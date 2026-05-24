@@ -249,6 +249,7 @@ function initDateControls() {
     currentDate = todayString();
     input.value = currentDate;
     renderTimeline();
+     window.dateControlsInitialized = true;
   });
 }
 
