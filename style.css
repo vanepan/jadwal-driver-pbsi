@@ -290,7 +290,6 @@ body {
   -webkit-overflow-scrolling: touch;
   scroll-behavior: smooth;
    overscroll-behavior-x: contain;
-   scroll-snap-type: x proximity;
 }
 
 /* Custom scrollbar untuk timeline body */
