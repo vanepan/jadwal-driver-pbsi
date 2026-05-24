@@ -144,9 +144,7 @@ function isFirebaseConfigured() {
 function showFirebaseConfigWarning() {
   if (firebaseConfigWarningShown) return;
   firebaseConfigWarningShown = true;
-  setTimeout(() => {
-    showToast('Firebase belum dikonfigurasi. Data masih tersimpan lokal.');
-  }, 300);
+  console.info('Firebase belum dikonfigurasi. Data masih tersimpan lokal.');
 }
 
 function assignmentsToFirebaseMap(items) {
