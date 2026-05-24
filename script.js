@@ -225,33 +225,33 @@ function initDateControls() {
   input.value = currentDate;
 
   // Input tanggal manual
-  input.addEventListener('change', () => {
+  input.onchange = () => {
     currentDate = input.value;
     renderTimeline();
-  });
+  };
 
   // Prev
-  document.getElementById('btnPrevDate').addEventListener('click', () => {
+  document.getElementById('btnPrevDate').onclick = () => {
     currentDate = offsetDate(currentDate, -1);
     input.value = currentDate;
     renderTimeline();
-  });
+  };
 
   // Next
-  document.getElementById('btnNextDate').addEventListener('click', () => {
+  document.getElementById('btnNextDate').onclick = () => {
     currentDate = offsetDate(currentDate, 1);
     input.value = currentDate;
     renderTimeline();
-  });
+  };
 
   // Today
-  document.getElementById('btnToday').addEventListener('click', () => {
+  document.getElementById('btnToday').onclick = () => {
     currentDate = todayString();
     input.value = currentDate;
     renderTimeline();
-     window.dateControlsInitialized = true;
-  });
+  };
 }
+
 
 /* ============================================================
    7. RENDER TIMELINE SCHEDULER
