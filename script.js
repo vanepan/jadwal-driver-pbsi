@@ -30,6 +30,9 @@ const firebaseConfig = {
 };
 
 const FIREBASE_ASSIGNMENTS_PATH = 'assignments';
+const APP_VERSION = '20260524-firebase-sync';
+
+console.info(`PBSI Scheduler ${APP_VERSION}`);
 
 /* ============================================================
    1. DATA: DAFTAR DRIVER & KENDARAAN
