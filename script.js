@@ -19,13 +19,14 @@ import { getDatabase, onValue, ref, set } from 'https://www.gstatic.com/firebase
    ============================================================ */
 
 const firebaseConfig = {
-  apiKey: '',
-  authDomain: '',
-  databaseURL: '',
-  projectId: '',
-  storageBucket: '',
-  messagingSenderId: '',
-  appId: '',
+  apiKey: 'AIzaSyDvGB_KUV-lIvV8Bv3x6CEyjmx6zB0gRow',
+  authDomain: 'schedule-driver-pbsi.firebaseapp.com',
+  databaseURL: 'https://schedule-driver-pbsi-default-rtdb.asia-southeast1.firebasedatabase.app',
+  projectId: 'schedule-driver-pbsi',
+  storageBucket: 'schedule-driver-pbsi.firebasestorage.app',
+  messagingSenderId: '389119454083',
+  appId: '1:389119454083:web:cf6bcc3466b456106ce4b6',
+  measurementId: 'G-J8FXX2SGHD',
 };
 
 const FIREBASE_ASSIGNMENTS_PATH = 'assignments';
