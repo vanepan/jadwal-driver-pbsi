@@ -472,7 +472,7 @@ function initDragDrop(slotsEl, driverName) {
     const totalWidth = 24 * hourWidth;
 
     // Hitung posisi baru (snap ke 15 menit)
-    let newLeft = clientX - slotsRect.left - dragOffsetX + slotsEl.scrollLeft;
+    let newLeft = clientX - slotsRect.left - dragOffsetX;
     const snapPx = hourWidth / 4; // 15 menit
     newLeft = Math.round(newLeft / snapPx) * snapPx;
     newLeft = Math.max(0, Math.min(newLeft, totalWidth - parseFloat(draggingBlock.style.width)));
