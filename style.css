@@ -256,7 +256,7 @@ body {
 /* Area jam-jam di header */
 .timeline-hours {
   display: flex;
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: hidden;
   flex: 1;
   scrollbar-width: none;
