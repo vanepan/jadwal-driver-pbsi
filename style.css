@@ -262,6 +262,8 @@ body {
   scrollbar-width: none;
    scroll-behavior: smooth;
 -webkit-overflow-scrolling: touch;
+   position: relative;
+z-index: 1;
 }
 .timeline-hours::-webkit-scrollbar { display: none; }
 
@@ -290,6 +292,8 @@ body {
   -webkit-overflow-scrolling: touch;
   scroll-behavior: smooth;
    overscroll-behavior-x: contain;
+   position: relative;
+z-index: 1;
 }
 
 /* Custom scrollbar untuk timeline body */
