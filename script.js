@@ -402,28 +402,8 @@ function syncTimelineScroll() {
   const body  = document.getElementById('timelineBody');
   const hours = document.getElementById('timelineHours');
 
-  let isSyncing = false;
-
   body.addEventListener('scroll', () => {
-    if (isSyncing) return;
-
-    isSyncing = true;
-
-    requestAnimationFrame(() => {
-      hours.scrollLeft = body.scrollLeft;
-      isSyncing = false;
-    });
-  });
-
-  hours.addEventListener('scroll', () => {
-    if (isSyncing) return;
-
-    isSyncing = true;
-
-    requestAnimationFrame(() => {
-      body.scrollLeft = hours.scrollLeft;
-      isSyncing = false;
-    });
+    hours.scrollLeft = body.scrollLeft;
   });
 }
 
