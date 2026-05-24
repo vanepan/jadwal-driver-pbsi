@@ -224,10 +224,6 @@ function initDateControls() {
 
   input.value = currentDate;
 
-  // Hindari duplicate init
-  if (window.dateControlsInitialized) return;
-  window.dateControlsInitialized = true;
-
   // Input tanggal manual
   input.addEventListener('change', () => {
     currentDate = input.value;
