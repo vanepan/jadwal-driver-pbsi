@@ -220,57 +220,36 @@ function initDriverSelect() {
    ============================================================ */
 
 function initDateControls() {
-
   const input = document.getElementById('filterDate');
 
   input.value = currentDate;
 
-  // Reset tombol agar event listener tidak dobel
-  const prevBtn = document.getElementById('btnPrevDate');
-  const nextBtn = document.getElementById('btnNextDate');
-  const todayBtn = document.getElementById('btnToday');
-
-  const newPrevBtn = prevBtn.cloneNode(true);
-  const newNextBtn = nextBtn.cloneNode(true);
-  const newTodayBtn = todayBtn.cloneNode(true);
-
-  prevBtn.parentNode.replaceChild(newPrevBtn, prevBtn);
-  nextBtn.parentNode.replaceChild(newNextBtn, nextBtn);
-  todayBtn.parentNode.replaceChild(newTodayBtn, todayBtn);
-
-  // Input tanggal manual
-  input.addEventListener('change', () => {
+  // Change tanggal manual
+  input.onchange = () => {
     currentDate = input.value;
     renderTimeline();
-  });
+  };
 
   // Hari sebelumnya
-  newPrevBtn.addEventListener('click', () => {
+  document.getElementById('btnPrevDate').onclick = () => {
     currentDate = offsetDate(currentDate, -1);
     input.value = currentDate;
     renderTimeline();
-  });
+  };
 
   // Hari berikutnya
-  newNextBtn.addEventListener('click', () => {
-    currentDate = offsetDate(currentDate, +1);
+  document.getElementById('btnNextDate').onclick = () => {
+    currentDate = offsetDate(currentDate, 1);
     input.value = currentDate;
     renderTimeline();
-  });
+  };
 
   // Hari ini
-  newTodayBtn.addEventListener('click', () => {
+  document.getElementById('btnToday').onclick = () => {
     currentDate = todayString();
     input.value = currentDate;
     renderTimeline();
-  });
-}
-
-// Menambah/mengurangi n hari dari tanggal string YYYY-MM-DD
-function offsetDate(dateStr, n) {
-  const d = new Date(dateStr + 'T00:00:00');
-  d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
+  };
 }
 
 /* ============================================================
