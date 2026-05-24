@@ -402,11 +402,28 @@ function syncTimelineScroll() {
   const body  = document.getElementById('timelineBody');
   const hours = document.getElementById('timelineHours');
 
+  let isSyncing = false;
+
   body.addEventListener('scroll', () => {
-    hours.scrollLeft = body.scrollLeft;
+    if (isSyncing) return;
+
+    isSyncing = true;
+
+    requestAnimationFrame(() => {
+      hours.scrollLeft = body.scrollLeft;
+      isSyncing = false;
+    });
   });
+
   hours.addEventListener('scroll', () => {
-    body.scrollLeft = hours.scrollLeft;
+    if (isSyncing) return;
+
+    isSyncing = true;
+
+    requestAnimationFrame(() => {
+      body.scrollLeft = hours.scrollLeft;
+      isSyncing = false;
+    });
   });
 }
 
