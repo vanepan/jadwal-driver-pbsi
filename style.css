@@ -216,8 +216,10 @@ body {
   background: var(--white);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: visible;
   border: 1px solid var(--gray-2);
+  position: relative;
 }
 
 /* ── Header Row (Jam) ── */
@@ -229,6 +231,7 @@ body {
   position: sticky;
   top: 0;
   z-index: 10;
+   position: sticky;
 }
 
 /* Sudut kiri atas (label "Driver") */
@@ -251,6 +254,10 @@ body {
   position: sticky;
   left: 0;
   z-index: 11;
+   position: sticky;
+left: 0;
+z-index: 40;
+background: var(--gray-1);
 }
 
 /* Area jam-jam di header */
@@ -286,14 +293,8 @@ z-index: 1;
 /* ── Timeline Body ── */
 .timeline-body {
   overflow-x: auto;
-  overflow-y: auto;
-  max-height: 60vh;
-  /* Scroll yang smooth di mobile */
-  -webkit-overflow-scrolling: touch;
-  scroll-behavior: smooth;
-   overscroll-behavior-x: contain;
-   position: relative;
-z-index: 1;
+  overflow-y: hidden;
+  position: relative;
 }
 
 /* Custom scrollbar untuk timeline body */
