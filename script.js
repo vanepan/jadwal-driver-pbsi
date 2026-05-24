@@ -267,6 +267,24 @@ function renderTimeline() {
   renderHourHeaders();
   renderDriverRows();
   syncTimelineScroll();
+
+  // Auto scroll ke jam sekarang
+  if (currentDate === todayString()) {
+    requestAnimationFrame(() => {
+      const body = document.getElementById('timelineBody');
+      const hourWidth = getHourWidth();
+
+      const now = new Date();
+      const currentHour =
+        now.getHours() + (now.getMinutes() / 60);
+
+      // Scroll sedikit sebelum jam sekarang
+      const scrollTarget =
+        Math.max(0, (currentHour - 2) * hourWidth);
+
+      body.scrollLeft = scrollTarget;
+    });
+  }
 }
 
 // Update label tanggal di atas timeline
@@ -780,9 +798,16 @@ function initModalHandlers() {
 
   // Tombol Edit di modal detail
   document.getElementById('btnEditAssignment').addEventListener('click', () => {
-    closeDetailModal();
-    openFormModal(viewingId);
-  });
+
+  const editId = viewingId;
+
+  closeDetailModal();
+
+  setTimeout(() => {
+    openFormModal(editId);
+  }, 50);
+
+});
 
   // Tombol Hapus di modal detail
   document.getElementById('btnDeleteAssignment').addEventListener('click', () => {
