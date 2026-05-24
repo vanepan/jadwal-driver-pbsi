@@ -224,32 +224,36 @@ function initDateControls() {
 
   input.value = currentDate;
 
-  // Change tanggal manual
-  input.onchange = () => {
+  // Hindari duplicate init
+  if (window.dateControlsInitialized) return;
+  window.dateControlsInitialized = true;
+
+  // Input tanggal manual
+  input.addEventListener('change', () => {
     currentDate = input.value;
     renderTimeline();
-  };
+  });
 
-  // Hari sebelumnya
-  document.getElementById('btnPrevDate').onclick = () => {
+  // Prev
+  document.getElementById('btnPrevDate').addEventListener('click', () => {
     currentDate = offsetDate(currentDate, -1);
     input.value = currentDate;
     renderTimeline();
-  };
+  });
 
-  // Hari berikutnya
-  document.getElementById('btnNextDate').onclick = () => {
+  // Next
+  document.getElementById('btnNextDate').addEventListener('click', () => {
     currentDate = offsetDate(currentDate, 1);
     input.value = currentDate;
     renderTimeline();
-  };
+  });
 
-  // Hari ini
-  document.getElementById('btnToday').onclick = () => {
+  // Today
+  document.getElementById('btnToday').addEventListener('click', () => {
     currentDate = todayString();
     input.value = currentDate;
     renderTimeline();
-  };
+  });
 }
 
 /* ============================================================
