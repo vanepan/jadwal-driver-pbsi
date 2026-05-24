@@ -231,25 +231,25 @@ function initDateControls() {
   };
 
   // Prev
-  document.getElementById('btnPrevDate').onclick = () => {
-    currentDate = offsetDate(currentDate, -1);
-    input.value = currentDate;
-    renderTimeline();
-  };
+document.getElementById('btnPrevDate').onclick = () => {
+  currentDate = offsetDate(currentDate, -1);
+  input.value = currentDate;
+  renderTimeline();
+};
 
-  // Next
-  document.getElementById('btnNextDate').onclick = () => {
-    currentDate = offsetDate(currentDate, 1);
-    input.value = currentDate;
-    renderTimeline();
-  };
+// Next
+document.getElementById('btnNextDate').onclick = () => {
+  currentDate = offsetDate(currentDate, 1);
+  input.value = currentDate;
+  renderTimeline();
+};
 
-  // Today
-  document.getElementById('btnToday').onclick = () => {
-    currentDate = todayString();
-    input.value = currentDate;
-    renderTimeline();
-  };
+// Today
+document.getElementById('btnToday').onclick = () => {
+  currentDate = todayString();
+  input.value = currentDate;
+  renderTimeline();
+};
 }
 
 
