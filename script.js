@@ -264,7 +264,12 @@ function renderTimeline() {
   updateDateLabel();
   renderHourHeaders();
   renderDriverRows();
-  syncTimelineScroll();
+
+  // Init scroll sync hanya sekali
+  if (!window.timelineScrollInitialized) {
+    syncTimelineScroll();
+    window.timelineScrollInitialized = true;
+  }
 
   // Auto scroll ke jam sekarang
   if (currentDate === todayString()) {
@@ -276,7 +281,6 @@ function renderTimeline() {
       const currentHour =
         now.getHours() + (now.getMinutes() / 60);
 
-      // Scroll sedikit sebelum jam sekarang
       const scrollTarget =
         Math.max(0, (currentHour - 2) * hourWidth);
 
@@ -284,6 +288,7 @@ function renderTimeline() {
     });
   }
 }
+
 
 // Update label tanggal di atas timeline
 function updateDateLabel() {
