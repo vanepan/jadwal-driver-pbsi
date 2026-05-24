@@ -350,7 +350,7 @@ function renderDriverRows() {
     body.appendChild(row);
 
     // Aktifkan drag & drop pada baris ini
-    initDragDrop(slots, driver.name);
+   // initDragDrop(slots, driver.name);
   });
 }
 
@@ -384,7 +384,7 @@ function createAssignmentBlock(assignment) {
   });
 
   // Aktifkan resize (drag handle kanan)
-  initResize(block, assignment);
+ // initResize(block, assignment);
 
   return block;
 }
