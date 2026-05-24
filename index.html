@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PBSI · Jadwal Driver Operasional</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ===== HEADER ===== -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="header-brand">
+        <div class="brand-badge">PBSI</div>
+        <div class="brand-text">
+          <span class="brand-title">Jadwal Driver</span>
+          <span class="brand-sub">Operasional Pelatnas</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <!-- Filter Tanggal -->
+        <div class="date-nav">
+          <button class="btn-icon" id="btnPrevDate" title="Hari sebelumnya">&#8592;</button>
+          <input type="date" id="filterDate" class="date-input" />
+          <button class="btn-icon" id="btnNextDate" title="Hari berikutnya">&#8594;</button>
+          <button class="btn-today" id="btnToday">Hari Ini</button>
+        </div>
+        <!-- Tombol Tambah Assignment -->
+        <button class="btn-primary" id="btnAddAssignment">
+          <span class="btn-plus">+</span> Tambah Jadwal
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== TIMELINE SCHEDULER ===== -->
+  <main class="main-content">
+
+    <!-- Label tanggal yang sedang ditampilkan -->
+    <div class="timeline-date-label" id="timelineDateLabel">Minggu, 24 Mei 2026</div>
+
+    <!-- Wrapper untuk timeline dengan scroll horizontal -->
+    <div class="timeline-wrapper">
+
+      <!-- Header jam (sticky kiri + scroll kanan) -->
+      <div class="timeline-header-row">
+        <div class="timeline-corner">Driver</div>
+        <div class="timeline-hours" id="timelineHours">
+          <!-- Diisi oleh JavaScript: kolom 00:00 – 24:00 -->
+        </div>
+      </div>
+
+      <!-- Baris driver + blok assignment -->
+      <div class="timeline-body" id="timelineBody">
+        <!-- Diisi oleh JavaScript -->
+      </div>
+
+    </div>
+
+    <!-- Keterangan warna kendaraan -->
+    <div class="legend">
+      <span class="legend-title">Kendaraan:</span>
+      <span class="legend-item" data-vehicle="Innova">Innova</span>
+      <span class="legend-item" data-vehicle="Luxio">Luxio</span>
+      <span class="legend-item" data-vehicle="Polytron">Polytron</span>
+      <span class="legend-item" data-vehicle="Hiace">Hiace</span>
+    </div>
+
+  </main>
+
+  <!-- ===== MODAL: FORM TAMBAH / EDIT ASSIGNMENT ===== -->
+  <div class="modal-overlay" id="modalForm" style="display:none;">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2 class="modal-title" id="modalFormTitle">Tambah Jadwal</h2>
+        <button class="modal-close" id="btnCloseForm">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="assignmentForm" novalidate>
+
+          <!-- Input tersembunyi untuk ID saat edit -->
+          <input type="hidden" id="fieldId" />
+
+          <div class="form-grid">
+
+            <!-- Driver -->
+            <div class="form-group">
+              <label for="fieldDriver">Driver *</label>
+              <select id="fieldDriver" required>
+                <option value="">-- Pilih Driver --</option>
+                <!-- Diisi JavaScript dari daftar driver -->
+              </select>
+            </div>
+
+            <!-- Nomor HP (otomatis terisi saat driver dipilih) -->
+            <div class="form-group">
+              <label for="fieldPhone">Nomor HP</label>
+              <input type="text" id="fieldPhone" placeholder="Otomatis terisi" readonly />
+            </div>
+
+            <!-- Kendaraan -->
+            <div class="form-group">
+              <label for="fieldVehicle">Kendaraan *</label>
+              <select id="fieldVehicle" required>
+                <option value="">-- Pilih Kendaraan --</option>
+                <option value="Innova">Innova</option>
+                <option value="Luxio">Luxio</option>
+                <option value="Polytron">Polytron</option>
+                <option value="Hiace">Hiace</option>
+              </select>
+            </div>
+
+            <!-- Tanggal -->
+            <div class="form-group">
+              <label for="fieldDate">Tanggal *</label>
+              <input type="date" id="fieldDate" required />
+            </div>
+
+            <!-- Jam Mulai -->
+            <div class="form-group">
+              <label for="fieldStart">Jam Mulai *</label>
+              <input type="time" id="fieldStart" required />
+            </div>
+
+            <!-- Jam Selesai -->
+            <div class="form-group">
+              <label for="fieldEnd">Jam Selesai *</label>
+              <input type="time" id="fieldEnd" required />
+            </div>
+
+            <!-- Tujuan -->
+            <div class="form-group form-full">
+              <label for="fieldDestination">Tujuan *</label>
+              <input type="text" id="fieldDestination" placeholder="Contoh: T3 Soetta – Pelatnas" required />
+            </div>
+
+            <!-- Keperluan -->
+            <div class="form-group form-full">
+              <label for="fieldPurpose">Keperluan *</label>
+              <input type="text" id="fieldPurpose" placeholder="Contoh: Penjemputan Kepulangan Pengurus" required />
+            </div>
+
+            <!-- PIC -->
+            <div class="form-group">
+              <label for="fieldPIC">PIC</label>
+              <input type="text" id="fieldPIC" placeholder="Contoh: Pak Tommy" />
+            </div>
+
+            <!-- Jumlah Penumpang -->
+            <div class="form-group">
+              <label for="fieldPax">Jumlah Penumpang</label>
+              <input type="number" id="fieldPax" min="1" max="20" placeholder="1" value="1" />
+            </div>
+
+            <!-- Catatan -->
+            <div class="form-group form-full">
+              <label for="fieldNotes">Catatan</label>
+              <textarea id="fieldNotes" rows="2" placeholder="Catatan tambahan (opsional)"></textarea>
+            </div>
+
+          </div><!-- /form-grid -->
+
+          <!-- Pesan error konflik jadwal -->
+          <div class="conflict-warning" id="conflictWarning" style="display:none;">
+            ⚠️ Konflik jadwal! Driver sudah memiliki assignment di jam yang sama.
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn-secondary" id="btnCancelForm">Batal</button>
+            <button type="submit" class="btn-primary" id="btnSaveForm">Simpan</button>
+          </div>
+
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL: DETAIL ASSIGNMENT ===== -->
+  <div class="modal-overlay" id="modalDetail" style="display:none;">
+    <div class="modal-box modal-detail-box">
+      <div class="modal-header">
+        <h2 class="modal-title">Detail Jadwal</h2>
+        <button class="modal-close" id="btnCloseDetail">&times;</button>
+      </div>
+      <div class="modal-body">
+
+        <!-- Konten detail diisi oleh JavaScript -->
+        <div id="detailContent"></div>
+
+        <!-- Preview format WhatsApp -->
+        <div class="wa-preview-box">
+          <div class="wa-preview-label">📱 Ringkasan WhatsApp</div>
+          <pre id="waPreviewText" class="wa-preview-text"></pre>
+          <button class="btn-wa-copy" id="btnCopyWA">
+            📋 Copy Ringkasan WhatsApp
+          </button>
+          <span class="copy-feedback" id="copyFeedback" style="display:none;">✅ Tersalin!</span>
+        </div>
+
+        <div class="detail-actions">
+          <button class="btn-danger" id="btnDeleteAssignment">🗑 Hapus</button>
+          <button class="btn-secondary" id="btnEditAssignment">✏️ Edit</button>
+          <button class="btn-secondary" id="btnCloseDetail2">Tutup</button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== TOAST NOTIFICATION ===== -->
+  <div class="toast" id="toast" style="display:none;"></div>
+
+  <!-- Script utama -->
+  <script type="module" src="script.js"></script>
+</body>
+</html>
