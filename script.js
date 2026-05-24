@@ -191,6 +191,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initFirebaseSync();      // Sinkronisasi realtime antar device
   initFormHandlers();      // Event listener form
   initModalHandlers();     // Event listener modal
+initTimeInputs();
 });
 
 /* ============================================================
@@ -963,6 +964,47 @@ function minutesToTime(minutes) {
 }
 
 // "2026-05-24" → "Minggu, 24 Mei 2026"
+/* ============================================================
+   TIME INPUT FORMATTER
+   ============================================================ */
+
+function initTimeInputs() {
+  ['fieldStart', 'fieldEnd'].forEach(id => {
+    const input = document.getElementById(id);
+
+    if (!input) return;
+
+    input.addEventListener('input', () => {
+      let value = input.value.replace(/\D/g, '');
+
+      if (value.length >= 3) {
+        value =
+          value.slice(0, value.length - 2) +
+          ':' +
+          value.slice(-2);
+      }
+
+      if (value.length > 5) {
+        value = value.slice(0, 5);
+      }
+
+      input.value = value;
+    });
+
+    input.addEventListener('blur', () => {
+      validateTimeInput(input);
+    });
+  });
+}
+
+function validateTimeInput(input) {
+  const val = input.value;
+
+  if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(val)) {
+    showToast('⚠️ Format jam tidak valid');
+    input.focus();
+  }
+}
 function formatDateLong(dateStr) {
   return new Date(dateStr + 'T00:00:00').toLocaleDateString('id-ID', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
