@@ -220,31 +220,46 @@ function initDriverSelect() {
    ============================================================ */
 
 function initDateControls() {
+
   const input = document.getElementById('filterDate');
+
   input.value = currentDate;
 
-  // Saat tanggal diubah langsung lewat input
+  // Reset tombol agar event listener tidak dobel
+  const prevBtn = document.getElementById('btnPrevDate');
+  const nextBtn = document.getElementById('btnNextDate');
+  const todayBtn = document.getElementById('btnToday');
+
+  const newPrevBtn = prevBtn.cloneNode(true);
+  const newNextBtn = nextBtn.cloneNode(true);
+  const newTodayBtn = todayBtn.cloneNode(true);
+
+  prevBtn.parentNode.replaceChild(newPrevBtn, prevBtn);
+  nextBtn.parentNode.replaceChild(newNextBtn, nextBtn);
+  todayBtn.parentNode.replaceChild(newTodayBtn, todayBtn);
+
+  // Input tanggal manual
   input.addEventListener('change', () => {
     currentDate = input.value;
     renderTimeline();
   });
 
-  // Tombol panah kiri (hari sebelumnya)
-  document.getElementById('btnPrevDate').addEventListener('click', () => {
+  // Hari sebelumnya
+  newPrevBtn.addEventListener('click', () => {
     currentDate = offsetDate(currentDate, -1);
     input.value = currentDate;
     renderTimeline();
   });
 
-  // Tombol panah kanan (hari berikutnya)
-  document.getElementById('btnNextDate').addEventListener('click', () => {
+  // Hari berikutnya
+  newNextBtn.addEventListener('click', () => {
     currentDate = offsetDate(currentDate, +1);
     input.value = currentDate;
     renderTimeline();
   });
 
-  // Tombol "Hari Ini"
-  document.getElementById('btnToday').addEventListener('click', () => {
+  // Hari ini
+  newTodayBtn.addEventListener('click', () => {
     currentDate = todayString();
     input.value = currentDate;
     renderTimeline();
