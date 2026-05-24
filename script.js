@@ -1,9 +1,34 @@
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
+import { getDatabase, onValue, ref, set } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
+
 /* ============================================================
    PBSI Driver Scheduler — script.js
-   Vanilla JavaScript, data disimpan di LocalStorage
+   Vanilla JavaScript + Firebase Realtime Database
    ============================================================ */
 
 'use strict';
+
+/* ============================================================
+   0. FIREBASE CONFIG
+
+   Isi value di bawah dari Firebase Console:
+   Project settings -> General -> Your apps -> Web app config.
+
+   Pastikan Realtime Database sudah dibuat, lalu publish rules dari
+   firebase-rules.json untuk mode sederhana tanpa login.
+   ============================================================ */
+
+const firebaseConfig = {
+  apiKey: '',
+  authDomain: '',
+  databaseURL: '',
+  projectId: '',
+  storageBucket: '',
+  messagingSenderId: '',
+  appId: '',
+};
+
+const FIREBASE_ASSIGNMENTS_PATH = 'assignments';
 
 /* ============================================================
    1. DATA: DAFTAR DRIVER & KENDARAAN
@@ -25,13 +50,17 @@ const VEHICLES = {
 };
 
 /* ============================================================
-   2. STATE: DATA ASSIGNMENT (disimpan LocalStorage)
+   2. STATE: DATA ASSIGNMENT (Firebase + cache LocalStorage)
    ============================================================ */
 
 const STORAGE_KEY = 'pbsi_assignments_v1';
 
-// Muat data dari LocalStorage, atau array kosong kalau belum ada
+// Muat cache lokal dulu supaya app tetap bisa tampil sebelum Firebase siap.
 let assignments = loadAssignments();
+let firebaseAssignmentsRef = null;
+let firebaseListening = false;
+let firebaseLoadedOnce = false;
+let firebaseConfigWarningShown = false;
 
 function loadAssignments() {
   try {
@@ -43,11 +72,98 @@ function loadAssignments() {
 
 function saveAssignments() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(assignments));
+
+  if (!firebaseAssignmentsRef) {
+    showFirebaseConfigWarning();
+    return Promise.resolve();
+  }
+
+  return set(firebaseAssignmentsRef, assignmentsToFirebaseMap(assignments))
+    .catch(err => {
+      console.error('Firebase save gagal:', err);
+      showToast('Firebase gagal menyimpan. Data tersimpan di device ini.');
+    });
 }
 
 // Generate ID unik sederhana
 function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+function initFirebaseSync() {
+  if (!isFirebaseConfigured()) {
+    showFirebaseConfigWarning();
+    return;
+  }
+
+  try {
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    firebaseAssignmentsRef = ref(db, FIREBASE_ASSIGNMENTS_PATH);
+  } catch (err) {
+    console.error('Firebase init gagal:', err);
+    showToast('Firebase belum bisa tersambung. Cek config Firebase.');
+    return;
+  }
+
+  if (firebaseListening) return;
+  firebaseListening = true;
+
+  onValue(firebaseAssignmentsRef, snapshot => {
+    if (!snapshot.exists()) {
+      if (!firebaseLoadedOnce && assignments.length > 0) {
+        saveAssignments();
+      }
+      firebaseLoadedOnce = true;
+      return;
+    }
+
+    assignments = firebaseMapToAssignments(snapshot.val());
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(assignments));
+    firebaseLoadedOnce = true;
+    renderTimeline();
+
+    if (viewingId && !assignments.some(a => a.id === viewingId)) {
+      closeDetailModal();
+    }
+  }, err => {
+    console.error('Firebase listener gagal:', err);
+    showToast('Firebase gagal membaca data. Cek rules/database URL.');
+  });
+}
+
+function isFirebaseConfigured() {
+  return Boolean(
+    firebaseConfig.apiKey &&
+    firebaseConfig.databaseURL &&
+    firebaseConfig.projectId &&
+    firebaseConfig.appId
+  );
+}
+
+function showFirebaseConfigWarning() {
+  if (firebaseConfigWarningShown) return;
+  firebaseConfigWarningShown = true;
+  setTimeout(() => {
+    showToast('Firebase belum dikonfigurasi. Data masih tersimpan lokal.');
+  }, 300);
+}
+
+function assignmentsToFirebaseMap(items) {
+  return items.reduce((map, item) => {
+    map[item.id] = item;
+    return map;
+  }, {});
+}
+
+function firebaseMapToAssignments(value) {
+  return Object.values(value || {})
+    .filter(item => item && item.id)
+    .sort((a, b) => {
+      const dateCompare = String(a.date || '').localeCompare(String(b.date || ''));
+      if (dateCompare !== 0) return dateCompare;
+      return String(a.startTime || '').localeCompare(String(b.startTime || ''));
+    });
 }
 
 /* ============================================================
@@ -70,6 +186,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initDriverSelect();      // Isi dropdown driver di form
   initDateControls();      // Inisialisasi kontrol tanggal
   renderTimeline();        // Render timeline pertama kali
+  initFirebaseSync();      // Sinkronisasi realtime antar device
   initFormHandlers();      // Event listener form
   initModalHandlers();     // Event listener modal
 });
