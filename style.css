@@ -260,6 +260,8 @@ body {
   overflow-y: hidden;
   flex: 1;
   scrollbar-width: none;
+   scroll-behavior: smooth;
+-webkit-overflow-scrolling: touch;
 }
 .timeline-hours::-webkit-scrollbar { display: none; }
 
@@ -287,6 +289,8 @@ body {
   /* Scroll yang smooth di mobile */
   -webkit-overflow-scrolling: touch;
   scroll-behavior: smooth;
+   overscroll-behavior-x: contain;
+   scroll-snap-type: x proximity;
 }
 
 /* Custom scrollbar untuk timeline body */
