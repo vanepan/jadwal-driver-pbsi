@@ -180,6 +180,13 @@ function todayString() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Menggeser tanggal sebanyak n hari dari tanggal yang diberikan
+function offsetDate(dateStr, days) {
+  const date = new Date(dateStr + 'T00:00:00');
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 /* ============================================================
    4. INISIALISASI SAAT DOM SIAP
    ============================================================ */
