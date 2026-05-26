@@ -14,8 +14,9 @@
 import { loadAssignments, saveAssignments, initFirebaseSync, registerDataChangeListener } from './firebase.js';
 import { initDriverSelect } from './drivers.js';
 import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate } from './timeline.js';
-import { initModalHandlers, registerEditCallback, registerDeleteCallback, setAssignments as setModalAssignments } from './modal.js';
+import { initModalHandlers, registerEditCallback, registerDeleteCallback, setAssignments as setModalAssignments, updateDetailActionButtons } from './modal.js';
 import { initFormHandlers, openFormModal, closeFormModal, registerSaveCallback, setAssignments as setAssignmentsForm, setCurrentDate as setCurrentDateForm, checkConflict, deleteAssignment } from './assignments.js';
+import { initAuthUI, hasPermission, getCurrentUser } from './auth.js';
 
 const APP_VERSION = '20260524-firebase-sync-modular';
 
@@ -35,6 +36,22 @@ function updateAllModules() {
 }
 
 /**
+ * Update tombol-tombol berdasarkan role login saat ini.
+ */
+function updatePermissionUI() {
+  const btnAdd = document.getElementById('btnAddAssignment');
+
+  if (btnAdd) {
+    btnAdd.disabled = !hasPermission('create');
+    btnAdd.title = hasPermission('create')
+      ? 'Tambah jadwal'
+      : 'Role ini hanya bisa melihat jadwal';
+  }
+
+  updateDetailActionButtons();
+}
+
+/**
  * Main initialization saat DOM ready
  */
 document.addEventListener('DOMContentLoaded', () => {
@@ -45,11 +62,13 @@ document.addEventListener('DOMContentLoaded', () => {
   updateAllModules();
 
   // Initialize UI modules
+  initAuthUI(updatePermissionUI); // Setup login modal, badge, logout
   initDriverSelect();           // Isi dropdown driver
   initDateControls();           // Setup date navigation buttons
   initFormHandlers();           // Setup form events
   initModalHandlers();          // Setup modal events
   renderTimeline();             // Render timeline pertama kali
+  updatePermissionUI();         // Disable tombol sesuai role
 
   // Setup callbacks untuk cross-module communication
 
@@ -81,11 +100,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── Callback: Edit button di detail modal ──
   registerEditCallback((assignmentId) => {
+    if (!hasPermission('edit')) return;
     openFormModal(assignmentId);
   });
 
   // ── Callback: Delete button di detail modal ──
   registerDeleteCallback((assignmentId) => {
+    if (!hasPermission('delete')) return;
+
     deleteAssignment(assignmentId);
     assignments = assignments.filter(a => a.id !== assignmentId);
     updateAllModules();
@@ -111,6 +133,8 @@ window.appDebug = {
   getAssignments: () => assignments,
   getAppVersion: () => APP_VERSION,
   getCurrentDate: () => getCurrentDate(),
+  getCurrentUser,
+  hasPermission,
   checkConflict,
   renderTimeline,
 };

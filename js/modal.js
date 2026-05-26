@@ -9,6 +9,7 @@
 
 import { formatDateLong, getTimePeriod, showToast } from './utils.js';
 import { VEHICLES } from './drivers.js';
+import { hasPermission } from './auth.js';
 
 /* ── Module State ── */
 let viewingId = null; // ID assignment yang sedang dilihat
@@ -60,6 +61,11 @@ export function initModalHandlers() {
   const btnEdit = document.getElementById('btnEditAssignment');
   if (btnEdit) {
     btnEdit.addEventListener('click', () => {
+      if (!hasPermission('edit')) {
+        showToast('Anda tidak punya akses untuk mengedit jadwal');
+        return;
+      }
+
       const editId = viewingId;
       closeDetailModal();
       // Delay untuk memastikan modal tutup dulu
@@ -75,6 +81,11 @@ export function initModalHandlers() {
   const btnDelete = document.getElementById('btnDeleteAssignment');
   if (btnDelete) {
     btnDelete.addEventListener('click', () => {
+      if (!hasPermission('delete')) {
+        showToast('Anda tidak punya akses untuk menghapus jadwal');
+        return;
+      }
+
       if (confirm('Yakin ingin menghapus jadwal ini?')) {
         if (onDeleteCallback) {
           onDeleteCallback(viewingId);
@@ -165,6 +176,8 @@ export function openDetailModal(id) {
     waText.textContent = generateWAText(a);
   }
 
+  updateDetailActionButtons();
+
   // Tampilkan modal
   const modal = document.getElementById('modalDetail');
   if (modal) {
@@ -187,6 +200,24 @@ export function closeDetailModal() {
   }
 
   viewingId = null;
+}
+
+/**
+ * Disable tombol edit/hapus untuk role yang tidak punya akses.
+ */
+export function updateDetailActionButtons() {
+  const btnEdit = document.getElementById('btnEditAssignment');
+  const btnDelete = document.getElementById('btnDeleteAssignment');
+
+  if (btnEdit) {
+    btnEdit.disabled = !hasPermission('edit');
+    btnEdit.title = hasPermission('edit') ? 'Edit jadwal' : 'Hanya admin yang bisa edit';
+  }
+
+  if (btnDelete) {
+    btnDelete.disabled = !hasPermission('delete');
+    btnDelete.title = hasPermission('delete') ? 'Hapus jadwal' : 'Hanya admin yang bisa hapus';
+  }
 }
 
 /**
