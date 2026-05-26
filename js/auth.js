@@ -11,7 +11,36 @@ import { getUserByUsername, initUsersSync } from './users.js';
 import { logAction } from './logs.js';
 import { showToast } from './utils.js';
 
+<<<<<<< HEAD
 const SESSION_KEY = 'pbsi_current_user';
+=======
+const MOCK_USERS = [
+  {
+    id: 'admin',
+    name: 'Admin',
+    role: 'admin',
+    pin: '1234',
+  },
+  {
+    id: 'bidang-komite-etik',
+    name: 'Bidang Komite Etik',
+    role: 'bidang',
+    pin: '2222',
+  },
+  {
+    id: 'bidang-perencanaan-strategis',
+    name: 'Bidang Perencanaan Strategis',
+    role: 'bidang',
+    pin: '3333',
+  },
+  {
+    id: 'viewer',
+    name: 'Viewer',
+    role: 'viewer',
+    pin: '9999',
+  },
+];
+>>>>>>> origin/main
 
 const ROLE_LABELS = {
   admin: 'Admin',

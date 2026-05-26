@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=20260524-firebase" />
+  <link rel="stylesheet" href="style.css?v=20260526-request-permissions" />
 </head>
 <body>
 
@@ -137,6 +137,7 @@
               <input type="date" id="requestFieldDate" required />
             </div>
 
+<<<<<<< HEAD
             <div class="form-group time-pair-group">
               <label>Jam Mulai *</label>
               <div class="time-pair">
@@ -153,6 +154,16 @@
                 <span class="time-separator">:</span>
                 <input type="text" id="requestFieldEndMinute" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="MM" required />
               </div>
+=======
+            <div class="form-group">
+              <label for="requestFieldStart">Jam Mulai *</label>
+              <input type="time" id="requestFieldStart" required />
+            </div>
+
+            <div class="form-group">
+              <label for="requestFieldEnd">Jam Selesai *</label>
+              <input type="time" id="requestFieldEnd" required />
+>>>>>>> origin/main
             </div>
 
             <div class="form-group form-full">
@@ -192,6 +203,7 @@
     </div>
   </div>
 
+<<<<<<< HEAD
   <!-- ===== MODAL: USER MANAGEMENT ===== -->
   <div class="modal-overlay" id="modalUsersList" style="display:none;">
     <div class="modal-box modal-detail-box">
@@ -309,6 +321,8 @@
     </div>
   </div>
 
+=======
+>>>>>>> origin/main
   <!-- ===== MODAL: FORM TAMBAH / EDIT ASSIGNMENT ===== -->
   <div class="modal-overlay" id="modalForm" style="display:none;">
     <div class="modal-box">
@@ -460,6 +474,6 @@
   <div class="toast" id="toast" style="display:none;"></div>
 
   <!-- Script utama (modular entry point) -->
-  <script type="module" src="js/app.js?v=20260524-firebase-modular"></script>
+  <script type="module" src="js/app.js?v=20260526-request-permissions"></script>
 </body>
 </html>

@@ -153,13 +153,15 @@ export function closeFormModal() {
 function handleFormSubmit(e) {
   e.preventDefault();
 
-  if (editingId && !hasPermission('edit')) {
-    showToast('Anda tidak punya akses untuk mengedit jadwal');
+  // Safety net: only admin can ever write directly to assignments.
+  if (!hasPermission('create')) {
+    showToast('Bidang harus membuat request jadwal, bukan jadwal langsung');
+    closeFormModal();
     return;
   }
 
-  if (!editingId && !hasPermission('create')) {
-    showToast('Anda tidak punya akses untuk menambah jadwal');
+  if (editingId && !hasPermission('edit')) {
+    showToast('Anda tidak punya akses untuk mengedit jadwal');
     return;
   }
 
