@@ -16,6 +16,10 @@ let currentDate = todayString();
 let assignments = [];
 let realtimeTimer = null;
 
+function getTimelineBodyElement() {
+  return document.getElementById('timelineBody') || document.getElementById('timelineGrid');
+}
+
 /**
  * Set current date yang sedang ditampilkan
  * @param {string} dateStr - Format YYYY-MM-DD
@@ -65,7 +69,7 @@ export function renderTimeline() {
   // Auto scroll ke jam sekarang (jika menampilkan hari ini)
   if (currentDate === todayString()) {
     requestAnimationFrame(() => {
-      const body = document.getElementById('timelineBody');
+      const body = getTimelineBodyElement();
       if (!body) return;
 
       const hourWidth = getHourWidth();
@@ -109,7 +113,7 @@ function renderHourHeaders() {
  * Render baris setiap driver beserta blok assignment-nya
  */
 function renderDriverRows() {
-  const body = document.getElementById('timelineBody');
+  const body = getTimelineBodyElement();
   if (!body) return;
 
   body.innerHTML = '';
@@ -231,7 +235,8 @@ function updateRealtimeTimeline() {
   });
 
   if (!isToday) {
-    document.querySelectorAll('#timelineBody .today-line').forEach(line => line.remove());
+    const body = getTimelineBodyElement();
+    if (body) body.querySelectorAll('.today-line').forEach(line => line.remove());
     return;
   }
 
@@ -239,7 +244,10 @@ function updateRealtimeTimeline() {
   const hourWidth = getHourWidth();
   const leftPx = (minutesFromMidnight / 60) * hourWidth;
 
-  document.querySelectorAll('#timelineBody .today-line').forEach(line => {
+  const body = getTimelineBodyElement();
+  if (!body) return;
+
+  body.querySelectorAll('.today-line').forEach(line => {
     line.style.left = `${leftPx}px`;
   });
 }
@@ -256,7 +264,7 @@ function startRealtimeTimeline() {
  * Ketika user scroll body ke kanan, header ikut scroll
  */
 function syncTimelineScroll() {
-  const body  = document.getElementById('timelineBody');
+  const body  = getTimelineBodyElement();
   const hours = document.getElementById('timelineHours');
 
   if (!body || !hours) return;

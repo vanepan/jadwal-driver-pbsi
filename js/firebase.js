@@ -275,20 +275,6 @@ export function initFirebaseSync() {
     return;
   }
 
-<<<<<<< HEAD
-=======
-  try {
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-    firebaseAssignmentsRef = ref(db, FIREBASE_ASSIGNMENTS_PATH);
-    firebaseRequestsRef = ref(db, FIREBASE_REQUESTS_PATH);
-  } catch (err) {
-    console.error('Firebase init gagal:', err);
-    showToast('Firebase belum bisa tersambung. Cek config Firebase.');
-    return;
-  }
-
->>>>>>> origin/main
   if (firebaseListening) return; // Sudah listening
   firebaseListening = true;
 
@@ -343,14 +329,6 @@ export function initFirebaseSync() {
  */
 export function hasFirebaseLoaded() {
   return firebaseLoadedOnce;
-}
-
-/**
- * Get Firebase requests reference.
- * @returns {Object|null}
- */
-export function getFirebaseRequestsRef() {
-  return firebaseRequestsRef;
 }
 
 /**

@@ -15,11 +15,7 @@ import { loadAssignments, saveAssignments, loadRequests, saveRequests, initFireb
 import { initDriverSelect } from './drivers.js';
 import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate } from './timeline.js';
 import { initModalHandlers, registerEditCallback, registerDeleteCallback, setAssignments as setModalAssignments, updateDetailActionButtons } from './modal.js';
-<<<<<<< HEAD
-import { initFormHandlers, openFormModal, closeFormModal, registerSaveCallback, setAssignments as setAssignmentsForm, setCurrentDate as setCurrentDateForm, checkConflict, deleteAssignment } from './assignments.js';
-=======
 import { initFormHandlers, openFormModal, registerSaveCallback, setAssignments as setAssignmentsForm, setCurrentDate as setCurrentDateForm, checkConflict, deleteAssignment } from './assignments.js';
->>>>>>> origin/main
 import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang } from './auth.js';
 import {
   initRequestHandlers,
@@ -34,12 +30,9 @@ import {
   renderRequestsList,
   requestToAssignment,
 } from './requests.js';
-<<<<<<< HEAD
 import { initAdminUI, updateAdminButtons } from './admin.js';
 import { initNotificationUI, setNotificationData } from './notifications.js';
 import { subscribeLogsChangeListener, getLogs, logAction } from './logs.js';
-=======
->>>>>>> origin/main
 
 const APP_VERSION = '20260526-request-permissions';
 
@@ -48,10 +41,7 @@ console.info(`PBSI Scheduler ${APP_VERSION}`);
 /* ── Global App State ── */
 let assignments = [];
 let requests = [];
-<<<<<<< HEAD
 let auditLogs = [];
-=======
->>>>>>> origin/main
 
 /**
  * Update all modules dengan data assignments terbaru
@@ -92,25 +82,6 @@ function updatePermissionUI() {
       btnAdd.title = 'Role ini hanya bisa melihat jadwal';
       if (btnText) btnText.textContent = 'Tambah Jadwal';
     }
-<<<<<<< HEAD
-=======
-  }
-
-  if (btnRequests) {
-    const shouldShowRequests = isAdmin() || isBidang();
-    btnRequests.style.display = shouldShowRequests ? 'flex' : 'none';
-  }
-
-  if (btnRequestsLabel) {
-    btnRequestsLabel.textContent = isAdmin() ? 'Pending' : 'Riwayat Request';
-  }
-
-  if (requestCountBadge) {
-    const pendingCount = getPendingRequestCount();
-    const showCount = isAdmin() && pendingCount > 0;
-    requestCountBadge.textContent = String(pendingCount);
-    requestCountBadge.style.display = showCount ? 'inline-flex' : 'none';
->>>>>>> origin/main
   }
 
   if (btnRequests) {
@@ -156,7 +127,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateAllModules();
 
   // Initialize UI modules
-<<<<<<< HEAD
   await initAuthUI(updatePermissionUI);  // Setup login modal, badge, logout
   await initAdminUI();                   // Setup admin user management
   initNotificationUI();                 // Setup notification badge & modal
@@ -207,35 +177,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       recentLogs: auditLogs,
     });
   });
-=======
-  initAuthUI(updatePermissionUI); // Setup login modal, badge, logout
-  initDriverSelect();           // Isi dropdown driver
-  initDateControls();           // Setup date navigation buttons
-  initFormHandlers();           // Setup form events
-  initModalHandlers();          // Setup modal events
-  initRequestHandlers();        // Setup request workflow events
-  renderTimeline();             // Render timeline pertama kali
-  updatePermissionUI();         // Disable tombol sesuai role
->>>>>>> origin/main
-
-  const btnAdd = document.getElementById('btnAddAssignment');
-  if (btnAdd) {
-    btnAdd.addEventListener('click', () => {
-      if (isAdmin()) {
-        openFormModal();
-        return;
-      }
-
-      if (isBidang()) {
-        openRequestFormModal();
-      }
-    });
-  }
-
-  const btnRequests = document.getElementById('btnRequests');
-  if (btnRequests) {
-    btnRequests.addEventListener('click', openRequestsListModal);
-  }
 
   // Setup callbacks untuk cross-module communication
 
@@ -280,11 +221,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     requests = [...requests, newRequest];
     updateAllModules();
     saveRequests(requests);
-<<<<<<< HEAD
     const currentUser = getCurrentUser();
     logAction({ userId: currentUser?.id, username: currentUser?.username, action: 'request_created', targetId: newRequest.id, metadata: { status: newRequest.status } });
-=======
->>>>>>> origin/main
     updatePermissionUI();
   });
 
@@ -295,11 +233,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     );
     updateAllModules();
     saveRequests(requests);
-<<<<<<< HEAD
     const currentUser = getCurrentUser();
     logAction({ userId: currentUser?.id, username: currentUser?.username, action: 'request_updated', targetId: updatedRequest.id, metadata: { status: updatedRequest.status } });
-=======
->>>>>>> origin/main
     updatePermissionUI();
   });
 
@@ -333,11 +268,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     setCurrentDateForm(request.date);
     saveAssignments(assignments);
     saveRequests(requests);
-<<<<<<< HEAD
     const currentUser = getCurrentUser();
     logAction({ userId: currentUser?.id, username: currentUser?.username, action: 'request_approved', targetId: requestId, metadata: { assignmentId: assignment.id } });
-=======
->>>>>>> origin/main
     renderTimeline();
     updatePermissionUI();
   });
@@ -360,11 +292,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     updateAllModules();
     saveRequests(requests);
-<<<<<<< HEAD
     const currentUser = getCurrentUser();
     logAction({ userId: currentUser?.id, username: currentUser?.username, action: 'request_rejected', targetId: requestId });
-=======
->>>>>>> origin/main
     updatePermissionUI();
   });
 
