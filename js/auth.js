@@ -23,8 +23,8 @@ const MOCK_USERS = [
     pin: '2222',
   },
   {
-    id: 'bidang-humas',
-    name: 'Bidang Humas',
+    id: 'bidang-perencanaan-strategis',
+    name: 'Bidang Perencanaan Strategis',
     role: 'bidang',
     pin: '3333',
   },
