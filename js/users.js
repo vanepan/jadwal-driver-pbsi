@@ -71,12 +71,7 @@ export async function validateUsername(username, excludeUsername = null) {
   return !existing || normalizeUsername(excludeUsername) === normalized;
 }
 
-export async function validateUniquePin(pin, excludeUsername = null) {
-  if (!isValidPin(pin)) return false;
-  if (!usersLoaded) await getUsers();
-  const existing = users.find(user => String(user.pin) === String(pin).trim());
-  return !existing || normalizeUsername(existing.username) === normalizeUsername(excludeUsername);
-}
+// Note: PIN uniqueness validation removed. Use `isValidPin()` for format checks.
 
 export async function createUser(userData) {
   if (!userData) throw new Error('User data is required');
@@ -90,8 +85,8 @@ export async function createUser(userData) {
     throw new Error('Username sudah digunakan.');
   }
 
-  if (!(await validateUniquePin(userData.pin))) {
-    throw new Error('PIN harus 4 digit dan unik.');
+  if (!isValidPin(userData.pin)) {
+    throw new Error('PIN harus 4 digit.');
   }
 
   const createdAt = new Date().toISOString();
@@ -143,9 +138,6 @@ export async function updateUser(userData) {
   if (String(userData.pin || '').trim()) {
     if (!isValidPin(userData.pin)) {
       throw new Error('PIN harus tepat 4 digit.');
-    }
-    if (!(await validateUniquePin(userData.pin, existing.username))) {
-      throw new Error('PIN harus unik.');
     }
     updates.pin = String(userData.pin).trim();
   }

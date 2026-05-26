@@ -802,10 +802,6 @@ z-index: 1;
   margin-top: 10px;
 }
 
-.user-card-actions button {
-  min-height: 36px;
-}
-
 .toggle-switch {
   display: inline-flex;
   align-items: center;
@@ -1221,21 +1217,6 @@ z-index: 1;
 
   .request-card-actions button {
     flex: 1;
-  }
-
-  .user-card-main {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .user-card-actions {
-    flex-direction: column;
-  }
-
-  .user-card-actions button {
-    width: 100%;
-    justify-content: center;
-    min-height: 42px;
   }
 
   /* Timeline date label */
