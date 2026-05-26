@@ -7,7 +7,7 @@
 
 'use strict';
 
-import { formatDateLong, getTimePeriod, showToast } from './utils.js';
+import { formatDateLong, getTimePeriod, parseLocalDate, showToast } from './utils.js';
 import { VEHICLES } from './drivers.js';
 import { hasPermission } from './auth.js';
 
@@ -226,7 +226,7 @@ export function updateDetailActionButtons() {
  * @returns {string} - Formatted text untuk WhatsApp
  */
 export function generateWAText(a) {
-  const dateObj  = new Date(a.date + 'T00:00:00');
+  const dateObj  = parseLocalDate(a.date);
   const dateStr  = dateObj.toLocaleDateString('id-ID', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
   });

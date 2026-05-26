@@ -10,7 +10,19 @@
  * Mengembalikan tanggal hari ini dalam format YYYY-MM-DD
  */
 export function todayString() {
-  return new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+export function parseLocalDate(dateStr) {
+  const parts = String(dateStr).split('-').map(Number);
+  if (parts.length !== 3 || parts.some(Number.isNaN)) {
+    return new Date(dateStr);
+  }
+  return new Date(parts[0], parts[1] - 1, parts[2]);
 }
 
 /**
@@ -56,7 +68,7 @@ export function minutesToTime(minutes) {
  * @returns {string} - Tanggal format panjang dalam Bahasa Indonesia
  */
 export function formatDateLong(dateStr) {
-  return new Date(dateStr + 'T00:00:00').toLocaleDateString('id-ID', {
+  return parseLocalDate(dateStr).toLocaleDateString('id-ID', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
