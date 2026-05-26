@@ -24,16 +24,20 @@ const firebaseConfig = {
 };
 
 const FIREBASE_ASSIGNMENTS_PATH = 'assignments';
+const FIREBASE_REQUESTS_PATH = 'driver_requests';
 const STORAGE_KEY = 'pbsi_assignments_v1';
+const REQUESTS_STORAGE_KEY = 'pbsi_driver_requests_v1';
 
 /* ── Internal State ── */
 let firebaseAssignmentsRef = null;
+let firebaseRequestsRef = null;
 let firebaseListening = false;
 let firebaseLoadedOnce = false;
 let firebaseConfigWarningShown = false;
 
 // Callback yang dipanggil saat data Firebase berubah
 let onDataChangeCallback = null;
+let onRequestsChangeCallback = null;
 
 /**
  * Check apakah Firebase sudah dikonfigurasi dengan valid
@@ -70,6 +74,18 @@ export function loadAssignments() {
 }
 
 /**
+ * Load driver requests dari localStorage.
+ * @returns {Array}
+ */
+export function loadRequests() {
+  try {
+    return JSON.parse(localStorage.getItem(REQUESTS_STORAGE_KEY)) || [];
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Save assignments ke localStorage dan Firebase (jika terhubung)
  * @param {Array} assignments - Daftar assignments yang akan disimpan
  * @returns {Promise}
@@ -90,12 +106,41 @@ export function saveAssignments(assignments) {
 }
 
 /**
+ * Save driver requests ke localStorage dan Firebase.
+ * @param {Array} requests
+ * @returns {Promise}
+ */
+export function saveRequests(requests) {
+  localStorage.setItem(REQUESTS_STORAGE_KEY, JSON.stringify(requests));
+
+  if (!firebaseRequestsRef) {
+    showFirebaseConfigWarning();
+    return Promise.resolve();
+  }
+
+  return set(firebaseRequestsRef, itemsToFirebaseMap(requests))
+    .catch(err => {
+      console.error('Firebase request save gagal:', err);
+      showToast('Firebase gagal menyimpan request. Data tersimpan di device ini.');
+    });
+}
+
+/**
  * Konversi array assignments → Firebase map object
  * Firebase menyukai struktur object untuk real-time sync yang lebih efisien
  * @param {Array} items - Daftar assignments
  * @returns {Object} - Map dengan assignment.id sebagai key
  */
 export function assignmentsToFirebaseMap(items) {
+  return itemsToFirebaseMap(items);
+}
+
+/**
+ * Konversi array item dengan id -> Firebase map object.
+ * @param {Array} items
+ * @returns {Object}
+ */
+export function itemsToFirebaseMap(items) {
   return items.reduce((map, item) => {
     map[item.id] = item;
     return map;
@@ -118,12 +163,36 @@ export function firebaseMapToAssignments(value) {
 }
 
 /**
+ * Konversi Firebase map -> array requests yang ter-sort.
+ * @param {Object} value
+ * @returns {Array}
+ */
+export function firebaseMapToRequests(value) {
+  return Object.values(value || {})
+    .filter(item => item && item.id)
+    .sort((a, b) => {
+      const statusOrder = { pending: 0, rejected: 1, approved: 2 };
+      const statusCompare = (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9);
+      if (statusCompare !== 0) return statusCompare;
+      return String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+    });
+}
+
+/**
  * Register callback yang dipanggil saat data Firebase berubah
  * Berguna untuk update UI ketika ada perubahan dari device lain
  * @param {Function} callback - Fungsi dengan signature: callback(updatedAssignments)
  */
 export function registerDataChangeListener(callback) {
   onDataChangeCallback = callback;
+}
+
+/**
+ * Register callback untuk perubahan driver_requests.
+ * @param {Function} callback
+ */
+export function registerRequestsChangeListener(callback) {
+  onRequestsChangeCallback = callback;
 }
 
 /**
@@ -145,6 +214,7 @@ export function initFirebaseSync() {
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
     firebaseAssignmentsRef = ref(db, FIREBASE_ASSIGNMENTS_PATH);
+    firebaseRequestsRef = ref(db, FIREBASE_REQUESTS_PATH);
   } catch (err) {
     console.error('Firebase init gagal:', err);
     showToast('Firebase belum bisa tersambung. Cek config Firebase.');
@@ -175,6 +245,22 @@ export function initFirebaseSync() {
     console.error('Firebase listener gagal:', err);
     showToast('Firebase gagal membaca data. Cek rules/database URL.');
   });
+
+  onValue(firebaseRequestsRef, snapshot => {
+    if (!snapshot.exists()) {
+      return;
+    }
+
+    const updatedRequests = firebaseMapToRequests(snapshot.val());
+    localStorage.setItem(REQUESTS_STORAGE_KEY, JSON.stringify(updatedRequests));
+
+    if (onRequestsChangeCallback) {
+      onRequestsChangeCallback(updatedRequests);
+    }
+  }, err => {
+    console.error('Firebase request listener gagal:', err);
+    showToast('Firebase gagal membaca request. Cek rules/database URL.');
+  });
 }
 
 /**
@@ -192,6 +278,14 @@ export function hasFirebaseLoaded() {
  */
 export function getFirebaseRef() {
   return firebaseAssignmentsRef;
+}
+
+/**
+ * Get Firebase requests reference.
+ * @returns {Object|null}
+ */
+export function getFirebaseRequestsRef() {
+  return firebaseRequestsRef;
 }
 
 console.info('Firebase module loaded');

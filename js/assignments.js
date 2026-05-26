@@ -58,6 +58,7 @@ export function initFormHandlers() {
   if (btnAdd) {
     btnAdd.addEventListener('click', () => {
       if (!hasPermission('create')) {
+        if (hasPermission('request')) return;
         showToast('Anda tidak punya akses untuk menambah jadwal');
         return;
       }

@@ -17,8 +17,8 @@ const MOCK_USERS = [
     pin: '1234',
   },
   {
-    id: 'bidang-keuangan',
-    name: 'Bidang Keuangan',
+    id: 'bidang-komite-etik',
+    name: 'Bidang Komite Etik',
     role: 'bidang',
     pin: '2222',
   },
