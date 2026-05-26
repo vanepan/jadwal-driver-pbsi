@@ -115,6 +115,52 @@ body {
   margin-left: auto;
 }
 
+.role-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--white);
+  background: var(--dark-2);
+  border: 1px solid var(--dark-3);
+  border-radius: 999px;
+  padding: 5px 10px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.role-badge[data-role="admin"] {
+  background: var(--red);
+  border-color: var(--red);
+}
+
+.role-badge[data-role="bidang"] {
+  background: #1565C0;
+  border-color: #1565C0;
+}
+
+.role-badge[data-role="viewer"] {
+  background: #2E7D32;
+  border-color: #2E7D32;
+}
+
+.btn-logout {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gray-3);
+  background: transparent;
+  border: 1px solid var(--dark-3);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  white-space: nowrap;
+}
+.btn-logout:hover {
+  color: var(--white);
+  border-color: var(--gray-3);
+  background: var(--dark-2);
+}
+
 /* Navigasi Tanggal */
 .date-nav {
   display: flex;
@@ -188,6 +234,15 @@ body {
 .btn-primary:active { transform: scale(0.97); }
 
 .btn-plus { font-size: 18px; line-height: 1; font-weight: 300; }
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+button:disabled:hover {
+  transform: none;
+}
 
 /* ============================================================
    MAIN CONTENT
@@ -518,6 +573,14 @@ z-index: 1;
   max-width: 480px;
 }
 
+.login-modal {
+  z-index: 300;
+}
+
+.login-box {
+  max-width: 360px;
+}
+
 @keyframes slideUp {
   from { opacity: 0; transform: translateY(20px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -623,6 +686,17 @@ z-index: 1;
   font-weight: 500;
   margin-top: 10px;
   animation: shake 0.3s ease;
+}
+
+.login-error {
+  background: var(--red-light);
+  border: 1px solid var(--red);
+  color: var(--red);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 10px;
 }
 
 @keyframes shake {
@@ -806,6 +880,12 @@ z-index: 1;
   .brand-title { font-size: 14px; }
 
   .btn-today { display: none; } /* Hemat ruang di HP kecil */
+
+  .role-badge,
+  .btn-logout {
+    font-size: 11px;
+    padding: 5px 8px;
+  }
 
   /* Tombol tambah lebih ringkas */
   .btn-primary { padding: 7px 11px; font-size: 12px; }

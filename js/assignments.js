@@ -9,6 +9,7 @@
 
 import { generateId, timeToMinutes, minutesToTime, showToast } from './utils.js';
 import { getDriverByName } from './drivers.js';
+import { hasPermission } from './auth.js';
 
 /* ── Module State ── */
 let assignments = [];
@@ -56,6 +57,11 @@ export function initFormHandlers() {
   const btnAdd = document.getElementById('btnAddAssignment');
   if (btnAdd) {
     btnAdd.addEventListener('click', () => {
+      if (!hasPermission('create')) {
+        showToast('Anda tidak punya akses untuk menambah jadwal');
+        return;
+      }
+
       openFormModal();
     });
   }
@@ -95,6 +101,16 @@ export function initFormHandlers() {
  * @param {string|null} asgnId - Assignment ID untuk edit, atau null untuk add
  */
 export function openFormModal(asgnId = null) {
+  if (asgnId && !hasPermission('edit')) {
+    showToast('Anda tidak punya akses untuk mengedit jadwal');
+    return;
+  }
+
+  if (!asgnId && !hasPermission('create')) {
+    showToast('Anda tidak punya akses untuk menambah jadwal');
+    return;
+  }
+
   editingId = asgnId;
   const form = document.getElementById('assignmentForm');
   if (form) form.reset();
@@ -149,6 +165,16 @@ export function closeFormModal() {
  */
 function handleFormSubmit(e) {
   e.preventDefault();
+
+  if (editingId && !hasPermission('edit')) {
+    showToast('Anda tidak punya akses untuk mengedit jadwal');
+    return;
+  }
+
+  if (!editingId && !hasPermission('create')) {
+    showToast('Anda tidak punya akses untuk menambah jadwal');
+    return;
+  }
 
   const driver      = document.getElementById('fieldDriver').value;
   const phone       = document.getElementById('fieldPhone').value;

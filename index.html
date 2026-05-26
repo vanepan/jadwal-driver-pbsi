@@ -22,6 +22,8 @@
         </div>
       </div>
       <div class="header-actions">
+        <span class="role-badge" id="roleBadge" data-role="guest">Belum Login</span>
+        <button class="btn-logout" id="btnLogout" type="button">Logout</button>
         <!-- Filter Tanggal -->
         <div class="date-nav">
           <button class="btn-icon" id="btnPrevDate" title="Hari sebelumnya">&#8592;</button>
@@ -71,6 +73,27 @@
     </div>
 
   </main>
+
+  <!-- ===== MODAL: LOGIN ===== -->
+  <div class="modal-overlay login-modal" id="modalLogin" style="display:none;">
+    <div class="modal-box login-box">
+      <div class="modal-header">
+        <h2 class="modal-title">Login</h2>
+      </div>
+      <div class="modal-body">
+        <form id="loginForm" novalidate>
+          <div class="form-group">
+            <label for="loginPin">PIN</label>
+            <input type="password" id="loginPin" inputmode="numeric" autocomplete="off" placeholder="Masukkan PIN" required />
+          </div>
+          <div class="login-error" id="loginError" style="display:none;">PIN tidak dikenal.</div>
+          <div class="form-actions">
+            <button type="submit" class="btn-primary" id="btnLogin">Masuk</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
 
   <!-- ===== MODAL: FORM TAMBAH / EDIT ASSIGNMENT ===== -->
   <div class="modal-overlay" id="modalForm" style="display:none;">
