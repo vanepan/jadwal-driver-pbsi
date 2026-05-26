@@ -1,18 +1,31 @@
 'use strict';
 
-import { getCurrentUser, isAdmin } from './auth.js';
-import { createUser, getUserByUsername, getUsers, initUsersSync, updateUser, deactivateUser, validateUniquePin, validateUsername, registerUsersChangeListener } from './users.js';
+import { getCurrentUser, isAdmin, logout } from './auth.js';
+import {
+  activateUser,
+  createUser,
+  deactivateUser,
+  getUserByUsername,
+  getUsers,
+  initUsersSync,
+  registerUsersChangeListener,
+  updateUser,
+  validateUniquePin,
+  validateUsername,
+} from './users.js';
 import { logAction } from './logs.js';
 import { showToast } from './utils.js';
 
 let users = [];
 let editingUsername = null;
+let adminHandlersAttached = false;
 
 export async function initAdminUI() {
   await initUsersSync();
   users = await getUsers();
   attachAdminButtons();
   renderAdminList();
+
   registerUsersChangeListener((nextUsers) => {
     users = nextUsers;
     renderAdminList();
@@ -21,6 +34,9 @@ export async function initAdminUI() {
 }
 
 function attachAdminButtons() {
+  if (adminHandlersAttached) return;
+  adminHandlersAttached = true;
+
   const btnUserMgmt = document.getElementById('btnUserMgmt');
   const btnProfile = document.getElementById('btnProfile');
   const btnCloseUserList = document.getElementById('btnCloseUsersList');
@@ -84,6 +100,11 @@ export function updateAdminButtons() {
 }
 
 function openUsersListModal() {
+  if (!isAdmin()) {
+    showToast('Hanya admin yang bisa membuka manajemen user.');
+    return;
+  }
+
   renderAdminList();
   const modal = document.getElementById('modalUsersList');
   if (modal) modal.style.display = 'flex';
@@ -95,6 +116,11 @@ function closeUsersListModal() {
 }
 
 function openUserFormModal(username = null) {
+  if (!isAdmin()) {
+    showToast('Hanya admin yang bisa mengelola user.');
+    return;
+  }
+
   editingUsername = username;
   const form = document.getElementById('userForm');
   if (!form) return;
@@ -111,19 +137,24 @@ function openUserFormModal(username = null) {
   const roleField = document.getElementById('userFieldRole');
   const pinField = document.getElementById('userFieldPin');
   const activeField = document.getElementById('userFieldActive');
+  const pinLabel = document.querySelector('label[for="userFieldPin"]');
 
-  if (username && users.length) {
-    const user = users.find(item => item.username === username);
-    if (user) {
-      if (usernameField) {
-        usernameField.value = user.username;
-        usernameField.disabled = true;
-      }
-      if (displayNameField) displayNameField.value = user.displayName || user.username;
-      if (roleField) roleField.value = user.role;
-      if (pinField) pinField.value = user.pin || '';
-      if (activeField) activeField.checked = Boolean(user.active);
+  const user = username ? users.find(item => item.username === username) : null;
+
+  if (user) {
+    if (usernameField) {
+      usernameField.value = user.username;
+      usernameField.disabled = true;
     }
+    if (displayNameField) displayNameField.value = user.displayName || user.username;
+    if (roleField) roleField.value = user.role;
+    if (pinField) {
+      pinField.value = '';
+      pinField.placeholder = 'Kosongkan jika tidak diganti';
+      pinField.required = false;
+    }
+    if (pinLabel) pinLabel.textContent = 'PIN Baru';
+    if (activeField) activeField.checked = Boolean(user.active);
   } else {
     if (usernameField) {
       usernameField.value = '';
@@ -131,7 +162,12 @@ function openUserFormModal(username = null) {
     }
     if (displayNameField) displayNameField.value = '';
     if (roleField) roleField.value = 'viewer';
-    if (pinField) pinField.value = '';
+    if (pinField) {
+      pinField.value = '';
+      pinField.placeholder = '4 digit PIN';
+      pinField.required = true;
+    }
+    if (pinLabel) pinLabel.textContent = 'PIN *';
     if (activeField) activeField.checked = true;
   }
 
@@ -148,6 +184,11 @@ function closeUserFormModal() {
 async function handleUserFormSubmit(event) {
   event.preventDefault();
 
+  if (!isAdmin()) {
+    showToast('Hanya admin yang bisa menyimpan user.');
+    return;
+  }
+
   const usernameField = document.getElementById('userFieldUsername');
   const displayNameField = document.getElementById('userFieldDisplayName');
   const roleField = document.getElementById('userFieldRole');
@@ -160,17 +201,22 @@ async function handleUserFormSubmit(event) {
   const pin = pinField ? pinField.value.trim() : '';
   const active = activeField ? activeField.checked : true;
 
-  if (!username || !displayName || !pin) {
-    showToast('Lengkapi username, display name, dan PIN.');
+  if (!username || !displayName || !role) {
+    showToast('Lengkapi username, display name, dan role.');
     return;
   }
 
-  if (!/^\d{4}$/.test(pin)) {
-    showToast('PIN harus 4 digit angka.');
+  if (!editingUsername && !pin) {
+    showToast('PIN wajib diisi untuk user baru.');
     return;
   }
 
-  if (!(await validateUniquePin(pin, editingUsername))) {
+  if (pin && !/^\d{4}$/.test(pin)) {
+    showToast('PIN harus tepat 4 digit angka.');
+    return;
+  }
+
+  if (pin && !(await validateUniquePin(pin, editingUsername))) {
     showToast('PIN sudah dipakai oleh user lain.');
     return;
   }
@@ -181,15 +227,17 @@ async function handleUserFormSubmit(event) {
   }
 
   try {
+    const currentUser = getCurrentUser();
     if (editingUsername) {
       await updateUser({ username: editingUsername, displayName, role, pin, active });
-      await logAction({ userId: getCurrentUser().id, username: getCurrentUser().username, action: 'user_edited', targetId: editingUsername, metadata: { displayName, role, active } });
+      await logAction({ userId: currentUser?.id, username: currentUser?.username, action: 'user_edited', targetId: editingUsername, metadata: { displayName, role, active } });
       showToast('User berhasil diperbarui.');
     } else {
       await createUser({ username, displayName, role, pin, active });
-      await logAction({ userId: getCurrentUser().id, username: getCurrentUser().username, action: 'user_created', targetId: username, metadata: { displayName, role, active } });
+      await logAction({ userId: currentUser?.id, username: currentUser?.username, action: 'user_created', targetId: username, metadata: { displayName, role, active } });
       showToast('User baru berhasil dibuat.');
     }
+
     users = await getUsers();
     renderAdminList();
     closeUserFormModal();
@@ -205,7 +253,7 @@ function renderAdminList() {
 
   const sorted = [...users].sort((a, b) => {
     const order = { admin: 0, bidang: 1, viewer: 2 };
-    return (order[a.role] - order[b.role]) || a.username.localeCompare(b.username);
+    return ((order[a.role] ?? 9) - (order[b.role] ?? 9)) || a.username.localeCompare(b.username);
   });
 
   if (sorted.length === 0) {
@@ -214,24 +262,29 @@ function renderAdminList() {
   }
 
   container.innerHTML = sorted.map(user => {
-    const status = user.active ? 'Aktif' : 'Non-aktif';
+    const status = user.active ? 'Aktif' : 'Nonaktif';
     const statusClass = user.active ? 'status-active' : 'status-inactive';
     return `
       <div class="user-card">
         <div class="user-card-main">
           <div>
             <div class="user-title">${escapeHTML(user.displayName || user.username)}</div>
-            <div class="user-sub">${escapeHTML(user.username)} · ${escapeHTML(user.role)}</div>
+            <div class="user-sub">${escapeHTML(user.username)} - ${escapeHTML(user.role)}</div>
           </div>
           <span class="user-status ${statusClass}">${status}</span>
         </div>
         <div class="user-card-meta">
-          <div>PIN: ${escapeHTML(user.pin || '—')}</div>
-          <div>Dibuat: ${new Date(user.createdAt || '').toLocaleDateString('id-ID') || '-'}</div>
+          <div>Username: ${escapeHTML(user.username)}</div>
+          <div>Display name: ${escapeHTML(user.displayName || user.username)}</div>
+          <div>Role: ${escapeHTML(user.role)}</div>
+          <div>Created: ${escapeHTML(formatDateTime(user.createdAt))}</div>
+          <div>Last updated: ${escapeHTML(formatDateTime(user.updatedAt || user.lastUpdatedAt))}</div>
         </div>
         <div class="user-card-actions">
           <button class="btn-secondary" data-user-action="edit" data-user-name="${escapeHTML(user.username)}">Edit</button>
-          ${user.active ? `<button class="btn-secondary" data-user-action="deactivate" data-user-name="${escapeHTML(user.username)}">Nonaktifkan</button>` : ''}
+          ${user.active
+            ? `<button class="btn-secondary" data-user-action="deactivate" data-user-name="${escapeHTML(user.username)}">Nonaktifkan</button>`
+            : `<button class="btn-secondary" data-user-action="activate" data-user-name="${escapeHTML(user.username)}">Aktifkan</button>`}
           <button class="btn-secondary" data-user-action="reset" data-user-name="${escapeHTML(user.username)}">Reset PIN</button>
         </div>
       </div>
@@ -244,6 +297,11 @@ function renderAdminList() {
 }
 
 async function handleUserActionClick(event) {
+  if (!isAdmin()) {
+    showToast('Hanya admin yang bisa mengelola user.');
+    return;
+  }
+
   const button = event.currentTarget;
   const action = button.dataset.userAction;
   const username = button.dataset.userName;
@@ -258,8 +316,9 @@ async function handleUserActionClick(event) {
   if (action === 'deactivate') {
     if (!confirm('Nonaktifkan user ini?')) return;
     try {
+      const currentUser = getCurrentUser();
       await deactivateUser(username);
-      await logAction({ userId: getCurrentUser().id, username: getCurrentUser().username, action: 'user_deactivated', targetId: username });
+      await logAction({ userId: currentUser?.id, username: currentUser?.username, action: 'user_deactivated', targetId: username });
       showToast('User dinonaktifkan.');
       users = await getUsers();
       renderAdminList();
@@ -269,39 +328,72 @@ async function handleUserActionClick(event) {
     return;
   }
 
-  if (action === 'reset') {
+  if (action === 'activate') {
     try {
-      const randomPin = String(Math.floor(1000 + Math.random() * 9000));
-      await updateUser({ username, pin: randomPin });
-      await logAction({ userId: getCurrentUser().id, username: getCurrentUser().username, action: 'user_pin_reset', targetId: username });
-      showToast(`PIN untuk ${username} di-reset menjadi ${randomPin}`);
+      const currentUser = getCurrentUser();
+      await activateUser(username);
+      await logAction({ userId: currentUser?.id, username: currentUser?.username, action: 'user_activated', targetId: username });
+      showToast('User diaktifkan.');
+      users = await getUsers();
+      renderAdminList();
+    } catch (error) {
+      showToast(error.message || 'Gagal mengaktifkan user.');
+    }
+    return;
+  }
+
+  if (action === 'reset') {
+    const nextPin = prompt(`Masukkan PIN baru 4 digit untuk ${username}`);
+    if (nextPin === null) return;
+
+    const pin = String(nextPin).trim();
+    if (!/^\d{4}$/.test(pin)) {
+      showToast('PIN baru harus tepat 4 digit angka.');
+      return;
+    }
+
+    if (!(await validateUniquePin(pin, username))) {
+      showToast('PIN baru sudah digunakan user lain.');
+      return;
+    }
+
+    try {
+      const currentUser = getCurrentUser();
+      await updateUser({ username, pin });
+      await logAction({ userId: currentUser?.id, username: currentUser?.username, action: 'user_pin_reset', targetId: username });
+      showToast(`PIN untuk ${username} berhasil diubah.`);
       users = await getUsers();
       renderAdminList();
     } catch (error) {
       showToast(error.message || 'Gagal mereset PIN.');
     }
-    return;
   }
 }
 
 function openProfileModal() {
   const modal = document.getElementById('modalProfile');
   if (!modal) return;
+
   const currentUser = getCurrentUser();
   const usernameLabel = document.getElementById('profileUsernameLabel');
-  if (usernameLabel) usernameLabel.textContent = currentUser ? currentUser.displayName : '-';
+  if (usernameLabel) {
+    usernameLabel.textContent = currentUser ? `${currentUser.name} (${currentUser.username})` : '-';
+  }
+
   modal.style.display = 'flex';
 }
 
 function closeProfileModal() {
   const modal = document.getElementById('modalProfile');
   if (modal) modal.style.display = 'none';
+
   const form = document.getElementById('profileForm');
   if (form) form.reset();
 }
 
 async function handleProfileSubmit(event) {
   event.preventDefault();
+
   const currentUser = getCurrentUser();
   if (!currentUser) {
     showToast('Sesi tidak tersedia. Silakan login ulang.');
@@ -313,7 +405,7 @@ async function handleProfileSubmit(event) {
   const confirmPin = document.getElementById('profileConfirmPin')?.value.trim();
 
   if (!/^\d{4}$/.test(currentPin) || !/^\d{4}$/.test(newPin) || !/^\d{4}$/.test(confirmPin)) {
-    showToast('Semua field PIN harus 4 digit angka.');
+    showToast('Semua field PIN harus tepat 4 digit angka.');
     return;
   }
 
@@ -324,7 +416,13 @@ async function handleProfileSubmit(event) {
 
   try {
     const user = await getUserByUsername(currentUser.username);
-    if (!user || user.pin !== currentPin) {
+    if (!user || !user.active) {
+      showToast('Sesi tidak aktif. Silakan login ulang.');
+      logout();
+      return;
+    }
+
+    if (user.pin !== currentPin) {
       showToast('PIN saat ini tidak cocok.');
       return;
     }
@@ -352,12 +450,26 @@ function escapeHTML(value) {
     .replace(/'/g, '&#39;');
 }
 
+function formatDateTime(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleString('id-ID', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+}
+
 export function checkCurrentUserActiveState() {
   const currentUser = getCurrentUser();
   if (!currentUser) return;
+
   const current = users.find(item => item.username === currentUser.username);
   if (current && current.active === false) {
     showToast('Akun Anda dinonaktifkan. Silakan login ulang jika diaktifkan kembali.');
-    window.location.reload();
+    closeUsersListModal();
+    closeUserFormModal();
+    closeProfileModal();
+    logout();
   }
 }

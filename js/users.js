@@ -16,6 +16,14 @@ function isValidUsername(value) {
   return /^[a-z0-9._-]{3,30}$/.test(normalized);
 }
 
+function isValidPin(value) {
+  return /^\d{4}$/.test(String(value || '').trim());
+}
+
+function isValidRole(value) {
+  return ['admin', 'bidang', 'viewer'].includes(value);
+}
+
 function mapFirebaseUsers(value) {
   const raw = value || {};
   return Object.keys(raw).map(key => ({ id: key, username: key, ...raw[key] }));
@@ -64,7 +72,7 @@ export async function validateUsername(username, excludeUsername = null) {
 }
 
 export async function validateUniquePin(pin, excludeUsername = null) {
-  if (!pin || !/^\d{4}$/.test(String(pin))) return false;
+  if (!isValidPin(pin)) return false;
   if (!usersLoaded) await getUsers();
   const existing = users.find(user => String(user.pin) === String(pin).trim());
   return !existing || normalizeUsername(existing.username) === normalizeUsername(excludeUsername);
@@ -90,14 +98,18 @@ export async function createUser(userData) {
   const nextUser = {
     username,
     displayName: String(userData.displayName || userData.username).trim() || username,
-    role: ['admin', 'bidang', 'viewer'].includes(userData.role) ? userData.role : 'viewer',
-    pin: String(userData.pin).padStart(4, '0'),
+    role: isValidRole(userData.role) ? userData.role : 'viewer',
+    pin: String(userData.pin).trim(),
     active: userData.active !== false,
     createdAt,
     updatedAt: createdAt,
   };
 
   await storeFirebaseData(`${USERS_PATH}/${username}`, nextUser);
+  refreshUsersCache([
+    ...users.filter(user => normalizeUsername(user.username) !== username),
+    nextUser,
+  ]);
   return nextUser;
 }
 
@@ -108,22 +120,42 @@ export async function updateUser(userData) {
   if (!existing) throw new Error('User tidak ditemukan');
 
   const username = normalizeUsername(existing.username);
+  const nextRole = isValidRole(userData.role) ? userData.role : existing.role;
+  const nextActive = typeof userData.active === 'boolean' ? userData.active : existing.active;
+  const activeAdmins = users.filter(item => item.role === 'admin' && item.active);
+
+  if (existing.role === 'admin' && existing.active && activeAdmins.length <= 1) {
+    if (nextRole !== 'admin') {
+      throw new Error('Tidak dapat mengubah role admin terakhir.');
+    }
+    if (nextActive === false) {
+      throw new Error('Tidak dapat menonaktifkan admin terakhir.');
+    }
+  }
+
   const updates = {
     displayName: String(userData.displayName || existing.displayName || existing.username).trim(),
-    role: ['admin', 'bidang', 'viewer'].includes(userData.role) ? userData.role : existing.role,
-    active: typeof userData.active === 'boolean' ? userData.active : existing.active,
+    role: nextRole,
+    active: nextActive,
     updatedAt: new Date().toISOString(),
   };
 
-  if (userData.pin) {
+  if (String(userData.pin || '').trim()) {
+    if (!isValidPin(userData.pin)) {
+      throw new Error('PIN harus tepat 4 digit.');
+    }
     if (!(await validateUniquePin(userData.pin, existing.username))) {
       throw new Error('PIN harus unik.');
     }
-    updates.pin = String(userData.pin).padStart(4, '0');
+    updates.pin = String(userData.pin).trim();
   }
 
   await updateFirebaseData(`${USERS_PATH}/${username}`, updates);
-  return { ...existing, ...updates };
+  const updatedUser = { ...existing, ...updates };
+  refreshUsersCache(users.map(user =>
+    normalizeUsername(user.username) === username ? updatedUser : user
+  ));
+  return updatedUser;
 }
 
 export async function deactivateUser(username) {
@@ -136,6 +168,12 @@ export async function deactivateUser(username) {
   }
 
   return updateUser({ username: user.username, active: false });
+}
+
+export async function activateUser(username) {
+  const user = await getUserByUsername(username);
+  if (!user) throw new Error('User tidak ditemukan');
+  return updateUser({ username: user.username, active: true });
 }
 
 export function registerUsersChangeListener(callback) {
