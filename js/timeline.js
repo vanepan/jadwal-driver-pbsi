@@ -14,6 +14,7 @@ import { openDetailModal } from './modal.js';
 /* ── Module State ── */
 let currentDate = todayString();
 let assignments = [];
+let realtimeTimer = null;
 
 /**
  * Set current date yang sedang ditampilkan
@@ -52,6 +53,8 @@ export function renderTimeline() {
   updateDateLabel();
   renderHourHeaders();
   renderDriverRows();
+  updateRealtimeTimeline();
+  startRealtimeTimeline();
 
   // Init scroll sync hanya sekali
   if (!window.timelineScrollInitialized) {
@@ -214,6 +217,38 @@ export function getHourWidth() {
     getComputedStyle(document.documentElement).getPropertyValue('--hour-width')
   );
   return isNaN(w) ? 80 : w;
+}
+
+function updateRealtimeTimeline() {
+  const isToday = currentDate === todayString();
+  const hourCells = document.querySelectorAll('#timelineHours .hour-cell');
+  const now = new Date();
+
+  hourCells.forEach((cell, index) => {
+    const hour = index;
+    cell.classList.toggle('hour-shaded', hour < 7 || hour >= 22);
+    cell.classList.toggle('hour-current', isToday && hour === now.getHours());
+  });
+
+  if (!isToday) {
+    document.querySelectorAll('#timelineBody .today-line').forEach(line => line.remove());
+    return;
+  }
+
+  const minutesFromMidnight = now.getHours() * 60 + now.getMinutes();
+  const hourWidth = getHourWidth();
+  const leftPx = (minutesFromMidnight / 60) * hourWidth;
+
+  document.querySelectorAll('#timelineBody .today-line').forEach(line => {
+    line.style.left = `${leftPx}px`;
+  });
+}
+
+function startRealtimeTimeline() {
+  if (realtimeTimer) return;
+  realtimeTimer = setInterval(() => {
+    updateRealtimeTimeline();
+  }, 60 * 1000);
 }
 
 /**

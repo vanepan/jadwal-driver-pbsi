@@ -101,3 +101,112 @@ export function showToast(message) {
     toast.style.display = 'none';
   }, 2800);
 }
+
+export function normalizeTimeValue(value) {
+  return String(value || '').replace(/\D/g, '').slice(0, 4);
+}
+
+export function padTimePart(value) {
+  return String(value || '0').padStart(2, '0');
+}
+
+export function isValidHour(value) {
+  const hour = Number(value);
+  return /^\d{1,2}$/.test(String(value)) && hour >= 0 && hour <= 23;
+}
+
+export function isValidMinute(value) {
+  const minute = Number(value);
+  return /^\d{1,2}$/.test(String(value)) && minute >= 0 && minute <= 59;
+}
+
+export function initCustomTimeInputPair(hourId, minuteId) {
+  const hourInput = document.getElementById(hourId);
+  const minuteInput = document.getElementById(minuteId);
+  if (!hourInput || !minuteInput) return;
+
+  hourInput.inputMode = 'numeric';
+  hourInput.pattern = '[0-9]*';
+  hourInput.maxLength = 2;
+  hourInput.autocomplete = 'off';
+  minuteInput.inputMode = 'numeric';
+  minuteInput.pattern = '[0-9]*';
+  minuteInput.maxLength = 2;
+  minuteInput.autocomplete = 'off';
+
+  hourInput.addEventListener('input', () => {
+    const digits = String(hourInput.value || '').replace(/\D/g, '').slice(0, 2);
+    hourInput.value = digits;
+
+    if (digits.length === 2 && isValidHour(digits)) {
+      minuteInput.focus();
+    }
+  });
+
+  hourInput.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowRight' && hourInput.value.length >= 1) {
+      minuteInput.focus();
+    }
+  });
+
+  minuteInput.addEventListener('input', () => {
+    const digits = String(minuteInput.value || '').replace(/\D/g, '').slice(0, 2);
+    minuteInput.value = digits;
+  });
+
+  minuteInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Backspace' && minuteInput.value.length === 0) {
+      event.preventDefault();
+      hourInput.focus();
+    }
+  });
+
+  hourInput.addEventListener('blur', () => {
+    if (hourInput.value) {
+      if (!isValidHour(hourInput.value)) {
+        hourInput.value = hourInput.value.slice(0, 1);
+      }
+      hourInput.value = padTimePart(hourInput.value);
+    }
+  });
+
+  minuteInput.addEventListener('blur', () => {
+    if (minuteInput.value) {
+      if (!isValidMinute(minuteInput.value)) {
+        minuteInput.value = minuteInput.value.slice(0, 1);
+      }
+      minuteInput.value = padTimePart(minuteInput.value);
+    }
+  });
+}
+
+export function getCombinedTimeFromPair(hourId, minuteId) {
+  const hourInput = document.getElementById(hourId);
+  const minuteInput = document.getElementById(minuteId);
+
+  if (!hourInput || !minuteInput) return '';
+  const hour = padTimePart(String(hourInput.value || '').replace(/\D/g, '').slice(0, 2));
+  const minute = padTimePart(String(minuteInput.value || '').replace(/\D/g, '').slice(0, 2));
+
+  if (!isValidHour(hour) || !isValidMinute(minute)) {
+    return '';
+  }
+
+  return `${hour}:${minute}`;
+}
+
+export function setTimeFieldsFromValue(hourId, minuteId, timeValue) {
+  const hourInput = document.getElementById(hourId);
+  const minuteInput = document.getElementById(minuteId);
+  if (!hourInput || !minuteInput) return;
+
+  if (!timeValue || typeof timeValue !== 'string') {
+    hourInput.value = '';
+    minuteInput.value = '';
+    return;
+  }
+
+  const [hour, minute] = timeValue.split(':').map(part => String(part || '').replace(/\D/g, ''));
+  hourInput.value = padTimePart(hour).slice(-2);
+  minuteInput.value = padTimePart(minute).slice(-2);
+}

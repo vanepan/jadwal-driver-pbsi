@@ -8,7 +8,7 @@
 'use strict';
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
-import { getDatabase, onValue, ref, set } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
+import { getDatabase, onValue, ref, set, get, update } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 import { showToast } from './utils.js';
 
 /* ── Firebase Configuration ── */
@@ -55,10 +55,75 @@ export function isFirebaseConfigured() {
 /**
  * Tampilkan warning sekali saja jika Firebase tidak dikonfigurasi
  */
+let firebaseApp = null;
+let firebaseDb = null;
+
 function showFirebaseConfigWarning() {
   if (firebaseConfigWarningShown) return;
   firebaseConfigWarningShown = true;
   console.info('Firebase belum dikonfigurasi. Data masih tersimpan lokal.');
+}
+
+function initFirebaseApp() {
+  if (firebaseDb) return firebaseDb;
+  try {
+    firebaseApp = initializeApp(firebaseConfig);
+    firebaseDb = getDatabase(firebaseApp);
+    return firebaseDb;
+  } catch (err) {
+    console.error('Firebase init gagal:', err);
+    showToast('Firebase belum bisa tersambung. Cek config Firebase.');
+    return null;
+  }
+}
+
+function getFirebaseRef(path) {
+  if (!isFirebaseConfigured()) {
+    showFirebaseConfigWarning();
+    return null;
+  }
+  const db = firebaseDb || initFirebaseApp();
+  if (!db) return null;
+  return ref(db, path);
+}
+
+export async function fetchFirebaseData(path) {
+  const dbRef = getFirebaseRef(path);
+  if (!dbRef) return null;
+  try {
+    const snapshot = await get(dbRef);
+    return snapshot.exists() ? snapshot.val() : null;
+  } catch (error) {
+    console.error('Fetch Firebase data gagal:', error);
+    return null;
+  }
+}
+
+export function subscribeFirebasePath(path, callback, errorHandler) {
+  const dbRef = getFirebaseRef(path);
+  if (!dbRef) return;
+  onValue(dbRef, callback, (error) => {
+    console.error(`Firebase listener gagal pada ${path}:`, error);
+    if (typeof errorHandler === 'function') errorHandler(error);
+  });
+}
+
+export function storeFirebaseData(path, value) {
+  const dbRef = getFirebaseRef(path);
+  if (!dbRef) {
+    showFirebaseConfigWarning();
+    return Promise.resolve();
+  }
+  return set(dbRef, value);
+}
+
+export function updateFirebaseData(path, value) {
+  const dbRef = getFirebaseRef(path);
+  if (!dbRef) {
+    showFirebaseConfigWarning();
+    return Promise.resolve();
+  }
+  return update(dbRef, value);
 }
 
 /**
@@ -210,6 +275,8 @@ export function initFirebaseSync() {
     return;
   }
 
+<<<<<<< HEAD
+=======
   try {
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
@@ -221,8 +288,14 @@ export function initFirebaseSync() {
     return;
   }
 
+>>>>>>> origin/main
   if (firebaseListening) return; // Sudah listening
   firebaseListening = true;
+
+  const db = initFirebaseApp();
+  if (!db) return;
+  firebaseAssignmentsRef = ref(db, FIREBASE_ASSIGNMENTS_PATH);
+  firebaseRequestsRef = ref(db, FIREBASE_REQUESTS_PATH);
 
   // Set up real-time listener
   onValue(firebaseAssignmentsRef, snapshot => {
@@ -273,11 +346,11 @@ export function hasFirebaseLoaded() {
 }
 
 /**
- * Get Firebase reference (untuk testing atau operasi advanced)
+ * Get Firebase requests reference.
  * @returns {Object|null}
  */
-export function getFirebaseRef() {
-  return firebaseAssignmentsRef;
+export function getFirebaseRequestsRef() {
+  return firebaseRequestsRef;
 }
 
 /**

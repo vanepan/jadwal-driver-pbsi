@@ -7,8 +7,13 @@
 
 'use strict';
 
-const SESSION_KEY = 'pbsi_current_user';
+import { getUserByUsername, initUsersSync } from './users.js';
+import { logAction } from './logs.js';
+import { showToast } from './utils.js';
 
+<<<<<<< HEAD
+const SESSION_KEY = 'pbsi_current_user';
+=======
 const MOCK_USERS = [
   {
     id: 'admin',
@@ -35,6 +40,7 @@ const MOCK_USERS = [
     pin: '9999',
   },
 ];
+>>>>>>> origin/main
 
 const ROLE_LABELS = {
   admin: 'Admin',
@@ -53,21 +59,27 @@ const PERMISSIONS = {
 let authChangeCallback = null;
 
 /**
- * Login memakai PIN sederhana.
+ * Login dengan username + PIN.
+ * @param {string} username
  * @param {string} pin
- * @returns {Object|null} user tanpa PIN, atau null jika PIN salah
+ * @returns {Object|null}
  */
-export function login(pin) {
-  const user = MOCK_USERS.find(item => item.pin === String(pin).trim());
-  if (!user) return null;
+export async function login(username, pin) {
+  const user = await getUserByUsername(String(username).trim());
+  if (!user || !user.active || user.pin !== String(pin).trim()) {
+    return null;
+  }
 
   const sessionUser = {
     id: user.id,
-    name: user.name,
+    username: user.username,
+    name: user.displayName || user.username,
     role: user.role,
+    active: user.active,
   };
 
   localStorage.setItem(SESSION_KEY, JSON.stringify(sessionUser));
+  logAction({ userId: user.id, username: user.username, action: 'login' });
   notifyAuthChange();
   return sessionUser;
 }
@@ -76,7 +88,11 @@ export function login(pin) {
  * Logout user saat ini.
  */
 export function logout() {
+  const currentUser = getCurrentUser();
   localStorage.removeItem(SESSION_KEY);
+  if (currentUser) {
+    logAction({ userId: currentUser.id, username: currentUser.username, action: 'logout' });
+  }
   notifyAuthChange();
 }
 
@@ -129,7 +145,7 @@ export function isViewer() {
  * Setup login modal, logout button, dan role badge.
  * @param {Function} onAuthChange
  */
-export function initAuthUI(onAuthChange) {
+export async function initAuthUI(onAuthChange) {
   authChangeCallback = onAuthChange;
 
   const form = document.getElementById('loginForm');
@@ -142,6 +158,8 @@ export function initAuthUI(onAuthChange) {
     logoutButton.addEventListener('click', logout);
   }
 
+  await initUsersSync();
+  restoreSession();
   updateAuthUI();
 
   if (!getCurrentUser()) {
@@ -178,12 +196,16 @@ export function getRoleLabel(role) {
   return ROLE_LABELS[role] || 'Guest';
 }
 
-function handleLoginSubmit(event) {
+async function handleLoginSubmit(event) {
   event.preventDefault();
 
+  const usernameInput = document.getElementById('loginUsername');
   const pinInput = document.getElementById('loginPin');
   const errorEl = document.getElementById('loginError');
-  const user = login(pinInput ? pinInput.value : '');
+
+  const username = usernameInput ? usernameInput.value.trim() : '';
+  const pin = pinInput ? pinInput.value.trim() : '';
+  const user = await login(username, pin);
 
   if (!user) {
     if (errorEl) errorEl.style.display = 'block';
@@ -196,6 +218,32 @@ function handleLoginSubmit(event) {
 
   if (errorEl) errorEl.style.display = 'none';
   if (pinInput) pinInput.value = '';
+  if (usernameInput) usernameInput.value = '';
+}
+
+function restoreSession() {
+  const session = getCurrentUser();
+  if (!session) return;
+
+  getUserByUsername(session.username).then(user => {
+    if (!user || !user.active) {
+      logout();
+      return;
+    }
+
+    const refreshedSession = {
+      id: user.id,
+      username: user.username,
+      name: user.displayName || user.username,
+      role: user.role,
+      active: user.active,
+    };
+
+    localStorage.setItem(SESSION_KEY, JSON.stringify(refreshedSession));
+    notifyAuthChange();
+  }).catch(() => {
+    logout();
+  });
 }
 
 function notifyAuthChange() {

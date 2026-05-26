@@ -7,7 +7,7 @@
 
 'use strict';
 
-import { generateId, timeToMinutes, minutesToTime, showToast } from './utils.js';
+import { generateId, timeToMinutes, minutesToTime, showToast, initCustomTimeInputPair, getCombinedTimeFromPair, setTimeFieldsFromValue, normalizeTimeValue } from './utils.js';
 import { getDriverByName } from './drivers.js';
 import { hasPermission } from './auth.js';
 
@@ -71,7 +71,7 @@ export function initFormHandlers() {
     form.addEventListener('submit', handleFormSubmit);
   }
 
-  // Time input formatting
+  // Custom time input behavior untuk mobile
   initTimeInputs();
 
   // Click di luar modal untuk tutup
@@ -119,8 +119,8 @@ export function openFormModal(asgnId = null) {
       document.getElementById('fieldPhone').value       = a.phone;
       document.getElementById('fieldVehicle').value     = a.vehicle;
       document.getElementById('fieldDate').value        = a.date;
-      document.getElementById('fieldStart').value       = a.startTime;
-      document.getElementById('fieldEnd').value         = a.endTime;
+      setTimeFieldsFromValue('fieldStartHour', 'fieldStartMinute', a.startTime);
+      setTimeFieldsFromValue('fieldEndHour', 'fieldEndMinute', a.endTime);
       document.getElementById('fieldDestination').value = a.destination;
       document.getElementById('fieldPurpose').value     = a.purpose;
       document.getElementById('fieldPIC').value         = a.pic;
@@ -169,8 +169,8 @@ function handleFormSubmit(e) {
   const phone       = document.getElementById('fieldPhone').value;
   const vehicle     = document.getElementById('fieldVehicle').value;
   const date        = document.getElementById('fieldDate').value;
-  const startTime   = document.getElementById('fieldStart').value;
-  const endTime     = document.getElementById('fieldEnd').value;
+  const startTime   = getCombinedTimeFromPair('fieldStartHour', 'fieldStartMinute');
+  const endTime     = getCombinedTimeFromPair('fieldEndHour', 'fieldEndMinute');
   const destination = document.getElementById('fieldDestination').value.trim();
   const purpose     = document.getElementById('fieldPurpose').value.trim();
   const pic         = document.getElementById('fieldPIC').value.trim();
@@ -180,6 +180,11 @@ function handleFormSubmit(e) {
   // Validasi dasar
   if (!driver || !vehicle || !date || !startTime || !endTime || !destination || !purpose) {
     showToast('⚠️ Lengkapi semua field wajib (*)');
+    return;
+  }
+
+  if (!/^\d{2}:\d{2}$/.test(startTime) || !/^\d{2}:\d{2}$/.test(endTime)) {
+    showToast('⚠️ Format waktu tidak valid');
     return;
   }
 
@@ -283,43 +288,18 @@ export function deleteAssignment(id) {
 }
 
 /**
- * Validate time input dan format dengan colon
+ * Initialize custom numeric time inputs for mobile/time entry.
  */
 function initTimeInputs() {
-  ['fieldStart', 'fieldEnd'].forEach(id => {
-    const input = document.getElementById(id);
-    if (!input) return;
-
-    // Format input saat user mengetik
-    input.addEventListener('input', () => {
-      let value = input.value.replace(/\D/g, '');
-
-      if (value.length >= 3) {
-        value =
-          value.slice(0, value.length - 2) +
-          ':' +
-          value.slice(-2);
-      }
-
-      if (value.length > 5) {
-        value = value.slice(0, 5);
-      }
-
-      input.value = value;
-    });
-
-    // Validate saat blur (keluar dari input)
-    input.addEventListener('blur', () => {
-      validateTimeInput(input);
-    });
-  });
+  initCustomTimeInputPair('fieldStartHour', 'fieldStartMinute');
+  initCustomTimeInputPair('fieldEndHour', 'fieldEndMinute');
 }
 
 /**
- * Validate format waktu (HH:MM)
+ * Validate format time from custom fields.
  */
 function validateTimeInput(input) {
-  const val = input.value;
+  const val = normalizeTimeValue(input);
 
   if (val && !/^([01]\d|2[0-3]):([0-5]\d)$/.test(val)) {
     showToast('⚠️ Format jam tidak valid (gunakan HH:MM)');
