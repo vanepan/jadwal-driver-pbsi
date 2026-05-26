@@ -8,7 +8,7 @@
 'use strict';
 
 import { DEFAULT_DRIVERS, VEHICLES, getDriverByName } from './drivers.js';
-import { generateId, timeToMinutes, showToast } from './utils.js';
+import { generateId, timeToMinutes, showToast, initCustomTimeInputPair, getCombinedTimeFromPair, setTimeFieldsFromValue, normalizeTimeValue } from './utils.js';
 import { getCurrentUser, hasPermission, isAdmin } from './auth.js';
 
 let requests = [];
@@ -41,6 +41,8 @@ export function registerRequestRejectCallback(callback) {
 
 export function initRequestHandlers() {
   initRequestDriverSelect();
+  initCustomTimeInputPair('requestFieldStartHour', 'requestFieldStartMinute');
+  initCustomTimeInputPair('requestFieldEndHour', 'requestFieldEndMinute');
 
   const form = document.getElementById('requestForm');
   if (form) {
@@ -110,8 +112,8 @@ export function openRequestFormModal(requestId = null) {
     document.getElementById('requestFieldDriver').value = request.driver || '';
     document.getElementById('requestFieldVehicle').value = request.vehicle || '';
     document.getElementById('requestFieldDate').value = request.date || '';
-    document.getElementById('requestFieldStart').value = request.startTime || '';
-    document.getElementById('requestFieldEnd').value = request.endTime || '';
+    setTimeFieldsFromValue('requestFieldStartHour', 'requestFieldStartMinute', request.startTime);
+    setTimeFieldsFromValue('requestFieldEndHour', 'requestFieldEndMinute', request.endTime);
     document.getElementById('requestFieldPurpose').value = request.purpose || '';
     document.getElementById('requestFieldNotes').value = request.notes || '';
   }
@@ -152,7 +154,7 @@ export function getVisibleRequestsForCurrentUser() {
   if (!user) return [];
 
   if (isAdmin()) {
-    return requests.filter(request => request.status === 'pending');
+    return requests;
   }
 
   return requests.filter(request => request.requesterId === user.id);
@@ -188,13 +190,18 @@ function handleRequestSubmit(event) {
   const driver = document.getElementById('requestFieldDriver').value;
   const vehicle = document.getElementById('requestFieldVehicle').value;
   const date = document.getElementById('requestFieldDate').value;
-  const startTime = document.getElementById('requestFieldStart').value;
-  const endTime = document.getElementById('requestFieldEnd').value;
+  const startTime = getCombinedTimeFromPair('requestFieldStartHour', 'requestFieldStartMinute');
+  const endTime = getCombinedTimeFromPair('requestFieldEndHour', 'requestFieldEndMinute');
   const purpose = document.getElementById('requestFieldPurpose').value.trim();
   const notes = document.getElementById('requestFieldNotes').value.trim();
 
   if (!driver || !vehicle || !date || !startTime || !endTime || !purpose) {
     showToast('Lengkapi semua field request wajib (*)');
+    return;
+  }
+
+  if (!/^\d{2}:\d{2}$/.test(startTime) || !/^\d{2}:\d{2}$/.test(endTime)) {
+    showToast('Format waktu request tidak valid');
     return;
   }
 

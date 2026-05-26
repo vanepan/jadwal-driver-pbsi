@@ -23,6 +23,11 @@
       </div>
       <div class="header-actions">
         <span class="role-badge" id="roleBadge" data-role="guest">Belum Login</span>
+        <button class="btn-secondary" id="btnProfile" type="button" style="display:none;">Profil</button>
+        <button class="btn-secondary" id="btnUserMgmt" type="button" style="display:none;">Manajemen User</button>
+        <button class="btn-secondary" id="btnNotifications" type="button" style="display:none;">
+          Notifikasi <span class="notification-dot" id="notificationDot" style="display:none;"></span>
+        </button>
         <button class="btn-logout" id="btnLogout" type="button">Logout</button>
         <button class="btn-requests" id="btnRequests" type="button" style="display:none;">
           <span id="btnRequestsLabel">Requests</span>
@@ -87,10 +92,14 @@
       <div class="modal-body">
         <form id="loginForm" novalidate>
           <div class="form-group">
-            <label for="loginPin">PIN</label>
-            <input type="password" id="loginPin" inputmode="numeric" autocomplete="off" placeholder="Masukkan PIN" required />
+            <label for="loginUsername">Username</label>
+            <input type="text" id="loginUsername" autocomplete="username" placeholder="Masukkan username" required />
           </div>
-          <div class="login-error" id="loginError" style="display:none;">PIN tidak dikenal.</div>
+          <div class="form-group">
+            <label for="loginPin">PIN</label>
+            <input type="password" id="loginPin" inputmode="numeric" pattern="[0-9]*" autocomplete="current-password" maxlength="4" placeholder="4 digit PIN" required />
+          </div>
+          <div class="login-error" id="loginError" style="display:none;">Username atau PIN tidak dikenal.</div>
           <div class="form-actions">
             <button type="submit" class="btn-primary" id="btnLogin">Masuk</button>
           </div>
@@ -128,14 +137,22 @@
               <input type="date" id="requestFieldDate" required />
             </div>
 
-            <div class="form-group">
-              <label for="requestFieldStart">Jam Mulai *</label>
-              <input type="time" id="requestFieldStart" required />
+            <div class="form-group time-pair-group">
+              <label>Jam Mulai *</label>
+              <div class="time-pair">
+                <input type="text" id="requestFieldStartHour" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="HH" required />
+                <span class="time-separator">:</span>
+                <input type="text" id="requestFieldStartMinute" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="MM" required />
+              </div>
             </div>
 
-            <div class="form-group">
-              <label for="requestFieldEnd">Jam Selesai *</label>
-              <input type="time" id="requestFieldEnd" required />
+            <div class="form-group time-pair-group">
+              <label>Jam Selesai *</label>
+              <div class="time-pair">
+                <input type="text" id="requestFieldEndHour" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="HH" required />
+                <span class="time-separator">:</span>
+                <input type="text" id="requestFieldEndMinute" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="MM" required />
+              </div>
             </div>
 
             <div class="form-group form-full">
@@ -170,6 +187,123 @@
 
         <div class="detail-actions">
           <button class="btn-secondary" id="btnCloseRequestsList2">Tutup</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL: USER MANAGEMENT ===== -->
+  <div class="modal-overlay" id="modalUsersList" style="display:none;">
+    <div class="modal-box modal-detail-box">
+      <div class="modal-header">
+        <h2 class="modal-title">Manajemen User</h2>
+        <button class="modal-close" id="btnCloseUsersList">&times;</button>
+      </div>
+      <div class="modal-body">
+        <button class="btn-primary" id="btnOpenAddUser" type="button">Tambah User</button>
+        <div class="users-list" id="usersListContent"></div>
+        <div class="detail-actions">
+          <button class="btn-secondary" id="btnCloseUsersList2">Tutup</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL: USER FORM ===== -->
+  <div class="modal-overlay" id="modalUserForm" style="display:none;">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2 class="modal-title" id="modalUserFormTitle">Tambah User</h2>
+        <button class="modal-close" id="btnCloseUserForm">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="userForm" novalidate>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="userFieldUsername">Username *</label>
+              <input type="text" id="userFieldUsername" autocomplete="username" placeholder="Masukkan username" required />
+            </div>
+            <div class="form-group">
+              <label for="userFieldDisplayName">Display Name *</label>
+              <input type="text" id="userFieldDisplayName" placeholder="Nama tampilan" required />
+            </div>
+            <div class="form-group">
+              <label for="userFieldRole">Role *</label>
+              <select id="userFieldRole" required>
+                <option value="admin">Admin</option>
+                <option value="bidang">Bidang</option>
+                <option value="viewer">Viewer</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="userFieldPin">PIN *</label>
+              <input type="text" id="userFieldPin" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="4 digit PIN" required />
+            </div>
+            <div class="form-group form-full">
+              <label for="userFieldActive">Status Akun</label>
+              <label class="toggle-switch">
+                <input type="checkbox" id="userFieldActive" checked />
+                <span class="switch-slider"></span>
+                <span class="switch-label">Aktif</span>
+              </label>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn-secondary" id="btnCancelUserForm">Batal</button>
+            <button type="submit" class="btn-primary" id="btnSaveUserForm">Simpan</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL: PROFILE / CHANGE PIN ===== -->
+  <div class="modal-overlay" id="modalProfile" style="display:none;">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2 class="modal-title">Ubah PIN</h2>
+        <button class="modal-close" id="btnCloseProfile">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="detail-row">
+          <span class="detail-label">Akun</span>
+          <span id="profileUsernameLabel" class="detail-value">-</span>
+        </div>
+        <form id="profileForm" novalidate>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="profileCurrentPin">PIN Saat Ini *</label>
+              <input type="password" id="profileCurrentPin" inputmode="numeric" pattern="[0-9]*" maxlength="4" required />
+            </div>
+            <div class="form-group">
+              <label for="profileNewPin">PIN Baru *</label>
+              <input type="password" id="profileNewPin" inputmode="numeric" pattern="[0-9]*" maxlength="4" required />
+            </div>
+            <div class="form-group">
+              <label for="profileConfirmPin">Konfirmasi PIN *</label>
+              <input type="password" id="profileConfirmPin" inputmode="numeric" pattern="[0-9]*" maxlength="4" required />
+            </div>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn-secondary" id="btnCancelProfile">Batal</button>
+            <button type="submit" class="btn-primary" id="btnSaveProfile">Simpan PIN</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL: NOTIFICATIONS ===== -->
+  <div class="modal-overlay" id="modalNotifications" style="display:none;">
+    <div class="modal-box modal-detail-box">
+      <div class="modal-header">
+        <h2 class="modal-title">Notifikasi</h2>
+        <button class="modal-close" id="btnCloseNotifications">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="notifications-list" id="notificationsContent"></div>
+        <div class="detail-actions">
+          <button class="btn-secondary" id="btnCloseNotifications2">Tutup</button>
         </div>
       </div>
     </div>
@@ -224,15 +358,23 @@
             </div>
 
             <!-- Jam Mulai -->
-            <div class="form-group">
-              <label for="fieldStart">Jam Mulai *</label>
-              <input type="time" id="fieldStart" required />
+            <div class="form-group time-pair-group">
+              <label>Jam Mulai *</label>
+              <div class="time-pair">
+                <input type="text" id="fieldStartHour" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="HH" required />
+                <span class="time-separator">:</span>
+                <input type="text" id="fieldStartMinute" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="MM" required />
+              </div>
             </div>
 
             <!-- Jam Selesai -->
-            <div class="form-group">
-              <label for="fieldEnd">Jam Selesai *</label>
-              <input type="time" id="fieldEnd" required />
+            <div class="form-group time-pair-group">
+              <label>Jam Selesai *</label>
+              <div class="time-pair">
+                <input type="text" id="fieldEndHour" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="HH" required />
+                <span class="time-separator">:</span>
+                <input type="text" id="fieldEndMinute" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="MM" required />
+              </div>
             </div>
 
             <!-- Tujuan -->
