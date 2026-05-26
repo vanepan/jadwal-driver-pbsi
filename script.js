@@ -180,11 +180,15 @@ function todayString() {
   return new Date().toISOString().slice(0, 10);
 }
 
-// Menggeser tanggal sebanyak n hari dari tanggal yang diberikan
+// Menggeser tanggal sebanyak n hari dari tanggal yang diberikan (timezone-safe)
 function offsetDate(dateStr, days) {
-  const date = new Date(dateStr + 'T00:00:00');
+  const parts = dateStr.split('-').map(Number);
+  const date = new Date(parts[0], parts[1] - 1, parts[2]);
   date.setDate(date.getDate() + days);
-  return date.toISOString().slice(0, 10);
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 /* ============================================================
