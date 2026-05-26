@@ -53,20 +53,6 @@ export function getEditingId() {
  * Initialize form handlers dan time input formatting
  */
 export function initFormHandlers() {
-  // Button "Tambah Jadwal" di header
-  const btnAdd = document.getElementById('btnAddAssignment');
-  if (btnAdd) {
-    btnAdd.addEventListener('click', () => {
-      if (!hasPermission('create')) {
-        if (hasPermission('request')) return;
-        showToast('Anda tidak punya akses untuk menambah jadwal');
-        return;
-      }
-
-      openFormModal();
-    });
-  }
-
   // Button "Batal" di form
   const btnCancel = document.getElementById('btnCancelForm');
   if (btnCancel) {

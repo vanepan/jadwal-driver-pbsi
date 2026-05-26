@@ -9,7 +9,7 @@
 
 import { DEFAULT_DRIVERS, VEHICLES, getDriverByName } from './drivers.js';
 import { generateId, timeToMinutes, showToast } from './utils.js';
-import { getCurrentUser, hasPermission } from './auth.js';
+import { getCurrentUser, hasPermission, isAdmin } from './auth.js';
 
 let requests = [];
 let editingRequestId = null;
@@ -75,7 +75,7 @@ export function initRequestHandlers() {
 }
 
 export function openRequestFormModal(requestId = null) {
-  if (requestId && !hasPermission('approve')) {
+  if (requestId && !isAdmin()) {
     showToast('Hanya admin yang bisa edit request sebelum approval');
     return;
   }
@@ -131,7 +131,7 @@ export function openRequestsListModal() {
 
   const title = document.getElementById('requestsListTitle');
   if (title) {
-    title.textContent = hasPermission('approve') ? 'Pending Requests' : 'Riwayat Request';
+    title.textContent = isAdmin() ? 'Pending Requests' : 'Riwayat Request';
   }
 
   const modal = document.getElementById('modalRequestsList');
@@ -151,7 +151,7 @@ export function getVisibleRequestsForCurrentUser() {
   const user = getCurrentUser();
   if (!user) return [];
 
-  if (hasPermission('approve')) {
+  if (isAdmin()) {
     return requests.filter(request => request.status === 'pending');
   }
 
@@ -205,7 +205,7 @@ function handleRequestSubmit(event) {
 
   if (editingRequestId) {
     const existing = requests.find(item => item.id === editingRequestId);
-    if (!existing || !hasPermission('approve')) return;
+    if (!existing || !isAdmin()) return;
 
     const updatedRequest = {
       ...existing,
@@ -273,7 +273,7 @@ function handleRequestActionClick(event) {
 
 function createRequestCardHTML(request) {
   const vehicleColor = VEHICLES[request.vehicle] || '#555';
-  const actions = request.status === 'pending' && hasPermission('approve')
+  const actions = request.status === 'pending' && isAdmin()
     ? `
       <div class="request-card-actions">
         <button class="btn-secondary" data-request-action="edit" data-request-id="${request.id}">Edit</button>

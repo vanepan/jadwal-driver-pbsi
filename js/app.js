@@ -16,7 +16,7 @@ import { initDriverSelect } from './drivers.js';
 import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate } from './timeline.js';
 import { initModalHandlers, registerEditCallback, registerDeleteCallback, setAssignments as setModalAssignments, updateDetailActionButtons } from './modal.js';
 import { initFormHandlers, openFormModal, closeFormModal, registerSaveCallback, setAssignments as setAssignmentsForm, setCurrentDate as setCurrentDateForm, checkConflict, deleteAssignment } from './assignments.js';
-import { initAuthUI, hasPermission, getCurrentUser } from './auth.js';
+import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang } from './auth.js';
 import {
   initRequestHandlers,
   openRequestFormModal,
@@ -60,34 +60,38 @@ function updatePermissionUI() {
   const requestCountBadge = document.getElementById('requestCountBadge');
 
   if (btnAdd) {
-    const canCreateSchedule = hasPermission('create');
-    const canRequestSchedule = hasPermission('request');
     const btnText = document.getElementById('btnAddAssignmentLabel');
 
-    btnAdd.disabled = !canCreateSchedule && !canRequestSchedule;
-    btnAdd.title = canRequestSchedule
-      ? 'Request jadwal driver'
-      : canCreateSchedule
-        ? 'Tambah jadwal'
-        : 'Role ini hanya bisa melihat jadwal';
-
-    if (btnText) {
-      btnText.textContent = canRequestSchedule ? 'Request Jadwal' : 'Tambah Jadwal';
+    if (isAdmin()) {
+      btnAdd.style.display = 'flex';
+      btnAdd.disabled = false;
+      btnAdd.title = 'Tambah jadwal';
+      if (btnText) btnText.textContent = 'Tambah Jadwal';
+    } else if (isBidang()) {
+      btnAdd.style.display = 'flex';
+      btnAdd.disabled = false;
+      btnAdd.title = 'Request jadwal driver';
+      if (btnText) btnText.textContent = 'Request Jadwal';
+    } else {
+      btnAdd.style.display = 'none';
+      btnAdd.disabled = true;
+      btnAdd.title = 'Role ini hanya bisa melihat jadwal';
+      if (btnText) btnText.textContent = 'Tambah Jadwal';
     }
   }
 
   if (btnRequests) {
-    const shouldShowRequests = hasPermission('approve') || hasPermission('request');
+    const shouldShowRequests = isAdmin() || isBidang();
     btnRequests.style.display = shouldShowRequests ? 'flex' : 'none';
   }
 
   if (btnRequestsLabel) {
-    btnRequestsLabel.textContent = hasPermission('approve') ? 'Pending' : 'Riwayat Request';
+    btnRequestsLabel.textContent = isAdmin() ? 'Pending' : 'Riwayat Request';
   }
 
   if (requestCountBadge) {
     const pendingCount = getPendingRequestCount();
-    const showCount = hasPermission('approve') && pendingCount > 0;
+    const showCount = isAdmin() && pendingCount > 0;
     requestCountBadge.textContent = String(pendingCount);
     requestCountBadge.style.display = showCount ? 'inline-flex' : 'none';
   }
@@ -120,7 +124,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnAdd = document.getElementById('btnAddAssignment');
   if (btnAdd) {
     btnAdd.addEventListener('click', () => {
-      if (hasPermission('request')) {
+      if (isAdmin()) {
+        openFormModal();
+        return;
+      }
+
+      if (isBidang()) {
         openRequestFormModal();
       }
     });
@@ -187,7 +196,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── Callback: Admin approve request ──
   registerRequestApproveCallback((requestId) => {
-    if (!hasPermission('approve')) return;
+    if (!isAdmin()) return;
 
     const request = requests.find(item => item.id === requestId);
     const admin = getCurrentUser();
@@ -221,7 +230,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── Callback: Admin reject request ──
   registerRequestRejectCallback((requestId) => {
-    if (!hasPermission('reject')) return;
+    if (!isAdmin()) return;
     if (!confirm('Reject request ini?')) return;
 
     const admin = getCurrentUser();
@@ -278,6 +287,8 @@ window.appDebug = {
   getCurrentDate: () => getCurrentDate(),
   getCurrentUser,
   hasPermission,
+  isAdmin,
+  isBidang,
   checkConflict,
   renderTimeline,
 };
