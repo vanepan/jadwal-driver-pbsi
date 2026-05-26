@@ -17,8 +17,8 @@ const MOCK_USERS = [
     pin: '1234',
   },
   {
-    id: 'bidang-keuangan',
-    name: 'Bidang Keuangan',
+    id: 'bidang-komite-etik',
+    name: 'Bidang Komite Etik',
     role: 'bidang',
     pin: '2222',
   },
@@ -44,7 +44,8 @@ const ROLE_LABELS = {
 
 const PERMISSIONS = {
   view: ['admin', 'bidang', 'viewer'],
-  create: ['admin', 'bidang'],
+  create: ['admin'],
+  request: ['bidang'],
   edit: ['admin'],
   delete: ['admin'],
 };
@@ -97,7 +98,7 @@ export function getCurrentUser() {
 
 /**
  * Cek apakah user saat ini punya permission tertentu.
- * Permission yang dipakai: view, create, edit, delete.
+ * Permission yang dipakai: view, create, request, edit, delete.
  * @param {string} permission
  * @returns {boolean}
  */
@@ -107,6 +108,21 @@ export function hasPermission(permission) {
 
   const allowedRoles = PERMISSIONS[permission] || [];
   return allowedRoles.includes(user.role);
+}
+
+export function isAdmin() {
+  const user = getCurrentUser();
+  return Boolean(user && user.role === 'admin');
+}
+
+export function isBidang() {
+  const user = getCurrentUser();
+  return Boolean(user && user.role === 'bidang');
+}
+
+export function isViewer() {
+  const user = getCurrentUser();
+  return Boolean(user && user.role === 'viewer');
 }
 
 /**

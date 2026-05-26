@@ -53,19 +53,6 @@ export function getEditingId() {
  * Initialize form handlers dan time input formatting
  */
 export function initFormHandlers() {
-  // Button "Tambah Jadwal" di header
-  const btnAdd = document.getElementById('btnAddAssignment');
-  if (btnAdd) {
-    btnAdd.addEventListener('click', () => {
-      if (!hasPermission('create')) {
-        showToast('Anda tidak punya akses untuk menambah jadwal');
-        return;
-      }
-
-      openFormModal();
-    });
-  }
-
   // Button "Batal" di form
   const btnCancel = document.getElementById('btnCancelForm');
   if (btnCancel) {
@@ -166,13 +153,15 @@ export function closeFormModal() {
 function handleFormSubmit(e) {
   e.preventDefault();
 
-  if (editingId && !hasPermission('edit')) {
-    showToast('Anda tidak punya akses untuk mengedit jadwal');
+  // Safety net: only admin can ever write directly to assignments.
+  if (!hasPermission('create')) {
+    showToast('Bidang harus membuat request jadwal, bukan jadwal langsung');
+    closeFormModal();
     return;
   }
 
-  if (!editingId && !hasPermission('create')) {
-    showToast('Anda tidak punya akses untuk menambah jadwal');
+  if (editingId && !hasPermission('edit')) {
+    showToast('Anda tidak punya akses untuk mengedit jadwal');
     return;
   }
 

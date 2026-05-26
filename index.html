@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=20260524-firebase" />
+  <link rel="stylesheet" href="style.css?v=20260526-request-permissions" />
 </head>
 <body>
 
@@ -24,6 +24,10 @@
       <div class="header-actions">
         <span class="role-badge" id="roleBadge" data-role="guest">Belum Login</span>
         <button class="btn-logout" id="btnLogout" type="button">Logout</button>
+        <button class="btn-requests" id="btnRequests" type="button" style="display:none;">
+          <span id="btnRequestsLabel">Requests</span>
+          <span class="request-count-badge" id="requestCountBadge" style="display:none;">0</span>
+        </button>
         <!-- Filter Tanggal -->
         <div class="date-nav">
           <button class="btn-icon" id="btnPrevDate" title="Hari sebelumnya">&#8592;</button>
@@ -33,7 +37,7 @@
         </div>
         <!-- Tombol Tambah Assignment -->
         <button class="btn-primary" id="btnAddAssignment">
-          <span class="btn-plus">+</span> Tambah Jadwal
+          <span class="btn-plus">+</span> <span id="btnAddAssignmentLabel">Tambah Jadwal</span>
         </button>
       </div>
     </div>
@@ -91,6 +95,82 @@
             <button type="submit" class="btn-primary" id="btnLogin">Masuk</button>
           </div>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL: REQUEST JADWAL ===== -->
+  <div class="modal-overlay" id="modalRequestForm" style="display:none;">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2 class="modal-title" id="modalRequestFormTitle">Request Jadwal</h2>
+        <button class="modal-close" id="btnCloseRequestForm">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="requestForm" novalidate>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="requestFieldDriver">Driver *</label>
+              <select id="requestFieldDriver" required>
+                <option value="">-- Pilih Driver --</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="requestFieldVehicle">Kendaraan *</label>
+              <select id="requestFieldVehicle" required>
+                <option value="">-- Pilih Kendaraan --</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="requestFieldDate">Tanggal *</label>
+              <input type="date" id="requestFieldDate" required />
+            </div>
+
+            <div class="form-group">
+              <label for="requestFieldStart">Jam Mulai *</label>
+              <input type="time" id="requestFieldStart" required />
+            </div>
+
+            <div class="form-group">
+              <label for="requestFieldEnd">Jam Selesai *</label>
+              <input type="time" id="requestFieldEnd" required />
+            </div>
+
+            <div class="form-group form-full">
+              <label for="requestFieldPurpose">Tujuan / Keperluan *</label>
+              <input type="text" id="requestFieldPurpose" placeholder="Contoh: Penjemputan atlet di bandara" required />
+            </div>
+
+            <div class="form-group form-full">
+              <label for="requestFieldNotes">Catatan</label>
+              <textarea id="requestFieldNotes" rows="2" placeholder="Catatan tambahan (opsional)"></textarea>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn-secondary" id="btnCancelRequestForm">Batal</button>
+            <button type="submit" class="btn-primary" id="btnSaveRequestForm">Kirim Request</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL: REQUEST LIST ===== -->
+  <div class="modal-overlay" id="modalRequestsList" style="display:none;">
+    <div class="modal-box modal-detail-box request-list-box">
+      <div class="modal-header">
+        <h2 class="modal-title" id="requestsListTitle">Requests</h2>
+        <button class="modal-close" id="btnCloseRequestsList">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="requests-list" id="requestsListContent"></div>
+
+        <div class="detail-actions">
+          <button class="btn-secondary" id="btnCloseRequestsList2">Tutup</button>
+        </div>
       </div>
     </div>
   </div>
@@ -238,6 +318,6 @@
   <div class="toast" id="toast" style="display:none;"></div>
 
   <!-- Script utama (modular entry point) -->
-  <script type="module" src="js/app.js?v=20260524-firebase-modular"></script>
+  <script type="module" src="js/app.js?v=20260526-request-permissions"></script>
 </body>
 </html>
