@@ -51,6 +51,25 @@ function attachAdminButtons() {
   if (btnSendTestTelegram) btnSendTestTelegram.addEventListener('click', handleSendTestTelegram);
   if (btnCopyMyIdCommand) btnCopyMyIdCommand.addEventListener('click', handleCopyMyIdCommand);
 
+  // Telegram Chat ID input listeners
+  const primaryChatIdField = document.getElementById('profileTelegramChatIdPrimary');
+  const btnPasteIdPrimary = document.getElementById('btnPasteIdPrimary');
+  const extra1ChatIdField = document.getElementById('profileTelegramChatId1');
+
+  if (btnPasteIdPrimary) {
+    btnPasteIdPrimary.addEventListener('click', handlePasteChatId);
+  }
+
+  if (primaryChatIdField) {
+    primaryChatIdField.addEventListener('input', updateTelegramStatusBadge);
+    primaryChatIdField.addEventListener('change', updateTelegramStatusBadge);
+  }
+
+  if (extra1ChatIdField) {
+    extra1ChatIdField.addEventListener('input', updateTelegramStatusBadge);
+    extra1ChatIdField.addEventListener('change', updateTelegramStatusBadge);
+  }
+
   const form = document.getElementById('userForm');
   if (form) form.addEventListener('submit', handleUserFormSubmit);
 
@@ -297,6 +316,59 @@ async function handleUserActionClick(event) {
   }
 }
 
+/**
+ * Update Telegram status badge berdasarkan ada tidaknya Chat ID.
+ * Called saat input berubah atau modal dibuka.
+ */
+function updateTelegramStatusBadge() {
+  const primaryField = document.getElementById('profileTelegramChatIdPrimary');
+  const statusBadge = document.getElementById('telegramStatusBadge');
+  const statusText = document.getElementById('telegramStatusText');
+
+  if (!statusBadge || !primaryField) return;
+
+  const hasChatId = Boolean(primaryField.value?.trim());
+
+  if (hasChatId) {
+    statusBadge.dataset.status = 'connected';
+    statusBadge.textContent = '✅ Terhubung';
+    if (statusText) statusText.textContent = 'Telegram sudah terhubung. Notifikasi akan dikirim.';
+  } else {
+    statusBadge.dataset.status = 'not-connected';
+    statusBadge.textContent = '⚠️ Belum Terhubung';
+    if (statusText) statusText.textContent = 'Belum terhubung ke Telegram. Setup Chat ID terlebih dahulu.';
+  }
+}
+
+/**
+ * Handle paste button - paste from clipboard ke Chat ID input.
+ * Uses modern Clipboard API with fallback.
+ */
+async function handlePasteChatId(event) {
+  event.preventDefault();
+  const primaryField = document.getElementById('profileTelegramChatIdPrimary');
+  if (!primaryField) return;
+
+  try {
+    // Try modern Clipboard API first
+    if (navigator.clipboard && navigator.clipboard.readText) {
+      const text = await navigator.clipboard.readText();
+      primaryField.value = text.trim();
+      primaryField.focus();
+      updateTelegramStatusBadge();
+      showToast('Chat ID berhasil dipaste dari clipboard');
+    } else {
+      // Fallback untuk browser lama
+      showToast('Clipboard API tidak tersedia. Paste manual menggunakan Ctrl+V');
+      primaryField.focus();
+    }
+  } catch (error) {
+    console.error('Paste error:', error);
+    showToast('Gagal paste dari clipboard. Paste manual dengan Ctrl+V');
+    primaryField.focus();
+  }
+}
+
 async function openProfileModal() {
   const modal = document.getElementById('modalProfile');
   if (!modal) return;
@@ -325,6 +397,9 @@ async function openProfileModal() {
       driverOnlyEls.forEach(el => { if (el) el.parentElement.style.display = isDriver ? 'block' : 'none'; });
     }
   }
+
+  // Update Telegram status badge saat modal dibuka
+  updateTelegramStatusBadge();
 
   modal.style.display = 'flex';
 }

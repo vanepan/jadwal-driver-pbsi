@@ -16,7 +16,7 @@ import { initDriverSelect } from './drivers.js';
 import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate } from './timeline.js';
 import { initModalHandlers, registerEditCallback, registerDeleteCallback, setAssignments as setModalAssignments, updateDetailActionButtons } from './modal.js';
 import { initFormHandlers, openFormModal, registerSaveCallback, setAssignments as setAssignmentsForm, setCurrentDate as setCurrentDateForm, checkConflict, deleteAssignment } from './assignments.js';
-import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang } from './auth.js';
+import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver, getDriverName } from './auth.js';
 import {
   initRequestHandlers,
   openRequestFormModal,
@@ -44,13 +44,37 @@ let requests = [];
 let auditLogs = [];
 
 /**
+ * Filter assignments berdasarkan user role saat ini.
+ * - Admin & Bidang: lihat semua assignments
+ * - Driver: lihat hanya assignments untuk driver itu sendiri
+ * - Viewer: lihat semua (read-only)
+ * @param {Array} allAssignments
+ * @returns {Array} - Filtered assignments
+ */
+function filterAssignmentsForUser(allAssignments) {
+  const currentUser = getCurrentUser();
+  if (!currentUser) return [];
+
+  if (isDriver()) {
+    const driverName = getDriverName();
+    return allAssignments.filter(a => a.driver === driverName);
+  }
+
+  // Admin, Bidang, Viewer lihat semua
+  return allAssignments;
+}
+
+/**
  * Update all modules dengan data assignments terbaru
  * Dipanggil setiap kali ada perubahan data (Firebase sync, form submit, delete, etc)
  */
 function updateAllModules() {
-  setTimelineAssignments(assignments);
-  setModalAssignments(assignments);
-  setAssignmentsForm(assignments);
+  // Filter assignments berdasarkan role user
+  const filteredAssignments = filterAssignmentsForUser(assignments);
+  
+  setTimelineAssignments(filteredAssignments);
+  setModalAssignments(filteredAssignments);
+  setAssignmentsForm(filteredAssignments);
   setRequestsModule(requests);
 }
 
@@ -76,6 +100,11 @@ function updatePermissionUI() {
       btnAdd.disabled = false;
       btnAdd.title = 'Request jadwal driver';
       if (btnText) btnText.textContent = 'Request Jadwal';
+    } else if (isDriver()) {
+      btnAdd.style.display = 'none';
+      btnAdd.disabled = true;
+      btnAdd.title = 'Driver tidak bisa membuat jadwal';
+      if (btnText) btnText.textContent = 'Lihat Assignment';
     } else {
       btnAdd.style.display = 'none';
       btnAdd.disabled = true;

@@ -16,15 +16,20 @@ const SESSION_KEY = 'pbsi_current_user';
 const ROLE_LABELS = {
   admin: 'Admin',
   bidang: 'Bidang',
+  driver: 'Driver',
   viewer: 'Viewer',
 };
 
 const PERMISSIONS = {
-  view: ['admin', 'bidang', 'viewer'],
+  view: ['admin', 'bidang', 'viewer', 'driver'],
+  view_assignments: ['admin', 'bidang', 'driver'],
+  view_own_assignments: ['driver'],
   create: ['admin'],
   request: ['bidang'],
+  assign: ['admin'],
   edit: ['admin'],
   delete: ['admin'],
+  manage_users: ['admin'],
 };
 
 let authChangeCallback = null;
@@ -110,6 +115,20 @@ export function isBidang() {
 export function isViewer() {
   const user = getCurrentUser();
   return Boolean(user && user.role === 'viewer');
+}
+
+export function isDriver() {
+  const user = getCurrentUser();
+  return Boolean(user && user.role === 'driver');
+}
+
+/**
+ * Get nama driver dari current user jika role adalah driver.
+ * @returns {string|null}
+ */
+export function getDriverName() {
+  const user = getCurrentUser();
+  return user && user.role === 'driver' ? user.username : null;
 }
 
 /**
