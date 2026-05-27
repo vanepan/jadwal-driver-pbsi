@@ -16,7 +16,7 @@ import { initDriverSelect } from './drivers.js';
 import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate } from './timeline.js';
 import { initModalHandlers, registerEditCallback, registerDeleteCallback, setAssignments as setModalAssignments, updateDetailActionButtons } from './modal.js';
 import { initFormHandlers, openFormModal, registerSaveCallback, setAssignments as setAssignmentsForm, setCurrentDate as setCurrentDateForm, checkConflict, deleteAssignment } from './assignments.js';
-import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver, getDriverName } from './auth.js';
+import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver } from './auth.js';
 import {
   initRequestHandlers,
   openRequestFormModal,
@@ -56,8 +56,26 @@ function filterAssignmentsForUser(allAssignments) {
   if (!currentUser) return [];
 
   if (isDriver()) {
-    const driverName = getDriverName();
-    return allAssignments.filter(a => a.driver === driverName);
+    const identityCandidates = [
+      currentUser.username,
+      currentUser.name,
+      currentUser.displayName,
+      currentUser.username ? currentUser.username.charAt(0).toUpperCase() + currentUser.username.slice(1).toLowerCase() : '',
+    ]
+      .filter(Boolean)
+      .flatMap(value => {
+        const normalized = String(value).trim().toLowerCase();
+        return normalized.startsWith('driver ')
+          ? [normalized, normalized.replace(/^driver\s+/, '')]
+          : [normalized];
+      });
+
+    const uniqueDriverIdentities = new Set(identityCandidates);
+
+    return allAssignments.filter(assignment => {
+      const assignedDriver = String(assignment.driver || '').trim().toLowerCase();
+      return uniqueDriverIdentities.has(assignedDriver);
+    });
   }
 
   // Admin, Bidang, Viewer lihat semua
@@ -71,7 +89,7 @@ function filterAssignmentsForUser(allAssignments) {
 function updateAllModules() {
   // Filter assignments berdasarkan role user
   const filteredAssignments = filterAssignmentsForUser(assignments);
-  
+
   setTimelineAssignments(filteredAssignments);
   setModalAssignments(filteredAssignments);
   setAssignmentsForm(filteredAssignments);
@@ -158,15 +176,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Initialize UI modules
   await initAuthUI(updatePermissionUI);  // Setup login modal, badge, logout
   await initAdminUI();                   // Setup admin user management
-  initNotificationUI();                 // Setup notification badge & modal
-  initDriverSelect();                   // Isi dropdown driver
-  initDateControls();                   // Setup date navigation buttons
-  initFormHandlers();                   // Setup form events
-  initModalHandlers();                  // Setup modal events
-  initRequestHandlers();                // Setup request workflow events
-  renderTimeline();                     // Render timeline pertama kali
-  updatePermissionUI();                 // Disable tombol sesuai role
-  updateAdminButtons();                 // Show admin controls properly
+  initNotificationUI();                  // Setup notification badge & modal
+  initDriverSelect();                    // Isi dropdown driver
+  initDateControls();                    // Setup date navigation buttons
+  initFormHandlers();                    // Setup form events
+  initModalHandlers();                   // Setup modal events
+  initRequestHandlers();                 // Setup request workflow events
+  renderTimeline();                      // Render timeline pertama kali
+  updatePermissionUI();                  // Disable tombol sesuai role
+  updateAdminButtons();                  // Show admin controls properly
   setNotificationData({
     pendingRequests: getPendingRequestCount(),
     recentLogs: auditLogs,
