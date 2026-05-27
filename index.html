@@ -192,6 +192,8 @@
     </div>
   </div>
 
+        
+
   <!-- ===== MODAL: USER MANAGEMENT ===== -->
   <div class="modal-overlay" id="modalUsersList" style="display:none;">
     <div class="modal-box modal-detail-box">
@@ -261,7 +263,7 @@
   <div class="modal-overlay" id="modalProfile" style="display:none;">
     <div class="modal-box">
       <div class="modal-header">
-        <h2 class="modal-title">Ubah PIN</h2>
+        <h2 class="modal-title">Akun & Telegram</h2>
         <button class="modal-close" id="btnCloseProfile">&times;</button>
       </div>
       <div class="modal-body">
@@ -270,23 +272,61 @@
           <span id="profileUsernameLabel" class="detail-value">-</span>
         </div>
         <form id="profileForm" novalidate>
+          <div class="section-title">Telegram Notifications</div>
+            <p class="form-text">Dapatkan notifikasi jadwal dan request melalui Telegram.</p>
+
+            <div class="small-instructions">
+              <ol>
+                <li>Tekan tombol Buka Bot</li>
+                <li>Kirim <strong>/start</strong> dan <strong>/myid</strong></li>
+                <li>Copy Chat ID</li>
+                <li>Tempel di bawah</li>
+              </ol>
+            </div>
+
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="profileTelegramChatIdPrimary">Chat ID Utama</label>
+                <input type="text" id="profileTelegramChatIdPrimary" placeholder="Contoh: 1868522785" />
+              </div>
+              <div class="form-group">
+                <label for="profileTelegramChatId1">Chat ID Tambahan 1</label>
+                <input type="text" id="profileTelegramChatId1" placeholder="Contoh: 1868522785 (opsional)" />
+              </div>
+              <div class="form-group">
+                <label for="profileTelegramChatId2">Chat ID Tambahan 2</label>
+                <input type="text" id="profileTelegramChatId2" placeholder="Contoh: 1868522785 (opsional)" />
+              </div>
+              <div class="form-group checkbox-group">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="profileNotificationsEnabled" />
+                  Terima notifikasi Telegram
+                </label>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="button" class="btn-secondary" id="btnOpenTelegramBot">Buka Bot Telegram</button>
+              <button type="button" class="btn-secondary" id="btnCopyMyIdCommand">Copy Command /myid</button>
+              <button type="button" class="btn-secondary" id="btnSendTestTelegram">Kirim Notifikasi Tes</button>
+            </div>
+          <div class="section-title">Ubah PIN</div>
           <div class="form-grid">
             <div class="form-group">
-              <label for="profileCurrentPin">PIN Saat Ini *</label>
-              <input type="password" id="profileCurrentPin" inputmode="numeric" pattern="[0-9]*" maxlength="4" required />
+              <label for="profileCurrentPin">PIN Saat Ini</label>
+              <input type="password" id="profileCurrentPin" inputmode="numeric" pattern="[0-9]*" maxlength="4" />
             </div>
             <div class="form-group">
-              <label for="profileNewPin">PIN Baru *</label>
-              <input type="password" id="profileNewPin" inputmode="numeric" pattern="[0-9]*" maxlength="4" required />
+              <label for="profileNewPin">PIN Baru</label>
+              <input type="password" id="profileNewPin" inputmode="numeric" pattern="[0-9]*" maxlength="4" />
             </div>
             <div class="form-group">
-              <label for="profileConfirmPin">Konfirmasi PIN *</label>
-              <input type="password" id="profileConfirmPin" inputmode="numeric" pattern="[0-9]*" maxlength="4" required />
+              <label for="profileConfirmPin">Konfirmasi PIN</label>
+              <input type="password" id="profileConfirmPin" inputmode="numeric" pattern="[0-9]*" maxlength="4" />
             </div>
           </div>
           <div class="form-actions">
             <button type="button" class="btn-secondary" id="btnCancelProfile">Batal</button>
-            <button type="submit" class="btn-primary" id="btnSaveProfile">Simpan PIN</button>
+            <button type="submit" class="btn-primary" id="btnSaveProfile">Simpan Perubahan</button>
           </div>
         </form>
       </div>

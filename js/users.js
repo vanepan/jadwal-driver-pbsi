@@ -21,7 +21,7 @@ function isValidPin(value) {
 }
 
 function isValidRole(value) {
-  return ['admin', 'bidang', 'viewer'].includes(value);
+  return ['admin', 'bidang', 'viewer', 'driver'].includes(value);
 }
 
 function mapFirebaseUsers(value) {
@@ -95,6 +95,11 @@ export async function createUser(userData) {
     displayName: String(userData.displayName || userData.username).trim() || username,
     role: isValidRole(userData.role) ? userData.role : 'viewer',
     pin: String(userData.pin).trim(),
+    // telegramChatIds: object with keys { primary, secondary1, secondary2 } for drivers
+    telegramChatIds: userData.telegramChatIds && typeof userData.telegramChatIds === 'object'
+      ? userData.telegramChatIds
+      : (userData.telegramChatId ? { primary: String(userData.telegramChatId).trim() } : {}),
+    notificationsEnabled: Boolean(userData.notificationsEnabled),
     active: userData.active !== false,
     createdAt,
     updatedAt: createdAt,
@@ -131,6 +136,12 @@ export async function updateUser(userData) {
   const updates = {
     displayName: String(userData.displayName || existing.displayName || existing.username).trim(),
     role: nextRole,
+    telegramChatIds: userData.telegramChatIds !== undefined
+      ? (userData.telegramChatIds || {})
+      : (existing.telegramChatIds || (existing.telegramChatId ? { primary: existing.telegramChatId } : {})),
+    notificationsEnabled: userData.notificationsEnabled !== undefined
+      ? Boolean(userData.notificationsEnabled)
+      : Boolean(existing.notificationsEnabled),
     active: nextActive,
     updatedAt: new Date().toISOString(),
   };

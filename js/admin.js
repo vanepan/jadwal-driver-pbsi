@@ -3,7 +3,11 @@
 import { getCurrentUser, isAdmin, logout } from './auth.js';
 import { createUser, getUserByUsername, getUsers, initUsersSync, updateUser, deactivateUser, validateUsername, registerUsersChangeListener } from './users.js';
 import { logAction } from './logs.js';
+import { sendNotification } from './telegram.js';
 import { showToast } from './utils.js';
+
+const TELEGRAM_BOT_USERNAME = 'PBSI_Assistant_Bot';
+const TELEGRAM_BOT_URL = `https://t.me/${TELEGRAM_BOT_USERNAME}`;
 
 let users = [];
 let editingUsername = null;
@@ -30,6 +34,9 @@ function attachAdminButtons() {
   const btnCancelUserForm = document.getElementById('btnCancelUserForm');
   const btnCloseProfile = document.getElementById('btnCloseProfile');
   const btnCancelProfile = document.getElementById('btnCancelProfile');
+  const btnOpenTelegramBot = document.getElementById('btnOpenTelegramBot');
+  const btnSendTestTelegram = document.getElementById('btnSendTestTelegram');
+  const btnCopyMyIdCommand = document.getElementById('btnCopyMyIdCommand');
 
   if (btnUserMgmt) btnUserMgmt.addEventListener('click', openUsersListModal);
   if (btnProfile) btnProfile.addEventListener('click', openProfileModal);
@@ -40,6 +47,9 @@ function attachAdminButtons() {
   if (btnCancelUserForm) btnCancelUserForm.addEventListener('click', closeUserFormModal);
   if (btnCloseProfile) btnCloseProfile.addEventListener('click', closeProfileModal);
   if (btnCancelProfile) btnCancelProfile.addEventListener('click', closeProfileModal);
+  if (btnOpenTelegramBot) btnOpenTelegramBot.addEventListener('click', openTelegramBot);
+  if (btnSendTestTelegram) btnSendTestTelegram.addEventListener('click', handleSendTestTelegram);
+  if (btnCopyMyIdCommand) btnCopyMyIdCommand.addEventListener('click', handleCopyMyIdCommand);
 
   const form = document.getElementById('userForm');
   if (form) form.addEventListener('submit', handleUserFormSubmit);
@@ -287,12 +297,35 @@ async function handleUserActionClick(event) {
   }
 }
 
-function openProfileModal() {
+async function openProfileModal() {
   const modal = document.getElementById('modalProfile');
   if (!modal) return;
+
   const currentUser = getCurrentUser();
   const usernameLabel = document.getElementById('profileUsernameLabel');
+  const primaryField = document.getElementById('profileTelegramChatIdPrimary');
+  const extra1Field = document.getElementById('profileTelegramChatId1');
+  const extra2Field = document.getElementById('profileTelegramChatId2');
+  const notificationsEnabledField = document.getElementById('profileNotificationsEnabled');
+
   if (usernameLabel) usernameLabel.textContent = currentUser ? currentUser.displayName : '-';
+
+  // Prefill fields from Firebase; support legacy telegramChatId
+  if (currentUser) {
+    const user = await getUserByUsername(currentUser.username);
+    if (user) {
+      const ids = user.telegramChatIds || (user.telegramChatId ? { primary: user.telegramChatId } : {});
+      if (primaryField) primaryField.value = ids.primary || '';
+      if (extra1Field) extra1Field.value = ids.secondary1 || '';
+      if (extra2Field) extra2Field.value = ids.secondary2 || '';
+      if (notificationsEnabledField) notificationsEnabledField.checked = Boolean(user.notificationsEnabled);
+      // Show/hide fields depending on role
+      const isDriver = (currentUser.role === 'driver' || (user.role === 'driver'));
+      const driverOnlyEls = [extra1Field, extra2Field];
+      driverOnlyEls.forEach(el => { if (el) el.parentElement.style.display = isDriver ? 'block' : 'none'; });
+    }
+  }
+
   modal.style.display = 'flex';
 }
 
@@ -314,32 +347,131 @@ async function handleProfileSubmit(event) {
   const currentPin = document.getElementById('profileCurrentPin')?.value.trim();
   const newPin = document.getElementById('profileNewPin')?.value.trim();
   const confirmPin = document.getElementById('profileConfirmPin')?.value.trim();
+  const primary = document.getElementById('profileTelegramChatIdPrimary')?.value.trim() || '';
+  const extra1 = document.getElementById('profileTelegramChatId1')?.value.trim() || '';
+  const extra2 = document.getElementById('profileTelegramChatId2')?.value.trim() || '';
+  const notificationsEnabled = Boolean(document.getElementById('profileNotificationsEnabled')?.checked);
 
-  if (!/^\d{4}$/.test(currentPin) || !/^\d{4}$/.test(newPin) || !/^\d{4}$/.test(confirmPin)) {
-    showToast('Semua field PIN harus 4 digit angka.');
+  const pinChangeRequested = Boolean(currentPin || newPin || confirmPin);
+  if (pinChangeRequested) {
+    if (!/^[0-9]{4}$/.test(currentPin) || !/^[0-9]{4}$/.test(newPin) || !/^[0-9]{4}$/.test(confirmPin)) {
+      showToast('Semua field PIN harus 4 digit angka.');
+      return;
+    }
+    if (newPin !== confirmPin) {
+      showToast('Konfirmasi PIN tidak cocok.');
+      return;
+    }
+  }
+
+  // Collect chat IDs; driver accounts may have multiple
+  const ids = [primary, extra1, extra2].map(v => (v || '').trim()).filter(Boolean);
+  // Prevent duplicates within same account
+  const uniqueIds = Array.from(new Set(ids));
+
+  if (notificationsEnabled && uniqueIds.length === 0) {
+    showToast('Isi minimal satu Telegram Chat ID jika notifikasi diaktifkan.');
     return;
   }
 
-  if (newPin !== confirmPin) {
-    showToast('Konfirmasi PIN tidak cocok.');
-    return;
+  // Validate numeric chat IDs
+  for (const id of uniqueIds) {
+    if (!/^-?\d+$/.test(id)) {
+      showToast('Telegram Chat ID harus berupa angka.');
+      return;
+    }
   }
 
   try {
     const user = await getUserByUsername(currentUser.username);
-    if (!user || user.pin !== currentPin) {
+    if (!user) {
+      showToast('User tidak ditemukan.');
+      return;
+    }
+
+    if (pinChangeRequested && user.pin !== currentPin) {
       showToast('PIN saat ini tidak cocok.');
       return;
     }
 
-    // Duplicate PINs allowed; no uniqueness check needed
+    const telegramChatIds = {};
+    if (uniqueIds.length > 0) {
+      telegramChatIds.primary = uniqueIds[0];
+      if (uniqueIds[1]) telegramChatIds.secondary1 = uniqueIds[1];
+      if (uniqueIds[2]) telegramChatIds.secondary2 = uniqueIds[2];
+    }
 
-    await updateUser({ username: currentUser.username, pin: newPin });
-    await logAction({ userId: currentUser.id, username: currentUser.username, action: 'pin_changed', targetId: currentUser.username });
-    showToast('PIN berhasil diperbarui.');
+    const updatePayload = {
+      username: currentUser.username,
+      telegramChatIds,
+      notificationsEnabled,
+    };
+
+    if (pinChangeRequested) updatePayload.pin = newPin;
+
+    await updateUser(updatePayload);
+    await logAction({ userId: currentUser.id, username: currentUser.username, action: 'profile_updated', targetId: currentUser.username });
+    showToast('Profil berhasil diperbarui.');
     closeProfileModal();
   } catch (error) {
-    showToast(error.message || 'Gagal mengubah PIN.');
+    showToast(error.message || 'Gagal memperbarui profil.');
+  }
+}
+
+function openTelegramBot() {
+  window.open(TELEGRAM_BOT_URL, '_blank', 'noopener');
+}
+
+async function handleSendTestTelegram() {
+  const currentUser = getCurrentUser();
+  if (!currentUser) {
+    showToast('Sesi tidak tersedia. Silakan login ulang.');
+    return;
+  }
+  try {
+    const user = await getUserByUsername(currentUser.username);
+    if (!user) {
+      showToast('User tidak ditemukan.');
+      return;
+    }
+
+    const results = await sendNotification(user, `Tes notifikasi dari PBSI Scheduler pada ${new Date().toLocaleString('id-ID')}`);
+    if (results && results.skipped) {
+      showToast('Notifikasi tidak dikirim: notifikasi dinonaktifkan.');
+      return;
+    }
+
+    const okCount = Array.isArray(results) ? results.filter(r => r.ok).length : 0;
+    const errCount = Array.isArray(results) ? results.filter(r => !r.ok).length : 0;
+    showToast(`Notifikasi tes: sukses ${okCount}, gagal ${errCount}`);
+    await logAction({ userId: currentUser.id, username: currentUser.username, action: 'telegram_test_sent', targetId: JSON.stringify(results || {}) });
+  } catch (error) {
+    showToast(error.message || 'Gagal mengirim notifikasi tes.');
+  }
+}
+
+function handleCopyMyIdCommand() {
+  const text = '/myid';
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => {
+      showToast('Perintah /myid tersalin.');
+    }).catch(() => {
+      showToast('Gagal menyalin. Silakan salin secara manual: /myid');
+    });
+    return;
+  }
+
+  // Fallback: use execCommand
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast('Perintah /myid tersalin.');
+  } catch (e) {
+    showToast('Gagal menyalin. Silakan salin secara manual: /myid');
   }
 }
 

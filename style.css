@@ -903,6 +903,25 @@ z-index: 1;
   gap: 8px;
   justify-content: flex-end;
   margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.form-text,
+.small-instructions {
+  color: var(--gray-4);
+  font-size: 13px;
+  line-height: 1.6;
+  margin-top: 8px;
+}
+
+.small-instructions ol {
+  list-style: decimal;
+  padding-left: 18px;
+  margin: 10px 0 0;
+}
+
+.small-instructions li {
+  margin-bottom: 6px;
 }
 
 .btn-secondary {
