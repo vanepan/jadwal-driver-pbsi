@@ -14,9 +14,8 @@
 'use strict';
 
 import { sendNotification } from './telegram.js';
-import { getCurrentUser } from './auth.js';
 
-/* ── Date helper (no external import needed) ── */
+/* ── Date helpers ── */
 function formatTanggal(dateStr) {
   if (!dateStr) return '-';
   try {
@@ -29,9 +28,6 @@ function formatTanggal(dateStr) {
   }
 }
 
-/* ── H-1 reminder deduplication via localStorage ── */
-const H1_REMINDER_KEY = 'pbsi_h1_reminders';
-
 function getTodayStr() {
   const n = new Date();
   return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
@@ -43,17 +39,43 @@ function getTomorrowStr() {
   return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
 }
 
-function loadH1State() {
+/* ── Unified reminder deduplication (date-keyed, auto-expires daily) ── */
+const REMINDERS_KEY = 'pbsi_reminders';
+
+function loadRemindersState() {
   try {
-    const raw = JSON.parse(localStorage.getItem(H1_REMINDER_KEY)) || {};
-    return raw.date === getTodayStr() ? raw : { date: getTodayStr(), sent: [] };
+    const raw = JSON.parse(localStorage.getItem(REMINDERS_KEY)) || {};
+    return raw.date === getTodayStr() ? { ...raw, sent: raw.sent || [] } : { date: getTodayStr(), sent: [] };
   } catch {
     return { date: getTodayStr(), sent: [] };
   }
 }
 
-function saveH1State(state) {
-  try { localStorage.setItem(H1_REMINDER_KEY, JSON.stringify(state)); } catch { /* ignore */ }
+function saveRemindersState(state) {
+  try { localStorage.setItem(REMINDERS_KEY, JSON.stringify(state)); } catch { /* ignore */ }
+}
+
+function isReminderSent(state, key) { return state.sent.includes(key); }
+function markReminderSent(state, key) { if (!state.sent.includes(key)) state.sent.push(key); }
+
+/* ── Driver user lookup (match by displayName or username, role=driver) ── */
+function findDriverUser(allUsers, driverName) {
+  if (!driverName || !Array.isArray(allUsers)) return null;
+  const name = String(driverName).trim().toLowerCase();
+  return allUsers.find(u =>
+    u.role === 'driver' && u.active !== false &&
+    ((u.displayName || '').trim().toLowerCase() === name ||
+     (u.username || '').trim().toLowerCase() === name)
+  ) || null;
+}
+
+/* ── Minutes from now until assignment starts (null if not today) ── */
+function minutesUntilStart(assignment) {
+  if (!assignment?.date || !assignment?.startTime) return null;
+  if (assignment.date !== getTodayStr()) return null;
+  const [h, m] = assignment.startTime.split(':').map(Number);
+  const now = new Date();
+  return (h * 60 + m) - (now.getHours() * 60 + now.getMinutes());
 }
 
 /* ── Notification Types ── */
@@ -403,52 +425,172 @@ export async function sendRequestRejectedNotification(request, getUserFn) {
 }
 
 /**
- * Check all assignments scheduled for tomorrow and send H-1 reminders
- * to the requester (bidang) who created each request.
+ * Notify all active admin users when a new request comes in from bidang.
+ * Sends to every admin who has notificationsEnabled.
  *
- * Uses localStorage to prevent duplicate sends within the same calendar day.
- * Safe to call multiple times (on load, on data change, on timer).
- *
- * @param {Array}    assignments - Current assignments array
- * @param {Array}    requests    - Current requests array (to resolve requesterId)
- * @param {Function} getUserFn  - async (username: string) => user | null
+ * @param {Object}   request     - The new request object
+ * @param {Function} getAllUsersFn - async () => user[]
  */
-export async function checkAndSendH1Reminders(assignments, requests, getUserFn) {
-  if (!Array.isArray(assignments) || !Array.isArray(requests) || typeof getUserFn !== 'function') return;
+export async function sendNewRequestNotificationToAdmins(request, getAllUsersFn) {
+  if (!request || typeof getAllUsersFn !== 'function') return;
+  try {
+    const allUsers = await getAllUsersFn();
+    const admins = allUsers.filter(u => u.role === 'admin' && u.active !== false && u.notificationsEnabled);
+    for (const admin of admins) {
+      try {
+        await sendNotification(admin, buildRequestPendingMessage(request));
+        console.log('[Notif] New request → sent to admin', admin.username);
+      } catch (err) {
+        console.error('[Notif] Admin notify failed for', admin.username, err);
+      }
+    }
+  } catch (err) {
+    console.error('[Notif] sendNewRequestNotificationToAdmins failed:', err);
+  }
+}
+
+/**
+ * Notify the driver when a new assignment is created for them.
+ * Matches the driver by displayName or username (role=driver).
+ *
+ * @param {Object}   assignment  - The new assignment object
+ * @param {Function} getAllUsersFn - async () => user[]
+ */
+export async function sendNewAssignmentNotificationToDriver(assignment, getAllUsersFn) {
+  if (!assignment?.driver || typeof getAllUsersFn !== 'function') return;
+  try {
+    const allUsers = await getAllUsersFn();
+    const driverUser = findDriverUser(allUsers, assignment.driver);
+    if (!driverUser) return;
+    const requesterName = assignment.pic || assignment.approvedBy || '';
+    await notifyDriverAssignment(assignment, driverUser, requesterName);
+    console.log('[Notif] New assignment → sent to driver', assignment.driver);
+  } catch (err) {
+    console.error('[Notif] sendNewAssignmentNotificationToDriver failed:', err);
+  }
+}
+
+/**
+ * Send H-1 day reminders for assignments scheduled tomorrow.
+ * Notifies both the requester (bidang) and the driver.
+ * Deduplicates via localStorage; safe to call multiple times.
+ *
+ * @param {Array}    assignments      - Current assignments
+ * @param {Array}    requests         - Current requests (to resolve requesterId)
+ * @param {Function} getUserByUsernameFn - async (username) => user | null
+ * @param {Function} getAllUsersFn       - async () => user[]
+ */
+export async function checkAndSendH1Reminders(assignments, requests, getUserByUsernameFn, getAllUsersFn) {
+  if (!Array.isArray(assignments) || !Array.isArray(requests)) return;
 
   const tomorrow = getTomorrowStr();
-  const state = loadH1State();
+  const state = loadRemindersState();
 
   const pending = assignments.filter(a =>
-    a.date === tomorrow && a.requestId && !state.sent.includes(a.id)
+    a.date === tomorrow && !isReminderSent(state, `${a.id}:h1`)
   );
 
   if (pending.length === 0) return;
+  console.log(`[H-1] Checking ${pending.length} assignment(s) for ${tomorrow}`);
 
-  console.log(`[H-1 Reminder] Checking ${pending.length} assignment(s) for ${tomorrow}`);
+  const allUsers = typeof getAllUsersFn === 'function' ? await getAllUsersFn().catch(() => []) : [];
 
   for (const assignment of pending) {
-    const origRequest = requests.find(r => r.id === assignment.requestId);
+    const msg = buildReminder24hMessage(assignment);
 
-    if (!origRequest?.requesterId) {
-      state.sent.push(assignment.id);
-      continue;
-    }
-
-    try {
-      const user = await getUserFn(origRequest.requesterId);
-      if (user) {
-        await sendNotification(user, buildReminder24hMessage(assignment));
-        console.log(`[H-1 Reminder] Sent to ${origRequest.requesterId} for ${assignment.id}`);
+    // Notify requester (bidang) if created from a request
+    if (assignment.requestId && typeof getUserByUsernameFn === 'function') {
+      const origRequest = requests.find(r => r.id === assignment.requestId);
+      if (origRequest?.requesterId) {
+        try {
+          const user = await getUserByUsernameFn(origRequest.requesterId);
+          if (user) {
+            await sendNotification(user, msg);
+            console.log(`[H-1] Requester notified: ${origRequest.requesterId}`);
+          }
+        } catch (err) {
+          console.error(`[H-1] Requester notify failed (${origRequest.requesterId}):`, err);
+        }
       }
-    } catch (err) {
-      console.error(`[H-1 Reminder] Failed for ${origRequest.requesterId}:`, err);
     }
 
-    state.sent.push(assignment.id);
+    // Notify driver
+    const driverUser = findDriverUser(allUsers, assignment.driver);
+    if (driverUser) {
+      try {
+        await sendNotification(driverUser, msg);
+        console.log(`[H-1] Driver notified: ${assignment.driver}`);
+      } catch (err) {
+        console.error(`[H-1] Driver notify failed (${assignment.driver}):`, err);
+      }
+    }
+
+    markReminderSent(state, `${assignment.id}:h1`);
   }
 
-  saveH1State(state);
+  saveRemindersState(state);
+}
+
+/**
+ * Send ~2-hour-ahead reminders for assignments starting today.
+ * Checks assignments where startTime is 110-135 minutes from now.
+ * Notifies both the requester (bidang) and the driver.
+ * Deduplicates via localStorage; safe to call every 5 minutes.
+ *
+ * @param {Array}    assignments      - Current assignments
+ * @param {Array}    requests         - Current requests
+ * @param {Function} getUserByUsernameFn - async (username) => user | null
+ * @param {Function} getAllUsersFn       - async () => user[]
+ */
+export async function checkAndSendHoursReminders(assignments, requests, getUserByUsernameFn, getAllUsersFn) {
+  if (!Array.isArray(assignments) || !Array.isArray(requests)) return;
+
+  const state = loadRemindersState();
+
+  const pending = assignments.filter(a => {
+    const mins = minutesUntilStart(a);
+    return mins !== null && mins >= 110 && mins <= 135 && !isReminderSent(state, `${a.id}:h2`);
+  });
+
+  if (pending.length === 0) return;
+  console.log(`[H-2] ${pending.length} assignment(s) starting in ~2 hours`);
+
+  const allUsers = typeof getAllUsersFn === 'function' ? await getAllUsersFn().catch(() => []) : [];
+
+  for (const assignment of pending) {
+    const msg = buildReminder2hMessage(assignment);
+
+    // Notify driver
+    const driverUser = findDriverUser(allUsers, assignment.driver);
+    if (driverUser) {
+      try {
+        await sendNotification(driverUser, msg);
+        console.log(`[H-2] Driver notified: ${assignment.driver}`);
+      } catch (err) {
+        console.error(`[H-2] Driver notify failed (${assignment.driver}):`, err);
+      }
+    }
+
+    // Notify requester (bidang)
+    if (assignment.requestId && typeof getUserByUsernameFn === 'function') {
+      const origRequest = requests.find(r => r.id === assignment.requestId);
+      if (origRequest?.requesterId) {
+        try {
+          const user = await getUserByUsernameFn(origRequest.requesterId);
+          if (user) {
+            await sendNotification(user, msg);
+            console.log(`[H-2] Requester notified: ${origRequest.requesterId}`);
+          }
+        } catch (err) {
+          console.error(`[H-2] Requester notify failed (${origRequest.requesterId}):`, err);
+        }
+      }
+    }
+
+    markReminderSent(state, `${assignment.id}:h2`);
+  }
+
+  saveRemindersState(state);
 }
 
 console.info('Notification Service module loaded');

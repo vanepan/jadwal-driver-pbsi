@@ -233,9 +233,9 @@ function handleFormSubmit(e) {
     showToast('✅ Jadwal berhasil ditambahkan');
   }
 
-  // Call save callback
+  // Call save callback — 4th arg is the new assignment (null on edit)
   if (onSaveCallback) {
-    onSaveCallback(assignments, isNew, date);
+    onSaveCallback(assignments, isNew, date, isNew ? newAssignment : null);
   }
 
   // Reset edit mode

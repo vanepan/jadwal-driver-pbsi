@@ -33,11 +33,14 @@ import {
 import { initAdminUI, updateAdminButtons } from './admin.js';
 import { initNotificationUI, setNotificationData, openNotificationsModal } from './notifications.js';
 import { subscribeLogsChangeListener, getLogs, logAction } from './logs.js';
-import { getUserByUsername } from './users.js';
+import { getUserByUsername, getUsers } from './users.js';
 import {
   sendRequestApprovedNotification,
   sendRequestRejectedNotification,
+  sendNewRequestNotificationToAdmins,
+  sendNewAssignmentNotificationToDriver,
   checkAndSendH1Reminders,
+  checkAndSendHoursReminders,
 } from './notification-service.js';
 
 const APP_VERSION = '20260526-request-permissions';
@@ -255,7 +258,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     assignments = updatedAssignments;
     updateAllModules();
     renderTimeline();
-    checkAndSendH1Reminders(assignments, requests, getUserByUsername);
+    checkAndSendH1Reminders(assignments, requests, getUserByUsername, getUsers);
+    checkAndSendHoursReminders(assignments, requests, getUserByUsername, getUsers);
   });
 
   // ── Callback: Firebase requests berubah (dari device lain) ──
@@ -267,23 +271,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // ── Callback: Form save (add/update assignment) ──
-  registerSaveCallback((updatedAssignments, isNewAssignment, assignmentDate) => {
+  registerSaveCallback((updatedAssignments, isNewAssignment, assignmentDate, newAssignment) => {
     assignments = updatedAssignments;
     updateAllModules();
 
-    // Update current date ke tanggal assignment jika add baru
     if (isNewAssignment) {
       setCurrentDate(assignmentDate);
       setCurrentDateForm(assignmentDate);
     }
 
-    // Save ke Firebase dan localStorage
     saveAssignments(assignments);
     const currentUser = getCurrentUser();
     logAction({ userId: currentUser?.id, username: currentUser?.username, action: isNewAssignment ? 'assignment_created' : 'assignment_edited', metadata: { date: assignmentDate } });
 
-    // Re-render timeline
     renderTimeline();
+
+    // Notify driver when admin creates a new assignment directly — non-blocking
+    if (isNewAssignment && newAssignment) {
+      sendNewAssignmentNotificationToDriver(newAssignment, getUsers);
+    }
   });
 
   // ── Callback: Bidang submit request ──
@@ -294,6 +300,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const currentUser = getCurrentUser();
     logAction({ userId: currentUser?.id, username: currentUser?.username, action: 'request_created', targetId: newRequest.id, metadata: { status: newRequest.status } });
     updatePermissionUI();
+
+    // Notify all admins that a new request arrived — non-blocking
+    sendNewRequestNotificationToAdmins(newRequest, getUsers);
   });
 
   // ── Callback: Admin edit pending request sebelum approval ──
@@ -345,6 +354,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Notify requester (bidang) via Telegram — non-blocking
     sendRequestApprovedNotification(request, getUserByUsername);
+    // Notify driver about the new assignment — non-blocking
+    sendNewAssignmentNotificationToDriver(assignment, getUsers);
   });
 
   // ── Callback: Admin reject request ──
@@ -403,11 +414,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Ini akan set up listener yang update assignments dan requests.
   initFirebaseSync();
 
-  // H-1 reminder: check on load, then every 60 minutes
-  // Uses module-level `assignments` and `requests` (always current via closure)
-  const runH1Check = () => checkAndSendH1Reminders(assignments, requests, getUserByUsername);
+  // H-1 reminder (D-1): check on load, then every 60 minutes
+  const runH1Check = () => checkAndSendH1Reminders(assignments, requests, getUserByUsername, getUsers);
   runH1Check();
   setInterval(runH1Check, 60 * 60 * 1000);
+
+  // H-2 hours reminder: check every 5 minutes for assignments starting ~2 hours from now
+  const runH2Check = () => checkAndSendHoursReminders(assignments, requests, getUserByUsername, getUsers);
+  runH2Check();
+  setInterval(runH2Check, 5 * 60 * 1000);
 
   console.log('✅ App initialized successfully');
 });
