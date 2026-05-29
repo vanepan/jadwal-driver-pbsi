@@ -33,6 +33,12 @@ import {
 import { initAdminUI, updateAdminButtons } from './admin.js';
 import { initNotificationUI, setNotificationData, openNotificationsModal } from './notifications.js';
 import { subscribeLogsChangeListener, getLogs, logAction } from './logs.js';
+import { getUserByUsername } from './users.js';
+import {
+  sendRequestApprovedNotification,
+  sendRequestRejectedNotification,
+  checkAndSendH1Reminders,
+} from './notification-service.js';
 
 const APP_VERSION = '20260526-request-permissions';
 
@@ -248,7 +254,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('Firebase data updated from another device');
     assignments = updatedAssignments;
     updateAllModules();
-    renderTimeline(); // Re-render timeline
+    renderTimeline();
+    checkAndSendH1Reminders(assignments, requests, getUserByUsername);
   });
 
   // ── Callback: Firebase requests berubah (dari device lain) ──
@@ -335,6 +342,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     logAction({ userId: currentUser?.id, username: currentUser?.username, action: 'request_approved', targetId: requestId, metadata: { assignmentId: assignment.id } });
     renderTimeline();
     updatePermissionUI();
+
+    // Notify requester (bidang) via Telegram — non-blocking
+    sendRequestApprovedNotification(request, getUserByUsername);
   });
 
   // ── Callback: Admin reject request ──
@@ -358,6 +368,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const currentUser = getCurrentUser();
     logAction({ userId: currentUser?.id, username: currentUser?.username, action: 'request_rejected', targetId: requestId });
     updatePermissionUI();
+
+    // Notify requester (bidang) via Telegram — non-blocking
+    const rejectedRequest = requests.find(item => item.id === requestId);
+    if (rejectedRequest) sendRequestRejectedNotification(rejectedRequest, getUserByUsername);
   });
 
   // ── Callback: Edit button di detail modal ──
@@ -388,6 +402,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Initialize Firebase real-time sync
   // Ini akan set up listener yang update assignments dan requests.
   initFirebaseSync();
+
+  // H-1 reminder: check on load, then every 60 minutes
+  // Uses module-level `assignments` and `requests` (always current via closure)
+  const runH1Check = () => checkAndSendH1Reminders(assignments, requests, getUserByUsername);
+  runH1Check();
+  setInterval(runH1Check, 60 * 60 * 1000);
 
   console.log('✅ App initialized successfully');
 });
