@@ -285,7 +285,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     saveAssignments(assignments);
     const currentUser = getCurrentUser();
-    logAction({ userId: currentUser?.id, username: currentUser?.username, action: isNewAssignment ? 'assignment_created' : 'assignment_edited', metadata: { date: assignmentDate } });
+    logAction({ userId: currentUser?.id, username: currentUser?.username, displayName: currentUser?.name, action: isNewAssignment ? 'assignment_created' : 'assignment_edited', metadata: { date: assignmentDate } });
 
     renderTimeline();
 
@@ -301,7 +301,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateAllModules();
     saveRequests(requests);
     const currentUser = getCurrentUser();
-    logAction({ userId: currentUser?.id, username: currentUser?.username, action: 'request_created', targetId: newRequest.id, metadata: { status: newRequest.status } });
+    logAction({ userId: currentUser?.id, username: currentUser?.username, displayName: currentUser?.name, action: 'request_created', targetId: newRequest.id, metadata: { status: newRequest.status } });
     updatePermissionUI();
 
     // Notify all admins that a new request arrived — non-blocking
@@ -316,7 +316,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateAllModules();
     saveRequests(requests);
     const currentUser = getCurrentUser();
-    logAction({ userId: currentUser?.id, username: currentUser?.username, action: 'request_updated', targetId: updatedRequest.id, metadata: { status: updatedRequest.status } });
+    logAction({ userId: currentUser?.id, username: currentUser?.username, displayName: currentUser?.name, action: 'request_updated', targetId: updatedRequest.id, metadata: { status: updatedRequest.status } });
     updatePermissionUI();
   });
 
@@ -415,7 +415,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateAllModules();
     saveRequests(requests);
     const currentUser = getCurrentUser();
-    logAction({ userId: currentUser?.id, username: currentUser?.username, action: 'request_rejected', targetId: requestId });
+    logAction({ userId: currentUser?.id, username: currentUser?.username, displayName: currentUser?.name, action: 'request_rejected', targetId: requestId });
     updatePermissionUI();
 
     // Notify requester (bidang) via Telegram — non-blocking
@@ -440,7 +440,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Save ke Firebase dan localStorage
     saveAssignments(assignments);
     const currentUser = getCurrentUser();
-    logAction({ userId: currentUser?.id, username: currentUser?.username, action: 'assignment_deleted', targetId: assignmentId });
+    logAction({ userId: currentUser?.id, username: currentUser?.username, displayName: currentUser?.name, action: 'assignment_deleted', targetId: assignmentId });
 
     // Re-render timeline
     renderTimeline();

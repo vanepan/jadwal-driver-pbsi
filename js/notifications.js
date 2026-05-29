@@ -12,25 +12,25 @@ const OPERATIONAL_ACTIONS = new Set([
 const ACTION_META = {
   request_created: {
     title: 'Request Baru',
-    desc: e => `${e.username} mengajukan request driver`,
+    desc: e => `${e.displayName || e.username} mengajukan request driver`,
     priority: 'high',
     icon: '📋',
   },
   request_approved: {
     title: 'Request Disetujui',
-    desc: e => `Request disetujui oleh ${e.username}`,
+    desc: e => `Request disetujui oleh ${e.displayName || e.username}`,
     priority: 'medium',
     icon: '✅',
   },
   request_rejected: {
     title: 'Request Ditolak',
-    desc: e => `Request ditolak oleh ${e.username}`,
+    desc: e => `Request ditolak oleh ${e.displayName || e.username}`,
     priority: 'high',
     icon: '❌',
   },
   assignment_created: {
     title: 'Jadwal Dibuat',
-    desc: e => `Jadwal baru dibuat oleh ${e.username}${e.metadata?.date ? ` untuk ${e.metadata.date}` : ''}`,
+    desc: e => `Jadwal baru dibuat oleh ${e.displayName || e.username}${e.metadata?.date ? ` untuk ${e.metadata.date}` : ''}`,
     priority: 'medium',
     icon: '🚗',
   },

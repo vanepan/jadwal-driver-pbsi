@@ -28,12 +28,13 @@ export async function getLogs() {
   return logs;
 }
 
-export async function logAction({ userId, username, action, targetId = '', metadata = {} }) {
+export async function logAction({ userId, username, displayName = '', action, targetId = '', metadata = {} }) {
   if (!isFirebaseConfigured()) return null;
   const id = generateId();
   const entry = {
     userId: userId || '',
     username: username || 'unknown',
+    displayName: displayName || username || 'unknown',
     action,
     targetId: targetId || '',
     metadata: metadata || {},
