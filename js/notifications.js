@@ -1,5 +1,13 @@
 'use strict';
 
+import { getUserList } from './users.js';
+
+function resolveDisplayName(entry) {
+  if (entry.displayName && entry.displayName !== entry.username) return entry.displayName;
+  const user = getUserList().find(u => u.username === entry.username);
+  return user?.displayName || entry.username;
+}
+
 /* ── Operational whitelist: only these actions appear in the notification center ── */
 const OPERATIONAL_ACTIONS = new Set([
   'request_created',
@@ -12,25 +20,25 @@ const OPERATIONAL_ACTIONS = new Set([
 const ACTION_META = {
   request_created: {
     title: 'Request Baru',
-    desc: e => `${e.displayName || e.username} mengajukan request driver`,
+    desc: e => `${resolveDisplayName(e)} mengajukan request driver`,
     priority: 'high',
     icon: '📋',
   },
   request_approved: {
     title: 'Request Disetujui',
-    desc: e => `Request disetujui oleh ${e.displayName || e.username}`,
+    desc: e => `Request disetujui oleh ${resolveDisplayName(e)}`,
     priority: 'medium',
     icon: '✅',
   },
   request_rejected: {
     title: 'Request Ditolak',
-    desc: e => `Request ditolak oleh ${e.displayName || e.username}`,
+    desc: e => `Request ditolak oleh ${resolveDisplayName(e)}`,
     priority: 'high',
     icon: '❌',
   },
   assignment_created: {
     title: 'Jadwal Dibuat',
-    desc: e => `Jadwal baru dibuat oleh ${e.displayName || e.username}${e.metadata?.date ? ` untuk ${e.metadata.date}` : ''}`,
+    desc: e => `Jadwal baru dibuat oleh ${resolveDisplayName(e)}${e.metadata?.date ? ` untuk ${e.metadata.date}` : ''}`,
     priority: 'medium',
     icon: '🚗',
   },
