@@ -5,6 +5,7 @@ import { fetchFirebaseData, subscribeFirebasePath, storeFirebaseData, updateFire
 const USERS_PATH = 'users';
 let users = [];
 let usersLoaded = false;
+let usersSubscribed = false;
 let onUsersChangeCallback = null;
 
 function normalizeUsername(value) {
@@ -43,9 +44,12 @@ export async function initUsersSync() {
     refreshUsersCache(mapFirebaseUsers(raw));
   }
 
-  subscribeFirebasePath(USERS_PATH, snapshot => {
-    refreshUsersCache(mapFirebaseUsers(snapshot.val()));
-  });
+  if (!usersSubscribed) {
+    usersSubscribed = true;
+    subscribeFirebasePath(USERS_PATH, snapshot => {
+      refreshUsersCache(mapFirebaseUsers(snapshot.val()));
+    });
+  }
 }
 
 export async function getUsers() {

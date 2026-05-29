@@ -10,7 +10,13 @@ export function initNotificationUI() {
   const modal = document.getElementById('modalNotifications');
 
   if (btnNotifications) {
-    btnNotifications.addEventListener('click', openNotificationsModal);
+    btnNotifications.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      ev.stopImmediatePropagation();
+      console.log('[CLICK] NOTIFICATIONS');
+      openNotificationsModal();
+    });
   }
 
   if (btnCloseNotifications) {
@@ -49,7 +55,7 @@ function renderNotificationBadge() {
   badge.textContent = pendingCount > 0 ? String(pendingCount) : '';
 }
 
-function openNotificationsModal() {
+export function openNotificationsModal() {
   renderNotificationsList();
   const modal = document.getElementById('modalNotifications');
   if (modal) modal.style.display = 'flex';

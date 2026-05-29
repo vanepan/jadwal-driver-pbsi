@@ -57,6 +57,7 @@ export async function login(username, pin) {
   localStorage.setItem(SESSION_KEY, JSON.stringify(sessionUser));
   logAction({ userId: user.id, username: user.username, action: 'login' });
   notifyAuthChange();
+  closeLoginModal();
   return sessionUser;
 }
 
@@ -248,7 +249,10 @@ function openLoginModal() {
   const modal = document.getElementById('modalLogin');
   const pinInput = document.getElementById('loginPin');
 
-  if (modal) modal.style.display = 'flex';
+  if (modal) {
+    modal.style.display = 'flex';
+    modal.style.pointerEvents = 'auto';
+  }
 
   setTimeout(() => {
     if (pinInput) pinInput.focus();
@@ -257,7 +261,10 @@ function openLoginModal() {
 
 function closeLoginModal() {
   const modal = document.getElementById('modalLogin');
-  if (modal) modal.style.display = 'none';
+  if (modal) {
+    modal.style.display = 'none';
+    modal.style.pointerEvents = 'none';
+  }
 }
 
 console.info('Auth module loaded');

@@ -41,7 +41,7 @@
           <button class="btn-today" id="btnToday">Hari Ini</button>
         </div>
         <!-- Tombol Tambah Assignment -->
-        <button class="btn-primary" id="btnAddAssignment">
+        <button class="btn-primary" id="btnAddAssignment" type="button">
           <span class="btn-plus">+</span> <span id="btnAddAssignmentLabel">Tambah Jadwal</span>
         </button>
       </div>
@@ -260,149 +260,100 @@
     </div>
   </div>
 
-  <!-- ===== MODAL: PROFILE / CHANGE PIN ===== -->
+  <!-- ===== MODAL: PROFILE ===== -->
   <div class="modal-overlay" id="modalProfile" style="display:none;">
-    <div class="modal-box">
+    <div class="modal-box profile-modal-box">
       <div class="modal-header">
-        <h2 class="modal-title">Akun & Telegram</h2>
+        <h2 class="modal-title">Profil</h2>
         <button class="modal-close" id="btnCloseProfile">&times;</button>
       </div>
       <div class="modal-body">
-        <div class="detail-row">
-          <span class="detail-label">Akun</span>
-          <span id="profileUsernameLabel" class="detail-value">-</span>
+
+        <!-- User Card -->
+        <div class="profile-user-card">
+          <div class="profile-avatar" id="profileAvatar">?</div>
+          <div class="profile-user-info">
+            <div class="profile-display-name" id="profileUsernameLabel">-</div>
+            <div class="profile-role-chip" id="profileRoleLabel">-</div>
+          </div>
         </div>
+
         <form id="profileForm" novalidate>
-          <!-- ===== Telegram Setup Card ===== -->
-          <div class="telegram-setup-card">
-            <div class="telegram-card-header">
-              <div class="telegram-header-title">
-                <span class="telegram-icon">📱</span>
-                <span>Telegram Notifications</span>
-              </div>
-              <div class="telegram-status-badge" id="telegramStatusBadge" data-status="not-connected">
-                Belum Terhubung
-              </div>
+
+          <!-- ── Telegram ── -->
+          <div class="profile-section">
+            <div class="profile-section-header">
+              <span class="profile-section-label">Notifikasi Telegram</span>
+              <span class="profile-tg-badge" id="telegramStatusBadge" data-status="not-connected">Belum Terhubung</span>
             </div>
 
-            <div class="telegram-card-body">
-              <!-- Status Section -->
-              <div class="telegram-status-section">
-                <div class="status-item">
-                  <span class="status-label">Status:</span>
-                  <span class="status-value" id="telegramStatusText">Belum terhubung ke Telegram</span>
-                </div>
-              </div>
+            <p class="profile-help-text">
+              Dapatkan Chat ID: buka
+              <button type="button" id="btnOpenTelegramBot" class="profile-inline-btn">Bot PBSI</button>,
+              ketik
+              <button type="button" id="btnCopyMyIdCommand" class="profile-code-btn"><code>/myid</code></button>
+              lalu paste di bawah.
+            </p>
 
-              <!-- Instructions Section -->
-              <div class="telegram-instructions">
-                <div class="instructions-header">Cara Mendapatkan Chat ID:</div>
-                <ol class="instructions-steps">
-                  <li>
-                    <span class="step-number">1</span>
-                    <span>Buka <strong>Bot Telegram PBSI</strong></span>
-                  </li>
-                  <li>
-                    <span class="step-number">2</span>
-                    <span>Ketik <code>/myid</code></span>
-                  </li>
-                  <li>
-                    <span class="step-number">3</span>
-                    <span>Copy Chat ID yang muncul</span>
-                  </li>
-                  <li>
-                    <span class="step-number">4</span>
-                    <span>Paste di kolom di bawah</span>
-                  </li>
-                </ol>
+            <div class="form-group">
+              <label for="profileTelegramChatIdPrimary">Chat ID</label>
+              <div class="profile-input-row">
+                <input type="text" id="profileTelegramChatIdPrimary"
+                       placeholder="contoh: 123456789"
+                       inputmode="numeric" autocomplete="off" />
+                <button type="button" id="btnPasteIdPrimary" class="btn-paste-small" title="Paste dari clipboard">Paste</button>
               </div>
-
-              <!-- Quick Actions -->
-              <div class="telegram-quick-actions">
-                <button type="button" class="btn-icon-text" id="btnOpenTelegramBot" title="Buka Bot Telegram">
-                  <span class="btn-icon">🤖</span>
-                  <span class="btn-text">Buka Bot</span>
-                </button>
-                <button type="button" class="btn-icon-text" id="btnCopyMyIdCommand" title="Copy /myid command">
-                  <span class="btn-icon">📋</span>
-                  <span class="btn-text">Copy /myid</span>
-                </button>
-              </div>
-
-              <!-- Chat ID Input Section -->
-              <div class="telegram-inputs-section">
-                <div class="telegram-input-group">
-                  <label for="profileTelegramChatIdPrimary" class="input-label">Chat ID Utama</label>
-                  <div class="input-with-action">
-                    <input 
-                      type="text" 
-                      id="profileTelegramChatIdPrimary" 
-                      class="telegram-chat-id-input" 
-                      placeholder="Paste Chat ID di sini (contoh: 123456789)" 
-                      inputmode="numeric"
-                      autocomplete="off"
-                    />
-                    <button type="button" class="btn-paste-inline" id="btnPasteIdPrimary" title="Paste dari clipboard">
-                      📌
-                    </button>
-                  </div>
-                  <div class="input-hint">Telegram ID utama untuk menerima notifikasi</div>
-                </div>
-
-                <div class="telegram-input-group">
-                  <label for="profileTelegramChatId1" class="input-label">Chat ID Tambahan (Opsional)</label>
-                  <div class="input-with-action">
-                    <input 
-                      type="text" 
-                      id="profileTelegramChatId1" 
-                      class="telegram-chat-id-input" 
-                      placeholder="Chat ID tambahan (opsional)"
-                      inputmode="numeric"
-                      autocomplete="off"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <!-- Notifications Enable Toggle -->
-              <div class="telegram-toggle-section">
-                <label class="toggle-label">
-                  <input type="checkbox" id="profileNotificationsEnabled" class="toggle-checkbox" />
-                  <span class="toggle-track"></span>
-                  <span class="toggle-label-text">Aktifkan Notifikasi Telegram</span>
-                </label>
-              </div>
-
-              <!-- Test Notification -->
-              <div class="telegram-test-section">
-                <button type="button" class="btn-secondary btn-full-width" id="btnSendTestTelegram">
-                  ✉️ Kirim Notifikasi Tes
-                </button>
-              </div>
+              <span class="profile-status-text" id="telegramStatusText"></span>
             </div>
+
+            <div class="form-group">
+              <label for="profileTelegramChatId1">Chat ID Tambahan <span class="tag-optional">opsional</span></label>
+              <input type="text" id="profileTelegramChatId1"
+                     placeholder="Chat ID tambahan"
+                     inputmode="numeric" autocomplete="off" />
+            </div>
+
+            <div class="profile-toggle-row">
+              <span class="profile-toggle-text">Aktifkan Notifikasi</span>
+              <label class="toggle-switch profile-toggle-switch">
+                <input type="checkbox" id="profileNotificationsEnabled" />
+                <span class="switch-slider"></span>
+              </label>
+            </div>
+
+            <button type="button" class="btn-secondary profile-test-btn" id="btnSendTestTelegram">
+              Kirim Notifikasi Tes
+            </button>
           </div>
 
-          <!-- ===== PIN Change Section ===== -->
-          <div class="pin-change-section">
-            <div class="section-title">Ubah PIN</div>
+          <div class="profile-divider"></div>
+
+          <!-- ── Ubah PIN ── -->
+          <div class="profile-section">
+            <div class="profile-section-label">
+              Ubah PIN <span class="tag-optional">kosongkan jika tidak ingin mengubah</span>
+            </div>
             <div class="form-grid">
               <div class="form-group">
                 <label for="profileCurrentPin">PIN Saat Ini</label>
-                <input type="password" id="profileCurrentPin" inputmode="numeric" pattern="[0-9]*" maxlength="4" />
+                <input type="password" id="profileCurrentPin" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="••••" />
               </div>
               <div class="form-group">
                 <label for="profileNewPin">PIN Baru</label>
-                <input type="password" id="profileNewPin" inputmode="numeric" pattern="[0-9]*" maxlength="4" />
+                <input type="password" id="profileNewPin" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="••••" />
               </div>
               <div class="form-group">
                 <label for="profileConfirmPin">Konfirmasi PIN</label>
-                <input type="password" id="profileConfirmPin" inputmode="numeric" pattern="[0-9]*" maxlength="4" />
+                <input type="password" id="profileConfirmPin" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="••••" />
               </div>
             </div>
+          </div>
+
           <div class="form-actions">
             <button type="button" class="btn-secondary" id="btnCancelProfile">Batal</button>
-            <button type="submit" class="btn-primary" id="btnSaveProfile">Simpan Perubahan</button>
+            <button type="submit" class="btn-primary" id="btnSaveProfile">Simpan</button>
           </div>
+
         </form>
       </div>
     </div>

@@ -15,7 +15,7 @@ import { loadAssignments, saveAssignments, loadRequests, saveRequests, initFireb
 import { initDriverSelect } from './drivers.js';
 import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate } from './timeline.js';
 import { initModalHandlers, registerEditCallback, registerDeleteCallback, setAssignments as setModalAssignments, updateDetailActionButtons } from './modal.js';
-import { initFormHandlers, openFormModal, registerSaveCallback, setAssignments as setAssignmentsForm, setCurrentDate as setCurrentDateForm, checkConflict, deleteAssignment } from './assignments.js';
+import { initFormHandlers, openFormModal, closeFormModal, registerSaveCallback, setAssignments as setAssignmentsForm, setCurrentDate as setCurrentDateForm, checkConflict, deleteAssignment } from './assignments.js';
 import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver } from './auth.js';
 import {
   initRequestHandlers,
@@ -31,7 +31,7 @@ import {
   requestToAssignment,
 } from './requests.js';
 import { initAdminUI, updateAdminButtons } from './admin.js';
-import { initNotificationUI, setNotificationData } from './notifications.js';
+import { initNotificationUI, setNotificationData, openNotificationsModal } from './notifications.js';
 import { subscribeLogsChangeListener, getLogs, logAction } from './logs.js';
 
 const APP_VERSION = '20260526-request-permissions';
@@ -168,6 +168,12 @@ function updatePermissionUI() {
 document.addEventListener('DOMContentLoaded', async () => {
   console.log('Initializing PBSI Scheduler app...');
 
+  // Setup global debug namespace for console/legacy access
+  window.appDebug = window.appDebug || {};
+  window.appDebug.openFormModal = openFormModal;
+  window.appDebug.closeFormModal = closeFormModal;
+  window.appDebug.openNotificationsModal = openNotificationsModal;
+
   // Load assignments dari localStorage (cache lokal)
   assignments = loadAssignments();
   requests = loadRequests();
@@ -192,7 +198,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const btnAdd = document.getElementById('btnAddAssignment');
   if (btnAdd) {
-    btnAdd.addEventListener('click', () => {
+    btnAdd.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      ev.stopImmediatePropagation();
+      console.log('[CLICK] ADD SCHEDULE');
+
       if (isAdmin()) {
         openFormModal();
         return;
@@ -206,7 +217,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const btnRequests = document.getElementById('btnRequests');
   if (btnRequests) {
-    btnRequests.addEventListener('click', openRequestsListModal);
+    btnRequests.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      console.log('[CLICK] REQUESTS');
+      openRequestsListModal();
+    });
   }
 
   getLogs().then((loadedLogs) => {

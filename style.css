@@ -1273,3 +1273,243 @@ z-index: 1;
   pointer-events: none;
   z-index: 2;
 }
+
+/* ============================================================
+   PROFILE MODAL
+   ============================================================ */
+
+.profile-modal-box {
+  max-width: 460px;
+}
+
+/* ── User card ── */
+.profile-user-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  background: var(--gray-1);
+  border: 1px solid var(--gray-2);
+  border-radius: var(--radius);
+  margin-bottom: 20px;
+}
+
+.profile-avatar {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: var(--red);
+  color: var(--white);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+  font-weight: 700;
+  flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.profile-user-info {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.profile-display-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dark);
+  line-height: 1.2;
+}
+
+.profile-role-chip {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  width: fit-content;
+  background: var(--gray-2);
+  color: var(--text-muted);
+}
+.profile-role-chip[data-role="admin"]  { background: var(--red-light); color: var(--red); }
+.profile-role-chip[data-role="bidang"] { background: #E3F2FD; color: #1565C0; }
+.profile-role-chip[data-role="viewer"] { background: #E8F5E9; color: #2E7D32; }
+.profile-role-chip[data-role="driver"] { background: #FFF3E0; color: #E65100; }
+
+/* ── Sections ── */
+.profile-section {
+  margin-bottom: 2px;
+}
+
+.profile-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.profile-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+  display: block;
+  margin-bottom: 12px;
+}
+.profile-section-header .profile-section-label {
+  margin-bottom: 0;
+}
+
+/* ── Telegram status badge ── */
+.profile-tg-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--gray-2);
+  background: var(--gray-1);
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+.profile-tg-badge[data-status="connected"] {
+  background: #E8F5E9;
+  color: #2E7D32;
+  border-color: #A5D6A7;
+}
+
+/* ── Help text with inline action buttons ── */
+.profile-help-text {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.7;
+  margin-bottom: 14px;
+}
+
+.profile-inline-btn {
+  background: none;
+  border: none;
+  color: var(--red);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  font-family: 'DM Sans', sans-serif;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.profile-inline-btn:hover { color: var(--red-mid); }
+
+.profile-code-btn {
+  background: var(--gray-1);
+  border: 1px solid var(--gray-2);
+  border-radius: 4px;
+  padding: 1px 7px;
+  cursor: pointer;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--dark);
+  transition: background 0.15s;
+  line-height: 1.6;
+  vertical-align: baseline;
+}
+.profile-code-btn:hover { background: var(--gray-2); }
+.profile-code-btn code { font-family: inherit; font-size: inherit; }
+
+/* ── Input row with paste button ── */
+.profile-input-row {
+  display: flex;
+  gap: 6px;
+}
+.profile-input-row input { flex: 1; min-width: 0; }
+
+.btn-paste-small {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0 13px;
+  background: var(--gray-1);
+  border: 1.5px solid var(--gray-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--dark-2);
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+.btn-paste-small:hover {
+  background: var(--gray-2);
+  border-color: var(--gray-3);
+}
+
+/* Status text below Chat ID input */
+.profile-status-text {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  min-height: 14px;
+  transition: color 0.2s;
+}
+
+/* Optional / hint tag */
+.tag-optional {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--gray-4);
+  background: var(--gray-2);
+  border-radius: 4px;
+  padding: 1px 5px;
+  text-transform: none;
+  letter-spacing: 0;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+
+/* ── Notifications toggle row ── */
+.profile-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 0;
+  border-top: 1px solid var(--gray-2);
+  border-bottom: 1px solid var(--gray-2);
+  margin: 14px 0 12px;
+}
+
+.profile-toggle-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dark);
+}
+
+/* Override toggle-switch pill style inside profile toggle row */
+.profile-toggle-switch {
+  background: none;
+  border: none;
+  padding: 0;
+  gap: 0;
+}
+
+/* ── Test button ── */
+.profile-test-btn {
+  width: 100%;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.profile-test-btn:hover { color: var(--dark-2); }
+
+/* ── Section divider ── */
+.profile-divider {
+  height: 1px;
+  background: var(--gray-2);
+  margin: 20px 0;
+}

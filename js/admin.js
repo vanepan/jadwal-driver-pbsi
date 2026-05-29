@@ -39,7 +39,15 @@ function attachAdminButtons() {
   const btnCopyMyIdCommand = document.getElementById('btnCopyMyIdCommand');
 
   if (btnUserMgmt) btnUserMgmt.addEventListener('click', openUsersListModal);
-  if (btnProfile) btnProfile.addEventListener('click', openProfileModal);
+  if (btnProfile) {
+    btnProfile.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      ev.stopImmediatePropagation();
+      console.log('[CLICK] PROFILE');
+      openProfileModal();
+    });
+  }
   if (btnCloseUserList) btnCloseUserList.addEventListener('click', closeUsersListModal);
   if (btnCloseUserList2) btnCloseUserList2.addEventListener('click', closeUsersListModal);
   if (btnAddUser) btnAddUser.addEventListener('click', () => openUserFormModal());
@@ -375,26 +383,41 @@ async function openProfileModal() {
 
   const currentUser = getCurrentUser();
   const usernameLabel = document.getElementById('profileUsernameLabel');
+  const avatarEl = document.getElementById('profileAvatar');
+  const roleEl = document.getElementById('profileRoleLabel');
   const primaryField = document.getElementById('profileTelegramChatIdPrimary');
   const extra1Field = document.getElementById('profileTelegramChatId1');
   const extra2Field = document.getElementById('profileTelegramChatId2');
   const notificationsEnabledField = document.getElementById('profileNotificationsEnabled');
 
-  if (usernameLabel) usernameLabel.textContent = currentUser ? currentUser.displayName : '-';
+  if (usernameLabel) usernameLabel.textContent = currentUser ? (currentUser.name || currentUser.username) : '-';
+
+  if (avatarEl && currentUser) {
+    avatarEl.textContent = (currentUser.name || currentUser.username || '?').charAt(0).toUpperCase();
+  }
+
+  if (roleEl && currentUser) {
+    const roleLabels = { admin: 'Admin', bidang: 'Bidang', viewer: 'Viewer', driver: 'Driver' };
+    roleEl.textContent = roleLabels[currentUser.role] || currentUser.role || '';
+    roleEl.dataset.role = currentUser.role || '';
+  }
 
   // Prefill fields from Firebase; support legacy telegramChatId
   if (currentUser) {
-    const user = await getUserByUsername(currentUser.username);
-    if (user) {
-      const ids = user.telegramChatIds || (user.telegramChatId ? { primary: user.telegramChatId } : {});
-      if (primaryField) primaryField.value = ids.primary || '';
-      if (extra1Field) extra1Field.value = ids.secondary1 || '';
-      if (extra2Field) extra2Field.value = ids.secondary2 || '';
-      if (notificationsEnabledField) notificationsEnabledField.checked = Boolean(user.notificationsEnabled);
-      // Show/hide fields depending on role
-      const isDriver = (currentUser.role === 'driver' || (user.role === 'driver'));
-      const driverOnlyEls = [extra1Field, extra2Field];
-      driverOnlyEls.forEach(el => { if (el) el.parentElement.style.display = isDriver ? 'block' : 'none'; });
+    try {
+      const user = await getUserByUsername(currentUser.username);
+      if (user) {
+        const ids = user.telegramChatIds || (user.telegramChatId ? { primary: user.telegramChatId } : {});
+        if (primaryField) primaryField.value = ids.primary || '';
+        if (extra1Field) extra1Field.value = ids.secondary1 || '';
+        if (extra2Field) extra2Field.value = ids.secondary2 || '';
+        if (notificationsEnabledField) notificationsEnabledField.checked = Boolean(user.notificationsEnabled);
+        const isDriver = (currentUser.role === 'driver' || (user.role === 'driver'));
+        const driverOnlyEls = [extra1Field, extra2Field];
+        driverOnlyEls.forEach(el => { if (el) el.parentElement.style.display = isDriver ? 'block' : 'none'; });
+      }
+    } catch (err) {
+      console.error('[openProfileModal] failed to load user data:', err);
     }
   }
 
