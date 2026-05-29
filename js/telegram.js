@@ -3,58 +3,95 @@
 /**
  * Telegram helper module.
  *
- * NOTE: Bot token must stay on the server-side and never be exposed in frontend source.
- * Provide a secure backend endpoint that stores the token in a private env variable.
+ * Calls the Telegram Bot API directly from the browser.
+ * Set  window.TELEGRAM_BOT_TOKEN  in index.html before this module loads.
+ *
+ * Fallback: if  window.TELEGRAM_API_BASE_URL  is set, requests are forwarded
+ * to that backend proxy instead (legacy / server-side mode).
  */
 
-const TELEGRAM_API_ENDPOINT = window.TELEGRAM_API_BASE_URL || '/api/telegram';
+const DIRECT_API = 'https://api.telegram.org';
+const CUSTOM_PROXY = () => window.TELEGRAM_API_BASE_URL || '';
+const getBotToken = () => window.TELEGRAM_BOT_TOKEN || '';
 
+/**
+ * Send a single message to one chat ID.
+ * @param {string|number} chatId
+ * @param {string} message  — Telegram Markdown v1 formatting accepted
+ */
 export async function sendTelegramMessage(chatId, message) {
   if (!chatId) throw new Error('Telegram Chat ID diperlukan.');
   if (!message || typeof message !== 'string') throw new Error('Pesan Telegram diperlukan.');
-  if (!TELEGRAM_API_ENDPOINT) throw new Error('Endpoint Telegram belum dikonfigurasi.');
 
-  const payload = { chatId: String(chatId).trim(), message: String(message) };
+  const id   = String(chatId).trim();
+  const text = String(message);
 
-  const response = await fetch(TELEGRAM_API_ENDPOINT, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
+  const proxy = CUSTOM_PROXY();
+  let url, body;
+
+  if (proxy) {
+    // ── Backend-proxy mode ──
+    url  = proxy;
+    body = JSON.stringify({ chatId: id, message: text });
+  } else {
+    // ── Direct Telegram API mode ──
+    const token = getBotToken();
+    if (!token) {
+      throw new Error(
+        'Telegram Bot Token belum dikonfigurasi. ' +
+        'Isi window.TELEGRAM_BOT_TOKEN di <script> dalam index.html.'
+      );
+    }
+    url  = `${DIRECT_API}/bot${token}/sendMessage`;
+    body = JSON.stringify({ chat_id: id, text, parse_mode: 'Markdown' });
+  }
+
+  let response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
+  } catch (networkErr) {
+    throw new Error(`Koneksi gagal: ${networkErr.message}`);
+  }
 
   let data;
-  try { data = await response.json(); } catch (e) { data = null; }
+  try { data = await response.json(); } catch { data = null; }
 
   if (!response.ok) {
-    const errorDetail = data?.error || data?.message || 'Gagal mengirim pesan Telegram.';
-    throw new Error(errorDetail);
+    // Telegram API returns { ok: false, description: "..." } on error
+    const detail = data?.description || data?.error || data?.message || `HTTP ${response.status}`;
+    throw new Error(detail);
   }
 
   return data;
 }
 
 /**
- * Send notification to all configured chat IDs for a user.
- * - Accepts legacy `telegramChatId` (string) or new `telegramChatIds` object.
- * - Skips if `notificationsEnabled` is falsy.
- * - Returns array of results for each attempted send.
+ * Send a notification message to every configured Telegram Chat ID for a user.
+ *
+ * - Skips silently if  notificationsEnabled  is falsy.
+ * - Supports both  telegramChatIds  (object) and legacy  telegramChatId  (string).
+ * - Returns  { skipped: true }  when disabled, or an array of per-chatId results.
  */
 export async function sendNotification(user, message) {
-  if (!user) throw new Error('User harus diberikan untuk mengirim notifikasi.');
+  if (!user) throw new Error('User diperlukan untuk mengirim notifikasi.');
   if (!user.notificationsEnabled) return { skipped: true, reason: 'Notifications disabled' };
 
   const chatIds = [];
+
   if (user.telegramChatIds && typeof user.telegramChatIds === 'object') {
-    // collect unique, non-empty values
     Object.values(user.telegramChatIds).forEach(v => { if (v) chatIds.push(String(v).trim()); });
   }
-  // legacy single-field fallback
-  if (user.telegramChatId && !chatIds.length) {
+  // Legacy single-field fallback
+  if (!chatIds.length && user.telegramChatId) {
     chatIds.push(String(user.telegramChatId).trim());
   }
 
   const unique = Array.from(new Set(chatIds.filter(Boolean)));
-  if (unique.length === 0) throw new Error('Tidak ada Telegram Chat ID tersedia untuk user ini.');
+  if (unique.length === 0) throw new Error('Tidak ada Telegram Chat ID untuk user ini.');
 
   const results = [];
   for (const id of unique) {
@@ -62,7 +99,7 @@ export async function sendNotification(user, message) {
       const res = await sendTelegramMessage(id, message);
       results.push({ chatId: id, ok: true, result: res });
     } catch (err) {
-      console.error('sendNotification error for', id, err);
+      console.error('[Telegram] sendNotification error for', id, ':', err.message);
       results.push({ chatId: id, ok: false, error: String(err?.message || err) });
     }
   }
