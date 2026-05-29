@@ -78,14 +78,12 @@ body {
   flex-shrink: 0;
 }
 
-.brand-badge {
-  background: var(--red);
-  color: var(--white);
-  font-weight: 700;
-  font-size: 13px;
-  letter-spacing: 1px;
-  padding: 4px 9px;
-  border-radius: 5px;
+.brand-logo {
+  width: 46px;
+  height: 46px;
+  object-fit: contain;
+  flex-shrink: 0;
+  display: block;
 }
 
 .brand-text {
@@ -96,14 +94,9 @@ body {
 
 .brand-title {
   color: var(--white);
-  font-weight: 600;
+  font-weight: 700;
   font-size: 15px;
-}
-
-.brand-sub {
-  color: var(--gray-3);
-  font-size: 11px;
-  font-weight: 300;
+  letter-spacing: 0.2px;
 }
 
 /* Header Actions */
@@ -1322,8 +1315,8 @@ z-index: 1;
     gap: 8px;
   }
 
-  .brand-sub { display: none; }
-  .brand-title { font-size: 14px; }
+  .brand-logo { width: 36px; height: 36px; }
+  .brand-title { font-size: 13px; }
 
   .btn-today { display: none; } /* Hemat ruang di HP kecil */
 
