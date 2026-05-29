@@ -29,11 +29,13 @@ import {
   getPendingRequestCount,
   renderRequestsList,
   requestToAssignment,
+  normalizeRequest,
 } from './requests.js';
 import { initAdminUI, updateAdminButtons } from './admin.js';
 import { initNotificationUI, setNotificationData, openNotificationsModal } from './notifications.js';
 import { subscribeLogsChangeListener, getLogs, logAction } from './logs.js';
 import { getUserByUsername, getUsers } from './users.js';
+import { expandDateRange, showToast, formatDateShort } from './utils.js';
 import {
   sendRequestApprovedNotification,
   sendRequestRejectedNotification,
@@ -184,8 +186,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.appDebug.openNotificationsModal = openNotificationsModal;
 
   // Load assignments dari localStorage (cache lokal)
+  // Normalize requests on load: convert legacy { date } → { startDate, endDate }
   assignments = loadAssignments();
-  requests = loadRequests();
+  requests = loadRequests().map(normalizeRequest);
   updateAllModules();
 
   // Initialize UI modules
@@ -265,7 +268,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ── Callback: Firebase requests berubah (dari device lain) ──
   registerRequestsChangeListener((updatedRequests) => {
     console.log('Firebase requests updated from another device');
-    requests = updatedRequests;
+    requests = updatedRequests.map(normalizeRequest);
     updateAllModules();
     updatePermissionUI();
   });
@@ -294,7 +297,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ── Callback: Bidang submit request ──
   registerRequestCreateCallback((newRequest) => {
-    requests = [...requests, newRequest];
+    requests = [...requests, normalizeRequest(newRequest)];
     updateAllModules();
     saveRequests(requests);
     const currentUser = getCurrentUser();
@@ -325,13 +328,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     const admin = getCurrentUser();
     if (!request || request.status !== 'pending') return;
 
-    if (checkConflict(request.driver, request.startTime, request.endTime, request.date)) {
-      alert('Request konflik dengan jadwal driver yang sudah ada. Edit request dulu sebelum approve.');
+    // Expand the date range (works for single-day too)
+    const dates = expandDateRange(request.startDate, request.endDate);
+    if (dates.length === 0) {
+      showToast('Request tidak memiliki tanggal yang valid.');
       return;
     }
 
-    const assignment = requestToAssignment(request, admin);
-    assignments = [...assignments, assignment];
+    // ── Phase 5: Conflict detection across ALL dates ──
+    const conflictingDates = dates.filter(date =>
+      checkConflict(request.driver, request.startTime, request.endTime, date)
+    );
+
+    if (conflictingDates.length > 0) {
+      const dateList = conflictingDates
+        .map(d => formatDateShort(d))
+        .join(', ');
+      alert(
+        `Konflik jadwal terdeteksi pada:\n${dateList}\n\n` +
+        `Driver ${request.driver} sudah memiliki jadwal di waktu tersebut.\n` +
+        `Edit request sebelum approve.`
+      );
+      return;
+    }
+
+    // ── Phase 4: Create one assignment per date ──
+    const newAssignments = dates.map(date => requestToAssignment(request, admin, date));
+    assignments = [...assignments, ...newAssignments];
+
     requests = requests.map(item => item.id === requestId
       ? {
           ...item,
@@ -343,19 +367,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     );
 
     updateAllModules();
-    setCurrentDate(request.date);
-    setCurrentDateForm(request.date);
+    setCurrentDate(request.startDate);
+    setCurrentDateForm(request.startDate);
     saveAssignments(assignments);
     saveRequests(requests);
+
     const currentUser = getCurrentUser();
-    logAction({ userId: currentUser?.id, username: currentUser?.username, action: 'request_approved', targetId: requestId, metadata: { assignmentId: assignment.id } });
+    logAction({
+      userId: currentUser?.id,
+      username: currentUser?.username,
+      action: 'request_approved',
+      targetId: requestId,
+      metadata: { assignmentCount: newAssignments.length, assignmentIds: newAssignments.map(a => a.id) },
+    });
+
     renderTimeline();
     updatePermissionUI();
 
-    // Notify requester (bidang) via Telegram — non-blocking
+    if (dates.length > 1) {
+      showToast(`✅ ${dates.length} assignment berhasil dibuat`);
+    }
+
+    // Notify requester (bidang) — non-blocking
     sendRequestApprovedNotification(request, getUserByUsername);
-    // Notify driver about the new assignment — non-blocking
-    sendNewAssignmentNotificationToDriver(assignment, getUsers);
+    // Notify driver once about the approved request — non-blocking
+    if (newAssignments.length > 0) {
+      sendNewAssignmentNotificationToDriver(newAssignments[0], getUsers);
+    }
   });
 
   // ── Callback: Admin reject request ──

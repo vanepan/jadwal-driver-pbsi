@@ -1079,6 +1079,16 @@ z-index: 1;
   align-items: flex-start;
 }
 
+.request-card-info { flex: 1; min-width: 0; }
+
+.request-card-badges {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
 .request-title {
   font-size: 14px;
   font-weight: 700;
@@ -1101,6 +1111,29 @@ z-index: 1;
   border-radius: 999px;
   padding: 3px 8px;
   color: var(--dark-2);
+}
+
+.request-card[data-status="approved"] .request-status {
+  background: #E8F5E9;
+  border-color: #A5D6A7;
+  color: #2E7D32;
+}
+
+.request-card[data-status="rejected"] .request-status {
+  background: var(--red-light);
+  border-color: #EF9A9A;
+  color: var(--red);
+}
+
+.request-duration {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #E3F2FD;
+  color: #1565C0;
+  border: 1px solid #BBDEFB;
+  white-space: nowrap;
 }
 
 .request-details {

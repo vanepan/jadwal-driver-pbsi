@@ -77,6 +77,53 @@ export function formatDateLong(dateStr) {
 }
 
 /**
+ * Format tanggal pendek: YYYY-MM-DD → "29/05/2026"
+ * @param {string} dateStr - Format YYYY-MM-DD
+ * @returns {string}
+ */
+export function formatDateShort(dateStr) {
+  if (!dateStr) return '-';
+  const [y, m, d] = String(dateStr).split('-');
+  return `${d}/${m}/${y}`;
+}
+
+/**
+ * Expand a date range into an array of YYYY-MM-DD strings, inclusive.
+ * Timezone-safe: uses local Date constructor.
+ * @param {string} startDate - YYYY-MM-DD
+ * @param {string} endDate   - YYYY-MM-DD
+ * @returns {string[]}
+ *
+ * @example
+ * expandDateRange('2026-05-29', '2026-05-31')
+ * // → ['2026-05-29', '2026-05-30', '2026-05-31']
+ */
+export function expandDateRange(startDate, endDate) {
+  if (!startDate) return [];
+  const effective = endDate || startDate;
+
+  const [sy, sm, sd] = String(startDate).split('-').map(Number);
+  const [ey, em, ed] = String(effective).split('-').map(Number);
+
+  const start = new Date(sy, sm - 1, sd);
+  const end   = new Date(ey, em - 1, ed);
+
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) return [startDate];
+  if (end < start) return [startDate];
+
+  const dates = [];
+  const cur = new Date(start);
+  while (cur <= end) {
+    const yy = cur.getFullYear();
+    const mm = String(cur.getMonth() + 1).padStart(2, '0');
+    const dd = String(cur.getDate()).padStart(2, '0');
+    dates.push(`${yy}-${mm}-${dd}`);
+    cur.setDate(cur.getDate() + 1);
+  }
+  return dates;
+}
+
+/**
  * Mengembalikan label waktu berdasarkan jam
  * @param {number} hour - Jam (0-23)
  * @returns {string} - Label waktu (Dini Hari, Pagi, Siang, Sore, Malam)

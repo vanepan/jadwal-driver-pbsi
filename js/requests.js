@@ -8,7 +8,7 @@
 'use strict';
 
 import { DEFAULT_DRIVERS, VEHICLES, getDriverByName } from './drivers.js';
-import { generateId, timeToMinutes, showToast, initCustomTimeInputPair, getCombinedTimeFromPair, setTimeFieldsFromValue, normalizeTimeValue } from './utils.js';
+import { generateId, timeToMinutes, showToast, initCustomTimeInputPair, getCombinedTimeFromPair, setTimeFieldsFromValue, normalizeTimeValue, expandDateRange, formatDateShort } from './utils.js';
 import { getCurrentUser, hasPermission, isAdmin } from './auth.js';
 
 let requests = [];
@@ -19,8 +19,27 @@ let onUpdateCallback = null;
 let onApproveCallback = null;
 let onRejectCallback = null;
 
+/**
+ * Normalize a request object to the multi-day data model.
+ * Converts legacy { date } → { startDate, endDate }.
+ * Safe to call on already-normalized requests (no-op).
+ * @param {Object} r
+ * @returns {Object}
+ */
+export function normalizeRequest(r) {
+  if (!r) return r;
+  if (!r.startDate) {
+    const d = r.date || '';
+    return { ...r, startDate: d, endDate: r.endDate || d };
+  }
+  if (!r.endDate) {
+    return { ...r, endDate: r.startDate };
+  }
+  return r;
+}
+
 export function setRequests(nextRequests) {
-  requests = nextRequests;
+  requests = Array.isArray(nextRequests) ? nextRequests.map(normalizeRequest) : [];
 }
 
 export function registerRequestCreateCallback(callback) {
@@ -109,13 +128,15 @@ export function openRequestFormModal(requestId = null) {
   }
 
   if (request) {
-    document.getElementById('requestFieldDriver').value = request.driver || '';
-    document.getElementById('requestFieldVehicle').value = request.vehicle || '';
-    document.getElementById('requestFieldDate').value = request.date || '';
-    setTimeFieldsFromValue('requestFieldStartHour', 'requestFieldStartMinute', request.startTime);
-    setTimeFieldsFromValue('requestFieldEndHour', 'requestFieldEndMinute', request.endTime);
-    document.getElementById('requestFieldPurpose').value = request.purpose || '';
-    document.getElementById('requestFieldNotes').value = request.notes || '';
+    const norm = normalizeRequest(request);
+    document.getElementById('requestFieldDriver').value    = norm.driver    || '';
+    document.getElementById('requestFieldVehicle').value   = norm.vehicle   || '';
+    document.getElementById('requestFieldStartDate').value = norm.startDate || '';
+    document.getElementById('requestFieldEndDate').value   = norm.endDate   || '';
+    setTimeFieldsFromValue('requestFieldStartHour', 'requestFieldStartMinute', norm.startTime);
+    setTimeFieldsFromValue('requestFieldEndHour',   'requestFieldEndMinute',   norm.endTime);
+    document.getElementById('requestFieldPurpose').value = norm.purpose || '';
+    document.getElementById('requestFieldNotes').value   = norm.notes   || '';
   }
 
   const modal = document.getElementById('modalRequestForm');
@@ -187,21 +208,27 @@ function handleRequestSubmit(event) {
     return;
   }
 
-  const driver = document.getElementById('requestFieldDriver').value;
-  const vehicle = document.getElementById('requestFieldVehicle').value;
-  const date = document.getElementById('requestFieldDate').value;
+  const driver    = document.getElementById('requestFieldDriver').value;
+  const vehicle   = document.getElementById('requestFieldVehicle').value;
+  const startDate = document.getElementById('requestFieldStartDate').value;
+  const endDate   = document.getElementById('requestFieldEndDate').value;
   const startTime = getCombinedTimeFromPair('requestFieldStartHour', 'requestFieldStartMinute');
-  const endTime = getCombinedTimeFromPair('requestFieldEndHour', 'requestFieldEndMinute');
-  const purpose = document.getElementById('requestFieldPurpose').value.trim();
-  const notes = document.getElementById('requestFieldNotes').value.trim();
+  const endTime   = getCombinedTimeFromPair('requestFieldEndHour', 'requestFieldEndMinute');
+  const purpose   = document.getElementById('requestFieldPurpose').value.trim();
+  const notes     = document.getElementById('requestFieldNotes').value.trim();
 
-  if (!driver || !vehicle || !date || !startTime || !endTime || !purpose) {
+  if (!driver || !vehicle || !startDate || !endDate || !startTime || !endTime || !purpose) {
     showToast('Lengkapi semua field request wajib (*)');
     return;
   }
 
+  if (endDate < startDate) {
+    showToast('Tanggal selesai tidak boleh sebelum tanggal mulai');
+    return;
+  }
+
   if (!/^\d{2}:\d{2}$/.test(startTime) || !/^\d{2}:\d{2}$/.test(endTime)) {
-    showToast('Format waktu request tidak valid');
+    showToast('Format waktu tidak valid');
     return;
   }
 
@@ -218,7 +245,8 @@ function handleRequestSubmit(event) {
       ...existing,
       driver,
       vehicle,
-      date,
+      startDate,
+      endDate,
       startTime,
       endTime,
       purpose,
@@ -234,11 +262,13 @@ function handleRequestSubmit(event) {
       return;
     }
 
+    const totalDays = expandDateRange(startDate, endDate).length;
     const newRequest = {
       id: generateId(),
       requesterId: user.id,
       requesterName: user.name,
-      date,
+      startDate,
+      endDate,
       startTime,
       endTime,
       driver,
@@ -247,12 +277,13 @@ function handleRequestSubmit(event) {
       notes,
       status: 'pending',
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       approvedBy: '',
       approvedAt: '',
     };
 
     if (onCreateCallback) onCreateCallback(newRequest);
-    showToast('Request jadwal terkirim');
+    showToast(totalDays > 1 ? `Request ${totalDays} hari terkirim` : 'Request jadwal terkirim');
   }
 
   closeRequestFormModal();
@@ -279,31 +310,49 @@ function handleRequestActionClick(event) {
 }
 
 function createRequestCardHTML(request) {
-  const vehicleColor = VEHICLES[request.vehicle] || '#555';
-  const actions = request.status === 'pending' && isAdmin()
+  const r = normalizeRequest(request);
+  const vehicleColor = VEHICLES[r.vehicle] || '#555';
+
+  // Date range display
+  const isSameDay = r.startDate === r.endDate;
+  const dateDisplay = isSameDay
+    ? formatDateShort(r.startDate)
+    : `${formatDateShort(r.startDate)} → ${formatDateShort(r.endDate)}`;
+  const totalDays = expandDateRange(r.startDate, r.endDate).length;
+  const durationChip = totalDays > 1
+    ? `<span class="request-duration">${totalDays} hari</span>`
+    : '';
+
+  const statusLabels = { pending: 'Menunggu', approved: 'Disetujui', rejected: 'Ditolak' };
+  const statusLabel = statusLabels[r.status] || r.status;
+
+  const actions = r.status === 'pending' && isAdmin()
     ? `
       <div class="request-card-actions">
-        <button class="btn-secondary" data-request-action="edit" data-request-id="${request.id}">Edit</button>
-        <button class="btn-secondary" data-request-action="reject" data-request-id="${request.id}">Reject</button>
-        <button class="btn-primary" data-request-action="approve" data-request-id="${request.id}">Approve</button>
+        <button class="btn-secondary" data-request-action="edit"    data-request-id="${r.id}">Edit</button>
+        <button class="btn-secondary" data-request-action="reject"  data-request-id="${r.id}">Tolak</button>
+        <button class="btn-primary"   data-request-action="approve" data-request-id="${r.id}">Setujui${totalDays > 1 ? ` (${totalDays} hari)` : ''}</button>
       </div>
     `
     : '';
 
   return `
-    <div class="request-card" data-status="${request.status}">
+    <div class="request-card" data-status="${r.status}">
       <div class="request-card-header">
-        <div>
-          <div class="request-title">${escapeHTML(request.purpose)}</div>
-          <div class="request-meta">${escapeHTML(request.requesterName)} - ${escapeHTML(request.date)} - ${escapeHTML(request.startTime)}-${escapeHTML(request.endTime)}</div>
+        <div class="request-card-info">
+          <div class="request-title">${escapeHTML(r.purpose)}</div>
+          <div class="request-meta">${escapeHTML(r.requesterName)} · ${escapeHTML(dateDisplay)} · ${escapeHTML(r.startTime)}–${escapeHTML(r.endTime)}</div>
         </div>
-        <span class="request-status">${escapeHTML(request.status)}</span>
+        <div class="request-card-badges">
+          <span class="request-status">${escapeHTML(statusLabel)}</span>
+          ${durationChip}
+        </div>
       </div>
       <div class="request-details">
-        <span class="vehicle-badge" style="background:${vehicleColor}">${escapeHTML(request.vehicle)}</span>
-        <span>${escapeHTML(request.driver)}</span>
+        <span class="vehicle-badge" style="background:${vehicleColor}">${escapeHTML(r.vehicle)}</span>
+        <span>${escapeHTML(r.driver)}</span>
       </div>
-      ${request.notes ? `<div class="request-notes">${escapeHTML(request.notes)}</div>` : ''}
+      ${r.notes ? `<div class="request-notes">${escapeHTML(r.notes)}</div>` : ''}
       ${actions}
     </div>
   `;
@@ -338,23 +387,31 @@ function escapeHTML(value) {
   return div.innerHTML;
 }
 
-export function requestToAssignment(request, approvedByUser) {
-  const driver = getDriverByName(request.driver);
+/**
+ * Convert a request into an assignment record.
+ * @param {Object}      request         - Normalized request object
+ * @param {Object|null} approvedByUser  - Admin user who approved
+ * @param {string|null} dateOverride    - Specific date for multi-day expansion (YYYY-MM-DD)
+ */
+export function requestToAssignment(request, approvedByUser, dateOverride = null) {
+  const r = normalizeRequest(request);
+  const driver = getDriverByName(r.driver);
+  const assignmentDate = dateOverride || r.startDate || r.date;
 
   return {
     id: generateId(),
-    driver: request.driver,
+    driver: r.driver,
     phone: driver ? driver.phone : '',
-    vehicle: request.vehicle,
-    date: request.date,
-    startTime: request.startTime,
-    endTime: request.endTime,
-    destination: request.purpose,
-    purpose: request.purpose,
-    pic: request.requesterName,
+    vehicle: r.vehicle,
+    date: assignmentDate,
+    startTime: r.startTime,
+    endTime: r.endTime,
+    destination: r.purpose,
+    purpose: r.purpose,
+    pic: r.requesterName,
     pax: 1,
-    notes: request.notes,
-    requestId: request.id,
+    notes: r.notes,
+    requestId: r.id,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     approvedBy: approvedByUser ? approvedByUser.name : '',

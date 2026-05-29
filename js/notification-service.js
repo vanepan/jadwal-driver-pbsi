@@ -28,6 +28,15 @@ function formatTanggal(dateStr) {
   }
 }
 
+/* Build "Senin, 29 Mei 2026" or "Senin, 29 – Rabu, 31 Mei 2026" for messages */
+function buildDateRangeStr(request) {
+  const start = request.startDate || request.date || '';
+  const end   = request.endDate   || start;
+  if (!start) return '-';
+  if (start === end) return formatTanggal(start);
+  return `${formatTanggal(start)} → ${formatTanggal(end)}`;
+}
+
 function getTodayStr() {
   const n = new Date();
   return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
@@ -93,11 +102,12 @@ export const NOTIFICATION_TYPES = {
  * Dikirim ke Admin/Sarpras saat ada request baru.
  */
 function buildRequestPendingMessage(request) {
+  const dateStr = buildDateRangeStr(request);
   return (
     '📋 *Request Jadwal Baru*\n\n' +
     `*Dari:* ${request.requesterName || 'Unknown'}\n` +
     `*Keperluan:* ${request.purpose || '-'}\n` +
-    `*Tanggal:* ${formatTanggal(request.date)}\n` +
+    `*Tanggal:* ${dateStr}\n` +
     `*Waktu:* ${request.startTime || '-'} – ${request.endTime || '-'}\n` +
     `*Kendaraan:* ${request.vehicle || '-'}\n` +
     (request.notes ? `*Catatan:* ${request.notes}\n` : '') +
@@ -105,15 +115,12 @@ function buildRequestPendingMessage(request) {
   );
 }
 
-/**
- * Build Telegram message untuk notifikasi request approved.
- * Dikirim ke Requester/Bidang saat request di-approve.
- */
 function buildRequestApprovedMessage(request, driver) {
+  const dateStr = buildDateRangeStr(request);
   return (
     '✅ *Request Jadwal Disetujui*\n\n' +
     `*Keperluan:* ${request.purpose || '-'}\n` +
-    `*Tanggal:* ${formatTanggal(request.date)}\n` +
+    `*Tanggal:* ${dateStr}\n` +
     `*Waktu:* ${request.startTime || '-'} – ${request.endTime || '-'}\n` +
     `*Driver:* ${driver || request.driver || 'TBD'}\n` +
     `*Kendaraan:* ${request.vehicle || '-'}\n` +
@@ -122,15 +129,12 @@ function buildRequestApprovedMessage(request, driver) {
   );
 }
 
-/**
- * Build Telegram message untuk notifikasi request rejected.
- * Dikirim ke Requester/Bidang saat request di-reject.
- */
 function buildRequestRejectedMessage(request) {
+  const dateStr = buildDateRangeStr(request);
   return (
     '❌ *Request Jadwal Ditolak*\n\n' +
     `*Keperluan:* ${request.purpose || '-'}\n` +
-    `*Tanggal:* ${formatTanggal(request.date)}\n` +
+    `*Tanggal:* ${dateStr}\n` +
     `*Waktu:* ${request.startTime || '-'} – ${request.endTime || '-'}\n\n` +
     '_Silakan buat request baru atau hubungi admin._'
   );
