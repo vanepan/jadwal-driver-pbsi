@@ -1394,46 +1394,157 @@ z-index: 1;
    ============================================================ */
 @media (max-width: 600px) {
 
-  /* Pada mobile, header lebih compact */
+  /* ============================================================
+     HEADER — 2-row compact layout with visual hierarchy
+     ============================================================ */
   .header-inner {
-    padding: 8px 12px;
-    gap: 8px;
+    flex-wrap: wrap;
+    padding: 8px 12px 7px;
+    gap: 0;
+    row-gap: 7px;
+    align-items: center;
   }
 
-  .brand-logo { width: 36px; height: 36px; }
+  /* Row 1: brand fills full width */
+  .header-brand {
+    flex: 0 0 100%;
+  }
+
+  .brand-logo  { width: 32px; height: 32px; }
   .brand-title { font-size: 13px; }
 
-  .btn-today { display: none; } /* Hemat ruang di HP kecil */
+  /* Row 2: horizontally scrollable action bar, no wrapping */
+  .header-actions {
+    flex: 0 0 100%;
+    margin-left: 0;
+    gap: 5px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 1px;
+    row-gap: 0;
+  }
+  .header-actions::-webkit-scrollbar { display: none; }
 
-  .role-badge,
-  .btn-logout,
-  .btn-requests {
+  /* ── Priority ordering — most-used visible without scrolling ── */
+  #btnAddAssignment { order: 1; flex-shrink: 0; }
+  .date-nav          { order: 2; flex-shrink: 0; }
+  #btnNotifications  { order: 3; flex-shrink: 0; }
+  #btnRequests       { order: 4; flex-shrink: 0; }
+  .role-badge        { order: 5; flex-shrink: 0; }
+  #btnProfile        { order: 6; flex-shrink: 0; }
+  #btnUserMgmt       { order: 7; flex-shrink: 0; }
+  #btnLogout         { order: 8; flex-shrink: 0; }
+
+  /* ── P1: Primary action — full weight ── */
+  #btnAddAssignment {
+    padding: 7px 13px;
+    font-size: 12px;
+    font-weight: 700;
+    gap: 4px;
+  }
+  .btn-plus { font-size: 15px; }
+
+  /* ── P2: Operational — medium weight ── */
+  #btnNotifications {
+    min-width: unset;
+    min-height: unset;
+    padding: 5px 9px;
     font-size: 11px;
+  }
+  #btnRequests {
+    padding: 5px 9px;
+    font-size: 11px;
+  }
+
+  /* ── P3: Identity — compact pill ── */
+  .role-badge {
+    padding: 4px 8px;
+    font-size: 10px;
+    letter-spacing: 0;
+  }
+  #btnProfile {
+    min-width: unset;
+    min-height: unset;
     padding: 5px 8px;
+    font-size: 11px;
   }
 
-  /* Tombol tambah lebih ringkas */
-  .btn-primary { padding: 7px 11px; font-size: 12px; }
+  /* ── P4: Tertiary — de-emphasised, accessible by scrolling ── */
+  #btnUserMgmt {
+    padding: 4px 7px;
+    font-size: 10px;
+    opacity: 0.75;
+  }
+  .btn-logout {
+    padding: 4px 7px;
+    font-size: 10px;
+    opacity: 0.75;
+  }
 
-  /* Timeline: row lebih tinggi agar blok bisa diklik */
+  /* Date nav compact */
+  .date-nav   { padding: 3px 5px; }
+  .date-input { min-width: 82px; font-size: 11px; }
+  .btn-today  { display: none; }
+
+  /* ============================================================
+     MAIN CONTENT
+     ============================================================ */
+  .main-content        { padding: 10px 8px 32px; }
+  .timeline-date-label { font-size: 13px; margin-bottom: 8px; }
+
+  /* ============================================================
+     TIMELINE — denser for more on-screen information
+     ============================================================ */
   :root {
-    --row-height: 52px;
-    --driver-col: 80px;
-    --hour-width: 64px;
-    --header-height: 30px;
+    --row-height:    44px;
+    --driver-col:    72px;
+    --hour-width:    58px;
+    --header-height: 26px;
   }
 
-  .driver-name { font-size: 12px; }
-  .driver-phone { display: none; } /* Hemat ruang, nomor HP ada di detail */
+  .driver-name  { font-size: 11px; }
+  .driver-phone { display: none; }
 
-  /* Form: 1 kolom di mobile */
-  .form-grid { grid-template-columns: 1fr; }
-  .form-full { grid-column: 1; }
+  .assignment-block {
+    top: 4px;
+    height: calc(var(--row-height) - 8px);
+  }
+  .block-purpose { font-size: 10px; }
+  .block-time    { font-size: 9px; }
 
-  /* Modal lebih compact */
+  /* ============================================================
+     FORMS — iOS Safari zoom prevention + tighter density
+     ============================================================ */
+
+  /* 16px minimum prevents iOS Safari auto-zoom on input focus */
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    font-size: 16px;
+    padding: 9px 10px;
+  }
+
+  .time-pair-group .time-pair input {
+    font-size: 16px;
+    padding: 9px 6px;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .form-full  { grid-column: 1; }
+  .form-group { gap: 3px; }
+  .form-group label { font-size: 11px; }
+
+  /* ============================================================
+     MODALS — bottom sheet, safe-area aware
+     ============================================================ */
   .modal-box {
     max-height: 95vh;
-    border-radius: 12px 12px 0 0;
+    border-radius: 16px 16px 0 0;
     position: fixed;
     bottom: 0;
     left: 0;
@@ -1449,33 +1560,50 @@ z-index: 1;
     to   { transform: translateY(0); }
   }
 
-  /* Padding modal lebih kecil */
   .modal-header { padding: 14px 16px 10px; }
-  .modal-body { padding: 12px 16px 24px; }
+  .modal-body {
+    padding: 10px 14px;
+    /* Padding bottom covers iPhone home indicator */
+    padding-bottom: max(20px, env(safe-area-inset-bottom, 20px));
+  }
 
-  /* Tombol aksi form: full width di mobile */
-  .form-actions { flex-direction: column-reverse; }
+  /* Form action buttons: full-width, primary on top */
+  .form-actions {
+    flex-direction: column-reverse;
+    margin-top: 14px;
+  }
   .form-actions .btn-primary,
-  .form-actions .btn-secondary { width: 100%; text-align: center; justify-content: center; }
+  .form-actions .btn-secondary {
+    width: 100%;
+    text-align: center;
+    justify-content: center;
+  }
 
   .detail-actions { flex-wrap: wrap; }
   .detail-actions button { flex: 1; text-align: center; }
 
-  .request-card-header {
-    flex-direction: column;
-    gap: 6px;
-  }
+  /* ============================================================
+     MULTI-DAY SECTION — compact
+     ============================================================ */
+  .multi-day-section      { padding-top: 0; padding-bottom: 0; }
+  .multi-day-checkbox-text { font-size: 13px; }
+  .multi-day-hint          { font-size: 10px; margin-top: 1px; }
 
-  .request-card-actions button {
-    flex: 1;
-  }
+  /* ============================================================
+     REQUEST CARDS — compact
+     ============================================================ */
+  .request-card        { padding: 10px 12px; }
+  .request-title       { font-size: 13px; }
+  .request-card-header { flex-direction: column; gap: 5px; }
+  .request-card-actions { margin-top: 8px; }
+  .request-card-actions button { flex: 1; }
 
-  /* Timeline date label */
-  .timeline-date-label { font-size: 13px; }
-
-  /* Legend lebih kecil */
-  .legend { padding: 8px 10px; gap: 6px; }
-  .legend-item { font-size: 11px; }
+  /* ============================================================
+     LEGEND — compact
+     ============================================================ */
+  .legend       { padding: 7px 10px; gap: 5px; margin-top: 8px; }
+  .legend-item  { font-size: 10px; padding: 2px 6px 2px 4px; }
+  .legend-title { font-size: 10px; }
 }
 
 /* ============================================================
