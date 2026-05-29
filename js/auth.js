@@ -30,6 +30,7 @@ const PERMISSIONS = {
   edit: ['admin'],
   delete: ['admin'],
   manage_users: ['admin'],
+  complete: ['admin', 'driver'],
 };
 
 let authChangeCallback = null;

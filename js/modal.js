@@ -7,7 +7,7 @@
 
 'use strict';
 
-import { formatDateLong, getTimePeriod, parseLocalDate, showToast } from './utils.js';
+import { formatDateLong, formatDateTime, getTimePeriod, parseLocalDate, showToast } from './utils.js';
 import { VEHICLES } from './drivers.js';
 import { hasPermission } from './auth.js';
 
@@ -16,6 +16,7 @@ let viewingId = null; // ID assignment yang sedang dilihat
 let assignments = [];
 let onEditCallback = null;
 let onDeleteCallback = null;
+let onCompleteCallback = null;
 
 /**
  * Register callback untuk event Edit
@@ -31,6 +32,14 @@ export function registerEditCallback(callback) {
  */
 export function registerDeleteCallback(callback) {
   onDeleteCallback = callback;
+}
+
+/**
+ * Register callback untuk event tandai Selesai
+ * @param {Function} callback - callback(assignmentId)
+ */
+export function registerCompleteCallback(callback) {
+  onCompleteCallback = callback;
 }
 
 /**
@@ -90,6 +99,28 @@ export function initModalHandlers() {
         if (onDeleteCallback) {
           onDeleteCallback(viewingId);
         }
+        closeDetailModal();
+      }
+    });
+  }
+
+  // Tombol Selesai di detail modal
+  const btnComplete = document.getElementById('btnCompleteAssignment');
+  if (btnComplete) {
+    btnComplete.addEventListener('click', () => {
+      if (!hasPermission('complete')) {
+        showToast('Hanya Admin atau Driver yang bisa menandai selesai');
+        return;
+      }
+
+      const a = assignments.find(x => x.id === viewingId);
+      if (a && (a.status ?? 'aktif') === 'selesai') {
+        showToast('Penugasan ini sudah selesai');
+        return;
+      }
+
+      if (confirm('Apakah penugasan ini sudah selesai?')) {
+        if (onCompleteCallback) onCompleteCallback(viewingId);
         closeDetailModal();
       }
     });
@@ -167,6 +198,23 @@ export function openDetailModal(id) {
         <span class="detail-label">Catatan</span>
         <span class="detail-value">${a.notes}</span>
       </div>` : ''}
+      <div class="detail-row">
+        <span class="detail-label">Status</span>
+        <span class="detail-value">
+          ${(a.status ?? 'aktif') === 'selesai'
+            ? '<span class="badge-selesai">Selesai</span>'
+            : '<span class="badge-aktif">Aktif</span>'}
+        </span>
+      </div>
+      ${(a.status ?? 'aktif') === 'selesai' ? `
+      <div class="detail-row">
+        <span class="detail-label">Selesai oleh</span>
+        <span class="detail-value">${a.completedBy || '-'}</span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Waktu selesai</span>
+        <span class="detail-value">${formatDateTime(a.completedAt)}</span>
+      </div>` : ''}
     `;
   }
 
@@ -203,11 +251,12 @@ export function closeDetailModal() {
 }
 
 /**
- * Disable tombol edit/hapus untuk role yang tidak punya akses.
+ * Update tombol edit/hapus/selesai sesuai role dan status assignment.
  */
 export function updateDetailActionButtons() {
-  const btnEdit = document.getElementById('btnEditAssignment');
-  const btnDelete = document.getElementById('btnDeleteAssignment');
+  const btnEdit     = document.getElementById('btnEditAssignment');
+  const btnDelete   = document.getElementById('btnDeleteAssignment');
+  const btnComplete = document.getElementById('btnCompleteAssignment');
 
   if (btnEdit) {
     btnEdit.disabled = !hasPermission('edit');
@@ -217,6 +266,20 @@ export function updateDetailActionButtons() {
   if (btnDelete) {
     btnDelete.disabled = !hasPermission('delete');
     btnDelete.title = hasPermission('delete') ? 'Hapus jadwal' : 'Hanya admin yang bisa hapus';
+  }
+
+  if (btnComplete) {
+    const canComplete = hasPermission('complete');
+    const a = assignments.find(x => x.id === viewingId);
+    const isAlreadyDone = a && (a.status ?? 'aktif') === 'selesai';
+
+    btnComplete.style.display = canComplete ? '' : 'none';
+    btnComplete.disabled = isAlreadyDone;
+    btnComplete.title = isAlreadyDone
+      ? 'Penugasan ini sudah selesai'
+      : canComplete
+        ? 'Tandai penugasan sebagai selesai'
+        : 'Hanya Admin atau Driver yang bisa menandai selesai';
   }
 }
 

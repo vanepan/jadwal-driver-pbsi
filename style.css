@@ -494,6 +494,30 @@ z-index: 1;
   z-index: 3;
 }
 
+/* Assignment selesai — tampak redup */
+.assignment-block.is-completed {
+  opacity: 0.5;
+  filter: grayscale(35%);
+}
+
+.assignment-block.is-completed:hover {
+  opacity: 0.65;
+  filter: grayscale(20%) brightness(1.05);
+}
+
+/* Badge SELESAI di dalam blok timeline */
+.block-status-badge {
+  display: inline-block;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  background: rgba(0,0,0,0.22);
+  border-radius: 2px;
+  padding: 1px 4px;
+  line-height: 1.4;
+}
+
 /* Teks di dalam blok */
 .block-purpose {
   font-weight: 600;
@@ -867,6 +891,54 @@ z-index: 1;
   min-height: 56px;
 }
 
+/* Multi-day toggle */
+.multi-day-section {
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+
+.multi-day-checkbox-label {
+  display: flex;
+  align-items: flex-start;
+  align-self: flex-start; /* prevent parent flex-stretch from widening the label */
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.multi-day-checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  accent-color: var(--red);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.multi-day-checkbox-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.multi-day-hint {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+/* End-date field — fade in/out, collapsed by default */
+.end-date-wrapper {
+  display: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.end-date-wrapper.visible {
+  opacity: 1;
+}
+
 /* Conflict Warning */
 .conflict-warning {
   background: var(--red-light);
@@ -878,6 +950,13 @@ z-index: 1;
   font-weight: 500;
   margin-top: 10px;
   animation: shake 0.3s ease;
+}
+
+.conflict-warning-dates {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
 }
 
 .login-error {
@@ -951,6 +1030,25 @@ z-index: 1;
   transition: background 0.15s;
 }
 .btn-danger:hover { background: var(--red-mid); }
+.btn-danger:disabled { opacity: 0.45; cursor: default; }
+
+.btn-success {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--white);
+  background: #43a047;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 8px 14px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 0.15s;
+}
+.btn-success:hover:not(:disabled) { background: #388e3c; }
+.btn-success:disabled { opacity: 0.45; cursor: default; }
 
 /* ── Modal Detail ── */
 #detailContent {
@@ -984,6 +1082,29 @@ z-index: 1;
   color: var(--dark);
   font-weight: 500;
   word-break: break-word;
+}
+
+/* Badge status assignment (Aktif / Selesai) */
+.badge-aktif {
+  display: inline-block;
+  background: #e8f5e9;
+  color: #2e7d32;
+  border: 1px solid #a5d6a7;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.badge-selesai {
+  display: inline-block;
+  background: #ede7f6;
+  color: #6a1b9a;
+  border: 1px solid #ce93d8;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 /* Badge kendaraan di detail */

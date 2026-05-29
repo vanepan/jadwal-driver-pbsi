@@ -7,7 +7,7 @@
 
 'use strict';
 
-import { generateId, timeToMinutes, minutesToTime, showToast, initCustomTimeInputPair, getCombinedTimeFromPair, setTimeFieldsFromValue, normalizeTimeValue } from './utils.js';
+import { generateId, timeToMinutes, minutesToTime, showToast, initCustomTimeInputPair, getCombinedTimeFromPair, setTimeFieldsFromValue, normalizeTimeValue, expandDateRange, formatDateShort, addHoursToTime } from './utils.js';
 import { getDriverByName } from './drivers.js';
 import { hasPermission } from './auth.js';
 
@@ -74,12 +74,45 @@ export function initFormHandlers() {
   // Custom time input behavior untuk mobile
   initTimeInputs();
 
+  // Multi-day checkbox
+  const multiDayCheckbox = document.getElementById('assignmentMultiDay');
+  if (multiDayCheckbox) {
+    multiDayCheckbox.addEventListener('change', syncAssignmentMultiDayUI);
+  }
+
   // Click di luar modal untuk tutup
   const modalForm = document.getElementById('modalForm');
   if (modalForm) {
     modalForm.addEventListener('click', (e) => {
       if (e.target === modalForm) closeFormModal();
     });
+  }
+}
+
+function syncAssignmentMultiDayUI() {
+  const checked = document.getElementById('assignmentMultiDay')?.checked;
+  const endDateGroup = document.getElementById('assignmentEndDateGroup');
+  const fieldDateLabel = document.getElementById('fieldDateLabel');
+  const endDateInput = document.getElementById('fieldEndDate');
+  if (!endDateGroup) return;
+
+  if (checked) {
+    endDateGroup.style.display = 'flex';
+    requestAnimationFrame(() => endDateGroup.classList.add('visible'));
+    if (endDateInput) endDateInput.required = true;
+    if (fieldDateLabel) fieldDateLabel.textContent = 'Tanggal Mulai *';
+  } else {
+    endDateGroup.classList.remove('visible');
+    if (endDateInput) {
+      endDateInput.required = false;
+      endDateInput.value = '';
+    }
+    if (fieldDateLabel) fieldDateLabel.textContent = 'Tanggal *';
+    endDateGroup.addEventListener('transitionend', () => {
+      if (!document.getElementById('assignmentMultiDay')?.checked) {
+        endDateGroup.style.display = 'none';
+      }
+    }, { once: true });
   }
 }
 
@@ -104,6 +137,16 @@ export function openFormModal(asgnId = null) {
 
   const warning = document.getElementById('conflictWarning');
   if (warning) warning.style.display = 'none';
+
+  // Always open in single-day mode (edit is always single-date) — reset without animation
+  const multiDayCheckbox = document.getElementById('assignmentMultiDay');
+  if (multiDayCheckbox) multiDayCheckbox.checked = false;
+  const endDateGroupReset = document.getElementById('assignmentEndDateGroup');
+  const fieldDateLabelReset = document.getElementById('fieldDateLabel');
+  const fieldEndDateReset = document.getElementById('fieldEndDate');
+  if (endDateGroupReset) { endDateGroupReset.classList.remove('visible'); endDateGroupReset.style.display = 'none'; }
+  if (fieldDateLabelReset) fieldDateLabelReset.textContent = 'Tanggal *';
+  if (fieldEndDateReset) { fieldEndDateReset.required = false; fieldEndDateReset.value = ''; }
 
   const title = document.getElementById('modalFormTitle');
   if (title) {
@@ -168,7 +211,7 @@ function handleFormSubmit(e) {
   const driver      = document.getElementById('fieldDriver').value;
   const phone       = document.getElementById('fieldPhone').value;
   const vehicle     = document.getElementById('fieldVehicle').value;
-  const date        = document.getElementById('fieldDate').value;
+  const startDate   = document.getElementById('fieldDate').value;
   const startTime   = getCombinedTimeFromPair('fieldStartHour', 'fieldStartMinute');
   const endTime     = getCombinedTimeFromPair('fieldEndHour', 'fieldEndMinute');
   const destination = document.getElementById('fieldDestination').value.trim();
@@ -176,9 +219,25 @@ function handleFormSubmit(e) {
   const pic         = document.getElementById('fieldPIC').value.trim();
   const pax         = parseInt(document.getElementById('fieldPax').value) || 1;
   const notes       = document.getElementById('fieldNotes').value.trim();
+  const isMultiDay  = !editingId && (document.getElementById('assignmentMultiDay')?.checked ?? false);
+
+  // Determine date range
+  let datesToCreate = [startDate];
+  if (isMultiDay) {
+    const endDate = document.getElementById('fieldEndDate').value;
+    if (!endDate) {
+      showToast('⚠️ Tanggal selesai wajib diisi untuk multi-day');
+      return;
+    }
+    if (endDate < startDate) {
+      showToast('⚠️ Tanggal selesai tidak boleh sebelum tanggal mulai');
+      return;
+    }
+    datesToCreate = expandDateRange(startDate, endDate);
+  }
 
   // Validasi dasar
-  if (!driver || !vehicle || !date || !startTime || !endTime || !destination || !purpose) {
+  if (!driver || !vehicle || !startDate || !startTime || !endTime || !destination || !purpose) {
     showToast('⚠️ Lengkapi semua field wajib (*)');
     return;
   }
@@ -193,58 +252,67 @@ function handleFormSubmit(e) {
     return;
   }
 
-  // Cek konflik jadwal
-  const hasConflict = checkConflict(driver, startTime, endTime, date, editingId);
-  const warningEl   = document.getElementById('conflictWarning');
+  // Cek konflik untuk semua tanggal dalam rentang
+  const conflictDates = datesToCreate.filter(d => checkConflict(driver, startTime, endTime, d, editingId));
+  const warningEl     = document.getElementById('conflictWarning');
+  const warningDatesEl = document.getElementById('conflictWarningDates');
 
-  if (hasConflict) {
+  if (conflictDates.length > 0) {
     if (warningEl) warningEl.style.display = 'block';
-    return; // Hentikan, jangan simpan
+    if (warningDatesEl) {
+      warningDatesEl.textContent = conflictDates.length > 1
+        ? `Tanggal konflik: ${conflictDates.map(d => formatDateShort(d)).join(', ')}`
+        : '';
+    }
+    return;
   } else {
     if (warningEl) warningEl.style.display = 'none';
+    if (warningDatesEl) warningDatesEl.textContent = '';
   }
 
-  let isNew = false;
-
   if (editingId) {
-    // Update assignment yang ada
+    // Update assignment yang ada (selalu single-date)
     const idx = assignments.findIndex(a => a.id === editingId);
     if (idx !== -1) {
       assignments[idx] = {
         id: editingId,
-        driver, phone, vehicle, date,
+        driver, phone, vehicle, date: startDate,
         startTime, endTime, destination, purpose, pic, pax, notes,
         createdAt: assignments[idx].createdAt,
         updatedAt: new Date().toISOString(),
       };
     }
     showToast('✅ Jadwal berhasil diperbarui');
-  } else {
-    // Tambah assignment baru
-    const newAssignment = {
+    if (onSaveCallback) onSaveCallback(assignments, false, startDate, null);
+  } else if (datesToCreate.length > 1) {
+    // Multi-day: buat satu assignment per tanggal
+    const newAssignments = datesToCreate.map(date => ({
       id: generateId(),
       driver, phone, vehicle, date,
       startTime, endTime, destination, purpose, pic, pax, notes,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+    }));
+    assignments.push(...newAssignments);
+    showToast(`✅ ${datesToCreate.length} jadwal berhasil ditambahkan`);
+    if (onSaveCallback) onSaveCallback(assignments, true, startDate, null);
+  } else {
+    // Single-day baru
+    const newAssignment = {
+      id: generateId(),
+      driver, phone, vehicle, date: startDate,
+      startTime, endTime, destination, purpose, pic, pax, notes,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
     assignments.push(newAssignment);
-    isNew = true;
     showToast('✅ Jadwal berhasil ditambahkan');
+    if (onSaveCallback) onSaveCallback(assignments, true, startDate, newAssignment);
   }
 
-  // Call save callback — 4th arg is the new assignment (null on edit)
-  if (onSaveCallback) {
-    onSaveCallback(assignments, isNew, date, isNew ? newAssignment : null);
-  }
-
-  // Reset edit mode
+  // Reset edit mode dan update current date
   editingId = null;
-
-  // Update current date jika add assignment baru
-  if (isNew && currentDate !== date) {
-    currentDate = date;
-  }
+  if (currentDate !== startDate) currentDate = startDate;
 
   closeFormModal();
 }
@@ -293,6 +361,24 @@ export function deleteAssignment(id) {
 function initTimeInputs() {
   initCustomTimeInputPair('fieldStartHour', 'fieldStartMinute');
   initCustomTimeInputPair('fieldEndHour', 'fieldEndMinute');
+
+  // Auto-fill Jam Selesai = Jam Mulai + 2h jika Jam Selesai masih kosong
+  const startMin = document.getElementById('fieldStartMinute');
+  if (startMin) {
+    startMin.addEventListener('blur', () => {
+      autoFillEndTime('fieldStartHour', 'fieldStartMinute', 'fieldEndHour', 'fieldEndMinute');
+    });
+  }
+}
+
+function autoFillEndTime(startHourId, startMinId, endHourId, endMinId) {
+  const startTime = getCombinedTimeFromPair(startHourId, startMinId);
+  if (!startTime) return;
+  const endHourEl = document.getElementById(endHourId);
+  const endMinEl  = document.getElementById(endMinId);
+  if (!endHourEl || !endMinEl) return;
+  if (endHourEl.value || endMinEl.value) return; // sudah diisi manual
+  setTimeFieldsFromValue(endHourId, endMinId, addHoursToTime(startTime, 2));
 }
 
 /**

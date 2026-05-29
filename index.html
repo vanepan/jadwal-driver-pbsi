@@ -132,14 +132,24 @@
               </select>
             </div>
 
-            <div class="form-group">
-              <label for="requestFieldStartDate">Tanggal Mulai *</label>
-              <input type="date" id="requestFieldStartDate" required />
+            <div class="form-group form-full multi-day-section">
+              <label class="multi-day-checkbox-label">
+                <input type="checkbox" id="requestMultiDay" />
+                <span>
+                  <span class="multi-day-checkbox-text">Jadwal Multi Hari</span>
+                  <span class="multi-day-hint">Buat request untuk beberapa hari berturut-turut</span>
+                </span>
+              </label>
             </div>
 
             <div class="form-group">
+              <label for="requestFieldStartDate" id="requestStartDateLabel">Tanggal *</label>
+              <input type="date" id="requestFieldStartDate" required />
+            </div>
+
+            <div class="form-group end-date-wrapper" id="requestEndDateGroup">
               <label for="requestFieldEndDate">Tanggal Selesai *</label>
-              <input type="date" id="requestFieldEndDate" required />
+              <input type="date" id="requestFieldEndDate" />
             </div>
 
             <div class="form-group time-pair-group">
@@ -422,10 +432,27 @@
               </select>
             </div>
 
-            <!-- Tanggal -->
+            <!-- Multi-day toggle -->
+            <div class="form-group form-full multi-day-section">
+              <label class="multi-day-checkbox-label">
+                <input type="checkbox" id="assignmentMultiDay" />
+                <span>
+                  <span class="multi-day-checkbox-text">Jadwal Multi Hari</span>
+                  <span class="multi-day-hint">Buat jadwal untuk beberapa hari berturut-turut</span>
+                </span>
+              </label>
+            </div>
+
+            <!-- Tanggal (single day / start date) -->
             <div class="form-group">
-              <label for="fieldDate">Tanggal *</label>
+              <label for="fieldDate" id="fieldDateLabel">Tanggal *</label>
               <input type="date" id="fieldDate" required />
+            </div>
+
+            <!-- Tanggal Selesai (hidden by default, multi-day only) -->
+            <div class="form-group end-date-wrapper" id="assignmentEndDateGroup">
+              <label for="fieldEndDate">Tanggal Selesai *</label>
+              <input type="date" id="fieldEndDate" />
             </div>
 
             <!-- Jam Mulai -->
@@ -483,6 +510,7 @@
           <!-- Pesan error konflik jadwal -->
           <div class="conflict-warning" id="conflictWarning" style="display:none;">
             ⚠️ Konflik jadwal! Driver sudah memiliki assignment di jam yang sama.
+            <div class="conflict-warning-dates" id="conflictWarningDates"></div>
           </div>
 
           <div class="form-actions">
@@ -520,6 +548,7 @@
         <div class="detail-actions">
           <button class="btn-danger" id="btnDeleteAssignment">🗑 Hapus</button>
           <button class="btn-secondary" id="btnEditAssignment">✏️ Edit</button>
+          <button class="btn-success" id="btnCompleteAssignment">✓ Selesai</button>
           <button class="btn-secondary" id="btnCloseDetail2">Tutup</button>
         </div>
 

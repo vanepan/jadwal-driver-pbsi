@@ -8,7 +8,7 @@
 'use strict';
 
 import { DEFAULT_DRIVERS, VEHICLES, getDriverByName } from './drivers.js';
-import { generateId, timeToMinutes, showToast, initCustomTimeInputPair, getCombinedTimeFromPair, setTimeFieldsFromValue, normalizeTimeValue, expandDateRange, formatDateShort } from './utils.js';
+import { generateId, timeToMinutes, showToast, initCustomTimeInputPair, getCombinedTimeFromPair, setTimeFieldsFromValue, normalizeTimeValue, expandDateRange, formatDateShort, addHoursToTime } from './utils.js';
 import { getCurrentUser, hasPermission, isAdmin } from './auth.js';
 
 let requests = [];
@@ -68,6 +68,25 @@ export function initRequestHandlers() {
     form.addEventListener('submit', handleRequestSubmit);
   }
 
+  const multiDayCheckbox = document.getElementById('requestMultiDay');
+  if (multiDayCheckbox) {
+    multiDayCheckbox.addEventListener('change', syncRequestMultiDayUI);
+  }
+
+  // Auto-fill Jam Selesai = Jam Mulai + 2h jika Jam Selesai masih kosong
+  const requestStartMin = document.getElementById('requestFieldStartMinute');
+  if (requestStartMin) {
+    requestStartMin.addEventListener('blur', () => {
+      const startTime = getCombinedTimeFromPair('requestFieldStartHour', 'requestFieldStartMinute');
+      if (!startTime) return;
+      const endH = document.getElementById('requestFieldEndHour');
+      const endM = document.getElementById('requestFieldEndMinute');
+      if (!endH || !endM) return;
+      if (endH.value || endM.value) return; // sudah diisi manual
+      setTimeFieldsFromValue('requestFieldEndHour', 'requestFieldEndMinute', addHoursToTime(startTime, 2));
+    });
+  }
+
   const closeButtons = [
     ['btnCloseRequestForm', closeRequestFormModal],
     ['btnCancelRequestForm', closeRequestFormModal],
@@ -92,6 +111,37 @@ export function initRequestHandlers() {
     modalRequestsList.addEventListener('click', (event) => {
       if (event.target === modalRequestsList) closeRequestsListModal();
     });
+  }
+}
+
+function syncRequestMultiDayUI(instant = false) {
+  const checked = document.getElementById('requestMultiDay')?.checked;
+  const endDateGroup = document.getElementById('requestEndDateGroup');
+  const startDateLabel = document.getElementById('requestStartDateLabel');
+  const endDateInput = document.getElementById('requestFieldEndDate');
+  if (!endDateGroup) return;
+
+  if (checked) {
+    endDateGroup.style.display = 'flex';
+    requestAnimationFrame(() => endDateGroup.classList.add('visible'));
+    if (endDateInput) endDateInput.required = true;
+    if (startDateLabel) startDateLabel.textContent = 'Tanggal Mulai *';
+  } else {
+    endDateGroup.classList.remove('visible');
+    if (endDateInput) {
+      endDateInput.required = false;
+      endDateInput.value = '';
+    }
+    if (startDateLabel) startDateLabel.textContent = 'Tanggal *';
+    if (instant) {
+      endDateGroup.style.display = 'none';
+    } else {
+      endDateGroup.addEventListener('transitionend', () => {
+        if (!document.getElementById('requestMultiDay')?.checked) {
+          endDateGroup.style.display = 'none';
+        }
+      }, { once: true });
+    }
   }
 }
 
@@ -137,6 +187,24 @@ export function openRequestFormModal(requestId = null) {
     setTimeFieldsFromValue('requestFieldEndHour',   'requestFieldEndMinute',   norm.endTime);
     document.getElementById('requestFieldPurpose').value = norm.purpose || '';
     document.getElementById('requestFieldNotes').value   = norm.notes   || '';
+
+    // Restore multi-day checkbox state based on date range
+    const isMultiDay = !!(norm.startDate && norm.endDate && norm.startDate !== norm.endDate);
+    const multiDayCheckbox = document.getElementById('requestMultiDay');
+    if (multiDayCheckbox) {
+      multiDayCheckbox.checked = isMultiDay;
+      syncRequestMultiDayUI(true); // instant = no animation on open
+    }
+  } else {
+    // New request — reset to single-day mode without animation
+    const multiDayCb = document.getElementById('requestMultiDay');
+    if (multiDayCb) multiDayCb.checked = false;
+    const endGrp = document.getElementById('requestEndDateGroup');
+    const startLbl = document.getElementById('requestStartDateLabel');
+    const endInput = document.getElementById('requestFieldEndDate');
+    if (endGrp) { endGrp.classList.remove('visible'); endGrp.style.display = 'none'; }
+    if (startLbl) startLbl.textContent = 'Tanggal *';
+    if (endInput) { endInput.required = false; endInput.value = ''; }
   }
 
   const modal = document.getElementById('modalRequestForm');
@@ -208,23 +276,32 @@ function handleRequestSubmit(event) {
     return;
   }
 
-  const driver    = document.getElementById('requestFieldDriver').value;
-  const vehicle   = document.getElementById('requestFieldVehicle').value;
-  const startDate = document.getElementById('requestFieldStartDate').value;
-  const endDate   = document.getElementById('requestFieldEndDate').value;
-  const startTime = getCombinedTimeFromPair('requestFieldStartHour', 'requestFieldStartMinute');
-  const endTime   = getCombinedTimeFromPair('requestFieldEndHour', 'requestFieldEndMinute');
-  const purpose   = document.getElementById('requestFieldPurpose').value.trim();
-  const notes     = document.getElementById('requestFieldNotes').value.trim();
+  const driver     = document.getElementById('requestFieldDriver').value;
+  const vehicle    = document.getElementById('requestFieldVehicle').value;
+  const startDate  = document.getElementById('requestFieldStartDate').value;
+  const startTime  = getCombinedTimeFromPair('requestFieldStartHour', 'requestFieldStartMinute');
+  const endTime    = getCombinedTimeFromPair('requestFieldEndHour', 'requestFieldEndMinute');
+  const purpose    = document.getElementById('requestFieldPurpose').value.trim();
+  const notes      = document.getElementById('requestFieldNotes').value.trim();
+  const isMultiDay = document.getElementById('requestMultiDay')?.checked ?? false;
+  const endDate    = isMultiDay
+    ? document.getElementById('requestFieldEndDate').value
+    : startDate;
 
-  if (!driver || !vehicle || !startDate || !endDate || !startTime || !endTime || !purpose) {
+  if (!driver || !vehicle || !startDate || !startTime || !endTime || !purpose) {
     showToast('Lengkapi semua field request wajib (*)');
     return;
   }
 
-  if (endDate < startDate) {
-    showToast('Tanggal selesai tidak boleh sebelum tanggal mulai');
-    return;
+  if (isMultiDay) {
+    if (!endDate) {
+      showToast('Tanggal selesai wajib diisi untuk multi-day request');
+      return;
+    }
+    if (endDate < startDate) {
+      showToast('Tanggal selesai tidak boleh sebelum tanggal mulai');
+      return;
+    }
   }
 
   if (!/^\d{2}:\d{2}$/.test(startTime) || !/^\d{2}:\d{2}$/.test(endTime)) {

@@ -14,7 +14,7 @@
 import { loadAssignments, saveAssignments, loadRequests, saveRequests, initFirebaseSync, registerDataChangeListener, registerRequestsChangeListener } from './firebase.js';
 import { initDriverSelect } from './drivers.js';
 import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate } from './timeline.js';
-import { initModalHandlers, registerEditCallback, registerDeleteCallback, setAssignments as setModalAssignments, updateDetailActionButtons } from './modal.js';
+import { initModalHandlers, registerEditCallback, registerDeleteCallback, registerCompleteCallback, setAssignments as setModalAssignments, updateDetailActionButtons } from './modal.js';
 import { initFormHandlers, openFormModal, closeFormModal, registerSaveCallback, setAssignments as setAssignmentsForm, setCurrentDate as setCurrentDateForm, checkConflict, deleteAssignment } from './assignments.js';
 import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver } from './auth.js';
 import {
@@ -446,6 +446,40 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderTimeline();
 
     console.log(`Assignment ${assignmentId} deleted`);
+  });
+
+  // ── Callback: Selesai button di detail modal ──
+  registerCompleteCallback((assignmentId) => {
+    if (!hasPermission('complete')) return;
+
+    const idx = assignments.findIndex(a => a.id === assignmentId);
+    if (idx === -1) return;
+
+    const currentUser = getCurrentUser();
+    assignments[idx] = {
+      ...assignments[idx],
+      status: 'selesai',
+      completedAt: new Date().toISOString(),
+      completedBy: currentUser ? currentUser.name : '',
+      updatedAt: new Date().toISOString(),
+    };
+
+    updateAllModules();
+    saveAssignments(assignments);
+    renderTimeline();
+
+    logAction({
+      userId: currentUser?.id,
+      username: currentUser?.username,
+      action: 'assignment_completed',
+      targetId: assignmentId,
+      metadata: {
+        completedAt: assignments[idx].completedAt,
+        completedBy: assignments[idx].completedBy,
+      },
+    });
+
+    showToast('✅ Penugasan ditandai selesai');
   });
 
   // Initialize Firebase real-time sync

@@ -145,6 +145,33 @@ export function generateId() {
 }
 
 /**
+ * Tambahkan jam ke waktu HH:MM. Hasil dicap di 23:59.
+ * @param {string} timeStr - Format HH:MM
+ * @param {number} hoursToAdd
+ * @returns {string} - Format HH:MM
+ */
+export function addHoursToTime(timeStr, hoursToAdd) {
+  const [h, m] = timeStr.split(':').map(Number);
+  const totalMinutes = h * 60 + m + hoursToAdd * 60;
+  return minutesToTime(Math.min(totalMinutes, 23 * 60 + 59));
+}
+
+/**
+ * Format ISO timestamp → "1 Juni 2026, 14.30"
+ * @param {string} isoString
+ * @returns {string}
+ */
+export function formatDateTime(isoString) {
+  if (!isoString) return '-';
+  const d = new Date(isoString);
+  if (isNaN(d.getTime())) return '-';
+  return d.toLocaleString('id-ID', {
+    day: 'numeric', month: 'long', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
+}
+
+/**
  * Toast notification untuk feedback user
  * @param {string} message - Pesan yang ditampilkan
  */

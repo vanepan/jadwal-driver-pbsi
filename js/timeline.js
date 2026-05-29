@@ -195,9 +195,13 @@ function createAssignmentBlock(assignment) {
   block.style.width = `${Math.max(width, 20)}px`;
   block.style.background = VEHICLES[assignment.vehicle] || '#555';
 
+  const isCompleted = (assignment.status ?? 'aktif') === 'selesai';
+  if (isCompleted) block.classList.add('is-completed');
+
   block.innerHTML = `
     <span class="block-purpose">${assignment.purpose}</span>
     <span class="block-time">${assignment.startTime}–${assignment.endTime}</span>
+    ${isCompleted ? '<span class="block-status-badge">Selesai</span>' : ''}
     <div class="resize-handle"></div>
   `;
 
