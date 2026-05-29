@@ -27,14 +27,17 @@ export async function sendTelegramMessage(chatId, message) {
   const text = String(message);
 
   const proxy = CUSTOM_PROXY();
-  let url, body;
+  let url, headers, fetchBody;
 
   if (proxy) {
-    // ── Backend-proxy mode ──
-    url  = proxy;
-    body = JSON.stringify({ chatId: id, message: text });
+    // ── Backend-proxy mode (JSON) ──
+    url       = proxy;
+    headers   = { 'Content-Type': 'application/json' };
+    fetchBody = JSON.stringify({ chatId: id, message: text });
   } else {
     // ── Direct Telegram API mode ──
+    // Use application/x-www-form-urlencoded (a CORS "simple" content-type)
+    // to avoid the OPTIONS preflight that Telegram's API does not handle.
     const token = getBotToken();
     if (!token) {
       throw new Error(
@@ -42,17 +45,14 @@ export async function sendTelegramMessage(chatId, message) {
         'Isi window.TELEGRAM_BOT_TOKEN di <script> dalam index.html.'
       );
     }
-    url  = `${DIRECT_API}/bot${token}/sendMessage`;
-    body = JSON.stringify({ chat_id: id, text, parse_mode: 'Markdown' });
+    url       = `${DIRECT_API}/bot${token}/sendMessage`;
+    headers   = { 'Content-Type': 'application/x-www-form-urlencoded' };
+    fetchBody = new URLSearchParams({ chat_id: id, text, parse_mode: 'Markdown' }).toString();
   }
 
   let response;
   try {
-    response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body,
-    });
+    response = await fetch(url, { method: 'POST', headers, body: fetchBody });
   } catch (networkErr) {
     throw new Error(`Koneksi gagal: ${networkErr.message}`);
   }
@@ -60,7 +60,7 @@ export async function sendTelegramMessage(chatId, message) {
   let data;
   try { data = await response.json(); } catch { data = null; }
 
-  if (!response.ok) {
+  if (!response.ok || (data && data.ok === false)) {
     // Telegram API returns { ok: false, description: "..." } on error
     const detail = data?.description || data?.error || data?.message || `HTTP ${response.status}`;
     throw new Error(detail);
