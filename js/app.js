@@ -171,22 +171,24 @@ function updatePermissionUI() {
   updateDetailActionButtons();
   renderRequestsList();
 
-  // ── Sync mobile bottom nav visibility ──
+  // ── Sync FAB, Pengaturan, and bottom nav visibility ──
   const currentUser = getCurrentUser();
   const canAdd = isAdmin() || isBidang();
-  const bottomNavAdd = document.getElementById('bottomNavAdd');
-  const bottomNavAddLabel = document.getElementById('bottomNavAddLabel');
+
+  // FAB: Tambah Jadwal / Request (mobile)
+  const fabAdd = document.getElementById('fabAdd');
+  if (fabAdd) fabAdd.style.display = canAdd ? 'flex' : 'none';
+
+  // Pengaturan button (sidebar, both desktop and mobile drawer)
+  const btnPengaturan = document.getElementById('btnPengaturan');
+  if (btnPengaturan) btnPengaturan.style.display = currentUser ? 'flex' : 'none';
+
+  // Bottom nav items
   const bottomNavRequests = document.getElementById('bottomNavRequests');
   const bottomNavRequestsBadge = document.getElementById('bottomNavRequestsBadge');
   const bottomNavNotifications = document.getElementById('bottomNavNotifications');
   const bottomNavProfile = document.getElementById('bottomNavProfile');
 
-  if (bottomNavAdd) {
-    bottomNavAdd.style.display = canAdd ? 'flex' : 'none';
-    if (bottomNavAddLabel) {
-      bottomNavAddLabel.textContent = isAdmin() ? 'Tambah' : 'Request';
-    }
-  }
   if (bottomNavRequests) {
     bottomNavRequests.style.display = canAdd ? 'flex' : 'none';
     if (bottomNavRequestsBadge) {
@@ -250,10 +252,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // ── Bottom nav proxy buttons ──
-  document.getElementById('bottomNavAdd')?.addEventListener('click', () => {
-    document.getElementById('btnAddAssignment')?.click();
+  // ── Pengaturan: opens profile modal (sidebar item) ──
+  document.getElementById('btnPengaturan')?.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    document.getElementById('btnProfile')?.click();
   });
+
+  // ── FAB: Tambah Jadwal / Request (mobile primary action) ──
+  document.getElementById('fabAdd')?.addEventListener('click', () => {
+    if (isAdmin()) {
+      openFormModal();
+    } else if (isBidang()) {
+      openRequestFormModal();
+    }
+  });
+
+  // ── Bottom nav: Dashboard (scroll timeline to focus) ──
+  document.getElementById('bottomNavDashboard')?.addEventListener('click', () => {
+    // Re-trigger smart auto-focus for current date
+    setCurrentDate(getCurrentDate()); // resets lastAutoFocusedDate
+    renderTimeline();
+  });
+
+  // ── Bottom nav proxy buttons ──
   document.getElementById('bottomNavRequests')?.addEventListener('click', () => {
     document.getElementById('btnRequests')?.click();
   });

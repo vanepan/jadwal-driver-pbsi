@@ -15,17 +15,20 @@ import { openDetailModal } from './modal.js';
 let currentDate = todayString();
 let assignments = [];
 let realtimeTimer = null;
+let lastAutoFocusedDate = null; // track which date has already been auto-focused
 
 function getTimelineBodyElement() {
   return document.getElementById('timelineBody') || document.getElementById('timelineGrid');
 }
 
 /**
- * Set current date yang sedang ditampilkan
+ * Set current date yang sedang ditampilkan.
+ * Resets auto-focus so the new date gets focused on next render.
  * @param {string} dateStr - Format YYYY-MM-DD
  */
 export function setCurrentDate(dateStr) {
   currentDate = dateStr;
+  lastAutoFocusedDate = null; // force re-focus on next renderTimeline call
 }
 
 /**
@@ -66,20 +69,56 @@ export function renderTimeline() {
     window.timelineScrollInitialized = true;
   }
 
-  // Auto scroll ke jam sekarang (jika menampilkan hari ini)
-  if (currentDate === todayString()) {
-    requestAnimationFrame(() => {
-      const body = getTimelineBodyElement();
-      if (!body) return;
-
-      const hourWidth = getHourWidth();
-      const now = new Date();
-      const currentHour = now.getHours() + (now.getMinutes() / 60);
-      const scrollTarget = Math.max(0, (currentHour - 2) * hourWidth);
-
-      body.scrollLeft = scrollTarget;
-    });
+  // Smart auto-focus: run when date changes (not on every data refresh)
+  if (lastAutoFocusedDate !== currentDate) {
+    lastAutoFocusedDate = currentDate;
+    requestAnimationFrame(() => autoFocusTimeline());
   }
+}
+
+/**
+ * Scroll timeline to the most relevant position for the current date:
+ * - Today: nearest assignment to current time, or current hour
+ * - Other date with assignments: earliest assignment
+ * - No assignments: default 08:00
+ * Uses smooth scrolling with ~350ms feel.
+ */
+function autoFocusTimeline() {
+  const body = getTimelineBodyElement();
+  if (!body) return;
+
+  const hourWidth = getHourWidth();
+  const dateAssignments = assignments.filter(a => a.date === currentDate);
+  let targetMinutes;
+
+  if (currentDate === todayString()) {
+    const now = new Date();
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+    if (dateAssignments.length > 0) {
+      // Nearest assignment to current time
+      const nearest = dateAssignments.reduce((best, a) => {
+        const diff = Math.abs(timeToMinutes(a.startTime) - nowMinutes);
+        const bestDiff = Math.abs(timeToMinutes(best.startTime) - nowMinutes);
+        return diff < bestDiff ? a : best;
+      });
+      targetMinutes = timeToMinutes(nearest.startTime);
+    } else {
+      targetMinutes = nowMinutes;
+    }
+  } else if (dateAssignments.length > 0) {
+    // Earliest assignment on the selected date
+    const earliest = dateAssignments.reduce((min, a) =>
+      timeToMinutes(a.startTime) < timeToMinutes(min.startTime) ? a : min
+    );
+    targetMinutes = timeToMinutes(earliest.startTime);
+  } else {
+    targetMinutes = 8 * 60; // default: 08:00
+  }
+
+  // Offset by ~1.5 hours to give context before the target
+  const scrollTarget = Math.max(0, ((targetMinutes / 60) - 1.5) * hourWidth);
+  body.scrollTo({ left: scrollTarget, behavior: 'smooth' });
 }
 
 /**
@@ -199,9 +238,9 @@ function createAssignmentBlock(assignment) {
   if (isCompleted) block.classList.add('is-completed');
 
   block.innerHTML = `
-    <span class="block-purpose">${assignment.purpose}</span>
     <span class="block-time">${assignment.startTime}–${assignment.endTime}</span>
-    ${isCompleted ? '<span class="block-status-badge">Selesai</span>' : ''}
+    <span class="block-purpose">${assignment.purpose}</span>
+    ${isCompleted ? '<span class="block-status-badge">✓ Selesai</span>' : ''}
     <div class="resize-handle"></div>
   `;
 

@@ -28,8 +28,8 @@
   --hour-width: 80px;
   /* Lebar kolom nama driver di kiri timeline */
   --driver-col: 110px;
-  /* Tinggi setiap baris driver */
-  --row-height: 56px;
+  /* Tinggi setiap baris driver — increased for better card readability */
+  --row-height: 66px;
   /* Tinggi header jam */
   --header-height: 36px;
 }
@@ -37,7 +37,10 @@
 /* ── Reset & Base ── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-html { scroll-behavior: smooth; }
+html {
+  scroll-behavior: smooth;
+  overflow-x: hidden; /* prevent page-level horizontal scroll */
+}
 
 body {
   font-family: 'DM Sans', sans-serif;
@@ -47,6 +50,8 @@ body {
   font-size: 14px;
   line-height: 1.5;
   -webkit-tap-highlight-color: transparent;
+  overflow-x: hidden; /* timeline scroll is isolated to its own container */
+  max-width: 100vw;
 }
 
 /* ============================================================
@@ -237,6 +242,17 @@ body {
 .sidebar-badge.notification-dot,
 .sidebar-badge.request-count-badge { margin-left: auto; }
 
+/* Desktop-only sidebar NAV GROUPS — groups have no JS inline-display, safe to force */
+.sidebar-nav-group.sidebar-nav-desktop-only { display: none !important; }
+@media (min-width: 769px) {
+  .sidebar-nav-group.sidebar-nav-desktop-only { display: flex !important; }
+}
+
+/* Hide the sidebar Profil button on mobile (it lives in the bottom nav there) */
+@media (max-width: 768px) {
+  #btnProfile.sidebar-nav-item { display: none !important; }
+}
+
 /* ── Sidebar Footer ── */
 .sidebar-footer {
   padding: 12px 14px;
@@ -341,6 +357,45 @@ body {
   align-items: center;
   justify-content: center;
   line-height: 1;
+}
+
+/* Small dot indicator (no number) for notification bell in bottom nav */
+.bottom-nav-dot {
+  position: absolute;
+  top: 7px;
+  left: calc(50% + 7px);
+  width: 8px;
+  height: 8px;
+  background: var(--red);
+  border-radius: 50%;
+  border: 2px solid var(--white);
+}
+
+/* ── FAB (Floating Action Button) — mobile primary action ── */
+.fab-add {
+  position: fixed;
+  bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 14px);
+  right: 18px;
+  width: 54px;
+  height: 54px;
+  background: var(--red);
+  color: var(--white);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 4px 18px rgba(211,47,47,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 98;
+  transition: transform 0.15s, box-shadow 0.15s, background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.fab-add:hover  { transform: scale(1.06); box-shadow: 0 6px 22px rgba(211,47,47,0.52); }
+.fab-add:active { transform: scale(0.96); background: var(--red-mid); }
+
+@media (min-width: 769px) {
+  .fab-add { display: none !important; }
 }
 
 /* ============================================================
@@ -811,22 +866,22 @@ z-index: 1;
 /* ── Blok Assignment ── */
 .assignment-block {
   position: absolute;
-  top: 6px;
-  height: calc(var(--row-height) - 12px);
-  border-radius: 6px;
-  padding: 3px 7px;
+  top: 5px;
+  height: calc(var(--row-height) - 10px);
+  border-radius: 8px;
+  padding: 5px 8px;
   cursor: pointer;
   display: flex;
   flex-direction: column;
   justify-content: center;
+  gap: 2px;
   overflow: hidden;
   font-size: 11px;
   color: var(--white);
   transition: filter 0.15s, box-shadow 0.15s;
-  /* Minimum lebar 20px agar masih bisa diklik */
-  min-width: 20px;
+  min-width: 24px;
   user-select: none;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.18);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.22);
 }
 
 .assignment-block:hover {
@@ -846,34 +901,37 @@ z-index: 1;
   filter: grayscale(20%) brightness(1.05);
 }
 
-/* Badge SELESAI di dalam blok timeline */
-.block-status-badge {
-  display: inline-block;
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
-  background: rgba(0,0,0,0.22);
-  border-radius: 2px;
-  padding: 1px 4px;
-  line-height: 1.4;
+/* Teks di dalam blok — time on top for quick scanning */
+.block-time {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  opacity: 0.9;
+  white-space: nowrap;
+  line-height: 1.2;
 }
 
-/* Teks di dalam blok */
 .block-purpose {
   font-weight: 600;
-  font-size: 11px;
+  font-size: 11.5px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.3;
 }
 
-.block-time {
-  font-family: 'DM Mono', monospace;
-  font-size: 10px;
-  opacity: 0.85;
-  white-space: nowrap;
+/* Badge SELESAI di dalam blok timeline */
+.block-status-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  background: rgba(0,0,0,0.28);
+  border-radius: 3px;
+  padding: 1px 5px;
+  line-height: 1.5;
+  width: fit-content;
+  margin-top: 1px;
 }
 
 /* Resize handle di kanan blok */
@@ -1749,7 +1807,20 @@ z-index: 1;
   .sidebar-overlay { display: none !important; }
   .header-brand { display: none; }
   .bottom-nav { display: none !important; }
+  .fab-add { display: none !important; }
   .header-module-title { display: block; }
+  /* Desktop header: date-nav sits inline (reset mobile wrapping) */
+  .date-nav {
+    order: unset;
+    width: auto;
+    margin: 0;
+    padding: 2px 6px;
+    background: var(--gray-1);
+    border: 1px solid var(--gray-2);
+    border-radius: var(--radius-sm);
+  }
+  .header-inner { flex-wrap: nowrap; height: 56px; padding: 0 16px; }
+  .header-spacer { flex: 1; }
 }
 
 /* ============================================================
@@ -1777,14 +1848,14 @@ z-index: 1;
   /* Bottom nav visible */
   .bottom-nav { display: flex; }
 
-  /* Extra bottom padding so content isn't hidden behind bottom nav */
+  /* Extra bottom padding: bottom nav (56px) + FAB overlap (70px) + safe area */
   .main-content {
-    padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 24px);
+    padding-bottom: calc(56px + 70px + env(safe-area-inset-bottom, 0px) + 8px);
   }
 
-  /* Toast above bottom nav */
+  /* Toast above FAB */
   .toast {
-    bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 10px);
+    bottom: calc(56px + 70px + env(safe-area-inset-bottom, 0px) + 8px);
   }
 
   /* Prevent body scroll when sidebar is open */
@@ -1794,19 +1865,43 @@ z-index: 1;
 @media (max-width: 600px) {
 
   /* ============================================================
-     HEADER — single row, compact
+     HEADER — 2-row compact layout
+     Row 1: hamburger | brand | spacer | user info
+     Row 2: date navigation (full-width centered)
      ============================================================ */
   .header-inner {
-    padding: 0 10px;
-    gap: 8px;
-    height: 50px;
+    flex-wrap: wrap;
+    height: auto;
+    padding: 8px 12px 0;
+    gap: 6px;
+    row-gap: 0;
+    align-items: center;
   }
 
-  .brand-logo  { width: 28px; height: 28px; }
+  /* Row 1 items */
+  .sidebar-toggle { order: 1; flex-shrink: 0; }
+  .header-brand   { order: 2; flex: 1; min-width: 0; gap: 6px; }
+  .header-spacer  { order: 3; flex: 1; }
+  .header-user-area { order: 4; flex-shrink: 0; }
+  .header-module-title { display: none; }
+
+  /* Row 2: date nav spans full width */
+  .date-nav {
+    order: 10;
+    width: calc(100% + 24px);
+    margin: 6px -12px 0;
+    padding: 6px 12px 8px;
+    background: var(--gray-1);
+    border: none;
+    border-top: 1px solid var(--gray-2);
+    border-radius: 0;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .brand-logo  { width: 26px; height: 26px; }
   .brand-title { font-size: 12px; }
 
-  /* Date nav compact */
-  .date-nav   { padding: 2px 5px; }
   .date-input { min-width: 82px; font-size: 11px; color-scheme: light; }
   .btn-today  { display: none; }
 

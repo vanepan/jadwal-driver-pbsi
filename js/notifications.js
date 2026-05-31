@@ -145,12 +145,17 @@ export function setNotificationData({ pendingRequests = 0, recentLogs = [] }) {
 function renderNotificationBadge() {
   const badge = document.getElementById('notificationDot');
   const btn = document.getElementById('btnNotifications');
+  const bottomNavDot = document.getElementById('bottomNavNotifDot');
   if (!btn || !badge) return;
 
   const unread = countUnread(filterOperational(allLogs));
   const total = pendingCount + unread;
   badge.style.display = total > 0 ? 'inline-flex' : 'none';
   badge.textContent = total > 0 ? String(total) : '';
+
+  if (bottomNavDot) {
+    bottomNavDot.style.display = total > 0 ? 'inline-block' : 'none';
+  }
 }
 
 /* ── Notification Center ── */

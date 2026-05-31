@@ -29,16 +29,16 @@
 
     <nav class="sidebar-nav">
 
-      <!-- Primary Action -->
-      <div class="sidebar-nav-group">
+      <!-- Primary Action — desktop sidebar only (mobile: FAB) -->
+      <div class="sidebar-nav-group sidebar-nav-desktop-only">
         <button class="sidebar-nav-item sidebar-nav-primary" id="btnAddAssignment" type="button">
           <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor"><path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"/></svg>
           <span id="btnAddAssignmentLabel">Tambah Jadwal</span>
         </button>
       </div>
 
-      <!-- Secondary Actions -->
-      <div class="sidebar-nav-group">
+      <!-- Secondary Actions — desktop sidebar only (mobile: bottom nav) -->
+      <div class="sidebar-nav-group sidebar-nav-desktop-only">
         <button class="sidebar-nav-item" id="btnRequests" type="button" style="display:none;">
           <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor"><path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/><path fill-rule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clip-rule="evenodd"/></svg>
           <span id="btnRequestsLabel">Requests</span>
@@ -51,20 +51,33 @@
         </button>
       </div>
 
-      <!-- Tertiary Actions -->
+      <!-- Tertiary / Admin — visible in mobile drawer AND desktop sidebar -->
       <div class="sidebar-nav-group sidebar-nav-group-bottom">
-        <button class="sidebar-nav-item sidebar-nav-tertiary" id="btnProfile" type="button" style="display:none;">
+
+        <!-- Profil: desktop sidebar only (mobile: bottom nav) -->
+        <button class="sidebar-nav-item sidebar-nav-tertiary sidebar-nav-desktop-only" id="btnProfile" type="button" style="display:none;">
           <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/></svg>
           Profil
         </button>
-        <button class="sidebar-nav-item sidebar-nav-tertiary" id="btnUserMgmt" type="button" style="display:none;">
+
+        <!-- Pengaturan: both desktop and mobile drawer -->
+        <button class="sidebar-nav-item sidebar-nav-tertiary" id="btnPengaturan" type="button" style="display:none;">
           <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
+          Pengaturan
+        </button>
+
+        <!-- Admin Panel: both desktop and mobile drawer (admin only) -->
+        <button class="sidebar-nav-item sidebar-nav-tertiary" id="btnUserMgmt" type="button" style="display:none;">
+          <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/></svg>
           Admin Panel
         </button>
+
+        <!-- Logout: always visible -->
         <button class="sidebar-nav-item sidebar-nav-logout" id="btnLogout" type="button">
           <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clip-rule="evenodd"/></svg>
           Logout
         </button>
+
       </div>
 
     </nav>
@@ -78,7 +91,7 @@
 
   </aside>
 
-  <!-- Overlay backdrop for mobile sidebar -->
+  <!-- Mobile sidebar backdrop -->
   <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
   <!-- ===== MAIN AREA ===== -->
@@ -88,12 +101,12 @@
     <header class="header">
       <div class="header-inner">
 
-        <!-- Hamburger (mobile only) -->
+        <!-- Hamburger (mobile) -->
         <button class="sidebar-toggle" id="sidebarToggle" aria-label="Buka menu" type="button">
           <svg viewBox="0 0 20 20" fill="currentColor" width="20" height="20"><path fill-rule="evenodd" d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 15a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd"/></svg>
         </button>
 
-        <!-- Brand (mobile only — desktop uses sidebar) -->
+        <!-- Brand (mobile only) -->
         <div class="header-brand">
           <img src="assets/Logo-PBSI.png" alt="PBSI" class="brand-logo"
                onerror="this.style.display='none'" />
@@ -105,7 +118,14 @@
         <!-- Module title (desktop) -->
         <div class="header-module-title">Jadwal Driver Operasional</div>
 
-        <!-- Date navigation -->
+        <!-- User info (always visible) -->
+        <div class="header-spacer"></div>
+        <div class="header-user-area">
+          <span class="header-display-name" id="headerDisplayName"></span>
+          <span class="role-badge" id="roleBadge" data-role="guest">Belum Login</span>
+        </div>
+
+        <!-- Date navigation — wraps to row 2 on mobile via CSS -->
         <div class="date-nav">
           <button class="btn-icon" id="btnPrevDate" title="Hari sebelumnya">&#8592;</button>
           <input type="date" id="filterDate" class="date-input" />
@@ -113,18 +133,10 @@
           <button class="btn-today" id="btnToday">Hari Ini</button>
         </div>
 
-        <div class="header-spacer"></div>
-
-        <!-- User info -->
-        <div class="header-user-area">
-          <span class="header-display-name" id="headerDisplayName"></span>
-          <span class="role-badge" id="roleBadge" data-role="guest">Belum Login</span>
-        </div>
-
       </div>
     </header>
 
-    <!-- ===== TIMELINE SCHEDULER ===== -->
+    <!-- ===== TIMELINE ===== -->
     <main class="main-content">
 
       <div class="timeline-date-label" id="timelineDateLabel">Memuat...</div>
@@ -151,25 +163,40 @@
 
     </main>
 
+    <!-- ===== FAB: Tambah Jadwal (mobile only) ===== -->
+    <button class="fab-add" id="fabAdd" type="button" aria-label="Tambah Jadwal" style="display:none;">
+      <svg viewBox="0 0 20 20" fill="currentColor" width="24" height="24"><path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"/></svg>
+    </button>
+
     <!-- ===== MOBILE BOTTOM NAV ===== -->
     <nav class="bottom-nav" id="bottomNav" aria-label="Navigasi utama">
-      <button class="bottom-nav-item bottom-nav-primary" id="bottomNavAdd" type="button">
-        <svg viewBox="0 0 20 20" fill="currentColor" width="22" height="22"><path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"/></svg>
-        <span id="bottomNavAddLabel">Tambah</span>
+
+      <!-- Dashboard — always visible when logged in -->
+      <button class="bottom-nav-item bottom-nav-active" id="bottomNavDashboard" type="button">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="22" height="22"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/></svg>
+        <span>Dashboard</span>
       </button>
+
+      <!-- Requests — admin & bidang only -->
       <button class="bottom-nav-item" id="bottomNavRequests" type="button" style="display:none;">
         <svg viewBox="0 0 20 20" fill="currentColor" width="22" height="22"><path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/><path fill-rule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clip-rule="evenodd"/></svg>
         <span>Requests</span>
         <span class="bottom-nav-badge" id="bottomNavRequestsBadge" style="display:none;"></span>
       </button>
+
+      <!-- Notifikasi — admin only -->
       <button class="bottom-nav-item" id="bottomNavNotifications" type="button" style="display:none;">
         <svg viewBox="0 0 20 20" fill="currentColor" width="22" height="22"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/></svg>
         <span>Notifikasi</span>
+        <span class="bottom-nav-dot" id="bottomNavNotifDot" style="display:none;"></span>
       </button>
+
+      <!-- Profil — logged in users -->
       <button class="bottom-nav-item" id="bottomNavProfile" type="button" style="display:none;">
         <svg viewBox="0 0 20 20" fill="currentColor" width="22" height="22"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/></svg>
         <span>Profil</span>
       </button>
+
     </nav>
 
   </div><!-- /main-area -->
@@ -178,7 +205,7 @@
 
 
 <!-- ================================================================
-     MODALS — position:fixed, DOM position does not matter
+     MODALS — position:fixed, unaffected by layout
      ================================================================ -->
 
 <!-- ===== MODAL: LOGIN ===== -->
@@ -226,18 +253,12 @@
         <div class="form-grid">
           <div class="form-group">
             <label for="requestFieldDriver">Driver *</label>
-            <select id="requestFieldDriver" required>
-              <option value="">-- Pilih Driver --</option>
-            </select>
+            <select id="requestFieldDriver" required><option value="">-- Pilih Driver --</option></select>
           </div>
-
           <div class="form-group">
             <label for="requestFieldVehicle">Kendaraan *</label>
-            <select id="requestFieldVehicle" required>
-              <option value="">-- Pilih Kendaraan --</option>
-            </select>
+            <select id="requestFieldVehicle" required><option value="">-- Pilih Kendaraan --</option></select>
           </div>
-
           <div class="form-group form-full multi-day-section">
             <label class="multi-day-checkbox-label">
               <input type="checkbox" id="requestMultiDay" />
@@ -247,17 +268,14 @@
               </span>
             </label>
           </div>
-
           <div class="form-group">
             <label for="requestFieldStartDate" id="requestStartDateLabel">Tanggal *</label>
             <input type="date" id="requestFieldStartDate" required />
           </div>
-
           <div class="form-group end-date-wrapper" id="requestEndDateGroup">
             <label for="requestFieldEndDate">Tanggal Selesai *</label>
             <input type="date" id="requestFieldEndDate" />
           </div>
-
           <div class="form-group time-pair-group">
             <label>Jam Mulai *</label>
             <div class="time-pair">
@@ -266,7 +284,6 @@
               <input type="text" id="requestFieldStartMinute" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="MM" required />
             </div>
           </div>
-
           <div class="form-group time-pair-group">
             <label>Jam Selesai *</label>
             <div class="time-pair">
@@ -275,18 +292,15 @@
               <input type="text" id="requestFieldEndMinute" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="MM" required />
             </div>
           </div>
-
           <div class="form-group form-full">
             <label for="requestFieldPurpose">Tujuan / Keperluan *</label>
             <input type="text" id="requestFieldPurpose" placeholder="Contoh: Penjemputan atlet di bandara" required />
           </div>
-
           <div class="form-group form-full">
             <label for="requestFieldNotes">Catatan</label>
             <textarea id="requestFieldNotes" rows="2" placeholder="Catatan tambahan (opsional)"></textarea>
           </div>
         </div>
-
         <div class="form-actions">
           <button type="button" class="btn-secondary" id="btnCancelRequestForm">Batal</button>
           <button type="submit" class="btn-primary" id="btnSaveRequestForm">Kirim Request</button>
@@ -386,8 +400,6 @@
       <button class="modal-close" id="btnCloseProfile">&times;</button>
     </div>
     <div class="modal-body">
-
-      <!-- User Card -->
       <div class="profile-user-card">
         <div class="profile-avatar" id="profileAvatar">?</div>
         <div class="profile-user-info">
@@ -395,16 +407,12 @@
           <div class="profile-role-chip" id="profileRoleLabel">-</div>
         </div>
       </div>
-
       <form id="profileForm" novalidate>
-
-        <!-- Telegram -->
         <div class="profile-section">
           <div class="profile-section-header">
             <span class="profile-section-label">Notifikasi Telegram</span>
             <span class="profile-tg-badge" id="telegramStatusBadge" data-status="not-connected">Belum Terhubung</span>
           </div>
-
           <p class="profile-help-text">
             Dapatkan Chat ID: buka
             <button type="button" id="btnOpenTelegramBot" class="profile-inline-btn">Bot PBSI</button>,
@@ -412,25 +420,18 @@
             <button type="button" id="btnCopyMyIdCommand" class="profile-code-btn"><code>/myid</code></button>
             lalu paste di bawah.
           </p>
-
           <div class="form-group">
             <label for="profileTelegramChatIdPrimary">Chat ID</label>
             <div class="profile-input-row">
-              <input type="text" id="profileTelegramChatIdPrimary"
-                     placeholder="contoh: 123456789"
-                     inputmode="numeric" autocomplete="off" />
+              <input type="text" id="profileTelegramChatIdPrimary" placeholder="contoh: 123456789" inputmode="numeric" autocomplete="off" />
               <button type="button" id="btnPasteIdPrimary" class="btn-paste-small" title="Paste dari clipboard">Paste</button>
             </div>
             <span class="profile-status-text" id="telegramStatusText"></span>
           </div>
-
           <div class="form-group">
             <label for="profileTelegramChatId1">Chat ID Tambahan <span class="tag-optional">opsional</span></label>
-            <input type="text" id="profileTelegramChatId1"
-                   placeholder="Chat ID tambahan"
-                   inputmode="numeric" autocomplete="off" />
+            <input type="text" id="profileTelegramChatId1" placeholder="Chat ID tambahan" inputmode="numeric" autocomplete="off" />
           </div>
-
           <div class="profile-toggle-row">
             <span class="profile-toggle-text">Aktifkan Notifikasi</span>
             <label class="toggle-switch profile-toggle-switch">
@@ -438,15 +439,9 @@
               <span class="switch-slider"></span>
             </label>
           </div>
-
-          <button type="button" class="btn-secondary profile-test-btn" id="btnSendTestTelegram">
-            Kirim Notifikasi Tes
-          </button>
+          <button type="button" class="btn-secondary profile-test-btn" id="btnSendTestTelegram">Kirim Notifikasi Tes</button>
         </div>
-
         <div class="profile-divider"></div>
-
-        <!-- Ubah PIN -->
         <div class="profile-section">
           <div class="profile-section-label">
             Ubah PIN <span class="tag-optional">kosongkan jika tidak ingin mengubah</span>
@@ -466,10 +461,7 @@
             </div>
           </div>
         </div>
-
         <div class="profile-divider"></div>
-
-        <!-- Application Information -->
         <div class="profile-section">
           <div class="profile-section-label">Informasi Aplikasi</div>
           <div class="app-info-block">
@@ -477,12 +469,10 @@
             <div class="app-info-version app-version-full"></div>
           </div>
         </div>
-
         <div class="form-actions">
           <button type="button" class="btn-secondary" id="btnCancelProfile">Batal</button>
           <button type="submit" class="btn-primary" id="btnSaveProfile">Simpan</button>
         </div>
-
       </form>
     </div>
   </div>
@@ -532,23 +522,16 @@
     </div>
     <div class="modal-body">
       <form id="assignmentForm" novalidate>
-
         <input type="hidden" id="fieldId" />
-
         <div class="form-grid">
-
           <div class="form-group">
             <label for="fieldDriver">Driver *</label>
-            <select id="fieldDriver" required>
-              <option value="">-- Pilih Driver --</option>
-            </select>
+            <select id="fieldDriver" required><option value="">-- Pilih Driver --</option></select>
           </div>
-
           <div class="form-group">
             <label for="fieldPhone">Nomor HP</label>
             <input type="text" id="fieldPhone" placeholder="Otomatis terisi" readonly />
           </div>
-
           <div class="form-group">
             <label for="fieldVehicle">Kendaraan *</label>
             <select id="fieldVehicle" required>
@@ -559,7 +542,6 @@
               <option value="Hiace">Hiace</option>
             </select>
           </div>
-
           <div class="form-group form-full multi-day-section">
             <label class="multi-day-checkbox-label">
               <input type="checkbox" id="assignmentMultiDay" />
@@ -569,17 +551,14 @@
               </span>
             </label>
           </div>
-
           <div class="form-group">
             <label for="fieldDate" id="fieldDateLabel">Tanggal *</label>
             <input type="date" id="fieldDate" required />
           </div>
-
           <div class="form-group end-date-wrapper" id="assignmentEndDateGroup">
             <label for="fieldEndDate">Tanggal Selesai *</label>
             <input type="date" id="fieldEndDate" />
           </div>
-
           <div class="form-group time-pair-group">
             <label>Jam Mulai *</label>
             <div class="time-pair">
@@ -588,7 +567,6 @@
               <input type="text" id="fieldStartMinute" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="MM" required />
             </div>
           </div>
-
           <div class="form-group time-pair-group">
             <label>Jam Selesai *</label>
             <div class="time-pair">
@@ -597,44 +575,35 @@
               <input type="text" id="fieldEndMinute" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="MM" required />
             </div>
           </div>
-
           <div class="form-group form-full">
             <label for="fieldDestination">Tujuan *</label>
             <input type="text" id="fieldDestination" placeholder="Contoh: T3 Soetta – Pelatnas" required />
           </div>
-
           <div class="form-group form-full">
             <label for="fieldPurpose">Keperluan *</label>
             <input type="text" id="fieldPurpose" placeholder="Contoh: Penjemputan Kepulangan Pengurus" required />
           </div>
-
           <div class="form-group">
             <label for="fieldPIC">PIC</label>
             <input type="text" id="fieldPIC" placeholder="Contoh: Pak Tommy" />
           </div>
-
           <div class="form-group">
             <label for="fieldPax">Jumlah Penumpang</label>
             <input type="number" id="fieldPax" min="1" max="20" placeholder="1" value="1" />
           </div>
-
           <div class="form-group form-full">
             <label for="fieldNotes">Catatan</label>
             <textarea id="fieldNotes" rows="2" placeholder="Catatan tambahan (opsional)"></textarea>
           </div>
-
         </div>
-
         <div class="conflict-warning" id="conflictWarning" style="display:none;">
           ⚠️ Konflik jadwal! Driver sudah memiliki assignment di jam yang sama.
           <div class="conflict-warning-dates" id="conflictWarningDates"></div>
         </div>
-
         <div class="form-actions">
           <button type="button" class="btn-secondary" id="btnCancelForm">Batal</button>
           <button type="submit" class="btn-primary" id="btnSaveForm">Simpan</button>
         </div>
-
       </form>
     </div>
   </div>
@@ -648,23 +617,19 @@
       <button class="modal-close" id="btnCloseDetail">&times;</button>
     </div>
     <div class="modal-body">
-
       <div id="detailContent"></div>
-
       <div class="wa-preview-box">
         <div class="wa-preview-label">📱 Ringkasan WhatsApp</div>
         <pre id="waPreviewText" class="wa-preview-text"></pre>
         <button class="btn-wa-copy" id="btnCopyWA">📋 Copy Ringkasan WhatsApp</button>
         <span class="copy-feedback" id="copyFeedback" style="display:none;">✅ Tersalin!</span>
       </div>
-
       <div class="detail-actions">
         <button class="btn-danger" id="btnDeleteAssignment">🗑 Hapus</button>
         <button class="btn-secondary" id="btnEditAssignment">✏️ Edit</button>
         <button class="btn-success" id="btnCompleteAssignment">✓ Selesai</button>
         <button class="btn-secondary" id="btnCloseDetail2">Tutup</button>
       </div>
-
     </div>
   </div>
 </div>
@@ -672,11 +637,9 @@
 <!-- ===== TOAST ===== -->
 <div class="toast" id="toast" style="display:none;"></div>
 
-<!-- Telegram bot token -->
 <script>
   window.TELEGRAM_BOT_TOKEN = '8925885704:AAH2Hi03tL6TNYicChXYwrYZzukkagtvAKE';
 </script>
-
 <script type="module" src="js/app.js?v=1.1.0"></script>
 </body>
 </html>
