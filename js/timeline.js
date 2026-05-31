@@ -87,6 +87,12 @@ function autoFocusTimeline() {
   const body = getTimelineBodyElement();
   if (!body) return;
 
+  // Don't fight an active user drag
+  if (syncTimelineScroll._isPointerDown?.()) {
+    lastAutoFocusedDate = null; // retry on next render after release
+    return;
+  }
+
   const hourWidth = getHourWidth();
   const dateAssignments = assignments.filter(a => a.date === currentDate);
   let targetMinutes;
@@ -127,8 +133,15 @@ function autoFocusTimeline() {
  */
 function updateDateLabel() {
   const label = document.getElementById('timelineDateLabel');
-  if (!label) return;
-  label.textContent = formatDateLong(currentDate);
+  if (label) label.textContent = formatDateLong(currentDate);
+
+  // Disable "Hari Ini" button when already viewing today
+  const btnToday = document.getElementById('btnToday');
+  if (btnToday) {
+    const isToday = currentDate === todayString();
+    btnToday.disabled = isToday;
+    btnToday.classList.toggle('is-today', isToday);
+  }
 }
 
 /**
@@ -315,6 +328,15 @@ function syncTimelineScroll() {
   const fadeR   = wrapper?.querySelector('.timeline-scroll-fade-right');
 
   if (!body || !hours) return;
+
+  // Pointer-down guard: stop auto-focus if user starts a manual drag
+  let isPointerDown = false;
+  body.addEventListener('pointerdown', () => { isPointerDown = true; }, { passive: true });
+  window.addEventListener('pointerup',     () => { isPointerDown = false; }, { passive: true });
+  window.addEventListener('pointercancel', () => { isPointerDown = false; }, { passive: true });
+
+  // Expose for autoFocusTimeline
+  syncTimelineScroll._isPointerDown = () => isPointerDown;
 
   // Sync hours header with body scroll
   body.addEventListener('scroll', () => {

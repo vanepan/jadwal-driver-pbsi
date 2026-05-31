@@ -175,13 +175,11 @@ function updatePermissionUI() {
   const currentUser = getCurrentUser();
   const canAdd = isAdmin() || isBidang();
 
-  // FAB: Tambah Jadwal / Request (mobile)
+  // FAB: Tambah Jadwal / Buat Request (mobile) — label reflects role
   const fabAdd = document.getElementById('fabAdd');
+  const fabLabel = document.getElementById('fabLabel');
   if (fabAdd) fabAdd.style.display = canAdd ? 'flex' : 'none';
-
-  // Pengaturan button (sidebar, both desktop and mobile drawer)
-  const btnPengaturan = document.getElementById('btnPengaturan');
-  if (btnPengaturan) btnPengaturan.style.display = currentUser ? 'flex' : 'none';
+  if (fabLabel) fabLabel.textContent = isAdmin() ? 'Tambah Jadwal' : 'Buat Request';
 
   // Bottom nav items
   const bottomNavRequests = document.getElementById('bottomNavRequests');
@@ -252,14 +250,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // ── Pengaturan: opens profile modal (sidebar item) ──
-  document.getElementById('btnPengaturan')?.addEventListener('click', (ev) => {
-    ev.preventDefault();
-    ev.stopPropagation();
-    document.getElementById('btnProfile')?.click();
+  // ── Profile modal logout button ──
+  document.getElementById('btnLogoutProfile')?.addEventListener('click', () => {
+    document.getElementById('btnCancelProfile')?.click(); // close profile modal
+    document.getElementById('btnLogout')?.click();        // trigger logout
   });
 
-  // ── FAB: Tambah Jadwal / Request (mobile primary action) ──
+  // ── FAB: Tambah Jadwal / Buat Request (mobile primary action) ──
   document.getElementById('fabAdd')?.addEventListener('click', () => {
     if (isAdmin()) {
       openFormModal();
