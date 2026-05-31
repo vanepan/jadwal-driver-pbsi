@@ -264,18 +264,52 @@ function startRealtimeTimeline() {
 }
 
 /**
- * Sinkronisasi scroll horizontal antara header jam dan body
- * Ketika user scroll body ke kanan, header ikut scroll
+ * Sinkronisasi scroll horizontal antara header jam dan body.
+ * Juga mengaktifkan scroll horizontal via mouse wheel pada area timeline,
+ * dan memperbarui fade indicator kiri/kanan.
  */
 function syncTimelineScroll() {
-  const body  = getTimelineBodyElement();
-  const hours = document.getElementById('timelineHours');
+  const body    = getTimelineBodyElement();
+  const hours   = document.getElementById('timelineHours');
+  const wrapper = document.querySelector('.timeline-wrapper');
+  const fadeL   = wrapper?.querySelector('.timeline-scroll-fade-left');
+  const fadeR   = wrapper?.querySelector('.timeline-scroll-fade-right');
 
   if (!body || !hours) return;
 
+  // Sync hours header with body scroll
   body.addEventListener('scroll', () => {
     hours.scrollLeft = body.scrollLeft;
+    updateFadeIndicators();
   });
+
+  // Mouse-wheel → horizontal scroll on the timeline body
+  if (wrapper) {
+    wrapper.addEventListener('wheel', (e) => {
+      // Prioritise native horizontal gestures (trackpad swipe, Shift+wheel)
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        e.preventDefault();
+        body.scrollLeft += e.deltaX;
+        return;
+      }
+      // Convert vertical wheel to horizontal scroll
+      if (e.deltaY !== 0) {
+        e.preventDefault();
+        const delta = e.deltaMode === 1 ? e.deltaY * 40 : e.deltaY;
+        body.scrollLeft += delta;
+      }
+    }, { passive: false });
+  }
+
+  function updateFadeIndicators() {
+    if (!fadeL || !fadeR) return;
+    const maxScroll = body.scrollWidth - body.clientWidth;
+    fadeL.style.opacity = body.scrollLeft > 16 ? '1' : '0';
+    fadeR.style.opacity = body.scrollLeft < maxScroll - 16 ? '1' : '0';
+  }
+
+  // Initial state
+  updateFadeIndicators();
 }
 
 /**

@@ -50,37 +50,347 @@ body {
 }
 
 /* ============================================================
-   HEADER
+   APP LAYOUT — Sidebar + Main Area
    ============================================================ */
-.header {
-  background: var(--dark);
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+.app-layout {
+  display: flex;
+  min-height: 100vh;
 }
 
-.header-inner {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 10px 16px;
+/* ── Sidebar ── */
+.sidebar {
+  width: 240px;
+  min-width: 240px;
+  background: var(--dark);
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  z-index: 150;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+.sidebar::-webkit-scrollbar { display: none; }
+
+.sidebar-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
+  justify-content: space-between;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  flex-shrink: 0;
+  gap: 8px;
 }
 
-/* Brand / Logo */
-.header-brand {
+.sidebar-brand {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.sidebar-logo {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.sidebar-brand-text { flex: 1; min-width: 0; }
+
+.sidebar-brand-title {
+  color: var(--white);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  display: block;
+}
+
+.sidebar-close {
+  display: none;
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.45);
+  font-size: 22px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+  transition: color 0.15s;
+  flex-shrink: 0;
+}
+.sidebar-close:hover { color: var(--white); }
+
+/* ── Sidebar Nav ── */
+.sidebar-nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 10px 8px;
+  gap: 2px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.sidebar-nav::-webkit-scrollbar { display: none; }
+
+.sidebar-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sidebar-nav-group + .sidebar-nav-group {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+
+.sidebar-nav-group-bottom {
+  margin-top: auto !important;
+  padding-top: 8px !important;
+  border-top: 1px solid rgba(255,255,255,0.08) !important;
+}
+
+.sidebar-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 9px 12px;
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.72);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 7px;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+  position: relative;
+}
+.sidebar-nav-item:hover {
+  background: rgba(255,255,255,0.09);
+  color: var(--white);
+}
+.sidebar-nav-item:active {
+  background: rgba(255,255,255,0.14);
+}
+
+.sidebar-nav-primary {
+  background: var(--red);
+  color: var(--white);
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+.sidebar-nav-primary:hover {
+  background: var(--red-mid);
+  color: var(--white);
+}
+
+.sidebar-nav-tertiary {
+  color: rgba(255,255,255,0.52);
+  font-size: 12px;
+}
+.sidebar-nav-tertiary:hover {
+  color: rgba(255,255,255,0.85);
+  background: rgba(255,255,255,0.07);
+}
+
+.sidebar-nav-logout {
+  color: rgba(239,83,80,0.75);
+  font-size: 12px;
+}
+.sidebar-nav-logout:hover {
+  background: rgba(211,47,47,0.14);
+  color: #EF5350;
+}
+
+.nav-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+/* Badges inside sidebar (notification dot, request count) */
+.sidebar-badge {
+  background: var(--red);
+  color: var(--white);
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 1px 6px;
+  min-width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+}
+/* Override single-class rules for notification-dot/request-count-badge in sidebar context */
+.sidebar-badge.notification-dot,
+.sidebar-badge.request-count-badge { margin-left: auto; }
+
+/* ── Sidebar Footer ── */
+.sidebar-footer {
+  padding: 12px 14px;
+  border-top: 1px solid rgba(255,255,255,0.07);
+  flex-shrink: 0;
+}
+
+.sidebar-version-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-app-name {
+  font-size: 10px;
+  color: rgba(255,255,255,0.28);
+  line-height: 1.45;
+}
+
+.sidebar-version {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.38);
+  font-family: 'DM Mono', monospace;
+  letter-spacing: 0.2px;
+}
+
+/* ── Sidebar Overlay (mobile backdrop) ── */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.48);
+  z-index: 140;
+  backdrop-filter: blur(1px);
+}
+.sidebar-overlay.overlay-visible { display: block; }
+
+/* ── Main Area ── */
+.main-area {
+  flex: 1;
+  margin-left: 240px;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-width: 0;
+}
+
+/* ── Bottom Nav (mobile only) ── */
+.bottom-nav {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: calc(56px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background: var(--white);
+  border-top: 1px solid var(--gray-2);
+  z-index: 99;
+  box-shadow: 0 -1px 8px rgba(0,0,0,0.07);
+}
+
+.bottom-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  flex: 1;
+  height: 56px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--gray-4);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 10px;
+  font-weight: 500;
+  transition: color 0.15s;
+  padding: 6px 4px;
+  position: relative;
+  -webkit-tap-highlight-color: transparent;
+}
+.bottom-nav-item:hover { color: var(--dark); }
+.bottom-nav-item:active { color: var(--red); }
+.bottom-nav-primary { color: var(--red); }
+.bottom-nav-primary:hover { color: var(--red-mid); }
+
+.bottom-nav-badge {
+  position: absolute;
+  top: 6px;
+  left: calc(50% + 2px);
+  background: var(--red);
+  color: var(--white);
+  font-size: 9px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 1px 5px;
+  min-width: 15px;
+  height: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+/* ============================================================
+   HEADER (redesigned — light background)
+   ============================================================ */
+.header {
+  background: var(--white);
+  border-bottom: 1px solid var(--gray-2);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+  flex-shrink: 0;
+}
+
+.header-inner {
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 56px;
+  max-width: 100%;
+}
+
+/* Sidebar toggle (hamburger) — mobile only */
+.sidebar-toggle {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--gray-4);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  transition: color 0.15s, background 0.15s;
+  flex-shrink: 0;
+  line-height: 0;
+}
+.sidebar-toggle:hover { color: var(--dark); background: var(--gray-1); }
+
+/* Brand (mobile header only — desktop shows in sidebar) */
+.header-brand {
+  display: none;
+  align-items: center;
+  gap: 8px;
   flex-shrink: 0;
 }
 
 .brand-logo {
-  width: 46px;
-  height: 46px;
+  width: 32px;
+  height: 32px;
   object-fit: contain;
   flex-shrink: 0;
   display: block;
@@ -93,55 +403,93 @@ body {
 }
 
 .brand-title {
-  color: var(--white);
+  color: var(--dark);
   font-weight: 700;
-  font-size: 15px;
-  letter-spacing: 0.2px;
+  font-size: 13px;
+  letter-spacing: 0.1px;
 }
 
-/* Header Actions */
+/* Module title (desktop) */
+.header-module-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  display: none;
+}
+
+/* Spacer pushes user area to the right */
+.header-spacer { flex: 1; }
+
+/* User area */
+.header-user-area {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.header-display-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dark);
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Header Actions (legacy fallback — no longer used for buttons) */
 .header-actions {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
-  margin-left: auto;
 }
 
 .role-badge {
   font-size: 11px;
   font-weight: 700;
-  color: var(--white);
-  background: var(--dark-2);
-  border: 1px solid var(--dark-3);
+  color: var(--dark);
+  background: var(--gray-2);
+  border: 1px solid var(--gray-3);
   border-radius: 999px;
-  padding: 5px 10px;
+  padding: 4px 10px;
   line-height: 1;
   white-space: nowrap;
 }
 
 .role-badge[data-role="admin"] {
-  background: var(--red);
-  border-color: var(--red);
+  background: var(--red-light);
+  border-color: #EF9A9A;
+  color: var(--red);
 }
 
 .role-badge[data-role="bidang"] {
-  background: #1565C0;
-  border-color: #1565C0;
+  background: #E3F2FD;
+  border-color: #90CAF9;
+  color: #1565C0;
 }
 
 .role-badge[data-role="viewer"] {
-  background: #2E7D32;
-  border-color: #2E7D32;
+  background: #E8F5E9;
+  border-color: #A5D6A7;
+  color: #2E7D32;
 }
 
+.role-badge[data-role="driver"] {
+  background: #FFF3E0;
+  border-color: #FFCC80;
+  color: #E65100;
+}
+
+/* Legacy header button styles (kept for modals/forms that may still reference them) */
 .btn-logout {
   font-family: 'DM Sans', sans-serif;
   font-size: 12px;
   font-weight: 600;
-  color: var(--gray-3);
+  color: var(--gray-4);
   background: transparent;
-  border: 1px solid var(--dark-3);
+  border: 1px solid var(--gray-2);
   border-radius: var(--radius-sm);
   padding: 6px 10px;
   cursor: pointer;
@@ -149,18 +497,18 @@ body {
   white-space: nowrap;
 }
 .btn-logout:hover {
-  color: var(--white);
+  color: var(--dark);
   border-color: var(--gray-3);
-  background: var(--dark-2);
+  background: var(--gray-1);
 }
 
 .btn-requests {
   font-family: 'DM Sans', sans-serif;
   font-size: 12px;
   font-weight: 600;
-  color: var(--white);
-  background: var(--dark-2);
-  border: 1px solid var(--dark-3);
+  color: var(--dark-2);
+  background: var(--gray-1);
+  border: 1.5px solid var(--gray-2);
   border-radius: var(--radius-sm);
   padding: 6px 10px;
   cursor: pointer;
@@ -171,7 +519,7 @@ body {
   white-space: nowrap;
 }
 .btn-requests:hover {
-  background: var(--dark-3);
+  background: var(--gray-2);
   border-color: var(--gray-3);
 }
 
@@ -194,15 +542,16 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
-  background: var(--dark-2);
+  background: var(--gray-1);
+  border: 1px solid var(--gray-2);
   border-radius: var(--radius-sm);
-  padding: 3px 6px;
+  padding: 2px 6px;
 }
 
 .btn-icon {
   background: none;
   border: none;
-  color: var(--gray-3);
+  color: var(--gray-4);
   font-size: 16px;
   cursor: pointer;
   padding: 4px 6px;
@@ -210,36 +559,35 @@ body {
   line-height: 1;
   transition: color 0.15s, background 0.15s;
 }
-.btn-icon:hover { color: var(--white); background: var(--dark-3); }
+.btn-icon:hover { color: var(--dark); background: var(--gray-2); }
 
 .date-input {
   font-family: 'DM Mono', monospace;
   font-size: 12px;
-  color: var(--white);
+  color: var(--dark);
   background: transparent;
   border: none;
   outline: none;
   padding: 4px 2px;
   cursor: pointer;
   min-width: 110px;
-  /* Untuk styling native date picker di beberapa browser */
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 .btn-today {
   font-family: 'DM Sans', sans-serif;
   font-size: 12px;
   font-weight: 500;
-  color: var(--gray-3);
+  color: var(--gray-4);
   background: none;
-  border: 1px solid var(--dark-3);
+  border: 1px solid var(--gray-2);
   border-radius: 4px;
   padding: 4px 8px;
   cursor: pointer;
   transition: all 0.15s;
   white-space: nowrap;
 }
-.btn-today:hover { color: var(--white); border-color: var(--gray-3); }
+.btn-today:hover { color: var(--dark); border-color: var(--gray-3); background: var(--gray-2); }
 
 /* Tombol Primer */
 .btn-primary {
@@ -1392,101 +1740,77 @@ z-index: 1;
 /* ============================================================
    RESPONSIVE — Mobile First
    ============================================================ */
+/* ============================================================
+   RESPONSIVE — Desktop (sidebar always visible)
+   ============================================================ */
+@media (min-width: 769px) {
+  .sidebar-toggle { display: none; }
+  .sidebar-close  { display: none; }
+  .sidebar-overlay { display: none !important; }
+  .header-brand { display: none; }
+  .bottom-nav { display: none !important; }
+  .header-module-title { display: block; }
+}
+
+/* ============================================================
+   RESPONSIVE — Tablet + Mobile (sidebar as drawer)
+   ============================================================ */
+@media (max-width: 768px) {
+  /* Sidebar: hidden by default, slides in on open */
+  .sidebar {
+    transform: translateX(-240px);
+    transition: transform 0.26s ease;
+    box-shadow: none;
+  }
+  .sidebar.sidebar-open {
+    transform: translateX(0);
+    box-shadow: var(--shadow-lg);
+  }
+  .sidebar-close { display: flex; }
+  .sidebar-toggle { display: flex; }
+  .header-brand { display: flex; }
+  .header-module-title { display: none; }
+
+  /* Main area takes full width */
+  .main-area { margin-left: 0; }
+
+  /* Bottom nav visible */
+  .bottom-nav { display: flex; }
+
+  /* Extra bottom padding so content isn't hidden behind bottom nav */
+  .main-content {
+    padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 24px);
+  }
+
+  /* Toast above bottom nav */
+  .toast {
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 10px);
+  }
+
+  /* Prevent body scroll when sidebar is open */
+  body.sidebar-is-open { overflow: hidden; }
+}
+
 @media (max-width: 600px) {
 
   /* ============================================================
-     HEADER — 2-row compact layout with visual hierarchy
+     HEADER — single row, compact
      ============================================================ */
   .header-inner {
-    flex-wrap: wrap;
-    padding: 8px 12px 7px;
-    gap: 0;
-    row-gap: 7px;
-    align-items: center;
+    padding: 0 10px;
+    gap: 8px;
+    height: 50px;
   }
 
-  /* Row 1: brand fills full width */
-  .header-brand {
-    flex: 0 0 100%;
-  }
-
-  .brand-logo  { width: 32px; height: 32px; }
-  .brand-title { font-size: 13px; }
-
-  /* Row 2: horizontally scrollable action bar, no wrapping */
-  .header-actions {
-    flex: 0 0 100%;
-    margin-left: 0;
-    gap: 5px;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    padding-bottom: 1px;
-    row-gap: 0;
-  }
-  .header-actions::-webkit-scrollbar { display: none; }
-
-  /* ── Priority ordering — most-used visible without scrolling ── */
-  #btnAddAssignment { order: 1; flex-shrink: 0; }
-  .date-nav          { order: 2; flex-shrink: 0; }
-  #btnNotifications  { order: 3; flex-shrink: 0; }
-  #btnRequests       { order: 4; flex-shrink: 0; }
-  .role-badge        { order: 5; flex-shrink: 0; }
-  #btnProfile        { order: 6; flex-shrink: 0; }
-  #btnUserMgmt       { order: 7; flex-shrink: 0; }
-  #btnLogout         { order: 8; flex-shrink: 0; }
-
-  /* ── P1: Primary action — full weight ── */
-  #btnAddAssignment {
-    padding: 7px 13px;
-    font-size: 12px;
-    font-weight: 700;
-    gap: 4px;
-  }
-  .btn-plus { font-size: 15px; }
-
-  /* ── P2: Operational — medium weight ── */
-  #btnNotifications {
-    min-width: unset;
-    min-height: unset;
-    padding: 5px 9px;
-    font-size: 11px;
-  }
-  #btnRequests {
-    padding: 5px 9px;
-    font-size: 11px;
-  }
-
-  /* ── P3: Identity — compact pill ── */
-  .role-badge {
-    padding: 4px 8px;
-    font-size: 10px;
-    letter-spacing: 0;
-  }
-  #btnProfile {
-    min-width: unset;
-    min-height: unset;
-    padding: 5px 8px;
-    font-size: 11px;
-  }
-
-  /* ── P4: Tertiary — de-emphasised, accessible by scrolling ── */
-  #btnUserMgmt {
-    padding: 4px 7px;
-    font-size: 10px;
-    opacity: 0.75;
-  }
-  .btn-logout {
-    padding: 4px 7px;
-    font-size: 10px;
-    opacity: 0.75;
-  }
+  .brand-logo  { width: 28px; height: 28px; }
+  .brand-title { font-size: 12px; }
 
   /* Date nav compact */
-  .date-nav   { padding: 3px 5px; }
-  .date-input { min-width: 82px; font-size: 11px; }
+  .date-nav   { padding: 2px 5px; }
+  .date-input { min-width: 82px; font-size: 11px; color-scheme: light; }
   .btn-today  { display: none; }
+
+  .header-display-name { max-width: 90px; font-size: 12px; }
 
   /* ============================================================
      MAIN CONTENT
@@ -1872,4 +2196,96 @@ z-index: 1;
   height: 1px;
   background: var(--gray-2);
   margin: 20px 0;
+}
+
+/* ============================================================
+   LOGIN MODAL — version footer
+   ============================================================ */
+.login-logo-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.login-logo {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.login-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--gray-2);
+  text-align: center;
+}
+
+.login-footer-appname {
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.login-footer-version {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gray-4);
+  font-family: 'DM Mono', monospace;
+}
+
+/* ============================================================
+   PROFILE — Application Information section
+   ============================================================ */
+.app-info-block {
+  background: var(--gray-1);
+  border: 1px solid var(--gray-2);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.app-info-name {
+  font-size: 12px;
+  color: var(--dark);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.app-info-version {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: 'DM Mono', monospace;
+}
+
+/* ============================================================
+   TIMELINE — scroll fade edge indicators
+   ============================================================ */
+.timeline-scroll-fade-left,
+.timeline-scroll-fade-right {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 36px;
+  pointer-events: none;
+  z-index: 6;
+  transition: opacity 0.2s;
+}
+
+.timeline-scroll-fade-left {
+  left: var(--driver-col);
+  background: linear-gradient(to right, rgba(255,255,255,0.85), transparent);
+  opacity: 0;
+}
+
+.timeline-scroll-fade-right {
+  right: 0;
+  background: linear-gradient(to left, rgba(255,255,255,0.85), transparent);
+  opacity: 1;
 }

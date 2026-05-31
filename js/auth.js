@@ -160,17 +160,22 @@ export async function initAuthUI(onAuthChange) {
 }
 
 /**
- * Update badge dan modal sesuai session saat ini.
+ * Update badge, display name, dan modal sesuai session saat ini.
  */
 export function updateAuthUI() {
   const user = getCurrentUser();
   const badge = document.getElementById('roleBadge');
   const logoutButton = document.getElementById('btnLogout');
+  const displayNameEl = document.getElementById('headerDisplayName');
 
   if (badge) {
-    badge.textContent = user ? user.name : 'Belum Login';
+    badge.textContent = user ? (ROLE_LABELS[user.role] || user.role) : 'Belum Login';
     badge.dataset.role = user ? user.role : 'guest';
-    badge.title = user ? ROLE_LABELS[user.role] : 'Silakan login';
+    badge.title = user ? `${user.name} · ${ROLE_LABELS[user.role]}` : 'Silakan login';
+  }
+
+  if (displayNameEl) {
+    displayNameEl.textContent = user ? (user.name || user.username) : '';
   }
 
   if (logoutButton) {

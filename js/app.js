@@ -11,6 +11,7 @@
 'use strict';
 
 // Import all modules
+import { APP_NAME, APP_VERSION } from './config.js';
 import { loadAssignments, saveAssignments, loadRequests, saveRequests, initFirebaseSync, registerDataChangeListener, registerRequestsChangeListener } from './firebase.js';
 import { initDriverSelect } from './drivers.js';
 import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate } from './timeline.js';
@@ -45,9 +46,7 @@ import {
   checkAndSendHoursReminders,
 } from './notification-service.js';
 
-const APP_VERSION = '20260526-request-permissions';
-
-console.info(`PBSI Scheduler ${APP_VERSION}`);
+console.info(`PBSI Scheduler v${APP_VERSION}`);
 
 /* ── Global App State ── */
 let assignments = [];
@@ -171,6 +170,38 @@ function updatePermissionUI() {
 
   updateDetailActionButtons();
   renderRequestsList();
+
+  // ── Sync mobile bottom nav visibility ──
+  const currentUser = getCurrentUser();
+  const canAdd = isAdmin() || isBidang();
+  const bottomNavAdd = document.getElementById('bottomNavAdd');
+  const bottomNavAddLabel = document.getElementById('bottomNavAddLabel');
+  const bottomNavRequests = document.getElementById('bottomNavRequests');
+  const bottomNavRequestsBadge = document.getElementById('bottomNavRequestsBadge');
+  const bottomNavNotifications = document.getElementById('bottomNavNotifications');
+  const bottomNavProfile = document.getElementById('bottomNavProfile');
+
+  if (bottomNavAdd) {
+    bottomNavAdd.style.display = canAdd ? 'flex' : 'none';
+    if (bottomNavAddLabel) {
+      bottomNavAddLabel.textContent = isAdmin() ? 'Tambah' : 'Request';
+    }
+  }
+  if (bottomNavRequests) {
+    bottomNavRequests.style.display = canAdd ? 'flex' : 'none';
+    if (bottomNavRequestsBadge) {
+      const pendingCount = getPendingRequestCount();
+      const showCount = isAdmin() && pendingCount > 0;
+      bottomNavRequestsBadge.textContent = String(pendingCount);
+      bottomNavRequestsBadge.style.display = showCount ? 'inline-flex' : 'none';
+    }
+  }
+  if (bottomNavNotifications) {
+    bottomNavNotifications.style.display = isAdmin() ? 'flex' : 'none';
+  }
+  if (bottomNavProfile) {
+    bottomNavProfile.style.display = currentUser ? 'flex' : 'none';
+  }
 }
 
 /**
@@ -178,6 +209,60 @@ function updatePermissionUI() {
  */
 document.addEventListener('DOMContentLoaded', async () => {
   console.log('Initializing PBSI Scheduler app...');
+
+  // ── Populate version & app name elements from config ──
+  document.querySelectorAll('.app-version-text').forEach(el => {
+    el.textContent = `v${APP_VERSION}`;
+  });
+  document.querySelectorAll('.app-version-full').forEach(el => {
+    el.textContent = `Versi ${APP_VERSION}`;
+  });
+  document.querySelectorAll('.app-name-text').forEach(el => {
+    el.textContent = APP_NAME;
+  });
+
+  // ── Sidebar toggle (mobile drawer) ──
+  const sidebar = document.getElementById('sidebar');
+  const sidebarToggle = document.getElementById('sidebarToggle');
+  const sidebarClose = document.getElementById('sidebarClose');
+  const sidebarOverlay = document.getElementById('sidebarOverlay');
+
+  function openSidebar() {
+    sidebar?.classList.add('sidebar-open');
+    sidebarOverlay?.classList.add('overlay-visible');
+    document.body.classList.add('sidebar-is-open');
+  }
+
+  function closeSidebar() {
+    sidebar?.classList.remove('sidebar-open');
+    sidebarOverlay?.classList.remove('overlay-visible');
+    document.body.classList.remove('sidebar-is-open');
+  }
+
+  sidebarToggle?.addEventListener('click', openSidebar);
+  sidebarClose?.addEventListener('click', closeSidebar);
+  sidebarOverlay?.addEventListener('click', closeSidebar);
+
+  // Close sidebar when any nav item is clicked on mobile
+  sidebar?.querySelectorAll('.sidebar-nav-item').forEach(item => {
+    item.addEventListener('click', () => {
+      if (window.innerWidth < 769) closeSidebar();
+    });
+  });
+
+  // ── Bottom nav proxy buttons ──
+  document.getElementById('bottomNavAdd')?.addEventListener('click', () => {
+    document.getElementById('btnAddAssignment')?.click();
+  });
+  document.getElementById('bottomNavRequests')?.addEventListener('click', () => {
+    document.getElementById('btnRequests')?.click();
+  });
+  document.getElementById('bottomNavNotifications')?.addEventListener('click', () => {
+    document.getElementById('btnNotifications')?.click();
+  });
+  document.getElementById('bottomNavProfile')?.addEventListener('click', () => {
+    document.getElementById('btnProfile')?.click();
+  });
 
   // Setup global debug namespace for console/legacy access
   window.appDebug = window.appDebug || {};
