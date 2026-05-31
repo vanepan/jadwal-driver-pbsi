@@ -721,6 +721,11 @@ button:disabled:hover {
   max-width: 1400px;
   margin: 0 auto;
   padding: 16px 12px 40px;
+  /* width:100% is required when .main-content is a flex child of .main-area
+     (column flex). Without it, margin:0 auto overrides align-self:stretch and
+     the element sizes to its intrinsic width — collapsing narrower than the
+     viewport and reducing the timeline-body clientWidth, cutting scroll range. */
+  width: 100%;
 }
 
 /* Label tanggal di atas timeline */
@@ -736,15 +741,15 @@ button:disabled:hover {
    TIMELINE SCHEDULER
    ============================================================ */
 
-/* Visual container — overflow:hidden so border-radius clips correctly.
-   Horizontal scroll lives exclusively on .timeline-body, not here.
-   Having overflow-x:auto on both wrapper AND body created two competing
-   scroll containers that broke mobile touch-scroll. */
+/* Wrapper seluruh timeline — visual card container.
+   overflow-x:auto here is safe because .main-content now has explicit
+   width:100%, so nothing forces the wrapper wider than the viewport. */
 .timeline-wrapper {
   background: var(--white);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: visible;
   border: 1px solid var(--gray-2);
   position: relative;
 }
@@ -1929,9 +1934,10 @@ z-index: 1;
   /* Row 2: date nav spans full width */
   .date-nav {
     order: 10;
-    width: calc(100% + 24px);
-    margin: 6px -12px 0;
-    padding: 6px 12px 8px;
+    flex: 0 0 100%; /* full row, no extra width */
+    width: 100%;
+    margin-top: 6px;
+    padding: 6px 0 8px;
     background: var(--gray-1);
     border: none;
     border-top: 1px solid var(--gray-2);
