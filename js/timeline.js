@@ -74,6 +74,28 @@ export function renderTimeline() {
     lastAutoFocusedDate = currentDate;
     requestAnimationFrame(() => autoFocusTimeline());
   }
+
+  // Debug: verify full 24-hour range is rendered and scrollable
+  requestAnimationFrame(() => {
+    const body = getTimelineBodyElement();
+    const hoursEl = document.getElementById('timelineHours');
+    if (!body) return;
+    const cells = hoursEl ? hoursEl.querySelectorAll('.hour-cell') : [];
+    const first = cells[0]?.textContent ?? 'N/A';
+    const last  = cells[cells.length - 1]?.textContent ?? 'N/A';
+    console.info('[Timeline]', {
+      scrollWidth:   body.scrollWidth,
+      clientWidth:   body.clientWidth,
+      maxScroll:     body.scrollWidth - body.clientWidth,
+      canScroll:     body.scrollWidth > body.clientWidth,
+      renderedHours: cells.length,
+      firstHour:     first,
+      lastHour:      last,
+      hourWidthPx:   getHourWidth(),
+      driverColPx:   parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--driver-col')) || 0,
+      expectedWidth: Math.round(24 * getHourWidth()),
+    });
+  });
 }
 
 /**
