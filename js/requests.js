@@ -474,6 +474,8 @@ export function requestToAssignment(request, approvedByUser, dateOverride = null
   const r = normalizeRequest(request);
   const driver = getDriverByName(r.driver);
   const assignmentDate = dateOverride || r.startDate || r.date;
+  const now = new Date().toISOString();
+  const adminName = approvedByUser ? approvedByUser.name : '';
 
   return {
     id: generateId(),
@@ -489,9 +491,18 @@ export function requestToAssignment(request, approvedByUser, dateOverride = null
     pax: 1,
     notes: r.notes,
     requestId: r.id,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    approvedBy: approvedByUser ? approvedByUser.name : '',
+    createdAt: now,
+    updatedAt: now,
+    // Lifecycle tracking
+    status: 'assigned',
+    approvedAt: r.approvedAt || now,
+    approvedBy: adminName,
+    assignedAt: now,
+    assignedBy: adminName,
+    startedAt: null,
+    startedBy: null,
+    completedAt: null,
+    completedBy: null,
   };
 }
 

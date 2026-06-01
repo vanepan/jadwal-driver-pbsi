@@ -9,7 +9,7 @@
 
 import { generateId, timeToMinutes, minutesToTime, showToast, initCustomTimeInputPair, getCombinedTimeFromPair, setTimeFieldsFromValue, normalizeTimeValue, expandDateRange, formatDateShort, addHoursToTime } from './utils.js';
 import { getDriverByName } from './drivers.js';
-import { hasPermission } from './auth.js';
+import { hasPermission, getCurrentUser } from './auth.js';
 
 /* ── Module State ── */
 let assignments = [];
@@ -270,16 +270,30 @@ function handleFormSubmit(e) {
     if (warningDatesEl) warningDatesEl.textContent = '';
   }
 
+  const currentUser = getCurrentUser();
+  const now = new Date().toISOString();
+
   if (editingId) {
-    // Update assignment yang ada (selalu single-date)
+    // Update assignment yang ada (selalu single-date) — preserve all lifecycle fields
     const idx = assignments.findIndex(a => a.id === editingId);
     if (idx !== -1) {
+      const existing = assignments[idx];
       assignments[idx] = {
         id: editingId,
         driver, phone, vehicle, date: startDate,
         startTime, endTime, destination, purpose, pic, pax, notes,
-        createdAt: assignments[idx].createdAt,
-        updatedAt: new Date().toISOString(),
+        createdAt: existing.createdAt,
+        updatedAt: now,
+        requestId:   existing.requestId   ?? null,
+        status:      existing.status      ?? 'assigned',
+        approvedAt:  existing.approvedAt  ?? null,
+        approvedBy:  existing.approvedBy  ?? null,
+        assignedAt:  existing.assignedAt  ?? null,
+        assignedBy:  existing.assignedBy  ?? null,
+        startedAt:   existing.startedAt   ?? null,
+        startedBy:   existing.startedBy   ?? null,
+        completedAt: existing.completedAt ?? null,
+        completedBy: existing.completedBy ?? null,
       };
     }
     showToast('✅ Jadwal berhasil diperbarui');
@@ -290,8 +304,13 @@ function handleFormSubmit(e) {
       id: generateId(),
       driver, phone, vehicle, date,
       startTime, endTime, destination, purpose, pic, pax, notes,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: now, updatedAt: now,
+      status: 'assigned',
+      assignedAt: now,
+      assignedBy: currentUser ? currentUser.name : '',
+      approvedAt: null, approvedBy: null,
+      startedAt: null, startedBy: null,
+      completedAt: null, completedBy: null,
     }));
     assignments.push(...newAssignments);
     showToast(`✅ ${datesToCreate.length} jadwal berhasil ditambahkan`);
@@ -302,8 +321,13 @@ function handleFormSubmit(e) {
       id: generateId(),
       driver, phone, vehicle, date: startDate,
       startTime, endTime, destination, purpose, pic, pax, notes,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: now, updatedAt: now,
+      status: 'assigned',
+      assignedAt: now,
+      assignedBy: currentUser ? currentUser.name : '',
+      approvedAt: null, approvedBy: null,
+      startedAt: null, startedBy: null,
+      completedAt: null, completedBy: null,
     };
     assignments.push(newAssignment);
     showToast('✅ Jadwal berhasil ditambahkan');

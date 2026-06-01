@@ -11,11 +11,19 @@ import { todayString, formatDateLong, timeToMinutes, offsetDate } from './utils.
 import { DEFAULT_DRIVERS, VEHICLES } from './drivers.js';
 import { openDetailModal } from './modal.js';
 
+/* ── Helpers ── */
+function normalizeBlockStatus(status) {
+  if (!status || status === 'aktif') return 'assigned';
+  if (status === 'selesai') return 'completed';
+  return status;
+}
+
 /* ── Module State ── */
 let currentDate = todayString();
 let assignments = [];
 let realtimeTimer = null;
 let lastAutoFocusedDate = null; // track which date has already been auto-focused
+let pendingScrollRestore = -1;  // scrollLeft to restore after innerHTML clear (-1 = none)
 
 function getTimelineBodyElement() {
   return document.getElementById('timelineBody') || document.getElementById('timelineGrid');
@@ -273,13 +281,17 @@ function createAssignmentBlock(assignment) {
   block.style.width = `${Math.max(width, 20)}px`;
   block.style.background = VEHICLES[assignment.vehicle] || '#555';
 
-  const isCompleted = (assignment.status ?? 'aktif') === 'selesai';
+  const status = normalizeBlockStatus(assignment.status);
+  const isCompleted = status === 'completed';
+  const isStarted   = status === 'started';
   if (isCompleted) block.classList.add('is-completed');
+  if (isStarted)   block.classList.add('is-started');
 
   block.innerHTML = `
     <span class="block-time">${assignment.startTime}–${assignment.endTime}</span>
     <span class="block-purpose">${assignment.purpose}</span>
     ${isCompleted ? '<span class="block-status-badge">✓ Selesai</span>' : ''}
+    ${isStarted   ? '<span class="block-status-badge block-status-badge--started">▶ Jalan</span>' : ''}
     <div class="resize-handle"></div>
   `;
 

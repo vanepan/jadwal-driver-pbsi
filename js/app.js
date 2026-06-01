@@ -15,7 +15,7 @@ import { APP_NAME, APP_VERSION } from './config.js';
 import { loadAssignments, saveAssignments, loadRequests, saveRequests, initFirebaseSync, registerDataChangeListener, registerRequestsChangeListener } from './firebase.js';
 import { initDriverSelect } from './drivers.js';
 import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate } from './timeline.js';
-import { initModalHandlers, registerEditCallback, registerDeleteCallback, registerCompleteCallback, setAssignments as setModalAssignments, updateDetailActionButtons } from './modal.js';
+import { initModalHandlers, registerEditCallback, registerDeleteCallback, registerStartCallback, registerCompleteCallback, setAssignments as setModalAssignments, updateDetailActionButtons } from './modal.js';
 import { initFormHandlers, openFormModal, closeFormModal, registerSaveCallback, setAssignments as setAssignmentsForm, setCurrentDate as setCurrentDateForm, checkConflict, deleteAssignment } from './assignments.js';
 import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver } from './auth.js';
 import {
@@ -90,6 +90,17 @@ function filterAssignmentsForUser(allAssignments) {
 
   // Admin, Bidang, Viewer lihat semua
   return allAssignments;
+}
+
+/**
+ * Normalize legacy assignment status values to canonical lifecycle codes.
+ * null / 'aktif' → 'assigned'; 'selesai' → 'completed'
+ */
+function normalizeAssignmentStatus(a) {
+  const s = a.status;
+  if (!s || s === 'aktif') return { ...a, status: 'assigned' };
+  if (s === 'selesai')     return { ...a, status: 'completed' };
+  return a;
 }
 
 /**
@@ -291,7 +302,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Load assignments dari localStorage (cache lokal)
   // Normalize requests on load: convert legacy { date } → { startDate, endDate }
-  assignments = loadAssignments();
+  // Normalize assignment status: convert legacy 'selesai'/'aktif' → lifecycle codes
+  assignments = loadAssignments().map(normalizeAssignmentStatus);
   requests = loadRequests().map(normalizeRequest);
   updateAllModules();
 
@@ -362,7 +374,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ── Callback: Firebase data berubah (dari device lain) ──
   registerDataChangeListener((updatedAssignments) => {
     console.log('Firebase data updated from another device');
-    assignments = updatedAssignments;
+    assignments = updatedAssignments.map(normalizeAssignmentStatus);
     updateAllModules();
     renderTimeline();
     checkAndSendH1Reminders(assignments, requests, getUserByUsername, getUsers);
@@ -552,20 +564,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log(`Assignment ${assignmentId} deleted`);
   });
 
-  // ── Callback: Selesai button di detail modal ──
-  registerCompleteCallback((assignmentId) => {
-    if (!hasPermission('complete')) return;
+  // ── Callback: Mulai button di detail modal ──
+  registerStartCallback((assignmentId) => {
+    if (!hasPermission('start')) return;
 
     const idx = assignments.findIndex(a => a.id === assignmentId);
     if (idx === -1) return;
 
+    if (assignments[idx].status === 'started') { showToast('Penugasan sudah dimulai'); return; }
+    if (assignments[idx].status === 'completed') { showToast('Penugasan sudah selesai'); return; }
+
     const currentUser = getCurrentUser();
+    const now = new Date().toISOString();
     assignments[idx] = {
       ...assignments[idx],
-      status: 'selesai',
-      completedAt: new Date().toISOString(),
-      completedBy: currentUser ? currentUser.name : '',
-      updatedAt: new Date().toISOString(),
+      status: 'started',
+      startedAt: now,
+      startedBy: currentUser ? currentUser.name : '',
+      updatedAt: now,
     };
 
     updateAllModules();
@@ -575,6 +591,45 @@ document.addEventListener('DOMContentLoaded', async () => {
     logAction({
       userId: currentUser?.id,
       username: currentUser?.username,
+      displayName: currentUser?.name,
+      action: 'assignment_started',
+      targetId: assignmentId,
+      metadata: {
+        startedAt: assignments[idx].startedAt,
+        startedBy: assignments[idx].startedBy,
+      },
+    });
+
+    showToast('▶ Penugasan dimulai');
+  });
+
+  // ── Callback: Selesai button di detail modal ──
+  registerCompleteCallback((assignmentId) => {
+    if (!hasPermission('complete')) return;
+
+    const idx = assignments.findIndex(a => a.id === assignmentId);
+    if (idx === -1) return;
+
+    if (assignments[idx].status === 'completed') { showToast('Penugasan sudah selesai'); return; }
+
+    const currentUser = getCurrentUser();
+    const now = new Date().toISOString();
+    assignments[idx] = {
+      ...assignments[idx],
+      status: 'completed',
+      completedAt: now,
+      completedBy: currentUser ? currentUser.name : '',
+      updatedAt: now,
+    };
+
+    updateAllModules();
+    saveAssignments(assignments);
+    renderTimeline();
+
+    logAction({
+      userId: currentUser?.id,
+      username: currentUser?.username,
+      displayName: currentUser?.name,
       action: 'assignment_completed',
       targetId: assignmentId,
       metadata: {
@@ -583,7 +638,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       },
     });
 
-    showToast('✅ Penugasan ditandai selesai');
+    showToast('✅ Penugasan selesai');
   });
 
   // Initialize Firebase real-time sync
