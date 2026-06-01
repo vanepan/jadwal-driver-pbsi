@@ -14,10 +14,11 @@ import { getCurrentUser, hasPermission, isAdmin } from './auth.js';
 let requests = [];
 let editingRequestId = null;
 
-let onCreateCallback = null;
-let onUpdateCallback = null;
+let onCreateCallback  = null;
+let onUpdateCallback  = null;
 let onApproveCallback = null;
-let onRejectCallback = null;
+let onRejectCallback  = null;
+let onCommentCallback = null;
 
 /**
  * Normalize a request object to the multi-day data model.
@@ -56,6 +57,10 @@ export function registerRequestApproveCallback(callback) {
 
 export function registerRequestRejectCallback(callback) {
   onRejectCallback = callback;
+}
+
+export function registerCommentCallback(callback) {
+  onCommentCallback = callback;
 }
 
 export function initRequestHandlers() {
@@ -383,6 +388,11 @@ function handleRequestActionClick(event) {
 
   if (action === 'reject' && onRejectCallback) {
     onRejectCallback(requestId);
+    return;
+  }
+
+  if (action === 'comment' && onCommentCallback) {
+    onCommentCallback(requestId);
   }
 }
 
@@ -403,15 +413,22 @@ function createRequestCardHTML(request) {
   const statusLabels = { pending: 'Menunggu', approved: 'Disetujui', rejected: 'Ditolak' };
   const statusLabel = statusLabels[r.status] || r.status;
 
-  const actions = r.status === 'pending' && isAdmin()
+  const adminActionButtons = r.status === 'pending' && isAdmin()
     ? `
-      <div class="request-card-actions">
         <button class="btn-secondary" data-request-action="edit"    data-request-id="${r.id}">Edit</button>
         <button class="btn-secondary" data-request-action="reject"  data-request-id="${r.id}">Tolak</button>
         <button class="btn-primary"   data-request-action="approve" data-request-id="${r.id}">Setujui${totalDays > 1 ? ` (${totalDays} hari)` : ''}</button>
-      </div>
-    `
-    : '';
+    ` : '';
+
+  const commentCount = Array.isArray(r.comments) ? r.comments.length : 0;
+  const commentLabel = commentCount > 0 ? `💬 ${commentCount}` : '💬';
+
+  const actions = `
+    <div class="request-card-actions">
+      ${adminActionButtons}
+      <button class="btn-secondary" data-request-action="comment" data-request-id="${r.id}" title="Komentar">${commentLabel}</button>
+    </div>
+  `;
 
   return `
     <div class="request-card" data-status="${r.status}">

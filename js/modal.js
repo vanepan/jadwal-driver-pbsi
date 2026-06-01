@@ -27,6 +27,7 @@ let onEditCallback = null;
 let onDeleteCallback = null;
 let onStartCallback = null;
 let onCompleteCallback = null;
+let onCommentCallback = null;
 
 /** Normalize legacy status values to canonical lifecycle codes. */
 function normalizeStatus(status) {
@@ -58,6 +59,7 @@ export function registerEditCallback(callback) { onEditCallback = callback; }
 export function registerDeleteCallback(callback) { onDeleteCallback = callback; }
 export function registerStartCallback(callback) { onStartCallback = callback; }
 export function registerCompleteCallback(callback) { onCompleteCallback = callback; }
+export function registerCommentCallback(callback) { onCommentCallback = callback; }
 
 export function setAssignments(newAssignments) {
   assignments = newAssignments;
@@ -118,6 +120,15 @@ export function initModalHandlers() {
     if (confirm('Tandai penugasan ini sebagai selesai?')) {
       if (onCompleteCallback) onCompleteCallback(viewingId);
       closeDetailModal();
+    }
+  });
+
+  // Comment thread — only shown when assignment has a requestId
+  document.getElementById('btnCommentThread')?.addEventListener('click', () => {
+    const a = assignments.find(x => x.id === viewingId);
+    if (a?.requestId && onCommentCallback) {
+      closeDetailModal();
+      setTimeout(() => onCommentCallback(a.requestId), 50);
     }
   });
 
@@ -258,6 +269,11 @@ export function updateDetailActionButtons() {
 
   const a = viewingId ? assignments.find(x => x.id === viewingId) : null;
   const status = normalizeStatus(a?.status);
+
+  const btnComment = document.getElementById('btnCommentThread');
+  if (btnComment) {
+    btnComment.style.display = (a?.requestId) ? '' : 'none';
+  }
 
   if (btnEdit) {
     btnEdit.disabled = !hasPermission('edit');

@@ -93,6 +93,9 @@ export function initFormHandlers() {
       if (e.target === modalForm) closeFormModal();
     });
   }
+
+  // Real-time conflict preview
+  initConflictPreview();
 }
 
 function syncAssignmentMultiDayUI() {
@@ -206,6 +209,8 @@ export function closeFormModal() {
   const modal = document.getElementById('modalForm');
   if (modal) modal.style.display = 'none';
   editingId = null;
+  const previewEl = document.getElementById('conflictPreview');
+  if (previewEl) previewEl.style.display = 'none';
 }
 
 /**
@@ -392,6 +397,30 @@ export function checkConflict(driverName, startTime, endTime, date, excludeId = 
 }
 
 /**
+ * Check whether a vehicle is already assigned to another assignment that overlaps
+ * the given time window on the given date.
+ * @param {string} vehicleName
+ * @param {string} startTime - HH:MM
+ * @param {string} endTime   - HH:MM
+ * @param {string} date      - YYYY-MM-DD
+ * @param {string|null} excludeId
+ * @returns {boolean}
+ */
+export function checkVehicleConflict(vehicleName, startTime, endTime, date, excludeId = null) {
+  const startMin = timeToMinutes(startTime);
+  const endMin   = timeToMinutes(endTime);
+
+  return assignments.some(a => {
+    if (a.id === excludeId) return false;
+    if (a.vehicle !== vehicleName) return false;
+    if (a.date !== date) return false;
+    const aStart = timeToMinutes(a.startTime);
+    const aEnd   = timeToMinutes(a.endTime);
+    return startMin < aEnd && endMin > aStart;
+  });
+}
+
+/**
  * Delete assignment by ID
  * @param {string} id
  */
@@ -400,6 +429,86 @@ export function deleteAssignment(id) {
   if (onSaveCallback) {
     onSaveCallback(assignments, false);
   }
+}
+
+/**
+ * Set up real-time conflict preview listeners on the assignment form.
+ * Called once from initFormHandlers.
+ */
+function initConflictPreview() {
+  const watchIds = [
+    'fieldDriver', 'fieldVehicle', 'fieldDate', 'fieldEndDate',
+    'fieldStartHour', 'fieldStartMinute', 'fieldEndHour', 'fieldEndMinute',
+  ];
+  watchIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('change', runConflictPreview);
+      el.addEventListener('blur',   runConflictPreview);
+    }
+  });
+  document.getElementById('assignmentMultiDay')?.addEventListener('change', runConflictPreview);
+  document.getElementById('assignmentFullDay')?.addEventListener('change',  runConflictPreview);
+}
+
+/**
+ * Run the advisory conflict preview — checks driver AND vehicle overlaps
+ * across all selected dates. Updates #conflictPreview. Advisory only; does
+ * not block submission (the hard block happens on submit via checkConflict).
+ */
+function runConflictPreview() {
+  const previewEl = document.getElementById('conflictPreview');
+  if (!previewEl) return;
+
+  const driver     = document.getElementById('fieldDriver')?.value;
+  const vehicle    = document.getElementById('fieldVehicle')?.value;
+  const date       = document.getElementById('fieldDate')?.value;
+  const isFullDay  = document.getElementById('assignmentFullDay')?.checked ?? false;
+  const isMultiDay = document.getElementById('assignmentMultiDay')?.checked ?? false;
+
+  if (!date) { previewEl.style.display = 'none'; return; }
+
+  const startTime = isFullDay ? '00:00' : getCombinedTimeFromPair('fieldStartHour', 'fieldStartMinute');
+  const endTime   = isFullDay ? '23:59' : getCombinedTimeFromPair('fieldEndHour', 'fieldEndMinute');
+
+  if (!isFullDay && (!startTime || !endTime)) { previewEl.style.display = 'none'; return; }
+
+  const endDateVal = isMultiDay ? (document.getElementById('fieldEndDate')?.value || date) : date;
+  const dates = (isMultiDay && endDateVal >= date)
+    ? expandDateRange(date, endDateVal)
+    : [date];
+
+  const warnings = [];
+
+  if (driver) {
+    const hits = dates.filter(d => checkConflict(driver, startTime, endTime, d, editingId));
+    if (hits.length > 0) {
+      warnings.push(
+        `⚠ Driver <b>${escPreview(driver)}</b> sudah memiliki jadwal pada ${hits.map(formatDateShort).join(', ')}`
+      );
+    }
+  }
+
+  if (vehicle) {
+    const hits = dates.filter(d => checkVehicleConflict(vehicle, startTime, endTime, d, editingId));
+    if (hits.length > 0) {
+      warnings.push(
+        `⚠ Kendaraan <b>${escPreview(vehicle)}</b> sudah digunakan pada ${hits.map(formatDateShort).join(', ')}`
+      );
+    }
+  }
+
+  if (warnings.length > 0) {
+    previewEl.innerHTML = warnings.join('<br>');
+    previewEl.style.display = 'block';
+  } else {
+    previewEl.style.display = 'none';
+  }
+}
+
+function escPreview(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 /**

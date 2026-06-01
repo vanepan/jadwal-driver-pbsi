@@ -15,7 +15,7 @@ import { APP_NAME, APP_VERSION } from './config.js';
 import { loadAssignments, saveAssignments, loadRequests, saveRequests, initFirebaseSync, registerDataChangeListener, registerRequestsChangeListener } from './firebase.js';
 import { initDriverSelect } from './drivers.js';
 import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate } from './timeline.js';
-import { initModalHandlers, registerEditCallback, registerDeleteCallback, registerStartCallback, registerCompleteCallback, setAssignments as setModalAssignments, updateDetailActionButtons } from './modal.js';
+import { initModalHandlers, registerEditCallback, registerDeleteCallback, registerStartCallback, registerCompleteCallback, registerCommentCallback as registerModalCommentCallback, setAssignments as setModalAssignments, updateDetailActionButtons } from './modal.js';
 import { initFormHandlers, openFormModal, closeFormModal, registerSaveCallback, setAssignments as setAssignmentsForm, setCurrentDate as setCurrentDateForm, checkConflict, deleteAssignment } from './assignments.js';
 import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver } from './auth.js';
 import {
@@ -26,12 +26,15 @@ import {
   registerRequestUpdateCallback,
   registerRequestApproveCallback,
   registerRequestRejectCallback,
+  registerCommentCallback as registerRequestCommentCallback,
   setRequests as setRequestsModule,
   getPendingRequestCount,
   renderRequestsList,
   requestToAssignment,
   normalizeRequest,
 } from './requests.js';
+import { renderDriverDashboard, setAssignments as setDashboardAssignments } from './driver-dashboard.js';
+import { initCommentHandlers, openCommentModal, closeCommentModal, setRequests as setCommentRequests, registerCommentSaveCallback } from './comments.js';
 import { initAdminUI, updateAdminButtons } from './admin.js';
 import { initNotificationUI, setNotificationData, openNotificationsModal } from './notifications.js';
 import { subscribeLogsChangeListener, getLogs, logAction } from './logs.js';
@@ -108,13 +111,17 @@ function normalizeAssignmentStatus(a) {
  * Dipanggil setiap kali ada perubahan data (Firebase sync, form submit, delete, etc)
  */
 function updateAllModules() {
-  // Filter assignments berdasarkan role user
-  const filteredAssignments = filterAssignmentsForUser(assignments);
+  // Timeline, modal, and conflict-check always see ALL assignments
+  setTimelineAssignments(assignments);
+  setModalAssignments(assignments);
+  setAssignmentsForm(assignments);
 
-  setTimelineAssignments(filteredAssignments);
-  setModalAssignments(filteredAssignments);
-  setAssignmentsForm(filteredAssignments);
+  // Driver Dashboard shows only assignments for the logged-in driver
+  setDashboardAssignments(filterAssignmentsForUser(assignments));
+
   setRequestsModule(requests);
+  setCommentRequests(requests);
+  renderDriverDashboard();
 }
 
 /**
@@ -181,6 +188,17 @@ function updatePermissionUI() {
 
   updateDetailActionButtons();
   renderRequestsList();
+
+  // ── Driver Dashboard panel: shown for driver role, hidden for others ──
+  // Re-filter and re-set assignments here so the dashboard always has
+  // fresh, role-correct data the moment it becomes visible.
+  const driverView = isDriver();
+  const dashboard = document.getElementById('driverDashboard');
+  if (dashboard) dashboard.style.display = driverView ? 'block' : 'none';
+  if (driverView) {
+    setDashboardAssignments(filterAssignmentsForUser(assignments));
+    renderDriverDashboard();
+  }
 
   // ── Sync FAB, Pengaturan, and bottom nav visibility ──
   const currentUser = getCurrentUser();
@@ -278,9 +296,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ── Bottom nav: Dashboard (scroll timeline to focus) ──
   document.getElementById('bottomNavDashboard')?.addEventListener('click', () => {
-    // Re-trigger smart auto-focus for current date
     setCurrentDate(getCurrentDate()); // resets lastAutoFocusedDate
     renderTimeline();
+    if (isDriver()) renderDriverDashboard();
   });
 
   // ── Bottom nav proxy buttons ──
@@ -316,6 +334,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initFormHandlers();                    // Setup form events
   initModalHandlers();                   // Setup modal events
   initRequestHandlers();                 // Setup request workflow events
+  initCommentHandlers();                 // Setup comment thread events
   renderTimeline();                      // Render timeline pertama kali
   updatePermissionUI();                  // Disable tombol sesuai role
   updateAdminButtons();                  // Show admin controls properly
@@ -375,7 +394,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   registerDataChangeListener((updatedAssignments) => {
     console.log('Firebase data updated from another device');
     assignments = updatedAssignments.map(normalizeAssignmentStatus);
-    updateAllModules();
+    updateAllModules();   // also calls setDashboardAssignments + renderDriverDashboard
     renderTimeline();
     checkAndSendH1Reminders(assignments, requests, getUserByUsername, getUsers);
     checkAndSendHoursReminders(assignments, requests, getUserByUsername, getUsers);
@@ -537,6 +556,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Notify requester (bidang) via Telegram — non-blocking
     const rejectedRequest = requests.find(item => item.id === requestId);
     if (rejectedRequest) sendRequestRejectedNotification(rejectedRequest, getUserByUsername);
+  });
+
+  // ── Callback: Comment thread — from request card (admin/bidang) ──
+  registerRequestCommentCallback((requestId) => openCommentModal(requestId));
+
+  // ── Callback: Comment thread — from assignment detail (driver/admin) ──
+  registerModalCommentCallback((requestId) => openCommentModal(requestId));
+
+  // ── Callback: Save a new comment to a request ──
+  registerCommentSaveCallback((updatedRequest) => {
+    requests = requests.map(r => r.id === updatedRequest.id ? updatedRequest : r);
+    setCommentRequests(requests);
+    saveRequests(requests);
+    renderRequestsList();
   });
 
   // ── Callback: Edit button di detail modal ──

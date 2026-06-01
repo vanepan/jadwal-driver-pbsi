@@ -1866,6 +1866,228 @@ z-index: 1;
 }
 
 /* ============================================================
+   DRIVER DASHBOARD
+   ============================================================ */
+.driver-dashboard {
+  padding: 16px 20px 80px;
+  max-width: 680px;
+}
+
+.dash-section {
+  margin-bottom: 28px;
+}
+
+.dash-section--active .dash-section-title {
+  color: #e65100;
+}
+
+.dash-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dash-section-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border, #e0e0e0);
+}
+
+.dash-card {
+  background: var(--white);
+  border: 1px solid var(--border, #e0e0e0);
+  border-radius: var(--radius, 10px);
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: box-shadow 0.15s, border-color 0.15s, transform 0.1s;
+}
+
+.dash-card:hover {
+  box-shadow: 0 3px 12px rgba(0,0,0,0.09);
+  border-color: #bdbdbd;
+}
+
+.dash-card:active { transform: scale(0.99); }
+
+.dash-card--started {
+  border-left: 3px solid #e65100;
+  background: #fff9f5;
+}
+
+.dash-card--muted { opacity: 0.72; }
+
+.dash-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.dash-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dark);
+  margin-bottom: 4px;
+  line-height: 1.4;
+}
+
+.dash-card-destination {
+  font-size: 13px;
+  color: var(--dark);
+  margin-bottom: 6px;
+}
+
+.dash-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.dash-meta-item {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.dash-card-pic {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.dash-empty {
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 20px 0;
+  font-style: italic;
+}
+
+/* ============================================================
+   COMMENT THREAD
+   ============================================================ */
+.comment-list {
+  overflow-y: auto;
+  max-height: 50vh;
+  min-height: 100px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 0 8px;
+  margin-bottom: 4px;
+}
+
+.comment-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.comment-item--own { align-items: flex-end; }
+
+.comment-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.comment-author {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dark);
+}
+
+.comment-role-badge {
+  font-size: 10px;
+  font-weight: 600;
+  background: #e8eaf6;
+  color: #3949ab;
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
+.comment-time {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.comment-body {
+  font-size: 13px;
+  color: var(--dark);
+  background: var(--gray-1, #f5f5f5);
+  border-radius: 8px;
+  padding: 8px 12px;
+  max-width: 92%;
+  word-break: break-word;
+  line-height: 1.5;
+}
+
+.comment-item--own .comment-body {
+  background: #fde8e8;
+}
+
+.comment-input-area {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  padding-top: 12px;
+  border-top: 1px solid var(--border, #e0e0e0);
+}
+
+.comment-input-area textarea {
+  flex: 1;
+  border: 1px solid var(--border, #e0e0e0);
+  border-radius: var(--radius-sm, 6px);
+  padding: 8px 12px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  resize: none;
+  min-height: 40px;
+  max-height: 100px;
+  color: var(--dark);
+  background: var(--white);
+  line-height: 1.4;
+}
+
+.comment-input-area textarea:focus {
+  outline: none;
+  border-color: var(--red, #d32f2f);
+}
+
+.comment-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 24px 0;
+  font-style: italic;
+}
+
+/* ============================================================
+   CONFLICT PREVIEW (real-time advisory warning)
+   ============================================================ */
+.conflict-preview {
+  background: #fff8e1;
+  border: 1.5px solid #ffca28;
+  color: #5d4037;
+  border-radius: var(--radius-sm, 6px);
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  margin-top: 8px;
+  line-height: 1.7;
+}
+
+/* ============================================================
    TOAST NOTIFICATION
    ============================================================ */
 .toast {

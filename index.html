@@ -155,6 +155,14 @@
         <span class="legend-item" data-vehicle="Hiace">Hiace</span>
       </div>
 
+      <!-- ===== DRIVER DASHBOARD — shown below timeline for driver role ===== -->
+      <div class="driver-dashboard" id="driverDashboard" style="display:none;">
+        <div id="dashActiveSection"></div>
+        <div id="dashTodaySection"></div>
+        <div id="dashUpcomingSection"></div>
+        <div id="dashHistorySection"></div>
+      </div>
+
     </main>
 
     <!-- ===== FAB: Tambah Jadwal / Buat Request (mobile only) ===== -->
@@ -607,6 +615,7 @@
             <textarea id="fieldNotes" rows="2" placeholder="Catatan tambahan (opsional)"></textarea>
           </div>
         </div>
+        <div class="conflict-preview" id="conflictPreview" style="display:none;"></div>
         <div class="conflict-warning" id="conflictWarning" style="display:none;">
           ⚠️ Konflik jadwal! Driver sudah memiliki assignment di jam yang sama.
           <div class="conflict-warning-dates" id="conflictWarningDates"></div>
@@ -638,9 +647,27 @@
       <div class="detail-actions">
         <button class="btn-danger" id="btnDeleteAssignment">🗑 Hapus</button>
         <button class="btn-secondary" id="btnEditAssignment">✏️ Edit</button>
+        <button class="btn-secondary" id="btnCommentThread" style="display:none;">💬 Thread</button>
         <button class="btn-primary" id="btnStartAssignment">▶ Mulai</button>
         <button class="btn-success" id="btnCompleteAssignment">✓ Selesai</button>
         <button class="btn-secondary" id="btnCloseDetail2">Tutup</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: COMMENT THREAD ===== -->
+<div class="modal-overlay" id="modalCommentThread" style="display:none;">
+  <div class="modal-box modal-detail-box">
+    <div class="modal-header">
+      <h2 class="modal-title" id="commentThreadTitle">Komentar</h2>
+      <button class="modal-close" id="btnCloseCommentThread">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="comment-list" id="commentThreadList"></div>
+      <div class="comment-input-area" id="commentInputArea">
+        <textarea id="commentInput" placeholder="Tulis komentar..." rows="2"></textarea>
+        <button class="btn-primary" id="btnSendComment" type="button">Kirim</button>
       </div>
     </div>
   </div>
