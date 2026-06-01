@@ -80,6 +80,12 @@ export function initFormHandlers() {
     multiDayCheckbox.addEventListener('change', syncAssignmentMultiDayUI);
   }
 
+  // Full-day checkbox
+  const fullDayCheckbox = document.getElementById('assignmentFullDay');
+  if (fullDayCheckbox) {
+    fullDayCheckbox.addEventListener('change', syncFullDayUI);
+  }
+
   // Click di luar modal untuk tutup
   const modalForm = document.getElementById('modalForm');
   if (modalForm) {
@@ -97,8 +103,7 @@ function syncAssignmentMultiDayUI() {
   if (!endDateGroup) return;
 
   if (checked) {
-    endDateGroup.style.display = 'flex';
-    requestAnimationFrame(() => endDateGroup.classList.add('visible'));
+    endDateGroup.classList.add('visible');
     if (endDateInput) endDateInput.required = true;
     if (fieldDateLabel) fieldDateLabel.textContent = 'Tanggal Mulai *';
   } else {
@@ -108,12 +113,15 @@ function syncAssignmentMultiDayUI() {
       endDateInput.value = '';
     }
     if (fieldDateLabel) fieldDateLabel.textContent = 'Tanggal *';
-    endDateGroup.addEventListener('transitionend', () => {
-      if (!document.getElementById('assignmentMultiDay')?.checked) {
-        endDateGroup.style.display = 'none';
-      }
-    }, { once: true });
   }
+}
+
+function syncFullDayUI() {
+  const checked = document.getElementById('assignmentFullDay')?.checked;
+  const timeStart = document.getElementById('assignmentTimeStart');
+  const timeEnd   = document.getElementById('assignmentTimeEnd');
+  if (timeStart) timeStart.classList.toggle('time-group-hidden', !!checked);
+  if (timeEnd)   timeEnd.classList.toggle('time-group-hidden', !!checked);
 }
 
 /**
@@ -144,9 +152,14 @@ export function openFormModal(asgnId = null) {
   const endDateGroupReset = document.getElementById('assignmentEndDateGroup');
   const fieldDateLabelReset = document.getElementById('fieldDateLabel');
   const fieldEndDateReset = document.getElementById('fieldEndDate');
-  if (endDateGroupReset) { endDateGroupReset.classList.remove('visible'); endDateGroupReset.style.display = 'none'; }
+  if (endDateGroupReset) endDateGroupReset.classList.remove('visible');
   if (fieldDateLabelReset) fieldDateLabelReset.textContent = 'Tanggal *';
   if (fieldEndDateReset) { fieldEndDateReset.required = false; fieldEndDateReset.value = ''; }
+
+  // Reset full-day
+  const fullDayCb = document.getElementById('assignmentFullDay');
+  if (fullDayCb) fullDayCb.checked = false;
+  syncFullDayUI();
 
   const title = document.getElementById('modalFormTitle');
   if (title) {
@@ -169,6 +182,11 @@ export function openFormModal(asgnId = null) {
       document.getElementById('fieldPIC').value         = a.pic;
       document.getElementById('fieldPax').value         = a.pax;
       document.getElementById('fieldNotes').value       = a.notes;
+
+      // Restore full-day state
+      const fullDayEdit = document.getElementById('assignmentFullDay');
+      if (fullDayEdit) fullDayEdit.checked = !!a.fullDay;
+      syncFullDayUI();
     }
   } else {
     // Mode add: set default date ke current date
@@ -212,8 +230,9 @@ function handleFormSubmit(e) {
   const phone       = document.getElementById('fieldPhone').value;
   const vehicle     = document.getElementById('fieldVehicle').value;
   const startDate   = document.getElementById('fieldDate').value;
-  const startTime   = getCombinedTimeFromPair('fieldStartHour', 'fieldStartMinute');
-  const endTime     = getCombinedTimeFromPair('fieldEndHour', 'fieldEndMinute');
+  const isFullDay   = document.getElementById('assignmentFullDay')?.checked ?? false;
+  const startTime   = isFullDay ? '00:00' : getCombinedTimeFromPair('fieldStartHour', 'fieldStartMinute');
+  const endTime     = isFullDay ? '23:59' : getCombinedTimeFromPair('fieldEndHour', 'fieldEndMinute');
   const destination = document.getElementById('fieldDestination').value.trim();
   const purpose     = document.getElementById('fieldPurpose').value.trim();
   const pic         = document.getElementById('fieldPIC').value.trim();
@@ -242,14 +261,15 @@ function handleFormSubmit(e) {
     return;
   }
 
-  if (!/^\d{2}:\d{2}$/.test(startTime) || !/^\d{2}:\d{2}$/.test(endTime)) {
-    showToast('⚠️ Format waktu tidak valid');
-    return;
-  }
-
-  if (timeToMinutes(endTime) <= timeToMinutes(startTime)) {
-    showToast('⚠️ Jam selesai harus lebih dari jam mulai');
-    return;
+  if (!isFullDay) {
+    if (!/^\d{2}:\d{2}$/.test(startTime) || !/^\d{2}:\d{2}$/.test(endTime)) {
+      showToast('⚠️ Format waktu tidak valid');
+      return;
+    }
+    if (timeToMinutes(endTime) <= timeToMinutes(startTime)) {
+      showToast('⚠️ Jam selesai harus lebih dari jam mulai');
+      return;
+    }
   }
 
   // Cek konflik untuk semua tanggal dalam rentang
@@ -282,6 +302,7 @@ function handleFormSubmit(e) {
         id: editingId,
         driver, phone, vehicle, date: startDate,
         startTime, endTime, destination, purpose, pic, pax, notes,
+        fullDay: isFullDay,
         createdAt: existing.createdAt,
         updatedAt: now,
         requestId:   existing.requestId   ?? null,
@@ -304,6 +325,7 @@ function handleFormSubmit(e) {
       id: generateId(),
       driver, phone, vehicle, date,
       startTime, endTime, destination, purpose, pic, pax, notes,
+      fullDay: isFullDay,
       createdAt: now, updatedAt: now,
       status: 'assigned',
       assignedAt: now,
@@ -321,6 +343,7 @@ function handleFormSubmit(e) {
       id: generateId(),
       driver, phone, vehicle, date: startDate,
       startTime, endTime, destination, purpose, pic, pax, notes,
+      fullDay: isFullDay,
       createdAt: now, updatedAt: now,
       status: 'assigned',
       assignedAt: now,

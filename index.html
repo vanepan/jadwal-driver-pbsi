@@ -561,7 +561,16 @@
             <label for="fieldEndDate">Tanggal Selesai *</label>
             <input type="date" id="fieldEndDate" />
           </div>
-          <div class="form-group time-pair-group">
+          <div class="form-group form-full full-day-section">
+            <label class="multi-day-checkbox-label">
+              <input type="checkbox" id="assignmentFullDay" />
+              <span>
+                <span class="multi-day-checkbox-text">Jadwal Penuh Hari</span>
+                <span class="multi-day-hint">Driver tidak tersedia sepanjang hari (00:00 – 23:59)</span>
+              </span>
+            </label>
+          </div>
+          <div class="form-group time-pair-group" id="assignmentTimeStart">
             <label>Jam Mulai *</label>
             <div class="time-pair">
               <input type="text" id="fieldStartHour" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="HH" required />
@@ -569,7 +578,7 @@
               <input type="text" id="fieldStartMinute" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="MM" required />
             </div>
           </div>
-          <div class="form-group time-pair-group">
+          <div class="form-group time-pair-group" id="assignmentTimeEnd">
             <label>Jam Selesai *</label>
             <div class="time-pair">
               <input type="text" id="fieldEndHour" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="HH" required />

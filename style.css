@@ -1467,15 +1467,34 @@ z-index: 1;
   margin-top: 1px;
 }
 
-/* End-date field — fade in/out, collapsed by default */
+/* End-date field — hidden by default.
+   Desktop: visibility:hidden preserves the grid cell so the time fields
+   below never shift when the field is toggled.
+   Mobile: display:none collapses the space on a single-column stack. */
 .end-date-wrapper {
-  display: none;
+  visibility: hidden;
+  pointer-events: none;
   opacity: 0;
   transition: opacity 0.2s ease;
 }
 
 .end-date-wrapper.visible {
+  visibility: visible;
+  pointer-events: auto;
   opacity: 1;
+}
+
+/* Full-day toggle — shares spacing/padding with multi-day row */
+.full-day-section {
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+
+/* Time pair groups hidden when Full Day is active.
+   Both groups are hidden together (a complete 2-col row) so
+   display:none is safe on both desktop and mobile. */
+.time-group-hidden {
+  display: none;
 }
 
 /* Conflict Warning */
@@ -2081,11 +2100,16 @@ z-index: 1;
   .detail-actions button { flex: 1; text-align: center; }
 
   /* ============================================================
-     MULTI-DAY SECTION — compact
+     MULTI-DAY / FULL-DAY SECTION — compact
      ============================================================ */
   .multi-day-section      { padding-top: 0; padding-bottom: 0; }
+  .full-day-section       { padding-top: 0; padding-bottom: 0; }
   .multi-day-checkbox-text { font-size: 13px; }
   .multi-day-hint          { font-size: 10px; margin-top: 1px; }
+
+  /* On mobile collapse the end-date field instead of just hiding it */
+  .end-date-wrapper         { display: none; }
+  .end-date-wrapper.visible { display: flex; opacity: 1; visibility: visible; pointer-events: auto; }
 
   /* ============================================================
      REQUEST CARDS — compact
