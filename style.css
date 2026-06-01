@@ -1974,6 +1974,52 @@ z-index: 1;
 /* ============================================================
    COMMENT THREAD
    ============================================================ */
+.modal-comment-box { max-width: 520px; }
+
+/* ── Request context strip ── */
+.comment-context {
+  border: 1px solid var(--border, #e0e0e0);
+  border-radius: var(--radius-sm, 6px);
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  background: var(--gray-1, #f5f5f5);
+}
+
+.comment-context-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.comment-context-row + .comment-context-row { margin-top: 5px; }
+
+.comment-context-footer { justify-content: space-between; }
+
+.comment-context-driver {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dark);
+}
+
+.comment-context-sep,
+.comment-context-date  { font-size: 12px; color: var(--text-muted); }
+
+.comment-context-requester { font-size: 11px; color: var(--text-muted); }
+
+.comment-context-status-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  border-radius: 4px;
+  padding: 2px 7px;
+}
+
+.comment-context-status--pending  { background: #fff9c4; color: #f57f17; }
+.comment-context-status--approved { background: #e8f5e9; color: #2e7d32; }
+.comment-context-status--rejected { background: #fce4ec; color: #c62828; }
+
 .comment-list {
   overflow-y: auto;
   max-height: 50vh;

@@ -34,7 +34,7 @@ import {
   normalizeRequest,
 } from './requests.js';
 import { renderDriverDashboard, setAssignments as setDashboardAssignments } from './driver-dashboard.js';
-import { initCommentHandlers, openCommentModal, closeCommentModal, setRequests as setCommentRequests, registerCommentSaveCallback } from './comments.js';
+import { initCommentHandlers, openCommentModal, closeCommentModal, setRequests as setCommentRequests, registerCommentSaveCallback, refreshCommentThreadIfOpen } from './comments.js';
 import { initAdminUI, updateAdminButtons } from './admin.js';
 import { initNotificationUI, setNotificationData, openNotificationsModal } from './notifications.js';
 import { subscribeLogsChangeListener, getLogs, logAction } from './logs.js';
@@ -406,6 +406,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     requests = updatedRequests.map(normalizeRequest);
     updateAllModules();
     updatePermissionUI();
+    // Refresh comment modal if open for one of the updated requests
+    refreshCommentThreadIfOpen(requests);
   });
 
   // ── Callback: Form save (add/update assignment) ──

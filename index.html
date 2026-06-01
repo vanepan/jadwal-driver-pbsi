@@ -658,16 +658,17 @@
 
 <!-- ===== MODAL: COMMENT THREAD ===== -->
 <div class="modal-overlay" id="modalCommentThread" style="display:none;">
-  <div class="modal-box modal-detail-box">
+  <div class="modal-box modal-detail-box modal-comment-box">
     <div class="modal-header">
       <h2 class="modal-title" id="commentThreadTitle">Komentar</h2>
       <button class="modal-close" id="btnCloseCommentThread">&times;</button>
     </div>
     <div class="modal-body">
+      <div class="comment-context" id="commentContext"></div>
       <div class="comment-list" id="commentThreadList"></div>
       <div class="comment-input-area" id="commentInputArea">
-        <textarea id="commentInput" placeholder="Tulis komentar..." rows="2"></textarea>
-        <button class="btn-primary" id="btnSendComment" type="button">Kirim</button>
+        <textarea id="commentInput" placeholder="Tulis komentar..." rows="2" maxlength="500"></textarea>
+        <button class="btn-primary" id="btnSendComment" type="button" disabled>Kirim</button>
       </div>
     </div>
   </div>
