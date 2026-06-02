@@ -123,8 +123,11 @@ function syncFullDayUI() {
   const checked = document.getElementById('assignmentFullDay')?.checked;
   const timeStart = document.getElementById('assignmentTimeStart');
   const timeEnd   = document.getElementById('assignmentTimeEnd');
-  if (timeStart) timeStart.classList.toggle('time-group-hidden', !!checked);
-  if (timeEnd)   timeEnd.classList.toggle('time-group-hidden', !!checked);
+  [timeStart, timeEnd].forEach(group => {
+    if (!group) return;
+    group.classList.toggle('time-group-disabled', !!checked);
+    group.querySelectorAll('input').forEach(el => { el.disabled = !!checked; });
+  });
 }
 
 /**

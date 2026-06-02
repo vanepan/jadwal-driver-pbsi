@@ -287,8 +287,12 @@ function createAssignmentBlock(assignment) {
   if (isCompleted) block.classList.add('is-completed');
   if (isStarted)   block.classList.add('is-started');
 
+  const blockTimeLabel = assignment.fullDay
+    ? 'Penuh Hari'
+    : `${assignment.startTime}–${assignment.endTime}`;
+
   block.innerHTML = `
-    <span class="block-time">${assignment.startTime}–${assignment.endTime}</span>
+    <span class="block-time">${blockTimeLabel}</span>
     <span class="block-purpose">${assignment.purpose}</span>
     ${isCompleted ? '<span class="block-status-badge">✓ Selesai</span>' : ''}
     ${isStarted   ? '<span class="block-status-badge block-status-badge--started">▶ Jalan</span>' : ''}

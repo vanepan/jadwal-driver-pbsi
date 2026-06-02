@@ -262,12 +262,21 @@
             <label for="requestFieldVehicle">Kendaraan *</label>
             <select id="requestFieldVehicle" required><option value="">-- Pilih Kendaraan --</option></select>
           </div>
-          <div class="form-group form-full multi-day-section">
+          <div class="form-group multi-day-section">
             <label class="multi-day-checkbox-label">
               <input type="checkbox" id="requestMultiDay" />
               <span>
-                <span class="multi-day-checkbox-text">Jadwal Multi Hari</span>
-                <span class="multi-day-hint">Buat request untuk beberapa hari berturut-turut</span>
+                <span class="multi-day-checkbox-text">Multi Hari</span>
+                <span class="multi-day-hint">Beberapa hari berturut-turut</span>
+              </span>
+            </label>
+          </div>
+          <div class="form-group full-day-section">
+            <label class="multi-day-checkbox-label">
+              <input type="checkbox" id="requestFullDay" />
+              <span>
+                <span class="multi-day-checkbox-text">Penuh Hari</span>
+                <span class="multi-day-hint">Standby sepanjang hari</span>
               </span>
             </label>
           </div>
@@ -279,7 +288,7 @@
             <label for="requestFieldEndDate">Tanggal Selesai *</label>
             <input type="date" id="requestFieldEndDate" />
           </div>
-          <div class="form-group time-pair-group">
+          <div class="form-group time-pair-group" id="requestTimeStart">
             <label>Jam Mulai *</label>
             <div class="time-pair">
               <input type="text" id="requestFieldStartHour" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="HH" required />
@@ -287,7 +296,7 @@
               <input type="text" id="requestFieldStartMinute" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="MM" required />
             </div>
           </div>
-          <div class="form-group time-pair-group">
+          <div class="form-group time-pair-group" id="requestTimeEnd">
             <label>Jam Selesai *</label>
             <div class="time-pair">
               <input type="text" id="requestFieldEndHour" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="HH" required />
@@ -542,7 +551,7 @@
             <label for="fieldPhone">Nomor HP</label>
             <input type="text" id="fieldPhone" placeholder="Otomatis terisi" readonly />
           </div>
-          <div class="form-group">
+          <div class="form-group form-full">
             <label for="fieldVehicle">Kendaraan *</label>
             <select id="fieldVehicle" required>
               <option value="">-- Pilih Kendaraan --</option>
@@ -552,12 +561,21 @@
               <option value="Hiace">Hiace</option>
             </select>
           </div>
-          <div class="form-group form-full multi-day-section">
+          <div class="form-group multi-day-section">
             <label class="multi-day-checkbox-label">
               <input type="checkbox" id="assignmentMultiDay" />
               <span>
-                <span class="multi-day-checkbox-text">Jadwal Multi Hari</span>
-                <span class="multi-day-hint">Buat jadwal untuk beberapa hari berturut-turut</span>
+                <span class="multi-day-checkbox-text">Multi Hari</span>
+                <span class="multi-day-hint">Beberapa hari berturut-turut</span>
+              </span>
+            </label>
+          </div>
+          <div class="form-group full-day-section">
+            <label class="multi-day-checkbox-label">
+              <input type="checkbox" id="assignmentFullDay" />
+              <span>
+                <span class="multi-day-checkbox-text">Penuh Hari</span>
+                <span class="multi-day-hint">Standby sepanjang hari</span>
               </span>
             </label>
           </div>
@@ -568,15 +586,6 @@
           <div class="form-group end-date-wrapper" id="assignmentEndDateGroup">
             <label for="fieldEndDate">Tanggal Selesai *</label>
             <input type="date" id="fieldEndDate" />
-          </div>
-          <div class="form-group form-full full-day-section">
-            <label class="multi-day-checkbox-label">
-              <input type="checkbox" id="assignmentFullDay" />
-              <span>
-                <span class="multi-day-checkbox-text">Jadwal Penuh Hari</span>
-                <span class="multi-day-hint">Driver tidak tersedia sepanjang hari (00:00 – 23:59)</span>
-              </span>
-            </label>
           </div>
           <div class="form-group time-pair-group" id="assignmentTimeStart">
             <label>Jam Mulai *</label>

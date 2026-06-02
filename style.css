@@ -1490,11 +1490,18 @@ z-index: 1;
   padding-bottom: 2px;
 }
 
-/* Time pair groups hidden when Full Day is active.
-   Both groups are hidden together (a complete 2-col row) so
-   display:none is safe on both desktop and mobile. */
-.time-group-hidden {
-  display: none;
+/* Time pair groups dimmed when Full Day is active.
+   Inputs are kept visible but disabled so the user sees
+   that time selection is not applicable for full-day assignments. */
+.time-group-disabled {
+  opacity: 0.38;
+  pointer-events: none;
+}
+.time-group-disabled label::after {
+  content: ' (Penuh Hari)';
+  font-style: italic;
+  font-weight: 400;
+  opacity: 0.8;
 }
 
 /* Conflict Warning */

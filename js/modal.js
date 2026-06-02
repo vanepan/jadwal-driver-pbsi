@@ -172,7 +172,7 @@ export function openDetailModal(id) {
       </div>
       <div class="detail-row">
         <span class="detail-label">Waktu</span>
-        <span class="detail-value">${escapeHTML(a.startTime)} – ${escapeHTML(a.endTime)}</span>
+        <span class="detail-value">${a.fullDay ? 'Penuh Hari' : `${escapeHTML(a.startTime)} – ${escapeHTML(a.endTime)}`}</span>
       </div>
       <div class="detail-row">
         <span class="detail-label">Tujuan</span>
@@ -311,16 +311,18 @@ export function generateWAText(a) {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
   });
 
-  const [h, m]    = a.startTime.split(':').map(Number);
+  const [h, m]    = (a.startTime || '00:00').split(':').map(Number);
   const timeLabel = getTimePeriod(h);
-  const timeStr   = `${String(h).padStart(2,'0')}.${String(m).padStart(2,'0')} (${timeLabel})`;
+  const timeStr   = a.fullDay
+    ? 'Penuh Hari'
+    : `Jam ${String(h).padStart(2,'0')}.${String(m).padStart(2,'0')} (${timeLabel})`;
   const picStr    = a.pic ? `${a.pax} Pax (${a.pic})` : `${a.pax} Pax`;
   const header    = a.pic ? `*${a.purpose}* (${a.pic})` : `*${a.purpose}*`;
 
   return `${header}
 
 ${dateStr}
-Jam ${timeStr}
+${timeStr}
 📍: ${a.destination}
 🚗: ${a.vehicle}
 ${picStr}

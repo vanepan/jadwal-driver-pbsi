@@ -78,6 +78,11 @@ export function initRequestHandlers() {
     multiDayCheckbox.addEventListener('change', syncRequestMultiDayUI);
   }
 
+  const fullDayCheckbox = document.getElementById('requestFullDay');
+  if (fullDayCheckbox) {
+    fullDayCheckbox.addEventListener('change', syncRequestFullDayUI);
+  }
+
   // Auto-fill Jam Selesai = Jam Mulai + 2h jika Jam Selesai masih kosong
   const requestStartMin = document.getElementById('requestFieldStartMinute');
   if (requestStartMin) {
@@ -119,6 +124,17 @@ export function initRequestHandlers() {
   }
 }
 
+function syncRequestFullDayUI() {
+  const checked = document.getElementById('requestFullDay')?.checked;
+  const timeStart = document.getElementById('requestTimeStart');
+  const timeEnd   = document.getElementById('requestTimeEnd');
+  [timeStart, timeEnd].forEach(group => {
+    if (!group) return;
+    group.classList.toggle('time-group-disabled', !!checked);
+    group.querySelectorAll('input').forEach(el => { el.disabled = !!checked; });
+  });
+}
+
 function syncRequestMultiDayUI(instant = false) {
   const checked = document.getElementById('requestMultiDay')?.checked;
   const endDateGroup = document.getElementById('requestEndDateGroup');
@@ -126,8 +142,9 @@ function syncRequestMultiDayUI(instant = false) {
   const endDateInput = document.getElementById('requestFieldEndDate');
   if (!endDateGroup) return;
 
+  // CSS handles visibility (desktop: visibility:hidden keeps grid space;
+  // mobile: display:none collapses space). Never set style.display here.
   if (checked) {
-    endDateGroup.style.display = 'flex';
     requestAnimationFrame(() => endDateGroup.classList.add('visible'));
     if (endDateInput) endDateInput.required = true;
     if (startDateLabel) startDateLabel.textContent = 'Tanggal Mulai *';
@@ -138,15 +155,6 @@ function syncRequestMultiDayUI(instant = false) {
       endDateInput.value = '';
     }
     if (startDateLabel) startDateLabel.textContent = 'Tanggal *';
-    if (instant) {
-      endDateGroup.style.display = 'none';
-    } else {
-      endDateGroup.addEventListener('transitionend', () => {
-        if (!document.getElementById('requestMultiDay')?.checked) {
-          endDateGroup.style.display = 'none';
-        }
-      }, { once: true });
-    }
   }
 }
 
@@ -200,6 +208,11 @@ export function openRequestFormModal(requestId = null) {
       multiDayCheckbox.checked = isMultiDay;
       syncRequestMultiDayUI(true); // instant = no animation on open
     }
+
+    // Restore full-day checkbox state
+    const fullDayCb = document.getElementById('requestFullDay');
+    if (fullDayCb) fullDayCb.checked = !!norm.fullDay;
+    syncRequestFullDayUI();
   } else {
     // New request — reset to single-day mode without animation
     const multiDayCb = document.getElementById('requestMultiDay');
@@ -207,9 +220,14 @@ export function openRequestFormModal(requestId = null) {
     const endGrp = document.getElementById('requestEndDateGroup');
     const startLbl = document.getElementById('requestStartDateLabel');
     const endInput = document.getElementById('requestFieldEndDate');
-    if (endGrp) { endGrp.classList.remove('visible'); endGrp.style.display = 'none'; }
+    if (endGrp) { endGrp.classList.remove('visible'); }
     if (startLbl) startLbl.textContent = 'Tanggal *';
     if (endInput) { endInput.required = false; endInput.value = ''; }
+
+    // Reset full-day
+    const fullDayCb = document.getElementById('requestFullDay');
+    if (fullDayCb) fullDayCb.checked = false;
+    syncRequestFullDayUI();
   }
 
   const modal = document.getElementById('modalRequestForm');
@@ -284,8 +302,9 @@ function handleRequestSubmit(event) {
   const driver     = document.getElementById('requestFieldDriver').value;
   const vehicle    = document.getElementById('requestFieldVehicle').value;
   const startDate  = document.getElementById('requestFieldStartDate').value;
-  const startTime  = getCombinedTimeFromPair('requestFieldStartHour', 'requestFieldStartMinute');
-  const endTime    = getCombinedTimeFromPair('requestFieldEndHour', 'requestFieldEndMinute');
+  const isFullDay  = document.getElementById('requestFullDay')?.checked ?? false;
+  const startTime  = isFullDay ? '00:00' : getCombinedTimeFromPair('requestFieldStartHour', 'requestFieldStartMinute');
+  const endTime    = isFullDay ? '23:59' : getCombinedTimeFromPair('requestFieldEndHour', 'requestFieldEndMinute');
   const purpose    = document.getElementById('requestFieldPurpose').value.trim();
   const notes      = document.getElementById('requestFieldNotes').value.trim();
   const isMultiDay = document.getElementById('requestMultiDay')?.checked ?? false;
@@ -293,7 +312,12 @@ function handleRequestSubmit(event) {
     ? document.getElementById('requestFieldEndDate').value
     : startDate;
 
-  if (!driver || !vehicle || !startDate || !startTime || !endTime || !purpose) {
+  if (!driver || !vehicle || !startDate || !purpose) {
+    showToast('Lengkapi semua field request wajib (*)');
+    return;
+  }
+
+  if (!isFullDay && (!startTime || !endTime)) {
     showToast('Lengkapi semua field request wajib (*)');
     return;
   }
@@ -309,14 +333,15 @@ function handleRequestSubmit(event) {
     }
   }
 
-  if (!/^\d{2}:\d{2}$/.test(startTime) || !/^\d{2}:\d{2}$/.test(endTime)) {
-    showToast('Format waktu tidak valid');
-    return;
-  }
-
-  if (timeToMinutes(endTime) <= timeToMinutes(startTime)) {
-    showToast('Jam selesai harus lebih dari jam mulai');
-    return;
+  if (!isFullDay) {
+    if (!/^\d{2}:\d{2}$/.test(startTime) || !/^\d{2}:\d{2}$/.test(endTime)) {
+      showToast('Format waktu tidak valid');
+      return;
+    }
+    if (timeToMinutes(endTime) <= timeToMinutes(startTime)) {
+      showToast('Jam selesai harus lebih dari jam mulai');
+      return;
+    }
   }
 
   if (editingRequestId) {
@@ -331,6 +356,7 @@ function handleRequestSubmit(event) {
       endDate,
       startTime,
       endTime,
+      fullDay: isFullDay,
       purpose,
       notes,
       updatedAt: new Date().toISOString(),
@@ -353,6 +379,7 @@ function handleRequestSubmit(event) {
       endDate,
       startTime,
       endTime,
+      fullDay: isFullDay,
       driver,
       vehicle,
       purpose,
@@ -409,6 +436,10 @@ function createRequestCardHTML(request) {
   const durationChip = totalDays > 1
     ? `<span class="request-duration">${totalDays} hari</span>`
     : '';
+  const fullDayChip = r.fullDay
+    ? `<span class="request-duration">Penuh Hari</span>`
+    : '';
+  const timeMeta = r.fullDay ? 'Penuh Hari' : `${r.startTime}–${r.endTime}`;
 
   const statusLabels = { pending: 'Menunggu', approved: 'Disetujui', rejected: 'Ditolak' };
   const statusLabel = statusLabels[r.status] || r.status;
@@ -435,11 +466,11 @@ function createRequestCardHTML(request) {
       <div class="request-card-header">
         <div class="request-card-info">
           <div class="request-title">${escapeHTML(r.purpose)}</div>
-          <div class="request-meta">${escapeHTML(r.requesterName)} · ${escapeHTML(dateDisplay)} · ${escapeHTML(r.startTime)}–${escapeHTML(r.endTime)}</div>
+          <div class="request-meta">${escapeHTML(r.requesterName)} · ${escapeHTML(dateDisplay)} · ${escapeHTML(timeMeta)}</div>
         </div>
         <div class="request-card-badges">
           <span class="request-status">${escapeHTML(statusLabel)}</span>
-          ${durationChip}
+          ${durationChip}${fullDayChip}
         </div>
       </div>
       <div class="request-details">
@@ -500,8 +531,9 @@ export function requestToAssignment(request, approvedByUser, dateOverride = null
     phone: driver ? driver.phone : '',
     vehicle: r.vehicle,
     date: assignmentDate,
-    startTime: r.startTime,
-    endTime: r.endTime,
+    startTime: r.fullDay ? '00:00' : r.startTime,
+    endTime: r.fullDay ? '23:59' : r.endTime,
+    fullDay: r.fullDay || false,
     destination: r.purpose,
     purpose: r.purpose,
     pic: r.requesterName,
