@@ -646,21 +646,80 @@
       <button class="modal-close" id="btnCloseDetail">&times;</button>
     </div>
     <div class="modal-body">
-      <div id="detailContent"></div>
-      <div class="wa-preview-box">
-        <div class="wa-preview-label">📱 Ringkasan WhatsApp</div>
-        <pre id="waPreviewText" class="wa-preview-text"></pre>
-        <button class="btn-wa-copy" id="btnCopyWA">📋 Copy Ringkasan WhatsApp</button>
-        <span class="copy-feedback" id="copyFeedback" style="display:none;">✅ Tersalin!</span>
+
+      <!-- Section 1: Ringkasan Jadwal — always expanded -->
+      <div class="accord-section accord-section--open" id="accordSummary">
+        <button class="accord-header" type="button" aria-expanded="true">
+          <span class="accord-title">Ringkasan Jadwal</span>
+          <span class="accord-chevron">▶</span>
+        </button>
+        <div class="accord-body">
+          <div class="accord-body-inner" id="detailSummary"></div>
+        </div>
       </div>
+
+      <!-- Primary Actions: immediately below summary, before secondary sections -->
+      <div class="detail-actions-primary" id="detailActionsPrimary">
+        <button class="btn-primary" id="btnStartAssignment">▶ Mulai Tugas</button>
+        <button class="btn-success" id="btnCompleteAssignment">✓ Selesaikan</button>
+        <button class="btn-secondary" id="btnCommentThread" style="display:none;">💬 Komentar</button>
+      </div>
+
+      <!-- Section 2: Detail Tambahan — collapsed by default -->
+      <div class="accord-section" id="accordExtra">
+        <button class="accord-header" type="button" aria-expanded="false">
+          <span class="accord-title">Detail Tambahan</span>
+          <span class="accord-chevron">▶</span>
+        </button>
+        <div class="accord-body">
+          <div class="accord-body-inner" id="detailExtra"></div>
+        </div>
+      </div>
+
+      <!-- Section 3: Informasi Operasional — collapsed by default -->
+      <div class="accord-section" id="accordOps">
+        <button class="accord-header" type="button" aria-expanded="false">
+          <span class="accord-title">Informasi Operasional</span>
+          <span class="accord-chevron">▶</span>
+        </button>
+        <div class="accord-body">
+          <div class="accord-body-inner" id="detailOps"></div>
+        </div>
+      </div>
+
+      <!-- Section 4: Odometer — hidden when no data, collapsed by default -->
+      <div class="accord-section accord-section--hidden" id="accordOdo">
+        <button class="accord-header" type="button" aria-expanded="false">
+          <span class="accord-title">Odometer</span>
+          <span class="accord-chevron">▶</span>
+        </button>
+        <div class="accord-body">
+          <div class="accord-body-inner" id="detailOdo"></div>
+        </div>
+      </div>
+
+      <!-- Section 5: Ringkasan WhatsApp — collapsed by default -->
+      <div class="accord-section" id="accordWA">
+        <button class="accord-header" type="button" aria-expanded="false">
+          <span class="accord-title">📱 Ringkasan WhatsApp</span>
+          <span class="accord-chevron">▶</span>
+        </button>
+        <div class="accord-body">
+          <div class="accord-body-inner">
+            <pre id="waPreviewText" class="wa-preview-text"></pre>
+            <button class="btn-wa-copy" id="btnCopyWA">📋 Copy Ringkasan WhatsApp</button>
+            <span class="copy-feedback" id="copyFeedback" style="display:none;">✅ Tersalin!</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Secondary Actions: always visible at bottom -->
       <div class="detail-actions">
         <button class="btn-danger" id="btnDeleteAssignment">🗑 Hapus</button>
         <button class="btn-secondary" id="btnEditAssignment">✏️ Edit</button>
-        <button class="btn-secondary" id="btnCommentThread" style="display:none;">💬 Thread</button>
-        <button class="btn-primary" id="btnStartAssignment">▶ Mulai</button>
-        <button class="btn-success" id="btnCompleteAssignment">✓ Selesai</button>
         <button class="btn-secondary" id="btnCloseDetail2">Tutup</button>
       </div>
+
     </div>
   </div>
 </div>

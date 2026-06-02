@@ -199,6 +199,8 @@ function _handleOdometerConfirm() {
 }
 
 export function initModalHandlers() {
+  initAccordionListeners();
+
   document.getElementById('btnCloseDetail')?.addEventListener('click', closeDetailModal);
   document.getElementById('btnCloseDetail2')?.addEventListener('click', closeDetailModal);
 
@@ -297,9 +299,16 @@ export function openDetailModal(id) {
   const status = normalizeStatus(a.status);
   const statusLabel = STATUS_LABELS[status] || status;
 
-  const content = document.getElementById('detailContent');
-  if (content) {
-    content.innerHTML = `
+  // Section 1: Ringkasan Jadwal
+  const summaryEl = document.getElementById('detailSummary');
+  if (summaryEl) {
+    summaryEl.innerHTML = `
+      <div class="detail-row">
+        <span class="detail-label">Status</span>
+        <span class="detail-value">
+          <span class="badge-status badge-status--${status}">${escapeHTML(statusLabel)}</span>
+        </span>
+      </div>
       <div class="detail-row">
         <span class="detail-label">Driver</span>
         <span class="detail-value">${escapeHTML(a.driver)}</span>
@@ -330,6 +339,13 @@ export function openDetailModal(id) {
         <span class="detail-label">Keperluan</span>
         <span class="detail-value">${escapeHTML(a.purpose)}</span>
       </div>
+    `;
+  }
+
+  // Section 2: Detail Tambahan
+  const extraEl = document.getElementById('detailExtra');
+  if (extraEl) {
+    extraEl.innerHTML = `
       <div class="detail-row">
         <span class="detail-label">PIC</span>
         <span class="detail-value">${escapeHTML(a.pic || '-')}</span>
@@ -343,18 +359,34 @@ export function openDetailModal(id) {
         <span class="detail-label">Catatan</span>
         <span class="detail-value">${escapeHTML(a.notes)}</span>
       </div>` : ''}
-      <div class="detail-row">
-        <span class="detail-label">Status</span>
-        <span class="detail-value">
-          <span class="badge-status badge-status--${status}">${escapeHTML(statusLabel)}</span>
-        </span>
-      </div>
-      ${buildLifecycleRows(a)}
     `;
   }
 
+  // Section 3: Informasi Operasional
+  const opsEl = document.getElementById('detailOps');
+  if (opsEl) {
+    opsEl.innerHTML = buildOpsRows(a) || '<p class="detail-empty">Belum ada informasi operasional.</p>';
+  }
+
+  // Section 4: Odometer — show only when odometer data exists
+  const odoEl = document.getElementById('detailOdo');
+  const accordOdo = document.getElementById('accordOdo');
+  if (odoEl && accordOdo) {
+    const odoRows = buildOdoRows(a);
+    if (odoRows) {
+      odoEl.innerHTML = odoRows;
+      accordOdo.classList.remove('accord-section--hidden');
+    } else {
+      accordOdo.classList.add('accord-section--hidden');
+    }
+  }
+
+  // Section 5: Ringkasan WhatsApp
   const waText = document.getElementById('waPreviewText');
   if (waText) waText.textContent = generateWAText(a);
+
+  // Reset accordion state: collapse all except Section 1
+  _resetAccordions();
 
   updateDetailActionButtons();
 
@@ -362,12 +394,11 @@ export function openDetailModal(id) {
   if (modal) modal.style.display = 'flex';
 }
 
-/** Render audit rows for lifecycle events that have occurred. */
-function buildLifecycleRows(a) {
+/** Operational audit rows (who requested/assigned/started/completed). */
+function buildOpsRows(a) {
   const rows = [];
 
-  // Show requester (createdBy) only for request-based assignments and only when
-  // it differs from the admin who assigned — it adds meaningful context for PIC tracking.
+  // Show requester only for request-based assignments when different from assigner.
   if (a.createdBy && a.requestId && a.createdBy !== a.assignedBy) {
     rows.push(`
       <div class="detail-row">
@@ -396,13 +427,6 @@ function buildLifecycleRows(a) {
         <span class="detail-label">Dimulai oleh</span>
         <span class="detail-value">${escapeHTML(a.startedBy || '-')} <span class="detail-ts">${formatDateTime(a.startedAt)}</span></span>
       </div>`);
-    if (a.startOdometer != null) {
-      rows.push(`
-      <div class="detail-row">
-        <span class="detail-label">KM Awal</span>
-        <span class="detail-value">${Number(a.startOdometer).toLocaleString()} km</span>
-      </div>`);
-    }
   }
 
   if (a.completedAt) {
@@ -411,23 +435,67 @@ function buildLifecycleRows(a) {
         <span class="detail-label">Diselesaikan oleh</span>
         <span class="detail-value">${escapeHTML(a.completedBy || '-')} <span class="detail-ts">${formatDateTime(a.completedAt)}</span></span>
       </div>`);
-    if (a.endOdometer != null) {
-      rows.push(`
+  }
+
+  return rows.join('');
+}
+
+/** Odometer rows (KM Awal / KM Akhir / Jarak Tempuh). Returns empty string if no data. */
+function buildOdoRows(a) {
+  const rows = [];
+
+  if (a.startOdometer != null) {
+    rows.push(`
+      <div class="detail-row">
+        <span class="detail-label">KM Awal</span>
+        <span class="detail-value">${Number(a.startOdometer).toLocaleString()} km</span>
+      </div>`);
+  }
+
+  if (a.endOdometer != null) {
+    rows.push(`
       <div class="detail-row">
         <span class="detail-label">KM Akhir</span>
         <span class="detail-value">${Number(a.endOdometer).toLocaleString()} km</span>
       </div>`);
-    }
-    if (a.distanceTravelled != null) {
-      rows.push(`
+  }
+
+  if (a.distanceTravelled != null) {
+    rows.push(`
       <div class="detail-row">
         <span class="detail-label">Jarak Tempuh</span>
         <span class="detail-value">${Number(a.distanceTravelled).toLocaleString()} km</span>
       </div>`);
-    }
   }
 
   return rows.join('');
+}
+
+/** Collapse all accordion sections back to default state (Section 1 stays open). */
+function _resetAccordions() {
+  document.querySelectorAll('#modalDetail .accord-section').forEach(section => {
+    const header = section.querySelector('.accord-header');
+    if (section.id === 'accordSummary') {
+      section.classList.add('accord-section--open');
+      header?.setAttribute('aria-expanded', 'true');
+    } else {
+      section.classList.remove('accord-section--open');
+      header?.setAttribute('aria-expanded', 'false');
+    }
+  });
+}
+
+/** Wire up accordion toggle behaviour (called once from initModalHandlers). */
+function initAccordionListeners() {
+  document.querySelectorAll('#modalDetail .accord-header').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const section = btn.closest('.accord-section');
+      if (!section) return;
+      const isOpen = section.classList.contains('accord-section--open');
+      section.classList.toggle('accord-section--open', !isOpen);
+      btn.setAttribute('aria-expanded', String(!isOpen));
+    });
+  });
 }
 
 export function closeDetailModal() {
@@ -481,6 +549,14 @@ export function updateDetailActionButtons() {
     btnComplete.title = alreadyDone
       ? 'Penugasan sudah selesai'
       : 'Tandai penugasan sebagai selesai';
+  }
+
+  // Show/hide the primary actions container based on whether any button is visible
+  const primaryArea = document.getElementById('detailActionsPrimary');
+  if (primaryArea) {
+    const hasVisible = [...primaryArea.querySelectorAll('button')]
+      .some(b => b.style.display !== 'none');
+    primaryArea.style.display = hasVisible ? 'flex' : 'none';
   }
 }
 
