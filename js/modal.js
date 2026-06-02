@@ -315,7 +315,7 @@ export function generateWAText(a) {
   const timeLabel = getTimePeriod(h);
   const timeStr   = `${String(h).padStart(2,'0')}.${String(m).padStart(2,'0')} (${timeLabel})`;
   const picStr    = a.pic ? `${a.pax} Pax (${a.pic})` : `${a.pax} Pax`;
-  const header    = a.pic ? `*${a.purpose}* (Bidang ${a.pic})` : `*${a.purpose}*`;
+  const header    = a.pic ? `*${a.purpose}* (${a.pic})` : `*${a.purpose}*`;
 
   return `${header}
 
