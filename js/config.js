@@ -1,10 +1,25 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.2.2';
-export const RELEASE_NAME = 'Odometer Foundation';
+export const APP_VERSION = '1.2.3';
+export const RELEASE_NAME = 'Completion Tracking Expansion';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.2.3',
+    date: '2026-06-02',
+    summary: 'Completion Tracking Expansion',
+    highlights: [
+      'createdBy field added to all assignment types',
+      'Request-based: createdBy = requester (bidang), distinct from approvedBy (admin)',
+      'Direct admin: createdBy = admin who created the assignment',
+      'getAssignmentLifecycle() helper — foundation for Analytics v1.2.5',
+      'validateLifecycle() — warns on out-of-order timestamps',
+      'lifecycle validator added to ValidationRegistry',
+      'Detail modal: "Diminta oleh" row for request-based assignments',
+      'odometer fields (startOdometer, endOdometer, distanceTravelled) initialized to null on creation',
+    ],
+  },
   {
     version: '1.2.2',
     date: '2026-06-02',

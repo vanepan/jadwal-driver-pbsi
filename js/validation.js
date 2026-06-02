@@ -430,15 +430,111 @@ export function validateOdometer(data) {
   return createResult(errors, warnings);
 }
 
+/* ── Lifecycle Helpers (v1.2.3) ────────────────────────────── */
+
+/**
+ * Extract the full assignment lifecycle into a structured object.
+ * Includes computed durations in milliseconds for analytics use.
+ *
+ * Durations are null if either endpoint timestamp is missing.
+ *
+ * Usage (v1.2.5 Analytics Foundation):
+ *   const lc = getAssignmentLifecycle(assignment);
+ *   const waitingMin = lc.approvalToStartMs / 60000;
+ *
+ * @param {Object} assignment
+ * @returns {Object} Lifecycle snapshot with timestamps + computed durations
+ */
+export function getAssignmentLifecycle(assignment) {
+  const a = assignment || {};
+
+  const createdAt   = a.createdAt   || null;
+  const approvedAt  = a.approvedAt  || null;
+  const assignedAt  = a.assignedAt  || null;
+  const startedAt   = a.startedAt   || null;
+  const completedAt = a.completedAt || null;
+
+  return {
+    // Actors
+    createdBy:   a.createdBy   || null,
+    approvedBy:  a.approvedBy  || null,
+    assignedBy:  a.assignedBy  || null,
+    startedBy:   a.startedBy   || null,
+    completedBy: a.completedBy || null,
+
+    // Timestamps
+    createdAt,
+    approvedAt,
+    assignedAt,
+    startedAt,
+    completedAt,
+
+    // Odometer
+    startOdometer:     a.startOdometer     ?? null,
+    endOdometer:       a.endOdometer       ?? null,
+    distanceTravelled: a.distanceTravelled ?? null,
+
+    // Source
+    requestId:     a.requestId || null,
+    isRequestBased: Boolean(a.requestId),
+
+    // Computed durations (ms) — foundation for Analytics v1.2.5
+    // Request created → Approval
+    requestToApprovalMs:  _durationMs(createdAt, approvedAt),
+    // Approval → Driver starts
+    approvalToStartMs:    _durationMs(approvedAt || assignedAt, startedAt),
+    // Driver starts → Driver completes
+    actualDurationMs:     _durationMs(startedAt, completedAt),
+    // Full cycle: created → completed
+    totalCycleMs:         _durationMs(createdAt, completedAt),
+  };
+}
+
+/**
+ * Validate that assignment lifecycle timestamps are in chronological order.
+ * Returns warnings (never errors) — does NOT block workflow.
+ *
+ * Expected order: createdAt ≤ approvedAt ≤ assignedAt ≤ startedAt ≤ completedAt
+ *
+ * Integration point (v1.2.5): Analytics Foundation anomaly detection
+ *
+ * @param {Object} assignment
+ * @returns {{ valid: boolean, errors: string[], warnings: string[] }}
+ */
+export function validateLifecycle(assignment) {
+  const a = assignment || {};
+  const warnings = [];
+
+  const sequence = [
+    { field: 'createdAt',   ts: a.createdAt },
+    { field: 'approvedAt',  ts: a.approvedAt },
+    { field: 'assignedAt',  ts: a.assignedAt },
+    { field: 'startedAt',   ts: a.startedAt },
+    { field: 'completedAt', ts: a.completedAt },
+  ].filter(e => e.ts);  // only check fields that are set
+
+  for (let i = 1; i < sequence.length; i++) {
+    const prev = sequence[i - 1];
+    const curr = sequence[i];
+    if (new Date(curr.ts) < new Date(prev.ts)) {
+      warnings.push(
+        `Lifecycle anomali: ${curr.field} (${curr.ts}) lebih awal dari ${prev.field} (${prev.ts}).`
+      );
+    }
+  }
+
+  return createResult([], warnings);
+}
+
 /* ── Validation Registry ───────────────────────────────────── */
 
 /**
  * Central registry of all available validators.
  *
  * Extend untuk versi berikutnya:
- *   v1.2.2  → odometer: validateOdometer (wiring to form)
- *   v1.2.3  → policy: validatePolicy (aturan bisnis lintas entitas)
+ *   v1.2.3  → lifecycle: validateLifecycle (audit trail order)
  *   v1.2.4  → sanity: validateSanityCheck (konsistensi data antar koleksi)
+ *   v1.2.5  → analytics: powered by getAssignmentLifecycle()
  */
 export const ValidationRegistry = {
   request:    validateRequest,
@@ -447,6 +543,7 @@ export const ValidationRegistry = {
   vehicle:    validateVehicle,
   user:       validateUser,
   odometer:   validateOdometer,
+  lifecycle:  validateLifecycle,
 };
 
 /**
@@ -471,6 +568,19 @@ export function validate(type, data) {
 }
 
 /* ── Internal Helpers ──────────────────────────────────────── */
+
+/**
+ * Compute duration in milliseconds between two ISO timestamps.
+ * Returns null if either value is missing or result is negative.
+ * @param {string|null} fromTs
+ * @param {string|null} toTs
+ * @returns {number|null}
+ */
+function _durationMs(fromTs, toTs) {
+  if (!fromTs || !toTs) return null;
+  const ms = new Date(toTs) - new Date(fromTs);
+  return ms >= 0 ? ms : null;
+}
 
 /**
  * Convert "HH:MM" to total minutes since midnight.

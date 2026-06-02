@@ -540,7 +540,8 @@ export function requestToAssignment(request, approvedByUser, dateOverride = null
     pax: 1,
     notes: r.notes,
     requestId: r.id,
-    createdAt: now,
+    createdAt: r.createdAt || now,   // preserve original request creation time
+    createdBy: r.requesterName || '', // bidang who submitted the request
     updatedAt: now,
     // Lifecycle tracking
     status: 'assigned',
@@ -552,6 +553,9 @@ export function requestToAssignment(request, approvedByUser, dateOverride = null
     startedBy: null,
     completedAt: null,
     completedBy: null,
+    startOdometer: null,
+    endOdometer: null,
+    distanceTravelled: null,
   };
 }
 

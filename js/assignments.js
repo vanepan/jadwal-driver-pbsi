@@ -311,8 +311,9 @@ function handleFormSubmit(e) {
         driver, phone, vehicle, date: startDate,
         startTime, endTime, destination, purpose, pic, pax, notes,
         fullDay: isFullDay,
-        createdAt: existing.createdAt,
-        updatedAt: now,
+        createdAt:   existing.createdAt,
+        createdBy:   existing.createdBy   ?? null,  // preserve — set at creation time only
+        updatedAt:   now,
         requestId:   existing.requestId   ?? null,
         status:      existing.status      ?? 'assigned',
         approvedAt:  existing.approvedAt  ?? null,
@@ -323,42 +324,47 @@ function handleFormSubmit(e) {
         startedBy:   existing.startedBy   ?? null,
         completedAt: existing.completedAt ?? null,
         completedBy: existing.completedBy ?? null,
+        startOdometer:     existing.startOdometer     ?? null,
+        endOdometer:       existing.endOdometer       ?? null,
+        distanceTravelled: existing.distanceTravelled ?? null,
       };
     }
     showToast('✅ Jadwal berhasil diperbarui');
     if (onSaveCallback) onSaveCallback(assignments, false, startDate, null);
   } else if (datesToCreate.length > 1) {
     // Multi-day: buat satu assignment per tanggal
+    const creatorName = currentUser ? currentUser.name : '';
     const newAssignments = datesToCreate.map(date => ({
       id: generateId(),
       driver, phone, vehicle, date,
       startTime, endTime, destination, purpose, pic, pax, notes,
       fullDay: isFullDay,
-      createdAt: now, updatedAt: now,
+      createdAt: now, createdBy: creatorName, updatedAt: now,
       status: 'assigned',
-      assignedAt: now,
-      assignedBy: currentUser ? currentUser.name : '',
+      assignedAt: now, assignedBy: creatorName,
       approvedAt: null, approvedBy: null,
       startedAt: null, startedBy: null,
       completedAt: null, completedBy: null,
+      startOdometer: null, endOdometer: null, distanceTravelled: null,
     }));
     assignments.push(...newAssignments);
     showToast(`✅ ${datesToCreate.length} jadwal berhasil ditambahkan`);
     if (onSaveCallback) onSaveCallback(assignments, true, startDate, null);
   } else {
     // Single-day baru
+    const creatorName = currentUser ? currentUser.name : '';
     const newAssignment = {
       id: generateId(),
       driver, phone, vehicle, date: startDate,
       startTime, endTime, destination, purpose, pic, pax, notes,
       fullDay: isFullDay,
-      createdAt: now, updatedAt: now,
+      createdAt: now, createdBy: creatorName, updatedAt: now,
       status: 'assigned',
-      assignedAt: now,
-      assignedBy: currentUser ? currentUser.name : '',
+      assignedAt: now, assignedBy: creatorName,
       approvedAt: null, approvedBy: null,
       startedAt: null, startedBy: null,
       completedAt: null, completedBy: null,
+      startOdometer: null, endOdometer: null, distanceTravelled: null,
     };
     assignments.push(newAssignment);
     showToast('✅ Jadwal berhasil ditambahkan');

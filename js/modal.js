@@ -366,6 +366,16 @@ export function openDetailModal(id) {
 function buildLifecycleRows(a) {
   const rows = [];
 
+  // Show requester (createdBy) only for request-based assignments and only when
+  // it differs from the admin who assigned — it adds meaningful context for PIC tracking.
+  if (a.createdBy && a.requestId && a.createdBy !== a.assignedBy) {
+    rows.push(`
+      <div class="detail-row">
+        <span class="detail-label">Diminta oleh</span>
+        <span class="detail-value">${escapeHTML(a.createdBy)} <span class="detail-ts">${a.createdAt ? formatDateTime(a.createdAt) : ''}</span></span>
+      </div>`);
+  }
+
   if (a.assignedAt) {
     rows.push(`
       <div class="detail-row">
