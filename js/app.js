@@ -12,7 +12,8 @@
 
 // Import all modules
 import { APP_NAME, APP_VERSION } from './config.js';
-import { loadAssignments, saveAssignments, loadRequests, saveRequests, initFirebaseSync, registerDataChangeListener, registerRequestsChangeListener } from './firebase.js';
+import { loadAssignments, saveAssignments, saveOneAssignment, removeOneAssignment, loadRequests, saveRequests, initFirebaseSync, registerDataChangeListener, registerRequestsChangeListener, checkAssignmentSafety } from './firebase.js';
+import { recoverAssignmentsFromRequests } from './recovery.js';
 import { initDriverSelect } from './drivers.js';
 import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate } from './timeline.js';
 import { initModalHandlers, registerEditCallback, registerDeleteCallback, registerStartCallback, registerCompleteCallback, registerCommentCallback as registerModalCommentCallback, setAssignments as setModalAssignments, updateDetailActionButtons } from './modal.js';
@@ -38,7 +39,7 @@ import { initCommentHandlers, openCommentModal, closeCommentModal, setRequests a
 import { initAdminUI, updateAdminButtons } from './admin.js';
 import { initNotificationUI, setNotificationData, openNotificationsModal } from './notifications.js';
 import { subscribeLogsChangeListener, getLogs, logAction } from './logs.js';
-import { getUserByUsername, getUsers } from './users.js';
+import { getUserByUsername, getUsers, createUser } from './users.js';
 import { expandDateRange, showToast, formatDateShort } from './utils.js';
 import {
   sendRequestApprovedNotification,
@@ -317,6 +318,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.appDebug.openFormModal = openFormModal;
   window.appDebug.closeFormModal = closeFormModal;
   window.appDebug.openNotificationsModal = openNotificationsModal;
+  // Recovery: pulihkan assignment historis dari approved driver_requests
+  // Cara pakai: await window.appDebug.recoverAssignments(true)  → dry run
+  //             await window.appDebug.recoverAssignments()       → pulihkan
+  window.appDebug.recoverAssignments = recoverAssignmentsFromRequests;
+  // User management (admin only)
+  // Cara pakai: await window.appDebug.createUser({ username, displayName, role, pin })
+  window.appDebug.createUser = createUser;
 
   // Load assignments dari localStorage (cache lokal)
   // Normalize requests on load: convert legacy { date } → { startDate, endDate }
@@ -412,6 +420,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ── Callback: Form save (add/update assignment) ──
   registerSaveCallback((updatedAssignments, isNewAssignment, assignmentDate, newAssignment) => {
+    // Guard: assignments.js memanggil onSaveCallback dari deleteAssignment() tanpa assignmentDate.
+    // Operasi delete sudah ditangani sepenuhnya oleh registerDeleteCallback — abaikan path ini.
+    if (!isNewAssignment && assignmentDate === undefined) return;
+
+    const prevAssignments = assignments; // capture sebelum update untuk deteksi perubahan
+    const beforeCount = prevAssignments.length;
+
+    // Safety guard: deteksi jika data lokal jauh lebih sedikit dari Firebase
+    checkAssignmentSafety(beforeCount);
+
     assignments = updatedAssignments;
     updateAllModules();
 
@@ -420,9 +438,40 @@ document.addEventListener('DOMContentLoaded', async () => {
       setCurrentDateForm(assignmentDate);
     }
 
-    saveAssignments(assignments);
+    saveAssignments(assignments); // localStorage only
+
+    // Surgical Firebase write — hanya tulis yang berubah, tidak overwrite semua
+    if (isNewAssignment && newAssignment) {
+      // Single-day baru: newAssignment sudah diketahui
+      saveOneAssignment(newAssignment);
+    } else if (isNewAssignment && !newAssignment) {
+      // Multi-day baru: cari assignments yang tidak ada di prevAssignments
+      const prevIds = new Set(prevAssignments.map(a => a.id));
+      updatedAssignments.filter(a => !prevIds.has(a.id)).forEach(a => saveOneAssignment(a));
+    } else {
+      // Edit: cari assignment yang berubah
+      const edited = updatedAssignments.find(a => {
+        const prev = prevAssignments.find(p => p.id === a.id);
+        return prev && JSON.stringify(prev) !== JSON.stringify(a);
+      });
+      if (edited) saveOneAssignment(edited);
+      // Jika tidak ada yang berubah (misal dipanggil dari deleteAssignment internal),
+      // removeOneAssignment sudah ditangani di registerDeleteCallback.
+    }
+
     const currentUser = getCurrentUser();
-    logAction({ userId: currentUser?.id, username: currentUser?.username, displayName: currentUser?.name, action: isNewAssignment ? 'assignment_created' : 'assignment_edited', metadata: { date: assignmentDate } });
+    logAction({
+      userId: currentUser?.id,
+      username: currentUser?.username,
+      displayName: currentUser?.name,
+      action: isNewAssignment ? 'assignment_created' : 'assignment_edited',
+      metadata: {
+        date: assignmentDate,
+        beforeCount,
+        afterCount: assignments.length,
+        operationType: isNewAssignment ? 'create' : 'edit',
+      },
+    });
 
     renderTimeline();
 
@@ -460,6 +509,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ── Callback: Admin approve request ──
   registerRequestApproveCallback((requestId) => {
     if (!isAdmin()) return;
+
+    // Safety guard sebelum bulk create
+    checkAssignmentSafety(assignments.length);
 
     const request = requests.find(item => item.id === requestId);
     const admin = getCurrentUser();
@@ -506,7 +558,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateAllModules();
     setCurrentDate(request.startDate);
     setCurrentDateForm(request.startDate);
-    saveAssignments(assignments);
+    saveAssignments(assignments); // localStorage only
+    // Surgical: hanya tulis assignments baru hasil approval, tidak overwrite semua
+    newAssignments.forEach(a => saveOneAssignment(a));
     saveRequests(requests);
 
     const currentUser = getCurrentUser();
@@ -515,7 +569,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       username: currentUser?.username,
       action: 'request_approved',
       targetId: requestId,
-      metadata: { assignmentCount: newAssignments.length, assignmentIds: newAssignments.map(a => a.id) },
+      metadata: {
+        assignmentCount: newAssignments.length,
+        assignmentIds: newAssignments.map(a => a.id),
+        beforeCount: assignments.length - newAssignments.length,
+        afterCount: assignments.length,
+        operationType: 'bulk_create',
+      },
     });
 
     renderTimeline();
@@ -584,16 +644,27 @@ document.addEventListener('DOMContentLoaded', async () => {
   registerDeleteCallback((assignmentId) => {
     if (!hasPermission('delete')) return;
 
+    const beforeCount = assignments.length;
     deleteAssignment(assignmentId);
     assignments = assignments.filter(a => a.id !== assignmentId);
     updateAllModules();
 
-    // Save ke Firebase dan localStorage
-    saveAssignments(assignments);
+    saveAssignments(assignments); // localStorage only
+    removeOneAssignment(assignmentId); // Surgical: hapus hanya record ini dari Firebase
     const currentUser = getCurrentUser();
-    logAction({ userId: currentUser?.id, username: currentUser?.username, displayName: currentUser?.name, action: 'assignment_deleted', targetId: assignmentId });
+    logAction({
+      userId: currentUser?.id,
+      username: currentUser?.username,
+      displayName: currentUser?.name,
+      action: 'assignment_deleted',
+      targetId: assignmentId,
+      metadata: {
+        beforeCount,
+        afterCount: assignments.length,
+        operationType: 'delete',
+      },
+    });
 
-    // Re-render timeline
     renderTimeline();
 
     console.log(`Assignment ${assignmentId} deleted`);
@@ -620,7 +691,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     updateAllModules();
-    saveAssignments(assignments);
+    saveAssignments(assignments); // localStorage only
+    saveOneAssignment(assignments[idx]); // Surgical: hanya update record ini di Firebase
     renderTimeline();
 
     logAction({
@@ -658,7 +730,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     updateAllModules();
-    saveAssignments(assignments);
+    saveAssignments(assignments); // localStorage only
+    saveOneAssignment(assignments[idx]); // Surgical: hanya update record ini di Firebase
     renderTimeline();
 
     logAction({

@@ -8,7 +8,7 @@
 'use strict';
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
-import { getDatabase, onValue, ref, set, get, update } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
+import { getDatabase, onValue, ref, set, get, update, remove } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 import { showToast } from './utils.js';
 
 /* ── Firebase Configuration ── */
@@ -34,6 +34,10 @@ let firebaseRequestsRef = null;
 let firebaseListening = false;
 let firebaseLoadedOnce = false;
 let firebaseConfigWarningShown = false;
+
+// Jumlah assignment yang diketahui ada di Firebase (dari last real-time snapshot)
+// -1 = belum pernah receive data dari Firebase
+let _remoteAssignmentCount = -1;
 
 // Callback yang dipanggil saat data Firebase berubah
 let onDataChangeCallback = null;
@@ -151,23 +155,44 @@ export function loadRequests() {
 }
 
 /**
- * Save assignments ke localStorage dan Firebase (jika terhubung)
- * @param {Array} assignments - Daftar assignments yang akan disimpan
- * @returns {Promise}
+ * Save assignments ke localStorage saja.
+ * JANGAN gunakan set() ke root /assignments — overwrite penuh dapat menghapus data historis.
+ * Gunakan saveOneAssignment() atau removeOneAssignment() untuk operasi Firebase.
+ * @param {Array} assignments
  */
 export function saveAssignments(assignments) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(assignments));
+  return Promise.resolve();
+}
 
-  if (!firebaseAssignmentsRef) {
-    showFirebaseConfigWarning();
-    return Promise.resolve();
-  }
+/**
+ * Tulis SATU assignment ke Firebase secara surgical (aman).
+ * Hanya menyentuh node /assignments/{id} — tidak mempengaruhi record lain.
+ * @param {Object} assignment - Harus memiliki field `id`
+ * @returns {Promise}
+ */
+export function saveOneAssignment(assignment) {
+  if (!firebaseDb || !assignment?.id) return Promise.resolve();
+  const assignRef = ref(firebaseDb, `${FIREBASE_ASSIGNMENTS_PATH}/${assignment.id}`);
+  return set(assignRef, assignment).catch(err => {
+    console.error('Firebase single-assignment save gagal:', err);
+    showToast('Firebase gagal menyimpan. Data tersimpan di device ini.');
+  });
+}
 
-  return set(firebaseAssignmentsRef, assignmentsToFirebaseMap(assignments))
-    .catch(err => {
-      console.error('Firebase save gagal:', err);
-      showToast('Firebase gagal menyimpan. Data tersimpan di device ini.');
-    });
+/**
+ * Hapus SATU assignment dari Firebase secara surgical (aman).
+ * Hanya menghapus node /assignments/{id} — tidak mempengaruhi record lain.
+ * @param {string} assignmentId
+ * @returns {Promise}
+ */
+export function removeOneAssignment(assignmentId) {
+  if (!firebaseDb || !assignmentId) return Promise.resolve();
+  const assignRef = ref(firebaseDb, `${FIREBASE_ASSIGNMENTS_PATH}/${assignmentId}`);
+  return remove(assignRef).catch(err => {
+    console.error('Firebase single-assignment remove gagal:', err);
+    showToast('Firebase gagal menghapus. Data tersimpan di device ini.');
+  });
 }
 
 /**
@@ -260,11 +285,152 @@ export function registerRequestsChangeListener(callback) {
   onRequestsChangeCallback = callback;
 }
 
+// Threshold untuk safety guard
+const SAFETY_RATIO_THRESHOLD    = 0.5;  // lokal < 50% dari remote → anomali
+const SAFETY_ABSOLUTE_THRESHOLD = 20;   // selisih > 20 record → anomali
+const SAFETY_MIN_REMOTE         = 10;   // jangan cek jika remote < 10 (dataset kecil)
+
+/**
+ * Safety guard: cek apakah jumlah assignment lokal mencurigakan dibanding Firebase.
+ *
+ * Dua kondisi independen (OR) yang masing-masing dapat memicu anomali:
+ *   1. Ratio: localCount / remoteCount < SAFETY_RATIO_THRESHOLD (50%)
+ *   2. Absolute: remoteCount - localCount > SAFETY_ABSOLUTE_THRESHOLD (20)
+ *
+ * Guard TIDAK memblokir surgical writes — menulis satu record ke /assignments/{id}
+ * aman berapapun remote count-nya. Guard berfungsi sebagai anomaly detector:
+ * menampilkan warning + mencatat ke /logs.
+ *
+ * @param {number} localCount - Jumlah assignment di state lokal saat ini
+ * @returns {{ safe: boolean, localCount: number, remoteCount: number, reason: string }}
+ */
+export function checkAssignmentSafety(localCount) {
+  const result = { safe: true, localCount, remoteCount: _remoteAssignmentCount, reason: '' };
+
+  // Belum terima snapshot Firebase — tidak bisa dibandingkan
+  if (_remoteAssignmentCount < 0) return result;
+  // Dataset kecil — threshold tidak bermakna
+  if (_remoteAssignmentCount < SAFETY_MIN_REMOTE) return result;
+
+  const ratio        = localCount / _remoteAssignmentCount;
+  const absoluteDiff = _remoteAssignmentCount - localCount;
+
+  const ratioFail    = ratio < SAFETY_RATIO_THRESHOLD;
+  const absoluteFail = absoluteDiff > SAFETY_ABSOLUTE_THRESHOLD;
+
+  if (ratioFail || absoluteFail) {
+    const reasons = [];
+    if (ratioFail)    reasons.push(`rasio ${Math.round(ratio * 100)}% < threshold ${SAFETY_RATIO_THRESHOLD * 100}%`);
+    if (absoluteFail) reasons.push(`selisih absolut ${absoluteDiff} > threshold ${SAFETY_ABSOLUTE_THRESHOLD}`);
+    const reason = reasons.join('; ');
+
+    result.safe   = false;
+    result.reason = reason;
+
+    console.warn(`[SAFETY] ⚠️ Anomali (${reason}): lokal=${localCount}, remote=${_remoteAssignmentCount}`);
+    showToast('⚠️ Data lokal belum sinkron penuh. Refresh halaman jika ada masalah.');
+    _logSafetyAnomalyToFirebase(localCount, _remoteAssignmentCount, reason);
+  }
+
+  return result;
+}
+
+/**
+ * Tulis anomali ke /logs (non-blocking, fire-and-forget).
+ * @param {number} localCount
+ * @param {number} remoteCount
+ * @param {string} reason
+ */
+async function _logSafetyAnomalyToFirebase(localCount, remoteCount, reason) {
+  if (!firebaseDb) return;
+  try {
+    const id = `anomaly_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const entry = {
+      type: 'safety_anomaly',
+      localCount,
+      remoteCount,
+      ratio: +(localCount / remoteCount).toFixed(3),
+      absoluteDiff: remoteCount - localCount,
+      reason,
+      timestamp: new Date().toISOString(),
+      userAgent: navigator.userAgent || 'unknown',
+    };
+    await set(ref(firebaseDb, `logs/${id}`), entry);
+    console.warn('[SAFETY] Anomali dicatat ke /logs:', id);
+  } catch (err) {
+    console.warn('[SAFETY] Gagal catat anomali (non-fatal):', err);
+  }
+}
+
+const BACKUP_RETENTION_DAYS = 30; // hapus backup lebih lama dari ini
+
+/**
+ * Buat backup harian assignments ke /backups/assignments/TIMESTAMP.
+ * Dipanggil sekali per hari saat Firebase pertama kali load data.
+ * Non-blocking — kegagalan backup tidak menghambat aplikasi.
+ * @param {Object} rawData - Raw Firebase map dari snapshot.val()
+ */
+async function _backupAssignmentsOnce(rawData) {
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const storageKey = `pbsi_backup_done_${today}`;
+  if (localStorage.getItem(storageKey)) return; // sudah backup hari ini
+
+  try {
+    const db = firebaseDb;
+    if (!db || !rawData) return;
+    const ts = new Date().toISOString().slice(0, 19).replace('T', '-').replace(/:/g, '');
+    const backupRef = ref(db, `backups/assignments/${ts}`);
+    await set(backupRef, rawData);
+    localStorage.setItem(storageKey, ts);
+    console.info(`[BACKUP] Dibuat: backups/assignments/${ts}`);
+    // Bersihkan backup lama setelah backup baru berhasil
+    _pruneOldBackups();
+  } catch (err) {
+    console.warn('[BACKUP] Gagal (non-fatal):', err);
+  }
+}
+
+/**
+ * Hapus backup yang lebih lama dari BACKUP_RETENTION_DAYS.
+ * Non-blocking. Format key: YYYY-MM-DD-HHmmss
+ */
+async function _pruneOldBackups() {
+  if (!firebaseDb) return;
+  try {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - BACKUP_RETENTION_DAYS);
+    // Format cutoff sebagai "YYYY-MM-DD" untuk perbandingan prefix
+    const cutoffPrefix = cutoff.toISOString().slice(0, 10);
+
+    const backupsRef = ref(firebaseDb, 'backups/assignments');
+    const snapshot = await get(backupsRef);
+    if (!snapshot.exists()) return;
+
+    const keys = Object.keys(snapshot.val());
+    const toDelete = keys.filter(key => {
+      // Key format: "2026-06-02-140532" — ambil 10 char pertama sebagai YYYY-MM-DD
+      const datePart = key.slice(0, 10);
+      return datePart < cutoffPrefix;
+    });
+
+    for (const key of toDelete) {
+      await remove(ref(firebaseDb, `backups/assignments/${key}`));
+      console.info(`[BACKUP] Dihapus (>${BACKUP_RETENTION_DAYS} hari): ${key}`);
+    }
+
+    if (toDelete.length > 0) {
+      console.info(`[BACKUP] Pruning selesai: ${toDelete.length} backup lama dihapus.`);
+    }
+  } catch (err) {
+    console.warn('[BACKUP] Pruning gagal (non-fatal):', err);
+  }
+}
+
 /**
  * Initialize Firebase sync
  * - Membuka listener real-time ke database
  * - Memerbarui local assignments saat ada perubahan dari device lain
- * 
+ *
  * Callback akan dipanggil saat:
  * 1. Data berhasil dimuat dari Firebase
  * 2. Ada perubahan di database (dari device lain, dsb)
@@ -286,17 +452,21 @@ export function initFirebaseSync() {
   // Set up real-time listener
   onValue(firebaseAssignmentsRef, snapshot => {
     if (!snapshot.exists()) {
-      // Jika Firebase kosong tapi local ada data, sync ke Firebase
       firebaseLoadedOnce = true;
       return;
     }
 
-    // Data ada di Firebase, convert dan update
     const updatedAssignments = firebaseMapToAssignments(snapshot.val());
+    _remoteAssignmentCount = updatedAssignments.length;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedAssignments));
-    firebaseLoadedOnce = true;
 
-    // Panggil callback untuk update UI
+    // Backup sekali per hari saat pertama kali data Firebase diterima
+    const isFirstLoad = !firebaseLoadedOnce;
+    firebaseLoadedOnce = true;
+    if (isFirstLoad) {
+      _backupAssignmentsOnce(snapshot.val());
+    }
+
     if (onDataChangeCallback) {
       onDataChangeCallback(updatedAssignments);
     }
