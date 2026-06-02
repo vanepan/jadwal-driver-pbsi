@@ -1,5 +1,6 @@
 {
   "dependencies": {
-    "firebase": "^12.13.0"
+    "firebase": "^12.13.0",
+    "puppeteer": "^25.1.0"
   }
 }
