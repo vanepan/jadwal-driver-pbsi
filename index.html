@@ -683,12 +683,49 @@
   </div>
 </div>
 
+<!-- ===== MODAL: ODOMETER INPUT ===== -->
+<div class="modal-overlay" id="modalOdometer" style="display:none;">
+  <div class="odo-modal">
+    <div class="odo-modal__header">
+      <div class="odo-modal__header-text">
+        <h2 class="odo-modal__title" id="odoModalTitle">Mulai Assignment</h2>
+        <p class="odo-modal__meta" id="odoModalMeta"></p>
+      </div>
+      <button class="odo-modal__close" id="btnCloseOdometer" aria-label="Tutup">&times;</button>
+    </div>
+    <div class="odo-modal__body">
+      <label class="odo-field__label" for="odoInput" id="odoInputLabel">KM Awal</label>
+      <input class="odo-field__input" type="number" id="odoInput"
+             inputmode="numeric" placeholder="0" min="0" step="1" autocomplete="off" />
+      <span class="odo-field__error" id="odoHint"></span>
+      <div class="odo-preview" id="odoPreview" style="display:none;">
+        <div class="odo-preview__row">
+          <span class="odo-preview__key">KM Awal</span>
+          <span class="odo-preview__val" id="odoPreviewStart">—</span>
+        </div>
+        <div class="odo-preview__row">
+          <span class="odo-preview__key">KM Akhir</span>
+          <span class="odo-preview__val" id="odoPreviewEnd">—</span>
+        </div>
+        <div class="odo-preview__row odo-preview__row--total">
+          <span class="odo-preview__key">Jarak Tempuh</span>
+          <span class="odo-preview__val" id="odoPreviewDistance">—</span>
+        </div>
+      </div>
+    </div>
+    <div class="odo-modal__footer">
+      <button type="button" class="odo-btn odo-btn--secondary" id="btnCancelOdometer">Batal</button>
+      <button type="button" class="odo-btn odo-btn--primary" id="btnConfirmOdometer">Mulai Assignment</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== TOAST ===== -->
 <div class="toast" id="toast" style="display:none;"></div>
 
 <script>
   window.TELEGRAM_BOT_TOKEN = '8925885704:AAH2Hi03tL6TNYicChXYwrYZzukkagtvAKE';
 </script>
-<script type="module" src="js/app.js?v=1.1.0"></script>
+<script type="module" src="js/app.js?v=1.2.2"></script>
 </body>
 </html>

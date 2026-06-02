@@ -671,7 +671,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // ── Callback: Mulai button di detail modal ──
-  registerStartCallback((assignmentId) => {
+  // odoData = { startOdometer: number } — diisi dari odometer modal (v1.2.2)
+  registerStartCallback((assignmentId, odoData = {}) => {
     if (!hasPermission('start')) return;
 
     const idx = assignments.findIndex(a => a.id === assignmentId);
@@ -687,6 +688,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       status: 'started',
       startedAt: now,
       startedBy: currentUser ? currentUser.name : '',
+      startOdometer: odoData.startOdometer ?? null,
       updatedAt: now,
     };
 
@@ -704,6 +706,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       metadata: {
         startedAt: assignments[idx].startedAt,
         startedBy: assignments[idx].startedBy,
+        startOdometer: assignments[idx].startOdometer,
       },
     });
 
@@ -711,7 +714,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // ── Callback: Selesai button di detail modal ──
-  registerCompleteCallback((assignmentId) => {
+  // odoData = { endOdometer: number } — diisi dari odometer modal (v1.2.2)
+  registerCompleteCallback((assignmentId, odoData = {}) => {
     if (!hasPermission('complete')) return;
 
     const idx = assignments.findIndex(a => a.id === assignmentId);
@@ -719,13 +723,22 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (assignments[idx].status === 'completed') { showToast('Penugasan sudah selesai'); return; }
 
-    const currentUser = getCurrentUser();
-    const now = new Date().toISOString();
+    const currentUser    = getCurrentUser();
+    const now            = new Date().toISOString();
+    const endOdometer    = odoData.endOdometer ?? null;
+    const startOdometer  = assignments[idx].startOdometer ?? null;
+    // Only compute if both values are present and end >= start
+    const distanceTravelled = (endOdometer != null && startOdometer != null && endOdometer >= startOdometer)
+      ? endOdometer - startOdometer
+      : null;
+
     assignments[idx] = {
       ...assignments[idx],
       status: 'completed',
       completedAt: now,
       completedBy: currentUser ? currentUser.name : '',
+      endOdometer,
+      distanceTravelled,
       updatedAt: now,
     };
 
@@ -743,6 +756,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       metadata: {
         completedAt: assignments[idx].completedAt,
         completedBy: assignments[idx].completedBy,
+        endOdometer: assignments[idx].endOdometer,
+        distanceTravelled: assignments[idx].distanceTravelled,
       },
     });
 

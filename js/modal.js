@@ -10,6 +10,7 @@
 import { formatDateLong, formatDateTime, getTimePeriod, parseLocalDate, showToast } from './utils.js';
 import { VEHICLES } from './drivers.js';
 import { hasPermission, getCurrentUser } from './auth.js';
+import { validateOdometer } from './validation.js';
 
 /* ── Status Constants ── */
 const STATUS_LABELS = {
@@ -65,9 +66,156 @@ export function setAssignments(newAssignments) {
   assignments = newAssignments;
 }
 
+/* ── Odometer Modal ─────────────────────────────────────────────
+   Shown before Start / Complete to capture KM Awal / KM Akhir.
+   Stacks on top of the detail modal (z-index: 210).
+   ────────────────────────────────────────────────────────────── */
+
+let _odoType       = null;  // 'start' | 'complete'
+let _odoId         = null;  // assignmentId
+let _odoAssignment = null;  // assignment object (for context + prev odometer)
+let _odoCallback   = null;  // (assignmentId, odoData) => void
+
+function _openOdometerModal(type, assignmentId, assignment, callback) {
+  _odoType       = type;
+  _odoId         = assignmentId;
+  _odoAssignment = assignment;
+  _odoCallback   = callback;
+
+  const isStart = type === 'start';
+
+  // Close detail modal first (Option A — no stacked modals)
+  closeDetailModal();
+
+  // Populate header
+  const titleEl   = document.getElementById('odoModalTitle');
+  const metaEl    = document.getElementById('odoModalMeta');
+  const labelEl   = document.getElementById('odoInputLabel');
+  const confirmEl = document.getElementById('btnConfirmOdometer');
+  const hintEl    = document.getElementById('odoHint');
+  const input     = document.getElementById('odoInput');
+  const previewEl = document.getElementById('odoPreview');
+
+  if (titleEl)   titleEl.textContent = isStart ? 'Mulai Assignment' : 'Selesaikan Assignment';
+  if (labelEl)   labelEl.textContent = isStart ? 'KM AWAL' : 'KM AKHIR';
+  if (confirmEl) confirmEl.textContent = isStart ? 'Mulai Assignment' : 'Selesaikan Assignment';
+  if (hintEl)    { hintEl.textContent = ''; }
+  if (input)     { input.value = ''; }
+  if (previewEl) { previewEl.style.display = 'none'; }
+
+  if (metaEl) {
+    const parts = [
+      `${escapeHTML(assignment.driver)} · ${escapeHTML(assignment.vehicle || '')}`,
+      escapeHTML(formatDateLong(assignment.date)),
+      escapeHTML(assignment.destination || ''),
+    ].filter(Boolean);
+    metaEl.textContent = parts.join('\n');
+  }
+
+  // Show preview section only for Complete when KM Awal is available
+  if (!isStart && assignment.startOdometer != null) {
+    const startEl = document.getElementById('odoPreviewStart');
+    if (startEl) startEl.textContent = `${Number(assignment.startOdometer).toLocaleString()} km`;
+    const endEl = document.getElementById('odoPreviewEnd');
+    if (endEl)   endEl.textContent = '—';
+    const distEl = document.getElementById('odoPreviewDistance');
+    if (distEl)  distEl.textContent = '—';
+    if (previewEl) previewEl.style.display = 'block';
+  }
+
+  const modal = document.getElementById('modalOdometer');
+  if (modal) modal.style.display = 'flex';
+
+  setTimeout(() => { if (input) input.focus(); }, 80);
+}
+
+/**
+ * Close odometer modal.
+ * @param {boolean} reopenDetail - If true, re-open the detail modal for the same assignment.
+ */
+function _closeOdometerModal(reopenDetail = false) {
+  const modal = document.getElementById('modalOdometer');
+  if (modal) modal.style.display = 'none';
+
+  if (reopenDetail && _odoId) {
+    openDetailModal(_odoId);
+  }
+
+  _odoType = _odoId = _odoAssignment = _odoCallback = null;
+}
+
+function _updateOdometerPreview() {
+  if (_odoType !== 'complete' || _odoAssignment?.startOdometer == null) return;
+
+  const previewEl = document.getElementById('odoPreview');
+  const endEl     = document.getElementById('odoPreviewEnd');
+  const distEl    = document.getElementById('odoPreviewDistance');
+  if (!previewEl) return;
+
+  const input = document.getElementById('odoInput');
+  const raw = input ? String(input.value).trim() : '';
+  const endOdo   = Number(raw);
+  const startOdo = Number(_odoAssignment.startOdometer);
+
+  if (!raw || !Number.isFinite(endOdo)) {
+    if (endEl)  endEl.textContent  = '—';
+    if (distEl) distEl.textContent = '—';
+    return;
+  }
+
+  if (endEl) endEl.textContent = `${endOdo.toLocaleString()} km`;
+
+  if (endOdo >= startOdo) {
+    if (distEl) distEl.textContent = `${(endOdo - startOdo).toLocaleString()} km`;
+  } else {
+    if (distEl) distEl.textContent = '⚠️ Lebih kecil dari KM Awal';
+  }
+}
+
+function _handleOdometerConfirm() {
+  const input  = document.getElementById('odoInput');
+  const hintEl = document.getElementById('odoHint');
+  const raw    = input ? String(input.value).trim() : '';
+
+  const isStart    = _odoType === 'start';
+  const prevOdoVal = (!isStart && _odoAssignment?.startOdometer != null)
+    ? _odoAssignment.startOdometer
+    : undefined;
+
+  const result = validateOdometer({ currentOdometer: raw, previousOdometer: prevOdoVal });
+
+  if (hintEl) {
+    const msgs = [...result.errors, ...result.warnings];
+    hintEl.textContent = msgs.join(' ');
+  }
+
+  if (!result.valid) return;
+
+  const odoValue = Number(raw);
+  if (_odoCallback) {
+    _odoCallback(_odoId, isStart ? { startOdometer: odoValue } : { endOdometer: odoValue });
+  }
+  _closeOdometerModal(false); // confirm → don't reopen detail
+}
+
 export function initModalHandlers() {
   document.getElementById('btnCloseDetail')?.addEventListener('click', closeDetailModal);
   document.getElementById('btnCloseDetail2')?.addEventListener('click', closeDetailModal);
+
+  // Odometer modal handlers
+  // Close/Cancel → reopen detail modal so user doesn't lose context
+  document.getElementById('btnCloseOdometer')?.addEventListener('click',  () => _closeOdometerModal(true));
+  document.getElementById('btnCancelOdometer')?.addEventListener('click', () => _closeOdometerModal(true));
+  document.getElementById('btnConfirmOdometer')?.addEventListener('click', _handleOdometerConfirm);
+  document.getElementById('odoInput')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter')  _handleOdometerConfirm();
+    if (e.key === 'Escape') _closeOdometerModal(true);
+  });
+  // Live preview while typing (Complete mode)
+  document.getElementById('odoInput')?.addEventListener('input', _updateOdometerPreview);
+  document.getElementById('modalOdometer')?.addEventListener('click', (e) => {
+    if (e.target === document.getElementById('modalOdometer')) _closeOdometerModal(true);
+  });
 
   // Edit
   document.getElementById('btnEditAssignment')?.addEventListener('click', () => {
@@ -92,7 +240,7 @@ export function initModalHandlers() {
     }
   });
 
-  // Start
+  // Start — open odometer modal to capture KM Awal before confirming
   document.getElementById('btnStartAssignment')?.addEventListener('click', () => {
     const a = assignments.find(x => x.id === viewingId);
     if (!canActOnAssignment('start', a)) {
@@ -100,15 +248,15 @@ export function initModalHandlers() {
       return;
     }
     const status = normalizeStatus(a?.status);
-    if (status === 'started') { showToast('Penugasan sudah dimulai'); return; }
+    if (status === 'started')   { showToast('Penugasan sudah dimulai'); return; }
     if (status === 'completed') { showToast('Penugasan sudah selesai'); return; }
-    if (confirm('Mulai penugasan ini sekarang?')) {
-      if (onStartCallback) onStartCallback(viewingId);
+    _openOdometerModal('start', viewingId, a, (assignmentId, odoData) => {
+      if (onStartCallback) onStartCallback(assignmentId, odoData);
       closeDetailModal();
-    }
+    });
   });
 
-  // Complete
+  // Complete — open odometer modal to capture KM Akhir before confirming
   document.getElementById('btnCompleteAssignment')?.addEventListener('click', () => {
     const a = assignments.find(x => x.id === viewingId);
     if (!canActOnAssignment('complete', a)) {
@@ -117,10 +265,10 @@ export function initModalHandlers() {
     }
     const status = normalizeStatus(a?.status);
     if (status === 'completed') { showToast('Penugasan sudah selesai'); return; }
-    if (confirm('Tandai penugasan ini sebagai selesai?')) {
-      if (onCompleteCallback) onCompleteCallback(viewingId);
+    _openOdometerModal('complete', viewingId, a, (assignmentId, odoData) => {
+      if (onCompleteCallback) onCompleteCallback(assignmentId, odoData);
       closeDetailModal();
-    }
+    });
   });
 
   // Comment thread — only shown when assignment has a requestId
@@ -238,6 +386,13 @@ function buildLifecycleRows(a) {
         <span class="detail-label">Dimulai oleh</span>
         <span class="detail-value">${escapeHTML(a.startedBy || '-')} <span class="detail-ts">${formatDateTime(a.startedAt)}</span></span>
       </div>`);
+    if (a.startOdometer != null) {
+      rows.push(`
+      <div class="detail-row">
+        <span class="detail-label">KM Awal</span>
+        <span class="detail-value">${Number(a.startOdometer).toLocaleString()} km</span>
+      </div>`);
+    }
   }
 
   if (a.completedAt) {
@@ -246,6 +401,20 @@ function buildLifecycleRows(a) {
         <span class="detail-label">Diselesaikan oleh</span>
         <span class="detail-value">${escapeHTML(a.completedBy || '-')} <span class="detail-ts">${formatDateTime(a.completedAt)}</span></span>
       </div>`);
+    if (a.endOdometer != null) {
+      rows.push(`
+      <div class="detail-row">
+        <span class="detail-label">KM Akhir</span>
+        <span class="detail-value">${Number(a.endOdometer).toLocaleString()} km</span>
+      </div>`);
+    }
+    if (a.distanceTravelled != null) {
+      rows.push(`
+      <div class="detail-row">
+        <span class="detail-label">Jarak Tempuh</span>
+        <span class="detail-value">${Number(a.distanceTravelled).toLocaleString()} km</span>
+      </div>`);
+    }
   }
 
   return rows.join('');

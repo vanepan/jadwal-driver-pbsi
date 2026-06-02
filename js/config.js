@@ -1,10 +1,24 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.2.1';
-export const RELEASE_NAME = 'Validation Engine Foundation';
+export const APP_VERSION = '1.2.2';
+export const RELEASE_NAME = 'Odometer Foundation';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.2.2',
+    date: '2026-06-02',
+    summary: 'Odometer Foundation',
+    highlights: [
+      'KM Awal captured on Start Assignment via odometer modal',
+      'KM Akhir captured on Complete Assignment via odometer modal',
+      'distanceTravelled calculated automatically',
+      'startOdometer, endOdometer, distanceTravelled stored in Firebase',
+      'KM Awal / KM Akhir / Jarak Tempuh shown in assignment detail',
+      'validateOdometer wired from Validation Engine (v1.2.1)',
+      'Stacked modal UX — detail modal stays visible during input',
+    ],
+  },
   {
     version: '1.2.1',
     date: '2026-06-02',
