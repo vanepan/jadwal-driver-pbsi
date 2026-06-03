@@ -1,0 +1,752 @@
+/* ============================================================
+   platform.css — PBSI Operations Platform v2.0
+   Design System Tokens · Phase 1
+
+   PURPOSE
+   -------
+   Additive token layer loaded AFTER style.css. Does NOT
+   modify existing selectors or class names — those remain
+   owned by style.css throughout the migration. This file
+   only adds new CSS custom properties and applies the font
+   transition from DM Sans → Inter.
+
+   Any selector defined here intentionally overrides a
+   style.css equivalent is noted with "OVERRIDE:" inline.
+
+   DARK MODE
+   ---------
+   Tokens are defined for both light and dark. The toggle
+   mechanism will be wired in Phase 3; for now the
+   [data-theme="dark"] block is inactive.
+   ============================================================ */
+
+
+/* ── Light mode tokens ── */
+:root,
+[data-theme="light"] {
+
+  /* Canvas & surfaces */
+  --canvas:         #F5F5F3;
+  --surface:        #FFFFFF;
+  --surface-2:      #FBFAF8;
+  --border:         #E8E6E2;
+  --border-strong:  #DAD7D2;
+  --grid:           #F0EEEB;
+
+  /* Text hierarchy
+     OVERRIDE: --text was #1A1A1A; V2.0 uses #1A1917 (imperceptible warm shift) */
+  --text:           #1A1917;
+  --muted:          #5B5953;
+  --faint:          #94918B;
+
+  /* Interactive states */
+  --hover:          #F2F0EC;
+  --input-bg:       #FBFAF8;
+  --input-border:   #E2DFDA;
+
+  /* Brand — accent aligns with current --red for continuity.
+     V2.0 uses a slightly deeper PBSI crimson. */
+  --accent:         #A8292F;
+  --on-accent:      #FFFFFF;
+
+  /* Chrome regions */
+  --topbar-bg:      #FFFFFF;
+  --tl-head-bg:     #FBFAF8;
+
+  /* Sidebar / rail — matches current dark sidebar (#1A1A1A ≈ #1D1D1B) */
+  --side-bg:        #1D1D1B;
+  --side-border:    #2E2E2C;
+  --side-text:      #B7B5B0;
+  --side-strong:    #F4F3F0;
+  --side-faint:     #75736E;
+  --side-active-bg: rgba(168,41,47,.14);
+  --side-active-tx: #FFFFFF;
+
+  /* Avatars */
+  --avatar-bg:      #EFEDEA;
+  --avatar-tx:      #6B6863;
+
+  /* Semantic status palette */
+  --info:           #3B5BA9;
+  --info-bg:        #EDF1FB;
+  --ok:             #2F7D62;
+  --ok-bg:          #E7F2EC;
+  --warn:           #946420;
+  --warn-bg:        #F6EEDB;
+  --danger:         #A8292F;
+  --danger-bg:      #FAEBEB;
+
+  /* Shadows
+     OVERRIDE: --shadow-lg redefines style.css value with V2.0 elevation. */
+  --shadow-sm:      0 1px 2px rgba(28,26,23,.06);
+  --shadow-md:      0 4px 16px -4px rgba(28,26,23,.12);
+  --shadow-lg:      0 18px 50px -12px rgba(28,26,23,.28);
+
+  /* Overlay / scrim */
+  --scrim:          rgba(28,26,23,.36);
+
+  /* Vehicle color palette — matches existing per-vehicle vars in style.css.
+     Provides canonical names for V2.0 components going forward. */
+  --v-innova:       #3B5BA9;
+  --v-luxio:        #2F7D62;
+  --v-poly:         #A9742A;
+  --v-hiace:        #6B4E9E;
+
+  /* Compact density defaults */
+  --row-h:          62px;
+  --bar-top:        9px;
+  --bar-h:          44px;
+}
+
+/* ── Comfortable density (future Tweaks toggle) ── */
+[data-density="comfortable"] {
+  --row-h:          74px;
+  --bar-top:        11px;
+  --bar-h:          52px;
+}
+
+
+/* ── Dark mode tokens ── */
+/* Inactive until the theme toggle is wired in Phase 3.
+   Defined now so dark-mode-aware components can reference
+   them without a later refactor. */
+[data-theme="dark"] {
+  --canvas:         #17181C;
+  --surface:        #1F2025;
+  --surface-2:      #262830;
+  --border:         #31333C;
+  --border-strong:  #3E414C;
+  --grid:           #26282F;
+
+  --text:           #E6E4DF;
+  --muted:          #A6A39B;
+  --faint:          #71706B;
+
+  --hover:          #292B33;
+  --input-bg:       #24262C;
+  --input-border:   #363941;
+
+  --accent:         #CF6469;
+  --on-accent:      #FBEFEF;
+
+  --topbar-bg:      #191A1F;
+  --tl-head-bg:     #202229;
+
+  --side-bg:        #191A1F;
+  --side-border:    #2C2E36;
+  --side-text:      #B2AFA8;
+  --side-strong:    #F0EEEA;
+  --side-faint:     #6E6D68;
+  --side-active-bg: rgba(255,255,255,.07);
+  --side-active-tx: #F0EEEA;
+
+  --avatar-bg:      #2D2F37;
+  --avatar-tx:      #B2AFA8;
+
+  --info:           #8AA0CF;
+  --info-bg:        #242B39;
+  --ok:             #72AF8F;
+  --ok-bg:          #1F2C27;
+  --warn:           #C7A05B;
+  --warn-bg:        #2C2719;
+  --danger:         #D6817C;
+  --danger-bg:      #2E2120;
+
+  --shadow-sm:      0 1px 2px rgba(0,0,0,.32);
+  --shadow-md:      0 6px 22px -8px rgba(0,0,0,.50);
+  --shadow-lg:      0 24px 60px -18px rgba(0,0,0,.58);
+
+  --scrim:          rgba(10,11,14,.60);
+
+  --v-innova:       #5E76B0;
+  --v-luxio:        #479B79;
+  --v-poly:         #BE9350;
+  --v-hiace:        #8470B5;
+}
+
+
+/* ============================================================
+   BASE OVERRIDES
+   ============================================================ */
+
+/* Font: Inter replaces DM Sans.
+   Both are grotesque sans-serifs with near-identical metrics;
+   no layout shift expected. */
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.011em;
+  /* OVERRIDE: background and color aligned to V2.0 tokens.
+     #F5F5F3 (--canvas) vs #F5F5F5 (--gray-1) — imperceptible. */
+  background: var(--canvas);
+  color: var(--text);
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+/* Mono elements: JetBrains Mono replaces DM Mono */
+code,
+kbd,
+pre,
+.wa-preview-text,
+#filterDate,
+.date-input {
+  font-family: 'JetBrains Mono', 'DM Mono', ui-monospace, monospace;
+}
+
+/* Text selection accent */
+::selection {
+  background: rgba(168, 41, 47, 0.20);
+}
+
+
+/* ============================================================
+   SMOOTH THEME CROSSFADE
+   Armed by JS adding .theme-anim to <html> for ~650ms during
+   a theme switch. Prevents flash-on-load by being opt-in.
+   ============================================================ */
+html.theme-anim,
+html.theme-anim *,
+html.theme-anim *::before,
+html.theme-anim *::after {
+  transition:
+    background-color .55s cubic-bezier(.4,0,.2,1),
+    border-color     .55s cubic-bezier(.4,0,.2,1),
+    color            .40s ease,
+    box-shadow       .55s ease !important;
+}
+
+
+/* ============================================================
+   V2.0 UTILITY CLASSES
+   Defined now so Phase 2 components can reference them.
+   These class names do NOT exist in style.css — no collision.
+   ============================================================ */
+
+/* ── Status pills ── */
+.p-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 20px;
+  white-space: nowrap;
+  line-height: 1;
+}
+.p-pill .p-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.p-pill.info    { background: var(--info-bg);    color: var(--info);   }
+.p-pill.ok      { background: var(--ok-bg);      color: var(--ok);     }
+.p-pill.warn    { background: var(--warn-bg);    color: var(--warn);   }
+.p-pill.danger  { background: var(--danger-bg);  color: var(--danger); }
+.p-pill.neutral { background: var(--hover);      color: var(--muted);  }
+.p-pill.info   .p-dot  { background: var(--info);   }
+.p-pill.ok     .p-dot  { background: var(--ok);     }
+.p-pill.warn   .p-dot  { background: var(--warn);   }
+.p-pill.danger .p-dot  { background: var(--danger); }
+.p-pill.neutral .p-dot { background: var(--faint);  }
+
+/* ── V2.0 buttons ── */
+.p-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 8px 14px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: filter .12s, background .12s;
+  white-space: nowrap;
+  font-family: inherit;
+}
+.p-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+.p-btn-primary {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
+}
+.p-btn-primary:hover { filter: brightness(.92); }
+
+.p-btn-ghost {
+  background: var(--input-bg);
+  color: var(--text);
+  border-color: var(--input-border);
+}
+.p-btn-ghost:hover { background: var(--hover); }
+
+.p-btn-ok      { background: var(--ok-bg);     color: var(--ok);     }
+.p-btn-danger  { background: var(--danger-bg); color: var(--danger); }
+.p-btn-sm      { padding: 6px 11px; font-size: 12px; }
+
+/* ── V2.0 form inputs ── */
+.p-inp,
+.p-sel,
+.p-ta {
+  width: 100%;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  padding: 9px 11px;
+  font-size: 13px;
+  color: var(--text);
+  outline: none;
+  font-family: inherit;
+  transition: border-color .12s, box-shadow .12s;
+}
+.p-inp::placeholder,
+.p-ta::placeholder  { color: var(--faint); }
+.p-inp:focus,
+.p-sel:focus,
+.p-ta:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(168,41,47,.14);
+}
+.p-ta     { resize: vertical; min-height: 62px; line-height: 1.5; }
+
+/* ── Toggle switch ── */
+.p-switch {
+  width: 40px;
+  height: 23px;
+  border-radius: 12px;
+  background: var(--input-border);
+  position: relative;
+  cursor: pointer;
+  transition: background .15s;
+  flex-shrink: 0;
+  border: none;
+  padding: 0;
+}
+.p-switch.on  { background: var(--ok); }
+.p-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 19px; height: 19px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left .15s;
+  box-shadow: 0 1px 2px rgba(0,0,0,.28);
+}
+.p-switch.on::after { left: 19px; }
+
+/* ── Toast (V2.0 style, complements existing #toast) ── */
+.p-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--text);
+  color: var(--canvas);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 11px 18px;
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  animation: p-toastin .2s ease;
+  pointer-events: none;
+}
+.p-toast svg { width: 15px; height: 15px; flex-shrink: 0; }
+@keyframes p-toastin {
+  from { opacity: 0; transform: translate(-50%, 10px); }
+  to   { opacity: 1; transform: translate(-50%, 0);    }
+}
+
+/* ── SVG size normalization for V2.0 icons ── */
+.p-icon     { width: 16px; height: 16px; flex-shrink: 0; }
+.p-icon-sm  { width: 13px; height: 13px; flex-shrink: 0; }
+.p-icon-lg  { width: 20px; height: 20px; flex-shrink: 0; }
+
+/* ── Scrollbar styling (V2.0 standard) ── */
+.p-scroll        { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+.p-scroll::-webkit-scrollbar              { width: 10px; height: 10px; }
+.p-scroll::-webkit-scrollbar-thumb       { background: var(--border-strong); border-radius: 6px; border: 3px solid transparent; background-clip: content-box; }
+.p-scroll::-webkit-scrollbar-track       { background: transparent; }
+
+/* ── Section divider ── */
+.p-shead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 2px 2px;
+}
+.p-shead h2 {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin: 0;
+  white-space: nowrap;
+}
+.p-shead .p-line {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* ── Empty state ── */
+.p-empty {
+  text-align: center;
+  padding: 48px 20px;
+  color: var(--faint);
+}
+.p-empty .p-empty-icon {
+  width: 46px; height: 46px;
+  border-radius: 13px;
+  background: var(--hover);
+  display: grid; place-items: center;
+  margin: 0 auto 12px;
+  color: var(--faint);
+}
+.p-empty .p-empty-icon svg { width: 22px; height: 22px; }
+.p-empty .p-empty-title { font-size: 13.5px; font-weight: 600; color: var(--muted); }
+.p-empty .p-empty-desc  { font-size: 12px; margin-top: 3px; }
+
+
+/* ============================================================
+   PHASE 2 — LOGIN SCREEN
+   ============================================================ */
+
+/* Fullscreen centered canvas with radial gradient */
+.login-screen {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  z-index: 200;
+  background:
+    radial-gradient(1100px 620px at 18% -10%,
+      rgba(168,41,47,.10) 0%, transparent 60%),
+    radial-gradient(900px 600px at 100% 110%,
+      rgba(59,91,169,.09) 0%, transparent 55%),
+    var(--canvas);
+  animation: ls-fade .25s ease;
+}
+@keyframes ls-fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* Card */
+.login-card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  box-shadow: var(--shadow-lg);
+  padding: 34px 32px 28px;
+  animation: ls-pop .22s cubic-bezier(.2,.8,.3,1);
+}
+@keyframes ls-pop {
+  from { opacity: 0; transform: translateY(10px) scale(.985); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Brand row */
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 26px;
+}
+.login-brand-crest {
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+  background: var(--accent);
+  color: var(--on-accent);
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 20px;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.login-brand-crest img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 5px;
+}
+.login-brand-name {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  display: block;
+}
+.login-brand-sub {
+  font-size: 11.5px;
+  color: var(--faint);
+  display: block;
+  margin-top: 2px;
+}
+
+/* Headings */
+.login-card h2 {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin: 0 0 5px;
+}
+.login-card .login-lead {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin: 0 0 22px;
+  line-height: 1.5;
+}
+
+/* Fields */
+.login-card .form-group {
+  margin-bottom: 13px;
+}
+.login-card .form-group label {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.login-card .form-group input {
+  width: 100%;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 9px;
+  padding: 10px 12px;
+  font-size: 14px;
+  color: var(--text);
+  outline: none;
+  font-family: inherit;
+  transition: border-color .12s, box-shadow .12s;
+}
+.login-card .form-group input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(168,41,47,.12);
+}
+.login-card .form-group input#loginPin {
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: .2em;
+  text-align: center;
+  font-size: 16px;
+}
+.login-card .form-group input::placeholder { color: var(--faint); }
+
+/* Error message */
+.login-error-v2 {
+  display: none;
+  font-size: 11.5px;
+  color: var(--danger);
+  margin: 6px 0 10px;
+  display: none;
+  align-items: center;
+  gap: 6px;
+  min-height: 16px;
+}
+.login-error-v2.visible { display: flex; }
+.login-error-v2 svg { width: 13px; height: 13px; flex-shrink: 0; }
+
+/* Submit button */
+.login-submit {
+  width: 100%;
+  background: var(--accent);
+  color: var(--on-accent);
+  border: none;
+  border-radius: 9px;
+  font-size: 13.5px;
+  font-weight: 600;
+  padding: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-family: inherit;
+  transition: filter .12s;
+}
+.login-submit:hover  { filter: brightness(.92); }
+.login-submit:active { filter: brightness(.86); }
+.login-submit svg    { width: 15px; height: 15px; }
+
+/* Quick access section */
+.login-quick {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+.login-quick-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-bottom: 9px;
+}
+.login-quick-chips {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+.login-quick-chip {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--input-bg);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: border-color .14s, background .14s, transform .1s;
+}
+.login-quick-chip:hover {
+  border-color: var(--accent);
+  background: var(--surface);
+  transform: translateY(-1px);
+}
+.login-quick-chip:active { transform: none; }
+.login-chip-ic {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.login-chip-ic svg { width: 14px; height: 14px; }
+.login-chip-ic.admin    { background: var(--danger-bg); color: var(--danger); }
+.login-chip-ic.bidang   { background: var(--info-bg);   color: var(--info);   }
+.login-chip-ic.driver   { background: var(--warn-bg);   color: var(--warn);   }
+.login-chip-ic.engineering { background: var(--ok-bg);  color: var(--ok);     }
+.login-chip-name  { font-size: 12px;   font-weight: 600; line-height: 1.1; color: var(--text);  display: block; }
+.login-chip-uname { font-size: 10px;   color: var(--faint); margin-top: 1px; display: block; font-family: 'JetBrains Mono', monospace; }
+
+/* Footer */
+.login-foot-text {
+  text-align: center;
+  font-size: 10.5px;
+  color: var(--faint);
+  margin-top: 20px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Mobile adjustments */
+@media (max-width: 480px) {
+  .login-card {
+    padding: 28px 22px 22px;
+    border-radius: 16px;
+  }
+  .login-quick-chips {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* ============================================================
+   EXISTING COMPONENT REFINEMENTS
+   Minor visual upgrades to current components using the new
+   token values. All selector names unchanged from style.css.
+   ============================================================ */
+
+/* Header: soften shadow, use surface token */
+.header {
+  background: var(--topbar-bg);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Modal overlay: use scrim token */
+.modal-overlay {
+  background: var(--scrim);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+/* Modal box: use surface token + V2.0 shadow */
+.modal-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  border-radius: 14px;
+}
+
+/* Modal header: sticky with surface bg */
+.modal-header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Form inputs: use input tokens */
+.form-group input:not([type="checkbox"]):not([type="radio"]),
+.form-group select,
+.form-group textarea {
+  background: var(--input-bg);
+  border-color: var(--input-border);
+  color: var(--text);
+  transition: border-color .12s, box-shadow .12s;
+}
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(168,41,47,.12);
+  outline: none;
+}
+
+/* Timeline header: tl-head-bg */
+.timeline-header-row {
+  background: var(--tl-head-bg);
+}
+
+/* Timeline vehicle bars: use canonical --v-* vars.
+   These override any hardcoded hex in style.css bar rules. */
+.bar-vehicle-innova { background: var(--v-innova) !important; }
+.bar-vehicle-luxio  { background: var(--v-luxio)  !important; }
+.bar-vehicle-poly   { background: var(--v-poly)   !important; }
+.bar-vehicle-hiace  { background: var(--v-hiace)  !important; }
+
+/* Legend swatches */
+.legend-item[data-vehicle="Innova"]  { --swatch: var(--v-innova); }
+.legend-item[data-vehicle="Luxio"]   { --swatch: var(--v-luxio);  }
+.legend-item[data-vehicle="Polytron"]{ --swatch: var(--v-poly);   }
+.legend-item[data-vehicle="Hiace"]   { --swatch: var(--v-hiace);  }
+
+/* Toast: use text/canvas tokens */
+.toast {
+  background: var(--text);
+  color: var(--canvas);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+  font-family: inherit;
+}
+
+/* Btn-primary: use accent token */
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  font-family: inherit;
+}
+.btn-primary:hover  { background: color-mix(in srgb, var(--accent) 85%, #000); }
+.btn-primary:active { background: color-mix(in srgb, var(--accent) 78%, #000); }

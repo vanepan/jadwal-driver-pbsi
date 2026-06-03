@@ -6,8 +6,9 @@
   <title>PBSI · Jadwal Driver Operasional</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css?v=1.1.0" />
+  <link rel="stylesheet" href="platform.css?v=2.0.0" />
 </head>
 <body>
 
@@ -211,36 +212,89 @@
      MODALS — position:fixed, unaffected by layout
      ================================================================ -->
 
-<!-- ===== MODAL: LOGIN ===== -->
-<div class="modal-overlay login-modal" id="modalLogin" style="display:none;">
-  <div class="modal-box login-box">
-    <div class="modal-header">
-      <div class="login-logo-row">
-        <img src="assets/Logo-PBSI.png" alt="PBSI" class="login-logo"
-             onerror="this.style.display='none'" />
-        <h2 class="modal-title">Login</h2>
+<!-- ===== MODAL: LOGIN (V2.0) ===== -->
+<div class="login-screen" id="modalLogin" style="display:none;">
+  <div class="login-card">
+
+    <!-- Brand -->
+    <div class="login-brand">
+      <div class="login-brand-crest">
+        <img src="assets/Logo-PBSI.png" alt="PBSI" onerror="this.style.display='none';this.parentElement.textContent='P'" />
+      </div>
+      <div>
+        <span class="login-brand-name">PBSI Operations</span>
+        <span class="login-brand-sub">Sarana &amp; Prasarana · Platform Operasional</span>
       </div>
     </div>
-    <div class="modal-body">
-      <form id="loginForm" novalidate>
-        <div class="form-group">
-          <label for="loginUsername">Username</label>
-          <input type="text" id="loginUsername" autocomplete="username" placeholder="Masukkan username" required />
-        </div>
-        <div class="form-group">
-          <label for="loginPin">PIN</label>
-          <input type="password" id="loginPin" inputmode="numeric" pattern="[0-9]*" autocomplete="current-password" maxlength="4" placeholder="4 digit PIN" required />
-        </div>
-        <div class="login-error" id="loginError" style="display:none;">Username atau PIN tidak dikenal.</div>
-        <div class="form-actions" style="margin-top:14px;">
-          <button type="submit" class="btn-primary" id="btnLogin" style="width:100%;justify-content:center;">Masuk</button>
-        </div>
-      </form>
-      <div class="login-footer">
-        <span class="login-footer-appname app-name-text"></span>
-        <span class="login-footer-version app-version-full"></span>
+
+    <h2>Masuk ke Platform</h2>
+    <p class="login-lead">Gunakan username dan PIN Anda. Navigasi menyesuaikan peran secara otomatis.</p>
+
+    <form id="loginForm" novalidate>
+      <div class="form-group">
+        <label for="loginUsername">Username</label>
+        <input type="text" id="loginUsername" autocomplete="username"
+               placeholder="contoh: admin" autofocus required />
+      </div>
+      <div class="form-group">
+        <label for="loginPin">PIN</label>
+        <input type="password" id="loginPin" inputmode="numeric"
+               pattern="[0-9]*" autocomplete="current-password"
+               maxlength="6" placeholder="••••" required />
+      </div>
+
+      <!-- Error — id=loginError kept exactly so auth.js can show/hide it -->
+      <div id="loginError" class="login-error-v2" style="display:none;" aria-live="polite">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+        Username atau PIN tidak dikenal.
+      </div>
+
+      <button type="submit" class="login-submit">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+        Masuk
+      </button>
+    </form>
+
+    <!-- Quick access role chips (dev / demo convenience) -->
+    <div class="login-quick" id="loginQuickAccess">
+      <div class="login-quick-label">Masuk Cepat</div>
+      <div class="login-quick-chips">
+
+        <button type="button" class="login-quick-chip" data-uname="admin" data-pin="1234">
+          <span class="login-chip-ic admin">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </span>
+          <span>
+            <span class="login-chip-name">Administrator</span>
+            <span class="login-chip-uname">admin · 1234</span>
+          </span>
+        </button>
+
+        <button type="button" class="login-quick-chip" data-uname="akuntes" data-pin="3333">
+          <span class="login-chip-ic bidang">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+          </span>
+          <span>
+            <span class="login-chip-name">Bidang / Requester</span>
+            <span class="login-chip-uname">akuntes · 3333</span>
+          </span>
+        </button>
+
+        <button type="button" class="login-quick-chip" data-uname="aria" data-pin="0000">
+          <span class="login-chip-ic driver">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 17h14M5 17a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm18 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM3 11l2-5h12l3 5M3 11h18M3 11v6m18-6v6"/></svg>
+          </span>
+          <span>
+            <span class="login-chip-name">Driver</span>
+            <span class="login-chip-uname">aria · 0000</span>
+          </span>
+        </button>
+
       </div>
     </div>
+
+    <p class="login-foot-text app-name-text" style="margin-top:18px;"></p>
+
   </div>
 </div>
 
