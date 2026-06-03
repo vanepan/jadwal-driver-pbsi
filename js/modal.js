@@ -11,6 +11,7 @@ import { formatDateLong, formatDateTime, getTimePeriod, parseLocalDate, showToas
 import { VEHICLES } from './drivers.js';
 import { hasPermission, getCurrentUser } from './auth.js';
 import { validateOdometer } from './validation.js';
+import { printReimbursementForm } from './reimbursement.js';
 
 /* ── Status Constants ── */
 const STATUS_LABELS = {
@@ -284,6 +285,13 @@ export function initModalHandlers() {
 
   // Copy WhatsApp
   document.getElementById('btnCopyWA')?.addEventListener('click', copyWAText);
+
+  // Print Reimbursement Form
+  document.getElementById('btnPrintReimbursement')?.addEventListener('click', () => {
+    const a = assignments.find(x => x.id === viewingId);
+    if (!a) return;
+    printReimbursementForm(a);
+  });
 
   // Click outside to close
   document.getElementById('modalDetail')?.addEventListener('click', (e) => {

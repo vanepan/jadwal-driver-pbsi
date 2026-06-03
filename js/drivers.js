@@ -21,6 +21,17 @@ export const VEHICLES = {
   'Hiace':    '#6A1B9A',
 };
 
+/* ── Data: Nomor Polisi Kendaraan ─────────────────────────────
+   Update these values to match the actual license plates.
+   Used by the reimbursement form generator (v1.2.4+).
+   ─────────────────────────────────────────────────────────── */
+export const VEHICLE_PLATES = {
+  'Innova':   '',
+  'Luxio':    '',
+  'Polytron': '',
+  'Hiace':    '',
+};
+
 /**
  * Initialize dropdown driver di form
  * - Isi options dengan daftar driver

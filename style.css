@@ -2023,6 +2023,29 @@ z-index: 1;
 }
 .btn-wa-copy:hover { background: #388E3C; }
 
+.btn-reimbursement {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--white);
+  background: #1A1917;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+  width: 100%;
+  text-align: left;
+}
+.btn-reimbursement:hover { background: #333; }
+
+.reimbursement-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  line-height: 1.5;
+}
+
 .copy-feedback {
   font-size: 12px;
   font-weight: 600;

@@ -1,10 +1,25 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.2.3';
-export const RELEASE_NAME = 'Completion Tracking Expansion';
+export const APP_VERSION = '1.2.4';
+export const RELEASE_NAME = 'Reimbursement Form Generator';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.2.4',
+    date: '2026-06-04',
+    summary: 'Reimbursement Form Generator',
+    highlights: [
+      'Print Reimbursement Form action added to Assignment Detail Modal',
+      'Professional A4 form: driver info, odometer, overtime status, signatures',
+      'Overtime auto-calculated: NORMAL (09:00–17:00) vs LEMBUR (outside window)',
+      'Section D: Lampiran Bukti Pengeluaran attachment area (≈35% of page)',
+      'Browser Print / Save as PDF support (no external library)',
+      'VEHICLE_PLATES map added to drivers.js for future plate number population',
+      'Requester field: Bidang for request-based, PIC/Admin for direct assignments',
+      'Architecture ready for fuel, toll, parking reimbursement expansion',
+    ],
+  },
   {
     version: '1.2.3',
     date: '2026-06-02',
