@@ -651,6 +651,80 @@ function initV2Panel() {
 }
 
 /**
+ * VSM-3: Create the V2 sticky topbar and migrate existing DOM nodes from
+ * the V1 .header into it. Called only when flags.visualShellV2 === true,
+ * immediately after initV2Panel().
+ *
+ * CRITICAL ORDERING: this function MUST run before any getElementById-based
+ * handler binding in DOMContentLoaded. initDateControls(), initNotificationUI(),
+ * and the sidebarToggle click handler all run later and will find the migrated
+ * elements in their new (topbar) location via getElementById — no rebinding needed.
+ *
+ * DOM migration (existing nodes, listeners travel with them):
+ *   #sidebarToggle     ← hamburger; existing openSidebar handler binds later
+ *   .date-nav          ← date controls; initDateControls() binds later
+ *   .header-user-area  ← display name + role badge + notif bell; binds later
+ *
+ * New decorative nodes (no event listeners):
+ *   #v2TopbarCrumb     ← "Driver Operations" breadcrumb, desktop only
+ *   .v2-topbar-spacer  ← flex: 1 push
+ *
+ * Rollback: page reload with flag off → fresh HTML, no migration occurs.
+ */
+function initV2Topbar() {
+  // ── Build topbar shell ──
+  const topbar = document.createElement('div');
+  topbar.className = 'v2-topbar';
+  topbar.id = 'v2Topbar';
+
+  // ── Create new elements (breadcrumb + spacer) ──
+  const crumb = document.createElement('span');
+  crumb.id = 'v2TopbarCrumb';
+  crumb.textContent = 'Driver Operations';
+  crumb.setAttribute('aria-hidden', 'true'); // decorative — rail already labels module
+
+  const spacer = document.createElement('div');
+  spacer.className = 'v2-topbar-spacer';
+  spacer.setAttribute('aria-hidden', 'true');
+
+  // ── Locate existing DOM elements to migrate ──
+  // Scope to .main-area .header to avoid matching elements outside the header.
+  const header   = document.querySelector('.main-area .header');
+  const toggler  = header?.querySelector('#sidebarToggle')
+                   ?? document.getElementById('sidebarToggle');
+  const dateNav  = header?.querySelector('.date-nav')
+                   ?? document.querySelector('.date-nav');
+  const userArea = header?.querySelector('.header-user-area')
+                   ?? document.querySelector('.header-user-area');
+
+  // Guard: abort if header is not found — V1 layout must be intact
+  if (!header) {
+    console.warn('[VSM-3] .header not found — topbar skipped');
+    return;
+  }
+
+  // ── Assemble topbar — DOM order drives flex layout ──
+  // Desktop (≥768px): [hamburger-hidden] [crumb] [date-nav] [spacer] [user-area]
+  // Mobile  (≤767px): [hamburger] [spacer] [user-area] row-1
+  //                   [date-nav full-width]             row-2  (via CSS order)
+  if (toggler)  topbar.appendChild(toggler);
+  topbar.appendChild(crumb);
+  if (dateNav)  topbar.appendChild(dateNav);
+  topbar.appendChild(spacer);
+  if (userArea) topbar.appendChild(userArea);
+
+  // ── Insert as first child of .main-area, before the V1 .header shell ──
+  // The V1 .header is hidden via CSS (body.v2-shell-active .header { display:none })
+  // but stays in the DOM as a harmless empty shell for rollback safety.
+  const mainArea = document.querySelector('.main-area');
+  if (mainArea) {
+    mainArea.insertBefore(topbar, header);
+  }
+
+  console.log('[VSM-3] V2 topbar initialised — DOM nodes migrated from .header');
+}
+
+/**
  * Main initialization saat DOM ready
  */
 document.addEventListener('DOMContentLoaded', async () => {
@@ -663,6 +737,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (appFlags.visualShellV2 === true) {
     initV2Rail();
     initV2Panel();
+    // VSM-3: must run before sidebar-toggle and initDateControls() handler binding
+    initV2Topbar();
   }
 
   // ── Populate version & app name elements from config ──
