@@ -158,6 +158,18 @@ function setSidebarActive(id) {
 }
 
 /**
+ * VSM-2: Set the active item in the V2 context panel navigation.
+ * Removes v2-panel-nav-item--active from every nav item then adds it to
+ * the target. Safe to call when the panel does not exist (flag off).
+ * @param {string|null} id - Element ID of the item to mark active, or null to reset to timeline.
+ */
+function setV2PanelNavActive(id) {
+  document.querySelectorAll('#v2Panel .v2-panel-nav-item').forEach(btn => {
+    btn.classList.toggle('v2-panel-nav-item--active', btn.id === id);
+  });
+}
+
+/**
  * Update tombol-tombol berdasarkan role login saat ini.
  */
 function updatePermissionUI() {
@@ -290,6 +302,54 @@ function updatePermissionUI() {
       .map(w => (w[0] ?? '').toUpperCase())
       .join('') || '?';
     railInitials.textContent = initials;
+  }
+
+  // ── VSM-2: V2 context panel role-gating ──
+  // Only runs when the panel element exists (visualShellV2 flag is on).
+  const v2Panel = document.getElementById('v2Panel');
+  if (v2Panel) {
+    const canAdd = isAdmin() || isBidang();
+
+    // CTA area: visible only for roles that can create/request assignments
+    const v2PanelCta = document.getElementById('v2PanelCta');
+    if (v2PanelCta) v2PanelCta.style.display = canAdd ? 'flex' : 'none';
+
+    // Primary CTA label: admin → "Tambah Jadwal", bidang → "Request Jadwal"
+    const v2BtnTambahLabel = document.getElementById('v2BtnTambahLabel');
+    if (v2BtnTambahLabel) {
+      v2BtnTambahLabel.textContent = isAdmin() ? 'Tambah Jadwal' : 'Request Jadwal';
+    }
+
+    // Ajukan Request: bidang only (admin already has Tambah Jadwal)
+    const v2BtnAjukanRequest = document.getElementById('v2BtnAjukanRequest');
+    if (v2BtnAjukanRequest) {
+      v2BtnAjukanRequest.style.display = isBidang() ? 'flex' : 'none';
+    }
+
+    // Pending nav item: admin (approval queue) + bidang (own request history)
+    const v2NavPending = document.getElementById('v2NavPending');
+    if (v2NavPending) {
+      v2NavPending.style.display = canAdd ? 'flex' : 'none';
+    }
+
+    // Jadwal Saya: driver only (personal schedule dashboard)
+    const v2NavJadwalSaya = document.getElementById('v2NavJadwalSaya');
+    if (v2NavJadwalSaya) {
+      v2NavJadwalSaya.style.display = isDriver() ? 'flex' : 'none';
+    }
+
+    // Pending badge: admin only, shows count of pending requests
+    const v2PanelBadge = document.getElementById('v2PanelBadge');
+    if (v2PanelBadge) {
+      const pendingCount = getPendingRequestCount();
+      const showBadge = isAdmin() && pendingCount > 0;
+      v2PanelBadge.textContent = String(pendingCount);
+      v2PanelBadge.style.display = showBadge ? 'inline-flex' : 'none';
+    }
+
+    // Reset active state to Dashboard on every auth/permission change.
+    // The active tab is updated per-click in initV2Panel() handlers.
+    setV2PanelNavActive('v2NavDashboard');
   }
 
   // Reset bottom nav to Dashboard on every auth/permission change.
@@ -440,6 +500,157 @@ function initV2Rail() {
 }
 
 /**
+ * VSM-2: Inject the V2 context panel (218px) and wire all nav/CTA buttons
+ * to their V1 proxy targets. Called only when flags.visualShellV2 === true,
+ * immediately after initV2Rail().
+ *
+ * Proxy pattern: every button calls the matching V1 element's .click() or
+ * the already-imported module function directly. Zero V1 event listeners
+ * are modified or duplicated.
+ *
+ * Role-gating is deferred to updatePermissionUI() which runs after auth
+ * resolves. All role-dependent items start hidden (style="display:none").
+ */
+function initV2Panel() {
+  const panel = document.createElement('div');
+  panel.className = 'v2-panel';
+  panel.id = 'v2Panel';
+  panel.innerHTML = `
+    <!-- Module title -->
+    <div class="v2-panel-header">
+      <span class="v2-panel-title">Driver Operations</span>
+    </div>
+    <div class="v2-panel-divider"></div>
+
+    <!-- CTAs — role-gated; hidden until updatePermissionUI() resolves auth -->
+    <div class="v2-panel-cta" id="v2PanelCta" style="display:none;">
+      <button class="v2-panel-btn v2-panel-btn--primary" id="v2BtnTambahJadwal" type="button">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true">
+          <path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"/>
+        </svg>
+        <span id="v2BtnTambahLabel">Tambah Jadwal</span>
+      </button>
+      <button class="v2-panel-btn v2-panel-btn--ghost" id="v2BtnAjukanRequest" type="button" style="display:none;">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true">
+          <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/>
+          <path fill-rule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5z" clip-rule="evenodd"/>
+        </svg>
+        Ajukan Request
+      </button>
+    </div>
+
+    <!-- Navigation list -->
+    <nav class="v2-panel-nav" aria-label="Driver Operations menu">
+
+      <!-- Dashboard: all authenticated roles -->
+      <button class="v2-panel-nav-item v2-panel-nav-item--active" id="v2NavDashboard" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/>
+        </svg>
+        Dashboard
+      </button>
+
+      <!-- Pending: admin (approval queue) + bidang (request history) -->
+      <button class="v2-panel-nav-item" id="v2NavPending" type="button" style="display:none;">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/>
+          <path fill-rule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clip-rule="evenodd"/>
+        </svg>
+        Pending
+        <span class="v2-panel-badge" id="v2PanelBadge" style="display:none;"></span>
+      </button>
+
+      <!-- Jadwal Saya: driver role only -->
+      <button class="v2-panel-nav-item" id="v2NavJadwalSaya" type="button" style="display:none;">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"/>
+        </svg>
+        Jadwal Saya
+      </button>
+
+    </nav>
+
+    <div class="v2-panel-spacer"></div>
+    <div class="v2-panel-divider"></div>
+
+    <!-- Footer — always visible when logged in -->
+    <div class="v2-panel-footer">
+      <button class="v2-panel-footer-btn" id="v2FooterProfil" type="button">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true">
+          <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/>
+        </svg>
+        Profil
+      </button>
+      <button class="v2-panel-footer-btn v2-panel-footer-btn--logout" id="v2FooterKeluar" type="button">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true">
+          <path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clip-rule="evenodd"/>
+        </svg>
+        Keluar
+      </button>
+    </div>
+  `;
+
+  // Insert immediately after .v2-rail (before #sidebar)
+  const rail = document.getElementById('v2Rail');
+  if (rail) {
+    rail.after(panel);
+  } else {
+    const appLayout = document.querySelector('.app-layout');
+    const sidebar   = document.getElementById('sidebar');
+    if (appLayout && sidebar) appLayout.insertBefore(panel, sidebar);
+    else document.body.appendChild(panel);
+  }
+
+  // ── Event handlers — all proxy to V1 elements or imported functions ──
+
+  // Tambah Jadwal: admin → assignment form; bidang → request form
+  document.getElementById('v2BtnTambahJadwal')?.addEventListener('click', () => {
+    if (isAdmin()) {
+      openFormModal();
+    } else if (isBidang()) {
+      openRequestFormModal();
+    }
+  });
+
+  // Ajukan Request: bidang only — direct call to request form
+  document.getElementById('v2BtnAjukanRequest')?.addEventListener('click', () => {
+    openRequestFormModal();
+  });
+
+  // Dashboard nav: scroll timeline to top (same as bottomNavDashboard)
+  document.getElementById('v2NavDashboard')?.addEventListener('click', () => {
+    setV2PanelNavActive('v2NavDashboard');
+    setCurrentDate(getCurrentDate());
+    renderTimeline();
+    if (isDriver()) renderDriverDashboard();
+  });
+
+  // Pending nav: proxy to V1 #btnRequests (role-aware handler already wired)
+  document.getElementById('v2NavPending')?.addEventListener('click', () => {
+    setV2PanelNavActive('v2NavPending');
+    document.getElementById('btnRequests')?.click();
+  });
+
+  // Jadwal Saya: scroll to driver dashboard section
+  document.getElementById('v2NavJadwalSaya')?.addEventListener('click', () => {
+    setV2PanelNavActive('v2NavJadwalSaya');
+    document.getElementById('driverDashboard')?.scrollIntoView({ behavior: 'smooth' });
+  });
+
+  // Profil footer: proxy to V1 #btnProfile
+  document.getElementById('v2FooterProfil')?.addEventListener('click', () => {
+    document.getElementById('btnProfile')?.click();
+  });
+
+  // Keluar footer: proxy to V1 #btnLogout
+  document.getElementById('v2FooterKeluar')?.addEventListener('click', () => {
+    document.getElementById('btnLogout')?.click();
+  });
+
+  console.log('[VSM-2] Context panel initialised');
+}
+
+/**
  * Main initialization saat DOM ready
  */
 document.addEventListener('DOMContentLoaded', async () => {
@@ -451,6 +662,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   appFlags = await loadFeatureFlags();
   if (appFlags.visualShellV2 === true) {
     initV2Rail();
+    initV2Panel();
   }
 
   // ── Populate version & app name elements from config ──

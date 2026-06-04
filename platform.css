@@ -1269,7 +1269,7 @@ html.theme-anim *::after {
     display: none !important;
   }
   body.v2-shell-active .main-area {
-    margin-left: 64px;
+    margin-left: 282px; /* 64px rail + 218px panel */
   }
 }
 
@@ -1439,4 +1439,253 @@ html.theme-anim *::after {
   text-transform: uppercase;
   user-select: none;
   line-height: 1;
+}
+
+
+/* ============================================================
+   VSM-2 — Context Panel (Section Panel)
+
+   The .v2-panel element is injected into the DOM by initV2Panel()
+   in app.js ONLY when the visualShellV2 feature flag is true.
+   When the flag is false: this element does not exist in the DOM
+   and these rules have zero effect on the application.
+
+   Layout: position:fixed at left:64px (right of the rail).
+   Desktop only (≥768px): same breakpoint as the rail.
+   Mobile (≤767px): panel stays hidden; V1 sidebar drawer handles
+   mobile navigation — no change to V1 mobile behavior.
+
+   Z-index budget: panel 115 — below rail (120), below modals (200+).
+   ============================================================ */
+
+/* ── Panel container ── */
+.v2-panel {
+  position: fixed;
+  top: 0;
+  left: 64px; /* flush right of rail */
+  width: 218px;
+  height: 100vh;
+  height: 100dvh;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  z-index: 115;
+  display: none; /* hidden by default; shown at ≥768px below */
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+
+@media (min-width: 768px) {
+  .v2-panel {
+    display: flex;
+  }
+}
+
+/* ── Module title header ── */
+.v2-panel-header {
+  padding: 18px 16px 10px;
+  flex-shrink: 0;
+}
+
+.v2-panel-title {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.01em;
+  font-family: var(--font-sans, 'Inter', sans-serif);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Horizontal divider ── */
+.v2-panel-divider {
+  height: 1px;
+  background: var(--border);
+  flex-shrink: 0;
+  margin: 0;
+}
+
+/* ── CTA button area ── */
+.v2-panel-cta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 10px 6px;
+  flex-shrink: 0;
+}
+
+.v2-panel-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 11px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  font-family: var(--font-sans, 'Inter', sans-serif);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  border: none;
+  outline: none;
+  transition: background 0.13s, color 0.13s, opacity 0.13s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.v2-panel-btn--primary {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.v2-panel-btn--primary:hover,
+.v2-panel-btn--primary:focus-visible {
+  background: #8f2226;
+}
+
+.v2-panel-btn--ghost {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.v2-panel-btn--ghost:hover,
+.v2-panel-btn--ghost:focus-visible {
+  background: var(--hover);
+}
+
+/* ── Navigation list ── */
+.v2-panel-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 8px 0;
+  flex-shrink: 0;
+  list-style: none;
+  margin: 0;
+}
+
+.v2-panel-nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font-sans, 'Inter', sans-serif);
+  color: var(--muted);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  transition: background 0.13s, color 0.13s;
+  outline: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.v2-panel-nav-item:hover,
+.v2-panel-nav-item:focus-visible {
+  background: var(--hover);
+  color: var(--text);
+}
+
+/* Active state — crimson tint + left-edge indicator */
+.v2-panel-nav-item--active {
+  background: var(--side-active-bg);
+  color: var(--accent);
+  font-weight: 600;
+}
+.v2-panel-nav-item--active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 16px;
+  background: var(--accent);
+  border-radius: 0 2px 2px 0;
+}
+.v2-panel-nav-item--active .v2-panel-nav-icon {
+  opacity: 1;
+}
+
+/* Nav item icon */
+.v2-panel-nav-icon {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  opacity: 0.55;
+}
+
+/* Pending count badge on nav item */
+.v2-panel-badge {
+  margin-left: auto;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--font-sans, 'Inter', sans-serif);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* ── Spacer pushes footer to bottom ── */
+.v2-panel-spacer {
+  flex: 1;
+  min-height: 8px;
+}
+
+/* ── Footer (Profil + Keluar) ── */
+.v2-panel-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 8px 14px;
+  flex-shrink: 0;
+}
+
+.v2-panel-footer-btn {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font-sans, 'Inter', sans-serif);
+  color: var(--muted);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  transition: background 0.13s, color 0.13s;
+  outline: none;
+}
+.v2-panel-footer-btn:hover,
+.v2-panel-footer-btn:focus-visible {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.v2-panel-footer-btn--logout {
+  color: var(--danger);
+}
+.v2-panel-footer-btn--logout:hover,
+.v2-panel-footer-btn--logout:focus-visible {
+  background: var(--danger-bg);
+  color: var(--danger);
 }
