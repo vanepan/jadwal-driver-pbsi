@@ -426,34 +426,56 @@ html.theme-anim *::after {
    PHASE 2 — LOGIN SCREEN
    ============================================================ */
 
-/* Fullscreen centered canvas with radial gradient */
+/* Fullscreen centered canvas — four-layer gradient mesh */
 .login-screen {
   position: fixed;
   inset: 0;
-  display: grid;
-  place-items: center;
+  /* flex instead of grid — auth.js sets display:flex via inline style,
+     which overrides CSS display:grid. justify-items (from place-items)
+     has no effect in flexbox; justify-content does. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 24px;
   z-index: 200;
+  /* Four layered radials: PBSI crimson top-left + bottom-left,
+     brand blue bottom-right + top-right accent.
+     Opacities are intentionally richer than the app canvas so the
+     login backdrop reads as a distinct, premium surface. */
   background:
-    radial-gradient(1100px 620px at 18% -10%,
-      rgba(168,41,47,.10) 0%, transparent 60%),
-    radial-gradient(900px 600px at 100% 110%,
-      rgba(59,91,169,.09) 0%, transparent 55%),
+    radial-gradient(ellipse 1200px 700px at 12% -10%,
+      rgba(168,41,47,.22) 0%, transparent 62%),
+    radial-gradient(ellipse 1000px 900px at 96% 108%,
+      rgba(59,91,169,.18) 0%, transparent 58%),
+    radial-gradient(ellipse 800px 550px at 80% 5%,
+      rgba(168,41,47,.08) 0%, transparent 52%),
+    radial-gradient(ellipse 650px 450px at 18% 98%,
+      rgba(59,91,169,.07) 0%, transparent 50%),
     var(--canvas);
-  animation: ls-fade .25s ease;
+  animation: ls-fade .28s ease;
 }
 @keyframes ls-fade { from { opacity: 0; } to { opacity: 1; } }
 
-/* Card */
+/* Card — frosted glass floating over gradient canvas */
 .login-card {
   width: 100%;
   max-width: 400px;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  /* Semi-transparent white so the gradient bleeds through (glass effect).
+     0.84 opacity keeps all text crisp and fully readable. */
+  background: rgba(255, 255, 255, 0.84);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  /* Semi-transparent border catches ambient light — the glass edge. */
+  border: 1px solid rgba(255, 255, 255, 0.62);
   border-radius: 20px;
-  box-shadow: var(--shadow-lg);
+  /* Layered shadow: inset top highlight + near shadow + far glow */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.90),
+    0 2px 8px  rgba(28, 26, 23, 0.06),
+    0 8px 32px -4px rgba(28, 26, 23, 0.14),
+    0 32px 72px -16px rgba(28, 26, 23, 0.18);
   padding: 34px 32px 28px;
-  animation: ls-pop .22s cubic-bezier(.2,.8,.3,1);
+  animation: ls-pop .24s cubic-bezier(.2,.8,.3,1);
 }
 @keyframes ls-pop {
   from { opacity: 0; transform: translateY(10px) scale(.985); }
@@ -478,7 +500,10 @@ html.theme-anim *::after {
   font-weight: 800;
   font-size: 20px;
   flex-shrink: 0;
-  box-shadow: var(--shadow-sm);
+  /* Inset shadow + outer crimson ring for brand presence on glass card */
+  box-shadow:
+    var(--shadow-sm),
+    0 0 0 3px rgba(168, 41, 47, 0.12);
   overflow: hidden;
 }
 .login-brand-crest img {
@@ -750,3 +775,668 @@ html.theme-anim *::after {
 }
 .btn-primary:hover  { background: color-mix(in srgb, var(--accent) 85%, #000); }
 .btn-primary:active { background: color-mix(in srgb, var(--accent) 78%, #000); }
+
+
+/* ============================================================
+   PHASE 1 — DESIGN SYSTEM CONSOLIDATION
+   Applying V2.0 tokens to V1 production components.
+
+   Every rule below is an intentional OVERRIDE of a style.css
+   declaration. style.css selectors are unchanged — these rules
+   win by load-order (platform.css loads after style.css) and
+   specificity matching.
+
+   Scope: Header · Navigation · Notifications
+   Does NOT activate any feature flag or V2 shell.
+   ============================================================ */
+
+
+/* ── 1. Login: Hide dev-only Masuk Cepat section ────────────
+   OVERRIDE: loginQuickAccess hidden in production per ROADMAP.md.
+   Re-enable for local dev by toggling this rule off in DevTools.
+   Permanent gate via devMode flag is planned for a future sprint.
+   ──────────────────────────────────────────────────────────── */
+#loginQuickAccess {
+  display: none;
+}
+
+
+/* ── 2. Header ───────────────────────────────────────────────
+   OVERRIDE: header colours already partially set above.
+   Below: date nav, buttons, role badge, module title.
+   ──────────────────────────────────────────────────────────── */
+
+/* Date navigation pill */
+.date-nav {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+
+/* "Hari Ini" button */
+.btn-today {
+  background: rgba(168, 41, 47, 0.08);
+  color: var(--accent);
+  border-color: rgba(168, 41, 47, 0.22);
+  font-family: inherit;
+  font-weight: 600;
+}
+.btn-today:hover:not(:disabled) {
+  background: rgba(168, 41, 47, 0.14);
+  border-color: var(--accent);
+}
+
+/* Arrow buttons */
+.btn-icon {
+  color: var(--muted);
+}
+.btn-icon:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+/* Date input */
+.date-input {
+  color: var(--text);
+}
+
+/* Module title (desktop) */
+.header-module-title {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* Display name */
+.header-display-name {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Role badge — base */
+.role-badge {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* Role badge — per-role semantic colours */
+.role-badge[data-role="admin"] {
+  background: var(--danger-bg);
+  border-color: rgba(168, 41, 47, 0.24);
+  color: var(--danger);
+}
+.role-badge[data-role="bidang"] {
+  background: var(--info-bg);
+  border-color: rgba(59, 91, 169, 0.24);
+  color: var(--info);
+}
+.role-badge[data-role="driver"] {
+  background: var(--warn-bg);
+  border-color: rgba(148, 100, 32, 0.24);
+  color: var(--warn);
+}
+.role-badge[data-role="viewer"] {
+  background: var(--ok-bg);
+  border-color: rgba(47, 125, 98, 0.24);
+  color: var(--ok);
+}
+.role-badge[data-role="guest"] {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--faint);
+}
+
+
+/* ── 3. Sidebar Navigation ───────────────────────────────────
+   OVERRIDE: all sidebar hardcoded rgba/hex values → --side-* tokens.
+   The sidebar background was already correct (#1D1D1B ≈ --side-bg).
+   ──────────────────────────────────────────────────────────── */
+
+/* Sidebar shell */
+.sidebar {
+  background: var(--side-bg);
+  border-right: 1px solid var(--side-border);
+}
+
+/* Brand header rule */
+.sidebar-header {
+  border-bottom-color: var(--side-border);
+}
+
+/* Brand title */
+.sidebar-brand-title {
+  color: var(--side-strong);
+  font-family: inherit;
+}
+
+/* Close button (mobile drawer) */
+.sidebar-close {
+  color: var(--side-faint);
+}
+.sidebar-close:hover {
+  color: var(--side-strong);
+}
+
+/* Nav item base */
+.sidebar-nav-item {
+  color: var(--side-text);
+  font-family: inherit;
+  border-radius: 8px;
+  transition: background 0.13s, color 0.13s;
+}
+.sidebar-nav-item:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--side-strong);
+}
+.sidebar-nav-item:active {
+  background: rgba(255, 255, 255, 0.11);
+}
+
+/* Primary CTA (Tambah Jadwal) */
+.sidebar-nav-primary {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-family: inherit;
+}
+.sidebar-nav-primary:hover {
+  background: color-mix(in srgb, var(--accent) 86%, #000);
+  color: var(--on-accent);
+}
+
+/* Active nav item — left-edge accent bar mirroring the planned V2 rail indicator.
+   Tokens --side-active-bg and --side-active-tx are already defined in :root. */
+.sidebar-nav-item--active {
+  background: var(--side-active-bg);
+  color: var(--side-active-tx);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.sidebar-nav-item--active:hover {
+  background: var(--side-active-bg);
+  color: var(--side-active-tx);
+}
+
+/* Tertiary items (Profil, Admin Panel) */
+.sidebar-nav-tertiary {
+  color: var(--side-faint);
+}
+.sidebar-nav-tertiary:hover {
+  color: var(--side-text);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Logout item */
+.sidebar-nav-logout {
+  color: rgba(207, 100, 105, 0.72);
+}
+.sidebar-nav-logout:hover {
+  background: rgba(168, 41, 47, 0.12);
+  color: var(--danger);
+}
+
+/* Nav group separators */
+.sidebar-nav-group + .sidebar-nav-group {
+  border-top-color: var(--side-border);
+}
+.sidebar-nav-group-bottom {
+  border-top-color: var(--side-border) !important;
+}
+
+/* Request count badge inside sidebar */
+.sidebar-badge {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* Sidebar footer */
+.sidebar-footer {
+  border-top-color: var(--side-border);
+}
+.sidebar-app-name {
+  color: var(--side-faint);
+  font-size: 9.5px;
+  letter-spacing: 0.01em;
+}
+.sidebar-version {
+  color: var(--side-faint);
+  font-family: 'JetBrains Mono', 'DM Mono', monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.1px;
+}
+
+/* Sidebar backdrop overlay */
+.sidebar-overlay {
+  background: var(--scrim);
+}
+
+
+/* ── 4. Bottom Navigation (mobile) ───────────────────────────
+   OVERRIDE: bg/border/text → V2 surface tokens.
+   ──────────────────────────────────────────────────────────── */
+
+.bottom-nav {
+  background: var(--surface);
+  border-top-color: var(--border);
+  box-shadow: 0 -1px 0 var(--border), 0 -4px 12px rgba(28, 26, 23, 0.06);
+}
+
+.bottom-nav-item {
+  color: var(--faint);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 500;
+  transition: color 0.13s;
+}
+.bottom-nav-item:hover  { color: var(--text); }
+.bottom-nav-item:active { color: var(--accent); }
+
+/* Active tab */
+.bottom-nav-active,
+.bottom-nav-primary {
+  color: var(--accent);
+}
+.bottom-nav-active:hover,
+.bottom-nav-primary:hover {
+  color: color-mix(in srgb, var(--accent) 80%, #000);
+}
+
+/* Badges */
+.bottom-nav-badge { background: var(--accent); }
+.bottom-nav-dot   { background: var(--accent); border-color: var(--surface); }
+
+
+/* ── 5. Notification Cards ────────────────────────────────────
+   OVERRIDE: notif-card colours → V2 surface/text tokens.
+   Priority accent colours use semantic tokens instead of hardcoded hex.
+   ──────────────────────────────────────────────────────────── */
+
+/* List container */
+.notifications-list {
+  gap: 8px;
+  margin-top: 0;
+}
+
+/* Card base */
+.notif-card {
+  background: var(--surface);
+  border-color: var(--border);
+  border-left-width: 3px;
+  border-radius: 8px;
+  padding: 11px 14px;
+}
+
+/* Priority left-edge accent */
+.notif-priority-high   { border-left-color: var(--danger); }
+.notif-priority-medium { border-left-color: var(--warn);   }
+.notif-priority-low    { border-left-color: var(--border-strong); }
+
+/* Card title */
+.notif-card-title {
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+/* Timestamp */
+.notif-card-time {
+  color: var(--faint);
+  font-family: 'JetBrains Mono', 'DM Mono', monospace;
+  font-size: 10.5px;
+}
+
+/* Description */
+.notif-card-desc {
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* ── Activity Log ────────────────────────────────────────────
+   OVERRIDE: log item colours → V2 surface tokens.
+   ──────────────────────────────────────────────────────────── */
+
+.activity-log-subtitle {
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.activity-log-item {
+  background: var(--surface-2);
+  border-color: var(--border);
+  border-radius: 7px;
+  padding: 9px 12px;
+}
+
+.activity-log-action {
+  color: var(--text);
+  font-family: 'JetBrains Mono', 'DM Mono', monospace;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.activity-log-time {
+  color: var(--faint);
+  font-family: 'JetBrains Mono', 'DM Mono', monospace;
+  font-size: 10.5px;
+}
+
+.activity-log-user {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+
+/* ── 6. Header Notification Bell ─────────────────────────────
+   New element: #btnHeaderNotif in .header-user-area.
+   Visible to all authenticated users on desktop.
+   Hidden on mobile (≤768px) — bottom nav bell covers that surface.
+   ──────────────────────────────────────────────────────────── */
+
+.header-notif-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.13s, color 0.13s;
+  padding: 0;
+}
+.header-notif-btn:hover  { background: var(--hover); color: var(--text); }
+.header-notif-btn:active { background: var(--border); }
+
+/* Unread indicator dot */
+.header-notif-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+  /* Border matches the topbar so the dot reads as floating above the icon */
+  border: 2px solid var(--topbar-bg);
+  pointer-events: none;
+}
+
+/* Hide header bell on mobile — bottom nav handles notification access */
+@media (max-width: 767px) {
+  .header-notif-btn { display: none !important; }
+}
+
+
+/* ── 7. Sidebar notification button: retired on desktop ──────
+   OVERRIDE: #btnNotifications hidden on desktop; the header bell
+   takes its place. The element stays in DOM — mobile bottom nav
+   still proxies its click() event successfully.
+   ──────────────────────────────────────────────────────────── */
+@media (min-width: 768px) {
+  #btnNotifications { display: none !important; }
+}
+
+
+/* ── 8. Display name: always visible, never hidden ───────────
+   OVERRIDE: guarantee truncation at any viewport width instead
+   of relying on fixed max-width alone.
+   ──────────────────────────────────────────────────────────── */
+.header-display-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Tighter max-width on compact screens so user-area doesn't overflow */
+@media (max-width: 600px) {
+  .header-display-name { max-width: 80px; }
+  .role-badge           { flex-shrink: 0; white-space: nowrap; }
+}
+
+
+/* ── Admin access button inside Profile modal (P2.2) ─────────
+   Compact single-row button. Intentionally not styled as danger
+   (that is for Logout). Uses ghost token palette.
+   ──────────────────────────────────────────────────────────── */
+.btn-profile-admin {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.13s, border-color 0.13s;
+}
+.btn-profile-admin:hover {
+  background: var(--hover);
+  border-color: var(--border-strong);
+}
+.btn-profile-admin svg { flex-shrink: 0; color: var(--muted); }
+
+
+/* ── 9. Mobile header overflow fix ───────────────────────────
+   OVERRIDE: .header-user-area is flex-shrink:0 in style.css
+   (line ~2567). On very narrow screens the area can push the
+   row wider than the viewport. Allow it to compress here;
+   its children have explicit max-widths and won't collapse.
+   ──────────────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .header-user-area {
+    flex-shrink: 1;
+    min-width: 0;
+    gap: 5px;
+  }
+}
+
+
+/* ============================================================
+   VSM-1 — Navigation Rail
+
+   The .v2-rail element is injected into the DOM by initV2Rail()
+   in app.js ONLY when the visualShellV2 feature flag is true.
+   When the flag is false: this element does not exist in the DOM
+   and these rules have zero effect on the application.
+
+   body.v2-shell-active is added by initV2Rail() at the same time.
+   Sidebar-hide and margin overrides are scoped to @media(min-width:768px)
+   so V1 mobile behavior (bottom nav + sidebar drawer) is fully preserved
+   when the flag is on.
+
+   Z-index budget: rail 120, tooltip 130 — both below modals (200+).
+   ============================================================ */
+
+/* ── Desktop sidebar + main-area overrides ── */
+@media (min-width: 768px) {
+  body.v2-shell-active #sidebar {
+    display: none !important;
+  }
+  body.v2-shell-active .main-area {
+    margin-left: 64px;
+  }
+}
+
+/* ── Rail container ──
+   display:none by default; becomes display:flex on desktop via
+   the media query below. On mobile (≤767px) the element stays hidden
+   so the V1 sidebar drawer and bottom nav handle all navigation.       */
+.v2-rail {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 64px;
+  height: 100vh;
+  height: 100dvh; /* dynamic viewport on mobile Safari — fallback above */
+  background: var(--side-bg);
+  border-right: 1px solid rgba(255, 255, 255, 0.07);
+  z-index: 120;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 0 14px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+@media (min-width: 768px) {
+  .v2-rail {
+    display: flex;
+  }
+}
+
+/* ── Platform crest (logo at top of rail) ── */
+.v2-rail-crest {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  cursor: pointer;
+  margin-bottom: 16px;
+  flex-shrink: 0;
+  transition: background 0.15s;
+  outline: none;
+}
+.v2-rail-crest:hover,
+.v2-rail-crest:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+}
+.v2-rail-crest-img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  border-radius: 6px;
+  display: block;
+}
+
+/* ── Module icon list ── */
+.v2-rail-modules {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* ── Individual module icon ── */
+.v2-rail-item {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.38);
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+  outline: none;
+}
+.v2-rail-item:hover,
+.v2-rail-item:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.72);
+}
+
+/* Active state: crimson tint + left-edge indicator */
+.v2-rail-item--active {
+  color: #ffffff;
+  background: rgba(168, 41, 47, 0.18);
+}
+.v2-rail-item--active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 22px;
+  background: var(--accent, #A8292F);
+  border-radius: 0 2px 2px 0;
+}
+
+.v2-rail-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  display: block;
+}
+
+/* ── Hover tooltip ── */
+.v2-rail-tooltip {
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%) translateX(-6px);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-sans, 'Inter', sans-serif);
+  white-space: nowrap;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s, transform 0.12s;
+  z-index: 130;
+}
+.v2-rail-item:hover .v2-rail-tooltip,
+.v2-rail-item:focus-visible .v2-rail-tooltip {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+/* ── User avatar ── */
+.v2-rail-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent, #A8292F);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-top: auto;
+  transition: opacity 0.15s;
+  outline: none;
+}
+.v2-rail-avatar:hover,
+.v2-rail-avatar:focus-visible {
+  opacity: 0.82;
+}
+.v2-rail-avatar-initials {
+  font-size: 11px;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: 0.03em;
+  font-family: var(--font-sans, 'Inter', sans-serif);
+  text-transform: uppercase;
+  user-select: none;
+  line-height: 1;
+}

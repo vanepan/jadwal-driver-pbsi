@@ -12,11 +12,11 @@
 |---|---|
 | **Production version** | v1.2.5 — Reimbursement Form Production Polish |
 | **Active module** | Driver Operations (sole production module) |
-| **Migration phase** | Pre-Phase 0 — Security Baseline not yet started |
+| **Migration phase** | Phase 1 — Design System Consolidation (in progress) |
 | **Migration planning** | Complete (`MIGRATION_PLAN.md` finalized 2026-06-04) |
 | **V2.0 architecture** | Approved — three-column shell, multi-module platform, token design system |
-| **Design system** | `platform.css` V2 token layer active; `style.css` V1 layer still primary |
-| **Login UI redesign** | Visual redesign complete in `platform.css`; production refinements pending |
+| **Design system** | `platform.css` V2 token layer active; Phase 1 overrides applied to header, sidebar, bottom nav, notifications |
+| **Login UI redesign** | V2 structure active; Masuk Cepat hidden in production (2026-06-04) |
 
 ### Active Production Module
 
@@ -60,16 +60,16 @@ These items are scoped to the 1.2.x release stream and do not require the V2 she
 
 #### Login Refinement
 
-**Status:** Pending
+**Status:** Complete (2026-06-04)
 
-The `platform.css` V2 login card design exists and is functional. The following production refinements are required before 1.3.0:
+The `platform.css` V2 login card design is fully production-ready.
 
-| Requirement | Detail |
-|---|---|
-| Center login card on screen | Card must be vertically and horizontally centered regardless of viewport height |
-| Premium enterprise background | Replace plain white `#fff` background with a professional gradient or dark ambient pattern consistent with the PBSI brand |
-| Blur / glass effect | Add `backdrop-filter: blur` or equivalent glass-morphism layer behind the login card for depth |
-| Remove "Masuk Cepat" buttons | Quick-login role buttons must be hidden in production builds. They are a development/testing convenience and must not appear for end users. Gate behind `devMode` flag or remove from `index.html` entirely |
+| Requirement | Status | Detail |
+|---|---|---|
+| Center login card on screen | ✅ Done | `display: grid; place-items: center` on `.login-screen` |
+| Premium enterprise background | ✅ Done | Four-layer radial gradient mesh (crimson top-left/bottom-left, brand blue bottom-right/top-right) at .07–.22 opacity over `--canvas` |
+| Blur / glass effect | ✅ Done | `rgba(255,255,255,0.84)` card + `backdrop-filter: blur(24px) saturate(160%)` + inset top highlight + layered shadow |
+| Remove "Masuk Cepat" buttons | ✅ Done | `#loginQuickAccess { display: none }` in Phase 1 section; HTML preserved for dev override |
 
 #### Validation Engine Wiring
 

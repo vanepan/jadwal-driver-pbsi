@@ -104,6 +104,14 @@ export function initNotificationUI() {
       openNotificationsModal();
     });
 
+  // Header bell — all authenticated users on desktop
+  document.getElementById('btnHeaderNotif')
+    ?.addEventListener('click', ev => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      openNotificationsModal();
+    });
+
   document.getElementById('btnCloseNotifications')
     ?.addEventListener('click', closeNotificationsModal);
   document.getElementById('btnCloseNotifications2')
@@ -155,6 +163,12 @@ function renderNotificationBadge() {
 
   if (bottomNavDot) {
     bottomNavDot.style.display = total > 0 ? 'inline-block' : 'none';
+  }
+
+  // Header bell dot — same unread signal
+  const headerDot = document.getElementById('headerNotifDot');
+  if (headerDot) {
+    headerDot.style.display = total > 0 ? 'block' : 'none';
   }
 }
 

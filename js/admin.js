@@ -39,6 +39,15 @@ function attachAdminButtons() {
   const btnCopyMyIdCommand = document.getElementById('btnCopyMyIdCommand');
 
   if (btnUserMgmt) btnUserMgmt.addEventListener('click', openUsersListModal);
+
+  // Profile modal → Admin Panel shortcut (admin only, P2.2)
+  const btnProfileOpenAdmin = document.getElementById('btnProfileOpenAdmin');
+  if (btnProfileOpenAdmin) {
+    btnProfileOpenAdmin.addEventListener('click', () => {
+      closeProfileModal();
+      openUsersListModal();
+    });
+  }
   if (btnProfile) {
     btnProfile.addEventListener('click', (ev) => {
       ev.preventDefault();
@@ -420,6 +429,10 @@ async function openProfileModal() {
       console.error('[openProfileModal] failed to load user data:', err);
     }
   }
+
+  // Admin section — visible only when the logged-in user is admin
+  const adminSection = document.getElementById('profileAdminSection');
+  if (adminSection) adminSection.style.display = isAdmin() ? 'block' : 'none';
 
   // Update Telegram status badge saat modal dibuka
   updateTelegramStatusBadge();

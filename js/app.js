@@ -12,7 +12,7 @@
 
 // Import all modules
 import { APP_NAME, APP_VERSION } from './config.js';
-import { loadAssignments, saveAssignments, saveOneAssignment, removeOneAssignment, loadRequests, saveRequests, initFirebaseSync, registerDataChangeListener, registerRequestsChangeListener, checkAssignmentSafety } from './firebase.js';
+import { loadAssignments, saveAssignments, saveOneAssignment, removeOneAssignment, loadRequests, saveRequests, initFirebaseSync, registerDataChangeListener, registerRequestsChangeListener, checkAssignmentSafety, fetchFirebaseData } from './firebase.js';
 import { recoverAssignmentsFromRequests } from './recovery.js';
 import { initDriverSelect } from './drivers.js';
 import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate } from './timeline.js';
@@ -56,6 +56,9 @@ console.info(`PBSI Scheduler v${APP_VERSION}`);
 let assignments = [];
 let requests = [];
 let auditLogs = [];
+// Feature flags — read once at startup from Firebase /feature_flags.
+// Default: all false. Populated by loadFeatureFlags() before any UI init.
+let appFlags = {};
 
 /**
  * Filter assignments berdasarkan user role saat ini.
@@ -123,6 +126,35 @@ function updateAllModules() {
   setRequestsModule(requests);
   setCommentRequests(requests);
   renderDriverDashboard();
+}
+
+/**
+ * Set the active tab in the mobile bottom navigation.
+ * Removes bottom-nav-active from every item, then adds it to the target.
+ * Safe to call when the bottom nav is not visible (desktop / modal open).
+ * @param {string} id - Element ID of the tab to mark active.
+ */
+function setBottomNavActive(id) {
+  document.querySelectorAll('#bottomNav .bottom-nav-item').forEach(btn => {
+    btn.classList.toggle('bottom-nav-active', btn.id === id);
+  });
+}
+
+/**
+ * Set the active item in the desktop sidebar navigation.
+ * Removes sidebar-nav-item--active from every nav item, then adds it to the
+ * target.  Pass null to clear all active states (login / logout).
+ *
+ * IMPORTANT: only called from user-interaction click handlers and the auth
+ * change callback.  Never called from updatePermissionUI() so Firebase
+ * real-time refreshes do not disturb the active state.
+ *
+ * @param {string|null} id - Element ID of the item to mark active, or null to clear.
+ */
+function setSidebarActive(id) {
+  document.querySelectorAll('#sidebar .sidebar-nav-item').forEach(btn => {
+    btn.classList.toggle('sidebar-nav-item--active', Boolean(id) && btn.id === id);
+  });
 }
 
 /**
@@ -226,12 +258,185 @@ function updatePermissionUI() {
       bottomNavRequestsBadge.style.display = showCount ? 'inline-flex' : 'none';
     }
   }
+  // Notification bell: all authenticated users (content is already role-filtered)
   if (bottomNavNotifications) {
-    bottomNavNotifications.style.display = isAdmin() ? 'flex' : 'none';
+    bottomNavNotifications.style.display = currentUser ? 'flex' : 'none';
   }
   if (bottomNavProfile) {
     bottomNavProfile.style.display = currentUser ? 'flex' : 'none';
   }
+
+  // Header notification bell — all authenticated users, desktop only (CSS hides on mobile)
+  const btnHeaderNotif = document.getElementById('btnHeaderNotif');
+  if (btnHeaderNotif) {
+    btnHeaderNotif.style.display = currentUser ? 'flex' : 'none';
+  }
+
+  // Bottom nav label — admin sees pending queue ("Antrian"), bidang sees history ("Riwayat")
+  const bottomNavRequestsLabel = document.getElementById('bottomNavRequestsLabel');
+  if (bottomNavRequestsLabel) {
+    bottomNavRequestsLabel.textContent = isAdmin() ? 'Antrian' : 'Riwayat';
+  }
+
+  // ── VSM-1: V2 rail avatar initials — update on every auth change ──
+  // The element only exists when visualShellV2 flag is on; guard with getElementById.
+  const railInitials = document.getElementById('v2RailAvatarInitials');
+  if (railInitials) {
+    const displayName = currentUser?.name || currentUser?.displayName || currentUser?.username || '';
+    const initials = displayName
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map(w => (w[0] ?? '').toUpperCase())
+      .join('') || '?';
+    railInitials.textContent = initials;
+  }
+
+  // Reset bottom nav to Dashboard on every auth/permission change.
+  // The active tab is updated per-tap in click handlers below; this ensures
+  // a clean state after login, logout, or a Firebase-triggered UI refresh.
+  setBottomNavActive('bottomNavDashboard');
+}
+
+/**
+ * Load feature flags once at startup.
+ *
+ * Priority (highest → lowest):
+ *   1. localStorage override  — developer device only, never production.
+ *      Set:   localStorage.setItem('pbsi_flag_visualShellV2', 'true')
+ *      Clear: localStorage.removeItem('pbsi_flag_visualShellV2')
+ *   2. Firebase RTDB /feature_flags — authoritative source.
+ *   3. Empty object (all flags default false) — Firebase timeout or error.
+ *
+ * 3-second timeout prevents Firebase latency from blocking app startup.
+ */
+async function loadFeatureFlags() {
+  const LS_PREFIX = 'pbsi_flag_';
+  const flagNames = ['visualShellV2'];
+
+  // Check localStorage overrides first
+  const overrides = {};
+  let hasOverride = false;
+  for (const name of flagNames) {
+    const val = localStorage.getItem(LS_PREFIX + name);
+    if (val !== null) {
+      overrides[name] = val === 'true';
+      hasOverride = true;
+    }
+  }
+  if (hasOverride) {
+    console.log('[flags] using localStorage overrides:', overrides);
+    return overrides;
+  }
+
+  // Firebase read with 3-second timeout
+  try {
+    const flagsData = await Promise.race([
+      fetchFirebaseData('feature_flags'),
+      new Promise(resolve => setTimeout(() => resolve(null), 3000)),
+    ]);
+    const flags = (flagsData && typeof flagsData === 'object') ? flagsData : {};
+    if (Object.keys(flags).length > 0) {
+      console.log('[flags] loaded from Firebase:', flags);
+    }
+    return flags;
+  } catch (err) {
+    console.warn('[flags] Firebase read failed, using defaults:', err);
+    return {};
+  }
+}
+
+/**
+ * VSM-1: Inject the V2 navigation rail and activate the v2-shell-active
+ * body class. Called only when flags.visualShellV2 === true.
+ *
+ * The rail element does not exist in the DOM when the flag is off —
+ * this satisfies the "hidden means absent" feature flag rule.
+ *
+ * Wiring: all click handlers proxy to existing V1 DOM elements so no
+ * V1 event listeners, modals, or workflows are touched.
+ */
+function initV2Rail() {
+  // Build the rail element
+  const rail = document.createElement('div');
+  rail.className = 'v2-rail';
+  rail.id = 'v2Rail';
+  rail.innerHTML = `
+    <div class="v2-rail-crest" id="v2RailCrest"
+         role="button" tabindex="0"
+         aria-label="PBSI Operations — kembali ke timeline">
+      <img src="assets/Logo-PBSI.png" alt="" class="v2-rail-crest-img"
+           onerror="this.style.display='none'" />
+    </div>
+
+    <nav class="v2-rail-modules" aria-label="Navigasi modul">
+      <!-- Driver Operations — only active module; other modules hidden (flags off) -->
+      <div class="v2-rail-item v2-rail-item--active" id="v2RailDriverOps"
+           role="button" tabindex="0"
+           aria-label="Driver Operations" aria-current="true">
+        <svg class="v2-rail-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path fill-rule="evenodd"
+                d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0
+                   002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0
+                   00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z"
+                clip-rule="evenodd"/>
+        </svg>
+        <div class="v2-rail-tooltip" aria-hidden="true">Driver Operations</div>
+      </div>
+    </nav>
+
+    <div class="v2-rail-avatar" id="v2RailAvatar"
+         role="button" tabindex="0"
+         aria-label="Buka profil">
+      <span class="v2-rail-avatar-initials" id="v2RailAvatarInitials"
+            aria-hidden="true"></span>
+    </div>
+  `;
+
+  // Insert before #sidebar so it appears at the start of .app-layout
+  const appLayout = document.querySelector('.app-layout');
+  const sidebar = document.getElementById('sidebar');
+  if (appLayout && sidebar) {
+    appLayout.insertBefore(rail, sidebar);
+  } else {
+    document.body.insertBefore(rail, document.body.firstChild);
+  }
+
+  // Activate the CSS gate — hides V1 sidebar (desktop) and shifts .main-area
+  document.body.classList.add('v2-shell-active');
+
+  // ── Event handlers — all proxy to existing V1 elements ──
+
+  const crest     = document.getElementById('v2RailCrest');
+  const driverOps = document.getElementById('v2RailDriverOps');
+  const avatar    = document.getElementById('v2RailAvatar');
+
+  // Crest: scroll timeline body to top
+  crest?.addEventListener('click', () => {
+    document.querySelector('.main-content')?.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+
+  // Driver Ops icon: already the active module; scroll to top (no routing)
+  driverOps?.addEventListener('click', () => {
+    document.querySelector('.main-content')?.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+
+  // Avatar: proxy click to V1 profile button (preserves all profile modal logic)
+  avatar?.addEventListener('click', () => {
+    document.getElementById('btnProfile')?.click();
+  });
+
+  // Keyboard: Enter/Space activates any focusable rail element
+  [crest, driverOps, avatar].forEach(el => {
+    el?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        el.click();
+      }
+    });
+  });
+
+  console.log('[VSM-1] Navigation rail initialised');
 }
 
 /**
@@ -239,6 +444,14 @@ function updatePermissionUI() {
  */
 document.addEventListener('DOMContentLoaded', async () => {
   console.log('Initializing PBSI Scheduler app...');
+
+  // ── Feature flags — read once before any UI init ──
+  // If visualShellV2 is true: inject the V2 rail and activate v2-shell-active.
+  // If false (default): nothing changes — app is identical to v1.2.5.
+  appFlags = await loadFeatureFlags();
+  if (appFlags.visualShellV2 === true) {
+    initV2Rail();
+  }
 
   // ── Populate version & app name elements from config ──
   document.querySelectorAll('.app-version-text').forEach(el => {
@@ -261,24 +474,47 @@ document.addEventListener('DOMContentLoaded', async () => {
     sidebar?.classList.add('sidebar-open');
     sidebarOverlay?.classList.add('overlay-visible');
     document.body.classList.add('sidebar-is-open');
+    // Move keyboard focus to the first visible, enabled button in the drawer.
+    // setTimeout defers until after the CSS slide-in transition begins.
+    setTimeout(() => {
+      const btns = sidebar ? [...sidebar.querySelectorAll('button')] : [];
+      const first = btns.find(b => !b.disabled && b.offsetParent !== null);
+      first?.focus();
+    }, 50);
   }
 
   function closeSidebar() {
     sidebar?.classList.remove('sidebar-open');
     sidebarOverlay?.classList.remove('overlay-visible');
     document.body.classList.remove('sidebar-is-open');
+    // Return focus to the hamburger button so keyboard users are not stranded.
+    // On desktop the toggle is hidden (display:none) and focus() is a no-op.
+    sidebarToggle?.focus();
   }
 
   sidebarToggle?.addEventListener('click', openSidebar);
   sidebarClose?.addEventListener('click', closeSidebar);
   sidebarOverlay?.addEventListener('click', closeSidebar);
 
+  // Escape key closes the drawer (keyboard accessibility, P2.3)
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && sidebar?.classList.contains('sidebar-open')) {
+      closeSidebar();
+    }
+  });
+
   // Close sidebar when any nav item is clicked on mobile
   sidebar?.querySelectorAll('.sidebar-nav-item').forEach(item => {
     item.addEventListener('click', () => {
-      if (window.innerWidth < 769) closeSidebar();
+      if (window.innerWidth < 768) closeSidebar();
     });
   });
+
+  // ── Sidebar active state: set per click, never reset by data refreshes ──
+  // Tambah Jadwal (CTA) and Logout are intentionally excluded.
+  document.getElementById('btnRequests')?.addEventListener('click', () => setSidebarActive('btnRequests'));
+  document.getElementById('btnProfile')?.addEventListener('click',   () => setSidebarActive('btnProfile'));
+  document.getElementById('btnUserMgmt')?.addEventListener('click',  () => setSidebarActive('btnUserMgmt'));
 
   // ── Profile modal logout button ──
   document.getElementById('btnLogoutProfile')?.addEventListener('click', () => {
@@ -297,6 +533,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ── Bottom nav: Dashboard (scroll timeline to focus) ──
   document.getElementById('bottomNavDashboard')?.addEventListener('click', () => {
+    setBottomNavActive('bottomNavDashboard');
     setCurrentDate(getCurrentDate()); // resets lastAutoFocusedDate
     renderTimeline();
     if (isDriver()) renderDriverDashboard();
@@ -304,12 +541,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ── Bottom nav proxy buttons ──
   document.getElementById('bottomNavRequests')?.addEventListener('click', () => {
+    setBottomNavActive('bottomNavRequests');
     document.getElementById('btnRequests')?.click();
   });
   document.getElementById('bottomNavNotifications')?.addEventListener('click', () => {
+    setBottomNavActive('bottomNavNotifications');
     document.getElementById('btnNotifications')?.click();
   });
   document.getElementById('bottomNavProfile')?.addEventListener('click', () => {
+    setBottomNavActive('bottomNavProfile');
     document.getElementById('btnProfile')?.click();
   });
 
@@ -334,7 +574,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateAllModules();
 
   // Initialize UI modules
-  await initAuthUI(updatePermissionUI);  // Setup login modal, badge, logout
+  // Auth callback: updatePermissionUI + clear sidebar active state.
+  // Sidebar is cleared on login/logout but NOT on Firebase data refreshes,
+  // which call updatePermissionUI() directly and bypass this wrapper.
+  await initAuthUI(() => {
+    updatePermissionUI();
+    setSidebarActive(null);
+  });
   await initAdminUI();                   // Setup admin user management
   initNotificationUI();                  // Setup notification badge & modal
   initDriverSelect();                    // Isi dropdown driver

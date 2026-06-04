@@ -36,6 +36,31 @@ A flag moves from `DISABLED` to `ENABLED` only after QA sign-off on staging. A f
 
 ---
 
+## V2 Shell Flags
+
+These flags control the progressive migration of the V1 shell into the V2 visual design. They are prerequisites for V2 Module Flags. All currently `DISABLED`.
+
+---
+
+### `visualShellV2`
+
+| Field | Value |
+|---|---|
+| **Flag name** | `visualShellV2` |
+| **Firebase RTDB path** | `/feature_flags/visualShellV2` |
+| **Description** | Enables the V2 three-column visual shell for Driver Operations only. When active: V1 sidebar is hidden; a 64px navigation rail (VSM-1) appears; V2 section panel, topbar, KPI cards, and micro-animations are revealed phase-by-phase. All Driver Operations business logic is completely unchanged. No routing, no Operations Hub, no new modules. |
+| **Current status** | `DISABLED` |
+| **Current value in Firebase** | `false` (not yet written — defaults to off) |
+| **User visibility** | Hidden from all users. V1 sidebar and header remain active. |
+| **Activation version** | v2.0.0 preliminary — after all VSM phases QA-approved on staging |
+| **Activation conditions** | All six VSM phases (VSM-1 through VSM-6) QA-approved on staging. No regressions on all four roles at 767px, 768px, 1024px, 1280px. |
+| **Dependencies** | `platform.css` committed and deployed. Phase 0 security baseline complete. P3 breakpoint changes applied. |
+| **Roles affected when enabled** | All — all users see the V2 visual shell |
+| **Rollback** | Set flag to `false`. V1 shell immediately restored on next page load. < 30 seconds. |
+| **Notes** | This flag is a hard prerequisite for `operationsHub`. Do not enable `operationsHub` until `visualShellV2` has been stable in production for at least 14 days. VSM phases are: VSM-1 Rail · VSM-2 Section Panel · VSM-3 Header/Topbar · VSM-4 KPI Cards · VSM-5 Timeline Container · VSM-6 Micro Animations. |
+
+---
+
 ## V2 Module Flags
 
 These flags control access to the V2 multi-module platform features. All are currently `DISABLED` and invisible to all users. No V2 module code exists in the production bundle at v1.2.5.
@@ -254,6 +279,7 @@ These flags control technical platform behavior rather than user-facing features
 
 | Flag | v1.2.x | v1.3.0 | v1.4.0 | v1.5.0 | v1.6.0 | v2.0.0 |
 |---|---|---|---|---|---|---|
+| `visualShellV2` | — | — | — | — | — | ✓ Active |
 | `sessionExpiry` | Phase 0 | — | — | — | — | — |
 | `offlineQueue` | Phase 1 | — | — | — | — | — |
 | `serverReminders` | Phase 2 (early) | — | ✓ Active | — | — | — |

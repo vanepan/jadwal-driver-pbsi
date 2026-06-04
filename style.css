@@ -248,12 +248,12 @@ body {
 
 /* Desktop-only sidebar NAV GROUPS — groups have no JS inline-display, safe to force */
 .sidebar-nav-group.sidebar-nav-desktop-only { display: none !important; }
-@media (min-width: 769px) {
+@media (min-width: 768px) {
   .sidebar-nav-group.sidebar-nav-desktop-only { display: flex !important; }
 }
 
 /* Hide the sidebar Profil button on mobile (it lives in the bottom nav there) */
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   #btnProfile.sidebar-nav-item { display: none !important; }
 }
 
@@ -408,7 +408,7 @@ body {
   letter-spacing: 0.1px;
 }
 
-@media (min-width: 769px) {
+@media (min-width: 768px) {
   .fab-add { display: none !important; }
 }
 
@@ -2483,7 +2483,7 @@ z-index: 1;
 /* ============================================================
    RESPONSIVE — Desktop (sidebar always visible)
    ============================================================ */
-@media (min-width: 769px) {
+@media (min-width: 768px) {
   .sidebar-toggle { display: none; }
   .sidebar-close  { display: none; }
   .sidebar-overlay { display: none !important; }
@@ -2508,7 +2508,7 @@ z-index: 1;
 /* ============================================================
    RESPONSIVE — Tablet + Mobile (sidebar as drawer)
    ============================================================ */
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   /* Sidebar: hidden by default, slides in on open */
   .sidebar {
     transform: translateX(-240px);
