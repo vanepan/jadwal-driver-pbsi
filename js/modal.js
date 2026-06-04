@@ -286,11 +286,17 @@ export function initModalHandlers() {
   // Copy WhatsApp
   document.getElementById('btnCopyWA')?.addEventListener('click', copyWAText);
 
-  // Print Reimbursement Form
-  document.getElementById('btnPrintReimbursement')?.addEventListener('click', () => {
+  // Print Reimbursement Form — async: acquires sequential doc number before opening window
+  document.getElementById('btnPrintReimbursement')?.addEventListener('click', async () => {
     const a = assignments.find(x => x.id === viewingId);
     if (!a) return;
-    printReimbursementForm(a);
+    const btn = document.getElementById('btnPrintReimbursement');
+    if (btn) { btn.disabled = true; btn.textContent = 'Memproses...'; }
+    try {
+      await printReimbursementForm(a);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '🖨 Cetak Form Reimbursement'; }
+    }
   });
 
   // Click outside to close
@@ -528,6 +534,12 @@ export function updateDetailActionButtons() {
   const btnComment = document.getElementById('btnCommentThread');
   if (btnComment) {
     btnComment.style.display = (a?.requestId) ? '' : 'none';
+  }
+
+  // Reimbursement section — only for Admin and Driver roles
+  const accordRmb = document.getElementById('accordReimbursement');
+  if (accordRmb) {
+    accordRmb.style.display = hasPermission('print_reimbursement') ? '' : 'none';
   }
 
   if (btnEdit) {

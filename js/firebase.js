@@ -8,7 +8,7 @@
 'use strict';
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
-import { getDatabase, onValue, ref, set, get, update, remove } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
+import { getDatabase, onValue, ref, set, get, update, remove, runTransaction } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 import { showToast } from './utils.js';
 
 /* ── Firebase Configuration ── */
@@ -507,6 +507,35 @@ export function hasFirebaseLoaded() {
  */
 export function getFirebaseRequestsRef() {
   return firebaseRequestsRef;
+}
+
+/**
+ * Atomically acquire the next reimbursement document number for a given month.
+ * Counter stored at: reimbursement_counters/{YYYY_MM}
+ * Resets every month. Format: "PBSI/RMB/YYYY/MM/NNNN"
+ *
+ * @param {string} dateStr - Assignment date in YYYY-MM-DD format
+ * @returns {Promise<string>} - Formatted document number
+ */
+export async function acquireReimbursementDocNumber(dateStr) {
+  const [year, month] = String(dateStr || new Date().toISOString()).slice(0, 7).split('-');
+  const key = `${year}_${month}`;
+
+  const db = firebaseDb || initFirebaseApp();
+  if (!db) {
+    // Offline fallback — not sequential but avoids blank number
+    return `PBSI/RMB/${year}/${month}/${String(Date.now()).slice(-4).padStart(4, '0')}`;
+  }
+
+  const counterRef = ref(db, `reimbursement_counters/${key}`);
+  try {
+    const result = await runTransaction(counterRef, (current) => (current || 0) + 1);
+    const n = result.snapshot.val() ?? 1;
+    return `PBSI/RMB/${year}/${month}/${String(n).padStart(4, '0')}`;
+  } catch (err) {
+    console.error('[RMB] Gagal acquire nomor dokumen:', err);
+    return `PBSI/RMB/${year}/${month}/${String(Date.now()).slice(-4).padStart(4, '0')}`;
+  }
 }
 
 console.info('Firebase module loaded');

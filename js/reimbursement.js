@@ -1,5 +1,5 @@
 /* ============================================================
-   REIMBURSEMENT.JS — Form Reimbursement Generator  (v1.2.4)
+   REIMBURSEMENT.JS — Form Reimbursement Generator  (v1.2.5)
 
    Generates a professional A4 reimbursement form from
    assignment data. Supports browser Print and Save as PDF.
@@ -8,15 +8,19 @@
    contained. It produces a full HTML string that is injected
    into a new window — no external PDF library required.
 
-   Future expense categories (fuel, toll, parking) are wired
-   as labelled attachment tags in Section D and can be
-   expanded to input fields in a later version.
+   v1.2.5 changes:
+   - Sequential PBSI/RMB/YYYY/MM/NNNN document numbering
+     stored atomically in Firebase (resets monthly)
+   - No. Assignment reference displayed in header
+   - Section C redesigned: 35/65 driver statement + breakdown
+   - Section D simplified: blank dashed area for physical receipts
    ============================================================ */
 
 'use strict';
 
 import { VEHICLE_PLATES } from './drivers.js';
 import { parseLocalDate }  from './utils.js';
+import { acquireReimbursementDocNumber } from './firebase.js';
 
 /* ── Overtime Boundaries ── */
 const WORK_START_MINS = 9  * 60;   // 09:00
@@ -53,16 +57,19 @@ function getRequesterInfo(a) {
   return { label: 'PIC / Requester', value: '—' };
 }
 
-/** License plate for a vehicle, or '—' when not yet configured. */
+/** License plate for a vehicle, or '-' when not yet configured. */
 function getVehiclePlate(vehicleName) {
-  return VEHICLE_PLATES[vehicleName] || '—';
+  return VEHICLE_PLATES[vehicleName] || '-';
 }
 
-/** Auto-generated document reference from assignment metadata. */
-function generateDocRef(a) {
-  const dateStr  = (a.date || '').replace(/-/g, '');
-  const idSuffix = (a.id   || '').slice(-6).toUpperCase();
-  return `PBSI/${dateStr}/${idSuffix}`;
+/**
+ * Format assignment ID as a human-readable reference.
+ * Shows as: ASG-YYYYMMDD-XXXXXX
+ */
+function formatAssignmentRef(a) {
+  const dateStr = (a.date || '').replace(/-/g, '');
+  const suffix  = String(a.id || '').slice(-6).toUpperCase();
+  return dateStr ? `ASG-${dateStr}-${suffix}` : (a.id || '—');
 }
 
 /** HTML-escape a value. */
@@ -83,10 +90,11 @@ function esc(value) {
  * form.  Write the result into window.document to enable
  * browser Print / Save as PDF.
  *
- * @param   {Object} a  — Assignment object
- * @returns {string}    — Complete HTML string
+ * @param   {Object} a          — Assignment object
+ * @param   {string} docNumber  — Sequential doc number (PBSI/RMB/YYYY/MM/NNNN)
+ * @returns {string}            — Complete HTML string
  */
-export function generateReimbursementHTML(a) {
+export function generateReimbursementHTML(a, docNumber) {
   const dateObj  = parseLocalDate(a.date);
   const dateStr  = dateObj.toLocaleDateString('id-ID', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
@@ -95,7 +103,7 @@ export function generateReimbursementHTML(a) {
   const overtimeStatus = calculateOvertimeStatus(a.startTime, a.endTime, a.fullDay);
   const requester      = getRequesterInfo(a);
   const vehiclePlate   = getVehiclePlate(a.vehicle);
-  const docRef         = generateDocRef(a);
+  const assignmentRef  = formatAssignmentRef(a);
   const printDate      = new Date().toLocaleDateString('id-ID', {
     day: 'numeric', month: 'long', year: 'numeric',
   });
@@ -105,16 +113,18 @@ export function generateReimbursementHTML(a) {
   const endOdo   = fmtOdo(a.endOdometer);
   const distance = fmtOdo(a.distanceTravelled);
 
-  const isOT      = overtimeStatus === 'OVERTIME';
-  const otLabel   = isOT ? 'LEMBUR'  : 'NORMAL';
-  const otDesc    = isOT
+  const isOT    = overtimeStatus === 'OVERTIME';
+  const otLabel = isOT ? 'LEMBUR'  : 'NORMAL';
+  const otDesc  = isOT
     ? 'Di luar jam operasional (09:00 – 17:00)'
     : 'Dalam jam operasional (09:00 – 17:00)';
-  const otBadge   = `<span class="badge badge--${isOT ? 'ot' : 'ok'}">${otLabel}</span>`;
+  const otBadge = `<span class="badge badge--${isOT ? 'ot' : 'ok'}">${otLabel}</span>`;
 
-  const startT = a.fullDay ? '00:00' : (a.startTime || '—');
-  const endT   = a.fullDay ? '23:59' : (a.endTime   || '—');
-  const fullDayNote = a.fullDay ? ' <span style="color:#5B5953;font-weight:400;">(Penuh Hari)</span>' : '';
+  const startT      = a.fullDay ? '00:00' : (a.startTime || '—');
+  const endT        = a.fullDay ? '23:59' : (a.endTime   || '—');
+  const fullDayNote = a.fullDay
+    ? ' <span style="color:#5B5953;font-weight:400;">(Penuh Hari)</span>'
+    : '';
 
   return `<!DOCTYPE html>
 <html lang="id">
@@ -280,40 +290,120 @@ body {
   margin-top: 3px;
 }
 
-/* ── Signature row ── */
-.sig-row {
+/* ── Section C: Pengajuan Reimbursement ── */
+.rmb-section {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 12px;
-  margin-top: 14px;
+  grid-template-columns: 35fr 65fr;
+  gap: 10px;
+  margin-top: 7px;
 }
-.sig-block {
+
+/* Left: Driver Statement */
+.driver-stmt-col {
   border: 1px solid #C9C6C0;
   border-radius: 4px;
-  padding: 9px 11px 8px;
-  text-align: center;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
 }
-.sig-title {
+.driver-stmt-label {
   font-size: 7pt;
   font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  letter-spacing: 0.07em;
   color: #5B5953;
-  margin-bottom: 40px;
+  margin-bottom: 7px;
 }
-.sig-line {
+.driver-stmt-text {
+  font-size: 7.5pt;
+  color: #3A3835;
+  line-height: 1.65;
+  flex: 1;
+}
+.driver-sig-area {
+  margin-top: 24px;
+}
+.driver-sig-date {
+  font-size: 7pt;
+  color: #5B5953;
+  margin-bottom: 28px;
+}
+.driver-sig-line {
   border-top: 1px solid #1A1917;
   padding-top: 5px;
+  text-align: center;
 }
-.sig-name {
+.driver-sig-name {
   font-size: 8.5pt;
   font-weight: 600;
   color: #1A1917;
 }
-.sig-role {
-  font-size: 7.5pt;
+.driver-sig-role {
+  font-size: 7pt;
   color: #5B5953;
   margin-top: 1px;
+}
+
+/* Right: Reimbursement Breakdown */
+.rmb-breakdown-col {
+  border: 1px solid #C9C6C0;
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.rmb-breakdown-title {
+  background: #F7F6F3;
+  font-size: 7pt;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #5B5953;
+  padding: 6px 12px;
+  border-bottom: 1px solid #E2DFD9;
+}
+.rmb-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 8.5pt;
+  flex: 1;
+}
+.rmb-table th {
+  background: #F7F6F3;
+  font-size: 7pt;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #5B5953;
+  padding: 5px 12px;
+  border-bottom: 1px solid #E2DFD9;
+  text-align: left;
+}
+.rmb-table th.col-amt { text-align: right; }
+.rmb-table td {
+  padding: 7px 12px;
+  border-bottom: 1px solid #F0EDE8;
+  vertical-align: middle;
+  color: #1A1917;
+}
+.rmb-table tr:last-child td { border-bottom: none; }
+.col-cat { width: 60%; }
+.col-amt { width: 40%; text-align: right; }
+.rmb-table td.col-amt {
+  color: #C9C6C0;
+  font-size: 7pt;
+  letter-spacing: 0.03em;
+}
+.row-total td {
+  background: #F7F6F3;
+  font-weight: 700;
+  font-size: 9pt;
+  border-top: 1.5px solid #C9C6C0;
+  border-bottom: none;
+}
+.row-total td.col-amt {
+  color: #5B5953;
+  font-size: 8pt;
 }
 
 /* ── Attachment section ── */
@@ -322,7 +412,7 @@ body {
   flex: 1;
   display: flex;
   flex-direction: column;
-  min-height: 86mm;
+  min-height: 82mm;
 }
 .attach-header {
   display: flex;
@@ -340,41 +430,9 @@ body {
 .attach-subtitle { font-size: 7pt; color: #5B5953; }
 .attach-area {
   flex: 1;
-  min-height: 76mm;
-  border: 1.5px dashed #94918B;
+  min-height: 72mm;
+  border: 1.5px dashed #C9C6C0;
   border-radius: 6px;
-  background: #FBFAF8;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  padding: 18px;
-}
-.attach-icon { font-size: 26pt; opacity: 0.28; line-height: 1; }
-.attach-hint {
-  font-size: 8.5pt;
-  color: #94918B;
-  text-align: center;
-  max-width: 300px;
-  line-height: 1.55;
-}
-.attach-tags {
-  display: flex;
-  gap: 7px;
-  flex-wrap: wrap;
-  justify-content: center;
-  margin-top: 4px;
-}
-.attach-tag {
-  font-size: 7pt;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: #5B5953;
-  border: 1px solid #C9C6C0;
-  border-radius: 2px;
-  padding: 2px 8px;
   background: #fff;
 }
 
@@ -427,7 +485,8 @@ body {
       <div class="org-sub">PBSI &mdash; Persatuan Bulu Tangkis Seluruh Indonesia</div>
     </div>
     <div class="doc-meta">
-      <div>No. Dokumen: <strong>${esc(docRef)}</strong></div>
+      <div>No. Dokumen: <strong>${esc(docNumber)}</strong></div>
+      <div>No. Assignment: <strong>${esc(assignmentRef)}</strong></div>
       <div>Tanggal Cetak: <strong>${esc(printDate)}</strong></div>
     </div>
   </div>
@@ -495,27 +554,62 @@ body {
     </tbody>
   </table>
 
-  <!-- ── C. Persetujuan ── -->
-  <div class="sec-label">C. Persetujuan</div>
-  <div class="sig-row">
-    <div class="sig-block">
-      <div class="sig-title">Driver</div>
-      <div class="sig-line"></div>
-      <div class="sig-name">${esc(a.driver || '—')}</div>
-      <div class="sig-role">Driver Operasional</div>
+  <!-- ── C. Pengajuan Reimbursement ── -->
+  <div class="sec-label">C. Pengajuan Reimbursement</div>
+  <div class="rmb-section">
+
+    <!-- LEFT 35%: Driver Statement + Signature -->
+    <div class="driver-stmt-col">
+      <div class="driver-stmt-label">Pernyataan Driver</div>
+      <p class="driver-stmt-text">
+        Dengan ini saya menyatakan bahwa data perjalanan dinas yang
+        tercantum di atas adalah benar dan biaya yang diajukan sesuai
+        dengan bukti pengeluaran yang disertakan.
+      </p>
+      <div class="driver-sig-area">
+        <div class="driver-sig-date">Jakarta, ${esc(printDate)}</div>
+        <div class="driver-sig-line">
+          <div class="driver-sig-name">${esc(a.driver || '—')}</div>
+          <div class="driver-sig-role">Driver Operasional</div>
+        </div>
+      </div>
     </div>
-    <div class="sig-block">
-      <div class="sig-title">Mengetahui</div>
-      <div class="sig-line"></div>
-      <div class="sig-name">( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )</div>
-      <div class="sig-role">Kabid Sarana &amp; Prasarana</div>
+
+    <!-- RIGHT 65%: Reimbursement Breakdown -->
+    <div class="rmb-breakdown-col">
+      <div class="rmb-breakdown-title">Rincian Biaya</div>
+      <table class="rmb-table">
+        <thead>
+          <tr>
+            <th class="col-cat">Keterangan</th>
+            <th class="col-amt">Jumlah (Rp)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="col-cat">BBM / Bensin</td>
+            <td class="col-amt">_______________</td>
+          </tr>
+          <tr>
+            <td class="col-cat">Tol</td>
+            <td class="col-amt">_______________</td>
+          </tr>
+          <tr>
+            <td class="col-cat">Parkir</td>
+            <td class="col-amt">_______________</td>
+          </tr>
+          <tr>
+            <td class="col-cat">Lain-lain</td>
+            <td class="col-amt">_______________</td>
+          </tr>
+          <tr class="row-total">
+            <td class="col-cat">TOTAL</td>
+            <td class="col-amt">_______________</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
-    <div class="sig-block">
-      <div class="sig-title">Menyetujui</div>
-      <div class="sig-line"></div>
-      <div class="sig-name">( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )</div>
-      <div class="sig-role">Bendahara / Keuangan</div>
-    </div>
+
   </div>
 
   <!-- ── D. Lampiran Bukti Pengeluaran ── -->
@@ -524,24 +618,13 @@ body {
       <div class="attach-title">D. Lampiran Bukti Pengeluaran</div>
       <div class="attach-subtitle">Tempel bukti fisik pada area di bawah ini</div>
     </div>
-    <div class="attach-area">
-      <div class="attach-icon">📎</div>
-      <div class="attach-hint">
-        Tempel Bukti BBM, Tol, Parkir, atau Pengeluaran Operasional Lain pada Area Ini
-      </div>
-      <div class="attach-tags">
-        <span class="attach-tag">BBM / Bensin</span>
-        <span class="attach-tag">Tol</span>
-        <span class="attach-tag">Parkir</span>
-        <span class="attach-tag">Lain-lain</span>
-      </div>
-    </div>
+    <div class="attach-area"></div>
   </div>
 
   <!-- ── Footer ── -->
   <div class="doc-footer">
-    <span>PBSI Operations Platform v1.2.4 &mdash; Form Reimbursement Perjalanan Dinas</span>
-    <span>${esc(docRef)}</span>
+    <span>PBSI Operations Platform v1.2.5 &mdash; Form Reimbursement Perjalanan Dinas</span>
+    <span>${esc(docNumber)}</span>
   </div>
 
 </div>
@@ -561,21 +644,23 @@ body {
    ──────────────────────────────────────────────────────────── */
 
 /**
- * Open the reimbursement form in a new browser window.
- * The user then prints or saves as PDF from that window.
+ * Acquire a sequential document number, then open the reimbursement
+ * form in a new browser window for Print / Save as PDF.
  *
  * @param {Object} assignment — Assignment object
+ * @returns {Promise<void>}
  */
-export function printReimbursementForm(assignment) {
-  const html = generateReimbursementHTML(assignment);
-  const win  = window.open(
+export async function printReimbursementForm(assignment) {
+  const docNumber = await acquireReimbursementDocNumber(assignment.date);
+  const html      = generateReimbursementHTML(assignment, docNumber);
+
+  const win = window.open(
     '',
     '_blank',
     'width=920,height=720,scrollbars=yes,resizable=yes'
   );
 
   if (!win) {
-    /* Popup blocked — guide the user. */
     alert(
       'Pop-up diblokir oleh browser.\n\n' +
       'Izinkan pop-up untuk situs ini, lalu coba lagi.'
@@ -589,4 +674,4 @@ export function printReimbursementForm(assignment) {
   win.focus();
 }
 
-console.info('Reimbursement module loaded');
+console.info('Reimbursement module loaded (v1.2.5)');

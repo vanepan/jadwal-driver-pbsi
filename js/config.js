@@ -1,10 +1,25 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.2.4';
-export const RELEASE_NAME = 'Reimbursement Form Generator';
+export const APP_VERSION = '1.2.5';
+export const RELEASE_NAME = 'Reimbursement Form — Production Polish';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.2.5',
+    date: '2026-06-04',
+    summary: 'Reimbursement Form — Production Polish',
+    highlights: [
+      'Sequential document numbering: PBSI/RMB/YYYY/MM/NNNN (atomic Firebase counter, resets monthly)',
+      'No. Assignment reference displayed in form header (ASG-YYYYMMDD-XXXXXX)',
+      'Section C redesigned: 35/65 two-column — driver statement + reimbursement breakdown table',
+      'Section D simplified: blank dashed area for physical receipt attachment',
+      'Role permission gate: reimbursement form hidden for Bidang/Viewer/other non-driver roles',
+      'Button loading state during async document number acquisition',
+      'Vehicle plate displays "-" gracefully when not yet configured',
+      'Overtime logic verified: NORMAL (09:00–17:00) vs LEMBUR unchanged',
+    ],
+  },
   {
     version: '1.2.4',
     date: '2026-06-04',

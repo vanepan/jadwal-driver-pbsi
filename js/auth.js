@@ -32,6 +32,7 @@ const PERMISSIONS = {
   manage_users: ['admin'],
   start: ['admin', 'driver'],
   complete: ['admin', 'driver'],
+  print_reimbursement: ['admin', 'driver'],
 };
 
 let authChangeCallback = null;
