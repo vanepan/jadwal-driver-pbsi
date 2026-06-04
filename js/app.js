@@ -126,6 +126,7 @@ function updateAllModules() {
   setRequestsModule(requests);
   setCommentRequests(requests);
   renderDriverDashboard();
+  renderKPIStrip();
 }
 
 /**
@@ -356,6 +357,7 @@ function updatePermissionUI() {
   // The active tab is updated per-tap in click handlers below; this ensures
   // a clean state after login, logout, or a Firebase-triggered UI refresh.
   setBottomNavActive('bottomNavDashboard');
+  renderKPIStrip();
 }
 
 /**
@@ -725,6 +727,121 @@ function initV2Topbar() {
 }
 
 /**
+ * VSM-4: Inject the #v2KpiStrip placeholder as the first child of .main-content,
+ * above .timeline-date-label. Called only when flags.visualShellV2 === true.
+ *
+ * The strip is initially hidden (display:none inline). renderKPIStrip() controls
+ * visibility and populates values on every data/auth change.
+ *
+ * Placement: .main-content > #v2KpiStrip > .timeline-date-label > .timeline-wrapper
+ */
+function initV2KpiStrip() {
+  const strip = document.createElement('div');
+  strip.id = 'v2KpiStrip';
+  strip.className = 'v2-kpi-strip';
+  strip.style.display = 'none'; // renderKPIStrip() reveals it after auth resolves
+  strip.setAttribute('aria-label', 'Ringkasan operasional hari ini');
+
+  strip.innerHTML = `
+    <div class="v2-kpi-card">
+      <span class="v2-kpi-label">Trip Aktif</span>
+      <span class="v2-kpi-value" id="v2KpiTripAktif" aria-live="polite">—</span>
+    </div>
+    <div class="v2-kpi-card">
+      <span class="v2-kpi-label">Driver Bertugas</span>
+      <span class="v2-kpi-value" id="v2KpiDriverBertugas" aria-live="polite">—</span>
+    </div>
+    <div class="v2-kpi-card">
+      <span class="v2-kpi-label">Menunggu</span>
+      <span class="v2-kpi-value" id="v2KpiMenunggu" aria-live="polite">—</span>
+    </div>
+    <div class="v2-kpi-card">
+      <span class="v2-kpi-label">Selesai Hari Ini</span>
+      <span class="v2-kpi-value" id="v2KpiSelesai" aria-live="polite">—</span>
+    </div>
+  `;
+
+  const mainContent = document.querySelector('.main-content');
+  if (mainContent) {
+    mainContent.insertBefore(strip, mainContent.firstChild);
+  }
+
+  console.log('[VSM-4] KPI strip injected');
+}
+
+// VSM-4: Operational KPIs only.
+// Historical, trend, utilization, forecasting, analytics and AI metrics
+// belong to v1.5+ Analytics and v1.6+ AI Assistant modules.
+//
+// All values derived from in-memory arrays (assignments, requests) already
+// loaded by Firebase sync. No new Firebase reads. No new Firebase writes.
+// No new collections. No charts. No aggregation beyond today's counts.
+//
+// KPIs use system date (new Date()) — NOT getCurrentDate() (timeline view date).
+// The strip reflects "right now", independent of which date is being viewed.
+function renderKPIStrip() {
+  const strip = document.getElementById('v2KpiStrip');
+  if (!strip) return; // flag off — strip not in DOM
+
+  const currentUser = getCurrentUser();
+
+  // Driver role: personal dashboard is the KPI surface. Strip absent.
+  // Unauthenticated: no data to show.
+  if (!currentUser || isDriver()) {
+    strip.style.display = 'none';
+    return;
+  }
+
+  strip.style.display = 'grid';
+
+  // System date — always reflects today, not the timeline's viewed date.
+  const sysDate = new Date().toISOString().split('T')[0];
+
+  // ── KPI 1: Trip Aktif ──────────────────────────────────────────────────
+  // Assignments currently in progress (status === 'started'), any date.
+  const tripAktif = assignments.filter(a => a.status === 'started').length;
+
+  // ── KPI 2: Driver Bertugas ─────────────────────────────────────────────
+  // Unique driver names with a started assignment (any date).
+  // Uses only live assignment data — no dependency on DEFAULT_DRIVERS list.
+  const driverBertugas = new Set(
+    assignments.filter(a => a.status === 'started').map(a => a.driver)
+  ).size;
+
+  // ── KPI 3: Menunggu ────────────────────────────────────────────────────
+  // Admin / Viewer: global pending queue.
+  // Bidang: own pending requests only.
+  // Legacy requests may lack requesterId — fall back to requesterName match.
+  let menunggu;
+  if (isBidang()) {
+    menunggu = requests.filter(
+      r => r.status === 'pending' &&
+           (r.requesterId === currentUser.id || r.requesterName === currentUser.name)
+    ).length;
+  } else {
+    menunggu = requests.filter(r => r.status === 'pending').length;
+  }
+
+  // ── KPI 4: Selesai Hari Ini ────────────────────────────────────────────
+  // Assignments completed on today's system date.
+  const selesai = assignments.filter(
+    a => a.status === 'completed' && a.date === sysDate
+  ).length;
+
+  // ── Update DOM values ──────────────────────────────────────────────────
+  const el = id => document.getElementById(id);
+  const kv1 = el('v2KpiTripAktif');
+  const kv2 = el('v2KpiDriverBertugas');
+  const kv3 = el('v2KpiMenunggu');
+  const kv4 = el('v2KpiSelesai');
+
+  if (kv1) kv1.textContent = String(tripAktif);
+  if (kv2) kv2.textContent = String(driverBertugas);
+  if (kv3) kv3.textContent = String(menunggu);
+  if (kv4) kv4.textContent = String(selesai);
+}
+
+/**
  * Main initialization saat DOM ready
  */
 document.addEventListener('DOMContentLoaded', async () => {
@@ -739,6 +856,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initV2Panel();
     // VSM-3: must run before sidebar-toggle and initDateControls() handler binding
     initV2Topbar();
+    initV2KpiStrip(); // VSM-4: inject KPI strip placeholder above timeline
   }
 
   // ── Populate version & app name elements from config ──

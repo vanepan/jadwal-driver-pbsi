@@ -1843,3 +1843,120 @@ body.v2-shell-active .v2-topbar {
     display: none !important;
   }
 }
+
+
+/* ============================================================
+   VSM-4 — KPI Cards
+
+   #v2KpiStrip is injected as the first child of .main-content
+   (above .timeline-date-label) by initV2KpiStrip() in app.js
+   ONLY when visualShellV2 === true.
+
+   renderKPIStrip() controls visibility (none | grid) and
+   updates all four values on every data/auth change.
+
+   Shown for: Admin, Bidang, Viewer.
+   Hidden for: Driver (personal dashboard is their KPI surface),
+               unauthenticated state.
+
+   All values come from in-memory arrays (assignments, requests).
+   No Firebase reads. No Firebase writes. No historical aggregation.
+   No charts. No trend calculations. No utilization calculations.
+   No analytics. No AI.
+
+   VSM-4 intentionally uses operational KPIs only.
+   Historical, trend, utilization, forecasting, analytics and AI
+   metrics belong to v1.5+ Analytics and v1.6+ AI Assistant.
+
+   Breakpoints:
+     ≥768px   4-column grid
+     ≤767px   2×2 grid
+     ≤400px   single column, horizontal card layout
+
+   When visualShellV2 === false: #v2KpiStrip is absent from DOM.
+   V1 has no KPI strip. No CSS rules apply. No visual change.
+   ============================================================ */
+
+/* ── Strip container ──
+   display is toggled by renderKPIStrip() via inline style.
+   CSS sets grid-template-columns and gap only — not display.     */
+#v2KpiStrip {
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  padding: 16px 16px 0;
+  box-sizing: border-box;
+}
+
+/* ── 2×2 grid on phone ── */
+@media (max-width: 767px) {
+  #v2KpiStrip {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    padding: 12px 12px 0;
+  }
+}
+
+/* ── Single column on very small screens ── */
+@media (max-width: 400px) {
+  #v2KpiStrip {
+    grid-template-columns: 1fr;
+    gap: 6px;
+    padding: 10px 10px 0;
+  }
+}
+
+/* ── Individual KPI card ── */
+.v2-kpi-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;       /* --radius-md: not in current :root — 8px hardcoded */
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: var(--shadow-sm);
+  min-width: 0;             /* prevent flex/grid child overflow */
+  overflow: hidden;
+}
+
+/* ── Horizontal layout on very small screens ── */
+@media (max-width: 400px) {
+  .v2-kpi-card {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    gap: 8px;
+  }
+}
+
+/* ── KPI label (uppercase caption) ── */
+.v2-kpi-label {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  font-family: var(--font-sans, 'Inter', sans-serif);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 1;
+}
+
+/* ── KPI value (large monospace number) ── */
+.v2-kpi-value {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text);
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  flex-shrink: 0;
+}
+
+/* ── Compact value on very small screens ── */
+@media (max-width: 400px) {
+  .v2-kpi-value {
+    font-size: 20px;
+  }
+}
