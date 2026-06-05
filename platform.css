@@ -1962,8 +1962,11 @@ body.v2-shell-active .v2-topbar {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   PDF VIEWER MODAL  (v1.3.0)
-   Mobile-first embedded PDF viewer — replaces window.open() flow.
+   PDF VIEWER MODAL  (v1.3.1)
+   Full-screen on mobile · 95vw×92vh centered on desktop.
+   Key layout rule: .pdf-viewer is a fixed-height flex column so
+   .pdf-viewer__body can use flex:1 + min-height:0 to fill exactly
+   the remaining space — the iframe then fills that space absolutely.
    ═══════════════════════════════════════════════════════════════ */
 
 /* ── Overlay / Scrim ── */
@@ -1971,66 +1974,46 @@ body.v2-shell-active .v2-topbar {
   position: fixed;
   inset: 0;
   z-index: 2000;
-  background: rgba(0, 0, 0, 0.68);
+  background: rgba(0, 0, 0, 0.72);
   display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding: 0;
+  align-items: stretch;       /* mobile: modal stretches full screen */
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
 }
 
-@media (min-width: 768px) {
-  .pdf-overlay {
-    align-items: center;
-    padding: 24px;
-  }
-}
-
-/* ── Modal box ── */
+/* ── Modal box — mobile: full screen ── */
 .pdf-viewer {
-  position: relative;
   width: 100%;
-  max-height: 92dvh;
-  max-height: 92vh; /* fallback */
+  height: 100%;
+  height: 100dvh;
   background: var(--surface);
-  border-radius: 20px 20px 0 0;
+  border-radius: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 -4px 40px rgba(0, 0, 0, 0.28);
-  /* Bottom-sheet slide-up on mobile */
-  animation: pdf-slide-up 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: pdf-slide-up 0.24s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* Mobile drag handle via pseudo-element */
-.pdf-viewer::before {
-  content: '';
-  display: block;
-  width: 36px;
-  height: 4px;
-  background: var(--border-strong);
-  border-radius: 2px;
-  margin: 10px auto 0;
-  flex-shrink: 0;
-}
-
+/* ── Desktop: centered overlay, 95vw × 92vh ── */
 @media (min-width: 768px) {
-  .pdf-viewer {
-    max-width: 1200px;
-    max-height: 90vh;
-    border-radius: 16px;
-    box-shadow: var(--shadow-lg);
-    animation: pdf-scale-in 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+  .pdf-overlay {
+    align-items: center;
+    justify-content: center;
+    padding: 0;
   }
-  /* No drag handle on desktop */
-  .pdf-viewer::before {
-    display: none;
+  .pdf-viewer {
+    width: 95vw;
+    height: 92vh;
+    height: 92dvh;
+    max-width: 1600px;
+    border-radius: 14px;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+    animation: pdf-scale-in 0.2s cubic-bezier(0.22, 1, 0.36, 1);
   }
 }
 
 @keyframes pdf-slide-up {
-  from { transform: translateY(24px); opacity: 0; }
+  from { transform: translateY(16px); opacity: 0; }
   to   { transform: translateY(0);    opacity: 1; }
 }
 @keyframes pdf-scale-in {
@@ -2038,15 +2021,17 @@ body.v2-shell-active .v2-topbar {
   to   { transform: scale(1);    opacity: 1; }
 }
 
-/* ── Header ── */
+/* ── Header — fixed height, never shrinks ── */
 .pdf-viewer__header {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 20px 12px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   background: var(--surface);
+  /* Safe area top for iPhone notch */
+  padding-top: calc(12px + env(safe-area-inset-top, 0px));
 }
 
 .pdf-viewer__info {
@@ -2090,21 +2075,15 @@ body.v2-shell-active .v2-topbar {
   font-family: inherit;
   padding: 0;
 }
-.pdf-viewer__close:hover {
-  background: var(--border);
-  color: var(--text);
-}
-.pdf-viewer__close:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
+.pdf-viewer__close:hover { background: var(--border); color: var(--text); }
+.pdf-viewer__close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* ── Toolbar ── */
+/* ── Toolbar — fixed height, never shrinks ── */
 .pdf-viewer__toolbar {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 16px;
+  padding: 8px 16px;
   background: var(--surface-2, #FBFAF8);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
@@ -2133,28 +2112,16 @@ body.v2-shell-active .v2-topbar {
   flex-shrink: 0;
   line-height: 1.4;
 }
-.pdf-viewer__btn:hover:not(:disabled) {
-  background: var(--hover);
-  border-color: var(--border-strong);
-}
-.pdf-viewer__btn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-.pdf-viewer__btn:disabled {
-  opacity: 0.42;
-  cursor: not-allowed;
-}
+.pdf-viewer__btn:hover:not(:disabled) { background: var(--hover); border-color: var(--border-strong); }
+.pdf-viewer__btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pdf-viewer__btn:disabled { opacity: 0.42; cursor: not-allowed; }
 
 .pdf-viewer__btn--primary {
   background: var(--accent);
   color: var(--on-accent);
   border-color: var(--accent);
 }
-.pdf-viewer__btn--primary:hover:not(:disabled) {
-  background: #8f2027;
-  border-color: #8f2027;
-}
+.pdf-viewer__btn--primary:hover:not(:disabled) { background: #8f2027; border-color: #8f2027; }
 
 .pdf-viewer__btn--dismiss {
   margin-left: auto;
@@ -2168,13 +2135,13 @@ body.v2-shell-active .v2-topbar {
   color: var(--text);
 }
 
-/* ── Body (hosts loading / iframe / error) ── */
+/* ── Body — grows to fill all remaining height ── */
 .pdf-viewer__body {
   flex: 1;
+  min-height: 0;      /* prevents flex blowout; allows children to shrink */
   position: relative;
   overflow: hidden;
-  background: var(--canvas);
-  min-height: 200px;
+  background: #e5e5e5;
 }
 
 /* ── Loading state ── */
@@ -2187,6 +2154,7 @@ body.v2-shell-active .v2-topbar {
   justify-content: center;
   gap: 14px;
   background: var(--surface);
+  z-index: 1;
 }
 
 .pdf-viewer__spinner {
@@ -2198,9 +2166,7 @@ body.v2-shell-active .v2-topbar {
   animation: pdf-spin 0.75s linear infinite;
   flex-shrink: 0;
 }
-@keyframes pdf-spin {
-  to { transform: rotate(360deg); }
-}
+@keyframes pdf-spin { to { transform: rotate(360deg); } }
 
 .pdf-viewer__loading-text {
   font-size: 13px;
@@ -2210,8 +2176,10 @@ body.v2-shell-active .v2-topbar {
   padding: 0 24px;
 }
 
-/* ── iframe preview ── */
+/* ── iframe — fills body exactly, single scroll surface ── */
 .pdf-viewer__iframe {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   border: none;
@@ -2231,6 +2199,7 @@ body.v2-shell-active .v2-topbar {
   background: var(--surface);
   padding: 32px 24px;
   text-align: center;
+  z-index: 1;
 }
 
 .pdf-viewer__error-icon {
@@ -2246,11 +2215,9 @@ body.v2-shell-active .v2-topbar {
   line-height: 1.5;
 }
 
-/* ── Safe area padding for iPhone notch / home bar ── */
+/* ── iPhone home bar safe area on toolbar ── */
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
-  @media (max-width: 767px) {
-    .pdf-viewer__toolbar {
-      padding-bottom: calc(10px + env(safe-area-inset-bottom));
-    }
+  .pdf-viewer__toolbar {
+    padding-bottom: calc(8px + env(safe-area-inset-bottom));
   }
 }
