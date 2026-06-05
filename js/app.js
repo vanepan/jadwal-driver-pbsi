@@ -57,7 +57,7 @@ let assignments = [];
 let requests = [];
 let auditLogs = [];
 // Feature flags — read once at startup from Firebase /feature_flags.
-// Default: all false. Populated by loadFeatureFlags() before any UI init.
+// Production defaults applied in loadFeatureFlags(); visualShellV2 defaults to true.
 let appFlags = {};
 
 // VSM-8: Dashboard view state — 'timeline' | 'list'. In-memory only; no URL or storage.
@@ -381,16 +381,21 @@ function updatePermissionUI() {
  *   1. localStorage override  — developer device only, never production.
  *      Set:   localStorage.setItem('pbsi_flag_visualShellV2', 'true')
  *      Clear: localStorage.removeItem('pbsi_flag_visualShellV2')
- *   2. Firebase RTDB /feature_flags — authoritative source.
- *   3. Empty object (all flags default false) — Firebase timeout or error.
+ *   2. Firebase RTDB /feature_flags — authoritative production source.
+ *      Set visualShellV2 = false to force V1 rollback for all users.
+ *   3. Production defaults — applied when Firebase key is absent or
+ *      on timeout/error. visualShellV2 defaults to TRUE so V2 is the
+ *      standard experience without requiring a Firebase write.
  *
+ * Rollback path: set /feature_flags/visualShellV2 = false in Firebase.
  * 3-second timeout prevents Firebase latency from blocking app startup.
  */
 async function loadFeatureFlags() {
   const LS_PREFIX = 'pbsi_flag_';
   const flagNames = ['visualShellV2'];
 
-  // Check localStorage overrides first
+  // ── Priority 1: localStorage overrides (developer testing only) ──
+  // These are never set for production users; cleared by removing the key.
   const overrides = {};
   let hasOverride = false;
   for (const name of flagNames) {
@@ -401,25 +406,47 @@ async function loadFeatureFlags() {
     }
   }
   if (hasOverride) {
-    console.log('[flags] using localStorage overrides:', overrides);
+    console.log('[flags] localStorage override active:', overrides);
+    console.log(`[VSM] visualShellV2 = ${overrides.visualShellV2 ?? true}`);
     return overrides;
   }
 
-  // Firebase read with 3-second timeout
+  // ── Priority 2: Firebase RTDB /feature_flags (3-second timeout) ──
+  let rawFlags = {};
   try {
     const flagsData = await Promise.race([
       fetchFirebaseData('feature_flags'),
       new Promise(resolve => setTimeout(() => resolve(null), 3000)),
     ]);
-    const flags = (flagsData && typeof flagsData === 'object') ? flagsData : {};
-    if (Object.keys(flags).length > 0) {
-      console.log('[flags] loaded from Firebase:', flags);
+    rawFlags = (flagsData && typeof flagsData === 'object') ? flagsData : {};
+    if (Object.keys(rawFlags).length > 0) {
+      console.log('[flags] loaded from Firebase:', rawFlags);
     }
-    return flags;
   } catch (err) {
-    console.warn('[flags] Firebase read failed, using defaults:', err);
-    return {};
+    console.warn('[flags] Firebase read failed, applying production defaults:', err);
   }
+
+  // ── Priority 3: Production defaults ──
+  // Spread order: defaults first, Firebase values second so an explicit
+  // Firebase false overrides the default true (emergency rollback path).
+  //
+  //   Firebase missing → visualShellV2 = true  (V2 is the standard UI)
+  //   Firebase = true  → visualShellV2 = true  (explicit enable)
+  //   Firebase = false → visualShellV2 = false (emergency rollback to V1)
+  const DEFAULTS = {
+    visualShellV2: true,  // V2 shell is the production-default experience
+  };
+  const flags = { ...DEFAULTS, ...rawFlags };
+
+  // Startup verification log — visible in DevTools Console
+  console.log(`[VSM] visualShellV2 = ${flags.visualShellV2}`);
+  if (flags.visualShellV2) {
+    console.log('[VSM] loading Visual Shell V2');
+  } else {
+    console.log('[VSM] Visual Shell V2 disabled — V1 active (Firebase override)');
+  }
+
+  return flags;
 }
 
 /**
