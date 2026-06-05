@@ -295,7 +295,7 @@ export function initModalHandlers() {
     try {
       await printReimbursementForm(a);
     } finally {
-      if (btn) { btn.disabled = false; btn.textContent = '🖨 Cetak Form Reimbursement'; }
+      if (btn) { btn.disabled = false; btn.textContent = '📄 Generate Form Reimbursement'; }
     }
   });
 

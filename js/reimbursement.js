@@ -640,38 +640,358 @@ body {
 }
 
 /* ────────────────────────────────────────────────────────────
-   PRINT LAUNCHER
+   PDF VIEWER MODAL  (v1.3.0)
+   Replaces window.open() — works on iOS Safari, Android Chrome,
+   and all desktop browsers without popup permission requirements.
    ──────────────────────────────────────────────────────────── */
 
+/** Session cache: assignment.id → { htmlUrl, pdfUrl, filename } */
+const _cache = new Map();
+
+/** Guards one-time event-listener setup. */
+let _viewerInitialized = false;
+
 /**
- * Acquire a sequential document number, then open the reimbursement
- * form in a new browser window for Print / Save as PDF.
+ * Open the PDF Viewer Modal for the given assignment.
+ * Exported as `printReimbursementForm` to keep callers unchanged.
  *
  * @param {Object} assignment — Assignment object
  * @returns {Promise<void>}
  */
 export async function printReimbursementForm(assignment) {
-  const docNumber = await acquireReimbursementDocNumber(assignment.date);
-  const html      = generateReimbursementHTML(assignment, docNumber);
+  _initViewerOnce();
 
-  const win = window.open(
-    '',
-    '_blank',
-    'width=920,height=720,scrollbars=yes,resizable=yes'
-  );
+  const cacheKey = String(assignment.id);
 
-  if (!win) {
-    alert(
-      'Pop-up diblokir oleh browser.\n\n' +
-      'Izinkan pop-up untuk situs ini, lalu coba lagi.'
-    );
+  // Show modal in loading state immediately — no waiting
+  _openViewerModal(assignment);
+
+  // Cache hit: reuse previously generated blob URLs
+  if (_cache.has(cacheKey)) {
+    const { htmlUrl, pdfUrl, filename } = _cache.get(cacheKey);
+    _showIframePreview(htmlUrl);
+    _enableActions(pdfUrl, filename, assignment);
     return;
   }
 
-  win.document.open();
-  win.document.write(html);
-  win.document.close();
-  win.focus();
+  try {
+    // 1. Acquire sequential doc number + generate HTML
+    _setLoadingText('Mempersiapkan Form Reimbursement...');
+    const docNumber = await acquireReimbursementDocNumber(assignment.date);
+    const html      = generateReimbursementHTML(assignment, docNumber);
+
+    // 2. HTML blob → iframe preview (appears immediately, no PDF lib needed)
+    const htmlBlob = new Blob([html], { type: 'text/html' });
+    const htmlUrl  = URL.createObjectURL(htmlBlob);
+    _showIframePreview(htmlUrl);
+
+    // 3. Generate PDF blob in the background (enables Download + Share)
+    _setLoadingText('Membuat PDF...');
+    const filename = _buildFilename(assignment, docNumber);
+
+    let pdfUrl = null;
+    try {
+      const pdfBlob = await _generatePdfBlob(html);
+      pdfUrl = URL.createObjectURL(pdfBlob);
+    } catch (pdfErr) {
+      // PDF generation failure is non-fatal — preview + print still work
+      console.warn('[PDFViewer] PDF generation failed; download unavailable:', pdfErr);
+    }
+
+    // 4. Cache result so re-opening the same form is instant
+    _cache.set(cacheKey, { htmlUrl, pdfUrl, filename });
+
+    // 5. Wire up action buttons
+    _enableActions(pdfUrl, filename, assignment);
+
+  } catch (err) {
+    console.error('[PDFViewer] Fatal error:', err);
+    _showViewerError();
+  }
 }
 
-console.info('Reimbursement module loaded (v1.2.5)');
+/**
+ * Close the PDF viewer and release transient DOM state.
+ * Cached blob URLs survive closure for session-level reuse.
+ */
+export function closePdfViewer() {
+  const overlay = document.getElementById('modalPdfViewer');
+  if (!overlay) return;
+  overlay.style.display = 'none';
+  document.body.style.overflow = '';
+
+  // Blank the iframe to stop running content and free memory
+  const iframe = document.getElementById('pdfViewerIframe');
+  if (iframe) {
+    iframe.src = 'about:blank';
+    _hideEl('pdfViewerIframe');
+  }
+}
+
+/* ── Private helpers ──────────────────────────────────────── */
+
+/** Show modal immediately in loading state; populate meta header. */
+function _openViewerModal(assignment) {
+  const meta = document.getElementById('pdfViewerMeta');
+  if (meta) {
+    const driver = assignment.driver || '—';
+    const date   = assignment.date
+      ? new Date(assignment.date + 'T00:00:00')
+          .toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+      : '—';
+    meta.textContent = `${driver} · ${date}`;
+  }
+
+  // Reset to loading state
+  _showEl('pdfViewerLoading', 'flex');
+  _hideEl('pdfViewerIframe');
+  _hideEl('pdfViewerError');
+
+  // Disable all action buttons until ready
+  ['btnPdfDownload', 'btnPdfPrint', 'btnPdfShare'].forEach(id => {
+    const btn = document.getElementById(id);
+    if (btn) btn.disabled = true;
+  });
+  const shareBtn = document.getElementById('btnPdfShare');
+  if (shareBtn) shareBtn.style.display = 'none';
+
+  const overlay = document.getElementById('modalPdfViewer');
+  if (overlay) {
+    overlay.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+  }
+
+  // Move focus into modal for accessibility / keyboard users
+  requestAnimationFrame(() => document.getElementById('btnClosePdfViewer')?.focus());
+}
+
+/**
+ * Load HTML blob URL into the iframe.
+ * Hides loading state once iframe content is ready.
+ */
+function _showIframePreview(htmlUrl) {
+  const iframe = document.getElementById('pdfViewerIframe');
+  if (!iframe) return;
+
+  iframe.onload = () => {
+    _hideEl('pdfViewerLoading');
+    _showEl('pdfViewerIframe', 'block');
+    // Print is available as soon as the iframe is loaded
+    const printBtn = document.getElementById('btnPdfPrint');
+    if (printBtn) {
+      printBtn.disabled = false;
+      printBtn.onclick  = _printFromIframe;
+    }
+  };
+  iframe.onerror = () => _showViewerError();
+  iframe.src = htmlUrl;
+}
+
+/** Wire Download, Print, and (if supported) Share buttons. */
+function _enableActions(pdfUrl, filename, assignment) {
+  const dlBtn = document.getElementById('btnPdfDownload');
+  if (dlBtn && pdfUrl) {
+    dlBtn.disabled = false;
+    dlBtn.onclick  = () => _downloadPdf(pdfUrl, filename);
+  }
+
+  // Print button may already be live; set handler defensively
+  const printBtn = document.getElementById('btnPdfPrint');
+  if (printBtn) {
+    printBtn.disabled = false;
+    printBtn.onclick  = _printFromIframe;
+  }
+
+  // Error-panel fallback download
+  const fbBtn = document.getElementById('btnPdfDownloadFallback');
+  if (fbBtn && pdfUrl) {
+    fbBtn.style.display = '';
+    fbBtn.onclick = () => _downloadPdf(pdfUrl, filename);
+  }
+
+  // Web Share API — only when file sharing is supported
+  if (pdfUrl && _canShareFiles()) {
+    const shareBtn = document.getElementById('btnPdfShare');
+    if (shareBtn) {
+      shareBtn.style.display = '';
+      shareBtn.disabled = false;
+      shareBtn.onclick  = () => _sharePdf(pdfUrl, filename, assignment);
+    }
+  }
+}
+
+function _buildFilename(assignment, docNumber) {
+  const safe = s => String(s || '').replace(/[^a-z0-9]/gi, '-').replace(/-+/g, '-').toLowerCase();
+  const date = (assignment.date || '').replace(/-/g, '');
+  return `Form-Reimbursement-${safe(assignment.driver)}-${date}.pdf`;
+}
+
+function _setLoadingText(text) {
+  const el = document.getElementById('pdfViewerLoadingText');
+  if (el) el.textContent = text;
+}
+
+function _showViewerError() {
+  _hideEl('pdfViewerLoading');
+  _hideEl('pdfViewerIframe');
+  _showEl('pdfViewerError', 'flex');
+}
+
+/** Trigger browser download using a temporary <a> element. */
+function _downloadPdf(pdfUrl, filename) {
+  const a = document.createElement('a');
+  a.href     = pdfUrl;
+  a.download = filename;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+/** Print via iframe.contentWindow.print(); falls back to new-tab. */
+function _printFromIframe() {
+  const iframe = document.getElementById('pdfViewerIframe');
+  try {
+    if (iframe?.contentWindow) {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+    }
+  } catch {
+    if (iframe?.src) window.open(iframe.src, '_blank', 'noopener');
+  }
+}
+
+/** True when navigator.share supports file attachments. */
+function _canShareFiles() {
+  if (!navigator.share || !navigator.canShare) return false;
+  try {
+    return navigator.canShare({ files: [new File([''], 'probe.pdf', { type: 'application/pdf' })] });
+  } catch {
+    return false;
+  }
+}
+
+/** Share PDF via Web Share API (iOS/Android); swallows user cancellation. */
+async function _sharePdf(pdfUrl, filename, assignment) {
+  try {
+    const res  = await fetch(pdfUrl);
+    const blob = await res.blob();
+    const file = new File([blob], filename, { type: 'application/pdf' });
+    await navigator.share({
+      title: 'Form Reimbursement',
+      text:  `Form Reimbursement – ${assignment.driver || ''} – ${assignment.date || ''}`,
+      files: [file],
+    });
+  } catch (e) {
+    if (e.name !== 'AbortError') console.warn('[PDFViewer] Share error:', e);
+  }
+}
+
+/**
+ * Generate a PDF Blob from the reimbursement HTML string.
+ * Dynamically loads html2pdf.js (CDN) on first use; result is cached
+ * at the call-site so the library is only downloaded once per session.
+ *
+ * Screen-only elements (.no-print, .print-bar) are hidden via an
+ * injected <style> so they don't appear in the rendered PDF.
+ * Body background and page margins are normalised for clean output.
+ */
+async function _generatePdfBlob(htmlString) {
+  const html2pdf = await _loadHtml2Pdf();
+
+  // Hide screen-only toolbar; normalise page background & margins
+  const cleanHtml = htmlString.replace(
+    '</head>',
+    '<style>' +
+      '.no-print,.print-bar{display:none!important}' +
+      'body{background:#fff!important}' +
+      '.page{margin:0!important;box-shadow:none!important}' +
+    '</style></head>'
+  );
+
+  // Parse and rebuild in a hidden off-screen container so html2canvas
+  // can access the fully-styled DOM without affecting the visible page
+  const parser    = new DOMParser();
+  const doc       = parser.parseFromString(cleanHtml, 'text/html');
+  const container = document.createElement('div');
+  container.setAttribute('aria-hidden', 'true');
+  container.style.cssText =
+    'position:fixed;top:-99999px;left:-99999px;width:794px;' +
+    'background:#fff;overflow:visible;pointer-events:none;';
+
+  doc.querySelectorAll('style').forEach(s => container.appendChild(s.cloneNode(true)));
+  const bodyWrap = document.createElement('div');
+  bodyWrap.innerHTML = doc.body.innerHTML;
+  container.appendChild(bodyWrap);
+  document.body.appendChild(container);
+
+  try {
+    return await html2pdf()
+      .set({
+        margin:      0,
+        filename:    'form-reimbursement.pdf',
+        image:       { type: 'jpeg', quality: 0.97 },
+        html2canvas: { scale: 2, useCORS: true, logging: false, windowWidth: 794 },
+        jsPDF:       { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak:   { mode: ['avoid-all', 'css'] },
+      })
+      .from(container)
+      .output('blob');
+  } finally {
+    document.body.removeChild(container);
+  }
+}
+
+/** Dynamically load html2pdf.js from CDN; resolves instantly on repeat calls. */
+function _loadHtml2Pdf() {
+  if (window.html2pdf) return Promise.resolve(window.html2pdf);
+  return new Promise((resolve, reject) => {
+    const s   = document.createElement('script');
+    s.src     = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+    s.async   = true;
+    s.onload  = () => resolve(window.html2pdf);
+    s.onerror = () => reject(new Error('html2pdf.js failed to load'));
+    document.head.appendChild(s);
+  });
+}
+
+/**
+ * Attach close / backdrop / ESC event listeners on the PDF viewer modal.
+ * Runs exactly once — subsequent calls are no-ops.
+ */
+function _initViewerOnce() {
+  if (_viewerInitialized) return;
+  _viewerInitialized = true;
+
+  document.getElementById('btnClosePdfViewer')
+    ?.addEventListener('click', closePdfViewer);
+
+  document.getElementById('btnPdfClose')
+    ?.addEventListener('click', closePdfViewer);
+
+  document.getElementById('modalPdfViewer')
+    ?.addEventListener('click', e => {
+      if (e.target === document.getElementById('modalPdfViewer')) closePdfViewer();
+    });
+
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    const overlay = document.getElementById('modalPdfViewer');
+    if (overlay && overlay.style.display !== 'none') {
+      e.preventDefault();
+      closePdfViewer();
+    }
+  });
+}
+
+/* ── Tiny DOM helpers ── */
+function _showEl(id, display = 'block') {
+  const el = document.getElementById(id);
+  if (el) el.style.display = display;
+}
+function _hideEl(id) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = 'none';
+}
+
+console.info('Reimbursement module loaded (v1.3.0)');
