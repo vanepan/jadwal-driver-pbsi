@@ -154,17 +154,24 @@ body {
     width: 210mm;
     min-height: 297mm;
     margin: 28px auto 40px;
-    padding: 16mm 18mm 14mm;
+    padding: 13mm 17mm 10mm;
     background: #fff;
     box-shadow: 0 6px 32px rgba(0,0,0,.16);
   }
 }
 
-/* ── Print ── */
+/* ── Print — single-page guarantee ── */
 @media print {
   body { background: #fff; }
   @page { size: A4 portrait; margin: 13mm 17mm 11mm; }
-  .page { width: 100%; padding: 0; margin: 0; box-shadow: none; }
+  .page {
+    width: 100%; padding: 0; margin: 0; box-shadow: none;
+    /* Explicit usable height = 297mm - 13mm top - 11mm bottom = 273mm.
+       flex:1 on .attach-section fills the exact remainder.
+       overflow:hidden is the hard safeguard: nothing bleeds to page 2. */
+    height: 273mm;
+    overflow: hidden;
+  }
   .no-print { display: none !important; }
 }
 
@@ -181,9 +188,9 @@ body {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  padding-bottom: 10px;
+  padding-bottom: 8px;
   border-bottom: 2.5px solid #1A1917;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 .org-name {
   font-size: 11.5pt;
@@ -194,13 +201,13 @@ body {
 .org-sub {
   font-size: 8pt;
   color: #5B5953;
-  margin-top: 3px;
+  margin-top: 1px;
 }
 .doc-meta {
   text-align: right;
   font-size: 7.5pt;
   color: #5B5953;
-  line-height: 2;
+  line-height: 1.8;
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -209,8 +216,8 @@ body {
 /* ── Form title ── */
 .form-title-block {
   text-align: center;
-  margin-bottom: 14px;
-  padding-bottom: 11px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
   border-bottom: 1px solid #E8E6E2;
 }
 .form-title {
@@ -223,7 +230,7 @@ body {
 .form-subtitle {
   font-size: 8pt;
   color: #5B5953;
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 /* ── Section label ── */
@@ -233,8 +240,8 @@ body {
   letter-spacing: 0.09em;
   text-transform: uppercase;
   color: #5B5953;
-  margin: 13px 0 7px;
-  padding-bottom: 4px;
+  margin: 9px 0 5px;
+  padding-bottom: 3px;
   border-bottom: 1px solid #E8E6E2;
 }
 
@@ -248,7 +255,7 @@ body {
   font-size: 9pt;
 }
 .data-table td {
-  padding: 7px 11px;
+  padding: 5px 10px;
   border: 1px solid #E2DFD9;
   vertical-align: top;
 }
@@ -287,22 +294,22 @@ body {
   font-size: 7.5pt;
   font-weight: 400;
   color: #5B5953;
-  margin-top: 3px;
+  margin-top: 2px;
 }
 
 /* ── Section C: Pengajuan Reimbursement ── */
 .rmb-section {
   display: grid;
   grid-template-columns: 35fr 65fr;
-  gap: 10px;
-  margin-top: 7px;
+  gap: 8px;
+  margin-top: 5px;
 }
 
 /* Left: Driver Statement */
 .driver-stmt-col {
   border: 1px solid #C9C6C0;
   border-radius: 4px;
-  padding: 10px 12px;
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
 }
@@ -312,25 +319,25 @@ body {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #5B5953;
-  margin-bottom: 7px;
+  margin-bottom: 5px;
 }
 .driver-stmt-text {
   font-size: 7.5pt;
   color: #3A3835;
-  line-height: 1.65;
+  line-height: 1.6;
   flex: 1;
 }
 .driver-sig-area {
-  margin-top: 24px;
+  margin-top: 14px;
 }
 .driver-sig-date {
   font-size: 7pt;
   color: #5B5953;
-  margin-bottom: 28px;
+  margin-bottom: 16px;
 }
 .driver-sig-line {
   border-top: 1px solid #1A1917;
-  padding-top: 5px;
+  padding-top: 4px;
   text-align: center;
 }
 .driver-sig-name {
@@ -359,7 +366,7 @@ body {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #5B5953;
-  padding: 6px 12px;
+  padding: 5px 10px;
   border-bottom: 1px solid #E2DFD9;
 }
 .rmb-table {
@@ -375,13 +382,13 @@ body {
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: #5B5953;
-  padding: 5px 12px;
+  padding: 4px 10px;
   border-bottom: 1px solid #E2DFD9;
   text-align: left;
 }
 .rmb-table th.col-amt { text-align: right; }
 .rmb-table td {
-  padding: 7px 12px;
+  padding: 5px 10px;
   border-bottom: 1px solid #F0EDE8;
   vertical-align: middle;
   color: #1A1917;
@@ -406,19 +413,19 @@ body {
   font-size: 8pt;
 }
 
-/* ── Attachment section ── */
+/* ── Attachment section — flex:1 claims all remaining vertical space ── */
 .attach-section {
-  margin-top: 14px;
+  margin-top: 8px;
   flex: 1;
   display: flex;
   flex-direction: column;
-  min-height: 82mm;
+  min-height: 70mm;
 }
 .attach-header {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  margin-bottom: 7px;
+  margin-bottom: 5px;
 }
 .attach-title {
   font-size: 7.5pt;
@@ -430,7 +437,7 @@ body {
 .attach-subtitle { font-size: 7pt; color: #5B5953; }
 .attach-area {
   flex: 1;
-  min-height: 72mm;
+  min-height: 60mm;
   border: 1.5px dashed #C9C6C0;
   border-radius: 6px;
   background: #fff;
@@ -438,8 +445,8 @@ body {
 
 /* ── Footer ── */
 .doc-footer {
-  margin-top: 11px;
-  padding-top: 8px;
+  margin-top: 7px;
+  padding-top: 6px;
   border-top: 1px solid #E8E6E2;
   display: flex;
   justify-content: space-between;
@@ -623,7 +630,7 @@ body {
 
   <!-- ── Footer ── -->
   <div class="doc-footer">
-    <span>PBSI Operations Platform v1.2.5 &mdash; Form Reimbursement Perjalanan Dinas</span>
+    <span>PBSI Operations Platform v1.3.0 &mdash; Form Reimbursement Perjalanan Dinas</span>
     <span>${esc(docNumber)}</span>
   </div>
 
