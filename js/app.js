@@ -69,6 +69,8 @@ let listDirty = true; // true = list view must re-render before next display
 let searchQuery = '';
 // VSM-9: which workspace is visible — 'dashboard' | 'pending' | 'administration'
 let currentWorkspace = 'dashboard';
+// VSM-9 cleanup: which rail module is active — 'driverops' | 'administration'
+let activeRailModule = 'driverops';
 
 /**
  * Filter assignments berdasarkan user role saat ini.
@@ -362,18 +364,18 @@ function updatePermissionUI(resetNavActive = false) {
       v2NavJadwalSaya.style.display = isDriver() ? 'flex' : 'none';
     }
 
-    // Pending badge: admin only, shows count of pending requests
+    // Pending badge: admin (global count) + bidang (own pending count)
     const v2PanelBadge = document.getElementById('v2PanelBadge');
     if (v2PanelBadge) {
-      const pendingCount = getPendingRequestCount();
-      const showBadge = isAdmin() && pendingCount > 0;
-      v2PanelBadge.textContent = String(pendingCount);
+      const myCount = getMyPendingRequestCount();
+      const showBadge = (isAdmin() || isBidang()) && myCount > 0;
+      v2PanelBadge.textContent = String(myCount);
       v2PanelBadge.style.display = showBadge ? 'inline-flex' : 'none';
     }
 
-    // Administrasi nav: admin only
-    const v2NavAdministration = document.getElementById('v2NavAdministration');
-    if (v2NavAdministration) v2NavAdministration.style.display = isAdmin() ? 'flex' : 'none';
+    // Administration rail module: admin only
+    const v2RailAdmin = document.getElementById('v2RailAdmin');
+    if (v2RailAdmin) v2RailAdmin.style.display = isAdmin() ? 'flex' : 'none';
 
     // Footer user info (Part H)
     const v2FooterAvatarInitials = document.getElementById('v2FooterAvatarInitials');
@@ -391,8 +393,9 @@ function updatePermissionUI(resetNavActive = false) {
     // disturb the current user's navigation position.
     if (resetNavActive) {
       setV2PanelNavActive('v2NavDashboard');
-      // Also reset workspace to dashboard on auth change
       if (document.getElementById('v2PendingWorkspace')) setWorkspace('dashboard');
+      // Reset rail to Driver Operations module
+      if (activeRailModule !== 'driverops') setRailModule('driverops');
     }
   }
 
@@ -486,6 +489,44 @@ async function loadFeatureFlags() {
  * Wiring: all click handlers proxy to existing V1 DOM elements so no
  * V1 event listeners, modals, or workflows are touched.
  */
+/**
+ * Switch the active rail module and swap the panel nav section accordingly.
+ * @param {'driverops'|'administration'} name
+ */
+function setRailModule(name) {
+  activeRailModule = name;
+
+  const isAdm = name === 'administration';
+
+  const driverOpsItem = document.getElementById('v2RailDriverOps');
+  const adminItem     = document.getElementById('v2RailAdmin');
+  const driverOpsNav  = document.getElementById('v2PanelDriverOpsNav');
+  const adminNav      = document.getElementById('v2PanelAdminNav');
+  const panelTitle    = document.getElementById('v2PanelTitle');
+  const crumbTitle    = document.getElementById('v2TopbarCrumb')?.querySelector('.v2-topbar-title');
+
+  if (driverOpsItem) {
+    driverOpsItem.classList.toggle('v2-rail-item--active', !isAdm);
+    driverOpsItem.setAttribute('aria-current', String(!isAdm));
+  }
+  if (adminItem) {
+    adminItem.classList.toggle('v2-rail-item--active', isAdm);
+    adminItem.setAttribute('aria-current', String(isAdm));
+  }
+
+  if (driverOpsNav) driverOpsNav.style.display = isAdm ? 'none' : '';
+  if (adminNav)     adminNav.style.display     = isAdm ? ''     : 'none';
+  if (panelTitle)   panelTitle.textContent     = isAdm ? 'Administration' : 'Driver Operations';
+  if (crumbTitle)   crumbTitle.textContent     = isAdm ? 'Administration' : 'Driver Operations';
+
+  if (!isAdm) {
+    setV2PanelNavActive('v2NavDashboard');
+    setWorkspace('dashboard');
+    renderViews();
+    if (isDriver()) renderDriverDashboard();
+  }
+}
+
 function initV2Rail() {
   // Build the rail element
   const rail = document.createElement('div');
@@ -500,7 +541,6 @@ function initV2Rail() {
     </div>
 
     <nav class="v2-rail-modules" aria-label="Navigasi modul">
-      <!-- Driver Operations — only active module; other modules hidden (flags off) -->
       <div class="v2-rail-item v2-rail-item--active" id="v2RailDriverOps"
            role="button" tabindex="0"
            aria-label="Driver Operations" aria-current="true">
@@ -513,13 +553,26 @@ function initV2Rail() {
         </svg>
         <div class="v2-rail-tooltip" aria-hidden="true">Driver Operations</div>
       </div>
+
+      <!-- Administration — admin only; shown by updatePermissionUI() -->
+      <div class="v2-rail-item" id="v2RailAdmin"
+           role="button" tabindex="0"
+           aria-label="Administration" aria-current="false" style="display:none;">
+        <svg class="v2-rail-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/>
+        </svg>
+        <div class="v2-rail-tooltip" aria-hidden="true">Administration</div>
+      </div>
     </nav>
 
-    <div class="v2-rail-avatar" id="v2RailAvatar"
-         role="button" tabindex="0"
-         aria-label="Buka profil">
-      <span class="v2-rail-avatar-initials" id="v2RailAvatarInitials"
-            aria-hidden="true"></span>
+    <!-- Rail footer: theme toggle (identity stays in panel footer) -->
+    <div class="v2-rail-footer">
+      <button class="v2-rail-footer-btn" id="v2RailThemeBtn"
+              type="button" aria-label="Ganti ke tema gelap">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15" aria-hidden="true">
+          <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>
+        </svg>
+      </button>
     </div>
   `;
 
@@ -535,29 +588,27 @@ function initV2Rail() {
   // Activate the CSS gate — hides V1 sidebar (desktop) and shifts .main-area
   document.body.classList.add('v2-shell-active');
 
-  // ── Event handlers — all proxy to existing V1 elements ──
+  // ── Event handlers ──
 
   const crest     = document.getElementById('v2RailCrest');
   const driverOps = document.getElementById('v2RailDriverOps');
-  const avatar    = document.getElementById('v2RailAvatar');
+  const railAdmin = document.getElementById('v2RailAdmin');
+  const railTheme = document.getElementById('v2RailThemeBtn');
 
-  // Crest: scroll timeline body to top
   crest?.addEventListener('click', () => {
     document.querySelector('.main-content')?.scrollTo({ top: 0, behavior: 'smooth' });
   });
 
-  // Driver Ops icon: already the active module; scroll to top (no routing)
-  driverOps?.addEventListener('click', () => {
-    document.querySelector('.main-content')?.scrollTo({ top: 0, behavior: 'smooth' });
-  });
+  driverOps?.addEventListener('click', () => setRailModule('driverops'));
+  railAdmin?.addEventListener('click', () => setRailModule('administration'));
 
-  // Avatar: proxy click to V1 profile button (preserves all profile modal logic)
-  avatar?.addEventListener('click', () => {
-    document.getElementById('btnProfile')?.click();
+  railTheme?.addEventListener('click', () => {
+    const current = document.documentElement.getAttribute('data-theme') || 'light';
+    applyTheme(current === 'dark' ? 'light' : 'dark', true);
   });
 
   // Keyboard: Enter/Space activates any focusable rail element
-  [crest, driverOps, avatar].forEach(el => {
+  [crest, driverOps, railAdmin].forEach(el => {
     el?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
@@ -586,9 +637,9 @@ function initV2Panel() {
   panel.className = 'v2-panel';
   panel.id = 'v2Panel';
   panel.innerHTML = `
-    <!-- Module title -->
+    <!-- Module title — text updated by setRailModule() -->
     <div class="v2-panel-header">
-      <span class="v2-panel-title">Driver Operations</span>
+      <span class="v2-panel-title" id="v2PanelTitle">Driver Operations</span>
     </div>
     <div class="v2-panel-divider"></div>
 
@@ -609,8 +660,9 @@ function initV2Panel() {
       </button>
     </div>
 
-    <!-- Navigation list -->
-    <nav class="v2-panel-nav" aria-label="Driver Operations menu">
+    <!-- Driver Operations navigation — visible when driverops module is active -->
+    <nav class="v2-panel-nav v2-panel-nav--driverops" id="v2PanelDriverOpsNav"
+         aria-label="Driver Operations menu">
 
       <!-- Jadwal Driver: all authenticated roles -->
       <button class="v2-panel-nav-item v2-panel-nav-item--active" id="v2NavDashboard" type="button">
@@ -638,12 +690,38 @@ function initV2Panel() {
         Jadwal Saya
       </button>
 
-      <!-- Administrasi: admin role only -->
-      <button class="v2-panel-nav-item" id="v2NavAdministration" type="button" style="display:none;">
+    </nav>
+
+    <!-- Administration navigation — visible when administration module is active (admin only) -->
+    <nav class="v2-panel-nav v2-panel-nav--admin" id="v2PanelAdminNav"
+         aria-label="Administration menu" style="display:none;">
+
+      <!-- Manajemen User: proxies to V1 user management modal -->
+      <button class="v2-panel-nav-item v2-panel-nav-item--active" id="v2NavAdminUsers" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/>
+        </svg>
+        Manajemen User
+      </button>
+
+      <!-- Peran & Izin: coming soon -->
+      <button class="v2-panel-nav-item v2-panel-nav-item--disabled" id="v2NavAdminRoles"
+              type="button" disabled>
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+        </svg>
+        Peran &amp; Izin
+        <span class="v2-panel-nav-badge-soon">Soon</span>
+      </button>
+
+      <!-- Konfigurasi: coming soon -->
+      <button class="v2-panel-nav-item v2-panel-nav-item--disabled" id="v2NavAdminConfig"
+              type="button" disabled>
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
           <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/>
         </svg>
-        Administrasi
+        Konfigurasi
+        <span class="v2-panel-nav-badge-soon">Soon</span>
       </button>
 
     </nav>
@@ -745,11 +823,9 @@ function initV2Panel() {
     setTimeout(() => document.getElementById('driverDashboard')?.scrollIntoView({ behavior: 'smooth' }), 50);
   });
 
-  // Administrasi nav: proxy to V1 admin modal (preserves all existing admin logic)
-  document.getElementById('v2NavAdministration')?.addEventListener('click', () => {
-    setV2PanelNavActive('v2NavAdministration');
-    const crumbTitle = document.getElementById('v2TopbarCrumb')?.querySelector('.v2-topbar-title');
-    if (crumbTitle) crumbTitle.textContent = 'Driver Operations › Administrasi';
+  // Manajemen User: proxy to V1 user management modal
+  document.getElementById('v2NavAdminUsers')?.addEventListener('click', () => {
+    setV2PanelNavActive('v2NavAdminUsers');
     document.getElementById('btnUserMgmt')?.click();
   });
 
@@ -1432,6 +1508,20 @@ function getFilteredAssignments() {
 }
 
 /**
+ * Pending count scoped to the current user's role.
+ * Admin → global pending count. Bidang → own pending requests only.
+ */
+function getMyPendingRequestCount() {
+  const user = getCurrentUser();
+  if (!user) return 0;
+  if (isAdmin()) return getPendingRequestCount();
+  return requests.filter(r =>
+    r.status === 'pending' &&
+    (r.requesterId === user.id || r.requesterName === user.name)
+  ).length;
+}
+
+/**
  * Show one workspace and hide the rest.
  * @param {'dashboard'|'pending'|'administration'} name
  */
@@ -1627,15 +1717,18 @@ function applyTheme(theme, animate = false) {
   document.documentElement.setAttribute('data-theme', theme);
   localStorage.setItem('pbsi_theme', theme);
 
-  const btn = document.getElementById('v2TopbarThemeBtn');
-  if (!btn) return;
+  const ICON_SUN  = `<svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15" aria-hidden="true"><path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/></svg>`;
+  const ICON_MOON = `<svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15" aria-hidden="true"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/></svg>`;
+
+  const topbarBtn = document.getElementById('v2TopbarThemeBtn');
+  const railBtn   = document.getElementById('v2RailThemeBtn');
 
   if (theme === 'dark') {
-    btn.setAttribute('aria-label', 'Ganti ke tema terang');
-    btn.innerHTML = `<svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15" aria-hidden="true"><path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/></svg>`;
+    if (topbarBtn) { topbarBtn.setAttribute('aria-label', 'Ganti ke tema terang'); topbarBtn.innerHTML = ICON_SUN; }
+    if (railBtn)   { railBtn.setAttribute('aria-label', 'Ganti ke tema terang');   railBtn.innerHTML   = ICON_SUN; }
   } else {
-    btn.setAttribute('aria-label', 'Ganti ke tema gelap');
-    btn.innerHTML = `<svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15" aria-hidden="true"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/></svg>`;
+    if (topbarBtn) { topbarBtn.setAttribute('aria-label', 'Ganti ke tema gelap'); topbarBtn.innerHTML = ICON_MOON; }
+    if (railBtn)   { railBtn.setAttribute('aria-label', 'Ganti ke tema gelap');   railBtn.innerHTML   = ICON_MOON; }
   }
 }
 

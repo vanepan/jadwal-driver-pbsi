@@ -4942,3 +4942,120 @@ body.v2-shell-active .v2-rail-avatar {
     color 280ms ease,
     border-color 200ms ease !important;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   VSM-9 Navigation Architecture Cleanup
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Part 1: Rail Administration module ── */
+/* Administration module visible as a peer to Driver Operations */
+body.v2-shell-active #v2RailAdmin { display: none; } /* shown by updatePermissionUI() */
+
+/* ── Part 2: Pending badge — admin + bidang ── */
+/* Badge is already styled as .v2-panel-badge; no extra CSS needed */
+
+/* ── Part 3: Timeline dark mode — neutralise V1 CSS variable artifacts ── */
+/* V1 style.css uses --white / --gray-1-3 which are undefined in dark mode.
+   Scoped to #v2TimelineSurface so V1 modals and V1 flow are unaffected. */
+[data-theme="dark"] #v2TimelineSurface {
+  --white:  var(--surface);
+  --gray-1: var(--tl-head-bg, #202229);
+  --gray-2: var(--border);
+  --gray-3: var(--border-strong);
+  --shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+
+/* ── Part 5: Compact KPI strip (~30% space reduction) ── */
+body.v2-shell-active #v2KpiStrip {
+  padding: 10px 16px 0;
+  gap: 8px;
+}
+body.v2-shell-active .v2-kpi-card {
+  padding: 10px 14px;
+  gap: 2px;
+}
+body.v2-shell-active .v2-kpi-value { font-size: 22px; }
+
+/* ── Part 6: Rail footer — theme button ── */
+.v2-rail-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding-bottom: 4px;
+  margin-top: auto;
+  flex-shrink: 0;
+}
+
+.v2-rail-footer-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--side-faint);
+  transition:
+    background var(--motion-fast, 150ms) ease,
+    color      var(--motion-fast, 150ms) ease;
+  flex-shrink: 0;
+}
+.v2-rail-footer-btn:hover,
+.v2-rail-footer-btn:focus-visible {
+  background: var(--side-active-bg);
+  color: var(--side-strong);
+  outline: none;
+}
+
+/* ── Part 1 (continued): Admin panel nav section label ── */
+/* Override the generic "MENU" pseudo-element for the admin nav section */
+.v2-panel-nav--admin::before {
+  content: 'ADMINISTRASI' !important;
+}
+
+/* Disabled nav items (coming-soon) */
+.v2-panel-nav-item--disabled {
+  opacity: 0.45;
+  pointer-events: none;
+  cursor: not-allowed;
+}
+
+/* "Soon" badge on disabled nav items */
+.v2-panel-nav-badge-soon {
+  margin-left: auto;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--hover);
+  color: var(--faint);
+  border: 1px solid var(--border);
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+/* ── Part 7: Mobile topbar — keep hamburger + date-nav + avatar on one row ── */
+@media (max-width: 767px) {
+  body.v2-shell-active .v2-topbar {
+    flex-wrap: nowrap;
+    height: 52px;
+  }
+  /* Collapse the flex spacer on mobile so date-nav stays in the row */
+  body.v2-shell-active .v2-topbar .v2-topbar-spacer {
+    flex: 1;
+    min-width: 0;
+  }
+  body.v2-shell-active .v2-topbar .date-nav {
+    flex-shrink: 1;
+    min-width: 0;
+  }
+}
+@media (max-width: 600px) {
+  .v2-topbar-search    { display: none !important; }
+  .v2-topbar-theme-btn { display: none !important; }
+  #v2TopbarCrumb       { display: none !important; }
+}
