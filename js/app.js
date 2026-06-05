@@ -177,8 +177,12 @@ function setV2PanelNavActive(id) {
 
 /**
  * Update tombol-tombol berdasarkan role login saat ini.
+ * @param {boolean} resetNavActive - When true, resets panel + bottom nav to Dashboard.
+ *   Pass true only on auth changes (login/logout/startup).
+ *   Firebase real-time data listeners must pass false (default) so an incoming
+ *   change from another device does not disturb the user's current nav position.
  */
-function updatePermissionUI() {
+function updatePermissionUI(resetNavActive = false) {
   const btnAdd = document.getElementById('btnAddAssignment');
   const btnRequests = document.getElementById('btnRequests');
   const btnRequestsLabel = document.getElementById('btnRequestsLabel');
@@ -362,15 +366,14 @@ function updatePermissionUI() {
       v2PanelBadge.style.display = showBadge ? 'inline-flex' : 'none';
     }
 
-    // Reset active state to Dashboard on every auth/permission change.
-    // The active tab is updated per-click in initV2Panel() handlers.
-    setV2PanelNavActive('v2NavDashboard');
+    // Reset active state to Dashboard only on auth changes (login/logout/startup).
+    // Skipped for Firebase data-refresh calls so another device's update does not
+    // disturb the current user's navigation position.
+    if (resetNavActive) setV2PanelNavActive('v2NavDashboard');
   }
 
-  // Reset bottom nav to Dashboard on every auth/permission change.
-  // The active tab is updated per-tap in click handlers below; this ensures
-  // a clean state after login, logout, or a Firebase-triggered UI refresh.
-  setBottomNavActive('bottomNavDashboard');
+  // Reset bottom nav only on auth changes — same reasoning as panel nav above.
+  if (resetNavActive) setBottomNavActive('bottomNavDashboard');
   renderKPIStrip();
 }
 
@@ -1465,7 +1468,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Sidebar is cleared on login/logout but NOT on Firebase data refreshes,
   // which call updatePermissionUI() directly and bypass this wrapper.
   await initAuthUI(() => {
-    updatePermissionUI();
+    updatePermissionUI(true); // auth change → reset nav to Dashboard
     setSidebarActive(null);
   });
   await initAdminUI();                   // Setup admin user management
@@ -1477,7 +1480,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initRequestHandlers();                 // Setup request workflow events
   initCommentHandlers();                 // Setup comment thread events
   renderViews();                         // Render timeline + list view pertama kali
-  updatePermissionUI();                  // Disable tombol sesuai role
+  updatePermissionUI(true);              // startup → reset nav to Dashboard
   updateAdminButtons();                  // Show admin controls properly
   setNotificationData({
     pendingRequests: getPendingRequestCount(),

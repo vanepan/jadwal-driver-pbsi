@@ -69,7 +69,7 @@ export function setAssignments(newAssignments) {
 
 /* ── Odometer Modal ─────────────────────────────────────────────
    Shown before Start / Complete to capture KM Awal / KM Akhir.
-   Stacks on top of the detail modal (z-index: 210).
+   Uses Option A: detail modal closes before odometer opens (no stacking).
    ────────────────────────────────────────────────────────────── */
 
 let _odoType       = null;  // 'start' | 'complete'

@@ -269,7 +269,11 @@ export function getVisibleRequestsForCurrentUser() {
     return requests;
   }
 
-  return requests.filter(request => request.requesterId === user.id);
+  // requesterId was added later; fall back to requesterName for legacy records
+  return requests.filter(request =>
+    request.requesterId === user.id ||
+    request.requesterName === user.name
+  );
 }
 
 export function renderRequestsList() {
