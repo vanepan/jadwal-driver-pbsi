@@ -145,6 +145,7 @@ export async function initAuthUI(onAuthChange) {
   const form = document.getElementById('loginForm');
   if (form) {
     form.addEventListener('submit', handleLoginSubmit);
+    initLoginKeyboardUX();
   }
 
   const logoutButton = document.getElementById('btnLogout');
@@ -255,7 +256,7 @@ function notifyAuthChange() {
 
 function openLoginModal() {
   const modal = document.getElementById('modalLogin');
-  const pinInput = document.getElementById('loginPin');
+  const usernameInput = document.getElementById('loginUsername');
 
   if (modal) {
     modal.style.display = 'flex';
@@ -263,8 +264,36 @@ function openLoginModal() {
   }
 
   setTimeout(() => {
-    if (pinInput) pinInput.focus();
+    if (usernameInput) usernameInput.focus();
   }, 50);
+}
+
+function initLoginKeyboardUX() {
+  const usernameInput = document.getElementById('loginUsername');
+  const pinInput = document.getElementById('loginPin');
+  const form = document.getElementById('loginForm');
+
+  if (usernameInput) {
+    usernameInput.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      if (usernameInput.value.trim() && pinInput) {
+        pinInput.focus();
+      }
+    });
+  }
+
+  if (pinInput) {
+    pinInput.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const username = usernameInput ? usernameInput.value.trim() : '';
+      const pin = pinInput.value.trim();
+      if (username && pin && form) {
+        form.requestSubmit();
+      }
+    });
+  }
 }
 
 function closeLoginModal() {

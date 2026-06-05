@@ -65,6 +65,11 @@ let appFlags = {};
 let currentDashboardView = 'timeline';
 let listDirty = true; // true = list view must re-render before next display
 
+// VSM-9: search query (client-side filter, never touches Firebase data)
+let searchQuery = '';
+// VSM-9: which workspace is visible — 'dashboard' | 'pending' | 'administration'
+let currentWorkspace = 'dashboard';
+
 /**
  * Filter assignments berdasarkan user role saat ini.
  * - Admin & Bidang: lihat semua assignments
@@ -120,8 +125,8 @@ function normalizeAssignmentStatus(a) {
  * Dipanggil setiap kali ada perubahan data (Firebase sync, form submit, delete, etc)
  */
 function updateAllModules() {
-  // Timeline, modal, and conflict-check always see ALL assignments
-  setTimelineAssignments(assignments);
+  // Timeline shows search-filtered view; modal/conflict-check always see ALL
+  setTimelineAssignments(getFilteredAssignments());
   setModalAssignments(assignments);
   setAssignmentsForm(assignments);
 
@@ -366,10 +371,29 @@ function updatePermissionUI(resetNavActive = false) {
       v2PanelBadge.style.display = showBadge ? 'inline-flex' : 'none';
     }
 
+    // Administrasi nav: admin only
+    const v2NavAdministration = document.getElementById('v2NavAdministration');
+    if (v2NavAdministration) v2NavAdministration.style.display = isAdmin() ? 'flex' : 'none';
+
+    // Footer user info (Part H)
+    const v2FooterAvatarInitials = document.getElementById('v2FooterAvatarInitials');
+    if (v2FooterAvatarInitials) v2FooterAvatarInitials.textContent = initials;
+    const v2FooterDisplayName = document.getElementById('v2FooterDisplayName');
+    if (v2FooterDisplayName) v2FooterDisplayName.textContent = displayName;
+    const v2FooterRoleLabel = document.getElementById('v2FooterRoleLabel');
+    if (v2FooterRoleLabel) {
+      const roleNames = { admin: 'Administrator', bidang: 'Bidang', driver: 'Driver', viewer: 'Viewer' };
+      v2FooterRoleLabel.textContent = roleNames[currentUser?.role] || '';
+    }
+
     // Reset active state to Dashboard only on auth changes (login/logout/startup).
     // Skipped for Firebase data-refresh calls so another device's update does not
     // disturb the current user's navigation position.
-    if (resetNavActive) setV2PanelNavActive('v2NavDashboard');
+    if (resetNavActive) {
+      setV2PanelNavActive('v2NavDashboard');
+      // Also reset workspace to dashboard on auth change
+      if (document.getElementById('v2PendingWorkspace')) setWorkspace('dashboard');
+    }
   }
 
   // Reset bottom nav only on auth changes — same reasoning as panel nav above.
@@ -588,12 +612,12 @@ function initV2Panel() {
     <!-- Navigation list -->
     <nav class="v2-panel-nav" aria-label="Driver Operations menu">
 
-      <!-- Dashboard: all authenticated roles -->
+      <!-- Jadwal Driver: all authenticated roles -->
       <button class="v2-panel-nav-item v2-panel-nav-item--active" id="v2NavDashboard" type="button">
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
           <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/>
         </svg>
-        Dashboard
+        Jadwal Driver
       </button>
 
       <!-- Pending: admin (approval queue) + bidang (request history) -->
@@ -614,25 +638,54 @@ function initV2Panel() {
         Jadwal Saya
       </button>
 
+      <!-- Administrasi: admin role only -->
+      <button class="v2-panel-nav-item" id="v2NavAdministration" type="button" style="display:none;">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/>
+        </svg>
+        Administrasi
+      </button>
+
     </nav>
 
     <div class="v2-panel-spacer"></div>
     <div class="v2-panel-divider"></div>
 
-    <!-- Footer — always visible when logged in -->
-    <div class="v2-panel-footer">
-      <button class="v2-panel-footer-btn" id="v2FooterProfil" type="button">
-        <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true">
-          <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/>
+    <!-- Footer user area — avatar + dropdown user menu (Part H) -->
+    <div class="v2-panel-footer-user" id="v2FooterUser">
+      <button class="v2-footer-avatar" id="v2FooterAvatar" type="button"
+              aria-haspopup="menu" aria-expanded="false">
+        <span class="v2-footer-avatar-circle" id="v2FooterAvatarInitials" aria-hidden="true">?</span>
+        <div class="v2-footer-user-info">
+          <span class="v2-footer-display-name" id="v2FooterDisplayName"></span>
+          <span class="v2-footer-role-label" id="v2FooterRoleLabel"></span>
+        </div>
+        <svg class="v2-footer-chevron" viewBox="0 0 20 20" fill="currentColor"
+             width="12" height="12" aria-hidden="true">
+          <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/>
         </svg>
-        Profil
       </button>
-      <button class="v2-panel-footer-btn v2-panel-footer-btn--logout" id="v2FooterKeluar" type="button">
-        <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true">
-          <path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clip-rule="evenodd"/>
-        </svg>
-        Keluar
-      </button>
+      <div class="v2-footer-menu" id="v2FooterMenu" role="menu" style="display:none;">
+        <button class="v2-footer-menu-item" id="v2FooterMenuProfil" role="menuitem" type="button">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true">
+            <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/>
+          </svg>
+          Profil
+        </button>
+        <button class="v2-footer-menu-item v2-footer-menu-item--danger" id="v2FooterMenuKeluar"
+                role="menuitem" type="button">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true">
+            <path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clip-rule="evenodd"/>
+          </svg>
+          Keluar
+        </button>
+      </div>
+    </div>
+
+    <!-- Version watermark — populated by DOMContentLoaded .app-name-text / .app-version-text sweep -->
+    <div class="v2-panel-version" aria-hidden="true">
+      <span class="v2-panel-version-name app-name-text"></span>
+      <span class="v2-panel-version-num app-version-text"></span>
     </div>
   `;
 
@@ -663,41 +716,73 @@ function initV2Panel() {
     openRequestFormModal();
   });
 
-  // Dashboard nav: scroll timeline to top (same as bottomNavDashboard)
+  // Dashboard nav: switch to dashboard workspace
   document.getElementById('v2NavDashboard')?.addEventListener('click', () => {
     setV2PanelNavActive('v2NavDashboard');
     const crumbTitle = document.getElementById('v2TopbarCrumb')?.querySelector('.v2-topbar-title');
     if (crumbTitle) crumbTitle.textContent = 'Driver Operations';
     setCurrentDate(getCurrentDate());
+    setWorkspace('dashboard');
     renderViews();
     if (isDriver()) renderDriverDashboard();
   });
 
-  // Pending nav: proxy to V1 #btnRequests (role-aware handler already wired)
+  // Pending nav: open inline workspace instead of modal
   document.getElementById('v2NavPending')?.addEventListener('click', () => {
     setV2PanelNavActive('v2NavPending');
     const label = isAdmin() ? 'Driver Operations › Antrian' : 'Driver Operations › Riwayat';
     const crumbTitle = document.getElementById('v2TopbarCrumb')?.querySelector('.v2-topbar-title');
     if (crumbTitle) crumbTitle.textContent = label;
-    document.getElementById('btnRequests')?.click();
+    setWorkspace('pending');
   });
 
-  // Jadwal Saya: scroll to driver dashboard section
+  // Jadwal Saya: switch to dashboard then scroll to driver section
   document.getElementById('v2NavJadwalSaya')?.addEventListener('click', () => {
     setV2PanelNavActive('v2NavJadwalSaya');
     const crumbTitle = document.getElementById('v2TopbarCrumb')?.querySelector('.v2-topbar-title');
     if (crumbTitle) crumbTitle.textContent = 'Driver Operations › Jadwal Saya';
-    document.getElementById('driverDashboard')?.scrollIntoView({ behavior: 'smooth' });
+    setWorkspace('dashboard');
+    setTimeout(() => document.getElementById('driverDashboard')?.scrollIntoView({ behavior: 'smooth' }), 50);
   });
 
-  // Profil footer: proxy to V1 #btnProfile
-  document.getElementById('v2FooterProfil')?.addEventListener('click', () => {
+  // Administrasi nav: proxy to V1 admin modal (preserves all existing admin logic)
+  document.getElementById('v2NavAdministration')?.addEventListener('click', () => {
+    setV2PanelNavActive('v2NavAdministration');
+    const crumbTitle = document.getElementById('v2TopbarCrumb')?.querySelector('.v2-topbar-title');
+    if (crumbTitle) crumbTitle.textContent = 'Driver Operations › Administrasi';
+    document.getElementById('btnUserMgmt')?.click();
+  });
+
+  // Footer avatar: toggle user menu
+  const footerAvatar = document.getElementById('v2FooterAvatar');
+  const footerMenu   = document.getElementById('v2FooterMenu');
+
+  footerAvatar?.addEventListener('click', () => {
+    const isOpen = footerMenu?.style.display !== 'none';
+    if (footerMenu) footerMenu.style.display = isOpen ? 'none' : 'block';
+    footerAvatar.setAttribute('aria-expanded', String(!isOpen));
+  });
+
+  document.getElementById('v2FooterMenuProfil')?.addEventListener('click', () => {
+    if (footerMenu) footerMenu.style.display = 'none';
+    footerAvatar?.setAttribute('aria-expanded', 'false');
     document.getElementById('btnProfile')?.click();
   });
 
-  // Keluar footer: proxy to V1 #btnLogout
-  document.getElementById('v2FooterKeluar')?.addEventListener('click', () => {
+  document.getElementById('v2FooterMenuKeluar')?.addEventListener('click', () => {
+    if (footerMenu) footerMenu.style.display = 'none';
+    footerAvatar?.setAttribute('aria-expanded', 'false');
     document.getElementById('btnLogout')?.click();
+  });
+
+  // Close user menu on outside click
+  document.addEventListener('click', e => {
+    if (footerMenu && footerMenu.style.display !== 'none') {
+      if (!footerAvatar?.contains(e.target) && !footerMenu.contains(e.target)) {
+        footerMenu.style.display = 'none';
+        footerAvatar?.setAttribute('aria-expanded', 'false');
+      }
+    }
   });
 
   console.log('[VSM-2] Context panel initialised');
@@ -753,15 +838,18 @@ function initV2Topbar() {
     <span class="v2-topbar-title">Driver Operations</span>
   `;
 
-  // ── Part 2 (VSM-5C / VSM-7): Visual-only search field — no handlers ──
+  // ── Part 2 (VSM-5C / VSM-7 / VSM-9): Interactive search field ──
   const searchField = document.createElement('div');
-  searchField.className = 'v2-topbar-search';
-  searchField.setAttribute('aria-hidden', 'true');
+  searchField.className = 'v2-topbar-search v2-topbar-search--active';
+  searchField.setAttribute('role', 'search');
   searchField.innerHTML = `
     <svg viewBox="0 0 20 20" fill="currentColor" width="13" height="13" aria-hidden="true">
       <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/>
     </svg>
-    <span class="v2-topbar-search-placeholder">Cari driver, tujuan...</span>
+    <input type="search" id="v2SearchInput" class="v2-topbar-search-input"
+           placeholder="Cari driver, tujuan..." autocomplete="off" />
+    <button class="v2-topbar-search-clear" id="v2SearchClear"
+            type="button" aria-label="Hapus pencarian" style="display:none;">&#x2715;</button>
   `;
 
   // ── Flex spacer ──
@@ -769,12 +857,12 @@ function initV2Topbar() {
   spacer.className = 'v2-topbar-spacer';
   spacer.setAttribute('aria-hidden', 'true');
 
-  // ── Part 5 (VSM-7): Theme toggle — visual only, no click logic ──
+  // ── Part 5 (VSM-7 / VSM-9): Theme toggle — wired in initThemeManager() ──
   const themeToggle = document.createElement('button');
+  themeToggle.id = 'v2TopbarThemeBtn';
   themeToggle.className = 'v2-topbar-icon-btn v2-topbar-theme-btn';
   themeToggle.setAttribute('type', 'button');
-  themeToggle.setAttribute('aria-label', 'Ganti tema (segera hadir)');
-  themeToggle.setAttribute('aria-hidden', 'true');
+  themeToggle.setAttribute('aria-label', 'Ganti ke tema gelap');
   themeToggle.innerHTML = `
     <svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15" aria-hidden="true">
       <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>
@@ -1074,7 +1162,7 @@ function renderListView() {
   if (!container) return; // flag off — container not in DOM
 
   const date = getCurrentDate();
-  const dayAssignments = assignments
+  const dayAssignments = getFilteredAssignments()
     .filter(a => a.date === date)
     .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
 
@@ -1323,6 +1411,350 @@ function initV2DriverAvatars() {
   console.log('[VSM-5C] Driver avatar observer initialised');
 }
 
+/* ============================================================
+   VSM-9 — Workspace, Search, Dark Mode, Admin
+   ============================================================ */
+
+/**
+ * Returns assignments filtered by the current search query.
+ * Source-of-truth assignments[] is never mutated.
+ */
+function getFilteredAssignments() {
+  if (!searchQuery) return assignments;
+  const q = searchQuery.toLowerCase();
+  return assignments.filter(a =>
+    (a.driver      || '').toLowerCase().includes(q) ||
+    (a.destination || '').toLowerCase().includes(q) ||
+    (a.purpose     || '').toLowerCase().includes(q) ||
+    (a.vehicle     || '').toLowerCase().includes(q) ||
+    (a.pic         || '').toLowerCase().includes(q)
+  );
+}
+
+/**
+ * Show one workspace and hide the rest.
+ * @param {'dashboard'|'pending'|'administration'} name
+ */
+function setWorkspace(name) {
+  currentWorkspace = name;
+  const isDash  = name === 'dashboard';
+  const isPend  = name === 'pending';
+  const isAdmWs = name === 'administration';
+
+  const timelineSurface = document.getElementById('v2TimelineSurface');
+  const driverDash      = document.getElementById('driverDashboard');
+  const pendingWs       = document.getElementById('v2PendingWorkspace');
+  const adminWs         = document.getElementById('v2AdministrationWorkspace');
+
+  if (timelineSurface) timelineSurface.style.display = isDash ? ''      : 'none';
+  if (driverDash)      driverDash.style.display      = isDash && isDriver() ? 'block' : 'none';
+  if (pendingWs)       pendingWs.style.display       = isPend  ? 'block' : 'none';
+  if (adminWs)         adminWs.style.display         = isAdmWs ? 'block' : 'none';
+
+  if (isDash) {
+    renderKPIStrip();
+  } else {
+    const kpiStrip   = document.getElementById('v2KpiStrip');
+    const dashHeader = document.getElementById('v2DashHeader');
+    if (kpiStrip)   kpiStrip.style.display   = 'none';
+    if (dashHeader) dashHeader.style.display = 'none';
+  }
+
+  if (isPend) renderPendingWorkspace();
+}
+
+/**
+ * Render pending request cards into #v2PendingWorkspace.
+ * Called on workspace switch and after approve/reject.
+ */
+function renderPendingWorkspace() {
+  const container = document.getElementById('v2PendingWorkspace');
+  if (!container) return;
+
+  const q = searchQuery.toLowerCase();
+  const pool = searchQuery
+    ? requests.filter(r =>
+        (r.driver        || '').toLowerCase().includes(q) ||
+        (r.requesterName || '').toLowerCase().includes(q) ||
+        (r.vehicle       || '').toLowerCase().includes(q) ||
+        (r.destination   || '').toLowerCase().includes(q) ||
+        (r.purpose       || '').toLowerCase().includes(q))
+    : requests;
+
+  const pending = pool.filter(r => r.status === 'pending');
+  const canAct  = isAdmin();
+
+  function buildCard(r) {
+    const ms  = r.createdAt ? Date.now() - new Date(r.createdAt).getTime() : null;
+    const age = ms !== null
+      ? ms < 3_600_000   ? `${Math.max(1, Math.floor(ms / 60_000))}m lalu`
+      : ms < 86_400_000  ? `${Math.floor(ms / 3_600_000)}j lalu`
+      : `${Math.floor(ms / 86_400_000)}h lalu`
+      : '';
+
+    const timeStr = r.fullDay
+      ? 'Penuh Hari'
+      : `${esc(r.startTime || '—')}–${esc(r.endTime || '—')}`;
+
+    const actions = canAct ? `
+      <div class="v2-pending-card-actions">
+        <button class="v2-pending-btn v2-pending-btn--approve"
+                data-action="approve" data-id="${esc(r.id)}" type="button">Setujui</button>
+        <button class="v2-pending-btn v2-pending-btn--reject"
+                data-action="reject" data-id="${esc(r.id)}" type="button">Tolak</button>
+      </div>` : '';
+
+    return `
+      <div class="v2-pending-card" data-request-id="${esc(r.id)}">
+        <div class="v2-pending-card-header">
+          <span class="v2-pending-status-pill">Menunggu</span>
+          ${age ? `<span class="v2-pending-age">${esc(age)}</span>` : ''}
+        </div>
+        <div class="v2-pending-card-body">
+          <div class="v2-pending-field">
+            <span class="v2-pending-label">Bidang</span>
+            <span class="v2-pending-value">${esc(r.requesterName || '—')}</span>
+          </div>
+          <div class="v2-pending-field">
+            <span class="v2-pending-label">Driver</span>
+            <span class="v2-pending-value">${esc(r.driver || '—')}</span>
+          </div>
+          <div class="v2-pending-field">
+            <span class="v2-pending-label">Kendaraan</span>
+            <span class="v2-pending-value">${esc(r.vehicle || '—')}</span>
+          </div>
+          <div class="v2-pending-field">
+            <span class="v2-pending-label">Tanggal</span>
+            <span class="v2-pending-value">${esc(r.startDate || '—')}</span>
+          </div>
+          <div class="v2-pending-field">
+            <span class="v2-pending-label">Waktu</span>
+            <span class="v2-pending-value">${timeStr}</span>
+          </div>
+          ${r.purpose ? `<div class="v2-pending-field v2-pending-field--full"><span class="v2-pending-label">Keperluan</span><span class="v2-pending-value">${esc(r.purpose)}</span></div>` : ''}
+          ${r.notes   ? `<div class="v2-pending-field v2-pending-field--full"><span class="v2-pending-label">Catatan</span><span class="v2-pending-value">${esc(r.notes)}</span></div>` : ''}
+        </div>
+        ${actions}
+      </div>`;
+  }
+
+  container.innerHTML = `
+    <div class="v2-workspace-header">
+      <h2 class="v2-workspace-title">Request Menunggu Approval</h2>
+      <p class="v2-workspace-subtitle">${pending.length ? `${pending.length} request menunggu` : 'Tidak ada request pending'}</p>
+    </div>
+    ${pending.length
+      ? `<div class="v2-pending-list">${pending.map(buildCard).join('')}</div>`
+      : '<div class="v2-pending-empty"><p>Semua request sudah diproses.</p></div>'}
+  `;
+
+  container.querySelectorAll('[data-action]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.action === 'approve') handleRequestApprove(btn.dataset.id);
+      else if (btn.dataset.action === 'reject') handleRequestReject(btn.dataset.id);
+    });
+  });
+}
+
+/**
+ * Inject #v2PendingWorkspace into .main-content. Hidden by default.
+ */
+function initV2PendingWorkspace() {
+  const ws = document.createElement('div');
+  ws.id = 'v2PendingWorkspace';
+  ws.className = 'v2-workspace';
+  ws.style.display = 'none';
+  document.querySelector('.main-content')?.appendChild(ws);
+  console.log('[VSM-9] Pending workspace injected');
+}
+
+/**
+ * Inject #v2AdministrationWorkspace into .main-content. Admin-only visibility.
+ */
+function initV2AdministrationWorkspace() {
+  const ws = document.createElement('div');
+  ws.id = 'v2AdministrationWorkspace';
+  ws.className = 'v2-workspace';
+  ws.style.display = 'none';
+  ws.innerHTML = `
+    <div class="v2-workspace-header">
+      <h2 class="v2-workspace-title">Administrasi</h2>
+      <p class="v2-workspace-subtitle">Kelola pengguna, peran, dan konfigurasi sistem.</p>
+    </div>
+    <div class="v2-admin-sections">
+      <div class="v2-admin-section">
+        <div class="v2-admin-section-header">
+          <span class="v2-admin-section-title">Manajemen User</span>
+          <button class="v2-admin-section-action" id="v2AdminOpenUsers" type="button">Kelola →</button>
+        </div>
+        <p class="v2-admin-section-desc">Tambah, edit, atau nonaktifkan akun pengguna.</p>
+      </div>
+      <div class="v2-admin-section v2-admin-section--disabled">
+        <div class="v2-admin-section-header">
+          <span class="v2-admin-section-title">Peran &amp; Izin</span>
+          <span class="v2-admin-section-badge">Segera</span>
+        </div>
+        <p class="v2-admin-section-desc">Konfigurasi hak akses per peran pengguna.</p>
+      </div>
+      <div class="v2-admin-section v2-admin-section--disabled">
+        <div class="v2-admin-section-header">
+          <span class="v2-admin-section-title">Konfigurasi</span>
+          <span class="v2-admin-section-badge">Segera</span>
+        </div>
+        <p class="v2-admin-section-desc">Pengaturan aplikasi dan integrasi.</p>
+      </div>
+    </div>
+  `;
+  document.querySelector('.main-content')?.appendChild(ws);
+
+  document.getElementById('v2AdminOpenUsers')?.addEventListener('click', () => {
+    document.getElementById('btnUserMgmt')?.click();
+  });
+
+  console.log('[VSM-9] Administration workspace injected');
+}
+
+/**
+ * Apply and persist a light/dark theme.
+ * @param {'light'|'dark'} theme
+ * @param {boolean} animate
+ */
+function applyTheme(theme, animate = false) {
+  if (animate) {
+    document.documentElement.classList.add('theme-anim');
+    setTimeout(() => document.documentElement.classList.remove('theme-anim'), 700);
+  }
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem('pbsi_theme', theme);
+
+  const btn = document.getElementById('v2TopbarThemeBtn');
+  if (!btn) return;
+
+  if (theme === 'dark') {
+    btn.setAttribute('aria-label', 'Ganti ke tema terang');
+    btn.innerHTML = `<svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15" aria-hidden="true"><path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/></svg>`;
+  } else {
+    btn.setAttribute('aria-label', 'Ganti ke tema gelap');
+    btn.innerHTML = `<svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15" aria-hidden="true"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/></svg>`;
+  }
+}
+
+/**
+ * Read saved theme preference and wire the theme toggle button.
+ * Must be called after initV2Topbar() so #v2TopbarThemeBtn exists.
+ */
+function initThemeManager() {
+  applyTheme(localStorage.getItem('pbsi_theme') || 'light', false);
+
+  document.getElementById('v2TopbarThemeBtn')?.addEventListener('click', () => {
+    const current = document.documentElement.getAttribute('data-theme') || 'light';
+    applyTheme(current === 'dark' ? 'light' : 'dark', true);
+  });
+}
+
+/**
+ * Approve a pending request. Extracted from DOMContentLoaded so the
+ * pending workspace can call the same path without duplication.
+ * @param {string} requestId
+ */
+function handleRequestApprove(requestId) {
+  if (!isAdmin()) return;
+
+  checkAssignmentSafety(assignments.length);
+
+  const request = requests.find(item => item.id === requestId);
+  const admin   = getCurrentUser();
+  if (!request || request.status !== 'pending') return;
+
+  const dates = expandDateRange(request.startDate, request.endDate);
+  if (dates.length === 0) {
+    showToast('Request tidak memiliki tanggal yang valid.');
+    return;
+  }
+
+  const conflictingDates = dates.filter(date =>
+    checkConflict(request.driver, request.startTime, request.endTime, date)
+  );
+  if (conflictingDates.length > 0) {
+    const dateList = conflictingDates.map(d => formatDateShort(d)).join(', ');
+    alert(
+      `Konflik jadwal terdeteksi pada:\n${dateList}\n\n` +
+      `Driver ${request.driver} sudah memiliki jadwal di waktu tersebut.\n` +
+      `Edit request sebelum approve.`
+    );
+    return;
+  }
+
+  const newAssignments = dates.map(date => requestToAssignment(request, admin, date));
+  assignments = [...assignments, ...newAssignments];
+
+  requests = requests.map(item => item.id === requestId
+    ? { ...item, status: 'approved', approvedBy: admin ? admin.name : '', approvedAt: new Date().toISOString() }
+    : item
+  );
+
+  updateAllModules();
+  setCurrentDate(request.startDate);
+  setCurrentDateForm(request.startDate);
+  saveAssignments(assignments);
+  newAssignments.forEach(a => saveOneAssignment(a));
+  saveRequests(requests);
+
+  const currentUser = getCurrentUser();
+  logAction({
+    userId:   currentUser?.id,
+    username: currentUser?.username,
+    action:   'request_approved',
+    targetId: requestId,
+    metadata: {
+      assignmentCount: newAssignments.length,
+      assignmentIds:   newAssignments.map(a => a.id),
+      beforeCount:     assignments.length - newAssignments.length,
+      afterCount:      assignments.length,
+      operationType:   'bulk_create',
+    },
+  });
+
+  renderViews();
+  updatePermissionUI();
+  if (currentWorkspace === 'pending') renderPendingWorkspace();
+  if (dates.length > 1) showToast(`✅ ${dates.length} assignment berhasil dibuat`);
+
+  sendRequestApprovedNotification(request, getUserByUsername);
+  if (newAssignments.length > 0) sendNewAssignmentNotificationToDriver(newAssignments[0], getUsers);
+}
+
+/**
+ * Reject a pending request. Extracted for reuse by renderPendingWorkspace().
+ * @param {string} requestId
+ */
+function handleRequestReject(requestId) {
+  if (!isAdmin()) return;
+  if (!confirm('Reject request ini?')) return;
+
+  const admin = getCurrentUser();
+  requests = requests.map(item => item.id === requestId
+    ? { ...item, status: 'rejected', approvedBy: admin ? admin.name : '', approvedAt: new Date().toISOString() }
+    : item
+  );
+
+  updateAllModules();
+  saveRequests(requests);
+  const currentUser = getCurrentUser();
+  logAction({
+    userId:      currentUser?.id,
+    username:    currentUser?.username,
+    displayName: currentUser?.name,
+    action:      'request_rejected',
+    targetId:    requestId,
+  });
+  updatePermissionUI();
+  if (currentWorkspace === 'pending') renderPendingWorkspace();
+
+  const rejectedRequest = requests.find(item => item.id === requestId);
+  if (rejectedRequest) sendRequestRejectedNotification(rejectedRequest, getUserByUsername);
+}
+
 /**
  * Main initialization saat DOM ready
  */
@@ -1338,9 +1770,45 @@ document.addEventListener('DOMContentLoaded', async () => {
     initV2Panel();
     // VSM-3: must run before sidebar-toggle and initDateControls() handler binding
     initV2Topbar();
-    initV2KpiStrip();          // VSM-4: inject KPI strip placeholder above timeline
-    initV2TimelineContainer(); // VSM-5: wrap timeline in elevated surface card
-    initV2DriverAvatars();     // VSM-5C Part 7: observer stamps data-initials onto driver rows
+    initV2KpiStrip();             // VSM-4: inject KPI strip placeholder above timeline
+    initV2TimelineContainer();    // VSM-5: wrap timeline in elevated surface card
+    initV2DriverAvatars();        // VSM-5C Part 7: observer stamps data-initials onto driver rows
+    initV2PendingWorkspace();     // VSM-9: inline pending workspace
+    initV2AdministrationWorkspace(); // VSM-9: admin-only administration workspace
+    initThemeManager();           // VSM-9: dark mode toggle wired to #v2TopbarThemeBtn
+  }
+
+  // VSM-9: Search input events — wired after topbar exists
+  const v2SearchInput = document.getElementById('v2SearchInput');
+  const v2SearchClear = document.getElementById('v2SearchClear');
+
+  if (v2SearchInput) {
+    v2SearchInput.addEventListener('input', () => {
+      searchQuery = v2SearchInput.value;
+      if (v2SearchClear) v2SearchClear.style.display = searchQuery ? 'flex' : 'none';
+      updateAllModules();
+      renderViews();
+      if (currentWorkspace === 'pending') renderPendingWorkspace();
+    });
+    v2SearchInput.addEventListener('keydown', e => {
+      if (e.key !== 'Escape') return;
+      searchQuery = '';
+      v2SearchInput.value = '';
+      if (v2SearchClear) v2SearchClear.style.display = 'none';
+      updateAllModules();
+      renderViews();
+      if (currentWorkspace === 'pending') renderPendingWorkspace();
+    });
+  }
+  if (v2SearchClear) {
+    v2SearchClear.addEventListener('click', () => {
+      searchQuery = '';
+      if (v2SearchInput) v2SearchInput.value = '';
+      v2SearchClear.style.display = 'none';
+      updateAllModules();
+      renderViews();
+      if (currentWorkspace === 'pending') renderPendingWorkspace();
+    });
   }
 
   // ── Populate version & app name elements from config ──
@@ -1642,119 +2110,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     updatePermissionUI();
   });
 
-  // ── Callback: Admin approve request ──
-  registerRequestApproveCallback((requestId) => {
-    if (!isAdmin()) return;
-
-    // Safety guard sebelum bulk create
-    checkAssignmentSafety(assignments.length);
-
-    const request = requests.find(item => item.id === requestId);
-    const admin = getCurrentUser();
-    if (!request || request.status !== 'pending') return;
-
-    // Expand the date range (works for single-day too)
-    const dates = expandDateRange(request.startDate, request.endDate);
-    if (dates.length === 0) {
-      showToast('Request tidak memiliki tanggal yang valid.');
-      return;
-    }
-
-    // ── Phase 5: Conflict detection across ALL dates ──
-    const conflictingDates = dates.filter(date =>
-      checkConflict(request.driver, request.startTime, request.endTime, date)
-    );
-
-    if (conflictingDates.length > 0) {
-      const dateList = conflictingDates
-        .map(d => formatDateShort(d))
-        .join(', ');
-      alert(
-        `Konflik jadwal terdeteksi pada:\n${dateList}\n\n` +
-        `Driver ${request.driver} sudah memiliki jadwal di waktu tersebut.\n` +
-        `Edit request sebelum approve.`
-      );
-      return;
-    }
-
-    // ── Phase 4: Create one assignment per date ──
-    const newAssignments = dates.map(date => requestToAssignment(request, admin, date));
-    assignments = [...assignments, ...newAssignments];
-
-    requests = requests.map(item => item.id === requestId
-      ? {
-          ...item,
-          status: 'approved',
-          approvedBy: admin ? admin.name : '',
-          approvedAt: new Date().toISOString(),
-        }
-      : item
-    );
-
-    updateAllModules();
-    setCurrentDate(request.startDate);
-    setCurrentDateForm(request.startDate);
-    saveAssignments(assignments); // localStorage only
-    // Surgical: hanya tulis assignments baru hasil approval, tidak overwrite semua
-    newAssignments.forEach(a => saveOneAssignment(a));
-    saveRequests(requests);
-
-    const currentUser = getCurrentUser();
-    logAction({
-      userId: currentUser?.id,
-      username: currentUser?.username,
-      action: 'request_approved',
-      targetId: requestId,
-      metadata: {
-        assignmentCount: newAssignments.length,
-        assignmentIds: newAssignments.map(a => a.id),
-        beforeCount: assignments.length - newAssignments.length,
-        afterCount: assignments.length,
-        operationType: 'bulk_create',
-      },
-    });
-
-    renderViews();
-    updatePermissionUI();
-
-    if (dates.length > 1) {
-      showToast(`✅ ${dates.length} assignment berhasil dibuat`);
-    }
-
-    // Notify requester (bidang) — non-blocking
-    sendRequestApprovedNotification(request, getUserByUsername);
-    // Notify driver once about the approved request — non-blocking
-    if (newAssignments.length > 0) {
-      sendNewAssignmentNotificationToDriver(newAssignments[0], getUsers);
-    }
-  });
-
-  // ── Callback: Admin reject request ──
-  registerRequestRejectCallback((requestId) => {
-    if (!isAdmin()) return;
-    if (!confirm('Reject request ini?')) return;
-
-    const admin = getCurrentUser();
-    requests = requests.map(item => item.id === requestId
-      ? {
-          ...item,
-          status: 'rejected',
-          approvedBy: admin ? admin.name : '',
-          approvedAt: new Date().toISOString(),
-        }
-      : item
-    );
-
-    updateAllModules();
-    saveRequests(requests);
-    const currentUser = getCurrentUser();
-    logAction({ userId: currentUser?.id, username: currentUser?.username, displayName: currentUser?.name, action: 'request_rejected', targetId: requestId });
-    updatePermissionUI();
-
-    // Notify requester (bidang) via Telegram — non-blocking
-    const rejectedRequest = requests.find(item => item.id === requestId);
-    if (rejectedRequest) sendRequestRejectedNotification(rejectedRequest, getUserByUsername);
-  });
+  // ── Callback: Admin approve/reject request — delegate to named handlers ──
+  registerRequestApproveCallback(handleRequestApprove);
+  registerRequestRejectCallback(handleRequestReject);
 
   // ── Callback: Comment thread — from request card (admin/bidang) ──
   registerRequestCommentCallback((requestId) => openCommentModal(requestId));

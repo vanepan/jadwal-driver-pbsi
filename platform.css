@@ -572,7 +572,7 @@ html.theme-anim *::after {
 .login-card .form-group input#loginPin {
   font-family: 'JetBrains Mono', monospace;
   letter-spacing: .2em;
-  text-align: center;
+  text-align: left;
   font-size: 16px;
 }
 .login-card .form-group input::placeholder { color: var(--faint); }
@@ -1695,6 +1695,36 @@ body.v2-shell-active .header {
 .v2-panel-footer-btn--logout:focus-visible {
   background: var(--danger-bg);
   color: var(--danger);
+}
+
+/* ── Version watermark — pinned below footer buttons ── */
+.v2-panel-version {
+  padding: 6px 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+
+.v2-panel-version-name,
+.v2-panel-version-num {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--faint);
+  display: block;
+}
+
+.v2-panel-version-name {
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+.v2-panel-version-num {
+  font-family: 'JetBrains Mono', 'DM Mono', monospace;
+  font-size: 10.5px;
+  white-space: nowrap;
 }
 
 
@@ -4509,4 +4539,406 @@ body.v2-shell-active #driverDashboard .dash-empty {
 @media (max-width: 480px) {
   .v2-list-card { padding: 10px 12px; }
   .v2-list-card-title { font-size: 13px; }
+}
+
+/* ============================================================
+   VSM-9 — Workspace System, Search, Dark Mode, Admin
+   ============================================================ */
+
+/* ── Shared workspace base ── */
+.v2-workspace {
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.v2-workspace-header {
+  margin-bottom: 16px;
+}
+
+.v2-workspace-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.02em;
+  margin: 0 0 4px;
+}
+
+.v2-workspace-subtitle {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin: 0;
+}
+
+/* ── Pending workspace cards ── */
+.v2-pending-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.v2-pending-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+.v2-pending-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.v2-pending-status-pill {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: var(--warn-bg, #fef3cd);
+  color: var(--warn, #92610a);
+  border: 1px solid rgba(148,100,32,.2);
+  line-height: 1.4;
+}
+
+.v2-pending-age {
+  font-size: 11px;
+  color: var(--faint);
+  font-family: 'JetBrains Mono', 'DM Mono', monospace;
+}
+
+.v2-pending-card-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+  margin-bottom: 12px;
+}
+
+.v2-pending-field {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.v2-pending-field--full {
+  grid-column: 1 / -1;
+}
+
+.v2-pending-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--faint);
+}
+
+.v2-pending-value {
+  font-size: 12.5px;
+  color: var(--text);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-pending-card-actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.v2-pending-btn {
+  flex: 1;
+  padding: 7px 12px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: filter var(--motion-fast) var(--motion-ease);
+}
+
+.v2-pending-btn--approve {
+  background: var(--ok, #1a7a4a);
+  color: #fff;
+  border-color: var(--ok, #1a7a4a);
+}
+.v2-pending-btn--approve:hover { filter: brightness(0.88); }
+
+.v2-pending-btn--reject {
+  background: var(--danger-bg, #fdecea);
+  color: var(--danger, #a8292f);
+  border-color: rgba(168,41,47,.2);
+}
+.v2-pending-btn--reject:hover {
+  background: var(--danger, #a8292f);
+  color: #fff;
+}
+
+.v2-pending-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--faint);
+  font-size: 13px;
+}
+
+/* ── Administration workspace ── */
+.v2-admin-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.v2-admin-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+.v2-admin-section--disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.v2-admin-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
+
+.v2-admin-section-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.v2-admin-section-action {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  padding: 0;
+  transition: opacity var(--motion-fast) var(--motion-ease);
+}
+.v2-admin-section-action:hover { opacity: 0.7; }
+
+.v2-admin-section-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 20px;
+  background: var(--hover);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+.v2-admin-section-desc {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* ── Footer user menu — Part H ── */
+.v2-panel-footer-user {
+  padding: 8px 10px;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.v2-footer-avatar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--motion-ease);
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+}
+.v2-footer-avatar:hover { background: var(--hover); }
+
+.v2-footer-avatar-circle {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-family: inherit;
+  user-select: none;
+  letter-spacing: 0.03em;
+}
+
+.v2-footer-user-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.v2-footer-display-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+.v2-footer-role-label {
+  font-size: 10.5px;
+  color: var(--faint);
+  white-space: nowrap;
+  display: block;
+}
+
+.v2-footer-chevron {
+  color: var(--faint);
+  flex-shrink: 0;
+  transition: transform var(--motion-fast) var(--motion-ease);
+}
+
+.v2-footer-avatar[aria-expanded="true"] .v2-footer-chevron {
+  transform: rotate(180deg);
+}
+
+.v2-footer-menu {
+  position: absolute;
+  bottom: calc(100% - 8px);
+  left: 10px;
+  right: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  z-index: 50;
+  animation: vsm6-box-in var(--motion-normal) var(--motion-ease) both;
+}
+
+.v2-footer-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--motion-fast) var(--motion-ease);
+}
+.v2-footer-menu-item:hover { background: var(--hover); }
+
+.v2-footer-menu-item--danger { color: var(--danger, #a8292f); }
+.v2-footer-menu-item--danger:hover { background: var(--danger-bg, #fdecea); }
+
+/* ── Interactive search — Part C ── */
+.v2-topbar-search--active {
+  pointer-events: auto !important;
+  user-select: auto !important;
+  cursor: text !important;
+}
+
+.v2-topbar-search-input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  font-size: 12.5px;
+  color: var(--text);
+  font-family: inherit;
+  min-width: 0;
+  padding: 0;
+}
+
+.v2-topbar-search-input::placeholder { color: var(--faint); }
+.v2-topbar-search-input::-webkit-search-cancel-button { display: none; }
+
+.v2-topbar-search-clear {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(0,0,0,.18);
+  color: var(--text);
+  border: none;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  font-family: inherit;
+  transition: background var(--motion-fast) var(--motion-ease);
+}
+.v2-topbar-search-clear:hover { background: rgba(0,0,0,.32); }
+
+[data-theme="dark"] .v2-topbar-search-clear {
+  background: rgba(255,255,255,.14);
+  color: var(--text);
+}
+[data-theme="dark"] .v2-topbar-search-clear:hover {
+  background: rgba(255,255,255,.24);
+}
+
+.v2-topbar-search--active:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(168,41,47,.1);
+}
+
+/* ── Rail avatar — hidden when panel footer owns user identity ── */
+body.v2-shell-active .v2-rail-avatar {
+  display: none;
+}
+
+/* ── Dark mode transition — Part D ── */
+/* Targeted containers only — avoid transitioning every DOM element */
+.theme-anim body,
+.theme-anim .app-layout,
+.theme-anim .v2-topbar,
+.theme-anim .v2-rail,
+.theme-anim .v2-panel,
+.theme-anim .main-area,
+.theme-anim .main-content,
+.theme-anim .v2-workspace,
+.theme-anim .v2-surface-card,
+.theme-anim .v2-list-card,
+.theme-anim .v2-pending-card,
+.theme-anim .v2-admin-section,
+.theme-anim .v2-footer-menu,
+.theme-anim .v2-topbar-search,
+.theme-anim .modal-container,
+.theme-anim .modal-backdrop {
+  transition:
+    background-color 280ms ease,
+    color 280ms ease,
+    border-color 200ms ease !important;
 }
