@@ -774,6 +774,7 @@ function _showIframePreview(htmlUrl) {
   if (!iframe) return;
 
   iframe.onload = () => {
+    _applyFitScale(iframe);
     _hideEl('pdfViewerLoading');
     _showEl('pdfViewerIframe', 'block');
     // Print is available as soon as the iframe is loaded
@@ -884,6 +885,47 @@ async function _sharePdf(pdfUrl, filename, assignment) {
     });
   } catch (e) {
     if (e.name !== 'AbortError') console.warn('[PDFViewer] Share error:', e);
+  }
+}
+
+/**
+ * Inject a CSS zoom override into the iframe content so the A4 page
+ * fits the container width on narrow screens (iPhone, Android).
+ *
+ * Why zoom not transform:scale — zoom collapses the layout box so no
+ * phantom whitespace appears below the scaled element.
+ *
+ * No-op when the container is already wide enough to show A4 naturally
+ * (desktop), or when same-origin iframe access is unavailable.
+ *
+ * @param {HTMLIFrameElement} iframe
+ */
+function _applyFitScale(iframe) {
+  try {
+    const doc       = iframe.contentDocument;
+    if (!doc) return;
+
+    const containerW = iframe.clientWidth;
+    if (!containerW) return;
+
+    const A4_PX = 794; // A4 at 96 dpi ≈ 210 mm
+    if (containerW >= A4_PX) return; // wide enough — no scaling needed
+
+    const scale = containerW / A4_PX;
+
+    const s = doc.createElement('style');
+    s.textContent =
+      /* Prevent horizontal scrollbar inside iframe */
+      'html,body{overflow-x:hidden!important}' +
+      /* Scale the A4 page to fit exactly */
+      '.page{zoom:' + scale + '!important;' +
+            'margin:0 auto!important}' +
+      /* Hide the screen-only toolbar that lives inside the HTML */
+      '.no-print,.print-bar{display:none!important}';
+    doc.head.appendChild(s);
+
+  } catch {
+    /* blob: URLs are always same-origin; guard exists only for safety */
   }
 }
 
