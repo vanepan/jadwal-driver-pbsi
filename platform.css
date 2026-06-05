@@ -1961,6 +1961,150 @@ body.v2-shell-active .v2-topbar {
   }
 }
 
+/* ============================================================
+   VSM-5 — Timeline Container
+
+   #v2TimelineSurface wraps .timeline-date-label, .timeline-wrapper,
+   and .legend as a single elevated card inside .main-content.
+
+   Injected by initV2TimelineContainer() in app.js ONLY when
+   visualShellV2 === true. When flag is false: element does not
+   exist in the DOM and every rule here has zero effect.
+
+   timeline.js is NOT modified. Document-root querySelector and
+   getElementById calls work unchanged after the reparent.
+
+   Pointer-down drag guard and all event listeners on moved
+   elements are preserved — listeners bind to the element
+   object, not to DOM position.
+
+   Specificity: all rules scoped under body.v2-shell-active
+   (≥ 0-2-0) beats style.css base rules (0-1-0 to 0-1-1).
+   padding-bottom on .main-content is never overridden so the
+   BP-S5 mobile nav clearance calc() remains active.
+   ============================================================ */
+
+/* ── .main-content padding — top/sides only ──
+   KPI strip owns top spacing (padding: 16px 16px 0 from VSM-4).
+   padding-bottom left untouched → BP-S5 mobile calc preserved. */
+body.v2-shell-active .main-content {
+  padding-top: 0;
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+/* ── Surface card — single elevated timeline container ── */
+body.v2-shell-active #v2TimelineSurface {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-md);
+  overflow: hidden;           /* clips border-radius; does NOT create scroll ctx */
+  margin-top: 16px;           /* gap between KPI strip and timeline */
+  min-height: 420px;          /* timeline remains dominant even with sparse data */
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Date label — V2 card header ── */
+body.v2-shell-active #v2TimelineSurface .timeline-date-label {
+  padding: 14px 16px 12px;
+  margin-bottom: 0;           /* override style.css margin-bottom: 10px */
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+/* ── Timeline wrapper — surface owns elevation, wrapper owns scroll ── */
+body.v2-shell-active #v2TimelineSurface .timeline-wrapper {
+  background: var(--surface);
+  border-radius: 0;           /* surface owns border-radius */
+  box-shadow: none;           /* surface owns elevation */
+  overflow-x: auto;           /* horizontal scroll preserved — unchanged */
+  flex: 1;                    /* grows to fill remaining height in surface */
+  min-height: 0;              /* flex shrink without overflow */
+}
+
+/* ── Legend — V2 footer strip ── */
+body.v2-shell-active #v2TimelineSurface .legend {
+  background: var(--surface-2, #FBFAF8);
+  border: none;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  padding: 8px 16px;
+  margin-top: 0;              /* override any style.css margin-top */
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ── Legend items — pill / chip style ── */
+body.v2-shell-active #v2TimelineSurface .legend-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 3px 10px 3px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  gap: 5px;
+}
+
+/* Circular swatch — inherits --swatch from existing platform.css rules */
+body.v2-shell-active #v2TimelineSurface .legend-item::before {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ── Mobile ≤767px ── */
+@media (max-width: 767px) {
+  body.v2-shell-active .main-content {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  body.v2-shell-active #v2TimelineSurface {
+    border-radius: 8px;
+    margin-top: 12px;
+    min-height: 320px;
+  }
+
+  body.v2-shell-active #v2TimelineSurface .timeline-date-label {
+    padding: 10px 12px 8px;
+    font-size: 14px;
+  }
+
+  body.v2-shell-active #v2TimelineSurface .legend {
+    padding: 6px 12px;
+    gap: 5px;
+  }
+
+  body.v2-shell-active #v2TimelineSurface .legend-item {
+    font-size: 11px;
+    padding: 2px 8px 2px 6px;
+  }
+}
+
+/* ── Small phone ≤600px ── */
+@media (max-width: 600px) {
+  body.v2-shell-active #v2TimelineSurface {
+    border-radius: 6px;
+    margin-top: 10px;
+    min-height: 280px;
+  }
+
+  body.v2-shell-active #v2TimelineSurface .timeline-date-label {
+    font-size: 13px;
+    padding: 8px 10px 6px;
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════════
    PDF VIEWER MODAL  (v1.3.1)
    Full-screen on mobile · 95vw×92vh centered on desktop.

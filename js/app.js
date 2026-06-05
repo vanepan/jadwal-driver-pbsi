@@ -842,6 +842,66 @@ function renderKPIStrip() {
 }
 
 /**
+ * VSM-5: Wrap .timeline-date-label, .timeline-wrapper, and .legend
+ * inside a single elevated #v2TimelineSurface card.
+ * Called only when flags.visualShellV2 === true, after initV2KpiStrip().
+ *
+ * DOM strategy: moves existing nodes — does NOT duplicate or recreate.
+ * All element IDs and classes are preserved unchanged.
+ *
+ * timeline.js safety: every query in timeline.js uses document.getElementById
+ * or document.querySelector from the document root, so reparenting elements
+ * has zero effect on timeline rendering, autoFocusTimeline(), syncTimelineScroll(),
+ * or the pointer-down drag guard.
+ *
+ * Event listeners on moved elements are preserved — addEventListener binds
+ * to the element object, not to its DOM position.
+ *
+ * Before:
+ *   .main-content > #v2KpiStrip
+ *   .main-content > .timeline-date-label  (#timelineDateLabel)
+ *   .main-content > .timeline-wrapper
+ *   .main-content > .legend
+ *   .main-content > #driverDashboard
+ *
+ * After:
+ *   .main-content > #v2KpiStrip
+ *   .main-content > #v2TimelineSurface
+ *                     > .timeline-date-label  (#timelineDateLabel)
+ *                     > .timeline-wrapper
+ *                     > .legend
+ *   .main-content > #driverDashboard  (stays outside surface)
+ */
+function initV2TimelineContainer() {
+  const mainContent = document.querySelector('.main-content');
+  if (!mainContent) return;
+
+  const dateLabel = document.getElementById('timelineDateLabel');
+  const tlWrapper = mainContent.querySelector('.timeline-wrapper');
+  const legend    = mainContent.querySelector('.legend');
+
+  if (!dateLabel || !tlWrapper) {
+    console.warn('[VSM-5] initV2TimelineContainer: required elements not found — aborting');
+    return;
+  }
+
+  const surface = document.createElement('div');
+  surface.id = 'v2TimelineSurface';
+
+  // Insert surface at the current position of .timeline-date-label
+  mainContent.insertBefore(surface, dateLabel);
+
+  // Move nodes into surface — appendChild preserves event listeners
+  surface.appendChild(dateLabel);
+  surface.appendChild(tlWrapper);
+  if (legend) surface.appendChild(legend);
+
+  // #driverDashboard is intentionally left outside the surface
+
+  console.log('[VSM-5] Timeline surface container initialised');
+}
+
+/**
  * Main initialization saat DOM ready
  */
 document.addEventListener('DOMContentLoaded', async () => {
@@ -856,7 +916,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     initV2Panel();
     // VSM-3: must run before sidebar-toggle and initDateControls() handler binding
     initV2Topbar();
-    initV2KpiStrip(); // VSM-4: inject KPI strip placeholder above timeline
+    initV2KpiStrip();          // VSM-4: inject KPI strip placeholder above timeline
+    initV2TimelineContainer(); // VSM-5: wrap timeline in elevated surface card
   }
 
   // ── Populate version & app name elements from config ──
