@@ -16,7 +16,7 @@ import { loadAssignments, saveAssignments, saveOneAssignment, removeOneAssignmen
 import { recoverAssignmentsFromRequests } from './recovery.js';
 import { initDriverSelect } from './drivers.js';
 import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate } from './timeline.js';
-import { initModalHandlers, registerEditCallback, registerDeleteCallback, registerStartCallback, registerCompleteCallback, registerCommentCallback as registerModalCommentCallback, setAssignments as setModalAssignments, updateDetailActionButtons } from './modal.js';
+import { initModalHandlers, openDetailModal, registerEditCallback, registerDeleteCallback, registerStartCallback, registerCompleteCallback, registerCommentCallback as registerModalCommentCallback, setAssignments as setModalAssignments, updateDetailActionButtons } from './modal.js';
 import { initFormHandlers, openFormModal, closeFormModal, registerSaveCallback, setAssignments as setAssignmentsForm, setCurrentDate as setCurrentDateForm, checkConflict, deleteAssignment } from './assignments.js';
 import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver } from './auth.js';
 import {
@@ -59,6 +59,11 @@ let auditLogs = [];
 // Feature flags — read once at startup from Firebase /feature_flags.
 // Default: all false. Populated by loadFeatureFlags() before any UI init.
 let appFlags = {};
+
+// VSM-8: Dashboard view state — 'timeline' | 'list'. In-memory only; no URL or storage.
+// Survives data updates and date navigation. Resets to 'timeline' on page reload.
+let currentDashboardView = 'timeline';
+let listDirty = true; // true = list view must re-render before next display
 
 /**
  * Filter assignments berdasarkan user role saat ini.
@@ -291,18 +296,27 @@ function updatePermissionUI() {
     bottomNavRequestsLabel.textContent = isAdmin() ? 'Antrian' : 'Riwayat';
   }
 
-  // ── VSM-1: V2 rail avatar initials — update on every auth change ──
-  // The element only exists when visualShellV2 flag is on; guard with getElementById.
+  // ── VSM-1 + VSM-5C Part 5: avatar initials — rail and topbar ──
+  // Both elements only exist when flag is on; guard with getElementById.
+  const displayName = currentUser?.name || currentUser?.displayName || currentUser?.username || '';
+  const initials = displayName
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map(w => (w[0] ?? '').toUpperCase())
+    .join('') || '?';
+
   const railInitials = document.getElementById('v2RailAvatarInitials');
-  if (railInitials) {
-    const displayName = currentUser?.name || currentUser?.displayName || currentUser?.username || '';
-    const initials = displayName
-      .trim()
-      .split(/\s+/)
-      .slice(0, 2)
-      .map(w => (w[0] ?? '').toUpperCase())
-      .join('') || '?';
-    railInitials.textContent = initials;
+  if (railInitials) railInitials.textContent = initials;
+
+  const topbarAvatar = document.getElementById('v2TopbarAvatar');
+  if (topbarAvatar) topbarAvatar.textContent = initials;
+
+  // VSM-7 Part 7: full role name in topbar profile card
+  const topbarRole = document.getElementById('v2TopbarRoleLabel');
+  if (topbarRole) {
+    const roleNames = { admin: 'Administrator', bidang: 'Bidang', driver: 'Driver', viewer: 'Viewer' };
+    topbarRole.textContent = roleNames[currentUser?.role] || '';
   }
 
   // ── VSM-2: V2 context panel role-gating ──
@@ -622,20 +636,27 @@ function initV2Panel() {
   // Dashboard nav: scroll timeline to top (same as bottomNavDashboard)
   document.getElementById('v2NavDashboard')?.addEventListener('click', () => {
     setV2PanelNavActive('v2NavDashboard');
+    const crumbTitle = document.getElementById('v2TopbarCrumb')?.querySelector('.v2-topbar-title');
+    if (crumbTitle) crumbTitle.textContent = 'Driver Operations';
     setCurrentDate(getCurrentDate());
-    renderTimeline();
+    renderViews();
     if (isDriver()) renderDriverDashboard();
   });
 
   // Pending nav: proxy to V1 #btnRequests (role-aware handler already wired)
   document.getElementById('v2NavPending')?.addEventListener('click', () => {
     setV2PanelNavActive('v2NavPending');
+    const label = isAdmin() ? 'Driver Operations › Antrian' : 'Driver Operations › Riwayat';
+    const crumbTitle = document.getElementById('v2TopbarCrumb')?.querySelector('.v2-topbar-title');
+    if (crumbTitle) crumbTitle.textContent = label;
     document.getElementById('btnRequests')?.click();
   });
 
   // Jadwal Saya: scroll to driver dashboard section
   document.getElementById('v2NavJadwalSaya')?.addEventListener('click', () => {
     setV2PanelNavActive('v2NavJadwalSaya');
+    const crumbTitle = document.getElementById('v2TopbarCrumb')?.querySelector('.v2-topbar-title');
+    if (crumbTitle) crumbTitle.textContent = 'Driver Operations › Jadwal Saya';
     document.getElementById('driverDashboard')?.scrollIntoView({ behavior: 'smooth' });
   });
 
@@ -679,18 +700,7 @@ function initV2Topbar() {
   topbar.className = 'v2-topbar';
   topbar.id = 'v2Topbar';
 
-  // ── Create new elements (breadcrumb + spacer) ──
-  const crumb = document.createElement('span');
-  crumb.id = 'v2TopbarCrumb';
-  crumb.textContent = 'Driver Operations';
-  crumb.setAttribute('aria-hidden', 'true'); // decorative — rail already labels module
-
-  const spacer = document.createElement('div');
-  spacer.className = 'v2-topbar-spacer';
-  spacer.setAttribute('aria-hidden', 'true');
-
   // ── Locate existing DOM elements to migrate ──
-  // Scope to .main-area .header to avoid matching elements outside the header.
   const header   = document.querySelector('.main-area .header');
   const toggler  = header?.querySelector('#sidebarToggle')
                    ?? document.getElementById('sidebarToggle');
@@ -699,25 +709,97 @@ function initV2Topbar() {
   const userArea = header?.querySelector('.header-user-area')
                    ?? document.querySelector('.header-user-area');
 
-  // Guard: abort if header is not found — V1 layout must be intact
   if (!header) {
     console.warn('[VSM-3] .header not found — topbar skipped');
     return;
   }
 
-  // ── Assemble topbar — DOM order drives flex layout ──
-  // Desktop (≥768px): [hamburger-hidden] [crumb] [date-nav] [spacer] [user-area]
-  // Mobile  (≤767px): [hamburger] [spacer] [user-area] row-1
-  //                   [date-nav full-width]             row-2  (via CSS order)
-  if (toggler)  topbar.appendChild(toggler);
-  topbar.appendChild(crumb);
-  if (dateNav)  topbar.appendChild(dateNav);
-  topbar.appendChild(spacer);
-  if (userArea) topbar.appendChild(userArea);
+  // ── Part 1 (VSM-7): Two-line breadcrumb — module label + section title ──
+  const crumb = document.createElement('div');
+  crumb.id = 'v2TopbarCrumb';
+  crumb.setAttribute('aria-hidden', 'true');
+  crumb.innerHTML = `
+    <span class="v2-topbar-label">DRIVER OPS</span>
+    <span class="v2-topbar-title">Driver Operations</span>
+  `;
 
-  // ── Insert as first child of .main-area, before the V1 .header shell ──
-  // The V1 .header is hidden via CSS (body.v2-shell-active .header { display:none })
-  // but stays in the DOM as a harmless empty shell for rollback safety.
+  // ── Part 2 (VSM-5C / VSM-7): Visual-only search field — no handlers ──
+  const searchField = document.createElement('div');
+  searchField.className = 'v2-topbar-search';
+  searchField.setAttribute('aria-hidden', 'true');
+  searchField.innerHTML = `
+    <svg viewBox="0 0 20 20" fill="currentColor" width="13" height="13" aria-hidden="true">
+      <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/>
+    </svg>
+    <span class="v2-topbar-search-placeholder">Cari driver, tujuan...</span>
+  `;
+
+  // ── Flex spacer ──
+  const spacer = document.createElement('div');
+  spacer.className = 'v2-topbar-spacer';
+  spacer.setAttribute('aria-hidden', 'true');
+
+  // ── Part 5 (VSM-7): Theme toggle — visual only, no click logic ──
+  const themeToggle = document.createElement('button');
+  themeToggle.className = 'v2-topbar-icon-btn v2-topbar-theme-btn';
+  themeToggle.setAttribute('type', 'button');
+  themeToggle.setAttribute('aria-label', 'Ganti tema (segera hadir)');
+  themeToggle.setAttribute('aria-hidden', 'true');
+  themeToggle.innerHTML = `
+    <svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15" aria-hidden="true">
+      <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>
+    </svg>
+  `;
+
+  // ── Parts 6 + 7 (VSM-7): Restructure userArea as profile card ──
+  // Extracts #btnHeaderNotif as standalone topbar icon button.
+  // Wraps displayName + new role label in a flex column .v2-topbar-user-info.
+  // #roleBadge stays in DOM (V1 compat) but is hidden by CSS.
+  let notifBtn = null;
+  if (userArea) {
+    // Extract notif button — it becomes a sibling icon button in the topbar
+    notifBtn = userArea.querySelector('#btnHeaderNotif');
+    if (notifBtn) notifBtn.remove();
+
+    const displayName = userArea.querySelector('#headerDisplayName');
+    const roleBadge   = userArea.querySelector('#roleBadge');
+
+    // Avatar circle (initials filled by updatePermissionUI())
+    const topbarAvatar = document.createElement('span');
+    topbarAvatar.id = 'v2TopbarAvatar';
+    topbarAvatar.className = 'v2-topbar-avatar';
+    topbarAvatar.setAttribute('aria-hidden', 'true');
+    topbarAvatar.textContent = '?';
+
+    // User info column: display name + full role text
+    const userInfo = document.createElement('div');
+    userInfo.className = 'v2-topbar-user-info';
+    if (displayName) userInfo.appendChild(displayName); // moves existing V1 element
+    const roleLabel = document.createElement('span');
+    roleLabel.id = 'v2TopbarRoleLabel';
+    roleLabel.className = 'v2-topbar-user-role';
+    userInfo.appendChild(roleLabel);
+
+    // Rebuild userArea — clear, then avatar | userInfo | roleBadge(hidden)
+    while (userArea.firstChild) userArea.removeChild(userArea.firstChild);
+    userArea.appendChild(topbarAvatar);
+    userArea.appendChild(userInfo);
+    if (roleBadge) userArea.appendChild(roleBadge); // hidden by CSS in V2 mode
+  }
+
+  // ── Assemble topbar ──
+  // Desktop: [hamburger] [crumb] [search] [date-nav] [spacer] [theme] [notif] [user-card]
+  // Mobile row-1: [hamburger] [spacer] [user-card]
+  // Mobile row-2: [date-nav full-width]
+  if (toggler)   topbar.appendChild(toggler);
+  topbar.appendChild(crumb);
+  topbar.appendChild(searchField);
+  if (dateNav)   topbar.appendChild(dateNav);
+  topbar.appendChild(spacer);
+  topbar.appendChild(themeToggle);
+  if (notifBtn)  topbar.appendChild(notifBtn);
+  if (userArea)  topbar.appendChild(userArea);
+
   const mainArea = document.querySelector('.main-area');
   if (mainArea) {
     mainArea.insertBefore(topbar, header);
@@ -736,34 +818,68 @@ function initV2Topbar() {
  * Placement: .main-content > #v2KpiStrip > .timeline-date-label > .timeline-wrapper
  */
 function initV2KpiStrip() {
+  // Gap 3: section label above KPI strip — visibility synced in renderKPIStrip()
+  const dashHeader = document.createElement('div');
+  dashHeader.id = 'v2DashHeader';
+  dashHeader.className = 'v2-dash-header p-shead';
+  dashHeader.style.display = 'none';
+  dashHeader.innerHTML = '<h2>Operasional</h2><div class="p-line"></div>';
+
   const strip = document.createElement('div');
   strip.id = 'v2KpiStrip';
   strip.className = 'v2-kpi-strip';
   strip.style.display = 'none'; // renderKPIStrip() reveals it after auth resolves
   strip.setAttribute('aria-label', 'Ringkasan operasional hari ini');
 
+  // Gap 1 + VSM-5C Part 3: icon + hierarchy + subtitle per card
   strip.innerHTML = `
-    <div class="v2-kpi-card">
+    <div class="v2-kpi-card" data-kpi="aktif">
+      <div class="v2-kpi-icon" aria-hidden="true">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16">
+          <path d="M8 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z"/>
+          <path d="M3 4a1 1 0 00-1 1v10a1 1 0 001 1h1.05a2.5 2.5 0 014.9 0H11a1 1 0 001-1V5a1 1 0 00-1-1H3zM14 7a1 1 0 00-1 1v6.05A2.5 2.5 0 0115.95 16H17a1 1 0 001-1v-5a1 1 0 00-.293-.707l-2-2A1 1 0 0015 7h-1z"/>
+        </svg>
+      </div>
       <span class="v2-kpi-label">Trip Aktif</span>
       <span class="v2-kpi-value" id="v2KpiTripAktif" aria-live="polite">—</span>
+      <span class="v2-kpi-sub">Sedang berlangsung</span>
     </div>
-    <div class="v2-kpi-card">
+    <div class="v2-kpi-card" data-kpi="bertugas">
+      <div class="v2-kpi-icon" aria-hidden="true">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16">
+          <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/>
+        </svg>
+      </div>
       <span class="v2-kpi-label">Driver Bertugas</span>
       <span class="v2-kpi-value" id="v2KpiDriverBertugas" aria-live="polite">—</span>
+      <span class="v2-kpi-sub">Sedang ditugaskan</span>
     </div>
-    <div class="v2-kpi-card">
-      <span class="v2-kpi-label">Menunggu</span>
+    <div class="v2-kpi-card" data-kpi="menunggu">
+      <div class="v2-kpi-icon" aria-hidden="true">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16">
+          <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/>
+        </svg>
+      </div>
+      <span class="v2-kpi-label">Menunggu Approval</span>
       <span class="v2-kpi-value" id="v2KpiMenunggu" aria-live="polite">—</span>
+      <span class="v2-kpi-sub">Perlu ditinjau</span>
     </div>
-    <div class="v2-kpi-card">
+    <div class="v2-kpi-card" data-kpi="selesai">
+      <div class="v2-kpi-icon" aria-hidden="true">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16">
+          <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+        </svg>
+      </div>
       <span class="v2-kpi-label">Selesai Hari Ini</span>
       <span class="v2-kpi-value" id="v2KpiSelesai" aria-live="polite">—</span>
+      <span class="v2-kpi-sub">Penugasan tuntas</span>
     </div>
   `;
 
   const mainContent = document.querySelector('.main-content');
   if (mainContent) {
-    mainContent.insertBefore(strip, mainContent.firstChild);
+    mainContent.insertBefore(dashHeader, mainContent.firstChild);
+    mainContent.insertBefore(strip, dashHeader.nextSibling);
   }
 
   console.log('[VSM-4] KPI strip injected');
@@ -787,12 +903,15 @@ function renderKPIStrip() {
 
   // Driver role: personal dashboard is the KPI surface. Strip absent.
   // Unauthenticated: no data to show.
+  const dashHeader = document.getElementById('v2DashHeader');
   if (!currentUser || isDriver()) {
     strip.style.display = 'none';
+    if (dashHeader) dashHeader.style.display = 'none';
     return;
   }
 
   strip.style.display = 'grid';
+  if (dashHeader) dashHeader.style.display = 'flex';
 
   // System date — always reflects today, not the timeline's viewed date.
   const sysDate = new Date().toISOString().split('T')[0];
@@ -839,6 +958,155 @@ function renderKPIStrip() {
   if (kv2) kv2.textContent = String(driverBertugas);
   if (kv3) kv3.textContent = String(menunggu);
   if (kv4) kv4.textContent = String(selesai);
+}
+
+/* ============================================================
+   VSM-8 — Timeline / List View
+   ============================================================ */
+
+/**
+ * HTML-escape helper for safe innerHTML injection.
+ * Identical implementation to driver-dashboard.js esc() — defined
+ * locally to keep renderListView() free of cross-module dependencies.
+ * @param {*} value
+ * @returns {string}
+ */
+function esc(value) {
+  const d = document.createElement('div');
+  d.textContent = String(value ?? '');
+  return d.innerHTML;
+}
+
+/** Returns the HTML string for the list-view empty state. */
+function buildListEmpty() {
+  return `
+    <div class="v2-list-empty">
+      <div class="v2-list-empty-icon" aria-hidden="true">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="22" height="22">
+          <path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"/>
+        </svg>
+      </div>
+      <p>Tidak ada jadwal pada tanggal ini</p>
+    </div>
+  `;
+}
+
+/**
+ * Returns the HTML string for a single assignment list card.
+ * All user-controlled fields are escaped through esc().
+ * @param {Object} a - Assignment object from in-memory assignments[]
+ */
+function buildListCard(a) {
+  const status      = a.status || 'assigned';
+  const statusMap   = { assigned: 'Dijadwalkan', started: 'Berlangsung', completed: 'Selesai', pending: 'Menunggu', approved: 'Disetujui' };
+  const statusLabel = statusMap[status] || status;
+  const timeStr     = a.fullDay ? 'Penuh Hari' : `${esc(a.startTime)}–${esc(a.endTime)}`;
+  const title       = esc(a.purpose || a.destination || '—');
+  const driver      = esc(a.driver  || '—');
+  const vehicle     = esc(a.vehicle || '—');
+  const dest        = esc(a.destination || '—');
+
+  return `
+    <div class="v2-list-card v2-list-card--${esc(status)}"
+         data-list-id="${esc(a.id)}"
+         role="button" tabindex="0"
+         aria-label="${title}">
+      <div class="v2-list-card-time">${timeStr}</div>
+      <div class="v2-list-card-body">
+        <div class="v2-list-card-title">${title}</div>
+        <div class="v2-list-card-meta">
+          <span>${driver}</span>
+          <span class="v2-list-vehicle-chip" data-vehicle="${vehicle}">${vehicle}</span>
+          <span>${dest}</span>
+        </div>
+      </div>
+      <div class="v2-list-card-status">
+        <span class="v2-list-status-pill v2-list-status-pill--${esc(status)}">${esc(statusLabel)}</span>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Render #v2ListView from the already-loaded in-memory assignments array.
+ *
+ * Data contract:
+ *   assignments[]    — module-scope; already role-filtered by updateAllModules()
+ *   getCurrentDate() — imported from timeline.js; the currently viewed date
+ *
+ * No Firebase reads. No business logic. Pure presentation.
+ *
+ * Event listeners are wired via delegation on the container in
+ * initV2TimelineContainer() and survive every innerHTML replacement here.
+ */
+function renderListView() {
+  const container = document.getElementById('v2ListView');
+  if (!container) return; // flag off — container not in DOM
+
+  const date = getCurrentDate();
+  const dayAssignments = assignments
+    .filter(a => a.date === date)
+    .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+
+  container.innerHTML = dayAssignments.length
+    ? dayAssignments.map(buildListCard).join('')
+    : buildListEmpty();
+}
+
+/**
+ * Activate a dashboard view and manage the lazy-render dirty flag.
+ *
+ * Lazy refresh strategy:
+ *   'list'     → render only when listDirty; show list, hide timeline
+ *   'timeline' → no render triggered; show timeline, hide list
+ *
+ * View switching never calls renderTimeline() — the timeline engine
+ * is unaffected by view changes.
+ *
+ * @param {'timeline'|'list'} view
+ */
+function setDashboardView(view) {
+  currentDashboardView = view;
+
+  const tlView  = document.getElementById('v2TimelineView');
+  const lstView = document.getElementById('v2ListView');
+
+  if (view === 'list') {
+    if (listDirty) { renderListView(); listDirty = false; }
+    tlView ?.classList.remove('v2-view-active');
+    lstView?.classList.add('v2-view-active');
+  } else {
+    lstView?.classList.remove('v2-view-active');
+    tlView ?.classList.add('v2-view-active');
+  }
+
+  // Sync toggle button active state + ARIA
+  document.querySelectorAll('.v2-tl-view-btn[data-view]').forEach(btn => {
+    const active = btn.dataset.view === view;
+    btn.classList.toggle('v2-tl-view-btn--active', active);
+    btn.setAttribute('aria-current', active ? 'true' : 'false');
+  });
+}
+
+/**
+ * Lazy-aware render dispatcher — replaces all direct renderTimeline() calls.
+ *
+ * Timeline always renders (preserves existing engine behaviour).
+ * List only renders when it is the active view; otherwise it is marked dirty
+ * so the next setDashboardView('list') call renders it before display.
+ *
+ * This is the single change to the data-update pipeline: every previous
+ * renderTimeline() call site now calls renderViews() instead.
+ */
+function renderViews() {
+  renderTimeline(); // always — unchanged behaviour, engine state fully preserved
+
+  if (currentDashboardView === 'list') {
+    renderListView();
+    listDirty = false;
+  } else {
+    listDirty = true; // data changed while list is hidden — mark stale
+  }
 }
 
 /**
@@ -891,14 +1159,138 @@ function initV2TimelineContainer() {
   // Insert surface at the current position of .timeline-date-label
   mainContent.insertBefore(surface, dateLabel);
 
-  // Move nodes into surface — appendChild preserves event listeners
-  surface.appendChild(dateLabel);
-  surface.appendChild(tlWrapper);
-  if (legend) surface.appendChild(legend);
+  // VSM-5B Gap 2 + VSM-5C Part 6: .v2-tl-header card header.
+  // Left: title "Papan Jadwal" + subtitle. Right: view toggle + date badge.
+  // #timelineDateLabel is MOVED (not cloned) — ID and timeline.js updates preserved.
+  const tlHeader = document.createElement('div');
+  tlHeader.className = 'v2-tl-header';
+
+  // Left group: title stack
+  const tlLeft = document.createElement('div');
+  tlLeft.className = 'v2-tl-header-left';
+
+  const tlTitle = document.createElement('span');
+  tlTitle.className = 'v2-tl-title';
+  tlTitle.textContent = 'Papan Jadwal';
+
+  const tlSub = document.createElement('span');
+  tlSub.className = 'v2-tl-sub';
+  tlSub.textContent = '16 jam • 06:00–21:00';
+  tlSub.setAttribute('aria-hidden', 'true');
+
+  tlLeft.appendChild(tlTitle);
+  tlLeft.appendChild(tlSub);
+
+  // Right group: view toggle + date badge
+  const tlRight = document.createElement('div');
+  tlRight.className = 'v2-tl-header-right';
+
+  // ── VSM-8: View toggle — fully functional (replaces visual-only from VSM-5C) ──
+  // Buttons are created programmatically so data-view attributes and handlers
+  // can be attached before they enter the DOM.
+  const viewToggle = document.createElement('div');
+  viewToggle.className = 'v2-tl-view-toggle';
+  viewToggle.setAttribute('role', 'group');
+  viewToggle.setAttribute('aria-label', 'Pilih tampilan');
+
+  const tlViewBtn = document.createElement('button');
+  tlViewBtn.className = 'v2-tl-view-btn v2-tl-view-btn--active';
+  tlViewBtn.type = 'button';
+  tlViewBtn.dataset.view = 'timeline';
+  tlViewBtn.setAttribute('aria-current', 'true');
+  tlViewBtn.textContent = 'Timeline';
+  tlViewBtn.addEventListener('click', () => setDashboardView('timeline'));
+
+  const listViewBtn = document.createElement('button');
+  listViewBtn.className = 'v2-tl-view-btn';
+  listViewBtn.type = 'button';
+  listViewBtn.dataset.view = 'list';
+  listViewBtn.setAttribute('aria-current', 'false');
+  listViewBtn.textContent = 'Daftar';
+  listViewBtn.addEventListener('click', () => setDashboardView('list'));
+
+  viewToggle.appendChild(tlViewBtn);
+  viewToggle.appendChild(listViewBtn);
+
+  tlRight.appendChild(viewToggle);
+  tlRight.appendChild(dateLabel); // moves existing node — event listeners preserved
+
+  tlHeader.appendChild(tlLeft);
+  tlHeader.appendChild(tlRight);
+
+  // ── VSM-8: #v2TimelineView — wraps .timeline-wrapper + .legend ──
+  // CSS .v2-view-container / .v2-view-active controls display:flex/none.
+  // Both containers stay mounted; only CSS class changes on toggle.
+  const timelineView = document.createElement('div');
+  timelineView.id = 'v2TimelineView';
+  timelineView.className = 'v2-view-container v2-view-active';
+
+  timelineView.appendChild(tlWrapper);
+  if (legend) timelineView.appendChild(legend);
+
+  // ── VSM-8: #v2ListView — initially hidden; filled by renderListView() ──
+  // Event listeners wired HERE via delegation so they survive every
+  // renderListView() innerHTML replacement.
+  // Opens the SAME openDetailModal() used by timeline blocks — no new modal path.
+  const listView = document.createElement('div');
+  listView.id = 'v2ListView';
+  listView.className = 'v2-view-container';
+  listView.setAttribute('aria-live', 'polite');
+
+  listView.addEventListener('click', (e) => {
+    const card = e.target.closest('[data-list-id]');
+    if (card) openDetailModal(card.dataset.listId);
+  });
+  listView.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const card = e.target.closest('[data-list-id]');
+    if (card) { e.preventDefault(); openDetailModal(card.dataset.listId); }
+  });
+
+  surface.appendChild(tlHeader);
+  surface.appendChild(timelineView);
+  surface.appendChild(listView);
+
+  // Safety assertion — timeline.js must still be able to reach #timelineDateLabel
+  console.assert(
+    document.getElementById('timelineDateLabel') !== null,
+    '[VSM-5B] #timelineDateLabel unreachable after header restructure'
+  );
 
   // #driverDashboard is intentionally left outside the surface
 
   console.log('[VSM-5] Timeline surface container initialised');
+}
+
+/**
+ * VSM-5C Part 7: Add data-initials attribute to .driver-label elements so
+ * CSS ::before can render an avatar circle without touching timeline.js.
+ *
+ * Uses MutationObserver on #timelineBody — fires automatically after every
+ * renderDriverRows() call. timeline.js is NOT modified.
+ *
+ * Only called when flags.visualShellV2 === true.
+ */
+function initV2DriverAvatars() {
+  const body = document.getElementById('timelineBody');
+  if (!body) return;
+
+  function stamp() {
+    body.querySelectorAll('.driver-label:not([data-initials])').forEach(label => {
+      const name = label.querySelector('.driver-name')?.textContent?.trim() || '';
+      const initials = name
+        .split(/\s+/)
+        .slice(0, 2)
+        .map(w => (w[0] ?? '').toUpperCase())
+        .join('') || '?';
+      label.setAttribute('data-initials', initials);
+    });
+  }
+
+  stamp(); // initial pass for any rows already in DOM
+  const observer = new MutationObserver(stamp);
+  observer.observe(body, { childList: true, subtree: false });
+  console.log('[VSM-5C] Driver avatar observer initialised');
 }
 
 /**
@@ -918,6 +1310,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initV2Topbar();
     initV2KpiStrip();          // VSM-4: inject KPI strip placeholder above timeline
     initV2TimelineContainer(); // VSM-5: wrap timeline in elevated surface card
+    initV2DriverAvatars();     // VSM-5C Part 7: observer stamps data-initials onto driver rows
   }
 
   // ── Populate version & app name elements from config ──
@@ -1002,7 +1395,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('bottomNavDashboard')?.addEventListener('click', () => {
     setBottomNavActive('bottomNavDashboard');
     setCurrentDate(getCurrentDate()); // resets lastAutoFocusedDate
-    renderTimeline();
+    renderViews();
     if (isDriver()) renderDriverDashboard();
   });
 
@@ -1056,7 +1449,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initModalHandlers();                   // Setup modal events
   initRequestHandlers();                 // Setup request workflow events
   initCommentHandlers();                 // Setup comment thread events
-  renderTimeline();                      // Render timeline pertama kali
+  renderViews();                         // Render timeline + list view pertama kali
   updatePermissionUI();                  // Disable tombol sesuai role
   updateAdminButtons();                  // Show admin controls properly
   setNotificationData({
@@ -1116,7 +1509,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('Firebase data updated from another device');
     assignments = updatedAssignments.map(normalizeAssignmentStatus);
     updateAllModules();   // also calls setDashboardAssignments + renderDriverDashboard
-    renderTimeline();
+    renderViews();
     checkAndSendH1Reminders(assignments, requests, getUserByUsername, getUsers);
     checkAndSendHoursReminders(assignments, requests, getUserByUsername, getUsers);
   });
@@ -1186,7 +1579,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       },
     });
 
-    renderTimeline();
+    renderViews();
 
     // Notify driver when admin creates a new assignment directly — non-blocking
     if (isNewAssignment && newAssignment) {
@@ -1291,7 +1684,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       },
     });
 
-    renderTimeline();
+    renderViews();
     updatePermissionUI();
 
     if (dates.length > 1) {
@@ -1378,7 +1771,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       },
     });
 
-    renderTimeline();
+    renderViews();
 
     console.log(`Assignment ${assignmentId} deleted`);
   });
@@ -1408,7 +1801,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateAllModules();
     saveAssignments(assignments); // localStorage only
     saveOneAssignment(assignments[idx]); // Surgical: hanya update record ini di Firebase
-    renderTimeline();
+    renderViews();
 
     logAction({
       userId: currentUser?.id,
@@ -1458,7 +1851,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateAllModules();
     saveAssignments(assignments); // localStorage only
     saveOneAssignment(assignments[idx]); // Surgical: hanya update record ini di Firebase
-    renderTimeline();
+    renderViews();
 
     logAction({
       userId: currentUser?.id,

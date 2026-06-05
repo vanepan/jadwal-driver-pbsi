@@ -2054,12 +2054,14 @@ body.v2-shell-active #v2TimelineSurface .legend-item {
   gap: 5px;
 }
 
-/* Circular swatch — inherits --swatch from existing platform.css rules */
+/* Circular swatch — inherits --swatch from .legend-item[data-vehicle="*"] rules */
 body.v2-shell-active #v2TimelineSurface .legend-item::before {
+  content: '';                 /* explicit — guarantees pseudo-element renders */
   width: 8px;
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
+  background: var(--swatch);  /* overrides hardcoded V1 hex from style.css */
 }
 
 /* ── Mobile ≤767px ── */
@@ -2364,4 +2366,2147 @@ body.v2-shell-active #v2TimelineSurface .legend-item::before {
   .pdf-viewer__toolbar {
     padding-bottom: calc(8px + env(safe-area-inset-bottom));
   }
+}
+
+
+/* ============================================================
+   VSM-5B — Dashboard Modernization
+
+   All rules here are purely additive. Every selector is either:
+     (a) scoped under body.v2-shell-active so it has zero effect
+         when visualShellV2 === false, or
+     (b) an attribute selector on an element that only exists in
+         the DOM when the flag is on.
+
+   No existing rules in this file are modified here — Gap 5
+   (legend swatch) was patched inline in the VSM-5 block above.
+
+   Gaps implemented:
+     1  KPI card semantic accent bars (data-kpi selectors)
+     2  .v2-tl-header card header for timeline surface
+     3  #v2DashHeader section label above KPI strip
+     4  Driver dashboard V2 token overrides
+     7  KPI 2×2 grid at 768–900px tablet breakpoint
+   ============================================================ */
+
+
+/* ── Gap 3: Section label above KPI strip ──────────────────────
+   #v2DashHeader is injected by initV2KpiStrip() only when the
+   flag is on. .p-shead (already defined above) provides flex
+   layout, gap, and child typography. This rule adds vertical
+   positioning within .main-content.                            */
+#v2DashHeader {
+  padding: 14px 16px 0;
+  box-sizing: border-box;
+}
+
+@media (max-width: 767px) {
+  #v2DashHeader { padding: 12px 8px 0; }
+}
+
+
+/* ── Gap 1: KPI card semantic left-edge accent bars ────────────
+   .v2-kpi-card[data-kpi="*"] specificity (0-2-0) beats
+   .v2-kpi-card (0-1-0) so border-left overrides correctly.
+   Left-edge bar is consistent with .notif-priority-* and the
+   .v2-panel-nav-item--active::before patterns already in use.  */
+.v2-kpi-card[data-kpi="aktif"]   { border-left: 3px solid var(--info);          }
+.v2-kpi-card[data-kpi="menunggu"]{ border-left: 3px solid var(--warn);          }
+.v2-kpi-card[data-kpi="selesai"] { border-left: 3px solid var(--ok);            }
+.v2-kpi-card[data-kpi="bertugas"]{ border-left: 3px solid var(--border-strong); }
+
+/* Value colour — semantic accent when metric is meaningful */
+.v2-kpi-card[data-kpi="aktif"]    .v2-kpi-value { color: var(--info);  }
+.v2-kpi-card[data-kpi="menunggu"] .v2-kpi-value { color: var(--warn);  }
+.v2-kpi-card[data-kpi="selesai"]  .v2-kpi-value { color: var(--ok);    }
+/* bertugas stays --text (neutral) */
+
+
+/* ── Gap 7: KPI 2×2 grid at 768–900px tablet ───────────────────
+   At 768px content width = 486px; 4-column cards are ~101px wide.
+   "Selesai Hari Ini" label wraps at that width. Switch to 2×2 at
+   the 768–900px window for readable, breathable cards.
+   #v2KpiStrip only exists in DOM when flag is on → no V1 impact. */
+@media (min-width: 768px) and (max-width: 900px) {
+  #v2KpiStrip {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+}
+
+
+/* ── Gap 2: .v2-tl-header — timeline card header row ───────────
+   Replaces the single .timeline-date-label card header with a
+   two-part row: "Timeline Board" title (left) + date badge (right).
+
+   IMPORTANT: #timelineDateLabel keeps its ID and is moved (not
+   cloned) inside .v2-tl-header. All timeline.js textContent
+   updates targeting getElementById('timelineDateLabel') continue
+   to work — DOM position does not affect getElementById.
+
+   The old VSM-5 rule for .timeline-date-label set padding,
+   border-bottom and background directly on the date element.
+   Those properties now belong to .v2-tl-header (the container).
+   The overrides below use higher specificity (1-3-2 > 1-2-2)
+   to reset the old date-label styles.                           */
+
+/* Header row — owns the border-bottom and padding that the
+   old .timeline-date-label rule previously carried.            */
+body.v2-shell-active #v2TimelineSurface .v2-tl-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* "Timeline Board" — section label, left side */
+body.v2-shell-active #v2TimelineSurface .v2-tl-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Date badge — right side; resets old full-width header styling */
+body.v2-shell-active #v2TimelineSurface .v2-tl-header .timeline-date-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  /* Reset VSM-5 full-width header properties */
+  padding: 0;
+  margin-bottom: 0;
+  border-bottom: none;
+  background: transparent;
+  flex: 1;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+/* Mobile ≤767px: tighter header padding */
+@media (max-width: 767px) {
+  body.v2-shell-active #v2TimelineSurface .v2-tl-header {
+    padding: 10px 12px;
+  }
+  body.v2-shell-active #v2TimelineSurface .v2-tl-title {
+    font-size: 11px;
+  }
+  body.v2-shell-active #v2TimelineSurface .v2-tl-header .timeline-date-label {
+    font-size: 12px;
+    padding: 0;
+  }
+}
+
+/* Small phone ≤600px */
+@media (max-width: 600px) {
+  body.v2-shell-active #v2TimelineSurface .v2-tl-header {
+    padding: 8px 10px;
+  }
+  body.v2-shell-active #v2TimelineSurface .v2-tl-header .timeline-date-label {
+    font-size: 11px;
+  }
+}
+
+
+/* ── Gap 4: Driver dashboard V2 token overrides ────────────────
+   All rules scoped to body.v2-shell-active #driverDashboard so
+   they are inert when visualShellV2 === false.
+
+   driver-dashboard.js is NOT modified. CSS targets the V1 class
+   names it generates. Specificity (body 0-1-0 + #driverDashboard
+   1-0-0 + .dash-card 0-1-0 = 1-2-0) beats style.css base rules
+   (0-1-0) on every property.
+
+   Audit of driver-dashboard.js class output:
+     .dash-section, .dash-section--active
+     .dash-section-title
+     .dash-card, .dash-card--{assigned|started|completed|muted}
+     .dash-card-header, .dash-card-title, .dash-card-destination
+     .dash-card-meta, .dash-meta-item, .dash-card-pic
+     .badge-status, .badge-status--{pending|approved|assigned|started|completed}
+     .vehicle-badge  (background from inline style — not overridable via token)
+     .dash-empty                                                */
+
+/* Dashboard wrapper */
+body.v2-shell-active #driverDashboard {
+  padding: 16px 0 80px;
+  max-width: none;
+}
+
+/* Section wrapper */
+body.v2-shell-active #driverDashboard .dash-section {
+  margin-bottom: 24px;
+}
+
+/* Section title — aligns with .p-shead aesthetic */
+body.v2-shell-active #driverDashboard .dash-section-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-bottom: 10px;
+}
+/* Active section (Berlangsung Sekarang) title accent */
+body.v2-shell-active #driverDashboard .dash-section--active .dash-section-title {
+  color: var(--warn);
+}
+/* Horizontal rule after section title — inherits V1 ::after, just update colour */
+body.v2-shell-active #driverDashboard .dash-section-title::after {
+  background: var(--border);
+}
+
+/* Card base */
+body.v2-shell-active #driverDashboard .dash-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-sm);
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  transition: box-shadow 0.14s, border-color 0.14s, transform 0.1s;
+}
+body.v2-shell-active #driverDashboard .dash-card:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-strong);
+}
+
+/* Active assignment card — warm left-edge accent */
+body.v2-shell-active #driverDashboard .dash-card--started {
+  border-left: 3px solid var(--warn);
+  background: var(--warn-bg);
+}
+
+/* Muted history cards */
+body.v2-shell-active #driverDashboard .dash-card--muted {
+  opacity: 0.78;
+}
+
+/* Card inner typography */
+body.v2-shell-active #driverDashboard .dash-card-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+body.v2-shell-active #driverDashboard .dash-card-destination {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+body.v2-shell-active #driverDashboard .dash-meta-item {
+  font-size: 11.5px;
+  color: var(--faint);
+}
+body.v2-shell-active #driverDashboard .dash-card-pic {
+  font-size: 11.5px;
+  color: var(--faint);
+  margin-top: 4px;
+}
+
+/* Empty state */
+body.v2-shell-active #driverDashboard .dash-empty {
+  color: var(--faint);
+  font-size: 12.5px;
+  font-style: normal;
+  padding: 16px 0;
+}
+
+/* Status badges — replace V1 hardcoded hex with V2 semantic tokens */
+body.v2-shell-active #driverDashboard .badge-status {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 20px;
+  line-height: 1;
+  border: 1px solid transparent;
+}
+body.v2-shell-active #driverDashboard .badge-status--pending {
+  background: var(--warn-bg);
+  color: var(--warn);
+  border-color: rgba(148,100,32,.22);
+}
+body.v2-shell-active #driverDashboard .badge-status--approved {
+  background: var(--info-bg);
+  color: var(--info);
+  border-color: rgba(59,91,169,.22);
+}
+body.v2-shell-active #driverDashboard .badge-status--assigned {
+  background: var(--ok-bg);
+  color: var(--ok);
+  border-color: rgba(47,125,98,.22);
+}
+body.v2-shell-active #driverDashboard .badge-status--started {
+  background: var(--warn-bg);
+  color: var(--warn);
+  border-color: rgba(148,100,32,.22);
+}
+body.v2-shell-active #driverDashboard .badge-status--completed {
+  background: var(--hover);
+  color: var(--muted);
+  border-color: var(--border-strong);
+}
+
+/* Vehicle badge — background is inline style (JS-controlled).
+   Override only shape/typography; leave background untouched.  */
+body.v2-shell-active #driverDashboard .vehicle-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+  color: #ffffff;
+  letter-spacing: 0.01em;
+}
+
+
+/* ============================================================
+   VSM-5C — Claude Design Component Parity
+
+   Objective: close the visual gap between current V2 shell and
+   the approved Claude Design reference to ≤ 10%.
+
+   All rules are either:
+     (a) scoped under body.v2-shell-active so they are inert
+         when visualShellV2 === false, or
+     (b) attribute/class selectors on elements that only exist
+         in the V2 DOM.
+
+   Parts implemented:
+     1  Rail — light surface theme
+     2  Context Panel — wider + more breathing room
+     3  KPI cards — icon + subtitle + larger value
+     4  Topbar — visual-only search field
+     5  Topbar — user avatar circle
+     6  Timeline header — Papan Jadwal + view toggle
+     7  Driver row — avatar initials via ::before
+     8  Assignment cards — tighter, cleaner visual polish
+   ============================================================ */
+
+
+/* ── Part 1: Rail — light surface theme ────────────────────────
+   Overrides the VSM-1 dark charcoal background. Rail now reads
+   as a premium surface panel instead of a dark sidebar remnant.
+   All selectors beat their VSM-1 counterparts by load order
+   (later in file = wins on equal specificity).               */
+
+.v2-rail {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+
+/* Crest (logo button) — hover on light bg */
+.v2-rail-crest:hover,
+.v2-rail-crest:focus-visible {
+  background: var(--hover);
+}
+
+/* Module icon — inactive: muted dark, active: accent crimson */
+.v2-rail-item {
+  color: var(--muted);
+}
+.v2-rail-item:hover,
+.v2-rail-item:focus-visible {
+  background: var(--hover);
+  color: var(--text);
+}
+
+/* Active module — light crimson tint + icon in accent */
+.v2-rail-item--active {
+  color: var(--accent);
+  background: rgba(168, 41, 47, 0.08);
+}
+.v2-rail-item--active:hover,
+.v2-rail-item--active:focus-visible {
+  background: rgba(168, 41, 47, 0.12);
+  color: var(--accent);
+}
+
+/* Active indicator bar stays crimson */
+.v2-rail-item--active::before {
+  background: var(--accent);
+}
+
+/* Tooltip on light rail — already uses --surface/--border, unchanged */
+
+/* Avatar circle — crimson reads well on both light and dark bgs */
+.v2-rail-avatar {
+  background: var(--accent);
+}
+
+
+/* ── Part 2: Context Panel — wider + more breathing room ───────
+   Width 218px → 240px. margin-left on main-area updates in step.
+   Internal spacing increases for visual breathing room.        */
+
+.v2-panel {
+  width: 240px;
+}
+
+@media (min-width: 768px) {
+  body.v2-shell-active .main-area {
+    margin-left: 304px; /* 64px rail + 240px panel */
+  }
+}
+
+/* More generous header padding */
+.v2-panel-header {
+  padding: 20px 16px 12px;
+}
+
+/* CTA area: more vertical gap between buttons */
+.v2-panel-cta {
+  padding: 10px 12px 8px;
+  gap: 8px;
+}
+
+/* Nav list: consistent padding */
+.v2-panel-nav {
+  padding: 8px 10px 0;
+  gap: 2px;
+}
+
+/* Footer: more top breathing room */
+.v2-panel-footer {
+  padding: 8px 10px 16px;
+}
+
+
+/* ── Part 3: KPI cards — icon + subtitle + larger value ────────
+   Adds .v2-kpi-icon and .v2-kpi-sub inside each card.
+   Card layout: icon → label → value → subtitle (column).      */
+
+/* Card: slightly more padding, tighter internal gap */
+.v2-kpi-card {
+  padding: 14px 16px;
+  gap: 2px;
+}
+
+/* Icon container — small rounded square tinted by card type */
+.v2-kpi-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-bottom: 6px;
+}
+.v2-kpi-card[data-kpi="aktif"]    .v2-kpi-icon { background: var(--info-bg);   color: var(--info);   }
+.v2-kpi-card[data-kpi="bertugas"] .v2-kpi-icon { background: var(--hover);     color: var(--muted);  }
+.v2-kpi-card[data-kpi="menunggu"] .v2-kpi-icon { background: var(--warn-bg);   color: var(--warn);   }
+.v2-kpi-card[data-kpi="selesai"]  .v2-kpi-icon { background: var(--ok-bg);     color: var(--ok);     }
+
+/* Label stays small + uppercase (unchanged) */
+
+/* Value: significantly larger for impact */
+.v2-kpi-value {
+  font-size: 32px;
+  line-height: 1;
+  margin-top: 2px;
+}
+
+/* Subtitle — muted context line below value */
+.v2-kpi-sub {
+  font-size: 11px;
+  color: var(--faint);
+  font-weight: 400;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Horizontal layout on very small screens: subtitle hidden */
+@media (max-width: 400px) {
+  .v2-kpi-icon  { width: 24px; height: 24px; margin-bottom: 4px; }
+  .v2-kpi-value { font-size: 24px; }
+  .v2-kpi-sub   { display: none; }
+}
+
+
+/* ── Part 4: Topbar — visual-only search field ─────────────────
+   Purely decorative. pointer-events: none. No handlers.
+   Visible ≥ 1024px only to preserve topbar space on tablet.   */
+
+.v2-topbar-search {
+  display: none;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  color: var(--faint);
+  font-size: 12.5px;
+  flex-shrink: 0;
+  min-width: 160px;
+  pointer-events: none;
+  user-select: none;
+  order: 30; /* between crumb (20) and date-nav (40) — see order renumbering below */
+  cursor: default;
+}
+@media (min-width: 1024px) {
+  .v2-topbar-search { display: flex; }
+}
+.v2-topbar-search-placeholder {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.v2-topbar-search svg { flex-shrink: 0; }
+
+/* Renumber topbar flex orders to accommodate search field (order 30) */
+#v2TopbarCrumb                        { order: 20; }
+body.v2-shell-active .v2-topbar .date-nav    { order: 40; }
+body.v2-shell-active .v2-topbar-spacer       { order: 50; }
+body.v2-shell-active .v2-topbar .header-user-area { order: 60; }
+
+/* Mobile ≤600px: search always hidden */
+@media (max-width: 600px) {
+  .v2-topbar-search { display: none !important; }
+}
+
+
+/* ── Part 5: Topbar — user avatar circle ───────────────────────
+   #v2TopbarAvatar is injected into .header-user-area by
+   initV2Topbar(). Initials are stamped by updatePermissionUI(). */
+
+.v2-topbar-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: var(--font-sans, 'Inter', sans-serif);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  user-select: none;
+  margin-right: 4px;
+}
+
+
+/* ── Part 6: Timeline header — Papan Jadwal + view toggle ──────
+   Replaces the VSM-5B two-element row with a semantic left/right
+   group structure. VSM-5B date label resets still apply via
+   cascade; additional overrides here handle the new nesting.   */
+
+/* Header container: slightly tighter */
+body.v2-shell-active #v2TimelineSurface .v2-tl-header {
+  padding: 10px 16px;
+  align-items: center;
+}
+
+/* Left group: title + subtitle stacked */
+body.v2-shell-active #v2TimelineSurface .v2-tl-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex-shrink: 0;
+}
+
+/* Title: prominent */
+body.v2-shell-active #v2TimelineSurface .v2-tl-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.01em;
+  text-transform: none; /* override VSM-5B uppercase */
+}
+
+/* Subtitle under title */
+body.v2-shell-active #v2TimelineSurface .v2-tl-sub {
+  font-size: 11px;
+  color: var(--faint);
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+/* Right group: view toggle + date label inline */
+body.v2-shell-active #v2TimelineSurface .v2-tl-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+/* View toggle pill container */
+body.v2-shell-active #v2TimelineSurface .v2-tl-view-toggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 2px;
+  flex-shrink: 0;
+}
+
+/* View toggle buttons */
+body.v2-shell-active #v2TimelineSurface .v2-tl-view-btn {
+  padding: 4px 10px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: default;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  line-height: 1.4;
+  white-space: nowrap;
+}
+body.v2-shell-active #v2TimelineSurface .v2-tl-view-btn--active {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+  cursor: default;
+}
+body.v2-shell-active #v2TimelineSurface .v2-tl-view-btn:disabled {
+  opacity: 0.42;
+}
+
+/* Date label inside .v2-tl-header-right — reset VSM-5B flex:1 */
+body.v2-shell-active #v2TimelineSurface .v2-tl-header-right .timeline-date-label {
+  flex: none;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  text-align: right;
+  padding: 0;
+  border-bottom: none;
+  background: transparent;
+  white-space: nowrap;
+}
+
+/* Mobile ≤767px: hide subtitle and view toggle to save space */
+@media (max-width: 767px) {
+  body.v2-shell-active #v2TimelineSurface .v2-tl-sub          { display: none; }
+  body.v2-shell-active #v2TimelineSurface .v2-tl-view-toggle  { display: none; }
+  body.v2-shell-active #v2TimelineSurface .v2-tl-header       { padding: 10px 12px; }
+  body.v2-shell-active #v2TimelineSurface .v2-tl-title        { font-size: 13px; }
+  body.v2-shell-active #v2TimelineSurface .v2-tl-header-right .timeline-date-label {
+    font-size: 11px;
+  }
+}
+
+
+/* ── Part 7: Driver row — avatar initials ──────────────────────
+   initV2DriverAvatars() stamps data-initials on .driver-label
+   via MutationObserver after every renderDriverRows() call.
+   CSS ::before renders the avatar; no timeline.js changes.
+
+   Layout: CSS Grid — avatar spans both rows, name + phone stack
+   on the right. Fits within the existing --driver-col: 110px.  */
+
+body.v2-shell-active .driver-label {
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  column-gap: 6px;
+  align-content: center;
+  padding: 6px 8px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+
+/* Avatar circle rendered from data-initials attribute */
+body.v2-shell-active .driver-label::before {
+  content: attr(data-initials);
+  grid-column: 1;
+  grid-row: 1 / 3;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 700;
+  font-family: var(--font-sans, 'Inter', sans-serif);
+  letter-spacing: 0.04em;
+  display: grid;
+  place-items: center;
+  align-self: center;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+/* Name + phone: explicitly placed in grid column 2 */
+body.v2-shell-active .driver-label .driver-name {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.v2-shell-active .driver-label .driver-phone {
+  grid-column: 2;
+  grid-row: 2;
+  font-size: 9.5px;
+  color: var(--faint);
+  font-family: 'JetBrains Mono', monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Mobile ≤600px: avatar hidden, label returns to single column */
+@media (max-width: 600px) {
+  body.v2-shell-active .driver-label {
+    grid-template-columns: 1fr;
+    padding: 4px 6px;
+  }
+  body.v2-shell-active .driver-label::before {
+    display: none;
+  }
+  body.v2-shell-active .driver-label .driver-name {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  body.v2-shell-active .driver-label .driver-phone {
+    grid-column: 1;
+    grid-row: 2;
+  }
+}
+
+
+/* ── Part 8: Assignment cards — visual polish ──────────────────
+   DO NOT touch: left, width, background, top, height, z-index.
+   Those are engine-generated values — they remain unchanged.
+   Only: radius, shadow, padding, typography.                  */
+
+body.v2-shell-active .assignment-block {
+  border-radius: 6px;
+  padding: 4px 8px;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.20),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+body.v2-shell-active .assignment-block:hover {
+  box-shadow:
+    0 3px 10px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+/* Time label: slightly smaller, higher opacity */
+body.v2-shell-active .block-time {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 500;
+  opacity: 0.82;
+  letter-spacing: 0.01em;
+}
+
+/* Purpose: stronger hierarchy */
+body.v2-shell-active .block-purpose {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* Status badge: tighter */
+body.v2-shell-active .block-status-badge {
+  font-size: 8.5px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-weight: 700;
+}
+
+
+/* ============================================================
+   VSM-6 — Motion & Micro Interactions
+
+   Scope: visual-only, all platform behaviour unchanged.
+
+   Guard strategy:
+   - Motion TOKENS (Part 1) are defined in :root — universal,
+     zero side-effects when no element references them.
+   - Transitions on .v2-* elements are inert until those
+     elements exist in the DOM (flag on only).
+   - Modal animations are scoped under body.v2-shell-active,
+     so V1 modals receive no animation when flag is off.
+   - prefers-reduced-motion (Part 9) zeroes all durations,
+     disabling every animation in one block.
+
+   DO NOT touch: timeline positioning, Firebase, routing,
+   business logic, modal open/close logic, role gates.
+   ============================================================ */
+
+
+/* ── Part 1: Motion tokens ─────────────────────────────────────
+   Enterprise-grade easing: fast start, gentle deceleration.
+   No bounce, no overshoot. Safe to add to :root — unused
+   tokens have zero rendering cost.                            */
+
+:root {
+  --motion-fast:   120ms;
+  --motion-normal: 200ms;
+  --motion-slow:   320ms;
+  /* Ease-out expo variant — snappy entry, gentle rest.
+     Used across all VSM-6 transitions and animations.        */
+  --motion-ease:   cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+
+/* ── VSM-6 keyframes ───────────────────────────────────────────
+   Named with vsm6- prefix to avoid collision with existing
+   ls-fade, ls-pop, pdf-slide-up, pdf-scale-in keyframes.     */
+
+/* Modal overlay: simple opacity fade */
+@keyframes vsm6-overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Modal box: subtle upward slide + scale — enterprise, not theatrical */
+@keyframes vsm6-box-in {
+  from {
+    opacity:   0;
+    transform: scale(0.98) translateY(6px);
+  }
+  to {
+    opacity:   1;
+    transform: scale(1)    translateY(0);
+  }
+}
+
+/* Notification dot: single gentle opacity pulse on appearance */
+@keyframes vsm6-dot-pulse {
+  0%, 60%, 100% { opacity: 1;   }
+  30%           { opacity: 0.4; }
+}
+
+
+/* ── Part 2: Rail interactions ─────────────────────────────────
+   Enhances existing VSM-5C hover rules with smooth transitions.
+   No layout shifts, no size changes.                          */
+
+/* Base transitions on all rail interactive elements */
+.v2-rail-crest {
+  transition:
+    background var(--motion-fast) var(--motion-ease);
+}
+
+.v2-rail-item {
+  transition:
+    background var(--motion-fast) var(--motion-ease),
+    color      var(--motion-fast) var(--motion-ease);
+}
+
+.v2-rail-avatar {
+  transition: opacity var(--motion-fast) var(--motion-ease);
+}
+
+/* Active indicator bar: animate height from 0 on base state
+   so the bar "grows" when module becomes active              */
+.v2-rail-item::before {
+  /* Pseudo-element present on all items; only visible when active.
+     Transition plays when height changes via --active class.  */
+  transition: height var(--motion-normal) var(--motion-ease);
+}
+
+
+/* ── Part 3: Panel interactions ────────────────────────────────
+   Nav items, CTAs, footer buttons — all get smooth state      */
+
+.v2-panel-nav-item {
+  transition:
+    background var(--motion-fast) var(--motion-ease),
+    color      var(--motion-fast) var(--motion-ease);
+}
+
+.v2-panel-btn {
+  transition:
+    background var(--motion-fast) var(--motion-ease),
+    color      var(--motion-fast) var(--motion-ease),
+    filter     var(--motion-fast) var(--motion-ease),
+    transform  var(--motion-fast) var(--motion-ease);
+}
+
+.v2-panel-footer-btn {
+  transition:
+    background var(--motion-fast) var(--motion-ease),
+    color      var(--motion-fast) var(--motion-ease);
+}
+
+/* Primary CTA press state — tactile feedback without glow */
+body.v2-shell-active .v2-panel-btn--primary:active {
+  filter: brightness(0.86);
+  transform: scale(0.99);
+}
+
+/* Ghost CTA press */
+body.v2-shell-active .v2-panel-btn--ghost:active {
+  filter: brightness(0.96);
+}
+
+
+/* ── Part 4: KPI card hover lift ───────────────────────────────
+   Scoped to pointer devices — no sticky-hover on touch screens.
+   translateY(-2px) is visual-only; layout is unaffected.      */
+
+body.v2-shell-active .v2-kpi-card {
+  transition:
+    transform    var(--motion-normal) var(--motion-ease),
+    box-shadow   var(--motion-normal) var(--motion-ease),
+    border-color var(--motion-fast)   var(--motion-ease);
+}
+
+@media (hover: hover) {
+  body.v2-shell-active .v2-kpi-card:hover {
+    transform:    translateY(-2px);
+    box-shadow:   var(--shadow-md);
+    border-color: var(--border-strong);
+  }
+}
+
+
+/* ── Part 5: Assignment card hover ─────────────────────────────
+   Extends VSM-5C box-shadow change with a smooth transition
+   and a 1px visual lift. left/width/top untouched.            */
+
+body.v2-shell-active .assignment-block {
+  transition:
+    filter     var(--motion-fast) var(--motion-ease),
+    box-shadow var(--motion-fast) var(--motion-ease),
+    transform  var(--motion-fast) var(--motion-ease);
+}
+
+@media (hover: hover) {
+  body.v2-shell-active .assignment-block:hover {
+    transform: translateY(-1px);
+  }
+}
+
+
+/* ── Parts 6 + 7: Modal entry animation ───────────────────────
+   Fires automatically when display changes none → flex.
+   Only active under body.v2-shell-active — V1 modals unchanged.
+
+   Close remains instant (no JS changes). Entry polish is the
+   primary gain.
+
+   Excluded intentionally:
+   - .login-screen  — has its own ls-fade animation
+   - .pdf-overlay   — has pdf-slide-up / pdf-scale-in          */
+
+body.v2-shell-active .modal-overlay {
+  animation: vsm6-overlay-in var(--motion-normal) var(--motion-ease);
+}
+
+body.v2-shell-active .modal-box {
+  animation: vsm6-box-in var(--motion-normal) var(--motion-ease);
+}
+
+/* Odometer modal uses .odo-modal, not .modal-box. Give it the
+   same entry feel via the overlay animation (overlay is enough). */
+
+
+/* ── Part 8: Topbar polish ─────────────────────────────────────
+   Hover states and badge animation. No layout changes.        */
+
+/* Date navigation buttons */
+body.v2-shell-active .v2-topbar .btn-today,
+body.v2-shell-active .v2-topbar .btn-icon {
+  transition:
+    background   var(--motion-fast) var(--motion-ease),
+    color        var(--motion-fast) var(--motion-ease),
+    border-color var(--motion-fast) var(--motion-ease);
+}
+
+/* Notification bell */
+.header-notif-btn {
+  transition:
+    background var(--motion-fast) var(--motion-ease),
+    color      var(--motion-fast) var(--motion-ease);
+}
+
+/* Unread dot: single gentle pulse when it becomes visible.
+   Plays once on display:none → visible transition.           */
+body.v2-shell-active .header-notif-dot {
+  animation: vsm6-dot-pulse 1.8s var(--motion-ease) 1;
+}
+
+body.v2-shell-active .bottom-nav-dot {
+  animation: vsm6-dot-pulse 1.8s var(--motion-ease) 1;
+}
+
+/* Topbar avatar */
+body.v2-shell-active .v2-topbar-avatar {
+  transition: opacity var(--motion-fast) var(--motion-ease);
+  cursor: default;
+}
+@media (hover: hover) {
+  body.v2-shell-active .v2-topbar-avatar:hover { opacity: 0.78; }
+}
+
+/* View toggle buttons in timeline header */
+body.v2-shell-active #v2TimelineSurface .v2-tl-view-btn {
+  transition:
+    background var(--motion-fast) var(--motion-ease),
+    color      var(--motion-fast) var(--motion-ease),
+    box-shadow var(--motion-fast) var(--motion-ease);
+}
+
+
+/* ── Part 9: Reduced motion support ───────────────────────────
+   When user requests reduced motion, zero out all VSM-6
+   durations via token override. Transforms on hover are
+   explicitly disabled. Opacity transitions collapse to 0ms
+   (element appears/disappears instantly — accessible).       */
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast:   0.01ms;
+    --motion-normal: 0.01ms;
+    --motion-slow:   0.01ms;
+  }
+
+  /* Disable all animations and transforms explicitly */
+  body.v2-shell-active .modal-overlay,
+  body.v2-shell-active .modal-box,
+  body.v2-shell-active .header-notif-dot,
+  body.v2-shell-active .bottom-nav-dot {
+    animation: none;
+  }
+
+  body.v2-shell-active .v2-kpi-card:hover {
+    transform: none;
+  }
+
+  body.v2-shell-active .assignment-block:hover {
+    transform: none;
+  }
+
+  body.v2-shell-active .v2-panel-btn--primary:active,
+  body.v2-shell-active .v2-panel-btn--ghost:active {
+    transform: none;
+  }
+}
+
+
+/* ============================================================
+   VSM-7 — Topbar Final Parity
+
+   Objective: bring the V2 topbar to ~95% visual parity with
+   the approved Claude Design reference.
+
+   All rules are either:
+     (a) scoped under body.v2-shell-active, or
+     (b) on .v2-topbar-* selectors that only exist when the
+         flag is on.
+   V1 topbar (.header) is completely unaffected.
+
+   Parts implemented:
+     1  Two-line breadcrumb hierarchy (label + title)
+     2  Search bar — full-width, polished
+     3  Date navigation — unified sizing
+     4  Role chip — full role name, pill style
+     5  Theme toggle — visual-only moon button
+     6  Notification button — icon-button treatment
+     7  User profile card — avatar + name + role column
+     8  Spacing normalization — single grid baseline
+     9  Responsive — 4-breakpoint verified rules
+   ============================================================ */
+
+
+/* ── Part 1: Two-line breadcrumb ───────────────────────────────
+   #v2TopbarCrumb is now a <div> with .v2-topbar-label (top)
+   and .v2-topbar-title (bottom). Dynamic section name updates
+   target .v2-topbar-title only — label stays "DRIVER OPS".  */
+
+#v2TopbarCrumb {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.v2-topbar-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.v2-topbar-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+
+/* ── Part 2: Search bar parity ─────────────────────────────────
+   Upgraded from VSM-5C placeholder — wider, more structured.
+   Visible ≥1024px; hidden on tablet/phone.                   */
+
+.v2-topbar-search {
+  min-width: 240px;
+  max-width: 320px;
+  padding: 6px 12px;
+  gap: 8px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  height: 32px;
+  box-sizing: border-box;
+}
+
+.v2-topbar-search svg { opacity: 0.6; }
+
+@media (min-width: 768px) and (max-width: 1279px) {
+  .v2-topbar-search { min-width: 180px; max-width: 240px; }
+}
+
+
+/* ── Part 3: Date navigation parity ───────────────────────────
+   Unified 32px height for all date controls — today button,
+   arrow buttons, and date input sit on the same baseline.
+   No logic changes; only visual sizing.                       */
+
+body.v2-shell-active .v2-topbar .date-nav {
+  gap: 3px;
+  align-items: center;
+  height: 32px;
+  padding: 2px 3px;
+  border-radius: 8px;
+}
+
+body.v2-shell-active .v2-topbar .btn-today {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+}
+
+body.v2-shell-active .v2-topbar .btn-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 14px;
+}
+
+body.v2-shell-active .v2-topbar .date-input {
+  height: 26px;
+  padding: 0 6px;
+  font-size: 12px;
+  border-radius: 6px;
+  border-color: var(--border);
+  background: var(--input-bg);
+  color: var(--text);
+  box-sizing: border-box;
+}
+
+
+/* ── Part 4: Role chip in profile card ─────────────────────────
+   #v2TopbarRoleLabel shows full role name (Administrator etc).
+   #roleBadge (V1 element) is hidden inside the V2 topbar —
+   the label supersedes it. V1 roleBadge still works in flag-off
+   mode since the hide rule is scoped to body.v2-shell-active.  */
+
+.v2-topbar-user-role {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--faint);
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+/* Hide V1 abbreviated badge inside the V2 profile card */
+body.v2-shell-active .v2-topbar .header-user-area .role-badge {
+  display: none !important;
+}
+
+
+/* ── Part 5: Theme toggle ──────────────────────────────────────
+   Visual-only moon icon button. No dark mode wired.
+   Uses shared .v2-topbar-icon-btn base (defined below).       */
+
+.v2-topbar-theme-btn {
+  order: 55;
+}
+
+@media (max-width: 767px) {
+  .v2-topbar-theme-btn { display: none !important; }
+}
+
+
+/* ── Parts 5 + 6: Shared topbar icon button base ───────────────
+   Theme toggle and notification bell share this base style.
+   Ensures equal height, border style, and hover treatment with
+   the date navigation and search controls.                    */
+
+.v2-topbar-icon-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  font-family: inherit;
+  transition:
+    background var(--motion-fast, 120ms) var(--motion-ease, ease-out),
+    color      var(--motion-fast, 120ms) var(--motion-ease, ease-out),
+    border-color var(--motion-fast, 120ms) var(--motion-ease, ease-out);
+}
+@media (hover: hover) {
+  .v2-topbar-icon-btn:hover {
+    background: var(--hover);
+    color: var(--text);
+    border-color: var(--border-strong);
+  }
+}
+
+
+/* ── Part 6: Notification bell — icon-button treatment ────────
+   The extracted #btnHeaderNotif becomes a .v2-topbar-icon-btn
+   sibling. Notification logic and unread badge are unchanged.
+   Only visual sizing and border are applied here.             */
+
+body.v2-shell-active .v2-topbar #btnHeaderNotif {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  order: 57;
+}
+
+/* Ensure inner SVG stays centred at the new size */
+body.v2-shell-active .v2-topbar #btnHeaderNotif svg {
+  width: 16px;
+  height: 16px;
+}
+
+
+/* ── Part 7: User profile card ─────────────────────────────────
+   .header-user-area is restructured by initV2Topbar() into:
+     [.v2-topbar-avatar] [.v2-topbar-user-info(name + role)]
+   The card has a subtle border and rounded surface, matching
+   the Claude Design profile card pattern.                     */
+
+body.v2-shell-active .v2-topbar .header-user-area {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  cursor: default;
+  min-width: 0;
+  flex-shrink: 0;
+  transition:
+    border-color var(--motion-fast, 120ms) var(--motion-ease, ease-out),
+    background   var(--motion-fast, 120ms) var(--motion-ease, ease-out);
+}
+@media (hover: hover) {
+  body.v2-shell-active .v2-topbar .header-user-area:hover {
+    border-color: var(--border-strong);
+    background: var(--surface-2);
+  }
+}
+
+/* Name inside profile card */
+body.v2-shell-active .v2-topbar .header-display-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100px;
+  line-height: 1.3;
+  display: block;
+}
+
+/* User info column: name + role stacked */
+.v2-topbar-user-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+}
+
+
+/* ── Part 8: Spacing normalization ─────────────────────────────
+   All topbar interactive elements sit on a 32px height baseline.
+   Gap between elements is 6px; padding is 0 12px.             */
+
+body.v2-shell-active .v2-topbar {
+  gap: 6px;
+  padding: 0 12px;
+  height: 52px; /* slightly taller than 56px V1 to match Claude Design */
+}
+
+/* Order assignments for new elements */
+body.v2-shell-active .v2-topbar .v2-topbar-theme-btn { order: 55; }
+body.v2-shell-active .v2-topbar #btnHeaderNotif { order: 57; }
+
+
+/* ── Part 9: Responsive review ─────────────────────────────────
+   Breakpoints: ≥1280 / 1024–1279 / 768–1023 / ≤767           */
+
+/* ≥1280px (full desktop): all elements visible */
+/* (no extra rules — the defaults above are for ≥1280px)       */
+
+/* 1024–1279px (laptop): search narrower, crumb visible */
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .v2-topbar-search {
+    min-width: 160px;
+    max-width: 200px;
+  }
+  body.v2-shell-active .v2-topbar .header-display-name {
+    max-width: 80px;
+  }
+}
+
+/* 768–1023px (tablet): hide search, keep crumb and date-nav */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .v2-topbar-search { display: none !important; }
+  body.v2-shell-active .v2-topbar .header-display-name {
+    max-width: 70px;
+  }
+}
+
+/* ≤767px (phone): single-row header, date-nav on row-2 */
+/* These rules mirror the existing VSM-3 mobile structure.
+   Theme toggle hidden; notif bell hidden (existing ≤767px rule). */
+@media (max-width: 767px) {
+  body.v2-shell-active .v2-topbar .header-user-area {
+    border: none;
+    background: transparent;
+    padding: 0;
+    gap: 5px;
+  }
+  .v2-topbar-user-info { display: none; } /* compact: avatar only on phone */
+  body.v2-shell-active .v2-topbar { height: auto; }
+}
+
+/* ≤600px (small phone): 2-row compact layout */
+@media (max-width: 600px) {
+  .v2-topbar-search   { display: none !important; }
+  .v2-topbar-theme-btn { display: none !important; }
+  #v2TopbarCrumb       { display: none !important; }
+}
+
+
+/* ============================================================
+   VSM-8 — Timeline / List View Architecture
+
+   #v2TimelineView — wraps .timeline-wrapper + .legend
+   #v2ListView     — assignment list cards for the viewed date
+
+   Both containers are always mounted inside #v2TimelineSurface.
+   .v2-view-active manages display:flex / display:none.
+   setDashboardView() swaps the class; no layout reflow for the
+   outgoing view, entry animation for the incoming view.
+
+   All selectors scoped under body.v2-shell-active or on IDs/
+   classes that only exist when the flag is on — zero V1 impact.
+   ============================================================ */
+
+
+/* ── View container base ───────────────────────────────────────
+   display:none by default; .v2-view-active makes it visible
+   with a fade-in entry animation using VSM-6 motion tokens.  */
+
+.v2-view-container {
+  display: none;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;           /* allows flex children to shrink below content */
+}
+
+.v2-view-active {
+  display: flex;
+  animation: vsm8-view-in var(--motion-normal, 200ms) var(--motion-ease, ease-out);
+}
+
+@keyframes vsm8-view-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v2-view-active { animation: none; }
+}
+
+/* ── #v2TimelineView — timeline content wrapper ────────────────
+   Contains .timeline-wrapper + .legend (moved inside by VSM-8).
+   flex:1 in .v2-view-active gives the timeline its full height
+   since #v2TimelineSurface is already a flex column.          */
+
+body.v2-shell-active #v2TimelineSurface #v2TimelineView {
+  flex: 1;
+  min-height: 0;
+}
+
+
+/* ── #v2ListView — list view container ─────────────────────────
+   overflow-y: auto so tall lists scroll independently without
+   moving the timeline header or topbar.                       */
+
+body.v2-shell-active #v2ListView {
+  overflow-y: auto;
+  padding: 12px 16px 16px;
+  gap: 8px;
+  display: none;           /* overridden by .v2-view-active when list is shown */
+  flex-direction: column;
+}
+
+body.v2-shell-active #v2ListView.v2-view-active {
+  display: flex;
+}
+
+
+/* ── List card base ────────────────────────────────────────────
+   Three-column grid: time (auto) | body (1fr) | status (auto).
+   Left-edge accent bar distinguishes assignment status.       */
+
+.v2-list-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: 10px 14px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 8px;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition:
+    box-shadow  var(--motion-fast, 120ms) var(--motion-ease, ease-out),
+    border-color var(--motion-fast, 120ms) var(--motion-ease, ease-out);
+  outline: none;
+}
+.v2-list-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (hover: hover) {
+  .v2-list-card:hover {
+    box-shadow:   var(--shadow-md);
+    border-color: var(--border-strong);
+  }
+}
+
+/* Status accent bars */
+.v2-list-card--started   { border-left-color: var(--warn);          }
+.v2-list-card--completed { border-left-color: var(--ok);            }
+.v2-list-card--assigned  { border-left-color: var(--info);          }
+.v2-list-card--pending   { border-left-color: var(--border-strong); }
+.v2-list-card--approved  { border-left-color: var(--info);          }
+
+
+/* ── Time column ───────────────────────────────────────────────
+   Monospace so hh:mm–hh:mm aligns across cards.              */
+
+.v2-list-card-time {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+  padding-top: 1px;
+  line-height: 1.4;
+}
+
+
+/* ── Body column — title + meta ────────────────────────────────*/
+
+.v2-list-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;            /* allows text-overflow: ellipsis to work in flex child */
+}
+
+.v2-list-card-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+
+.v2-list-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+
+/* ── Vehicle chip inside meta ──────────────────────────────────
+   Uses data-vehicle attribute; colour matched to --v-* tokens. */
+
+.v2-list-vehicle-chip {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 20px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.v2-list-vehicle-chip[data-vehicle="Innova"]   { color: var(--v-innova); border-color: var(--v-innova); }
+.v2-list-vehicle-chip[data-vehicle="Luxio"]    { color: var(--v-luxio);  border-color: var(--v-luxio);  }
+.v2-list-vehicle-chip[data-vehicle="Polytron"] { color: var(--v-poly);   border-color: var(--v-poly);   }
+.v2-list-vehicle-chip[data-vehicle="Hiace"]    { color: var(--v-hiace);  border-color: var(--v-hiace);  }
+
+
+/* ── Status column ─────────────────────────────────────────────*/
+
+.v2-list-card-status {
+  display: flex;
+  align-items: flex-start;
+  flex-shrink: 0;
+}
+
+.v2-list-status-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 20px;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+.v2-list-status-pill--started   { background: var(--warn-bg);  color: var(--warn);  }
+.v2-list-status-pill--completed { background: var(--ok-bg);    color: var(--ok);    }
+.v2-list-status-pill--assigned  { background: var(--info-bg);  color: var(--info);  }
+.v2-list-status-pill--pending   { background: var(--hover);    color: var(--muted); }
+.v2-list-status-pill--approved  { background: var(--info-bg);  color: var(--info);  }
+
+
+/* ── Empty state ───────────────────────────────────────────────*/
+
+.v2-list-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 48px 24px;
+  text-align: center;
+  gap: 12px;
+  color: var(--faint);
+}
+
+.v2-list-empty-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: var(--hover);
+  display: grid;
+  place-items: center;
+  color: var(--faint);
+}
+
+.v2-list-empty p {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
+
+/* ── Responsive ────────────────────────────────────────────────
+   Tablet ≤1023px: compressed card spacing.
+   Phone ≤767px: single-column stacked layout.
+   No horizontal scrolling on any breakpoint.                  */
+
+@media (max-width: 1023px) {
+  body.v2-shell-active #v2ListView { padding: 10px 12px 14px; }
+  .v2-list-card { padding: 12px 14px; gap: 8px 12px; }
+}
+
+@media (max-width: 767px) {
+  body.v2-shell-active #v2ListView { padding: 10px 8px 14px; gap: 6px; }
+
+  /* Single-column: time + body + status stack vertically */
+  .v2-list-card {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+    gap: 6px;
+    padding: 12px 14px;
+  }
+
+  .v2-list-card-time {
+    font-size: 11px;
+    color: var(--faint);
+  }
+
+  .v2-list-card-status {
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 480px) {
+  .v2-list-card { padding: 10px 12px; }
+  .v2-list-card-title { font-size: 13px; }
+}
+
+
+/* ============================================================
+   VSM-9 — Visual Parity Cleanup
+
+   CSS-only refinements. Appended last so these rules beat all
+   prior VSM phases by cascade order.
+
+   Scope: every selector is either a V2 class (.v2-*) that only
+   exists when the flag is on, or scoped under
+   body.v2-shell-active — zero V1 impact in either case.
+
+   Areas covered:
+     1  Rail
+     2  Section Panel
+     3  Topbar
+     4  KPI Cards
+     5  Timeline Header
+     6  Driver Column
+     7  Vehicle Legend
+     8  Empty States
+     9  Responsive Polish
+   ============================================================ */
+
+
+/* ── 1. Rail — lighter, more premium ──────────────────────────
+   Reduces hit-area, icon size, active indicator weight and
+   avatar size for a more refined, enterprise-grade rail.     */
+
+/* Tighter top/bottom padding */
+.v2-rail {
+  padding: 8px 0 12px;
+}
+
+/* Crest: smaller gap, tighter radius */
+.v2-rail-crest {
+  margin-bottom: 10px;
+  border-radius: 8px;
+  width: 38px;
+  height: 38px;
+}
+
+/* Crest logo: slightly smaller */
+.v2-rail-crest-img {
+  width: 26px;
+  height: 26px;
+}
+
+/* Module icon hit area: more compact */
+.v2-rail-item {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+}
+
+/* Icon SVG */
+.v2-rail-icon {
+  width: 17px;
+  height: 17px;
+}
+
+/* Active indicator: thinner and shorter — lighter visual weight */
+.v2-rail-item--active::before {
+  width: 2px;
+  height: 18px;
+}
+
+/* Avatar: slightly smaller with subtle ring */
+.v2-rail-avatar {
+  width: 28px;
+  height: 28px;
+  box-shadow: 0 0 0 2px var(--border);
+}
+
+/* Avatar initials */
+.v2-rail-avatar-initials {
+  font-size: 10px;
+}
+
+
+/* ── 2. Section Panel — better proportions ────────────────────
+   Adds a "MENU" section label above nav items, tightens the
+   module title, and improves footer visual separation.       */
+
+/* Module title: slightly more muted — "Driver Operations" is
+   decorative context, not the primary action area.          */
+.v2-panel-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--muted);
+}
+
+/* "MENU" section label — rendered purely via CSS ::before.
+   Sits inside the flex column before the nav item buttons.  */
+.v2-panel-nav::before {
+  content: 'MENU';
+  display: block;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding: 0 2px 6px;
+  font-family: var(--font-sans, 'Inter', sans-serif);
+  flex-shrink: 0;
+}
+
+/* Nav items: slightly more generous horizontal padding */
+.v2-panel-nav-item {
+  padding: 8px 12px;
+  border-radius: 7px;
+  font-size: 12.5px;
+}
+
+/* Active left bar: match icon hit width change */
+.v2-panel-nav-item--active::before {
+  height: 14px;
+}
+
+/* Pending badge: refined pill */
+.v2-panel-badge {
+  font-size: 10px;
+  height: 16px;
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+}
+
+/* CTA buttons: slightly more padding */
+.v2-panel-btn {
+  padding: 8px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  border-radius: 7px;
+}
+
+/* Footer: cleaner separation */
+.v2-panel-footer {
+  padding: 6px 10px 16px;
+  gap: 1px;
+}
+
+.v2-panel-footer-btn {
+  padding: 8px 12px;
+  font-size: 12.5px;
+  border-radius: 7px;
+}
+
+/* Dividers: ensure consistent appearance */
+.v2-panel-divider {
+  margin: 1px 0;
+}
+
+/* Panel header: tighter */
+.v2-panel-header {
+  padding: 16px 14px 10px;
+}
+
+
+/* ── 3. Topbar — refined spacing and typography ───────────────
+   Targets consistent 32px height baseline for all controls,
+   tighter gaps, and cleaner breadcrumb hierarchy.           */
+
+body.v2-shell-active .v2-topbar {
+  gap: 8px;
+  padding: 0 14px;
+}
+
+/* Breadcrumb container: slight gap between label and title */
+#v2TopbarCrumb {
+  gap: 1px;
+}
+
+/* Module label: refined */
+.v2-topbar-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--faint);
+  opacity: 0.8;
+}
+
+/* Section title: slightly larger */
+.v2-topbar-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+/* Search: rounder, cleaner */
+.v2-topbar-search {
+  border-radius: 9px;
+  gap: 7px;
+  font-size: 12px;
+  border-color: var(--border);
+}
+
+/* Date nav: consistent height, rounder */
+body.v2-shell-active .v2-topbar .date-nav {
+  border-radius: 9px;
+  gap: 2px;
+  padding: 2px 3px;
+}
+
+body.v2-shell-active .v2-topbar .btn-today {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 0 10px;
+  border-radius: 7px;
+}
+
+body.v2-shell-active .v2-topbar .btn-icon {
+  border-radius: 7px;
+  font-size: 13px;
+}
+
+body.v2-shell-active .v2-topbar .date-input {
+  border-radius: 7px;
+  font-size: 11.5px;
+}
+
+/* Icon buttons: rounder */
+.v2-topbar-icon-btn {
+  border-radius: 9px;
+}
+
+/* Notification bell: consistent */
+body.v2-shell-active .v2-topbar #btnHeaderNotif {
+  border-radius: 9px;
+}
+
+/* User profile card: slightly rounder */
+body.v2-shell-active .v2-topbar .header-user-area {
+  border-radius: 9px;
+  padding: 4px 10px 4px 7px;
+}
+
+/* Avatar in topbar: tighter */
+.v2-topbar-avatar {
+  width: 26px;
+  height: 26px;
+  font-size: 9.5px;
+  font-weight: 700;
+}
+
+/* Name in card: cleaner */
+body.v2-shell-active .v2-topbar .header-display-name {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+/* Role label: refined */
+.v2-topbar-user-role {
+  font-size: 9.5px;
+  letter-spacing: 0.01em;
+  color: var(--faint);
+}
+
+
+/* ── 4. KPI Cards — refined density and hierarchy ─────────────
+   Improves icon, label, value and subtitle proportions for
+   the target V2 KPI card readability.                       */
+
+/* Card: generous padding, cleaner radius */
+.v2-kpi-card {
+  padding: 16px;
+  border-radius: 10px;
+  gap: 2px;
+}
+
+/* Icon container: slightly larger, refined radius */
+.v2-kpi-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  margin-bottom: 8px;
+}
+
+/* Label: tighter letter-spacing, slightly bolder */
+.v2-kpi-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  margin-top: 0;
+}
+
+/* Value: strong hierarchy — keep 28px for 768-1279, 32px at 1280+ */
+.v2-kpi-value {
+  font-size: 28px;
+  letter-spacing: -0.02em;
+  margin-top: 2px;
+}
+
+@media (min-width: 1280px) {
+  .v2-kpi-value { font-size: 32px; }
+}
+
+/* Subtitle: subtle secondary context */
+.v2-kpi-sub {
+  font-size: 10.5px;
+  color: var(--faint);
+  margin-top: 3px;
+  font-weight: 400;
+}
+
+/* Strip gap: consistent with content padding */
+#v2KpiStrip {
+  gap: 10px;
+  padding: 14px 16px 0;
+}
+
+/* Dashboard section header: tighter bottom padding */
+#v2DashHeader {
+  padding: 12px 16px 0;
+}
+
+
+/* ── 5. Timeline Header — clearer hierarchy ───────────────────
+   "Papan Jadwal" title should dominate; subtitle should read
+   as secondary context without competing.                   */
+
+body.v2-shell-active #v2TimelineSurface .v2-tl-header {
+  padding: 11px 16px;
+}
+
+/* Title: more prominent */
+body.v2-shell-active #v2TimelineSurface .v2-tl-title {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+/* Subtitle: clearly secondary */
+body.v2-shell-active #v2TimelineSurface .v2-tl-sub {
+  font-size: 10.5px;
+  color: var(--faint);
+  font-weight: 400;
+}
+
+/* View toggle: slightly more refined */
+body.v2-shell-active #v2TimelineSurface .v2-tl-view-toggle {
+  border-radius: 8px;
+  padding: 2px;
+  gap: 1px;
+}
+
+body.v2-shell-active #v2TimelineSurface .v2-tl-view-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  border-radius: 6px;
+  letter-spacing: 0;
+}
+
+body.v2-shell-active #v2TimelineSurface .v2-tl-view-btn--active {
+  font-weight: 600;
+}
+
+/* Date badge in header: cleaner */
+body.v2-shell-active #v2TimelineSurface .v2-tl-header-right .timeline-date-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+
+/* ── 6. Driver Column — refined avatar ────────────────────────
+   Increases avatar from 26px to 28px and adds a subtle ring
+   to anchor the avatar visually against the surface.        */
+
+body.v2-shell-active .driver-label {
+  grid-template-columns: 28px 1fr;
+  column-gap: 7px;
+  padding: 5px 10px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+
+/* Avatar: 28px with accent ring */
+body.v2-shell-active .driver-label::before {
+  width: 28px;
+  height: 28px;
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+  box-shadow: 0 0 0 1.5px rgba(168, 41, 47, 0.22);
+}
+
+/* Driver name: clearer */
+body.v2-shell-active .driver-label .driver-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* Phone: refined */
+body.v2-shell-active .driver-label .driver-phone {
+  font-size: 9px;
+  color: var(--faint);
+}
+
+/* Mobile: maintain correct columns for 28px avatar */
+@media (max-width: 600px) {
+  body.v2-shell-active .driver-label {
+    grid-template-columns: 1fr;
+    padding: 4px 6px;
+  }
+  body.v2-shell-active .driver-label::before { display: none; }
+  body.v2-shell-active .driver-label .driver-name { grid-column: 1; grid-row: 1; }
+  body.v2-shell-active .driver-label .driver-phone { grid-column: 1; grid-row: 2; }
+}
+
+
+/* ── 7. Vehicle Legend — refined chips ────────────────────────
+   Tighter padding, slightly smaller text, better swatch size. */
+
+body.v2-shell-active #v2TimelineSurface .legend {
+  padding: 8px 16px;
+  gap: 5px;
+}
+
+body.v2-shell-active #v2TimelineSurface .legend-item {
+  padding: 3px 9px 3px 7px;
+  font-size: 11.5px;
+  font-weight: 500;
+  gap: 5px;
+  border-radius: 20px;
+}
+
+/* Swatch: slightly smaller circle */
+body.v2-shell-active #v2TimelineSurface .legend-item::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+
+/* ── 8. Empty States — unified visual language ────────────────
+   All empty states (timeline rows, list view, driver dashboard)
+   use the same typographic and colour treatment.             */
+
+/* Timeline row "Belum ada jadwal" hint text */
+body.v2-shell-active .empty-slots-hint {
+  font-size: 11.5px;
+  color: var(--faint);
+  font-style: normal;
+  font-family: var(--font-sans, 'Inter', sans-serif);
+  font-weight: 400;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  left: 8px;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* List empty state: already defined in VSM-8 — refine icon */
+.v2-list-empty-icon {
+  border-radius: 16px;
+}
+
+/* Driver dashboard empty sections: consistent */
+body.v2-shell-active #driverDashboard .dash-empty {
+  padding: 20px 0;
+  font-size: 12.5px;
+  color: var(--faint);
+  font-style: normal;
+  text-align: center;
+}
+
+
+/* ── 9. Responsive Polish ─────────────────────────────────────
+   Fine-tune density at each major breakpoint.               */
+
+/* ≥1440px: wide desktop — more comfortable spacing */
+@media (min-width: 1440px) {
+  body.v2-shell-active .main-content {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+  #v2KpiStrip  { gap: 14px; padding: 16px 20px 0; }
+  .v2-kpi-card { padding: 18px 20px; }
+  body.v2-shell-active #v2TimelineSurface .v2-tl-header { padding: 13px 20px; }
+  body.v2-shell-active #v2TimelineSurface .legend { padding: 9px 20px; }
+  body.v2-shell-active #v2ListView { padding: 14px 20px 16px; }
+}
+
+/* 1024–1279px: laptop — moderate density */
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .v2-kpi-value { font-size: 26px; }
+  .v2-kpi-icon  { width: 30px; height: 30px; margin-bottom: 6px; }
+  body.v2-shell-active .v2-topbar { padding: 0 10px; gap: 6px; }
+  .v2-topbar-search { min-width: 160px; max-width: 200px; }
+}
+
+/* 768–1023px: tablet — compact */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .v2-kpi-value { font-size: 24px; }
+  .v2-kpi-icon  { width: 28px; height: 28px; margin-bottom: 5px; }
+  .v2-kpi-sub   { display: none; }  /* recover height on tablet */
+  body.v2-shell-active .v2-topbar { padding: 0 10px; gap: 5px; }
+}
+
+/* ≤767px phone — existing rules remain; just these refinements */
+@media (max-width: 767px) {
+  /* Driver column: tighter on phone */
+  body.v2-shell-active .driver-label { padding: 4px 8px; }
+  /* KPI strip: tighter */
+  #v2KpiStrip { gap: 8px; }
+  #v2DashHeader { padding: 10px 8px 0; }
+}
+
+@media (max-width: 480px) {
+  .v2-list-card { padding: 10px 12px; }
+  .v2-list-card-title { font-size: 13px; }
 }
