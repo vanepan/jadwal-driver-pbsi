@@ -6377,3 +6377,181 @@ textarea:disabled { opacity: 0.55; }
   background: var(--ok, #72AF8F);
   border-color: var(--ok, #72AF8F);
 }
+
+
+/* ════════════════════════════════════════════════════════════════
+   REQUEST CARD — DARK MODE & MOBILE OPTIMIZATION
+
+   Root cause: .request-card and siblings in style.css use
+   hardcoded light-mode variables (--gray-1, --white, --dark,
+   --red-light, literal hex values) that never update in dark
+   mode. Zero dark-mode overrides existed.
+
+   This block is pure CSS — no HTML or JS changes.
+   Mobile density improvements are theme-agnostic (both modes).
+   Desktop layout is unchanged.
+   ════════════════════════════════════════════════════════════════ */
+
+/* ── 1  Card surface ─────────────────────────────────────────── */
+
+[data-theme="dark"] .request-card {
+  background: var(--surface);
+  border-color: var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ── 2  Status-specific card treatment ───────────────────────── */
+
+/* Approved: faint success tint on the card itself */
+[data-theme="dark"] .request-card[data-status="approved"] {
+  background: color-mix(in srgb, var(--surface) 94%, var(--ok) 6%);
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
+}
+
+/* Rejected: danger-tinted surface, no harsh solid-red border     */
+[data-theme="dark"] .request-card[data-status="rejected"] {
+  background: var(--danger-bg);
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+}
+
+/* ── 3  Typography hierarchy ─────────────────────────────────── */
+
+/* Title — high emphasis */
+[data-theme="dark"] .request-title {
+  color: var(--text);
+}
+
+/* Requester · date · time, and inline notes — medium emphasis    */
+[data-theme="dark"] .request-meta,
+[data-theme="dark"] .request-notes {
+  color: var(--muted);
+}
+
+/* Driver row, vehicle badge context — medium emphasis            */
+[data-theme="dark"] .request-details {
+  color: var(--muted);
+}
+
+/* ── 4  Status pill ──────────────────────────────────────────── */
+
+/* Default / pending — muted surface chip                         */
+[data-theme="dark"] .request-status {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+  color: var(--muted);
+}
+
+/* Approved — semantic green */
+[data-theme="dark"] .request-card[data-status="approved"] .request-status {
+  background: var(--ok-bg);
+  border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+  color: var(--ok);
+}
+
+/* Rejected — semantic danger, softer than light-mode             */
+[data-theme="dark"] .request-card[data-status="rejected"] .request-status {
+  background: color-mix(in srgb, var(--danger-bg) 80%, var(--surface) 20%);
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+  color: var(--danger);
+}
+
+/* ── 5  Duration / multi-day badge ──────────────────────────── */
+/* Base: hardcoded #E3F2FD / #1565C0 (light blue) — not dark-aware */
+[data-theme="dark"] .request-duration {
+  background: var(--info-bg);
+  border-color: color-mix(in srgb, var(--info) 40%, transparent);
+  color: var(--info);
+}
+
+/* ── 6  Vehicle badge — request card context ────────────────── */
+/* inline style="background:..." can't be overridden via color;
+   filter desaturates + dims the vivid vehicle palette so it sits
+   comfortably on dark surfaces without eye-strain.               */
+[data-theme="dark"] .request-card .vehicle-badge {
+  filter: saturate(0.55) brightness(0.78);
+  opacity: 1;
+}
+
+/* ── 7  Card actions separator ──────────────────────────────── */
+[data-theme="dark"] .request-card .request-card-actions {
+  margin-top: 0;
+  padding-top: 11px;
+  border-top: 1px solid var(--border);
+}
+
+/* ── 8  Comment button — elevated chip style ────────────────── */
+/* Visually distinct from action buttons: surface-2 background,
+   muted text, smaller padding — integrates into card vs floating */
+[data-theme="dark"] .request-card-actions
+  .btn-secondary[data-request-action="comment"] {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  padding: 5px 10px;
+}
+[data-theme="dark"] .request-card-actions
+  .btn-secondary[data-request-action="comment"]:hover {
+  background: var(--hover);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+/* ── 9  Empty state ──────────────────────────────────────────── */
+[data-theme="dark"] .empty-request-state {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--muted);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   REQUEST CARD — MOBILE DENSITY IMPROVEMENTS
+   Applies in both light and dark mode.
+   Desktop layout (≥768px) unchanged.
+   ════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 767px) {
+
+  /* Tighter card gap — more cards visible without scrolling      */
+  .requests-list { gap: 8px; }
+
+  /* Comment button: compact emoji chip, does NOT flex-grow       */
+  .request-card-actions
+    .btn-secondary[data-request-action="comment"] {
+    flex: 0 0 auto;
+    padding: 6px 10px;
+    font-size: 12px;
+    line-height: 1;
+  }
+
+  /* Admin action buttons (Edit / Tolak / Setujui) expand evenly  */
+  .request-card-actions
+    button:not([data-request-action="comment"]) {
+    flex: 1;
+  }
+
+  /* Right-align the action row so comment stays rightmost        */
+  .request-card-actions {
+    justify-content: flex-end;
+    align-items: center;
+  }
+
+  /* Tighter details row on mobile                                */
+  .request-details { margin-top: 7px; gap: 6px; font-size: 12px; }
+}
+
+/* ── Mobile + dark mode combined ────────────────────────────── */
+@media (max-width: 767px) {
+  /* Comment chip: deeper surface on mobile dark for contrast      */
+  [data-theme="dark"] .request-card-actions
+    .btn-secondary[data-request-action="comment"] {
+    background: var(--input-bg);
+    border-color: var(--input-border);
+    color: var(--faint);
+  }
+  [data-theme="dark"] .request-card-actions
+    .btn-secondary[data-request-action="comment"]:hover {
+    background: var(--hover);
+    color: var(--muted);
+  }
+}
