@@ -437,6 +437,10 @@ async function openProfileModal() {
   // Update Telegram status badge saat modal dibuka
   updateTelegramStatusBadge();
 
+  // Sync appearance toggle to current theme (in case changed via topbar since last open)
+  const darkToggle = document.getElementById('profileDarkModeToggle');
+  if (darkToggle) darkToggle.checked = (document.documentElement.getAttribute('data-theme') === 'dark');
+
   modal.style.display = 'flex';
 }
 

@@ -2970,6 +2970,28 @@ z-index: 1;
   gap: 0;
 }
 
+/* ── Appearance section — dark mode toggle ── */
+
+/* Remove top border: section label already provides visual separation. */
+.profile-theme-row {
+  border-top: none;
+  margin-top: 2px;
+}
+
+/* Stack label + subtext vertically inside the toggle row. */
+.profile-theme-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Muted subtext below the toggle label. */
+.profile-theme-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
 /* ── Test button ── */
 .profile-test-btn {
   width: 100%;
