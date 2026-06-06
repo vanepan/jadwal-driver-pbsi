@@ -36,10 +36,10 @@ import {
 } from './requests.js';
 import { renderDriverDashboard, setAssignments as setDashboardAssignments } from './driver-dashboard.js';
 import { initCommentHandlers, openCommentModal, closeCommentModal, setRequests as setCommentRequests, registerCommentSaveCallback, refreshCommentThreadIfOpen } from './comments.js';
-import { initAdminUI, updateAdminButtons } from './admin.js';
+import { initAdminUI, updateAdminButtons, openUserFormModal } from './admin.js';
 import { initNotificationUI, setNotificationData, openNotificationsModal } from './notifications.js';
 import { subscribeLogsChangeListener, getLogs, logAction } from './logs.js';
-import { getUserByUsername, getUsers, createUser } from './users.js';
+import { getUserByUsername, getUsers, createUser, getUserList, activateUser, deactivateUser, registerUsersChangeListener } from './users.js';
 import { expandDateRange, showToast, formatDateShort } from './utils.js';
 import {
   sendRequestApprovedNotification,
@@ -340,13 +340,13 @@ function updatePermissionUI(resetNavActive = false) {
     const v2PanelCta = document.getElementById('v2PanelCta');
     if (v2PanelCta) v2PanelCta.style.display = canAdd ? 'flex' : 'none';
 
-    // Primary CTA label: admin → "Tambah Jadwal", bidang → "Request Jadwal"
-    const v2BtnTambahLabel = document.getElementById('v2BtnTambahLabel');
-    if (v2BtnTambahLabel) {
-      v2BtnTambahLabel.textContent = isAdmin() ? 'Tambah Jadwal' : 'Request Jadwal';
+    // Primary CTA: admin only — Tambah Jadwal
+    const v2BtnTambahJadwal = document.getElementById('v2BtnTambahJadwal');
+    if (v2BtnTambahJadwal) {
+      v2BtnTambahJadwal.style.display = isAdmin() ? 'flex' : 'none';
     }
 
-    // Ajukan Request: bidang only (admin already has Tambah Jadwal)
+    // Ajukan Request: bidang only — single CTA, no duplicate
     const v2BtnAjukanRequest = document.getElementById('v2BtnAjukanRequest');
     if (v2BtnAjukanRequest) {
       v2BtnAjukanRequest.style.display = isBidang() ? 'flex' : 'none';
@@ -503,6 +503,7 @@ function setRailModule(name) {
   const driverOpsNav  = document.getElementById('v2PanelDriverOpsNav');
   const adminNav      = document.getElementById('v2PanelAdminNav');
   const panelTitle    = document.getElementById('v2PanelTitle');
+  const panelSubtitle = document.getElementById('v2PanelSubtitle');
   const crumbTitle    = document.getElementById('v2TopbarCrumb')?.querySelector('.v2-topbar-title');
 
   if (driverOpsItem) {
@@ -516,10 +517,14 @@ function setRailModule(name) {
 
   if (driverOpsNav) driverOpsNav.style.display = isAdm ? 'none' : '';
   if (adminNav)     adminNav.style.display     = isAdm ? ''     : 'none';
-  if (panelTitle)   panelTitle.textContent     = isAdm ? 'Administration' : 'Driver Operations';
-  if (crumbTitle)   crumbTitle.textContent     = isAdm ? 'Administration' : 'Driver Operations';
+  if (panelTitle)    panelTitle.textContent    = isAdm ? 'Administration'      : 'Driver Operations';
+  if (panelSubtitle) panelSubtitle.textContent = isAdm ? 'Manajemen Platform' : 'Operasional Kendaraan';
+  if (crumbTitle)    crumbTitle.textContent    = isAdm ? 'Administration'      : 'Driver Operations';
 
-  if (!isAdm) {
+  if (isAdm) {
+    setV2PanelNavActive('v2NavAdminUsers');
+    setWorkspace('administration');
+  } else {
     setV2PanelNavActive('v2NavDashboard');
     setWorkspace('dashboard');
     renderViews();
@@ -640,6 +645,7 @@ function initV2Panel() {
     <!-- Module title — text updated by setRailModule() -->
     <div class="v2-panel-header">
       <span class="v2-panel-title" id="v2PanelTitle">Driver Operations</span>
+      <span class="v2-panel-subtitle" id="v2PanelSubtitle">Operasional Kendaraan</span>
     </div>
     <div class="v2-panel-divider"></div>
 
@@ -656,7 +662,7 @@ function initV2Panel() {
           <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/>
           <path fill-rule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5z" clip-rule="evenodd"/>
         </svg>
-        Ajukan Request
+        Ajukan Jadwal
       </button>
     </div>
 
@@ -737,6 +743,7 @@ function initV2Panel() {
         <div class="v2-footer-user-info">
           <span class="v2-footer-display-name" id="v2FooterDisplayName"></span>
           <span class="v2-footer-role-label" id="v2FooterRoleLabel"></span>
+          <span class="v2-footer-version-label app-version-text" aria-hidden="true"></span>
         </div>
         <svg class="v2-footer-chevron" viewBox="0 0 20 20" fill="currentColor"
              width="12" height="12" aria-hidden="true">
@@ -760,11 +767,6 @@ function initV2Panel() {
       </div>
     </div>
 
-    <!-- Version watermark — populated by DOMContentLoaded .app-name-text / .app-version-text sweep -->
-    <div class="v2-panel-version" aria-hidden="true">
-      <span class="v2-panel-version-name app-name-text"></span>
-      <span class="v2-panel-version-num app-version-text"></span>
-    </div>
   `;
 
   // Insert immediately after .v2-rail (before #sidebar)
@@ -789,7 +791,7 @@ function initV2Panel() {
     }
   });
 
-  // Ajukan Request: bidang only — direct call to request form
+  // Ajukan Jadwal: bidang only — direct call to request form
   document.getElementById('v2BtnAjukanRequest')?.addEventListener('click', () => {
     openRequestFormModal();
   });
@@ -823,10 +825,10 @@ function initV2Panel() {
     setTimeout(() => document.getElementById('driverDashboard')?.scrollIntoView({ behavior: 'smooth' }), 50);
   });
 
-  // Manajemen User: proxy to V1 user management modal
+  // Manajemen User: open V2 administration workspace
   document.getElementById('v2NavAdminUsers')?.addEventListener('click', () => {
     setV2PanelNavActive('v2NavAdminUsers');
-    document.getElementById('btnUserMgmt')?.click();
+    setWorkspace('administration');
   });
 
   // Footer avatar: toggle user menu
@@ -1550,7 +1552,8 @@ function setWorkspace(name) {
     if (dashHeader) dashHeader.style.display = 'none';
   }
 
-  if (isPend) renderPendingWorkspace();
+  if (isPend)  renderPendingWorkspace();
+  if (isAdmWs) renderV2AdminWorkspace();
 }
 
 /**
@@ -1668,40 +1671,115 @@ function initV2AdministrationWorkspace() {
   ws.style.display = 'none';
   ws.innerHTML = `
     <div class="v2-workspace-header">
-      <h2 class="v2-workspace-title">Administrasi</h2>
-      <p class="v2-workspace-subtitle">Kelola pengguna, peran, dan konfigurasi sistem.</p>
+      <h2 class="v2-workspace-title">Manajemen User</h2>
+      <p class="v2-workspace-subtitle">Tambah, edit, atau nonaktifkan akun pengguna.</p>
     </div>
-    <div class="v2-admin-sections">
-      <div class="v2-admin-section">
-        <div class="v2-admin-section-header">
-          <span class="v2-admin-section-title">Manajemen User</span>
-          <button class="v2-admin-section-action" id="v2AdminOpenUsers" type="button">Kelola →</button>
-        </div>
-        <p class="v2-admin-section-desc">Tambah, edit, atau nonaktifkan akun pengguna.</p>
-      </div>
-      <div class="v2-admin-section v2-admin-section--disabled">
-        <div class="v2-admin-section-header">
-          <span class="v2-admin-section-title">Peran &amp; Izin</span>
-          <span class="v2-admin-section-badge">Segera</span>
-        </div>
-        <p class="v2-admin-section-desc">Konfigurasi hak akses per peran pengguna.</p>
-      </div>
-      <div class="v2-admin-section v2-admin-section--disabled">
-        <div class="v2-admin-section-header">
-          <span class="v2-admin-section-title">Konfigurasi</span>
-          <span class="v2-admin-section-badge">Segera</span>
-        </div>
-        <p class="v2-admin-section-desc">Pengaturan aplikasi dan integrasi.</p>
-      </div>
+    <div class="v2-admin-toolbar">
+      <input type="search" id="v2AdminSearch" class="v2-admin-search"
+             placeholder="Cari nama atau username…" autocomplete="off" />
+      <select id="v2AdminRoleFilter" class="v2-admin-filter">
+        <option value="">Semua Peran</option>
+        <option value="admin">Admin</option>
+        <option value="bidang">Bidang</option>
+        <option value="driver">Driver</option>
+        <option value="viewer">Viewer</option>
+      </select>
+      <button id="v2AdminAddUser" class="v2-admin-add-btn" type="button">+ Tambah User</button>
     </div>
+    <div id="v2AdminUserList" class="v2-admin-user-list"></div>
   `;
   document.querySelector('.main-content')?.appendChild(ws);
 
-  document.getElementById('v2AdminOpenUsers')?.addEventListener('click', () => {
-    document.getElementById('btnUserMgmt')?.click();
+  ws.addEventListener('input', e => {
+    if (e.target.id === 'v2AdminSearch') renderV2AdminWorkspace();
+  });
+  ws.addEventListener('change', e => {
+    if (e.target.id === 'v2AdminRoleFilter') renderV2AdminWorkspace();
+  });
+  document.getElementById('v2AdminAddUser')?.addEventListener('click', () => {
+    openUserFormModal(null);
   });
 
-  console.log('[VSM-9] Administration workspace injected');
+  registerUsersChangeListener(() => {
+    if (currentWorkspace === 'administration') renderV2AdminWorkspace();
+  });
+
+  console.log('[VSM-12] Administration workspace injected');
+}
+
+function buildUserCard(user) {
+  const initials = (user.displayName || user.username || '?')
+    .split(' ').slice(0, 2).map(w => w[0] || '').join('').toUpperCase() || '?';
+  const role = user.role || 'viewer';
+  const active = user.active !== false;
+  const roleLabel = { admin: 'Admin', bidang: 'Bidang', driver: 'Driver', viewer: 'Viewer' }[role] || role;
+  const toggleLabel = active ? 'Nonaktifkan' : 'Aktifkan';
+  return `
+    <div class="v2-user-card${active ? '' : ' v2-user-card--inactive'}">
+      <div class="v2-user-avatar-ring v2-user-avatar--${esc(role)}">
+        <span class="v2-user-avatar-initials">${esc(initials)}</span>
+      </div>
+      <div class="v2-user-info">
+        <span class="v2-user-display-name">${esc(user.displayName || user.username)}</span>
+        <span class="v2-user-username">@${esc(user.username)}</span>
+      </div>
+      <div class="v2-user-meta">
+        <span class="v2-user-role-pill v2-role-pill--${esc(role)}">${esc(roleLabel)}</span>
+        <span class="v2-user-status-pill${active ? '' : ' v2-status-pill--inactive'}">${active ? 'Aktif' : 'Nonaktif'}</span>
+      </div>
+      <div class="v2-user-card-actions">
+        <button class="v2-user-btn v2-user-btn--edit"
+                data-user-edit="${esc(user.username)}" type="button">Edit</button>
+        <button class="v2-user-btn v2-user-btn--toggle"
+                data-user-toggle="${esc(user.username)}" type="button">${toggleLabel}</button>
+      </div>
+    </div>`;
+}
+
+function renderV2AdminWorkspace() {
+  const list = document.getElementById('v2AdminUserList');
+  if (!list) return;
+
+  const q = (document.getElementById('v2AdminSearch')?.value || '').toLowerCase().trim();
+  const roleFilter = document.getElementById('v2AdminRoleFilter')?.value || '';
+  const allUsers = getUserList();
+
+  const filtered = allUsers.filter(u => {
+    const matchesSearch = !q ||
+      (u.displayName || '').toLowerCase().includes(q) ||
+      (u.username    || '').toLowerCase().includes(q);
+    const matchesRole = !roleFilter || u.role === roleFilter;
+    return matchesSearch && matchesRole;
+  });
+
+  if (!filtered.length) {
+    list.innerHTML = '<div class="v2-admin-empty">Tidak ada pengguna ditemukan.</div>';
+    return;
+  }
+
+  list.innerHTML = filtered.map(buildUserCard).join('');
+
+  list.querySelectorAll('[data-user-edit]').forEach(btn => {
+    btn.addEventListener('click', () => openUserFormModal(btn.dataset.userEdit));
+  });
+  list.querySelectorAll('[data-user-toggle]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const username = btn.dataset.userToggle;
+      const user = getUserList().find(u => u.username === username);
+      if (!user) return;
+      btn.disabled = true;
+      try {
+        if (user.active !== false) {
+          await deactivateUser(username);
+        } else {
+          await activateUser(username);
+        }
+      } catch (err) {
+        showToast(err.message || 'Gagal mengubah status.', 'error');
+        renderV2AdminWorkspace();
+      }
+    });
+  });
 }
 
 /**

@@ -120,14 +120,14 @@
 
   --text:           #E6E4DF;
   --muted:          #A6A39B;
-  --faint:          #71706B;
+  --faint:          #908C86;    /* upgraded: 4.78:1 on surface, WCAG AA */
 
   --hover:          #292B33;
   --input-bg:       #24262C;
   --input-border:   #363941;
 
-  --accent:         #CF6469;
-  --on-accent:      #FBEFEF;
+  --accent:         #B8454A;    /* deepened: 5.33:1 with white, WCAG AA */
+  --on-accent:      #FFFFFF;
 
   --topbar-bg:      #191A1F;
   --tl-head-bg:     #202229;
@@ -5059,3 +5059,1065 @@ body.v2-shell-active .v2-kpi-value { font-size: 22px; }
   .v2-topbar-theme-btn { display: none !important; }
   #v2TopbarCrumb       { display: none !important; }
 }
+
+
+/* ════════════════════════════════════════════════════════════════
+   VSM-10 — Dark Mode Cleanup + Bidang UX Fix
+   ════════════════════════════════════════════════════════════════ */
+
+/* ── Part 1: Timeline scroll-fade edge overlays ─────────────────
+   .timeline-scroll-fade-* use literal rgba(255,255,255,0.85) that
+   render as opaque white bars at the left/right edges in dark mode.
+   Remap gradient source to the surface color so the fade blends
+   into the dark canvas without visible white artifacts.          */
+[data-theme="dark"] .timeline-scroll-fade-left {
+  background: linear-gradient(to right, var(--surface), transparent);
+}
+[data-theme="dark"] .timeline-scroll-fade-right {
+  background: linear-gradient(to left, var(--surface), transparent);
+}
+
+/* ── Part 1: Assignment card white inset highlight ──────────────
+   The inset top-edge shadow (rgba 255,255,255,0.18) is a
+   light-mode "top-surface sheen" trick. In dark mode it produces
+   a bright white horizontal line on every assignment card.
+   Replace with a deeper drop shadow + subtle transparent ring to
+   define card edges without any white glow.                      */
+[data-theme="dark"] body.v2-shell-active .assignment-block {
+  box-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+[data-theme="dark"] body.v2-shell-active .assignment-block:hover {
+  box-shadow:
+    0 3px 12px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+/* ── Part 1: Timeline scrollbar — explicit dark override ────────
+   CSS custom property cascade to ::-webkit-scrollbar pseudo-
+   elements is unreliable across browsers. Explicit rule wins.   */
+[data-theme="dark"] #v2TimelineSurface .timeline-body::-webkit-scrollbar-track {
+  background: var(--tl-head-bg, #202229);
+}
+[data-theme="dark"] #v2TimelineSurface .timeline-body::-webkit-scrollbar-thumb {
+  background: var(--border-strong, #3E414C);
+}
+
+/* ── Part 2: Low-contrast faint text upgrade ────────────────────
+   --faint (#71706B) on --surface (#1F2025) is ~3.6:1 contrast —
+   below WCAG AA for small text. Upgrade to --muted in dark mode. */
+[data-theme="dark"] .v2-kpi-sub {
+  color: var(--muted);
+}
+[data-theme="dark"] body.v2-shell-active .driver-label .driver-phone {
+  color: var(--muted);
+}
+
+/* ── Part 4: Navigation icon baseline visibility ────────────────
+   Inactive nav icons at opacity:0.55 are too faint on the dark
+   panel surface. Raise to 0.70 for readable without hover.      */
+[data-theme="dark"] .v2-panel-nav-icon {
+  opacity: 0.70;
+}
+
+/* ── Part 2: Timeline theme-switch exemption ────────────────────
+   html.theme-anim * (platform.css line 214) applies a 550ms
+   background-color transition to EVERY element. For the timeline
+   this causes gradient overlays and assignment card shadows to
+   flash through intermediate light states before settling dark.
+   Explicitly zero the transition for all timeline descendants so
+   the switch is instant and clean. The !important beats the
+   html.theme-anim * !important specificity tie by being later.  */
+html.theme-anim #v2TimelineSurface,
+html.theme-anim #v2TimelineSurface *,
+html.theme-anim #v2TimelineSurface *::before,
+html.theme-anim #v2TimelineSurface *::after,
+html.theme-anim .timeline-scroll-fade-left,
+html.theme-anim .timeline-scroll-fade-right {
+  transition: none !important;
+}
+
+/* ── Part 3: Panel module subtitle ─────────────────────────────
+   .v2-panel-subtitle sits below .v2-panel-title. It describes
+   the active module — text is updated by setRailModule().       */
+.v2-panel-subtitle {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--faint);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-family: var(--font-sans, 'Inter', sans-serif);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 3px;
+}
+
+/* ── Part 3: Panel header — tighten bottom padding ─────────────
+   Original 18px / 10px padding assumed a single title line.
+   With a subtitle the visual weight now fills the header.       */
+.v2-panel-header {
+  padding: 16px 16px 8px;
+}
+
+/* ── Part 4: Footer version label ──────────────────────────────
+   Third line inside .v2-footer-user-info — version watermark
+   placed directly below the role label. aria-hidden="true" on
+   the element so screen readers skip it.                        */
+.v2-footer-version-label {
+  display: block;
+  font-size: 10px;
+  font-family: 'JetBrains Mono', 'DM Mono', monospace;
+  color: var(--faint);
+  white-space: nowrap;
+  margin-top: 2px;
+  line-height: 1.3;
+}
+
+/* ── Part 6: Footer role label contrast ────────────────────────
+   --faint (#71706B) on --surface (#1F2025) is ~3.6:1 in dark
+   mode. Upgrade role label and version label to --muted.        */
+[data-theme="dark"] .v2-footer-role-label,
+[data-theme="dark"] .v2-footer-version-label {
+  color: var(--muted);
+}
+
+/* ── VSM-12 Part 1: Login card dark mode ────────────────────────
+   .login-card uses hardcoded rgba(255,255,255,0.84) — override
+   the glass effect with the standard dark surface token.          */
+[data-theme="dark"] .login-card {
+  background: var(--surface);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid var(--border);
+  box-shadow:
+    0 2px 8px  rgba(0,0,0,.30),
+    0 8px 32px -4px rgba(0,0,0,.45),
+    0 32px 72px -16px rgba(0,0,0,.55);
+}
+/* Faint labels on the login card: upgrade --faint → --muted in dark mode
+   for WCAG AA compliance (~6.75:1 vs ~3.42:1) */
+[data-theme="dark"] .login-brand-sub,
+[data-theme="dark"] .login-quick-label,
+[data-theme="dark"] .login-chip-uname,
+[data-theme="dark"] .login-foot-text {
+  color: var(--muted);
+}
+
+/* ── VSM-12 Part 3: V2 Administration workspace ─────────────────
+   Toolbar (search + filter + add button) and user card grid.      */
+.v2-admin-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 20px 16px;
+  flex-wrap: wrap;
+}
+
+.v2-admin-search {
+  flex: 1 1 180px;
+  min-width: 0;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text);
+  font-family: inherit;
+  outline: none;
+  transition: border-color .12s, box-shadow .12s;
+}
+.v2-admin-search::placeholder { color: var(--faint); }
+.v2-admin-search:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(168,41,47,.12);
+}
+
+.v2-admin-filter {
+  flex: 0 0 auto;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text);
+  font-family: inherit;
+  outline: none;
+  cursor: pointer;
+  transition: border-color .12s;
+}
+.v2-admin-filter:focus { border-color: var(--accent); }
+
+.v2-admin-add-btn {
+  flex: 0 0 auto;
+  background: var(--accent);
+  color: var(--on-accent);
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: filter .12s;
+  white-space: nowrap;
+}
+.v2-admin-add-btn:hover  { filter: brightness(.92); }
+.v2-admin-add-btn:active { filter: brightness(.86); }
+
+.v2-admin-user-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 20px 20px;
+}
+
+.v2-admin-empty {
+  padding: 40px 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* User card */
+.v2-user-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow .15s;
+}
+.v2-user-card:hover { box-shadow: var(--shadow-md); }
+.v2-user-card--inactive { opacity: 0.60; }
+
+/* Avatar ring — role-coloured border */
+.v2-user-avatar-ring {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border: 2px solid transparent;
+}
+.v2-user-avatar--admin   { background: var(--danger-bg);  border-color: var(--danger);  color: var(--danger);  }
+.v2-user-avatar--bidang  { background: var(--info-bg);    border-color: var(--info);    color: var(--info);    }
+.v2-user-avatar--driver  { background: var(--warn-bg);    border-color: var(--warn);    color: var(--warn);    }
+.v2-user-avatar--viewer  { background: var(--ok-bg);      border-color: var(--ok);      color: var(--ok);      }
+
+.v2-user-avatar-initials {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: .03em;
+}
+
+/* Name + username */
+.v2-user-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+.v2-user-display-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.v2-user-username {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: 'JetBrains Mono', 'DM Mono', monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Pill badges */
+.v2-user-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.v2-user-role-pill {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 20px;
+}
+.v2-role-pill--admin   { background: var(--danger-bg);  color: var(--danger);  }
+.v2-role-pill--bidang  { background: var(--info-bg);    color: var(--info);    }
+.v2-role-pill--driver  { background: var(--warn-bg);    color: var(--warn);    }
+.v2-role-pill--viewer  { background: var(--ok-bg);      color: var(--ok);      }
+
+.v2-user-status-pill {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 20px;
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.v2-user-status-pill.v2-status-pill--inactive {
+  background: var(--border);
+  color: var(--muted);
+}
+
+/* Action buttons */
+.v2-user-card-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.v2-user-btn {
+  font-size: 11.5px;
+  font-weight: 600;
+  font-family: inherit;
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: filter .12s, background .12s;
+  white-space: nowrap;
+}
+.v2-user-btn--edit {
+  background: var(--input-bg);
+  border-color: var(--border);
+  color: var(--text);
+}
+.v2-user-btn--edit:hover { filter: brightness(.95); }
+
+.v2-user-btn--toggle {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-color: transparent;
+}
+.v2-user-btn--toggle:hover { filter: brightness(.94); }
+.v2-user-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Responsive: collapse meta + actions on narrow widths */
+@media (max-width: 560px) {
+  .v2-user-card { flex-wrap: wrap; }
+  .v2-user-meta { order: 3; width: 100%; margin-left: 50px; }
+  .v2-user-card-actions { order: 4; width: 100%; margin-left: 50px; }
+}
+
+/* ── VSM-12 Part 4: Dark mode audit ────────────────────────────
+   Pending workspace labels that use --faint (3.42:1 on dark
+   surface) — upgrade to --muted for WCAG AA.                     */
+[data-theme="dark"] .v2-pending-label,
+[data-theme="dark"] .v2-pending-age {
+  color: var(--muted);
+}
+
+/* Dark mode: inset card shadows already removed for assignment
+   blocks in VSM-10; admin user card hover gets darker tint */
+[data-theme="dark"] .v2-user-card {
+  box-shadow: 0 1px 4px rgba(0,0,0,.35);
+}
+[data-theme="dark"] .v2-user-card:hover {
+  box-shadow: 0 3px 12px rgba(0,0,0,.50);
+}
+
+
+/* ════════════════════════════════════════════════════════════════
+   VSM-13 — Accessibility, Contrast & Dark Mode Polish
+
+   Part 1+2 handled via [data-theme="dark"] token block edits:
+     --faint upgraded to #908C86 (4.78:1 WCAG AA)
+     --accent upgraded to #B8454A (5.33:1 with white)
+     --on-accent set to #FFFFFF
+
+   Parts 3–6 below.
+   ════════════════════════════════════════════════════════════════ */
+
+
+/* ── Part 3: Global scrollbar system ────────────────────────────
+   Uniform thin scrollbars. Sizes set globally; colors per theme.
+   Existing high-specificity rules (timeline, sidebar) still win. */
+
+/* Size — universal, lowest specificity so class-level overrides win */
+::-webkit-scrollbar              { width: 8px; height: 8px; }
+::-webkit-scrollbar-corner       { background: transparent; }
+
+/* Light theme */
+::-webkit-scrollbar-track        { background: #F3F4F6; }
+::-webkit-scrollbar-thumb        { background: #CBD5E1; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover  { background: #94A3B8; }
+:root,
+[data-theme="light"] { scrollbar-width: thin; scrollbar-color: #CBD5E1 #F3F4F6; }
+
+/* Dark theme — scoped under html[data-theme="dark"] so descendant
+   pseudo-element rules beat the bare light-mode rules above      */
+html[data-theme="dark"] ::-webkit-scrollbar-track       { background: #161A22; }
+html[data-theme="dark"] ::-webkit-scrollbar-thumb       { background: #3A4152; border-radius: 4px; }
+html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: #4C556A; }
+[data-theme="dark"] { scrollbar-color: #3A4152 #161A22; }
+
+/* Preserve explicitly hidden scrollbars (sidebar, timeline hours) */
+.sidebar::-webkit-scrollbar,
+.sidebar-nav::-webkit-scrollbar,
+.timeline-hours::-webkit-scrollbar { display: none !important; }
+
+
+/* ── Part 4: Notification card V2 redesign ──────────────────────
+   Overrides the Phase-1 / VSM-5 .notif-card block by cascade.
+   No HTML changes — only CSS.                                     */
+
+.notifications-list { gap: 10px; }
+
+.notif-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 13px 15px;
+  box-shadow: var(--shadow-sm);
+  transition: background .13s, box-shadow .13s;
+  cursor: default;
+}
+@media (hover: hover) {
+  .notif-card:hover {
+    background: var(--hover);
+    box-shadow: var(--shadow-md);
+  }
+}
+.notif-priority-high   { border-left-color: var(--danger); }
+.notif-priority-medium { border-left-color: var(--warn);   }
+.notif-priority-low    { border-left-color: var(--border-strong); }
+
+.notif-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 5px;
+}
+
+.notif-card-title {
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.3;
+}
+
+.notif-card-time {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-family: 'JetBrains Mono', 'DM Mono', monospace;
+  color: var(--muted);
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
+.notif-card-desc {
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+/* Activity log: same hierarchy uplift */
+.activity-log-subtitle { color: var(--muted); }
+.activity-log-time     { color: var(--muted); }
+
+
+/* ── Part 5: Mobile quality audit ───────────────────────────────
+   Polish for V2 workspaces on 375–600px viewports.              */
+
+/* Admin workspace: tighter horizontal padding on phone */
+@media (max-width: 600px) {
+  .v2-admin-toolbar   { padding: 0 12px 12px; gap: 6px; }
+  .v2-admin-user-list { padding: 0 12px 16px; gap: 6px; }
+  .v2-admin-search    { flex-basis: 100%; }  /* full-width row on its own */
+  .v2-admin-filter    { flex: 1 1 0; }
+}
+
+/* Workspace panels: compact padding on small phone */
+@media (max-width: 480px) {
+  .v2-workspace               { padding: 10px 0 0; }
+  .v2-workspace-header        { padding: 0 12px; margin-bottom: 12px; }
+  .v2-workspace-title         { font-size: 16px; }
+  .v2-workspace-subtitle      { font-size: 12px; }
+  .v2-pending-card            { padding: 11px 12px; }
+  .v2-pending-card-body       { grid-template-columns: 1fr; gap: 6px 0; }
+}
+
+/* User card: ultra-compact on very narrow screens */
+@media (max-width: 400px) {
+  .v2-user-card               { padding: 10px; gap: 8px; }
+  .v2-user-meta               { gap: 4px; }
+  .v2-user-card-actions       { gap: 4px; }
+  .v2-user-btn                { padding: 4px 8px; font-size: 11px; }
+}
+
+/* Notification list: scrollable in tight modal on phone */
+@media (max-width: 600px) {
+  .notifications-list { max-height: 55vh; overflow-y: auto; }
+  .activity-log-list  { max-height: 35vh; overflow-y: auto; }
+}
+
+
+/* ── Part 6: Accessibility — focus rings & keyboard nav ─────────
+   All interactive V2 elements get a visible 2px accent ring
+   on :focus-visible (keyboard focus only, not mouse).           */
+
+/* Admin workspace controls */
+.v2-admin-search:focus-visible,
+.v2-admin-filter:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.v2-admin-add-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.v2-user-btn:focus-visible      { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Pending workspace buttons */
+.v2-pending-btn:focus-visible   { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Topbar icon buttons */
+.v2-topbar-icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Login screen */
+.login-submit:focus-visible     { outline: 2px solid var(--accent); outline-offset: 3px; }
+.login-quick-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Placeholder contrast — Firefox normalisation (opacity:1 default in Chrome) */
+::placeholder { opacity: 1; }
+
+/* Disabled inputs: keep label readable at reduced opacity */
+input:disabled,
+select:disabled,
+textarea:disabled { opacity: 0.55; }
+
+/* KPI/metadata contrast: --faint token upgraded globally in dark token
+   block. Explicit belt-and-suspenders for notification timestamps.    */
+[data-theme="dark"] .notif-card-time,
+[data-theme="dark"] .activity-log-time,
+[data-theme="dark"] .activity-log-subtitle,
+[data-theme="dark"] .v2-topbar-user-role { color: var(--muted); }
+
+
+/* ════════════════════════════════════════════════════════════════
+   VSM-14 — Final Polish & Complete Application Audit
+
+   Scope: every V1 component that has no dark-mode override.
+   Strategy: append high-specificity [data-theme="dark"] rules
+   so style.css originals stay untouched — rollback = delete block.
+
+   Sections:
+     A  Global token fixes (both themes)
+     B  Modal chrome (header, title, body, close)
+     C  Form system (labels, inputs, focus, readonly, toggles)
+     D  Button system (secondary, success, danger, WA, reimburse)
+     E  Profile modal (all sub-components)
+     F  Detail modal accordion
+     G  Status & role badges
+     H  User / notification cards (V1)
+     I  Typography & hierarchy cleanup
+     J  Additional V2 consistency polish
+   ════════════════════════════════════════════════════════════════ */
+
+
+/* ── A: Global token fixes (both light & dark themes) ───────────
+   Replace hardcoded colours with semantic tokens so dark mode
+   token redefinitions propagate automatically.                   */
+
+/* btn-success: hardcoded #43a047 → semantic --ok token */
+.btn-success {
+  background: var(--ok);
+  color: #FFFFFF;
+}
+.btn-success:hover:not(:disabled) { background: color-mix(in srgb, var(--ok) 85%, #000); }
+
+/* Toggle switch checked state: hardcoded #A5D6A7 → --ok */
+.toggle-switch input:checked + .switch-slider { background: var(--ok); }
+
+/* Role chips: hardcoded hex → semantic bg/fg tokens */
+.profile-role-chip[data-role="admin"]  {
+  background: var(--danger-bg); color: var(--danger);
+}
+.profile-role-chip[data-role="bidang"] {
+  background: var(--info-bg);   color: var(--info);
+}
+.profile-role-chip[data-role="viewer"] {
+  background: var(--ok-bg);     color: var(--ok);
+}
+.profile-role-chip[data-role="driver"] {
+  background: var(--warn-bg);   color: var(--warn);
+}
+
+/* Telegram connected badge */
+.profile-tg-badge[data-status="connected"] {
+  background: var(--ok-bg); color: var(--ok); border-color: var(--ok);
+}
+
+/* Status badges in detail modal — semantic tokens */
+.badge-aktif  { background: var(--ok-bg);   color: var(--ok);     border-color: var(--ok);     }
+.badge-selesai { background: var(--info-bg); color: var(--info);   border-color: var(--info);   }
+
+.badge-status--pending   { background: var(--warn-bg);   color: var(--warn);   border-color: var(--warn);   }
+.badge-status--approved  { background: var(--info-bg);   color: var(--info);   border-color: var(--info);   }
+.badge-status--assigned  { background: var(--ok-bg);     color: var(--ok);     border-color: var(--ok);     }
+.badge-status--started   { background: var(--warn-bg);   color: var(--warn);   border-color: var(--warn);   }
+.badge-status--completed { background: var(--info-bg);   color: var(--info);   border-color: var(--info);   }
+
+/* WA accordion: semantic green tokens */
+#accordWA { border-color: var(--ok); background: var(--ok-bg); }
+#accordWA .accord-title,
+#accordWA .accord-chevron { color: var(--ok); }
+@media (hover: hover) {
+  #accordWA .accord-header:hover { background: color-mix(in srgb, var(--ok-bg) 90%, var(--ok)); }
+}
+.wa-preview-box { background: var(--ok-bg); border-color: var(--ok); }
+.wa-preview-label { color: var(--ok); }
+.copy-feedback  { color: var(--ok); }
+.btn-wa-copy    { background: var(--ok); }
+.btn-wa-copy:hover { background: color-mix(in srgb, var(--ok) 85%, #000); }
+
+
+/* ── B: Modal chrome — dark mode ────────────────────────────────
+   .modal-box, .modal-header, .modal-title use hardcoded V1 values
+   (--white, --gray-2, --dark). Override for dark theme.          */
+
+[data-theme="dark"] .modal-box {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .modal-header {
+  background: var(--surface);
+  border-bottom-color: var(--border);
+}
+
+[data-theme="dark"] .modal-title { color: var(--text); }
+
+[data-theme="dark"] .modal-close {
+  color: var(--muted);
+}
+[data-theme="dark"] .modal-close:hover { color: var(--text); }
+
+[data-theme="dark"] .modal-body { color: var(--text); }
+
+
+/* ── C: Form system — dark mode ──────────────────────────────────
+   All inputs, selects, textareas in .form-group use V1 --gray-*
+   tokens. Override everything for dark.                           */
+
+[data-theme="dark"] .form-group label { color: var(--muted); }
+
+[data-theme="dark"] .form-group input,
+[data-theme="dark"] .form-group select,
+[data-theme="dark"] .form-group textarea {
+  background: var(--input-bg);
+  border-color: var(--input-border);
+  color: var(--text);
+  font-family: inherit;
+}
+
+[data-theme="dark"] .form-group input::placeholder,
+[data-theme="dark"] .form-group textarea::placeholder { color: var(--faint); }
+
+[data-theme="dark"] .form-group input:focus,
+[data-theme="dark"] .form-group select:focus,
+[data-theme="dark"] .form-group textarea:focus {
+  border-color: var(--accent);
+  background: var(--input-bg);
+  box-shadow: 0 0 0 3px rgba(168,41,47,.14);
+}
+
+[data-theme="dark"] .form-group input[readonly] { color: var(--muted); }
+
+[data-theme="dark"] .time-separator { color: var(--muted); }
+
+[data-theme="dark"] .multi-day-checkbox-text { color: var(--text); }
+[data-theme="dark"] .multi-day-hint          { color: var(--muted); }
+
+/* Toggle switch — dark background surface */
+[data-theme="dark"] .toggle-switch {
+  background: var(--input-bg);
+  border-color: var(--input-border);
+}
+[data-theme="dark"] .switch-slider { background: var(--border-strong); }
+
+/* form-group input[readonly] in dark */
+[data-theme="dark"] .form-group input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
+/* Form actions row */
+[data-theme="dark"] .form-actions { border-top-color: var(--border); }
+
+/* Tag optional */
+[data-theme="dark"] .tag-optional {
+  background: var(--input-bg);
+  color: var(--muted);
+}
+
+
+/* ── D: Button system — dark mode ────────────────────────────────
+   .btn-secondary, .btn-danger, .btn-reimbursement               */
+
+[data-theme="dark"] .btn-secondary {
+  background: var(--input-bg);
+  border-color: var(--input-border);
+  color: var(--text);
+}
+[data-theme="dark"] .btn-secondary:hover {
+  background: var(--hover);
+  border-color: var(--border-strong);
+}
+
+[data-theme="dark"] .btn-danger {
+  background: var(--danger);
+  color: #FFFFFF;
+}
+[data-theme="dark"] .btn-danger:hover {
+  background: color-mix(in srgb, var(--danger) 85%, #000);
+}
+
+/* Reimbursement button: inverts from dark (#1A1917) to surface */
+[data-theme="dark"] .btn-reimbursement {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+[data-theme="dark"] .btn-reimbursement:hover {
+  background: var(--hover);
+}
+
+/* Paste small button */
+[data-theme="dark"] .btn-paste-small {
+  background: var(--input-bg);
+  border-color: var(--input-border);
+  color: var(--text);
+}
+[data-theme="dark"] .btn-paste-small:hover {
+  background: var(--hover);
+  border-color: var(--border-strong);
+}
+
+/* Profile test button */
+[data-theme="dark"] .profile-test-btn { color: var(--muted); }
+[data-theme="dark"] .profile-test-btn:hover { color: var(--text); }
+
+
+/* ── E: Profile modal — dark mode ───────────────────────────────
+   Complete override of every profile sub-component.             */
+
+[data-theme="dark"] .profile-user-card {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .profile-display-name { color: var(--text); }
+
+[data-theme="dark"] .profile-section-label { color: var(--muted); }
+
+[data-theme="dark"] .profile-tg-badge {
+  background: var(--input-bg);
+  border-color: var(--border);
+  color: var(--muted);
+}
+
+[data-theme="dark"] .profile-help-text { color: var(--muted); }
+
+[data-theme="dark"] .profile-code-btn {
+  background: var(--input-bg);
+  border-color: var(--border);
+  color: var(--text);
+}
+[data-theme="dark"] .profile-code-btn:hover { background: var(--hover); }
+
+[data-theme="dark"] .profile-status-text { color: var(--muted); }
+
+[data-theme="dark"] .profile-toggle-row {
+  border-top-color:    var(--border);
+  border-bottom-color: var(--border);
+}
+[data-theme="dark"] .profile-toggle-text { color: var(--text); }
+
+[data-theme="dark"] .profile-divider { background: var(--border); }
+
+[data-theme="dark"] .profile-inline-btn { color: var(--accent); }
+
+/* Toggle switch: checked state dark */
+[data-theme="dark"] .toggle-switch input:checked + .switch-slider {
+  background: var(--ok);
+}
+
+/* Profile section header inline btn */
+[data-theme="dark"] .profile-section-header .profile-inline-btn { color: var(--accent); }
+
+/* Reimbursement hint */
+[data-theme="dark"] .reimbursement-hint { color: var(--muted); }
+
+/* Detail empty state */
+[data-theme="dark"] .detail-empty { color: var(--muted); }
+
+
+/* ── F: Detail modal accordion — dark mode ───────────────────────
+   .accord-section, .accord-header, .accord-title, .accord-body  */
+
+[data-theme="dark"] .accord-section {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] #accordSummary {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+
+[data-theme="dark"] .accord-header:active { background: var(--hover); }
+@media (hover: hover) {
+  [data-theme="dark"] .accord-header:hover { background: var(--hover); }
+  [data-theme="dark"] #accordSummary .accord-header:hover { background: var(--input-bg); }
+}
+
+[data-theme="dark"] .accord-title   { color: var(--text); }
+[data-theme="dark"] .accord-chevron { color: var(--muted); }
+
+[data-theme="dark"] .detail-label   { color: var(--muted); }
+[data-theme="dark"] .detail-value   { color: var(--text); }
+[data-theme="dark"] .detail-ts      { color: var(--faint); }
+
+/* WA accordion in dark: subtle green on dark surface */
+[data-theme="dark"] #accordWA {
+  background: var(--ok-bg);
+  border-color: var(--ok);
+}
+
+/* WA preview box in dark */
+[data-theme="dark"] .wa-preview-box {
+  background: var(--ok-bg);
+  border-color: var(--ok);
+}
+[data-theme="dark"] .wa-preview-text { color: var(--text); }
+
+
+/* ── G: Status & role badges — dark mode ─────────────────────────
+   All badges already use semantic tokens via Section A, so the
+   dark-mode token redefinitions handle them automatically.
+   Only extra: vehicle badge uses inline color (JS-injected).     */
+
+[data-theme="dark"] .vehicle-badge { opacity: 0.90; }
+
+/* Notification dot in sidebar */
+[data-theme="dark"] .notification-dot {
+  background: var(--danger);
+  border: 2px solid var(--surface);
+}
+
+
+/* ── H: User / notification cards (V1) — dark mode ──────────────
+   .user-card and .notification-item use --gray-1 background.    */
+
+[data-theme="dark"] .user-card,
+[data-theme="dark"] .notification-item {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .user-title { color: var(--text); }
+[data-theme="dark"] .user-sub,
+[data-theme="dark"] .notification-time,
+[data-theme="dark"] .notification-target { color: var(--muted); }
+
+
+/* ── I: Typography & hierarchy — dark mode consistency ───────────
+   Elements where V1 --dark / --text-muted cause readability gaps.*/
+
+/* Form actions — text labels near buttons */
+[data-theme="dark"] .form-section-title { color: var(--text); }
+
+/* Detail hint text */
+[data-theme="dark"] .detail-hint { color: var(--muted); }
+
+/* Section caption/subtitle patterns across all modals */
+[data-theme="dark"] .section-caption,
+[data-theme="dark"] .field-hint,
+[data-theme="dark"] .helper-text { color: var(--muted); }
+
+/* Reimbursement section */
+[data-theme="dark"] .accord-body-inner { color: var(--text); }
+
+
+/* ── J: Additional V2 consistency polish ─────────────────────────
+   Visual consistency pass: radius, spacing, shadow alignment.   */
+
+/* Standardise .btn-secondary radius to match V2 (8px) */
+.btn-secondary { border-radius: 8px; }
+.btn-danger    { border-radius: 8px; }
+.btn-success   { border-radius: 8px; }
+
+/* Modal close button: rounder, clearer hover */
+.modal-close {
+  border-radius: 6px;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 20px;
+  transition: background .12s, color .12s;
+}
+.modal-close:hover { background: var(--hover); }
+[data-theme="dark"] .modal-close:hover { background: var(--hover); }
+
+/* Modal title: consistent weight with V2 workspace titles */
+.modal-title { font-size: 16px; font-weight: 700; letter-spacing: -0.02em; }
+
+/* Accordion section: slightly rounder to match V2 cards */
+.accord-section { border-radius: 8px; }
+
+/* user-card in admin modal: align with V2 card radius */
+.user-card { border-radius: 8px; }
+
+/* Form label: consistent with V2 pending/admin labels */
+.form-group label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* Scrollbar for modal-box (inherits global from VSM-13 Part 3) */
+.modal-box { scrollbar-width: thin; }
+
+/* Focus ring on modal close button */
+.modal-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Form actions: consistent bottom spacing */
+.form-actions {
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* Accordion body inner: consistent padding */
+.accord-body-inner { padding: 6px 14px 14px; }
+
+/* ── Mobile: profile & form modal on phone ───────────────────────
+   Ensure profile modal is usable on 390px screens.             */
+@media (max-width: 480px) {
+  .profile-modal-box { margin: 8px; width: calc(100vw - 16px); max-width: none; }
+  .profile-user-card { padding: 12px 13px; gap: 10px; }
+  .profile-input-row { flex-direction: column; gap: 6px; }
+  .profile-input-row input { width: 100%; }
+  .btn-paste-small { width: 100%; justify-content: center; padding: 9px; }
+  .form-grid { grid-template-columns: 1fr; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   VSM-15 — Dark Mode Final Polish
+   ───────────────────────────────────────────────────────────────
+   Parts 1–6: Timeline assignment visibility, grid contrast,
+   scrollbar hover, sidebar footer hierarchy, bidang label
+   (app.js), and full-app consistency audit.
+   Append-only. style.css is never modified.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Part 1A: Assignment text — restore white ───────────────────
+   VSM-9 Part 3 sets --white: var(--surface) inside #v2TimelineSurface,
+   so .assignment-block's color: var(--white) renders dark text on
+   coloured block backgrounds. Explicit #fff breaks the cascade.   */
+[data-theme="dark"] #v2TimelineSurface .assignment-block {
+  color: #FFFFFF;
+}
+
+/* ── Part 1B: Vehicle block colours — dark-mode-appropriate ─────
+   style.css uses vivid Material Design hex values. In dark mode we
+   override with the already-defined muted --v-* tokens so blocks
+   sit clearly on the dark grid without harsh saturation.
+   Specificity [1,1,1] beats style.css's bare attr selector [0,1,0]. */
+[data-theme="dark"] #v2TimelineSurface [data-vehicle="Innova"]   { background: var(--v-innova); }
+[data-theme="dark"] #v2TimelineSurface [data-vehicle="Luxio"]    { background: var(--v-luxio);  }
+[data-theme="dark"] #v2TimelineSurface [data-vehicle="Polytron"] { background: var(--v-poly);   }
+[data-theme="dark"] #v2TimelineSurface [data-vehicle="Hiace"]    { background: var(--v-hiace);  }
+
+/* ── Part 1C: Block elevation — stronger shadow in dark ─────────
+   Assignment blocks are the primary element; they must read as
+   clearly elevated over the grid. VSM-10's 1px shadow is too light.
+   Remove the inset top-highlight (visible white line in VSM-9) and
+   replace with deeper drop shadow + more opaque ring.              */
+[data-theme="dark"] body.v2-shell-active .assignment-block {
+  box-shadow:
+    0 2px 8px rgba(0,0,0,.60),
+    0 0 0 1px rgba(255,255,255,.12);
+}
+[data-theme="dark"] body.v2-shell-active .assignment-block:hover {
+  box-shadow:
+    0 4px 14px rgba(0,0,0,.70),
+    0 0 0 1px rgba(255,255,255,.20);
+  filter: brightness(1.10);
+}
+
+/* ── Part 1D: Completed blocks — reduce dark-mode fading ────────
+   style.css applies opacity: 0.5 + grayscale(35%). On dark-muted
+   vehicle colours the result is nearly invisible. Ease both values
+   so completed slots remain identifiable without appearing active.  */
+[data-theme="dark"] .assignment-block.is-completed {
+  opacity: 0.65;
+  filter: grayscale(20%);
+}
+[data-theme="dark"] .assignment-block.is-completed:hover {
+  opacity: 0.78;
+  filter: grayscale(10%) brightness(1.08);
+}
+
+/* ── Part 2: Grid lines — halve visual weight ───────────────────
+   --gray-2 = --border = #31333C draws attention away from blocks.
+   Opacity 0.5 on the ::before pseudo-element that draws vertical
+   hour lines softens the grid noise without touching .driver-row
+   border-bottom or .driver-label border-right (which remain full). */
+[data-theme="dark"] #v2TimelineSurface .driver-slots::before {
+  opacity: 0.5;
+}
+
+/* ── Part 3: Timeline scrollbar — thumb hover state ────────────
+   VSM-10 defined track + thumb colours but no hover state.
+   Thumb brightens on hover consistent with the global scrollbar
+   pattern added in VSM-13.                                         */
+[data-theme="dark"] #v2TimelineSurface .timeline-body::-webkit-scrollbar-thumb:hover {
+  background: #4C556A;
+}
+
+/* ── Part 4A: Footer role label — reduce visual weight ──────────
+   12.5px name / 10.5px role / 10px version is nearly two distinct
+   sizes instead of three. Shrinking role to 10px creates a clear
+   primary→secondary→tertiary stack.                                */
+.v2-footer-role-label { font-size: 10px; }
+
+/* ── Part 4B: Footer version label — truly tertiary in dark ─────
+   VSM-11 promoted both role + version to --muted for WCAG AA.
+   VSM-13 upgraded --faint to #908C86 (4.78:1, WCAG AA-compliant).
+   Version is informational, not actionable — it should whisper.
+   Revert to var(--faint) now that the token itself passes AA.      */
+[data-theme="dark"] .v2-footer-version-label { color: var(--faint); }
+
+/* ── Part 6: Consistency audit — minor sweeps ───────────────────
+   Items surfaced during final review across all views and roles.
+
+   a. Footer user-info: tighten vertical gap so name/role/version
+      group feels like a single unit, not three separate labels.
+   b. Nav icons: 0.55 opacity on --side-text renders almost
+      invisible in dark mode. 0.70 maintains hierarchy while
+      keeping icons readable against the dark sidebar.             */
+.v2-footer-user-info { gap: 0; }
+
+[data-theme="dark"] .v2-panel-nav-icon { opacity: 0.70; }

@@ -140,7 +140,7 @@ function closeUsersListModal() {
   if (modal) modal.style.display = 'none';
 }
 
-function openUserFormModal(username = null) {
+export function openUserFormModal(username = null) {
   editingUsername = username;
   const form = document.getElementById('userForm');
   if (!form) return;

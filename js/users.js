@@ -6,7 +6,7 @@ const USERS_PATH = 'users';
 let users = [];
 let usersLoaded = false;
 let usersSubscribed = false;
-let onUsersChangeCallback = null;
+let onUsersChangeCallbacks = [];
 
 function normalizeUsername(value) {
   return String(value || '').trim().toLowerCase().replace(/\s+/g, '-');
@@ -33,7 +33,7 @@ function mapFirebaseUsers(value) {
 function refreshUsersCache(nextUsers) {
   users = nextUsers;
   usersLoaded = true;
-  if (onUsersChangeCallback) onUsersChangeCallback(users);
+  onUsersChangeCallbacks.forEach(cb => cb(users));
 }
 
 export async function initUsersSync() {
@@ -184,7 +184,7 @@ export async function activateUser(username) {
 }
 
 export function registerUsersChangeListener(callback) {
-  onUsersChangeCallback = callback;
+  onUsersChangeCallbacks.push(callback);
 }
 
 export function getUserList() {
