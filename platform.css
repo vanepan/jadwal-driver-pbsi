@@ -316,7 +316,7 @@ html.theme-anim *::after {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(168,41,47,.14);
 }
-.p-ta     { resize: vertical; min-height: 62px; line-height: 1.5; }
+.p-ta     { resize: none; min-height: 62px; line-height: 1.5; }
 
 /* ── Toggle switch ── */
 .p-switch {
@@ -5781,6 +5781,24 @@ textarea:disabled { opacity: 0.55; }
 
 [data-theme="dark"] .multi-day-checkbox-text { color: var(--text); }
 [data-theme="dark"] .multi-day-hint          { color: var(--muted); }
+[data-theme="dark"] .multi-day-checkbox-label {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+[data-theme="dark"] .multi-day-checkbox-label:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(184, 69, 74, 0.12);
+}
+[data-theme="dark"] .multi-day-checkbox-label:has(input[type="checkbox"]:focus-visible) {
+  outline-color: var(--accent);
+}
+[data-theme="dark"] .multi-day-checkbox-label:has(input[type="checkbox"]:checked) {
+  border-color: var(--accent);
+  background: rgba(184, 69, 74, 0.12);
+}
+[data-theme="dark"] .multi-day-checkbox-label:has(input[type="checkbox"]:checked)::after {
+  background: var(--accent);
+}
 
 /* Toggle switch — dark background surface */
 [data-theme="dark"] .toggle-switch {
@@ -6764,4 +6782,44 @@ textarea:disabled { opacity: 0.55; }
     width: 100%;
     text-align: center;
   }
+}
+
+/* ============================================================
+   V1.3.2 — V2 UI Consistency Sprint
+   Fixes: C-01 select arrow · M-03 calendar icon · N-04 placeholder
+   Placed at end to win cascade over all earlier background shorthands.
+   ============================================================ */
+
+/* C-01: Custom select chevron — removes native OS dropdown arrow.
+   background longhand properties are re-declared here because earlier
+   platform.css rules use the background: shorthand which resets
+   background-image; placing these rules last wins the cascade. */
+.form-group select,
+.v2-admin-filter {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='7' viewBox='0 0 11 7'%3E%3Cpath d='M1 1l4.5 4.5L10 1' stroke='%23757575' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 34px;
+}
+[data-theme="dark"] .form-group select,
+[data-theme="dark"] .v2-admin-filter {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='7' viewBox='0 0 11 7'%3E%3Cpath d='M1 1l4.5 4.5L10 1' stroke='%23A6A39B' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+
+/* M-03: Hide native calendar picker indicator icon.
+   Clicking anywhere on the input still opens the date picker. */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* N-04: Placeholder contrast — WCAG 3:1 on --input-bg (#FBFAF8).
+   --gray-4 (#757575) gives ~4.4:1; dark mode already uses --faint at 5:1. */
+.form-group input:not([type="checkbox"]):not([type="radio"])::placeholder,
+.form-group textarea::placeholder {
+  color: var(--gray-4);
 }

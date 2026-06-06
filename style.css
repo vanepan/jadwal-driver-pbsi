@@ -663,6 +663,9 @@ body {
   color-scheme: light;
 }
 
+/* M-04: Force consistent light picker across ALL date inputs (Flatpickr pending v1.4.0) */
+input[type="date"] { color-scheme: light; }
+
 .btn-today {
   font-family: 'DM Sans', sans-serif;
   font-size: 12px;
@@ -1780,8 +1783,19 @@ z-index: 1;
 }
 
 .form-group textarea {
-  resize: vertical;
+  resize: none;
   min-height: 56px;
+}
+
+/* C-02: Hide native number input increment/decrement arrows globally */
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 /* Multi-day toggle */
@@ -1790,22 +1804,30 @@ z-index: 1;
   padding-bottom: 2px;
 }
 
+/* ── Multi-day / Full-day selectable cards ── */
 .multi-day-checkbox-label {
+  position: relative;
   display: flex;
-  align-items: flex-start;
-  align-self: flex-start; /* prevent parent flex-stretch from widening the label */
-  gap: 8px;
+  flex-direction: column;
+  flex: 1;
+  padding: 12px 14px;
+  border: 1.5px solid var(--gray-3);
+  border-radius: 10px;
+  background: var(--white);
   cursor: pointer;
   user-select: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
 }
 
+/* Native checkbox hidden in DOM — kept for accessibility */
 .multi-day-checkbox-label input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  margin-top: 1px;
-  accent-color: var(--red);
-  cursor: pointer;
-  flex-shrink: 0;
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  margin: 0;
+  pointer-events: none;
 }
 
 .multi-day-checkbox-text {
@@ -1818,7 +1840,38 @@ z-index: 1;
   display: block;
   font-size: 11px;
   color: var(--text-muted);
-  margin-top: 1px;
+  margin-top: 2px;
+}
+
+.multi-day-checkbox-label:hover {
+  border-color: var(--red);
+  box-shadow: 0 0 0 3px rgba(211, 47, 47, 0.06);
+}
+
+.multi-day-checkbox-label:has(input[type="checkbox"]:focus-visible) {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+.multi-day-checkbox-label:has(input[type="checkbox"]:checked) {
+  border-color: var(--red);
+  background: var(--red-light);
+}
+
+.multi-day-checkbox-label:has(input[type="checkbox"]:checked)::after {
+  content: '\2713';
+  position: absolute;
+  top: 9px;
+  right: 10px;
+  width: 18px;
+  height: 18px;
+  background: var(--red);
+  color: var(--white);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
 }
 
 /* End-date field — hidden by default.

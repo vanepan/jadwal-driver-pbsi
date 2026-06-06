@@ -1,10 +1,25 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.3.1';
-export const RELEASE_NAME = 'User Management Enhancement';
+export const APP_VERSION = '1.3.2';
+export const RELEASE_NAME = 'V2 UI Consistency Sprint';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.3.2',
+    date: '2026-06-07',
+    summary: 'V2 UI Consistency Sprint',
+    highlights: [
+      'Custom select chevron — native OS dropdown arrow replaced with V2 SVG chevron (light + dark mode)',
+      'Number input spinners hidden — consistent with odometer field; no browser-native arrows visible',
+      'Textarea resize handle removed — resize: none locks modal layout containment',
+      'Selectable card checkboxes — Multi Hari / Penuh Hari redesigned as PBSI V2 card components',
+      'Calendar picker indicator hidden — date field click still opens native picker',
+      'Date input color-scheme unified — all five date inputs now consistently force light picker',
+      'Placeholder contrast upgraded — #757575 (~4.4:1) replaces browser default on form inputs',
+      'Browser validation bubbles suppressed — novalidate confirmed on all forms; JS validation engine active',
+    ],
+  },
   {
     version: '1.3.1',
     date: '2026-06-07',
