@@ -7,9 +7,10 @@
 
 'use strict';
 
-import { generateId, timeToMinutes, minutesToTime, showToast, initCustomTimeInputPair, getCombinedTimeFromPair, setTimeFieldsFromValue, normalizeTimeValue, expandDateRange, formatDateShort, addHoursToTime } from './utils.js';
+import { generateId, timeToMinutes, minutesToTime, showToast, initCustomTimeInputPair, getCombinedTimeFromPair, setTimeFieldsFromValue, normalizeTimeValue, expandDateRange, formatDateShort, addHoursToTime, todayString } from './utils.js';
 import { getDriverByName } from './drivers.js';
 import { hasPermission, getCurrentUser } from './auth.js';
+import { initFormGuard, resetDirty } from './form-guard.js';
 
 /* ── Module State ── */
 let assignments = [];
@@ -53,18 +54,6 @@ export function getEditingId() {
  * Initialize form handlers dan time input formatting
  */
 export function initFormHandlers() {
-  // Button "Batal" di form
-  const btnCancel = document.getElementById('btnCancelForm');
-  if (btnCancel) {
-    btnCancel.addEventListener('click', closeFormModal);
-  }
-
-  // Button "X" (close) di form
-  const btnClose = document.getElementById('btnCloseForm');
-  if (btnClose) {
-    btnClose.addEventListener('click', closeFormModal);
-  }
-
   // Submit form
   const form = document.getElementById('assignmentForm');
   if (form) {
@@ -86,16 +75,17 @@ export function initFormHandlers() {
     fullDayCheckbox.addEventListener('change', syncFullDayUI);
   }
 
-  // Click di luar modal untuk tutup
-  const modalForm = document.getElementById('modalForm');
-  if (modalForm) {
-    modalForm.addEventListener('click', (e) => {
-      if (e.target === modalForm) closeFormModal();
-    });
-  }
-
   // Real-time conflict preview
   initConflictPreview();
+
+  // Data-loss guard: disables backdrop close, intercepts X/Cancel, shows
+  // confirmation dialog when form is dirty. Owns btnCloseForm + btnCancelForm.
+  initFormGuard({
+    formId:    'assignmentForm',
+    overlayId: 'modalForm',
+    closeIds:  ['btnCloseForm', 'btnCancelForm'],
+    closeFn:   closeFormModal,
+  });
 }
 
 function syncAssignmentMultiDayUI() {
@@ -195,14 +185,15 @@ export function openFormModal(asgnId = null) {
       syncFullDayUI();
     }
   } else {
-    // Mode add: set default date ke current date
-    if (currentDate) {
-      document.getElementById('fieldDate').value = currentDate;
-    }
+    // Mode add: default to today's date
+    document.getElementById('fieldDate').value = todayString();
   }
 
   const modal = document.getElementById('modalForm');
-  if (modal) modal.style.display = 'flex';
+  if (modal) {
+    resetDirty('assignmentForm');
+    modal.style.display = 'flex';
+  }
 }
 
 /**
@@ -375,6 +366,7 @@ function handleFormSubmit(e) {
   editingId = null;
   if (currentDate !== startDate) currentDate = startDate;
 
+  resetDirty('assignmentForm');
   closeFormModal();
 }
 

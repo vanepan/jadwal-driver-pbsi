@@ -8,8 +8,9 @@
 'use strict';
 
 import { DEFAULT_DRIVERS, VEHICLES, getDriverByName } from './drivers.js';
-import { generateId, timeToMinutes, showToast, initCustomTimeInputPair, getCombinedTimeFromPair, setTimeFieldsFromValue, normalizeTimeValue, expandDateRange, formatDateShort, addHoursToTime } from './utils.js';
+import { generateId, timeToMinutes, showToast, initCustomTimeInputPair, getCombinedTimeFromPair, setTimeFieldsFromValue, normalizeTimeValue, expandDateRange, formatDateShort, addHoursToTime, todayString } from './utils.js';
 import { getCurrentUser, hasPermission, isAdmin } from './auth.js';
+import { initFormGuard, resetDirty } from './form-guard.js';
 
 let requests = [];
 let editingRequestId = null;
@@ -97,9 +98,8 @@ export function initRequestHandlers() {
     });
   }
 
+  // List-modal close buttons only (form close buttons are owned by form-guard)
   const closeButtons = [
-    ['btnCloseRequestForm', closeRequestFormModal],
-    ['btnCancelRequestForm', closeRequestFormModal],
     ['btnCloseRequestsList', closeRequestsListModal],
     ['btnCloseRequestsList2', closeRequestsListModal],
   ];
@@ -109,19 +109,21 @@ export function initRequestHandlers() {
     if (button) button.addEventListener('click', handler);
   });
 
-  const modalRequestForm = document.getElementById('modalRequestForm');
-  if (modalRequestForm) {
-    modalRequestForm.addEventListener('click', (event) => {
-      if (event.target === modalRequestForm) closeRequestFormModal();
-    });
-  }
-
   const modalRequestsList = document.getElementById('modalRequestsList');
   if (modalRequestsList) {
     modalRequestsList.addEventListener('click', (event) => {
       if (event.target === modalRequestsList) closeRequestsListModal();
     });
   }
+
+  // Data-loss guard: disables backdrop close, intercepts X/Cancel, shows
+  // confirmation dialog when form is dirty. Owns btnCloseRequestForm + btnCancelRequestForm.
+  initFormGuard({
+    formId:    'requestForm',
+    overlayId: 'modalRequestForm',
+    closeIds:  ['btnCloseRequestForm', 'btnCancelRequestForm'],
+    closeFn:   closeRequestFormModal,
+  });
 }
 
 function syncRequestFullDayUI() {
@@ -224,6 +226,10 @@ export function openRequestFormModal(requestId = null) {
     if (startLbl) startLbl.textContent = 'Tanggal *';
     if (endInput) { endInput.required = false; endInput.value = ''; }
 
+    // Default start date to today
+    const startDateInput = document.getElementById('requestFieldStartDate');
+    if (startDateInput) startDateInput.value = todayString();
+
     // Reset full-day
     const fullDayCb = document.getElementById('requestFullDay');
     if (fullDayCb) fullDayCb.checked = false;
@@ -231,7 +237,10 @@ export function openRequestFormModal(requestId = null) {
   }
 
   const modal = document.getElementById('modalRequestForm');
-  if (modal) modal.style.display = 'flex';
+  if (modal) {
+    resetDirty('requestForm');
+    modal.style.display = 'flex';
+  }
 }
 
 export function closeRequestFormModal() {
@@ -399,6 +408,7 @@ function handleRequestSubmit(event) {
     showToast(totalDays > 1 ? `Request ${totalDays} hari terkirim` : 'Request jadwal terkirim');
   }
 
+  resetDirty('requestForm');
   closeRequestFormModal();
 }
 
