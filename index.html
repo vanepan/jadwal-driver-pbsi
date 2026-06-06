@@ -533,29 +533,28 @@
             <label for="profileTelegramChatId1">Chat ID Tambahan <span class="tag-optional">opsional</span></label>
             <input type="text" id="profileTelegramChatId1" placeholder="Chat ID tambahan" inputmode="numeric" autocomplete="off" />
           </div>
-          <div class="profile-toggle-row">
-            <span class="profile-toggle-text">Aktifkan Notifikasi</span>
-            <label class="toggle-switch profile-toggle-switch">
-              <input type="checkbox" id="profileNotificationsEnabled" />
-              <span class="switch-slider"></span>
-            </label>
-          </div>
+          <label class="pbsi-setting-row">
+            <div class="pbsi-setting-content">
+              <span class="pbsi-setting-title">Aktifkan Notifikasi</span>
+              <span class="pbsi-setting-desc">Terima notifikasi Telegram untuk assignment, approval, dan update operasional.</span>
+              <span class="pbsi-setting-status" id="statusNotificationsEnabled">Nonaktif</span>
+            </div>
+            <input type="checkbox" id="profileNotificationsEnabled" class="pbsi-toggle-input" role="switch" aria-label="Aktifkan notifikasi Telegram" />
+          </label>
           <button type="button" class="btn-secondary profile-test-btn" id="btnSendTestTelegram">Kirim Notifikasi Tes</button>
         </div>
         <div class="profile-divider"></div>
         <!-- ── Appearance ── -->
         <div class="profile-section" id="profileAppearanceSection">
           <div class="profile-section-label">Tampilan</div>
-          <div class="profile-toggle-row profile-theme-row">
-            <div class="profile-theme-info">
-              <span class="profile-toggle-text">Mode Gelap</span>
-              <span class="profile-theme-sub">Ubah tema tampilan aplikasi</span>
+          <label class="pbsi-setting-row">
+            <div class="pbsi-setting-content">
+              <span class="pbsi-setting-title">Mode Gelap</span>
+              <span class="pbsi-setting-desc">Ubah tema tampilan aplikasi menjadi mode gelap.</span>
+              <span class="pbsi-setting-status" id="statusDarkModeToggle">Nonaktif</span>
             </div>
-            <label class="toggle-switch profile-toggle-switch" aria-label="Aktifkan mode gelap">
-              <input type="checkbox" id="profileDarkModeToggle" role="switch" />
-              <span class="switch-slider"></span>
-            </label>
-          </div>
+            <input type="checkbox" id="profileDarkModeToggle" class="pbsi-toggle-input" role="switch" aria-label="Aktifkan mode gelap" />
+          </label>
         </div>
         <div class="profile-divider"></div>
         <div class="profile-section">

@@ -1801,11 +1801,13 @@ function applyTheme(theme, animate = false) {
   const topbarBtn    = document.getElementById('v2TopbarThemeBtn');
   const railBtn      = document.getElementById('v2RailThemeBtn');
   const profileToggle = document.getElementById('profileDarkModeToggle');
+  const darkStatus    = document.getElementById('statusDarkModeToggle');
 
   const isDark = theme === 'dark';
   if (topbarBtn) { topbarBtn.setAttribute('aria-label', isDark ? 'Ganti ke tema terang' : 'Ganti ke tema gelap'); topbarBtn.innerHTML = isDark ? ICON_SUN : ICON_MOON; }
   if (railBtn)   { railBtn.setAttribute('aria-label',   isDark ? 'Ganti ke tema terang' : 'Ganti ke tema gelap'); railBtn.innerHTML   = isDark ? ICON_SUN : ICON_MOON; }
   if (profileToggle) profileToggle.checked = isDark;
+  if (darkStatus)  { darkStatus.textContent = isDark ? 'Aktif' : 'Nonaktif'; darkStatus.classList.toggle('is-active', isDark); }
 }
 
 /**

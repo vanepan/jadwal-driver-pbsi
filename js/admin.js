@@ -12,6 +12,18 @@ const TELEGRAM_BOT_URL = `https://t.me/${TELEGRAM_BOT_USERNAME}`;
 let users = [];
 let editingUsername = null;
 
+/**
+ * Sync a .pbsi-setting-status element to reflect the current toggle state.
+ * @param {string} id - Element ID of the status <span>
+ * @param {boolean} isOn
+ */
+function syncSettingStatus(id, isOn) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = isOn ? 'Aktif' : 'Nonaktif';
+  el.classList.toggle('is-active', Boolean(isOn));
+}
+
 export async function initAdminUI() {
   await initUsersSync();
   users = await getUsers();
@@ -92,6 +104,11 @@ function attachAdminButtons() {
 
   const profileForm = document.getElementById('profileForm');
   if (profileForm) profileForm.addEventListener('submit', handleProfileSubmit);
+
+  // ── Setting status: live update on toggle change ──────────────
+  document.getElementById('profileNotificationsEnabled')?.addEventListener('change', (e) => {
+    syncSettingStatus('statusNotificationsEnabled', e.target.checked);
+  });
 
   const usersModal = document.getElementById('modalUsersList');
   if (usersModal) {
@@ -421,6 +438,7 @@ async function openProfileModal() {
         if (extra1Field) extra1Field.value = ids.secondary1 || '';
         if (extra2Field) extra2Field.value = ids.secondary2 || '';
         if (notificationsEnabledField) notificationsEnabledField.checked = Boolean(user.notificationsEnabled);
+        syncSettingStatus('statusNotificationsEnabled', Boolean(user.notificationsEnabled));
         const isDriver = (currentUser.role === 'driver' || (user.role === 'driver'));
         const driverOnlyEls = [extra1Field, extra2Field];
         driverOnlyEls.forEach(el => { if (el) el.parentElement.style.display = isDriver ? 'block' : 'none'; });
@@ -437,9 +455,11 @@ async function openProfileModal() {
   // Update Telegram status badge saat modal dibuka
   updateTelegramStatusBadge();
 
-  // Sync appearance toggle to current theme (in case changed via topbar since last open)
+  // Sync appearance toggle + status text to current theme
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
   const darkToggle = document.getElementById('profileDarkModeToggle');
-  if (darkToggle) darkToggle.checked = (document.documentElement.getAttribute('data-theme') === 'dark');
+  if (darkToggle) darkToggle.checked = isDark;
+  syncSettingStatus('statusDarkModeToggle', isDark);
 
   modal.style.display = 'flex';
 }
