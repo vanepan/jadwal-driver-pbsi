@@ -108,13 +108,21 @@ export function resetDirty(formId) {
    PRIVATE
    ════════════════════════════════════════════════════════════ */
 
+function _isTouchDevice() {
+  // pointer:coarse = touch/stylus primary input (phones, tablets without mouse).
+  // More accurate than innerWidth: a phone in landscape or a large tablet still
+  // returns coarse, while a tablet with an attached mouse returns fine.
+  return window.matchMedia('(pointer: coarse)').matches;
+}
+
 function _guardedClose(formId, closeFn, triggerEl) {
-  if (!_state[formId]?.dirty) {
-    // Clean form — close immediately, no dialog.
+  // On touch devices the drag-select / accidental-backdrop-close scenarios that
+  // motivated this guard do not occur. Skip the dialog and close immediately.
+  if (!_state[formId]?.dirty || _isTouchDevice()) {
     closeFn();
     return;
   }
-  // Dirty form — remember context and show the confirmation dialog.
+  // Desktop + dirty form — show confirmation dialog.
   _focusOnDismiss  = triggerEl instanceof Element ? triggerEl : document.activeElement;
   _pendingCloseFn  = closeFn;
   _showDialog();
