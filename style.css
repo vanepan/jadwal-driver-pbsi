@@ -1466,6 +1466,63 @@ z-index: 1;
   color: var(--text-muted);
 }
 
+/* ── Notification section headers (Unread / Riwayat) ── */
+.notif-section-header {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  padding: 4px 0 6px;
+}
+
+.notif-section-header--gap {
+  margin-top: 12px;
+}
+
+/* ── Unread card state ── */
+.notif-unread {
+  background: #FFF8F0;
+}
+
+/* New-dot badge inline in title */
+.notif-new-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--red);
+  margin-left: 6px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+/* ── Notification detail rows ── */
+.notif-card-details {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.notif-card-row {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  align-items: baseline;
+}
+
+.notif-card-label {
+  color: var(--text-muted);
+  min-width: 68px;
+  flex-shrink: 0;
+}
+
+.notif-card-value {
+  color: var(--text);
+  font-weight: 500;
+}
+
 /* ── Activity Log ── */
 .activity-log-subtitle {
   font-size: 12px;

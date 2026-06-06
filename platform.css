@@ -5535,6 +5535,45 @@ html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: #4C556A; }
 .activity-log-subtitle { color: var(--muted); }
 .activity-log-time     { color: var(--muted); }
 
+/* ── Notification: section headers + unread state + detail rows ─
+   Uses semantic tokens → works in light & dark automatically.    */
+
+.notif-section-header {
+  color: var(--faint);
+  font-size: 10.5px;
+}
+
+.notif-unread {
+  background: var(--surface-2);
+}
+
+.notif-new-dot {
+  background: var(--danger);
+}
+
+.notif-card-details {
+  margin-top: 7px;
+  gap: 4px;
+}
+
+.notif-card-row {
+  font-size: 12px;
+}
+
+.notif-card-label {
+  color: var(--faint);
+  min-width: 72px;
+}
+
+.notif-card-value {
+  color: var(--text);
+}
+
+/* Dark mode: tint unread cards slightly against surface */
+[data-theme="dark"] .notif-unread {
+  background: var(--hover);
+}
+
 
 /* ── Part 5: Mobile quality audit ───────────────────────────────
    Polish for V2 workspaces on 375–600px viewports.              */

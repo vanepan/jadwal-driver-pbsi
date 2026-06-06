@@ -21,6 +21,15 @@ function refreshLogsCache(nextLogs) {
   if (onLogsChangeCallback) onLogsChangeCallback(logs);
 }
 
+// Firebase rejects undefined values. Replace any undefined in the metadata
+// object with null, which is PBSI's convention for absent optional fields.
+function sanitizeMetadata(meta) {
+  if (!meta || typeof meta !== 'object') return {};
+  return Object.fromEntries(
+    Object.entries(meta).map(([k, v]) => [k, v === undefined ? null : v])
+  );
+}
+
 export async function getLogs() {
   if (logsLoaded) return logs;
   const raw = await fetchFirebaseData(LOGS_PATH);
@@ -32,13 +41,13 @@ export async function logAction({ userId, username, displayName = '', action, ta
   if (!isFirebaseConfigured()) return null;
   const id = generateId();
   const entry = {
-    userId: userId || '',
-    username: username || 'unknown',
+    userId:      userId || '',
+    username:    username || 'unknown',
     displayName: displayName || username || 'unknown',
     action,
-    targetId: targetId || '',
-    metadata: metadata || {},
-    timestamp: new Date().toISOString(),
+    targetId:    targetId || '',
+    metadata:    sanitizeMetadata(metadata),
+    timestamp:   new Date().toISOString(),
   };
 
   try {

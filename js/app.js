@@ -244,7 +244,7 @@ function updatePermissionUI(resetNavActive = false) {
 
   updateAdminButtons();
   setNotificationData({
-    pendingRequests: getPendingRequestCount(),
+    pendingRequests: getMyPendingRequestCount(),
     recentLogs: auditLogs,
   });
 
@@ -1878,6 +1878,8 @@ function handleRequestApprove(requestId) {
     action:   'request_approved',
     targetId: requestId,
     metadata: {
+      requesterId:     request.requesterId,
+      driver:          request.driver,
       assignmentCount: newAssignments.length,
       assignmentIds:   newAssignments.map(a => a.id),
       beforeCount:     assignments.length - newAssignments.length,
@@ -1885,6 +1887,35 @@ function handleRequestApprove(requestId) {
       operationType:   'bulk_create',
     },
   });
+
+  // Log assignment_created for each assignment produced by this approval.
+  // The notification center (drivers) reads these entries to build its feed —
+  // without them drivers see "Belum ada notifikasi untuk Anda."
+  const approvalDriverNameLower = (request.driver || '').trim().toLowerCase();
+  const approvalDriverUser = approvalDriverNameLower
+    ? getUserList().find(u => u.role === 'driver' &&
+        ((u.displayName || '').trim().toLowerCase() === approvalDriverNameLower ||
+         (u.username   || '').trim().toLowerCase() === approvalDriverNameLower))
+    : null;
+  for (const asgn of newAssignments) {
+    logAction({
+      userId:      currentUser?.id,
+      username:    currentUser?.username,
+      action:      'assignment_created',
+      targetId:    asgn.id,
+      metadata: {
+        driver:         asgn.driver,
+        driverUsername: approvalDriverUser?.username || null,
+        vehicle:        asgn.vehicle,
+        destination:    asgn.destination,
+        date:           asgn.date,
+        startTime:      asgn.startTime,
+        endTime:        asgn.endTime,
+        requestId:      asgn.requestId,
+        requesterId:    request.requesterId,
+      },
+    });
+  }
 
   renderViews();
   updatePermissionUI();
@@ -1912,17 +1943,20 @@ function handleRequestReject(requestId) {
   updateAllModules();
   saveRequests(requests);
   const currentUser = getCurrentUser();
+  const rejectedRequest = requests.find(item => item.id === requestId);
   logAction({
     userId:      currentUser?.id,
     username:    currentUser?.username,
     displayName: currentUser?.name,
     action:      'request_rejected',
     targetId:    requestId,
+    metadata: {
+      requesterId: rejectedRequest?.requesterId,
+    },
   });
   updatePermissionUI();
   if (currentWorkspace === 'pending') renderPendingWorkspace();
 
-  const rejectedRequest = requests.find(item => item.id === requestId);
   if (rejectedRequest) sendRequestRejectedNotification(rejectedRequest, getUserByUsername);
 }
 
@@ -2128,7 +2162,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   updatePermissionUI(true);              // startup → reset nav to Dashboard
   updateAdminButtons();                  // Show admin controls properly
   setNotificationData({
-    pendingRequests: getPendingRequestCount(),
+    pendingRequests: getMyPendingRequestCount(),
     recentLogs: auditLogs,
   });
 
@@ -2164,7 +2198,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   getLogs().then((loadedLogs) => {
     auditLogs = loadedLogs;
     setNotificationData({
-      pendingRequests: getPendingRequestCount(),
+      pendingRequests: getMyPendingRequestCount(),
       recentLogs: auditLogs,
     });
   });
@@ -2172,7 +2206,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   subscribeLogsChangeListener((updatedLogs) => {
     auditLogs = updatedLogs;
     setNotificationData({
-      pendingRequests: getPendingRequestCount(),
+      pendingRequests: getMyPendingRequestCount(),
       recentLogs: auditLogs,
     });
   });
@@ -2241,16 +2275,40 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     const currentUser = getCurrentUser();
+    // Resolve representative assignment for ownership metadata
+    let repAssignment = newAssignment;
+    if (!repAssignment && isNewAssignment) {
+      const prevIds = new Set(prevAssignments.map(p => p.id));
+      repAssignment = updatedAssignments.find(a => !prevIds.has(a.id)) || null;
+    }
+    const repRequesterId = repAssignment?.requestId
+      ? (requests.find(r => r.id === repAssignment.requestId)?.requesterId || null)
+      : null;
+    const repDriverName = (repAssignment?.driver || '').trim().toLowerCase();
+    const repDriverUser = repDriverName
+      ? getUserList().find(u => u.role === 'driver' &&
+          ((u.displayName || '').trim().toLowerCase() === repDriverName ||
+           (u.username   || '').trim().toLowerCase() === repDriverName))
+      : null;
     logAction({
-      userId: currentUser?.id,
-      username: currentUser?.username,
+      userId:      currentUser?.id,
+      username:    currentUser?.username,
       displayName: currentUser?.name,
-      action: isNewAssignment ? 'assignment_created' : 'assignment_edited',
+      action:      isNewAssignment ? 'assignment_created' : 'assignment_edited',
+      targetId:    repAssignment?.id || '',
       metadata: {
-        date: assignmentDate,
+        driver:         repAssignment?.driver,
+        driverUsername: repDriverUser?.username || null,
+        vehicle:        repAssignment?.vehicle,
+        destination:    repAssignment?.destination,
+        date:           assignmentDate || repAssignment?.date,
+        startTime:      repAssignment?.startTime,
+        endTime:        repAssignment?.endTime,
+        requestId:      repAssignment?.requestId,
+        requesterId:    repRequesterId,
         beforeCount,
-        afterCount: assignments.length,
-        operationType: isNewAssignment ? 'create' : 'edit',
+        afterCount:     assignments.length,
+        operationType:  isNewAssignment ? 'create' : 'edit',
       },
     });
 
@@ -2418,17 +2476,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     saveOneAssignment(assignments[idx]); // Surgical: hanya update record ini di Firebase
     renderViews();
 
+    const completedAssignment = assignments[idx];
+    const completedRequesterId = completedAssignment.requestId
+      ? (requests.find(r => r.id === completedAssignment.requestId)?.requesterId || null)
+      : null;
+    const completedDriverName = (completedAssignment.driver || '').trim().toLowerCase();
+    const completedDriverUser = completedDriverName
+      ? getUserList().find(u => u.role === 'driver' &&
+          ((u.displayName || '').trim().toLowerCase() === completedDriverName ||
+           (u.username   || '').trim().toLowerCase() === completedDriverName))
+      : null;
     logAction({
-      userId: currentUser?.id,
-      username: currentUser?.username,
+      userId:      currentUser?.id,
+      username:    currentUser?.username,
       displayName: currentUser?.name,
-      action: 'assignment_completed',
-      targetId: assignmentId,
+      action:      'assignment_completed',
+      targetId:    assignmentId,
       metadata: {
-        completedAt: assignments[idx].completedAt,
-        completedBy: assignments[idx].completedBy,
-        endOdometer: assignments[idx].endOdometer,
-        distanceTravelled: assignments[idx].distanceTravelled,
+        driver:            completedAssignment.driver,
+        driverUsername:    completedDriverUser?.username || null,
+        vehicle:           completedAssignment.vehicle,
+        destination:       completedAssignment.destination,
+        date:              completedAssignment.date || completedAssignment.startDate,
+        requestId:         completedAssignment.requestId,
+        requesterId:       completedRequesterId,
+        completedAt:       completedAssignment.completedAt,
+        completedBy:       completedAssignment.completedBy,
+        endOdometer:       completedAssignment.endOdometer,
+        distanceTravelled: completedAssignment.distanceTravelled,
       },
     });
 
