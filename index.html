@@ -9,6 +9,16 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css?v=1.1.0" />
   <link rel="stylesheet" href="platform.css?v=2.0.0" />
+
+  <!-- Startup gating: hides V1 layout until V2 shell is ready.
+       body:not(.app-ready) keeps all V1 elements invisible at first paint.
+       Only #app-splash overrides this — it is visible during init.
+       app-ready is set at the end of DOMContentLoaded in app.js.   -->
+  <style>
+    body:not(.app-ready) { visibility: hidden; }
+    body:not(.app-ready) #app-splash { visibility: visible; }
+  </style>
+
   <script>
     (function () {
       var t = localStorage.getItem('pbsi_theme');
@@ -17,6 +27,17 @@
   </script>
 </head>
 <body>
+
+<!-- Startup splash: covers page during initialization.
+     Theme-aware (uses CSS custom properties set by the inline script above).
+     Fades out when body.app-ready is set; removed from DOM after transition. -->
+<div id="app-splash" aria-hidden="true">
+  <div class="app-splash-inner">
+    <p class="app-splash-name">PBSI</p>
+    <p class="app-splash-sub">Operations Platform</p>
+    <span class="app-splash-spinner" role="progressbar" aria-label="Memuat aplikasi…"></span>
+  </div>
+</div>
 
 <div class="app-layout">
 

@@ -2443,6 +2443,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   runH2Check();
   setInterval(runH2Check, 5 * 60 * 1000);
 
+  // ── Startup complete: reveal V2 shell, dismiss splash ──────────
+  // Adding .app-ready lifts visibility: hidden from body (set in
+  // the <style> block in <head>) and triggers the splash fade-out
+  // transition defined in platform.css.  The splash element is
+  // removed from DOM after the 0.18s transition finishes.
+  document.body.classList.add('app-ready');
+  setTimeout(() => document.getElementById('app-splash')?.remove(), 250);
+
   console.log('✅ App initialized successfully');
 });
 

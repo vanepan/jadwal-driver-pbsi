@@ -6121,3 +6121,99 @@ textarea:disabled { opacity: 0.55; }
 .v2-footer-user-info { gap: 0; }
 
 [data-theme="dark"] .v2-panel-nav-icon { opacity: 0.70; }
+
+
+/* ════════════════════════════════════════════════════════════════
+   STARTUP SPLASH — FOUC prevention
+   Prevents V1 shell from flashing before V2 shell is initialized.
+
+   Strategy:
+     • body:not(.app-ready) { visibility: hidden } is declared in
+       a <style> block in <head> — active at first paint, before
+       any JavaScript runs.
+     • body:not(.app-ready) #app-splash { visibility: visible }
+       overrides the inheritance so only the splash is painted.
+     • When app.js finishes initialization it adds .app-ready to
+       body → splash fades out, V2 shell becomes visible.
+   ════════════════════════════════════════════════════════════════ */
+
+/* ── Splash container ───────────────────────────────────────────
+   Full-viewport overlay.  Background matches the page canvas so
+   there is no color seam between splash and first V2 frame.      */
+#app-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--page-bg, #F5F3EF);
+  transition: opacity 0.18s ease;
+}
+
+/* Fade to invisible once body.app-ready is set.                  */
+.app-ready #app-splash {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ── Splash content ─────────────────────────────────────────────
+   Minimal: wordmark + platform label + spinner.
+   Uses Inter from the already-preconnected Google Fonts request.  */
+.app-splash-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  user-select: none;
+}
+
+.app-splash-name {
+  margin: 0;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: var(--text, #1A1917);
+}
+
+.app-splash-sub {
+  margin: 0;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--muted, #8C8981);
+}
+
+/* ── Spinner ────────────────────────────────────────────────────
+   CSS-only rotating ring.  Visible only during init (≈50–300ms
+   on fast networks; up to 3s on slow networks / Firebase timeout).*/
+.app-splash-spinner {
+  display: block;
+  width: 18px;
+  height: 18px;
+  margin-top: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--border, rgba(0, 0, 0, 0.12));
+  border-top-color: var(--accent, #C62828);
+  animation: startup-spin 0.75s linear infinite;
+}
+
+@keyframes startup-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Dark-mode overrides ────────────────────────────────────────
+   CSS custom properties already flip automatically via
+   [data-theme="dark"] rules higher in this file.  The explicit
+   overrides below are only needed for properties that use literal
+   fallback values (the second arg of var()) as a safety net.     */
+[data-theme="dark"] #app-splash {
+  background: var(--page-bg, #17181C);
+}
+[data-theme="dark"] .app-splash-spinner {
+  border-color: var(--border, rgba(255, 255, 255, 0.10));
+  border-top-color: var(--accent, #B8454A);
+}
