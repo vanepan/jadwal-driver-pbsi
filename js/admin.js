@@ -12,6 +12,16 @@ const TELEGRAM_BOT_URL = `https://t.me/${TELEGRAM_BOT_USERNAME}`;
 let users = [];
 let editingUsername = null;
 
+const ROLE_CONFIG = [
+  { key: 'admin',       label: 'ADMIN',       defaultExpanded: true,  visible: true  },
+  { key: 'bidang',      label: 'BIDANG',       defaultExpanded: false, visible: true  },
+  { key: 'driver',      label: 'DRIVER',       defaultExpanded: false, visible: true  },
+  { key: 'viewer',      label: 'VIEWER',       defaultExpanded: false, visible: true  },
+  { key: 'engineering', label: 'ENGINEERING',  defaultExpanded: false, visible: false },
+];
+
+const groupExpanded = {};
+
 /**
  * Sync a .pbsi-setting-status element to reflect the current toggle state.
  * @param {string} id - Element ID of the status <span>
@@ -269,44 +279,122 @@ function renderAdminList() {
   const container = document.getElementById('usersListContent');
   if (!container) return;
 
-  const sorted = [...users].sort((a, b) => {
-    const order = { admin: 0, bidang: 1, viewer: 2 };
-    return (order[a.role] - order[b.role]) || a.username.localeCompare(b.username);
-  });
+  renderUserStats();
 
-  if (sorted.length === 0) {
+  if (users.length === 0) {
     container.innerHTML = '<div class="empty-request-state">Belum ada user.</div>';
     return;
   }
 
-  container.innerHTML = sorted.map(user => {
-    const status = user.active ? 'Aktif' : 'Non-aktif';
-    const statusClass = user.active ? 'status-active' : 'status-inactive';
-    return `
-      <div class="user-card">
-        <div class="user-card-main">
-          <div>
-            <div class="user-title">${escapeHTML(user.displayName || user.username)}</div>
-            <div class="user-sub">${escapeHTML(user.username)} · ${escapeHTML(user.role)}</div>
-          </div>
-          <span class="user-status ${statusClass}">${status}</span>
-        </div>
-        <div class="user-card-meta">
-          <div>PIN: ${escapeHTML(user.pin || '—')}</div>
-          <div>Dibuat: ${new Date(user.createdAt || '').toLocaleDateString('id-ID') || '-'}</div>
-        </div>
-        <div class="user-card-actions">
-          <button class="btn-secondary" data-user-action="edit" data-user-name="${escapeHTML(user.username)}">Edit</button>
-          ${user.active ? `<button class="btn-secondary" data-user-action="deactivate" data-user-name="${escapeHTML(user.username)}">Nonaktifkan</button>` : ''}
-          <button class="btn-secondary" data-user-action="reset" data-user-name="${escapeHTML(user.username)}">Reset PIN</button>
-        </div>
+  const byRole = {};
+  for (const user of users) {
+    const key = user.role || 'viewer';
+    if (!byRole[key]) byRole[key] = [];
+    byRole[key].push(user);
+  }
+
+  for (const key of Object.keys(byRole)) {
+    byRole[key].sort((a, b) =>
+      (a.displayName || a.username).localeCompare(b.displayName || b.username, 'id')
+    );
+  }
+
+  const knownKeys = new Set(ROLE_CONFIG.map(r => r.key));
+  const unknownRoles = Object.keys(byRole).filter(k => !knownKeys.has(k));
+  const allRoles = [
+    ...ROLE_CONFIG,
+    ...unknownRoles.map(k => ({ key: k, label: k.toUpperCase(), defaultExpanded: false, visible: true })),
+  ];
+
+  let html = '';
+  for (const roleInfo of allRoles) {
+    if (!roleInfo.visible) continue;
+    const roleUsers = byRole[roleInfo.key] || [];
+    const expanded = groupExpanded[roleInfo.key] ?? roleInfo.defaultExpanded;
+    const arrow = expanded ? '▼' : '▶';
+
+    html += `<div class="user-role-group">
+      <button class="user-role-header" data-role-toggle="${escapeHTML(roleInfo.key)}" type="button" aria-expanded="${expanded}">
+        <span class="user-role-arrow">${arrow}</span>
+        <span class="user-role-label">${escapeHTML(roleInfo.label)}</span>
+        <span class="user-role-count-badge">${roleUsers.length}</span>
+      </button>
+      <div class="user-role-body"${expanded ? '' : ' style="display:none;"'}>
+        ${roleUsers.length === 0
+          ? '<div class="user-role-empty">Tidak ada user di grup ini.</div>'
+          : roleUsers.map(user => renderUserCard(user)).join('')}
       </div>
-    `;
+    </div>`;
+  }
+
+  container.innerHTML = html;
+
+  container.querySelectorAll('[data-role-toggle]').forEach(btn => {
+    btn.addEventListener('click', handleRoleGroupToggle);
+  });
+  container.querySelectorAll('[data-user-action]').forEach(btn => {
+    btn.addEventListener('click', handleUserActionClick);
+  });
+}
+
+function renderUserStats() {
+  const el = document.getElementById('usersStatsHeader');
+  if (!el) return;
+
+  const counts = {};
+  for (const user of users) counts[user.role] = (counts[user.role] || 0) + 1;
+
+  const visibleRoles = ROLE_CONFIG.filter(r => r.visible);
+  const chips = visibleRoles.map(r => {
+    const label = r.label.charAt(0) + r.label.slice(1).toLowerCase();
+    return `<span class="users-stats-chip">
+      <span class="users-stats-chip-label">${escapeHTML(label)}</span>
+      <span class="users-stats-chip-count">${counts[r.key] || 0}</span>
+    </span>`;
   }).join('');
 
-  container.querySelectorAll('[data-user-action]').forEach(button => {
-    button.addEventListener('click', handleUserActionClick);
-  });
+  el.innerHTML = `<div class="users-stats">
+    <div class="users-stats-total">Total <strong>${users.length}</strong></div>
+    <div class="users-stats-chips">${chips}</div>
+  </div>`;
+}
+
+function renderUserCard(user) {
+  const status = user.active ? 'Aktif' : 'Non-aktif';
+  const statusClass = user.active ? 'status-active' : 'status-inactive';
+  return `<div class="user-card">
+    <div class="user-card-main">
+      <div>
+        <div class="user-title">${escapeHTML(user.displayName || user.username)}</div>
+        <div class="user-sub">${escapeHTML(user.username)}</div>
+      </div>
+      <span class="user-status ${statusClass}">${status}</span>
+    </div>
+    <div class="user-card-meta">
+      <div>PIN: ${escapeHTML(user.pin || '—')}</div>
+      <div>Dibuat: ${new Date(user.createdAt || '').toLocaleDateString('id-ID') || '-'}</div>
+    </div>
+    <div class="user-card-actions">
+      <button class="btn-secondary" data-user-action="edit" data-user-name="${escapeHTML(user.username)}">Edit</button>
+      ${user.active ? `<button class="btn-secondary" data-user-action="deactivate" data-user-name="${escapeHTML(user.username)}">Nonaktifkan</button>` : ''}
+      <button class="btn-secondary" data-user-action="reset" data-user-name="${escapeHTML(user.username)}">Reset PIN</button>
+    </div>
+  </div>`;
+}
+
+function handleRoleGroupToggle(event) {
+  const btn = event.currentTarget;
+  const role = btn.dataset.roleToggle;
+  const body = btn.nextElementSibling;
+  if (!body) return;
+
+  const wasExpanded = groupExpanded[role] ?? (ROLE_CONFIG.find(r => r.key === role)?.defaultExpanded ?? false);
+  const nowExpanded = !wasExpanded;
+
+  groupExpanded[role] = nowExpanded;
+  body.style.display = nowExpanded ? '' : 'none';
+  btn.setAttribute('aria-expanded', String(nowExpanded));
+  btn.querySelector('.user-role-arrow').textContent = nowExpanded ? '▼' : '▶';
 }
 
 async function handleUserActionClick(event) {

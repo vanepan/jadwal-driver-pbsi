@@ -1,10 +1,26 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.2.5';
-export const RELEASE_NAME = 'Reimbursement Form — Production Polish';
+export const APP_VERSION = '1.3.1';
+export const RELEASE_NAME = 'User Management Enhancement';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.3.1',
+    date: '2026-06-07',
+    summary: 'User Management Enhancement',
+    highlights: [
+      'User list grouped by role: Admin → Bidang → Driver → Viewer (Engineering future-ready)',
+      'Alphabetical sorting within each role group (A→Z by display name)',
+      'Collapsible role groups with session-state memory (Admin expanded by default)',
+      'Role count badge per group header',
+      'Statistics header: Total Users + per-role counts (Admin, Bidang, Driver, Viewer)',
+      'Notification ownership system — driver-scoped Telegram notifications',
+      'Sticky notification footer on assignment detail modal',
+      'Form guard — data loss prevention with confirmation dialog on unsaved changes',
+      'Default date = today on initial load',
+    ],
+  },
   {
     version: '1.2.5',
     date: '2026-06-04',

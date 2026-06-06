@@ -1661,6 +1661,15 @@ function initV2PendingWorkspace() {
   console.log('[VSM-9] Pending workspace injected');
 }
 
+const V2_ROLE_CONFIG = [
+  { key: 'admin',       label: 'ADMIN',       defaultExpanded: true,  visible: true  },
+  { key: 'bidang',      label: 'BIDANG',       defaultExpanded: false, visible: true  },
+  { key: 'driver',      label: 'DRIVER',       defaultExpanded: false, visible: true  },
+  { key: 'viewer',      label: 'VIEWER',       defaultExpanded: false, visible: true  },
+  { key: 'engineering', label: 'ENGINEERING',  defaultExpanded: false, visible: false },
+];
+const v2GroupExpanded = {};
+
 /**
  * Inject #v2AdministrationWorkspace into .main-content. Admin-only visibility.
  */
@@ -1686,6 +1695,7 @@ function initV2AdministrationWorkspace() {
       </select>
       <button id="v2AdminAddUser" class="v2-admin-add-btn" type="button">+ Tambah User</button>
     </div>
+    <div id="v2AdminStats"></div>
     <div id="v2AdminUserList" class="v2-admin-user-list"></div>
   `;
   document.querySelector('.main-content')?.appendChild(ws);
@@ -1736,6 +1746,43 @@ function buildUserCard(user) {
     </div>`;
 }
 
+function renderV2AdminStats(allUsers) {
+  const el = document.getElementById('v2AdminStats');
+  if (!el) return;
+
+  const counts = {};
+  for (const user of allUsers) counts[user.role] = (counts[user.role] || 0) + 1;
+
+  const visibleRoles = V2_ROLE_CONFIG.filter(r => r.visible);
+  const chips = visibleRoles.map(r => {
+    const label = r.label.charAt(0) + r.label.slice(1).toLowerCase();
+    return `<span class="users-stats-chip">
+      <span class="users-stats-chip-label">${esc(label)}</span>
+      <span class="users-stats-chip-count">${counts[r.key] || 0}</span>
+    </span>`;
+  }).join('');
+
+  el.innerHTML = `<div class="users-stats">
+    <div class="users-stats-total">Total Users <strong>${allUsers.length}</strong></div>
+    <div class="users-stats-chips">${chips}</div>
+  </div>`;
+}
+
+function handleV2RoleGroupToggle(event) {
+  const btn = event.currentTarget;
+  const role = btn.dataset.v2RoleToggle;
+  const body = btn.nextElementSibling;
+  if (!body) return;
+
+  const wasExpanded = v2GroupExpanded[role] ?? (V2_ROLE_CONFIG.find(r => r.key === role)?.defaultExpanded ?? false);
+  const nowExpanded = !wasExpanded;
+
+  v2GroupExpanded[role] = nowExpanded;
+  body.style.display = nowExpanded ? '' : 'none';
+  btn.setAttribute('aria-expanded', String(nowExpanded));
+  btn.querySelector('.user-role-arrow').textContent = nowExpanded ? '▼' : '▶';
+}
+
 function renderV2AdminWorkspace() {
   const list = document.getElementById('v2AdminUserList');
   if (!list) return;
@@ -1743,6 +1790,9 @@ function renderV2AdminWorkspace() {
   const q = (document.getElementById('v2AdminSearch')?.value || '').toLowerCase().trim();
   const roleFilter = document.getElementById('v2AdminRoleFilter')?.value || '';
   const allUsers = getUserList();
+
+  // Stats always reflect global totals — unaffected by search / role filter
+  renderV2AdminStats(allUsers);
 
   const filtered = allUsers.filter(u => {
     const matchesSearch = !q ||
@@ -1757,8 +1807,57 @@ function renderV2AdminWorkspace() {
     return;
   }
 
-  list.innerHTML = filtered.map(buildUserCard).join('');
+  // Group filtered users by role, sort each group A→Z by displayName
+  const byRole = {};
+  for (const user of filtered) {
+    const key = user.role || 'viewer';
+    if (!byRole[key]) byRole[key] = [];
+    byRole[key].push(user);
+  }
+  for (const key of Object.keys(byRole)) {
+    byRole[key].sort((a, b) =>
+      (a.displayName || a.username).localeCompare(b.displayName || b.username, 'id')
+    );
+  }
 
+  // Unknown roles (not in V2_ROLE_CONFIG) appended after configured roles
+  const knownKeys = new Set(V2_ROLE_CONFIG.map(r => r.key));
+  const unknownRoles = Object.keys(byRole).filter(k => !knownKeys.has(k));
+  const allRoles = [
+    ...V2_ROLE_CONFIG,
+    ...unknownRoles.map(k => ({ key: k, label: k.toUpperCase(), defaultExpanded: false, visible: true })),
+  ];
+
+  // When role filter is active show only that group; otherwise show all visible
+  const rolesToRender = roleFilter
+    ? allRoles.filter(r => r.key === roleFilter)
+    : allRoles.filter(r => r.visible);
+
+  let html = '';
+  for (const roleInfo of rolesToRender) {
+    const roleUsers = byRole[roleInfo.key] || [];
+    const expanded = v2GroupExpanded[roleInfo.key] ?? roleInfo.defaultExpanded;
+    const arrow = expanded ? '▼' : '▶';
+
+    html += `<div class="user-role-group">
+      <button class="user-role-header" data-v2-role-toggle="${esc(roleInfo.key)}" type="button" aria-expanded="${expanded}">
+        <span class="user-role-arrow">${arrow}</span>
+        <span class="user-role-label">${esc(roleInfo.label)}</span>
+        <span class="user-role-count-badge">${roleUsers.length}</span>
+      </button>
+      <div class="user-role-body"${expanded ? '' : ' style="display:none;"'}>
+        ${roleUsers.length === 0
+          ? '<div class="user-role-empty">Tidak ada user di grup ini.</div>'
+          : roleUsers.map(buildUserCard).join('')}
+      </div>
+    </div>`;
+  }
+
+  list.innerHTML = html;
+
+  list.querySelectorAll('[data-v2-role-toggle]').forEach(btn => {
+    btn.addEventListener('click', handleV2RoleGroupToggle);
+  });
   list.querySelectorAll('[data-user-edit]').forEach(btn => {
     btn.addEventListener('click', () => openUserFormModal(btn.dataset.userEdit));
   });

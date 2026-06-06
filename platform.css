@@ -5270,7 +5270,7 @@ html.theme-anim .timeline-scroll-fade-right {
 .v2-admin-user-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   padding: 0 20px 20px;
 }
 
@@ -5972,6 +5972,46 @@ textarea:disabled { opacity: 0.55; }
 [data-theme="dark"] .user-sub,
 [data-theme="dark"] .notification-time,
 [data-theme="dark"] .notification-target { color: var(--muted); }
+
+/* ── H2: User Management — stats + role groups — dark mode ── */
+[data-theme="dark"] .users-stats {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .users-stats-total { color: var(--muted); }
+[data-theme="dark"] .users-stats-total strong { color: var(--text); }
+
+[data-theme="dark"] .users-stats-chip {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .users-stats-chip-label { color: var(--muted); }
+[data-theme="dark"] .users-stats-chip-count { color: var(--text); }
+
+[data-theme="dark"] .user-role-header {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text);
+  box-shadow: 0 1px 4px rgba(0,0,0,.30);
+}
+
+[data-theme="dark"] .user-role-header:hover {
+  background: var(--grid);
+  box-shadow: 0 2px 8px rgba(0,0,0,.45);
+}
+
+[data-theme="dark"] .user-role-count-badge {
+  background: var(--grid);
+  color: var(--muted);
+}
+
+[data-theme="dark"] .user-role-empty {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+  color: var(--muted);
+}
 
 
 /* ── I: Typography & hierarchy — dark mode consistency ───────────

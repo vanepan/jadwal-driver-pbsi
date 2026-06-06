@@ -1593,6 +1593,132 @@ z-index: 1;
   margin-top: 10px;
 }
 
+/* ── User Management: Statistics Header ── */
+.users-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  background: var(--gray-1);
+  border: 1px solid var(--gray-2);
+  border-radius: 8px;
+  margin-top: 12px;
+  margin-bottom: 14px;
+}
+
+.users-stats-total {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.users-stats-total strong {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  margin-left: 4px;
+}
+
+.users-stats-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.users-stats-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--gray-2);
+  background: var(--white);
+  font-size: 11px;
+}
+
+.users-stats-chip-label {
+  color: var(--text-muted);
+}
+
+.users-stats-chip-count {
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* ── User Management: Role Groups ── */
+.users-list {
+  gap: 10px;
+}
+
+.user-role-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.user-role-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--white);
+  border: 1px solid var(--gray-2);
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  transition: background 0.12s, box-shadow 0.12s;
+}
+
+.user-role-header:hover {
+  background: var(--gray-1);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+
+.user-role-arrow {
+  font-size: 10px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.user-role-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  background: var(--gray-2);
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--gray-4);
+  letter-spacing: 0;
+}
+
+.user-role-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+  padding-bottom: 2px;
+}
+
+.user-role-empty {
+  padding: 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+  background: var(--gray-1);
+  border: 1px dashed var(--gray-3);
+  border-radius: 8px;
+}
+
 .toggle-switch {
   display: inline-flex;
   align-items: center;
