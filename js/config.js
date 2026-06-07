@@ -1,10 +1,25 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.3.4';
-export const RELEASE_NAME = 'Operational Data Accuracy Fix';
+export const APP_VERSION = '1.4.0';
+export const RELEASE_NAME = 'PBSI Select Component';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.4.0',
+    date: '2026-06-07',
+    summary: 'PBSI Select Component',
+    highlights: [
+      'Custom PBSI Select replaces all 6 browser-native <select> dropdowns',
+      'Targets: #fieldDriver, #fieldVehicle, #requestFieldDriver, #requestFieldVehicle, #userFieldRole, #v2AdminRoleFilter',
+      'Portal-rendered floating panel (z-index 350) — escapes modal stacking contexts',
+      'MutationObserver syncs option list when Firebase repopulates driver/vehicle options at runtime',
+      'Full keyboard navigation: Arrow keys, Enter/Space to pick, Escape/Tab to close',
+      'aria-activedescendant pattern — focus stays on trigger, screen reader announces highlighted option',
+      'Dark mode and mobile touch support (font-size: 16px on ≤600px prevents iOS Safari zoom)',
+      'Native <select> retained as hidden form value source — all business logic unchanged',
+    ],
+  },
   {
     version: '1.3.4',
     date: '2026-06-07',

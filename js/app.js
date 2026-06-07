@@ -15,6 +15,7 @@ import { APP_NAME, APP_VERSION } from './config.js';
 import { loadAssignments, saveAssignments, saveOneAssignment, removeOneAssignment, loadRequests, saveRequests, initFirebaseSync, registerDataChangeListener, registerRequestsChangeListener, checkAssignmentSafety, fetchFirebaseData } from './firebase.js';
 import { recoverAssignmentsFromRequests } from './recovery.js';
 import { initDriverSelect } from './drivers.js';
+import { initPbsiSelect } from './pbsi-select.js';
 import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate } from './timeline.js';
 import { initModalHandlers, openDetailModal, registerEditCallback, registerDeleteCallback, registerStartCallback, registerCompleteCallback, registerCommentCallback as registerModalCommentCallback, setAssignments as setModalAssignments, updateDetailActionButtons } from './modal.js';
 import { initFormHandlers, openFormModal, closeFormModal, registerSaveCallback, setAssignments as setAssignmentsForm, setCurrentDate as setCurrentDateForm, checkConflict, deleteAssignment } from './assignments.js';
@@ -1671,6 +1672,22 @@ const V2_ROLE_CONFIG = [
 const v2GroupExpanded = {};
 
 /**
+ * Wrap all native <select> elements with PBSI Select component.
+ * Called once after initDriverSelect + initRequestHandlers have
+ * populated dynamic option lists.
+ */
+function _initAllPbsiSelects() {
+  [
+    'fieldDriver', 'fieldVehicle',
+    'requestFieldDriver', 'requestFieldVehicle',
+    'userFieldRole', 'v2AdminRoleFilter',
+  ].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) initPbsiSelect(el);
+  });
+}
+
+/**
  * Inject #v2AdministrationWorkspace into .main-content. Admin-only visibility.
  */
 function initV2AdministrationWorkspace() {
@@ -2256,6 +2273,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initFormHandlers();                    // Setup form events
   initModalHandlers();                   // Setup modal events
   initRequestHandlers();                 // Setup request workflow events
+  _initAllPbsiSelects();                 // Wrap all native selects after options are populated
   initCommentHandlers();                 // Setup comment thread events
   renderViews();                         // Render timeline + list view pertama kali
   updatePermissionUI(true);              // startup → reset nav to Dashboard

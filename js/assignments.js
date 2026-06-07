@@ -11,6 +11,7 @@ import { generateId, timeToMinutes, minutesToTime, showToast, initCustomTimeInpu
 import { getDriverByName } from './drivers.js';
 import { hasPermission, getCurrentUser } from './auth.js';
 import { initFormGuard, resetDirty } from './form-guard.js';
+import { syncPbsiSelect } from './pbsi-select.js';
 
 /* ── Module State ── */
 let assignments = [];
@@ -142,6 +143,8 @@ export function openFormModal(asgnId = null) {
   const form = document.getElementById('assignmentForm');
   if (form) form.reset();
   _syncPaxDisplay(0); // reset stepper display after form.reset()
+  syncPbsiSelect(document.getElementById('fieldDriver'));
+  syncPbsiSelect(document.getElementById('fieldVehicle'));
 
   const warning = document.getElementById('conflictWarning');
   if (warning) warning.style.display = 'none';
@@ -172,8 +175,10 @@ export function openFormModal(asgnId = null) {
     if (a) {
       document.getElementById('fieldId').value          = a.id;
       document.getElementById('fieldDriver').value      = a.driver;
+      syncPbsiSelect(document.getElementById('fieldDriver'));
       document.getElementById('fieldPhone').value       = a.phone;
       document.getElementById('fieldVehicle').value     = a.vehicle;
+      syncPbsiSelect(document.getElementById('fieldVehicle'));
       document.getElementById('fieldDate').value        = a.date;
       setTimeFieldsFromValue('fieldStartHour', 'fieldStartMinute', a.startTime);
       setTimeFieldsFromValue('fieldEndHour', 'fieldEndMinute', a.endTime);

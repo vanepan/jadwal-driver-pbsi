@@ -6952,3 +6952,252 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 .comment-char-counter--warn { color: var(--warn, #B45309); }
 .comment-char-counter--full { color: var(--error, var(--accent)); }
+
+/* ============================================================
+   v1.4.0 — PBSI Select Component
+   ============================================================ */
+
+/* ── Wrapper: fills layout slot of the hidden native select ── */
+.pbsi-select {
+  position: relative;
+  width: 100%;
+  display: block;
+}
+
+/* ── Trigger button: visually identical to .form-group select ─
+   Resets all browser button chrome, then applies PBSI tokens.  */
+.pbsi-select-trigger {
+  /* Reset button defaults */
+  box-sizing: border-box;
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  outline: none;
+  margin: 0;
+  padding: 0;
+
+  /* Layout */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 10px;
+
+  /* Typography — matches .form-group input */
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  line-height: 1.4;
+  text-align: left;
+
+  /* Appearance — matches .form-group select token overrides */
+  background: var(--input-bg);
+  color: var(--text);
+  border: 1.5px solid var(--input-border);
+  border-radius: var(--radius-sm, 6px);
+
+  cursor: pointer;
+  transition: border-color .12s, box-shadow .12s, background .12s;
+}
+
+.pbsi-select-trigger:hover:not(:disabled) {
+  background: var(--hover, rgba(0,0,0,.03));
+  border-color: color-mix(in srgb, var(--input-border) 60%, var(--text));
+}
+
+.pbsi-select-trigger:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(168,41,47,.12);
+  outline: none;
+}
+
+/* Open state: accent border (same as native :focus) */
+.pbsi-select-trigger--open {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(168,41,47,.12);
+}
+
+.pbsi-select-trigger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ── Value span ─────────────────────────────────────────────── */
+.pbsi-select-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pbsi-select-value--placeholder {
+  color: var(--faint);
+}
+
+/* ── Chevron ────────────────────────────────────────────────── */
+.pbsi-select-chevron {
+  flex-shrink: 0;
+  color: var(--text-secondary, #757575);
+  transition: transform .2s cubic-bezier(.4,0,.2,1);
+  pointer-events: none;
+}
+
+.pbsi-select-trigger--open .pbsi-select-chevron {
+  transform: rotate(180deg);
+}
+
+/* ── Portal panel ────────────────────────────────────────────
+   Portal-rendered: position:fixed, lives on <body>.
+   z-index 350 — above modals (200) and backdrop (140),
+   below form-guard confirmation dialog (400).              */
+.pbsi-select-panel {
+  position: fixed;
+  z-index: 350;
+
+  background: var(--surface-card, var(--white, #fff));
+  border: 1.5px solid var(--input-border);
+  border-radius: var(--radius-sm, 6px);
+  box-shadow:
+    0 4px 6px -1px rgba(0,0,0,.08),
+    0 10px 20px -4px rgba(0,0,0,.10);
+
+  max-height: 240px;
+  overflow-y: auto;
+  overflow-x: hidden;
+
+  /* Smooth open animation */
+  opacity: 0;
+  transform: translateY(-4px);
+  transition:
+    opacity  .13s ease,
+    transform .13s ease;
+
+  /* Scrollbar styling (matches platform.css pattern) */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.pbsi-select-panel::-webkit-scrollbar       { width: 4px; }
+.pbsi-select-panel::-webkit-scrollbar-track { background: transparent; }
+.pbsi-select-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.pbsi-select-panel--open {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Flip-up variant: animate upward instead */
+.pbsi-select-panel--above {
+  transform: translateY(4px);
+}
+.pbsi-select-panel--above.pbsi-select-panel--open {
+  transform: translateY(0);
+}
+
+/* ── Option items ─────────────────────────────────────────── */
+.pbsi-select-option {
+  padding: 9px 12px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
+  transition: background .08s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Minimum touch target */
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+}
+
+/* Hover state */
+.pbsi-select-option:hover,
+.pbsi-select-option--active {
+  background: var(--hover, rgba(0,0,0,.05));
+}
+
+/* Selected state — accent tint left border */
+.pbsi-select-option--selected {
+  color: var(--accent);
+  background: rgba(168,41,47,.05);
+  font-weight: 500;
+}
+
+.pbsi-select-option--selected::before {
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 14px;
+  background: var(--accent);
+  border-radius: 2px;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+/* Keyboard-highlighted overrides selected bg */
+.pbsi-select-option--active.pbsi-select-option--selected {
+  background: color-mix(in srgb, var(--hover, rgba(0,0,0,.05)) 200%, rgba(168,41,47,.05));
+}
+
+/* Placeholder option ("-- Pilih ...") */
+.pbsi-select-option--placeholder {
+  color: var(--faint);
+  font-weight: 400;
+}
+.pbsi-select-option--placeholder::before {
+  display: none;
+}
+
+/* ── Dark mode ────────────────────────────────────────────── */
+[data-theme="dark"] .pbsi-select-trigger {
+  background: var(--input-bg);
+  border-color: var(--input-border);
+  color: var(--text);
+}
+[data-theme="dark"] .pbsi-select-trigger:hover:not(:disabled) {
+  background: var(--hover, rgba(255,255,255,.05));
+  border-color: color-mix(in srgb, var(--input-border) 60%, var(--text));
+}
+[data-theme="dark"] .pbsi-select-chevron {
+  color: var(--text-secondary, #A6A39B);
+}
+[data-theme="dark"] .pbsi-select-panel {
+  background: var(--surface-card, #2A2A2A);
+  border-color: var(--input-border);
+  box-shadow:
+    0 4px 6px -1px rgba(0,0,0,.30),
+    0 10px 20px -4px rgba(0,0,0,.40);
+}
+[data-theme="dark"] .pbsi-select-option {
+  color: var(--text);
+}
+[data-theme="dark"] .pbsi-select-option:hover,
+[data-theme="dark"] .pbsi-select-option--active {
+  background: var(--hover, rgba(255,255,255,.06));
+}
+[data-theme="dark"] .pbsi-select-option--selected {
+  color: var(--accent);
+  background: rgba(168,41,47,.12);
+}
+[data-theme="dark"] .pbsi-select-option--active.pbsi-select-option--selected {
+  background: color-mix(in srgb, var(--hover, rgba(255,255,255,.06)) 200%, rgba(168,41,47,.12));
+}
+
+/* ── Mobile: 16px font prevents iOS Safari zoom on focus ──── */
+@media (max-width: 600px) {
+  .pbsi-select-trigger { font-size: 16px; padding: 9px 10px; }
+  .pbsi-select-option  { font-size: 16px; }
+}
+
+/* ── v2-admin-filter variant (outside .form-group) ──────────
+   The admin role filter sits in .v2-admin-toolbar, not in a
+   .form-group. Its trigger inherits toolbar flex sizing.     */
+.v2-admin-toolbar .pbsi-select {
+  flex: 0 0 auto;
+}
+.v2-admin-toolbar .pbsi-select-trigger {
+  border-radius: 8px;
+  font-size: 13px;
+  padding: 8px 12px;
+}

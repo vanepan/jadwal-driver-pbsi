@@ -11,6 +11,7 @@ import { DEFAULT_DRIVERS, VEHICLES, getDriverByName } from './drivers.js';
 import { generateId, timeToMinutes, showToast, initCustomTimeInputPair, getCombinedTimeFromPair, setTimeFieldsFromValue, normalizeTimeValue, expandDateRange, formatDateShort, addHoursToTime, todayString } from './utils.js';
 import { getCurrentUser, hasPermission, isAdmin } from './auth.js';
 import { initFormGuard, resetDirty } from './form-guard.js';
+import { syncPbsiSelect } from './pbsi-select.js';
 
 let requests = [];
 let editingRequestId = null;
@@ -181,6 +182,8 @@ export function openRequestFormModal(requestId = null) {
 
   const form = document.getElementById('requestForm');
   if (form) form.reset();
+  syncPbsiSelect(document.getElementById('requestFieldDriver'));
+  syncPbsiSelect(document.getElementById('requestFieldVehicle'));
 
   const title = document.getElementById('modalRequestFormTitle');
   if (title) {
@@ -195,7 +198,9 @@ export function openRequestFormModal(requestId = null) {
   if (request) {
     const norm = normalizeRequest(request);
     document.getElementById('requestFieldDriver').value    = norm.driver    || '';
+    syncPbsiSelect(document.getElementById('requestFieldDriver'));
     document.getElementById('requestFieldVehicle').value   = norm.vehicle   || '';
+    syncPbsiSelect(document.getElementById('requestFieldVehicle'));
     document.getElementById('requestFieldStartDate').value = norm.startDate || '';
     document.getElementById('requestFieldEndDate').value   = norm.endDate   || '';
     setTimeFieldsFromValue('requestFieldStartHour', 'requestFieldStartMinute', norm.startTime);

@@ -5,6 +5,7 @@ import { createUser, getUserByUsername, getUsers, initUsersSync, updateUser, dea
 import { logAction } from './logs.js';
 import { sendNotification } from './telegram.js';
 import { showToast } from './utils.js';
+import { syncPbsiSelect } from './pbsi-select.js';
 
 const TELEGRAM_BOT_USERNAME = 'PBSI_Assistant_Bot';
 const TELEGRAM_BOT_URL = `https://t.me/${TELEGRAM_BOT_USERNAME}`;
@@ -207,6 +208,7 @@ export function openUserFormModal(username = null) {
     if (pinField) pinField.value = '';
     if (activeField) activeField.checked = true;
   }
+  syncPbsiSelect(roleField);
 
   const modal = document.getElementById('modalUserForm');
   if (modal) modal.style.display = 'flex';
