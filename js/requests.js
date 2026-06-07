@@ -8,10 +8,11 @@
 'use strict';
 
 import { DEFAULT_DRIVERS, VEHICLES, getDriverByName } from './drivers.js';
-import { generateId, timeToMinutes, showToast, initCustomTimeInputPair, getCombinedTimeFromPair, setTimeFieldsFromValue, normalizeTimeValue, expandDateRange, formatDateShort, addHoursToTime, todayString } from './utils.js';
+import { generateId, timeToMinutes, showToast, initCustomTimeInputPair, getCombinedTimeFromPair, setTimeFieldsFromValue, normalizeTimeValue, expandDateRange, formatDateShort, addHoursToTime, todayString, offsetDate } from './utils.js';
 import { getCurrentUser, hasPermission, isAdmin } from './auth.js';
 import { initFormGuard, resetDirty } from './form-guard.js';
 import { syncPbsiSelect } from './pbsi-select.js';
+import { initPbsiDatepicker, syncPbsiDatepicker } from './pbsi-datepicker.js';
 
 let requests = [];
 let editingRequestId = null;
@@ -125,6 +126,31 @@ export function initRequestHandlers() {
     closeIds:  ['btnCloseRequestForm', 'btnCancelRequestForm'],
     closeFn:   closeRequestFormModal,
   });
+
+  // PBSI Date Picker — request start date
+  initPbsiDatepicker(document.getElementById('requestFieldStartDate'), {
+    presets: [
+      { label: 'Hari Ini', getValue: () => todayString() },
+      { label: 'Besok',    getValue: () => offsetDate(todayString(), 1) },
+      { label: 'Lusa',     getValue: () => offsetDate(todayString(), 2) },
+      { label: 'Pilih Tanggal', openCalendar: true },
+    ],
+  });
+
+  // PBSI Date Picker — request end date (presets relative to current start date)
+  initPbsiDatepicker(document.getElementById('requestFieldEndDate'), {
+    presets: [
+      { label: 'Sama Hari', getValue: () => document.getElementById('requestFieldStartDate').value || todayString() },
+      { label: '+1 Hari',   getValue: () => offsetDate(document.getElementById('requestFieldStartDate').value || todayString(), 1) },
+      { label: '+2 Hari',   getValue: () => offsetDate(document.getElementById('requestFieldStartDate').value || todayString(), 2) },
+      { label: 'Pilih Tanggal', openCalendar: true },
+    ],
+  });
+
+  // When request start date changes, re-evaluate end date preset active states
+  document.getElementById('requestFieldStartDate')?.addEventListener('change', () => {
+    syncPbsiDatepicker(document.getElementById('requestFieldEndDate'));
+  });
 }
 
 function syncRequestFullDayUI() {
@@ -156,6 +182,7 @@ function syncRequestMultiDayUI(instant = false) {
     if (endDateInput) {
       endDateInput.required = false;
       endDateInput.value = '';
+      syncPbsiDatepicker(endDateInput);
     }
     if (startDateLabel) startDateLabel.textContent = 'Tanggal *';
   }
@@ -184,6 +211,8 @@ export function openRequestFormModal(requestId = null) {
   if (form) form.reset();
   syncPbsiSelect(document.getElementById('requestFieldDriver'));
   syncPbsiSelect(document.getElementById('requestFieldVehicle'));
+  syncPbsiDatepicker(document.getElementById('requestFieldStartDate'));
+  syncPbsiDatepicker(document.getElementById('requestFieldEndDate'));
 
   const title = document.getElementById('modalRequestFormTitle');
   if (title) {
@@ -202,7 +231,9 @@ export function openRequestFormModal(requestId = null) {
     document.getElementById('requestFieldVehicle').value   = norm.vehicle   || '';
     syncPbsiSelect(document.getElementById('requestFieldVehicle'));
     document.getElementById('requestFieldStartDate').value = norm.startDate || '';
+    syncPbsiDatepicker(document.getElementById('requestFieldStartDate'));
     document.getElementById('requestFieldEndDate').value   = norm.endDate   || '';
+    syncPbsiDatepicker(document.getElementById('requestFieldEndDate'));
     setTimeFieldsFromValue('requestFieldStartHour', 'requestFieldStartMinute', norm.startTime);
     setTimeFieldsFromValue('requestFieldEndHour',   'requestFieldEndMinute',   norm.endTime);
     document.getElementById('requestFieldPurpose').value = norm.purpose || '';
@@ -229,11 +260,11 @@ export function openRequestFormModal(requestId = null) {
     const endInput = document.getElementById('requestFieldEndDate');
     if (endGrp) { endGrp.classList.remove('visible'); }
     if (startLbl) startLbl.textContent = 'Tanggal *';
-    if (endInput) { endInput.required = false; endInput.value = ''; }
+    if (endInput) { endInput.required = false; endInput.value = ''; syncPbsiDatepicker(endInput); }
 
     // Default start date to today
     const startDateInput = document.getElementById('requestFieldStartDate');
-    if (startDateInput) startDateInput.value = todayString();
+    if (startDateInput) { startDateInput.value = todayString(); syncPbsiDatepicker(startDateInput); }
 
     // Reset full-day
     const fullDayCb = document.getElementById('requestFullDay');

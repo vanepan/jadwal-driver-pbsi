@@ -1,10 +1,28 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.4.0';
-export const RELEASE_NAME = 'PBSI Select Component';
+export const APP_VERSION = '1.4.1';
+export const RELEASE_NAME = 'PBSI Date Picker Component';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.4.1',
+    date: '2026-06-07',
+    summary: 'PBSI Date Picker Component',
+    highlights: [
+      'Custom PBSI Date Picker replaces all 5 native date inputs',
+      'Targets: filterDate (header nav), fieldDate, fieldEndDate, requestFieldStartDate, requestFieldEndDate',
+      'Flatpickr 4.6.13 vendored locally (vendor/flatpickr.min.js + flatpickr.min.css)',
+      'Indonesian locale inline — weekday/month names in Bahasa Indonesia',
+      'Start date presets: Hari Ini · Besok · Lusa · Pilih Tanggal',
+      'End date presets: Sama Hari · +1 Hari · +2 Hari · Pilih Tanggal (relative to start date)',
+      'Smart preset highlight — active state auto-detects which preset matches current value',
+      'Calendar appended to document.body (z-index 360) — escapes modal stacking contexts',
+      'PBSI V2 Flatpickr theme — accent color, DM Sans font, dark mode support',
+      'filterDate nav sync — btnPrevDate/btnNextDate/btnToday trigger requestAnimationFrame sync',
+      'Native date input retained as hidden form value source — all business logic unchanged',
+    ],
+  },
   {
     version: '1.4.0',
     date: '2026-06-07',

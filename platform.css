@@ -7201,3 +7201,267 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   font-size: 13px;
   padding: 8px 12px;
 }
+
+/* ============================================================
+   PBSI DATEPICKER COMPONENT  (v1.4.1)
+   ============================================================ */
+
+/* ── Wrapper ──────────────────────────────────────────────── */
+.pbsi-datepicker {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+/* ── Preset strip ─────────────────────────────────────────── */
+.pbsi-datepicker-presets {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+  flex-wrap: nowrap;
+}
+
+.pbsi-datepicker-preset {
+  flex: 1;
+  padding: 5px 6px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11.5px;
+  font-weight: 500;
+  background: transparent;
+  border: 1.5px solid var(--input-border);
+  border-radius: 20px;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color .12s, background .12s, color .12s;
+}
+.pbsi-datepicker-preset:hover {
+  background: var(--hover);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.pbsi-datepicker-preset--active {
+  background: rgba(168, 41, 47, .09);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ── Trigger button ───────────────────────────────────────── */
+.pbsi-datepicker-trigger {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 8px 10px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  background: var(--input-bg);
+  color: var(--text);
+  border: 1.5px solid var(--input-border);
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .12s;
+}
+.pbsi-datepicker-trigger:hover {
+  border-color: var(--accent);
+}
+.pbsi-datepicker-trigger:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(168, 41, 47, .12);
+}
+
+/* ── Display span ─────────────────────────────────────────── */
+.pbsi-datepicker-display {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pbsi-datepicker-display--empty {
+  color: #757575;
+}
+
+/* ── Calendar icon ────────────────────────────────────────── */
+.pbsi-datepicker-icon {
+  flex-shrink: 0;
+  color: var(--faint);
+  opacity: .7;
+}
+
+/* ── Date-nav header variant (filterDate) ─────────────────── */
+.date-nav .pbsi-datepicker {
+  width: auto;
+}
+.date-nav .pbsi-datepicker-trigger {
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 6px;
+  gap: 5px;
+  min-width: 148px;
+  color: var(--text);
+}
+.date-nav .pbsi-datepicker-trigger:hover {
+  background: var(--hover);
+  border-color: transparent;
+}
+.date-nav .pbsi-datepicker-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  box-shadow: none;
+}
+.date-nav .pbsi-datepicker-display--empty {
+  color: var(--faint);
+}
+@media (max-width: 600px) {
+  .date-nav .pbsi-datepicker-trigger {
+    font-size: 11px;
+    min-width: 126px;
+    padding: 3px 5px;
+  }
+}
+
+/* ── Mobile: prevent iOS Safari zoom on focus ─────────────── */
+@media (max-width: 600px) {
+  .pbsi-datepicker-trigger { font-size: 16px; }
+  .pbsi-datepicker-preset  { font-size: 13px; }
+}
+
+/* ============================================================
+   FLATPICKR — PBSI V2 THEME OVERRIDE
+   Replaces Flatpickr's default blue with PBSI accent tokens.
+   z-index 360 — above PBSI Select panel (350) and modals (200).
+   ============================================================ */
+
+.flatpickr-calendar {
+  font-family: 'DM Sans', sans-serif !important;
+  font-size: 13px !important;
+  background: var(--surface-card, #ffffff) !important;
+  border: 1.5px solid var(--input-border) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 6px -2px rgba(0,0,0,.08),
+              0 12px 24px -6px rgba(0,0,0,.10) !important;
+  z-index: 360 !important;
+  color: var(--text) !important;
+}
+.flatpickr-calendar.open { display: inline-block; }
+
+/* Month / year header */
+.flatpickr-months {
+  background: var(--surface-card, #ffffff) !important;
+  border-radius: 6px 6px 0 0;
+}
+.flatpickr-month {
+  background: transparent !important;
+  color: var(--text) !important;
+  fill: var(--text) !important;
+}
+.flatpickr-current-month {
+  color: var(--text) !important;
+}
+.flatpickr-current-month select.cur-month,
+.flatpickr-current-month .numInputWrapper input.cur-year {
+  color: var(--text) !important;
+  font-family: 'DM Sans', sans-serif !important;
+  font-weight: 600 !important;
+}
+.flatpickr-prev-month,
+.flatpickr-next-month {
+  fill: var(--text) !important;
+  color: var(--text) !important;
+}
+.flatpickr-prev-month:hover svg,
+.flatpickr-next-month:hover svg {
+  fill: var(--accent) !important;
+}
+
+/* Weekday header row */
+.flatpickr-weekdays,
+.flatpickr-weekdaycontainer {
+  background: var(--surface-card, #ffffff) !important;
+}
+span.flatpickr-weekday {
+  background: transparent !important;
+  color: var(--faint) !important;
+  font-weight: 600 !important;
+  font-size: 11px !important;
+}
+
+/* Day cells */
+.flatpickr-days, .dayContainer {
+  background: var(--surface-card, #ffffff) !important;
+}
+.flatpickr-day {
+  color: var(--text) !important;
+  border-radius: 6px !important;
+  font-family: 'DM Sans', sans-serif !important;
+}
+.flatpickr-day:hover,
+.flatpickr-day.prevMonthDay:hover,
+.flatpickr-day.nextMonthDay:hover {
+  background: var(--hover) !important;
+  border-color: transparent !important;
+}
+.flatpickr-day.today {
+  border-color: var(--accent) !important;
+}
+.flatpickr-day.today:hover {
+  background: var(--hover) !important;
+  color: var(--text) !important;
+  border-color: var(--accent) !important;
+}
+.flatpickr-day.selected,
+.flatpickr-day.selected:hover,
+.flatpickr-day.startRange,
+.flatpickr-day.endRange {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+  color: #ffffff !important;
+}
+.flatpickr-day.prevMonthDay,
+.flatpickr-day.nextMonthDay {
+  color: var(--faint) !important;
+}
+.flatpickr-day.flatpickr-disabled {
+  color: var(--faint) !important;
+  opacity: .4 !important;
+}
+
+/* Number input (year) arrows */
+.numInputWrapper:hover,
+.numInputWrapper span {
+  background: var(--hover) !important;
+}
+
+/* ── Dark mode ────────────────────────────────────────────── */
+[data-theme="dark"] .pbsi-datepicker-display--empty {
+  color: var(--faint);
+}
+[data-theme="dark"] .flatpickr-calendar {
+  background: var(--surface-2, #262830) !important;
+  border-color: var(--input-border) !important;
+  box-shadow: 0 4px 8px -2px rgba(0,0,0,.40),
+              0 16px 32px -8px rgba(0,0,0,.48) !important;
+}
+[data-theme="dark"] .flatpickr-months,
+[data-theme="dark"] .flatpickr-weekdays,
+[data-theme="dark"] .flatpickr-weekdaycontainer,
+[data-theme="dark"] .flatpickr-days,
+[data-theme="dark"] .dayContainer {
+  background: var(--surface-2, #262830) !important;
+}
+[data-theme="dark"] .flatpickr-day:hover {
+  background: var(--hover) !important;
+}
+[data-theme="dark"] .flatpickr-day.selected,
+[data-theme="dark"] .flatpickr-day.selected:hover {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+  color: #ffffff !important;
+}

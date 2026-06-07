@@ -16,6 +16,7 @@ import { loadAssignments, saveAssignments, saveOneAssignment, removeOneAssignmen
 import { recoverAssignmentsFromRequests } from './recovery.js';
 import { initDriverSelect } from './drivers.js';
 import { initPbsiSelect } from './pbsi-select.js';
+import { initPbsiDatepicker, syncPbsiDatepicker } from './pbsi-datepicker.js';
 import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate } from './timeline.js';
 import { initModalHandlers, openDetailModal, registerEditCallback, registerDeleteCallback, registerStartCallback, registerCompleteCallback, registerCommentCallback as registerModalCommentCallback, setAssignments as setModalAssignments, updateDetailActionButtons } from './modal.js';
 import { initFormHandlers, openFormModal, closeFormModal, registerSaveCallback, setAssignments as setAssignmentsForm, setCurrentDate as setCurrentDateForm, checkConflict, deleteAssignment } from './assignments.js';
@@ -1688,6 +1689,26 @@ function _initAllPbsiSelects() {
 }
 
 /**
+ * Wrap the timeline filterDate input with PBSI Datepicker.
+ * Form date fields (fieldDate, fieldEndDate, requestField*) are
+ * initialized inside their respective initFormHandlers / initRequestHandlers.
+ */
+function _initAllPbsiDatepickers() {
+  const filterDateEl = document.getElementById('filterDate');
+  if (!filterDateEl) return;
+
+  initPbsiDatepicker(filterDateEl, { presets: [] });
+
+  // timeline.js sets filterDate.value directly without dispatching change events
+  // (btnPrevDate, btnNextDate, btnToday). Sync PBSI display after each click.
+  ['btnPrevDate', 'btnNextDate', 'btnToday'].forEach(id => {
+    document.getElementById(id)?.addEventListener('click', () => {
+      requestAnimationFrame(() => syncPbsiDatepicker(filterDateEl));
+    });
+  });
+}
+
+/**
  * Inject #v2AdministrationWorkspace into .main-content. Admin-only visibility.
  */
 function initV2AdministrationWorkspace() {
@@ -2274,6 +2295,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initModalHandlers();                   // Setup modal events
   initRequestHandlers();                 // Setup request workflow events
   _initAllPbsiSelects();                 // Wrap all native selects after options are populated
+  _initAllPbsiDatepickers();             // Wrap filterDate + wire nav button sync
   initCommentHandlers();                 // Setup comment thread events
   renderViews();                         // Render timeline + list view pertama kali
   updatePermissionUI(true);              // startup → reset nav to Dashboard

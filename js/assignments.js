@@ -7,11 +7,12 @@
 
 'use strict';
 
-import { generateId, timeToMinutes, minutesToTime, showToast, initCustomTimeInputPair, getCombinedTimeFromPair, setTimeFieldsFromValue, normalizeTimeValue, expandDateRange, formatDateShort, addHoursToTime, todayString } from './utils.js';
+import { generateId, timeToMinutes, minutesToTime, showToast, initCustomTimeInputPair, getCombinedTimeFromPair, setTimeFieldsFromValue, normalizeTimeValue, expandDateRange, formatDateShort, addHoursToTime, todayString, offsetDate } from './utils.js';
 import { getDriverByName } from './drivers.js';
 import { hasPermission, getCurrentUser } from './auth.js';
 import { initFormGuard, resetDirty } from './form-guard.js';
 import { syncPbsiSelect } from './pbsi-select.js';
+import { initPbsiDatepicker, syncPbsiDatepicker } from './pbsi-datepicker.js';
 
 /* ── Module State ── */
 let assignments = [];
@@ -90,6 +91,31 @@ export function initFormHandlers() {
     closeIds:  ['btnCloseForm', 'btnCancelForm'],
     closeFn:   closeFormModal,
   });
+
+  // PBSI Date Picker — start date
+  initPbsiDatepicker(document.getElementById('fieldDate'), {
+    presets: [
+      { label: 'Hari Ini', getValue: () => todayString() },
+      { label: 'Besok',    getValue: () => offsetDate(todayString(), 1) },
+      { label: 'Lusa',     getValue: () => offsetDate(todayString(), 2) },
+      { label: 'Pilih Tanggal', openCalendar: true },
+    ],
+  });
+
+  // PBSI Date Picker — end date (presets relative to current start date)
+  initPbsiDatepicker(document.getElementById('fieldEndDate'), {
+    presets: [
+      { label: 'Sama Hari', getValue: () => document.getElementById('fieldDate').value || todayString() },
+      { label: '+1 Hari',   getValue: () => offsetDate(document.getElementById('fieldDate').value || todayString(), 1) },
+      { label: '+2 Hari',   getValue: () => offsetDate(document.getElementById('fieldDate').value || todayString(), 2) },
+      { label: 'Pilih Tanggal', openCalendar: true },
+    ],
+  });
+
+  // When start date changes, re-evaluate end date preset active states
+  document.getElementById('fieldDate')?.addEventListener('change', () => {
+    syncPbsiDatepicker(document.getElementById('fieldEndDate'));
+  });
 }
 
 function syncAssignmentMultiDayUI() {
@@ -108,6 +134,7 @@ function syncAssignmentMultiDayUI() {
     if (endDateInput) {
       endDateInput.required = false;
       endDateInput.value = '';
+      syncPbsiDatepicker(endDateInput);
     }
     if (fieldDateLabel) fieldDateLabel.textContent = 'Tanggal *';
   }
@@ -145,6 +172,8 @@ export function openFormModal(asgnId = null) {
   _syncPaxDisplay(0); // reset stepper display after form.reset()
   syncPbsiSelect(document.getElementById('fieldDriver'));
   syncPbsiSelect(document.getElementById('fieldVehicle'));
+  syncPbsiDatepicker(document.getElementById('fieldDate'));
+  syncPbsiDatepicker(document.getElementById('fieldEndDate'));
 
   const warning = document.getElementById('conflictWarning');
   if (warning) warning.style.display = 'none';
@@ -180,6 +209,7 @@ export function openFormModal(asgnId = null) {
       document.getElementById('fieldVehicle').value     = a.vehicle;
       syncPbsiSelect(document.getElementById('fieldVehicle'));
       document.getElementById('fieldDate').value        = a.date;
+      syncPbsiDatepicker(document.getElementById('fieldDate'));
       setTimeFieldsFromValue('fieldStartHour', 'fieldStartMinute', a.startTime);
       setTimeFieldsFromValue('fieldEndHour', 'fieldEndMinute', a.endTime);
       document.getElementById('fieldDestination').value = a.destination;
@@ -196,6 +226,7 @@ export function openFormModal(asgnId = null) {
   } else {
     // Mode add: default to today's date
     document.getElementById('fieldDate').value = todayString();
+    syncPbsiDatepicker(document.getElementById('fieldDate'));
   }
 
   const modal = document.getElementById('modalForm');
