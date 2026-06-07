@@ -745,14 +745,13 @@ button:disabled:hover {
    ============================================================ */
 
 /* Wrapper seluruh timeline — visual card container.
-   overflow-x:auto here is safe because .main-content now has explicit
-   width:100%, so nothing forces the wrapper wider than the viewport. */
+   overflow: hidden clips any rogue child overflow without creating a
+   competing horizontal scroll container (timeline-body owns the scroll). */
 .timeline-wrapper {
   background: var(--white);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  overflow-x: auto;
-  overflow-y: visible;
+  overflow: hidden;
   border: 1px solid var(--gray-2);
   position: relative;
 }
@@ -762,11 +761,9 @@ button:disabled:hover {
   display: flex;
   border-bottom: 2px solid var(--gray-2);
   background: var(--gray-1);
-  /* Sticky supaya header jam tetap di atas saat scroll vertikal */
   position: sticky;
   top: 0;
-  z-index: 10;
-   position: sticky;
+  z-index: 20;
 }
 
 /* Sudut kiri atas (label "Driver") */
@@ -782,17 +779,12 @@ button:disabled:hover {
   color: var(--text-muted);
   letter-spacing: 0.5px;
   text-transform: uppercase;
-  border-right: 2px solid var(--gray-2);
   flex-shrink: 0;
   background: var(--gray-1);
-  /* Sticky kiri supaya nama driver tidak ikut scroll horizontal */
   position: sticky;
   left: 0;
-  z-index: 11;
-   position: sticky;
-left: 0;
-z-index: 40;
-background: var(--gray-1);
+  z-index: 25;
+  box-shadow: 2px 0 8px rgba(0,0,0,0.07);
 }
 
 /* Area jam-jam di header */
@@ -840,6 +832,7 @@ z-index: 1;
   overflow-x: auto;
   overflow-y: hidden;
   position: relative;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Custom scrollbar untuk timeline body */
@@ -865,13 +858,12 @@ z-index: 1;
   align-items: flex-start;
   justify-content: center;
   padding: 6px 10px;
-  border-right: 2px solid var(--gray-2);
   background: var(--white);
-  /* Sticky supaya nama driver tidak ikut scroll horizontal */
   position: sticky;
   left: 0;
-  z-index: 5;
+  z-index: 15;
   flex-shrink: 0;
+  box-shadow: 2px 0 8px rgba(0,0,0,0.07);
 }
 
 .driver-name {
@@ -936,7 +928,7 @@ z-index: 1;
 .assignment-block:hover {
   filter: brightness(1.08);
   box-shadow: 0 3px 10px rgba(0,0,0,0.25);
-  z-index: 3;
+  z-index: 3; /* always below .driver-label (z-index: 15) */
 }
 
 /* Assignment selesai — tampak redup */
@@ -3311,27 +3303,19 @@ input[type="number"]::-webkit-inner-spin-button {
 }
 
 /* ============================================================
-   TIMELINE — scroll fade edge indicators
+   TIMELINE — scroll fade edge indicator (right side only)
+   Left fade removed: sticky driver column eliminates the need for it,
+   and the gradient was interfering with driver name readability.
    ============================================================ */
-.timeline-scroll-fade-left,
 .timeline-scroll-fade-right {
   position: absolute;
   top: 0;
   bottom: 0;
+  right: 0;
   width: 36px;
   pointer-events: none;
-  z-index: 6;
+  z-index: 8; /* above blocks (3) and body content, below driver-label (15) */
   transition: opacity 0.2s;
-}
-
-.timeline-scroll-fade-left {
-  left: var(--driver-col);
-  background: linear-gradient(to right, rgba(255,255,255,0.85), transparent);
-  opacity: 0;
-}
-
-.timeline-scroll-fade-right {
-  right: 0;
   background: linear-gradient(to left, rgba(255,255,255,0.85), transparent);
   opacity: 1;
 }

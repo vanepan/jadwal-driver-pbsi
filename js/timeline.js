@@ -366,7 +366,6 @@ function syncTimelineScroll() {
   const body    = getTimelineBodyElement();
   const hours   = document.getElementById('timelineHours');
   const wrapper = document.querySelector('.timeline-wrapper');
-  const fadeL   = wrapper?.querySelector('.timeline-scroll-fade-left');
   const fadeR   = wrapper?.querySelector('.timeline-scroll-fade-right');
 
   if (!body || !hours) return;
@@ -405,9 +404,8 @@ function syncTimelineScroll() {
   }
 
   function updateFadeIndicators() {
-    if (!fadeL || !fadeR) return;
+    if (!fadeR) return;
     const maxScroll = body.scrollWidth - body.clientWidth;
-    fadeL.style.opacity = body.scrollLeft > 16 ? '1' : '0';
     fadeR.style.opacity = body.scrollLeft < maxScroll - 16 ? '1' : '0';
   }
 

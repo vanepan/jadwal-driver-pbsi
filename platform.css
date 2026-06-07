@@ -5070,9 +5070,6 @@ body.v2-shell-active .v2-kpi-value { font-size: 22px; }
    render as opaque white bars at the left/right edges in dark mode.
    Remap gradient source to the surface color so the fade blends
    into the dark canvas without visible white artifacts.          */
-[data-theme="dark"] .timeline-scroll-fade-left {
-  background: linear-gradient(to right, var(--surface), transparent);
-}
 [data-theme="dark"] .timeline-scroll-fade-right {
   background: linear-gradient(to left, var(--surface), transparent);
 }
@@ -5133,7 +5130,6 @@ html.theme-anim #v2TimelineSurface,
 html.theme-anim #v2TimelineSurface *,
 html.theme-anim #v2TimelineSurface *::before,
 html.theme-anim #v2TimelineSurface *::after,
-html.theme-anim .timeline-scroll-fade-left,
 html.theme-anim .timeline-scroll-fade-right {
   transition: none !important;
 }
