@@ -63,6 +63,9 @@ export function initFormHandlers() {
   // Custom time input behavior untuk mobile
   initTimeInputs();
 
+  // PBSI Stepper for passenger count
+  initPaxStepper();
+
   // Multi-day checkbox
   const multiDayCheckbox = document.getElementById('assignmentMultiDay');
   if (multiDayCheckbox) {
@@ -138,6 +141,7 @@ export function openFormModal(asgnId = null) {
   editingId = asgnId;
   const form = document.getElementById('assignmentForm');
   if (form) form.reset();
+  _syncPaxDisplay(0); // reset stepper display after form.reset()
 
   const warning = document.getElementById('conflictWarning');
   if (warning) warning.style.display = 'none';
@@ -176,7 +180,7 @@ export function openFormModal(asgnId = null) {
       document.getElementById('fieldDestination').value = a.destination;
       document.getElementById('fieldPurpose').value     = a.purpose;
       document.getElementById('fieldPIC').value         = a.pic;
-      document.getElementById('fieldPax').value         = a.pax;
+      _syncPaxDisplay(a.pax);
       document.getElementById('fieldNotes').value       = a.notes;
 
       // Restore full-day state
@@ -235,7 +239,8 @@ function handleFormSubmit(e) {
   const destination = document.getElementById('fieldDestination').value.trim();
   const purpose     = document.getElementById('fieldPurpose').value.trim();
   const pic         = document.getElementById('fieldPIC').value.trim();
-  const pax         = parseInt(document.getElementById('fieldPax').value) || 1;
+  const rawPax      = parseInt(document.getElementById('fieldPax').value, 10);
+  const pax         = Number.isNaN(rawPax) ? 0 : rawPax;
   const notes       = document.getElementById('fieldNotes').value.trim();
   const isMultiDay  = !editingId && (document.getElementById('assignmentMultiDay')?.checked ?? false);
 
@@ -510,6 +515,44 @@ function runConflictPreview() {
 function escPreview(value) {
   return String(value || '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/* ── PBSI Stepper (#fieldPax) ─────────────────────────────── */
+
+const PAX_MIN = 0;
+const PAX_MAX = 20;
+
+function _syncPaxDisplay(val) {
+  const n = Math.max(PAX_MIN, Math.min(PAX_MAX, parseInt(val, 10) || PAX_MIN));
+  const hidden  = document.getElementById('fieldPax');
+  const display = document.getElementById('paxDisplay');
+  const minus   = document.getElementById('btnPaxMinus');
+  const plus    = document.getElementById('btnPaxPlus');
+  if (hidden)  hidden.value = n;
+  if (display) display.textContent = n;
+  if (minus)   minus.disabled = n <= PAX_MIN;
+  if (plus)    plus.disabled  = n >= PAX_MAX;
+}
+
+function initPaxStepper() {
+  const minus = document.getElementById('btnPaxMinus');
+  const plus  = document.getElementById('btnPaxPlus');
+  if (!minus || !plus) return;
+
+  minus.addEventListener('click', () => {
+    _syncPaxDisplay(parseInt(document.getElementById('fieldPax')?.value, 10) - 1);
+  });
+  plus.addEventListener('click', () => {
+    _syncPaxDisplay(parseInt(document.getElementById('fieldPax')?.value, 10) + 1);
+  });
+
+  // Arrow key support when a stepper button has keyboard focus
+  [minus, plus].forEach(btn => {
+    btn.addEventListener('keydown', e => {
+      if (e.key === 'ArrowUp')   { e.preventDefault(); _syncPaxDisplay(parseInt(document.getElementById('fieldPax')?.value, 10) + 1); }
+      if (e.key === 'ArrowDown') { e.preventDefault(); _syncPaxDisplay(parseInt(document.getElementById('fieldPax')?.value, 10) - 1); }
+    });
+  });
 }
 
 /**

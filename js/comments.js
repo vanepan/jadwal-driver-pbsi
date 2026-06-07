@@ -93,6 +93,7 @@ export function closeCommentModal() {
   const input = document.getElementById('commentInput');
   if (input) input.value = '';
   _syncSendButton();
+  _syncCharCounter();
 }
 
 /**
@@ -134,7 +135,7 @@ export function initCommentHandlers() {
 
   const textarea = document.getElementById('commentInput');
   if (textarea) {
-    textarea.addEventListener('input', _syncSendButton);
+    textarea.addEventListener('input', () => { _syncSendButton(); _syncCharCounter(); });
     textarea.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); _handleSend(); }
     });
@@ -286,6 +287,7 @@ function _handleSend() {
 
   input.value = '';
   _syncSendButton();
+  _syncCharCounter();
 
   // Persist: app.js handles saveRequests + renderRequestsList
   if (onCommentSaveCallback) onCommentSaveCallback(updatedRequest);
@@ -295,6 +297,17 @@ function _syncSendButton() {
   const input = document.getElementById('commentInput');
   const btn   = document.getElementById('btnSendComment');
   if (btn) btn.disabled = !input?.value?.trim();
+}
+
+function _syncCharCounter() {
+  const input   = document.getElementById('commentInput');
+  const counter = document.getElementById('commentCharCount');
+  if (!counter) return;
+  const len     = input?.value?.length ?? 0;
+  const max     = parseInt(input?.getAttribute('maxlength'), 10) || 500;
+  counter.textContent = `${len} / ${max}`;
+  counter.classList.toggle('comment-char-counter--warn', len >= 450 && len < max);
+  counter.classList.toggle('comment-char-counter--full', len >= max);
 }
 
 /* ── Utility ── */

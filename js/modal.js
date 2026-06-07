@@ -366,7 +366,7 @@ export function openDetailModal(id) {
       </div>
       <div class="detail-row">
         <span class="detail-label">Penumpang</span>
-        <span class="detail-value">${escapeHTML(String(a.pax))} pax</span>
+        <span class="detail-value">${escapeHTML(String(a.pax ?? 0))} pax</span>
       </div>
       ${a.notes ? `
       <div class="detail-row">
@@ -591,7 +591,7 @@ export function generateWAText(a) {
   const timeStr   = a.fullDay
     ? 'Penuh Hari'
     : `Jam ${String(h).padStart(2,'0')}.${String(m).padStart(2,'0')} (${timeLabel})`;
-  const picStr    = a.pic ? `${a.pax} Pax (${a.pic})` : `${a.pax} Pax`;
+  const picStr    = a.pic ? `${a.pax ?? 0} Pax (${a.pic})` : `${a.pax ?? 0} Pax`;
   const header    = a.pic ? `*${a.purpose}* (${a.pic})` : `*${a.purpose}*`;
 
   return `${header}

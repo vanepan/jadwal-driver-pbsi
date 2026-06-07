@@ -1,10 +1,33 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.3.2';
-export const RELEASE_NAME = 'V2 UI Consistency Sprint';
+export const APP_VERSION = '1.3.4';
+export const RELEASE_NAME = 'Operational Data Accuracy Fix';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.3.4',
+    date: '2026-06-07',
+    summary: 'Operational Data Accuracy Fix',
+    highlights: [
+      'Passenger count minimum changed from 1 to 0 — supports logistics/equipment assignments with no passengers',
+      'Fixed || 1 fallback that silently swallowed pax=0 as "1" on form submit',
+      'Request approval default pax changed from 1 to 0',
+      'Reimbursement form: a.pax || 1 replaced with a.pax ?? 0 — equipment runs now print "0 pax" correctly',
+      'Assignment detail and WA copy: null-safe a.pax ?? 0 guards against legacy missing-field data',
+    ],
+  },
+  {
+    version: '1.3.3',
+    date: '2026-06-07',
+    summary: 'Native Component Replacement Sprint I',
+    highlights: [
+      'PBSI Stepper — passenger count (#fieldPax) replaced with [−] N [+] component (affordance restored)',
+      'Search icon — PBSI glass icon added to admin workspace search input (light + dark mode)',
+      'Toggle consolidation — #userFieldActive migrated from legacy .toggle-switch to .pbsi-toggle-input',
+      'Comment character counter — live 0 / 500 counter with warn (450+) and full (500) color states',
+    ],
+  },
   {
     version: '1.3.2',
     date: '2026-06-07',

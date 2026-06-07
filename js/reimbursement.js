@@ -534,7 +534,7 @@ body {
         <td class="td-lbl">Jam Kembali</td>
         <td class="td-val">${esc(endT)}${fullDayNote}</td>
         <td class="td-lbl">Jumlah Penumpang</td>
-        <td class="td-val">${esc(String(a.pax || 1))} pax</td>
+        <td class="td-val">${esc(String(a.pax ?? 0))} pax</td>
       </tr>
     </tbody>
   </table>

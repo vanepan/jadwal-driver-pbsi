@@ -6819,3 +6819,136 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 .form-group textarea::placeholder {
   color: var(--gray-4);
 }
+
+/* ============================================================
+   v1.3.3 — Native Component Replacement Sprint I
+   ============================================================ */
+
+/* ── T1: PBSI Stepper ────────────────────────────────────────
+   Replaces <input type="number"> for bounded integer fields.
+   Uses a hidden input as the form value source; JS manages it.
+   Layout: [−] value-display [+] */
+.pbsi-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  height: 38px;
+  border: 1.5px solid var(--input-border);
+  border-radius: 8px;
+  background: var(--input-bg);
+  overflow: hidden;
+}
+
+.pbsi-stepper-btn {
+  flex-shrink: 0;
+  width: 36px;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--motion-fast, .12s) var(--motion-ease, ease);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.pbsi-stepper-btn:hover:not(:disabled) {
+  background: var(--hover, rgba(0,0,0,.06));
+}
+.pbsi-stepper-btn:active:not(:disabled) {
+  background: color-mix(in srgb, var(--hover, rgba(0,0,0,.06)) 200%, transparent);
+}
+.pbsi-stepper-btn:disabled {
+  color: var(--faint);
+  cursor: not-allowed;
+}
+.pbsi-stepper-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+
+.pbsi-stepper-display {
+  flex: 1;
+  min-width: 36px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  border-left: 1px solid var(--input-border);
+  border-right: 1px solid var(--input-border);
+  padding: 0 6px;
+  pointer-events: none;
+  line-height: 36px;
+}
+
+[data-theme="dark"] .pbsi-stepper {
+  border-color: var(--input-border);
+  background: var(--input-bg);
+}
+[data-theme="dark"] .pbsi-stepper-btn:hover:not(:disabled) {
+  background: var(--hover, rgba(255,255,255,.06));
+}
+[data-theme="dark"] .pbsi-stepper-display {
+  border-color: var(--input-border);
+}
+
+/* ── T2: Admin search icon ───────────────────────────────────
+   Background SVG mirrors the Timeline topbar search glass.
+   Cascade placement here ensures it wins over earlier
+   background: shorthands in the admin toolbar rules.         */
+.v2-admin-search {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23757575' width='14' height='14'%3E%3Cpath fill-rule='evenodd' d='M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z' clip-rule='evenodd'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: left 10px center;
+  padding-left: 32px;
+}
+[data-theme="dark"] .v2-admin-search {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23A6A39B' width='14' height='14'%3E%3Cpath fill-rule='evenodd' d='M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z' clip-rule='evenodd'/%3E%3C/svg%3E");
+}
+
+/* ── T3: Form-context toggle row ────────────────────────────
+   Wraps .pbsi-toggle-input with a label inside a .form-group.
+   Simpler than .pbsi-setting-row — no hover card, no desc.   */
+.pbsi-form-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  cursor: pointer;
+  user-select: none;
+}
+.pbsi-form-toggle-label {
+  font-size: 13px;
+  color: var(--text-secondary, var(--text-muted));
+}
+
+/* ── T4: Comment character counter ──────────────────────────
+   .comment-input-wrap takes the flex: 1 slot that the bare
+   textarea previously held; counter sits directly below it.  */
+.comment-input-wrap {
+  flex: 1;
+  min-width: 0;
+}
+.comment-input-wrap textarea {
+  width: 100%;
+}
+
+.comment-char-counter {
+  display: block;
+  text-align: right;
+  font-size: 11px;
+  color: var(--faint);
+  margin-top: 3px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  transition: color .15s ease;
+}
+.comment-char-counter--warn { color: var(--warn, #B45309); }
+.comment-char-counter--full { color: var(--error, var(--accent)); }

@@ -476,11 +476,10 @@
             <input type="text" id="userFieldPin" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="4 digit PIN" required />
           </div>
           <div class="form-group form-full">
-            <label for="userFieldActive">Status Akun</label>
-            <label class="toggle-switch">
-              <input type="checkbox" id="userFieldActive" checked />
-              <span class="switch-slider"></span>
-              <span class="switch-label">Aktif</span>
+            <label>Status Akun</label>
+            <label class="pbsi-form-toggle">
+              <input type="checkbox" id="userFieldActive" class="pbsi-toggle-input" role="switch" aria-label="Status akun aktif" checked />
+              <span class="pbsi-form-toggle-label">Aktif</span>
             </label>
           </div>
         </div>
@@ -733,8 +732,13 @@
             <input type="text" id="fieldPIC" placeholder="Contoh: Pak Tommy" />
           </div>
           <div class="form-group">
-            <label for="fieldPax">Jumlah Penumpang</label>
-            <input type="number" id="fieldPax" min="1" max="20" placeholder="1" value="1" />
+            <label id="fieldPaxLabel">Jumlah Penumpang</label>
+            <div class="pbsi-stepper" id="paxStepper" role="group" aria-labelledby="fieldPaxLabel">
+              <button type="button" class="pbsi-stepper-btn" id="btnPaxMinus" aria-label="Kurangi penumpang" disabled>−</button>
+              <span class="pbsi-stepper-display" id="paxDisplay" aria-live="polite" aria-atomic="true">0</span>
+              <button type="button" class="pbsi-stepper-btn" id="btnPaxPlus" aria-label="Tambah penumpang">+</button>
+              <input type="hidden" id="fieldPax" value="0" />
+            </div>
           </div>
           <div class="form-group form-full">
             <label for="fieldNotes">Catatan</label>
@@ -866,7 +870,10 @@
       <div class="comment-context" id="commentContext"></div>
       <div class="comment-list" id="commentThreadList"></div>
       <div class="comment-input-area" id="commentInputArea">
-        <textarea id="commentInput" placeholder="Tulis komentar..." rows="2" maxlength="500"></textarea>
+        <div class="comment-input-wrap">
+          <textarea id="commentInput" placeholder="Tulis komentar..." rows="2" maxlength="500"></textarea>
+          <span class="comment-char-counter" id="commentCharCount">0 / 500</span>
+        </div>
         <button class="btn-primary" id="btnSendComment" type="button" disabled>Kirim</button>
       </div>
     </div>

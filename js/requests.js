@@ -551,7 +551,7 @@ export function requestToAssignment(request, approvedByUser, dateOverride = null
     destination: r.purpose,
     purpose: r.purpose,
     pic: r.requesterName,
-    pax: 1,
+    pax: 0,
     notes: r.notes,
     requestId: r.id,
     createdAt: r.createdAt || now,   // preserve original request creation time
