@@ -91,6 +91,7 @@ export function initPbsiSelect(selectEl) {
     kbIndex: -1,       // currently keyboard-highlighted option index
     _onOutside: null,
     _onRepos: null,
+    _hideTimer: null,  // setTimeout ID for deferred panel hide
     observer: null,
   };
   _registry.set(selectEl, inst);
@@ -188,6 +189,12 @@ function _open(inst) {
   if (inst.trigger.disabled) return;
   if (_currentOpen && _currentOpen !== inst) _close(_currentOpen);
 
+  // Cancel any in-flight close animation from a rapid toggle
+  if (inst._hideTimer) {
+    clearTimeout(inst._hideTimer);
+    inst._hideTimer = null;
+  }
+
   // Rebuild in case options changed while closed
   _buildOptions(inst);
   _markSelected(inst);
@@ -208,9 +215,9 @@ function _open(inst) {
     if (sel) sel.scrollIntoView({ block: 'nearest' });
   });
 
-  // Outside click → close
+  // Outside click → close (use contains to cover clicks on trigger's child elements)
   inst._onOutside = e => {
-    if (!inst.panel.contains(e.target) && e.target !== inst.trigger) _close(inst);
+    if (!inst.panel.contains(e.target) && !inst.trigger.contains(e.target)) _close(inst);
   };
   document.addEventListener('mousedown', inst._onOutside);
 
@@ -245,10 +252,14 @@ function _close(inst) {
   panel.classList.remove('pbsi-select-panel--open');
   _clearKb(inst);
 
-  // Hide after animation completes
-  const hidePanel = () => { panel.hidden = true; };
+  // Hide after animation completes; guard inst.open so a rapid reopen survives
+  const hidePanel = () => {
+    if (inst.open) return;  // panel was reopened before animation finished — abort
+    panel.hidden = true;
+    inst._hideTimer = null;
+  };
   panel.addEventListener('transitionend', hidePanel, { once: true });
-  setTimeout(hidePanel, 160);  // fallback if transitionend doesn't fire
+  inst._hideTimer = setTimeout(hidePanel, 160);  // fallback if transitionend doesn't fire
 
   trigger.setAttribute('aria-expanded', 'false');
   trigger.removeAttribute('aria-activedescendant');
