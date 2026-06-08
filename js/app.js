@@ -75,6 +75,20 @@ let currentWorkspace = 'dashboard';
 // VSM-9 cleanup: which rail module is active — 'driverops' | 'administration'
 let activeRailModule = 'driverops';
 
+// V1.5.0 Phase 2.5.1: Administration workspace section state
+let activeAdminSection = 'users';
+const ADMIN_SECTION_DEFS = [
+  { key: 'users', label: 'Manajemen User', subtitle: 'Tambah, edit, atau nonaktifkan akun pengguna.' },
+  { key: 'drivers', label: 'Manajemen Driver', subtitle: 'Rencanakan pusat manajemen driver dengan kontrol identitas dan status.',
+    features: ['Registrasi Driver', 'Aktivasi / Nonaktif Driver', 'Link Akun Driver', 'Nomor Telepon Driver', 'Pengelolaan Data Driver'] },
+  { key: 'vehicles', label: 'Manajemen Kendaraan', subtitle: 'Rencanakan kontrol armada dan data kendaraan secara terpusat.',
+    features: ['Registrasi Kendaraan', 'Plat Nomor', 'Kapasitas Kendaraan', 'Status Aktif', 'Warna Timeline'] },
+  { key: 'audit', label: 'Audit Center', subtitle: 'Rencanakan visibilitas aktivitas sistem dan catatan operasional.',
+    features: ['Aktivitas Sistem', 'Filter Log', 'Riwayat Perubahan', 'Audit Operasional', 'Pencarian Log'] },
+  { key: 'config', label: 'Konfigurasi', subtitle: 'Rencanakan konfigurasi sistem dan integrasi operasional.',
+    features: ['Pengaturan Sistem', 'Telegram Integration', 'Feature Flags', 'Operational Settings', 'Application Metadata'] },
+];
+
 /**
  * Filter assignments berdasarkan user role saat ini.
  * - Admin & Bidang: lihat semua assignments
@@ -705,32 +719,12 @@ function initV2Panel() {
     <nav class="v2-panel-nav v2-panel-nav--admin" id="v2PanelAdminNav"
          aria-label="Administration menu" style="display:none;">
 
-      <!-- Manajemen User: proxies to V1 user management modal -->
+      <!-- Administration Workspace entry only -->
       <button class="v2-panel-nav-item v2-panel-nav-item--active" id="v2NavAdminUsers" type="button">
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
           <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/>
         </svg>
-        Manajemen User
-      </button>
-
-      <!-- Peran & Izin: coming soon -->
-      <button class="v2-panel-nav-item v2-panel-nav-item--disabled" id="v2NavAdminRoles"
-              type="button" disabled>
-        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-          <path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
-        </svg>
-        Peran &amp; Izin
-        <span class="v2-panel-nav-badge-soon">Soon</span>
-      </button>
-
-      <!-- Konfigurasi: coming soon -->
-      <button class="v2-panel-nav-item v2-panel-nav-item--disabled" id="v2NavAdminConfig"
-              type="button" disabled>
-        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-          <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/>
-        </svg>
-        Konfigurasi
-        <span class="v2-panel-nav-badge-soon">Soon</span>
+        Administration Workspace
       </button>
 
     </nav>
@@ -1717,27 +1711,61 @@ function initV2AdministrationWorkspace() {
   ws.id = 'v2AdministrationWorkspace';
   ws.className = 'v2-workspace';
   ws.style.display = 'none';
+
+  const tabsHtml = ADMIN_SECTION_DEFS.map(section => `
+      <button type="button" class="v2-admin-nav-tab${section.key === activeAdminSection ? ' v2-admin-nav-tab--active' : ''}"
+              data-admin-section="${section.key}" role="tab">
+        <span class="v2-admin-nav-tab-label">${esc(section.label)}</span>
+      </button>
+    `).join('');
+
   ws.innerHTML = `
-    <div class="v2-workspace-header">
-      <h2 class="v2-workspace-title">Manajemen User</h2>
-      <p class="v2-workspace-subtitle">Tambah, edit, atau nonaktifkan akun pengguna.</p>
+    <div class="v2-admin-workspace-layout">
+      <div class="v2-admin-page-header">
+        <h1 class="v2-admin-page-title">Administration</h1>
+        <p class="v2-admin-page-subtitle">Manajemen platform dan pengguna</p>
+      </div>
+      
+      <div id="v2AdminOverviewRow" class="v2-admin-overview-row"></div>
+      
+      <nav class="v2-admin-nav" aria-label="Administrasi">
+        ${tabsHtml}
+      </nav>
+      
+      <div class="v2-admin-content">
+        <div id="v2AdminSectionUsers">
+          <div class="v2-admin-toolbar">
+            <input type="search" id="v2AdminSearch" class="v2-admin-search"
+                   placeholder="Cari nama atau username…" autocomplete="off" />
+            <select id="v2AdminRoleFilter" class="v2-admin-filter">
+              <option value="">Semua Peran</option>
+              <option value="admin">Admin</option>
+              <option value="bidang">Bidang</option>
+              <option value="driver">Driver</option>
+              <option value="viewer">Viewer</option>
+            </select>
+            <button id="v2AdminAddUser" class="v2-admin-add-btn" type="button">+ Tambah User</button>
+          </div>
+          <div id="v2AdminStats"></div>
+          <div id="v2AdminUserList" class="v2-admin-user-list"></div>
+        </div>
+        <div id="v2AdminSectionPlaceholder" style="display:none;"></div>
+      </div>
     </div>
-    <div class="v2-admin-toolbar">
-      <input type="search" id="v2AdminSearch" class="v2-admin-search"
-             placeholder="Cari nama atau username…" autocomplete="off" />
-      <select id="v2AdminRoleFilter" class="v2-admin-filter">
-        <option value="">Semua Peran</option>
-        <option value="admin">Admin</option>
-        <option value="bidang">Bidang</option>
-        <option value="driver">Driver</option>
-        <option value="viewer">Viewer</option>
-      </select>
-      <button id="v2AdminAddUser" class="v2-admin-add-btn" type="button">+ Tambah User</button>
-    </div>
-    <div id="v2AdminStats"></div>
-    <div id="v2AdminUserList" class="v2-admin-user-list"></div>
   `;
   document.querySelector('.main-content')?.appendChild(ws);
+
+  ws.addEventListener('click', e => {
+    const button = e.target.closest('[data-admin-section]');
+    if (button) {
+      const sectionKey = button.dataset.adminSection;
+      if (sectionKey && sectionKey !== activeAdminSection) {
+        activeAdminSection = sectionKey;
+        renderV2AdminWorkspace();
+      }
+      return;
+    }
+  });
 
   ws.addEventListener('input', e => {
     if (e.target.id === 'v2AdminSearch') renderV2AdminWorkspace();
@@ -1746,7 +1774,7 @@ function initV2AdministrationWorkspace() {
     if (e.target.id === 'v2AdminRoleFilter') renderV2AdminWorkspace();
   });
   document.getElementById('v2AdminAddUser')?.addEventListener('click', () => {
-    openUserFormModal(null);
+    if (activeAdminSection === 'users') openUserFormModal(null);
   });
 
   registerUsersChangeListener(() => {
@@ -1795,15 +1823,15 @@ function renderV2AdminStats(allUsers) {
   const visibleRoles = V2_ROLE_CONFIG.filter(r => r.visible);
   const chips = visibleRoles.map(r => {
     const label = r.label.charAt(0) + r.label.slice(1).toLowerCase();
-    return `<span class="users-stats-chip">
-      <span class="users-stats-chip-label">${esc(label)}</span>
-      <span class="users-stats-chip-count">${counts[r.key] || 0}</span>
+    return `<span class="v2-admin-stats-chip">
+      <span class="v2-admin-stats-chip-label">${esc(label)}</span>
+      <span class="v2-admin-stats-chip-count">${counts[r.key] || 0}</span>
     </span>`;
   }).join('');
 
-  el.innerHTML = `<div class="users-stats">
-    <div class="users-stats-total">Total Users <strong>${allUsers.length}</strong></div>
-    <div class="users-stats-chips">${chips}</div>
+  el.innerHTML = `<div class="v2-admin-stats">
+    <div class="v2-admin-stats-total">Total Pengguna <strong>${allUsers.length}</strong></div>
+    <div class="v2-admin-stats-chips">${chips}</div>
   </div>`;
 }
 
@@ -1823,6 +1851,66 @@ function handleV2RoleGroupToggle(event) {
 }
 
 function renderV2AdminWorkspace() {
+  const section = ADMIN_SECTION_DEFS.find(s => s.key === activeAdminSection) || ADMIN_SECTION_DEFS[0];
+  const usersSection = document.getElementById('v2AdminSectionUsers');
+  const placeholderSection = document.getElementById('v2AdminSectionPlaceholder');
+  const overviewRow = document.getElementById('v2AdminOverviewRow');
+
+  // Update active navigation tab
+  document.querySelectorAll('[data-admin-section]').forEach(btn => {
+    btn.classList.toggle('v2-admin-nav-tab--active', btn.dataset.adminSection === activeAdminSection);
+  });
+
+  // Update page header subtitle
+  const pageSubtitle = document.querySelector('.v2-admin-page-subtitle');
+  if (pageSubtitle) pageSubtitle.textContent = section.subtitle;
+
+  if (activeAdminSection === 'users') {
+    if (usersSection) usersSection.style.display = '';
+    if (placeholderSection) placeholderSection.style.display = 'none';
+    if (overviewRow) {
+      const allUsers = getUserList();
+      const counts = {};
+      for (const user of allUsers) counts[user.role] = (counts[user.role] || 0) + 1;
+      overviewRow.innerHTML = `
+        <div class="v2-admin-overview-cards">
+          <div class="v2-admin-overview-card">
+            <span class="v2-admin-overview-value">${allUsers.length}</span>
+            <span class="v2-admin-overview-label">Total Pengguna</span>
+          </div>
+          <div class="v2-admin-overview-card">
+            <span class="v2-admin-overview-value">${counts['driver'] || 0}</span>
+            <span class="v2-admin-overview-label">Driver Aktif</span>
+          </div>
+          <div class="v2-admin-overview-card">
+            <span class="v2-admin-overview-value">${counts['admin'] || 0}</span>
+            <span class="v2-admin-overview-label">Administrator</span>
+          </div>
+        </div>
+      `;
+    }
+    renderV2AdminUsers();
+  } else {
+    if (usersSection) usersSection.style.display = 'none';
+    if (overviewRow) overviewRow.innerHTML = '';
+    if (placeholderSection) {
+      placeholderSection.style.display = '';
+      placeholderSection.innerHTML = `
+        <div class="v2-admin-placeholder-module">
+          <div class="v2-admin-placeholder-header">
+            <h3 class="v2-admin-placeholder-module-title">${esc(section.label)}</h3>
+            <span class="v2-admin-placeholder-badge">Planned Capabilities</span>
+          </div>
+          <ul class="v2-admin-placeholder-features">
+            ${section.features.map(feature => `<li>${esc(feature)}</li>`).join('')}
+          </ul>
+        </div>
+      `;
+    }
+  }
+}
+
+function renderV2AdminUsers() {
   const list = document.getElementById('v2AdminUserList');
   if (!list) return;
 
