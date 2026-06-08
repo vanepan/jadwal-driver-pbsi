@@ -15,6 +15,7 @@ import { APP_NAME, APP_VERSION } from './config.js';
 import { loadAssignments, saveAssignments, saveOneAssignment, removeOneAssignment, loadRequests, saveRequests, initFirebaseSync, registerDataChangeListener, registerRequestsChangeListener, checkAssignmentSafety, fetchFirebaseData } from './firebase.js';
 import { recoverAssignmentsFromRequests } from './recovery.js';
 import { initDriverSelect } from './drivers.js';
+import { initDriversStore } from './drivers-store.js';
 import { initPbsiSelect } from './pbsi-select.js';
 import { initPbsiDatepicker, syncPbsiDatepicker } from './pbsi-datepicker.js';
 import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate } from './timeline.js';
@@ -2288,6 +2289,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setSidebarActive(null);
   });
   await initAdminUI();                   // Setup admin user management
+  await initDriversStore();              // v1.5.0 Phase 1: seed/sync Firebase driver registry
   initNotificationUI();                  // Setup notification badge & modal
   initDriverSelect();                    // Isi dropdown driver
   initDateControls();                    // Setup date navigation buttons
