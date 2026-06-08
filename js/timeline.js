@@ -9,6 +9,7 @@
 
 import { todayString, formatDateLong, timeToMinutes, offsetDate } from './utils.js';
 import { DEFAULT_DRIVERS, VEHICLES } from './drivers.js';
+import { getDrivers, getActiveDrivers } from './drivers-store.js';
 import { openDetailModal } from './modal.js';
 
 /* ── Helpers ── */
@@ -206,8 +207,22 @@ function renderDriverRows() {
 
   // Filter assignments sesuai tanggal yang dipilih
   const todayAssignments = assignments.filter(a => a.date === currentDate);
+  const timelineDrivers = getDrivers().length > 0 ? getActiveDrivers() : DEFAULT_DRIVERS;
+  const driversToRender = [...timelineDrivers];
 
-  DEFAULT_DRIVERS.forEach(driver => {
+  todayAssignments.forEach(assignment => {
+    const hasDriverRow = driversToRender.some(driver => driverMatchesAssignment(driver, assignment));
+    if (!hasDriverRow && assignment.driver) {
+      driversToRender.push({
+        name: assignment.driver,
+        phone: assignment.phone || '',
+        legacyNames: [assignment.driver],
+        active: false,
+      });
+    }
+  });
+
+  driversToRender.forEach(driver => {
     // Buat baris driver
     const row = document.createElement('div');
     row.className = 'driver-row';
@@ -226,7 +241,7 @@ function renderDriverRows() {
     slots.className = 'driver-slots';
 
     // Gambar blok assignment untuk driver ini
-    const driverAssignments = todayAssignments.filter(a => a.driver === driver.name);
+    const driverAssignments = todayAssignments.filter(a => driverMatchesAssignment(driver, a));
 
     if (driverAssignments.length === 0) {
       // Teks hint jika tidak ada jadwal
@@ -258,6 +273,15 @@ function renderDriverRows() {
     row.appendChild(slots);
     body.appendChild(row);
   });
+}
+
+function driverMatchesAssignment(driver, assignment) {
+  const assignmentDriver = String(assignment?.driver || '').trim();
+  if (!assignmentDriver) return false;
+  if (assignmentDriver === driver.name) return true;
+
+  const legacyNames = Array.isArray(driver.legacyNames) ? driver.legacyNames : [];
+  return legacyNames.some(name => String(name || '').trim() === assignmentDriver);
 }
 
 /**

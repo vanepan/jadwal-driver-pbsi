@@ -8,6 +8,7 @@
 'use strict';
 
 import { DEFAULT_DRIVERS, VEHICLES, getDriverByName } from './drivers.js';
+import { getDrivers, getActiveDrivers } from './drivers-store.js';
 import { generateId, timeToMinutes, showToast, initCustomTimeInputPair, getCombinedTimeFromPair, setTimeFieldsFromValue, normalizeTimeValue, expandDateRange, formatDateShort, addHoursToTime, todayString, offsetDate } from './utils.js';
 import { getCurrentUser, hasPermission, isAdmin } from './auth.js';
 import { initFormGuard, resetDirty } from './form-guard.js';
@@ -538,7 +539,8 @@ function initRequestDriverSelect() {
   if (!select) return;
 
   select.innerHTML = '<option value="">-- Pilih Driver --</option>';
-  DEFAULT_DRIVERS.forEach(driver => {
+  const driverOptions = getDrivers().length > 0 ? getActiveDrivers() : DEFAULT_DRIVERS;
+  driverOptions.forEach(driver => {
     const option = document.createElement('option');
     option.value = driver.name;
     option.textContent = driver.name;

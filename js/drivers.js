@@ -6,6 +6,8 @@
 
 'use strict';
 
+import { getDrivers, getActiveDrivers, findDriverByLegacyName } from './drivers-store.js';
+
 /* ── Data: Daftar Driver ── */
 export const DEFAULT_DRIVERS = [
   { name: 'Igo',  phone: '+62 813-1107-3261' },
@@ -32,6 +34,12 @@ export const VEHICLE_PLATES = {
   'Hiace':    '',
 };
 
+function getActiveDriversOrFallback() {
+  if (getDrivers().length === 0) return DEFAULT_DRIVERS;
+  const activeDrivers = getActiveDrivers();
+  return activeDrivers;
+}
+
 /**
  * Initialize dropdown driver di form
  * - Isi options dengan daftar driver
@@ -42,7 +50,7 @@ export function initDriverSelect() {
   if (!sel) return;
 
   sel.innerHTML = '<option value="">-- Pilih Driver --</option>';
-  DEFAULT_DRIVERS.forEach(d => {
+  getActiveDriversOrFallback().forEach(d => {
     const opt = document.createElement('option');
     opt.value = d.name;
     opt.textContent = d.name;
@@ -51,7 +59,7 @@ export function initDriverSelect() {
 
   // Saat driver dipilih, otomatis isi nomor HP
   sel.addEventListener('change', () => {
-    const driver = DEFAULT_DRIVERS.find(d => d.name === sel.value);
+    const driver = getDriverByName(sel.value);
     const phoneInput = document.getElementById('fieldPhone');
     if (phoneInput) {
       phoneInput.value = driver ? driver.phone : '';
@@ -65,7 +73,7 @@ export function initDriverSelect() {
  * @returns {Object|undefined} - Driver object atau undefined
  */
 export function getDriverByName(name) {
-  return DEFAULT_DRIVERS.find(d => d.name === name);
+  return findDriverByLegacyName(name) || DEFAULT_DRIVERS.find(d => d.name === name);
 }
 
 /**
