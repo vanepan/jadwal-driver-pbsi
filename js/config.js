@@ -1,10 +1,60 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.5.1';
-export const RELEASE_NAME = 'Driver Management Stabilization';
+export const APP_VERSION = '1.5.3.1';
+export const RELEASE_NAME = 'Archive & Safe Deletion Framework';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.5.3.1',
+    date: '2026-06-09',
+    summary: 'Archived Records Searchability Fix',
+    highlights: [
+      'Bug fix: archived entities now discoverable through search in Users, Drivers, and Vehicles lists',
+      'Filter = All: includes archived records when a search query matches them; shows Archived badge',
+      'Filter = All with no search query: behaviour unchanged — archived records hidden by default',
+      'Filter = Active/Inactive/Archived: unchanged, each shows only its respective state',
+      'Root cause: status filter previously excluded archived records before search executed; fix evaluates search first',
+    ],
+  },
+  {
+    version: '1.5.3',
+    date: '2026-06-09',
+    summary: 'Archive & Safe Deletion Framework',
+    highlights: [
+      'Three-state lifecycle for Users, Drivers, and Vehicles: Active → Inactive → Archived',
+      'Archive: sets archived=true, archived=true hides entity from all lists and dropdowns',
+      'Restore: clears archived/archivedAt only — entity returns as Inactive, admin must re-activate',
+      'Permanent Delete: only available when archived===true AND reference count === 0',
+      'Reference counting from in-memory assignments[] and requests[] — no additional Firebase reads',
+      'Delete confirmation modal requires typing "DELETE" before proceeding',
+      'Status filter "Diarsipkan" option added to Users, Drivers, and Vehicles toolbars',
+      'Overview cards and stats chips exclude archived from totals; show archived count when >0',
+      'Vehicle validation fix: plate numbers must be unique (not vehicle names); multiple vehicles may share a model name',
+      'Plate uniqueness: case-insensitive, whitespace-stripped comparison; empty plates always allowed',
+      'Last active admin guard extended to archiveUser() — cannot archive the last active admin',
+      'Restore does NOT auto-reactivate — prevents unintended activation of long-inactive entities',
+    ],
+  },
+  {
+    version: '1.5.2',
+    date: '2026-06-09',
+    summary: 'Vehicle Management Workspace',
+    highlights: [
+      'Vehicle Management module live in Administration Workspace (replaces placeholder)',
+      'Feature 1: Overview cards — Total Vehicles, Active Vehicles, Inactive Vehicles',
+      'Feature 2: Toolbar — Search by name/plate, Status Filter (All/Active/Inactive), Tambah Kendaraan',
+      'Feature 3: Vehicle list with Name, Plate Number, Capacity, Color Preview, Active Status, and actions',
+      'Feature 4: Create Vehicle form — Name, Plate Number, Capacity, Timeline Color (picker), Active toggle',
+      'Feature 5: Edit Vehicle — all fields editable, updatedAt maintained',
+      'Feature 6: Deactivate Vehicle — soft deactivate only (active=false + inactiveAt), never deletes',
+      'Feature 7: Reactivate Vehicle — sets active=true + inactiveAt=null',
+      'vehicles-store.js: createVehicle, updateVehicle, deactivateVehicle, reactivateVehicle, registerVehiclesChangeListener',
+      'Firebase /vehicles introduced as source of truth; seeded from existing VEHICLES map on first load',
+      'Phase A compatibility: existing hardcoded vehicle config unchanged; Timeline/Assignments/Requests unaffected',
+      'Duplicate active vehicle name validation prevents conflicting records',
+    ],
+  },
   {
     version: '1.5.1',
     date: '2026-06-09',

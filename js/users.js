@@ -192,5 +192,45 @@ export function getUserList() {
 }
 
 export function getActiveAdminCount() {
-  return users.filter(item => item.role === 'admin' && item.active).length;
+  return users.filter(item => item.role === 'admin' && item.active && item.archived !== true).length;
+}
+
+export async function archiveUser(username) {
+  const user = await getUserByUsername(username);
+  if (!user) throw new Error('User tidak ditemukan.');
+
+  // Guard the last active admin
+  if (user.role === 'admin') {
+    const activeAdmins = users.filter(u => u.role === 'admin' && u.active !== false && u.archived !== true);
+    if (activeAdmins.length <= 1) throw new Error('Tidak dapat mengarsipkan admin terakhir.');
+  }
+
+  const normalized = normalizeUsername(username);
+  const now = new Date().toISOString();
+  const updates = { archived: true, archivedAt: now, active: false, updatedAt: now };
+  await updateFirebaseData(`${USERS_PATH}/${normalized}`, updates);
+  refreshUsersCache(users.map(u =>
+    normalizeUsername(u.username) === normalized ? { ...u, ...updates } : u
+  ));
+}
+
+export async function restoreUser(username) {
+  const user = await getUserByUsername(username);
+  if (!user) throw new Error('User tidak ditemukan.');
+  const normalized = normalizeUsername(username);
+  const now = new Date().toISOString();
+  const updates = { archived: false, archivedAt: null, updatedAt: now };
+  await updateFirebaseData(`${USERS_PATH}/${normalized}`, updates);
+  refreshUsersCache(users.map(u =>
+    normalizeUsername(u.username) === normalized ? { ...u, ...updates } : u
+  ));
+}
+
+export async function deleteUser(username) {
+  const user = await getUserByUsername(username);
+  if (!user) throw new Error('User tidak ditemukan.');
+  if (user.archived !== true) throw new Error('User harus diarsipkan sebelum dapat dihapus permanen.');
+  const normalized = normalizeUsername(username);
+  await storeFirebaseData(`${USERS_PATH}/${normalized}`, null);
+  refreshUsersCache(users.filter(u => normalizeUsername(u.username) !== normalized));
 }

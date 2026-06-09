@@ -23,7 +23,23 @@ import {
   updateDriver,
   deactivateDriver,
   reactivateDriver,
+  archiveDriver,
+  restoreDriver,
+  deleteDriver,
 } from './drivers-store.js';
+import {
+  initVehiclesStore,
+  getVehicles,
+  getActiveVehicles as getActiveVehiclesFromStore,
+  registerVehiclesChangeListener,
+  createVehicle,
+  updateVehicle,
+  deactivateVehicle,
+  reactivateVehicle,
+  archiveVehicle,
+  restoreVehicle,
+  deleteVehicle,
+} from './vehicles-store.js';
 import { initPbsiSelect } from './pbsi-select.js';
 import { initPbsiDatepicker, syncPbsiDatepicker } from './pbsi-datepicker.js';
 import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate } from './timeline.js';
@@ -50,7 +66,7 @@ import { initCommentHandlers, openCommentModal, closeCommentModal, setRequests a
 import { initAdminUI, updateAdminButtons, openUserFormModal } from './admin.js';
 import { initNotificationUI, setNotificationData, openNotificationsModal } from './notifications.js';
 import { subscribeLogsChangeListener, getLogs, logAction } from './logs.js';
-import { getUserByUsername, getUsers, createUser, getUserList, activateUser, deactivateUser, registerUsersChangeListener } from './users.js';
+import { getUserByUsername, getUsers, createUser, getUserList, activateUser, deactivateUser, registerUsersChangeListener, archiveUser, restoreUser, deleteUser } from './users.js';
 import { expandDateRange, showToast, formatDateShort } from './utils.js';
 import {
   sendRequestApprovedNotification,
@@ -87,13 +103,19 @@ let activeRailModule = 'driverops';
 let activeAdminSection = 'users';
 // V1.5.0 Phase 3.1: Driver management workspace state
 let driverSearch = '';
-let driverStatusFilter = 'all'; // 'all' | 'active' | 'inactive'
+let driverStatusFilter = 'all'; // 'all' | 'active' | 'inactive' | 'archived'
 let editingDriverId = null;
+// V1.5.2: Vehicle management workspace state
+let vehicleSearch = '';
+let vehicleStatusFilter = 'all'; // 'all' | 'active' | 'inactive' | 'archived'
+let editingVehicleId = null;
+// V1.5.3: Archive & deletion state
+let userStatusFilter = 'all';    // 'all' | 'active' | 'inactive' | 'archived'
+let pendingDeleteEntity = null;  // { type, id, name } — set before opening delete confirm modal
 const ADMIN_SECTION_DEFS = [
   { key: 'users', label: 'Manajemen User', subtitle: 'Tambah, edit, atau nonaktifkan akun pengguna.' },
   { key: 'drivers', label: 'Manajemen Driver', subtitle: 'Kelola registrasi, status, dan data identitas driver.' },
-  { key: 'vehicles', label: 'Manajemen Kendaraan', subtitle: 'Rencanakan kontrol armada dan data kendaraan secara terpusat.',
-    features: ['Registrasi Kendaraan', 'Plat Nomor', 'Kapasitas Kendaraan', 'Status Aktif', 'Warna Timeline'] },
+  { key: 'vehicles', label: 'Manajemen Kendaraan', subtitle: 'Kelola registrasi, status, dan data armada kendaraan operasional.' },
   { key: 'audit', label: 'Audit Center', subtitle: 'Rencanakan visibilitas aktivitas sistem dan catatan operasional.',
     features: ['Aktivitas Sistem', 'Filter Log', 'Riwayat Perubahan', 'Audit Operasional', 'Pencarian Log'] },
   { key: 'config', label: 'Konfigurasi', subtitle: 'Rencanakan konfigurasi sistem dan integrasi operasional.',
@@ -1753,6 +1775,12 @@ function initV2AdministrationWorkspace() {
           <div class="v2-admin-toolbar">
             <input type="search" id="v2AdminSearch" class="v2-admin-search"
                    placeholder="Cari nama atau username…" autocomplete="off" />
+            <select id="v2AdminUserStatusFilter" class="v2-admin-filter">
+              <option value="all">Semua Status</option>
+              <option value="active">Aktif</option>
+              <option value="inactive">Nonaktif</option>
+              <option value="archived">Diarsipkan</option>
+            </select>
             <select id="v2AdminRoleFilter" class="v2-admin-filter">
               <option value="">Semua Peran</option>
               <option value="admin">Admin</option>
@@ -1773,11 +1801,27 @@ function initV2AdministrationWorkspace() {
               <option value="all">Semua Status</option>
               <option value="active">Aktif</option>
               <option value="inactive">Nonaktif</option>
+              <option value="archived">Diarsipkan</option>
             </select>
             <button id="v2AdminAddDriver" class="v2-admin-add-btn" type="button">+ Tambah Driver</button>
           </div>
           <div id="v2AdminDriverStats"></div>
           <div id="v2AdminDriverList" class="v2-admin-user-list"></div>
+        </div>
+        <div id="v2AdminSectionVehicles" style="display:none;">
+          <div class="v2-admin-toolbar">
+            <input type="search" id="v2AdminVehicleSearch" class="v2-admin-search"
+                   placeholder="Cari nama atau plat nomor kendaraan…" autocomplete="off" />
+            <select id="v2AdminVehicleStatusFilter" class="v2-admin-filter">
+              <option value="all">Semua Status</option>
+              <option value="active">Aktif</option>
+              <option value="inactive">Nonaktif</option>
+              <option value="archived">Diarsipkan</option>
+            </select>
+            <button id="v2AdminAddVehicle" class="v2-admin-add-btn" type="button">+ Tambah Kendaraan</button>
+          </div>
+          <div id="v2AdminVehicleStats"></div>
+          <div id="v2AdminVehicleList" class="v2-admin-user-list"></div>
         </div>
         <div id="v2AdminSectionPlaceholder" style="display:none;"></div>
       </div>
@@ -1803,11 +1847,23 @@ function initV2AdministrationWorkspace() {
       driverSearch = e.target.value;
       renderV2AdminWorkspace();
     }
+    if (e.target.id === 'v2AdminVehicleSearch') {
+      vehicleSearch = e.target.value;
+      renderV2AdminWorkspace();
+    }
   });
   ws.addEventListener('change', e => {
+    if (e.target.id === 'v2AdminUserStatusFilter') {
+      userStatusFilter = e.target.value;
+      renderV2AdminWorkspace();
+    }
     if (e.target.id === 'v2AdminRoleFilter') renderV2AdminWorkspace();
     if (e.target.id === 'v2AdminDriverStatusFilter') {
       driverStatusFilter = e.target.value;
+      renderV2AdminWorkspace();
+    }
+    if (e.target.id === 'v2AdminVehicleStatusFilter') {
+      vehicleStatusFilter = e.target.value;
       renderV2AdminWorkspace();
     }
   });
@@ -1816,6 +1872,9 @@ function initV2AdministrationWorkspace() {
   });
   document.getElementById('v2AdminAddDriver')?.addEventListener('click', () => {
     if (activeAdminSection === 'drivers') openDriverFormModal(null);
+  });
+  document.getElementById('v2AdminAddVehicle')?.addEventListener('click', () => {
+    if (activeAdminSection === 'vehicles') openVehicleFormModal(null);
   });
 
   registerUsersChangeListener(() => {
@@ -1827,8 +1886,13 @@ function initV2AdministrationWorkspace() {
     refreshDriverSelect();
     if (currentWorkspace === 'administration' && activeAdminSection === 'drivers') renderV2AdminWorkspace();
   });
+  registerVehiclesChangeListener(() => {
+    if (currentWorkspace === 'administration' && activeAdminSection === 'vehicles') renderV2AdminWorkspace();
+  });
 
   initDriverFormModal();
+  initVehicleFormModal();
+  initDeleteConfirmModal();
   console.log('[VSM-12] Administration workspace injected');
 }
 
@@ -1837,7 +1901,36 @@ function buildUserCard(user) {
     .split(' ').slice(0, 2).map(w => w[0] || '').join('').toUpperCase() || '?';
   const role = user.role || 'viewer';
   const active = user.active !== false;
+  const archived = user.archived === true;
   const roleLabel = { admin: 'Admin', bidang: 'Bidang', driver: 'Driver', viewer: 'Viewer' }[role] || role;
+
+  if (archived) {
+    const refCount = countUserReferences(user);
+    const deleteBtnHtml = refCount === 0
+      ? `<button class="v2-user-btn v2-user-btn--delete"
+                data-user-delete="${esc(user.username)}" type="button">Hapus Permanen</button>`
+      : `<span class="v2-delete-blocked-hint">${refCount} referensi</span>`;
+    return `
+      <div class="v2-user-card v2-user-card--archived">
+        <div class="v2-user-avatar-ring v2-user-avatar--${esc(role)}">
+          <span class="v2-user-avatar-initials">${esc(initials)}</span>
+        </div>
+        <div class="v2-user-info">
+          <span class="v2-user-display-name">${esc(user.displayName || user.username)}</span>
+          <span class="v2-user-username">@${esc(user.username)}</span>
+        </div>
+        <div class="v2-user-meta">
+          <span class="v2-user-role-pill v2-role-pill--${esc(role)}">${esc(roleLabel)}</span>
+          <span class="v2-entity-badge v2-entity-badge--archived">Arsip</span>
+        </div>
+        <div class="v2-user-card-actions">
+          <button class="v2-user-btn v2-user-btn--restore"
+                  data-user-restore="${esc(user.username)}" type="button">Pulihkan</button>
+          ${deleteBtnHtml}
+        </div>
+      </div>`;
+  }
+
   const toggleLabel = active ? 'Nonaktifkan' : 'Aktifkan';
   return `
     <div class="v2-user-card${active ? '' : ' v2-user-card--inactive'}">
@@ -1857,6 +1950,8 @@ function buildUserCard(user) {
                 data-user-edit="${esc(user.username)}" type="button">Edit</button>
         <button class="v2-user-btn v2-user-btn--toggle"
                 data-user-toggle="${esc(user.username)}" type="button">${toggleLabel}</button>
+        <button class="v2-user-btn v2-user-btn--archive"
+                data-user-archive="${esc(user.username)}" type="button">Arsipkan</button>
       </div>
     </div>`;
 }
@@ -1865,8 +1960,10 @@ function renderV2AdminStats(allUsers) {
   const el = document.getElementById('v2AdminStats');
   if (!el) return;
 
+  const nonArchived = allUsers.filter(u => u.archived !== true);
   const counts = {};
-  for (const user of allUsers) counts[user.role] = (counts[user.role] || 0) + 1;
+  for (const user of nonArchived) counts[user.role] = (counts[user.role] || 0) + 1;
+  const archivedCount = allUsers.length - nonArchived.length;
 
   const visibleRoles = V2_ROLE_CONFIG.filter(r => r.visible);
   const chips = visibleRoles.map(r => {
@@ -1876,10 +1973,15 @@ function renderV2AdminStats(allUsers) {
       <span class="v2-admin-stats-chip-count">${counts[r.key] || 0}</span>
     </span>`;
   }).join('');
+  const archivedChip = archivedCount > 0
+    ? `<span class="v2-admin-stats-chip v2-stats-chip--archived">
+        <span class="v2-admin-stats-chip-label">Arsip</span>
+        <span class="v2-admin-stats-chip-count">${archivedCount}</span>
+      </span>` : '';
 
   el.innerHTML = `<div class="v2-admin-stats">
-    <div class="v2-admin-stats-total">Total Pengguna <strong>${allUsers.length}</strong></div>
-    <div class="v2-admin-stats-chips">${chips}</div>
+    <div class="v2-admin-stats-total">Total Pengguna <strong>${nonArchived.length}</strong></div>
+    <div class="v2-admin-stats-chips">${chips}${archivedChip}</div>
   </div>`;
 }
 
@@ -1902,6 +2004,7 @@ function renderV2AdminWorkspace() {
   const section = ADMIN_SECTION_DEFS.find(s => s.key === activeAdminSection) || ADMIN_SECTION_DEFS[0];
   const usersSection    = document.getElementById('v2AdminSectionUsers');
   const driversSection  = document.getElementById('v2AdminSectionDrivers');
+  const vehiclesSection = document.getElementById('v2AdminSectionVehicles');
   const placeholderSection = document.getElementById('v2AdminSectionPlaceholder');
   const overviewRow     = document.getElementById('v2AdminOverviewRow');
 
@@ -1915,15 +2018,18 @@ function renderV2AdminWorkspace() {
   if (activeAdminSection === 'users') {
     if (usersSection)    usersSection.style.display    = '';
     if (driversSection)  driversSection.style.display  = 'none';
+    if (vehiclesSection) vehiclesSection.style.display = 'none';
     if (placeholderSection) placeholderSection.style.display = 'none';
     if (overviewRow) {
       const allUsers = getUserList();
+      const nonArchived = allUsers.filter(u => u.archived !== true);
       const counts = {};
-      for (const user of allUsers) counts[user.role] = (counts[user.role] || 0) + 1;
+      for (const user of nonArchived) counts[user.role] = (counts[user.role] || 0) + 1;
+      const archivedCount = allUsers.length - nonArchived.length;
       overviewRow.innerHTML = `
         <div class="v2-admin-overview-cards">
           <div class="v2-admin-overview-card">
-            <span class="v2-admin-overview-value">${allUsers.length}</span>
+            <span class="v2-admin-overview-value">${nonArchived.length}</span>
             <span class="v2-admin-overview-label">Total Pengguna</span>
           </div>
           <div class="v2-admin-overview-card">
@@ -1934,23 +2040,32 @@ function renderV2AdminWorkspace() {
             <span class="v2-admin-overview-value">${counts['admin'] || 0}</span>
             <span class="v2-admin-overview-label">Administrator</span>
           </div>
+          ${archivedCount > 0 ? `<div class="v2-admin-overview-card v2-admin-overview-card--archived">
+            <span class="v2-admin-overview-value">${archivedCount}</span>
+            <span class="v2-admin-overview-label">Diarsipkan</span>
+          </div>` : ''}
         </div>
       `;
     }
+    const statusFilterEl = document.getElementById('v2AdminUserStatusFilter');
+    if (statusFilterEl) statusFilterEl.value = userStatusFilter;
     renderV2AdminUsers();
 
   } else if (activeAdminSection === 'drivers') {
     if (usersSection)    usersSection.style.display    = 'none';
     if (driversSection)  driversSection.style.display  = '';
+    if (vehiclesSection) vehiclesSection.style.display = 'none';
     if (placeholderSection) placeholderSection.style.display = 'none';
     if (overviewRow) {
       const allDrivers = getDrivers();
-      const activeCount = allDrivers.filter(d => d.active !== false).length;
-      const linkedCount = allDrivers.filter(d => d.linkedUserUsername).length;
+      const nonArchived  = allDrivers.filter(d => d.archived !== true);
+      const activeCount  = nonArchived.filter(d => d.active !== false).length;
+      const linkedCount  = nonArchived.filter(d => d.linkedUserUsername).length;
+      const archivedCount = allDrivers.length - nonArchived.length;
       overviewRow.innerHTML = `
         <div class="v2-admin-overview-cards">
           <div class="v2-admin-overview-card">
-            <span class="v2-admin-overview-value">${allDrivers.length}</span>
+            <span class="v2-admin-overview-value">${nonArchived.length}</span>
             <span class="v2-admin-overview-label">Total Driver</span>
           </div>
           <div class="v2-admin-overview-card">
@@ -1961,6 +2076,10 @@ function renderV2AdminWorkspace() {
             <span class="v2-admin-overview-value">${linkedCount}</span>
             <span class="v2-admin-overview-label">Akun Tertaut</span>
           </div>
+          ${archivedCount > 0 ? `<div class="v2-admin-overview-card v2-admin-overview-card--archived">
+            <span class="v2-admin-overview-value">${archivedCount}</span>
+            <span class="v2-admin-overview-label">Diarsipkan</span>
+          </div>` : ''}
         </div>
       `;
     }
@@ -1970,9 +2089,48 @@ function renderV2AdminWorkspace() {
     if (filterEl) filterEl.value = driverStatusFilter;
     renderV2AdminDrivers();
 
+  } else if (activeAdminSection === 'vehicles') {
+    if (usersSection)    usersSection.style.display    = 'none';
+    if (driversSection)  driversSection.style.display  = 'none';
+    if (vehiclesSection) vehiclesSection.style.display = '';
+    if (placeholderSection) placeholderSection.style.display = 'none';
+    if (overviewRow) {
+      const allVehicles   = getVehicles();
+      const nonArchived   = allVehicles.filter(v => v.archived !== true);
+      const activeCount   = nonArchived.filter(v => v.active !== false).length;
+      const inactiveCount = nonArchived.length - activeCount;
+      const archivedCount = allVehicles.length - nonArchived.length;
+      overviewRow.innerHTML = `
+        <div class="v2-admin-overview-cards">
+          <div class="v2-admin-overview-card">
+            <span class="v2-admin-overview-value">${nonArchived.length}</span>
+            <span class="v2-admin-overview-label">Total Kendaraan</span>
+          </div>
+          <div class="v2-admin-overview-card">
+            <span class="v2-admin-overview-value">${activeCount}</span>
+            <span class="v2-admin-overview-label">Kendaraan Aktif</span>
+          </div>
+          <div class="v2-admin-overview-card">
+            <span class="v2-admin-overview-value">${inactiveCount}</span>
+            <span class="v2-admin-overview-label">Kendaraan Nonaktif</span>
+          </div>
+          ${archivedCount > 0 ? `<div class="v2-admin-overview-card v2-admin-overview-card--archived">
+            <span class="v2-admin-overview-value">${archivedCount}</span>
+            <span class="v2-admin-overview-label">Diarsipkan</span>
+          </div>` : ''}
+        </div>
+      `;
+    }
+    const searchEl = document.getElementById('v2AdminVehicleSearch');
+    if (searchEl) searchEl.value = vehicleSearch;
+    const filterEl = document.getElementById('v2AdminVehicleStatusFilter');
+    if (filterEl) filterEl.value = vehicleStatusFilter;
+    renderV2AdminVehicles();
+
   } else {
     if (usersSection)    usersSection.style.display    = 'none';
     if (driversSection)  driversSection.style.display  = 'none';
+    if (vehiclesSection) vehiclesSection.style.display = 'none';
     if (overviewRow) overviewRow.innerHTML = '';
     if (placeholderSection) {
       placeholderSection.style.display = '';
@@ -2007,7 +2165,12 @@ function renderV2AdminUsers() {
       (u.displayName || '').toLowerCase().includes(q) ||
       (u.username    || '').toLowerCase().includes(q);
     const matchesRole = !roleFilter || u.role === roleFilter;
-    return matchesSearch && matchesRole;
+    const matchesStatus =
+      userStatusFilter === 'all'      ? (u.archived !== true || (!!q && matchesSearch)) :
+      userStatusFilter === 'active'   ? (u.archived !== true && u.active !== false) :
+      userStatusFilter === 'inactive' ? (u.archived !== true && u.active === false) :
+      userStatusFilter === 'archived' ? (u.archived === true) : (u.archived !== true);
+    return matchesSearch && matchesRole && matchesStatus;
   });
 
   if (!filtered.length) {
@@ -2085,6 +2248,42 @@ function renderV2AdminUsers() {
         showToast(err.message || 'Gagal mengubah status.', 'error');
         renderV2AdminWorkspace();
       }
+    });
+  });
+  list.querySelectorAll('[data-user-archive]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const username = btn.dataset.userArchive;
+      btn.disabled = true;
+      try {
+        await archiveUser(username);
+        logAction({ userId: getCurrentUser()?.id, username: getCurrentUser()?.username, action: 'user_archived', targetId: username });
+        showToast('User berhasil diarsipkan.');
+      } catch (err) {
+        showToast(err.message || 'Gagal mengarsipkan user.', 'error');
+        btn.disabled = false;
+      }
+    });
+  });
+  list.querySelectorAll('[data-user-restore]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const username = btn.dataset.userRestore;
+      btn.disabled = true;
+      try {
+        await restoreUser(username);
+        logAction({ userId: getCurrentUser()?.id, username: getCurrentUser()?.username, action: 'user_restored', targetId: username });
+        showToast('User berhasil dipulihkan.');
+      } catch (err) {
+        showToast(err.message || 'Gagal memulihkan user.', 'error');
+        btn.disabled = false;
+      }
+    });
+  });
+  list.querySelectorAll('[data-user-delete]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const username = btn.dataset.userDelete;
+      const user = getUserList().find(u => u.username === username);
+      if (!user) return;
+      openDeleteConfirmModal({ type: 'user', id: username, name: user.displayName || user.username, refCount: countUserReferences(user) });
     });
   });
 }
@@ -2236,8 +2435,36 @@ async function handleDriverFormSubmit(event) {
 function buildDriverCard(driver) {
   const initials = (driver.name || '?')
     .split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase() || '?';
-  const active = driver.active !== false;
-  const linked = Boolean(driver.linkedUserUsername);
+  const active   = driver.active !== false;
+  const archived = driver.archived === true;
+  const linked   = Boolean(driver.linkedUserUsername);
+
+  if (archived) {
+    const refCount = countDriverReferences(driver);
+    const deleteBtnHtml = refCount === 0
+      ? `<button class="v2-user-btn v2-user-btn--delete"
+                data-driver-delete="${esc(driver.id)}" type="button">Hapus Permanen</button>`
+      : `<span class="v2-delete-blocked-hint">${refCount} referensi</span>`;
+    return `
+      <div class="v2-user-card v2-user-card--archived">
+        <div class="v2-user-avatar-ring v2-user-avatar--driver">
+          <span class="v2-user-avatar-initials">${esc(initials)}</span>
+        </div>
+        <div class="v2-user-info">
+          <span class="v2-user-display-name">${esc(driver.name)}</span>
+          <span class="v2-user-username">${esc(driver.phone || '—')}</span>
+        </div>
+        <div class="v2-user-meta">
+          ${linked ? `<span class="v2-user-role-pill v2-driver-linked-pill">@${esc(driver.linkedUserUsername)}</span>` : ''}
+          <span class="v2-entity-badge v2-entity-badge--archived">Arsip</span>
+        </div>
+        <div class="v2-user-card-actions">
+          <button class="v2-user-btn v2-user-btn--restore"
+                  data-driver-restore="${esc(driver.id)}" type="button">Pulihkan</button>
+          ${deleteBtnHtml}
+        </div>
+      </div>`;
+  }
 
   return `
     <div class="v2-user-card${active ? '' : ' v2-user-card--inactive'}">
@@ -2259,6 +2486,8 @@ function buildDriverCard(driver) {
                 data-driver-toggle="${esc(driver.id)}" type="button">
           ${active ? 'Nonaktifkan' : 'Aktifkan'}
         </button>
+        <button class="v2-user-btn v2-user-btn--archive"
+                data-driver-archive="${esc(driver.id)}" type="button">Arsipkan</button>
       </div>
     </div>`;
 }
@@ -2267,13 +2496,19 @@ function renderV2AdminDriverStats(allDrivers) {
   const el = document.getElementById('v2AdminDriverStats');
   if (!el) return;
 
-  const total    = allDrivers.length;
-  const activeCount   = allDrivers.filter(d => d.active !== false).length;
-  const linkedCount   = allDrivers.filter(d => d.linkedUserUsername).length;
-  const inactiveCount = total - activeCount;
+  const nonArchived   = allDrivers.filter(d => d.archived !== true);
+  const activeCount   = nonArchived.filter(d => d.active !== false).length;
+  const linkedCount   = nonArchived.filter(d => d.linkedUserUsername).length;
+  const inactiveCount = nonArchived.length - activeCount;
+  const archivedCount = allDrivers.length - nonArchived.length;
+  const archivedChip  = archivedCount > 0
+    ? `<span class="v2-admin-stats-chip v2-stats-chip--archived">
+        <span class="v2-admin-stats-chip-label">Arsip</span>
+        <span class="v2-admin-stats-chip-count">${archivedCount}</span>
+      </span>` : '';
 
   el.innerHTML = `<div class="v2-admin-stats">
-    <div class="v2-admin-stats-total">Total Driver <strong>${total}</strong></div>
+    <div class="v2-admin-stats-total">Total Driver <strong>${nonArchived.length}</strong></div>
     <div class="v2-admin-stats-chips">
       <span class="v2-admin-stats-chip">
         <span class="v2-admin-stats-chip-label">Aktif</span>
@@ -2287,6 +2522,7 @@ function renderV2AdminDriverStats(allDrivers) {
         <span class="v2-admin-stats-chip-label">Tertaut</span>
         <span class="v2-admin-stats-chip-count">${linkedCount}</span>
       </span>
+      ${archivedChip}
     </div>
   </div>`;
 }
@@ -2306,9 +2542,10 @@ function renderV2AdminDrivers() {
       (d.phone || '').toLowerCase().includes(q) ||
       (d.linkedUserUsername || '').toLowerCase().includes(q);
     const matchesStatus =
-      driverStatusFilter === 'all' ||
-      (driverStatusFilter === 'active'   && d.active !== false) ||
-      (driverStatusFilter === 'inactive' && d.active === false);
+      driverStatusFilter === 'all'      ? (d.archived !== true || (!!q && matchesSearch)) :
+      driverStatusFilter === 'active'   ? (d.archived !== true && d.active !== false) :
+      driverStatusFilter === 'inactive' ? (d.archived !== true && d.active === false) :
+      driverStatusFilter === 'archived' ? (d.archived === true) : (d.archived !== true);
     return matchesSearch && matchesStatus;
   });
 
@@ -2345,6 +2582,506 @@ function renderV2AdminDrivers() {
       }
     });
   });
+  list.querySelectorAll('[data-driver-archive]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const driverId = btn.dataset.driverArchive;
+      btn.disabled = true;
+      try {
+        await archiveDriver(driverId);
+        logAction({ userId: getCurrentUser()?.id, username: getCurrentUser()?.username, action: 'driver_archived', targetId: driverId });
+        showToast('Driver berhasil diarsipkan.');
+      } catch (err) {
+        showToast(err.message || 'Gagal mengarsipkan driver.', 'error');
+        btn.disabled = false;
+      }
+    });
+  });
+  list.querySelectorAll('[data-driver-restore]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const driverId = btn.dataset.driverRestore;
+      btn.disabled = true;
+      try {
+        await restoreDriver(driverId);
+        logAction({ userId: getCurrentUser()?.id, username: getCurrentUser()?.username, action: 'driver_restored', targetId: driverId });
+        showToast('Driver berhasil dipulihkan.');
+      } catch (err) {
+        showToast(err.message || 'Gagal memulihkan driver.', 'error');
+        btn.disabled = false;
+      }
+    });
+  });
+  list.querySelectorAll('[data-driver-delete]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const driverId = btn.dataset.driverDelete;
+      const driver = getDrivers().find(d => d.id === driverId);
+      if (!driver) return;
+      openDeleteConfirmModal({ type: 'driver', id: driverId, name: driver.name, refCount: countDriverReferences(driver) });
+    });
+  });
+}
+
+/* ============================================================
+   V1.5.2 — Vehicle Management Workspace
+   ============================================================ */
+
+function initVehicleFormModal() {
+  const modal = document.createElement('div');
+  modal.id = 'modalVehicleForm';
+  modal.className = 'modal-overlay';
+  modal.style.display = 'none';
+  modal.innerHTML = `
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2 class="modal-title" id="vehicleFormTitle">Tambah Kendaraan</h2>
+        <button class="modal-close" id="btnCloseVehicleForm" type="button">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="vehicleForm" novalidate>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="vehicleFieldName">Nama Kendaraan *</label>
+              <input type="text" id="vehicleFieldName" placeholder="Contoh: Innova" required />
+            </div>
+            <div class="form-group">
+              <label for="vehicleFieldPlate">Plat Nomor</label>
+              <input type="text" id="vehicleFieldPlate" placeholder="Contoh: B 1234 XYZ" autocomplete="off" />
+            </div>
+            <div class="form-group">
+              <label for="vehicleFieldCapacity">Kapasitas (kursi) *</label>
+              <input type="number" id="vehicleFieldCapacity" placeholder="7" min="1" required />
+            </div>
+            <div class="form-group">
+              <label for="vehicleFieldColor">Warna Timeline</label>
+              <div class="v2-vehicle-color-row">
+                <input type="color" id="vehicleFieldColor" class="v2-vehicle-color-input" value="#1565C0" />
+                <span class="v2-vehicle-color-preview" id="vehicleColorPreview" style="background:#1565C0;"></span>
+                <span class="v2-vehicle-color-hex" id="vehicleColorHex">#1565C0</span>
+              </div>
+            </div>
+            <div class="form-group form-full">
+              <label>Status Aktif</label>
+              <label class="pbsi-form-toggle">
+                <input type="checkbox" id="vehicleFieldActive" class="pbsi-toggle-input"
+                       role="switch" aria-label="Status kendaraan aktif" checked />
+                <span class="pbsi-form-toggle-label" id="vehicleActiveLabel">Aktif</span>
+              </label>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn-secondary" id="btnCancelVehicleForm">Batal</button>
+            <button type="submit" class="btn-primary" id="btnSaveVehicleForm">Tambah Kendaraan</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  document.getElementById('btnCloseVehicleForm')?.addEventListener('click', closeVehicleFormModal);
+  document.getElementById('btnCancelVehicleForm')?.addEventListener('click', closeVehicleFormModal);
+  modal.addEventListener('click', e => { if (e.target === modal) closeVehicleFormModal(); });
+  document.getElementById('vehicleForm')?.addEventListener('submit', handleVehicleFormSubmit);
+  document.getElementById('vehicleFieldActive')?.addEventListener('change', e => {
+    const lbl = document.getElementById('vehicleActiveLabel');
+    if (lbl) lbl.textContent = e.target.checked ? 'Aktif' : 'Nonaktif';
+  });
+  document.getElementById('vehicleFieldColor')?.addEventListener('input', e => {
+    const hex = e.target.value;
+    const preview = document.getElementById('vehicleColorPreview');
+    const hexLabel = document.getElementById('vehicleColorHex');
+    if (preview) preview.style.background = hex;
+    if (hexLabel) hexLabel.textContent = hex;
+  });
+}
+
+function openVehicleFormModal(vehicleId = null) {
+  editingVehicleId = vehicleId;
+  const form = document.getElementById('vehicleForm');
+  if (!form) return;
+  form.reset();
+
+  const title   = document.getElementById('vehicleFormTitle');
+  const btnSave = document.getElementById('btnSaveVehicleForm');
+
+  if (vehicleId) {
+    const vehicle = getVehicles().find(v => v.id === vehicleId);
+    if (!vehicle) return;
+    if (title)   title.textContent   = 'Edit Kendaraan';
+    if (btnSave) btnSave.textContent = 'Simpan Perubahan';
+    const nameEl     = document.getElementById('vehicleFieldName');
+    const plateEl    = document.getElementById('vehicleFieldPlate');
+    const capEl      = document.getElementById('vehicleFieldCapacity');
+    const colorEl    = document.getElementById('vehicleFieldColor');
+    const activeEl   = document.getElementById('vehicleFieldActive');
+    if (nameEl)   nameEl.value   = vehicle.name || '';
+    if (plateEl)  plateEl.value  = vehicle.plateNumber || '';
+    if (capEl)    capEl.value    = vehicle.capacity || '';
+    if (colorEl)  colorEl.value  = vehicle.color || '#1565C0';
+    if (activeEl) activeEl.checked = vehicle.active !== false;
+    const activeLbl  = document.getElementById('vehicleActiveLabel');
+    const preview    = document.getElementById('vehicleColorPreview');
+    const hexLabel   = document.getElementById('vehicleColorHex');
+    const color      = vehicle.color || '#1565C0';
+    if (activeLbl) activeLbl.textContent = vehicle.active !== false ? 'Aktif' : 'Nonaktif';
+    if (preview)   preview.style.background = color;
+    if (hexLabel)  hexLabel.textContent = color;
+  } else {
+    if (title)   title.textContent   = 'Tambah Kendaraan';
+    if (btnSave) btnSave.textContent = 'Tambah Kendaraan';
+    const activeLbl = document.getElementById('vehicleActiveLabel');
+    if (activeLbl) activeLbl.textContent = 'Aktif';
+    const colorEl   = document.getElementById('vehicleFieldColor');
+    const preview   = document.getElementById('vehicleColorPreview');
+    const hexLabel  = document.getElementById('vehicleColorHex');
+    const defaultColor = '#1565C0';
+    if (colorEl)  colorEl.value = defaultColor;
+    if (preview)  preview.style.background = defaultColor;
+    if (hexLabel) hexLabel.textContent = defaultColor;
+  }
+
+  const modal = document.getElementById('modalVehicleForm');
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeVehicleFormModal() {
+  const modal = document.getElementById('modalVehicleForm');
+  if (modal) modal.style.display = 'none';
+  editingVehicleId = null;
+}
+
+async function handleVehicleFormSubmit(event) {
+  event.preventDefault();
+  const name        = document.getElementById('vehicleFieldName')?.value.trim() || '';
+  const plateNumber = document.getElementById('vehicleFieldPlate')?.value.trim() || '';
+  const capacity    = document.getElementById('vehicleFieldCapacity')?.value || '';
+  const color       = document.getElementById('vehicleFieldColor')?.value || '#1565C0';
+  const active      = document.getElementById('vehicleFieldActive')?.checked ?? true;
+
+  const btn = document.getElementById('btnSaveVehicleForm');
+  if (btn) btn.disabled = true;
+
+  try {
+    const currentUser = getCurrentUser();
+    if (editingVehicleId) {
+      await updateVehicle(editingVehicleId, { name, plateNumber, capacity, color, active });
+      logAction({
+        userId:   currentUser?.id,
+        username: currentUser?.username,
+        action:   'vehicle_updated',
+        targetId: editingVehicleId,
+        metadata: { name, active },
+      });
+      showToast('Kendaraan berhasil diperbarui.');
+    } else {
+      const newVehicle = await createVehicle({ name, plateNumber, capacity, color, active });
+      logAction({
+        userId:   currentUser?.id,
+        username: currentUser?.username,
+        action:   'vehicle_created',
+        targetId: newVehicle.id,
+        metadata: { name, active },
+      });
+      showToast('Kendaraan baru berhasil ditambahkan.');
+    }
+    closeVehicleFormModal();
+  } catch (err) {
+    showToast(err.message || 'Gagal menyimpan kendaraan.');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function buildVehicleCard(vehicle) {
+  const active   = vehicle.active !== false;
+  const archived = vehicle.archived === true;
+  const color    = vehicle.color || '#555';
+  const plate    = vehicle.plateNumber || '—';
+  const cap      = vehicle.capacity ? `${vehicle.capacity} kursi` : '—';
+
+  if (archived) {
+    const refCount = countVehicleReferences(vehicle);
+    const deleteBtnHtml = refCount === 0
+      ? `<button class="v2-user-btn v2-user-btn--delete"
+                data-vehicle-delete="${esc(vehicle.id)}" type="button">Hapus Permanen</button>`
+      : `<span class="v2-delete-blocked-hint">${refCount} referensi</span>`;
+    return `
+      <div class="v2-user-card v2-user-card--archived">
+        <div class="v2-vehicle-avatar" style="background:${esc(color)}20; border-color:${esc(color)};">
+          <span class="v2-vehicle-color-dot" style="background:${esc(color)};"></span>
+        </div>
+        <div class="v2-user-info">
+          <span class="v2-user-display-name">${esc(vehicle.name)}</span>
+          <span class="v2-user-username">${esc(plate)}</span>
+        </div>
+        <div class="v2-user-meta">
+          <span class="v2-vehicle-cap-chip">${esc(cap)}</span>
+          <span class="v2-entity-badge v2-entity-badge--archived">Arsip</span>
+        </div>
+        <div class="v2-user-card-actions">
+          <button class="v2-user-btn v2-user-btn--restore"
+                  data-vehicle-restore="${esc(vehicle.id)}" type="button">Pulihkan</button>
+          ${deleteBtnHtml}
+        </div>
+      </div>`;
+  }
+
+  return `
+    <div class="v2-user-card${active ? '' : ' v2-user-card--inactive'}">
+      <div class="v2-vehicle-avatar" style="background:${esc(color)}20; border-color:${esc(color)};">
+        <span class="v2-vehicle-color-dot" style="background:${esc(color)};"></span>
+      </div>
+      <div class="v2-user-info">
+        <span class="v2-user-display-name">${esc(vehicle.name)}</span>
+        <span class="v2-user-username">${esc(plate)}</span>
+      </div>
+      <div class="v2-user-meta">
+        <span class="v2-vehicle-cap-chip">${esc(cap)}</span>
+        <span class="v2-user-status-pill${active ? '' : ' v2-status-pill--inactive'}">${active ? 'Aktif' : 'Nonaktif'}</span>
+      </div>
+      <div class="v2-user-card-actions">
+        <button class="v2-user-btn v2-user-btn--edit"
+                data-vehicle-edit="${esc(vehicle.id)}" type="button">Edit</button>
+        <button class="v2-user-btn v2-user-btn--toggle"
+                data-vehicle-toggle="${esc(vehicle.id)}" type="button">
+          ${active ? 'Nonaktifkan' : 'Aktifkan'}
+        </button>
+        <button class="v2-user-btn v2-user-btn--archive"
+                data-vehicle-archive="${esc(vehicle.id)}" type="button">Arsipkan</button>
+      </div>
+    </div>`;
+}
+
+function renderV2AdminVehicleStats(allVehicles) {
+  const el = document.getElementById('v2AdminVehicleStats');
+  if (!el) return;
+
+  const nonArchived   = allVehicles.filter(v => v.archived !== true);
+  const activeCount   = nonArchived.filter(v => v.active !== false).length;
+  const inactiveCount = nonArchived.length - activeCount;
+  const archivedCount = allVehicles.length - nonArchived.length;
+  const archivedChip  = archivedCount > 0
+    ? `<span class="v2-admin-stats-chip v2-stats-chip--archived">
+        <span class="v2-admin-stats-chip-label">Arsip</span>
+        <span class="v2-admin-stats-chip-count">${archivedCount}</span>
+      </span>` : '';
+
+  el.innerHTML = `<div class="v2-admin-stats">
+    <div class="v2-admin-stats-total">Total Kendaraan <strong>${nonArchived.length}</strong></div>
+    <div class="v2-admin-stats-chips">
+      <span class="v2-admin-stats-chip">
+        <span class="v2-admin-stats-chip-label">Aktif</span>
+        <span class="v2-admin-stats-chip-count">${activeCount}</span>
+      </span>
+      <span class="v2-admin-stats-chip">
+        <span class="v2-admin-stats-chip-label">Nonaktif</span>
+        <span class="v2-admin-stats-chip-count">${inactiveCount}</span>
+      </span>
+      ${archivedChip}
+    </div>
+  </div>`;
+}
+
+function renderV2AdminVehicles() {
+  const list = document.getElementById('v2AdminVehicleList');
+  if (!list) return;
+
+  const q = vehicleSearch.toLowerCase().trim();
+  const allVehicles = getVehicles();
+
+  renderV2AdminVehicleStats(allVehicles);
+
+  const filtered = allVehicles.filter(v => {
+    const matchesSearch = !q ||
+      (v.name         || '').toLowerCase().includes(q) ||
+      (v.plateNumber  || '').toLowerCase().includes(q);
+    const matchesStatus =
+      vehicleStatusFilter === 'all'      ? (v.archived !== true || (!!q && matchesSearch)) :
+      vehicleStatusFilter === 'active'   ? (v.archived !== true && v.active !== false) :
+      vehicleStatusFilter === 'inactive' ? (v.archived !== true && v.active === false) :
+      vehicleStatusFilter === 'archived' ? (v.archived === true) : (v.archived !== true);
+    return matchesSearch && matchesStatus;
+  });
+
+  if (!filtered.length) {
+    list.innerHTML = '<div class="v2-admin-empty">Tidak ada kendaraan ditemukan.</div>';
+    return;
+  }
+
+  list.innerHTML = filtered.map(buildVehicleCard).join('');
+
+  list.querySelectorAll('[data-vehicle-edit]').forEach(btn => {
+    btn.addEventListener('click', () => openVehicleFormModal(btn.dataset.vehicleEdit));
+  });
+
+  list.querySelectorAll('[data-vehicle-toggle]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const vehicleId = btn.dataset.vehicleToggle;
+      const vehicle = getVehicles().find(v => v.id === vehicleId);
+      if (!vehicle) return;
+      btn.disabled = true;
+      try {
+        const currentUser = getCurrentUser();
+        if (vehicle.active !== false) {
+          await deactivateVehicle(vehicleId);
+          logAction({ userId: currentUser?.id, username: currentUser?.username, action: 'vehicle_deactivated', targetId: vehicleId });
+        } else {
+          await reactivateVehicle(vehicleId);
+          logAction({ userId: currentUser?.id, username: currentUser?.username, action: 'vehicle_reactivated', targetId: vehicleId });
+        }
+        // Render is handled by registerVehiclesChangeListener callback once cache is updated.
+      } catch (err) {
+        showToast(err.message || 'Gagal mengubah status kendaraan.');
+        btn.disabled = false;
+      }
+    });
+  });
+  list.querySelectorAll('[data-vehicle-archive]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const vehicleId = btn.dataset.vehicleArchive;
+      btn.disabled = true;
+      try {
+        await archiveVehicle(vehicleId);
+        logAction({ userId: getCurrentUser()?.id, username: getCurrentUser()?.username, action: 'vehicle_archived', targetId: vehicleId });
+        showToast('Kendaraan berhasil diarsipkan.');
+      } catch (err) {
+        showToast(err.message || 'Gagal mengarsipkan kendaraan.', 'error');
+        btn.disabled = false;
+      }
+    });
+  });
+  list.querySelectorAll('[data-vehicle-restore]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const vehicleId = btn.dataset.vehicleRestore;
+      btn.disabled = true;
+      try {
+        await restoreVehicle(vehicleId);
+        logAction({ userId: getCurrentUser()?.id, username: getCurrentUser()?.username, action: 'vehicle_restored', targetId: vehicleId });
+        showToast('Kendaraan berhasil dipulihkan.');
+      } catch (err) {
+        showToast(err.message || 'Gagal memulihkan kendaraan.', 'error');
+        btn.disabled = false;
+      }
+    });
+  });
+  list.querySelectorAll('[data-vehicle-delete]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const vehicleId = btn.dataset.vehicleDelete;
+      const vehicle = getVehicles().find(v => v.id === vehicleId);
+      if (!vehicle) return;
+      openDeleteConfirmModal({ type: 'vehicle', id: vehicleId, name: vehicle.name, refCount: countVehicleReferences(vehicle) });
+    });
+  });
+}
+
+/* ============================================================
+   V1.5.3 — Archive & Safe Deletion Framework
+   ============================================================ */
+
+function countDriverReferences(driver) {
+  const name = (driver.name || '').toLowerCase();
+  return assignments.filter(a => (a.driver || '').toLowerCase() === name).length
+       + requests.filter(r => (r.driver || '').toLowerCase() === name).length;
+}
+
+function countVehicleReferences(vehicle) {
+  const name = (vehicle.name || '').toLowerCase();
+  return assignments.filter(a => (a.vehicle || '').toLowerCase() === name).length
+       + requests.filter(r => (r.vehicle || '').toLowerCase() === name).length;
+}
+
+function countUserReferences(user) {
+  return requests.filter(r =>
+    r.requesterId === user.id ||
+    (r.requesterName && r.requesterName === (user.displayName || user.username))
+  ).length;
+}
+
+function initDeleteConfirmModal() {
+  const modal = document.createElement('div');
+  modal.id = 'modalDeleteConfirm';
+  modal.className = 'modal-overlay';
+  modal.style.display = 'none';
+  modal.innerHTML = `
+    <div class="modal-box modal-box--narrow">
+      <div class="modal-header">
+        <h2 class="modal-title" id="deleteConfirmTitle">Hapus Permanen</h2>
+        <button class="modal-close" id="btnCloseDeleteConfirm" type="button">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="v2-delete-confirm-desc" id="deleteConfirmDesc"></p>
+        <div class="v2-delete-confirm-refs" id="deleteConfirmRefs"></div>
+        <div class="form-group" id="deleteConfirmInputGroup">
+          <label for="deleteConfirmInput">Ketik <strong>DELETE</strong> untuk konfirmasi:</label>
+          <input type="text" id="deleteConfirmInput" placeholder="DELETE" autocomplete="off" />
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn-secondary" id="btnCancelDeleteConfirm">Batal</button>
+          <button type="button" class="btn-danger" id="btnConfirmDelete" disabled>Hapus Permanen</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  document.getElementById('btnCloseDeleteConfirm')?.addEventListener('click', closeDeleteConfirmModal);
+  document.getElementById('btnCancelDeleteConfirm')?.addEventListener('click', closeDeleteConfirmModal);
+  modal.addEventListener('click', e => { if (e.target === modal) closeDeleteConfirmModal(); });
+  document.getElementById('deleteConfirmInput')?.addEventListener('input', e => {
+    const btn = document.getElementById('btnConfirmDelete');
+    if (btn) btn.disabled = e.target.value.trim() !== 'DELETE';
+  });
+  document.getElementById('btnConfirmDelete')?.addEventListener('click', handlePermanentDelete);
+}
+
+function openDeleteConfirmModal({ type, id, name, refCount }) {
+  pendingDeleteEntity = { type, id, name };
+  const title  = document.getElementById('deleteConfirmTitle');
+  const desc   = document.getElementById('deleteConfirmDesc');
+  const refs   = document.getElementById('deleteConfirmRefs');
+  const input  = document.getElementById('deleteConfirmInput');
+  const btn    = document.getElementById('btnConfirmDelete');
+  const group  = document.getElementById('deleteConfirmInputGroup');
+  if (title) title.textContent = `Hapus Permanen — ${name}`;
+  if (desc)  desc.textContent  = 'Tindakan ini tidak dapat dibatalkan. Data akan dihapus secara permanen dari sistem.';
+  if (refs)  refs.innerHTML    = refCount > 0
+    ? `<div class="v2-delete-refs-warning">Ditemukan ${refCount} referensi di riwayat operasional. Hapus tidak tersedia selama ada referensi aktif.</div>`
+    : `<div class="v2-delete-refs-ok">Tidak ada referensi aktif ditemukan. Data ini aman untuk dihapus.</div>`;
+  if (input) { input.value = ''; input.disabled = refCount > 0; }
+  if (group) group.style.display = refCount > 0 ? 'none' : '';
+  if (btn)   btn.disabled = true;
+  const modal = document.getElementById('modalDeleteConfirm');
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeDeleteConfirmModal() {
+  const modal = document.getElementById('modalDeleteConfirm');
+  if (modal) modal.style.display = 'none';
+  pendingDeleteEntity = null;
+}
+
+async function handlePermanentDelete() {
+  if (!pendingDeleteEntity) return;
+  const { type, id, name } = pendingDeleteEntity;
+  const btn = document.getElementById('btnConfirmDelete');
+  if (btn) btn.disabled = true;
+  try {
+    const cu = getCurrentUser();
+    if (type === 'user') {
+      await deleteUser(id);
+      logAction({ userId: cu?.id, username: cu?.username, action: 'user_deleted', targetId: id, metadata: { name } });
+    } else if (type === 'driver') {
+      await deleteDriver(id);
+      logAction({ userId: cu?.id, username: cu?.username, action: 'driver_deleted', targetId: id, metadata: { name } });
+    } else if (type === 'vehicle') {
+      await deleteVehicle(id);
+      logAction({ userId: cu?.id, username: cu?.username, action: 'vehicle_deleted', targetId: id, metadata: { name } });
+    }
+    showToast(`${name} berhasil dihapus permanen.`);
+    closeDeleteConfirmModal();
+  } catch (err) {
+    showToast(err.message || 'Gagal menghapus.', 'error');
+    if (btn) btn.disabled = false;
+  }
 }
 
 /**
@@ -2717,6 +3454,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   await initAdminUI();                   // Setup admin user management
   await initDriversStore();              // v1.5.0 Phase 1: seed/sync Firebase driver registry
+  await initVehiclesStore();             // v1.5.2: seed/sync Firebase vehicle registry
   initNotificationUI();                  // Setup notification badge & modal
   initDriverSelect();                    // Isi dropdown driver
   initDateControls();                    // Setup date navigation buttons

@@ -5770,6 +5770,74 @@ html.theme-anim .timeline-scroll-fade-right {
   font-size: 10px;
 }
 
+/* ── V1.5.2: Vehicle Management ─────────────────────────────── */
+
+/* Vehicle avatar — colored ring using the vehicle's timeline color */
+.v2-vehicle-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 2px solid transparent;
+}
+
+.v2-vehicle-color-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: block;
+}
+
+/* Capacity chip */
+.v2-vehicle-cap-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Color picker row in vehicle form */
+.v2-vehicle-color-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.v2-vehicle-color-input {
+  width: 42px;
+  height: 34px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--input-bg);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.v2-vehicle-color-preview {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: block;
+  flex-shrink: 0;
+  border: 1px solid rgba(0,0,0,.1);
+}
+
+.v2-vehicle-color-hex {
+  font-family: 'JetBrains Mono', 'DM Mono', monospace;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 /* ── VSM-12 Part 4: Dark mode audit ────────────────────────────
    Pending workspace labels that use --faint (3.42:1 on dark
    surface) — upgrade to --muted for WCAG AA.                     */
@@ -7922,4 +7990,133 @@ span.flatpickr-weekday {
   background: var(--accent) !important;
   border-color: var(--accent) !important;
   color: #ffffff !important;
+}
+
+/* ============================================================
+   V1.5.3 — Archive & Safe Deletion Framework
+   ============================================================ */
+
+/* Archived card — visually distinct from inactive (opacity) */
+.v2-user-card--archived {
+  opacity: 1;
+  border-color: var(--border);
+  background: repeating-linear-gradient(
+    135deg,
+    transparent,
+    transparent 6px,
+    var(--hover) 6px,
+    var(--hover) 7px
+  );
+}
+
+/* Archived badge — shows in meta column */
+.v2-entity-badge--archived {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .03em;
+  background: var(--border);
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+/* Archive button — muted amber style */
+.v2-user-btn--archive {
+  background: color-mix(in srgb, var(--warning, #F59E0B) 12%, transparent);
+  color: color-mix(in srgb, var(--warning, #F59E0B) 80%, var(--text));
+  border-color: color-mix(in srgb, var(--warning, #F59E0B) 30%, transparent);
+}
+.v2-user-btn--archive:hover { filter: brightness(.94); }
+
+/* Restore button — muted green style */
+.v2-user-btn--restore {
+  background: color-mix(in srgb, var(--ok, #22C55E) 12%, transparent);
+  color: color-mix(in srgb, var(--ok, #22C55E) 80%, var(--text));
+  border-color: color-mix(in srgb, var(--ok, #22C55E) 30%, transparent);
+}
+.v2-user-btn--restore:hover { filter: brightness(.94); }
+
+/* Delete button — strong danger */
+.v2-user-btn--delete {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-color: transparent;
+  font-weight: 700;
+}
+.v2-user-btn--delete:hover { filter: brightness(.92); }
+
+/* Reference-blocked hint (shown instead of delete button) */
+.v2-delete-blocked-hint {
+  font-size: 11px;
+  color: var(--muted);
+  font-style: italic;
+  padding: 2px 4px;
+}
+
+/* Archived chip in stats bar */
+.v2-stats-chip--archived .v2-admin-stats-chip-label { color: var(--muted); }
+.v2-stats-chip--archived .v2-admin-stats-chip-count { color: var(--muted); }
+.v2-stats-chip--archived { border-color: var(--border); }
+
+/* Archived overview card */
+.v2-admin-overview-card--archived {
+  border-color: var(--border);
+  opacity: 0.7;
+}
+.v2-admin-overview-card--archived .v2-admin-overview-value { color: var(--muted); }
+.v2-admin-overview-card--archived .v2-admin-overview-label { color: var(--faint); }
+
+/* Delete confirmation modal — narrower than default */
+.modal-box--narrow {
+  max-width: 440px;
+  width: 100%;
+}
+
+/* Delete confirm description text */
+.v2-delete-confirm-desc {
+  font-size: 13.5px;
+  color: var(--text-secondary, var(--muted));
+  margin: 0 0 12px;
+  line-height: 1.5;
+}
+
+/* Reference count display */
+.v2-delete-confirm-refs {
+  margin-bottom: 16px;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.v2-delete-refs-warning {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-weight: 600;
+}
+.v2-delete-refs-ok {
+  background: color-mix(in srgb, var(--ok, #22C55E) 10%, transparent);
+  color: color-mix(in srgb, var(--ok, #22C55E) 80%, var(--text));
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-weight: 500;
+}
+
+/* Dark mode overrides */
+[data-theme="dark"] .v2-user-card--archived {
+  background: repeating-linear-gradient(
+    135deg,
+    transparent,
+    transparent 6px,
+    rgba(255,255,255,.03) 6px,
+    rgba(255,255,255,.03) 7px
+  );
+}
+[data-theme="dark"] .v2-entity-badge--archived {
+  background: rgba(255,255,255,.08);
+  color: var(--muted);
 }

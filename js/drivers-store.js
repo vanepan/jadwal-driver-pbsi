@@ -110,7 +110,7 @@ export function getDrivers() {
 }
 
 export function getActiveDrivers() {
-  return drivers.filter(driver => driver.active !== false);
+  return drivers.filter(driver => driver.active !== false && driver.archived !== true);
 }
 
 export function getDriverById(id) {
@@ -248,6 +248,47 @@ export async function reactivateDriver(id) {
     return;
   }
   await updateFirebaseData(DRIVERS_PATH + '/' + id, updates);
+}
+
+export async function archiveDriver(id) {
+  const existing = drivers.find(d => d.id === id);
+  if (!existing) throw new Error('Driver tidak ditemukan.');
+  const now = new Date().toISOString();
+  const updates = { archived: true, archivedAt: now, active: false, inactiveAt: existing.inactiveAt || now, updatedAt: now };
+  if (!isFirebaseConfigured()) {
+    refreshDriversCache(mapFirebaseDrivers(Object.fromEntries(
+      drivers.map(d => [d.id, d.id === id ? { ...d, ...updates } : d])
+    )));
+    return;
+  }
+  await updateFirebaseData(DRIVERS_PATH + '/' + id, updates);
+}
+
+export async function restoreDriver(id) {
+  const existing = drivers.find(d => d.id === id);
+  if (!existing) throw new Error('Driver tidak ditemukan.');
+  const now = new Date().toISOString();
+  const updates = { archived: false, archivedAt: null, updatedAt: now };
+  if (!isFirebaseConfigured()) {
+    refreshDriversCache(mapFirebaseDrivers(Object.fromEntries(
+      drivers.map(d => [d.id, d.id === id ? { ...d, ...updates } : d])
+    )));
+    return;
+  }
+  await updateFirebaseData(DRIVERS_PATH + '/' + id, updates);
+}
+
+export async function deleteDriver(id) {
+  const existing = drivers.find(d => d.id === id);
+  if (!existing) throw new Error('Driver tidak ditemukan.');
+  if (existing.archived !== true) throw new Error('Driver harus diarsipkan sebelum dapat dihapus permanen.');
+  if (!isFirebaseConfigured()) {
+    refreshDriversCache(mapFirebaseDrivers(
+      Object.fromEntries(drivers.filter(d => d.id !== id).map(d => [d.id, d]))
+    ));
+    return;
+  }
+  await storeFirebaseData(DRIVERS_PATH + '/' + id, null);
 }
 
 console.info('Drivers store module loaded');
