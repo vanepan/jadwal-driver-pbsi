@@ -1,10 +1,35 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.5.3.1';
-export const RELEASE_NAME = 'Archive & Safe Deletion Framework';
+export const APP_VERSION = '1.6.1';
+export const RELEASE_NAME = 'Audit Center UX Polish';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.6.1',
+    date: '2026-06-09',
+    summary: 'Audit Center UX Polish',
+    highlights: [
+      'Human-readable audit summaries',
+      'Business-friendly activity details',
+      'Collapsible technical JSON payload',
+      'Improved audit detail modal UX',
+      'Mobile-friendly audit viewer',
+    ],
+  },
+  {
+    version: '1.6.0',
+    date: '2026-06-09',
+    summary: 'Audit Center Foundation',
+    highlights: [
+      'Audit Center workspace',
+      'Audit log explorer',
+      'Category filtering',
+      'Actor filtering',
+      'Audit detail viewer',
+      'Legacy log compatibility',
+    ],
+  },
   {
     version: '1.5.3.1',
     date: '2026-06-09',

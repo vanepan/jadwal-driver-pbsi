@@ -11,7 +11,7 @@
 'use strict';
 
 // Import all modules
-import { APP_NAME, APP_VERSION } from './config.js';
+import { APP_NAME, APP_VERSION, RELEASE_NAME } from './config.js';
 import { loadAssignments, saveAssignments, saveOneAssignment, removeOneAssignment, loadRequests, saveRequests, initFirebaseSync, registerDataChangeListener, registerRequestsChangeListener, checkAssignmentSafety, fetchFirebaseData } from './firebase.js';
 import { recoverAssignmentsFromRequests } from './recovery.js';
 import { initDriverSelect, refreshDriverSelect } from './drivers.js';
@@ -3859,7 +3859,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     el.textContent = `v${APP_VERSION}`;
   });
   document.querySelectorAll('.app-version-full').forEach(el => {
-    el.textContent = `Versi ${APP_VERSION}`;
+    el.textContent = `Versi ${APP_VERSION} — ${RELEASE_NAME}`;
   });
   document.querySelectorAll('.app-name-text').forEach(el => {
     el.textContent = APP_NAME;
@@ -4385,6 +4385,7 @@ window.appDebug = {
   getAssignments: () => assignments,
   getRequests: () => requests,
   getAppVersion: () => APP_VERSION,
+  getReleaseName: () => RELEASE_NAME,
   getCurrentDate: () => getCurrentDate(),
   getCurrentUser,
   hasPermission,
@@ -4394,4 +4395,4 @@ window.appDebug = {
   renderTimeline,
 };
 
-console.info(`Jadwal Driver PBSI v${APP_VERSION} loaded`);
+console.info(`Jadwal Driver PBSI v${APP_VERSION} — ${RELEASE_NAME} loaded`);
