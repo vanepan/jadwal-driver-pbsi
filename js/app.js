@@ -124,6 +124,7 @@ let analyticsDateRange    = '30d'; // 'today' | '7d' | '30d' | '90d' | 'all'
 let analyticsDriverFilter  = '';
 let analyticsVehicleFilter = '';
 let analyticsBidangFilter  = '';
+const _analyticsCharts = new Map();
 const ADMIN_SECTION_DEFS = [
   { key: 'users', label: 'Manajemen User', subtitle: 'Tambah, edit, atau nonaktifkan akun pengguna.' },
   { key: 'drivers', label: 'Manajemen Driver', subtitle: 'Kelola registrasi, status, dan data identitas driver.' },
@@ -4041,6 +4042,11 @@ function renderV2AdminConfig() {
    V1.8.0 — Analytics Foundation
    ============================================================ */
 
+function _destroyAnalyticsCharts() {
+  for (const c of _analyticsCharts.values()) { try { c.destroy(); } catch (_) {} }
+  _analyticsCharts.clear();
+}
+
 function renderV2AdminAnalytics() {
   // Populate driver dropdown (dynamic — from drivers-store)
   const driverEl = document.getElementById('v2AnalyticsDriverFilter');
@@ -4071,6 +4077,7 @@ function renderV2AdminAnalytics() {
 }
 
 function refreshAnalyticsDisplay() {
+  _destroyAnalyticsCharts();
   const overviewRow = document.getElementById('v2AdminOverviewRow');
   const contentEl   = document.getElementById('v2AnalyticsContent');
   if (!contentEl) return;
@@ -4229,6 +4236,33 @@ function refreshAnalyticsDisplay() {
     asgPct: total > 0           ? Math.round((b.asgCount / total) * 100)            : 0,
   }));
 
+  // ── Odometer / Jarak Tempuh analytics ─────────────────────────────────
+  const _driverOdo  = new Map();
+  const _vehicleOdo = new Map();
+  const _bidangOdo  = new Map();
+  for (const a of filteredAsg) {
+    const km = a.distanceTravelled;
+    if (km == null || km <= 0) continue;
+    const dKey = (a.driver || '').toLowerCase();
+    _driverOdo.set(dKey, (_driverOdo.get(dKey) || 0) + km);
+    const vKey = (a.vehicle || '').toLowerCase();
+    _vehicleOdo.set(vKey, (_vehicleOdo.get(vKey) || 0) + km);
+    if (a.requestId) {
+      const req = requests.find(r => r.id === a.requestId);
+      if (req?.requesterName) _bidangOdo.set(req.requesterName, (_bidangOdo.get(req.requesterName) || 0) + km);
+    }
+  }
+  const driverOdoList  = driversSorted
+    .map(d => ({ name: d.displayName, km: _driverOdo.get(d.displayName.toLowerCase()) || 0 }))
+    .filter(d => d.km > 0).sort((a, b) => b.km - a.km);
+  const vehicleOdoList = vehiclesSorted
+    .map(v => ({ name: v.displayName, km: _vehicleOdo.get(v.displayName.toLowerCase()) || 0 }))
+    .filter(v => v.km > 0).sort((a, b) => b.km - a.km);
+  const totalKm        = driverOdoList.reduce((s, d) => s + d.km, 0);
+  const hasOdoData     = totalKm > 0;
+  const odoTripCount   = filteredAsg.filter(a => a.distanceTravelled != null && a.distanceTravelled > 0).length;
+  const avgKmPerTrip   = hasOdoData && odoTripCount > 0 ? Math.round(totalKm / odoTripCount) : 0;
+
   // ── Completion quality ─────────────────────────────────────────────────
   const openRate        = total > 0 ? Math.round((openAsg / total) * 100) : 0;
   const completionRatio = total > 0 ? `${completed} / ${total}` : '—';
@@ -4382,6 +4416,105 @@ function refreshAnalyticsDisplay() {
       }).join('')
     : `<p class="v2-analytics-empty">Tidak ada permintaan bidang pada rentang waktu ini.</p>`;
 
+  // ── Chart canvas HTML fragments ────────────────────────────────────────
+  const chartStatusHtml = total > 0 ? `
+    <div class="v2-analytics-chart-wrap">
+      <div class="v2-analytics-chart-label">Distribusi Status Assignment</div>
+      <div class="v2-analytics-chart-box v2-analytics-chart-box--donut">
+        <canvas id="chartAssignmentStatus"></canvas>
+      </div>
+    </div>` : '';
+
+  const chartDriverHtml = activeDriversInPeriod.length > 0 ? `
+    <div class="v2-analytics-chart-wrap">
+      <div class="v2-analytics-chart-label">Distribusi Penugasan per Driver</div>
+      <div class="v2-analytics-chart-box" style="height:${Math.max(150, activeDriversInPeriod.length * 30)}px;">
+        <canvas id="chartDriverWorkload"></canvas>
+      </div>
+    </div>` : '';
+
+  const chartVehicleHtml = vehiclesWithTrips.length > 0 ? `
+    <div class="v2-analytics-chart-wrap">
+      <div class="v2-analytics-chart-label">Utilisasi per Kendaraan</div>
+      <div class="v2-analytics-chart-box" style="height:${Math.max(150, vehiclesWithTrips.length * 30)}px;">
+        <canvas id="chartVehicleUtil"></canvas>
+      </div>
+    </div>` : '';
+
+  const chartBidangHtml = bidangEnhanced.length > 1 ? `
+    <div class="v2-analytics-chart-wrap">
+      <div class="v2-analytics-chart-label">Distribusi Permintaan per Bidang</div>
+      <div class="v2-analytics-chart-box v2-analytics-chart-box--donut">
+        <canvas id="chartBidangDemand"></canvas>
+      </div>
+    </div>` : '';
+
+  // ── Odometer section HTML ──────────────────────────────────────────────
+  const odoDriverBdHtml = driverOdoList.length > 0
+    ? `<div class="v2-analytics-breakdown-row v2-analytics-breakdown-row--header">
+        <span class="v2-analytics-breakdown-name">Driver</span>
+        <span class="v2-analytics-breakdown-count">Jarak</span>
+      </div>` +
+      driverOdoList.map((d, i) =>
+        `<div class="v2-analytics-breakdown-row">
+          <span class="v2-analytics-breakdown-name">${esc(d.name)}${i === 0 ? ' <span class="v2-analytics-top-badge">#1</span>' : ''}</span>
+          <span class="v2-analytics-breakdown-count">${d.km.toLocaleString('id-ID')} km</span>
+        </div>`).join('')
+    : `<p class="v2-analytics-empty">—</p>`;
+
+  const odoVehicleBdHtml = vehicleOdoList.length > 0
+    ? `<div class="v2-analytics-breakdown-row v2-analytics-breakdown-row--header">
+        <span class="v2-analytics-breakdown-name">Kendaraan</span>
+        <span class="v2-analytics-breakdown-count">Jarak</span>
+      </div>` +
+      vehicleOdoList.map((v, i) =>
+        `<div class="v2-analytics-breakdown-row">
+          <span class="v2-analytics-breakdown-name">${esc(v.name)}${i === 0 ? ' <span class="v2-analytics-top-badge">#1</span>' : ''}</span>
+          <span class="v2-analytics-breakdown-count">${v.km.toLocaleString('id-ID')} km</span>
+        </div>`).join('')
+    : `<p class="v2-analytics-empty">Belum ada data jarak kendaraan.</p>`;
+
+  const chartOdoDriverHtml = driverOdoList.length > 0 ? `
+    <div class="v2-analytics-chart-wrap">
+      <div class="v2-analytics-chart-label">Jarak Tempuh per Driver (km)</div>
+      <div class="v2-analytics-chart-box" style="height:${Math.max(140, driverOdoList.length * 32)}px;">
+        <canvas id="chartOdoDriver"></canvas>
+      </div>
+    </div>` : '';
+
+  const chartOdoVehicleHtml = vehicleOdoList.length > 0 ? `
+    <div class="v2-analytics-chart-wrap">
+      <div class="v2-analytics-chart-label">Jarak Tempuh per Kendaraan (km)</div>
+      <div class="v2-analytics-chart-box" style="height:${Math.max(140, vehicleOdoList.length * 32)}px;">
+        <canvas id="chartOdoVehicle"></canvas>
+      </div>
+    </div>` : '';
+
+  const odoBodyHtml = hasOdoData
+    ? `<div class="v2-analytics-subtitle">Jarak Tempuh per Driver</div>
+      <div class="v2-analytics-breakdown">${odoDriverBdHtml}</div>
+      ${chartOdoDriverHtml}
+      <div class="v2-analytics-subtitle v2-analytics-subtitle--mt">Jarak Tempuh per Kendaraan</div>
+      <div class="v2-analytics-breakdown">${odoVehicleBdHtml}</div>
+      ${chartOdoVehicleHtml}`
+    : `<p class="v2-analytics-empty" style="margin-top:12px;">Belum ada data jarak tempuh pada periode ini. Odometer dicatat saat driver memulai dan menyelesaikan assignment.</p>`;
+
+  const odoSection = `
+      <div class="v2-analytics-section">
+        <div class="v2-analytics-section-header">Odometer &amp; Jarak Tempuh</div>
+        <div class="v2-analytics-groups">
+          <div class="v2-admin-config-group">
+            <h3 class="v2-admin-config-group-title">Ringkasan Jarak Tempuh</h3>
+            <div class="v2-analytics-kpi-list">
+              ${kpiRow('Total Jarak Tempuh', hasOdoData ? totalKm.toLocaleString('id-ID') + ' km' : '—')}
+              ${kpiRow('Rata-rata per Trip', hasOdoData ? avgKmPerTrip.toLocaleString('id-ID') + ' km' : '—')}
+              ${kpiRow('Trip dengan Odometer', odoTripCount)}
+            </div>
+            ${odoBodyHtml}
+          </div>
+        </div>
+      </div>`;
+
   contentEl.innerHTML = `
     <div class="v2-analytics-sections">
 
@@ -4400,6 +4533,7 @@ function refreshAnalyticsDisplay() {
               ${kpiRow('Dijadwalkan', scheduled)}
               ${kpiRow('Dibatalkan / Lainnya', cancelled)}
             </div>
+            ${chartStatusHtml}
           </div>
         </div>
       </div>
@@ -4432,6 +4566,7 @@ function refreshAnalyticsDisplay() {
             </div>
             <div class="v2-analytics-subtitle v2-analytics-subtitle--mt">Driver Tanpa Penugasan</div>
             <div class="v2-analytics-breakdown">${inactiveDrvHtml}</div>
+            ${chartDriverHtml}
           </div>
         </div>
       </div>
@@ -4459,6 +4594,7 @@ function refreshAnalyticsDisplay() {
             </div>
             <div class="v2-analytics-subtitle v2-analytics-subtitle--mt">Kendaraan Tanpa Penggunaan</div>
             <div class="v2-analytics-breakdown">${inactiveVehHtml}</div>
+            ${chartVehicleHtml}
           </div>
         </div>
       </div>
@@ -4485,6 +4621,7 @@ function refreshAnalyticsDisplay() {
               </div>` : ''}
               ${bidangDemandHtml}
             </div>
+            ${chartBidangHtml}
           </div>
           ${hasDestData ? `
           <div class="v2-admin-config-group">
@@ -4506,6 +4643,8 @@ function refreshAnalyticsDisplay() {
         </div>
       </div>
 
+      ${odoSection}
+
       <!-- Kualitas Penyelesaian -->
       <div class="v2-analytics-section">
         <div class="v2-analytics-section-header">Kualitas Penyelesaian</div>
@@ -4525,6 +4664,150 @@ function refreshAnalyticsDisplay() {
 
     </div>
   `;
+  _renderAnalyticsCharts({
+    completed, inProgress, scheduled, cancelled, total,
+    activeDriversInPeriod, vehiclesWithTrips, bidangEnhanced,
+    driverOdoList, vehicleOdoList, totalKm, hasOdoData
+  });
+}
+
+function _renderAnalyticsCharts({ completed, inProgress, scheduled, cancelled, total,
+    activeDriversInPeriod, vehiclesWithTrips, bidangEnhanced,
+    driverOdoList, vehicleOdoList, totalKm, hasOdoData }) {
+  if (typeof Chart === 'undefined') return;
+
+  const isDark    = document.documentElement.getAttribute('data-theme') === 'dark';
+  const textColor = isDark ? '#9A9690' : '#5B5953';
+  const gridColor = isDark ? '#31333C' : '#E8E6E2';
+  const surfBg    = isDark ? '#262830' : '#FBFAF8';
+
+  Chart.defaults.font.family = "'Inter', sans-serif";
+  Chart.defaults.font.size   = 11;
+
+  const PALETTE = ['#3B5BA9','#2F7D62','#946420','#6B4E9E','#1E7A8A','#A8292F','#7A6E2A','#2A7A6E'];
+
+  function _makeChart(id, config) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    try { _analyticsCharts.set(id, new Chart(el, config)); } catch (_) {}
+  }
+
+  // 1. Assignment status donut
+  if (total > 0) {
+    _makeChart('chartAssignmentStatus', {
+      type: 'doughnut',
+      data: {
+        labels: ['Selesai', 'Berlangsung', 'Dijadwalkan', 'Lainnya'],
+        datasets: [{ data: [completed, inProgress, scheduled, cancelled],
+          backgroundColor: ['#2F7D62','#3B5BA9','#7A7D8A','#A8292F'],
+          borderColor: surfBg, borderWidth: 2, hoverOffset: 4 }]
+      },
+      options: { responsive: true, maintainAspectRatio: true, cutout: '62%',
+        plugins: {
+          legend: { position: 'bottom', labels: { color: textColor, padding: 14, boxWidth: 12 } },
+          tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed} (${total > 0 ? Math.round(ctx.parsed / total * 100) : 0}%)` } }
+        }
+      }
+    });
+  }
+
+  // 2. Driver workload horizontal bar
+  const topDrv = activeDriversInPeriod.slice(0, 12);
+  if (topDrv.length > 0) {
+    _makeChart('chartDriverWorkload', {
+      type: 'bar',
+      data: {
+        labels: topDrv.map(d => d.displayName),
+        datasets: [{ label: 'Penugasan', data: topDrv.map(d => d.count),
+          backgroundColor: '#A8292FCC', borderColor: '#A8292F', borderWidth: 1, borderRadius: 3 }]
+      },
+      options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { color: gridColor }, ticks: { color: textColor, precision: 0 }, border: { color: gridColor } },
+          y: { grid: { display: false }, ticks: { color: textColor }, border: { color: gridColor } }
+        }
+      }
+    });
+  }
+
+  // 3. Vehicle utilization horizontal bar
+  const topVeh = vehiclesWithTrips.slice(0, 10);
+  if (topVeh.length > 0) {
+    _makeChart('chartVehicleUtil', {
+      type: 'bar',
+      data: {
+        labels: topVeh.map(v => v.displayName),
+        datasets: [{ label: 'Penugasan', data: topVeh.map(v => v.count),
+          backgroundColor: '#3B5BA9CC', borderColor: '#3B5BA9', borderWidth: 1, borderRadius: 3 }]
+      },
+      options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { color: gridColor }, ticks: { color: textColor, precision: 0 }, border: { color: gridColor } },
+          y: { grid: { display: false }, ticks: { color: textColor }, border: { color: gridColor } }
+        }
+      }
+    });
+  }
+
+  // 4. Bidang demand donut
+  const topBidang = bidangEnhanced.slice(0, 8).filter(b => b.reqCount > 0);
+  if (topBidang.length > 1) {
+    _makeChart('chartBidangDemand', {
+      type: 'doughnut',
+      data: {
+        labels: topBidang.map(b => b.name),
+        datasets: [{ data: topBidang.map(b => b.reqCount),
+          backgroundColor: PALETTE.slice(0, topBidang.length),
+          borderColor: surfBg, borderWidth: 2, hoverOffset: 4 }]
+      },
+      options: { responsive: true, maintainAspectRatio: true, cutout: '58%',
+        plugins: {
+          legend: { position: 'bottom', labels: { color: textColor, padding: 12, boxWidth: 12 } },
+          tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed} permintaan` } }
+        }
+      }
+    });
+  }
+
+  // 5. Odometer per driver horizontal bar
+  if (driverOdoList.length > 0) {
+    _makeChart('chartOdoDriver', {
+      type: 'bar',
+      data: {
+        labels: driverOdoList.map(d => d.name),
+        datasets: [{ label: 'Jarak (km)', data: driverOdoList.map(d => d.km),
+          backgroundColor: '#2F7D62CC', borderColor: '#2F7D62', borderWidth: 1, borderRadius: 3 }]
+      },
+      options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { color: gridColor }, ticks: { color: textColor }, border: { color: gridColor } },
+          y: { grid: { display: false }, ticks: { color: textColor }, border: { color: gridColor } }
+        }
+      }
+    });
+  }
+
+  // 6. Odometer per vehicle horizontal bar
+  if (vehicleOdoList.length > 0) {
+    _makeChart('chartOdoVehicle', {
+      type: 'bar',
+      data: {
+        labels: vehicleOdoList.map(v => v.name),
+        datasets: [{ label: 'Jarak (km)', data: vehicleOdoList.map(v => v.km),
+          backgroundColor: '#946420CC', borderColor: '#946420', borderWidth: 1, borderRadius: 3 }]
+      },
+      options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { color: gridColor }, ticks: { color: textColor }, border: { color: gridColor } },
+          y: { grid: { display: false }, ticks: { color: textColor }, border: { color: gridColor } }
+        }
+      }
+    });
+  }
 }
 
 /* ============================================================
