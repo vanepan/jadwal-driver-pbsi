@@ -112,12 +112,16 @@ let editingVehicleId = null;
 // V1.5.3: Archive & deletion state
 let userStatusFilter = 'all';    // 'all' | 'active' | 'inactive' | 'archived'
 let pendingDeleteEntity = null;  // { type, id, name } — set before opening delete confirm modal
+// V1.6.0: Audit Center state
+let auditSearch = '';
+let auditCategoryFilter = 'all';
+let auditActorFilter = '';
+let auditDateFilter = '';
 const ADMIN_SECTION_DEFS = [
   { key: 'users', label: 'Manajemen User', subtitle: 'Tambah, edit, atau nonaktifkan akun pengguna.' },
   { key: 'drivers', label: 'Manajemen Driver', subtitle: 'Kelola registrasi, status, dan data identitas driver.' },
   { key: 'vehicles', label: 'Manajemen Kendaraan', subtitle: 'Kelola registrasi, status, dan data armada kendaraan operasional.' },
-  { key: 'audit', label: 'Audit Center', subtitle: 'Rencanakan visibilitas aktivitas sistem dan catatan operasional.',
-    features: ['Aktivitas Sistem', 'Filter Log', 'Riwayat Perubahan', 'Audit Operasional', 'Pencarian Log'] },
+  { key: 'audit', label: 'Audit Center', subtitle: 'Telusuri dan verifikasi aktivitas sistem dan catatan operasional.' },
   { key: 'config', label: 'Konfigurasi', subtitle: 'Rencanakan konfigurasi sistem dan integrasi operasional.',
     features: ['Pengaturan Sistem', 'Telegram Integration', 'Feature Flags', 'Operational Settings', 'Application Metadata'] },
 ];
@@ -1823,6 +1827,26 @@ function initV2AdministrationWorkspace() {
           <div id="v2AdminVehicleStats"></div>
           <div id="v2AdminVehicleList" class="v2-admin-user-list"></div>
         </div>
+        <div id="v2AdminSectionAudit" style="display:none;">
+          <div class="v2-admin-toolbar">
+            <input type="search" id="v2AuditSearch" class="v2-admin-search"
+                   placeholder="Cari aktor, aksi, atau ringkasan…" autocomplete="off" />
+            <select id="v2AuditCategoryFilter" class="v2-admin-filter">
+              <option value="all">Semua Kategori</option>
+              <option value="users">Users</option>
+              <option value="drivers">Drivers</option>
+              <option value="vehicles">Vehicles</option>
+              <option value="assignments">Assignments</option>
+              <option value="requests">Requests</option>
+              <option value="authentication">Authentication</option>
+              <option value="system">System</option>
+              <option value="archive">Archive &amp; Restore</option>
+            </select>
+            <select id="v2AuditActorFilter" class="v2-admin-filter"></select>
+            <input type="date" id="v2AuditDateFilter" class="v2-admin-filter v2-audit-date-input" />
+          </div>
+          <div id="v2AuditList" class="v2-audit-list"></div>
+        </div>
         <div id="v2AdminSectionPlaceholder" style="display:none;"></div>
       </div>
     </div>
@@ -1851,6 +1875,10 @@ function initV2AdministrationWorkspace() {
       vehicleSearch = e.target.value;
       renderV2AdminWorkspace();
     }
+    if (e.target.id === 'v2AuditSearch') {
+      auditSearch = e.target.value;
+      if (activeAdminSection === 'audit') renderAuditCenter();
+    }
   });
   ws.addEventListener('change', e => {
     if (e.target.id === 'v2AdminUserStatusFilter') {
@@ -1865,6 +1893,18 @@ function initV2AdministrationWorkspace() {
     if (e.target.id === 'v2AdminVehicleStatusFilter') {
       vehicleStatusFilter = e.target.value;
       renderV2AdminWorkspace();
+    }
+    if (e.target.id === 'v2AuditCategoryFilter') {
+      auditCategoryFilter = e.target.value;
+      if (activeAdminSection === 'audit') renderAuditCenter();
+    }
+    if (e.target.id === 'v2AuditActorFilter') {
+      auditActorFilter = e.target.value;
+      if (activeAdminSection === 'audit') renderAuditCenter();
+    }
+    if (e.target.id === 'v2AuditDateFilter') {
+      auditDateFilter = e.target.value;
+      if (activeAdminSection === 'audit') renderAuditCenter();
     }
   });
   document.getElementById('v2AdminAddUser')?.addEventListener('click', () => {
@@ -1893,6 +1933,7 @@ function initV2AdministrationWorkspace() {
   initDriverFormModal();
   initVehicleFormModal();
   initDeleteConfirmModal();
+  initAuditDetailModal();
   console.log('[VSM-12] Administration workspace injected');
 }
 
@@ -2127,10 +2168,64 @@ function renderV2AdminWorkspace() {
     if (filterEl) filterEl.value = vehicleStatusFilter;
     renderV2AdminVehicles();
 
+  } else if (activeAdminSection === 'audit') {
+    if (usersSection)    usersSection.style.display    = 'none';
+    if (driversSection)  driversSection.style.display  = 'none';
+    if (vehiclesSection) vehiclesSection.style.display = 'none';
+    if (placeholderSection) placeholderSection.style.display = 'none';
+    const auditSection = document.getElementById('v2AdminSectionAudit');
+    if (auditSection) auditSection.style.display = '';
+    if (overviewRow) {
+      const today = new Date().toISOString().split('T')[0];
+      const totalLogs     = auditLogs.length;
+      const todayLogs     = auditLogs.filter(l => (l.timestamp || '').startsWith(today)).length;
+      const userEventsCount = auditLogs.filter(l => inferAuditCategory(l) === 'Users').length;
+      const opEventsCount = auditLogs.filter(l => {
+        const cat = inferAuditCategory(l);
+        return cat === 'Assignments' || cat === 'Requests';
+      }).length;
+      overviewRow.innerHTML = `
+        <div class="v2-admin-overview-cards">
+          <div class="v2-admin-overview-card">
+            <span class="v2-admin-overview-value">${totalLogs}</span>
+            <span class="v2-admin-overview-label">Total Log</span>
+          </div>
+          <div class="v2-admin-overview-card">
+            <span class="v2-admin-overview-value">${todayLogs}</span>
+            <span class="v2-admin-overview-label">Aktivitas Hari Ini</span>
+          </div>
+          <div class="v2-admin-overview-card">
+            <span class="v2-admin-overview-value">${userEventsCount}</span>
+            <span class="v2-admin-overview-label">User Events</span>
+          </div>
+          <div class="v2-admin-overview-card">
+            <span class="v2-admin-overview-value">${opEventsCount}</span>
+            <span class="v2-admin-overview-label">Operational Events</span>
+          </div>
+        </div>
+      `;
+    }
+    const auditSearchEl = document.getElementById('v2AuditSearch');
+    if (auditSearchEl) auditSearchEl.value = auditSearch;
+    const auditCatEl = document.getElementById('v2AuditCategoryFilter');
+    if (auditCatEl) auditCatEl.value = auditCategoryFilter;
+    const auditActorEl = document.getElementById('v2AuditActorFilter');
+    if (auditActorEl) {
+      const actors = [...new Set(auditLogs.map(l => l.username || '').filter(Boolean))].sort();
+      auditActorEl.innerHTML = '<option value="">Semua Aktor</option>' +
+        actors.map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join('');
+      auditActorEl.value = auditActorFilter;
+    }
+    const auditDateEl = document.getElementById('v2AuditDateFilter');
+    if (auditDateEl) auditDateEl.value = auditDateFilter;
+    renderAuditCenter();
+
   } else {
     if (usersSection)    usersSection.style.display    = 'none';
     if (driversSection)  driversSection.style.display  = 'none';
     if (vehiclesSection) vehiclesSection.style.display = 'none';
+    const auditSection = document.getElementById('v2AdminSectionAudit');
+    if (auditSection) auditSection.style.display = 'none';
     if (overviewRow) overviewRow.innerHTML = '';
     if (placeholderSection) {
       placeholderSection.style.display = '';
@@ -2974,6 +3069,447 @@ function renderV2AdminVehicles() {
 }
 
 /* ============================================================
+   V1.6.0 — Audit Center
+   ============================================================ */
+
+const AUDIT_ACTION_LABELS = {
+  driver_created:       'Driver Dibuat',
+  driver_updated:       'Driver Diperbarui',
+  driver_archived:      'Driver Diarsipkan',
+  driver_restored:      'Driver Dipulihkan',
+  driver_deleted:       'Driver Dihapus',
+  driver_deactivated:   'Driver Dinonaktifkan',
+  driver_reactivated:   'Driver Diaktifkan',
+  user_created:         'User Dibuat',
+  user_updated:         'User Diperbarui',
+  user_archived:        'User Diarsipkan',
+  user_restored:        'User Dipulihkan',
+  user_deleted:         'User Dihapus',
+  vehicle_created:      'Kendaraan Dibuat',
+  vehicle_updated:      'Kendaraan Diperbarui',
+  vehicle_archived:     'Kendaraan Diarsipkan',
+  vehicle_restored:     'Kendaraan Dipulihkan',
+  vehicle_deleted:      'Kendaraan Dihapus',
+  vehicle_deactivated:  'Kendaraan Dinonaktifkan',
+  vehicle_reactivated:  'Kendaraan Diaktifkan',
+  assignment_created:   'Penugasan Dibuat',
+  assignment_updated:   'Penugasan Diperbarui',
+  assignment_deleted:   'Penugasan Dihapus',
+  assignment_started:   'Penugasan Dimulai',
+  assignment_completed: 'Penugasan Selesai',
+  request_created:      'Request Dibuat',
+  request_approved:     'Request Disetujui',
+  request_rejected:     'Request Ditolak',
+  request_updated:      'Request Diperbarui',
+};
+
+function inferAuditCategory(log) {
+  const action = String(log.action || log.type || '').toLowerCase();
+  if (action.includes('user'))       return 'Users';
+  if (action.includes('driver'))     return 'Drivers';
+  if (action.includes('vehicle'))    return 'Vehicles';
+  if (action.includes('assignment')) return 'Assignments';
+  if (action.includes('request'))    return 'Requests';
+  if (action.includes('login') || action.includes('logout') || action.includes('auth'))
+                                     return 'Authentication';
+  return 'System';
+}
+
+function auditMatchesCategory(log, filter) {
+  if (filter === 'all') return true;
+  if (filter === 'archive') {
+    const action = String(log.action || '').toLowerCase();
+    return action.includes('archive') || action.includes('restore');
+  }
+  const catMap = {
+    users: 'Users', drivers: 'Drivers', vehicles: 'Vehicles',
+    assignments: 'Assignments', requests: 'Requests',
+    authentication: 'Authentication', system: 'System',
+  };
+  return inferAuditCategory(log) === (catMap[filter] || '');
+}
+
+function formatAuditTimestamp(isoString) {
+  if (!isoString) return '—';
+  const d = new Date(isoString);
+  if (isNaN(d.getTime())) return String(isoString);
+  const months = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agt','Sep','Okt','Nov','Des'];
+  const day = String(d.getDate()).padStart(2, '0');
+  const mon = months[d.getMonth()];
+  const yr  = d.getFullYear();
+  const hh  = String(d.getHours()).padStart(2, '0');
+  const mm  = String(d.getMinutes()).padStart(2, '0');
+  return `${day} ${mon} ${yr} ${hh}:${mm}`;
+}
+
+function getAuditActionLabel(action) {
+  if (!action) return '—';
+  return AUDIT_ACTION_LABELS[action] || String(action)
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function buildAuditSummary(log) {
+  const meta   = log.metadata || {};
+  const action = String(log.action || '').toLowerCase();
+  if (action.includes('driver')) {
+    const name = meta.name || log.targetId;
+    if (name) return `Driver: ${name}`;
+  }
+  if (action.includes('vehicle')) {
+    const name = meta.name || log.targetId;
+    if (name) return `Kendaraan: ${name}`;
+  }
+  if (action.includes('user')) {
+    const name = meta.name || meta.displayName || log.targetId;
+    if (name) return `User: ${name}`;
+  }
+  if (action.includes('assignment')) {
+    const parts = [];
+    if (meta.driver)      parts.push(`Driver: ${meta.driver}`);
+    if (meta.destination) parts.push(`Tujuan: ${meta.destination}`);
+    if (meta.date)        parts.push(meta.date);
+    if (parts.length)     return parts.join(' · ');
+    if (log.targetId)     return `ID: ${log.targetId}`;
+  }
+  if (action.includes('request')) {
+    const parts = [];
+    if (meta.driver)          parts.push(`Driver: ${meta.driver}`);
+    if (meta.assignmentCount > 1) parts.push(`${meta.assignmentCount} assignment`);
+    if (parts.length)         return parts.join(' · ');
+    if (log.targetId)         return `ID: ${log.targetId}`;
+  }
+  if (log.targetId) return `ID: ${log.targetId}`;
+  return '—';
+}
+
+function buildAuditRow(log) {
+  const category = inferAuditCategory(log);
+  const catKey   = category.toLowerCase().replace(/[^a-z]/g, '');
+  const ts       = esc(formatAuditTimestamp(log.timestamp));
+  const actor    = esc(log.displayName || log.username || log.userId || '—');
+  const action   = esc(getAuditActionLabel(log.action || log.type));
+  const summary  = esc(buildAuditSummary(log));
+  return `
+    <div class="v2-audit-row" data-audit-id="${esc(log.id || '')}" role="button" tabindex="0">
+      <div class="v2-audit-col v2-audit-col--time">${ts}</div>
+      <div class="v2-audit-col v2-audit-col--actor">${actor}</div>
+      <div class="v2-audit-col v2-audit-col--action">${action}</div>
+      <div class="v2-audit-col v2-audit-col--category">
+        <span class="v2-audit-cat-pill v2-audit-cat--${esc(catKey)}">${esc(category)}</span>
+      </div>
+      <div class="v2-audit-col v2-audit-col--summary">${summary}</div>
+    </div>`;
+}
+
+function renderAuditCenter() {
+  const list = document.getElementById('v2AuditList');
+  if (!list) return;
+
+  const q       = auditSearch.toLowerCase().trim();
+  const dateStr = auditDateFilter;
+
+  const filtered = auditLogs.filter(log => {
+    if (!auditMatchesCategory(log, auditCategoryFilter)) return false;
+    if (auditActorFilter) {
+      if ((log.username || '') !== auditActorFilter) return false;
+    }
+    if (dateStr) {
+      if (!(log.timestamp || '').startsWith(dateStr)) return false;
+    }
+    if (q) {
+      const actor   = (log.username || log.displayName || '').toLowerCase();
+      const action  = (log.action   || log.type        || '').toLowerCase();
+      const metaStr = JSON.stringify(log.metadata || {}).toLowerCase();
+      const summary = buildAuditSummary(log).toLowerCase();
+      if (!actor.includes(q) && !action.includes(q) && !metaStr.includes(q) && !summary.includes(q)) return false;
+    }
+    return true;
+  });
+
+  if (!filtered.length) {
+    list.innerHTML = '<div class="v2-admin-empty">Tidak ada log ditemukan.</div>';
+    return;
+  }
+
+  list.innerHTML = `
+    <div class="v2-audit-header-row" aria-hidden="true">
+      <div class="v2-audit-col v2-audit-col--time">Waktu</div>
+      <div class="v2-audit-col v2-audit-col--actor">Aktor</div>
+      <div class="v2-audit-col v2-audit-col--action">Aksi</div>
+      <div class="v2-audit-col v2-audit-col--category">Kategori</div>
+      <div class="v2-audit-col v2-audit-col--summary">Ringkasan</div>
+    </div>
+    ${filtered.map(buildAuditRow).join('')}
+  `;
+
+  list.querySelectorAll('[data-audit-id]').forEach(row => {
+    const open = () => {
+      const log = auditLogs.find(l => l.id === row.dataset.auditId);
+      if (log) openAuditDetailModal(log);
+    };
+    row.addEventListener('click', open);
+    row.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+    });
+  });
+}
+
+function initAuditDetailModal() {
+  const modal = document.createElement('div');
+  modal.id = 'modalAuditDetail';
+  modal.className = 'modal-overlay';
+  modal.style.display = 'none';
+  modal.innerHTML = `
+    <div class="modal-box v2-audit-detail-box">
+      <div class="modal-header">
+        <h2 class="modal-title">Detail Log</h2>
+        <button class="modal-close" id="btnCloseAuditDetail" type="button">&times;</button>
+      </div>
+      <div class="modal-body" id="auditDetailBody"></div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  document.getElementById('btnCloseAuditDetail')?.addEventListener('click', closeAuditDetailModal);
+  modal.addEventListener('click', e => { if (e.target === modal) closeAuditDetailModal(); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && modal.style.display !== 'none') closeAuditDetailModal();
+  });
+}
+
+function buildAuditHumanDetails(log) {
+  const meta   = log.metadata || {};
+  const action = String(log.action || log.type || '');
+  const humanFields = [];
+  const changeItems = [];
+
+  const f = (label, value, bold = false) => {
+    const v = value == null ? '' : String(value);
+    if (v !== '' && v !== 'null' && v !== 'undefined') humanFields.push({ label, value: v, bold });
+  };
+  const chg = (label, from, to) => changeItems.push({ label, from: String(from), to: String(to) });
+
+  switch (action) {
+    case 'driver_created':
+    case 'driver_updated':
+      f('Nama Driver',  meta.name,                             true);
+      f('Status',       meta.active !== false ? 'Aktif' : 'Nonaktif');
+      break;
+    case 'driver_archived':
+      chg('Status Driver', 'Aktif / Nonaktif', 'Diarsipkan');
+      break;
+    case 'driver_restored':
+      chg('Status Driver', 'Diarsipkan', 'Aktif');
+      break;
+    case 'driver_deactivated':
+      chg('Status Driver', 'Aktif', 'Nonaktif');
+      break;
+    case 'driver_reactivated':
+      chg('Status Driver', 'Nonaktif', 'Aktif');
+      break;
+    case 'driver_deleted':
+      f('Nama Driver', meta.name, true);
+      f('Operasi',     'Dihapus Permanen');
+      break;
+
+    case 'user_created':
+    case 'user_updated':
+      f('Nama',    meta.displayName || meta.name);
+      f('Username', meta.username || log.targetId);
+      f('Role',    meta.role);
+      break;
+    case 'user_archived':
+      chg('Status User', 'Aktif / Nonaktif', 'Diarsipkan');
+      break;
+    case 'user_restored':
+      chg('Status User', 'Diarsipkan', 'Aktif');
+      break;
+    case 'user_deleted':
+      f('Nama User', meta.name, true);
+      f('Operasi',   'Dihapus Permanen');
+      break;
+
+    case 'vehicle_created':
+    case 'vehicle_updated':
+      f('Nama Kendaraan', meta.name,                             true);
+      f('Status',         meta.active !== false ? 'Aktif' : 'Nonaktif');
+      break;
+    case 'vehicle_archived':
+      chg('Status Kendaraan', 'Aktif / Nonaktif', 'Diarsipkan');
+      break;
+    case 'vehicle_restored':
+      chg('Status Kendaraan', 'Diarsipkan', 'Aktif');
+      break;
+    case 'vehicle_deactivated':
+      chg('Status Kendaraan', 'Aktif', 'Nonaktif');
+      break;
+    case 'vehicle_reactivated':
+      chg('Status Kendaraan', 'Nonaktif', 'Aktif');
+      break;
+    case 'vehicle_deleted':
+      f('Nama Kendaraan', meta.name, true);
+      f('Operasi',        'Dihapus Permanen');
+      break;
+
+    case 'assignment_created':
+      f('Driver',     meta.driver,      true);
+      f('Kendaraan',  meta.vehicle);
+      f('Tujuan',     meta.destination);
+      f('Tanggal',    meta.date);
+      if (meta.startTime && meta.endTime) f('Waktu', `${meta.startTime} – ${meta.endTime}`);
+      f('Sumber', meta.requestId ? 'Dari Request' : 'Langsung oleh Admin');
+      break;
+    case 'assignment_started':
+      f('Dimulai Oleh',  meta.startedBy);
+      if (meta.startedAt)      f('Waktu Mulai',   formatAuditTimestamp(meta.startedAt));
+      if (meta.startOdometer != null) f('Odometer Awal', `${meta.startOdometer} km`);
+      chg('Status Penugasan', 'Dijadwalkan', 'Berlangsung');
+      break;
+    case 'assignment_completed':
+      f('Driver',            meta.driver,       true);
+      f('Tujuan',            meta.destination);
+      if (meta.completedAt)  f('Waktu Selesai', formatAuditTimestamp(meta.completedAt));
+      f('Diselesaikan Oleh', meta.completedBy);
+      if (meta.endOdometer != null)       f('Odometer Akhir', `${meta.endOdometer} km`);
+      if (meta.distanceTravelled != null) f('Jarak Tempuh',   `${meta.distanceTravelled} km`);
+      chg('Status Penugasan', 'Berlangsung', 'Selesai');
+      break;
+    case 'assignment_deleted':
+      if (meta.beforeCount != null) chg('Jumlah Assignment', `${meta.beforeCount} penugasan`, `${meta.afterCount} penugasan`);
+      break;
+
+    case 'request_approved':
+      f('Driver',            meta.driver, true);
+      if (meta.assignmentCount) f('Assignment Dibuat', `${meta.assignmentCount} penugasan`);
+      break;
+
+    case 'request_rejected':
+      f('Status Request', 'Ditolak oleh Admin');
+      break;
+
+    default:
+      // For unknown actions, extract any obvious name fields from metadata
+      if (meta.name) f('Nama', meta.name, true);
+      break;
+  }
+
+  return { humanFields, changeItems };
+}
+
+function openAuditDetailModal(log) {
+  const body = document.getElementById('auditDetailBody');
+  if (!body) return;
+
+  const category = inferAuditCategory(log);
+  const catKey   = category.toLowerCase().replace(/[^a-z]/g, '');
+  const meta     = log.metadata || {};
+  const metaJson = JSON.stringify(meta, null, 2);
+  const actor    = log.displayName || log.username || '—';
+  const showSub  = log.username && log.displayName && log.username !== log.displayName;
+
+  const { humanFields, changeItems } = buildAuditHumanDetails(log);
+
+  const humanHtml = humanFields.length ? `
+    <div class="v2-audit-section">
+      <div class="v2-audit-section-title">Detail Aktivitas</div>
+      <div class="v2-audit-human-grid">
+        ${humanFields.map(({ label, value, bold }) => `
+          <div class="v2-audit-human-item">
+            <span class="v2-audit-human-label">${esc(label)}</span>
+            <span class="v2-audit-human-value${bold ? ' v2-audit-human-value--bold' : ''}">${esc(value)}</span>
+          </div>`).join('')}
+      </div>
+    </div>` : '';
+
+  const changesHtml = changeItems.length ? `
+    <div class="v2-audit-section">
+      <div class="v2-audit-section-title">Perubahan Status</div>
+      <div class="v2-audit-changes">
+        ${changeItems.map(({ label, from, to }) => `
+          <div class="v2-audit-change-item">
+            <span class="v2-audit-change-label">${esc(label)}</span>
+            <div class="v2-audit-change-flow">
+              <span class="v2-audit-change-old">${esc(from)}</span>
+              <span class="v2-audit-change-arrow" aria-label="menjadi">↓</span>
+              <span class="v2-audit-change-new">${esc(to)}</span>
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>` : '';
+
+  const anomalyHtml = log.safety_anomaly ? `
+    <div class="v2-audit-section v2-audit-section--warn">
+      <div class="v2-audit-section-title v2-audit-section-title--warn">Safety Anomaly</div>
+      <span class="v2-audit-human-value v2-audit-detail-warn">${esc(String(log.safety_anomaly))}</span>
+    </div>` : '';
+
+  body.innerHTML = `
+    <div class="v2-audit-detail">
+
+      <!-- Section 1: Activity Summary -->
+      <div class="v2-audit-section v2-audit-section--summary">
+        <div class="v2-audit-summary-grid">
+          <div class="v2-audit-summary-item">
+            <span class="v2-audit-summary-label">Aksi</span>
+            <span class="v2-audit-summary-value v2-audit-summary-value--action">${esc(getAuditActionLabel(log.action || log.type))}</span>
+          </div>
+          <div class="v2-audit-summary-item">
+            <span class="v2-audit-summary-label">Aktor</span>
+            <span class="v2-audit-summary-value">
+              ${esc(actor)}${showSub ? ` <span class="v2-audit-summary-sub">@${esc(log.username)}</span>` : ''}
+            </span>
+          </div>
+          <div class="v2-audit-summary-item">
+            <span class="v2-audit-summary-label">Waktu</span>
+            <span class="v2-audit-summary-value">${esc(formatAuditTimestamp(log.timestamp))}</span>
+          </div>
+          <div class="v2-audit-summary-item">
+            <span class="v2-audit-summary-label">Kategori</span>
+            <span class="v2-audit-summary-value">
+              <span class="v2-audit-cat-pill v2-audit-cat--${esc(catKey)}">${esc(category)}</span>
+            </span>
+          </div>
+          ${log.targetId ? `
+          <div class="v2-audit-summary-item">
+            <span class="v2-audit-summary-label">Target</span>
+            <span class="v2-audit-summary-value v2-audit-summary-mono">${esc(log.targetId)}</span>
+          </div>` : ''}
+        </div>
+      </div>
+
+      <!-- Section 2: Human-Readable Details -->
+      ${humanHtml}
+
+      <!-- Section 3: Change Detection -->
+      ${changesHtml}
+
+      <!-- Safety anomaly warning -->
+      ${anomalyHtml}
+
+      <!-- Section 4: Technical Details (collapsed) -->
+      <details class="v2-audit-tech-details">
+        <summary class="v2-audit-tech-summary">
+          <span>Detail Teknis (JSON)</span>
+          <svg class="v2-audit-tech-chevron" viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true">
+            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/>
+          </svg>
+        </summary>
+        <pre class="v2-audit-meta-json">${esc(metaJson)}</pre>
+      </details>
+
+    </div>
+  `;
+
+  const modal = document.getElementById('modalAuditDetail');
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeAuditDetailModal() {
+  const modal = document.getElementById('modalAuditDetail');
+  if (modal) modal.style.display = 'none';
+}
+
+/* ============================================================
    V1.5.3 — Archive & Safe Deletion Framework
    ============================================================ */
 
@@ -3515,6 +4051,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       pendingRequests: getMyPendingRequestCount(),
       recentLogs: auditLogs,
     });
+    if (currentWorkspace === 'administration' && activeAdminSection === 'audit') {
+      renderV2AdminWorkspace();
+    }
   });
 
   // Setup callbacks untuk cross-module communication
