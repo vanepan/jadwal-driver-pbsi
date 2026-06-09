@@ -14,7 +14,7 @@
 import { APP_NAME, APP_VERSION } from './config.js';
 import { loadAssignments, saveAssignments, saveOneAssignment, removeOneAssignment, loadRequests, saveRequests, initFirebaseSync, registerDataChangeListener, registerRequestsChangeListener, checkAssignmentSafety, fetchFirebaseData } from './firebase.js';
 import { recoverAssignmentsFromRequests } from './recovery.js';
-import { initDriverSelect } from './drivers.js';
+import { initDriverSelect, refreshDriverSelect } from './drivers.js';
 import {
   initDriversStore,
   getDrivers,
@@ -1822,6 +1822,9 @@ function initV2AdministrationWorkspace() {
     if (currentWorkspace === 'administration') renderV2AdminWorkspace();
   });
   registerDriversChangeListener(() => {
+    // Always keep #fieldDriver in sync regardless of active workspace.
+    // #requestFieldDriver is handled by requests.js's own listener.
+    refreshDriverSelect();
     if (currentWorkspace === 'administration' && activeAdminSection === 'drivers') renderV2AdminWorkspace();
   });
 
@@ -2221,7 +2224,8 @@ async function handleDriverFormSubmit(event) {
       showToast('Driver baru berhasil ditambahkan.');
     }
     closeDriverFormModal();
-    if (currentWorkspace === 'administration' && activeAdminSection === 'drivers') renderV2AdminWorkspace();
+    // No explicit render here: the registerDriversChangeListener callback renders
+    // after the drivers cache is updated (local: synchronous; Firebase: on subscription).
   } catch (err) {
     showToast(err.message || 'Gagal menyimpan driver.');
   } finally {
@@ -2334,7 +2338,7 @@ function renderV2AdminDrivers() {
           await reactivateDriver(driverId);
           logAction({ userId: currentUser?.id, username: currentUser?.username, action: 'driver_reactivated', targetId: driverId });
         }
-        if (currentWorkspace === 'administration' && activeAdminSection === 'drivers') renderV2AdminWorkspace();
+        // Render is handled by registerDriversChangeListener callback once cache is updated.
       } catch (err) {
         showToast(err.message || 'Gagal mengubah status driver.');
         btn.disabled = false;

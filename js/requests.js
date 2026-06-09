@@ -8,7 +8,7 @@
 'use strict';
 
 import { DEFAULT_DRIVERS, VEHICLES, getDriverByName } from './drivers.js';
-import { getDrivers, getActiveDrivers } from './drivers-store.js';
+import { getDrivers, getActiveDrivers, registerDriversChangeListener } from './drivers-store.js';
 import { generateId, timeToMinutes, showToast, initCustomTimeInputPair, getCombinedTimeFromPair, setTimeFieldsFromValue, normalizeTimeValue, expandDateRange, formatDateShort, addHoursToTime, todayString, offsetDate } from './utils.js';
 import { getCurrentUser, hasPermission, isAdmin } from './auth.js';
 import { initFormGuard, resetDirty } from './form-guard.js';
@@ -69,6 +69,9 @@ export function registerCommentCallback(callback) {
 
 export function initRequestHandlers() {
   initRequestDriverSelect();
+  // Keep #requestFieldDriver in sync with driver create/deactivate/reactivate.
+  // MutationObserver in PBSI Select picks up option changes automatically.
+  registerDriversChangeListener(initRequestDriverSelect);
   initCustomTimeInputPair('requestFieldStartHour', 'requestFieldStartMinute');
   initCustomTimeInputPair('requestFieldEndHour', 'requestFieldEndMinute');
 

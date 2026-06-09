@@ -1,10 +1,26 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.5.0';
-export const RELEASE_NAME = 'Driver Management Workspace';
+export const APP_VERSION = '1.5.1';
+export const RELEASE_NAME = 'Driver Management Stabilization';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.5.1',
+    date: '2026-06-09',
+    summary: 'Driver Management Stabilization',
+    highlights: [
+      'Bug fix: deactivated/created drivers now reflected in assignment and request driver dropdowns without page reload',
+      'Bug fix: initDriverSelect() no longer accumulates change listeners — listener registered once, options rebuilt on driver change',
+      'Bug fix: refreshDriverSelect() exported from drivers.js; called by drivers-store listener in app.js',
+      'Bug fix: requests.js self-registers driver change listener — #requestFieldDriver kept in sync via PBSI Select MutationObserver',
+      'Bug fix: removed stale explicit renderV2AdminWorkspace() from handleDriverFormSubmit and toggle handler — Firebase path was rendering with pre-update cache',
+      'Bug fix: driver form modal toggle no longer stretches full-width — form-group flex-stretch overridden via align-self:flex-start',
+      'Bug fix: toggle status label (Aktif/Nonaktif) now updates dynamically on change and on modal open',
+      'Bug fix: Administration Workspace reachable on mobile — sidebar Admin Panel button navigates to V2 workspace',
+      'Bug fix: V1 openUsersListModal no longer fires from sidebar button when V2 shell is active',
+    ],
+  },
   {
     version: '1.5.0',
     date: '2026-06-09',

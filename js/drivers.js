@@ -42,22 +42,15 @@ function getActiveDriversOrFallback() {
 
 /**
  * Initialize dropdown driver di form
- * - Isi options dengan daftar driver
- * - Auto-fill nomor HP saat driver dipilih
+ * - Isi options dengan daftar driver (active only)
+ * - Auto-fill nomor HP saat driver dipilih (one-time listener)
  */
 export function initDriverSelect() {
   const sel = document.getElementById('fieldDriver');
   if (!sel) return;
 
-  sel.innerHTML = '<option value="">-- Pilih Driver --</option>';
-  getActiveDriversOrFallback().forEach(d => {
-    const opt = document.createElement('option');
-    opt.value = d.name;
-    opt.textContent = d.name;
-    sel.appendChild(opt);
-  });
+  _buildDriverOptions(sel);
 
-  // Saat driver dipilih, otomatis isi nomor HP
   sel.addEventListener('change', () => {
     const driver = getDriverByName(sel.value);
     const phoneInput = document.getElementById('fieldPhone');
@@ -65,6 +58,29 @@ export function initDriverSelect() {
       phoneInput.value = driver ? driver.phone : '';
     }
   });
+}
+
+/**
+ * Rebuild driver options without adding a new event listener.
+ * Call this when the driver list changes (create/deactivate/reactivate).
+ * The PBSI Select MutationObserver picks up option changes automatically.
+ */
+export function refreshDriverSelect() {
+  const sel = document.getElementById('fieldDriver');
+  if (sel) _buildDriverOptions(sel);
+}
+
+function _buildDriverOptions(sel) {
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">-- Pilih Driver --</option>';
+  getActiveDriversOrFallback().forEach(d => {
+    const opt = document.createElement('option');
+    opt.value = d.name;
+    opt.textContent = d.name;
+    sel.appendChild(opt);
+  });
+  // Restore selection only if the driver is still in the list (still active)
+  if (prev && Array.from(sel.options).some(o => o.value === prev)) sel.value = prev;
 }
 
 /**
