@@ -61,7 +61,11 @@ function attachAdminButtons() {
   const btnSendTestTelegram = document.getElementById('btnSendTestTelegram');
   const btnCopyMyIdCommand = document.getElementById('btnCopyMyIdCommand');
 
-  if (btnUserMgmt) btnUserMgmt.addEventListener('click', openUsersListModal);
+  // V2 shell handles navigation to Administration workspace via setRailModule('administration').
+  // Only attach the V1 modal in legacy (non-V2) context.
+  if (btnUserMgmt && !document.body.classList.contains('v2-shell-active')) {
+    btnUserMgmt.addEventListener('click', openUsersListModal);
+  }
 
   // Profile modal → Admin Panel shortcut (admin only, P2.2)
   const btnProfileOpenAdmin = document.getElementById('btnProfileOpenAdmin');

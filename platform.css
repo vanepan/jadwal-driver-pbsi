@@ -5762,6 +5762,14 @@ html.theme-anim .timeline-scroll-fade-right {
   .v2-user-card-actions { order: 4; width: 100%; margin-left: 50px; }
 }
 
+/* ── V1.5.0 Phase 3.1: Driver linked-account pill ───────────── */
+.v2-driver-linked-pill {
+  background: var(--info-bg);
+  color: var(--info);
+  font-family: 'JetBrains Mono', 'DM Mono', monospace;
+  font-size: 10px;
+}
+
 /* ── VSM-12 Part 4: Dark mode audit ────────────────────────────
    Pending workspace labels that use --faint (3.42:1 on dark
    surface) — upgrade to --muted for WCAG AA.                     */
@@ -7365,6 +7373,18 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 .pbsi-form-toggle-label {
   font-size: 13px;
   color: var(--text-secondary, var(--text-muted));
+}
+
+/* Fix: .form-group (column flex, align-items:stretch) would stretch the toggle
+   to full container width. align-self:flex-start shrinks it to content width.
+   .form-group input has specificity 0,1,1 which overrides .pbsi-toggle-input
+   (0,1,0); the two-class selector below (0,2,0) restores the fixed 52px width. */
+.form-group .pbsi-form-toggle {
+  align-self: flex-start;
+}
+.form-group .pbsi-toggle-input {
+  width: 52px;
+  flex-shrink: 0;
 }
 
 /* ── T4: Comment character counter ──────────────────────────

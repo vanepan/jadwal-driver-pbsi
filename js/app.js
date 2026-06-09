@@ -15,7 +15,15 @@ import { APP_NAME, APP_VERSION } from './config.js';
 import { loadAssignments, saveAssignments, saveOneAssignment, removeOneAssignment, loadRequests, saveRequests, initFirebaseSync, registerDataChangeListener, registerRequestsChangeListener, checkAssignmentSafety, fetchFirebaseData } from './firebase.js';
 import { recoverAssignmentsFromRequests } from './recovery.js';
 import { initDriverSelect } from './drivers.js';
-import { initDriversStore } from './drivers-store.js';
+import {
+  initDriversStore,
+  getDrivers,
+  registerDriversChangeListener,
+  createDriver,
+  updateDriver,
+  deactivateDriver,
+  reactivateDriver,
+} from './drivers-store.js';
 import { initPbsiSelect } from './pbsi-select.js';
 import { initPbsiDatepicker, syncPbsiDatepicker } from './pbsi-datepicker.js';
 import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate } from './timeline.js';
@@ -77,10 +85,13 @@ let activeRailModule = 'driverops';
 
 // V1.5.0 Phase 2.5.1: Administration workspace section state
 let activeAdminSection = 'users';
+// V1.5.0 Phase 3.1: Driver management workspace state
+let driverSearch = '';
+let driverStatusFilter = 'all'; // 'all' | 'active' | 'inactive'
+let editingDriverId = null;
 const ADMIN_SECTION_DEFS = [
   { key: 'users', label: 'Manajemen User', subtitle: 'Tambah, edit, atau nonaktifkan akun pengguna.' },
-  { key: 'drivers', label: 'Manajemen Driver', subtitle: 'Rencanakan pusat manajemen driver dengan kontrol identitas dan status.',
-    features: ['Registrasi Driver', 'Aktivasi / Nonaktif Driver', 'Link Akun Driver', 'Nomor Telepon Driver', 'Pengelolaan Data Driver'] },
+  { key: 'drivers', label: 'Manajemen Driver', subtitle: 'Kelola registrasi, status, dan data identitas driver.' },
   { key: 'vehicles', label: 'Manajemen Kendaraan', subtitle: 'Rencanakan kontrol armada dan data kendaraan secara terpusat.',
     features: ['Registrasi Kendaraan', 'Plat Nomor', 'Kapasitas Kendaraan', 'Status Aktif', 'Warna Timeline'] },
   { key: 'audit', label: 'Audit Center', subtitle: 'Rencanakan visibilitas aktivitas sistem dan catatan operasional.',
@@ -623,6 +634,11 @@ function initV2Rail() {
 
   driverOps?.addEventListener('click', () => setRailModule('driverops'));
   railAdmin?.addEventListener('click', () => setRailModule('administration'));
+
+  // Mobile: sidebar "Admin Panel" button navigates to Administration workspace.
+  // The rail is hidden at <768px, so this is the only mobile entry point.
+  // Sidebar auto-closes on .sidebar-nav-item click (initSidebar handler).
+  document.getElementById('btnUserMgmt')?.addEventListener('click', () => setRailModule('administration'));
 
   railTheme?.addEventListener('click', () => {
     const current = document.documentElement.getAttribute('data-theme') || 'light';
@@ -1749,6 +1765,20 @@ function initV2AdministrationWorkspace() {
           <div id="v2AdminStats"></div>
           <div id="v2AdminUserList" class="v2-admin-user-list"></div>
         </div>
+        <div id="v2AdminSectionDrivers" style="display:none;">
+          <div class="v2-admin-toolbar">
+            <input type="search" id="v2AdminDriverSearch" class="v2-admin-search"
+                   placeholder="Cari nama atau telepon driver…" autocomplete="off" />
+            <select id="v2AdminDriverStatusFilter" class="v2-admin-filter">
+              <option value="all">Semua Status</option>
+              <option value="active">Aktif</option>
+              <option value="inactive">Nonaktif</option>
+            </select>
+            <button id="v2AdminAddDriver" class="v2-admin-add-btn" type="button">+ Tambah Driver</button>
+          </div>
+          <div id="v2AdminDriverStats"></div>
+          <div id="v2AdminDriverList" class="v2-admin-user-list"></div>
+        </div>
         <div id="v2AdminSectionPlaceholder" style="display:none;"></div>
       </div>
     </div>
@@ -1769,18 +1799,33 @@ function initV2AdministrationWorkspace() {
 
   ws.addEventListener('input', e => {
     if (e.target.id === 'v2AdminSearch') renderV2AdminWorkspace();
+    if (e.target.id === 'v2AdminDriverSearch') {
+      driverSearch = e.target.value;
+      renderV2AdminWorkspace();
+    }
   });
   ws.addEventListener('change', e => {
     if (e.target.id === 'v2AdminRoleFilter') renderV2AdminWorkspace();
+    if (e.target.id === 'v2AdminDriverStatusFilter') {
+      driverStatusFilter = e.target.value;
+      renderV2AdminWorkspace();
+    }
   });
   document.getElementById('v2AdminAddUser')?.addEventListener('click', () => {
     if (activeAdminSection === 'users') openUserFormModal(null);
+  });
+  document.getElementById('v2AdminAddDriver')?.addEventListener('click', () => {
+    if (activeAdminSection === 'drivers') openDriverFormModal(null);
   });
 
   registerUsersChangeListener(() => {
     if (currentWorkspace === 'administration') renderV2AdminWorkspace();
   });
+  registerDriversChangeListener(() => {
+    if (currentWorkspace === 'administration' && activeAdminSection === 'drivers') renderV2AdminWorkspace();
+  });
 
+  initDriverFormModal();
   console.log('[VSM-12] Administration workspace injected');
 }
 
@@ -1852,21 +1897,21 @@ function handleV2RoleGroupToggle(event) {
 
 function renderV2AdminWorkspace() {
   const section = ADMIN_SECTION_DEFS.find(s => s.key === activeAdminSection) || ADMIN_SECTION_DEFS[0];
-  const usersSection = document.getElementById('v2AdminSectionUsers');
+  const usersSection    = document.getElementById('v2AdminSectionUsers');
+  const driversSection  = document.getElementById('v2AdminSectionDrivers');
   const placeholderSection = document.getElementById('v2AdminSectionPlaceholder');
-  const overviewRow = document.getElementById('v2AdminOverviewRow');
+  const overviewRow     = document.getElementById('v2AdminOverviewRow');
 
-  // Update active navigation tab
   document.querySelectorAll('[data-admin-section]').forEach(btn => {
     btn.classList.toggle('v2-admin-nav-tab--active', btn.dataset.adminSection === activeAdminSection);
   });
 
-  // Update page header subtitle
   const pageSubtitle = document.querySelector('.v2-admin-page-subtitle');
   if (pageSubtitle) pageSubtitle.textContent = section.subtitle;
 
   if (activeAdminSection === 'users') {
-    if (usersSection) usersSection.style.display = '';
+    if (usersSection)    usersSection.style.display    = '';
+    if (driversSection)  driversSection.style.display  = 'none';
     if (placeholderSection) placeholderSection.style.display = 'none';
     if (overviewRow) {
       const allUsers = getUserList();
@@ -1890,8 +1935,41 @@ function renderV2AdminWorkspace() {
       `;
     }
     renderV2AdminUsers();
+
+  } else if (activeAdminSection === 'drivers') {
+    if (usersSection)    usersSection.style.display    = 'none';
+    if (driversSection)  driversSection.style.display  = '';
+    if (placeholderSection) placeholderSection.style.display = 'none';
+    if (overviewRow) {
+      const allDrivers = getDrivers();
+      const activeCount = allDrivers.filter(d => d.active !== false).length;
+      const linkedCount = allDrivers.filter(d => d.linkedUserUsername).length;
+      overviewRow.innerHTML = `
+        <div class="v2-admin-overview-cards">
+          <div class="v2-admin-overview-card">
+            <span class="v2-admin-overview-value">${allDrivers.length}</span>
+            <span class="v2-admin-overview-label">Total Driver</span>
+          </div>
+          <div class="v2-admin-overview-card">
+            <span class="v2-admin-overview-value">${activeCount}</span>
+            <span class="v2-admin-overview-label">Driver Aktif</span>
+          </div>
+          <div class="v2-admin-overview-card">
+            <span class="v2-admin-overview-value">${linkedCount}</span>
+            <span class="v2-admin-overview-label">Akun Tertaut</span>
+          </div>
+        </div>
+      `;
+    }
+    const searchEl = document.getElementById('v2AdminDriverSearch');
+    if (searchEl) searchEl.value = driverSearch;
+    const filterEl = document.getElementById('v2AdminDriverStatusFilter');
+    if (filterEl) filterEl.value = driverStatusFilter;
+    renderV2AdminDrivers();
+
   } else {
-    if (usersSection) usersSection.style.display = 'none';
+    if (usersSection)    usersSection.style.display    = 'none';
+    if (driversSection)  driversSection.style.display  = 'none';
     if (overviewRow) overviewRow.innerHTML = '';
     if (placeholderSection) {
       placeholderSection.style.display = '';
@@ -1902,7 +1980,7 @@ function renderV2AdminWorkspace() {
             <span class="v2-admin-placeholder-badge">Planned Capabilities</span>
           </div>
           <ul class="v2-admin-placeholder-features">
-            ${section.features.map(feature => `<li>${esc(feature)}</li>`).join('')}
+            ${(section.features || []).map(feature => `<li>${esc(feature)}</li>`).join('')}
           </ul>
         </div>
       `;
@@ -2003,6 +2081,263 @@ function renderV2AdminUsers() {
       } catch (err) {
         showToast(err.message || 'Gagal mengubah status.', 'error');
         renderV2AdminWorkspace();
+      }
+    });
+  });
+}
+
+/* ============================================================
+   V1.5.0 Phase 3.1 — Driver Management Workspace
+   ============================================================ */
+
+function initDriverFormModal() {
+  const modal = document.createElement('div');
+  modal.id = 'modalDriverForm';
+  modal.className = 'modal-overlay';
+  modal.style.display = 'none';
+  modal.innerHTML = `
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2 class="modal-title" id="driverFormTitle">Tambah Driver</h2>
+        <button class="modal-close" id="btnCloseDriverForm" type="button">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="driverForm" novalidate>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="driverFieldName">Nama *</label>
+              <input type="text" id="driverFieldName" placeholder="Nama driver" required />
+            </div>
+            <div class="form-group">
+              <label for="driverFieldPhone">No. Telepon *</label>
+              <input type="tel" id="driverFieldPhone" placeholder="08xx-xxxx-xxxx" required />
+            </div>
+            <div class="form-group form-full">
+              <label for="driverFieldLinkedUser">Username Akun Tertaut <span style="font-weight:400;color:var(--muted)">(opsional)</span></label>
+              <input type="text" id="driverFieldLinkedUser"
+                     placeholder="Username akun yang ditautkan" autocomplete="off" />
+            </div>
+            <div class="form-group form-full">
+              <label>Status Aktif</label>
+              <label class="pbsi-form-toggle">
+                <input type="checkbox" id="driverFieldActive" class="pbsi-toggle-input"
+                       role="switch" aria-label="Status driver aktif" checked />
+                <span class="pbsi-form-toggle-label" id="driverActiveLabel">Aktif</span>
+              </label>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn-secondary" id="btnCancelDriverForm">Batal</button>
+            <button type="submit" class="btn-primary" id="btnSaveDriverForm">Tambah Driver</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  document.getElementById('btnCloseDriverForm')?.addEventListener('click', closeDriverFormModal);
+  document.getElementById('btnCancelDriverForm')?.addEventListener('click', closeDriverFormModal);
+  modal.addEventListener('click', e => { if (e.target === modal) closeDriverFormModal(); });
+  document.getElementById('driverForm')?.addEventListener('submit', handleDriverFormSubmit);
+  document.getElementById('driverFieldActive')?.addEventListener('change', e => {
+    const lbl = document.getElementById('driverActiveLabel');
+    if (lbl) lbl.textContent = e.target.checked ? 'Aktif' : 'Nonaktif';
+  });
+}
+
+function openDriverFormModal(driverId = null) {
+  editingDriverId = driverId;
+  const form = document.getElementById('driverForm');
+  if (!form) return;
+  form.reset();
+
+  const title  = document.getElementById('driverFormTitle');
+  const btnSave = document.getElementById('btnSaveDriverForm');
+
+  if (driverId) {
+    const driver = getDrivers().find(d => d.id === driverId);
+    if (!driver) return;
+    if (title)   title.textContent   = 'Edit Driver';
+    if (btnSave) btnSave.textContent = 'Simpan Perubahan';
+    const nameEl   = document.getElementById('driverFieldName');
+    const phoneEl  = document.getElementById('driverFieldPhone');
+    const linkedEl = document.getElementById('driverFieldLinkedUser');
+    const activeEl = document.getElementById('driverFieldActive');
+    if (nameEl)   nameEl.value   = driver.name || '';
+    if (phoneEl)  phoneEl.value  = driver.phone || '';
+    if (linkedEl) linkedEl.value = driver.linkedUserUsername || '';
+    if (activeEl) activeEl.checked = driver.active !== false;
+    const activeLbl = document.getElementById('driverActiveLabel');
+    if (activeLbl) activeLbl.textContent = driver.active !== false ? 'Aktif' : 'Nonaktif';
+  } else {
+    if (title)   title.textContent   = 'Tambah Driver';
+    if (btnSave) btnSave.textContent = 'Tambah Driver';
+    const activeLbl = document.getElementById('driverActiveLabel');
+    if (activeLbl) activeLbl.textContent = 'Aktif';
+  }
+
+  const modal = document.getElementById('modalDriverForm');
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeDriverFormModal() {
+  const modal = document.getElementById('modalDriverForm');
+  if (modal) modal.style.display = 'none';
+  editingDriverId = null;
+}
+
+async function handleDriverFormSubmit(event) {
+  event.preventDefault();
+  const name               = document.getElementById('driverFieldName')?.value.trim() || '';
+  const phone              = document.getElementById('driverFieldPhone')?.value.trim() || '';
+  const linkedUserUsername = document.getElementById('driverFieldLinkedUser')?.value.trim() || '';
+  const active             = document.getElementById('driverFieldActive')?.checked ?? true;
+
+  const btn = document.getElementById('btnSaveDriverForm');
+  if (btn) btn.disabled = true;
+
+  try {
+    const currentUser = getCurrentUser();
+    if (editingDriverId) {
+      await updateDriver(editingDriverId, { name, phone, linkedUserUsername, active });
+      logAction({
+        userId:   currentUser?.id,
+        username: currentUser?.username,
+        action:   'driver_updated',
+        targetId: editingDriverId,
+        metadata: { name, active },
+      });
+      showToast('Driver berhasil diperbarui.');
+    } else {
+      const newDriver = await createDriver({ name, phone, linkedUserUsername, active });
+      logAction({
+        userId:   currentUser?.id,
+        username: currentUser?.username,
+        action:   'driver_created',
+        targetId: newDriver.id,
+        metadata: { name, active },
+      });
+      showToast('Driver baru berhasil ditambahkan.');
+    }
+    closeDriverFormModal();
+    if (currentWorkspace === 'administration' && activeAdminSection === 'drivers') renderV2AdminWorkspace();
+  } catch (err) {
+    showToast(err.message || 'Gagal menyimpan driver.');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function buildDriverCard(driver) {
+  const initials = (driver.name || '?')
+    .split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase() || '?';
+  const active = driver.active !== false;
+  const linked = Boolean(driver.linkedUserUsername);
+
+  return `
+    <div class="v2-user-card${active ? '' : ' v2-user-card--inactive'}">
+      <div class="v2-user-avatar-ring v2-user-avatar--driver">
+        <span class="v2-user-avatar-initials">${esc(initials)}</span>
+      </div>
+      <div class="v2-user-info">
+        <span class="v2-user-display-name">${esc(driver.name)}</span>
+        <span class="v2-user-username">${esc(driver.phone || '—')}</span>
+      </div>
+      <div class="v2-user-meta">
+        ${linked ? `<span class="v2-user-role-pill v2-driver-linked-pill">@${esc(driver.linkedUserUsername)}</span>` : ''}
+        <span class="v2-user-status-pill${active ? '' : ' v2-status-pill--inactive'}">${active ? 'Aktif' : 'Nonaktif'}</span>
+      </div>
+      <div class="v2-user-card-actions">
+        <button class="v2-user-btn v2-user-btn--edit"
+                data-driver-edit="${esc(driver.id)}" type="button">Edit</button>
+        <button class="v2-user-btn v2-user-btn--toggle"
+                data-driver-toggle="${esc(driver.id)}" type="button">
+          ${active ? 'Nonaktifkan' : 'Aktifkan'}
+        </button>
+      </div>
+    </div>`;
+}
+
+function renderV2AdminDriverStats(allDrivers) {
+  const el = document.getElementById('v2AdminDriverStats');
+  if (!el) return;
+
+  const total    = allDrivers.length;
+  const activeCount   = allDrivers.filter(d => d.active !== false).length;
+  const linkedCount   = allDrivers.filter(d => d.linkedUserUsername).length;
+  const inactiveCount = total - activeCount;
+
+  el.innerHTML = `<div class="v2-admin-stats">
+    <div class="v2-admin-stats-total">Total Driver <strong>${total}</strong></div>
+    <div class="v2-admin-stats-chips">
+      <span class="v2-admin-stats-chip">
+        <span class="v2-admin-stats-chip-label">Aktif</span>
+        <span class="v2-admin-stats-chip-count">${activeCount}</span>
+      </span>
+      <span class="v2-admin-stats-chip">
+        <span class="v2-admin-stats-chip-label">Nonaktif</span>
+        <span class="v2-admin-stats-chip-count">${inactiveCount}</span>
+      </span>
+      <span class="v2-admin-stats-chip">
+        <span class="v2-admin-stats-chip-label">Tertaut</span>
+        <span class="v2-admin-stats-chip-count">${linkedCount}</span>
+      </span>
+    </div>
+  </div>`;
+}
+
+function renderV2AdminDrivers() {
+  const list = document.getElementById('v2AdminDriverList');
+  if (!list) return;
+
+  const q = driverSearch.toLowerCase().trim();
+  const allDrivers = getDrivers();
+
+  renderV2AdminDriverStats(allDrivers);
+
+  const filtered = allDrivers.filter(d => {
+    const matchesSearch = !q ||
+      (d.name  || '').toLowerCase().includes(q) ||
+      (d.phone || '').toLowerCase().includes(q) ||
+      (d.linkedUserUsername || '').toLowerCase().includes(q);
+    const matchesStatus =
+      driverStatusFilter === 'all' ||
+      (driverStatusFilter === 'active'   && d.active !== false) ||
+      (driverStatusFilter === 'inactive' && d.active === false);
+    return matchesSearch && matchesStatus;
+  });
+
+  if (!filtered.length) {
+    list.innerHTML = '<div class="v2-admin-empty">Tidak ada driver ditemukan.</div>';
+    return;
+  }
+
+  list.innerHTML = filtered.map(buildDriverCard).join('');
+
+  list.querySelectorAll('[data-driver-edit]').forEach(btn => {
+    btn.addEventListener('click', () => openDriverFormModal(btn.dataset.driverEdit));
+  });
+
+  list.querySelectorAll('[data-driver-toggle]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const driverId = btn.dataset.driverToggle;
+      const driver = getDrivers().find(d => d.id === driverId);
+      if (!driver) return;
+      btn.disabled = true;
+      try {
+        const currentUser = getCurrentUser();
+        if (driver.active !== false) {
+          await deactivateDriver(driverId);
+          logAction({ userId: currentUser?.id, username: currentUser?.username, action: 'driver_deactivated', targetId: driverId });
+        } else {
+          await reactivateDriver(driverId);
+          logAction({ userId: currentUser?.id, username: currentUser?.username, action: 'driver_reactivated', targetId: driverId });
+        }
+        if (currentWorkspace === 'administration' && activeAdminSection === 'drivers') renderV2AdminWorkspace();
+      } catch (err) {
+        showToast(err.message || 'Gagal mengubah status driver.');
+        btn.disabled = false;
       }
     });
   });

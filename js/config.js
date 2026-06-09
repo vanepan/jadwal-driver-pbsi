@@ -1,10 +1,30 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.4.1';
-export const RELEASE_NAME = 'PBSI Date Picker Component';
+export const APP_VERSION = '1.5.0';
+export const RELEASE_NAME = 'Driver Management Workspace';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.5.0',
+    date: '2026-06-09',
+    summary: 'Driver Management Workspace',
+    highlights: [
+      'Driver Management module live in Administration Workspace (replaces placeholder)',
+      'Feature 1: Overview cards — Total Drivers, Active Drivers, Linked Accounts',
+      'Feature 2: Toolbar — Search by name/phone, Status Filter (All/Active/Inactive), Tambah Driver',
+      'Feature 3: Driver list with Name, Phone, Active Status, Linked Account, and actions',
+      'Feature 4: Create Driver form — Name, Phone, Linked User (optional), Active toggle',
+      'Feature 5: Edit Driver — all fields editable, legacyNames preserved for backward compat',
+      'Feature 6: Deactivate Driver — sets active=false + inactiveAt, never deletes',
+      'Feature 7: Reactivate Driver — sets active=true + inactiveAt=null',
+      'drivers-store.js: createDriver, updateDriver, deactivateDriver, reactivateDriver, registerDriversChangeListener',
+      'Firebase CRUD via updateFirebaseData; local-only fallback when Firebase not configured',
+      'Duplicate active name validation prevents conflicting driver records',
+      'legacyNames preserved on rename for backward compatibility with assignments/timeline',
+      'Real-time driver list refreshes via Firebase subscription unchanged',
+    ],
+  },
   {
     version: '1.4.1',
     date: '2026-06-07',

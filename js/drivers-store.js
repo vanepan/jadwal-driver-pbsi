@@ -5,6 +5,7 @@ import {
   isFirebaseConfigured,
   storeFirebaseData,
   subscribeFirebasePath,
+  updateFirebaseData,
 } from './firebase.js';
 import { DEFAULT_DRIVERS } from './drivers.js';
 
@@ -13,6 +14,7 @@ const DRIVERS_PATH = 'drivers';
 let drivers = [];
 let driversLoaded = false;
 let driversSubscribed = false;
+let onDriversChangeCallbacks = [];
 
 function normalizeName(value) {
   return String(value || '').trim().toLowerCase();
@@ -61,6 +63,7 @@ function buildSeedDrivers() {
 function refreshDriversCache(nextDrivers) {
   drivers = nextDrivers;
   driversLoaded = true;
+  onDriversChangeCallbacks.forEach(cb => cb(drivers));
 }
 
 async function seedDriversIfEmpty() {
@@ -129,6 +132,122 @@ export function findDriverByLegacyName(name) {
 
 export function getDriverUserUsername(id) {
   return getDriverById(id)?.linkedUserUsername || '';
+}
+
+export function registerDriversChangeListener(callback) {
+  onDriversChangeCallbacks.push(callback);
+}
+
+export async function createDriver({ name, phone, linkedUserUsername = '', active = true }) {
+  const trimName = String(name || '').trim();
+  if (!trimName) throw new Error('Nama driver wajib diisi.');
+  const trimPhone = String(phone || '').trim();
+  if (!trimPhone) throw new Error('Nomor telepon wajib diisi.');
+
+  const normalized = normalizeName(trimName);
+  if (drivers.find(d => d.active !== false && normalizeName(d.name) === normalized)) {
+    throw new Error('Driver aktif dengan nama ini sudah ada.');
+  }
+
+  let id = makeDriverId(trimName);
+  let suffix = 0;
+  while (drivers.find(d => d.id === id)) {
+    suffix++;
+    id = makeDriverId(trimName + suffix);
+  }
+
+  const now = new Date().toISOString();
+  const maxOrder = drivers.reduce((m, d) => Math.max(m, Number(d.sortOrder) || 0), 0);
+  const driver = {
+    id,
+    name: trimName,
+    phone: trimPhone,
+    active: Boolean(active),
+    linkedUserUsername: String(linkedUserUsername || '').trim(),
+    normalizedName: normalized,
+    sortOrder: maxOrder + 1,
+    legacyNames: [trimName],
+    inactiveAt: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  if (!isFirebaseConfigured()) {
+    refreshDriversCache(mapFirebaseDrivers({ ...Object.fromEntries(drivers.map(d => [d.id, d])), [id]: driver }));
+    return driver;
+  }
+  await storeFirebaseData(DRIVERS_PATH + '/' + id, driver);
+  return driver;
+}
+
+export async function updateDriver(id, { name, phone, linkedUserUsername, active }) {
+  const existing = drivers.find(d => d.id === id);
+  if (!existing) throw new Error('Driver tidak ditemukan.');
+
+  const trimName = String(name || '').trim();
+  if (!trimName) throw new Error('Nama driver wajib diisi.');
+  const trimPhone = String(phone || '').trim();
+  if (!trimPhone) throw new Error('Nomor telepon wajib diisi.');
+
+  const normalized = normalizeName(trimName);
+  if (drivers.find(d => d.id !== id && d.active !== false && normalizeName(d.name) === normalized)) {
+    throw new Error('Driver aktif dengan nama ini sudah ada.');
+  }
+
+  const legacyNames = Array.isArray(existing.legacyNames) ? [...existing.legacyNames] : [existing.name];
+  if (!legacyNames.includes(existing.name)) legacyNames.push(existing.name);
+
+  const now = new Date().toISOString();
+  const isNowActive = active !== false;
+  const wasActive = existing.active !== false;
+
+  const updates = {
+    name: trimName,
+    phone: trimPhone,
+    active: isNowActive,
+    linkedUserUsername: String(linkedUserUsername || '').trim(),
+    normalizedName: normalized,
+    legacyNames,
+    inactiveAt: isNowActive ? null : (wasActive ? now : (existing.inactiveAt || now)),
+    updatedAt: now,
+  };
+
+  if (!isFirebaseConfigured()) {
+    refreshDriversCache(mapFirebaseDrivers(Object.fromEntries(
+      drivers.map(d => [d.id, d.id === id ? { ...d, ...updates } : d])
+    )));
+    return { ...existing, ...updates };
+  }
+  await updateFirebaseData(DRIVERS_PATH + '/' + id, updates);
+  return { ...existing, ...updates };
+}
+
+export async function deactivateDriver(id) {
+  const existing = drivers.find(d => d.id === id);
+  if (!existing) throw new Error('Driver tidak ditemukan.');
+  const now = new Date().toISOString();
+  const updates = { active: false, inactiveAt: now, updatedAt: now };
+  if (!isFirebaseConfigured()) {
+    refreshDriversCache(mapFirebaseDrivers(Object.fromEntries(
+      drivers.map(d => [d.id, d.id === id ? { ...d, ...updates } : d])
+    )));
+    return;
+  }
+  await updateFirebaseData(DRIVERS_PATH + '/' + id, updates);
+}
+
+export async function reactivateDriver(id) {
+  const existing = drivers.find(d => d.id === id);
+  if (!existing) throw new Error('Driver tidak ditemukan.');
+  const now = new Date().toISOString();
+  const updates = { active: true, inactiveAt: null, updatedAt: now };
+  if (!isFirebaseConfigured()) {
+    refreshDriversCache(mapFirebaseDrivers(Object.fromEntries(
+      drivers.map(d => [d.id, d.id === id ? { ...d, ...updates } : d])
+    )));
+    return;
+  }
+  await updateFirebaseData(DRIVERS_PATH + '/' + id, updates);
 }
 
 console.info('Drivers store module loaded');
