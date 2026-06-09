@@ -18,7 +18,7 @@
 
 'use strict';
 
-import { VEHICLE_PLATES } from './drivers.js';
+import { getVehicles }    from './vehicles-store.js';
 import { parseLocalDate }  from './utils.js';
 import { acquireReimbursementDocNumber } from './firebase.js';
 
@@ -59,7 +59,8 @@ function getRequesterInfo(a) {
 
 /** License plate for a vehicle, or '-' when not yet configured. */
 function getVehiclePlate(vehicleName) {
-  return VEHICLE_PLATES[vehicleName] || '-';
+  const v = getVehicles().find(veh => veh.name === vehicleName);
+  return v?.plateNumber || '-';
 }
 
 /**

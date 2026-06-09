@@ -8,7 +8,7 @@
 'use strict';
 
 import { formatDateLong, formatDateTime, getTimePeriod, parseLocalDate, showToast } from './utils.js';
-import { VEHICLES } from './drivers.js';
+import { getVehicleColor } from './drivers.js';
 import { hasPermission, getCurrentUser } from './auth.js';
 import { validateOdometer } from './validation.js';
 import { printReimbursementForm } from './reimbursement.js';
@@ -334,7 +334,7 @@ export function openDetailModal(id) {
       <div class="detail-row">
         <span class="detail-label">Kendaraan</span>
         <span class="detail-value">
-          <span class="vehicle-badge" style="background:${VEHICLES[a.vehicle]||'#555'}">${escapeHTML(a.vehicle)}</span>
+          <span class="vehicle-badge" style="background:${getVehicleColor(a.vehicle)}">${escapeHTML(a.vehicle)}</span>
         </span>
       </div>
       <div class="detail-row">

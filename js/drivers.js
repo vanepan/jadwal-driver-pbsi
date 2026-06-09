@@ -7,6 +7,7 @@
 'use strict';
 
 import { getDrivers, getActiveDrivers, findDriverByLegacyName } from './drivers-store.js';
+import { getVehicleColorByName } from './vehicles-store.js';
 
 /* ── Data: Daftar Driver ── */
 export const DEFAULT_DRIVERS = [
@@ -16,23 +17,15 @@ export const DEFAULT_DRIVERS = [
 ];
 
 /* ── Data: Daftar Kendaraan & Warna Timeline ── */
-export const VEHICLES = {
+// Internal fallback only — authoritative source is /vehicles in Firebase via vehicles-store.
+// Used by getVehicleColor() when vehicles-store cache is empty (e.g. pre-init race).
+const VEHICLES = {
   'Innova':   '#1565C0',
   'Luxio':    '#2E7D32',
   'Polytron': '#E65100',
   'Hiace':    '#6A1B9A',
 };
 
-/* ── Data: Nomor Polisi Kendaraan ─────────────────────────────
-   Update these values to match the actual license plates.
-   Used by the reimbursement form generator (v1.2.4+).
-   ─────────────────────────────────────────────────────────── */
-export const VEHICLE_PLATES = {
-  'Innova':   '',
-  'Luxio':    '',
-  'Polytron': '',
-  'Hiace':    '',
-};
 
 function getActiveDriversOrFallback() {
   if (getDrivers().length === 0) return DEFAULT_DRIVERS;
@@ -93,12 +86,13 @@ export function getDriverByName(name) {
 }
 
 /**
- * Get warna kendaraan dari VEHICLES map
- * @param {string} vehicleName - Nama kendaraan
- * @returns {string} - Hex color code (atau default #555 jika tidak ditemukan)
+ * Get warna kendaraan. Primary source: vehicles-store (Firebase).
+ * Falls back to legacy VEHICLES map then '#555' if store is not yet loaded.
+ * @param {string} vehicleName
+ * @returns {string} - Hex color code
  */
 export function getVehicleColor(vehicleName) {
-  return VEHICLES[vehicleName] || '#555';
+  return getVehicleColorByName(vehicleName) || VEHICLES[vehicleName] || '#555';
 }
 
 console.info('Drivers module loaded');

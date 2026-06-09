@@ -65,6 +65,7 @@ import { renderDriverDashboard, setAssignments as setDashboardAssignments } from
 import { initCommentHandlers, openCommentModal, closeCommentModal, setRequests as setCommentRequests, registerCommentSaveCallback, refreshCommentThreadIfOpen } from './comments.js';
 import { initAdminUI, updateAdminButtons, openUserFormModal } from './admin.js';
 import { initNotificationUI, setNotificationData, openNotificationsModal } from './notifications.js';
+import { setTelegramBotToken } from './telegram.js';
 import { subscribeLogsChangeListener, getLogs, logAction } from './logs.js';
 import { getUserByUsername, getUsers, createUser, getUserList, activateUser, deactivateUser, registerUsersChangeListener, archiveUser, restoreUser, deleteUser } from './users.js';
 import { expandDateRange, showToast, formatDateShort } from './utils.js';
@@ -3991,6 +3992,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   await initAdminUI();                   // Setup admin user management
   await initDriversStore();              // v1.5.0 Phase 1: seed/sync Firebase driver registry
   await initVehiclesStore();             // v1.5.2: seed/sync Firebase vehicle registry
+  const _telegramSettings = await fetchFirebaseData('settings/telegram');
+  if (_telegramSettings?.botToken) setTelegramBotToken(_telegramSettings.botToken);
   initNotificationUI();                  // Setup notification badge & modal
   initDriverSelect();                    // Isi dropdown driver
   initDateControls();                    // Setup date navigation buttons

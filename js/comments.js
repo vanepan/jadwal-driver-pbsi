@@ -36,7 +36,7 @@
 
 import { generateId, formatDateTime, formatDateShort, showToast } from './utils.js';
 import { getCurrentUser, isAdmin, isBidang, isDriver } from './auth.js';
-import { VEHICLES } from './drivers.js';
+import { getVehicleColor } from './drivers.js';
 
 /* ── Module State ── */
 let requests = [];
@@ -200,7 +200,7 @@ function _renderContext(req) {
   const el = document.getElementById('commentContext');
   if (!el) return;
 
-  const vehicleColor  = VEHICLES[req.vehicle] || '#555';
+  const vehicleColor  = getVehicleColor(req.vehicle);
   const STATUS_LABELS = { pending: 'Menunggu', approved: 'Disetujui', rejected: 'Ditolak' };
   const statusLabel   = STATUS_LABELS[req.status] || req.status || '-';
 

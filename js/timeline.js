@@ -8,8 +8,8 @@
 'use strict';
 
 import { todayString, formatDateLong, timeToMinutes, offsetDate } from './utils.js';
-import { DEFAULT_DRIVERS, VEHICLES } from './drivers.js';
-import { getDrivers, getActiveDrivers } from './drivers-store.js';
+import { getVehicleColor } from './drivers.js';
+import { getActiveDrivers } from './drivers-store.js';
 import { openDetailModal } from './modal.js';
 
 /* ── Helpers ── */
@@ -207,7 +207,7 @@ function renderDriverRows() {
 
   // Filter assignments sesuai tanggal yang dipilih
   const todayAssignments = assignments.filter(a => a.date === currentDate);
-  const timelineDrivers = getDrivers().length > 0 ? getActiveDrivers() : DEFAULT_DRIVERS;
+  const timelineDrivers = getActiveDrivers();
   const driversToRender = [...timelineDrivers];
 
   todayAssignments.forEach(assignment => {
@@ -303,7 +303,7 @@ function createAssignmentBlock(assignment) {
   block.dataset.vehicle = assignment.vehicle;
   block.style.left  = `${left}px`;
   block.style.width = `${Math.max(width, 20)}px`;
-  block.style.background = VEHICLES[assignment.vehicle] || '#555';
+  block.style.background = getVehicleColor(assignment.vehicle);
 
   const status = normalizeBlockStatus(assignment.status);
   const isCompleted = status === 'completed';

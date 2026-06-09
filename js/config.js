@@ -1,10 +1,23 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.6.1';
-export const RELEASE_NAME = 'Audit Center UX Polish';
+export const APP_VERSION = '1.6.2';
+export const RELEASE_NAME = 'Security & Source Consolidation';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.6.2',
+    date: '2026-06-09',
+    summary: 'Security & Source Consolidation',
+    highlights: [
+      'Telegram bot token removed from index.html — loaded from Firebase /settings/telegram/botToken at runtime',
+      'VEHICLES map in drivers.js demoted to internal fallback; all callers now use getVehicleColor() via vehicles-store',
+      'DEFAULT_DRIVERS fallback rendering retired from timeline.js and requests.js; drivers-store is the only source',
+      'VEHICLE_PLATES map removed; reimbursement.js now reads plateNumber directly from vehicles-store cache',
+      'validation.js: KNOWN_VEHICLE_NAMES and KNOWN_DRIVER_NAMES replaced with live getActiveVehicleNames() / getActiveDriverNames() calls',
+      'New exports: setTelegramBotToken (telegram.js), getVehicleColorByName + getActiveVehicleNames (vehicles-store.js), getActiveDriverNames (drivers-store.js)',
+    ],
+  },
   {
     version: '1.6.1',
     date: '2026-06-09',

@@ -123,6 +123,17 @@ export function registerVehiclesChangeListener(callback) {
   onVehiclesChangeCallbacks.push(callback);
 }
 
+export function getVehicleColorByName(vehicleName) {
+  const v = vehicles.find(veh => veh.name === vehicleName && veh.archived !== true);
+  return v ? v.color : null;
+}
+
+export function getActiveVehicleNames() {
+  return vehicles
+    .filter(v => v.active !== false && v.archived !== true)
+    .map(v => v.name);
+}
+
 export async function createVehicle({ name, plateNumber, capacity, color, active = true }) {
   const trimName = String(name || '').trim();
   if (!trimName) throw new Error('Nama kendaraan wajib diisi.');

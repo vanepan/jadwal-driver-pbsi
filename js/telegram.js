@@ -4,7 +4,9 @@
  * Telegram helper module.
  *
  * Calls the Telegram Bot API directly from the browser.
- * Set  window.TELEGRAM_BOT_TOKEN  in index.html before this module loads.
+ * Token is loaded at startup from Firebase /settings/telegram/botToken
+ * via setTelegramBotToken(). Falls back to window.TELEGRAM_BOT_TOKEN for
+ * backward compatibility during migration.
  *
  * Fallback: if  window.TELEGRAM_API_BASE_URL  is set, requests are forwarded
  * to that backend proxy instead (legacy / server-side mode).
@@ -12,7 +14,14 @@
 
 const DIRECT_API = 'https://api.telegram.org';
 const CUSTOM_PROXY = () => window.TELEGRAM_API_BASE_URL || '';
-const getBotToken = () => window.TELEGRAM_BOT_TOKEN || '';
+
+let _botToken = '';
+
+export function setTelegramBotToken(token) {
+  _botToken = String(token || '').trim();
+}
+
+const getBotToken = () => _botToken || window.TELEGRAM_BOT_TOKEN || '';
 
 /**
  * Send a single message to one chat ID.
@@ -42,7 +51,7 @@ export async function sendTelegramMessage(chatId, message) {
     if (!token) {
       throw new Error(
         'Telegram Bot Token belum dikonfigurasi. ' +
-        'Isi window.TELEGRAM_BOT_TOKEN di <script> dalam index.html.'
+        'Simpan token di Firebase /settings/telegram/botToken.'
       );
     }
     url       = `${DIRECT_API}/bot${token}/sendMessage`;

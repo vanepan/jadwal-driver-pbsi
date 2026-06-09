@@ -11,7 +11,7 @@
 'use strict';
 
 import { todayString, formatDateShort } from './utils.js';
-import { VEHICLES } from './drivers.js';
+import { getVehicleColor } from './drivers.js';
 import { openDetailModal } from './modal.js';
 
 /* ── Module State ── */
@@ -104,7 +104,7 @@ function buildSection(title, items, opts = {}) {
 function buildCard(a, { showDate = false, muted = false } = {}) {
   const status = a.status || 'assigned';
   const label  = STATUS_LABELS[status] || status;
-  const color  = VEHICLES[a.vehicle] || '#555';
+  const color  = getVehicleColor(a.vehicle);
 
   const datePart = showDate
     ? `<span class="dash-meta-item">📅 ${formatDateShort(a.date)}</span>` : '';

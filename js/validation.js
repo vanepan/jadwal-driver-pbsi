@@ -24,16 +24,13 @@
 
 'use strict';
 
-import { DEFAULT_DRIVERS, VEHICLES } from './drivers.js';
+import { getActiveVehicleNames } from './vehicles-store.js';
+import { getActiveDriverNames }  from './drivers-store.js';
 
 /* ── Constants ─────────────────────────────────────────────── */
 
 const VALID_STATUSES  = ['assigned', 'started', 'completed'];
 const VALID_ROLES     = ['admin', 'bidang', 'driver', 'viewer'];
-
-// Derived from drivers.js — single source of truth
-const KNOWN_VEHICLE_NAMES = Object.keys(VEHICLES);
-const KNOWN_DRIVER_NAMES  = DEFAULT_DRIVERS.map(d => d.name);
 
 // Regex patterns (mirrored from existing inline usage for consistency)
 const TIME_REGEX        = /^\d{2}:\d{2}$/;
@@ -215,10 +212,10 @@ export function validateRequest(request) {
 
   const warnings = [];
   if (!r.requesterName) warnings.push('Nama pengaju tidak tercatat.');
-  if (r.driver && !KNOWN_DRIVER_NAMES.includes(r.driver)) {
+  if (r.driver && !getActiveDriverNames().includes(r.driver)) {
     warnings.push(`Driver "${r.driver}" tidak ada dalam daftar driver aktif.`);
   }
-  if (r.vehicle && !KNOWN_VEHICLE_NAMES.includes(r.vehicle)) {
+  if (r.vehicle && !getActiveVehicleNames().includes(r.vehicle)) {
     warnings.push(`Kendaraan "${r.vehicle}" tidak ada dalam daftar kendaraan yang dikenal.`);
   }
 
@@ -265,10 +262,10 @@ export function validateAssignment(assignment) {
   const warnings = [];
   if (!a.purpose)      warnings.push('Keperluan (purpose) tidak diisi.');
   if (!a.destination)  warnings.push('Tujuan (destination) tidak diisi.');
-  if (a.driver && !KNOWN_DRIVER_NAMES.includes(a.driver)) {
+  if (a.driver && !getActiveDriverNames().includes(a.driver)) {
     warnings.push(`Driver "${a.driver}" tidak ada dalam daftar driver aktif.`);
   }
-  if (a.vehicle && !KNOWN_VEHICLE_NAMES.includes(a.vehicle)) {
+  if (a.vehicle && !getActiveVehicleNames().includes(a.vehicle)) {
     warnings.push(`Kendaraan "${a.vehicle}" tidak ada dalam daftar kendaraan yang dikenal.`);
   }
 
@@ -299,7 +296,7 @@ export function validateDriver(driver) {
   if (typeof driver === 'object' && !phone) {
     warnings.push('Nomor HP driver tidak tersedia.');
   }
-  if (name && !KNOWN_DRIVER_NAMES.includes(name)) {
+  if (name && !getActiveDriverNames().includes(name)) {
     warnings.push(`Driver "${name}" tidak terdaftar dalam daftar driver aktif.`);
   }
 
@@ -324,8 +321,8 @@ export function validateVehicle(vehicleName) {
   if (!name) return createResult(['Kendaraan wajib dipilih.']);
 
   const warnings = [];
-  if (!KNOWN_VEHICLE_NAMES.includes(name)) {
-    warnings.push(`Kendaraan "${name}" tidak ada dalam daftar yang dikenal: ${KNOWN_VEHICLE_NAMES.join(', ')}.`);
+  if (!getActiveVehicleNames().includes(name)) {
+    warnings.push(`Kendaraan "${name}" tidak ada dalam daftar yang dikenal: ${getActiveVehicleNames().join(', ')}.`);
   }
 
   return createResult([], warnings);

@@ -7,8 +7,9 @@
 
 'use strict';
 
-import { DEFAULT_DRIVERS, VEHICLES, getDriverByName } from './drivers.js';
+import { getDriverByName, getVehicleColor } from './drivers.js';
 import { getDrivers, getActiveDrivers, registerDriversChangeListener } from './drivers-store.js';
+import { getActiveVehicleNames } from './vehicles-store.js';
 import { generateId, timeToMinutes, showToast, initCustomTimeInputPair, getCombinedTimeFromPair, setTimeFieldsFromValue, normalizeTimeValue, expandDateRange, formatDateShort, addHoursToTime, todayString, offsetDate } from './utils.js';
 import { getCurrentUser, hasPermission, isAdmin } from './auth.js';
 import { initFormGuard, resetDirty } from './form-guard.js';
@@ -479,7 +480,7 @@ function handleRequestActionClick(event) {
 
 function createRequestCardHTML(request) {
   const r = normalizeRequest(request);
-  const vehicleColor = VEHICLES[r.vehicle] || '#555';
+  const vehicleColor = getVehicleColor(r.vehicle);
 
   // Date range display
   const isSameDay = r.startDate === r.endDate;
@@ -542,7 +543,7 @@ function initRequestDriverSelect() {
   if (!select) return;
 
   select.innerHTML = '<option value="">-- Pilih Driver --</option>';
-  const driverOptions = getDrivers().length > 0 ? getActiveDrivers() : DEFAULT_DRIVERS;
+  const driverOptions = getActiveDrivers();
   driverOptions.forEach(driver => {
     const option = document.createElement('option');
     option.value = driver.name;
@@ -552,7 +553,7 @@ function initRequestDriverSelect() {
 
   const vehicleSelect = document.getElementById('requestFieldVehicle');
   if (vehicleSelect && vehicleSelect.options.length <= 1) {
-    Object.keys(VEHICLES).forEach(vehicle => {
+    getActiveVehicleNames().forEach(vehicle => {
       const option = document.createElement('option');
       option.value = vehicle;
       option.textContent = vehicle;

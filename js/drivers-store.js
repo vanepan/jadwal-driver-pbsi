@@ -138,6 +138,12 @@ export function registerDriversChangeListener(callback) {
   onDriversChangeCallbacks.push(callback);
 }
 
+export function getActiveDriverNames() {
+  return drivers
+    .filter(d => d.active !== false && d.archived !== true)
+    .map(d => d.name);
+}
+
 export async function createDriver({ name, phone, linkedUserUsername = '', active = true }) {
   const trimName = String(name || '').trim();
   if (!trimName) throw new Error('Nama driver wajib diisi.');
