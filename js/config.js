@@ -1,10 +1,45 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.8.0';
-export const RELEASE_NAME = 'Analytics Foundation';
+export const APP_VERSION = '1.8.2';
+export const RELEASE_NAME = 'Analytics Deep Metrics';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.8.2',
+    date: '2026-06-09',
+    summary: 'Analytics Deep Metrics',
+    highlights: [
+      'Module 1 — Driver Workload Distribution: workload % per driver, relative classification (Seimbang / Melebihi / Di Bawah) using mean ± stdDev — no hardcoded thresholds',
+      'Module 2 — Vehicle Utilization: utilization share % per vehicle added to breakdown',
+      'Module 3 — Inactive Resources: active drivers with 0 assignments and active vehicles with 0 usage in selected period, sorted alphabetically',
+      'Module 4 — Destination Analytics: top 10 destinations by frequency; module hidden gracefully when no destination data exists',
+      'Module 5 — Bidang Demand Analysis: request share % and assignment share % per bidang; most active and least active bidang KPIs',
+      'Module 6 — Completion Quality: Open Assignment Rate %, Selesai vs Total ratio, alongside existing Completion Rate',
+      'All 7 cards respect all 4 active filters (date, driver, vehicle, bidang)',
+      'New CSS: .v2-analytics-wl-badge (balanced/over/under/idle), .v2-analytics-breakdown-pct, .v2-analytics-subtitle--mt',
+      'NaN-safe: all percentages guard against zero-division; empty states on every breakdown section',
+    ],
+  },
+  {
+    version: '1.8.1',
+    date: '2026-06-09',
+    summary: 'Analytics Filters',
+    highlights: [
+      'Four filter controls: Date Range, Driver, Vehicle, Bidang — rendered as v2-admin-filter selects',
+      'Date Range options: Hari Ini / 7 Hari / 30 Hari (default) / 90 Hari / Semua Data',
+      'Driver filter: populated from /drivers (active, non-archived only)',
+      'Vehicle filter: populated from /vehicles (active, non-archived only)',
+      'Bidang filter: built dynamically from unique requesterName values in requests[]',
+      'Filters apply consistently to all 5 modules: Assignment, Driver, Vehicle, Bidang, Completion Analytics',
+      'Overview cards (Completion Rate, Total Assignments, Driver Bertugas, Kendaraan Digunakan) update on every filter change',
+      'Global empty state shown when no matching assignments or requests exist — replaces zero-filled module cards',
+      'Per-breakdown empty state shown inside individual cards when breakdown list is empty for the active period',
+      'Filter state persists within session (analyticsDateRange, analyticsDriverFilter, analyticsVehicleFilter, analyticsBidangFilter)',
+      'Architecture: renderV2AdminAnalytics() populates dropdowns; refreshAnalyticsDisplay() computes + renders — filter changes only call refreshAnalyticsDisplay()',
+      'Mobile: all 4 filters wrap via flex-wrap on v2-admin-toolbar — no horizontal scroll',
+    ],
+  },
   {
     version: '1.8.0',
     date: '2026-06-09',

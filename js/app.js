@@ -119,6 +119,11 @@ let auditSearch = '';
 let auditCategoryFilter = 'all';
 let auditActorFilter = '';
 let auditDateFilter = '';
+// V1.8.1: Analytics filter state
+let analyticsDateRange    = '30d'; // 'today' | '7d' | '30d' | '90d' | 'all'
+let analyticsDriverFilter  = '';
+let analyticsVehicleFilter = '';
+let analyticsBidangFilter  = '';
 const ADMIN_SECTION_DEFS = [
   { key: 'users', label: 'Manajemen User', subtitle: 'Tambah, edit, atau nonaktifkan akun pengguna.' },
   { key: 'drivers', label: 'Manajemen Driver', subtitle: 'Kelola registrasi, status, dan data identitas driver.' },
@@ -1854,7 +1859,27 @@ function initV2AdministrationWorkspace() {
           <div id="v2AuditList" class="v2-audit-list"></div>
         </div>
         <div id="v2AdminSectionConfig" style="display:none;"></div>
-        <div id="v2AdminSectionAnalytics" style="display:none;"></div>
+        <div id="v2AdminSectionAnalytics" style="display:none;">
+          <div class="v2-admin-toolbar">
+            <select id="v2AnalyticsDateRange" class="v2-admin-filter">
+              <option value="today">Hari Ini</option>
+              <option value="7d">7 Hari Terakhir</option>
+              <option value="30d" selected>30 Hari Terakhir</option>
+              <option value="90d">90 Hari Terakhir</option>
+              <option value="all">Semua Data</option>
+            </select>
+            <select id="v2AnalyticsDriverFilter" class="v2-admin-filter">
+              <option value="">Semua Driver</option>
+            </select>
+            <select id="v2AnalyticsVehicleFilter" class="v2-admin-filter">
+              <option value="">Semua Kendaraan</option>
+            </select>
+            <select id="v2AnalyticsBidangFilter" class="v2-admin-filter">
+              <option value="">Semua Bidang</option>
+            </select>
+          </div>
+          <div id="v2AnalyticsContent"></div>
+        </div>
         <div id="v2AdminSectionPlaceholder" style="display:none;"></div>
       </div>
     </div>
@@ -1913,6 +1938,22 @@ function initV2AdministrationWorkspace() {
     if (e.target.id === 'v2AuditDateFilter') {
       auditDateFilter = e.target.value;
       if (activeAdminSection === 'audit') renderAuditCenter();
+    }
+    if (e.target.id === 'v2AnalyticsDateRange') {
+      analyticsDateRange = e.target.value;
+      if (activeAdminSection === 'analytics') refreshAnalyticsDisplay();
+    }
+    if (e.target.id === 'v2AnalyticsDriverFilter') {
+      analyticsDriverFilter = e.target.value;
+      if (activeAdminSection === 'analytics') refreshAnalyticsDisplay();
+    }
+    if (e.target.id === 'v2AnalyticsVehicleFilter') {
+      analyticsVehicleFilter = e.target.value;
+      if (activeAdminSection === 'analytics') refreshAnalyticsDisplay();
+    }
+    if (e.target.id === 'v2AnalyticsBidangFilter') {
+      analyticsBidangFilter = e.target.value;
+      if (activeAdminSection === 'analytics') refreshAnalyticsDisplay();
     }
   });
   document.getElementById('v2AdminAddUser')?.addEventListener('click', () => {
@@ -2293,34 +2334,6 @@ function renderV2AdminWorkspace() {
     if (placeholderSection) placeholderSection.style.display = 'none';
     const _auditSec2 = document.getElementById('v2AdminSectionAudit');
     if (_auditSec2) _auditSec2.style.display = 'none';
-    if (overviewRow) {
-      const _allAsg   = assignments.map(normalizeAssignmentStatus);
-      const _total    = _allAsg.length;
-      const _done     = _allAsg.filter(a => a.status === 'completed').length;
-      const _rate     = _total > 0 ? Math.round((_done / _total) * 100) : 0;
-      const _drivers  = getDrivers().filter(d => d.active !== false && !d.archived).length;
-      const _vehicles = getActiveVehiclesFromStore().filter(v => !v.archived).length;
-      overviewRow.innerHTML = `
-        <div class="v2-admin-overview-cards">
-          <div class="v2-admin-overview-card">
-            <span class="v2-admin-overview-value">${_rate}%</span>
-            <span class="v2-admin-overview-label">Completion Rate</span>
-          </div>
-          <div class="v2-admin-overview-card">
-            <span class="v2-admin-overview-value">${_total}</span>
-            <span class="v2-admin-overview-label">Total Assignments</span>
-          </div>
-          <div class="v2-admin-overview-card">
-            <span class="v2-admin-overview-value">${_drivers}</span>
-            <span class="v2-admin-overview-label">Driver Aktif</span>
-          </div>
-          <div class="v2-admin-overview-card">
-            <span class="v2-admin-overview-value">${_vehicles}</span>
-            <span class="v2-admin-overview-label">Kendaraan Aktif</span>
-          </div>
-        </div>
-      `;
-    }
     renderV2AdminAnalytics();
 
   } else {
@@ -4019,15 +4032,98 @@ function renderV2AdminConfig() {
    ============================================================ */
 
 function renderV2AdminAnalytics() {
-  const container = document.getElementById('v2AdminSectionAnalytics');
-  if (!container) return;
+  // Populate driver dropdown (dynamic — from drivers-store)
+  const driverEl = document.getElementById('v2AnalyticsDriverFilter');
+  if (driverEl) {
+    const drvList = getDrivers().filter(d => d.active !== false && !d.archived);
+    driverEl.innerHTML = '<option value="">Semua Driver</option>' +
+      drvList.map(d => `<option value="${esc(d.name)}"${d.name === analyticsDriverFilter ? ' selected' : ''}>${esc(d.name)}</option>`).join('');
+  }
+  // Populate vehicle dropdown (dynamic — from vehicles-store)
+  const vehicleEl = document.getElementById('v2AnalyticsVehicleFilter');
+  if (vehicleEl) {
+    const vehList = getActiveVehiclesFromStore().filter(v => !v.archived);
+    vehicleEl.innerHTML = '<option value="">Semua Kendaraan</option>' +
+      vehList.map(v => `<option value="${esc(v.name)}"${v.name === analyticsVehicleFilter ? ' selected' : ''}>${esc(v.name)}</option>`).join('');
+  }
+  // Populate bidang dropdown (dynamic — from requests requesterName)
+  const bidangEl = document.getElementById('v2AnalyticsBidangFilter');
+  if (bidangEl) {
+    const bidangNames = [...new Set(requests.map(r => r.requesterName || '').filter(Boolean))].sort();
+    bidangEl.innerHTML = '<option value="">Semua Bidang</option>' +
+      bidangNames.map(n => `<option value="${esc(n)}"${n === analyticsBidangFilter ? ' selected' : ''}>${esc(n)}</option>`).join('');
+  }
+  // Restore date range select
+  const dateRangeEl = document.getElementById('v2AnalyticsDateRange');
+  if (dateRangeEl) dateRangeEl.value = analyticsDateRange;
 
-  // ── Assignment counts ──────────────────────────────────────────────────
-  const allAsg     = assignments.map(normalizeAssignmentStatus);
-  const total      = allAsg.length;
-  const completed  = allAsg.filter(a => a.status === 'completed').length;
-  const inProgress = allAsg.filter(a => a.status === 'started').length;
-  const scheduled  = allAsg.filter(a => a.status === 'assigned').length;
+  refreshAnalyticsDisplay();
+}
+
+function refreshAnalyticsDisplay() {
+  const overviewRow = document.getElementById('v2AdminOverviewRow');
+  const contentEl   = document.getElementById('v2AnalyticsContent');
+  if (!contentEl) return;
+
+  // ── Date cutoff ────────────────────────────────────────────────────────
+  const today = new Date().toISOString().split('T')[0];
+  let cutoff = null;
+  if (analyticsDateRange !== 'all') {
+    if (analyticsDateRange === 'today') {
+      cutoff = today; // used as exact match below
+    } else {
+      const days = analyticsDateRange === '7d' ? 7 : analyticsDateRange === '30d' ? 30 : 90;
+      const d = new Date();
+      d.setDate(d.getDate() - days + 1);
+      cutoff = d.toISOString().split('T')[0];
+    }
+  }
+
+  function _asgDate(a) { return a.date || a.startDate || ''; }
+  function _reqDate(r) { return r.startDate || (r.createdAt || '').slice(0, 10); }
+
+  // ── Filter assignments ─────────────────────────────────────────────────
+  let filteredAsg = assignments.map(normalizeAssignmentStatus);
+  if (analyticsDateRange === 'today') {
+    filteredAsg = filteredAsg.filter(a => _asgDate(a) === today);
+  } else if (cutoff) {
+    filteredAsg = filteredAsg.filter(a => _asgDate(a) >= cutoff);
+  }
+  if (analyticsDriverFilter) {
+    filteredAsg = filteredAsg.filter(a => (a.driver || '').toLowerCase() === analyticsDriverFilter.toLowerCase());
+  }
+  if (analyticsVehicleFilter) {
+    filteredAsg = filteredAsg.filter(a => (a.vehicle || '').toLowerCase() === analyticsVehicleFilter.toLowerCase());
+  }
+  if (analyticsBidangFilter) {
+    const bidangReqIds = new Set(
+      requests.filter(r => r.requesterName === analyticsBidangFilter).map(r => r.id)
+    );
+    filteredAsg = filteredAsg.filter(a => a.requestId && bidangReqIds.has(a.requestId));
+  }
+
+  // ── Filter requests ────────────────────────────────────────────────────
+  let filteredReqs = requests;
+  if (analyticsDateRange === 'today') {
+    filteredReqs = filteredReqs.filter(r => _reqDate(r) === today);
+  } else if (cutoff) {
+    filteredReqs = filteredReqs.filter(r => _reqDate(r) >= cutoff);
+  }
+  if (analyticsDriverFilter) {
+    filteredReqs = filteredReqs.filter(r => (r.driver || '').toLowerCase() === analyticsDriverFilter.toLowerCase());
+  }
+  if (analyticsVehicleFilter) {
+    filteredReqs = filteredReqs.filter(r => (r.vehicle || '').toLowerCase() === analyticsVehicleFilter.toLowerCase());
+  }
+  if (analyticsBidangFilter) {
+    filteredReqs = filteredReqs.filter(r => r.requesterName === analyticsBidangFilter);
+  }
+
+  // ── Assignment KPIs ────────────────────────────────────────────────────
+  const total      = filteredAsg.length;
+  const completed  = filteredAsg.filter(a => a.status === 'completed').length;
+  const inProgress = filteredAsg.filter(a => a.status === 'started').length;
+  const scheduled  = filteredAsg.filter(a => a.status === 'assigned').length;
   const cancelled  = Math.max(0, total - completed - inProgress - scheduled);
   const openAsg    = inProgress + scheduled;
   const compRate   = total > 0 ? Math.round((completed / total) * 100) : 0;
@@ -4038,13 +4134,14 @@ function renderV2AdminAnalytics() {
   for (const d of activeDrivers) {
     driverMap.set((d.name || '').toLowerCase(), { displayName: d.name, count: 0 });
   }
-  for (const a of allAsg) {
+  for (const a of filteredAsg) {
     const entry = driverMap.get((a.driver || '').toLowerCase());
     if (entry) entry.count++;
   }
-  const driversSorted  = [...driverMap.values()].sort((x, y) => y.count - x.count);
-  const mostActiveDrv  = driversSorted[0] ?? null;
-  const leastActiveDrv = driversSorted.length > 1 ? driversSorted[driversSorted.length - 1] : null;
+  const driversSorted    = [...driverMap.values()].sort((x, y) => y.count - x.count);
+  const driversWithTrips = driversSorted.filter(d => d.count > 0);
+  const mostActiveDrv    = driversWithTrips[0] ?? null;
+  const leastActiveDrv   = driversWithTrips.length > 1 ? driversWithTrips[driversWithTrips.length - 1] : null;
 
   // ── Vehicle utilization ────────────────────────────────────────────────
   const activeVehicles = getActiveVehiclesFromStore().filter(v => !v.archived);
@@ -4052,33 +4149,114 @@ function renderV2AdminAnalytics() {
   for (const v of activeVehicles) {
     vehicleMap.set((v.name || '').toLowerCase(), { displayName: v.name, count: 0 });
   }
-  for (const a of allAsg) {
+  for (const a of filteredAsg) {
     const entry = vehicleMap.get((a.vehicle || '').toLowerCase());
     if (entry) entry.count++;
   }
-  const vehiclesSorted = [...vehicleMap.values()].sort((x, y) => y.count - x.count);
-  const mostUsedVeh    = vehiclesSorted[0] ?? null;
-  const leastUsedVeh   = vehiclesSorted.length > 1 ? vehiclesSorted[vehiclesSorted.length - 1] : null;
+  const vehiclesSorted    = [...vehicleMap.values()].sort((x, y) => y.count - x.count);
+  const vehiclesWithTrips = vehiclesSorted.filter(v => v.count > 0);
+  const mostUsedVeh       = vehiclesWithTrips[0] ?? null;
+  const leastUsedVeh      = vehiclesWithTrips.length > 1 ? vehiclesWithTrips[vehiclesWithTrips.length - 1] : null;
 
-  // ── Bidang analytics — from requests ──────────────────────────────────
+  // ── Bidang analytics ───────────────────────────────────────────────────
   const bidangReqCounts = new Map();
   const bidangAsgCounts = new Map();
-  for (const r of requests) {
+  for (const r of filteredReqs) {
     const name = r.requesterName || '—';
     bidangReqCounts.set(name, (bidangReqCounts.get(name) || 0) + 1);
   }
-  for (const a of allAsg) {
+  for (const a of filteredAsg) {
     if (a.requestId) {
       const req = requests.find(r => r.id === a.requestId);
       if (req && req.requesterName) {
-        const name = req.requesterName;
-        bidangAsgCounts.set(name, (bidangAsgCounts.get(name) || 0) + 1);
+        bidangAsgCounts.set(req.requesterName, (bidangAsgCounts.get(req.requesterName) || 0) + 1);
       }
     }
   }
   const bidangSorted = [...bidangReqCounts.entries()]
     .map(([name, reqCount]) => ({ name, reqCount, asgCount: bidangAsgCounts.get(name) || 0 }))
     .sort((a, b) => b.reqCount - a.reqCount);
+
+  // ── Workload classification (relative — no hardcoded thresholds) ─────────
+  const _wlCounts = driversWithTrips.map(d => d.count);
+  const _wlMean   = _wlCounts.length > 0 ? _wlCounts.reduce((s, c) => s + c, 0) / _wlCounts.length : 0;
+  const _wlStdDev = (() => {
+    if (_wlCounts.length < 2) return 0;
+    const variance = _wlCounts.reduce((s, c) => s + (c - _wlMean) ** 2, 0) / _wlCounts.length;
+    return Math.sqrt(variance);
+  })();
+  const classifiedDrivers = driversSorted.map(d => {
+    if (d.count === 0)    return { ...d, wl: 'idle' };
+    if (_wlStdDev < 0.5)  return { ...d, wl: 'balanced' };
+    if (d.count > _wlMean + _wlStdDev)              return { ...d, wl: 'over' };
+    if (d.count < Math.max(1, _wlMean - _wlStdDev)) return { ...d, wl: 'under' };
+    return { ...d, wl: 'balanced' };
+  });
+  const wlBalancedCount = classifiedDrivers.filter(d => d.wl === 'balanced').length;
+  const wlOverCount     = classifiedDrivers.filter(d => d.wl === 'over').length;
+  const wlUnderCount    = classifiedDrivers.filter(d => d.wl === 'under').length;
+
+  // ── Inactive resources ─────────────────────────────────────────────────
+  const inactiveDrivers  = [...driverMap.values()].filter(d => d.count === 0)
+    .sort((a, b) => a.displayName.localeCompare(b.displayName));
+  const inactiveVehicles = [...vehicleMap.values()].filter(v => v.count === 0)
+    .sort((a, b) => a.displayName.localeCompare(b.displayName));
+
+  // ── Destination analytics ──────────────────────────────────────────────
+  const _destFreq = new Map();
+  for (const a of filteredAsg) {
+    const dest = (a.destination || '').trim();
+    if (dest) _destFreq.set(dest, (_destFreq.get(dest) || 0) + 1);
+  }
+  const destSorted  = [..._destFreq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const hasDestData = destSorted.length > 0;
+
+  // ── Enhanced bidang demand ─────────────────────────────────────────────
+  const totalBidangReqs = filteredReqs.length;
+  const bidangEnhanced  = bidangSorted.map(b => ({
+    ...b,
+    reqPct: totalBidangReqs > 0 ? Math.round((b.reqCount / totalBidangReqs) * 100) : 0,
+    asgPct: total > 0           ? Math.round((b.asgCount / total) * 100)            : 0,
+  }));
+
+  // ── Completion quality ─────────────────────────────────────────────────
+  const openRate        = total > 0 ? Math.round((openAsg / total) * 100) : 0;
+  const completionRatio = total > 0 ? `${completed} / ${total}` : '—';
+
+  // ── Overview row (filter-aware) ────────────────────────────────────────
+  if (overviewRow) {
+    overviewRow.innerHTML = `
+      <div class="v2-admin-overview-cards">
+        <div class="v2-admin-overview-card">
+          <span class="v2-admin-overview-value">${compRate}%</span>
+          <span class="v2-admin-overview-label">Completion Rate</span>
+        </div>
+        <div class="v2-admin-overview-card">
+          <span class="v2-admin-overview-value">${total}</span>
+          <span class="v2-admin-overview-label">Total Assignments</span>
+        </div>
+        <div class="v2-admin-overview-card">
+          <span class="v2-admin-overview-value">${driversWithTrips.length}</span>
+          <span class="v2-admin-overview-label">Driver Bertugas</span>
+        </div>
+        <div class="v2-admin-overview-card">
+          <span class="v2-admin-overview-value">${vehiclesWithTrips.length}</span>
+          <span class="v2-admin-overview-label">Kendaraan Digunakan</span>
+        </div>
+      </div>
+    `;
+  }
+
+  // ── Global empty state ─────────────────────────────────────────────────
+  if (total === 0 && filteredReqs.length === 0) {
+    contentEl.innerHTML = `
+      <div class="v2-analytics-empty-state">
+        <p class="v2-analytics-empty-state-msg">Tidak ada data yang sesuai dengan filter yang dipilih.</p>
+        <p class="v2-analytics-empty-state-hint">Coba ubah rentang waktu atau hapus filter entitas lainnya.</p>
+      </div>
+    `;
+    return;
+  }
 
   // ── Render helpers ─────────────────────────────────────────────────────
   function kpiRow(label, value, mod = '') {
@@ -4088,36 +4266,79 @@ function renderV2AdminAnalytics() {
     </div>`;
   }
 
-  const driverBreakdownHtml = driversSorted.length > 0
-    ? driversSorted.map(d => `
-        <div class="v2-analytics-breakdown-row">
+  function wlBadge(wl) {
+    const map = { over: ['Melebihi', 'over'], under: ['Di Bawah', 'under'], idle: ['Tidak Aktif', 'idle'] };
+    const [label, cls] = map[wl] || ['Seimbang', 'balanced'];
+    return `<span class="v2-analytics-wl-badge v2-analytics-wl-badge--${cls}">${label}</span>`;
+  }
+
+  const fmtDrv = d => d ? `${d.displayName} (${d.count} asg)` : '—';
+  const fmtVeh = v => v ? `${v.displayName} (${v.count} asg)` : '—';
+
+  // Module 1 — Driver Workload Distribution breakdown
+  const activeDriversInPeriod = classifiedDrivers.filter(d => d.count > 0);
+  const driverWlHtml = activeDriversInPeriod.length > 0
+    ? activeDriversInPeriod.map(d => {
+        const pct = total > 0 ? Math.round((d.count / total) * 100) : 0;
+        return `<div class="v2-analytics-breakdown-row">
           <span class="v2-analytics-breakdown-name">${esc(d.displayName)}</span>
-          <span class="v2-analytics-breakdown-count">${d.count} trip</span>
-        </div>`).join('')
-    : '<p class="v2-analytics-empty">Belum ada data driver aktif.</p>';
+          <span class="v2-analytics-breakdown-count">${d.count} asg</span>
+          <span class="v2-analytics-breakdown-pct">${pct}%</span>
+          ${wlBadge(d.wl)}
+        </div>`;
+      }).join('')
+    : `<p class="v2-analytics-empty">Tidak ada penugasan dalam periode ini.</p>`;
 
-  const vehicleBreakdownHtml = vehiclesSorted.length > 0
-    ? vehiclesSorted.map(v => `
-        <div class="v2-analytics-breakdown-row">
+  // Module 2 — Vehicle Utilization breakdown
+  const vehicleWlHtml = vehiclesWithTrips.length > 0
+    ? vehiclesWithTrips.map(v => {
+        const pct = total > 0 ? Math.round((v.count / total) * 100) : 0;
+        return `<div class="v2-analytics-breakdown-row">
           <span class="v2-analytics-breakdown-name">${esc(v.displayName)}</span>
-          <span class="v2-analytics-breakdown-count">${v.count} trip</span>
-        </div>`).join('')
-    : '<p class="v2-analytics-empty">Belum ada data kendaraan aktif.</p>';
+          <span class="v2-analytics-breakdown-count">${v.count} asg</span>
+          <span class="v2-analytics-breakdown-pct">${pct}%</span>
+        </div>`;
+      }).join('')
+    : `<p class="v2-analytics-empty">Tidak ada penggunaan kendaraan dalam periode ini.</p>`;
 
-  const bidangRowsHtml = bidangSorted.length > 0
-    ? bidangSorted.map((b, i) => `
+  // Module 3 — Inactive Resources
+  const inactiveDrvHtml = inactiveDrivers.length > 0
+    ? inactiveDrivers.map(d => `<div class="v2-analytics-breakdown-row">
+        <span class="v2-analytics-breakdown-name">${esc(d.displayName)}</span>
+        <span class="v2-analytics-breakdown-count">0 asg</span>
+      </div>`).join('')
+    : `<p class="v2-analytics-empty">Semua driver aktif memiliki penugasan dalam periode ini.</p>`;
+
+  const inactiveVehHtml = inactiveVehicles.length > 0
+    ? inactiveVehicles.map(v => `<div class="v2-analytics-breakdown-row">
+        <span class="v2-analytics-breakdown-name">${esc(v.displayName)}</span>
+        <span class="v2-analytics-breakdown-count">0 asg</span>
+      </div>`).join('')
+    : `<p class="v2-analytics-empty">Semua kendaraan aktif digunakan dalam periode ini.</p>`;
+
+  // Module 4 — Destination Analytics
+  const destBreakdownHtml = destSorted.map(([dest, freq], i) =>
+    `<div class="v2-analytics-breakdown-row">
+      <span class="v2-analytics-breakdown-rank">${i + 1}</span>
+      <span class="v2-analytics-breakdown-name">${esc(dest)}</span>
+      <span class="v2-analytics-breakdown-count">${freq}x</span>
+    </div>`).join('');
+
+  // Module 5 — Bidang Demand Analysis
+  const mostActiveBidang  = bidangEnhanced[0] ?? null;
+  const leastActiveBidang = bidangEnhanced.length > 1 ? bidangEnhanced[bidangEnhanced.length - 1] : null;
+  const bidangDemandHtml = bidangEnhanced.length > 0
+    ? bidangEnhanced.map((b, i) => `
         <div class="v2-analytics-breakdown-row">
           <span class="v2-analytics-breakdown-rank">${i + 1}</span>
           <span class="v2-analytics-breakdown-name">${esc(b.name)}</span>
           <span class="v2-analytics-breakdown-count">${b.reqCount} req</span>
+          <span class="v2-analytics-breakdown-pct">${b.reqPct}%</span>
           <span class="v2-analytics-breakdown-count">${b.asgCount} asg</span>
         </div>`).join('')
-    : '<p class="v2-analytics-empty">Belum ada data request.</p>';
+    : `<p class="v2-analytics-empty">Tidak ada data request dalam periode ini.</p>`;
 
-  const fmtDrv = d => d ? `${esc(d.displayName)} (${d.count} trip)` : '—';
-  const fmtVeh = v => v ? `${esc(v.displayName)} (${v.count} trip)` : '—';
-
-  container.innerHTML = `
+  contentEl.innerHTML = `
     <div class="v2-analytics-groups">
 
       <!-- 1. Assignment Analytics -->
@@ -4128,20 +4349,33 @@ function renderV2AdminAnalytics() {
           ${kpiRow('Selesai', completed, 'ok')}
           ${kpiRow('Berlangsung', inProgress, 'info')}
           ${kpiRow('Dijadwalkan', scheduled)}
-          ${kpiRow('Dibatalkan', cancelled)}
+          ${kpiRow('Dibatalkan / Lainnya', cancelled)}
         </div>
       </div>
 
-      <!-- 2. Driver Utilization -->
+      <!-- 2. Driver Workload Distribution -->
       <div class="v2-admin-config-group">
-        <h3 class="v2-admin-config-group-title">Driver Utilization</h3>
+        <h3 class="v2-admin-config-group-title">Driver Workload Distribution</h3>
         <div class="v2-analytics-kpi-list">
-          ${kpiRow('Total Driver Aktif', activeDrivers.length)}
+          ${kpiRow('Driver Aktif Bertugas', activeDriversInPeriod.length)}
+          ${kpiRow('Driver Tidak Bertugas', inactiveDrivers.length)}
           ${kpiRow('Driver Paling Aktif', fmtDrv(mostActiveDrv))}
           ${kpiRow('Driver Paling Jarang', fmtDrv(leastActiveDrv))}
+          ${kpiRow('Seimbang', `${wlBalancedCount} driver`)}
+          ${kpiRow('Melebihi Rata-rata', `${wlOverCount} driver`, wlOverCount > 0 ? 'warn' : '')}
+          ${kpiRow('Di Bawah Rata-rata', `${wlUnderCount} driver`)}
         </div>
-        <div class="v2-analytics-subtitle">Penugasan Per Driver</div>
-        <div class="v2-analytics-breakdown">${driverBreakdownHtml}</div>
+        <div class="v2-analytics-subtitle">Distribusi Penugasan Per Driver</div>
+        <div class="v2-analytics-breakdown">
+          ${activeDriversInPeriod.length > 0 ? `
+          <div class="v2-analytics-breakdown-row v2-analytics-breakdown-row--header">
+            <span class="v2-analytics-breakdown-name">Driver</span>
+            <span class="v2-analytics-breakdown-count">Asg</span>
+            <span class="v2-analytics-breakdown-pct">%</span>
+            <span class="v2-analytics-breakdown-wl"></span>
+          </div>` : ''}
+          ${driverWlHtml}
+        </div>
       </div>
 
       <!-- 3. Vehicle Utilization -->
@@ -4152,30 +4386,74 @@ function renderV2AdminAnalytics() {
           ${kpiRow('Kendaraan Terbanyak', fmtVeh(mostUsedVeh))}
           ${kpiRow('Kendaraan Paling Jarang', fmtVeh(leastUsedVeh))}
         </div>
-        <div class="v2-analytics-subtitle">Penggunaan Per Kendaraan</div>
-        <div class="v2-analytics-breakdown">${vehicleBreakdownHtml}</div>
-      </div>
-
-      <!-- 4. Bidang Analytics -->
-      <div class="v2-admin-config-group">
-        <h3 class="v2-admin-config-group-title">Bidang Analytics</h3>
+        <div class="v2-analytics-subtitle">Utilisasi Per Kendaraan</div>
         <div class="v2-analytics-breakdown">
-          ${bidangSorted.length > 0 ? `
+          ${vehiclesWithTrips.length > 0 ? `
           <div class="v2-analytics-breakdown-row v2-analytics-breakdown-row--header">
-            <span class="v2-analytics-breakdown-rank"></span>
-            <span class="v2-analytics-breakdown-name">Bidang</span>
-            <span class="v2-analytics-breakdown-count">Request</span>
+            <span class="v2-analytics-breakdown-name">Kendaraan</span>
             <span class="v2-analytics-breakdown-count">Asg</span>
+            <span class="v2-analytics-breakdown-pct">%</span>
           </div>` : ''}
-          ${bidangRowsHtml}
+          ${vehicleWlHtml}
         </div>
       </div>
 
-      <!-- 5. Completion Analytics -->
+      <!-- 4. Inactive Resources -->
       <div class="v2-admin-config-group">
-        <h3 class="v2-admin-config-group-title">Completion Analytics</h3>
+        <h3 class="v2-admin-config-group-title">Inactive Resources</h3>
+        <div class="v2-analytics-subtitle">Driver Tanpa Penugasan</div>
+        <div class="v2-analytics-breakdown">${inactiveDrvHtml}</div>
+        <div class="v2-analytics-subtitle v2-analytics-subtitle--mt">Kendaraan Tanpa Penggunaan</div>
+        <div class="v2-analytics-breakdown">${inactiveVehHtml}</div>
+      </div>
+
+      ${hasDestData ? `
+      <!-- 5. Destination Analytics -->
+      <div class="v2-admin-config-group">
+        <h3 class="v2-admin-config-group-title">Destination Analytics</h3>
+        <div class="v2-analytics-kpi-list">
+          ${kpiRow('Total Tujuan Unik', _destFreq.size)}
+          ${destSorted[0] ? kpiRow('Tujuan Paling Sering', `${destSorted[0][0]} (${destSorted[0][1]}x)`) : ''}
+        </div>
+        <div class="v2-analytics-subtitle">Top ${Math.min(10, destSorted.length)} Tujuan</div>
+        <div class="v2-analytics-breakdown">
+          <div class="v2-analytics-breakdown-row v2-analytics-breakdown-row--header">
+            <span class="v2-analytics-breakdown-rank"></span>
+            <span class="v2-analytics-breakdown-name">Tujuan</span>
+            <span class="v2-analytics-breakdown-count">Frekuensi</span>
+          </div>
+          ${destBreakdownHtml}
+        </div>
+      </div>` : ''}
+
+      <!-- 6. Bidang Demand Analysis -->
+      <div class="v2-admin-config-group">
+        <h3 class="v2-admin-config-group-title">Bidang Demand Analysis</h3>
+        <div class="v2-analytics-kpi-list">
+          ${kpiRow('Total Bidang', bidangEnhanced.length)}
+          ${mostActiveBidang  ? kpiRow('Bidang Paling Aktif',  `${mostActiveBidang.name} (${mostActiveBidang.reqCount} req, ${mostActiveBidang.reqPct}%)`) : ''}
+          ${leastActiveBidang ? kpiRow('Bidang Paling Jarang', `${leastActiveBidang.name} (${leastActiveBidang.reqCount} req)`) : ''}
+        </div>
+        <div class="v2-analytics-breakdown">
+          ${bidangEnhanced.length > 0 ? `
+          <div class="v2-analytics-breakdown-row v2-analytics-breakdown-row--header">
+            <span class="v2-analytics-breakdown-rank"></span>
+            <span class="v2-analytics-breakdown-name">Bidang</span>
+            <span class="v2-analytics-breakdown-count">Req</span>
+            <span class="v2-analytics-breakdown-pct">%</span>
+            <span class="v2-analytics-breakdown-count">Asg</span>
+          </div>` : ''}
+          ${bidangDemandHtml}
+        </div>
+      </div>
+
+      <!-- 7. Completion Quality -->
+      <div class="v2-admin-config-group">
+        <h3 class="v2-admin-config-group-title">Completion Quality</h3>
         <div class="v2-analytics-kpi-list">
           ${kpiRow('Completion Rate', `${compRate}%`, compRate >= 80 ? 'ok' : compRate >= 50 ? 'warn' : '')}
+          ${kpiRow('Open Assignment Rate', `${openRate}%`, openRate > 50 ? 'warn' : openRate === 0 && total > 0 ? 'ok' : '')}
+          ${kpiRow('Selesai vs Total', completionRatio)}
           ${kpiRow('Open Assignments', openAsg)}
           ${kpiRow('Completed Assignments', completed, 'ok')}
         </div>
