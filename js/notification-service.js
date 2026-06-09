@@ -14,6 +14,7 @@
 'use strict';
 
 import { sendNotification } from './telegram.js';
+import { getSetting }        from './settings-store.js';
 
 /* ── Date helpers ── */
 function formatTanggal(dateStr) {
@@ -537,7 +538,7 @@ export async function checkAndSendH1Reminders(assignments, requests, getUserByUs
 
 /**
  * Send ~2-hour-ahead reminders for assignments starting today.
- * Checks assignments where startTime is 110-135 minutes from now.
+ * Checks assignments where startTime is within the configured h2 reminder window.
  * Notifies both the requester (bidang) and the driver.
  * Deduplicates via localStorage; safe to call every 5 minutes.
  *
@@ -553,7 +554,7 @@ export async function checkAndSendHoursReminders(assignments, requests, getUserB
 
   const pending = assignments.filter(a => {
     const mins = minutesUntilStart(a);
-    return mins !== null && mins >= 110 && mins <= 135 && !isReminderSent(state, `${a.id}:h2`);
+    return mins !== null && mins >= getSetting('notifications.h2WindowMinFrom') && mins <= getSetting('notifications.h2WindowMinTo') && !isReminderSent(state, `${a.id}:h2`);
   });
 
   if (pending.length === 0) return;

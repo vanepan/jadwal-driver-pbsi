@@ -10,6 +10,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
 import { getDatabase, onValue, ref, set, get, update, remove, runTransaction } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 import { showToast } from './utils.js';
+import { getSetting } from './settings-store.js';
 
 /* ── Firebase Configuration ── */
 const firebaseConfig = {
@@ -362,7 +363,6 @@ async function _logSafetyAnomalyToFirebase(localCount, remoteCount, reason) {
   }
 }
 
-const BACKUP_RETENTION_DAYS = 30; // hapus backup lebih lama dari ini
 
 /**
  * Buat backup harian assignments ke /backups/assignments/TIMESTAMP.
@@ -391,14 +391,14 @@ async function _backupAssignmentsOnce(rawData) {
 }
 
 /**
- * Hapus backup yang lebih lama dari BACKUP_RETENTION_DAYS.
+ * Hapus backup yang lebih lama dari settings system.backupRetentionDays.
  * Non-blocking. Format key: YYYY-MM-DD-HHmmss
  */
 async function _pruneOldBackups() {
   if (!firebaseDb) return;
   try {
     const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - BACKUP_RETENTION_DAYS);
+    cutoff.setDate(cutoff.getDate() - getSetting('system.backupRetentionDays'));
     // Format cutoff sebagai "YYYY-MM-DD" untuk perbandingan prefix
     const cutoffPrefix = cutoff.toISOString().slice(0, 10);
 
@@ -415,7 +415,7 @@ async function _pruneOldBackups() {
 
     for (const key of toDelete) {
       await remove(ref(firebaseDb, `backups/assignments/${key}`));
-      console.info(`[BACKUP] Dihapus (>${BACKUP_RETENTION_DAYS} hari): ${key}`);
+      console.info(`[BACKUP] Dihapus (>${getSetting('system.backupRetentionDays')} hari): ${key}`);
     }
 
     if (toDelete.length > 0) {

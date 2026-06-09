@@ -4820,6 +4820,13 @@ body.v2-shell-active #driverDashboard .dash-empty {
   color: var(--muted);
 }
 
+.v2-admin-overview-desc {
+  font-size: 11px;
+  color: var(--faint);
+  margin: 0;
+  line-height: 1.3;
+}
+
 .v2-admin-overview-value {
   font-size: 42px;
   font-weight: 700;
@@ -8479,4 +8486,213 @@ span.flatpickr-weekday {
   .v2-audit-human-label     { flex: 0 0 110px; font-size: 12px; }
   .v2-audit-change-label    { flex: 0 0 110px; font-size: 12px; }
   .v2-audit-detail-box      { max-width: 100%; }
+}
+
+/* ================================================================
+   V1.7.1 — Configuration Center
+   ================================================================ */
+
+.v2-admin-config-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
+}
+
+.v2-admin-config-group {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.v2-admin-config-group-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.v2-admin-config-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.v2-admin-config-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.v2-admin-config-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.v2-admin-config-input {
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  padding: 9px 11px;
+  font-size: 13px;
+  color: var(--text);
+  font-family: inherit;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color .12s, box-shadow .12s;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+input[type="time"].v2-admin-config-input {
+  min-height: 38px;
+}
+
+.v2-admin-config-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(168, 41, 47, 0.12);
+}
+
+.v2-admin-config-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.v2-admin-config-input-row .v2-admin-config-input {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+
+.v2-admin-config-unit {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.v2-admin-config-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+/* Token display */
+.v2-admin-config-token-display {
+  font-size: 13px;
+  font-family: 'SF Mono', 'Fira Code', ui-monospace, monospace;
+  color: var(--text);
+  background: var(--hover);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 9px 12px;
+  letter-spacing: 0.04em;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  word-break: break-all;
+}
+
+.v2-admin-config-token-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.v2-admin-config-ghost-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background .12s, border-color .12s;
+  outline: none;
+}
+
+.v2-admin-config-ghost-btn:hover {
+  background: var(--hover);
+  border-color: var(--border-strong);
+}
+
+.v2-admin-config-ghost-btn:focus-visible {
+  box-shadow: 0 0 0 3px rgba(168, 41, 47, 0.18);
+}
+
+.v2-admin-config-ghost-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Mobile: stack to single column */
+@media (max-width: 720px) {
+  .v2-admin-config-groups {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Dark mode overrides */
+@media (prefers-color-scheme: dark) {
+  .v2-admin-config-input:focus {
+    box-shadow: 0 0 0 3px rgba(184, 69, 74, 0.2);
+  }
+  .v2-admin-config-ghost-btn:focus-visible {
+    box-shadow: 0 0 0 3px rgba(184, 69, 74, 0.25);
+  }
+}
+
+[data-theme="dark"] .v2-admin-config-input:focus {
+  box-shadow: 0 0 0 3px rgba(184, 69, 74, 0.2);
+}
+[data-theme="dark"] .v2-admin-config-ghost-btn:focus-visible {
+  box-shadow: 0 0 0 3px rgba(184, 69, 74, 0.25);
+}
+
+/* ── v1.7.1.1 UX additions ─────────────────────────────────────── */
+
+.v2-admin-config-hint {
+  font-size: 11px;
+  color: var(--faint);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.v2-admin-config-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+  padding: 8px 0;
+}
+
+.v2-admin-config-status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--faint);
+  flex-shrink: 0;
+}
+
+.v2-admin-config-status-dot--online {
+  background: #22a84a;
 }

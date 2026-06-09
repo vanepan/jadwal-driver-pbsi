@@ -40,6 +40,7 @@ import {
   restoreVehicle,
   deleteVehicle,
 } from './vehicles-store.js';
+import { initSettingsStore, getSetting, updateSetting } from './settings-store.js';
 import { initPbsiSelect } from './pbsi-select.js';
 import { initPbsiDatepicker, syncPbsiDatepicker } from './pbsi-datepicker.js';
 import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate } from './timeline.js';
@@ -123,8 +124,7 @@ const ADMIN_SECTION_DEFS = [
   { key: 'drivers', label: 'Manajemen Driver', subtitle: 'Kelola registrasi, status, dan data identitas driver.' },
   { key: 'vehicles', label: 'Manajemen Kendaraan', subtitle: 'Kelola registrasi, status, dan data armada kendaraan operasional.' },
   { key: 'audit', label: 'Audit Center', subtitle: 'Telusuri dan verifikasi aktivitas sistem dan catatan operasional.' },
-  { key: 'config', label: 'Konfigurasi', subtitle: 'Rencanakan konfigurasi sistem dan integrasi operasional.',
-    features: ['Pengaturan Sistem', 'Telegram Integration', 'Feature Flags', 'Operational Settings', 'Application Metadata'] },
+  { key: 'config', label: 'Konfigurasi', subtitle: 'Atur parameter operasional, notifikasi, sistem, dan integrasi Telegram.' },
 ];
 
 /**
@@ -1411,7 +1411,11 @@ function initV2TimelineContainer() {
 
   const tlSub = document.createElement('span');
   tlSub.className = 'v2-tl-sub';
-  tlSub.textContent = '16 jam • 06:00–21:00';
+  const _wStart = getSetting('operations.workStartMins');
+  const _wEnd   = getSetting('operations.workEndMins');
+  const _wHours = Math.round((_wEnd - _wStart) / 60);
+  const _fmt = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  tlSub.textContent = `${_wHours} jam • ${_fmt(_wStart)}–${_fmt(_wEnd)}`;
   tlSub.setAttribute('aria-hidden', 'true');
 
   tlLeft.appendChild(tlTitle);
@@ -1848,6 +1852,7 @@ function initV2AdministrationWorkspace() {
           </div>
           <div id="v2AuditList" class="v2-audit-list"></div>
         </div>
+        <div id="v2AdminSectionConfig" style="display:none;"></div>
         <div id="v2AdminSectionPlaceholder" style="display:none;"></div>
       </div>
     </div>
@@ -2047,6 +2052,7 @@ function renderV2AdminWorkspace() {
   const usersSection    = document.getElementById('v2AdminSectionUsers');
   const driversSection  = document.getElementById('v2AdminSectionDrivers');
   const vehiclesSection = document.getElementById('v2AdminSectionVehicles');
+  const configSection   = document.getElementById('v2AdminSectionConfig');
   const placeholderSection = document.getElementById('v2AdminSectionPlaceholder');
   const overviewRow     = document.getElementById('v2AdminOverviewRow');
 
@@ -2061,6 +2067,7 @@ function renderV2AdminWorkspace() {
     if (usersSection)    usersSection.style.display    = '';
     if (driversSection)  driversSection.style.display  = 'none';
     if (vehiclesSection) vehiclesSection.style.display = 'none';
+    if (configSection)   configSection.style.display   = 'none';
     if (placeholderSection) placeholderSection.style.display = 'none';
     if (overviewRow) {
       const allUsers = getUserList();
@@ -2097,6 +2104,7 @@ function renderV2AdminWorkspace() {
     if (usersSection)    usersSection.style.display    = 'none';
     if (driversSection)  driversSection.style.display  = '';
     if (vehiclesSection) vehiclesSection.style.display = 'none';
+    if (configSection)   configSection.style.display   = 'none';
     if (placeholderSection) placeholderSection.style.display = 'none';
     if (overviewRow) {
       const allDrivers = getDrivers();
@@ -2135,6 +2143,7 @@ function renderV2AdminWorkspace() {
     if (usersSection)    usersSection.style.display    = 'none';
     if (driversSection)  driversSection.style.display  = 'none';
     if (vehiclesSection) vehiclesSection.style.display = '';
+    if (configSection)   configSection.style.display   = 'none';
     if (placeholderSection) placeholderSection.style.display = 'none';
     if (overviewRow) {
       const allVehicles   = getVehicles();
@@ -2173,6 +2182,7 @@ function renderV2AdminWorkspace() {
     if (usersSection)    usersSection.style.display    = 'none';
     if (driversSection)  driversSection.style.display  = 'none';
     if (vehiclesSection) vehiclesSection.style.display = 'none';
+    if (configSection)   configSection.style.display   = 'none';
     if (placeholderSection) placeholderSection.style.display = 'none';
     const auditSection = document.getElementById('v2AdminSectionAudit');
     if (auditSection) auditSection.style.display = '';
@@ -2221,10 +2231,50 @@ function renderV2AdminWorkspace() {
     if (auditDateEl) auditDateEl.value = auditDateFilter;
     renderAuditCenter();
 
+  } else if (activeAdminSection === 'config') {
+    if (usersSection)    usersSection.style.display    = 'none';
+    if (driversSection)  driversSection.style.display  = 'none';
+    if (vehiclesSection) vehiclesSection.style.display = 'none';
+    if (placeholderSection) placeholderSection.style.display = 'none';
+    const auditSection = document.getElementById('v2AdminSectionAudit');
+    if (auditSection) auditSection.style.display = 'none';
+    if (configSection) configSection.style.display = '';
+    if (overviewRow) {
+      const telegramToken = getSetting('telegram.botToken');
+      const _tStart = _cfgMinsToTime(getSetting('operations.workStartMins'));
+      const _tEnd   = _cfgMinsToTime(getSetting('operations.workEndMins'));
+      overviewRow.innerHTML = `
+        <div class="v2-admin-overview-cards">
+          <div class="v2-admin-overview-card">
+            <span class="v2-admin-overview-value">${esc(_tStart)} – ${esc(_tEnd)}</span>
+            <span class="v2-admin-overview-label">Jam Operasional</span>
+            <span class="v2-admin-overview-desc">Operasional harian aktif</span>
+          </div>
+          <div class="v2-admin-overview-card">
+            <span class="v2-admin-overview-value">${Number(getSetting('operations.odometerWarnJumpKm')).toLocaleString('id')} km</span>
+            <span class="v2-admin-overview-label">Batas Odometer</span>
+            <span class="v2-admin-overview-desc">Deteksi lonjakan jarak</span>
+          </div>
+          <div class="v2-admin-overview-card">
+            <span class="v2-admin-overview-value">${getSetting('system.backupRetentionDays')} Hari</span>
+            <span class="v2-admin-overview-label">Retensi Backup</span>
+            <span class="v2-admin-overview-desc">Penyimpanan cadangan</span>
+          </div>
+          <div class="v2-admin-overview-card">
+            <span class="v2-admin-overview-value">${telegramToken ? 'Terhubung' : 'Belum Diatur'}</span>
+            <span class="v2-admin-overview-label">Telegram</span>
+            <span class="v2-admin-overview-desc">${telegramToken ? 'Bot aktif dan tersedia' : 'Bot belum terhubung'}</span>
+          </div>
+        </div>
+      `;
+    }
+    renderV2AdminConfig();
+
   } else {
     if (usersSection)    usersSection.style.display    = 'none';
     if (driversSection)  driversSection.style.display  = 'none';
     if (vehiclesSection) vehiclesSection.style.display = 'none';
+    if (configSection)   configSection.style.display   = 'none';
     const auditSection = document.getElementById('v2AdminSectionAudit');
     if (auditSection) auditSection.style.display = 'none';
     if (overviewRow) overviewRow.innerHTML = '';
@@ -3102,6 +3152,7 @@ const AUDIT_ACTION_LABELS = {
   request_approved:     'Request Disetujui',
   request_rejected:     'Request Ditolak',
   request_updated:      'Request Diperbarui',
+  settings_updated:     'Konfigurasi Diperbarui',
 };
 
 function inferAuditCategory(log) {
@@ -3388,6 +3439,20 @@ function buildAuditHumanDetails(log) {
       f('Status Request', 'Ditolak oleh Admin');
       break;
 
+    case 'settings_updated': {
+      const _groupLabels = {
+        operations:    'Pengaturan Operasional',
+        notifications: 'Pengaturan Notifikasi',
+        system:        'Pengaturan Sistem',
+        telegram:      'Pengaturan Telegram',
+      };
+      f('Konfigurasi', _groupLabels[meta.group] || meta.group || log.targetId || 'Sistem', true);
+      if (Array.isArray(meta.changes)) {
+        meta.changes.forEach(c => chg(c.field, c.from, c.to));
+      }
+      break;
+    }
+
     default:
       // For unknown actions, extract any obvious name fields from metadata
       if (meta.name) f('Nama', meta.name, true);
@@ -3508,6 +3573,391 @@ function openAuditDetailModal(log) {
 function closeAuditDetailModal() {
   const modal = document.getElementById('modalAuditDetail');
   if (modal) modal.style.display = 'none';
+}
+
+/* ============================================================
+   V1.7.1 — Configuration Center
+   ============================================================ */
+
+function _cfgMinsToTime(mins) {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function _cfgTimeToMins(timeStr) {
+  const [h, m] = String(timeStr || '00:00').split(':').map(Number);
+  return ((h || 0) * 60) + (m || 0);
+}
+
+function _cfgMaskToken(token) {
+  if (!token) return '—';
+  if (token.length <= 10) return '****';
+  return token.slice(0, 6) + '****' + token.slice(-4);
+}
+
+function renderV2AdminConfig() {
+  const container = document.getElementById('v2AdminSectionConfig');
+  if (!container) return;
+
+  container.innerHTML = `
+    <div class="v2-admin-config-groups">
+
+      <div class="v2-admin-config-group">
+        <h3 class="v2-admin-config-group-title">Pengaturan Operasional</h3>
+        <div class="v2-admin-config-fields">
+          <div class="v2-admin-config-field">
+            <label class="v2-admin-config-label" for="cfgWorkStart">Jam Mulai Operasi</label>
+            <input type="time" id="cfgWorkStart" class="v2-admin-config-input">
+            <p class="v2-admin-config-hint">Digunakan untuk menentukan rentang operasional timeline.</p>
+          </div>
+          <div class="v2-admin-config-field">
+            <label class="v2-admin-config-label" for="cfgWorkEnd">Jam Selesai Operasi</label>
+            <input type="time" id="cfgWorkEnd" class="v2-admin-config-input">
+            <p class="v2-admin-config-hint">Digunakan untuk menghitung durasi operasional harian.</p>
+          </div>
+          <div class="v2-admin-config-field">
+            <label class="v2-admin-config-label" for="cfgOdometerWarn">Batas Lompatan Odometer</label>
+            <div class="v2-admin-config-input-row">
+              <input type="number" id="cfgOdometerWarn" class="v2-admin-config-input" min="1" step="1">
+              <span class="v2-admin-config-unit">km</span>
+            </div>
+            <p class="v2-admin-config-hint">Perubahan di atas nilai ini akan ditandai sebagai anomali.</p>
+          </div>
+        </div>
+        <div class="v2-admin-config-footer">
+          <button id="cfgResetOps" class="v2-admin-config-ghost-btn" type="button">Reset</button>
+          <button id="cfgSaveOps"  class="v2-admin-add-btn" type="button">Simpan</button>
+        </div>
+      </div>
+
+      <div class="v2-admin-config-group">
+        <h3 class="v2-admin-config-group-title">Pengaturan Notifikasi</h3>
+        <div class="v2-admin-config-fields">
+          <div class="v2-admin-config-field">
+            <label class="v2-admin-config-label" for="cfgH2From">H-2 Window Mulai</label>
+            <div class="v2-admin-config-input-row">
+              <input type="number" id="cfgH2From" class="v2-admin-config-input" min="1" step="1">
+              <span class="v2-admin-config-unit">menit</span>
+            </div>
+            <p class="v2-admin-config-hint">Batas awal pengiriman pengingat H-2.</p>
+          </div>
+          <div class="v2-admin-config-field">
+            <label class="v2-admin-config-label" for="cfgH2To">H-2 Window Selesai</label>
+            <div class="v2-admin-config-input-row">
+              <input type="number" id="cfgH2To" class="v2-admin-config-input" min="1" step="1">
+              <span class="v2-admin-config-unit">menit</span>
+            </div>
+            <p class="v2-admin-config-hint">Batas akhir pengiriman pengingat H-2.</p>
+          </div>
+          <div class="v2-admin-config-field">
+            <label class="v2-admin-config-label" for="cfgH1Interval">Interval Pengingat H-1</label>
+            <div class="v2-admin-config-input-row">
+              <input type="number" id="cfgH1Interval" class="v2-admin-config-input" min="1" step="1">
+              <span class="v2-admin-config-unit">menit</span>
+            </div>
+            <p class="v2-admin-config-hint">Frekuensi pengecekan reminder H-1.</p>
+          </div>
+          <div class="v2-admin-config-field">
+            <label class="v2-admin-config-label" for="cfgH2Interval">Interval Pengingat H-2</label>
+            <div class="v2-admin-config-input-row">
+              <input type="number" id="cfgH2Interval" class="v2-admin-config-input" min="1" step="1">
+              <span class="v2-admin-config-unit">menit</span>
+            </div>
+            <p class="v2-admin-config-hint">Frekuensi pengecekan reminder H-2.</p>
+          </div>
+        </div>
+        <div class="v2-admin-config-footer">
+          <button id="cfgResetNotif" class="v2-admin-config-ghost-btn" type="button">Reset</button>
+          <button id="cfgSaveNotif"  class="v2-admin-add-btn" type="button">Simpan</button>
+        </div>
+      </div>
+
+      <div class="v2-admin-config-group">
+        <h3 class="v2-admin-config-group-title">Pengaturan Sistem</h3>
+        <div class="v2-admin-config-fields">
+          <div class="v2-admin-config-field">
+            <label class="v2-admin-config-label" for="cfgBackupDays">Retensi Backup</label>
+            <div class="v2-admin-config-input-row">
+              <input type="number" id="cfgBackupDays" class="v2-admin-config-input" min="1" step="1">
+              <span class="v2-admin-config-unit">hari</span>
+            </div>
+            <p class="v2-admin-config-hint">Jumlah hari data backup dipertahankan.</p>
+          </div>
+        </div>
+        <div class="v2-admin-config-footer">
+          <button id="cfgResetSystem" class="v2-admin-config-ghost-btn" type="button">Reset</button>
+          <button id="cfgSaveSystem"  class="v2-admin-add-btn" type="button">Simpan</button>
+        </div>
+      </div>
+
+      <div class="v2-admin-config-group">
+        <h3 class="v2-admin-config-group-title">Pengaturan Telegram</h3>
+        <div class="v2-admin-config-fields">
+          <div class="v2-admin-config-field">
+            <label class="v2-admin-config-label">Status Telegram</label>
+            <div class="v2-admin-config-status" id="cfgTelegramStatus"></div>
+          </div>
+          <div class="v2-admin-config-field">
+            <label class="v2-admin-config-label">Bot Token</label>
+            <div class="v2-admin-config-token-display" id="cfgTokenDisplay"></div>
+            <div class="v2-admin-config-token-actions">
+              <button id="cfgTokenToggle" class="v2-admin-config-ghost-btn" type="button">Tampilkan</button>
+              <button id="cfgTokenEdit"   class="v2-admin-config-ghost-btn" type="button">Perbarui Token</button>
+            </div>
+          </div>
+          <div class="v2-admin-config-field" id="cfgTokenEditField" style="display:none;">
+            <label class="v2-admin-config-label" for="cfgTokenInput">Token Baru</label>
+            <input type="text" id="cfgTokenInput" class="v2-admin-config-input"
+                   placeholder="Masukkan bot token baru…" autocomplete="off" spellcheck="false">
+          </div>
+        </div>
+        <div class="v2-admin-config-footer">
+          <button id="cfgResetTelegram" class="v2-admin-config-ghost-btn" type="button" style="display:none;">Batal</button>
+          <button id="cfgSaveTelegram"  class="v2-admin-add-btn" type="button" style="display:none;">Simpan Token</button>
+        </div>
+      </div>
+
+    </div>
+  `;
+
+  // ── Set field values (programmatic — no user-controlled data in innerHTML) ──
+  document.getElementById('cfgWorkStart').value    = _cfgMinsToTime(getSetting('operations.workStartMins'));
+  document.getElementById('cfgWorkEnd').value      = _cfgMinsToTime(getSetting('operations.workEndMins'));
+  document.getElementById('cfgOdometerWarn').value = getSetting('operations.odometerWarnJumpKm');
+  document.getElementById('cfgH2From').value       = getSetting('notifications.h2WindowMinFrom');
+  document.getElementById('cfgH2To').value         = getSetting('notifications.h2WindowMinTo');
+  document.getElementById('cfgH1Interval').value   = Math.round(getSetting('notifications.h1ReminderCheckIntervalMs') / 60000);
+  document.getElementById('cfgH2Interval').value   = Math.round(getSetting('notifications.h2ReminderCheckIntervalMs') / 60000);
+  document.getElementById('cfgBackupDays').value   = getSetting('system.backupRetentionDays');
+
+  // ── Telegram status block ─────────────────────────────────────
+  const telegramStatusEl = document.getElementById('cfgTelegramStatus');
+  const _setTelegramStatus = () => {
+    const tok = getSetting('telegram.botToken') || '';
+    telegramStatusEl.textContent = '';
+    const dot = document.createElement('span');
+    dot.className = `v2-admin-config-status-dot${tok ? ' v2-admin-config-status-dot--online' : ''}`;
+    dot.setAttribute('aria-hidden', 'true');
+    telegramStatusEl.appendChild(dot);
+    telegramStatusEl.append(tok ? ' Terhubung' : ' Tidak terhubung');
+  };
+  _setTelegramStatus();
+
+  // ── Token display: masked by default ─────────────────────────
+  let _tokenVisible = false;
+  const tokenDisplay   = document.getElementById('cfgTokenDisplay');
+  const tokenToggleBtn = document.getElementById('cfgTokenToggle');
+  const _refreshTokenDisplay = () => {
+    const tok = getSetting('telegram.botToken') || '';
+    tokenDisplay.textContent   = _tokenVisible ? (tok || '—') : _cfgMaskToken(tok);
+    tokenToggleBtn.textContent = _tokenVisible ? 'Sembunyikan' : 'Tampilkan';
+    tokenToggleBtn.disabled    = !tok;
+  };
+  _refreshTokenDisplay();
+
+  tokenToggleBtn.addEventListener('click', () => {
+    _tokenVisible = !_tokenVisible;
+    _refreshTokenDisplay();
+  });
+
+  // ── Token edit toggle ─────────────────────────────────────────
+  const tokenEditBtn    = document.getElementById('cfgTokenEdit');
+  const tokenEditField  = document.getElementById('cfgTokenEditField');
+  const tokenSaveBtn    = document.getElementById('cfgSaveTelegram');
+  const tokenResetBtn   = document.getElementById('cfgResetTelegram');
+  let _editingToken = false;
+
+  const _closeTokenEdit = () => {
+    _editingToken = false;
+    tokenEditField.style.display = 'none';
+    tokenSaveBtn.style.display   = 'none';
+    tokenResetBtn.style.display  = 'none';
+    tokenEditBtn.textContent     = 'Perbarui Token';
+    document.getElementById('cfgTokenInput').value = '';
+  };
+
+  tokenEditBtn.addEventListener('click', () => {
+    _editingToken = !_editingToken;
+    tokenEditField.style.display = _editingToken ? '' : 'none';
+    tokenSaveBtn.style.display   = _editingToken ? '' : 'none';
+    tokenResetBtn.style.display  = _editingToken ? '' : 'none';
+    tokenEditBtn.textContent     = _editingToken ? 'Batal' : 'Perbarui Token';
+    if (_editingToken) {
+      const inp = document.getElementById('cfgTokenInput');
+      inp.value = '';
+      inp.focus();
+    }
+  });
+
+  tokenResetBtn.addEventListener('click', () => {
+    _closeTokenEdit();
+    _tokenVisible = false;
+    _refreshTokenDisplay();
+    showToast('Perubahan dibatalkan.');
+  });
+
+  tokenSaveBtn.addEventListener('click', async function() {
+    const btn = this;
+    const newToken = (document.getElementById('cfgTokenInput')?.value || '').trim();
+    if (!newToken) { showToast('Token tidak boleh kosong.'); return; }
+    btn.disabled = true;
+    try {
+      await updateSetting('telegram.botToken', newToken);
+      setTelegramBotToken(newToken);
+      logAction({
+        userId: getCurrentUser()?.id, username: getCurrentUser()?.username,
+        action: 'settings_updated', targetId: 'telegram',
+        metadata: { group: 'telegram', changes: [{ field: 'Bot Token', from: '(tersembunyi)', to: '(diperbarui)' }] },
+      });
+      showToast('Token Telegram berhasil disimpan.');
+      _closeTokenEdit();
+      _tokenVisible = false;
+      _refreshTokenDisplay();
+      _setTelegramStatus();
+    } catch (err) {
+      showToast(err.message || 'Gagal menyimpan token Telegram.');
+    } finally { btn.disabled = false; }
+  });
+
+  // ── Operational save ─────────────────────────────────────────
+  document.getElementById('cfgResetOps')?.addEventListener('click', () => {
+    document.getElementById('cfgWorkStart').value    = _cfgMinsToTime(getSetting('operations.workStartMins'));
+    document.getElementById('cfgWorkEnd').value      = _cfgMinsToTime(getSetting('operations.workEndMins'));
+    document.getElementById('cfgOdometerWarn').value = getSetting('operations.odometerWarnJumpKm');
+    showToast('Perubahan dibatalkan.');
+  });
+
+  document.getElementById('cfgSaveOps')?.addEventListener('click', async function() {
+    const btn = this;
+    const newStart = _cfgTimeToMins(document.getElementById('cfgWorkStart').value);
+    const newEnd   = _cfgTimeToMins(document.getElementById('cfgWorkEnd').value);
+    const newOdom  = parseInt(document.getElementById('cfgOdometerWarn').value, 10);
+
+    if (isNaN(newStart) || isNaN(newEnd) || newStart >= newEnd) {
+      showToast('Jam mulai harus lebih awal dari jam selesai.'); return;
+    }
+    if (!Number.isFinite(newOdom) || newOdom < 1) {
+      showToast('Batas lompatan odometer harus lebih dari 0 km.'); return;
+    }
+    btn.disabled = true;
+    try {
+      const prevStart = getSetting('operations.workStartMins');
+      const prevEnd   = getSetting('operations.workEndMins');
+      const prevOdom  = getSetting('operations.odometerWarnJumpKm');
+      const saves = [];
+      const changes = [];
+      if (newStart !== prevStart) {
+        saves.push(updateSetting('operations.workStartMins', newStart));
+        changes.push({ field: 'Jam Mulai Operasi', from: _cfgMinsToTime(prevStart), to: _cfgMinsToTime(newStart) });
+      }
+      if (newEnd !== prevEnd) {
+        saves.push(updateSetting('operations.workEndMins', newEnd));
+        changes.push({ field: 'Jam Selesai Operasi', from: _cfgMinsToTime(prevEnd), to: _cfgMinsToTime(newEnd) });
+      }
+      if (newOdom !== prevOdom) {
+        saves.push(updateSetting('operations.odometerWarnJumpKm', newOdom));
+        changes.push({ field: 'Batas Odometer', from: `${prevOdom} km`, to: `${newOdom} km` });
+      }
+      if (!saves.length) { showToast('Tidak ada perubahan.'); return; }
+      await Promise.all(saves);
+      logAction({
+        userId: getCurrentUser()?.id, username: getCurrentUser()?.username,
+        action: 'settings_updated', targetId: 'operations',
+        metadata: { group: 'operations', changes },
+      });
+      showToast('Pengaturan operasional berhasil disimpan.');
+    } catch (err) {
+      showToast(err.message || 'Gagal menyimpan pengaturan operasional.');
+    } finally { btn.disabled = false; }
+  });
+
+  // ── Notification save ─────────────────────────────────────────
+  document.getElementById('cfgResetNotif')?.addEventListener('click', () => {
+    document.getElementById('cfgH2From').value      = getSetting('notifications.h2WindowMinFrom');
+    document.getElementById('cfgH2To').value        = getSetting('notifications.h2WindowMinTo');
+    document.getElementById('cfgH1Interval').value  = Math.round(getSetting('notifications.h1ReminderCheckIntervalMs') / 60000);
+    document.getElementById('cfgH2Interval').value  = Math.round(getSetting('notifications.h2ReminderCheckIntervalMs') / 60000);
+    showToast('Perubahan dibatalkan.');
+  });
+
+  document.getElementById('cfgSaveNotif')?.addEventListener('click', async function() {
+    const btn = this;
+    const newH2From = parseInt(document.getElementById('cfgH2From').value, 10);
+    const newH2To   = parseInt(document.getElementById('cfgH2To').value, 10);
+    const newH1Mins = parseInt(document.getElementById('cfgH1Interval').value, 10);
+    const newH2Mins = parseInt(document.getElementById('cfgH2Interval').value, 10);
+
+    if (!Number.isFinite(newH2From) || newH2From < 1 || !Number.isFinite(newH2To) || newH2To < 1 || newH2From >= newH2To) {
+      showToast('H-2 Window Mulai harus lebih kecil dari H-2 Window Selesai.'); return;
+    }
+    if (!Number.isFinite(newH1Mins) || newH1Mins < 1) { showToast('Interval H-1 harus lebih dari 0 menit.'); return; }
+    if (!Number.isFinite(newH2Mins) || newH2Mins < 1) { showToast('Interval H-2 harus lebih dari 0 menit.'); return; }
+
+    btn.disabled = true;
+    try {
+      const prevH2From = getSetting('notifications.h2WindowMinFrom');
+      const prevH2To   = getSetting('notifications.h2WindowMinTo');
+      const prevH1Mins = Math.round(getSetting('notifications.h1ReminderCheckIntervalMs') / 60000);
+      const prevH2Mins = Math.round(getSetting('notifications.h2ReminderCheckIntervalMs') / 60000);
+      const saves = [];
+      const changes = [];
+      if (newH2From !== prevH2From) {
+        saves.push(updateSetting('notifications.h2WindowMinFrom', newH2From));
+        changes.push({ field: 'H-2 Window Mulai', from: `${prevH2From} menit`, to: `${newH2From} menit` });
+      }
+      if (newH2To !== prevH2To) {
+        saves.push(updateSetting('notifications.h2WindowMinTo', newH2To));
+        changes.push({ field: 'H-2 Window Selesai', from: `${prevH2To} menit`, to: `${newH2To} menit` });
+      }
+      if (newH1Mins !== prevH1Mins) {
+        saves.push(updateSetting('notifications.h1ReminderCheckIntervalMs', newH1Mins * 60000));
+        changes.push({ field: 'Interval Pengingat H-1', from: `${prevH1Mins} menit`, to: `${newH1Mins} menit` });
+      }
+      if (newH2Mins !== prevH2Mins) {
+        saves.push(updateSetting('notifications.h2ReminderCheckIntervalMs', newH2Mins * 60000));
+        changes.push({ field: 'Interval Pengingat H-2', from: `${prevH2Mins} menit`, to: `${newH2Mins} menit` });
+      }
+      if (!saves.length) { showToast('Tidak ada perubahan.'); return; }
+      await Promise.all(saves);
+      logAction({
+        userId: getCurrentUser()?.id, username: getCurrentUser()?.username,
+        action: 'settings_updated', targetId: 'notifications',
+        metadata: { group: 'notifications', changes },
+      });
+      showToast('Pengaturan notifikasi berhasil disimpan.');
+    } catch (err) {
+      showToast(err.message || 'Gagal menyimpan pengaturan notifikasi.');
+    } finally { btn.disabled = false; }
+  });
+
+  // ── System save ───────────────────────────────────────────────
+  document.getElementById('cfgResetSystem')?.addEventListener('click', () => {
+    document.getElementById('cfgBackupDays').value = getSetting('system.backupRetentionDays');
+    showToast('Perubahan dibatalkan.');
+  });
+
+  document.getElementById('cfgSaveSystem')?.addEventListener('click', async function() {
+    const btn = this;
+    const newDays = parseInt(document.getElementById('cfgBackupDays').value, 10);
+    if (!Number.isFinite(newDays) || newDays < 1) {
+      showToast('Retensi backup harus lebih dari 0 hari.'); return;
+    }
+    const prevDays = getSetting('system.backupRetentionDays');
+    if (newDays === prevDays) { showToast('Tidak ada perubahan.'); return; }
+    btn.disabled = true;
+    try {
+      await updateSetting('system.backupRetentionDays', newDays);
+      logAction({
+        userId: getCurrentUser()?.id, username: getCurrentUser()?.username,
+        action: 'settings_updated', targetId: 'system',
+        metadata: { group: 'system', changes: [{ field: 'Retensi Backup', from: `${prevDays} hari`, to: `${newDays} hari` }] },
+      });
+      showToast('Pengaturan sistem berhasil disimpan.');
+    } catch (err) {
+      showToast(err.message || 'Gagal menyimpan pengaturan sistem.');
+    } finally { btn.disabled = false; }
+  });
 }
 
 /* ============================================================
@@ -3992,6 +4442,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await initAdminUI();                   // Setup admin user management
   await initDriversStore();              // v1.5.0 Phase 1: seed/sync Firebase driver registry
   await initVehiclesStore();             // v1.5.2: seed/sync Firebase vehicle registry
+  await initSettingsStore();             // v1.7.0: centralized settings foundation
   const _telegramSettings = await fetchFirebaseData('settings/telegram');
   if (_telegramSettings?.botToken) setTelegramBotToken(_telegramSettings.botToken);
   initNotificationUI();                  // Setup notification badge & modal
@@ -4362,15 +4813,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Ini akan set up listener yang update assignments dan requests.
   initFirebaseSync();
 
-  // H-1 reminder (D-1): check on load, then every 60 minutes
+  // H-1 reminder (D-1): check on load, then on configured interval
   const runH1Check = () => checkAndSendH1Reminders(assignments, requests, getUserByUsername, getUsers);
   runH1Check();
-  setInterval(runH1Check, 60 * 60 * 1000);
+  setInterval(runH1Check, getSetting('notifications.h1ReminderCheckIntervalMs'));
 
-  // H-2 hours reminder: check every 5 minutes for assignments starting ~2 hours from now
+  // H-2 hours reminder: check on configured interval for assignments starting ~2 hours from now
   const runH2Check = () => checkAndSendHoursReminders(assignments, requests, getUserByUsername, getUsers);
   runH2Check();
-  setInterval(runH2Check, 5 * 60 * 1000);
+  setInterval(runH2Check, getSetting('notifications.h2ReminderCheckIntervalMs'));
 
   // ── Startup complete: reveal V2 shell, dismiss splash ──────────
   // Adding .app-ready lifts visibility: hidden from body (set in

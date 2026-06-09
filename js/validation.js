@@ -26,6 +26,7 @@
 
 import { getActiveVehicleNames } from './vehicles-store.js';
 import { getActiveDriverNames }  from './drivers-store.js';
+import { getSetting }            from './settings-store.js';
 
 /* ── Constants ─────────────────────────────────────────────── */
 
@@ -39,8 +40,6 @@ const PIN_REGEX         = /^\d{4}$/;
 const USERNAME_REGEX    = /^[a-z0-9._-]{3,30}$/;
 const CHAT_ID_REGEX     = /^-?\d+$/;
 
-// Odometer: jump > this (km) triggers a warning (not a hard error)
-const ODOMETER_WARN_JUMP_KM = 2000;
 
 /* ── Core Result Helpers ───────────────────────────────────── */
 
@@ -370,7 +369,7 @@ export function validateUser(user) {
  *
  * Checks: currentOdometer is a non-negative finite number.
  *         If previousOdometer provided: no backward movement.
- * Warns:  jump > ODOMETER_WARN_JUMP_KM (anomali tidak wajar).
+ * Warns:  jump > settings operations.odometerWarnJumpKm (anomali tidak wajar).
  *
  * Integration point (v1.2.2): assignment detail modal, start/complete callbacks
  *   const result = validateOdometer({ currentOdometer, previousOdometer });
@@ -416,7 +415,7 @@ export function validateOdometer(data) {
       );
     } else {
       const jump = current - prev;
-      if (jump > ODOMETER_WARN_JUMP_KM) {
+      if (jump > getSetting('operations.odometerWarnJumpKm')) {
         warnings.push(
           `Lonjakan odometer tidak wajar: +${jump.toLocaleString()} km sejak pencatatan terakhir. Harap periksa kembali.`
         );
