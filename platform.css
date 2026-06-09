@@ -8939,3 +8939,118 @@ input[type="time"].v2-admin-config-input {
 .v2-analytics-subtitle--mt {
   margin-top: 14px;
 }
+
+/* ================================================================
+   V1.8.3 — Analytics UX Polish
+   ================================================================ */
+
+/* Active filter summary bar — shown below the toolbar */
+.v2-analytics-filter-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 0 2px;
+}
+.v2-analytics-filter-summary:empty { display: none; }
+
+/* Individual active filter chip */
+.v2-analytics-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--danger-bg);
+  border: 1px solid rgba(168, 41, 47, 0.18);
+  border-radius: 20px;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+/* Reset all filters button — sits in v2-admin-toolbar */
+.v2-analytics-reset-btn {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.v2-analytics-reset-btn:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--hover);
+}
+
+/* Insight highlights bar — at top of analytics content */
+.v2-analytics-insights {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 16px;
+}
+.v2-analytics-insight-item {
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.v2-analytics-insight-item strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* Section grouping — vertical stack of named sections */
+.v2-analytics-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.v2-analytics-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.v2-analytics-section-header {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--faint);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Top performer badge — #1 Driver / #1 Kendaraan / #1 Bidang */
+.v2-analytics-top-badge {
+  display: inline-block;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--warn);
+  background: var(--warn-bg);
+  border-radius: 5px;
+  padding: 1px 6px;
+  margin-left: 4px;
+  vertical-align: middle;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+@media (max-width: 600px) {
+  .v2-analytics-reset-btn {
+    width: 100%;
+    text-align: center;
+  }
+  .v2-analytics-insights {
+    padding: 10px 12px;
+  }
+}

@@ -1,10 +1,25 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.8.2';
-export const RELEASE_NAME = 'Analytics Deep Metrics';
+export const APP_VERSION = '1.8.3';
+export const RELEASE_NAME = 'Analytics UX Polish';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.8.3',
+    date: '2026-06-09',
+    summary: 'Analytics UX Polish',
+    highlights: [
+      'Feature 1 — Active Filter Summary: chips displayed below toolbar showing active date range and any entity filters (Driver/Kendaraan/Bidang)',
+      'Feature 2 — Reset Semua Filter: one-click button resets all four filters to defaults (30 Hari, Semua Driver, Semua Kendaraan, Semua Bidang)',
+      'Feature 3 — Top Performer Badges: #1 Driver, #1 Kendaraan, #1 Bidang badges shown on the top-ranked row in each breakdown',
+      'Feature 4 — Contextual Empty States: per-section messages (driver: "Tidak ada assignment pada periode yang dipilih.", vehicle: "Tidak ada data kendaraan yang sesuai dengan filter aktif.", bidang: "Tidak ada permintaan bidang pada rentang waktu ini.")',
+      'Feature 5 — Analytics Sections: cards grouped under 5 labelled section headers (Ringkasan Operasional / Utilisasi Driver / Utilisasi Kendaraan / Analisis Bidang / Kualitas Penyelesaian); Inactive Resources absorbed into Driver and Vehicle sections',
+      'Feature 6 — Insight Highlights: up to 3 plain-text highlights at the top (Driver paling aktif, Kendaraan paling sering digunakan, Bidang dengan permintaan terbanyak)',
+      'New CSS: .v2-analytics-filter-summary, .v2-analytics-filter-chip, .v2-analytics-reset-btn, .v2-analytics-insights, .v2-analytics-sections, .v2-analytics-section, .v2-analytics-section-header, .v2-analytics-top-badge',
+      'Mobile: filter chips wrap, reset button full-width on ≤600px, insight highlights stack vertically',
+    ],
+  },
   {
     version: '1.8.2',
     date: '2026-06-09',

@@ -1877,7 +1877,9 @@ function initV2AdministrationWorkspace() {
             <select id="v2AnalyticsBidangFilter" class="v2-admin-filter">
               <option value="">Semua Bidang</option>
             </select>
+            <button id="v2AnalyticsResetFilters" class="v2-analytics-reset-btn" type="button">Reset Semua Filter</button>
           </div>
+          <div id="v2AnalyticsFilterSummary" class="v2-analytics-filter-summary"></div>
           <div id="v2AnalyticsContent"></div>
         </div>
         <div id="v2AdminSectionPlaceholder" style="display:none;"></div>
@@ -1887,6 +1889,14 @@ function initV2AdministrationWorkspace() {
   document.querySelector('.main-content')?.appendChild(ws);
 
   ws.addEventListener('click', e => {
+    if (e.target.closest('#v2AnalyticsResetFilters')) {
+      analyticsDateRange    = '30d';
+      analyticsDriverFilter  = '';
+      analyticsVehicleFilter = '';
+      analyticsBidangFilter  = '';
+      renderV2AdminAnalytics();
+      return;
+    }
     const button = e.target.closest('[data-admin-section]');
     if (button) {
       const sectionKey = button.dataset.adminSection;
@@ -4070,7 +4080,7 @@ function refreshAnalyticsDisplay() {
   let cutoff = null;
   if (analyticsDateRange !== 'all') {
     if (analyticsDateRange === 'today') {
-      cutoff = today; // used as exact match below
+      cutoff = today;
     } else {
       const days = analyticsDateRange === '7d' ? 7 : analyticsDateRange === '30d' ? 30 : 90;
       const d = new Date();
@@ -4247,11 +4257,28 @@ function refreshAnalyticsDisplay() {
     `;
   }
 
+  // ── Filter summary chips ───────────────────────────────────────────────
+  const summaryEl = document.getElementById('v2AnalyticsFilterSummary');
+  if (summaryEl) {
+    const dateLabels = { today: 'Hari Ini', '7d': '7 Hari', '30d': '30 Hari', '90d': '90 Hari', all: 'Semua Data' };
+    const chips = [`<span class="v2-analytics-filter-chip">${dateLabels[analyticsDateRange] || analyticsDateRange}</span>`];
+    if (analyticsDriverFilter)  chips.push(`<span class="v2-analytics-filter-chip">Driver: ${esc(analyticsDriverFilter)}</span>`);
+    if (analyticsVehicleFilter) chips.push(`<span class="v2-analytics-filter-chip">Kendaraan: ${esc(analyticsVehicleFilter)}</span>`);
+    if (analyticsBidangFilter)  chips.push(`<span class="v2-analytics-filter-chip">Bidang: ${esc(analyticsBidangFilter)}</span>`);
+    summaryEl.innerHTML = chips.join('');
+  }
+
   // ── Global empty state ─────────────────────────────────────────────────
   if (total === 0 && filteredReqs.length === 0) {
+    const hasEntityFilter = analyticsDriverFilter || analyticsVehicleFilter || analyticsBidangFilter;
+    const emptyMsg = hasEntityFilter
+      ? 'Tidak ada data yang sesuai dengan filter yang dipilih.'
+      : analyticsDateRange === 'today'
+        ? 'Tidak ada assignment pada hari ini.'
+        : 'Tidak ada assignment pada periode yang dipilih.';
     contentEl.innerHTML = `
       <div class="v2-analytics-empty-state">
-        <p class="v2-analytics-empty-state-msg">Tidak ada data yang sesuai dengan filter yang dipilih.</p>
+        <p class="v2-analytics-empty-state-msg">${emptyMsg}</p>
         <p class="v2-analytics-empty-state-hint">Coba ubah rentang waktu atau hapus filter entitas lainnya.</p>
       </div>
     `;
@@ -4275,33 +4302,48 @@ function refreshAnalyticsDisplay() {
   const fmtDrv = d => d ? `${d.displayName} (${d.count} asg)` : '—';
   const fmtVeh = v => v ? `${v.displayName} (${v.count} asg)` : '—';
 
-  // Module 1 — Driver Workload Distribution breakdown
+  // ── Insight highlights (top 3) ─────────────────────────────────────────
+  const insightItems = [];
+  if (mostActiveDrv)
+    insightItems.push(`Driver paling aktif: <strong>${esc(mostActiveDrv.displayName)}</strong> &mdash; ${mostActiveDrv.count} penugasan`);
+  if (mostUsedVeh)
+    insightItems.push(`Kendaraan paling sering digunakan: <strong>${esc(mostUsedVeh.displayName)}</strong> &mdash; ${mostUsedVeh.count} penugasan`);
+  if (bidangEnhanced[0] && bidangEnhanced[0].name !== '—')
+    insightItems.push(`Bidang dengan permintaan terbanyak: <strong>${esc(bidangEnhanced[0].name)}</strong> &mdash; ${bidangEnhanced[0].reqCount} permintaan`);
+  const insightsHtml = insightItems.length > 0 ? `
+    <div class="v2-analytics-insights">
+      ${insightItems.slice(0, 3).map(i => `<div class="v2-analytics-insight-item">${i}</div>`).join('')}
+    </div>` : '';
+
+  // ── Driver breakdown (Module 1) ────────────────────────────────────────
   const activeDriversInPeriod = classifiedDrivers.filter(d => d.count > 0);
   const driverWlHtml = activeDriversInPeriod.length > 0
-    ? activeDriversInPeriod.map(d => {
+    ? activeDriversInPeriod.map((d, i) => {
         const pct = total > 0 ? Math.round((d.count / total) * 100) : 0;
+        const topBadge = i === 0 ? '<span class="v2-analytics-top-badge">#1 Driver</span>' : '';
         return `<div class="v2-analytics-breakdown-row">
-          <span class="v2-analytics-breakdown-name">${esc(d.displayName)}</span>
+          <span class="v2-analytics-breakdown-name">${esc(d.displayName)}${topBadge ? ' ' + topBadge : ''}</span>
           <span class="v2-analytics-breakdown-count">${d.count} asg</span>
           <span class="v2-analytics-breakdown-pct">${pct}%</span>
           ${wlBadge(d.wl)}
         </div>`;
       }).join('')
-    : `<p class="v2-analytics-empty">Tidak ada penugasan dalam periode ini.</p>`;
+    : `<p class="v2-analytics-empty">Tidak ada assignment pada periode yang dipilih.</p>`;
 
-  // Module 2 — Vehicle Utilization breakdown
+  // ── Vehicle breakdown (Module 2) ───────────────────────────────────────
   const vehicleWlHtml = vehiclesWithTrips.length > 0
-    ? vehiclesWithTrips.map(v => {
+    ? vehiclesWithTrips.map((v, i) => {
         const pct = total > 0 ? Math.round((v.count / total) * 100) : 0;
+        const topBadge = i === 0 ? '<span class="v2-analytics-top-badge">#1 Kendaraan</span>' : '';
         return `<div class="v2-analytics-breakdown-row">
-          <span class="v2-analytics-breakdown-name">${esc(v.displayName)}</span>
+          <span class="v2-analytics-breakdown-name">${esc(v.displayName)}${topBadge ? ' ' + topBadge : ''}</span>
           <span class="v2-analytics-breakdown-count">${v.count} asg</span>
           <span class="v2-analytics-breakdown-pct">${pct}%</span>
         </div>`;
       }).join('')
-    : `<p class="v2-analytics-empty">Tidak ada penggunaan kendaraan dalam periode ini.</p>`;
+    : `<p class="v2-analytics-empty">Tidak ada data kendaraan yang sesuai dengan filter aktif.</p>`;
 
-  // Module 3 — Inactive Resources
+  // ── Inactive resources ─────────────────────────────────────────────────
   const inactiveDrvHtml = inactiveDrivers.length > 0
     ? inactiveDrivers.map(d => `<div class="v2-analytics-breakdown-row">
         <span class="v2-analytics-breakdown-name">${esc(d.displayName)}</span>
@@ -4316,7 +4358,7 @@ function refreshAnalyticsDisplay() {
       </div>`).join('')
     : `<p class="v2-analytics-empty">Semua kendaraan aktif digunakan dalam periode ini.</p>`;
 
-  // Module 4 — Destination Analytics
+  // ── Destination breakdown (Module 4) ──────────────────────────────────
   const destBreakdownHtml = destSorted.map(([dest, freq], i) =>
     `<div class="v2-analytics-breakdown-row">
       <span class="v2-analytics-breakdown-rank">${i + 1}</span>
@@ -4324,138 +4366,160 @@ function refreshAnalyticsDisplay() {
       <span class="v2-analytics-breakdown-count">${freq}x</span>
     </div>`).join('');
 
-  // Module 5 — Bidang Demand Analysis
+  // ── Bidang breakdown (Module 5) ────────────────────────────────────────
   const mostActiveBidang  = bidangEnhanced[0] ?? null;
   const leastActiveBidang = bidangEnhanced.length > 1 ? bidangEnhanced[bidangEnhanced.length - 1] : null;
   const bidangDemandHtml = bidangEnhanced.length > 0
-    ? bidangEnhanced.map((b, i) => `
-        <div class="v2-analytics-breakdown-row">
+    ? bidangEnhanced.map((b, i) => {
+        const topBadge = i === 0 ? '<span class="v2-analytics-top-badge">#1 Bidang</span>' : '';
+        return `<div class="v2-analytics-breakdown-row">
           <span class="v2-analytics-breakdown-rank">${i + 1}</span>
-          <span class="v2-analytics-breakdown-name">${esc(b.name)}</span>
+          <span class="v2-analytics-breakdown-name">${esc(b.name)}${topBadge ? ' ' + topBadge : ''}</span>
           <span class="v2-analytics-breakdown-count">${b.reqCount} req</span>
           <span class="v2-analytics-breakdown-pct">${b.reqPct}%</span>
           <span class="v2-analytics-breakdown-count">${b.asgCount} asg</span>
-        </div>`).join('')
-    : `<p class="v2-analytics-empty">Tidak ada data request dalam periode ini.</p>`;
+        </div>`;
+      }).join('')
+    : `<p class="v2-analytics-empty">Tidak ada permintaan bidang pada rentang waktu ini.</p>`;
 
   contentEl.innerHTML = `
-    <div class="v2-analytics-groups">
+    <div class="v2-analytics-sections">
 
-      <!-- 1. Assignment Analytics -->
-      <div class="v2-admin-config-group">
-        <h3 class="v2-admin-config-group-title">Assignment Analytics</h3>
-        <div class="v2-analytics-kpi-list">
-          ${kpiRow('Total Assignments', total)}
-          ${kpiRow('Selesai', completed, 'ok')}
-          ${kpiRow('Berlangsung', inProgress, 'info')}
-          ${kpiRow('Dijadwalkan', scheduled)}
-          ${kpiRow('Dibatalkan / Lainnya', cancelled)}
-        </div>
-      </div>
+      ${insightsHtml}
 
-      <!-- 2. Driver Workload Distribution -->
-      <div class="v2-admin-config-group">
-        <h3 class="v2-admin-config-group-title">Driver Workload Distribution</h3>
-        <div class="v2-analytics-kpi-list">
-          ${kpiRow('Driver Aktif Bertugas', activeDriversInPeriod.length)}
-          ${kpiRow('Driver Tidak Bertugas', inactiveDrivers.length)}
-          ${kpiRow('Driver Paling Aktif', fmtDrv(mostActiveDrv))}
-          ${kpiRow('Driver Paling Jarang', fmtDrv(leastActiveDrv))}
-          ${kpiRow('Seimbang', `${wlBalancedCount} driver`)}
-          ${kpiRow('Melebihi Rata-rata', `${wlOverCount} driver`, wlOverCount > 0 ? 'warn' : '')}
-          ${kpiRow('Di Bawah Rata-rata', `${wlUnderCount} driver`)}
-        </div>
-        <div class="v2-analytics-subtitle">Distribusi Penugasan Per Driver</div>
-        <div class="v2-analytics-breakdown">
-          ${activeDriversInPeriod.length > 0 ? `
-          <div class="v2-analytics-breakdown-row v2-analytics-breakdown-row--header">
-            <span class="v2-analytics-breakdown-name">Driver</span>
-            <span class="v2-analytics-breakdown-count">Asg</span>
-            <span class="v2-analytics-breakdown-pct">%</span>
-            <span class="v2-analytics-breakdown-wl"></span>
-          </div>` : ''}
-          ${driverWlHtml}
-        </div>
-      </div>
-
-      <!-- 3. Vehicle Utilization -->
-      <div class="v2-admin-config-group">
-        <h3 class="v2-admin-config-group-title">Vehicle Utilization</h3>
-        <div class="v2-analytics-kpi-list">
-          ${kpiRow('Total Kendaraan Aktif', activeVehicles.length)}
-          ${kpiRow('Kendaraan Terbanyak', fmtVeh(mostUsedVeh))}
-          ${kpiRow('Kendaraan Paling Jarang', fmtVeh(leastUsedVeh))}
-        </div>
-        <div class="v2-analytics-subtitle">Utilisasi Per Kendaraan</div>
-        <div class="v2-analytics-breakdown">
-          ${vehiclesWithTrips.length > 0 ? `
-          <div class="v2-analytics-breakdown-row v2-analytics-breakdown-row--header">
-            <span class="v2-analytics-breakdown-name">Kendaraan</span>
-            <span class="v2-analytics-breakdown-count">Asg</span>
-            <span class="v2-analytics-breakdown-pct">%</span>
-          </div>` : ''}
-          ${vehicleWlHtml}
-        </div>
-      </div>
-
-      <!-- 4. Inactive Resources -->
-      <div class="v2-admin-config-group">
-        <h3 class="v2-admin-config-group-title">Inactive Resources</h3>
-        <div class="v2-analytics-subtitle">Driver Tanpa Penugasan</div>
-        <div class="v2-analytics-breakdown">${inactiveDrvHtml}</div>
-        <div class="v2-analytics-subtitle v2-analytics-subtitle--mt">Kendaraan Tanpa Penggunaan</div>
-        <div class="v2-analytics-breakdown">${inactiveVehHtml}</div>
-      </div>
-
-      ${hasDestData ? `
-      <!-- 5. Destination Analytics -->
-      <div class="v2-admin-config-group">
-        <h3 class="v2-admin-config-group-title">Destination Analytics</h3>
-        <div class="v2-analytics-kpi-list">
-          ${kpiRow('Total Tujuan Unik', _destFreq.size)}
-          ${destSorted[0] ? kpiRow('Tujuan Paling Sering', `${destSorted[0][0]} (${destSorted[0][1]}x)`) : ''}
-        </div>
-        <div class="v2-analytics-subtitle">Top ${Math.min(10, destSorted.length)} Tujuan</div>
-        <div class="v2-analytics-breakdown">
-          <div class="v2-analytics-breakdown-row v2-analytics-breakdown-row--header">
-            <span class="v2-analytics-breakdown-rank"></span>
-            <span class="v2-analytics-breakdown-name">Tujuan</span>
-            <span class="v2-analytics-breakdown-count">Frekuensi</span>
+      <!-- Ringkasan Operasional -->
+      <div class="v2-analytics-section">
+        <div class="v2-analytics-section-header">Ringkasan Operasional</div>
+        <div class="v2-analytics-groups">
+          <div class="v2-admin-config-group">
+            <h3 class="v2-admin-config-group-title">Assignment Analytics</h3>
+            <div class="v2-analytics-kpi-list">
+              ${kpiRow('Total Assignments', total)}
+              ${kpiRow('Selesai', completed, 'ok')}
+              ${kpiRow('Berlangsung', inProgress, 'info')}
+              ${kpiRow('Dijadwalkan', scheduled)}
+              ${kpiRow('Dibatalkan / Lainnya', cancelled)}
+            </div>
           </div>
-          ${destBreakdownHtml}
-        </div>
-      </div>` : ''}
-
-      <!-- 6. Bidang Demand Analysis -->
-      <div class="v2-admin-config-group">
-        <h3 class="v2-admin-config-group-title">Bidang Demand Analysis</h3>
-        <div class="v2-analytics-kpi-list">
-          ${kpiRow('Total Bidang', bidangEnhanced.length)}
-          ${mostActiveBidang  ? kpiRow('Bidang Paling Aktif',  `${mostActiveBidang.name} (${mostActiveBidang.reqCount} req, ${mostActiveBidang.reqPct}%)`) : ''}
-          ${leastActiveBidang ? kpiRow('Bidang Paling Jarang', `${leastActiveBidang.name} (${leastActiveBidang.reqCount} req)`) : ''}
-        </div>
-        <div class="v2-analytics-breakdown">
-          ${bidangEnhanced.length > 0 ? `
-          <div class="v2-analytics-breakdown-row v2-analytics-breakdown-row--header">
-            <span class="v2-analytics-breakdown-rank"></span>
-            <span class="v2-analytics-breakdown-name">Bidang</span>
-            <span class="v2-analytics-breakdown-count">Req</span>
-            <span class="v2-analytics-breakdown-pct">%</span>
-            <span class="v2-analytics-breakdown-count">Asg</span>
-          </div>` : ''}
-          ${bidangDemandHtml}
         </div>
       </div>
 
-      <!-- 7. Completion Quality -->
-      <div class="v2-admin-config-group">
-        <h3 class="v2-admin-config-group-title">Completion Quality</h3>
-        <div class="v2-analytics-kpi-list">
-          ${kpiRow('Completion Rate', `${compRate}%`, compRate >= 80 ? 'ok' : compRate >= 50 ? 'warn' : '')}
-          ${kpiRow('Open Assignment Rate', `${openRate}%`, openRate > 50 ? 'warn' : openRate === 0 && total > 0 ? 'ok' : '')}
-          ${kpiRow('Selesai vs Total', completionRatio)}
-          ${kpiRow('Open Assignments', openAsg)}
-          ${kpiRow('Completed Assignments', completed, 'ok')}
+      <!-- Utilisasi Driver -->
+      <div class="v2-analytics-section">
+        <div class="v2-analytics-section-header">Utilisasi Driver</div>
+        <div class="v2-analytics-groups">
+          <div class="v2-admin-config-group">
+            <h3 class="v2-admin-config-group-title">Driver Workload Distribution</h3>
+            <div class="v2-analytics-kpi-list">
+              ${kpiRow('Driver Aktif Bertugas', activeDriversInPeriod.length)}
+              ${kpiRow('Driver Tidak Bertugas', inactiveDrivers.length)}
+              ${kpiRow('Driver Paling Aktif', fmtDrv(mostActiveDrv))}
+              ${kpiRow('Driver Paling Jarang', fmtDrv(leastActiveDrv))}
+              ${kpiRow('Seimbang', `${wlBalancedCount} driver`)}
+              ${kpiRow('Melebihi Rata-rata', `${wlOverCount} driver`, wlOverCount > 0 ? 'warn' : '')}
+              ${kpiRow('Di Bawah Rata-rata', `${wlUnderCount} driver`)}
+            </div>
+            <div class="v2-analytics-subtitle">Distribusi Penugasan Per Driver</div>
+            <div class="v2-analytics-breakdown">
+              ${activeDriversInPeriod.length > 0 ? `
+              <div class="v2-analytics-breakdown-row v2-analytics-breakdown-row--header">
+                <span class="v2-analytics-breakdown-name">Driver</span>
+                <span class="v2-analytics-breakdown-count">Asg</span>
+                <span class="v2-analytics-breakdown-pct">%</span>
+                <span class="v2-analytics-breakdown-wl"></span>
+              </div>` : ''}
+              ${driverWlHtml}
+            </div>
+            <div class="v2-analytics-subtitle v2-analytics-subtitle--mt">Driver Tanpa Penugasan</div>
+            <div class="v2-analytics-breakdown">${inactiveDrvHtml}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Utilisasi Kendaraan -->
+      <div class="v2-analytics-section">
+        <div class="v2-analytics-section-header">Utilisasi Kendaraan</div>
+        <div class="v2-analytics-groups">
+          <div class="v2-admin-config-group">
+            <h3 class="v2-admin-config-group-title">Vehicle Utilization</h3>
+            <div class="v2-analytics-kpi-list">
+              ${kpiRow('Total Kendaraan Aktif', activeVehicles.length)}
+              ${kpiRow('Kendaraan Terbanyak', fmtVeh(mostUsedVeh))}
+              ${kpiRow('Kendaraan Paling Jarang', fmtVeh(leastUsedVeh))}
+            </div>
+            <div class="v2-analytics-subtitle">Utilisasi Per Kendaraan</div>
+            <div class="v2-analytics-breakdown">
+              ${vehiclesWithTrips.length > 0 ? `
+              <div class="v2-analytics-breakdown-row v2-analytics-breakdown-row--header">
+                <span class="v2-analytics-breakdown-name">Kendaraan</span>
+                <span class="v2-analytics-breakdown-count">Asg</span>
+                <span class="v2-analytics-breakdown-pct">%</span>
+              </div>` : ''}
+              ${vehicleWlHtml}
+            </div>
+            <div class="v2-analytics-subtitle v2-analytics-subtitle--mt">Kendaraan Tanpa Penggunaan</div>
+            <div class="v2-analytics-breakdown">${inactiveVehHtml}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Analisis Bidang -->
+      <div class="v2-analytics-section">
+        <div class="v2-analytics-section-header">Analisis Bidang</div>
+        <div class="v2-analytics-groups">
+          <div class="v2-admin-config-group">
+            <h3 class="v2-admin-config-group-title">Bidang Demand Analysis</h3>
+            <div class="v2-analytics-kpi-list">
+              ${kpiRow('Total Bidang', bidangEnhanced.length)}
+              ${mostActiveBidang  ? kpiRow('Bidang Paling Aktif',  `${mostActiveBidang.name} (${mostActiveBidang.reqCount} req, ${mostActiveBidang.reqPct}%)`) : ''}
+              ${leastActiveBidang ? kpiRow('Bidang Paling Jarang', `${leastActiveBidang.name} (${leastActiveBidang.reqCount} req)`) : ''}
+            </div>
+            <div class="v2-analytics-breakdown">
+              ${bidangEnhanced.length > 0 ? `
+              <div class="v2-analytics-breakdown-row v2-analytics-breakdown-row--header">
+                <span class="v2-analytics-breakdown-rank"></span>
+                <span class="v2-analytics-breakdown-name">Bidang</span>
+                <span class="v2-analytics-breakdown-count">Req</span>
+                <span class="v2-analytics-breakdown-pct">%</span>
+                <span class="v2-analytics-breakdown-count">Asg</span>
+              </div>` : ''}
+              ${bidangDemandHtml}
+            </div>
+          </div>
+          ${hasDestData ? `
+          <div class="v2-admin-config-group">
+            <h3 class="v2-admin-config-group-title">Destination Analytics</h3>
+            <div class="v2-analytics-kpi-list">
+              ${kpiRow('Total Tujuan Unik', _destFreq.size)}
+              ${destSorted[0] ? kpiRow('Tujuan Paling Sering', `${destSorted[0][0]} (${destSorted[0][1]}x)`) : ''}
+            </div>
+            <div class="v2-analytics-subtitle">Top ${Math.min(10, destSorted.length)} Tujuan</div>
+            <div class="v2-analytics-breakdown">
+              <div class="v2-analytics-breakdown-row v2-analytics-breakdown-row--header">
+                <span class="v2-analytics-breakdown-rank"></span>
+                <span class="v2-analytics-breakdown-name">Tujuan</span>
+                <span class="v2-analytics-breakdown-count">Frekuensi</span>
+              </div>
+              ${destBreakdownHtml}
+            </div>
+          </div>` : ''}
+        </div>
+      </div>
+
+      <!-- Kualitas Penyelesaian -->
+      <div class="v2-analytics-section">
+        <div class="v2-analytics-section-header">Kualitas Penyelesaian</div>
+        <div class="v2-analytics-groups">
+          <div class="v2-admin-config-group">
+            <h3 class="v2-admin-config-group-title">Completion Quality</h3>
+            <div class="v2-analytics-kpi-list">
+              ${kpiRow('Completion Rate', `${compRate}%`, compRate >= 80 ? 'ok' : compRate >= 50 ? 'warn' : '')}
+              ${kpiRow('Open Assignment Rate', `${openRate}%`, openRate > 50 ? 'warn' : openRate === 0 && total > 0 ? 'ok' : '')}
+              ${kpiRow('Selesai vs Total', completionRatio)}
+              ${kpiRow('Open Assignments', openAsg)}
+              ${kpiRow('Completed Assignments', completed, 'ok')}
+            </div>
+          </div>
         </div>
       </div>
 
