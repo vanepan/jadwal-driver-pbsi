@@ -125,6 +125,7 @@ const ADMIN_SECTION_DEFS = [
   { key: 'vehicles', label: 'Manajemen Kendaraan', subtitle: 'Kelola registrasi, status, dan data armada kendaraan operasional.' },
   { key: 'audit', label: 'Audit Center', subtitle: 'Telusuri dan verifikasi aktivitas sistem dan catatan operasional.' },
   { key: 'config', label: 'Konfigurasi', subtitle: 'Atur parameter operasional, notifikasi, sistem, dan integrasi Telegram.' },
+  { key: 'analytics', label: 'Analytics', subtitle: 'Ringkasan operasional berbasis data aktual — assignment, driver, kendaraan, dan bidang.' },
 ];
 
 /**
@@ -1853,6 +1854,7 @@ function initV2AdministrationWorkspace() {
           <div id="v2AuditList" class="v2-audit-list"></div>
         </div>
         <div id="v2AdminSectionConfig" style="display:none;"></div>
+        <div id="v2AdminSectionAnalytics" style="display:none;"></div>
         <div id="v2AdminSectionPlaceholder" style="display:none;"></div>
       </div>
     </div>
@@ -2049,12 +2051,13 @@ function handleV2RoleGroupToggle(event) {
 
 function renderV2AdminWorkspace() {
   const section = ADMIN_SECTION_DEFS.find(s => s.key === activeAdminSection) || ADMIN_SECTION_DEFS[0];
-  const usersSection    = document.getElementById('v2AdminSectionUsers');
-  const driversSection  = document.getElementById('v2AdminSectionDrivers');
-  const vehiclesSection = document.getElementById('v2AdminSectionVehicles');
-  const configSection   = document.getElementById('v2AdminSectionConfig');
+  const usersSection       = document.getElementById('v2AdminSectionUsers');
+  const driversSection     = document.getElementById('v2AdminSectionDrivers');
+  const vehiclesSection    = document.getElementById('v2AdminSectionVehicles');
+  const configSection      = document.getElementById('v2AdminSectionConfig');
+  const analyticsSection   = document.getElementById('v2AdminSectionAnalytics');
   const placeholderSection = document.getElementById('v2AdminSectionPlaceholder');
-  const overviewRow     = document.getElementById('v2AdminOverviewRow');
+  const overviewRow        = document.getElementById('v2AdminOverviewRow');
 
   document.querySelectorAll('[data-admin-section]').forEach(btn => {
     btn.classList.toggle('v2-admin-nav-tab--active', btn.dataset.adminSection === activeAdminSection);
@@ -2064,11 +2067,14 @@ function renderV2AdminWorkspace() {
   if (pageSubtitle) pageSubtitle.textContent = section.subtitle;
 
   if (activeAdminSection === 'users') {
-    if (usersSection)    usersSection.style.display    = '';
-    if (driversSection)  driversSection.style.display  = 'none';
-    if (vehiclesSection) vehiclesSection.style.display = 'none';
-    if (configSection)   configSection.style.display   = 'none';
+    if (usersSection)       usersSection.style.display       = '';
+    if (driversSection)     driversSection.style.display     = 'none';
+    if (vehiclesSection)    vehiclesSection.style.display    = 'none';
+    if (configSection)      configSection.style.display      = 'none';
+    if (analyticsSection)   analyticsSection.style.display   = 'none';
     if (placeholderSection) placeholderSection.style.display = 'none';
+    const _auditSec = document.getElementById('v2AdminSectionAudit');
+    if (_auditSec) _auditSec.style.display = 'none';
     if (overviewRow) {
       const allUsers = getUserList();
       const nonArchived = allUsers.filter(u => u.archived !== true);
@@ -2101,11 +2107,14 @@ function renderV2AdminWorkspace() {
     renderV2AdminUsers();
 
   } else if (activeAdminSection === 'drivers') {
-    if (usersSection)    usersSection.style.display    = 'none';
-    if (driversSection)  driversSection.style.display  = '';
-    if (vehiclesSection) vehiclesSection.style.display = 'none';
-    if (configSection)   configSection.style.display   = 'none';
+    if (usersSection)       usersSection.style.display       = 'none';
+    if (driversSection)     driversSection.style.display     = '';
+    if (vehiclesSection)    vehiclesSection.style.display    = 'none';
+    if (configSection)      configSection.style.display      = 'none';
+    if (analyticsSection)   analyticsSection.style.display   = 'none';
     if (placeholderSection) placeholderSection.style.display = 'none';
+    const _auditSec = document.getElementById('v2AdminSectionAudit');
+    if (_auditSec) _auditSec.style.display = 'none';
     if (overviewRow) {
       const allDrivers = getDrivers();
       const nonArchived  = allDrivers.filter(d => d.archived !== true);
@@ -2140,11 +2149,14 @@ function renderV2AdminWorkspace() {
     renderV2AdminDrivers();
 
   } else if (activeAdminSection === 'vehicles') {
-    if (usersSection)    usersSection.style.display    = 'none';
-    if (driversSection)  driversSection.style.display  = 'none';
-    if (vehiclesSection) vehiclesSection.style.display = '';
-    if (configSection)   configSection.style.display   = 'none';
+    if (usersSection)       usersSection.style.display       = 'none';
+    if (driversSection)     driversSection.style.display     = 'none';
+    if (vehiclesSection)    vehiclesSection.style.display    = '';
+    if (configSection)      configSection.style.display      = 'none';
+    if (analyticsSection)   analyticsSection.style.display   = 'none';
     if (placeholderSection) placeholderSection.style.display = 'none';
+    const _auditSec = document.getElementById('v2AdminSectionAudit');
+    if (_auditSec) _auditSec.style.display = 'none';
     if (overviewRow) {
       const allVehicles   = getVehicles();
       const nonArchived   = allVehicles.filter(v => v.archived !== true);
@@ -2179,10 +2191,11 @@ function renderV2AdminWorkspace() {
     renderV2AdminVehicles();
 
   } else if (activeAdminSection === 'audit') {
-    if (usersSection)    usersSection.style.display    = 'none';
-    if (driversSection)  driversSection.style.display  = 'none';
-    if (vehiclesSection) vehiclesSection.style.display = 'none';
-    if (configSection)   configSection.style.display   = 'none';
+    if (usersSection)       usersSection.style.display       = 'none';
+    if (driversSection)     driversSection.style.display     = 'none';
+    if (vehiclesSection)    vehiclesSection.style.display    = 'none';
+    if (configSection)      configSection.style.display      = 'none';
+    if (analyticsSection)   analyticsSection.style.display   = 'none';
     if (placeholderSection) placeholderSection.style.display = 'none';
     const auditSection = document.getElementById('v2AdminSectionAudit');
     if (auditSection) auditSection.style.display = '';
@@ -2232,9 +2245,10 @@ function renderV2AdminWorkspace() {
     renderAuditCenter();
 
   } else if (activeAdminSection === 'config') {
-    if (usersSection)    usersSection.style.display    = 'none';
-    if (driversSection)  driversSection.style.display  = 'none';
-    if (vehiclesSection) vehiclesSection.style.display = 'none';
+    if (usersSection)       usersSection.style.display       = 'none';
+    if (driversSection)     driversSection.style.display     = 'none';
+    if (vehiclesSection)    vehiclesSection.style.display    = 'none';
+    if (analyticsSection)   analyticsSection.style.display   = 'none';
     if (placeholderSection) placeholderSection.style.display = 'none';
     const auditSection = document.getElementById('v2AdminSectionAudit');
     if (auditSection) auditSection.style.display = 'none';
@@ -2270,11 +2284,51 @@ function renderV2AdminWorkspace() {
     }
     renderV2AdminConfig();
 
+  } else if (activeAdminSection === 'analytics') {
+    if (usersSection)       usersSection.style.display       = 'none';
+    if (driversSection)     driversSection.style.display     = 'none';
+    if (vehiclesSection)    vehiclesSection.style.display    = 'none';
+    if (configSection)      configSection.style.display      = 'none';
+    if (analyticsSection)   analyticsSection.style.display   = '';
+    if (placeholderSection) placeholderSection.style.display = 'none';
+    const _auditSec2 = document.getElementById('v2AdminSectionAudit');
+    if (_auditSec2) _auditSec2.style.display = 'none';
+    if (overviewRow) {
+      const _allAsg   = assignments.map(normalizeAssignmentStatus);
+      const _total    = _allAsg.length;
+      const _done     = _allAsg.filter(a => a.status === 'completed').length;
+      const _rate     = _total > 0 ? Math.round((_done / _total) * 100) : 0;
+      const _drivers  = getDrivers().filter(d => d.active !== false && !d.archived).length;
+      const _vehicles = getActiveVehiclesFromStore().filter(v => !v.archived).length;
+      overviewRow.innerHTML = `
+        <div class="v2-admin-overview-cards">
+          <div class="v2-admin-overview-card">
+            <span class="v2-admin-overview-value">${_rate}%</span>
+            <span class="v2-admin-overview-label">Completion Rate</span>
+          </div>
+          <div class="v2-admin-overview-card">
+            <span class="v2-admin-overview-value">${_total}</span>
+            <span class="v2-admin-overview-label">Total Assignments</span>
+          </div>
+          <div class="v2-admin-overview-card">
+            <span class="v2-admin-overview-value">${_drivers}</span>
+            <span class="v2-admin-overview-label">Driver Aktif</span>
+          </div>
+          <div class="v2-admin-overview-card">
+            <span class="v2-admin-overview-value">${_vehicles}</span>
+            <span class="v2-admin-overview-label">Kendaraan Aktif</span>
+          </div>
+        </div>
+      `;
+    }
+    renderV2AdminAnalytics();
+
   } else {
-    if (usersSection)    usersSection.style.display    = 'none';
-    if (driversSection)  driversSection.style.display  = 'none';
-    if (vehiclesSection) vehiclesSection.style.display = 'none';
-    if (configSection)   configSection.style.display   = 'none';
+    if (usersSection)       usersSection.style.display       = 'none';
+    if (driversSection)     driversSection.style.display     = 'none';
+    if (vehiclesSection)    vehiclesSection.style.display    = 'none';
+    if (configSection)      configSection.style.display      = 'none';
+    if (analyticsSection)   analyticsSection.style.display   = 'none';
     const auditSection = document.getElementById('v2AdminSectionAudit');
     if (auditSection) auditSection.style.display = 'none';
     if (overviewRow) overviewRow.innerHTML = '';
@@ -3958,6 +4012,177 @@ function renderV2AdminConfig() {
       showToast(err.message || 'Gagal menyimpan pengaturan sistem.');
     } finally { btn.disabled = false; }
   });
+}
+
+/* ============================================================
+   V1.8.0 — Analytics Foundation
+   ============================================================ */
+
+function renderV2AdminAnalytics() {
+  const container = document.getElementById('v2AdminSectionAnalytics');
+  if (!container) return;
+
+  // ── Assignment counts ──────────────────────────────────────────────────
+  const allAsg     = assignments.map(normalizeAssignmentStatus);
+  const total      = allAsg.length;
+  const completed  = allAsg.filter(a => a.status === 'completed').length;
+  const inProgress = allAsg.filter(a => a.status === 'started').length;
+  const scheduled  = allAsg.filter(a => a.status === 'assigned').length;
+  const cancelled  = Math.max(0, total - completed - inProgress - scheduled);
+  const openAsg    = inProgress + scheduled;
+  const compRate   = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+  // ── Driver utilization ─────────────────────────────────────────────────
+  const activeDrivers = getDrivers().filter(d => d.active !== false && !d.archived);
+  const driverMap = new Map();
+  for (const d of activeDrivers) {
+    driverMap.set((d.name || '').toLowerCase(), { displayName: d.name, count: 0 });
+  }
+  for (const a of allAsg) {
+    const entry = driverMap.get((a.driver || '').toLowerCase());
+    if (entry) entry.count++;
+  }
+  const driversSorted  = [...driverMap.values()].sort((x, y) => y.count - x.count);
+  const mostActiveDrv  = driversSorted[0] ?? null;
+  const leastActiveDrv = driversSorted.length > 1 ? driversSorted[driversSorted.length - 1] : null;
+
+  // ── Vehicle utilization ────────────────────────────────────────────────
+  const activeVehicles = getActiveVehiclesFromStore().filter(v => !v.archived);
+  const vehicleMap = new Map();
+  for (const v of activeVehicles) {
+    vehicleMap.set((v.name || '').toLowerCase(), { displayName: v.name, count: 0 });
+  }
+  for (const a of allAsg) {
+    const entry = vehicleMap.get((a.vehicle || '').toLowerCase());
+    if (entry) entry.count++;
+  }
+  const vehiclesSorted = [...vehicleMap.values()].sort((x, y) => y.count - x.count);
+  const mostUsedVeh    = vehiclesSorted[0] ?? null;
+  const leastUsedVeh   = vehiclesSorted.length > 1 ? vehiclesSorted[vehiclesSorted.length - 1] : null;
+
+  // ── Bidang analytics — from requests ──────────────────────────────────
+  const bidangReqCounts = new Map();
+  const bidangAsgCounts = new Map();
+  for (const r of requests) {
+    const name = r.requesterName || '—';
+    bidangReqCounts.set(name, (bidangReqCounts.get(name) || 0) + 1);
+  }
+  for (const a of allAsg) {
+    if (a.requestId) {
+      const req = requests.find(r => r.id === a.requestId);
+      if (req && req.requesterName) {
+        const name = req.requesterName;
+        bidangAsgCounts.set(name, (bidangAsgCounts.get(name) || 0) + 1);
+      }
+    }
+  }
+  const bidangSorted = [...bidangReqCounts.entries()]
+    .map(([name, reqCount]) => ({ name, reqCount, asgCount: bidangAsgCounts.get(name) || 0 }))
+    .sort((a, b) => b.reqCount - a.reqCount);
+
+  // ── Render helpers ─────────────────────────────────────────────────────
+  function kpiRow(label, value, mod = '') {
+    return `<div class="v2-analytics-kpi-row">
+      <span class="v2-analytics-kpi-label">${esc(label)}</span>
+      <span class="v2-analytics-kpi-val${mod ? ` v2-analytics-kpi-val--${mod}` : ''}">${esc(String(value))}</span>
+    </div>`;
+  }
+
+  const driverBreakdownHtml = driversSorted.length > 0
+    ? driversSorted.map(d => `
+        <div class="v2-analytics-breakdown-row">
+          <span class="v2-analytics-breakdown-name">${esc(d.displayName)}</span>
+          <span class="v2-analytics-breakdown-count">${d.count} trip</span>
+        </div>`).join('')
+    : '<p class="v2-analytics-empty">Belum ada data driver aktif.</p>';
+
+  const vehicleBreakdownHtml = vehiclesSorted.length > 0
+    ? vehiclesSorted.map(v => `
+        <div class="v2-analytics-breakdown-row">
+          <span class="v2-analytics-breakdown-name">${esc(v.displayName)}</span>
+          <span class="v2-analytics-breakdown-count">${v.count} trip</span>
+        </div>`).join('')
+    : '<p class="v2-analytics-empty">Belum ada data kendaraan aktif.</p>';
+
+  const bidangRowsHtml = bidangSorted.length > 0
+    ? bidangSorted.map((b, i) => `
+        <div class="v2-analytics-breakdown-row">
+          <span class="v2-analytics-breakdown-rank">${i + 1}</span>
+          <span class="v2-analytics-breakdown-name">${esc(b.name)}</span>
+          <span class="v2-analytics-breakdown-count">${b.reqCount} req</span>
+          <span class="v2-analytics-breakdown-count">${b.asgCount} asg</span>
+        </div>`).join('')
+    : '<p class="v2-analytics-empty">Belum ada data request.</p>';
+
+  const fmtDrv = d => d ? `${esc(d.displayName)} (${d.count} trip)` : '—';
+  const fmtVeh = v => v ? `${esc(v.displayName)} (${v.count} trip)` : '—';
+
+  container.innerHTML = `
+    <div class="v2-analytics-groups">
+
+      <!-- 1. Assignment Analytics -->
+      <div class="v2-admin-config-group">
+        <h3 class="v2-admin-config-group-title">Assignment Analytics</h3>
+        <div class="v2-analytics-kpi-list">
+          ${kpiRow('Total Assignments', total)}
+          ${kpiRow('Selesai', completed, 'ok')}
+          ${kpiRow('Berlangsung', inProgress, 'info')}
+          ${kpiRow('Dijadwalkan', scheduled)}
+          ${kpiRow('Dibatalkan', cancelled)}
+        </div>
+      </div>
+
+      <!-- 2. Driver Utilization -->
+      <div class="v2-admin-config-group">
+        <h3 class="v2-admin-config-group-title">Driver Utilization</h3>
+        <div class="v2-analytics-kpi-list">
+          ${kpiRow('Total Driver Aktif', activeDrivers.length)}
+          ${kpiRow('Driver Paling Aktif', fmtDrv(mostActiveDrv))}
+          ${kpiRow('Driver Paling Jarang', fmtDrv(leastActiveDrv))}
+        </div>
+        <div class="v2-analytics-subtitle">Penugasan Per Driver</div>
+        <div class="v2-analytics-breakdown">${driverBreakdownHtml}</div>
+      </div>
+
+      <!-- 3. Vehicle Utilization -->
+      <div class="v2-admin-config-group">
+        <h3 class="v2-admin-config-group-title">Vehicle Utilization</h3>
+        <div class="v2-analytics-kpi-list">
+          ${kpiRow('Total Kendaraan Aktif', activeVehicles.length)}
+          ${kpiRow('Kendaraan Terbanyak', fmtVeh(mostUsedVeh))}
+          ${kpiRow('Kendaraan Paling Jarang', fmtVeh(leastUsedVeh))}
+        </div>
+        <div class="v2-analytics-subtitle">Penggunaan Per Kendaraan</div>
+        <div class="v2-analytics-breakdown">${vehicleBreakdownHtml}</div>
+      </div>
+
+      <!-- 4. Bidang Analytics -->
+      <div class="v2-admin-config-group">
+        <h3 class="v2-admin-config-group-title">Bidang Analytics</h3>
+        <div class="v2-analytics-breakdown">
+          ${bidangSorted.length > 0 ? `
+          <div class="v2-analytics-breakdown-row v2-analytics-breakdown-row--header">
+            <span class="v2-analytics-breakdown-rank"></span>
+            <span class="v2-analytics-breakdown-name">Bidang</span>
+            <span class="v2-analytics-breakdown-count">Request</span>
+            <span class="v2-analytics-breakdown-count">Asg</span>
+          </div>` : ''}
+          ${bidangRowsHtml}
+        </div>
+      </div>
+
+      <!-- 5. Completion Analytics -->
+      <div class="v2-admin-config-group">
+        <h3 class="v2-admin-config-group-title">Completion Analytics</h3>
+        <div class="v2-analytics-kpi-list">
+          ${kpiRow('Completion Rate', `${compRate}%`, compRate >= 80 ? 'ok' : compRate >= 50 ? 'warn' : '')}
+          ${kpiRow('Open Assignments', openAsg)}
+          ${kpiRow('Completed Assignments', completed, 'ok')}
+        </div>
+      </div>
+
+    </div>
+  `;
 }
 
 /* ============================================================

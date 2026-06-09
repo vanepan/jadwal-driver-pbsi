@@ -1,10 +1,27 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.6.2';
-export const RELEASE_NAME = 'Security & Source Consolidation';
+export const APP_VERSION = '1.8.0';
+export const RELEASE_NAME = 'Analytics Foundation';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.8.0',
+    date: '2026-06-09',
+    summary: 'Analytics Foundation',
+    highlights: [
+      'Analytics section added to Administration Workspace (after Konfigurasi)',
+      'Module 1 — Assignment Analytics: Total, Selesai, Berlangsung, Dijadwalkan, Dibatalkan',
+      'Module 2 — Driver Utilization: Active drivers, Most/Least active, per-driver trip breakdown',
+      'Module 3 — Vehicle Utilization: Active vehicles, Most/Least used, per-vehicle trip breakdown',
+      'Module 4 — Bidang Analytics: Top requesting bidang ranked by request count and assignment count',
+      'Module 5 — Completion Analytics: Completion rate %, Open assignments, Completed assignments',
+      'Overview cards: Completion Rate, Total Assignments, Driver Aktif, Kendaraan Aktif',
+      'No AI, no predictions, no charts — foundation KPIs from existing collections only',
+      'Mobile-first: single-column stacking on ≤720px via v2-analytics-groups grid',
+      'Section visibility bug fixed: users/drivers/vehicles tabs now properly hide audit section on switch',
+    ],
+  },
   {
     version: '1.6.2',
     date: '2026-06-09',

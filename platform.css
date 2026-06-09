@@ -8696,3 +8696,150 @@ input[type="time"].v2-admin-config-input {
 .v2-admin-config-status-dot--online {
   background: #22a84a;
 }
+
+/* ================================================================
+   V1.8.0 — Analytics Foundation
+   ================================================================ */
+
+/* Grid layout — mirrors config groups, responsive to single column on mobile */
+.v2-analytics-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 20px;
+}
+
+@media (max-width: 720px) {
+  .v2-analytics-groups {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* KPI stat list — vertical stack of label/value rows */
+.v2-analytics-kpi-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Single KPI row: label left, value right */
+.v2-analytics-kpi-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 0;
+  border-bottom: 1px solid var(--border);
+}
+.v2-analytics-kpi-row:last-child {
+  border-bottom: none;
+}
+
+.v2-analytics-kpi-label {
+  font-size: 13px;
+  color: var(--muted);
+  flex: 1;
+  line-height: 1.4;
+}
+
+.v2-analytics-kpi-val {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  text-align: right;
+  flex-shrink: 0;
+  max-width: 55%;
+  word-break: break-word;
+}
+
+.v2-analytics-kpi-val--ok   { color: var(--ok);   }
+.v2-analytics-kpi-val--info { color: var(--info);  }
+.v2-analytics-kpi-val--warn { color: var(--warn);  }
+
+/* Section subtitle divider within an analytics card */
+.v2-analytics-subtitle {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+  margin-top: 2px;
+}
+
+/* Breakdown list — per-driver / per-vehicle / per-bidang rows */
+.v2-analytics-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* One breakdown row */
+.v2-analytics-breakdown-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+.v2-analytics-breakdown-row:last-child {
+  border-bottom: none;
+}
+
+/* Header row: dimmed labels, no background on chips */
+.v2-analytics-breakdown-row--header {
+  padding-bottom: 6px;
+}
+.v2-analytics-breakdown-row--header .v2-analytics-breakdown-name,
+.v2-analytics-breakdown-row--header .v2-analytics-breakdown-count {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: none;
+  padding: 0;
+  border-radius: 0;
+}
+
+/* Rank number (#1, #2 …) */
+.v2-analytics-breakdown-rank {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--faint);
+  width: 18px;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+/* Entity name — takes remaining space */
+.v2-analytics-breakdown-name {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Count chip — compact badge on the right */
+.v2-analytics-breakdown-count {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--hover);
+  padding: 2px 8px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  min-width: 44px;
+  text-align: center;
+}
+
+/* Empty state message */
+.v2-analytics-empty {
+  font-size: 12px;
+  color: var(--faint);
+  margin: 0;
+  text-align: center;
+  padding: 10px 0;
+}
