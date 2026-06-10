@@ -336,6 +336,7 @@ function handleFormSubmit(e) {
   if (editingId) {
     // Update assignment yang ada (selalu single-date) — preserve all lifecycle fields
     const idx = assignments.findIndex(a => a.id === editingId);
+    let editedAssignment = null;
     if (idx !== -1) {
       const existing = assignments[idx];
       assignments[idx] = {
@@ -360,9 +361,10 @@ function handleFormSubmit(e) {
         endOdometer:       existing.endOdometer       ?? null,
         distanceTravelled: existing.distanceTravelled ?? null,
       };
+      editedAssignment = assignments[idx];
     }
     showToast('✅ Jadwal berhasil diperbarui');
-    if (onSaveCallback) onSaveCallback(assignments, false, startDate, null);
+    if (onSaveCallback) onSaveCallback(assignments, false, startDate, editedAssignment);
   } else if (datesToCreate.length > 1) {
     // Multi-day: buat satu assignment per tanggal
     const creatorName = currentUser ? currentUser.name : '';

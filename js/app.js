@@ -6168,7 +6168,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Operasi delete sudah ditangani sepenuhnya oleh registerDeleteCallback — abaikan path ini.
     if (!isNewAssignment && assignmentDate === undefined) return;
 
-    const prevAssignments = assignments.map(a => ({ ...a })); // shallow-clone each item before assignments.js mutates the shared array
+    const prevAssignments = assignments; // used only for multi-day new-assignment detection (prevIds)
     const beforeCount = prevAssignments.length;
 
     // Safety guard: deteksi jika data lokal jauh lebih sedikit dari Firebase
@@ -6193,12 +6193,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       const prevIds = new Set(prevAssignments.map(a => a.id));
       updatedAssignments.filter(a => !prevIds.has(a.id)).forEach(a => saveOneAssignment(a));
     } else {
-      // Edit: cari assignment yang berubah
-      const edited = updatedAssignments.find(a => {
-        const prev = prevAssignments.find(p => p.id === a.id);
-        return prev && JSON.stringify(prev) !== JSON.stringify(a);
-      });
-      if (edited) saveOneAssignment(edited);
+      // Edit: assignments.js passes the edited object directly as newAssignment.
+      // The shared-array mutation means a diff on prevAssignments is unreliable.
+      if (newAssignment) saveOneAssignment(newAssignment);
       // Jika tidak ada yang berubah (misal dipanggil dari deleteAssignment internal),
       // removeOneAssignment sudah ditangani di registerDeleteCallback.
     }
