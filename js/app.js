@@ -6168,7 +6168,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Operasi delete sudah ditangani sepenuhnya oleh registerDeleteCallback — abaikan path ini.
     if (!isNewAssignment && assignmentDate === undefined) return;
 
-    const prevAssignments = assignments; // capture sebelum update untuk deteksi perubahan
+    const prevAssignments = assignments.map(a => ({ ...a })); // shallow-clone each item before assignments.js mutates the shared array
     const beforeCount = prevAssignments.length;
 
     // Safety guard: deteksi jika data lokal jauh lebih sedikit dari Firebase
