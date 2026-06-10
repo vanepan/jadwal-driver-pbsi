@@ -362,7 +362,9 @@ function handleFormSubmit(e) {
         distanceTravelled: existing.distanceTravelled ?? null,
       };
       editedAssignment = assignments[idx];
+      console.log('[EDIT DEBUG] editedAssignment to save:', JSON.stringify(editedAssignment));
     }
+    if (!editedAssignment) console.warn('[EDIT DEBUG] idx === -1, editingId not found:', editingId, 'array ids:', assignments.map(a => a.id));
     showToast('✅ Jadwal berhasil diperbarui');
     if (onSaveCallback) onSaveCallback(assignments, false, startDate, editedAssignment);
   } else if (datesToCreate.length > 1) {
