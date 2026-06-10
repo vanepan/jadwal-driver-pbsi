@@ -6195,7 +6195,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else {
       // Edit: assignments.js passes the edited object directly as newAssignment.
       // The shared-array mutation means a diff on prevAssignments is unreliable.
-      console.log('[EDIT DEBUG] app.js saveCallback — newAssignment about to write:', JSON.stringify(newAssignment));
       if (newAssignment) saveOneAssignment(newAssignment);
       // Jika tidak ada yang berubah (misal dipanggil dari deleteAssignment internal),
       // removeOneAssignment sudah ditangani di registerDeleteCallback.

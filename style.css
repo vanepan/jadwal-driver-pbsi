@@ -705,6 +705,13 @@ input[type="date"] { color-scheme: light; }
 }
 .btn-primary:hover { background: var(--red-mid); }
 .btn-primary:active { transform: scale(0.97); }
+.btn-primary:disabled {
+  background: var(--gray-3, #d1d5db);
+  color: var(--gray-5, #9ca3af);
+  cursor: not-allowed;
+  transform: none;
+  pointer-events: none;
+}
 
 .btn-plus { font-size: 18px; line-height: 1; font-weight: 300; }
 
@@ -1912,7 +1919,6 @@ input[type="number"]::-webkit-inner-spin-button {
   padding: 10px 14px;
   font-size: 13px;
   font-weight: 500;
-  margin-top: 10px;
   animation: shake 0.3s ease;
 }
 
@@ -1947,6 +1953,25 @@ input[type="number"]::-webkit-inner-spin-button {
   justify-content: flex-end;
   margin-top: 16px;
   flex-wrap: wrap;
+}
+
+/* Assignment form: sticky footer with conflict notices stacked above buttons */
+#assignmentForm .form-actions {
+  flex-direction: column;
+  justify-content: stretch;
+  margin-top: 12px;
+  position: sticky;
+  bottom: 0;
+  background: var(--white);
+  padding-top: 10px;
+  border-top: 1px solid var(--gray-2, #e5e7eb);
+  z-index: 1;
+}
+
+.form-actions-btns {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 .form-text,
@@ -2674,7 +2699,6 @@ input[type="number"]::-webkit-inner-spin-button {
   padding: 10px 14px;
   font-size: 12px;
   font-weight: 500;
-  margin-top: 8px;
   line-height: 1.7;
 }
 
@@ -2907,8 +2931,12 @@ input[type="number"]::-webkit-inner-spin-button {
     flex-direction: column-reverse;
     margin-top: 14px;
   }
+  #assignmentForm .form-actions { margin-top: 0; flex-direction: column; }
+  .form-actions-btns { flex-direction: column-reverse; }
   .form-actions .btn-primary,
-  .form-actions .btn-secondary {
+  .form-actions .btn-secondary,
+  .form-actions-btns .btn-primary,
+  .form-actions-btns .btn-secondary {
     width: 100%;
     text-align: center;
     justify-content: center;

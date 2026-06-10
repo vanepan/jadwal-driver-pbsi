@@ -173,18 +173,12 @@ export function saveAssignments(assignments) {
  * @returns {Promise}
  */
 export function saveOneAssignment(assignment) {
-  if (!firebaseDb || !assignment?.id) {
-    console.warn('[EDIT DEBUG] saveOneAssignment skipped — firebaseDb:', !!firebaseDb, 'id:', assignment?.id);
-    return Promise.resolve();
-  }
+  if (!firebaseDb || !assignment?.id) return Promise.resolve();
   const assignRef = ref(firebaseDb, `${FIREBASE_ASSIGNMENTS_PATH}/${assignment.id}`);
-  console.log('[EDIT DEBUG] Writing to Firebase path:', `${FIREBASE_ASSIGNMENTS_PATH}/${assignment.id}`, JSON.stringify(assignment));
-  return set(assignRef, assignment)
-    .then(() => console.log('[EDIT DEBUG] Firebase write SUCCESS for', assignment.id))
-    .catch(err => {
-      console.error('Firebase single-assignment save gagal:', err);
-      showToast('Firebase gagal menyimpan. Data tersimpan di device ini.');
-    });
+  return set(assignRef, assignment).catch(err => {
+    console.error('Firebase single-assignment save gagal:', err);
+    showToast('Firebase gagal menyimpan. Data tersimpan di device ini.');
+  });
 }
 
 /**
@@ -464,7 +458,6 @@ export function initFirebaseSync() {
 
     const updatedAssignments = firebaseMapToAssignments(snapshot.val());
     _remoteAssignmentCount = updatedAssignments.length;
-    console.log('[EDIT DEBUG] Firebase listener fired — assignment count:', updatedAssignments.length, '| first item sample:', JSON.stringify(updatedAssignments[0]));
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedAssignments));
 
     // Backup sekali per hari saat pertama kali data Firebase diterima

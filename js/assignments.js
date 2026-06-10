@@ -177,6 +177,8 @@ export function openFormModal(asgnId = null) {
 
   const warning = document.getElementById('conflictWarning');
   if (warning) warning.style.display = 'none';
+  const saveBtn = document.getElementById('btnSaveForm');
+  if (saveBtn) saveBtn.disabled = false;
 
   // Always open in single-day mode (edit is always single-date) — reset without animation
   const multiDayCheckbox = document.getElementById('assignmentMultiDay');
@@ -312,8 +314,11 @@ function handleFormSubmit(e) {
     }
   }
 
-  // Cek konflik untuk semua tanggal dalam rentang
-  const conflictDates = datesToCreate.filter(d => checkConflict(driver, startTime, endTime, d, editingId));
+  // Cek konflik untuk semua tanggal dalam rentang (driver dan kendaraan)
+  const conflictDates = datesToCreate.filter(d =>
+    checkConflict(driver, startTime, endTime, d, editingId) ||
+    checkVehicleConflict(vehicle, startTime, endTime, d, editingId)
+  );
   const warningEl     = document.getElementById('conflictWarning');
   const warningDatesEl = document.getElementById('conflictWarningDates');
 
@@ -362,9 +367,7 @@ function handleFormSubmit(e) {
         distanceTravelled: existing.distanceTravelled ?? null,
       };
       editedAssignment = assignments[idx];
-      console.log('[EDIT DEBUG] editedAssignment to save:', JSON.stringify(editedAssignment));
     }
-    if (!editedAssignment) console.warn('[EDIT DEBUG] idx === -1, editingId not found:', editingId, 'array ids:', assignments.map(a => a.id));
     showToast('✅ Jadwal berhasil diperbarui');
     if (onSaveCallback) onSaveCallback(assignments, false, startDate, editedAssignment);
   } else if (datesToCreate.length > 1) {
@@ -544,11 +547,14 @@ function runConflictPreview() {
     }
   }
 
+  const saveBtn = document.getElementById('btnSaveForm');
   if (warnings.length > 0) {
     previewEl.innerHTML = warnings.join('<br>');
     previewEl.style.display = 'block';
+    if (saveBtn) saveBtn.disabled = true;
   } else {
     previewEl.style.display = 'none';
+    if (saveBtn) saveBtn.disabled = false;
   }
 }
 
