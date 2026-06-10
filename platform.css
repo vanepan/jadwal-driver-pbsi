@@ -9800,3 +9800,109 @@ input[type="time"].v2-admin-config-input {
   .v2-pwa-update-banner { flex-direction: column; gap: 8px; text-align: center; }
   .v2-pwa-update-btn { width: 100%; }
 }
+
+/* ── Install onboarding banner (Android — all roles) ─────────
+   Auto-shown 3 s after page load when beforeinstallprompt fires.
+   Dismissed → localStorage for 7 days.
+   Auto-hidden on appinstalled / standalone mode change.
+   ──────────────────────────────────────────────────────────── */
+.v2-pwa-install-banner {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 9998;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  /* Push above iPhone home-bar */
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
+  background: var(--surface, #fff);
+  border-top: 1px solid var(--border, #E0DDD8);
+  box-shadow: 0 -2px 14px rgba(0, 0, 0, 0.1);
+}
+
+.v2-pwa-install-icon {
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  background: #A8292F;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 19px;
+  font-weight: 800;
+  font-family: inherit;
+  letter-spacing: -0.5px;
+  user-select: none;
+}
+
+.v2-pwa-install-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.v2-pwa-install-name {
+  font-size: 0.87rem;
+  font-weight: 700;
+  color: var(--text-primary, #1A1A2E);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.v2-pwa-install-hint {
+  font-size: 0.74rem;
+  color: var(--text-muted, #888);
+}
+
+.v2-pwa-install-cta {
+  flex-shrink: 0;
+  padding: 7px 15px;
+  background: #A8292F;
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.v2-pwa-install-cta:hover    { background: #8E1E23; }
+.v2-pwa-install-cta:active   { background: #751A1E; }
+.v2-pwa-install-cta:disabled { opacity: 0.6; cursor: default; }
+
+.v2-pwa-install-close {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted, #888);
+  font-size: 20px;
+  border-radius: 6px;
+  padding: 0;
+  line-height: 1;
+}
+
+.v2-pwa-install-close:hover { background: var(--surface-2, #F5F4F2); }
+
+[data-theme="dark"] .v2-pwa-install-close:hover { background: rgba(255,255,255,0.06); }
+
+@media (max-width: 400px) {
+  /* Very narrow: hide hint text to keep banner single-line */
+  .v2-pwa-install-hint { display: none; }
+}

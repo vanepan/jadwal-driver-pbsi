@@ -1,9 +1,10 @@
 'use strict';
 
 /* ============================================================
-   PWA Foundation — v1.9.1
+   PWA — v1.9.1.1
    Handles install detection, prompt capture, iOS onboarding,
-   service worker registration, update detection, and update banner.
+   service worker registration, update detection, update banner,
+   and global install onboarding (all roles).
    ============================================================ */
 
 import { APP_VERSION } from './config.js';
@@ -13,27 +14,51 @@ const _stateCallbacks = [];
 let _deferredPrompt    = null;
 let _swRegistration    = null;
 let _updateBannerEl    = null;
+let _installBannerEl   = null;
+let _bannerCheckDone   = false; // true once the 3-second startup check has fired
 
 let _state = {
   /* Install */
-  isInstalled:      false,
-  platform:         'other',   // 'ios-safari' | 'android-chrome' | 'desktop-chrome' | 'other'
-  canInstall:       false,
-  isIOSSafari:      false,
-  displayMode:      'browser', // 'standalone' | 'browser'
+  isInstalled:       false,
+  platform:          'other',   // 'ios-safari' | 'android-chrome' | 'desktop-chrome' | 'other'
+  canInstall:        false,
+  isIOSSafari:       false,
+  displayMode:       'browser', // 'standalone' | 'browser'
   /* Service Worker */
-  swStatus:         'unsupported', // 'unsupported' | 'registering' | 'active' | 'failed'
+  swStatus:          'unsupported', // 'unsupported' | 'registering' | 'active' | 'failed'
   swUpdateAvailable: false,
-  swCacheCount:     null,       // number | null — filled async after SW activates
+  swCacheCount:      null,       // number | null — filled async after SW activates
   /* Version */
-  appVersion:       APP_VERSION,
+  appVersion:        APP_VERSION,
 };
 
-/* Capture beforeinstallprompt at module load so we don't miss early fires */
+/* ── Install-dismiss persistence ───────────────────────────── */
+
+const _INSTALL_DISMISS_KEY = 'pbsi_pwa_install_dismissed';
+const _INSTALL_DISMISS_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+function _installDismissed() {
+  try {
+    const ts = localStorage.getItem(_INSTALL_DISMISS_KEY);
+    return Boolean(ts) && (Date.now() - Number(ts) < _INSTALL_DISMISS_TTL);
+  } catch (_) { return false; }
+}
+
+function _recordInstallDismiss() {
+  try { localStorage.setItem(_INSTALL_DISMISS_KEY, String(Date.now())); } catch (_) {}
+}
+
+/* ── Module-level event listeners (run before DOMContentLoaded) */
+
+/* Capture beforeinstallprompt early so we never miss it */
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   _deferredPrompt   = e;
   _state.canInstall = true;
+  /* If the startup check already fired but couldn't show (no prompt yet), show now */
+  if (_bannerCheckDone && !_installBannerEl && !_state.isInstalled && !_installDismissed()) {
+    _showAndroidInstallBanner();
+  }
   _notifyListeners();
 });
 
@@ -42,6 +67,7 @@ window.addEventListener('appinstalled', () => {
   _state.isInstalled     = true;
   _state.canInstall      = false;
   _state.displayMode     = 'standalone';
+  _hideInstallBanner();
   _notifyListeners();
 });
 
@@ -85,9 +111,7 @@ async function _refreshCacheCount() {
     }
     _state.swCacheCount = total;
     _notifyListeners();
-  } catch (_) {
-    /* non-fatal */
-  }
+  } catch (_) { /* non-fatal */ }
 }
 
 /* ── Update banner ─────────────────────────────────────────── */
@@ -116,6 +140,65 @@ function _showUpdateBanner() {
       window.location.reload();
     }, { once: true });
   });
+}
+
+/* ── Install banner (Android) ──────────────────────────────── */
+
+function _hideInstallBanner() {
+  if (_installBannerEl) _installBannerEl.style.display = 'none';
+}
+
+function _showAndroidInstallBanner() {
+  if (_installBannerEl) {
+    _installBannerEl.style.display = 'flex';
+    return;
+  }
+
+  const banner = document.createElement('div');
+  banner.id        = 'pwaInstallBanner';
+  banner.className = 'v2-pwa-install-banner';
+  banner.innerHTML = `
+    <div class="v2-pwa-install-icon" aria-hidden="true">S</div>
+    <div class="v2-pwa-install-info">
+      <span class="v2-pwa-install-name">Sarpras Operations</span>
+      <span class="v2-pwa-install-hint">Pasang di perangkat Anda</span>
+    </div>
+    <button class="v2-pwa-install-cta" type="button" id="btnPwaInstall">Instal</button>
+    <button class="v2-pwa-install-close" type="button" id="btnPwaInstallDismiss" aria-label="Tutup">&times;</button>
+  `;
+  document.body.appendChild(banner);
+  _installBannerEl = banner;
+
+  document.getElementById('btnPwaInstallDismiss')?.addEventListener('click', () => {
+    _recordInstallDismiss();
+    _hideInstallBanner();
+  });
+
+  document.getElementById('btnPwaInstall')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btnPwaInstall');
+    if (btn) { btn.disabled = true; btn.textContent = 'Menginstal…'; }
+    const accepted = await triggerInstallPrompt();
+    /* If accepted, appinstalled will fire and hide the banner automatically */
+    if (!accepted && btn) {
+      btn.disabled   = false;
+      btn.textContent = 'Instal';
+    }
+  });
+}
+
+/* ── Install onboarding gating ─────────────────────────────── */
+
+function _maybeShowInstallOnboarding() {
+  if (_state.isInstalled) return;
+  if (_installDismissed()) return;
+
+  if (_state.platform === 'android-chrome' && _deferredPrompt) {
+    _showAndroidInstallBanner();
+  } else if (_state.platform === 'ios-safari') {
+    /* Record dismiss before showing so it doesn't auto-show again for 7 days */
+    _recordInstallDismiss();
+    showIOSInstallModal();
+  }
 }
 
 /* ── Service worker registration ───────────────────────────── */
@@ -194,11 +277,18 @@ export function initPWA() {
   window.matchMedia('(display-mode: standalone)').addEventListener('change', (e) => {
     _state.isInstalled = e.matches;
     _state.displayMode = e.matches ? 'standalone' : 'browser';
+    if (e.matches) _hideInstallBanner();
     _notifyListeners();
   });
 
-  /* Register service worker after state is ready */
+  /* Register service worker */
   _registerServiceWorker();
+
+  /* Show install onboarding after a brief delay so the app renders first */
+  setTimeout(() => {
+    _bannerCheckDone = true;
+    _maybeShowInstallOnboarding();
+  }, 3000);
 }
 
 export function getPWAState() {

@@ -1,10 +1,25 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.9.1';
-export const RELEASE_NAME = 'Advanced PWA Foundation';
+export const APP_VERSION = '1.9.1.1';
+export const RELEASE_NAME = 'PWA Install Experience';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.9.1.1',
+    date: '2026-06-10',
+    summary: 'PWA Install Experience',
+    highlights: [
+      'Global install onboarding — visible to all roles, not just admins in Configuration Center',
+      'Android: persistent bottom install banner (#pwaInstallBanner) auto-shown 3 s after page load when beforeinstallprompt is available; "Instal" CTA wraps triggerInstallPrompt(); auto-hidden on appinstalled / standalone mode change',
+      'iPhone: iOS Add-to-Home-Screen onboarding modal (existing showIOSInstallModal) auto-shown 3 s after page load on ios-safari',
+      'Dismiss persistence: localStorage key pbsi_pwa_install_dismissed stores timestamp; suppressed for 7 days after dismiss or after iOS modal auto-show; resets after TTL',
+      '_bannerCheckDone flag: if beforeinstallprompt fires after the 3-s check, the banner shows immediately (handles slow Chrome instability detection)',
+      'display-mode change listener: hides install banner when app transitions to standalone mode',
+      'platform.css: .v2-pwa-install-banner (fixed bottom, z-index 9998), .v2-pwa-install-icon (crimson 42×42 rounded square), .v2-pwa-install-name, .v2-pwa-install-hint, .v2-pwa-install-cta, .v2-pwa-install-close; dark-mode; ≤400px hides hint text',
+      'No changes to Configuration Center PWA diagnostics group',
+    ],
+  },
   {
     version: '1.9.1',
     date: '2026-06-10',
