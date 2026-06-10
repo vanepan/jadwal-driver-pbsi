@@ -1,50 +1,63 @@
 'use strict';
 
 /* ============================================================
-   PWA Foundation — v1.9.0
-   Handles install detection, prompt capture, iOS onboarding.
-   No service worker. No offline mode. Foundation only.
+   PWA Foundation — v1.9.1
+   Handles install detection, prompt capture, iOS onboarding,
+   service worker registration, update detection, and update banner.
    ============================================================ */
+
+import { APP_VERSION } from './config.js';
 
 const _stateCallbacks = [];
 
-let _deferredPrompt = null;
+let _deferredPrompt    = null;
+let _swRegistration    = null;
+let _updateBannerEl    = null;
 
 let _state = {
-  isInstalled: false,
-  platform: 'other',        // 'ios-safari' | 'android-chrome' | 'desktop-chrome' | 'other'
-  canInstall: false,
-  isIOSSafari: false,
-  displayMode: 'browser',   // 'standalone' | 'browser'
+  /* Install */
+  isInstalled:      false,
+  platform:         'other',   // 'ios-safari' | 'android-chrome' | 'desktop-chrome' | 'other'
+  canInstall:       false,
+  isIOSSafari:      false,
+  displayMode:      'browser', // 'standalone' | 'browser'
+  /* Service Worker */
+  swStatus:         'unsupported', // 'unsupported' | 'registering' | 'active' | 'failed'
+  swUpdateAvailable: false,
+  swCacheCount:     null,       // number | null — filled async after SW activates
+  /* Version */
+  appVersion:       APP_VERSION,
 };
 
-// Register beforeinstallprompt at module load time so we don't miss early fires.
+/* Capture beforeinstallprompt at module load so we don't miss early fires */
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
-  _deferredPrompt = e;
+  _deferredPrompt   = e;
   _state.canInstall = true;
   _notifyListeners();
 });
 
 window.addEventListener('appinstalled', () => {
-  _deferredPrompt = null;
-  _state.isInstalled = true;
-  _state.canInstall = false;
-  _state.displayMode = 'standalone';
+  _deferredPrompt        = null;
+  _state.isInstalled     = true;
+  _state.canInstall      = false;
+  _state.displayMode     = 'standalone';
   _notifyListeners();
 });
 
+/* ── Platform helpers ──────────────────────────────────────── */
+
 function _detectPlatform() {
   const ua = navigator.userAgent || '';
-  const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+  const isIOS       = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
   const isIOSSafari = isIOS && /Safari/i.test(ua) && !/CriOS|FxiOS|OPiOS/i.test(ua);
-  const isAndroid = /Android/i.test(ua);
-  const isChrome = /Chrome\/\d/i.test(ua) && !/Edg\/|OPR\/|Brave/i.test(ua);
-  const isMobile = isIOS || isAndroid;
+  const isAndroid   = /Android/i.test(ua);
+  const isChrome    = /Chrome\/\d/i.test(ua) && !/Edg\/|OPR\/|Brave/i.test(ua);
+  const isMobile    = isIOS || isAndroid;
 
-  if (isIOSSafari) return 'ios-safari';
-  if (isAndroid && isChrome) return 'android-chrome';
-  if (!isMobile && isChrome) return 'desktop-chrome';
+  if (isIOSSafari)             return 'ios-safari';
+  if (isAndroid && isChrome)   return 'android-chrome';
+  if (!isMobile && isChrome)   return 'desktop-chrome';
   return 'other';
 }
 
@@ -58,6 +71,120 @@ function _notifyListeners() {
   _stateCallbacks.forEach(cb => cb(snap));
 }
 
+/* ── Cache query (async) ───────────────────────────────────── */
+
+async function _refreshCacheCount() {
+  if (!('caches' in window)) return;
+  try {
+    const keys = await caches.keys();
+    let total = 0;
+    for (const key of keys) {
+      const cache    = await caches.open(key);
+      const requests = await cache.keys();
+      total += requests.length;
+    }
+    _state.swCacheCount = total;
+    _notifyListeners();
+  } catch (_) {
+    /* non-fatal */
+  }
+}
+
+/* ── Update banner ─────────────────────────────────────────── */
+
+function _showUpdateBanner() {
+  if (_updateBannerEl) {
+    _updateBannerEl.style.display = 'flex';
+    return;
+  }
+
+  const banner = document.createElement('div');
+  banner.id        = 'pwaTUpdateBanner';
+  banner.className = 'v2-pwa-update-banner';
+  banner.innerHTML = `
+    <span class="v2-pwa-update-text">Versi baru tersedia.</span>
+    <button class="v2-pwa-update-btn" type="button" id="btnPwaRefreshNow">Refresh Sekarang</button>
+  `;
+  document.body.appendChild(banner);
+  _updateBannerEl = banner;
+
+  document.getElementById('btnPwaRefreshNow')?.addEventListener('click', () => {
+    if (_swRegistration && _swRegistration.waiting) {
+      _swRegistration.waiting.postMessage('SKIP_WAITING');
+    }
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      window.location.reload();
+    }, { once: true });
+  });
+}
+
+/* ── Service worker registration ───────────────────────────── */
+
+async function _registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) {
+    _state.swStatus = 'unsupported';
+    _notifyListeners();
+    return;
+  }
+
+  _state.swStatus = 'registering';
+  _notifyListeners();
+
+  try {
+    const reg = await navigator.serviceWorker.register('/service-worker.js');
+    _swRegistration = reg;
+
+    /* Already-waiting worker on first load (e.g. page refreshed mid-update) */
+    if (reg.waiting && navigator.serviceWorker.controller) {
+      _state.swUpdateAvailable = true;
+      _showUpdateBanner();
+    }
+
+    /* Watch for future updates */
+    reg.addEventListener('updatefound', () => {
+      const installing = reg.installing;
+      if (!installing) return;
+      installing.addEventListener('statechange', () => {
+        if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+          _state.swUpdateAvailable = true;
+          _showUpdateBanner();
+          _notifyListeners();
+        }
+      });
+    });
+
+    _state.swStatus = reg.active ? 'active' : 'registering';
+    _notifyListeners();
+
+    /* Refresh cache count once SW is active */
+    if (reg.active) {
+      _refreshCacheCount();
+    } else {
+      reg.addEventListener('updatefound', () => {
+        const w = reg.installing;
+        if (!w) return;
+        w.addEventListener('statechange', () => {
+          if (w.state === 'activated') _refreshCacheCount();
+        });
+      });
+    }
+
+    /* Detect when this tab's controller changes (after skipWaiting) */
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      _state.swStatus = 'active';
+      _notifyListeners();
+      _refreshCacheCount();
+    });
+
+  } catch (err) {
+    console.warn('[PWA] Service worker registration failed:', err);
+    _state.swStatus = 'failed';
+    _notifyListeners();
+  }
+}
+
+/* ── Public API ────────────────────────────────────────────── */
+
 export function initPWA() {
   _state.platform    = _detectPlatform();
   _state.isInstalled = _detectInstalled();
@@ -69,6 +196,9 @@ export function initPWA() {
     _state.displayMode = e.matches ? 'standalone' : 'browser';
     _notifyListeners();
   });
+
+  /* Register service worker after state is ready */
+  _registerServiceWorker();
 }
 
 export function getPWAState() {
@@ -84,7 +214,7 @@ export async function triggerInstallPrompt() {
   try {
     _deferredPrompt.prompt();
     const { outcome } = await _deferredPrompt.userChoice;
-    _deferredPrompt = null;
+    _deferredPrompt   = null;
     _state.canInstall = false;
     if (outcome === 'accepted') {
       _state.isInstalled = true;

@@ -1,10 +1,25 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.9.0';
-export const RELEASE_NAME = 'PWA Foundation';
+export const APP_VERSION = '1.9.1';
+export const RELEASE_NAME = 'Advanced PWA Foundation';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.9.1',
+    date: '2026-06-10',
+    summary: 'Advanced PWA Foundation',
+    highlights: [
+      'service-worker.js: cache-first strategy for static assets (CSS, JS, icons, manifest, fonts); network-first with offline.html fallback for navigation; network-only for Firebase origins',
+      'offline.html: standalone offline fallback page — crimson icon, "Sarpras Operations" label, "Tidak ada koneksi internet. / Silakan periksa jaringan Anda dan coba kembali.", Coba Lagi button; dark-mode-aware; zero external deps',
+      'Update Detection: when a new SW is installed and waiting, shows bottom banner "Versi baru tersedia. [Refresh Sekarang]"; button sends SKIP_WAITING to the waiting worker then reloads the page on controllerchange',
+      'PWA Diagnostics extended: Configuration → Progressive Web App now shows Service Worker (Aktif/Mendaftar…/Tidak Didukung/Gagal), Cache (N aset), Versi (vX.Y.Z from config), Update Tersedia (Ya/Tidak with amber warning color)',
+      'SW state tracked in pwa.js: swStatus, swUpdateAvailable, swCacheCount, appVersion — all included in getPWAState() snapshot and trigger registerPWAStateListener callbacks',
+      'Cache count refreshed asynchronously after SW activates and after controllerchange; shown live in diagnostics panel',
+      'Cache cleanup on activate: old sarpras-cache-* versions deleted when new SW takes control — no stale caches left behind',
+      'platform.css: .v2-pwa-update-banner (fixed bottom bar, safe-area-inset-bottom), .v2-pwa-update-btn, .v2-pwa-stat--warn, .v2-pwa-stat-divider; mobile: banner stacks vertically, button full-width',
+    ],
+  },
   {
     version: '1.9.0',
     date: '2026-06-10',

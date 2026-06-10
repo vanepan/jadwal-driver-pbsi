@@ -4102,11 +4102,22 @@ function renderV2AdminConfig() {
     'other':           'Browser',
   };
 
+  const _swStatusLabels = {
+    unsupported: 'Tidak Didukung',
+    registering: 'Mendaftar…',
+    active:      'Aktif',
+    failed:      'Gagal',
+  };
+
   const _refreshPwaConfigGroup = () => {
     const state       = getPWAState();
     const statusGrid  = document.getElementById('cfgPwaStatusGrid');
     const actionFooter = document.getElementById('cfgPwaActionFooter');
     if (!statusGrid || !actionFooter) return;
+
+    const swOk      = state.swStatus === 'active';
+    const cacheText = state.swCacheCount !== null ? `${state.swCacheCount} aset` : '—';
+    const swLabel   = _swStatusLabels[state.swStatus] || state.swStatus;
 
     statusGrid.innerHTML = `
       <div class="v2-pwa-stat-row">
@@ -4126,6 +4137,22 @@ function renderV2AdminConfig() {
       <div class="v2-pwa-stat-row">
         <span class="v2-pwa-stat-label">Display Mode</span>
         <span class="v2-pwa-stat-value">${state.displayMode}</span>
+      </div>
+      <div class="v2-pwa-stat-row v2-pwa-stat-divider">
+        <span class="v2-pwa-stat-label">Service Worker</span>
+        <span class="v2-pwa-stat-value${swOk ? ' v2-pwa-stat--ok' : ''}">${swLabel}</span>
+      </div>
+      <div class="v2-pwa-stat-row">
+        <span class="v2-pwa-stat-label">Cache</span>
+        <span class="v2-pwa-stat-value${swOk ? ' v2-pwa-stat--ok' : ''}">${swOk ? cacheText : '—'}</span>
+      </div>
+      <div class="v2-pwa-stat-row">
+        <span class="v2-pwa-stat-label">Versi</span>
+        <span class="v2-pwa-stat-value">v${state.appVersion}</span>
+      </div>
+      <div class="v2-pwa-stat-row">
+        <span class="v2-pwa-stat-label">Update Tersedia</span>
+        <span class="v2-pwa-stat-value${state.swUpdateAvailable ? ' v2-pwa-stat--warn' : ''}">${state.swUpdateAvailable ? 'Ya' : 'Tidak'}</span>
       </div>
     `;
 
