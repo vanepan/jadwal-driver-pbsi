@@ -1,10 +1,82 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.8.3';
-export const RELEASE_NAME = 'Analytics UX Polish';
+export const APP_VERSION = '1.9.0';
+export const RELEASE_NAME = 'PWA Foundation';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.9.0',
+    date: '2026-06-10',
+    summary: 'PWA Foundation',
+    highlights: [
+      'manifest.json: name "Sarpras Operations", short_name "Sarpras", display standalone, orientation portrait-primary, theme_color #A8292F, background_color #FBFAF8',
+      'PWA Icons: 192×192 and 512×512 PNGs generated via puppeteer — bold white "S" on crimson background with accent underbar; both registered as any + maskable',
+      'js/pwa.js: self-contained PWA module — beforeinstallprompt capture at module load time, appinstalled listener, display-mode change listener, iOS/Android/Chrome platform detection',
+      'Install Detection: isInstalled (matchMedia standalone + navigator.standalone), platform detection for ios-safari / android-chrome / desktop-chrome / other',
+      'Android/Chrome Install Flow: triggerInstallPrompt() wraps beforeinstallprompt.prompt() + userChoice; shows "Install Sarpras Operations" button in PWA Settings only when canInstall',
+      'iOS Safari Install Flow: showIOSInstallModal() creates a 3-step onboarding modal (Share → Add to Home Screen → Add); shown only on iOS Safari when not already installed',
+      'Installation Status: when display-mode:standalone detected, hides install actions and shows "✓ Aplikasi Terinstal" badge',
+      'PWA Settings in Configuration Center: read-only group with Status, Platform, Install Tersedia, Display Mode; refreshes live via registerPWAStateListener',
+      'Branding Migration: HTML title updated to "Sarpras · Jadwal Driver Operasional"; app-splash updated to "Sarpras"; manifest, apple-mobile-web-app-title, application-name all use Sarpras branding',
+      'index.html: manifest link, apple-touch-icon, meta theme-color, apple-mobile-web-app-capable/status-bar-style/title, application-name, description all added',
+      'scripts/generate-icons.js: Node.js puppeteer script for reproducing icons; renders HTML template at exact pixel size; deterministic output',
+      'No service worker, no offline mode, no push notifications — foundation only',
+    ],
+  },
+  {
+    version: '1.8.4.2',
+    date: '2026-06-10',
+    summary: 'Analytics Data Quality Center Enhancements',
+    highlights: [
+      'Data Quality Statistics bar: 4 stat cards — Potensi Duplikasi, Warning Diabaikan, Alias Aktif, Duplikasi Diselesaikan; warn/ok color states',
+      'Skip/Dismiss Warning: Abaikan button on each unresolved pair; stores dismisser name + timestamp to /settings/analyticsQuality/dismissedWarnings/{type}/{pairKey}; does NOT create alias or modify data',
+      'Restore Ignored Warnings: Warning Diabaikan section lists dismissed pairs with dismisser, date, and Tampilkan Lagi button; warning_restored audit log',
+      'Tinjau Semua Tujuan: review modal showing all destinations from filtered assignments with Name, Count, Normalized Key; searchable; sorted most-used first',
+      'Manual Merge from Review Modal: select exactly 2 destinations via checkbox; Gabungkan Terpilih opens alias resolution modal pre-filled with both values',
+      'Alias Impact Preview: Gabungkan button passes countA/countB; modal shows "A: N asg + B: M asg → Gabungan: N+M asg" before saving',
+      'Bulk Alias Visibility: Kelola Alias table gains Penggunaan (usage count) and Dibuat (created date) columns; created date tooltip shows creator name and ISO timestamp',
+      'Alias schema upgraded: stored as { canonical, createdAt, createdBy } object; backward-compatible with legacy plain strings via _getAliasCanonical()',
+      '_dismissDqWarning / _restoreDqWarning: new async helpers; log warning_dismissed / warning_restored audit actions',
+      'initDestinationReviewModal / openDestinationReviewModal / _renderDestReviewList: new modal and rendering pipeline for manual destination review workflow',
+      'window._analyticsFilteredAsg: exposes current filtered assignments for destination review modal without requiring re-query',
+      'Mobile: stats bar collapses to 2×2; pair actions wrap; Kelola Alias Usage/Dibuat columns hidden on ≤600px',
+    ],
+  },
+  {
+    version: '1.8.4.1',
+    date: '2026-06-10',
+    summary: 'Analytics Alias Resolution',
+    highlights: [
+      'Data Quality Resolution Center: replaces warning-only block with actionable resolution workflows; each detected pair shows a "Gabungkan" button',
+      'Alias Resolution Layer: /settings/analyticsAliases/{type}/{normalizedKey} → canonical value; applied before analytics computation — raw operational records untouched',
+      'Resolution Modal: radio selection of canonical value (A / B / Custom text input); saves to Firebase, logs audit action, triggers immediate analytics recalculation',
+      'Alias Resolution in Destination Analytics: occurrences of aliased names are counted under the canonical key, reducing duplicate destination entries',
+      'Alias Resolution in Bidang Analytics: bidang names resolved through alias map before frequency counting',
+      'Alias Active Indicator: resolved pairs show "✓ Alias Aktif" badge with canonical value instead of Gabungkan button',
+      'Kelola Alias table: lists all existing aliases (alias key, canonical value, type) with inline Hapus action',
+      'Delete Alias: removes mapping from Firebase; does NOT modify assignments or requests; analytics recalculates automatically',
+      'Audit Logging: alias_created and alias_deleted actions logged with type, aliasKey, canonical, actor, timestamp',
+      'Auto-refresh: registerSettingsChangeListener triggers refreshAnalyticsDisplay() when alias settings change',
+      'Firebase schema: /settings/analyticsAliases/destinations, /drivers, /vehicles, /bidang (each: normalizedKey → canonicalString)',
+      'New CSS: .v2-dq-center, .v2-dq-pair-list, .v2-dq-pair-row, .v2-dq-type-badge, .v2-dq-merge-btn, .v2-dq-resolved-badge, .v2-dq-alias-table, .v2-alias-modal-box, .v2-alias-radio-row, .v2-alias-custom-input, .v2-alias-modal-footer',
+      'Mobile: pair rows wrap, Gabungkan and Alias Aktif full-width on ≤600px; modal max-width 100%',
+    ],
+  },
+  {
+    version: '1.8.4',
+    date: '2026-06-10',
+    summary: 'Analytics Refinement & Data Quality',
+    highlights: [
+      'Task 1 — Destination Normalization: _normDestKey() collapses trim/lowercase/dash-variants/multi-space/trailing-punct into a canonical key; display label preserved as most-frequent raw value; duplicate destination entries now merged in analytics',
+      'Task 2 — Destination Similarity Detection: _strSimilarity() (Levenshtein ratio) + _detectSimilarPairs() identify likely-duplicate names at ≥0.75 similarity; warnings-only, no auto-merge',
+      'Task 3 — Data Quality Warnings: collapsible "Peringatan Kualitas Data" section appears when similar destinations / bidang / driver / vehicle names are detected; informational only, no data mutation',
+      'Task 4 — Completion Metrics Merge: Completion Rate + Open Rate KPIs moved into Ringkasan Operasional; separate "Kualitas Penyelesaian" section removed — reduces scroll depth',
+      'Task 5 — Bidang Cleanup: requesterName null / undefined / empty-string entries skipped in bidang analytics — prevents "-" from appearing as a ranked bidang',
+      'Task 6 — Filter Chip UX: date range chip uses neutral --date modifier (muted, surface bg); entity filter chips use --active modifier (accent color) — visual distinction between default context and active filters',
+      'New CSS: .v2-analytics-filter-chip--date, .v2-analytics-filter-chip--active, .v2-dq-details, .v2-dq-summary, .v2-dq-count, .v2-dq-hint, .v2-dq-list, .v2-dq-item, .v2-dq-type, .v2-dq-pair, .v2-dq-note',
+    ],
+  },
   {
     version: '1.8.3',
     date: '2026-06-09',

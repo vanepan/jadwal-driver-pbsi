@@ -40,7 +40,8 @@ import {
   restoreVehicle,
   deleteVehicle,
 } from './vehicles-store.js';
-import { initSettingsStore, getSetting, updateSetting } from './settings-store.js';
+import { initSettingsStore, getSetting, updateSetting, registerSettingsChangeListener } from './settings-store.js';
+import { initPWA, getPWAState, registerPWAStateListener, triggerInstallPrompt, showIOSInstallModal } from './pwa.js';
 import { initPbsiSelect } from './pbsi-select.js';
 import { initPbsiDatepicker, syncPbsiDatepicker } from './pbsi-datepicker.js';
 import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate } from './timeline.js';
@@ -1898,6 +1899,49 @@ function initV2AdministrationWorkspace() {
       renderV2AdminAnalytics();
       return;
     }
+
+    const actionBtn = e.target.closest('[data-action]');
+    if (actionBtn) {
+      const action = actionBtn.dataset.action;
+      if (action === 'alias-merge') {
+        openAliasResolutionModal(
+          actionBtn.dataset.type,
+          actionBtn.dataset.a,
+          actionBtn.dataset.b,
+          actionBtn.dataset.countA || null,
+          actionBtn.dataset.countB || null,
+        );
+        return;
+      }
+      if (action === 'alias-delete') {
+        const type = actionBtn.dataset.type;
+        const key  = actionBtn.dataset.key;
+        if (confirm(`Hapus alias "${key}"? Analytics akan dihitung ulang secara otomatis.`)) {
+          _deleteAnalyticsAlias(type, key);
+        }
+        return;
+      }
+      if (action === 'alias-dismiss') {
+        const type = actionBtn.dataset.type;
+        const a    = actionBtn.dataset.a;
+        const b    = actionBtn.dataset.b;
+        if (confirm(`Abaikan warning untuk "${a}" & "${b}"?`)) {
+          _dismissDqWarning(type, a, b);
+        }
+        return;
+      }
+      if (action === 'alias-restore') {
+        const type    = actionBtn.dataset.type;
+        const pairKey = actionBtn.dataset.key;
+        _restoreDqWarning(type, pairKey);
+        return;
+      }
+      if (action === 'dest-review') {
+        openDestinationReviewModal();
+        return;
+      }
+    }
+
     const button = e.target.closest('[data-admin-section]');
     if (button) {
       const sectionKey = button.dataset.adminSection;
@@ -1989,11 +2033,16 @@ function initV2AdministrationWorkspace() {
   registerVehiclesChangeListener(() => {
     if (currentWorkspace === 'administration' && activeAdminSection === 'vehicles') renderV2AdminWorkspace();
   });
+  registerSettingsChangeListener(() => {
+    if (activeAdminSection === 'analytics') refreshAnalyticsDisplay();
+  });
 
   initDriverFormModal();
   initVehicleFormModal();
   initDeleteConfirmModal();
   initAuditDetailModal();
+  initAliasResolutionModal();
+  initDestinationReviewModal();
   console.log('[VSM-12] Administration workspace injected');
 }
 
@@ -3796,6 +3845,14 @@ function renderV2AdminConfig() {
         </div>
       </div>
 
+      <!-- PWA group — read-only diagnostics, dynamic content filled by _refreshPwaConfigGroup() -->
+      <div class="v2-admin-config-group">
+        <h3 class="v2-admin-config-group-title">Progressive Web App</h3>
+        <p class="v2-admin-config-hint" style="margin-bottom:14px;">Status instalasi dan diagnostik PWA. Hanya baca.</p>
+        <div class="v2-pwa-status-grid" id="cfgPwaStatusGrid"></div>
+        <div class="v2-admin-config-footer v2-pwa-action-footer" id="cfgPwaActionFooter"></div>
+      </div>
+
     </div>
   `;
 
@@ -4036,6 +4093,77 @@ function renderV2AdminConfig() {
       showToast(err.message || 'Gagal menyimpan pengaturan sistem.');
     } finally { btn.disabled = false; }
   });
+
+  // ── PWA diagnostics group ─────────────────────────────────────
+  const _platformLabels = {
+    'ios-safari':      'iPhone / iPad (Safari)',
+    'android-chrome':  'Android (Chrome)',
+    'desktop-chrome':  'Desktop (Chrome)',
+    'other':           'Browser',
+  };
+
+  const _refreshPwaConfigGroup = () => {
+    const state       = getPWAState();
+    const statusGrid  = document.getElementById('cfgPwaStatusGrid');
+    const actionFooter = document.getElementById('cfgPwaActionFooter');
+    if (!statusGrid || !actionFooter) return;
+
+    statusGrid.innerHTML = `
+      <div class="v2-pwa-stat-row">
+        <span class="v2-pwa-stat-label">Status</span>
+        <span class="v2-pwa-stat-value${state.isInstalled ? ' v2-pwa-stat--ok' : ''}">
+          ${state.isInstalled ? '✓ Terinstal' : 'Browser Mode'}
+        </span>
+      </div>
+      <div class="v2-pwa-stat-row">
+        <span class="v2-pwa-stat-label">Platform</span>
+        <span class="v2-pwa-stat-value">${_platformLabels[state.platform] || state.platform}</span>
+      </div>
+      <div class="v2-pwa-stat-row">
+        <span class="v2-pwa-stat-label">Install Tersedia</span>
+        <span class="v2-pwa-stat-value">${state.canInstall ? 'Ya' : 'Tidak'}</span>
+      </div>
+      <div class="v2-pwa-stat-row">
+        <span class="v2-pwa-stat-label">Display Mode</span>
+        <span class="v2-pwa-stat-value">${state.displayMode}</span>
+      </div>
+    `;
+
+    actionFooter.innerHTML = '';
+    if (state.isInstalled) {
+      const badge = document.createElement('span');
+      badge.className = 'v2-pwa-installed-badge';
+      badge.textContent = '✓ Aplikasi Terinstal';
+      actionFooter.appendChild(badge);
+    } else if (state.canInstall) {
+      const btn = document.createElement('button');
+      btn.className = 'v2-admin-add-btn';
+      btn.type = 'button';
+      btn.textContent = 'Install Sarpras Operations';
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        btn.textContent = 'Menginstal…';
+        const accepted = await triggerInstallPrompt();
+        if (!accepted) {
+          showToast('Instalasi dibatalkan.', 'info');
+          btn.disabled = false;
+          btn.textContent = 'Install Sarpras Operations';
+        }
+        _refreshPwaConfigGroup();
+      });
+      actionFooter.appendChild(btn);
+    } else if (state.isIOSSafari && !state.isInstalled) {
+      const btn = document.createElement('button');
+      btn.className = 'v2-admin-add-btn';
+      btn.type = 'button';
+      btn.textContent = 'Cara Instal di iPhone';
+      btn.addEventListener('click', () => showIOSInstallModal());
+      actionFooter.appendChild(btn);
+    }
+  };
+
+  _refreshPwaConfigGroup();
+  registerPWAStateListener(_refreshPwaConfigGroup);
 }
 
 /* ============================================================
@@ -4074,6 +4202,73 @@ function renderV2AdminAnalytics() {
   if (dateRangeEl) dateRangeEl.value = analyticsDateRange;
 
   refreshAnalyticsDisplay();
+}
+
+function _normDestKey(dest) {
+  return String(dest)
+    .trim()
+    .toLowerCase()
+    .replace(/[–—‒‐﹘﹣－]/g, '-')
+    .replace(/\s*-\s*/g, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/[.,;]+$/g, '')
+    .trim();
+}
+
+function _strSimilarity(a, b) {
+  if (a === b) return 1;
+  const la = a.length, lb = b.length;
+  if (la === 0 || lb === 0) return 0;
+  const dp = Array.from({ length: lb + 1 }, (_, i) => i);
+  for (let i = 1; i <= la; i++) {
+    let prev = i;
+    for (let j = 1; j <= lb; j++) {
+      const curr = a[i - 1] === b[j - 1] ? dp[j - 1] : 1 + Math.min(dp[j - 1], dp[j], prev);
+      dp[j - 1] = prev;
+      prev = curr;
+    }
+    dp[lb] = prev;
+  }
+  return 1 - dp[lb] / Math.max(la, lb);
+}
+
+function _detectSimilarPairs(names, threshold = 0.75) {
+  const pairs = [];
+  const keys = names.map(_normDestKey);
+  for (let i = 0; i < names.length; i++) {
+    for (let j = i + 1; j < names.length; j++) {
+      const sim = _strSimilarity(keys[i], keys[j]);
+      if (sim >= threshold && sim < 1) pairs.push({ a: names[i], b: names[j] });
+    }
+  }
+  return pairs;
+}
+
+function _getAnalyticsAliases(type) {
+  const aa = getSetting('analyticsAliases') || {};
+  const map = aa[type];
+  return (map && typeof map === 'object') ? map : {};
+}
+
+function _getAliasCanonical(entry) {
+  if (!entry) return null;
+  if (typeof entry === 'string') return entry;
+  return entry.canonical || null;
+}
+
+function _getAliasMeta(entry) {
+  if (!entry || typeof entry === 'string') return {};
+  return { createdAt: entry.createdAt || null, createdBy: entry.createdBy || null };
+}
+
+function _getDismissedWarnings(type) {
+  const aq = getSetting('analyticsQuality') || {};
+  const dw = aq.dismissedWarnings || {};
+  return (dw[type] && typeof dw[type] === 'object') ? dw[type] : {};
+}
+
+function _dqPairKey(a, b) {
+  return [_normDestKey(a), _normDestKey(b)].sort().join('|');
 }
 
 function refreshAnalyticsDisplay() {
@@ -4118,6 +4313,8 @@ function refreshAnalyticsDisplay() {
     );
     filteredAsg = filteredAsg.filter(a => a.requestId && bidangReqIds.has(a.requestId));
   }
+
+  window._analyticsFilteredAsg = filteredAsg;
 
   // ── Filter requests ────────────────────────────────────────────────────
   let filteredReqs = requests;
@@ -4176,17 +4373,21 @@ function refreshAnalyticsDisplay() {
   const leastUsedVeh      = vehiclesWithTrips.length > 1 ? vehiclesWithTrips[vehiclesWithTrips.length - 1] : null;
 
   // ── Bidang analytics ───────────────────────────────────────────────────
+  const bidangAliases  = _getAnalyticsAliases('bidang');
   const bidangReqCounts = new Map();
   const bidangAsgCounts = new Map();
   for (const r of filteredReqs) {
-    const name = r.requesterName || '—';
-    bidangReqCounts.set(name, (bidangReqCounts.get(name) || 0) + 1);
+    const name = r.requesterName;
+    if (!name || !name.trim()) continue;
+    const resolved = _getAliasCanonical(bidangAliases[_normDestKey(name)]) || name;
+    bidangReqCounts.set(resolved, (bidangReqCounts.get(resolved) || 0) + 1);
   }
   for (const a of filteredAsg) {
     if (a.requestId) {
       const req = requests.find(r => r.id === a.requestId);
-      if (req && req.requesterName) {
-        bidangAsgCounts.set(req.requesterName, (bidangAsgCounts.get(req.requesterName) || 0) + 1);
+      if (req && req.requesterName && req.requesterName.trim()) {
+        const resolved = bidangAliases[_normDestKey(req.requesterName)] || req.requesterName;
+        bidangAsgCounts.set(resolved, (bidangAsgCounts.get(resolved) || 0) + 1);
       }
     }
   }
@@ -4219,13 +4420,27 @@ function refreshAnalyticsDisplay() {
   const inactiveVehicles = [...vehicleMap.values()].filter(v => v.count === 0)
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
 
-  // ── Destination analytics ──────────────────────────────────────────────
-  const _destFreq = new Map();
+  // ── Destination analytics (with alias resolution) ─────────────────────
+  const destAliases = _getAnalyticsAliases('destinations');
+  const _destFreq   = new Map();
+  const _destLabel  = new Map();
   for (const a of filteredAsg) {
-    const dest = (a.destination || '').trim();
-    if (dest) _destFreq.set(dest, (_destFreq.get(dest) || 0) + 1);
+    const raw = (a.destination || '').trim();
+    if (!raw) continue;
+    let key   = _normDestKey(raw);
+    let label = raw;
+    const _canonical = _getAliasCanonical(destAliases[key]);
+    if (_canonical) {
+      label = _canonical;
+      key   = _normDestKey(label);
+    }
+    _destFreq.set(key, (_destFreq.get(key) || 0) + 1);
+    if (!_destLabel.has(key)) _destLabel.set(key, label);
   }
-  const destSorted  = [..._destFreq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const destSorted  = [..._destFreq.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([key, freq]) => [_destLabel.get(key) || key, freq]);
   const hasDestData = destSorted.length > 0;
 
   // ── Enhanced bidang demand ─────────────────────────────────────────────
@@ -4267,6 +4482,86 @@ function refreshAnalyticsDisplay() {
   const openRate        = total > 0 ? Math.round((openAsg / total) * 100) : 0;
   const completionRatio = total > 0 ? `${completed} / ${total}` : '—';
 
+  // ── Data quality warnings + alias resolution ───────────────────────────
+  const _driverAliases  = _getAnalyticsAliases('drivers');
+  const _vehicleAliases = _getAnalyticsAliases('vehicles');
+
+  const _destDismissed    = _getDismissedWarnings('destinations');
+  const _bidangDismissed  = _getDismissedWarnings('bidang');
+  const _driverDismissed  = _getDismissedWarnings('drivers');
+  const _vehicleDismissed = _getDismissedWarnings('vehicles');
+
+  const _dqWarnings = [];
+  const _destRawNames = [..._destFreq.keys()].map(k => _destLabel.get(k) || k);
+  for (const { a, b } of _detectSimilarPairs(_destRawNames)) {
+    const keyA = _normDestKey(a), keyB = _normDestKey(b);
+    const pairKey    = [keyA, keyB].sort().join('|');
+    const aliasActive = _getAliasCanonical(destAliases[keyA]) || _getAliasCanonical(destAliases[keyB]) || null;
+    const dismissed  = _destDismissed[pairKey] || null;
+    const countA     = _destFreq.get(keyA) || 0;
+    const countB     = _destFreq.get(keyB) || 0;
+    _dqWarnings.push({ type: 'destinations', a, b, aliasActive, dismissed, pairKey, countA, countB });
+  }
+  const _bidangRawNames = [...bidangReqCounts.keys()];
+  for (const { a, b } of _detectSimilarPairs(_bidangRawNames)) {
+    const keyA = _normDestKey(a), keyB = _normDestKey(b);
+    const pairKey    = [keyA, keyB].sort().join('|');
+    const aliasActive = _getAliasCanonical(bidangAliases[keyA]) || _getAliasCanonical(bidangAliases[keyB]) || null;
+    const dismissed  = _bidangDismissed[pairKey] || null;
+    const countA     = bidangReqCounts.get(a) || 0;
+    const countB     = bidangReqCounts.get(b) || 0;
+    _dqWarnings.push({ type: 'bidang', a, b, aliasActive, dismissed, pairKey, countA, countB });
+  }
+  const _driverNames = getDrivers().filter(d => d.active !== false && !d.archived).map(d => d.name || '');
+  for (const { a, b } of _detectSimilarPairs(_driverNames)) {
+    const keyA = _normDestKey(a), keyB = _normDestKey(b);
+    const pairKey    = [keyA, keyB].sort().join('|');
+    const aliasActive = _getAliasCanonical(_driverAliases[keyA]) || _getAliasCanonical(_driverAliases[keyB]) || null;
+    const dismissed  = _driverDismissed[pairKey] || null;
+    _dqWarnings.push({ type: 'drivers', a, b, aliasActive, dismissed, pairKey, countA: null, countB: null });
+  }
+  const _vehicleNames = getActiveVehiclesFromStore().filter(v => !v.archived).map(v => v.name || '');
+  for (const { a, b } of _detectSimilarPairs(_vehicleNames)) {
+    const keyA = _normDestKey(a), keyB = _normDestKey(b);
+    const pairKey    = [keyA, keyB].sort().join('|');
+    const aliasActive = _getAliasCanonical(_vehicleAliases[keyA]) || _getAliasCanonical(_vehicleAliases[keyB]) || null;
+    const dismissed  = _vehicleDismissed[pairKey] || null;
+    _dqWarnings.push({ type: 'vehicles', a, b, aliasActive, dismissed, pairKey, countA: null, countB: null });
+  }
+
+  // All dismissed warnings for display
+  const _allDismissed = [
+    ...Object.entries(_destDismissed).map(([k, v]) => ({ type: 'destinations', pairKey: k, ...v })),
+    ...Object.entries(_bidangDismissed).map(([k, v]) => ({ type: 'bidang', pairKey: k, ...v })),
+    ...Object.entries(_driverDismissed).map(([k, v]) => ({ type: 'drivers', pairKey: k, ...v })),
+    ...Object.entries(_vehicleDismissed).map(([k, v]) => ({ type: 'vehicles', pairKey: k, ...v })),
+  ];
+
+  // All existing aliases for the Kelola Alias table
+  const _allAliases = [
+    ...Object.entries(destAliases).map(([k, v]) => {
+      const canonical = _getAliasCanonical(v); const meta = _getAliasMeta(v);
+      return { type: 'destinations', aliasKey: k, canonical, usageCount: _destFreq.get(_normDestKey(canonical || k)) || 0, ...meta };
+    }),
+    ...Object.entries(bidangAliases).map(([k, v]) => {
+      const canonical = _getAliasCanonical(v); const meta = _getAliasMeta(v);
+      return { type: 'bidang', aliasKey: k, canonical, usageCount: bidangReqCounts.get(canonical || k) || 0, ...meta };
+    }),
+    ...Object.entries(_driverAliases).map(([k, v]) => {
+      const canonical = _getAliasCanonical(v); const meta = _getAliasMeta(v);
+      return { type: 'drivers', aliasKey: k, canonical, usageCount: null, ...meta };
+    }),
+    ...Object.entries(_vehicleAliases).map(([k, v]) => {
+      const canonical = _getAliasCanonical(v); const meta = _getAliasMeta(v);
+      return { type: 'vehicles', aliasKey: k, canonical, usageCount: null, ...meta };
+    }),
+  ];
+
+  // DQ statistics
+  const _dqMainWarnings    = _dqWarnings.filter(w => !w.dismissed);
+  const _dqUnresolvedCount = _dqMainWarnings.filter(w => !w.aliasActive).length;
+  const _dqResolvedCount   = _dqWarnings.filter(w => !!w.aliasActive).length;
+
   // ── Overview row (filter-aware) ────────────────────────────────────────
   if (overviewRow) {
     overviewRow.innerHTML = `
@@ -4295,10 +4590,10 @@ function refreshAnalyticsDisplay() {
   const summaryEl = document.getElementById('v2AnalyticsFilterSummary');
   if (summaryEl) {
     const dateLabels = { today: 'Hari Ini', '7d': '7 Hari', '30d': '30 Hari', '90d': '90 Hari', all: 'Semua Data' };
-    const chips = [`<span class="v2-analytics-filter-chip">${dateLabels[analyticsDateRange] || analyticsDateRange}</span>`];
-    if (analyticsDriverFilter)  chips.push(`<span class="v2-analytics-filter-chip">Driver: ${esc(analyticsDriverFilter)}</span>`);
-    if (analyticsVehicleFilter) chips.push(`<span class="v2-analytics-filter-chip">Kendaraan: ${esc(analyticsVehicleFilter)}</span>`);
-    if (analyticsBidangFilter)  chips.push(`<span class="v2-analytics-filter-chip">Bidang: ${esc(analyticsBidangFilter)}</span>`);
+    const chips = [`<span class="v2-analytics-filter-chip v2-analytics-filter-chip--date">${dateLabels[analyticsDateRange] || analyticsDateRange}</span>`];
+    if (analyticsDriverFilter)  chips.push(`<span class="v2-analytics-filter-chip v2-analytics-filter-chip--active">Driver: ${esc(analyticsDriverFilter)}</span>`);
+    if (analyticsVehicleFilter) chips.push(`<span class="v2-analytics-filter-chip v2-analytics-filter-chip--active">Kendaraan: ${esc(analyticsVehicleFilter)}</span>`);
+    if (analyticsBidangFilter)  chips.push(`<span class="v2-analytics-filter-chip v2-analytics-filter-chip--active">Bidang: ${esc(analyticsBidangFilter)}</span>`);
     summaryEl.innerHTML = chips.join('');
   }
 
@@ -4532,6 +4827,8 @@ function refreshAnalyticsDisplay() {
               ${kpiRow('Berlangsung', inProgress, 'info')}
               ${kpiRow('Dijadwalkan', scheduled)}
               ${kpiRow('Dibatalkan / Lainnya', cancelled)}
+              ${kpiRow('Completion Rate', `${compRate}%`, compRate >= 80 ? 'ok' : compRate >= 50 ? 'warn' : '')}
+              ${kpiRow('Open Rate', `${openRate}%`, openRate > 50 ? 'warn' : openRate === 0 && total > 0 ? 'ok' : '')}
             </div>
             ${chartStatusHtml}
           </div>
@@ -4645,20 +4942,153 @@ function refreshAnalyticsDisplay() {
 
       ${odoSection}
 
-      <!-- Kualitas Penyelesaian -->
+      <!-- Data Quality Resolution Center -->
       <div class="v2-analytics-section">
-        <div class="v2-analytics-section-header">Kualitas Penyelesaian</div>
-        <div class="v2-analytics-groups">
-          <div class="v2-admin-config-group">
-            <h3 class="v2-admin-config-group-title">Completion Quality</h3>
-            <div class="v2-analytics-kpi-list">
-              ${kpiRow('Completion Rate', `${compRate}%`, compRate >= 80 ? 'ok' : compRate >= 50 ? 'warn' : '')}
-              ${kpiRow('Open Assignment Rate', `${openRate}%`, openRate > 50 ? 'warn' : openRate === 0 && total > 0 ? 'ok' : '')}
-              ${kpiRow('Selesai vs Total', completionRatio)}
-              ${kpiRow('Open Assignments', openAsg)}
-              ${kpiRow('Completed Assignments', completed, 'ok')}
+        <div class="v2-analytics-section-header">Data Quality Resolution Center</div>
+        <div class="v2-admin-config-group v2-dq-center">
+
+          <!-- Stats bar -->
+          <div class="v2-dq-stats">
+            <div class="v2-dq-stat-card${_dqUnresolvedCount > 0 ? ' v2-dq-stat-card--warn' : ''}">
+              <span class="v2-dq-stat-value">${_dqUnresolvedCount}</span>
+              <span class="v2-dq-stat-label">Potensi Duplikasi</span>
+            </div>
+            <div class="v2-dq-stat-card">
+              <span class="v2-dq-stat-value">${_allDismissed.length}</span>
+              <span class="v2-dq-stat-label">Warning Diabaikan</span>
+            </div>
+            <div class="v2-dq-stat-card${_allAliases.length > 0 ? ' v2-dq-stat-card--ok' : ''}">
+              <span class="v2-dq-stat-value">${_allAliases.length}</span>
+              <span class="v2-dq-stat-label">Alias Aktif</span>
+            </div>
+            <div class="v2-dq-stat-card${_dqResolvedCount > 0 ? ' v2-dq-stat-card--ok' : ''}">
+              <span class="v2-dq-stat-value">${_dqResolvedCount}</span>
+              <span class="v2-dq-stat-label">Duplikasi Diselesaikan</span>
             </div>
           </div>
+
+          <!-- Manual review action -->
+          <div class="v2-dq-actions-row">
+            <button class="v2-dq-review-btn" data-action="dest-review" type="button">Tinjau Semua Tujuan</button>
+          </div>
+
+          <!-- Detected duplicate pairs -->
+          <h3 class="v2-admin-config-group-title">Deteksi Duplikasi</h3>
+          ${_dqMainWarnings.length > 0 ? `
+          <div class="v2-dq-pair-list">
+            ${_dqMainWarnings.map(w => {
+              const typeLabels = { destinations: 'Tujuan', bidang: 'Bidang', drivers: 'Driver', vehicles: 'Kendaraan' };
+              const typeLabel  = typeLabels[w.type] || w.type;
+              if (w.aliasActive) {
+                return `<div class="v2-dq-pair-row v2-dq-pair-row--resolved">
+                  <span class="v2-dq-type-badge">${typeLabel}</span>
+                  <div class="v2-dq-pair-names">
+                    <span class="v2-dq-name">${esc(w.a)}</span>
+                    <span class="v2-dq-arrow">→</span>
+                    <span class="v2-dq-name v2-dq-name--canonical">${esc(w.aliasActive)}</span>
+                  </div>
+                  <span class="v2-dq-resolved-badge">✓ Alias Aktif</span>
+                </div>`;
+              }
+              return `<div class="v2-dq-pair-row">
+                <span class="v2-dq-type-badge">${typeLabel}</span>
+                <div class="v2-dq-pair-names">
+                  <span class="v2-dq-name">${esc(w.a)}</span>
+                  <span class="v2-dq-sep">&amp;</span>
+                  <span class="v2-dq-name">${esc(w.b)}</span>
+                </div>
+                <div class="v2-dq-pair-actions">
+                  <button class="v2-dq-merge-btn"
+                    data-action="alias-merge"
+                    data-type="${esc(w.type)}"
+                    data-a="${esc(w.a)}"
+                    data-b="${esc(w.b)}"
+                    data-count-a="${w.countA ?? ''}"
+                    data-count-b="${w.countB ?? ''}"
+                    type="button">Gabungkan</button>
+                  <button class="v2-dq-dismiss-btn"
+                    data-action="alias-dismiss"
+                    data-type="${esc(w.type)}"
+                    data-a="${esc(w.a)}"
+                    data-b="${esc(w.b)}"
+                    type="button">Abaikan</button>
+                </div>
+              </div>`;
+            }).join('')}
+          </div>` : `
+          <p class="v2-analytics-empty" style="padding:8px 0 12px;">Tidak ada potensi duplikasi terdeteksi pada periode ini.</p>`}
+
+          <!-- Dismissed warnings section -->
+          ${_allDismissed.length > 0 ? `
+          <h3 class="v2-admin-config-group-title v2-dq-section-divider">Warning Diabaikan</h3>
+          <div class="v2-dq-dismissed-list">
+            ${_allDismissed.map(d => {
+              const typeLabels = { destinations: 'Tujuan', bidang: 'Bidang', drivers: 'Driver', vehicles: 'Kendaraan' };
+              const typeLabel  = typeLabels[d.type] || d.type;
+              const dismissedAtStr = d.dismissedAt
+                ? new Date(d.dismissedAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+                : '—';
+              return `<div class="v2-dq-dismissed-row">
+                <span class="v2-dq-type-badge">${typeLabel}</span>
+                <div class="v2-dq-pair-names">
+                  <span class="v2-dq-name">${esc(d.a || '')}</span>
+                  <span class="v2-dq-sep">&amp;</span>
+                  <span class="v2-dq-name">${esc(d.b || '')}</span>
+                </div>
+                <div class="v2-dq-dismissed-meta">
+                  <span class="v2-dq-dismissed-by">Diabaikan oleh ${esc(d.dismissedBy || '—')}</span>
+                  <span class="v2-dq-dismissed-at">${dismissedAtStr}</span>
+                </div>
+                <button class="v2-dq-restore-btn"
+                  data-action="alias-restore"
+                  data-type="${esc(d.type)}"
+                  data-key="${esc(d.pairKey)}"
+                  type="button">Tampilkan Lagi</button>
+              </div>`;
+            }).join('')}
+          </div>` : ''}
+
+          <!-- Kelola Alias table -->
+          ${_allAliases.length > 0 ? `
+          <h3 class="v2-admin-config-group-title v2-dq-section-divider">Kelola Alias</h3>
+          <div class="v2-dq-alias-table-wrap">
+            <table class="v2-dq-alias-table">
+              <thead>
+                <tr>
+                  <th>Alias (Raw)</th>
+                  <th>Nilai Kanonik</th>
+                  <th>Tipe</th>
+                  <th>Penggunaan</th>
+                  <th>Dibuat</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                ${_allAliases.map(al => {
+                  const typeLabels = { destinations: 'Tujuan', bidang: 'Bidang', drivers: 'Driver', vehicles: 'Kendaraan' };
+                  const usageStr   = al.usageCount !== null ? `${al.usageCount} asg` : '—';
+                  const createdStr = al.createdAt
+                    ? new Date(al.createdAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })
+                    : '—';
+                  return `<tr>
+                    <td class="v2-dq-alias-key">${esc(al.aliasKey)}</td>
+                    <td class="v2-dq-alias-canonical">${esc(al.canonical || '')}</td>
+                    <td><span class="v2-dq-type-badge">${typeLabels[al.type] || al.type}</span></td>
+                    <td class="v2-dq-alias-usage">${usageStr}</td>
+                    <td class="v2-dq-alias-created" title="${esc(al.createdBy || '')}&#10;${esc(al.createdAt || '')}">${createdStr}</td>
+                    <td class="v2-dq-alias-actions">
+                      <button class="v2-dq-delete-btn"
+                        data-action="alias-delete"
+                        data-type="${esc(al.type)}"
+                        data-key="${esc(al.aliasKey)}"
+                        type="button">Hapus</button>
+                    </td>
+                  </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>` : ''}
+
         </div>
       </div>
 
@@ -4668,6 +5098,328 @@ function refreshAnalyticsDisplay() {
     completed, inProgress, scheduled, cancelled, total,
     activeDriversInPeriod, vehiclesWithTrips, bidangEnhanced,
     driverOdoList, vehicleOdoList, totalKm, hasOdoData
+  });
+}
+
+// ── Alias Resolution ──────────────────────────────────────────────────────
+
+async function _saveAnalyticsAlias(type, aliasKey, canonical) {
+  const cu = getCurrentUser();
+  const entry = { canonical, createdAt: new Date().toISOString(), createdBy: cu?.displayName || cu?.username || '' };
+  const current = _getAnalyticsAliases(type);
+  const updated  = { ...current, [aliasKey]: entry };
+  await updateSetting(`analyticsAliases.${type}`, updated);
+  logAction({
+    userId: cu?.id, username: cu?.username, displayName: cu?.displayName,
+    action: 'alias_created', targetId: aliasKey,
+    metadata: { type, aliasKey, canonical },
+  });
+  showToast(`Alias disimpan: "${canonical}"`);
+}
+
+async function _deleteAnalyticsAlias(type, aliasKey) {
+  const current  = { ..._getAnalyticsAliases(type) };
+  const canonical = _getAliasCanonical(current[aliasKey]) || aliasKey;
+  delete current[aliasKey];
+  await updateSetting(`analyticsAliases.${type}`, Object.keys(current).length > 0 ? current : null);
+  const cu = getCurrentUser();
+  logAction({
+    userId: cu?.id, username: cu?.username, displayName: cu?.displayName,
+    action: 'alias_deleted', targetId: aliasKey,
+    metadata: { type, aliasKey, canonical },
+  });
+  showToast('Alias dihapus.');
+}
+
+async function _dismissDqWarning(type, a, b) {
+  const pairKey = _dqPairKey(a, b);
+  const current = _getDismissedWarnings(type);
+  const cu = getCurrentUser();
+  const entry = { dismissedBy: cu?.displayName || cu?.username || '', dismissedAt: new Date().toISOString(), a, b };
+  const updated = { ...current, [pairKey]: entry };
+  await updateSetting(`analyticsQuality.dismissedWarnings.${type}`, updated);
+  logAction({
+    userId: cu?.id, username: cu?.username, displayName: cu?.displayName,
+    action: 'warning_dismissed', targetId: pairKey,
+    metadata: { type, a, b },
+  });
+  showToast('Warning diabaikan.');
+}
+
+async function _restoreDqWarning(type, pairKey) {
+  const current = { ..._getDismissedWarnings(type) };
+  delete current[pairKey];
+  await updateSetting(`analyticsQuality.dismissedWarnings.${type}`, Object.keys(current).length > 0 ? current : null);
+  const cu = getCurrentUser();
+  logAction({
+    userId: cu?.id, username: cu?.username, displayName: cu?.displayName,
+    action: 'warning_restored', targetId: pairKey,
+    metadata: { type, pairKey },
+  });
+  showToast('Warning ditampilkan kembali.');
+}
+
+function initAliasResolutionModal() {
+  if (document.getElementById('modalAliasResolution')) return;
+  const modal = document.createElement('div');
+  modal.id        = 'modalAliasResolution';
+  modal.className = 'modal-overlay';
+  modal.style.display = 'none';
+  modal.innerHTML = `
+    <div class="modal-box v2-alias-modal-box">
+      <div class="modal-header">
+        <h2 class="modal-title" id="aliasModalTitle">Gabungkan Alias</h2>
+        <button class="modal-close" id="btnCloseAliasModal" type="button">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="v2-alias-detected-values" id="aliasDetectedValues"></div>
+        <div class="v2-alias-form">
+          <p class="v2-alias-form-label">Pilih nilai kanonik:</p>
+          <label class="v2-alias-radio-row" id="aliasOptionA">
+            <input type="radio" name="aliasCanonical" value="a"> <span id="aliasLabelA"></span>
+          </label>
+          <label class="v2-alias-radio-row" id="aliasOptionB">
+            <input type="radio" name="aliasCanonical" value="b"> <span id="aliasLabelB"></span>
+          </label>
+          <label class="v2-alias-radio-row">
+            <input type="radio" name="aliasCanonical" value="custom"> Nilai Kustom
+          </label>
+          <input type="text" class="v2-alias-custom-input" id="aliasCustomInput"
+            placeholder="Masukkan nilai kanonik..." style="display:none;">
+        </div>
+        <div id="aliasImpactPreview" class="v2-alias-impact-preview" style="display:none;"></div>
+      </div>
+      <div class="v2-alias-modal-footer">
+        <button class="p-btn p-btn-muted" id="btnAliasCancel" type="button">Batal</button>
+        <button class="p-btn" id="btnAliasSave" type="button">Simpan Alias</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const closeModal = () => { modal.style.display = 'none'; };
+  document.getElementById('btnCloseAliasModal')?.addEventListener('click', closeModal);
+  document.getElementById('btnAliasCancel')?.addEventListener('click', closeModal);
+  modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && modal.style.display !== 'none') closeModal();
+  });
+
+  modal.querySelectorAll('input[name="aliasCanonical"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      const customInput = document.getElementById('aliasCustomInput');
+      if (customInput) customInput.style.display = radio.value === 'custom' ? 'block' : 'none';
+    });
+  });
+
+  document.getElementById('btnAliasSave')?.addEventListener('click', async () => {
+    const type     = modal.dataset.aliasType;
+    const nameA    = modal.dataset.aliasA;
+    const nameB    = modal.dataset.aliasB;
+    const selected = modal.querySelector('input[name="aliasCanonical"]:checked')?.value;
+    if (!selected) { showToast('Pilih nilai kanonik terlebih dahulu.', 'error'); return; }
+
+    let canonical;
+    if (selected === 'a')      canonical = nameA;
+    else if (selected === 'b') canonical = nameB;
+    else {
+      canonical = document.getElementById('aliasCustomInput')?.value?.trim();
+      if (!canonical) { showToast('Masukkan nilai kanonik kustom.', 'error'); return; }
+    }
+
+    const aliasName = selected === 'b' ? nameA : nameB;
+    const aliasKey  = _normDestKey(aliasName);
+
+    const btn = document.getElementById('btnAliasSave');
+    if (btn) { btn.disabled = true; btn.textContent = 'Menyimpan…'; }
+    try {
+      await _saveAnalyticsAlias(type, aliasKey, canonical);
+      closeModal();
+    } catch (err) {
+      showToast('Gagal menyimpan alias.', 'error');
+      console.error('[Alias] save error:', err);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Simpan Alias'; }
+    }
+  });
+}
+
+function openAliasResolutionModal(type, a, b, countA = null, countB = null) {
+  const modal = document.getElementById('modalAliasResolution');
+  if (!modal) return;
+
+  const typeLabels = { destinations: 'Tujuan', bidang: 'Bidang', drivers: 'Driver', vehicles: 'Kendaraan' };
+  document.getElementById('aliasModalTitle').textContent = `Gabungkan Alias ${typeLabels[type] || type}`;
+  document.getElementById('aliasDetectedValues').innerHTML = `
+    <div class="v2-alias-detected-row">
+      <span class="v2-alias-detected-label">Nilai yang terdeteksi:</span>
+      <div class="v2-alias-detected-pair">
+        <span class="v2-alias-detected-value">${esc(a)}</span>
+        <span class="v2-alias-detected-sep">&amp;</span>
+        <span class="v2-alias-detected-value">${esc(b)}</span>
+      </div>
+    </div>`;
+  document.getElementById('aliasLabelA').textContent = a;
+  document.getElementById('aliasLabelB').textContent = b;
+
+  modal.querySelectorAll('input[name="aliasCanonical"]').forEach(r => { r.checked = false; });
+  const customInput = document.getElementById('aliasCustomInput');
+  if (customInput) { customInput.value = ''; customInput.style.display = 'none'; }
+
+  const impactDiv = document.getElementById('aliasImpactPreview');
+  if (impactDiv) {
+    if (countA !== null && countB !== null) {
+      const cA = parseInt(countA, 10) || 0;
+      const cB = parseInt(countB, 10) || 0;
+      impactDiv.innerHTML = `
+        <div class="v2-alias-impact-row">
+          <span class="v2-alias-impact-item"><strong>${esc(a)}</strong>: ${cA} asg</span>
+          <span class="v2-alias-impact-sep">+</span>
+          <span class="v2-alias-impact-item"><strong>${esc(b)}</strong>: ${cB} asg</span>
+          <span class="v2-alias-impact-sep">→</span>
+          <span class="v2-alias-impact-total">Gabungan: <strong>${cA + cB} asg</strong></span>
+        </div>`;
+      impactDiv.style.display = 'block';
+    } else {
+      impactDiv.style.display = 'none';
+    }
+  }
+
+  modal.dataset.aliasType = type;
+  modal.dataset.aliasA    = a;
+  modal.dataset.aliasB    = b;
+  modal.style.display     = 'flex';
+}
+
+// ── Destination Review Modal ───────────────────────────────────────────────
+
+let _destReviewAllData = [];
+
+function initDestinationReviewModal() {
+  if (document.getElementById('modalDestReview')) return;
+  const modal = document.createElement('div');
+  modal.id        = 'modalDestReview';
+  modal.className = 'modal-overlay';
+  modal.style.display = 'none';
+  modal.innerHTML = `
+    <div class="modal-box v2-dest-review-modal-box">
+      <div class="modal-header">
+        <h2 class="modal-title">Tinjau Semua Tujuan</h2>
+        <button class="modal-close" id="btnCloseDestReview" type="button">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="text" id="destReviewSearch" class="v2-dest-review-search"
+          placeholder="Cari tujuan…" autocomplete="off">
+        <p class="v2-dest-review-hint" id="destReviewHint">Pilih 2 tujuan untuk digabungkan.</p>
+        <div class="v2-dest-review-list" id="destReviewList"></div>
+      </div>
+      <div class="v2-alias-modal-footer">
+        <button class="p-btn p-btn-muted" id="btnDestReviewCancel" type="button">Tutup</button>
+        <button class="p-btn" id="btnDestReviewMerge" type="button" disabled>Gabungkan Terpilih</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const closeModal = () => {
+    modal.style.display = 'none';
+    _destReviewAllData = [];
+  };
+  document.getElementById('btnCloseDestReview')?.addEventListener('click', closeModal);
+  document.getElementById('btnDestReviewCancel')?.addEventListener('click', closeModal);
+  modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && modal.style.display !== 'none') closeModal();
+  });
+
+  document.getElementById('destReviewSearch')?.addEventListener('input', e => {
+    _renderDestReviewList(_destReviewAllData, e.target.value.trim().toLowerCase());
+  });
+
+  document.getElementById('btnDestReviewMerge')?.addEventListener('click', () => {
+    const checked = document.querySelectorAll('#destReviewList input[type="checkbox"]:checked');
+    if (checked.length !== 2) return;
+    const [rawA, rawB] = Array.from(checked).map(c => c.dataset.raw);
+    const countA = parseInt(checked[0].dataset.count, 10) || 0;
+    const countB = parseInt(checked[1].dataset.count, 10) || 0;
+    closeModal();
+    openAliasResolutionModal('destinations', rawA, rawB, countA, countB);
+  });
+}
+
+function openDestinationReviewModal() {
+  const modal = document.getElementById('modalDestReview');
+  if (!modal) return;
+
+  const destAliases = _getAnalyticsAliases('destinations');
+  const freqMap = new Map();
+  for (const a of (window._analyticsFilteredAsg || [])) {
+    const raw = (a.destination || '').trim();
+    if (!raw) continue;
+    let key = _normDestKey(raw);
+    let label = raw;
+    const canonical = _getAliasCanonical(destAliases[key]);
+    if (canonical) { label = canonical; key = _normDestKey(label); }
+    freqMap.set(label, (freqMap.get(label) || 0) + 1);
+  }
+
+  _destReviewAllData = Array.from(freqMap.entries())
+    .map(([label, count]) => ({ label, count }))
+    .sort((a, b) => b.count - a.count);
+
+  const searchEl = document.getElementById('destReviewSearch');
+  if (searchEl) searchEl.value = '';
+  _renderDestReviewList(_destReviewAllData, '');
+
+  const mergeBtn = document.getElementById('btnDestReviewMerge');
+  if (mergeBtn) mergeBtn.disabled = true;
+
+  modal.style.display = 'flex';
+}
+
+function _renderDestReviewList(allData, query) {
+  const list = document.getElementById('destReviewList');
+  if (!list) return;
+
+  const filtered = query
+    ? allData.filter(d => d.label.toLowerCase().includes(query))
+    : allData;
+
+  list.innerHTML = filtered.map(d => `
+    <label class="v2-dest-review-row">
+      <input type="checkbox" class="v2-dest-review-check"
+        data-raw="${esc(d.label)}"
+        data-count="${d.count}">
+      <span class="v2-dest-review-name">${esc(d.label)}</span>
+      <span class="v2-dest-review-count">${d.count} asg</span>
+    </label>`).join('');
+
+  if (filtered.length === 0) {
+    list.innerHTML = '<p class="v2-analytics-empty" style="padding:12px;">Tidak ada tujuan ditemukan.</p>';
+  }
+
+  list.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const allChecked = list.querySelectorAll('input:checked');
+      if (allChecked.length > 2) { cb.checked = false; return; }
+      const mergeBtn = document.getElementById('btnDestReviewMerge');
+      const hint     = document.getElementById('destReviewHint');
+      if (mergeBtn) mergeBtn.disabled = allChecked.length !== 2;
+      if (hint) {
+        hint.textContent = allChecked.length === 2
+          ? 'Klik "Gabungkan Terpilih" untuk membuat alias.'
+          : `${allChecked.length}/2 tujuan dipilih.`;
+      }
+      list.querySelectorAll('.v2-dest-review-row').forEach(row => {
+        const rowCb = row.querySelector('input');
+        row.classList.toggle('v2-dest-review-row--selected', rowCb?.checked || false);
+        if (!rowCb?.checked && allChecked.length >= 2) {
+          rowCb.disabled = true;
+        } else {
+          rowCb.disabled = false;
+        }
+      });
+    });
   });
 }
 
@@ -5104,6 +5856,7 @@ function handleRequestReject(requestId) {
  */
 document.addEventListener('DOMContentLoaded', async () => {
   console.log('Initializing PBSI Scheduler app...');
+  initPWA();
 
   // ── Feature flags — read once before any UI init ──
   // If visualShellV2 is true: inject the V2 rail and activate v2-shell-active.
