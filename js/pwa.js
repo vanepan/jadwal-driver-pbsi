@@ -1,13 +1,26 @@
 'use strict';
 
 /* ============================================================
-   PWA — v1.9.1.1
+   PWA — Install + Update lifecycle
    Handles install detection, prompt capture, iOS onboarding,
    service worker registration, update detection, update banner,
    and global install onboarding (all roles).
+
+   UPDATE MODEL (works for every release, no reinstall/cache-clear):
+     1. register with updateViaCache:'none' so the SW script is never
+        served from the HTTP cache.
+     2. On load + on focus/visibility (throttled), call reg.update()
+        and fetch /version.json (no-store) — the deployed-version oracle.
+     3. When the running APP_VERSION ≠ deployed version, a new SW is
+        pulled; "Versi baru tersedia" banner is shown.
+     4. Banner → postMessage SKIP_WAITING → controllerchange → one
+        guarded reload. New SW's activate() purges the old cache, so
+        every asset (incl. config.js) is re-fetched fresh.
    ============================================================ */
 
 import { APP_VERSION } from './config.js';
+
+const VERSION_URL = '/version.json';
 
 const _stateCallbacks = [];
 
@@ -16,6 +29,9 @@ let _swRegistration    = null;
 let _updateBannerEl    = null;
 let _installBannerEl   = null;
 let _bannerCheckDone   = false; // true once the 3-second startup check has fired
+let _skipWaitingTriggered = false; // user accepted update → allow auto-reload
+let _reloading            = false; // ensures we reload at most once
+let _lastUpdateCheck      = 0;     // throttle for focus/visibility update checks
 
 let _state = {
   /* Install */
@@ -133,13 +149,50 @@ function _showUpdateBanner() {
   _updateBannerEl = banner;
 
   document.getElementById('btnPwaRefreshNow')?.addEventListener('click', () => {
-    if (_swRegistration && _swRegistration.waiting) {
-      _swRegistration.waiting.postMessage('SKIP_WAITING');
+    const btn = document.getElementById('btnPwaRefreshNow');
+    if (btn) { btn.disabled = true; btn.textContent = 'Memperbarui…'; }
+    _skipWaitingTriggered = true;
+    const waiting = _swRegistration && _swRegistration.waiting;
+    if (waiting) {
+      /* Tell the waiting SW to activate; controllerchange → reload (guarded) */
+      waiting.postMessage('SKIP_WAITING');
+    } else {
+      /* No waiting worker yet (e.g. banner shown by the version oracle before
+         install finished): pull the update, then reload regardless. */
+      Promise.resolve(_swRegistration?.update?.())
+        .catch(() => {})
+        .finally(() => { if (!_reloading) { _reloading = true; window.location.reload(); } });
     }
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      window.location.reload();
-    }, { once: true });
   });
+}
+
+/* ── Deployed-version oracle ───────────────────────────────────
+   Fetches /version.json (never cached by the SW) and compares the
+   DEPLOYED version against the RUNNING bundle's APP_VERSION. A
+   mismatch means a new deployment exists even if the browser hasn't
+   yet noticed the new SW — so we pull it and surface the banner. */
+async function _checkDeployedVersion() {
+  try {
+    const res = await fetch(`${VERSION_URL}?_=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) return;
+    const data = await res.json();
+    const deployed = data && data.version;
+    if (deployed && deployed !== APP_VERSION) {
+      _state.swUpdateAvailable = true;
+      try { await _swRegistration?.update?.(); } catch (_) { /* non-fatal */ }
+      _showUpdateBanner();
+      _notifyListeners();
+    }
+  } catch (_) { /* offline or version.json absent — non-fatal */ }
+}
+
+/* Throttled update check for focus / visibility / reopen of installed app. */
+function _maybeCheckUpdate() {
+  const now = Date.now();
+  if (now - _lastUpdateCheck < 60000) return; // at most once per minute
+  _lastUpdateCheck = now;
+  if (_swRegistration) { try { _swRegistration.update(); } catch (_) {} }
+  _checkDeployedVersion();
 }
 
 /* ── Install banner (Android) ──────────────────────────────── */
@@ -214,8 +267,14 @@ async function _registerServiceWorker() {
   _notifyListeners();
 
   try {
-    const reg = await navigator.serviceWorker.register('/service-worker.js');
+    /* updateViaCache:'none' → the SW script is fetched from network on every
+       update check, so a new SW_VERSION is always seen promptly. */
+    const reg = await navigator.serviceWorker.register('/service-worker.js', { updateViaCache: 'none' });
     _swRegistration = reg;
+
+    /* Proactively check for a newer SW + deployment right away */
+    reg.update().catch(() => {});
+    _checkDeployedVersion();
 
     /* Already-waiting worker on first load (e.g. page refreshed mid-update) */
     if (reg.waiting && navigator.serviceWorker.controller) {
@@ -252,11 +311,18 @@ async function _registerServiceWorker() {
       });
     }
 
-    /* Detect when this tab's controller changes (after skipWaiting) */
+    /* Detect when this tab's controller changes (after skipWaiting).
+       Reload exactly once, and ONLY when the user accepted the update —
+       so a first-install control change never causes a surprise reload,
+       and we can never enter a reload loop. */
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       _state.swStatus = 'active';
       _notifyListeners();
       _refreshCacheCount();
+      if (_skipWaitingTriggered && !_reloading) {
+        _reloading = true;
+        window.location.reload();
+      }
     });
 
   } catch (err) {
@@ -283,6 +349,14 @@ export function initPWA() {
 
   /* Register service worker */
   _registerServiceWorker();
+
+  /* Re-check for a new deployment whenever the app regains focus or becomes
+     visible. This is the key path for installed apps (esp. iOS Home Screen),
+     which can sit resident for days between opens. Throttled to once/min. */
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') _maybeCheckUpdate();
+  });
+  window.addEventListener('focus', _maybeCheckUpdate);
 
   /* Show install onboarding after a brief delay so the app renders first */
   setTimeout(() => {

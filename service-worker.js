@@ -1,18 +1,30 @@
 'use strict';
 
 /* ============================================================
-   Service Worker — Sarpras Operations v1.9.1
+   Service Worker — Sarpras Operations
    Strategy:
      • Install  → precache offline.html only; no skipWaiting
      • Activate → purge stale caches, claim clients
      • Fetch    → Firebase: network-only
+                  version.json: network-only (never cached)
                   navigate : network-first → offline.html fallback
                   static   : cache-first  → network fill
      • Message  → SKIP_WAITING to accept pending update
+
+   CACHE LIFECYCLE — why this works for EVERY release:
+   SW_VERSION is stamped from config.js APP_VERSION by
+   scripts/sync-version.mjs at deploy time. Because the version is
+   embedded here, service-worker.js bytes CHANGE on every release →
+   the browser detects a new SW → installs it (waiting) → the update
+   banner activates it → activate() purges the old version-scoped
+   cache → cache-first re-fetches every asset fresh. No manual cache
+   bump, no reinstall, no drift between deployed and installed.
    ============================================================ */
 
-const CACHE_NAME  = 'sarpras-cache-v1.9.1';
+const SW_VERSION  = '1.9.2';   // stamped from config.js — do not edit by hand
+const CACHE_NAME  = `sarpras-cache-v${SW_VERSION}`;
 const OFFLINE_URL = '/offline.html';
+const VERSION_URL = '/version.json';
 
 /* Origins that must never be served from cache */
 const BYPASS_ORIGINS = [
@@ -66,6 +78,10 @@ self.addEventListener('fetch', event => {
   /* Skip browser internals and Firebase/font CDN */
   if (url.protocol !== 'https:' && url.protocol !== 'http:') return;
   if (_isBypassOrigin(url)) return;
+
+  /* Version oracle must ALWAYS be fresh — never cache, never serve cached.
+     This is the signal the app uses to detect a new deployment. */
+  if (url.pathname === VERSION_URL) return;
 
   /* Navigation requests: network-first, offline.html fallback */
   if (request.mode === 'navigate') {
