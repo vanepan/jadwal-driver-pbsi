@@ -161,6 +161,44 @@ body {
   }
 }
 
+/* ── Mobile responsive — fit to viewport ── */
+@media screen and (max-width: 800px) {
+  body { background: #f5f5f5; }
+  .page {
+    width: calc(100% - 16px);
+    min-height: auto;
+    margin: 12px 8px 40px;
+    padding: 12px 12px 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.08);
+  }
+  /* Reduce font sizes for mobile readability */
+  .org-name { font-size: 10pt; line-height: 1.1; }
+  .org-sub { font-size: 7pt; }
+  .form-title { font-size: 11pt; }
+  .form-subtitle { font-size: 7pt; }
+  .sec-label { font-size: 6.5pt; margin: 2px 0 1px; }
+  .data-table { font-size: 8pt; margin-bottom: 1px; }
+  .data-table td { padding: 2px 4px; }
+  .td-val { font-size: 8pt; }
+  /* Stack reimbursement section vertically on mobile */
+  .rmb-section {
+    grid-template-columns: 1fr;
+    gap: 3px;
+    margin-top: 1px;
+  }
+  .driver-stmt-col { padding: 3px 4px; }
+  .driver-stmt-text { font-size: 6.5pt; }
+  .rmb-table { font-size: 7.5pt; }
+  .rmb-table th { padding: 1px 4px; font-size: 6pt; }
+  .rmb-table td { padding: 1px 4px; }
+  .attach-section { min-height: 30mm; }
+  .attach-area { min-height: 30mm; }
+  .attach-title { font-size: 6.5pt; }
+  .attach-subtitle { font-size: 6pt; }
+  .attach-placeholder { font-size: 7pt; }
+  .doc-footer { font-size: 5.5pt; padding-top: 1px; margin-top: 1px; }
+}
+
 /* ── Print — single-page guarantee ── */
 @media print {
   body { background: #fff; }
