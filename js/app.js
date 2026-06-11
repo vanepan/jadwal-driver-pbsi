@@ -48,6 +48,8 @@ import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignment
 import { initModalHandlers, openDetailModal, registerEditCallback, registerDeleteCallback, registerStartCallback, registerCompleteCallback, registerCommentCallback as registerModalCommentCallback, setAssignments as setModalAssignments, updateDetailActionButtons } from './modal.js';
 import { initFormHandlers, openFormModal, closeFormModal, registerSaveCallback, setAssignments as setAssignmentsForm, setCurrentDate as setCurrentDateForm, checkConflict, deleteAssignment } from './assignments.js';
 import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver } from './auth.js';
+import * as DocumentEngine from './docs/doc-engine.js';
+import './docs/templates/analytics-summary.js';   // registers 'analytics-summary'
 import {
   initRequestHandlers,
   openRequestFormModal,
@@ -126,6 +128,9 @@ let analyticsDriverFilter  = '';
 let analyticsVehicleFilter = '';
 let analyticsBidangFilter  = '';
 const _analyticsCharts = new Map();
+/* Snapshot of the latest analytics compute — consumed by the PDF export so
+   the report matches exactly what is on screen (no recomputation, no drift). */
+let _lastAnalyticsModel = null;
 const ADMIN_SECTION_DEFS = [
   { key: 'users', label: 'Manajemen User', subtitle: 'Tambah, edit, atau nonaktifkan akun pengguna.' },
   { key: 'drivers', label: 'Manajemen Driver', subtitle: 'Kelola registrasi, status, dan data identitas driver.' },
@@ -1880,6 +1885,7 @@ function initV2AdministrationWorkspace() {
               <option value="">Semua Bidang</option>
             </select>
             <button id="v2AnalyticsResetFilters" class="v2-analytics-reset-btn" type="button">Reset Semua Filter</button>
+            <button id="v2AnalyticsExportPdf" class="btn-reimbursement" type="button">📄 Export PDF</button>
           </div>
           <div id="v2AnalyticsFilterSummary" class="v2-analytics-filter-summary"></div>
           <div id="v2AnalyticsContent"></div>
@@ -2019,6 +2025,9 @@ function initV2AdministrationWorkspace() {
   });
   document.getElementById('v2AdminAddVehicle')?.addEventListener('click', () => {
     if (activeAdminSection === 'vehicles') openVehicleFormModal(null);
+  });
+  document.getElementById('v2AnalyticsExportPdf')?.addEventListener('click', () => {
+    if (activeAdminSection === 'analytics') exportAnalyticsReport();
   });
 
   registerUsersChangeListener(() => {
@@ -4478,6 +4487,21 @@ function refreshAnalyticsDisplay() {
     asgPct: total > 0           ? Math.round((b.asgCount / total) * 100)            : 0,
   }));
 
+  /* Snapshot for the PDF export (Analytics Summary Report). Captures exactly
+     the figures rendered below, so the document never drifts from the screen. */
+  _lastAnalyticsModel = {
+    compRate, total, completed, inProgress, scheduled, cancelled, openAsg,
+    activeDrivers:  activeDrivers.length,
+    activeVehicles: activeVehicles.length,
+    mostActiveDriver:  mostActiveDrv  ? { name: mostActiveDrv.displayName,  count: mostActiveDrv.count }  : null,
+    leastActiveDriver: leastActiveDrv ? { name: leastActiveDrv.displayName, count: leastActiveDrv.count } : null,
+    driverCounts:  driversWithTrips.map(d => ({ name: d.displayName, count: d.count })),
+    mostUsedVehicle: mostUsedVeh ? { name: mostUsedVeh.displayName, count: mostUsedVeh.count } : null,
+    idleVehicles:  inactiveVehicles.map(v => v.displayName),
+    vehicleCounts: vehiclesWithTrips.map(v => ({ name: v.displayName, count: v.count })),
+    bidang: bidangEnhanced.map(b => ({ name: b.name, reqCount: b.reqCount, asgCount: b.asgCount })),
+  };
+
   // ── Odometer / Jarak Tempuh analytics ─────────────────────────────────
   const _driverOdo  = new Map();
   const _vehicleOdo = new Map();
@@ -5184,6 +5208,47 @@ async function _restoreDqWarning(type, pairKey) {
     metadata: { type, pairKey },
   });
   showToast('Warning ditampilkan kembali.');
+}
+
+/* ── Analytics PDF export ──────────────────────────────────────
+   Builds the report view model from the latest analytics snapshot
+   (so it matches the screen exactly) and hands off to the Document
+   Engine — the same pipeline reimbursement uses. No new PDF code. */
+async function exportAnalyticsReport() {
+  if (!_lastAnalyticsModel) refreshAnalyticsDisplay();
+  if (!_lastAnalyticsModel) { showToast('Data analytics belum siap.'); return; }
+
+  const btn = document.getElementById('v2AnalyticsExportPdf');
+  if (btn) { btn.disabled = true; btn.textContent = 'Memproses…'; }
+
+  const dateRangeLabels = {
+    today: 'Hari Ini', '7d': '7 Hari Terakhir', '30d': '30 Hari Terakhir',
+    '90d': '90 Hari Terakhir', all: 'Semua Data',
+  };
+  const user = getCurrentUser();
+  const vm = {
+    ..._lastAnalyticsModel,
+    filters: {
+      dateRange: dateRangeLabels[analyticsDateRange] || analyticsDateRange,
+      driver:   analyticsDriverFilter  || 'Semua Driver',
+      vehicle:  analyticsVehicleFilter || 'Semua Kendaraan',
+      bidang:   analyticsBidangFilter  || 'Semua Bidang',
+    },
+    generatedAt: new Date().toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' }),
+    generatedBy: (user && (user.displayName || user.name || user.username)) || '—',
+    appVersion:  APP_VERSION,
+  };
+
+  try {
+    await DocumentEngine.generateAndOpen('analytics-summary', vm, {
+      viewer: { title: 'Laporan Analytics Operasional' },
+    });
+  } catch (err) {
+    console.error('[Analytics] PDF export failed:', err);
+    showToast('Gagal membuat PDF.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '📄 Export PDF'; }
+  }
 }
 
 function initAliasResolutionModal() {

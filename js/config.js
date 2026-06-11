@@ -1,10 +1,22 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.9.2';
-export const RELEASE_NAME = 'Document Generation Foundation';
+export const APP_VERSION = '1.9.3';
+export const RELEASE_NAME = 'Analytics Export Foundation';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.9.3',
+    date: '2026-06-11',
+    summary: 'Analytics Export Foundation',
+    highlights: [
+      'Analytics Summary Report — first Analytics PDF, built entirely on the v1.9.2 Document Generation Foundation (DocumentEngine · TemplateRegistry · PdfExporter · DocumentViewer · PrintManager). No new PDF pipeline; no html2canvas/jsPDF/browser-print',
+      'New template js/docs/templates/analytics-summary.js: 6 sections — Operational Summary (Completion Rate, Total Assignments, Active Drivers, Active Vehicles), Driver Analytics (most/least active + counts), Vehicle Analytics (most used, idle units + counts), Bidang Analytics (most active, request & assignment counts), Filter Snapshot, Report Metadata (Generated At / By / APP_VERSION)',
+      'Export PDF button added to the Analytics toolbar; report data is snapshotted from the live analytics compute (refreshAnalyticsDisplay) so the PDF matches exactly what is on screen — no recomputation, no drift',
+      'Executive-friendly, text-and-tables only (no charts/graphs/images/canvas), A4 portrait, deterministic across Desktop / Android / iPhone / PWA — proves the framework reuse claim: a new report = one template file + one register() + one integration point',
+      'Second production template on the engine (after Reimbursement), validating the Document Generation Foundation as the standard for future Audit, Asset, Engineering, and AI-generated reports',
+    ],
+  },
   {
     version: '1.9.2',
     date: '2026-06-11',

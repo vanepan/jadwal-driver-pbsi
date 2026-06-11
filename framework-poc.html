@@ -83,8 +83,9 @@
 
 <script type="module">
   import * as DocumentEngine from './js/docs/doc-engine.js';
-  import './js/docs/templates/test-report.js';     // registers 'test-report'
-  import './js/docs/templates/reimbursement.js';   // registers 'reimbursement'
+  import './js/docs/templates/test-report.js';       // registers 'test-report'
+  import './js/docs/templates/reimbursement.js';     // registers 'reimbursement'
+  import './js/docs/templates/analytics-summary.js'; // registers 'analytics-summary'
 
   /* FIXED sample data — identical input ⇒ identical output across devices.
      Note: printDate is hard-coded (not new Date()) so the rendered content
@@ -193,6 +194,39 @@
     const data = { ...SAMPLE_RMB, ...(overrides || {}) };
     if (receiptH) data.receiptH = receiptH;
     const doc = await DocumentEngine.generate('reimbursement', data, { cache: false });
+    const a = await analyze(doc.blob);
+    return { pages: a.pages, size: a.size };
+  };
+  const SAMPLE_ANALYTICS = {
+    compRate: 78, total: 142, completed: 111, inProgress: 12, scheduled: 15, cancelled: 4, openAsg: 27,
+    activeDrivers: 9, activeVehicles: 6,
+    mostActiveDriver: { name: 'Budi Santoso', count: 31 },
+    leastActiveDriver: { name: 'Andi Wijaya', count: 4 },
+    driverCounts: [
+      { name: 'Budi Santoso', count: 31 }, { name: 'Eko Prasetyo', count: 27 },
+      { name: 'Rudi Hartono', count: 22 }, { name: 'Slamet Riyadi', count: 18 },
+      { name: 'Joko Susilo', count: 14 }, { name: 'Agus Salim', count: 11 },
+      { name: 'Dedi Kurniawan', count: 9 }, { name: 'Andi Wijaya', count: 4 },
+    ],
+    mostUsedVehicle: { name: 'Toyota Avanza', count: 48 },
+    idleVehicles: ['Daihatsu Luxio', 'Isuzu Elf'],
+    vehicleCounts: [
+      { name: 'Toyota Avanza', count: 48 }, { name: 'Toyota Innova', count: 39 },
+      { name: 'Mitsubishi L300', count: 28 }, { name: 'Suzuki APV', count: 19 },
+    ],
+    bidang: [
+      { name: 'Bidang Pertandingan', reqCount: 34, asgCount: 31 },
+      { name: 'Bidang Pembinaan Prestasi', reqCount: 22, asgCount: 20 },
+      { name: 'Bidang Umum', reqCount: 15, asgCount: 12 },
+      { name: 'Bidang Hukum', reqCount: 8, asgCount: 7 },
+    ],
+    filters: { dateRange: '30 Hari Terakhir', driver: 'Semua Driver', vehicle: 'Semua Kendaraan', bidang: 'Semua Bidang' },
+    generatedAt: '11 Juni 2026 pukul 14.30',
+    generatedBy: 'Evan (Admin)',
+    appVersion: '1.9.3',
+  };
+  window.__measureAnalytics = async () => {
+    const doc = await DocumentEngine.generate('analytics-summary', SAMPLE_ANALYTICS, { cache: false });
     const a = await analyze(doc.blob);
     return { pages: a.pages, size: a.size };
   };
