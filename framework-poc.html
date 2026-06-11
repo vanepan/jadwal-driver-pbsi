@@ -186,6 +186,18 @@
   $('btnGen').addEventListener('click', () => run('test-report', SAMPLE, 'Test Report (POC)'));
   $('btnGenR').addEventListener('click', () => run('reimbursement', SAMPLE_RMB, 'Form Reimbursement (sample)'));
 
+  /* Test-only measurement hook (used by scripts/measure-reimbursement.mjs).
+     Generates the reimbursement PDF with an optional receipt-area height and
+     returns { pages, size } parsed from the real PDF blob. */
+  window.__measureRmb = async (receiptH, overrides) => {
+    const data = { ...SAMPLE_RMB, ...(overrides || {}) };
+    if (receiptH) data.receiptH = receiptH;
+    const doc = await DocumentEngine.generate('reimbursement', data, { cache: false });
+    const a = await analyze(doc.blob);
+    return { pages: a.pages, size: a.size };
+  };
+  window.__ready = true;
+
   $('btnDl').addEventListener('click', () => {
     if (!lastDoc) return;
     const a = document.createElement('a');

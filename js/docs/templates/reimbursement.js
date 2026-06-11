@@ -20,10 +20,14 @@ import {
   A4_MARGINS, CONTENT_W, TOKENS,
 } from '../doc-theme.js';
 
-/* Receipt area height (pt). Conservative so the form never spills to
-   a 2nd page, while remaining the largest section. Tunable after
-   on-device page-count verification. */
-const RECEIPT_H = 320;
+/* Receipt area height (pt). Measured budget (headless Chrome, pdfmake):
+   A4 usable content height = 773.89pt; everything except this box
+   consumes ≈ 470.89pt, so the single-page threshold is 303pt.
+   320pt overflowed by 17pt → page 2. Set to 260pt: 43pt of headroom
+   below the threshold to absorb ~2 extra wrapped lines from long
+   purpose/destination/requester values, while remaining the largest
+   section on the page. Overridable per-call via vm.receiptH. */
+const RECEIPT_H = 260;
 
 const COL_GAP = 8;
 const COL_L   = Math.round((CONTENT_W - COL_GAP) * 0.35);   // statement
@@ -71,7 +75,7 @@ function build(vm) {
       { text: 'D. Lampiran Bukti Pengeluaran', style: 'secLabel' },
       { text: 'Tempel bukti fisik pada area di bawah ini',
         fontSize: 7, color: TOKENS.color.dim, margin: [0, 0, 0, 3] },
-      _receiptBox(RECEIPT_H),
+      _receiptBox(d.receiptH || RECEIPT_H),
     ],
   };
 }
