@@ -188,21 +188,21 @@ body {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
-  padding-bottom: 8px;
+  gap: 10px;
+  padding-bottom: 3px;
   border-bottom: 2.5px solid #1A1917;
-  margin-bottom: 10px;
+  margin-bottom: 4px;
 }
 .org-name {
-  font-size: 11.5pt;
+  font-size: 11pt;
   font-weight: 700;
   letter-spacing: -0.01em;
-  line-height: 1.2;
+  line-height: 1.1;
 }
 .org-sub {
-  font-size: 8pt;
+  font-size: 7.5pt;
   color: #5B5953;
-  margin-top: 1px;
+  margin-top: 0px;
 }
 .doc-meta {
   text-align: right;
@@ -217,32 +217,32 @@ body {
 /* ── Form title ── */
 .form-title-block {
   text-align: center;
-  margin-bottom: 10px;
-  padding-bottom: 8px;
+  margin-bottom: 4px;
+  padding-bottom: 3px;
   border-bottom: 1px solid #E8E6E2;
 }
 .form-title {
-  font-size: 13pt;
+  font-size: 12pt;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  line-height: 1.2;
+  line-height: 1.1;
 }
 .form-subtitle {
-  font-size: 8pt;
+  font-size: 7.5pt;
   color: #5B5953;
-  margin-top: 2px;
+  margin-top: 1px;
 }
 
 /* ── Section label ── */
 .sec-label {
-  font-size: 7.5pt;
+  font-size: 7pt;
   font-weight: 700;
-  letter-spacing: 0.09em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #5B5953;
-  margin: 9px 0 5px;
-  padding-bottom: 3px;
+  margin: 3px 0 2px;
+  padding-bottom: 1px;
   border-bottom: 1px solid #E8E6E2;
 }
 
@@ -253,25 +253,26 @@ body {
   border: 1px solid #C9C6C0;
   border-radius: 4px;
   overflow: hidden;
-  font-size: 9pt;
+  font-size: 8.5pt;
+  margin-bottom: 2px;
 }
 .data-table td {
-  padding: 5px 10px;
+  padding: 3px 6px;
   border: 1px solid #E2DFD9;
   vertical-align: top;
 }
 .td-lbl {
   width: 18%;
   background: #F7F6F3;
-  font-size: 7.5pt;
+  font-size: 7pt;
   font-weight: 700;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: #5B5953;
   white-space: nowrap;
 }
 .td-val {
-  font-size: 9.5pt;
+  font-size: 8.5pt;
   font-weight: 600;
   color: #1A1917;
   min-width: 80px;
@@ -302,54 +303,55 @@ body {
 .rmb-section {
   display: grid;
   grid-template-columns: 35fr 65fr;
-  gap: 8px;
-  margin-top: 5px;
+  gap: 4px;
+  margin-top: 2px;
+  margin-bottom: 2px;
 }
 
 /* Left: Driver Statement */
 .driver-stmt-col {
   border: 1px solid #C9C6C0;
   border-radius: 4px;
-  padding: 8px 10px;
+  padding: 4px 6px;
   display: flex;
   flex-direction: column;
 }
 .driver-stmt-label {
-  font-size: 7pt;
+  font-size: 6.5pt;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: #5B5953;
-  margin-bottom: 5px;
+  margin-bottom: 2px;
 }
 .driver-stmt-text {
-  font-size: 7.5pt;
+  font-size: 7pt;
   color: #3A3835;
-  line-height: 1.6;
+  line-height: 1.4;
   flex: 1;
 }
 .driver-sig-area {
-  margin-top: 14px;
+  margin-top: 5px;
 }
 .driver-sig-date {
-  font-size: 7pt;
+  font-size: 6.5pt;
   color: #5B5953;
-  margin-bottom: 16px;
+  margin-bottom: 6px;
 }
 .driver-sig-line {
   border-top: 1px solid #1A1917;
-  padding-top: 4px;
+  padding-top: 2px;
   text-align: center;
 }
 .driver-sig-name {
-  font-size: 8.5pt;
+  font-size: 7.5pt;
   font-weight: 600;
   color: #1A1917;
 }
 .driver-sig-role {
-  font-size: 7pt;
+  font-size: 6.5pt;
   color: #5B5953;
-  margin-top: 1px;
+  margin-top: 0px;
 }
 
 /* Right: Reimbursement Breakdown */
@@ -362,34 +364,34 @@ body {
 }
 .rmb-breakdown-title {
   background: #F7F6F3;
-  font-size: 7pt;
+  font-size: 6.5pt;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: #5B5953;
-  padding: 5px 10px;
+  padding: 3px 6px;
   border-bottom: 1px solid #E2DFD9;
 }
 .rmb-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 8.5pt;
+  font-size: 8pt;
   flex: 1;
 }
 .rmb-table th {
   background: #F7F6F3;
-  font-size: 7pt;
+  font-size: 6.5pt;
   font-weight: 700;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: #5B5953;
-  padding: 4px 10px;
+  padding: 2px 6px;
   border-bottom: 1px solid #E2DFD9;
   text-align: left;
 }
 .rmb-table th.col-amt { text-align: right; }
 .rmb-table td {
-  padding: 5px 10px;
+  padding: 2px 6px;
   border-bottom: 1px solid #F0EDE8;
   vertical-align: middle;
   color: #1A1917;
@@ -416,42 +418,53 @@ body {
 
 /* ── Attachment section — flex:1 claims all remaining vertical space ── */
 .attach-section {
-  margin-top: 8px;
+  margin-top: 2px;
   flex: 1;
   display: flex;
   flex-direction: column;
-  min-height: 70mm;
+  min-height: 40mm;
 }
 .attach-header {
   display: flex;
   align-items: baseline;
-  gap: 10px;
-  margin-bottom: 5px;
+  gap: 6px;
+  margin-bottom: 2px;
 }
 .attach-title {
-  font-size: 7.5pt;
+  font-size: 7pt;
   font-weight: 700;
-  letter-spacing: 0.09em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #1A1917;
 }
-.attach-subtitle { font-size: 7pt; color: #5B5953; }
+.attach-subtitle { font-size: 6.5pt; color: #5B5953; }
 .attach-area {
   flex: 1;
-  min-height: 60mm;
+  min-height: 40mm;
   border: 1.5px dashed #C9C6C0;
   border-radius: 6px;
   background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+}
+.attach-placeholder {
+  font-size: 7.5pt;
+  color: #C0C0C0;
+  text-align: center;
+  pointer-events: none;
+  line-height: 1.5;
 }
 
 /* ── Footer ── */
 .doc-footer {
-  margin-top: 7px;
-  padding-top: 6px;
+  margin-top: 2px;
+  padding-top: 2px;
   border-top: 1px solid #E8E6E2;
   display: flex;
   justify-content: space-between;
-  font-size: 6.5pt;
+  font-size: 6pt;
   color: #94918B;
   flex-shrink: 0;
 }
@@ -626,7 +639,9 @@ body {
       <div class="attach-title">D. Lampiran Bukti Pengeluaran</div>
       <div class="attach-subtitle">Tempel bukti fisik pada area di bawah ini</div>
     </div>
-    <div class="attach-area"></div>
+    <div class="attach-area">
+      <div class="attach-placeholder">Lampirkan Bukti Pengeluaran di Area Ini</div>
+    </div>
   </div>
 
   <!-- ── Footer ── -->
