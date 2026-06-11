@@ -955,35 +955,40 @@ function _applyFitScale(iframe) {
 
 /**
  * Generate a PDF Blob from the reimbursement HTML string.
- * Dynamically loads html2pdf.js (CDN) on first use; result is cached
- * at the call-site so the library is only downloaded once per session.
+ * Uses fixed A4 rendering pipeline independent of device screen size.
  *
- * Screen-only elements (.no-print, .print-bar) are hidden via an
- * injected <style> so they don't appear in the rendered PDF.
- * Body background and page margins are normalised for clean output.
+ * Rendering pipeline:
+ * 1. HTML → DOM in isolated container (off-screen)
+ * 2. DOM → Canvas at fixed 96 DPI (standardized, not device DPI)
+ * 3. Canvas → JPEG image (compressed)
+ * 4. JPEG → A4 PDF
+ *
+ * Result: Identical PDF on all devices (desktop, mobile, tablet)
  */
 async function _generatePdfBlob(htmlString) {
-  const html2pdf = await _loadHtml2Pdf();
+  // Load html2canvas and jsPDF
+  const html2canvas = await _loadHtml2Canvas();
+  const jsPDF = await _loadJsPdf();
 
-  // Hide screen-only toolbar; normalise page background & margins
+  // Normalize HTML: remove screen-only elements
   const cleanHtml = htmlString.replace(
     '</head>',
     '<style>' +
       '.no-print,.print-bar{display:none!important}' +
-      'body{background:#fff!important}' +
+      'body{background:#fff!important;margin:0;padding:0}' +
       '.page{margin:0!important;box-shadow:none!important}' +
+      'html,body{height:auto!important}' +
     '</style></head>'
   );
 
-  // Parse and rebuild in a hidden off-screen container so html2canvas
-  // can access the fully-styled DOM without affecting the visible page
+  // Render into isolated container (not connected to viewport)
   const parser    = new DOMParser();
   const doc       = parser.parseFromString(cleanHtml, 'text/html');
   const container = document.createElement('div');
   container.setAttribute('aria-hidden', 'true');
   container.style.cssText =
     'position:fixed;top:-99999px;left:-99999px;width:794px;' +
-    'background:#fff;overflow:visible;pointer-events:none;';
+    'background:#fff;overflow:visible;pointer-events:none;z-index:-9999;';
 
   doc.querySelectorAll('style').forEach(s => container.appendChild(s.cloneNode(true)));
   const bodyWrap = document.createElement('div');
@@ -992,34 +997,83 @@ async function _generatePdfBlob(htmlString) {
   document.body.appendChild(container);
 
   try {
-    return await html2pdf()
-      .set({
-        margin:      0,
-        filename:    'form-reimbursement.pdf',
-        image:       { type: 'jpeg', quality: 0.85 },
-        html2canvas: { scale: 1.5, useCORS: true, logging: false, windowWidth: 794, allowTaint: false },
-        jsPDF:       { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true },
-        pagebreak:   { mode: ['avoid-all', 'css'] },
-      })
-      .from(container)
-      .output('blob');
+    // Render container to canvas at FIXED 96 DPI (standard screen DPI)
+    // NOT multiplied by devicePixelRatio
+    const canvas = await html2canvas(container, {
+      scale: 1,  // Fixed scale = 1x (no device pixel ratio multiplication)
+      useCORS: true,
+      logging: false,
+      backgroundColor: '#ffffff',
+      width: 794,
+      height: container.offsetHeight || 1123,
+      windowWidth: 794,
+      windowHeight: container.offsetHeight || 1123,
+    });
+
+    // Convert canvas to compressed JPEG image
+    const imgData = canvas.toDataURL('image/jpeg', 0.70);  // 70% quality for max compression
+
+    // Create A4 PDF and insert image
+    const pdf = new jsPDF({
+      unit: 'mm',
+      format: 'a4',
+      orientation: 'portrait',
+      compress: true,
+    });
+
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+
+    // Calculate aspect ratio and fit to page
+    const canvasAspect = canvas.width / canvas.height;
+    let imgWidth = pageWidth;
+    let imgHeight = imgWidth / canvasAspect;
+
+    if (imgHeight > pageHeight) {
+      imgHeight = pageHeight;
+      imgWidth = imgHeight * canvasAspect;
+    }
+
+    // Center image on page
+    const x = (pageWidth - imgWidth) / 2;
+    const y = (pageHeight - imgHeight) / 2;
+
+    pdf.addImage(imgData, 'JPEG', x, y, imgWidth, imgHeight);
+
+    // Return as blob
+    return pdf.output('blob');
+
   } finally {
     document.body.removeChild(container);
   }
 }
 
-/** Dynamically load html2pdf.js from CDN; resolves instantly on repeat calls. */
-function _loadHtml2Pdf() {
-  if (window.html2pdf) return Promise.resolve(window.html2pdf);
+/** Load html2canvas from CDN */
+function _loadHtml2Canvas() {
+  if (window.html2canvas) return Promise.resolve(window.html2canvas);
   return new Promise((resolve, reject) => {
-    const s   = document.createElement('script');
-    s.src     = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-    s.async   = true;
-    s.onload  = () => resolve(window.html2pdf);
-    s.onerror = () => reject(new Error('html2pdf.js failed to load'));
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    s.async = true;
+    s.onload = () => resolve(window.html2canvas);
+    s.onerror = () => reject(new Error('html2canvas failed to load'));
     document.head.appendChild(s);
   });
 }
+
+/** Load jsPDF from CDN */
+function _loadJsPdf() {
+  if (window.jsPDF) return Promise.resolve(window.jsPDF.jsPDF);
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    s.async = true;
+    s.onload = () => resolve(window.jsPDF.jsPDF);
+    s.onerror = () => reject(new Error('jsPDF failed to load'));
+    document.head.appendChild(s);
+  });
+}
+
 
 /**
  * Attach close / backdrop / ESC event listeners on the PDF viewer modal.
@@ -1060,4 +1114,4 @@ function _hideEl(id) {
   if (el) el.style.display = 'none';
 }
 
-console.info('Reimbursement module loaded (v1.3.0)');
+console.info(`Reimbursement module loaded (v${APP_VERSION})`);
