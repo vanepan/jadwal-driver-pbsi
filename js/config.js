@@ -1,10 +1,25 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.9.1.1';
-export const RELEASE_NAME = 'PWA Install Experience';
+export const APP_VERSION = '1.9.2';
+export const RELEASE_NAME = 'Document Generation Foundation';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.9.2',
+    date: '2026-06-11',
+    summary: 'Document Generation Foundation',
+    highlights: [
+      'New Document Generation Framework (js/docs/*) — reusable PDF engine for all current and future reports (Reimbursement, Analytics, Audit, Asset, Engineering, AI). Hybrid C-now / D-later: pdfmake client-side today, swappable to a server-side Puppeteer backend later behind the same Blob interface',
+      'PDF-first architecture: documents are computed in pure JS from declarative templates, never rasterized from the DOM or paginated by the browser print engine — output is deterministic and byte-identical across Desktop, Android, iPhone, and installed PWA',
+      'DocumentEngine · TemplateRegistry · PdfExporter (PdfmakeBackend + PuppeteerBackend stub) · DocumentViewer · PrintManager · doc-theme — one engine, one reusable preview/print/share modal, one shared visual language; APP_VERSION injected centrally so no document hardcodes a version again',
+      'Reimbursement is the first production template: js/reimbursement.js reduced from 1047 → 155 lines (domain logic only), delegating render/preview/print/download/share to the engine; public API (printReimbursementForm, closePdfViewer, calculateOvertimeStatus) unchanged',
+      'Removed the four legacy reimbursement paths: html2canvas raster, jsPDF assembly, iframe + window.print(), and viewport zoom-scaling — eliminating the mobile page-2 / 11 MB / corrupt-download failure class entirely',
+      'Real PDF output: text-based, ~20–80 KB per form (was ~11 MB on mobile), opens in any PDF reader; single-page A4 guaranteed by fixed-geometry layout, not CSS print hacks',
+      'Cleanup: removed orphaned #modalPdfViewer markup (index.html) and the dead PDF Viewer Modal stylesheet incl. pdf-slide-up / pdf-scale-in / pdf-spin keyframes (platform.css); dropped html2canvas and jsPDF CDN dependencies',
+      'framework-poc.html: standalone cross-platform verification harness — fixed sample data, timestamp-normalized SHA-256 fingerprint, page-count guard, and device diagnostics; Phase 1.5 + Phase 2 verified on Desktop / Android / iPhone / PWA before migration',
+    ],
+  },
   {
     version: '1.9.1.1',
     date: '2026-06-10',
