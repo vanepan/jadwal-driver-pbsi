@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Document Framework — POC Verification</title>
+<style>
+  :root { color-scheme: light; }
+  body { font: 14px/1.5 system-ui, -apple-system, Segoe UI, sans-serif; color:#1A1917;
+         background:#FBFAF8; margin:0; padding:24px; }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p.sub { color:#5B5953; margin:0 0 20px; }
+  .card { background:#fff; border:1px solid #ECEAE6; border-radius:12px; padding:18px; margin-bottom:16px; }
+  .card h2 { font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:#5B5953; margin:0 0 12px; }
+  button { border:none; border-radius:9px; padding:12px 20px; font:600 14px system-ui; cursor:pointer; }
+  .primary { background:#A8292F; color:#fff; }
+  .primary:hover { background:#8f2228; }
+  .ghost { background:#F3F1ED; color:#1A1917; }
+  .ghost:hover { background:#E7E4DF; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  td { padding:7px 4px; border-bottom:1px solid #F0EDE8; vertical-align:top; }
+  td.k { color:#5B5953; width:42%; }
+  td.v { font-family: ui-monospace, "JetBrains Mono", monospace; word-break:break-all; }
+  .hash { font-size:11px; }
+  .pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:11px; font-weight:700; }
+  .ok { background:#E7F2EC; color:#2F7D62; }
+  .pending { background:#FBF0DC; color:#9A6B12; }
+  .status { margin-top:10px; font-size:13px; color:#5B5953; min-height:18px; }
+  ol { margin:8px 0 0; padding-left:20px; color:#5B5953; font-size:13px; }
+  ol li { margin:4px 0; }
+  code { background:#F3F1ED; padding:1px 5px; border-radius:4px; font-size:12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Document Framework — POC Verification</h1>
+  <p class="sub">Phase 1.5 · Test Report on the Hybrid (pdfmake) engine. Compare the fingerprint across devices.</p>
+
+  <div class="card">
+    <h2>Actions</h2>
+    <div class="row">
+      <button class="primary" id="btnGen">Generate &amp; Preview</button>
+      <button class="ghost"   id="btnDl" disabled>Download PDF</button>
+    </div>
+    <div class="status" id="status">Ready. Tap “Generate &amp; Preview”.</div>
+  </div>
+
+  <div class="card">
+    <h2>Determinism Fingerprint <span class="pill pending" id="fpPill">pending</span></h2>
+    <table>
+      <tr><td class="k">pdfmake version</td><td class="v" id="d_lib">—</td></tr>
+      <tr><td class="k">Page count</td><td class="v" id="d_pages">—</td></tr>
+      <tr><td class="k">File size (bytes)</td><td class="v" id="d_size">—</td></tr>
+      <tr><td class="k">Content SHA-256 <br><span style="font-weight:400;color:#94918B">(timestamps normalized)</span></td><td class="v hash" id="d_hash">—</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>This Device</h2>
+    <table>
+      <tr><td class="k">Platform</td><td class="v" id="e_plat">—</td></tr>
+      <tr><td class="k">devicePixelRatio</td><td class="v" id="e_dpr">—</td></tr>
+      <tr><td class="k">Viewport</td><td class="v" id="e_vp">—</td></tr>
+      <tr><td class="k">Display mode</td><td class="v" id="e_dm">—</td></tr>
+      <tr><td class="k">User agent</td><td class="v" id="e_ua">—</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>How to verify</h2>
+    <ol>
+      <li>Open this page on <b>Desktop Chrome</b>, <b>Android Chrome</b>, <b>iPhone Safari</b>, and the <b>installed PWA</b>.</li>
+      <li>Tap <b>Generate &amp; Preview</b> on each.</li>
+      <li>The <b>Content SHA-256</b> must be <b>identical</b> on all four, and <b>Page count = 1</b>.</li>
+      <li>Visually confirm the preview looks the same and the dashed box is intact.</li>
+      <li>Tap <b>Download</b>; the file must open as a real PDF in a PDF reader.</li>
+    </ol>
+  </div>
+</div>
+
+<script type="module">
+  import * as DocumentEngine from './js/docs/doc-engine.js';
+  import './js/docs/templates/test-report.js';   // side-effect: registers 'test-report'
+
+  /* FIXED sample data — identical input ⇒ identical output across devices.
+     Note: printDate is hard-coded (not new Date()) so the rendered content
+     is device-independent; PDF metadata timestamps are normalized in the hash. */
+  const SAMPLE = {
+    id: 'POC-0001',
+    docNumber: 'PBSI/TEST/2026/06/0001',
+    reference: 'POC-REF-0001',
+    printDate: '11 Juni 2026',
+    name: 'Budi Santoso',
+    date: 'Rabu, 11 Juni 2026',
+    unit: 'Toyota Avanza',
+    status: 'NORMAL',
+    rows: [
+      { label: 'BBM / Bensin', amount: '150.000' },
+      { label: 'Tol',          amount: '45.000'  },
+      { label: 'Parkir',       amount: '20.000'  },
+      { label: 'Lain-lain',    amount: '0'       },
+    ],
+    total: '215.000',
+  };
+
+  const $ = id => document.getElementById(id);
+  let lastDoc = null;
+
+  function fillEnv() {
+    const standalone = window.matchMedia('(display-mode: standalone)').matches
+      || window.navigator.standalone === true;
+    $('e_plat').textContent = navigator.platform || '—';
+    $('e_dpr').textContent  = String(window.devicePixelRatio);
+    $('e_vp').textContent   = `${window.innerWidth}×${window.innerHeight}`;
+    $('e_dm').textContent   = standalone ? 'standalone (PWA)' : 'browser';
+    $('e_ua').textContent   = navigator.userAgent;
+  }
+
+  async function analyze(blob) {
+    const buf = new Uint8Array(await blob.arrayBuffer());
+    let bin = '';
+    for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
+
+    const pages = (bin.match(/\/Type\s*\/Page[^s]/g) || []).length;
+
+    const normalized = bin
+      .replace(/\/CreationDate\s*\(D:[^)]*\)/g, '/CreationDate (D:NORMALIZED)')
+      .replace(/\/ModDate\s*\(D:[^)]*\)/g,     '/ModDate (D:NORMALIZED)')
+      .replace(/\/ID\s*\[[^\]]*\]/g,           '/ID [NORMALIZED]');
+
+    const out = new Uint8Array(normalized.length);
+    for (let i = 0; i < normalized.length; i++) out[i] = normalized.charCodeAt(i) & 0xff;
+    const digest = await crypto.subtle.digest('SHA-256', out);
+    const hash = [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
+
+    return { pages, size: buf.length, hash };
+  }
+
+  $('btnGen').addEventListener('click', async () => {
+    $('status').textContent = 'Loading pdfmake & rendering…';
+    $('fpPill').className = 'pill pending'; $('fpPill').textContent = 'pending';
+    try {
+      lastDoc = await DocumentEngine.generate('test-report', SAMPLE, { cache: false });
+      DocumentEngine.open(lastDoc, { title: 'Test Report (POC)' });
+
+      const a = await analyze(lastDoc.blob);
+      $('d_lib').textContent   = (window.pdfMake && window.pdfMake.version) || '0.2.10';
+      $('d_pages').textContent = String(a.pages);
+      $('d_size').textContent  = a.size.toLocaleString('en-US');
+      $('d_hash').textContent  = a.hash;
+      $('fpPill').className = 'pill ok'; $('fpPill').textContent = 'ready';
+      $('btnDl').disabled = false;
+      $('status').textContent = `Done. Page count ${a.pages}, ${a.size.toLocaleString('en-US')} bytes.`;
+    } catch (err) {
+      console.error(err);
+      $('status').textContent = 'Error: ' + err.message;
+    }
+  });
+
+  $('btnDl').addEventListener('click', () => {
+    if (!lastDoc) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(lastDoc.blob);
+    a.download = lastDoc.filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+
+  fillEnv();
+</script>
+</body>
+</html>
