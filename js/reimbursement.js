@@ -931,11 +931,10 @@ async function _sharePdf(pdfUrl, filename, assignment) {
  * Inject a CSS zoom override into the iframe content so the A4 page
  * fits the container width on narrow screens (iPhone, Android).
  *
- * Why zoom not transform:scale — zoom collapses the layout box so no
- * phantom whitespace appears below the scaled element.
+ * CRITICAL FIX: Zoom CSS must ONLY apply to @media screen context.
+ * It must NEVER apply to @media print, otherwise it breaks print layout.
  *
- * No-op when the container is already wide enough to show A4 naturally
- * (desktop), or when same-origin iframe access is unavailable.
+ * Solution: Wrap zoom in @media screen query so it's ignored during print.
  *
  * @param {HTMLIFrameElement} iframe
  */
@@ -956,9 +955,15 @@ function _applyFitScale(iframe) {
     s.textContent =
       /* Prevent horizontal scrollbar inside iframe */
       'html,body{overflow-x:hidden!important}' +
-      /* Scale the A4 page to fit exactly */
-      '.page{zoom:' + scale + '!important;' +
-            'margin:0 auto!important}' +
+      /* IMPORTANT: Wrap zoom in @media screen so it NEVER affects print */
+      '@media screen{' +
+        '.page{zoom:' + scale + '!important;' +
+              'margin:0 auto!important}' +
+      '}' +
+      /* Ensure zoom is 1.0 during print (override any screen zoom) */
+      '@media print{' +
+        '.page{zoom:1!important}' +
+      '}' +
       /* Hide the screen-only toolbar that lives inside the HTML */
       '.no-print,.print-bar{display:none!important}';
     doc.head.appendChild(s);
@@ -969,33 +974,129 @@ function _applyFitScale(iframe) {
 }
 
 /**
- * Generate a PDF Blob via browser native print-to-PDF.
+ * Generate a real PDF Blob from the reimbursement form.
  *
- * Since browser native print engine is most reliable and consistent:
- * 1. Form renders as A4 via @media print CSS
- * 2. Browser handles DPI, compression, and PDF generation
- * 3. No external libraries (html2canvas, jsPDF) = no rendering issues
- * 4. Identical output across desktop, mobile, tablet, PWA
+ * Pipeline:
+ * 1. Render HTML to canvas via offscreen DOM (fixed 96 DPI)
+ * 2. Canvas → JPEG image (70% quality, compressed)
+ * 3. JPEG → jsPDF document
+ * 4. Return actual PDF blob
  *
- * Implementation:
- * - Return HTML string as blob
- * - Caller triggers window.print() or browser "Save as PDF"
- * - No async rendering complications
- * - No blank PDF issues
- * - Single-page guarantee enforced by CSS
+ * This ensures:
+ * ✓ Real PDF file (not HTML masquerading as PDF)
+ * ✓ Consistent across devices (fixed 96 DPI, no device scaling)
+ * ✓ File size optimized (<2 MB target)
+ * ✓ No zoom CSS interference (isolated rendering)
+ * ✓ Single page guaranteed by CSS
  */
 async function _generatePdfBlob(htmlString) {
-  // Normalize HTML: ensure print CSS is applied
+  const html2canvas = await _loadHtml2Canvas();
+  const jsPDF = await _loadJsPdf();
+
+  // Normalize HTML: remove screen-only elements
   const cleanHtml = htmlString.replace(
     '</head>',
     '<style>' +
       '.no-print,.print-bar{display:none!important}' +
+      'body{margin:0;padding:0;background:#fff}' +
     '</style></head>'
   );
 
-  // Return as blob
-  // Note: Browser will handle print-to-PDF with proper A4 dimensions
-  return new Blob([cleanHtml], { type: 'text/html; charset=utf-8' });
+  // Render to canvas at fixed 96 DPI (standard screen DPI)
+  const parser    = new DOMParser();
+  const doc       = parser.parseFromString(cleanHtml, 'text/html');
+  const container = document.createElement('div');
+  container.setAttribute('aria-hidden', 'true');
+  container.style.cssText =
+    'position:fixed;top:-99999px;left:-99999px;width:794px;' +
+    'background:#fff;overflow:visible;pointer-events:none;z-index:-9999;';
+
+  doc.querySelectorAll('style').forEach(s => container.appendChild(s.cloneNode(true)));
+  const bodyWrap = document.createElement('div');
+  bodyWrap.innerHTML = doc.body.innerHTML;
+  container.appendChild(bodyWrap);
+  document.body.appendChild(container);
+
+  try {
+    // Render container to canvas at fixed 96 DPI (no device pixel ratio scaling)
+    const canvas = await html2canvas(container, {
+      scale: 1,                          // Fixed scale: 1x (no DPR multiplication)
+      useCORS: true,
+      logging: false,
+      backgroundColor: '#ffffff',
+      width: 794,                        // A4 width at 96 DPI
+      windowWidth: 794,
+      windowHeight: container.offsetHeight || 1123,
+      allowTaint: false,
+    });
+
+    // Convert canvas to compressed JPEG (70% quality for file size optimization)
+    const imgData = canvas.toDataURL('image/jpeg', 0.70);
+
+    // Create A4 PDF and insert image
+    const pdf = new jsPDF({
+      unit: 'mm',
+      format: 'a4',
+      orientation: 'portrait',
+      compress: true,
+    });
+
+    const pageWidth = pdf.internal.pageSize.getWidth();   // 210mm
+    const pageHeight = pdf.internal.pageSize.getHeight(); // 297mm
+    const margins = { top: 13, left: 17, right: 17, bottom: 11 };
+
+    // Calculate image dimensions to fit within page margins
+    const usableWidth = pageWidth - margins.left - margins.right;
+    const usableHeight = pageHeight - margins.top - margins.bottom;
+    const canvasAspect = canvas.width / canvas.height;
+
+    let imgWidth = usableWidth;
+    let imgHeight = imgWidth / canvasAspect;
+
+    if (imgHeight > usableHeight) {
+      imgHeight = usableHeight;
+      imgWidth = imgHeight * canvasAspect;
+    }
+
+    // Center image on page
+    const x = margins.left + (usableWidth - imgWidth) / 2;
+    const y = margins.top;
+
+    // Add image to PDF
+    pdf.addImage(imgData, 'JPEG', x, y, imgWidth, imgHeight);
+
+    // Return PDF as blob
+    return pdf.output('blob');
+
+  } finally {
+    document.body.removeChild(container);
+  }
+}
+
+/** Load html2canvas from CDN */
+function _loadHtml2Canvas() {
+  if (window.html2canvas) return Promise.resolve(window.html2canvas);
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    s.async = true;
+    s.onload = () => resolve(window.html2canvas);
+    s.onerror = () => reject(new Error('html2canvas failed to load'));
+    document.head.appendChild(s);
+  });
+}
+
+/** Load jsPDF from CDN */
+function _loadJsPdf() {
+  if (window.jsPDF) return Promise.resolve(window.jsPDF.jsPDF);
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    s.async = true;
+    s.onload = () => resolve(window.jsPDF.jsPDF);
+    s.onerror = () => reject(new Error('jsPDF failed to load'));
+    document.head.appendChild(s);
+  });
 }
 
 
