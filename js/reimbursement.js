@@ -1,34 +1,38 @@
 /* ============================================================
-   REIMBURSEMENT.JS — Form Reimbursement Generator  (v1.2.5)
+   REIMBURSEMENT.JS — Form Reimbursement Generator  (v2.0)
 
-   Generates a professional A4 reimbursement form from
-   assignment data. Supports browser Print and Save as PDF.
+   Now the first production consumer of the Document Generation
+   Framework (js/docs/*). This module owns only DOMAIN LOGIC:
+   overtime calculation, requester resolution, plate lookup,
+   sequential doc-number acquisition, and building a presentation-
+   agnostic view model. Rendering, preview, print, download, and
+   share are delegated to DocumentEngine.
 
-   Architecture note: this module is intentionally self-
-   contained. It produces a full HTML string that is injected
-   into a new window — no external PDF library required.
+   The PDF is computed in pure JS (pdfmake) from a declarative
+   template — deterministic across Desktop, Android, iPhone, PWA.
 
-   v1.2.5 changes:
-   - Sequential PBSI/RMB/YYYY/MM/NNNN document numbering
-     stored atomically in Firebase (resets monthly)
-   - No. Assignment reference displayed in header
-   - Section C redesigned: 35/65 driver statement + breakdown
-   - Section D simplified: blank dashed area for physical receipts
+   Removed in v2.0 (replaced by the framework):
+   - html2canvas raster path
+   - jsPDF assembly path
+   - iframe + window.print() path
+   - viewport zoom-scaling path
+   - self-contained HTML string generator
    ============================================================ */
 
 'use strict';
 
-import { getVehicles }    from './vehicles-store.js';
-import { parseLocalDate }  from './utils.js';
-import { acquireReimbursementDocNumber } from './firebase.js';
-import { APP_VERSION } from './config.js';
+import { getVehicles }                    from './vehicles-store.js';
+import { parseLocalDate }                 from './utils.js';
+import { acquireReimbursementDocNumber }  from './firebase.js';
+import * as DocumentEngine                from './docs/doc-engine.js';
+import './docs/templates/reimbursement.js';   // side-effect: registers 'reimbursement'
 
 /* ── Overtime Boundaries ── */
 const WORK_START_MINS = 9  * 60;   // 09:00
 const WORK_END_MINS   = 17 * 60;   // 17:00
 
 /* ────────────────────────────────────────────────────────────
-   HELPERS
+   DOMAIN HELPERS
    ──────────────────────────────────────────────────────────── */
 
 /**
@@ -64,1079 +68,88 @@ function getVehiclePlate(vehicleName) {
   return v?.plateNumber || '-';
 }
 
-/**
- * Format assignment ID as a human-readable reference.
- * Shows as: ASG-YYYYMMDD-XXXXXX
- */
+/** Format assignment ID as a human-readable reference (ASG-YYYYMMDD-XXXXXX). */
 function formatAssignmentRef(a) {
   const dateStr = (a.date || '').replace(/-/g, '');
   const suffix  = String(a.id || '').slice(-6).toUpperCase();
   return dateStr ? `ASG-${dateStr}-${suffix}` : (a.id || '—');
 }
 
-/** HTML-escape a value. */
-function esc(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-/* ────────────────────────────────────────────────────────────
-   HTML GENERATOR
-   ──────────────────────────────────────────────────────────── */
-
 /**
- * Build a self-contained A4 HTML document for the reimbursement
- * form.  Write the result into window.document to enable
- * browser Print / Save as PDF.
- *
- * @param   {Object} a          — Assignment object
- * @param   {string} docNumber  — Sequential doc number (PBSI/RMB/YYYY/MM/NNNN)
- * @returns {string}            — Complete HTML string
+ * Build the presentation-agnostic view model consumed by the
+ * reimbursement template. No layout decisions here — just data.
  */
-export function generateReimbursementHTML(a, docNumber) {
-  const dateObj  = parseLocalDate(a.date);
-  const dateStr  = dateObj.toLocaleDateString('id-ID', {
+function buildViewModel(a, docNumber) {
+  const dateObj = parseLocalDate(a.date);
+  const dateStr = dateObj.toLocaleDateString('id-ID', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
   });
-
-  const overtimeStatus = calculateOvertimeStatus(a.startTime, a.endTime, a.fullDay);
-  const requester      = getRequesterInfo(a);
-  const vehiclePlate   = getVehiclePlate(a.vehicle);
-  const assignmentRef  = formatAssignmentRef(a);
-  const printDate      = new Date().toLocaleDateString('id-ID', {
+  const printDate = new Date().toLocaleDateString('id-ID', {
     day: 'numeric', month: 'long', year: 'numeric',
   });
 
+  const overtimeStatus = calculateOvertimeStatus(a.startTime, a.endTime, a.fullDay);
+  const isOT = overtimeStatus === 'OVERTIME';
+
   const fmtOdo = v => (v != null ? `${Number(v).toLocaleString('id-ID')} km` : '—');
-  const startOdo = fmtOdo(a.startOdometer);
-  const endOdo   = fmtOdo(a.endOdometer);
-  const distance = fmtOdo(a.distanceTravelled);
+  const requester = getRequesterInfo(a);
 
-  const isOT    = overtimeStatus === 'OVERTIME';
-  const otLabel = isOT ? 'LEMBUR'  : 'NORMAL';
-  const otDesc  = isOT
-    ? 'Di luar jam operasional (09:00 – 17:00)'
-    : 'Dalam jam operasional (09:00 – 17:00)';
-  const otBadge = `<span class="badge badge--${isOT ? 'ot' : 'ok'}">${otLabel}</span>`;
+  return {
+    docNumber,
+    assignmentRef: formatAssignmentRef(a),
+    printDate,
+    rawDate: a.date || '',
 
-  const startT      = a.fullDay ? '00:00' : (a.startTime || '—');
-  const endT        = a.fullDay ? '23:59' : (a.endTime   || '—');
-  const fullDayNote = a.fullDay
-    ? ' <span style="color:#5B5953;font-weight:400;">(Penuh Hari)</span>'
-    : '';
+    driver:         a.driver || '—',
+    requesterLabel: requester.label,
+    requesterValue: requester.value,
+    purpose:        a.purpose || '—',
+    destination:    a.destination || '',
+    dateStr,
+    vehicle:        a.vehicle || '—',
+    vehiclePlate:   getVehiclePlate(a.vehicle),
 
-  return `<!DOCTYPE html>
-<html lang="id">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Form Reimbursement – ${esc(a.driver)} – ${esc(a.date)}</title>
-<style>
-/* ── Reset ── */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    startT:  a.fullDay ? '00:00' : (a.startTime || '—'),
+    endT:    a.fullDay ? '23:59' : (a.endTime   || '—'),
+    fullDay: !!a.fullDay,
+    pax:     a.pax ?? 0,
 
-/* ── Base ── */
-body {
-  font-family: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
-  font-size: 9.5pt;
-  color: #1A1917;
-  background: #fff;
-  line-height: 1.5;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
+    startOdo: fmtOdo(a.startOdometer),
+    endOdo:   fmtOdo(a.endOdometer),
+    distance: fmtOdo(a.distanceTravelled),
 
-/* ── Screen wrapper — always A4 fixed for consistency ── */
-@media screen {
-  body { background: #E0DDD9; }
-  .page {
-    width: 210mm;
-    min-height: 297mm;
-    margin: 28px auto 40px;
-    padding: 13mm 17mm 10mm;
-    background: #fff;
-    box-shadow: 0 6px 32px rgba(0,0,0,.16);
-  }
-}
-
-/* ── Print — single-page guarantee ── */
-@media print {
-  body { background: #fff; margin: 0; padding: 0; }
-  @page { size: A4 portrait; margin: 13mm 17mm 11mm; }
-  .page {
-    width: 100%; padding: 0; margin: 0; box-shadow: none;
-    height: 273mm;
-    overflow: hidden;
-    page-break-after: avoid;
-    page-break-before: avoid;
-  }
-  .no-print { display: none !important; }
-  /* Critical: prevent attachment section from expanding beyond page */
-  .attach-section {
-    flex: none !important;
-    max-height: 100mm !important;
-    overflow: hidden !important;
-    page-break-inside: avoid;
-  }
-  .attach-area {
-    max-height: 95mm !important;
-    overflow: hidden !important;
-  }
-  /* Prevent all sections from breaking */
-  .doc-header { page-break-after: avoid; page-break-inside: avoid; }
-  .form-title-block { page-break-after: avoid; page-break-inside: avoid; }
-  .data-table { page-break-inside: avoid; }
-  .rmb-section { page-break-inside: avoid; }
-}
-
-/* ── Page layout ── */
-.page {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-
-/* ── Doc header ── */
-.doc-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-  padding-bottom: 3px;
-  border-bottom: 2.5px solid #1A1917;
-  margin-bottom: 4px;
-}
-.org-name {
-  font-size: 11pt;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  line-height: 1.1;
-}
-.org-sub {
-  font-size: 7.5pt;
-  color: #5B5953;
-  margin-top: 0px;
-}
-.doc-meta {
-  text-align: right;
-  font-size: 7.5pt;
-  color: #5B5953;
-  line-height: 1.8;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.doc-meta strong { font-weight: 600; color: #1A1917; }
-
-/* ── Form title ── */
-.form-title-block {
-  text-align: center;
-  margin-bottom: 4px;
-  padding-bottom: 3px;
-  border-bottom: 1px solid #E8E6E2;
-}
-.form-title {
-  font-size: 12pt;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  line-height: 1.1;
-}
-.form-subtitle {
-  font-size: 7.5pt;
-  color: #5B5953;
-  margin-top: 1px;
-}
-
-/* ── Section label ── */
-.sec-label {
-  font-size: 7pt;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #5B5953;
-  margin: 3px 0 2px;
-  padding-bottom: 1px;
-  border-bottom: 1px solid #E8E6E2;
-}
-
-/* ── Data table ── */
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-  border: 1px solid #C9C6C0;
-  border-radius: 4px;
-  overflow: hidden;
-  font-size: 8.5pt;
-  margin-bottom: 2px;
-}
-.data-table td {
-  padding: 3px 6px;
-  border: 1px solid #E2DFD9;
-  vertical-align: top;
-}
-.td-lbl {
-  width: 18%;
-  background: #F7F6F3;
-  font-size: 7pt;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #5B5953;
-  white-space: nowrap;
-}
-.td-val {
-  font-size: 8.5pt;
-  font-weight: 600;
-  color: #1A1917;
-  min-width: 80px;
-}
-.td-val--muted { font-weight: 400; color: #5B5953; }
-
-/* ── Badges ── */
-.badge {
-  display: inline-block;
-  padding: 2px 9px;
-  border-radius: 3px;
-  font-size: 7.5pt;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  vertical-align: middle;
-}
-.badge--ok  { background: #E7F2EC; color: #2F7D62; border: 1px solid #B3D9C9; }
-.badge--ot  { background: #FAEBEB; color: #A8292F; border: 1px solid #F0BDBD; }
-.badge-desc {
-  display: block;
-  font-size: 7.5pt;
-  font-weight: 400;
-  color: #5B5953;
-  margin-top: 2px;
-}
-
-/* ── Section C: Pengajuan Reimbursement ── */
-.rmb-section {
-  display: grid;
-  grid-template-columns: 35fr 65fr;
-  gap: 4px;
-  margin-top: 2px;
-  margin-bottom: 2px;
-}
-
-/* Left: Driver Statement */
-.driver-stmt-col {
-  border: 1px solid #C9C6C0;
-  border-radius: 4px;
-  padding: 4px 6px;
-  display: flex;
-  flex-direction: column;
-}
-.driver-stmt-label {
-  font-size: 6.5pt;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: #5B5953;
-  margin-bottom: 2px;
-}
-.driver-stmt-text {
-  font-size: 7pt;
-  color: #3A3835;
-  line-height: 1.4;
-  flex: 1;
-}
-.driver-sig-area {
-  margin-top: 5px;
-}
-.driver-sig-date {
-  font-size: 6.5pt;
-  color: #5B5953;
-  margin-bottom: 6px;
-}
-.driver-sig-line {
-  border-top: 1px solid #1A1917;
-  padding-top: 2px;
-  text-align: center;
-}
-.driver-sig-name {
-  font-size: 7.5pt;
-  font-weight: 600;
-  color: #1A1917;
-}
-.driver-sig-role {
-  font-size: 6.5pt;
-  color: #5B5953;
-  margin-top: 0px;
-}
-
-/* Right: Reimbursement Breakdown */
-.rmb-breakdown-col {
-  border: 1px solid #C9C6C0;
-  border-radius: 4px;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-.rmb-breakdown-title {
-  background: #F7F6F3;
-  font-size: 6.5pt;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: #5B5953;
-  padding: 3px 6px;
-  border-bottom: 1px solid #E2DFD9;
-}
-.rmb-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 8pt;
-  flex: 1;
-}
-.rmb-table th {
-  background: #F7F6F3;
-  font-size: 6.5pt;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #5B5953;
-  padding: 2px 6px;
-  border-bottom: 1px solid #E2DFD9;
-  text-align: left;
-}
-.rmb-table th.col-amt { text-align: right; }
-.rmb-table td {
-  padding: 2px 6px;
-  border-bottom: 1px solid #F0EDE8;
-  vertical-align: middle;
-  color: #1A1917;
-}
-.rmb-table tr:last-child td { border-bottom: none; }
-.col-cat { width: 60%; }
-.col-amt { width: 40%; text-align: right; }
-.rmb-table td.col-amt {
-  color: #C9C6C0;
-  font-size: 7pt;
-  letter-spacing: 0.03em;
-}
-.row-total td {
-  background: #F7F6F3;
-  font-weight: 700;
-  font-size: 9pt;
-  border-top: 1.5px solid #C9C6C0;
-  border-bottom: none;
-}
-.row-total td.col-amt {
-  color: #5B5953;
-  font-size: 8pt;
-}
-
-/* ── Attachment section — flex:1 claims all remaining vertical space ── */
-.attach-section {
-  margin-top: 2px;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 40mm;
-}
-.attach-header {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  margin-bottom: 2px;
-}
-.attach-title {
-  font-size: 7pt;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #1A1917;
-}
-.attach-subtitle { font-size: 6.5pt; color: #5B5953; }
-.attach-area {
-  flex: 1;
-  min-height: 40mm;
-  border: 1.5px dashed #C9C6C0;
-  border-radius: 6px;
-  background: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 8px;
-}
-.attach-placeholder {
-  font-size: 7.5pt;
-  color: #C0C0C0;
-  text-align: center;
-  pointer-events: none;
-  line-height: 1.5;
-}
-
-/* ── Footer ── */
-.doc-footer {
-  margin-top: 2px;
-  padding-top: 2px;
-  border-top: 1px solid #E8E6E2;
-  display: flex;
-  justify-content: space-between;
-  font-size: 6pt;
-  color: #94918B;
-  flex-shrink: 0;
-}
-
-/* ── Print toolbar (screen only) ── */
-.print-bar {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
-  display: flex;
-  gap: 10px;
-  z-index: 99;
-  filter: drop-shadow(0 4px 12px rgba(0,0,0,.18));
-}
-@media print { .print-bar { display: none; } }
-.btn-p {
-  border: none;
-  padding: 11px 22px;
-  border-radius: 6px;
-  font-size: 10pt;
-  font-weight: 600;
-  cursor: pointer;
-  font-family: inherit;
-  letter-spacing: 0.01em;
-}
-.btn-p--dark  { background: #1A1917; color: #fff; }
-.btn-p--dark:hover  { background: #333; }
-.btn-p--light { background: #fff; color: #1A1917; border: 1.5px solid #C9C6C0; }
-.btn-p--light:hover { background: #F5F4F1; }
-</style>
-</head>
-<body>
-<div class="page">
-
-  <!-- ── Doc Header ── -->
-  <div class="doc-header">
-    <div>
-      <div class="org-name">Bidang Sarana dan Prasarana</div>
-      <div class="org-sub">PBSI &mdash; Persatuan Bulu Tangkis Seluruh Indonesia</div>
-    </div>
-    <div class="doc-meta">
-      <div>No. Dokumen: <strong>${esc(docNumber)}</strong></div>
-      <div>No. Assignment: <strong>${esc(assignmentRef)}</strong></div>
-      <div>Tanggal Cetak: <strong>${esc(printDate)}</strong></div>
-    </div>
-  </div>
-
-  <!-- ── Form Title ── -->
-  <div class="form-title-block">
-    <div class="form-title">Form Reimbursement Perjalanan Dinas</div>
-    <div class="form-subtitle">Formulir Pengajuan Penggantian Biaya Operasional Kendaraan</div>
-  </div>
-
-  <!-- ── A. Informasi Perjalanan ── -->
-  <div class="sec-label">A. Informasi Perjalanan</div>
-  <table class="data-table">
-    <tbody>
-      <tr>
-        <td class="td-lbl">Nama Driver</td>
-        <td class="td-val">${esc(a.driver || '—')}</td>
-        <td class="td-lbl">${esc(requester.label)}</td>
-        <td class="td-val">${esc(requester.value)}</td>
-      </tr>
-      <tr>
-        <td class="td-lbl">Keperluan</td>
-        <td class="td-val" colspan="3">${esc(a.purpose || '—')}${a.destination ? ` &mdash; <span class="td-val--muted">${esc(a.destination)}</span>` : ''}</td>
-      </tr>
-      <tr>
-        <td class="td-lbl">Tanggal</td>
-        <td class="td-val">${esc(dateStr)}</td>
-        <td class="td-lbl">Unit Kendaraan</td>
-        <td class="td-val">${esc(a.vehicle || '—')}</td>
-      </tr>
-      <tr>
-        <td class="td-lbl">Jam Berangkat</td>
-        <td class="td-val">${esc(startT)}${fullDayNote}</td>
-        <td class="td-lbl">Nomor Polisi</td>
-        <td class="td-val">${esc(vehiclePlate)}</td>
-      </tr>
-      <tr>
-        <td class="td-lbl">Jam Kembali</td>
-        <td class="td-val">${esc(endT)}${fullDayNote}</td>
-        <td class="td-lbl">Jumlah Penumpang</td>
-        <td class="td-val">${esc(String(a.pax ?? 0))} pax</td>
-      </tr>
-    </tbody>
-  </table>
-
-  <!-- ── B. Data Odometer ── -->
-  <div class="sec-label">B. Data Odometer &amp; Status Lembur</div>
-  <table class="data-table">
-    <tbody>
-      <tr>
-        <td class="td-lbl">KM Awal</td>
-        <td class="td-val">${esc(startOdo)}</td>
-        <td class="td-lbl">KM Akhir</td>
-        <td class="td-val">${esc(endOdo)}</td>
-      </tr>
-      <tr>
-        <td class="td-lbl">Total Jarak</td>
-        <td class="td-val">${esc(distance)}</td>
-        <td class="td-lbl">Status Lembur</td>
-        <td class="td-val">
-          ${otBadge}
-          <span class="badge-desc">${esc(otDesc)}</span>
-        </td>
-      </tr>
-    </tbody>
-  </table>
-
-  <!-- ── C. Pengajuan Reimbursement ── -->
-  <div class="sec-label">C. Pengajuan Reimbursement</div>
-  <div class="rmb-section">
-
-    <!-- LEFT 35%: Driver Statement + Signature -->
-    <div class="driver-stmt-col">
-      <div class="driver-stmt-label">Pernyataan Driver</div>
-      <p class="driver-stmt-text">
-        Dengan ini saya menyatakan bahwa data perjalanan dinas yang
-        tercantum di atas adalah benar dan biaya yang diajukan sesuai
-        dengan bukti pengeluaran yang disertakan.
-      </p>
-      <div class="driver-sig-area">
-        <div class="driver-sig-date">Jakarta, ${esc(printDate)}</div>
-        <div class="driver-sig-line">
-          <div class="driver-sig-name">${esc(a.driver || '—')}</div>
-          <div class="driver-sig-role">Driver Operasional</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- RIGHT 65%: Reimbursement Breakdown -->
-    <div class="rmb-breakdown-col">
-      <div class="rmb-breakdown-title">Rincian Biaya</div>
-      <table class="rmb-table">
-        <thead>
-          <tr>
-            <th class="col-cat">Keterangan</th>
-            <th class="col-amt">Jumlah (Rp)</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td class="col-cat">BBM / Bensin</td>
-            <td class="col-amt">_______________</td>
-          </tr>
-          <tr>
-            <td class="col-cat">Tol</td>
-            <td class="col-amt">_______________</td>
-          </tr>
-          <tr>
-            <td class="col-cat">Parkir</td>
-            <td class="col-amt">_______________</td>
-          </tr>
-          <tr>
-            <td class="col-cat">Lain-lain</td>
-            <td class="col-amt">_______________</td>
-          </tr>
-          <tr class="row-total">
-            <td class="col-cat">TOTAL</td>
-            <td class="col-amt">_______________</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-  </div>
-
-  <!-- ── D. Lampiran Bukti Pengeluaran ── -->
-  <div class="attach-section">
-    <div class="attach-header">
-      <div class="attach-title">D. Lampiran Bukti Pengeluaran</div>
-      <div class="attach-subtitle">Tempel bukti fisik pada area di bawah ini</div>
-    </div>
-    <div class="attach-area">
-      <div class="attach-placeholder">Lampirkan Bukti Pengeluaran di Area Ini</div>
-    </div>
-  </div>
-
-  <!-- ── Footer ── -->
-  <div class="doc-footer">
-    <span>PBSI Operations Platform v${esc(APP_VERSION)} &mdash; Form Reimbursement Perjalanan Dinas</span>
-    <span>${esc(docNumber)}</span>
-  </div>
-
-</div>
-
-<!-- ── Print toolbar (screen only) ── -->
-<div class="print-bar no-print">
-  <button class="btn-p btn-p--light" onclick="window.close()">Tutup</button>
-  <button class="btn-p btn-p--dark" onclick="window.print()">🖸&nbsp; Cetak / Simpan sebagai PDF</button>
-</div>
-
-</body>
-</html>`;
+    isOT,
+    otLabel: isOT ? 'LEMBUR' : 'NORMAL',
+    otDesc:  isOT
+      ? 'Di luar jam operasional (09:00 – 17:00)'
+      : 'Dalam jam operasional (09:00 – 17:00)',
+  };
 }
 
 /* ────────────────────────────────────────────────────────────
-   PDF VIEWER MODAL  (v1.3.0)
-   Replaces window.open() — works on iOS Safari, Android Chrome,
-   and all desktop browsers without popup permission requirements.
+   PUBLIC API  (unchanged signatures)
    ──────────────────────────────────────────────────────────── */
 
-/** Session cache: assignment.id → { htmlUrl, pdfUrl, filename } */
-const _cache = new Map();
-
-/** Guards one-time event-listener setup. */
-let _viewerInitialized = false;
-
 /**
- * Open the PDF Viewer Modal for the given assignment.
- * Exported as `printReimbursementForm` to keep callers unchanged.
+ * Generate and open the reimbursement form for an assignment.
+ * Acquires a sequential document number, builds the view model,
+ * then hands off to the Document Engine (preview + print + PDF).
  *
- * @param {Object} assignment — Assignment object
+ * @param {Object} assignment
  * @returns {Promise<void>}
  */
 export async function printReimbursementForm(assignment) {
-  _initViewerOnce();
-
-  const cacheKey = String(assignment.id);
-
-  // Show modal in loading state immediately — no waiting
-  _openViewerModal(assignment);
-
-  // Cache hit: reuse previously generated blob URLs
-  if (_cache.has(cacheKey)) {
-    const { htmlUrl, pdfUrl, filename } = _cache.get(cacheKey);
-    _showIframePreview(htmlUrl);
-    _enableActions(pdfUrl, filename, assignment);
-    return;
-  }
-
-  try {
-    // 1. Acquire sequential doc number + generate HTML
-    _setLoadingText('Mempersiapkan Form Reimbursement...');
-    const docNumber = await acquireReimbursementDocNumber(assignment.date);
-    const html      = generateReimbursementHTML(assignment, docNumber);
-
-    // 2. HTML blob → iframe preview (appears immediately, no PDF lib needed)
-    const htmlBlob = new Blob([html], { type: 'text/html' });
-    const htmlUrl  = URL.createObjectURL(htmlBlob);
-    _showIframePreview(htmlUrl);
-
-    // 3. Generate PDF blob in the background (enables Download + Share)
-    _setLoadingText('Membuat PDF...');
-    const filename = _buildFilename(assignment, docNumber);
-
-    let pdfUrl = null;
-    try {
-      const pdfBlob = await _generatePdfBlob(html);
-      pdfUrl = URL.createObjectURL(pdfBlob);
-    } catch (pdfErr) {
-      // PDF generation failure is non-fatal — preview + print still work
-      console.warn('[PDFViewer] PDF generation failed; download unavailable:', pdfErr);
-    }
-
-    // 4. Cache result so re-opening the same form is instant
-    _cache.set(cacheKey, { htmlUrl, pdfUrl, filename });
-
-    // 5. Wire up action buttons
-    _enableActions(pdfUrl, filename, assignment);
-
-  } catch (err) {
-    console.error('[PDFViewer] Fatal error:', err);
-    _showViewerError();
-  }
+  const docNumber = await acquireReimbursementDocNumber(assignment.date);
+  const vm = buildViewModel(assignment, docNumber);
+  await DocumentEngine.generateAndOpen('reimbursement', vm, {
+    viewer: {
+      title: `Form Reimbursement — ${vm.driver}`,
+      shareText: `Form Reimbursement – ${vm.driver} – ${assignment.date || ''}`,
+    },
+  });
 }
 
-/**
- * Close the PDF viewer and release transient DOM state.
- * Cached blob URLs survive closure for session-level reuse.
- */
+/** Close the document viewer (delegates to the framework). */
 export function closePdfViewer() {
-  const overlay = document.getElementById('modalPdfViewer');
-  if (!overlay) return;
-  overlay.style.display = 'none';
-  document.body.style.overflow = '';
-
-  // Blank the iframe to stop running content and free memory
-  const iframe = document.getElementById('pdfViewerIframe');
-  if (iframe) {
-    iframe.src = 'about:blank';
-    _hideEl('pdfViewerIframe');
-  }
+  DocumentEngine.closeViewer();
 }
-
-/* ── Private helpers ──────────────────────────────────────── */
-
-/** Show modal immediately in loading state; populate meta header. */
-function _openViewerModal(assignment) {
-  const meta = document.getElementById('pdfViewerMeta');
-  if (meta) {
-    const driver = assignment.driver || '—';
-    const date   = assignment.date
-      ? new Date(assignment.date + 'T00:00:00')
-          .toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
-      : '—';
-    meta.textContent = `${driver} · ${date}`;
-  }
-
-  // Reset to loading state
-  _showEl('pdfViewerLoading', 'flex');
-  _hideEl('pdfViewerIframe');
-  _hideEl('pdfViewerError');
-
-  // Disable all action buttons until ready
-  ['btnPdfDownload', 'btnPdfPrint', 'btnPdfShare'].forEach(id => {
-    const btn = document.getElementById(id);
-    if (btn) btn.disabled = true;
-  });
-  const shareBtn = document.getElementById('btnPdfShare');
-  if (shareBtn) shareBtn.style.display = 'none';
-
-  const overlay = document.getElementById('modalPdfViewer');
-  if (overlay) {
-    overlay.style.display = 'flex';
-    document.body.style.overflow = 'hidden';
-  }
-
-  // Move focus into modal for accessibility / keyboard users
-  requestAnimationFrame(() => document.getElementById('btnClosePdfViewer')?.focus());
-}
-
-/**
- * Load HTML blob URL into the iframe.
- * Hides loading state once iframe content is ready.
- */
-function _showIframePreview(htmlUrl) {
-  const iframe = document.getElementById('pdfViewerIframe');
-  if (!iframe) return;
-
-  iframe.onload = () => {
-    _applyFitScale(iframe);
-    _hideEl('pdfViewerLoading');
-    _showEl('pdfViewerIframe', 'block');
-    // Print is available as soon as the iframe is loaded
-    const printBtn = document.getElementById('btnPdfPrint');
-    if (printBtn) {
-      printBtn.disabled = false;
-      printBtn.onclick  = _printFromIframe;
-    }
-  };
-  iframe.onerror = () => _showViewerError();
-  iframe.src = htmlUrl;
-}
-
-/** Wire Download, Print, and (if supported) Share buttons. */
-function _enableActions(pdfUrl, filename, assignment) {
-  const dlBtn = document.getElementById('btnPdfDownload');
-  if (dlBtn && pdfUrl) {
-    dlBtn.disabled = false;
-    dlBtn.onclick  = () => _downloadPdf(pdfUrl, filename);
-  }
-
-  // Print button may already be live; set handler defensively
-  const printBtn = document.getElementById('btnPdfPrint');
-  if (printBtn) {
-    printBtn.disabled = false;
-    printBtn.onclick  = _printFromIframe;
-  }
-
-  // Error-panel fallback download
-  const fbBtn = document.getElementById('btnPdfDownloadFallback');
-  if (fbBtn && pdfUrl) {
-    fbBtn.style.display = '';
-    fbBtn.onclick = () => _downloadPdf(pdfUrl, filename);
-  }
-
-  // Web Share API — only when file sharing is supported
-  if (pdfUrl && _canShareFiles()) {
-    const shareBtn = document.getElementById('btnPdfShare');
-    if (shareBtn) {
-      shareBtn.style.display = '';
-      shareBtn.disabled = false;
-      shareBtn.onclick  = () => _sharePdf(pdfUrl, filename, assignment);
-    }
-  }
-}
-
-function _buildFilename(assignment, docNumber) {
-  const safe = s => String(s || '').replace(/[^a-z0-9]/gi, '-').replace(/-+/g, '-').toLowerCase();
-  const date = (assignment.date || '').replace(/-/g, '');
-  return `Form-Reimbursement-${safe(assignment.driver)}-${date}.pdf`;
-}
-
-function _setLoadingText(text) {
-  const el = document.getElementById('pdfViewerLoadingText');
-  if (el) el.textContent = text;
-}
-
-function _showViewerError() {
-  _hideEl('pdfViewerLoading');
-  _hideEl('pdfViewerIframe');
-  _showEl('pdfViewerError', 'flex');
-}
-
-/** Trigger browser download using a temporary <a> element. */
-function _downloadPdf(pdfUrl, filename) {
-  const a = document.createElement('a');
-  a.href     = pdfUrl;
-  a.download = filename;
-  a.style.display = 'none';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-}
-
-/** Print via iframe.contentWindow.print(); falls back to new-tab. */
-function _printFromIframe() {
-  const iframe = document.getElementById('pdfViewerIframe');
-  try {
-    if (iframe?.contentWindow) {
-      iframe.contentWindow.focus();
-      iframe.contentWindow.print();
-    }
-  } catch {
-    if (iframe?.src) window.open(iframe.src, '_blank', 'noopener');
-  }
-}
-
-/** True when navigator.share supports file attachments. */
-function _canShareFiles() {
-  if (!navigator.share || !navigator.canShare) return false;
-  try {
-    return navigator.canShare({ files: [new File([''], 'probe.pdf', { type: 'application/pdf' })] });
-  } catch {
-    return false;
-  }
-}
-
-/** Share PDF via Web Share API (iOS/Android); swallows user cancellation. */
-async function _sharePdf(pdfUrl, filename, assignment) {
-  try {
-    const res  = await fetch(pdfUrl);
-    const blob = await res.blob();
-    const file = new File([blob], filename, { type: 'application/pdf' });
-    await navigator.share({
-      title: 'Form Reimbursement',
-      text:  `Form Reimbursement – ${assignment.driver || ''} – ${assignment.date || ''}`,
-      files: [file],
-    });
-  } catch (e) {
-    if (e.name !== 'AbortError') console.warn('[PDFViewer] Share error:', e);
-  }
-}
-
-/**
- * Inject a CSS zoom override into the iframe content so the A4 page
- * fits the container width on narrow screens (iPhone, Android).
- *
- * CRITICAL FIX: Zoom CSS must ONLY apply to @media screen context.
- * It must NEVER apply to @media print, otherwise it breaks print layout.
- *
- * Solution: Wrap zoom in @media screen query so it's ignored during print.
- *
- * @param {HTMLIFrameElement} iframe
- */
-function _applyFitScale(iframe) {
-  try {
-    const doc       = iframe.contentDocument;
-    if (!doc) return;
-
-    const containerW = iframe.clientWidth;
-    if (!containerW) return;
-
-    const A4_PX = 794; // A4 at 96 dpi ≈ 210 mm
-    if (containerW >= A4_PX) return; // wide enough — no scaling needed
-
-    const scale = containerW / A4_PX;
-
-    const s = doc.createElement('style');
-    s.textContent =
-      /* Prevent horizontal scrollbar inside iframe */
-      'html,body{overflow-x:hidden!important}' +
-      /* IMPORTANT: Wrap zoom in @media screen so it NEVER affects print */
-      '@media screen{' +
-        '.page{zoom:' + scale + '!important;' +
-              'margin:0 auto!important}' +
-      '}' +
-      /* Ensure zoom is 1.0 during print (override any screen zoom) */
-      '@media print{' +
-        '.page{zoom:1!important}' +
-      '}' +
-      /* Hide the screen-only toolbar that lives inside the HTML */
-      '.no-print,.print-bar{display:none!important}';
-    doc.head.appendChild(s);
-
-  } catch {
-    /* blob: URLs are always same-origin; guard exists only for safety */
-  }
-}
-
-/**
- * Generate a real PDF Blob from the reimbursement form.
- *
- * Pipeline:
- * 1. Render HTML to canvas via offscreen DOM (fixed 96 DPI)
- * 2. Canvas → JPEG image (70% quality, compressed)
- * 3. JPEG → jsPDF document
- * 4. Return actual PDF blob
- *
- * This ensures:
- * ✓ Real PDF file (not HTML masquerading as PDF)
- * ✓ Consistent across devices (fixed 96 DPI, no device scaling)
- * ✓ File size optimized (<2 MB target)
- * ✓ No zoom CSS interference (isolated rendering)
- * ✓ Single page guaranteed by CSS
- */
-async function _generatePdfBlob(htmlString) {
-  const html2canvas = await _loadHtml2Canvas();
-  const jsPDF = await _loadJsPdf();
-
-  // Normalize HTML: remove screen-only elements
-  const cleanHtml = htmlString.replace(
-    '</head>',
-    '<style>' +
-      '.no-print,.print-bar{display:none!important}' +
-      'body{margin:0;padding:0;background:#fff}' +
-    '</style></head>'
-  );
-
-  // Render to canvas at fixed 96 DPI (standard screen DPI)
-  const parser    = new DOMParser();
-  const doc       = parser.parseFromString(cleanHtml, 'text/html');
-  const container = document.createElement('div');
-  container.setAttribute('aria-hidden', 'true');
-  container.style.cssText =
-    'position:fixed;top:-99999px;left:-99999px;width:794px;' +
-    'background:#fff;overflow:visible;pointer-events:none;z-index:-9999;';
-
-  doc.querySelectorAll('style').forEach(s => container.appendChild(s.cloneNode(true)));
-  const bodyWrap = document.createElement('div');
-  bodyWrap.innerHTML = doc.body.innerHTML;
-  container.appendChild(bodyWrap);
-  document.body.appendChild(container);
-
-  try {
-    // Render container to canvas at fixed 96 DPI (no device pixel ratio scaling)
-    const canvas = await html2canvas(container, {
-      scale: 1,                          // Fixed scale: 1x (no DPR multiplication)
-      useCORS: true,
-      logging: false,
-      backgroundColor: '#ffffff',
-      width: 794,                        // A4 width at 96 DPI
-      windowWidth: 794,
-      windowHeight: container.offsetHeight || 1123,
-      allowTaint: false,
-    });
-
-    // Convert canvas to compressed JPEG (70% quality for file size optimization)
-    const imgData = canvas.toDataURL('image/jpeg', 0.70);
-
-    // Create A4 PDF and insert image
-    const pdf = new jsPDF({
-      unit: 'mm',
-      format: 'a4',
-      orientation: 'portrait',
-      compress: true,
-    });
-
-    const pageWidth = pdf.internal.pageSize.getWidth();   // 210mm
-    const pageHeight = pdf.internal.pageSize.getHeight(); // 297mm
-    const margins = { top: 13, left: 17, right: 17, bottom: 11 };
-
-    // Calculate image dimensions to fit within page margins
-    const usableWidth = pageWidth - margins.left - margins.right;
-    const usableHeight = pageHeight - margins.top - margins.bottom;
-    const canvasAspect = canvas.width / canvas.height;
-
-    let imgWidth = usableWidth;
-    let imgHeight = imgWidth / canvasAspect;
-
-    if (imgHeight > usableHeight) {
-      imgHeight = usableHeight;
-      imgWidth = imgHeight * canvasAspect;
-    }
-
-    // Center image on page
-    const x = margins.left + (usableWidth - imgWidth) / 2;
-    const y = margins.top;
-
-    // Add image to PDF
-    pdf.addImage(imgData, 'JPEG', x, y, imgWidth, imgHeight);
-
-    // Return PDF as blob
-    return pdf.output('blob');
-
-  } finally {
-    document.body.removeChild(container);
-  }
-}
-
-/** Load html2canvas from CDN */
-function _loadHtml2Canvas() {
-  if (window.html2canvas) return Promise.resolve(window.html2canvas);
-  return new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-    s.async = true;
-    s.onload = () => resolve(window.html2canvas);
-    s.onerror = () => reject(new Error('html2canvas failed to load'));
-    document.head.appendChild(s);
-  });
-}
-
-/** Load jsPDF from CDN */
-function _loadJsPdf() {
-  if (window.jsPDF) return Promise.resolve(window.jsPDF.jsPDF);
-  return new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-    s.async = true;
-    s.onload = () => resolve(window.jsPDF.jsPDF);
-    s.onerror = () => reject(new Error('jsPDF failed to load'));
-    document.head.appendChild(s);
-  });
-}
-
-
-/**
- * Attach close / backdrop / ESC event listeners on the PDF viewer modal.
- * Runs exactly once — subsequent calls are no-ops.
- */
-function _initViewerOnce() {
-  if (_viewerInitialized) return;
-  _viewerInitialized = true;
-
-  document.getElementById('btnClosePdfViewer')
-    ?.addEventListener('click', closePdfViewer);
-
-  document.getElementById('btnPdfClose')
-    ?.addEventListener('click', closePdfViewer);
-
-  document.getElementById('modalPdfViewer')
-    ?.addEventListener('click', e => {
-      if (e.target === document.getElementById('modalPdfViewer')) closePdfViewer();
-    });
-
-  document.addEventListener('keydown', e => {
-    if (e.key !== 'Escape') return;
-    const overlay = document.getElementById('modalPdfViewer');
-    if (overlay && overlay.style.display !== 'none') {
-      e.preventDefault();
-      closePdfViewer();
-    }
-  });
-}
-
-/* ── Tiny DOM helpers ── */
-function _showEl(id, display = 'block') {
-  const el = document.getElementById(id);
-  if (el) el.style.display = display;
-}
-function _hideEl(id) {
-  const el = document.getElementById(id);
-  if (el) el.style.display = 'none';
-}
-
-console.info(`Reimbursement module loaded (v${APP_VERSION})`);

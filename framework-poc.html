@@ -41,10 +41,11 @@
   <div class="card">
     <h2>Actions</h2>
     <div class="row">
-      <button class="primary" id="btnGen">Generate &amp; Preview</button>
+      <button class="primary" id="btnGen">Test Report</button>
+      <button class="primary" id="btnGenR">Reimbursement (sample)</button>
       <button class="ghost"   id="btnDl" disabled>Download PDF</button>
     </div>
-    <div class="status" id="status">Ready. Tap “Generate &amp; Preview”.</div>
+    <div class="status" id="status">Ready. Pick a template to generate.</div>
   </div>
 
   <div class="card">
@@ -72,9 +73,9 @@
     <h2>How to verify</h2>
     <ol>
       <li>Open this page on <b>Desktop Chrome</b>, <b>Android Chrome</b>, <b>iPhone Safari</b>, and the <b>installed PWA</b>.</li>
-      <li>Tap <b>Generate &amp; Preview</b> on each.</li>
-      <li>The <b>Content SHA-256</b> must be <b>identical</b> on all four, and <b>Page count = 1</b>.</li>
-      <li>Visually confirm the preview looks the same and the dashed box is intact.</li>
+      <li>Tap <b>Test Report</b> and <b>Reimbursement (sample)</b> on each.</li>
+      <li>For each template, the <b>Content SHA-256</b> must be <b>identical</b> across all four devices, and <b>Page count = 1</b> (the pill warns if it's not).</li>
+      <li>Visually confirm the preview looks the same and the dashed receipt box is intact.</li>
       <li>Tap <b>Download</b>; the file must open as a real PDF in a PDF reader.</li>
     </ol>
   </div>
@@ -82,7 +83,8 @@
 
 <script type="module">
   import * as DocumentEngine from './js/docs/doc-engine.js';
-  import './js/docs/templates/test-report.js';   // side-effect: registers 'test-report'
+  import './js/docs/templates/test-report.js';     // registers 'test-report'
+  import './js/docs/templates/reimbursement.js';   // registers 'reimbursement'
 
   /* FIXED sample data — identical input ⇒ identical output across devices.
      Note: printDate is hard-coded (not new Date()) so the rendered content
@@ -103,6 +105,26 @@
       { label: 'Lain-lain',    amount: '0'       },
     ],
     total: '215.000',
+  };
+
+  /* Realistic reimbursement view model (same shape buildViewModel produces). */
+  const SAMPLE_RMB = {
+    docNumber: 'PBSI/RMB/2026/06/0001',
+    assignmentRef: 'ASG-20260611-A1B2C3',
+    printDate: '11 Juni 2026',
+    rawDate: '2026-06-11',
+    driver: 'Budi Santoso',
+    requesterLabel: 'Bidang Requester',
+    requesterValue: 'Bidang Pertandingan',
+    purpose: 'Antar peralatan turnamen',
+    destination: 'GOR Bulungan, Jakarta Selatan',
+    dateStr: 'Rabu, 11 Juni 2026',
+    vehicle: 'Toyota Avanza',
+    vehiclePlate: 'B 1234 XYZ',
+    startT: '07:30', endT: '19:45', fullDay: false, pax: 3,
+    startOdo: '12.500 km', endOdo: '12.640 km', distance: '140 km',
+    isOT: true, otLabel: 'LEMBUR',
+    otDesc: 'Di luar jam operasional (09:00 – 17:00)',
   };
 
   const $ = id => document.getElementById(id);
@@ -138,26 +160,31 @@
     return { pages, size: buf.length, hash };
   }
 
-  $('btnGen').addEventListener('click', async () => {
+  async function run(templateId, data, title) {
     $('status').textContent = 'Loading pdfmake & rendering…';
     $('fpPill').className = 'pill pending'; $('fpPill').textContent = 'pending';
     try {
-      lastDoc = await DocumentEngine.generate('test-report', SAMPLE, { cache: false });
-      DocumentEngine.open(lastDoc, { title: 'Test Report (POC)' });
+      lastDoc = await DocumentEngine.generate(templateId, data, { cache: false });
+      DocumentEngine.open(lastDoc, { title });
 
       const a = await analyze(lastDoc.blob);
       $('d_lib').textContent   = (window.pdfMake && window.pdfMake.version) || '0.2.10';
       $('d_pages').textContent = String(a.pages);
       $('d_size').textContent  = a.size.toLocaleString('en-US');
       $('d_hash').textContent  = a.hash;
-      $('fpPill').className = 'pill ok'; $('fpPill').textContent = 'ready';
+      const onePage = a.pages === 1;
+      $('fpPill').className = 'pill ' + (onePage ? 'ok' : 'pending');
+      $('fpPill').textContent = onePage ? 'ready' : `⚠ ${a.pages} pages`;
       $('btnDl').disabled = false;
-      $('status').textContent = `Done. Page count ${a.pages}, ${a.size.toLocaleString('en-US')} bytes.`;
+      $('status').textContent = `${title}: ${a.pages} page(s), ${a.size.toLocaleString('en-US')} bytes.`;
     } catch (err) {
       console.error(err);
       $('status').textContent = 'Error: ' + err.message;
     }
-  });
+  }
+
+  $('btnGen').addEventListener('click', () => run('test-report', SAMPLE, 'Test Report (POC)'));
+  $('btnGenR').addEventListener('click', () => run('reimbursement', SAMPLE_RMB, 'Form Reimbursement (sample)'));
 
   $('btnDl').addEventListener('click', () => {
     if (!lastDoc) return;
