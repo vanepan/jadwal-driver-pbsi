@@ -34,7 +34,7 @@ function Sidebar({ onClose }) {
   );
 }
 
-function Topbar({ onMenu }) {
+function Topbar({ onMenu, theme, onToggleTheme }) {
   return (
     <header className="topbar">
       <button className="hamb" onClick={onMenu} aria-label="Menu"><Icon name="layout" size={17} /></button>
@@ -54,7 +54,9 @@ function Topbar({ onMenu }) {
         <span>Sel, 9 Jun 2026</span>
         <button aria-label="Berikutnya"><Icon name="arrowR" size={14} /></button>
       </div>
-      <button className="tb-icon" aria-label="Tema"><Icon name="sun" size={16} /></button>
+      <button className="tb-icon" aria-label="Tema" onClick={onToggleTheme} title={theme === 'dark' ? 'Mode terang' : 'Mode gelap'}>
+        <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
+      </button>
       <button className="tb-icon" aria-label="Notifikasi"><Icon name="bell" size={16} /><span className="dot" /></button>
       <button className="tb-user">
         <span className="sb-ava" style={{ width: 28, height: 28, borderRadius: 7 }}>E</span>
