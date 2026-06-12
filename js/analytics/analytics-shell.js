@@ -86,10 +86,13 @@ export function renderAnalyticsPlaceholderSection({ id = '', title = '', descrip
 /* ── KPI system (Sprint 2) — reusable, module-agnostic ───────────────────── */
 
 /**
- * Trend indicator. Sprint 2 has no period-over-period data yet, so anything
- * other than an explicit up/down trend renders a calm NEUTRAL state — we never
- * fabricate a comparison. Shape: { direction:'up'|'down'|'neutral', percent }.
- * @param {{direction?:string, percent?:number}|null} trend
+ * Trend indicator. Anything other than an explicit up/down trend renders a calm
+ * NEUTRAL state — we never fabricate a comparison. The arrow always follows raw
+ * movement (`direction`); the COLOR follows `tone` when supplied, since "up" is
+ * good for some metrics (completion) and bad for others (open/cancellation rate).
+ * Without `tone`, color falls back to direction (backward compatible).
+ * Shape: { direction:'up'|'down'|'neutral', percent, tone?:'positive'|'negative'|'neutral' }.
+ * @param {{direction?:string, percent?:number, tone?:string}|null} trend
  */
 export function renderTrendIndicator(trend) {
   const dir = trend && trend.direction;
@@ -97,7 +100,11 @@ export function renderTrendIndicator(trend) {
     return `<span class="v2-analytics-kpi-trend v2-analytics-kpi-trend--neutral" title="Perbandingan antar-periode belum tersedia">—</span>`;
   }
   const arrow = dir === 'up' ? '▲' : '▼';
-  return `<span class="v2-analytics-kpi-trend v2-analytics-kpi-trend--${dir}">${arrow} ${Math.abs(trend.percent)}%</span>`;
+  // tone → reuse the existing --up (good/green) / --down (bad/warn) color classes.
+  const colorKey = trend.tone
+    ? (trend.tone === 'positive' ? 'up' : trend.tone === 'negative' ? 'down' : 'neutral')
+    : dir;
+  return `<span class="v2-analytics-kpi-trend v2-analytics-kpi-trend--${colorKey}">${arrow} ${Math.abs(trend.percent)}%</span>`;
 }
 
 /**

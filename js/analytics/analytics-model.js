@@ -25,6 +25,7 @@ import { ANALYTICS_SCHEMA_VERSION } from './analytics-types.js';
  * @param {Object} [parts.kpis]
  * @param {Object} [parts.charts]
  * @param {Array}  [parts.insights]
+ * @param {Object} [parts.trends]
  * @param {Object} [parts.diagnostics]
  * @param {Object} [parts.render]
  * @param {Object} [parts.exportSnapshot]
@@ -38,6 +39,9 @@ export function buildAnalyticsModel(parts = {}) {
     charts:         parts.charts         || {},
     insights:       parts.insights       || [],
     recommendations: parts.recommendations || [],
+    // Trend bucket (Sprint 6) — period-over-period comparison. Empty when no
+    // previous-period model is supplied, so the shape is always stable.
+    trends:         parts.trends         || {},
     diagnostics:    parts.diagnostics    || {},
     // Transitional projections (removed once components/exports render
     // from the structured buckets above).

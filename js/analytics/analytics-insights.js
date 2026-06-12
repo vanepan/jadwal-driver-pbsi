@@ -144,6 +144,29 @@ export function generateInsights(model) {
       'Bidang Demand');
   }
 
+  // ── Trend references (Sprint 6) ────────────────────────────────────────
+  // Optional, additive: surfaced ONLY when valid period-over-period data exists
+  // (a non-null percentChange and real movement). Scoped to the 4 required KPIs.
+  // Without trend data this loop produces nothing — behavior is unchanged.
+  const trends = (model && model.trends) || {};
+  const TREND_META = [
+    ['totalAssignments', 'Volume penugasan',     'Total Assignments (Trend)', ''],
+    ['completionRate',   'Tingkat penyelesaian',  'Completion Rate (Trend)',   '%'],
+    ['openRate',         'Tingkat open',          'Open Rate (Trend)',         '%'],
+    ['cancellationRate', 'Tingkat pembatalan',    'Cancellation Rate (Trend)', '%'],
+  ];
+  for (const [key, label, source, unit] of TREND_META) {
+    const m = trends[key];
+    if (!m || m.percentChange == null || m.direction === 'neutral') continue;
+    const word = m.direction === 'up' ? 'naik' : 'turun';
+    const type = m.tone === 'positive' ? 'success' : m.tone === 'negative' ? 'warning' : 'info';
+    const priority = m.tone === 'negative' ? INSIGHT_PRIORITY.IMPORTANT : INSIGHT_PRIORITY.GENERAL;
+    push(type, priority,
+      `${label} ${word} ${Math.abs(m.percentChange)}%`,
+      `${label} ${word} ${Math.abs(m.percentChange)}% dibanding periode sebelumnya (${m.previous}${unit} → ${m.current}${unit}).`,
+      source);
+  }
+
   // Deterministic ordering: priority asc, then stable insertion order.
   return out
     .map((it, i) => ({ ...it, _i: i }))

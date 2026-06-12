@@ -49,7 +49,7 @@ const measure = (page, h) => page.evaluate(rh => window.__measureRmb(rh), h);
   console.log(`Current RECEIPT_H = 320 → pages: ${current.pages}, size: ${current.size.toLocaleString('en-US')} bytes`);
 
   // Binary search: largest integer receiptH that still yields a single page.
-  let lo = 60, hi = 360, best = -1;
+  let lo = 60, hi = 440, best = -1;
   while (lo <= hi) {
     const mid = (lo + hi) >> 1;
     const { pages } = await measure(page, mid);

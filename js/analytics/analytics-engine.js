@@ -18,6 +18,7 @@ import { buildAnalyticsModel } from './analytics-model.js';
 import { filterEligible } from './analytics-governance.js';
 import { generateInsights } from './analytics-insights.js';
 import { generateRecommendations } from './analytics-recommendations.js';
+import { generateTrends } from './analytics-trends.js';
 
 /* ── Pure helpers (moved verbatim from app.js) ───────────────────────────── */
 
@@ -150,6 +151,12 @@ export function computeAnalyticsModel(ctx) {
     );
     filteredAsg = filteredAsg.filter(a => a.requestId && bidangReqIds.has(a.requestId));
   }
+  // Optional inclusive upper bound (Sprint 6) — only set when computing a
+  // PREVIOUS-period model, to keep current-period records out of the prior
+  // window. Absent on the normal call ⇒ filtering is byte-identical to before.
+  if (ctx.windowEnd) {
+    filteredAsg = filteredAsg.filter(a => _asgDate(a) <= ctx.windowEnd);
+  }
 
   // ── Filter requests ────────────────────────────────────────────────────
   let filteredReqs = requests;
@@ -166,6 +173,9 @@ export function computeAnalyticsModel(ctx) {
   }
   if (analyticsBidangFilter) {
     filteredReqs = filteredReqs.filter(r => r.requesterName === analyticsBidangFilter);
+  }
+  if (ctx.windowEnd) {
+    filteredReqs = filteredReqs.filter(r => _reqDate(r) <= ctx.windowEnd);
   }
 
   // ── Assignment KPIs ────────────────────────────────────────────────────
@@ -466,6 +476,14 @@ export function computeAnalyticsModel(ctx) {
     render,
     exportSnapshot,
   });
+
+  // Trend layer (Sprint 6): when a previous-period model is supplied, diff the
+  // existing KPIs into a period-over-period comparison. Populated BEFORE the
+  // insight/recommendation layers so they can reference trends in a single
+  // generation pass. Absent ⇒ model.trends stays {} (no comparison fabricated).
+  if (ctx.previousModel) {
+    model.trends = generateTrends(model, ctx.previousModel);
+  }
 
   // Insight layer (Sprint 4): interpret existing model outputs. Pure, derived,
   // and traceable — no new calculations, so KPI/chart/export values are unchanged.

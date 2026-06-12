@@ -63,14 +63,15 @@ import {
   renderAnalyticsErrorState,
   renderAnalyticsKPICard,
   renderKPIGrid,
+  renderTrendIndicator,
   renderOperationalHighlights,
   renderAnalyticsChart,
-  renderAnalyticsChartEmpty,
   renderInsightCard,
   renderInsightList,
   renderRecommendationCard,
   renderRecommendationList,
 } from './analytics/analytics-shell.js';
+import { derivePreviousPeriod } from './analytics/analytics-period.js';
 import {
   initRequestHandlers,
   openRequestFormModal,
@@ -4300,8 +4301,11 @@ function refreshAnalyticsDisplay() {
   //    pure functions. This call replaces the former ~300-line inline compute
   //    block; rendering below consumes the returned model. Parity-preserving.
   let _analyticsModel;
+  let _trendState = 'unavailable';   // 'available' | 'insufficient' | 'unavailable'
   try {
-    _analyticsModel = computeAnalyticsModel({
+    // Shared engine context — identical inputs for the current and (optional)
+    // previous-period computations; only the time window differs.
+    const _baseCtx = {
       assignments,
       requests,
       drivers:  getDrivers(),
@@ -4325,7 +4329,22 @@ function refreshAnalyticsDisplay() {
         vehicles:     _getDismissedWarnings('vehicles'),
       },
       normalizeAssignmentStatus,
-    });
+    };
+
+    // Trend Engine (Sprint 6): compute the previous equal-length period and feed
+    // it in as `previousModel`, so the engine diffs the existing KPIs into
+    // model.trends. The current-period computation is unchanged when no previous
+    // period exists ('Semua Data'), so on-screen KPIs never change.
+    const _prevPeriod = derivePreviousPeriod(analyticsDateRange);
+    let _previousModel = null;
+    if (_prevPeriod.available) {
+      _previousModel = computeAnalyticsModel({
+        ..._baseCtx, now: _prevPeriod.prevNow, windowEnd: _prevPeriod.windowEnd,
+      });
+      _trendState = (_previousModel.kpis.total || 0) > 0 ? 'available' : 'insufficient';
+    }
+
+    _analyticsModel = computeAnalyticsModel({ ..._baseCtx, previousModel: _previousModel });
   } catch (err) {
     console.error('[Analytics] compute failed:', err);
     if (overviewRow) overviewRow.innerHTML = '';
@@ -4354,16 +4373,28 @@ function refreshAnalyticsDisplay() {
     _dqMainWarnings, _dqUnresolvedCount, _dqResolvedCount, _allDismissed, _allAliases,
   } = _analyticsModel.render;
 
+  // ── Trend indicators (Sprint 6) ────────────────────────────────────────
+  // Render a period-over-period badge ONLY for KPIs that have a trend source
+  // (Completion Rate, Total Assignments). A null/empty metric ⇒ no badge — we
+  // never fabricate a comparison (Phase 10).
+  const _trends = _analyticsModel.trends || {};
+  const _trendBadge = (metric) => {
+    if (!metric || metric.percentChange == null) return '';
+    return renderTrendIndicator({ direction: metric.direction, percent: metric.percentChange, tone: metric.tone });
+  };
+
   // ── Overview row (filter-aware) ────────────────────────────────────────
   if (overviewRow) {
     overviewRow.innerHTML = `
       <div class="v2-admin-overview-cards">
         <div class="v2-admin-overview-card">
           <span class="v2-admin-overview-value">${compRate}%</span>
+          ${_trendBadge(_trends.completionRate)}
           <span class="v2-admin-overview-label">Completion Rate</span>
         </div>
         <div class="v2-admin-overview-card">
           <span class="v2-admin-overview-value">${total}</span>
+          ${_trendBadge(_trends.totalAssignments)}
           <span class="v2-admin-overview-label">Total Assignments</span>
         </div>
         <div class="v2-admin-overview-card">
@@ -4888,20 +4919,31 @@ function refreshAnalyticsDisplay() {
 
         </div>`;
 
-  // Operational Trends — activated as a dedicated chart home (Sprint 3). The
-  // engine computes single-period figures only, so there is no time-series
-  // data yet; we show a standardized chart empty state rather than fabricating
-  // trends or comparisons.
-  const trendsContent = `
-    <div class="v2-analytics-groups">
-      <div class="v2-admin-config-group">
-        ${renderAnalyticsChartEmpty({
-          title: 'Tren Operasional',
-          message: 'Grafik tren (penugasan, penyelesaian, permintaan) akan aktif setelah Trend Engine tersedia.',
-          hint: 'Memerlukan data deret waktu antar-periode — belum dihitung oleh Analytics Engine.',
-        })}
-      </div>
-    </div>`;
+  // Operational Trends — activated by the Trend Engine (Sprint 6). Shows the 4
+  // required KPIs as period-over-period comparison cards. When there is no valid
+  // comparison ('Semua Data', or no prior-period activity) we render the current
+  // values with a calm neutral state + note — never a fabricated trend.
+  const _cancRate = total > 0 ? Math.round((cancelled / total) * 100) : 0;
+  const _toIndicator = (m) => (m ? { direction: m.direction, percent: m.percentChange, tone: m.tone } : null);
+  const _trendComparison = _trendState === 'available' ? 'vs periode sebelumnya' : '';
+  const _trendCards = [
+    { title: 'Total Assignments', value: total,           metric: _trends.totalAssignments },
+    { title: 'Completion Rate',   value: `${compRate}%`,  metric: _trends.completionRate },
+    { title: 'Open Rate',         value: `${openRate}%`,  metric: _trends.openRate },
+    { title: 'Cancellation Rate', value: `${_cancRate}%`, metric: _trends.cancellationRate },
+  ];
+  const _trendNote = _trendState === 'available' ? '' : (() => {
+    const msg = _trendState === 'insufficient'
+      ? 'Riwayat periode sebelumnya belum cukup untuk perbandingan.'
+      : 'Perbandingan antar-periode tidak tersedia untuk “Semua Data”.';
+    const hint = _trendState === 'insufficient'
+      ? 'Indikator tren akan muncul saat tersedia data periode sebelumnya yang setara.'
+      : 'Pilih rentang waktu tertentu (mis. 30 Hari) untuk melihat perubahan dibanding periode sebelumnya.';
+    return `<p class="v2-analytics-section-desc" style="margin:0 0 12px;color:var(--text-dim,#5b5b64);font-size:13px;line-height:1.5;">${esc(msg)} <span style="color:var(--faint,#9a958c);">${esc(hint)}</span></p>`;
+  })();
+  const trendsContent = `${_trendNote}${renderKPIGrid(_trendCards.map(c =>
+    renderAnalyticsKPICard({ title: c.title, value: c.value, trend: _toIndicator(c.metric), comparison: _trendComparison })
+  ))}`;
 
   // Insights (Sprint 4): driven entirely by model.insights (generated by the
   // Insight Engine). No inline insight generation, no hardcoded cards.

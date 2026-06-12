@@ -90,6 +90,21 @@
  */
 
 /**
+ * A single period-over-period comparison produced by the Trend Engine
+ * (Sprint 6) from values the Analytics Engine already computed. No new
+ * calculation — only a diff of current vs previous. `direction` reflects raw
+ * movement; `tone` reflects goodness (for color), since "up" is good for some
+ * metrics (completion) and bad for others (open/cancellation rate).
+ * @typedef {Object} TrendMetric
+ * @property {number} current
+ * @property {number} previous
+ * @property {number} delta              - current - previous
+ * @property {number|null} percentChange - round(delta/previous*100); null when previous == 0
+ * @property {'up'|'down'|'neutral'} direction
+ * @property {'positive'|'negative'|'neutral'} tone
+ */
+
+/**
  * The normalized analytics output. `render` and `exportSnapshot` are
  * transitional, parity-preserving projections used while the UI and PDF
  * are migrated onto the structured buckets in later sprints.
@@ -99,6 +114,7 @@
  * @property {Object} kpis
  * @property {Object} charts
  * @property {Insight[]} insights
+ * @property {Object.<string, TrendMetric>} trends - period-over-period comparison (empty without previous period)
  * @property {Object} diagnostics
  * @property {Object} render          - flat projection consumed by the current renderer
  * @property {Object} exportSnapshot  - the legacy _lastAnalyticsModel shape (PDF parity)

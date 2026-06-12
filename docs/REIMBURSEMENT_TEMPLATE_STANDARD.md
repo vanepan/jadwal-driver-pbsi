@@ -36,7 +36,8 @@ A single-page A4 portrait form, top to bottom:
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ HEADER   org identity      [PBSI logo]      document metadata  │
+│                          [PBSI logo]   ← raised ≈8pt           │
+│ HEADER   org identity                       document metadata  │
 │ ───────────────────────────────────────────────────────────── │
 │              TITLE  (centered, uppercase)                      │
 │              subtitle (centered, dim)                          │
@@ -74,7 +75,7 @@ Implements the mandatory three-column header from the Design System.
 ### Center — PBSI logo
 - Official PBSI asset, embedded as base64 so pdfmake renders it deterministically with no network fetch.
 - **Proportional size:** displayed at `31` pt wide → ≈ `34` pt tall (source 180 × 197 px). Sized by width so it never dominates.
-- **Slightly elevated vertically** (`margin-top: -4 pt`) so it aligns with the first identity line, not the block centre.
+- **Elevated vertically** (`margin-top: -8 pt`) so it sits **slightly above** the top org/metadata lines — deliberately *not* flush with them. The lift gives the header an optical centre and keeps the mark from reading as just another row of side text.
 - **Centered between identity and metadata** — the left and right columns are equal-width (`*`), so the fixed-width logo sits in the middle.
 
 ### Right — metadata (right-aligned)
@@ -144,11 +145,11 @@ Contains, top to bottom:
 - signing space (empty room to sign)
 - signature line
 - **Driver name**
-- `Driver Operasional` label
 
 Intentional design decisions:
 - **Driver declaration paragraph was intentionally removed** — the long "Dengan ini saya menyatakan…" statement is gone.
 - **"Jakarta, [date]" text was intentionally removed.**
+- **The `Driver Operasional` role label was intentionally removed** — the box now holds only the signing area and the driver name; the role is already established by Section A.
 - **The signature area remains** for operational validation/authorisation.
 
 ### Right — Rincian Biaya (cost table)
@@ -167,8 +168,8 @@ The amount column is left blank for manual or downstream entry.
 
 This is achieved structurally by rendering Section C as one table row (both cells
 take the shared row height). The empty signing space is tuned so the signature
-cluster (line · name · role) sits roughly centered while the cost table still
-governs the row height — so there is never an empty gap beneath `TOTAL`.
+cluster (line · name) sits roughly centered while the cost table still governs
+the row height — so there is never an empty gap beneath `TOTAL`.
 
 ---
 
@@ -227,14 +228,19 @@ pipeline headlessly and counting pages), not estimates.
 - **Single-page A4 requirement.** Usable content height is `773.89` pt. With
   worst-case field values (long purpose + destination + driver + requester), the
   largest the receipt area can be while everything stays on one page is the
-  measured **threshold of `356` pt**; beyond that the document spills to page 2.
-- **Receipt area is set to `346` pt** (≈ 45% of usable height) — the measured
+  measured **threshold of `393` pt**; beyond that the document spills to page 2.
+  (Re-measured via [scripts/measure-reimbursement.mjs](../scripts/measure-reimbursement.mjs).)
+- **Receipt area is set to `383` pt** (≈ 49% of usable height) — the measured
   maximum minus a 10 pt safety buffer for unusually long field values.
-- **A literal "50% of page height" (~387 pt) receipt area is not achievable**
-  single-page while Sections A, B, and the full cost table are present.
-- **Density was optimised, not redesigned.** Section margins, table cell padding
-  (3→2 pt), bordered-box padding (6→4 pt) and the signing gap were tightened to
-  reclaim ≈ 58 pt of vertical space, all of which was allocated to Section D.
+- **A literal "50% of page height" (~387 pt) receipt area is now essentially
+  reached** — at `383` pt the receipt box is ≈49% of usable height while
+  Sections A, B, and the full cost table all remain present and single-page.
+- **Density was optimised in two passes, not redesigned.** Pass 1 tightened
+  section margins, table cell padding (3→2 pt), bordered-box padding (6→4 pt) and
+  the signing gap (reclaiming ≈ 58 pt; threshold 298→356 pt). Pass 2 compressed
+  the section-label margins (`[0,4,0,2]`→`[0,2,0,1]`) and removed the
+  `Driver Operasional` role label (reclaiming a further ≈ 37 pt; threshold
+  356→393 pt). All reclaimed space was allocated to Section D.
 - **The header and footer are currently implemented inline** in the template,
   because the shared `docHeader` does not support a center logo and `docFooter`
   is single-line. A future refactor should extract a logo-capable
@@ -289,11 +295,12 @@ Foundation**, and its layout was derived empirically rather than by guesswork:
    balanced signature box that matches the cost table's height.
 4. **Single page, measured.** Rather than assume what fits, the receipt height was
    tuned against the real pdfmake output: the page-break threshold was measured at
-   `356` pt under worst-case data, and the receipt area was set to `346` pt to keep
+   `393` pt under worst-case data, and the receipt area was set to `383` pt to keep
    a safe single-page margin.
 5. **Density, not redesign.** When more receipt space was wanted, the structure was
-   kept and only whitespace/padding was compressed — reclaiming ≈ 58 pt and giving
-   all of it to the receipt area, without touching the document engine.
+   kept and only whitespace/padding was compressed (and the redundant role label
+   dropped) — reclaiming ≈ 95 pt in total and giving all of it to the receipt area,
+   without touching the document engine.
 
 This makes Reimbursement the reference implementation: future Audit, Asset,
 Engineering, and AI report templates should inherit its header, footer, and visual

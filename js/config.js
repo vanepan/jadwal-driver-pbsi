@@ -1,10 +1,25 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.9.3';
-export const RELEASE_NAME = 'Analytics Export Foundation';
+export const APP_VERSION = '1.10.0';
+export const RELEASE_NAME = 'Trend Engine Foundation';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.10.0',
+    date: '2026-06-12',
+    summary: 'Trend Engine Foundation',
+    highlights: [
+      'Analytics V2 now answers "what changed?" — a deterministic Trend Engine compares the current period to the previous equal-length period using KPIs the engine already computes. No AI, no prediction, no new KPI formulas; trend analysis is strictly additive (parity-check confirms no existing analytics value changes)',
+      'Period comparison foundation (js/analytics/analytics-period.js): derivePreviousPeriod() maps each date range to its adjacent, non-overlapping prior window (today→yesterday, 7d→prior 7d, 30d→prior 30d, 90d→prior 90d); "Semua Data" has no fixed length → no comparison',
+      'Engine isolation (additive): computeAnalyticsModel gains an optional ctx.windowEnd upper bound and ctx.previousModel — the previous model is computed with a shifted clock + windowEnd so current-period records never leak into the prior window; model.trends is populated before the Insight/Recommendation layers in a single pass',
+      'Trend contract (js/analytics/analytics-trends.js): { current, previous, delta, percentChange, direction, tone } for the 4 required KPIs — Total Assignments, Completion Rate, Open Rate, Cancellation Rate; direction is raw movement, tone is goodness (up is good for completion, bad for open/cancellation)',
+      'KPI trend indicators: Completion Rate and Total Assignments overview cards show a period-over-period badge (▲/▼ %), colored by tone; renderTrendIndicator gains optional tone-based coloring (an up-arrow on Open Rate reads red)',
+      'Operational Trends section activated (was a placeholder): a 4-card grid of trend comparisons with graceful states — available (arrows), insufficient history (neutral + note), and comparison-unavailable for "Semua Data" — never a fabricated trend',
+      'Trend-aware Insights & Recommendations: optional, guarded references appear only when valid trend data exists (e.g. "Tingkat penyelesaian naik 50% dibanding periode sebelumnya"), each tagged with a "(Trend)" source for traceability; without a previous period, output is unchanged',
+      'Verification: Analytics-V2/trend-check.mjs proves deterministic output, correct direction/percent/tone, previous-period isolation (no leakage), missing-history handling (no divide-by-zero), and additive-only behavior; parity/insights/recommendations harnesses still pass',
+    ],
+  },
   {
     version: '1.9.3',
     date: '2026-06-11',

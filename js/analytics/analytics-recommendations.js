@@ -98,6 +98,37 @@ export function generateRecommendations(model) {
       'Data Quality');
   }
 
+  // ── Trend-driven advice (Sprint 6) ─────────────────────────────────────
+  // Optional, additive: emitted ONLY when valid period-over-period trend
+  // evidence exists. Scoped to the required KPIs. No trends ⇒ nothing added.
+  const trends = (model && model.trends) || {};
+  const comp = trends.completionRate, open = trends.openRate, canc = trends.cancellationRate;
+  if (comp && comp.percentChange != null && comp.direction !== 'neutral') {
+    if (comp.direction === 'up') {
+      push('optimization', RECOMMENDATION_PRIORITY.INFO,
+        'Pertahankan alur kerja operasional',
+        `Tingkat penyelesaian naik ${Math.abs(comp.percentChange)}% dibanding periode sebelumnya. Pertahankan praktik operasional yang sedang berjalan.`,
+        'Completion Rate (Trend)');
+    } else {
+      push('warning', RECOMMENDATION_PRIORITY.RISK,
+        'Selidiki penurunan tingkat penyelesaian',
+        `Tingkat penyelesaian turun ${Math.abs(comp.percentChange)}% dibanding periode sebelumnya. Telusuri penyebab penurunan kinerja penyelesaian.`,
+        'Completion Rate (Trend)');
+    }
+  }
+  if (open && open.percentChange != null && open.direction === 'up') {
+    push('action', RECOMMENDATION_PRIORITY.RISK,
+      'Antisipasi kenaikan backlog',
+      `Open rate naik ${Math.abs(open.percentChange)}% dibanding periode sebelumnya. Tinjau penjadwalan agar backlog tidak terus menumpuk.`,
+      'Open Rate (Trend)');
+  }
+  if (canc && canc.percentChange != null && canc.direction === 'up') {
+    push('action', RECOMMENDATION_PRIORITY.RISK,
+      'Tinjau kenaikan pembatalan',
+      `Tingkat pembatalan naik ${Math.abs(canc.percentChange)}% dibanding periode sebelumnya. Telusuri penyebab pembatalan yang meningkat.`,
+      'Cancellation Rate (Trend)');
+  }
+
   // Deterministic ordering: priority asc, then stable insertion order.
   return out
     .map((it, i) => ({ ...it, _i: i }))

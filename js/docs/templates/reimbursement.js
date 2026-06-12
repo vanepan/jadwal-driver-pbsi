@@ -28,27 +28,29 @@ import { PBSI_LOGO_DATA_URI } from './reimbursement-logo.js';
    number: auto". 34pt ≈ the left org text block, so the mark stays balanced. */
 const LOGO_W = 31;
 
-/* Receipt area height (pt). Re-measured (headless Chrome + production pdfmake)
-   after the density-optimization pass tightened section margins, table cell
-   padding (3→2pt), the bordered-box padding (6→4pt) and the signing area
-   (60→40pt). A4 usable content height = 773.89pt. With worst-case field values
-   (long purpose + destination + driver + requester) the single-page threshold
-   rose from 298pt to 356pt (358pt spills to page 2) — ≈58pt reclaimed and
-   allocated entirely here. Set to 346pt: 10pt of headroom under that worst-case
-   threshold, ≈45% of usable page height. Largest section on the page.
-   Overridable via vm.receiptH. */
-const RECEIPT_H = 346;
+/* Receipt area height (pt). Re-measured (headless Chrome + production pdfmake,
+   scripts/measure-reimbursement.mjs) after a second tightening pass: the
+   section labels were compressed (margin [0,4,0,2]→[0,2,0,1]) and the
+   "Driver Operasional" role label was removed from the signature box. A4 usable
+   content height = 773.89pt. With worst-case field values (long purpose +
+   destination + driver + requester) the single-page threshold rose from 356pt
+   to 393pt (394pt spills to page 2) — ≈37pt more reclaimed and allocated
+   entirely here. Set to 383pt: 10pt of headroom under that worst-case
+   threshold, ≈49% of usable page height. By far the largest section on the
+   page. Overridable via vm.receiptH. */
+const RECEIPT_H = 383;
 
 /* Signature column width (≈30%); the cost-table cell takes the rest ('*'). */
 const COL_L = Math.round((CONTENT_W - 8) * 0.30);
 
 /* Empty signing gap above the signature line (pt). Tuned so the signature
-   cluster (line · name · role) sits ≈centred in the box once it stretches to
-   the cost-table height — kept just under that height so the breakdown still
-   governs the row (no gap under TOTAL). Measured: the signature cell equals the
-   breakdown height at gap ≈75; 70 leaves it a hair shorter so the breakdown
-   still governs while the cluster sits ≈centred. Overridable via vm.signGap. */
-const SIGN_GAP = 70;
+   cluster (line · name) sits ≈centred in the box once it stretches to the
+   cost-table height — kept just under that height so the breakdown still
+   governs the row (no gap under TOTAL). After the role label ("Driver
+   Operasional") was removed the cluster lost ≈9pt, so the gap was raised
+   70→78 to re-centre while staying below the breakdown height (the cells equal
+   out around gap ≈84 now). Overridable via vm.signGap. */
+const SIGN_GAP = 78;
 
 function build(vm) {
   const d = vm || {};
@@ -60,7 +62,7 @@ function build(vm) {
     info: { title: `Form Reimbursement — ${d.driver || ''}`, author: 'Sarpras Operations' },
     defaultStyle: { fontSize: 8.5, color: TOKENS.color.ink, lineHeight: 1.2 },
     styles: {
-      secLabel: { fontSize: 7.5, bold: true, color: TOKENS.color.dim, margin: [0, 4, 0, 2] },
+      secLabel: { fontSize: 7.5, bold: true, color: TOKENS.color.dim, margin: [0, 2, 0, 1] },
       tdLbl:    { fontSize: 7, bold: true, color: TOKENS.color.dim, fillColor: TOKENS.color.fill },
     },
     /* Custom two-line footer (template-local; the shared docFooter is single
@@ -102,8 +104,6 @@ function build(vm) {
       _sectionC(d),
 
       { text: 'D. Lampiran Bukti Pengeluaran', style: 'secLabel' },
-      { text: 'Tempel bukti fisik pada area di bawah ini',
-        fontSize: 7, color: TOKENS.color.dim, margin: [0, 0, 0, 2] },
       _receiptBox(d.receiptH || RECEIPT_H),
     ],
   };
@@ -123,9 +123,11 @@ function _header(d) {
         { text: 'PBSI — Persatuan Bulu Tangkis Seluruh Indonesia',
           fontSize: 7.5, color: TOKENS.color.dim, margin: [0, 1, 0, 0] },
       ] },
-      // Negative top margin lifts the mark ≈4pt so it aligns with the first
-      // org line ("Bidang Sarana dan Prasarana") rather than the block centre.
-      { image: PBSI_LOGO_DATA_URI, width: LOGO_W, margin: [0, -4, 0, 0] },
+      // Negative top margin lifts the mark ≈8pt so it sits slightly ABOVE the
+      // top org/meta lines rather than flush with them — the elevation gives the
+      // header an optical centre and keeps the logo from reading as just another
+      // row of the side text.
+      { image: PBSI_LOGO_DATA_URI, width: LOGO_W, margin: [0, -8, 0, 0] },
       { width: '*', stack: meta },
     ],
     columnGap: 10,
@@ -216,8 +218,10 @@ function _sectionC(d) {
   };
 }
 
-/* Clean signature box: caption · signing space · signature line · name · role.
-   Declaration paragraph and "Jakarta, [date]" line intentionally removed. */
+/* Clean signature box: caption · signing space · signature line · name.
+   Declaration paragraph, "Jakarta, [date]" line, and the "Driver Operasional"
+   role label are all intentionally removed — only the box, the signing area,
+   and the driver name remain. */
 function _statement(d) {
   const inner = COL_L - 16; // box horizontal padding
   const gap = d.signGap || SIGN_GAP;
@@ -226,7 +230,6 @@ function _statement(d) {
       { text: 'TANDA TANGAN', fontSize: 6.5, bold: true, color: TOKENS.color.dim, margin: [0, 0, 0, 3] },
       { canvas: [{ type: 'line', x1: 0, y1: 0, x2: inner, y2: 0, lineWidth: 1, lineColor: TOKENS.color.ink }], margin: [0, gap, 0, 0] },
       { text: d.driver || '—', fontSize: 8.5, bold: true, alignment: 'center', margin: [0, 3, 0, 0] },
-      { text: 'Driver Operasional', fontSize: 6.5, color: TOKENS.color.dim, alignment: 'center' },
     ],
   };
 }
