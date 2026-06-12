@@ -49,7 +49,8 @@ import { initModalHandlers, openDetailModal, registerEditCallback, registerDelet
 import { initFormHandlers, openFormModal, closeFormModal, registerSaveCallback, setAssignments as setAssignmentsForm, setCurrentDate as setCurrentDateForm, checkConflict, deleteAssignment } from './assignments.js';
 import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver } from './auth.js';
 import * as DocumentEngine from './docs/doc-engine.js';
-import './docs/templates/analytics-summary.js';   // registers 'analytics-summary'
+import './docs/templates/analytics-summary.js';   // registers 'analytics-summary' (legacy text-only)
+import './docs/templates/analytics-report.js';    // registers 'analytics-report' (chart-first)
 import {
   initRequestHandlers,
   openRequestFormModal,
@@ -1885,7 +1886,7 @@ function initV2AdministrationWorkspace() {
               <option value="">Semua Bidang</option>
             </select>
             <button id="v2AnalyticsResetFilters" class="v2-analytics-reset-btn" type="button">Reset Semua Filter</button>
-            <button id="v2AnalyticsExportPdf" class="btn-reimbursement" type="button">📄 Export PDF</button>
+            <button id="v2AnalyticsExportPdf" class="v2-analytics-export-btn" type="button">📄 Export PDF</button>
           </div>
           <div id="v2AnalyticsFilterSummary" class="v2-analytics-filter-summary"></div>
           <div id="v2AnalyticsContent"></div>
@@ -4613,6 +4614,19 @@ function refreshAnalyticsDisplay() {
   const _dqUnresolvedCount = _dqMainWarnings.filter(w => !w.aliasActive).length;
   const _dqResolvedCount   = _dqWarnings.filter(w => !!w.aliasActive).length;
 
+  /* Augment the analytics snapshot with a compact data-quality / alias summary
+     for the PDF report's "Data Quality & Alias Resolution" section. */
+  if (_lastAnalyticsModel) {
+    _lastAnalyticsModel.dataQuality = {
+      aliasCount:       _allAliases.length,
+      warningsResolved: _dqResolvedCount,
+      warningsOpen:     _dqUnresolvedCount,
+      aliases: _allAliases.slice(0, 8).map(a => ({
+        type: a.type, canonical: a.canonical || a.aliasKey, usageCount: a.usageCount,
+      })),
+    };
+  }
+
   // ── Overview row (filter-aware) ────────────────────────────────────────
   if (overviewRow) {
     overviewRow.innerHTML = `
@@ -5240,8 +5254,8 @@ async function exportAnalyticsReport() {
   };
 
   try {
-    await DocumentEngine.generateAndOpen('analytics-summary', vm, {
-      viewer: { title: 'Laporan Analytics Operasional' },
+    await DocumentEngine.generateAndOpen('analytics-report', vm, {
+      viewer: { title: 'Analytics Summary Report' },
     });
   } catch (err) {
     console.error('[Analytics] PDF export failed:', err);

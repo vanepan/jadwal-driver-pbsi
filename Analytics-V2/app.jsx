@@ -347,7 +347,6 @@ function App() {
             </div>
             <div className="head-actions">
               <button className="btn btn-ghost" onClick={() => setToast('Memuat ulang data analitik...')}><Icon name="reset" size={15} /> Segarkan</button>
-              <button className="btn btn-primary" onClick={() => setToast('Laporan analitik diekspor (PDF)')}><Icon name="download" size={15} /> Ekspor Laporan</button>
             </div>
           </div>
 
@@ -357,7 +356,7 @@ function App() {
 
           <FilterBar state={state} setState={setState} activeDrill={drill}
             clearDrill={() => { setDrill(null); setState({ range: '30', driver: 'all', vehicle: 'all', bidang: 'all' }); }}
-            onExport={() => setToast('Data analitik diekspor (CSV)')} />
+            onExport={() => setToast('Laporan analitik diekspor (PDF)')} />
 
           {t.layout === 'bento'
             ? <BentoView state={state} anim={t.anim} onPick={onPick} onSlice={onSlice} />

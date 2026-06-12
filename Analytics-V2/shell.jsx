@@ -138,7 +138,7 @@ function FilterBar({ state, setState, activeDrill, clearDrill, onExport }) {
         </span>
       )}
       <span className="fb-chip" style={{ background: 'var(--accent-weak)' }}>{ranges.find((r) => r.v === state.range).l.replace(' Terakhir', '')}</span>
-      <button className="btn" onClick={onExport}><Icon name="download" size={15} /><span className="hide-sm">Ekspor</span></button>
+      <button className="btn btn-ghost" onClick={onExport}><Icon name="download" size={15} /><span className="hide-sm">Ekspor PDF</span></button>
     </div>
   );
 }

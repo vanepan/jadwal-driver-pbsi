@@ -16,22 +16,39 @@
 
 import { register } from '../template-registry.js';
 import {
-  docHeader, headerRule, docFooter, tableLayout,
+  tableLayout,
   A4_MARGINS, CONTENT_W, TOKENS,
 } from '../doc-theme.js';
+import { APP_VERSION } from '../../config.js';
+import { PBSI_LOGO_DATA_URI } from './reimbursement-logo.js';
 
-/* Receipt area height (pt). Measured budget (headless Chrome, pdfmake):
-   A4 usable content height = 773.89pt; everything except this box
-   consumes ≈ 470.89pt, so the single-page threshold is 303pt.
-   320pt overflowed by 17pt → page 2. Set to 260pt: 43pt of headroom
-   below the threshold to absorb ~2 extra wrapped lines from long
-   purpose/destination/requester values, while remaining the largest
-   section on the page. Overridable per-call via vm.receiptH. */
-const RECEIPT_H = 260;
+/* Header logo display size (pt). Sized by WIDTH (the source is 180×197, so
+   width 31 → height ≈ 34) which also sets the centre column width — sizing an
+   image by height under an 'auto' column makes pdfmake throw "unsupported
+   number: auto". 34pt ≈ the left org text block, so the mark stays balanced. */
+const LOGO_W = 31;
 
-const COL_GAP = 8;
-const COL_L   = Math.round((CONTENT_W - COL_GAP) * 0.35);   // statement
-const COL_R   = CONTENT_W - COL_GAP - COL_L;                // breakdown
+/* Receipt area height (pt). Re-measured (headless Chrome + production pdfmake)
+   after the density-optimization pass tightened section margins, table cell
+   padding (3→2pt), the bordered-box padding (6→4pt) and the signing area
+   (60→40pt). A4 usable content height = 773.89pt. With worst-case field values
+   (long purpose + destination + driver + requester) the single-page threshold
+   rose from 298pt to 356pt (358pt spills to page 2) — ≈58pt reclaimed and
+   allocated entirely here. Set to 346pt: 10pt of headroom under that worst-case
+   threshold, ≈45% of usable page height. Largest section on the page.
+   Overridable via vm.receiptH. */
+const RECEIPT_H = 346;
+
+/* Signature column width (≈30%); the cost-table cell takes the rest ('*'). */
+const COL_L = Math.round((CONTENT_W - 8) * 0.30);
+
+/* Empty signing gap above the signature line (pt). Tuned so the signature
+   cluster (line · name · role) sits ≈centred in the box once it stretches to
+   the cost-table height — kept just under that height so the breakdown still
+   governs the row (no gap under TOTAL). Measured: the signature cell equals the
+   breakdown height at gap ≈75; 70 leaves it a hair shorter so the breakdown
+   still governs while the cluster sits ≈centred. Overridable via vm.signGap. */
+const SIGN_GAP = 70;
 
 function build(vm) {
   const d = vm || {};
@@ -43,25 +60,37 @@ function build(vm) {
     info: { title: `Form Reimbursement — ${d.driver || ''}`, author: 'Sarpras Operations' },
     defaultStyle: { fontSize: 8.5, color: TOKENS.color.ink, lineHeight: 1.2 },
     styles: {
-      secLabel: { fontSize: 7.5, bold: true, color: TOKENS.color.dim, margin: [0, 7, 0, 3] },
+      secLabel: { fontSize: 7.5, bold: true, color: TOKENS.color.dim, margin: [0, 4, 0, 2] },
       tdLbl:    { fontSize: 7, bold: true, color: TOKENS.color.dim, fillColor: TOKENS.color.fill },
     },
-    footer: docFooter({ label: 'Form Reimbursement Perjalanan Dinas' }),
+    /* Custom two-line footer (template-local; the shared docFooter is single
+       line and used by other documents). Left: document name over platform
+       version; right: page number. Both short → no wrap, no overflow. */
+    footer: (currentPage, pageCount) => ({
+      margin: [48, 8, 48, 0],
+      columns: [
+        { width: '*', stack: [
+          { text: 'Form Reimbursement Kendaraan Operasional dan Driver',
+            fontSize: 6.5, color: TOKENS.color.faint },
+          { text: `PBSI Operations Platform v${APP_VERSION}`,
+            fontSize: 6.5, color: TOKENS.color.faint, margin: [0, 1, 0, 0] },
+        ] },
+        { width: 'auto', text: `Hal. ${currentPage} / ${pageCount}`,
+          fontSize: 6.5, color: TOKENS.color.faint, alignment: 'right' },
+      ],
+    }),
 
     content: [
-      docHeader({
-        docNumber: d.docNumber,
-        reference: d.assignmentRef,
-        printDate: d.printDate,
-        org: 'Bidang Sarana dan Prasarana',
-        orgSub: 'PBSI — Persatuan Bulu Tangkis Seluruh Indonesia',
-      }),
-      headerRule(),
+      _header(d),
+      // Compact header rule (inlined from the 8pt-margin shared helper to
+      // tighten the header → title gap during the density pass).
+      { canvas: [{ type: 'line', x1: 0, y1: 0, x2: CONTENT_W, y2: 0, lineWidth: 1.5, lineColor: TOKENS.color.ink }],
+        margin: [0, 0, 0, 5] },
 
-      { text: 'FORM REIMBURSEMENT PERJALANAN DINAS', fontSize: 13, bold: true,
+      { text: 'FORM REIMBURSEMENT KENDARAAN OPERASIONAL DAN DRIVER', fontSize: 13, bold: true,
         alignment: 'center', characterSpacing: 0.5 },
       { text: 'Formulir Pengajuan Penggantian Biaya Operasional Kendaraan',
-        fontSize: 8, color: TOKENS.color.dim, alignment: 'center', margin: [0, 2, 0, 4] },
+        fontSize: 8, color: TOKENS.color.dim, alignment: 'center', margin: [0, 1, 0, 2] },
 
       { text: 'A. Informasi Perjalanan', style: 'secLabel' },
       _sectionA(d),
@@ -74,10 +103,49 @@ function build(vm) {
 
       { text: 'D. Lampiran Bukti Pengeluaran', style: 'secLabel' },
       { text: 'Tempel bukti fisik pada area di bawah ini',
-        fontSize: 7, color: TOKENS.color.dim, margin: [0, 0, 0, 3] },
+        fontSize: 7, color: TOKENS.color.dim, margin: [0, 0, 0, 2] },
       _receiptBox(d.receiptH || RECEIPT_H),
     ],
   };
+}
+
+/* ── Header: org (left) · PBSI logo (center) · meta (right) ──── */
+function _header(d) {
+  const meta = [];
+  if (d.docNumber)     meta.push(_metaLine('No. Dokumen: ', d.docNumber, 0));
+  if (d.assignmentRef) meta.push(_metaLine('Referensi: ', d.assignmentRef, 2));
+  meta.push(_metaLine('Tanggal Cetak: ', d.printDate || '—', 2));
+
+  return {
+    columns: [
+      { width: '*', stack: [
+        { text: 'Bidang Sarana dan Prasarana', bold: true, fontSize: 11 },
+        { text: 'PBSI — Persatuan Bulu Tangkis Seluruh Indonesia',
+          fontSize: 7.5, color: TOKENS.color.dim, margin: [0, 1, 0, 0] },
+      ] },
+      // Negative top margin lifts the mark ≈4pt so it aligns with the first
+      // org line ("Bidang Sarana dan Prasarana") rather than the block centre.
+      { image: PBSI_LOGO_DATA_URI, width: LOGO_W, margin: [0, -4, 0, 0] },
+      { width: '*', stack: meta },
+    ],
+    columnGap: 10,
+    margin: [0, 0, 0, 4],
+  };
+}
+
+function _metaLine(label, value, topMargin) {
+  return {
+    text: [{ text: label, color: TOKENS.color.dim }, { text: value, bold: true }],
+    fontSize: 7.5, alignment: 'right', margin: [0, topMargin, 0, 0],
+  };
+}
+
+/* Local density variant of the shared tableLayout: identical thin-line styling
+   and horizontal padding, but tighter vertical cell padding (3→2pt per side) to
+   reclaim row height across Sections A/B and the cost table. Defined here so the
+   shared tableLayout() (used by other documents) is left untouched. */
+function denseTableLayout() {
+  return { ...tableLayout(), paddingTop: () => 2, paddingBottom: () => 2 };
 }
 
 /* ── Section A: trip info (4-column key/value grid) ──────────── */
@@ -99,8 +167,8 @@ function _sectionA(d) {
         [lbl('Jam Kembali'), _timeVal(d.endT, d.fullDay), lbl('Jumlah Penumpang'), val(`${d.pax ?? 0} pax`)],
       ],
     },
-    layout: tableLayout(),
-    margin: [0, 0, 0, 2],
+    layout: denseTableLayout(),
+    margin: [0, 0, 0, 1],
   };
 }
 
@@ -128,32 +196,35 @@ function _sectionB(d) {
           ] }],
       ],
     },
-    layout: tableLayout(),
-    margin: [0, 0, 0, 2],
+    layout: denseTableLayout(),
+    margin: [0, 0, 0, 1],
   };
 }
 
-/* ── Section C: 35% statement+signature | 65% breakdown ─────── */
+/* ── Section C: signature (left) | cost breakdown (right) ─────
+   Rendered as ONE table row (not independent columns) so both cells take the
+   shared row height — the signature box border now matches the full height of
+   the cost table, aligned top and bottom. */
 function _sectionC(d) {
   return {
-    columns: [
-      { width: COL_L, ...box(_statement(d)) },
-      { width: COL_R, ...box(_breakdown()) },
-    ],
-    columnGap: COL_GAP,
-    margin: [0, 0, 0, 2],
+    table: {
+      widths: [COL_L, '*'],
+      body: [[ _statement(d), _breakdown() ]],
+    },
+    layout: BOX_LAYOUT,
+    margin: [0, 0, 0, 1],
   };
 }
 
+/* Clean signature box: caption · signing space · signature line · name · role.
+   Declaration paragraph and "Jakarta, [date]" line intentionally removed. */
 function _statement(d) {
   const inner = COL_L - 16; // box horizontal padding
+  const gap = d.signGap || SIGN_GAP;
   return {
     stack: [
-      { text: 'PERNYATAAN DRIVER', fontSize: 6.5, bold: true, color: TOKENS.color.dim, margin: [0, 0, 0, 3] },
-      { text: 'Dengan ini saya menyatakan bahwa data perjalanan dinas yang tercantum di atas adalah benar dan biaya yang diajukan sesuai dengan bukti pengeluaran yang disertakan.',
-        fontSize: 7, color: '#3A3835', lineHeight: 1.4 },
-      { text: `Jakarta, ${d.printDate || '—'}`, fontSize: 6.5, color: TOKENS.color.dim, margin: [0, 16, 0, 0] },
-      { canvas: [{ type: 'line', x1: 0, y1: 0, x2: inner, y2: 0, lineWidth: 1, lineColor: TOKENS.color.ink }], margin: [0, 22, 0, 0] },
+      { text: 'TANDA TANGAN', fontSize: 6.5, bold: true, color: TOKENS.color.dim, margin: [0, 0, 0, 3] },
+      { canvas: [{ type: 'line', x1: 0, y1: 0, x2: inner, y2: 0, lineWidth: 1, lineColor: TOKENS.color.ink }], margin: [0, gap, 0, 0] },
       { text: d.driver || '—', fontSize: 8.5, bold: true, alignment: 'center', margin: [0, 3, 0, 0] },
       { text: 'Driver Operasional', fontSize: 6.5, color: TOKENS.color.dim, alignment: 'center' },
     ],
@@ -167,7 +238,7 @@ function _breakdown() {
   ]);
   return {
     stack: [
-      { text: 'RINCIAN BIAYA', fontSize: 6.5, bold: true, color: TOKENS.color.dim, margin: [0, 0, 0, 4] },
+      { text: 'RINCIAN BIAYA', fontSize: 6.5, bold: true, color: TOKENS.color.dim, margin: [0, 0, 0, 3] },
       {
         table: {
           widths: ['*', 110],
@@ -181,7 +252,7 @@ function _breakdown() {
              { text: '', bold: true, alignment: 'right', fillColor: TOKENS.color.fill }],
           ],
         },
-        layout: tableLayout(),
+        layout: denseTableLayout(),
       },
     ],
   };
@@ -200,15 +271,12 @@ function _receiptBox(height) {
   };
 }
 
-/* ── Bordered box helper (mirrors the legacy card borders) ──── */
+/* ── Bordered box layout for the Section C table (mirrors legacy cards) ── */
 const BOX_LAYOUT = {
   hLineWidth: () => 1, vLineWidth: () => 1,
   hLineColor: () => TOKENS.color.line, vLineColor: () => TOKENS.color.line,
-  paddingLeft: () => 8, paddingRight: () => 8, paddingTop: () => 6, paddingBottom: () => 6,
+  paddingLeft: () => 8, paddingRight: () => 8, paddingTop: () => 4, paddingBottom: () => 4,
 };
-function box(content) {
-  return { table: { widths: ['*'], body: [[content]] }, layout: BOX_LAYOUT };
-}
 
 /* ── Self-register ──────────────────────────────────────────── */
 register('reimbursement', {
@@ -218,5 +286,5 @@ register('reimbursement', {
     const date = (d.rawDate || '').replace(/-/g, '');
     return `Form-Reimbursement-${safe(d.driver)}-${date}.pdf`;
   },
-  meta: { title: 'Form Reimbursement', label: 'Form Reimbursement Perjalanan Dinas' },
+  meta: { title: 'Form Reimbursement', label: 'Form Reimbursement Kendaraan Operasional dan Driver' },
 });
