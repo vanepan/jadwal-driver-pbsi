@@ -8790,6 +8790,156 @@ input[type="time"].v2-admin-config-input {
   border-bottom: 1px solid var(--border);
 }
 
+/* ── Executive Summary V2 — KPI cards / grid / highlights (v1.10.0) ──────── */
+.v2-analytics-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 4px;
+}
+.v2-analytics-kpi-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  min-width: 0;
+}
+.v2-analytics-kpi-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.v2-analytics-kpi-card-icon {
+  font-size: 14px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.v2-analytics-kpi-card-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.v2-analytics-kpi-card-value {
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.v2-analytics-kpi-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 16px;
+}
+.v2-analytics-kpi-card-comp {
+  font-size: 11px;
+  color: var(--faint);
+}
+.v2-analytics-kpi-card-sub {
+  font-size: 11.5px;
+  color: var(--faint);
+  line-height: 1.35;
+}
+/* status accents (left edge) */
+.v2-analytics-kpi-card--ok   { box-shadow: inset 3px 0 0 var(--ok); }
+.v2-analytics-kpi-card--warn { box-shadow: inset 3px 0 0 var(--warn); }
+.v2-analytics-kpi-card--info { box-shadow: inset 3px 0 0 var(--info); }
+.v2-analytics-kpi-card--ok   .v2-analytics-kpi-card-value { color: var(--ok); }
+.v2-analytics-kpi-card--warn .v2-analytics-kpi-card-value { color: var(--warn); }
+
+/* trend chip */
+.v2-analytics-kpi-trend {
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.v2-analytics-kpi-trend--up      { color: var(--ok); }
+.v2-analytics-kpi-trend--down    { color: var(--warn); }
+.v2-analytics-kpi-trend--neutral { color: var(--ghost, var(--faint)); font-weight: 500; }
+
+/* loading skeleton */
+.v2-analytics-kpi-card--loading { gap: 10px; }
+.v2-analytics-kpi-skel {
+  background: var(--hover);
+  border-radius: 6px;
+}
+.v2-analytics-kpi-skel--line  { height: 12px; width: 55%; }
+.v2-analytics-kpi-skel--value { height: 28px; width: 70%; }
+
+/* Operational Highlights */
+.v2-analytics-highlights {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+.v2-analytics-highlight {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  min-width: 0;
+}
+.v2-analytics-highlight-eyebrow {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--faint);
+}
+.v2-analytics-highlight-value {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.25;
+  word-break: break-word;
+}
+.v2-analytics-highlight-context {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+/* Executive Summary sub-headers + quick summary */
+.v2-analytics-subhead {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 10px;
+}
+.v2-analytics-quick-summary-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.v2-analytics-quick-summary-stats strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 1024px) {
+  .v2-analytics-kpi-grid,
+  .v2-analytics-highlights { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 600px) {
+  .v2-analytics-kpi-grid,
+  .v2-analytics-highlights { grid-template-columns: 1fr; gap: 12px; }
+  .v2-analytics-kpi-card-value { font-size: 26px; }
+}
+
 /* Top performer badge — #1 Driver / #1 Kendaraan / #1 Bidang */
 .v2-analytics-top-badge {
   display: inline-block;
@@ -8845,6 +8995,89 @@ input[type="time"].v2-admin-config-input {
 .v2-analytics-chart-box--donut {
   max-width: 300px;
   margin: 0 auto;
+}
+
+/* Unified chart container slots (v1.10.0 Sprint 3) — title/subtitle/actions/
+   footer/state. Charts without these render exactly as before. */
+.v2-analytics-chart-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.v2-analytics-chart-head .v2-analytics-chart-label { margin-bottom: 0; }
+.v2-analytics-chart-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.v2-analytics-chart-subtitle {
+  font-size: 11px;
+  color: var(--faint);
+  line-height: 1.35;
+}
+.v2-analytics-chart-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.v2-analytics-chart-footer {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--faint);
+}
+.v2-analytics-chart-state { padding: 6px 0; }
+
+/* ── Insight cards (v1.10.0 Sprint 4) ───────────────────────────────────── */
+.v2-analytics-insight-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.v2-analytics-insight-card {
+  display: flex;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.v2-analytics-insight-card--info    { box-shadow: inset 3px 0 0 var(--info); }
+.v2-analytics-insight-card--success { box-shadow: inset 3px 0 0 var(--ok); }
+.v2-analytics-insight-card--warning { box-shadow: inset 3px 0 0 var(--warn); }
+.v2-analytics-insight-icon {
+  font-size: 15px;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+.v2-analytics-insight-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.v2-analytics-insight-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.35;
+}
+.v2-analytics-insight-desc {
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.v2-analytics-insight-source {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--faint);
+  margin-top: 2px;
 }
 
 /* ================================================================

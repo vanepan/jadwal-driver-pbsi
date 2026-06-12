@@ -41,6 +41,15 @@ const PATHS = {
   alert: 'M12 9v4M12 17h.01M10.3 4.3 2.6 18a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0Z',
   bolt: 'M13 2 4 14h6l-1 8 9-12h-6z',
   flag: 'M5 21V4M5 4h11l-2 3 2 3H5',
+  moon: 'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z',
+  pulse: 'M3 12h4l2-6 4 12 2-6h6',
+  arrowUR: 'M7 17 17 7M8 7h9v9',
+  chevR: 'M9 6l6 6-6 6',
+  ruler: 'M3 9.5 9.5 3 21 14.5 14.5 21 3 9.5ZM7 8l1.5 1.5M10 11l1.5 1.5M13 8l1.5 1.5',
+  layers: 'M12 3 3 8l9 5 9-5-9-5ZM3 13l9 5 9-5M3 16.5l9 5 9-5',
+  car: 'M5 11l1.5-4.5A2 2 0 0 1 8.4 5h7.2a2 2 0 0 1 1.9 1.5L19 11m-14 0h14m-14 0a2 2 0 0 0-2 2v3h2m14-5a2 2 0 0 1 2 2v3h-2m-12 0h10m-10 0v1a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-1m12 0v1a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1M7.5 14h.01M16.5 14h.01',
+  sliders: 'M4 7h10M18 7h2M4 17h2M10 17h10M14 5v4M6 15v4',
+  compass: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM15.5 8.5l-2 5-5 2 2-5 5-2Z',
 };
 function Icon({ name, size = 16, stroke = 2, fill = false, style, className }) {
   const d = PATHS[name] || '';
@@ -136,7 +145,7 @@ function AreaChart({ data, height = 260, anim = true }) {
         }}>
         <defs>
           <linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.30" />
+            <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.16" />
             <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
           </linearGradient>
         </defs>
@@ -148,11 +157,11 @@ function AreaChart({ data, height = 260, anim = true }) {
             fontSize="9.5" fill="var(--text-ghost)" fontFamily="var(--font-mono)">{Math.round(g * maxV)}</text>
         ))}
         <path d={areaPath} fill="url(#areaFill)" className={anim ? 'area-draw' : ''} />
-        <path d={line('value')} fill="none" stroke="var(--accent)" strokeWidth="2.2"
+        <path d={line('value')} fill="none" stroke="var(--accent)" strokeWidth="2"
           strokeLinecap="round" strokeLinejoin="round" className={anim ? 'line-draw' : ''}
           style={{ strokeDasharray: anim ? 2400 : 'none', strokeDashoffset: 0 }} />
         <path d={line('completed')} fill="none" stroke="var(--text-faint)" strokeWidth="1.4"
-          strokeDasharray="4 4" opacity="0.7" />
+          strokeDasharray="3 5" opacity="0.65" />
         {ticks.map((d) => {
           const i = data.indexOf(d);
           return <text key={i} x={x(i)} y={H - 8} textAnchor="middle" fontSize="9.5"
@@ -161,7 +170,7 @@ function AreaChart({ data, height = 260, anim = true }) {
         {hover != null && (
           <g>
             <line x1={x(hover)} x2={x(hover)} y1={padT} y2={padT + innerH} stroke="var(--border-strong)" strokeWidth="1" />
-            <circle cx={x(hover)} cy={y(data[hover].value)} r="4.5" fill="var(--accent)" stroke="var(--panel)" strokeWidth="2" />
+            <circle cx={x(hover)} cy={y(data[hover].value)} r="4.5" fill="var(--accent)" stroke="var(--surface)" strokeWidth="2.5" />
           </g>
         )}
       </svg>
@@ -172,8 +181,8 @@ function AreaChart({ data, height = 260, anim = true }) {
         return (
         <div style={{
           position: 'absolute', top: 6, left,
-          background: 'var(--panel-3)', border: '1px solid var(--border-strong)', borderRadius: 9, padding: '7px 10px',
-          pointerEvents: 'none', minWidth: 110, boxShadow: '0 10px 24px -12px rgba(0,0,0,0.8)',
+          background: 'var(--surface)', border: '1px solid var(--border-strong)', borderRadius: 11, padding: '9px 12px',
+          pointerEvents: 'none', minWidth: 118, boxShadow: 'var(--shadow-lg)',
         }}>
           <div style={{ fontSize: 10.5, color: 'var(--text-faint)', fontFamily: 'var(--font-mono)', marginBottom: 4 }}>{data[hover].label} 2026</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 700 }}>
@@ -209,7 +218,7 @@ function Donut({ data, size = 188, thickness = 24, anim = true, centerLabel, cen
     <div className="donut-wrap">
       <div style={{ position: 'relative', width: size, height: size, flex: `0 0 ${size}px` }}>
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: 'rotate(-90deg)' }}>
-          <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--panel-3)" strokeWidth={thickness} />
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--surface-2)" strokeWidth={thickness} />
           {segs.map((s, i) => (
             <circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={s.color}
               strokeWidth={active === i ? thickness + 4 : thickness}
@@ -250,7 +259,7 @@ function Donut({ data, size = 188, thickness = 24, anim = true, centerLabel, cen
 }
 
 /* ---------------- RingGauge ---------------- */
-function RingGauge({ value, size = 38, thickness = 5, color = 'var(--accent)', track = 'var(--panel-3)', label }) {
+function RingGauge({ value, size = 38, thickness = 5, color = 'var(--accent)', track = 'var(--surface-2)', label }) {
   const r = (size - thickness) / 2;
   const cx = size / 2, circ = 2 * Math.PI * r;
   return (
@@ -275,7 +284,7 @@ function SemiGauge({ value, max = 100, size = 168, color = 'var(--st-done)' }) {
   return (
     <svg width={size} height={size / 2 + 16} viewBox={`0 0 ${size} ${size / 2 + 16}`}>
       <path d={`M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`} fill="none"
-        stroke="var(--panel-3)" strokeWidth="12" strokeLinecap="round" />
+        stroke="var(--surface-2)" strokeWidth="12" strokeLinecap="round" />
       <path d={`M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`} fill="none"
         stroke={color} strokeWidth="12" strokeLinecap="round"
         strokeDasharray={`${(frac * circ).toFixed(1)} ${circ.toFixed(1)}`}

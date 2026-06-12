@@ -49,8 +49,28 @@ import { initModalHandlers, openDetailModal, registerEditCallback, registerDelet
 import { initFormHandlers, openFormModal, closeFormModal, registerSaveCallback, setAssignments as setAssignmentsForm, setCurrentDate as setCurrentDateForm, checkConflict, deleteAssignment } from './assignments.js';
 import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver } from './auth.js';
 import * as DocumentEngine from './docs/doc-engine.js';
-import './docs/templates/analytics-summary.js';   // registers 'analytics-summary' (legacy text-only)
-import './docs/templates/analytics-report.js';    // registers 'analytics-report' (chart-first)
+import './docs/templates/analytics-summary.js';   // registers 'analytics-summary'
+import {
+  computeAnalyticsModel,
+  normDestKey as _normDestKey,
+  getAliasCanonical as _getAliasCanonical,
+  dqPairKey as _dqPairKey,
+} from './analytics/analytics-engine.js';
+import {
+  renderAnalyticsSection,
+  renderAnalyticsPlaceholderSection,
+  renderAnalyticsEmptyState,
+  renderAnalyticsErrorState,
+  renderAnalyticsKPICard,
+  renderKPIGrid,
+  renderOperationalHighlights,
+  renderAnalyticsChart,
+  renderAnalyticsChartEmpty,
+  renderInsightCard,
+  renderInsightList,
+  renderRecommendationCard,
+  renderRecommendationList,
+} from './analytics/analytics-shell.js';
 import {
   initRequestHandlers,
   openRequestFormModal,
@@ -1868,27 +1888,34 @@ function initV2AdministrationWorkspace() {
         </div>
         <div id="v2AdminSectionConfig" style="display:none;"></div>
         <div id="v2AdminSectionAnalytics" style="display:none;">
-          <div class="v2-admin-toolbar">
-            <select id="v2AnalyticsDateRange" class="v2-admin-filter">
-              <option value="today">Hari Ini</option>
-              <option value="7d">7 Hari Terakhir</option>
-              <option value="30d" selected>30 Hari Terakhir</option>
-              <option value="90d">90 Hari Terakhir</option>
-              <option value="all">Semua Data</option>
-            </select>
-            <select id="v2AnalyticsDriverFilter" class="v2-admin-filter">
-              <option value="">Semua Driver</option>
-            </select>
-            <select id="v2AnalyticsVehicleFilter" class="v2-admin-filter">
-              <option value="">Semua Kendaraan</option>
-            </select>
-            <select id="v2AnalyticsBidangFilter" class="v2-admin-filter">
-              <option value="">Semua Bidang</option>
-            </select>
-            <button id="v2AnalyticsResetFilters" class="v2-analytics-reset-btn" type="button">Reset Semua Filter</button>
-            <button id="v2AnalyticsExportPdf" class="v2-analytics-export-btn" type="button">📄 Export PDF</button>
+          <!-- Analytics Header (command area): title + date range + filters + export -->
+          <div class="v2-analytics-header" id="v2AnalyticsHeader">
+            <div class="v2-analytics-header-titles">
+              <h2 class="v2-analytics-header-title" style="font-size:18px;font-weight:700;margin:0 0 4px;">Analytics Operasional</h2>
+              <p class="v2-analytics-header-sub" style="margin:0 0 14px;color:var(--text-dim,#5b5b64);font-size:13px;line-height:1.5;">Ringkasan kinerja operasional berbasis data aktual — assignment, driver, kendaraan, dan bidang.</p>
+            </div>
+            <div class="v2-admin-toolbar">
+              <select id="v2AnalyticsDateRange" class="v2-admin-filter">
+                <option value="today">Hari Ini</option>
+                <option value="7d">7 Hari Terakhir</option>
+                <option value="30d" selected>30 Hari Terakhir</option>
+                <option value="90d">90 Hari Terakhir</option>
+                <option value="all">Semua Data</option>
+              </select>
+              <select id="v2AnalyticsDriverFilter" class="v2-admin-filter">
+                <option value="">Semua Driver</option>
+              </select>
+              <select id="v2AnalyticsVehicleFilter" class="v2-admin-filter">
+                <option value="">Semua Kendaraan</option>
+              </select>
+              <select id="v2AnalyticsBidangFilter" class="v2-admin-filter">
+                <option value="">Semua Bidang</option>
+              </select>
+              <button id="v2AnalyticsResetFilters" class="v2-analytics-reset-btn" type="button">Reset Semua Filter</button>
+              <button id="v2AnalyticsExportPdf" class="btn-reimbursement" type="button">📄 Export PDF</button>
+            </div>
+            <div id="v2AnalyticsFilterSummary" class="v2-analytics-filter-summary"></div>
           </div>
-          <div id="v2AnalyticsFilterSummary" class="v2-analytics-filter-summary"></div>
           <div id="v2AnalyticsContent"></div>
         </div>
         <div id="v2AdminSectionPlaceholder" style="display:none;"></div>
@@ -4241,45 +4268,9 @@ function renderV2AdminAnalytics() {
   refreshAnalyticsDisplay();
 }
 
-function _normDestKey(dest) {
-  return String(dest)
-    .trim()
-    .toLowerCase()
-    .replace(/[–—‒‐﹘﹣－]/g, '-')
-    .replace(/\s*-\s*/g, '-')
-    .replace(/\s+/g, ' ')
-    .replace(/[.,;]+$/g, '')
-    .trim();
-}
-
-function _strSimilarity(a, b) {
-  if (a === b) return 1;
-  const la = a.length, lb = b.length;
-  if (la === 0 || lb === 0) return 0;
-  const dp = Array.from({ length: lb + 1 }, (_, i) => i);
-  for (let i = 1; i <= la; i++) {
-    let prev = i;
-    for (let j = 1; j <= lb; j++) {
-      const curr = a[i - 1] === b[j - 1] ? dp[j - 1] : 1 + Math.min(dp[j - 1], dp[j], prev);
-      dp[j - 1] = prev;
-      prev = curr;
-    }
-    dp[lb] = prev;
-  }
-  return 1 - dp[lb] / Math.max(la, lb);
-}
-
-function _detectSimilarPairs(names, threshold = 0.75) {
-  const pairs = [];
-  const keys = names.map(_normDestKey);
-  for (let i = 0; i < names.length; i++) {
-    for (let j = i + 1; j < names.length; j++) {
-      const sim = _strSimilarity(keys[i], keys[j]);
-      if (sim >= threshold && sim < 1) pairs.push({ a: names[i], b: names[j] });
-    }
-  }
-  return pairs;
-}
+/* _normDestKey / _strSimilarity / _detectSimilarPairs moved to
+   ./analytics/analytics-engine.js (Sprint 0). _normDestKey is re-imported
+   above (aliased) for the alias/review modals below. */
 
 function _getAnalyticsAliases(type) {
   const aa = getSetting('analyticsAliases') || {};
@@ -4287,16 +4278,8 @@ function _getAnalyticsAliases(type) {
   return (map && typeof map === 'object') ? map : {};
 }
 
-function _getAliasCanonical(entry) {
-  if (!entry) return null;
-  if (typeof entry === 'string') return entry;
-  return entry.canonical || null;
-}
-
-function _getAliasMeta(entry) {
-  if (!entry || typeof entry === 'string') return {};
-  return { createdAt: entry.createdAt || null, createdBy: entry.createdBy || null };
-}
+/* _getAliasCanonical / _getAliasMeta moved to analytics-engine.js (Sprint 0).
+   _getAliasCanonical is re-imported above (aliased) for the modals below. */
 
 function _getDismissedWarnings(type) {
   const aq = getSetting('analyticsQuality') || {};
@@ -4304,9 +4287,7 @@ function _getDismissedWarnings(type) {
   return (dw[type] && typeof dw[type] === 'object') ? dw[type] : {};
 }
 
-function _dqPairKey(a, b) {
-  return [_normDestKey(a), _normDestKey(b)].sort().join('|');
-}
+/* _dqPairKey moved to analytics-engine.js (Sprint 0); re-imported above. */
 
 function refreshAnalyticsDisplay() {
   _destroyAnalyticsCharts();
@@ -4314,318 +4295,64 @@ function refreshAnalyticsDisplay() {
   const contentEl   = document.getElementById('v2AnalyticsContent');
   if (!contentEl) return;
 
-  // ── Date cutoff ────────────────────────────────────────────────────────
-  const today = new Date().toISOString().split('T')[0];
-  let cutoff = null;
-  if (analyticsDateRange !== 'all') {
-    if (analyticsDateRange === 'today') {
-      cutoff = today;
-    } else {
-      const days = analyticsDateRange === '7d' ? 7 : analyticsDateRange === '30d' ? 30 : 90;
-      const d = new Date();
-      d.setDate(d.getDate() - days + 1);
-      cutoff = d.toISOString().split('T')[0];
-    }
+  // ── Compute the analytics model via the Analytics Engine (Sprint 0) ─────
+  //    All KPI / aggregation / DQ logic now lives in analytics-engine.js as
+  //    pure functions. This call replaces the former ~300-line inline compute
+  //    block; rendering below consumes the returned model. Parity-preserving.
+  let _analyticsModel;
+  try {
+    _analyticsModel = computeAnalyticsModel({
+      assignments,
+      requests,
+      drivers:  getDrivers(),
+      vehicles: getActiveVehiclesFromStore(),
+      filters: {
+        dateRange: analyticsDateRange,
+        driver:    analyticsDriverFilter,
+        vehicle:   analyticsVehicleFilter,
+        bidang:    analyticsBidangFilter,
+      },
+      aliases: {
+        destinations: _getAnalyticsAliases('destinations'),
+        bidang:       _getAnalyticsAliases('bidang'),
+        drivers:      _getAnalyticsAliases('drivers'),
+        vehicles:     _getAnalyticsAliases('vehicles'),
+      },
+      dismissed: {
+        destinations: _getDismissedWarnings('destinations'),
+        bidang:       _getDismissedWarnings('bidang'),
+        drivers:      _getDismissedWarnings('drivers'),
+        vehicles:     _getDismissedWarnings('vehicles'),
+      },
+      normalizeAssignmentStatus,
+    });
+  } catch (err) {
+    console.error('[Analytics] compute failed:', err);
+    if (overviewRow) overviewRow.innerHTML = '';
+    contentEl.innerHTML = renderAnalyticsErrorState({
+      message: 'Gagal memuat analytics.',
+      detail: 'Terjadi kesalahan saat menghitung data. Silakan muat ulang halaman atau hubungi administrator.',
+    });
+    return;
   }
 
-  function _asgDate(a) { return a.date || a.startDate || ''; }
-  function _reqDate(r) { return r.startDate || (r.createdAt || '').slice(0, 10); }
+  // Side effects the engine deliberately leaves to the caller (stays pure):
+  window._analyticsFilteredAsg = _analyticsModel.diagnostics.filteredAsg;
+  _lastAnalyticsModel          = _analyticsModel.exportSnapshot;   // PDF export snapshot
 
-  // ── Filter assignments ─────────────────────────────────────────────────
-  let filteredAsg = assignments.map(normalizeAssignmentStatus);
-  if (analyticsDateRange === 'today') {
-    filteredAsg = filteredAsg.filter(a => _asgDate(a) === today);
-  } else if (cutoff) {
-    filteredAsg = filteredAsg.filter(a => _asgDate(a) >= cutoff);
-  }
-  if (analyticsDriverFilter) {
-    filteredAsg = filteredAsg.filter(a => (a.driver || '').toLowerCase() === analyticsDriverFilter.toLowerCase());
-  }
-  if (analyticsVehicleFilter) {
-    filteredAsg = filteredAsg.filter(a => (a.vehicle || '').toLowerCase() === analyticsVehicleFilter.toLowerCase());
-  }
-  if (analyticsBidangFilter) {
-    const bidangReqIds = new Set(
-      requests.filter(r => r.requesterName === analyticsBidangFilter).map(r => r.id)
-    );
-    filteredAsg = filteredAsg.filter(a => a.requestId && bidangReqIds.has(a.requestId));
-  }
-
-  window._analyticsFilteredAsg = filteredAsg;
-
-  // ── Filter requests ────────────────────────────────────────────────────
-  let filteredReqs = requests;
-  if (analyticsDateRange === 'today') {
-    filteredReqs = filteredReqs.filter(r => _reqDate(r) === today);
-  } else if (cutoff) {
-    filteredReqs = filteredReqs.filter(r => _reqDate(r) >= cutoff);
-  }
-  if (analyticsDriverFilter) {
-    filteredReqs = filteredReqs.filter(r => (r.driver || '').toLowerCase() === analyticsDriverFilter.toLowerCase());
-  }
-  if (analyticsVehicleFilter) {
-    filteredReqs = filteredReqs.filter(r => (r.vehicle || '').toLowerCase() === analyticsVehicleFilter.toLowerCase());
-  }
-  if (analyticsBidangFilter) {
-    filteredReqs = filteredReqs.filter(r => r.requesterName === analyticsBidangFilter);
-  }
-
-  // ── Assignment KPIs ────────────────────────────────────────────────────
-  const total      = filteredAsg.length;
-  const completed  = filteredAsg.filter(a => a.status === 'completed').length;
-  const inProgress = filteredAsg.filter(a => a.status === 'started').length;
-  const scheduled  = filteredAsg.filter(a => a.status === 'assigned').length;
-  const cancelled  = Math.max(0, total - completed - inProgress - scheduled);
-  const openAsg    = inProgress + scheduled;
-  const compRate   = total > 0 ? Math.round((completed / total) * 100) : 0;
-
-  // ── Driver utilization ─────────────────────────────────────────────────
-  const activeDrivers = getDrivers().filter(d => d.active !== false && !d.archived);
-  const driverMap = new Map();
-  for (const d of activeDrivers) {
-    driverMap.set((d.name || '').toLowerCase(), { displayName: d.name, count: 0 });
-  }
-  for (const a of filteredAsg) {
-    const entry = driverMap.get((a.driver || '').toLowerCase());
-    if (entry) entry.count++;
-  }
-  const driversSorted    = [...driverMap.values()].sort((x, y) => y.count - x.count);
-  const driversWithTrips = driversSorted.filter(d => d.count > 0);
-  const mostActiveDrv    = driversWithTrips[0] ?? null;
-  const leastActiveDrv   = driversWithTrips.length > 1 ? driversWithTrips[driversWithTrips.length - 1] : null;
-
-  // ── Vehicle utilization ────────────────────────────────────────────────
-  const activeVehicles = getActiveVehiclesFromStore().filter(v => !v.archived);
-  const vehicleMap = new Map();
-  for (const v of activeVehicles) {
-    vehicleMap.set((v.name || '').toLowerCase(), { displayName: v.name, count: 0 });
-  }
-  for (const a of filteredAsg) {
-    const entry = vehicleMap.get((a.vehicle || '').toLowerCase());
-    if (entry) entry.count++;
-  }
-  const vehiclesSorted    = [...vehicleMap.values()].sort((x, y) => y.count - x.count);
-  const vehiclesWithTrips = vehiclesSorted.filter(v => v.count > 0);
-  const mostUsedVeh       = vehiclesWithTrips[0] ?? null;
-  const leastUsedVeh      = vehiclesWithTrips.length > 1 ? vehiclesWithTrips[vehiclesWithTrips.length - 1] : null;
-
-  // ── Bidang analytics ───────────────────────────────────────────────────
-  const bidangAliases  = _getAnalyticsAliases('bidang');
-  const bidangReqCounts = new Map();
-  const bidangAsgCounts = new Map();
-  for (const r of filteredReqs) {
-    const name = r.requesterName;
-    if (!name || !name.trim()) continue;
-    const resolved = _getAliasCanonical(bidangAliases[_normDestKey(name)]) || name;
-    bidangReqCounts.set(resolved, (bidangReqCounts.get(resolved) || 0) + 1);
-  }
-  for (const a of filteredAsg) {
-    if (a.requestId) {
-      const req = requests.find(r => r.id === a.requestId);
-      if (req && req.requesterName && req.requesterName.trim()) {
-        const resolved = bidangAliases[_normDestKey(req.requesterName)] || req.requesterName;
-        bidangAsgCounts.set(resolved, (bidangAsgCounts.get(resolved) || 0) + 1);
-      }
-    }
-  }
-  const bidangSorted = [...bidangReqCounts.entries()]
-    .map(([name, reqCount]) => ({ name, reqCount, asgCount: bidangAsgCounts.get(name) || 0 }))
-    .sort((a, b) => b.reqCount - a.reqCount);
-
-  // ── Workload classification (relative — no hardcoded thresholds) ─────────
-  const _wlCounts = driversWithTrips.map(d => d.count);
-  const _wlMean   = _wlCounts.length > 0 ? _wlCounts.reduce((s, c) => s + c, 0) / _wlCounts.length : 0;
-  const _wlStdDev = (() => {
-    if (_wlCounts.length < 2) return 0;
-    const variance = _wlCounts.reduce((s, c) => s + (c - _wlMean) ** 2, 0) / _wlCounts.length;
-    return Math.sqrt(variance);
-  })();
-  const classifiedDrivers = driversSorted.map(d => {
-    if (d.count === 0)    return { ...d, wl: 'idle' };
-    if (_wlStdDev < 0.5)  return { ...d, wl: 'balanced' };
-    if (d.count > _wlMean + _wlStdDev)              return { ...d, wl: 'over' };
-    if (d.count < Math.max(1, _wlMean - _wlStdDev)) return { ...d, wl: 'under' };
-    return { ...d, wl: 'balanced' };
-  });
-  const wlBalancedCount = classifiedDrivers.filter(d => d.wl === 'balanced').length;
-  const wlOverCount     = classifiedDrivers.filter(d => d.wl === 'over').length;
-  const wlUnderCount    = classifiedDrivers.filter(d => d.wl === 'under').length;
-
-  // ── Inactive resources ─────────────────────────────────────────────────
-  const inactiveDrivers  = [...driverMap.values()].filter(d => d.count === 0)
-    .sort((a, b) => a.displayName.localeCompare(b.displayName));
-  const inactiveVehicles = [...vehicleMap.values()].filter(v => v.count === 0)
-    .sort((a, b) => a.displayName.localeCompare(b.displayName));
-
-  // ── Destination analytics (with alias resolution) ─────────────────────
-  const destAliases = _getAnalyticsAliases('destinations');
-  const _destFreq   = new Map();
-  const _destLabel  = new Map();
-  for (const a of filteredAsg) {
-    const raw = (a.destination || '').trim();
-    if (!raw) continue;
-    let key   = _normDestKey(raw);
-    let label = raw;
-    const _canonical = _getAliasCanonical(destAliases[key]);
-    if (_canonical) {
-      label = _canonical;
-      key   = _normDestKey(label);
-    }
-    _destFreq.set(key, (_destFreq.get(key) || 0) + 1);
-    if (!_destLabel.has(key)) _destLabel.set(key, label);
-  }
-  const destSorted  = [..._destFreq.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10)
-    .map(([key, freq]) => [_destLabel.get(key) || key, freq]);
-  const hasDestData = destSorted.length > 0;
-
-  // ── Enhanced bidang demand ─────────────────────────────────────────────
-  const totalBidangReqs = filteredReqs.length;
-  const bidangEnhanced  = bidangSorted.map(b => ({
-    ...b,
-    reqPct: totalBidangReqs > 0 ? Math.round((b.reqCount / totalBidangReqs) * 100) : 0,
-    asgPct: total > 0           ? Math.round((b.asgCount / total) * 100)            : 0,
-  }));
-
-  /* Snapshot for the PDF export (Analytics Summary Report). Captures exactly
-     the figures rendered below, so the document never drifts from the screen. */
-  _lastAnalyticsModel = {
-    compRate, total, completed, inProgress, scheduled, cancelled, openAsg,
-    activeDrivers:  activeDrivers.length,
-    activeVehicles: activeVehicles.length,
-    mostActiveDriver:  mostActiveDrv  ? { name: mostActiveDrv.displayName,  count: mostActiveDrv.count }  : null,
-    leastActiveDriver: leastActiveDrv ? { name: leastActiveDrv.displayName, count: leastActiveDrv.count } : null,
-    driverCounts:  driversWithTrips.map(d => ({ name: d.displayName, count: d.count })),
-    mostUsedVehicle: mostUsedVeh ? { name: mostUsedVeh.displayName, count: mostUsedVeh.count } : null,
-    idleVehicles:  inactiveVehicles.map(v => v.displayName),
-    vehicleCounts: vehiclesWithTrips.map(v => ({ name: v.displayName, count: v.count })),
-    bidang: bidangEnhanced.map(b => ({ name: b.name, reqCount: b.reqCount, asgCount: b.asgCount })),
-  };
-
-  // ── Odometer / Jarak Tempuh analytics ─────────────────────────────────
-  const _driverOdo  = new Map();
-  const _vehicleOdo = new Map();
-  const _bidangOdo  = new Map();
-  for (const a of filteredAsg) {
-    const km = a.distanceTravelled;
-    if (km == null || km <= 0) continue;
-    const dKey = (a.driver || '').toLowerCase();
-    _driverOdo.set(dKey, (_driverOdo.get(dKey) || 0) + km);
-    const vKey = (a.vehicle || '').toLowerCase();
-    _vehicleOdo.set(vKey, (_vehicleOdo.get(vKey) || 0) + km);
-    if (a.requestId) {
-      const req = requests.find(r => r.id === a.requestId);
-      if (req?.requesterName) _bidangOdo.set(req.requesterName, (_bidangOdo.get(req.requesterName) || 0) + km);
-    }
-  }
-  const driverOdoList  = driversSorted
-    .map(d => ({ name: d.displayName, km: _driverOdo.get(d.displayName.toLowerCase()) || 0 }))
-    .filter(d => d.km > 0).sort((a, b) => b.km - a.km);
-  const vehicleOdoList = vehiclesSorted
-    .map(v => ({ name: v.displayName, km: _vehicleOdo.get(v.displayName.toLowerCase()) || 0 }))
-    .filter(v => v.km > 0).sort((a, b) => b.km - a.km);
-  const totalKm        = driverOdoList.reduce((s, d) => s + d.km, 0);
-  const hasOdoData     = totalKm > 0;
-  const odoTripCount   = filteredAsg.filter(a => a.distanceTravelled != null && a.distanceTravelled > 0).length;
-  const avgKmPerTrip   = hasOdoData && odoTripCount > 0 ? Math.round(totalKm / odoTripCount) : 0;
-
-  // ── Completion quality ─────────────────────────────────────────────────
-  const openRate        = total > 0 ? Math.round((openAsg / total) * 100) : 0;
-  const completionRatio = total > 0 ? `${completed} / ${total}` : '—';
-
-  // ── Data quality warnings + alias resolution ───────────────────────────
-  const _driverAliases  = _getAnalyticsAliases('drivers');
-  const _vehicleAliases = _getAnalyticsAliases('vehicles');
-
-  const _destDismissed    = _getDismissedWarnings('destinations');
-  const _bidangDismissed  = _getDismissedWarnings('bidang');
-  const _driverDismissed  = _getDismissedWarnings('drivers');
-  const _vehicleDismissed = _getDismissedWarnings('vehicles');
-
-  const _dqWarnings = [];
-  const _destRawNames = [..._destFreq.keys()].map(k => _destLabel.get(k) || k);
-  for (const { a, b } of _detectSimilarPairs(_destRawNames)) {
-    const keyA = _normDestKey(a), keyB = _normDestKey(b);
-    const pairKey    = [keyA, keyB].sort().join('|');
-    const aliasActive = _getAliasCanonical(destAliases[keyA]) || _getAliasCanonical(destAliases[keyB]) || null;
-    const dismissed  = _destDismissed[pairKey] || null;
-    const countA     = _destFreq.get(keyA) || 0;
-    const countB     = _destFreq.get(keyB) || 0;
-    _dqWarnings.push({ type: 'destinations', a, b, aliasActive, dismissed, pairKey, countA, countB });
-  }
-  const _bidangRawNames = [...bidangReqCounts.keys()];
-  for (const { a, b } of _detectSimilarPairs(_bidangRawNames)) {
-    const keyA = _normDestKey(a), keyB = _normDestKey(b);
-    const pairKey    = [keyA, keyB].sort().join('|');
-    const aliasActive = _getAliasCanonical(bidangAliases[keyA]) || _getAliasCanonical(bidangAliases[keyB]) || null;
-    const dismissed  = _bidangDismissed[pairKey] || null;
-    const countA     = bidangReqCounts.get(a) || 0;
-    const countB     = bidangReqCounts.get(b) || 0;
-    _dqWarnings.push({ type: 'bidang', a, b, aliasActive, dismissed, pairKey, countA, countB });
-  }
-  const _driverNames = getDrivers().filter(d => d.active !== false && !d.archived).map(d => d.name || '');
-  for (const { a, b } of _detectSimilarPairs(_driverNames)) {
-    const keyA = _normDestKey(a), keyB = _normDestKey(b);
-    const pairKey    = [keyA, keyB].sort().join('|');
-    const aliasActive = _getAliasCanonical(_driverAliases[keyA]) || _getAliasCanonical(_driverAliases[keyB]) || null;
-    const dismissed  = _driverDismissed[pairKey] || null;
-    _dqWarnings.push({ type: 'drivers', a, b, aliasActive, dismissed, pairKey, countA: null, countB: null });
-  }
-  const _vehicleNames = getActiveVehiclesFromStore().filter(v => !v.archived).map(v => v.name || '');
-  for (const { a, b } of _detectSimilarPairs(_vehicleNames)) {
-    const keyA = _normDestKey(a), keyB = _normDestKey(b);
-    const pairKey    = [keyA, keyB].sort().join('|');
-    const aliasActive = _getAliasCanonical(_vehicleAliases[keyA]) || _getAliasCanonical(_vehicleAliases[keyB]) || null;
-    const dismissed  = _vehicleDismissed[pairKey] || null;
-    _dqWarnings.push({ type: 'vehicles', a, b, aliasActive, dismissed, pairKey, countA: null, countB: null });
-  }
-
-  // All dismissed warnings for display
-  const _allDismissed = [
-    ...Object.entries(_destDismissed).map(([k, v]) => ({ type: 'destinations', pairKey: k, ...v })),
-    ...Object.entries(_bidangDismissed).map(([k, v]) => ({ type: 'bidang', pairKey: k, ...v })),
-    ...Object.entries(_driverDismissed).map(([k, v]) => ({ type: 'drivers', pairKey: k, ...v })),
-    ...Object.entries(_vehicleDismissed).map(([k, v]) => ({ type: 'vehicles', pairKey: k, ...v })),
-  ];
-
-  // All existing aliases for the Kelola Alias table
-  const _allAliases = [
-    ...Object.entries(destAliases).map(([k, v]) => {
-      const canonical = _getAliasCanonical(v); const meta = _getAliasMeta(v);
-      return { type: 'destinations', aliasKey: k, canonical, usageCount: _destFreq.get(_normDestKey(canonical || k)) || 0, ...meta };
-    }),
-    ...Object.entries(bidangAliases).map(([k, v]) => {
-      const canonical = _getAliasCanonical(v); const meta = _getAliasMeta(v);
-      return { type: 'bidang', aliasKey: k, canonical, usageCount: bidangReqCounts.get(canonical || k) || 0, ...meta };
-    }),
-    ...Object.entries(_driverAliases).map(([k, v]) => {
-      const canonical = _getAliasCanonical(v); const meta = _getAliasMeta(v);
-      return { type: 'drivers', aliasKey: k, canonical, usageCount: null, ...meta };
-    }),
-    ...Object.entries(_vehicleAliases).map(([k, v]) => {
-      const canonical = _getAliasCanonical(v); const meta = _getAliasMeta(v);
-      return { type: 'vehicles', aliasKey: k, canonical, usageCount: null, ...meta };
-    }),
-  ];
-
-  // DQ statistics
-  const _dqMainWarnings    = _dqWarnings.filter(w => !w.dismissed);
-  const _dqUnresolvedCount = _dqMainWarnings.filter(w => !w.aliasActive).length;
-  const _dqResolvedCount   = _dqWarnings.filter(w => !!w.aliasActive).length;
-
-  /* Augment the analytics snapshot with a compact data-quality / alias summary
-     for the PDF report's "Data Quality & Alias Resolution" section. */
-  if (_lastAnalyticsModel) {
-    _lastAnalyticsModel.dataQuality = {
-      aliasCount:       _allAliases.length,
-      warningsResolved: _dqResolvedCount,
-      warningsOpen:     _dqUnresolvedCount,
-      aliases: _allAliases.slice(0, 8).map(a => ({
-        type: a.type, canonical: a.canonical || a.aliasKey, usageCount: a.usageCount,
-      })),
-    };
-  }
+  /* Flat projection consumed by the renderer below. Identifiers match the
+     names used verbatim inside the HTML templates, so the rendering code is
+     unchanged — guaranteeing visual + numerical parity with the old compute. */
+  const {
+    total, completed, inProgress, scheduled, cancelled, compRate, openRate, filteredReqs,
+    driversWithTrips, vehiclesWithTrips, mostActiveDrv, leastActiveDrv, mostUsedVeh, leastUsedVeh,
+    activeDrivers, activeVehicles, activeDriversInPeriod, inactiveDrivers, inactiveVehicles,
+    wlBalancedCount, wlOverCount, wlUnderCount,
+    bidangEnhanced, mostActiveBidang, leastActiveBidang,
+    destSorted, hasDestData, _destFreq,
+    driverOdoList, vehicleOdoList, totalKm, hasOdoData, odoTripCount, avgKmPerTrip,
+    _dqMainWarnings, _dqUnresolvedCount, _dqResolvedCount, _allDismissed, _allAliases,
+  } = _analyticsModel.render;
 
   // ── Overview row (filter-aware) ────────────────────────────────────────
   if (overviewRow) {
@@ -4670,12 +4397,10 @@ function refreshAnalyticsDisplay() {
       : analyticsDateRange === 'today'
         ? 'Tidak ada assignment pada hari ini.'
         : 'Tidak ada assignment pada periode yang dipilih.';
-    contentEl.innerHTML = `
-      <div class="v2-analytics-empty-state">
-        <p class="v2-analytics-empty-state-msg">${emptyMsg}</p>
-        <p class="v2-analytics-empty-state-hint">Coba ubah rentang waktu atau hapus filter entitas lainnya.</p>
-      </div>
-    `;
+    contentEl.innerHTML = renderAnalyticsEmptyState({
+      message: emptyMsg,
+      hint: 'Coba ubah rentang waktu atau hapus filter entitas lainnya.',
+    });
     return;
   }
 
@@ -4710,7 +4435,7 @@ function refreshAnalyticsDisplay() {
     </div>` : '';
 
   // ── Driver breakdown (Module 1) ────────────────────────────────────────
-  const activeDriversInPeriod = classifiedDrivers.filter(d => d.count > 0);
+  // activeDriversInPeriod is provided by the Analytics Engine (destructured above).
   const driverWlHtml = activeDriversInPeriod.length > 0
     ? activeDriversInPeriod.map((d, i) => {
         const pct = total > 0 ? Math.round((d.count / total) * 100) : 0;
@@ -4761,8 +4486,7 @@ function refreshAnalyticsDisplay() {
     </div>`).join('');
 
   // ── Bidang breakdown (Module 5) ────────────────────────────────────────
-  const mostActiveBidang  = bidangEnhanced[0] ?? null;
-  const leastActiveBidang = bidangEnhanced.length > 1 ? bidangEnhanced[bidangEnhanced.length - 1] : null;
+  // mostActiveBidang / leastActiveBidang are provided by the Analytics Engine (destructured above).
   const bidangDemandHtml = bidangEnhanced.length > 0
     ? bidangEnhanced.map((b, i) => {
         const topBadge = i === 0 ? '<span class="v2-analytics-top-badge">#1 Bidang</span>' : '';
@@ -4776,38 +4500,30 @@ function refreshAnalyticsDisplay() {
       }).join('')
     : `<p class="v2-analytics-empty">Tidak ada permintaan bidang pada rentang waktu ini.</p>`;
 
-  // ── Chart canvas HTML fragments ────────────────────────────────────────
-  const chartStatusHtml = total > 0 ? `
-    <div class="v2-analytics-chart-wrap">
-      <div class="v2-analytics-chart-label">Distribusi Status Assignment</div>
-      <div class="v2-analytics-chart-box v2-analytics-chart-box--donut">
-        <canvas id="chartAssignmentStatus"></canvas>
-      </div>
-    </div>` : '';
+  // ── Chart canvas fragments (unified container — Sprint 3). The Chart.js
+  //    rendering + datasets are unchanged; only the wrapper is standardized.
+  //    Hidden metadata is attached for future PDF/Excel/AI/governance use. ───
+  const chartMeta = {
+    generatedAt: _analyticsModel.metadata.generatedAt,
+    period: _analyticsModel.metadata.dateRange,
+    source: 'analytics-engine',
+  };
 
-  const chartDriverHtml = activeDriversInPeriod.length > 0 ? `
-    <div class="v2-analytics-chart-wrap">
-      <div class="v2-analytics-chart-label">Distribusi Penugasan per Driver</div>
-      <div class="v2-analytics-chart-box" style="height:${Math.max(150, activeDriversInPeriod.length * 30)}px;">
-        <canvas id="chartDriverWorkload"></canvas>
-      </div>
-    </div>` : '';
+  const chartStatusHtml = total > 0
+    ? renderAnalyticsChart({ title: 'Distribusi Status Assignment', canvasId: 'chartAssignmentStatus', boxVariant: 'donut', metadata: chartMeta })
+    : '';
 
-  const chartVehicleHtml = vehiclesWithTrips.length > 0 ? `
-    <div class="v2-analytics-chart-wrap">
-      <div class="v2-analytics-chart-label">Utilisasi per Kendaraan</div>
-      <div class="v2-analytics-chart-box" style="height:${Math.max(150, vehiclesWithTrips.length * 30)}px;">
-        <canvas id="chartVehicleUtil"></canvas>
-      </div>
-    </div>` : '';
+  const chartDriverHtml = activeDriversInPeriod.length > 0
+    ? renderAnalyticsChart({ title: 'Distribusi Penugasan per Driver', canvasId: 'chartDriverWorkload', height: Math.max(150, activeDriversInPeriod.length * 30), metadata: chartMeta })
+    : '';
 
-  const chartBidangHtml = bidangEnhanced.length > 1 ? `
-    <div class="v2-analytics-chart-wrap">
-      <div class="v2-analytics-chart-label">Distribusi Permintaan per Bidang</div>
-      <div class="v2-analytics-chart-box v2-analytics-chart-box--donut">
-        <canvas id="chartBidangDemand"></canvas>
-      </div>
-    </div>` : '';
+  const chartVehicleHtml = vehiclesWithTrips.length > 0
+    ? renderAnalyticsChart({ title: 'Utilisasi per Kendaraan', canvasId: 'chartVehicleUtil', height: Math.max(150, vehiclesWithTrips.length * 30), metadata: chartMeta })
+    : '';
+
+  const chartBidangHtml = bidangEnhanced.length > 1
+    ? renderAnalyticsChart({ title: 'Distribusi Permintaan per Bidang', canvasId: 'chartBidangDemand', boxVariant: 'donut', metadata: chartMeta })
+    : '';
 
   // ── Odometer section HTML ──────────────────────────────────────────────
   const odoDriverBdHtml = driverOdoList.length > 0
@@ -4834,21 +4550,13 @@ function refreshAnalyticsDisplay() {
         </div>`).join('')
     : `<p class="v2-analytics-empty">Belum ada data jarak kendaraan.</p>`;
 
-  const chartOdoDriverHtml = driverOdoList.length > 0 ? `
-    <div class="v2-analytics-chart-wrap">
-      <div class="v2-analytics-chart-label">Jarak Tempuh per Driver (km)</div>
-      <div class="v2-analytics-chart-box" style="height:${Math.max(140, driverOdoList.length * 32)}px;">
-        <canvas id="chartOdoDriver"></canvas>
-      </div>
-    </div>` : '';
+  const chartOdoDriverHtml = driverOdoList.length > 0
+    ? renderAnalyticsChart({ title: 'Jarak Tempuh per Driver (km)', canvasId: 'chartOdoDriver', height: Math.max(140, driverOdoList.length * 32), metadata: chartMeta })
+    : '';
 
-  const chartOdoVehicleHtml = vehicleOdoList.length > 0 ? `
-    <div class="v2-analytics-chart-wrap">
-      <div class="v2-analytics-chart-label">Jarak Tempuh per Kendaraan (km)</div>
-      <div class="v2-analytics-chart-box" style="height:${Math.max(140, vehicleOdoList.length * 32)}px;">
-        <canvas id="chartOdoVehicle"></canvas>
-      </div>
-    </div>` : '';
+  const chartOdoVehicleHtml = vehicleOdoList.length > 0
+    ? renderAnalyticsChart({ title: 'Jarak Tempuh per Kendaraan (km)', canvasId: 'chartOdoVehicle', height: Math.max(140, vehicleOdoList.length * 32), metadata: chartMeta })
+    : '';
 
   const odoBodyHtml = hasOdoData
     ? `<div class="v2-analytics-subtitle">Jarak Tempuh per Driver</div>
@@ -4859,9 +4567,7 @@ function refreshAnalyticsDisplay() {
       ${chartOdoVehicleHtml}`
     : `<p class="v2-analytics-empty" style="margin-top:12px;">Belum ada data jarak tempuh pada periode ini. Odometer dicatat saat driver memulai dan menyelesaikan assignment.</p>`;
 
-  const odoSection = `
-      <div class="v2-analytics-section">
-        <div class="v2-analytics-section-header">Odometer &amp; Jarak Tempuh</div>
+  const odoContent = `
         <div class="v2-analytics-groups">
           <div class="v2-admin-config-group">
             <h3 class="v2-admin-config-group-title">Ringkasan Jarak Tempuh</h3>
@@ -4872,144 +4578,170 @@ function refreshAnalyticsDisplay() {
             </div>
             ${odoBodyHtml}
           </div>
+        </div>`;
+
+  // ── Section content fragments (computed values unchanged — layout only) ────
+  // Executive Summary V2 (Sprint 2): KPI cards + Operational Highlights +
+  // Quick Summary. All values are read straight from the AnalyticsModel —
+  // no new calculations, no fabricated trends (period comparison N/A → neutral).
+  const k = _analyticsModel.kpis;
+  const execKpiGrid = renderKPIGrid([
+    renderAnalyticsKPICard({
+      title: 'Total Assignments', value: k.total, icon: '📋',
+      subtitle: 'Penugasan pada periode terpilih',
+    }),
+    renderAnalyticsKPICard({
+      title: 'Selesai', value: k.completed, icon: '✅', status: 'ok',
+    }),
+    renderAnalyticsKPICard({
+      title: 'Completion Rate', value: `${k.compRate}%`,
+      status: k.compRate >= 80 ? 'ok' : k.compRate >= 50 ? 'warn' : '',
+      subtitle: `${k.completed} dari ${k.total} selesai`,
+    }),
+    renderAnalyticsKPICard({
+      title: 'Open Rate', value: `${k.openRate}%`,
+      status: k.openRate > 50 ? 'warn' : (k.openRate === 0 && k.total > 0 ? 'ok' : ''),
+      subtitle: `${k.openAsg} penugasan terbuka`,
+    }),
+  ]);
+
+  // Operational Highlights — surfaces existing analytics in executive form.
+  const execHighlights = renderOperationalHighlights([
+    mostActiveDrv ? { label: 'Driver Paling Aktif', value: esc(mostActiveDrv.displayName), context: `${mostActiveDrv.count} penugasan` } : null,
+    mostUsedVeh   ? { label: 'Kendaraan Terutilisasi', value: esc(mostUsedVeh.displayName), context: `${mostUsedVeh.count} penugasan` } : null,
+    (destSorted && destSorted[0]) ? { label: 'Tujuan Tersering', value: esc(destSorted[0][0]), context: `${destSorted[0][1]}x perjalanan` } : null,
+    mostActiveBidang ? { label: 'Bidang Teraktif', value: esc(mostActiveBidang.name), context: `${mostActiveBidang.reqCount} permintaan` } : null,
+  ]);
+
+  // Quick Summary — remaining status detail (unchanged values) + status chart.
+  const execQuickSummary = `
+        <div class="v2-analytics-quick-summary-stats">
+          <span>Berlangsung: <strong>${k.inProgress}</strong></span>
+          <span>Dijadwalkan: <strong>${k.scheduled}</strong></span>
+          <span>Dibatalkan / Lainnya: <strong>${k.cancelled}</strong></span>
         </div>
-      </div>`;
+        ${chartStatusHtml}`;
 
-  contentEl.innerHTML = `
-    <div class="v2-analytics-sections">
-
-      ${insightsHtml}
-
-      <!-- Ringkasan Operasional -->
-      <div class="v2-analytics-section">
-        <div class="v2-analytics-section-header">Ringkasan Operasional</div>
-        <div class="v2-analytics-groups">
-          <div class="v2-admin-config-group">
-            <h3 class="v2-admin-config-group-title">Assignment Analytics</h3>
-            <div class="v2-analytics-kpi-list">
-              ${kpiRow('Total Assignments', total)}
-              ${kpiRow('Selesai', completed, 'ok')}
-              ${kpiRow('Berlangsung', inProgress, 'info')}
-              ${kpiRow('Dijadwalkan', scheduled)}
-              ${kpiRow('Dibatalkan / Lainnya', cancelled)}
-              ${kpiRow('Completion Rate', `${compRate}%`, compRate >= 80 ? 'ok' : compRate >= 50 ? 'warn' : '')}
-              ${kpiRow('Open Rate', `${openRate}%`, openRate > 50 ? 'warn' : openRate === 0 && total > 0 ? 'ok' : '')}
-            </div>
-            ${chartStatusHtml}
-          </div>
-        </div>
+  const execContent = `
+    ${execKpiGrid}
+    <div class="v2-analytics-groups">
+      <div class="v2-admin-config-group">
+        <div class="v2-analytics-subhead">Sorotan Operasional</div>
+        ${execHighlights}
+        <div class="v2-analytics-subhead" style="margin-top:18px;">Ringkasan Cepat</div>
+        ${execQuickSummary}
       </div>
+    </div>`;
 
-      <!-- Utilisasi Driver -->
-      <div class="v2-analytics-section">
-        <div class="v2-analytics-section-header">Utilisasi Driver</div>
-        <div class="v2-analytics-groups">
-          <div class="v2-admin-config-group">
-            <h3 class="v2-admin-config-group-title">Driver Workload Distribution</h3>
-            <div class="v2-analytics-kpi-list">
-              ${kpiRow('Driver Aktif Bertugas', activeDriversInPeriod.length)}
-              ${kpiRow('Driver Tidak Bertugas', inactiveDrivers.length)}
-              ${kpiRow('Driver Paling Aktif', fmtDrv(mostActiveDrv))}
-              ${kpiRow('Driver Paling Jarang', fmtDrv(leastActiveDrv))}
-              ${kpiRow('Seimbang', `${wlBalancedCount} driver`)}
-              ${kpiRow('Melebihi Rata-rata', `${wlOverCount} driver`, wlOverCount > 0 ? 'warn' : '')}
-              ${kpiRow('Di Bawah Rata-rata', `${wlUnderCount} driver`)}
-            </div>
-            <div class="v2-analytics-subtitle">Distribusi Penugasan Per Driver</div>
-            <div class="v2-analytics-breakdown">
-              ${activeDriversInPeriod.length > 0 ? `
-              <div class="v2-analytics-breakdown-row v2-analytics-breakdown-row--header">
-                <span class="v2-analytics-breakdown-name">Driver</span>
-                <span class="v2-analytics-breakdown-count">Asg</span>
-                <span class="v2-analytics-breakdown-pct">%</span>
-                <span class="v2-analytics-breakdown-wl"></span>
-              </div>` : ''}
-              ${driverWlHtml}
-            </div>
-            <div class="v2-analytics-subtitle v2-analytics-subtitle--mt">Driver Tanpa Penugasan</div>
-            <div class="v2-analytics-breakdown">${inactiveDrvHtml}</div>
-            ${chartDriverHtml}
-          </div>
+  const driverContent = `
+    <div class="v2-analytics-groups">
+      <div class="v2-admin-config-group">
+        <h3 class="v2-admin-config-group-title">Driver Workload Distribution</h3>
+        <div class="v2-analytics-kpi-list">
+          ${kpiRow('Driver Aktif Bertugas', activeDriversInPeriod.length)}
+          ${kpiRow('Driver Tidak Bertugas', inactiveDrivers.length)}
+          ${kpiRow('Driver Paling Aktif', fmtDrv(mostActiveDrv))}
+          ${kpiRow('Driver Paling Jarang', fmtDrv(leastActiveDrv))}
+          ${kpiRow('Seimbang', `${wlBalancedCount} driver`)}
+          ${kpiRow('Melebihi Rata-rata', `${wlOverCount} driver`, wlOverCount > 0 ? 'warn' : '')}
+          ${kpiRow('Di Bawah Rata-rata', `${wlUnderCount} driver`)}
         </div>
-      </div>
-
-      <!-- Utilisasi Kendaraan -->
-      <div class="v2-analytics-section">
-        <div class="v2-analytics-section-header">Utilisasi Kendaraan</div>
-        <div class="v2-analytics-groups">
-          <div class="v2-admin-config-group">
-            <h3 class="v2-admin-config-group-title">Vehicle Utilization</h3>
-            <div class="v2-analytics-kpi-list">
-              ${kpiRow('Total Kendaraan Aktif', activeVehicles.length)}
-              ${kpiRow('Kendaraan Terbanyak', fmtVeh(mostUsedVeh))}
-              ${kpiRow('Kendaraan Paling Jarang', fmtVeh(leastUsedVeh))}
-            </div>
-            <div class="v2-analytics-subtitle">Utilisasi Per Kendaraan</div>
-            <div class="v2-analytics-breakdown">
-              ${vehiclesWithTrips.length > 0 ? `
-              <div class="v2-analytics-breakdown-row v2-analytics-breakdown-row--header">
-                <span class="v2-analytics-breakdown-name">Kendaraan</span>
-                <span class="v2-analytics-breakdown-count">Asg</span>
-                <span class="v2-analytics-breakdown-pct">%</span>
-              </div>` : ''}
-              ${vehicleWlHtml}
-            </div>
-            <div class="v2-analytics-subtitle v2-analytics-subtitle--mt">Kendaraan Tanpa Penggunaan</div>
-            <div class="v2-analytics-breakdown">${inactiveVehHtml}</div>
-            ${chartVehicleHtml}
-          </div>
-        </div>
-      </div>
-
-      <!-- Analisis Bidang -->
-      <div class="v2-analytics-section">
-        <div class="v2-analytics-section-header">Analisis Bidang</div>
-        <div class="v2-analytics-groups">
-          <div class="v2-admin-config-group">
-            <h3 class="v2-admin-config-group-title">Bidang Demand Analysis</h3>
-            <div class="v2-analytics-kpi-list">
-              ${kpiRow('Total Bidang', bidangEnhanced.length)}
-              ${mostActiveBidang  ? kpiRow('Bidang Paling Aktif',  `${mostActiveBidang.name} (${mostActiveBidang.reqCount} req, ${mostActiveBidang.reqPct}%)`) : ''}
-              ${leastActiveBidang ? kpiRow('Bidang Paling Jarang', `${leastActiveBidang.name} (${leastActiveBidang.reqCount} req)`) : ''}
-            </div>
-            <div class="v2-analytics-breakdown">
-              ${bidangEnhanced.length > 0 ? `
-              <div class="v2-analytics-breakdown-row v2-analytics-breakdown-row--header">
-                <span class="v2-analytics-breakdown-rank"></span>
-                <span class="v2-analytics-breakdown-name">Bidang</span>
-                <span class="v2-analytics-breakdown-count">Req</span>
-                <span class="v2-analytics-breakdown-pct">%</span>
-                <span class="v2-analytics-breakdown-count">Asg</span>
-              </div>` : ''}
-              ${bidangDemandHtml}
-            </div>
-            ${chartBidangHtml}
-          </div>
-          ${hasDestData ? `
-          <div class="v2-admin-config-group">
-            <h3 class="v2-admin-config-group-title">Destination Analytics</h3>
-            <div class="v2-analytics-kpi-list">
-              ${kpiRow('Total Tujuan Unik', _destFreq.size)}
-              ${destSorted[0] ? kpiRow('Tujuan Paling Sering', `${destSorted[0][0]} (${destSorted[0][1]}x)`) : ''}
-            </div>
-            <div class="v2-analytics-subtitle">Top ${Math.min(10, destSorted.length)} Tujuan</div>
-            <div class="v2-analytics-breakdown">
-              <div class="v2-analytics-breakdown-row v2-analytics-breakdown-row--header">
-                <span class="v2-analytics-breakdown-rank"></span>
-                <span class="v2-analytics-breakdown-name">Tujuan</span>
-                <span class="v2-analytics-breakdown-count">Frekuensi</span>
-              </div>
-              ${destBreakdownHtml}
-            </div>
+        <div class="v2-analytics-subtitle">Distribusi Penugasan Per Driver</div>
+        <div class="v2-analytics-breakdown">
+          ${activeDriversInPeriod.length > 0 ? `
+          <div class="v2-analytics-breakdown-row v2-analytics-breakdown-row--header">
+            <span class="v2-analytics-breakdown-name">Driver</span>
+            <span class="v2-analytics-breakdown-count">Asg</span>
+            <span class="v2-analytics-breakdown-pct">%</span>
+            <span class="v2-analytics-breakdown-wl"></span>
           </div>` : ''}
+          ${driverWlHtml}
+        </div>
+        <div class="v2-analytics-subtitle v2-analytics-subtitle--mt">Driver Tanpa Penugasan</div>
+        <div class="v2-analytics-breakdown">${inactiveDrvHtml}</div>
+        ${chartDriverHtml}
+      </div>
+    </div>`;
+
+  const vehicleContent = `
+    <div class="v2-analytics-groups">
+      <div class="v2-admin-config-group">
+        <h3 class="v2-admin-config-group-title">Vehicle Utilization</h3>
+        <div class="v2-analytics-kpi-list">
+          ${kpiRow('Total Kendaraan Aktif', activeVehicles.length)}
+          ${kpiRow('Kendaraan Terbanyak', fmtVeh(mostUsedVeh))}
+          ${kpiRow('Kendaraan Paling Jarang', fmtVeh(leastUsedVeh))}
+        </div>
+        <div class="v2-analytics-subtitle">Utilisasi Per Kendaraan</div>
+        <div class="v2-analytics-breakdown">
+          ${vehiclesWithTrips.length > 0 ? `
+          <div class="v2-analytics-breakdown-row v2-analytics-breakdown-row--header">
+            <span class="v2-analytics-breakdown-name">Kendaraan</span>
+            <span class="v2-analytics-breakdown-count">Asg</span>
+            <span class="v2-analytics-breakdown-pct">%</span>
+          </div>` : ''}
+          ${vehicleWlHtml}
+        </div>
+        <div class="v2-analytics-subtitle v2-analytics-subtitle--mt">Kendaraan Tanpa Penggunaan</div>
+        <div class="v2-analytics-breakdown">${inactiveVehHtml}</div>
+        ${chartVehicleHtml}
+      </div>
+    </div>`;
+
+  const bidangContent = `
+    <div class="v2-analytics-groups">
+      <div class="v2-admin-config-group">
+        <h3 class="v2-admin-config-group-title">Bidang Demand Analysis</h3>
+        <div class="v2-analytics-kpi-list">
+          ${kpiRow('Total Bidang', bidangEnhanced.length)}
+          ${mostActiveBidang  ? kpiRow('Bidang Paling Aktif',  `${mostActiveBidang.name} (${mostActiveBidang.reqCount} req, ${mostActiveBidang.reqPct}%)`) : ''}
+          ${leastActiveBidang ? kpiRow('Bidang Paling Jarang', `${leastActiveBidang.name} (${leastActiveBidang.reqCount} req)`) : ''}
+        </div>
+        <div class="v2-analytics-breakdown">
+          ${bidangEnhanced.length > 0 ? `
+          <div class="v2-analytics-breakdown-row v2-analytics-breakdown-row--header">
+            <span class="v2-analytics-breakdown-rank"></span>
+            <span class="v2-analytics-breakdown-name">Bidang</span>
+            <span class="v2-analytics-breakdown-count">Req</span>
+            <span class="v2-analytics-breakdown-pct">%</span>
+            <span class="v2-analytics-breakdown-count">Asg</span>
+          </div>` : ''}
+          ${bidangDemandHtml}
+        </div>
+        ${chartBidangHtml}
+      </div>
+    </div>`;
+
+  // Destination is now its own section (was nested in Bidang). Shows an empty
+  // state — instead of vanishing — when there is no destination data.
+  const destContent = hasDestData ? `
+    <div class="v2-analytics-groups">
+      <div class="v2-admin-config-group">
+        <h3 class="v2-admin-config-group-title">Destination Analytics</h3>
+        <div class="v2-analytics-kpi-list">
+          ${kpiRow('Total Tujuan Unik', _destFreq.size)}
+          ${destSorted[0] ? kpiRow('Tujuan Paling Sering', `${destSorted[0][0]} (${destSorted[0][1]}x)`) : ''}
+        </div>
+        <div class="v2-analytics-subtitle">Top ${Math.min(10, destSorted.length)} Tujuan</div>
+        <div class="v2-analytics-breakdown">
+          <div class="v2-analytics-breakdown-row v2-analytics-breakdown-row--header">
+            <span class="v2-analytics-breakdown-rank"></span>
+            <span class="v2-analytics-breakdown-name">Tujuan</span>
+            <span class="v2-analytics-breakdown-count">Frekuensi</span>
+          </div>
+          ${destBreakdownHtml}
         </div>
       </div>
+    </div>`
+    : `
+    <div class="v2-analytics-groups">
+      <div class="v2-admin-config-group">
+        ${renderAnalyticsEmptyState({ message: 'Belum ada data tujuan pada periode ini.', hint: 'Tujuan tercatat dari kolom destination pada tiap assignment.' })}
+      </div>
+    </div>`;
 
-      ${odoSection}
-
-      <!-- Data Quality Resolution Center -->
-      <div class="v2-analytics-section">
-        <div class="v2-analytics-section-header">Data Quality Resolution Center</div>
+  // Data Quality Resolution Center inner content (unchanged markup/behavior).
+  const dqContent = `
         <div class="v2-admin-config-group v2-dq-center">
 
           <!-- Stats bar -->
@@ -5154,15 +4886,82 @@ function refreshAnalyticsDisplay() {
             </table>
           </div>` : ''}
 
-        </div>
-      </div>
+        </div>`;
 
+  // Operational Trends — activated as a dedicated chart home (Sprint 3). The
+  // engine computes single-period figures only, so there is no time-series
+  // data yet; we show a standardized chart empty state rather than fabricating
+  // trends or comparisons.
+  const trendsContent = `
+    <div class="v2-analytics-groups">
+      <div class="v2-admin-config-group">
+        ${renderAnalyticsChartEmpty({
+          title: 'Tren Operasional',
+          message: 'Grafik tren (penugasan, penyelesaian, permintaan) akan aktif setelah Trend Engine tersedia.',
+          hint: 'Memerlukan data deret waktu antar-periode — belum dihitung oleh Analytics Engine.',
+        })}
+      </div>
+    </div>`;
+
+  // Insights (Sprint 4): driven entirely by model.insights (generated by the
+  // Insight Engine). No inline insight generation, no hardcoded cards.
+  const _insights = _analyticsModel.insights || [];
+  const insightsContent = _insights.length > 0
+    ? renderInsightList(_insights.map(ins => renderInsightCard({
+        type: ins.type, title: ins.title, description: ins.description, source: ins.source,
+      })))
+    : renderAnalyticsEmptyState({
+        message: 'Belum ada wawasan untuk periode ini.',
+        hint: 'Wawasan muncul otomatis dari data analytics yang tersedia.',
+      });
+
+  // Recommendations (Sprint 5): driven entirely by model.recommendations
+  // (deterministic Recommendation Engine). Advisory only — no inline generation.
+  const _recs = _analyticsModel.recommendations || [];
+  const recommendationsContent = _recs.length > 0
+    ? renderRecommendationList(_recs.map(rec => renderRecommendationCard({
+        type: rec.type, title: rec.title, description: rec.description, source: rec.source,
+      })))
+    : renderAnalyticsEmptyState({
+        message: 'Tidak ada rekomendasi untuk periode ini.',
+        hint: 'Rekomendasi muncul otomatis saat data analytics menunjukkan area yang perlu ditindaklanjuti.',
+      });
+
+  // ── Compose the Analytics V2 shell — every block renders through the same
+  //    section pattern, in the Information-Architecture order. ──────────────
+  contentEl.innerHTML = `
+    <div class="v2-analytics-sections">
+      ${[
+        renderAnalyticsSection({ id: 'analyticsExecutiveSummary', variant: 'exec', title: 'Ringkasan Eksekutif', description: 'Indikator utama kinerja operasional pada periode terpilih.', content: execContent }),
+        renderAnalyticsSection({ id: 'analyticsTrends', title: 'Operational Trends', description: 'Tren volume penugasan, penyelesaian &amp; permintaan dari waktu ke waktu.', content: trendsContent }),
+        renderAnalyticsSection({ id: 'analyticsDriver', title: 'Utilisasi Driver', content: driverContent }),
+        renderAnalyticsSection({ id: 'analyticsVehicle', title: 'Utilisasi Kendaraan', content: vehicleContent }),
+        renderAnalyticsSection({ id: 'analyticsBidang', title: 'Analisis Bidang', content: bidangContent }),
+        renderAnalyticsSection({ id: 'analyticsDestination', title: 'Analitik Tujuan', content: destContent }),
+        renderAnalyticsSection({ id: 'analyticsOdometer', title: 'Odometer &amp; Jarak Tempuh', content: odoContent }),
+        renderAnalyticsSection({ id: 'analyticsInsights', title: 'Wawasan Operasional', description: 'Interpretasi otomatis dari data analytics — menjelaskan apa yang terjadi pada periode ini.', content: insightsContent }),
+        renderAnalyticsSection({ id: 'analyticsRecommendations', title: 'Rekomendasi Operasional', description: 'Saran tindak lanjut berbasis aturan deterministik dari temuan analytics — bersifat advisory.', content: recommendationsContent }),
+        renderAnalyticsSection({ id: 'analyticsDataQuality', title: 'Data Quality Resolution Center', content: dqContent }),
+        renderAnalyticsPlaceholderSection({ id: 'analyticsExport', title: 'Export Center', description: 'Ekspor laporan analytics.', note: 'Export PDF tersedia di header. Excel &amp; Print akan ditambahkan pada sprint berikutnya.' }),
+      ].join('')}
     </div>
   `;
+  // Phase 6: the chart layer consumes model.charts (same datasets, same values
+  // — the Chart.js configuration in _renderAnalyticsCharts is unchanged).
+  const _charts = _analyticsModel.charts;
   _renderAnalyticsCharts({
-    completed, inProgress, scheduled, cancelled, total,
-    activeDriversInPeriod, vehiclesWithTrips, bidangEnhanced,
-    driverOdoList, vehicleOdoList, totalKm, hasOdoData
+    completed:  _charts.status.completed,
+    inProgress: _charts.status.inProgress,
+    scheduled:  _charts.status.scheduled,
+    cancelled:  _charts.status.cancelled,
+    total:      _charts.status.total,
+    activeDriversInPeriod: _charts.driverWorkload,
+    vehiclesWithTrips:     _charts.vehicleUtil,
+    bidangEnhanced:        _charts.bidangDemand,
+    driverOdoList:         _charts.odoDriver,
+    vehicleOdoList:        _charts.odoVehicle,
+    totalKm:    _analyticsModel.kpis.totalKm,
+    hasOdoData: _analyticsModel.render.hasOdoData,
   });
 }
 
@@ -5254,8 +5053,8 @@ async function exportAnalyticsReport() {
   };
 
   try {
-    await DocumentEngine.generateAndOpen('analytics-report', vm, {
-      viewer: { title: 'Analytics Summary Report' },
+    await DocumentEngine.generateAndOpen('analytics-summary', vm, {
+      viewer: { title: 'Laporan Analytics Operasional' },
     });
   } catch (err) {
     console.error('[Analytics] PDF export failed:', err);
