@@ -101,14 +101,16 @@ export function computeAnalyticsModel(ctx) {
   const analyticsDriverFilter = ctx.filters.driver;
   const analyticsVehicleFilter = ctx.filters.vehicle;
   const analyticsBidangFilter = ctx.filters.bidang;
-  const requests = ctx.requests;
   const normalizeAssignmentStatus = ctx.normalizeAssignmentStatus;
   const getDrivers = () => ctx.drivers;
   const getActiveVehiclesFromStore = () => ctx.vehicles;
   const _getAnalyticsAliases  = (type) => ctx.aliases[type]   || {};
   const _getDismissedWarnings = (type) => ctx.dismissed[type] || {};
-  // Governance gate (identity for ungoverned data in Sprint 0 → parity).
+  // Governance gate (identity for ungoverned data → parity). Both record kinds
+  // pass through the same eligibility filter, so a record classified as test /
+  // excluded (assignment OR driver_request) leaves every downstream aggregate.
   const assignments = filterEligible(ctx.assignments);
+  const requests = filterEligible(ctx.requests);
 
   // ===== BEGIN lifted computation (verbatim from refreshAnalyticsDisplay) ===
 

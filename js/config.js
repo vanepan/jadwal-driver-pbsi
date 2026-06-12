@@ -1,10 +1,88 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.10.0';
-export const RELEASE_NAME = 'Trend Engine Foundation';
+export const APP_VERSION = '1.10.6';
+export const RELEASE_NAME = 'Analytics Experience V2 — Claude Design';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.10.6',
+    date: '2026-06-13',
+    summary: 'Export PDF width fix + compact Request Review (Sprint 7D polish)',
+    highlights: [
+      'Export PDF is now genuinely content-width: the analytics toolbar button switched off the global full-width .btn-reimbursement (style.css forces width:100%) to the purpose-built .v2-analytics-export-btn (width:auto; display:inline-flex; flex:0 0 auto) — it sits inline beside Reset Filter instead of stretching across its own row',
+      'Request Review redesigned to fit the viewport with no horizontal scrolling: the table now shows only the primary fields (Tanggal · Bidang · Tujuan · Status · Klasifikasi · Tata Kelola); secondary fields (Request ID · Pemohon · Driver · Kendaraan) move into an expandable per-row detail panel (tap the row chevron)',
+      'Feels like an operational review, not a database viewer — narrower modal, compact columns with ellipsis, tap-to-expand details',
+      'Presentation only — governance model, engine gate, and all analytics values unchanged; parity/trend/insights/recommendations harnesses still pass',
+    ],
+  },
+  {
+    version: '1.10.5',
+    date: '2026-06-13',
+    summary: 'Export hub restore + Request governance (Sprint 7D follow-up)',
+    highlights: [
+      'Export PDF is a compact, content-width utility button living in the filter/action row (Rentang · Driver · Kendaraan · Bidang · Reset · Export PDF) — icon + label, semantic tokens, distinct in light vs dark, no full-width strip',
+      'Export Center restored as the long-term reporting hub — redesigned as a calm, secondary, future-ready format LIST (Laporan PDF available; Excel & Cetak "Segera hadir") instead of the old full-width button banner; PDF shares the same exportAnalyticsReport() path and on-screen data, and it does not compete with the keynote hero',
+      'Analytics Governance now covers driver_requests as well as assignments: the engine routes BOTH record kinds through the same filterEligible() gate, so an excluded request leaves every downstream aggregate',
+      'Data Quality Center gains "Tinjau Request" alongside "Tinjau Tujuan" and "Tinjau Assignment" — a record-level review of driver_requests (ID · Tanggal · Pemohon · Bidang · Driver · Kendaraan · Tujuan · Status) filterable by Date Range / Driver / Kendaraan / Bidang / Status / analytics eligibility, with ID/destination/requester search',
+      'Requests support the same four governance actions as assignments — Tandai Data Produksi · Tandai Data Uji · Keluarkan Dari Analytics · Pulihkan Ke Analytics — writing an audited request.governance block ({ classification, analyticsEligible, classifiedBy, classifiedAt }); logged via request_classified',
+      'Excluded requests remain in Firebase, editable and operationally visible, but no longer participate in KPIs / Trends / Insights / Recommendations / Health Score / Analytics Export / future AI analytics — no deletion, fully reversible',
+      'Governance remains the same opt-in gate (absence of a governance block ⇒ production); no analytics calculation, KPI, trend, insight, or recommendation logic changed — parity/trend/insights/recommendations harnesses still pass',
+    ],
+  },
+  {
+    version: '1.10.4',
+    date: '2026-06-13',
+    summary: 'Analytics Governance & UX Polish (Sprint 7D)',
+    highlights: [
+      'Export PDF is now a compact utility action, not a banner: the full-width "Export Center" section is removed and Export PDF lives solely as a quiet, theme-aware icon+label button in the filter/action row (Rentang · Driver · Kendaraan · Bidang · Reset · Export PDF) — semantic surface/border/text tokens, distinct in light vs dark, never full width',
+      'Data Quality Center now governs records, not just names: a new "Tinjau Assignment" review sits alongside "Tinjau Tujuan" — the first operational UI for the Analytics Governance Layer',
+      'Assignment Review screen: a compact governance table (ID · Tanggal · Driver · Kendaraan · Bidang · Tujuan · Status · Klasifikasi) filterable by Date Range / Driver / Kendaraan / Bidang and by analytics eligibility, with searchable ID/destination lookup',
+      'Record-level governance actions — Tandai Data Produksi · Tandai Data Uji · Keluarkan Dari Analytics · Pulihkan Ke Analytics — write an audited assignment.governance block ({ classification, analyticsEligible, classifiedBy, classifiedAt }); each change is logged via assignment_classified',
+      'Excluded assignments remain in the database, visible and editable operationally, but no longer participate in Analytics / Trends / Insights / Recommendations / Health Score (the engine already filters at its boundary via filterEligible) — no deletion, fully reversible',
+      'Claude Design language for the review UI: compact table, subtle hairlines, semantic status & classification chips, no emoji; mobile-friendly (filters stack, table scrolls horizontally)',
+      'No analytics calculation, KPI, trend, insight, or recommendation logic changed — governance is the same opt-in gate shipped in Sprint 0 (absence of a governance block still means production); parity/trend/insights/recommendations harnesses still pass',
+    ],
+  },
+  {
+    version: '1.10.3',
+    date: '2026-06-13',
+    summary: 'Analytics Experience polish (Sprint 7C)',
+    highlights: [
+      'Resource Analytics density: tighter vertical spacing across panels (subsections, list/breakdown rows, cards) for a professional data-workspace feel with less scrolling — readability preserved',
+      'Bidang Analytics now leads with distance: rankings, summaries, highlights, and the table show "{jarak} km" as the primary value with assignment count as supporting context (distance surfaced from existing distanceTravelled data in the presentation layer — no analytics computation change)',
+      'Export PDF button redesigned: smaller, quieter, theme-aware utility action (semantic surface/border/text tokens — distinct in light vs dark) instead of an oversized accent button; the Export Center action is de-emphasized to match',
+      'Removed duplicate page copy: the Analytics header now uses an analytics-specific description ("Analisis kinerja operasional, utilisasi sumber daya, dan tren aktivitas.") instead of repeating the Administration-level context',
+      'Presentation only — no KPI, trend, insight, recommendation, or chart-dataset changes; parity/trend/insights/recommendations harnesses still pass',
+    ],
+  },
+  {
+    version: '1.10.2',
+    date: '2026-06-12',
+    summary: 'Analytics Experience V2 — Claude Design visual language',
+    highlights: [
+      'Analytics migrated to the approved Claude Design visual language: a typography-first, de-boxed, Apple-style operational-intelligence experience (replaces the Sprint-7A card-in-card layout). Scoped under .v2-analytics-claude — the rest of the app is unchanged',
+      'Keynote executive hero: a derived operational-health verdict ("Operasi berjalan sehat") + a 0–100 health score in a draw-animated ring gauge + three big stats with real period-over-period deltas. The score is computed in the presentation layer purely from existing KPIs (completion/open/cancellation rates + Priority-1 finding count) — no engine change, no fabricated data',
+      'Custom SVG icon system (no emoji anywhere): a single consistent outline stroke set ported from the prototype replaces every emoji glyph across KPIs, tabs, insights, and export',
+      'De-boxed sections with eyebrow headers + hairline dividers; editorial highlights trio that deep-links into Resource tabs; premium segmented control for Resource Analytics; Operational Health rendered as a divider-based insight list (severity + Wawasan/Rekomendasi tags) instead of nested boxes',
+      'Calm micro-animations: count-up numbers, ring-gauge draw, section fade-up, insight stagger, panel-enter, attention pulse — all 200–1200ms and disabled under prefers-reduced-motion / [data-anim="off"]',
+      'Proper dark mode via scoped semantic tokens (not an inverted light mode); Archivo/Manrope/JetBrains Mono fonts applied only within the analytics scope; mobile keeps the hero, stacks stats/highlights, fills the seg control full-width, no horizontal scroll',
+      'Presentation only — engine/model/insights/recommendations/trends modules and every analytics value, chart dataset, and canvas id are untouched; parity/trend/insights/recommendations harnesses still pass',
+    ],
+  },
+  {
+    version: '1.10.1',
+    date: '2026-06-12',
+    summary: 'Analytics Experience V2 — Claude Design migration',
+    highlights: [
+      'Analytics migrated to the Claude Design experience: the former flat list of sections is re-composed into a 6-section operational-intelligence dashboard — Executive Summary, Operational Trends, Operational Health, Resource Analytics, Data Quality Center, Export Center — each wrapped in an elevated section card with a clear hierarchy (eyebrow + H2 + description)',
+      'Operational Health (new): merges the Insight Engine and Recommendation Engine outputs into one prioritized surface, grouped Prioritas 1 → 3 (highest first) with each card tagged Wawasan or Rekomendasi; uses the priority each engine already emits',
+      'Resource Analytics (new): Driver / Kendaraan / Bidang / Tujuan / Jarak Tempuh consolidated into one section with a segmented tab control — one panel at a time; Chart.js charts in hidden panels are resized on show so they render correctly',
+      'Export Center (new): a dedicated section with a working PDF export (shares exportAnalyticsReport with the header button) and prepared Excel / Print placeholders; the header Export PDF button is retained',
+      'Presentation-only: no analytics logic, KPI, chart dataset, insight, recommendation, or trend value changed — the engine modules (engine/model/insights/recommendations/trends) are untouched and the existing parity/trend/insights/recommendations harnesses still pass',
+      'Mobile: section cards stack, tabs wrap (no horizontal scrolling), export buttons go full-width at ≤600px',
+    ],
+  },
   {
     version: '1.10.0',
     date: '2026-06-12',

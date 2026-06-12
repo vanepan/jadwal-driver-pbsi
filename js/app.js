@@ -56,20 +56,20 @@ import {
   getAliasCanonical as _getAliasCanonical,
   dqPairKey as _dqPairKey,
 } from './analytics/analytics-engine.js';
+import { classificationOf } from './analytics/analytics-governance.js';
 import {
-  renderAnalyticsSection,
-  renderAnalyticsPlaceholderSection,
   renderAnalyticsEmptyState,
   renderAnalyticsErrorState,
-  renderAnalyticsKPICard,
-  renderKPIGrid,
-  renderTrendIndicator,
-  renderOperationalHighlights,
   renderAnalyticsChart,
-  renderInsightCard,
-  renderInsightList,
-  renderRecommendationCard,
-  renderRecommendationList,
+  renderAnalyticsTabPanels,
+  renderExportCenter,
+  anIcon,
+  renderEyebrow,
+  renderHeroSection,
+  renderHighlights,
+  renderInsightRow,
+  renderInsightDividerList,
+  renderSeg,
 } from './analytics/analytics-shell.js';
 import { derivePreviousPeriod } from './analytics/analytics-period.js';
 import {
@@ -1888,12 +1888,12 @@ function initV2AdministrationWorkspace() {
           <div id="v2AuditList" class="v2-audit-list"></div>
         </div>
         <div id="v2AdminSectionConfig" style="display:none;"></div>
-        <div id="v2AdminSectionAnalytics" style="display:none;">
+        <div id="v2AdminSectionAnalytics" class="v2-analytics-claude" style="display:none;">
           <!-- Analytics Header (command area): title + date range + filters + export -->
           <div class="v2-analytics-header" id="v2AnalyticsHeader">
             <div class="v2-analytics-header-titles">
               <h2 class="v2-analytics-header-title" style="font-size:18px;font-weight:700;margin:0 0 4px;">Analytics Operasional</h2>
-              <p class="v2-analytics-header-sub" style="margin:0 0 14px;color:var(--text-dim,#5b5b64);font-size:13px;line-height:1.5;">Ringkasan kinerja operasional berbasis data aktual — assignment, driver, kendaraan, dan bidang.</p>
+              <p class="v2-analytics-header-sub" style="margin:0 0 14px;color:var(--text-dim,#5b5b64);font-size:13px;line-height:1.5;">Analisis kinerja operasional, utilisasi sumber daya, dan tren aktivitas.</p>
             </div>
             <div class="v2-admin-toolbar">
               <select id="v2AnalyticsDateRange" class="v2-admin-filter">
@@ -1913,7 +1913,10 @@ function initV2AdministrationWorkspace() {
                 <option value="">Semua Bidang</option>
               </select>
               <button id="v2AnalyticsResetFilters" class="v2-analytics-reset-btn" type="button">Reset Semua Filter</button>
-              <button id="v2AnalyticsExportPdf" class="btn-reimbursement" type="button">📄 Export PDF</button>
+              <button id="v2AnalyticsExportPdf" class="v2-analytics-export-btn" type="button" title="Ekspor laporan analytics ke PDF">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg>
+                <span>Export PDF</span>
+              </button>
             </div>
             <div id="v2AnalyticsFilterSummary" class="v2-analytics-filter-summary"></div>
           </div>
@@ -1935,9 +1938,30 @@ function initV2AdministrationWorkspace() {
       return;
     }
 
+    // Resource Analytics segmented tabs (Sprint 7) — switch panels in place.
+    const tabBtn = e.target.closest('[data-tab-id]');
+    if (tabBtn) {
+      _switchAnalyticsTab(tabBtn.dataset.tabGroup, tabBtn.dataset.tabId);
+      return;
+    }
+
     const actionBtn = e.target.closest('[data-action]');
     if (actionBtn) {
       const action = actionBtn.dataset.action;
+      if (action === 'export-pdf') {
+        if (activeAdminSection === 'analytics') exportAnalyticsReport();
+        return;
+      }
+      if (action === 'goto-health') {
+        _scrollAnalyticsTo('analyticsHealth');
+        return;
+      }
+      if (action === 'goto-resource') {
+        const target = actionBtn.dataset.tabTarget;
+        if (target) _switchAnalyticsTab('resource', target);
+        _scrollAnalyticsTo('analyticsResource');
+        return;
+      }
       if (action === 'alias-merge') {
         openAliasResolutionModal(
           actionBtn.dataset.type,
@@ -1973,6 +1997,14 @@ function initV2AdministrationWorkspace() {
       }
       if (action === 'dest-review') {
         openDestinationReviewModal();
+        return;
+      }
+      if (action === 'assignment-review') {
+        openAssignmentReviewModal();
+        return;
+      }
+      if (action === 'request-review') {
+        openRequestReviewModal();
         return;
       }
     }
@@ -2081,6 +2113,8 @@ function initV2AdministrationWorkspace() {
   initAuditDetailModal();
   initAliasResolutionModal();
   initDestinationReviewModal();
+  initAssignmentReviewModal();
+  initRequestReviewModal();
   console.log('[VSM-12] Administration workspace injected');
 }
 
@@ -4240,6 +4274,91 @@ function _destroyAnalyticsCharts() {
   _analyticsCharts.clear();
 }
 
+/* Resource Analytics tab switch (Sprint 7) — presentation only. Toggles the
+   active segmented button + visible panel for a tab group, then resizes any
+   Chart.js charts inside the newly shown panel (canvases that were in a
+   display:none panel render at 0px until resized). No data is recomputed. */
+/* Smooth-scroll to an analytics section (used by the hero "Tinjau sekarang" and
+   the editorial highlights deep-links). Presentation only. */
+function _scrollAnalyticsTo(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const reduce = _analyticsMotionOff();
+  try { el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' }); }
+  catch (_) { el.scrollIntoView(); }
+}
+
+function _switchAnalyticsTab(group, id) {
+  if (!group || !id) return;
+  const root = document.getElementById('v2AnalyticsContent');
+  if (!root) return;
+  root.querySelectorAll(`[data-tab-id][data-tab-group="${group}"]`).forEach(b => {
+    const on = b.dataset.tabId === id;
+    b.classList.toggle('on', on);            // prototype .seg button.on
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  let shown = null;
+  root.querySelectorAll(`.v2-analytics-tab-panel[data-tab-group="${group}"]`).forEach(p => {
+    const on = p.dataset.tabPanel === id;
+    if (on) { p.removeAttribute('hidden'); shown = p; }
+    else p.setAttribute('hidden', '');
+  });
+  if (shown) {
+    // Replay the panel-enter animation, resize charts (canvases that were in a
+    // display:none panel render at 0px), and re-run the bar/count-up draw.
+    shown.classList.remove('deep-panel');
+    void shown.offsetWidth;                  // force reflow so the animation restarts
+    shown.classList.add('deep-panel');
+    for (const chart of _analyticsCharts.values()) {
+      const c = chart && chart.canvas;
+      if (c && shown.contains(c)) { try { chart.resize(); } catch (_) {} }
+    }
+    _animateAnalyticsRegion(shown);
+  }
+}
+
+/* ── Sprint 7B micro-animations (calm, premium) ──────────────────────────────
+   Presentation-only. Count-up numbers ease from 0 to target; ring gauges draw
+   their stroke from empty. All respect prefers-reduced-motion / [data-anim="off"]
+   (in which case values are set immediately, fully visible — capture/print safe). */
+function _analyticsMotionOff() {
+  if (document.documentElement.getAttribute('data-anim') === 'off') return true;
+  try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (_) { return false; }
+}
+
+function _animateCountUp(el, target, { duration = 1100, decimals = 0 } = {}) {
+  const f = Math.pow(10, decimals);
+  const fmt = (v) => (Math.round(v * f) / f).toLocaleString('id-ID', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+  if (_analyticsMotionOff()) { el.textContent = fmt(target); return; }
+  const ease = (x) => 1 - Math.pow(1 - x, 3);
+  const t0 = performance.now();
+  const tick = (now) => {
+    const p = Math.min(1, (now - t0) / duration);
+    el.textContent = fmt(target * ease(p));
+    if (p < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+function _animateAnalyticsRegion(root) {
+  if (!root) return;
+  root.querySelectorAll('[data-countup]').forEach(el => {
+    const target = parseFloat(el.getAttribute('data-countup'));
+    if (!isFinite(target)) return;
+    const decimals = parseInt(el.getAttribute('data-countup-decimals') || '0', 10) || 0;
+    _animateCountUp(el, target, { decimals });
+  });
+  // Ring gauges: animate stroke-dasharray from "0 circ" to "len circ".
+  root.querySelectorAll('.an-ring-val[data-ring-len]').forEach(el => {
+    const len = el.getAttribute('data-ring-len');
+    const circ = el.getAttribute('data-ring-circ');
+    if (len == null || circ == null) return;
+    const apply = () => { el.setAttribute('stroke-dasharray', `${len} ${circ}`); };
+    if (_analyticsMotionOff()) apply();
+    else requestAnimationFrame(() => requestAnimationFrame(apply));
+  });
+}
+
 function renderV2AdminAnalytics() {
   // Populate driver dropdown (dynamic — from drivers-store)
   const driverEl = document.getElementById('v2AnalyticsDriverFilter');
@@ -4359,6 +4478,28 @@ function refreshAnalyticsDisplay() {
   window._analyticsFilteredAsg = _analyticsModel.diagnostics.filteredAsg;
   _lastAnalyticsModel          = _analyticsModel.exportSnapshot;   // PDF export snapshot
 
+  // ── Per-bidang distance (Sprint 7C, presentation-only) ─────────────────
+  // Surfaces the existing `distanceTravelled` values aggregated per bidang so
+  // the Bidang views can lead with distance (operationally more valuable than
+  // request count). Uses the engine's own filtered assignment set + the same
+  // bidang-alias resolution as the engine — no analytics computation changes.
+  const _bidangAliasMap = _getAnalyticsAliases('bidang');
+  const _bidangKm = new Map();
+  for (const a of (_analyticsModel.diagnostics.filteredAsg || [])) {
+    const km = a.distanceTravelled;
+    if (km == null || km <= 0 || !a.requestId) continue;
+    const req = requests.find(r => r.id === a.requestId);
+    const rawName = req && req.requesterName;
+    if (!rawName || !rawName.trim()) continue;
+    const resolved = _getAliasCanonical(_bidangAliasMap[_normDestKey(rawName)]) || rawName;
+    _bidangKm.set(resolved, (_bidangKm.get(resolved) || 0) + km);
+  }
+  const _bidangKmOf = (name) => _bidangKm.get(name) || 0;
+  const _bidangKmFmt = (name) => {
+    const km = _bidangKmOf(name);
+    return km > 0 ? `${km.toLocaleString('id-ID')} km` : '—';
+  };
+
   /* Flat projection consumed by the renderer below. Identifiers match the
      names used verbatim inside the HTML templates, so the rendering code is
      unchanged — guaranteeing visual + numerical parity with the old compute. */
@@ -4373,41 +4514,19 @@ function refreshAnalyticsDisplay() {
     _dqMainWarnings, _dqUnresolvedCount, _dqResolvedCount, _allDismissed, _allAliases,
   } = _analyticsModel.render;
 
-  // ── Trend indicators (Sprint 6) ────────────────────────────────────────
-  // Render a period-over-period badge ONLY for KPIs that have a trend source
-  // (Completion Rate, Total Assignments). A null/empty metric ⇒ no badge — we
-  // never fabricate a comparison (Phase 10).
+  // ── Trends (Sprint 6 data) ─────────────────────────────────────────────
   const _trends = _analyticsModel.trends || {};
-  const _trendBadge = (metric) => {
-    if (!metric || metric.percentChange == null) return '';
-    return renderTrendIndicator({ direction: metric.direction, percent: metric.percentChange, tone: metric.tone });
+  // Build a hero/stat trend delta from an existing trend metric. Never fabricates
+  // a comparison: returns null when there is no valid period-over-period data.
+  const _trendDelta = (metric, { sub = '' } = {}) => {
+    if (!metric || metric.percentChange == null || metric.direction === 'neutral') return null;
+    const toneCls = metric.tone === 'positive' ? 'up' : metric.tone === 'negative' ? 'down' : '';
+    const ico = metric.direction === 'up' ? anIcon('arrowUR', { size: 13 }) : anIcon('arrowDR', { size: 13 });
+    return { tone: toneCls, icon: ico, text: `${Math.abs(metric.percentChange)}%`, sub };
   };
 
-  // ── Overview row (filter-aware) ────────────────────────────────────────
-  if (overviewRow) {
-    overviewRow.innerHTML = `
-      <div class="v2-admin-overview-cards">
-        <div class="v2-admin-overview-card">
-          <span class="v2-admin-overview-value">${compRate}%</span>
-          ${_trendBadge(_trends.completionRate)}
-          <span class="v2-admin-overview-label">Completion Rate</span>
-        </div>
-        <div class="v2-admin-overview-card">
-          <span class="v2-admin-overview-value">${total}</span>
-          ${_trendBadge(_trends.totalAssignments)}
-          <span class="v2-admin-overview-label">Total Assignments</span>
-        </div>
-        <div class="v2-admin-overview-card">
-          <span class="v2-admin-overview-value">${driversWithTrips.length}</span>
-          <span class="v2-admin-overview-label">Driver Bertugas</span>
-        </div>
-        <div class="v2-admin-overview-card">
-          <span class="v2-admin-overview-value">${vehiclesWithTrips.length}</span>
-          <span class="v2-admin-overview-label">Kendaraan Digunakan</span>
-        </div>
-      </div>
-    `;
-  }
+  // ── Overview row superseded by the keynote hero (Sprint 7B) ────────────
+  if (overviewRow) overviewRow.innerHTML = '';
 
   // ── Filter summary chips ───────────────────────────────────────────────
   const summaryEl = document.getElementById('v2AnalyticsFilterSummary');
@@ -4524,9 +4643,9 @@ function refreshAnalyticsDisplay() {
         return `<div class="v2-analytics-breakdown-row">
           <span class="v2-analytics-breakdown-rank">${i + 1}</span>
           <span class="v2-analytics-breakdown-name">${esc(b.name)}${topBadge ? ' ' + topBadge : ''}</span>
-          <span class="v2-analytics-breakdown-count">${b.reqCount} req</span>
-          <span class="v2-analytics-breakdown-pct">${b.reqPct}%</span>
+          <span class="v2-analytics-breakdown-count v2-analytics-breakdown-count--primary">${_bidangKmFmt(b.name)}</span>
           <span class="v2-analytics-breakdown-count">${b.asgCount} asg</span>
+          <span class="v2-analytics-breakdown-count v2-analytics-breakdown-count--muted">${b.reqCount} req</span>
         </div>`;
       }).join('')
     : `<p class="v2-analytics-empty">Tidak ada permintaan bidang pada rentang waktu ini.</p>`;
@@ -4612,57 +4731,54 @@ function refreshAnalyticsDisplay() {
         </div>`;
 
   // ── Section content fragments (computed values unchanged — layout only) ────
-  // Executive Summary V2 (Sprint 2): KPI cards + Operational Highlights +
-  // Quick Summary. All values are read straight from the AnalyticsModel —
-  // no new calculations, no fabricated trends (period comparison N/A → neutral).
+  // ── §01 Executive — keynote hero (Sprint 7B) ───────────────────────────
+  // De-boxed hero: a derived health verdict + 0–100 score + 3 big stats. The
+  // score is computed HERE in the presentation layer purely from values the
+  // engine already produced (compRate, openRate, cancellation, Priority-1
+  // findings) — no engine change, no fabricated data.
   const k = _analyticsModel.kpis;
-  const execKpiGrid = renderKPIGrid([
-    renderAnalyticsKPICard({
-      title: 'Total Assignments', value: k.total, icon: '📋',
-      subtitle: 'Penugasan pada periode terpilih',
-    }),
-    renderAnalyticsKPICard({
-      title: 'Selesai', value: k.completed, icon: '✅', status: 'ok',
-    }),
-    renderAnalyticsKPICard({
-      title: 'Completion Rate', value: `${k.compRate}%`,
-      status: k.compRate >= 80 ? 'ok' : k.compRate >= 50 ? 'warn' : '',
-      subtitle: `${k.completed} dari ${k.total} selesai`,
-    }),
-    renderAnalyticsKPICard({
-      title: 'Open Rate', value: `${k.openRate}%`,
-      status: k.openRate > 50 ? 'warn' : (k.openRate === 0 && k.total > 0 ? 'ok' : ''),
-      subtitle: `${k.openAsg} penugasan terbuka`,
-    }),
+  const _cancRateExec = total > 0 ? Math.round((cancelled / total) * 100) : 0;
+  const _p1Count =
+    (_analyticsModel.insights || []).filter(i => i.priority === 1).length +
+    (_analyticsModel.recommendations || []).filter(r => r.priority === 1).length;
+  const _healthScore = Math.max(0, Math.min(100, Math.round(
+    0.45 * k.compRate + 0.25 * (100 - k.openRate) + 0.20 * (100 - _cancRateExec) + 0.10 * Math.max(0, 100 - _p1Count * 25)
+  )));
+  const _healthTone = _healthScore >= 70 ? 'green' : _healthScore >= 50 ? 'amber' : 'crit';
+  const _ringColor = _healthTone === 'green' ? 'var(--c-green)' : _healthTone === 'amber' ? 'var(--c-amber)' : 'var(--crit)';
+  const _verdictWord = _healthScore >= 85 ? 'sangat efisien' : _healthScore >= 70 ? 'berjalan sehat' : _healthScore >= 50 ? 'cukup stabil' : 'perlu perhatian';
+  const _healthGrade = _healthScore >= 85 ? 'Sangat Baik' : _healthScore >= 70 ? 'Sehat' : _healthScore >= 50 ? 'Cukup' : 'Perlu Perhatian';
+
+  const _complTrend = _trends.completionRate;
+  let _heroTrendSub = '';
+  if (_complTrend && _complTrend.percentChange != null && _complTrend.direction !== 'neutral') {
+    _heroTrendSub = ` · ${_complTrend.direction === 'up' ? 'naik' : 'turun'} ${Math.abs(_complTrend.percentChange)}% dari periode sebelumnya`;
+  }
+  const heroHeadline = `Operasi <span class="hl">${esc(_verdictWord)}</span>.`;
+  const heroSub = `${total} penugasan · <span class="up">${compRate}% penyelesaian</span>${_heroTrendSub}.`;
+
+  const heroSection = renderHeroSection({
+    headline: heroHeadline, sub: heroSub,
+    attn: _p1Count > 0 ? { label: `${_p1Count} area memerlukan perhatian` } : null,
+    score: _healthScore, grade: _healthGrade, ringValue: _healthScore / 100, ringColor: _ringColor, tone: _healthTone,
+    stats: [
+      { lbl: 'Total Penugasan', big: `<span data-countup="${total}">0</span>`, delta: _trendDelta(_trends.totalAssignments, { sub: 'vs periode lalu' }) },
+      { lbl: 'Tingkat Penyelesaian', big: `${compRate}<span class="u">%</span>`, delta: _trendDelta(_trends.completionRate, { sub: `${k.completed}/${k.total}` }) },
+      { lbl: 'Peringatan Kritis', big: `<span data-countup="${_p1Count}">0</span>`, alertStat: true, alert: _p1Count > 0 ? 'Tinjau sekarang' : '' },
+    ],
+  });
+
+  // Editorial highlights trio (Level 2) — existing analytics in executive form.
+  const _drvAvatar = mostActiveDrv ? (String(mostActiveDrv.displayName || '?').trim()[0] || '?').toUpperCase() : '?';
+  const _volTrend = _trends.totalAssignments;
+  const _thirdHl = (_volTrend && _volTrend.percentChange != null && _volTrend.direction !== 'neutral')
+    ? { label: 'Perubahan Operasional', value: `${_volTrend.direction === 'up' ? '+' : '−'}${Math.abs(_volTrend.percentChange)}`, unit: '%', tone: _volTrend.tone === 'positive' ? 'up' : '', context: 'Volume penugasan · vs periode lalu', tag: _volTrend.direction === 'up' ? 'tren menguat' : 'tren melemah', tagTone: _volTrend.tone === 'negative' ? 'crit' : 'up', tab: 'driver' }
+    : (mostActiveBidang ? { label: 'Bidang Teraktif', value: mostActiveBidang.name, context: `${_bidangKmFmt(mostActiveBidang.name)} (${mostActiveBidang.asgCount} assignment)`, tab: 'bidang' } : null);
+  const highlightsBlock = renderHighlights([
+    mostActiveDrv ? { label: 'Driver Paling Aktif', avatar: _drvAvatar, value: mostActiveDrv.displayName, context: `${mostActiveDrv.count} penugasan`, tag: 'beban tertinggi', tagTone: 'up', tab: 'driver' } : null,
+    mostUsedVeh ? { label: 'Kendaraan Terutilisasi', value: mostUsedVeh.displayName, context: `${mostUsedVeh.count} penugasan`, tab: 'vehicle' } : null,
+    _thirdHl,
   ]);
-
-  // Operational Highlights — surfaces existing analytics in executive form.
-  const execHighlights = renderOperationalHighlights([
-    mostActiveDrv ? { label: 'Driver Paling Aktif', value: esc(mostActiveDrv.displayName), context: `${mostActiveDrv.count} penugasan` } : null,
-    mostUsedVeh   ? { label: 'Kendaraan Terutilisasi', value: esc(mostUsedVeh.displayName), context: `${mostUsedVeh.count} penugasan` } : null,
-    (destSorted && destSorted[0]) ? { label: 'Tujuan Tersering', value: esc(destSorted[0][0]), context: `${destSorted[0][1]}x perjalanan` } : null,
-    mostActiveBidang ? { label: 'Bidang Teraktif', value: esc(mostActiveBidang.name), context: `${mostActiveBidang.reqCount} permintaan` } : null,
-  ]);
-
-  // Quick Summary — remaining status detail (unchanged values) + status chart.
-  const execQuickSummary = `
-        <div class="v2-analytics-quick-summary-stats">
-          <span>Berlangsung: <strong>${k.inProgress}</strong></span>
-          <span>Dijadwalkan: <strong>${k.scheduled}</strong></span>
-          <span>Dibatalkan / Lainnya: <strong>${k.cancelled}</strong></span>
-        </div>
-        ${chartStatusHtml}`;
-
-  const execContent = `
-    ${execKpiGrid}
-    <div class="v2-analytics-groups">
-      <div class="v2-admin-config-group">
-        <div class="v2-analytics-subhead">Sorotan Operasional</div>
-        ${execHighlights}
-        <div class="v2-analytics-subhead" style="margin-top:18px;">Ringkasan Cepat</div>
-        ${execQuickSummary}
-      </div>
-    </div>`;
 
   const driverContent = `
     <div class="v2-analytics-groups">
@@ -4725,17 +4841,17 @@ function refreshAnalyticsDisplay() {
         <h3 class="v2-admin-config-group-title">Bidang Demand Analysis</h3>
         <div class="v2-analytics-kpi-list">
           ${kpiRow('Total Bidang', bidangEnhanced.length)}
-          ${mostActiveBidang  ? kpiRow('Bidang Paling Aktif',  `${mostActiveBidang.name} (${mostActiveBidang.reqCount} req, ${mostActiveBidang.reqPct}%)`) : ''}
-          ${leastActiveBidang ? kpiRow('Bidang Paling Jarang', `${leastActiveBidang.name} (${leastActiveBidang.reqCount} req)`) : ''}
+          ${mostActiveBidang  ? kpiRow('Bidang Teraktif',      `${mostActiveBidang.name} — ${_bidangKmFmt(mostActiveBidang.name)} (${mostActiveBidang.asgCount} asg)`) : ''}
+          ${leastActiveBidang ? kpiRow('Bidang Paling Jarang', `${leastActiveBidang.name} — ${_bidangKmFmt(leastActiveBidang.name)} (${leastActiveBidang.asgCount} asg)`) : ''}
         </div>
         <div class="v2-analytics-breakdown">
           ${bidangEnhanced.length > 0 ? `
           <div class="v2-analytics-breakdown-row v2-analytics-breakdown-row--header">
             <span class="v2-analytics-breakdown-rank"></span>
             <span class="v2-analytics-breakdown-name">Bidang</span>
-            <span class="v2-analytics-breakdown-count">Req</span>
-            <span class="v2-analytics-breakdown-pct">%</span>
+            <span class="v2-analytics-breakdown-count">Jarak</span>
             <span class="v2-analytics-breakdown-count">Asg</span>
+            <span class="v2-analytics-breakdown-count">Req</span>
           </div>` : ''}
           ${bidangDemandHtml}
         </div>
@@ -4795,9 +4911,11 @@ function refreshAnalyticsDisplay() {
             </div>
           </div>
 
-          <!-- Manual review action -->
+          <!-- Manual review actions -->
           <div class="v2-dq-actions-row">
-            <button class="v2-dq-review-btn" data-action="dest-review" type="button">Tinjau Semua Tujuan</button>
+            <button class="v2-dq-review-btn" data-action="dest-review" type="button">Tinjau Tujuan</button>
+            <button class="v2-dq-review-btn" data-action="assignment-review" type="button">Tinjau Assignment</button>
+            <button class="v2-dq-review-btn" data-action="request-review" type="button">Tinjau Request</button>
           </div>
 
           <!-- Detected duplicate pairs -->
@@ -4919,19 +5037,17 @@ function refreshAnalyticsDisplay() {
 
         </div>`;
 
-  // Operational Trends — activated by the Trend Engine (Sprint 6). Shows the 4
-  // required KPIs as period-over-period comparison cards. When there is no valid
-  // comparison ('Semua Data', or no prior-period activity) we render the current
-  // values with a calm neutral state + note — never a fabricated trend.
+  // ── §02 Operational Trends — de-boxed stat row (Sprint 7B) ─────────────
+  // The 4 Trend-Engine KPIs as a de-boxed statrow with real period-over-period
+  // deltas; never fabricates a comparison ('Semua Data' / insufficient history).
   const _cancRate = total > 0 ? Math.round((cancelled / total) * 100) : 0;
-  const _toIndicator = (m) => (m ? { direction: m.direction, percent: m.percentChange, tone: m.tone } : null);
-  const _trendComparison = _trendState === 'available' ? 'vs periode sebelumnya' : '';
-  const _trendCards = [
-    { title: 'Total Assignments', value: total,           metric: _trends.totalAssignments },
-    { title: 'Completion Rate',   value: `${compRate}%`,  metric: _trends.completionRate },
-    { title: 'Open Rate',         value: `${openRate}%`,  metric: _trends.openRate },
-    { title: 'Cancellation Rate', value: `${_cancRate}%`, metric: _trends.cancellationRate },
-  ];
+  const _trendStat = (label, value, metric) => {
+    const d = _trendDelta(metric);
+    const deltaHtml = d
+      ? `<div class="delta ${d.tone}">${d.icon} ${d.text}</div>`
+      : `<div class="delta delta--none">—</div>`;
+    return `<div class="st st--trend"><div class="l">${esc(label)}</div><div class="v">${value}</div>${deltaHtml}</div>`;
+  };
   const _trendNote = _trendState === 'available' ? '' : (() => {
     const msg = _trendState === 'insufficient'
       ? 'Riwayat periode sebelumnya belum cukup untuk perbandingan.'
@@ -4939,53 +5055,115 @@ function refreshAnalyticsDisplay() {
     const hint = _trendState === 'insufficient'
       ? 'Indikator tren akan muncul saat tersedia data periode sebelumnya yang setara.'
       : 'Pilih rentang waktu tertentu (mis. 30 Hari) untuk melihat perubahan dibanding periode sebelumnya.';
-    return `<p class="v2-analytics-section-desc" style="margin:0 0 12px;color:var(--text-dim,#5b5b64);font-size:13px;line-height:1.5;">${esc(msg)} <span style="color:var(--faint,#9a958c);">${esc(hint)}</span></p>`;
+    return `<p class="an-note">${esc(msg)} <span>${esc(hint)}</span></p>`;
   })();
-  const trendsContent = `${_trendNote}${renderKPIGrid(_trendCards.map(c =>
-    renderAnalyticsKPICard({ title: c.title, value: c.value, trend: _toIndicator(c.metric), comparison: _trendComparison })
-  ))}`;
+  const trendsContent = `
+    ${_trendNote}
+    <div class="statrow statrow--trends">
+      ${_trendStat('Total Penugasan', total, _trends.totalAssignments)}
+      ${_trendStat('Tingkat Penyelesaian', `${compRate}%`, _trends.completionRate)}
+      ${_trendStat('Tingkat Open', `${openRate}%`, _trends.openRate)}
+      ${_trendStat('Tingkat Pembatalan', `${_cancRate}%`, _trends.cancellationRate)}
+    </div>
+    ${chartStatusHtml ? `<div class="card">${chartStatusHtml}</div>` : ''}`;
 
-  // Insights (Sprint 4): driven entirely by model.insights (generated by the
-  // Insight Engine). No inline insight generation, no hardcoded cards.
+  // ── §03 Operational Health — de-boxed divider list (Sprint 7B) ─────────
+  // Merges the Insight Engine + Recommendation Engine into one prioritized
+  // divider list (no nested boxes). Both arrays carry a `priority` already; we
+  // render insights then recommendations, ordered P1 → P3 (highest first), each
+  // tagged Wawasan / Rekomendasi. No new computation — values read from the model.
   const _insights = _analyticsModel.insights || [];
-  const insightsContent = _insights.length > 0
-    ? renderInsightList(_insights.map(ins => renderInsightCard({
-        type: ins.type, title: ins.title, description: ins.description, source: ins.source,
-      })))
+  const _recs     = _analyticsModel.recommendations || [];
+  const _toneIns = (t) => (t === 'warning' ? 'warn' : t === 'success' ? 'good' : 'info');
+  const _toneRec = (t) => (t === 'warning' ? 'warn' : t === 'optimization' ? 'good' : 'info');
+  const _sevByPriority = (p) => (p === 1 ? 'Prioritas 1' : p === 2 ? 'Prioritas 2' : '');
+  const _healthRows = [
+    ..._insights.map(ins => ({
+      priority: ins.priority || 3, kind: 'insight',
+      html: renderInsightRow({ tone: _toneIns(ins.type), title: ins.title, desc: ins.description, sevLabel: _sevByPriority(ins.priority || 3), kind: 'Wawasan' }),
+    })),
+    ..._recs.map(rec => ({
+      priority: rec.priority || 3, kind: 'recommendation',
+      html: renderInsightRow({ tone: _toneRec(rec.type), title: rec.title, desc: rec.description, sevLabel: _sevByPriority(rec.priority || 3), kind: 'Rekomendasi' }),
+    })),
+  ].sort((a, b) => (a.priority - b.priority) || (a.kind === b.kind ? 0 : a.kind === 'insight' ? -1 : 1));
+  const healthContent = _healthRows.length > 0
+    ? renderInsightDividerList(_healthRows.map(r => r.html))
     : renderAnalyticsEmptyState({
-        message: 'Belum ada wawasan untuk periode ini.',
-        hint: 'Wawasan muncul otomatis dari data analytics yang tersedia.',
+        message: 'Belum ada temuan operasional untuk periode ini.',
+        hint: 'Wawasan dan rekomendasi muncul otomatis dari data analytics yang tersedia.',
       });
 
-  // Recommendations (Sprint 5): driven entirely by model.recommendations
-  // (deterministic Recommendation Engine). Advisory only — no inline generation.
-  const _recs = _analyticsModel.recommendations || [];
-  const recommendationsContent = _recs.length > 0
-    ? renderRecommendationList(_recs.map(rec => renderRecommendationCard({
-        type: rec.type, title: rec.title, description: rec.description, source: rec.source,
-      })))
-    : renderAnalyticsEmptyState({
-        message: 'Tidak ada rekomendasi untuk periode ini.',
-        hint: 'Rekomendasi muncul otomatis saat data analytics menunjukkan area yang perlu ditindaklanjuti.',
-      });
+  // ── §04 Resource Analytics — premium segmented control (Sprint 7B) ─────
+  // The five existing fragments, one panel visible at a time (default Driver),
+  // each wrapped in a prototype card. Chart canvas ids unchanged; tab switching +
+  // chart resize handled by the delegated listener.
+  const _resourceGroup = 'resource';
+  const _wrapCard = (html) => `<div class="card">${html}</div>`;
+  const resourceContent =
+    renderSeg({
+      groupId: _resourceGroup, activeId: 'driver',
+      tabs: [
+        { id: 'driver', label: 'Driver', icon: 'user' },
+        { id: 'vehicle', label: 'Kendaraan', icon: 'car' },
+        { id: 'bidang', label: 'Bidang', icon: 'building' },
+        { id: 'destination', label: 'Tujuan', icon: 'pin' },
+        { id: 'odometer', label: 'Jarak Tempuh', icon: 'ruler' },
+      ],
+    }) +
+    renderAnalyticsTabPanels({
+      groupId: _resourceGroup, activeId: 'driver',
+      panels: [
+        { id: 'driver', content: _wrapCard(driverContent) },
+        { id: 'vehicle', content: _wrapCard(vehicleContent) },
+        { id: 'bidang', content: _wrapCard(bidangContent) },
+        { id: 'destination', content: _wrapCard(destContent) },
+        { id: 'odometer', content: _wrapCard(odoContent) },
+      ],
+    });
 
-  // ── Compose the Analytics V2 shell — every block renders through the same
-  //    section pattern, in the Information-Architecture order. ──────────────
+  // ── §06 Export Center — the long-term reporting hub (Sprint 7D restore) ────
+  // A calm, future-ready format list (PDF live; Excel/Print/scheduled/automated
+  // reports to come), not a banner. The same exportAnalyticsReport() path as the
+  // compact header utility button; all exports use the on-screen data.
+  const exportContent = renderExportCenter({
+    description: 'Pusat ekspor &amp; pelaporan — semua ekspor memakai data yang sama dengan layar (data yang dikecualikan lewat tata kelola tidak ikut). Format & laporan terjadwal menyusul.',
+    formats: [
+      { id: 'pdf',   label: 'Laporan PDF',   sub: 'Ringkasan analytics untuk rapat &amp; arsip', icon: 'file',    action: 'export-pdf', actionLabel: 'Unduh PDF', enabled: true },
+      { id: 'excel', label: 'Ekspor Excel',  sub: 'Data mentah untuk analisis lanjutan',          icon: 'sheet',   enabled: false, note: 'Segera hadir' },
+      { id: 'print', label: 'Cetak Laporan', sub: 'Versi cetak siap-bagikan',                     icon: 'printer', enabled: false, note: 'Segera hadir' },
+    ],
+  });
+
+  // ── Compose the Claude Design experience — keynote hero + de-boxed eyebrow
+  //    sections (Sprint 7B). Typography-first, hairline dividers, no card-in-card. ──
   contentEl.innerHTML = `
-    <div class="v2-analytics-sections">
-      ${[
-        renderAnalyticsSection({ id: 'analyticsExecutiveSummary', variant: 'exec', title: 'Ringkasan Eksekutif', description: 'Indikator utama kinerja operasional pada periode terpilih.', content: execContent }),
-        renderAnalyticsSection({ id: 'analyticsTrends', title: 'Operational Trends', description: 'Tren volume penugasan, penyelesaian &amp; permintaan dari waktu ke waktu.', content: trendsContent }),
-        renderAnalyticsSection({ id: 'analyticsDriver', title: 'Utilisasi Driver', content: driverContent }),
-        renderAnalyticsSection({ id: 'analyticsVehicle', title: 'Utilisasi Kendaraan', content: vehicleContent }),
-        renderAnalyticsSection({ id: 'analyticsBidang', title: 'Analisis Bidang', content: bidangContent }),
-        renderAnalyticsSection({ id: 'analyticsDestination', title: 'Analitik Tujuan', content: destContent }),
-        renderAnalyticsSection({ id: 'analyticsOdometer', title: 'Odometer &amp; Jarak Tempuh', content: odoContent }),
-        renderAnalyticsSection({ id: 'analyticsInsights', title: 'Wawasan Operasional', description: 'Interpretasi otomatis dari data analytics — menjelaskan apa yang terjadi pada periode ini.', content: insightsContent }),
-        renderAnalyticsSection({ id: 'analyticsRecommendations', title: 'Rekomendasi Operasional', description: 'Saran tindak lanjut berbasis aturan deterministik dari temuan analytics — bersifat advisory.', content: recommendationsContent }),
-        renderAnalyticsSection({ id: 'analyticsDataQuality', title: 'Data Quality Resolution Center', content: dqContent }),
-        renderAnalyticsPlaceholderSection({ id: 'analyticsExport', title: 'Export Center', description: 'Ekspor laporan analytics.', note: 'Export PDF tersedia di header. Excel &amp; Print akan ditambahkan pada sprint berikutnya.' }),
-      ].join('')}
+    <div class="v2-analytics-sections an-sections">
+      ${heroSection}
+      <section class="level an-level fade-up" id="analyticsHighlights">
+        ${renderEyebrow({ title: 'Sorotan Operasional', sub: 'Temuan paling menentukan' })}
+        ${highlightsBlock}
+      </section>
+      <section class="level an-level fade-up" id="analyticsTrends">
+        ${renderEyebrow({ tag: '02', title: 'Operational Trends', sub: 'Perubahan dibanding periode sebelumnya' })}
+        ${trendsContent}
+      </section>
+      <section class="level an-level fade-up" id="analyticsHealth">
+        ${renderEyebrow({ tag: '03', title: 'Operational Health', sub: 'Wawasan & rekomendasi — prioritas tertinggi di atas' })}
+        ${healthContent}
+      </section>
+      <section class="level an-level fade-up" id="analyticsResource">
+        ${renderEyebrow({ tag: '04', title: 'Resource Analytics', sub: 'Driver · Kendaraan · Bidang · Tujuan · Jarak' })}
+        ${resourceContent}
+      </section>
+      <section class="level an-level fade-up" id="analyticsDataQuality">
+        ${renderEyebrow({ tag: '05', title: 'Data Quality Center', sub: 'Tinjau duplikasi data & tata kelola record (assignment + request)' })}
+        <div class="card">${dqContent}</div>
+      </section>
+      <section class="level an-level fade-up" id="analyticsExport">
+        ${renderEyebrow({ tag: '06', title: 'Export Center', sub: 'Pusat pelaporan — PDF · Excel · Cetak · laporan terjadwal' })}
+        ${exportContent}
+      </section>
     </div>
   `;
   // Phase 6: the chart layer consumes model.charts (same datasets, same values
@@ -5005,6 +5183,9 @@ function refreshAnalyticsDisplay() {
     totalKm:    _analyticsModel.kpis.totalKm,
     hasOdoData: _analyticsModel.render.hasOdoData,
   });
+
+  // Sprint 7B micro-animations: count-up numbers + ring draw (calm, premium).
+  _animateAnalyticsRegion(contentEl);
 }
 
 // ── Alias Resolution ──────────────────────────────────────────────────────
@@ -5102,7 +5283,7 @@ async function exportAnalyticsReport() {
     console.error('[Analytics] PDF export failed:', err);
     showToast('Gagal membuat PDF.');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '📄 Export PDF'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Export PDF'; }
   }
 }
 
@@ -5368,6 +5549,636 @@ function _renderDestReviewList(allData, query) {
       });
     });
   });
+}
+
+/* ============================================================================
+   ASSIGNMENT REVIEW — Analytics Governance Layer (Sprint 7D)
+
+   The first operational UI for record-level analytics governance. Lets an admin
+   review individual assignments and classify each as production / test data, or
+   explicitly include/exclude it from analytics — WITHOUT deleting anything. The
+   classification is written to `assignment.governance` (see analytics-governance.js,
+   GOVERNANCE_RECOMMENDATION.md). The engine already consumes this via
+   `filterEligible()` at its boundary, so excluding a record removes it from every
+   downstream surface (KPIs, trends, insights, recommendations, health score, export)
+   while it stays in the database, visible and editable operationally.
+
+   This is built as the foundation for future analytics classification & governance
+   controls — not a temporary fix.
+   ============================================================================ */
+
+// Review-scoped filters (independent from the on-screen analytics filters so the
+// admin can audit the full record set, including currently-excluded records).
+let _asgReviewFilters = { range: 'all', driver: '', vehicle: '', bidang: '', governance: 'all' };
+let _asgReviewSearch  = '';
+
+const _ASG_STATUS_META = {
+  assigned:  { label: 'Ditugaskan',  cls: 'neutral' },
+  scheduled: { label: 'Dijadwalkan', cls: 'info' },
+  started:   { label: 'Berlangsung', cls: 'info' },
+  completed: { label: 'Selesai',     cls: 'ok' },
+  cancelled: { label: 'Dibatalkan',  cls: 'danger' },
+  dibatalkan:{ label: 'Dibatalkan',  cls: 'danger' },
+};
+
+const _ASG_CLASS_LABELS = {
+  production: 'Produksi',
+  testing:    'Data Uji',
+  training:   'Pelatihan',
+  demo:       'Demo',
+};
+
+/** Resolve an assignment's bidang the same way the engine does (via its request). */
+function _asgReviewBidangFor(a) {
+  if (a.requestId) {
+    const req = requests.find(r => r.id === a.requestId);
+    if (req && (req.requesterName || '').trim()) return req.requesterName.trim();
+  }
+  return '';
+}
+
+/** Date-range membership for the review filter (relative to today; future-inclusive). */
+function _asgReviewWithinRange(dateStr, range) {
+  if (range === 'all' || !range) return true;
+  if (!dateStr) return false;
+  const days = range === 'today' ? 0 : range === '7d' ? 6 : range === '30d' ? 29 : range === '90d' ? 89 : null;
+  if (days == null) return true;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const cutoff = new Date(today); cutoff.setDate(cutoff.getDate() - days);
+  const d = new Date(`${dateStr}T00:00:00`);
+  return !isNaN(d) && d >= cutoff;
+}
+
+/**
+ * Write a governance classification onto one assignment (surgical, audited).
+ * `gov` carries { classification, analyticsEligible }; provenance is stamped here.
+ * Mirrors the existing single-record write pattern (saveAssignments + saveOneAssignment).
+ */
+function _setAssignmentGovernance(id, gov, actionLabel) {
+  const idx = assignments.findIndex(a => a.id === id);
+  if (idx === -1) return;
+  const cu  = getCurrentUser();
+  const now = new Date().toISOString();
+  assignments[idx] = {
+    ...assignments[idx],
+    governance: {
+      classification:   gov.classification,
+      analyticsEligible: gov.analyticsEligible,
+      classifiedBy:     cu?.name || cu?.displayName || cu?.username || '',
+      classifiedAt:     now,
+    },
+    updatedAt: now,
+  };
+  saveAssignments(assignments);          // localStorage
+  saveOneAssignment(assignments[idx]);   // surgical Firebase write of /assignments/{id}
+
+  logAction({
+    userId: cu?.id, username: cu?.username, displayName: cu?.name,
+    action: 'assignment_classified', targetId: id,
+    metadata: {
+      classification:    gov.classification,
+      analyticsEligible: gov.analyticsEligible,
+      action:            actionLabel,
+    },
+  });
+
+  // The governance change re-filters analytics immediately; refresh the live view
+  // and the open review table so both reflect the new eligibility.
+  if (activeAdminSection === 'analytics') refreshAnalyticsDisplay();
+  _renderAssignmentReviewList();
+  showToast(actionLabel);
+}
+
+function initAssignmentReviewModal() {
+  if (document.getElementById('modalAsgReview')) return;
+  const modal = document.createElement('div');
+  modal.id        = 'modalAsgReview';
+  modal.className = 'modal-overlay';
+  modal.style.display = 'none';
+  modal.innerHTML = `
+    <div class="modal-box v2-asg-review-modal-box">
+      <div class="modal-header">
+        <h2 class="modal-title">Tinjau Assignment</h2>
+        <button class="modal-close" id="btnCloseAsgReview" type="button">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="v2-asg-review-intro">Tata kelola data analytics tingkat-record. Klasifikasikan assignment sebagai data produksi atau data uji, atau keluarkan/pulihkan dari analytics. Record tetap tersimpan & dapat diedit secara operasional — hanya partisipasinya dalam analytics yang berubah.</p>
+        <div class="v2-asg-review-filters">
+          <select id="asgReviewRange" class="v2-admin-filter">
+            <option value="today">Hari Ini</option>
+            <option value="7d">7 Hari Terakhir</option>
+            <option value="30d">30 Hari Terakhir</option>
+            <option value="90d">90 Hari Terakhir</option>
+            <option value="all" selected>Semua Data</option>
+          </select>
+          <select id="asgReviewDriver" class="v2-admin-filter"><option value="">Semua Driver</option></select>
+          <select id="asgReviewVehicle" class="v2-admin-filter"><option value="">Semua Kendaraan</option></select>
+          <select id="asgReviewBidang" class="v2-admin-filter"><option value="">Semua Bidang</option></select>
+          <select id="asgReviewGovernance" class="v2-admin-filter">
+            <option value="all" selected>Semua Klasifikasi</option>
+            <option value="included">Disertakan</option>
+            <option value="excluded">Dikecualikan</option>
+          </select>
+          <input type="text" id="asgReviewSearch" class="v2-asg-review-search" placeholder="Cari ID / tujuan…" autocomplete="off">
+        </div>
+        <p class="v2-asg-review-summary" id="asgReviewSummary"></p>
+        <div class="v2-asg-review-table-wrap">
+          <table class="v2-asg-review-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Tanggal</th>
+                <th>Driver</th>
+                <th>Kendaraan</th>
+                <th>Bidang</th>
+                <th>Tujuan</th>
+                <th>Status</th>
+                <th>Klasifikasi</th>
+                <th class="v2-asg-review-actions-th">Tata Kelola</th>
+              </tr>
+            </thead>
+            <tbody id="asgReviewBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="v2-alias-modal-footer">
+        <button class="p-btn p-btn-muted" id="btnAsgReviewClose" type="button">Tutup</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const closeModal = () => { modal.style.display = 'none'; };
+  document.getElementById('btnCloseAsgReview')?.addEventListener('click', closeModal);
+  document.getElementById('btnAsgReviewClose')?.addEventListener('click', closeModal);
+  modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && modal.style.display !== 'none') closeModal();
+  });
+
+  // Filter wiring
+  document.getElementById('asgReviewRange')?.addEventListener('change', e => {
+    _asgReviewFilters.range = e.target.value; _renderAssignmentReviewList();
+  });
+  document.getElementById('asgReviewDriver')?.addEventListener('change', e => {
+    _asgReviewFilters.driver = e.target.value; _renderAssignmentReviewList();
+  });
+  document.getElementById('asgReviewVehicle')?.addEventListener('change', e => {
+    _asgReviewFilters.vehicle = e.target.value; _renderAssignmentReviewList();
+  });
+  document.getElementById('asgReviewBidang')?.addEventListener('change', e => {
+    _asgReviewFilters.bidang = e.target.value; _renderAssignmentReviewList();
+  });
+  document.getElementById('asgReviewGovernance')?.addEventListener('change', e => {
+    _asgReviewFilters.governance = e.target.value; _renderAssignmentReviewList();
+  });
+  document.getElementById('asgReviewSearch')?.addEventListener('input', e => {
+    _asgReviewSearch = e.target.value.trim().toLowerCase(); _renderAssignmentReviewList();
+  });
+
+  // Delegated governance-action clicks (one listener for the whole table body).
+  document.getElementById('asgReviewBody')?.addEventListener('click', e => {
+    const btn = e.target.closest('[data-gov-action]');
+    if (!btn || btn.disabled) return;
+    const id  = btn.dataset.id;
+    const act = btn.dataset.govAction;
+    if (act === 'produksi') {
+      _setAssignmentGovernance(id, { classification: 'production', analyticsEligible: true }, 'Ditandai sebagai data produksi');
+    } else if (act === 'uji') {
+      _setAssignmentGovernance(id, { classification: 'testing', analyticsEligible: false }, 'Ditandai sebagai data uji');
+    } else if (act === 'keluarkan') {
+      const cur = classificationOf(assignments.find(a => a.id === id) || {});
+      _setAssignmentGovernance(id, { classification: cur.classification || 'production', analyticsEligible: false }, 'Dikeluarkan dari analytics');
+    } else if (act === 'pulihkan') {
+      _setAssignmentGovernance(id, { classification: 'production', analyticsEligible: true }, 'Dipulihkan ke analytics');
+    }
+  });
+}
+
+function _populateAsgReviewFilters() {
+  const drvSel = document.getElementById('asgReviewDriver');
+  if (drvSel) {
+    const drvList = getDrivers().filter(d => d.active !== false && !d.archived);
+    drvSel.innerHTML = '<option value="">Semua Driver</option>' +
+      drvList.map(d => `<option value="${esc(d.name)}"${d.name === _asgReviewFilters.driver ? ' selected' : ''}>${esc(d.name)}</option>`).join('');
+  }
+  const vehSel = document.getElementById('asgReviewVehicle');
+  if (vehSel) {
+    const vehList = getActiveVehiclesFromStore().filter(v => !v.archived);
+    vehSel.innerHTML = '<option value="">Semua Kendaraan</option>' +
+      vehList.map(v => `<option value="${esc(v.name)}"${v.name === _asgReviewFilters.vehicle ? ' selected' : ''}>${esc(v.name)}</option>`).join('');
+  }
+  const bidSel = document.getElementById('asgReviewBidang');
+  if (bidSel) {
+    const bidangNames = [...new Set(requests.map(r => r.requesterName || '').filter(Boolean))].sort();
+    bidSel.innerHTML = '<option value="">Semua Bidang</option>' +
+      bidangNames.map(n => `<option value="${esc(n)}"${n === _asgReviewFilters.bidang ? ' selected' : ''}>${esc(n)}</option>`).join('');
+  }
+  const rangeSel = document.getElementById('asgReviewRange');
+  if (rangeSel) rangeSel.value = _asgReviewFilters.range;
+  const govSel = document.getElementById('asgReviewGovernance');
+  if (govSel) govSel.value = _asgReviewFilters.governance;
+  const searchEl = document.getElementById('asgReviewSearch');
+  if (searchEl) searchEl.value = _asgReviewSearch;
+}
+
+function openAssignmentReviewModal() {
+  const modal = document.getElementById('modalAsgReview');
+  if (!modal) return;
+  _populateAsgReviewFilters();
+  _renderAssignmentReviewList();
+  modal.style.display = 'flex';
+}
+
+function _renderAssignmentReviewList() {
+  const body = document.getElementById('asgReviewBody');
+  const summaryEl = document.getElementById('asgReviewSummary');
+  if (!body) return;
+
+  const f = _asgReviewFilters;
+  const q = _asgReviewSearch;
+
+  const rows = assignments.filter(a => {
+    if (!_asgReviewWithinRange(a.date, f.range)) return false;
+    if (f.driver && (a.driver || '') !== f.driver) return false;
+    if (f.vehicle && (a.vehicle || '') !== f.vehicle) return false;
+    if (f.bidang && _asgReviewBidangFor(a) !== f.bidang) return false;
+    const cls = classificationOf(a);
+    if (f.governance === 'included' && !cls.eligible) return false;
+    if (f.governance === 'excluded' && cls.eligible) return false;
+    if (q) {
+      const hay = `${a.id || ''} ${a.destination || ''} ${a.driver || ''} ${a.vehicle || ''}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  }).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+
+  if (summaryEl) {
+    const excluded = rows.filter(a => !classificationOf(a).eligible).length;
+    summaryEl.textContent = rows.length === 0
+      ? 'Tidak ada assignment yang cocok dengan filter.'
+      : `${rows.length} assignment · ${excluded} dikecualikan dari analytics`;
+  }
+
+  if (rows.length === 0) {
+    body.innerHTML = `<tr><td colspan="9" class="v2-asg-review-empty">Tidak ada assignment yang cocok dengan filter.</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = rows.map(a => {
+    const cls    = classificationOf(a);
+    const statM  = _ASG_STATUS_META[a.status] || { label: a.status || '—', cls: 'neutral' };
+    const dateStr = a.date
+      ? new Date(`${a.date}T00:00:00`).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' })
+      : '—';
+    const bidang = _asgReviewBidangFor(a) || '—';
+    const idShort = (a.id || '—');
+
+    const classChip = cls.eligible
+      ? `<span class="v2-asg-class-chip v2-asg-class-chip--included">Disertakan</span>`
+      : `<span class="v2-asg-class-chip v2-asg-class-chip--excluded">Dikecualikan</span>`;
+    const classLabel = cls.explicit
+      ? `<span class="v2-asg-class-sub">${esc(_ASG_CLASS_LABELS[cls.classification] || cls.classification)}</span>`
+      : '';
+
+    const isProdEligible = cls.eligible && cls.classification === 'production';
+    const btn = (act, label, disabled) =>
+      `<button type="button" class="v2-asg-act-btn v2-asg-act-btn--${act}" data-gov-action="${act}" data-id="${esc(a.id)}"${disabled ? ' disabled' : ''}>${label}</button>`;
+
+    return `<tr class="${cls.eligible ? '' : 'v2-asg-review-row--excluded'}">
+      <td class="v2-asg-id" title="${esc(a.id || '')}">${esc(idShort)}</td>
+      <td class="v2-asg-date">${esc(dateStr)}</td>
+      <td>${esc(a.driver || '—')}</td>
+      <td>${esc(a.vehicle || '—')}</td>
+      <td>${esc(bidang)}</td>
+      <td class="v2-asg-dest" title="${esc(a.destination || '')}">${esc(a.destination || '—')}</td>
+      <td><span class="v2-asg-status-chip v2-asg-status-chip--${statM.cls}">${esc(statM.label)}</span></td>
+      <td>${classChip}${classLabel}</td>
+      <td class="v2-asg-review-actions">
+        ${btn('produksi', 'Produksi', isProdEligible)}
+        ${btn('uji', 'Uji', cls.classification === 'testing' && !cls.eligible)}
+        ${btn('keluarkan', 'Keluarkan', !cls.eligible)}
+        ${btn('pulihkan', 'Pulihkan', cls.eligible)}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+/* ============================================================================
+   REQUEST REVIEW — Analytics Governance Layer, driver_requests (Sprint 7D)
+
+   Governance is record-level and must cover BOTH record kinds. Many analytics
+   test records originate from driver_requests (pending/rejected/cancelled/test
+   workflows) rather than finalized assignments. This screen mirrors Assignment
+   Review for `/driver_requests`: the same governance block, the same four actions,
+   the same engine gate (`filterEligible` now also runs over ctx.requests). Writes
+   go through the existing request persistence path (saveRequests) and are audited.
+   ============================================================================ */
+
+let _reqReviewFilters = { range: 'all', driver: '', vehicle: '', bidang: '', status: 'all', governance: 'all' };
+let _reqReviewSearch  = '';
+
+const _REQ_STATUS_META = {
+  pending:    { label: 'Menunggu',   cls: 'info' },
+  approved:   { label: 'Disetujui',  cls: 'ok' },
+  rejected:   { label: 'Ditolak',    cls: 'danger' },
+  cancelled:  { label: 'Dibatalkan', cls: 'danger' },
+  dibatalkan: { label: 'Dibatalkan', cls: 'danger' },
+};
+
+/** A request's analytics date — same rule the engine uses (_reqDate). */
+function _reqReviewDate(r) { return r.startDate || (r.createdAt || '').slice(0, 10) || ''; }
+/** A request's destination — requests carry `purpose`; some legacy carry `destination`. */
+function _reqReviewDest(r) { return r.destination || r.purpose || ''; }
+
+/**
+ * Write a governance classification onto one driver_request (audited).
+ * Requests persist as a whole collection (saveRequests) — the established path —
+ * so we map the array and write it; the engine re-filters on the next refresh.
+ */
+function _setRequestGovernance(id, gov, actionLabel) {
+  const idx = requests.findIndex(r => r.id === id);
+  if (idx === -1) return;
+  const cu  = getCurrentUser();
+  const now = new Date().toISOString();
+  requests = requests.map(r => r.id === id ? {
+    ...r,
+    governance: {
+      classification:    gov.classification,
+      analyticsEligible: gov.analyticsEligible,
+      classifiedBy:      cu?.name || cu?.displayName || cu?.username || '',
+      classifiedAt:      now,
+    },
+    updatedAt: now,
+  } : r);
+  saveRequests(requests);
+
+  logAction({
+    userId: cu?.id, username: cu?.username, displayName: cu?.name,
+    action: 'request_classified', targetId: id,
+    metadata: {
+      classification:    gov.classification,
+      analyticsEligible: gov.analyticsEligible,
+      action:            actionLabel,
+    },
+  });
+
+  if (activeAdminSection === 'analytics') refreshAnalyticsDisplay();
+  _renderRequestReviewList();
+  showToast(actionLabel);
+}
+
+function initRequestReviewModal() {
+  if (document.getElementById('modalReqReview')) return;
+  const modal = document.createElement('div');
+  modal.id        = 'modalReqReview';
+  modal.className = 'modal-overlay';
+  modal.style.display = 'none';
+  modal.innerHTML = `
+    <div class="modal-box v2-asg-review-modal-box v2-req-review-modal-box">
+      <div class="modal-header">
+        <h2 class="modal-title">Tinjau Request</h2>
+        <button class="modal-close" id="btnCloseReqReview" type="button">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="v2-asg-review-intro">Tata kelola data analytics untuk driver_requests. Banyak data uji berasal dari request (menunggu / ditolak / dibatalkan / alur uji bidang). Klasifikasikan tiap request atau keluarkan/pulihkan dari analytics — record tetap tersimpan di Firebase, dapat diedit, dan terlihat secara operasional. Ketuk baris untuk detail pemohon, driver &amp; kendaraan.</p>
+        <div class="v2-asg-review-filters">
+          <select id="reqReviewRange" class="v2-admin-filter">
+            <option value="today">Hari Ini</option>
+            <option value="7d">7 Hari Terakhir</option>
+            <option value="30d">30 Hari Terakhir</option>
+            <option value="90d">90 Hari Terakhir</option>
+            <option value="all" selected>Semua Data</option>
+          </select>
+          <select id="reqReviewDriver" class="v2-admin-filter"><option value="">Semua Driver</option></select>
+          <select id="reqReviewVehicle" class="v2-admin-filter"><option value="">Semua Kendaraan</option></select>
+          <select id="reqReviewBidang" class="v2-admin-filter"><option value="">Semua Bidang</option></select>
+          <select id="reqReviewStatus" class="v2-admin-filter">
+            <option value="all" selected>Semua Status</option>
+            <option value="pending">Menunggu</option>
+            <option value="approved">Disetujui</option>
+            <option value="rejected">Ditolak</option>
+          </select>
+          <select id="reqReviewGovernance" class="v2-admin-filter">
+            <option value="all" selected>Semua Klasifikasi</option>
+            <option value="included">Disertakan</option>
+            <option value="excluded">Dikecualikan</option>
+          </select>
+          <input type="text" id="reqReviewSearch" class="v2-asg-review-search" placeholder="Cari ID / tujuan / pemohon…" autocomplete="off">
+        </div>
+        <p class="v2-asg-review-summary" id="reqReviewSummary"></p>
+        <div class="v2-asg-review-table-wrap">
+          <table class="v2-asg-review-table v2-req-review-table">
+            <thead>
+              <tr>
+                <th class="v2-req-exp-th" aria-hidden="true"></th>
+                <th>Tanggal</th>
+                <th>Bidang</th>
+                <th>Tujuan</th>
+                <th>Status</th>
+                <th>Klasifikasi</th>
+                <th class="v2-asg-review-actions-th">Tata Kelola</th>
+              </tr>
+            </thead>
+            <tbody id="reqReviewBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="v2-alias-modal-footer">
+        <button class="p-btn p-btn-muted" id="btnReqReviewClose" type="button">Tutup</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const closeModal = () => { modal.style.display = 'none'; };
+  document.getElementById('btnCloseReqReview')?.addEventListener('click', closeModal);
+  document.getElementById('btnReqReviewClose')?.addEventListener('click', closeModal);
+  modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && modal.style.display !== 'none') closeModal();
+  });
+
+  document.getElementById('reqReviewRange')?.addEventListener('change', e => {
+    _reqReviewFilters.range = e.target.value; _renderRequestReviewList();
+  });
+  document.getElementById('reqReviewDriver')?.addEventListener('change', e => {
+    _reqReviewFilters.driver = e.target.value; _renderRequestReviewList();
+  });
+  document.getElementById('reqReviewVehicle')?.addEventListener('change', e => {
+    _reqReviewFilters.vehicle = e.target.value; _renderRequestReviewList();
+  });
+  document.getElementById('reqReviewBidang')?.addEventListener('change', e => {
+    _reqReviewFilters.bidang = e.target.value; _renderRequestReviewList();
+  });
+  document.getElementById('reqReviewStatus')?.addEventListener('change', e => {
+    _reqReviewFilters.status = e.target.value; _renderRequestReviewList();
+  });
+  document.getElementById('reqReviewGovernance')?.addEventListener('change', e => {
+    _reqReviewFilters.governance = e.target.value; _renderRequestReviewList();
+  });
+  document.getElementById('reqReviewSearch')?.addEventListener('input', e => {
+    _reqReviewSearch = e.target.value.trim().toLowerCase(); _renderRequestReviewList();
+  });
+
+  document.getElementById('reqReviewBody')?.addEventListener('click', e => {
+    // Row expand/collapse — reveals the secondary fields (Pemohon/Driver/Kendaraan).
+    const toggle = e.target.closest('[data-req-toggle]');
+    if (toggle) {
+      const id = toggle.dataset.reqToggle;
+      const detail = document.querySelector(`#reqReviewBody tr[data-detail-for="${CSS.escape(id)}"]`);
+      const open = toggle.classList.toggle('is-open');
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (detail) detail.hidden = !open;
+      return;
+    }
+    const btn = e.target.closest('[data-gov-action]');
+    if (!btn || btn.disabled) return;
+    const id  = btn.dataset.id;
+    const act = btn.dataset.govAction;
+    if (act === 'produksi') {
+      _setRequestGovernance(id, { classification: 'production', analyticsEligible: true }, 'Ditandai sebagai data produksi');
+    } else if (act === 'uji') {
+      _setRequestGovernance(id, { classification: 'testing', analyticsEligible: false }, 'Ditandai sebagai data uji');
+    } else if (act === 'keluarkan') {
+      const cur = classificationOf(requests.find(r => r.id === id) || {});
+      _setRequestGovernance(id, { classification: cur.classification || 'production', analyticsEligible: false }, 'Dikeluarkan dari analytics');
+    } else if (act === 'pulihkan') {
+      _setRequestGovernance(id, { classification: 'production', analyticsEligible: true }, 'Dipulihkan ke analytics');
+    }
+  });
+}
+
+function _populateReqReviewFilters() {
+  const drvSel = document.getElementById('reqReviewDriver');
+  if (drvSel) {
+    const drvList = getDrivers().filter(d => d.active !== false && !d.archived);
+    drvSel.innerHTML = '<option value="">Semua Driver</option>' +
+      drvList.map(d => `<option value="${esc(d.name)}"${d.name === _reqReviewFilters.driver ? ' selected' : ''}>${esc(d.name)}</option>`).join('');
+  }
+  const vehSel = document.getElementById('reqReviewVehicle');
+  if (vehSel) {
+    const vehList = getActiveVehiclesFromStore().filter(v => !v.archived);
+    vehSel.innerHTML = '<option value="">Semua Kendaraan</option>' +
+      vehList.map(v => `<option value="${esc(v.name)}"${v.name === _reqReviewFilters.vehicle ? ' selected' : ''}>${esc(v.name)}</option>`).join('');
+  }
+  const bidSel = document.getElementById('reqReviewBidang');
+  if (bidSel) {
+    const bidangNames = [...new Set(requests.map(r => r.requesterName || '').filter(Boolean))].sort();
+    bidSel.innerHTML = '<option value="">Semua Bidang</option>' +
+      bidangNames.map(n => `<option value="${esc(n)}"${n === _reqReviewFilters.bidang ? ' selected' : ''}>${esc(n)}</option>`).join('');
+  }
+  const rangeSel = document.getElementById('reqReviewRange');
+  if (rangeSel) rangeSel.value = _reqReviewFilters.range;
+  const statusSel = document.getElementById('reqReviewStatus');
+  if (statusSel) statusSel.value = _reqReviewFilters.status;
+  const govSel = document.getElementById('reqReviewGovernance');
+  if (govSel) govSel.value = _reqReviewFilters.governance;
+  const searchEl = document.getElementById('reqReviewSearch');
+  if (searchEl) searchEl.value = _reqReviewSearch;
+}
+
+function openRequestReviewModal() {
+  const modal = document.getElementById('modalReqReview');
+  if (!modal) return;
+  _populateReqReviewFilters();
+  _renderRequestReviewList();
+  modal.style.display = 'flex';
+}
+
+function _renderRequestReviewList() {
+  const body = document.getElementById('reqReviewBody');
+  const summaryEl = document.getElementById('reqReviewSummary');
+  if (!body) return;
+
+  const f = _reqReviewFilters;
+  const q = _reqReviewSearch;
+
+  const rows = requests.filter(r => {
+    if (!_asgReviewWithinRange(_reqReviewDate(r), f.range)) return false;
+    if (f.driver && (r.driver || '') !== f.driver) return false;
+    if (f.vehicle && (r.vehicle || '') !== f.vehicle) return false;
+    if (f.bidang && (r.requesterName || '') !== f.bidang) return false;
+    if (f.status !== 'all' && (r.status || '') !== f.status) return false;
+    const cls = classificationOf(r);
+    if (f.governance === 'included' && !cls.eligible) return false;
+    if (f.governance === 'excluded' && cls.eligible) return false;
+    if (q) {
+      const hay = `${r.id || ''} ${_reqReviewDest(r)} ${r.requesterName || ''} ${r.driver || ''} ${r.vehicle || ''}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  }).sort((a, b) => String(_reqReviewDate(b)).localeCompare(String(_reqReviewDate(a))));
+
+  if (summaryEl) {
+    const excluded = rows.filter(r => !classificationOf(r).eligible).length;
+    summaryEl.textContent = rows.length === 0
+      ? 'Tidak ada request yang cocok dengan filter.'
+      : `${rows.length} request · ${excluded} dikecualikan dari analytics`;
+  }
+
+  if (rows.length === 0) {
+    body.innerHTML = `<tr><td colspan="7" class="v2-asg-review-empty">Tidak ada request yang cocok dengan filter.</td></tr>`;
+    return;
+  }
+
+  const chevron = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>`;
+
+  body.innerHTML = rows.map(r => {
+    const cls    = classificationOf(r);
+    const statM  = _REQ_STATUS_META[r.status] || { label: r.status || '—', cls: 'neutral' };
+    const dRaw   = _reqReviewDate(r);
+    const dateStr = dRaw
+      ? new Date(`${dRaw}T00:00:00`).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' })
+      : '—';
+    const dest = _reqReviewDest(r);
+
+    const classChip = cls.eligible
+      ? `<span class="v2-asg-class-chip v2-asg-class-chip--included">Disertakan</span>`
+      : `<span class="v2-asg-class-chip v2-asg-class-chip--excluded">Dikecualikan</span>`;
+    const classLabel = cls.explicit
+      ? `<span class="v2-asg-class-sub">${esc(_ASG_CLASS_LABELS[cls.classification] || cls.classification)}</span>`
+      : '';
+
+    const isProdEligible = cls.eligible && cls.classification === 'production';
+    const btn = (act, label, disabled) =>
+      `<button type="button" class="v2-asg-act-btn v2-asg-act-btn--${act}" data-gov-action="${act}" data-id="${esc(r.id)}"${disabled ? ' disabled' : ''}>${label}</button>`;
+
+    // Primary row (fits the viewport, no horizontal scroll); secondary fields
+    // live in the expandable detail row below — operational review, not a DB dump.
+    const mainRow = `<tr class="v2-req-main-row ${cls.eligible ? '' : 'v2-asg-review-row--excluded'}">
+      <td class="v2-req-exp-cell">
+        <button type="button" class="v2-req-exp-btn" data-req-toggle="${esc(r.id)}" aria-expanded="false" aria-label="Tampilkan detail">${chevron}</button>
+      </td>
+      <td class="v2-asg-date">${esc(dateStr)}</td>
+      <td class="v2-req-bidang" title="${esc(r.requesterName || '')}">${esc(r.requesterName || '—')}</td>
+      <td class="v2-asg-dest" title="${esc(dest)}">${esc(dest || '—')}</td>
+      <td><span class="v2-asg-status-chip v2-asg-status-chip--${statM.cls}">${esc(statM.label)}</span></td>
+      <td>${classChip}${classLabel}</td>
+      <td class="v2-asg-review-actions">
+        ${btn('produksi', 'Produksi', isProdEligible)}
+        ${btn('uji', 'Uji', cls.classification === 'testing' && !cls.eligible)}
+        ${btn('keluarkan', 'Keluarkan', !cls.eligible)}
+        ${btn('pulihkan', 'Pulihkan', cls.eligible)}
+      </td>
+    </tr>`;
+
+    const detailField = (label, value) =>
+      `<div class="v2-req-detail-item"><span class="v2-req-detail-label">${label}</span><span class="v2-req-detail-value">${esc(value || '—')}</span></div>`;
+    const detailRow = `<tr class="v2-req-detail-row" data-detail-for="${esc(r.id)}" hidden>
+      <td></td>
+      <td colspan="6">
+        <div class="v2-req-detail-grid">
+          ${detailField('Request ID', r.id)}
+          ${detailField('Pemohon', r.requesterName)}
+          ${detailField('Driver', r.driver)}
+          ${detailField('Kendaraan', r.vehicle)}
+        </div>
+      </td>
+    </tr>`;
+
+    return mainRow + detailRow;
+  }).join('');
 }
 
 function _renderAnalyticsCharts({ completed, inProgress, scheduled, cancelled, total,
