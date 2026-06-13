@@ -34,6 +34,7 @@ const { onRequestWrite } = require('./src/events/onRequestWrite');
 const { onEventWrite } = require('./src/events/onEventWrite');
 
 const { telegramProxy } = require('./src/telegram/proxyEndpoint');
+const { telegramWebhook } = require('./src/telegram/webhookEndpoint');
 
 const { registerPushSubscription, unregisterPushSubscription } = require('./src/push/callables');
 
@@ -46,6 +47,11 @@ exports.onRequestWrite = onRequestWrite;
 exports.onEventWrite = onEventWrite;
 
 exports.telegramProxy = telegramProxy;
+
+/* Telegram inbound webhook (/start, /myid). Set Telegram's setWebhook to
+   this function's URL with secret_token = TELEGRAM_WEBHOOK_SECRET. This is
+   the endpoint Telegram POSTs updates to — NOT telegramProxy (outbound). */
+exports.telegramWebhook = telegramWebhook;
 
 /* Push Subscription Registry (v1.11.3) — server-only write path into
    /push_subscriptions. Subscription send lives inside onEventWrite via

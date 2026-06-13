@@ -36,8 +36,17 @@ const { defineSecret } = require('firebase-functions/params');
 /** Telegram bot token — bound to a function only in v1.11.1.3. */
 const TELEGRAM_BOT_TOKEN = defineSecret('TELEGRAM_BOT_TOKEN');
 
+/**
+ * Telegram webhook shared secret — authenticates inbound updates on
+ * telegramWebhook. The same value is passed to setWebhook(secret_token)
+ * and echoed back by Telegram in the X-Telegram-Bot-Api-Secret-Token
+ * header. Any random string (A-Z, a-z, 0-9, _ and -, 1–256 chars).
+ *   firebase functions:secrets:set TELEGRAM_WEBHOOK_SECRET
+ */
+const TELEGRAM_WEBHOOK_SECRET = defineSecret('TELEGRAM_WEBHOOK_SECRET');
+
 /** Web Push VAPID keypair — bound to onEventWrite in v1.11.3 (push send). */
 const PUSH_VAPID_PUBLIC_KEY = defineSecret('PUSH_VAPID_PUBLIC_KEY');
 const PUSH_VAPID_PRIVATE_KEY = defineSecret('PUSH_VAPID_PRIVATE_KEY');
 
-module.exports = { TELEGRAM_BOT_TOKEN, PUSH_VAPID_PUBLIC_KEY, PUSH_VAPID_PRIVATE_KEY };
+module.exports = { TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, PUSH_VAPID_PUBLIC_KEY, PUSH_VAPID_PRIVATE_KEY };
