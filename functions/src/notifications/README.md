@@ -1,12 +1,12 @@
-# notifications/ — (reserved)
+# notifications/ — Recipient Resolution Foundation (v1.11.1.3)
 
-Placeholder for the server-side Notification Engine and channel dispatchers.
+| File | Role |
+|---|---|
+| `recipients.js` | `resolveRecipients(event, users) → { users, telegram, push }`. Collapses the three divergent encodings (`notification-service.js` fan-out, `notifications.js#isVisibleToUser`, `comments.js#_canView`) into one server-side resolver. `loadUserDirectory()` reads `/users` via the Admin SDK. |
 
-Nothing here yet — added in later sub-phases:
+**Shadow only this release.** The resolver is exercised by
+`events/onEventWrite.js` to validate parity; it is **not yet authoritative**
+and drives no sending. `push[]` is always empty until v1.11.3.
 
-- **v1.11.1.3** — `telegram.js`: server-side Telegram send (moves the bot
-  token off the browser; reproduces `js/telegram.js` behavior exactly).
-- **v1.11.2+** — `engine.js`: unified event → channel fan-out (in-app, push,
-  Telegram) with one recipient resolver.
-
-See `docs/PUSH_NOTIFICATION_ARCHITECTURE.md` (Phase 3) for the design.
+The unified engine (`engine.js`, event → channel fan-out) that *consumes*
+this resolver lands in **v1.11.2**.

@@ -1,10 +1,25 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.11.1.2';
-export const RELEASE_NAME = 'Identity Foundation — Custom Auth & Authenticated RTDB';
+export const APP_VERSION = '1.11.1.3';
+export const RELEASE_NAME = 'Server Telegram + Event Foundation';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.11.1.3',
+    date: '2026-06-13',
+    summary: 'Server Telegram + Event Foundation (shadow-first, no production cutover)',
+    highlights: [
+      'Event Foundation: a canonical, versioned event envelope { id, type, version, timestamp, actor, entity, payload } written to a NEW append-only /events outbox (functions/src/events/schema.js). /logs is untouched — the in-app center and Audit Center keep reading it. Envelope field names version/timestamp/entity/payload are authoritative; the earlier draft v/ts/subject/metadata is retired',
+      'Authoritative event triggers: onAssignmentWrite (/assignments) and onRequestWrite (/driver_requests) Cloud Functions derive events from true state transitions (created/updated/started/completed/cancelled/deleted, approved/rejected) so events cannot be forged or skipped by an offline client; a legacy /logs action → canonical type map preserves back-compat',
+      'Validation-only subscriber: onEventWrite asserts envelope integrity and runs the recipient resolver in SHADOW (logs resolved counts) — no fan-out, no sending, no push this release',
+      'Recipient Resolution Foundation: resolveRecipients(event) → { users, telegram, push } (functions/src/notifications/recipients.js) collapses the three divergent encodings (notification-service.js fan-out, notifications.js isVisibleToUser, comments.js _canView) into one server-side resolver; shadow only, not yet authoritative; push[] always empty until v1.11.3',
+      'Server Telegram Foundation (dormant): functions/src/telegram/ (sendMessage, retry with 429 retry_after + terminal-error classification, deliveryLog → /telegram_deliveries + notification.sent event, proxyEndpoint accepting { chatId, message }). Bot token bound from Secret Manager (TELEGRAM_BOT_TOKEN). Browser Telegram remains the PRIMARY live path — window.TELEGRAM_API_BASE_URL stays unset; no cutover, no removal of the existing token flow',
+      'Comment Event Foundation: comment.added now exists — the comment save path emits a comment_added /logs entry (surfaced as an in-app card to thread participants, author excluded) and publishes a canonical comment.added event via the publishEvent callable (client-publishable types are restricted server-side; actor taken from the verified token). No push (deferred to v1.11.5)',
+      'RTDB rules: additive /events and /telegram_deliveries nodes with read for role admin OR developer (extensible role design) and append-only / server-only writes; no existing path modified',
+      'Strictly scoped to v1.11.1.3 — Notification Engine fan-out (v1.11.2), Push (v1.11.3), server Reminders (v1.11.4), and Comment push (v1.11.5) are NOT included',
+    ],
+  },
   {
     version: '1.11.1.2',
     date: '2026-06-13',

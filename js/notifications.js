@@ -50,6 +50,7 @@ const OPERATIONAL_ACTIONS = new Set([
   'assignment_created',
   'assignment_completed',
   'assignment_cancelled',
+  'comment_added',
 ]);
 
 /* ── Action metadata — desc + optional detail rows ── */
@@ -135,6 +136,18 @@ const ACTION_META = {
     priority: 'high',
     icon: '✕',
   },
+  comment_added: {
+    title: 'Komentar Baru',
+    desc: e => `${resolveDisplayName(e)} menambahkan komentar`,
+    detail: e => {
+      const m = e.metadata || {};
+      const rows = [];
+      if (m.purpose) rows.push({ label: 'Request', value: m.purpose });
+      return rows.length > 0 ? rows : null;
+    },
+    priority: 'medium',
+    icon: '💬',
+  },
 };
 
 /* ── Read state ── */
@@ -169,10 +182,15 @@ function isVisibleToUser(entry, user) {
   if (!user) return false;
   const { role, username, name } = user;
 
-  if (role === 'admin') return true;
-
   const action = entry.action;
   const meta   = entry.metadata || {};
+
+  // Comment authors are not notified of their own comment (any role, incl. admin).
+  if (action === 'comment_added' && meta.authorUsername && meta.authorUsername === username) {
+    return false;
+  }
+
+  if (role === 'admin') return true;
 
   if (role === 'bidang') {
     switch (action) {
@@ -186,7 +204,8 @@ function isVisibleToUser(entry, user) {
       case 'assignment_created':
       case 'assignment_completed':
       case 'assignment_cancelled':
-        // Assignment originated from their request
+      case 'comment_added':
+        // Assignment / discussion originated from their request
         return meta.requesterId === username;
       default:
         return false;
@@ -198,6 +217,7 @@ function isVisibleToUser(entry, user) {
       case 'assignment_created':
       case 'assignment_completed':
       case 'assignment_cancelled':
+      case 'comment_added':
         // Prefer stable username match (new log entries carry driverUsername).
         // Fall back to display name for log entries written before this fix.
         if (meta.driverUsername) return meta.driverUsername === username;

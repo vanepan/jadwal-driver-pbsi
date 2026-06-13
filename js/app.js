@@ -93,6 +93,7 @@ import { initAdminUI, updateAdminButtons, openUserFormModal } from './admin.js';
 import { initNotificationUI, setNotificationData, openNotificationsModal } from './notifications.js';
 import { setTelegramBotToken } from './telegram.js';
 import { subscribeLogsChangeListener, getLogs, logAction } from './logs.js';
+import { publishEvent } from './events.js';
 import { getUserByUsername, getUsers, createUser, getUserList, activateUser, deactivateUser, registerUsersChangeListener, archiveUser, restoreUser, deleteUser, initUsersSync } from './users.js';
 import { expandDateRange, showToast, formatDateShort } from './utils.js';
 import {
@@ -7086,11 +7087,44 @@ document.addEventListener('DOMContentLoaded', async () => {
   registerModalCommentCallback((requestId) => openCommentModal(requestId));
 
   // ── Callback: Save a new comment to a request ──
-  registerCommentSaveCallback((updatedRequest) => {
+  registerCommentSaveCallback((updatedRequest, newComment) => {
     requests = requests.map(r => r.id === updatedRequest.id ? updatedRequest : r);
     setCommentRequests(requests);
     saveRequests(requests);
     renderRequestsList();
+
+    // ── Comment Event Foundation (v1.11.1.3) ──
+    // comment.added has no authoritative data-node trigger (comments are an
+    // embedded array), so emit it explicitly: a /logs entry for the in-app
+    // center + a canonical comment.added event for the foundation. Both are
+    // additive and fire-and-forget — no push notification in this release.
+    if (newComment) {
+      const currentUser = getCurrentUser();
+      const driverNameLower = (updatedRequest.driver || '').trim().toLowerCase();
+      const driverUser = driverNameLower
+        ? getUserList().find(u => u.role === 'driver' &&
+            ((u.displayName || '').trim().toLowerCase() === driverNameLower ||
+             (u.username   || '').trim().toLowerCase() === driverNameLower))
+        : null;
+      const meta = {
+        requestId:      updatedRequest.id,
+        commentId:      newComment.id,
+        authorUsername: currentUser?.username || null,
+        requesterId:    updatedRequest.requesterId || null,
+        driver:         updatedRequest.driver || null,
+        driverUsername: driverUser?.username || null,
+        purpose:        updatedRequest.purpose || null,
+      };
+      logAction({
+        userId:      currentUser?.id,
+        username:    currentUser?.username,
+        displayName: currentUser?.name,
+        action:      'comment_added',
+        targetId:    updatedRequest.id,
+        metadata:    meta,
+      });
+      publishEvent('comment.added', 'comment', newComment.id, meta);
+    }
   });
 
   // ── Callback: Edit button di detail modal ──

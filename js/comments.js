@@ -289,8 +289,9 @@ function _handleSend() {
   _syncSendButton();
   _syncCharCounter();
 
-  // Persist: app.js handles saveRequests + renderRequestsList
-  if (onCommentSaveCallback) onCommentSaveCallback(updatedRequest);
+  // Persist: app.js handles saveRequests + renderRequestsList.
+  // newComment is passed so app.js can emit the comment_added log + comment.added event.
+  if (onCommentSaveCallback) onCommentSaveCallback(updatedRequest, newComment);
 }
 
 function _syncSendButton() {

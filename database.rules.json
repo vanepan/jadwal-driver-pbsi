@@ -1,6 +1,28 @@
 {
   "rules": {
     ".read": "auth != null",
-    ".write": "auth != null"
+    ".write": "auth != null",
+
+    "events": {
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+      ".write": "false"
+    },
+
+    "telegram_deliveries": {
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+      ".write": "false"
+    },
+
+    "notifications": {
+      ".write": "false",
+      "$recipientId": {
+        ".read": "auth.uid === $recipientId || auth.token.role === 'admin' || auth.token.role === 'developer'"
+      }
+    },
+
+    "notification_deliveries": {
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+      ".write": "false"
+    }
   }
 }

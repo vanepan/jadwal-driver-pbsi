@@ -179,6 +179,25 @@ export async function callVerifyPin(username, pin) {
 }
 
 /**
+ * Call the publishEvent Cloud Function (client → /events outbox).
+ * Used for events with no authoritative data-node trigger (comment.added).
+ * The server derives the actor from the verified token and restricts the
+ * accepted type set — clients cannot forge authoritative events.
+ * @param {{ type: string, entity: { kind: string, id: string }, payload?: Object, actorName?: string }} payload
+ * @returns {Promise<{ id: string }>}
+ */
+export async function callPublishEvent(payload) {
+  if (!firebaseDb) initFirebaseApp();
+  if (!firebaseApp) throw new Error('Firebase belum siap.');
+  if (!firebaseFunctions) {
+    firebaseFunctions = getFunctions(firebaseApp, FUNCTIONS_REGION);
+  }
+  const fn = httpsCallable(firebaseFunctions, 'publishEvent');
+  const result = await fn(payload);
+  return result.data;
+}
+
+/**
  * Sign in with a custom token minted by verifyPin.
  * @param {string} token
  */
