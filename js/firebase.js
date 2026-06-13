@@ -9,8 +9,13 @@
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
 import { getDatabase, onValue, ref, set, get, update, remove, runTransaction } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
+import { getAuth, signInWithCustomToken, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
+import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-functions.js';
 import { showToast } from './utils.js';
 import { getSetting } from './settings-store.js';
+
+/* ── Backend region — must match Cloud Functions deploy region ── */
+const FUNCTIONS_REGION = 'asia-southeast1';
 
 /* ── Firebase Configuration ── */
 const firebaseConfig = {
@@ -80,6 +85,114 @@ function initFirebaseApp() {
     showToast('Firebase belum bisa tersambung. Cek config Firebase.');
     return null;
   }
+}
+
+/* ============================================================
+   AUTH LAYER (v1.11.1.2) — Custom Authentication + auth-ready gate.
+
+   Provides the Firebase Auth + Functions primitives consumed by
+   js/auth.js. localStorage remains a write-through CACHE of the
+   auth state hydrated by onAuthStateChanged; getCurrentUser() stays
+   synchronous. No RTDB access should occur before authReady().
+   ============================================================ */
+let firebaseAuth = null;
+let firebaseFunctions = null;
+let _authStateCallback = null;
+let _authResolved = false;
+let _authReadyResolve = null;
+const _authReadyPromise = new Promise((resolve) => { _authReadyResolve = resolve; });
+
+/**
+ * Initialize the Firebase Auth layer and wire onAuthStateChanged.
+ * The FIRST emission resolves authReady() (with the user or null).
+ * Idempotent.
+ * @returns {Object|null} Firebase Auth instance
+ */
+export function initFirebaseAuthLayer() {
+  if (firebaseAuth) return firebaseAuth;
+  const db = firebaseDb || initFirebaseApp();
+  if (!db || !firebaseApp) return null;
+
+  firebaseAuth = getAuth(firebaseApp);
+  onAuthStateChanged(firebaseAuth, async (user) => {
+    // Await hydration so the synchronous session cache is populated
+    // BEFORE authReady() resolves and the bootstrap proceeds.
+    try {
+      if (typeof _authStateCallback === 'function') {
+        await _authStateCallback(user);
+      }
+    } catch (err) {
+      console.error('[firebase] auth-state callback failed:', err);
+    } finally {
+      if (!_authResolved) {
+        _authResolved = true;
+        _authReadyResolve(user);
+      }
+    }
+  });
+  return firebaseAuth;
+}
+
+/**
+ * Register the write-through hydration callback invoked on every
+ * auth-state change (user | null). Set this BEFORE initFirebaseAuthLayer().
+ * @param {Function} cb
+ */
+export function registerAuthStateCallback(cb) {
+  _authStateCallback = cb;
+}
+
+/**
+ * Promise that resolves once authentication state is known.
+ * @returns {Promise<Object|null>}
+ */
+export function authReady() {
+  return _authReadyPromise;
+}
+
+/**
+ * Resolve authReady() without Firebase Auth (break-glass / direct-PIN mode).
+ * @param {Object|null} value
+ */
+export function resolveAuthReadyManually(value) {
+  if (!_authResolved) {
+    _authResolved = true;
+    _authReadyResolve(value || null);
+  }
+}
+
+/**
+ * Call the verifyPin Cloud Function (server-side PIN check + token mint).
+ * @param {string} username
+ * @param {string} pin
+ * @returns {Promise<{ token: string, profile: Object }>}
+ */
+export async function callVerifyPin(username, pin) {
+  if (!firebaseDb) initFirebaseApp();
+  if (!firebaseApp) throw new Error('Firebase belum siap.');
+  if (!firebaseFunctions) {
+    firebaseFunctions = getFunctions(firebaseApp, FUNCTIONS_REGION);
+  }
+  const fn = httpsCallable(firebaseFunctions, 'verifyPin');
+  const result = await fn({ username, pin });
+  return result.data;
+}
+
+/**
+ * Sign in with a custom token minted by verifyPin.
+ * @param {string} token
+ */
+export async function signInWithToken(token) {
+  const auth = firebaseAuth || initFirebaseAuthLayer();
+  if (!auth) throw new Error('Firebase Auth belum siap.');
+  return signInWithCustomToken(auth, token);
+}
+
+/** Sign out of Firebase Auth. */
+export async function firebaseSignOut() {
+  const auth = firebaseAuth || initFirebaseAuthLayer();
+  if (!auth) return;
+  return signOut(auth);
 }
 
 function getFirebaseRef(path) {

@@ -1,0 +1,7 @@
+{
+  "_comment": "STAGE A (open) — ROLLBACK ONLY. Pre-v1.11.1.2 open rules. To roll back from Stage B: copy this over database.rules.json and run `firebase deploy --only database`. Required when AUTH_DIRECT_PIN break-glass is enabled (unauthenticated clients).",
+  "rules": {
+    ".read": true,
+    ".write": true
+  }
+}

@@ -93,7 +93,7 @@ import { initAdminUI, updateAdminButtons, openUserFormModal } from './admin.js';
 import { initNotificationUI, setNotificationData, openNotificationsModal } from './notifications.js';
 import { setTelegramBotToken } from './telegram.js';
 import { subscribeLogsChangeListener, getLogs, logAction } from './logs.js';
-import { getUserByUsername, getUsers, createUser, getUserList, activateUser, deactivateUser, registerUsersChangeListener, archiveUser, restoreUser, deleteUser } from './users.js';
+import { getUserByUsername, getUsers, createUser, getUserList, activateUser, deactivateUser, registerUsersChangeListener, archiveUser, restoreUser, deleteUser, initUsersSync } from './users.js';
 import { expandDateRange, showToast, formatDateShort } from './utils.js';
 import {
   sendRequestApprovedNotification,
@@ -6826,16 +6826,59 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Auth callback: updatePermissionUI + clear sidebar active state.
   // Sidebar is cleared on login/logout but NOT on Firebase data refreshes,
   // which call updatePermissionUI() directly and bypass this wrapper.
+  // ── Auth-ready gate (v1.11.1.2) ─────────────────────────────────
+  // No RTDB access until authentication resolves. initAuthUI() registers
+  // onAuthStateChanged + awaits authReady() (Firebase mode), or resolves
+  // immediately (AUTH_DIRECT_PIN break-glass). startAuthenticatedSession()
+  // runs exactly once — now if already signed in, else on first login —
+  // so all RTDB reads/listeners are gated behind a signed-in user and
+  // there are no permission_denied storms under auth != null rules.
+  let _sessionStarted = false;
+  async function startAuthenticatedSession() {
+    if (_sessionStarted) return;
+    _sessionStarted = true;
+
+    await initUsersSync();                 // user registry (was inside initAuthUI pre-1.11.1.2)
+    await initDriversStore();              // v1.5.0: seed/sync Firebase driver registry
+    await initVehiclesStore();             // v1.5.2: seed/sync Firebase vehicle registry
+    await initSettingsStore();             // v1.7.0: centralized settings foundation
+
+    const _telegramSettings = await fetchFirebaseData('settings/telegram');
+    if (_telegramSettings?.botToken) setTelegramBotToken(_telegramSettings.botToken);
+
+    initFirebaseSync();                    // real-time assignments + requests listeners
+
+    // Re-render with authoritative data + refresh permissioned UI
+    updateAllModules();
+    renderViews();
+    updatePermissionUI(true);
+    updateAdminButtons();
+    setNotificationData({
+      pendingRequests: getMyPendingRequestCount(),
+      recentLogs: auditLogs,
+    });
+
+    // H-1 / H-2 reminder timers (read assignments/requests/users)
+    const runH1Check = () => checkAndSendH1Reminders(assignments, requests, getUserByUsername, getUsers);
+    runH1Check();
+    setInterval(runH1Check, getSetting('notifications.h1ReminderCheckIntervalMs'));
+    const runH2Check = () => checkAndSendHoursReminders(assignments, requests, getUserByUsername, getUsers);
+    runH2Check();
+    setInterval(runH2Check, getSetting('notifications.h2ReminderCheckIntervalMs'));
+  }
+
   await initAuthUI(() => {
     updatePermissionUI(true); // auth change → reset nav to Dashboard
     setSidebarActive(null);
+    if (getCurrentUser()) startAuthenticatedSession(); // login transition → start once
   });
-  await initAdminUI();                   // Setup admin user management
-  await initDriversStore();              // v1.5.0 Phase 1: seed/sync Firebase driver registry
-  await initVehiclesStore();             // v1.5.2: seed/sync Firebase vehicle registry
-  await initSettingsStore();             // v1.7.0: centralized settings foundation
-  const _telegramSettings = await fetchFirebaseData('settings/telegram');
-  if (_telegramSettings?.botToken) setTelegramBotToken(_telegramSettings.botToken);
+
+  // Returning user (persisted session restored) → start immediately.
+  if (getCurrentUser()) {
+    await startAuthenticatedSession();
+  }
+
+  await initAdminUI();                   // Setup admin user management (UI wiring only)
   initNotificationUI();                  // Setup notification badge & modal
   initDriverSelect();                    // Isi dropdown driver
   initDateControls();                    // Setup date navigation buttons
@@ -7288,19 +7331,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     showToast('✕ Assignment dibatalkan');
   });
 
-  // Initialize Firebase real-time sync
-  // Ini akan set up listener yang update assignments dan requests.
-  initFirebaseSync();
-
-  // H-1 reminder (D-1): check on load, then on configured interval
-  const runH1Check = () => checkAndSendH1Reminders(assignments, requests, getUserByUsername, getUsers);
-  runH1Check();
-  setInterval(runH1Check, getSetting('notifications.h1ReminderCheckIntervalMs'));
-
-  // H-2 hours reminder: check on configured interval for assignments starting ~2 hours from now
-  const runH2Check = () => checkAndSendHoursReminders(assignments, requests, getUserByUsername, getUsers);
-  runH2Check();
-  setInterval(runH2Check, getSetting('notifications.h2ReminderCheckIntervalMs'));
+  // NOTE (v1.11.1.2): Firebase real-time sync + H-1/H-2 reminder timers
+  // moved into startAuthenticatedSession() above so they run only after
+  // authentication resolves (auth-ready gate). Do not re-add RTDB calls here.
 
   // ── Startup complete: reveal V2 shell, dismiss splash ──────────
   // Adding .app-ready lifts visibility: hidden from body (set in

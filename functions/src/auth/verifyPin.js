@@ -1,58 +1,97 @@
 'use strict';
 
 /* ============================================================
-   verifyPin() — DORMANT SKELETON (v1.11.1.1)
+   verifyPin() — custom-authentication entry (v1.11.1.2)
 
-   Structure + input validation + logging ONLY.
+   ACTIVE. Wired into the login flow (js/auth.js → callVerifyPin).
 
-   This function is NOT wired into the login flow. The frontend
-   (js/auth.js) still verifies PINs client-side and stores a
-   localStorage session exactly as before. Nothing calls this yet.
+   Flow:
+     1. Validate username + PIN format.
+     2. Normalize the username exactly like the client (trim →
+        lowercase → spaces to dashes) so uid === the /users key.
+     3. Read /users/{username} via the Admin SDK.
+     4. Reject unknown / inactive / archived users and PIN
+        mismatches with a GENERIC unauthenticated error
+        (no account enumeration).
+     5. Mint a custom token: createCustomToken(username, { role }).
+        The role developer-claim becomes the authoritative role,
+        surfaced as request.auth.token.role for RTDB rules.
+     6. Return { token, profile } so the client can
+        signInWithCustomToken() and hydrate its session cache.
 
-   In v1.11.1.2 this skeleton becomes the real custom-auth entry:
-     1. read /users/{username} via the Admin SDK,
-     2. compare the PIN server-side (and later, a hash),
-     3. mint a custom token: admin.auth().createCustomToken(
-          username, { role }),
-     4. return it so the client can signInWithCustomToken().
-
-   Until then it deliberately performs NO database read, NO PIN
-   comparison, and mints NO token. It returns a dormant marker.
-   The submitted PIN is never logged.
+   The submitted PIN is NEVER logged.
    ============================================================ */
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const logger = require('firebase-functions/logger');
 const { REGION, SERVICE_VERSION } = require('../config/constants');
+const { auth, db } = require('../config/admin');
 
-const USERNAME_RE = /^[a-zA-Z0-9._-]{3,30}$/;
+const USERNAME_RE = /^[a-z0-9._-]{3,30}$/;
 const PIN_RE = /^\d{4}$/;
+const VALID_ROLES = ['admin', 'bidang', 'driver', 'viewer'];
 
-const verifyPin = onCall({ region: REGION }, (request) => {
+/** Mirror of users.js#normalizeUsername — must stay in sync. */
+function normalizeUsername(value) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, '-');
+}
+
+const verifyPin = onCall({ region: REGION }, async (request) => {
   const data = request.data || {};
-  const username = typeof data.username === 'string' ? data.username.trim() : '';
+  const username = normalizeUsername(data.username);
   const pin = data.pin == null ? '' : String(data.pin).trim();
 
-  /* ── Validation only ── */
+  /* ── Format validation ── */
   if (!USERNAME_RE.test(username)) {
-    throw new HttpsError('invalid-argument', 'username harus 3-30 karakter alfanumerik.');
+    throw new HttpsError('invalid-argument', 'Username harus 3-30 karakter alfanumerik.');
   }
   if (!PIN_RE.test(pin)) {
     throw new HttpsError('invalid-argument', 'PIN harus 4 digit.');
   }
 
-  /* ── Logging only (never log the PIN itself) ── */
-  logger.info('[verifyPin] dormant skeleton invoked', {
-    username,
-    version: SERVICE_VERSION,
-  });
+  /* ── Read user record (Admin SDK bypasses rules) ── */
+  let user = null;
+  try {
+    const snap = await db.ref(`users/${username}`).once('value');
+    user = snap.val();
+  } catch (err) {
+    logger.error('[verifyPin] user read failed', { username, error: err.message });
+    throw new HttpsError('internal', 'Gagal memverifikasi. Coba lagi.');
+  }
 
-  /* ── DORMANT: not connected to login. No DB read, no token minted. ── */
+  /* ── Generic rejection (no enumeration). PIN never logged. ── */
+  const ok =
+    user &&
+    user.active !== false &&
+    user.archived !== true &&
+    typeof user.pin === 'string' &&
+    user.pin === pin;
+
+  if (!ok) {
+    logger.warn('[verifyPin] auth failed', { username, version: SERVICE_VERSION });
+    throw new HttpsError('unauthenticated', 'Username atau PIN salah.');
+  }
+
+  /* ── Mint custom token with authoritative role claim ── */
+  const role = VALID_ROLES.includes(user.role) ? user.role : 'viewer';
+  let token;
+  try {
+    token = await auth.createCustomToken(username, { role });
+  } catch (err) {
+    logger.error('[verifyPin] token mint failed', { username, error: err.message });
+    throw new HttpsError('internal', 'Gagal membuat sesi. Coba lagi.');
+  }
+
+  logger.info('[verifyPin] auth ok', { username, role, version: SERVICE_VERSION });
+
   return {
-    status: 'not_implemented',
-    dormant: true,
-    version: SERVICE_VERSION,
-    message: 'verifyPin skeleton — input validated and logged only. Not active in v1.11.1.1.',
+    token,
+    profile: {
+      username,
+      name: String(user.displayName || username),
+      role,
+      active: user.active !== false,
+    },
   };
 });
 

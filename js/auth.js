@@ -10,8 +10,37 @@
 import { getUserByUsername, initUsersSync } from './users.js';
 import { logAction } from './logs.js';
 import { showToast } from './utils.js';
+import {
+  callVerifyPin,
+  signInWithToken,
+  firebaseSignOut,
+  registerAuthStateCallback,
+  initFirebaseAuthLayer,
+  authReady,
+  resolveAuthReadyManually,
+} from './firebase.js';
 
 const SESSION_KEY = 'pbsi_current_user';
+
+/* ── Break-glass: AUTH_DIRECT_PIN ────────────────────────────────
+   Emergency rollback path. DEFAULT OFF. When enabled, login bypasses
+   verifyPin / Firebase Auth and uses the legacy client-side PIN
+   comparison + localStorage session. Requires RTDB rules at Stage A
+   (open), since clients are then unauthenticated. Removable once
+   custom auth is proven stable.
+
+   Enable via either:
+     • window.AUTH_DIRECT_PIN = true
+     • localStorage['pbsi_auth_direct_pin'] = 'true'
+   ──────────────────────────────────────────────────────────────── */
+function isDirectPinMode() {
+  try {
+    if (typeof window !== 'undefined' && window.AUTH_DIRECT_PIN === true) return true;
+    return localStorage.getItem('pbsi_auth_direct_pin') === 'true';
+  } catch (_) {
+    return false;
+  }
+}
 
 const ROLE_LABELS = {
   admin: 'Admin',
@@ -40,11 +69,73 @@ let authChangeCallback = null;
 
 /**
  * Login dengan username + PIN.
+ * Routes to Firebase custom auth (default) or the legacy client-side
+ * PIN path when AUTH_DIRECT_PIN break-glass is active.
+ * Returns the session user on success, or null on failure (so the
+ * login form can surface its error UI) — never throws.
  * @param {string} username
  * @param {string} pin
- * @returns {Object|null}
+ * @returns {Promise<Object|null>}
  */
 export async function login(username, pin) {
+  return isDirectPinMode()
+    ? loginLegacy(username, pin)
+    : loginViaFirebase(username, pin);
+}
+
+/**
+ * Firebase custom-auth login: verifyPin (server-side) → custom token
+ * → signInWithCustomToken. localStorage is written as a write-through
+ * cache; onAuthStateChanged re-hydrates it from the token claim.
+ */
+async function loginViaFirebase(username, pin) {
+  let data;
+  try {
+    data = await callVerifyPin(String(username).trim(), String(pin).trim());
+  } catch (err) {
+    const code = String(err?.code || '');
+    // Auth failures (wrong PIN / unknown user / bad input) → silent null
+    // so the form shows its standard error. Anything else is an outage.
+    if (!/unauthenticated|invalid-argument|not-found|permission-denied/.test(code)) {
+      console.error('[auth] verifyPin error:', err);
+      showToast('Login sementara tidak tersedia. Coba lagi sebentar.');
+    }
+    return null;
+  }
+
+  if (!data || !data.token) return null;
+
+  const p = data.profile || {};
+  const sessionUser = {
+    id: p.username,
+    username: p.username,
+    name: p.name || p.username,
+    role: p.role,
+    active: p.active !== false,
+  };
+  localStorage.setItem(SESSION_KEY, JSON.stringify(sessionUser));
+
+  try {
+    await signInWithToken(data.token);
+  } catch (err) {
+    console.error('[auth] signInWithCustomToken failed:', err);
+    localStorage.removeItem(SESSION_KEY);
+    showToast('Gagal membuat sesi. Coba lagi.');
+    return null;
+  }
+
+  // Signed in now → audit write passes auth != null rules.
+  logAction({ userId: sessionUser.id, username: sessionUser.username, action: 'login' });
+  notifyAuthChange();
+  closeLoginModal();
+  return sessionUser;
+}
+
+/**
+ * Legacy client-side PIN comparison (break-glass only).
+ * Preserved verbatim from the pre-v1.11.1.2 flow.
+ */
+async function loginLegacy(username, pin) {
   const user = await getUserByUsername(String(username).trim());
   if (!user || !user.active || user.pin !== String(pin).trim()) {
     return null;
@@ -66,15 +157,61 @@ export async function login(username, pin) {
 }
 
 /**
+ * Write-through hydration from Firebase auth state.
+ * user → cache {id, username, name, role, active}; null → clear cache.
+ * role is sourced from the authoritative token claim; name falls back
+ * to the cached blob (preserves displayName offline) then to uid.
+ * @param {Object|null} user Firebase user
+ */
+async function _hydrateFromFirebaseUser(user) {
+  if (!user) {
+    localStorage.removeItem(SESSION_KEY);
+    notifyAuthChange();
+    return;
+  }
+
+  let role = 'viewer';
+  const cached = getCurrentUser();
+  try {
+    const res = await user.getIdTokenResult();
+    role = res.claims?.role || role;
+  } catch (_) {
+    if (cached && cached.username === user.uid) role = cached.role || role;
+  }
+
+  const name = (cached && cached.username === user.uid && cached.name)
+    ? cached.name
+    : user.uid;
+
+  const sessionUser = { id: user.uid, username: user.uid, name, role, active: true };
+  localStorage.setItem(SESSION_KEY, JSON.stringify(sessionUser));
+  notifyAuthChange();
+}
+
+/**
  * Logout user saat ini.
  */
-export function logout() {
+export async function logout() {
   const currentUser = getCurrentUser();
-  localStorage.removeItem(SESSION_KEY);
   if (currentUser) {
     logAction({ userId: currentUser.id, username: currentUser.username, action: 'logout' });
   }
-  notifyAuthChange();
+
+  if (isDirectPinMode()) {
+    localStorage.removeItem(SESSION_KEY);
+    notifyAuthChange();
+    return;
+  }
+
+  try {
+    await firebaseSignOut();
+  } catch (err) {
+    console.error('[auth] signOut failed:', err);
+  }
+  localStorage.removeItem(SESSION_KEY);
+  // Reload to a clean unauthenticated state: detaches RTDB listeners
+  // that would otherwise hit permission_denied under auth != null rules.
+  if (typeof window !== 'undefined') window.location.reload();
 }
 
 /**
@@ -154,8 +291,23 @@ export async function initAuthUI(onAuthChange) {
     logoutButton.addEventListener('click', logout);
   }
 
-  await initUsersSync();
-  restoreSession();
+  if (isDirectPinMode()) {
+    // ── Break-glass: legacy client-side PIN (requires Stage A open rules) ──
+    console.warn('[auth] AUTH_DIRECT_PIN active — legacy PIN mode. RTDB must be at Stage A (open).');
+    await initUsersSync();
+    restoreSession();
+    resolveAuthReadyManually(getCurrentUser());
+    updateAuthUI();
+    if (!getCurrentUser()) openLoginModal();
+    return;
+  }
+
+  // ── Firebase custom-auth mode: register hydration, then GATE on auth ──
+  // No RTDB access occurs here. The first onAuthStateChanged emission
+  // hydrates the session cache and resolves authReady().
+  registerAuthStateCallback(_hydrateFromFirebaseUser);
+  initFirebaseAuthLayer();
+  await authReady();
   updateAuthUI();
 
   if (!getCurrentUser()) {

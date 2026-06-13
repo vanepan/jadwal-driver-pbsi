@@ -1,10 +1,25 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.11.0';
-export const RELEASE_NAME = 'PWA Foundation — Desktop Install Affordance';
+export const APP_VERSION = '1.11.1.2';
+export const RELEASE_NAME = 'Identity Foundation — Custom Auth & Authenticated RTDB';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.11.1.2',
+    date: '2026-06-13',
+    summary: 'Identity Foundation — Firebase Custom Auth & authenticated RTDB',
+    highlights: [
+      'Trusted per-user identity: login now calls the verifyPin Cloud Function (server-side PIN check) which mints a Firebase custom token with uid=username and an authoritative { role } claim, then signInWithCustomToken() establishes a real Firebase Auth session — the PIN login UX is unchanged',
+      'verifyPin (functions/src/auth/verifyPin.js) activated from its v1.11.1.1 dormant skeleton: normalizes the username to match the /users key, reads the record via the Admin SDK, rejects unknown/inactive/archived users and PIN mismatches with a generic unauthenticated error (no enumeration), and never logs the PIN',
+      'Write-through session cache: localStorage is now a cache of Firebase auth state hydrated by onAuthStateChanged (role from the token claim, displayName preserved from cache); getCurrentUser() keeps its synchronous signature so all ~70 existing consumers are untouched',
+      'Auth-ready gate in app.js: a new startAuthenticatedSession() runs initUsersSync / stores / settings / initFirebaseSync / reminder timers only after authReady() resolves with a signed-in user — no RTDB access before authentication, eliminating permission_denied storms',
+      'RTDB Security Rules Stage B: /.read and /.write now require auth != null (database.rules.json). No role or ownership restrictions yet. database.rules.stageA.json retained as the instant rollback to open rules',
+      'AUTH_DIRECT_PIN break-glass flag (default OFF): window.AUTH_DIRECT_PIN or localStorage pbsi_auth_direct_pin restores the legacy client-side PIN path for emergency rollback (pair with Stage A rules); legacy login code retained',
+      'Username audit (Phase 0 gate): 24 users audited, zero invalid usernames — uid=username is safe with no re-keying',
+      'Deferred to later sub-versions: Role Rules, Ownership Rules, server-side Telegram, Push Notifications',
+    ],
+  },
   {
     version: '1.10.6',
     date: '2026-06-13',

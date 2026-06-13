@@ -3,11 +3,11 @@
 /* ============================================================
    Cloud Functions entry point — Sarpras Operations backend.
 
-   v1.11.1.1 Backend Scaffold Foundation.
-   Exports only the scaffold functions:
+   v1.11.1.2 Identity Foundation.
+   Exports:
      • health     — deployment smoke test (active, side-effect free)
-     • verifyPin  — DORMANT skeleton (validation + logging only,
-                    NOT wired into login)
+     • verifyPin  — ACTIVE custom-auth entry: server-side PIN check
+                    + custom token { uid, role } (wired into login)
 
    No production features, no triggers, no scheduled jobs yet.
    Notification engine, event triggers, server-side Telegram, and
