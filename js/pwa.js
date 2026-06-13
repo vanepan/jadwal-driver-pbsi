@@ -109,8 +109,49 @@ function _detectInstalled() {
 }
 
 function _notifyListeners() {
+  _syncHeaderInstallButton();
   const snap = getPWAState();
   _stateCallbacks.forEach(cb => cb(snap));
+}
+
+/* ── Header install affordance ─────────────────────────────────
+   A header action button (#btnHeaderInstall) that exposes install
+   directly from the topbar — reusing the existing install logic.
+   Visible only when the app is installable and not yet installed. */
+
+function _headerInstallShouldShow() {
+  // iOS Safari never fires beforeinstallprompt, but Add-to-Home-Screen is
+  // available — surface the button so it can open the iOS onboarding modal.
+  if (_state.isInstalled) return false;
+  return _state.canInstall || _state.isIOSSafari;
+}
+
+function _syncHeaderInstallButton() {
+  const btn = document.getElementById('btnHeaderInstall');
+  if (!btn) return;
+  btn.style.display = _headerInstallShouldShow() ? '' : 'none';
+}
+
+function _initHeaderInstallButton() {
+  const btn = document.getElementById('btnHeaderInstall');
+  if (!btn || btn.dataset.pwaWired) return;
+  btn.dataset.pwaWired = '1';
+
+  btn.addEventListener('click', async () => {
+    // iOS Safari → onboarding modal (no programmatic prompt available).
+    if (_state.isIOSSafari) {
+      showIOSInstallModal();
+      return;
+    }
+    // Android / Windows Chrome / Edge → reuse the captured beforeinstallprompt.
+    btn.disabled = true;
+    const accepted = await triggerInstallPrompt();
+    // On accept, appinstalled fires and _syncHeaderInstallButton() hides it.
+    // On dismiss, re-enable so the user can try again.
+    if (!accepted) btn.disabled = false;
+  });
+
+  _syncHeaderInstallButton();
 }
 
 /* ── Cache query (async) ───────────────────────────────────── */
@@ -346,6 +387,9 @@ export function initPWA() {
     if (e.matches) _hideInstallBanner();
     _notifyListeners();
   });
+
+  /* Header install affordance — wire click + set initial visibility */
+  _initHeaderInstallButton();
 
   /* Register service worker */
   _registerServiceWorker();

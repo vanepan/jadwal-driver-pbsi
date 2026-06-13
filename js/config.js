@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.10.8';
-export const RELEASE_NAME = 'Analytics Cancellation Intelligence';
+export const APP_VERSION = '1.11.0';
+export const RELEASE_NAME = 'PWA Foundation — Desktop Install Affordance';
 
 export const VERSION_HISTORY = [
   {

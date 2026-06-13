@@ -1156,6 +1156,30 @@ html.theme-anim *::after {
 .header-notif-btn:hover  { background: var(--hover); color: var(--text); }
 .header-notif-btn:active { background: var(--border); }
 
+/* Header install affordance — same visual language as the notification
+   button. Unlike the bell (hidden on mobile in favour of the bottom nav),
+   this stays available on every viewport so Android Chrome and iPhone
+   Safari can install from the header too. Visibility is JS-controlled. */
+.header-install-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.13s, color 0.13s;
+  padding: 0;
+}
+.header-install-btn:hover  { background: var(--hover); color: var(--text); }
+.header-install-btn:active { background: var(--border); }
+.header-install-btn:disabled { opacity: 0.55; cursor: default; }
+
 /* Unread indicator dot */
 .header-notif-dot {
   position: absolute;
