@@ -1,7 +1,7 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.11.3';
+export const APP_VERSION = '1.11.3.1';
 export const RELEASE_NAME = 'PWA Push Notification Foundation';
 
 /**
@@ -14,7 +14,7 @@ export const RELEASE_NAME = 'PWA Push Notification Foundation';
  * client-side (js/push.js no-ops), so the app degrades gracefully until
  * the key is set. Must equal the PUSH_VAPID_PUBLIC_KEY secret value.
  */
-export const VAPID_PUBLIC_KEY = '';
+export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLIBKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLIBKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
   {
