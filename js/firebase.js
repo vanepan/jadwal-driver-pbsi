@@ -102,6 +102,21 @@ let _authResolved = false;
 let _authReadyResolve = null;
 const _authReadyPromise = new Promise((resolve) => { _authReadyResolve = resolve; });
 
+/* ── Auth-presence signals (v1.11.3.3) ───────────────────────────
+   Level-triggered orchestration hooks. onAuthAvailable fires whenever a
+   live Firebase Auth user exists (warm launch, delayed restore, fresh
+   login); onAuthLost fires on sign-out/expiry. These let the app drive
+   auth-gated data loading as a recurring event instead of a one-shot
+   bootstrap check — the iOS-PWA cold-launch fix. */
+const _authAvailableCbs = [];
+const _authLostCbs = [];
+export function onAuthAvailable(cb) { if (typeof cb === 'function') _authAvailableCbs.push(cb); }
+export function onAuthLost(cb) { if (typeof cb === 'function') _authLostCbs.push(cb); }
+function _emitAuthSignal(user) {
+  const cbs = user ? _authAvailableCbs : _authLostCbs;
+  cbs.forEach(cb => { try { user ? cb(user) : cb(); } catch (err) { console.error('[firebase] auth signal cb failed:', err); } });
+}
+
 /**
  * Initialize the Firebase Auth layer and wire onAuthStateChanged.
  * The FIRST emission resolves authReady() (with the user or null).
@@ -129,6 +144,9 @@ export function initFirebaseAuthLayer() {
         _authReadyResolve(user);
       }
     }
+    // Fire orchestration signals AFTER hydration so getCurrentUser() reflects
+    // the new state when listeners react (e.g. re-subscribe admin data).
+    _emitAuthSignal(user);
   });
   return firebaseAuth;
 }
@@ -277,6 +295,52 @@ export function subscribeFirebasePath(path, callback, errorHandler) {
   onValue(dbRef, callback, (error) => {
     console.error(`Firebase listener gagal pada ${path}:`, error);
     if (typeof errorHandler === 'function') errorHandler(error);
+  });
+}
+
+/* ── Typed read / subscribe (v1.11.3.3) ──────────────────────────
+   Unlike fetchFirebaseData (which collapses every failure to null and is
+   indistinguishable from an empty node), these distinguish ok / denied /
+   error so callers never latch an empty cache on a permission_denied.
+   Used by the admin data stores (users, logs). */
+
+function _classifyFirebaseError(error) {
+  const code = String(error?.code || error?.message || '');
+  return /permission|denied|PERMISSION_DENIED/i.test(code) ? 'denied' : 'error';
+}
+
+/**
+ * One-shot typed read.
+ * @returns {Promise<{status:'ok'|'denied'|'error', value:*, code?:string}>}
+ */
+export async function readNode(path) {
+  const dbRef = getFirebaseRef(path);
+  if (!dbRef) return { status: 'error', value: null, code: 'no-ref' };
+  try {
+    const snapshot = await get(dbRef);
+    return { status: 'ok', value: snapshot.exists() ? snapshot.val() : null };
+  } catch (error) {
+    const status = _classifyFirebaseError(error);
+    console.error(`readNode ${path} (${status}):`, error);
+    return { status, value: null, code: String(error?.code || '') };
+  }
+}
+
+/**
+ * Recoverable realtime subscription. Returns the modular-SDK unsubscribe
+ * function so the caller can detach before re-attaching (no duplicate
+ * listeners). The error path classifies denied vs error so the caller can
+ * reset its state machine and re-subscribe once auth becomes available.
+ * @returns {Function} unsubscribe
+ */
+export function subscribeNode(path, onData, { onDenied, onError } = {}) {
+  const dbRef = getFirebaseRef(path);
+  if (!dbRef) { if (typeof onError === 'function') onError(new Error('no-ref')); return () => {}; }
+  return onValue(dbRef, onData, (error) => {
+    const status = _classifyFirebaseError(error);
+    console.error(`subscribeNode ${path} (${status}):`, error);
+    if (status === 'denied' && typeof onDenied === 'function') onDenied(error);
+    else if (typeof onError === 'function') onError(error);
   });
 }
 

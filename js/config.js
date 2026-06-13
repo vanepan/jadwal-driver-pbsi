@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.11.3.2';
-export const RELEASE_NAME = 'PWA Push Notification Foundation';
+export const APP_VERSION = '1.11.3.3';
+export const RELEASE_NAME = 'iPhone Stability & Push Pilot Readiness';
 
 /**
  * Web Push VAPID PUBLIC key (v1.11.3). Safe to ship — it is an
@@ -17,6 +17,20 @@ export const RELEASE_NAME = 'PWA Push Notification Foundation';
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.11.3.3',
+    date: '2026-06-14',
+    summary: 'iPhone PWA stability, admin data bootstrap fix, and Push pilot readiness',
+    highlights: [
+      'Admin Data Bootstrap fix (P1): User Management and Audit Center showed 0 records on iPhone PWA because /users and /logs were read at bootstrap BEFORE a Firebase Auth session existed; permission_denied was swallowed to [] and latched permanently (usersLoaded/logsLoaded=true on failure) with the realtime listener cancelled. New typed read/subscribe primitives (readNode/subscribeNode in firebase.js) distinguish ok/denied/error; the stores use explicit UNLOADED→LOADING→LOADED and IDLE→SUBSCRIBING→SUBSCRIBED state machines that reach LOADED/SUBSCRIBED only on success — a denied read never latches and is retried',
+      'Auth-driven orchestration: firebase.js emits onAuthAvailable/onAuthLost; app.js loads + subscribes /users and /logs behind a re-entrant authenticated-session gate (loadAuthedAdminData) that fires on warm launch, delayed session restore, AND fresh PIN login — so the admin datasets recover after an iPhone cold launch. Realtime listeners re-attach cleanly (no duplicates) after a denied attach or re-auth; sign-out tears them down',
+      'Push retry UX (P1): a FAILED push activation no longer suppresses the soft-ask — only an explicit dismiss (or a successful enable) records the 7-day TTL, so the user can retry immediately. Added an always-available entry point in Profile → Notifikasi Perangkat (Push) → "Aktifkan Notifikasi Perangkat", independent of the soft-ask (hidden where push is unsupported)',
+      'Mobile navigation fix (P1): the bottom-nav Dashboard button now always restores the Driver Operations workspace (rail + workspace + timeline), instead of only re-rendering a hidden timeline — eliminating the trap where admins were stranded in Administration on mobile/iPhone PWA',
+      'Telegram test diagnostics (P2): the test now surfaces the actual Telegram error reason (e.g. chat not found, 401 invalid token, Markdown parse error) instead of the opaque "sukses 0, gagal 1"; the bot token is never exposed',
+      'iOS clipboard UX (P3): the Chat ID paste fallback is now platform-aware — iPhone/iPad "Tekan dan tahan lalu pilih Paste", Mac "Cmd+V", desktop "Ctrl+V"',
+      'Client-only release: no Cloud Functions, rules, schema, envelope, or notification-engine code changed; SERVICE_VERSION stays 1.11.3. Version bump + sync-version.mjs re-stamps the service worker so installed PWAs pick up the fixes',
+    ],
+  },
   {
     version: '1.11.3.2',
     date: '2026-06-14',

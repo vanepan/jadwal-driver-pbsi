@@ -222,14 +222,23 @@ function _showSoftAsk() {
   document.body.appendChild(card);
   _softAskEl = card;
 
+  // Dismiss is an explicit "not now" → suppress for the TTL.
   document.getElementById('btnPushDismiss')?.addEventListener('click', () => {
     _recordSoftAsk();
     card.style.display = 'none';
   });
+  // Enable: only record (suppress) on SUCCESS. A failed activation must NOT
+  // suppress the soft-ask — the user keeps the card and can retry immediately.
   document.getElementById('btnPushEnable')?.addEventListener('click', async () => {
-    _recordSoftAsk();
+    const btn = document.getElementById('btnPushEnable');
+    if (btn) btn.disabled = true;
     const ok = await enablePush();
-    if (ok) card.style.display = 'none';
+    if (ok) {
+      _recordSoftAsk();
+      card.style.display = 'none';
+    } else if (btn) {
+      btn.disabled = false; // allow immediate retry
+    }
   });
 }
 

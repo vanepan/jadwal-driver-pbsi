@@ -1,11 +1,20 @@
 'use strict';
 
-import { fetchFirebaseData, subscribeFirebasePath, storeFirebaseData, updateFirebaseData, isFirebaseConfigured } from './firebase.js';
+import { readNode, subscribeNode, storeFirebaseData, updateFirebaseData, isFirebaseConfigured } from './firebase.js';
 
 const USERS_PATH = 'users';
+
+// Explicit state machines (v1.11.3.3) replace the old usersLoaded/usersSubscribed
+// booleans. LOADED/SUBSCRIBED are reached ONLY on a successful read — a
+// permission_denied never latches an empty cache, so a later auth-available
+// event recovers the data. See docs/ADMIN_DATA_BOOTSTRAP_FIX_DESIGN.md.
+const LOAD = { UNLOADED: 'UNLOADED', LOADING: 'LOADING', LOADED: 'LOADED' };
+const SUB = { IDLE: 'IDLE', SUBSCRIBING: 'SUBSCRIBING', SUBSCRIBED: 'SUBSCRIBED' };
+
 let users = [];
-let usersLoaded = false;
-let usersSubscribed = false;
+let loadState = LOAD.UNLOADED;
+let subState = SUB.IDLE;
+let unsubscribe = null;
 let onUsersChangeCallbacks = [];
 
 function normalizeUsername(value) {
@@ -30,39 +39,67 @@ function mapFirebaseUsers(value) {
   return Object.keys(raw).map(key => ({ id: key, username: key, ...raw[key] }));
 }
 
+// Apply an AUTHORITATIVE user set: caller has real data (successful read,
+// realtime snapshot, or local mutation). Marks LOADED and fans out to the UI.
+// Failure paths must NOT call this — that was the poisoned-cache bug.
 function refreshUsersCache(nextUsers) {
   users = nextUsers;
-  usersLoaded = true;
+  loadState = LOAD.LOADED;
   onUsersChangeCallbacks.forEach(cb => cb(users));
 }
 
-export async function initUsersSync() {
+/**
+ * Idempotent, re-entrant: load + attach the realtime listener for /users.
+ * The subscription's initial snapshot is the loader. Safe to call on every
+ * auth-available event — already-SUBSCRIBED is a no-op; a previously denied
+ * subscription (state reset to IDLE) re-attaches cleanly.
+ */
+export async function ensureUsersLoadedAndSubscribed() {
   if (!isFirebaseConfigured()) return;
+  if (subState !== SUB.IDLE) return; // SUBSCRIBING or SUBSCRIBED → nothing to do
+  subState = SUB.SUBSCRIBING;
+  if (unsubscribe) { try { unsubscribe(); } catch (_) {} unsubscribe = null; }
+  unsubscribe = subscribeNode(
+    USERS_PATH,
+    snapshot => {
+      refreshUsersCache(mapFirebaseUsers(snapshot.val())); // sets LOADED
+      subState = SUB.SUBSCRIBED;
+    },
+    {
+      // Denied/error → do NOT latch. Reset so a later auth-available retries.
+      onDenied: () => { subState = SUB.IDLE; loadState = LOAD.UNLOADED; },
+      onError: () => { subState = SUB.IDLE; loadState = LOAD.UNLOADED; },
+    }
+  );
+}
 
-  if (!usersLoaded) {
-    const raw = await fetchFirebaseData(USERS_PATH);
-    refreshUsersCache(mapFirebaseUsers(raw));
-  }
+/** Tear down on sign-out/expiry so a re-login reloads from a clean state. */
+export function resetUsersSync() {
+  if (unsubscribe) { try { unsubscribe(); } catch (_) {} unsubscribe = null; }
+  subState = SUB.IDLE;
+  loadState = LOAD.UNLOADED;
+  users = [];
+}
 
-  if (!usersSubscribed) {
-    usersSubscribed = true;
-    subscribeFirebasePath(USERS_PATH, snapshot => {
-      refreshUsersCache(mapFirebaseUsers(snapshot.val()));
-    });
-  }
+// Back-compat alias — callers (auth.js, app.js) keep calling initUsersSync().
+export async function initUsersSync() {
+  return ensureUsersLoadedAndSubscribed();
 }
 
 export async function getUsers() {
-  if (usersLoaded) return users;
-  const raw = await fetchFirebaseData(USERS_PATH);
-  refreshUsersCache(mapFirebaseUsers(raw));
+  if (loadState === LOAD.LOADED) return users;
+  const res = await readNode(USERS_PATH);
+  if (res.status === 'ok') {
+    refreshUsersCache(mapFirebaseUsers(res.value)); // sets LOADED only on success
+  }
+  // denied/error → return current cache WITHOUT latching; next call retries.
   return users;
 }
 
 export async function getUserByUsername(username) {
   if (!username) return null;
   const normalized = normalizeUsername(username);
-  if (!usersLoaded) await getUsers();
+  if (loadState !== LOAD.LOADED) await getUsers();
   return users.find(item => normalizeUsername(item.username) === normalized) || null;
 }
 
@@ -70,7 +107,7 @@ export async function validateUsername(username, excludeUsername = null) {
   if (!username) return false;
   if (!isValidUsername(username)) return false;
   const normalized = normalizeUsername(username);
-  if (!usersLoaded) await getUsers();
+  if (loadState !== LOAD.LOADED) await getUsers();
   const existing = users.find(user => normalizeUsername(user.username) === normalized);
   return !existing || normalizeUsername(excludeUsername) === normalized;
 }

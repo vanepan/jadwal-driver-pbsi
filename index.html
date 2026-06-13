@@ -568,6 +568,18 @@
           <button type="button" class="btn-secondary profile-test-btn" id="btnSendTestTelegram">Kirim Notifikasi Tes</button>
         </div>
         <div class="profile-divider"></div>
+        <!-- ── Device push notifications (v1.11.3.3) — always-available entry,
+             independent of the soft-ask. Hidden by JS when unsupported. ── -->
+        <div class="profile-section" id="profilePushSection">
+          <div class="profile-section-label">Notifikasi Perangkat (Push)</div>
+          <p class="profile-help-text">
+            Aktifkan push di perangkat ini untuk menerima notifikasi langsung
+            meski aplikasi sedang tertutup.
+          </p>
+          <button type="button" class="btn-secondary profile-test-btn" id="btnEnablePushDevice">Aktifkan Notifikasi Perangkat</button>
+          <span class="profile-status-text" id="pushDeviceStatusText"></span>
+        </div>
+        <div class="profile-divider"></div>
         <!-- ── Appearance ── -->
         <div class="profile-section" id="profileAppearanceSection">
           <div class="profile-section-label">Tampilan</div>

@@ -1,11 +1,19 @@
 'use strict';
 
-import { fetchFirebaseData, subscribeFirebasePath, storeFirebaseData, isFirebaseConfigured } from './firebase.js';
+import { readNode, subscribeNode, storeFirebaseData, isFirebaseConfigured } from './firebase.js';
 import { generateId } from './utils.js';
 
 const LOGS_PATH = 'logs';
+
+// State machines (v1.11.3.3) — mirror users.js. LOADED/SUBSCRIBED only on a
+// successful read; permission_denied never latches an empty cache.
+const LOAD = { UNLOADED: 'UNLOADED', LOADING: 'LOADING', LOADED: 'LOADED' };
+const SUB = { IDLE: 'IDLE', SUBSCRIBING: 'SUBSCRIBING', SUBSCRIBED: 'SUBSCRIBED' };
+
 let logs = [];
-let logsLoaded = false;
+let loadState = LOAD.UNLOADED;
+let subState = SUB.IDLE;
+let unsubscribe = null;
 let onLogsChangeCallback = null;
 
 function mapFirebaseLogs(value) {
@@ -17,8 +25,38 @@ function mapFirebaseLogs(value) {
 
 function refreshLogsCache(nextLogs) {
   logs = nextLogs;
-  logsLoaded = true;
+  loadState = LOAD.LOADED;
   if (onLogsChangeCallback) onLogsChangeCallback(logs);
+}
+
+/**
+ * Idempotent, re-entrant: load + attach the realtime listener for /logs.
+ * Driven by the auth-available signal (see app.js loadAuthedAdminData).
+ */
+export async function ensureLogsLoadedAndSubscribed() {
+  if (!isFirebaseConfigured()) return;
+  if (subState !== SUB.IDLE) return;
+  subState = SUB.SUBSCRIBING;
+  if (unsubscribe) { try { unsubscribe(); } catch (_) {} unsubscribe = null; }
+  unsubscribe = subscribeNode(
+    LOGS_PATH,
+    snapshot => {
+      refreshLogsCache(mapFirebaseLogs(snapshot.val())); // sets LOADED
+      subState = SUB.SUBSCRIBED;
+    },
+    {
+      onDenied: () => { subState = SUB.IDLE; loadState = LOAD.UNLOADED; },
+      onError: () => { subState = SUB.IDLE; loadState = LOAD.UNLOADED; },
+    }
+  );
+}
+
+/** Tear down on sign-out/expiry so a re-login reloads from a clean state. */
+export function resetLogsSync() {
+  if (unsubscribe) { try { unsubscribe(); } catch (_) {} unsubscribe = null; }
+  subState = SUB.IDLE;
+  loadState = LOAD.UNLOADED;
+  logs = [];
 }
 
 // Firebase rejects undefined values. Replace any undefined in the metadata
@@ -31,9 +69,12 @@ function sanitizeMetadata(meta) {
 }
 
 export async function getLogs() {
-  if (logsLoaded) return logs;
-  const raw = await fetchFirebaseData(LOGS_PATH);
-  refreshLogsCache(mapFirebaseLogs(raw));
+  if (loadState === LOAD.LOADED) return logs;
+  const res = await readNode(LOGS_PATH);
+  if (res.status === 'ok') {
+    refreshLogsCache(mapFirebaseLogs(res.value)); // sets LOADED only on success
+  }
+  // denied/error → return current cache WITHOUT latching; next call retries.
   return logs;
 }
 
@@ -59,10 +100,9 @@ export async function logAction({ userId, username, displayName = '', action, ta
   return entry;
 }
 
+// Registers the UI change callback only. The actual realtime subscription is
+// attached by ensureLogsLoadedAndSubscribed() behind the authenticated-session
+// gate — so it never attaches (and gets cancelled) while unauthenticated.
 export function subscribeLogsChangeListener(callback) {
   onLogsChangeCallback = callback;
-  if (!isFirebaseConfigured()) return;
-  subscribeFirebasePath(LOGS_PATH, snapshot => {
-    refreshLogsCache(mapFirebaseLogs(snapshot.val()));
-  });
 }

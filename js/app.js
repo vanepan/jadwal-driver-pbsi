@@ -12,7 +12,7 @@
 
 // Import all modules
 import { APP_NAME, APP_VERSION, RELEASE_NAME } from './config.js';
-import { loadAssignments, saveAssignments, saveOneAssignment, removeOneAssignment, loadRequests, saveRequests, initFirebaseSync, registerDataChangeListener, registerRequestsChangeListener, checkAssignmentSafety, fetchFirebaseData } from './firebase.js';
+import { loadAssignments, saveAssignments, saveOneAssignment, removeOneAssignment, loadRequests, saveRequests, initFirebaseSync, registerDataChangeListener, registerRequestsChangeListener, checkAssignmentSafety, fetchFirebaseData, onAuthAvailable, onAuthLost } from './firebase.js';
 import { recoverAssignmentsFromRequests } from './recovery.js';
 import { initDriverSelect, refreshDriverSelect } from './drivers.js';
 import {
@@ -93,9 +93,9 @@ import { initCommentHandlers, openCommentModal, closeCommentModal, setRequests a
 import { initAdminUI, updateAdminButtons, openUserFormModal } from './admin.js';
 import { initNotificationUI, setNotificationData, openNotificationsModal } from './notifications.js';
 import { setTelegramBotToken } from './telegram.js';
-import { subscribeLogsChangeListener, getLogs, logAction } from './logs.js';
+import { subscribeLogsChangeListener, getLogs, logAction, ensureLogsLoadedAndSubscribed, resetLogsSync } from './logs.js';
 import { publishEvent } from './events.js';
-import { getUserByUsername, getUsers, createUser, getUserList, activateUser, deactivateUser, registerUsersChangeListener, archiveUser, restoreUser, deleteUser, initUsersSync } from './users.js';
+import { getUserByUsername, getUsers, createUser, getUserList, activateUser, deactivateUser, registerUsersChangeListener, archiveUser, restoreUser, deleteUser, initUsersSync, ensureUsersLoadedAndSubscribed, resetUsersSync } from './users.js';
 import { expandDateRange, showToast, formatDateShort } from './utils.js';
 import {
   sendRequestApprovedNotification,
@@ -6785,6 +6785,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ── Bottom nav: Dashboard (scroll timeline to focus) ──
   document.getElementById('bottomNavDashboard')?.addEventListener('click', () => {
     setBottomNavActive('bottomNavDashboard');
+    // Always restore the Driver Operations workspace. Previously this only
+    // re-rendered the timeline, which stayed display:none while the user was
+    // in Administration — stranding them there (iPhone PWA nav trap). Resetting
+    // the rail + workspace guarantees the timeline becomes visible again.
+    if (activeRailModule !== 'driverops') setRailModule('driverops');
+    setV2PanelNavActive('v2NavDashboard');
+    setWorkspace('dashboard');
     setCurrentDate(getCurrentDate()); // resets lastAutoFocusedDate
     renderViews();
     if (isDriver()) renderDriverDashboard();
@@ -6835,12 +6842,27 @@ document.addEventListener('DOMContentLoaded', async () => {
   // runs exactly once — now if already signed in, else on first login —
   // so all RTDB reads/listeners are gated behind a signed-in user and
   // there are no permission_denied storms under auth != null rules.
-  let _sessionStarted = false;
-  async function startAuthenticatedSession() {
-    if (_sessionStarted) return;
-    _sessionStarted = true;
+  // ── Auth-gated admin data (v1.11.3.3) ──────────────────────────
+  // RE-ENTRANT: runs on EVERY auth-available signal so /users and /logs
+  // load+subscribe only while authenticated, and recover after an iPhone
+  // PWA cold launch / delayed session restore / fresh PIN login. The store
+  // ensure* helpers are idempotent (already-subscribed = no-op).
+  async function loadAuthedAdminData() {
+    await ensureUsersLoadedAndSubscribed();
+    await ensureLogsLoadedAndSubscribed();
+    // Refresh an already-open admin view (e.g. user logged in while on it).
+    if (currentWorkspace === 'administration') renderV2AdminWorkspace();
+  }
 
-    await initUsersSync();                 // user registry (was inside initAuthUI pre-1.11.1.2)
+  let _sessionInfraStarted = false;
+  async function startAuthenticatedSession() {
+    // Always (re)drive the auth-gated data load first.
+    await loadAuthedAdminData();
+
+    // One-shot infrastructure: stores, real-time sync, reminder timers, push.
+    if (_sessionInfraStarted) return;
+    _sessionInfraStarted = true;
+
     await initDriversStore();              // v1.5.0: seed/sync Firebase driver registry
     await initVehiclesStore();             // v1.5.2: seed/sync Firebase vehicle registry
     await initSettingsStore();             // v1.7.0: centralized settings foundation
@@ -6873,13 +6895,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     initPush();
   }
 
+  // Auth-presence orchestration (Firebase custom-auth mode). onAuthAvailable
+  // fires on warm launch, delayed restore, AND fresh login — so the admin
+  // datasets recover whenever a live session appears, not only at boot.
+  onAuthAvailable(() => { startAuthenticatedSession(); });
+  onAuthLost(() => { resetUsersSync(); resetLogsSync(); });
+
   await initAuthUI(() => {
     updatePermissionUI(true); // auth change → reset nav to Dashboard
     setSidebarActive(null);
-    if (getCurrentUser()) startAuthenticatedSession(); // login transition → start once
+    if (getCurrentUser()) startAuthenticatedSession(); // login transition (covers direct-PIN mode)
   });
 
   // Returning user (persisted session restored) → start immediately.
+  // (onAuthAvailable also covers this in Firebase mode; startAuthenticatedSession
+  // is idempotent so a double-trigger is harmless.)
   if (getCurrentUser()) {
     await startAuthenticatedSession();
   }
@@ -6931,14 +6961,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  getLogs().then((loadedLogs) => {
-    auditLogs = loadedLogs;
-    setNotificationData({
-      pendingRequests: getMyPendingRequestCount(),
-      recentLogs: auditLogs,
-    });
-  });
-
+  // /logs is loaded + subscribed behind the authenticated-session gate
+  // (loadAuthedAdminData → ensureLogsLoadedAndSubscribed). Here we only
+  // register the change listener; it fires once the gated subscription
+  // delivers its first authenticated snapshot.
   subscribeLogsChangeListener((updatedLogs) => {
     auditLogs = updatedLogs;
     setNotificationData({

@@ -1,11 +1,12 @@
 'use strict';
 
 import { getCurrentUser, isAdmin, logout } from './auth.js';
-import { createUser, getUserByUsername, getUsers, initUsersSync, updateUser, deactivateUser, validateUsername, registerUsersChangeListener } from './users.js';
+import { createUser, getUserByUsername, getUsers, updateUser, deactivateUser, validateUsername, registerUsersChangeListener, getUserList } from './users.js';
 import { logAction } from './logs.js';
 import { sendNotification } from './telegram.js';
 import { showToast } from './utils.js';
 import { syncPbsiSelect } from './pbsi-select.js';
+import { enablePush, isPushSupported } from './push.js';
 
 const TELEGRAM_BOT_USERNAME = 'PBSI_Assistant_Bot';
 const TELEGRAM_BOT_URL = `https://t.me/${TELEGRAM_BOT_USERNAME}`;
@@ -36,15 +37,19 @@ function syncSettingStatus(id, isOn) {
 }
 
 export async function initAdminUI() {
-  await initUsersSync();
-  users = await getUsers();
+  // UI wiring only. User data load + realtime subscription is auth-gated
+  // (app.js loadAuthedAdminData → ensureUsersLoadedAndSubscribed) so it never
+  // runs unauthenticated and poisons the cache. We render whatever is cached
+  // now (empty until auth arrives) and the change listener re-renders on the
+  // first authenticated snapshot. See docs/ADMIN_DATA_BOOTSTRAP_FIX_DESIGN.md.
   attachAdminButtons();
-  renderAdminList();
   registerUsersChangeListener((nextUsers) => {
     users = nextUsers;
     renderAdminList();
     checkCurrentUserActiveState();
   });
+  users = getUserList();
+  renderAdminList();
 }
 
 function attachAdminButtons() {
@@ -60,6 +65,7 @@ function attachAdminButtons() {
   const btnOpenTelegramBot = document.getElementById('btnOpenTelegramBot');
   const btnSendTestTelegram = document.getElementById('btnSendTestTelegram');
   const btnCopyMyIdCommand = document.getElementById('btnCopyMyIdCommand');
+  const btnEnablePushDevice = document.getElementById('btnEnablePushDevice');
 
   // V2 shell handles navigation to Administration workspace via setRailModule('administration').
   // Only attach the V1 modal in legacy (non-V2) context.
@@ -94,6 +100,7 @@ function attachAdminButtons() {
   if (btnOpenTelegramBot) btnOpenTelegramBot.addEventListener('click', openTelegramBot);
   if (btnSendTestTelegram) btnSendTestTelegram.addEventListener('click', handleSendTestTelegram);
   if (btnCopyMyIdCommand) btnCopyMyIdCommand.addEventListener('click', handleCopyMyIdCommand);
+  if (btnEnablePushDevice) btnEnablePushDevice.addEventListener('click', handleEnablePushDevice);
 
   // Telegram Chat ID input listeners
   const primaryChatIdField = document.getElementById('profileTelegramChatIdPrimary');
@@ -486,15 +493,30 @@ async function handlePasteChatId(event) {
       updateTelegramStatusBadge();
       showToast('Chat ID berhasil dipaste dari clipboard');
     } else {
-      // Fallback untuk browser lama
-      showToast('Clipboard API tidak tersedia. Paste manual menggunakan Ctrl+V');
+      // Fallback untuk browser lama / iOS (clipboard-read tidak tersedia)
+      showToast(`Clipboard tidak tersedia. ${pasteHint()}`);
       primaryField.focus();
     }
   } catch (error) {
     console.error('Paste error:', error);
-    showToast('Gagal paste dari clipboard. Paste manual dengan Ctrl+V');
+    showToast(`Gagal paste otomatis. ${pasteHint()}`);
     primaryField.focus();
   }
+}
+
+/**
+ * Platform-aware manual-paste guidance. iOS Safari blocks programmatic
+ * clipboard reads, so the operator must paste by hand — and the gesture
+ * differs per platform.
+ */
+function pasteHint() {
+  const ua = navigator.userAgent || '';
+  const isIOS = /iPad|iPhone|iPod/.test(ua) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPadOS 13+
+  const isMac = !isIOS && /Mac/i.test(navigator.platform || ua);
+  if (isIOS) return 'Tekan dan tahan kolom, lalu pilih Paste.';
+  if (isMac) return 'Tempel manual dengan Cmd+V.';
+  return 'Tempel manual dengan Ctrl+V.';
 }
 
 async function openProfileModal() {
@@ -548,6 +570,9 @@ async function openProfileModal() {
 
   // Update Telegram status badge saat modal dibuka
   updateTelegramStatusBadge();
+
+  // Reflect device push state (and hide the section where unsupported)
+  updatePushDeviceStatus();
 
   // Sync appearance toggle + status text to current theme
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
@@ -647,6 +672,25 @@ async function handleProfileSubmit(event) {
   }
 }
 
+/**
+ * Map a raw Telegram API error description to operator-friendly Indonesian,
+ * preserving the original text for anything unrecognized so no diagnostic
+ * information is lost. Input is the Telegram `description` (never the token).
+ */
+function humanizeTelegramError(raw) {
+  const msg = String(raw || '').trim();
+  if (!msg) return 'Alasan tidak diketahui.';
+  const m = msg.toLowerCase();
+  if (m.includes('chat not found')) return 'Chat ID tidak ditemukan — mulai percakapan dengan bot dulu (kirim /myid).';
+  if (m.includes('bot was blocked')) return 'Bot diblokir oleh pengguna ini.';
+  if (m.includes('unauthorized') || m.includes('401')) return 'Token bot tidak valid (401).';
+  if (m.includes('forbidden') || m.includes('403')) return 'Akses ditolak (403) — bot belum diizinkan mengirim ke chat ini.';
+  if (m.includes('parse') || m.includes('entities') || m.includes('markdown')) return 'Format pesan (Markdown) tidak valid.';
+  if (m.includes('too many requests') || m.includes('429')) return 'Terlalu banyak permintaan (429) — coba lagi sebentar.';
+  if (m.includes('koneksi gagal')) return msg; // already localized network error
+  return msg; // unknown → show the raw description verbatim
+}
+
 function openTelegramBot() {
   window.open(TELEGRAM_BOT_URL, '_blank', 'noopener');
 }
@@ -671,8 +715,20 @@ async function handleSendTestTelegram() {
     }
 
     const okCount = Array.isArray(results) ? results.filter(r => r.ok).length : 0;
-    const errCount = Array.isArray(results) ? results.filter(r => !r.ok).length : 0;
-    showToast(`Notifikasi tes: sukses ${okCount}, gagal ${errCount}`);
+    const failures = Array.isArray(results) ? results.filter(r => !r.ok) : [];
+
+    if (failures.length === 0) {
+      showToast(`Notifikasi tes terkirim ke ${okCount} chat.`);
+    } else {
+      // Surface the ACTUAL Telegram error reason so it is actionable, instead
+      // of the opaque "sukses 0, gagal 1". The reason is the Telegram API
+      // `description` (e.g. "chat not found", "Unauthorized") captured by
+      // telegram.js — it never contains the bot token.
+      const reasons = failures
+        .map(r => `${r.chatId}: ${humanizeTelegramError(r.error)}`)
+        .join(' · ');
+      showToast(`Tes Telegram — sukses ${okCount}, gagal ${failures.length}. ${reasons}`);
+    }
     await logAction({ userId: currentUser.id, username: currentUser.username, action: 'telegram_test_sent', targetId: JSON.stringify(results || {}) });
   } catch (error) {
     showToast(error.message || 'Gagal mengirim notifikasi tes.');
@@ -702,6 +758,54 @@ function handleCopyMyIdCommand() {
   } catch (e) {
     showToast('Gagal menyalin. Silakan salin secara manual: /myid');
   }
+}
+
+/**
+ * Settings → Notifications → device push. Always-available entry point,
+ * independent of the soft-ask card (which may have been dismissed). A failed
+ * activation never suppresses anything — the user can tap again immediately.
+ */
+async function handleEnablePushDevice(event) {
+  event?.preventDefault();
+  const btn = document.getElementById('btnEnablePushDevice');
+  if (btn) { btn.disabled = true; btn.textContent = 'Mengaktifkan…'; }
+  try {
+    const ok = await enablePush();
+    if (ok) showToast('Notifikasi perangkat aktif.');
+    // enablePush() surfaces its own failure toast; no double-toast here.
+  } finally {
+    if (btn) btn.textContent = 'Aktifkan Notifikasi Perangkat';
+    updatePushDeviceStatus();
+  }
+}
+
+/**
+ * Reflect device push state in the profile modal. Hides the whole section
+ * where push is unsupported (old iOS / no PushManager / no VAPID key).
+ */
+function updatePushDeviceStatus() {
+  const section = document.getElementById('profilePushSection');
+  const statusEl = document.getElementById('pushDeviceStatusText');
+  const btn = document.getElementById('btnEnablePushDevice');
+  if (!section) return;
+
+  if (!isPushSupported()) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = '';
+
+  const perm = (typeof Notification !== 'undefined') ? Notification.permission : 'default';
+  if (statusEl) {
+    if (perm === 'granted') {
+      statusEl.textContent = 'Notifikasi perangkat aktif.';
+    } else if (perm === 'denied') {
+      statusEl.textContent = 'Diblokir. Aktifkan lewat pengaturan browser/OS, lalu coba lagi.';
+    } else {
+      statusEl.textContent = 'Belum aktif di perangkat ini.';
+    }
+  }
+  if (btn) btn.disabled = (perm === 'denied');
 }
 
 function escapeHTML(value) {
