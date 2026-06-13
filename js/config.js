@@ -1,7 +1,7 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.11.3.1';
+export const APP_VERSION = '1.11.3.2';
 export const RELEASE_NAME = 'PWA Push Notification Foundation';
 
 /**
@@ -14,9 +14,19 @@ export const RELEASE_NAME = 'PWA Push Notification Foundation';
  * client-side (js/push.js no-ops), so the app degrades gracefully until
  * the key is set. Must equal the PUSH_VAPID_PUBLIC_KEY secret value.
  */
-export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLIBKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLIBKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
+export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.11.3.2',
+    date: '2026-06-14',
+    summary: 'VAPID keypair correction — restore valid Web Push public key (client + Secret Manager)',
+    highlights: [
+      'Root cause fix: VAPID_PUBLIC_KEY was a valid 87-char P-256 public key accidentally concatenated three times (261 chars / 195 decoded bytes), so pushManager.subscribe() threw before _register() and no /push_subscriptions record was ever written. Corrected to the single 87-char segment (65 decoded bytes, 0x04 uncompressed point)',
+      'The identical triplication existed in Secret Manager PUSH_VAPID_PUBLIC_KEY; it was re-set to the same single 87-char value so the server-side web-push.setVapidDetails no longer rejects a 195-byte key. PUSH_VAPID_PRIVATE_KEY was verified intact (its derived public key === the corrected segment) and left unchanged',
+      'No push logic, dispatcher, notification engine, event foundation, schema, reminder, or Telegram code changed — value-only correction plus a version bump to force a service-worker refresh and re-fetch of config.js',
+    ],
+  },
   {
     version: '1.11.3',
     date: '2026-06-13',
