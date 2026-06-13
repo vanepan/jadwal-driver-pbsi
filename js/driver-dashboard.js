@@ -23,6 +23,7 @@ const STATUS_LABELS = {
   assigned:  'Dijadwalkan',
   started:   'Berlangsung',
   completed: 'Selesai',
+  cancelled: 'Dibatalkan',
 };
 
 export function setAssignments(newAssignments) {
@@ -49,16 +50,17 @@ export function renderDriverDashboard() {
     .filter(a => a.date === today && a.status === 'assigned')
     .sort((a, b) => a.startTime.localeCompare(b.startTime));
 
-  // Upcoming: future dates, not completed
+  // Upcoming: future dates, not completed and not cancelled
   const upcoming = assignments
-    .filter(a => a.date > today && a.status !== 'completed')
+    .filter(a => a.date > today && a.status !== 'completed' && a.status !== 'cancelled')
     .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime))
     .slice(0, 20);
 
-  // History: completed assignments + overdue non-completed past assignments
+  // History: completed + cancelled (any date) + overdue non-completed past assignments
   const historyRaw = [
     ...assignments.filter(a => a.status === 'completed'),
-    ...assignments.filter(a => a.date < today && a.status !== 'completed' && a.status !== 'started'),
+    ...assignments.filter(a => a.status === 'cancelled'),
+    ...assignments.filter(a => a.date < today && a.status !== 'completed' && a.status !== 'started' && a.status !== 'cancelled'),
   ];
   const seen = new Set();
   const history = historyRaw

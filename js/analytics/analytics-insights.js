@@ -71,14 +71,32 @@ export function generateInsights(model) {
       'Open Rate');
   }
 
-  // ── Cancelled / other ──────────────────────────────────────────
+  // ── Cancelled assignments ──────────────────────────────────────
   if (k.cancelled > 0) {
-    const pct = Math.round((k.cancelled / total) * 100);
+    // Rate over ALL assignments (operational + cancelled). Prefer the canonical
+    // KPI (v1.10.8); fall back to deriving it for older models.
+    const pct = k.cancellationRate != null
+      ? k.cancellationRate
+      : Math.round((k.cancelled / (k.grandTotal || (total + k.cancelled))) * 100);
     const heavy = pct >= 20;
     push(heavy ? 'warning' : 'info', heavy ? INSIGHT_PRIORITY.IMPORTANT : INSIGHT_PRIORITY.GENERAL,
-      `${k.cancelled} penugasan dibatalkan / lainnya`,
-      `Sekitar ${pct}% dari total penugasan tidak berstatus aktif maupun selesai.`,
+      `${k.cancelled} penugasan dibatalkan (${pct}%)`,
+      `${k.cancelled} dari ${k.grandTotal || (total + k.cancelled)} penugasan dibatalkan pada periode ini — tidak dihitung sebagai pekerjaan selesai maupun utilisasi.`,
       'Cancelled Assignments');
+  }
+
+  // ── Cancellation concentration by bidang (v1.10.8) ─────────────
+  // Only when statistically meaningful: enough cancellations AND a clear leader.
+  const canc = (model && model.cancellation) || {};
+  const topCancBidang = canc.topBidang;
+  if (topCancBidang && (canc.count || 0) >= 3 && topCancBidang.count >= 2) {
+    const share = canc.count > 0 ? Math.round((topCancBidang.count / canc.count) * 100) : 0;
+    if (share >= 40) {
+      push('warning', INSIGHT_PRIORITY.IMPORTANT,
+        `Pembatalan terbanyak dari ${topCancBidang.name}`,
+        `${topCancBidang.name} menyumbang ${topCancBidang.count} dari ${canc.count} pembatalan (${share}%) pada periode ini.`,
+        'Cancellation by Bidang');
+    }
   }
 
   // ── Driver workload distribution ───────────────────────────────

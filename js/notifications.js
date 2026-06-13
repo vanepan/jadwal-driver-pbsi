@@ -49,6 +49,7 @@ const OPERATIONAL_ACTIONS = new Set([
   'request_rejected',
   'assignment_created',
   'assignment_completed',
+  'assignment_cancelled',
 ]);
 
 /* ── Action metadata — desc + optional detail rows ── */
@@ -116,6 +117,24 @@ const ACTION_META = {
     priority: 'medium',
     icon: '✔️',
   },
+  assignment_cancelled: {
+    title: 'Assignment Dibatalkan',
+    desc: e => {
+      const by = e.metadata?.cancelledByName || resolveDisplayName(e);
+      return `Assignment dibatalkan oleh ${by}.`;
+    },
+    detail: e => {
+      const m = e.metadata || {};
+      const rows = [];
+      if (m.destination) rows.push({ label: 'Tujuan',    value: m.destination });
+      if (m.vehicle)     rows.push({ label: 'Kendaraan', value: m.vehicle });
+      if (m.date)        rows.push({ label: 'Tanggal',   value: formatDateMedium(m.date) });
+      if (m.reason)      rows.push({ label: 'Alasan',    value: m.reason });
+      return rows.length > 0 ? rows : null;
+    },
+    priority: 'high',
+    icon: '✕',
+  },
 };
 
 /* ── Read state ── */
@@ -166,6 +185,7 @@ function isVisibleToUser(entry, user) {
         return meta.requesterId === username;
       case 'assignment_created':
       case 'assignment_completed':
+      case 'assignment_cancelled':
         // Assignment originated from their request
         return meta.requesterId === username;
       default:
@@ -177,6 +197,7 @@ function isVisibleToUser(entry, user) {
     switch (action) {
       case 'assignment_created':
       case 'assignment_completed':
+      case 'assignment_cancelled':
         // Prefer stable username match (new log entries carry driverUsername).
         // Fall back to display name for log entries written before this fix.
         if (meta.driverUsername) return meta.driverUsername === username;

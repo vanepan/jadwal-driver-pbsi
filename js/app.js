@@ -45,7 +45,7 @@ import { initPWA, getPWAState, registerPWAStateListener, triggerInstallPrompt, s
 import { initPbsiSelect } from './pbsi-select.js';
 import { initPbsiDatepicker, syncPbsiDatepicker } from './pbsi-datepicker.js';
 import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate } from './timeline.js';
-import { initModalHandlers, openDetailModal, registerEditCallback, registerDeleteCallback, registerStartCallback, registerCompleteCallback, registerCommentCallback as registerModalCommentCallback, setAssignments as setModalAssignments, updateDetailActionButtons } from './modal.js';
+import { initModalHandlers, openDetailModal, registerEditCallback, registerDeleteCallback, registerStartCallback, registerCompleteCallback, registerCommentCallback as registerModalCommentCallback, registerCancelCallback, setAssignments as setModalAssignments, updateDetailActionButtons } from './modal.js';
 import { initFormHandlers, openFormModal, closeFormModal, registerSaveCallback, setAssignments as setAssignmentsForm, setCurrentDate as setCurrentDateForm, checkConflict, deleteAssignment } from './assignments.js';
 import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver } from './auth.js';
 import * as DocumentEngine from './docs/doc-engine.js';
@@ -100,6 +100,7 @@ import {
   sendRequestRejectedNotification,
   sendNewRequestNotificationToAdmins,
   sendNewAssignmentNotificationToDriver,
+  sendAssignmentCancelledNotification,
   checkAndSendH1Reminders,
   checkAndSendHoursReminders,
 } from './notification-service.js';
@@ -1577,9 +1578,13 @@ function initV2DriverAvatars() {
  * Source-of-truth assignments[] is never mutated.
  */
 function getFilteredAssignments() {
-  if (!searchQuery) return assignments;
+  // Cancelled assignments are terminal — they drop off the active schedule board,
+  // KPI strip, and list view (they no longer occupy capacity). Records are retained
+  // in the master `assignments` array for audit, history, and analytics.
+  const active = assignments.filter(a => a.status !== 'cancelled');
+  if (!searchQuery) return active;
   const q = searchQuery.toLowerCase();
-  return assignments.filter(a =>
+  return active.filter(a =>
     (a.driver      || '').toLowerCase().includes(q) ||
     (a.destination || '').toLowerCase().includes(q) ||
     (a.purpose     || '').toLowerCase().includes(q) ||
@@ -3347,6 +3352,7 @@ const AUDIT_ACTION_LABELS = {
   assignment_deleted:   'Penugasan Dihapus',
   assignment_started:   'Penugasan Dimulai',
   assignment_completed: 'Penugasan Selesai',
+  assignment_cancelled: 'Penugasan Dibatalkan',
   request_created:      'Request Dibuat',
   request_approved:     'Request Disetujui',
   request_rejected:     'Request Ditolak',
@@ -3627,6 +3633,14 @@ function buildAuditHumanDetails(log) {
       break;
     case 'assignment_deleted':
       if (meta.beforeCount != null) chg('Jumlah Assignment', `${meta.beforeCount} penugasan`, `${meta.afterCount} penugasan`);
+      break;
+    case 'assignment_cancelled':
+      f('Driver',         meta.driver, true);
+      if (meta.destination) f('Tujuan', meta.destination);
+      f('Dibatalkan Oleh', meta.cancelledByName || meta.cancelledBy);
+      if (meta.cancelledAt) f('Waktu Pembatalan', formatAuditTimestamp(meta.cancelledAt));
+      if (meta.reason)     f('Alasan', meta.reason);
+      chg('Status Penugasan', 'Aktif', 'Dibatalkan');
       break;
 
     case 'request_approved':
@@ -4737,7 +4751,8 @@ function refreshAnalyticsDisplay() {
   // engine already produced (compRate, openRate, cancellation, Priority-1
   // findings) — no engine change, no fabricated data.
   const k = _analyticsModel.kpis;
-  const _cancRateExec = total > 0 ? Math.round((cancelled / total) * 100) : 0;
+  // Canonical cancellation rate (cancelled / all assignments) from the engine.
+  const _cancRateExec = k.cancellationRate ?? (total + cancelled > 0 ? Math.round((cancelled / (total + cancelled)) * 100) : 0);
   const _p1Count =
     (_analyticsModel.insights || []).filter(i => i.priority === 1).length +
     (_analyticsModel.recommendations || []).filter(r => r.priority === 1).length;
@@ -5040,7 +5055,8 @@ function refreshAnalyticsDisplay() {
   // ── §02 Operational Trends — de-boxed stat row (Sprint 7B) ─────────────
   // The 4 Trend-Engine KPIs as a de-boxed statrow with real period-over-period
   // deltas; never fabricates a comparison ('Semua Data' / insufficient history).
-  const _cancRate = total > 0 ? Math.round((cancelled / total) * 100) : 0;
+  const _cancRate = k.cancellationRate ?? (total + cancelled > 0 ? Math.round((cancelled / (total + cancelled)) * 100) : 0);
+  const _activeCount = inProgress + scheduled;
   const _trendStat = (label, value, metric) => {
     const d = _trendDelta(metric);
     const deltaHtml = d
@@ -5057,7 +5073,18 @@ function refreshAnalyticsDisplay() {
       : 'Pilih rentang waktu tertentu (mis. 30 Hari) untuk melihat perubahan dibanding periode sebelumnya.';
     return `<p class="an-note">${esc(msg)} <span>${esc(hint)}</span></p>`;
   })();
+  // Phase 4 (v1.10.8): operational status summary — counts, with cancelled
+  // visible but clearly separated from active operations. Total = all
+  // assignments (operational + cancelled) so the four figures reconcile.
+  const _statusSummary = `
+    <div class="statrow statrow--status">
+      <div class="st"><div class="l">Total Penugasan</div><div class="v">${total + cancelled}</div></div>
+      <div class="st"><div class="l">Selesai</div><div class="v">${completed}</div></div>
+      <div class="st"><div class="l">Aktif</div><div class="v">${_activeCount}</div></div>
+      <div class="st st--cancelled"><div class="l">Dibatalkan</div><div class="v">${cancelled}</div></div>
+    </div>`;
   const trendsContent = `
+    ${_statusSummary}
     ${_trendNote}
     <div class="statrow statrow--trends">
       ${_trendStat('Total Penugasan', total, _trends.totalAssignments)}
@@ -6202,12 +6229,15 @@ function _renderAnalyticsCharts({ completed, inProgress, scheduled, cancelled, t
     try { _analyticsCharts.set(id, new Chart(el, config)); } catch (_) {}
   }
 
-  // 1. Assignment status donut
-  if (total > 0) {
+  // 1. Assignment status donut — cancelled shown as its own labelled slice.
+  //    Percentages are over the sum of all slices (operational + cancelled),
+  //    so the donut's segments add up to 100%.
+  const _statusSum = completed + inProgress + scheduled + cancelled;
+  if (_statusSum > 0) {
     _makeChart('chartAssignmentStatus', {
       type: 'doughnut',
       data: {
-        labels: ['Selesai', 'Berlangsung', 'Dijadwalkan', 'Lainnya'],
+        labels: ['Selesai', 'Berlangsung', 'Dijadwalkan', 'Dibatalkan'],
         datasets: [{ data: [completed, inProgress, scheduled, cancelled],
           backgroundColor: ['#2F7D62','#3B5BA9','#7A7D8A','#A8292F'],
           borderColor: surfBg, borderWidth: 2, hoverOffset: 4 }]
@@ -6215,7 +6245,7 @@ function _renderAnalyticsCharts({ completed, inProgress, scheduled, cancelled, t
       options: { responsive: true, maintainAspectRatio: true, cutout: '62%',
         plugins: {
           legend: { position: 'bottom', labels: { color: textColor, padding: 14, boxWidth: 12 } },
-          tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed} (${total > 0 ? Math.round(ctx.parsed / total * 100) : 0}%)` } }
+          tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed} (${_statusSum > 0 ? Math.round(ctx.parsed / _statusSum * 100) : 0}%)` } }
         }
       }
     });
@@ -7165,6 +7195,97 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     showToast('✅ Penugasan selesai');
+  });
+
+  // ── Callback: Batalkan button di detail modal (v1.10.7) ──
+  // reason = string (already validated ≥10 chars di modal). Cancelled adalah
+  // terminal state: record tetap disimpan untuk audit & analytics.
+  registerCancelCallback((assignmentId, reason) => {
+    if (!hasPermission('cancel')) { showToast('Anda tidak punya akses untuk membatalkan'); return; }
+
+    const idx = assignments.findIndex(a => a.id === assignmentId);
+    if (idx === -1) return;
+
+    const existing = assignments[idx];
+    const existingStatus = normalizeAssignmentStatus(existing).status;
+
+    // Re-validate state server-side: terminal states can't be cancelled.
+    if (existingStatus === 'completed' || existingStatus === 'cancelled') {
+      showToast('Assignment ini tidak dapat dibatalkan');
+      return;
+    }
+    // Bidang may only cancel their own request-derived assignment before it starts.
+    const currentUser = getCurrentUser();
+    if (currentUser?.role === 'bidang') {
+      const owner = String(existing.createdBy || '').trim().toLowerCase();
+      const me = [currentUser.name, currentUser.username].filter(Boolean).map(v => String(v).trim().toLowerCase());
+      if (existingStatus !== 'assigned' || !existing.requestId || !me.includes(owner)) {
+        showToast('Anda tidak dapat membatalkan assignment ini');
+        return;
+      }
+    }
+
+    const now = new Date().toISOString();
+    assignments[idx] = {
+      ...existing,
+      status: 'cancelled',
+      cancelledAt: now,
+      cancelledBy: {
+        uid:  currentUser?.id || null,
+        name: currentUser?.name || '',
+        role: currentUser?.role || '',
+      },
+      cancellationReason: reason,
+      updatedAt: now,
+    };
+
+    updateAllModules();
+    saveAssignments(assignments);          // localStorage only
+    saveOneAssignment(assignments[idx]);   // surgical Firebase write
+    renderViews();
+
+    const cancelledAssignment = assignments[idx];
+    const requesterId = cancelledAssignment.requestId
+      ? (requests.find(r => r.id === cancelledAssignment.requestId)?.requesterId || null)
+      : null;
+    const cancelledDriverName = (cancelledAssignment.driver || '').trim().toLowerCase();
+    const cancelledDriverUser = cancelledDriverName
+      ? getUserList().find(u => u.role === 'driver' &&
+          ((u.displayName || '').trim().toLowerCase() === cancelledDriverName ||
+           (u.username   || '').trim().toLowerCase() === cancelledDriverName))
+      : null;
+
+    logAction({
+      userId:      currentUser?.id,
+      username:    currentUser?.username,
+      displayName: currentUser?.name,
+      action:      'assignment_cancelled',
+      targetId:    assignmentId,
+      metadata: {
+        driver:          cancelledAssignment.driver,
+        driverUsername:  cancelledDriverUser?.username || null,
+        vehicle:         cancelledAssignment.vehicle,
+        destination:     cancelledAssignment.destination,
+        date:            cancelledAssignment.date,
+        requestId:       cancelledAssignment.requestId,
+        requesterId:     requesterId,
+        cancelledByRole: currentUser?.role || '',
+        cancelledByName: currentUser?.name || '',
+        cancelledAt:     now,
+        reason,
+      },
+    });
+
+    // Notify affected parties (driver always; admins or requester depending on who cancelled).
+    sendAssignmentCancelledNotification(
+      cancelledAssignment,
+      { reason, cancelledByRole: currentUser?.role || '', cancelledByName: currentUser?.name || '' },
+      getUserByUsername,
+      getUsers,
+      requests,
+    );
+
+    showToast('✕ Assignment dibatalkan');
   });
 
   // Initialize Firebase real-time sync

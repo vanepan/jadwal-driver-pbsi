@@ -434,6 +434,7 @@ export function checkConflict(driverName, startTime, endTime, date, excludeId = 
 
   return assignments.some(a => {
     if (a.id === excludeId) return false; // Ignore diri sendiri
+    if (a.status === 'cancelled') return false; // Dibatalkan tidak memakai kapasitas
     if (a.driver !== driverName) return false; // Beda driver
     if (a.date !== date) return false; // Beda tanggal
 
@@ -461,6 +462,7 @@ export function checkVehicleConflict(vehicleName, startTime, endTime, date, excl
 
   return assignments.some(a => {
     if (a.id === excludeId) return false;
+    if (a.status === 'cancelled') return false; // Dibatalkan tidak memakai kapasitas
     if (a.vehicle !== vehicleName) return false;
     if (a.date !== date) return false;
     const aStart = timeToMinutes(a.startTime);

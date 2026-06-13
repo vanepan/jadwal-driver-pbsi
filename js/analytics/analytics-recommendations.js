@@ -59,12 +59,28 @@ export function generateRecommendations(model) {
       'Open Rate');
   }
   if (k.cancelled > 0) {
-    const pct = Math.round((k.cancelled / total) * 100);
+    // Rate over ALL assignments (operational + cancelled). Prefer canonical KPI.
+    const pct = k.cancellationRate != null
+      ? k.cancellationRate
+      : Math.round((k.cancelled / (k.grandTotal || (total + k.cancelled))) * 100);
     if (pct >= 20) {
       push('action', RECOMMENDATION_PRIORITY.RISK,
-        'Tinjau alur persetujuan penugasan',
-        `Sekitar ${pct}% penugasan dibatalkan/lainnya (${k.cancelled}). Tinjau alur persetujuan dan penyebab pembatalan.`,
+        'Tinjau alur persetujuan & penjadwalan',
+        `Sekitar ${pct}% penugasan dibatalkan (${k.cancelled}). Pembatalan berulang dapat menandakan inefisiensi perencanaan — tinjau alur persetujuan dan penyebab pembatalan.`,
         'Cancelled Assignments');
+    }
+  }
+  // Cancellation concentrated on one bidang → targeted scheduling review (v1.10.8).
+  // Gated to statistically significant volume to avoid noise.
+  const cancAgg = (model && model.cancellation) || {};
+  const topCancBidang = cancAgg.topBidang;
+  if (topCancBidang && (cancAgg.count || 0) >= 3 && topCancBidang.count >= 2) {
+    const share = cancAgg.count > 0 ? Math.round((topCancBidang.count / cancAgg.count) * 100) : 0;
+    if (share >= 40) {
+      push('action', RECOMMENDATION_PRIORITY.RISK,
+        `Tinjau praktik penjadwalan ${topCancBidang.name}`,
+        `${topCancBidang.name} menyumbang ${topCancBidang.count} dari ${canc.count} pembatalan (${share}%). Tinjau praktik penjadwalan bidang ini untuk menekan pembatalan berulang.`,
+        'Cancellation by Bidang');
     }
   }
 

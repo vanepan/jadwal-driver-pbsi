@@ -58,8 +58,17 @@ export function generateTrends(current, previous) {
 
   const cTotal = c.total || 0;
   const pTotal = p.total || 0;
-  const cCancRate = cTotal > 0 ? Math.round(((c.cancelled || 0) / cTotal) * 100) : 0;
-  const pCancRate = pTotal > 0 ? Math.round(((p.cancelled || 0) / pTotal) * 100) : 0;
+  // Cancellation rate is over ALL assignments (operational + cancelled).
+  // Prefer the canonical kpis.cancellationRate (v1.10.8); fall back to deriving
+  // it for older models that predate the KPI.
+  const cCancDenom = c.grandTotal || (cTotal + (c.cancelled || 0));
+  const pCancDenom = p.grandTotal || (pTotal + (p.cancelled || 0));
+  const cCancRate = c.cancellationRate != null
+    ? c.cancellationRate
+    : (cCancDenom > 0 ? Math.round(((c.cancelled || 0) / cCancDenom) * 100) : 0);
+  const pCancRate = p.cancellationRate != null
+    ? p.cancellationRate
+    : (pCancDenom > 0 ? Math.round(((p.cancelled || 0) / pCancDenom) * 100) : 0);
 
   return {
     totalAssignments: trendFor(cTotal, pTotal, null),          // informational

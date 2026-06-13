@@ -19,6 +19,7 @@ import { filterEligible } from './analytics-governance.js';
 import { generateInsights } from './analytics-insights.js';
 import { generateRecommendations } from './analytics-recommendations.js';
 import { generateTrends } from './analytics-trends.js';
+import { buildCancellationModel } from './analytics-cancellation.js';
 
 /* ── Pure helpers (moved verbatim from app.js) ───────────────────────────── */
 
@@ -180,12 +181,19 @@ export function computeAnalyticsModel(ctx) {
     filteredReqs = filteredReqs.filter(r => _reqDate(r) <= ctx.windowEnd);
   }
 
+  // ── Cancelled assignments (v1.10.7) ──────────────────────────────────────
+  // Cancelled records are retained in data but excluded from every operational
+  // aggregate (KPIs, completion rate, driver/vehicle utilization, destinations).
+  // They are surfaced separately so future cancellation analytics can use them.
+  const cancelledAsg = filteredAsg.filter(a => a.status === 'cancelled');
+  filteredAsg = filteredAsg.filter(a => a.status !== 'cancelled');
+
   // ── Assignment KPIs ────────────────────────────────────────────────────
   const total      = filteredAsg.length;
   const completed  = filteredAsg.filter(a => a.status === 'completed').length;
   const inProgress = filteredAsg.filter(a => a.status === 'started').length;
   const scheduled  = filteredAsg.filter(a => a.status === 'assigned').length;
-  const cancelled  = Math.max(0, total - completed - inProgress - scheduled);
+  const cancelled  = cancelledAsg.length;
   const openAsg    = inProgress + scheduled;
   const compRate   = total > 0 ? Math.round((completed / total) * 100) : 0;
 
@@ -444,6 +452,26 @@ export function computeAnalyticsModel(ctx) {
     _dqMainWarnings, _dqUnresolvedCount, _dqResolvedCount, _allDismissed, _allAliases,
   };
 
+  // ── Cancellation Intelligence (v1.10.8) ─────────────────────────────────
+  // Reusable aggregation foundation over the cancelled set. Resolves the
+  // bidang the same way the operational bidang section does (requestId →
+  // requesterName → alias), falling back to the requester stored on the
+  // assignment (createdBy). Never feeds operational KPIs.
+  const _resolveCancelBidang = (a) => {
+    if (a && a.requestId) {
+      const req = requests.find(r => r.id === a.requestId);
+      if (req && req.requesterName && req.requesterName.trim()) {
+        return _getAliasCanonical(bidangAliases[_normDestKey(req.requesterName)]) || req.requesterName;
+      }
+    }
+    return (a && a.createdBy) || null;
+  };
+  const cancellation = buildCancellationModel(cancelledAsg, {
+    resolveBidang: _resolveCancelBidang,
+    operationalTotal: total,
+    completed,
+  });
+
   const model = buildAnalyticsModel({
     metadata: {
       generatedAt: new Date().toISOString(),
@@ -451,12 +479,16 @@ export function computeAnalyticsModel(ctx) {
       dateRange: analyticsDateRange,
     },
     kpis: {
-      total, completed, inProgress, scheduled, cancelled, openAsg, compRate, openRate, completionRatio,
+      total, completed, inProgress, scheduled, cancelled, grandTotal: total + cancelled, openAsg, compRate, openRate, completionRatio,
+      // Cancellation Intelligence KPIs (v1.10.8):
+      cancellationRate: cancellation.rate,                                   // cancelled / (operational + cancelled)
+      completionVsCancellationRate: cancellation.completionVsCancellationRate, // completed / (completed + cancelled)
       activeDrivers: activeDrivers.length, activeVehicles: activeVehicles.length,
       driversWithTrips: driversWithTrips.length, vehiclesWithTrips: vehiclesWithTrips.length,
       totalKm, avgKmPerTrip, odoTripCount,
       wlBalancedCount, wlOverCount, wlUnderCount,
     },
+    cancellation,
     charts: {
       status: { completed, inProgress, scheduled, cancelled, total },
       driverWorkload: activeDriversInPeriod,
@@ -468,6 +500,7 @@ export function computeAnalyticsModel(ctx) {
     insights: [],
     diagnostics: {
       filteredAsg,
+      cancelledAsg, // retained for future cancellation analytics (rate, trend, by bidang/driver/destination)
       dqWarnings: _dqWarnings,
       dqMainWarnings: _dqMainWarnings,
       dqUnresolvedCount: _dqUnresolvedCount,

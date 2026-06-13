@@ -2426,6 +2426,11 @@ body.v2-shell-active #driverDashboard .badge-status--completed {
   color: var(--muted);
   border-color: var(--border-strong);
 }
+body.v2-shell-active #driverDashboard .badge-status--cancelled {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-color: rgba(168,41,47,.22);
+}
 
 /* Vehicle badge — background is inline style (JS-controlled).
    Override only shape/typography; leave background untouched.  */
@@ -5964,6 +5969,29 @@ textarea:disabled { opacity: 0.55; }
 .badge-status--assigned  { background: var(--ok-bg);     color: var(--ok);     border-color: var(--ok);     }
 .badge-status--started   { background: var(--warn-bg);   color: var(--warn);   border-color: var(--warn);   }
 .badge-status--completed { background: var(--info-bg);   color: var(--info);   border-color: var(--info);   }
+.badge-status--cancelled { background: var(--danger-bg); color: var(--danger); border-color: var(--danger); }
+
+/* ── v1.10.7 Assignment Cancellation Workflow ── */
+.detail-row--cancelled .detail-label,
+.detail-row--cancelled .detail-value { color: var(--danger); }
+
+.cancel-warning {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: 13px;
+  line-height: 1.45;
+  border: 1px solid color-mix(in srgb, var(--danger) 28%, transparent);
+}
+.cancel-reason-counter {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.cancel-reason-counter--ok { color: var(--ok); }
 
 /* WA accordion: semantic green tokens */
 #accordWA { border-color: var(--ok); background: var(--ok-bg); }
@@ -10568,6 +10596,9 @@ input[type="time"].v2-admin-config-input {
 .v2-analytics-claude .statrow .st .delta.up { color: var(--c-green); }
 .v2-analytics-claude .statrow .st .delta.down { color: var(--crit); }
 .v2-analytics-claude .statrow .st .delta.delta--none { color: var(--text-ghost); }
+/* Cancellation status cell (v1.10.8) — visible but clearly separated/muted. */
+.v2-analytics-claude .statrow .st--cancelled .l { color: var(--crit); }
+.v2-analytics-claude .statrow .st--cancelled .v { color: var(--crit); }
 
 /* ── Operational Health — divider insight list ──────────────────────────── */
 .v2-analytics-claude .insights { display: flex; flex-direction: column; }

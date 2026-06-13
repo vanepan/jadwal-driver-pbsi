@@ -20,7 +20,11 @@ const STATUS_LABELS = {
   assigned:  'Ditugaskan',
   started:   'Berlangsung',
   completed: 'Selesai',
+  cancelled: 'Dibatalkan',
 };
+
+/** Minimum characters required for a cancellation reason. */
+const CANCEL_REASON_MIN = 10;
 
 /* ── Module State ── */
 let viewingId = null;
@@ -30,6 +34,7 @@ let onDeleteCallback = null;
 let onStartCallback = null;
 let onCompleteCallback = null;
 let onCommentCallback = null;
+let onCancelCallback = null;
 
 /** Normalize legacy status values to canonical lifecycle codes. */
 function normalizeStatus(status) {
@@ -57,11 +62,47 @@ function canActOnAssignment(permission, assignment) {
   return false;
 }
 
+/**
+ * Cancellation eligibility (v1.10.7 — Assignment Cancellation Workflow).
+ *
+ * Admin   — may cancel any active assignment: 'assigned' (≈approved) or
+ *           'started' (≈in_progress).
+ * Bidang  — may cancel only their OWN request-derived assignment, and only
+ *           before the driver starts it ('assigned'). Once started,
+ *           operational control belongs to Admin.
+ * Completed / already-cancelled assignments are terminal → never cancellable.
+ */
+function canCancelAssignment(assignment) {
+  if (!hasPermission('cancel') || !assignment) return false;
+  const user = getCurrentUser();
+  if (!user) return false;
+
+  const status = normalizeStatus(assignment.status);
+  if (status === 'completed' || status === 'cancelled') return false;
+
+  if (user.role === 'admin') {
+    return status === 'assigned' || status === 'started';
+  }
+
+  if (user.role === 'bidang') {
+    if (status !== 'assigned') return false;       // not after driver starts
+    if (!assignment.requestId) return false;        // only request-derived
+    const owner = String(assignment.createdBy || '').trim().toLowerCase();
+    const me = [user.name, user.username]
+      .filter(Boolean)
+      .map(v => String(v).trim().toLowerCase());
+    return owner !== '' && me.includes(owner);
+  }
+
+  return false;
+}
+
 export function registerEditCallback(callback) { onEditCallback = callback; }
 export function registerDeleteCallback(callback) { onDeleteCallback = callback; }
 export function registerStartCallback(callback) { onStartCallback = callback; }
 export function registerCompleteCallback(callback) { onCompleteCallback = callback; }
 export function registerCommentCallback(callback) { onCommentCallback = callback; }
+export function registerCancelCallback(callback) { onCancelCallback = callback; }
 
 export function setAssignments(newAssignments) {
   assignments = newAssignments;
@@ -199,6 +240,66 @@ function _handleOdometerConfirm() {
   _closeOdometerModal(false); // confirm → don't reopen detail
 }
 
+/* ── Cancellation Modal ─────────────────────────────────────────
+   Confirmation dialog shown before cancelling an assignment.
+   Captures a mandatory reason (min 10 chars). Mirrors the odometer
+   modal pattern: detail modal closes first; "Kembali" reopens it.
+   ────────────────────────────────────────────────────────────── */
+
+let _cancelId = null; // assignment id pending cancellation
+
+function _syncCancelConfirmState() {
+  const input   = document.getElementById('cancelReasonInput');
+  const counter = document.getElementById('cancelReasonCounter');
+  const confirm = document.getElementById('btnConfirmCancel');
+  const len = input ? String(input.value).trim().length : 0;
+
+  if (counter) {
+    counter.textContent = len < CANCEL_REASON_MIN
+      ? `Minimal ${CANCEL_REASON_MIN} karakter (${len}/${CANCEL_REASON_MIN})`
+      : `${len} karakter`;
+    counter.classList.toggle('cancel-reason-counter--ok', len >= CANCEL_REASON_MIN);
+  }
+  if (confirm) confirm.disabled = len < CANCEL_REASON_MIN;
+}
+
+function _openCancelModal(assignmentId) {
+  _cancelId = assignmentId;
+  closeDetailModal(); // Option A — no stacked modals
+
+  const input = document.getElementById('cancelReasonInput');
+  if (input) input.value = '';
+  _syncCancelConfirmState();
+
+  const modal = document.getElementById('modalCancel');
+  if (modal) modal.style.display = 'flex';
+  setTimeout(() => { if (input) input.focus(); }, 80);
+}
+
+/**
+ * @param {boolean} reopenDetail - reopen the detail modal for the same assignment.
+ */
+function _closeCancelModal(reopenDetail = false) {
+  const modal = document.getElementById('modalCancel');
+  if (modal) modal.style.display = 'none';
+
+  const reopenId = _cancelId;
+  _cancelId = null;
+  if (reopenDetail && reopenId) openDetailModal(reopenId);
+}
+
+function _handleCancelConfirm() {
+  const input  = document.getElementById('cancelReasonInput');
+  const reason = input ? String(input.value).trim() : '';
+  if (reason.length < CANCEL_REASON_MIN) {
+    _syncCancelConfirmState();
+    return;
+  }
+  const id = _cancelId;
+  _closeCancelModal(false);
+  if (id && onCancelCallback) onCancelCallback(id, reason);
+}
+
 export function initModalHandlers() {
   initAccordionListeners();
 
@@ -272,6 +373,25 @@ export function initModalHandlers() {
       if (onCompleteCallback) onCompleteCallback(assignmentId, odoData);
       closeDetailModal();
     });
+  });
+
+  // Cancel (Batalkan) — open confirmation dialog to capture a reason
+  document.getElementById('btnCancelAssignment')?.addEventListener('click', () => {
+    const a = assignments.find(x => x.id === viewingId);
+    if (!canCancelAssignment(a)) {
+      showToast('Anda tidak dapat membatalkan assignment ini');
+      return;
+    }
+    _openCancelModal(viewingId);
+  });
+
+  // Cancellation modal: Kembali reopens detail; Konfirmasi performs the cancel
+  document.getElementById('btnCloseCancel')?.addEventListener('click',  () => _closeCancelModal(true));
+  document.getElementById('btnBackCancel')?.addEventListener('click',   () => _closeCancelModal(true));
+  document.getElementById('btnConfirmCancel')?.addEventListener('click', _handleCancelConfirm);
+  document.getElementById('cancelReasonInput')?.addEventListener('input', _syncCancelConfirmState);
+  document.getElementById('modalCancel')?.addEventListener('click', (e) => {
+    if (e.target === document.getElementById('modalCancel')) _closeCancelModal(true);
   });
 
   // Comment thread — only shown when assignment has a requestId
@@ -451,6 +571,23 @@ function buildOpsRows(a) {
       </div>`);
   }
 
+  // Cancellation audit (v1.10.7) — permanently visible once cancelled.
+  if (a.cancelledAt || a.cancellationReason) {
+    const cancelledByName = a.cancelledBy?.name || a.cancelledBy || '-';
+    rows.push(`
+      <div class="detail-row detail-row--cancelled">
+        <span class="detail-label">Dibatalkan oleh</span>
+        <span class="detail-value">${escapeHTML(cancelledByName)}${a.cancelledAt ? ` <span class="detail-ts">${formatDateTime(a.cancelledAt)}</span>` : ''}</span>
+      </div>`);
+    if (a.cancellationReason) {
+      rows.push(`
+      <div class="detail-row detail-row--cancelled">
+        <span class="detail-label">Alasan Pembatalan</span>
+        <span class="detail-value">${escapeHTML(a.cancellationReason)}</span>
+      </div>`);
+    }
+  }
+
   return rows.join('');
 }
 
@@ -527,9 +664,12 @@ export function updateDetailActionButtons() {
   const btnDelete   = document.getElementById('btnDeleteAssignment');
   const btnStart    = document.getElementById('btnStartAssignment');
   const btnComplete = document.getElementById('btnCompleteAssignment');
+  const btnCancel   = document.getElementById('btnCancelAssignment');
 
   const a = viewingId ? assignments.find(x => x.id === viewingId) : null;
   const status = normalizeStatus(a?.status);
+  // Terminal states can't be edited, started, completed, or re-cancelled.
+  const isTerminal = status === 'completed' || status === 'cancelled';
 
   const btnComment = document.getElementById('btnCommentThread');
   if (btnComment) {
@@ -543,8 +683,19 @@ export function updateDetailActionButtons() {
   }
 
   if (btnEdit) {
-    btnEdit.disabled = !hasPermission('edit');
-    btnEdit.title = hasPermission('edit') ? 'Edit jadwal' : 'Hanya admin yang bisa edit';
+    // Cancelled/completed assignments are terminal — editing is blocked.
+    const canEdit = hasPermission('edit') && status !== 'cancelled';
+    btnEdit.disabled = !canEdit;
+    btnEdit.title = status === 'cancelled'
+      ? 'Assignment yang dibatalkan tidak dapat diedit'
+      : (hasPermission('edit') ? 'Edit jadwal' : 'Hanya admin yang bisa edit');
+  }
+
+  if (btnCancel) {
+    const showCancel = canCancelAssignment(a);
+    btnCancel.style.display = showCancel ? '' : 'none';
+    btnCancel.disabled = false;
+    btnCancel.title = 'Batalkan assignment';
   }
 
   if (btnDelete) {
@@ -564,7 +715,8 @@ export function updateDetailActionButtons() {
   if (btnComplete) {
     const canComplete = canActOnAssignment('complete', a);
     const alreadyDone = status === 'completed';
-    btnComplete.style.display = canComplete ? '' : 'none';
+    // Hide for terminal states (completed already disabled it; cancelled removes it).
+    btnComplete.style.display = (canComplete && status !== 'cancelled') ? '' : 'none';
     btnComplete.disabled = alreadyDone;
     btnComplete.title = alreadyDone
       ? 'Penugasan sudah selesai'

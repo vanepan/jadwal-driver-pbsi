@@ -50,6 +50,10 @@ function build(vm) {
   const vehicleCounts = d.vehicleCounts || [];
   const bidang        = d.bidang        || [];
   const openRate = d.total > 0 ? Math.round(((d.openAsg || 0) / d.total) * 100) : 0;
+  // Cancellation figures (v1.10.8) — rate over ALL assignments (operational + cancelled).
+  const cancelled    = d.cancelled ?? 0;
+  const grandTotal   = (d.total ?? 0) + cancelled;
+  const cancRate     = grandTotal > 0 ? Math.round((cancelled / grandTotal) * 100) : 0;
 
   /* Section 4 chart selection: ≤6 vehicles → pie (composition reads well),
      >6 → bar (comparison across many items). */
@@ -129,12 +133,16 @@ function build(vm) {
         _bidangPie(bidang),
       ]),
 
-      _section('6. Completion Quality', 'Penyelesaian vs. penugasan terbuka.', [
+      _section('6. Completion Quality', 'Penyelesaian vs. penugasan terbuka & dibatalkan.', [
         _kpiCards([
           { value: `${d.compRate ?? 0}%`, label: 'Completion Rate', accent: true },
           { value: `${openRate}%`,         label: 'Open Rate' },
           { value: d.completed ?? 0,        label: 'Completed Assignments' },
           { value: d.openAsg ?? 0,          label: 'Open Assignments' },
+        ]),
+        _kpiCards([
+          { value: cancelled,        label: 'Cancelled Assignments' },
+          { value: `${cancRate}%`,   label: 'Cancellation Rate' },
         ]),
       ]),
 

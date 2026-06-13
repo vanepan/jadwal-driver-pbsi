@@ -159,6 +159,23 @@ function buildAssignmentCreatedMessage(assignment, requester) {
 }
 
 /**
+ * Build Telegram message untuk notifikasi pembatalan assignment (v1.10.7).
+ * Dikirim ke pihak terkait (driver + admin/requester tergantung pembatal).
+ */
+function buildAssignmentCancelledMessage(assignment, { reason, cancelledByName } = {}) {
+  return (
+    '🚫 *Assignment Dibatalkan*\n\n' +
+    `*Tujuan:* ${assignment.destination || '-'}\n` +
+    `*Tanggal:* ${formatTanggal(assignment.date)}\n` +
+    `*Waktu:* ${assignment.startTime || '-'} – ${assignment.endTime || '-'}\n` +
+    `*Driver:* ${assignment.driver || '-'}\n` +
+    `*Kendaraan:* ${assignment.vehicle || '-'}\n` +
+    `*Dibatalkan oleh:* ${cancelledByName || '-'}\n` +
+    `*Alasan:* ${reason || '-'}\n`
+  );
+}
+
+/**
  * Build Telegram message untuk reminder H-1 (24 jam sebelum).
  * Dikirim ke Requester + Driver.
  */
@@ -476,6 +493,61 @@ export async function sendNewAssignmentNotificationToDriver(assignment, getAllUs
 }
 
 /**
+ * Notify affected parties when an assignment is cancelled (v1.10.7).
+ *
+ * Recipients depend on who cancelled:
+ *   - Cancelled by Bidang → Admin(s) + assigned Driver
+ *   - Cancelled by Admin  → Requester (Bidang) + assigned Driver
+ * The driver is always notified. Fire-and-forget safe.
+ *
+ * @param {Object}   assignment  - The cancelled assignment
+ * @param {Object}   info        - { reason, cancelledByRole, cancelledByName }
+ * @param {Function} getUserByUsernameFn - async (username) => user | null
+ * @param {Function} getAllUsersFn       - async () => user[]
+ * @param {Array}    requests    - Current requests (resolve requesterId)
+ */
+export async function sendAssignmentCancelledNotification(assignment, info, getUserByUsernameFn, getAllUsersFn, requests) {
+  if (!assignment || typeof getAllUsersFn !== 'function') return;
+  const { cancelledByRole } = info || {};
+  const message = buildAssignmentCancelledMessage(assignment, info || {});
+
+  try {
+    const allUsers = await getAllUsersFn().catch(() => []);
+
+    // Always notify the assigned driver.
+    const driverUser = findDriverUser(allUsers, assignment.driver);
+    if (driverUser?.notificationsEnabled) {
+      try { await sendNotification(driverUser, message); }
+      catch (err) { console.error('[Notif] Cancel → driver failed:', err); }
+    }
+
+    if (cancelledByRole === 'bidang') {
+      // Notify all active admins.
+      const admins = allUsers.filter(u => u.role === 'admin' && u.active !== false && u.notificationsEnabled);
+      for (const admin of admins) {
+        try { await sendNotification(admin, message); }
+        catch (err) { console.error('[Notif] Cancel → admin failed:', err); }
+      }
+    } else {
+      // Cancelled by admin (or other) → notify requester (bidang) of the source request.
+      const origRequest = assignment.requestId && Array.isArray(requests)
+        ? requests.find(r => r.id === assignment.requestId)
+        : null;
+      if (origRequest?.requesterId && typeof getUserByUsernameFn === 'function') {
+        try {
+          const requester = await getUserByUsernameFn(origRequest.requesterId);
+          if (requester?.notificationsEnabled) await sendNotification(requester, message);
+        } catch (err) {
+          console.error('[Notif] Cancel → requester failed:', err);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[Notif] sendAssignmentCancelledNotification failed:', err);
+  }
+}
+
+/**
  * Send H-1 day reminders for assignments scheduled tomorrow.
  * Notifies both the requester (bidang) and the driver.
  * Deduplicates via localStorage; safe to call multiple times.
@@ -492,7 +564,7 @@ export async function checkAndSendH1Reminders(assignments, requests, getUserByUs
   const state = loadRemindersState();
 
   const pending = assignments.filter(a =>
-    a.date === tomorrow && !isReminderSent(state, `${a.id}:h1`)
+    a.date === tomorrow && a.status !== 'cancelled' && !isReminderSent(state, `${a.id}:h1`)
   );
 
   if (pending.length === 0) return;
@@ -553,6 +625,7 @@ export async function checkAndSendHoursReminders(assignments, requests, getUserB
   const state = loadRemindersState();
 
   const pending = assignments.filter(a => {
+    if (a.status === 'cancelled') return false;
     const mins = minutesUntilStart(a);
     return mins !== null && mins >= getSetting('notifications.h2WindowMinFrom') && mins <= getSetting('notifications.h2WindowMinTo') && !isReminderSent(state, `${a.id}:h2`);
   });

@@ -42,6 +42,10 @@ export function buildAnalyticsModel(parts = {}) {
     // Trend bucket (Sprint 6) — period-over-period comparison. Empty when no
     // previous-period model is supplied, so the shape is always stable.
     trends:         parts.trends         || {},
+    // Cancellation Intelligence (v1.10.8) — reusable aggregation buckets for
+    // the `cancelled` status (by bidang/driver/vehicle/destination/reason +
+    // monthly/weekly trend). Never feeds operational KPIs.
+    cancellation:   parts.cancellation   || {},
     diagnostics:    parts.diagnostics    || {},
     // Transitional projections (removed once components/exports render
     // from the structured buckets above).

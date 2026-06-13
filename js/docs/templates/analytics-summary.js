@@ -58,6 +58,7 @@ function build(vm) {
 
       { text: '1. Ringkasan Operasional', style: 'secLabel' },
       _kpiRow(d),
+      _cancellationCaption(d),
 
       { text: '2. Analitik Driver', style: 'secLabel' },
       _driverSection(d),
@@ -96,6 +97,24 @@ function _kpiRow(d) {
     columnGap: 6,
     margin: [0, 0, 0, 2],
   };
+}
+
+/* ── Section 1b: Cancellation summary caption (v1.10.8) ─────────
+   Cancelled assignments are shown but never inflate completion/utilization.
+   Rate is over ALL assignments (operational + cancelled). */
+function _cancellationCaption(d) {
+  const cancelled = d.cancelled ?? 0;
+  const total     = d.total ?? 0;            // operational total (excludes cancelled)
+  const completed = d.completed ?? 0;
+  const grand     = total + cancelled;
+  const cancRate  = grand > 0 ? Math.round((cancelled / grand) * 100) : 0;
+  const exec      = (completed + cancelled) > 0
+    ? Math.round((completed / (completed + cancelled)) * 100) : 0;
+  return _caption([
+    ['Dibatalkan',          `${cancelled} penugasan`],
+    ['Tingkat Pembatalan',  `${cancRate}%`],
+    ['Selesai vs Batal',    `${exec}%`],
+  ]);
 }
 
 /* ── Section 2: Driver analytics ────────────────────────────── */

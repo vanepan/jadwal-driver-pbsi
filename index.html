@@ -801,6 +801,7 @@
         <button class="btn-primary" id="btnStartAssignment">▶ Mulai Tugas</button>
         <button class="btn-success" id="btnCompleteAssignment">✓ Selesaikan</button>
         <button class="btn-secondary" id="btnCommentThread" style="display:none;">💬 Komentar</button>
+        <button class="btn-danger" id="btnCancelAssignment" style="display:none;">✕ Batalkan</button>
       </div>
 
       <!-- Section 2: Detail Tambahan — collapsed by default -->
@@ -930,6 +931,30 @@
     <div class="odo-modal__footer">
       <button type="button" class="odo-btn odo-btn--secondary" id="btnCancelOdometer">Batal</button>
       <button type="button" class="odo-btn odo-btn--primary" id="btnConfirmOdometer">Mulai Assignment</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: BATALKAN ASSIGNMENT ===== -->
+<div class="modal-overlay" id="modalCancel" style="display:none;">
+  <div class="modal-box modal-cancel-box">
+    <div class="modal-header">
+      <h2 class="modal-title">Batalkan Assignment</h2>
+      <button class="modal-close" id="btnCloseCancel">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p class="cancel-warning">Assignment yang dibatalkan tidak dapat diaktifkan kembali. Catatan ini disimpan permanen untuk audit.</p>
+      <div class="form-group form-full">
+        <label for="cancelReasonInput">Alasan Pembatalan *</label>
+        <textarea id="cancelReasonInput" rows="4"
+                  placeholder="Jelaskan alasan pembatalan (minimal 10 karakter)…"
+                  maxlength="500"></textarea>
+        <span class="cancel-reason-counter" id="cancelReasonCounter"></span>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" id="btnBackCancel">Kembali</button>
+        <button type="button" class="btn-danger" id="btnConfirmCancel" disabled>Konfirmasi Pembatalan</button>
+      </div>
     </div>
   </div>
 </div>
