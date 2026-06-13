@@ -12,7 +12,7 @@ const SERVICE_NAME = 'sarpras-operations';
  * APP_VERSION (js/config.js) so deploying the backend never triggers
  * the PWA "Versi baru tersedia" update banner.
  */
-const SERVICE_VERSION = '1.11.2';
+const SERVICE_VERSION = '1.11.3';
 
 /**
  * Deploy region. Must match the RTDB region (asia-southeast1) so that
@@ -50,4 +50,30 @@ const NOTIFICATION_FLAGS = {
   },
 };
 
-module.exports = { SERVICE_NAME, SERVICE_VERSION, REGION, DB_INSTANCE, NOTIFICATION_FLAGS };
+/**
+ * Push (Web Push / VAPID) configuration (v1.11.3).
+ *
+ *   subject     — VAPID contact (mailto: or https URL). REQUIRED by
+ *                 web-push.setVapidDetails. Not a secret.
+ *   deviceCap   — max subscriptions retained per user (abuse/storage
+ *                 bound; oldest-by-lastSeen pruned beyond this).
+ *   endpointAllowOrigins — accepted push-service hosts (subscription
+ *                 abuse guard in registerPushSubscription).
+ *   pilotAllowlist — Phase B/C ONLY. uids here receive REAL push even
+ *                 while NOTIFICATION_FLAGS.channels.push is false. Empty
+ *                 = pure shadow (Phase A). Phase D flips the flag true
+ *                 and empties this list.
+ */
+const PUSH_CONFIG = {
+  subject: 'mailto:ops@sarpras.pbsi',
+  deviceCap: 10,
+  endpointAllowOrigins: [
+    'fcm.googleapis.com',
+    'updates.push.services.mozilla.com',
+    'push.services.mozilla.com',
+    'web.push.apple.com',
+  ],
+  pilotAllowlist: [],
+};
+
+module.exports = { SERVICE_NAME, SERVICE_VERSION, REGION, DB_INSTANCE, NOTIFICATION_FLAGS, PUSH_CONFIG };

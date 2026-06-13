@@ -23,6 +23,13 @@
     "notification_deliveries": {
       ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
       ".write": "false"
+    },
+
+    "push_subscriptions": {
+      ".write": "false",
+      "$userId": {
+        ".read": "auth.uid === $userId || auth.token.role === 'admin' || auth.token.role === 'developer'"
+      }
     }
   }
 }

@@ -10,6 +10,7 @@
 import { getUserByUsername, initUsersSync } from './users.js';
 import { logAction } from './logs.js';
 import { showToast } from './utils.js';
+import { cleanupPushOnLogout } from './push.js';
 import {
   callVerifyPin,
   signInWithToken,
@@ -201,6 +202,15 @@ export async function logout() {
     localStorage.removeItem(SESSION_KEY);
     notifyAuthChange();
     return;
+  }
+
+  // Push cleanup BEFORE signOut — the callable needs the live auth
+  // session. A logged-out device must stop receiving push; siblings
+  // keep working (per-device record). Best-effort, never blocks logout.
+  try {
+    await cleanupPushOnLogout();
+  } catch (err) {
+    console.warn('[auth] push cleanup on logout failed:', err);
   }
 
   try {

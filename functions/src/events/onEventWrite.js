@@ -24,13 +24,16 @@
 
 const { onValueCreated } = require('firebase-functions/v2/database');
 const logger = require('firebase-functions/logger');
-const { REGION, DB_INSTANCE, NOTIFICATION_FLAGS } = require('../config/constants');
-const { TELEGRAM_BOT_TOKEN } = require('../config/secrets');
+const { REGION, DB_INSTANCE, NOTIFICATION_FLAGS, PUSH_CONFIG } = require('../config/constants');
+const { TELEGRAM_BOT_TOKEN, PUSH_VAPID_PUBLIC_KEY, PUSH_VAPID_PRIVATE_KEY } = require('../config/secrets');
 const { validateEnvelope } = require('./schema');
 const { processEvent } = require('../notifications/engine');
 
 const onEventWrite = onValueCreated(
-  { ref: '/events/{eventId}', region: REGION, instance: DB_INSTANCE, secrets: [TELEGRAM_BOT_TOKEN] },
+  {
+    ref: '/events/{eventId}', region: REGION, instance: DB_INSTANCE,
+    secrets: [TELEGRAM_BOT_TOKEN, PUSH_VAPID_PUBLIC_KEY, PUSH_VAPID_PRIVATE_KEY],
+  },
   async (event) => {
     const envelope = event.data.val();
     const eventId = event.params.eventId;
@@ -53,12 +56,21 @@ const onEventWrite = onValueCreated(
       return;
     }
 
-    /* 2. Run the notification engine. The bot token is only resolved when
-       the telegram channel is actually enabled (it stays dormant this
-       release), so a dormant deploy never requires the secret at runtime. */
+    /* 2. Run the notification engine. Channel credentials are resolved
+       lazily — only when a channel can actually send — so a fully shadow
+       deploy never reads a secret at runtime. Push needs VAPID whenever
+       the flag is ON or a pilot allowlist exists (Phase B/C sends to
+       allowlisted recipients while the global flag is still OFF). */
     try {
       const token = NOTIFICATION_FLAGS.channels.telegram ? TELEGRAM_BOT_TOKEN.value() : null;
-      const result = await processEvent({ ...envelope, id: envelope.id || eventId }, { token });
+      const pushMaySend = NOTIFICATION_FLAGS.channels.push ||
+        (Array.isArray(PUSH_CONFIG.pilotAllowlist) && PUSH_CONFIG.pilotAllowlist.length > 0);
+      const vapid = pushMaySend ? {
+        subject:    PUSH_CONFIG.subject,
+        publicKey:  PUSH_VAPID_PUBLIC_KEY.value(),
+        privateKey: PUSH_VAPID_PRIVATE_KEY.value(),
+      } : null;
+      const result = await processEvent({ ...envelope, id: envelope.id || eventId }, { token, vapid });
       logger.info('[onEventWrite] engine result', { eventId, ...result });
     } catch (err) {
       logger.error('[onEventWrite] engine failed', { eventId, type: envelope.type, error: err.message });

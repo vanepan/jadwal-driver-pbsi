@@ -31,9 +31,11 @@ const {
 } = require('./model');
 const { render } = require('./templates');
 const { telegramChatIds } = require('./recipients');
-const { NOTIFICATION_FLAGS } = require('../config/constants');
+const { NOTIFICATION_FLAGS, PUSH_CONFIG } = require('../config/constants');
 const { sendWithRetry } = require('../telegram/retry');
 const { recordDelivery: recordTelegramAudit } = require('../telegram/deliveryLog');
+const { loadSubscriptions, pruneSubscription } = require('../push/model');
+const { sendPushWithRetry } = require('../push/send');
 
 /**
  * Dispatch one notification to all its channels. Channel failures are
@@ -146,21 +148,86 @@ async function dispatchTelegram(notification, { event, recipient, token }) {
   });
 }
 
-/* ── push (SCAFFOLD ONLY — v1.11.3) ─────────────────────────
-   No registry entry enables push this release, so this is never
-   reached in production. Present so the future cutover is one
-   registry edit, not a dispatcher rewrite. */
-async function dispatchPush(notification) {
-  logger.info('[dispatcher] push channel dormant (scaffold, v1.11.3)', {
-    notificationId: notification.id,
-  });
-  return recordDelivery({
+/* ── push (Web Push / VAPID — v1.11.3) ──────────────────────
+   Multi-device. Resolves the recipient's /push_subscriptions, sends
+   one encrypted Web Push per device (with retry), prunes Gone (404/410)
+   subscriptions, and records ONE aggregate delivery row carrying the
+   per-device breakdown.
+
+   Gating (architecture §7 — two-part control, no accidental sends):
+     • registry membership puts PUSH in notification.channels → we get here.
+     • NOTIFICATION_FLAGS.channels.push (or a Phase B/C pilot allowlist
+       entry for this recipient) decides SEND vs SHADOW. While neither
+       is satisfied we record a shadow row and send nothing. */
+function _pushLive(recipientId) {
+  if (NOTIFICATION_FLAGS.channels.push) return true;
+  return Array.isArray(PUSH_CONFIG.pilotAllowlist) &&
+    PUSH_CONFIG.pilotAllowlist.map(String).includes(String(recipientId));
+}
+
+async function dispatchPush(notification, { event, recipient, vapid } = {}) {
+  const base = {
     eventId: notification.eventId,
     notificationId: notification.id,
     recipientId: notification.recipientId,
     channel: CHANNELS.PUSH,
-    status: DELIVERY_STATUS.QUEUED,
-    shadow: true,
+  };
+
+  const subs = await loadSubscriptions(notification.recipientId);
+  if (!subs.length) {
+    return recordDelivery({ ...base, status: DELIVERY_STATUS.FAILED, error: 'no push subscription' });
+  }
+
+  // Shadow (Phase A–C): record intent + device count, send nothing.
+  if (!_pushLive(notification.recipientId)) {
+    return recordDelivery({
+      ...base, status: DELIVERY_STATUS.QUEUED, shadow: true, target: `${subs.length} device(s)`,
+    });
+  }
+
+  // Idempotency: a prior successful push for this (event,recipient) → skip.
+  const existing = await getDelivery(deliveryId(base));
+  if (existing && existing.status === DELIVERY_STATUS.SENT) return existing;
+
+  if (!vapid || !vapid.publicKey || !vapid.privateKey) {
+    return recordDelivery({ ...base, status: DELIVERY_STATUS.FAILED, error: 'vapid keys unavailable' });
+  }
+
+  const rendered = render(notification.type, event, recipient, CHANNELS.PUSH) || {};
+  const payload = JSON.stringify({
+    title: rendered.title || notification.title,
+    body:  rendered.body || notification.body,
+    data:  rendered.data || {},
+  });
+
+  const devices = {};
+  let anySent = false, anyExpired = false, anyOther = false, maxAttempts = 0;
+
+  for (const sub of subs) {
+    const r = await sendPushWithRetry(
+      { endpoint: sub.endpoint, keys: sub.keys }, payload, vapid,
+    );
+    maxAttempts = Math.max(maxAttempts, r.attempts || 1);
+    if (r.ok) {
+      anySent = true;
+      devices[sub.deviceId] = { status: DELIVERY_STATUS.SENT, attempts: r.attempts };
+    } else if (r.expired) {
+      anyExpired = true;
+      devices[sub.deviceId] = { status: DELIVERY_STATUS.EXPIRED, attempts: r.attempts, error: r.error };
+      try { await pruneSubscription(notification.recipientId, sub.deviceId); }
+      catch (err) { logger.error('[dispatcher] push prune failed', { error: err.message }); }
+    } else {
+      anyOther = true;
+      devices[sub.deviceId] = { status: DELIVERY_STATUS.FAILED, attempts: r.attempts, error: r.error };
+    }
+  }
+
+  const status = anySent
+    ? DELIVERY_STATUS.SENT
+    : (anyExpired && !anyOther ? DELIVERY_STATUS.EXPIRED : DELIVERY_STATUS.FAILED);
+
+  return recordDelivery({
+    ...base, status, attempts: maxAttempts, devices, target: `${subs.length} device(s)`,
   });
 }
 

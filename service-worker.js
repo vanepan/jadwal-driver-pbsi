@@ -21,7 +21,7 @@
    bump, no reinstall, no drift between deployed and installed.
    ============================================================ */
 
-const SW_VERSION  = '1.11.1.3';   // stamped from config.js — do not edit by hand
+const SW_VERSION  = '1.11.3';   // stamped from config.js — do not edit by hand
 const CACHE_NAME  = `sarpras-cache-v${SW_VERSION}`;
 const OFFLINE_URL = '/offline.html';
 const VERSION_URL = '/version.json';
@@ -115,4 +115,43 @@ self.addEventListener('fetch', event => {
 /* ── Messages ────────────────────────────────────────────── */
 self.addEventListener('message', event => {
   if (event.data === 'SKIP_WAITING') self.skipWaiting();
+});
+
+/* ── Push (v1.11.3) ──────────────────────────────────────────
+   Additive only — does NOT touch the cache/update lifecycle above.
+   Payload (from the server dispatcher) is JSON: { title, body, data }.
+   userVisibleOnly is enforced: every push shows a notification. */
+self.addEventListener('push', event => {
+  let payload = {};
+  try { payload = event.data ? event.data.json() : {}; } catch (_) { payload = {}; }
+
+  const title = payload.title || 'Sarpras Operations';
+  const options = {
+    body: payload.body || '',
+    data: payload.data || {},
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
+    // Collapse repeat notifications for the same entity (data.entityId).
+    tag: (payload.data && payload.data.entityId) || undefined,
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+/* ── Notification click (v1.11.3) ────────────────────────────
+   Focus an existing app window and route it (postMessage NAV), else
+   open a new one at the deep link. */
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const target = (event.notification.data && event.notification.data.url) || '/';
+
+  event.waitUntil((async () => {
+    const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const existing = all.find(c => c.url.indexOf(self.registration.scope) === 0);
+    if (existing) {
+      await existing.focus();
+      existing.postMessage({ type: 'NAV', url: target });
+    } else {
+      await self.clients.openWindow(target);
+    }
+  })());
 });

@@ -34,8 +34,9 @@ const DELIVERIES_PATH = 'notification_deliveries';
 /** Notification lifecycle (coarse — per-channel detail lives in deliveries). */
 const NOTIFICATION_STATUS = { QUEUED: 'queued', DISPATCHED: 'dispatched' };
 
-/** Per-channel delivery lifecycle. `delivered` reserved for push receipts (v1.11.3). */
-const DELIVERY_STATUS = { QUEUED: 'queued', SENT: 'sent', FAILED: 'failed', DELIVERED: 'delivered' };
+/** Per-channel delivery lifecycle. `delivered` reserved for push receipts.
+    `expired` = push subscription was Gone (404/410) and got pruned (v1.11.3). */
+const DELIVERY_STATUS = { QUEUED: 'queued', SENT: 'sent', FAILED: 'failed', DELIVERED: 'delivered', EXPIRED: 'expired' };
 
 /** Channel identifiers. push is scaffold-only this release. */
 const CHANNELS = { IN_APP: 'inApp', TELEGRAM: 'telegram', PUSH: 'push' };
@@ -104,6 +105,7 @@ async function getDelivery(id) {
 async function recordDelivery({
   eventId, notificationId = null, recipientId, channel,
   status, attempts = 0, terminal = false, error = null, target = null, shadow = false,
+  devices = null,
 }) {
   const id = deliveryId({ eventId, recipientId, channel });
   const record = {
@@ -118,6 +120,9 @@ async function recordDelivery({
     error:          error || null,
     target:         target || null,
     shadow:         Boolean(shadow),
+    // Per-device push outcomes (push is multi-device; one row per
+    // (event,recipient,channel) with the per-device breakdown embedded).
+    devices:        devices || null,
     updatedAt:      new Date().toISOString(),
   };
   await db.ref(`${DELIVERIES_PATH}/${id}`).set(record);

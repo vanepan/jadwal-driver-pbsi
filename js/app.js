@@ -42,6 +42,7 @@ import {
 } from './vehicles-store.js';
 import { initSettingsStore, getSetting, updateSetting, registerSettingsChangeListener } from './settings-store.js';
 import { initPWA, getPWAState, registerPWAStateListener, triggerInstallPrompt, showIOSInstallModal } from './pwa.js';
+import { initPush } from './push.js';
 import { initPbsiSelect } from './pbsi-select.js';
 import { initPbsiDatepicker, syncPbsiDatepicker } from './pbsi-datepicker.js';
 import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate } from './timeline.js';
@@ -6866,6 +6867,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const runH2Check = () => checkAndSendHoursReminders(assignments, requests, getUserByUsername, getUsers);
     runH2Check();
     setInterval(runH2Check, getSetting('notifications.h2ReminderCheckIntervalMs'));
+
+    // Push (v1.11.3): wire deep-link nav, refresh/heal an existing
+    // subscription, and offer the soft-ask once. No-op where unsupported.
+    initPush();
   }
 
   await initAuthUI(() => {

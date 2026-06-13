@@ -35,6 +35,8 @@ const { onEventWrite } = require('./src/events/onEventWrite');
 
 const { telegramProxy } = require('./src/telegram/proxyEndpoint');
 
+const { registerPushSubscription, unregisterPushSubscription } = require('./src/push/callables');
+
 exports.health = health;
 exports.verifyPin = verifyPin;
 
@@ -44,3 +46,9 @@ exports.onRequestWrite = onRequestWrite;
 exports.onEventWrite = onEventWrite;
 
 exports.telegramProxy = telegramProxy;
+
+/* Push Subscription Registry (v1.11.3) — server-only write path into
+   /push_subscriptions. Subscription send lives inside onEventWrite via
+   the dispatcher; these only register/unregister devices. */
+exports.registerPushSubscription = registerPushSubscription;
+exports.unregisterPushSubscription = unregisterPushSubscription;

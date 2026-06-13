@@ -169,8 +169,21 @@ const TEMPLATES = {
 };
 
 /**
+ * Build a deep-link target the PWA can resolve from a push click
+ * ("/?view=assignment&id=ASG-…"). Derived from the canonical entity.
+ */
+function deepLink(event) {
+  const ent = (event && event.entity) || {};
+  if (!ent.kind || !ent.id) return '/';
+  return `/?view=${encodeURIComponent(ent.kind)}&id=${encodeURIComponent(ent.id)}`;
+}
+
+/**
  * Render a notification for a recipient on a channel.
- * @returns {{title:string, body:string, text:string}|null}
+ *   telegram → { title, body, text:<rich Markdown> }
+ *   push     → { title, body, text, data:{ type, url, entityId } }
+ *   default  → { title, body, text:"title\nbody" }
+ * @returns {{title:string, body:string, text:string, data?:Object}|null}
  */
 function render(type, event, recipient, channel) {
   const t = TEMPLATES[type];
@@ -182,7 +195,14 @@ function render(type, event, recipient, channel) {
   if (channel === 'telegram' && typeof t.telegram === 'function') {
     return { title, body, text: t.telegram(ev, recipient) };
   }
+  if (channel === 'push') {
+    const ent = ev.entity || {};
+    return {
+      title, body, text: `${title}\n${body}`,
+      data: { type, url: deepLink(ev), entityId: ent.id || null },
+    };
+  }
   return { title, body, text: `${title}\n${body}` };
 }
 
-module.exports = { render, TEMPLATES };
+module.exports = { render, TEMPLATES, deepLink };

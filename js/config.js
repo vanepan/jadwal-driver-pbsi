@@ -1,10 +1,36 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.11.1.3';
-export const RELEASE_NAME = 'Server Telegram + Event Foundation';
+export const APP_VERSION = '1.11.3';
+export const RELEASE_NAME = 'PWA Push Notification Foundation';
+
+/**
+ * Web Push VAPID PUBLIC key (v1.11.3). Safe to ship — it is an
+ * application-server identity, not a secret. The matching PRIVATE key
+ * lives ONLY in Secret Manager (PUSH_VAPID_PRIVATE_KEY) on the server.
+ *
+ * OPERATOR: paste the public key from `npx web-push generate-vapid-keys`
+ * here before deploying. Empty string → push opt-in is feature-disabled
+ * client-side (js/push.js no-ops), so the app degrades gracefully until
+ * the key is set. Must equal the PUSH_VAPID_PUBLIC_KEY secret value.
+ */
+export const VAPID_PUBLIC_KEY = '';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.11.3',
+    date: '2026-06-13',
+    summary: 'PWA Push Notification Foundation (shadow-first; push channel OFF by default)',
+    highlights: [
+      'Push is Channel #3 inside the EXISTING Event → Notification Engine → Dispatcher pipeline — no parallel notification path. The dispatchPush scaffold is now filled: it resolves /push_subscriptions, sends standards-based Web Push (VAPID) per device with retry, prunes Gone (404/410) subscriptions, and records one aggregate /notification_deliveries row with a per-device breakdown',
+      'Standards-based Web Push + VAPID (web-push library) — no FCM, no second service worker, no client messaging SDK. The existing service-worker.js gains ONLY push + notificationclick listeners; install/activate/fetch/update lifecycle is byte-for-byte unchanged',
+      'Device registry /push_subscriptions/{userId}/{deviceId}: stable client-minted deviceId (localStorage + IndexedDB) so endpoint rotation overwrites in place; multi-device, reinstall-safe, logout-safe. Server-only write path via registerPushSubscription / unregisterPushSubscription callables (clients never write the node directly; ownership taken from the verified token)',
+      'Permission UX (js/push.js): soft-ask (7-day TTL) → iOS install gate (reuses showIOSInstallModal) → native prompt → subscribe → register. Feature-degrades silently on unsupported browsers / iOS < 16.4. Logout deletes this device’s subscription and unsubscribes locally; siblings keep working',
+      'Shadow-first rollout: NOTIFICATION_FLAGS.channels.push = false by default → dispatchPush records shadow rows and sends NOTHING. PUSH added to the registry (assignment + request lifecycle) so dispatch INVOKES the push arm; an empty PUSH_CONFIG.pilotAllowlist keeps Phase A pure shadow. Two-part gate (registry membership + flag/allowlist) means no single edit causes a production send',
+      'Security: VAPID private key in Secret Manager (PUSH_VAPID_PRIVATE_KEY), public key in config.js (identity, not a secret); /push_subscriptions read scoped to owner+admin; endpoint-origin allowlist + per-user device cap in the register callable',
+      'Strictly scoped: Reminder Engine/Push (v1.11.4), Comment Push (v1.11.5), and notification preferences UI are NOT included. Rollback = flip channels.push back to false (backend-only, no banner)',
+    ],
+  },
   {
     version: '1.11.1.3',
     date: '2026-06-13',

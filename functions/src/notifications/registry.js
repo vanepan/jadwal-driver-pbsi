@@ -20,19 +20,24 @@
 
 const { CHANNELS } = require('./model');
 
-const { IN_APP, TELEGRAM } = CHANNELS;
+const { IN_APP, TELEGRAM, PUSH } = CHANNELS;
 
+/* PUSH is on the assignment + request lifecycle and request.created.
+   Membership only makes dispatch() INVOKE dispatchPush — it records a
+   shadow row until NOTIFICATION_FLAGS.channels.push (or a pilot
+   allowlist entry) makes it actually send (v1.11.3 §7). comment.added
+   PUSH is intentionally deferred to v1.11.5. */
 const REGISTRY = {
-  'assignment.created':   { channels: [IN_APP, TELEGRAM], template: 'assignment.created' },
-  'assignment.started':   { channels: [IN_APP],           template: 'assignment.started' },
-  'assignment.completed': { channels: [IN_APP, TELEGRAM], template: 'assignment.completed' },
-  'assignment.cancelled': { channels: [IN_APP, TELEGRAM], template: 'assignment.cancelled' },
+  'assignment.created':   { channels: [IN_APP, TELEGRAM, PUSH], template: 'assignment.created' },
+  'assignment.started':   { channels: [IN_APP],                 template: 'assignment.started' },
+  'assignment.completed': { channels: [IN_APP, TELEGRAM, PUSH], template: 'assignment.completed' },
+  'assignment.cancelled': { channels: [IN_APP, TELEGRAM, PUSH], template: 'assignment.cancelled' },
 
-  'request.created':      { channels: [IN_APP, TELEGRAM], template: 'request.created' },
-  'request.approved':     { channels: [IN_APP, TELEGRAM], template: 'request.approved' },
-  'request.rejected':     { channels: [IN_APP, TELEGRAM], template: 'request.rejected' },
+  'request.created':      { channels: [IN_APP, TELEGRAM, PUSH], template: 'request.created' },
+  'request.approved':     { channels: [IN_APP, TELEGRAM, PUSH], template: 'request.approved' },
+  'request.rejected':     { channels: [IN_APP, TELEGRAM, PUSH], template: 'request.rejected' },
 
-  'comment.added':        { channels: [IN_APP, TELEGRAM], template: 'comment.added' },
+  'comment.added':        { channels: [IN_APP, TELEGRAM],       template: 'comment.added' },
 };
 
 /** Registry entry for a canonical type, or null if not notifiable. */

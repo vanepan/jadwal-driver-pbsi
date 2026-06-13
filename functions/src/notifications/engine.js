@@ -36,7 +36,9 @@ const lc = (v) => String(v || '').trim().toLowerCase();
  * Turn one canonical event into notifications + deliveries.
  *
  * @param {Object} event  canonical envelope (must carry its id)
- * @param {Object} [opts] { token } — Telegram bot token (Phase D only)
+ * @param {Object} [opts] { token, vapid } — Telegram bot token (Phase D)
+ *                        and Web Push VAPID details (push send), each
+ *                        resolved only when its channel is live.
  * @returns {Promise<Object>} a structured outcome for logging
  */
 async function processEvent(event, opts = {}) {
@@ -85,7 +87,7 @@ async function processEvent(event, opts = {}) {
     const { created: wasCreated } = await persistNotification(notification);
     if (wasCreated) created += 1;
 
-    await dispatch(notification, { event, recipient, token: opts.token });
+    await dispatch(notification, { event, recipient, token: opts.token, vapid: opts.vapid });
   }
 
   logger.info('[engine] processed event', {

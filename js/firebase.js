@@ -198,6 +198,41 @@ export async function callPublishEvent(payload) {
 }
 
 /**
+ * Register a Web Push subscription for this device (v1.11.3).
+ * Server-only write path into /push_subscriptions — the client never
+ * writes that node directly. The server derives userId from the verified
+ * token (NOT the payload), so a caller cannot register under another user.
+ * @param {{ deviceId:string, subscription:Object, platform?:string, appVersion?:string }} payload
+ * @returns {Promise<{ ok:boolean, created:boolean }>}
+ */
+export async function callRegisterPushSubscription(payload) {
+  if (!firebaseDb) initFirebaseApp();
+  if (!firebaseApp) throw new Error('Firebase belum siap.');
+  if (!firebaseFunctions) {
+    firebaseFunctions = getFunctions(firebaseApp, FUNCTIONS_REGION);
+  }
+  const fn = httpsCallable(firebaseFunctions, 'registerPushSubscription');
+  const result = await fn(payload);
+  return result.data;
+}
+
+/**
+ * Unregister (delete) this device's push subscription (opt-out / logout).
+ * @param {{ deviceId:string }} payload
+ * @returns {Promise<{ ok:boolean }>}
+ */
+export async function callUnregisterPushSubscription(payload) {
+  if (!firebaseDb) initFirebaseApp();
+  if (!firebaseApp) throw new Error('Firebase belum siap.');
+  if (!firebaseFunctions) {
+    firebaseFunctions = getFunctions(firebaseApp, FUNCTIONS_REGION);
+  }
+  const fn = httpsCallable(firebaseFunctions, 'unregisterPushSubscription');
+  const result = await fn(payload);
+  return result.data;
+}
+
+/**
  * Sign in with a custom token minted by verifyPin.
  * @param {string} token
  */
