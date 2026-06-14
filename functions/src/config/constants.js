@@ -65,7 +65,12 @@ const NOTIFICATION_FLAGS = {
  *                 and empties this list.
  */
 const PUSH_CONFIG = {
-  subject: 'mailto:ops@sarpras.pbsi',
+  // VAPID contact. MUST be a real mailto: domain or https: URL — Apple Web
+  // Push (web.push.apple.com) validates this claim and rejects an invalid
+  // domain with 403 BadJwtToken (FCM/Mozilla ignore it). 'sarpras.pbsi' is
+  // not a routable TLD, so iOS push failed; the project hosting URL is valid
+  // and Apple-accepted (verified against evan's iOS subscription, v1.11.3).
+  subject: 'https://schedule-driver-pbsi.web.app',
   deviceCap: 10,
   endpointAllowOrigins: [
     'fcm.googleapis.com',
