@@ -109,7 +109,16 @@ const PUSH_CONFIG = {
  * browser reminders) → D(channels.push). Flip one field per phase.
  */
 const REMINDER_FLAGS = {
-  enabled: false,
+  // Phase A — SHADOW ACTIVATION (v1.11.4 production activation, 2026-06-14).
+  // enabled:true starts row materialization + the tick emitting reminder
+  // events; channels stay OFF so EVERY reminder records a shadow delivery and
+  // SENDS NOTHING. The browser reminder path (notification-service.js
+  // checkAndSendH1/HoursReminders) remains the live sender — no double-send,
+  // no gap. Advancing to telegram/push delivery (Phase C/D) is GATED on
+  // retiring the browser reminders in the SAME deploy + a /reminders backfill
+  // (see REMINDER_PRODUCTION_ACTIVATION_REVIEW.md). Do NOT flip channels.*
+  // true until then.
+  enabled: true,
   channels: {
     inApp: true,
     telegram: false,
