@@ -109,13 +109,34 @@ const PUSH_CONFIG = {
  * browser reminders) → D(channels.push). Flip one field per phase.
  */
 const REMINDER_FLAGS = {
-  enabled: false,
+  // Phase A — SHADOW ACTIVATION (v1.11.4 production activation, 2026-06-14).
+  // enabled:true starts row materialization + the tick emitting reminder
+  // events; channels stay OFF so EVERY reminder records a shadow delivery and
+  // SENDS NOTHING. The browser reminder path (notification-service.js
+  // checkAndSendH1/HoursReminders) remains the live sender — no double-send,
+  // no gap. Advancing to telegram/push delivery (Phase C/D) is GATED on
+  // retiring the browser reminders in the SAME deploy + a /reminders backfill
+  // (see REMINDER_PRODUCTION_ACTIVATION_REVIEW.md). Do NOT flip channels.*
+  // true until then.
+  enabled: true,
   channels: {
     inApp: true,
     telegram: false,
     push: false,
   },
   pilotAllowlist: [],
+  // Role-based reminder PUSH pilot (v1.11.4). A recipient receives REAL
+  // reminder push if their role is listed here (OR channels.push true OR an
+  // exact-case pilotAllowlist match). Consulted ONLY for assignment.reminder
+  // PUSH — by BOTH dispatcher.liveFor and the onEventWrite credential gate
+  // (they must read the same predicate). Lifecycle push is unaffected
+  // (it never consults REMINDER_FLAGS). Reminder push has NO browser
+  // equivalent, so this cannot double-send; reminder Telegram stays shadow.
+  // NOTE: reminder recipients are the assigned driver + the requester
+  // (role 'bidang') only — admins are NOT reminder recipients today, so
+  // 'admin' here is forward-compatible (no admin reminder exists to send).
+  // Effective live target: drivers. 'bidang'/requester stays shadow.
+  pushRoles: ['admin', 'driver'],
 };
 
 module.exports = { SERVICE_NAME, SERVICE_VERSION, REGION, DB_INSTANCE, NOTIFICATION_FLAGS, PUSH_CONFIG, REMINDER_FLAGS };

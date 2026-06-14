@@ -74,7 +74,8 @@ const onEventWrite = onValueCreated(
       const pushMaySend = NOTIFICATION_FLAGS.channels.push ||
         (Array.isArray(PUSH_CONFIG.pilotAllowlist) && PUSH_CONFIG.pilotAllowlist.length > 0) ||
         (isReminder && (REMINDER_FLAGS.channels.push ||
-          (Array.isArray(REMINDER_FLAGS.pilotAllowlist) && REMINDER_FLAGS.pilotAllowlist.length > 0)));
+          (Array.isArray(REMINDER_FLAGS.pilotAllowlist) && REMINDER_FLAGS.pilotAllowlist.length > 0) ||
+          (Array.isArray(REMINDER_FLAGS.pushRoles) && REMINDER_FLAGS.pushRoles.length > 0)));
       const vapid = pushMaySend ? {
         subject:    PUSH_CONFIG.subject,
         publicKey:  PUSH_VAPID_PUBLIC_KEY.value(),
