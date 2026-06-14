@@ -146,10 +146,14 @@ function resolveRecipients(event, users) {
       break;
     }
     case 'assignment.reminder': {
-      // System-originated (no human actor to exclude) — remind everyone on
-      // the trip: assigned driver + requester (if the trip came from a request).
+      // System-originated (no human actor to exclude) — remind everyone with
+      // an operational stake in the trip: assigned driver + requester (if the
+      // trip came from a request) + all active admins (fleet oversight).
+      // Dedup is handled by add(); whether each actually receives PUSH is the
+      // role gate (REMINDER_FLAGS.pushRoles) — admins/drivers live, bidang shadow.
       add(resolveDriver(users, p));
       add(byUsername(users, p.requesterId));
+      admins(users).forEach(a => add(a));
       break;
     }
     case 'comment.added': {
