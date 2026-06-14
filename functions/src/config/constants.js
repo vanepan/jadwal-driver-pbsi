@@ -73,7 +73,7 @@ const PUSH_CONFIG = {
     'push.services.mozilla.com',
     'web.push.apple.com',
   ],
-  pilotAllowlist: [],
+  pilotAllowlist: ['evan'],
 };
 
 module.exports = { SERVICE_NAME, SERVICE_VERSION, REGION, DB_INSTANCE, NOTIFICATION_FLAGS, PUSH_CONFIG };
