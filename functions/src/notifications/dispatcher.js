@@ -44,12 +44,13 @@ const { sendPushWithRetry } = require('../push/send');
  * onEventWrite uses to load credentials (REV2 §2.2) — gate and credential
  * cannot disagree, or a reminder channel either fails or leaks.
  *
- * @param {string} channel       CHANNELS.*
- * @param {Object} notification  carries `type` and `recipientId`
- * @param {string} recipientId   the resolved recipient (username/uid)
+ * @param {string} channel        CHANNELS.*
+ * @param {Object} notification   carries `type` and `recipientId`
+ * @param {string} recipientId    the resolved recipient (username/uid)
+ * @param {string} [recipientRole] the recipient's role (role-based reminder push)
  * @returns {boolean} true → real send; false → shadow.
  */
-function liveFor(channel, notification, recipientId) {
+function liveFor(channel, notification, recipientId, recipientRole) {
   const isReminder = notification && notification.type === 'assignment.reminder';
 
   if (channel === CHANNELS.IN_APP) {
@@ -63,7 +64,10 @@ function liveFor(channel, notification, recipientId) {
   }
   if (channel === CHANNELS.PUSH) {
     if (isReminder) {
-      return Boolean(REMINDER_FLAGS.channels.push) || _inAllowlist(REMINDER_FLAGS.pilotAllowlist, recipientId);
+      // Role-based pilot (admin/driver) OR exact-username pilot OR global.
+      return Boolean(REMINDER_FLAGS.channels.push)
+        || _inRoles(REMINDER_FLAGS.pushRoles, recipientRole)
+        || _inAllowlist(REMINDER_FLAGS.pilotAllowlist, recipientId);
     }
     return Boolean(NOTIFICATION_FLAGS.channels.push) || _inAllowlist(PUSH_CONFIG.pilotAllowlist, recipientId);
   }
@@ -73,6 +77,13 @@ function liveFor(channel, notification, recipientId) {
 /** Exact, case-sensitive allowlist match (the documented pilot gotcha). */
 function _inAllowlist(list, recipientId) {
   return Array.isArray(list) && list.map(String).includes(String(recipientId));
+}
+
+/** Role match (case-insensitive — roles are a controlled lowercase vocab). */
+function _inRoles(list, role) {
+  if (!Array.isArray(list) || !role) return false;
+  const r = String(role).trim().toLowerCase();
+  return list.map(x => String(x).trim().toLowerCase()).includes(r);
 }
 
 /**
@@ -212,8 +223,9 @@ async function dispatchPush(notification, { event, recipient, vapid } = {}) {
   }
 
   // Shadow: record intent + device count, send nothing. Reminder vs
-  // lifecycle gating (incl. each pilot allowlist) is in liveFor().
-  if (!liveFor(CHANNELS.PUSH, notification, notification.recipientId)) {
+  // lifecycle gating (incl. each pilot allowlist + role pilot) is in liveFor();
+  // the recipient's role drives the role-based reminder push pilot.
+  if (!liveFor(CHANNELS.PUSH, notification, notification.recipientId, recipient && recipient.role)) {
     return recordDelivery({
       ...base, status: DELIVERY_STATUS.QUEUED, shadow: true, target: `${subs.length} device(s)`,
     });

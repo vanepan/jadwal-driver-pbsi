@@ -125,6 +125,18 @@ const REMINDER_FLAGS = {
     push: false,
   },
   pilotAllowlist: [],
+  // Role-based reminder PUSH pilot (v1.11.4). A recipient receives REAL
+  // reminder push if their role is listed here (OR channels.push true OR an
+  // exact-case pilotAllowlist match). Consulted ONLY for assignment.reminder
+  // PUSH — by BOTH dispatcher.liveFor and the onEventWrite credential gate
+  // (they must read the same predicate). Lifecycle push is unaffected
+  // (it never consults REMINDER_FLAGS). Reminder push has NO browser
+  // equivalent, so this cannot double-send; reminder Telegram stays shadow.
+  // NOTE: reminder recipients are the assigned driver + the requester
+  // (role 'bidang') only — admins are NOT reminder recipients today, so
+  // 'admin' here is forward-compatible (no admin reminder exists to send).
+  // Effective live target: drivers. 'bidang'/requester stays shadow.
+  pushRoles: ['admin', 'driver'],
 };
 
 module.exports = { SERVICE_NAME, SERVICE_VERSION, REGION, DB_INSTANCE, NOTIFICATION_FLAGS, PUSH_CONFIG, REMINDER_FLAGS };
