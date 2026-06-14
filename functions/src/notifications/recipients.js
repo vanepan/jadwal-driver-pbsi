@@ -145,6 +145,13 @@ function resolveRecipients(event, users) {
       }
       break;
     }
+    case 'assignment.reminder': {
+      // System-originated (no human actor to exclude) — remind everyone on
+      // the trip: assigned driver + requester (if the trip came from a request).
+      add(resolveDriver(users, p));
+      add(byUsername(users, p.requesterId));
+      break;
+    }
     case 'comment.added': {
       // Thread participants minus the author: admin(s), owning bidang, assigned driver.
       admins(users).forEach(a => add(a, { excludeActor: true }));

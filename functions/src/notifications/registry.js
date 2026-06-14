@@ -38,6 +38,11 @@ const REGISTRY = {
   'request.rejected':     { channels: [IN_APP, TELEGRAM, PUSH], template: 'request.rejected' },
 
   'comment.added':        { channels: [IN_APP, TELEGRAM],       template: 'comment.added' },
+
+  // v1.11.4 Reminder Engine. Membership only makes dispatch() INVOKE each
+  // arm; whether it SENDS is the REMINDER_FLAGS gate (dispatcher.liveFor),
+  // independent of the lifecycle NOTIFICATION_FLAGS.
+  'assignment.reminder':  { channels: [IN_APP, TELEGRAM, PUSH], template: 'assignment.reminder' },
 };
 
 /** Registry entry for a canonical type, or null if not notifiable. */

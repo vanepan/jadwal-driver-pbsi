@@ -31,11 +31,49 @@ const {
 } = require('./model');
 const { render } = require('./templates');
 const { telegramChatIds } = require('./recipients');
-const { NOTIFICATION_FLAGS, PUSH_CONFIG } = require('../config/constants');
+const { NOTIFICATION_FLAGS, PUSH_CONFIG, REMINDER_FLAGS } = require('../config/constants');
 const { sendWithRetry } = require('../telegram/retry');
 const { recordDelivery: recordTelegramAudit } = require('../telegram/deliveryLog');
 const { loadSubscriptions, pruneSubscription } = require('../push/model');
 const { sendPushWithRetry } = require('../push/send');
+
+/**
+ * The single send-vs-shadow gate (v1.11.4). Reminder-type notifications
+ * consult REMINDER_FLAGS; everything else consults NOTIFICATION_FLAGS /
+ * PUSH_CONFIG. This MUST read the same REMINDER_FLAGS predicates that
+ * onEventWrite uses to load credentials (REV2 §2.2) — gate and credential
+ * cannot disagree, or a reminder channel either fails or leaks.
+ *
+ * @param {string} channel       CHANNELS.*
+ * @param {Object} notification  carries `type` and `recipientId`
+ * @param {string} recipientId   the resolved recipient (username/uid)
+ * @returns {boolean} true → real send; false → shadow.
+ */
+function liveFor(channel, notification, recipientId) {
+  const isReminder = notification && notification.type === 'assignment.reminder';
+
+  if (channel === CHANNELS.IN_APP) {
+    // In-app is the shared surface; reminders inherit the lifecycle flag.
+    return Boolean(NOTIFICATION_FLAGS.channels.inApp);
+  }
+  if (channel === CHANNELS.TELEGRAM) {
+    return isReminder
+      ? Boolean(REMINDER_FLAGS.channels.telegram)
+      : Boolean(NOTIFICATION_FLAGS.channels.telegram);
+  }
+  if (channel === CHANNELS.PUSH) {
+    if (isReminder) {
+      return Boolean(REMINDER_FLAGS.channels.push) || _inAllowlist(REMINDER_FLAGS.pilotAllowlist, recipientId);
+    }
+    return Boolean(NOTIFICATION_FLAGS.channels.push) || _inAllowlist(PUSH_CONFIG.pilotAllowlist, recipientId);
+  }
+  return false;
+}
+
+/** Exact, case-sensitive allowlist match (the documented pilot gotcha). */
+function _inAllowlist(list, recipientId) {
+  return Array.isArray(list) && list.map(String).includes(String(recipientId));
+}
 
 /**
  * Dispatch one notification to all its channels. Channel failures are
@@ -78,7 +116,7 @@ async function dispatchInApp(notification) {
     channel: CHANNELS.IN_APP,
     target: notification.recipientId,
   };
-  if (!NOTIFICATION_FLAGS.channels.inApp) {
+  if (!liveFor(CHANNELS.IN_APP, notification, notification.recipientId)) {
     return recordDelivery({ ...base, status: DELIVERY_STATUS.QUEUED, shadow: true });
   }
   return recordDelivery({ ...base, status: DELIVERY_STATUS.SENT, attempts: 1 });
@@ -102,8 +140,9 @@ async function dispatchTelegram(notification, { event, recipient, token }) {
     return recordDelivery({ ...base, status: DELIVERY_STATUS.FAILED, error: 'no telegram target' });
   }
 
-  // Shadow (Phase A–C): browser still sends. Record intent, do NOT send.
-  if (!NOTIFICATION_FLAGS.channels.telegram) {
+  // Shadow: browser still sends (lifecycle) / reminder channel off. Record
+  // intent, do NOT send. Reminder vs lifecycle gating is in liveFor().
+  if (!liveFor(CHANNELS.TELEGRAM, notification, notification.recipientId)) {
     return recordDelivery({
       ...base, status: DELIVERY_STATUS.QUEUED, shadow: true, target: chatIds.join(','),
     });
@@ -159,12 +198,6 @@ async function dispatchTelegram(notification, { event, recipient, token }) {
      • NOTIFICATION_FLAGS.channels.push (or a Phase B/C pilot allowlist
        entry for this recipient) decides SEND vs SHADOW. While neither
        is satisfied we record a shadow row and send nothing. */
-function _pushLive(recipientId) {
-  if (NOTIFICATION_FLAGS.channels.push) return true;
-  return Array.isArray(PUSH_CONFIG.pilotAllowlist) &&
-    PUSH_CONFIG.pilotAllowlist.map(String).includes(String(recipientId));
-}
-
 async function dispatchPush(notification, { event, recipient, vapid } = {}) {
   const base = {
     eventId: notification.eventId,
@@ -178,8 +211,9 @@ async function dispatchPush(notification, { event, recipient, vapid } = {}) {
     return recordDelivery({ ...base, status: DELIVERY_STATUS.FAILED, error: 'no push subscription' });
   }
 
-  // Shadow (Phase A–C): record intent + device count, send nothing.
-  if (!_pushLive(notification.recipientId)) {
+  // Shadow: record intent + device count, send nothing. Reminder vs
+  // lifecycle gating (incl. each pilot allowlist) is in liveFor().
+  if (!liveFor(CHANNELS.PUSH, notification, notification.recipientId)) {
     return recordDelivery({
       ...base, status: DELIVERY_STATUS.QUEUED, shadow: true, target: `${subs.length} device(s)`,
     });
@@ -231,4 +265,4 @@ async function dispatchPush(notification, { event, recipient, vapid } = {}) {
   });
 }
 
-module.exports = { dispatch, dispatchInApp, dispatchTelegram, dispatchPush };
+module.exports = { dispatch, dispatchInApp, dispatchTelegram, dispatchPush, liveFor };

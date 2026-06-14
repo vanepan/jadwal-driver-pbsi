@@ -38,6 +38,9 @@ const { telegramWebhook } = require('./src/telegram/webhookEndpoint');
 
 const { registerPushSubscription, unregisterPushSubscription } = require('./src/push/callables');
 
+const { onAssignmentReminderSync } = require('./src/reminders/onAssignmentReminderSync');
+const { reminderTick } = require('./src/reminders/tick');
+
 exports.health = health;
 exports.verifyPin = verifyPin;
 
@@ -58,3 +61,11 @@ exports.telegramWebhook = telegramWebhook;
    the dispatcher; these only register/unregister devices. */
 exports.registerPushSubscription = registerPushSubscription;
 exports.unregisterPushSubscription = unregisterPushSubscription;
+
+/* Reminder Engine (v1.11.4) — backend-only, dormant until REMINDER_FLAGS.enabled.
+   onAssignmentReminderSync maintains the /reminders timer queue on /assignments
+   writes; reminderTick (Cloud Scheduler, every 5 min, Asia/Jakarta) mints
+   assignment.reminder events that ride the EXISTING engine→dispatcher pipeline.
+   No parallel delivery path. */
+exports.onAssignmentReminderSync = onAssignmentReminderSync;
+exports.reminderTick = reminderTick;

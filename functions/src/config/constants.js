@@ -12,7 +12,7 @@ const SERVICE_NAME = 'sarpras-operations';
  * APP_VERSION (js/config.js) so deploying the backend never triggers
  * the PWA "Versi baru tersedia" update banner.
  */
-const SERVICE_VERSION = '1.11.3';
+const SERVICE_VERSION = '1.11.4';
 
 /**
  * Deploy region. Must match the RTDB region (asia-southeast1) so that
@@ -81,4 +81,41 @@ const PUSH_CONFIG = {
   pilotAllowlist: ['evan'],
 };
 
-module.exports = { SERVICE_NAME, SERVICE_VERSION, REGION, DB_INSTANCE, NOTIFICATION_FLAGS, PUSH_CONFIG };
+/**
+ * Reminder Engine flags (v1.11.4 — shadow-first, INDEPENDENT of the
+ * lifecycle NOTIFICATION_FLAGS). Reminders have no legacy SERVER sender,
+ * so reminder Telegram/Push can go live without the lifecycle cutover —
+ * but they DO have a legacy BROWSER reminder path
+ * (notification-service.js checkAndSendH1/HoursReminders) that must be
+ * retired in the SAME deploy that flips channels.telegram true (Phase C),
+ * or they double-send (REV2 §1.4).
+ *
+ *   enabled         — master: does the scheduler maintain rows + the tick
+ *                     emit reminder events at all? Ships FALSE → the whole
+ *                     subsystem is dormant on deploy (no production change
+ *                     until ops flips it). Phase A (shadow) = flip true.
+ *   channels.inApp  — reminders inherit the shared in-app surface
+ *                     (NOTIFICATION_FLAGS.channels.inApp gates the actual
+ *                     in-app delivery; recorded-but-invisible until the
+ *                     bell Phase C). Declared here for symmetry.
+ *   channels.telegram / .push — reminder-only send gates, consulted by BOTH
+ *                     the onEventWrite credential load AND dispatcher.liveFor
+ *                     (the two must read identical predicates — REV2 §2.2).
+ *   pilotAllowlist  — exact-case /users keys that get REAL reminder Push
+ *                     while channels.push is false (Phase B). Mirrors
+ *                     PUSH_CONFIG.pilotAllowlist; same exact-case gotcha.
+ *
+ * Rollout: A(enabled) → B(pilotAllowlist) → C(channels.telegram + retire
+ * browser reminders) → D(channels.push). Flip one field per phase.
+ */
+const REMINDER_FLAGS = {
+  enabled: false,
+  channels: {
+    inApp: true,
+    telegram: false,
+    push: false,
+  },
+  pilotAllowlist: [],
+};
+
+module.exports = { SERVICE_NAME, SERVICE_VERSION, REGION, DB_INSTANCE, NOTIFICATION_FLAGS, PUSH_CONFIG, REMINDER_FLAGS };

@@ -24,7 +24,7 @@
 
 const { onValueCreated } = require('firebase-functions/v2/database');
 const logger = require('firebase-functions/logger');
-const { REGION, DB_INSTANCE, NOTIFICATION_FLAGS, PUSH_CONFIG } = require('../config/constants');
+const { REGION, DB_INSTANCE, NOTIFICATION_FLAGS, PUSH_CONFIG, REMINDER_FLAGS } = require('../config/constants');
 const { TELEGRAM_BOT_TOKEN, PUSH_VAPID_PUBLIC_KEY, PUSH_VAPID_PRIVATE_KEY } = require('../config/secrets');
 const { validateEnvelope } = require('./schema');
 const { processEvent } = require('../notifications/engine');
@@ -62,9 +62,19 @@ const onEventWrite = onValueCreated(
        the flag is ON or a pilot allowlist exists (Phase B/C sends to
        allowlisted recipients while the global flag is still OFF). */
     try {
-      const token = NOTIFICATION_FLAGS.channels.telegram ? TELEGRAM_BOT_TOKEN.value() : null;
+      // Type-aware credential gate (v1.11.4 REV2 §1). Reminders activate
+      // independently of the lifecycle channels: load creds when EITHER the
+      // lifecycle channel is live OR this is a reminder and its REMINDER_FLAGS
+      // channel is live. This MUST mirror dispatcher.liveFor's predicates
+      // (REV2 §2.2) — gate and credential cannot disagree.
+      const isReminder = envelope.type === 'assignment.reminder';
+      const telegramMaySend = NOTIFICATION_FLAGS.channels.telegram ||
+        (isReminder && REMINDER_FLAGS.channels.telegram);
+      const token = telegramMaySend ? TELEGRAM_BOT_TOKEN.value() : null;
       const pushMaySend = NOTIFICATION_FLAGS.channels.push ||
-        (Array.isArray(PUSH_CONFIG.pilotAllowlist) && PUSH_CONFIG.pilotAllowlist.length > 0);
+        (Array.isArray(PUSH_CONFIG.pilotAllowlist) && PUSH_CONFIG.pilotAllowlist.length > 0) ||
+        (isReminder && (REMINDER_FLAGS.channels.push ||
+          (Array.isArray(REMINDER_FLAGS.pilotAllowlist) && REMINDER_FLAGS.pilotAllowlist.length > 0)));
       const vapid = pushMaySend ? {
         subject:    PUSH_CONFIG.subject,
         publicKey:  PUSH_VAPID_PUBLIC_KEY.value(),

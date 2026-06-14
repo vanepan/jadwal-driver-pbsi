@@ -30,6 +30,12 @@
       "$userId": {
         ".read": "auth.uid === $userId || auth.token.role === 'admin' || auth.token.role === 'developer'"
       }
+    },
+
+    "reminders": {
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+      ".write": "false",
+      ".indexOn": ["fireAt"]
     }
   }
 }

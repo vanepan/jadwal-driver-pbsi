@@ -52,6 +52,9 @@ const EVENT_TYPES = [
   'request.rejected',
   'comment.added',
   'notification.sent',
+  // v1.11.4 Reminder Engine — additive, system-originated time-based reminder.
+  // H-1d vs H-1h is data (payload.offset), not a separate type.
+  'assignment.reminder',
 ];
 const EVENT_TYPE_SET = new Set(EVENT_TYPES);
 
@@ -155,6 +158,34 @@ async function writeEvent(envelope) {
   return stored;
 }
 
+/** RTDB keys may not contain . # $ / [ ]. Replace any with _. Mirrors
+ *  notifications/model.js#keySafe (inlined to keep events foundational —
+ *  events must not depend on the notifications layer). */
+function keySafe(value) {
+  return String(value == null ? '' : value).replace(/[.#$/[\]]/g, '_');
+}
+
+/**
+ * Append an envelope to /events under a DETERMINISTIC id (v1.11.4).
+ * Unlike writeEvent (random push key), this lets a producer mint one
+ * canonical event per logical occurrence — e.g. one reminder per
+ * (assignment, offset), forever. Because onEventWrite is onValueCreated,
+ * re-writing an existing id is an UPDATE (not a create) and does NOT
+ * re-fire the engine: the guarantee is at-most-once, dedup not re-drive
+ * (see REMINDER_ENGINE_ARCHITECTURE_v1.11.4_REV2.md §3).
+ *
+ * @param {string} id        deterministic id (e.g. "reminder__<asg>__<offset>")
+ * @param {Object} envelope  output of buildEnvelope()
+ * @returns {Promise<Object>} the written envelope incl. its (keySafe) id
+ */
+async function writeEventWithId(id, envelope) {
+  const safeId = keySafe(id);
+  const ref = db.ref(`${EVENTS_PATH}/${safeId}`);
+  const stored = { id: safeId, ...envelope };
+  await ref.set(stored);
+  return stored;
+}
+
 module.exports = {
   ENVELOPE_VERSION,
   EVENTS_PATH,
@@ -166,7 +197,9 @@ module.exports = {
   legacyActionToType,
   inferEntityKind,
   sanitize,
+  keySafe,
   buildEnvelope,
   validateEnvelope,
   writeEvent,
+  writeEventWithId,
 };

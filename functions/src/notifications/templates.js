@@ -166,6 +166,33 @@ const TEMPLATES = {
         `*Oleh:* ${actorName(e)}\n`;
     },
   },
+
+  // v1.11.4 Reminder Engine — one template, copy branches on payload.offset.
+  'assignment.reminder': {
+    title: (e) => (e.payload.offset === 'H-1h' ? 'Pengingat: 1 Jam Lagi' : 'Pengingat: Besok'),
+    body: (e) => {
+      const p = e.payload;
+      const when = p.offset === 'H-1h'
+        ? `Tugas dimulai dalam 1 jam (${p.startTime || '-'})`
+        : 'Anda memiliki tugas besok';
+      return p.destination ? `${when} — ${p.destination}` : when;
+    },
+    telegram: (e) => {
+      const p = e.payload;
+      const head = p.offset === 'H-1h'
+        ? '⏰ *Pengingat — 1 Jam Lagi*'
+        : '🔔 *Pengingat — Besok*';
+      return head + '\n\n' +
+        `*Tanggal:* ${fmtDate(p.date)}\n` +
+        `*Waktu:* ${p.startTime || '-'} – ${p.endTime || '-'}\n` +
+        `*Tujuan:* ${p.destination || '-'}\n` +
+        `*Kendaraan:* ${p.vehicle || '-'}\n` +
+        `*Driver:* ${p.driver || '-'}\n\n` +
+        (p.offset === 'H-1h'
+          ? '🚗 Keberangkatan sebentar lagi. Siap-siap ya!'
+          : '⏰ Jadwal Anda besok. Pastikan semua siap!');
+    },
+  },
 };
 
 /**
@@ -197,9 +224,18 @@ function render(type, event, recipient, channel) {
   }
   if (channel === 'push') {
     const ent = ev.entity || {};
+    // The SW collapses notifications by data.entityId (its `tag`). For
+    // reminders, suffix the offset so H-1d and H-1h are independently
+    // dismissable and don't collapse with lifecycle events on the same
+    // assignment (REV2 §5.4). Navigation uses `url` (real entity) — so the
+    // deep link is unaffected. No service-worker change required.
+    let entityId = ent.id || null;
+    if (type === 'assignment.reminder' && entityId && ev.payload && ev.payload.offset) {
+      entityId = `${entityId}__${ev.payload.offset}`;
+    }
     return {
       title, body, text: `${title}\n${body}`,
-      data: { type, url: deepLink(ev), entityId: ent.id || null },
+      data: { type, url: deepLink(ev), entityId },
     };
   }
   return { title, body, text: `${title}\n${body}` };
