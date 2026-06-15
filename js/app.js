@@ -51,6 +51,7 @@ import { initFormHandlers, openFormModal, closeFormModal, registerSaveCallback, 
 import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver } from './auth.js';
 import * as DocumentEngine from './docs/doc-engine.js';
 import './docs/templates/analytics-summary.js';   // registers 'analytics-summary'
+import './exports/analytics/analytics-export-client.js'; // Analytics Export Phase A — window.exportAnalyticsPoc()
 import {
   computeAnalyticsModel,
   normDestKey as _normDestKey,
@@ -1920,10 +1921,19 @@ function initV2AdministrationWorkspace() {
                 <option value="">Semua Bidang</option>
               </select>
               <button id="v2AnalyticsResetFilters" class="v2-analytics-reset-btn" type="button">Reset Semua Filter</button>
-              <button id="v2AnalyticsExportPdf" class="v2-analytics-export-btn" type="button" title="Ekspor laporan analytics ke PDF">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg>
-                <span>Export PDF</span>
-              </button>
+              <div class="v2-analytics-export" id="v2AnalyticsExport">
+                <button id="v2AnalyticsExportPdf" class="v2-analytics-export-btn" type="button" aria-haspopup="true" aria-expanded="false" title="Ekspor laporan analytics ke PDF">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg>
+                  <span class="v2-analytics-export-label">Export PDF</span>
+                  <svg class="v2-analytics-export-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+                </button>
+                <div id="v2AnalyticsExportMenu" class="v2-analytics-export-menu" role="menu" aria-label="Pilih laporan" hidden>
+                  <button class="v2-analytics-export-item" type="button" role="menuitem" data-report="driver">Laporan Pengemudi</button>
+                  <button class="v2-analytics-export-item" type="button" role="menuitem" data-report="vehicle">Laporan Armada</button>
+                  <button class="v2-analytics-export-item" type="button" role="menuitem" data-report="bidang">Laporan Bidang</button>
+                  <button class="v2-analytics-export-item" type="button" role="menuitem" data-report="complete">Laporan Lengkap</button>
+                </div>
+              </div>
             </div>
             <div id="v2AnalyticsFilterSummary" class="v2-analytics-filter-summary"></div>
           </div>
@@ -1956,7 +1966,7 @@ function initV2AdministrationWorkspace() {
     if (actionBtn) {
       const action = actionBtn.dataset.action;
       if (action === 'export-pdf') {
-        if (activeAdminSection === 'analytics') exportAnalyticsReport();
+        if (activeAdminSection === 'analytics') exportAnalyticsReport(actionBtn);
         return;
       }
       if (action === 'goto-health') {
@@ -2094,8 +2104,34 @@ function initV2AdministrationWorkspace() {
   document.getElementById('v2AdminAddVehicle')?.addEventListener('click', () => {
     if (activeAdminSection === 'vehicles') openVehicleFormModal(null);
   });
-  document.getElementById('v2AnalyticsExportPdf')?.addEventListener('click', () => {
-    if (activeAdminSection === 'analytics') exportAnalyticsReport();
+  // Analytics Export dropdown — 4 server-rendered reports via the validated
+  // window.export*Analytics() pipeline. Filters/period flow through unchanged
+  // (the export functions read the live model + meta set by refreshAnalyticsDisplay).
+  const _analyticsExportBtn  = document.getElementById('v2AnalyticsExportPdf');
+  const _analyticsExportMenu = document.getElementById('v2AnalyticsExportMenu');
+  const _closeAnalyticsExportMenu = () => {
+    if (_analyticsExportMenu) _analyticsExportMenu.hidden = true;
+    _analyticsExportBtn?.setAttribute('aria-expanded', 'false');
+  };
+  _analyticsExportBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (activeAdminSection !== 'analytics' || !_analyticsExportMenu) return;
+    if (_analyticsExportBtn.disabled) return;
+    const willOpen = _analyticsExportMenu.hidden;
+    _analyticsExportMenu.hidden = !willOpen;
+    _analyticsExportBtn.setAttribute('aria-expanded', String(willOpen));
+  });
+  _analyticsExportMenu?.addEventListener('click', (e) => {
+    const item = e.target.closest('[data-report]');
+    if (!item) return;
+    _closeAnalyticsExportMenu();
+    runAnalyticsExport(item.dataset.report);
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#v2AnalyticsExport')) _closeAnalyticsExportMenu();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') _closeAnalyticsExportMenu();
   });
 
   registerUsersChangeListener(() => {
@@ -4494,6 +4530,27 @@ function refreshAnalyticsDisplay() {
   window._analyticsFilteredAsg = _analyticsModel.diagnostics.filteredAsg;
   _lastAnalyticsModel          = _analyticsModel.exportSnapshot;   // PDF export snapshot
 
+  // Analytics Export V2 (Phase B): expose the FULL model + render context so
+  // the report projections (Driver, …) can build a DriverReportModel. The
+  // legacy exportSnapshot above stays the source for the pdfmake summary.
+  const _dateRangeLabels = {
+    today: 'Hari Ini', '7d': '7 Hari Terakhir', '30d': '30 Hari Terakhir',
+    '90d': '90 Hari Terakhir', all: 'Semua Data',
+  };
+  const _exportUser = getCurrentUser();
+  window._lastAnalyticsFullModel = _analyticsModel;
+  window._analyticsExportMeta = {
+    periodLabel: _dateRangeLabels[analyticsDateRange] || analyticsDateRange,
+    dateRangeKey: analyticsDateRange,   // raw key for the Complete appendix period range
+    generatedBy: (_exportUser && (_exportUser.displayName || _exportUser.name || _exportUser.username)) || '—',
+    appVersion: APP_VERSION,
+    filters: {
+      driver:  analyticsDriverFilter  || 'Semua Pengemudi',
+      vehicle: analyticsVehicleFilter || 'Semua Kendaraan',
+      bidang:  analyticsBidangFilter  || 'Semua Bidang',
+    },
+  };
+
   // ── Per-bidang distance (Sprint 7C, presentation-only) ─────────────────
   // Surfaces the existing `distanceTravelled` values aggregated per bidang so
   // the Bidang views can lead with distance (operationally more valuable than
@@ -4515,6 +4572,12 @@ function refreshAnalyticsDisplay() {
     const km = _bidangKmOf(name);
     return km > 0 ? `${km.toLocaleString('id-ID')} km` : '—';
   };
+
+  // Analytics Export V2 (Phase D): hand the already-aggregated per-bidang
+  // distance to the Bidang report projection (it is not held by the engine).
+  if (window._analyticsExportMeta) {
+    window._analyticsExportMeta.bidangKm = Object.fromEntries(_bidangKm);
+  }
 
   /* Flat projection consumed by the renderer below. Identifiers match the
      names used verbatim inside the HTML templates, so the rendering code is
@@ -5279,12 +5342,15 @@ async function _restoreDqWarning(type, pairKey) {
    Builds the report view model from the latest analytics snapshot
    (so it matches the screen exactly) and hands off to the Document
    Engine — the same pipeline reimbursement uses. No new PDF code. */
-async function exportAnalyticsReport() {
+async function exportAnalyticsReport(triggerBtn) {
   if (!_lastAnalyticsModel) refreshAnalyticsDisplay();
   if (!_lastAnalyticsModel) { showToast('Data analytics belum siap.'); return; }
 
-  const btn = document.getElementById('v2AnalyticsExportPdf');
-  if (btn) { btn.disabled = true; btn.textContent = 'Memproses…'; }
+  // Legacy pdfmake summary — invoked from the Export Center. The header
+  // "Export PDF" control is now the dropdown (runAnalyticsExport), so this
+  // path operates only on its own trigger button to avoid clobbering it.
+  const btn = triggerBtn || null;
+  if (btn) btn.disabled = true;
 
   const dateRangeLabels = {
     today: 'Hari Ini', '7d': '7 Hari Terakhir', '30d': '30 Hari Terakhir',
@@ -5312,7 +5378,36 @@ async function exportAnalyticsReport() {
     console.error('[Analytics] PDF export failed:', err);
     showToast('Gagal membuat PDF.');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Export PDF'; }
+    if (btn) btn.disabled = false;
+  }
+}
+
+/* Analytics Export dropdown — runs one of the 4 server-rendered reports
+   (Driver/Vehicle/Bidang/Complete) through the validated window.export*
+   pipeline. Filters & period pass through unchanged: the export functions
+   read the live model + export meta that refreshAnalyticsDisplay publishes. */
+const _ANALYTICS_EXPORT_RUNNERS = {
+  driver:   () => window.exportDriverAnalytics(),
+  vehicle:  () => window.exportVehicleAnalytics(),
+  bidang:   () => window.exportBidangAnalytics(),
+  complete: () => window.exportCompleteAnalytics(),
+};
+async function runAnalyticsExport(report) {
+  const runner = _ANALYTICS_EXPORT_RUNNERS[report];
+  if (!runner) return;
+  const btn   = document.getElementById('v2AnalyticsExportPdf');
+  const label = btn ? btn.querySelector('.v2-analytics-export-label') : null;
+  const prev  = label ? label.textContent : null;
+  if (btn) btn.disabled = true;
+  if (label) label.textContent = 'Memproses PDF…';
+  try {
+    await runner();
+  } catch (err) {
+    console.error('[Analytics] PDF export failed:', err);
+    showToast('Gagal membuat PDF.');
+  } finally {
+    if (btn) btn.disabled = false;
+    if (label) label.textContent = prev || 'Export PDF';
   }
 }
 

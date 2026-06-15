@@ -8802,6 +8802,78 @@ input[type="time"].v2-admin-config-input {
   border-color: var(--border-strong);
   background: var(--hover);
 }
+.v2-analytics-export-btn[disabled] {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Analytics Export dropdown (4 server-rendered reports). Token-based so
+   light & dark adapt automatically; click-toggle so it works on touch. */
+.v2-analytics-export {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+.v2-analytics-export-caret {
+  margin-left: 1px;
+  opacity: 0.7;
+}
+.v2-analytics-export-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 60;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  padding: 5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+.v2-analytics-export-menu[hidden] {
+  display: none;
+}
+.v2-analytics-export-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 9px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s;
+}
+.v2-analytics-export-item:hover {
+  background: var(--hover);
+}
+.v2-analytics-export-item[disabled] {
+  opacity: 0.6;
+  cursor: default;
+}
+/* On narrow screens the toolbar wraps; let the menu align to the left edge. */
+@media (max-width: 600px) {
+  .v2-analytics-export {
+    width: 100%;
+  }
+  .v2-analytics-export-btn {
+    width: 100%;
+    max-width: none;
+    justify-content: center;
+  }
+  .v2-analytics-export-menu {
+    left: 0;
+    right: 0;
+    min-width: 0;
+  }
+}
 
 /* Insight highlights bar — at top of analytics content */
 .v2-analytics-insights {

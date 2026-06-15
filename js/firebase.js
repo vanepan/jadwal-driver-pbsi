@@ -251,6 +251,26 @@ export async function callUnregisterPushSubscription(payload) {
 }
 
 /**
+ * Render an Analytics Export PDF server-side (v1.12.0, Phase A).
+ * Calls the exportAnalyticsReport Cloud Function (headless Chrome) with
+ * the report envelope { templateId, model } and returns the rendered PDF
+ * as base64. Used by the DocumentEngine 'puppeteer' backend; the browser
+ * wraps the result back into a Blob (the Blob-only contract is preserved).
+ * @param {{ templateId: string, model?: Object }} payload
+ * @returns {Promise<{ base64: string, contentType: string, templateId: string }>}
+ */
+export async function callRenderAnalyticsExport(payload) {
+  if (!firebaseDb) initFirebaseApp();
+  if (!firebaseApp) throw new Error('Firebase belum siap.');
+  if (!firebaseFunctions) {
+    firebaseFunctions = getFunctions(firebaseApp, FUNCTIONS_REGION);
+  }
+  const fn = httpsCallable(firebaseFunctions, 'exportAnalyticsReport');
+  const result = await fn(payload);
+  return result.data;
+}
+
+/**
  * Sign in with a custom token minted by verifyPin.
  * @param {string} token
  */

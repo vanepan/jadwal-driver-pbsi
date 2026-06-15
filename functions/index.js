@@ -41,6 +41,8 @@ const { registerPushSubscription, unregisterPushSubscription } = require('./src/
 const { onAssignmentReminderSync } = require('./src/reminders/onAssignmentReminderSync');
 const { reminderTick } = require('./src/reminders/tick');
 
+const { exportAnalyticsReport } = require('./src/exports/analytics');
+
 exports.health = health;
 exports.verifyPin = verifyPin;
 
@@ -69,3 +71,11 @@ exports.unregisterPushSubscription = unregisterPushSubscription;
    No parallel delivery path. */
 exports.onAssignmentReminderSync = onAssignmentReminderSync;
 exports.reminderTick = reminderTick;
+
+/* Analytics Export (v1.12.0, Phase A) — server-side PDF render of the
+   approved Analytics Export design via headless Chrome (Puppeteer). The
+   browser DocumentEngine 'puppeteer' backend calls this; the approved
+   HTML/CSS prototype is rendered verbatim so design ≡ output. Phase A
+   ships the 'poc' foundation template only. See
+   Analytics Export/IMPLEMENTATION_ARCHITECTURE.md §7. */
+exports.exportAnalyticsReport = exportAnalyticsReport;

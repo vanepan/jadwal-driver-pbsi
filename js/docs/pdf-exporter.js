@@ -70,12 +70,42 @@ class PdfmakeBackend {
 }
 
 class PuppeteerBackend {
-  /* D-later: implement against a Cloud Function that renders HTML
-     (derived from the same abstract model) via headless Chrome.
-     Templates, viewer, print, and callers stay untouched. */
-  async exportToPdf() {
-    throw new Error('PuppeteerBackend not implemented — D-later seam');
+  /* Server-side render via headless Chrome in a Cloud Function
+     (exportAnalyticsReport). Templates/viewer/print/callers stay
+     untouched — this backend speaks the same Blob-out interface.
+
+     The "definition" for this backend is the Analytics Export
+     envelope produced by the client report template:
+       { __analyticsExport:true, payload:{ templateId, model } }
+     The Cloud Function returns { base64, contentType }, which we
+     wrap back into a Blob so everything above stays Blob-only.
+
+     firebase.js is imported lazily so this module stays free of a
+     hard Firebase dependency (and avoids load-order coupling). */
+  async exportToPdf(definition) {
+    const payload = definition && definition.__analyticsExport
+      ? definition.payload
+      : definition;
+    if (!payload || !payload.templateId) {
+      throw new Error('PuppeteerBackend: definition.payload.templateId required');
+    }
+
+    const { callRenderAnalyticsExport } = await import('../firebase.js');
+    const res = await callRenderAnalyticsExport(payload);
+    if (!res || !res.base64) {
+      throw new Error('Render server tidak mengembalikan PDF.');
+    }
+    return _base64ToBlob(res.base64, res.contentType || 'application/pdf');
   }
+}
+
+/** Decode a base64 string into a Blob without inflating to a data: URL. */
+function _base64ToBlob(base64, contentType) {
+  const byteChars = atob(base64);
+  const len = byteChars.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) bytes[i] = byteChars.charCodeAt(i);
+  return new Blob([bytes], { type: contentType || 'application/pdf' });
 }
 
 const BACKENDS = { pdfmake: PdfmakeBackend, puppeteer: PuppeteerBackend };

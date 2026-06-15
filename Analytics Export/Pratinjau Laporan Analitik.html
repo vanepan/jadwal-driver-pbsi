@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Pratinjau Laporan Analitik — Sarpras Operations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,100;0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',system-ui,sans-serif;background:#E6E6E3;-webkit-font-smoothing:antialiased;min-height:100vh}
+
+/* NAV */
+.vn{background:#FAFAF8;border-bottom:1px solid #E0E0DC;display:flex;align-items:center;padding:0 32px;position:sticky;top:0;z-index:100}
+.vn-eye{font-size:9px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:#9A9A9A;margin-right:28px;white-space:nowrap}
+.nb{background:none;border:none;border-bottom:2px solid transparent;padding:15px 18px;font-family:inherit;font-size:12px;font-weight:500;color:#6B6B6B;cursor:pointer;letter-spacing:.01em;transition:color .15s,border-color .15s;white-space:nowrap;margin-bottom:-1px}
+.nb:hover{color:#0F0F0F}
+.nb.on{color:#0F0F0F;border-bottom-color:#0F0F0F}
+.vn-sp{flex:1}
+.np{font-family:inherit;font-size:11px;font-weight:500;color:#6B6B6B;background:none;border:1px solid #D4D4D4;border-radius:4px;padding:6px 14px;cursor:pointer;letter-spacing:.01em}
+.np:hover{color:#0F0F0F;border-color:#9A9A9A}
+
+/* REPORT AREA */
+.ra{padding:48px 24px 80px;display:flex;justify-content:center}
+.rpt{display:none;flex-direction:column;align-items:center;gap:24px}
+.rpt.on{display:flex}
+
+/* A4 PAGE */
+.a4{width:794px;height:1123px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.10),0 32px 64px rgba(0,0,0,.07);overflow:hidden;flex-shrink:0}
+.pi{width:100%;height:100%;padding:72px 76px 64px;display:flex;flex-direction:column}
+.zr{flex-shrink:0;height:1px;background:#D4D4D4;margin:0 -1px}
+
+/* ZONE A — HEADER */
+.za{flex:0 0 auto;padding-bottom:12px;display:flex;flex-direction:column;justify-content:flex-end}
+.htop{display:flex;justify-content:space-between;align-items:flex-start}
+.hid{display:flex;align-items:center;gap:10px}
+.pm{background:#0F0F0F;color:#fff;font-size:8px;font-weight:700;letter-spacing:.08em;padding:4px 6px;line-height:1;flex-shrink:0}
+.hot{display:flex;flex-direction:column;gap:1px}
+.on1{font-size:11px;font-weight:600;color:#0F0F0F;letter-spacing:-.01em}
+.on2{font-size:9px;font-weight:400;color:#9A9A9A}
+.hrt{text-align:right}
+.hpe{font-size:9px;font-weight:500;color:#6B6B6B}
+.hda{font-size:9px;font-weight:400;color:#9A9A9A;margin-top:2px}
+.htt{margin-top:10px;font-size:8px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:#0F0F0F}
+
+/* ZONE B — HERO */
+.zb{flex:0 0 auto;display:flex;flex-direction:column;justify-content:center;padding:16px 0}
+.hs{display:flex;align-items:baseline;gap:0;line-height:1}
+.hn{font-size:92px;font-weight:100;letter-spacing:-.03em;color:#0F0F0F;font-variant-numeric:tabular-nums}
+.hpu{font-size:42px;font-weight:300;letter-spacing:-.02em;color:#0F0F0F;margin-left:2px}
+.hl{font-size:9px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:#9A9A9A;margin-top:6px}
+/* KPI ROW */
+.kr{display:flex;border-top:1px solid #D4D4D4;margin-top:16px;padding-top:14px}
+.kc{flex:1;display:flex;flex-direction:column;gap:5px;padding-right:14px;border-right:1px solid #D4D4D4}
+.kc:last-child{border-right:none;padding-right:0}
+.kv{font-size:27px;font-weight:300;color:#0F0F0F;font-variant-numeric:tabular-nums;letter-spacing:-.02em;line-height:1}
+.kv .ku{font-size:13px;font-weight:400;letter-spacing:0}
+.kl{font-size:7px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:#9A9A9A;line-height:1.35}
+
+/* ZONE C — DISTRIBUTION */
+.zc{flex:0 0 auto;display:flex;flex-direction:column;padding:10px 0}
+.sl{font-size:7.5px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:#9A9A9A;margin-bottom:10px}
+/* strips */
+.dr{display:flex;flex-direction:column;gap:12px}
+.drow{display:flex;align-items:center;gap:10px}
+.dn{width:84px;flex-shrink:0;font-size:11px;font-weight:600;color:#0F0F0F}
+.dt{flex:1;height:6px;background:#EBEBEB;border-radius:1px;position:relative;overflow:hidden}
+.df{position:absolute;inset:0 auto 0 0;background:#1A1A1A;border-radius:1px}
+.dp{width:34px;flex-shrink:0;text-align:right;font-size:10px;font-weight:400;color:#6B6B6B;font-variant-numeric:tabular-nums}
+.dk{width:60px;flex-shrink:0;text-align:right;font-size:10px;font-weight:400;color:#9A9A9A;font-variant-numeric:tabular-nums}
+.dnote{font-size:8.5px;color:#9A9A9A;margin-top:10px}
+/* bidang status strips */
+.be{display:flex;flex-direction:column;gap:2px}
+.bdn{font-size:11px;font-weight:600;color:#0F0F0F}
+.bdd{font-size:9px;color:#6B6B6B}
+.bsw{display:flex;align-items:center;gap:10px;margin-top:8px}
+.bs{flex:1;height:8px;border-radius:2px}
+.bs.ok{background:#1A7A4A}
+.bs.wt{background:#EBEBEB;border:1px solid #D4D4D4}
+.bsl{font-size:7.5px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;width:72px;flex-shrink:0;text-align:right}
+.bsl.ok{color:#1A7A4A}
+.bsl.wt{color:#9A9A9A}
+
+/* ZONE D — HIGHLIGHTS */
+.zd{flex:1;display:flex;flex-direction:column;padding:10px 0;min-height:0}
+.hl-list{display:flex;flex-direction:column;gap:14px;margin-top:2px}
+.hi{display:flex;gap:20px}
+.hcat{flex:0 0 100px;font-size:7.5px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:#9A9A9A;padding-top:1px;line-height:1.3}
+.hcat.g{color:#1A7A4A}
+.hcat.r{color:#C0392B}
+.hbd{flex:1}
+.hst{font-size:11px;font-weight:500;color:#0F0F0F;line-height:1.45}
+.hct{font-size:9.5px;color:#6B6B6B;margin-top:2px;line-height:1.4}
+
+/* ZONE E — FOOTER */
+.ze{flex:0 0 auto;display:flex;flex-direction:column;justify-content:space-between;padding-top:8px;min-height:58px}
+.cm{font-size:10px;color:#6B6B6B;margin-top:5px;line-height:1.55}
+.cm b{font-weight:600;color:#0F0F0F}
+.fb{display:flex;justify-content:space-between;align-items:center;border-top:1px solid #D4D4D4;padding-top:8px;margin-top:8px}
+.fm{font-size:7.5px;color:#9A9A9A}
+.cnote{font-size:8px;color:#9A9A9A;font-style:italic;margin-bottom:4px}
+
+/* HEALTH SCORE — Complete P1 */
+.zb.ctr{align-items:center;justify-content:center;text-align:center}
+.hsc{display:flex;align-items:baseline;justify-content:center;line-height:1;gap:0}
+.hscn{font-size:100px;font-weight:100;letter-spacing:-.03em;color:#0F0F0F;font-variant-numeric:tabular-nums}
+.hscd{font-size:36px;font-weight:300;color:#9A9A9A;letter-spacing:-.01em}
+.hsbadge{display:inline-block;background:#E8F5EF;color:#1A7A4A;font-size:10px;font-weight:600;letter-spacing:.04em;padding:4px 12px;border-radius:4px;margin-top:10px}
+.hslbl{font-size:8px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:#9A9A9A;margin-top:8px}
+
+/* TWO-COLUMN — Complete P2 */
+.tcol{display:flex;flex:1;gap:0;min-height:0}
+.cl{flex:1;padding-right:24px;display:flex;flex-direction:column}
+.cr{flex:1;padding-left:24px;display:flex;flex-direction:column}
+.crule{width:1px;background:#D4D4D4;flex-shrink:0}
+.ch{font-size:8px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:#9A9A9A;margin-bottom:10px}
+.cs{font-size:9.5px;color:#6B6B6B;line-height:1.5;margin-bottom:12px}
+.dr.sm .dn{width:60px;font-size:10px}
+.dr.sm .dp{width:28px;font-size:9px}
+.dr.sm .dk{width:48px;font-size:9px}
+.dr.sm{gap:9px}
+.chl{margin-top:12px;display:flex;flex-direction:column;gap:9px}
+.chi{display:flex;gap:10px}
+.chcat{flex:0 0 70px;font-size:7px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:#9A9A9A;padding-top:1px}
+.chcat.g{color:#1A7A4A}
+.chst{font-size:10px;font-weight:500;color:#0F0F0F;line-height:1.4}
+.chct{font-size:9px;color:#6B6B6B;margin-top:1px;line-height:1.35}
+.cdim{border-top:1px solid #EBEBEB;padding-top:10px;margin-top:auto}
+.cdlbl{font-size:7px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:#9A9A9A;margin-bottom:4px}
+.cdtxt{font-size:10px;color:#6B6B6B;font-style:italic}
+
+/* DESTINATIONS — P3 */
+.dlist{display:flex;flex-direction:column}
+.ditem{display:flex;justify-content:space-between;align-items:baseline;padding:7px 0;border-bottom:1px solid #F0F0F0}
+.ditem:last-child{border-bottom:none}
+.dname{font-size:10.5px;color:#0F0F0F}
+.dfreq{font-size:10.5px;font-weight:300;color:#6B6B6B;font-variant-numeric:tabular-nums}
+
+/* CONTRIBUTORS FULL — P4 */
+.cfs{margin-bottom:14px}
+.cfsl{font-size:7.5px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:#9A9A9A;padding-bottom:8px;border-bottom:1px solid #E8E8E8;margin-bottom:12px}
+.cfi{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:12px;margin-bottom:12px;border-bottom:1px solid #F4F4F4}
+.cfi:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}
+.cfl{flex:1}
+.cfn{font-size:13px;font-weight:600;color:#0F0F0F;margin-bottom:3px}
+.cfd{font-size:10px;color:#6B6B6B;line-height:1.5;max-width:430px}
+.cfr{text-align:right;padding-left:20px;flex-shrink:0}
+.cfp{font-size:22px;font-weight:300;color:#0F0F0F;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1}
+.cfpl{font-size:7px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:#9A9A9A;margin-top:3px}
+
+/* LAMPIRAN — P5 */
+.lgrid{display:grid;grid-template-columns:1fr 1fr;gap:20px 48px}
+.lkey{font-size:7.5px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:#9A9A9A;margin-bottom:4px}
+.lval{font-size:11px;color:#0F0F0F;line-height:1.5}
+.lsub{font-size:10px;color:#6B6B6B}
+.lnote{border-top:1px solid #D4D4D4;padding-top:16px;margin-top:20px;font-size:10px;color:#6B6B6B;line-height:1.65}
+
+@media print{.vn{display:none}.ra{padding:0;background:none}.a4{box-shadow:none;break-after:page}.rpt{display:flex!important}}
+</style>
+</head>
+<body>
+
+<nav class="vn">
+  <span class="vn-eye">Pratinjau Laporan</span>
+  <button class="nb on" data-t="pengemudi">Laporan Pengemudi</button>
+  <button class="nb" data-t="armada">Laporan Armada</button>
+  <button class="nb" data-t="bidang">Laporan Bidang</button>
+  <button class="nb" data-t="lengkap">Laporan Lengkap</button>
+  <span class="vn-sp"></span>
+  <button class="np" onclick="window.print()">Cetak</button>
+</nav>
+
+<div class="ra">
+
+<!-- ═══════════════════════════════════════
+     LAPORAN ANALITIK PENGEMUDI
+═══════════════════════════════════════ -->
+<div class="rpt on" id="r-pengemudi">
+<div class="a4"><div class="pi">
+
+  <div class="za">
+    <div class="htop">
+      <div class="hid">
+        <div class="pm">PBSI</div>
+        <div class="hot"><div class="on1">Bidang Sarana dan Prasarana</div><div class="on2">PBSI — Persatuan Bulu Tangkis Seluruh Indonesia</div></div>
+      </div>
+      <div class="hrt"><div class="hpe">30 Hari Terakhir</div><div class="hda">15 Juni 2026</div></div>
+    </div>
+    <div class="htt">Laporan Analitik Pengemudi</div>
+  </div>
+  <div class="zr"></div>
+
+  <div class="zb">
+    <div>
+      <div class="hs"><span class="hn">100</span><span class="hpu">%</span></div>
+      <div class="hl">Tingkat Selesai</div>
+    </div>
+    <div class="kr">
+      <div class="kc"><div class="kv">26</div><div class="kl">Penugasan</div></div>
+      <div class="kc"><div class="kv">3</div><div class="kl">Pengemudi Aktif</div></div>
+      <div class="kc"><div class="kv">1.342 <span class="ku">km</span></div><div class="kl">Jarak Tempuh</div></div>
+      <div class="kc"><div class="kv">67 <span class="ku">km</span></div><div class="kl">Rata-rata per Trip</div></div>
+      <div class="kc"><div class="kv">0</div><div class="kl">Dibatalkan</div></div>
+    </div>
+  </div>
+  <div class="zr"></div>
+
+  <div class="zc">
+    <div class="sl">Distribusi Beban</div>
+    <div class="dr">
+      <div class="drow"><div class="dn">Igo</div><div class="dt"><div class="df" style="width:100%"></div></div><div class="dp">42%</div><div class="dk">581 km</div></div>
+      <div class="drow"><div class="dn">Aria</div><div class="dt"><div class="df" style="width:74%"></div></div><div class="dp">31%</div><div class="dk">337 km</div></div>
+      <div class="drow"><div class="dn">Dedi</div><div class="dt"><div class="df" style="width:64%"></div></div><div class="dp">27%</div><div class="dk">424 km</div></div>
+    </div>
+    <div class="dnote">Rata-rata beban: 8,7 penugasan per pengemudi</div>
+  </div>
+  <div class="zr"></div>
+
+  <div class="zd">
+    <div class="sl">Sorotan</div>
+    <div class="hl-list">
+      <div class="hi">
+        <div class="hcat g">Efisiensi</div>
+        <div class="hbd"><div class="hst">Seluruh 26 penugasan selesai dalam periode ini.</div><div class="hct">Tidak ada penugasan yang terbengkalai atau tertunda.</div></div>
+      </div>
+      <div class="hi">
+        <div class="hcat">Distribusi</div>
+        <div class="hbd"><div class="hst">Satu pengemudi menanggung 42% dari total beban armada.</div><div class="hct">Realokasi penugasan dapat meningkatkan keseimbangan tim pada periode berikutnya.</div></div>
+      </div>
+      <div class="hi">
+        <div class="hcat">Jarak</div>
+        <div class="hbd"><div class="hst">Igo mencatat 581 km — 43% dari total jarak tempuh armada.</div><div class="hct">Selisih jarak antar pengemudi mencerminkan distribusi rute yang tidak merata.</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="zr"></div>
+
+  <div class="ze">
+    <div>
+      <div class="sl">Kontributor Utama</div>
+      <div class="cm"><b>Igo</b> — Jarak dan volume penugasan tertinggi &nbsp;·&nbsp; <b>Aria</b> — Ketersediaan penuh sepanjang periode &nbsp;·&nbsp; <b>Dedi</b> — Diversifikasi rute terluas</div>
+    </div>
+    <div class="fb">
+      <div class="fm">Filter: Semua Pengemudi · Semua Kendaraan · Semua Bidang</div>
+      <div class="fm">v1.11.3.3 · Evan · 15 Jun 2026</div>
+    </div>
+  </div>
+
+</div></div>
+</div>
+
+
+<!-- ═══════════════════════════════════════
+     LAPORAN ANALITIK ARMADA
+═══════════════════════════════════════ -->
+<div class="rpt" id="r-armada">
+<div class="a4"><div class="pi">
+
+  <div class="za">
+    <div class="htop">
+      <div class="hid">
+        <div class="pm">PBSI</div>
+        <div class="hot"><div class="on1">Bidang Sarana dan Prasarana</div><div class="on2">PBSI — Persatuan Bulu Tangkis Seluruh Indonesia</div></div>
+      </div>
+      <div class="hrt"><div class="hpe">30 Hari Terakhir</div><div class="hda">15 Juni 2026</div></div>
+    </div>
+    <div class="htt">Laporan Analitik Armada</div>
+  </div>
+  <div class="zr"></div>
+
+  <div class="zb">
+    <div>
+      <div class="hs"><span class="hn">1.342</span><span class="hpu"> km</span></div>
+      <div class="hl">Jarak Tempuh</div>
+    </div>
+    <div class="kr">
+      <div class="kc"><div class="kv">26</div><div class="kl">Penugasan</div></div>
+      <div class="kc"><div class="kv">4</div><div class="kl">Armada Aktif</div></div>
+      <div class="kc"><div class="kv">571 <span class="ku">km</span></div><div class="kl">Terbesar per Unit</div></div>
+      <div class="kc"><div class="kv">67 <span class="ku">km</span></div><div class="kl">Rata-rata per Trip</div></div>
+      <div class="kc"><div class="kv">0</div><div class="kl">Armada Idle</div></div>
+    </div>
+  </div>
+  <div class="zr"></div>
+
+  <div class="zc">
+    <div class="sl">Utilisasi Armada</div>
+    <div class="dr">
+      <div class="drow"><div class="dn">Luxio</div><div class="dt"><div class="df" style="width:100%"></div></div><div class="dp">35%</div><div class="dk">571 km</div></div>
+      <div class="drow"><div class="dn">Innova</div><div class="dt"><div class="df" style="width:89%"></div></div><div class="dp">31%</div><div class="dk">309 km</div></div>
+      <div class="drow"><div class="dn">Polytron</div><div class="dt"><div class="df" style="width:54%"></div></div><div class="dp">19%</div><div class="dk">121 km</div></div>
+      <div class="drow"><div class="dn">Hiace</div><div class="dt"><div class="df" style="width:43%"></div></div><div class="dp">15%</div><div class="dk">341 km</div></div>
+    </div>
+    <div class="dnote">Data odometer tersedia: 20 dari 26 trip</div>
+  </div>
+  <div class="zr"></div>
+
+  <div class="zd">
+    <div class="sl">Sorotan</div>
+    <div class="hl-list">
+      <div class="hi">
+        <div class="hcat g">Utilisasi</div>
+        <div class="hbd"><div class="hst">Seluruh armada aktif beroperasi. Tidak ada kendaraan yang tidak ditugaskan.</div><div class="hct">Kapasitas armada dimanfaatkan sepenuhnya selama periode ini.</div></div>
+      </div>
+      <div class="hi">
+        <div class="hcat">Jarak</div>
+        <div class="hbd"><div class="hst">Hiace mencatat rata-rata 85 km per trip — tertinggi di antara seluruh armada.</div><div class="hct">Meski volume penugasan terendah, Hiace mendukung rute jarak jauh secara konsisten.</div></div>
+      </div>
+      <div class="hi">
+        <div class="hcat">Distribusi</div>
+        <div class="hbd"><div class="hst">Luxio dan Innova menyumbang 66% dari total penugasan armada periode ini.</div><div class="hct">Kedua kendaraan ini menjadi tulang punggung operasional pada periode ini.</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="zr"></div>
+
+  <div class="ze">
+    <div>
+      <div class="sl">Kontributor Utama</div>
+      <div class="cm"><b>Luxio</b> — Volume penugasan tertinggi &nbsp;·&nbsp; <b>Hiace</b> — Rute jarak jauh, 85 km per trip &nbsp;·&nbsp; <b>Innova</b> — Utilisasi konsisten &nbsp;·&nbsp; <b>Polytron</b> — Cadangan aktif</div>
+    </div>
+    <div class="fb">
+      <div class="fm">Filter: Semua Kendaraan · Semua Pengemudi · Semua Bidang</div>
+      <div class="fm">v1.11.3.3 · Evan · 15 Jun 2026</div>
+    </div>
+  </div>
+
+</div></div>
+</div>
+
+
+<!-- ═══════════════════════════════════════
+     LAPORAN ANALITIK BIDANG
+═══════════════════════════════════════ -->
+<div class="rpt" id="r-bidang">
+<div class="a4"><div class="pi">
+
+  <div class="za">
+    <div class="htop">
+      <div class="hid">
+        <div class="pm">PBSI</div>
+        <div class="hot"><div class="on1">Bidang Sarana dan Prasarana</div><div class="on2">PBSI — Persatuan Bulu Tangkis Seluruh Indonesia</div></div>
+      </div>
+      <div class="hrt"><div class="hpe">30 Hari Terakhir</div><div class="hda">15 Juni 2026</div></div>
+    </div>
+    <div class="htt">Laporan Analitik Bidang</div>
+  </div>
+  <div class="zr"></div>
+
+  <div class="zb">
+    <div>
+      <div class="hs"><span class="hn">2</span></div>
+      <div class="hl">Permintaan</div>
+    </div>
+    <div class="kr">
+      <div class="kc"><div class="kv">2</div><div class="kl">Bidang Aktif</div></div>
+      <div class="kc"><div class="kv">1</div><div class="kl">Terpenuhi</div></div>
+      <div class="kc"><div class="kv">1</div><div class="kl">Menunggu</div></div>
+      <div class="kc"><div class="kv">87 <span class="ku">km</span></div><div class="kl">Jarak Tercatat</div></div>
+      <div class="kc"><div class="kv">50<span class="ku">%</span></div><div class="kl">Tingkat Pemenuhan</div></div>
+    </div>
+  </div>
+  <div class="zr"></div>
+
+  <div class="zc">
+    <div class="sl">Permintaan per Bidang</div>
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div class="be">
+        <div class="bdn">Bidang Turnamen</div>
+        <div class="bdd">1 permintaan &nbsp;·&nbsp; 1 penugasan &nbsp;·&nbsp; 87 km</div>
+        <div class="bsw"><div class="bs ok"></div><div class="bsl ok">Terpenuhi</div></div>
+      </div>
+      <div class="be">
+        <div class="bdn">Medis Pelatnas</div>
+        <div class="bdd">1 permintaan &nbsp;·&nbsp; 0 penugasan &nbsp;·&nbsp; —</div>
+        <div class="bsw"><div class="bs wt"></div><div class="bsl wt">Menunggu</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="zr"></div>
+
+  <div class="zd">
+    <div class="sl">Sorotan</div>
+    <div class="hl-list">
+      <div class="hi">
+        <div class="hcat g">Pemenuhan</div>
+        <div class="hbd"><div class="hst">Bidang Turnamen terpenuhi sepenuhnya pada periode ini.</div><div class="hct">Seluruh permintaan mendapat penugasan dan diselesaikan.</div></div>
+      </div>
+      <div class="hi">
+        <div class="hcat r">Permintaan</div>
+        <div class="hbd"><div class="hst">Medis Pelatnas mengajukan 1 permintaan yang belum mendapat penugasan.</div><div class="hct">Permintaan ini menunggu penugasan pada periode berikutnya.</div></div>
+      </div>
+      <div class="hi">
+        <div class="hcat">Jarak</div>
+        <div class="hbd"><div class="hst">Seluruh 87 km jarak tercatat berasal dari penugasan Bidang Turnamen.</div><div class="hct">Medis Pelatnas belum menghasilkan rekam jarak pada periode ini.</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="zr"></div>
+
+  <div class="ze">
+    <div>
+      <div class="sl">Kontributor Utama</div>
+      <div class="cm"><b>Bidang Turnamen</b> — Penugasan terpenuhi, 87 km tercatat &nbsp;·&nbsp; <b>Medis Pelatnas</b> — Permintaan diajukan, menunggu penugasan</div>
+    </div>
+    <div class="fb">
+      <div class="fm">Filter: Semua Bidang · Semua Pengemudi · Semua Kendaraan</div>
+      <div class="fm">v1.11.3.3 · Evan · 15 Jun 2026</div>
+    </div>
+  </div>
+
+</div></div>
+</div>
+
+
+<!-- ═══════════════════════════════════════
+     LAPORAN ANALITIK LENGKAP — 5 HALAMAN
+═══════════════════════════════════════ -->
+<div class="rpt" id="r-lengkap">
+
+<!-- HALAMAN 1 — RINGKASAN EKSEKUTIF -->
+<div class="a4"><div class="pi">
+  <div class="za">
+    <div class="htop">
+      <div class="hid">
+        <div class="pm">PBSI</div>
+        <div class="hot"><div class="on1">Bidang Sarana dan Prasarana</div><div class="on2">PBSI — Persatuan Bulu Tangkis Seluruh Indonesia</div></div>
+      </div>
+      <div class="hrt"><div class="hpe">30 Hari Terakhir</div><div class="hda">15 Juni 2026</div></div>
+    </div>
+    <div class="htt">Laporan Analitik Lengkap</div>
+  </div>
+  <div class="zr"></div>
+
+  <div class="zb ctr">
+    <div class="hsc"><span class="hscn">99</span><span class="hscd"> / 100</span></div>
+    <div><div class="hsbadge">Sangat Baik</div></div>
+    <div class="hslbl">Kesehatan Operasional</div>
+  </div>
+  <div class="zr"></div>
+
+  <div class="zc" style="padding:14px 0">
+    <div class="kr" style="margin-top:0;padding-top:0;border-top:none">
+      <div class="kc"><div class="kv">100<span class="ku">%</span></div><div class="kl">Tingkat Selesai</div></div>
+      <div class="kc"><div class="kv">26</div><div class="kl">Penugasan</div></div>
+      <div class="kc"><div class="kv">3</div><div class="kl">Pengemudi Aktif</div></div>
+      <div class="kc"><div class="kv">4</div><div class="kl">Armada Aktif</div></div>
+      <div class="kc"><div class="kv">1.342 <span class="ku">km</span></div><div class="kl">Jarak Tempuh</div></div>
+      <div class="kc"><div class="kv">0</div><div class="kl">Peringatan Kritis</div></div>
+    </div>
+  </div>
+  <div class="zr"></div>
+
+  <div class="zd">
+    <div class="sl">Sorotan</div>
+    <div class="hl-list">
+      <div class="hi"><div class="hcat g">Efisiensi</div><div class="hbd"><div class="hst">Seluruh 26 penugasan selesai. Tidak ada penugasan terbengkalai dalam 30 hari terakhir.</div></div></div>
+      <div class="hi"><div class="hcat g">Utilisasi</div><div class="hbd"><div class="hst">Seluruh armada 4 kendaraan beroperasi aktif. Tidak ada aset idle pada periode ini.</div></div></div>
+      <div class="hi"><div class="hcat">Distribusi</div><div class="hbd"><div class="hst">Satu pengemudi menangani 42% dari total beban.</div><div class="hct">Pertimbangkan rebalancing beban pengemudi pada periode berikutnya.</div></div></div>
+      <div class="hi"><div class="hcat">Jarak</div><div class="hbd"><div class="hst">1.342 km tercatat selama periode ini, rata-rata 67 km per trip.</div><div class="hct">Data odometer tersedia untuk 20 dari 26 penugasan.</div></div></div>
+      <div class="hi"><div class="hcat r">Permintaan</div><div class="hbd"><div class="hst">Satu permintaan Medis Pelatnas belum mendapat penugasan pada akhir periode ini.</div></div></div>
+    </div>
+  </div>
+  <div class="zr"></div>
+
+  <div class="ze">
+    <div class="cnote">Baseline periode perdana. Perbandingan tersedia mulai laporan berikutnya.</div>
+    <div class="fb">
+      <div class="fm">Filter: Semua Pengemudi · Semua Kendaraan · Semua Bidang</div>
+      <div class="fm">v1.11.3.3 · Evan · 15 Jun 2026</div>
+    </div>
+  </div>
+</div></div>
+
+<!-- HALAMAN 2 — PENGEMUDI & ARMADA -->
+<div class="a4"><div class="pi">
+  <div class="za">
+    <div class="htop">
+      <div class="hid">
+        <div class="pm">PBSI</div>
+        <div class="hot"><div class="on1">Bidang Sarana dan Prasarana</div><div class="on2">PBSI — Persatuan Bulu Tangkis Seluruh Indonesia</div></div>
+      </div>
+      <div class="hrt"><div class="hpe">30 Hari Terakhir</div><div class="hda">15 Juni 2026</div></div>
+    </div>
+    <div class="htt">Laporan Analitik Lengkap &nbsp;—&nbsp; Pengemudi & Armada</div>
+  </div>
+  <div class="zr"></div>
+
+  <div style="flex:1;display:flex;flex-direction:column;padding:16px 0;gap:16px;min-height:0">
+    <div class="tcol" style="flex:1">
+      <div class="cl">
+        <div class="ch">Pengemudi</div>
+        <div class="cs">3 aktif &nbsp;·&nbsp; 26 penugasan &nbsp;·&nbsp; 1.342 km total</div>
+        <div class="dr sm">
+          <div class="drow"><div class="dn">Igo</div><div class="dt"><div class="df" style="width:100%"></div></div><div class="dp">42%</div><div class="dk">581 km</div></div>
+          <div class="drow"><div class="dn">Aria</div><div class="dt"><div class="df" style="width:74%"></div></div><div class="dp">31%</div><div class="dk">337 km</div></div>
+          <div class="drow"><div class="dn">Dedi</div><div class="dt"><div class="df" style="width:64%"></div></div><div class="dp">27%</div><div class="dk">424 km</div></div>
+        </div>
+        <div class="chl">
+          <div class="chi"><div class="chcat g">Efisiensi</div><div><div class="chst">100% penugasan selesai.</div></div></div>
+          <div class="chi"><div class="chcat">Distribusi</div><div><div class="chst">Igo menanggung 42% beban.</div><div class="chct">Satu pengemudi di atas rata-rata.</div></div></div>
+          <div class="chi"><div class="chcat">Jarak</div><div><div class="chst">Igo: 581 km — 43% total jarak.</div></div></div>
+        </div>
+      </div>
+      <div class="crule"></div>
+      <div class="cr">
+        <div class="ch">Armada</div>
+        <div class="cs">4 aktif &nbsp;·&nbsp; 26 penugasan &nbsp;·&nbsp; 1.342 km total</div>
+        <div class="dr sm">
+          <div class="drow"><div class="dn">Luxio</div><div class="dt"><div class="df" style="width:100%"></div></div><div class="dp">35%</div><div class="dk">571 km</div></div>
+          <div class="drow"><div class="dn">Innova</div><div class="dt"><div class="df" style="width:89%"></div></div><div class="dp">31%</div><div class="dk">309 km</div></div>
+          <div class="drow"><div class="dn">Polytron</div><div class="dt"><div class="df" style="width:54%"></div></div><div class="dp">19%</div><div class="dk">121 km</div></div>
+          <div class="drow"><div class="dn">Hiace</div><div class="dt"><div class="df" style="width:43%"></div></div><div class="dp">15%</div><div class="dk">341 km</div></div>
+        </div>
+        <div class="chl">
+          <div class="chi"><div class="chcat g">Utilisasi</div><div><div class="chst">Seluruh armada aktif. 0 idle.</div></div></div>
+          <div class="chi"><div class="chcat">Jarak</div><div><div class="chst">Hiace: 85 km/trip, tertinggi.</div><div class="chct">Volume terendah, rute terpanjang.</div></div></div>
+          <div class="chi"><div class="chcat">Distribusi</div><div><div class="chst">Luxio & Innova: 66% dari total.</div></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="cdim">
+      <div class="cdlbl">Koneksi Lintas Dimensi</div>
+      <div class="cdtxt">Igo–Luxio merupakan pasangan pengemudi–kendaraan yang paling dominan pada periode ini.</div>
+    </div>
+  </div>
+  <div class="zr"></div>
+
+  <div class="ze" style="padding-top:8px">
+    <div class="fb">
+      <div class="fm">Filter: Semua Pengemudi · Semua Kendaraan · Semua Bidang</div>
+      <div class="fm">v1.11.3.3 · Evan · 15 Jun 2026</div>
+    </div>
+  </div>
+</div></div>
+
+<!-- HALAMAN 3 — PERMINTAAN & OPERASI -->
+<div class="a4"><div class="pi">
+  <div class="za">
+    <div class="htop">
+      <div class="hid">
+        <div class="pm">PBSI</div>
+        <div class="hot"><div class="on1">Bidang Sarana dan Prasarana</div><div class="on2">PBSI — Persatuan Bulu Tangkis Seluruh Indonesia</div></div>
+      </div>
+      <div class="hrt"><div class="hpe">30 Hari Terakhir</div><div class="hda">15 Juni 2026</div></div>
+    </div>
+    <div class="htt">Laporan Analitik Lengkap &nbsp;—&nbsp; Permintaan & Operasi</div>
+  </div>
+  <div class="zr"></div>
+
+  <div style="flex:1;display:flex;flex-direction:column;padding:16px 0;gap:20px">
+    <div>
+      <div class="sl">Permintaan per Bidang</div>
+      <div style="display:flex;flex-direction:column;gap:16px;margin-top:2px">
+        <div class="be">
+          <div class="bdn">Bidang Turnamen</div><div class="bdd">1 permintaan &nbsp;·&nbsp; 1 penugasan &nbsp;·&nbsp; 87 km</div>
+          <div class="bsw"><div class="bs ok"></div><div class="bsl ok">Terpenuhi</div></div>
+        </div>
+        <div class="be">
+          <div class="bdn">Medis Pelatnas</div><div class="bdd">1 permintaan &nbsp;·&nbsp; 0 penugasan &nbsp;·&nbsp; —</div>
+          <div class="bsw"><div class="bs wt"></div><div class="bsl wt">Menunggu</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="zr"></div>
+
+    <div>
+      <div class="sl">Destinasi Utama <span style="font-weight:400;letter-spacing:0;text-transform:none;font-size:9px;color:#9A9A9A">— 16 tujuan unik periode ini</span></div>
+      <div class="dlist" style="margin-top:4px">
+        <div class="ditem"><div class="dname">Pelatnas – Istora Senayan</div><div class="dfreq">8 trip</div></div>
+        <div class="ditem"><div class="dname">Pelatnas – Soekarno-Hatta</div><div class="dfreq">3 trip</div></div>
+        <div class="ditem"><div class="dname">T3 Soetta – Pelatnas</div><div class="dfreq">2 trip</div></div>
+        <div class="ditem"><div class="dname">Hotel Artotel – Imigrasi Depok</div><div class="dfreq">1 trip</div></div>
+        <div class="ditem"><div class="dname">ASTRA Cibubur</div><div class="dfreq">1 trip</div></div>
+      </div>
+    </div>
+
+    <div class="zr"></div>
+
+    <div>
+      <div class="sl">Sorotan</div>
+      <div class="hl-list" style="margin-top:8px">
+        <div class="hi"><div class="hcat g">Pemenuhan</div><div class="hbd"><div class="hst">Bidang Turnamen terpenuhi sepenuhnya pada periode ini.</div></div></div>
+        <div class="hi"><div class="hcat">Permintaan</div><div class="hbd"><div class="hst">Istora Senayan: 8 dari 26 trip (31%) — destinasi paling dominan dalam periode ini.</div></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="zr"></div>
+
+  <div class="ze" style="padding-top:8px">
+    <div class="fb">
+      <div class="fm">Filter: Semua Bidang · Semua Pengemudi · Semua Kendaraan</div>
+      <div class="fm">v1.11.3.3 · Evan · 15 Jun 2026</div>
+    </div>
+  </div>
+</div></div>
+
+<!-- HALAMAN 4 — KONTRIBUTOR UTAMA -->
+<div class="a4"><div class="pi">
+  <div class="za">
+    <div class="htop">
+      <div class="hid">
+        <div class="pm">PBSI</div>
+        <div class="hot"><div class="on1">Bidang Sarana dan Prasarana</div><div class="on2">PBSI — Persatuan Bulu Tangkis Seluruh Indonesia</div></div>
+      </div>
+      <div class="hrt"><div class="hpe">30 Hari Terakhir</div><div class="hda">15 Juni 2026</div></div>
+    </div>
+    <div class="htt">Laporan Analitik Lengkap &nbsp;—&nbsp; Kontributor Utama</div>
+  </div>
+  <div class="zr"></div>
+
+  <div style="flex:1;display:flex;flex-direction:column;padding:18px 0">
+    <div class="cfs">
+      <div class="cfsl">Pengemudi</div>
+      <div class="cfi">
+        <div class="cfl"><div class="cfn">Igo</div><div class="cfd">Mengelola volume dan jarak tertinggi dalam tim — mencakup 42% dari seluruh penugasan dan 43% dari total jarak tempuh armada pada periode ini.</div></div>
+        <div class="cfr"><div class="cfp">581</div><div class="cfpl">km</div></div>
+      </div>
+      <div class="cfi">
+        <div class="cfl"><div class="cfn">Aria</div><div class="cfd">Mempertahankan ketersediaan penuh sepanjang periode, menyelesaikan semua penugasan yang diterima tanpa penundaan.</div></div>
+        <div class="cfr"><div class="cfp">337</div><div class="cfpl">km</div></div>
+      </div>
+      <div class="cfi">
+        <div class="cfl"><div class="cfn">Dedi</div><div class="cfd">Menangani rute dengan diversifikasi tujuan terluas, termasuk perjalanan jarak menengah ke berbagai destinasi.</div></div>
+        <div class="cfr"><div class="cfp">424</div><div class="cfpl">km</div></div>
+      </div>
+    </div>
+
+    <div class="cfs">
+      <div class="cfsl">Kendaraan</div>
+      <div class="cfi">
+        <div class="cfl"><div class="cfn">Luxio</div><div class="cfd">Kendaraan dengan volume penugasan tertinggi — menjadi tulang punggung operasional armada pada periode ini.</div></div>
+        <div class="cfr"><div class="cfp">571</div><div class="cfpl">km</div></div>
+      </div>
+      <div class="cfi">
+        <div class="cfl"><div class="cfn">Hiace</div><div class="cfd">Mendukung rute jarak jauh dengan rata-rata 85 km per trip — tertinggi di antara seluruh kendaraan aktif.</div></div>
+        <div class="cfr"><div class="cfp">341</div><div class="cfpl">km</div></div>
+      </div>
+      <div class="cfi">
+        <div class="cfl"><div class="cfn">Innova</div><div class="cfd">Utilisasi konsisten sepanjang periode, mendukung 31% dari total penugasan armada.</div></div>
+        <div class="cfr"><div class="cfp">309</div><div class="cfpl">km</div></div>
+      </div>
+      <div class="cfi">
+        <div class="cfl"><div class="cfn">Polytron</div><div class="cfd">Beroperasi sebagai cadangan aktif, siap mendukung kapasitas tambahan saat diperlukan.</div></div>
+        <div class="cfr"><div class="cfp">121</div><div class="cfpl">km</div></div>
+      </div>
+    </div>
+
+    <div class="cfs">
+      <div class="cfsl">Bidang</div>
+      <div class="cfi">
+        <div class="cfl"><div class="cfn">Bidang Turnamen</div><div class="cfd">Mengajukan dan menyelesaikan satu permintaan layanan penuh pada periode ini. Seluruh 87 km jarak tercatat berasal dari penugasan bidang ini.</div></div>
+        <div class="cfr"><div class="cfp">87</div><div class="cfpl">km</div></div>
+      </div>
+      <div class="cfi">
+        <div class="cfl"><div class="cfn">Medis Pelatnas</div><div class="cfd">Mengajukan permintaan layanan yang menunggu penugasan. Permintaan akan diproses pada periode selanjutnya.</div></div>
+        <div class="cfr"><div class="cfp" style="color:#9A9A9A">—</div><div class="cfpl">km</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="zr"></div>
+
+  <div class="ze" style="padding-top:8px">
+    <div class="fb">
+      <div class="fm">Filter: Semua Pengemudi · Semua Kendaraan · Semua Bidang</div>
+      <div class="fm">v1.11.3.3 · Evan · 15 Jun 2026</div>
+    </div>
+  </div>
+</div></div>
+
+<!-- HALAMAN 5 — LAMPIRAN -->
+<div class="a4"><div class="pi">
+  <div class="za">
+    <div class="htop">
+      <div class="hid">
+        <div class="pm">PBSI</div>
+        <div class="hot"><div class="on1">Bidang Sarana dan Prasarana</div><div class="on2">PBSI — Persatuan Bulu Tangkis Seluruh Indonesia</div></div>
+      </div>
+      <div class="hrt"><div class="hpe">30 Hari Terakhir</div><div class="hda">15 Juni 2026</div></div>
+    </div>
+    <div class="htt">Laporan Analitik Lengkap &nbsp;—&nbsp; Lampiran</div>
+  </div>
+  <div class="zr"></div>
+
+  <div style="flex:1;padding:20px 0">
+    <div class="lgrid">
+      <div><div class="lkey">Periode Laporan</div><div class="lval">30 Hari Terakhir<br><span class="lsub">16 Mei – 15 Juni 2026</span></div></div>
+      <div><div class="lkey">Rekam Teranalisis</div><div class="lval">26 penugasan selesai<br><span class="lsub">1 penugasan dibatalkan</span></div></div>
+      <div><div class="lkey">Filter Pengemudi</div><div class="lval">Semua Pengemudi</div></div>
+      <div><div class="lkey">Cakupan Odometer</div><div class="lval">20 dari 26 trip (77%)<br><span class="lsub">6 trip tanpa rekam jarak</span></div></div>
+      <div><div class="lkey">Filter Kendaraan</div><div class="lval">Semua Kendaraan</div></div>
+      <div><div class="lkey">Alias Aktif</div><div class="lval">5 alias terdaftar</div></div>
+      <div><div class="lkey">Filter Bidang</div><div class="lval">Semua Bidang</div></div>
+      <div><div class="lkey">Peringatan Diabaikan</div><div class="lval">1<br><span class="lsub">Pelatnas-istora & Medistra</span></div></div>
+      <div><div class="lkey">Dibuat Oleh</div><div class="lval">Evan</div></div>
+      <div><div class="lkey">Versi Aplikasi</div><div class="lval">v1.11.3.3</div></div>
+      <div><div class="lkey">Dibuat Pada</div><div class="lval">15 Juni 2026, pukul 00.44</div></div>
+      <div><div class="lkey">Perbandingan Periode</div><div class="lval" style="color:#9A9A9A;font-style:italic">Tidak tersedia — baseline perdana</div></div>
+    </div>
+    <div class="lnote">Laporan ini mencerminkan kondisi data pada saat dibuat. Data yang dikecualikan melalui tata kelola tidak masuk dalam perhitungan ini. Seluruh angka bersifat final untuk periode yang dipilih. Laporan Analitik Lengkap diterbitkan oleh Sarpras Operations.</div>
+  </div>
+  <div class="zr"></div>
+
+  <div class="ze" style="padding-top:8px">
+    <div class="fb">
+      <div class="fm">Filter: Semua Pengemudi · Semua Kendaraan · Semua Bidang</div>
+      <div class="fm">v1.11.3.3 · Evan · 15 Jun 2026</div>
+    </div>
+  </div>
+</div></div>
+
+</div><!-- /r-lengkap -->
+</div><!-- /ra -->
+
+<script>
+document.querySelectorAll('.nb').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.nb').forEach(x => x.classList.remove('on'));
+    document.querySelectorAll('.rpt').forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    document.getElementById('r-' + b.dataset.t).classList.add('on');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+});
+
+function scalePages() {
+  const vw = window.innerWidth;
+  const pw = 794, pad = 40;
+  const pages = document.querySelectorAll('.a4');
+  if (vw - pad < pw) {
+    const s = (vw - pad) / pw;
+    pages.forEach(p => {
+      p.style.transform = `scale(${s})`;
+      p.style.transformOrigin = 'top center';
+      p.style.marginBottom = (1123 * (s - 1)) + 'px';
+    });
+  } else {
+    pages.forEach(p => { p.style.transform = ''; p.style.marginBottom = ''; });
+  }
+}
+window.addEventListener('resize', scalePages);
+scalePages();
+</script>
+</body>
+</html>
