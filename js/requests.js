@@ -9,7 +9,7 @@
 
 import { getDriverByName, getVehicleColor } from './drivers.js';
 import { getDrivers, getActiveDrivers, registerDriversChangeListener } from './drivers-store.js';
-import { getActiveVehicleNames } from './vehicles-store.js';
+import { getActiveVehicleNames, registerVehiclesChangeListener } from './vehicles-store.js';
 import { generateId, timeToMinutes, showToast, initCustomTimeInputPair, getCombinedTimeFromPair, setTimeFieldsFromValue, normalizeTimeValue, expandDateRange, formatDateShort, addHoursToTime, todayString, offsetDate } from './utils.js';
 import { getCurrentUser, hasPermission, isAdmin } from './auth.js';
 import { initFormGuard, resetDirty } from './form-guard.js';
@@ -70,9 +70,14 @@ export function registerCommentCallback(callback) {
 
 export function initRequestHandlers() {
   initRequestDriverSelect();
-  // Keep #requestFieldDriver in sync with driver create/deactivate/reactivate.
-  // MutationObserver in PBSI Select picks up option changes automatically.
+  initRequestVehicleSelect();
+  // Keep #requestFieldDriver / #requestFieldVehicle in sync with create/
+  // deactivate/reactivate. MutationObserver in PBSI Select picks up option
+  // changes automatically. The vehicles listener also covers the case where the
+  // vehicles store finishes loading AFTER this form is initialized (fresh
+  // login) — otherwise the Bidang role is left with an empty dropdown.
   registerDriversChangeListener(initRequestDriverSelect);
+  registerVehiclesChangeListener(initRequestVehicleSelect);
   initCustomTimeInputPair('requestFieldStartHour', 'requestFieldStartMinute');
   initCustomTimeInputPair('requestFieldEndHour', 'requestFieldEndMinute');
 
@@ -550,16 +555,30 @@ function initRequestDriverSelect() {
     option.textContent = driver.name;
     select.appendChild(option);
   });
+}
 
+/* Vehicle dropdown for the request form (Bidang's only vehicle-selection path).
+   Split out from the driver select and driven by registerVehiclesChangeListener
+   so it survives the vehicles store loading AFTER the form is initialized — on a
+   fresh login it was previously populated once from an empty cache and never
+   refreshed, leaving Bidang with an empty "Pilih Kendaraan". Rebuilds
+   idempotently, preserves the current selection; the PBSI Select MutationObserver
+   rebuilds the custom option list and syncPbsiSelect refreshes the trigger. */
+function initRequestVehicleSelect() {
   const vehicleSelect = document.getElementById('requestFieldVehicle');
-  if (vehicleSelect && vehicleSelect.options.length <= 1) {
-    getActiveVehicleNames().forEach(vehicle => {
-      const option = document.createElement('option');
-      option.value = vehicle;
-      option.textContent = vehicle;
-      vehicleSelect.appendChild(option);
-    });
-  }
+  if (!vehicleSelect) return;
+
+  const prev = vehicleSelect.value;
+  const names = getActiveVehicleNames();
+  vehicleSelect.innerHTML = '<option value="">-- Pilih Kendaraan --</option>';
+  names.forEach(name => {
+    const option = document.createElement('option');
+    option.value = name;
+    option.textContent = name;
+    vehicleSelect.appendChild(option);
+  });
+  if (prev && names.includes(prev)) vehicleSelect.value = prev;
+  syncPbsiSelect(vehicleSelect);
 }
 
 function escapeHTML(value) {
