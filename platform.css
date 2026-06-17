@@ -6571,6 +6571,18 @@ textarea:disabled { opacity: 0.55; }
   user-select: none;
 }
 
+/* Sarpras Operations logo above the wordmark. Explicit box (matches the
+   width/height attributes on the <img>) so there is no layout shift while
+   the asset decodes. Responsive size handled below. */
+.app-splash-logo {
+  width: 72px;
+  height: 72px;
+  display: block;
+  margin-bottom: 14px;
+  object-fit: contain;
+  border-radius: 16px;
+}
+
 .app-splash-name {
   margin: 0;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
@@ -6619,6 +6631,11 @@ textarea:disabled { opacity: 0.55; }
 [data-theme="dark"] .app-splash-spinner {
   border-color: var(--border, rgba(255, 255, 255, 0.10));
   border-top-color: var(--accent, #B8454A);
+}
+
+/* Mobile: slightly smaller splash logo (applied pre-paint → no layout shift). */
+@media (max-width: 480px) {
+  .app-splash-logo { width: 60px; height: 60px; margin-bottom: 12px; }
 }
 
 

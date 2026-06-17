@@ -17,6 +17,8 @@
    All text is HTML-escaped via esc().
    ============================================================ */
 
+const { sarprasLogoDataUrl } = require('../../assets/logos/sarpras-logo');
+
 /** Escape text for safe interpolation into HTML. */
 function esc(s) {
   return String(s == null ? '' : s)
@@ -37,23 +39,52 @@ function rule() {
 }
 
 /**
- * Zone A — standard PBSI report header.
- * @param {{org?:string, orgSub?:string, periodLabel?:string,
+ * Zone A — standard 3-column branded report header.
+ *
+ *   LEFT   PBSI monogram + institutional identity
+ *   CENTER Sarpras Operations logo + wordmark
+ *   RIGHT  report period + generate date
+ *
+ * The left (PBSI) and center (Sarpras Operations) branding is FIXED —
+ * it is the platform institutional identity, shared verbatim by every
+ * report — while period/date/title stay data-driven from the model.
+ * The institutional lines are intentionally NOT taken from meta.org/
+ * orgSub (the client model sends the department name there, e.g.
+ * "Bidang Sarana dan Prasarana", which now lives in the centre wordmark
+ * as "Sarpras Operations"). The centre logo is embedded as a data: URI;
+ * when the asset is absent the wordmark renders text-only.
+ *
+ * @param {{appName?:string, periodLabel?:string,
  *          dateLabel?:string, title?:string}} meta
  */
 function reportHeader(meta = {}) {
-  const org        = esc(meta.org || 'Bidang Sarana dan Prasarana');
-  const orgSub     = esc(meta.orgSub || 'PBSI — Persatuan Bulu Tangkis Seluruh Indonesia');
+  const orgName    = 'PBSI';
+  const orgSub     = 'Persatuan Bulutangkis Seluruh Indonesia';
+  const appName    = esc(meta.appName || 'Sarpras Operations');
   const periodLabel = esc(meta.periodLabel || '');
   const dateLabel  = esc(meta.dateLabel || '');
   const title      = esc(meta.title || '');
+
+  // CENTER — logo + wordmark when the mark embedded; a bold "SARPRAS
+  // OPERATIONS" text wordmark fallback (never a blank/broken image) otherwise.
+  const logo = sarprasLogoDataUrl();
+  const centerInner = logo
+    ? `<img class="hlogo" src="${logo}" alt="${appName}" /><div class="hcl">${appName}</div>`
+    : `<div class="hcl hcl-fallback">${esc((meta.appName || 'Sarpras Operations')).toUpperCase()}</div>`;
+
   return (
     '<div class="za">' +
       '<div class="htop">' +
+        // LEFT — PBSI
         '<div class="hid">' +
           '<div class="pm">PBSI</div>' +
-          `<div class="hot"><div class="on1">${org}</div><div class="on2">${orgSub}</div></div>` +
+          `<div class="hot"><div class="on1">${orgName}</div><div class="on2">${orgSub}</div></div>` +
         '</div>' +
+        // CENTER — Sarpras Operations
+        '<div class="hctr">' +
+          centerInner +
+        '</div>' +
+        // RIGHT — period + date
         `<div class="hrt"><div class="hpe">${periodLabel}</div><div class="hda">${dateLabel}</div></div>` +
       '</div>' +
       `<div class="htt">${title}</div>` +

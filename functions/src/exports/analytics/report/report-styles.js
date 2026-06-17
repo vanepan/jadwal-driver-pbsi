@@ -41,13 +41,20 @@ body{font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased
 
 /* ZONE A — HEADER */
 .za{flex:0 0 auto;padding-bottom:12px;display:flex;flex-direction:column;justify-content:flex-end}
-.htop{display:flex;justify-content:space-between;align-items:flex-start}
-.hid{display:flex;align-items:center;gap:10px}
+/* 3-column header: LEFT (PBSI) · CENTER (Sarpras Operations) · RIGHT (period).
+   1fr/auto/1fr keeps the centre column optically centred while the side
+   columns stay balanced; align-items:center vertically aligns logo + text. */
+.htop{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:16px}
+.hid{display:flex;align-items:center;gap:10px;justify-self:start}
 .pm{background:#0F0F0F;color:#fff;font-size:8px;font-weight:700;letter-spacing:.08em;padding:4px 6px;line-height:1;flex-shrink:0}
 .hot{display:flex;flex-direction:column;gap:1px}
 .on1{font-size:11px;font-weight:600;color:#0F0F0F;letter-spacing:-.01em}
 .on2{font-size:9px;font-weight:400;color:#9A9A9A}
-.hrt{text-align:right}
+.hctr{display:flex;flex-direction:column;align-items:center;gap:4px;justify-self:center;text-align:center}
+.hlogo{height:32px;width:auto;display:block;object-fit:contain}
+.hcl{font-size:10px;font-weight:600;color:#0F0F0F;letter-spacing:.01em}
+.hcl-fallback{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.hrt{text-align:right;justify-self:end}
 .hpe{font-size:9px;font-weight:500;color:#6B6B6B}
 .hda{font-size:9px;font-weight:400;color:#9A9A9A;margin-top:2px}
 .htt{margin-top:10px;font-size:8px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:#0F0F0F}
