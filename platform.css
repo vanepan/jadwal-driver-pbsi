@@ -10847,3 +10847,61 @@ input[type="time"].v2-admin-config-input {
   .v2-analytics-claude .an-export-go,
   .v2-analytics-claude .an-export-chip { margin-left: 47px; }
 }
+
+/* ── Export Center — modern hub (v1.12.1C) ───────────────────────────────
+   Built on the Registry (catalog) + Metadata (history/summary) foundations.
+   Summary stat row + a two-column Catalog / History grid (stacked on mobile). */
+.v2-analytics-claude .ec { display: flex; flex-direction: column; gap: 22px; }
+
+/* Summary — four headline figures derived from the metadata cache */
+.v2-analytics-claude .ec-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.v2-analytics-claude .ec-stat { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border: 1px solid var(--border-faint); border-radius: var(--radius-sm); background: var(--surface); min-width: 0; }
+.v2-analytics-claude .ec-stat-num { font-family: var(--font-display); font-weight: 800; font-size: 24px; letter-spacing: -0.02em; color: var(--text); line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v2-analytics-claude .ec-stat--wide .ec-stat-num { font-size: 16px; font-weight: 700; }
+.v2-analytics-claude .ec-stat--ok .ec-stat-num { color: var(--c-green); }
+.v2-analytics-claude .ec-stat--fail .ec-stat-num { color: var(--crit); }
+.v2-analytics-claude .ec-stat-label { font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; font-weight: 700; color: var(--text-faint); }
+
+/* Two-column layout */
+.v2-analytics-claude .ec-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 22px; align-items: start; }
+.v2-analytics-claude .ec-col { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.v2-analytics-claude .ec-col-title { font-family: var(--font-display); font-weight: 700; font-size: 14px; letter-spacing: -0.01em; color: var(--text); margin: 0; }
+
+/* Catalog cards (from listExportReports) */
+.v2-analytics-claude .ec-catalog { display: flex; flex-direction: column; gap: 10px; }
+.v2-analytics-claude .ec-card { display: flex; align-items: center; gap: 13px; padding: 13px 15px; border: 1px solid var(--border-faint); border-radius: var(--radius-sm); background: var(--surface); }
+.v2-analytics-claude .ec-card-ic { display: inline-flex; width: 36px; height: 36px; flex: 0 0 36px; border-radius: 9px; background: var(--surface-2); color: var(--text-dim); align-items: center; justify-content: center; }
+.v2-analytics-claude .ec-card-ic svg { width: 18px; height: 18px; }
+.v2-analytics-claude .ec-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.v2-analytics-claude .ec-card-title { font-size: 13.5px; font-weight: 700; color: var(--text); letter-spacing: -0.005em; }
+.v2-analytics-claude .ec-card-desc { font-size: 12px; color: var(--text-faint); line-height: 1.45; }
+.v2-analytics-claude .ec-card-gen { flex: 0 0 auto; height: 32px; padding: 0 14px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface); color: var(--text-dim); font-family: var(--font-sans); font-weight: 600; font-size: 12.5px; cursor: pointer; box-shadow: var(--shadow-sm); transition: color .12s, border-color .12s, background .12s; }
+.v2-analytics-claude .ec-card-gen:hover { color: var(--text); border-color: var(--border-strong); background: var(--surface-2); }
+.v2-analytics-claude .ec-card-gen:disabled { opacity: 0.6; cursor: default; }
+
+/* History list (from the metadata cache) */
+.v2-analytics-claude .ec-history { display: flex; flex-direction: column; border: 1px solid var(--border-faint); border-radius: var(--radius-sm); overflow: hidden; }
+.v2-analytics-claude .ec-history--empty { padding: 0; }
+.v2-analytics-claude .ec-empty { margin: 0; padding: 18px 15px; font-size: 12.5px; color: var(--text-faint); }
+.v2-analytics-claude .ec-hist { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 15px; border-top: 1px solid var(--border-faint); background: var(--surface); }
+.v2-analytics-claude .ec-hist:first-child { border-top: none; }
+.v2-analytics-claude .ec-hist-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.v2-analytics-claude .ec-hist-title { font-size: 13px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v2-analytics-claude .ec-hist-meta { font-size: 11.5px; color: var(--text-faint); }
+.v2-analytics-claude .ec-hist-aside { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.v2-analytics-claude .ec-hist-stat { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+
+/* Status badges */
+.v2-analytics-claude .ec-badge { font-size: 10px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 9px; border-radius: 999px; }
+.v2-analytics-claude .ec-badge--success { color: var(--c-green); background: rgba(47,158,107,0.12); }
+.v2-analytics-claude .ec-badge--failed { color: var(--crit); background: var(--crit-weak); }
+
+/* Responsive — stack catalog over history, 2-up summary */
+@media (max-width: 920px) {
+  .v2-analytics-claude .ec-grid { grid-template-columns: 1fr; gap: 26px; }
+}
+@media (max-width: 560px) {
+  .v2-analytics-claude .ec-summary { grid-template-columns: 1fr 1fr; }
+  .v2-analytics-claude .ec-card { flex-wrap: wrap; }
+  .v2-analytics-claude .ec-card-gen { margin-left: 49px; }
+}

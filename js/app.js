@@ -52,6 +52,9 @@ import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver 
 import * as DocumentEngine from './docs/doc-engine.js';
 import './docs/templates/analytics-summary.js';   // registers 'analytics-summary'
 import './exports/analytics/analytics-export-client.js'; // Analytics Export Phase A — window.exportAnalyticsPoc()
+import { listExportReports, getExportReport, runExportReport } from './exports/export-registry.js'; // single source of truth for report exports
+import { logExportSuccess, logExportFailure, ensureExportHistoryLoadedAndSubscribed, resetExportHistorySync, getExportHistoryCache, subscribeExportHistoryChangeListener } from './exports/export-history.js'; // metadata logging for every export
+import { renderExportCenter as renderModernExportCenter } from './exports/export-center.js'; // v1.12.1C modern Export Center (registry + metadata)
 import {
   computeAnalyticsModel,
   normDestKey as _normDestKey,
@@ -64,7 +67,6 @@ import {
   renderAnalyticsErrorState,
   renderAnalyticsChart,
   renderAnalyticsTabPanels,
-  renderExportCenter,
   anIcon,
   renderEyebrow,
   renderHeroSection,
@@ -1927,12 +1929,9 @@ function initV2AdministrationWorkspace() {
                   <span class="v2-analytics-export-label">Export PDF</span>
                   <svg class="v2-analytics-export-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
                 </button>
-                <div id="v2AnalyticsExportMenu" class="v2-analytics-export-menu" role="menu" aria-label="Pilih laporan" hidden>
-                  <button class="v2-analytics-export-item" type="button" role="menuitem" data-report="driver">Laporan Pengemudi</button>
-                  <button class="v2-analytics-export-item" type="button" role="menuitem" data-report="vehicle">Laporan Armada</button>
-                  <button class="v2-analytics-export-item" type="button" role="menuitem" data-report="bidang">Laporan Bidang</button>
-                  <button class="v2-analytics-export-item" type="button" role="menuitem" data-report="complete">Laporan Lengkap</button>
-                </div>
+                <!-- Items rendered from the export registry at init
+                     (see listExportReports() in initV2AdminWorkspace). -->
+                <div id="v2AnalyticsExportMenu" class="v2-analytics-export-menu" role="menu" aria-label="Pilih laporan" hidden></div>
               </div>
             </div>
             <div id="v2AnalyticsFilterSummary" class="v2-analytics-filter-summary"></div>
@@ -1967,6 +1966,12 @@ function initV2AdministrationWorkspace() {
       const action = actionBtn.dataset.action;
       if (action === 'export-pdf') {
         if (activeAdminSection === 'analytics') exportAnalyticsReport(actionBtn);
+        return;
+      }
+      if (action === 'ec-generate') {
+        // Export Center catalog card → registry-driven export + metadata log,
+        // showing the clicked card's own busy state.
+        if (activeAdminSection === 'analytics') runAnalyticsExport(actionBtn.dataset.report, actionBtn);
         return;
       }
       if (action === 'goto-health') {
@@ -2109,6 +2114,14 @@ function initV2AdministrationWorkspace() {
   // (the export functions read the live model + meta set by refreshAnalyticsDisplay).
   const _analyticsExportBtn  = document.getElementById('v2AnalyticsExportPdf');
   const _analyticsExportMenu = document.getElementById('v2AnalyticsExportMenu');
+  // Build the menu items from the shared export registry (single source of
+  // truth). Produces the same markup as the previous static buttons, so the
+  // styling and behavior are unchanged — only the id/title source moved.
+  if (_analyticsExportMenu) {
+    _analyticsExportMenu.innerHTML = listExportReports().map((r) =>
+      `<button class="v2-analytics-export-item" type="button" role="menuitem" data-report="${r.id}">${r.title}</button>`
+    ).join('');
+  }
   const _closeAnalyticsExportMenu = () => {
     if (_analyticsExportMenu) _analyticsExportMenu.hidden = true;
     _analyticsExportBtn?.setAttribute('aria-expanded', 'false');
@@ -2132,6 +2145,14 @@ function initV2AdministrationWorkspace() {
   });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') _closeAnalyticsExportMenu();
+  });
+
+  // Export Center live refresh — when an export record is written, re-render
+  // the §06 history + summary in place from the metadata cache (no Firebase
+  // query from the UI). outerHTML keeps #ecRoot stable for the next update.
+  subscribeExportHistoryChangeListener((records) => {
+    const root = document.getElementById('ecRoot');
+    if (root) root.outerHTML = renderModernExportCenter(records);
   });
 
   registerUsersChangeListener(() => {
@@ -5214,18 +5235,13 @@ function refreshAnalyticsDisplay() {
       ],
     });
 
-  // ── §06 Export Center — the long-term reporting hub (Sprint 7D restore) ────
-  // A calm, future-ready format list (PDF live; Excel/Print/scheduled/automated
-  // reports to come), not a banner. The same exportAnalyticsReport() path as the
-  // compact header utility button; all exports use the on-screen data.
-  const exportContent = renderExportCenter({
-    description: 'Pusat ekspor &amp; pelaporan — semua ekspor memakai data yang sama dengan layar (data yang dikecualikan lewat tata kelola tidak ikut). Format & laporan terjadwal menyusul.',
-    formats: [
-      { id: 'pdf',   label: 'Laporan PDF',   sub: 'Ringkasan analytics untuk rapat &amp; arsip', icon: 'file',    action: 'export-pdf', actionLabel: 'Unduh PDF', enabled: true },
-      { id: 'excel', label: 'Ekspor Excel',  sub: 'Data mentah untuk analisis lanjutan',          icon: 'sheet',   enabled: false, note: 'Segera hadir' },
-      { id: 'print', label: 'Cetak Laporan', sub: 'Versi cetak siap-bagikan',                     icon: 'printer', enabled: false, note: 'Segera hadir' },
-    ],
-  });
+  // ── §06 Export Center (v1.12.1C modernization) ────────────────────────────
+  // Built entirely on the Registry (catalog) + Metadata (history/summary)
+  // foundations: report cards come from listExportReports(), history + the
+  // headline figures from the export metadata cache. Generate buttons dispatch
+  // through runExportReport() (the ec-generate action). The realtime history
+  // listener re-renders #ecRoot in place. No PDF/template/engine code here.
+  const exportContent = renderModernExportCenter(getExportHistoryCache());
 
   // ── Compose the Claude Design experience — keynote hero + de-boxed eyebrow
   //    sections (Sprint 7B). Typography-first, hairline dividers, no card-in-card. ──
@@ -5253,7 +5269,7 @@ function refreshAnalyticsDisplay() {
         <div class="card">${dqContent}</div>
       </section>
       <section class="level an-level fade-up" id="analyticsExport">
-        ${renderEyebrow({ tag: '06', title: 'Export Center', sub: 'Pusat pelaporan — PDF · Excel · Cetak · laporan terjadwal' })}
+        ${renderEyebrow({ tag: '06', title: 'Export Center', sub: 'Katalog laporan · riwayat ekspor · ringkasan aktivitas' })}
         ${exportContent}
       </section>
     </div>
@@ -5382,28 +5398,49 @@ async function exportAnalyticsReport(triggerBtn) {
   }
 }
 
-/* Analytics Export dropdown — runs one of the 4 server-rendered reports
+/* Analytics Export — runs one of the server-rendered reports
    (Driver/Vehicle/Bidang/Complete) through the validated window.export*
-   pipeline. Filters & period pass through unchanged: the export functions
-   read the live model + export meta that refreshAnalyticsDisplay publishes. */
-const _ANALYTICS_EXPORT_RUNNERS = {
-  driver:   () => window.exportDriverAnalytics(),
-  vehicle:  () => window.exportVehicleAnalytics(),
-  bidang:   () => window.exportBidangAnalytics(),
-  complete: () => window.exportCompleteAnalytics(),
-};
-async function runAnalyticsExport(report) {
-  const runner = _ANALYTICS_EXPORT_RUNNERS[report];
-  if (!runner) return;
-  const btn   = document.getElementById('v2AnalyticsExportPdf');
-  const label = btn ? btn.querySelector('.v2-analytics-export-label') : null;
+   pipeline. The id→handler mapping lives in the shared export registry
+   (js/exports/export-registry.js), the single source of truth; metadata is
+   logged to export-history afterwards. Shared by the header dropdown and the
+   Export Center catalog cards — pass the clicked button as `triggerBtn` so its
+   own busy state is shown. Filters & period pass through unchanged. */
+async function runAnalyticsExport(report, triggerBtn = null) {
+  const def = getExportReport(report);
+  if (!def) return;
+  const btn   = triggerBtn || document.getElementById('v2AnalyticsExportPdf');
+  const label = btn ? (btn.querySelector('.v2-analytics-export-label, [data-busy-label]') || btn) : null;
   const prev  = label ? label.textContent : null;
   if (btn) btn.disabled = true;
   if (label) label.textContent = 'Memproses PDF…';
+
+  // Build the metadata context from the registry + live export meta that
+  // refreshAnalyticsDisplay publishes. Metadata only — no PDF/blob content.
+  const meta = window._analyticsExportMeta || {};
+  const u = getCurrentUser();
+  const exportCtx = {
+    reportId:     def.id,
+    reportTitle:  def.title,
+    periodLabel:  meta.periodLabel,
+    dateRangeKey: meta.dateRangeKey,
+    filters:      meta.filters,
+    generatedBy:  meta.generatedBy || (u && (u.displayName || u.name || u.username)) || '—',
+    userId:       u?.id,
+    username:     u?.username,
+    appVersion:   meta.appVersion || APP_VERSION,
+  };
+  const _startedAt = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const _elapsed = () => Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - _startedAt);
+
   try {
-    await runner();
+    const result = await runExportReport(report);
+    const fileSize = result?.blob?.size;
+    // Log metadata after a successful export. Never block/break the export on
+    // a logging failure (logExportSuccess swallows its own errors).
+    logExportSuccess(exportCtx, { fileSize, durationMs: _elapsed() });
   } catch (err) {
     console.error('[Analytics] PDF export failed:', err);
+    logExportFailure(exportCtx, { error: err, durationMs: _elapsed() });
     showToast('Gagal membuat PDF.');
   } finally {
     if (btn) btn.disabled = false;
@@ -6945,6 +6982,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function loadAuthedAdminData() {
     await ensureUsersLoadedAndSubscribed();
     await ensureLogsLoadedAndSubscribed();
+    await ensureExportHistoryLoadedAndSubscribed(); // v1.12.1B export metadata cache
     // Refresh an already-open admin view (e.g. user logged in while on it).
     if (currentWorkspace === 'administration') renderV2AdminWorkspace();
   }
@@ -6994,7 +7032,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // fires on warm launch, delayed restore, AND fresh login — so the admin
   // datasets recover whenever a live session appears, not only at boot.
   onAuthAvailable(() => { startAuthenticatedSession(); });
-  onAuthLost(() => { resetUsersSync(); resetLogsSync(); });
+  onAuthLost(() => { resetUsersSync(); resetLogsSync(); resetExportHistorySync(); });
 
   await initAuthUI(() => {
     updatePermissionUI(true); // auth change → reset nav to Dashboard
