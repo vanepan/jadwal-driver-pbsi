@@ -65,11 +65,13 @@ function reportHeader(meta = {}) {
   const dateLabel  = esc(meta.dateLabel || '');
   const title      = esc(meta.title || '');
 
-  // CENTER — logo + wordmark when the mark embedded; a bold "SARPRAS
-  // OPERATIONS" text wordmark fallback (never a blank/broken image) otherwise.
+  // CENTER — logo only (v1.12.2 final polish: the "Sarpras Operations"
+  // wordmark under the logo was removed to keep the header calm). When the
+  // mark is unavailable, fall back to a bold "SARPRAS OPERATIONS" text
+  // wordmark so the centre is never blank/broken.
   const logo = sarprasLogoDataUrl();
   const centerInner = logo
-    ? `<img class="hlogo" src="${logo}" alt="${appName}" /><div class="hcl">${appName}</div>`
+    ? `<img class="hlogo" src="${logo}" alt="${appName}" />`
     : `<div class="hcl hcl-fallback">${esc((meta.appName || 'Sarpras Operations')).toUpperCase()}</div>`;
 
   return (

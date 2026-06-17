@@ -51,7 +51,7 @@ body{font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased
 .on1{font-size:11px;font-weight:600;color:#0F0F0F;letter-spacing:-.01em}
 .on2{font-size:9px;font-weight:400;color:#9A9A9A}
 .hctr{display:flex;flex-direction:column;align-items:center;gap:4px;justify-self:center;text-align:center}
-.hlogo{height:32px;width:auto;display:block;object-fit:contain}
+.hlogo{height:38px;width:auto;display:block;object-fit:contain}
 .hcl{font-size:10px;font-weight:600;color:#0F0F0F;letter-spacing:.01em}
 .hcl-fallback{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
 .hrt{text-align:right;justify-self:end}
