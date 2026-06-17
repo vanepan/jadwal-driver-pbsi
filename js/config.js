@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.11.3.3';
-export const RELEASE_NAME = 'iPhone Stability & Push Pilot Readiness';
+export const APP_VERSION = '1.12.2';
+export const RELEASE_NAME = 'Mobile UI Hotfix & Vehicle Selector Recovery';
 
 /**
  * Web Push VAPID PUBLIC key (v1.11.3). Safe to ship — it is an
@@ -17,6 +17,17 @@ export const RELEASE_NAME = 'iPhone Stability & Push Pilot Readiness';
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.12.2',
+    date: '2026-06-17',
+    summary: 'Mobile UI hotfix — iPhone dark-mode footer bleed + Bidang vehicle selector recovery',
+    highlights: [
+      'Dark Mode footer bleed (iPhone, P1): the "Tambah Jadwal" modal showed a white strip behind the Simpan/Batal buttons in dark mode. Root cause: #assignmentForm .form-actions is a sticky footer hardcoded to background: var(--white) in style.css (id+class specificity 1,1,0); the generic [data-theme="dark"] .form-actions override is class-only (0,2,0) and only recoloured the border-top, so the footer background stayed pure white. Fix (platform.css, append-only): [data-theme="dark"] #assignmentForm .form-actions → background: var(--surface). The modal box/body are already dark (var(--surface)), so the home-indicator safe-area inset now reads dark and the buttons merge with the modal. Light mode on Android + iPhone + desktop is byte-for-byte unchanged (rule scoped to [data-theme="dark"])',
+      'Bidang vehicle selector recovery (P1): the request form vehicle dropdown showed only "Pilih Kendaraan" for the Bidang role, blocking vehicle requests. Root cause was a load-order / missing-listener bug — NOT a role guard: initRequestDriverSelect() populated #requestFieldVehicle once from getActiveVehicleNames() and only re-ran on driver changes, never on vehicle changes. On a fresh login the vehicles store loads AFTER the request form is initialized, so the dropdown was built from an empty cache and never refreshed. Admin was unaffected only because the assignment form #fieldVehicle carries hardcoded <option>s in index.html. Fix (requests.js): split out initRequestVehicleSelect() and drive it via registerVehiclesChangeListener so the dropdown repopulates when the vehicles cache loads/changes; rebuilds idempotently and preserves the current selection (PBSI Select MutationObserver + syncPbsiSelect refresh the custom dropdown)',
+      'Vehicle selection ≠ vehicle administration: Bidang can now view + pick active vehicles and submit requests, but still cannot create / edit / delete vehicles — vehicle administration remains in the admin-only section and is unchanged',
+      'Client-only release: no Cloud Functions, rules, schema, PDF rendering, Puppeteer/Chromium, analytics calculations, or report templates changed; SERVICE_VERSION stays 1.11.4. Version bump + sync-version.mjs re-stamps the service worker (SW_VERSION → CACHE_NAME) and version.json so installed PWAs pick up the fixes',
+    ],
+  },
   {
     version: '1.11.3.3',
     date: '2026-06-14',

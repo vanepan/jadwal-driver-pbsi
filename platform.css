@@ -10905,3 +10905,30 @@ input[type="time"].v2-admin-config-input {
   .v2-analytics-claude .ec-card { flex-wrap: wrap; }
   .v2-analytics-claude .ec-card-gen { margin-left: 49px; }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   v1.12.2 — Task 1: Dark Mode footer bleed (iPhone "Tambah Jadwal")
+   ───────────────────────────────────────────────────────────────
+   ROOT CAUSE: #assignmentForm .form-actions is a sticky footer that
+   style.css hardcodes to `background: var(--white)` (id+class
+   specificity 1,1,0). The generic dark override
+   `[data-theme="dark"] .form-actions` is class-only (0,2,0) and only
+   recoloured the border-top — so the footer background stayed pure
+   white in dark mode, showing a white strip behind the Simpan/Batal
+   buttons. Most visible on the iPhone bottom-sheet, where the footer
+   sits over the home-indicator safe-area.
+
+   FIX: make the footer background follow the theme. The modal box +
+   body are already dark (var(--surface), see the dark .modal-box /
+   .modal-header rules above), so the bottom safe-area inset region —
+   which is .modal-body's padding-bottom: max(20px, env(safe-area-
+   inset-bottom)) over the dark modal-box — already reads dark once
+   the footer matches. Buttons then merge seamlessly with the modal.
+
+   Scoped to [data-theme="dark"] only: light mode (Android + iPhone +
+   desktop) is byte-for-byte unchanged; this purely repairs the dark
+   theme on every platform. style.css remains untouched (append-only).
+   ═══════════════════════════════════════════════════════════════ */
+[data-theme="dark"] #assignmentForm .form-actions {
+  background: var(--surface);
+}

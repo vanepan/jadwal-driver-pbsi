@@ -1,4 +1,4 @@
-/* Boot smoke test (v1.11.3.3): serve the static app, load it in headless
+/* Boot smoke test (v1.12.2): serve the static app, load it in headless
    Chromium, and assert the bootstrap completes without uncaught errors or
    ES-module load failures, and that the login modal renders (proving
    initAuthUI + the new auth-signal wiring ran). Unauthenticated load only —
@@ -63,6 +63,6 @@ errors.forEach(e => console.log('   •', e.slice(0, 200)));
 await browser.close();
 server.close();
 
-const pass = ver === '1.11.3.3' && loginVisible && pushSectionExists && enablePushBtnExists && fatal.length === 0;
+const pass = ver === '1.12.2' && loginVisible && pushSectionExists && enablePushBtnExists && fatal.length === 0;
 console.log('\nSMOKE RESULT:', pass ? 'PASS' : 'FAIL');
 process.exit(pass ? 0 : 1);
