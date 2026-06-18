@@ -1,7 +1,7 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.12.2';
+export const APP_VERSION = '1.12.2.1';
 export const RELEASE_NAME = 'Global Push Activation & Reliability Hardening';
 
 /**
@@ -18,10 +18,11 @@ export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss
 
 export const VERSION_HISTORY = [
   {
-    version: '1.12.2',
+    version: '1.12.2.1',
     date: '2026-06-18',
     summary: 'Global lifecycle push activation (Phase D) + push reliability hardening, actor self-push exclusion, dark-mode Informasi Aplikasi fix, and the earlier mobile UI hotfix',
     highlights: [
+      'Cache-bust patch (.1): production already served 1.12.2, whose service worker holds CACHE_NAME = sarpras-cache-v1.12.2. Because the SW is cache-first and activate() only purges caches != CACHE_NAME, re-shipping the new push.js under the SAME 1.12.2 cache would have served the OLD push client to already-installed PWAs — trapping the push-reliability fix on exactly the iPhones this release targets. Bumping APP_VERSION → 1.12.2.1 re-stamps SW_VERSION → CACHE_NAME (sarpras-cache-v1.12.2.1) so activate() purges the stale cache and re-fetches every asset fresh',
       'Global Push Activation (Phase D): NOTIFICATION_FLAGS.channels.push flipped false → true and PUSH_CONFIG.pilotAllowlist emptied, so every resolved recipient of a notifiable lifecycle event (request.created → all admins, assignment created/completed/cancelled, request approved/rejected) now receives a real Web Push popup instead of a shadow row. Safe without a Telegram-style cutover: push is server-only (no browser sender), so there is no double-send; dead endpoints self-prune on 404/410; delivery is idempotent per (event, recipient, channel). Fully reversible — set channels.push = false and redeploy functions. Admin fan-out is the full active-admin set (recipients.admins()), never admins[0]',
       'Push reliability — multi-device auto-heal (P1): a second iPhone on the same account received push inconsistently because iOS/Safari periodically evicts the push subscription on installed PWAs while permission stays "granted"; initPush only re-registered an EXISTING subscription and otherwise fell through to a 7-day-TTL-suppressed soft-ask, so the device silently stayed unsubscribed. Fix (js/push.js): initPush now silently re-subscribes + re-registers whenever permission is granted but the subscription is missing (no prompt), via the new _subscribeAndRegister() helper — runs every app open and refreshes lastSeenAt',
       'Push reliability — pushsubscriptionchange recovery: service-worker.js gains a pushsubscriptionchange handler that re-subscribes using the prior applicationServerKey (no VAPID constant needed in the SW) and messages open clients (PUSH_RESUBSCRIBED → push.js _healSubscription registers the rotated endpoint on the server). If no client is open, the server prunes the dead endpoint on the next 404/410 and initPush re-registers on the next open',
