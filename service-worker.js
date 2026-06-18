@@ -137,6 +137,31 @@ self.addEventListener('push', event => {
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
+/* ── Push subscription change (v1.12.2) ──────────────────────
+   The push service can rotate/expire an endpoint out from under us
+   (common on iOS/Safari installed PWAs — the #1 cause of a 2nd device
+   silently dropping out of delivery). When the browser fires this, the
+   old endpoint is dead; re-subscribe immediately using the prior
+   applicationServerKey (so we need no VAPID constant in the SW) and tell
+   any open client to register the new endpoint on the server. If no
+   client is open, the client-side heal in push.js#initPush re-registers
+   on the next app open (and the server prunes the dead endpoint on the
+   next 410). */
+self.addEventListener('pushsubscriptionchange', event => {
+  event.waitUntil((async () => {
+    try {
+      const appServerKey = event.oldSubscription && event.oldSubscription.options
+        ? event.oldSubscription.options.applicationServerKey : undefined;
+      await self.registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: appServerKey || undefined,
+      });
+      const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      for (const c of clients) c.postMessage({ type: 'PUSH_RESUBSCRIBED' });
+    } catch (_) { /* best-effort; initPush heals on next open */ }
+  })());
+});
+
 /* ── Notification click (v1.11.3) ────────────────────────────
    Focus an existing app window and route it (postMessage NAV), else
    open a new one at the deep link. */

@@ -12,7 +12,7 @@ const SERVICE_NAME = 'sarpras-operations';
  * APP_VERSION (js/config.js) so deploying the backend never triggers
  * the PWA "Versi baru tersedia" update banner.
  */
-const SERVICE_VERSION = '1.11.4';
+const SERVICE_VERSION = '1.12.2';
 
 /**
  * Deploy region. Must match the RTDB region (asia-southeast1) so that
@@ -46,7 +46,14 @@ const NOTIFICATION_FLAGS = {
   channels: {
     inApp: true,
     telegram: false,
-    push: false,
+    // Phase D (v1.12.2): lifecycle Web Push ACTIVATED globally. Every resolved
+    // recipient of a notifiable event (request.created → all admins, assignment
+    // lifecycle → driver/requester, etc.) now receives a real push popup, not a
+    // shadow row. Safe to flip without a Telegram-style cutover: push is
+    // server-only (no browser sender), so there is no double-send. The dead
+    // endpoints self-prune on 404/410 (dispatcher.dispatchPush). Roll back by
+    // setting this false — recipients fall back to in-app + Telegram only.
+    push: true,
   },
 };
 
@@ -78,7 +85,10 @@ const PUSH_CONFIG = {
     'push.services.mozilla.com',
     'web.push.apple.com',
   ],
-  pilotAllowlist: ['evan'],
+  // Phase D: emptied — NOTIFICATION_FLAGS.channels.push now governs lifecycle
+  // push for everyone, so the pilot allowlist is no longer needed. (Kept as an
+  // empty array so liveFor's _inAllowlist OR-clause stays a harmless no-op.)
+  pilotAllowlist: [],
 };
 
 /**

@@ -87,6 +87,34 @@ function _inRoles(list, role) {
 }
 
 /**
+ * Is this recipient the actor who triggered the event? (v1.12.2.1)
+ * Used to suppress self-PUSH only — a user should not get a push popup for an
+ * action they just performed (e.g. bidang submitting a request, an admin
+ * approving/rejecting one). The notification record, in-app surface, audit
+ * deliveries, and Telegram are all unaffected; this gates PUSH delivery only.
+ *
+ * Identity match prefers the actor uid (request.created carries
+ * actor.uid = requesterId). When the emitter has no uid (request.approved /
+ * request.rejected persist only the admin's display name — onRequestWrite
+ * deriveActor), fall back to display-name identity against the resolved
+ * recipient. Returning false (no actor / ambiguous) means "send" — never
+ * silently drops a legitimate recipient.
+ */
+function _isActorRecipient(recipientId, recipient, event) {
+  const actor = event && event.actor;
+  if (!actor) return false;
+  const rid = String(recipientId || '').trim().toLowerCase();
+  if (actor.uid) {
+    return String(actor.uid).trim().toLowerCase() === rid;
+  }
+  if (actor.displayName && recipient && recipient.displayName) {
+    return String(recipient.displayName).trim().toLowerCase()
+      === String(actor.displayName).trim().toLowerCase();
+  }
+  return false;
+}
+
+/**
  * Dispatch one notification to all its channels. Channel failures are
  * isolated (one bad channel never blocks the others).
  *
@@ -217,6 +245,15 @@ async function dispatchPush(notification, { event, recipient, vapid } = {}) {
     channel: CHANNELS.PUSH,
   };
 
+  // Actor self-PUSH suppression (v1.12.2.1). The actor still gets the in-app
+  // record + (shadow) audit; only the push popup is withheld. Recorded as a
+  // non-sent row so the suppression is auditable and idempotent on re-dispatch.
+  if (_isActorRecipient(notification.recipientId, recipient, event)) {
+    return recordDelivery({
+      ...base, status: DELIVERY_STATUS.QUEUED, shadow: true, target: 'actor-excluded',
+    });
+  }
+
   const subs = await loadSubscriptions(notification.recipientId);
   if (!subs.length) {
     return recordDelivery({ ...base, status: DELIVERY_STATUS.FAILED, error: 'no push subscription' });
@@ -277,4 +314,4 @@ async function dispatchPush(notification, { event, recipient, vapid } = {}) {
   });
 }
 
-module.exports = { dispatch, dispatchInApp, dispatchTelegram, dispatchPush, liveFor };
+module.exports = { dispatch, dispatchInApp, dispatchTelegram, dispatchPush, liveFor, _isActorRecipient };

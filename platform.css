@@ -6212,6 +6212,18 @@ textarea:disabled { opacity: 0.55; }
 
 [data-theme="dark"] .profile-divider { background: var(--border); }
 
+/* Informasi Aplikasi block — built on legacy V1 tokens (--gray-1/--gray-2/
+   --dark/--text-muted) that the dark token block does NOT remap, so it
+   rendered with a near-white (#F5F5F5) background in dark mode. Re-point it
+   to the dark surface tokens at higher specificity (the documented
+   "--white trap" for legacy-token surfaces). */
+[data-theme="dark"] .app-info-block {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+[data-theme="dark"] .app-info-name    { color: var(--text); }
+[data-theme="dark"] .app-info-version { color: var(--muted); }
+
 [data-theme="dark"] .profile-inline-btn { color: var(--accent); }
 
 /* Toggle switch: checked state dark */

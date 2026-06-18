@@ -150,14 +150,7 @@ export async function enablePush() {
 
   try {
     const reg = await navigator.serviceWorker.ready;
-    let sub = await reg.pushManager.getSubscription();
-    if (!sub) {
-      sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-      });
-    }
-    await _register(sub);
+    await _subscribeAndRegister(reg);
     showToast('Notifikasi aktif di perangkat ini.');
     return true;
   } catch (err) {
@@ -165,6 +158,26 @@ export async function enablePush() {
     showToast('Gagal mengaktifkan notifikasi. Coba lagi.');
     return false;
   }
+}
+
+/**
+ * Ensure this device has a live PushSubscription and the server record is
+ * current. Mints a subscription if none exists, then (re)registers it.
+ * Re-used by enablePush (user gesture) AND the silent heal in initPush —
+ * registration is rotation-safe (upsert keyed by the stable deviceId), so
+ * calling this when a subscription already exists just refreshes the record.
+ * @returns {Promise<PushSubscription>}
+ */
+async function _subscribeAndRegister(reg) {
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub) {
+    sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+    });
+  }
+  await _register(sub);
+  return sub;
 }
 
 async function _register(subscription) {
@@ -254,10 +267,22 @@ function _emitNav(url) {
   } catch (_) {}
 }
 
+async function _healSubscription() {
+  if (!isPushSupported() || Notification.permission !== 'granted') return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    await _subscribeAndRegister(reg); // register the SW-rotated subscription
+  } catch (err) { console.warn('[push] heal failed:', err); }
+}
+
 function _initNavigation() {
   if (!('serviceWorker' in navigator)) return;
   navigator.serviceWorker.addEventListener('message', (event) => {
-    if (event.data && event.data.type === 'NAV' && event.data.url) _emitNav(event.data.url);
+    if (!event.data) return;
+    if (event.data.type === 'NAV' && event.data.url) _emitNav(event.data.url);
+    // SW fired pushsubscriptionchange and re-subscribed — register the new
+    // endpoint on the server (the SW cannot call the auth'd callable itself).
+    if (event.data.type === 'PUSH_RESUBSCRIBED') _healSubscription();
   });
   // Cold start: a notification may have opened the app at a deep link.
   const params = new URLSearchParams(window.location.search);
@@ -279,9 +304,16 @@ export async function initPush() {
 
   try {
     const reg = await navigator.serviceWorker.ready;
-    const sub = await reg.pushManager.getSubscription();
-    if (sub && Notification.permission === 'granted') {
-      await _register(sub); // refresh lastSeenAt / heal server record
+    if (Notification.permission === 'granted') {
+      // Permission is already granted, so we may (re)subscribe with NO prompt.
+      //   • subscription present → refresh lastSeenAt / heal the server record.
+      //   • subscription MISSING → iOS/Safari periodically evicts the push
+      //     subscription (or rotates the endpoint to null) on installed PWAs.
+      //     This is the root cause of "kadang masuk, kadang tidak" on a 2nd
+      //     device: permission stays granted but the device silently has no
+      //     subscription, and the soft-ask is suppressed by its 7-day TTL, so
+      //     nothing ever re-subscribes. Silently re-mint it here on every open.
+      await _subscribeAndRegister(reg); // null-safe: subscribes if absent
       return;
     }
   } catch (err) { console.warn('[push] init check failed:', err); }
