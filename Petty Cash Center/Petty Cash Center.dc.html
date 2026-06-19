@@ -1,0 +1,1157 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f3f2ef; --card:#ffffff; --card2:#faf9f7; --border:#e8e6e1; --border2:#efeeea;
+    --text:#262320; --muted:#8b857c; --label:#a49d93;
+    --sidebar:#ffffff; --rail:#ffffff;
+    --primary:#9a1b2d; --primary-fg:#ffffff; --primary-tint:#f7e6e8; --primary-text:#9a1b2d; --primary-hover:#821625;
+    --green:#2f7d5b; --green-tint:#e6f0ea; --green-bd:#cfe3d8;
+    --amber:#a9781a; --amber-tint:#f8eed4; --amber-bd:#ecdcb2;
+    --blue:#4f73a8; --blue-tint:#e7edf5; --purple:#7a5aa8; --purple-tint:#eee9f4;
+    --input:#ffffff; --input-bd:#e1dfd9;
+    --shadow:0 1px 2px rgba(38,35,32,.05),0 1px 3px rgba(38,35,32,.04);
+    --shadow-lg:0 10px 30px rgba(38,35,32,.13),0 2px 8px rgba(38,35,32,.08);
+  }
+  [data-theme="dark"]{
+    --bg:#0d0d0e; --card:#161617; --card2:#1c1c1e; --border:#2a2a2c; --border2:#222224;
+    --text:#ededec; --muted:#8f8a84; --label:#6e6962;
+    --sidebar:#121213; --rail:#121213;
+    --primary:#9a1b2d; --primary-fg:#ffffff; --primary-tint:#2c1418; --primary-text:#df8b95; --primary-hover:#b02234;
+    --green:#5fb98c; --green-tint:#142019; --green-bd:#244236;
+    --amber:#cda34f; --amber-tint:#241f10; --amber-bd:#403718;
+    --blue:#7fa0cf; --blue-tint:#151b25; --purple:#a98fd2; --purple-tint:#1c1726;
+    --input:#1b1b1d; --input-bd:#333230;
+    --shadow:0 1px 2px rgba(0,0,0,.4); --shadow-lg:0 16px 40px rgba(0,0,0,.55);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{font-family:'Archivo',system-ui,sans-serif;background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:var(--border);border-radius:8px;border:2px solid var(--bg)}
+  ::-webkit-scrollbar-track{background:transparent}
+  input,select,textarea,button{font-family:inherit}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary)!important;box-shadow:0 0 0 3px var(--primary-tint)}
+  @keyframes pcSpin{to{transform:rotate(360deg)}}
+  @keyframes pcToast{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes pcFade{from{opacity:0}to{opacity:1}}
+  @keyframes pcPop{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+  @keyframes pcPulse{0%,100%{opacity:1}50%{opacity:.35}}
+</style>
+</helmet>
+
+<div data-theme="{{ theme }}" style="display:flex;height:100vh;width:100%;overflow:hidden;background:var(--bg);color:var(--text)">
+
+  <!-- ICON RAIL -->
+  <div style="width:64px;flex:none;background:var(--rail);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:14px 0;gap:8px;z-index:20">
+    <div style="width:38px;height:38px;border-radius:11px;background:var(--green);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:11px;letter-spacing:.5px;margin-bottom:10px;box-shadow:inset 0 0 0 2px rgba(255,255,255,.25)">PBSI</div>
+    <div title="Driver Operations" style="width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:var(--muted);cursor:pointer">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+    </div>
+    <div title="Administration" style="width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:var(--muted);cursor:pointer">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </div>
+    <div title="Petty Cash Center" style="width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:var(--primary);background:var(--primary-tint);position:relative;cursor:pointer">
+      <span style="position:absolute;left:-1px;top:9px;bottom:9px;width:3px;border-radius:3px;background:var(--primary)"></span>
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 7V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M21 7H8a2 2 0 0 0 0 4h13a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1z"/><circle cx="17.5" cy="9" r="1" fill="currentColor"/></svg>
+    </div>
+    <div style="flex:1"></div>
+    <div onClick="{{ toggleTheme }}" title="Ganti tema" style="width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:var(--muted);cursor:pointer">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </div>
+  </div>
+
+  <!-- SIDEBAR -->
+  <div style="width:248px;flex:none;background:var(--sidebar);border-right:1px solid var(--border);display:flex;flex-direction:column;z-index:10">
+    <div style="padding:18px 18px 14px">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1.5px;color:var(--label);text-transform:uppercase;margin-bottom:2px">Petty Cash</div>
+      <div style="font-weight:800;font-size:16px;letter-spacing:-.2px">Kas Operasional</div>
+      <div style="display:inline-flex;align-items:center;gap:5px;margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.5px;color:var(--amber);background:var(--amber-tint);border:1px solid var(--amber-bd);padding:3px 7px;border-radius:6px">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        ADMIN ONLY
+      </div>
+    </div>
+    <div style="padding:0 14px 14px">
+      <button onClick="{{ openAdd }}" style="width:100%;display:flex;align-items:center;justify-content:center;gap:8px;background:var(--primary);color:var(--primary-fg);border:none;border-radius:10px;padding:11px;font-weight:700;font-size:13.5px;cursor:pointer;box-shadow:var(--shadow)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        Tambah Pengeluaran
+      </button>
+    </div>
+    <div style="padding:6px 18px 6px;font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1.5px;color:var(--label)">MENU</div>
+    <div style="padding:0 12px;display:flex;flex-direction:column;gap:2px">
+      <sc-for list="{{ nav }}" as="n" hint-placeholder-count="5">
+        <div onClick="{{ n.onClick }}" style="{{ n.style }}">
+          <span style="{{ n.iconStyle }}">{{ n.icon }}</span>
+          <span style="flex:1">{{ n.label }}</span>
+          <sc-if value="{{ n.badge }}" hint-placeholder-val="">
+            <span style="{{ n.badgeStyle }}">{{ n.badge }}</span>
+          </sc-if>
+        </div>
+      </sc-for>
+    </div>
+    <div style="flex:1"></div>
+    <div style="border-top:1px solid var(--border);padding:12px 14px;display:flex;align-items:center;gap:10px">
+      <div style="width:34px;height:34px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px">E</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:13px;line-height:1.2">Evan</div>
+        <div style="font-size:11px;color:var(--muted);line-height:1.3">Administrator</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--label);margin-top:1px">v1.12.2.1</div>
+      </div>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;height:100vh">
+    <!-- TOPBAR -->
+    <div style="height:58px;flex:none;border-bottom:1px solid var(--border);background:var(--card);display:flex;align-items:center;gap:16px;padding:0 18px;z-index:5">
+      <div style="min-width:150px">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1.5px;color:var(--label);text-transform:uppercase">Sarpras Ops</div>
+        <div style="font-weight:800;font-size:15px;letter-spacing:-.2px">{{ screenTitle }}</div>
+      </div>
+      <div style="flex:1;max-width:340px;display:flex;align-items:center;gap:8px;background:var(--card2);border:1px solid var(--border);border-radius:9px;padding:8px 12px;color:var(--muted)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-3.5-3.5"/></svg>
+        <input value="{{ fSearch }}" onInput="{{ onSearch }}" placeholder="Cari pengeluaran, NOR..." style="border:none;background:transparent;color:var(--text);font-size:13px;width:100%"/>
+      </div>
+      <div style="flex:1"></div>
+      <div style="display:flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--text);border:1px solid var(--border);border-radius:9px;padding:7px 11px">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+        Kam, 19 Jun 2026
+      </div>
+      <div onClick="{{ toggleTheme }}" style="width:38px;height:38px;border-radius:9px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);cursor:pointer">
+        {{ themeIcon }}
+      </div>
+      <div onClick="{{ openNotif }}" style="position:relative;width:38px;height:38px;border-radius:9px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);cursor:pointer">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+        <sc-if value="{{ lowBalance }}" hint-placeholder-val="{{ true }}"><span style="position:absolute;top:8px;right:9px;width:7px;height:7px;border-radius:50%;background:var(--primary);border:1.5px solid var(--card)"></span></sc-if>
+      </div>
+      <div style="display:flex;align-items:center;gap:9px;border:1px solid var(--border);border-radius:10px;padding:5px 11px 5px 5px;cursor:pointer">
+        <div style="width:30px;height:30px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px">E</div>
+        <div style="line-height:1.15"><div style="font-weight:700;font-size:12.5px">Evan</div><div style="font-size:10.5px;color:var(--muted)">Administrator</div></div>
+      </div>
+    </div>
+
+    <!-- CONTENT -->
+    <div style="flex:1;overflow-y:auto;overflow-x:hidden">
+      <div style="max-width:1200px;margin:0 auto;padding:26px 30px 60px">
+
+        <!-- ============ DASHBOARD ============ -->
+        <sc-if value="{{ isDashboard }}" hint-placeholder-val="{{ true }}">
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;color:var(--label);text-transform:uppercase;margin-bottom:14px">Petty Cash Center</div>
+
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px">
+              <div style="background:var(--card);border:1px solid var(--border);border-left:3px solid var(--primary);border-radius:13px;padding:16px;box-shadow:var(--shadow)">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                  <div style="width:32px;height:32px;border-radius:9px;background:var(--primary-tint);color:var(--primary);display:flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 7V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M21 7H8a2 2 0 0 0 0 4h13a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1z"/></svg></div>
+                  <sc-if value="{{ lowBalance }}" hint-placeholder-val="{{ true }}"><span style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.5px;color:var(--amber);background:var(--amber-tint);border:1px solid var(--amber-bd);padding:3px 6px;border-radius:5px">RENDAH</span></sc-if>
+                </div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase;margin-top:13px">Saldo Petty Cash</div>
+                <div style="font-weight:800;font-size:25px;letter-spacing:-.5px;margin-top:3px">{{ balanceFmt }}</div>
+                <div style="font-size:11px;color:var(--muted);margin-top:3px">Siklus #{{ cycleNo }} · awal {{ startingFmt }}</div>
+              </div>
+
+              <div style="background:var(--card);border:1px solid var(--border);border-left:3px solid var(--blue);border-radius:13px;padding:16px;box-shadow:var(--shadow)">
+                <div style="width:32px;height:32px;border-radius:9px;background:var(--blue-tint);color:var(--blue);display:flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase;margin-top:13px">Total Pengeluaran</div>
+                <div style="font-weight:800;font-size:25px;letter-spacing:-.5px;margin-top:3px">{{ spentFmt }}</div>
+                <div style="font-size:11px;color:var(--muted);margin-top:3px">{{ expCount }} transaksi tercatat</div>
+              </div>
+
+              <div style="background:var(--card);border:1px solid var(--border);border-left:3px solid var(--green);border-radius:13px;padding:16px;box-shadow:var(--shadow)">
+                <div style="width:32px;height:32px;border-radius:9px;background:var(--green-tint);color:var(--green);display:flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase;margin-top:13px">Siap Direalisasi</div>
+                <div style="font-weight:800;font-size:25px;letter-spacing:-.5px;margin-top:3px">{{ availFmt }}</div>
+                <div style="font-size:11px;color:var(--muted);margin-top:3px">{{ availCount }} nota tersedia untuk NOR</div>
+              </div>
+
+              <div style="background:var(--card);border:1px solid var(--border);border-left:3px solid var(--amber);border-radius:13px;padding:16px;box-shadow:var(--shadow)">
+                <div style="width:32px;height:32px;border-radius:9px;background:var(--amber-tint);color:var(--amber);display:flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg></div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase;margin-top:13px">NOR Diterbitkan</div>
+                <div style="font-weight:800;font-size:25px;letter-spacing:-.5px;margin-top:3px">{{ norCount }}</div>
+                <div style="font-size:11px;color:var(--muted);margin-top:3px">Sepanjang riwayat realisasi</div>
+              </div>
+            </div>
+
+            <!-- LOW BALANCE ALERT -->
+            <sc-if value="{{ lowBalance }}" hint-placeholder-val="{{ true }}">
+              <div style="margin-top:16px;background:var(--amber-tint);border:1px solid var(--amber-bd);border-radius:13px;padding:15px 17px;display:flex;align-items:center;gap:14px">
+                <div style="width:38px;height:38px;flex:none;border-radius:10px;background:var(--amber);color:#fff;display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg></div>
+                <div style="flex:1">
+                  <div style="font-weight:700;font-size:13.5px;color:var(--amber)">Petty Cash hampir habis. Disarankan membuat Nota Organisasi Realisasi.</div>
+                  <div style="font-size:11.5px;color:var(--muted);margin-top:2px">Saldo {{ balanceFmt }} berada di bawah ambang {{ thresholdFmt }}. Notifikasi ini hanya dikirim ke Admin.</div>
+                </div>
+                <button onClick="{{ goGenerate }}" style="flex:none;background:var(--amber);color:#fff;border:none;border-radius:9px;padding:10px 16px;font-weight:700;font-size:12.5px;cursor:pointer">Buat NOR</button>
+              </div>
+            </sc-if>
+
+            <div style="display:grid;grid-template-columns:1.55fr 1fr;gap:16px;margin-top:16px;align-items:start">
+              <!-- RECENT EXPENSES -->
+              <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);overflow:hidden">
+                <div style="padding:16px 18px 14px;border-bottom:1px solid var(--border2);display:flex;justify-content:space-between;align-items:center">
+                  <div>
+                    <div style="font-weight:800;font-size:15px">Pengeluaran Terbaru</div>
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--muted);margin-top:2px">{{ expCount }} transaksi · siklus berjalan</div>
+                  </div>
+                  <button onClick="{{ goExpenses }}" style="background:transparent;border:1px solid var(--border);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;color:var(--text);cursor:pointer">Lihat Semua</button>
+                </div>
+                <div>
+                  <sc-for list="{{ recent }}" as="e" hint-placeholder-count="5">
+                    <div onClick="{{ e.onOpen }}" style="display:flex;align-items:center;gap:13px;padding:12px 18px;border-bottom:1px solid var(--border2);cursor:pointer">
+                      <div style="{{ e.dotStyle }}"></div>
+                      <div style="flex:1;min-width:0">
+                        <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ e.desc }}</div>
+                        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);margin-top:2px">{{ e.ref }} · {{ e.teamDisplay }} · {{ e.dateFmt }}</div>
+                      </div>
+                      <div style="font-weight:700;font-size:13px;font-family:'JetBrains Mono',monospace">{{ e.amountFmt }}</div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+
+              <!-- USAGE / QUICK ACTIONS -->
+              <div style="display:flex;flex-direction:column;gap:16px">
+                <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:18px">
+                  <div style="font-weight:800;font-size:15px;margin-bottom:3px">Penggunaan Dana</div>
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--muted)">Siklus #{{ cycleNo }} · mulai {{ cycleStartFmt }}</div>
+                  <div style="margin-top:16px;height:10px;border-radius:6px;background:var(--border2);overflow:hidden">
+                    <div style="{{ usageBarStyle }}"></div>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;margin-top:9px;font-size:11.5px">
+                    <span style="color:var(--muted)">Terpakai {{ usagePct }}%</span>
+                    <span style="font-weight:600">Sisa {{ balanceFmt }}</span>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;margin-top:16px;padding-top:14px;border-top:1px solid var(--border2)">
+                    <div><div style="font-size:10.5px;color:var(--label);font-family:'JetBrains Mono',monospace;letter-spacing:.5px">DANA AWAL</div><div style="font-weight:700;font-size:13px;margin-top:2px">{{ startingFmt }}</div></div>
+                    <div style="text-align:right"><div style="font-size:10.5px;color:var(--label);font-family:'JetBrains Mono',monospace;letter-spacing:.5px">TERPAKAI</div><div style="font-weight:700;font-size:13px;margin-top:2px;color:var(--primary)">{{ spentFmt }}</div></div>
+                  </div>
+                </div>
+                <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:18px">
+                  <div style="font-weight:800;font-size:15px;margin-bottom:13px">Aksi Cepat</div>
+                  <div style="display:flex;flex-direction:column;gap:9px">
+                    <button onClick="{{ openAdd }}" style="display:flex;align-items:center;gap:10px;width:100%;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:11px 13px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer;text-align:left"><span style="color:var(--primary)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>Catat Pengeluaran Baru</button>
+                    <button onClick="{{ goGenerate }}" style="display:flex;align-items:center;gap:10px;width:100%;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:11px 13px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer;text-align:left"><span style="color:var(--amber)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></span>Generate Nota Realisasi</button>
+                    <button onClick="{{ goNorHistory }}" style="display:flex;align-items:center;gap:10px;width:100%;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:11px 13px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer;text-align:left"><span style="color:var(--blue)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg></span>Lihat Riwayat NOR</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- ============ EXPENSE LIST ============ -->
+        <sc-if value="{{ isExpenses }}" hint-placeholder-val="{{ true }}">
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:18px">
+              <div>
+                <div style="font-weight:800;font-size:26px;letter-spacing:-.5px">Pengeluaran</div>
+                <div style="font-size:13px;color:var(--muted);margin-top:3px">Semua nota petty cash pada siklus berjalan. Nota yang masuk NOR terkunci otomatis.</div>
+              </div>
+              <button onClick="{{ openAdd }}" style="display:flex;align-items:center;gap:8px;background:var(--primary);color:#fff;border:none;border-radius:10px;padding:11px 16px;font-weight:700;font-size:13px;cursor:pointer;box-shadow:var(--shadow)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Tambah Pengeluaran</button>
+              <button onClick="{{ exportExpCSV }}" style="display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:11px 14px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export Excel</button>
+            </div>
+
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
+              <div style="display:flex;gap:6px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:4px">
+                <sc-for list="{{ statusChips }}" as="c" hint-placeholder-count="3">
+                  <button onClick="{{ c.onClick }}" style="{{ c.style }}">{{ c.label }} <span style="opacity:.6">{{ c.count }}</span></button>
+                </sc-for>
+              </div>
+              <select value="{{ fTeam }}" onChange="{{ onFilterTeam }}" style="background:var(--input);border:1px solid var(--input-bd);border-radius:10px;padding:9px 12px;font-size:12.5px;color:var(--text);cursor:pointer">
+                <option value="all">Semua Unit</option>
+                <option value="Engineering">Engineering</option>
+                <option value="Cleaning Service">Cleaning Service</option>
+                <option value="Others">Others / Custom</option>
+              </select>
+              <div style="flex:1"></div>
+              <div style="font-size:12.5px;color:var(--muted)">Total tampil: <span style="font-weight:700;color:var(--text);font-family:'JetBrains Mono',monospace">{{ filteredTotalFmt }}</span></div>
+            </div>
+
+            <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);overflow:hidden">
+              <div style="display:grid;grid-template-columns:128px 1fr 150px 120px 130px 120px;gap:12px;padding:13px 18px;border-bottom:1px solid var(--border);background:var(--card2);font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">
+                <div>Ref · Tanggal</div><div>Deskripsi</div><div>Unit</div><div>Kategori</div><div style="text-align:right">Jumlah</div><div style="text-align:right">Status</div>
+              </div>
+              <sc-for list="{{ filtered }}" as="e" hint-placeholder-count="8">
+                <div onClick="{{ e.onOpen }}" style="display:grid;grid-template-columns:128px 1fr 150px 120px 130px 120px;gap:12px;padding:13px 18px;border-bottom:1px solid var(--border2);cursor:pointer;align-items:center">
+                  <div><div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600">{{ e.ref }}</div><div style="font-size:10.5px;color:var(--muted);margin-top:2px">{{ e.dateFmt }}</div></div>
+                  <div style="min-width:0"><div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ e.desc }}</div><div style="font-size:10.5px;color:var(--muted);margin-top:1px">{{ e.notes }}</div></div>
+                  <div style="display:flex;align-items:center;gap:7px"><span style="{{ e.dotStyle }}"></span><span style="font-size:12.5px">{{ e.teamDisplay }}</span></div>
+                  <div style="font-size:12px;color:var(--muted)">{{ e.category }}</div>
+                  <div style="text-align:right;font-weight:700;font-size:13px;font-family:'JetBrains Mono',monospace">{{ e.amountFmt }}</div>
+                  <div style="text-align:right"><span style="{{ e.badgeStyle }}">{{ e.statusLabel }}</span></div>
+                </div>
+              </sc-for>
+              <sc-if value="{{ filteredEmpty }}" hint-placeholder-val="">
+                <div style="padding:48px;text-align:center;color:var(--muted);font-size:13px">Tidak ada pengeluaran yang cocok dengan filter.</div>
+              </sc-if>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- ============ GENERATE NOR ============ -->
+        <sc-if value="{{ isGenerate }}" hint-placeholder-val="">
+          <div>
+            <!-- STEP: SELECT -->
+            <sc-if value="{{ isStepSelect }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:6px">
+                <div>
+                  <div style="font-weight:800;font-size:26px;letter-spacing:-.5px">Generate Nota Realisasi</div>
+                  <div style="font-size:13px;color:var(--muted);margin-top:3px">Pilih nota yang akan direalisasikan. Nota terpilih akan terkunci setelah NOR diterbitkan.</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:7px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)"><span style="width:22px;height:22px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700">1</span>Pilih <span style="opacity:.4">→</span><span style="width:22px;height:22px;border-radius:50%;background:var(--border2);color:var(--muted);display:flex;align-items:center;justify-content:center;font-weight:700">2</span>Preview</div>
+              </div>
+
+              <div style="display:grid;grid-template-columns:1fr 320px;gap:18px;margin-top:18px;align-items:start">
+                <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);overflow:hidden">
+                  <div style="display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--border);background:var(--card2)">
+                    <button onClick="{{ selectAll }}" style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:7px 13px;font-size:12px;font-weight:600;color:var(--text);cursor:pointer">Pilih Semua</button>
+                    <button onClick="{{ clearSel }}" style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:7px 13px;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer">Hapus Pilihan</button>
+                    <div style="flex:1;background:var(--card);border:1px solid var(--input-bd);border-radius:8px;display:flex;align-items:center;gap:8px;padding:6px 11px;color:var(--muted)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-3.5-3.5"/></svg><input value="{{ norSearch }}" onInput="{{ onNorSearch }}" placeholder="Cari ref / deskripsi..." style="border:none;background:transparent;font-size:12px;color:var(--text);width:100%"/></div>
+                    <div style="font-size:12px;color:var(--muted)"><span style="font-weight:700;color:var(--text)">{{ selectedCount }}</span> dipilih</div>
+                  </div>
+                  <sc-for list="{{ availRows }}" as="e" hint-placeholder-count="8">
+                    <div onClick="{{ e.onToggle }}" style="{{ e.rowStyle }}">
+                      <div style="{{ e.checkStyle }}"><sc-if value="{{ e.selected }}" hint-placeholder-val=""><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></sc-if></div>
+                      <div><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600">{{ e.ref }}</div><div style="font-size:10px;color:var(--muted);margin-top:1px">{{ e.dateFmt }}</div></div>
+                      <div style="min-width:0"><div style="font-weight:600;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ e.desc }}</div><div style="font-size:10px;color:var(--muted);margin-top:1px">{{ e.notes }}</div></div>
+                      <div style="display:flex;align-items:center;gap:6px"><span style="{{ e.dotStyle }}"></span><span style="font-size:11.5px">{{ e.teamDisplay }}</span></div>
+                      <div style="text-align:right;font-weight:700;font-size:12.5px;font-family:'JetBrains Mono',monospace">{{ e.amountFmt }}</div>
+                    </div>
+                  </sc-for>
+                  <sc-if value="{{ noAvail }}" hint-placeholder-val=""><div style="padding:46px;text-align:center;color:var(--muted);font-size:13px">Tidak ada nota tersedia untuk direalisasikan.</div></sc-if>
+                </div>
+
+                <div style="position:sticky;top:0;display:flex;flex-direction:column;gap:14px">
+                  <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:18px">
+                    <div style="font-weight:800;font-size:15px;margin-bottom:14px">Detail NOR</div>
+                    <label style="display:block;margin-bottom:13px"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Nomor NOR *</span><input name="number" value="{{ norForm.number }}" onInput="{{ onNorInput }}" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:9px 11px;font-size:12.5px;color:var(--text);font-family:'JetBrains Mono',monospace"/></label>
+                    <label style="display:block;margin-bottom:13px"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Tanggal NOR *</span><input type="date" name="date" value="{{ norForm.date }}" onChange="{{ onNorInput }}" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:9px 11px;font-size:12.5px;color:var(--text)"/></label>
+                    <div style="display:block"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Perihal <span style="color:var(--muted);font-weight:400;letter-spacing:0">(otomatis dari tanggal)</span></span><div style="margin-top:6px;background:var(--card2);border:1px solid var(--border2);border-radius:9px;padding:9px 11px;font-size:12.5px;color:var(--muted);line-height:1.4">{{ norAutoSubject }}</div></div>
+                  </div>
+                  <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:18px">
+                    <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted)"><span>Nota dipilih</span><span style="font-weight:700;color:var(--text)">{{ selectedCount }}</span></div>
+                    <div style="margin-top:12px;font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Total Realisasi</div>
+                    <div style="font-weight:800;font-size:24px;font-family:'JetBrains Mono',monospace;margin-top:2px;color:var(--primary)">{{ selTotalFmt }}</div>
+                    <button onClick="{{ gotoPreview }}" style="width:100%;margin-top:15px;background:var(--primary);color:#fff;border:none;border-radius:10px;padding:12px;font-weight:700;font-size:13.5px;cursor:pointer;opacity:{{ previewOpacity }}">Preview NOR →</button>
+                    <sc-if value="{{ noSelection }}" hint-placeholder-val="{{ true }}"><div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px">Pilih minimal satu nota untuk lanjut.</div></sc-if>
+                  </div>
+                </div>
+              </div>
+            </sc-if>
+
+            <!-- STEP: PREVIEW -->
+            <sc-if value="{{ isStepPreview }}" hint-placeholder-val="">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                <div style="display:flex;align-items:center;gap:7px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)"><span style="width:22px;height:22px;border-radius:50%;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700">✓</span>Pilih <span style="opacity:.4">→</span><span style="width:22px;height:22px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700">2</span>Preview</div>
+                <div style="display:flex;gap:10px"><button onClick="{{ backToSelect }}" style="background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 16px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer">← Kembali</button><button onClick="{{ confirmGenerate }}" style="background:var(--primary);color:#fff;border:none;border-radius:9px;padding:10px 18px;font-weight:700;font-size:13px;cursor:pointer">Generate &amp; Terbitkan NOR</button></div>
+              </div>
+              <div style="background:#fff;color:#000;max-width:820px;margin:0 auto;border-radius:2px;box-shadow:var(--shadow-lg);overflow:hidden;font-family:Arial,Helvetica,sans-serif">
+                <div style="padding:40px 52px 30px;font-size:10pt;line-height:1.3">
+                  <div style="display:flex;flex-direction:column;align-items:center;margin-bottom:2px">
+                    <img src="assets/pbsi-logo.png" alt="PBSI" style="width:52px;height:auto;margin-bottom:4px"/>
+                    <div style="font-weight:700;font-size:13pt;padding-bottom:0">NOTA ORGANISASI</div>
+                  </div>
+                  <div style="margin:14px 0 12px">
+                    <div>Jakarta, {{ prevDateLong }}</div>
+                    <div>No.{{ norForm.number }}</div>
+                  </div>
+                  <table style="border-collapse:collapse;margin-bottom:9px"><tbody>
+                    <tr><td style="vertical-align:top;width:96px;padding:0">Kepada Yth.</td><td style="width:10px;vertical-align:top;padding:0">:</td><td style="padding:0"><sc-for list="{{ prevRecipientsList }}" as="r" hint-placeholder-count="3"><div>{{ r.n }}. {{ r.v }}</div></sc-for></td></tr>
+                    <tr><td style="vertical-align:top;padding:0">Dari</td><td style="vertical-align:top;padding:0">:</td><td style="padding:0">{{ prevSender }}</td></tr>
+                    <tr><td style="vertical-align:top;padding:0">Tembusan Yth.</td><td style="vertical-align:top;padding:0">:</td><td style="padding:0"><sc-for list="{{ prevCcList }}" as="r" hint-placeholder-count="3"><div>{{ r.n }}. {{ r.v }}</div></sc-for></td></tr>
+                    <tr><td style="vertical-align:top;padding:0">Perihal</td><td style="vertical-align:top;padding:0">:</td><td style="padding:0;font-weight:700">{{ norAutoSubject }}</td></tr>
+                    <tr><td style="vertical-align:top;padding:0">Lampiran</td><td style="vertical-align:top;padding:0">:</td><td style="padding:0">1 (satu) berkas</td></tr>
+                  </tbody></table>
+                  <p style="margin:0 0 6px">Dengan hormat,</p>
+                  <p style="margin:0 0 6px;text-align:justify">Sehubungan dengan kegiatan operasional bidang sarana dan prasarana, kami melaporkan realisasi petty cash bidang sarana dan prasarana dengan rincian sebagai berikut:</p>
+                  <table style="border-collapse:collapse;margin:0 0 6px"><tbody>
+                    <tr><td style="padding:0;width:206px">Dana Awal ({{ prevDanaAwalDate }})</td><td style="padding:0;width:30px">: Rp</td><td style="padding:0;text-align:right;width:104px">{{ prevStartDoc }}</td></tr>
+                    <tr><td style="padding:0">Dana Terealisasi</td><td style="padding:0">: Rp</td><td style="padding:0;text-align:right">{{ prevTotalDoc }}</td></tr>
+                    <tr><td style="padding:0">Sisa Dana</td><td style="padding:0">: Rp</td><td style="padding:0;text-align:right">{{ prevSisaDoc }}</td></tr>
+                  </tbody></table>
+                  <p style="margin:0 0 6px">Terbilang: {{ prevTerbilang }}</p>
+                  <p style="margin:0 0 6px;text-align:justify">Sehubungan dengan telah direalisasikannya petty cash tersebut, kami memohon agar dana petty cash dapat ditambahkan kembali untuk memastikan kelancaran operasional di bidang Sarana dan Prasarana. Sebagai dasar perhitungan, kami lampirkan laporan realisasi penggunaan dana.</p>
+                  <p style="margin:0 0 16px;text-align:justify">Demikian nota organisasi ini disampaikan, atas perhatiannya kami ucapkan terima kasih.</p>
+                  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;text-align:left">
+                    <sc-for list="{{ prevLetterTop }}" as="s" hint-placeholder-count="3">
+                      <div><div>{{ s.label }},</div><div style="font-weight:700;text-transform:uppercase">{{ s.positionUp }}</div><div style="height:46px"></div><div style="font-weight:700;text-decoration:underline">{{ s.name }}</div></div>
+                    </sc-for>
+                  </div>
+                  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;text-align:left;margin-top:8px">
+                    <sc-for list="{{ prevLetterBottom }}" as="s" hint-placeholder-count="1">
+                      <div><div>{{ s.label }},</div><div style="font-weight:700;text-transform:uppercase">{{ s.positionUp }}</div><div style="height:46px"></div><div style="font-weight:700;text-decoration:underline">{{ s.name }}</div></div>
+                    </sc-for>
+                  </div>
+                </div>
+                <div style="border-top:1px dashed #c8c8c8;padding:30px 52px 38px;font-size:10pt;line-height:1.25">
+                  <div style="text-align:center;font-weight:700;font-size:11pt">RINCIAN PENGGUNAAN PETTY CASH</div>
+                  <div style="text-align:center;margin-bottom:9px">BIDANG SARANA DAN PRASARANA</div>
+                  <table style="width:100%;border-collapse:collapse;font-size:9pt">
+                    <thead><tr><th style="border:1px solid #000;padding:3px 5px;width:26px">No</th><th style="border:1px solid #000;padding:3px 5px;width:76px">Tanggal</th><th style="border:1px solid #000;padding:3px 5px;text-align:left">Rincian</th><th style="border:1px solid #000;padding:3px 5px;width:94px;text-align:right">Biaya</th><th style="border:1px solid #000;padding:3px 5px;width:88px">Keterangan</th></tr></thead>
+                    <tbody>
+                      <sc-for list="{{ previewItems }}" as="it" hint-placeholder-count="5">
+                        <tr><td style="border:1px solid #000;padding:3px 5px;text-align:center">{{ it.no }}</td><td style="border:1px solid #000;padding:3px 5px;text-align:center">{{ it.dateFmt }}</td><td style="border:1px solid #000;padding:3px 5px">{{ it.desc }}</td><td style="border:1px solid #000;padding:3px 5px;text-align:right">{{ it.amountFmt }}</td><td style="border:1px solid #000;padding:3px 5px">{{ it.ket }}</td></tr>
+                      </sc-for>
+                      <tr style="font-weight:700"><td colspan="3" style="border:1px solid #000;padding:3px 5px;text-align:right">Total Pengeluaran</td><td style="border:1px solid #000;padding:3px 5px;text-align:right">{{ prevTotalTable }}</td><td style="border:1px solid #000"></td></tr>
+                    </tbody>
+                  </table>
+                  <table style="border-collapse:collapse;margin:12px 0 6px"><tbody>
+                    <tr><td style="padding:0;width:216px">Dana Awal ({{ prevDanaAwalDate }})</td><td style="padding:0;width:30px">: Rp</td><td style="padding:0;text-align:right;width:104px">{{ prevStartDoc }}</td></tr>
+                    <tr><td style="padding:0">Dana Terealisasi</td><td style="padding:0">: Rp</td><td style="padding:0;text-align:right">{{ prevTotalDoc }}</td></tr>
+                    <tr><td style="padding:0">Sisa Dana</td><td style="padding:0">: Rp</td><td style="padding:0;text-align:right">{{ prevSisaDoc }}</td></tr>
+                  </tbody></table>
+                  <p style="margin:0 0 14px">Terbilang: {{ prevTerbilang }}</p>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;text-align:center;max-width:440px">
+                    <sc-for list="{{ prevRecapSign }}" as="s" hint-placeholder-count="2">
+                      <div><div>{{ s.label }},</div><div>{{ s.position }}</div><div style="height:44px"></div><div style="font-weight:700;text-decoration:underline">{{ s.name }}</div></div>
+                    </sc-for>
+                  </div>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+        </sc-if>
+
+        <!-- ============ NOR HISTORY ============ -->
+        <sc-if value="{{ isHistory }}" hint-placeholder-val="">
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:18px">
+              <div><div style="font-weight:800;font-size:26px;letter-spacing:-.5px">Riwayat NOR</div><div style="font-size:13px;color:var(--muted);margin-top:3px">Seluruh Nota Organisasi Realisasi yang pernah diterbitkan.</div></div>
+              <button onClick="{{ goGenerate }}" style="display:flex;align-items:center;gap:8px;background:var(--primary);color:#fff;border:none;border-radius:10px;padding:11px 16px;font-weight:700;font-size:13px;cursor:pointer;box-shadow:var(--shadow)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>NOR Baru</button>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <sc-for list="{{ norList }}" as="n" hint-placeholder-count="3">
+                <div onClick="{{ n.onOpen }}" style="background:var(--card);border:1px solid var(--border);border-radius:13px;box-shadow:var(--shadow);padding:17px 19px;display:flex;align-items:center;gap:18px;cursor:pointer">
+                  <div style="width:42px;height:42px;flex:none;border-radius:11px;background:var(--primary-tint);color:var(--primary);display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div>
+                  <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:14px;font-family:'JetBrains Mono',monospace">{{ n.number }}</div><div style="font-size:12px;color:var(--muted);margin-top:2px">{{ n.subject }} · {{ n.dateFmt }}</div></div>
+                  <div style="text-align:right"><div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--label);letter-spacing:.5px">TOTAL</div><div style="font-weight:700;font-size:14px;font-family:'JetBrains Mono',monospace">{{ n.totalFmt }}</div></div>
+                  <div style="text-align:center;min-width:64px"><div style="font-weight:700;font-size:15px">{{ n.count }}</div><div style="font-size:10px;color:var(--muted)">nota</div></div>
+                  <span style="{{ n.statusStyle }}">{{ n.status }}</span>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- ============ NOR DETAIL ============ -->
+        <sc-if value="{{ isNorDetail }}" hint-placeholder-val="">
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px" data-print-hide="1">
+              <button onClick="{{ goNorHistory }}" style="display:flex;align-items:center;gap:7px;background:transparent;border:none;font-weight:600;font-size:13px;color:var(--muted);cursor:pointer"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>Riwayat NOR</button>
+              <div style="display:flex;gap:10px;align-items:center">
+                <span style="{{ norDetailStatusStyle }}">{{ norDetail.status }}</span>
+                <button onClick="{{ exportNorCSV }}" style="display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 15px;font-weight:600;font-size:12.5px;color:var(--text);cursor:pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export Excel</button>
+                <button onClick="{{ printNor }}" style="display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 15px;font-weight:600;font-size:12.5px;color:var(--text);cursor:pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Cetak / PDF</button>
+                <sc-if value="{{ norAwaitingFunds }}" hint-placeholder-val="">
+                  <button onClick="{{ receiveFunds }}" style="display:flex;align-items:center;gap:7px;background:var(--green);color:#fff;border:none;border-radius:9px;padding:10px 15px;font-weight:700;font-size:12.5px;cursor:pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Dana Pengganti Diterima</button>
+                </sc-if>
+              </div>
+            </div>
+            <div id="norPaper" style="background:#fff;color:#000;max-width:820px;margin:0 auto;border-radius:2px;box-shadow:var(--shadow-lg);overflow:hidden;font-family:Arial,Helvetica,sans-serif">
+              <div style="padding:40px 52px 30px;font-size:10pt;line-height:1.3">
+                <div style="display:flex;flex-direction:column;align-items:center;margin-bottom:2px">
+                  <img src="assets/pbsi-logo.png" alt="PBSI" style="width:52px;height:auto;margin-bottom:4px"/>
+                  <div style="font-weight:700;font-size:13pt;padding-bottom:0">NOTA ORGANISASI</div>
+                </div>
+                <div style="margin:14px 0 12px">
+                  <div>Jakarta, {{ norDetail.dateLong }}</div>
+                  <div>No.{{ norDetail.number }}</div>
+                </div>
+                <table style="border-collapse:collapse;margin-bottom:9px"><tbody>
+                  <tr><td style="vertical-align:top;width:96px;padding:0">Kepada Yth.</td><td style="width:10px;vertical-align:top;padding:0">:</td><td style="padding:0"><sc-for list="{{ norDetail.recipientsList }}" as="r" hint-placeholder-count="3"><div>{{ r.n }}. {{ r.v }}</div></sc-for></td></tr>
+                  <tr><td style="vertical-align:top;padding:0">Dari</td><td style="vertical-align:top;padding:0">:</td><td style="padding:0">{{ norDetail.sender }}</td></tr>
+                  <tr><td style="vertical-align:top;padding:0">Tembusan Yth.</td><td style="vertical-align:top;padding:0">:</td><td style="padding:0"><sc-for list="{{ norDetail.ccList }}" as="r" hint-placeholder-count="3"><div>{{ r.n }}. {{ r.v }}</div></sc-for></td></tr>
+                  <tr><td style="vertical-align:top;padding:0">Perihal</td><td style="vertical-align:top;padding:0">:</td><td style="padding:0;font-weight:700">{{ norDetail.subject }}</td></tr>
+                  <tr><td style="vertical-align:top;padding:0">Lampiran</td><td style="vertical-align:top;padding:0">:</td><td style="padding:0">1 (satu) berkas</td></tr>
+                </tbody></table>
+                <p style="margin:0 0 6px">Dengan hormat,</p>
+                <p style="margin:0 0 6px;text-align:justify">Sehubungan dengan kegiatan operasional bidang sarana dan prasarana, kami melaporkan realisasi petty cash bidang sarana dan prasarana dengan rincian sebagai berikut:</p>
+                <table style="border-collapse:collapse;margin:0 0 6px"><tbody>
+                  <tr><td style="padding:0;width:206px">Dana Awal ({{ norDetail.danaAwalDate }})</td><td style="padding:0;width:30px">: Rp</td><td style="padding:0;text-align:right;width:104px">{{ norDetail.startDoc }}</td></tr>
+                  <tr><td style="padding:0">Dana Terealisasi</td><td style="padding:0">: Rp</td><td style="padding:0;text-align:right">{{ norDetail.totalDoc }}</td></tr>
+                  <tr><td style="padding:0">Sisa Dana</td><td style="padding:0">: Rp</td><td style="padding:0;text-align:right">{{ norDetail.sisaDoc }}</td></tr>
+                </tbody></table>
+                <p style="margin:0 0 6px">Terbilang: {{ norDetail.terbilang }}</p>
+                <p style="margin:0 0 6px;text-align:justify">Sehubungan dengan telah direalisasikannya petty cash tersebut, kami memohon agar dana petty cash dapat ditambahkan kembali untuk memastikan kelancaran operasional di bidang Sarana dan Prasarana. Sebagai dasar perhitungan, kami lampirkan laporan realisasi penggunaan dana.</p>
+                <p style="margin:0 0 16px;text-align:justify">Demikian nota organisasi ini disampaikan, atas perhatiannya kami ucapkan terima kasih.</p>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;text-align:left">
+                  <sc-for list="{{ norDetail.letterTop }}" as="s" hint-placeholder-count="3">
+                    <div><div>{{ s.label }},</div><div style="font-weight:700;text-transform:uppercase">{{ s.positionUp }}</div><div style="height:46px"></div><div style="font-weight:700;text-decoration:underline">{{ s.name }}</div></div>
+                  </sc-for>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;text-align:left;margin-top:8px">
+                  <sc-for list="{{ norDetail.letterBottom }}" as="s" hint-placeholder-count="1">
+                    <div><div>{{ s.label }},</div><div style="font-weight:700;text-transform:uppercase">{{ s.positionUp }}</div><div style="height:46px"></div><div style="font-weight:700;text-decoration:underline">{{ s.name }}</div></div>
+                  </sc-for>
+                </div>
+              </div>
+              <div style="border-top:1px dashed #c8c8c8;padding:30px 52px 38px;font-size:10pt;line-height:1.25">
+                <div style="text-align:center;font-weight:700;font-size:11pt">RINCIAN PENGGUNAAN PETTY CASH</div>
+                <div style="text-align:center;margin-bottom:9px">BIDANG SARANA DAN PRASARANA</div>
+                <table style="width:100%;border-collapse:collapse;font-size:9pt">
+                  <thead><tr><th style="border:1px solid #000;padding:3px 5px;width:26px">No</th><th style="border:1px solid #000;padding:3px 5px;width:76px">Tanggal</th><th style="border:1px solid #000;padding:3px 5px;text-align:left">Rincian</th><th style="border:1px solid #000;padding:3px 5px;width:94px;text-align:right">Biaya</th><th style="border:1px solid #000;padding:3px 5px;width:88px">Keterangan</th></tr></thead>
+                  <tbody>
+                    <sc-for list="{{ norDetail.items }}" as="it" hint-placeholder-count="6">
+                      <tr><td style="border:1px solid #000;padding:3px 5px;text-align:center">{{ it.no }}</td><td style="border:1px solid #000;padding:3px 5px;text-align:center">{{ it.dateFmt }}</td><td style="border:1px solid #000;padding:3px 5px">{{ it.desc }}</td><td style="border:1px solid #000;padding:3px 5px;text-align:right">{{ it.amountFmt }}</td><td style="border:1px solid #000;padding:3px 5px">{{ it.ket }}</td></tr>
+                    </sc-for>
+                    <tr style="font-weight:700"><td colspan="3" style="border:1px solid #000;padding:3px 5px;text-align:right">Total Pengeluaran</td><td style="border:1px solid #000;padding:3px 5px;text-align:right">{{ norDetail.totalTable }}</td><td style="border:1px solid #000"></td></tr>
+                  </tbody>
+                </table>
+                <table style="border-collapse:collapse;margin:12px 0 6px"><tbody>
+                  <tr><td style="padding:0;width:216px">Dana Awal ({{ norDetail.danaAwalDate }})</td><td style="padding:0;width:30px">: Rp</td><td style="padding:0;text-align:right;width:104px">{{ norDetail.startDoc }}</td></tr>
+                  <tr><td style="padding:0">Dana Terealisasi</td><td style="padding:0">: Rp</td><td style="padding:0;text-align:right">{{ norDetail.totalDoc }}</td></tr>
+                  <tr><td style="padding:0">Sisa Dana</td><td style="padding:0">: Rp</td><td style="padding:0;text-align:right">{{ norDetail.sisaDoc }}</td></tr>
+                </tbody></table>
+                <p style="margin:0 0 14px">Terbilang: {{ norDetail.terbilang }}</p>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;text-align:center;max-width:440px">
+                  <sc-for list="{{ norDetail.recapSign }}" as="s" hint-placeholder-count="2">
+                    <div><div>{{ s.label }},</div><div>{{ s.position }}</div><div style="height:44px"></div><div style="font-weight:700;text-decoration:underline">{{ s.name }}</div></div>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- ============ SETTINGS ============ -->
+        <sc-if value="{{ isSettings }}" hint-placeholder-val="">
+          <div>
+            <div style="margin-bottom:8px"><div style="font-weight:800;font-size:26px;letter-spacing:-.5px">Pengaturan Petty Cash</div><div style="font-size:13px;color:var(--muted);margin-top:3px">Konfigurasi saldo awal, ambang notifikasi, dan penandatangan NOR.</div></div>
+            <div style="display:flex;gap:40px;margin:22px 0 24px">
+              <div><div style="font-weight:800;font-size:32px;letter-spacing:-1px">{{ startingFmt }}</div><div style="font-size:11.5px;color:var(--muted);margin-top:2px">Saldo Awal Default</div></div>
+              <div><div style="font-weight:800;font-size:32px;letter-spacing:-1px">{{ thresholdFmt }}</div><div style="font-size:11.5px;color:var(--muted);margin-top:2px">Ambang Notifikasi</div></div>
+              <div><div style="font-weight:800;font-size:32px;letter-spacing:-1px">{{ sigCount }}</div><div style="font-size:11.5px;color:var(--muted);margin-top:2px">Penandatangan NOR</div></div>
+            </div>
+            <div style="display:grid;grid-template-columns:340px 1fr;gap:18px;align-items:start">
+              <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:20px">
+                <div style="font-weight:800;font-size:15px;margin-bottom:4px">Saldo &amp; Notifikasi</div>
+                <div style="font-size:11.5px;color:var(--muted);margin-bottom:16px">Dipakai saat memulai siklus petty cash baru.</div>
+                <label style="display:block;margin-bottom:15px"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Saldo Awal Default (Rp)</span><input name="startingBalance" value="{{ startBalDraft }}" onInput="{{ onSetInput }}" inputmode="numeric" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text);font-family:'JetBrains Mono',monospace"/></label>
+                <label style="display:block;margin-bottom:6px"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Ambang Notifikasi (Rp)</span><input name="threshold" value="{{ threshDraft }}" onInput="{{ onSetInput }}" inputmode="numeric" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text);font-family:'JetBrains Mono',monospace"/></label>
+                <div style="font-size:11px;color:var(--muted);line-height:1.4">Saat saldo turun di bawah nilai ini, notifikasi dikirim ke Admin.</div>
+                <div style="border-top:1px solid var(--border2);margin:16px 0 0;padding-top:16px">
+                  <label style="display:block;margin-bottom:13px"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Kepada Yth. (NOR)</span><input name="recipients" value="{{ sd.recipients }}" onInput="{{ onSetInput }}" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:9px 11px;font-size:12px;color:var(--text)"/></label>
+                  <label style="display:block"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Tembusan (NOR)</span><input name="cc" value="{{ sd.cc }}" onInput="{{ onSetInput }}" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:9px 11px;font-size:12px;color:var(--text)"/></label>
+                </div>
+              </div>
+
+              <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:20px">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><div style="font-weight:800;font-size:15px">Konfigurasi Penandatangan NOR</div><button onClick="{{ addSig }}" style="display:flex;align-items:center;gap:6px;background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;color:var(--text);cursor:pointer"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Tambah</button></div>
+                <div style="font-size:11.5px;color:var(--muted);margin-bottom:16px">Dikonfigurasi sekali, otomatis dipakai saat generate NOR. Urutkan dengan kolom "Urutan".</div>
+                <div style="display:grid;grid-template-columns:64px 1fr 1fr 1fr 36px;gap:10px;padding:0 2px 8px;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1px;color:var(--label);text-transform:uppercase"><div>Urutan</div><div>Label Peran</div><div>Nama</div><div>Jabatan</div><div></div></div>
+                <div style="display:flex;flex-direction:column;gap:9px">
+                  <sc-for list="{{ sigRows }}" as="s" hint-placeholder-count="4">
+                    <div style="display:grid;grid-template-columns:64px 1fr 1fr 1fr 36px;gap:10px;align-items:center">
+                      <input type="number" name="order" data-id="{{ s.id }}" value="{{ s.order }}" onInput="{{ onSigInput }}" style="width:100%;background:var(--input);border:1px solid var(--input-bd);border-radius:8px;padding:8px;font-size:12px;color:var(--text);text-align:center;font-family:'JetBrains Mono',monospace"/>
+                      <input name="label" data-id="{{ s.id }}" value="{{ s.label }}" onInput="{{ onSigInput }}" style="width:100%;background:var(--input);border:1px solid var(--input-bd);border-radius:8px;padding:8px 10px;font-size:12px;color:var(--text)"/>
+                      <input name="name" data-id="{{ s.id }}" value="{{ s.name }}" onInput="{{ onSigInput }}" style="width:100%;background:var(--input);border:1px solid var(--input-bd);border-radius:8px;padding:8px 10px;font-size:12px;color:var(--text)"/>
+                      <input name="position" data-id="{{ s.id }}" value="{{ s.position }}" onInput="{{ onSigInput }}" style="width:100%;background:var(--input);border:1px solid var(--input-bd);border-radius:8px;padding:8px 10px;font-size:12px;color:var(--text)"/>
+                      <div onClick="{{ s.onRemove }}" style="width:32px;height:32px;border-radius:8px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></div>
+                    </div>
+                  </sc-for>
+                </div>
+                <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border2)"><button onClick="{{ resetSettings }}" style="background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 18px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer">Reset</button><button onClick="{{ saveSettings }}" style="background:var(--primary);color:#fff;border:none;border-radius:9px;padding:10px 20px;font-weight:700;font-size:13px;cursor:pointer">Simpan</button></div>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- ============ MOBILE ============ -->
+        <sc-if value="{{ isMobile }}" hint-placeholder-val="">
+          <div>
+            <div style="margin-bottom:8px"><div style="font-weight:800;font-size:26px;letter-spacing:-.5px">Tampilan Mobile</div><div style="font-size:13px;color:var(--muted);margin-top:3px">Layout responsif Petty Cash Center untuk perangkat Admin di lapangan.</div></div>
+            <div style="display:flex;gap:34px;flex-wrap:wrap;justify-content:center;margin-top:26px">
+
+              <!-- Phone 1: Dashboard -->
+              <div style="text-align:center">
+                <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:1px;color:var(--muted);margin-bottom:10px;text-transform:uppercase">Dashboard</div>
+                <div style="width:300px;height:620px;background:#111;border-radius:38px;padding:11px;box-shadow:var(--shadow-lg)">
+                  <div style="width:100%;height:100%;background:var(--bg);border-radius:28px;overflow:hidden;display:flex;flex-direction:column;text-align:left">
+                    <div style="background:var(--card);padding:14px 16px 10px;border-bottom:1px solid var(--border)"><div style="display:flex;justify-content:space-between;align-items:center"><div style="font-weight:800;font-size:15px">Petty Cash</div><div style="width:28px;height:28px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">E</div></div></div>
+                    <div style="flex:1;overflow:hidden;padding:14px">
+                      <div style="background:var(--primary);color:#fff;border-radius:14px;padding:16px"><div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1px;opacity:.8">SALDO PETTY CASH</div><div style="font-weight:800;font-size:24px;margin-top:4px;font-family:'JetBrains Mono',monospace">{{ balanceFmt }}</div><div style="font-size:10.5px;opacity:.85;margin-top:3px">Siklus #{{ cycleNo }} · awal {{ startingFmt }}</div></div>
+                      <div style="background:var(--amber-tint);border:1px solid var(--amber-bd);border-radius:11px;padding:11px 13px;margin-top:12px;font-size:11px;font-weight:600;color:var(--amber);line-height:1.4">⚠ Petty Cash hampir habis. Disarankan membuat NOR.</div>
+                      <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:12px">
+                        <div style="background:var(--card);border:1px solid var(--border);border-radius:11px;padding:11px"><div style="font-size:9px;color:var(--label);font-family:'JetBrains Mono',monospace">TERPAKAI</div><div style="font-weight:700;font-size:13px;margin-top:3px;font-family:'JetBrains Mono',monospace">{{ spentFmt }}</div></div>
+                        <div style="background:var(--card);border:1px solid var(--border);border-radius:11px;padding:11px"><div style="font-size:9px;color:var(--label);font-family:'JetBrains Mono',monospace">TERSEDIA</div><div style="font-weight:700;font-size:13px;margin-top:3px">{{ availCount }} nota</div></div>
+                      </div>
+                      <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1px;color:var(--label);margin:15px 2px 8px">PENGELUARAN TERBARU</div>
+                      <sc-for list="{{ mobileRecent }}" as="e" hint-placeholder-count="3">
+                        <div style="display:flex;align-items:center;gap:9px;padding:8px 2px;border-bottom:1px solid var(--border2)"><div style="{{ e.dotStyle }}"></div><div style="flex:1;min-width:0"><div style="font-weight:600;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ e.desc }}</div><div style="font-size:9px;color:var(--muted)">{{ e.teamDisplay }}</div></div><div style="font-weight:700;font-size:11px;font-family:'JetBrains Mono',monospace">{{ e.amountFmt }}</div></div>
+                      </sc-for>
+                    </div>
+                    <div style="background:var(--card);border-top:1px solid var(--border);display:flex;justify-content:space-around;padding:9px 0 12px"><div style="color:var(--primary);text-align:center"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg></div><div style="color:var(--muted)"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/></svg></div><div style="color:var(--muted)"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><div style="color:var(--muted)"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.3 1a7 7 0 0 0-1.7-1L16.5 2h-4l-.4 2.6a7 7 0 0 0-1.7 1l-2.3-1-2 3.4 2 1.5a7 7 0 0 0 0 2l-2 1.5 2 3.4 2.3-1a7 7 0 0 0 1.7 1l.4 2.6h4l.4-2.6a7 7 0 0 0 1.7-1l2.3 1 2-3.4-2-1.5a7 7 0 0 0 .1-1z"/></svg></div></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Phone 2: Expense List -->
+              <div style="text-align:center">
+                <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:1px;color:var(--muted);margin-bottom:10px;text-transform:uppercase">Daftar Pengeluaran</div>
+                <div style="width:300px;height:620px;background:#111;border-radius:38px;padding:11px;box-shadow:var(--shadow-lg)">
+                  <div style="width:100%;height:100%;background:var(--bg);border-radius:28px;overflow:hidden;display:flex;flex-direction:column;text-align:left">
+                    <div style="background:var(--card);padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text)" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg><div style="font-weight:800;font-size:15px">Pengeluaran</div></div>
+                    <div style="padding:11px 14px;display:flex;gap:6px;background:var(--card);border-bottom:1px solid var(--border)"><span style="background:var(--primary);color:#fff;border-radius:7px;padding:5px 11px;font-size:11px;font-weight:600">Semua</span><span style="background:var(--card2);border:1px solid var(--border);border-radius:7px;padding:5px 11px;font-size:11px;color:var(--muted)">Tersedia</span><span style="background:var(--card2);border:1px solid var(--border);border-radius:7px;padding:5px 11px;font-size:11px;color:var(--muted)">NOR</span></div>
+                    <div style="flex:1;overflow:hidden;padding:6px 14px">
+                      <sc-for list="{{ mobileList }}" as="e" hint-placeholder-count="6">
+                        <div style="padding:11px 0;border-bottom:1px solid var(--border2)"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div style="font-weight:600;font-size:12px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:8px">{{ e.desc }}</div><div style="font-weight:700;font-size:12px;font-family:'JetBrains Mono',monospace">{{ e.amountFmt }}</div></div><div style="display:flex;align-items:center;gap:6px;margin-top:5px"><span style="{{ e.dotStyle }}"></span><span style="font-size:10px;color:var(--muted)">{{ e.teamDisplay }} · {{ e.dateFmt }}</span><div style="flex:1"></div><span style="{{ e.badgeStyle }}">{{ e.statusLabel }}</span></div></div>
+                      </sc-for>
+                    </div>
+                    <div style="padding:12px 14px;background:var(--card);border-top:1px solid var(--border)"><div style="background:var(--primary);color:#fff;border-radius:11px;padding:12px;text-align:center;font-weight:700;font-size:13px">+ Tambah Pengeluaran</div></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Phone 3: Add Expense -->
+              <div style="text-align:center">
+                <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:1px;color:var(--muted);margin-bottom:10px;text-transform:uppercase">Tambah Pengeluaran</div>
+                <div style="width:300px;height:620px;background:#111;border-radius:38px;padding:11px;box-shadow:var(--shadow-lg)">
+                  <div style="width:100%;height:100%;background:var(--bg);border-radius:28px;overflow:hidden;display:flex;flex-direction:column;text-align:left">
+                    <div style="background:var(--card);padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center"><div style="font-weight:800;font-size:15px">Tambah Pengeluaran</div><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
+                    <div style="flex:1;overflow:hidden;padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+                      <div><div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.5px;color:var(--label)">REF OTOMATIS</div><div style="background:var(--card2);border:1px dashed var(--border);border-radius:9px;padding:9px 10px;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;margin-top:4px">{{ nextRef }}</div></div>
+                      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                        <div><div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.5px;color:var(--label)">UNIT</div><div style="background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:9px 10px;font-size:11.5px;margin-top:4px;display:flex;justify-content:space-between">Engineering <span style="color:var(--muted)">▾</span></div></div>
+                        <div><div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.5px;color:var(--label)">KATEGORI</div><div style="background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:9px 10px;font-size:11.5px;margin-top:4px;display:flex;justify-content:space-between">Inventaris <span style="color:var(--muted)">▾</span></div></div>
+                      </div>
+                      <div><div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.5px;color:var(--label)">JUMLAH (RP)</div><div style="background:var(--input);border:1px solid var(--primary);border-radius:9px;padding:9px 10px;font-size:14px;font-weight:700;margin-top:4px;font-family:'JetBrains Mono',monospace">Rp 1.250.000</div></div>
+                      <div><div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.5px;color:var(--label)">DESKRIPSI</div><div style="background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:9px 10px;font-size:11.5px;margin-top:4px;color:var(--muted)">Perbaikan AC ruang rapat lantai 2</div></div>
+                      <div><div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.5px;color:var(--label)">CATATAN (OPSIONAL)</div><div style="background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:9px 10px;font-size:11.5px;margin-top:4px;color:var(--muted)">Dedi</div></div>
+                    </div>
+                    <div style="padding:12px 14px;background:var(--card);border-top:1px solid var(--border)"><div style="background:var(--primary);color:#fff;border-radius:11px;padding:12px;text-align:center;font-weight:700;font-size:13px">Simpan Pengeluaran</div></div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </sc-if>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ ADD EXPENSE MODAL ============ -->
+  <sc-if value="{{ addOpen }}" hint-placeholder-val="">
+    <div onClick="{{ closeAdd }}" style="position:fixed;inset:0;background:rgba(20,16,14,.5);backdrop-filter:blur(2px);z-index:100;display:flex;align-items:flex-start;justify-content:center;padding:40px 20px;overflow-y:auto;animation:pcFade .18s ease">
+      <div onClick="{{ stop }}" style="width:100%;max-width:560px;background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-lg);animation:pcPop .22s ease">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 22px;border-bottom:1px solid var(--border2)">
+          <div><div style="font-weight:800;font-size:17px">Tambah Pengeluaran</div><div style="font-size:11.5px;color:var(--muted);margin-top:1px">Catat nota fisik petty cash · Ref otomatis {{ nextRef }}</div></div>
+          <div onClick="{{ closeAdd }}" style="width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
+        </div>
+        <div style="padding:20px 22px;display:flex;flex-direction:column;gap:15px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+            <label style="display:block"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Tanggal *</span>
+              <input type="date" name="date" value="{{ form.date }}" onChange="{{ onFormInput }}" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text)"/></label>
+            <label style="display:block"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Tim *</span>
+              <select name="team" value="{{ form.team }}" onChange="{{ onFormInput }}" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text);cursor:pointer">
+                <option>Engineering</option><option>Cleaning Service</option><option>Kantin</option><option value="Others">Others</option>
+              </select></label>
+          </div>
+          <sc-if value="{{ isOthers }}" hint-placeholder-val="">
+            <label style="display:block"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Nama Unit *</span>
+              <input name="customTeam" value="{{ form.customTeam }}" onInput="{{ onFormInput }}" placeholder="Contoh: Sekretariat, Humas, Turnamen, PP PBSI" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text)"/></label>
+          </sc-if>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+            <label style="display:block"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Kategori *</span>
+              <select name="category" value="{{ form.category }}" onChange="{{ onFormInput }}" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text);cursor:pointer">
+                <sc-for list="{{ categories }}" as="c" hint-placeholder-count="6"><option>{{ c }}</option></sc-for>
+              </select></label>
+            <label style="display:block"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Jumlah (Rp) *</span>
+              <input name="amount" value="{{ form.amount }}" onInput="{{ onFormInput }}" inputmode="numeric" placeholder="0" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text);font-family:'JetBrains Mono',monospace"/></label>
+          </div>
+          <label style="display:block"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Deskripsi *</span>
+            <input name="desc" value="{{ form.desc }}" onInput="{{ onFormInput }}" placeholder="Contoh: Pembelian cairan pembersih & alat pel" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text)"/></label>
+          <label style="display:block"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Catatan / Keterangan</span>
+            <input name="notes" value="{{ form.notes }}" onInput="{{ onFormInput }}" placeholder="Contoh: nama PIC / no. kendaraan (opsional)" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text)"/></label>
+          <label style="display:block"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Foto Nota <span style="color:var(--muted);font-weight:400;letter-spacing:0">(Opsional · disimpan untuk arsip digital)</span></span>
+            <div style="margin-top:6px;border:1.5px dashed var(--input-bd);border-radius:9px;padding:18px 14px;text-align:center;color:var(--muted);font-size:12.5px;cursor:pointer;background:var(--card2)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto 8px;display:block"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>Klik atau seret foto nota fisik<br/><span style="font-size:11px">JPG, PNG · maks. 5 MB · tidak wajib</span></div></label>
+          <sc-if value="{{ formError }}" hint-placeholder-val=""><div style="font-size:12px;color:var(--primary);background:var(--primary-tint);border-radius:8px;padding:9px 12px">{{ formError }}</div></sc-if>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:10px;padding:16px 22px;border-top:1px solid var(--border2)">
+          <button onClick="{{ closeAdd }}" style="background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 18px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer">Batal</button>
+          <button onClick="{{ submitAdd }}" style="background:var(--primary);color:#fff;border:none;border-radius:9px;padding:10px 20px;font-weight:700;font-size:13px;cursor:pointer">Simpan Pengeluaran</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ EXPENSE DETAIL DRAWER ============ -->
+  <sc-if value="{{ detailOpen }}" hint-placeholder-val="">
+    <div onClick="{{ closeDetail }}" style="position:fixed;inset:0;background:rgba(20,16,14,.5);backdrop-filter:blur(2px);z-index:100;display:flex;justify-content:flex-end;animation:pcFade .18s ease">
+      <div onClick="{{ stop }}" style="width:440px;max-width:94vw;height:100%;background:var(--card);border-left:1px solid var(--border);box-shadow:var(--shadow-lg);display:flex;flex-direction:column;animation:pcPop .24s ease">
+        <div style="padding:18px 22px;border-bottom:1px solid var(--border2);display:flex;justify-content:space-between;align-items:flex-start">
+          <div><div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)">{{ detail.ref }}</div><div style="font-weight:800;font-size:18px;margin-top:3px;line-height:1.25">{{ detail.desc }}</div></div>
+          <div onClick="{{ closeDetail }}" style="width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:20px 22px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
+            <span style="{{ detail.badgeStyle }}">{{ detail.statusLabel }}</span>
+            <sc-if value="{{ detail.locked }}" hint-placeholder-val=""><span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Terkunci dalam {{ detail.norNumber }}</span></sc-if>
+          </div>
+          <div style="background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;margin-bottom:18px">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Jumlah</div>
+            <div style="font-weight:800;font-size:30px;font-family:'JetBrains Mono',monospace;margin-top:4px">{{ detail.amountFmt }}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:0;border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:20px">
+            <div style="display:flex;justify-content:space-between;padding:11px 14px;border-bottom:1px solid var(--border2)"><span style="font-size:12px;color:var(--muted)">Tanggal</span><span style="font-size:12.5px;font-weight:600">{{ detail.dateFmt }}</span></div>
+            <div style="display:flex;justify-content:space-between;padding:11px 14px;border-bottom:1px solid var(--border2)"><span style="font-size:12px;color:var(--muted)">Unit</span><span style="font-size:12.5px;font-weight:600">{{ detail.teamDisplay }}</span></div>
+            <div style="display:flex;justify-content:space-between;padding:11px 14px;border-bottom:1px solid var(--border2)"><span style="font-size:12px;color:var(--muted)">Kategori</span><span style="font-size:12.5px;font-weight:600">{{ detail.category }}</span></div>
+            <div style="display:flex;justify-content:space-between;padding:11px 14px;border-bottom:1px solid var(--border2)"><span style="font-size:12px;color:var(--muted)">Catatan</span><span style="font-size:12.5px;font-weight:600;text-align:right;max-width:60%">{{ detail.notesDisplay }}</span></div>
+            <div style="display:flex;justify-content:space-between;padding:11px 14px;border-bottom:1px solid var(--border2)"><span style="font-size:12px;color:var(--muted)">Dibuat oleh</span><span style="font-size:12.5px;font-weight:600">Evan · Admin</span></div>
+            <div style="display:flex;justify-content:space-between;padding:11px 14px"><span style="font-size:12px;color:var(--muted)">Tanggal Input</span><span style="font-size:12.5px;font-weight:600;font-family:'JetBrains Mono',monospace">{{ detail.dateFmt }}</span></div>
+          </div>
+          <sc-if value="{{ detail.locked }}" hint-placeholder-val="">
+            <div style="background:var(--amber-tint);border:1px solid var(--amber-bd);border-radius:11px;padding:12px 14px;margin-bottom:18px">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1px;color:var(--amber);text-transform:uppercase;margin-bottom:4px">Termasuk dalam NOR</div>
+              <div style="font-weight:700;font-size:13px;font-family:'JetBrains Mono',monospace">{{ detail.norNumber }}</div>
+              <button onClick="{{ openNorFromDetail }}" style="margin-top:8px;background:transparent;border:none;color:var(--amber);font-size:11.5px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline">Lihat NOR Terkait →</button>
+            </div>
+          </sc-if>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1.5px;color:var(--label);text-transform:uppercase;margin-bottom:12px">Riwayat Audit</div>
+          <div style="position:relative;padding-left:20px">
+            <div style="position:absolute;left:5px;top:4px;bottom:6px;width:1.5px;background:var(--border)"></div>
+            <sc-for list="{{ detail.audit }}" as="a" hint-placeholder-count="2">
+              <div style="position:relative;padding-bottom:16px">
+                <div style="position:absolute;left:-19px;top:3px;width:10px;height:10px;border-radius:50%;background:var(--card);border:2px solid {{ a.color }}"></div>
+                <div style="font-weight:600;font-size:12.5px">{{ a.action }}</div>
+                <div style="font-size:11.5px;color:var(--muted);margin-top:1px">{{ a.note }}</div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--label);margin-top:3px">{{ a.t }} · {{ a.who }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="padding:14px 22px;border-top:1px solid var(--border2);display:flex;gap:10px">
+          <sc-if value="{{ detail.locked }}" hint-placeholder-val="">
+            <button onClick="{{ openNorFromDetail }}" style="flex:1;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:11px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer">Lihat NOR Terkait</button>
+          </sc-if>
+          <sc-if value="{{ detailUnlocked }}" hint-placeholder-val="">
+            <button onClick="{{ closeDetail }}" style="flex:1;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:11px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer">Tutup</button>
+            <button onClick="{{ deleteExpense }}" style="background:var(--primary-tint);border:1px solid var(--primary-tint);border-radius:9px;padding:11px 16px;font-weight:600;font-size:13px;color:var(--primary);cursor:pointer">Hapus</button>
+          </sc-if>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ NOTIFICATIONS MODAL ============ -->
+  <sc-if value="{{ notifOpen }}" hint-placeholder-val="">
+    <div onClick="{{ closeNotif }}" style="position:fixed;inset:0;background:rgba(20,16,14,.5);backdrop-filter:blur(2px);z-index:100;display:flex;align-items:flex-start;justify-content:center;padding:60px 20px;animation:pcFade .18s ease">
+      <div onClick="{{ stop }}" style="width:100%;max-width:440px;background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-lg);max-height:80vh;display:flex;flex-direction:column;animation:pcPop .22s ease">
+        <div style="padding:17px 20px;border-bottom:1px solid var(--border2);display:flex;justify-content:space-between;align-items:center"><div style="font-weight:800;font-size:17px">Notifikasi</div><div onClick="{{ closeNotif }}" style="width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div></div>
+        <div style="flex:1;overflow-y:auto;padding:14px 18px">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase;margin-bottom:10px">Untuk Admin</div>
+          <sc-for list="{{ notifications }}" as="n" hint-placeholder-count="3">
+            <div style="border:1px solid {{ n.bd }};border-left:3px solid {{ n.accent }};border-radius:11px;padding:13px 14px;margin-bottom:10px">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start"><div style="display:flex;align-items:center;gap:7px;font-weight:700;font-size:13px"><span style="color:{{ n.accent }}">{{ n.icon }}</span>{{ n.title }}</div><div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--label)">{{ n.time }}</div></div>
+              <div style="font-size:12px;color:var(--muted);margin-top:5px;line-height:1.4">{{ n.body }}</div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="padding:13px 18px;border-top:1px solid var(--border2);display:flex;justify-content:flex-end;gap:9px"><button onClick="{{ closeNotif }}" style="background:var(--green-tint);border:1px solid var(--green-bd);border-radius:9px;padding:9px 16px;font-weight:600;font-size:12.5px;color:var(--green);cursor:pointer">Tandai Dibaca</button><button onClick="{{ closeNotif }}" style="background:var(--card);border:1px solid var(--border);border-radius:9px;padding:9px 16px;font-weight:600;font-size:12.5px;color:var(--text);cursor:pointer">Tutup</button></div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ CYCLE MODAL ============ -->
+  <sc-if value="{{ cycleModalOpen }}" hint-placeholder-val="">
+    <div onClick="{{ closeCycleModal }}" style="position:fixed;inset:0;background:rgba(20,16,14,.55);backdrop-filter:blur(3px);z-index:150;display:flex;align-items:center;justify-content:center;padding:20px">
+      <div onClick="{{ stop }}" style="width:100%;max-width:480px;background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-lg);overflow:hidden">
+        <div style="background:var(--green);padding:22px 26px 20px">
+          <div style="color:rgba(255,255,255,.85);font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px">Dana Pengganti Diterima</div>
+          <div style="font-weight:800;font-size:20px;color:#fff;letter-spacing:-.3px">Tutup Siklus &amp; Mulai Siklus Baru</div>
+        </div>
+        <div style="padding:22px 26px;display:flex;flex-direction:column;gap:16px">
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase;margin-bottom:9px">Ringkasan Siklus #{{ cyclePrevNo }}</div>
+            <div style="border:1px solid var(--border);border-radius:11px;overflow:hidden">
+              <div style="display:flex;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border2)"><span style="font-size:12px;color:var(--muted)">Siklus Berjalan</span><span style="font-size:12.5px;font-weight:600">#{{ cyclePrevNo }}</span></div>
+              <div style="display:flex;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border2)"><span style="font-size:12px;color:var(--muted)">Saldo Awal</span><span style="font-size:12.5px;font-weight:600;font-family:'JetBrains Mono',monospace">{{ cycleSumStartFmt }}</span></div>
+              <div style="display:flex;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border2)"><span style="font-size:12px;color:var(--muted)">Total Direalisasi</span><span style="font-size:12.5px;font-weight:600;font-family:'JetBrains Mono',monospace;color:var(--primary)">{{ cycleSumRealFmt }}</span></div>
+              <div style="display:flex;justify-content:space-between;padding:10px 14px"><span style="font-size:12px;color:var(--muted)">Sisa Kas (dikembalikan)</span><span style="font-size:12.5px;font-weight:700;font-family:'JetBrains Mono',monospace">{{ cycleSumSisaFmt }}</span></div>
+            </div>
+          </div>
+          <label style="display:block">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Saldo Awal Siklus #{{ cycleNewNo }} (Rp) *</span>
+            <input value="{{ newCycleBalance }}" onInput="{{ onNewBalInput }}" inputmode="numeric" placeholder="10000000" style="width:100%;margin-top:8px;background:var(--input);border:1.5px solid var(--green);border-radius:10px;padding:12px 14px;font-size:16px;font-weight:700;color:var(--text);font-family:'JetBrains Mono',monospace"/>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">Jumlah dana pengganti yang diterima dari Finance untuk siklus berikutnya.</div>
+          </label>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:10px;padding:16px 26px;border-top:1px solid var(--border2)">
+          <button onClick="{{ closeCycleModal }}" style="background:var(--card);border:1px solid var(--border);border-radius:9px;padding:11px 18px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer">Batal</button>
+          <button onClick="{{ confirmNewCycle }}" style="background:var(--green);color:#fff;border:none;border-radius:9px;padding:11px 22px;font-weight:700;font-size:13px;cursor:pointer">Tutup &amp; Mulai Siklus Baru</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- TOAST -->
+  <sc-if value="{{ toast }}" hint-placeholder-val="">
+    <div style="position:fixed;bottom:26px;left:50%;transform:translateX(-50%);z-index:200;background:var(--text);color:var(--bg);padding:12px 20px;border-radius:11px;font-weight:600;font-size:13px;box-shadow:var(--shadow-lg);display:flex;align-items:center;gap:9px;animation:pcToast .3s ease">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>{{ toast }}
+    </div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:860}}">
+class Component extends DCLogic {
+  blankForm(){ const today=new Date().toISOString().slice(0,10); return { date:today, team:'Engineering', customTeam:'', category:'Inventaris', desc:'', amount:'', notes:'', foto:null }; }
+  seedExpenses(){
+    const A=(t,who,action,note,color)=>({t,who,action,note,color});
+    const mk=(n,ref,date,team,custom,cat,desc,amt,notes,extra)=>({id:n,ref,date,team,customTeam:custom,category:cat,desc,amount:amt,notes,status:'available',norNumber:null,
+      audit:[A(date+' 09:1'+(n%6),'Evan','Pengeluaran dicatat','Dibuat dari nota fisik yang diserahkan tim','#2f7d5b')].concat(extra||[])});
+    return [
+      mk(1,'PC/2606/001','2026-06-03','Engineering','','Inventaris','Pembelian peralatan inventaris untuk acara PBSI',1438300,'Bu Monika'),
+      mk(2,'PC/2606/002','2026-06-04','Cleaning Service','','Kebersihan','Pembelian cairan pembersih & alat pel',685000,'Khalam'),
+      mk(3,'PC/2606/005','2026-06-05','Others','Kantin','Konsumsi','Pengisian galon air & gas LPG',420000,'Grace'),
+      mk(4,'PC/2606/006','2026-06-06','Engineering','','Perbaikan & Pemeliharaan','Perbaikan AC ruang rapat lantai 2',1250000,'Dedi'),
+      mk(5,'PC/2606/007','2026-06-07','Others','Sekretariat','ATK','Cetak sertifikat & dokumen Kejati 2025',310000,'Khalam'),
+      mk(6,'PC/2606/008','2026-06-08','Engineering','','Reimbursement Driver','Pengisian bensin genset cadangan',350000,'Dedi'),
+      mk(7,'PC/2606/009','2026-06-09','Cleaning Service','','Kebersihan','Tisu, sabun cuci, pengharum ruangan',540000,'Khalam'),
+      mk(8,'PC/2606/010','2026-06-10','Others','Kantin','Konsumsi','Konsumsi rapat koordinasi pengurus',1825000,'Grace'),
+      mk(9,'PC/2606/011','2026-06-11','Engineering','','Inventaris','Pembelian kursi & meja lipat',2400000,'Bu Monika',[{t:'2026-06-11 14:22',who:'Evan',action:'Jumlah diperbarui',note:'Rp2.200.000 → Rp2.400.000 (tambahan ongkir)',color:'#a9781a'}]),
+      mk(10,'PC/2606/012','2026-06-12','Others','Humas','ATK','Cetak piagam & banner kegiatan',980000,'Grace'),
+      mk(11,'PC/2606/013','2026-06-13','Cleaning Service','','Kebersihan','Service vacuum cleaner & sapu lantai',475000,'Khalam'),
+      mk(12,'PC/2606/014','2026-06-15','Engineering','','Perbaikan & Pemeliharaan','Material perbaikan plafon gudang',1650000,'Dedi'),
+      mk(13,'PC/2606/015','2026-06-16','Others','Kantin','Konsumsi','Air mineral & snack untuk tamu',365000,'Grace'),
+      mk(14,'PC/2606/016','2026-06-17','Others','Keamanan','Lainnya','Penggantian kunci & gembok pos jaga',290000,'Pak Tommy'),
+      mk(15,'PC/2606/017','2026-06-18','Engineering','','Perbaikan & Pemeliharaan','Perbaikan pompa air & instalasi pipa',1500000,'Dedi'),
+    ];
+  }
+  seedNors(){
+    const it=(date,team,desc,ket,amt)=>({date,team,desc,ket,amount:amt});
+    return [
+      {id:'nor11',number:'119/Nota Organisasi/Sarpras/V/2026',date:'2026-05-28',subject:'Realisasi Petty Cash Pertanggal 26 Mei 2026 Bidang Sarana dan Prasarana',status:'Selesai',items:[
+        it('2026-05-12','Engineering','Perbaikan instalasi listrik gedung','Dedi',3250000),
+        it('2026-05-14','Kantin','Konsumsi kegiatan pelatihan','Grace',1980000),
+        it('2026-05-16','Cleaning Service','Alat & bahan kebersihan bulanan','Khalam',1150000),
+        it('2026-05-18','Engineering','Pembelian inventaris ruang kerja','Bu Monika',4300000),
+        it('2026-05-20','Humas','Cetak & dokumentasi kegiatan','Grace',1430000),
+        it('2026-05-24','Engineering','BBM & operasional genset','Dedi',850000),
+        it('2026-05-26','Kantin','Galon, gas, dan snack tamu','Grace',1800000),
+      ]},
+      {id:'nor10',number:'112/Nota Organisasi/Sarpras/IV/2026',date:'2026-04-30',subject:'Realisasi Petty Cash Pertanggal 26 April 2026 Bidang Sarana dan Prasarana',status:'Selesai',items:[
+        it('2026-04-02','Engineering','Perbaikan AC & kelistrikan','Dedi',3800000),
+        it('2026-04-08','Kantin','Konsumsi rapat pengurus','Grace',2150000),
+        it('2026-04-14','Cleaning Service','Bahan kebersihan & sanitasi','Khalam',1260000),
+        it('2026-04-20','Engineering','Inventaris perlengkapan kantor','Bu Monika',4500000),
+        it('2026-04-26','Sekretariat','ATK & cetak dokumen','Khalam',1350000),
+      ]},
+      {id:'nor09',number:'104/Nota Organisasi/Sarpras/III/2026',date:'2026-03-29',subject:'Realisasi Petty Cash Pertanggal 28 Maret 2026 Bidang Sarana dan Prasarana',status:'Selesai',items:[
+        it('2026-03-05','Engineering','Material perbaikan atap & talang','Dedi',4100000),
+        it('2026-03-12','Kantin','Galon, gas, dan konsumsi','Grace',2300000),
+        it('2026-03-18','Cleaning Service','Alat kebersihan & pel','Khalam',980000),
+        it('2026-03-24','Engineering','Inventaris & perkakas bengkel','Bu Monika',3700000),
+        it('2026-03-28','Humas','Banner & cetak sertifikat','Grace',1600000),
+      ]},
+    ];
+  }
+  state = {
+    screen:'dashboard', theme:'light', addOpen:false, notifOpen:false, detailId:null, norDetailId:null,
+    fTeam:'all', fStatus:'all', fSearch:'', norSearch:'',
+    cycleModalOpen:false, newCycleBalance:'15000000',
+    selectedIds:[], norStep:'select',
+    norForm:{ number:'120/Nota Organisasi/Sarpras/VI/2026', date:'2026-06-19' },
+    form:this.blankForm(),
+    settings:{ startingBalance:15000000, threshold:1000000, senderTitle:'Plt. Kabid Sarana dan Prasarana', recipients:'Wakil Ketua Umum III, Sekretaris Jenderal, Bendahara', cc:'Ketua Umum sebagai laporan, Audit Internal, Arsip',
+      signatories:[
+        {id:1,label:'Diajukan oleh',name:'Raras Ayu Pratama',position:'Plt. Kabid Sarpras',order:1},
+        {id:2,label:'Mengetahui dan Menyetujui',name:'Armand Darmadji',position:'Wakil Ketua Umum III',order:2},
+        {id:3,label:'Mengetahui/Menyetujui',name:'Ricky Soebagdja',position:'Sekretaris Jenderal',order:3},
+        {id:4,label:'Dibayarkan oleh',name:'Eddy Prayitno',position:'Wakil Bendahara',order:4},
+      ],
+      recapSignatories:[
+        {id:1,label:'Dibuat Oleh',name:'Grace Widelia',position:'Staf Sarana dan Prasarana',order:1},
+        {id:2,label:'Disetujui Oleh',name:'Raras Ayu Pratama',position:'Plt. Kabid Sarana dan Prasarana',order:2},
+      ]},
+    cycle:{ number:12, startDate:'2026-06-02' },
+    expenses:this.seedExpenses(),
+    nors:this.seedNors(),
+    settingsDraft:null,
+    toast:null, _toastT:null,
+  };
+  // ---------- helpers ----------
+  rp(n){ return 'Rp\u00A0'+Number(Math.round(n)).toLocaleString('id-ID'); }
+  rpDoc(n){ return Number(Math.round(n)).toLocaleString('id-ID')+',-'; }
+  rpTable(n){ return 'Rp '+Number(Math.round(n)).toLocaleString('id-ID'); }
+  recList(s){ return String(s||'').split(/[,\n]/).map(x=>x.trim()).filter(Boolean); }
+  monthsLong(){ return ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember']; }
+  monthsShort(){ return ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des']; }
+  fmtShort(iso){ if(!iso) return '-'; const p=iso.split('-'); return p[2]+' '+this.monthsShort()[+p[1]-1]+' '+p[0]; }
+  fmtLong(iso){ if(!iso) return '-'; const p=iso.split('-'); return p[2]+' '+this.monthsLong()[+p[1]-1]+' '+p[0]; }
+  teamDisplay(e){ return e.team==='Others' ? (e.customTeam||'Others') : e.team; }
+  teamColor(e){ const t=e.team; if(t==='Engineering')return'#4f73a8'; if(t==='Cleaning Service')return'#2f7d5b'; return'#7a5aa8'; }
+  norAutoSubj(date){ return 'Realisasi Petty Cash Pertanggal '+this.fmtLong(date)+' Bidang Sarana dan Prasarana'; }
+  terbilang(n){ n=Math.floor(n); const s=['','satu','dua','tiga','empat','lima','enam','tujuh','delapan','sembilan','sepuluh','sebelas'];
+    if(n<0) return 'minus '+this.terbilang(-n); if(n<12) return s[n];
+    if(n<20) return this.terbilang(n-10)+' belas';
+    if(n<100) return this.terbilang(Math.floor(n/10))+' puluh'+(n%10?' '+this.terbilang(n%10):'');
+    if(n<200) return 'seratus'+(n-100?' '+this.terbilang(n-100):'');
+    if(n<1000) return this.terbilang(Math.floor(n/100))+' ratus'+(n%100?' '+this.terbilang(n%100):'');
+    if(n<2000) return 'seribu'+(n-1000?' '+this.terbilang(n-1000):'');
+    if(n<1000000) return this.terbilang(Math.floor(n/1000))+' ribu'+(n%1000?' '+this.terbilang(n%1000):'');
+    if(n<1000000000) return this.terbilang(Math.floor(n/1000000))+' juta'+(n%1000000?' '+this.terbilang(n%1000000):'');
+    return this.terbilang(Math.floor(n/1000000000))+' miliar'+(n%1000000000?' '+this.terbilang(n%1000000000):''); }
+  terbilangCap(n){ const t=this.terbilang(n).trim().replace(/\s+/g,' '); return t.split(' ').map(w=>w?w[0].toUpperCase()+w.slice(1):w).join(' ')+' Rupiah'; }
+  statusBadge(status){ if(status==='in_nor') return 'display:inline-flex;align-items:center;gap:4px;font-family:\'JetBrains Mono\',monospace;font-size:9.5px;letter-spacing:.5px;padding:4px 8px;border-radius:6px;background:var(--amber-tint);color:var(--amber);border:1px solid var(--amber-bd)';
+    return 'display:inline-flex;align-items:center;gap:4px;font-family:\'JetBrains Mono\',monospace;font-size:9.5px;letter-spacing:.5px;padding:4px 8px;border-radius:6px;background:var(--green-tint);color:var(--green);border:1px solid var(--green-bd)'; }
+  toast(msg){ if(this.state._toastT) clearTimeout(this.state._toastT); const t=setTimeout(()=>this.setState({toast:null}),2600); this.setState({toast:msg,_toastT:t}); }
+  // ---------- derived ----------
+  spent(){ return this.state.expenses.reduce((a,e)=>a+e.amount,0); }
+  balance(){ return this.state.settings.startingBalance - this.spent(); }
+  avail(){ return this.state.expenses.filter(e=>e.status==='available'); }
+  availTotal(){ return this.avail().reduce((a,e)=>a+e.amount,0); }
+  norTotal(nor){ return nor.items.reduce((a,i)=>a+i.amount,0); }
+  nextRef(){ const ids=this.state.expenses.map(e=>+(e.ref.split('/')[2])); const mx=ids.length?Math.max.apply(null,ids):0; return 'PC/2606/'+String(mx+1).padStart(3,'0'); }
+  // ---------- nav ----------
+  go(s){ this.setState({screen:s, addOpen:false, notifOpen:false}); }
+  // ---------- expense actions ----------
+  decorate(e){ return Object.assign({},e,{ teamDisplay:this.teamDisplay(e), amountFmt:this.rp(e.amount), dateFmt:this.fmtShort(e.date),
+    statusLabel: e.status==='in_nor'?'Termasuk NOR':'Tersedia', badgeStyle:this.statusBadge(e.status),
+    notesDisplay: e.notes||'—',
+    dotStyle:'width:8px;height:8px;border-radius:50%;flex:none;background:'+this.teamColor(e),
+    onOpen:()=>this.setState({detailId:e.id}) }); }
+  submitAdd(){ const f=this.state.form; const amt=parseInt(String(f.amount).replace(/[^0-9]/g,''),10);
+    if(!f.desc.trim()||!amt||(f.team==='Others'&&!f.customTeam.trim())){ this.setState({form:Object.assign({},f,{_err:'Lengkapi deskripsi, jumlah, dan nama unit.'})}); return; }
+    const ref=this.nextRef(); const id=Math.max.apply(null,this.state.expenses.map(e=>e.id))+1;
+    const ne={id,ref,date:f.date,team:f.team,customTeam:f.customTeam,category:f.category,desc:f.desc.trim(),amount:amt,notes:f.notes.trim(),status:'available',norNumber:null,
+      audit:[{t:f.date+' '+new Date().toTimeString().slice(0,5),who:'Evan',action:'Pengeluaran dicatat',note:'Dibuat dari nota fisik yang diserahkan tim',color:'#2f7d5b'}]};
+    this.setState({expenses:[ne].concat(this.state.expenses),addOpen:false,form:this.blankForm()}); this.toast('Pengeluaran '+ref+' tersimpan'); }
+  deleteExpense(){ const id=this.state.detailId; this.setState({expenses:this.state.expenses.filter(e=>e.id!==id),detailId:null}); this.toast('Pengeluaran dihapus'); }
+  // ---------- nor generate ----------
+  toggleSel(id){ const s=this.state.selectedIds; this.setState({selectedIds: s.includes(id)? s.filter(x=>x!==id): s.concat(id)}); }
+  selectAll(){ this.setState({selectedIds:this.avail().map(e=>e.id)}); }
+  clearSel(){ this.setState({selectedIds:[]}); }
+  confirmGenerate(){ const sel=this.state.expenses.filter(e=>this.state.selectedIds.includes(e.id));
+    if(!sel.length) return; const nf=this.state.norForm;
+    const nid='nor'+Date.now(); const subj=this.norAutoSubj(nf.date);
+    const nor={id:nid,number:nf.number,date:nf.date,subject:subj,status:'Menunggu Realisasi',
+      items:sel.map(e=>({date:e.date,team:this.teamDisplay(e),desc:e.desc,ket:e.notes||'—',amount:e.amount}))};
+    const exp=this.state.expenses.map(e=> this.state.selectedIds.includes(e.id)
+      ? Object.assign({},e,{status:'in_nor',norNumber:nf.number,audit:e.audit.concat([{t:nf.date+' 16:30',who:'Evan',action:'Dimasukkan ke NOR',note:'Terkunci dalam '+nf.number,color:'#a9781a'}])}) : e);
+    this.setState({nors:[nor].concat(this.state.nors),expenses:exp,selectedIds:[],norStep:'select',screen:'norDetail',norDetailId:nid});
+    this.toast('NOR '+nf.number+' berhasil dibuat'); }
+  openCycleModal(){ this.setState({cycleModalOpen:true,newCycleBalance:String(this.state.settings.startingBalance)}); }
+  confirmNewCycle(){ const bal=parseInt(String(this.state.newCycleBalance).replace(/[^0-9]/g,''),10)||this.state.settings.startingBalance; const n=this.state.cycle.number+1; const nid=this.state.norDetailId;
+    this.setState({expenses:[],nors:this.state.nors.map(x=>x.id===nid?Object.assign({},x,{status:'Selesai'}):x),cycle:{number:n,startDate:new Date().toISOString().slice(0,10)},settings:Object.assign({},this.state.settings,{startingBalance:bal}),screen:'dashboard',cycleModalOpen:false}); this.toast('Siklus #'+n+' dimulai. Saldo awal: '+this.rp(bal)); }
+  receiveFunds(){ this.openCycleModal(); }
+  startNewCycle(){ this.openCycleModal(); }
+  // ---------- settings ----------
+  ensureDraft(){ if(!this.state.settingsDraft) this.setState({settingsDraft:JSON.parse(JSON.stringify(this.state.settings))}); }
+  saveSettings(){ this.setState({settings:JSON.parse(JSON.stringify(this.state.settingsDraft))}); this.toast('Pengaturan disimpan'); }
+  exportCSV(type){ const st=this.state; const esc=(s)=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); const start=st.settings.startingBalance; const css="<style>table{border-collapse:collapse}td,th{font-family:Calibri,Arial,sans-serif;font-size:11pt;border:.5pt solid #b0b0b0;padding:5px 9px}.b{font-weight:bold}.c{text-align:center}.r{text-align:right;mso-number-format:'\\#\\,\\#\\#0'}.h{background:#9a1b2d;color:#fff;font-weight:bold;text-align:center}.tt{background:#f0e2e4;font-weight:bold}.nb{border:none}</style>"; let body,fn;
+    if(type==='nor'){ const nd=st.nors.find(n=>n.id===st.norDetailId); if(!nd){return;} const tot=this.norTotal(nd); const rows=nd.items.map((it,i)=>'<tr><td class="c">'+(i+1)+'</td><td>'+esc(this.fmtShort(it.date))+'</td><td>'+esc(it.team)+'</td><td>'+esc(it.desc)+'</td><td>'+esc(it.ket)+'</td><td class="r">'+it.amount+'</td></tr>').join('');
+      body='<table><tr><td colspan="6" class="b c" style="font-size:15pt;border:none">PENGURUS BESAR PBSI</td></tr><tr><td colspan="6" class="c" style="border:none">Bidang Sarana dan Prasarana</td></tr><tr><td colspan="6" class="b c" style="font-size:13pt;border:none">NOTA ORGANISASI REALISASI PETTY CASH</td></tr><tr><td colspan="6" class="nb"></td></tr><tr><td class="b">Nomor NOR</td><td colspan="5">'+esc(nd.number)+'</td></tr><tr><td class="b">Tanggal NOR</td><td colspan="5">'+esc(this.fmtLong(nd.date))+'</td></tr><tr><td class="b">Dana Awal</td><td colspan="5" class="r">'+start+'</td></tr><tr><td class="b">Total Realisasi</td><td colspan="5" class="r">'+tot+'</td></tr><tr><td class="b">Sisa Dana</td><td colspan="5" class="r">'+(start-tot)+'</td></tr><tr><td colspan="6" class="nb"></td></tr><tr class="h"><td>No</td><td>Tanggal</td><td>Unit</td><td>Rincian</td><td>Keterangan</td><td>Biaya (Rp)</td></tr>'+rows+'<tr class="tt"><td colspan="5" class="r">TOTAL PENGELUARAN</td><td class="r">'+tot+'</td></tr></table>'; fn='NOR_'+nd.number.replace(/[\/ ]/g,'-')+'.xls';
+    } else { const exps=st.expenses; const tot=this.spent(); const rows=exps.map((e,i)=>'<tr><td class="c">'+(i+1)+'</td><td>'+esc(e.ref)+'</td><td>'+esc(this.fmtShort(e.date))+'</td><td>'+esc(this.teamDisplay(e))+'</td><td>'+esc(e.category)+'</td><td>'+esc(e.desc)+'</td><td class="r">'+e.amount+'</td><td>'+(e.status==='in_nor'?'Termasuk NOR':'Tersedia')+'</td><td>'+esc(e.norNumber||'-')+'</td></tr>').join('');
+      body='<table><tr><td colspan="9" class="b c" style="font-size:15pt;border:none">PENGURUS BESAR PBSI</td></tr><tr><td colspan="9" class="c" style="border:none">Bidang Sarana dan Prasarana</td></tr><tr><td colspan="9" class="b c" style="font-size:13pt;border:none">LAPORAN PETTY CASH</td></tr><tr><td colspan="9" class="nb"></td></tr><tr><td class="b">Tanggal Export</td><td colspan="8">'+esc(this.fmtLong(new Date().toISOString().slice(0,10)))+'</td></tr><tr><td class="b">Siklus</td><td colspan="8">#'+st.cycle.number+'</td></tr><tr><td class="b">Dana Awal</td><td colspan="8" class="r">'+start+'</td></tr><tr><td class="b">Total Realisasi</td><td colspan="8" class="r">'+tot+'</td></tr><tr><td class="b">Sisa Saldo</td><td colspan="8" class="r">'+(start-tot)+'</td></tr><tr><td colspan="9" class="nb"></td></tr><tr class="h"><td>No</td><td>Ref</td><td>Tanggal</td><td>Unit</td><td>Kategori</td><td>Deskripsi</td><td>Jumlah (Rp)</td><td>Status</td><td>NOR</td></tr>'+rows+'<tr class="tt"><td colspan="6" class="r">GRAND TOTAL</td><td class="r">'+tot+'</td><td colspan="2"></td></tr></table>'; fn='Laporan_PettyCash_Siklus'+st.cycle.number+'.xls'; }
+    const html='<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8">'+css+'</head><body>'+body+'</body></html>'; const a=document.createElement('a'); a.href='data:application/vnd.ms-excel;charset=utf-8,'+encodeURIComponent(html); a.download=fn; a.click(); this.toast('Excel diunduh: '+fn); }
+  // ---------- render ----------
+  componentDidMount(){ this.ensureDraft(); }
+  icon(name,sz){ const E=React.createElement; const sw=2; const sv=(ch)=>E('svg',{width:sz||17,height:sz||17,viewBox:'0 0 24 24',fill:'none',stroke:'currentColor',strokeWidth:sw,strokeLinecap:'round',strokeLinejoin:'round',key:name},ch);
+    const P=(d,i)=>E('path',{d,key:'p'+i}); const R=(x,y,w,h,rx,i)=>E('rect',{x,y,width:w,height:h,rx,key:'r'+i}); const L=(x1,y1,x2,y2,i)=>E('line',{x1,y1,x2,y2,key:'l'+i}); const C=(cx,cy,r,f,i)=>E('circle',{cx,cy,r,fill:f||'none',key:'c'+i});
+    const m={
+      dashboard:()=>sv([R(3,3,7,9,1,0),R(14,3,7,5,1,1),R(14,12,7,9,1,2),R(3,16,7,5,1,3)]),
+      expenses:()=>sv([L(8,6,21,6,0),L(8,12,21,12,1),L(8,18,21,18,2),C(3.5,6,1.2,'currentColor',3),C(3.5,12,1.2,'currentColor',4),C(3.5,18,1.2,'currentColor',5)]),
+      gen:()=>sv([P('M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z',0),P('M14 2v6h6M12 18v-6M9 15h6',1)]),
+      history:()=>sv([P('M3 3v5h5',0),P('M3.05 13A9 9 0 1 0 6 5.3L3 8',1),P('M12 7v5l4 2',2)]),
+      settings:()=>sv([C(12,12,3,null,0),P('M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z',1)]),
+      mobile:()=>sv([R(5,2,14,20,2,0),L(12,18,12.01,18,1)]),
+      moon:()=>sv([P('M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z',0)]),
+      sun:()=>sv([C(12,12,4,null,0),P('M12 2v2M12 20v2M5 5l1.5 1.5M17.5 17.5 19 19M2 12h2M20 12h2M5 19l1.5-1.5M17.5 6.5 19 5',1)]),
+      check:()=>sv([P('M20 6 9 17l-5-5',0)]),
+      warn:()=>sv([P('M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z',0),P('M12 9v4M12 17h.01',1)]),
+      doc:()=>sv([P('M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z',0),P('M14 2v6h6',1)]),
+    };
+    return (m[name]||(()=>null))(); }
+  renderVals(){
+    const st=this.state; const screen=st.screen;
+    const navDef=[
+      {key:'dashboard',label:'Dashboard',icon:this.icon('dashboard')},
+      {key:'expenses',label:'Pengeluaran',icon:this.icon('expenses'),badge:String(this.avail().length)},
+      {key:'norGenerate',label:'Generate NOR',icon:this.icon('gen')},
+      {key:'norHistory',label:'Riwayat NOR',icon:this.icon('history')},
+      {key:'settings',label:'Pengaturan',icon:this.icon('settings')},
+      {key:'mobile',label:'Tampilan Mobile',icon:this.icon('mobile')},
+    ];
+    const norScreens=['norGenerate','norHistory','norDetail'];
+    const nav=navDef.map(n=>{ const active = n.key===screen || (n.key==='norHistory'&&screen==='norDetail') || (n.key==='norGenerate'&&false);
+      const act = active;
+      return { label:n.label, icon:n.icon, badge:n.badge,
+        onClick:()=>this.go(n.key),
+        style:'display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:9px;font-size:13.5px;font-weight:'+(act?'700':'600')+';cursor:pointer;'+(act?'background:var(--primary-tint);color:var(--primary-text);box-shadow:inset 2px 0 0 var(--primary)':'color:var(--text)'),
+        iconStyle:'display:flex;color:'+(act?'var(--primary-text)':'var(--muted)'),
+        badgeStyle:'font-family:\'JetBrains Mono\',monospace;font-size:10px;font-weight:600;padding:1px 7px;border-radius:20px;'+(act?'background:var(--primary);color:#fff':'background:var(--border2);color:var(--muted)') };
+    });
+    const titles={dashboard:'Petty Cash Center',expenses:'Pengeluaran',norGenerate:'Generate NOR',norHistory:'Riwayat NOR',norDetail:'Detail NOR',settings:'Pengaturan',mobile:'Tampilan Mobile'};
+
+    // expenses filtering
+    const q=st.fSearch.trim().toLowerCase();
+    let list=st.expenses.filter(e=>{
+      if(st.fStatus==='available'&&e.status!=='available')return false;
+      if(st.fStatus==='in_nor'&&e.status!=='in_nor')return false;
+      if(st.fTeam!=='all'&&e.team!==st.fTeam)return false;
+      if(q&&!(e.desc.toLowerCase().includes(q)||e.ref.toLowerCase().includes(q)||this.teamDisplay(e).toLowerCase().includes(q)))return false;
+      return true; });
+    const filtered=list.map(e=>this.decorate(e));
+    const filteredTotal=list.reduce((a,e)=>a+e.amount,0);
+    const statusChips=[
+      {key:'all',label:'Semua',count:st.expenses.length},
+      {key:'available',label:'Tersedia',count:this.avail().length},
+      {key:'in_nor',label:'Termasuk NOR',count:st.expenses.filter(e=>e.status==='in_nor').length},
+    ].map(c=>({label:c.label,count:c.count,onClick:()=>this.setState({fStatus:c.key}),
+      style:'border:none;border-radius:7px;padding:7px 13px;font-size:12.5px;font-weight:600;cursor:pointer;'+(st.fStatus===c.key?'background:var(--primary);color:#fff':'background:transparent;color:var(--muted)')}));
+
+    // detail
+    const de=st.expenses.find(e=>e.id===st.detailId);
+    const detail = de? Object.assign({},this.decorate(de),{locked:de.status==='in_nor'}):{audit:[]};
+    const detailUnlocked = de && de.status!=='in_nor';
+
+    // dashboard
+    const spent=this.spent(), bal=this.balance(), start=st.settings.startingBalance;
+    const pct=Math.min(100,Math.round(spent/start*100));
+    const low=bal < st.settings.threshold;
+    const recent=st.expenses.slice(0,5).map(e=>this.decorate(e));
+
+    // nor generate
+    const norQ=(st.norSearch||'').trim().toLowerCase();
+    const availDec=this.avail().filter(e=>{ if(!norQ) return true; return e.ref.toLowerCase().includes(norQ)||e.desc.toLowerCase().includes(norQ); }).map(e=>{ const sel=st.selectedIds.includes(e.id); return Object.assign({},this.decorate(e),{selected:sel,
+      onToggle:()=>this.toggleSel(e.id),
+      rowStyle:'display:grid;grid-template-columns:34px 110px 1fr 130px 120px;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border2);cursor:pointer;align-items:center;'+(sel?'background:var(--primary-tint)':'background:transparent'),
+      checkStyle:'width:19px;height:19px;border-radius:6px;display:flex;align-items:center;justify-content:center;'+(sel?'background:var(--primary);border:1px solid var(--primary)':'background:var(--card);border:1.5px solid var(--input-bd)') }); });
+    const selTotal=st.expenses.filter(e=>st.selectedIds.includes(e.id)).reduce((a,e)=>a+e.amount,0);
+
+    // nor list
+    const norList=st.nors.map(n=>({id:n.id,number:n.number,dateFmt:this.fmtLong(n.date),subject:n.subject,status:n.status,
+      totalFmt:this.rp(this.norTotal(n)),count:n.items.length,
+      statusStyle:'font-family:\'JetBrains Mono\',monospace;font-size:9.5px;letter-spacing:.5px;padding:4px 9px;border-radius:6px;'+(n.status==='Selesai'?'background:var(--green-tint);color:var(--green);border:1px solid var(--green-bd)':'background:var(--amber-tint);color:var(--amber);border:1px solid var(--amber-bd)'),
+      onOpen:()=>this.setState({screen:'norDetail',norDetailId:n.id}) }));
+
+    // nor detail
+    const nd=st.nors.find(n=>n.id===st.norDetailId);
+    const sigSorted=st.settings.signatories.slice().sort((a,b)=>a.order-b.order);
+    const letterTop=sigSorted.slice(0,3).map(s=>Object.assign({},s,{positionUp:(s.position||'').toUpperCase()}));
+    const letterBottom=sigSorted.slice(3).map(s=>Object.assign({},s,{positionUp:(s.position||'').toUpperCase()}));
+    const recapSign=(st.settings.recapSignatories||[]).slice().sort((a,b)=>a.order-b.order).map(s=>Object.assign({},s));
+    const recListR=this.recList(st.settings.recipients).map((v,i)=>({n:i+1,v:v}));
+    const ccListR=this.recList(st.settings.cc).map((v,i)=>({n:i+1,v:v}));
+    let norDetail={items:[],signatories:[],letterTop:[],letterBottom:[],recapSign:[],recipientsList:[],ccList:[]};
+    if(nd){ const tot=this.norTotal(nd);
+      norDetail={ number:nd.number,dateLong:this.fmtLong(nd.date),subject:nd.subject,status:nd.status,
+        sender:st.settings.senderTitle, recipientsList:recListR, ccList:ccListR,
+        danaAwalDate:this.fmtLong(st.cycle.startDate),
+        startDoc:this.rpDoc(start),totalDoc:this.rpDoc(tot),sisaDoc:this.rpDoc(start-tot),totalTable:this.rpTable(tot),
+        startFmt:this.rp(start),totalFmt:this.rp(tot),sisaFmt:this.rp(start-tot),terbilang:this.terbilangCap(start-tot),
+        items:nd.items.map((it,i)=>({no:i+1,dateFmt:this.fmtShort(it.date),desc:it.desc,team:it.team,ket:it.ket,amountFmt:this.rpTable(it.amount)})),
+        letterTop, letterBottom, recapSign,
+        isPending: nd.status!=='Selesai' };
+    }
+
+    // settings draft
+    const sd=st.settingsDraft||st.settings;
+    const sigRows=(sd.signatories||[]).slice().sort((a,b)=>a.order-b.order).map(s=>({id:s.id,label:s.label,name:s.name,position:s.position,order:s.order,
+      onRemove:()=>{ this.ensureDraft(); const d=JSON.parse(JSON.stringify(this.state.settingsDraft||this.state.settings)); d.signatories=d.signatories.filter(x=>x.id!==s.id); this.setState({settingsDraft:d}); } }));
+
+    // notifications
+    const NI={check:this.icon('check',14),warn:this.icon('warn',14),doc:this.icon('doc',14)};
+    const notifications=[
+      {title:'Petty Cash Hampir Habis',time:'baru saja',accent:'var(--amber)',bd:'var(--amber-bd)',icon:NI.warn,body:'Saldo '+this.rp(bal)+' di bawah ambang '+this.rp(st.settings.threshold)+'. Disarankan membuat Nota Organisasi Realisasi.'},
+      {title:'Pengeluaran Dicatat',time:'2 jam lalu',accent:'var(--green)',bd:'var(--border)',icon:NI.check,body:'Nota PC/2606/017 (Perbaikan pompa air) sebesar '+this.rp(1500000)+' telah dicatat.'},
+      {title:'NOR Diterbitkan',time:'22 hari lalu',accent:'var(--blue)',bd:'var(--border)',icon:NI.doc,body:'NOR 119/Memo/Sarpras/V/2026 telah dikirim ke Finance.'},
+    ];
+
+    const themeIcon = st.theme==='dark' ? this.icon('sun') : this.icon('moon');
+
+    return {
+      theme:st.theme, themeIcon, toggleTheme:()=>this.setState({theme:st.theme==='dark'?'light':'dark'}),
+      stop:(e)=>e.stopPropagation(),
+      nav, screenTitle:titles[screen]||'Petty Cash Center',
+      isDashboard:screen==='dashboard', isExpenses:screen==='expenses',
+      isGenerate:screen==='norGenerate', isHistory:screen==='norHistory', isNorDetail:screen==='norDetail', isSettings:screen==='settings', isMobile:screen==='mobile',
+      goExpenses:()=>this.go('expenses'), goGenerate:()=>this.go('norGenerate'), goNorHistory:()=>this.go('norHistory'),
+      openAdd:()=>this.setState({addOpen:true,form:this.blankForm()}), closeAdd:()=>this.setState({addOpen:false}),
+      openNotif:()=>this.setState({notifOpen:true}), closeNotif:()=>this.setState({notifOpen:false}),
+      addOpen:st.addOpen, notifOpen:st.notifOpen, notifications,
+      fSearch:st.fSearch, onSearch:(e)=>this.setState({fSearch:e.target.value}),
+      // dashboard
+      lowBalance:low, balanceFmt:this.rp(bal), startingFmt:this.rp(start), spentFmt:this.rp(spent), availFmt:this.rp(this.availTotal()),
+      thresholdFmt:this.rp(st.settings.threshold), cycleNo:st.cycle.number, cycleStartFmt:this.fmtLong(st.cycle.startDate),
+      expCount:st.expenses.length, availCount:this.avail().length, norCount:st.nors.length, usagePct:pct,
+      usageBarStyle:'height:100%;width:'+pct+'%;border-radius:6px;background:'+(low?'var(--amber)':'var(--primary)'),
+      recent,
+      // expenses
+      filtered, filteredEmpty:filtered.length===0, filteredTotalFmt:this.rp(filteredTotal), statusChips,
+      fTeam:st.fTeam, onFilterTeam:(e)=>this.setState({fTeam:e.target.value}),
+      // add form
+      form:st.form, isOthers:st.form.team==='Others',
+      nextRef:this.nextRef(), formError:st.form._err||'',
+      onFormInput:(e)=>{ const{name,value}=e.target; this.setState({form:Object.assign({},this.state.form,{[name]:value,_err:''})}); },
+      submitAdd:()=>this.submitAdd(),
+      // detail
+      detailOpen:!!de, detail, detailUnlocked, closeDetail:()=>this.setState({detailId:null}),
+      deleteExpense:()=>this.deleteExpense(),
+      openNorFromDetail:()=>{ const nor=st.nors.find(n=>n.number===de.norNumber); if(nor) this.setState({detailId:null,screen:'norDetail',norDetailId:nor.id}); },
+      // nor generate
+      availRows:availDec, noAvail:availDec.length===0, previewOpacity: st.selectedIds.length? '1':'.5',
+      prevDateLong:this.fmtLong(st.norForm.date),
+      norAutoSubject:this.norAutoSubj(st.norForm.date),
+      mobileRecent:recent.slice(0,3), mobileList:st.expenses.slice(0,6).map(e=>this.decorate(e)), sigCount:(sd.signatories||[]).length,
+      norSearch:st.norSearch, onNorSearch:(e)=>this.setState({norSearch:e.target.value}),
+      selectedCount:st.selectedIds.length, selTotalFmt:this.rp(selTotal), hasSelection:st.selectedIds.length>0,
+      selectAll:()=>this.selectAll(), clearSel:()=>this.clearSel(),
+      norStep:st.norStep, isStepSelect:st.norStep==='select', isStepPreview:st.norStep==='preview',
+      gotoPreview:()=>{ if(st.selectedIds.length) this.setState({norStep:'preview'}); }, backToSelect:()=>this.setState({norStep:'select'}),
+      norForm:st.norForm, onNorInput:(e)=>{ const{name,value}=e.target; this.setState({norForm:Object.assign({},this.state.norForm,{[name]:value})}); },
+      confirmGenerate:()=>this.confirmGenerate(),
+      previewItems: st.expenses.filter(e=>st.selectedIds.includes(e.id)).map((e,i)=>({no:i+1,dateFmt:this.fmtShort(e.date),desc:e.desc,team:this.teamDisplay(e),ket:e.notes||'—',amountFmt:this.rpTable(e.amount)})),
+      prevStartFmt:this.rp(start), prevTotalFmt:this.rp(selTotal), prevSisaFmt:this.rp(start-selTotal), prevTerbilang:this.terbilangCap(start-selTotal),
+      prevStartDoc:this.rpDoc(start), prevTotalDoc:this.rpDoc(selTotal), prevSisaDoc:this.rpDoc(start-selTotal),
+      prevDanaAwalDate:this.fmtLong(st.cycle.startDate), prevSender:st.settings.senderTitle,
+      prevRecipientsList:recListR, prevCcList:ccListR,
+      prevLetterTop:letterTop, prevLetterBottom:letterBottom, prevRecapSign:recapSign,
+      prevTotalTable:this.rpTable(selTotal),
+      docLogo:'assets/pbsi-logo.png',
+      prevSign:st.settings.signatories.slice().sort((a,b)=>a.order-b.order),
+      prevRecipients:st.settings.recipients, prevCc:st.settings.cc,
+      noSelection:st.selectedIds.length===0,
+      // nor list/detail
+      norList, norEmpty:st.nors.length===0, norDetail, hasNorDetail:!!nd, norPending: nd && nd.status!=='Selesai',
+      norAwaitingFunds: nd && nd.status==='Menunggu Realisasi',
+      norDetailStatusStyle: 'font-family:\'JetBrains Mono\',monospace;font-size:9.5px;letter-spacing:.5px;padding:6px 11px;border-radius:7px;'+((nd&&nd.status==='Selesai')?'background:var(--green-tint);color:var(--green);border:1px solid var(--green-bd)':'background:var(--amber-tint);color:var(--amber);border:1px solid var(--amber-bd)'),
+      printNor:()=>window.print(), markNorDone:()=>{ this.setState({nors:st.nors.map(n=>n.id===st.norDetailId?Object.assign({},n,{status:'Selesai'}):n)}); this.toast('NOR ditandai selesai'); },
+      receiveFunds:()=>this.receiveFunds(),
+      exportNorCSV:()=>this.exportCSV('nor'), exportExpCSV:()=>this.exportCSV('expenses'),
+      startNewCycle:()=>this.startNewCycle(),
+      cycleModalOpen:st.cycleModalOpen, closeCycleModal:()=>this.setState({cycleModalOpen:false}),
+      cyclePrevNo:st.cycle.number, cycleNewNo:st.cycle.number+1,
+      cycleSumStartFmt:this.rp(start), cycleSumRealFmt:this.rp(spent), cycleSumSisaFmt:this.rp(bal),
+      newCycleBalance:st.newCycleBalance, onNewBalInput:(e)=>this.setState({newCycleBalance:e.target.value}), confirmNewCycle:()=>this.confirmNewCycle(),
+      // settings
+      categories:['Inventaris','Perbaikan & Pemeliharaan','Kebersihan','Konsumsi','ATK','Reimbursement Driver','Lainnya'],
+      sd, sigRows, onSetInput:(e)=>{ this.ensureDraft(); const{name,value}=e.target; const d=JSON.parse(JSON.stringify(this.state.settingsDraft||this.state.settings)); d[name]= (name==='startingBalance'||name==='threshold')? parseInt(String(value).replace(/[^0-9]/g,''),10)||0 : value; this.setState({settingsDraft:d}); },
+      onSigInput:(e)=>{ this.ensureDraft(); const id=+e.target.dataset.id; const f=e.target.name; const v=e.target.value; const d=JSON.parse(JSON.stringify(this.state.settingsDraft||this.state.settings)); d.signatories=d.signatories.map(s=>s.id===id?Object.assign({},s,{[f]: f==='order'?(parseInt(v,10)||1):v}):s); this.setState({settingsDraft:d}); },
+      addSig:()=>{ this.ensureDraft(); const d=JSON.parse(JSON.stringify(this.state.settingsDraft||this.state.settings)); const nid=Math.max.apply(null,d.signatories.map(s=>s.id))+1; d.signatories.push({id:nid,label:'Mengetahui',name:'',position:'',order:d.signatories.length+1}); this.setState({settingsDraft:d}); },
+      removeSig:()=>{}, // placeholder; per-row remove attached below
+      sigRemovers: (sd.signatories||[]).map(s=>({id:s.id,onRemove:()=>{ this.ensureDraft(); const d=JSON.parse(JSON.stringify(this.state.settingsDraft||this.state.settings)); d.signatories=d.signatories.filter(x=>x.id!==s.id); this.setState({settingsDraft:d}); }})),
+      saveSettings:()=>this.saveSettings(), resetSettings:()=>{ this.setState({settingsDraft:JSON.parse(JSON.stringify(this.state.settings))}); this.toast('Perubahan dibatalkan'); },
+      startBalDraft: String(sd.startingBalance), threshDraft:String(sd.threshold),
+      // toast
+      toast:st.toast,
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,78 @@
+/* ============================================================
+   PETTY-CASH.CSS — scoped design tokens for the Petty Cash Center
+
+   Every token and rule is scoped under `.pc-root` so the module's
+   visual language (ported verbatim from the approved design) never
+   leaks into — or is overridden by — the global platform stylesheet.
+   Dark mode follows the module root's own data-theme attribute,
+   which petty-cash-center.js keeps in sync with the app theme.
+
+   Fonts (Archivo, JetBrains Mono) are linked from index.html and
+   fall back to system-ui offline.
+   ============================================================ */
+
+.pc-root {
+  --bg: #f3f2ef; --card: #ffffff; --card2: #faf9f7; --border: #e8e6e1; --border2: #efeeea;
+  --text: #262320; --muted: #8b857c; --label: #a49d93;
+  --sidebar: #ffffff; --rail: #ffffff;
+  --primary: #9a1b2d; --primary-fg: #ffffff; --primary-tint: #f7e6e8; --primary-text: #9a1b2d; --primary-hover: #821625;
+  --green: #2f7d5b; --green-tint: #e6f0ea; --green-bd: #cfe3d8;
+  --amber: #a9781a; --amber-tint: #f8eed4; --amber-bd: #ecdcb2;
+  --blue: #4f73a8; --blue-tint: #e7edf5; --purple: #7a5aa8; --purple-tint: #eee9f4;
+  --input: #ffffff; --input-bd: #e1dfd9;
+  --shadow: 0 1px 2px rgba(38,35,32,.05), 0 1px 3px rgba(38,35,32,.04);
+  --shadow-lg: 0 10px 30px rgba(38,35,32,.13), 0 2px 8px rgba(38,35,32,.08);
+
+  font-family: 'Archivo', system-ui, -apple-system, sans-serif;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+.pc-root[data-theme="dark"] {
+  --bg: #0d0d0e; --card: #161617; --card2: #1c1c1e; --border: #2a2a2c; --border2: #222224;
+  --text: #ededec; --muted: #8f8a84; --label: #6e6962;
+  --sidebar: #121213; --rail: #121213;
+  --primary: #9a1b2d; --primary-fg: #ffffff; --primary-tint: #2c1418; --primary-text: #df8b95; --primary-hover: #b02234;
+  --green: #5fb98c; --green-tint: #142019; --green-bd: #244236;
+  --amber: #cda34f; --amber-tint: #241f10; --amber-bd: #403718;
+  --blue: #7fa0cf; --blue-tint: #151b25; --purple: #a98fd2; --purple-tint: #1c1726;
+  --input: #1b1b1d; --input-bd: #333230;
+  --shadow: 0 1px 2px rgba(0,0,0,.4); --shadow-lg: 0 16px 40px rgba(0,0,0,.55);
+}
+
+.pc-root, .pc-root * { box-sizing: border-box; }
+.pc-root input, .pc-root select, .pc-root textarea, .pc-root button { font-family: inherit; }
+.pc-root input:focus, .pc-root select:focus, .pc-root textarea:focus {
+  outline: none; border-color: var(--primary) !important; box-shadow: 0 0 0 3px var(--primary-tint);
+}
+
+/* Scoped scrollbar (WebKit) */
+.pc-root ::-webkit-scrollbar { width: 10px; height: 10px; }
+.pc-root ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; border: 2px solid var(--bg); }
+.pc-root ::-webkit-scrollbar-track { background: transparent; }
+
+/* Animations (module-prefixed, safe globally) */
+@keyframes pcSpin { to { transform: rotate(360deg); } }
+@keyframes pcToast { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@keyframes pcFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pcPop { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes pcPulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+/* Responsive: stack multi-column grids on tablets/phones. */
+@media (max-width: 900px) {
+  .pc-root .pc-kpis { grid-template-columns: repeat(2, 1fr) !important; }
+  .pc-root .pc-2col { grid-template-columns: 1fr !important; }
+}
+
+/* Phones: drop the icon rail and slim the sidebar to an icon strip so
+   the content area keeps usable width. The module's "Tampilan Mobile"
+   screen demonstrates the field layout; here we keep the real UI
+   navigable on small screens. */
+@media (max-width: 640px) {
+  .pc-root .pc-rail { display: none !important; }
+  .pc-root .pc-sidebar { width: 72px !important; }
+  .pc-root .pc-sidebar [style*="flex:1"] + div,
+  .pc-root .pc-kpis { grid-template-columns: 1fr !important; }
+  .pc-root .pc-sidebar span { display: none !important; }
+  .pc-root .pc-sidebar svg { display: block !important; }
+}

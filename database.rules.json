@@ -36,6 +36,27 @@
       ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
       ".write": "false",
       ".indexOn": ["fireAt"]
+    },
+
+    "pettyCashExpenses": {
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+      ".write": "auth.token.role === 'admin'"
+    },
+    "pettyCashNors": {
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+      ".write": "auth.token.role === 'admin'"
+    },
+    "pettyCashCycles": {
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+      ".write": "auth.token.role === 'admin'"
+    },
+    "pettyCashSettings": {
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+      ".write": "auth.token.role === 'admin'"
+    },
+    "pettyCashAudit": {
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+      ".write": "auth.token.role === 'admin'"
     }
   }
 }

@@ -166,6 +166,12 @@ export function updateAdminButtons() {
   if (btnUserMgmt) {
     btnUserMgmt.style.display = isAdmin() ? 'flex' : 'none';
   }
+
+  // Petty Cash Center — admin only (v1.13.0).
+  const btnPettyCash = document.getElementById('btnPettyCash');
+  if (btnPettyCash) {
+    btnPettyCash.style.display = isAdmin() ? 'flex' : 'none';
+  }
 }
 
 function openUsersListModal() {

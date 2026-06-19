@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.12.2.1';
-export const RELEASE_NAME = 'Global Push Activation & Reliability Hardening';
+export const APP_VERSION = '1.13.0';
+export const RELEASE_NAME = 'Petty Cash Center';
 
 /**
  * Web Push VAPID PUBLIC key (v1.11.3). Safe to ship — it is an

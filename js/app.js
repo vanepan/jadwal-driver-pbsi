@@ -94,6 +94,7 @@ import {
 import { renderDriverDashboard, setAssignments as setDashboardAssignments } from './driver-dashboard.js';
 import { initCommentHandlers, openCommentModal, closeCommentModal, setRequests as setCommentRequests, registerCommentSaveCallback, refreshCommentThreadIfOpen } from './comments.js';
 import { initAdminUI, updateAdminButtons, openUserFormModal } from './admin.js';
+import { openPettyCashCenter } from './petty-cash/petty-cash-center.js';
 import { initNotificationUI, setNotificationData, openNotificationsModal } from './notifications.js';
 import { setTelegramBotToken } from './telegram.js';
 import { subscribeLogsChangeListener, getLogs, logAction, ensureLogsLoadedAndSubscribed, resetLogsSync } from './logs.js';
@@ -711,6 +712,20 @@ function initV2Rail() {
   railTheme?.addEventListener('click', () => {
     const current = document.documentElement.getAttribute('data-theme') || 'light';
     applyTheme(current === 'dark' ? 'light' : 'dark', true);
+  });
+
+  // Theme hook for the Petty Cash Center (its internal toggle delegates here
+  // so the app-wide theme stays the single source of truth).
+  window.__pbsiToggleTheme = () => {
+    const current = document.documentElement.getAttribute('data-theme') || 'light';
+    applyTheme(current === 'dark' ? 'light' : 'dark', true);
+  };
+
+  // Petty Cash Center — admin-only module (v1.13.0). Opens the full-screen
+  // overlay; the module mounts its own DOM and manages internal navigation.
+  document.getElementById('btnPettyCash')?.addEventListener('click', () => {
+    setSidebarActive('btnPettyCash');
+    openPettyCashCenter();
   });
 
   // Keyboard: Enter/Space activates any focusable rail element
