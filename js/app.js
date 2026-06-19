@@ -470,6 +470,10 @@ function updatePermissionUI(resetNavActive = false) {
       v2PanelBadge.style.display = showBadge ? 'inline-flex' : 'none';
     }
 
+    // Petty Cash Center rail module: admin only (v1.13.2 — desktop visibility)
+    const v2RailPettyCash = document.getElementById('v2RailPettyCash');
+    if (v2RailPettyCash) v2RailPettyCash.style.display = isAdmin() ? 'flex' : 'none';
+
     // Administration rail module: admin only
     const v2RailAdmin = document.getElementById('v2RailAdmin');
     if (v2RailAdmin) v2RailAdmin.style.display = isAdmin() ? 'flex' : 'none';
@@ -656,6 +660,19 @@ function initV2Rail() {
         <div class="v2-rail-tooltip" aria-hidden="true">Driver Operations</div>
       </div>
 
+      <!-- Petty Cash Center — admin only; shown by updatePermissionUI() (v1.13.2) -->
+      <div class="v2-rail-item" id="v2RailPettyCash"
+           role="button" tabindex="0"
+           aria-label="Petty Cash Center" aria-current="false" style="display:none;">
+        <svg class="v2-rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M19 7V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+          <path d="M21 7H8a2 2 0 0 0 0 4h13a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1z"/>
+          <circle cx="17.5" cy="9" r="1" fill="currentColor"/>
+        </svg>
+        <div class="v2-rail-tooltip" aria-hidden="true">Petty Cash Center</div>
+      </div>
+
       <!-- Administration — admin only; shown by updatePermissionUI() -->
       <div class="v2-rail-item" id="v2RailAdmin"
            role="button" tabindex="0"
@@ -692,10 +709,11 @@ function initV2Rail() {
 
   // ── Event handlers ──
 
-  const crest     = document.getElementById('v2RailCrest');
-  const driverOps = document.getElementById('v2RailDriverOps');
-  const railAdmin = document.getElementById('v2RailAdmin');
-  const railTheme = document.getElementById('v2RailThemeBtn');
+  const crest       = document.getElementById('v2RailCrest');
+  const driverOps   = document.getElementById('v2RailDriverOps');
+  const railPetty   = document.getElementById('v2RailPettyCash');
+  const railAdmin   = document.getElementById('v2RailAdmin');
+  const railTheme   = document.getElementById('v2RailThemeBtn');
 
   crest?.addEventListener('click', () => {
     document.querySelector('.main-content')?.scrollTo({ top: 0, behavior: 'smooth' });
@@ -721,15 +739,17 @@ function initV2Rail() {
     applyTheme(current === 'dark' ? 'light' : 'dark', true);
   };
 
-  // Petty Cash Center — admin-only module (v1.13.0). Opens the full-screen
-  // overlay; the module mounts its own DOM and manages internal navigation.
-  document.getElementById('btnPettyCash')?.addEventListener('click', () => {
+  // Petty Cash Center — admin-only module. Both the desktop rail item (v1.13.2)
+  // and the legacy V1 sidebar button (mobile entry) open the module surface.
+  const openPettyCash = () => {
     setSidebarActive('btnPettyCash');
     openPettyCashCenter();
-  });
+  };
+  railPetty?.addEventListener('click', openPettyCash);
+  document.getElementById('btnPettyCash')?.addEventListener('click', openPettyCash);
 
   // Keyboard: Enter/Space activates any focusable rail element
-  [crest, driverOps, railAdmin].forEach(el => {
+  [crest, driverOps, railPetty, railAdmin].forEach(el => {
     el?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();

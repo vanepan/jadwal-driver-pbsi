@@ -26,7 +26,7 @@ function signBlock(s) {
   return `<div><div>${esc(s.label)},</div><div style="font-weight:700;text-transform:uppercase">${esc(s.position)}</div><div style="height:46px"></div><div style="font-weight:700;text-decoration:underline">${esc(s.name)}</div></div>`;
 }
 function recapBlock(s) {
-  return `<div><div>${esc(s.label)},</div><div>${esc(s.position)}</div><div style="height:44px"></div><div style="font-weight:700;text-decoration:underline">${esc(s.name)}</div></div>`;
+  return `<div><div>${esc(s.label)},</div><div style="font-weight:700">${esc(s.position)}</div><div style="height:44px"></div><div style="font-weight:700;text-decoration:underline">${esc(s.name)}</div></div>`;
 }
 
 /**
@@ -53,10 +53,11 @@ export function renderNorPaper(vm, logoSrc, paperId) {
   );
 
   return `
-  <div ${paperId ? `id="${paperId}"` : ''} style="background:#fff;color:#000;max-width:820px;margin:0 auto;border-radius:2px;box-shadow:var(--shadow-lg);overflow:hidden;font-family:Arial,Helvetica,sans-serif">
-    <div style="padding:40px 52px 30px;font-size:10pt;line-height:1.3">
+  <div ${paperId ? `id="${paperId}"` : ''} class="pc-nor-paper" style="background:#fff;color:#000;max-width:820px;margin:0 auto;border-radius:2px;box-shadow:var(--shadow-lg);overflow:hidden;font-family:Arial,Helvetica,sans-serif">
+    <div class="pc-nor-pad" style="padding:40px 52px 30px;font-size:10pt;line-height:1.3">
+      ${d.isTest ? `<div style="text-align:center;font-family:Arial,Helvetica,sans-serif;font-weight:700;font-size:9pt;letter-spacing:2px;color:#9a1b2d;border:1.5px dashed #9a1b2d;border-radius:6px;padding:6px;margin-bottom:14px">TEST ONLY — DOKUMEN TIDAK SAH</div>` : ''}
       <div style="display:flex;flex-direction:column;align-items:center;margin-bottom:2px">
-        <img src="${esc(logoSrc)}" alt="PBSI" style="width:52px;height:auto;margin-bottom:4px"/>
+        <img src="${esc(logoSrc)}" alt="PBSI" style="width:75px;height:auto;margin-bottom:6px"/>
         <div style="font-weight:700;font-size:13pt">NOTA ORGANISASI</div>
       </div>
       <div style="margin:14px 0 12px">
@@ -81,10 +82,11 @@ export function renderNorPaper(vm, logoSrc, paperId) {
       </div>
       ${(d.letterBottom && d.letterBottom.length) ? `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;text-align:left;margin-top:8px">${d.letterBottom.map(signBlock).join('')}</div>` : ''}
     </div>
-    <div style="border-top:1px dashed #c8c8c8;padding:30px 52px 38px;font-size:10pt;line-height:1.25">
+    <div class="pc-nor-pad" style="border-top:1px dashed #c8c8c8;padding:30px 52px 38px;font-size:10pt;line-height:1.25">
       <div style="text-align:center;font-weight:700;font-size:11pt">RINCIAN PENGGUNAAN PETTY CASH</div>
       <div style="text-align:center;margin-bottom:9px">BIDANG SARANA DAN PRASARANA</div>
-      <table style="width:100%;border-collapse:collapse;font-size:9pt">
+      <div class="pc-nor-table-wrap">
+      <table style="width:100%;border-collapse:collapse;font-size:9pt;min-width:460px">
         <thead><tr>
           <th style="border:1px solid #000;padding:3px 5px;width:26px">No</th>
           <th style="border:1px solid #000;padding:3px 5px;width:76px">Tanggal</th>
@@ -97,9 +99,10 @@ export function renderNorPaper(vm, logoSrc, paperId) {
           <tr style="font-weight:700"><td colspan="3" style="border:1px solid #000;padding:3px 5px;text-align:right">Total Pengeluaran</td><td style="border:1px solid #000;padding:3px 5px;text-align:right">${esc(d.totalTable)}</td><td style="border:1px solid #000"></td></tr>
         </tbody>
       </table>
+      </div>
       ${balanceTable(216)}
       <p style="margin:0 0 14px">Terbilang: ${esc(d.terbilang)}</p>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;text-align:center;max-width:440px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;text-align:left;max-width:440px">
         ${(d.recap || []).map(recapBlock).join('')}
       </div>
     </div>

@@ -30,9 +30,9 @@ import { renderNorPaper } from './nor-paper.js';
 import { previewNorPdf } from './nor-pdf-exporter.js';
 import { exportNorExcel, exportExpensesExcel } from './nor-excel-exporter.js';
 import {
-  UNITS, CATEGORIES, EXPENSE_STATUS, NOR_STATUS, AUDIT_LABEL,
+  UNITS, CATEGORIES, EXPENSE_STATUS, NOR_STATUS, NOR_TYPE, AUDIT_LABEL,
   rp, fmtShort, fmtLong, todayISO, parseAmount, unitColor, unitDisplay,
-  norAutoSubject, norStatusMeta,
+  norAutoSubject, norStatusMeta, norNumberFromSequence, isValidNorSequence,
 } from './petty-cash-config.js';
 
 const LOGO_SRC = 'assets/Logo-PBSI.png';
@@ -40,11 +40,11 @@ const LOGO_SRC = 'assets/Logo-PBSI.png';
 /* ── Module state ────────────────────────────────────────────────── */
 const st = {
   screen: 'dashboard',
-  addOpen: false, notifOpen: false, cycleModalOpen: false,
+  addOpen: false, notifOpen: false, cycleModalOpen: false, drawerOpen: false,
   detailId: null, norDetailId: null,
   fUnit: 'all', fStatus: 'all', fSearch: '', norSearch: '',
-  selectedIds: [], norStep: 'select',
-  norForm: { number: '', date: todayISO() },
+  selectedIds: [], norStep: 'select', norFilter: NOR_TYPE.OFFICIAL,
+  norForm: { sequence: '', date: todayISO(), isTest: false },
   form: blankForm(),
   newCycleBalance: '',
   settingsDraft: null,
@@ -179,12 +179,13 @@ function shell() {
     <div style="flex:1;min-width:0;display:flex;flex-direction:column;height:100vh">
       ${topbar(user, initial, m)}
       <div style="flex:1;overflow-y:auto;overflow-x:hidden">
-        <div style="max-width:1200px;margin:0 auto;padding:26px 30px 60px">
+        <div class="pc-content-pad" style="max-width:1200px;margin:0 auto;padding:26px 30px 60px">
           ${content(m)}
         </div>
       </div>
     </div>
   </div>
+  ${st.drawerOpen ? mobileDrawer(m) : ''}
   ${st.addOpen ? addModal() : ''}
   ${st.detailId ? detailDrawer() : ''}
   ${st.notifOpen ? notifModal(m) : ''}
@@ -262,32 +263,98 @@ function sidebar(m) {
   </div>`;
 }
 
+/* ── Mobile drawer ───────────────────────────────────────────────
+   Below 1024px the icon rail + sidebar are hidden (petty-cash.css) and
+   this slide-in drawer carries navigation and identity. It reuses the
+   same NAV model and data-act dispatch as the desktop sidebar; the
+   "Tampilan Mobile" showcase is omitted (redundant on a real phone). */
+function mobileDrawer(m) {
+  const screen = st.screen;
+  const user = getCurrentUser() || {};
+  const items = NAV.filter(n => n.key !== 'mobile').map(n => {
+    const act = n.key === screen || (n.key === 'norHistory' && screen === 'norDetail');
+    const badge = n.key === 'expenses' ? String(svc.availableExpenses().length) : '';
+    return `
+    <div data-act="nav" data-id="${n.key}" style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:9px;font-size:14px;font-weight:${act ? '700' : '600'};cursor:pointer;${act ? 'background:var(--primary-tint);color:var(--primary-text);box-shadow:inset 2px 0 0 var(--primary)' : 'color:var(--text)'}">
+      <span style="display:flex;color:${act ? 'var(--primary-text)' : 'var(--muted)'}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${n.icon}</svg></span>
+      <span style="flex:1">${n.label}</span>
+      ${badge ? `<span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;padding:1px 7px;border-radius:20px;${act ? 'background:var(--primary);color:#fff' : 'background:var(--border2);color:var(--muted)'}">${badge}</span>` : ''}
+    </div>`;
+  }).join('');
+
+  return `
+  <div class="pc-drawer-scrim" data-act="closeDrawer">
+    <div class="pc-drawer" data-act="stop">
+      <div style="padding:18px 18px 14px;display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1.5px;color:var(--label);text-transform:uppercase;margin-bottom:2px">Petty Cash</div>
+          <div style="font-weight:800;font-size:17px;letter-spacing:-.2px">Kas Operasional</div>
+          <div style="display:inline-flex;align-items:center;gap:5px;margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.5px;color:var(--amber);background:var(--amber-tint);border:1px solid var(--amber-bd);padding:3px 7px;border-radius:6px">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            ADMIN ONLY
+          </div>
+        </div>
+        <div data-act="closeDrawer" style="width:32px;height:32px;flex:none;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
+      </div>
+      <div style="padding:0 14px 14px">
+        <button data-act="openAdd" style="width:100%;display:flex;align-items:center;justify-content:center;gap:8px;background:var(--primary);color:var(--primary-fg);border:none;border-radius:10px;padding:12px;font-weight:700;font-size:14px;cursor:pointer;box-shadow:var(--shadow)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          Tambah Pengeluaran
+        </button>
+      </div>
+      <div style="padding:6px 18px 6px;font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1.5px;color:var(--label)">MENU</div>
+      <div style="padding:0 12px;display:flex;flex-direction:column;gap:3px">${items}</div>
+      <div style="flex:1;min-height:14px"></div>
+      <div style="padding:0 12px 6px;display:flex;flex-direction:column;gap:3px;border-top:1px solid var(--border);padding-top:10px;margin-top:10px">
+        <div data-act="toggleTheme" style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:9px;font-size:14px;font-weight:600;color:var(--text);cursor:pointer">
+          <span style="display:flex;color:var(--muted)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></span>
+          <span style="flex:1">Ganti Tema</span>
+        </div>
+        <div data-act="exit" style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:9px;font-size:14px;font-weight:600;color:var(--text);cursor:pointer">
+          <span style="display:flex;color:var(--muted)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></span>
+          <span style="flex:1">Kembali ke Driver Ops</span>
+        </div>
+      </div>
+      <div style="border-top:1px solid var(--border);padding:12px 16px;display:flex;align-items:center;gap:10px">
+        <div style="width:34px;height:34px;flex:none;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px">${esc((user.displayName || user.username || 'A').charAt(0).toUpperCase())}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:13px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(user.displayName || user.username || 'Admin')}</div>
+          <div style="font-size:11px;color:var(--muted);line-height:1.3">Administrator</div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
 /* ── Topbar ──────────────────────────────────────────────────────── */
 const TITLES = { dashboard: 'Petty Cash Center', expenses: 'Pengeluaran', norGenerate: 'Generate NOR', norHistory: 'Riwayat NOR', norDetail: 'Detail NOR', settings: 'Pengaturan', mobile: 'Tampilan Mobile' };
 function topbar(user, initial, m) {
   const todayLbl = new Date().toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
   return `
-  <div style="height:58px;flex:none;border-bottom:1px solid var(--border);background:var(--card);display:flex;align-items:center;gap:16px;padding:0 18px;z-index:5">
-    <div style="min-width:150px">
+  <div class="pc-topbar" style="height:58px;flex:none;border-bottom:1px solid var(--border);background:var(--card);display:flex;align-items:center;gap:16px;padding:0 18px;z-index:5">
+    <div class="pc-topbar-title" style="min-width:150px">
       <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1.5px;color:var(--label);text-transform:uppercase">Sarpras Ops</div>
-      <div style="font-weight:800;font-size:15px;letter-spacing:-.2px">${esc(TITLES[st.screen] || 'Petty Cash Center')}</div>
+      <div style="font-weight:800;font-size:15px;letter-spacing:-.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(TITLES[st.screen] || 'Petty Cash Center')}</div>
     </div>
-    <div style="flex:1;max-width:340px;display:flex;align-items:center;gap:8px;background:var(--card2);border:1px solid var(--border);border-radius:9px;padding:8px 12px;color:var(--muted)">
+    <div class="pc-desktop-only" style="flex:1;max-width:340px;display:flex;align-items:center;gap:8px;background:var(--card2);border:1px solid var(--border);border-radius:9px;padding:8px 12px;color:var(--muted)">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-3.5-3.5"/></svg>
       <input value="${esc(st.fSearch)}" data-act="search" data-focus="topSearch" placeholder="Cari pengeluaran, NOR..." style="border:none;background:transparent;color:var(--text);font-size:13px;width:100%"/>
     </div>
     <div style="flex:1"></div>
-    <div style="display:flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--text);border:1px solid var(--border);border-radius:9px;padding:7px 11px">
+    <div class="pc-desktop-only" style="display:flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--text);border:1px solid var(--border);border-radius:9px;padding:7px 11px">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
       ${esc(todayLbl)}
     </div>
-    <div data-act="openNotif" style="position:relative;width:38px;height:38px;border-radius:9px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);cursor:pointer">
+    <div data-act="openNotif" style="position:relative;width:38px;height:38px;flex:none;border-radius:9px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);cursor:pointer">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
       ${m.low ? '<span style="position:absolute;top:8px;right:9px;width:7px;height:7px;border-radius:50%;background:var(--primary);border:1.5px solid var(--card)"></span>' : ''}
     </div>
-    <div style="display:flex;align-items:center;gap:9px;border:1px solid var(--border);border-radius:10px;padding:5px 11px 5px 5px">
+    <div class="pc-desktop-only" style="display:flex;align-items:center;gap:9px;border:1px solid var(--border);border-radius:10px;padding:5px 11px 5px 5px">
       <div style="width:30px;height:30px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px">${esc(initial)}</div>
       <div style="line-height:1.15"><div style="font-weight:700;font-size:12.5px">${esc(user.displayName || user.username || 'Admin')}</div><div style="font-size:10.5px;color:var(--muted)">Administrator</div></div>
+    </div>
+    <div class="pc-mobile-only" data-act="openDrawer" title="Menu" style="width:38px;height:38px;flex:none;border-radius:9px;border:1px solid var(--border);align-items:center;justify-content:center;color:var(--text);cursor:pointer">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
     </div>
   </div>`;
 }
@@ -397,7 +464,10 @@ function dashboard(m) {
 /* ── EXPENSES ────────────────────────────────────────────────────── */
 function filteredExpenses() {
   const q = st.fSearch.trim().toLowerCase();
-  return svc.activeExpenses().filter(e => {
+  // Arsip filter reads the archived set; all other filters read the active
+  // (non-archived) operational set. Archived stays searchable here. (v1.13.2)
+  const base = st.fStatus === 'archived' ? svc.archivedExpenses() : svc.activeExpenses();
+  return base.filter(e => {
     if (st.fStatus === 'available' && e.status !== EXPENSE_STATUS.AVAILABLE) return false;
     if (st.fStatus === 'locked' && e.status !== EXPENSE_STATUS.LOCKED) return false;
     if (st.fUnit !== 'all' && e.unit !== st.fUnit) return false;
@@ -407,16 +477,18 @@ function filteredExpenses() {
 }
 function expensesScreen(m) {
   const all = svc.activeExpenses();
+  const archivedCount = svc.archivedExpenses().length;
   const list = filteredExpenses();
   const total = list.reduce((a, e) => a + (e.amount || 0), 0);
   const chips = [
     { key: 'all', label: 'Semua', count: all.length },
     { key: 'available', label: 'Tersedia', count: all.filter(e => e.status === EXPENSE_STATUS.AVAILABLE).length },
     { key: 'locked', label: 'Termasuk NOR', count: all.filter(e => e.status === EXPENSE_STATUS.LOCKED).length },
+    { key: 'archived', label: 'Arsip', count: archivedCount },
   ].map(c => `<button data-act="filterStatus" data-id="${c.key}" style="border:none;border-radius:7px;padding:7px 13px;font-size:12.5px;font-weight:600;cursor:pointer;${st.fStatus === c.key ? 'background:var(--primary);color:#fff' : 'background:transparent;color:var(--muted)'}">${c.label} <span style="opacity:.6">${c.count}</span></button>`).join('');
 
   const rows = list.map(decorate).map(e => `
-    <div data-act="openDetail" data-id="${esc(e.id)}" style="display:grid;grid-template-columns:128px 1fr 150px 130px 130px 120px;gap:12px;padding:13px 18px;border-bottom:1px solid var(--border2);cursor:pointer;align-items:center">
+    <div class="pc-exp-row" data-act="openDetail" data-id="${esc(e.id)}" style="display:grid;grid-template-columns:128px 1fr 150px 130px 130px 120px;gap:12px;padding:13px 18px;border-bottom:1px solid var(--border2);cursor:pointer;align-items:center">
       <div><div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600">${esc(e.refNumber)}</div><div style="font-size:10.5px;color:var(--muted);margin-top:2px">${esc(e.dateFmt)}</div></div>
       <div style="min-width:0"><div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(e.description)}</div><div style="font-size:10.5px;color:var(--muted);margin-top:1px">${esc(e.notesDisplay)}</div></div>
       <div style="display:flex;align-items:center;gap:7px"><span style="${dotStyle(e.unit)}"></span><span style="font-size:12.5px">${esc(e.unitDisp)}</span></div>
@@ -427,7 +499,7 @@ function expensesScreen(m) {
 
   return `
   <div>
-    <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:18px;gap:10px">
+    <div class="pc-head-row" style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:18px;gap:10px">
       <div>
         <div style="font-weight:800;font-size:26px;letter-spacing:-.5px">Pengeluaran</div>
         <div style="font-size:13px;color:var(--muted);margin-top:3px">Semua nota petty cash pada siklus berjalan. Nota yang masuk NOR terkunci otomatis.</div>
@@ -447,7 +519,7 @@ function expensesScreen(m) {
       <div style="font-size:12.5px;color:var(--muted)">Total tampil: <span style="font-weight:700;color:var(--text);font-family:'JetBrains Mono',monospace">${esc(rp(total))}</span></div>
     </div>
     <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);overflow:hidden">
-      <div style="display:grid;grid-template-columns:128px 1fr 150px 130px 130px 120px;gap:12px;padding:13px 18px;border-bottom:1px solid var(--border);background:var(--card2);font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">
+      <div class="pc-exp-head" style="display:grid;grid-template-columns:128px 1fr 150px 130px 130px 120px;gap:12px;padding:13px 18px;border-bottom:1px solid var(--border);background:var(--card2);font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">
         <div>Ref · Tanggal</div><div>Deskripsi</div><div>Unit</div><div>Kategori</div><div style="text-align:right">Jumlah</div><div style="text-align:right">Status</div>
       </div>
       ${rows}
@@ -462,8 +534,9 @@ function previewVm(m) {
   const realized = selected.reduce((a, e) => a + (e.amount || 0), 0);
   const opening = cycle ? cycle.openingBalance : m.opening;
   const pseudo = {
-    norNumber: st.norForm.number || '—',
+    norNumber: st.norForm.sequence ? norNumberFromSequence(st.norForm.sequence, st.norForm.date) : '—',
     norDate: st.norForm.date,
+    type: st.norForm.isTest ? NOR_TYPE.TEST : NOR_TYPE.OFFICIAL,
     subject: norAutoSubject(st.norForm.date),
     items: selected.map(e => ({ expenseId: e.id, refNumber: e.refNumber, expenseDate: e.expenseDate, unit: unitDisplay(e), description: e.description, keterangan: e.notes || '—', amount: e.amount })),
     openingBalance: opening, realizedAmount: realized, remainingBalance: opening - realized,
@@ -476,7 +549,7 @@ function generateScreen(m) {
     const vm = previewVm(m);
     return `
     <div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div class="pc-head-row" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:10px">
         <div style="display:flex;align-items:center;gap:7px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)"><span style="width:22px;height:22px;border-radius:50%;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700">✓</span>Pilih <span style="opacity:.4">→</span><span style="width:22px;height:22px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700">2</span>Preview</div>
         <div style="display:flex;gap:10px"><button data-act="backToSelect" style="background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 16px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer">← Kembali</button><button data-act="confirmGenerate" style="background:var(--primary);color:#fff;border:none;border-radius:9px;padding:10px 18px;font-weight:700;font-size:13px;cursor:pointer">Generate &amp; Terbitkan NOR</button></div>
       </div>
@@ -495,7 +568,7 @@ function generateScreen(m) {
   const rows = avail.map(e => {
     const sel = st.selectedIds.includes(e.id);
     return `
-    <div data-act="toggleSel" data-id="${esc(e.id)}" style="display:grid;grid-template-columns:34px 110px 1fr 130px 120px;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border2);cursor:pointer;align-items:center;${sel ? 'background:var(--primary-tint)' : 'background:transparent'}">
+    <div class="pc-nor-row" data-act="toggleSel" data-id="${esc(e.id)}" style="display:grid;grid-template-columns:34px 110px 1fr 130px 120px;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border2);cursor:pointer;align-items:center;${sel ? 'background:var(--primary-tint)' : 'background:transparent'}">
       <div style="width:19px;height:19px;border-radius:6px;display:flex;align-items:center;justify-content:center;${sel ? 'background:var(--primary);border:1px solid var(--primary)' : 'background:var(--card);border:1.5px solid var(--input-bd)'}">${sel ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>' : ''}</div>
       <div><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600">${esc(e.refNumber)}</div><div style="font-size:10px;color:var(--muted);margin-top:1px">${esc(fmtShort(e.expenseDate))}</div></div>
       <div style="min-width:0"><div style="font-weight:600;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(e.description)}</div><div style="font-size:10px;color:var(--muted);margin-top:1px">${esc(e.notes || '—')}</div></div>
@@ -506,7 +579,7 @@ function generateScreen(m) {
 
   return `
   <div>
-    <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:6px">
+    <div class="pc-head-row" style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:6px;gap:10px">
       <div>
         <div style="font-weight:800;font-size:26px;letter-spacing:-.5px">Generate Nota Realisasi</div>
         <div style="font-size:13px;color:var(--muted);margin-top:3px">Pilih nota yang akan direalisasikan. Nota terpilih akan terkunci setelah NOR diterbitkan.</div>
@@ -515,7 +588,7 @@ function generateScreen(m) {
     </div>
     <div class="pc-2col" style="display:grid;grid-template-columns:1fr 320px;gap:18px;margin-top:18px;align-items:start">
       <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);overflow:hidden">
-        <div style="display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--border);background:var(--card2)">
+        <div class="pc-head-row" style="display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--border);background:var(--card2)">
           <button data-act="selectAll" style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:7px 13px;font-size:12px;font-weight:600;color:var(--text);cursor:pointer">Pilih Semua</button>
           <button data-act="clearSel" style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:7px 13px;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer">Hapus Pilihan</button>
           <div style="flex:1;background:var(--card);border:1px solid var(--input-bd);border-radius:8px;display:flex;align-items:center;gap:8px;padding:6px 11px;color:var(--muted)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-3.5-3.5"/></svg><input value="${esc(st.norSearch)}" data-act="norSearch" data-focus="norSearch" placeholder="Cari ref / deskripsi..." style="border:none;background:transparent;font-size:12px;color:var(--text);width:100%"/></div>
@@ -526,9 +599,14 @@ function generateScreen(m) {
       <div style="position:sticky;top:0;display:flex;flex-direction:column;gap:14px">
         <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:18px">
           <div style="font-weight:800;font-size:15px;margin-bottom:14px">Detail NOR</div>
-          <label style="display:block;margin-bottom:13px"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Nomor NOR *</span><input name="number" value="${esc(st.norForm.number)}" data-act="norForm" data-focus="norNumber" placeholder="cth: 120/Nota Organisasi/Sarpras/VI/2026" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:9px 11px;font-size:12.5px;color:var(--text);font-family:'JetBrains Mono',monospace"/></label>
+          <label style="display:block;margin-bottom:13px"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Nomor Urut NOR *</span><input name="sequence" value="${esc(st.norForm.sequence)}" data-act="norForm" data-focus="norSequence" inputmode="numeric" placeholder="cth: 120" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:9px 11px;font-size:12.5px;color:var(--text);font-family:'JetBrains Mono',monospace"/></label>
+          <div style="margin:-6px 0 13px"><span style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.5px;color:var(--label);text-transform:uppercase">Nomor Lengkap (otomatis)</span><div id="pcNorFull" style="margin-top:5px;background:var(--card2);border:1px solid var(--border2);border-radius:9px;padding:9px 11px;font-size:12px;line-height:1.4;font-family:'JetBrains Mono',monospace;${isValidNorSequence(st.norForm.sequence) ? 'color:var(--primary-text);font-weight:600' : 'color:var(--muted)'}">${esc(isValidNorSequence(st.norForm.sequence) ? norNumberFromSequence(st.norForm.sequence, st.norForm.date) : 'Masukkan nomor urut (angka) untuk melihat nomor lengkap')}</div></div>
           <label style="display:block;margin-bottom:13px"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Tanggal NOR *</span><input type="date" name="date" value="${esc(st.norForm.date)}" data-act="norForm" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:9px 11px;font-size:12.5px;color:var(--text)"/></label>
-          <div style="display:block"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Perihal <span style="color:var(--muted);font-weight:400;letter-spacing:0">(otomatis dari tanggal)</span></span><div style="margin-top:6px;background:var(--card2);border:1px solid var(--border2);border-radius:9px;padding:9px 11px;font-size:12.5px;color:var(--muted);line-height:1.4">${esc(norAutoSubject(st.norForm.date))}</div></div>
+          <div style="display:block;margin-bottom:13px"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Perihal <span style="color:var(--muted);font-weight:400;letter-spacing:0">(otomatis dari tanggal)</span></span><div id="pcNorSubject" style="margin-top:6px;background:var(--card2);border:1px solid var(--border2);border-radius:9px;padding:9px 11px;font-size:12.5px;color:var(--muted);line-height:1.4">${esc(norAutoSubject(st.norForm.date))}</div></div>
+          <div data-act="toggleTestNor" style="display:flex;align-items:flex-start;gap:9px;cursor:pointer;background:${st.norForm.isTest ? 'var(--amber-tint)' : 'var(--card2)'};border:1px solid ${st.norForm.isTest ? 'var(--amber-bd)' : 'var(--border2)'};border-radius:9px;padding:10px 12px">
+            <div style="width:18px;height:18px;flex:none;margin-top:1px;border-radius:5px;display:flex;align-items:center;justify-content:center;${st.norForm.isTest ? 'background:var(--amber);border:1px solid var(--amber)' : 'background:var(--card);border:1.5px solid var(--input-bd)'}">${st.norForm.isTest ? '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>' : ''}</div>
+            <div><div style="font-weight:600;font-size:12.5px;color:var(--text)">Generate as Test NOR</div><div style="font-size:11px;color:var(--muted);margin-top:1px;line-height:1.35">NOR uji coba: tidak mengunci nota, tidak memengaruhi metrik, dan tersembunyi dari Riwayat resmi.</div></div>
+          </div>
         </div>
         <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:18px">
           <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted)"><span>Nota dipilih</span><span style="font-weight:700;color:var(--text)">${selectedCount}</span></div>
@@ -543,28 +621,56 @@ function generateScreen(m) {
 }
 
 /* ── NOR HISTORY ─────────────────────────────────────────────────── */
+/* Riwayat NOR has two tabs only (v1.13.2): Official and Archived. The Test
+   tab was removed — a non-archived Test NOR is transient validation data, so
+   it lives in the Official view (clearly badged TEST, excluded from metrics)
+   until it is archived, after which it moves to Archived ("ARSIP · TEST").
+   Archived can hold both archived Official ("ARSIP") and archived Test. */
+/** Apply the active history filter ('official' | 'archived'). */
+function norMatchesFilter(n, filter) {
+  if (filter === 'archived') return !!n.archived;
+  return !n.archived; // 'official' tab = all non-archived (Test NORs badged inline)
+}
 function historyScreen() {
-  const nors = getNors().slice().sort((a, b) => (b.generatedAt || 0) - (a.generatedAt || 0));
-  const rows = nors.map(n => {
+  const all = getNors();
+  const list = all.slice()
+    .filter(n => norMatchesFilter(n, st.norFilter))
+    .sort((a, b) => (b.generatedAt || 0) - (a.generatedAt || 0));
+
+  const chips = [
+    { key: NOR_TYPE.OFFICIAL, label: 'Official', count: all.filter(n => !n.archived).length },
+    { key: 'archived', label: 'Archived', count: all.filter(n => !!n.archived).length },
+  ].map(c => `<button data-act="filterNorType" data-id="${c.key}" style="border:none;border-radius:7px;padding:7px 13px;font-size:12.5px;font-weight:600;cursor:pointer;${st.norFilter === c.key ? 'background:var(--primary);color:#fff' : 'background:transparent;color:var(--muted)'}">${c.label} <span style="opacity:.6">${c.count}</span></button>`).join('');
+
+  const testBadge = '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;letter-spacing:.5px;padding:4px 8px;border-radius:6px;background:var(--amber-tint);color:var(--amber);border:1px solid var(--amber-bd)">TEST</span>';
+  const archBadge = '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;letter-spacing:.5px;padding:4px 8px;border-radius:6px;background:var(--border2);color:var(--muted);border:1px solid var(--border)">ARSIP</span>';
+  const archTestBadge = '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;letter-spacing:.5px;padding:4px 8px;border-radius:6px;background:var(--border2);color:var(--muted);border:1px solid var(--border)">ARSIP · TEST</span>';
+
+  const rows = list.map(n => {
     const meta = norStatusMeta(n.status);
     const total = n.realizedAmount || 0;
+    const isTest = n.type === NOR_TYPE.TEST;
+    const tag = n.archived
+      ? (isTest ? archTestBadge : archBadge)
+      : (isTest ? testBadge : `<span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.5px;padding:4px 9px;border-radius:6px;${meta.done ? 'background:var(--green-tint);color:var(--green);border:1px solid var(--green-bd)' : 'background:var(--amber-tint);color:var(--amber);border:1px solid var(--amber-bd)'}">${meta.label}</span>`);
     return `
-    <div data-act="norOpen" data-id="${esc(n.id)}" style="background:var(--card);border:1px solid var(--border);border-radius:13px;box-shadow:var(--shadow);padding:17px 19px;display:flex;align-items:center;gap:18px;cursor:pointer">
+    <div class="pc-nor-hist" data-act="norOpen" data-id="${esc(n.id)}" style="background:var(--card);border:1px solid var(--border);border-radius:13px;box-shadow:var(--shadow);padding:17px 19px;display:flex;align-items:center;gap:18px;cursor:pointer;${isTest || n.archived ? 'opacity:.92' : ''}">
       <div style="width:42px;height:42px;flex:none;border-radius:11px;background:var(--primary-tint);color:var(--primary);display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div>
       <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:14px;font-family:'JetBrains Mono',monospace">${esc(n.norNumber)}</div><div style="font-size:12px;color:var(--muted);margin-top:2px">${esc(n.subject)} · ${esc(fmtLong(n.norDate))}</div></div>
       <div style="text-align:right"><div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--label);letter-spacing:.5px">TOTAL</div><div style="font-weight:700;font-size:14px;font-family:'JetBrains Mono',monospace">${esc(rp(total))}</div></div>
       <div style="text-align:center;min-width:64px"><div style="font-weight:700;font-size:15px">${(n.expenseIds || n.items || []).length}</div><div style="font-size:10px;color:var(--muted)">nota</div></div>
-      <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.5px;padding:4px 9px;border-radius:6px;${meta.done ? 'background:var(--green-tint);color:var(--green);border:1px solid var(--green-bd)' : 'background:var(--amber-tint);color:var(--amber);border:1px solid var(--amber-bd)'}">${meta.label}</span>
+      ${tag}
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
     </div>`;
-  }).join('') || `<div style="padding:48px;text-align:center;color:var(--muted);font-size:13px;background:var(--card);border:1px solid var(--border);border-radius:14px">Belum ada NOR yang diterbitkan.</div>`;
+  }).join('') || `<div style="padding:48px;text-align:center;color:var(--muted);font-size:13px;background:var(--card);border:1px solid var(--border);border-radius:14px">Belum ada NOR pada tampilan ini.</div>`;
 
   return `
   <div>
-    <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:18px">
+    <div class="pc-head-row" style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:16px;gap:10px">
       <div><div style="font-weight:800;font-size:26px;letter-spacing:-.5px">Riwayat NOR</div><div style="font-size:13px;color:var(--muted);margin-top:3px">Seluruh Nota Organisasi Realisasi yang pernah diterbitkan.</div></div>
       <button data-act="nav" data-id="norGenerate" style="display:flex;align-items:center;gap:8px;background:var(--primary);color:#fff;border:none;border-radius:10px;padding:11px 16px;font-weight:700;font-size:13px;cursor:pointer;box-shadow:var(--shadow)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>NOR Baru</button>
     </div>
+    <div style="display:flex;gap:6px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:4px;margin-bottom:16px;width:max-content;max-width:100%;flex-wrap:wrap">${chips}</div>
     <div style="display:flex;flex-direction:column;gap:12px">${rows}</div>
   </div>`;
 }
@@ -574,19 +680,30 @@ function norDetailScreen(m) {
   const nor = st.norDetailId ? getNorById(st.norDetailId) : null;
   if (!nor) return `<div style="padding:48px;text-align:center;color:var(--muted)">NOR tidak ditemukan. <button data-act="nav" data-id="norHistory" style="color:var(--primary);background:none;border:none;cursor:pointer;text-decoration:underline">Kembali</button></div>`;
   const meta = norStatusMeta(nor.status);
-  const awaiting = nor.status === NOR_STATUS.GENERATED || nor.status === NOR_STATUS.WAITING;
+  const isTest = nor.type === NOR_TYPE.TEST;
+  // Test / archived NORs never lock expenses, so cycle rollover is N/A.
+  const awaiting = !isTest && !nor.archived && (nor.status === NOR_STATUS.GENERATED || nor.status === NOR_STATUS.WAITING);
   const vm = buildNorViewModel(nor);
   const statusStyle = `font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.5px;padding:6px 11px;border-radius:7px;${meta.done ? 'background:var(--green-tint);color:var(--green);border:1px solid var(--green-bd)' : 'background:var(--amber-tint);color:var(--amber);border:1px solid var(--amber-bd)'}`;
+  // Type/archive badge (v1.13.2): distinguishes archived Official ("ARSIP")
+  // from archived Test ("ARSIP · TEST"), and flags a live Test NOR ("TEST ONLY").
+  const typeBadge = nor.archived
+    ? (isTest
+        ? '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9.5px;letter-spacing:.5px;padding:6px 11px;border-radius:7px;background:var(--border2);color:var(--muted);border:1px solid var(--border)">ARSIP · TEST</span>'
+        : '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9.5px;letter-spacing:.5px;padding:6px 11px;border-radius:7px;background:var(--border2);color:var(--muted);border:1px solid var(--border)">ARSIP</span>')
+    : (isTest ? '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9.5px;letter-spacing:.5px;padding:6px 11px;border-radius:7px;background:var(--amber-tint);color:var(--amber);border:1px solid var(--amber-bd)">TEST ONLY</span>' : '');
 
   return `
   <div>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+    <div class="pc-head-row" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:10px">
       <button data-act="nav" data-id="norHistory" style="display:flex;align-items:center;gap:7px;background:transparent;border:none;font-weight:600;font-size:13px;color:var(--muted);cursor:pointer"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>Riwayat NOR</button>
-      <div style="display:flex;gap:10px;align-items:center">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+        ${typeBadge}
         <span style="${statusStyle}">${meta.label}</span>
         <button data-act="exportNor" data-id="${esc(nor.id)}" style="display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 15px;font-weight:600;font-size:12.5px;color:var(--text);cursor:pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export Excel</button>
         <button data-act="printNor" data-id="${esc(nor.id)}" style="display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 15px;font-weight:600;font-size:12.5px;color:var(--text);cursor:pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Cetak / PDF</button>
         ${awaiting ? `<button data-act="receiveFunds" data-id="${esc(nor.id)}" style="display:flex;align-items:center;gap:7px;background:var(--green);color:#fff;border:none;border-radius:9px;padding:10px 15px;font-weight:700;font-size:12.5px;cursor:pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Dana Pengganti Diterima</button>` : ''}
+        ${nor.archived ? '' : `<button data-act="archiveTestNor" data-id="${esc(nor.id)}" style="display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 15px;font-weight:600;font-size:12.5px;color:var(--muted);cursor:pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>${isTest ? 'Arsipkan Test NOR' : 'Arsipkan NOR'}</button>`}
       </div>
     </div>
     ${renderNorPaper(vm, LOGO_SRC, 'norPaper')}
@@ -598,7 +715,7 @@ function settingsScreen(m) {
   const sd = st.settingsDraft || getSettings();
   const sigs = (sd.signatories || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0));
   const sigRows = sigs.map(s => `
-    <div style="display:grid;grid-template-columns:64px 1fr 1fr 1fr 36px;gap:10px;align-items:center">
+    <div class="pc-sig-row" style="display:grid;grid-template-columns:64px 1fr 1fr 1fr 36px;gap:10px;align-items:center">
       <input type="number" name="order" data-act="sigInput" data-id="${s.id}" data-focus="sig-order-${s.id}" value="${esc(s.order)}" style="width:100%;background:var(--input);border:1px solid var(--input-bd);border-radius:8px;padding:8px;font-size:12px;color:var(--text);text-align:center;font-family:'JetBrains Mono',monospace"/>
       <input name="label" data-act="sigInput" data-id="${s.id}" data-focus="sig-label-${s.id}" value="${esc(s.label)}" style="width:100%;background:var(--input);border:1px solid var(--input-bd);border-radius:8px;padding:8px 10px;font-size:12px;color:var(--text)"/>
       <input name="name" data-act="sigInput" data-id="${s.id}" data-focus="sig-name-${s.id}" value="${esc(s.name)}" style="width:100%;background:var(--input);border:1px solid var(--input-bd);border-radius:8px;padding:8px 10px;font-size:12px;color:var(--text)"/>
@@ -609,9 +726,9 @@ function settingsScreen(m) {
   return `
   <div>
     <div style="margin-bottom:8px"><div style="font-weight:800;font-size:26px;letter-spacing:-.5px">Pengaturan Petty Cash</div><div style="font-size:13px;color:var(--muted);margin-top:3px">Konfigurasi saldo awal, ambang notifikasi, dan penandatangan NOR.</div></div>
-    <div style="display:flex;gap:40px;margin:22px 0 24px">
-      <div><div style="font-weight:800;font-size:32px;letter-spacing:-1px">${esc(rp(sd.openingBalance))}</div><div style="font-size:11.5px;color:var(--muted);margin-top:2px">Saldo Awal Default</div></div>
-      <div><div style="font-weight:800;font-size:32px;letter-spacing:-1px">${esc(rp(sd.lowBalanceThreshold))}</div><div style="font-size:11.5px;color:var(--muted);margin-top:2px">Ambang Notifikasi</div></div>
+    <div class="pc-set-stats" style="display:flex;gap:40px;margin:22px 0 24px">
+      <div><div id="pcStatOpening" style="font-weight:800;font-size:32px;letter-spacing:-1px">${esc(rp(sd.openingBalance))}</div><div style="font-size:11.5px;color:var(--muted);margin-top:2px">Saldo Awal Default</div></div>
+      <div><div id="pcStatThreshold" style="font-weight:800;font-size:32px;letter-spacing:-1px">${esc(rp(sd.lowBalanceThreshold))}</div><div style="font-size:11.5px;color:var(--muted);margin-top:2px">Ambang Notifikasi</div></div>
       <div><div style="font-weight:800;font-size:32px;letter-spacing:-1px">${(sd.signatories || []).length}</div><div style="font-size:11.5px;color:var(--muted);margin-top:2px">Penandatangan NOR</div></div>
     </div>
     <div class="pc-2col" style="display:grid;grid-template-columns:340px 1fr;gap:18px;align-items:start">
@@ -629,7 +746,7 @@ function settingsScreen(m) {
       <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:20px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><div style="font-weight:800;font-size:15px">Konfigurasi Penandatangan NOR</div><button data-act="addSig" style="display:flex;align-items:center;gap:6px;background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;color:var(--text);cursor:pointer"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Tambah</button></div>
         <div style="font-size:11.5px;color:var(--muted);margin-bottom:16px">Dikonfigurasi sekali, otomatis dipakai saat generate NOR. Urutkan dengan kolom "Urutan".</div>
-        <div style="display:grid;grid-template-columns:64px 1fr 1fr 1fr 36px;gap:10px;padding:0 2px 8px;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1px;color:var(--label);text-transform:uppercase"><div>Urutan</div><div>Label Peran</div><div>Nama</div><div>Jabatan</div><div></div></div>
+        <div class="pc-sig-head" style="display:grid;grid-template-columns:64px 1fr 1fr 1fr 36px;gap:10px;padding:0 2px 8px;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1px;color:var(--label);text-transform:uppercase"><div>Urutan</div><div>Label Peran</div><div>Nama</div><div>Jabatan</div><div></div></div>
         <div style="display:flex;flex-direction:column;gap:9px">${sigRows}</div>
         <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border2)"><button data-act="resetSettings" style="background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 18px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer">Reset</button><button data-act="saveSettings" style="background:var(--primary);color:#fff;border:none;border-radius:9px;padding:10px 20px;font-weight:700;font-size:13px;cursor:pointer">Simpan</button></div>
       </div>
@@ -701,7 +818,7 @@ function addModal() {
         <label style="display:block"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Foto Nota <span style="color:var(--muted);font-weight:400;letter-spacing:0">(Opsional · disimpan untuk arsip digital)</span></span>
           <div data-act="pickReceipt" style="margin-top:6px;border:1.5px dashed var(--input-bd);border-radius:9px;padding:18px 14px;text-align:center;color:var(--muted);font-size:12.5px;cursor:pointer;background:var(--card2)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto 8px;display:block"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>${f._photoName ? esc(f._photoName) : 'Klik untuk pilih foto nota fisik<br/><span style="font-size:11px">JPG, PNG · maks. 5 MB · tidak wajib</span>'}</div>
           <input id="pcReceiptInput" type="file" accept="image/*" data-act="receiptFile" style="display:none"/></label>
-        ${f._err ? `<div style="font-size:12px;color:var(--primary);background:var(--primary-tint);border-radius:8px;padding:9px 12px">${esc(f._err)}</div>` : ''}
+        ${f._err ? `<div id="pcAddErr" style="font-size:12px;color:var(--primary);background:var(--primary-tint);border-radius:8px;padding:9px 12px">${esc(f._err)}</div>` : ''}
       </div>
       <div style="display:flex;justify-content:flex-end;gap:10px;padding:16px 22px;border-top:1px solid var(--border2)">
         <button data-act="closeAdd" style="background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 18px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer">Batal</button>
@@ -716,6 +833,7 @@ function detailDrawer() {
   if (!raw) return '';
   const d = decorate(raw);
   const locked = raw.status === EXPENSE_STATUS.LOCKED;
+  const archived = raw.status === EXPENSE_STATUS.ARCHIVED;
   const nor = raw.norId ? getNorById(raw.norId) : null;
   const audit = svc.getExpenseAudit(raw.id);
   const auditRows = audit.map(a => `
@@ -761,8 +879,13 @@ function detailDrawer() {
         </div>
       </div>
       <div style="padding:14px 22px;border-top:1px solid var(--border2);display:flex;gap:10px">
-        ${locked && nor ? `<button data-act="openNorFromDetail" data-id="${esc(nor.id)}" style="flex:1;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:11px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer">Lihat NOR Terkait</button>` : `
-          <button data-act="closeDetail" style="flex:1;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:11px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer">Tutup</button>
+        ${locked && nor
+          ? `<button data-act="openNorFromDetail" data-id="${esc(nor.id)}" style="flex:1;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:11px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer">Lihat NOR Terkait</button>`
+          : archived
+            ? `<button data-act="closeDetail" style="flex:1;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:11px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer">Tutup</button>
+          <button data-act="restoreExpense" data-id="${esc(d.id)}" style="display:flex;align-items:center;gap:7px;background:var(--green-tint);border:1px solid var(--green-bd);border-radius:9px;padding:11px 16px;font-weight:600;font-size:13px;color:var(--green);cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M3.51 13a9 9 0 1 0 2.13-9.36L3 7"/></svg>Pulihkan Pengeluaran</button>`
+            : `<button data-act="closeDetail" style="flex:1;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:11px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer">Tutup</button>
+          <button data-act="archiveExpense" data-id="${esc(d.id)}" style="display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:11px 14px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>Arsipkan</button>
           <button data-act="deleteExpense" data-id="${esc(d.id)}" style="background:var(--primary-tint);border:1px solid var(--primary-tint);border-radius:9px;padding:11px 16px;font-weight:600;font-size:13px;color:var(--primary);cursor:pointer">Hapus</button>`}
       </div>
     </div>
@@ -858,8 +981,10 @@ async function onClick(e) {
         document.documentElement.setAttribute('data-theme', cur);
       }
       render(); return;
-    case 'nav': setState({ screen: id, addOpen: false, notifOpen: false, norStep: id === 'norGenerate' ? 'select' : st.norStep }); return;
-    case 'openAdd': setState({ addOpen: true, form: blankForm() }); return;
+    case 'nav': setState({ screen: id, addOpen: false, notifOpen: false, drawerOpen: false, norStep: id === 'norGenerate' ? 'select' : st.norStep }); return;
+    case 'openDrawer': setState({ drawerOpen: true }); return;
+    case 'closeDrawer': setState({ drawerOpen: false }); return;
+    case 'openAdd': setState({ addOpen: true, drawerOpen: false, form: blankForm() }); return;
     case 'closeAdd': setState({ addOpen: false }); return;
     case 'openNotif': setState({ notifOpen: true }); return;
     case 'closeNotif': setState({ notifOpen: false }); return;
@@ -868,15 +993,20 @@ async function onClick(e) {
     case 'pickReceipt': { const inp = root.querySelector('#pcReceiptInput'); if (inp) inp.click(); return; }
     case 'submitAdd': return submitAdd();
     case 'deleteExpense': return doDeleteExpense(id);
+    case 'archiveExpense': return doArchiveExpense(id);
+    case 'restoreExpense': return doRestoreExpense(id);
     case 'openNorFromDetail': setState({ detailId: null, screen: 'norDetail', norDetailId: id }); return;
     case 'filterStatus': setState({ fStatus: id }); return;
     case 'toggleSel': return toggleSel(id);
     case 'selectAll': setState({ selectedIds: svc.availableExpenses().map(x => x.id) }); return;
     case 'clearSel': setState({ selectedIds: [] }); return;
-    case 'gotoPreview': if (st.selectedIds.length) setState({ norStep: 'preview' }); return;
+    case 'gotoPreview': return gotoPreview();
+    case 'toggleTestNor': st.norForm.isTest = !st.norForm.isTest; render(); return;
     case 'backToSelect': setState({ norStep: 'select' }); return;
     case 'confirmGenerate': return confirmGenerate();
     case 'norOpen': setState({ screen: 'norDetail', norDetailId: id }); return;
+    case 'filterNorType': setState({ norFilter: id }); return;
+    case 'archiveTestNor': return doArchiveTestNor(id);
     case 'exportNor': return doExportNor(id);
     case 'printNor': return doPrintNor(id);
     case 'receiveFunds': return openCycleModal(id);
@@ -896,13 +1026,51 @@ function onInput(e) {
   if (!el) return;
   const act = el.dataset.act;
   const v = el.value;
+  // List-filter inputs re-render the visible list. They carry data-focus so the
+  // search box itself survives the re-render (the box is not a typed-into form).
   if (act === 'search') { st.fSearch = v; render(); return; }
   if (act === 'norSearch') { st.norSearch = v; render(); return; }
-  if (act === 'formInput') { st.form[el.name] = v; st.form._err = ''; render(); return; }
-  if (act === 'norForm') { st.norForm[el.name] = v; render(); return; }
-  if (act === 'newBalInput') { st.newCycleBalance = v; return; } // no re-render needed
-  if (act === 'setInput') { setDraftField(el.name, v); render(); return; }
-  if (act === 'sigInput') { setSigField(el.dataset.id, el.name, v); render(); return; }
+  // ── Form fields: update state ONLY — never re-render the active form. ──
+  // A full render() here would replace the focused <input>, destroying its
+  // native focus and caret on every keystroke. The DOM already shows the typed
+  // value, so state just needs to stay in sync for the next structural render
+  // (open/close/submit). Read-only previews that depend on a field are patched
+  // in place below, without touching the form. (v1.13.2 focus-retention fix)
+  if (act === 'formInput') { st.form[el.name] = v; st.form._err = ''; clearAddError(); return; }
+  if (act === 'norForm') { st.norForm[el.name] = v; patchNorPreview(); return; }
+  if (act === 'newBalInput') { st.newCycleBalance = v; return; }
+  if (act === 'setInput') { setDraftField(el.name, v); patchSettingsStats(); return; }
+  if (act === 'sigInput') { setSigField(el.dataset.id, el.name, v); return; }
+}
+
+/* ── Targeted in-place patches for read-only previews ──────────────────
+   These update a single dependent display node without re-rendering the
+   form, so typed inputs keep focus and caret naturally. */
+function clearAddError() {
+  const errEl = root && root.querySelector('#pcAddErr');
+  if (errEl) errEl.remove();
+}
+function patchNorPreview() {
+  if (!root) return;
+  const full = root.querySelector('#pcNorFull');
+  if (full) {
+    const valid = isValidNorSequence(st.norForm.sequence);
+    full.textContent = valid
+      ? norNumberFromSequence(st.norForm.sequence, st.norForm.date)
+      : 'Masukkan nomor urut (angka) untuk melihat nomor lengkap';
+    full.style.color = valid ? 'var(--primary-text)' : 'var(--muted)';
+    full.style.fontWeight = valid ? '600' : '';
+  }
+  const subj = root.querySelector('#pcNorSubject');
+  if (subj) subj.textContent = norAutoSubject(st.norForm.date);
+}
+function patchSettingsStats() {
+  if (!root) return;
+  const sd = st.settingsDraft || {};
+  const o = root.querySelector('#pcStatOpening');
+  if (o) o.textContent = rp(sd.openingBalance);
+  const t = root.querySelector('#pcStatThreshold');
+  if (t) t.textContent = rp(sd.lowBalanceThreshold);
 }
 
 function onChange(e) {
@@ -910,8 +1078,15 @@ function onChange(e) {
   if (!el) return;
   const act = el.dataset.act;
   if (act === 'filterUnit') { setState({ fUnit: el.value }); return; }
-  if (act === 'formInput') { st.form[el.name] = el.value; st.form._err = ''; render(); return; }
-  if (act === 'norForm') { st.norForm[el.name] = el.value; render(); return; }
+  if (act === 'formInput') {
+    st.form[el.name] = el.value; st.form._err = '';
+    // Only the Unit select toggles dependent layout (the custom-unit field),
+    // so it alone needs a structural re-render. Other fields (category select,
+    // date picker) update state silently to preserve focus. (v1.13.2)
+    if (el.name === 'unit') render(); else clearAddError();
+    return;
+  }
+  if (act === 'norForm') { st.norForm[el.name] = el.value; patchNorPreview(); return; }
   if (act === 'receiptFile') { return onReceiptFile(el); }
 }
 
@@ -943,12 +1118,50 @@ async function doDeleteExpense(id) {
   catch (err) { toast(err.message || 'Gagal menghapus'); }
 }
 
+async function doArchiveExpense(id) {
+  const e = getExpenseById(id);
+  const ref = e ? e.refNumber : 'ini';
+  // Confirmation required (P3). Archiving is reversible via the Arsip filter.
+  if (!window.confirm(`Arsipkan pengeluaran ${ref}?\n\nPengeluaran akan keluar dari daftar operasional dan tidak dapat dipilih untuk NOR. Anda dapat memulihkannya kapan saja dari filter Arsip.`)) return;
+  try { await svc.archiveExpense(id); setState({ detailId: null }); toast('Pengeluaran diarsipkan'); }
+  catch (err) { toast(err.message || 'Gagal mengarsipkan'); }
+}
+
+async function doRestoreExpense(id) {
+  try { await svc.restoreExpense(id); setState({ detailId: null }); toast('Pengeluaran dipulihkan'); }
+  catch (err) { toast(err.message || 'Gagal memulihkan'); }
+}
+
+function gotoPreview() {
+  if (!st.selectedIds.length) { toast('Pilih minimal satu nota untuk lanjut.'); return; }
+  if (!isValidNorSequence(st.norForm.sequence)) { toast('Nomor urut NOR wajib diisi (angka positif).'); return; }
+  setState({ norStep: 'preview' });
+}
+
 async function confirmGenerate() {
+  if (!isValidNorSequence(st.norForm.sequence)) { toast('Nomor urut NOR wajib diisi (angka positif).'); return; }
   try {
-    const nor = await svc.generateNor({ expenseIds: st.selectedIds, norNumber: st.norForm.number, norDate: st.norForm.date });
-    setState({ selectedIds: [], norStep: 'select', screen: 'norDetail', norDetailId: nor.id, norForm: { number: '', date: todayISO() } });
-    toast(`NOR ${nor.norNumber} berhasil dibuat`);
+    const fullNumber = norNumberFromSequence(st.norForm.sequence, st.norForm.date);
+    const nor = await svc.generateNor({
+      expenseIds: st.selectedIds, norNumber: fullNumber, norDate: st.norForm.date,
+      type: st.norForm.isTest ? NOR_TYPE.TEST : NOR_TYPE.OFFICIAL,
+    });
+    setState({
+      selectedIds: [], norStep: 'select', screen: 'norDetail', norDetailId: nor.id,
+      norFilter: NOR_TYPE.OFFICIAL, // non-archived NORs (incl. Test) live under Official
+      norForm: { sequence: '', date: todayISO(), isTest: false },
+    });
+    toast(`NOR ${nor.norNumber} berhasil dibuat${nor.type === NOR_TYPE.TEST ? ' (TEST)' : ''}`);
   } catch (err) { toast(err.message || 'Gagal membuat NOR'); }
+}
+
+async function doArchiveTestNor(id) {
+  const nor = getNorById(id); if (!nor) return;
+  try {
+    await svc.archiveTestNor(id);
+    setState({ screen: 'norHistory', norFilter: 'archived', norDetailId: null });
+    toast(`${nor.norNumber} diarsipkan${nor.type === NOR_TYPE.TEST ? ' (Test)' : ''}`);
+  } catch (err) { toast(err.message || 'Gagal mengarsipkan'); }
 }
 
 async function doExportNor(id) {

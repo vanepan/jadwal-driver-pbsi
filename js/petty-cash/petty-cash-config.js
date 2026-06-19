@@ -41,6 +41,14 @@ export const NOR_STATUS = {
   CLOSED: 'closed',
 };
 
+/**
+ * NOR document type. A "test" NOR is a UAT / development artifact: it is
+ * generated for verification only, so it NEVER locks expenses, NEVER
+ * affects operational metrics, and is hidden from the default (Official)
+ * history view. Archiving any NOR converts it to an archived test record.
+ */
+export const NOR_TYPE = { OFFICIAL: 'official', TEST: 'test' };
+
 /** Cycle lifecycle. */
 export const CYCLE_STATUS = { ACTIVE: 'active', CLOSED: 'closed' };
 
@@ -50,8 +58,11 @@ export const AUDIT_ACTION = {
   EXPENSE_UPDATED: 'expense_updated',
   EXPENSE_LOCKED: 'expense_locked',
   EXPENSE_DELETED: 'expense_deleted',
+  EXPENSE_ARCHIVED: 'expense_archived',
+  EXPENSE_RESTORED: 'expense_restored',
   NOR_GENERATED: 'nor_generated',
   NOR_EXPORTED: 'nor_exported',
+  NOR_ARCHIVED: 'nor_archived',
   NOR_REPLENISHED: 'nor_replenished',
   CYCLE_CLOSED: 'cycle_closed',
   CYCLE_CREATED: 'cycle_created',
@@ -63,8 +74,11 @@ export const AUDIT_LABEL = {
   [AUDIT_ACTION.EXPENSE_UPDATED]: 'Pengeluaran diperbarui',
   [AUDIT_ACTION.EXPENSE_LOCKED]: 'Dimasukkan ke NOR',
   [AUDIT_ACTION.EXPENSE_DELETED]: 'Pengeluaran dihapus',
+  [AUDIT_ACTION.EXPENSE_ARCHIVED]: 'Pengeluaran diarsipkan',
+  [AUDIT_ACTION.EXPENSE_RESTORED]: 'Pengeluaran dipulihkan',
   [AUDIT_ACTION.NOR_GENERATED]: 'NOR diterbitkan',
   [AUDIT_ACTION.NOR_EXPORTED]: 'NOR diekspor',
+  [AUDIT_ACTION.NOR_ARCHIVED]: 'NOR diarsipkan',
   [AUDIT_ACTION.NOR_REPLENISHED]: 'Dana pengganti diterima',
   [AUDIT_ACTION.CYCLE_CLOSED]: 'Siklus ditutup',
   [AUDIT_ACTION.CYCLE_CREATED]: 'Siklus baru dimulai',
@@ -76,8 +90,11 @@ export const AUDIT_COLOR = {
   [AUDIT_ACTION.EXPENSE_UPDATED]: '#a9781a',
   [AUDIT_ACTION.EXPENSE_LOCKED]: '#a9781a',
   [AUDIT_ACTION.EXPENSE_DELETED]: '#9a1b2d',
+  [AUDIT_ACTION.EXPENSE_ARCHIVED]: '#8b857c',
+  [AUDIT_ACTION.EXPENSE_RESTORED]: '#2f7d5b',
   [AUDIT_ACTION.NOR_GENERATED]: '#4f73a8',
   [AUDIT_ACTION.NOR_EXPORTED]: '#7a5aa8',
+  [AUDIT_ACTION.NOR_ARCHIVED]: '#8b857c',
   [AUDIT_ACTION.NOR_REPLENISHED]: '#2f7d5b',
   [AUDIT_ACTION.CYCLE_CLOSED]: '#a9781a',
   [AUDIT_ACTION.CYCLE_CREATED]: '#2f7d5b',
@@ -148,6 +165,34 @@ export function todayISO() {
 /** Auto-generated NOR subject from the NOR date. Read-only in the UI. */
 export function norAutoSubject(date) {
   return `Realisasi Petty Cash Pertanggal ${fmtLong(date)} Bidang Sarana dan Prasarana`;
+}
+
+/* ── NOR number auto-formatter ───────────────────────────────────────
+   The user types only the sequence number (e.g. "120"); the system
+   composes the full official number from the NOR DATE (never the system
+   date): "120/Nota Organisasi/Sarpras/VI/2026". */
+const ROMAN_MONTHS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+
+/** Roman month (I…XII) derived from an ISO date's month. */
+export function romanMonth(iso) {
+  const m = parseInt(String(iso || '').split('-')[1], 10);
+  return (m >= 1 && m <= 12) ? ROMAN_MONTHS[m - 1] : '';
+}
+
+/** Validate a NOR sequence: required, digits only, positive integer.
+    Rejects "", "ABC", "12A", "120/Nota". */
+export function isValidNorSequence(v) {
+  const s = String(v == null ? '' : v).trim();
+  return /^[0-9]+$/.test(s) && parseInt(s, 10) > 0;
+}
+
+/** Compose the full NOR number from a sequence + the NOR date.
+    norNumberFromSequence('120', '2026-06-19')
+      → '120/Nota Organisasi/Sarpras/VI/2026'. */
+export function norNumberFromSequence(seq, iso) {
+  const n = String(seq == null ? '' : seq).trim();
+  const year = String(iso || '').split('-')[0] || '';
+  return `${n}/Nota Organisasi/Sarpras/${romanMonth(iso)}/${year}`;
 }
 
 /** Display unit name (resolves "Others" → custom unit name). */

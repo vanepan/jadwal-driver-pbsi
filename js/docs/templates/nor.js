@@ -124,10 +124,13 @@ function build(vm) {
     pageMargins: [56, 40, 56, 40],
     info: { title: `Nota Organisasi — ${d.norNumber || ''}`, author: 'Sarpras Operations' },
     defaultStyle: { fontSize: 10, color: INK, lineHeight: 1.3 },
-    footer: (currentPage, pageCount) => ({
+    // Page 1 (NOTA ORGANISASI) is a formal PBSI document — NO footer at all
+    // (no app name, no branding, no page number). Footer appears on page 2+
+    // only (RINCIAN PENGGUNAAN PETTY CASH). (v1.13.2)
+    footer: (currentPage, pageCount) => (currentPage === 1 ? undefined : {
       margin: [56, 6, 56, 0],
       columns: [
-        { text: `PBSI Operations Platform v${APP_VERSION} — Nota Organisasi Realisasi Petty Cash`,
+        { text: `Sarpras Operations Platform v${APP_VERSION} — Nota Organisasi Realisasi Petty Cash`,
           fontSize: 6.5, color: '#9a9a9a' },
         { text: `Hal. ${currentPage} / ${pageCount}`, fontSize: 6.5, color: '#9a9a9a', alignment: 'right' },
       ],
@@ -135,7 +138,11 @@ function build(vm) {
 
     content: [
       /* ── PAGE 1: NOTA ORGANISASI ─────────────────────────────── */
-      { image: PBSI_LOGO_DATA_URI, width: 38, alignment: 'center', margin: [0, 0, 0, 4] },
+      ...(d.isTest ? [{
+        text: 'TEST ONLY — DOKUMEN TIDAK SAH', fontSize: 9, bold: true, color: INK,
+        alignment: 'center', characterSpacing: 1.5, margin: [0, 0, 0, 12],
+      }] : []),
+      { image: PBSI_LOGO_DATA_URI, width: 56, alignment: 'center', margin: [0, 0, 0, 6] },
       { text: 'NOTA ORGANISASI', fontSize: 13, bold: true, alignment: 'center', margin: [0, 0, 0, 14] },
 
       { text: `Jakarta, ${d.dateLong || ''}`, fontSize: 10, margin: [0, 0, 0, 0] },
@@ -199,9 +206,19 @@ function build(vm) {
 
 register('nor', {
   build,
+  // Filename: "Nota Organisasi Sarpras [SEQUENCE] - [PERIHAL].pdf" (v1.13.2).
+  // Uses ONLY the NOR sequence (e.g. "120"), never the full composed number
+  // (no slashes / Roman month). Sanitised for Windows/macOS.
   filename: (d) => {
-    const safe = s => String(s || '').replace(/[^a-z0-9]/gi, '-').replace(/-+/g, '-');
-    return `NOR-${safe(d.norNumber)}.pdf`;
+    const sequence = String(d.norNumber || '').split('/')[0].trim();
+    const perihal = String(d.subject || '').trim();
+    const raw = `Nota Organisasi Sarpras ${sequence}${perihal ? ` - ${perihal}` : ''}`;
+    const safe = raw
+      .replace(/[<>:"/\\|?*\x00-\x1f]/g, ' ') // strip OS-reserved + control chars
+      .replace(/\s+/g, ' ')                    // collapse whitespace
+      .replace(/[. ]+$/, '')                   // no trailing dot/space (Windows)
+      .trim();
+    return `${safe || 'Nota Organisasi Sarpras'}.pdf`;
   },
   meta: { title: 'Nota Organisasi', label: 'Nota Organisasi Realisasi Petty Cash' },
 });

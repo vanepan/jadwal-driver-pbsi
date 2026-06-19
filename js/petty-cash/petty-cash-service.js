@@ -20,7 +20,7 @@
 
 import { getCurrentUser } from '../auth.js';
 import {
-  EXPENSE_STATUS, NOR_STATUS, CYCLE_STATUS, AUDIT_ACTION, AUDIT_LABEL, AUDIT_COLOR,
+  EXPENSE_STATUS, NOR_STATUS, NOR_TYPE, CYCLE_STATUS, AUDIT_ACTION, AUDIT_LABEL, AUDIT_COLOR,
   norAutoSubject, unitDisplay, todayISO,
 } from './petty-cash-config.js';
 import {
@@ -28,6 +28,12 @@ import {
   getExpenseById, getNorById, putExpense, putNor, putCycle, putAudit,
   deleteExpense as storeDeleteExpense, applyUpdates, PETTY_CASH_PATHS as P,
 } from './petty-cash-store.js';
+
+/** Operational (official, non-archived) NORs — the only ones that count
+    toward reporting metrics. Test and archived NORs are excluded. */
+export function operationalNors() {
+  return getNors().filter(n => n.type !== NOR_TYPE.TEST && !n.archived);
+}
 
 /* ── Identity helpers ───────────────────────────────────────────── */
 export function currentActor() {
@@ -102,7 +108,7 @@ export function computeMetrics() {
   return {
     cycle, opening, spent, balance,
     availableCount: avail.length, availableTotal,
-    expenseCount: active.length, norCount: getNors().length,
+    expenseCount: active.length, norCount: operationalNors().length,
     usagePct, low, threshold: settings.lowBalanceThreshold,
   };
 }
@@ -158,10 +164,48 @@ export async function removeExpense(id) {
   await writeAudit(AUDIT_ACTION.EXPENSE_DELETED, 'expense', id, `Nota ${e.refNumber} dihapus`);
 }
 
+/* ── Expense archive (v1.13.2) ──────────────────────────────────────
+   Archived expenses leave every operational view (list, dashboard,
+   metrics) and cannot be selected for a NOR, but remain searchable under
+   the Arsip filter and restorable. Only AVAILABLE expenses may be archived
+   — LOCKED ones belong to an issued NOR and stay immutable. */
+
+/** Archived expenses (newest first) — the Arsip filter's data source. */
+export function archivedExpenses() {
+  return getExpenses()
+    .filter(e => e.status === EXPENSE_STATUS.ARCHIVED)
+    .sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+}
+
+/** Archive an AVAILABLE expense → status=archived. */
+export async function archiveExpense(id) {
+  const e = getExpenseById(id);
+  if (!e) throw new Error('Pengeluaran tidak ditemukan.');
+  if (e.status === EXPENSE_STATUS.LOCKED) throw new Error('Pengeluaran terkunci dalam NOR tidak dapat diarsipkan.');
+  if (e.status === EXPENSE_STATUS.ARCHIVED) return e;
+  const next = { ...e, status: EXPENSE_STATUS.ARCHIVED, updatedAt: Date.now() };
+  await putExpense(next);
+  await writeAudit(AUDIT_ACTION.EXPENSE_ARCHIVED, 'expense', id, `Nota ${e.refNumber} diarsipkan`);
+  return next;
+}
+
+/** Restore an ARCHIVED expense → status=available. */
+export async function restoreExpense(id) {
+  const e = getExpenseById(id);
+  if (!e) throw new Error('Pengeluaran tidak ditemukan.');
+  if (e.status !== EXPENSE_STATUS.ARCHIVED) throw new Error('Hanya pengeluaran terarsip yang dapat dipulihkan.');
+  const next = { ...e, status: EXPENSE_STATUS.AVAILABLE, updatedAt: Date.now() };
+  await putExpense(next);
+  await writeAudit(AUDIT_ACTION.EXPENSE_RESTORED, 'expense', id, `Nota ${e.refNumber} dipulihkan`);
+  return next;
+}
+
 /* ── NOR generation ─────────────────────────────────────────────── */
-export async function generateNor({ expenseIds, norNumber, norDate }) {
+export async function generateNor({ expenseIds, norNumber, norDate, type }) {
   const num = (norNumber || '').trim();
   if (!num) throw new Error('Nomor NOR wajib diisi.');
+  const norType = type === NOR_TYPE.TEST ? NOR_TYPE.TEST : NOR_TYPE.OFFICIAL;
+  const isTest = norType === NOR_TYPE.TEST;
   const ids = (expenseIds || []).slice();
   const selected = availableExpenses().filter(e => ids.includes(e.id));
   if (!selected.length) throw new Error('Pilih minimal satu nota untuk direalisasikan.');
@@ -191,6 +235,8 @@ export async function generateNor({ expenseIds, norNumber, norDate }) {
     id: norId,
     norNumber: num,
     norDate: date,
+    type: norType,
+    archived: false,
     subject: norAutoSubject(date),
     expenseIds: selected.map(e => e.id),
     items,
@@ -204,19 +250,41 @@ export async function generateNor({ expenseIds, norNumber, norDate }) {
     replenishedAt: null,
   };
 
-  // Fan-out: write the NOR and lock every selected expense atomically.
+  // Fan-out: write the NOR. Official NORs lock their selected expenses;
+  // TEST NORs are dry-runs — they never touch expense state or metrics.
   const updates = {};
   updates[`${P.nors}/${norId}`] = nor;
-  selected.forEach(e => {
-    updates[`${P.expenses}/${e.id}`] = { ...e, status: EXPENSE_STATUS.LOCKED, norId, updatedAt: now };
-  });
+  if (!isTest) {
+    selected.forEach(e => {
+      updates[`${P.expenses}/${e.id}`] = { ...e, status: EXPENSE_STATUS.LOCKED, norId, updatedAt: now };
+    });
+  }
   await applyUpdates(updates);
 
-  await writeAudit(AUDIT_ACTION.NOR_GENERATED, 'nor', norId, `${num} · ${selected.length} nota · ${realized}`);
-  for (const e of selected) {
-    await writeAudit(AUDIT_ACTION.EXPENSE_LOCKED, 'expense', e.id, `Terkunci dalam ${num}`);
+  await writeAudit(AUDIT_ACTION.NOR_GENERATED, 'nor', norId,
+    `${num} · ${selected.length} nota · ${realized}${isTest ? ' · TEST' : ''}`);
+  if (!isTest) {
+    for (const e of selected) {
+      await writeAudit(AUDIT_ACTION.EXPENSE_LOCKED, 'expense', e.id, `Terkunci dalam ${num}`);
+    }
   }
   return nor;
+}
+
+/**
+ * Archive a NOR (v1.13.2): sets archived=true while PRESERVING the original
+ * type. An archived Official NOR stays Official ("ARSIP"); an archived Test
+ * NOR stays Test ("ARSIP · TEST"). Archived NORs leave the Official view and
+ * are excluded from metrics. Does NOT unlock expenses (preserves the
+ * historical snapshot). Export name kept for caller compatibility.
+ */
+export async function archiveTestNor(norId) {
+  const nor = getNorById(norId);
+  if (!nor) throw new Error('NOR tidak ditemukan.');
+  await putNor({ ...nor, archived: true, archivedAt: Date.now() });
+  const tag = nor.type === NOR_TYPE.TEST ? ' (test)' : '';
+  await writeAudit(AUDIT_ACTION.NOR_ARCHIVED, 'nor', norId, `${nor.norNumber} diarsipkan${tag}`);
+  return true;
 }
 
 /** Record that a NOR was exported (PDF or Excel). */

@@ -51,6 +51,7 @@ export function buildNorViewModel(nor) {
 
   return {
     norNumber: nor.norNumber,
+    isTest: nor.type === 'test',
     dateLong: fmtLong(nor.norDate),
     subject: nor.subject,
     senderTitle: settings.senderTitle,

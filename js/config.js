@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.13.0';
-export const RELEASE_NAME = 'Petty Cash Center';
+export const APP_VERSION = '1.13.1';
+export const RELEASE_NAME = 'Petty Cash Center — Mobile Hardening + NOR Finalization';
 
 /**
  * Web Push VAPID PUBLIC key (v1.11.3). Safe to ship — it is an
@@ -17,6 +17,19 @@ export const RELEASE_NAME = 'Petty Cash Center';
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.13.1',
+    date: '2026-06-19',
+    summary: 'Petty Cash Center mobile hardening (drawer nav, compact header, single-column reflow, no horizontal scroll) and NOR document finalization to match the official PBSI template',
+    highlights: [
+      'Mobile responsive (P1): below 1024px the desktop icon rail + sidebar are hidden and replaced by a slide-in drawer (Dashboard, Pengeluaran, Generate NOR, Riwayat NOR, Pengaturan + Admin Only badge, Tambah Pengeluaran, theme toggle, exit, and the user profile card). The topbar collapses to a compact header — page title · notification · hamburger — with the desktop search box, date selector, and profile chip hidden via .pc-desktop-only',
+      'Horizontal-overflow elimination: .pc-root is overflow-x:hidden / max-width:100vw and every fixed-width grid (expenses table, NOR select list, signatory editor) reflows into stacked single-column cards at <1024px via nth-child ordering, so document.documentElement.scrollWidth stays equal to window.innerWidth. KPI cards stack full-width with 16px padding',
+      'NOR finalization to match the official PBSI template (Sarpras 113/120): "NOTA ORGANISASI" title with no underline, PBSI mark enlarged to ~75px on-screen / 56pt in PDF, "Jakarta, <tanggal>" and "No.<nomor>" BOTH flush-left with the date directly above the number (no right-aligned date), and every signatory block (Kabid Sarpras, Wakil Ketua Umum III, Sekretaris Jenderal, Wakil Bendahara + page-2 recap) left-aligned. On-screen paper renders in Arial 10pt; the pdfmake PDF reuses the shared Document Engine (no second engine) with the closest embedded face',
+      'NOR number auto-formatter: the user types only the sequence number (e.g. "120") and the system composes the full official number from the NOR DATE (not the system date) — "120/Nota Organisasi/Sarpras/VI/2026" — with a live preview that updates on sequence or date change. Roman month + year derive from the NOR date; the sequence is validated as a positive integer (rejects "", ABC, 12A, "120/Nota"). Only the fully composed number is stored, shown everywhere (preview, detail, riwayat, PDF, Excel, print); existing NOR records are untouched',
+      'Test NOR mode: "Generate as Test NOR" produces a UAT/dev artifact (type=test) that NEVER locks expenses and NEVER affects operational metrics (operationalNors() excludes test + archived). A TEST ONLY banner shows on the history card, NOR detail, and the document (on-screen + PDF). Riwayat NOR gains Official | Test | Archived filters defaulting to Official; an Archive action retires a test NOR (and can convert a stray official NOR) to an archived test record that is hidden from the Official/Test views',
+      'Client-only release: no Cloud Functions, rules, schema, or notification-engine code changed; SERVICE_VERSION unchanged. The APP_VERSION bump (+ sync-version.mjs) re-stamps SW_VERSION → CACHE_NAME (sarpras-cache-v1.13.1) so installed PWAs purge the 1.13.0 cache and re-fetch the hardened module + stylesheet',
+    ],
+  },
   {
     version: '1.12.2.1',
     date: '2026-06-18',
