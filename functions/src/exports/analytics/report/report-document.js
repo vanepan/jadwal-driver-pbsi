@@ -27,6 +27,8 @@ const { buildDriverReport } = require('./reports/driver-report');
 const { buildVehicleReport } = require('./reports/vehicle-report');
 const { buildBidangReport } = require('./reports/bidang-report');
 const { buildCompleteReport } = require('./reports/complete-report');
+const { buildPettyCashReport } = require('./reports/petty-cash-report');
+const { buildExecutiveReport } = require('./reports/executive-report');
 
 /** Wrap page HTML in the document shell (fonts + stylesheet inlined). */
 function htmlShell(bodyHtml) {
@@ -134,6 +136,8 @@ const TEMPLATES = {
   'analytics-vehicle': (model) => htmlShell(buildVehicleReport(model)),
   'analytics-bidang': (model) => htmlShell(buildBidangReport(model)),
   'analytics-complete': (model) => htmlShell(buildCompleteReport(model)),
+  'analytics-petty-cash': (model) => htmlShell(buildPettyCashReport(model)),
+  'analytics-executive': (model) => htmlShell(buildExecutiveReport(model)),
 };
 
 /**

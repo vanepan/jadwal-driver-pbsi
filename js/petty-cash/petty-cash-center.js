@@ -954,7 +954,9 @@ function addModal() {
             <select name="unit" data-act="formInput" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text);cursor:pointer">${units}</select></label>
         </div>
         ${f.unit === 'Others' ? `<label style="display:block"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Nama Unit *</span>
-          <input name="customUnit" data-act="formInput" data-focus="customUnit" value="${esc(f.customUnit)}" placeholder="Contoh: Sekretariat, Humas, Turnamen, PP PBSI" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text)"/></label>` : ''}
+          <input name="customUnit" list="pcBidangOptions" autocomplete="off" data-act="formInput" data-focus="customUnit" value="${esc(f.customUnit)}" placeholder="Contoh: Sekretariat, Humas, Turnamen, PP PBSI" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text)"/>
+          <datalist id="pcBidangOptions">${svc.bidangRoster().map(b => `<option value="${esc(b.name)}"></option>`).join('')}</datalist>
+          <span style="display:block;margin-top:5px;font-size:10.5px;color:var(--muted)">Cocokkan dengan nama bidang bila tersedia — dipakai untuk analitik penggunaan dana per bidang.</span></label>` : ''}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
           <label style="display:block"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Kategori *</span>
             <select name="category" data-act="formInput" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text);cursor:pointer">${cats}</select></label>

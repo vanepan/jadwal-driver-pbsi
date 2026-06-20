@@ -34,6 +34,7 @@ const { renderHtmlToPdf } = require('./render/puppeteer-renderer');
 
 const ALLOWED_TEMPLATES = new Set([
   'poc', 'analytics-driver', 'analytics-vehicle', 'analytics-bidang', 'analytics-complete',
+  'analytics-petty-cash', 'analytics-executive',
 ]);
 
 const exportAnalyticsReport = onCall(

@@ -19,6 +19,8 @@
 'use strict';
 
 import { getCurrentUser } from '../auth.js';
+import { getUserList } from '../users.js';
+import { matchBidang } from './bidang-matcher.js';
 import {
   EXPENSE_STATUS, NOR_STATUS, NOR_TYPE, CYCLE_STATUS, AUDIT_ACTION, AUDIT_LABEL, AUDIT_COLOR,
   norAutoSubject, unitDisplay, todayISO,
@@ -34,6 +36,28 @@ import {
     toward reporting metrics. Test and archived NORs are excluded. */
 export function operationalNors() {
   return getNors().filter(n => n.type !== NOR_TYPE.TEST && !n.archived);
+}
+
+/* ── Bidang analytics metadata (v1.15.0) ─────────────────────────────
+   The expense form carries no dedicated Bidang field. For "Others" units,
+   the Nama Unit free-text is matched against the bidang user roster
+   (role='bidang') and the resolved { bidangId, bidangName } is stored as
+   analytics metadata (null when no confident match). Engineering / Cleaning
+   Service are fixed operational units and never carry a bidang. */
+export function bidangRoster() {
+  return getUserList()
+    .filter(u => u && u.role === 'bidang' && u.archived !== true)
+    .map(u => ({ id: u.username, name: u.displayName || u.username }))
+    .filter(b => b.name);
+}
+
+/** Resolve { bidangId, bidangName } for an expense input (null when N/A). */
+export function resolveExpenseBidang({ unit, customUnit } = {}) {
+  if ((unit || '') !== 'Others') return { bidangId: null, bidangName: null };
+  const text = (customUnit || '').trim();
+  if (!text) return { bidangId: null, bidangName: null };
+  const m = matchBidang(text, bidangRoster());
+  return { bidangId: m.bidangId, bidangName: m.bidangName };
 }
 
 /* ── Identity helpers ───────────────────────────────────────────── */
@@ -151,12 +175,15 @@ export async function createExpense(input) {
   const cycle = getActiveCycle();
   const now = Date.now();
   const id = genId('exp');
+  const bidang = resolveExpenseBidang({ unit: input.unit, customUnit: input.customUnit });
   const expense = {
     id,
     refNumber: nextRefNumber(),
     expenseDate: input.expenseDate || todayISO(),
     unit: input.unit || 'Engineering',
     customUnit: input.unit === 'Others' ? (input.customUnit || '').trim() : '',
+    bidangId: bidang.bidangId,
+    bidangName: bidang.bidangName,
     category: input.category || 'Lainnya',
     amount: input.amount || 0,
     description: (input.description || '').trim(),
@@ -178,10 +205,16 @@ export async function updateExpense(id, patch) {
   const e = getExpenseById(id);
   if (!e) throw new Error('Pengeluaran tidak ditemukan.');
   if (e.status !== EXPENSE_STATUS.AVAILABLE) throw new Error('Pengeluaran terkunci tidak dapat diubah.');
+  const nextUnit = patch.unit || e.unit;
+  const nextCustom = nextUnit === 'Others' ? (patch.customUnit ?? e.customUnit) : '';
+  // Re-resolve bidang metadata whenever the unit / Nama Unit can change.
+  const bidang = resolveExpenseBidang({ unit: nextUnit, customUnit: nextCustom });
   const next = {
     ...e,
     ...patch,
-    customUnit: (patch.unit || e.unit) === 'Others' ? (patch.customUnit ?? e.customUnit) : '',
+    customUnit: nextCustom,
+    bidangId: bidang.bidangId,
+    bidangName: bidang.bidangName,
     updatedAt: Date.now(),
   };
   await putExpense(next);

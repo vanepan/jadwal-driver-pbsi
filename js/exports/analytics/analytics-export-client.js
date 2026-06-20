@@ -20,10 +20,15 @@ import './driver-template.js';  // self-registers 'analytics-driver'
 import './vehicle-template.js'; // self-registers 'analytics-vehicle'
 import './bidang-template.js';   // self-registers 'analytics-bidang'
 import './complete-template.js'; // self-registers 'analytics-complete'
+import './petty-cash-template.js'; // self-registers 'analytics-petty-cash'
+import './executive-template.js';  // self-registers 'analytics-executive'
 import { buildDriverReportModel } from './model/driver-report-model.js';
 import { buildVehicleReportModel } from './model/vehicle-report-model.js';
 import { buildBidangReportModel } from './model/bidang-report-model.js';
 import { buildCompleteReportModel } from './model/complete-report-model.js';
+import { buildPettyCashReportModel } from './model/petty-cash-report-model.js';
+import { buildExecutiveReportModel } from './model/executive-report-model.js';
+import { exportExpensesExcel } from '../../petty-cash/nor-excel-exporter.js';
 
 /**
  * Generate the A4 foundation POC via the Puppeteer backend and open it
@@ -132,6 +137,40 @@ export async function exportCompleteAnalytics(analyticsModel, meta = {}) {
   });
 }
 
+/**
+ * Project the Petty Cash analytics model into its report and render server-side.
+ * @param {Object} pettyModel PettyCashAnalyticsModel
+ * @param {Object} [meta]
+ * @returns {Promise<{blob:Blob, filename:string}>}
+ */
+export async function exportPettyCashAnalytics(pettyModel, meta = {}) {
+  if (!pettyModel || !pettyModel.hero) {
+    throw new Error('exportPettyCashAnalytics: PettyCashAnalyticsModel required.');
+  }
+  const reportModel = buildPettyCashReportModel(pettyModel, meta);
+  return DocumentEngine.generateAndOpen('analytics-petty-cash', reportModel, {
+    backend: 'puppeteer', cache: false,
+    viewer: { title: 'Laporan Analitik Petty Cash' },
+  });
+}
+
+/**
+ * Project the Executive analytics model into its report and render server-side.
+ * @param {Object} execModel ExecutiveAnalyticsModel
+ * @param {Object} [meta]
+ * @returns {Promise<{blob:Blob, filename:string}>}
+ */
+export async function exportExecutiveAnalytics(execModel, meta = {}) {
+  if (!execModel || !execModel.score) {
+    throw new Error('exportExecutiveAnalytics: ExecutiveAnalyticsModel required.');
+  }
+  const reportModel = buildExecutiveReportModel(execModel, meta);
+  return DocumentEngine.generateAndOpen('analytics-executive', reportModel, {
+    backend: 'puppeteer', cache: false,
+    viewer: { title: 'Laporan Eksekutif Operasional' },
+  });
+}
+
 // Console-reachable verification hooks (Phase A/B). The Driver hook reads
 // the live model that app.js exposes for export.
 if (typeof window !== 'undefined') {
@@ -156,4 +195,19 @@ if (typeof window !== 'undefined') {
     if (!m) throw new Error('Buka tab Analytics dulu agar model tersedia.');
     return exportCompleteAnalytics(m, { ...(window._analyticsExportMeta || {}), ...meta });
   };
+
+  // v1.15.0 — Analytics Petty Cash / Executive export hooks (called by the
+  // mounted views). Each reads the live model the view publishes on render.
+  window.exportPettyCashAnalyticsPdf = (meta = {}) => {
+    const m = window._lastPettyCashAnalyticsModel;
+    if (!m) throw new Error('Buka tab Analytics Petty Cash dulu agar model tersedia.');
+    return exportPettyCashAnalytics(m, { ...(window._pettyCashAnalyticsMeta || {}), ...meta });
+  };
+  window.exportExecutiveAnalyticsPdf = (meta = {}) => {
+    const m = window._lastExecutiveAnalyticsModel;
+    if (!m) throw new Error('Buka tab Analytics Executive dulu agar model tersedia.');
+    return exportExecutiveAnalytics(m, { ...(window._executiveAnalyticsMeta || {}), ...meta });
+  };
+  // Petty Cash Excel reuses the existing cycle workbook exporter (no-arg).
+  window.exportPettyCashAnalyticsExcel = () => exportExpensesExcel();
 }

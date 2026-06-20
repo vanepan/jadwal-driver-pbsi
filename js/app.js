@@ -97,6 +97,8 @@ import { initAdminUI, updateAdminButtons, openUserFormModal } from './admin.js';
 import {
   mountPettyCash, setPettyCashScreen, closePettyCashCenter, openPettyCashAddExpense,
 } from './petty-cash/petty-cash-center.js';
+import { mountAnalyticsPettyCash, closeAnalyticsPettyCash, refreshAnalyticsPettyCash } from './analytics/views/analytics-petty-cash-view.js';
+import { mountAnalyticsExecutive, closeAnalyticsExecutive, refreshAnalyticsExecutive } from './analytics/views/analytics-executive-view.js';
 import { initNotificationUI, setNotificationData, openNotificationsModal } from './notifications.js';
 import { setTelegramBotToken } from './telegram.js';
 import { subscribeLogsChangeListener, getLogs, logAction, ensureLogsLoadedAndSubscribed, resetLogsSync } from './logs.js';
@@ -142,6 +144,9 @@ let activeRailModule = 'driverops';
 let activeAdminModule = 'konfigurasi';
 // v1.14.0: lazy mount flag for the embedded Petty Cash module.
 let pettyCashMounted = false;
+// v1.15.0: lazy mount flags for the new Analytics workspaces.
+let analyticsPettyMounted = false;
+let analyticsExecMounted = false;
 
 // V1.5.0 Phase 2.5.1: Administration workspace section state
 let activeAdminSection = 'users';
@@ -808,15 +813,19 @@ function navAnalyticsDriver() {
   setCrumb('ANALYTICS', 'Analytics Driver');
   setWorkspace('administration');
 }
-function navAnalyticsPettyCash() {
+async function navAnalyticsPettyCash() {
   setV2PanelNavActive('v2NavAnalyticsPetty');
   setCrumb('ANALYTICS', 'Analytics Petty Cash');
-  showModulePlaceholder('Analytics Petty Cash', 'Analytics Petty Cash akan hadir pada versi berikutnya.');
+  setWorkspace('analyticsPetty');
+  analyticsPettyMounted = true;
+  await mountAnalyticsPettyCash(document.getElementById('v2AnalyticsPettyWorkspace'));
 }
-function navAnalyticsGabungan() {
+async function navAnalyticsExecutive() {
   setV2PanelNavActive('v2NavAnalyticsGabungan');
-  setCrumb('ANALYTICS', 'Analytics Gabungan');
-  showModulePlaceholder('Analytics Gabungan', 'Analytics Gabungan akan hadir pada versi berikutnya.');
+  setCrumb('ANALYTICS', 'Analytics Executive');
+  setWorkspace('analyticsExec');
+  analyticsExecMounted = true;
+  await mountAnalyticsExecutive(document.getElementById('v2AnalyticsExecWorkspace'));
 }
 
 /* ── MODUL: Konfigurasi ── */
@@ -1153,7 +1162,7 @@ function initV2Panel() {
       </button>
       <button class="v2-panel-nav-item" id="v2NavAnalyticsGabungan" type="button">
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M5 3a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V5a2 2 0 00-2-2H5zm2.5 9a1.5 1.5 0 100-3 1.5 1.5 0 000 3zm5 0a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/></svg>
-        Analytics Gabungan
+        Analytics Executive
       </button>
     </nav>
 
@@ -1276,7 +1285,7 @@ function initV2Panel() {
   // MODUL Analytics
   document.getElementById('v2NavAnalyticsDriver')?.addEventListener('click', navAnalyticsDriver);
   document.getElementById('v2NavAnalyticsPetty')?.addEventListener('click', navAnalyticsPettyCash);
-  document.getElementById('v2NavAnalyticsGabungan')?.addEventListener('click', navAnalyticsGabungan);
+  document.getElementById('v2NavAnalyticsGabungan')?.addEventListener('click', navAnalyticsExecutive);
 
   // MODUL Konfigurasi
   document.getElementById('v2NavKonfUsers')?.addEventListener('click', navManajemenUser);
@@ -1996,6 +2005,8 @@ function setWorkspace(name) {
   const isAdmWs = name === 'administration';
   const isPc    = name === 'pettycash';
   const isPh    = name === 'placeholder';
+  const isAnPc  = name === 'analyticsPetty';
+  const isAnEx  = name === 'analyticsExec';
 
   const timelineSurface = document.getElementById('v2TimelineSurface');
   const driverDash      = document.getElementById('driverDashboard');
@@ -2003,6 +2014,8 @@ function setWorkspace(name) {
   const adminWs         = document.getElementById('v2AdministrationWorkspace');
   const pcWs            = document.getElementById('v2PettyCashWorkspace');
   const phWs            = document.getElementById('v2PlaceholderWorkspace');
+  const anPcWs          = document.getElementById('v2AnalyticsPettyWorkspace');
+  const anExWs          = document.getElementById('v2AnalyticsExecWorkspace');
 
   if (timelineSurface) timelineSurface.style.display = isDash ? ''      : 'none';
   if (driverDash)      driverDash.style.display      = isDash && isDriver() ? 'block' : 'none';
@@ -2010,10 +2023,20 @@ function setWorkspace(name) {
   if (adminWs)         adminWs.style.display         = isAdmWs ? 'block' : 'none';
   if (pcWs)            pcWs.style.display            = isPc    ? 'block' : 'none';
   if (phWs)            phWs.style.display            = isPh    ? 'block' : 'none';
+  if (anPcWs)          anPcWs.style.display          = isAnPc  ? 'block' : 'none';
+  if (anExWs)          anExWs.style.display          = isAnEx  ? 'block' : 'none';
 
   // Pause the embedded Petty Cash module's live re-render when it is hidden;
   // navPettyCash()/setPettyCashScreen() resume it on return.
   if (!isPc && pettyCashMounted) closePettyCashCenter();
+  // Pause the new Analytics workspaces' live re-render when hidden, and force a
+  // fresh recompute whenever one becomes visible — so a data change made while it
+  // was hidden (e.g. a NOR Official↔Test convert) is always reflected without a
+  // page refresh, on every show path (desktop panel-nav + shared mobile sub-nav).
+  if (!isAnPc && analyticsPettyMounted) closeAnalyticsPettyCash();
+  if (!isAnEx && analyticsExecMounted) closeAnalyticsExecutive();
+  if (isAnPc && analyticsPettyMounted) refreshAnalyticsPettyCash();
+  if (isAnEx && analyticsExecMounted) refreshAnalyticsExecutive();
 
   if (isDash) {
     renderKPIStrip();
@@ -2148,8 +2171,8 @@ function initV2PettyCashWorkspace() {
 }
 
 /**
- * v1.14.0: Inject a shared placeholder workspace used by "coming soon" menus
- * (Analytics Petty Cash, Analytics Gabungan). Content is set by showModulePlaceholder().
+ * v1.14.0: Inject a shared placeholder workspace used by "coming soon" menus.
+ * Content is set by showModulePlaceholder().
  */
 function initV2PlaceholderWorkspace() {
   const ws = document.createElement('div');
@@ -2158,6 +2181,22 @@ function initV2PlaceholderWorkspace() {
   ws.style.display = 'none';
   document.querySelector('.main-content')?.appendChild(ws);
   console.log('[v1.14.0] Placeholder workspace injected');
+}
+
+/**
+ * v1.15.0: Inject the two new Analytics workspace hosts (Petty Cash + Executive).
+ * Each carries the .v2-analytics-claude scope so the Analytics design tokens
+ * resolve, and is mounted lazily on first navigation.
+ */
+function initV2AnalyticsWorkspaces() {
+  ['v2AnalyticsPettyWorkspace', 'v2AnalyticsExecWorkspace'].forEach(id => {
+    const ws = document.createElement('div');
+    ws.id = id;
+    ws.className = 'v2-workspace';
+    ws.style.display = 'none';
+    document.querySelector('.main-content')?.appendChild(ws);
+  });
+  console.log('[v1.15.0] Analytics Petty Cash + Executive workspaces injected');
 }
 
 const V2_ROLE_CONFIG = [
@@ -4897,6 +4936,48 @@ function _getDismissedWarnings(type) {
 
 /* _dqPairKey moved to analytics-engine.js (Sprint 0); re-imported above. */
 
+/**
+ * v1.15.0: Build a Driver AnalyticsModel for a given date range, WITHOUT the
+ * on-screen entity filters, for the Analytics Executive view (which owns no
+ * assignment/request data). Reuses the same engine + previous-period logic as
+ * refreshAnalyticsDisplay; pure with respect to the UI (renders nothing).
+ * @param {'today'|'7d'|'30d'|'90d'|'all'} dateRange
+ * @returns {import('./analytics/analytics-types.js').AnalyticsModel}
+ */
+function computeDriverModelForRange(dateRange) {
+  const range = ['today', '7d', '30d', '90d', 'all'].includes(dateRange) ? dateRange : '30d';
+  const baseCtx = {
+    assignments,
+    requests,
+    drivers: getDrivers(),
+    vehicles: getActiveVehiclesFromStore(),
+    filters: { dateRange: range, driver: '', vehicle: '', bidang: '' },
+    aliases: {
+      destinations: _getAnalyticsAliases('destinations'),
+      bidang: _getAnalyticsAliases('bidang'),
+      drivers: _getAnalyticsAliases('drivers'),
+      vehicles: _getAnalyticsAliases('vehicles'),
+    },
+    dismissed: {
+      destinations: _getDismissedWarnings('destinations'),
+      bidang: _getDismissedWarnings('bidang'),
+      drivers: _getDismissedWarnings('drivers'),
+      vehicles: _getDismissedWarnings('vehicles'),
+    },
+    normalizeAssignmentStatus,
+  };
+  const prev = derivePreviousPeriod(range);
+  let previousModel = null;
+  if (prev.available) {
+    previousModel = computeAnalyticsModel({ ...baseCtx, now: prev.prevNow, windowEnd: prev.windowEnd });
+  }
+  return computeAnalyticsModel({ ...baseCtx, previousModel });
+}
+if (typeof window !== 'undefined') {
+  window.__computeDriverAnalyticsModel = computeDriverModelForRange;
+  window.__APP_VERSION__ = APP_VERSION;
+}
+
 function refreshAnalyticsDisplay() {
   _destroyAnalyticsCharts();
   const overviewRow = document.getElementById('v2AdminOverviewRow');
@@ -7211,6 +7292,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initV2AdministrationWorkspace(); // VSM-9: admin-only administration workspace
     initV2PettyCashWorkspace();   // v1.14.0: embedded Petty Cash module host
     initV2PlaceholderWorkspace(); // v1.14.0: shared "coming soon" placeholder
+    initV2AnalyticsWorkspaces();  // v1.15.0: Analytics Petty Cash + Executive hosts
     initThemeManager();           // VSM-9: dark mode toggle wired to #v2TopbarThemeBtn
   }
 

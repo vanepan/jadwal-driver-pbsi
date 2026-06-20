@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.14.1';
-export const RELEASE_NAME = 'NOR Type Conversion & Navigation Polish';
+export const APP_VERSION = '1.15.0';
+export const RELEASE_NAME = 'Analytics Expansion Foundation';
 
 /**
  * Web Push VAPID PUBLIC key (v1.11.3). Safe to ship — it is an
@@ -17,6 +17,19 @@ export const RELEASE_NAME = 'NOR Type Conversion & Navigation Polish';
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.15.0',
+    date: '2026-06-21',
+    summary: 'Analytics Expansion Foundation: a reusable analytics engine layer (no calculations in UI) powering two new Analytics modules — Analytics Petty Cash and Analytics Executive (renamed from Analytics Gabungan) — plus bidang analytics metadata on petty cash expenses and full PDF/Excel export for both new modules.',
+    highlights: [
+      'Engine layer (js/analytics/engines/): Trend (calculateTrend/calculateGrowth/annualizedProjection), Insight 2.0 (15 rotating templates across Efficiency/Warning/Trend/NOR/Forecast), Ranking (topN/bottomN/distribution), NOR Analytics (officialNorCount/averageRealizationTime/realizationTrend), Spending (category/unit/bidang breakdown, topTransactions, forecast), Executive Score (calculateScore/healthLevel). All pure & engine-tested; UI only renders.',
+      'Analytics Petty Cash: 2 Hero KPI (NOR Official · Rata-rata Waktu Realisasi with period comparison), Ringkasan Siklus Aktif, trend visualization (7/30/90 Hari · 1 Tahun · Annualized with YTD→year-end projection), category & unit breakdown, Spending Intelligence (Top Unit/Bidang/Category/Transaction), and rotating insight cards.',
+      'Analytics Executive (was Analytics Gabungan): Operational Health Score (40% Driver Ops · 30% Vehicle Utilization · 30% Petty Cash Health) with health ring, executive KPIs across Driver + Petty Cash, and cross-domain insights.',
+      'Bidang analytics metadata: the petty cash expense "Nama Unit" (Others) field now autocompletes from the bidang user roster and is matched (exact → fuzzy/token-prefix) on save into { bidangId, bidangName } — no new form field, accurate Top Bidang analytics, null fallback when unmatched.',
+      'Export: new analytics-petty-cash & analytics-executive document templates render through the EXISTING Puppeteer analytics-export pipeline (client report-model projections + server report builders reusing the shared zone components). Petty Cash also exports the existing cycle Excel workbook. Requires a Cloud Functions deploy (new templateIds added to the export callable allowlist).',
+      'Screens are isolated, lazily-mounted workspaces using the Analytics design language (.v2-analytics-claude); no Petty Cash Dashboard layout reused. APP_VERSION bump (+ sync-version.mjs) re-stamps SW_VERSION → CACHE_NAME (sarpras-cache-v1.15.0).',
+    ],
+  },
   {
     version: '1.14.1',
     date: '2026-06-20',
