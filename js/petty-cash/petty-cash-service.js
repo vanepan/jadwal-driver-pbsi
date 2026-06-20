@@ -194,6 +194,9 @@ export async function restoreExpense(id) {
   const e = getExpenseById(id);
   if (!e) throw new Error('Pengeluaran tidak ditemukan.');
   if (e.status !== EXPENSE_STATUS.ARCHIVED) throw new Error('Hanya pengeluaran terarsip yang dapat dipulihkan.');
+  // Cascade-archived expenses are owned by their Test NOR — restore them by
+  // restoring the NOR (restoreNor) so the NOR/expense states stay consistent.
+  if (e.archivedByNor) throw new Error('Pengeluaran ini diarsipkan bersama NOR Test. Pulihkan melalui NOR terkait.');
   const next = { ...e, status: EXPENSE_STATUS.AVAILABLE, updatedAt: Date.now() };
   await putExpense(next);
   await writeAudit(AUDIT_ACTION.EXPENSE_RESTORED, 'expense', id, `Nota ${e.refNumber} dipulihkan`);
@@ -250,23 +253,22 @@ export async function generateNor({ expenseIds, norNumber, norDate, type }) {
     replenishedAt: null,
   };
 
-  // Fan-out: write the NOR. Official NORs lock their selected expenses;
-  // TEST NORs are dry-runs — they never touch expense state or metrics.
+  // Fan-out: write the NOR and lock its selected expenses. Both Official and
+  // TEST NORs now lock their expenses (the TEST case is the "LOCKED TEST"
+  // state) and stamp norId, so the association is authoritative. An Official
+  // lock is released by the cycle-close replenishment; a TEST lock is released
+  // by archiving the NOR (cascade — see archiveTestNor / restoreNor). (v1.13.2)
   const updates = {};
   updates[`${P.nors}/${norId}`] = nor;
-  if (!isTest) {
-    selected.forEach(e => {
-      updates[`${P.expenses}/${e.id}`] = { ...e, status: EXPENSE_STATUS.LOCKED, norId, updatedAt: now };
-    });
-  }
+  selected.forEach(e => {
+    updates[`${P.expenses}/${e.id}`] = { ...e, status: EXPENSE_STATUS.LOCKED, norId, updatedAt: now };
+  });
   await applyUpdates(updates);
 
   await writeAudit(AUDIT_ACTION.NOR_GENERATED, 'nor', norId,
     `${num} · ${selected.length} nota · ${realized}${isTest ? ' · TEST' : ''}`);
-  if (!isTest) {
-    for (const e of selected) {
-      await writeAudit(AUDIT_ACTION.EXPENSE_LOCKED, 'expense', e.id, `Terkunci dalam ${num}`);
-    }
+  for (const e of selected) {
+    await writeAudit(AUDIT_ACTION.EXPENSE_LOCKED, 'expense', e.id, `Terkunci dalam ${num}${isTest ? ' (Test)' : ''}`);
   }
   return nor;
 }
@@ -275,16 +277,89 @@ export async function generateNor({ expenseIds, norNumber, norDate, type }) {
  * Archive a NOR (v1.13.2): sets archived=true while PRESERVING the original
  * type. An archived Official NOR stays Official ("ARSIP"); an archived Test
  * NOR stays Test ("ARSIP · TEST"). Archived NORs leave the Official view and
- * are excluded from metrics. Does NOT unlock expenses (preserves the
- * historical snapshot). Export name kept for caller compatibility.
+ * are excluded from metrics. Export name kept for caller compatibility.
+ *
+ * NOR Archive Cascade (v1.13.2): a TEST NOR locks its expenses ("LOCKED TEST"),
+ * which would otherwise become permanent orphans once the NOR is archived. So
+ * archiving a TEST NOR cascades to its expenses — each one is archived too, its
+ * prior status snapshotted in `previousStatus` and tagged with `archivedByNor`
+ * /`archivedReason` so `restoreNor` can put it back exactly. An OFFICIAL NOR is
+ * NEVER cascaded (rule H): its expenses stay LOCKED to preserve the cycle's
+ * historical snapshot.
  */
 export async function archiveTestNor(norId) {
   const nor = getNorById(norId);
   if (!nor) throw new Error('NOR tidak ditemukan.');
-  await putNor({ ...nor, archived: true, archivedAt: Date.now() });
-  const tag = nor.type === NOR_TYPE.TEST ? ' (test)' : '';
-  await writeAudit(AUDIT_ACTION.NOR_ARCHIVED, 'nor', norId, `${nor.norNumber} diarsipkan${tag}`);
-  return true;
+  if (nor.archived) return { cascadedCount: 0, isTest: nor.type === NOR_TYPE.TEST };
+  const now = Date.now();
+  const isTest = nor.type === NOR_TYPE.TEST;
+
+  const updates = {};
+  // Cascade only for TEST NORs. We target the NOR's stored `expenseIds` (the
+  // authoritative association — also covers legacy Test NORs whose expenses
+  // predate the norId stamping), skipping any already archived.
+  let cascaded = [];
+  if (isTest) {
+    const ids = nor.expenseIds || [];
+    cascaded = getExpenses().filter(e => ids.includes(e.id) && e.status !== EXPENSE_STATUS.ARCHIVED);
+    cascaded.forEach(e => {
+      updates[`${P.expenses}/${e.id}`] = {
+        ...e,
+        previousStatus: e.status,
+        status: EXPENSE_STATUS.ARCHIVED,
+        archivedByNor: norId,
+        archivedReason: 'test_nor_archive',
+        updatedAt: now,
+      };
+    });
+  }
+  updates[`${P.nors}/${norId}`] = {
+    ...nor, archived: true, archivedAt: now, archivedExpenseCount: cascaded.length,
+  };
+  await applyUpdates(updates);
+
+  await writeAudit(AUDIT_ACTION.NOR_ARCHIVED, 'nor', norId, `${nor.norNumber} diarsipkan${isTest ? ' (test)' : ''}`);
+  for (const e of cascaded) {
+    await writeAudit(AUDIT_ACTION.EXPENSE_ARCHIVED_BY_TEST_NOR, 'expense', e.id,
+      `Pengeluaran diarsipkan otomatis karena NOR Test ${nor.norNumber} diarsipkan`);
+  }
+  return { cascadedCount: cascaded.length, isTest };
+}
+
+/**
+ * Restore an archived NOR (v1.13.2): clears archived and, for a TEST NOR,
+ * cascades the restore back to every expense it archived — each is returned to
+ * its `previousStatus` and the cascade metadata (archivedByNor / archivedReason
+ * / previousStatus) is stripped. Writing a full object to each expense path
+ * deletes the omitted keys (Firebase multi-path update semantics).
+ */
+export async function restoreNor(norId) {
+  const nor = getNorById(norId);
+  if (!nor) throw new Error('NOR tidak ditemukan.');
+  const now = Date.now();
+  const isTest = nor.type === NOR_TYPE.TEST;
+
+  const updates = {};
+  const restored = isTest ? getExpenses().filter(e => e.archivedByNor === norId) : [];
+  restored.forEach(e => {
+    const clean = { ...e, status: e.previousStatus || EXPENSE_STATUS.LOCKED, updatedAt: now };
+    delete clean.previousStatus;
+    delete clean.archivedByNor;
+    delete clean.archivedReason;
+    updates[`${P.expenses}/${e.id}`] = clean;
+  });
+  const norClean = { ...nor, archived: false };
+  delete norClean.archivedAt;
+  delete norClean.archivedExpenseCount;
+  updates[`${P.nors}/${norId}`] = norClean;
+  await applyUpdates(updates);
+
+  await writeAudit(AUDIT_ACTION.NOR_RESTORED, 'nor', norId, `${nor.norNumber} dipulihkan${isTest ? ' (test)' : ''}`);
+  for (const e of restored) {
+    await writeAudit(AUDIT_ACTION.EXPENSE_RESTORED_BY_TEST_NOR, 'expense', e.id,
+      `Pengeluaran dipulihkan otomatis karena NOR Test ${nor.norNumber} dipulihkan`);
+  }
+  return { cascadedCount: restored.length, isTest };
 }
 
 /** Record that a NOR was exported (PDF or Excel). */

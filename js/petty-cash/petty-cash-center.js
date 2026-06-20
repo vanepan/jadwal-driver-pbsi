@@ -22,7 +22,7 @@
 import { isAdmin, getCurrentUser } from '../auth.js';
 import {
   initPettyCashStore, registerChangeListener, getSettings, getActiveCycle,
-  getNors, getNorById, getExpenseById, saveSettings as storeSaveSettings,
+  getNors, getNorById, getExpenses, getExpenseById, saveSettings as storeSaveSettings,
 } from './petty-cash-store.js';
 import * as svc from './petty-cash-service.js';
 import { buildNorViewModel } from './nor-document-engine.js';
@@ -69,31 +69,71 @@ function toast(msg) {
   st._toastT = setTimeout(() => { st.toast = null; render(); }, 2600);
   setState({ toast: msg });
 }
-function statusBadge(status) {
-  const base = 'display:inline-flex;align-items:center;gap:4px;font-family:\'JetBrains Mono\',monospace;font-size:9.5px;letter-spacing:.5px;padding:4px 8px;border-radius:6px;';
-  if (status === EXPENSE_STATUS.LOCKED) return base + 'background:var(--amber-tint);color:var(--amber);border:1px solid var(--amber-bd)';
-  if (status === EXPENSE_STATUS.ARCHIVED) return base + 'background:var(--border2);color:var(--muted);border:1px solid var(--border)';
-  return base + 'background:var(--green-tint);color:var(--green);border:1px solid var(--green-bd)';
+const BADGE_BASE = 'display:inline-flex;align-items:center;gap:4px;font-family:\'JetBrains Mono\',monospace;font-size:9.5px;letter-spacing:.5px;padding:4px 8px;border-radius:6px;';
+
+/** True when this expense is locked inside a TEST NOR (vs an Official one). */
+function lockedByTestNor(e) {
+  if (!e || e.status !== EXPENSE_STATUS.LOCKED || !e.norId) return false;
+  const nor = getNorById(e.norId);
+  return !!(nor && nor.type === NOR_TYPE.TEST);
 }
-function statusLabelOf(status) {
-  if (status === EXPENSE_STATUS.LOCKED) return 'Termasuk NOR';
-  if (status === EXPENSE_STATUS.ARCHIVED) return 'Arsip';
-  return 'Tersedia';
+
+/**
+ * Status badge descriptor — { label, style, tip } — distinguishing an Official
+ * lock ("Termasuk NOR", amber) from a Test lock ("TEST NOR", blue), and a plain
+ * archive ("Arsip") from a cascade archive ("ARSIP · TEST NOR"). Tooltips (P6)
+ * ride along as `tip`. (v1.13.2.1)
+ */
+function expenseBadge(e) {
+  const s = e.status;
+  if (s === EXPENSE_STATUS.LOCKED) {
+    return lockedByTestNor(e)
+      ? { label: 'TEST NOR', style: BADGE_BASE + 'background:var(--blue-tint);color:var(--blue);border:1px solid var(--blue-bd)', tip: 'Pengeluaran digunakan oleh NOR uji coba.' }
+      : { label: 'Termasuk NOR', style: BADGE_BASE + 'background:var(--amber-tint);color:var(--amber);border:1px solid var(--amber-bd)', tip: 'Pengeluaran terkunci dalam Nota Organisasi Realisasi.' };
+  }
+  if (s === EXPENSE_STATUS.ARCHIVED) {
+    return e.archivedByNor
+      ? { label: 'ARSIP · TEST NOR', style: BADGE_BASE + 'background:var(--border2);color:var(--muted);border:1px solid var(--border)', tip: 'Pengeluaran diarsipkan otomatis bersama TEST NOR.' }
+      : { label: 'Arsip', style: BADGE_BASE + 'background:var(--border2);color:var(--muted);border:1px solid var(--border)', tip: 'Pengeluaran tidak dihitung dalam operasional aktif.' };
+  }
+  return { label: 'Tersedia', style: BADGE_BASE + 'background:var(--green-tint);color:var(--green);border:1px solid var(--green-bd)', tip: 'Siap dipilih untuk realisasi NOR.' };
 }
 function dotStyle(unit) { return `width:8px;height:8px;border-radius:50%;flex:none;background:${unitColor(unit)}`; }
 
 /** Decorate a raw expense with presentation fields. */
 function decorate(e) {
+  const badge = expenseBadge(e);
   return {
     ...e,
     unitDisp: unitDisplay(e),
     amountFmt: rp(e.amount),
     dateFmt: fmtShort(e.expenseDate),
-    statusLabel: statusLabelOf(e.status),
-    badgeStyle: statusBadge(e.status),
+    statusLabel: badge.label,
+    badgeStyle: badge.style,
+    badgeTip: badge.tip,
     dotStyle: dotStyle(e.unit),
     notesDisplay: e.notes || '—',
   };
+}
+
+/* ── Consistent empty state (v1.13.2.1) ──────────────────────────────
+   One visual treatment for every "no data" surface: a tinted glyph tile,
+   a title, and an optional supporting line. `icon` defaults to a document
+   glyph; callers pass a fitting one. */
+const EMPTY_ICONS = {
+  doc: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>',
+  list: '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3.5" cy="6" r="1.2" fill="currentColor"/><circle cx="3.5" cy="12" r="1.2" fill="currentColor"/><circle cx="3.5" cy="18" r="1.2" fill="currentColor"/>',
+  archive: '<path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/>',
+  check: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+};
+function emptyState(title, sub, icon) {
+  const path = EMPTY_ICONS[icon] || EMPTY_ICONS.doc;
+  return `
+    <div style="padding:46px 24px;text-align:center">
+      <div style="width:46px;height:46px;margin:0 auto 14px;border-radius:13px;background:var(--card2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${path}</svg></div>
+      <div style="font-weight:700;font-size:14px;color:var(--text)">${esc(title)}</div>
+      ${sub ? `<div style="font-size:12px;color:var(--muted);margin:4px auto 0;max-width:330px;line-height:1.5">${esc(sub)}</div>` : ''}
+    </div>`;
 }
 
 /* ── Focus preservation across full re-render ────────────────────── */
@@ -376,6 +416,7 @@ function content(m) {
 /* ── DASHBOARD ───────────────────────────────────────────────────── */
 function dashboard(m) {
   const cycle = m.cycle || {};
+  const archivedCount = svc.archivedExpenses().length;
   const recent = svc.activeExpenses().slice(0, 5).map(decorate);
   const recentRows = recent.map(e => `
     <div data-act="openDetail" data-id="${esc(e.id)}" style="display:flex;align-items:center;gap:13px;padding:12px 18px;border-bottom:1px solid var(--border2);cursor:pointer">
@@ -385,7 +426,7 @@ function dashboard(m) {
         <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);margin-top:2px">${esc(e.refNumber)} · ${esc(e.unitDisp)} · ${esc(e.dateFmt)}</div>
       </div>
       <div style="font-weight:700;font-size:13px;font-family:'JetBrains Mono',monospace">${esc(e.amountFmt)}</div>
-    </div>`).join('') || `<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">Belum ada pengeluaran pada siklus ini.</div>`;
+    </div>`).join('') || emptyState('Belum ada pengeluaran pada siklus ini.', 'Catat nota petty cash pertama untuk memulai siklus berjalan.', 'list');
 
   const card = (accent, tintBg, tintColor, iconPath, label, value, sub, badge) => `
     <div style="background:var(--card);border:1px solid var(--border);border-left:3px solid ${accent};border-radius:13px;padding:16px;box-shadow:var(--shadow)">
@@ -408,6 +449,19 @@ function dashboard(m) {
       ${card('var(--blue)', 'var(--blue-tint)', 'var(--blue)', '<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>', 'Total Pengeluaran', esc(rp(m.spent)), `${m.expenseCount} transaksi tercatat`)}
       ${card('var(--green)', 'var(--green-tint)', 'var(--green)', '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>', 'Siap Direalisasi', esc(rp(m.availableTotal)), `${m.availableCount} nota tersedia untuk NOR`)}
       ${card('var(--amber)', 'var(--amber-tint)', 'var(--amber)', '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>', 'NOR Diterbitkan', String(m.norCount), 'Sepanjang riwayat realisasi')}
+    </div>
+
+    <div class="pc-stat-split" style="margin-top:14px;display:flex;gap:14px;flex-wrap:wrap">
+      <div style="flex:1;min-width:220px;background:var(--card);border:1px solid var(--border);border-radius:13px;box-shadow:var(--shadow);padding:14px 16px;display:flex;align-items:center;gap:13px">
+        <div style="width:34px;height:34px;flex:none;border-radius:10px;background:var(--green-tint);color:var(--green);display:flex;align-items:center;justify-content:center"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3.5" cy="6" r="1.2" fill="currentColor"/><circle cx="3.5" cy="12" r="1.2" fill="currentColor"/><circle cx="3.5" cy="18" r="1.2" fill="currentColor"/></svg></div>
+        <div style="flex:1"><div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Pengeluaran Aktif</div><div style="font-weight:800;font-size:20px;margin-top:2px">${m.expenseCount}</div></div>
+        <div style="font-size:11px;color:var(--muted);text-align:right;max-width:120px">Tercatat pada siklus berjalan</div>
+      </div>
+      <div data-act="goArchive" title="Lihat pengeluaran terarsip" style="flex:1;min-width:220px;background:var(--card);border:1px solid var(--border);border-radius:13px;box-shadow:var(--shadow);padding:14px 16px;display:flex;align-items:center;gap:13px;cursor:pointer">
+        <div style="width:34px;height:34px;flex:none;border-radius:10px;background:var(--border2);color:var(--muted);display:flex;align-items:center;justify-content:center"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg></div>
+        <div style="flex:1"><div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Pengeluaran Diarsipkan</div><div style="font-weight:800;font-size:20px;margin-top:2px">${archivedCount}</div></div>
+        <span style="display:flex;color:var(--muted)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
+      </div>
     </div>
 
     ${m.low ? `
@@ -494,8 +548,10 @@ function expensesScreen(m) {
       <div style="display:flex;align-items:center;gap:7px"><span style="${dotStyle(e.unit)}"></span><span style="font-size:12.5px">${esc(e.unitDisp)}</span></div>
       <div style="font-size:12px;color:var(--muted)">${esc(e.category)}</div>
       <div style="text-align:right;font-weight:700;font-size:13px;font-family:'JetBrains Mono',monospace">${esc(e.amountFmt)}</div>
-      <div style="text-align:right"><span style="${e.badgeStyle}">${esc(e.statusLabel)}</span></div>
-    </div>`).join('') || `<div style="padding:48px;text-align:center;color:var(--muted);font-size:13px">Tidak ada pengeluaran yang cocok dengan filter.</div>`;
+      <div style="text-align:right"><span style="${e.badgeStyle}" title="${esc(e.badgeTip)}">${esc(e.statusLabel)}</span></div>
+    </div>`).join('') || (st.fStatus === 'archived'
+      ? emptyState('Belum ada data arsip.', 'Pengeluaran yang diarsipkan—termasuk yang ikut terarsip bersama NOR Test—akan muncul di sini.', 'archive')
+      : emptyState('Tidak ada pengeluaran yang cocok dengan filter.', 'Ubah filter status atau unit untuk melihat nota lain.', 'list'));
 
   return `
   <div>
@@ -575,7 +631,7 @@ function generateScreen(m) {
       <div style="display:flex;align-items:center;gap:6px"><span style="${dotStyle(e.unit)}"></span><span style="font-size:11.5px">${esc(unitDisplay(e))}</span></div>
       <div style="text-align:right;font-weight:700;font-size:12.5px;font-family:'JetBrains Mono',monospace">${esc(rp(e.amount))}</div>
     </div>`;
-  }).join('') || `<div style="padding:46px;text-align:center;color:var(--muted);font-size:13px">Tidak ada nota tersedia untuk direalisasikan.</div>`;
+  }).join('') || emptyState('Belum ada pengeluaran yang siap direalisasikan.', 'Tambahkan nota petty cash baru atau pilih siklus yang masih memiliki nota tersedia.', 'check');
 
   return `
   <div>
@@ -662,7 +718,11 @@ function historyScreen() {
       ${tag}
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
     </div>`;
-  }).join('') || `<div style="padding:48px;text-align:center;color:var(--muted);font-size:13px;background:var(--card);border:1px solid var(--border);border-radius:14px">Belum ada NOR pada tampilan ini.</div>`;
+  }).join('') || `<div style="background:var(--card);border:1px solid var(--border);border-radius:14px">${
+    st.norFilter === 'archived'
+      ? emptyState('Belum ada arsip NOR.', 'NOR yang diarsipkan—Official maupun Test—akan tersimpan di sini.', 'archive')
+      : emptyState('Belum ada Nota Organisasi yang diterbitkan.', 'Buat NOR baru dari nota petty cash yang tersedia untuk mulai merealisasikan.', 'doc')
+  }</div>`;
 
   return `
   <div>
@@ -693,6 +753,43 @@ function norDetailScreen(m) {
         : '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9.5px;letter-spacing:.5px;padding:6px 11px;border-radius:7px;background:var(--border2);color:var(--muted);border:1px solid var(--border)">ARSIP</span>')
     : (isTest ? '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9.5px;letter-spacing:.5px;padding:6px 11px;border-radius:7px;background:var(--amber-tint);color:var(--amber);border:1px solid var(--amber-bd)">TEST ONLY</span>' : '');
 
+  // Cascade summary (v1.13.2): how many expenses ride along with this Test NOR.
+  // When archived → those currently tagged archivedByNor; when live → its LOCKED
+  // TEST expenses that an archive would carry. Official NORs never cascade.
+  const cascadeArchived = isTest && nor.archived
+    ? getExpenses().filter(e => e.archivedByNor === nor.id).length
+    : 0;
+  const cascadeLive = isTest && !nor.archived
+    ? getExpenses().filter(e => (nor.expenseIds || []).includes(e.id) && e.status !== EXPENSE_STATUS.ARCHIVED).length
+    : 0;
+  // Summary card (P3, v1.13.2.1): at-a-glance stats. Test NORs get an extra
+  // "Pengeluaran Diarsipkan" tile reflecting the cascade.
+  const summaryCount = (nor.expenseIds || nor.items || []).length;
+  const statusText = nor.archived ? (isTest ? 'Arsip · Test' : 'Arsip') : (isTest ? 'Test Only' : meta.label);
+  const summaryTile = (label, value, idx) => `
+    <div style="flex:1;min-width:130px;padding:14px 16px;${idx > 0 ? 'border-left:1px solid var(--border2);' : ''}">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1px;color:var(--label);text-transform:uppercase">${esc(label)}</div>
+      <div style="font-weight:800;font-size:19px;margin-top:5px;line-height:1.1">${value}</div>
+    </div>`;
+  const summaryTiles = [
+    summaryTile('Jumlah Pengeluaran', String(summaryCount), 0),
+    summaryTile('Total Nilai', `<span style="font-family:'JetBrains Mono',monospace">${esc(rp(nor.realizedAmount || 0))}</span>`, 1),
+    summaryTile('Status', `<span style="font-size:14px">${esc(statusText)}</span>`, 2),
+  ];
+  if (isTest) summaryTiles.push(summaryTile('Pengeluaran Diarsipkan', String(cascadeArchived), 3));
+  const summaryCard = `
+    <div style="margin-bottom:16px;background:var(--card);border:1px solid var(--border);border-radius:13px;box-shadow:var(--shadow);display:flex;flex-wrap:wrap;overflow:hidden">${summaryTiles.join('')}</div>`;
+
+  const cascadeBanner = (cascadeArchived || cascadeLive) ? `
+    <div style="margin-bottom:16px;background:var(--card2);border:1px solid var(--border);border-left:3px solid ${cascadeArchived ? 'var(--muted)' : 'var(--amber)'};border-radius:12px;padding:12px 15px;display:flex;align-items:center;gap:11px">
+      <span style="color:${cascadeArchived ? 'var(--muted)' : 'var(--amber)'};display:flex"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg></span>
+      <div style="font-size:12.5px;color:var(--text)">
+        ${cascadeArchived
+          ? `<b>${cascadeArchived} pengeluaran</b> diarsipkan bersama NOR ini. Memulihkan NOR akan memulihkannya kembali.`
+          : `NOR Test ini mengunci <b>${cascadeLive} pengeluaran</b>. Mengarsipkan NOR akan ikut mengarsipkannya otomatis.`}
+      </div>
+    </div>` : '';
+
   return `
   <div>
     <div class="pc-head-row" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:10px">
@@ -703,9 +800,13 @@ function norDetailScreen(m) {
         <button data-act="exportNor" data-id="${esc(nor.id)}" style="display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 15px;font-weight:600;font-size:12.5px;color:var(--text);cursor:pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export Excel</button>
         <button data-act="printNor" data-id="${esc(nor.id)}" style="display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 15px;font-weight:600;font-size:12.5px;color:var(--text);cursor:pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Cetak / PDF</button>
         ${awaiting ? `<button data-act="receiveFunds" data-id="${esc(nor.id)}" style="display:flex;align-items:center;gap:7px;background:var(--green);color:#fff;border:none;border-radius:9px;padding:10px 15px;font-weight:700;font-size:12.5px;cursor:pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Dana Pengganti Diterima</button>` : ''}
-        ${nor.archived ? '' : `<button data-act="archiveTestNor" data-id="${esc(nor.id)}" style="display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 15px;font-weight:600;font-size:12.5px;color:var(--muted);cursor:pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>${isTest ? 'Arsipkan Test NOR' : 'Arsipkan NOR'}</button>`}
+        ${nor.archived
+          ? `<button data-act="restoreNor" data-id="${esc(nor.id)}" style="display:flex;align-items:center;gap:7px;background:var(--green-tint);border:1px solid var(--green-bd);border-radius:9px;padding:10px 15px;font-weight:600;font-size:12.5px;color:var(--green);cursor:pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M3.51 13a9 9 0 1 0 2.13-9.36L3 7"/></svg>Pulihkan NOR</button>`
+          : `<button data-act="archiveTestNor" data-id="${esc(nor.id)}" style="display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 15px;font-weight:600;font-size:12.5px;color:var(--muted);cursor:pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>${isTest ? 'Arsipkan Test NOR' : 'Arsipkan NOR'}</button>`}
       </div>
     </div>
+    ${summaryCard}
+    ${cascadeBanner}
     ${renderNorPaper(vm, LOGO_SRC, 'norPaper')}
   </div>`;
 }
@@ -834,6 +935,10 @@ function detailDrawer() {
   const d = decorate(raw);
   const locked = raw.status === EXPENSE_STATUS.LOCKED;
   const archived = raw.status === EXPENSE_STATUS.ARCHIVED;
+  // Cascade-archived (v1.13.2): archived automatically because its Test NOR was
+  // archived. Owned by the NOR — restored via the NOR, not individually.
+  const cascadeArchived = archived && !!raw.archivedByNor;
+  const lockedTest = lockedByTestNor(raw);
   const nor = raw.norId ? getNorById(raw.norId) : null;
   const audit = svc.getExpenseAudit(raw.id);
   const auditRows = audit.map(a => `
@@ -853,7 +958,7 @@ function detailDrawer() {
       </div>
       <div style="flex:1;overflow-y:auto;padding:20px 22px">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
-          <span style="${d.badgeStyle}">${esc(d.statusLabel)}</span>
+          <span style="${d.badgeStyle}" title="${esc(d.badgeTip)}">${esc(d.statusLabel)}</span>
           ${locked && nor ? `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Terkunci dalam ${esc(nor.norNumber)}</span>` : ''}
         </div>
         <div style="background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;margin-bottom:18px">
@@ -867,10 +972,23 @@ function detailDrawer() {
           <div style="display:flex;justify-content:space-between;padding:11px 14px;border-bottom:1px solid var(--border2)"><span style="font-size:12px;color:var(--muted)">Catatan</span><span style="font-size:12.5px;font-weight:600;text-align:right;max-width:60%">${esc(d.notesDisplay)}</span></div>
           <div style="display:flex;justify-content:space-between;padding:11px 14px"><span style="font-size:12px;color:var(--muted)">Dibuat oleh</span><span style="font-size:12.5px;font-weight:600">${esc(d.createdBy || '—')}</span></div>
         </div>
-        ${locked && nor ? `<div style="background:var(--amber-tint);border:1px solid var(--amber-bd);border-radius:11px;padding:12px 14px;margin-bottom:18px">
+        ${locked && nor ? (lockedTest
+          ? `<div style="background:var(--blue-tint);border:1px solid var(--blue-bd);border-radius:11px;padding:12px 14px;margin-bottom:18px">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1px;color:var(--blue);text-transform:uppercase;margin-bottom:4px">Digunakan oleh TEST NOR</div>
+          <div style="font-weight:700;font-size:13px;font-family:'JetBrains Mono',monospace">${esc(nor.norNumber)}</div>
+          <div style="font-size:11.5px;color:var(--muted);margin-top:5px;line-height:1.4">Pengeluaran ini sedang digunakan oleh TEST NOR dan tidak dapat digunakan pada NOR lain.</div>
+          <button data-act="openNorFromDetail" data-id="${esc(nor.id)}" style="margin-top:8px;background:transparent;border:none;color:var(--blue);font-size:11.5px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline">Lihat TEST NOR →</button>
+        </div>`
+          : `<div style="background:var(--amber-tint);border:1px solid var(--amber-bd);border-radius:11px;padding:12px 14px;margin-bottom:18px">
           <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1px;color:var(--amber);text-transform:uppercase;margin-bottom:4px">Termasuk dalam NOR</div>
           <div style="font-weight:700;font-size:13px;font-family:'JetBrains Mono',monospace">${esc(nor.norNumber)}</div>
           <button data-act="openNorFromDetail" data-id="${esc(nor.id)}" style="margin-top:8px;background:transparent;border:none;color:var(--amber);font-size:11.5px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline">Lihat NOR Terkait →</button>
+        </div>`) : ''}
+        ${cascadeArchived && nor ? `<div style="background:var(--card2);border:1px solid var(--border);border-radius:11px;padding:12px 14px;margin-bottom:18px">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1px;color:var(--muted);text-transform:uppercase;margin-bottom:4px">Diarsipkan bersama NOR Test</div>
+          <div style="font-weight:700;font-size:13px;font-family:'JetBrains Mono',monospace">${esc(nor.norNumber)}</div>
+          <div style="font-size:11.5px;color:var(--muted);margin-top:5px;line-height:1.4">Pengeluaran ini diarsipkan bersama TEST NOR. Pulihkan melalui NOR terkait agar status semula kembali.</div>
+          <button data-act="openNorFromDetail" data-id="${esc(nor.id)}" style="margin-top:8px;background:transparent;border:none;color:var(--primary);font-size:11.5px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline">Buka NOR Test →</button>
         </div>` : ''}
         <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1.5px;color:var(--label);text-transform:uppercase;margin-bottom:12px">Riwayat Audit</div>
         <div style="position:relative;padding-left:20px">
@@ -881,6 +999,9 @@ function detailDrawer() {
       <div style="padding:14px 22px;border-top:1px solid var(--border2);display:flex;gap:10px">
         ${locked && nor
           ? `<button data-act="openNorFromDetail" data-id="${esc(nor.id)}" style="flex:1;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:11px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer">Lihat NOR Terkait</button>`
+          : cascadeArchived
+            ? `<button data-act="closeDetail" style="flex:1;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:11px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer">Tutup</button>
+          <button data-act="openNorFromDetail" data-id="${esc(raw.norId)}" style="display:flex;align-items:center;gap:7px;background:var(--primary-tint);border:1px solid var(--primary-tint);border-radius:9px;padding:11px 16px;font-weight:600;font-size:13px;color:var(--primary);cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>Pulihkan via NOR Test</button>`
           : archived
             ? `<button data-act="closeDetail" style="flex:1;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:11px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer">Tutup</button>
           <button data-act="restoreExpense" data-id="${esc(d.id)}" style="display:flex;align-items:center;gap:7px;background:var(--green-tint);border:1px solid var(--green-bd);border-radius:9px;padding:11px 16px;font-weight:600;font-size:13px;color:var(--green);cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M3.51 13a9 9 0 1 0 2.13-9.36L3 7"/></svg>Pulihkan Pengeluaran</button>`
@@ -997,6 +1118,7 @@ async function onClick(e) {
     case 'restoreExpense': return doRestoreExpense(id);
     case 'openNorFromDetail': setState({ detailId: null, screen: 'norDetail', norDetailId: id }); return;
     case 'filterStatus': setState({ fStatus: id }); return;
+    case 'goArchive': setState({ screen: 'expenses', fStatus: 'archived', drawerOpen: false }); return;
     case 'toggleSel': return toggleSel(id);
     case 'selectAll': setState({ selectedIds: svc.availableExpenses().map(x => x.id) }); return;
     case 'clearSel': setState({ selectedIds: [] }); return;
@@ -1007,6 +1129,7 @@ async function onClick(e) {
     case 'norOpen': setState({ screen: 'norDetail', norDetailId: id }); return;
     case 'filterNorType': setState({ norFilter: id }); return;
     case 'archiveTestNor': return doArchiveTestNor(id);
+    case 'restoreNor': return doRestoreNor(id);
     case 'exportNor': return doExportNor(id);
     case 'printNor': return doPrintNor(id);
     case 'receiveFunds': return openCycleModal(id);
@@ -1157,11 +1280,30 @@ async function confirmGenerate() {
 
 async function doArchiveTestNor(id) {
   const nor = getNorById(id); if (!nor) return;
+  const isTest = nor.type === NOR_TYPE.TEST;
+  // Test NOR archive cascades to its expenses, so confirm the wider effect.
+  const msg = isTest
+    ? `Arsipkan NOR Test ${nor.norNumber}?\n\nSemua pengeluaran yang terkunci di NOR ini akan ikut diarsipkan dan keluar dari daftar operasional. Anda dapat memulihkannya kembali dengan memulihkan NOR ini.`
+    : `Arsipkan NOR ${nor.norNumber}?`;
+  if (!window.confirm(msg)) return;
   try {
-    await svc.archiveTestNor(id);
+    const res = await svc.archiveTestNor(id);
     setState({ screen: 'norHistory', norFilter: 'archived', norDetailId: null });
-    toast(`${nor.norNumber} diarsipkan${nor.type === NOR_TYPE.TEST ? ' (Test)' : ''}`);
+    toast(res.isTest && res.cascadedCount
+      ? `${nor.norNumber} diarsipkan · ${res.cascadedCount} pengeluaran ikut diarsipkan`
+      : `${nor.norNumber} diarsipkan${isTest ? ' (Test)' : ''}`);
   } catch (err) { toast(err.message || 'Gagal mengarsipkan'); }
+}
+
+async function doRestoreNor(id) {
+  const nor = getNorById(id); if (!nor) return;
+  try {
+    const res = await svc.restoreNor(id);
+    setState({ screen: 'norDetail', norDetailId: id });
+    toast(res.isTest && res.cascadedCount
+      ? `${nor.norNumber} dipulihkan · ${res.cascadedCount} pengeluaran ikut dipulihkan`
+      : `${nor.norNumber} dipulihkan`);
+  } catch (err) { toast(err.message || 'Gagal memulihkan NOR'); }
 }
 
 async function doExportNor(id) {
