@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.13.1';
-export const RELEASE_NAME = 'Petty Cash Center — Mobile Hardening + NOR Finalization';
+export const APP_VERSION = '1.14.1';
+export const RELEASE_NAME = 'NOR Type Conversion & Navigation Polish';
 
 /**
  * Web Push VAPID PUBLIC key (v1.11.3). Safe to ship — it is an
@@ -17,6 +17,32 @@ export const RELEASE_NAME = 'Petty Cash Center — Mobile Hardening + NOR Finali
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.14.1',
+    date: '2026-06-20',
+    summary: 'UAT polish on v1.14.0: a module-aware panel primary CTA and a safe two-way NOR type conversion (Official ↔ Test) from Riwayat NOR. Scoped fix — no Driver Operations, Analytics engine, Konfigurasi, notification, PDF, NOR-numbering, or archive-cascade logic changed.',
+    highlights: [
+      'Panel primary CTA is now module-aware: Driver Operations shows "Tambah Jadwal" (admin) / "Ajukan Jadwal" (bidang); Petty Cash Center shows "Tambah Pengeluaran" (opens the add-expense modal); Analytics and Konfigurasi hide the CTA (read-only / configuration modules). Same behavior on desktop and mobile.',
+      'NOR Type Conversion (P2): from a NOR detail screen, an Official NOR can be converted to TEST ("Ubah Menjadi TEST NOR", blue) and a TEST NOR back to Official ("Jadikan NOR Resmi", amber), with confirmation dialogs. Converting to TEST removes the NOR from official reporting and re-badges its linked expenses as TEST; converting to Official returns it.',
+      'Conversion uses the existing derived "LOCKED TEST" model (a LOCKED expense whose owning NOR is type=test) — it flips nor.type only, so metrics (operationalNors), badges (lockedByTestNor), and the v1.13.2 archive cascade follow automatically. The cascade is untouched: convert Official→Test→Archive cascades the expenses (ARSIP · TEST) and restore returns them to LOCKED TEST.',
+      'Guard rails (P9): a NOR that is already realised (replenished/closed) or archived cannot have its type changed — the convert buttons are hidden and the service rejects the operation with "NOR ini sudah direalisasikan dan tidak dapat diubah tipenya."',
+      'Audit trail (P7): new actions NOR_CONVERTED_TO_TEST ("NOR diubah menjadi TEST", blue) and NOR_CONVERTED_TO_OFFICIAL ("NOR diubah menjadi resmi", amber), written at NOR and per-expense level.',
+      'Client-only release: no Cloud Functions, rules, schema, or notification-engine code changed. APP_VERSION bump (+ sync-version.mjs) re-stamps SW_VERSION → CACHE_NAME (sarpras-cache-v1.14.1) so installed PWAs purge the old cache.',
+    ],
+  },
+  {
+    version: '1.14.0',
+    date: '2026-06-20',
+    summary: 'Navigation Architecture Foundation — unifies Driver Operations, Petty Cash Center, Analytics and Konfigurasi into a single platform shell. Architecture-only refactor: no business logic, schema, or engine changes.',
+    highlights: [
+      'Four platform MODULES in the rail (MODUL → MENU → SUB MENU): Driver Operations, Petty Cash Center, Analytics, Konfigurasi. The Administration module is retired from navigation (hidden, not deleted — kept for rollback); its content is redistributed: Manajemen Driver/Kendaraan + Audit → Driver Operations, Manajemen User + Konfigurasi Global → Konfigurasi, Analytics → Analytics.',
+      'Driver Operations panel is grouped: Operasional (Jadwal Driver, Pending, Jadwal Saya) · Master Data (Manajemen Driver, Manajemen Kendaraan) · Audit (Audit Driver, Audit Kendaraan). Audit Driver/Kendaraan are two entry points into ONE Audit Center, auto-filtered to driver vs vehicle records.',
+      'Petty Cash Center is now a NATIVE embedded module: the full-screen .pc-root overlay, private icon rail, sidebar, topbar, mobile drawer, theme toggle and "Kembali ke Driver Operations" exit are retired. It renders into a platform-owned workspace using the same rail, panel, topbar, profile and theme source as every other module. All workflows (NOR generation, PDF/Excel export, archive, test NOR, settings, dashboard) are unchanged.',
+      'Analytics module: Analytics Driver reuses the existing analytics engine unchanged; Analytics Petty Cash and Analytics Gabungan are placeholders ("akan hadir pada versi berikutnya") — no analytics development this sprint.',
+      'Mobile reuses the existing framework, repointed (no rewrite): the sidebar drawer switches modules; the Administration tab strip becomes a module-filtered sub-nav; the Petty Cash private drawer + app identity are removed. Desktop and mobile share one module structure.',
+      'Architecture only — no Cloud Functions, RTDB schema, NOR/PDF/Excel/notification/reminder/analytics/scheduling engines were touched. APP_VERSION bump (+ sync-version.mjs) re-stamps SW_VERSION → CACHE_NAME (sarpras-cache-v1.14.0) so installed PWAs purge the old cache and re-fetch the unified shell.',
+    ],
+  },
   {
     version: '1.13.1',
     date: '2026-06-19',

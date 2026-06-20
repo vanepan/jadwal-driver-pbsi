@@ -395,6 +395,89 @@ export async function restoreNor(norId) {
   return { cascadedCount: restored.length, isTest };
 }
 
+/* ── NOR type conversion (v1.14.1) ──────────────────────────────────
+   Two-way Official ↔ Test conversion from Riwayat NOR, for the common UAT
+   mistake of forgetting the "Test NOR" checkbox at generation time.
+
+   Model note: "LOCKED TEST" is the DERIVED state — a LOCKED expense whose
+   owning NOR has type=test (see lockedByTestNor() in the UI). So conversion
+   only flips nor.type; the expense status value stays LOCKED and every
+   downstream behaviour follows the new type automatically:
+     • metrics      — operationalNors() filters type !== TEST,
+     • badges       — lockedByTestNor() reads the owning NOR's live type,
+     • archive cascade — archiveTestNor()/restoreNor() branch on type===TEST.
+   This is why no archive-cascade code changes are needed (sprint constraint).
+
+   Guard rail (P9): a realised, replenished/closed, or archived NOR is
+   immutable — its type cannot be changed. */
+function assertConvertible(nor) {
+  if (nor.archived) {
+    throw new Error('NOR ini sudah diarsipkan dan tidak dapat diubah tipenya.');
+  }
+  if (nor.status === NOR_STATUS.REPLENISHED || nor.status === NOR_STATUS.CLOSED) {
+    throw new Error('NOR ini sudah direalisasikan dan tidak dapat diubah tipenya.');
+  }
+}
+
+/** Can this NOR's type be converted? (UI gate for the convert buttons.) */
+export function isNorConvertible(nor) {
+  return !!nor && !nor.archived &&
+    nor.status !== NOR_STATUS.REPLENISHED && nor.status !== NOR_STATUS.CLOSED;
+}
+
+/** Official → Test. NOR leaves official reporting; linked expenses become the
+    derived LOCKED_TEST state (value stays LOCKED, owning NOR now type=test). */
+export async function convertNorToTest(norId) {
+  const nor = getNorById(norId);
+  if (!nor) throw new Error('NOR tidak ditemukan.');
+  if (nor.type === NOR_TYPE.TEST) return { changed: false, type: NOR_TYPE.TEST, affected: 0 };
+  assertConvertible(nor);
+  const now = Date.now();
+  const ids = nor.expenseIds || [];
+  // Linked, still-locked expenses — they transition LOCKED → LOCKED_TEST (derived).
+  const affected = getExpenses().filter(e => ids.includes(e.id) && e.status === EXPENSE_STATUS.LOCKED);
+
+  const updates = {};
+  updates[`${P.nors}/${norId}`] = { ...nor, type: NOR_TYPE.TEST, typeConvertedAt: now };
+  // Status value is unchanged (LOCKED); bump updatedAt so the realtime echo
+  // re-renders each expense's TEST NOR badge promptly.
+  affected.forEach(e => { updates[`${P.expenses}/${e.id}`] = { ...e, updatedAt: now }; });
+  await applyUpdates(updates);
+
+  await writeAudit(AUDIT_ACTION.NOR_CONVERTED_TO_TEST, 'nor', norId,
+    `${nor.norNumber} diubah menjadi TEST · ${affected.length} pengeluaran terkait`);
+  for (const e of affected) {
+    await writeAudit(AUDIT_ACTION.NOR_CONVERTED_TO_TEST, 'expense', e.id,
+      `Menjadi LOCKED TEST karena NOR ${nor.norNumber} diubah menjadi TEST`);
+  }
+  return { changed: true, type: NOR_TYPE.TEST, affected: affected.length };
+}
+
+/** Test → Official. NOR returns to official reporting; linked expenses return
+    to a plain LOCKED state (owning NOR now type=official). */
+export async function convertNorToOfficial(norId) {
+  const nor = getNorById(norId);
+  if (!nor) throw new Error('NOR tidak ditemukan.');
+  if (nor.type === NOR_TYPE.OFFICIAL) return { changed: false, type: NOR_TYPE.OFFICIAL, affected: 0 };
+  assertConvertible(nor);
+  const now = Date.now();
+  const ids = nor.expenseIds || [];
+  const affected = getExpenses().filter(e => ids.includes(e.id) && e.status === EXPENSE_STATUS.LOCKED);
+
+  const updates = {};
+  updates[`${P.nors}/${norId}`] = { ...nor, type: NOR_TYPE.OFFICIAL, typeConvertedAt: now };
+  affected.forEach(e => { updates[`${P.expenses}/${e.id}`] = { ...e, updatedAt: now }; });
+  await applyUpdates(updates);
+
+  await writeAudit(AUDIT_ACTION.NOR_CONVERTED_TO_OFFICIAL, 'nor', norId,
+    `${nor.norNumber} diubah menjadi resmi · ${affected.length} pengeluaran terkait`);
+  for (const e of affected) {
+    await writeAudit(AUDIT_ACTION.NOR_CONVERTED_TO_OFFICIAL, 'expense', e.id,
+      `Menjadi LOCKED resmi karena NOR ${nor.norNumber} dijadikan resmi`);
+  }
+  return { changed: true, type: NOR_TYPE.OFFICIAL, affected: affected.length };
+}
+
 /** Record that a NOR was exported (PDF or Excel). */
 export async function recordNorExport(norId, kind) {
   await writeAudit(AUDIT_ACTION.NOR_EXPORTED, 'nor', norId, `Diekspor sebagai ${kind}`);

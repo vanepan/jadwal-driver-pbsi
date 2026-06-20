@@ -10961,3 +10961,61 @@ input[type="time"].v2-admin-config-input {
 [data-theme="dark"] #assignmentForm .form-actions {
   background: var(--surface);
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   v1.14.0 — Navigation Architecture Foundation
+
+   Unifies Driver Operations, Petty Cash Center, Analytics and Konfigurasi
+   into one platform shell. The rail = MODUL, the panel = MENU. The shared
+   Administration workspace is reused headless (its title hidden; its tab strip
+   becomes the mobile-only sub-nav). Petty Cash is embedded (no overlay).
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Panel section sub-headers (Operasional / Master Data / Audit). */
+.v2-panel-section {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim, #8a8a93);
+  padding: 14px 12px 6px;
+  user-select: none;
+}
+.v2-panel-nav > .v2-panel-section:first-child { padding-top: 4px; }
+
+/* The Administration workspace is now headless — the platform panel (desktop)
+   and the tab strip (mobile) provide navigation + context, so the retired
+   "Administration" page header is hidden at every breakpoint. */
+.v2-admin-page-header { display: none !important; }
+
+/* The admin tab strip is the mobile sub-nav only; on desktop the panel menu
+   drives navigation (no redundant in-content tabs). */
+@media (min-width: 768px) {
+  .v2-admin-nav { display: none !important; }
+}
+
+/* Module "coming soon" placeholder (Analytics Petty Cash / Analytics Gabungan). */
+.v2-module-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 50vh;
+  padding: 40px 20px;
+}
+.v2-module-placeholder-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+  max-width: 440px;
+  color: var(--text-dim, #8a8a93);
+}
+.v2-module-placeholder-card svg { color: var(--text-dim, #b0b0b8); opacity: 0.8; }
+.v2-module-placeholder-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+}
+.v2-module-placeholder-text { margin: 0; font-size: 14px; line-height: 1.6; }

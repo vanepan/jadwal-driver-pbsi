@@ -94,7 +94,9 @@ import {
 import { renderDriverDashboard, setAssignments as setDashboardAssignments } from './driver-dashboard.js';
 import { initCommentHandlers, openCommentModal, closeCommentModal, setRequests as setCommentRequests, registerCommentSaveCallback, refreshCommentThreadIfOpen } from './comments.js';
 import { initAdminUI, updateAdminButtons, openUserFormModal } from './admin.js';
-import { openPettyCashCenter } from './petty-cash/petty-cash-center.js';
+import {
+  mountPettyCash, setPettyCashScreen, closePettyCashCenter, openPettyCashAddExpense,
+} from './petty-cash/petty-cash-center.js';
 import { initNotificationUI, setNotificationData, openNotificationsModal } from './notifications.js';
 import { setTelegramBotToken } from './telegram.js';
 import { subscribeLogsChangeListener, getLogs, logAction, ensureLogsLoadedAndSubscribed, resetLogsSync } from './logs.js';
@@ -129,9 +131,17 @@ let listDirty = true; // true = list view must re-render before next display
 // VSM-9: search query (client-side filter, never touches Firebase data)
 let searchQuery = '';
 // VSM-9: which workspace is visible — 'dashboard' | 'pending' | 'administration'
+//        | 'pettycash' | 'placeholder'  (v1.14.0 platform modules)
 let currentWorkspace = 'dashboard';
-// VSM-9 cleanup: which rail module is active — 'driverops' | 'administration'
+// v1.14.0: which rail module is active —
+//   'driverops' | 'pettycash' | 'analytics' | 'konfigurasi'
+//   ('administration' retained in code for rollback but no longer reachable)
 let activeRailModule = 'driverops';
+// v1.14.0: which module is currently driving the (shared) administration
+// workspace — controls which sub-nav tabs render on mobile.
+let activeAdminModule = 'konfigurasi';
+// v1.14.0: lazy mount flag for the embedded Petty Cash module.
+let pettyCashMounted = false;
 
 // V1.5.0 Phase 2.5.1: Administration workspace section state
 let activeAdminSection = 'users';
@@ -168,6 +178,16 @@ const ADMIN_SECTION_DEFS = [
   { key: 'config', label: 'Konfigurasi', subtitle: 'Atur parameter operasional, notifikasi, sistem, dan integrasi Telegram.' },
   { key: 'analytics', label: 'Analytics', subtitle: 'Ringkasan operasional berbasis data aktual — assignment, driver, kendaraan, dan bidang.' },
 ];
+
+/* v1.14.0: which admin sections belong to which platform module. Drives the
+   mobile sub-nav tab strip so it mirrors the new module structure rather than
+   the retired flat Administration list. (Desktop hides the strip — the panel
+   menu navigates.) */
+const ADMIN_MODULE_SECTIONS = {
+  driverops:   ['drivers', 'vehicles', 'audit'],
+  konfigurasi: ['users', 'config'],
+  analytics:   ['analytics'],
+};
 
 /**
  * Filter assignments berdasarkan user role saat ini.
@@ -433,21 +453,9 @@ function updatePermissionUI(resetNavActive = false) {
   if (v2Panel) {
     const canAdd = isAdmin() || isBidang();
 
-    // CTA area: visible only for roles that can create/request assignments
-    const v2PanelCta = document.getElementById('v2PanelCta');
-    if (v2PanelCta) v2PanelCta.style.display = canAdd ? 'flex' : 'none';
-
-    // Primary CTA: admin only — Tambah Jadwal
-    const v2BtnTambahJadwal = document.getElementById('v2BtnTambahJadwal');
-    if (v2BtnTambahJadwal) {
-      v2BtnTambahJadwal.style.display = isAdmin() ? 'flex' : 'none';
-    }
-
-    // Ajukan Request: bidang only — single CTA, no duplicate
-    const v2BtnAjukanRequest = document.getElementById('v2BtnAjukanRequest');
-    if (v2BtnAjukanRequest) {
-      v2BtnAjukanRequest.style.display = isBidang() ? 'flex' : 'none';
-    }
+    // Primary CTA is module-aware (v1.14.1): role + active module decide which
+    // (if any) CTA shows. updatePanelCta() owns #v2PanelCta + its buttons.
+    updatePanelCta();
 
     // Pending nav item: admin (approval queue) + bidang (own request history)
     const v2NavPending = document.getElementById('v2NavPending');
@@ -470,13 +478,24 @@ function updatePermissionUI(resetNavActive = false) {
       v2PanelBadge.style.display = showBadge ? 'inline-flex' : 'none';
     }
 
-    // Petty Cash Center rail module: admin only (v1.13.2 — desktop visibility)
+    // ── Rail modules: Petty Cash, Analytics, Konfigurasi are admin-only ──
+    const adminOnly = isAdmin();
     const v2RailPettyCash = document.getElementById('v2RailPettyCash');
-    if (v2RailPettyCash) v2RailPettyCash.style.display = isAdmin() ? 'flex' : 'none';
+    if (v2RailPettyCash) v2RailPettyCash.style.display = adminOnly ? 'flex' : 'none';
+    const v2RailAnalytics = document.getElementById('v2RailAnalytics');
+    if (v2RailAnalytics) v2RailAnalytics.style.display = adminOnly ? 'flex' : 'none';
+    const v2RailKonfig = document.getElementById('v2RailKonfigurasi');
+    if (v2RailKonfig) v2RailKonfig.style.display = adminOnly ? 'flex' : 'none';
 
-    // Administration rail module: admin only
+    // Administration rail module: RETIRED (v1.14.0) — always hidden.
     const v2RailAdmin = document.getElementById('v2RailAdmin');
-    if (v2RailAdmin) v2RailAdmin.style.display = isAdmin() ? 'flex' : 'none';
+    if (v2RailAdmin) v2RailAdmin.style.display = 'none';
+
+    // Driver Operations panel — Master Data + Audit sections are admin-only.
+    const v2PanelDriverMaster = document.getElementById('v2PanelDriverMaster');
+    if (v2PanelDriverMaster) v2PanelDriverMaster.style.display = adminOnly ? '' : 'none';
+    const v2PanelDriverAudit = document.getElementById('v2PanelDriverAudit');
+    if (v2PanelDriverAudit) v2PanelDriverAudit.style.display = adminOnly ? '' : 'none';
 
     // Footer user info (Part H)
     const v2FooterAvatarInitials = document.getElementById('v2FooterAvatarInitials');
@@ -590,47 +609,248 @@ async function loadFeatureFlags() {
  * Wiring: all click handlers proxy to existing V1 DOM elements so no
  * V1 event listeners, modals, or workflows are touched.
  */
+/* ──────────────────────────────────────────────────────────────────
+   v1.14.0 — Platform module model
+
+   Four user-facing MODULES live in the rail. Each owns a panel-nav block
+   and a default MENU. Administration is retired from navigation but kept
+   in code (its workspace is reused, headless, by the new modules).
+
+   MODULE_DEFS drives setRailModule(): rail item id, panel nav id, label,
+   subtitle, breadcrumb label and the default landing action.
+   ────────────────────────────────────────────────────────────────── */
+const MODULE_DEFS = {
+  driverops: {
+    railId: 'v2RailDriverOps', navId: 'v2PanelDriverOpsNav',
+    title: 'Driver Operations', subtitle: 'Operasional Kendaraan', crumb: 'DRIVER OPS',
+    land: () => navJadwalDriver(),
+  },
+  pettycash: {
+    railId: 'v2RailPettyCash', navId: 'v2PanelPettyCashNav',
+    title: 'Petty Cash Center', subtitle: 'Kas Operasional', crumb: 'PETTY CASH',
+    land: () => navPettyCash('dashboard'),
+  },
+  analytics: {
+    railId: 'v2RailAnalytics', navId: 'v2PanelAnalyticsNav',
+    title: 'Analytics', subtitle: 'Intelijen Operasional', crumb: 'ANALYTICS',
+    land: () => navAnalyticsDriver(),
+  },
+  konfigurasi: {
+    railId: 'v2RailKonfigurasi', navId: 'v2PanelKonfigurasiNav',
+    title: 'Konfigurasi', subtitle: 'Manajemen Platform', crumb: 'KONFIGURASI',
+    land: () => navManajemenUser(),
+  },
+};
+
+/** Set the two-line topbar breadcrumb (module label + section title). */
+function setCrumb(moduleLabel, title) {
+  const crumb = document.getElementById('v2TopbarCrumb');
+  if (!crumb) return;
+  const lab = crumb.querySelector('.v2-topbar-label');
+  const ttl = crumb.querySelector('.v2-topbar-title');
+  if (lab && moduleLabel != null) lab.textContent = moduleLabel;
+  if (ttl && title != null) ttl.textContent = title;
+}
+
 /**
- * Switch the active rail module and swap the panel nav section accordingly.
- * @param {'driverops'|'administration'} name
+ * v1.14.1: Module-aware panel primary CTA.
+ *   Driver Operations → "Tambah Jadwal" (admin) / "Ajukan Jadwal" (bidang)
+ *   Petty Cash Center → "Tambah Pengeluaran" (admin)
+ *   Analytics / Konfigurasi → hidden (read-only / config modules)
+ * Called on module switch (setRailModule) and on auth/data refresh
+ * (updatePermissionUI), so role + active module stay in sync.
+ */
+function updatePanelCta() {
+  const cta      = document.getElementById('v2PanelCta');
+  const btnJadwal = document.getElementById('v2BtnTambahJadwal');
+  const btnAjukan = document.getElementById('v2BtnAjukanRequest');
+  const btnPc     = document.getElementById('v2BtnTambahPengeluaran');
+  if (!cta) return;
+
+  if (btnJadwal) btnJadwal.style.display = 'none';
+  if (btnAjukan) btnAjukan.style.display = 'none';
+  if (btnPc)     btnPc.style.display     = 'none';
+
+  let show = false;
+  if (activeRailModule === 'driverops') {
+    if (isAdmin())  { if (btnJadwal) btnJadwal.style.display = 'flex'; show = true; }
+    if (isBidang()) { if (btnAjukan) btnAjukan.style.display = 'flex'; show = true; }
+  } else if (activeRailModule === 'pettycash') {
+    if (isAdmin())  { if (btnPc) btnPc.style.display = 'flex'; show = true; }
+  }
+  // analytics + konfigurasi → no CTA (read-only / configuration modules)
+  cta.style.display = show ? 'flex' : 'none';
+}
+
+/**
+ * Switch the active rail module: highlight its rail item, reveal its panel-nav
+ * block, set the panel header + breadcrumb, and run its default landing menu.
+ * @param {'driverops'|'pettycash'|'analytics'|'konfigurasi'|'administration'} name
  */
 function setRailModule(name) {
+  // 'administration' is no longer a visible module — fold legacy callers into
+  // Konfigurasi (which now owns user management + global config).
+  if (name === 'administration') name = 'konfigurasi';
+  const def = MODULE_DEFS[name];
+  if (!def) return;
   activeRailModule = name;
 
-  const isAdm = name === 'administration';
+  // Rail item active state — only one module highlighted at a time.
+  Object.values(MODULE_DEFS).forEach(d => {
+    const item = document.getElementById(d.railId);
+    if (item) {
+      const on = d === def;
+      item.classList.toggle('v2-rail-item--active', on);
+      item.setAttribute('aria-current', String(on));
+    }
+  });
 
-  const driverOpsItem = document.getElementById('v2RailDriverOps');
-  const adminItem     = document.getElementById('v2RailAdmin');
-  const driverOpsNav  = document.getElementById('v2PanelDriverOpsNav');
-  const adminNav      = document.getElementById('v2PanelAdminNav');
+  // Panel-nav block visibility — show only the active module's menu.
+  ['v2PanelDriverOpsNav', 'v2PanelPettyCashNav', 'v2PanelAnalyticsNav', 'v2PanelKonfigurasiNav']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = (id === def.navId) ? '' : 'none'; });
+
   const panelTitle    = document.getElementById('v2PanelTitle');
   const panelSubtitle = document.getElementById('v2PanelSubtitle');
-  const crumbTitle    = document.getElementById('v2TopbarCrumb')?.querySelector('.v2-topbar-title');
+  if (panelTitle)    panelTitle.textContent    = def.title;
+  if (panelSubtitle) panelSubtitle.textContent = def.subtitle;
 
-  if (driverOpsItem) {
-    driverOpsItem.classList.toggle('v2-rail-item--active', !isAdm);
-    driverOpsItem.setAttribute('aria-current', String(!isAdm));
-  }
-  if (adminItem) {
-    adminItem.classList.toggle('v2-rail-item--active', isAdm);
-    adminItem.setAttribute('aria-current', String(isAdm));
-  }
+  // Module-aware primary CTA (v1.14.1).
+  updatePanelCta();
 
-  if (driverOpsNav) driverOpsNav.style.display = isAdm ? 'none' : '';
-  if (adminNav)     adminNav.style.display     = isAdm ? ''     : 'none';
-  if (panelTitle)    panelTitle.textContent    = isAdm ? 'Administration'      : 'Driver Operations';
-  if (panelSubtitle) panelSubtitle.textContent = isAdm ? 'Manajemen Platform' : 'Operasional Kendaraan';
-  if (crumbTitle)    crumbTitle.textContent    = isAdm ? 'Administration'      : 'Driver Operations';
+  // Land on the module's default menu.
+  def.land();
+}
 
-  if (isAdm) {
-    setV2PanelNavActive('v2NavAdminUsers');
-    setWorkspace('administration');
-  } else {
-    setV2PanelNavActive('v2NavDashboard');
-    setWorkspace('dashboard');
-    renderViews();
-    if (isDriver()) renderDriverDashboard();
+/* ──────────────────────────────────────────────────────────────────
+   Navigation routing layer (v1.14.0)
+
+   One function per MENU item. Panel buttons, the mobile sidebar drawer and
+   any mobile sub-nav all call these — single source of truth for routing.
+   Each sets the active panel item, breadcrumb, workspace and any sub-state.
+   ────────────────────────────────────────────────────────────────── */
+
+/* ── MODUL: Driver Operations ── */
+function navJadwalDriver() {
+  setV2PanelNavActive('v2NavDashboard');
+  setCrumb('DRIVER OPS', 'Jadwal Driver');
+  setCurrentDate(getCurrentDate());
+  setWorkspace('dashboard');
+  renderViews();
+  if (isDriver()) renderDriverDashboard();
+}
+function navPending() {
+  setV2PanelNavActive('v2NavPending');
+  setCrumb('DRIVER OPS', isAdmin() ? 'Pending — Antrian' : 'Pending — Riwayat');
+  setWorkspace('pending');
+}
+function navJadwalSaya() {
+  setV2PanelNavActive('v2NavJadwalSaya');
+  setCrumb('DRIVER OPS', 'Jadwal Saya');
+  setWorkspace('dashboard');
+  setTimeout(() => document.getElementById('driverDashboard')?.scrollIntoView({ behavior: 'smooth' }), 50);
+}
+function navManajemenDriver() {
+  activeAdminModule = 'driverops';
+  activeAdminSection = 'drivers';
+  setV2PanelNavActive('v2NavMasterDrivers');
+  setCrumb('DRIVER OPS', 'Manajemen Driver');
+  setWorkspace('administration');
+}
+function navManajemenKendaraan() {
+  activeAdminModule = 'driverops';
+  activeAdminSection = 'vehicles';
+  setV2PanelNavActive('v2NavMasterVehicles');
+  setCrumb('DRIVER OPS', 'Manajemen Kendaraan');
+  setWorkspace('administration');
+}
+function navAuditDriver() {
+  activeAdminModule = 'driverops';
+  activeAdminSection = 'audit';
+  auditCategoryFilter = 'drivers';
+  const sel = document.getElementById('v2AuditCategoryFilter');
+  if (sel) sel.value = 'drivers';
+  setV2PanelNavActive('v2NavAuditDriver');
+  setCrumb('DRIVER OPS', 'Audit Driver');
+  setWorkspace('administration');
+}
+function navAuditKendaraan() {
+  activeAdminModule = 'driverops';
+  activeAdminSection = 'audit';
+  auditCategoryFilter = 'vehicles';
+  const sel = document.getElementById('v2AuditCategoryFilter');
+  if (sel) sel.value = 'vehicles';
+  setV2PanelNavActive('v2NavAuditVehicle');
+  setCrumb('DRIVER OPS', 'Audit Kendaraan');
+  setWorkspace('administration');
+}
+
+/* ── MODUL: Petty Cash Center ── (embedded native module) */
+async function navPettyCash(screen, navId) {
+  setCrumb('PETTY CASH', PC_MENU_TITLES[screen] || 'Petty Cash Center');
+  if (navId) setV2PanelNavActive(navId);
+  setWorkspace('pettycash');
+  if (!pettyCashMounted) {
+    pettyCashMounted = true;
+    await mountPettyCash(document.getElementById('v2PettyCashWorkspace'));
   }
+  setPettyCashScreen(screen);
+}
+const PC_MENU_TITLES = {
+  dashboard: 'Dashboard', expenses: 'Pengeluaran', norGenerate: 'Generate NOR',
+  norHistory: 'Riwayat NOR', settings: 'Pengaturan',
+};
+
+/* ── MODUL: Analytics ── */
+function navAnalyticsDriver() {
+  activeAdminModule = 'analytics';
+  activeAdminSection = 'analytics';
+  setV2PanelNavActive('v2NavAnalyticsDriver');
+  setCrumb('ANALYTICS', 'Analytics Driver');
+  setWorkspace('administration');
+}
+function navAnalyticsPettyCash() {
+  setV2PanelNavActive('v2NavAnalyticsPetty');
+  setCrumb('ANALYTICS', 'Analytics Petty Cash');
+  showModulePlaceholder('Analytics Petty Cash', 'Analytics Petty Cash akan hadir pada versi berikutnya.');
+}
+function navAnalyticsGabungan() {
+  setV2PanelNavActive('v2NavAnalyticsGabungan');
+  setCrumb('ANALYTICS', 'Analytics Gabungan');
+  showModulePlaceholder('Analytics Gabungan', 'Analytics Gabungan akan hadir pada versi berikutnya.');
+}
+
+/* ── MODUL: Konfigurasi ── */
+function navManajemenUser() {
+  activeAdminModule = 'konfigurasi';
+  activeAdminSection = 'users';
+  setV2PanelNavActive('v2NavKonfUsers');
+  setCrumb('KONFIGURASI', 'Manajemen User');
+  setWorkspace('administration');
+}
+function navKonfigurasiGlobal() {
+  activeAdminModule = 'konfigurasi';
+  activeAdminSection = 'config';
+  setV2PanelNavActive('v2NavKonfGlobal');
+  setCrumb('KONFIGURASI', 'Konfigurasi Global');
+  setWorkspace('administration');
+}
+
+/** Render a "coming soon" placeholder into the shared placeholder workspace. */
+function showModulePlaceholder(title, message) {
+  setWorkspace('placeholder');
+  const el = document.getElementById('v2PlaceholderWorkspace');
+  if (!el) return;
+  el.innerHTML = `
+    <div class="v2-module-placeholder">
+      <div class="v2-module-placeholder-card">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+             stroke-linecap="round" stroke-linejoin="round" width="40" height="40" aria-hidden="true">
+          <path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 5-6"/>
+        </svg>
+        <h2 class="v2-module-placeholder-title">${esc(title)}</h2>
+        <p class="v2-module-placeholder-text">${esc(message)}</p>
+      </div>
+    </div>`;
 }
 
 function initV2Rail() {
@@ -673,10 +893,33 @@ function initV2Rail() {
         <div class="v2-rail-tooltip" aria-hidden="true">Petty Cash Center</div>
       </div>
 
-      <!-- Administration — admin only; shown by updatePermissionUI() -->
-      <div class="v2-rail-item" id="v2RailAdmin"
+      <!-- Analytics — admin only; shown by updatePermissionUI() (v1.14.0) -->
+      <div class="v2-rail-item" id="v2RailAnalytics"
            role="button" tabindex="0"
-           aria-label="Administration" aria-current="false" style="display:none;">
+           aria-label="Analytics" aria-current="false" style="display:none;">
+        <svg class="v2-rail-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"/>
+        </svg>
+        <div class="v2-rail-tooltip" aria-hidden="true">Analytics</div>
+      </div>
+
+      <!-- Konfigurasi — admin only; shown by updatePermissionUI() (v1.14.0) -->
+      <div class="v2-rail-item" id="v2RailKonfigurasi"
+           role="button" tabindex="0"
+           aria-label="Konfigurasi" aria-current="false" style="display:none;">
+        <svg class="v2-rail-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/>
+        </svg>
+        <div class="v2-rail-tooltip" aria-hidden="true">Konfigurasi</div>
+      </div>
+
+      <!-- Administration — RETIRED from navigation (v1.14.0). Element kept in
+           the DOM for rollback compatibility but permanently hidden; no module
+           activates it. Its content lives under Driver Operations / Konfigurasi
+           / Analytics now. -->
+      <div class="v2-rail-item" id="v2RailAdmin"
+           role="button" tabindex="-1" aria-hidden="true"
+           aria-label="Administration" aria-current="false" style="display:none !important;">
         <svg class="v2-rail-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
           <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/>
         </svg>
@@ -712,44 +955,40 @@ function initV2Rail() {
   const crest       = document.getElementById('v2RailCrest');
   const driverOps   = document.getElementById('v2RailDriverOps');
   const railPetty   = document.getElementById('v2RailPettyCash');
-  const railAdmin   = document.getElementById('v2RailAdmin');
+  const railAnalytics = document.getElementById('v2RailAnalytics');
+  const railKonfig  = document.getElementById('v2RailKonfigurasi');
   const railTheme   = document.getElementById('v2RailThemeBtn');
 
   crest?.addEventListener('click', () => {
     document.querySelector('.main-content')?.scrollTo({ top: 0, behavior: 'smooth' });
   });
 
+  // ── Rail MODULE switching (v1.14.0) ──
   driverOps?.addEventListener('click', () => setRailModule('driverops'));
-  railAdmin?.addEventListener('click', () => setRailModule('administration'));
+  railPetty?.addEventListener('click', () => setRailModule('pettycash'));
+  railAnalytics?.addEventListener('click', () => setRailModule('analytics'));
+  railKonfig?.addEventListener('click', () => setRailModule('konfigurasi'));
 
-  // Mobile: sidebar "Admin Panel" button navigates to Administration workspace.
-  // The rail is hidden at <768px, so this is the only mobile entry point.
-  // Sidebar auto-closes on .sidebar-nav-item click (initSidebar handler).
-  document.getElementById('btnUserMgmt')?.addEventListener('click', () => setRailModule('administration'));
+  // Mobile (rail hidden <768px): repointed sidebar drawer buttons are the
+  // module entry points. Sidebar auto-closes on .sidebar-nav-item click.
+  document.getElementById('btnUserMgmt')?.addEventListener('click', () => setRailModule('konfigurasi'));
+  document.getElementById('btnPettyCash')?.addEventListener('click', () => setRailModule('pettycash'));
+  document.getElementById('btnAnalytics')?.addEventListener('click', () => setRailModule('analytics'));
 
   railTheme?.addEventListener('click', () => {
     const current = document.documentElement.getAttribute('data-theme') || 'light';
     applyTheme(current === 'dark' ? 'light' : 'dark', true);
   });
 
-  // Theme hook for the Petty Cash Center (its internal toggle delegates here
-  // so the app-wide theme stays the single source of truth).
+  // Theme hook retained for any module that delegates to the app-wide theme
+  // (single source of truth).
   window.__pbsiToggleTheme = () => {
     const current = document.documentElement.getAttribute('data-theme') || 'light';
     applyTheme(current === 'dark' ? 'light' : 'dark', true);
   };
 
-  // Petty Cash Center — admin-only module. Both the desktop rail item (v1.13.2)
-  // and the legacy V1 sidebar button (mobile entry) open the module surface.
-  const openPettyCash = () => {
-    setSidebarActive('btnPettyCash');
-    openPettyCashCenter();
-  };
-  railPetty?.addEventListener('click', openPettyCash);
-  document.getElementById('btnPettyCash')?.addEventListener('click', openPettyCash);
-
   // Keyboard: Enter/Space activates any focusable rail element
-  [crest, driverOps, railPetty, railAdmin].forEach(el => {
+  [crest, driverOps, railPetty, railAnalytics, railKonfig].forEach(el => {
     el?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
@@ -800,11 +1039,20 @@ function initV2Panel() {
         </svg>
         Ajukan Jadwal
       </button>
+      <!-- Petty Cash primary CTA (v1.14.1) — shown only when the Petty Cash module is active -->
+      <button class="v2-panel-btn v2-panel-btn--primary" id="v2BtnTambahPengeluaran" type="button" style="display:none;">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true">
+          <path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"/>
+        </svg>
+        Tambah Pengeluaran
+      </button>
     </div>
 
-    <!-- Driver Operations navigation — visible when driverops module is active -->
+    <!-- ═══ MODUL: Driver Operations ═══ -->
     <nav class="v2-panel-nav v2-panel-nav--driverops" id="v2PanelDriverOpsNav"
          aria-label="Driver Operations menu">
+
+      <div class="v2-panel-section">Operasional</div>
 
       <!-- Jadwal Driver: all authenticated roles -->
       <button class="v2-panel-nav-item v2-panel-nav-item--active" id="v2NavDashboard" type="button">
@@ -832,20 +1080,108 @@ function initV2Panel() {
         Jadwal Saya
       </button>
 
+      <!-- Master Data + Audit: admin only — toggled by updatePermissionUI() -->
+      <div id="v2PanelDriverMaster" style="display:none;">
+        <div class="v2-panel-section">Master Data</div>
+        <button class="v2-panel-nav-item" id="v2NavMasterDrivers" type="button">
+          <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/>
+          </svg>
+          Manajemen Driver
+        </button>
+        <button class="v2-panel-nav-item" id="v2NavMasterVehicles" type="button">
+          <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path d="M4 4a2 2 0 00-2 2v6a2 2 0 002 2h1a2 2 0 104 0h2a2 2 0 104 0 2 2 0 002-2V8a2 2 0 00-.586-1.414l-2-2A2 2 0 0014 4H4zm9 2.586L14.414 8H13V6.586zM6 15a1 1 0 110-2 1 1 0 010 2zm8 0a1 1 0 110-2 1 1 0 010 2z"/>
+          </svg>
+          Manajemen Kendaraan
+        </button>
+      </div>
+
+      <div id="v2PanelDriverAudit" style="display:none;">
+        <div class="v2-panel-section">Audit</div>
+        <button class="v2-panel-nav-item" id="v2NavAuditDriver" type="button">
+          <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V4a2 2 0 00-2-2H6zm1 5a1 1 0 011-1h4a1 1 0 110 2H8a1 1 0 01-1-1zm1 3a1 1 0 100 2h3a1 1 0 100-2H8z" clip-rule="evenodd"/>
+          </svg>
+          Audit Driver
+        </button>
+        <button class="v2-panel-nav-item" id="v2NavAuditVehicle" type="button">
+          <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V4a2 2 0 00-2-2H6zm1 5a1 1 0 011-1h4a1 1 0 110 2H8a1 1 0 01-1-1zm1 3a1 1 0 100 2h3a1 1 0 100-2H8z" clip-rule="evenodd"/>
+          </svg>
+          Audit Kendaraan
+        </button>
+      </div>
+
     </nav>
 
-    <!-- Administration navigation — visible when administration module is active (admin only) -->
-    <nav class="v2-panel-nav v2-panel-nav--admin" id="v2PanelAdminNav"
-         aria-label="Administration menu" style="display:none;">
+    <!-- ═══ MODUL: Petty Cash Center ═══ (admin only) -->
+    <nav class="v2-panel-nav v2-panel-nav--pettycash" id="v2PanelPettyCashNav"
+         aria-label="Petty Cash Center menu" style="display:none;">
+      <button class="v2-panel-nav-item v2-panel-nav-item--active" id="v2NavPcDashboard" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M3 4a1 1 0 011-1h5a1 1 0 011 1v5a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM11 4a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1V4zM11 10a1 1 0 011-1h4a1 1 0 011 1v6a1 1 0 01-1 1h-4a1 1 0 01-1-1v-6zM3 13a1 1 0 011-1h5a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3z"/></svg>
+        Dashboard
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavPcExpenses" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M3 5a2 2 0 012-2h10a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V5zm3 2a1 1 0 000 2h8a1 1 0 100-2H6zm0 3a1 1 0 100 2h8a1 1 0 100-2H6zm0 3a1 1 0 100 2h4a1 1 0 100-2H6z" clip-rule="evenodd"/></svg>
+        Pengeluaran
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavPcNorGenerate" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h4a1 1 0 100-2H7z" clip-rule="evenodd"/></svg>
+        Generate NOR
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavPcNorHistory" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
+        Riwayat NOR
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavPcSettings" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
+        Pengaturan
+      </button>
+    </nav>
 
-      <!-- Administration Workspace entry only -->
-      <button class="v2-panel-nav-item v2-panel-nav-item--active" id="v2NavAdminUsers" type="button">
+    <!-- ═══ MODUL: Analytics ═══ (admin only) -->
+    <nav class="v2-panel-nav v2-panel-nav--analytics" id="v2PanelAnalyticsNav"
+         aria-label="Analytics menu" style="display:none;">
+      <button class="v2-panel-nav-item v2-panel-nav-item--active" id="v2NavAnalyticsDriver" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"/></svg>
+        Analytics Driver
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavAnalyticsPetty" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
+        Analytics Petty Cash
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavAnalyticsGabungan" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M5 3a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V5a2 2 0 00-2-2H5zm2.5 9a1.5 1.5 0 100-3 1.5 1.5 0 000 3zm5 0a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/></svg>
+        Analytics Gabungan
+      </button>
+    </nav>
+
+    <!-- ═══ MODUL: Konfigurasi ═══ (admin only) -->
+    <nav class="v2-panel-nav v2-panel-nav--konfigurasi" id="v2PanelKonfigurasiNav"
+         aria-label="Konfigurasi menu" style="display:none;">
+      <button class="v2-panel-nav-item v2-panel-nav-item--active" id="v2NavKonfUsers" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/>
+        </svg>
+        Manajemen User
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavKonfGlobal" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
+        Konfigurasi Global
+      </button>
+    </nav>
+
+    <!-- Legacy Administration nav — retired from navigation (hidden), kept for
+         rollback compatibility. No rail entry activates this block. -->
+    <nav class="v2-panel-nav v2-panel-nav--admin" id="v2PanelAdminNav"
+         aria-label="Administration menu" style="display:none;" hidden>
+      <button class="v2-panel-nav-item" id="v2NavAdminUsers" type="button">
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
           <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/>
         </svg>
         Administration Workspace
       </button>
-
     </nav>
 
     <div class="v2-panel-spacer"></div>
@@ -912,40 +1248,42 @@ function initV2Panel() {
     openRequestFormModal();
   });
 
-  // Dashboard nav: switch to dashboard workspace
-  document.getElementById('v2NavDashboard')?.addEventListener('click', () => {
-    setV2PanelNavActive('v2NavDashboard');
-    const crumbTitle = document.getElementById('v2TopbarCrumb')?.querySelector('.v2-topbar-title');
-    if (crumbTitle) crumbTitle.textContent = 'Driver Operations';
-    setCurrentDate(getCurrentDate());
-    setWorkspace('dashboard');
-    renderViews();
-    if (isDriver()) renderDriverDashboard();
+  // Tambah Pengeluaran (v1.14.1): Petty Cash primary CTA → open the add-expense
+  // modal. Ensure the module is mounted/active first (covers a direct click).
+  document.getElementById('v2BtnTambahPengeluaran')?.addEventListener('click', async () => {
+    if (!isAdmin()) return;
+    if (activeRailModule !== 'pettycash') await navPettyCash('dashboard', 'v2NavPcDashboard');
+    openPettyCashAddExpense();
   });
 
-  // Pending nav: open inline workspace instead of modal
-  document.getElementById('v2NavPending')?.addEventListener('click', () => {
-    setV2PanelNavActive('v2NavPending');
-    const label = isAdmin() ? 'Driver Operations › Antrian' : 'Driver Operations › Riwayat';
-    const crumbTitle = document.getElementById('v2TopbarCrumb')?.querySelector('.v2-topbar-title');
-    if (crumbTitle) crumbTitle.textContent = label;
-    setWorkspace('pending');
-  });
+  // ── Panel MENU handlers — all delegate to the v1.14.0 routing layer ──
+  // MODUL Driver Operations
+  document.getElementById('v2NavDashboard')?.addEventListener('click', navJadwalDriver);
+  document.getElementById('v2NavPending')?.addEventListener('click', navPending);
+  document.getElementById('v2NavJadwalSaya')?.addEventListener('click', navJadwalSaya);
+  document.getElementById('v2NavMasterDrivers')?.addEventListener('click', navManajemenDriver);
+  document.getElementById('v2NavMasterVehicles')?.addEventListener('click', navManajemenKendaraan);
+  document.getElementById('v2NavAuditDriver')?.addEventListener('click', navAuditDriver);
+  document.getElementById('v2NavAuditVehicle')?.addEventListener('click', navAuditKendaraan);
 
-  // Jadwal Saya: switch to dashboard then scroll to driver section
-  document.getElementById('v2NavJadwalSaya')?.addEventListener('click', () => {
-    setV2PanelNavActive('v2NavJadwalSaya');
-    const crumbTitle = document.getElementById('v2TopbarCrumb')?.querySelector('.v2-topbar-title');
-    if (crumbTitle) crumbTitle.textContent = 'Driver Operations › Jadwal Saya';
-    setWorkspace('dashboard');
-    setTimeout(() => document.getElementById('driverDashboard')?.scrollIntoView({ behavior: 'smooth' }), 50);
-  });
+  // MODUL Petty Cash Center
+  document.getElementById('v2NavPcDashboard')?.addEventListener('click', () => navPettyCash('dashboard', 'v2NavPcDashboard'));
+  document.getElementById('v2NavPcExpenses')?.addEventListener('click', () => navPettyCash('expenses', 'v2NavPcExpenses'));
+  document.getElementById('v2NavPcNorGenerate')?.addEventListener('click', () => navPettyCash('norGenerate', 'v2NavPcNorGenerate'));
+  document.getElementById('v2NavPcNorHistory')?.addEventListener('click', () => navPettyCash('norHistory', 'v2NavPcNorHistory'));
+  document.getElementById('v2NavPcSettings')?.addEventListener('click', () => navPettyCash('settings', 'v2NavPcSettings'));
 
-  // Manajemen User: open V2 administration workspace
-  document.getElementById('v2NavAdminUsers')?.addEventListener('click', () => {
-    setV2PanelNavActive('v2NavAdminUsers');
-    setWorkspace('administration');
-  });
+  // MODUL Analytics
+  document.getElementById('v2NavAnalyticsDriver')?.addEventListener('click', navAnalyticsDriver);
+  document.getElementById('v2NavAnalyticsPetty')?.addEventListener('click', navAnalyticsPettyCash);
+  document.getElementById('v2NavAnalyticsGabungan')?.addEventListener('click', navAnalyticsGabungan);
+
+  // MODUL Konfigurasi
+  document.getElementById('v2NavKonfUsers')?.addEventListener('click', navManajemenUser);
+  document.getElementById('v2NavKonfGlobal')?.addEventListener('click', navKonfigurasiGlobal);
+
+  // Legacy Administration entry (hidden) — kept wired for rollback safety.
+  document.getElementById('v2NavAdminUsers')?.addEventListener('click', navManajemenUser);
 
   // Footer avatar: toggle user menu
   const footerAvatar = document.getElementById('v2FooterAvatar');
@@ -1656,16 +1994,26 @@ function setWorkspace(name) {
   const isDash  = name === 'dashboard';
   const isPend  = name === 'pending';
   const isAdmWs = name === 'administration';
+  const isPc    = name === 'pettycash';
+  const isPh    = name === 'placeholder';
 
   const timelineSurface = document.getElementById('v2TimelineSurface');
   const driverDash      = document.getElementById('driverDashboard');
   const pendingWs       = document.getElementById('v2PendingWorkspace');
   const adminWs         = document.getElementById('v2AdministrationWorkspace');
+  const pcWs            = document.getElementById('v2PettyCashWorkspace');
+  const phWs            = document.getElementById('v2PlaceholderWorkspace');
 
   if (timelineSurface) timelineSurface.style.display = isDash ? ''      : 'none';
   if (driverDash)      driverDash.style.display      = isDash && isDriver() ? 'block' : 'none';
   if (pendingWs)       pendingWs.style.display       = isPend  ? 'block' : 'none';
   if (adminWs)         adminWs.style.display         = isAdmWs ? 'block' : 'none';
+  if (pcWs)            pcWs.style.display            = isPc    ? 'block' : 'none';
+  if (phWs)            phWs.style.display            = isPh    ? 'block' : 'none';
+
+  // Pause the embedded Petty Cash module's live re-render when it is hidden;
+  // navPettyCash()/setPettyCashScreen() resume it on return.
+  if (!isPc && pettyCashMounted) closePettyCashCenter();
 
   if (isDash) {
     renderKPIStrip();
@@ -1783,6 +2131,33 @@ function initV2PendingWorkspace() {
   ws.style.display = 'none';
   document.querySelector('.main-content')?.appendChild(ws);
   console.log('[VSM-9] Pending workspace injected');
+}
+
+/**
+ * v1.14.0: Inject the embedded Petty Cash module host (#v2PettyCashWorkspace).
+ * Carries class .pc-root so the module's scoped design tokens resolve. The
+ * module mounts lazily into this container on first navigation (navPettyCash).
+ */
+function initV2PettyCashWorkspace() {
+  const ws = document.createElement('div');
+  ws.id = 'v2PettyCashWorkspace';
+  ws.className = 'v2-workspace pc-root';
+  ws.style.display = 'none';
+  document.querySelector('.main-content')?.appendChild(ws);
+  console.log('[v1.14.0] Petty Cash workspace host injected');
+}
+
+/**
+ * v1.14.0: Inject a shared placeholder workspace used by "coming soon" menus
+ * (Analytics Petty Cash, Analytics Gabungan). Content is set by showModulePlaceholder().
+ */
+function initV2PlaceholderWorkspace() {
+  const ws = document.createElement('div');
+  ws.id = 'v2PlaceholderWorkspace';
+  ws.className = 'v2-workspace';
+  ws.style.display = 'none';
+  document.querySelector('.main-content')?.appendChild(ws);
+  console.log('[v1.14.0] Placeholder workspace injected');
 }
 
 const V2_ROLE_CONFIG = [
@@ -2331,8 +2706,13 @@ function renderV2AdminWorkspace() {
   const placeholderSection = document.getElementById('v2AdminSectionPlaceholder');
   const overviewRow        = document.getElementById('v2AdminOverviewRow');
 
+  // v1.14.0: the tab strip is the mobile sub-nav — show only the tabs that
+  // belong to the active platform module so it mirrors the new module IA.
+  const moduleSections = ADMIN_MODULE_SECTIONS[activeAdminModule] || null;
   document.querySelectorAll('[data-admin-section]').forEach(btn => {
-    btn.classList.toggle('v2-admin-nav-tab--active', btn.dataset.adminSection === activeAdminSection);
+    const key = btn.dataset.adminSection;
+    btn.classList.toggle('v2-admin-nav-tab--active', key === activeAdminSection);
+    btn.style.display = (!moduleSections || moduleSections.includes(key)) ? '' : 'none';
   });
 
   const pageSubtitle = document.querySelector('.v2-admin-page-subtitle');
@@ -6829,6 +7209,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     initV2DriverAvatars();        // VSM-5C Part 7: observer stamps data-initials onto driver rows
     initV2PendingWorkspace();     // VSM-9: inline pending workspace
     initV2AdministrationWorkspace(); // VSM-9: admin-only administration workspace
+    initV2PettyCashWorkspace();   // v1.14.0: embedded Petty Cash module host
+    initV2PlaceholderWorkspace(); // v1.14.0: shared "coming soon" placeholder
     initThemeManager();           // VSM-9: dark mode toggle wired to #v2TopbarThemeBtn
   }
 

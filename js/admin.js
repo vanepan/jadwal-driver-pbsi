@@ -172,6 +172,12 @@ export function updateAdminButtons() {
   if (btnPettyCash) {
     btnPettyCash.style.display = isAdmin() ? 'flex' : 'none';
   }
+
+  // Analytics module — admin only (v1.14.0 mobile module entry).
+  const btnAnalytics = document.getElementById('btnAnalytics');
+  if (btnAnalytics) {
+    btnAnalytics.style.display = isAdmin() ? 'flex' : 'none';
+  }
 }
 
 function openUsersListModal() {

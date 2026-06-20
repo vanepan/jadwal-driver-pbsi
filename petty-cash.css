@@ -34,7 +34,12 @@
   max-width: 100vw;
 }
 
-.pc-root[data-theme="dark"] {
+/* Dark mode: follows either the module root's own data-theme (set by JS) OR
+   the platform's <html data-theme="dark"> ancestor (v1.14.0 embedded module —
+   the app theme toggle flips the document attribute and the tokens cascade in
+   without a Petty Cash re-render). */
+.pc-root[data-theme="dark"],
+[data-theme="dark"] .pc-root {
   --bg: #0d0d0e; --card: #161617; --card2: #1c1c1e; --border: #2a2a2c; --border2: #222224;
   --text: #ededec; --muted: #8f8a84; --label: #6e6962;
   --sidebar: #121213; --rail: #121213;
@@ -77,6 +82,11 @@
 /* Desktop default: mobile-only chrome (hamburger, drawer) stays hidden. */
 .pc-root .pc-mobile-only { display: none !important; }
 .pc-root .pc-drawer-scrim { display: none; }
+
+/* v1.14.0 embedded module: the in-content screen switcher is mobile-only —
+   on desktop the platform panel menu drives navigation. */
+.pc-embed-nav { display: flex; }
+@media (min-width: 768px) { .pc-embed-nav { display: none !important; } }
 
 /* Tablet-landscape down: KPI grid to two-up before the full mobile reflow. */
 @media (max-width: 1180px) {

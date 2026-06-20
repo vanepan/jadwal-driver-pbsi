@@ -1,13 +1,16 @@
 /* ============================================================
-   PETTY-CASH-CENTER.JS — Admin-only module UI (full-screen)
+   PETTY-CASH-CENTER.JS — Admin-only platform module (embedded)
 
-   Vanilla-JS port of the approved Petty Cash Center design. Mounts
-   a self-contained `.pc-root` overlay (icon rail · sidebar · topbar ·
-   content) into the DOM, mirroring how the platform's other heavy
-   modules mount their own surface. The design's inline styling is
-   reproduced verbatim for exact visual fidelity; only the data
-   bindings and event plumbing were adapted to the production
-   architecture (RTDB store + domain service + shared doc engine).
+   Vanilla-JS port of the approved Petty Cash Center design.
+
+   v1.14.0 — Navigation Architecture Foundation: this is no longer a
+   full-screen `.pc-root` overlay. It mounts into a platform-owned host
+   container (#v2PettyCashWorkspace, class .pc-root so its scoped tokens
+   resolve) via mountPettyCash() and renders ONLY content + modals. The
+   rail, panel, topbar, profile and theme are owned by the unified shell;
+   setPettyCashScreen() (driven by the platform panel menu / mobile sub-nav)
+   switches screens. The legacy overlay builders (iconRail/sidebar/topbar/
+   mobileDrawer) are retained but no longer called.
 
    Rendering model: full re-render of the root on every state change,
    with focus/caret restoration so live-filter inputs keep focus.
@@ -154,34 +157,28 @@ function restoreFocus() {
   pendingFocus = null;
 }
 
-/* ── Mount / open / close ────────────────────────────────────────── */
-function ensureRoot() {
-  if (root) return root;
-  root = document.createElement('div');
-  root.id = 'pcRoot';
-  root.className = 'pc-root';
-  // Below the shared document viewer (z-index:1000) so the NOR PDF preview
-  // layers above this overlay; above the normal app chrome. The module's own
-  // modals/toast sit within this root's stacking context.
-  root.style.cssText = 'position:fixed;inset:0;z-index:999;display:none';
-  document.body.appendChild(root);
-  bindDelegation();
-  return root;
-}
-
+/* ── Mount / render — embedded native module (v1.14.0) ─────────────
+   The Petty Cash Center is no longer a full-screen `.pc-root` overlay.
+   It mounts into a host container supplied by the platform shell
+   (#v2PettyCashWorkspace, carrying class .pc-root so the module's scoped
+   design tokens still resolve) and renders ONLY its content + modals.
+   The private icon rail, sidebar, topbar, mobile drawer, theme toggle and
+   "Kembali ke Driver Operations" exit are retired — navigation, identity
+   and theme are now owned by the unified platform shell. */
 function syncTheme() {
   const t = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
   if (root) root.setAttribute('data-theme', t);
 }
 
-/** Public entry — open the Petty Cash Center (admin only). */
-export async function openPettyCashCenter() {
+/** Mount the module into a platform-owned host container (admin only). */
+export async function mountPettyCash(container) {
   if (!isAdmin()) { console.warn('[PettyCash] admin only'); return; }
-  ensureRoot();
-  syncTheme();
-  root.style.display = 'block';
-  document.body.style.overflow = 'hidden';
+  if (!container) { console.warn('[PettyCash] mount container missing'); return; }
+  root = container;
+  if (!root.classList.contains('pc-root')) root.classList.add('pc-root');
+  bindDelegation();          // guarded by `bound`; binds onClick/onInput/onChange once
   opened = true;
+  syncTheme();
   if (!st.settingsDraft) st.settingsDraft = clone(getSettings());
   render();
   await initPettyCashStore();
@@ -189,10 +186,33 @@ export async function openPettyCashCenter() {
   render();
 }
 
-export function closePettyCashCenter() {
-  if (root) root.style.display = 'none';
-  document.body.style.overflow = '';
-  opened = false;
+/** Switch the active screen — driven by the platform panel menu / mobile sub-nav. */
+export function setPettyCashScreen(key) {
+  opened = true;
+  st.screen = key;
+  st.addOpen = false; st.notifOpen = false; st.drawerOpen = false;
+  if (key === 'norGenerate') st.norStep = 'select';
+  render();
+}
+
+/** Screen registry consumed by the platform shell to build menus. */
+export function getPettyCashScreens() { return NAV.filter(n => n.key !== 'mobile'); }
+
+/** Open the "Tambah Pengeluaran" modal — used by the platform panel CTA (v1.14.1). */
+export function openPettyCashAddExpense() {
+  if (!root || !opened) { console.warn('[PettyCash] not mounted'); return; }
+  setState({ addOpen: true, drawerOpen: false, form: blankForm() });
+}
+
+/** Current active screen key. */
+export function getPettyCashScreen() { return st.screen; }
+
+/** Leaving the module — keep state, stop reacting to store changes while hidden. */
+export function closePettyCashCenter() { opened = false; }
+
+/** @deprecated overlay entry retired in v1.14.0 — use mountPettyCash(). */
+export async function openPettyCashCenter() {
+  console.warn('[PettyCash] openPettyCashCenter() is deprecated; module is now embedded');
 }
 
 function clone(o) { return JSON.parse(JSON.stringify(o)); }
@@ -208,29 +228,42 @@ function render() {
   restoreFocus();
 }
 
+/* Embedded shell — content + modals only. The platform shell supplies the
+   rail, panel, topbar, profile and theme, so none of those are rendered here.
+   A compact horizontal screen-nav is included for <768px where the platform
+   panel is hidden (it reuses the existing data-act="nav" dispatch). */
 function shell() {
-  const user = getCurrentUser() || {};
-  const initial = (user.displayName || user.username || 'A').charAt(0).toUpperCase();
   const m = svc.computeMetrics();
   return `
-  <div style="display:flex;height:100vh;width:100%;overflow:hidden;background:var(--bg);color:var(--text)">
-    ${iconRail()}
-    ${sidebar(m)}
-    <div style="flex:1;min-width:0;display:flex;flex-direction:column;height:100vh">
-      ${topbar(user, initial, m)}
-      <div style="flex:1;overflow-y:auto;overflow-x:hidden">
-        <div class="pc-content-pad" style="max-width:1200px;margin:0 auto;padding:26px 30px 60px">
-          ${content(m)}
-        </div>
+  <div class="pc-embed" style="width:100%;background:var(--bg);color:var(--text)">
+    ${embedNav()}
+    <div style="overflow-x:hidden">
+      <div class="pc-content-pad" style="max-width:1200px;margin:0 auto;padding:20px 24px 64px">
+        ${content(m)}
       </div>
     </div>
   </div>
-  ${st.drawerOpen ? mobileDrawer(m) : ''}
   ${st.addOpen ? addModal() : ''}
   ${st.detailId ? detailDrawer() : ''}
   ${st.notifOpen ? notifModal(m) : ''}
   ${st.cycleModalOpen ? cycleModal(m) : ''}
   ${st.toast ? toastEl() : ''}`;
+}
+
+/* Mobile-only in-content screen switcher (hidden ≥768px via petty-cash.css —
+   the platform panel menu handles navigation on desktop). */
+function embedNav() {
+  const screen = st.screen;
+  const items = NAV.filter(n => n.key !== 'mobile').map(n => {
+    const act = n.key === screen || (n.key === 'norHistory' && screen === 'norDetail');
+    return `
+    <button data-act="nav" data-id="${n.key}" type="button"
+      style="flex:none;display:inline-flex;align-items:center;gap:7px;padding:8px 13px;border-radius:9px;border:1px solid ${act ? 'var(--primary)' : 'var(--border)'};background:${act ? 'var(--primary-tint)' : 'var(--card)'};color:${act ? 'var(--primary-text)' : 'var(--text)'};font-size:13px;font-weight:${act ? '700' : '600'};white-space:nowrap;cursor:pointer">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${n.icon}</svg>
+      ${n.label}
+    </button>`;
+  }).join('');
+  return `<div class="pc-embed-nav" style="display:flex;gap:8px;overflow-x:auto;padding:14px 16px 4px;-webkit-overflow-scrolling:touch">${items}</div>`;
 }
 
 /* ── Icon rail ───────────────────────────────────────────────────── */
@@ -799,6 +832,9 @@ function norDetailScreen(m) {
         <span style="${statusStyle}">${meta.label}</span>
         <button data-act="exportNor" data-id="${esc(nor.id)}" style="display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 15px;font-weight:600;font-size:12.5px;color:var(--text);cursor:pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export Excel</button>
         <button data-act="printNor" data-id="${esc(nor.id)}" style="display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 15px;font-weight:600;font-size:12.5px;color:var(--text);cursor:pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Cetak / PDF</button>
+        ${svc.isNorConvertible(nor) ? (isTest
+          ? `<button data-act="convertToOfficial" data-id="${esc(nor.id)}" style="display:flex;align-items:center;gap:7px;background:var(--amber-tint);border:1px solid var(--amber-bd);border-radius:9px;padding:10px 15px;font-weight:600;font-size:12.5px;color:var(--amber);cursor:pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Jadikan NOR Resmi</button>`
+          : `<button data-act="convertToTest" data-id="${esc(nor.id)}" style="display:flex;align-items:center;gap:7px;background:var(--blue-tint);border:1px solid var(--blue-bd);border-radius:9px;padding:10px 15px;font-weight:600;font-size:12.5px;color:var(--blue);cursor:pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 9V3M14 9V3M6 21h12a2 2 0 0 0 1.7-3l-4.3-7V3M8.6 11L4.3 18A2 2 0 0 0 6 21"/></svg>Ubah Menjadi TEST NOR</button>`) : ''}
         ${awaiting ? `<button data-act="receiveFunds" data-id="${esc(nor.id)}" style="display:flex;align-items:center;gap:7px;background:var(--green);color:#fff;border:none;border-radius:9px;padding:10px 15px;font-weight:700;font-size:12.5px;cursor:pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Dana Pengganti Diterima</button>` : ''}
         ${nor.archived
           ? `<button data-act="restoreNor" data-id="${esc(nor.id)}" style="display:flex;align-items:center;gap:7px;background:var(--green-tint);border:1px solid var(--green-bd);border-radius:9px;padding:10px 15px;font-weight:600;font-size:12.5px;color:var(--green);cursor:pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M3.51 13a9 9 0 1 0 2.13-9.36L3 7"/></svg>Pulihkan NOR</button>`
@@ -1143,6 +1179,8 @@ async function onClick(e) {
     case 'filterNorType': setState({ norFilter: id }); return;
     case 'archiveTestNor': return doArchiveTestNor(id);
     case 'restoreNor': return doRestoreNor(id);
+    case 'convertToTest': return doConvertToTest(id);
+    case 'convertToOfficial': return doConvertToOfficial(id);
     case 'exportNor': return doExportNor(id);
     case 'printNor': return doPrintNor(id);
     case 'receiveFunds': return openCycleModal(id);
@@ -1317,6 +1355,39 @@ async function doRestoreNor(id) {
       ? `${nor.norNumber} dipulihkan · ${res.cascadedCount} pengeluaran ikut dipulihkan`
       : `${nor.norNumber} dipulihkan`);
   } catch (err) { toast(err.message || 'Gagal memulihkan NOR'); }
+}
+
+async function doConvertToTest(id) {
+  const nor = getNorById(id); if (!nor) return;
+  // Guard rail (P9) — surface the reason before prompting.
+  if (!svc.isNorConvertible(nor)) { toast('NOR ini sudah direalisasikan dan tidak dapat diubah tipenya.'); return; }
+  const ok = window.confirm(
+    'Ubah Menjadi TEST NOR?\n\n' +
+    'NOR ini akan dikeluarkan dari pelaporan resmi.\n' +
+    'Seluruh pengeluaran terkait akan berubah menjadi TEST NOR.'
+  );
+  if (!ok) return;
+  try {
+    const res = await svc.convertNorToTest(id);
+    setState({ screen: 'norDetail', norDetailId: id });
+    toast(`${nor.norNumber} kini TEST NOR${res.affected ? ` · ${res.affected} pengeluaran` : ''}`);
+  } catch (err) { toast(err.message || 'Gagal mengubah tipe NOR'); }
+}
+
+async function doConvertToOfficial(id) {
+  const nor = getNorById(id); if (!nor) return;
+  if (!svc.isNorConvertible(nor)) { toast('NOR ini sudah direalisasikan dan tidak dapat diubah tipenya.'); return; }
+  const ok = window.confirm(
+    'Jadikan NOR Resmi?\n\n' +
+    'NOR ini akan masuk ke pelaporan resmi.\n' +
+    'Seluruh pengeluaran terkait akan menjadi NOR resmi.'
+  );
+  if (!ok) return;
+  try {
+    const res = await svc.convertNorToOfficial(id);
+    setState({ screen: 'norDetail', norDetailId: id });
+    toast(`${nor.norNumber} kini NOR resmi${res.affected ? ` · ${res.affected} pengeluaran` : ''}`);
+  } catch (err) { toast(err.message || 'Gagal mengubah tipe NOR'); }
 }
 
 async function doExportNor(id) {
