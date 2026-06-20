@@ -27,6 +27,7 @@ import {
   genId, getExpenses, getNors, getActiveCycle, getSettings, getAudit,
   getExpenseById, getNorById, putExpense, putNor, putCycle, putAudit,
   deleteExpense as storeDeleteExpense, applyUpdates, PETTY_CASH_PATHS as P,
+  saveSettings as storeSaveSettings,
 } from './petty-cash-store.js';
 
 /** Operational (official, non-archived) NORs — the only ones that count
@@ -111,6 +112,38 @@ export function computeMetrics() {
     expenseCount: active.length, norCount: operationalNors().length,
     usagePct, low, threshold: settings.lowBalanceThreshold,
   };
+}
+
+/* ── Settings + smart opening-balance sync (v1.13.2.2) ───────────────
+   The active cycle is "empty" when nothing has been realised against it yet:
+   no active (non-archived) expenses and a zero realised total. Only then does a
+   change to the Saldo Awal Default also retune the CURRENT cycle's opening
+   balance; otherwise the change applies to the next cycle only. */
+export function isActiveCycleEmpty() {
+  const cycle = getActiveCycle();
+  if (cycle && (cycle.realizedAmount || 0) > 0) return false;
+  return activeExpenses().length === 0;
+}
+
+/**
+ * Persist Petty Cash settings, with smart opening-balance sync:
+ * • CASE A — active cycle still empty → also apply the new openingBalance to the
+ *   current cycle so the dashboard reflects it immediately.
+ * • CASE B — active cycle already has expenses → settings only; the current
+ *   cycle keeps its opening balance and the new value takes effect on the next
+ *   cycle (created by receiveReplenishment).
+ * Returns { syncedCycle, opening, cycleNumber } for the caller's feedback.
+ */
+export async function saveSettings(draft) {
+  const merged = { ...getSettings(), ...draft };
+  const cycle = getActiveCycle();
+  let syncedCycle = null;
+  if (isActiveCycleEmpty() && cycle && cycle.openingBalance !== merged.openingBalance) {
+    // Empty cycle → no spend, so closing tracks opening.
+    syncedCycle = { ...cycle, openingBalance: merged.openingBalance, closingBalance: merged.openingBalance };
+  }
+  await storeSaveSettings(merged, syncedCycle);
+  return { syncedCycle: !!syncedCycle, opening: merged.openingBalance, cycleNumber: cycle ? cycle.cycleNumber : 1 };
 }
 
 /* ── Expense intents ────────────────────────────────────────────── */

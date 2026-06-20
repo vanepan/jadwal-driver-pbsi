@@ -126,6 +126,8 @@ export async function initPettyCashStore() {
     subscribeFirebasePath(PATH.settings, snap => {
       const v = snap.val();
       cache.settings = v ? { ...DEFAULT_SETTINGS, ...v } : { ...DEFAULT_SETTINGS };
+      // TEMP TRACE (v1.13.2.1) — remove after UAT. Proves load reads the SAME path.
+      console.info('[PettyCash] settings loaded ← read', PATH.settings, '· openingBalance =', cache.settings.openingBalance);
       notify();
     });
   }
@@ -183,10 +185,23 @@ export async function putAudit(entry) {
   if (!isFirebaseConfigured()) { localWrite('audit', entry.id, entry); return; }
   await storeFirebaseData(`${PATH.audit}/${entry.id}`, entry);
 }
-export async function saveSettings(settings) {
+export async function saveSettings(settings, cycle) {
   const merged = { ...DEFAULT_SETTINGS, ...settings };
-  if (!isFirebaseConfigured()) { cache.settings = merged; notify(); return; }
-  await storeFirebaseData(PATH.settings, merged);
+  // Apply locally first so state.settings updates immediately and a same-session
+  // read returns exactly what was saved — independent of when the realtime echo
+  // arrives. The subscription re-applies the identical payload shortly after.
+  // When an active cycle's opening balance is synced too (v1.13.2.2 smart sync),
+  // mirror it into the cache in the same tick so the dashboard KPI refreshes
+  // immediately, and persist both nodes atomically.
+  cache.settings = merged;
+  if (cycle) cache.cycles[cycle.id] = cycle;
+  notify();
+  if (!isFirebaseConfigured()) return;
+  // TEMP TRACE (v1.13.2.1) — remove after UAT. Proves the write target path.
+  console.info('[PettyCash] saveSettings → write', PATH.settings, '· openingBalance =', merged.openingBalance, cycle ? `· synced cycle #${cycle.cycleNumber}` : '');
+  const updates = { [PATH.settings]: merged };
+  if (cycle) updates[`${PATH.cycles}/${cycle.id}`] = cycle;
+  await updateFirebaseData('/', updates);
 }
 
 /**

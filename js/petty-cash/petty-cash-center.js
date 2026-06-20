@@ -22,7 +22,7 @@
 import { isAdmin, getCurrentUser } from '../auth.js';
 import {
   initPettyCashStore, registerChangeListener, getSettings, getActiveCycle,
-  getNors, getNorById, getExpenses, getExpenseById, saveSettings as storeSaveSettings,
+  getNors, getNorById, getExpenses, getExpenseById,
 } from './petty-cash-store.js';
 import * as svc from './petty-cash-service.js';
 import { buildNorViewModel } from './nor-document-engine.js';
@@ -47,7 +47,7 @@ const st = {
   norForm: { sequence: '', date: todayISO(), isTest: false },
   form: blankForm(),
   newCycleBalance: '',
-  settingsDraft: null,
+  settingsDraft: null, settingsDirty: false,
   toast: null, _toastT: null,
 };
 
@@ -445,7 +445,7 @@ function dashboard(m) {
   <div>
     <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;color:var(--label);text-transform:uppercase;margin-bottom:14px">Petty Cash Center</div>
     <div class="pc-kpis" style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px">
-      ${card('var(--primary)', 'var(--primary-tint)', 'var(--primary)', '<path d="M19 7V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M21 7H8a2 2 0 0 0 0 4h13a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1z"/>', 'Saldo Petty Cash', esc(rp(m.balance)), `Siklus #${esc(cycle.cycleNumber || 1)} · awal ${esc(rp(m.opening))}`, lowBadge)}
+      ${card('var(--primary)', 'var(--primary-tint)', 'var(--primary)', '<path d="M19 7V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M21 7H8a2 2 0 0 0 0 4h13a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1z"/>', 'Saldo Petty Cash', esc(rp(m.balance)), `Siklus #${esc(cycle.cycleNumber || 1)} · Saldo Awal Siklus ${esc(rp(m.opening))}`, lowBadge)}
       ${card('var(--blue)', 'var(--blue-tint)', 'var(--blue)', '<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>', 'Total Pengeluaran', esc(rp(m.spent)), `${m.expenseCount} transaksi tercatat`)}
       ${card('var(--green)', 'var(--green-tint)', 'var(--green)', '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>', 'Siap Direalisasi', esc(rp(m.availableTotal)), `${m.availableCount} nota tersedia untuk NOR`)}
       ${card('var(--amber)', 'var(--amber-tint)', 'var(--amber)', '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>', 'NOR Diterbitkan', String(m.norCount), 'Sepanjang riwayat realisasi')}
@@ -813,7 +813,16 @@ function norDetailScreen(m) {
 
 /* ── SETTINGS ────────────────────────────────────────────────────── */
 function settingsScreen(m) {
+  // Persistence display fix (v1.13.2.1): keep the editable draft mirrored to the
+  // persisted settings until the user actually edits. The overlay opens (and the
+  // draft is first captured) BEFORE the RTDB settings subscription has hydrated
+  // cache.settings, so a draft snapshotted then would show stale DEFAULT values
+  // and mask the saved figure after a refresh. Re-cloning here on each render —
+  // while not dirty — lets the loaded RTDB value flow into the form; once the
+  // user edits (settingsDirty), the draft is preserved for editing.
+  if (!st.settingsDirty) st.settingsDraft = clone(getSettings());
   const sd = st.settingsDraft || getSettings();
+  const cycleEmpty = svc.isActiveCycleEmpty();
   const sigs = (sd.signatories || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0));
   const sigRows = sigs.map(s => `
     <div class="pc-sig-row" style="display:grid;grid-template-columns:64px 1fr 1fr 1fr 36px;gap:10px;align-items:center">
@@ -836,7 +845,11 @@ function settingsScreen(m) {
       <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:20px">
         <div style="font-weight:800;font-size:15px;margin-bottom:4px">Saldo &amp; Notifikasi</div>
         <div style="font-size:11.5px;color:var(--muted);margin-bottom:16px">Dipakai saat memulai siklus petty cash baru.</div>
-        <label style="display:block;margin-bottom:15px"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Saldo Awal Default (Rp)</span><input name="openingBalance" data-act="setInput" data-focus="set-opening" value="${esc(sd.openingBalance)}" inputmode="numeric" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text);font-family:'JetBrains Mono',monospace"/></label>
+        <label style="display:block;margin-bottom:8px"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Saldo Awal Default (Rp)</span><input name="openingBalance" data-act="setInput" data-focus="set-opening" value="${esc(sd.openingBalance)}" inputmode="numeric" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text);font-family:'JetBrains Mono',monospace"/></label>
+        <div style="margin-bottom:15px;font-size:11px;color:var(--muted);line-height:1.45">
+          Jika siklus aktif belum memiliki pengeluaran, perubahan saldo awal akan diterapkan langsung. Jika sudah terdapat pengeluaran, perubahan akan berlaku pada siklus berikutnya.
+          <div style="display:inline-flex;align-items:center;gap:5px;margin-top:8px;padding:3px 8px;border-radius:6px;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.4px;${cycleEmpty ? 'background:var(--green-tint);color:var(--green);border:1px solid var(--green-bd)' : 'background:var(--amber-tint);color:var(--amber);border:1px solid var(--amber-bd)'}">${cycleEmpty ? 'SIKLUS AKTIF KOSONG · DITERAPKAN LANGSUNG' : 'SIKLUS AKTIF BERISI · BERLAKU SIKLUS BERIKUTNYA'}</div>
+        </div>
         <label style="display:block;margin-bottom:6px"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Ambang Notifikasi (Rp)</span><input name="lowBalanceThreshold" data-act="setInput" data-focus="set-threshold" value="${esc(sd.lowBalanceThreshold)}" inputmode="numeric" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text);font-family:'JetBrains Mono',monospace"/></label>
         <div style="font-size:11px;color:var(--muted);line-height:1.4">Saat saldo turun di bawah nilai ini, notifikasi dikirim ke Admin.</div>
         <div style="border-top:1px solid var(--border2);margin:16px 0 0;padding-top:16px">
@@ -1139,7 +1152,7 @@ async function onClick(e) {
     case 'addSig': return addSig();
     case 'removeSig': return removeSig(id);
     case 'saveSettings': return doSaveSettings();
-    case 'resetSettings': setState({ settingsDraft: clone(getSettings()) }); toast('Perubahan dibatalkan'); return;
+    case 'resetSettings': setState({ settingsDraft: clone(getSettings()), settingsDirty: false }); toast('Perubahan dibatalkan'); return;
     default: return;
   }
 }
@@ -1325,8 +1338,11 @@ async function doPrintNor(id) {
 }
 
 function openCycleModal(norId) {
-  const m = svc.computeMetrics();
-  setState({ cycleModalOpen: true, norDetailId: norId || st.norDetailId, newCycleBalance: String(m.opening) });
+  // Pre-fill the next cycle's opening with the Saldo Awal Default (v1.13.2.2),
+  // so a default changed under CASE B flows into the new cycle. The admin can
+  // still override with the actual amount received from finance.
+  const settings = getSettings();
+  setState({ cycleModalOpen: true, norDetailId: norId || st.norDetailId, newCycleBalance: String(settings.openingBalance) });
 }
 async function confirmNewCycle() {
   const bal = parseAmount(st.newCycleBalance) || svc.computeMetrics().opening;
@@ -1341,17 +1357,20 @@ async function confirmNewCycle() {
 function ensureDraft() { if (!st.settingsDraft) st.settingsDraft = clone(getSettings()); }
 function setDraftField(name, value) {
   ensureDraft();
+  st.settingsDirty = true;
   if (name === 'openingBalance' || name === 'lowBalanceThreshold') st.settingsDraft[name] = parseAmount(value);
   else st.settingsDraft[name] = value;
 }
 function setSigField(id, field, value) {
   ensureDraft();
+  st.settingsDirty = true;
   const sid = Number(id);
   st.settingsDraft.signatories = (st.settingsDraft.signatories || []).map(s =>
     s.id === sid ? { ...s, [field]: field === 'order' ? (parseInt(value, 10) || 1) : value } : s);
 }
 function addSig() {
   ensureDraft();
+  st.settingsDirty = true;
   const list = st.settingsDraft.signatories || [];
   const nid = list.length ? Math.max(...list.map(s => s.id)) + 1 : 1;
   list.push({ id: nid, label: 'Mengetahui', name: '', position: '', order: list.length + 1 });
@@ -1360,14 +1379,22 @@ function addSig() {
 }
 function removeSig(id) {
   ensureDraft();
+  st.settingsDirty = true;
   const sid = Number(id);
   st.settingsDraft.signatories = (st.settingsDraft.signatories || []).filter(s => s.id !== sid);
   render();
 }
 async function doSaveSettings() {
   ensureDraft();
-  try { await storeSaveSettings(st.settingsDraft); toast('Pengaturan disimpan'); }
-  catch (err) { toast(err.message || 'Gagal menyimpan'); }
+  try {
+    const res = await svc.saveSettings(st.settingsDraft);
+    // Saved successfully → drop the dirty flag so the form re-mirrors the now
+    // persisted (and locally-applied) settings on the next render. (v1.13.2.1)
+    st.settingsDirty = false;
+    toast(res.syncedCycle
+      ? `Pengaturan disimpan · saldo awal Siklus #${res.cycleNumber} diperbarui`
+      : 'Pengaturan disimpan');
+  } catch (err) { toast(err.message || 'Gagal menyimpan'); }
 }
 
 /* ── Receipt image (optional, stored as data URL for digital archive) ── */
