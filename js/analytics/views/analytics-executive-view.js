@@ -14,19 +14,52 @@ import {
   initPettyCashStore, registerChangeListener as registerPcListener, isReady as pcReady,
   getExpenses, getNors, getActiveCycle, getSettings,
 } from '../../petty-cash/petty-cash-store.js';
-import { rp } from '../../petty-cash/petty-cash-config.js';
+import { rp, rpCompact } from '../../petty-cash/petty-cash-config.js';
 import { bidangRoster } from '../../petty-cash/petty-cash-service.js';
+import { getDrivers } from '../../drivers-store.js';
+import { getActiveVehicles } from '../../vehicles-store.js';
 import { computePettyCashAnalytics } from '../petty-cash-analytics.js';
 import { computeExecutiveAnalytics } from '../executive-analytics.js';
 import {
   renderHeroSection, renderEyebrow, renderAnalyticsKPICard, renderKPIGrid,
-  renderInsightRow, renderInsightDividerList, renderExportCenter, renderAnalyticsEmptyState, anIcon,
+  renderInsightRow, renderInsightDividerList, renderExportCenter, renderAnalyticsEmptyState,
+  renderResponsiveCurrency, anIcon,
 } from '../analytics-shell.js';
+import { bindResponsiveCurrency, unbindResponsiveCurrency } from '../responsive-currency.js';
 
-const RANGES = ['7d', '30d', '90d'];
-const RANGE_LABELS = { '7d': '7 Hari', '30d': '30 Hari', '90d': '90 Hari' };
+/** Container-aware currency cell (sized by ResizeObserver to actual card width). */
+const curResp = (v, cls = '') => renderResponsiveCurrency(rp(v), rpCompact(v), cls);
 
-const state = { host: null, range: '30d', listening: false, visible: false, dirty: false };
+/* ── Phase B: Executive filter architecture (v1.15.3) ─────────────────────────
+   executiveFilterState is the SINGLE source of truth for Executive Analytics
+   filters, INDEPENDENT of Driver Analytics' own filter state (app.js). Changing
+   it recomputes the executive aggregate (Driver + Petty sub-models) on the fly. */
+const EXEC_PERIODS = ['today', '7d', '30d', '90d', 'ytd'];
+const EXEC_PERIOD_LABELS = {
+  today: 'Hari Ini', '7d': '7 Hari', '30d': '30 Hari', '90d': '90 Hari', ytd: 'Tahun Berjalan',
+};
+const executiveFilterState = { period: '30d', driver: '', vehicle: '', bidang: '' };
+
+/**
+ * SINGLE source for period → engine windows. The Driver and Petty engines have
+ * different range vocabularies, so this is the one place that reconciles them.
+ *   today → driver 'today'  · petty '7d'        (petty's finest bucket)
+ *   ytd   → driver 'all'    · petty 'annualized'(Jan 1 → now = true YTD)
+ * Custom Range is intentionally NOT here yet — it needs a unified explicit-window
+ * contract in BOTH engines (see Phase C); shipping an approximation would emit
+ * wrong numbers, which this architecture explicitly avoids.
+ * @returns {{driverRange:string, pettyRange:string}}
+ */
+function resolveExecRanges(period) {
+  switch (period) {
+    case 'today': return { driverRange: 'today', pettyRange: '7d' };
+    case '7d':    return { driverRange: '7d',    pettyRange: '7d' };
+    case '30d':   return { driverRange: '30d',   pettyRange: '30d' };
+    case '90d':   return { driverRange: '90d',   pettyRange: '90d' };
+    case 'ytd':   return { driverRange: 'all',   pettyRange: 'annualized' };
+    default:      return { driverRange: '30d',   pettyRange: '30d' };
+  }
+}
 
 function esc(s) {
   return String(s == null ? '' : s)
@@ -34,16 +67,25 @@ function esc(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+const state = { host: null, listening: false, visible: false, dirty: false };
+
 function buildModels() {
+  const { driverRange, pettyRange } = resolveExecRanges(executiveFilterState.period);
   const pettyModel = computePettyCashAnalytics({
     expenses: getExpenses(), nors: getNors(), activeCycle: getActiveCycle(),
-    settings: getSettings(), bidangRoster: bidangRoster(), range: state.range,
+    settings: getSettings(), bidangRoster: bidangRoster(), range: pettyRange,
   });
-  // Driver model is owned by app.js (it holds the assignment/request data).
+  // Driver model is owned by app.js (it holds the assignment/request data). Scope
+  // (driver/vehicle/bidang) refines the Driver sub-model — the Petty engine has
+  // no driver/vehicle scope, so scope currently shapes the Driver portion only.
   let driverModel = null;
   try {
     if (typeof window.__computeDriverAnalyticsModel === 'function') {
-      driverModel = window.__computeDriverAnalyticsModel(state.range);
+      driverModel = window.__computeDriverAnalyticsModel(driverRange, {
+        driver: executiveFilterState.driver,
+        vehicle: executiveFilterState.vehicle,
+        bidang: executiveFilterState.bidang,
+      });
     } else if (window._lastAnalyticsFullModel) {
       driverModel = window._lastAnalyticsFullModel;
     }
@@ -59,7 +101,10 @@ function heroBlock(exec) {
   // on one line inside the keynote strip's fixed 1/3 column (the column cannot
   // fit a full "Rp …" value at the default .big size — that caused the earlier
   // overlap bug). Total Trip / Driver Utilization stay full-size numerics.
-  const cur = (v) => `<span style="font-size:0.6em;letter-spacing:-0.01em;white-space:nowrap;">${rp(v)}</span>`;
+  // v1.15.3: container-aware currency. `.an-cur--hero` is a direct child of the
+  // stat's `.big` block, so the ResizeObserver measures the real cell width and
+  // picks full → "Rp 10 Jt" → "10 Jt" → "10Jt" as the column tightens.
+  const cur = (v) => curResp(v, 'an-cur--hero');
   return renderHeroSection({
     headline: `Kesehatan operasional <span class="hl">${esc(s.label)}</span>`,
     sub: esc(exec.narrative),
@@ -80,7 +125,7 @@ function kpiBlock(exec) {
     renderAnalyticsKPICard({ title: 'Kendaraan Aktif', icon: anIcon('car', { size: 15 }), value: String(d.activeVehicles), subtitle: `${d.vehiclesWithTrips} terpakai` }),
   ]);
   const pettyCards = renderKPIGrid([
-    renderAnalyticsKPICard({ title: 'Saldo Aktif', icon: anIcon('chart', { size: 15 }), value: rp(p.activeBalance), status: p.activeBalance < 0 ? 'warn' : 'ok' }),
+    renderAnalyticsKPICard({ title: 'Saldo Aktif', icon: anIcon('chart', { size: 15 }), value: curResp(p.activeBalance), status: p.activeBalance < 0 ? 'warn' : 'ok' }),
     renderAnalyticsKPICard({ title: 'NOR Official', icon: anIcon('file', { size: 15 }), value: `${p.norOfficial} NOR` }),
     renderAnalyticsKPICard({ title: 'Realisasi', icon: anIcon('pulse', { size: 15 }), value: `${p.realizationPct}%`, subtitle: 'Siklus berjalan' }),
   ]);
@@ -114,9 +159,32 @@ function exportBlock() {
     })}`;
 }
 
-function rangeSeg() {
-  return `<div class="seg" role="tablist" style="display:inline-flex;">${RANGES.map(r => `
-    <button type="button" class="${r === state.range ? 'on' : ''}" data-exec-range="${r}" aria-selected="${r === state.range}">${esc(RANGE_LABELS[r])}</button>`).join('')}</div>`;
+function scopeOptions(values, selected) {
+  return values.map(v => `<option value="${esc(v)}"${v === selected ? ' selected' : ''}>${esc(v)}</option>`).join('');
+}
+
+/** Executive filter bar: period segment + driver/vehicle/bidang scope selects. */
+function filterBar() {
+  const periodBtns = EXEC_PERIODS.map(p =>
+    `<button type="button" class="${p === executiveFilterState.period ? 'on' : ''}" data-exec-period="${p}" aria-selected="${p === executiveFilterState.period}">${esc(EXEC_PERIOD_LABELS[p])}</button>`).join('');
+  const driverNames  = [...new Set(getDrivers().map(d => d && d.name).filter(Boolean))].sort();
+  const vehicleNames = [...new Set(getActiveVehicles().map(v => v && v.name).filter(Boolean))].sort();
+  const bidangNames  = [...new Set((bidangRoster() || []).map(b => b && b.name).filter(Boolean))].sort();
+  return `
+    <div class="exec-filter-bar">
+      <div class="seg exec-period-seg" role="tablist" aria-label="Periode">${periodBtns}</div>
+      <div class="exec-scope-row">
+        <select class="v2-admin-filter" data-exec-scope="driver" aria-label="Filter driver">
+          <option value="">Semua Driver</option>${scopeOptions(driverNames, executiveFilterState.driver)}
+        </select>
+        <select class="v2-admin-filter" data-exec-scope="vehicle" aria-label="Filter kendaraan">
+          <option value="">Semua Kendaraan</option>${scopeOptions(vehicleNames, executiveFilterState.vehicle)}
+        </select>
+        <select class="v2-admin-filter" data-exec-scope="bidang" aria-label="Filter bidang">
+          <option value="">Semua Bidang</option>${scopeOptions(bidangNames, executiveFilterState.bidang)}
+        </select>
+      </div>
+    </div>`;
 }
 
 function render() {
@@ -130,17 +198,21 @@ function render() {
   }
   const exec = models.exec;
   window._lastExecutiveAnalyticsModel = exec;
-  window._executiveAnalyticsMeta = { range: state.range, appVersion: (window.__APP_VERSION__ || '') };
+  window._executiveAnalyticsMeta = {
+    range: resolveExecRanges(executiveFilterState.period).pettyRange,
+    period: executiveFilterState.period,
+    periodLabel: EXEC_PERIOD_LABELS[executiveFilterState.period] || '',
+    scope: { driver: executiveFilterState.driver, vehicle: executiveFilterState.vehicle, bidang: executiveFilterState.bidang },
+    appVersion: (window.__APP_VERSION__ || ''),
+  };
 
   state.host.innerHTML = `
     <div class="v2-analytics-claude v2-analytics-exec">
       <div class="v2-admin-workspace-layout" style="max-width:1080px;margin:0 auto;padding:6px 4px 40px;">
-        <div class="v2-admin-page-header" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
-          <div>
-            <h1 class="v2-admin-page-title">Analytics Executive</h1>
-            <p class="v2-admin-page-subtitle">Ringkasan kesehatan operasional lintas Driver & Petty Cash.</p>
-          </div>
-          ${rangeSeg()}
+        <div class="v2-admin-page-header" style="margin-bottom:14px;">
+          <h1 class="v2-admin-page-title">Analytics Executive</h1>
+          <p class="v2-admin-page-subtitle">Ringkasan kesehatan operasional lintas Driver & Petty Cash.</p>
+          ${filterBar()}
         </div>
         ${heroBlock(exec)}
         <div style="height:26px;"></div>
@@ -162,18 +234,37 @@ function render() {
       el.textContent = String(target);
     });
   });
+
+  // v1.15.3: (re)bind container-aware currency sizing for the freshly rendered
+  // KPI cards + hero stat. Safe to call every render (idempotent per host).
+  bindResponsiveCurrency(state.host);
 }
 
 function onHostClick(e) {
-  const rangeBtn = e.target.closest('[data-exec-range]');
-  if (rangeBtn) {
-    const r = rangeBtn.dataset.execRange;
-    if (RANGES.includes(r) && r !== state.range) { state.range = r; render(); }
+  // Phase B: period segment → recompute the executive aggregate.
+  const periodBtn = e.target.closest('[data-exec-period]');
+  if (periodBtn) {
+    const p = periodBtn.dataset.execPeriod;
+    if (EXEC_PERIODS.includes(p) && p !== executiveFilterState.period) {
+      executiveFilterState.period = p;
+      render();
+    }
     return;
   }
   const actionBtn = e.target.closest('[data-action]');
-  if (actionBtn && actionBtn.dataset.action === 'exec-export-pdf' && typeof window.exportExecutiveAnalyticsPdf === 'function') {
-    Promise.resolve(window.exportExecutiveAnalyticsPdf()).catch(err => console.error('[AnalyticsExecutive] PDF export failed', err));
+  if (actionBtn && actionBtn.dataset.action === 'exec-export-pdf' && typeof window.exportExecutiveAnalytics === 'function') {
+    Promise.resolve(window.exportExecutiveAnalytics()).catch(err => console.error('[AnalyticsExecutive] PDF export failed', err));
+  }
+}
+
+/** Phase B: scope selects (driver/vehicle/bidang) → recompute on change. */
+function onHostChange(e) {
+  const sel = e.target.closest('[data-exec-scope]');
+  if (!sel) return;
+  const key = sel.dataset.execScope;
+  if (key === 'driver' || key === 'vehicle' || key === 'bidang') {
+    executiveFilterState[key] = sel.value;
+    render();
   }
 }
 
@@ -183,6 +274,7 @@ export async function mountAnalyticsExecutive(host) {
   state.visible = true;
   if (!state.listening) {
     host.addEventListener('click', onHostClick);
+    host.addEventListener('change', onHostChange);
     // Live data changes (convert echo): re-render when visible, else mark dirty.
     registerPcListener(() => { if (state.visible) render(); else state.dirty = true; });
     state.listening = true;
@@ -201,4 +293,7 @@ export function refreshAnalyticsExecutive() {
   render();
 }
 
-export function closeAnalyticsExecutive() { state.visible = false; }
+export function closeAnalyticsExecutive() {
+  state.visible = false;
+  if (state.host) unbindResponsiveCurrency(state.host);
+}

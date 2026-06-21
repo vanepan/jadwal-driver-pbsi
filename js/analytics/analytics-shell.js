@@ -148,6 +148,28 @@ export function renderAnalyticsKPICard({ title = '', value = '', trend = null, c
 }
 
 /**
+ * Container-aware currency cell (v1.15.3). Carries four representations as data-*
+ * attributes; bindResponsiveCurrency() (a ResizeObserver) swaps the visible text
+ * to the widest form that fits the cell's ACTUAL width — not the viewport — so it
+ * adapts correctly under DevTools, split-screen, foldables and tablet landscape:
+ *   ≥240px "Rp 10.000.000" · 180–240 "Rp 10 Jt" · 130–180 "10 Jt" · <130 "10Jt"
+ * Default text is the full value (graceful no-JS / pre-measure fallback). Pure
+ * presentation — currency logic stays single-sourced (rp / rpCompact); the bare
+ * + tight forms are derived by stripping the compact string (no dup formatter).
+ * @param {string} full    e.g. "Rp 10.000.000"
+ * @param {string} compact e.g. "Rp 10 Jt"
+ * @param {string} [extraClass]
+ */
+export function renderResponsiveCurrency(full, compact, extraClass = '') {
+  const f = String(full == null ? '' : full);
+  const c = String(compact == null ? '' : compact);
+  const bare = c.replace(/^(-?)Rp\s*/, '$1'); // "10 Jt"
+  const tight = bare.replace(/\s+/g, '');      // "10Jt"
+  const cls = extraClass ? ` ${extraClass}` : '';
+  return `<span class="an-cur${cls}" data-cur-full="${_escHtml(f)}" data-cur-rp="${_escHtml(c)}" data-cur-jt="${_escHtml(bare)}" data-cur-tight="${_escHtml(tight)}">${_escHtml(f)}</span>`;
+}
+
+/**
  * Responsive KPI grid (desktop 4 / tablet 2 / mobile 1 — via CSS).
  * @param {string[]} cards - pre-rendered card HTML strings
  */

@@ -388,11 +388,11 @@ function updatePermissionUI(resetNavActive = false) {
   const currentUser = getCurrentUser();
   const canAdd = isAdmin() || isBidang();
 
-  // FAB: Tambah Jadwal / Buat Request (mobile) — label reflects role
-  const fabAdd = document.getElementById('fabAdd');
-  const fabLabel = document.getElementById('fabLabel');
-  if (fabAdd) fabAdd.style.display = canAdd ? 'flex' : 'none';
-  if (fabLabel) fabLabel.textContent = isAdmin() ? 'Tambah Jadwal' : 'Buat Request';
+  // FAB (mobile primary action): v1.15.2 — driven by the SAME module-aware
+  // resolver as the desktop panel CTA (resolvePrimaryCta), so it is hidden on
+  // read-only workspaces (Analytics / Konfigurasi) and labelled per module.
+  // Called unconditionally here; setRailModule() refreshes it on module switch.
+  updateFabCta();
 
   // Bottom nav items
   const bottomNavRequests = document.getElementById('bottomNavRequests');
@@ -658,33 +658,91 @@ function setCrumb(moduleLabel, title) {
 }
 
 /**
- * v1.14.1: Module-aware panel primary CTA.
- *   Driver Operations → "Tambah Jadwal" (admin) / "Ajukan Jadwal" (bidang)
- *   Petty Cash Center → "Tambah Pengeluaran" (admin)
- *   Analytics / Konfigurasi → hidden (read-only / config modules)
+ * v1.15.2: SINGLE source of truth for the module-aware primary CTA.
+ *
+ * Both the desktop context-panel CTA (updatePanelCta) and the mobile FAB
+ * (updateFabCta) read THIS resolver — the workspace→CTA mapping is defined in
+ * exactly one place, so mobile and desktop can never drift apart again.
+ *
+ * Mapping (role + active module):
+ *   Driver Operations → 'jadwal' (admin) / 'ajukan' (bidang)
+ *   Petty Cash Center → 'pengeluaran' (admin)
+ *   Analytics (Driver/Petty/Executive) → null (read-only)
+ *   Konfigurasi → null (configuration)
+ *
+ * @returns {{kind:'jadwal'|'ajukan'|'pengeluaran', label:string}|null}
+ *          null ⇒ no CTA / FAB on this workspace.
+ */
+function resolvePrimaryCta() {
+  if (activeRailModule === 'driverops') {
+    if (isAdmin())  return { kind: 'jadwal', label: 'Tambah Jadwal' };
+    if (isBidang()) return { kind: 'ajukan', label: 'Ajukan Jadwal' };
+    return null;
+  }
+  if (activeRailModule === 'pettycash') {
+    if (isAdmin())  return { kind: 'pengeluaran', label: 'Tambah Pengeluaran' };
+    return null;
+  }
+  // analytics + konfigurasi → read-only, no primary CTA
+  return null;
+}
+
+/**
+ * Run the resolved primary CTA's action. Shared by the desktop panel CTA
+ * buttons and the mobile FAB so the click behaviour matches the visible label.
+ */
+function runPrimaryCta() {
+  const resolved = resolvePrimaryCta();
+  if (!resolved) return;
+  if (resolved.kind === 'jadwal')      openFormModal();
+  else if (resolved.kind === 'ajukan') openRequestFormModal();
+  else if (resolved.kind === 'pengeluaran') {
+    // Guard: ensure the Petty Cash module is mounted/active before opening.
+    if (activeRailModule !== 'pettycash') { navPettyCash('dashboard', 'v2NavPcDashboard'); }
+    openPettyCashAddExpense();
+  }
+}
+
+/**
+ * Mobile FAB (#fabAdd) — mirrors the desktop CTA via the shared resolver.
+ * Hidden on every read-only workspace (Analytics Driver/Petty/Executive,
+ * Konfigurasi); labelled + shown on Driver Operations / Petty Cash.
+ */
+function updateFabCta(resolved = resolvePrimaryCta()) {
+  const fabAdd   = document.getElementById('fabAdd');
+  const fabLabel = document.getElementById('fabLabel');
+  if (!fabAdd) return;
+  if (resolved) {
+    fabAdd.style.display = 'flex';
+    if (fabLabel) fabLabel.textContent = resolved.label;
+  } else {
+    fabAdd.style.display = 'none';
+  }
+}
+
+/**
+ * v1.14.1: Module-aware panel primary CTA — now driven by resolvePrimaryCta().
  * Called on module switch (setRailModule) and on auth/data refresh
- * (updatePermissionUI), so role + active module stay in sync.
+ * (updatePermissionUI), so role + active module stay in sync. Keeps the mobile
+ * FAB in lockstep by routing it through the same resolver.
  */
 function updatePanelCta() {
+  const resolved = resolvePrimaryCta();
+
+  // Desktop context-panel CTA buttons.
   const cta      = document.getElementById('v2PanelCta');
   const btnJadwal = document.getElementById('v2BtnTambahJadwal');
   const btnAjukan = document.getElementById('v2BtnAjukanRequest');
   const btnPc     = document.getElementById('v2BtnTambahPengeluaran');
-  if (!cta) return;
-
-  if (btnJadwal) btnJadwal.style.display = 'none';
-  if (btnAjukan) btnAjukan.style.display = 'none';
-  if (btnPc)     btnPc.style.display     = 'none';
-
-  let show = false;
-  if (activeRailModule === 'driverops') {
-    if (isAdmin())  { if (btnJadwal) btnJadwal.style.display = 'flex'; show = true; }
-    if (isBidang()) { if (btnAjukan) btnAjukan.style.display = 'flex'; show = true; }
-  } else if (activeRailModule === 'pettycash') {
-    if (isAdmin())  { if (btnPc) btnPc.style.display = 'flex'; show = true; }
+  if (cta) {
+    if (btnJadwal) btnJadwal.style.display = (resolved && resolved.kind === 'jadwal')      ? 'flex' : 'none';
+    if (btnAjukan) btnAjukan.style.display = (resolved && resolved.kind === 'ajukan')      ? 'flex' : 'none';
+    if (btnPc)     btnPc.style.display     = (resolved && resolved.kind === 'pengeluaran') ? 'flex' : 'none';
+    cta.style.display = resolved ? 'flex' : 'none';
   }
-  // analytics + konfigurasi → no CTA (read-only / configuration modules)
-  cta.style.display = show ? 'flex' : 'none';
+
+  // Mobile FAB — same resolver, no duplicated mapping.
+  updateFabCta(resolved);
 }
 
 /**
@@ -719,7 +777,7 @@ function setRailModule(name) {
   if (panelTitle)    panelTitle.textContent    = def.title;
   if (panelSubtitle) panelSubtitle.textContent = def.subtitle;
 
-  // Module-aware primary CTA (v1.14.1).
+  // Module-aware primary CTA (v1.14.1) — also re-syncs the mobile FAB (v1.15.2).
   updatePanelCta();
 
   // Land on the module's default menu.
@@ -2049,6 +2107,9 @@ function setWorkspace(name) {
 
   if (isPend)  renderPendingWorkspace();
   if (isAdmWs) renderV2AdminWorkspace();
+
+  // Keep the mobile Analytics sub-nav in lockstep with the active screen.
+  syncAnalyticsMobileNav();
 }
 
 /**
@@ -2197,6 +2258,68 @@ function initV2AnalyticsWorkspaces() {
     document.querySelector('.main-content')?.appendChild(ws);
   });
   console.log('[v1.15.0] Analytics Petty Cash + Executive workspaces injected');
+}
+
+/* ──────────────────────────────────────────────────────────────────
+   v1.15.2 — Mobile Analytics sub-nav
+
+   On mobile (<768px) the desktop rail + context panel are hidden, so the
+   panel's three Analytics menu buttons (Driver / Petty Cash / Executive)
+   are unreachable. The in-content admin tab strip only covers Analytics
+   Driver (the lone admin section), leaving Petty Cash + Executive — which
+   live in their own lazily-mounted workspaces — with NO mobile entry point.
+
+   This injects a single, module-level segmented strip that gives mobile
+   users parity. It is presentation only: each tab delegates to the SAME
+   nav* routing function the desktop panel uses (no duplicated business
+   logic). Mirrors the .v2-admin-nav pattern — hidden on desktop (the panel
+   navigates), shown on mobile only when the Analytics module is active. */
+function initV2AnalyticsMobileNav() {
+  const mainContent = document.querySelector('.main-content');
+  if (!mainContent) return;
+  const nav = document.createElement('nav');
+  nav.id = 'v2AnalyticsMobileNav';
+  nav.className = 'v2-admin-nav v2-an-mnav';
+  nav.setAttribute('aria-label', 'Analytics');
+  nav.style.display = 'none';
+  nav.innerHTML = `
+    <button type="button" class="v2-admin-nav-tab" data-analytics-mnav="driver"><span class="v2-admin-nav-tab-label">Driver</span></button>
+    <button type="button" class="v2-admin-nav-tab" data-analytics-mnav="petty"><span class="v2-admin-nav-tab-label">Petty Cash</span></button>
+    <button type="button" class="v2-admin-nav-tab" data-analytics-mnav="exec"><span class="v2-admin-nav-tab-label">Executive</span></button>
+  `;
+  // First child so it sits above whichever Analytics workspace is visible
+  // (the KPI strip / timeline / dashboard are all hidden on Analytics screens).
+  mainContent.insertBefore(nav, mainContent.firstChild);
+
+  nav.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-analytics-mnav]');
+    if (!btn) return;
+    const key = btn.dataset.analyticsMnav;
+    if (key === 'driver')      navAnalyticsDriver();
+    else if (key === 'petty')  navAnalyticsPettyCash();
+    else if (key === 'exec')   navAnalyticsExecutive();
+  });
+  console.log('[v1.15.2] Analytics mobile sub-nav injected');
+}
+
+/**
+ * Sync the mobile Analytics sub-nav: shown only while the Analytics module is
+ * active (CSS keeps it mobile-only), with the tab matching the active screen.
+ * Called from setWorkspace() so every entry path (desktop panel, mobile drawer,
+ * the strip itself) keeps it in lockstep.
+ */
+function syncAnalyticsMobileNav() {
+  const nav = document.getElementById('v2AnalyticsMobileNav');
+  if (!nav) return;
+  const inAnalytics = activeRailModule === 'analytics';
+  nav.style.display = inAnalytics ? 'flex' : 'none';
+  if (!inAnalytics) return;
+  let key = 'driver';
+  if (currentWorkspace === 'analyticsPetty')     key = 'petty';
+  else if (currentWorkspace === 'analyticsExec') key = 'exec';
+  nav.querySelectorAll('[data-analytics-mnav]').forEach(btn => {
+    btn.classList.toggle('v2-admin-nav-tab--active', btn.dataset.analyticsMnav === key);
+  });
 }
 
 const V2_ROLE_CONFIG = [
@@ -2753,6 +2876,13 @@ function renderV2AdminWorkspace() {
     btn.classList.toggle('v2-admin-nav-tab--active', key === activeAdminSection);
     btn.style.display = (!moduleSections || moduleSections.includes(key)) ? '' : 'none';
   });
+
+  // v1.15.2: Analytics has a single admin section (Analytics Driver), so its
+  // in-content tab strip would render a lone redundant "Analytics" tab on
+  // mobile. The dedicated mobile Analytics sub-nav (#v2AnalyticsMobileNav)
+  // owns that navigation, so hide the admin strip while in the Analytics module.
+  const adminNavStrip = document.querySelector('#v2AdministrationWorkspace .v2-admin-nav');
+  if (adminNavStrip) adminNavStrip.style.display = (activeAdminModule === 'analytics') ? 'none' : '';
 
   const pageSubtitle = document.querySelector('.v2-admin-page-subtitle');
   if (pageSubtitle) pageSubtitle.textContent = section.subtitle;
@@ -4944,14 +5074,21 @@ function _getDismissedWarnings(type) {
  * @param {'today'|'7d'|'30d'|'90d'|'all'} dateRange
  * @returns {import('./analytics/analytics-types.js').AnalyticsModel}
  */
-function computeDriverModelForRange(dateRange) {
+function computeDriverModelForRange(dateRange, scope = {}) {
   const range = ['today', '7d', '30d', '90d', 'all'].includes(dateRange) ? dateRange : '30d';
+  // v1.15.3: Executive Analytics passes optional scope (driver/vehicle/bidang).
+  // The driver engine already honours these filters; default '' = Semua (all).
   const baseCtx = {
     assignments,
     requests,
     drivers: getDrivers(),
     vehicles: getActiveVehiclesFromStore(),
-    filters: { dateRange: range, driver: '', vehicle: '', bidang: '' },
+    filters: {
+      dateRange: range,
+      driver:  scope.driver  || '',
+      vehicle: scope.vehicle || '',
+      bidang:  scope.bidang  || '',
+    },
     aliases: {
       destinations: _getAnalyticsAliases('destinations'),
       bidang: _getAnalyticsAliases('bidang'),
@@ -7293,6 +7430,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initV2PettyCashWorkspace();   // v1.14.0: embedded Petty Cash module host
     initV2PlaceholderWorkspace(); // v1.14.0: shared "coming soon" placeholder
     initV2AnalyticsWorkspaces();  // v1.15.0: Analytics Petty Cash + Executive hosts
+    initV2AnalyticsMobileNav();   // v1.15.2: mobile parity sub-nav for the 3 Analytics screens
     initThemeManager();           // VSM-9: dark mode toggle wired to #v2TopbarThemeBtn
   }
 
@@ -7404,14 +7542,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     applyTheme(e.target.checked ? 'dark' : 'light', true);
   });
 
-  // ── FAB: Tambah Jadwal / Buat Request (mobile primary action) ──
-  document.getElementById('fabAdd')?.addEventListener('click', () => {
-    if (isAdmin()) {
-      openFormModal();
-    } else if (isBidang()) {
-      openRequestFormModal();
-    }
-  });
+  // ── FAB (mobile primary action) — v1.15.2: runs the shared module-aware
+  // CTA so the click always matches the visible label (Tambah Jadwal /
+  // Ajukan Jadwal / Tambah Pengeluaran). No-op on read-only workspaces. ──
+  document.getElementById('fabAdd')?.addEventListener('click', runPrimaryCta);
 
   // ── Bottom nav: Dashboard (scroll timeline to focus) ──
   document.getElementById('bottomNavDashboard')?.addEventListener('click', () => {

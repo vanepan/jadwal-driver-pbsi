@@ -6,6 +6,15 @@
 
 /* ── CSS Variables ── */
 :root {
+  /* v1.15.2 — Global mobile bottom safe-area clearance (single source of truth).
+     Any scroll container that can sit behind the mobile FAB + bottom nav uses
+     this for its padding-bottom, so the last actionable element (export, save,
+     generate, restore, pagination, card action…) is always scrollable clear of
+     both. Budget: bottom-nav 56px + FAB (50px height + 14px offset) + 16px
+     comfort margin + the iOS home-indicator inset. Reusable across every
+     workspace — fix is architectural, never per-page. */
+  --mobile-safe-bottom: calc(136px + env(safe-area-inset-bottom, 0px));
+
   --red:        #D32F2F;
   --red-light:  #FFEBEE;
   --red-mid:    #EF5350;
@@ -2782,14 +2791,17 @@ input[type="number"]::-webkit-inner-spin-button {
   /* Bottom nav visible */
   .bottom-nav { display: flex; }
 
-  /* Extra bottom padding: bottom nav (56px) + FAB overlap (70px) + safe area */
+  /* Global bottom clearance (v1.15.2): one reusable token applied to the single
+     scroll container so NO actionable element is ever trapped behind the FAB or
+     bottom nav, on any workspace (Driver Ops, Petty Cash, Analytics, Konfigurasi,
+     forms, detail screens). */
   .main-content {
-    padding-bottom: calc(56px + 70px + env(safe-area-inset-bottom, 0px) + 8px);
+    padding-bottom: var(--mobile-safe-bottom);
   }
 
-  /* Toast above FAB */
+  /* Toast clears the FAB + bottom nav too. */
   .toast {
-    bottom: calc(56px + 70px + env(safe-area-inset-bottom, 0px) + 8px);
+    bottom: var(--mobile-safe-bottom);
   }
 
   /* Prevent body scroll when sidebar is open */

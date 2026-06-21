@@ -159,7 +159,7 @@ function breakdownSection(model) {
     : renderAnalyticsEmptyState({ message: 'Belum ada data unit.' });
   return `
     ${renderEyebrow({ tag: 'Rincian', title: 'Breakdown Pengeluaran', sub: 'Distribusi belanja per kategori dan unit' })}
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin-bottom:26px;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr));gap:18px;margin-bottom:26px;">
       ${catChart}
       ${unitChart}
     </div>`;
@@ -354,8 +354,8 @@ function onHostClick(e) {
   const actionBtn = e.target.closest('[data-action]');
   if (actionBtn) {
     const action = actionBtn.dataset.action;
-    if (action === 'pc-export-pdf' && typeof window.exportPettyCashAnalyticsPdf === 'function') {
-      Promise.resolve(window.exportPettyCashAnalyticsPdf()).catch(err => console.error('[AnalyticsPettyCash] PDF export failed', err));
+    if (action === 'pc-export-pdf' && typeof window.exportPettyCashAnalytics === 'function') {
+      Promise.resolve(window.exportPettyCashAnalytics()).catch(err => console.error('[AnalyticsPettyCash] PDF export failed', err));
     } else if (action === 'pc-export-excel' && typeof window.exportPettyCashAnalyticsExcel === 'function') {
       Promise.resolve(window.exportPettyCashAnalyticsExcel()).catch(err => console.error('[AnalyticsPettyCash] Excel export failed', err));
     }

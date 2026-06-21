@@ -198,16 +198,25 @@ if (typeof window !== 'undefined') {
 
   // v1.15.0 — Analytics Petty Cash / Executive export hooks (called by the
   // mounted views). Each reads the live model the view publishes on render.
-  window.exportPettyCashAnalyticsPdf = (meta = {}) => {
+  //
+  // v1.15.2 (UAT fix): registered under the SAME canonical naming as the
+  // working Driver export (window.exportDriverAnalytics — no "Pdf" suffix), so
+  // the runtime/console can resolve them. The legacy `…Pdf` names are kept as
+  // back-compat ALIASES (pointers, not duplicate implementations) so any older
+  // caller keeps working.
+  window.exportPettyCashAnalytics = (meta = {}) => {
     const m = window._lastPettyCashAnalyticsModel;
     if (!m) throw new Error('Buka tab Analytics Petty Cash dulu agar model tersedia.');
     return exportPettyCashAnalytics(m, { ...(window._pettyCashAnalyticsMeta || {}), ...meta });
   };
-  window.exportExecutiveAnalyticsPdf = (meta = {}) => {
+  window.exportExecutiveAnalytics = (meta = {}) => {
     const m = window._lastExecutiveAnalyticsModel;
     if (!m) throw new Error('Buka tab Analytics Executive dulu agar model tersedia.');
     return exportExecutiveAnalytics(m, { ...(window._executiveAnalyticsMeta || {}), ...meta });
   };
+  // Back-compat aliases (legacy view callback names).
+  window.exportPettyCashAnalyticsPdf = window.exportPettyCashAnalytics;
+  window.exportExecutiveAnalyticsPdf = window.exportExecutiveAnalytics;
   // Petty Cash Excel reuses the existing cycle workbook exporter (no-arg).
   window.exportPettyCashAnalyticsExcel = () => exportExpensesExcel();
 }

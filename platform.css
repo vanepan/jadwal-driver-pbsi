@@ -8978,23 +8978,59 @@ input[type="time"].v2-admin-config-input {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* v1.15.3: wrap to a second line on tight cards rather than truncating with
+     an ellipsis (A2: "no ellipsis unless absolutely required"). */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .v2-analytics-kpi-card-value {
-  font-size: 30px;
+  /* v1.15.2: responsive value typography. A fixed 30px currency value
+     (e.g. "Rp 12.345.678") overflowed its 1fr grid column on narrow desktop /
+     split-screen / DevTools-open widths and visually overlapped the next card
+     ("Saldo Aktif" bug). clamp() scales the value to the available width and
+     overflow-wrap lets an unbreakable long number wrap inside the card instead
+     of spilling out. The card already has min-width:0 so the grid track shrinks. */
+  font-size: clamp(22px, 2.4vw, 30px);
   font-weight: 700;
   line-height: 1.05;
   letter-spacing: -0.01em;
   color: var(--text);
   font-variant-numeric: tabular-nums;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .v2-analytics-kpi-card-meta {
   display: flex;
   align-items: center;
   gap: 8px;
   min-height: 16px;
+}
+
+/* v1.15.3 — Container-aware currency (renderResponsiveCurrency +
+   bindResponsiveCurrency). A single cell whose text is swapped by a
+   ResizeObserver to the widest form that fits the cell's ACTUAL container width
+   (not the viewport), so it never overflows/clips/fragments under DevTools,
+   split-screen, foldables or tablet landscape. Always one unbreakable line. */
+.an-cur { white-space: nowrap; }
+.an-cur--hero { font-size: 0.62em; letter-spacing: -0.01em; }
+
+/* v1.15.3 — Executive filter bar (Phase B): period segment + scope selects.
+   Wraps fluidly; on mobile the scope selects go full-width 1-per-row. */
+.v2-analytics-claude .exec-filter-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+.v2-analytics-claude .exec-period-seg { margin-bottom: 0; }
+.v2-analytics-claude .exec-scope-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
+  gap: 8px;
+}
+.v2-analytics-claude .exec-scope-row .v2-admin-filter { width: 100%; min-width: 0; }
+@media (max-width: 600px) {
+  .v2-analytics-claude .exec-scope-row { grid-template-columns: 1fr; }
 }
 .v2-analytics-kpi-card-comp {
   font-size: 11px;
@@ -10857,9 +10893,18 @@ input[type="time"].v2-admin-config-input {
 }
 @media (max-width: 760px) {
   .v2-analytics-claude .statrow { grid-template-columns: 1fr 1fr; gap: 20px; }
-  .v2-analytics-claude .hm-stats { grid-template-columns: 1fr; gap: 24px; }
-  .v2-analytics-claude .hm-stat { border-right: none; padding: 0 0 22px; border-bottom: 1px solid var(--border-faint); }
-  .v2-analytics-claude .hm-stat:last-child { padding-bottom: 0; border-bottom: none; }
+  /* v1.15.2: keep the three hero KPIs HORIZONTAL on mobile (all visible above
+     the fold) instead of stacking full-width — saves ~2 rows of vertical space.
+     Compact dividers + viewport-scaled values; the currency stat ("Dana
+     Terpakai") wraps within its cell rather than overflowing. */
+  .v2-analytics-claude .hm-stats { grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .v2-analytics-claude .hm-stat { border-right: 1px solid var(--border-faint); border-bottom: none; padding: 0 9px; min-width: 0; }
+  .v2-analytics-claude .hm-stat:first-child { padding-left: 0; }
+  .v2-analytics-claude .hm-stat:last-child { border-right: none; padding-right: 0; }
+  .v2-analytics-claude .hm-stat .lbl { font-size: 9.5px; letter-spacing: 0.03em; }
+  .v2-analytics-claude .hm-stat .big { font-size: clamp(16px, 5.2vw, 30px); margin-top: 8px; overflow-wrap: anywhere; }
+  .v2-analytics-claude .hm-stat .delta,
+  .v2-analytics-claude .hm-stat .alertbtn { font-size: 11px; margin-top: 8px; }
   .v2-analytics-claude .highlights { grid-template-columns: 1fr; }
   .v2-analytics-claude .hl-item { border-left: none; border-top: 1px solid var(--border-faint); padding: 22px 0; min-height: 0; }
   .v2-analytics-claude .hl-item:first-child { border-top: none; padding-top: 4px; }
@@ -10872,9 +10917,18 @@ input[type="time"].v2-admin-config-input {
   .v2-analytics-claude .statrow { grid-template-columns: 1fr 1fr; }
   .v2-analytics-claude .hm-health { flex-direction: column; text-align: center; align-items: center; gap: 16px; }
   .v2-analytics-claude .hm-health .meta .lbl { max-width: none; }
+  /* v1.15.2: shrink the health ring + score on small phones so the 3 hero KPIs
+     below it stay above the fold (the SVG width/height attrs are overridden). */
+  .v2-analytics-claude .hm-health .an-ring { width: 132px; height: 132px; }
+  .v2-analytics-claude .hm-health .score .v { font-size: 42px; }
   .v2-analytics-claude .an-export-item { flex-wrap: wrap; }
   .v2-analytics-claude .an-export-go,
   .v2-analytics-claude .an-export-chip { margin-left: 47px; }
+}
+/* Tightest phones: trim 3-up gutters so wide currency never forces overflow. */
+@media (max-width: 380px) {
+  .v2-analytics-claude .hm-stats { gap: 7px; }
+  .v2-analytics-claude .hm-stat { padding: 0 6px; }
 }
 
 /* ── Export Center — modern hub (v1.12.1C) ───────────────────────────────
@@ -10992,6 +11046,46 @@ input[type="time"].v2-admin-config-input {
    drives navigation (no redundant in-content tabs). */
 @media (min-width: 768px) {
   .v2-admin-nav { display: none !important; }
+}
+
+/* ── Mobile Analytics sub-nav (v1.15.2) ───────────────────────────────────
+   A module-level segmented strip giving mobile users parity access to the
+   three Analytics screens (Driver / Petty Cash / Executive). Reuses the
+   .v2-admin-nav-tab look but renders as an equal-width segmented control with
+   ≥44px touch targets. JS toggles display:flex when the Analytics module is
+   active; the media query below keeps it mobile-only (the panel drives desktop).
+   The inline display set by JS is non-important, so the desktop !important wins. */
+#v2AnalyticsMobileNav.v2-an-mnav {
+  display: none;
+  gap: 3px;
+  margin: 0 0 16px;
+  padding: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  overflow: visible;
+}
+.v2-an-mnav .v2-admin-nav-tab {
+  flex: 1 1 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-height: 44px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.v2-an-mnav .v2-admin-nav-tab::after { display: none; }
+.v2-an-mnav .v2-admin-nav-tab--active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+  padding-bottom: 8px;
+}
+@media (min-width: 768px) {
+  #v2AnalyticsMobileNav.v2-an-mnav { display: none !important; }
 }
 
 /* Module "coming soon" placeholder (Analytics Petty Cash / Analytics Gabungan). */
