@@ -1,7 +1,7 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.15.0';
+export const APP_VERSION = '1.15.1';
 export const RELEASE_NAME = 'Analytics Expansion Foundation';
 
 /**
@@ -17,6 +17,17 @@ export const RELEASE_NAME = 'Analytics Expansion Foundation';
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.15.1',
+    date: '2026-06-21',
+    summary: 'Cache-invalidation / deployment-hygiene patch. v1.15.0 analytics module fixes were edited without an APP_VERSION bump, so the Service Worker (SW_VERSION still 1.15.0) kept serving the old analytics JS modules cache-first on every normal load — only a hard refresh (which bypasses the SW) loaded the corrected code. Bumping APP_VERSION re-stamps SW_VERSION → a new CACHE_NAME, so the browser detects a new SW, activate() purges the stale cache, and a normal F5 re-fetches the newest analytics bundles. No analytics, store, or Firebase logic changed.',
+    highlights: [
+      'APP_VERSION 1.15.0 → 1.15.1 (single source of truth in js/config.js); sync-version.mjs re-stamps service-worker.js SW_VERSION and version.json.',
+      'CACHE_NAME changes sarpras-cache-v1.15.0 → sarpras-cache-v1.15.1, so service-worker.js bytes change → new SW installs → activate() deletes every cache key !== sarpras-cache-v1.15.1, evicting the stale cache-first analytics modules.',
+      'After deployment a normal F5 loads the newest Analytics Petty Cash and Analytics Executive JS bundles (no Ctrl+Shift+R required); the cache-first fetch handler refills from network on the now-empty cache.',
+      'Cache-invalidation only — no analytics-engine, petty-cash-store, or Firebase logic was touched.',
+    ],
+  },
   {
     version: '1.15.0',
     date: '2026-06-21',

@@ -205,23 +205,48 @@ export async function saveSettings(settings, cycle) {
 }
 
 /**
+ * Apply a flat multi-path update map into the in-memory cache. Keys mirror the
+ * Firebase fan-out shape: "pettyCashNode/id" → full record (or null to delete),
+ * and "pettyCashSettings" → settings object (merged). Pure cache mutation — no
+ * notify, no I/O. Every real call site (NOR generate / archive / restore /
+ * convert / replenish) uses the two-level "node/id" form, so a whole record is
+ * always replaced — never a partial field path.
+ */
+function applyUpdatesToCache(updates) {
+  Object.keys(updates).forEach(p => {
+    const parts = p.split('/');
+    const node = parts[0].replace('pettyCash', '').toLowerCase();
+    if (node === 'settings') { cache.settings = { ...cache.settings, ...updates[p] }; return; }
+    const id = parts[1];
+    if (cache[node]) { if (updates[p] === null) delete cache[node][id]; else cache[node][id] = updates[p]; }
+  });
+}
+
+/**
  * Apply many writes atomically across nodes via a single multi-path
- * update. `updates` is a flat map of "node/id/field" → value (Firebase
- * fan-out). Used by NOR generation and cycle rollover.
+ * update. `updates` is a flat map of "node/id" → value (Firebase fan-out).
+ * Used by every NOR-lifecycle mutation (generate / archive / restore /
+ * convert) and cycle rollover.
+ *
+ * RUNTIME-SYNC ROOT CAUSE (v1.15.0): the in-memory cache is updated LOCALLY
+ * first, then notify() fires synchronously, so every live view (dashboard,
+ * petty cash center, analytics) reflects the mutation in the SAME tick —
+ * independent of when the realtime echo arrives. This mirrors saveSettings'
+ * optimistic-write pattern (v1.13.2.2).
+ *
+ * Previously the Firebase-configured path only awaited the root-level update()
+ * and relied solely on the onValue echo to refresh the cache. Unlike a direct
+ * child set() (putExpense), a root multi-path update() did not reflect into the
+ * in-session cache before the user observed the screen — so a NOR Official↔Test
+ * conversion left analytics showing pre-conversion spending until a page reload
+ * re-read the node from the server. Optimistic local apply fixes the live
+ * runtime path at its source; the echo later re-applies an identical payload
+ * (idempotent re-render).
  */
 export async function applyUpdates(updates) {
-  if (!isFirebaseConfigured()) {
-    // Best-effort local application for offline mode.
-    Object.keys(updates).forEach(p => {
-      const parts = p.split('/');
-      const node = parts[0].replace('pettyCash', '').toLowerCase();
-      if (node === 'settings') { cache.settings = { ...cache.settings, ...updates[p] }; return; }
-      const id = parts[1];
-      if (cache[node]) { if (updates[p] === null) delete cache[node][id]; else cache[node][id] = updates[p]; }
-    });
-    notify();
-    return;
-  }
+  applyUpdatesToCache(updates);
+  notify();
+  if (!isFirebaseConfigured()) return;
   await updateFirebaseData('/', updates);
 }
 
