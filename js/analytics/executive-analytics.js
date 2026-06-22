@@ -52,15 +52,28 @@ export function computeExecutiveAnalytics({ driverModel, pettyModel } = {}) {
   const consumedSpend = num((pc.consumed || {}).totalConsumedSpend);
 
   // ── Operational Health Score (Formula V1) ───────────────────────────────
-  const remainingRatio = pcCycle.opening > 0 ? Math.max(0, activeBalance) / pcCycle.opening : 1;
+  // v1.15.8 Phase A — Petty Cash No-Data ≠ Perfect. Previously opening<=0 made
+  // remainingRatio default to 1 (100% headroom) and norOfficial===0 made
+  // realizationRatio default to 1 (100% flow), so an empty domain scored 100.
+  // We now detect the No-Data signature and feed `null`, letting the existing
+  // weight re-normalization in calculateScore drop the component cleanly.
+  const opening = num(pcCycle.opening);
+  const pcTxCount = num((pc.diagnostics || {}).curCount); // official transactions in window
+  const pettyNoData = opening <= 0 && norOfficial === 0 && pcTxCount === 0;
+  const remainingRatio = opening > 0 ? Math.max(0, activeBalance) / opening : 1;
   const realizationRatio = norOfficial > 0 ? realizedCount / norOfficial : 1;
   const components = {
-    driverOps: driverOpsScore({ compRate: dk.compRate }),
+    driverOps: driverOpsScore({ compRate: dk.compRate, driverUtilization, totalTrips: totalTrip }),
     vehicleUtil: vehicleUtilScore({ vehiclesWithTrips, activeVehicles }),
-    pettyCash: pettyCashHealthScore({ remainingRatio, realizationRatio }),
+    pettyCash: pettyNoData ? null : pettyCashHealthScore({ remainingRatio, realizationRatio }),
   };
   const scored = calculateScore(components, SCORE_WEIGHTS_V1);
-  const level = healthLevel(scored.score);
+  // v1.15.8 — null score (no domain available) maps to an explicit No-Data
+  // health state rather than the misleading "Perlu Perhatian" that healthLevel
+  // would return for a coerced 0.
+  const level = scored.score == null
+    ? { level: 'nodata', label: 'Belum Ada Data', tone: 'amber' }
+    : healthLevel(scored.score);
 
   // ── Executive insights (cross-domain) — reuse the insight engine over a
   //    combined context, then fold in the petty-cash narrative findings. ────
@@ -89,6 +102,18 @@ export function computeExecutiveAnalytics({ driverModel, pettyModel } = {}) {
     driverKpis: { totalTrip, tripsWithVehicle, tripsWithoutVehicle, driverUtilization, activeVehicles, vehiclesWithTrips, activeDrivers, compRate: clampPct(dk.compRate) },
     pettyKpis: { activeBalance, norOfficial, realizationPct, consumedSpend, opening: num(pcCycle.opening) },
     score: { value: scored.score, components: scored.components, weights: scored.weights, level: level.level, label: level.label, tone: level.tone },
+    // v1.15.8 Phase D — Executive Score explainability (MODEL ONLY, no UI). The
+    // per-domain sub-scores behind `value`, with explicit null where a domain
+    // had no data. Consumed by future export / PDF Composer / Recommendation
+    // Engine without changing the current hero. `usedWeight` lets a consumer see
+    // how much of the formula's weight actually contributed.
+    scoreBreakdown: {
+      driverScore: components.driverOps,     // 0–100 | null
+      fleetScore: components.vehicleUtil,    // 0–100 | null
+      pettyCashScore: components.pettyCash,  // 0–100 | null
+      weights: scored.weights,
+      usedWeight: scored.usedWeight,
+    },
     insights,
     narrative,
   };

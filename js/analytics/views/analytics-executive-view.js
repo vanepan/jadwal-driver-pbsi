@@ -110,14 +110,21 @@ function heroBlock(exec) {
   // stat's `.big` block, so the ResizeObserver measures the real cell width and
   // picks full → "Rp 10 Jt" → "10 Jt" → "10Jt" as the column tightens.
   const cur = (v) => curResp(v, 'an-cur--hero');
+  // v1.15.8: score may be null (no domain had data). Pass it through so the hero
+  // renders "—" instead of a misleading 0, and leave the ring empty.
+  const hasScore = s.value != null;
   return renderHeroSection({
     headline: `Kesehatan operasional <span class="hl">${esc(s.label)}</span>`,
     sub: esc(exec.narrative),
-    score: s.value, grade: s.label, ringValue: s.value / 100, ringColor, tone: s.tone,
+    score: hasScore ? s.value : null, grade: s.label, ringValue: hasScore ? s.value / 100 : 0, ringColor, tone: s.tone,
+    // v1.15.7 (Phase D — card prioritization): Dana Terpakai is the most
+    // executive-relevant figure (Sekjen/Waketum), so it leads the keynote strip,
+    // followed by Total Trip then Driver Utilization. Reordered from the prior
+    // Trip → Utilization → Dana sequence.
     stats: [
+      { lbl: 'Dana Terpakai', big: cur(pk.consumedSpend) },
       { lbl: 'Total Trip', big: String(dkv.totalTrip) },
       { lbl: 'Driver Utilization', big: `${dkv.driverUtilization}<span class="u">%</span>` },
-      { lbl: 'Dana Terpakai', big: cur(pk.consumedSpend) },
     ],
   });
 }

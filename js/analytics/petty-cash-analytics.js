@@ -187,9 +187,15 @@ export function computePettyCashAnalytics(ctx = {}) {
   const insights = generateInsights(insightCtx);
   const narrative = generateNarrative(insightCtx);
 
-  // Dana Terpakai — total operational consumption (official realized + active
-  // working spend). Reusable across Executive, PDF, dashboards, digests.
-  const consumed = calculateConsumedSpend({ expenses: allExpenses, nors: allNors, activeCycle });
+  // Dana Terpakai — operational consumption (official realized + active working
+  // spend), SCOPED TO THE ACTIVE WINDOW (v1.15.7). Previously this was all-time
+  // regardless of the selected period, so the Executive "Dana Terpakai" hero
+  // never tracked the filter. It now reuses the SAME window as curExpenses by
+  // pre-filtering inputs on expenseDate, then runs the existing
+  // calculateConsumedSpend engine — no duplicate calculation, single source of
+  // truth preserved. (consumed is Executive-only; Health Score does not read it.)
+  const windowExpenses = allExpenses.filter(e => inRange(e.expenseDate, win.start, win.end));
+  const consumed = calculateConsumedSpend({ expenses: windowExpenses, nors: allNors, activeCycle });
 
   return {
     schemaVersion: 1,

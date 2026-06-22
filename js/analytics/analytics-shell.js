@@ -477,7 +477,9 @@ export function renderHeroSection({ headline = '', sub = '', attn = null, score 
         <div class="hm-health">
           <div class="gwrap">
             ${ring}
-            <div class="score"><span class="v" data-countup="${score}" data-countup-decimals="0">0</span><span class="s">/ 100</span></div>
+            <div class="score">${score == null
+              ? '<span class="v">—</span><span class="s">/ 100</span>'
+              : `<span class="v" data-countup="${score}" data-countup-decimals="0">0</span><span class="s">/ 100</span>`}</div>
           </div>
           <div class="meta">
             <div class="lbl">Kesehatan Operasional</div>
