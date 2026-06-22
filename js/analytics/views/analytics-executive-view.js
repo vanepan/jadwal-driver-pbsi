@@ -124,8 +124,14 @@ function heroBlock(exec) {
 
 function kpiBlock(exec) {
   const d = exec.driverKpis, p = exec.pettyKpis;
+  // v1.15.6: when some trips used a requester vehicle, show the armada vs
+  // "Tanpa Kendaraan" split as the Total Trip subtitle (no new KPI card). The
+  // default subtitle is preserved when every trip used a PBSI vehicle.
+  const tripSubtitle = (Number(d.tripsWithoutVehicle) > 0)
+    ? `${Number(d.tripsWithVehicle) || 0} armada • ${Number(d.tripsWithoutVehicle)} tanpa kendaraan`
+    : 'Penugasan operasional';
   const driverCards = renderKPIGrid([
-    renderAnalyticsKPICard({ title: 'Total Trip', icon: anIcon('car', { size: 15 }), value: String(d.totalTrip), subtitle: 'Penugasan operasional' }),
+    renderAnalyticsKPICard({ title: 'Total Trip', icon: anIcon('car', { size: 15 }), value: String(d.totalTrip), subtitle: tripSubtitle }),
     renderAnalyticsKPICard({ title: 'Driver Utilization', icon: anIcon('user', { size: 15 }), value: `${d.driverUtilization}%`, subtitle: `${d.activeDrivers} driver aktif` }),
     renderAnalyticsKPICard({ title: 'Kendaraan Aktif', icon: anIcon('car', { size: 15 }), value: String(d.vehiclesWithTrips), subtitle: `dari ${d.activeVehicles} armada` }),
   ]);

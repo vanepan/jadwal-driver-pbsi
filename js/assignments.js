@@ -15,6 +15,10 @@ import { syncPbsiSelect } from './pbsi-select.js';
 import { initPbsiDatepicker, syncPbsiDatepicker } from './pbsi-datepicker.js';
 
 /* ── Module State ── */
+// v1.15.6: UI-only sentinel for the "Tanpa Kendaraan" dropdown option. NEVER
+// persisted — handleFormSubmit normalizes it to the official representation
+// `vehicle: ''` (assignment performed with a requester / non-PBSI vehicle).
+const NO_VEHICLE_SENTINEL = '__none__';
 let assignments = [];
 let editingId = null; // null = add mode, or ID = edit mode
 let onSaveCallback = null;
@@ -208,7 +212,9 @@ export function openFormModal(asgnId = null) {
       document.getElementById('fieldDriver').value      = a.driver;
       syncPbsiSelect(document.getElementById('fieldDriver'));
       document.getElementById('fieldPhone').value       = a.phone;
-      document.getElementById('fieldVehicle').value     = a.vehicle;
+      // v1.15.6: a stored empty vehicle ('') is the "Tanpa Kendaraan" state —
+      // select the sentinel option so it shows correctly in edit mode.
+      document.getElementById('fieldVehicle').value     = (a.vehicle == null || a.vehicle === '') ? NO_VEHICLE_SENTINEL : a.vehicle;
       syncPbsiSelect(document.getElementById('fieldVehicle'));
       document.getElementById('fieldDate').value        = a.date;
       syncPbsiDatepicker(document.getElementById('fieldDate'));
@@ -269,7 +275,10 @@ function handleFormSubmit(e) {
 
   const driver      = document.getElementById('fieldDriver').value;
   const phone       = document.getElementById('fieldPhone').value;
-  const vehicle     = document.getElementById('fieldVehicle').value;
+  // v1.15.6: `vehicleRaw` is the dropdown value (may be the UI sentinel); `vehicle`
+  // is the persisted value — the sentinel normalizes to '' (Tanpa Kendaraan).
+  const vehicleRaw  = document.getElementById('fieldVehicle').value;
+  const vehicle     = vehicleRaw === NO_VEHICLE_SENTINEL ? '' : vehicleRaw;
   const startDate   = document.getElementById('fieldDate').value;
   const isFullDay   = document.getElementById('assignmentFullDay')?.checked ?? false;
   const startTime   = isFullDay ? '00:00' : getCombinedTimeFromPair('fieldStartHour', 'fieldStartMinute');
@@ -297,8 +306,11 @@ function handleFormSubmit(e) {
     datesToCreate = expandDateRange(startDate, endDate);
   }
 
-  // Validasi dasar
-  if (!driver || !vehicle || !startDate || !startTime || !endTime || !destination || !purpose) {
+  // Validasi dasar. v1.15.6: the vehicle field is satisfied as long as the user
+  // made a selection — including "Tanpa Kendaraan" (sentinel → ''). Only an
+  // untouched dropdown (raw '') is invalid. Driver/date/time/destination/purpose
+  // stay mandatory.
+  if (!driver || vehicleRaw === '' || !startDate || !startTime || !endTime || !destination || !purpose) {
     showToast('⚠️ Lengkapi semua field wajib (*)');
     return;
   }
@@ -314,10 +326,13 @@ function handleFormSubmit(e) {
     }
   }
 
-  // Cek konflik untuk semua tanggal dalam rentang (driver dan kendaraan)
+  // Cek konflik untuk semua tanggal dalam rentang (driver dan kendaraan).
+  // v1.15.6: vehicle conflict is SKIPPED for "Tanpa Kendaraan" (vehicle === '') —
+  // a requester vehicle is not a bookable PBSI resource, so two such assignments
+  // may run concurrently. Driver conflict always applies.
   const conflictDates = datesToCreate.filter(d =>
     checkConflict(driver, startTime, endTime, d, editingId) ||
-    checkVehicleConflict(vehicle, startTime, endTime, d, editingId)
+    (vehicle !== '' && checkVehicleConflict(vehicle, startTime, endTime, d, editingId))
   );
   const warningEl     = document.getElementById('conflictWarning');
   const warningDatesEl = document.getElementById('conflictWarningDates');
@@ -512,7 +527,10 @@ function runConflictPreview() {
   if (!previewEl) return;
 
   const driver     = document.getElementById('fieldDriver')?.value;
-  const vehicle    = document.getElementById('fieldVehicle')?.value;
+  // v1.15.6: normalize the sentinel so the vehicle preview is skipped for
+  // "Tanpa Kendaraan" (vehicle === '') exactly like the hard check on submit.
+  const vehicleRaw = document.getElementById('fieldVehicle')?.value;
+  const vehicle    = vehicleRaw === NO_VEHICLE_SENTINEL ? '' : vehicleRaw;
   const date       = document.getElementById('fieldDate')?.value;
   const isFullDay  = document.getElementById('assignmentFullDay')?.checked ?? false;
   const isMultiDay = document.getElementById('assignmentMultiDay')?.checked ?? false;

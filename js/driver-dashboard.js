@@ -10,7 +10,7 @@
 
 'use strict';
 
-import { todayString, formatDateShort } from './utils.js';
+import { todayString, formatDateShort, vehicleLabel } from './utils.js';
 import { getVehicleColor } from './drivers.js';
 import { openDetailModal } from './modal.js';
 
@@ -122,7 +122,7 @@ function buildCard(a, { showDate = false, muted = false } = {}) {
          aria-label="${esc(a.purpose || a.destination)}">
       <div class="dash-card-header">
         <span class="badge-status badge-status--${esc(status)}">${esc(label)}</span>
-        <span class="vehicle-badge" style="background:${esc(color)}">${esc(a.vehicle)}</span>
+        <span class="vehicle-badge" style="background:${esc(color)}">${esc(vehicleLabel(a.vehicle))}</span>
       </div>
       <div class="dash-card-title">${esc(a.purpose || a.destination)}</div>
       <div class="dash-card-destination">📍 ${esc(a.destination)}</div>

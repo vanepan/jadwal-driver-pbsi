@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.15.5.2';
-export const RELEASE_NAME = 'Silent Auto Update';
+export const APP_VERSION = '1.15.6';
+export const RELEASE_NAME = 'Requester Vehicle Support';
 
 /**
  * Web Push VAPID PUBLIC key (v1.11.3). Safe to ship — it is an
@@ -17,6 +17,17 @@ export const RELEASE_NAME = 'Silent Auto Update';
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.15.6',
+    date: '2026-06-22',
+    summary: 'Requester Vehicle Support ("Tanpa Kendaraan"). Drivers can now be assigned to a trip performed with a requester / non-PBSI vehicle. A new "Tanpa Kendaraan" dropdown option (UI sentinel __none__) is normalized on save to the official representation vehicle:\'\' — no dummy vehicle, no transportType, no schema/collection, no migration. Driver analytics count these trips (driver work); vehicle analytics exclude them (no phantom bucket). Vehicle conflict is skipped when vehicle===\'\'; driver conflict still applies. Odometer capture is skipped on start/complete for no-vehicle trips (start/end/distance stay null).',
+    highlights: [
+      'Shared helper utils.vehicleLabel() renders \'\'/null/undefined as "Tanpa Kendaraan" across timeline card, driver dashboard, detail modal, WhatsApp text, Telegram/reminder notifications, and reimbursement; replaces ad-hoc `vehicle || \'-\'/\'—\'` for assignment vehicle.',
+      'assignments.js: sentinel normalized to \'\' on save; validation accepts the explicit no-vehicle choice; vehicle conflict (submit + preview) skipped when empty; edit mode reselects the option for stored \'\'.',
+      'Analytics engine exposes kpis.tripsWithVehicle/tripsWithoutVehicle (sum === total) for every period; Executive shows the split as the Total Trip subtitle ("N armada • M tanpa kendaraan") — no new KPI card. Vehicle utilization/ranking/distance/odometer unchanged (empty vehicle matches no real vehicle).',
+      'Backward compatible: existing assignments and all existing analytics/reports unchanged; only new or edited-to-no-vehicle assignments are affected. APP_VERSION 1.15.5.2 → 1.15.6; sync-version re-stamps CACHE_NAME sarpras-cache-v1.15.6.',
+    ],
+  },
   {
     version: '1.15.5.2',
     date: '2026-06-22',

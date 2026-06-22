@@ -23,7 +23,7 @@
    no drift between deployed and installed.
    ============================================================ */
 
-const SW_VERSION  = '1.15.5.2';   // stamped from config.js — do not edit by hand
+const SW_VERSION  = '1.15.6';   // stamped from config.js — do not edit by hand
 const CACHE_NAME  = `sarpras-cache-v${SW_VERSION}`;
 const OFFLINE_URL = '/offline.html';
 const VERSION_URL = '/version.json';

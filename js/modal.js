@@ -7,7 +7,7 @@
 
 'use strict';
 
-import { formatDateLong, formatDateTime, getTimePeriod, parseLocalDate, showToast } from './utils.js';
+import { formatDateLong, formatDateTime, getTimePeriod, parseLocalDate, showToast, vehicleLabel } from './utils.js';
 import { getVehicleColor } from './drivers.js';
 import { hasPermission, getCurrentUser } from './auth.js';
 import { validateOdometer } from './validation.js';
@@ -147,7 +147,7 @@ function _openOdometerModal(type, assignmentId, assignment, callback) {
 
   if (metaEl) {
     const parts = [
-      `${escapeHTML(assignment.driver)} · ${escapeHTML(assignment.vehicle || '')}`,
+      `${escapeHTML(assignment.driver)} · ${escapeHTML(vehicleLabel(assignment.vehicle))}`,
       escapeHTML(formatDateLong(assignment.date)),
       escapeHTML(assignment.destination || ''),
     ].filter(Boolean);
@@ -354,6 +354,13 @@ export function initModalHandlers() {
     const status = normalizeStatus(a?.status);
     if (status === 'started')   { showToast('Penugasan sudah dimulai'); return; }
     if (status === 'completed') { showToast('Penugasan sudah selesai'); return; }
+    // v1.15.6: "Tanpa Kendaraan" (vehicle === '') has no odometer — start
+    // directly (Scheduled → In Progress), leaving startOdometer null.
+    if (!a || !a.vehicle) {
+      if (onStartCallback) onStartCallback(viewingId, {});
+      closeDetailModal();
+      return;
+    }
     _openOdometerModal('start', viewingId, a, (assignmentId, odoData) => {
       if (onStartCallback) onStartCallback(assignmentId, odoData);
       closeDetailModal();
@@ -369,6 +376,13 @@ export function initModalHandlers() {
     }
     const status = normalizeStatus(a?.status);
     if (status === 'completed') { showToast('Penugasan sudah selesai'); return; }
+    // v1.15.6: "Tanpa Kendaraan" (vehicle === '') has no odometer — complete
+    // directly (In Progress → Completed), leaving endOdometer/distance null.
+    if (!a || !a.vehicle) {
+      if (onCompleteCallback) onCompleteCallback(viewingId, {});
+      closeDetailModal();
+      return;
+    }
     _openOdometerModal('complete', viewingId, a, (assignmentId, odoData) => {
       if (onCompleteCallback) onCompleteCallback(assignmentId, odoData);
       closeDetailModal();
@@ -454,7 +468,7 @@ export function openDetailModal(id) {
       <div class="detail-row">
         <span class="detail-label">Kendaraan</span>
         <span class="detail-value">
-          <span class="vehicle-badge" style="background:${getVehicleColor(a.vehicle)}">${escapeHTML(a.vehicle)}</span>
+          <span class="vehicle-badge" style="background:${getVehicleColor(a.vehicle)}">${escapeHTML(vehicleLabel(a.vehicle))}</span>
         </span>
       </div>
       <div class="detail-row">
@@ -751,9 +765,9 @@ export function generateWAText(a) {
 ${dateStr}
 ${timeStr}
 📍: ${a.destination}
-🚗: ${a.vehicle}
+🚗: ${vehicleLabel(a.vehicle)}
 ${picStr}
-Driver: ${a.vehicle} @${a.driver} PBSI${a.notes ? `\nCatatan: ${a.notes}` : ''}`;
+Driver: ${vehicleLabel(a.vehicle)} @${a.driver} PBSI${a.notes ? `\nCatatan: ${a.notes}` : ''}`;
 }
 
 function copyWAText() {

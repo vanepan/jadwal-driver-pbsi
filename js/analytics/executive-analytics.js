@@ -33,6 +33,10 @@ export function computeExecutiveAnalytics({ driverModel, pettyModel } = {}) {
 
   // ── Driver KPIs ─────────────────────────────────────────────────────────
   const totalTrip = num(dk.total);
+  // v1.15.6: trip split (PBSI armada vs requester/"Tanpa Kendaraan"). Falls back
+  // so older driver models (without the split) still yield armada === total.
+  const tripsWithoutVehicle = num(dk.tripsWithoutVehicle);
+  const tripsWithVehicle = (dk.tripsWithVehicle != null) ? num(dk.tripsWithVehicle) : (totalTrip - tripsWithoutVehicle);
   const activeDrivers = num(dk.activeDrivers);
   const driversWithTrips = num(dk.driversWithTrips);
   const activeVehicles = num(dk.activeVehicles);
@@ -82,7 +86,7 @@ export function computeExecutiveAnalytics({ driverModel, pettyModel } = {}) {
     schemaVersion: 1,
     domain: 'executive',
     metadata: { generatedAt: new Date().toISOString() },
-    driverKpis: { totalTrip, driverUtilization, activeVehicles, vehiclesWithTrips, activeDrivers, compRate: clampPct(dk.compRate) },
+    driverKpis: { totalTrip, tripsWithVehicle, tripsWithoutVehicle, driverUtilization, activeVehicles, vehiclesWithTrips, activeDrivers, compRate: clampPct(dk.compRate) },
     pettyKpis: { activeBalance, norOfficial, realizationPct, consumedSpend, opening: num(pcCycle.opening) },
     score: { value: scored.score, components: scored.components, weights: scored.weights, level: level.level, label: level.label, tone: level.tone },
     insights,

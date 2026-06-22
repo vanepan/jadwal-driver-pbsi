@@ -22,7 +22,7 @@
 'use strict';
 
 import { getVehicles }                    from './vehicles-store.js';
-import { parseLocalDate }                 from './utils.js';
+import { parseLocalDate, vehicleLabel }   from './utils.js';
 import { acquireReimbursementDocNumber }  from './firebase.js';
 import * as DocumentEngine                from './docs/doc-engine.js';
 import './docs/templates/reimbursement.js';   // side-effect: registers 'reimbursement'
@@ -106,7 +106,7 @@ function buildViewModel(a, docNumber) {
     purpose:        a.purpose || '—',
     destination:    a.destination || '',
     dateStr,
-    vehicle:        a.vehicle || '—',
+    vehicle:        vehicleLabel(a.vehicle),   // v1.15.6: '' → "Tanpa Kendaraan"
     vehiclePlate:   getVehiclePlate(a.vehicle),
 
     startT:  a.fullDay ? '00:00' : (a.startTime || '—'),

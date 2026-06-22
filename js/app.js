@@ -104,7 +104,7 @@ import { setTelegramBotToken } from './telegram.js';
 import { subscribeLogsChangeListener, getLogs, logAction, ensureLogsLoadedAndSubscribed, resetLogsSync } from './logs.js';
 import { publishEvent } from './events.js';
 import { getUserByUsername, getUsers, createUser, getUserList, activateUser, deactivateUser, registerUsersChangeListener, archiveUser, restoreUser, deleteUser, initUsersSync, ensureUsersLoadedAndSubscribed, resetUsersSync } from './users.js';
-import { expandDateRange, showToast, formatDateShort } from './utils.js';
+import { expandDateRange, showToast, formatDateShort, vehicleLabel } from './utils.js';
 import {
   sendRequestApprovedNotification,
   sendRequestRejectedNotification,
@@ -1720,7 +1720,7 @@ function buildListCard(a) {
   const timeStr     = a.fullDay ? 'Penuh Hari' : `${esc(a.startTime)}–${esc(a.endTime)}`;
   const title       = esc(a.purpose || a.destination || '—');
   const driver      = esc(a.driver  || '—');
-  const vehicle     = esc(a.vehicle || '—');
+  const vehicle     = esc(vehicleLabel(a.vehicle));   // v1.15.6: '' → "Tanpa Kendaraan"
   const dest        = esc(a.destination || '—');
 
   return `
@@ -6643,7 +6643,7 @@ function _renderAssignmentReviewList() {
       <td class="v2-asg-id" title="${esc(a.id || '')}">${esc(idShort)}</td>
       <td class="v2-asg-date">${esc(dateStr)}</td>
       <td>${esc(a.driver || '—')}</td>
-      <td>${esc(a.vehicle || '—')}</td>
+      <td>${esc(vehicleLabel(a.vehicle))}</td>
       <td>${esc(bidang)}</td>
       <td class="v2-asg-dest" title="${esc(a.destination || '')}">${esc(a.destination || '—')}</td>
       <td><span class="v2-asg-status-chip v2-asg-status-chip--${statM.cls}">${esc(statM.label)}</span></td>

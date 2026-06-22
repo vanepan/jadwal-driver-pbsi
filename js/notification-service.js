@@ -15,6 +15,7 @@
 
 import { sendNotification } from './telegram.js';
 import { getSetting }        from './settings-store.js';
+import { vehicleLabel }      from './utils.js';
 
 /* ── Date helpers ── */
 function formatTanggal(dateStr) {
@@ -152,7 +153,7 @@ function buildAssignmentCreatedMessage(assignment, requester) {
     `*Tanggal:* ${assignment.date || '-'}\n` +
     `*Waktu:* ${assignment.startTime || '-'} - ${assignment.endTime || '-'}\n` +
     `*Tujuan:* ${assignment.destination || '-'}\n` +
-    `*Kendaraan:* ${assignment.vehicle || '-'}\n` +
+    `*Kendaraan:* ${vehicleLabel(assignment.vehicle)}\n` +
     `*Catatan:* ${assignment.notes || '(tidak ada)'}\n\n` +
     '_Check dashboard Anda untuk detail lebih lanjut_'
   );
@@ -169,7 +170,7 @@ function buildAssignmentCancelledMessage(assignment, { reason, cancelledByName }
     `*Tanggal:* ${formatTanggal(assignment.date)}\n` +
     `*Waktu:* ${assignment.startTime || '-'} – ${assignment.endTime || '-'}\n` +
     `*Driver:* ${assignment.driver || '-'}\n` +
-    `*Kendaraan:* ${assignment.vehicle || '-'}\n` +
+    `*Kendaraan:* ${vehicleLabel(assignment.vehicle)}\n` +
     `*Dibatalkan oleh:* ${cancelledByName || '-'}\n` +
     `*Alasan:* ${reason || '-'}\n`
   );
@@ -186,7 +187,7 @@ function buildReminder24hMessage(assignment) {
     `*Tanggal:* ${formatTanggal(assignment.date)}\n` +
     `*Waktu:* ${assignment.startTime || '-'} – ${assignment.endTime || '-'}\n` +
     `*Driver:* ${assignment.driver || '-'}\n` +
-    `*Kendaraan:* ${assignment.vehicle || '-'}\n` +
+    `*Kendaraan:* ${vehicleLabel(assignment.vehicle)}\n` +
     (assignment.notes ? `*Catatan:* ${assignment.notes}\n` : '') +
     '\n⏰ Jadwal Anda besok. Pastikan semua siap!'
   );
@@ -203,7 +204,7 @@ function buildReminder2hMessage(assignment) {
     `*Waktu:* ${assignment.startTime || '-'} - ${assignment.endTime || '-'}\n` +
     `*Tujuan:* ${assignment.destination || '-'}\n` +
     `*Driver:* ${assignment.driver || '-'}\n` +
-    `*Kendaraan:* ${assignment.vehicle || '-'}\n\n` +
+    `*Kendaraan:* ${vehicleLabel(assignment.vehicle)}\n\n` +
     '🚗 Keberangkatan dalam 2 jam. Siap-siap ya!'
   );
 }

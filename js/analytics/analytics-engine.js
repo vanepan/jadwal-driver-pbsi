@@ -197,6 +197,11 @@ export function computeAnalyticsModel(ctx) {
 
   // ── Assignment KPIs ────────────────────────────────────────────────────
   const total      = filteredAsg.length;
+  // v1.15.6: split operational trips by whether a PBSI vehicle was used. A
+  // "Tanpa Kendaraan" trip is stored as vehicle === '' (requester vehicle).
+  // Both halves are driver work and sum to `total` exactly.
+  const tripsWithVehicle    = filteredAsg.filter(a => (a.vehicle || '').trim() !== '').length;
+  const tripsWithoutVehicle = total - tripsWithVehicle;
   const completed  = filteredAsg.filter(a => a.status === 'completed').length;
   const inProgress = filteredAsg.filter(a => a.status === 'started').length;
   const scheduled  = filteredAsg.filter(a => a.status === 'assigned').length;
@@ -487,6 +492,7 @@ export function computeAnalyticsModel(ctx) {
     },
     kpis: {
       total, completed, inProgress, scheduled, cancelled, grandTotal: total + cancelled, openAsg, compRate, openRate, completionRatio,
+      tripsWithVehicle, tripsWithoutVehicle,   // v1.15.6 (Tanpa Kendaraan split; sum === total)
       // Cancellation Intelligence KPIs (v1.10.8):
       cancellationRate: cancellation.rate,                                   // cancelled / (operational + cancelled)
       completionVsCancellationRate: cancellation.completionVsCancellationRate, // completed / (completed + cancelled)

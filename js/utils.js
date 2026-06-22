@@ -188,6 +188,19 @@ export function showToast(message) {
   }, 2800);
 }
 
+/**
+ * Display label for an assignment's vehicle (v1.15.6 — Requester Vehicle).
+ * An assignment performed with a non-PBSI / requester vehicle is stored as
+ * `vehicle: ''`; render it as "Tanpa Kendaraan" everywhere (timeline, cards,
+ * dashboard, detail, notifications, exports) instead of '-' / '—' / blank.
+ * Any non-empty value is returned unchanged.
+ * @param {string|null|undefined} vehicle
+ * @returns {string}
+ */
+export function vehicleLabel(vehicle) {
+  return (vehicle == null || String(vehicle).trim() === '') ? 'Tanpa Kendaraan' : vehicle;
+}
+
 export function normalizeTimeValue(value) {
   return String(value || '').replace(/\D/g, '').slice(0, 4);
 }
