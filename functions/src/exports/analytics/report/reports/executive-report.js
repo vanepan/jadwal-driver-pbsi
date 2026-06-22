@@ -16,6 +16,7 @@
 
 const { page, rule, reportHeader, esc } = require('../layouts/report-layout');
 const { healthScoreHero } = require('../components/health-score-hero');
+const { scoreBreakdown } = require('../components/score-breakdown');
 const { metricGrid } = require('../components/metric-grid');
 const { highlightsSection } = require('../components/highlights-section');
 const { reportFooter } = require('../components/report-footer');
@@ -32,6 +33,17 @@ function buildExecutiveReport(model = {}) {
       metricGrid(model.kpis || []) +
     '</div>';
 
+  // Phase D — Executive Narrative: the SAME hero sub-line the dashboard shows,
+  // placed directly under the score hero (omitted when there is none).
+  const narrativeZone = model.narrative
+    ? `<div class="exec-narr">${esc(model.narrative)}</div>`
+    : '';
+
+  // Phase C — Explainability: the Petty Cash Health Score V2 breakdown, mirroring
+  // the dashboard's position (directly under the hero, above the KPI grid).
+  // scoreBreakdown returns '' on No-Data, so its rule only appears with content.
+  const explainZone = scoreBreakdown(model.explainability || {});
+
   const body =
     reportHeader({
       periodLabel: meta.periodLabel,
@@ -40,7 +52,9 @@ function buildExecutiveReport(model = {}) {
     }) +
     rule() +
     healthScoreHero(model.health || {}) +
+    narrativeZone +
     rule() +
+    (explainZone ? explainZone + rule() : '') +
     kpisZone +
     rule() +
     highlightsSection({ label: meta.highlightsLabel || 'Sorotan Eksekutif', items: model.highlights || [] }) +

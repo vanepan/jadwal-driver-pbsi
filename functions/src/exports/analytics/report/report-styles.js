@@ -122,7 +122,27 @@ body{font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased
 .hscn{font-size:100px;font-weight:100;letter-spacing:-.03em;color:#0F0F0F;font-variant-numeric:tabular-nums}
 .hscd{font-size:36px;font-weight:300;color:#9A9A9A;letter-spacing:-.01em}
 .hsbadge{display:inline-block;background:#E8F5EF;color:#1A7A4A;font-size:10px;font-weight:600;letter-spacing:.04em;padding:4px 12px;border-radius:4px;margin-top:10px}
+/* Badge tone variants (v1.16.4) — match the dashboard hero's amber/crit states.
+   Green is the default .hsbadge above (no modifier class). */
+.hsbadge.amber{background:#FBF3E2;color:#946420}
+.hsbadge.crit{background:#F7E9EA;color:#A8292F}
 .hslbl{font-size:8px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:#9A9A9A;margin-top:8px}
+
+/* EXECUTIVE — narrative + Petty Cash Health explainability (v1.16.4).
+   Screen-PDF parity twins of the dashboard hero sub-line and renderScoreBreakdown. */
+.exec-narr{font-size:10.5px;color:#6B6B6B;line-height:1.5;text-align:center;max-width:520px;margin:10px auto 2px}
+.zc .exec-narr-sub{font-size:9.5px;color:#6B6B6B;line-height:1.45;margin:-2px 0 12px}
+.sbk{display:flex;flex-direction:column;gap:11px}
+.sbk-row{display:flex;flex-direction:column;gap:5px}
+.sbk-head{display:flex;justify-content:space-between;align-items:baseline}
+.sbk-lbl{font-size:10px;font-weight:500;color:#0F0F0F}
+.sbk-wt{font-size:8px;font-weight:500;color:#9A9A9A;margin-left:6px}
+.sbk-val{font-size:13px;font-weight:300;color:#0F0F0F;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.sbk-track{height:6px;background:#EBEBEB;border-radius:1px;position:relative;overflow:hidden}
+.sbk-fill{position:absolute;inset:0 auto 0 0;border-radius:1px;background:#1A7A4A}
+.sbk-fill.g{background:#1A7A4A}
+.sbk-fill.a{background:#946420}
+.sbk-fill.r{background:#A8292F}
 
 /* TWO-COLUMN — Complete P2 */
 .tcol{display:flex;flex:1;gap:0;min-height:0}

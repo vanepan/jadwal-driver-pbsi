@@ -12,6 +12,7 @@
 
 import { formatInt } from '../format/numbers.js';
 import { longDateID, shortDateID } from '../format/dates.js';
+import { healthLevel } from '../../../analytics/engines/executive-score-engine.js';
 
 const CAT_LABEL = { efficiency: 'Efisiensi', warning: 'Peringatan', trend: 'Tren', nor: 'NOR', forecast: 'Proyeksi' };
 const TONE_OF = { success: 'good', warning: 'attention', info: 'neutral' };
@@ -39,11 +40,41 @@ export function buildExecutiveReportModel(exec = {}, meta = {}) {
     versionLine: `v${meta.appVersion || '—'} · ${meta.generatedBy || '—'} · ${shortDateID(generatedAt)}`,
   };
 
+  // B2 parity: the PDF badge must carry the SAME tone the dashboard hero shows
+  // (green / amber / crit). `s.tone` is the executive score engine's qualitative
+  // tone — passed straight through so the badge colour matches the screen rather
+  // than always rendering green. health-score-hero keeps green as the default
+  // when badgeTone is absent, so the Complete report stays byte-identical.
   const health = {
     score: s.value == null ? null : s.value,
     outOf: 100,
     badge: s.label || '—',
+    badgeTone: s.tone || 'green',
     label: 'Kesehatan Operasional',
+  };
+
+  // ── Phase D — Executive Narrative parity. The SAME cross-domain narrative the
+  //    dashboard hero shows as its sub-line. Read straight from the model; no
+  //    regeneration, no narrative engine here. ─────────────────────────────────
+  const narrative = (exec.narrative || '').trim();
+
+  // ── Phase C — Explainability parity. Project the Petty Cash Health Score V2
+  //    breakdown the dashboard already renders (exec.pettyHealth) into a PDF-ready
+  //    shape: the four weighted components + the derived petty narrative. NO new
+  //    computation — every score comes from exec.pettyHealth.components; the per-
+  //    row tone reuses healthLevel() exactly as analytics-executive-view does. ──
+  const ph = exec.pettyHealth || {};
+  const explainability = {
+    label: 'Rincian Kesehatan Petty Cash',
+    narrative: (ph.narrative || '').trim(),
+    score: ph.score == null ? null : ph.score,
+    levelLabel: ph.levelLabel || '',
+    components: (Array.isArray(ph.components) ? ph.components : []).map((c) => ({
+      label: c.label,
+      weightPct: c.weightPct,
+      score: c.score == null ? null : c.score,
+      tone: c.score == null ? 'amber' : healthLevel(c.score).tone,
+    })),
   };
 
   const kpis = [
@@ -62,5 +93,5 @@ export function buildExecutiveReportModel(exec = {}, meta = {}) {
     context: i.description,
   }));
 
-  return { meta: metaOut, health, kpis, highlights };
+  return { meta: metaOut, health, narrative, explainability, kpis, highlights };
 }

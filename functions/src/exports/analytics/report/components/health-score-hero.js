@@ -19,6 +19,12 @@
 
 const { esc } = require('../layouts/report-layout');
 
+/* Badge tone → extra class. Green is the default `.hsbadge` styling, so it adds
+   NO class (keeps the Complete report and the green Executive case byte-
+   identical). Amber/crit add a tone modifier so the PDF badge colour matches the
+   dashboard hero (B2 parity). Any other/absent tone falls through to green. */
+const BADGE_TONE_CLASS = { amber: ' amber', crit: ' crit' };
+
 /**
  * @param {{ score:number|string|null, outOf:number|string,
  *           badge:string, badgeTone?:string, label:string }} hs
@@ -27,6 +33,7 @@ const { esc } = require('../layouts/report-layout');
 function healthScoreHero(hs = {}) {
   const badge = esc(hs.badge || '');
   const label = esc(hs.label || 'Kesehatan Operasional');
+  const toneClass = BADGE_TONE_CLASS[hs.badgeTone] || '';
 
   // Empty-state (Phase F, I-1): no score → em dash, no "/100", neutral badge.
   if (hs.score == null) {
@@ -44,7 +51,7 @@ function healthScoreHero(hs = {}) {
   return (
     '<div class="zb ctr">' +
       `<div class="hsc"><span class="hscn">${score}</span><span class="hscd"> / ${outOf}</span></div>` +
-      `<div><div class="hsbadge">${badge}</div></div>` +
+      `<div><div class="hsbadge${toneClass}">${badge}</div></div>` +
       `<div class="hslbl">${label}</div>` +
     '</div>'
   );
