@@ -11,12 +11,49 @@
 'use strict';
 
 import {
-  calculateScore, healthLevel, driverOpsScore, vehicleUtilScore, pettyCashHealthScore, SCORE_WEIGHTS_V1,
+  calculateScore, healthLevel, driverOpsScore, vehicleUtilScore, SCORE_WEIGHTS_V1,
 } from './engines/executive-score-engine.js';
 import { generateInsights, generateNarrative } from './engines/insight-engine.js';
 
 function num(v) { const n = Number(v); return Number.isFinite(n) ? n : 0; }
 function clampPct(v) { return Math.max(0, Math.min(100, Math.round(num(v)))); }
+
+/* ── Petty Cash explainability (v1.16.3) ──────────────────────────────────── */
+
+/** Display metadata for the four Petty Cash Health Score V2 components, in
+ *  formula-weight order. Labels are Executive-facing (Indonesian). */
+const PETTY_COMPONENT_META = [
+  { key: 'compliance', label: 'Kepatuhan Administrasi', weightPct: 35 },
+  { key: 'budget',     label: 'Kepatuhan Anggaran',     weightPct: 30 },
+  { key: 'cash',       label: 'Ketersediaan Kas',       weightPct: 25 },
+  { key: 'stability',  label: 'Stabilitas Pengeluaran', weightPct: 10 },
+];
+
+/**
+ * Executive Narrative (v1.16.3) — one explainable sentence derived STRICTLY from
+ * the actual Petty Cash V2 scoreBreakdown (no engine, no hardcoded verdict).
+ * Names the strongest and weakest contributing components so a reader of the
+ * blended score understands what carried it and what held it back.
+ * @param {Array<{label:string, score:number|null}>} components
+ * @param {string} levelLabel  qualitative band of the petty score (or No-Data label)
+ * @param {boolean} hasScore   false ⇒ petty score is null (insufficient data)
+ * @returns {string}
+ */
+function pettyNarrative(components, levelLabel, hasScore) {
+  if (!hasScore) return 'Belum cukup data untuk menilai kesehatan petty cash periode ini.';
+  const scored = components.filter((c) => c.score != null);
+  if (!scored.length) return 'Belum cukup data untuk menilai kesehatan petty cash periode ini.';
+  const sorted = [...scored].sort((a, b) => b.score - a.score);
+  const strongest = sorted[0];
+  const weakest = sorted[sorted.length - 1];
+  const lvl = String(levelLabel || '').toLowerCase();
+  // When every component is strong (no meaningful weak link), keep it positive
+  // and single-clause; otherwise contrast the lead driver against the laggard.
+  if (weakest.score >= 80 || strongest.label === weakest.label) {
+    return `Kesehatan petty cash ${lvl} — ditopang ${strongest.label.toLowerCase()} (${strongest.score}).`;
+  }
+  return `Kesehatan petty cash ${lvl} — ditopang ${strongest.label.toLowerCase()} (${strongest.score}) namun perlu perhatian pada ${weakest.label.toLowerCase()} (${weakest.score}).`;
+}
 
 /**
  * Compose the executive model.
@@ -46,26 +83,23 @@ export function computeExecutiveAnalytics({ driverModel, pettyModel } = {}) {
   // ── Petty Cash KPIs ───────────────────────────────────────────────────────
   const activeBalance = num(pcCycle.remaining);
   const norOfficial = num(pcHero.norOfficial);
-  const realizedCount = num(pcHero.realizedCount);
   const realizationPct = num(pcCycle.realizationPct);
   // Dana Terpakai — single reusable consumption figure from the petty model.
   const consumedSpend = num((pc.consumed || {}).totalConsumedSpend);
 
   // ── Operational Health Score (Formula V1) ───────────────────────────────
-  // v1.15.8 Phase A — Petty Cash No-Data ≠ Perfect. Previously opening<=0 made
-  // remainingRatio default to 1 (100% headroom) and norOfficial===0 made
-  // realizationRatio default to 1 (100% flow), so an empty domain scored 100.
-  // We now detect the No-Data signature and feed `null`, letting the existing
-  // weight re-normalization in calculateScore drop the component cleanly.
-  const opening = num(pcCycle.opening);
-  const pcTxCount = num((pc.diagnostics || {}).curCount); // official transactions in window
-  const pettyNoData = opening <= 0 && norOfficial === 0 && pcTxCount === 0;
-  const remainingRatio = opening > 0 ? Math.max(0, activeBalance) / opening : 1;
-  const realizationRatio = norOfficial > 0 ? realizedCount / norOfficial : 1;
+  // v1.16.3 — Petty Cash Health Score V2 cutover. The petty model already
+  // composes the validated V2 score (35% Compliance / 30% Budget / 25% Cash /
+  // 10% Stability), gated to ≥3 active components and null on No-Data. We read
+  // that single source of truth directly instead of recomputing the retired
+  // legacy headroom/flow blend. When `pc.healthScore` is null, feeding null lets
+  // the existing calculateScore re-normalization drop the petty component cleanly
+  // so the Executive score stays stable (B3).
+  const pettyCashV2 = pc.healthScore == null ? null : clampPct(pc.healthScore);
   const components = {
     driverOps: driverOpsScore({ compRate: dk.compRate, driverUtilization, totalTrips: totalTrip }),
     vehicleUtil: vehicleUtilScore({ vehiclesWithTrips, activeVehicles }),
-    pettyCash: pettyNoData ? null : pettyCashHealthScore({ remainingRatio, realizationRatio }),
+    pettyCash: pettyCashV2,
   };
   const scored = calculateScore(components, SCORE_WEIGHTS_V1);
   // v1.15.8 — null score (no domain available) maps to an explicit No-Data
@@ -74,6 +108,26 @@ export function computeExecutiveAnalytics({ driverModel, pettyModel } = {}) {
   const level = scored.score == null
     ? { level: 'nodata', label: 'Belum Ada Data', tone: 'amber' }
     : healthLevel(scored.score);
+
+  // ── Petty Cash explainability (v1.16.3) — projects the V2 scoreBreakdown the
+  //    petty model already computed into a UI-ready shape (component scores +
+  //    weights + a derived narrative). NO recomputation: every score is read
+  //    straight from `pc.scoreBreakdown`. ───────────────────────────────────
+  const sb = pc.scoreBreakdown || {};
+  const pettyHasScore = pc.healthScore != null;
+  const pettyComponents = PETTY_COMPONENT_META.map((m) => ({
+    key: m.key,
+    label: m.label,
+    weightPct: m.weightPct,
+    score: sb[m.key] == null ? null : clampPct(sb[m.key]),
+  }));
+  const pettyLevelLabel = pettyHasScore ? healthLevel(pc.healthScore).label : 'Belum Ada Data';
+  const pettyHealth = {
+    score: pettyHasScore ? clampPct(pc.healthScore) : null,
+    levelLabel: pettyLevelLabel,
+    components: pettyComponents,
+    narrative: pettyNarrative(pettyComponents, pettyLevelLabel, pettyHasScore),
+  };
 
   // ── Executive insights (cross-domain) — reuse the insight engine over a
   //    combined context, then fold in the petty-cash narrative findings. ────
@@ -91,6 +145,10 @@ export function computeExecutiveAnalytics({ driverModel, pettyModel } = {}) {
     forecast: (pc.trend && pc.trend.annualized) ? { projected: pc.trend.annualized.projected } : null,
     spendTrend: (pc.trend && pc.trend.spendTrend) || null,
     totalSpend: num(pcCycle.spent),
+    // v1.16.0 Phase D — reuse the petty model's configurable annual budget so the
+    // existing (formerly dormant) `forecast-pace` insight can fire here too. No
+    // new insight is introduced; the rule already lives in insight-engine.js.
+    annualBudget: num(pc.annualBudget) || undefined,
   };
   const insights = generateInsights(execCtx);
   const narrative = generateNarrative(execCtx);
@@ -114,6 +172,10 @@ export function computeExecutiveAnalytics({ driverModel, pettyModel } = {}) {
       weights: scored.weights,
       usedWeight: scored.usedWeight,
     },
+    // v1.16.3 Phase C — Petty Cash Health Score V2 explainability for the
+    // Executive view: the four component sub-scores (with formula weights) plus a
+    // one-line narrative, all derived from the petty model's scoreBreakdown.
+    pettyHealth,
     insights,
     narrative,
   };

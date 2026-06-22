@@ -19,6 +19,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CONFIG = path.join(ROOT, 'js', 'config.js');
 const SW     = path.join(ROOT, 'service-worker.js');
 const VJSON  = path.join(ROOT, 'version.json');
+const INDEX  = path.join(ROOT, 'index.html');
 
 const config = fs.readFileSync(CONFIG, 'utf8');
 const m = config.match(/APP_VERSION\s*=\s*['"]([^'"]+)['"]/);
@@ -34,7 +35,16 @@ fs.writeFileSync(SW, sw);
 // 2) Write version.json oracle
 fs.writeFileSync(VJSON, JSON.stringify({ version }, null, 2) + '\n');
 
+// 3) Stamp the entry-point cache-bust query in index.html (js/app.js?v=…) so the
+//    app shell URL changes every release — a per-release bust for the entry that
+//    complements the SW cache purge. Kept in sync here so it can never freeze.
+let html = fs.readFileSync(INDEX, 'utf8');
+const idxBefore = html.match(/src="js\/app\.js\?v=([^"]+)"/)?.[1];
+html = html.replace(/(src="js\/app\.js\?v=)[^"]+(")/, `$1${version}$2`);
+fs.writeFileSync(INDEX, html);
+
 console.log(`APP_VERSION (source) : ${version}`);
 console.log(`service-worker.js    : SW_VERSION ${before} → ${version}`);
 console.log(`version.json         : { "version": "${version}" }`);
+console.log(`index.html           : app.js?v ${idxBefore} → ${version}`);
 console.log('Done. CACHE_NAME is now sarpras-cache-v' + version);

@@ -238,7 +238,7 @@ function shell() {
   <div class="pc-embed" style="width:100%;background:var(--bg);color:var(--text)">
     ${embedNav()}
     <div style="overflow-x:hidden">
-      <div class="pc-content-pad" style="max-width:1200px;margin:0 auto;padding:20px 24px 64px">
+      <div class="pc-content-pad">
         ${content(m)}
       </div>
     </div>
@@ -310,7 +310,7 @@ function sidebar(m) {
   return `
   <div class="pc-sidebar" style="width:248px;flex:none;background:var(--sidebar);border-right:1px solid var(--border);display:flex;flex-direction:column;z-index:10">
     <div style="padding:18px 18px 14px">
-      <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1.5px;color:var(--label);text-transform:uppercase;margin-bottom:2px">Petty Cash</div>
+      <div style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase;margin-bottom:2px">Petty Cash</div>
       <div style="font-weight:800;font-size:16px;letter-spacing:-.2px">Kas Operasional</div>
       <div style="display:inline-flex;align-items:center;gap:5px;margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.5px;color:var(--amber);background:var(--amber-tint);border:1px solid var(--amber-bd);padding:3px 7px;border-radius:6px">
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
@@ -323,7 +323,7 @@ function sidebar(m) {
         Tambah Pengeluaran
       </button>
     </div>
-    <div style="padding:6px 18px 6px;font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1.5px;color:var(--label)">MENU</div>
+    <div style="padding:6px 18px 6px;font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label)">MENU</div>
     <div style="padding:0 12px;display:flex;flex-direction:column;gap:2px">${items}</div>
     <div style="flex:1"></div>
     <div style="border-top:1px solid var(--border);padding:12px 14px;display:flex;align-items:center;gap:10px">
@@ -360,7 +360,7 @@ function mobileDrawer(m) {
     <div class="pc-drawer" data-act="stop">
       <div style="padding:18px 18px 14px;display:flex;justify-content:space-between;align-items:flex-start">
         <div>
-          <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1.5px;color:var(--label);text-transform:uppercase;margin-bottom:2px">Petty Cash</div>
+          <div style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase;margin-bottom:2px">Petty Cash</div>
           <div style="font-weight:800;font-size:17px;letter-spacing:-.2px">Kas Operasional</div>
           <div style="display:inline-flex;align-items:center;gap:5px;margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.5px;color:var(--amber);background:var(--amber-tint);border:1px solid var(--amber-bd);padding:3px 7px;border-radius:6px">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
@@ -375,7 +375,7 @@ function mobileDrawer(m) {
           Tambah Pengeluaran
         </button>
       </div>
-      <div style="padding:6px 18px 6px;font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1.5px;color:var(--label)">MENU</div>
+      <div style="padding:6px 18px 6px;font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label)">MENU</div>
       <div style="padding:0 12px;display:flex;flex-direction:column;gap:3px">${items}</div>
       <div style="flex:1;min-height:14px"></div>
       <div style="padding:0 12px 6px;display:flex;flex-direction:column;gap:3px;border-top:1px solid var(--border);padding-top:10px;margin-top:10px">
@@ -406,7 +406,7 @@ function topbar(user, initial, m) {
   return `
   <div class="pc-topbar" style="height:58px;flex:none;border-bottom:1px solid var(--border);background:var(--card);display:flex;align-items:center;gap:16px;padding:0 18px;z-index:5">
     <div class="pc-topbar-title" style="min-width:150px">
-      <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1.5px;color:var(--label);text-transform:uppercase">Sarpras Ops</div>
+      <div style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Sarpras Ops</div>
       <div style="font-weight:800;font-size:15px;letter-spacing:-.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(TITLES[st.screen] || 'Petty Cash Center')}</div>
     </div>
     <div class="pc-desktop-only" style="flex:1;max-width:340px;display:flex;align-items:center;gap:8px;background:var(--card2);border:1px solid var(--border);border-radius:9px;padding:8px 12px;color:var(--muted)">
@@ -467,7 +467,7 @@ function dashboard(m) {
         <div style="width:32px;height:32px;border-radius:9px;background:${tintBg};color:${tintColor};display:flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${iconPath}</svg></div>
         ${badge || ''}
       </div>
-      <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase;margin-top:13px">${label}</div>
+      <div style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase;margin-top:13px">${label}</div>
       <div style="font-weight:800;font-size:25px;letter-spacing:-.5px;margin-top:3px">${value}</div>
       <div style="font-size:11px;color:var(--muted);margin-top:3px">${sub}</div>
     </div>`;
@@ -476,7 +476,7 @@ function dashboard(m) {
 
   return `
   <div>
-    <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;color:var(--label);text-transform:uppercase;margin-bottom:14px">Petty Cash Center</div>
+    <div style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase;margin-bottom:14px">Petty Cash Center</div>
     <div class="pc-kpis" style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px">
       ${card('var(--primary)', 'var(--primary-tint)', 'var(--primary)', '<path d="M19 7V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M21 7H8a2 2 0 0 0 0 4h13a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1z"/>', 'Saldo Petty Cash', esc(rp(m.balance)), `Siklus #${esc(cycle.cycleNumber || 1)} · Saldo Awal Siklus ${esc(rp(m.opening))}`, lowBadge)}
       ${card('var(--blue)', 'var(--blue-tint)', 'var(--blue)', '<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>', 'Total Pengeluaran', esc(rp(m.spent)), `${m.expenseCount} transaksi tercatat`)}
@@ -487,12 +487,12 @@ function dashboard(m) {
     <div class="pc-stat-split" style="margin-top:14px;display:flex;gap:14px;flex-wrap:wrap">
       <div style="flex:1;min-width:220px;background:var(--card);border:1px solid var(--border);border-radius:13px;box-shadow:var(--shadow);padding:14px 16px;display:flex;align-items:center;gap:13px">
         <div style="width:34px;height:34px;flex:none;border-radius:10px;background:var(--green-tint);color:var(--green);display:flex;align-items:center;justify-content:center"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3.5" cy="6" r="1.2" fill="currentColor"/><circle cx="3.5" cy="12" r="1.2" fill="currentColor"/><circle cx="3.5" cy="18" r="1.2" fill="currentColor"/></svg></div>
-        <div style="flex:1"><div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Pengeluaran Aktif</div><div style="font-weight:800;font-size:20px;margin-top:2px">${m.expenseCount}</div></div>
+        <div style="flex:1"><div style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Pengeluaran Aktif</div><div style="font-weight:800;font-size:20px;margin-top:2px">${m.expenseCount}</div></div>
         <div style="font-size:11px;color:var(--muted);text-align:right;max-width:120px">Tercatat pada siklus berjalan</div>
       </div>
       <div data-act="goArchive" title="Lihat pengeluaran terarsip" style="flex:1;min-width:220px;background:var(--card);border:1px solid var(--border);border-radius:13px;box-shadow:var(--shadow);padding:14px 16px;display:flex;align-items:center;gap:13px;cursor:pointer">
         <div style="width:34px;height:34px;flex:none;border-radius:10px;background:var(--border2);color:var(--muted);display:flex;align-items:center;justify-content:center"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg></div>
-        <div style="flex:1"><div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Pengeluaran Diarsipkan</div><div style="font-weight:800;font-size:20px;margin-top:2px">${archivedCount}</div></div>
+        <div style="flex:1"><div style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Pengeluaran Diarsipkan</div><div style="font-weight:800;font-size:20px;margin-top:2px">${archivedCount}</div></div>
         <span style="display:flex;color:var(--muted)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
       </div>
     </div>
@@ -608,7 +608,7 @@ function expensesScreen(m) {
       <div style="font-size:12.5px;color:var(--muted)">Total tampil: <span style="font-weight:700;color:var(--text);font-family:'JetBrains Mono',monospace">${esc(rp(total))}</span></div>
     </div>
     <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);overflow:hidden">
-      <div class="pc-exp-head" style="display:grid;grid-template-columns:128px 1fr 150px 130px 130px 120px;gap:12px;padding:13px 18px;border-bottom:1px solid var(--border);background:var(--card2);font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">
+      <div class="pc-exp-head" style="display:grid;grid-template-columns:128px 1fr 150px 130px 130px 120px;gap:12px;padding:13px 18px;border-bottom:1px solid var(--border);background:var(--card2);font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">
         <div>Ref · Tanggal</div><div>Deskripsi</div><div>Unit</div><div>Kategori</div><div style="text-align:right">Jumlah</div><div style="text-align:right">Status</div>
       </div>
       ${rows}
@@ -688,10 +688,10 @@ function generateScreen(m) {
       <div style="position:sticky;top:0;display:flex;flex-direction:column;gap:14px">
         <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:18px">
           <div style="font-weight:800;font-size:15px;margin-bottom:14px">Detail NOR</div>
-          <label style="display:block;margin-bottom:13px"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Nomor Urut NOR *</span><input name="sequence" value="${esc(st.norForm.sequence)}" data-act="norForm" data-focus="norSequence" inputmode="numeric" placeholder="cth: 120" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:9px 11px;font-size:12.5px;color:var(--text);font-family:'JetBrains Mono',monospace"/></label>
-          <div style="margin:-6px 0 13px"><span style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.5px;color:var(--label);text-transform:uppercase">Nomor Lengkap (otomatis)</span><div id="pcNorFull" style="margin-top:5px;background:var(--card2);border:1px solid var(--border2);border-radius:9px;padding:9px 11px;font-size:12px;line-height:1.4;font-family:'JetBrains Mono',monospace;${isValidNorSequence(st.norForm.sequence) ? 'color:var(--primary-text);font-weight:600' : 'color:var(--muted)'}">${esc(isValidNorSequence(st.norForm.sequence) ? norNumberFromSequence(st.norForm.sequence, st.norForm.date) : 'Masukkan nomor urut (angka) untuk melihat nomor lengkap')}</div></div>
-          <label style="display:block;margin-bottom:13px"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Tanggal NOR *</span><input type="date" name="date" value="${esc(st.norForm.date)}" data-act="norForm" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:9px 11px;font-size:12.5px;color:var(--text)"/></label>
-          <div style="display:block;margin-bottom:13px"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Perihal <span style="color:var(--muted);font-weight:400;letter-spacing:0">(otomatis dari tanggal)</span></span><div id="pcNorSubject" style="margin-top:6px;background:var(--card2);border:1px solid var(--border2);border-radius:9px;padding:9px 11px;font-size:12.5px;color:var(--muted);line-height:1.4">${esc(norAutoSubject(st.norForm.date))}</div></div>
+          <label style="display:block;margin-bottom:13px"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Nomor Urut NOR *</span><input name="sequence" value="${esc(st.norForm.sequence)}" data-act="norForm" data-focus="norSequence" inputmode="numeric" placeholder="cth: 120" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:9px 11px;font-size:12.5px;color:var(--text);font-family:'JetBrains Mono',monospace"/></label>
+          <div style="margin:-6px 0 13px"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Nomor Lengkap (otomatis)</span><div id="pcNorFull" style="margin-top:5px;background:var(--card2);border:1px solid var(--border2);border-radius:9px;padding:9px 11px;font-size:12px;line-height:1.4;font-family:'JetBrains Mono',monospace;${isValidNorSequence(st.norForm.sequence) ? 'color:var(--primary-text);font-weight:600' : 'color:var(--muted)'}">${esc(isValidNorSequence(st.norForm.sequence) ? norNumberFromSequence(st.norForm.sequence, st.norForm.date) : 'Masukkan nomor urut (angka) untuk melihat nomor lengkap')}</div></div>
+          <label style="display:block;margin-bottom:13px"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Tanggal NOR *</span><input type="date" name="date" value="${esc(st.norForm.date)}" data-act="norForm" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:9px 11px;font-size:12.5px;color:var(--text)"/></label>
+          <div style="display:block;margin-bottom:13px"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Perihal <span style="color:var(--muted);font-weight:400;letter-spacing:0">(otomatis dari tanggal)</span></span><div id="pcNorSubject" style="margin-top:6px;background:var(--card2);border:1px solid var(--border2);border-radius:9px;padding:9px 11px;font-size:12.5px;color:var(--muted);line-height:1.4">${esc(norAutoSubject(st.norForm.date))}</div></div>
           <div data-act="toggleTestNor" style="display:flex;align-items:flex-start;gap:9px;cursor:pointer;background:${st.norForm.isTest ? 'var(--amber-tint)' : 'var(--card2)'};border:1px solid ${st.norForm.isTest ? 'var(--amber-bd)' : 'var(--border2)'};border-radius:9px;padding:10px 12px">
             <div style="width:18px;height:18px;flex:none;margin-top:1px;border-radius:5px;display:flex;align-items:center;justify-content:center;${st.norForm.isTest ? 'background:var(--amber);border:1px solid var(--amber)' : 'background:var(--card);border:1.5px solid var(--input-bd)'}">${st.norForm.isTest ? '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>' : ''}</div>
             <div><div style="font-weight:600;font-size:12.5px;color:var(--text)">Generate as Test NOR</div><div style="font-size:11px;color:var(--muted);margin-top:1px;line-height:1.35">NOR uji coba: tidak mengunci nota, tidak memengaruhi metrik, dan tersembunyi dari Riwayat resmi.</div></div>
@@ -699,7 +699,7 @@ function generateScreen(m) {
         </div>
         <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:18px">
           <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted)"><span>Nota dipilih</span><span style="font-weight:700;color:var(--text)">${selectedCount}</span></div>
-          <div style="margin-top:12px;font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Total Realisasi</div>
+          <div style="margin-top:12px;font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Total Realisasi</div>
           <div style="font-weight:800;font-size:24px;font-family:'JetBrains Mono',monospace;margin-top:2px;color:var(--primary)">${esc(rp(selTotal))}</div>
           <button data-act="gotoPreview" style="width:100%;margin-top:15px;background:var(--primary);color:#fff;border:none;border-radius:10px;padding:12px;font-weight:700;font-size:13.5px;cursor:pointer;opacity:${selectedCount ? '1' : '.5'}">Preview NOR →</button>
           ${selectedCount ? '' : '<div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px">Pilih minimal satu nota untuk lanjut.</div>'}
@@ -801,7 +801,7 @@ function norDetailScreen(m) {
   const statusText = nor.archived ? (isTest ? 'Arsip · Test' : 'Arsip') : (isTest ? 'Test Only' : meta.label);
   const summaryTile = (label, value, idx) => `
     <div style="flex:1;min-width:130px;padding:14px 16px;${idx > 0 ? 'border-left:1px solid var(--border2);' : ''}">
-      <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1px;color:var(--label);text-transform:uppercase">${esc(label)}</div>
+      <div style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">${esc(label)}</div>
       <div style="font-weight:800;font-size:19px;margin-top:5px;line-height:1.1">${value}</div>
     </div>`;
   const summaryTiles = [
@@ -881,22 +881,24 @@ function settingsScreen(m) {
       <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:20px">
         <div style="font-weight:800;font-size:15px;margin-bottom:4px">Saldo &amp; Notifikasi</div>
         <div style="font-size:11.5px;color:var(--muted);margin-bottom:16px">Dipakai saat memulai siklus petty cash baru.</div>
-        <label style="display:block;margin-bottom:8px"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Saldo Awal Default (Rp)</span><input name="openingBalance" data-act="setInput" data-focus="set-opening" value="${esc(sd.openingBalance)}" inputmode="numeric" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text);font-family:'JetBrains Mono',monospace"/></label>
+        <label style="display:block;margin-bottom:8px"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Saldo Awal Default (Rp)</span><input name="openingBalance" data-act="setInput" data-focus="set-opening" value="${esc(sd.openingBalance)}" inputmode="numeric" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text);font-family:'JetBrains Mono',monospace"/></label>
         <div style="margin-bottom:15px;font-size:11px;color:var(--muted);line-height:1.45">
           Jika siklus aktif belum memiliki pengeluaran, perubahan saldo awal akan diterapkan langsung. Jika sudah terdapat pengeluaran, perubahan akan berlaku pada siklus berikutnya.
           <div style="display:inline-flex;align-items:center;gap:5px;margin-top:8px;padding:3px 8px;border-radius:6px;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.4px;${cycleEmpty ? 'background:var(--green-tint);color:var(--green);border:1px solid var(--green-bd)' : 'background:var(--amber-tint);color:var(--amber);border:1px solid var(--amber-bd)'}">${cycleEmpty ? 'SIKLUS AKTIF KOSONG · DITERAPKAN LANGSUNG' : 'SIKLUS AKTIF BERISI · BERLAKU SIKLUS BERIKUTNYA'}</div>
         </div>
-        <label style="display:block;margin-bottom:6px"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Ambang Notifikasi (Rp)</span><input name="lowBalanceThreshold" data-act="setInput" data-focus="set-threshold" value="${esc(sd.lowBalanceThreshold)}" inputmode="numeric" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text);font-family:'JetBrains Mono',monospace"/></label>
+        <label style="display:block;margin-bottom:6px"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Ambang Notifikasi (Rp)</span><input name="lowBalanceThreshold" data-act="setInput" data-focus="set-threshold" value="${esc(sd.lowBalanceThreshold)}" inputmode="numeric" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text);font-family:'JetBrains Mono',monospace"/></label>
         <div style="font-size:11px;color:var(--muted);line-height:1.4">Saat saldo turun di bawah nilai ini, notifikasi dikirim ke Admin.</div>
+        <label style="display:block;margin:15px 0 6px"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Anggaran Tahunan (Rp)</span><input name="annualPettyCashBudget" data-act="setInput" data-focus="set-annual" value="${esc(sd.annualPettyCashBudget)}" inputmode="numeric" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text);font-family:'JetBrains Mono',monospace"/></label>
+        <div style="font-size:11px;color:var(--muted);line-height:1.4">Baseline anggaran petty cash tahunan — dipakai untuk proyeksi & analitik.</div>
         <div style="border-top:1px solid var(--border2);margin:16px 0 0;padding-top:16px">
-          <label style="display:block;margin-bottom:13px"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Kepada Yth. (NOR)</span><input name="recipients" data-act="setInput" data-focus="set-recipients" value="${esc(sd.recipients)}" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:9px 11px;font-size:12px;color:var(--text)"/></label>
-          <label style="display:block"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Tembusan (NOR)</span><input name="ccRecipients" data-act="setInput" data-focus="set-cc" value="${esc(sd.ccRecipients)}" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:9px 11px;font-size:12px;color:var(--text)"/></label>
+          <label style="display:block;margin-bottom:13px"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Kepada Yth. (NOR)</span><input name="recipients" data-act="setInput" data-focus="set-recipients" value="${esc(sd.recipients)}" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:9px 11px;font-size:12px;color:var(--text)"/></label>
+          <label style="display:block"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Tembusan (NOR)</span><input name="ccRecipients" data-act="setInput" data-focus="set-cc" value="${esc(sd.ccRecipients)}" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:9px 11px;font-size:12px;color:var(--text)"/></label>
         </div>
       </div>
       <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:20px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><div style="font-weight:800;font-size:15px">Konfigurasi Penandatangan NOR</div><button data-act="addSig" style="display:flex;align-items:center;gap:6px;background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;color:var(--text);cursor:pointer"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Tambah</button></div>
         <div style="font-size:11.5px;color:var(--muted);margin-bottom:16px">Dikonfigurasi sekali, otomatis dipakai saat generate NOR. Urutkan dengan kolom "Urutan".</div>
-        <div class="pc-sig-head" style="display:grid;grid-template-columns:64px 1fr 1fr 1fr 36px;gap:10px;padding:0 2px 8px;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1px;color:var(--label);text-transform:uppercase"><div>Urutan</div><div>Label Peran</div><div>Nama</div><div>Jabatan</div><div></div></div>
+        <div class="pc-sig-head" style="display:grid;grid-template-columns:64px 1fr 1fr 1fr 36px;gap:10px;padding:0 2px 8px;font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase"><div>Urutan</div><div>Label Peran</div><div>Nama</div><div>Jabatan</div><div></div></div>
         <div style="display:flex;flex-direction:column;gap:9px">${sigRows}</div>
         <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border2)"><button data-act="resetSettings" style="background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 18px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer">Reset</button><button data-act="saveSettings" style="background:var(--primary);color:#fff;border:none;border-radius:9px;padding:10px 20px;font-weight:700;font-size:13px;cursor:pointer">Simpan</button></div>
       </div>
@@ -924,7 +926,7 @@ function mobileScreen(m) {
                 <div style="background:var(--card);border:1px solid var(--border);border-radius:11px;padding:11px"><div style="font-size:9px;color:var(--label);font-family:'JetBrains Mono',monospace">TERPAKAI</div><div style="font-weight:700;font-size:13px;margin-top:3px;font-family:'JetBrains Mono',monospace">${esc(rp(m.spent))}</div></div>
                 <div style="background:var(--card);border:1px solid var(--border);border-radius:11px;padding:11px"><div style="font-size:9px;color:var(--label);font-family:'JetBrains Mono',monospace">TERSEDIA</div><div style="font-weight:700;font-size:13px;margin-top:3px">${m.availableCount} nota</div></div>
               </div>
-              <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1px;color:var(--label);margin:15px 2px 8px">PENGELUARAN TERBARU</div>
+              <div style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);margin:15px 2px 8px">PENGELUARAN TERBARU</div>
               ${recentRows}
             </div>
           </div>
@@ -948,26 +950,26 @@ function addModal() {
       </div>
       <div style="padding:20px 22px;display:flex;flex-direction:column;gap:15px">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-          <label style="display:block"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Tanggal *</span>
+          <label style="display:block"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Tanggal *</span>
             <input type="date" name="expenseDate" data-act="formInput" value="${esc(f.expenseDate)}" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text)"/></label>
-          <label style="display:block"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Unit *</span>
+          <label style="display:block"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Unit *</span>
             <select name="unit" data-act="formInput" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text);cursor:pointer">${units}</select></label>
         </div>
-        ${f.unit === 'Others' ? `<label style="display:block"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Nama Unit *</span>
+        ${f.unit === 'Others' ? `<label style="display:block"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Nama Unit *</span>
           <input name="customUnit" list="pcBidangOptions" autocomplete="off" data-act="formInput" data-focus="customUnit" value="${esc(f.customUnit)}" placeholder="Contoh: Sekretariat, Humas, Turnamen, PP PBSI" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text)"/>
           <datalist id="pcBidangOptions">${svc.bidangRoster().map(b => `<option value="${esc(b.name)}"></option>`).join('')}</datalist>
           <span style="display:block;margin-top:5px;font-size:10.5px;color:var(--muted)">Cocokkan dengan nama bidang bila tersedia — dipakai untuk analitik penggunaan dana per bidang.</span></label>` : ''}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-          <label style="display:block"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Kategori *</span>
+          <label style="display:block"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Kategori *</span>
             <select name="category" data-act="formInput" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text);cursor:pointer">${cats}</select></label>
-          <label style="display:block"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Jumlah (Rp) *</span>
+          <label style="display:block"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Jumlah (Rp) *</span>
             <input name="amount" data-act="formInput" data-focus="amount" value="${esc(f.amount)}" inputmode="numeric" placeholder="0" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text);font-family:'JetBrains Mono',monospace"/></label>
         </div>
-        <label style="display:block"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Deskripsi *</span>
+        <label style="display:block"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Deskripsi *</span>
           <input name="description" data-act="formInput" data-focus="description" value="${esc(f.description)}" placeholder="Contoh: Pembelian cairan pembersih & alat pel" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text)"/></label>
-        <label style="display:block"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Catatan / Keterangan</span>
+        <label style="display:block"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Catatan / Keterangan</span>
           <input name="notes" data-act="formInput" data-focus="notes" value="${esc(f.notes)}" placeholder="Contoh: nama PIC / no. kendaraan (opsional)" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text)"/></label>
-        <label style="display:block"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Foto Nota <span style="color:var(--muted);font-weight:400;letter-spacing:0">(Opsional · disimpan untuk arsip digital)</span></span>
+        <label style="display:block"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Foto Nota <span style="color:var(--muted);font-weight:400;letter-spacing:0">(Opsional · disimpan untuk arsip digital)</span></span>
           <div data-act="pickReceipt" style="margin-top:6px;border:1.5px dashed var(--input-bd);border-radius:9px;padding:18px 14px;text-align:center;color:var(--muted);font-size:12.5px;cursor:pointer;background:var(--card2)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto 8px;display:block"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>${f._photoName ? esc(f._photoName) : 'Klik untuk pilih foto nota fisik<br/><span style="font-size:11px">JPG, PNG · maks. 5 MB · tidak wajib</span>'}</div>
           <input id="pcReceiptInput" type="file" accept="image/*" data-act="receiptFile" style="display:none"/></label>
         ${f._err ? `<div id="pcAddErr" style="font-size:12px;color:var(--primary);background:var(--primary-tint);border-radius:8px;padding:9px 12px">${esc(f._err)}</div>` : ''}
@@ -1013,7 +1015,7 @@ function detailDrawer() {
           ${locked && nor ? `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Terkunci dalam ${esc(nor.norNumber)}</span>` : ''}
         </div>
         <div style="background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;margin-bottom:18px">
-          <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Jumlah</div>
+          <div style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Jumlah</div>
           <div style="font-weight:800;font-size:30px;font-family:'JetBrains Mono',monospace;margin-top:4px">${esc(d.amountFmt)}</div>
         </div>
         <div style="display:flex;flex-direction:column;gap:0;border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:20px">
@@ -1041,7 +1043,7 @@ function detailDrawer() {
           <div style="font-size:11.5px;color:var(--muted);margin-top:5px;line-height:1.4">Pengeluaran ini diarsipkan bersama TEST NOR. Pulihkan melalui NOR terkait agar status semula kembali.</div>
           <button data-act="openNorFromDetail" data-id="${esc(nor.id)}" style="margin-top:8px;background:transparent;border:none;color:var(--primary);font-size:11.5px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline">Buka NOR Test →</button>
         </div>` : ''}
-        <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1.5px;color:var(--label);text-transform:uppercase;margin-bottom:12px">Riwayat Audit</div>
+        <div style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase;margin-bottom:12px">Riwayat Audit</div>
         <div style="position:relative;padding-left:20px">
           <div style="position:absolute;left:5px;top:4px;bottom:6px;width:1.5px;background:var(--border)"></div>
           ${auditRows}
@@ -1078,7 +1080,7 @@ function notifModal(m) {
     <div data-act="stop" style="width:100%;max-width:440px;background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-lg);max-height:80vh;display:flex;flex-direction:column;animation:pcPop .22s ease">
       <div style="padding:17px 20px;border-bottom:1px solid var(--border2);display:flex;justify-content:space-between;align-items:center"><div style="font-weight:800;font-size:17px">Notifikasi</div><div data-act="closeNotif" style="width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div></div>
       <div style="flex:1;overflow-y:auto;padding:14px 18px">
-        <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase;margin-bottom:10px">Untuk Admin</div>
+        <div style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase;margin-bottom:10px">Untuk Admin</div>
         ${items}
       </div>
       <div style="padding:13px 18px;border-top:1px solid var(--border2);display:flex;justify-content:flex-end;gap:9px"><button data-act="closeNotif" style="background:var(--card);border:1px solid var(--border);border-radius:9px;padding:9px 16px;font-weight:600;font-size:12.5px;color:var(--text);cursor:pointer">Tutup</button></div>
@@ -1097,7 +1099,7 @@ function cycleModal(m) {
       </div>
       <div style="padding:22px 26px;display:flex;flex-direction:column;gap:16px">
         <div>
-          <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase;margin-bottom:9px">Ringkasan Siklus #${esc(cycle.cycleNumber || 1)}</div>
+          <div style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase;margin-bottom:9px">Ringkasan Siklus #${esc(cycle.cycleNumber || 1)}</div>
           <div style="border:1px solid var(--border);border-radius:11px;overflow:hidden">
             <div style="display:flex;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border2)"><span style="font-size:12px;color:var(--muted)">Siklus Berjalan</span><span style="font-size:12.5px;font-weight:600">#${esc(cycle.cycleNumber || 1)}</span></div>
             <div style="display:flex;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border2)"><span style="font-size:12px;color:var(--muted)">Saldo Awal</span><span style="font-size:12.5px;font-weight:600;font-family:'JetBrains Mono',monospace">${esc(rp(m.opening))}</span></div>
@@ -1106,7 +1108,7 @@ function cycleModal(m) {
           </div>
         </div>
         <label style="display:block">
-          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--label);text-transform:uppercase">Saldo Awal Siklus #${esc((cycle.cycleNumber || 1) + 1)} (Rp) *</span>
+          <span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Saldo Awal Siklus #${esc((cycle.cycleNumber || 1) + 1)} (Rp) *</span>
           <input value="${esc(st.newCycleBalance)}" data-act="newBalInput" data-focus="newBal" inputmode="numeric" placeholder="${esc(m.opening)}" style="width:100%;margin-top:8px;background:var(--input);border:1.5px solid var(--green);border-radius:10px;padding:12px 14px;font-size:16px;font-weight:700;color:var(--text);font-family:'JetBrains Mono',monospace"/>
           <div style="font-size:11px;color:var(--muted);margin-top:4px">Jumlah dana pengganti yang diterima dari Finance untuk siklus berikutnya.</div>
         </label>
@@ -1431,7 +1433,7 @@ function ensureDraft() { if (!st.settingsDraft) st.settingsDraft = clone(getSett
 function setDraftField(name, value) {
   ensureDraft();
   st.settingsDirty = true;
-  if (name === 'openingBalance' || name === 'lowBalanceThreshold') st.settingsDraft[name] = parseAmount(value);
+  if (name === 'openingBalance' || name === 'lowBalanceThreshold' || name === 'annualPettyCashBudget') st.settingsDraft[name] = parseAmount(value);
   else st.settingsDraft[name] = value;
 }
 function setSigField(id, field, value) {

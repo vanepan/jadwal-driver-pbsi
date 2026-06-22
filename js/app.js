@@ -633,7 +633,11 @@ const MODULE_DEFS = {
   pettycash: {
     railId: 'v2RailPettyCash', navId: 'v2PanelPettyCashNav',
     title: 'Petty Cash Center', subtitle: 'Kas Operasional', crumb: 'PETTY CASH',
-    land: () => navPettyCash('dashboard'),
+    /* v1.16.2.7 fix: pass the nav id so the Dashboard menu highlights on landing
+       (other modules self-highlight inside their land fn; navPettyCash only
+       highlights when given navId — without it the active state was set only
+       after the user clicked Dashboard). */
+    land: () => navPettyCash('dashboard', 'v2NavPcDashboard'),
   },
   analytics: {
     railId: 'v2RailAnalytics', navId: 'v2PanelAnalyticsNav',
@@ -2470,7 +2474,7 @@ function initV2AdministrationWorkspace() {
           <div id="v2AuditList" class="v2-audit-list"></div>
         </div>
         <div id="v2AdminSectionConfig" style="display:none;"></div>
-        <div id="v2AdminSectionAnalytics" class="v2-analytics-claude" style="display:none;">
+        <div id="v2AdminSectionAnalytics" class="v2-analytics-claude v2-analytics-shell" style="display:none;">
           <!-- Analytics Header (command area): title + date range + filters + export -->
           <div class="v2-analytics-header" id="v2AnalyticsHeader">
             <div class="v2-analytics-header-titles">

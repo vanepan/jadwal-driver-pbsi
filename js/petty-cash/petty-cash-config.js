@@ -122,12 +122,20 @@ export function unitColor(unit) {
   return '#7a5aa8';
 }
 
+/* Annual Petty Cash budget baseline (v1.16.0). Operational baseline agreed after
+   the v1.15.9 audit: realisasi historis Jan–Nov ≈ Rp201 jt, proyeksi tahunan
+   ≈ Rp219 jt → Rp240 jt disepakati sebagai baseline. CONFIGURABLE via Settings —
+   never hardcode at call sites; read from settings and fall back to THIS constant
+   so existing installations (without the field) keep working. */
+export const DEFAULT_ANNUAL_PETTY_CASH_BUDGET = 240000000;
+
 /* ── Default settings (seeded on first run) ──────────────────────
    Mirrors the official PBSI NOR signatories. Editable via the
    Settings screen and persisted to pettyCashSettings. */
 export const DEFAULT_SETTINGS = {
   openingBalance: 15000000,
   lowBalanceThreshold: 1000000,
+  annualPettyCashBudget: DEFAULT_ANNUAL_PETTY_CASH_BUDGET,
   senderTitle: 'Plt. Kabid Sarana dan Prasarana',
   recipients: 'Wakil Ketua Umum III, Sekretaris Jenderal, Bendahara',
   ccRecipients: 'Ketua Umum sebagai laporan, Audit Internal, Arsip',

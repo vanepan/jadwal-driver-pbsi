@@ -6,24 +6,31 @@
    service worker registration, update detection, update banner,
    and global install onboarding (all roles).
 
-   UPDATE MODEL — SILENT AUTO-UPDATE (v1.15.5.2; no banner, no button):
+   UPDATE MODEL — SILENT AUTO-UPDATE (v1.15.5.2; finalized v1.16.2.3; no
+   banner, no button):
      1. register with updateViaCache:'none' so the SW script is never
         served from the HTTP cache.
      2. On load + on focus/visibility (throttled), call reg.update()
         and fetch /version.json (no-store) — the deployed-version oracle.
-        This only DOWNLOADS a newer SW into the waiting state.
-     3. A newer SW is APPLIED automatically ONLY during the startup window
-        (first STARTUP_APPLY_WINDOW_MS after load) and only when the user
-        is not mid-task (_isBusy): a tiny "Memperbarui…" toast is shown,
-        SKIP_WAITING is posted, and controllerchange triggers ONE guarded
-        reload. The new SW's activate() purges the old cache, so every
-        asset (incl. config.js) is re-fetched fresh.
-     4. If a newer SW appears AFTER the startup window (app already open),
-        it is left waiting and only flagged internally (swUpdateAvailable);
-        it activates automatically on the NEXT launch's startup window.
+        This DOWNLOADS a newer SW. As of v1.16.2.3 the worker self-activates
+        (skipWaiting in its install handler) so it never lingers in `waiting`.
+     3. ACTIVATION vs RELOAD are now separated:
+        • ACTIVATION is owned by the SW (skipWaiting + clients.claim) so the
+          new worker takes control even for LEGACY clients that never post
+          SKIP_WAITING — this is what permanently drains the old population.
+        • The single RELOAD is still owned HERE: only during the startup
+          window, only when idle (_isBusy false), a "Memperbarui…" toast +
+          ONE guarded reload (controllerchange → reload, gated on
+          _skipWaitingTriggered). The new SW's activate() purges the old
+          cache, so every asset (incl. config.js) is re-fetched fresh.
+     4. If the worker activates AFTER the startup window (app already open),
+        the controller swaps INVISIBLY — no reload (the guard is false), so a
+        mid-task user is never interrupted; the fresh bundle loads on the next
+        navigation/launch.
    LOOP SAFETY: at most one auto-reload per page (_reloading) AND at most
      one auto-reload attempt per tab session keyed by APP_VERSION
-     (sessionStorage), so a failed activation can never reload-loop.
+     (sessionStorage), so a failed activation can never reload-loop. An
+     unsolicited controllerchange (SW self-activation) never reloads.
    ============================================================ */
 
 import { APP_VERSION } from './config.js';

@@ -20,10 +20,11 @@ import { getDrivers } from '../../drivers-store.js';
 import { getActiveVehicles } from '../../vehicles-store.js';
 import { computePettyCashAnalytics } from '../petty-cash-analytics.js';
 import { computeExecutiveAnalytics } from '../executive-analytics.js';
+import { healthLevel } from '../engines/executive-score-engine.js';
 import {
   renderHeroSection, renderEyebrow, renderAnalyticsKPICard, renderKPIGrid,
-  renderInsightRow, renderInsightDividerList, renderExportCenter, renderAnalyticsEmptyState,
-  renderResponsiveCurrency, anIcon,
+  renderInsightRow, renderInsightDividerList, renderScoreBreakdown, renderExportCenter,
+  renderAnalyticsEmptyState, renderResponsiveCurrency, anIcon,
 } from '../analytics-shell.js';
 import { bindResponsiveCurrency, unbindResponsiveCurrency } from '../responsive-currency.js';
 
@@ -129,6 +130,31 @@ function heroBlock(exec) {
   });
 }
 
+/**
+ * Petty Cash Health Score V2 explainability (v1.16.3). Renders the four weighted
+ * components (Compliance / Budget / Cash / Stability) as score bars plus the
+ * derived narrative, so the Executive understands WHY the petty score is what it
+ * is. Sits directly under the hero. Hidden when there is no petty score and no
+ * component data (keeps the screen clean rather than showing four em-dashes).
+ */
+function pettyBreakdownBlock(exec) {
+  const ph = exec.pettyHealth;
+  if (!ph) return '';
+  const comps = ph.components || [];
+  const anyData = ph.score != null || comps.some((c) => c.score != null);
+  if (!anyData) return '';
+  const rows = comps.map((c) => ({
+    label: c.label,
+    score: c.score,
+    weightPct: c.weightPct,
+    tone: c.score == null ? 'amber' : healthLevel(c.score).tone,
+  }));
+  return `
+    ${renderEyebrow({ tag: 'Petty Cash', title: 'Rincian Skor Kesehatan', sub: esc(ph.narrative || '') })}
+    ${renderScoreBreakdown(rows)}
+    <div style="height:var(--space-section);"></div>`;
+}
+
 function kpiBlock(exec) {
   const d = exec.driverKpis, p = exec.pettyKpis;
   // v1.15.6: when some trips used a requester vehicle, show the armada vs
@@ -150,10 +176,10 @@ function kpiBlock(exec) {
   return `
     ${renderEyebrow({ tag: 'Driver Operations', title: 'Kinerja Operasional', sub: 'Aktivitas penugasan & armada' })}
     ${driverCards}
-    <div style="height:22px;"></div>
+    <div style="height:var(--space-subsection);"></div>
     ${renderEyebrow({ tag: 'Petty Cash', title: 'Kesehatan Dana', sub: 'Saldo, NOR, dan realisasi' })}
     ${pettyCards}
-    <div style="height:26px;"></div>`;
+    <div style="height:var(--space-section);"></div>`;
 }
 
 function insightBlock(exec) {
@@ -163,7 +189,7 @@ function insightBlock(exec) {
   return `
     ${renderEyebrow({ tag: 'Wawasan', title: 'Insight Eksekutif', sub: 'Temuan lintas-domain periode ini' })}
     ${renderInsightDividerList(rows)}
-    <div style="height:26px;"></div>`;
+    <div style="height:var(--space-section);"></div>`;
 }
 
 function exportBlock() {
@@ -226,14 +252,15 @@ function render() {
 
   state.host.innerHTML = `
     <div class="v2-analytics-claude v2-analytics-exec">
-      <div class="v2-admin-workspace-layout" style="max-width:1080px;margin:0 auto;padding:6px 4px 40px;">
+      <div class="v2-admin-workspace-layout v2-analytics-shell">
         <div class="v2-admin-page-header" style="margin-bottom:14px;">
           <h1 class="v2-admin-page-title">Analytics Executive</h1>
           <p class="v2-admin-page-subtitle">Ringkasan kesehatan operasional lintas Driver & Petty Cash.</p>
         </div>
         ${heroBlock(exec)}
+        ${pettyBreakdownBlock(exec)}
         ${filterBar()}
-        <div style="height:26px;"></div>
+        <div style="height:var(--space-section);"></div>
         ${kpiBlock(exec)}
         ${insightBlock(exec)}
         ${exportBlock()}

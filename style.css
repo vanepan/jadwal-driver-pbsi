@@ -54,7 +54,7 @@ html {
 }
 
 body {
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-sans);
   background: var(--gray-1);
   color: var(--text);
   min-height: 100vh;
@@ -183,7 +183,7 @@ body {
   background: none;
   border: none;
   color: rgba(255,255,255,0.72);
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -289,7 +289,7 @@ body {
   font-size: 11px;
   font-weight: 600;
   color: rgba(255,255,255,0.38);
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   letter-spacing: 0.2px;
 }
 
@@ -341,7 +341,7 @@ body {
   border: none;
   cursor: pointer;
   color: var(--gray-4);
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 10px;
   font-weight: 500;
   transition: color 0.15s;
@@ -410,7 +410,7 @@ body {
 .fab-add:active { transform: scale(0.97); background: var(--red-mid); }
 .fab-icon { flex-shrink: 0; }
 .fab-label {
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
@@ -429,7 +429,7 @@ body {
   justify-content: center;
   gap: 8px;
   padding: 10px 16px;
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px;
   font-weight: 600;
   color: var(--red);
@@ -582,7 +582,7 @@ body {
 
 /* Legacy header button styles (kept for modals/forms that may still reference them) */
 .btn-logout {
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 12px;
   font-weight: 600;
   color: var(--gray-4);
@@ -601,7 +601,7 @@ body {
 }
 
 .btn-requests {
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 12px;
   font-weight: 600;
   color: var(--dark-2);
@@ -660,7 +660,7 @@ body {
 .btn-icon:hover { color: var(--dark); background: var(--gray-2); }
 
 .date-input {
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   color: var(--dark);
   background: transparent;
@@ -676,7 +676,7 @@ body {
 input[type="date"] { color-scheme: light; }
 
 .btn-today {
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 12px;
   font-weight: 600;
   color: var(--red);
@@ -697,7 +697,7 @@ input[type="date"] { color-scheme: light; }
 
 /* Tombol Primer */
 .btn-primary {
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px;
   font-weight: 600;
   background: var(--red);
@@ -825,7 +825,7 @@ z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-muted);
   border-right: 1px solid var(--gray-2);
@@ -891,7 +891,7 @@ z-index: 1;
 .driver-phone {
   font-size: 10px;
   color: var(--text-muted);
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   margin-top: 1px;
 }
 
@@ -960,7 +960,7 @@ z-index: 1;
 
 /* Teks di dalam blok — time on top for quick scanning */
 .block-time {
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 500;
   opacity: 0.9;
@@ -1355,7 +1355,7 @@ z-index: 1;
 .form-group input,
 .form-group select,
 .form-group textarea {
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
   color: var(--dark);
   background: var(--gray-1);
@@ -1377,13 +1377,13 @@ z-index: 1;
   width: 100%;
   text-align: center;
   padding: 10px 8px;
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   letter-spacing: 0.12em;
 }
 
 .time-separator {
   color: var(--text-muted);
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 16px;
 }
 
@@ -1565,7 +1565,7 @@ z-index: 1;
   font-size: 12px;
   font-weight: 600;
   color: var(--text);
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
 }
 
 .activity-log-time {
@@ -2002,7 +2002,7 @@ input[type="number"]::-webkit-inner-spin-button {
 }
 
 .btn-secondary {
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px;
   font-weight: 500;
   color: var(--dark-2);
@@ -2016,7 +2016,7 @@ input[type="number"]::-webkit-inner-spin-button {
 .btn-secondary:hover { background: var(--gray-2); }
 
 .btn-danger {
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px;
   font-weight: 600;
   color: var(--white);
@@ -2031,7 +2031,7 @@ input[type="number"]::-webkit-inner-spin-button {
 .btn-danger:disabled { opacity: 0.45; cursor: default; }
 
 .btn-success {
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px;
   font-weight: 600;
   color: var(--white);
@@ -2263,7 +2263,7 @@ input[type="number"]::-webkit-inner-spin-button {
 }
 
 .wa-preview-text {
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   white-space: pre-wrap;
   color: var(--dark-2);
@@ -2272,7 +2272,7 @@ input[type="number"]::-webkit-inner-spin-button {
 }
 
 .btn-wa-copy {
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px;
   font-weight: 600;
   color: var(--white);
@@ -2286,7 +2286,7 @@ input[type="number"]::-webkit-inner-spin-button {
 .btn-wa-copy:hover { background: #388E3C; }
 
 .btn-reimbursement {
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px;
   font-weight: 600;
   color: var(--white);
@@ -2674,7 +2674,7 @@ input[type="number"]::-webkit-inner-spin-button {
   border: 1px solid var(--border, #e0e0e0);
   border-radius: var(--radius-sm, 6px);
   padding: 8px 12px;
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px;
   resize: none;
   min-height: 40px;
@@ -3141,7 +3141,7 @@ input[type="number"]::-webkit-inner-spin-button {
   font-weight: 600;
   cursor: pointer;
   padding: 0;
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-sans);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -3153,7 +3153,7 @@ input[type="number"]::-webkit-inner-spin-button {
   border-radius: 4px;
   padding: 1px 7px;
   cursor: pointer;
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--dark);
   transition: background 0.15s;
@@ -3171,7 +3171,7 @@ input[type="number"]::-webkit-inner-spin-button {
 .profile-input-row input { flex: 1; min-width: 0; }
 
 .btn-paste-small {
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 12px;
   font-weight: 600;
   padding: 0 13px;
@@ -3313,7 +3313,7 @@ input[type="number"]::-webkit-inner-spin-button {
   font-size: 11px;
   font-weight: 600;
   color: var(--gray-4);
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
 }
 
 /* ============================================================
@@ -3339,7 +3339,7 @@ input[type="number"]::-webkit-inner-spin-button {
 .app-info-version {
   font-size: 11px;
   color: var(--text-muted);
-  font-family: 'DM Mono', monospace;
+  font-family: var(--font-mono);
 }
 
 /* ============================================================

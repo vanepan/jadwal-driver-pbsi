@@ -23,7 +23,7 @@
   --shadow: 0 1px 2px rgba(38,35,32,.05), 0 1px 3px rgba(38,35,32,.04);
   --shadow-lg: 0 10px 30px rgba(38,35,32,.13), 0 2px 8px rgba(38,35,32,.08);
 
-  font-family: 'Archivo', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
 
@@ -52,6 +52,16 @@
 }
 
 .pc-root, .pc-root * { box-sizing: border-box; }
+/* v1.16.2.5 — Petty Cash Center adopts the unified workspace geometry (global
+   --workspace-* tokens inherit into .pc-root) so every PC screen aligns with
+   Analytics Executive: left-aligned, 1400 max, 56px left edge — replacing the
+   old centered max-width:1200/margin:0 auto that made PC look like a different app. */
+.pc-content-pad {
+  max-width: var(--workspace-max-width);
+  margin-left: 0;
+  margin-right: 0;
+  padding: var(--workspace-pad-top) var(--workspace-pad-inline) var(--workspace-pad-bottom);
+}
 .pc-root input, .pc-root select, .pc-root textarea, .pc-root button { font-family: inherit; }
 .pc-root input:focus, .pc-root select:focus, .pc-root textarea:focus {
   outline: none; border-color: var(--primary) !important; box-shadow: 0 0 0 3px var(--primary-tint);

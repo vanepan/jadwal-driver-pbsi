@@ -106,6 +106,30 @@ export function averageRealizationTime(nors) {
 }
 
 /**
+ * TRUE Timeliness ratio (v1.16.2): the share of REALIZED official NORs that were
+ * replenished within `targetDays` of issue. This is a genuine SPEED metric built
+ * from the existing `realizationDays` samples — distinct from the realization /
+ * completion RATE (how many NORs got realized at all).
+ *
+ *   timeliness = (#realized NORs with realizationDays ≤ targetDays) / (#realized NORs)
+ *
+ * Denominator is realized NORs only, so unrealized NORs neither help nor hurt
+ * timeliness (they are a completion concern, not a speed one). Returns null when
+ * there is no realized NOR to measure (No-Data ≠ 0).
+ *
+ * @param {Object[]} nors
+ * @param {number} [targetDays=14]
+ * @returns {number|null} 0–1 ratio | null
+ */
+export function realizationTimelinessRatio(nors, targetDays = 14) {
+  const { samples } = averageRealizationTime(nors);
+  if (!samples.length) return null;
+  const limit = Number.isFinite(Number(targetDays)) ? Number(targetDays) : 14;
+  const onTime = samples.filter(d => d <= limit).length;
+  return onTime / samples.length;
+}
+
+/**
  * Compare average realization time of the CURRENT period's NORs against the
  * PREVIOUS period's. Lower is better (faster replenishment), so a decrease is
  * a positive tone. Returns a directionless/insufficient result when either

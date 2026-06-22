@@ -1,21 +1,22 @@
 /* ============================================================
-   HEALTH-SCORE.JS — deterministic Operational Health Score
+   HEALTH-SCORE.JS — Complete Driver PDF Operational Health Score
 
-   The Complete report's P1 hero (prototype: 99 / 100 "Sangat Baik",
-   "Kesehatan Operasional"). A NEW deterministic derivation — NOT a
-   new analytics engine: it is a weighted composite of metrics the
-   Analytics Engine ALREADY computed, plus a critical-warning count
-   that REUSES analytics-insights.js (priority-1 findings).
+   The Complete report's P1 hero ("Kesehatan Operasional"). As of v1.16.0 this
+   no longer derives its OWN score: it reads the Driver Health Score from the
+   single source of truth — the Executive Score Engine (driverOpsScore) — so the
+   PDF hero and the Analytics Executive hero can NEVER disagree for the same data.
 
-   Approved formula (PHASE_E_READINESS §4):
-     score = round( 50·completion + 30·(1−idleShare)
-                  + 15·(1−cancellationRate) + 5·odoCoverage )
-             − 5·criticalWarnings        (clamped to [0,100])
-     badge: ≥95 "Sangat Baik" · ≥85 "Baik" · ≥70 "Cukup"
-            · else "Perlu Perhatian"
+   Official Driver Health Score (v1.16.0, spec A2):
+     70% Completion Rate + 20% Driver Utilization + 10% Volume Factor
+     (computed by executive-score-engine.driverOpsScore)
 
-   Validated against the approved prototype: 50·1 + 30·1 + 15·1
-   + 5·(20/26) = 98.85 → 99 → "Sangat Baik", 0 critical warnings.
+   Banding/labels also come from the engine (healthLevel), mapped to the PDF's
+   existing badge-tone vocabulary so the hero layout/markup is UNCHANGED — only
+   the score SOURCE is consolidated (spec A4). The legacy 50/30/15/5 composite
+   and its 95/85/70 bands are retired.
+
+   "Peringatan Kritis" (critical-warning count) is still surfaced as a separate
+   KPI in the report, so it is retained here — it no longer affects the score.
 
    Pure, deterministic. No DOM, no Firebase.
    ============================================================ */
@@ -23,6 +24,10 @@
 'use strict';
 
 import { generateInsights } from '../../../analytics/analytics-insights.js';
+import { driverOpsScore, healthLevel } from '../../../analytics/engines/executive-score-engine.js';
+
+/** Engine tone (green/amber/crit) → the PDF hero's existing tone vocabulary. */
+const TONE_MAP = { green: 'good', amber: 'neutral', crit: 'attention' };
 
 /**
  * "Peringatan Kritis" — count of priority-1 (CRITICAL) insights.
@@ -34,61 +39,51 @@ export function countCriticalWarnings(model) {
   return generateInsights(model).filter((i) => i.priority === 1).length;
 }
 
-function _band(score) {
-  if (score >= 95) return { badge: 'Sangat Baik', tone: 'good' };
-  if (score >= 85) return { badge: 'Baik', tone: 'good' };
-  if (score >= 70) return { badge: 'Cukup', tone: 'neutral' };
-  return { badge: 'Perlu Perhatian', tone: 'attention' };
-}
-
 /**
- * Derive the Operational Health Score from an AnalyticsModel.
+ * Derive the Operational Health Score for the Complete Driver PDF from an
+ * AnalyticsModel — delegating the score math to the Executive Score Engine.
  * @param {import('../../../analytics/analytics-types.js').AnalyticsModel} model
- * @returns {{score:number, outOf:number, badge:string, badgeTone:string, label:string, criticalWarnings:number}}
+ * @returns {{score:number|null, outOf:number, badge:string, badgeTone:string, label:string, criticalWarnings:number}}
  */
 export function deriveHealthScore(model) {
   const k = (model && model.kpis) || {};
-  const r = (model && model.render) || {};
 
-  // Empty-state (Phase F, I-1): no activity in the period → no score.
-  // Returning a number here would read as a mediocre grade ("Perlu
-  // Perhatian"); instead surface an explicit "no data" sentinel that the
-  // hero renders as an em dash with a neutral badge.
-  if (!((k.total || 0) > 0)) {
+  // Driver Utilization (share of active drivers who drove) — derived from the
+  // SAME model KPIs the Executive path uses, so both surfaces feed driverOpsScore
+  // identical inputs. activeDrivers / driversWithTrips are counts on the model.
+  const activeDrivers = Number(k.activeDrivers) || 0;
+  const driversWithTrips = Number(k.driversWithTrips) || 0;
+  const driverUtilization = activeDrivers > 0 ? (driversWithTrips / activeDrivers) * 100 : 0;
+
+  // SINGLE SOURCE OF TRUTH (v1.16.0): Driver Health Score from the engine.
+  const score = driverOpsScore({
+    compRate: k.compRate,
+    driverUtilization,
+    totalTrips: k.total,
+  });
+
+  const critical = countCriticalWarnings(model);
+
+  // No activity in the period (driverOpsScore === null) → explicit "no data"
+  // sentinel: the hero renders an em dash with a neutral badge rather than a
+  // misleading low grade.
+  if (score == null) {
     return {
       score: null,
       outOf: 100,
       badge: 'Belum Ada Data',
       badgeTone: 'neutral',
       label: 'Kesehatan Operasional',
-      criticalWarnings: 0,
+      criticalWarnings: critical,
     };
   }
 
-  const completion = Math.max(0, Math.min(1, (k.compRate || 0) / 100));
-
-  const idleVeh = Array.isArray(r.inactiveVehicles) ? r.inactiveVehicles.length : 0;
-  const vWith = k.vehiclesWithTrips
-    || (Array.isArray(r.vehiclesWithTrips) ? r.vehiclesWithTrips.length : 0);
-  const totalVeh = (Array.isArray(r.activeVehicles) ? r.activeVehicles.length : 0) || (vWith + idleVeh);
-  const idleShare = totalVeh > 0 ? idleVeh / totalVeh : 0;
-
-  const cancRate = Math.max(0, Math.min(1, (k.cancellationRate || 0) / 100));
-  const odoCoverage = (k.total || 0) > 0 ? (k.odoTripCount || 0) / k.total : 0;
-
-  const critical = countCriticalWarnings(model);
-
-  let score = Math.round(
-    50 * completion +
-    30 * (1 - idleShare) +
-    15 * (1 - cancRate) +
-    5 * odoCoverage
-  ) - 5 * critical;
-  score = Math.max(0, Math.min(100, score));
-
-  const { badge, tone } = _band(score);
+  const lv = healthLevel(score);
   return {
-    score, outOf: 100, badge, badgeTone: tone,
+    score,
+    outOf: 100,
+    badge: lv.label,
+    badgeTone: TONE_MAP[lv.tone] || 'neutral',
     label: 'Kesehatan Operasional',
     criticalWarnings: critical,
   };

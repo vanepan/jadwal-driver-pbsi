@@ -548,6 +548,36 @@ export function renderInsightDividerList(rows = []) {
 }
 
 /**
+ * Score breakdown bars (v1.16.3) — a compact, explainable list of weighted
+ * sub-scores rendered in the Executive visual language. Each row shows the
+ * component label, its 0–100 score, and a horizontal bar whose width = score and
+ * whose color follows the supplied tone (green/amber/crit). A `null` score reads
+ * as an em-dash with an empty track (mirrors the hero's No-Data treatment), so a
+ * missing component never looks like a real 0.
+ * @param {Array<{label:string, score:number|null, tone?:'green'|'amber'|'crit', weightPct?:number}>} rows
+ * @returns {string}
+ */
+export function renderScoreBreakdown(rows = []) {
+  const items = (Array.isArray(rows) ? rows : []).filter(Boolean);
+  if (!items.length) return '';
+  const body = items.map((r) => {
+    const has = r.score != null && Number.isFinite(Number(r.score));
+    const pct = has ? Math.max(0, Math.min(100, Number(r.score))) : 0;
+    const tone = (r.tone === 'crit' || r.tone === 'amber') ? r.tone : 'green';
+    const weight = (r.weightPct != null) ? `<span class="an-sb-wt">${_escHtml(String(r.weightPct))}%</span>` : '';
+    const val = has ? String(pct) : '—';
+    return `<div class="an-sb-row">
+        <div class="an-sb-head">
+          <span class="an-sb-lbl">${_escHtml(r.label)}${weight}</span>
+          <span class="an-sb-val">${val}</span>
+        </div>
+        <div class="an-sb-track"><span class="an-sb-fill an-tone-${tone}" style="width:${pct}%;"></span></div>
+      </div>`;
+  }).join('');
+  return `<div class="an-scorebar">${body}</div>`;
+}
+
+/**
  * Premium segmented control (prototype `.seg`). Same data-tab-* contract as the
  * Sprint-7 tabs so the existing delegated switch listener keeps working.
  * @param {{groupId:string, tabs:Array<{id:string,label:string,icon?:string}>, activeId?:string}} p

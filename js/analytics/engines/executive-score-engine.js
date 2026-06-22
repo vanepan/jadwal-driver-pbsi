@@ -18,8 +18,11 @@
 
 'use strict';
 
-/** Default Formula-V1 weights. */
+/** Default Formula-V1 weights (Executive Operational Health Score). */
 export const SCORE_WEIGHTS_V1 = Object.freeze({ driverOps: 0.4, vehicleUtil: 0.3, pettyCash: 0.3 });
+
+/** Petty Cash Health Score weights (v1.16.2 recomposition, spec-locked). */
+export const PC_SCORE_WEIGHTS_V1 = Object.freeze({ compliance: 0.35, budget: 0.30, cash: 0.25, stability: 0.10 });
 
 function clamp100(v) {
   const n = Number(v);
@@ -38,7 +41,12 @@ function clamp100(v) {
  *   score is null when NO component is available (No Data ≠ 0 ≠ 100). v1.15.8.
  */
 export function calculateScore(components = {}, weights = SCORE_WEIGHTS_V1) {
-  const keys = ['driverOps', 'vehicleUtil', 'pettyCash'];
+  // Keys are derived from the WEIGHTS object so the same blend engine serves any
+  // composition (Executive driverOps/vehicleUtil/pettyCash AND the Petty Cash
+  // Health Score compliance/budget/cash/stability). For the default Executive
+  // call this yields the original ['driverOps','vehicleUtil','pettyCash'] order,
+  // so behaviour is byte-identical. (v1.16.2)
+  const keys = Object.keys(weights);
   let weighted = 0;
   let usedWeight = 0;
   const norm = {};
@@ -139,4 +147,115 @@ export function pettyCashHealthScore({ remainingRatio = 1, realizationRatio = 1 
   const flow = clamp100((Number(realizationRatio) || 0) * 100);
   // Headroom dominates (overspending is the primary risk), flow is supporting.
   return Math.round(headroom * 0.65 + flow * 0.35);
+}
+
+/**
+ * Administrative Compliance sub-score (v1.16.0 — FOUNDATION ONLY: not yet wired
+ * into the main Health Score, the UI, or any PDF). Blends how much consumed
+ * spend is covered by an official, realized NOR (Coverage, dominant) with how
+ * many of the period's official NORs have actually been realized (Timeliness,
+ * supporting). Both inputs are 0–1 ratios derived UPSTREAM from the existing
+ * official-set + realization engines — no new query/metric/engine.
+ *
+ * Weights (spec C3): 80% Coverage Ratio + 20% Timeliness Ratio. A `null` input
+ * is re-normalized out (mirrors calculateScore's No-Data handling); both null ⇒
+ * null, because "nothing to measure" ≠ 0.
+ *
+ * @param {{coverageRatio?:number|null, timelinessRatio?:number|null}} m
+ * @returns {number|null} 0–100 | null
+ */
+export function administrativeComplianceScore({ coverageRatio = null, timelinessRatio = null } = {}) {
+  const parts = [
+    { v: coverageRatio, w: 0.80 },
+    { v: timelinessRatio, w: 0.20 },
+  ];
+  let weighted = 0;
+  let used = 0;
+  for (const { v, w } of parts) {
+    if (v == null) continue;
+    weighted += clamp100((Number(v) || 0) * 100) * w;
+    used += w;
+  }
+  return used > 0 ? Math.round(weighted / used) : null;
+}
+
+/**
+ * Budget Adherence sub-score (v1.16.1 — OBSERVABILITY ONLY: not yet wired into
+ * the Executive Score or the Petty Cash Health Score). Maps a Budget Adherence
+ * Ratio (actualBurnYTD / expectedBurnYTD) to a 0–100 score via a symmetric,
+ * deterministic step curve centred on 100% pace. Over- AND under-spending are
+ * penalised equally — both are budget-control signals.
+ *
+ * Curve "Option B — Balanced" (v1.16.2, audit-approved): restores ~85% of the
+ * nominal weight (range 85 vs the retired floor-40 curve's range 60) while
+ * keeping a small dignity floor of 15 so a single sub-metric can never zero the
+ * blended score.
+ *
+ *   |dev| = |ratio − 1| × 100   (percentage points away from on-pace 100%)
+ *     dev ≤ 10  (90–110%)      → 100   on pace
+ *     dev ≤ 20  (80–120%)      →  88   minor drift
+ *     dev ≤ 30  (70–130%)      →  72   notable drift
+ *     dev ≤ 50  (50–150%)      →  50   strong drift
+ *     dev ≤ 75  (25–175%)      →  28   severe drift
+ *     dev > 75  (<25% / >175%) →  15   critical drift
+ *
+ * Stepped (not continuous) so every score is traceable to a named band — same
+ * "explainable" contract as the other sub-scores. Symmetric: over- and
+ * under-spending are penalised equally. Returns null when the ratio is null
+ * (No-Data ≠ 0 ≠ 100).
+ *
+ * @param {number|null} ratio  actualBurnYTD / expectedBurnYTD
+ * @returns {number|null} 0–100 | null
+ */
+export function budgetAdherenceScore(ratio) {
+  if (ratio == null || !Number.isFinite(Number(ratio))) return null;
+  // Round to 9 dp so float error (e.g. 1.10−1 = 0.1000…09 → 10.000…9) cannot push
+  // an exact band edge like 110% / 70% / 130% into the next-lower band.
+  const dev = Math.round(Math.abs(Number(ratio) - 1) * 100 * 1e9) / 1e9;
+  if (dev <= 10) return 100;
+  if (dev <= 20) return 88;
+  if (dev <= 30) return 72;
+  if (dev <= 50) return 50;
+  if (dev <= 75) return 28;
+  return 15;
+}
+
+/**
+ * Cash Availability sub-score (v1.16.2). Standalone budget-headroom component of
+ * the Petty Cash Health Score — how much of the cycle's opening balance is still
+ * available. Linear over the full [0,100] range so it carries its nominal weight.
+ *
+ * @param {number|null} remainingRatio  max(0, remainingBalance) / openingBalance
+ *   null when there is no cycle budget to measure (No-Data ≠ 0).
+ * @returns {number|null} 0–100 | null
+ */
+export function cashAvailabilityScore(remainingRatio) {
+  if (remainingRatio == null || !Number.isFinite(Number(remainingRatio))) return null;
+  return clamp100(Number(remainingRatio) * 100);
+}
+
+/**
+ * Spending Stability sub-score v1 (v1.16.2 — early-alarm, 10% weight). A simple,
+ * explainable warning count over two ready rules; R2 (monthly spike) is reserved
+ * for a future version and would map a 3rd warning to 60.
+ *   R1: largest spend category > 60% of period spend       (concentration)
+ *   R3: a single transaction > 25% of the annual budget     (outsized outlay)
+ *   warnings → 0:100 · 1:90 · 2:75 · (3:60 reserved)
+ *
+ * Returns null when there is no spend to assess (hasData === false): No-Data ≠ 0.
+ *
+ * @param {{topCategoryPct?:number|null, maxTransactionAmount?:number|null,
+ *          annualBudget?:number, hasData?:boolean}} m
+ * @returns {number|null} 0–100 | null
+ */
+export function spendingStabilityScore({
+  topCategoryPct = null, maxTransactionAmount = null, annualBudget = 0, hasData = false,
+} = {}) {
+  if (!hasData) return null;
+  let warnings = 0;
+  if (topCategoryPct != null && Number(topCategoryPct) > 60) warnings++;                       // R1
+  if (Number(annualBudget) > 0 && maxTransactionAmount != null
+      && Number(maxTransactionAmount) > Number(annualBudget) * 0.25) warnings++;               // R3
+  const MAP = [100, 90, 75, 60]; // index = warning count (3 reserved for future R2)
+  return MAP[Math.min(warnings, MAP.length - 1)];
 }

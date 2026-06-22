@@ -22,9 +22,15 @@ import {
 } from './engines/spending-analytics-engine.js';
 import {
   officialNorCount, averageRealizationTime, realizationTrend, getOfficialAnalyticsExpenses,
+  realizationTimelinessRatio,
 } from './engines/nor-analytics-engine.js';
 import { resolveBidang } from '../petty-cash/bidang-matcher.js';
 import { generateInsights, generateNarrative } from './engines/insight-engine.js';
+import {
+  administrativeComplianceScore, budgetAdherenceScore, cashAvailabilityScore,
+  spendingStabilityScore, calculateScore, PC_SCORE_WEIGHTS_V1,
+} from './engines/executive-score-engine.js';
+import { DEFAULT_ANNUAL_PETTY_CASH_BUDGET } from '../petty-cash/petty-cash-config.js';
 
 const MS_PER_DAY = 86400000;
 
@@ -118,6 +124,9 @@ export function computePettyCashAnalytics(ctx = {}) {
   const activeCycle = ctx.activeCycle || null;
   const settings = ctx.settings || {};
   const bidangRoster = Array.isArray(ctx.bidangRoster) ? ctx.bidangRoster : [];
+  // Configurable annual budget (v1.16.0). Falls back to the agreed baseline so
+  // existing installations whose settings predate the field keep working.
+  const annualBudget = num(settings.annualPettyCashBudget) || DEFAULT_ANNUAL_PETTY_CASH_BUDGET;
 
   // ── OFFICIAL source of truth ─────────────────────────────────────────────
   // Analytics Petty Cash is an official report: it counts ONLY expenses linked
@@ -183,6 +192,9 @@ export function computePettyCashAnalytics(ctx = {}) {
     realizationTrend: realTrend,
     forecast: { projected: projection.projected, actual: projection.actual },
     spendTrend,
+    // v1.16.0 Phase D — activate the DORMANT `forecast-pace` insight that already
+    // reads `annualBudget` in insight-engine.js (no new insight created).
+    annualBudget,
   };
   const insights = generateInsights(insightCtx);
   const narrative = generateNarrative(insightCtx);
@@ -197,11 +209,124 @@ export function computePettyCashAnalytics(ctx = {}) {
   const windowExpenses = allExpenses.filter(e => inRange(e.expenseDate, win.start, win.end));
   const consumed = calculateConsumedSpend({ expenses: windowExpenses, nors: allNors, activeCycle });
 
+  // ── Administrative Compliance (v1.16.0 Phase C — FOUNDATION ONLY) ────────────
+  // Internal metric: NOT wired into the Health Score, the UI, or any PDF this
+  // sprint. Built purely from figures already computed above so the number is
+  // verifiable now and ready to feed the future Petty Cash Health Score.
+  //   Coverage Ratio   = officialRealizedSpend / totalConsumedSpend
+  //   Timeliness Ratio = realized official NORs / official NORs (this window)
+  // null when the denominator is 0 (No-Data ≠ 0). Score = 80% Coverage + 20%
+  // Timeliness, re-normalized over whichever component is available.
+  const coverageRatio = consumed.totalConsumedSpend > 0
+    ? consumed.officialRealizedSpend / consumed.totalConsumedSpend
+    : null;
+  // v1.16.2 — TRUE Timeliness (speed): share of realized NORs replenished within
+  // targetDays of issue. The old realizedCount/officialNorCount ratio measured
+  // COMPLETION, so it is renamed `realizationRate` and kept as a diagnostic ONLY
+  // (it no longer feeds the Compliance score). targetDays is settings-overridable
+  // (default 14) with a safe fallback so existing installations keep working.
+  const targetDays = num(settings.realizationTargetDays) || 14;
+  const timelinessRatio = realizationTimelinessRatio(curNors, targetDays);
+  const realizationRate = norOfficial > 0 ? realization.realizedCount / norOfficial : null;
+  const complianceScore = administrativeComplianceScore({ coverageRatio, timelinessRatio });
+
+  // ── Budget Adherence (v1.16.1 Phase B — OBSERVABILITY ONLY) ──────────────────
+  // YTD by construction (independent of the selected range) so the figure is a
+  // stable annual-pace signal — it does not move when the user changes the period
+  // filter. Reuses the SAME 'annualized' window math (resolveWindow) the trend
+  // block already uses, so Jan 1 → now and elapsed-days are computed one way only.
+  //   Actual Burn YTD   = official spend Jan 1 → now (the official source of truth)
+  //   Expected Burn YTD = configurable annual budget pro-rated by elapsed days
+  //   Adherence Ratio   = actual / expected  (null when there is no YTD spend yet:
+  //                       No-Data ≠ a real 0%-pace reading)
+  // NOT wired into any score this sprint (spec B5/C).
+  const ytdWin = win.isAnnualized ? win : resolveWindow('annualized', now);
+  const ytdOfficial = officialExpenses.filter(e => inRange(e.expenseDate, ytdWin.start, ytdWin.end));
+  const actualBurnYtd = totalSpend(ytdOfficial);
+  const elapsedDaysYtd = ytdWin.elapsedDays;
+  const expectedBurnYtd = Math.round(annualBudget * elapsedDaysYtd / 365);
+  const budgetAdherenceRatio = (ytdOfficial.length > 0 && expectedBurnYtd > 0)
+    ? actualBurnYtd / expectedBurnYtd
+    : null;
+  const budgetAdherenceScoreVal = budgetAdherenceScore(budgetAdherenceRatio);
+
+  // ── Cash Availability (v1.16.2) — standalone budget-headroom component ───────
+  // null when there is no active cycle budget to measure (No-Data ≠ 100).
+  const cashRemainingRatio = (activeCycle && opening > 0) ? Math.max(0, remaining) / opening : null;
+  const cashScore = cashAvailabilityScore(cashRemainingRatio);
+
+  // ── Spending Stability v1 (v1.16.2) — R1 + R3 warning count (R2 deferred) ────
+  // Same thresholds the engine applies (R1 >60%, R3 >25% annual budget); the
+  // flags here are the explainability mirror, the engine owns the score.
+  const stabilityHasData = curExpenses.length > 0;
+  const topCategoryPct = byCategory.top ? byCategory.top.pct : null;
+  const maxTransactionAmount = topTx.length ? topTx[0].amount : null;
+  const r1Concentrated = stabilityHasData && topCategoryPct != null && topCategoryPct > 60;
+  const r3OutsizedTx = stabilityHasData && annualBudget > 0 && maxTransactionAmount != null
+    && maxTransactionAmount > annualBudget * 0.25;
+  const stabilityScore = spendingStabilityScore({
+    topCategoryPct, maxTransactionAmount, annualBudget, hasData: stabilityHasData,
+  });
+
+  // ── Petty Cash Health Score (v1.16.2 — 35/30/25/10 recomposition) ───────────
+  // Reuses the SAME calculateScore blend engine as the Executive score (single
+  // source of weighting + renormalization). Guard: needs ≥3 non-null components,
+  // else null — communicates "insufficient data" honestly AND caps any single
+  // component's effective influence at ≤50% (audit v1.16.1.1 §3). NOTE: this is
+  // exposed on the model only; the Executive blend still uses the legacy
+  // pettyCashHealthScore this sprint (cutover deferred to a UI/PDF-review sprint).
+  const pcComponents = {
+    compliance: complianceScore,
+    budget: budgetAdherenceScoreVal,
+    cash: cashScore,
+    stability: stabilityScore,
+  };
+  const activeComponentCount = Object.values(pcComponents).filter(v => v != null).length;
+  const pcScored = calculateScore(pcComponents, PC_SCORE_WEIGHTS_V1);
+  const healthScore = activeComponentCount >= 3 ? pcScored.score : null;
+
   return {
     schemaVersion: 1,
     domain: 'pettyCash',
     metadata: { generatedAt: new Date().toISOString(), range, rangeLabel: PC_RANGE_LABELS[range], window: win },
     consumed,
+    // v1.16.0 — configurable annual budget carried on the model so the Executive
+    // composer can reuse the SAME value (single source) without re-reading settings.
+    annualBudget,
+    // v1.16.2 — Petty Cash Health Score (35/30/25/10), gated ≥3 components.
+    healthScore,
+    // v1.16.2 Phase F — per-component breakdown so Executive Analytics can later
+    // explain "why the score is X" without recomputation (MODEL ONLY, no UI/PDF).
+    scoreBreakdown: {
+      compliance: complianceScore,        // 0–100 | null (35%)
+      budget: budgetAdherenceScoreVal,    // 0–100 | null (30%)
+      cash: cashScore,                    // 0–100 | null (25%)
+      stability: stabilityScore,          // 0–100 | null (10%)
+      weights: PC_SCORE_WEIGHTS_V1,
+      usedWeight: pcScored.usedWeight,
+      activeComponents: activeComponentCount,
+    },
+    // Administrative Compliance (v1.16.2): Coverage 80% + TRUE Timeliness 20%.
+    // `realizationRate` is a diagnostic only (renamed from the old "timeliness").
+    compliance: {
+      coverageRatio, timelinessRatio, realizationRate, targetDays, score: complianceScore,
+    },
+    // Cash Availability (v1.16.2).
+    cash: { remainingRatio: cashRemainingRatio, score: cashScore },
+    // Spending Stability v1 (v1.16.2) — R1/R3 flags + score.
+    stability: {
+      topCategoryPct, maxTransactionAmount,
+      r1Concentrated, r3OutsizedTx, score: stabilityScore,
+    },
+    // v1.16.1 Phase B/C — Budget Adherence observability (YTD).
+    budget: {
+      annualBudget,
+      elapsedDaysYtd,
+      expectedBurnYtd,
+      actualBurnYtd,
+      adherenceRatio: budgetAdherenceRatio,
+      adherenceScore: budgetAdherenceScoreVal,
+    },
     hero: {
       norOfficial,
       avgRealizationDays: realization.averageDays,

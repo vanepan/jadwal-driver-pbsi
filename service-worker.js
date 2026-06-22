@@ -3,14 +3,22 @@
 /* ============================================================
    Service Worker — Sarpras Operations
    Strategy:
-     • Install  → precache offline.html only; no skipWaiting
+     • Install  → precache offline.html; self.skipWaiting() (v1.16.2.3 legacy
+                  drain — see install handler for the full rationale)
      • Activate → purge stale caches, claim clients
      • Fetch    → Firebase: network-only
                   version.json: network-only (never cached)
                   navigate : network-first → offline.html fallback
                   static   : cache-first  → network fill
-     • Message  → SKIP_WAITING to activate the pending update (sent by the
-                  client's SILENT auto-update flow, not a user button)
+     • Message  → SKIP_WAITING (kept as a redundant client-driven trigger for
+                  the startup reload path; activation is now primarily install-
+                  driven, so this is belt-and-suspenders, not the sole path)
+
+   UPDATE ARCHITECTURE (finalized v1.16.2.3) — ONE silent path, no banner/CTA:
+     new worker installs → skipWaiting (self-activate) → activate purges old
+     cache + clients.claim → client (pwa.js) performs at most ONE guarded reload
+     during the startup window; outside it the swap is invisible and the fresh
+     bundle loads on the next launch. No button, no banner, no manual refresh.
 
    CACHE LIFECYCLE — why this works for EVERY release:
    SW_VERSION is stamped from config.js APP_VERSION by
@@ -55,9 +63,22 @@ self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => cache.add(OFFLINE_URL))
   );
-  /* Do NOT skipWaiting here — the client decides WHEN to activate (silent
-     auto-update applies it during the startup window, defers it otherwise),
-     so a mid-session install never swaps the controller unexpectedly. */
+  /* v1.16.2.3 — LEGACY DRAIN: self-activate instead of waiting.
+     Why: a newly deployed worker would otherwise sit in `waiting` until a
+     client posts SKIP_WAITING. Legacy (pre-v1.15.5.2) clients run an old
+     bundle that posts SKIP_WAITING only on a USER banner click — so a user
+     who ignores the banner keeps the OLD worker in control indefinitely and
+     sees the old banner every launch. skipWaiting() lives in the worker being
+     installed, so it self-promotes regardless of which client/worker is in
+     control — the only mechanism that can drain that population.
+     Why it's SAFE (not the mid-task reload the old design feared): the client
+     NEVER auto-reloads on an UNSOLICITED controllerchange — pwa.js reloads only
+     when IT triggered the apply (_skipWaitingTriggered, set only in the startup
+     window while idle, bounded once per page + once per session). So a mid-task
+     user's controller swaps INVISIBLY (no reload, no lost state); the fresh
+     bundle simply loads on their next navigation/launch. clients.claim() in
+     activate() then routes existing clients through the new worker at once. */
+  self.skipWaiting();
 });
 
 /* ── Activate ────────────────────────────────────────────── */

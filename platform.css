@@ -25,6 +25,46 @@
 :root,
 [data-theme="light"] {
 
+  /* Typography — unified app-wide on the Executive Analytics font system.
+     Manrope = base/body, Archivo = display headings, JetBrains Mono = numeric.
+     All three are loaded in index.html. These tokens previously lived only
+     inside .v2-analytics-claude; promoting them to :root makes the ENTIRE app
+     inherit the same typeface as Executive Analytics. */
+  --font-display: 'Archivo', 'Inter', system-ui, sans-serif;
+  --font-sans:    'Manrope', 'Inter', system-ui, sans-serif;
+  --font-mono:    'JetBrains Mono', ui-monospace, monospace;
+
+  /* ── Unified WORKSPACE system (v1.16.2.5) — Analytics Executive is the
+     design authority. ONE source for every page's content geometry. The values
+     are exactly Executive's current geometry, so Executive is visually identical.
+     Effective left inset = main-content(16) + workspace(16) + pad-inline(24) = 56px.
+     Pages that lack the intermediate 16px workspace layer use --workspace-edge
+     (=workspace 16 + pad-inline 24 = 40) so the TOTAL still lands at 56px. */
+  --workspace-max-width:   1400px;
+  --workspace-pad-inline:  24px;   /* gutter when already inside .v2-workspace */
+  --workspace-edge:        40px;   /* gutter when a page sits directly in .main-content */
+  --workspace-pad-top:     8px;
+  --workspace-pad-bottom:  44px;
+  --workspace-section-gap: 32px;
+  --workspace-card-gap:    16px;
+
+  /* Vertical rhythm — one spacing scale for every page (Executive values). */
+  --space-hero:       26px;  /* hero → first section */
+  --space-section:    26px;  /* section → section */
+  --space-subsection: 22px;  /* sub-group within a section */
+  --space-card:       16px;  /* card → card */
+
+  /* ── Unified TYPOGRAPHY scale (v1.16.2.5) — mirrors the Executive shell, so
+     there are no standalone font-sizes; every level references a token. */
+  --type-display-xl: clamp(30px, 4.4vw, 52px);  /* keynote hero (Exec hero-title) */
+  --type-display-lg: clamp(22px, 2.6vw, 28px);  /* secondary hero / .an-display */
+  --type-heading-xl: 19px;   /* section title (eyebrow h2) */
+  --type-heading-lg: 18px;   /* KPI / figure value */
+  --type-heading-md: 15px;   /* card title */
+  --type-body:       14px;   /* body / narrative */
+  --type-caption:    11px;   /* caption under a figure */
+  --type-label:      11px;   /* micro label / table header / tag base */
+
   /* Canvas & surfaces */
   --canvas:         #F5F5F3;
   --surface:        #FFFFFF;
@@ -173,7 +213,7 @@
    Both are grotesque sans-serifs with near-identical metrics;
    no layout shift expected. */
 body {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   letter-spacing: -0.011em;
   /* OVERRIDE: background and color aligned to V2.0 tokens.
@@ -1998,13 +2038,17 @@ body.v2-shell-active .v2-topbar {
   flex-shrink: 1;
 }
 
-/* ── KPI value (large monospace number) ── */
+/* ── KPI value (large number) ──
+   v1.16.2.6: converged to the app/Executive sans face (was JetBrains Mono) so
+   the Driver Operations KPI strip reads as the same design generation as the
+   Analytics KPI cards. tabular-nums keeps the figures column-aligned. */
 .v2-kpi-value {
   font-size: 24px;
   font-weight: 700;
   line-height: 1;
   color: var(--text);
-  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
 
@@ -4530,6 +4574,53 @@ body.v2-shell-active #driverDashboard .dash-empty {
   padding: 0 20px 40px;
 }
 
+/* v1.16.2.3 — Unified analytics container (ONE width language for Driver /
+   Petty Cash / Executive). Left-aligned so content hugs the sidebar; capped so
+   the editorial hero + 3-column grids stay dense and premium on ultra-wide
+   monitors instead of spreading into sparse gutters. Below ~1680px viewport the
+   cap is never reached, so every breakpoint renders identically across the three
+   modules — the cap only tames 1920+. Governs WIDTH/alignment only; each view
+   keeps its own vertical rhythm + padding. */
+/* v1.16.2.5 — the analytics shell is now one instance of the unified workspace
+   system; geometry comes entirely from the global tokens (Executive authority).
+   Never margin:auto (that re-creates the old "too far from sidebar" centering). */
+.v2-analytics-shell {
+  max-width: var(--workspace-max-width);
+  margin-left: 0;
+  margin-right: 0;
+  padding: var(--workspace-pad-top) var(--workspace-pad-inline) var(--workspace-pad-bottom);
+}
+/* Responsive gutter is tuned ONCE at the token level so every workspace
+   consumer (analytics, petty cash center, driver operations) shrinks together. */
+@media (max-width: 1024px) { :root { --workspace-pad-inline: 18px; --workspace-edge: 34px; --workspace-pad-bottom: 40px; } }
+@media (max-width: 600px)  { :root { --workspace-pad-inline: 12px; --workspace-edge: 28px; --workspace-pad-top: 6px; --workspace-pad-bottom: 34px; } }
+
+/* Analytics Driver sits one level deeper than Executive (inside
+   .v2-admin-workspace-layout, padding:0 20px). The shell can't override that
+   ancestor, so cancel it with a matching negative margin → identical 56px left
+   edge as Executive. The negative value tracks the admin-layout padding at each
+   breakpoint (20px desktop → 16px ≤960). */
+#v2AdminSectionAnalytics { margin-left: -20px; margin-right: -20px; }
+@media (max-width: 960px) { #v2AdminSectionAnalytics { margin-left: -16px; margin-right: -16px; } }
+
+/* Driver Operations has NO .v2-workspace layer — its blocks are direct children
+   of .main-content. Use --workspace-edge (= workspace 16 + pad-inline 24 = 40)
+   so the TOTAL left inset still equals Executive's 56px, and cap at the same
+   max-width. The timeline grid keeps overflow-x:auto, so nothing is hidden — it
+   scrolls within the capped surface. */
+body.v2-shell-active .main-content > #v2KpiStrip,
+body.v2-shell-active .main-content > #v2TimelineSurface,
+body.v2-shell-active .main-content > .legend,
+body.v2-shell-active .main-content > #driverDashboard {
+  max-width: var(--workspace-max-width);
+  margin-left: var(--workspace-edge);
+  margin-right: auto;
+  box-sizing: border-box;
+}
+/* The KPI strip carried its own horizontal padding; drop it so its cards align
+   to the same left edge the strip element now establishes via margin. */
+body.v2-shell-active .main-content > #v2KpiStrip { padding-left: 0; padding-right: 0; }
+
 /* ── Page header layer ──────────────────────────────────────────────── */
 .v2-admin-page-header {
   display: flex;
@@ -6597,7 +6688,7 @@ textarea:disabled { opacity: 0.55; }
 
 .app-splash-name {
   margin: 0;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
   font-size: 22px;
   font-weight: 800;
   letter-spacing: 0.12em;
@@ -6606,7 +6697,7 @@ textarea:disabled { opacity: 0.55; }
 
 .app-splash-sub {
   margin: 0;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
   font-size: 10px;
   font-weight: 500;
   letter-spacing: 0.10em;
@@ -7336,7 +7427,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   padding: 8px 10px;
 
   /* Typography — matches .form-group input */
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.4;
   text-align: left;
@@ -7448,7 +7539,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 /* ── Option items ─────────────────────────────────────────── */
 .pbsi-select-option {
   padding: 9px 12px;
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
   color: var(--text);
   cursor: pointer;
@@ -7575,7 +7666,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 .pbsi-datepicker-preset {
   flex: 1;
   padding: 5px 6px;
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 11.5px;
   font-weight: 500;
   background: transparent;
@@ -7606,7 +7697,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   gap: 7px;
   width: 100%;
   padding: 8px 10px;
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
   background: var(--input-bg);
   color: var(--text);
@@ -7691,7 +7782,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
    ============================================================ */
 
 .flatpickr-calendar {
-  font-family: 'DM Sans', sans-serif !important;
+  font-family: var(--font-sans) !important;
   font-size: 13px !important;
   background: var(--surface-card, #ffffff) !important;
   border: 1.5px solid var(--input-border) !important;
@@ -7719,7 +7810,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 .flatpickr-current-month select.cur-month,
 .flatpickr-current-month .numInputWrapper input.cur-year {
   color: var(--text) !important;
-  font-family: 'DM Sans', sans-serif !important;
+  font-family: var(--font-sans) !important;
   font-weight: 600 !important;
 }
 .flatpickr-prev-month,
@@ -7751,7 +7842,7 @@ span.flatpickr-weekday {
 .flatpickr-day {
   color: var(--text) !important;
   border-radius: 6px !important;
-  font-family: 'DM Sans', sans-serif !important;
+  font-family: var(--font-sans) !important;
 }
 .flatpickr-day:hover,
 .flatpickr-day.prevMonthDay:hover,
@@ -10633,6 +10724,25 @@ input[type="time"].v2-admin-config-input {
 .v2-analytics-claude .an-note { margin: 0 0 14px; font-size: 13px; line-height: 1.5; color: var(--text-dim); }
 .v2-analytics-claude .an-note span { color: var(--text-faint); }
 
+/* ── Analytics typography scale (v1.16.2.4) ───────────────────────────────────
+   ONE reusable type language for Driver / Executive / Petty Cash. Values MIRROR
+   the keynote shell (hero / eyebrow / stat), so a given hierarchy level is
+   byte-identical everywhere — no module may invent its own weight/size/family.
+   Reuse these instead of hardcoding inline typography. Presentation only — no
+   numbers/formulas change.
+     .an-display  Secondary hero / display headline (font-display 800)
+     .an-tag      Eyebrow / kicker tag (mono, accent)
+     .an-label    Micro label for stats, table headers, captions (sans uppercase)
+     .an-figure   Inline numeric figure / KPI value (font-display, tabular)
+     .an-body     Body / narrative paragraph
+     .an-caption  Small caption beneath a figure                                */
+.v2-analytics-claude .an-display { font-family: var(--font-display); font-weight: 800; font-size: var(--type-display-lg); line-height: 1.12; letter-spacing: -0.028em; color: var(--text); margin: 0; }
+.v2-analytics-claude .an-tag { display: inline-block; font-family: var(--font-mono); font-size: var(--type-label); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent); }
+.v2-analytics-claude .an-label { font-family: var(--font-sans); font-size: var(--type-label); font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-faint); }
+.v2-analytics-claude .an-figure { font-family: var(--font-display); font-weight: 700; font-size: var(--type-heading-lg); line-height: 1.15; letter-spacing: -0.012em; color: var(--text); font-variant-numeric: tabular-nums; }
+.v2-analytics-claude .an-body { font-family: var(--font-sans); font-size: var(--type-body); line-height: 1.6; color: var(--text-dim); margin: 0; }
+.v2-analytics-claude .an-caption { font-family: var(--font-sans); font-size: var(--type-caption); line-height: 1.5; color: var(--text-dim); }
+
 /* ── Keynote hero ───────────────────────────────────────────────────────── */
 .v2-analytics-claude .hero { margin-top: 8px; }
 .v2-analytics-claude .hero-head { max-width: 860px; }
@@ -10751,6 +10861,26 @@ input[type="time"].v2-admin-config-input {
 .v2-analytics-claude .ib-good { background: rgba(47,158,107,0.12); color: var(--c-green); }
 .v2-analytics-claude .an-kind { font-size: 9.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; padding: 2px 7px; border-radius: 6px; border: 1px solid var(--border); color: var(--text-faint); }
 .v2-analytics-claude .an-kind--rec { color: var(--accent); border-color: var(--accent-line); background: var(--accent-weak); }
+
+/* ── Score Breakdown bars (v1.16.3) — Executive Petty Cash explainability ─────
+   Compact weighted sub-score list under the hero. Quiet, editorial: a label, a
+   tabular score, and a thin tone-colored bar. No boxes — matches the de-boxed
+   insight rows above. */
+.v2-analytics-claude .an-scorebar { display: flex; flex-direction: column; gap: 15px; }
+.v2-analytics-claude .an-sb-row { animation: anFadeUp .5s cubic-bezier(.2,.7,.2,1) both; }
+.v2-analytics-claude .an-sb-row:nth-child(1) { animation-delay: .02s; }
+.v2-analytics-claude .an-sb-row:nth-child(2) { animation-delay: .06s; }
+.v2-analytics-claude .an-sb-row:nth-child(3) { animation-delay: .10s; }
+.v2-analytics-claude .an-sb-row:nth-child(4) { animation-delay: .14s; }
+.v2-analytics-claude .an-sb-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 7px; }
+.v2-analytics-claude .an-sb-lbl { font-weight: 700; font-size: 13px; color: var(--text); display: inline-flex; align-items: baseline; gap: 8px; }
+.v2-analytics-claude .an-sb-wt { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; color: var(--text-faint); }
+.v2-analytics-claude .an-sb-val { font-family: var(--font-mono); font-size: 14px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.v2-analytics-claude .an-sb-track { height: 7px; border-radius: 99px; background: var(--border-faint); overflow: hidden; }
+.v2-analytics-claude .an-sb-fill { display: block; height: 100%; border-radius: 99px; transition: width .8s cubic-bezier(.2,.7,.2,1); }
+.v2-analytics-claude .an-sb-fill.an-tone-green { background: var(--c-green); }
+.v2-analytics-claude .an-sb-fill.an-tone-amber { background: var(--c-amber); }
+.v2-analytics-claude .an-sb-fill.an-tone-crit  { background: var(--crit); }
 
 /* ── Export Center — future-ready reporting hub (Sprint 7D restore) ───────────
    A calm, secondary format LIST. Intentionally quiet: no gradients, no large

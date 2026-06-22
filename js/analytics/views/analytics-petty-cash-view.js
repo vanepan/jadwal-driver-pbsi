@@ -64,11 +64,12 @@ function heroInsight(model) {
   const tone = top ? (toneMap[top.type] || 'info') : 'info';
   const headline = top ? esc(top.title) : 'Analitik Petty Cash';
   return `
-    <section class="pc-an-hero an-tone-${tone === 'crit' ? 'crit' : tone === 'good' ? 'green' : 'amber'}"
-      style="padding:6px 0 18px;border-bottom:1px solid var(--border,#e8e6e2);margin-bottom:22px;">
-      <span class="tag" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:1.5px;color:var(--accent,#3B5BA9);text-transform:uppercase;margin-bottom:8px;">Ringkasan Eksekutif</span>
-      <h1 style="font-size:24px;font-weight:800;line-height:1.25;margin:0 0 8px;color:var(--text,#2b2a28);">${headline}</h1>
-      <p style="margin:0;color:var(--text-dim,#5b5b64);font-size:14px;line-height:1.6;max-width:760px;">${esc(model.narrative)}</p>
+    <section class="hero pc-an-hero an-tone-${tone === 'crit' ? 'crit' : tone === 'good' ? 'green' : 'amber'}" style="margin-bottom:var(--space-section);">
+      <div class="hero-head">
+        <span class="an-tag" style="display:block;margin-bottom:14px;">Ringkasan Eksekutif</span>
+        <h1 class="hero-title">${headline}</h1>
+        <p class="hero-sub">${esc(model.narrative)}</p>
+      </div>
     </section>`;
 }
 
@@ -100,9 +101,9 @@ function heroKpi(model) {
 function cycleSummary(model) {
   const c = model.cycle;
   const item = (label, value, accent) => `
-    <div class="pc-an-cyc-item" style="flex:1 1 160px;padding:14px 16px;background:var(--surface-2,#f6f5f3);border:1px solid var(--border,#e8e6e2);border-radius:12px;">
-      <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--text-dim,#5b5b64);text-transform:uppercase;margin-bottom:6px;">${esc(label)}</div>
-      <div style="font-size:18px;font-weight:700;color:${accent || 'var(--text,#2b2a28)'};">${value}</div>
+    <div class="pc-an-cyc-item" style="flex:1 1 160px;padding:14px 16px;background:var(--surface-2);border:1px solid var(--border);border-radius:12px;">
+      <div class="an-label" style="margin-bottom:6px;">${esc(label)}</div>
+      <div class="an-figure"${accent ? ` style="color:${accent};"` : ''}>${value}</div>
     </div>`;
   return `
     ${renderEyebrow({ tag: 'Siklus Aktif', title: `Ringkasan Siklus${c.number ? ` #${c.number}` : ''}`, sub: 'Status saldo siklus berjalan' })}
@@ -123,13 +124,13 @@ function trendSection(model) {
     const a = model.trend.annualized;
     annualizedHtml = `
       <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
-        <div style="flex:1 1 200px;padding:12px 14px;background:var(--surface-2,#f6f5f3);border:1px solid var(--border,#e8e6e2);border-radius:10px;">
-          <div style="font-size:11px;color:var(--text-dim,#5b5b64);margin-bottom:4px;">Aktual YTD (${a.elapsedDays} hari)</div>
-          <div style="font-size:17px;font-weight:700;color:var(--text,#2b2a28);">${rp(a.actual)}</div>
+        <div style="flex:1 1 200px;padding:12px 14px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;">
+          <div class="an-caption" style="margin-bottom:4px;">Aktual YTD (${a.elapsedDays} hari)</div>
+          <div class="an-figure">${rp(a.actual)}</div>
         </div>
-        <div style="flex:1 1 200px;padding:12px 14px;background:var(--surface-2,#f6f5f3);border:1px solid var(--border,#e8e6e2);border-radius:10px;">
-          <div style="font-size:11px;color:var(--text-dim,#5b5b64);margin-bottom:4px;">Proyeksi Akhir Tahun</div>
-          <div style="font-size:17px;font-weight:700;color:var(--accent,#3B5BA9);">${rp(a.projected)}</div>
+        <div style="flex:1 1 200px;padding:12px 14px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;">
+          <div class="an-caption" style="margin-bottom:4px;">Proyeksi Akhir Tahun</div>
+          <div class="an-figure" style="color:var(--accent);">${rp(a.projected)}</div>
         </div>
       </div>`;
   }
@@ -145,7 +146,7 @@ function trendSection(model) {
     </div>
     ${annualizedHtml}
     ${chart}
-    <div style="height:26px;"></div>`;
+    <div style="height:var(--space-section);"></div>`;
 }
 
 function breakdownSection(model) {
@@ -186,7 +187,7 @@ function rankingSection(model) {
     : `<tr><td colspan="4" style="padding:14px;text-align:center;color:var(--text-dim,#5b5b64);font-size:12.5px;">Belum ada transaksi.</td></tr>`;
 
   const bidangNote = r.bidangUnresolved > 0
-    ? `<p style="margin:6px 0 0;font-size:11px;color:var(--text-dim,#5b5b64);">${r.bidangUnresolved} transaksi belum tercocokkan ke bidang (unit tetap / tanpa kecocokan nama).</p>`
+    ? `<p class="an-caption" style="margin:6px 0 0;">${r.bidangUnresolved} transaksi belum tercocokkan ke bidang (unit tetap / tanpa kecocokan nama).</p>`
     : '';
 
   return `
@@ -194,13 +195,13 @@ function rankingSection(model) {
     ${highlights}
     ${bidangNote}
     <div style="margin:18px 0 26px;overflow-x:auto;">
-      <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--text-dim,#5b5b64);text-transform:uppercase;margin-bottom:8px;">Transaksi Teratas</div>
+      <div class="an-label" style="margin-bottom:8px;">Transaksi Teratas</div>
       <table style="width:100%;border-collapse:collapse;min-width:420px;">
         <thead><tr>
-          <th style="padding:8px 10px;text-align:left;font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:var(--text-dim,#5b5b64);border-bottom:1.5px solid var(--border,#e8e6e2);">Tanggal</th>
-          <th style="padding:8px 10px;text-align:left;font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:var(--text-dim,#5b5b64);border-bottom:1.5px solid var(--border,#e8e6e2);">Unit</th>
-          <th style="padding:8px 10px;text-align:left;font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:var(--text-dim,#5b5b64);border-bottom:1.5px solid var(--border,#e8e6e2);">Kategori</th>
-          <th style="padding:8px 10px;text-align:right;font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:var(--text-dim,#5b5b64);border-bottom:1.5px solid var(--border,#e8e6e2);">Nilai</th>
+          <th class="an-label" style="padding:8px 10px;text-align:left;border-bottom:1.5px solid var(--border);">Tanggal</th>
+          <th class="an-label" style="padding:8px 10px;text-align:left;border-bottom:1.5px solid var(--border);">Unit</th>
+          <th class="an-label" style="padding:8px 10px;text-align:left;border-bottom:1.5px solid var(--border);">Kategori</th>
+          <th class="an-label" style="padding:8px 10px;text-align:right;border-bottom:1.5px solid var(--border);">Nilai</th>
         </tr></thead>
         <tbody>${txRows}</tbody>
       </table>
@@ -218,7 +219,7 @@ function insightSection(model) {
   return `
     ${renderEyebrow({ tag: 'Wawasan', title: 'Insight Engine', sub: 'Temuan otomatis dari data periode ini' })}
     ${renderInsightDividerList(rows)}
-    <div style="height:26px;"></div>`;
+    <div style="height:var(--space-section);"></div>`;
 }
 
 function exportSection() {
@@ -324,14 +325,14 @@ function render() {
 
   state.host.innerHTML = `
     <div class="v2-analytics-claude v2-analytics-pc">
-      <div class="v2-admin-workspace-layout" style="max-width:1080px;margin:0 auto;padding:6px 4px 40px;">
+      <div class="v2-admin-workspace-layout v2-analytics-shell">
         <div class="v2-admin-page-header" style="margin-bottom:6px;">
           <h1 class="v2-admin-page-title">Analytics Petty Cash</h1>
           <p class="v2-admin-page-subtitle">Analisis realisasi NOR, siklus dana, dan pola pengeluaran.</p>
         </div>
         ${heroInsight(model)}
         ${heroKpi(model)}
-        <div style="height:26px;"></div>
+        <div style="height:var(--space-section);"></div>
         ${cycleSummary(model)}
         ${trendSection(model)}
         ${breakdownSection(model)}
