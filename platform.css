@@ -9020,7 +9020,10 @@ input[type="time"].v2-admin-config-input {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin-top: 14px;
+  /* v1.15.4: relocated OUT of the (display:none) .v2-admin-page-header to sit
+     directly below the hero. The workspace layout supplies the vertical rhythm
+     via its flex `gap`, so no extra top margin is needed here. */
+  margin-top: 0;
 }
 .v2-analytics-claude .exec-period-seg { margin-bottom: 0; }
 .v2-analytics-claude .exec-scope-row {
@@ -10143,54 +10146,15 @@ input[type="time"].v2-admin-config-input {
   padding-top: 6px;
 }
 
-/* Warn state — used for "Update Tersedia: Ya" */
+/* Warn state — used for "Update Tersedia: Ya" diagnostic in the config panel.
+   (The old persistent update banner/button was removed in v1.15.5.2 — updates
+   now apply silently on startup; see js/pwa.js.) */
 .v2-pwa-stat--warn { color: #B45309; }
 [data-theme="dark"] .v2-pwa-stat--warn { color: #F59E0B; }
-
-/* Update available banner — fixed bottom bar */
-.v2-pwa-update-banner {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 10000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  padding: 13px 20px;
-  background: #1A1A2E;
-  color: #F0EFF0;
-  font-size: 0.88rem;
-  font-weight: 500;
-  box-shadow: 0 -2px 12px rgba(0,0,0,0.18);
-  /* Safe area inset for iPhone home-bar */
-  padding-bottom: max(13px, env(safe-area-inset-bottom));
-}
-
-.v2-pwa-update-text { flex-shrink: 0; }
-
-.v2-pwa-update-btn {
-  flex-shrink: 0;
-  padding: 6px 16px;
-  background: #A8292F;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  font-size: 0.82rem;
-  font-weight: 700;
-  cursor: pointer;
-  font-family: inherit;
-  transition: background 0.15s;
-}
-
-.v2-pwa-update-btn:hover { background: #8E1E23; }
 
 @media (max-width: 600px) {
   .v2-pwa-ios-modal-box { max-width: 100%; }
   .v2-pwa-stat-label { min-width: 90px; }
-  .v2-pwa-update-banner { flex-direction: column; gap: 8px; text-align: center; }
-  .v2-pwa-update-btn { width: 100%; }
 }
 
 /* ── Install onboarding banner (Android — all roles) ─────────
@@ -10912,6 +10876,25 @@ input[type="time"].v2-admin-config-input {
   .v2-analytics-claude .seg { width: 100%; }
   .v2-analytics-claude .seg button { flex: 1 1 auto; justify-content: center; }
   .v2-analytics-claude .an-sections > .level { margin-top: 46px; }
+}
+/* v1.15.4 — Executive period chips: horizontal scroll on narrow viewports.
+   Overrides the shared `.seg` mobile WRAP (which would stack the 5 chips into
+   2–3 rows on 320–430px) with a single scrollable row. Scoped to the Executive
+   filter bar via .exec-filter-bar .exec-period-seg (specificity 0,3,1 > the
+   shared .seg button rule) so Driver Analytics segments are untouched. */
+@media (max-width: 600px) {
+  .v2-analytics-claude .exec-filter-bar .exec-period-seg {
+    width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;            /* Firefox */
+  }
+  .v2-analytics-claude .exec-filter-bar .exec-period-seg::-webkit-scrollbar { display: none; }
+  .v2-analytics-claude .exec-filter-bar .exec-period-seg button {
+    flex: 0 0 auto;                   /* natural width; scroll instead of squish/wrap */
+    justify-content: center;
+  }
 }
 @media (max-width: 520px) {
   .v2-analytics-claude .statrow { grid-template-columns: 1fr 1fr; }

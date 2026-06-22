@@ -8,7 +8,9 @@
    DOM — the view layer assembles the context from the store and renders the
    returned model. Mirrors the role analytics-engine.js plays for Driver.
 
-   Time ranges (spec P2): '7d' | '30d' | '90d' | '1y' | 'annualized'.
+   Time ranges: 'today' | '7d' | '30d' | '90d' | '1y' | 'annualized'.
+   ('today' added v1.15.5.1 so Executive "Hari Ini" is a single-day window on
+   both the Driver and Petty engines — no 7d fallback / mixed-window analytics.)
    ============================================================ */
 
 'use strict';
@@ -29,9 +31,9 @@ const MS_PER_DAY = 86400000;
 function num(v) { const n = Number(v); return Number.isFinite(n) ? n : 0; }
 function isoOf(d) { return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
 
-export const PC_RANGES = ['7d', '30d', '90d', '1y', 'annualized'];
+export const PC_RANGES = ['today', '7d', '30d', '90d', '1y', 'annualized'];
 export const PC_RANGE_LABELS = Object.freeze({
-  '7d': '7 Hari', '30d': '30 Hari', '90d': '90 Hari', '1y': '1 Tahun', annualized: 'Annualized',
+  today: 'Hari Ini', '7d': '7 Hari', '30d': '30 Hari', '90d': '90 Hari', '1y': '1 Tahun', annualized: 'Annualized',
 });
 
 /**
@@ -51,7 +53,7 @@ function resolveWindow(range, now) {
     const prevStart = new Date(Date.UTC(end.getUTCFullYear() - 1, 0, 1));
     return { start: startISO, end: endISO, days: elapsedDays, elapsedDays, prevStart: isoOf(prevStart), prevEnd: isoOf(prevEnd), isAnnualized: true };
   }
-  const days = range === '7d' ? 7 : range === '30d' ? 30 : range === '90d' ? 90 : range === '1y' ? 365 : 30;
+  const days = range === 'today' ? 1 : range === '7d' ? 7 : range === '30d' ? 30 : range === '90d' ? 90 : range === '1y' ? 365 : 30;
   const start = new Date(end); start.setDate(start.getDate() - days + 1);
   const prevEnd = new Date(start); prevEnd.setDate(prevEnd.getDate() - 1);
   const prevStart = new Date(prevEnd); prevStart.setDate(prevStart.getDate() - days + 1);
@@ -65,7 +67,7 @@ function buildSpendSeries(expenses, win, range) {
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
   const map = new Map();
   let keyOf, labelOf, order;
-  if (range === '7d' || range === '30d') {
+  if (range === 'today' || range === '7d' || range === '30d') {
     keyOf = (iso) => iso;
     labelOf = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
   } else if (range === '90d') {
@@ -102,7 +104,7 @@ function buildSpendSeries(expenses, win, range) {
  * @param {Object}   ctx.activeCycle
  * @param {Object[]} ctx.activeExpenses - non-archived expenses (active cycle working set)
  * @param {Object}   ctx.settings
- * @param {'7d'|'30d'|'90d'|'1y'|'annualized'} ctx.range
+ * @param {'today'|'7d'|'30d'|'90d'|'1y'|'annualized'} ctx.range
  * @param {Date|string|number} [ctx.now]
  * @returns {Object} PettyCashAnalyticsModel
  */

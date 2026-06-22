@@ -43,8 +43,13 @@ const executiveFilterState = { period: '30d', driver: '', vehicle: '', bidang: '
 /**
  * SINGLE source for period → engine windows. The Driver and Petty engines have
  * different range vocabularies, so this is the one place that reconciles them.
- *   today → driver 'today'  · petty '7d'        (petty's finest bucket)
- *   ytd   → driver 'all'    · petty 'annualized'(Jan 1 → now = true YTD)
+ *   today → driver 'today'  · petty 'today'      (v1.15.5.1: single-day window
+ *                                                 on BOTH engines — no 7d fallback)
+ *   ytd   → driver 'ytd'    · petty 'annualized'(both Jan 1 → now = true YTD)
+ * v1.15.4: "Tahun Berjalan" now maps to the driver engine's NEW 'ytd' window
+ * (Jan 1 → now) instead of 'all' (all-time). Previously the two halves of the
+ * Executive aggregate covered DIFFERENT windows for YTD — petty was year-to-date
+ * while driver was all-time — so KPIs/insights/score silently mixed timeframes.
  * Custom Range is intentionally NOT here yet — it needs a unified explicit-window
  * contract in BOTH engines (see Phase C); shipping an approximation would emit
  * wrong numbers, which this architecture explicitly avoids.
@@ -52,11 +57,11 @@ const executiveFilterState = { period: '30d', driver: '', vehicle: '', bidang: '
  */
 function resolveExecRanges(period) {
   switch (period) {
-    case 'today': return { driverRange: 'today', pettyRange: '7d' };
+    case 'today': return { driverRange: 'today', pettyRange: 'today' };
     case '7d':    return { driverRange: '7d',    pettyRange: '7d' };
     case '30d':   return { driverRange: '30d',   pettyRange: '30d' };
     case '90d':   return { driverRange: '90d',   pettyRange: '90d' };
-    case 'ytd':   return { driverRange: 'all',   pettyRange: 'annualized' };
+    case 'ytd':   return { driverRange: 'ytd',   pettyRange: 'annualized' };
     default:      return { driverRange: '30d',   pettyRange: '30d' };
   }
 }
@@ -122,7 +127,7 @@ function kpiBlock(exec) {
   const driverCards = renderKPIGrid([
     renderAnalyticsKPICard({ title: 'Total Trip', icon: anIcon('car', { size: 15 }), value: String(d.totalTrip), subtitle: 'Penugasan operasional' }),
     renderAnalyticsKPICard({ title: 'Driver Utilization', icon: anIcon('user', { size: 15 }), value: `${d.driverUtilization}%`, subtitle: `${d.activeDrivers} driver aktif` }),
-    renderAnalyticsKPICard({ title: 'Kendaraan Aktif', icon: anIcon('car', { size: 15 }), value: String(d.activeVehicles), subtitle: `${d.vehiclesWithTrips} terpakai` }),
+    renderAnalyticsKPICard({ title: 'Kendaraan Aktif', icon: anIcon('car', { size: 15 }), value: String(d.vehiclesWithTrips), subtitle: `dari ${d.activeVehicles} armada` }),
   ]);
   const pettyCards = renderKPIGrid([
     renderAnalyticsKPICard({ title: 'Saldo Aktif', icon: anIcon('chart', { size: 15 }), value: curResp(p.activeBalance), status: p.activeBalance < 0 ? 'warn' : 'ok' }),
@@ -212,9 +217,9 @@ function render() {
         <div class="v2-admin-page-header" style="margin-bottom:14px;">
           <h1 class="v2-admin-page-title">Analytics Executive</h1>
           <p class="v2-admin-page-subtitle">Ringkasan kesehatan operasional lintas Driver & Petty Cash.</p>
-          ${filterBar()}
         </div>
         ${heroBlock(exec)}
+        ${filterBar()}
         <div style="height:26px;"></div>
         ${kpiBlock(exec)}
         ${insightBlock(exec)}

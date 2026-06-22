@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.15.1';
-export const RELEASE_NAME = 'Analytics Expansion Foundation';
+export const APP_VERSION = '1.15.5.2';
+export const RELEASE_NAME = 'Silent Auto Update';
 
 /**
  * Web Push VAPID PUBLIC key (v1.11.3). Safe to ship — it is an
@@ -17,6 +17,37 @@ export const RELEASE_NAME = 'Analytics Expansion Foundation';
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.15.5.2',
+    date: '2026-06-22',
+    summary: 'Silent automatic PWA update. The persistent "Versi baru tersedia / Refresh Sekarang" bottom banner is removed; a newer Service Worker now activates automatically during the startup window with only a brief "Memperbarui aplikasi ke versi terbaru…" toast, then reloads once. Updates that arrive while the app is already open are left waiting and applied on the next launch, so a working user is never interrupted. Reload-loop-proof: at most one reload per page (_reloading) and one auto-apply attempt per tab session keyed by APP_VERSION (sessionStorage).',
+    highlights: [
+      'js/pwa.js: removed _showUpdateBanner; added _showUpdateToast + _applyUpdateSilently + _isBusy + _canAutoApply + a startup window (STARTUP_APPLY_WINDOW_MS). updatefound/waiting-at-startup auto-apply only within the window and when idle; otherwise defer.',
+      'Safety: auto-reload only at startup; _isBusy() (and the window.__pwaIsBusy hook) blocks reload while a form/input/modal is active; focus/visibility checks DOWNLOAD only (never reload).',
+      'platform.css: removed dead .v2-pwa-update-banner/-text/-btn rules (kept .v2-pwa-stat--warn diagnostic). service-worker.js: comments updated; still client-driven SKIP_WAITING, no skipWaiting on install.',
+      'APP_VERSION 1.15.5.1 → 1.15.5.2; sync-version.mjs re-stamps SW_VERSION → CACHE_NAME sarpras-cache-v1.15.5.2.',
+    ],
+  },
+  {
+    version: '1.15.5.1',
+    date: '2026-06-22',
+    summary: 'Executive Analytics data-integrity fix (audit v1.15.5 remediation). A1: the Executive "Kendaraan Aktif" KPI was bound to the master fleet count (activeVehicles, period-invariant) and now shows vehiclesWithTrips — vehicles actually used in the selected period — with the fleet size moved to the subtitle ("dari N armada"). B3: Executive "Hari Ini" was a mixed-window aggregate (driver=today but petty=7d fallback); the Petty Cash engine now supports a real "today" single-day range so every domain (driver, petty, score, insights, narrative, export) reflects the same day. No engine math changed for the other periods.',
+    highlights: [
+      'A1 — Kendaraan Aktif now reflects period usage (vehiclesWithTrips) in both the Executive KPI card and the Executive PDF export model; value was already computed (shown as the old subtitle), so no driver-engine change was needed.',
+      'B3 — petty-cash-analytics.js gained a "today" range (PC_RANGES + label + 1-day resolveWindow + daily spend series); resolveExecRanges maps Executive "Hari Ini" → petty "today" (no more 7d fallback). Cycle-scoped figures (Saldo/Realisasi) remain cycle-based by design.',
+      'APP_VERSION 1.15.4 → 1.15.5.1; sync-version.mjs re-stamps SW_VERSION → CACHE_NAME sarpras-cache-v1.15.5.1 so installed PWAs purge the stale bundle on a normal F5.',
+    ],
+  },
+  {
+    version: '1.15.4',
+    date: '2026-06-22',
+    summary: 'Executive Filter Bar completion + cache-invalidation patch. The Executive Filter Bar (period chips + driver/vehicle/bidang scope) shipped in the v1.15.3 SOURCE but APP_VERSION/SW_VERSION were never bumped past 1.15.1, so the cache-first Service Worker kept serving the pre-filter-bar analytics-executive-view.js on every normal load — UAT saw NO filter bar. This is the same deployment-hygiene failure mode as v1.15.1. Bumping APP_VERSION re-stamps SW_VERSION → a new CACHE_NAME, so activate() purges the stale cache and a normal F5 re-fetches the filter-bar bundle. Also hardens the period chips to horizontal-scroll on narrow viewports and lands the v1.15.4 driver YTD engine window (Tahun Berjalan = Jan 1 → now on BOTH halves of the Executive aggregate).',
+    highlights: [
+      'APP_VERSION 1.15.1 → 1.15.4 (single source of truth in js/config.js); sync-version.mjs re-stamps service-worker.js SW_VERSION and version.json → CACHE_NAME sarpras-cache-v1.15.4, evicting the stale cache-first analytics modules so the Executive Filter Bar finally loads on a normal F5.',
+      'Executive period chips (.exec-period-seg) now horizontal-scroll on ≤600px instead of wrapping into 2–3 rows; scope selects stack 1-per-row on mobile. Scoped overrides — Driver Analytics segments untouched.',
+      'Driver analytics engine gained a true year-to-date window (dateRange "ytd" → cutoff Jan 1 UTC), matching the Petty engine annualized window so "Tahun Berjalan" measures the SAME period on Driver + Petty halves of the Executive Health Score, KPIs, narrative, insights, and export model.',
+    ],
+  },
   {
     version: '1.15.1',
     date: '2026-06-21',

@@ -49,7 +49,7 @@ export function buildExecutiveReportModel(exec = {}, meta = {}) {
   const kpis = [
     { value: formatInt(d.totalTrip || 0), label: 'Total Trip' },
     { value: formatInt(d.driverUtilization || 0), unit: '%', label: 'Driver Utilization' },
-    { value: formatInt(d.activeVehicles || 0), label: 'Kendaraan Aktif' },
+    { value: formatInt(d.vehiclesWithTrips || 0), label: 'Kendaraan Aktif' },
     { value: rp(p.activeBalance || 0), label: 'Saldo Aktif' },
     { value: rp(p.consumedSpend || 0), label: 'Dana Terpakai' },
     { value: formatInt(p.realizationPct || 0), unit: '%', label: 'Realisasi' },

@@ -6,32 +6,49 @@
    service worker registration, update detection, update banner,
    and global install onboarding (all roles).
 
-   UPDATE MODEL (works for every release, no reinstall/cache-clear):
+   UPDATE MODEL — SILENT AUTO-UPDATE (v1.15.5.2; no banner, no button):
      1. register with updateViaCache:'none' so the SW script is never
         served from the HTTP cache.
      2. On load + on focus/visibility (throttled), call reg.update()
         and fetch /version.json (no-store) — the deployed-version oracle.
-     3. When the running APP_VERSION ≠ deployed version, a new SW is
-        pulled; "Versi baru tersedia" banner is shown.
-     4. Banner → postMessage SKIP_WAITING → controllerchange → one
-        guarded reload. New SW's activate() purges the old cache, so
-        every asset (incl. config.js) is re-fetched fresh.
+        This only DOWNLOADS a newer SW into the waiting state.
+     3. A newer SW is APPLIED automatically ONLY during the startup window
+        (first STARTUP_APPLY_WINDOW_MS after load) and only when the user
+        is not mid-task (_isBusy): a tiny "Memperbarui…" toast is shown,
+        SKIP_WAITING is posted, and controllerchange triggers ONE guarded
+        reload. The new SW's activate() purges the old cache, so every
+        asset (incl. config.js) is re-fetched fresh.
+     4. If a newer SW appears AFTER the startup window (app already open),
+        it is left waiting and only flagged internally (swUpdateAvailable);
+        it activates automatically on the NEXT launch's startup window.
+   LOOP SAFETY: at most one auto-reload per page (_reloading) AND at most
+     one auto-reload attempt per tab session keyed by APP_VERSION
+     (sessionStorage), so a failed activation can never reload-loop.
    ============================================================ */
 
 import { APP_VERSION } from './config.js';
 
 const VERSION_URL = '/version.json';
 
+/* How long after initial load an update may be applied AUTOMATICALLY (with a
+   silent reload). After this window any newer SW is left waiting and applied on
+   the next launch instead — so we never reload a user who is mid-task. The
+   _isBusy() guard adds a second layer of protection within the window itself. */
+const STARTUP_APPLY_WINDOW_MS = 60000;
+/* sessionStorage key: records the APP_VERSION we last auto-reloaded FROM, so a
+   failed activation cannot trigger an infinite reload loop in the same session. */
+const _SESSION_RELOAD_KEY = 'pbsi_pwa_autoreload_from';
+
 const _stateCallbacks = [];
 
 let _deferredPrompt    = null;
 let _swRegistration    = null;
-let _updateBannerEl    = null;
 let _installBannerEl   = null;
 let _bannerCheckDone   = false; // true once the 3-second startup check has fired
-let _skipWaitingTriggered = false; // user accepted update → allow auto-reload
+let _skipWaitingTriggered = false; // an auto-apply is in flight → allow auto-reload
 let _reloading            = false; // ensures we reload at most once
 let _lastUpdateCheck      = 0;     // throttle for focus/visibility update checks
+let _startupDeadline      = 0;     // Date.now() before which auto-apply is allowed
 
 let _state = {
   /* Install */
@@ -171,40 +188,68 @@ async function _refreshCacheCount() {
   } catch (_) { /* non-fatal */ }
 }
 
-/* ── Update banner ─────────────────────────────────────────── */
+/* ── Silent auto-update ─────────────────────────────────────────
+   No banner, no button. A newer worker is applied automatically during the
+   startup window; outside it, the update is deferred to the next launch. */
 
-function _showUpdateBanner() {
-  if (_updateBannerEl) {
-    _updateBannerEl.style.display = 'flex';
-    return;
-  }
+/** Brief, non-interactive "updating…" toast. Disappears with the reload. */
+function _showUpdateToast() {
+  if (document.getElementById('pwaUpdateToast')) return;
+  const t = document.createElement('div');
+  t.id = 'pwaUpdateToast';
+  t.setAttribute('role', 'status');
+  t.setAttribute('aria-live', 'polite');
+  t.textContent = 'Memperbarui aplikasi ke versi terbaru…';
+  t.style.cssText = [
+    'position:fixed', 'left:50%', 'bottom:24px', 'transform:translateX(-50%)',
+    'z-index:100000', 'max-width:90vw', 'padding:11px 18px',
+    'background:#1A1A2E', 'color:#F0EFF0', 'font-size:0.86rem', 'font-weight:500',
+    'border-radius:10px', 'box-shadow:0 4px 18px rgba(0,0,0,0.22)', 'font-family:inherit',
+    'padding-bottom:max(11px,env(safe-area-inset-bottom))', 'pointer-events:none',
+  ].join(';');
+  document.body.appendChild(t);
+}
 
-  const banner = document.createElement('div');
-  banner.id        = 'pwaTUpdateBanner';
-  banner.className = 'v2-pwa-update-banner';
-  banner.innerHTML = `
-    <span class="v2-pwa-update-text">Versi baru tersedia.</span>
-    <button class="v2-pwa-update-btn" type="button" id="btnPwaRefreshNow">Refresh Sekarang</button>
-  `;
-  document.body.appendChild(banner);
-  _updateBannerEl = banner;
+/** True if the user may be mid-task — defer the reload rather than lose state. */
+function _isBusy() {
+  try {
+    const hook = window.__pwaIsBusy;
+    if (typeof hook === 'function') return !!hook();
+    if (hook === true) return true;
+  } catch (_) { /* hook threw — fall through to heuristic */ }
+  // Heuristic fallback (active editing): a focused text field or an open modal.
+  const ae = document.activeElement;
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return true;
+  if (document.querySelector('.modal-overlay[style*="flex"]')) return true;
+  return false;
+}
 
-  document.getElementById('btnPwaRefreshNow')?.addEventListener('click', () => {
-    const btn = document.getElementById('btnPwaRefreshNow');
-    if (btn) { btn.disabled = true; btn.textContent = 'Memperbarui…'; }
-    _skipWaitingTriggered = true;
-    const waiting = _swRegistration && _swRegistration.waiting;
-    if (waiting) {
-      /* Tell the waiting SW to activate; controllerchange → reload (guarded) */
-      waiting.postMessage('SKIP_WAITING');
-    } else {
-      /* No waiting worker yet (e.g. banner shown by the version oracle before
-         install finished): pull the update, then reload regardless. */
-      Promise.resolve(_swRegistration?.update?.())
-        .catch(() => {})
-        .finally(() => { if (!_reloading) { _reloading = true; window.location.reload(); } });
-    }
-  });
+/** Auto-apply is permitted only during the startup window, when idle, once. */
+function _canAutoApply() {
+  return Date.now() < _startupDeadline && !_isBusy() && !_reloading && !_skipWaitingTriggered;
+}
+
+/**
+ * Silently activate the waiting worker and reload exactly once. Guarded so a
+ * failed activation cannot loop: at most one attempt per tab session, keyed by
+ * the APP_VERSION we are leaving (a successful update changes APP_VERSION, so a
+ * later genuine update is still allowed; a failure that lands back on the same
+ * version is blocked for the rest of the session and retried next launch).
+ */
+function _applyUpdateSilently() {
+  const waiting = _swRegistration && _swRegistration.waiting;
+  if (!waiting || _skipWaitingTriggered || _reloading) return;
+  try {
+    if (sessionStorage.getItem(_SESSION_RELOAD_KEY) === APP_VERSION) return; // already tried this session
+    sessionStorage.setItem(_SESSION_RELOAD_KEY, APP_VERSION);
+  } catch (_) { /* sessionStorage unavailable — _reloading still bounds to one */ }
+
+  _skipWaitingTriggered = true;
+  _showUpdateToast();
+  waiting.postMessage('SKIP_WAITING'); // → SW activates → controllerchange → reload
+
+  // Fallback: if controllerchange does not fire shortly, reload once anyway.
+  setTimeout(() => { if (!_reloading) { _reloading = true; window.location.reload(); } }, 3000);
 }
 
 /* ── Deployed-version oracle ───────────────────────────────────
@@ -220,8 +265,11 @@ async function _checkDeployedVersion() {
     const deployed = data && data.version;
     if (deployed && deployed !== APP_VERSION) {
       _state.swUpdateAvailable = true;
+      // Pull the newer SW into the waiting state. The actual silent activation
+      // is driven by the `updatefound` handler (gated to the startup window) or
+      // the waiting-at-startup check — never directly here, so a focus/visibility
+      // check while the app is open can only DOWNLOAD, never reload.
       try { await _swRegistration?.update?.(); } catch (_) { /* non-fatal */ }
-      _showUpdateBanner();
       _notifyListeners();
     }
   } catch (_) { /* offline or version.json absent — non-fatal */ }
@@ -317,21 +365,25 @@ async function _registerServiceWorker() {
     reg.update().catch(() => {});
     _checkDeployedVersion();
 
-    /* Already-waiting worker on first load (e.g. page refreshed mid-update) */
+    /* Already-waiting worker on first load (update downloaded in a previous
+       session): apply it silently within the startup window, else defer. */
     if (reg.waiting && navigator.serviceWorker.controller) {
       _state.swUpdateAvailable = true;
-      _showUpdateBanner();
+      if (_canAutoApply()) _applyUpdateSilently();
     }
 
-    /* Watch for future updates */
+    /* Watch for future updates. A newer worker reaching the "installed" state
+       while a controller exists is an UPDATE (not a first install). Apply it
+       silently only during the startup window; otherwise leave it waiting and
+       flag it — the next launch's startup check will activate it. */
     reg.addEventListener('updatefound', () => {
       const installing = reg.installing;
       if (!installing) return;
       installing.addEventListener('statechange', () => {
         if (installing.state === 'installed' && navigator.serviceWorker.controller) {
           _state.swUpdateAvailable = true;
-          _showUpdateBanner();
           _notifyListeners();
+          if (_canAutoApply()) _applyUpdateSilently();
         }
       });
     });
@@ -352,10 +404,10 @@ async function _registerServiceWorker() {
       });
     }
 
-    /* Detect when this tab's controller changes (after skipWaiting).
-       Reload exactly once, and ONLY when the user accepted the update —
-       so a first-install control change never causes a surprise reload,
-       and we can never enter a reload loop. */
+    /* Detect when this tab's controller changes (after our silent skipWaiting).
+       Reload exactly once, and ONLY when WE initiated the apply
+       (_skipWaitingTriggered) — so a first-install control change never causes
+       a surprise reload, and we can never enter a reload loop. */
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       _state.swStatus = 'active';
       _notifyListeners();
@@ -376,6 +428,9 @@ async function _registerServiceWorker() {
 /* ── Public API ────────────────────────────────────────────── */
 
 export function initPWA() {
+  /* Open the startup window: updates may auto-apply (silent reload) only until
+     this deadline; afterwards they defer to the next launch. */
+  _startupDeadline   = Date.now() + STARTUP_APPLY_WINDOW_MS;
   _state.platform    = _detectPlatform();
   _state.isInstalled = _detectInstalled();
   _state.isIOSSafari = _state.platform === 'ios-safari';

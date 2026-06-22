@@ -124,6 +124,13 @@ export function computeAnalyticsModel(ctx) {
   if (analyticsDateRange !== 'all') {
     if (analyticsDateRange === 'today') {
       cutoff = today;
+    } else if (analyticsDateRange === 'ytd') {
+      // Year-to-date (v1.15.4): lower bound = Jan 1 of the current year. Derived
+      // from the UTC `today` string so it matches the rest of the engine's date
+      // math AND the Petty engine's `annualized` window (Jan 1 UTC → now), which
+      // is what makes "Tahun Berjalan" cover the SAME window on both halves of
+      // the Executive aggregate.
+      cutoff = `${today.slice(0, 4)}-01-01`;
     } else {
       const days = analyticsDateRange === '7d' ? 7 : analyticsDateRange === '30d' ? 30 : 90;
       const d = new Date(_now);

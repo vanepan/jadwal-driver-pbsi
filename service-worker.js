@@ -9,19 +9,21 @@
                   version.json: network-only (never cached)
                   navigate : network-first → offline.html fallback
                   static   : cache-first  → network fill
-     • Message  → SKIP_WAITING to accept pending update
+     • Message  → SKIP_WAITING to activate the pending update (sent by the
+                  client's SILENT auto-update flow, not a user button)
 
    CACHE LIFECYCLE — why this works for EVERY release:
    SW_VERSION is stamped from config.js APP_VERSION by
    scripts/sync-version.mjs at deploy time. Because the version is
    embedded here, service-worker.js bytes CHANGE on every release →
-   the browser detects a new SW → installs it (waiting) → the update
-   banner activates it → activate() purges the old version-scoped
-   cache → cache-first re-fetches every asset fresh. No manual cache
-   bump, no reinstall, no drift between deployed and installed.
+   the browser detects a new SW → installs it (waiting) → the client's
+   silent auto-update (js/pwa.js) posts SKIP_WAITING on startup →
+   activate() purges the old version-scoped cache → cache-first
+   re-fetches every asset fresh. No manual cache bump, no reinstall,
+   no drift between deployed and installed.
    ============================================================ */
 
-const SW_VERSION  = '1.15.1';   // stamped from config.js — do not edit by hand
+const SW_VERSION  = '1.15.5.2';   // stamped from config.js — do not edit by hand
 const CACHE_NAME  = `sarpras-cache-v${SW_VERSION}`;
 const OFFLINE_URL = '/offline.html';
 const VERSION_URL = '/version.json';
@@ -53,8 +55,9 @@ self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => cache.add(OFFLINE_URL))
   );
-  /* Do NOT skipWaiting — let the update-detection flow handle it
-     so the app can show "Versi baru tersedia" before activating. */
+  /* Do NOT skipWaiting here — the client decides WHEN to activate (silent
+     auto-update applies it during the startup window, defers it otherwise),
+     so a mid-session install never swaps the controller unexpectedly. */
 });
 
 /* ── Activate ────────────────────────────────────────────── */

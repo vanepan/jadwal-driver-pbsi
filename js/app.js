@@ -5071,11 +5071,11 @@ function _getDismissedWarnings(type) {
  * on-screen entity filters, for the Analytics Executive view (which owns no
  * assignment/request data). Reuses the same engine + previous-period logic as
  * refreshAnalyticsDisplay; pure with respect to the UI (renders nothing).
- * @param {'today'|'7d'|'30d'|'90d'|'all'} dateRange
+ * @param {'today'|'7d'|'30d'|'90d'|'ytd'|'all'} dateRange
  * @returns {import('./analytics/analytics-types.js').AnalyticsModel}
  */
 function computeDriverModelForRange(dateRange, scope = {}) {
-  const range = ['today', '7d', '30d', '90d', 'all'].includes(dateRange) ? dateRange : '30d';
+  const range = ['today', '7d', '30d', '90d', 'ytd', 'all'].includes(dateRange) ? dateRange : '30d';
   // v1.15.3: Executive Analytics passes optional scope (driver/vehicle/bidang).
   // The driver engine already honours these filters; default '' = Semua (all).
   const baseCtx = {

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>UAT — Executive Filter Bar (v1.15.4)</title>
+  <!-- Real production stylesheet — faithful render of the shipped CSS. -->
+  <link rel="stylesheet" href="../../../platform.css">
+  <style>
+    html,body { margin:0; padding:0; background:#ECEAE6; }
+    /* Lightweight stand-in for the score hero, just to anchor "directly below
+       the hero". The real heroBlock() is unchanged by this sprint. */
+    .uat-hero {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 16px; padding: 20px; font-family: var(--font-sans, system-ui);
+      color: var(--text); font-weight: 700; letter-spacing: -0.01em;
+    }
+    .uat-hero small { display:block; font-weight:500; color: var(--text-dim); margin-top:4px; font-size:12px; }
+  </style>
+</head>
+<body>
+  <!-- New DOM order (post-fix): page-header (display:none) → hero → FILTER BAR
+       as a direct child of .v2-admin-workspace-layout. Matches render() in
+       js/analytics/views/analytics-executive-view.js after v1.15.4. -->
+  <div class="v2-analytics-claude v2-analytics-exec">
+    <div class="v2-admin-workspace-layout" style="max-width:1080px;margin:0 auto;padding:16px;">
+      <div class="v2-admin-page-header" style="margin-bottom:14px;">
+        <h1 class="v2-admin-page-title">Analytics Executive</h1>
+        <p class="v2-admin-page-subtitle">Ringkasan kesehatan operasional lintas Driver &amp; Petty Cash.</p>
+      </div>
+      <div class="uat-hero">Kesehatan operasional BAIK<small>Hero stand-in (real score ring unchanged)</small></div>
+      <div class="exec-filter-bar">
+        <div class="seg exec-period-seg" role="tablist" aria-label="Periode">
+          <button type="button" data-exec-period="today" aria-selected="false">Hari Ini</button>
+          <button type="button" data-exec-period="7d" aria-selected="false">7 Hari</button>
+          <button type="button" class="on" data-exec-period="30d" aria-selected="true">30 Hari</button>
+          <button type="button" data-exec-period="90d" aria-selected="false">90 Hari</button>
+          <button type="button" data-exec-period="ytd" aria-selected="false">Tahun Berjalan</button>
+        </div>
+        <div class="exec-scope-row">
+          <select class="v2-admin-filter" aria-label="Filter driver">
+            <option value="">Semua Driver</option>
+            <option>Agus Salim</option><option>Bambang W.</option><option>Dedi Kurniawan</option>
+          </select>
+          <select class="v2-admin-filter" aria-label="Filter kendaraan">
+            <option value="">Semua Kendaraan</option>
+            <option>B 1234 ABC</option><option>B 5678 DEF</option>
+          </select>
+          <select class="v2-admin-filter" aria-label="Filter bidang">
+            <option value="">Semua Bidang</option>
+            <option>Sarpras</option><option>Umum</option><option>Keuangan</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
