@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.15.6';
-export const RELEASE_NAME = 'Requester Vehicle Support';
+export const APP_VERSION = '1.16.3';
+export const RELEASE_NAME = 'Executive Petty Cash Cutover & Explainability';
 
 /**
  * Web Push VAPID PUBLIC key (v1.11.3). Safe to ship — it is an
@@ -17,6 +17,112 @@ export const RELEASE_NAME = 'Requester Vehicle Support';
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.16.3',
+    date: '2026-06-23',
+    summary: 'Executive Petty Cash Cutover & Explainability — ROADMAP CHECKPOINT. Executive Analytics now consumes the validated Petty Cash Health Score V2 (35% Administrative Compliance · 30% Budget Adherence · 25% Cash Availability · 10% Spending Stability) instead of the legacy 65/35 headroom-flow blend. A lightweight Explainability Layer + Executive Narrative were added under the hero so the reader understands WHY the score is what it is. Versioning/roadmap maintenance: APP_VERSION 1.15.6 → 1.16.3, re-stamping SW_VERSION → CACHE_NAME sarpras-cache-v1.16.3, version.json, and the index.html app.js cache-bust. No business logic, analytics formula, score/petty engine, PDF composer, notification engine, or UI layout changed beyond the cutover + explainability surface.',
+    highlights: [
+      'Cutover: js/analytics/executive-analytics.js reads pettyModel.healthScore (V2, gated ≥3 active components, null on No-Data) as the pettyCash component; the legacy pettyCashHealthScore() input is retired. calculateScore re-normalization keeps the Executive score stable when the petty domain is null (no formula change).',
+      'Explainability Layer: the four Petty Cash V2 sub-scores render as compact score bars (renderScoreBreakdown in analytics-shell.js) directly under the Executive hero, in the Executive visual language. A null component reads as an em-dash with an empty track.',
+      'Executive Narrative: a deterministic one-line summary derived strictly from the actual scoreBreakdown (strongest + weakest contributor) — no new engine, no recommendation/insight engine.',
+      'Consolidated baseline of the v1.16.2.x maintenance stream: analytics layout convergence, workspace alignment standardization, PWA update flow stabilization, navigation state fixes, and UI consistency improvements (see the per-version entries below).',
+      'Validated across 5 scenarios (Healthy / Average / Poor / No Data / Thin Data): no crash, null petty never breaks the Executive score, each bar equals its scoreBreakdown value, and no single component dominates.',
+    ],
+    deferred: [
+      'Petty Cash Center Typography Convergence (~200 inline typography declarations).',
+      'Remaining inline typography declarations cleanup.',
+      'Executive Design Authority rollout for Petty Cash Center.',
+      'Update the stale cutover-deferred comment in js/analytics/petty-cash-analytics.js (now inaccurate after the v1.16.3 cutover).',
+    ],
+  },
+  {
+    version: '1.16.2.7',
+    date: '2026-06-23',
+    summary: 'Petty Cash Navigation & Analytics Convergence. Navigation state for the Petty Cash module and its analytics views was stabilized so module/menu/sub-menu state stays consistent across entry paths, and the Petty Cash analytics surface was aligned with the converged Analytics suite. UI/navigation only — no engine or formula changes.',
+    highlights: [
+      'Petty Cash navigation state convergence (consistent module/menu selection across all entry points).',
+      'Analytics Petty Cash view aligned with the converged Analytics suite layout.',
+    ],
+  },
+  {
+    version: '1.16.2.6',
+    date: '2026-06-23',
+    summary: 'Executive Design Authority Convergence. Established a single design authority for Executive Analytics so its hero, KPIs, insights, and supporting surfaces share one consistent visual language. Presentation only — no analytics values changed.',
+    highlights: [
+      'Executive Analytics surfaces unified under one design authority (typography, spacing, tone).',
+    ],
+  },
+  {
+    version: '1.16.2.5',
+    date: '2026-06-23',
+    summary: 'Workspace & Typography Unification. Standardized workspace layout and typography across the platform shell so modules render with consistent alignment and type scale. Presentation only.',
+    highlights: [
+      'Workspace alignment standardized across modules; typography scale unified.',
+    ],
+  },
+  {
+    version: '1.16.2.4',
+    date: '2026-06-23',
+    summary: 'Analytics Layout Alignment. Aligned the Analytics suite layouts (Driver, Petty Cash, Executive) for consistent structure and spacing. Presentation only — no engine or KPI changes.',
+    highlights: [
+      'Analytics suite layout convergence across Driver / Petty Cash / Executive views.',
+    ],
+  },
+  {
+    version: '1.16.2.3',
+    date: '2026-06-23',
+    summary: 'PWA Update Flow Stabilization. Hardened the silent automatic PWA update flow so installed clients pick up new releases reliably without interrupting an active user. Service Worker behaviour unchanged beyond stabilization of the existing update path.',
+    highlights: [
+      'Silent auto-update flow stabilized (startup-window apply, idle-guarded, reload-loop-proof).',
+    ],
+  },
+  {
+    version: '1.16.2',
+    date: '2026-06-23',
+    summary: 'Petty Cash Health Score V2 (recomposition). The Petty Cash Health Score was recomposed to 35% Administrative Compliance · 30% Budget Adherence · 25% Cash Availability · 10% Spending Stability, blended through the SAME calculateScore weighting/renormalization engine as the Executive score, gated to ≥3 active components (null otherwise). MODEL-ONLY this version — the Executive blend still consumed the legacy score until the v1.16.3 cutover.',
+    highlights: [
+      'New standalone sub-scores: Cash Availability (linear headroom) and Spending Stability v1 (R1 concentration + R3 outsized-transaction warning count).',
+      'TRUE Timeliness ratio (share of NORs realized within targetDays) replaces the old completion-based proxy in Administrative Compliance; realizationRate retained as a diagnostic only.',
+      'Budget Adherence curve set to "Option B — Balanced" (audit-approved). Per-component scoreBreakdown exposed on the petty model for downstream explainability.',
+    ],
+  },
+  {
+    version: '1.16.1',
+    date: '2026-06-23',
+    summary: 'Budget Adherence observability (foundation). Added a YTD Budget Adherence signal (actual burn vs. pro-rated expected burn from a configurable annual budget) as an observability metric. Symmetric stepped 0–100 curve. OBSERVABILITY-ONLY — not wired into any score this version.',
+    highlights: [
+      'budgetAdherenceScore() stepped curve (on-pace → critical drift), over- and under-spend penalized equally; null on No-Data.',
+      'YTD by construction (independent of the selected range) so the figure is a stable annual-pace signal.',
+    ],
+  },
+  {
+    version: '1.16.0',
+    date: '2026-06-23',
+    summary: 'Administrative Compliance foundation + Driver Health Score consolidation. Introduced an Administrative Compliance metric (80% Coverage + 20% Timeliness) and a configurable annual petty cash budget carried on the petty model. The Complete Driver PDF hero now reads the Driver Health Score from the single source of truth (executive-score-engine.driverOpsScore) so the PDF and Analytics Executive hero can never disagree.',
+    highlights: [
+      'administrativeComplianceScore() foundation (re-normalized, null-aware); configurable annualBudget single-sourced on the petty model.',
+      'Driver PDF health hero consolidated onto driverOpsScore (retires the legacy 50/30/15/5 composite); hero markup unchanged.',
+    ],
+  },
+  {
+    version: '1.15.8',
+    date: '2026-06-22',
+    summary: 'Executive analytics accuracy overhaul. Petty Cash No-Data is no longer scored as a perfect 100 (the empty-domain signature now feeds null and re-normalizes out), and the Driver Operations sub-score was recomposed (70% completion · 20% utilization · 10% saturating volume factor) so one perfect trip no longer reads identically to hundreds. A null Operational Health Score now maps to an explicit "Belum Ada Data" state instead of a misleading low grade.',
+    highlights: [
+      'calculateScore returns null when no component is available (No Data ≠ 0 ≠ 100); healthLevel/No-Data hero state added.',
+      'driverOpsScore recomposition + volumeFactor; vehicleUtilScore returns null when there is no fleet to measure.',
+      'Executive Score explainability scoreBreakdown (driver/fleet/petty sub-scores) exposed on the model (MODEL ONLY at this version).',
+    ],
+  },
+  {
+    version: '1.15.7',
+    date: '2026-06-22',
+    summary: 'Executive keynote card prioritization + window-scoped consumption. Reordered the Executive hero keynote strip so Dana Terpakai leads (most executive-relevant), and scoped the Dana Terpakai consumption figure to the active filter window instead of all-time, so it now tracks the selected period. Presentation/scoping only — no score formula change.',
+    highlights: [
+      'Keynote strip order: Dana Terpakai → Total Trip → Driver Utilization.',
+      'consumedSpend computed over the SAME window as curExpenses (single source via calculateConsumedSpend); no duplicate calculation.',
+    ],
+  },
   {
     version: '1.15.6',
     date: '2026-06-22',
