@@ -13,8 +13,10 @@
 
 /* ── Business enums ──────────────────────────────────────────── */
 
-/** Operational units. "Others" reveals a free-text unit name field. */
-export const UNITS = ['Engineering', 'Cleaning Service', 'Others'];
+/** Operational units. "Others" reveals a free-text unit name field.
+    "Driver" aligns the unit list with the "Reimbursement Driver" category
+    (v1.16.4.1). Order is fixed: Engineering · Cleaning Service · Driver · Others. */
+export const UNITS = ['Engineering', 'Cleaning Service', 'Driver', 'Others'];
 
 /**
  * Expense categories. "Reimbursement Driver" consolidates the legacy
@@ -29,6 +31,38 @@ export const CATEGORIES = [
   'Reimbursement Driver',
   'Lainnya',
 ];
+
+/** Reimbursement Driver detail mode (v1.16.4.2). When an expense is Unit=Driver
+    AND Category="Reimbursement Driver", its amount is itemised across these
+    fixed components and the total is computed (never typed). Stored as
+    `reimbursementDetail: { bbm, tol, parkir, lembur, others }` — additive and
+    backward compatible (legacy records simply omit it). */
+export const REIMBURSE_UNIT = 'Driver';
+export const REIMBURSE_CATEGORY = 'Reimbursement Driver';
+export const REIMBURSE_ITEMS = [
+  { key: 'bbm', label: 'BBM' },
+  { key: 'tol', label: 'Tol' },
+  { key: 'parkir', label: 'Parkir' },
+  { key: 'lembur', label: 'Lembur' },
+  { key: 'others', label: 'Others' },
+];
+/** A zeroed reimbursement detail (default state of a new itemisation). */
+export function blankReimburseDetail() {
+  return { bbm: 0, tol: 0, parkir: 0, lembur: 0, others: 0 };
+}
+/** Sum of all reimbursement components (null-safe; non-numeric → 0). */
+export function reimburseSum(detail) {
+  if (!detail) return 0;
+  return REIMBURSE_ITEMS.reduce((a, it) => a + (Number(detail[it.key]) || 0), 0);
+}
+/** True when an expense (or form draft) is in Reimbursement Driver detail mode. */
+export function isReimburseExpense(e) {
+  return !!e && e.unit === REIMBURSE_UNIT && e.category === REIMBURSE_CATEGORY;
+}
+/** True when a reimbursement detail object carries any non-zero component. */
+export function hasReimburseDetail(detail) {
+  return !!detail && reimburseSum(detail) > 0;
+}
 
 /** Expense lifecycle. */
 export const EXPENSE_STATUS = { AVAILABLE: 'available', LOCKED: 'locked', ARCHIVED: 'archived' };
@@ -119,6 +153,7 @@ export const AUDIT_COLOR = {
 export function unitColor(unit) {
   if (unit === 'Engineering') return '#4f73a8';
   if (unit === 'Cleaning Service') return '#2f7d5b';
+  if (unit === 'Driver') return '#c2683d';
   return '#7a5aa8';
 }
 

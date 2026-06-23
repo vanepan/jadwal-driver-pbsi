@@ -110,8 +110,10 @@ export function matchBidang(text, roster, { threshold = 0.82 } = {}) {
   return { bidangId: null, bidangName: null, matchType: 'none', score: best ? best.score : 0 };
 }
 
-/** Fixed operational units — never carry a derivable bidang on the `unit` field. */
-const FIXED_UNITS = new Set(['Engineering', 'Cleaning Service', 'Others']);
+/** Fixed operational units — never carry a derivable bidang on the `unit` field.
+    "Driver" is a fixed operational unit too (v1.16.4.1), so it is excluded from
+    free-text bidang derivation exactly like Engineering / Cleaning Service. */
+const FIXED_UNITS = new Set(['Engineering', 'Cleaning Service', 'Driver', 'Others']);
 
 /**
  * Resolve an expense's bidang for analytics, HYBRID strategy:

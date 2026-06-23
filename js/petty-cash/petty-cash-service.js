@@ -23,7 +23,8 @@ import { getUserList } from '../users.js';
 import { matchBidang } from './bidang-matcher.js';
 import {
   EXPENSE_STATUS, NOR_STATUS, NOR_TYPE, CYCLE_STATUS, AUDIT_ACTION, AUDIT_LABEL, AUDIT_COLOR,
-  norAutoSubject, unitDisplay, todayISO,
+  norAutoSubject, unitDisplay, todayISO, rp, fmtShort,
+  REIMBURSE_ITEMS, reimburseSum, isReimburseExpense,
 } from './petty-cash-config.js';
 import {
   genId, getExpenses, getNors, getActiveCycle, getSettings, getAudit,
@@ -170,22 +171,38 @@ export async function saveSettings(draft) {
   return { syncedCycle: !!syncedCycle, opening: merged.openingBalance, cycleNumber: cycle ? cycle.cycleNumber : 1 };
 }
 
+/* ── Reimbursement detail (v1.16.4.2) ─────────────────────────────────
+   Clamp every component to a non-negative integer rupiah. Used for both
+   create and update so the stored shape is always canonical. */
+function sanitizeReimburse(detail) {
+  const out = {};
+  REIMBURSE_ITEMS.forEach(it => { out[it.key] = Math.max(0, Math.round(Number(detail && detail[it.key]) || 0)); });
+  return out;
+}
+
 /* ── Expense intents ────────────────────────────────────────────── */
 export async function createExpense(input) {
   const cycle = getActiveCycle();
   const now = Date.now();
   const id = genId('exp');
-  const bidang = resolveExpenseBidang({ unit: input.unit, customUnit: input.customUnit });
+  const unit = input.unit || 'Engineering';
+  const category = input.category || 'Lainnya';
+  const bidang = resolveExpenseBidang({ unit, customUnit: input.customUnit });
+  // Reimbursement Driver detail mode: itemise and compute the amount from the
+  // components (never trust a typed total). Only when Unit=Driver AND the
+  // category matches; otherwise the plain typed amount is used.
+  const reimburse = (isReimburseExpense({ unit, category }) && input.reimbursementDetail)
+    ? sanitizeReimburse(input.reimbursementDetail) : null;
   const expense = {
     id,
     refNumber: nextRefNumber(),
     expenseDate: input.expenseDate || todayISO(),
-    unit: input.unit || 'Engineering',
-    customUnit: input.unit === 'Others' ? (input.customUnit || '').trim() : '',
+    unit,
+    customUnit: unit === 'Others' ? (input.customUnit || '').trim() : '',
     bidangId: bidang.bidangId,
     bidangName: bidang.bidangName,
-    category: input.category || 'Lainnya',
-    amount: input.amount || 0,
+    category,
+    amount: reimburse ? reimburseSum(reimburse) : (input.amount || 0),
     description: (input.description || '').trim(),
     notes: (input.notes || '').trim(),
     receiptImage: input.receiptImage || null,
@@ -196,29 +213,73 @@ export async function createExpense(input) {
     createdAt: now,
     updatedAt: now,
   };
+  if (reimburse) expense.reimbursementDetail = reimburse;
   await putExpense(expense);
   await writeAudit(AUDIT_ACTION.EXPENSE_CREATED, 'expense', id, 'Dibuat dari nota fisik yang diserahkan unit');
   return expense;
 }
 
+/* Human-readable diff for the audit timeline (v1.16.4.1). Lists only the fields
+   that actually changed (Nominal / Kategori / Unit / Tanggal / Deskripsi /
+   Catatan / Foto Nota) so the "Pengeluaran diperbarui" event carries what was
+   corrected — e.g. "Nominal: Rp 200.000 → Rp 230.500 · Unit: Engineering → Driver". */
+function describeExpenseChanges(before, after) {
+  const parts = [];
+  if ((before.amount || 0) !== (after.amount || 0)) parts.push(`Nominal: ${rp(before.amount)} → ${rp(after.amount)}`);
+  if ((before.category || '') !== (after.category || '')) parts.push(`Kategori: ${before.category || '—'} → ${after.category || '—'}`);
+  const bu = unitDisplay(before), au = unitDisplay(after);
+  if (bu !== au) parts.push(`Unit: ${bu} → ${au}`);
+  if ((before.expenseDate || '') !== (after.expenseDate || '')) parts.push(`Tanggal: ${fmtShort(before.expenseDate)} → ${fmtShort(after.expenseDate)}`);
+  // Per-item reimbursement changes (v1.16.4.2) — e.g. "BBM: Rp 100.000 → Rp 125.000".
+  const rb = before.reimbursementDetail, ra = after.reimbursementDetail;
+  if (rb || ra) {
+    REIMBURSE_ITEMS.forEach(it => {
+      const b = Number(rb && rb[it.key]) || 0, a = Number(ra && ra[it.key]) || 0;
+      if (b !== a) parts.push(`${it.label}: ${rp(b)} → ${rp(a)}`);
+    });
+  }
+  if ((before.description || '') !== (after.description || '')) parts.push('Deskripsi diperbarui');
+  if ((before.notes || '') !== (after.notes || '')) parts.push('Catatan diperbarui');
+  if ((before.receiptImage || null) !== (after.receiptImage || null)) parts.push('Foto nota diperbarui');
+  return parts.join(' · ');
+}
+
 export async function updateExpense(id, patch) {
   const e = getExpenseById(id);
   if (!e) throw new Error('Pengeluaran tidak ditemukan.');
-  if (e.status !== EXPENSE_STATUS.AVAILABLE) throw new Error('Pengeluaran terkunci tidak dapat diubah.');
-  const nextUnit = patch.unit || e.unit;
-  const nextCustom = nextUnit === 'Others' ? (patch.customUnit ?? e.customUnit) : '';
+  // Lock rule (v1.16.4.1): only AVAILABLE expenses are editable. A LOCKED
+  // expense is realised inside a NOR (official document) and ARCHIVED ones are
+  // historical — both stay immutable.
+  if (e.status !== EXPENSE_STATUS.AVAILABLE) throw new Error('Transaksi telah direalisasikan dalam NOR dan tidak dapat diubah.');
+  // `_note` is a caller hint; amount/reimbursementDetail are handled explicitly
+  // (computed), never blindly spread — keep all three out of the spread.
+  const { _note, reimbursementDetail: rdIn, amount: amtIn, ...fields } = patch;
+  const nextUnit = fields.unit || e.unit;
+  const nextCustom = nextUnit === 'Others' ? (fields.customUnit ?? e.customUnit) : '';
+  const nextCategory = fields.category ?? e.category;
   // Re-resolve bidang metadata whenever the unit / Nama Unit can change.
   const bidang = resolveExpenseBidang({ unit: nextUnit, customUnit: nextCustom });
+  // Reimbursement detail mode: recompute the amount from components; leaving the
+  // mode (Unit/Category no longer match) drops the detail so it can't go stale.
+  const reimburse = (isReimburseExpense({ unit: nextUnit, category: nextCategory }) && rdIn)
+    ? sanitizeReimburse(rdIn) : null;
   const next = {
     ...e,
-    ...patch,
+    ...fields,
     customUnit: nextCustom,
+    amount: reimburse ? reimburseSum(reimburse) : (amtIn != null ? amtIn : e.amount),
     bidangId: bidang.bidangId,
     bidangName: bidang.bidangName,
+    // createdAt / createdBy are preserved untouched (carried by ...e); the
+    // edit only stamps the updater identity + time.
     updatedAt: Date.now(),
+    updatedBy: actorLabel(),
   };
+  if (reimburse) next.reimbursementDetail = reimburse;
+  else delete next.reimbursementDetail;
   await putExpense(next);
-  await writeAudit(AUDIT_ACTION.EXPENSE_UPDATED, 'expense', id, patch._note || 'Pengeluaran diperbarui');
+  const note = _note || describeExpenseChanges(e, next) || 'Pengeluaran diperbarui';
+  await writeAudit(AUDIT_ACTION.EXPENSE_UPDATED, 'expense', id, note);
   return next;
 }
 

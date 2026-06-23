@@ -36,6 +36,7 @@ import {
   UNITS, CATEGORIES, EXPENSE_STATUS, NOR_STATUS, NOR_TYPE, AUDIT_LABEL,
   rp, fmtShort, fmtLong, todayISO, parseAmount, unitColor, unitDisplay,
   norAutoSubject, norStatusMeta, norNumberFromSequence, isValidNorSequence,
+  REIMBURSE_ITEMS, reimburseSum, isReimburseExpense, hasReimburseDetail, blankReimburseDetail,
 } from './petty-cash-config.js';
 
 const LOGO_SRC = 'assets/Logo-PBSI.png';
@@ -43,7 +44,7 @@ const LOGO_SRC = 'assets/Logo-PBSI.png';
 /* ── Module state ────────────────────────────────────────────────── */
 const st = {
   screen: 'dashboard',
-  addOpen: false, notifOpen: false, cycleModalOpen: false, drawerOpen: false,
+  addOpen: false, editId: null, notifOpen: false, cycleModalOpen: false, drawerOpen: false,
   detailId: null, norDetailId: null,
   fUnit: 'all', fStatus: 'all', fSearch: '', norSearch: '',
   selectedIds: [], norStep: 'select', norFilter: NOR_TYPE.OFFICIAL,
@@ -57,8 +58,11 @@ const st = {
 let root = null, bound = false, opened = false, listening = false;
 
 function blankForm() {
-  return { expenseDate: todayISO(), unit: 'Engineering', customUnit: '', category: 'Inventaris', description: '', amount: '', notes: '', _err: '' };
+  return { expenseDate: todayISO(), unit: 'Engineering', customUnit: '', category: 'Inventaris', description: '', amount: '', notes: '', reimbursementDetail: blankReimburseDetail(), _err: '' };
 }
+
+/** Is the current form draft in Reimbursement Driver detail mode? */
+function formIsReimburse(f) { return isReimburseExpense({ unit: f.unit, category: f.category }); }
 
 /* ── Small helpers ───────────────────────────────────────────────── */
 function esc(s) {
@@ -190,7 +194,7 @@ export async function mountPettyCash(container) {
 export function setPettyCashScreen(key) {
   opened = true;
   st.screen = key;
-  st.addOpen = false; st.notifOpen = false; st.drawerOpen = false;
+  st.addOpen = false; st.editId = null; st.notifOpen = false; st.drawerOpen = false;
   if (key === 'norGenerate') st.norStep = 'select';
   render();
 }
@@ -201,7 +205,7 @@ export function getPettyCashScreens() { return NAV.filter(n => n.key !== 'mobile
 /** Open the "Tambah Pengeluaran" modal — used by the platform panel CTA (v1.14.1). */
 export function openPettyCashAddExpense() {
   if (!root || !opened) { console.warn('[PettyCash] not mounted'); return; }
-  setState({ addOpen: true, drawerOpen: false, form: blankForm() });
+  setState({ addOpen: true, editId: null, drawerOpen: false, form: blankForm() });
 }
 
 /** Current active screen key. */
@@ -937,15 +941,60 @@ function mobileScreen(m) {
 }
 
 /* ── MODALS ──────────────────────────────────────────────────────── */
+/* Shared field styles for the Tambah/Edit modal (kept identical to the inline
+   originals so the visual design is unchanged). */
+const FLD_LABEL = 'font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase';
+const FLD_INPUT = 'width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text)';
+
+/* ── Patchable dynamic regions of the modal (v1.16.4.2 flicker fix) ──────
+   The Unit and Kategori <select>s are STATIC in the DOM; the fields that
+   DEPEND on them (Nama Unit · amount · reimbursement detail) live in wrapper
+   nodes (display:contents so they add no layout box when empty). Changing Unit
+   or Kategori re-fills ONLY these wrappers via patchFormDynamic() — the focused
+   <select> is never replaced, so focus, caret and TAB order all survive and
+   the card no longer flickers (no full render()). */
+function unitExtraHtml(f) {
+  if (f.unit !== 'Others') return '';
+  return `<label style="display:block"><span style="${FLD_LABEL}">Nama Unit *</span>
+    <input name="customUnit" list="pcBidangOptions" autocomplete="off" data-act="formInput" data-focus="customUnit" value="${esc(f.customUnit)}" placeholder="Contoh: Sekretariat, Humas, Turnamen, PP PBSI" style="${FLD_INPUT}"/>
+    <datalist id="pcBidangOptions">${svc.bidangRoster().map(b => `<option value="${esc(b.name)}"></option>`).join('')}</datalist>
+    <span style="display:block;margin-top:5px;font-size:10.5px;color:var(--muted)">Cocokkan dengan nama bidang bila tersedia — dipakai untuk analitik penggunaan dana per bidang.</span></label>`;
+}
+function amountRegionHtml(f) {
+  if (!formIsReimburse(f)) {
+    return `<label style="display:block"><span style="${FLD_LABEL}">Jumlah (Rp) *</span>
+      <input name="amount" data-act="formInput" data-focus="amount" value="${esc(f.amount)}" inputmode="numeric" placeholder="0" style="${FLD_INPUT};font-family:'JetBrains Mono',monospace"/></label>`;
+  }
+  const sum = reimburseSum(f.reimbursementDetail);
+  const items = REIMBURSE_ITEMS.map(it => {
+    const v = Number(f.reimbursementDetail[it.key]) || 0;
+    return `<label style="display:block"><span style="${FLD_LABEL}">${esc(it.label)}</span>
+      <input data-act="reimburseInput" data-rk="${esc(it.key)}" data-focus="rb_${esc(it.key)}" inputmode="numeric" value="${v ? esc(String(v)) : ''}" placeholder="0" style="${FLD_INPUT};font-family:'JetBrains Mono',monospace"/></label>`;
+  }).join('');
+  return `
+    <div style="border:1px solid var(--border);border-radius:11px;padding:14px;background:var(--card2)">
+      <div style="${FLD_LABEL};margin-bottom:10px">Rincian Reimbursement</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">${items}</div>
+    </div>
+    <label style="display:block"><span style="${FLD_LABEL}">Jumlah (Rp) — otomatis</span>
+      <input id="pcAmountValue" value="${esc(rp(sum))}" readonly tabindex="-1" style="${FLD_INPUT};font-family:'JetBrains Mono',monospace;font-weight:700;background:var(--border2);cursor:not-allowed" title="Dihitung otomatis dari rincian"/>
+      <span style="display:block;margin-top:5px;font-size:10.5px;color:var(--muted)">Total dihitung otomatis dari rincian — tidak dapat diubah manual.</span></label>`;
+}
+
 function addModal() {
   const f = st.form;
+  const editing = !!st.editId;
   const cats = CATEGORIES.map(c => `<option${f.category === c ? ' selected' : ''}>${esc(c)}</option>`).join('');
   const units = UNITS.map(u => `<option value="${esc(u)}"${f.unit === u ? ' selected' : ''}>${esc(u)}</option>`).join('');
+  const title = editing ? 'Edit Pengeluaran' : 'Tambah Pengeluaran';
+  const subtitle = editing
+    ? `Perbarui nota petty cash · Ref ${esc(f.refNumber || '—')} (tidak dapat diubah)`
+    : `Catat nota fisik petty cash · Ref otomatis ${esc(svc.nextRefNumber())}`;
   return `
   <div data-act="closeAdd" style="position:fixed;inset:0;background:rgba(20,16,14,.5);backdrop-filter:blur(2px);z-index:1500;display:flex;align-items:flex-start;justify-content:center;padding:40px 20px;overflow-y:auto;animation:pcFade .18s ease">
     <div data-act="stop" style="width:100%;max-width:560px;background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-lg);animation:pcPop .22s ease">
       <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 22px;border-bottom:1px solid var(--border2)">
-        <div><div style="font-weight:800;font-size:17px">Tambah Pengeluaran</div><div style="font-size:11.5px;color:var(--muted);margin-top:1px">Catat nota fisik petty cash · Ref otomatis ${esc(svc.nextRefNumber())}</div></div>
+        <div><div style="font-weight:800;font-size:17px">${esc(title)}</div><div style="font-size:11.5px;color:var(--muted);margin-top:1px">${subtitle}</div></div>
         <div data-act="closeAdd" style="width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
       </div>
       <div style="padding:20px 22px;display:flex;flex-direction:column;gap:15px">
@@ -955,16 +1004,10 @@ function addModal() {
           <label style="display:block"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Unit *</span>
             <select name="unit" data-act="formInput" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text);cursor:pointer">${units}</select></label>
         </div>
-        ${f.unit === 'Others' ? `<label style="display:block"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Nama Unit *</span>
-          <input name="customUnit" list="pcBidangOptions" autocomplete="off" data-act="formInput" data-focus="customUnit" value="${esc(f.customUnit)}" placeholder="Contoh: Sekretariat, Humas, Turnamen, PP PBSI" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text)"/>
-          <datalist id="pcBidangOptions">${svc.bidangRoster().map(b => `<option value="${esc(b.name)}"></option>`).join('')}</datalist>
-          <span style="display:block;margin-top:5px;font-size:10.5px;color:var(--muted)">Cocokkan dengan nama bidang bila tersedia — dipakai untuk analitik penggunaan dana per bidang.</span></label>` : ''}
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-          <label style="display:block"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Kategori *</span>
-            <select name="category" data-act="formInput" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text);cursor:pointer">${cats}</select></label>
-          <label style="display:block"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Jumlah (Rp) *</span>
-            <input name="amount" data-act="formInput" data-focus="amount" value="${esc(f.amount)}" inputmode="numeric" placeholder="0" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text);font-family:'JetBrains Mono',monospace"/></label>
-        </div>
+        <div id="pcUnitExtra" style="display:contents">${unitExtraHtml(f)}</div>
+        <label style="display:block"><span style="${FLD_LABEL}">Kategori *</span>
+          <select name="category" data-act="formInput" style="${FLD_INPUT};cursor:pointer">${cats}</select></label>
+        <div id="pcAmountRegion" style="display:contents">${amountRegionHtml(f)}</div>
         <label style="display:block"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Deskripsi *</span>
           <input name="description" data-act="formInput" data-focus="description" value="${esc(f.description)}" placeholder="Contoh: Pembelian cairan pembersih & alat pel" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text)"/></label>
         <label style="display:block"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Catatan / Keterangan</span>
@@ -976,10 +1019,32 @@ function addModal() {
       </div>
       <div style="display:flex;justify-content:flex-end;gap:10px;padding:16px 22px;border-top:1px solid var(--border2)">
         <button data-act="closeAdd" style="background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 18px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer">Batal</button>
-        <button data-act="submitAdd" style="background:var(--primary);color:#fff;border:none;border-radius:9px;padding:10px 20px;font-weight:700;font-size:13px;cursor:pointer">Simpan Pengeluaran</button>
+        <button data-act="submitAdd" style="background:var(--primary);color:#fff;border:none;border-radius:9px;padding:10px 20px;font-weight:700;font-size:13px;cursor:pointer">${editing ? 'Simpan Perubahan' : 'Simpan Pengeluaran'}</button>
       </div>
     </div>
   </div>`;
+}
+
+/* "Rincian Reimbursement" breakdown in the detail drawer — only rendered when
+   the expense actually carries a reimbursement detail (v1.16.4.2). Components
+   that are zero are still listed so the itemisation reads as a complete slip. */
+function reimbursementDetailSection(e) {
+  const detail = e && e.reimbursementDetail;
+  if (!hasReimburseDetail(detail)) return '';
+  const rows = REIMBURSE_ITEMS.map((it, i) => `
+    <div style="display:flex;justify-content:space-between;padding:11px 14px;${i < REIMBURSE_ITEMS.length - 1 ? 'border-bottom:1px solid var(--border2)' : ''}">
+      <span style="font-size:12px;color:var(--muted)">${esc(it.label)}</span>
+      <span style="font-size:12.5px;font-weight:600;font-family:'JetBrains Mono',monospace">${esc(rp(Number(detail[it.key]) || 0))}</span>
+    </div>`).join('');
+  return `
+    <div style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase;margin-bottom:10px">Rincian Reimbursement</div>
+    <div style="display:flex;flex-direction:column;gap:0;border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:20px">
+      ${rows}
+      <div style="display:flex;justify-content:space-between;padding:11px 14px;background:var(--card2);border-top:1px solid var(--border)">
+        <span style="font-size:12px;font-weight:700;color:var(--text)">Total</span>
+        <span style="font-size:12.5px;font-weight:800;font-family:'JetBrains Mono',monospace">${esc(rp(reimburseSum(detail)))}</span>
+      </div>
+    </div>`;
 }
 
 function detailDrawer() {
@@ -1025,6 +1090,7 @@ function detailDrawer() {
           <div style="display:flex;justify-content:space-between;padding:11px 14px;border-bottom:1px solid var(--border2)"><span style="font-size:12px;color:var(--muted)">Catatan</span><span style="font-size:12.5px;font-weight:600;text-align:right;max-width:60%">${esc(d.notesDisplay)}</span></div>
           <div style="display:flex;justify-content:space-between;padding:11px 14px"><span style="font-size:12px;color:var(--muted)">Dibuat oleh</span><span style="font-size:12.5px;font-weight:600">${esc(d.createdBy || '—')}</span></div>
         </div>
+        ${reimbursementDetailSection(raw)}
         ${locked && nor ? (lockedTest
           ? `<div style="background:var(--blue-tint);border:1px solid var(--blue-bd);border-radius:11px;padding:12px 14px;margin-bottom:18px">
           <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1px;color:var(--blue);text-transform:uppercase;margin-bottom:4px">Digunakan oleh TEST NOR</div>
@@ -1035,6 +1101,7 @@ function detailDrawer() {
           : `<div style="background:var(--amber-tint);border:1px solid var(--amber-bd);border-radius:11px;padding:12px 14px;margin-bottom:18px">
           <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1px;color:var(--amber);text-transform:uppercase;margin-bottom:4px">Termasuk dalam NOR</div>
           <div style="font-weight:700;font-size:13px;font-family:'JetBrains Mono',monospace">${esc(nor.norNumber)}</div>
+          <div style="font-size:11.5px;color:var(--muted);margin-top:5px;line-height:1.4">Transaksi telah direalisasikan dalam NOR dan tidak dapat diubah.</div>
           <button data-act="openNorFromDetail" data-id="${esc(nor.id)}" style="margin-top:8px;background:transparent;border:none;color:var(--amber);font-size:11.5px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline">Lihat NOR Terkait →</button>
         </div>`) : ''}
         ${cascadeArchived && nor ? `<div style="background:var(--card2);border:1px solid var(--border);border-radius:11px;padding:12px 14px;margin-bottom:18px">
@@ -1059,6 +1126,7 @@ function detailDrawer() {
             ? `<button data-act="closeDetail" style="flex:1;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:11px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer">Tutup</button>
           <button data-act="restoreExpense" data-id="${esc(d.id)}" style="display:flex;align-items:center;gap:7px;background:var(--green-tint);border:1px solid var(--green-bd);border-radius:9px;padding:11px 16px;font-weight:600;font-size:13px;color:var(--green);cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M3.51 13a9 9 0 1 0 2.13-9.36L3 7"/></svg>Pulihkan Pengeluaran</button>`
             : `<button data-act="closeDetail" style="flex:1;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:11px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer">Tutup</button>
+          <button data-act="editExpense" data-id="${esc(d.id)}" style="display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:11px 14px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Edit</button>
           <button data-act="archiveExpense" data-id="${esc(d.id)}" style="display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:11px 14px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>Arsipkan</button>
           <button data-act="deleteExpense" data-id="${esc(d.id)}" style="background:var(--primary-tint);border:1px solid var(--primary-tint);border-radius:9px;padding:11px 16px;font-weight:600;font-size:13px;color:var(--primary);cursor:pointer">Hapus</button>`}
       </div>
@@ -1155,11 +1223,12 @@ async function onClick(e) {
         document.documentElement.setAttribute('data-theme', cur);
       }
       render(); return;
-    case 'nav': setState({ screen: id, addOpen: false, notifOpen: false, drawerOpen: false, norStep: id === 'norGenerate' ? 'select' : st.norStep }); return;
+    case 'nav': setState({ screen: id, addOpen: false, editId: null, notifOpen: false, drawerOpen: false, norStep: id === 'norGenerate' ? 'select' : st.norStep }); return;
     case 'openDrawer': setState({ drawerOpen: true }); return;
     case 'closeDrawer': setState({ drawerOpen: false }); return;
-    case 'openAdd': setState({ addOpen: true, drawerOpen: false, form: blankForm() }); return;
-    case 'closeAdd': setState({ addOpen: false }); return;
+    case 'openAdd': setState({ addOpen: true, editId: null, drawerOpen: false, form: blankForm() }); return;
+    case 'closeAdd': setState({ addOpen: false, editId: null }); return;
+    case 'editExpense': return openEdit(id);
     case 'openNotif': setState({ notifOpen: true }); return;
     case 'closeNotif': setState({ notifOpen: false }); return;
     case 'openDetail': setState({ detailId: id }); return;
@@ -1215,6 +1284,17 @@ function onInput(e) {
   // (open/close/submit). Read-only previews that depend on a field are patched
   // in place below, without touching the form. (v1.13.2 focus-retention fix)
   if (act === 'formInput') { st.form[el.name] = v; st.form._err = ''; clearAddError(); return; }
+  // Reimbursement component: update state and recompute the read-only total in
+  // place (no structural rebuild) so the typed field keeps focus + caret.
+  if (act === 'reimburseInput') {
+    st.form.reimbursementDetail[el.dataset.rk] = parseAmount(v);
+    const sum = reimburseSum(st.form.reimbursementDetail);
+    st.form.amount = String(sum);
+    const amtEl = root && root.querySelector('#pcAmountValue');
+    if (amtEl) amtEl.value = rp(sum);
+    st.form._err = ''; clearAddError();
+    return;
+  }
   if (act === 'norForm') { st.norForm[el.name] = v; patchNorPreview(); return; }
   if (act === 'newBalInput') { st.newCycleBalance = v; return; }
   if (act === 'setInput') { setDraftField(el.name, v); patchSettingsStats(); return; }
@@ -1251,6 +1331,18 @@ function patchSettingsStats() {
   if (t) t.textContent = rp(sd.lowBalanceThreshold);
 }
 
+/* Re-fill ONLY the modal's dependent regions (Nama Unit + amount/reimbursement)
+   from the current form state. The Unit / Kategori <select>s sit OUTSIDE these
+   wrappers, so the focused control is never destroyed — no flicker, focus, caret
+   and TAB order all preserved. Replaces the former full render() on Unit change. */
+function patchFormDynamic() {
+  if (!root) return;
+  const ue = root.querySelector('#pcUnitExtra');
+  if (ue) ue.innerHTML = unitExtraHtml(st.form);
+  const ar = root.querySelector('#pcAmountRegion');
+  if (ar) ar.innerHTML = amountRegionHtml(st.form);
+}
+
 function onChange(e) {
   const el = actorEl(e);
   if (!el) return;
@@ -1258,10 +1350,12 @@ function onChange(e) {
   if (act === 'filterUnit') { setState({ fUnit: el.value }); return; }
   if (act === 'formInput') {
     st.form[el.name] = el.value; st.form._err = '';
-    // Only the Unit select toggles dependent layout (the custom-unit field),
-    // so it alone needs a structural re-render. Other fields (category select,
-    // date picker) update state silently to preserve focus. (v1.13.2)
-    if (el.name === 'unit') render(); else clearAddError();
+    // Unit and Kategori toggle dependent layout (Nama Unit field, and the
+    // Reimbursement Driver detail mode). Patch ONLY the dependent wrappers in
+    // place — the changed <select> stays in the DOM, so focus/caret/TAB survive
+    // and the modal never flickers. Other fields update state silently. (v1.16.4.2)
+    if (el.name === 'unit' || el.name === 'category') patchFormDynamic();
+    else clearAddError();
     return;
   }
   if (act === 'norForm') { st.norForm[el.name] = el.value; patchNorPreview(); return; }
@@ -1274,20 +1368,65 @@ function toggleSel(id) {
   setState({ selectedIds: s.includes(id) ? s.filter(x => x !== id) : s.concat(id) });
 }
 
+/* Preload the shared Tambah/Edit modal from an existing expense (v1.16.4.1).
+   REF / Created By / Created At / audit history are NOT editable — only the
+   fields the spec allows are mirrored into the form. */
+function formFromExpense(e) {
+  return {
+    expenseDate: e.expenseDate || todayISO(),
+    unit: e.unit || 'Engineering',
+    customUnit: e.customUnit || '',
+    category: e.category || 'Inventaris',
+    description: e.description || '',
+    amount: (e.amount != null && e.amount !== 0) ? String(e.amount) : '',
+    notes: e.notes || '',
+    refNumber: e.refNumber || '',
+    reimbursementDetail: { ...blankReimburseDetail(), ...(e.reimbursementDetail || {}) },
+    _receiptData: e.receiptImage || null,
+    _photoName: e.receiptImage ? 'Foto nota tersimpan' : '',
+    _err: '',
+  };
+}
+
+function openEdit(id) {
+  const e = getExpenseById(id);
+  if (!e) { toast('Pengeluaran tidak ditemukan.'); return; }
+  // NOR lock rule (Phase B): realised (LOCKED) or archived expenses are immutable.
+  if (e.status !== EXPENSE_STATUS.AVAILABLE) {
+    toast('Transaksi telah direalisasikan dalam NOR dan tidak dapat diubah.');
+    return;
+  }
+  setState({ addOpen: true, editId: id, detailId: null, drawerOpen: false, form: formFromExpense(e) });
+}
+
 async function submitAdd() {
   const f = st.form;
-  const amount = parseAmount(f.amount);
+  const reimburse = formIsReimburse(f);
+  // In reimbursement mode the total is computed from the components and never
+  // typed; otherwise the plain typed amount is parsed.
+  const amount = reimburse ? reimburseSum(f.reimbursementDetail) : parseAmount(f.amount);
   if (!f.description.trim() || !amount || (f.unit === 'Others' && !f.customUnit.trim())) {
-    st.form._err = 'Lengkapi deskripsi, jumlah, dan nama unit.'; render(); return;
+    st.form._err = reimburse
+      ? 'Lengkapi deskripsi dan isi minimal satu rincian reimbursement.'
+      : 'Lengkapi deskripsi, jumlah, dan nama unit.';
+    render(); return;
   }
+  const payload = {
+    expenseDate: f.expenseDate, unit: f.unit, customUnit: f.customUnit,
+    category: f.category, amount, description: f.description, notes: f.notes,
+    receiptImage: f._receiptData || null,
+    reimbursementDetail: reimburse ? f.reimbursementDetail : null,
+  };
   try {
-    const exp = await svc.createExpense({
-      expenseDate: f.expenseDate, unit: f.unit, customUnit: f.customUnit,
-      category: f.category, amount, description: f.description, notes: f.notes,
-      receiptImage: f._receiptData || null,
-    });
-    setState({ addOpen: false, form: blankForm() });
-    toast(`Pengeluaran ${exp.refNumber} tersimpan`);
+    if (st.editId) {
+      const updated = await svc.updateExpense(st.editId, payload);
+      setState({ addOpen: false, editId: null, form: blankForm() });
+      toast(`Pengeluaran ${updated.refNumber} diperbarui`);
+    } else {
+      const exp = await svc.createExpense(payload);
+      setState({ addOpen: false, form: blankForm() });
+      toast(`Pengeluaran ${exp.refNumber} tersimpan`);
+    }
   } catch (err) { st.form._err = err.message || 'Gagal menyimpan.'; render(); }
 }
 
