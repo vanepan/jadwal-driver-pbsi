@@ -31,7 +31,8 @@ function _clampPct(n) {
 /**
  * @param {{ label?:string, narrative?:string,
  *           components?:Array<{label:string, weightPct?:number,
- *             score:number|null, tone?:string}> }} explain
+ *             score:number|null, tone?:string, scope?:string}>,
+ *           nullState?:{active?:boolean, text?:string} }} explain
  * @returns {string} HTML for the Zone-C explainability block, or '' when there
  *   is no petty health data to show (mirrors the dashboard's anyData gate so the
  *   PDF stays clean rather than printing four em-dashes — F2/F3 No-Data safety).
@@ -54,22 +55,34 @@ function scoreBreakdown(explain = {}) {
       ? `<span class="sbk-wt">${esc(String(c.weightPct))}%</span>`
       : '';
     const val = has ? esc(String(pct)) : '—';
+    // v1.16.4.6.1 Phase B/E — per-component analysis-horizon subtitle (PDF twin).
+    const scope = (c && c.scope)
+      ? `<div class="sbk-scope">${esc(String(c.scope))}</div>`
+      : '';
     return (
       '<div class="sbk-row">' +
         '<div class="sbk-head">' +
           `<span class="sbk-lbl">${esc((c && c.label) || '')}${weight}</span>` +
           `<span class="sbk-val">${val}</span>` +
         '</div>' +
+        scope +
         `<div class="sbk-track"><span class="sbk-fill ${toneClass}" style="width:${pct}%"></span></div>` +
       '</div>'
     );
   }).join('');
+
+  // v1.16.4.6.1 Phase D/E — null-state clarification (same copy as the dashboard).
+  const ns = explain.nullState || {};
+  const nullHtml = (ns.active && ns.text)
+    ? `<div class="exec-nullstate">${esc(ns.text)}</div>`
+    : '';
 
   return (
     '<div class="zc">' +
       `<div class="sl">${esc(label)}</div>` +
       subHtml +
       `<div class="sbk">${rows}</div>` +
+      nullHtml +
     '</div>'
   );
 }

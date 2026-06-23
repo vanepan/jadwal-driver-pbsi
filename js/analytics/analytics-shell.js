@@ -554,7 +554,7 @@ export function renderInsightDividerList(rows = []) {
  * whose color follows the supplied tone (green/amber/crit). A `null` score reads
  * as an em-dash with an empty track (mirrors the hero's No-Data treatment), so a
  * missing component never looks like a real 0.
- * @param {Array<{label:string, score:number|null, tone?:'green'|'amber'|'crit', weightPct?:number}>} rows
+ * @param {Array<{label:string, score:number|null, tone?:'green'|'amber'|'crit', weightPct?:number, scope?:string}>} rows
  * @returns {string}
  */
 export function renderScoreBreakdown(rows = []) {
@@ -566,11 +566,15 @@ export function renderScoreBreakdown(rows = []) {
     const tone = (r.tone === 'crit' || r.tone === 'amber') ? r.tone : 'green';
     const weight = (r.weightPct != null) ? `<span class="an-sb-wt">${_escHtml(String(r.weightPct))}%</span>` : '';
     const val = has ? String(pct) : '—';
+    // v1.16.4.6.1 — optional scope subtitle (Trust Layer). Back-compatible: rows
+    // without `scope` render exactly as before, so other callers are unaffected.
+    const scope = r.scope ? `<div class="an-sb-scope">${_escHtml(String(r.scope))}</div>` : '';
     return `<div class="an-sb-row">
         <div class="an-sb-head">
           <span class="an-sb-lbl">${_escHtml(r.label)}${weight}</span>
           <span class="an-sb-val">${val}</span>
         </div>
+        ${scope}
         <div class="an-sb-track"><span class="an-sb-fill an-tone-${tone}" style="width:${pct}%;"></span></div>
       </div>`;
   }).join('');

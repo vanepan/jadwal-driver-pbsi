@@ -143,6 +143,19 @@ body{font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased
 .sbk-fill.g{background:#1A7A4A}
 .sbk-fill.a{background:#946420}
 .sbk-fill.r{background:#A8292F}
+/* Executive Trust Layer (v1.16.4.6.1) — PDF twins of the dashboard confidence
+   badge / scope subtitle / transparency panel / null-state note. */
+.sbk-scope{font-size:8px;color:#9A9A9A;margin:1px 0 4px;letter-spacing:.01em}
+.exec-conf-wrap{text-align:center;margin-top:8px}
+.exec-conf{display:inline-block;font-size:9px;font-weight:600;letter-spacing:.04em;padding:3px 11px;border-radius:99px;border:1px solid #D4D4D4;color:#6B6B6B}
+.exec-conf-high{border-color:#1A7A4A;color:#1A7A4A}
+.exec-conf-medium{border-color:#1A7A4A;color:#0F0F0F}
+.exec-conf-low{border-color:#946420;color:#946420}
+.exec-conf-insufficient{border-color:#D4D4D4;color:#9A9A9A}
+.exec-nullstate{margin-top:9px;padding:8px 11px;border-radius:5px;background:#FBF3E2;border:1px solid #946420;font-size:9px;line-height:1.5;color:#0F0F0F}
+.exec-tp-list{margin:0;padding-left:15px;display:flex;flex-direction:column;gap:4px}
+.exec-tp-list li{font-size:9.5px;line-height:1.4;color:#0F0F0F}
+.exec-tp-empty{font-size:9.5px;line-height:1.5;color:#6B6B6B}
 
 /* TWO-COLUMN — Complete P2 */
 .tcol{display:flex;flex:1;gap:0;min-height:0}

@@ -10907,6 +10907,42 @@ input[type="time"].v2-admin-config-input {
 .v2-analytics-claude .an-sb-fill.an-tone-green { background: var(--c-green); }
 .v2-analytics-claude .an-sb-fill.an-tone-amber { background: var(--c-amber); }
 .v2-analytics-claude .an-sb-fill.an-tone-crit  { background: var(--crit); }
+/* v1.16.4.6.1 Phase B — per-component analysis-horizon subtitle. */
+.v2-analytics-claude .an-sb-scope { font-size: 11px; color: var(--muted); margin: -3px 0 7px; letter-spacing: .01em; }
+
+/* ── Executive Trust Layer (v1.16.4.6.1) — confidence badge / transparency /
+   null-state. Presentation only; no score, weight, or formula meaning. ──────── */
+.v2-analytics-exec .exec-confidence {
+  display: flex; width: fit-content; align-items: center; gap: 8px;
+  margin: -6px auto 0; padding: 6px 14px; border-radius: 99px;
+  font-size: 12px; font-weight: 600; letter-spacing: .02em;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+}
+.v2-analytics-exec .exec-confidence-dot { width: 8px; height: 8px; border-radius: 99px; background: var(--muted); }
+.v2-analytics-exec .exec-confidence--high   { border-color: var(--c-green); color: var(--c-green); }
+.v2-analytics-exec .exec-confidence--high   .exec-confidence-dot { background: var(--c-green); }
+.v2-analytics-exec .exec-confidence--medium { border-color: var(--c-green); color: var(--text); }
+.v2-analytics-exec .exec-confidence--medium .exec-confidence-dot { background: var(--c-green); }
+.v2-analytics-exec .exec-confidence--low    { border-color: var(--c-amber); color: var(--c-amber); }
+.v2-analytics-exec .exec-confidence--low    .exec-confidence-dot { background: var(--c-amber); }
+.v2-analytics-exec .exec-confidence--insufficient { border-color: var(--border); color: var(--muted); }
+.v2-analytics-exec .exec-confidence--insufficient .exec-confidence-dot { background: var(--muted); }
+
+/* Phase D — null-state clarification note (idle-cash / partial-data case). */
+.v2-analytics-exec .exec-nullstate {
+  margin-top: 12px; padding: 11px 14px; border-radius: 8px;
+  background: var(--warn-bg, var(--surface)); border: 1px solid var(--c-amber);
+  font-size: 12px; line-height: 1.5; color: var(--text);
+}
+
+/* Phase C — transparency panel facts. */
+.v2-analytics-exec .exec-transparency {
+  padding: 14px 16px; border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--border);
+}
+.v2-analytics-exec .exec-transparency-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+.v2-analytics-exec .exec-transparency-list li { font-size: 12.5px; line-height: 1.45; color: var(--text); }
+.v2-analytics-exec .exec-transparency-empty { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
 
 /* ── Export Center — future-ready reporting hub (Sprint 7D restore) ───────────
    A calm, secondary format LIST. Intentionally quiet: no gradients, no large

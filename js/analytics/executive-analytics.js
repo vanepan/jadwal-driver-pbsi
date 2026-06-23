@@ -23,11 +23,26 @@ function clampPct(v) { return Math.max(0, Math.min(100, Math.round(num(v)))); }
 /** Display metadata for the four Petty Cash Health Score V2 components, in
  *  formula-weight order. Labels are Executive-facing (Indonesian). */
 const PETTY_COMPONENT_META = [
-  { key: 'compliance', label: 'Kepatuhan Administrasi', weightPct: 35 },
-  { key: 'budget',     label: 'Kepatuhan Anggaran',     weightPct: 30 },
-  { key: 'cash',       label: 'Ketersediaan Kas',       weightPct: 25 },
-  { key: 'stability',  label: 'Stabilitas Pengeluaran', weightPct: 10 },
+  { key: 'compliance', label: 'Kepatuhan Administrasi', weightPct: 35, scope: 'Periode Analisis' },
+  { key: 'budget',     label: 'Kepatuhan Anggaran',     weightPct: 30, scope: 'Tahun Berjalan (YTD)' },
+  { key: 'cash',       label: 'Ketersediaan Kas',       weightPct: 25, scope: 'Siklus Petty Cash Aktif' },
+  { key: 'stability',  label: 'Stabilitas Pengeluaran', weightPct: 10, scope: 'Periode Analisis' },
 ];
+
+/**
+ * Data Sufficiency / Confidence (v1.16.4.6.1 — Trust Layer). PRESENTATION ONLY.
+ * Tells the reader whether the petty score rests on enough data. Reuses figures
+ * the petty model ALREADY computed (transaction count, official NOR count, active
+ * component count) — derives NO new analytics, runs NO engine, and NEVER feeds
+ * the score, weights, or gate. Thresholds per spec v1.16.4.6.1 Phase A.
+ * @returns {{level:'high'|'medium'|'low'|'insufficient', label:string}}
+ */
+function computeConfidence({ txCount, norCount, activeComponents, hasScore }) {
+  if (!hasScore || !(txCount > 0)) return { level: 'insufficient', label: 'Data Tidak Memadai' };
+  if (txCount >= 20 && norCount >= 3 && activeComponents >= 3) return { level: 'high', label: 'Data Sangat Memadai' };
+  if (txCount >= 5) return { level: 'medium', label: 'Data Memadai' };
+  return { level: 'low', label: 'Data Terbatas' }; // 1–4 transaksi
+}
 
 /**
  * Executive Narrative (v1.16.3) — one explainable sentence derived STRICTLY from
@@ -62,7 +77,7 @@ function pettyNarrative(components, levelLabel, hasScore) {
  * @param {Object} ctx.pettyModel  - model from petty-cash-analytics.js (may be null)
  * @returns {Object} ExecutiveAnalyticsModel
  */
-export function computeExecutiveAnalytics({ driverModel, pettyModel } = {}) {
+export function computeExecutiveAnalytics({ driverModel, pettyModel, meta } = {}) {
   const dk = (driverModel && driverModel.kpis) || {};
   const pc = pettyModel || {};
   const pcCycle = pc.cycle || {};
@@ -134,14 +149,59 @@ export function computeExecutiveAnalytics({ driverModel, pettyModel } = {}) {
     key: m.key,
     label: m.label,
     weightPct: m.weightPct,
+    // v1.16.4.6.1 Phase B — expose the time horizon each component ALREADY uses
+    // (no scope change; purely surfacing what the model computes today).
+    scope: m.scope,
     score: sb[m.key] == null ? null : clampPct(sb[m.key]),
   }));
   const pettyLevelLabel = pettyHasScore ? healthLevel(pc.healthScore).label : 'Belum Ada Data';
+
+  // ── Trust Layer (v1.16.4.6.1) — PRESENTATION metadata for Dashboard + PDF.
+  //    Built ONLY from figures the petty model already produced; SINGLE source so
+  //    both surfaces render identical copy (Phase E parity). No score/weight/gate
+  //    change. ────────────────────────────────────────────────────────────────
+  const pettyTxCount = num((pc.diagnostics || {}).curCount);            // official tx in window
+  const pettyActiveComponents = num((pc.scoreBreakdown || {}).activeComponents);
+  const hasActiveCycle = !!(pc.cycle && pc.cycle.number != null);
+  const periodLabel = (meta && meta.periodLabel) || (pc.metadata && pc.metadata.rangeLabel) || '';
+  const confidence = computeConfidence({
+    txCount: pettyTxCount, norCount: norOfficial,
+    activeComponents: pettyActiveComponents, hasScore: pettyHasScore,
+  });
+  // Phase C — Transparency facts (no recommendation/insight/AI/prediction): plain
+  // facts the model already holds, prebuilt as display strings here so Dashboard
+  // and PDF are byte-identical.
+  const transparencyFacts = [];
+  if (pettyTxCount > 0) {
+    transparencyFacts.push(`${pettyTxCount} transaksi petty cash`);
+    transparencyFacts.push(`${realizedCount} NOR terealisasi`);
+    if (periodLabel) transparencyFacts.push(`Periode analisis ${periodLabel}`);
+    transparencyFacts.push(hasActiveCycle ? 'Siklus petty cash aktif' : 'Tidak ada siklus aktif');
+  }
+  const transparency = {
+    hasData: pettyTxCount > 0,
+    facts: transparencyFacts,
+    emptyText: 'Data belum cukup untuk menghasilkan penilaian yang representatif.',
+  };
+  // Phase D — Null-state clarification: petty score is null (insufficient) yet at
+  // least one component bar still renders (e.g. Ketersediaan Kas = 100 from an
+  // idle cycle). Make clear those bars are informational, not a verdict.
+  const anyComponentData = pettyComponents.some((c) => c.score != null);
+  const nullState = {
+    active: !pettyHasScore && anyComponentData,
+    text: 'Belum terdapat aktivitas petty cash yang cukup untuk menghasilkan Health Score. '
+      + 'Beberapa indikator tetap ditampilkan sebagai informasi operasional dan belum '
+      + 'merepresentasikan kesehatan petty cash secara menyeluruh.',
+  };
+
   const pettyHealth = {
     score: pettyHasScore ? clampPct(pc.healthScore) : null,
     levelLabel: pettyLevelLabel,
     components: pettyComponents,
     narrative: pettyNarrative(pettyComponents, pettyLevelLabel, pettyHasScore),
+    confidence,
+    transparency,
+    nullState,
   };
 
   // ── Executive insights (cross-domain) — reuse the insight engine over a

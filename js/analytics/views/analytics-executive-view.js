@@ -96,7 +96,11 @@ function buildModels() {
       driverModel = window._lastAnalyticsFullModel;
     }
   } catch (err) { console.warn('[AnalyticsExecutive] driver model unavailable', err); }
-  return { pettyModel, driverModel, exec: computeExecutiveAnalytics({ driverModel, pettyModel }) };
+  // v1.16.4.6.1 — pass the Executive period label so the Trust Layer's
+  // transparency facts bake the SAME horizon the dashboard shows (and the PDF,
+  // which reads this stored model, stays in parity).
+  const meta = { periodLabel: EXEC_PERIOD_LABELS[executiveFilterState.period] || '' };
+  return { pettyModel, driverModel, exec: computeExecutiveAnalytics({ driverModel, pettyModel, meta }) };
 }
 
 function heroBlock(exec) {
@@ -147,11 +151,52 @@ function pettyBreakdownBlock(exec) {
     label: c.label,
     score: c.score,
     weightPct: c.weightPct,
+    // v1.16.4.6.1 Phase B — surface each component's analysis horizon.
+    scope: c.scope || '',
     tone: c.score == null ? 'amber' : healthLevel(c.score).tone,
   }));
+  // v1.16.4.6.1 Phase D — null-state clarification (idle-cash/partial-data case).
+  const ns = ph.nullState;
+  const nullNote = (ns && ns.active)
+    ? `<div class="exec-nullstate">${esc(ns.text)}</div>`
+    : '';
   return `
     ${renderEyebrow({ tag: 'Petty Cash', title: 'Rincian Skor Kesehatan', sub: esc(ph.narrative || '') })}
     ${renderScoreBreakdown(rows)}
+    ${nullNote}
+    <div style="height:var(--space-section);"></div>`;
+}
+
+/**
+ * Confidence / Data Sufficiency badge (v1.16.4.6.1 Phase A). Sits directly under
+ * the Health Score hero. Reads exec.pettyHealth.confidence (model-derived from
+ * existing figures) — no new analytics. Always renders (insufficient included).
+ */
+function confidenceBadgeBlock(exec) {
+  const c = exec.pettyHealth && exec.pettyHealth.confidence;
+  if (!c) return '';
+  return `
+    <div class="exec-confidence exec-confidence--${esc(c.level)}" role="note">
+      <span class="exec-confidence-dot" aria-hidden="true"></span>
+      <span class="exec-confidence-label">${esc(c.label)}</span>
+    </div>
+    <div style="height:var(--space-subsection);"></div>`;
+}
+
+/**
+ * Transparency panel (v1.16.4.6.1 Phase C) — "Mengapa Skor Ini Muncul?". Renders
+ * ONLY the plain facts the model already holds (transaction/NOR counts, period,
+ * active cycle). No recommendation, insight, AI summary, or prediction.
+ */
+function transparencyBlock(exec) {
+  const t = exec.pettyHealth && exec.pettyHealth.transparency;
+  if (!t) return '';
+  const body = t.hasData
+    ? `<ul class="exec-transparency-list">${t.facts.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>`
+    : `<p class="exec-transparency-empty">${esc(t.emptyText)}</p>`;
+  return `
+    ${renderEyebrow({ tag: 'Transparansi', title: 'Mengapa Skor Ini Muncul?', sub: 'Fakta yang dianalisis periode ini' })}
+    <div class="exec-transparency">${body}</div>
     <div style="height:var(--space-section);"></div>`;
 }
 
@@ -270,7 +315,9 @@ function render() {
           <p class="v2-admin-page-subtitle">Ringkasan kesehatan operasional lintas Driver & Petty Cash.</p>
         </div>
         ${heroBlock(exec)}
+        ${confidenceBadgeBlock(exec)}
         ${pettyBreakdownBlock(exec)}
+        ${transparencyBlock(exec)}
         ${filterBar()}
         <div style="height:var(--space-section);"></div>
         ${kpiBlock(exec)}

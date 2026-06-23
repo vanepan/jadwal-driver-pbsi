@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.16.4.4';
-export const RELEASE_NAME = 'Driver Availability & Leave Management';
+export const APP_VERSION = '1.16.4.6.1';
+export const RELEASE_NAME = 'Executive Analytics KPI Rationalization & Trust Layer';
 
 /**
  * Web Push VAPID PUBLIC key (v1.11.3). Safe to ship — it is an
@@ -17,6 +17,21 @@ export const RELEASE_NAME = 'Driver Availability & Leave Management';
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.16.4.6.1',
+    date: '2026-06-23',
+    summary: 'Executive Analytics KPI Rationalization (v1.16.4.5) + Executive Analytics Trust Layer (v1.16.4.6.1). The Executive KPI strip was rationalized to six locked indicators rendered in one desktop row with Dashboard = PDF parity; a presentation-only Trust Layer was then added so leadership can judge whether the Health Score rests on adequate data. NO scoring change: the Petty Cash Health Score formula, PC_SCORE_WEIGHTS_V1 (35/30/25/10), the ≥3-component gate, healthLevel(), the Executive score engine, KPI formulas, and the recommendation/insight/forecast/narrative engines are all untouched. Versioning/roadmap maintenance: APP_VERSION 1.16.4.4 → 1.16.4.6.1, re-stamping SW_VERSION → CACHE_NAME sarpras-cache-v1.16.4.6.1, version.json, and the index.html app.js cache-bust via scripts/sync-version.mjs.',
+    highlights: [
+      'KPI Rationalization (v1.16.4.5): the Executive KPI strip is now six locked indicators — Total Trip, Driver Utilization, Tingkat Penyelesaian, Dana Digunakan YTD, Jumlah Realisasi NOR, Persentase Pemakaian RAB Petty Cash — in a dedicated .v2-exec-kpi-grid (6 desktop / 3 tablet / 1 mobile). executive-analytics.js exposes pettyKpis.actualBurnYtd / realizedCount / rabUsagePct (rabUsagePct = actualBurnYtd / annualBudget × 100, null-guarded). executive-report-model.js mirrors the same six KPIs so Dashboard = PDF.',
+      'Trust Layer — Confidence badge (Phase A): a data-sufficiency badge under the hero (Data Sangat Memadai / Memadai / Terbatas / Tidak Memadai) derived from existing figures (transaction count, official NOR count, active component count). No new analytics.',
+      'Trust Layer — Scope visibility (Phase B): each score bar carries its analysis horizon (Periode Analisis / Tahun Berjalan (YTD) / Siklus Petty Cash Aktif) — surfacing, not changing, the horizon each component already uses.',
+      'Trust Layer — Transparency panel (Phase C) "Mengapa Skor Ini Muncul?": plain facts already held by the model (transaksi, NOR terealisasi, periode, siklus) — no recommendation, insight, AI summary, or prediction.',
+      'Trust Layer — Null-state clarification (Phase D): when the petty score is null yet a component bar still shows (e.g. idle-cycle Ketersediaan Kas = 100), an explicit note marks those bars as informational, not a verdict. All Trust Layer copy is built once in exec.pettyHealth so Dashboard and PDF render identically (Phase E parity).',
+    ],
+    deferred: [
+      'Petty Cash Health Score scoring refinement (audit v1.16.4.6 R1–R4: zero-burn null inversion, idle-cash de-weighting, gate redesign, stability enrichment) — proposed for a future v1.16.4.7; intentionally NOT part of this trust/presentation release.',
+    ],
+  },
   {
     version: '1.16.4.4',
     date: '2026-06-23',

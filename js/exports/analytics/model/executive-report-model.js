@@ -74,9 +74,28 @@ export function buildExecutiveReportModel(exec = {}, meta = {}) {
     components: (Array.isArray(ph.components) ? ph.components : []).map((c) => ({
       label: c.label,
       weightPct: c.weightPct,
+      // v1.16.4.6.1 Phase B/E — per-component analysis horizon, mirrored to PDF.
+      scope: c.scope || '',
       score: c.score == null ? null : c.score,
       tone: c.score == null ? 'amber' : healthLevel(c.score).tone,
     })),
+    // Phase D/E — null-state clarification (same copy the dashboard shows).
+    nullState: (ph.nullState && ph.nullState.active)
+      ? { active: true, text: ph.nullState.text || '' }
+      : { active: false, text: '' },
+  };
+
+  // ── Trust Layer parity (v1.16.4.6.1 Phase A/C/E) — pass the model's confidence
+  //    badge and transparency facts straight through (SINGLE source: exec.pettyHealth).
+  //    No separate projection / recomputation. ──────────────────────────────────
+  const conf = ph.confidence || null;
+  const confidence = conf ? { level: conf.level, label: conf.label } : null;
+  const t = ph.transparency || {};
+  const transparency = {
+    label: 'Mengapa Skor Ini Muncul?',
+    hasData: !!t.hasData,
+    facts: Array.isArray(t.facts) ? t.facts.slice() : [],
+    emptyText: t.emptyText || 'Data belum cukup untuk menghasilkan penilaian yang representatif.',
   };
 
   // v1.16.4.5 — KPI Rationalization. This array is LOCKED to mirror the dashboard
@@ -99,5 +118,5 @@ export function buildExecutiveReportModel(exec = {}, meta = {}) {
     context: i.description,
   }));
 
-  return { meta: metaOut, health, narrative, explainability, kpis, highlights };
+  return { meta: metaOut, health, confidence, narrative, explainability, transparency, kpis, highlights };
 }
