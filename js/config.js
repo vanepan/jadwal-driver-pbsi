@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.16.4.6.1';
-export const RELEASE_NAME = 'Executive Analytics KPI Rationalization & Trust Layer';
+export const APP_VERSION = '1.16.4.7';
+export const RELEASE_NAME = 'Driver Actual Working Time & Overtime Detection';
 
 /**
  * Web Push VAPID PUBLIC key (v1.11.3). Safe to ship — it is an
@@ -17,6 +17,23 @@ export const RELEASE_NAME = 'Executive Analytics KPI Rationalization & Trust Lay
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.16.4.7',
+    date: '2026-06-23',
+    summary: 'Driver Actual Working Time & Overtime Detection. Driver Operations now surfaces ACTUAL working time and calendar-based overtime from data the app already captures (startedAt/completedAt at the Mulai/Selesai buttons) — previously recorded but almost entirely unconsumed. NOT payroll: no tariff, no overtime pay, no approval, no HR module, and NO new persisted fields (actualStartAt/actualEndAt are read-aliases of startedAt/completedAt; scheduled date+startTime/endTime are never overwritten). Overtime is calendar-based: an assignment is Lembur when it runs on a weekend (Sat/Sun) OR any engaged minute falls outside the office-hours window, reusing the existing operations.workStartMins/workEndMins setting (default re-pointed 06:00–21:00 → 09:00–17:00) as the boundary — no new setting. Versioning: APP_VERSION 1.16.4.6.1 → 1.16.4.7 re-stamps SW_VERSION → CACHE_NAME sarpras-cache-v1.16.4.7, version.json, and the index.html app.js cache-bust via scripts/sync-version.mjs.',
+    highlights: [
+      'Shared foundation (js/utils.js): pure computeWorkTime() is the single source of truth for actualHours, scheduledHours, varianceHours, isOvertime, overtimeHours and overtimeReason. Calendar overtime (weekend OR outside office hours), office-overlap computed across spanned days so cross-midnight trips are correct, and vehicle-agnostic — "Tanpa Kendaraan" (vehicle:\'\') assignments contribute working hours identically.',
+      'Timeline auto-adjustment (js/timeline.js): a completed assignment renders its REAL engaged window (startedAt→completedAt); an in-progress one anchors to the actual start; scheduled-only stays on the plan. Scheduled fields are never mutated (audit/variance baseline). Overtime blocks gain an amber "⏱ Lembur" badge + is-overtime outline.',
+      'Driver Analytics (js/analytics/analytics-engine.js, js/app.js): three additive KPIs — Total Jam Kerja Aktual, Assignment Lembur, Jam Lembur Total — plus actual-hours-based Working-Hour Utilization, a per-driver Jam column, and a Normal/Lembur indicator. Existing KPIs untouched.',
+      'Parity-safe: render and exportSnapshot are byte-identical to the pre-feature baseline (working-time data is routed through kpis + diagnostics, never render; driver entries stay { displayName, count }). The parity/insights/trends/recommendations harnesses and a new scripts/worktime-check.mjs (20-case overtime matrix) all pass.',
+    ],
+    deferred: [
+      'Overtime amount / tariff / pay, approval flow, reimbursement of overtime, and HR module — intentionally out of scope (detection & analytics only).',
+    ],
+    operator: [
+      'Existing production keeps its stored Jam Operasional window (seeded settings favor stored values over the new code default). To activate the intended 09:00–17:00 overtime boundary, set Jam Operasional in Konfigurasi.',
+    ],
+  },
   {
     version: '1.16.4.6.1',
     date: '2026-06-23',
