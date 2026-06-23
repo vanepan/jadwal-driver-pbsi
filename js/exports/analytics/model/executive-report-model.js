@@ -13,11 +13,13 @@
 import { formatInt } from '../format/numbers.js';
 import { longDateID, shortDateID } from '../format/dates.js';
 import { healthLevel } from '../../../analytics/engines/executive-score-engine.js';
+// v1.16.4.5 — compact rupiah for the Dana Digunakan YTD KPI. Reuse the petty-cash
+// SINGLE source of truth (never reimplement) so the PDF reads identically to the
+// dashboard ("Rp 84,2 Jt"), not the full "Rp 84.234.500" form.
+import { rpCompact } from '../../../petty-cash/petty-cash-config.js';
 
 const CAT_LABEL = { efficiency: 'Efisiensi', warning: 'Peringatan', trend: 'Tren', nor: 'NOR', forecast: 'Proyeksi' };
 const TONE_OF = { success: 'good', warning: 'attention', info: 'neutral' };
-
-function rp(n) { return 'Rp ' + Number(Math.round(Number(n) || 0)).toLocaleString('id-ID'); }
 
 /**
  * @param {Object} exec ExecutiveAnalyticsModel
@@ -77,13 +79,17 @@ export function buildExecutiveReportModel(exec = {}, meta = {}) {
     })),
   };
 
+  // v1.16.4.5 — KPI Rationalization. This array is LOCKED to mirror the dashboard
+  // Executive KPI strip (analytics-executive-view.js kpiBlock) exactly: same six
+  // indicators, same order, same labels, same values. Three Operasional + three
+  // Petty Cash. Dashboard KPI === PDF KPI.
   const kpis = [
     { value: formatInt(d.totalTrip || 0), label: 'Total Trip' },
     { value: formatInt(d.driverUtilization || 0), unit: '%', label: 'Driver Utilization' },
-    { value: formatInt(d.vehiclesWithTrips || 0), label: 'Kendaraan Aktif' },
-    { value: rp(p.activeBalance || 0), label: 'Saldo Aktif' },
-    { value: rp(p.consumedSpend || 0), label: 'Dana Terpakai' },
-    { value: formatInt(p.realizationPct || 0), unit: '%', label: 'Realisasi' },
+    { value: formatInt(d.compRate || 0), unit: '%', label: 'Tingkat Penyelesaian' },
+    { value: rpCompact(p.actualBurnYtd || 0), label: 'Dana Digunakan YTD' },
+    { value: formatInt(p.realizedCount || 0), unit: 'NOR', label: 'Jumlah Realisasi NOR' },
+    { value: p.rabUsagePct == null ? '—' : formatInt(p.rabUsagePct), unit: p.rabUsagePct == null ? '' : '%', label: 'Persentase Pemakaian RAB Petty Cash' },
   ];
 
   const highlights = (exec.insights || []).slice(0, 6).map(i => ({

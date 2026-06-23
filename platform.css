@@ -9230,6 +9230,27 @@ input[type="time"].v2-admin-config-input {
   .v2-analytics-kpi-card-value { font-size: 26px; }
 }
 
+/* ── Executive Analytics KPI grid (v1.16.4.5 — KPI Rationalization) ──────────
+   Dedicated layout for the rationalized Executive KPI strip: six indicators in
+   ONE desktop row, 3+3 on tablet, stacked on mobile. Scoped to .v2-exec-kpi-grid
+   (an extra class alongside .v2-analytics-kpi-grid) so NO other analytics screen
+   is affected. These rules intentionally sit AFTER the generic .v2-analytics-kpi-
+   grid rules above so that, at equal specificity, source order makes the
+   Executive overrides win at every breakpoint. */
+.v2-exec-kpi-grid { grid-template-columns: repeat(6, 1fr); gap: 12px; }
+/* Six columns are tighter than the default four — trim the title size ONLY here
+   (no global typography change) so longer labels like "Persentase Pemakaian RAB
+   Petty Cash" wrap cleanly instead of overlapping a neighbour. */
+.v2-exec-kpi-grid .v2-analytics-kpi-card { padding: 14px 14px; }
+.v2-exec-kpi-grid .v2-analytics-kpi-card-title { font-size: 10.5px; letter-spacing: 0.03em; }
+.v2-exec-kpi-grid .v2-analytics-kpi-card-value { font-size: clamp(18px, 1.5vw, 24px); }
+@media (max-width: 1024px) {
+  .v2-exec-kpi-grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 600px) {
+  .v2-exec-kpi-grid { grid-template-columns: 1fr; }
+}
+
 /* Top performer badge — #1 Driver / #1 Kendaraan / #1 Bidang */
 .v2-analytics-top-badge {
   display: inline-block;

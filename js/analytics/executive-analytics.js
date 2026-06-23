@@ -67,6 +67,7 @@ export function computeExecutiveAnalytics({ driverModel, pettyModel } = {}) {
   const pc = pettyModel || {};
   const pcCycle = pc.cycle || {};
   const pcHero = pc.hero || {};
+  const pcBudget = pc.budget || {};
 
   // ── Driver KPIs ─────────────────────────────────────────────────────────
   const totalTrip = num(dk.total);
@@ -86,6 +87,20 @@ export function computeExecutiveAnalytics({ driverModel, pettyModel } = {}) {
   const realizationPct = num(pcCycle.realizationPct);
   // Dana Terpakai — single reusable consumption figure from the petty model.
   const consumedSpend = num((pc.consumed || {}).totalConsumedSpend);
+
+  // ── Executive Petty KPIs (v1.16.4.5) — sourced directly from the existing
+  //    petty model; NO engine changes. These three back the rationalized
+  //    Executive KPI strip (Dashboard + PDF parity):
+  //      • actualBurnYtd — Dana Digunakan YTD                 (pc.budget.actualBurnYtd)
+  //      • realizedCount — Jumlah Realisasi NOR               (pc.hero.realizedCount)
+  //      • rabUsagePct   — Persentase Pemakaian RAB Petty Cash
+  //                        = (actualBurnYtd / annualBudget) × 100, guarded null
+  //                          when annualBudget ≤ 0. Intentionally NOT
+  //                          budget.adherenceRatio nor cycle.realizationPct.
+  const actualBurnYtd = num(pcBudget.actualBurnYtd);
+  const realizedCount = num(pcHero.realizedCount);
+  const rabAnnualBudget = num(pc.annualBudget);
+  const rabUsagePct = rabAnnualBudget > 0 ? clampPct((actualBurnYtd / rabAnnualBudget) * 100) : null;
 
   // ── Operational Health Score (Formula V1) ───────────────────────────────
   // v1.16.3 — Petty Cash Health Score V2 cutover. The petty model already
@@ -158,7 +173,7 @@ export function computeExecutiveAnalytics({ driverModel, pettyModel } = {}) {
     domain: 'executive',
     metadata: { generatedAt: new Date().toISOString() },
     driverKpis: { totalTrip, tripsWithVehicle, tripsWithoutVehicle, driverUtilization, activeVehicles, vehiclesWithTrips, activeDrivers, compRate: clampPct(dk.compRate) },
-    pettyKpis: { activeBalance, norOfficial, realizationPct, consumedSpend, opening: num(pcCycle.opening) },
+    pettyKpis: { activeBalance, norOfficial, realizationPct, consumedSpend, opening: num(pcCycle.opening), actualBurnYtd, realizedCount, rabUsagePct },
     score: { value: scored.score, components: scored.components, weights: scored.weights, level: level.level, label: level.label, tone: level.tone },
     // v1.15.8 Phase D — Executive Score explainability (MODEL ONLY, no UI). The
     // per-domain sub-scores behind `value`, with explicit null where a domain

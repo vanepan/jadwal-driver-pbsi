@@ -22,7 +22,7 @@ import { computePettyCashAnalytics } from '../petty-cash-analytics.js';
 import { computeExecutiveAnalytics } from '../executive-analytics.js';
 import { healthLevel } from '../engines/executive-score-engine.js';
 import {
-  renderHeroSection, renderEyebrow, renderAnalyticsKPICard, renderKPIGrid,
+  renderHeroSection, renderEyebrow, renderAnalyticsKPICard,
   renderInsightRow, renderInsightDividerList, renderScoreBreakdown, renderExportCenter,
   renderAnalyticsEmptyState, renderResponsiveCurrency, anIcon,
 } from '../analytics-shell.js';
@@ -155,6 +155,19 @@ function pettyBreakdownBlock(exec) {
     <div style="height:var(--space-section);"></div>`;
 }
 
+/**
+ * Executive KPI strip (v1.16.4.5 — KPI Rationalization). One unified row of six
+ * rationalized indicators — three Operasional, three Petty Cash — replacing the
+ * prior two-grid (3+3 split) layout. Order/labels/values are LOCKED to match the
+ * Executive PDF exactly (see executive-report-model.js). The dedicated
+ * `.v2-exec-kpi-grid` class (platform.css) lays them out 6-up on desktop, 3+3 on
+ * tablet, stacked on mobile — without touching any other analytics screen.
+ *
+ * Petty display rules (locked):
+ *   • Dana Digunakan YTD            → compact rupiah ("Rp 84,2 Jt"), never full.
+ *   • Jumlah Realisasi NOR          → "<n> NOR".
+ *   • Persentase Pemakaian RAB      → "<n>%", or "—" when annualBudget ≤ 0 (null).
+ */
 function kpiBlock(exec) {
   const d = exec.driverKpis, p = exec.pettyKpis;
   // v1.15.6: when some trips used a requester vehicle, show the armada vs
@@ -163,22 +176,21 @@ function kpiBlock(exec) {
   const tripSubtitle = (Number(d.tripsWithoutVehicle) > 0)
     ? `${Number(d.tripsWithVehicle) || 0} armada • ${Number(d.tripsWithoutVehicle)} tanpa kendaraan`
     : 'Penugasan operasional';
-  const driverCards = renderKPIGrid([
+  const rabValue = p.rabUsagePct == null ? '—' : `${p.rabUsagePct}%`;
+  const cards = [
+    // Operasional
     renderAnalyticsKPICard({ title: 'Total Trip', icon: anIcon('car', { size: 15 }), value: String(d.totalTrip), subtitle: tripSubtitle }),
     renderAnalyticsKPICard({ title: 'Driver Utilization', icon: anIcon('user', { size: 15 }), value: `${d.driverUtilization}%`, subtitle: `${d.activeDrivers} driver aktif` }),
-    renderAnalyticsKPICard({ title: 'Kendaraan Aktif', icon: anIcon('car', { size: 15 }), value: String(d.vehiclesWithTrips), subtitle: `dari ${d.activeVehicles} armada` }),
-  ]);
-  const pettyCards = renderKPIGrid([
-    renderAnalyticsKPICard({ title: 'Saldo Aktif', icon: anIcon('chart', { size: 15 }), value: curResp(p.activeBalance), status: p.activeBalance < 0 ? 'warn' : 'ok' }),
-    renderAnalyticsKPICard({ title: 'NOR Official', icon: anIcon('file', { size: 15 }), value: `${p.norOfficial} NOR` }),
-    renderAnalyticsKPICard({ title: 'Realisasi', icon: anIcon('pulse', { size: 15 }), value: `${p.realizationPct}%`, subtitle: 'Siklus berjalan' }),
-  ]);
+    renderAnalyticsKPICard({ title: 'Tingkat Penyelesaian', icon: anIcon('pulse', { size: 15 }), value: `${d.compRate}%`, subtitle: 'Penugasan selesai' }),
+    // Petty Cash — compact rupiah for Dana Digunakan YTD (rpCompact = single
+    // source of truth; never the full "Rp 84.234.500" form).
+    renderAnalyticsKPICard({ title: 'Dana Digunakan YTD', icon: anIcon('chart', { size: 15 }), value: rpCompact(p.actualBurnYtd), subtitle: 'Realisasi resmi YTD' }),
+    renderAnalyticsKPICard({ title: 'Jumlah Realisasi NOR', icon: anIcon('file', { size: 15 }), value: `${p.realizedCount} NOR`, subtitle: 'NOR terealisasi' }),
+    renderAnalyticsKPICard({ title: 'Persentase Pemakaian RAB Petty Cash', icon: anIcon('pulse', { size: 15 }), value: rabValue, subtitle: 'Terhadap anggaran tahunan' }),
+  ];
   return `
-    ${renderEyebrow({ tag: 'Driver Operations', title: 'Kinerja Operasional', sub: 'Aktivitas penugasan & armada' })}
-    ${driverCards}
-    <div style="height:var(--space-subsection);"></div>
-    ${renderEyebrow({ tag: 'Petty Cash', title: 'Kesehatan Dana', sub: 'Saldo, NOR, dan realisasi' })}
-    ${pettyCards}
+    ${renderEyebrow({ tag: 'Indikator Eksekutif', title: 'Indikator Kinerja Utama', sub: 'Operasional & Petty Cash' })}
+    <div class="v2-analytics-kpi-grid v2-exec-kpi-grid">${cards.join('')}</div>
     <div style="height:var(--space-section);"></div>`;
 }
 
