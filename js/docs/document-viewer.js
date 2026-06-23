@@ -10,7 +10,7 @@
 
 'use strict';
 
-import { printPdfBlob } from './print-manager.js';
+import { printPdfFromFrame } from './print-manager.js';
 
 let _initialised = false;
 let _currentUrl  = null;
@@ -92,7 +92,22 @@ export function showViewer(blob, filename, meta = {}) {
     document.body.appendChild(a); a.click(); a.remove();
   };
 
-  document.getElementById('docvPrint').onclick = () => printPdfBlob(blob);
+  document.getElementById('docvPrint').onclick = () => {
+    // Print the SAME PDF the viewer is displaying — its own rendered iframe.
+    const frame = document.getElementById('docvFrame');
+    let frameReadyState = 'cross-origin';
+    try { frameReadyState = frame && frame.contentDocument ? frame.contentDocument.readyState : 'n/a'; } catch { /* native PDF plugin: not inspectable */ }
+    // Diagnostic (v1.16.4.3) — proves the print context owns a real PDF.
+    console.info('[DocumentViewer] Cetak →', {
+      sourceUrl: _currentUrl,
+      iframeSrc: frame ? frame.getAttribute('src') : null,
+      frameReadyState,
+      blobExists: !!blob,
+      blobType: blob ? blob.type : null,
+      blobSize: blob ? blob.size : null,
+    });
+    printPdfFromFrame(frame, _currentUrl);
+  };
 
   const shareBtn = document.getElementById('docvShare');
   if (_canShareFiles()) {

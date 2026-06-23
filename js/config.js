@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.16.3';
-export const RELEASE_NAME = 'Executive Petty Cash Cutover & Explainability';
+export const APP_VERSION = '1.16.4.4';
+export const RELEASE_NAME = 'Driver Availability & Leave Management';
 
 /**
  * Web Push VAPID PUBLIC key (v1.11.3). Safe to ship — it is an
@@ -17,6 +17,21 @@ export const RELEASE_NAME = 'Executive Petty Cash Cutover & Explainability';
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.16.4.4',
+    date: '2026-06-23',
+    summary: 'Driver Availability & Leave Management + the v1.16.4.1–.4.3 delivery cutover. ROOT CAUSE this release fixes: APP_VERSION had sat at 1.16.3 across the entire v1.16.4.x stream, so the version-scoped service-worker cache (sarpras-cache-v1.16.3) and the index.html app.js?v cache-bust never changed — installed PWAs kept serving the cached pre-1.16.4 bundle and NONE of the v1.16.4.x code reached the browser (UAT: driver leave UI absent). Bumping APP_VERSION 1.16.3 → 1.16.4.4 re-stamps SW_VERSION → CACHE_NAME sarpras-cache-v1.16.4.4 + the app.js cache-bust via scripts/sync-version.mjs, so the new SW activates, purges the stale cache, and re-fetches every module fresh.',
+    highlights: [
+      'Driver status expansion (drivers-store.js): status enum Aktif/Cuti/Sakit/Izin/Nonaktif/Arsip is the source of truth; legacy active/archived mirrors kept in sync so existing eligibility consumers (validation.js, timeline.js, requests.js) are unchanged. Backward compatible via deriveStatus() for records without status.',
+      'Assignment eligibility (B): getActiveDrivers()/getActiveDriverNames() now filter on effective Aktif, so Cuti/Sakit/Izin/Nonaktif drivers are excluded from selection automatically.',
+      'Leave tracking + effective-on-read auto-reactivation: leave {start,end,note} entered in the Edit modal; a leave whose end has passed reads as Aktif immediately (effectiveStatus), with an admin-gated, idempotent sweep (autoReactivateDueDrivers) persisting + auditing the return.',
+      'UI: driver Edit modal Status dropdown + conditional leave-date fields; amber leave status pill with period on cards; Cuti/Izin filter + stats chip. Audit codes DRIVER_STATUS_CHANGED + DRIVER_STATUS_AUTO_RESTORED.',
+      'Also delivered in this cutover: v1.16.4.1 Petty Cash edit + Driver unit + Reimbursement Driver alignment, v1.16.4.2 reimbursement detail mode & form-flicker fix, v1.16.4.3 PDF print reliability (print the rendered viewer iframe, not a hidden 0×0 frame).',
+    ],
+    deferred: [
+      'Driver leave analytics surfaces (data captured via reimbursementDetail/leave; analytics intentionally deferred).',
+    ],
+  },
   {
     version: '1.16.3',
     date: '2026-06-23',

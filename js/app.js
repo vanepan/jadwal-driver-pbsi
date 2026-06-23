@@ -21,11 +21,15 @@ import {
   registerDriversChangeListener,
   createDriver,
   updateDriver,
-  deactivateDriver,
-  reactivateDriver,
   archiveDriver,
   restoreDriver,
   deleteDriver,
+  DRIVER_STATUS,
+  isLeaveStatus,
+  deriveStatus,
+  effectiveStatus,
+  setDriverStatus,
+  autoReactivateDueDrivers,
 } from './drivers-store.js';
 import {
   initVehiclesStore,
@@ -2430,6 +2434,7 @@ function initV2AdministrationWorkspace() {
             <select id="v2AdminDriverStatusFilter" class="v2-admin-filter">
               <option value="all">Semua Status</option>
               <option value="active">Aktif</option>
+              <option value="leave">Cuti / Izin</option>
               <option value="inactive">Nonaktif</option>
               <option value="archived">Diarsipkan</option>
             </select>
@@ -2738,6 +2743,7 @@ function initV2AdministrationWorkspace() {
     // Always keep #fieldDriver in sync regardless of active workspace.
     // #requestFieldDriver is handled by requests.js's own listener.
     refreshDriverSelect();
+    maybeAutoReactivateDrivers();
     if (currentWorkspace === 'administration' && activeAdminSection === 'drivers') renderV2AdminWorkspace();
   });
   registerVehiclesChangeListener(() => {
@@ -3317,12 +3323,30 @@ function initDriverFormModal() {
                      placeholder="Username akun yang ditautkan" autocomplete="off" />
             </div>
             <div class="form-group form-full">
-              <label>Status Aktif</label>
-              <label class="pbsi-form-toggle">
-                <input type="checkbox" id="driverFieldActive" class="pbsi-toggle-input"
-                       role="switch" aria-label="Status driver aktif" checked />
-                <span class="pbsi-form-toggle-label" id="driverActiveLabel">Aktif</span>
-              </label>
+              <label for="driverFieldStatus">Status</label>
+              <select id="driverFieldStatus">
+                <option value="Aktif">Aktif</option>
+                <option value="Cuti">Cuti</option>
+                <option value="Sakit">Sakit</option>
+                <option value="Izin">Izin</option>
+                <option value="Nonaktif">Nonaktif</option>
+              </select>
+            </div>
+            <div class="form-group form-full" id="driverLeaveFields" style="display:none">
+              <div class="form-grid">
+                <div class="form-group">
+                  <label for="driverFieldLeaveStart">Tanggal Mulai *</label>
+                  <input type="date" id="driverFieldLeaveStart" />
+                </div>
+                <div class="form-group">
+                  <label for="driverFieldLeaveEnd">Tanggal Selesai *</label>
+                  <input type="date" id="driverFieldLeaveEnd" />
+                </div>
+                <div class="form-group form-full">
+                  <label for="driverFieldLeaveNote">Keterangan</label>
+                  <input type="text" id="driverFieldLeaveNote" placeholder="Mis. Cuti tahunan, sakit, keperluan keluarga" autocomplete="off" />
+                </div>
+              </div>
             </div>
           </div>
           <div class="form-actions">
@@ -3339,10 +3363,15 @@ function initDriverFormModal() {
   document.getElementById('btnCancelDriverForm')?.addEventListener('click', closeDriverFormModal);
   modal.addEventListener('click', e => { if (e.target === modal) closeDriverFormModal(); });
   document.getElementById('driverForm')?.addEventListener('submit', handleDriverFormSubmit);
-  document.getElementById('driverFieldActive')?.addEventListener('change', e => {
-    const lbl = document.getElementById('driverActiveLabel');
-    if (lbl) lbl.textContent = e.target.checked ? 'Aktif' : 'Nonaktif';
+  document.getElementById('driverFieldStatus')?.addEventListener('change', e => {
+    toggleDriverLeaveFields(e.target.value);
   });
+}
+
+/** Show the leave-period fields only for leave statuses (Cuti/Sakit/Izin). */
+function toggleDriverLeaveFields(status) {
+  const grp = document.getElementById('driverLeaveFields');
+  if (grp) grp.style.display = isLeaveStatus(status) ? '' : 'none';
 }
 
 function openDriverFormModal(driverId = null) {
@@ -3354,6 +3383,11 @@ function openDriverFormModal(driverId = null) {
   const title  = document.getElementById('driverFormTitle');
   const btnSave = document.getElementById('btnSaveDriverForm');
 
+  const statusEl = document.getElementById('driverFieldStatus');
+  const leaveStartEl = document.getElementById('driverFieldLeaveStart');
+  const leaveEndEl   = document.getElementById('driverFieldLeaveEnd');
+  const leaveNoteEl  = document.getElementById('driverFieldLeaveNote');
+
   if (driverId) {
     const driver = getDrivers().find(d => d.id === driverId);
     if (!driver) return;
@@ -3362,19 +3396,25 @@ function openDriverFormModal(driverId = null) {
     const nameEl   = document.getElementById('driverFieldName');
     const phoneEl  = document.getElementById('driverFieldPhone');
     const linkedEl = document.getElementById('driverFieldLinkedUser');
-    const activeEl = document.getElementById('driverFieldActive');
     if (nameEl)   nameEl.value   = driver.name || '';
     if (phoneEl)  phoneEl.value  = driver.phone || '';
     if (linkedEl) linkedEl.value = driver.linkedUserUsername || '';
-    if (activeEl) activeEl.checked = driver.active !== false;
-    const activeLbl = document.getElementById('driverActiveLabel');
-    if (activeLbl) activeLbl.textContent = driver.active !== false ? 'Aktif' : 'Nonaktif';
+    // Arsip is managed via the card action, not this dropdown — fall back to Aktif.
+    const st = deriveStatus(driver);
+    if (statusEl) statusEl.value = st === DRIVER_STATUS.ARSIP ? DRIVER_STATUS.ACTIVE : st;
+    const leave = driver.leave || {};
+    if (leaveStartEl) leaveStartEl.value = leave.start || '';
+    if (leaveEndEl)   leaveEndEl.value   = leave.end || '';
+    if (leaveNoteEl)  leaveNoteEl.value  = leave.note || '';
   } else {
     if (title)   title.textContent   = 'Tambah Driver';
     if (btnSave) btnSave.textContent = 'Tambah Driver';
-    const activeLbl = document.getElementById('driverActiveLabel');
-    if (activeLbl) activeLbl.textContent = 'Aktif';
+    if (statusEl) statusEl.value = DRIVER_STATUS.ACTIVE;
+    if (leaveStartEl) leaveStartEl.value = '';
+    if (leaveEndEl)   leaveEndEl.value   = '';
+    if (leaveNoteEl)  leaveNoteEl.value  = '';
   }
+  toggleDriverLeaveFields(statusEl ? statusEl.value : DRIVER_STATUS.ACTIVE);
 
   const modal = document.getElementById('modalDriverForm');
   if (modal) modal.style.display = 'flex';
@@ -3391,7 +3431,12 @@ async function handleDriverFormSubmit(event) {
   const name               = document.getElementById('driverFieldName')?.value.trim() || '';
   const phone              = document.getElementById('driverFieldPhone')?.value.trim() || '';
   const linkedUserUsername = document.getElementById('driverFieldLinkedUser')?.value.trim() || '';
-  const active             = document.getElementById('driverFieldActive')?.checked ?? true;
+  const status             = document.getElementById('driverFieldStatus')?.value || DRIVER_STATUS.ACTIVE;
+  const leave = isLeaveStatus(status) ? {
+    start: document.getElementById('driverFieldLeaveStart')?.value || '',
+    end:   document.getElementById('driverFieldLeaveEnd')?.value || '',
+    note:  document.getElementById('driverFieldLeaveNote')?.value.trim() || '',
+  } : null;
 
   const btn = document.getElementById('btnSaveDriverForm');
   if (btn) btn.disabled = true;
@@ -3399,24 +3444,43 @@ async function handleDriverFormSubmit(event) {
   try {
     const currentUser = getCurrentUser();
     if (editingDriverId) {
-      await updateDriver(editingDriverId, { name, phone, linkedUserUsername, active });
+      const prevStatus = deriveStatus(getDrivers().find(d => d.id === editingDriverId));
+      await updateDriver(editingDriverId, { name, phone, linkedUserUsername, status, leave });
       logAction({
         userId:   currentUser?.id,
         username: currentUser?.username,
         action:   'driver_updated',
         targetId: editingDriverId,
-        metadata: { name, active },
+        metadata: { name, status },
       });
+      if (status !== prevStatus) {
+        logAction({
+          userId:   currentUser?.id,
+          username: currentUser?.username,
+          action:   'DRIVER_STATUS_CHANGED',
+          targetId: editingDriverId,
+          metadata: { name, from: prevStatus, to: status, leave },
+        });
+      }
       showToast('Driver berhasil diperbarui.');
     } else {
-      const newDriver = await createDriver({ name, phone, linkedUserUsername, active });
+      const newDriver = await createDriver({ name, phone, linkedUserUsername, status, leave });
       logAction({
         userId:   currentUser?.id,
         username: currentUser?.username,
         action:   'driver_created',
         targetId: newDriver.id,
-        metadata: { name, active },
+        metadata: { name, status },
       });
+      if (status !== DRIVER_STATUS.ACTIVE) {
+        logAction({
+          userId:   currentUser?.id,
+          username: currentUser?.username,
+          action:   'DRIVER_STATUS_CHANGED',
+          targetId: newDriver.id,
+          metadata: { name, from: DRIVER_STATUS.ACTIVE, to: status, leave },
+        });
+      }
       showToast('Driver baru berhasil ditambahkan.');
     }
     closeDriverFormModal();
@@ -3429,10 +3493,20 @@ async function handleDriverFormSubmit(event) {
   }
 }
 
+const LEAVE_MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+function fmtLeaveDate(iso) {
+  if (!iso) return '';
+  const p = String(iso).split('-');
+  return `${+p[2]} ${LEAVE_MONTHS_SHORT[+p[1] - 1] || ''}`.trim();
+}
+function fmtLeaveRange(leave) {
+  if (!leave || !leave.start || !leave.end) return '';
+  return `${fmtLeaveDate(leave.start)}–${fmtLeaveDate(leave.end)}`;
+}
+
 function buildDriverCard(driver) {
   const initials = (driver.name || '?')
     .split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase() || '?';
-  const active   = driver.active !== false;
   const archived = driver.archived === true;
   const linked   = Boolean(driver.linkedUserUsername);
 
@@ -3463,8 +3537,15 @@ function buildDriverCard(driver) {
       </div>`;
   }
 
+  const effStatus = effectiveStatus(driver);
+  const eligible  = effStatus === DRIVER_STATUS.ACTIVE;
+  const onLeave   = isLeaveStatus(effStatus);
+  const pillClass = onLeave ? ' v2-status-pill--leave' : (eligible ? '' : ' v2-status-pill--inactive');
+  const range     = onLeave ? fmtLeaveRange(driver.leave) : '';
+  const pillText  = onLeave ? `${effStatus}${range ? ' · ' + range : ''}` : effStatus;
+
   return `
-    <div class="v2-user-card${active ? '' : ' v2-user-card--inactive'}">
+    <div class="v2-user-card${eligible ? '' : ' v2-user-card--inactive'}">
       <div class="v2-user-avatar-ring v2-user-avatar--driver">
         <span class="v2-user-avatar-initials">${esc(initials)}</span>
       </div>
@@ -3474,14 +3555,14 @@ function buildDriverCard(driver) {
       </div>
       <div class="v2-user-meta">
         ${linked ? `<span class="v2-user-role-pill v2-driver-linked-pill">@${esc(driver.linkedUserUsername)}</span>` : ''}
-        <span class="v2-user-status-pill${active ? '' : ' v2-status-pill--inactive'}">${active ? 'Aktif' : 'Nonaktif'}</span>
+        <span class="v2-user-status-pill${pillClass}">${esc(pillText)}</span>
       </div>
       <div class="v2-user-card-actions">
         <button class="v2-user-btn v2-user-btn--edit"
                 data-driver-edit="${esc(driver.id)}" type="button">Edit</button>
         <button class="v2-user-btn v2-user-btn--toggle"
                 data-driver-toggle="${esc(driver.id)}" type="button">
-          ${active ? 'Nonaktifkan' : 'Aktifkan'}
+          ${eligible ? 'Nonaktifkan' : 'Aktifkan'}
         </button>
         <button class="v2-user-btn v2-user-btn--archive"
                 data-driver-archive="${esc(driver.id)}" type="button">Arsipkan</button>
@@ -3494,10 +3575,17 @@ function renderV2AdminDriverStats(allDrivers) {
   if (!el) return;
 
   const nonArchived   = allDrivers.filter(d => d.archived !== true);
-  const activeCount   = nonArchived.filter(d => d.active !== false).length;
+  // Counts follow the effective status so they match the cards/eligibility.
+  const activeCount   = nonArchived.filter(d => effectiveStatus(d) === DRIVER_STATUS.ACTIVE).length;
+  const leaveCount    = nonArchived.filter(d => isLeaveStatus(effectiveStatus(d))).length;
+  const inactiveCount = nonArchived.filter(d => effectiveStatus(d) === DRIVER_STATUS.NONAKTIF).length;
   const linkedCount   = nonArchived.filter(d => d.linkedUserUsername).length;
-  const inactiveCount = nonArchived.length - activeCount;
   const archivedCount = allDrivers.length - nonArchived.length;
+  const leaveChip = leaveCount > 0
+    ? `<span class="v2-admin-stats-chip">
+        <span class="v2-admin-stats-chip-label">Cuti/Izin</span>
+        <span class="v2-admin-stats-chip-count">${leaveCount}</span>
+      </span>` : '';
   const archivedChip  = archivedCount > 0
     ? `<span class="v2-admin-stats-chip v2-stats-chip--archived">
         <span class="v2-admin-stats-chip-label">Arsip</span>
@@ -3511,6 +3599,7 @@ function renderV2AdminDriverStats(allDrivers) {
         <span class="v2-admin-stats-chip-label">Aktif</span>
         <span class="v2-admin-stats-chip-count">${activeCount}</span>
       </span>
+      ${leaveChip}
       <span class="v2-admin-stats-chip">
         <span class="v2-admin-stats-chip-label">Nonaktif</span>
         <span class="v2-admin-stats-chip-count">${inactiveCount}</span>
@@ -3522,6 +3611,34 @@ function renderV2AdminDriverStats(allDrivers) {
       ${archivedChip}
     </div>
   </div>`;
+}
+
+/* Auto-reactivation sweep (v1.16.4.4): when a driver's leave period has ended,
+   return them to Aktif and audit it. Only an admin session persists/audits the
+   change (writes require admin); other sessions still see the effective status
+   via effectiveStatus(). Re-entrancy guarded — the sweep is idempotent, so the
+   write-triggered re-fire finds nothing and stops. */
+let _driverSweepRunning = false;
+async function maybeAutoReactivateDrivers() {
+  if (!isAdmin() || _driverSweepRunning) return;
+  _driverSweepRunning = true;
+  try {
+    const restored = await autoReactivateDueDrivers({ persist: true });
+    if (restored.length) {
+      const currentUser = getCurrentUser();
+      restored.forEach(d => {
+        logAction({
+          userId: currentUser?.id, username: currentUser?.username,
+          action: 'DRIVER_STATUS_AUTO_RESTORED', targetId: d.id,
+          metadata: { name: d.name, leaveEnd: d.leave && d.leave.end },
+        });
+      });
+    }
+  } catch (err) {
+    console.warn('[Drivers] auto-reactivation sweep failed:', err);
+  } finally {
+    _driverSweepRunning = false;
+  }
 }
 
 function renderV2AdminDrivers() {
@@ -3538,10 +3655,12 @@ function renderV2AdminDrivers() {
       (d.name  || '').toLowerCase().includes(q) ||
       (d.phone || '').toLowerCase().includes(q) ||
       (d.linkedUserUsername || '').toLowerCase().includes(q);
+    const eff = effectiveStatus(d);
     const matchesStatus =
       driverStatusFilter === 'all'      ? (d.archived !== true || (!!q && matchesSearch)) :
-      driverStatusFilter === 'active'   ? (d.archived !== true && d.active !== false) :
-      driverStatusFilter === 'inactive' ? (d.archived !== true && d.active === false) :
+      driverStatusFilter === 'active'   ? (d.archived !== true && eff === DRIVER_STATUS.ACTIVE) :
+      driverStatusFilter === 'leave'    ? (d.archived !== true && isLeaveStatus(eff)) :
+      driverStatusFilter === 'inactive' ? (d.archived !== true && eff === DRIVER_STATUS.NONAKTIF) :
       driverStatusFilter === 'archived' ? (d.archived === true) : (d.archived !== true);
     return matchesSearch && matchesStatus;
   });
@@ -3565,13 +3684,16 @@ function renderV2AdminDrivers() {
       btn.disabled = true;
       try {
         const currentUser = getCurrentUser();
-        if (driver.active !== false) {
-          await deactivateDriver(driverId);
-          logAction({ userId: currentUser?.id, username: currentUser?.username, action: 'driver_deactivated', targetId: driverId });
-        } else {
-          await reactivateDriver(driverId);
-          logAction({ userId: currentUser?.id, username: currentUser?.username, action: 'driver_reactivated', targetId: driverId });
-        }
+        // Quick toggle works on the EFFECTIVE status: eligible → Nonaktif,
+        // otherwise → Aktif (which also ends/clears any leave early).
+        const from = effectiveStatus(driver);
+        const to = from === DRIVER_STATUS.ACTIVE ? DRIVER_STATUS.NONAKTIF : DRIVER_STATUS.ACTIVE;
+        await setDriverStatus(driverId, to, null);
+        logAction({
+          userId: currentUser?.id, username: currentUser?.username,
+          action: 'DRIVER_STATUS_CHANGED', targetId: driverId,
+          metadata: { name: driver.name, from, to },
+        });
         // Render is handled by registerDriversChangeListener callback once cache is updated.
       } catch (err) {
         showToast(err.message || 'Gagal mengubah status driver.');

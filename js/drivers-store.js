@@ -11,6 +11,59 @@ import { DEFAULT_DRIVERS } from './drivers.js';
 
 const DRIVERS_PATH = 'drivers';
 
+/* ── Driver availability status (v1.16.4.4) ──────────────────────────
+   `status` is the source of truth; the legacy boolean mirrors `active`
+   and `archived` are kept in sync on every write so existing consumers
+   (getActiveDrivers, validation.js, timeline.js, requests.js) are
+   unchanged. Leave statuses (Cuti/Sakit/Izin) carry a `leave` period
+   { start, end, note } and auto-return to Aktif once `end` passes. */
+export const DRIVER_STATUS = {
+  ACTIVE: 'Aktif',
+  CUTI: 'Cuti',
+  SAKIT: 'Sakit',
+  IZIN: 'Izin',
+  NONAKTIF: 'Nonaktif',
+  ARSIP: 'Arsip',
+};
+export const DRIVER_LEAVE_STATUSES = [DRIVER_STATUS.CUTI, DRIVER_STATUS.SAKIT, DRIVER_STATUS.IZIN];
+const VALID_SET_STATUSES = [
+  DRIVER_STATUS.ACTIVE, DRIVER_STATUS.CUTI, DRIVER_STATUS.SAKIT, DRIVER_STATUS.IZIN, DRIVER_STATUS.NONAKTIF,
+];
+
+export function isLeaveStatus(status) {
+  return DRIVER_LEAVE_STATUSES.includes(status);
+}
+
+/** Local-day ISO (yyyy-mm-dd), timezone-safe — mirrors the petty-cash todayISO. */
+function todayISO() {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
+/** Stored status, deriving a value for legacy records that predate `status`. */
+export function deriveStatus(driver) {
+  if (!driver) return DRIVER_STATUS.NONAKTIF;
+  if (driver.archived === true) return DRIVER_STATUS.ARSIP;
+  if (driver.status && Object.values(DRIVER_STATUS).includes(driver.status)) return driver.status;
+  return driver.active === false ? DRIVER_STATUS.NONAKTIF : DRIVER_STATUS.ACTIVE;
+}
+
+/** Effective status: a leave whose `end` has passed reads as Aktif immediately,
+    even before the auto-reactivation sweep persists it. */
+export function effectiveStatus(driver, today = todayISO()) {
+  const status = deriveStatus(driver);
+  if (isLeaveStatus(status)) {
+    const end = driver && driver.leave && driver.leave.end;
+    if (end && String(end) < today) return DRIVER_STATUS.ACTIVE;
+  }
+  return status;
+}
+
+/** Eligible for assignment selection ⇔ effective status is Aktif. */
+export function isDriverEligible(driver) {
+  return effectiveStatus(driver) === DRIVER_STATUS.ACTIVE;
+}
+
 let drivers = [];
 let driversLoaded = false;
 let driversSubscribed = false;
@@ -110,7 +163,9 @@ export function getDrivers() {
 }
 
 export function getActiveDrivers() {
-  return drivers.filter(driver => driver.active !== false && driver.archived !== true);
+  // Eligible = effective status Aktif (excludes Cuti/Sakit/Izin/Nonaktif/Arsip,
+  // but a leave whose end has passed reads as Aktif right away).
+  return drivers.filter(isDriverEligible);
 }
 
 export function getDriverById(id) {
@@ -139,12 +194,49 @@ export function registerDriversChangeListener(callback) {
 }
 
 export function getActiveDriverNames() {
-  return drivers
-    .filter(d => d.active !== false && d.archived !== true)
-    .map(d => d.name);
+  return drivers.filter(isDriverEligible).map(d => d.name);
 }
 
-export async function createDriver({ name, phone, linkedUserUsername = '', active = true }) {
+/* ── Status write helpers (v1.16.4.4) ────────────────────────────────
+   Single place that derives the legacy mirrors (active/archived/inactiveAt/
+   archivedAt) and the leave period from a chosen `status`, so every write
+   path stays consistent. */
+function sanitizeLeave(status, leave) {
+  if (!isLeaveStatus(status)) return null;
+  return {
+    start: leave && leave.start ? String(leave.start).slice(0, 10) : '',
+    end: leave && leave.end ? String(leave.end).slice(0, 10) : '',
+    note: leave && leave.note ? String(leave.note).trim() : '',
+  };
+}
+
+function statusFields(status, leave, existing, now) {
+  const isActive = status === DRIVER_STATUS.ACTIVE;
+  const isArchived = status === DRIVER_STATUS.ARSIP;
+  return {
+    status,
+    active: isActive,
+    archived: isArchived,
+    leave: sanitizeLeave(status, leave),
+    inactiveAt: isActive ? null : ((existing && existing.inactiveAt) || now),
+    archivedAt: isArchived ? ((existing && existing.archivedAt) || now) : null,
+    updatedAt: now,
+  };
+}
+
+/** Apply a partial update to one driver — local cache when offline, Firebase
+    merge otherwise (a `leave:null` field deletes the node, the intended reset). */
+async function writeDriverUpdates(id, updates) {
+  if (!isFirebaseConfigured()) {
+    refreshDriversCache(mapFirebaseDrivers(Object.fromEntries(
+      drivers.map(d => [d.id, d.id === id ? { ...d, ...updates } : d])
+    )));
+    return;
+  }
+  await updateFirebaseData(DRIVERS_PATH + '/' + id, updates);
+}
+
+export async function createDriver({ name, phone, linkedUserUsername = '', status = DRIVER_STATUS.ACTIVE, leave = null }) {
   const trimName = String(name || '').trim();
   if (!trimName) throw new Error('Nama driver wajib diisi.');
   const trimPhone = String(phone || '').trim();
@@ -168,14 +260,12 @@ export async function createDriver({ name, phone, linkedUserUsername = '', activ
     id,
     name: trimName,
     phone: trimPhone,
-    active: Boolean(active),
     linkedUserUsername: String(linkedUserUsername || '').trim(),
     normalizedName: normalized,
     sortOrder: maxOrder + 1,
     legacyNames: [trimName],
-    inactiveAt: null,
     createdAt: now,
-    updatedAt: now,
+    ...statusFields(status, leave, null, now),
   };
 
   if (!isFirebaseConfigured()) {
@@ -186,7 +276,7 @@ export async function createDriver({ name, phone, linkedUserUsername = '', activ
   return driver;
 }
 
-export async function updateDriver(id, { name, phone, linkedUserUsername, active }) {
+export async function updateDriver(id, { name, phone, linkedUserUsername, status, leave }) {
   const existing = drivers.find(d => d.id === id);
   if (!existing) throw new Error('Driver tidak ditemukan.');
 
@@ -194,6 +284,13 @@ export async function updateDriver(id, { name, phone, linkedUserUsername, active
   if (!trimName) throw new Error('Nama driver wajib diisi.');
   const trimPhone = String(phone || '').trim();
   if (!trimPhone) throw new Error('Nomor telepon wajib diisi.');
+
+  const nextStatus = status || deriveStatus(existing);
+  if (!VALID_SET_STATUSES.includes(nextStatus)) throw new Error('Status driver tidak valid.');
+  if (isLeaveStatus(nextStatus)) {
+    if (!leave || !leave.start || !leave.end) throw new Error('Tanggal mulai dan selesai wajib diisi untuk status cuti/sakit/izin.');
+    if (String(leave.end) < String(leave.start)) throw new Error('Tanggal selesai tidak boleh sebelum tanggal mulai.');
+  }
 
   const normalized = normalizeName(trimName);
   if (drivers.find(d => d.id !== id && d.active !== false && normalizeName(d.name) === normalized)) {
@@ -204,84 +301,89 @@ export async function updateDriver(id, { name, phone, linkedUserUsername, active
   if (!legacyNames.includes(existing.name)) legacyNames.push(existing.name);
 
   const now = new Date().toISOString();
-  const isNowActive = active !== false;
-  const wasActive = existing.active !== false;
-
   const updates = {
     name: trimName,
     phone: trimPhone,
-    active: isNowActive,
     linkedUserUsername: String(linkedUserUsername || '').trim(),
     normalizedName: normalized,
     legacyNames,
-    inactiveAt: isNowActive ? null : (wasActive ? now : (existing.inactiveAt || now)),
-    updatedAt: now,
+    ...statusFields(nextStatus, leave, existing, now),
   };
 
-  if (!isFirebaseConfigured()) {
-    refreshDriversCache(mapFirebaseDrivers(Object.fromEntries(
-      drivers.map(d => [d.id, d.id === id ? { ...d, ...updates } : d])
-    )));
-    return { ...existing, ...updates };
-  }
-  await updateFirebaseData(DRIVERS_PATH + '/' + id, updates);
+  await writeDriverUpdates(id, updates);
   return { ...existing, ...updates };
+}
+
+/**
+ * Set a driver's availability status directly (quick card actions / leave).
+ * Validates the status + leave period, syncs the legacy mirrors, and returns
+ * { before, after, leave } so the caller can write an audit entry.
+ */
+export async function setDriverStatus(id, status, leave = null) {
+  const existing = drivers.find(d => d.id === id);
+  if (!existing) throw new Error('Driver tidak ditemukan.');
+  if (!VALID_SET_STATUSES.includes(status)) throw new Error('Status driver tidak valid.');
+  if (isLeaveStatus(status)) {
+    if (!leave || !leave.start || !leave.end) throw new Error('Tanggal mulai dan selesai wajib diisi untuk status cuti/sakit/izin.');
+    if (String(leave.end) < String(leave.start)) throw new Error('Tanggal selesai tidak boleh sebelum tanggal mulai.');
+  }
+  const before = deriveStatus(existing);
+  const now = new Date().toISOString();
+  const fields = statusFields(status, leave, existing, now);
+  await writeDriverUpdates(id, fields);
+  return { before, after: status, leave: fields.leave };
+}
+
+/**
+ * Auto-reactivation sweep: drivers whose leave `end` has passed return to Aktif.
+ * Returns the affected drivers (pre-restore snapshots) so the caller can audit.
+ * Idempotent — once restored they no longer match, so repeated calls are safe.
+ */
+export async function autoReactivateDueDrivers({ persist = false } = {}) {
+  const today = todayISO();
+  const due = drivers.filter(d => {
+    const s = deriveStatus(d);
+    return isLeaveStatus(s) && d.leave && d.leave.end && String(d.leave.end) < today;
+  });
+  if (!persist || due.length === 0) return due;
+  const now = new Date().toISOString();
+  for (const d of due) {
+    await writeDriverUpdates(d.id, {
+      status: DRIVER_STATUS.ACTIVE, active: true, archived: false,
+      leave: null, inactiveAt: null, updatedAt: now,
+    });
+  }
+  return due;
 }
 
 export async function deactivateDriver(id) {
   const existing = drivers.find(d => d.id === id);
   if (!existing) throw new Error('Driver tidak ditemukan.');
   const now = new Date().toISOString();
-  const updates = { active: false, inactiveAt: now, updatedAt: now };
-  if (!isFirebaseConfigured()) {
-    refreshDriversCache(mapFirebaseDrivers(Object.fromEntries(
-      drivers.map(d => [d.id, d.id === id ? { ...d, ...updates } : d])
-    )));
-    return;
-  }
-  await updateFirebaseData(DRIVERS_PATH + '/' + id, updates);
+  await writeDriverUpdates(id, { status: DRIVER_STATUS.NONAKTIF, active: false, leave: null, inactiveAt: now, updatedAt: now });
 }
 
 export async function reactivateDriver(id) {
   const existing = drivers.find(d => d.id === id);
   if (!existing) throw new Error('Driver tidak ditemukan.');
   const now = new Date().toISOString();
-  const updates = { active: true, inactiveAt: null, updatedAt: now };
-  if (!isFirebaseConfigured()) {
-    refreshDriversCache(mapFirebaseDrivers(Object.fromEntries(
-      drivers.map(d => [d.id, d.id === id ? { ...d, ...updates } : d])
-    )));
-    return;
-  }
-  await updateFirebaseData(DRIVERS_PATH + '/' + id, updates);
+  await writeDriverUpdates(id, { status: DRIVER_STATUS.ACTIVE, active: true, leave: null, inactiveAt: null, updatedAt: now });
 }
 
 export async function archiveDriver(id) {
   const existing = drivers.find(d => d.id === id);
   if (!existing) throw new Error('Driver tidak ditemukan.');
   const now = new Date().toISOString();
-  const updates = { archived: true, archivedAt: now, active: false, inactiveAt: existing.inactiveAt || now, updatedAt: now };
-  if (!isFirebaseConfigured()) {
-    refreshDriversCache(mapFirebaseDrivers(Object.fromEntries(
-      drivers.map(d => [d.id, d.id === id ? { ...d, ...updates } : d])
-    )));
-    return;
-  }
-  await updateFirebaseData(DRIVERS_PATH + '/' + id, updates);
+  await writeDriverUpdates(id, { status: DRIVER_STATUS.ARSIP, archived: true, archivedAt: now, active: false, leave: null, inactiveAt: existing.inactiveAt || now, updatedAt: now });
 }
 
 export async function restoreDriver(id) {
   const existing = drivers.find(d => d.id === id);
   if (!existing) throw new Error('Driver tidak ditemukan.');
   const now = new Date().toISOString();
-  const updates = { archived: false, archivedAt: null, updatedAt: now };
-  if (!isFirebaseConfigured()) {
-    refreshDriversCache(mapFirebaseDrivers(Object.fromEntries(
-      drivers.map(d => [d.id, d.id === id ? { ...d, ...updates } : d])
-    )));
-    return;
-  }
-  await updateFirebaseData(DRIVERS_PATH + '/' + id, updates);
+  // Restored to Nonaktif (not auto-eligible) — matches the prior behaviour where
+  // a restored driver stayed inactive until explicitly reactivated.
+  await writeDriverUpdates(id, { status: DRIVER_STATUS.NONAKTIF, archived: false, archivedAt: null, active: false, inactiveAt: existing.inactiveAt || now, updatedAt: now });
 }
 
 export async function deleteDriver(id) {

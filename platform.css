@@ -5586,6 +5586,11 @@ html.theme-anim .timeline-scroll-fade-right {
   background: var(--border);
   color: var(--muted);
 }
+/* Leave statuses (Cuti/Sakit/Izin) — amber, theme-aware via --warn tokens. v1.16.4.4 */
+.v2-user-status-pill.v2-status-pill--leave {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
 
 /* Action buttons */
 .v2-user-card-actions {
