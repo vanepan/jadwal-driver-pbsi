@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.16.4.9';
-export const RELEASE_NAME = 'Overtime Administration';
+export const APP_VERSION = '1.16.4.10';
+export const RELEASE_NAME = 'Alias Engine Hardening';
 
 /**
  * Web Push VAPID PUBLIC key (v1.11.3). Safe to ship — it is an
@@ -17,6 +17,22 @@ export const RELEASE_NAME = 'Overtime Administration';
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.16.4.10',
+    date: '2026-06-24',
+    summary: 'Alias Engine Hardening. Resolves the long-standing "Gagal menyimpan alias" failure and hardens the analytics alias subsystem to be safe, auditable, reversible, and credible. ROOT CAUSE: the normalized destination/entity name was used DIRECTLY as a Firebase RTDB child key, but RTDB rejects keys containing . # $ / [ ] — so any alias for a name like "RS EKA Hospital Cibubur / kontrol" threw inside firebase.set(). A new pure Alias Engine introduces an RTDB-safe key encoder plus deterministic confidence scoring, custom-value validation, non-destructive merge + undo, and a standardized audit trail. Strictly additive and backward compatible: the safe-key encoder is a NO-OP for any name without an illegal character, so every alias stored before this release keeps resolving (no migration). The parity-locked analytics render/exportSnapshot projection is unchanged — merge provenance + confidence are presented in the view layer only. APP_VERSION 1.16.4.9 → 1.16.4.10 re-stamps SW_VERSION → CACHE_NAME sarpras-cache-v1.16.4.10, version.json, and the index.html app.js cache-bust via scripts/sync-version.mjs.',
+    highlights: [
+      'New pure engine (js/analytics/engines/alias-engine.js, DOM/Firebase-free, mirrors workload-engine): rtdbSafeKey() is RTDB-safe, deterministic, reversible (decodeSafeKey) and collision-resistant. For names without an illegal char it returns the legacy normalized string verbatim (backward compatible); for names that were previously UNSAVEABLE it encodes . # $ / [ ] (and the * escape) to *+two-hex. This is the SINGLE normalization used for both alias save and lookup → read/write symmetry. analytics-engine.js _normDestKey() now delegates to it.',
+      'Custom alias reliability (Phase B): validateCustomAlias() rejects empty / whitespace-only / punctuation-only ("- _ ." ) / single-char values, and normalizeCanonical() Title-Cases with an acronym allowlist so casing variants ("rs eka hospital cibubur", "RS EKA HOSPITAL CIBUBUR") collapse to one canonical "RS Eka Hospital Cibubur".',
+      'Audit trail (Phase C): standardized ALIAS_CREATED / UPDATED / MERGED / DELETED / RESTORED events carry before/after + actor + timestamp (+ optional reason); merge provenance (who/when, source) is shown in the Kelola Alias row.',
+      'Undo Merge (Phase D): merges are non-destructive — raw names always remain on assignments; save records mergedFrom/mergedAt/mergedBy and a new "Batalkan Merge" action removes the mapping (source re-resolves to itself) and logs ALIAS_RESTORED. Analytics recompute automatically.',
+      'Confidence model (Phase E/F, deterministic — no AI/API/LLM): aliasConfidence() blends char similarity (0.40), token overlap (0.35, max of Jaccard & containment so a shared distinctive token counts), and abbreviation detection (0.25). Bands: 90+ Sangat Yakin · 70–89 Kemungkinan Sama · 50–69 Perlu Review · <50 Jangan Sarankan. The duplicate-detection UI shows a colored confidence badge, sorts highest-confidence first, and hides <50% suggestions.',
+      'Regression-safe: the parity-locked render/exportSnapshot projection is byte-identical (merge provenance + confidence are derived in the view from the live alias map, never added to model.render). New scripts/alias-engine-check.mjs (34 cases) passes 100%; the full analytics suite — parity, insights, recommendations, trend, worktime, workload, workload-integration — all remain green.',
+    ],
+    deferred: [
+      'Semantic alias matching (e.g. "Pelatnas Cipayung" ≈ "PBSI Cipayung") needs domain knowledge a pure string model cannot infer — such pairs land in "Perlu Review", not auto-merge, by design.',
+    ],
+  },
   {
     version: '1.16.4.9',
     date: '2026-06-24',

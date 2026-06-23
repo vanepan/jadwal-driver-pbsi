@@ -65,6 +65,17 @@ import {
   getAliasCanonical as _getAliasCanonical,
   dqPairKey as _dqPairKey,
 } from './analytics/analytics-engine.js';
+import {
+  validateCustomAlias as _validateCustomAlias,
+  normalizeCanonical as _normalizeCanonical,
+  aliasConfidence as _aliasConfidence,
+  decodeSafeKey as _decodeSafeKey,
+  ALIAS_AUDIT as _ALIAS_AUDIT,
+  buildAliasEntry as _buildAliasEntry,
+  aliasSaveAction as _aliasSaveAction,
+  applyAlias as _applyAlias,
+  removeAlias as _removeAlias,
+} from './analytics/engines/alias-engine.js';
 import { classificationOf } from './analytics/analytics-governance.js';
 import {
   renderAnalyticsEmptyState,
@@ -2580,6 +2591,15 @@ function initV2AdministrationWorkspace() {
         const key  = actionBtn.dataset.key;
         if (confirm(`Hapus alias "${key}"? Analytics akan dihitung ulang secara otomatis.`)) {
           _deleteAnalyticsAlias(type, key);
+        }
+        return;
+      }
+      if (action === 'alias-undo') {
+        const type = actionBtn.dataset.type;
+        const key  = actionBtn.dataset.key;
+        const src  = actionBtn.dataset.restore || _decodeSafeKey(key);
+        if (confirm(`Batalkan merge ini? "${src}" akan dipulihkan dan analytics dihitung ulang.`)) {
+          _undoAliasMerge(type, key);
         }
         return;
       }
@@ -5877,45 +5897,60 @@ function refreshAnalyticsDisplay() {
           <h3 class="v2-admin-config-group-title">Deteksi Duplikasi</h3>
           ${_dqMainWarnings.length > 0 ? `
           <div class="v2-dq-pair-list">
-            ${_dqMainWarnings.map(w => {
+            ${(() => {
+              // Phase F (v1.16.4.10) — score each unresolved pair with the
+              // deterministic confidence model and present highest-confidence
+              // suggestions first. Pairs below "Jangan Sarankan" (<50%) are
+              // hidden. Resolved (alias-active) rows always show. Computed here
+              // in the view (render projection stays parity-locked).
+              const _confTone = { green: '#2f7d5b', yellow: '#a9781a', red: '#9a1b2d', none: '#8b857c' };
+              const scored = _dqMainWarnings.map(w => ({
+                w, conf: w.aliasActive ? null : _aliasConfidence(w.a, w.b),
+              })).filter(x => x.conf === null || x.conf.recommend)
+                .sort((x, y) => (y.conf?.score ?? 101) - (x.conf?.score ?? 101));
               const typeLabels = { destinations: 'Tujuan', bidang: 'Bidang', drivers: 'Driver', vehicles: 'Kendaraan' };
-              const typeLabel  = typeLabels[w.type] || w.type;
-              if (w.aliasActive) {
-                return `<div class="v2-dq-pair-row v2-dq-pair-row--resolved">
+              return scored.map(({ w, conf }) => {
+                const typeLabel = typeLabels[w.type] || w.type;
+                if (w.aliasActive) {
+                  return `<div class="v2-dq-pair-row v2-dq-pair-row--resolved">
+                    <span class="v2-dq-type-badge">${typeLabel}</span>
+                    <div class="v2-dq-pair-names">
+                      <span class="v2-dq-name">${esc(w.a)}</span>
+                      <span class="v2-dq-arrow">→</span>
+                      <span class="v2-dq-name v2-dq-name--canonical">${esc(w.aliasActive)}</span>
+                    </div>
+                    <span class="v2-dq-resolved-badge">✓ Alias Aktif</span>
+                  </div>`;
+                }
+                const tone = _confTone[conf.tone] || _confTone.none;
+                const confBadge = `<span class="v2-dq-conf-badge" title="Skor keyakinan: kemiripan teks + tumpang-tindih kata + deteksi singkatan" style="display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:800;color:#fff;background:${tone}">${conf.score}% · ${esc(conf.label)}</span>`;
+                return `<div class="v2-dq-pair-row">
                   <span class="v2-dq-type-badge">${typeLabel}</span>
                   <div class="v2-dq-pair-names">
                     <span class="v2-dq-name">${esc(w.a)}</span>
-                    <span class="v2-dq-arrow">→</span>
-                    <span class="v2-dq-name v2-dq-name--canonical">${esc(w.aliasActive)}</span>
+                    <span class="v2-dq-sep">&amp;</span>
+                    <span class="v2-dq-name">${esc(w.b)}</span>
                   </div>
-                  <span class="v2-dq-resolved-badge">✓ Alias Aktif</span>
+                  ${confBadge}
+                  <div class="v2-dq-pair-actions">
+                    <button class="v2-dq-merge-btn"
+                      data-action="alias-merge"
+                      data-type="${esc(w.type)}"
+                      data-a="${esc(w.a)}"
+                      data-b="${esc(w.b)}"
+                      data-count-a="${w.countA ?? ''}"
+                      data-count-b="${w.countB ?? ''}"
+                      type="button">Gabungkan</button>
+                    <button class="v2-dq-dismiss-btn"
+                      data-action="alias-dismiss"
+                      data-type="${esc(w.type)}"
+                      data-a="${esc(w.a)}"
+                      data-b="${esc(w.b)}"
+                      type="button">Abaikan</button>
+                  </div>
                 </div>`;
-              }
-              return `<div class="v2-dq-pair-row">
-                <span class="v2-dq-type-badge">${typeLabel}</span>
-                <div class="v2-dq-pair-names">
-                  <span class="v2-dq-name">${esc(w.a)}</span>
-                  <span class="v2-dq-sep">&amp;</span>
-                  <span class="v2-dq-name">${esc(w.b)}</span>
-                </div>
-                <div class="v2-dq-pair-actions">
-                  <button class="v2-dq-merge-btn"
-                    data-action="alias-merge"
-                    data-type="${esc(w.type)}"
-                    data-a="${esc(w.a)}"
-                    data-b="${esc(w.b)}"
-                    data-count-a="${w.countA ?? ''}"
-                    data-count-b="${w.countB ?? ''}"
-                    type="button">Gabungkan</button>
-                  <button class="v2-dq-dismiss-btn"
-                    data-action="alias-dismiss"
-                    data-type="${esc(w.type)}"
-                    data-a="${esc(w.a)}"
-                    data-b="${esc(w.b)}"
-                    type="button">Abaikan</button>
-                </div>
-              </div>`;
-            }).join('')}
+              }).join('');
+            })()}
           </div>` : `
           <p class="v2-analytics-empty" style="padding:8px 0 12px;">Tidak ada potensi duplikasi terdeteksi pada periode ini.</p>`}
 
@@ -5971,13 +6006,27 @@ function refreshAnalyticsDisplay() {
                   const createdStr = al.createdAt
                     ? new Date(al.createdAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })
                     : '—';
+                  // Merge provenance is read live from the alias map (NOT the
+                  // parity-locked render projection) so the frozen snapshot shape
+                  // is preserved. v1.16.4.10.
+                  const _rawEntry = _getAnalyticsAliases(al.type)[al.aliasKey] || {};
+                  const _mergedFrom = _rawEntry.mergedFrom || '';
+                  const _mergedBy   = _rawEntry.mergedBy || '';
+                  const _mergedAt   = _rawEntry.mergedAt || '';
                   return `<tr>
                     <td class="v2-dq-alias-key">${esc(al.aliasKey)}</td>
                     <td class="v2-dq-alias-canonical">${esc(al.canonical || '')}</td>
                     <td><span class="v2-dq-type-badge">${typeLabels[al.type] || al.type}</span></td>
                     <td class="v2-dq-alias-usage">${usageStr}</td>
-                    <td class="v2-dq-alias-created" title="${esc(al.createdBy || '')}&#10;${esc(al.createdAt || '')}">${createdStr}</td>
+                    <td class="v2-dq-alias-created" title="Dibuat oleh ${esc(al.createdBy || '—')}&#10;${esc(al.createdAt || '')}${_mergedFrom ? `&#10;Merge dari: ${esc(_mergedFrom)}` : ''}${_mergedBy ? `&#10;Oleh ${esc(_mergedBy)} · ${esc(_mergedAt)}` : ''}">${createdStr}${_mergedFrom ? ' <span class="v2-dq-merge-tag" title="Hasil merge" style="font-size:10px;opacity:.7">⤵</span>' : ''}</td>
                     <td class="v2-dq-alias-actions">
+                      <button class="v2-dq-undo-btn"
+                        data-action="alias-undo"
+                        data-type="${esc(al.type)}"
+                        data-key="${esc(al.aliasKey)}"
+                        data-restore="${esc(_mergedFrom || _decodeSafeKey(al.aliasKey))}"
+                        title="Pulihkan nilai sumber dan hitung ulang analytics"
+                        type="button">Batalkan Merge</button>
                       <button class="v2-dq-delete-btn"
                         data-action="alias-delete"
                         data-type="${esc(al.type)}"
@@ -6152,32 +6201,79 @@ function refreshAnalyticsDisplay() {
 
 // ── Alias Resolution ──────────────────────────────────────────────────────
 
-async function _saveAnalyticsAlias(type, aliasKey, canonical) {
+/**
+ * Save (create / update / merge) an alias mapping. v1.16.4.10: writes
+ * non-destructive merge provenance and a standardized audit event with
+ * before/after so every change is traceable (Phase C/D).
+ * @param {string} type
+ * @param {string} aliasKey - RTDB-safe key (from _normDestKey)
+ * @param {string} canonical
+ * @param {{ sourceName?:string, reason?:string }} [meta]
+ */
+async function _saveAnalyticsAlias(type, aliasKey, canonical, meta = {}) {
   const cu = getCurrentUser();
-  const entry = { canonical, createdAt: new Date().toISOString(), createdBy: cu?.displayName || cu?.username || '' };
+  const who = cu?.displayName || cu?.username || '';
+  const now = new Date().toISOString();
   const current = _getAnalyticsAliases(type);
-  const updated  = { ...current, [aliasKey]: entry };
+  const before  = current[aliasKey] || null;          // prior mapping (for audit + UPDATED detection)
+
+  // Phase C/D — entry construction (incl. non-destructive merge provenance) and
+  // map application live in the pure alias engine; here we only persist + audit.
+  const entry = _buildAliasEntry({ canonical, before, who, now, sourceName: meta.sourceName || null, reason: meta.reason });
+  const updated = _applyAlias(current, aliasKey, entry);
   await updateSetting(`analyticsAliases.${type}`, updated);
+
+  const action = _aliasSaveAction(before, meta.sourceName);
   logAction({
     userId: cu?.id, username: cu?.username, displayName: cu?.displayName,
-    action: 'alias_created', targetId: aliasKey,
-    metadata: { type, aliasKey, canonical },
+    action, targetId: aliasKey,
+    metadata: {
+      type, aliasKey,
+      before: before ? _getAliasCanonical(before) : null,
+      after: canonical,
+      sourceName: meta.sourceName || null,
+      reason: meta.reason || null,
+    },
   });
   showToast(`Alias disimpan: "${canonical}"`);
 }
 
 async function _deleteAnalyticsAlias(type, aliasKey) {
-  const current  = { ..._getAnalyticsAliases(type) };
-  const canonical = _getAliasCanonical(current[aliasKey]) || aliasKey;
-  delete current[aliasKey];
-  await updateSetting(`analyticsAliases.${type}`, Object.keys(current).length > 0 ? current : null);
+  const before   = _getAnalyticsAliases(type)[aliasKey] || null;
+  const canonical = _getAliasCanonical(before) || aliasKey;
+  const next     = _removeAlias(_getAnalyticsAliases(type), aliasKey);
+  await updateSetting(`analyticsAliases.${type}`, Object.keys(next).length > 0 ? next : null);
   const cu = getCurrentUser();
   logAction({
     userId: cu?.id, username: cu?.username, displayName: cu?.displayName,
-    action: 'alias_deleted', targetId: aliasKey,
-    metadata: { type, aliasKey, canonical },
+    action: _ALIAS_AUDIT.DELETED, targetId: aliasKey,
+    metadata: { type, aliasKey, before: canonical, after: null },
   });
   showToast('Alias dihapus.');
+}
+
+/**
+ * Undo a merge (Phase D). Because the merge is non-destructive (raw names are
+ * preserved on every assignment), reverting is simply removing the alias
+ * mapping — the source name then resolves to itself and analytics recompute.
+ * Emits an ALIAS_RESTORED audit event carrying the reverted mapping.
+ * @param {string} type
+ * @param {string} aliasKey
+ */
+async function _undoAliasMerge(type, aliasKey) {
+  const before   = _getAnalyticsAliases(type)[aliasKey] || null;
+  if (!before) { showToast('Alias sudah tidak ada.'); return; }
+  const canonical = _getAliasCanonical(before) || aliasKey;
+  const restored  = (before && before.mergedFrom) || _decodeSafeKey(aliasKey);
+  const next     = _removeAlias(_getAnalyticsAliases(type), aliasKey);
+  await updateSetting(`analyticsAliases.${type}`, Object.keys(next).length > 0 ? next : null);
+  const cu = getCurrentUser();
+  logAction({
+    userId: cu?.id, username: cu?.username, displayName: cu?.displayName,
+    action: _ALIAS_AUDIT.RESTORED, targetId: aliasKey,
+    metadata: { type, aliasKey, before: canonical, after: restored, restored },
+  });
+  showToast(`Merge dibatalkan: "${restored}" dipulihkan.`);
 }
 
 async function _dismissDqWarning(type, a, b) {
@@ -6366,8 +6462,12 @@ function initAliasResolutionModal() {
     if (selected === 'a')      canonical = nameA;
     else if (selected === 'b') canonical = nameB;
     else {
-      canonical = document.getElementById('aliasCustomInput')?.value?.trim();
-      if (!canonical) { showToast('Masukkan nilai kanonik kustom.', 'error'); return; }
+      // Phase B: a custom value must be real — not empty, not just punctuation
+      // ("-", "_", ".", spaces). validateCustomAlias also returns the canonical
+      // (Title-Cased, acronym-preserving) display form so casing variants agree.
+      const v = _validateCustomAlias(document.getElementById('aliasCustomInput')?.value);
+      if (!v.valid) { showToast(v.reason, 'error'); return; }
+      canonical = v.value;
     }
 
     const aliasName = selected === 'b' ? nameA : nameB;
@@ -6376,7 +6476,7 @@ function initAliasResolutionModal() {
     const btn = document.getElementById('btnAliasSave');
     if (btn) { btn.disabled = true; btn.textContent = 'Menyimpan…'; }
     try {
-      await _saveAnalyticsAlias(type, aliasKey, canonical);
+      await _saveAnalyticsAlias(type, aliasKey, canonical, { sourceName: aliasName });
       closeModal();
     } catch (err) {
       showToast('Gagal menyimpan alias.', 'error');

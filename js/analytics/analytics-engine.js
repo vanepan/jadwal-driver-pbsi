@@ -22,18 +22,17 @@ import { generateInsights } from './analytics-insights.js';
 import { generateRecommendations } from './analytics-recommendations.js';
 import { generateTrends } from './analytics-trends.js';
 import { buildCancellationModel } from './analytics-cancellation.js';
+import { rtdbSafeKey } from './engines/alias-engine.js';
 
 /* ── Pure helpers (moved verbatim from app.js) ───────────────────────────── */
 
+/* v1.16.4.10 — destination/entity key derivation now delegates to the hardened
+   alias engine: rtdbSafeKey() is RTDB-safe (encodes . # $ / [ ]) yet a no-op for
+   any name without an illegal char, so existing alias keys are byte-identical and
+   keep resolving. This is the SINGLE normalization used for both alias save and
+   lookup, guaranteeing read/write symmetry. */
 function _normDestKey(dest) {
-  return String(dest)
-    .trim()
-    .toLowerCase()
-    .replace(/[–—‒‐﹘﹣－]/g, '-')
-    .replace(/\s*-\s*/g, '-')
-    .replace(/\s+/g, ' ')
-    .replace(/[.,;]+$/g, '')
-    .trim();
+  return rtdbSafeKey(dest);
 }
 
 function _strSimilarity(a, b) {
