@@ -7,10 +7,27 @@
 
 'use strict';
 
-import { todayString, formatDateLong, timeToMinutes, offsetDate } from './utils.js';
+import { todayString, formatDateLong, timeToMinutes, minutesToTime, offsetDate, computeWorkTime } from './utils.js';
 import { getVehicleColor } from './drivers.js';
 import { getActiveDrivers } from './drivers-store.js';
 import { openDetailModal } from './modal.js';
+import { getSetting } from './settings-store.js';
+
+/** Live office-hours window (09:00–17:00 default) for overtime detection. */
+function getOfficeHours() {
+  return {
+    workStartMins: getSetting('operations.workStartMins'),
+    workEndMins:   getSetting('operations.workEndMins'),
+  };
+}
+
+/** Minutes-from-midnight (local) for an ISO timestamp, or null. */
+function isoToMinsOfDay(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  return d.getHours() * 60 + d.getMinutes();
+}
 
 /* ── Helpers ── */
 function normalizeBlockStatus(status) {
@@ -292,10 +309,39 @@ function driverMatchesAssignment(driver, assignment) {
  */
 function createAssignmentBlock(assignment) {
   const hourWidth = getHourWidth();
-  const startMin = timeToMinutes(assignment.startTime);
-  const endMin   = timeToMinutes(assignment.endTime);
-  const left  = (startMin / 60) * hourWidth;
-  const width = ((endMin - startMin) / 60) * hourWidth;
+
+  // Scheduled window (planned) — the default and the audit baseline.
+  const schedStartMin = timeToMinutes(assignment.startTime);
+  const schedEndMin   = timeToMinutes(assignment.endTime);
+
+  const status = normalizeBlockStatus(assignment.status);
+  const isCompleted = status === 'completed';
+  const isStarted   = status === 'started';
+
+  // v1.16.4.7 — auto-adjust the block to ACTUAL operational time when known.
+  // Scheduled fields are never mutated; this only changes the visual window.
+  let displayStartMin = schedStartMin;
+  let displayEndMin   = schedEndMin;
+  let usingActual = false;
+
+  const actualStartMin = isoToMinsOfDay(assignment.startedAt);
+  const actualEndMin   = isoToMinsOfDay(assignment.completedAt);
+
+  if (isCompleted && actualStartMin != null && actualEndMin != null && actualEndMin > actualStartMin) {
+    // Completed: render the real engaged window (same-day).
+    displayStartMin = actualStartMin;
+    displayEndMin   = actualEndMin;
+    usingActual = true;
+  } else if (isStarted && actualStartMin != null) {
+    // In progress: anchor to the real start; extend to the scheduled end
+    // (or just past the start if the schedule has already elapsed).
+    displayStartMin = actualStartMin;
+    displayEndMin   = Math.max(schedEndMin, actualStartMin + 1);
+    usingActual = true;
+  }
+
+  const left  = (displayStartMin / 60) * hourWidth;
+  const width = ((displayEndMin - displayStartMin) / 60) * hourWidth;
 
   const block = document.createElement('div');
   block.className = 'assignment-block';
@@ -305,21 +351,24 @@ function createAssignmentBlock(assignment) {
   block.style.width = `${Math.max(width, 20)}px`;
   block.style.background = getVehicleColor(assignment.vehicle);
 
-  const status = normalizeBlockStatus(assignment.status);
-  const isCompleted = status === 'completed';
-  const isStarted   = status === 'started';
   if (isCompleted) block.classList.add('is-completed');
   if (isStarted)   block.classList.add('is-started');
 
-  const blockTimeLabel = assignment.fullDay
+  // Overtime (calendar-based) — only meaningful once completed.
+  const work = computeWorkTime(assignment, getOfficeHours());
+  const isOvertime = work.isOvertime === true;
+  if (isOvertime) block.classList.add('is-overtime');
+
+  const blockTimeLabel = (assignment.fullDay && !usingActual)
     ? 'Penuh Hari'
-    : `${assignment.startTime}–${assignment.endTime}`;
+    : `${minutesToTime(displayStartMin)}–${minutesToTime(displayEndMin)}`;
 
   block.innerHTML = `
     <span class="block-time">${blockTimeLabel}</span>
     <span class="block-purpose">${assignment.purpose}</span>
     ${isCompleted ? '<span class="block-status-badge">✓ Selesai</span>' : ''}
     ${isStarted   ? '<span class="block-status-badge block-status-badge--started">▶ Jalan</span>' : ''}
+    ${isOvertime  ? '<span class="block-status-badge block-status-badge--overtime">⏱ Lembur</span>' : ''}
     <div class="resize-handle"></div>
   `;
 

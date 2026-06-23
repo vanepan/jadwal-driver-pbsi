@@ -15,6 +15,7 @@
 'use strict';
 
 import { buildAnalyticsModel } from './analytics-model.js';
+import { computeWorkTime } from '../utils.js';
 import { filterEligible } from './analytics-governance.js';
 import { generateInsights } from './analytics-insights.js';
 import { generateRecommendations } from './analytics-recommendations.js';
@@ -209,7 +210,20 @@ export function computeAnalyticsModel(ctx) {
   const openAsg    = inProgress + scheduled;
   const compRate   = total > 0 ? Math.round((completed / total) * 100) : 0;
 
+  // ── Actual Working Time & Overtime (v1.16.4.7) ─────────────────────────
+  // Office-hours window (overtime boundary) supplied by the caller; defaults
+  // to 09:00–17:00 inside computeWorkTime when absent (e.g. Node harnesses).
+  const office = (ctx.office && Number.isFinite(Number(ctx.office.workStartMins)))
+    ? ctx.office
+    : undefined;
+  const _officeStart = office ? Number(office.workStartMins) : 540;
+  const _officeEnd   = office ? Number(office.workEndMins)   : 1020;
+  const officeHoursPerDay = Math.max(1, (_officeEnd - _officeStart) / 60);
+
   // ── Driver utilization ─────────────────────────────────────────────────
+  // NOTE: driverMap entries stay { displayName, count } EXACTLY (parity-locked
+  // via render.driversWithTrips). Actual-working-time data is kept in a
+  // separate structure so the parity-preserving render projection is unchanged.
   const activeDrivers = getDrivers().filter(d => d.active !== false && !d.archived);
   const driverMap = new Map();
   for (const d of activeDrivers) {
@@ -223,6 +237,35 @@ export function computeAnalyticsModel(ctx) {
   const driversWithTrips = driversSorted.filter(d => d.count > 0);
   const mostActiveDrv    = driversWithTrips[0] ?? null;
   const leastActiveDrv   = driversWithTrips.length > 1 ? driversWithTrips[driversWithTrips.length - 1] : null;
+
+  // ── Working-time / overtime aggregation (kept OUT of render for parity) ──
+  // Window totals computed over ALL operational assignments (not gated by
+  // driverMap membership), so work by archived/legacy drivers still counts.
+  let totalActualHours    = 0;
+  let overtimeAssignments = 0;
+  let totalOvertimeHours  = 0;
+  const _driverWorkTime = {};    // lowercased driver name → { actualHours, overtimeCount, overtimeHours }
+  const _driverDays = new Set(); // distinct (driver, date) pairs that had actual hours
+  for (const a of filteredAsg) {
+    const wt = computeWorkTime(a, office);
+    if (wt.actualHours == null) continue; // only completed assignments contribute
+    totalActualHours   += wt.actualHours;
+    totalOvertimeHours += wt.overtimeHours;
+    if (wt.isOvertime) overtimeAssignments++;
+    const dKey = (a.driver || '').toLowerCase();
+    _driverDays.add(`${dKey}|${a.date || a.startDate || ''}`);
+    const e = _driverWorkTime[dKey] || { actualHours: 0, overtimeCount: 0, overtimeHours: 0 };
+    e.actualHours   += wt.actualHours;
+    e.overtimeHours += wt.overtimeHours;
+    if (wt.isOvertime) e.overtimeCount++;
+    _driverWorkTime[dKey] = e;
+  }
+  // Working-hour utilization (actual-hours based, not trip count): engaged
+  // hours ÷ available office hours across the driver-days actually worked.
+  const driverDaysWorked = _driverDays.size;
+  const workingHourUtilization = driverDaysWorked > 0
+    ? Math.round((totalActualHours / (officeHoursPerDay * driverDaysWorked)) * 100)
+    : null;
 
   // ── Vehicle utilization ────────────────────────────────────────────────
   const activeVehicles = getActiveVehiclesFromStore().filter(v => !v.archived);
@@ -500,6 +543,8 @@ export function computeAnalyticsModel(ctx) {
       driversWithTrips: driversWithTrips.length, vehiclesWithTrips: vehiclesWithTrips.length,
       totalKm, avgKmPerTrip, odoTripCount,
       wlBalancedCount, wlOverCount, wlUnderCount,
+      // Actual Working Time & Overtime (v1.16.4.7) — additive; existing KPIs untouched.
+      totalActualHours, overtimeAssignments, totalOvertimeHours, workingHourUtilization,
     },
     cancellation,
     charts: {
@@ -513,6 +558,14 @@ export function computeAnalyticsModel(ctx) {
     insights: [],
     diagnostics: {
       filteredAsg,
+      // Actual Working Time & Overtime (v1.16.4.7) — per-driver hours/overtime
+      // map + office window. Kept here (not in render) so the parity-preserving
+      // render projection stays byte-identical to the pre-feature baseline.
+      workingTime: {
+        byDriver: _driverWorkTime,           // lowercased name → { actualHours, overtimeCount, overtimeHours }
+        officeHoursPerDay, driverDaysWorked,
+        totalActualHours, overtimeAssignments, totalOvertimeHours, workingHourUtilization,
+      },
       cancelledAsg, // retained for future cancellation analytics (rate, trend, by bidang/driver/destination)
       dqWarnings: _dqWarnings,
       dqMainWarnings: _dqMainWarnings,

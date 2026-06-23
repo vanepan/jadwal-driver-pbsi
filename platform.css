@@ -11288,3 +11288,50 @@ input[type="time"].v2-admin-config-input {
   color: var(--text);
 }
 .v2-module-placeholder-text { margin: 0; font-size: 14px; line-height: 1.6; }
+
+/* ============================================================
+   v1.16.4.7 — Driver Actual Working Time & Overtime Detection
+   Append-only. Amber LEMBUR badge on overtime timeline blocks +
+   Normal/Lembur indicators in Driver Analytics. Theme-aware via
+   the existing --warn / --warn-bg tokens.
+   ============================================================ */
+
+/* Timeline: amber "Lembur" badge + subtle amber outline on OT blocks. */
+body.v2-shell-active .block-status-badge--overtime {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.assignment-block.is-overtime {
+  box-shadow: inset 0 0 0 1.5px var(--warn);
+}
+
+/* Driver Analytics: Normal / Lembur per-driver indicator. */
+.v2-analytics-ot-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 3px 8px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  width: 60px;
+  justify-content: center;
+}
+.v2-analytics-ot-badge--lembur {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.v2-analytics-ot-badge--normal {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+
+/* Explanatory note under the working-time KPI group. */
+.v2-analytics-note {
+  margin: 10px 0 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--muted);
+}

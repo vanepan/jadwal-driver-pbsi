@@ -5209,6 +5209,8 @@ function computeDriverModelForRange(dateRange, scope = {}) {
     requests,
     drivers: getDrivers(),
     vehicles: getActiveVehiclesFromStore(),
+    // v1.16.4.7 — office-hours window (overtime boundary) from Konfigurasi.
+    office: { workStartMins: getSetting('operations.workStartMins'), workEndMins: getSetting('operations.workEndMins') },
     filters: {
       dateRange: range,
       driver:  scope.driver  || '',
@@ -5261,6 +5263,8 @@ function refreshAnalyticsDisplay() {
       requests,
       drivers:  getDrivers(),
       vehicles: getActiveVehiclesFromStore(),
+      // v1.16.4.7 — office-hours window (overtime boundary) from Konfigurasi.
+      office: { workStartMins: getSetting('operations.workStartMins'), workEndMins: getSetting('operations.workEndMins') },
       filters: {
         dateRange: analyticsDateRange,
         driver:    analyticsDriverFilter,
@@ -5373,6 +5377,15 @@ function refreshAnalyticsDisplay() {
     _dqMainWarnings, _dqUnresolvedCount, _dqResolvedCount, _allDismissed, _allAliases,
   } = _analyticsModel.render;
 
+  // v1.16.4.7 — Actual Working Time & Overtime (kept in diagnostics, not render,
+  // so the parity-preserving render projection is unchanged).
+  const _wt = (_analyticsModel.diagnostics && _analyticsModel.diagnostics.workingTime) || {};
+  const {
+    totalActualHours = 0, overtimeAssignments = 0,
+    totalOvertimeHours = 0, workingHourUtilization = null,
+  } = _wt;
+  const _driverWT = _wt.byDriver || {};
+
   // ── Trends (Sprint 6 data) ─────────────────────────────────────────────
   const _trends = _analyticsModel.trends || {};
   // Build a hero/stat trend delta from an existing trend metric. Never fabricates
@@ -5430,6 +5443,10 @@ function refreshAnalyticsDisplay() {
   const fmtDrv = d => d ? `${d.displayName} (${d.count} asg)` : '—';
   const fmtVeh = v => v ? `${v.displayName} (${v.count} asg)` : '—';
 
+  // v1.16.4.7 — format actual working hours (e.g. 12.5 → "12,5 jam").
+  const fmtHours = h => (h == null) ? '—'
+    : `${Number(h).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 1 })} jam`;
+
   // ── Insight highlights (top 3) ─────────────────────────────────────────
   const insightItems = [];
   if (mostActiveDrv)
@@ -5449,10 +5466,17 @@ function refreshAnalyticsDisplay() {
     ? activeDriversInPeriod.map((d, i) => {
         const pct = total > 0 ? Math.round((d.count / total) * 100) : 0;
         const topBadge = i === 0 ? '<span class="v2-analytics-top-badge">#1 Driver</span>' : '';
+        // v1.16.4.7 — Normal / Lembur indicator from the driver's overtime count.
+        const wt = _driverWT[(d.displayName || '').toLowerCase()] || { actualHours: 0, overtimeCount: 0, overtimeHours: 0 };
+        const otBadge = (wt.overtimeCount || 0) > 0
+          ? `<span class="v2-analytics-ot-badge v2-analytics-ot-badge--lembur" title="${wt.overtimeCount} assignment lembur · ${fmtHours(wt.overtimeHours)} lembur">Lembur</span>`
+          : `<span class="v2-analytics-ot-badge v2-analytics-ot-badge--normal">Normal</span>`;
         return `<div class="v2-analytics-breakdown-row">
           <span class="v2-analytics-breakdown-name">${esc(d.displayName)}${topBadge ? ' ' + topBadge : ''}</span>
           <span class="v2-analytics-breakdown-count">${d.count} asg</span>
+          <span class="v2-analytics-breakdown-count v2-analytics-breakdown-count--muted">${fmtHours(wt.actualHours)}</span>
           <span class="v2-analytics-breakdown-pct">${pct}%</span>
+          ${otBadge}
           ${wlBadge(d.wl)}
         </div>`;
       }).join('')
@@ -5643,6 +5667,16 @@ function refreshAnalyticsDisplay() {
   const driverContent = `
     <div class="v2-analytics-groups">
       <div class="v2-admin-config-group">
+        <h3 class="v2-admin-config-group-title">Jam Kerja Aktual & Lembur</h3>
+        <div class="v2-analytics-kpi-list">
+          ${kpiRow('Total Jam Kerja Aktual', fmtHours(totalActualHours))}
+          ${kpiRow('Assignment Lembur', `${overtimeAssignments || 0} assignment`, (overtimeAssignments || 0) > 0 ? 'warn' : '')}
+          ${kpiRow('Jam Lembur Total', fmtHours(totalOvertimeHours), (totalOvertimeHours || 0) > 0 ? 'warn' : '')}
+          ${kpiRow('Utilisasi Jam Kerja', workingHourUtilization != null ? `${workingHourUtilization}%` : '—')}
+        </div>
+        <p class="v2-analytics-note">Lembur dihitung berdasarkan kalender: assignment di akhir pekan (Sabtu/Minggu) atau di luar jam operasional. Jam aktual dihitung dari waktu mulai &amp; selesai driver — termasuk tugas tanpa kendaraan.</p>
+      </div>
+      <div class="v2-admin-config-group">
         <h3 class="v2-admin-config-group-title">Driver Workload Distribution</h3>
         <div class="v2-analytics-kpi-list">
           ${kpiRow('Driver Aktif Bertugas', activeDriversInPeriod.length)}
@@ -5659,7 +5693,9 @@ function refreshAnalyticsDisplay() {
           <div class="v2-analytics-breakdown-row v2-analytics-breakdown-row--header">
             <span class="v2-analytics-breakdown-name">Driver</span>
             <span class="v2-analytics-breakdown-count">Asg</span>
+            <span class="v2-analytics-breakdown-count v2-analytics-breakdown-count--muted">Jam</span>
             <span class="v2-analytics-breakdown-pct">%</span>
+            <span class="v2-analytics-breakdown-wl"></span>
             <span class="v2-analytics-breakdown-wl"></span>
           </div>` : ''}
           ${driverWlHtml}

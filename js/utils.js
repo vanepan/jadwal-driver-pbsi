@@ -62,6 +62,129 @@ export function minutesToTime(minutes) {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
+/* ============================================================
+   WORKING TIME & OVERTIME (v1.16.4.7)
+   Single source of truth for actual working time + calendar-based
+   overtime detection. Pure & DOM-free — reused by the timeline,
+   the analytics engine, and the Driver Analytics KPIs.
+   ============================================================ */
+
+/**
+ * Default office-hours window — mirrors settings-store DEFAULTS.operations
+ * (09:00–17:00). Callers should pass the live configured window; this is
+ * only the fallback when settings haven't loaded.
+ */
+export const DEFAULT_OFFICE_HOURS = { workStartMins: 540, workEndMins: 1020 };
+
+/** Minutes-from-midnight (local time) for a Date. */
+function _localMinsOfDay(d) {
+  return d.getHours() * 60 + d.getMinutes();
+}
+
+/** Whole-calendar-day difference (local) between two Dates (b − a). */
+function _calendarDayDiff(a, b) {
+  const da = new Date(a.getFullYear(), a.getMonth(), a.getDate());
+  const db = new Date(b.getFullYear(), b.getMonth(), b.getDate());
+  return Math.round((db.getTime() - da.getTime()) / 86400000);
+}
+
+/**
+ * Compute actual working time + calendar-based overtime for an assignment,
+ * WITHOUT mutating it.
+ *
+ * Reuses the existing operational ground-truth fields (no new fields):
+ *   startedAt   (ISO) → actualStartAt
+ *   completedAt (ISO) → actualEndAt
+ * Scheduled time stays in `date` + `startTime`/`endTime` and is never touched.
+ *
+ * Overtime is CALENDAR-based, not duration-based: an assignment is overtime
+ * when it runs on a weekend (Sat/Sun, by actualStart day) OR any engaged
+ * minute falls outside the office-hours window. `overtimeHours` is the full
+ * engaged time on a weekend, otherwise the engaged minutes outside office
+ * hours (computed across spanned days so cross-midnight trips are correct).
+ *
+ * Vehicle-agnostic: uses only timestamps, so `vehicle === ''` (Tanpa
+ * Kendaraan) assignments contribute working hours identically.
+ *
+ * @param {Object} a - assignment record
+ * @param {{workStartMins:number, workEndMins:number}} [office] - office window
+ * @returns {{
+ *   actualStartAt:(string|null), actualEndAt:(string|null),
+ *   hasStarted:boolean, hasCompleted:boolean,
+ *   actualHours:(number|null), scheduledHours:(number|null), varianceHours:(number|null),
+ *   isOvertime:(boolean|null), overtimeHours:number, overtimeReason:(string|null)
+ * }}
+ */
+export function computeWorkTime(a, office = DEFAULT_OFFICE_HOURS) {
+  const workStartMins = Number(office?.workStartMins ?? DEFAULT_OFFICE_HOURS.workStartMins);
+  const workEndMins   = Number(office?.workEndMins   ?? DEFAULT_OFFICE_HOURS.workEndMins);
+
+  const actualStartAt = a?.startedAt   || null;
+  const actualEndAt   = a?.completedAt || null;
+  const hasStarted   = !!actualStartAt;
+  const hasCompleted = !!actualEndAt && hasStarted;
+
+  // ── Scheduled hours (baseline; from planned schedule, never overwritten) ──
+  let scheduledHours = null;
+  if (a?.fullDay) {
+    scheduledHours = (timeToMinutes('23:59') - timeToMinutes('00:00')) / 60;
+  } else if (a?.startTime && a?.endTime) {
+    const sMin = timeToMinutes(a.startTime);
+    const eMin = timeToMinutes(a.endTime);
+    if (Number.isFinite(sMin) && Number.isFinite(eMin) && eMin >= sMin) {
+      scheduledHours = (eMin - sMin) / 60;
+    }
+  }
+
+  // ── Actual hours + overtime (truth; only once completed) ──
+  let actualHours = null;
+  let isOvertime = null;
+  let overtimeHours = 0;
+  let overtimeReason = null;
+
+  if (hasCompleted) {
+    const start = new Date(actualStartAt);
+    const end   = new Date(actualEndAt);
+    if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && end.getTime() >= start.getTime()) {
+      actualHours = (end.getTime() - start.getTime()) / 3600000;
+
+      const day = start.getDay(); // 0=Sun … 6=Sat (local/WIB on the client)
+      const isWeekend = day === 0 || day === 6;
+
+      // Absolute minute timeline anchored at the start day's midnight, so the
+      // office window can be intersected across each spanned calendar day.
+      const startAbs = _localMinsOfDay(start);
+      const dayDiff  = _calendarDayDiff(start, end);
+      const endAbs   = dayDiff * 1440 + _localMinsOfDay(end);
+      const totalMins = endAbs - startAbs;
+
+      let officeOverlap = 0;
+      for (let d = 0; d <= dayDiff; d++) {
+        const winStart = d * 1440 + workStartMins;
+        const winEnd   = d * 1440 + workEndMins;
+        officeOverlap += Math.max(0, Math.min(endAbs, winEnd) - Math.max(startAbs, winStart));
+      }
+      const outsideMins = Math.max(0, totalMins - officeOverlap);
+      const isOutsideOffice = outsideMins > 0;
+
+      isOvertime = isWeekend || isOutsideOffice;
+      overtimeReason = isWeekend ? 'weekend' : (isOutsideOffice ? 'outside_office' : null);
+      overtimeHours = isWeekend ? actualHours : (outsideMins / 60);
+    }
+  }
+
+  const varianceHours = (actualHours != null && scheduledHours != null)
+    ? actualHours - scheduledHours
+    : null;
+
+  return {
+    actualStartAt, actualEndAt,
+    hasStarted, hasCompleted,
+    actualHours, scheduledHours, varianceHours,
+    isOvertime, overtimeHours, overtimeReason,
+  };
+}
+
 /**
  * Format tanggal panjang: YYYY-MM-DD → "Minggu, 24 Mei 2026"
  * @param {string} dateStr - Format YYYY-MM-DD

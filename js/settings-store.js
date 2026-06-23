@@ -15,8 +15,8 @@ const SETTINGS_PATH = 'settings';
 const DEFAULTS = {
   general: {},
   operations: {
-    workStartMins: 360,          // 06:00
-    workEndMins: 1260,           // 21:00
+    workStartMins: 540,          // 09:00 (office-hours window; also the overtime boundary, v1.16.4.7)
+    workEndMins: 1020,           // 17:00
     odometerWarnJumpKm: 2000,
   },
   notifications: {
