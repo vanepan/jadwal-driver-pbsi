@@ -15,7 +15,8 @@
 'use strict';
 
 import { buildAnalyticsModel } from './analytics-model.js';
-import { computeWorkTime } from '../utils.js';
+import { computeWorkTime, parseLocalDate } from '../utils.js';
+import { buildWorkloadModel } from './engines/workload-engine.js';
 import { filterEligible } from './analytics-governance.js';
 import { generateInsights } from './analytics-insights.js';
 import { generateRecommendations } from './analytics-recommendations.js';
@@ -246,6 +247,11 @@ export function computeAnalyticsModel(ctx) {
   let totalOvertimeHours  = 0;
   const _driverWorkTime = {};    // lowercased driver name → { actualHours, overtimeCount, overtimeHours }
   const _driverDays = new Set(); // distinct (driver, date) pairs that had actual hours
+  // ── Driver Workload Intelligence (v1.16.4.8) — per-driver raw components ──
+  // Collected here (over the SAME completed set) so no extra computeWorkTime
+  // pass is needed. completed/hours/distance feed the normalized Workload
+  // Score; `days` (distinct worked dates) feeds per-driver utilization.
+  const _wlByDriver = {}; // dKey → { name, completed, hours, distance, weekend, days:Set }
   for (const a of filteredAsg) {
     const wt = computeWorkTime(a, office);
     if (wt.actualHours == null) continue; // only completed assignments contribute
@@ -259,6 +265,15 @@ export function computeAnalyticsModel(ctx) {
     e.overtimeHours += wt.overtimeHours;
     if (wt.isOvertime) e.overtimeCount++;
     _driverWorkTime[dKey] = e;
+    // Workload raw aggregation (completed-only, mirrors the working-time set).
+    const _wlName = (driverMap.get(dKey) && driverMap.get(dKey).displayName) || a.driver || '';
+    const wl = _wlByDriver[dKey] || { name: _wlName, completed: 0, hours: 0, distance: 0, weekend: 0, days: new Set() };
+    wl.completed += 1;
+    wl.hours     += wt.actualHours;
+    const _km = Number(a.distanceTravelled);
+    if (Number.isFinite(_km) && _km > 0) wl.distance += _km;
+    wl.days.add(a.date || a.startDate || '');
+    _wlByDriver[dKey] = wl;
   }
   // Working-hour utilization (actual-hours based, not trip count): engaged
   // hours ÷ available office hours across the driver-days actually worked.
@@ -266,6 +281,30 @@ export function computeAnalyticsModel(ctx) {
   const workingHourUtilization = driverDaysWorked > 0
     ? Math.round((totalActualHours / (officeHoursPerDay * driverDaysWorked)) * 100)
     : null;
+
+  // ── Weekend assignments (v1.16.4.8) — calendar-based on the SCHEDULED date
+  // (Sat/Sun), independent of completion, so a planned weekend trip counts even
+  // before it is executed. Distinct from computeWorkTime's overtime weekend
+  // flag (which needs a completed actualStart). Per-driver weekend tallies are
+  // attached to the workload raw set for the Driver Analytics view.
+  let weekendAssignments = 0;
+  for (const a of filteredAsg) {
+    const ds = a.date || a.startDate || '';
+    if (!ds) continue;
+    const dow = parseLocalDate(ds).getDay(); // 0=Sun … 6=Sat
+    if (dow !== 0 && dow !== 6) continue;
+    weekendAssignments++;
+    const dKey = (a.driver || '').toLowerCase();
+    if (_wlByDriver[dKey]) _wlByDriver[dKey].weekend++;
+  }
+
+  // Normalized Workload Score + ranking (pure engine; explainable 0–100).
+  const workload = buildWorkloadModel(
+    Object.values(_wlByDriver).map((d) => ({
+      name: d.name, completed: d.completed, hours: d.hours, distance: d.distance,
+      weekend: d.weekend, daysWorked: d.days.size, officeHoursPerDay,
+    })),
+  );
 
   // ── Vehicle utilization ────────────────────────────────────────────────
   const activeVehicles = getActiveVehiclesFromStore().filter(v => !v.archived);
@@ -545,6 +584,11 @@ export function computeAnalyticsModel(ctx) {
       wlBalancedCount, wlOverCount, wlUnderCount,
       // Actual Working Time & Overtime (v1.16.4.7) — additive; existing KPIs untouched.
       totalActualHours, overtimeAssignments, totalOvertimeHours, workingHourUtilization,
+      // Driver Workload Intelligence (v1.16.4.8) — additive; existing KPIs untouched.
+      weekendAssignments,
+      workloadAvgScore: workload.averageScore,
+      workloadTop: workload.palingAktif ? { name: workload.palingAktif.name, score: workload.palingAktif.score } : null,
+      workloadLow: workload.bebanTerendah ? { name: workload.bebanTerendah.name, score: workload.bebanTerendah.score } : null,
     },
     cancellation,
     charts: {
@@ -565,6 +609,19 @@ export function computeAnalyticsModel(ctx) {
         byDriver: _driverWorkTime,           // lowercased name → { actualHours, overtimeCount, overtimeHours }
         officeHoursPerDay, driverDaysWorked,
         totalActualHours, overtimeAssignments, totalOvertimeHours, workingHourUtilization,
+      },
+      // Driver Workload Intelligence (v1.16.4.8) — normalized score + ranking +
+      // explainability. Kept in diagnostics (NOT render) so the parity-locked
+      // render projection & exportSnapshot stay byte-identical to the baseline.
+      workload: {
+        weights: workload.weights,
+        drivers: workload.drivers,                 // [{name,completed,hours,distance,weekend,...,score,contribution,utilization}]
+        palingAktif: workload.palingAktif,
+        bebanTertinggi: workload.bebanTertinggi,
+        bebanTerendah: workload.bebanTerendah,
+        utilizationRanking: workload.utilizationRanking,
+        averageScore: workload.averageScore,
+        weekendAssignments,
       },
       cancelledAsg, // retained for future cancellation analytics (rate, trend, by bidang/driver/destination)
       dqWarnings: _dqWarnings,

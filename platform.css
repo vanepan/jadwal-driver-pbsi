@@ -11335,3 +11335,46 @@ body.v2-shell-active .block-status-badge--overtime {
   line-height: 1.55;
   color: var(--muted);
 }
+
+/* ── Driver Workload Intelligence (v1.16.4.8) — explainable per-driver score ── */
+.v2-wl-list { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+.v2-wl-item {
+  border: 1px solid var(--border-faint);
+  border-radius: 10px;
+  padding: 11px 13px;
+  background: var(--surface-2, transparent);
+}
+.v2-wl-item--top { border-color: var(--accent, var(--ok)); }
+.v2-wl-head { display: flex; align-items: center; gap: 9px; }
+.v2-wl-rank {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+  color: var(--text-ghost); min-width: 24px;
+}
+.v2-wl-name { flex: 1; min-width: 0; font-weight: 700; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v2-wl-score {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: 17px; font-weight: 800; color: var(--text); line-height: 1;
+}
+.v2-wl-score-unit { font-size: 10px; font-weight: 600; color: var(--text-ghost); margin-left: 2px; }
+.v2-wl-metrics {
+  margin-top: 5px; font-family: var(--font-mono); font-size: 11.5px;
+  color: var(--text-dim); font-variant-numeric: tabular-nums;
+}
+.v2-wl-bars {
+  display: flex; height: 7px; border-radius: 4px; overflow: hidden;
+  margin-top: 9px; background: var(--border-faint);
+}
+.v2-wl-seg { height: 100%; }
+.v2-wl-seg--hours { background: var(--accent, #4f8cff); }
+.v2-wl-seg--dist  { background: var(--ok, #36b37e); }
+.v2-wl-seg--asg   { background: var(--warn, #f5a623); }
+.v2-wl-legend {
+  display: flex; flex-wrap: wrap; gap: 12px; margin-top: 7px;
+  font-size: 10.5px; color: var(--muted);
+}
+.v2-wl-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.v2-wl-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+.v2-wl-dot--hours { background: var(--accent, #4f8cff); }
+.v2-wl-dot--dist  { background: var(--ok, #36b37e); }
+.v2-wl-dot--asg   { background: var(--warn, #f5a623); }

@@ -5386,6 +5386,12 @@ function refreshAnalyticsDisplay() {
   } = _wt;
   const _driverWT = _wt.byDriver || {};
 
+  // v1.16.4.8 — Driver Workload Intelligence (kept in diagnostics, not render).
+  const _workload  = (_analyticsModel.diagnostics && _analyticsModel.diagnostics.workload) || {};
+  const _wlDrivers = _workload.drivers || [];
+  const _wlWeights = _workload.weights || { hours: 0.45, distance: 0.30, assignments: 0.25 };
+  const _weekendAssignments = (_analyticsModel.kpis && _analyticsModel.kpis.weekendAssignments) || 0;
+
   // ── Trends (Sprint 6 data) ─────────────────────────────────────────────
   const _trends = _analyticsModel.trends || {};
   // Build a hero/stat trend delta from an existing trend metric. Never fabricates
@@ -5664,8 +5670,61 @@ function refreshAnalyticsDisplay() {
     _thirdHl,
   ]);
 
+  // ── Driver Workload Intelligence (v1.16.4.8) ───────────────────────────
+  // Explainable, normalized 0–100 workload score per driver (Jam 45% · Jarak
+  // 30% · Assignment 25%, each indexed against the period's busiest driver).
+  // "Paling Aktif" = highest workload score, NOT most assignments.
+  const _fmtKm = km => (km > 0) ? `${Math.round(km).toLocaleString('id-ID')} km` : '0 km';
+  const _wHrsPct = Math.round((_wlWeights.hours || 0) * 100);
+  const _wDstPct = Math.round((_wlWeights.distance || 0) * 100);
+  const _wAsgPct = Math.round((_wlWeights.assignments || 0) * 100);
+  const _fmtWlDrv = d => d ? `${d.name} — Skor ${d.score}` : '—';
+
+  const workloadListHtml = _wlDrivers.length > 0
+    ? `<div class="v2-wl-list">
+        ${_wlDrivers.map((d, i) => {
+          const c = d.contribution || { hours: 0, distance: 0, assignments: 0 };
+          const idxTitle = `Indeks (relatif driver tersibuk): Jam ${d.hoursIndex} · Jarak ${d.distanceIndex} · Assignment ${d.assignmentIndex}`;
+          return `<div class="v2-wl-item${i === 0 ? ' v2-wl-item--top' : ''}">
+            <div class="v2-wl-head">
+              <span class="v2-wl-rank">#${i + 1}</span>
+              <span class="v2-wl-name">${esc(d.name)}</span>
+              <span class="v2-wl-score" title="${esc(idxTitle)}">${d.score}<span class="v2-wl-score-unit">/100</span></span>
+            </div>
+            <div class="v2-wl-metrics">${d.completed} asg · ${fmtHours(d.hours)} · ${_fmtKm(d.distance)}${(d.weekend || 0) > 0 ? ` · ${d.weekend} weekend` : ''}${d.utilization != null ? ` · utilisasi ${d.utilization}%` : ''}</div>
+            <div class="v2-wl-bars" title="${esc(idxTitle)}">
+              <span class="v2-wl-seg v2-wl-seg--hours" style="width:${c.hours}%"></span>
+              <span class="v2-wl-seg v2-wl-seg--dist" style="width:${c.distance}%"></span>
+              <span class="v2-wl-seg v2-wl-seg--asg" style="width:${c.assignments}%"></span>
+            </div>
+            <div class="v2-wl-legend">
+              <span class="v2-wl-legend-item"><span class="v2-wl-dot v2-wl-dot--hours"></span>Jam Kerja ${c.hours}%</span>
+              <span class="v2-wl-legend-item"><span class="v2-wl-dot v2-wl-dot--dist"></span>Jarak ${c.distance}%</span>
+              <span class="v2-wl-legend-item"><span class="v2-wl-dot v2-wl-dot--asg"></span>Assignment ${c.assignments}%</span>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>`
+    : `<p class="v2-analytics-empty">Belum ada data beban kerja pada periode ini. Skor dihitung dari assignment selesai, jam kerja aktual, dan jarak tempuh.</p>`;
+
+  const workloadGroupHtml = `
+      <div class="v2-admin-config-group">
+        <h3 class="v2-admin-config-group-title">Beban Kerja Driver (Workload Intelligence)</h3>
+        <div class="v2-analytics-kpi-list">
+          ${kpiRow('Driver Paling Aktif', _fmtWlDrv(_workload.palingAktif))}
+          ${kpiRow('Beban Kerja Tertinggi', _fmtWlDrv(_workload.bebanTertinggi))}
+          ${kpiRow('Beban Kerja Terendah', _fmtWlDrv(_workload.bebanTerendah))}
+          ${kpiRow('Rata-rata Skor Beban', _workload.averageScore != null ? String(_workload.averageScore) : '—')}
+          ${kpiRow('Assignment Weekend', `${_weekendAssignments} assignment`, _weekendAssignments > 0 ? 'warn' : '')}
+        </div>
+        <p class="v2-analytics-note">Skor Beban Kerja (0–100) menggabungkan tiga indikator yang dinormalisasi terhadap driver tersibuk pada periode ini: Jam Kerja Aktual (${_wHrsPct}%), Jarak Tempuh (${_wDstPct}%), dan Jumlah Assignment Selesai (${_wAsgPct}%). "Paling Aktif" berarti skor beban tertinggi — bukan sekadar jumlah assignment terbanyak. Tugas tanpa kendaraan tetap dihitung lewat jam kerja &amp; assignment (jarak nol).</p>
+        <div class="v2-analytics-subtitle">Peringkat &amp; Penjelasan Skor per Driver</div>
+        ${workloadListHtml}
+      </div>`;
+
   const driverContent = `
     <div class="v2-analytics-groups">
+      ${workloadGroupHtml}
       <div class="v2-admin-config-group">
         <h3 class="v2-admin-config-group-title">Jam Kerja Aktual & Lembur</h3>
         <div class="v2-analytics-kpi-list">

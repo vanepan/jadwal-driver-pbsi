@@ -249,6 +249,34 @@ function insightBlock(exec) {
     <div style="height:var(--space-section);"></div>`;
 }
 
+/**
+ * Driver Workload Intelligence (v1.16.4.8) — ADDITIVE executive surface. Renders
+ * up to four workload cards (Paling Aktif by score, Jam Kerja Aktual, Jam Lembur,
+ * Assignment Weekend) from exec.workloadIntel. Does NOT alter the Executive Health
+ * Score, the locked KPI strip, or any existing block. Hidden when there is no
+ * workload data (keeps the executive view clean).
+ */
+function workloadBlock(exec) {
+  const w = exec.workloadIntel;
+  if (!w) return '';
+  const hasData = w.palingAktif || w.totalActualHours > 0 || w.weekendAssignments > 0;
+  if (!hasData) return '';
+  const fmtH = (h) => `${Number(h || 0).toLocaleString('id-ID', { maximumFractionDigits: 1 })} jam`;
+  const palingAktif = w.palingAktif
+    ? { value: esc(w.palingAktif.name), subtitle: `Skor beban ${w.palingAktif.score}/100` }
+    : { value: '—', subtitle: 'Belum ada data beban' };
+  const cards = [
+    renderAnalyticsKPICard({ title: 'Driver Paling Aktif', icon: anIcon('user', { size: 15 }), value: palingAktif.value, subtitle: palingAktif.subtitle }),
+    renderAnalyticsKPICard({ title: 'Total Jam Kerja Aktual', icon: anIcon('pulse', { size: 15 }), value: fmtH(w.totalActualHours), subtitle: 'Waktu kerja tercatat' }),
+    renderAnalyticsKPICard({ title: 'Total Jam Lembur', icon: anIcon('chart', { size: 15 }), value: fmtH(w.totalOvertimeHours), subtitle: 'Akhir pekan / luar jam kerja' }),
+    renderAnalyticsKPICard({ title: 'Assignment Weekend', icon: anIcon('car', { size: 15 }), value: String(w.weekendAssignments), subtitle: 'Penugasan Sabtu/Minggu' }),
+  ];
+  return `
+    ${renderEyebrow({ tag: 'Beban Kerja', title: 'Driver Workload Intelligence', sub: 'Beban kerja operasional berbasis jam & jarak aktual' })}
+    <div class="v2-analytics-kpi-grid v2-exec-kpi-grid">${cards.join('')}</div>
+    <div style="height:var(--space-section);"></div>`;
+}
+
 function exportBlock() {
   return `
     ${renderEyebrow({ tag: 'Ekspor', title: 'Unduh Laporan', sub: 'Ringkasan eksekutif untuk pelaporan' })}
@@ -321,6 +349,7 @@ function render() {
         ${filterBar()}
         <div style="height:var(--space-section);"></div>
         ${kpiBlock(exec)}
+        ${workloadBlock(exec)}
         ${insightBlock(exec)}
         ${exportBlock()}
       </div>

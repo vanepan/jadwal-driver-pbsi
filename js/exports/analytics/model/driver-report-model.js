@@ -39,6 +39,10 @@ export function buildDriverReportModel(model, meta = {}) {
   const k = (model && model.kpis) || {};
   const r = (model && model.render) || {};
   const charts = (model && model.charts) || {};
+  // v1.16.4.8 — Driver Workload Intelligence (diagnostics, parity-locked out of render).
+  const wl = (model && model.diagnostics && model.diagnostics.workload) || {};
+  const wlDrivers = Array.isArray(wl.drivers) ? wl.drivers : [];
+  const wlWeights = wl.weights || { hours: 0.45, distance: 0.30, assignments: 0.25 };
   const generatedAt = (model && model.metadata && model.metadata.generatedAt) || Date.now();
 
   const filters = meta.filters || {};
@@ -64,42 +68,73 @@ export function buildDriverReportModel(model, meta = {}) {
     label: 'Tingkat Selesai',
   };
 
-  // ── KPI grid (5 cells, matching the approved Driver layout) ──
+  // ── KPI grid (6 cells — adds Jam Kerja Aktual for v1.16.4.8) ──
+  // Dashboard = PDF: the same actual-working-hours figure the Driver Analytics
+  // working-time group shows. Workload Score (per driver) is surfaced in the
+  // distribution strip below, mirroring the dashboard's headline ranking.
   const kpis = [
     { value: formatInt(k.total || 0),            label: 'Penugasan' },
     { value: formatInt(k.driversWithTrips || 0), label: 'Pengemudi Aktif' },
     { value: formatInt(k.totalKm || 0),          unit: 'km', label: 'Jarak Tempuh' },
     { value: formatInt(k.avgKmPerTrip || 0),     unit: 'km', label: 'Rata-rata per Trip' },
+    { value: formatDecimal1(k.totalActualHours || 0), unit: 'jam', label: 'Jam Kerja Aktual' },
     { value: formatInt(k.cancelled || 0),        label: 'Dibatalkan' },
   ];
 
-  // ── Distribution (Distribusi Beban) ──────────────────────────
-  // Bars carry WORKLOAD (assignment count, fill = count/maxCount);
-  // share is count/total; the secondary column shows distance.
-  const workload = Array.isArray(charts.driverWorkload) && charts.driverWorkload.length
-    ? charts.driverWorkload
-    : (Array.isArray(r.driversWithTrips) ? r.driversWithTrips : []); // [{displayName,count}]
-  const maxCount = workload.length ? (workload[0].count || 0) : 0;
   const total = k.total || 0;
-  const kmByName = new Map(
-    (Array.isArray(r.driverOdoList) ? r.driverOdoList : []).map(d => [String(d.name).toLowerCase(), d.km])
-  );
+  const wHrsPct = Math.round((wlWeights.hours || 0) * 100);
+  const wDstPct = Math.round((wlWeights.distance || 0) * 100);
+  const wAsgPct = Math.round((wlWeights.assignments || 0) * 100);
 
-  const rows = workload.map(d => ({
-    name: d.displayName,
-    fillPct: maxCount > 0 ? Math.round((d.count / maxCount) * 100) : 0,
-    shareLabel: pctOf(d.count, total),
-    secondaryLabel: formatKmLabel(kmByName.get(String(d.displayName).toLowerCase()) || 0),
-  }));
-
-  const driversWithTrips = k.driversWithTrips || workload.length;
-  const distribution = {
-    label: 'Distribusi Beban',
-    rows,
-    note: driversWithTrips > 0
-      ? `Rata-rata beban: ${formatDecimal1(total / driversWithTrips)} penugasan per pengemudi`
-      : '',
-  };
+  // ── Distribution (Distribusi Beban Kerja) ────────────────────
+  // v1.16.4.8: the strip now carries the normalized WORKLOAD SCORE per driver
+  // (bar fill = score 0–100; the .dp column shows the score; the secondary
+  // column shows distance), ordered by score — the SAME ranking the dashboard
+  // leads with. Falls back to the legacy assignment-count distribution when no
+  // workload data exists (older models / no completed work), so the PDF is
+  // backward compatible.
+  let distribution;
+  if (wlDrivers.length > 0) {
+    const rows = wlDrivers.map(d => ({
+      name: d.name,
+      fillPct: Math.max(0, Math.min(100, Math.round(d.score || 0))),
+      shareLabel: String(Math.round(d.score || 0)),
+      secondaryLabel: formatKmLabel(d.distance || 0),
+    }));
+    const avg = wl.averageScore != null ? wl.averageScore : 0;
+    const top = wl.palingAktif;
+    distribution = {
+      label: 'Distribusi Beban Kerja (Skor 0–100)',
+      rows,
+      note: `Skor = Jam ${wHrsPct}% · Jarak ${wDstPct}% · Assignment ${wAsgPct}% (relatif driver tersibuk). `
+        + `Rata-rata skor ${avg}`
+        + (top ? ` · Paling aktif: ${top.name} (${top.score})` : '')
+        + (k.weekendAssignments ? ` · ${formatInt(k.weekendAssignments)} assignment weekend` : '') + '.',
+    };
+  } else {
+    // Legacy fallback — assignment-count bars (pre-v1.16.4.8 behavior).
+    const workload = Array.isArray(charts.driverWorkload) && charts.driverWorkload.length
+      ? charts.driverWorkload
+      : (Array.isArray(r.driversWithTrips) ? r.driversWithTrips : []); // [{displayName,count}]
+    const maxCount = workload.length ? (workload[0].count || 0) : 0;
+    const kmByName = new Map(
+      (Array.isArray(r.driverOdoList) ? r.driverOdoList : []).map(d => [String(d.name).toLowerCase(), d.km])
+    );
+    const rows = workload.map(d => ({
+      name: d.displayName,
+      fillPct: maxCount > 0 ? Math.round((d.count / maxCount) * 100) : 0,
+      shareLabel: pctOf(d.count, total),
+      secondaryLabel: formatKmLabel(kmByName.get(String(d.displayName).toLowerCase()) || 0),
+    }));
+    const driversWithTrips = k.driversWithTrips || workload.length;
+    distribution = {
+      label: 'Distribusi Beban',
+      rows,
+      note: driversWithTrips > 0
+        ? `Rata-rata beban: ${formatDecimal1(total / driversWithTrips)} penugasan per pengemudi`
+        : '',
+    };
+  }
 
   // ── Highlights + Contributors (reuse engine outputs) ─────────
   const highlights = selectDriverHighlights(model);

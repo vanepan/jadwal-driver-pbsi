@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.16.4.7';
-export const RELEASE_NAME = 'Driver Actual Working Time & Overtime Detection';
+export const APP_VERSION = '1.16.4.8';
+export const RELEASE_NAME = 'Driver Workload Intelligence';
 
 /**
  * Web Push VAPID PUBLIC key (v1.11.3). Safe to ship — it is an
@@ -17,6 +17,24 @@ export const RELEASE_NAME = 'Driver Actual Working Time & Overtime Detection';
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.16.4.8',
+    date: '2026-06-24',
+    summary: 'Driver Workload Intelligence. Adds a fair, explainable, operationally-credible measure of driver workload built from execution data the platform already captures — NOT payroll, tariff, overtime pay, or HR appraisal. Assignment count alone is misleading (20 trips / 40 h / 300 km is LESS work than 15 trips / 90 h / 1.500 km), so a composite 0–100 Workload Score combines three normalized indicators at once: Actual Working Hours (45%), Distance Travelled (30%), and Completed Assignments (25%). Each component is first normalized against the period\'s busiest driver (value / cohortMax × 100, OECD distance-to-reference method) and THEN weighted — never summed raw. The score is fully explainable: every driver card shows each component\'s contribution % (no black box). Strictly additive: render + exportSnapshot stay byte-identical, and the Executive Health Score, Petty Cash health formulas, and v1.16.4.7 overtime rules are untouched. APP_VERSION 1.16.4.7 → 1.16.4.8 re-stamps SW_VERSION → CACHE_NAME sarpras-cache-v1.16.4.8, version.json, and the index.html app.js cache-bust via scripts/sync-version.mjs.',
+    highlights: [
+      'Workload Score engine (js/analytics/engines/workload-engine.js): new pure module exporting WORKLOAD_WEIGHTS_V1 { hours:0.45, distance:0.30, assignments:0.25 } and buildWorkloadModel(). Max-normalized indices → weighted 0–100 score → per-component explainability (contribution %) + per-driver utilization + ranking. Weights are justified from Fleet/HOS/logistics analytics (hours = most direct labour-time signal; distance = operational exposure; assignment count = dispatch overhead, weakest effort proxy).',
+      'Engine wiring (js/analytics/analytics-engine.js): per-driver completed/hours/distance/weekend/days aggregation folded into the existing working-time loop; new diagnostics.workload (score + ranking + explainability) and additive kpis.{weekendAssignments, workloadAvgScore, workloadTop, workloadLow}. render and exportSnapshot are parity-locked (every addition lives in kpis + diagnostics only).',
+      'Ranking (Phase C): Driver Paling Aktif / Beban Kerja Tertinggi / Beban Kerja Terendah are all derived from the Workload Score — NOT assignment count. Driver Utilization Ranking sorts by per-driver working-hour utilization (hours ÷ available office hours), score as tiebreak.',
+      'Driver Analytics view (js/app.js + platform.css): new "Beban Kerja Driver (Workload Intelligence)" group — ranking KPIs + Assignment Weekend + per-driver explainability cards (segmented contribution bar Jam/Jarak/Assignment + legend + metrics + index tooltip). Existing groups untouched.',
+      'Executive Analytics (additive only): a Driver Workload Intelligence card row (Paling Aktif, Total Jam Kerja Aktual, Total Jam Lembur, Assignment Weekend) sits AFTER the locked v1.16.4.5 KPI strip. The Executive Health Score, scoreBreakdown, and Petty Cash health are not touched.',
+      'Driver PDF parity (js/exports/analytics/model/driver-report-model.js): the distribution strip becomes the Workload-Score ranking (formula in the note), and the KPI grid gains Jam Kerja Aktual — Dashboard = PDF. The server report composer is fully generic (client-model driven), so NO Cloud Functions deploy is required for the Driver PDF.',
+      'No-vehicle work counts (Phase I): a "Tanpa Kendaraan" (vehicle:\'\') assignment still earns Workload Score via hours + assignment contribution (distance contribution 0%). Validated. New scripts/workload-check.mjs (25 cases) + scripts/workload-integration-check.mjs (17 cases) pass; parity/insights/trends/recommendations/worktime harnesses all remain green.',
+    ],
+    deferred: [
+      'Analytics alias-save defect ("Gagal menyimpan alias") — root cause investigated only (v1.16.4.10): _normDestKey() does not strip RTDB-illegal key characters (. # $ / [ ]), so saving an alias for a destination/bidang name containing one throws inside firebase.set(). No fix this release.',
+      'Payroll, overtime tariff/pay, HR performance appraisal, and manual overtime override — intentionally out of scope (workload measurement only).',
+    ],
+  },
   {
     version: '1.16.4.7',
     date: '2026-06-23',

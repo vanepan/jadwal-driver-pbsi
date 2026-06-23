@@ -251,6 +251,18 @@ export function computeExecutiveAnalytics({ driverModel, pettyModel, meta } = {}
     // Executive view: the four component sub-scores (with formula weights) plus a
     // one-line narrative, all derived from the petty model's scoreBreakdown.
     pettyHealth,
+    // ── Driver Workload Intelligence (v1.16.4.8) — ADDITIVE executive surface.
+    //    Read straight from the Driver sub-model's KPIs; introduces NO new
+    //    calculation here and does NOT touch the Executive score, scoreBreakdown,
+    //    KPI strip, or Petty Cash health. Purely a presentation surface. ───────
+    workloadIntel: {
+      palingAktif: dk.workloadTop || null,          // { name, score } | null
+      bebanTerendah: dk.workloadLow || null,        // { name, score } | null
+      avgScore: num(dk.workloadAvgScore),
+      totalActualHours: num(dk.totalActualHours),
+      totalOvertimeHours: num(dk.totalOvertimeHours),
+      weekendAssignments: num(dk.weekendAssignments),
+    },
     insights,
     narrative,
   };
