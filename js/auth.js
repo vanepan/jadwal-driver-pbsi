@@ -64,6 +64,7 @@ const PERMISSIONS = {
   complete: ['admin', 'driver'],
   cancel: ['admin', 'bidang'],
   print_reimbursement: ['admin', 'driver'],
+  override_overtime: ['admin'],
 };
 
 let authChangeCallback = null;

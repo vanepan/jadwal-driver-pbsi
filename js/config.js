@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.16.4.8';
-export const RELEASE_NAME = 'Driver Workload Intelligence';
+export const APP_VERSION = '1.16.4.9';
+export const RELEASE_NAME = 'Overtime Administration';
 
 /**
  * Web Push VAPID PUBLIC key (v1.11.3). Safe to ship — it is an
@@ -17,6 +17,25 @@ export const RELEASE_NAME = 'Driver Workload Intelligence';
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.16.4.9',
+    date: '2026-06-24',
+    summary: 'Overtime Administration. Adds an administrative override layer between automatic overtime detection and the systems that consume it (analytics, reimbursement, executive visibility) — operational administration only, NOT payroll: no rate, pay, compensation, tax, approval workflow, or HR module. v1.16.4.7 detected overtime (calendar-based: weekend OR outside the office-hours window) but the result was non-overridable and served analytics alone. An admin can now Paksa Normal / Paksa Lembur on a completed assignment with a mandatory reason; the SYSTEM detection is preserved (AUTO_NORMAL / AUTO_LEMBUR) while the FINAL status (NORMAL / LEMBUR) drives everything downstream. Strictly backward compatible: four optional override fields are additive (no migration; legacy records behave exactly as before), and the Executive Health Score, Petty Cash health, and the v1.16.4.8 Workload formula are untouched. APP_VERSION 1.16.4.8 → 1.16.4.9 re-stamps SW_VERSION → CACHE_NAME sarpras-cache-v1.16.4.9, version.json, and the index.html app.js cache-bust via scripts/sync-version.mjs.',
+    highlights: [
+      'Single source of truth (js/utils.js): computeWorkTime() now resolves an administrative override and returns detectionStatus (AUTO_NORMAL/AUTO_LEMBUR), finalStatus (NORMAL/LEMBUR), overtimeSource (AUTO/MANUAL), autoIsOvertime, and overtimeOverrideReason. Critically, isOvertime and overtimeHours reflect the FINAL decision, so the timeline and every analytics consumer follow overrides with zero changes. Forced-Normal contributes 0 Jam Lembur; forced-Lembur on an in-office trip counts the full engaged time (weekend semantics). The system detection is never persisted or overwritten.',
+      'Data model (additive, no migration): a completed assignment may carry overtimeOverride (NORMAL|LEMBUR), overtimeOverrideReason, overtimeOverriddenBy {uid,name,role}, and overtimeOverriddenAt. Tier-1 operational actuals (startedAt/completedAt/odometer/distance) are never touched by an override.',
+      'Override workflow (js/auth.js, js/app.js, js/modal.js, index.html): new admin-only override_overtime permission; a "⏱ Override Lembur" action on completed assignments opens a Paksa Normal / Paksa Lembur dialog (mandatory reason, ≥10 chars) mirroring the cancellation modal. The detail modal surfaces both "Deteksi Sistem" and "Status Akhir (Override Admin)" badges plus the override audit (who/when/why). Every override writes an assignment_overtime_overridden audit log (detection, old/new status, reason, user) — no silent overrides.',
+      'Reimbursement integration (js/reimbursement.js): the PDF Form Reimbursement now follows the assignment FINAL overtime status once completed (Paksa Normal disables the Lembur claim; Paksa Lembur enables it — no manual re-entry), falling back to the legacy schedule-based estimate only for not-yet-completed assignments. The printed status line names the override when administrative.',
+      'Analytics + Executive (additive, parity-preserved): all overtime metrics (Jam Lembur, Assignment Lembur, per-driver, executive) already read isOvertime/overtimeHours, so they follow final status automatically. analytics-engine.js adds manualOvertimeOverrides + overtimeOverridePct (kpis + diagnostics); the Executive view gains an additive "Override Manual" card. The Executive Health Score, Petty Cash health, and Workload formula are not touched. NOR totals are unaffected by construction (petty-cash Reimbursement Driver has no assignment linkage and is untouched).',
+      'Validation: scripts/worktime-check.mjs extended to 40 cases (Auto Normal/Lembur, Auto Normal→Manual Lembur, Auto Lembur→Manual Normal, weekend, office-hour, pre-completion, legacy, invalid-value) — all pass; workload-integration-check 17/17 pass (render/exportSnapshot parity intact).',
+    ],
+    deferred: [
+      'Petty-cash "Reimbursement Driver" lembur item is NOT gated by assignment status — that surface has no assignment linkage; only the PDF Form Reimbursement is overtime-aware this release.',
+      'Auto overtime HOURS are not separately retained after an override (the detection STATUS is); override visibility is screen-only (executive view + detail modal), not yet in the analytics PDF.',
+      'Analytics alias-save defect ("Gagal menyimpan alias") still open — root cause is RTDB-illegal key characters in _normDestKey(); scheduled for v1.16.4.10 Alias Engine Hardening.',
+      'Payroll, overtime rate/pay, compensation, tax, approval workflow, and HR module — intentionally out of scope (operational administration only).',
+    ],
+  },
   {
     version: '1.16.4.8',
     date: '2026-06-24',

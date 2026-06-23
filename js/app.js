@@ -50,7 +50,7 @@ import { initPush } from './push.js';
 import { initPbsiSelect } from './pbsi-select.js';
 import { initPbsiDatepicker, syncPbsiDatepicker } from './pbsi-datepicker.js';
 import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate } from './timeline.js';
-import { initModalHandlers, openDetailModal, registerEditCallback, registerDeleteCallback, registerStartCallback, registerCompleteCallback, registerCommentCallback as registerModalCommentCallback, registerCancelCallback, setAssignments as setModalAssignments, updateDetailActionButtons } from './modal.js';
+import { initModalHandlers, openDetailModal, registerEditCallback, registerDeleteCallback, registerStartCallback, registerCompleteCallback, registerCommentCallback as registerModalCommentCallback, registerCancelCallback, registerOvertimeOverrideCallback, setAssignments as setModalAssignments, updateDetailActionButtons } from './modal.js';
 import { initFormHandlers, openFormModal, closeFormModal, registerSaveCallback, setAssignments as setAssignmentsForm, setCurrentDate as setCurrentDateForm, checkConflict, deleteAssignment } from './assignments.js';
 import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver } from './auth.js';
 import * as DocumentEngine from './docs/doc-engine.js';
@@ -108,7 +108,7 @@ import { setTelegramBotToken } from './telegram.js';
 import { subscribeLogsChangeListener, getLogs, logAction, ensureLogsLoadedAndSubscribed, resetLogsSync } from './logs.js';
 import { publishEvent } from './events.js';
 import { getUserByUsername, getUsers, createUser, getUserList, activateUser, deactivateUser, registerUsersChangeListener, archiveUser, restoreUser, deleteUser, initUsersSync, ensureUsersLoadedAndSubscribed, resetUsersSync } from './users.js';
-import { expandDateRange, showToast, formatDateShort, vehicleLabel } from './utils.js';
+import { expandDateRange, showToast, formatDateShort, vehicleLabel, computeWorkTime } from './utils.js';
 import {
   sendRequestApprovedNotification,
   sendRequestRejectedNotification,
@@ -8381,6 +8381,84 @@ document.addEventListener('DOMContentLoaded', async () => {
     );
 
     showToast('✕ Assignment dibatalkan');
+  });
+
+  // ── Callback: Override Lembur button di detail modal (v1.16.4.9) ──
+  // targetStatus ∈ {'NORMAL','LEMBUR'} — the administrative final status forced
+  // by an admin; reason is mandatory (validated ≥10 chars in the modal). The
+  // system detection (AUTO_*) is never overwritten — only the override fields
+  // are written, so computeWorkTime() keeps both the detection and the final.
+  registerOvertimeOverrideCallback((assignmentId, targetStatus, reason) => {
+    if (!hasPermission('override_overtime')) {
+      showToast('Hanya admin yang bisa override status lembur');
+      return;
+    }
+    if (targetStatus !== 'NORMAL' && targetStatus !== 'LEMBUR') return;
+    const cleanReason = String(reason || '').trim();
+    if (!cleanReason) { showToast('Alasan override wajib diisi'); return; }
+
+    const idx = assignments.findIndex(a => a.id === assignmentId);
+    if (idx === -1) return;
+
+    const existing = assignments[idx];
+    // Override is only meaningful for a completed assignment (detection needs
+    // the actual start/end timestamps).
+    if (normalizeAssignmentStatus(existing).status !== 'completed') {
+      showToast('Override hanya untuk penugasan yang sudah selesai');
+      return;
+    }
+
+    const office = {
+      workStartMins: getSetting('operations.workStartMins'),
+      workEndMins:   getSetting('operations.workEndMins'),
+    };
+    const before = computeWorkTime(existing, office);
+    const oldFinalStatus = before.finalStatus;          // pre-override final
+    if (oldFinalStatus === targetStatus && before.overtimeSource === 'MANUAL') {
+      showToast('Status sudah sesuai'); return;
+    }
+
+    const currentUser = getCurrentUser();
+    const now = new Date().toISOString();
+    assignments[idx] = {
+      ...existing,
+      overtimeOverride:       targetStatus,
+      overtimeOverrideReason: cleanReason,
+      overtimeOverriddenBy: {
+        uid:  currentUser?.id || null,
+        name: currentUser?.name || '',
+        role: currentUser?.role || '',
+      },
+      overtimeOverriddenAt: now,
+      updatedAt: now,
+    };
+
+    updateAllModules();
+    saveAssignments(assignments);        // localStorage only
+    saveOneAssignment(assignments[idx]); // surgical Firebase write
+    renderViews();
+
+    const overridden = assignments[idx];
+    logAction({
+      userId:      currentUser?.id,
+      username:    currentUser?.username,
+      displayName: currentUser?.name,
+      action:      'assignment_overtime_overridden',
+      targetId:    assignmentId,
+      metadata: {
+        driver:           overridden.driver,
+        vehicle:          overridden.vehicle,
+        date:             overridden.date || overridden.startDate,
+        detectionStatus:  before.detectionStatus, // AUTO_NORMAL | AUTO_LEMBUR
+        oldStatus:        oldFinalStatus,          // NORMAL | LEMBUR (pre)
+        newStatus:        targetStatus,            // NORMAL | LEMBUR (post)
+        source:           'MANUAL',
+        reason:           cleanReason,
+      },
+    });
+
+    if (openDetailModal) openDetailModal(assignmentId); // refresh detail view
+    showToast(targetStatus === 'LEMBUR' ? '⏱ Status diubah ke Lembur' : '✓ Status diubah ke Normal');
   });
 
   // NOTE (v1.11.1.2): Firebase real-time sync + H-1/H-2 reminder timers

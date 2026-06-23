@@ -7,11 +7,20 @@
 
 'use strict';
 
-import { formatDateLong, formatDateTime, getTimePeriod, parseLocalDate, showToast, vehicleLabel } from './utils.js';
+import { formatDateLong, formatDateTime, getTimePeriod, parseLocalDate, showToast, vehicleLabel, computeWorkTime } from './utils.js';
 import { getVehicleColor } from './drivers.js';
 import { hasPermission, getCurrentUser } from './auth.js';
 import { validateOdometer } from './validation.js';
 import { printReimbursementForm } from './reimbursement.js';
+import { getSetting } from './settings-store.js';
+
+/** Live office-hours window (09:00–17:00 default) for overtime detection. */
+function getOfficeHours() {
+  return {
+    workStartMins: getSetting('operations.workStartMins'),
+    workEndMins:   getSetting('operations.workEndMins'),
+  };
+}
 
 /* ── Status Constants ── */
 const STATUS_LABELS = {
@@ -25,6 +34,8 @@ const STATUS_LABELS = {
 
 /** Minimum characters required for a cancellation reason. */
 const CANCEL_REASON_MIN = 10;
+/** Minimum characters required for an overtime-override reason (v1.16.4.9). */
+const OT_OVERRIDE_REASON_MIN = 10;
 
 /* ── Module State ── */
 let viewingId = null;
@@ -35,6 +46,7 @@ let onStartCallback = null;
 let onCompleteCallback = null;
 let onCommentCallback = null;
 let onCancelCallback = null;
+let onOvertimeOverrideCallback = null;
 
 /** Normalize legacy status values to canonical lifecycle codes. */
 function normalizeStatus(status) {
@@ -103,6 +115,7 @@ export function registerStartCallback(callback) { onStartCallback = callback; }
 export function registerCompleteCallback(callback) { onCompleteCallback = callback; }
 export function registerCommentCallback(callback) { onCommentCallback = callback; }
 export function registerCancelCallback(callback) { onCancelCallback = callback; }
+export function registerOvertimeOverrideCallback(callback) { onOvertimeOverrideCallback = callback; }
 
 export function setAssignments(newAssignments) {
   assignments = newAssignments;
@@ -300,6 +313,82 @@ function _handleCancelConfirm() {
   if (id && onCancelCallback) onCancelCallback(id, reason);
 }
 
+/* ── Overtime Override Modal (v1.16.4.9) ────────────────────────
+   Admin-only dialog to force a completed assignment's overtime final
+   status (Paksa Normal / Paksa Lembur). Reason is mandatory. Mirrors
+   the cancellation modal: detail closes first; "Kembali" reopens it.
+   ────────────────────────────────────────────────────────────── */
+
+let _otOverrideId = null; // assignment id pending override
+
+function _selectedOtChoice() {
+  const el = document.querySelector('input[name="otOverrideChoice"]:checked');
+  return el ? el.value : '';
+}
+
+function _syncOtOverrideState() {
+  const input   = document.getElementById('otOverrideReason');
+  const counter = document.getElementById('otOverrideCounter');
+  const confirm = document.getElementById('btnConfirmOtOverride');
+  const len = input ? String(input.value).trim().length : 0;
+  const hasChoice = _selectedOtChoice() === 'NORMAL' || _selectedOtChoice() === 'LEMBUR';
+
+  if (counter) {
+    counter.textContent = len < OT_OVERRIDE_REASON_MIN
+      ? `Minimal ${OT_OVERRIDE_REASON_MIN} karakter (${len}/${OT_OVERRIDE_REASON_MIN})`
+      : `${len} karakter`;
+    counter.classList.toggle('cancel-reason-counter--ok', len >= OT_OVERRIDE_REASON_MIN);
+  }
+  if (confirm) confirm.disabled = !(hasChoice && len >= OT_OVERRIDE_REASON_MIN);
+}
+
+function _openOtOverrideModal(assignmentId) {
+  _otOverrideId = assignmentId;
+  closeDetailModal(); // Option A — no stacked modals
+
+  const a = assignments.find(x => x.id === assignmentId);
+  const wt = a ? computeWorkTime(a, getOfficeHours()) : null;
+  const ctx = document.getElementById('otOverrideContext');
+  if (ctx) {
+    const det = wt && wt.detectionStatus === 'AUTO_LEMBUR' ? 'Lembur' : 'Normal';
+    const fin = wt && wt.finalStatus === 'LEMBUR' ? 'Lembur' : 'Normal';
+    ctx.textContent = `Deteksi Sistem: ${det}. Status Akhir saat ini: ${fin}. `
+      + 'Override mengubah hasil administratif (analitik & form reimbursement mengikuti status akhir). Deteksi sistem tetap tersimpan untuk audit.';
+  }
+  // Reset form, preselect the current final status to make the change explicit.
+  document.querySelectorAll('input[name="otOverrideChoice"]').forEach(r => {
+    r.checked = wt && wt.finalStatus === r.value;
+  });
+  const input = document.getElementById('otOverrideReason');
+  if (input) input.value = '';
+  _syncOtOverrideState();
+
+  const modal = document.getElementById('modalOvertimeOverride');
+  if (modal) modal.style.display = 'flex';
+  setTimeout(() => { if (input) input.focus(); }, 80);
+}
+
+function _closeOtOverrideModal(reopenDetail = false) {
+  const modal = document.getElementById('modalOvertimeOverride');
+  if (modal) modal.style.display = 'none';
+  const reopenId = _otOverrideId;
+  _otOverrideId = null;
+  if (reopenDetail && reopenId) openDetailModal(reopenId);
+}
+
+function _handleOtOverrideConfirm() {
+  const input  = document.getElementById('otOverrideReason');
+  const reason = input ? String(input.value).trim() : '';
+  const choice = _selectedOtChoice();
+  if (reason.length < OT_OVERRIDE_REASON_MIN || (choice !== 'NORMAL' && choice !== 'LEMBUR')) {
+    _syncOtOverrideState();
+    return;
+  }
+  const id = _otOverrideId;
+  _closeOtOverrideModal(false);
+  if (id && onOvertimeOverrideCallback) onOvertimeOverrideCallback(id, choice, reason);
+}
+
 export function initModalHandlers() {
   initAccordionListeners();
 
@@ -406,6 +495,28 @@ export function initModalHandlers() {
   document.getElementById('cancelReasonInput')?.addEventListener('input', _syncCancelConfirmState);
   document.getElementById('modalCancel')?.addEventListener('click', (e) => {
     if (e.target === document.getElementById('modalCancel')) _closeCancelModal(true);
+  });
+
+  // Overtime override (v1.16.4.9) — admin opens the force-status dialog.
+  document.getElementById('btnOverrideOvertime')?.addEventListener('click', () => {
+    if (!hasPermission('override_overtime')) {
+      showToast('Hanya admin yang bisa override status lembur');
+      return;
+    }
+    const a = assignments.find(x => x.id === viewingId);
+    if (normalizeStatus(a?.status) !== 'completed') {
+      showToast('Override hanya untuk penugasan yang sudah selesai');
+      return;
+    }
+    _openOtOverrideModal(viewingId);
+  });
+  document.getElementById('btnCloseOtOverride')?.addEventListener('click', () => _closeOtOverrideModal(true));
+  document.getElementById('btnBackOtOverride')?.addEventListener('click',  () => _closeOtOverrideModal(true));
+  document.getElementById('btnConfirmOtOverride')?.addEventListener('click', _handleOtOverrideConfirm);
+  document.getElementById('otOverrideReason')?.addEventListener('input', _syncOtOverrideState);
+  document.getElementById('otOverrideChoices')?.addEventListener('change', _syncOtOverrideState);
+  document.getElementById('modalOvertimeOverride')?.addEventListener('click', (e) => {
+    if (e.target === document.getElementById('modalOvertimeOverride')) _closeOtOverrideModal(true);
   });
 
   // Comment thread — only shown when assignment has a requestId
@@ -585,6 +696,9 @@ function buildOpsRows(a) {
       </div>`);
   }
 
+  // Overtime status (v1.16.4.9) — system detection vs. administrative final.
+  rows.push(buildOvertimeRows(a));
+
   // Cancellation audit (v1.10.7) — permanently visible once cancelled.
   if (a.cancelledAt || a.cancellationReason) {
     const cancelledByName = a.cancelledBy?.name || a.cancelledBy || '-';
@@ -598,6 +712,55 @@ function buildOpsRows(a) {
       <div class="detail-row detail-row--cancelled">
         <span class="detail-label">Alasan Pembatalan</span>
         <span class="detail-value">${escapeHTML(a.cancellationReason)}</span>
+      </div>`);
+    }
+  }
+
+  return rows.join('');
+}
+
+/**
+ * Overtime status rows (v1.16.4.9 — Overtime Administration). Shown only once
+ * the assignment is completed (detection needs actual start/end). Surfaces the
+ * SYSTEM detection ("Deteksi Sistem") and the administrative FINAL status
+ * ("Status Akhir") side by side, plus the override audit (who/when/why) when the
+ * final status was set manually. Returns '' for non-completed/legacy records.
+ */
+function buildOvertimeRows(a) {
+  const wt = computeWorkTime(a, getOfficeHours());
+  if (!wt.hasCompleted || !wt.finalStatus) return '';
+
+  const lbl = (s) => (s === 'LEMBUR' ? 'Lembur' : 'Normal');
+  const badge = (s) => {
+    const lembur = s === 'LEMBUR';
+    const bg = lembur ? '#a9781a' : '#2f7d5b';
+    return `<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:800;color:#fff;background:${bg}">${lbl(s)}</span>`;
+  };
+
+  const detection = wt.detectionStatus === 'AUTO_LEMBUR' ? 'LEMBUR' : 'NORMAL';
+  const isManual = wt.overtimeSource === 'MANUAL';
+  const rows = [`
+    <div class="detail-row">
+      <span class="detail-label">Deteksi Sistem</span>
+      <span class="detail-value">${badge(detection)}</span>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">Status Akhir</span>
+      <span class="detail-value">${badge(wt.finalStatus)}${isManual ? ' <span class="detail-ts">(Override Admin)</span>' : ''}</span>
+    </div>`];
+
+  if (isManual) {
+    const byName = a.overtimeOverriddenBy?.name || a.overtimeOverriddenBy || '-';
+    rows.push(`
+      <div class="detail-row">
+        <span class="detail-label">Override oleh</span>
+        <span class="detail-value">${escapeHTML(String(byName))}${a.overtimeOverriddenAt ? ` <span class="detail-ts">${formatDateTime(a.overtimeOverriddenAt)}</span>` : ''}</span>
+      </div>`);
+    if (a.overtimeOverrideReason) {
+      rows.push(`
+      <div class="detail-row">
+        <span class="detail-label">Alasan Override</span>
+        <span class="detail-value">${escapeHTML(a.overtimeOverrideReason)}</span>
       </div>`);
     }
   }
@@ -735,6 +898,16 @@ export function updateDetailActionButtons() {
     btnComplete.title = alreadyDone
       ? 'Penugasan sudah selesai'
       : 'Tandai penugasan sebagai selesai';
+  }
+
+  // Overtime override (v1.16.4.9) — admin only, and only once the assignment is
+  // completed (the detection that gets overridden needs actual start/end).
+  const btnOverride = document.getElementById('btnOverrideOvertime');
+  if (btnOverride) {
+    const showOverride = hasPermission('override_overtime') && status === 'completed';
+    btnOverride.style.display = showOverride ? '' : 'none';
+    btnOverride.disabled = false;
+    btnOverride.title = 'Override status lembur (Paksa Normal / Paksa Lembur)';
   }
 
   // Show/hide the primary actions container based on whether any button is visible

@@ -268,8 +268,10 @@ function workloadBlock(exec) {
   const cards = [
     renderAnalyticsKPICard({ title: 'Driver Paling Aktif', icon: anIcon('user', { size: 15 }), value: palingAktif.value, subtitle: palingAktif.subtitle }),
     renderAnalyticsKPICard({ title: 'Total Jam Kerja Aktual', icon: anIcon('pulse', { size: 15 }), value: fmtH(w.totalActualHours), subtitle: 'Waktu kerja tercatat' }),
-    renderAnalyticsKPICard({ title: 'Total Jam Lembur', icon: anIcon('chart', { size: 15 }), value: fmtH(w.totalOvertimeHours), subtitle: 'Akhir pekan / luar jam kerja' }),
+    renderAnalyticsKPICard({ title: 'Total Jam Lembur', icon: anIcon('chart', { size: 15 }), value: fmtH(w.totalOvertimeHours), subtitle: 'Status akhir (termasuk override)' }),
     renderAnalyticsKPICard({ title: 'Assignment Weekend', icon: anIcon('car', { size: 15 }), value: String(w.weekendAssignments), subtitle: 'Penugasan Sabtu/Minggu' }),
+    // Overtime Administration (v1.16.4.9) — additive; never alters the score.
+    renderAnalyticsKPICard({ title: 'Override Manual', icon: anIcon('bolt', { size: 15 }), value: String(w.manualOvertimeOverrides || 0), subtitle: w.overtimeOverridePct == null ? 'Belum ada data' : `${w.overtimeOverridePct}% dari penugasan selesai` }),
   ];
   return `
     ${renderEyebrow({ tag: 'Beban Kerja', title: 'Driver Workload Intelligence', sub: 'Beban kerja operasional berbasis jam & jarak aktual' })}

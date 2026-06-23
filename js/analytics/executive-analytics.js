@@ -262,6 +262,9 @@ export function computeExecutiveAnalytics({ driverModel, pettyModel, meta } = {}
       totalActualHours: num(dk.totalActualHours),
       totalOvertimeHours: num(dk.totalOvertimeHours),
       weekendAssignments: num(dk.weekendAssignments),
+      // Overtime Administration (v1.16.4.9) — additive override visibility.
+      manualOvertimeOverrides: num(dk.manualOvertimeOverrides),
+      overtimeOverridePct: dk.overtimeOverridePct == null ? null : num(dk.overtimeOverridePct),
     },
     insights,
     narrative,

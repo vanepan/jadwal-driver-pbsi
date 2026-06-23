@@ -245,6 +245,12 @@ export function computeAnalyticsModel(ctx) {
   let totalActualHours    = 0;
   let overtimeAssignments = 0;
   let totalOvertimeHours  = 0;
+  // Overtime Administration (v1.16.4.9) — count of completed assignments whose
+  // overtime FINAL status was set by an admin override, + the completed
+  // denominator, so executive surfaces can show "Manual Overrides" and an
+  // override percentage. Purely additive; existing KPIs are unaffected.
+  let manualOvertimeOverrides = 0;
+  let completedWorkCount      = 0;
   const _driverWorkTime = {};    // lowercased driver name → { actualHours, overtimeCount, overtimeHours }
   const _driverDays = new Set(); // distinct (driver, date) pairs that had actual hours
   // ── Driver Workload Intelligence (v1.16.4.8) — per-driver raw components ──
@@ -258,6 +264,8 @@ export function computeAnalyticsModel(ctx) {
     totalActualHours   += wt.actualHours;
     totalOvertimeHours += wt.overtimeHours;
     if (wt.isOvertime) overtimeAssignments++;
+    completedWorkCount++;
+    if (wt.overtimeSource === 'MANUAL') manualOvertimeOverrides++;
     const dKey = (a.driver || '').toLowerCase();
     _driverDays.add(`${dKey}|${a.date || a.startDate || ''}`);
     const e = _driverWorkTime[dKey] || { actualHours: 0, overtimeCount: 0, overtimeHours: 0 };
@@ -280,6 +288,10 @@ export function computeAnalyticsModel(ctx) {
   const driverDaysWorked = _driverDays.size;
   const workingHourUtilization = driverDaysWorked > 0
     ? Math.round((totalActualHours / (officeHoursPerDay * driverDaysWorked)) * 100)
+    : null;
+  // Share of completed assignments whose overtime status was manually overridden.
+  const overtimeOverridePct = completedWorkCount > 0
+    ? Math.round((manualOvertimeOverrides / completedWorkCount) * 100)
     : null;
 
   // ── Weekend assignments (v1.16.4.8) — calendar-based on the SCHEDULED date
@@ -584,6 +596,8 @@ export function computeAnalyticsModel(ctx) {
       wlBalancedCount, wlOverCount, wlUnderCount,
       // Actual Working Time & Overtime (v1.16.4.7) — additive; existing KPIs untouched.
       totalActualHours, overtimeAssignments, totalOvertimeHours, workingHourUtilization,
+      // Overtime Administration (v1.16.4.9) — additive; existing KPIs untouched.
+      manualOvertimeOverrides, overtimeOverridePct,
       // Driver Workload Intelligence (v1.16.4.8) — additive; existing KPIs untouched.
       weekendAssignments,
       workloadAvgScore: workload.averageScore,
@@ -609,6 +623,8 @@ export function computeAnalyticsModel(ctx) {
         byDriver: _driverWorkTime,           // lowercased name → { actualHours, overtimeCount, overtimeHours }
         officeHoursPerDay, driverDaysWorked,
         totalActualHours, overtimeAssignments, totalOvertimeHours, workingHourUtilization,
+        // Overtime Administration (v1.16.4.9) — additive override telemetry.
+        manualOvertimeOverrides, overtimeOverridePct, completedWorkCount,
       },
       // Driver Workload Intelligence (v1.16.4.8) — normalized score + ranking +
       // explainability. Kept in diagnostics (NOT render) so the parity-locked

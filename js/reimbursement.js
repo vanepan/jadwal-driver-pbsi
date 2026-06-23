@@ -22,14 +22,23 @@
 'use strict';
 
 import { getVehicles }                    from './vehicles-store.js';
-import { parseLocalDate, vehicleLabel }   from './utils.js';
+import { parseLocalDate, vehicleLabel, computeWorkTime } from './utils.js';
 import { acquireReimbursementDocNumber }  from './firebase.js';
+import { getSetting }                     from './settings-store.js';
 import * as DocumentEngine                from './docs/doc-engine.js';
 import './docs/templates/reimbursement.js';   // side-effect: registers 'reimbursement'
 
-/* ── Overtime Boundaries ── */
+/* ── Overtime Boundaries (schedule-based fallback only) ── */
 const WORK_START_MINS = 9  * 60;   // 09:00
 const WORK_END_MINS   = 17 * 60;   // 17:00
+
+/** Live office-hours window for the actual-based overtime final status. */
+function getOfficeHours() {
+  return {
+    workStartMins: getSetting('operations.workStartMins'),
+    workEndMins:   getSetting('operations.workEndMins'),
+  };
+}
 
 /* ────────────────────────────────────────────────────────────
    DOMAIN HELPERS
@@ -88,8 +97,17 @@ function buildViewModel(a, docNumber) {
     day: 'numeric', month: 'long', year: 'numeric',
   });
 
-  const overtimeStatus = calculateOvertimeStatus(a.startTime, a.endTime, a.fullDay);
-  const isOT = overtimeStatus === 'OVERTIME';
+  // Overtime status (v1.16.4.9): once the assignment is completed, the form
+  // follows the ADMINISTRATIVE FINAL status (system detection + any admin
+  // override) — so a "Paksa Normal" override disables the Lembur claim and a
+  // "Paksa Lembur" override enables it, with no manual re-entry. For not-yet-
+  // completed assignments (no actuals) it falls back to the legacy schedule-
+  // based estimate so the form still prints sensibly. Backward compatible.
+  const wt = computeWorkTime(a, getOfficeHours());
+  const isOT = (wt.hasCompleted && wt.finalStatus)
+    ? wt.finalStatus === 'LEMBUR'
+    : calculateOvertimeStatus(a.startTime, a.endTime, a.fullDay) === 'OVERTIME';
+  const isOverride = wt.hasCompleted && wt.overtimeSource === 'MANUAL';
 
   const fmtOdo = v => (v != null ? `${Number(v).toLocaleString('id-ID')} km` : '—');
   const requester = getRequesterInfo(a);
@@ -120,9 +138,11 @@ function buildViewModel(a, docNumber) {
 
     isOT,
     otLabel: isOT ? 'LEMBUR' : 'NORMAL',
-    otDesc:  isOT
-      ? 'Di luar jam operasional (09:00 – 17:00)'
-      : 'Dalam jam operasional (09:00 – 17:00)',
+    otDesc:  isOverride
+      ? `Ditetapkan administratif (override admin)${wt.overtimeOverrideReason ? ` — ${wt.overtimeOverrideReason}` : ''}`
+      : (isOT
+          ? 'Di luar jam operasional (09:00 – 17:00)'
+          : 'Dalam jam operasional (09:00 – 17:00)'),
   };
 }
 

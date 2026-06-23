@@ -57,5 +57,48 @@ r = computeWorkTime({ startedAt: null, completedAt: null, startTime: '09:00', en
 check('scheduled-only scheduledHours = 8', approx(r.scheduledHours, 8));
 check('scheduled-only isOvertime null', r.isOvertime === null);
 
+// ── Overtime Administration (v1.16.4.9) — detection vs final + override matrix ──
+
+// 9. Auto Normal: detection + final NORMAL, source AUTO (weekday in-office)
+r = computeWorkTime({ startedAt: iso('2026-06-22', 10, 0), completedAt: iso('2026-06-22', 14, 0) }, OFFICE);
+check('auto normal → detectionStatus AUTO_NORMAL', r.detectionStatus === 'AUTO_NORMAL');
+check('auto normal → finalStatus NORMAL', r.finalStatus === 'NORMAL');
+check('auto normal → source AUTO', r.overtimeSource === 'AUTO');
+
+// 10. Auto Lembur: detection + final LEMBUR, source AUTO (weekday late)
+r = computeWorkTime({ startedAt: iso('2026-06-22', 15, 0), completedAt: iso('2026-06-22', 19, 0) }, OFFICE);
+check('auto lembur → detectionStatus AUTO_LEMBUR', r.detectionStatus === 'AUTO_LEMBUR');
+check('auto lembur → finalStatus LEMBUR', r.finalStatus === 'LEMBUR');
+
+// 11. Auto Normal → Manual Lembur: final LEMBUR, isOvertime true, hours = full engaged
+r = computeWorkTime({ startedAt: iso('2026-06-22', 10, 0), completedAt: iso('2026-06-22', 14, 0), overtimeOverride: 'LEMBUR', overtimeOverrideReason: 'Pendampingan Event Nasional' }, OFFICE);
+check('override→lembur: detection still AUTO_NORMAL', r.detectionStatus === 'AUTO_NORMAL');
+check('override→lembur: finalStatus LEMBUR', r.finalStatus === 'LEMBUR');
+check('override→lembur: isOvertime true (analytics follows final)', r.isOvertime === true);
+check('override→lembur: source MANUAL', r.overtimeSource === 'MANUAL');
+check('override→lembur: overtimeHours = actualHours (4)', approx(r.overtimeHours, 4));
+check('override→lembur: reason passed through', r.overtimeOverrideReason === 'Pendampingan Event Nasional');
+
+// 12. Auto Lembur → Manual Normal: final NORMAL, isOvertime false, hours = 0
+r = computeWorkTime({ startedAt: iso('2026-06-20', 10, 0), completedAt: iso('2026-06-20', 13, 0), overtimeOverride: 'NORMAL', overtimeOverrideReason: 'Bukan lembur resmi' }, OFFICE);
+check('override→normal: detection still AUTO_LEMBUR', r.detectionStatus === 'AUTO_LEMBUR');
+check('override→normal: finalStatus NORMAL', r.finalStatus === 'NORMAL');
+check('override→normal: isOvertime false (analytics follows final)', r.isOvertime === false);
+check('override→normal: overtimeHours = 0 (no Jam Lembur)', approx(r.overtimeHours, 0));
+
+// 13. Override ignored before completion (no actuals → no final status)
+r = computeWorkTime({ startedAt: iso('2026-06-22', 9, 0), completedAt: null, overtimeOverride: 'LEMBUR' }, OFFICE);
+check('override pre-completion: finalStatus null', r.finalStatus === null);
+check('override pre-completion: source AUTO (not applied)', r.overtimeSource === 'AUTO');
+
+// 14. Legacy assignment (no override field) → backward compatible, source AUTO
+r = computeWorkTime({ startedAt: iso('2026-06-22', 10, 0), completedAt: iso('2026-06-22', 14, 0) }, OFFICE);
+check('legacy: no crash, source AUTO', r.overtimeSource === 'AUTO' && r.overtimeOverrideReason === null);
+
+// 15. Invalid override value is ignored (treated as no override)
+r = computeWorkTime({ startedAt: iso('2026-06-22', 10, 0), completedAt: iso('2026-06-22', 14, 0), overtimeOverride: 'GARBAGE' }, OFFICE);
+check('invalid override ignored → source AUTO', r.overtimeSource === 'AUTO');
+check('invalid override ignored → finalStatus NORMAL', r.finalStatus === 'NORMAL');
+
 console.log(`\nworktime-check: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

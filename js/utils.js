@@ -112,8 +112,20 @@ function _calendarDayDiff(a, b) {
  *   actualStartAt:(string|null), actualEndAt:(string|null),
  *   hasStarted:boolean, hasCompleted:boolean,
  *   actualHours:(number|null), scheduledHours:(number|null), varianceHours:(number|null),
- *   isOvertime:(boolean|null), overtimeHours:number, overtimeReason:(string|null)
+ *   isOvertime:(boolean|null), overtimeHours:number, overtimeReason:(string|null),
+ *   autoIsOvertime:(boolean|null), detectionStatus:(string|null),
+ *   finalStatus:(string|null), overtimeSource:string,
+ *   overtimeOverrideReason:(string|null)
  * }}
+ *
+ * v1.16.4.9 (Overtime Administration): the system detection is exposed as
+ * `detectionStatus` ('AUTO_NORMAL' | 'AUTO_LEMBUR'), and an optional admin
+ * override persisted on the record (`overtimeOverride` ∈ {'NORMAL','LEMBUR'})
+ * resolves the `finalStatus` ('NORMAL' | 'LEMBUR'). `isOvertime` and
+ * `overtimeHours` reflect the FINAL decision, so every existing consumer
+ * (timeline, analytics, KPIs) follows the administrative result automatically.
+ * Backward compatible: records without the override field behave exactly as
+ * before (source = 'AUTO', final = detection).
  */
 export function computeWorkTime(a, office = DEFAULT_OFFICE_HOURS) {
   const workStartMins = Number(office?.workStartMins ?? DEFAULT_OFFICE_HOURS.workStartMins);
@@ -138,7 +150,7 @@ export function computeWorkTime(a, office = DEFAULT_OFFICE_HOURS) {
 
   // ── Actual hours + overtime (truth; only once completed) ──
   let actualHours = null;
-  let isOvertime = null;
+  let autoIsOvertime = null; // raw SYSTEM detection (pre-override)
   let overtimeHours = 0;
   let overtimeReason = null;
 
@@ -167,11 +179,46 @@ export function computeWorkTime(a, office = DEFAULT_OFFICE_HOURS) {
       const outsideMins = Math.max(0, totalMins - officeOverlap);
       const isOutsideOffice = outsideMins > 0;
 
-      isOvertime = isWeekend || isOutsideOffice;
+      autoIsOvertime = isWeekend || isOutsideOffice;
       overtimeReason = isWeekend ? 'weekend' : (isOutsideOffice ? 'outside_office' : null);
       overtimeHours = isWeekend ? actualHours : (outsideMins / 60);
     }
   }
+
+  // ── Detection result (system) ── 'AUTO_LEMBUR' | 'AUTO_NORMAL' | null.
+  const detectionStatus = hasCompleted
+    ? (autoIsOvertime ? 'AUTO_LEMBUR' : 'AUTO_NORMAL')
+    : null;
+
+  // ── Administrative override (v1.16.4.9) ──
+  // `overtimeOverride` ∈ {'NORMAL','LEMBUR'} is persisted on the assignment by
+  // an admin. Only meaningful once completed (no actuals before that). When
+  // present it overrides the detection; the final boolean + hours are adjusted
+  // so analytics, KPIs, and the timeline all follow the final decision.
+  const rawOverride = a?.overtimeOverride;
+  const hasOverride = hasCompleted && (rawOverride === 'NORMAL' || rawOverride === 'LEMBUR');
+  const overtimeSource = hasOverride ? 'MANUAL' : 'AUTO';
+
+  let isOvertime = autoIsOvertime; // FINAL boolean (override applied below)
+  if (hasOverride) {
+    if (rawOverride === 'NORMAL') {
+      isOvertime = false;
+      overtimeHours = 0;          // forced normal → contributes no Jam Lembur
+      overtimeReason = null;
+    } else { // 'LEMBUR'
+      isOvertime = true;
+      // If the system already counted overtime hours, keep them. When forcing
+      // lembur onto an in-office trip (system counted 0), the full engaged time
+      // is treated as the overtime window — mirrors weekend semantics. This is
+      // operational accounting only; no pay rate or compensation is implied.
+      if (!(overtimeHours > 0)) overtimeHours = actualHours || 0;
+      overtimeReason = 'override_lembur';
+    }
+  }
+
+  const finalStatus = hasCompleted
+    ? (isOvertime ? 'LEMBUR' : 'NORMAL')
+    : null;
 
   const varianceHours = (actualHours != null && scheduledHours != null)
     ? actualHours - scheduledHours
@@ -182,6 +229,9 @@ export function computeWorkTime(a, office = DEFAULT_OFFICE_HOURS) {
     hasStarted, hasCompleted,
     actualHours, scheduledHours, varianceHours,
     isOvertime, overtimeHours, overtimeReason,
+    // v1.16.4.9 Overtime Administration — detection vs final + provenance.
+    autoIsOvertime, detectionStatus, finalStatus, overtimeSource,
+    overtimeOverrideReason: hasOverride ? (a?.overtimeOverrideReason || null) : null,
   };
 }
 
