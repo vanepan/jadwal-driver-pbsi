@@ -34,22 +34,9 @@
     body:not(.app-ready) { visibility: hidden; }
     body:not(.app-ready) #app-splash { visibility: visible; }
 
-    /* beta.3 / beta.3.1 — admin recommendation/override styling */
-    .approve-recommendation{
-      background:var(--surface-2);border:1px solid var(--border);border-radius:10px;
-      padding:.7rem .8rem;margin-bottom:.85rem;font-size:.86rem;color:var(--text);
-    }
-    .approve-recommendation--has{border-color:var(--ok);background:var(--ok-bg);}
-    .approve-rec-top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.5rem;}
-    .approve-rec-badge{font-size:.74rem;font-weight:700;color:var(--ok);background:var(--surface);
-      border:1px solid var(--ok);border-radius:999px;padding:.18rem .6rem;}
-    .approve-rec-badge--none{color:var(--muted);border-color:var(--border);}
-    .approve-rec-score{font-size:.78rem;font-weight:800;color:var(--ok);
-      background:var(--surface);border:1px solid var(--ok);border-radius:999px;padding:.18rem .55rem;}
-    .approve-rec-grid{display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-bottom:.3rem;}
-    .approve-rec-k{display:block;font-size:.68rem;text-transform:uppercase;letter-spacing:.02em;color:var(--muted);}
-    .approve-rec-v{display:block;font-size:1rem;font-weight:700;color:var(--text);}
-    .approve-rec-sub{font-size:.8rem;color:var(--muted);margin-top:.2rem;}
+    /* beta.3.1 — admin override form label. The rich recommendation panel is
+       rendered by js/components/approval-intelligence-panel.js into
+       #approveIntelligence (v1.16.4.12 Auto Assignment Assistant). */
     .approve-section-label{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);margin:.2rem 0 .5rem;}
     .request-rec{font-size:.8rem;color:var(--muted);}
     .v2-pending-btn--edit{background:var(--surface-2);color:var(--text);border:1px solid var(--border);}
@@ -485,8 +472,10 @@
       <button class="modal-close" id="btnCloseApprove">&times;</button>
     </div>
     <div class="modal-body">
-      <!-- Background Dispatch Intelligence recommendation (admin-only). -->
-      <div class="approve-recommendation" id="approveRecommendation"></div>
+      <!-- Auto Assignment Assistant (v1.16.4.12): premium Dispatch Intelligence
+           panel — recommendation, confidence, apply, comparison, breakdown,
+           explanation, timeline. Rendered by approval-intelligence-panel.js. -->
+      <div id="approveIntelligence"></div>
       <form id="approveForm" novalidate>
         <div class="approve-section-label">Penyesuaian</div>
         <div class="form-grid">
@@ -1100,6 +1089,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="vendor/flatpickr.min.js"></script>
-<script type="module" src="js/app.js?v=1.16.4.11-rc.1.1"></script>
+<script type="module" src="js/app.js?v=1.17.0"></script>
 </body>
 </html>

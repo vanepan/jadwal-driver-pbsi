@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.16.4.11-rc.1.1';
-export const RELEASE_NAME = 'Analytics Data Sanitization';
+export const APP_VERSION = '1.17.0';
+export const RELEASE_NAME = 'Dispatch Intelligence Analytics';
 
 /**
  * Web Push VAPID PUBLIC key (v1.11.3). Safe to ship — it is an
@@ -17,6 +17,26 @@ export const RELEASE_NAME = 'Analytics Data Sanitization';
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.17.0',
+    date: '2026-06-25',
+    summary: 'Dispatch Intelligence Analytics — a dedicated, READ-ONLY executive dashboard that visualizes the completed Dispatch Intelligence decision history (override logs, stored recommendations, capacity) without touching any engine, workflow, or Firebase schema. It sits BESIDE the existing operational Analytics dashboard as a new "Dispatch Analytics" admin section (Analytics module). Eleven sections: Executive KPI (akurasi dispatch, tingkat override, penerimaan rekomendasi, rata-rata skor & confidence), Confidence Distribution (★★★★★→★☆☆☆☆), Driver Intelligence (per-driver rekomendasi/penerimaan/override/skor/kapasitas/anti-konflik + ranking), Vehicle Intelligence (utilisasi/idle/anti-konflik), Override Analytics (alasan + tren harian/mingguan/bulanan), Bidang Intelligence (join via recommendationId → request), Recommendation Quality (funnel Diterima/Driver/Kendaraan/Keduanya Diubah), Dispatch Timeline, Explainability (alasan rekomendasi + alasan override), and a Trend Dashboard (7/30/90/YTD). Every KPI has exactly one source of truth — the engine REUSES override-workflow-service (computeOverrideStats/Driver/VehicleAccuracy), dispatch-presentation (confidenceFromScore — the same 4-band scale as the approval panel, so the 1★ bucket is empty by definition), and the driver/vehicle capacity engines; nothing is recalculated. Apple-style, dark-mode safe, fully responsive (tables scroll inside their own region — no horizontal page scroll). PDF + Excel export reuses the platform export libraries (pdfmake backend + xlsx-js-style) and the export-history metadata log. APP_VERSION 1.16.4.12 → 1.17.0 re-stamps SW_VERSION → CACHE_NAME, version.json, and the index.html app.js cache-bust via scripts/sync-version.mjs.',
+    highlights: [
+      'New PURE engine js/analytics/dispatch-analytics-engine.js: computeDispatchAnalyticsModel({ overrideLogs, requestRecommendations, requests, drivers, vehicles, assignments, now }) → a complete model with one block per spec section. Historical metrics (accuracy/acceptance/override/score/confidence) come from the override log; capacity/utilization/idle are current-state from the capacity engines; conflict-avoidance is real double-booking detection over assignments. 72 assertions in scripts/dispatch-analytics-check.mjs (incl. empty-data safety + the pure PDF/Excel builders).',
+      'New render component js/components/dispatch-analytics-dashboard.js: scoped .daa-* styles on the platform CSS variables (no hard-coded #fff — dark-mode safe), KPI hero cards, distribution bars, ranked tables, trend-window toggle (7/30/90/YTD), quality funnel, timeline, explainability, sparklines. Pure string render (escaped). DOM test scripts/dispatch-analytics-dom-check.mjs (28 checks, Puppeteer) renders the real dashboard from a seeded model, asserts all 11 sections + no horizontal page scroll + 0 console errors, and captures desktop-light/desktop-dark/mobile-light screenshots.',
+      'New export js/exports/analytics/dispatch-analytics-export.js: pure node-testable builders (buildDispatchAnalyticsDocDefinition + buildDispatchAnalyticsSheets) wrapped by pdfmake (js/docs/pdf-exporter.js) and xlsx-js-style blob functions; registered in export-registry as dispatch-analytics-pdf/-excel (kept OUT of the operational dropdown order). app.js adds the Dispatch Analytics admin section (ADMIN_SECTION_DEFS + ADMIN_MODULE_SECTIONS.analytics), the render/refresh wiring, the trend-window + export click delegation, and a download+history-log runner. Store gains one additive read-only getter getAllRequestRecommendations(). No engine, override workflow, request workflow, assignment logic, auto-assignment, or Firebase schema changed.',
+    ],
+  },
+  {
+    version: '1.16.4.12',
+    date: '2026-06-25',
+    summary: 'Auto Assignment Assistant — a UX checkpoint over the completed Dispatch Intelligence engine. It makes the admin approval (Edit & Setujui) decision easier WITHOUT changing any algorithm: a premium "🤖 Dispatch Intelligence" panel inside the approval modal shows the recommended driver + vehicle, the dispatch score, a star CONFIDENCE badge (95–100 Sangat Tinggi / 85–94 Tinggi / 70–84 Sedang / <70 Perlu Review), a plain-language "Mengapa?" explanation, a score COMPOSITION that always totals to the dispatch score, an AI↔Admin COMPARISON with Driver/Kendaraan "Diubah" badges when the admin overrides, and an approval LINIMASA. A one-click "Terapkan Rekomendasi" button pre-fills the driver/vehicle selects (the admin may still edit). RECOMMENDATION-ONLY: no auto-approval, no auto-assignment, no auto-reject. The scoring/recommendation/override/persistence engines, analytics, and Firebase schema are untouched — the headline reuses the STORED recommendation object (no recalculation) and the transparent breakdown reads engine sub-scores from a read-only live recompute (no scoring duplicated). APP_VERSION 1.16.4.11-rc.1.1 → 1.16.4.12 re-stamps SW_VERSION → CACHE_NAME, version.json, and the index.html app.js cache-bust via scripts/sync-version.mjs.',
+    highlights: [
+      'New pure layer js/services/dispatch-presentation.js: confidenceFromScore, buildScoreBreakdown (driver+vehicle contributions ALWAYS sum to the dispatch score), buildSubScoreRows, buildExplanation (derived from engine booleans — no generated text), buildComparison, buildTimeline. No engine imported; nothing recalculated. 34 assertions in scripts/dispatch-presentation-check.mjs (incl. a totals-correctly fuzz across scores × weights).',
+      'New DOM component js/components/approval-intelligence-panel.js: scoped .aip-* styles on the platform CSS variables (dark-mode safe, responsive, textContent-only), with mountApprovalIntelligencePanel + a live updateApprovalComparison that re-renders only the comparison region (and override timeline row) on select change.',
+      'app.js wires it into openApproveRequestModal: live read-only buildLiveApprovalPackage() for diagnostics, the Terapkan Rekomendasi apply path (applyRecommendationToApprove), and comparison refresh on driver/vehicle change. The legacy inline recommendation HTML (#approveRecommendation) is replaced by #approveIntelligence. No change to commitApproval / the override log / the engines.',
+    ],
+  },
   {
     version: '1.16.4.11-rc.1.1',
     date: '2026-06-25',

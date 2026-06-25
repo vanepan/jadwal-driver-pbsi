@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer';
+import { APP_VERSION } from '../js/config.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MIME = { '.html':'text/html', '.js':'text/javascript', '.mjs':'text/javascript', '.css':'text/css', '.json':'application/json', '.png':'image/png', '.svg':'image/svg+xml', '.ico':'image/x-icon' };
@@ -63,6 +64,8 @@ errors.forEach(e => console.log('   •', e.slice(0, 200)));
 await browser.close();
 server.close();
 
-const pass = ver === '1.12.2' && loginVisible && pushSectionExists && enablePushBtnExists && fatal.length === 0;
+// version.json must match the source APP_VERSION (proves sync-version stamped it);
+// self-updating so it never goes stale on a release bump.
+const pass = ver === APP_VERSION && loginVisible && pushSectionExists && enablePushBtnExists && fatal.length === 0;
 console.log('\nSMOKE RESULT:', pass ? 'PASS' : 'FAIL');
 process.exit(pass ? 0 : 1);

@@ -58,17 +58,25 @@ import { initFormHandlers, openFormModal, closeFormModal, registerSaveCallback, 
 // Request Auto-Fill Intelligence (v1.16.4.11-beta.2): read-only dispatch suggestion panel.
 import { initAssignmentDispatchHints } from './components/assignment-dispatch-hints.js';
 // beta.3: admin approval override → records the decision in the existing override log.
-import { saveOverrideLog } from './stores/dispatch-intelligence-store.js';
+import { saveOverrideLog, getOverrideLogs, getAllRequestRecommendations } from './stores/dispatch-intelligence-store.js';
+import { computeDispatchAnalyticsModel } from './analytics/dispatch-analytics-engine.js';
+import { injectDispatchAnalyticsStyles, renderDispatchAnalyticsDashboard } from './components/dispatch-analytics-dashboard.js';
 // beta.3.1: pure approval-decision helpers (effective dispatch, classification, audit record).
 import {
   resolveEffectiveDispatch,
   isApprovalOverride,
   buildApprovalOverrideRecord,
+  buildRecommendationPackage,
+  requestToEngineRequest,
 } from './services/request-intelligence-service.js';
+// v1.16.4.12 Auto Assignment Assistant: premium approval intelligence panel
+// (recommendation card, confidence, apply, comparison, breakdown, timeline).
+import { mountApprovalIntelligencePanel, updateApprovalComparison } from './components/approval-intelligence-panel.js';
 import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver } from './auth.js';
 import * as DocumentEngine from './docs/doc-engine.js';
 import './docs/templates/analytics-summary.js';   // registers 'analytics-summary'
 import './exports/analytics/analytics-export-client.js'; // Analytics Export Phase A — window.exportAnalyticsPoc()
+import './exports/analytics/dispatch-analytics-export.js'; // v1.17.0 — window.exportDispatchAnalyticsPdf/Excel()
 import { listExportReports, getExportReport, runExportReport } from './exports/export-registry.js'; // single source of truth for report exports
 import { logExportSuccess, logExportFailure, ensureExportHistoryLoadedAndSubscribed, resetExportHistorySync, getExportHistoryCache, subscribeExportHistoryChangeListener } from './exports/export-history.js'; // metadata logging for every export
 import { renderExportCenter as renderModernExportCenter } from './exports/export-center.js'; // v1.12.1C modern Export Center (registry + metadata)
@@ -220,6 +228,7 @@ const ADMIN_SECTION_DEFS = [
   { key: 'audit', label: 'Audit Center', subtitle: 'Telusuri dan verifikasi aktivitas sistem dan catatan operasional.' },
   { key: 'config', label: 'Konfigurasi', subtitle: 'Atur parameter operasional, notifikasi, sistem, dan integrasi Telegram.' },
   { key: 'analytics', label: 'Analytics', subtitle: 'Ringkasan operasional berbasis data aktual — assignment, driver, kendaraan, dan bidang.' },
+  { key: 'dispatchanalytics', label: 'Dispatch Analytics', subtitle: 'Dashboard eksekutif Dispatch Intelligence — akurasi, override, confidence, intelijen driver/kendaraan, dan tren.' },
 ];
 
 /* v1.14.0: which admin sections belong to which platform module. Drives the
@@ -229,7 +238,7 @@ const ADMIN_SECTION_DEFS = [
 const ADMIN_MODULE_SECTIONS = {
   driverops:   ['drivers', 'vehicles', 'audit'],
   konfigurasi: ['users', 'config'],
-  analytics:   ['analytics'],
+  analytics:   ['analytics', 'dispatchanalytics'],
 };
 
 /**
@@ -2519,6 +2528,7 @@ function initV2AdministrationWorkspace() {
           <div id="v2AuditList" class="v2-audit-list"></div>
         </div>
         <div id="v2AdminSectionConfig" style="display:none;"></div>
+        <div id="v2AdminSectionDispatchAnalytics" style="display:none;"></div>
         <div id="v2AdminSectionAnalytics" class="v2-analytics-claude v2-analytics-shell" style="display:none;">
           <!-- Analytics Header (command area): title + date range + filters + export -->
           <div class="v2-analytics-header" id="v2AnalyticsHeader">
@@ -2659,6 +2669,22 @@ function initV2AdministrationWorkspace() {
         openRequestReviewModal();
         return;
       }
+    }
+
+    // v1.17.0: Dispatch Analytics trend-window toggle + export buttons.
+    const daaWindowBtn = e.target.closest('[data-daa-window]');
+    if (daaWindowBtn) {
+      const w = daaWindowBtn.dataset.daaWindow;
+      if (w && w !== dispatchAnalyticsTrendWindow) {
+        dispatchAnalyticsTrendWindow = w;
+        renderDispatchAnalyticsSection();
+      }
+      return;
+    }
+    const daaExportBtn = e.target.closest('[data-daa-export]');
+    if (daaExportBtn) {
+      exportDispatchAnalytics(daaExportBtn.dataset.daaExport, daaExportBtn);
+      return;
     }
 
     const button = e.target.closest('[data-admin-section]');
@@ -2924,8 +2950,15 @@ function renderV2AdminWorkspace() {
   const vehiclesSection    = document.getElementById('v2AdminSectionVehicles');
   const configSection      = document.getElementById('v2AdminSectionConfig');
   const analyticsSection   = document.getElementById('v2AdminSectionAnalytics');
+  const dispatchAnalyticsSection = document.getElementById('v2AdminSectionDispatchAnalytics');
   const placeholderSection = document.getElementById('v2AdminSectionPlaceholder');
   const overviewRow        = document.getElementById('v2AdminOverviewRow');
+
+  // v1.17.0: the Dispatch Analytics section is hidden in every branch except its
+  // own — set centrally so the per-section branches below don't each need a line.
+  if (dispatchAnalyticsSection) {
+    dispatchAnalyticsSection.style.display = (activeAdminSection === 'dispatchanalytics') ? '' : 'none';
+  }
 
   // v1.14.0: the tab strip is the mobile sub-nav — show only the tabs that
   // belong to the active platform module so it mirrors the new module IA.
@@ -2940,8 +2973,14 @@ function renderV2AdminWorkspace() {
   // in-content tab strip would render a lone redundant "Analytics" tab on
   // mobile. The dedicated mobile Analytics sub-nav (#v2AnalyticsMobileNav)
   // owns that navigation, so hide the admin strip while in the Analytics module.
+  // v1.17.0: the Analytics module now has TWO sections (Analytics + Dispatch
+  // Analytics), so keep the in-content tab strip visible to switch between them
+  // (it was hidden only when the module had a single, redundant tab).
   const adminNavStrip = document.querySelector('#v2AdministrationWorkspace .v2-admin-nav');
-  if (adminNavStrip) adminNavStrip.style.display = (activeAdminModule === 'analytics') ? 'none' : '';
+  if (adminNavStrip) {
+    const moduleTabCount = (ADMIN_MODULE_SECTIONS[activeAdminModule] || []).length;
+    adminNavStrip.style.display = (activeAdminModule === 'analytics' && moduleTabCount <= 1) ? 'none' : '';
+  }
 
   const pageSubtitle = document.querySelector('.v2-admin-page-subtitle');
   if (pageSubtitle) pageSubtitle.textContent = section.subtitle;
@@ -3174,6 +3213,18 @@ function renderV2AdminWorkspace() {
     const _auditSec2 = document.getElementById('v2AdminSectionAudit');
     if (_auditSec2) _auditSec2.style.display = 'none';
     renderV2AdminAnalytics();
+
+  } else if (activeAdminSection === 'dispatchanalytics') {
+    if (usersSection)       usersSection.style.display       = 'none';
+    if (driversSection)     driversSection.style.display     = 'none';
+    if (vehiclesSection)    vehiclesSection.style.display    = 'none';
+    if (configSection)      configSection.style.display      = 'none';
+    if (analyticsSection)   analyticsSection.style.display   = 'none';
+    if (placeholderSection) placeholderSection.style.display = 'none';
+    const _auditSec3 = document.getElementById('v2AdminSectionAudit');
+    if (_auditSec3) _auditSec3.style.display = 'none';
+    if (overviewRow) overviewRow.innerHTML = '';
+    renderDispatchAnalyticsSection();
 
   } else {
     if (usersSection)       usersSection.style.display       = 'none';
@@ -5189,6 +5240,85 @@ function _animateAnalyticsRegion(root) {
     if (_analyticsMotionOff()) apply();
     else requestAnimationFrame(() => requestAnimationFrame(apply));
   });
+}
+
+/* ── Dispatch Intelligence Analytics (v1.17.0) ─────────────────────────────
+   A dedicated, READ-ONLY executive dashboard over the Dispatch Intelligence
+   decision history. It computes nothing operational — it aggregates the
+   existing override log + stored recommendations + live request/assignment data
+   into the analytics model and renders it. No engine, workflow, or schema is
+   touched. */
+let dispatchAnalyticsTrendWindow = '30d';
+
+/** Build the analytics model from live subsystem + operational data. */
+function buildDispatchAnalyticsModel() {
+  return computeDispatchAnalyticsModel({
+    overrideLogs:           getOverrideLogs(),
+    requestRecommendations: getAllRequestRecommendations(),
+    requests,
+    drivers:                getDrivers(),
+    vehicles:               getVehicles(),
+    assignments,
+  });
+}
+
+/** Render (or re-render) the Dispatch Analytics section into its container. */
+function renderDispatchAnalyticsSection() {
+  const host = document.getElementById('v2AdminSectionDispatchAnalytics');
+  if (!host) return;
+  injectDispatchAnalyticsStyles();
+  try {
+    const model = buildDispatchAnalyticsModel();
+    // Publish for the export hooks (mirrors the operational analytics exports).
+    window._lastDispatchAnalyticsModel = model;
+    window._dispatchAnalyticsMeta = { generatedBy: (getCurrentUser() && (getCurrentUser().name || getCurrentUser().username)) || '—', appVersion: APP_VERSION, periodLabel: 'Semua riwayat' };
+    host.innerHTML = renderDispatchAnalyticsDashboard(model, { trendWindow: dispatchAnalyticsTrendWindow });
+  } catch (err) {
+    console.warn('[DispatchAnalytics] render failed', err);
+    host.innerHTML = '<div class="daa"><div class="daa-sec"><div class="daa-empty"><div class="daa-empty__ic">⚠️</div><div class="daa-empty__t">Gagal memuat Dispatch Analytics</div><div class="daa-empty__d">Terjadi kesalahan saat menyusun data. Coba muat ulang halaman.</div></div></div></div>';
+  }
+}
+
+/** Export the Dispatch Analytics report (PDF | Excel). Reuses the export
+ *  registry (single source of truth) + the export-history metadata log, then
+ *  downloads the resulting blob. The dashboard owns its own buttons, so this is
+ *  a small dedicated runner rather than the operational analytics runner. */
+async function exportDispatchAnalytics(format, btn) {
+  const isExcel = format === 'excel';
+  const reportId = isExcel ? 'dispatch-analytics-excel' : 'dispatch-analytics-pdf';
+  const def = getExportReport(reportId);
+  if (!def) return;
+  const prev = btn ? btn.textContent : null;
+  if (btn) { btn.disabled = true; btn.textContent = isExcel ? '⏳ Excel…' : '⏳ PDF…'; }
+
+  const u = getCurrentUser();
+  const exportCtx = {
+    reportId: def.id, reportTitle: def.title,
+    periodLabel: 'Semua riwayat', dateRangeKey: 'all', filters: {},
+    generatedBy: (u && (u.displayName || u.name || u.username)) || '—',
+    userId: u?.id, username: u?.username, appVersion: APP_VERSION,
+  };
+  const startedAt = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const elapsed = () => Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt);
+
+  try {
+    const result = await runExportReport(reportId);
+    if (result && result.blob) {
+      const url = URL.createObjectURL(result.blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = result.filename || `${reportId}.${isExcel ? 'xlsx' : 'pdf'}`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    }
+    logExportSuccess(exportCtx, { fileSize: result?.blob?.size, durationMs: elapsed() });
+    showToast(isExcel ? 'Excel berhasil dibuat.' : 'PDF berhasil dibuat.');
+  } catch (err) {
+    console.error('[DispatchAnalytics] export failed:', err);
+    logExportFailure(exportCtx, { error: err, durationMs: elapsed() });
+    showToast(isExcel ? 'Gagal membuat Excel.' : 'Gagal membuat PDF.');
+  } finally {
+    if (btn) { btn.disabled = false; if (prev != null) btn.textContent = prev; }
+  }
 }
 
 function renderV2AdminAnalytics() {
@@ -7779,6 +7909,27 @@ let approveModalRequestId = null;
 
 function _escAttr(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
+/**
+ * Live-recompute the dispatch recommendation PACKAGE for a request at approval
+ * time — read-only, reusing the engines (no scoring duplicated). Powers the
+ * transparent score breakdown + explanation in the intelligence panel. Returns
+ * an empty object on any failure so the modal can never be blocked by it.
+ */
+function buildLiveApprovalPackage(request) {
+  try {
+    return buildRecommendationPackage({
+      request: requestToEngineRequest(request),
+      drivers: getActiveDrivers(),
+      vehicles: getActiveVehiclesFromStore(),
+      assignments,
+      overrideLogs: getOverrideLogs(),
+    });
+  } catch (err) {
+    console.warn('[Approval] live recommendation package failed', err);
+    return {};
+  }
+}
+
 function openApproveRequestModal(requestId) {
   const request = requests.find(item => item.id === requestId);
   if (!request || request.status !== 'pending') return;
@@ -7786,47 +7937,78 @@ function openApproveRequestModal(requestId) {
 
   const recDriver  = request.recommendedDriver  || '';
   const recVehicle = request.recommendedVehicle || '';
-  const rec = request.recommendation || null;
 
-  // Recommendation summary panel — highlighted, with score badge (Part 6).
-  const recEl = document.getElementById('approveRecommendation');
-  if (recEl) {
-    recEl.classList.toggle('approve-recommendation--has', !!recDriver);
-    recEl.innerHTML = recDriver
-      ? `<div class="approve-rec-top">
-           <span class="approve-rec-badge">✓ Direkomendasikan Sistem</span>
-           <span class="approve-rec-score">Skor ${_escAttr(String(request.dispatchScore || 0))}</span>
-         </div>
-         <div class="approve-rec-grid">
-           <div><span class="approve-rec-k">Driver</span><span class="approve-rec-v">${_escAttr(recDriver)}</span></div>
-           <div><span class="approve-rec-k">Kendaraan</span><span class="approve-rec-v">${_escAttr(recVehicle)}</span></div>
-         </div>
-         ${rec && rec.reasonSummary ? `<div class="approve-rec-sub">${_escAttr(rec.reasonSummary)}</div>` : ''}
-         ${rec && rec.availabilitySummary ? `<div class="approve-rec-sub">${_escAttr(rec.availabilitySummary)}</div>` : ''}`
-      : `<div class="approve-rec-top"><span class="approve-rec-badge approve-rec-badge--none">Tanpa Rekomendasi</span></div>
-         <div class="approve-rec-sub">Tidak ada rekomendasi otomatis — pilih driver & kendaraan manual.</div>`;
-  }
+  // Premium Dispatch Intelligence panel (Auto Assignment Assistant). Headline is
+  // the STORED recommendation (no recalculation); the breakdown/explanation read
+  // engine sub-scores from a live read-only recompute for the same pairing.
+  mountApprovalIntelligencePanel('approveIntelligence', {
+    pkg: buildLiveApprovalPackage(request),
+    stored: request.recommendation || null,
+    request,
+    recommended: { driver: recDriver, vehicle: recVehicle },
+    selection: { driver: '', vehicle: '' },
+  });
 
-  // Populate selects from the active drivers/vehicles, pre-select the recommendation.
+  // Populate selects from the active drivers/vehicles. NEW FLOW: leave them
+  // unselected — the admin applies the recommendation with one click
+  // ("Terapkan Rekomendasi") or picks manually. The human always decides.
   const driverSel  = document.getElementById('approveDriverSelect');
   const vehicleSel = document.getElementById('approveVehicleSelect');
   if (driverSel) {
     driverSel.innerHTML = '<option value="">-- Pilih Driver --</option>'
       + getActiveDrivers().map(d => `<option value="${_escAttr(d.name)}">${_escAttr(d.name)}</option>`).join('');
-    driverSel.value = recDriver;
+    driverSel.value = '';
   }
   if (vehicleSel) {
     vehicleSel.innerHTML = '<option value="">-- Pilih Kendaraan --</option>'
       + getActiveVehiclesFromStore().map(v => `<option value="${_escAttr(v.name)}">${_escAttr(v.name)}</option>`).join('');
-    vehicleSel.value = recVehicle;
+    vehicleSel.value = '';
+  }
+
+  // Wire the panel's "Terapkan Rekomendasi" button (re-rendered each open).
+  const applyBtn = document.getElementById('aipApplyBtn');
+  if (applyBtn) {
+    applyBtn.disabled = !recDriver && !recVehicle;
+    applyBtn.addEventListener('click', applyRecommendationToApprove);
   }
 
   const reason = document.getElementById('approveReason');
   if (reason) reason.value = '';
   _syncApproveReasonVisibility();
+  _syncApproveComparison();
 
   const modal = document.getElementById('modalApproveRequest');
   if (modal) modal.style.display = 'flex';
+}
+
+/**
+ * Feature 3 — Apply Recommendation: one click pre-fills the driver + vehicle
+ * selects with the stored recommendation. The admin may still edit them.
+ */
+function applyRecommendationToApprove() {
+  const request = requests.find(item => item.id === approveModalRequestId);
+  if (!request) return;
+  const driverSel  = document.getElementById('approveDriverSelect');
+  const vehicleSel = document.getElementById('approveVehicleSelect');
+  if (driverSel)  driverSel.value  = request.recommendedDriver  || '';
+  if (vehicleSel) vehicleSel.value = request.recommendedVehicle || '';
+
+  const applyBtn = document.getElementById('aipApplyBtn');
+  if (applyBtn) { applyBtn.setAttribute('data-applied', 'true'); applyBtn.textContent = '✓ Rekomendasi Diterapkan'; }
+
+  _syncApproveReasonVisibility();
+  _syncApproveComparison();
+  showToast('Rekomendasi diterapkan — periksa lalu setujui.');
+}
+
+/** Refresh the panel's AI↔Admin comparison from the current selects (Feature 4). */
+function _syncApproveComparison() {
+  const driverSel  = document.getElementById('approveDriverSelect');
+  const vehicleSel = document.getElementById('approveVehicleSelect');
+  updateApprovalComparison('approveIntelligence', {
+    driver:  driverSel  ? driverSel.value  : '',
+    vehicle: vehicleSel ? vehicleSel.value : '',
+  });
 }
 
 function closeApproveRequestModal() {
@@ -7875,12 +8057,17 @@ function confirmApproveRequest(event) {
   commitApproval(requestId, { driver: selDriver, vehicle: selVehicle, reason });
 }
 
+function _onApproveSelectChange() {
+  _syncApproveReasonVisibility();
+  _syncApproveComparison();
+}
+
 function initApproveRequestModal() {
   document.getElementById('btnCloseApprove')?.addEventListener('click', closeApproveRequestModal);
   document.getElementById('btnCancelApprove')?.addEventListener('click', closeApproveRequestModal);
   document.getElementById('approveForm')?.addEventListener('submit', confirmApproveRequest);
-  document.getElementById('approveDriverSelect')?.addEventListener('change', _syncApproveReasonVisibility);
-  document.getElementById('approveVehicleSelect')?.addEventListener('change', _syncApproveReasonVisibility);
+  document.getElementById('approveDriverSelect')?.addEventListener('change', _onApproveSelectChange);
+  document.getElementById('approveVehicleSelect')?.addEventListener('change', _onApproveSelectChange);
   const overlay = document.getElementById('modalApproveRequest');
   overlay?.addEventListener('click', (e) => { if (e.target === overlay) closeApproveRequestModal(); });
 }
@@ -8280,6 +8467,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     assignments = updatedAssignments.map(normalizeAssignmentStatus);
     updateAllModules();   // also calls setDashboardAssignments + renderDriverDashboard
     renderViews();
+    if (activeAdminSection === 'dispatchanalytics') renderDispatchAnalyticsSection();
     checkAndSendH1Reminders(assignments, requests, getUserByUsername, getUsers);
     checkAndSendHoursReminders(assignments, requests, getUserByUsername, getUsers);
   });
@@ -8290,6 +8478,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     requests = updatedRequests.map(normalizeRequest);
     updateAllModules();
     updatePermissionUI();
+    if (activeAdminSection === 'dispatchanalytics') renderDispatchAnalyticsSection();
     // Refresh comment modal if open for one of the updated requests
     refreshCommentThreadIfOpen(requests);
   });

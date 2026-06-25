@@ -275,6 +275,13 @@ export function getRequestRecommendation(key = 'latest') {
   return state.requestRecommendations[key] || null;
 }
 
+/** The full request-recommendation cache as a map (shallow copy — read-only).
+ *  Consumed by the Dispatch Intelligence Analytics engine (v1.17.0) for
+ *  explainability reason summaries + generation timestamps. Additive getter. */
+export function getAllRequestRecommendations() {
+  return { ...state.requestRecommendations };
+}
+
 /* ── Override logs (Admin Override Workflow) ─────────────────────────── */
 
 /** Append an admin decision record (from createOverrideRecord) to the override

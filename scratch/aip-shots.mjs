@@ -1,0 +1,41 @@
+import http from 'node:http'; import fs from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url'; import puppeteer from 'puppeteer';
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const OUT = path.join(ROOT, 'scratch');
+const MIME = { '.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.json':'application/json','.png':'image/png','.svg':'image/svg+xml','.ico':'image/x-icon' };
+const server = http.createServer((req,res)=>{let p=decodeURIComponent(req.url.split('?')[0]); if(p==='/')p='/index.html'; const f=path.join(ROOT,p); if(!f.startsWith(ROOT)||!fs.existsSync(f)||fs.statSync(f).isDirectory()){res.writeHead(404);res.end();return;} res.writeHead(200,{'Content-Type':MIME[path.extname(f)]||'application/octet-stream'}); fs.createReadStream(f).pipe(res);});
+await new Promise(r=>server.listen(0,r)); const port=server.address().port;
+const browser=await puppeteer.launch({headless:'new',args:['--no-sandbox']});
+async function shot(name, theme, width){
+  const page=await browser.newPage();
+  await page.setViewport({width, height: 900, deviceScaleFactor: 2});
+  await page.goto(`http://localhost:${port}/index.html`,{waitUntil:'domcontentloaded',timeout:45000});
+  await page.evaluate(async (theme)=>{
+    document.documentElement.setAttribute('data-theme', theme);
+    document.body.classList.add('app-ready');
+    document.querySelectorAll('.modal-overlay, #app-splash, #modalLogin').forEach(m=>m.style.display='none');
+    document.body.style.background = getComputedStyle(document.body).getPropertyValue('--bg') || '#fff';
+    const ris=await import('/js/services/request-intelligence-service.js');
+    const panel=await import('/js/components/approval-intelligence-panel.js');
+    const NOW='2026-06-25T09:23:00';
+    const request={date:'2026-06-25',startTime:'08:00',endTime:'12:00',passengers:6,destination:'Bandara'};
+    const drivers=[{id:'d_aria',name:'Aria'},{id:'d_budi',name:'Budi'}];
+    const vehicles=[{id:'innova_01',name:'Toyota Innova',capacity:7,healthScore:100},{id:'hiace_01',name:'Toyota Hiace',capacity:14,healthScore:96}];
+    const pkg=ris.buildRecommendationPackage({request,drivers,vehicles,assignments:[],overrideLogs:[]},{now:NOW});
+    const stored={hasRecommendation:true,recommendedDriver:'Aria',recommendedDriverId:'d_aria',recommendedVehicle:'Toyota Innova',recommendedVehicleId:'innova_01',dispatchScore:pkg.recommendedDispatch.dispatchScore,generatedAt:NOW};
+    const host=document.createElement('div'); host.id='shotHost';
+    host.style.cssText='max-width:560px;margin:24px auto;padding:16px;';
+    document.body.appendChild(host);
+    panel.mountApprovalIntelligencePanel(host,{pkg,stored,request:{createdAt:'2026-06-25T09:20:00'},recommended:{driver:'Aria',vehicle:'Toyota Innova'},selection:{driver:'Budi',vehicle:'Toyota Innova'}});
+    panel.updateApprovalComparison(host,{driver:'Budi',vehicle:'Toyota Innova'});
+    window.scrollTo(0,0);
+  }, theme);
+  await new Promise(r=>setTimeout(r,800));
+  await page.evaluate(()=>{document.querySelectorAll('.modal-overlay,#app-splash,#modalLogin').forEach(m=>m.remove()); const h=document.getElementById('shotHost'); if(h){h.style.position='relative'; h.style.zIndex='99999'; h.style.background=getComputedStyle(document.body).backgroundColor;}});
+  const el=await page.$('#shotHost');
+  await el.screenshot({path: path.join(OUT, name)});
+  await page.close();
+  console.log('wrote', name);
+}
+await shot('aip-desktop-dark.png','dark',640);
+await shot('aip-mobile-light.png','light',390);
+await browser.close(); server.close();

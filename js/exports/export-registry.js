@@ -84,6 +84,27 @@ export const EXPORT_REPORTS = {
     template: 'analytics-complete',
     run: (meta = {}) => window.exportCompleteAnalytics(meta),
   },
+  // v1.17.0 — Dispatch Intelligence Analytics. CLIENT-side blob (pdfmake / xlsx),
+  // not the server doc-engine pipeline (different model). Deliberately excluded
+  // from EXPORT_REPORT_ORDER so they don't appear in the operational Analytics
+  // dropdown — the Dispatch Analytics dashboard owns its own export buttons and
+  // resolves these by id.
+  'dispatch-analytics-pdf': {
+    id: 'dispatch-analytics-pdf',
+    title: 'Dispatch Analytics (PDF)',
+    description: 'Dashboard eksekutif Dispatch Intelligence sebagai PDF.',
+    icon: ICONS.complete,
+    template: 'dispatch-analytics',
+    run: (meta = {}) => window.exportDispatchAnalyticsPdf(meta),
+  },
+  'dispatch-analytics-excel': {
+    id: 'dispatch-analytics-excel',
+    title: 'Dispatch Analytics (Excel)',
+    description: 'Dashboard eksekutif Dispatch Intelligence sebagai workbook .xlsx.',
+    icon: ICONS.complete,
+    template: 'dispatch-analytics',
+    run: (meta = {}) => window.exportDispatchAnalyticsExcel(meta),
+  },
 };
 
 /** Stable display/menu order for every consumer. */
