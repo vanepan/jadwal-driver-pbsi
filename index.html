@@ -33,6 +33,26 @@
   <style>
     body:not(.app-ready) { visibility: hidden; }
     body:not(.app-ready) #app-splash { visibility: visible; }
+
+    /* beta.3 / beta.3.1 — admin recommendation/override styling */
+    .approve-recommendation{
+      background:var(--surface-2);border:1px solid var(--border);border-radius:10px;
+      padding:.7rem .8rem;margin-bottom:.85rem;font-size:.86rem;color:var(--text);
+    }
+    .approve-recommendation--has{border-color:var(--ok);background:var(--ok-bg);}
+    .approve-rec-top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.5rem;}
+    .approve-rec-badge{font-size:.74rem;font-weight:700;color:var(--ok);background:var(--surface);
+      border:1px solid var(--ok);border-radius:999px;padding:.18rem .6rem;}
+    .approve-rec-badge--none{color:var(--muted);border-color:var(--border);}
+    .approve-rec-score{font-size:.78rem;font-weight:800;color:var(--ok);
+      background:var(--surface);border:1px solid var(--ok);border-radius:999px;padding:.18rem .55rem;}
+    .approve-rec-grid{display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-bottom:.3rem;}
+    .approve-rec-k{display:block;font-size:.68rem;text-transform:uppercase;letter-spacing:.02em;color:var(--muted);}
+    .approve-rec-v{display:block;font-size:1rem;font-weight:700;color:var(--text);}
+    .approve-rec-sub{font-size:.8rem;color:var(--muted);margin-top:.2rem;}
+    .approve-section-label{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);margin:.2rem 0 .5rem;}
+    .request-rec{font-size:.8rem;color:var(--muted);}
+    .v2-pending-btn--edit{background:var(--surface-2);color:var(--text);border:1px solid var(--border);}
   </style>
 
   <script>
@@ -381,15 +401,13 @@
     </div>
     <div class="modal-body">
       <form id="requestForm" novalidate>
+        <!-- v1.16.4.11-beta.3 Request Workflow Separation: the requester form
+             collects only WHAT is needed (date / time / passengers / purpose /
+             notes). Driver + vehicle are decided by the admin at approval, aided
+             by a background Dispatch Intelligence recommendation the requester
+             never sees. The driver/vehicle selectors + suggestion panel were
+             removed from this requester-facing form. -->
         <div class="form-grid">
-          <div class="form-group">
-            <label for="requestFieldDriver">Driver *</label>
-            <select id="requestFieldDriver" required><option value="">-- Pilih Driver --</option></select>
-          </div>
-          <div class="form-group">
-            <label for="requestFieldVehicle">Kendaraan *</label>
-            <select id="requestFieldVehicle" required><option value="">-- Pilih Kendaraan --</option></select>
-          </div>
           <div class="form-group multi-day-section">
             <label class="multi-day-checkbox-label">
               <input type="checkbox" id="requestMultiDay" />
@@ -432,6 +450,15 @@
               <input type="text" id="requestFieldEndMinute" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="MM" required />
             </div>
           </div>
+          <div class="form-group">
+            <label id="requestFieldPaxLabel">Penumpang *</label>
+            <div class="pbsi-stepper" id="requestPaxStepper" role="group" aria-labelledby="requestFieldPaxLabel">
+              <button type="button" class="pbsi-stepper-btn" id="btnRequestPaxMinus" aria-label="Kurangi penumpang" disabled>−</button>
+              <span class="pbsi-stepper-display" id="requestPaxDisplay" aria-live="polite" aria-atomic="true">1</span>
+              <button type="button" class="pbsi-stepper-btn" id="btnRequestPaxPlus" aria-label="Tambah penumpang">+</button>
+              <input type="hidden" id="requestFieldPax" value="1" />
+            </div>
+          </div>
           <div class="form-group form-full">
             <label for="requestFieldPurpose">Tujuan / Keperluan *</label>
             <input type="text" id="requestFieldPurpose" placeholder="Contoh: Penjemputan atlet di bandara" required />
@@ -444,6 +471,41 @@
         <div class="form-actions">
           <button type="button" class="btn-secondary" id="btnCancelRequestForm">Batal</button>
           <button type="submit" class="btn-primary" id="btnSaveRequestForm">Kirim Request</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: APPROVE / OVERRIDE REQUEST (admin, v1.16.4.11-beta.3.1) ===== -->
+<div class="modal-overlay" id="modalApproveRequest" style="display:none;">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h2 class="modal-title">Edit &amp; Setujui</h2>
+      <button class="modal-close" id="btnCloseApprove">&times;</button>
+    </div>
+    <div class="modal-body">
+      <!-- Background Dispatch Intelligence recommendation (admin-only). -->
+      <div class="approve-recommendation" id="approveRecommendation"></div>
+      <form id="approveForm" novalidate>
+        <div class="approve-section-label">Penyesuaian</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="approveDriverSelect">Driver</label>
+            <select id="approveDriverSelect"><option value="">-- Pilih Driver --</option></select>
+          </div>
+          <div class="form-group">
+            <label for="approveVehicleSelect">Kendaraan</label>
+            <select id="approveVehicleSelect"><option value="">-- Pilih Kendaraan --</option></select>
+          </div>
+          <div class="form-group form-full" id="approveReasonGroup" hidden>
+            <label for="approveReason">Alasan Override *</label>
+            <textarea id="approveReason" rows="2" placeholder="Wajib diisi jika mengganti rekomendasi"></textarea>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn-secondary" id="btnCancelApprove">Batal</button>
+          <button type="submit" class="btn-primary" id="btnConfirmApprove">Simpan &amp; Setujui</button>
         </div>
       </form>
     </div>
@@ -714,6 +776,8 @@
           <div class="form-group">
             <label for="fieldDriver">Driver *</label>
             <select id="fieldDriver" required><option value="">-- Pilih Driver --</option></select>
+            <!-- beta.3: compact Dispatch Intelligence hint (admin direct assignment) -->
+            <div class="dispatch-hint" id="assignmentDriverHint" hidden></div>
           </div>
           <div class="form-group">
             <label for="fieldPhone">Nomor HP</label>
@@ -729,6 +793,8 @@
               <option value="Hiace">Hiace</option>
               <option value="__none__">Tanpa Kendaraan</option>
             </select>
+            <!-- beta.3: compact Dispatch Intelligence hint (admin direct assignment) -->
+            <div class="dispatch-hint" id="assignmentVehicleHint" hidden></div>
           </div>
           <div class="form-group multi-day-section">
             <label class="multi-day-checkbox-label">
@@ -1034,6 +1100,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="vendor/flatpickr.min.js"></script>
-<script type="module" src="js/app.js?v=1.16.4.10"></script>
+<script type="module" src="js/app.js?v=1.16.4.11-rc.1.1"></script>
 </body>
 </html>

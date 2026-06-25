@@ -79,7 +79,7 @@ export function generateRecommendations(model) {
     if (share >= 40) {
       push('action', RECOMMENDATION_PRIORITY.RISK,
         `Tinjau praktik penjadwalan ${topCancBidang.name}`,
-        `${topCancBidang.name} menyumbang ${topCancBidang.count} dari ${canc.count} pembatalan (${share}%). Tinjau praktik penjadwalan bidang ini untuk menekan pembatalan berulang.`,
+        `${topCancBidang.name} menyumbang ${topCancBidang.count} dari ${cancAgg.count} pembatalan (${share}%). Tinjau praktik penjadwalan bidang ini untuk menekan pembatalan berulang.`,
         'Cancellation by Bidang');
     }
   }

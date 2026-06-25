@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<title>Request Workflow Separation — Model Harness</title>
+<!-- Loads the REAL requestToAssignment (requests.js) to validate that the admin's
+     decision (override) and the background recommendation resolve the effective
+     driver/vehicle (beta.3 Part 4). No Firebase data needed. -->
+</head>
+<body>
+  <script type="module">
+    import { requestToAssignment } from '../js/requests.js';
+    window.__requestToAssignment = requestToAssignment;
+    window.__ready = true;
+  </script>
+</body>
+</html>

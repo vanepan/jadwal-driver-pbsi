@@ -9,7 +9,10 @@
 
 import { getDriverByName, getVehicleColor } from './drivers.js';
 import { getDrivers, getActiveDrivers, registerDriversChangeListener } from './drivers-store.js';
-import { getActiveVehicleNames, registerVehiclesChangeListener } from './vehicles-store.js';
+import { getActiveVehicleNames, getActiveVehicles, registerVehiclesChangeListener } from './vehicles-store.js';
+import { getAssignments } from './assignments.js';
+import { getOverrideLogs, saveRequestRecommendation } from './stores/dispatch-intelligence-store.js';
+import { buildRequestRecommendation } from './services/request-intelligence-service.js';
 import { generateId, timeToMinutes, showToast, initCustomTimeInputPair, getCombinedTimeFromPair, setTimeFieldsFromValue, normalizeTimeValue, expandDateRange, formatDateShort, addHoursToTime, todayString, offsetDate } from './utils.js';
 import { getCurrentUser, hasPermission, isAdmin } from './auth.js';
 import { initFormGuard, resetDirty } from './form-guard.js';
@@ -19,11 +22,12 @@ import { initPbsiDatepicker, syncPbsiDatepicker } from './pbsi-datepicker.js';
 let requests = [];
 let editingRequestId = null;
 
-let onCreateCallback  = null;
-let onUpdateCallback  = null;
-let onApproveCallback = null;
-let onRejectCallback  = null;
-let onCommentCallback = null;
+let onCreateCallback      = null;
+let onUpdateCallback      = null;
+let onApproveCallback     = null;  // "Setujui Sesuai Rekomendasi" (direct, ACCEPTED)
+let onApproveEditCallback = null;  // "Edit & Setujui" (opens approval/override modal)
+let onRejectCallback      = null;
+let onCommentCallback     = null;
 
 /**
  * Normalize a request object to the multi-day data model.
@@ -32,6 +36,30 @@ let onCommentCallback = null;
  * @param {Object} r
  * @returns {Object}
  */
+/**
+ * Generate the background Dispatch Intelligence recommendation for a request
+ * (beta.3). Computed at submit over the live drivers/vehicles/assignments and
+ * stored WITH the request — the requester never sees it; the admin does at
+ * approval. Pure-failure-safe: returns null (and logs) if anything goes wrong,
+ * so a recommendation hiccup can never block a request submission.
+ * @param {Object} reqShape  { startDate, startTime, endTime, pax, fullDay, purpose }
+ * @returns {Object|null} the compact storable recommendation (buildRequestRecommendation)
+ */
+function generateBackgroundRecommendation(reqShape) {
+  try {
+    return buildRequestRecommendation({
+      request: reqShape,
+      drivers: getActiveDrivers(),
+      vehicles: getActiveVehicles(),
+      assignments: getAssignments(),
+      overrideLogs: getOverrideLogs(),
+    });
+  } catch (err) {
+    console.warn('[Request] background recommendation failed', err);
+    return null;
+  }
+}
+
 export function normalizeRequest(r) {
   if (!r) return r;
   if (!r.startDate) {
@@ -60,6 +88,10 @@ export function registerRequestApproveCallback(callback) {
   onApproveCallback = callback;
 }
 
+export function registerRequestApproveEditCallback(callback) {
+  onApproveEditCallback = callback;
+}
+
 export function registerRequestRejectCallback(callback) {
   onRejectCallback = callback;
 }
@@ -68,9 +100,51 @@ export function registerCommentCallback(callback) {
   onCommentCallback = callback;
 }
 
+/* ── Request passenger stepper (#requestFieldPax) ──────────────────────
+   Mirrors the assignment form's pax stepper but a request must carry at least
+   one passenger (min 1, default 1) so Dispatch Intelligence readiness can be
+   satisfied — the recommendation needs a party size to fit a vehicle to. */
+const REQUEST_PAX_MIN = 1;
+const REQUEST_PAX_MAX = 20;
+
+function _syncRequestPaxDisplay(val) {
+  const n = Math.max(REQUEST_PAX_MIN, Math.min(REQUEST_PAX_MAX, parseInt(val, 10) || REQUEST_PAX_MIN));
+  const hidden  = document.getElementById('requestFieldPax');
+  const display = document.getElementById('requestPaxDisplay');
+  const minus   = document.getElementById('btnRequestPaxMinus');
+  const plus    = document.getElementById('btnRequestPaxPlus');
+  if (hidden)  hidden.value = n;
+  if (display) display.textContent = n;
+  if (minus)   minus.disabled = n <= REQUEST_PAX_MIN;
+  if (plus)    plus.disabled  = n >= REQUEST_PAX_MAX;
+}
+
+function initRequestPaxStepper() {
+  const minus = document.getElementById('btnRequestPaxMinus');
+  const plus  = document.getElementById('btnRequestPaxPlus');
+  if (!minus || !plus) return;
+
+  minus.addEventListener('click', () => {
+    _syncRequestPaxDisplay(parseInt(document.getElementById('requestFieldPax')?.value, 10) - 1);
+  });
+  plus.addEventListener('click', () => {
+    _syncRequestPaxDisplay(parseInt(document.getElementById('requestFieldPax')?.value, 10) + 1);
+  });
+
+  [minus, plus].forEach(btn => {
+    btn.addEventListener('keydown', e => {
+      if (e.key === 'ArrowUp')   { e.preventDefault(); _syncRequestPaxDisplay(parseInt(document.getElementById('requestFieldPax')?.value, 10) + 1); }
+      if (e.key === 'ArrowDown') { e.preventDefault(); _syncRequestPaxDisplay(parseInt(document.getElementById('requestFieldPax')?.value, 10) - 1); }
+    });
+  });
+
+  _syncRequestPaxDisplay(REQUEST_PAX_MIN);
+}
+
 export function initRequestHandlers() {
   initRequestDriverSelect();
   initRequestVehicleSelect();
+  initRequestPaxStepper();
   // Keep #requestFieldDriver / #requestFieldVehicle in sync with create/
   // deactivate/reactivate. MutationObserver in PBSI Select picks up option
   // changes automatically. The vehicles listener also covers the case where the
@@ -219,8 +293,8 @@ export function openRequestFormModal(requestId = null) {
 
   const form = document.getElementById('requestForm');
   if (form) form.reset();
-  syncPbsiSelect(document.getElementById('requestFieldDriver'));
-  syncPbsiSelect(document.getElementById('requestFieldVehicle'));
+  // beta.3: driver/vehicle are no longer requester-facing — they are decided by
+  // the admin at approval. No driver/vehicle selectors to sync here.
   syncPbsiDatepicker(document.getElementById('requestFieldStartDate'));
   syncPbsiDatepicker(document.getElementById('requestFieldEndDate'));
 
@@ -236,10 +310,6 @@ export function openRequestFormModal(requestId = null) {
 
   if (request) {
     const norm = normalizeRequest(request);
-    document.getElementById('requestFieldDriver').value    = norm.driver    || '';
-    syncPbsiSelect(document.getElementById('requestFieldDriver'));
-    document.getElementById('requestFieldVehicle').value   = norm.vehicle   || '';
-    syncPbsiSelect(document.getElementById('requestFieldVehicle'));
     document.getElementById('requestFieldStartDate').value = norm.startDate || '';
     syncPbsiDatepicker(document.getElementById('requestFieldStartDate'));
     document.getElementById('requestFieldEndDate').value   = norm.endDate   || '';
@@ -248,6 +318,7 @@ export function openRequestFormModal(requestId = null) {
     setTimeFieldsFromValue('requestFieldEndHour',   'requestFieldEndMinute',   norm.endTime);
     document.getElementById('requestFieldPurpose').value = norm.purpose || '';
     document.getElementById('requestFieldNotes').value   = norm.notes   || '';
+    _syncRequestPaxDisplay(norm.pax);
 
     // Restore multi-day checkbox state based on date range
     const isMultiDay = !!(norm.startDate && norm.endDate && norm.startDate !== norm.endDate);
@@ -280,6 +351,10 @@ export function openRequestFormModal(requestId = null) {
     const fullDayCb = document.getElementById('requestFullDay');
     if (fullDayCb) fullDayCb.checked = false;
     syncRequestFullDayUI();
+
+    // Reset passenger count to the minimum (form.reset restores the hidden
+    // input; this re-syncs the visible display + button disabled states).
+    _syncRequestPaxDisplay(REQUEST_PAX_MIN);
   }
 
   const modal = document.getElementById('modalRequestForm');
@@ -358,20 +433,25 @@ function handleRequestSubmit(event) {
     return;
   }
 
-  const driver     = document.getElementById('requestFieldDriver').value;
-  const vehicle    = document.getElementById('requestFieldVehicle').value;
+  // beta.3: the requester no longer chooses driver/vehicle — the admin decides
+  // at approval, aided by a background recommendation. These stay '' on the
+  // request until approval resolves them.
+  const driver     = '';
+  const vehicle    = '';
   const startDate  = document.getElementById('requestFieldStartDate').value;
   const isFullDay  = document.getElementById('requestFullDay')?.checked ?? false;
   const startTime  = isFullDay ? '00:00' : getCombinedTimeFromPair('requestFieldStartHour', 'requestFieldStartMinute');
   const endTime    = isFullDay ? '23:59' : getCombinedTimeFromPair('requestFieldEndHour', 'requestFieldEndMinute');
   const purpose    = document.getElementById('requestFieldPurpose').value.trim();
   const notes      = document.getElementById('requestFieldNotes').value.trim();
+  const rawPax     = parseInt(document.getElementById('requestFieldPax')?.value, 10);
+  const pax        = Number.isNaN(rawPax) ? REQUEST_PAX_MIN : Math.max(REQUEST_PAX_MIN, rawPax);
   const isMultiDay = document.getElementById('requestMultiDay')?.checked ?? false;
   const endDate    = isMultiDay
     ? document.getElementById('requestFieldEndDate').value
     : startDate;
 
-  if (!driver || !vehicle || !startDate || !purpose) {
+  if (!startDate || !purpose) {
     showToast('Lengkapi semua field request wajib (*)');
     return;
   }
@@ -403,6 +483,15 @@ function handleRequestSubmit(event) {
     }
   }
 
+  // Background Dispatch Intelligence recommendation (admin-only at approval).
+  const recommendation = generateBackgroundRecommendation({ startDate, startTime, endTime, pax, fullDay: isFullDay, purpose });
+  const recFields = recommendation ? {
+    recommendedDriver:  recommendation.recommendedDriver,
+    recommendedVehicle: recommendation.recommendedVehicle,
+    dispatchScore:      recommendation.dispatchScore,
+    recommendation,
+  } : {};
+
   if (editingRequestId) {
     const existing = requests.find(item => item.id === editingRequestId);
     if (!existing || !isAdmin()) return;
@@ -418,6 +507,8 @@ function handleRequestSubmit(event) {
       fullDay: isFullDay,
       purpose,
       notes,
+      pax,
+      ...recFields,
       updatedAt: new Date().toISOString(),
     };
 
@@ -443,6 +534,8 @@ function handleRequestSubmit(event) {
       vehicle,
       purpose,
       notes,
+      pax,
+      ...recFields,
       status: 'pending',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -451,6 +544,25 @@ function handleRequestSubmit(event) {
     };
 
     if (onCreateCallback) onCreateCallback(newRequest);
+
+    // Record the recommendation in the persisted history (rc.1). Keyed by request
+    // id; the persistence layer write-through mirrors it to RTDB. Best-effort.
+    if (recommendation && recommendation.hasRecommendation) {
+      try {
+        saveRequestRecommendation({
+          requestId:            newRequest.id,
+          recommendedDriverId:  recommendation.recommendedDriverId,
+          recommendedVehicleId: recommendation.recommendedVehicleId,
+          dispatchScore:        recommendation.dispatchScore,
+          reasonSummary:        recommendation.reasonSummary,
+          availabilitySummary:  recommendation.availabilitySummary,
+          generatedAt:          recommendation.generatedAt,
+        }, newRequest.id);
+      } catch (err) {
+        console.warn('[Request] recording recommendation history failed', err);
+      }
+    }
+
     showToast(totalDays > 1 ? `Request ${totalDays} hari terkirim` : 'Request jadwal terkirim');
   }
 
@@ -468,8 +580,13 @@ function handleRequestActionClick(event) {
     return;
   }
 
-  if (action === 'approve' && onApproveCallback) {
+  if (action === 'approve-direct' && onApproveCallback) {
     onApproveCallback(requestId);
+    return;
+  }
+
+  if (action === 'approve-edit' && onApproveEditCallback) {
+    onApproveEditCallback(requestId);
     return;
   }
 
@@ -506,9 +623,10 @@ function createRequestCardHTML(request) {
 
   const adminActionButtons = r.status === 'pending' && isAdmin()
     ? `
-        <button class="btn-secondary" data-request-action="edit"    data-request-id="${r.id}">Edit</button>
-        <button class="btn-secondary" data-request-action="reject"  data-request-id="${r.id}">Tolak</button>
-        <button class="btn-primary"   data-request-action="approve" data-request-id="${r.id}">Setujui${totalDays > 1 ? ` (${totalDays} hari)` : ''}</button>
+        <button class="btn-secondary" data-request-action="edit"           data-request-id="${r.id}">Edit</button>
+        <button class="btn-secondary" data-request-action="reject"         data-request-id="${r.id}">Tolak</button>
+        <button class="btn-secondary" data-request-action="approve-edit"   data-request-id="${r.id}">Edit &amp; Setujui</button>
+        <button class="btn-primary"   data-request-action="approve-direct" data-request-id="${r.id}">Setujui Sesuai Rekomendasi${totalDays > 1 ? ` (${totalDays} hari)` : ''}</button>
     ` : '';
 
   const commentCount = Array.isArray(r.comments) ? r.comments.length : 0;
@@ -534,8 +652,12 @@ function createRequestCardHTML(request) {
         </div>
       </div>
       <div class="request-details">
-        <span class="vehicle-badge" style="background:${vehicleColor}">${escapeHTML(r.vehicle)}</span>
-        <span>${escapeHTML(r.driver)}</span>
+        ${(r.driver || r.vehicle)
+          ? `<span class="vehicle-badge" style="background:${vehicleColor}">${escapeHTML(r.vehicle || '—')}</span><span>${escapeHTML(r.driver || '—')}</span>`
+          : ''}
+        ${(isAdmin() && r.recommendedDriver)
+          ? `<span class="request-rec">🧭 Rekomendasi: ${escapeHTML(r.recommendedDriver)} · ${escapeHTML(r.recommendedVehicle)}${r.dispatchScore ? ` · skor ${r.dispatchScore}` : ''}</span>`
+          : ''}
       </div>
       ${r.notes ? `<div class="request-notes">${escapeHTML(r.notes)}</div>` : ''}
       ${actions}
@@ -593,18 +715,27 @@ function escapeHTML(value) {
  * @param {Object|null} approvedByUser  - Admin user who approved
  * @param {string|null} dateOverride    - Specific date for multi-day expansion (YYYY-MM-DD)
  */
-export function requestToAssignment(request, approvedByUser, dateOverride = null) {
+export function requestToAssignment(request, approvedByUser, dateOverride = null, decision = {}) {
   const r = normalizeRequest(request);
-  const driver = getDriverByName(r.driver);
+  // beta.3: the request itself carries no requester-chosen driver/vehicle. The
+  // effective values come from the admin's decision (override) when present,
+  // otherwise the background recommendation, otherwise any legacy request value.
+  const effectiveDriver = ('driver' in decision)
+    ? (decision.driver || '')
+    : (r.driver || r.recommendedDriver || '');
+  const effectiveVehicle = ('vehicle' in decision)
+    ? (decision.vehicle || '')
+    : (r.vehicle || r.recommendedVehicle || '');
+  const driver = getDriverByName(effectiveDriver);
   const assignmentDate = dateOverride || r.startDate || r.date;
   const now = new Date().toISOString();
   const adminName = approvedByUser ? approvedByUser.name : '';
 
   return {
     id: generateId(),
-    driver: r.driver,
+    driver: effectiveDriver,
     phone: driver ? driver.phone : '',
-    vehicle: r.vehicle,
+    vehicle: effectiveVehicle,
     date: assignmentDate,
     startTime: r.fullDay ? '00:00' : r.startTime,
     endTime: r.fullDay ? '23:59' : r.endTime,
@@ -612,7 +743,7 @@ export function requestToAssignment(request, approvedByUser, dateOverride = null
     destination: r.purpose,
     purpose: r.purpose,
     pic: r.requesterName,
-    pax: 0,
+    pax: Number(r.pax) || 0, // carried from the request's passenger count (legacy requests → 0)
     notes: r.notes,
     requestId: r.id,
     createdAt: r.createdAt || now,   // preserve original request creation time

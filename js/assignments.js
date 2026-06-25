@@ -49,6 +49,16 @@ export function setCurrentDate(dateStr) {
 }
 
 /**
+ * Get the operational assignments array (read-only consumers, e.g. the
+ * read-only Request Intelligence panel). Same array app.js pushes via
+ * setAssignments — exposed so additive read-only features need no new plumbing.
+ * @returns {Array}
+ */
+export function getAssignments() {
+  return assignments;
+}
+
+/**
  * Get ID assignment yang sedang diedit
  * @returns {string|null}
  */

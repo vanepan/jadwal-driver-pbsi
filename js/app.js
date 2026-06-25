@@ -12,12 +12,15 @@
 
 // Import all modules
 import { APP_NAME, APP_VERSION, RELEASE_NAME } from './config.js';
-import { loadAssignments, saveAssignments, saveOneAssignment, removeOneAssignment, loadRequests, saveRequests, initFirebaseSync, registerDataChangeListener, registerRequestsChangeListener, checkAssignmentSafety, fetchFirebaseData, onAuthAvailable, onAuthLost } from './firebase.js';
+import { loadAssignments, saveAssignments, saveOneAssignment, removeOneAssignment, loadRequests, saveRequests, initFirebaseSync, registerDataChangeListener, registerRequestsChangeListener, checkAssignmentSafety, fetchFirebaseData, storeFirebaseData, isFirebaseConfigured, onAuthAvailable, onAuthLost } from './firebase.js';
+// rc.1: persist Dispatch Intelligence history (override logs / recommendations / capacity) to RTDB.
+import { hydrateDispatchIntelligence, initDispatchIntelligencePersistence } from './services/dispatch-intelligence-persistence.js';
 import { recoverAssignmentsFromRequests } from './recovery.js';
 import { initDriverSelect, refreshDriverSelect } from './drivers.js';
 import {
   initDriversStore,
   getDrivers,
+  getActiveDrivers,
   registerDriversChangeListener,
   createDriver,
   updateDriver,
@@ -52,6 +55,16 @@ import { initPbsiDatepicker, syncPbsiDatepicker } from './pbsi-datepicker.js';
 import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate } from './timeline.js';
 import { initModalHandlers, openDetailModal, registerEditCallback, registerDeleteCallback, registerStartCallback, registerCompleteCallback, registerCommentCallback as registerModalCommentCallback, registerCancelCallback, registerOvertimeOverrideCallback, setAssignments as setModalAssignments, updateDetailActionButtons } from './modal.js';
 import { initFormHandlers, openFormModal, closeFormModal, registerSaveCallback, setAssignments as setAssignmentsForm, setCurrentDate as setCurrentDateForm, checkConflict, deleteAssignment } from './assignments.js';
+// Request Auto-Fill Intelligence (v1.16.4.11-beta.2): read-only dispatch suggestion panel.
+import { initAssignmentDispatchHints } from './components/assignment-dispatch-hints.js';
+// beta.3: admin approval override → records the decision in the existing override log.
+import { saveOverrideLog } from './stores/dispatch-intelligence-store.js';
+// beta.3.1: pure approval-decision helpers (effective dispatch, classification, audit record).
+import {
+  resolveEffectiveDispatch,
+  isApprovalOverride,
+  buildApprovalOverrideRecord,
+} from './services/request-intelligence-service.js';
 import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver } from './auth.js';
 import * as DocumentEngine from './docs/doc-engine.js';
 import './docs/templates/analytics-summary.js';   // registers 'analytics-summary'
@@ -65,6 +78,15 @@ import {
   getAliasCanonical as _getAliasCanonical,
   dqPairKey as _dqPairKey,
 } from './analytics/analytics-engine.js';
+// v1.16.4.11-rc.1.1: single sanitization boundary — the engine receives only
+// clean, fully-typed data so its business logic carries no null-guards.
+import {
+  sanitizeDrivers,
+  sanitizeVehicles,
+  sanitizeRequests,
+  sanitizeAssignments,
+  sanitizeSettings,
+} from './analytics/analytics-sanitizer.js';
 import {
   validateCustomAlias as _validateCustomAlias,
   normalizeCanonical as _normalizeCanonical,
@@ -98,6 +120,7 @@ import {
   registerRequestCreateCallback,
   registerRequestUpdateCallback,
   registerRequestApproveCallback,
+  registerRequestApproveEditCallback,
   registerRequestRejectCallback,
   registerCommentCallback as registerRequestCommentCallback,
   setRequests as setRequestsModule,
@@ -2167,7 +2190,9 @@ function renderPendingWorkspace() {
     const actions = canAct ? `
       <div class="v2-pending-card-actions">
         <button class="v2-pending-btn v2-pending-btn--approve"
-                data-action="approve" data-id="${esc(r.id)}" type="button">Setujui</button>
+                data-action="approve-direct" data-id="${esc(r.id)}" type="button">Setujui Sesuai Rekomendasi</button>
+        <button class="v2-pending-btn v2-pending-btn--edit"
+                data-action="approve-edit" data-id="${esc(r.id)}" type="button">Edit &amp; Setujui</button>
         <button class="v2-pending-btn v2-pending-btn--reject"
                 data-action="reject" data-id="${esc(r.id)}" type="button">Tolak</button>
       </div>` : '';
@@ -2183,13 +2208,16 @@ function renderPendingWorkspace() {
             <span class="v2-pending-label">Bidang</span>
             <span class="v2-pending-value">${esc(r.requesterName || '—')}</span>
           </div>
-          <div class="v2-pending-field">
-            <span class="v2-pending-label">Driver</span>
-            <span class="v2-pending-value">${esc(r.driver || '—')}</span>
+          <div class="v2-pending-field v2-pending-field--full">
+            <span class="v2-pending-label">Rekomendasi Dispatch</span>
+            <span class="v2-pending-value">${r.recommendedDriver
+              ? `${esc(r.recommendedDriver)} · ${esc(r.recommendedVehicle)} · skor ${esc(String(r.dispatchScore || 0))}`
+              : (r.driver ? `${esc(r.driver)} · ${esc(r.vehicle || '—')}` : 'Tidak ada rekomendasi')}</span>
           </div>
+          ${r.recommendation && r.recommendation.availabilitySummary ? `<div class="v2-pending-field v2-pending-field--full"><span class="v2-pending-label">Ketersediaan</span><span class="v2-pending-value">${esc(r.recommendation.availabilitySummary)}</span></div>` : ''}
           <div class="v2-pending-field">
-            <span class="v2-pending-label">Kendaraan</span>
-            <span class="v2-pending-value">${esc(r.vehicle || '—')}</span>
+            <span class="v2-pending-label">Penumpang</span>
+            <span class="v2-pending-value">${esc(String(r.pax || 0))}</span>
           </div>
           <div class="v2-pending-field">
             <span class="v2-pending-label">Tanggal</span>
@@ -2218,7 +2246,8 @@ function renderPendingWorkspace() {
 
   container.querySelectorAll('[data-action]').forEach(btn => {
     btn.addEventListener('click', () => {
-      if (btn.dataset.action === 'approve') handleRequestApprove(btn.dataset.id);
+      if (btn.dataset.action === 'approve-direct') handleRequestApproveDirect(btn.dataset.id);
+      else if (btn.dataset.action === 'approve-edit') handleRequestApproveEdit(btn.dataset.id);
       else if (btn.dataset.action === 'reject') handleRequestReject(btn.dataset.id);
     });
   });
@@ -5225,12 +5254,13 @@ function computeDriverModelForRange(dateRange, scope = {}) {
   // v1.15.3: Executive Analytics passes optional scope (driver/vehicle/bidang).
   // The driver engine already honours these filters; default '' = Semua (all).
   const baseCtx = {
-    assignments,
-    requests,
-    drivers: getDrivers(),
-    vehicles: getActiveVehiclesFromStore(),
+    // rc.1.1: sanitization boundary (see refreshAnalyticsDisplay) — clean data in.
+    assignments: sanitizeAssignments(assignments),
+    requests:    sanitizeRequests(requests),
+    drivers:     sanitizeDrivers(getDrivers()),
+    vehicles:    sanitizeVehicles(getActiveVehiclesFromStore()),
     // v1.16.4.7 — office-hours window (overtime boundary) from Konfigurasi.
-    office: { workStartMins: getSetting('operations.workStartMins'), workEndMins: getSetting('operations.workEndMins') },
+    office: sanitizeSettings({ workStartMins: getSetting('operations.workStartMins'), workEndMins: getSetting('operations.workEndMins') }),
     filters: {
       dateRange: range,
       driver:  scope.driver  || '',
@@ -5279,12 +5309,15 @@ function refreshAnalyticsDisplay() {
     // Shared engine context — identical inputs for the current and (optional)
     // previous-period computations; only the time window differs.
     const _baseCtx = {
-      assignments,
-      requests,
-      drivers:  getDrivers(),
-      vehicles: getActiveVehiclesFromStore(),
+      // rc.1.1: every analytics input crosses the sanitization boundary so the
+      // engine only ever sees clean, fully-typed records (no null holes, no
+      // numeric requesterName/destination, defaulted active/archived/status).
+      assignments: sanitizeAssignments(assignments),
+      requests:    sanitizeRequests(requests),
+      drivers:     sanitizeDrivers(getDrivers()),
+      vehicles:    sanitizeVehicles(getActiveVehiclesFromStore()),
       // v1.16.4.7 — office-hours window (overtime boundary) from Konfigurasi.
-      office: { workStartMins: getSetting('operations.workStartMins'), workEndMins: getSetting('operations.workEndMins') },
+      office: sanitizeSettings({ workStartMins: getSetting('operations.workStartMins'), workEndMins: getSetting('operations.workEndMins') }),
       filters: {
         dateRange: analyticsDateRange,
         driver:    analyticsDriverFilter,
@@ -7595,7 +7628,33 @@ function initThemeManager() {
  * pending workspace can call the same path without duplication.
  * @param {string} requestId
  */
-function handleRequestApprove(requestId) {
+/**
+ * "Setujui Sesuai Rekomendasi" (beta.3.1): immediately approve using the stored
+ * recommendation (or a legacy requester choice) — outcome ACCEPTED, no modal.
+ */
+function handleRequestApproveDirect(requestId) {
+  if (!isAdmin()) return;
+  commitApproval(requestId); // no decision → effective = recommendation/baseline → ACCEPTED
+}
+
+/**
+ * "Edit & Setujui" (beta.3.1): open the Approve/Override modal so the admin can
+ * adjust the driver/vehicle (reason required) before approving.
+ */
+function handleRequestApproveEdit(requestId) {
+  if (!isAdmin()) return;
+  openApproveRequestModal(requestId);
+}
+
+/**
+ * Commit an approval: convert the request to assignment(s) using the admin's
+ * decision (driver/vehicle override) or the background recommendation, and
+ * record the outcome in the override log (Part 4). The dispatch decision is the
+ * single source of the effective driver/vehicle.
+ * @param {string} requestId
+ * @param {{driver?:string, vehicle?:string, reason?:string}} [decision]
+ */
+function commitApproval(requestId, decision = {}) {
   if (!isAdmin()) return;
 
   checkAssignmentSafety(assignments.length);
@@ -7604,6 +7663,17 @@ function handleRequestApprove(requestId) {
   const admin   = getCurrentUser();
   if (!request || request.status !== 'pending') return;
 
+  // Effective driver/vehicle from the admin's decision (override) or the
+  // baseline (recommendation → legacy requester choice). Single source of truth.
+  const eff = resolveEffectiveDispatch(request, decision);
+  const effDriver  = eff.selectedDriver;
+  const effVehicle = eff.selectedVehicle;
+
+  if (!effDriver) {
+    showToast('Tidak ada driver untuk request ini — gunakan "Edit & Setujui".');
+    return;
+  }
+
   const dates = expandDateRange(request.startDate, request.endDate);
   if (dates.length === 0) {
     showToast('Request tidak memiliki tanggal yang valid.');
@@ -7611,23 +7681,31 @@ function handleRequestApprove(requestId) {
   }
 
   const conflictingDates = dates.filter(date =>
-    checkConflict(request.driver, request.startTime, request.endTime, date)
+    checkConflict(effDriver, request.startTime, request.endTime, date)
   );
   if (conflictingDates.length > 0) {
     const dateList = conflictingDates.map(d => formatDateShort(d)).join(', ');
     alert(
       `Konflik jadwal terdeteksi pada:\n${dateList}\n\n` +
-      `Driver ${request.driver} sudah memiliki jadwal di waktu tersebut.\n` +
-      `Edit request sebelum approve.`
+      `Driver ${effDriver} sudah memiliki jadwal di waktu tersebut.\n` +
+      `Pilih driver lain lewat Override sebelum approve.`
     );
     return;
   }
 
-  const newAssignments = dates.map(date => requestToAssignment(request, admin, date));
+  const dispatchDecision = { driver: effDriver, vehicle: effVehicle };
+  const newAssignments = dates.map(date => requestToAssignment(request, admin, date, dispatchDecision));
   assignments = [...assignments, ...newAssignments];
 
+  // Record the acceptance/override outcome in the EXISTING override log (Part 4/7).
+  try {
+    saveOverrideLog(buildApprovalOverrideRecord(request, decision, admin ? admin.name : ''));
+  } catch (err) {
+    console.warn('[Approval] override log failed', err);
+  }
+
   requests = requests.map(item => item.id === requestId
-    ? { ...item, status: 'approved', approvedBy: admin ? admin.name : '', approvedAt: new Date().toISOString() }
+    ? { ...item, status: 'approved', driver: effDriver, vehicle: effVehicle, approvedBy: admin ? admin.name : '', approvedAt: new Date().toISOString() }
     : item
   );
 
@@ -7646,7 +7724,7 @@ function handleRequestApprove(requestId) {
     targetId: requestId,
     metadata: {
       requesterId:     request.requesterId,
-      driver:          request.driver,
+      driver:          effDriver,
       assignmentCount: newAssignments.length,
       assignmentIds:   newAssignments.map(a => a.id),
       beforeCount:     assignments.length - newAssignments.length,
@@ -7658,7 +7736,7 @@ function handleRequestApprove(requestId) {
   // Log assignment_created for each assignment produced by this approval.
   // The notification center (drivers) reads these entries to build its feed —
   // without them drivers see "Belum ada notifikasi untuk Anda."
-  const approvalDriverNameLower = (request.driver || '').trim().toLowerCase();
+  const approvalDriverNameLower = (effDriver || '').trim().toLowerCase();
   const approvalDriverUser = approvalDriverNameLower
     ? getUserList().find(u => u.role === 'driver' &&
         ((u.displayName || '').trim().toLowerCase() === approvalDriverNameLower ||
@@ -7691,6 +7769,120 @@ function handleRequestApprove(requestId) {
 
   sendRequestApprovedNotification(request, getUserByUsername);
   if (newAssignments.length > 0) sendNewAssignmentNotificationToDriver(newAssignments[0], getUsers);
+}
+
+/* ── Approve / Override modal (beta.3) ──────────────────────────────────
+   The admin's decision point: shows the background recommendation and lets the
+   admin approve as-is or OVERRIDE the driver/vehicle (reason required). On
+   confirm, commitApproval() records the outcome in the override log. */
+let approveModalRequestId = null;
+
+function _escAttr(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+function openApproveRequestModal(requestId) {
+  const request = requests.find(item => item.id === requestId);
+  if (!request || request.status !== 'pending') return;
+  approveModalRequestId = requestId;
+
+  const recDriver  = request.recommendedDriver  || '';
+  const recVehicle = request.recommendedVehicle || '';
+  const rec = request.recommendation || null;
+
+  // Recommendation summary panel — highlighted, with score badge (Part 6).
+  const recEl = document.getElementById('approveRecommendation');
+  if (recEl) {
+    recEl.classList.toggle('approve-recommendation--has', !!recDriver);
+    recEl.innerHTML = recDriver
+      ? `<div class="approve-rec-top">
+           <span class="approve-rec-badge">✓ Direkomendasikan Sistem</span>
+           <span class="approve-rec-score">Skor ${_escAttr(String(request.dispatchScore || 0))}</span>
+         </div>
+         <div class="approve-rec-grid">
+           <div><span class="approve-rec-k">Driver</span><span class="approve-rec-v">${_escAttr(recDriver)}</span></div>
+           <div><span class="approve-rec-k">Kendaraan</span><span class="approve-rec-v">${_escAttr(recVehicle)}</span></div>
+         </div>
+         ${rec && rec.reasonSummary ? `<div class="approve-rec-sub">${_escAttr(rec.reasonSummary)}</div>` : ''}
+         ${rec && rec.availabilitySummary ? `<div class="approve-rec-sub">${_escAttr(rec.availabilitySummary)}</div>` : ''}`
+      : `<div class="approve-rec-top"><span class="approve-rec-badge approve-rec-badge--none">Tanpa Rekomendasi</span></div>
+         <div class="approve-rec-sub">Tidak ada rekomendasi otomatis — pilih driver & kendaraan manual.</div>`;
+  }
+
+  // Populate selects from the active drivers/vehicles, pre-select the recommendation.
+  const driverSel  = document.getElementById('approveDriverSelect');
+  const vehicleSel = document.getElementById('approveVehicleSelect');
+  if (driverSel) {
+    driverSel.innerHTML = '<option value="">-- Pilih Driver --</option>'
+      + getActiveDrivers().map(d => `<option value="${_escAttr(d.name)}">${_escAttr(d.name)}</option>`).join('');
+    driverSel.value = recDriver;
+  }
+  if (vehicleSel) {
+    vehicleSel.innerHTML = '<option value="">-- Pilih Kendaraan --</option>'
+      + getActiveVehiclesFromStore().map(v => `<option value="${_escAttr(v.name)}">${_escAttr(v.name)}</option>`).join('');
+    vehicleSel.value = recVehicle;
+  }
+
+  const reason = document.getElementById('approveReason');
+  if (reason) reason.value = '';
+  _syncApproveReasonVisibility();
+
+  const modal = document.getElementById('modalApproveRequest');
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeApproveRequestModal() {
+  approveModalRequestId = null;
+  const modal = document.getElementById('modalApproveRequest');
+  if (modal) modal.style.display = 'none';
+}
+
+/** Is the current selection an override (differs from the recommendation)? */
+function _approveIsOverride() {
+  const request = requests.find(item => item.id === approveModalRequestId);
+  if (!request) return false;
+  const driverSel  = document.getElementById('approveDriverSelect');
+  const vehicleSel = document.getElementById('approveVehicleSelect');
+  return isApprovalOverride(request, {
+    driver:  driverSel  ? driverSel.value  : '',
+    vehicle: vehicleSel ? vehicleSel.value : '',
+  });
+}
+
+/** Show + require the reason field only when overriding. */
+function _syncApproveReasonVisibility() {
+  const group = document.getElementById('approveReasonGroup');
+  if (group) group.hidden = !_approveIsOverride();
+}
+
+function confirmApproveRequest(event) {
+  if (event) event.preventDefault();
+  const requestId = approveModalRequestId;
+  if (!requestId) return;
+
+  const driverSel  = document.getElementById('approveDriverSelect');
+  const vehicleSel = document.getElementById('approveVehicleSelect');
+  const reasonEl   = document.getElementById('approveReason');
+  const selDriver  = driverSel  ? driverSel.value  : '';
+  const selVehicle = vehicleSel ? vehicleSel.value : '';
+  const reason     = reasonEl ? reasonEl.value.trim() : '';
+
+  if (!selDriver) { showToast('Pilih driver dulu.'); return; }
+  if (_approveIsOverride() && !reason) {
+    showToast('Alasan override wajib diisi.');
+    return;
+  }
+
+  closeApproveRequestModal();
+  commitApproval(requestId, { driver: selDriver, vehicle: selVehicle, reason });
+}
+
+function initApproveRequestModal() {
+  document.getElementById('btnCloseApprove')?.addEventListener('click', closeApproveRequestModal);
+  document.getElementById('btnCancelApprove')?.addEventListener('click', closeApproveRequestModal);
+  document.getElementById('approveForm')?.addEventListener('submit', confirmApproveRequest);
+  document.getElementById('approveDriverSelect')?.addEventListener('change', _syncApproveReasonVisibility);
+  document.getElementById('approveVehicleSelect')?.addEventListener('change', _syncApproveReasonVisibility);
+  const overlay = document.getElementById('modalApproveRequest');
+  overlay?.addEventListener('click', (e) => { if (e.target === overlay) closeApproveRequestModal(); });
 }
 
 /**
@@ -7959,6 +8151,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     initFirebaseSync();                    // real-time assignments + requests listeners
 
+    // rc.1: hydrate Dispatch Intelligence history from RTDB (read-through), then
+    // enable write-through. Failure-safe: a Firebase hiccup never blocks the
+    // session — the subsystem keeps running on in-memory state.
+    const _diAdapter = { isConfigured: isFirebaseConfigured, fetchData: fetchFirebaseData, storeData: storeFirebaseData };
+    try {
+      await hydrateDispatchIntelligence(_diAdapter);
+      initDispatchIntelligencePersistence(_diAdapter);
+    } catch (err) {
+      console.warn('[DI Persistence] init failed — continuing on memory.', err);
+    }
+
     // Re-render with authoritative data + refresh permissioned UI
     updateAllModules();
     renderViews();
@@ -8008,6 +8211,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   initFormHandlers();                    // Setup form events
   initModalHandlers();                   // Setup modal events
   initRequestHandlers();                 // Setup request workflow events
+  // beta.3 Request Workflow Separation: Dispatch Intelligence is no longer shown
+  // to requesters. Instead it (a) runs in the BACKGROUND at request submit and
+  // is surfaced to the ADMIN at approval, and (b) provides compact hints in the
+  // admin direct-assignment form.
+  initAssignmentDispatchHints();         // Compact driver/vehicle hints (Tambah Jadwal)
+  initApproveRequestModal();             // Admin approve/override modal events
   _initAllPbsiSelects();                 // Wrap all native selects after options are populated
   _initAllPbsiDatepickers();             // Wrap filterDate + wire nav button sync
   initCommentHandlers();                 // Setup comment thread events
@@ -8195,7 +8404,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // ── Callback: Admin approve/reject request — delegate to named handlers ──
-  registerRequestApproveCallback(handleRequestApprove);
+  registerRequestApproveCallback(handleRequestApproveDirect);   // Setujui Sesuai Rekomendasi
+  registerRequestApproveEditCallback(handleRequestApproveEdit); // Edit & Setujui
   registerRequestRejectCallback(handleRequestReject);
 
   // ── Callback: Comment thread — from request card (admin/bidang) ──
