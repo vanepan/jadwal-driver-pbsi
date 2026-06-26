@@ -35,6 +35,58 @@ function normalizePlate(value) {
   return String(value || '').replace(/\s+/g, '').toLowerCase();
 }
 
+/* ── v1.18.0 Vehicle Asset Intelligence — asset identity fields ──────────────
+   The Vehicle Store is the SINGLE SOURCE OF TRUTH for every PBSI vehicle asset.
+   These fields are ADDITIVE: legacy records (name/plate/capacity/color/active)
+   keep working untouched. `type` + `status` become part of asset identity and
+   `active` stays mirrored from `status` so every operational module that already
+   reads `v.active` (dispatch, recommendation, analytics) behaves unchanged —
+   only an 'active' status participates in operations. */
+export const VEHICLE_TYPES = Object.freeze(['mobil', 'motor', 'ambulance']);
+export const VEHICLE_STATUSES = Object.freeze(['active', 'maintenance', 'inactive', 'retired']);
+
+// Registration + legal + insurance asset fields persisted verbatim (passthrough).
+const ASSET_STRING_FIELDS = Object.freeze([
+  'brand', 'model', 'year', 'fuel', 'transmission', 'engineNumber', 'chassisNumber',
+  'owner', 'registrationRegion', 'odometer', 'acquisitionDate', 'acquisitionValue',
+  'stnkNumber', 'stnkExpiry', 'annualTaxDue', 'fiveYearTaxDue', 'taxStatus',
+  'insuranceCompany', 'policyNumber', 'coverage', 'insuranceExpiry', 'insuranceStatus',
+]);
+
+function normalizeType(value) {
+  const t = String(value || '').trim().toLowerCase();
+  return VEHICLE_TYPES.includes(t) ? t : 'mobil';
+}
+
+function normalizeStatus(value, fallbackActive) {
+  const s = String(value || '').trim().toLowerCase();
+  if (VEHICLE_STATUSES.includes(s)) return s;
+  return fallbackActive === false ? 'inactive' : 'active';
+}
+
+// Build the additive asset payload from an input bag, dropping undefined so a
+// Firebase write never carries `undefined` (RTDB rejects it). taxHistory is a
+// read-only payment list ([{date,amount,officer,notes}]); timeline is reserved
+// future-ready event storage (kept verbatim when supplied).
+function sanitizeAssetFields(input = {}) {
+  const out = {};
+  for (const key of ASSET_STRING_FIELDS) {
+    if (input[key] !== undefined) out[key] = input[key] === null ? null : String(input[key]).trim();
+  }
+  if (Array.isArray(input.taxHistory)) {
+    out.taxHistory = input.taxHistory
+      .filter(e => e && typeof e === 'object')
+      .map(e => ({
+        date: String(e.date || '').trim(),
+        amount: String(e.amount == null ? '' : e.amount).trim(),
+        officer: String(e.officer || '').trim(),
+        notes: String(e.notes || '').trim(),
+      }));
+  }
+  if (Array.isArray(input.timeline)) out.timeline = input.timeline;
+  return out;
+}
+
 function mapFirebaseVehicles(value) {
   const raw = value || {};
   return Object.keys(raw)
@@ -52,6 +104,8 @@ function buildSeedVehicles() {
       plateNumber: v.plateNumber,
       capacity: v.capacity,
       color: v.color,
+      type: 'mobil',
+      status: 'active',
       active: true,
       createdAt: now,
       updatedAt: now,
@@ -134,7 +188,7 @@ export function getActiveVehicleNames() {
     .map(v => v.name);
 }
 
-export async function createVehicle({ name, plateNumber, capacity, color, active = true }) {
+export async function createVehicle({ name, plateNumber, capacity, color, active = true, type, status, ...assetInput }) {
   const trimName = String(name || '').trim();
   if (!trimName) throw new Error('Nama kendaraan wajib diisi.');
 
@@ -160,16 +214,23 @@ export async function createVehicle({ name, plateNumber, capacity, color, active
   }
 
   const now = new Date().toISOString();
+  // status is authoritative; `active` stays mirrored (only 'active' participates
+  // in operational modules). When only a legacy `active` is given, derive status.
+  const resolvedStatus = normalizeStatus(status, active);
+  const isActive = resolvedStatus === 'active';
   const vehicle = {
     id,
     name: trimName,
     plateNumber: trimPlate,
     capacity: cap,
     color: String(color || '#555555'),
-    active: Boolean(active),
+    type: normalizeType(type),
+    status: resolvedStatus,
+    active: isActive,
     createdAt: now,
     updatedAt: now,
-    inactiveAt: null,
+    inactiveAt: isActive ? null : now,
+    ...sanitizeAssetFields(assetInput),
   };
 
   if (!isFirebaseConfigured()) {
@@ -183,7 +244,7 @@ export async function createVehicle({ name, plateNumber, capacity, color, active
   return vehicle;
 }
 
-export async function updateVehicle(id, { name, plateNumber, capacity, color, active }) {
+export async function updateVehicle(id, { name, plateNumber, capacity, color, active, type, status, ...assetInput }) {
   const existing = vehicles.find(v => v.id === id);
   if (!existing) throw new Error('Kendaraan tidak ditemukan.');
 
@@ -205,7 +266,13 @@ export async function updateVehicle(id, { name, plateNumber, capacity, color, ac
   }
 
   const now = new Date().toISOString();
-  const isNowActive = active !== false;
+  // Resolve status (authoritative). If the caller did not send `status`, fall
+  // back to the legacy active flag (or the existing status) so callers that only
+  // toggle `active` keep working.
+  const resolvedStatus = status !== undefined
+    ? normalizeStatus(status, active)
+    : (active !== undefined ? normalizeStatus(existing.status, active !== false) : (existing.status || normalizeStatus(null, existing.active !== false)));
+  const isNowActive = resolvedStatus === 'active';
   const wasActive = existing.active !== false;
 
   const updates = {
@@ -213,9 +280,12 @@ export async function updateVehicle(id, { name, plateNumber, capacity, color, ac
     plateNumber: trimPlate,
     capacity: cap,
     color: String(color || '#555555'),
+    type: type !== undefined ? normalizeType(type) : (existing.type || 'mobil'),
+    status: resolvedStatus,
     active: isNowActive,
     inactiveAt: isNowActive ? null : (wasActive ? now : (existing.inactiveAt || now)),
     updatedAt: now,
+    ...sanitizeAssetFields(assetInput),
   };
 
   if (!isFirebaseConfigured()) {
@@ -232,7 +302,10 @@ export async function deactivateVehicle(id) {
   const existing = vehicles.find(v => v.id === id);
   if (!existing) throw new Error('Kendaraan tidak ditemukan.');
   const now = new Date().toISOString();
-  const updates = { active: false, inactiveAt: now, updatedAt: now };
+  // Keep status mirrored. Preserve maintenance/retired if already set; only a
+  // plain active→inactive toggle moves status to 'inactive'.
+  const nextStatus = (existing.status && existing.status !== 'active') ? existing.status : 'inactive';
+  const updates = { active: false, status: nextStatus, inactiveAt: now, updatedAt: now };
   if (!isFirebaseConfigured()) {
     refreshVehiclesCache(mapFirebaseVehicles(Object.fromEntries(
       vehicles.map(v => [v.id, v.id === id ? { ...v, ...updates } : v])
@@ -246,7 +319,7 @@ export async function reactivateVehicle(id) {
   const existing = vehicles.find(v => v.id === id);
   if (!existing) throw new Error('Kendaraan tidak ditemukan.');
   const now = new Date().toISOString();
-  const updates = { active: true, inactiveAt: null, updatedAt: now };
+  const updates = { active: true, status: 'active', inactiveAt: null, updatedAt: now };
   if (!isFirebaseConfigured()) {
     refreshVehiclesCache(mapFirebaseVehicles(Object.fromEntries(
       vehicles.map(v => [v.id, v.id === id ? { ...v, ...updates } : v])

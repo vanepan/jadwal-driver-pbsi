@@ -1964,6 +1964,19 @@ input[type="number"]::-webkit-inner-spin-button {
   flex-wrap: wrap;
 }
 
+/* v1.18.0 Vehicle Asset form — grouped section heading (Identitas/Registrasi/Legal/Asuransi) */
+.form-section-label {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted, #6b7280);
+  margin: 18px 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+.form-section-label:first-child { margin-top: 0; }
+
 /* Assignment form: sticky footer with conflict notices stacked above buttons */
 #assignmentForm .form-actions {
   flex-direction: column;

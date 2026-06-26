@@ -87,6 +87,14 @@ import { openDecisionReplay, closeDecisionReplayDrawer } from './components/deci
 import { computeDriverWellnessModel, findDriverWellness } from './services/driver-wellness-service.js';
 import { injectDriverWellnessStyles, renderDriverWellnessDashboard } from './components/driver-wellness-dashboard.js';
 import { openDriverWellnessDrawer } from './components/driver-wellness-drawer.js';
+// v1.18.0 Vehicle Asset Intelligence — the Vehicle Store is the single asset
+// source; this layer interprets it (health, tax/insurance status, eligibility,
+// timeline) and renders the Fleet Dashboard + Apple-style detail drawer. Reuses
+// Unified Scoring + the Dispatch Policy Engine (no dispatch/recommendation change).
+import { computeFleetAssetModel, findVehicleAsset } from './services/vehicle-asset-service.js';
+import { injectFleetDashboardStyles, renderFleetDashboard } from './components/fleet-dashboard.js';
+import { openVehicleDetailDrawer } from './components/vehicle-detail-drawer.js';
+import { FUEL_TYPES, TRANSMISSION_TYPES, VEHICLE_TYPE_REGISTRY, VEHICLE_STATUS_REGISTRY } from './config/vehicle-asset-config.js';
 import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver } from './auth.js';
 import * as DocumentEngine from './docs/doc-engine.js';
 import './docs/templates/analytics-summary.js';   // registers 'analytics-summary'
@@ -220,8 +228,14 @@ let driverStatusFilter = 'all'; // 'all' | 'active' | 'inactive' | 'archived'
 let editingDriverId = null;
 // V1.5.2: Vehicle management workspace state
 let vehicleSearch = '';
-let vehicleStatusFilter = 'all'; // 'all' | 'active' | 'inactive' | 'archived'
+let vehicleStatusFilter = 'all'; // 'all' | 'active' | 'inactive' | 'archived' | status keys
 let editingVehicleId = null;
+// v1.18.0 Vehicle Asset Intelligence — asset search/filter (Feature 13) + cached
+// fleet model (rebuilt on each render from the Vehicle Store, the single source).
+let vehicleTypeFilter = 'all';
+let vehicleFuelFilter = 'all';
+let vehicleTransmissionFilter = 'all';
+let _fleetAssetModel = null;
 // V1.5.3: Archive & deletion state
 let userStatusFilter = 'all';    // 'all' | 'active' | 'inactive' | 'archived'
 let pendingDeleteEntity = null;  // { type, id, name } — set before opening delete confirm modal
@@ -2567,14 +2581,26 @@ function initV2AdministrationWorkspace() {
           <div id="v2AdminDriverList" class="v2-admin-user-list"></div>
         </div>
         <div id="v2AdminSectionVehicles" style="display:none;">
+          <div id="v2FleetDashboard"></div>
           <div class="v2-admin-toolbar">
             <input type="search" id="v2AdminVehicleSearch" class="v2-admin-search"
-                   placeholder="Cari nama atau plat nomor kendaraan…" autocomplete="off" />
+                   placeholder="Cari nama, plat, merek, atau tahun…" autocomplete="off" />
+            <select id="v2AdminVehicleTypeFilter" class="v2-admin-filter">
+              <option value="all">Semua Tipe</option>
+              ${VEHICLE_TYPE_REGISTRY.map(t => `<option value="${t.key}">${t.icon} ${t.label}</option>`).join('')}
+            </select>
             <select id="v2AdminVehicleStatusFilter" class="v2-admin-filter">
               <option value="all">Semua Status</option>
-              <option value="active">Aktif</option>
-              <option value="inactive">Nonaktif</option>
+              ${VEHICLE_STATUS_REGISTRY.map(s => `<option value="${s.key}">${s.labelId}</option>`).join('')}
               <option value="archived">Diarsipkan</option>
+            </select>
+            <select id="v2AdminVehicleFuelFilter" class="v2-admin-filter">
+              <option value="all">Semua BBM</option>
+              ${FUEL_TYPES.map(f => `<option value="${f}">${f}</option>`).join('')}
+            </select>
+            <select id="v2AdminVehicleTransmissionFilter" class="v2-admin-filter">
+              <option value="all">Semua Transmisi</option>
+              ${TRANSMISSION_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
             </select>
             <button id="v2AdminAddVehicle" class="v2-admin-add-btn" type="button">+ Tambah Kendaraan</button>
           </div>
@@ -2859,6 +2885,18 @@ function initV2AdministrationWorkspace() {
     }
     if (e.target.id === 'v2AdminVehicleStatusFilter') {
       vehicleStatusFilter = e.target.value;
+      renderV2AdminWorkspace();
+    }
+    if (e.target.id === 'v2AdminVehicleTypeFilter') {
+      vehicleTypeFilter = e.target.value;
+      renderV2AdminWorkspace();
+    }
+    if (e.target.id === 'v2AdminVehicleFuelFilter') {
+      vehicleFuelFilter = e.target.value;
+      renderV2AdminWorkspace();
+    }
+    if (e.target.id === 'v2AdminVehicleTransmissionFilter') {
+      vehicleTransmissionFilter = e.target.value;
       renderV2AdminWorkspace();
     }
     if (e.target.id === 'v2AuditCategoryFilter') {
@@ -3253,6 +3291,12 @@ function renderV2AdminWorkspace() {
     if (searchEl) searchEl.value = vehicleSearch;
     const filterEl = document.getElementById('v2AdminVehicleStatusFilter');
     if (filterEl) filterEl.value = vehicleStatusFilter;
+    const typeFilterEl = document.getElementById('v2AdminVehicleTypeFilter');
+    if (typeFilterEl) typeFilterEl.value = vehicleTypeFilter;
+    const fuelFilterEl = document.getElementById('v2AdminVehicleFuelFilter');
+    if (fuelFilterEl) fuelFilterEl.value = vehicleFuelFilter;
+    const transFilterEl = document.getElementById('v2AdminVehicleTransmissionFilter');
+    if (transFilterEl) transFilterEl.value = vehicleTransmissionFilter;
     renderV2AdminVehicles();
 
   } else if (activeAdminSection === 'audit') {
@@ -4014,14 +4058,23 @@ function initVehicleFormModal() {
       </div>
       <div class="modal-body">
         <form id="vehicleForm" novalidate>
+          <div class="form-section-label">Identitas Aset</div>
           <div class="form-grid">
             <div class="form-group">
               <label for="vehicleFieldName">Nama Kendaraan *</label>
               <input type="text" id="vehicleFieldName" placeholder="Contoh: Innova" required />
             </div>
             <div class="form-group">
-              <label for="vehicleFieldPlate">Plat Nomor</label>
-              <input type="text" id="vehicleFieldPlate" placeholder="Contoh: B 1234 XYZ" autocomplete="off" />
+              <label for="vehicleFieldType">Tipe Kendaraan *</label>
+              <select id="vehicleFieldType">
+                ${VEHICLE_TYPE_REGISTRY.map(t => `<option value="${t.key}">${t.icon} ${t.label}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="vehicleFieldStatus">Status *</label>
+              <select id="vehicleFieldStatus">
+                ${VEHICLE_STATUS_REGISTRY.map(s => `<option value="${s.key}">${s.labelId}</option>`).join('')}
+              </select>
             </div>
             <div class="form-group">
               <label for="vehicleFieldCapacity">Kapasitas (kursi) *</label>
@@ -4035,13 +4088,104 @@ function initVehicleFormModal() {
                 <span class="v2-vehicle-color-hex" id="vehicleColorHex">#1565C0</span>
               </div>
             </div>
-            <div class="form-group form-full">
-              <label>Status Aktif</label>
-              <label class="pbsi-form-toggle">
-                <input type="checkbox" id="vehicleFieldActive" class="pbsi-toggle-input"
-                       role="switch" aria-label="Status kendaraan aktif" checked />
-                <span class="pbsi-form-toggle-label" id="vehicleActiveLabel">Aktif</span>
-              </label>
+          </div>
+          <div class="form-section-label">Registrasi</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="vehicleFieldPlate">Plat Nomor</label>
+              <input type="text" id="vehicleFieldPlate" placeholder="Contoh: B 1234 XYZ" autocomplete="off" />
+            </div>
+            <div class="form-group">
+              <label for="vehicleFieldBrand">Merek</label>
+              <input type="text" id="vehicleFieldBrand" placeholder="Toyota" autocomplete="off" />
+            </div>
+            <div class="form-group">
+              <label for="vehicleFieldModel">Model</label>
+              <input type="text" id="vehicleFieldModel" placeholder="Innova Reborn" autocomplete="off" />
+            </div>
+            <div class="form-group">
+              <label for="vehicleFieldYear">Tahun</label>
+              <input type="number" id="vehicleFieldYear" placeholder="2022" min="1950" max="2100" />
+            </div>
+            <div class="form-group">
+              <label for="vehicleFieldFuel">Bahan Bakar</label>
+              <select id="vehicleFieldFuel">
+                <option value="">—</option>
+                ${FUEL_TYPES.map(f => `<option value="${f}">${f}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="vehicleFieldTransmission">Transmisi</label>
+              <select id="vehicleFieldTransmission">
+                <option value="">—</option>
+                ${TRANSMISSION_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="vehicleFieldEngineNumber">No. Mesin</label>
+              <input type="text" id="vehicleFieldEngineNumber" autocomplete="off" />
+            </div>
+            <div class="form-group">
+              <label for="vehicleFieldChassisNumber">No. Rangka</label>
+              <input type="text" id="vehicleFieldChassisNumber" autocomplete="off" />
+            </div>
+            <div class="form-group">
+              <label for="vehicleFieldOwner">Pemilik</label>
+              <input type="text" id="vehicleFieldOwner" placeholder="PBSI" autocomplete="off" />
+            </div>
+            <div class="form-group">
+              <label for="vehicleFieldRegion">Wilayah Registrasi</label>
+              <input type="text" id="vehicleFieldRegion" placeholder="DKI Jakarta" autocomplete="off" />
+            </div>
+            <div class="form-group">
+              <label for="vehicleFieldOdometer">Odometer (km)</label>
+              <input type="number" id="vehicleFieldOdometer" min="0" />
+            </div>
+            <div class="form-group">
+              <label for="vehicleFieldAcqDate">Tgl Akuisisi</label>
+              <input type="date" id="vehicleFieldAcqDate" />
+            </div>
+            <div class="form-group">
+              <label for="vehicleFieldAcqValue">Nilai Akuisisi (Rp)</label>
+              <input type="text" id="vehicleFieldAcqValue" autocomplete="off" />
+            </div>
+          </div>
+          <div class="form-section-label">Legal &amp; Pajak</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="vehicleFieldStnkNumber">No. STNK</label>
+              <input type="text" id="vehicleFieldStnkNumber" autocomplete="off" />
+            </div>
+            <div class="form-group">
+              <label for="vehicleFieldStnkExpiry">Masa Berlaku STNK</label>
+              <input type="date" id="vehicleFieldStnkExpiry" />
+            </div>
+            <div class="form-group">
+              <label for="vehicleFieldAnnualTax">Pajak Tahunan Jatuh Tempo</label>
+              <input type="date" id="vehicleFieldAnnualTax" />
+            </div>
+            <div class="form-group">
+              <label for="vehicleFieldFiveYearTax">Pajak 5 Tahunan Jatuh Tempo</label>
+              <input type="date" id="vehicleFieldFiveYearTax" />
+            </div>
+          </div>
+          <div class="form-section-label">Asuransi</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="vehicleFieldInsCompany">Perusahaan Asuransi</label>
+              <input type="text" id="vehicleFieldInsCompany" autocomplete="off" />
+            </div>
+            <div class="form-group">
+              <label for="vehicleFieldPolicyNumber">No. Polis</label>
+              <input type="text" id="vehicleFieldPolicyNumber" autocomplete="off" />
+            </div>
+            <div class="form-group">
+              <label for="vehicleFieldCoverage">Cakupan</label>
+              <input type="text" id="vehicleFieldCoverage" placeholder="All Risk / TLO" autocomplete="off" />
+            </div>
+            <div class="form-group">
+              <label for="vehicleFieldInsExpiry">Masa Berlaku Asuransi</label>
+              <input type="date" id="vehicleFieldInsExpiry" />
             </div>
           </div>
           <div class="form-actions">
@@ -4058,10 +4202,6 @@ function initVehicleFormModal() {
   document.getElementById('btnCancelVehicleForm')?.addEventListener('click', closeVehicleFormModal);
   modal.addEventListener('click', e => { if (e.target === modal) closeVehicleFormModal(); });
   document.getElementById('vehicleForm')?.addEventListener('submit', handleVehicleFormSubmit);
-  document.getElementById('vehicleFieldActive')?.addEventListener('change', e => {
-    const lbl = document.getElementById('vehicleActiveLabel');
-    if (lbl) lbl.textContent = e.target.checked ? 'Aktif' : 'Nonaktif';
-  });
   document.getElementById('vehicleFieldColor')?.addEventListener('input', e => {
     const hex = e.target.value;
     const preview = document.getElementById('vehicleColorPreview');
@@ -4080,40 +4220,55 @@ function openVehicleFormModal(vehicleId = null) {
   const title   = document.getElementById('vehicleFormTitle');
   const btnSave = document.getElementById('btnSaveVehicleForm');
 
+  const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val == null ? '' : val; };
+  const syncColor = (color) => {
+    const preview = document.getElementById('vehicleColorPreview');
+    const hexLabel = document.getElementById('vehicleColorHex');
+    if (preview)  preview.style.background = color;
+    if (hexLabel) hexLabel.textContent = color;
+  };
+
   if (vehicleId) {
     const vehicle = getVehicles().find(v => v.id === vehicleId);
     if (!vehicle) return;
     if (title)   title.textContent   = 'Edit Kendaraan';
     if (btnSave) btnSave.textContent = 'Simpan Perubahan';
-    const nameEl     = document.getElementById('vehicleFieldName');
-    const plateEl    = document.getElementById('vehicleFieldPlate');
-    const capEl      = document.getElementById('vehicleFieldCapacity');
-    const colorEl    = document.getElementById('vehicleFieldColor');
-    const activeEl   = document.getElementById('vehicleFieldActive');
-    if (nameEl)   nameEl.value   = vehicle.name || '';
-    if (plateEl)  plateEl.value  = vehicle.plateNumber || '';
-    if (capEl)    capEl.value    = vehicle.capacity || '';
-    if (colorEl)  colorEl.value  = vehicle.color || '#1565C0';
-    if (activeEl) activeEl.checked = vehicle.active !== false;
-    const activeLbl  = document.getElementById('vehicleActiveLabel');
-    const preview    = document.getElementById('vehicleColorPreview');
-    const hexLabel   = document.getElementById('vehicleColorHex');
-    const color      = vehicle.color || '#1565C0';
-    if (activeLbl) activeLbl.textContent = vehicle.active !== false ? 'Aktif' : 'Nonaktif';
-    if (preview)   preview.style.background = color;
-    if (hexLabel)  hexLabel.textContent = color;
+    const color = vehicle.color || '#1565C0';
+    setVal('vehicleFieldName', vehicle.name);
+    setVal('vehicleFieldType', vehicle.type || 'mobil');
+    setVal('vehicleFieldStatus', vehicle.status || (vehicle.active === false ? 'inactive' : 'active'));
+    setVal('vehicleFieldCapacity', vehicle.capacity);
+    setVal('vehicleFieldColor', color);
+    setVal('vehicleFieldPlate', vehicle.plateNumber);
+    setVal('vehicleFieldBrand', vehicle.brand);
+    setVal('vehicleFieldModel', vehicle.model);
+    setVal('vehicleFieldYear', vehicle.year);
+    setVal('vehicleFieldFuel', vehicle.fuel);
+    setVal('vehicleFieldTransmission', vehicle.transmission);
+    setVal('vehicleFieldEngineNumber', vehicle.engineNumber);
+    setVal('vehicleFieldChassisNumber', vehicle.chassisNumber);
+    setVal('vehicleFieldOwner', vehicle.owner);
+    setVal('vehicleFieldRegion', vehicle.registrationRegion);
+    setVal('vehicleFieldOdometer', vehicle.odometer);
+    setVal('vehicleFieldAcqDate', vehicle.acquisitionDate);
+    setVal('vehicleFieldAcqValue', vehicle.acquisitionValue);
+    setVal('vehicleFieldStnkNumber', vehicle.stnkNumber);
+    setVal('vehicleFieldStnkExpiry', vehicle.stnkExpiry);
+    setVal('vehicleFieldAnnualTax', vehicle.annualTaxDue);
+    setVal('vehicleFieldFiveYearTax', vehicle.fiveYearTaxDue);
+    setVal('vehicleFieldInsCompany', vehicle.insuranceCompany);
+    setVal('vehicleFieldPolicyNumber', vehicle.policyNumber);
+    setVal('vehicleFieldCoverage', vehicle.coverage);
+    setVal('vehicleFieldInsExpiry', vehicle.insuranceExpiry);
+    syncColor(color);
   } else {
     if (title)   title.textContent   = 'Tambah Kendaraan';
     if (btnSave) btnSave.textContent = 'Tambah Kendaraan';
-    const activeLbl = document.getElementById('vehicleActiveLabel');
-    if (activeLbl) activeLbl.textContent = 'Aktif';
-    const colorEl   = document.getElementById('vehicleFieldColor');
-    const preview   = document.getElementById('vehicleColorPreview');
-    const hexLabel  = document.getElementById('vehicleColorHex');
+    setVal('vehicleFieldType', 'mobil');
+    setVal('vehicleFieldStatus', 'active');
     const defaultColor = '#1565C0';
-    if (colorEl)  colorEl.value = defaultColor;
-    if (preview)  preview.style.background = defaultColor;
-    if (hexLabel) hexLabel.textContent = defaultColor;
+    setVal('vehicleFieldColor', defaultColor);
+    syncColor(defaultColor);
   }
 
   const modal = document.getElementById('modalVehicleForm');
@@ -4128,11 +4283,35 @@ function closeVehicleFormModal() {
 
 async function handleVehicleFormSubmit(event) {
   event.preventDefault();
-  const name        = document.getElementById('vehicleFieldName')?.value.trim() || '';
-  const plateNumber = document.getElementById('vehicleFieldPlate')?.value.trim() || '';
+  const val = (id) => (document.getElementById(id)?.value ?? '').trim();
+  const name        = val('vehicleFieldName');
+  const plateNumber = val('vehicleFieldPlate');
   const capacity    = document.getElementById('vehicleFieldCapacity')?.value || '';
   const color       = document.getElementById('vehicleFieldColor')?.value || '#1565C0';
-  const active      = document.getElementById('vehicleFieldActive')?.checked ?? true;
+  const type        = val('vehicleFieldType') || 'mobil';
+  const status      = val('vehicleFieldStatus') || 'active';
+  const assetFields = {
+    brand: val('vehicleFieldBrand'),
+    model: val('vehicleFieldModel'),
+    year: val('vehicleFieldYear'),
+    fuel: val('vehicleFieldFuel'),
+    transmission: val('vehicleFieldTransmission'),
+    engineNumber: val('vehicleFieldEngineNumber'),
+    chassisNumber: val('vehicleFieldChassisNumber'),
+    owner: val('vehicleFieldOwner'),
+    registrationRegion: val('vehicleFieldRegion'),
+    odometer: val('vehicleFieldOdometer'),
+    acquisitionDate: val('vehicleFieldAcqDate'),
+    acquisitionValue: val('vehicleFieldAcqValue'),
+    stnkNumber: val('vehicleFieldStnkNumber'),
+    stnkExpiry: val('vehicleFieldStnkExpiry'),
+    annualTaxDue: val('vehicleFieldAnnualTax'),
+    fiveYearTaxDue: val('vehicleFieldFiveYearTax'),
+    insuranceCompany: val('vehicleFieldInsCompany'),
+    policyNumber: val('vehicleFieldPolicyNumber'),
+    coverage: val('vehicleFieldCoverage'),
+    insuranceExpiry: val('vehicleFieldInsExpiry'),
+  };
 
   const btn = document.getElementById('btnSaveVehicleForm');
   if (btn) btn.disabled = true;
@@ -4140,23 +4319,23 @@ async function handleVehicleFormSubmit(event) {
   try {
     const currentUser = getCurrentUser();
     if (editingVehicleId) {
-      await updateVehicle(editingVehicleId, { name, plateNumber, capacity, color, active });
+      await updateVehicle(editingVehicleId, { name, plateNumber, capacity, color, type, status, ...assetFields });
       logAction({
         userId:   currentUser?.id,
         username: currentUser?.username,
         action:   'vehicle_updated',
         targetId: editingVehicleId,
-        metadata: { name, active },
+        metadata: { name, type, status },
       });
       showToast('Kendaraan berhasil diperbarui.');
     } else {
-      const newVehicle = await createVehicle({ name, plateNumber, capacity, color, active });
+      const newVehicle = await createVehicle({ name, plateNumber, capacity, color, type, status, ...assetFields });
       logAction({
         userId:   currentUser?.id,
         username: currentUser?.username,
         action:   'vehicle_created',
         targetId: newVehicle.id,
-        metadata: { name, active },
+        metadata: { name, type, status },
       });
       showToast('Kendaraan baru berhasil ditambahkan.');
     }
@@ -4168,62 +4347,68 @@ async function handleVehicleFormSubmit(event) {
   }
 }
 
-function buildVehicleCard(vehicle) {
-  const active   = vehicle.active !== false;
-  const archived = vehicle.archived === true;
-  const color    = vehicle.color || '#555';
-  const plate    = vehicle.plateNumber || '—';
-  const cap      = vehicle.capacity ? `${vehicle.capacity} kursi` : '—';
+// v1.18.0 — accepts a NORMALIZED asset (vehicle-asset-service). The card is the
+// entry point into the Apple-style detail drawer (data-vehicle-detail); action
+// buttons stopPropagation so they don't also open the drawer.
+function buildVehicleCard(asset) {
+  const active   = asset.status === 'active';
+  const archived = asset.archived === true;
+  const color    = asset.color || '#555';
+  const plate    = asset.plateNumber || '—';
+  const cap      = asset.capacity ? `${asset.capacity} kursi` : '—';
+  const typeChip = `<span class="v2-vehicle-cap-chip">${esc(asset.typeInfo.icon)} ${esc(asset.typeInfo.label)}</span>`;
+  const healthChip = `<span class="v2-vehicle-cap-chip" style="color:var(--${esc(asset.health.color)});border-color:var(--${esc(asset.health.color)});">♥ ${esc(asset.health.overall)}</span>`;
 
   if (archived) {
-    const refCount = countVehicleReferences(vehicle);
+    const refCount = countVehicleReferences(asset);
     const deleteBtnHtml = refCount === 0
       ? `<button class="v2-user-btn v2-user-btn--delete"
-                data-vehicle-delete="${esc(vehicle.id)}" type="button">Hapus Permanen</button>`
+                data-vehicle-delete="${esc(asset.id)}" type="button">Hapus Permanen</button>`
       : `<span class="v2-delete-blocked-hint">${refCount} referensi</span>`;
     return `
-      <div class="v2-user-card v2-user-card--archived">
+      <div class="v2-user-card v2-user-card--archived" data-vehicle-detail="${esc(asset.id)}" role="button" tabindex="0">
         <div class="v2-vehicle-avatar" style="background:${esc(color)}20; border-color:${esc(color)};">
           <span class="v2-vehicle-color-dot" style="background:${esc(color)};"></span>
         </div>
         <div class="v2-user-info">
-          <span class="v2-user-display-name">${esc(vehicle.name)}</span>
+          <span class="v2-user-display-name">${esc(asset.name)}</span>
           <span class="v2-user-username">${esc(plate)}</span>
         </div>
         <div class="v2-user-meta">
-          <span class="v2-vehicle-cap-chip">${esc(cap)}</span>
+          ${typeChip}
           <span class="v2-entity-badge v2-entity-badge--archived">Arsip</span>
         </div>
         <div class="v2-user-card-actions">
           <button class="v2-user-btn v2-user-btn--restore"
-                  data-vehicle-restore="${esc(vehicle.id)}" type="button">Pulihkan</button>
+                  data-vehicle-restore="${esc(asset.id)}" type="button">Pulihkan</button>
           ${deleteBtnHtml}
         </div>
       </div>`;
   }
 
   return `
-    <div class="v2-user-card${active ? '' : ' v2-user-card--inactive'}">
+    <div class="v2-user-card${active ? '' : ' v2-user-card--inactive'}" data-vehicle-detail="${esc(asset.id)}" role="button" tabindex="0">
       <div class="v2-vehicle-avatar" style="background:${esc(color)}20; border-color:${esc(color)};">
         <span class="v2-vehicle-color-dot" style="background:${esc(color)};"></span>
       </div>
       <div class="v2-user-info">
-        <span class="v2-user-display-name">${esc(vehicle.name)}</span>
+        <span class="v2-user-display-name">${esc(asset.name)}</span>
         <span class="v2-user-username">${esc(plate)}</span>
       </div>
       <div class="v2-user-meta">
-        <span class="v2-vehicle-cap-chip">${esc(cap)}</span>
-        <span class="v2-user-status-pill${active ? '' : ' v2-status-pill--inactive'}">${active ? 'Aktif' : 'Nonaktif'}</span>
+        ${typeChip}
+        ${healthChip}
+        <span class="v2-user-status-pill${active ? '' : ' v2-status-pill--inactive'}" style="${active ? '' : `color:var(--${esc(asset.statusInfo.tone === 'muted' ? 'muted' : asset.statusInfo.tone)});`}">${esc(asset.statusInfo.labelId)}</span>
       </div>
       <div class="v2-user-card-actions">
         <button class="v2-user-btn v2-user-btn--edit"
-                data-vehicle-edit="${esc(vehicle.id)}" type="button">Edit</button>
+                data-vehicle-edit="${esc(asset.id)}" type="button">Edit</button>
         <button class="v2-user-btn v2-user-btn--toggle"
-                data-vehicle-toggle="${esc(vehicle.id)}" type="button">
+                data-vehicle-toggle="${esc(asset.id)}" type="button">
           ${active ? 'Nonaktifkan' : 'Aktifkan'}
         </button>
         <button class="v2-user-btn v2-user-btn--archive"
-                data-vehicle-archive="${esc(vehicle.id)}" type="button">Arsipkan</button>
+                data-vehicle-archive="${esc(asset.id)}" type="button">Arsipkan</button>
       </div>
     </div>`;
 }
@@ -4262,29 +4447,57 @@ function renderV2AdminVehicles() {
   const list = document.getElementById('v2AdminVehicleList');
   if (!list) return;
 
-  const q = vehicleSearch.toLowerCase().trim();
   const allVehicles = getVehicles();
-
   renderV2AdminVehicleStats(allVehicles);
 
-  const filtered = allVehicles.filter(v => {
-    const matchesSearch = !q ||
-      (v.name         || '').toLowerCase().includes(q) ||
-      (v.plateNumber  || '').toLowerCase().includes(q);
-    const matchesStatus =
-      vehicleStatusFilter === 'all'      ? (v.archived !== true || (!!q && matchesSearch)) :
-      vehicleStatusFilter === 'active'   ? (v.archived !== true && v.active !== false) :
-      vehicleStatusFilter === 'inactive' ? (v.archived !== true && v.active === false) :
-      vehicleStatusFilter === 'archived' ? (v.archived === true) : (v.archived !== true);
-    return matchesSearch && matchesStatus;
+  // Feature 10/11/12 — executive Fleet Dashboard (non-archived inventory).
+  injectFleetDashboardStyles();
+  const dashHost = document.getElementById('v2FleetDashboard');
+  const dashModel = computeFleetAssetModel({ vehicles: allVehicles });
+  if (dashHost) dashHost.innerHTML = renderFleetDashboard(dashModel);
+
+  // Full normalized model (incl. archived) — drives the cards + detail drawer.
+  _fleetAssetModel = computeFleetAssetModel({ vehicles: allVehicles, includeArchived: true });
+
+  // Feature 13 — search & filter (type / status / fuel / transmission / query).
+  let assets = _fleetAssetModel.vehicles.filter(v => {
+    if (vehicleStatusFilter === 'archived') return v.archived;
+    if (v.archived) return false;
+    if (vehicleStatusFilter === 'all' || vehicleStatusFilter === '') return true;
+    if (vehicleStatusFilter === 'inactive') return v.status === 'inactive';
+    return v.status === vehicleStatusFilter;
+  });
+  assets = searchFilterVehicles(assets, {
+    query: vehicleSearch,
+    type: vehicleTypeFilter,
+    fuel: vehicleFuelFilter,
+    transmission: vehicleTransmissionFilter,
   });
 
-  if (!filtered.length) {
+  if (!assets.length) {
     list.innerHTML = '<div class="v2-admin-empty">Tidak ada kendaraan ditemukan.</div>';
     return;
   }
 
-  list.innerHTML = filtered.map(buildVehicleCard).join('');
+  list.innerHTML = assets.map(buildVehicleCard).join('');
+
+  // Card → Apple-style detail drawer (replaces the old detail modal).
+  const openDetail = (id) => {
+    const asset = findVehicleAsset(_fleetAssetModel, id);
+    if (asset) openVehicleDetailDrawer(asset, { onEdit: openVehicleFormModal });
+  };
+  list.querySelectorAll('[data-vehicle-detail]').forEach(card => {
+    card.addEventListener('click', e => {
+      if (e.target.closest('button')) return; // action buttons handle themselves
+      openDetail(card.dataset.vehicleDetail);
+    });
+    card.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      if (e.target.closest('button')) return;
+      e.preventDefault();
+      openDetail(card.dataset.vehicleDetail);
+    });
+  });
 
   list.querySelectorAll('[data-vehicle-edit]').forEach(btn => {
     btn.addEventListener('click', () => openVehicleFormModal(btn.dataset.vehicleEdit));
