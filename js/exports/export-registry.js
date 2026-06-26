@@ -105,6 +105,26 @@ export const EXPORT_REPORTS = {
     template: 'dispatch-analytics',
     run: (meta = {}) => window.exportDispatchAnalyticsExcel(meta),
   },
+  // v1.17.1 — Recommendation Accuracy Engine. Same CLIENT-side blob pipeline
+  // (pdfmake / xlsx) as Dispatch Analytics; also excluded from EXPORT_REPORT_ORDER
+  // so it stays out of the operational Analytics dropdown — the Dispatch Analytics
+  // dashboard owns the buttons and resolves these by id.
+  'recommendation-accuracy-pdf': {
+    id: 'recommendation-accuracy-pdf',
+    title: 'Recommendation Accuracy (PDF)',
+    description: 'Akurasi rekomendasi Dispatch Intelligence sebagai PDF.',
+    icon: ICONS.complete,
+    template: 'recommendation-accuracy',
+    run: (meta = {}) => window.exportRecommendationAccuracyPdf(meta),
+  },
+  'recommendation-accuracy-excel': {
+    id: 'recommendation-accuracy-excel',
+    title: 'Recommendation Accuracy (Excel)',
+    description: 'Akurasi rekomendasi Dispatch Intelligence sebagai workbook .xlsx.',
+    icon: ICONS.complete,
+    template: 'recommendation-accuracy',
+    run: (meta = {}) => window.exportRecommendationAccuracyExcel(meta),
+  },
 };
 
 /** Stable display/menu order for every consumer. */

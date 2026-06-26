@@ -18,6 +18,14 @@
 'use strict';
 
 import { getExporter } from '../../docs/pdf-exporter.js';
+// v1.17.1 — the Dispatch Analytics report can APPEND a Recommendation Accuracy
+// section. The accuracy projection lives in its own module (one source of truth);
+// these builders only splice it in when an accuracy model is supplied. Existing
+// callers (no accuracy model) get byte-identical output — no regression.
+import {
+  buildRecommendationAccuracyContent,
+  buildRecommendationAccuracySheets,
+} from './recommendation-accuracy-export.js';
 
 /* ── xlsx-js-style lazy loader (mirrors nor-excel-exporter) ───────────────── */
 
@@ -93,7 +101,7 @@ function simpleTable(headers, rows, widths) {
  * @param {Object} [meta] { periodLabel, generatedBy, appVersion }
  * @returns {Object} pdfmake docDefinition
  */
-export function buildDispatchAnalyticsDocDefinition(model, meta = {}) {
+export function buildDispatchAnalyticsDocDefinition(model, meta = {}, accuracyModel = null) {
   const m = model || {};
   const k = m.kpi || {};
   const conf = k.avgConfidence || {};
@@ -189,6 +197,13 @@ export function buildDispatchAnalyticsDocDefinition(model, meta = {}) {
     ['*', 60],
   ));
 
+  // v1.17.1 — Recommendation Accuracy section (only when supplied; additive).
+  if (accuracyModel) {
+    content.push({ text: '', pageBreak: 'after' });
+    content.push({ text: 'Recommendation Accuracy Engine', style: 'h1', margin: [0, 0, 0, 4] });
+    content.push(...buildRecommendationAccuracyContent(accuracyModel));
+  }
+
   return {
     pageSize: 'A4',
     pageMargins: [34, 36, 34, 40],
@@ -215,7 +230,7 @@ export function buildDispatchAnalyticsDocDefinition(model, meta = {}) {
  * @param {Object} model
  * @returns {Array<{name:string, aoa:Array<Array<string|number>>}>}
  */
-export function buildDispatchAnalyticsSheets(model) {
+export function buildDispatchAnalyticsSheets(model, accuracyModel = null) {
   const m = model || {};
   const k = m.kpi || {};
   const conf = k.avgConfidence || {};
@@ -280,6 +295,9 @@ export function buildDispatchAnalyticsSheets(model) {
     ...((m.explainability && m.explainability.adminOverrideReasons) || []).map((r) => [r.text, r.count]),
   ] });
 
+  // v1.17.1 — append the Recommendation Accuracy sheets (only when supplied).
+  if (accuracyModel) sheets.push(...buildRecommendationAccuracySheets(accuracyModel));
+
   return sheets;
 }
 
@@ -289,8 +307,8 @@ export function buildDispatchAnalyticsSheets(model) {
  * Build the PDF blob for the Dispatch Analytics report.
  * @returns {Promise<{blob:Blob, filename:string}>}
  */
-export async function exportDispatchAnalyticsPdf(model, meta = {}) {
-  const docDef = buildDispatchAnalyticsDocDefinition(model, meta);
+export async function exportDispatchAnalyticsPdf(model, meta = {}, accuracyModel = null) {
+  const docDef = buildDispatchAnalyticsDocDefinition(model, meta, accuracyModel);
   const blob = await getExporter('pdfmake').exportToPdf(docDef);
   return { blob, filename: `${safeFilename('dispatch-analytics')}.pdf` };
 }
@@ -299,10 +317,10 @@ export async function exportDispatchAnalyticsPdf(model, meta = {}) {
  * Build the Excel (.xlsx) blob for the Dispatch Analytics report.
  * @returns {Promise<{blob:Blob, filename:string}>}
  */
-export async function exportDispatchAnalyticsExcel(model, meta = {}) {
+export async function exportDispatchAnalyticsExcel(model, meta = {}, accuracyModel = null) {
   const XLSX = await loadXLSX();
   const wb = XLSX.utils.book_new();
-  for (const sheet of buildDispatchAnalyticsSheets(model)) {
+  for (const sheet of buildDispatchAnalyticsSheets(model, accuracyModel)) {
     const ws = XLSX.utils.aoa_to_sheet(sheet.aoa);
     XLSX.utils.book_append_sheet(wb, ws, sheet.name.slice(0, 31));
   }
@@ -317,11 +335,12 @@ if (typeof window !== 'undefined') {
   window.exportDispatchAnalyticsPdf = (meta = {}) => {
     const m = window._lastDispatchAnalyticsModel;
     if (!m) throw new Error('Buka tab Dispatch Analytics dulu agar model tersedia.');
-    return exportDispatchAnalyticsPdf(m, { ...(window._dispatchAnalyticsMeta || {}), ...meta });
+    // v1.17.1 — bundle the Recommendation Accuracy section when its model is live.
+    return exportDispatchAnalyticsPdf(m, { ...(window._dispatchAnalyticsMeta || {}), ...meta }, window._lastRecommendationAccuracyModel || null);
   };
   window.exportDispatchAnalyticsExcel = (meta = {}) => {
     const m = window._lastDispatchAnalyticsModel;
     if (!m) throw new Error('Buka tab Dispatch Analytics dulu agar model tersedia.');
-    return exportDispatchAnalyticsExcel(m, { ...(window._dispatchAnalyticsMeta || {}), ...meta });
+    return exportDispatchAnalyticsExcel(m, { ...(window._dispatchAnalyticsMeta || {}), ...meta }, window._lastRecommendationAccuracyModel || null);
   };
 }

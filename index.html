@@ -21,9 +21,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Archivo:wght@400;500;600;700;800;900&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=1.1.0" />
+  <link rel="stylesheet" href="style.css?v=1.17.4" />
   <link rel="stylesheet" href="platform.css?v=2.1.0" />
-  <link rel="stylesheet" href="petty-cash.css?v=1.14.1" />
+  <link rel="stylesheet" href="petty-cash.css?v=1.17.4" />
   <link rel="stylesheet" href="vendor/flatpickr.min.css" />
 
   <!-- Startup gating: hides V1 layout until V2 shell is ready.
@@ -454,12 +454,73 @@
             <label for="requestFieldNotes">Catatan</label>
             <textarea id="requestFieldNotes" rows="2" placeholder="Catatan tambahan (opsional)"></textarea>
           </div>
+          <!-- Mode Penugasan (v1.17.4 — Part B · Request Experience Polish).
+               Premium Apple-style option cards replace the legacy checkboxes.
+               The hidden checkboxes below remain the SOURCE OF TRUTH read by
+               requests.js (submit/restore logic unchanged); the cards, the
+               confirmation sheets and the context hint are driven by
+               js/components/request-mode-selector.js. The toggle → Dispatch
+               Policy Engine context mapping lives in services/request-mode.js —
+               no dispatch logic is duplicated. The "Ambulance" card is shown
+               only to a Medical Pelatnas requester (Feature 7). -->
+          <div class="form-group form-full request-mode-group" id="requestModeGroup">
+            <span class="request-mode-group__label" id="requestModeLabel">Mode Penugasan</span>
+            <div class="req-mode-grid" role="group" aria-labelledby="requestModeLabel">
+              <button type="button" class="req-mode-card" id="reqModeCardNoDriver" data-request-mode="noDriver" role="switch" aria-checked="false">
+                <span class="req-mode-card__icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14M6.5 17l1-5.5a2 2 0 0 1 2-1.5h5a2 2 0 0 1 2 1.5l1 5.5"/><circle cx="7.5" cy="17.5" r="1.6"/><circle cx="16.5" cy="17.5" r="1.6"/><path d="M3 8l3.5 1M21 8l-3.5 1"/></svg>
+                </span>
+                <span class="req-mode-card__main">
+                  <span class="req-mode-card__title">Tanpa Driver</span>
+                  <span class="req-mode-card__desc">Hanya kendaraan — rekomendasi driver dilewati.</span>
+                </span>
+                <span class="req-mode-card__tick" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg>
+                </span>
+              </button>
+              <button type="button" class="req-mode-card" id="reqModeCardAmbulance" data-request-mode="ambulance" role="switch" aria-checked="false" hidden>
+                <span class="req-mode-card__icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="10" rx="2"/><path d="M12 10v4M10 12h4"/><path d="M3 13h2M19 13h2"/></svg>
+                </span>
+                <span class="req-mode-card__main">
+                  <span class="req-mode-card__title">Ambulance</span>
+                  <span class="req-mode-card__desc">Ambulance diprioritaskan untuk permintaan medis.</span>
+                </span>
+                <span class="req-mode-card__tick" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg>
+                </span>
+              </button>
+            </div>
+            <div class="req-mode-hint" id="requestModeHint" hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+              <span id="requestModeHintText">Ambulance akan digunakan tanpa penugasan driver.</span>
+            </div>
+            <!-- Source-of-truth inputs (read by requests.js — visually hidden). -->
+            <input type="checkbox" id="requestUseAmbulance" class="req-mode-input" tabindex="-1" aria-hidden="true" />
+            <input type="checkbox" id="requestNoDriver" class="req-mode-input" tabindex="-1" aria-hidden="true" />
+          </div>
         </div>
         <div class="form-actions">
           <button type="button" class="btn-secondary" id="btnCancelRequestForm">Batal</button>
           <button type="submit" class="btn-primary" id="btnSaveRequestForm">Kirim Request</button>
         </div>
       </form>
+    </div>
+  </div>
+</div>
+
+<!-- ===== APPLE CONFIRMATION SHEET — Request Mode (v1.17.4 — Part B, Feature 9) =====
+     A minimal Human-Interface-style sheet shown when a request mode is turned ON.
+     Title/body/buttons are filled by request-mode-selector.js from
+     services/request-mode.js. Dismiss: Batal · ESC · outside click · swipe down. -->
+<div class="req-sheet-overlay" id="requestModeSheet" hidden>
+  <div class="req-sheet" role="dialog" aria-modal="true" aria-labelledby="reqSheetTitle" aria-describedby="reqSheetBody">
+    <span class="req-sheet__grab" aria-hidden="true"></span>
+    <h3 class="req-sheet__title" id="reqSheetTitle"></h3>
+    <p class="req-sheet__body" id="reqSheetBody"></p>
+    <div class="req-sheet__actions">
+      <button type="button" class="req-sheet__btn req-sheet__btn--cancel" id="reqSheetCancel">Batal</button>
+      <button type="button" class="req-sheet__btn req-sheet__btn--confirm" id="reqSheetConfirm">Aktifkan</button>
     </div>
   </div>
 </div>
@@ -1089,6 +1150,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="vendor/flatpickr.min.js"></script>
-<script type="module" src="js/app.js?v=1.17.0"></script>
+<script type="module" src="js/app.js?v=1.17.4"></script>
 </body>
 </html>

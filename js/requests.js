@@ -13,6 +13,11 @@ import { getActiveVehicleNames, getActiveVehicles, registerVehiclesChangeListene
 import { getAssignments } from './assignments.js';
 import { getOverrideLogs, saveRequestRecommendation } from './stores/dispatch-intelligence-store.js';
 import { buildRequestRecommendation } from './services/request-intelligence-service.js';
+import { isMedicalRequester } from './services/dispatch-policy-engine.js';
+import { buildRequestPolicyContext } from './services/request-mode.js';
+import {
+  initRequestModeSelector, setRequestModeVisibility, resetRequestMode, syncRequestModeFromInputs,
+} from './components/request-mode-selector.js';
 import { generateId, timeToMinutes, showToast, initCustomTimeInputPair, getCombinedTimeFromPair, setTimeFieldsFromValue, normalizeTimeValue, expandDateRange, formatDateShort, addHoursToTime, todayString, offsetDate } from './utils.js';
 import { getCurrentUser, hasPermission, isAdmin } from './auth.js';
 import { initFormGuard, resetDirty } from './form-guard.js';
@@ -45,7 +50,7 @@ let onCommentCallback     = null;
  * @param {Object} reqShape  { startDate, startTime, endTime, pax, fullDay, purpose }
  * @returns {Object|null} the compact storable recommendation (buildRequestRecommendation)
  */
-function generateBackgroundRecommendation(reqShape) {
+function generateBackgroundRecommendation(reqShape, policy = {}) {
   try {
     return buildRequestRecommendation({
       request: reqShape,
@@ -53,7 +58,7 @@ function generateBackgroundRecommendation(reqShape) {
       vehicles: getActiveVehicles(),
       assignments: getAssignments(),
       overrideLogs: getOverrideLogs(),
-    });
+    }, { policy });
   } catch (err) {
     console.warn('[Request] background recommendation failed', err);
     return null;
@@ -159,6 +164,9 @@ export function initRequestHandlers() {
   if (form) {
     form.addEventListener('submit', handleRequestSubmit);
   }
+
+  // Premium request mode cards + confirmation sheets (v1.17.4 — Part B).
+  initRequestModeSelector();
 
   const multiDayCheckbox = document.getElementById('requestMultiDay');
   if (multiDayCheckbox) {
@@ -293,6 +301,11 @@ export function openRequestFormModal(requestId = null) {
 
   const form = document.getElementById('requestForm');
   if (form) form.reset();
+
+  // Request mode (v1.17.4): the premium option cards replace the legacy
+  // checkboxes. The "Ambulance" card is shown only to a Medical Pelatnas
+  // requester (Feature 7); "Tanpa Driver" is always available.
+  setRequestModeVisibility(isMedicalRequester(getCurrentUser()));
   // beta.3: driver/vehicle are no longer requester-facing — they are decided by
   // the admin at approval. No driver/vehicle selectors to sync here.
   syncPbsiDatepicker(document.getElementById('requestFieldStartDate'));
@@ -332,6 +345,14 @@ export function openRequestFormModal(requestId = null) {
     const fullDayCb = document.getElementById('requestFullDay');
     if (fullDayCb) fullDayCb.checked = !!norm.fullDay;
     syncRequestFullDayUI();
+
+    // Restore policy options (v1.17.2) onto the hidden source-of-truth inputs,
+    // then reflect them on the premium cards + context hint (v1.17.4).
+    const useAmbCb = document.getElementById('requestUseAmbulance');
+    if (useAmbCb) useAmbCb.checked = !!norm.useAmbulance;
+    const noDrvCb = document.getElementById('requestNoDriver');
+    if (noDrvCb) noDrvCb.checked = !!norm.noDriver;
+    syncRequestModeFromInputs();
   } else {
     // New request — reset to single-day mode without animation
     const multiDayCb = document.getElementById('requestMultiDay');
@@ -355,6 +376,9 @@ export function openRequestFormModal(requestId = null) {
     // Reset passenger count to the minimum (form.reset restores the hidden
     // input; this re-syncs the visible display + button disabled states).
     _syncRequestPaxDisplay(REQUEST_PAX_MIN);
+
+    // Reset the request mode cards (both off) for a fresh request (v1.17.4).
+    resetRequestMode();
   }
 
   const modal = document.getElementById('modalRequestForm');
@@ -483,8 +507,19 @@ function handleRequestSubmit(event) {
     }
   }
 
+  // Dispatch Policy context (v1.17.2). "Gunakan Ambulance" is only honoured for
+  // a Medical Pelatnas requester (Feature 2); "Tanpa Driver" skips the driver
+  // engines (Feature 3). Both are persisted on the request so approval re-applies
+  // the same policy. Admins never have their selection blocked (Feature 4).
+  const isMedical    = isMedicalRequester(user);
+  const useAmbulance = isMedical && (document.getElementById('requestUseAmbulance')?.checked ?? false);
+  const noDriver     = document.getElementById('requestNoDriver')?.checked ?? false;
+  // Toggle → Policy Engine context mapping is centralized in services/request-mode.js
+  // (the same { medicalMode, driverOptional } shape; no dispatch logic duplicated).
+  const policyContext = buildRequestPolicyContext({ useAmbulance, noDriver });
+
   // Background Dispatch Intelligence recommendation (admin-only at approval).
-  const recommendation = generateBackgroundRecommendation({ startDate, startTime, endTime, pax, fullDay: isFullDay, purpose });
+  const recommendation = generateBackgroundRecommendation({ startDate, startTime, endTime, pax, fullDay: isFullDay, purpose }, policyContext);
   const recFields = recommendation ? {
     recommendedDriver:  recommendation.recommendedDriver,
     recommendedVehicle: recommendation.recommendedVehicle,
@@ -508,6 +543,8 @@ function handleRequestSubmit(event) {
       purpose,
       notes,
       pax,
+      useAmbulance,
+      noDriver,
       ...recFields,
       updatedAt: new Date().toISOString(),
     };
@@ -535,6 +572,8 @@ function handleRequestSubmit(event) {
       purpose,
       notes,
       pax,
+      useAmbulance,
+      noDriver,
       ...recFields,
       status: 'pending',
       createdAt: new Date().toISOString(),

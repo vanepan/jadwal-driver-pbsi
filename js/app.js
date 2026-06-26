@@ -61,6 +61,14 @@ import { initAssignmentDispatchHints } from './components/assignment-dispatch-hi
 import { saveOverrideLog, getOverrideLogs, getAllRequestRecommendations } from './stores/dispatch-intelligence-store.js';
 import { computeDispatchAnalyticsModel } from './analytics/dispatch-analytics-engine.js';
 import { injectDispatchAnalyticsStyles, renderDispatchAnalyticsDashboard } from './components/dispatch-analytics-dashboard.js';
+// v1.17.1 Recommendation Accuracy Engine — read-only accuracy analytics rendered
+// beside the Dispatch Analytics dashboard (same admin section).
+import { computeRecommendationAccuracyModel } from './analytics/recommendation-accuracy-engine.js';
+import { injectRecommendationAccuracyStyles, renderRecommendationAccuracyDashboard } from './components/recommendation-accuracy-dashboard.js';
+// v1.17.2 Dispatch Intelligence Policy Engine — the single eligibility-rule layer.
+// applyAnalyticsPolicy filters the analytics INPUTS (ambulance + Akuntes) without
+// touching any analytics formula; operational data is never deleted.
+import { applyAnalyticsPolicy } from './services/dispatch-policy-engine.js';
 // beta.3.1: pure approval-decision helpers (effective dispatch, classification, audit record).
 import {
   resolveEffectiveDispatch,
@@ -77,6 +85,7 @@ import * as DocumentEngine from './docs/doc-engine.js';
 import './docs/templates/analytics-summary.js';   // registers 'analytics-summary'
 import './exports/analytics/analytics-export-client.js'; // Analytics Export Phase A — window.exportAnalyticsPoc()
 import './exports/analytics/dispatch-analytics-export.js'; // v1.17.0 — window.exportDispatchAnalyticsPdf/Excel()
+import './exports/analytics/recommendation-accuracy-export.js'; // v1.17.1 — window.exportRecommendationAccuracyPdf/Excel()
 import { listExportReports, getExportReport, runExportReport } from './exports/export-registry.js'; // single source of truth for report exports
 import { logExportSuccess, logExportFailure, ensureExportHistoryLoadedAndSubscribed, resetExportHistorySync, getExportHistoryCache, subscribeExportHistoryChangeListener } from './exports/export-history.js'; // metadata logging for every export
 import { renderExportCenter as renderModernExportCenter } from './exports/export-center.js'; // v1.12.1C modern Export Center (registry + metadata)
@@ -2528,7 +2537,10 @@ function initV2AdministrationWorkspace() {
           <div id="v2AuditList" class="v2-audit-list"></div>
         </div>
         <div id="v2AdminSectionConfig" style="display:none;"></div>
-        <div id="v2AdminSectionDispatchAnalytics" style="display:none;"></div>
+        <div id="v2AdminSectionDispatchAnalytics" style="display:none;">
+          <div id="v2DispatchAnalyticsDashboard"></div>
+          <div id="v2RecommendationAccuracyDashboard" style="margin-top:1.1rem;"></div>
+        </div>
         <div id="v2AdminSectionAnalytics" class="v2-analytics-claude v2-analytics-shell" style="display:none;">
           <!-- Analytics Header (command area): title + date range + filters + export -->
           <div class="v2-analytics-header" id="v2AnalyticsHeader">
@@ -2687,6 +2699,22 @@ function initV2AdministrationWorkspace() {
       return;
     }
 
+    // v1.17.1: Recommendation Accuracy learning-trend toggle + export buttons.
+    const raaWindowBtn = e.target.closest('[data-raa-window]');
+    if (raaWindowBtn) {
+      const w = raaWindowBtn.dataset.raaWindow;
+      if (w && w !== recommendationAccuracyTrendWindow) {
+        recommendationAccuracyTrendWindow = w;
+        renderRecommendationAccuracySection();
+      }
+      return;
+    }
+    const raaExportBtn = e.target.closest('[data-raa-export]');
+    if (raaExportBtn) {
+      exportRecommendationAccuracy(raaExportBtn.dataset.raaExport, raaExportBtn);
+      return;
+    }
+
     const button = e.target.closest('[data-admin-section]');
     if (button) {
       const sectionKey = button.dataset.adminSection;
@@ -2711,6 +2739,13 @@ function initV2AdministrationWorkspace() {
     if (e.target.id === 'v2AuditSearch') {
       auditSearch = e.target.value;
       if (activeAdminSection === 'audit') renderAuditCenter();
+    }
+    // v1.17.1: Recommendation Accuracy live search (driver / vehicle tables).
+    const raaSearch = e.target.closest && e.target.closest('[data-raa-search]');
+    if (raaSearch) {
+      if (raaSearch.dataset.raaSearch === 'driver') recommendationAccuracyDriverSearch = raaSearch.value;
+      else recommendationAccuracyVehicleSearch = raaSearch.value;
+      renderRecommendationAccuracySection();
     }
   });
   ws.addEventListener('change', e => {
@@ -2754,6 +2789,13 @@ function initV2AdministrationWorkspace() {
     if (e.target.id === 'v2AnalyticsBidangFilter') {
       analyticsBidangFilter = e.target.value;
       if (activeAdminSection === 'analytics') refreshAnalyticsDisplay();
+    }
+    // v1.17.1: Recommendation Accuracy sort selects (driver / vehicle tables).
+    const raaSort = e.target.closest && e.target.closest('[data-raa-sort]');
+    if (raaSort) {
+      if (raaSort.dataset.raaSort === 'driver') recommendationAccuracyDriverSort = raaSort.value;
+      else recommendationAccuracyVehicleSort = raaSort.value;
+      renderRecommendationAccuracySection();
     }
   });
   document.getElementById('v2AdminAddUser')?.addEventListener('click', () => {
@@ -5250,32 +5292,143 @@ function _animateAnalyticsRegion(root) {
    touched. */
 let dispatchAnalyticsTrendWindow = '30d';
 
-/** Build the analytics model from live subsystem + operational data. */
+/** Build the analytics model from live subsystem + operational data. The
+ *  Dispatch Policy Engine filters the INPUTS first so ambulance (F5) and Akuntes
+ *  (F6) never participate in analytics — without changing any analytics math and
+ *  without deleting operational data (history/audit/export still see everything). */
 function buildDispatchAnalyticsModel() {
+  const filtered = applyAnalyticsPolicy({
+    vehicles: getVehicles(), requests, assignments, overrideLogs: getOverrideLogs(),
+  });
   return computeDispatchAnalyticsModel({
-    overrideLogs:           getOverrideLogs(),
+    overrideLogs:           filtered.overrideLogs,
     requestRecommendations: getAllRequestRecommendations(),
-    requests,
+    requests:               filtered.requests,
     drivers:                getDrivers(),
-    vehicles:               getVehicles(),
-    assignments,
+    vehicles:               filtered.vehicles,
+    assignments:            filtered.assignments,
   });
 }
 
 /** Render (or re-render) the Dispatch Analytics section into its container. */
 function renderDispatchAnalyticsSection() {
-  const host = document.getElementById('v2AdminSectionDispatchAnalytics');
+  const host = document.getElementById('v2DispatchAnalyticsDashboard');
+  if (host) {
+    injectDispatchAnalyticsStyles();
+    try {
+      const model = buildDispatchAnalyticsModel();
+      // Publish for the export hooks (mirrors the operational analytics exports).
+      window._lastDispatchAnalyticsModel = model;
+      window._dispatchAnalyticsMeta = { generatedBy: (getCurrentUser() && (getCurrentUser().name || getCurrentUser().username)) || '—', appVersion: APP_VERSION, periodLabel: 'Semua riwayat' };
+      host.innerHTML = renderDispatchAnalyticsDashboard(model, { trendWindow: dispatchAnalyticsTrendWindow });
+    } catch (err) {
+      console.warn('[DispatchAnalytics] render failed', err);
+      host.innerHTML = '<div class="daa"><div class="daa-sec"><div class="daa-empty"><div class="daa-empty__ic">⚠️</div><div class="daa-empty__t">Gagal memuat Dispatch Analytics</div><div class="daa-empty__d">Terjadi kesalahan saat menyusun data. Coba muat ulang halaman.</div></div></div></div>';
+    }
+  }
+  // v1.17.1 — render the Recommendation Accuracy dashboard beside it.
+  renderRecommendationAccuracySection();
+}
+
+/* ── Recommendation Accuracy (v1.17.1) ─────────────────────────────────────
+   A read-only accuracy dashboard rendered beside Dispatch Analytics. It REUSES
+   the override log + stored recommendations to measure HOW ACCURATE the
+   recommendations are over time — no engine, workflow, or schema is touched. */
+let recommendationAccuracyTrendWindow = '30d';
+let recommendationAccuracyDriverSort = 'ranking';
+let recommendationAccuracyDriverSearch = '';
+let recommendationAccuracyVehicleSort = 'ranking';
+let recommendationAccuracyVehicleSearch = '';
+
+/** Build the accuracy model from the live subsystem + registry data. The Policy
+ *  Engine filters the INPUTS first (ambulance F5 + Akuntes F6) so excluded
+ *  entities never enter Recommendation Accuracy — analytics math is untouched. */
+function buildRecommendationAccuracyModel() {
+  const filtered = applyAnalyticsPolicy({
+    vehicles: getVehicles(), requests, overrideLogs: getOverrideLogs(),
+  });
+  return computeRecommendationAccuracyModel({
+    overrideLogs:           filtered.overrideLogs,
+    requestRecommendations: getAllRequestRecommendations(),
+    requests:               filtered.requests,
+    drivers:                getDrivers(),
+    vehicles:               filtered.vehicles,
+  });
+}
+
+/** Render (or re-render) the Recommendation Accuracy dashboard. Restores focus
+ *  + caret to the active search field so live search does not lose focus. */
+function renderRecommendationAccuracySection() {
+  const host = document.getElementById('v2RecommendationAccuracyDashboard');
   if (!host) return;
-  injectDispatchAnalyticsStyles();
+  injectRecommendationAccuracyStyles();
+
+  // Remember which search field (if any) is being edited so we can restore it.
+  const active = document.activeElement;
+  const editingKind = active && active.matches && active.matches('[data-raa-search]') ? active.dataset.raaSearch : null;
+  const caret = editingKind ? active.selectionStart : null;
+
   try {
-    const model = buildDispatchAnalyticsModel();
-    // Publish for the export hooks (mirrors the operational analytics exports).
-    window._lastDispatchAnalyticsModel = model;
-    window._dispatchAnalyticsMeta = { generatedBy: (getCurrentUser() && (getCurrentUser().name || getCurrentUser().username)) || '—', appVersion: APP_VERSION, periodLabel: 'Semua riwayat' };
-    host.innerHTML = renderDispatchAnalyticsDashboard(model, { trendWindow: dispatchAnalyticsTrendWindow });
+    const model = buildRecommendationAccuracyModel();
+    window._lastRecommendationAccuracyModel = model;
+    window._recommendationAccuracyMeta = { generatedBy: (getCurrentUser() && (getCurrentUser().name || getCurrentUser().username)) || '—', appVersion: APP_VERSION, periodLabel: 'Semua riwayat' };
+    host.innerHTML = renderRecommendationAccuracyDashboard(model, {
+      trendWindow: recommendationAccuracyTrendWindow,
+      driverSort: recommendationAccuracyDriverSort, driverSearch: recommendationAccuracyDriverSearch,
+      vehicleSort: recommendationAccuracyVehicleSort, vehicleSearch: recommendationAccuracyVehicleSearch,
+    });
   } catch (err) {
-    console.warn('[DispatchAnalytics] render failed', err);
-    host.innerHTML = '<div class="daa"><div class="daa-sec"><div class="daa-empty"><div class="daa-empty__ic">⚠️</div><div class="daa-empty__t">Gagal memuat Dispatch Analytics</div><div class="daa-empty__d">Terjadi kesalahan saat menyusun data. Coba muat ulang halaman.</div></div></div></div>';
+    console.warn('[RecommendationAccuracy] render failed', err);
+    host.innerHTML = '<div class="daa raa"><div class="daa-sec"><div class="daa-empty"><div class="daa-empty__ic">⚠️</div><div class="daa-empty__t">Gagal memuat Recommendation Accuracy</div><div class="daa-empty__d">Terjadi kesalahan saat menyusun data. Coba muat ulang halaman.</div></div></div></div>';
+    return;
+  }
+
+  if (editingKind) {
+    const field = host.querySelector(`[data-raa-search="${editingKind}"]`);
+    if (field) {
+      field.focus();
+      if (caret != null) { try { field.setSelectionRange(caret, caret); } catch (_) { /* number/email inputs reject caret */ } }
+    }
+  }
+}
+
+/** Export the Recommendation Accuracy report (PDF | Excel) via the export
+ *  registry + export-history log (mirrors exportDispatchAnalytics). */
+async function exportRecommendationAccuracy(format, btn) {
+  const isExcel = format === 'excel';
+  const reportId = isExcel ? 'recommendation-accuracy-excel' : 'recommendation-accuracy-pdf';
+  const def = getExportReport(reportId);
+  if (!def) return;
+  const prev = btn ? btn.textContent : null;
+  if (btn) { btn.disabled = true; btn.textContent = isExcel ? '⏳ Excel…' : '⏳ PDF…'; }
+
+  const u = getCurrentUser();
+  const exportCtx = {
+    reportId: def.id, reportTitle: def.title,
+    periodLabel: 'Semua riwayat', dateRangeKey: 'all', filters: {},
+    generatedBy: (u && (u.displayName || u.name || u.username)) || '—',
+    userId: u?.id, username: u?.username, appVersion: APP_VERSION,
+  };
+  const startedAt = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const elapsed = () => Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt);
+
+  try {
+    const result = await runExportReport(reportId);
+    if (result && result.blob) {
+      const url = URL.createObjectURL(result.blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = result.filename || `${reportId}.${isExcel ? 'xlsx' : 'pdf'}`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    }
+    logExportSuccess(exportCtx, { fileSize: result?.blob?.size, durationMs: elapsed() });
+    showToast(isExcel ? 'Excel berhasil dibuat.' : 'PDF berhasil dibuat.');
+  } catch (err) {
+    console.error('[RecommendationAccuracy] export failed:', err);
+    logExportFailure(exportCtx, { error: err, durationMs: elapsed() });
+    showToast(isExcel ? 'Gagal membuat Excel.' : 'Gagal membuat PDF.');
+  } finally {
+    if (btn) { btn.disabled = false; if (prev != null) btn.textContent = prev; }
   }
 }
 
@@ -7923,6 +8076,11 @@ function buildLiveApprovalPackage(request) {
       vehicles: getActiveVehiclesFromStore(),
       assignments,
       overrideLogs: getOverrideLogs(),
+    }, {
+      // Re-apply the request's Dispatch Policy (v1.17.2) so the admin sees the
+      // recommendation under the same rules the requester chose (medical /
+      // "Tanpa Driver"). The admin's own selection is never blocked (Feature 4).
+      policy: { medicalMode: !!request.useAmbulance, driverOptional: !!request.noDriver },
     });
   } catch (err) {
     console.warn('[Approval] live recommendation package failed', err);
