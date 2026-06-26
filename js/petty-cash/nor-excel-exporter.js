@@ -18,11 +18,12 @@
 'use strict';
 
 import {
-  getSettings, getActiveCycle, getNors, getAudit,
+  getSettings, getActiveCycle, getNors, getAudit, getExpenseById,
 } from './petty-cash-store.js';
 import { activeExpenses, recordNorExport } from './petty-cash-service.js';
 import {
   fmtShort, fmtLong, terbilangCap, unitDisplay, splitList, AUDIT_LABEL, todayISO,
+  REIMBURSE_ITEMS, isReimburseExpense,
 } from './petty-cash-config.js';
 
 const XLSX_SRC = 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js';
@@ -90,8 +91,17 @@ function sheetFromAOA(XLSX, aoa, colWidths, merges) {
 }
 
 /* ── Sheet 1: Rincian Pengeluaran ────────────────────────────────── */
+/* Explicit reimbursement component columns (BBM · Tol · Parkir · Lembur ·
+   Others) sit between Keterangan and Biaya. Only reimbursement rows populate
+   them; every other expense leaves them blank. Biaya (Rp) remains the single
+   total — components are not re-summed. (v1.17.4.1) */
 function rincianSheet(XLSX, rows, title) {
-  const header = ['No', 'Ref', 'Tanggal', 'Unit', 'Kategori', 'Rincian', 'Keterangan', 'Biaya (Rp)', 'Status'];
+  const reimburseHeads = REIMBURSE_ITEMS.map(it => it.label);
+  const header = [
+    'No', 'Ref', 'Tanggal', 'Unit', 'Kategori', 'Rincian', 'Keterangan',
+    ...reimburseHeads, 'Biaya (Rp)', 'Status',
+  ];
+  const lastCol = header.length - 1;
   const aoa = [
     [T('PENGURUS BESAR PBSI', S.title)],
     [T('Bidang Sarana dan Prasarana', S.sub)],
@@ -102,22 +112,26 @@ function rincianSheet(XLSX, rows, title) {
   let total = 0;
   rows.forEach((e, i) => {
     total += e.amount || 0;
+    const rd = (isReimburseExpense(e) && e.reimbursementDetail) ? e.reimbursementDetail : null;
+    const reimburseCells = REIMBURSE_ITEMS.map(it =>
+      rd ? N(Number(rd[it.key]) || 0, S.money) : T('', S.cell));
     aoa.push([
       T(i + 1, S.cellC), T(e.refNumber, S.cell), T(fmtShort(e.expenseDate || e.date), S.cellC),
       T(unitDisplay(e), S.cell), T(e.category, S.cell), T(e.description, S.cell),
-      T(e.notes || '—', S.cell), N(e.amount, S.money),
+      T(e.notes || '—', S.cell), ...reimburseCells, N(e.amount, S.money),
       T(e.status === 'locked' ? 'Termasuk NOR' : e.status === 'archived' ? 'Arsip' : 'Tersedia', S.cellC),
     ]);
   });
   aoa.push([
     T('TOTAL', S.total), T('', S.total), T('', S.total), T('', S.total), T('', S.total),
-    T('', S.total), T('', S.total), N(total, S.totalMoney), T('', S.total),
+    T('', S.total), T('', S.total), ...REIMBURSE_ITEMS.map(() => T('', S.total)),
+    N(total, S.totalMoney), T('', S.total),
   ]);
-  const widths = [5, 14, 13, 16, 18, 34, 18, 15, 13];
+  const widths = [5, 14, 13, 16, 18, 34, 18, ...REIMBURSE_ITEMS.map(() => 12), 15, 13];
   const merges = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } },
-    { s: { r: 1, c: 0 }, e: { r: 1, c: 8 } },
-    { s: { r: 2, c: 0 }, e: { r: 2, c: 8 } },
+    { s: { r: 0, c: 0 }, e: { r: 0, c: lastCol } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: lastCol } },
+    { s: { r: 2, c: 0 }, e: { r: 2, c: lastCol } },
   ];
   return sheetFromAOA(XLSX, aoa, widths, merges);
 }
@@ -169,11 +183,18 @@ function download(XLSX, wb, filename) {
 export async function exportNorExcel(nor) {
   const XLSX = await loadXLSX();
   const settings = getSettings();
-  const rows = (nor.items || []).map(it => ({
-    refNumber: it.refNumber || '-', expenseDate: it.expenseDate || it.date,
-    unit: it.unit, category: it.category || '-', description: it.description || it.desc,
-    notes: it.keterangan || it.ket, amount: it.amount, status: 'locked',
-  }));
+  const rows = (nor.items || []).map(it => {
+    // Reimbursement detail is resolved live from the source expense (the snapshot
+    // never stored it) so the component columns can populate. Read-only — the
+    // amount/total still come from the snapshot. (v1.17.4.1)
+    const exp = it.expenseId ? getExpenseById(it.expenseId) : null;
+    return {
+      refNumber: it.refNumber || '-', expenseDate: it.expenseDate || it.date,
+      unit: it.unit, category: it.category || '-', description: it.description || it.desc,
+      notes: it.keterangan || it.ket, amount: it.amount, status: 'locked',
+      reimbursementDetail: (exp && isReimburseExpense(exp)) ? exp.reimbursementDetail : null,
+    };
+  });
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, rincianSheet(XLSX, rows, 'NOTA ORGANISASI REALISASI PETTY CASH'), 'Rincian Pengeluaran');
   XLSX.utils.book_append_sheet(wb, ringkasanSheet(XLSX, {

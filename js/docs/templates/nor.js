@@ -104,11 +104,31 @@ function build(vm) {
   const bottom = d.letterBottom || [];
   const recap = d.recap || [];
 
+  /* Rincian cell — description plus an optional reimbursement breakdown. The
+     breakdown is a clean indented detail inside the same cell: no new columns,
+     no extra table, no borders. Only non-zero components reach the view model. */
+  const rincianCell = (it) => {
+    if (!it.reimburse || !it.reimburse.length) return { text: it.description, fontSize: 9 };
+    return {
+      stack: [
+        { text: it.description, fontSize: 9 },
+        ...it.reimburse.map(r => ({
+          columns: [
+            { text: r.label, fontSize: 7.5, color: DIM },
+            { text: r.amountFmt, fontSize: 7.5, color: DIM, alignment: 'right' },
+          ],
+          columnGap: 6,
+          margin: [10, 1, 0, 0],
+        })),
+      ],
+    };
+  };
+
   /* Rincian table body. */
   const itemRows = (d.items || []).map(it => ([
     { text: String(it.no), fontSize: 9, alignment: 'center' },
     { text: it.dateFmt, fontSize: 9, alignment: 'center' },
-    { text: it.description, fontSize: 9 },
+    rincianCell(it),
     { text: it.amountFmt, fontSize: 9, alignment: 'right' },
     { text: it.keterangan, fontSize: 9 },
   ]));

@@ -1152,11 +1152,16 @@ function addModal() {
 function reimbursementDetailSection(e) {
   const detail = e && e.reimbursementDetail;
   if (!hasReimburseDetail(detail)) return '';
-  const rows = REIMBURSE_ITEMS.map((it, i) => `
+  const rows = REIMBURSE_ITEMS.map((it, i) => {
+    // Empty categories read as an em dash (—) instead of "Rp0" so the slip stays
+    // clean while still listing every component. (v1.17.4.1)
+    const v = Number(detail[it.key]) || 0;
+    return `
     <div style="display:flex;justify-content:space-between;padding:11px 14px;${i < REIMBURSE_ITEMS.length - 1 ? 'border-bottom:1px solid var(--border2)' : ''}">
       <span style="font-size:12px;color:var(--muted)">${esc(it.label)}</span>
-      <span style="font-size:12.5px;font-weight:600;font-family:'JetBrains Mono',monospace">${esc(rp(Number(detail[it.key]) || 0))}</span>
-    </div>`).join('');
+      <span style="font-size:12.5px;font-weight:600;font-family:'JetBrains Mono',monospace;${v > 0 ? '' : 'color:var(--muted)'}">${v > 0 ? esc(rp(v)) : '—'}</span>
+    </div>`;
+  }).join('');
   return `
     <div style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase;margin-bottom:10px">Rincian Reimbursement</div>
     <div style="display:flex;flex-direction:column;gap:0;border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:20px">

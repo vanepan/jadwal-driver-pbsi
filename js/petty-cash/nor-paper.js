@@ -36,12 +36,23 @@ function recapBlock(s) {
  */
 export function renderNorPaper(vm, logoSrc, paperId) {
   const d = vm || {};
+  // Reimbursement breakdown: a clean indented detail inside the Rincian cell —
+  // no new columns, no extra table, no borders. Only non-zero components arrive
+  // here (the view model drops zeros). (v1.17.4.1)
+  const detailBlock = (it) => {
+    if (!it.reimburse || !it.reimburse.length) return '';
+    const lines = it.reimburse.map(r => (
+      `<div style="display:flex;justify-content:space-between;gap:14px;font-size:7.5pt;color:#555;padding-left:12px;line-height:1.35">` +
+      `<span>${esc(r.label)}</span><span style="text-align:right;white-space:nowrap">${esc(r.amountFmt)}</span></div>`
+    )).join('');
+    return `<div style="margin-top:2px">${lines}</div>`;
+  };
   const itemRows = (d.items || []).map(it => (
-    `<tr><td style="border:1px solid #000;padding:3px 5px;text-align:center">${it.no}</td>` +
-    `<td style="border:1px solid #000;padding:3px 5px;text-align:center">${esc(it.dateFmt)}</td>` +
-    `<td style="border:1px solid #000;padding:3px 5px">${esc(it.description)}</td>` +
-    `<td style="border:1px solid #000;padding:3px 5px;text-align:right">${esc(it.amountFmt)}</td>` +
-    `<td style="border:1px solid #000;padding:3px 5px">${esc(it.keterangan)}</td></tr>`
+    `<tr><td style="border:1px solid #000;padding:3px 5px;text-align:center;vertical-align:top">${it.no}</td>` +
+    `<td style="border:1px solid #000;padding:3px 5px;text-align:center;vertical-align:top">${esc(it.dateFmt)}</td>` +
+    `<td style="border:1px solid #000;padding:3px 5px;vertical-align:top">${esc(it.description)}${detailBlock(it)}</td>` +
+    `<td style="border:1px solid #000;padding:3px 5px;text-align:right;vertical-align:top">${esc(it.amountFmt)}</td>` +
+    `<td style="border:1px solid #000;padding:3px 5px;vertical-align:top">${esc(it.keterangan)}</td></tr>`
   )).join('');
 
   const balanceTable = (awalW) => (

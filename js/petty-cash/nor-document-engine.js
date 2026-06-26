@@ -14,9 +14,10 @@
 import * as DocumentEngine from '../docs/doc-engine.js';
 import '../docs/templates/nor.js'; // side-effect: registers 'nor'
 
-import { getSettings, getCycles } from './petty-cash-store.js';
+import { getSettings, getCycles, getExpenseById } from './petty-cash-store.js';
 import {
   fmtLong, fmtShort, rpDoc, rpTable, terbilangCap, splitList,
+  REIMBURSE_ITEMS, isReimburseExpense, hasReimburseDetail,
 } from './petty-cash-config.js';
 
 /** Resolve the opening-balance date shown on the NOR ("Dana Awal (…)"). */
@@ -26,6 +27,21 @@ function danaAwalDate(nor) {
     if (c && c.startDate) return fmtLong(c.startDate);
   }
   return fmtLong(nor.norDate);
+}
+
+/**
+ * Resolve the non-zero reimbursement components for a NOR line item from its
+ * source expense. Returns [] for non-reimbursement items, missing expenses, or
+ * legacy records without a detail. Pure read — never recomputes the total.
+ */
+function reimburseLines(expenseId) {
+  if (!expenseId) return [];
+  const exp = getExpenseById(expenseId);
+  if (!exp || !isReimburseExpense(exp) || !hasReimburseDetail(exp.reimbursementDetail)) return [];
+  const rd = exp.reimbursementDetail;
+  return REIMBURSE_ITEMS
+    .filter(r => (Number(rd[r.key]) || 0) > 0)
+    .map(r => ({ label: r.label, amountFmt: rpTable(Number(rd[r.key]) || 0) }));
 }
 
 /**
@@ -47,6 +63,11 @@ export function buildNorViewModel(nor) {
     description: it.description || it.desc || '',
     keterangan: it.keterangan || it.ket || '—',
     amountFmt: rpTable(it.amount || 0),
+    // Reimbursement breakdown (presentation only, v1.17.4.1): resolved live from
+    // the source expense via the snapshot's expenseId — the same data the detail
+    // drawer reads. No stored snapshot field, no recalculation. Only non-zero
+    // components are emitted so zero-value rows never render on the NOR.
+    reimburse: reimburseLines(it.expenseId),
   }));
 
   return {
