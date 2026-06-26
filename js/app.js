@@ -80,12 +80,21 @@ import {
 // v1.16.4.12 Auto Assignment Assistant: premium approval intelligence panel
 // (recommendation card, confidence, apply, comparison, breakdown, timeline).
 import { mountApprovalIntelligencePanel, updateApprovalComparison } from './components/approval-intelligence-panel.js';
+import { openDecisionReplay, closeDecisionReplayDrawer } from './components/decision-replay-drawer.js'; // v1.17.5 — Decision Replay & Explainable AI drawer
+// v1.17.6 Driver Wellness Intelligence — read-only wellness interpretation layer
+// (health score, fatigue, burnout, capacity health) rendered as its own admin
+// section in the Analytics module. Reuses capacity + workload + unified scoring.
+import { computeDriverWellnessModel, findDriverWellness } from './services/driver-wellness-service.js';
+import { injectDriverWellnessStyles, renderDriverWellnessDashboard } from './components/driver-wellness-dashboard.js';
+import { openDriverWellnessDrawer } from './components/driver-wellness-drawer.js';
 import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver } from './auth.js';
 import * as DocumentEngine from './docs/doc-engine.js';
 import './docs/templates/analytics-summary.js';   // registers 'analytics-summary'
 import './exports/analytics/analytics-export-client.js'; // Analytics Export Phase A — window.exportAnalyticsPoc()
 import './exports/analytics/dispatch-analytics-export.js'; // v1.17.0 — window.exportDispatchAnalyticsPdf/Excel()
 import './exports/analytics/recommendation-accuracy-export.js'; // v1.17.1 — window.exportRecommendationAccuracyPdf/Excel()
+import './exports/analytics/decision-replay-export.js'; // v1.17.5 — window.exportDecisionReplayPdf/Excel()
+import './exports/analytics/driver-wellness-export.js'; // v1.17.6 — window.exportDriverWellnessPdf/Excel()
 import { listExportReports, getExportReport, runExportReport } from './exports/export-registry.js'; // single source of truth for report exports
 import { logExportSuccess, logExportFailure, ensureExportHistoryLoadedAndSubscribed, resetExportHistorySync, getExportHistoryCache, subscribeExportHistoryChangeListener } from './exports/export-history.js'; // metadata logging for every export
 import { renderExportCenter as renderModernExportCenter } from './exports/export-center.js'; // v1.12.1C modern Export Center (registry + metadata)
@@ -238,6 +247,7 @@ const ADMIN_SECTION_DEFS = [
   { key: 'config', label: 'Konfigurasi', subtitle: 'Atur parameter operasional, notifikasi, sistem, dan integrasi Telegram.' },
   { key: 'analytics', label: 'Analytics', subtitle: 'Ringkasan operasional berbasis data aktual — assignment, driver, kendaraan, dan bidang.' },
   { key: 'dispatchanalytics', label: 'Dispatch Analytics', subtitle: 'Dashboard eksekutif Dispatch Intelligence — akurasi, override, confidence, intelijen driver/kendaraan, dan tren.' },
+  { key: 'wellness', label: 'Driver Wellness', subtitle: 'Keberlanjutan operasional — skor kesehatan, kelelahan, burnout, dan capacity health per driver.' },
 ];
 
 /* v1.14.0: which admin sections belong to which platform module. Drives the
@@ -247,7 +257,7 @@ const ADMIN_SECTION_DEFS = [
 const ADMIN_MODULE_SECTIONS = {
   driverops:   ['drivers', 'vehicles', 'audit'],
   konfigurasi: ['users', 'config'],
-  analytics:   ['analytics', 'dispatchanalytics'],
+  analytics:   ['analytics', 'dispatchanalytics', 'wellness'],
 };
 
 /**
@@ -946,6 +956,40 @@ async function navAnalyticsExecutive() {
   await mountAnalyticsExecutive(document.getElementById('v2AnalyticsExecWorkspace'));
 }
 
+/* v1.17.6.1 Analytics Navigation Integration — desktop panel entry points for
+   the Dispatch Intelligence sections (Dispatch Analytics, Recommendation
+   Accuracy, Driver Wellness). They REUSE the exact navAnalyticsDriver pattern:
+   set the analytics module + the target admin section, then render the shared
+   administration workspace (setWorkspace('administration') → renderV2AdminWorkspace
+   → the section's existing render branch). No new section, render fn, or logic.
+   Recommendation Accuracy renders WITHIN the Dispatch Analytics section
+   (#v2RecommendationAccuracyDashboard, rendered beside it by
+   renderDispatchAnalyticsSection), so it navigates to that section and scrolls
+   the accuracy dashboard into view. */
+function navDispatchAnalytics() {
+  activeAdminModule = 'analytics';
+  activeAdminSection = 'dispatchanalytics';
+  setV2PanelNavActive('v2NavDispatchAnalytics');
+  setCrumb('ANALYTICS', 'Dispatch Analytics');
+  setWorkspace('administration');
+}
+function navRecommendationAccuracy() {
+  activeAdminModule = 'analytics';
+  activeAdminSection = 'dispatchanalytics'; // RA renders inside the Dispatch Analytics section
+  setV2PanelNavActive('v2NavRecommendationAccuracy');
+  setCrumb('ANALYTICS', 'Recommendation Accuracy');
+  setWorkspace('administration');
+  const host = document.getElementById('v2RecommendationAccuracyDashboard');
+  if (host && host.scrollIntoView) host.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function navDriverWellness() {
+  activeAdminModule = 'analytics';
+  activeAdminSection = 'wellness';
+  setV2PanelNavActive('v2NavDriverWellness');
+  setCrumb('ANALYTICS', 'Driver Wellness');
+  setWorkspace('administration');
+}
+
 /* ── MODUL: Konfigurasi ── */
 function navManajemenUser() {
   activeAdminModule = 'konfigurasi';
@@ -1274,6 +1318,22 @@ function initV2Panel() {
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"/></svg>
         Analytics Driver
       </button>
+      <!-- v1.17.6.1 Analytics Navigation Integration — desktop panel entries for
+           the Dispatch Intelligence sections that were previously reachable only
+           from the mobile-only in-content tab strip (.v2-admin-nav). Reuses the
+           existing nav-item style + an already-used bar-chart icon. -->
+      <button class="v2-panel-nav-item" id="v2NavDispatchAnalytics" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"/></svg>
+        Dispatch Analytics
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavRecommendationAccuracy" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"/></svg>
+        Recommendation Accuracy
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavDriverWellness" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"/></svg>
+        Driver Wellness
+      </button>
       <button class="v2-panel-nav-item" id="v2NavAnalyticsPetty" type="button">
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
         Analytics Petty Cash
@@ -1402,6 +1462,11 @@ function initV2Panel() {
 
   // MODUL Analytics
   document.getElementById('v2NavAnalyticsDriver')?.addEventListener('click', navAnalyticsDriver);
+  // v1.17.6.1 Analytics Navigation Integration — desktop entries for the Dispatch
+  // Intelligence sections (previously reachable only from the mobile tab strip).
+  document.getElementById('v2NavDispatchAnalytics')?.addEventListener('click', navDispatchAnalytics);
+  document.getElementById('v2NavRecommendationAccuracy')?.addEventListener('click', navRecommendationAccuracy);
+  document.getElementById('v2NavDriverWellness')?.addEventListener('click', navDriverWellness);
   document.getElementById('v2NavAnalyticsPetty')?.addEventListener('click', navAnalyticsPettyCash);
   document.getElementById('v2NavAnalyticsGabungan')?.addEventListener('click', navAnalyticsExecutive);
 
@@ -2541,6 +2606,9 @@ function initV2AdministrationWorkspace() {
           <div id="v2DispatchAnalyticsDashboard"></div>
           <div id="v2RecommendationAccuracyDashboard" style="margin-top:1.1rem;"></div>
         </div>
+        <div id="v2AdminSectionWellness" style="display:none;">
+          <div id="v2DriverWellnessDashboard"></div>
+        </div>
         <div id="v2AdminSectionAnalytics" class="v2-analytics-claude v2-analytics-shell" style="display:none;">
           <!-- Analytics Header (command area): title + date range + filters + export -->
           <div class="v2-analytics-header" id="v2AnalyticsHeader">
@@ -2699,6 +2767,27 @@ function initV2AdministrationWorkspace() {
       return;
     }
 
+    // v1.17.6: Driver Wellness window toggle + export buttons + row → drawer.
+    const dwiWindowBtn = e.target.closest('[data-dwi-window]');
+    if (dwiWindowBtn) {
+      const w = dwiWindowBtn.dataset.dwiWindow;
+      if (w && w !== driverWellnessWindow) {
+        driverWellnessWindow = w;
+        renderDriverWellnessSection();
+      }
+      return;
+    }
+    const dwiExportBtn = e.target.closest('[data-dwi-export]');
+    if (dwiExportBtn) {
+      exportDriverWellness(dwiExportBtn.dataset.dwiExport, dwiExportBtn);
+      return;
+    }
+    const dwiRow = e.target.closest('[data-dwi-driver]');
+    if (dwiRow) {
+      openDriverWellnessDetail(dwiRow.dataset.dwiDriver);
+      return;
+    }
+
     // v1.17.1: Recommendation Accuracy learning-trend toggle + export buttons.
     const raaWindowBtn = e.target.closest('[data-raa-window]');
     if (raaWindowBtn) {
@@ -2723,6 +2812,16 @@ function initV2AdministrationWorkspace() {
         renderV2AdminWorkspace();
       }
       return;
+    }
+  });
+
+  // v1.17.6: keyboard-open the Driver Wellness detail drawer (rows are role=button).
+  ws.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const dwiRow = e.target.closest && e.target.closest('[data-dwi-driver]');
+    if (dwiRow) {
+      e.preventDefault();
+      openDriverWellnessDetail(dwiRow.dataset.dwiDriver);
     }
   });
 
@@ -2993,6 +3092,7 @@ function renderV2AdminWorkspace() {
   const configSection      = document.getElementById('v2AdminSectionConfig');
   const analyticsSection   = document.getElementById('v2AdminSectionAnalytics');
   const dispatchAnalyticsSection = document.getElementById('v2AdminSectionDispatchAnalytics');
+  const wellnessSection    = document.getElementById('v2AdminSectionWellness');
   const placeholderSection = document.getElementById('v2AdminSectionPlaceholder');
   const overviewRow        = document.getElementById('v2AdminOverviewRow');
 
@@ -3000,6 +3100,10 @@ function renderV2AdminWorkspace() {
   // own — set centrally so the per-section branches below don't each need a line.
   if (dispatchAnalyticsSection) {
     dispatchAnalyticsSection.style.display = (activeAdminSection === 'dispatchanalytics') ? '' : 'none';
+  }
+  // v1.17.6: the Driver Wellness section follows the same central-hide pattern.
+  if (wellnessSection) {
+    wellnessSection.style.display = (activeAdminSection === 'wellness') ? '' : 'none';
   }
 
   // v1.14.0: the tab strip is the mobile sub-nav — show only the tabs that
@@ -3267,6 +3371,18 @@ function renderV2AdminWorkspace() {
     if (_auditSec3) _auditSec3.style.display = 'none';
     if (overviewRow) overviewRow.innerHTML = '';
     renderDispatchAnalyticsSection();
+
+  } else if (activeAdminSection === 'wellness') {
+    if (usersSection)       usersSection.style.display       = 'none';
+    if (driversSection)     driversSection.style.display     = 'none';
+    if (vehiclesSection)    vehiclesSection.style.display    = 'none';
+    if (configSection)      configSection.style.display      = 'none';
+    if (analyticsSection)   analyticsSection.style.display   = 'none';
+    if (placeholderSection) placeholderSection.style.display = 'none';
+    const _auditSec4 = document.getElementById('v2AdminSectionAudit');
+    if (_auditSec4) _auditSec4.style.display = 'none';
+    if (overviewRow) overviewRow.innerHTML = '';
+    renderDriverWellnessSection();
 
   } else {
     if (usersSection)       usersSection.style.display       = 'none';
@@ -5467,6 +5583,88 @@ async function exportDispatchAnalytics(format, btn) {
     showToast(isExcel ? 'Excel berhasil dibuat.' : 'PDF berhasil dibuat.');
   } catch (err) {
     console.error('[DispatchAnalytics] export failed:', err);
+    logExportFailure(exportCtx, { error: err, durationMs: elapsed() });
+    showToast(isExcel ? 'Gagal membuat Excel.' : 'Gagal membuat PDF.');
+  } finally {
+    if (btn) { btn.disabled = false; if (prev != null) btn.textContent = prev; }
+  }
+}
+
+/* ── Driver Wellness Intelligence (v1.17.6) ────────────────────────────────
+   A read-only wellness INTERPRETATION dashboard in the Analytics module. It
+   REUSES the driver capacity + workload engines + unified scoring to derive a
+   Driver Health Score, fatigue, burnout, and capacity health from operational
+   data — it changes no recommendation, dispatch, policy, scoring, or schema. */
+let driverWellnessWindow = '30d';
+
+/** Build the wellness model from the live drivers + operational assignments. */
+function buildDriverWellnessModel() {
+  return computeDriverWellnessModel({
+    drivers: getDrivers(),
+    assignments,
+    window: driverWellnessWindow,
+  });
+}
+
+/** Render (or re-render) the Driver Wellness section into its container. */
+function renderDriverWellnessSection() {
+  const host = document.getElementById('v2DriverWellnessDashboard');
+  if (!host) return;
+  injectDriverWellnessStyles();
+  try {
+    const model = buildDriverWellnessModel();
+    // Publish for the export hooks (mirrors the Dispatch Analytics exports).
+    window._lastDriverWellnessModel = model;
+    window._driverWellnessMeta = { generatedBy: (getCurrentUser() && (getCurrentUser().name || getCurrentUser().username)) || '—', appVersion: APP_VERSION, periodLabel: `Jendela ${model.windowDays} hari` };
+    host.innerHTML = renderDriverWellnessDashboard(model);
+  } catch (err) {
+    console.warn('[DriverWellness] render failed', err);
+    host.innerHTML = '<div class="dwi"><div class="dwi-sec"><div class="dwi-empty"><div class="dwi-empty__ic">⚠️</div><div class="dwi-empty__t">Gagal memuat Driver Wellness</div><div class="dwi-empty__d">Terjadi kesalahan saat menyusun data. Coba muat ulang halaman.</div></div></div></div>';
+  }
+}
+
+/** Open the Apple-style detail drawer for one driver (Feature 7). Resolves the
+ *  driver from the published model so the drawer reuses the SAME computed object
+ *  (nothing is recomputed for the drawer). */
+function openDriverWellnessDetail(driverId) {
+  const model = window._lastDriverWellnessModel || buildDriverWellnessModel();
+  const driver = findDriverWellness(model, driverId);
+  if (driver) openDriverWellnessDrawer(driver);
+}
+
+/** Export the Driver Wellness report (PDF | Excel) via the export registry +
+ *  export-history log (mirrors exportDispatchAnalytics). */
+async function exportDriverWellness(format, btn) {
+  const isExcel = format === 'excel';
+  const reportId = isExcel ? 'driver-wellness-excel' : 'driver-wellness-pdf';
+  const def = getExportReport(reportId);
+  if (!def) return;
+  const prev = btn ? btn.textContent : null;
+  if (btn) { btn.disabled = true; btn.textContent = isExcel ? '⏳ Excel…' : '⏳ PDF…'; }
+
+  const u = getCurrentUser();
+  const exportCtx = {
+    reportId: def.id, reportTitle: def.title,
+    periodLabel: 'Semua riwayat', dateRangeKey: 'all', filters: {},
+    generatedBy: (u && (u.displayName || u.name || u.username)) || '—',
+    userId: u?.id, username: u?.username, appVersion: APP_VERSION,
+  };
+  const startedAt = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const elapsed = () => Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt);
+
+  try {
+    const result = await runExportReport(reportId);
+    if (result && result.blob) {
+      const url = URL.createObjectURL(result.blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = result.filename || `${reportId}.${isExcel ? 'xlsx' : 'pdf'}`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    }
+    logExportSuccess(exportCtx, { fileSize: result?.blob?.size, durationMs: elapsed() });
+    showToast(isExcel ? 'Excel berhasil dibuat.' : 'PDF berhasil dibuat.');
+  } catch (err) {
+    console.error('[DriverWellness] export failed:', err);
     logExportFailure(exportCtx, { error: err, durationMs: elapsed() });
     showToast(isExcel ? 'Gagal membuat Excel.' : 'Gagal membuat PDF.');
   } finally {
@@ -8171,8 +8369,75 @@ function _syncApproveComparison() {
 
 function closeApproveRequestModal() {
   approveModalRequestId = null;
+  closeDecisionReplayDrawer();
   const modal = document.getElementById('modalApproveRequest');
   if (modal) modal.style.display = 'none';
+}
+
+/**
+ * Decision Replay & Explainable AI (v1.17.5). Open the side drawer that replays
+ * the CURRENT request's recommendation step-by-step. Read-only: it reuses the
+ * live recommendation package + the stored recommendation + the admin's current
+ * selection; it recomputes nothing. Export reuses the registered blob pipeline.
+ */
+function openDecisionReplayForApproval() {
+  const request = requests.find(item => item.id === approveModalRequestId);
+  if (!request) return;
+  const driverSel  = document.getElementById('approveDriverSelect');
+  const vehicleSel = document.getElementById('approveVehicleSelect');
+
+  openDecisionReplay({
+    pkg: buildLiveApprovalPackage(request),
+    stored: request.recommendation || null,
+    request,
+    recommended: { driver: request.recommendedDriver || '', vehicle: request.recommendedVehicle || '' },
+    selection: {
+      driver:  driverSel  ? driverSel.value  : '',
+      vehicle: vehicleSel ? vehicleSel.value : '',
+    },
+  }, {
+    onExport: (format, model) => { _downloadDecisionReplay(format, model); },
+  });
+}
+
+/** Download the Decision Replay as PDF/Excel through the registered exporter. */
+async function _downloadDecisionReplay(format, model) {
+  const isExcel = format === 'excel';
+  const reportId = isExcel ? 'decision-replay-excel' : 'decision-replay-pdf';
+  const def = getExportReport(reportId);
+  if (!def) return;
+
+  // Publish the model for the window-hook exporter (mirrors the analytics hooks).
+  window._lastDecisionReplayModel = model;
+  const u = getCurrentUser();
+  window._decisionReplayMeta = {
+    generatedBy: (u && (u.displayName || u.name || u.username)) || '—',
+    appVersion: APP_VERSION,
+  };
+  const exportCtx = {
+    reportId: def.id, reportTitle: def.title,
+    periodLabel: model && model.requestId ? `Request ${model.requestId}` : '—', dateRangeKey: 'single', filters: {},
+    generatedBy: window._decisionReplayMeta.generatedBy,
+    userId: u?.id, username: u?.username, appVersion: APP_VERSION,
+  };
+  const startedAt = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const elapsed = () => Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt);
+  try {
+    const result = await runExportReport(reportId);
+    if (result && result.blob) {
+      const url = URL.createObjectURL(result.blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = result.filename || `${reportId}.${isExcel ? 'xlsx' : 'pdf'}`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    }
+    logExportSuccess(exportCtx, { fileSize: result?.blob?.size, durationMs: elapsed() });
+    showToast(isExcel ? 'Excel berhasil dibuat.' : 'PDF berhasil dibuat.');
+  } catch (err) {
+    console.error('[DecisionReplay] export failed:', err);
+    logExportFailure(exportCtx, { error: err, durationMs: elapsed() });
+    showToast(isExcel ? 'Gagal membuat Excel.' : 'Gagal membuat PDF.');
+  }
 }
 
 /** Is the current selection an override (differs from the recommendation)? */
@@ -8226,6 +8491,7 @@ function initApproveRequestModal() {
   document.getElementById('approveForm')?.addEventListener('submit', confirmApproveRequest);
   document.getElementById('approveDriverSelect')?.addEventListener('change', _onApproveSelectChange);
   document.getElementById('approveVehicleSelect')?.addEventListener('change', _onApproveSelectChange);
+  document.getElementById('btnOpenDecisionReplay')?.addEventListener('click', openDecisionReplayForApproval);
   const overlay = document.getElementById('modalApproveRequest');
   overlay?.addEventListener('click', (e) => { if (e.target === overlay) closeApproveRequestModal(); });
 }
@@ -8626,6 +8892,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateAllModules();   // also calls setDashboardAssignments + renderDriverDashboard
     renderViews();
     if (activeAdminSection === 'dispatchanalytics') renderDispatchAnalyticsSection();
+    if (activeAdminSection === 'wellness') renderDriverWellnessSection();
     checkAndSendH1Reminders(assignments, requests, getUserByUsername, getUsers);
     checkAndSendHoursReminders(assignments, requests, getUserByUsername, getUsers);
   });
@@ -8637,6 +8904,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateAllModules();
     updatePermissionUI();
     if (activeAdminSection === 'dispatchanalytics') renderDispatchAnalyticsSection();
+    if (activeAdminSection === 'wellness') renderDriverWellnessSection();
     // Refresh comment modal if open for one of the updated requests
     refreshCommentThreadIfOpen(requests);
   });

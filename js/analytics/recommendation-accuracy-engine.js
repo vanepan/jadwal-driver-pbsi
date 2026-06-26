@@ -321,14 +321,18 @@ function buildCalibration(logs, recIndex) {
 
 /* ── Feature 5 — Override Severity ────────────────────────────────────── */
 
-const SEVERITY_BANDS = Object.freeze([
+// Exported (v1.17.5) so Decision Replay reuses the SAME severity scale — the
+// single source of truth for "how big was this override?" (no duplicated band
+// thresholds anywhere). Reused by js/services/decision-replay-service.js.
+export const SEVERITY_BANDS = Object.freeze([
   { key: 'minor', label: 'Minor', min: 0 },
   { key: 'medium', label: 'Medium', min: 5 },
   { key: 'major', label: 'Major', min: 15 },
   { key: 'critical', label: 'Critical', min: 30 },
 ]);
 
-function severityBand(diff) {
+/** Band an absolute dispatch-score difference into an override severity. */
+export function severityBand(diff) {
   const d = Math.abs(diff);
   let band = SEVERITY_BANDS[0];
   for (const b of SEVERITY_BANDS) if (d >= b.min) band = b;

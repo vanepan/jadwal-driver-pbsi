@@ -125,6 +125,46 @@ export const EXPORT_REPORTS = {
     template: 'recommendation-accuracy',
     run: (meta = {}) => window.exportRecommendationAccuracyExcel(meta),
   },
+  // v1.17.5 — Decision Replay & Explainable AI. Same CLIENT-side blob pipeline
+  // (pdfmake / xlsx) as the analytics exports; excluded from EXPORT_REPORT_ORDER
+  // so it stays out of the operational Analytics dropdown — the Decision Replay
+  // drawer owns its own Export buttons and resolves these by id. No CSV.
+  'decision-replay-pdf': {
+    id: 'decision-replay-pdf',
+    title: 'Decision Replay (PDF)',
+    description: 'Replay keputusan Dispatch Intelligence sebagai PDF.',
+    icon: ICONS.complete,
+    template: 'decision-replay',
+    run: (meta = {}) => window.exportDecisionReplayPdf(meta),
+  },
+  'decision-replay-excel': {
+    id: 'decision-replay-excel',
+    title: 'Decision Replay (Excel)',
+    description: 'Replay keputusan Dispatch Intelligence sebagai workbook .xlsx.',
+    icon: ICONS.complete,
+    template: 'decision-replay',
+    run: (meta = {}) => window.exportDecisionReplayExcel(meta),
+  },
+  // v1.17.6 — Driver Wellness Intelligence. Same CLIENT-side blob pipeline
+  // (pdfmake / xlsx) as the analytics exports; excluded from EXPORT_REPORT_ORDER
+  // so it stays out of the operational Analytics dropdown — the Driver Wellness
+  // dashboard owns its own export buttons and resolves these by id. No CSV.
+  'driver-wellness-pdf': {
+    id: 'driver-wellness-pdf',
+    title: 'Driver Wellness (PDF)',
+    description: 'Dashboard kesehatan & keberlanjutan driver sebagai PDF.',
+    icon: ICONS.driver,
+    template: 'driver-wellness',
+    run: (meta = {}) => window.exportDriverWellnessPdf(meta),
+  },
+  'driver-wellness-excel': {
+    id: 'driver-wellness-excel',
+    title: 'Driver Wellness (Excel)',
+    description: 'Dashboard kesehatan & keberlanjutan driver sebagai workbook .xlsx.',
+    icon: ICONS.driver,
+    template: 'driver-wellness',
+    run: (meta = {}) => window.exportDriverWellnessExcel(meta),
+  },
 };
 
 /** Stable display/menu order for every consumer. */

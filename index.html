@@ -537,6 +537,11 @@
            panel — recommendation, confidence, apply, comparison, breakdown,
            explanation, timeline. Rendered by approval-intelligence-panel.js. -->
       <div id="approveIntelligence"></div>
+      <!-- Decision Replay & Explainable AI (v1.17.5): opens the side drawer that
+           replays this recommendation step-by-step. Additive trigger only — the
+           drawer is rendered by decision-replay-drawer.js. -->
+      <button type="button" class="btn-secondary" id="btnOpenDecisionReplay"
+              style="width:100%;margin-bottom:.9rem;">🧠 Lihat Decision Replay</button>
       <form id="approveForm" novalidate>
         <div class="approve-section-label">Penyesuaian</div>
         <div class="form-grid">
@@ -1150,6 +1155,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="vendor/flatpickr.min.js"></script>
-<script type="module" src="js/app.js?v=1.17.4.1"></script>
+<script type="module" src="js/app.js?v=1.17.6.1"></script>
 </body>
 </html>
