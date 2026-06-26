@@ -28,6 +28,9 @@ import {
   getNors, getNorById, getExpenses, getExpenseById,
 } from './petty-cash-store.js';
 import * as svc from './petty-cash-service.js';
+import {
+  rankUnitSuggestions, soleCompletion, pushMru,
+} from '../services/unit-autocomplete-engine.js';
 import { buildNorViewModel } from './nor-document-engine.js';
 import { renderNorPaper } from './nor-paper.js';
 import { previewNorPdf } from './nor-pdf-exporter.js';
@@ -53,6 +56,10 @@ const st = {
   newCycleBalance: '',
   settingsDraft: null, settingsDirty: false,
   toast: null, _toastT: null,
+  // Nama Unit autocomplete (v1.17.4 — Part A). Managed in place (the dropdown is
+  // a sibling of the focused input, never the input itself) so typing never loses
+  // focus or caret across the full-render model.
+  _acOpen: false, _acIndex: -1, _acItems: [],
 };
 
 let root = null, bound = false, opened = false, listening = false;
@@ -956,9 +963,123 @@ const FLD_INPUT = 'width:100%;margin-top:6px;background:var(--input);border:1px 
 function unitExtraHtml(f) {
   if (f.unit !== 'Others') return '';
   return `<label style="display:block"><span style="${FLD_LABEL}">Nama Unit *</span>
-    <input name="customUnit" list="pcBidangOptions" autocomplete="off" data-act="formInput" data-focus="customUnit" value="${esc(f.customUnit)}" placeholder="Contoh: Sekretariat, Humas, Turnamen, PP PBSI" style="${FLD_INPUT}"/>
-    <datalist id="pcBidangOptions">${svc.bidangRoster().map(b => `<option value="${esc(b.name)}"></option>`).join('')}</datalist>
-    <span style="display:block;margin-top:5px;font-size:10.5px;color:var(--muted)">Cocokkan dengan nama bidang bila tersedia — dipakai untuk analitik penggunaan dana per bidang.</span></label>`;
+    <div class="pc-ac" data-pc-ac>
+      <input name="customUnit" data-act="formInput" data-ac-input data-focus="customUnit" value="${esc(f.customUnit)}"
+        autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+        role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="pcUnitAcMenu"
+        placeholder="Contoh: Sekretariat, Humas, Turnamen, PP PBSI" style="${FLD_INPUT}"/>
+      <div id="pcUnitAcMenu" class="pc-ac-menu" role="listbox" aria-label="Saran nama unit" hidden></div>
+    </div>
+    <span style="display:block;margin-top:5px;font-size:10.5px;color:var(--muted)">Ketik untuk mencari bidang — gunakan ↑ ↓ untuk memilih, Tab/Enter untuk melengkapi. Dipakai untuk analitik penggunaan dana per bidang.</span></label>`;
+}
+
+/* ── Nama Unit autocomplete (v1.17.4 — Part A · Petty Cash Intelligence) ──────
+   An Apple-style, keyboard-navigable suggestion dropdown that replaces the
+   native datalist. Ranking + learning live in the PURE unit-autocomplete-engine
+   (exact > startsWith > contains > recently-used > alpha; Akuntes excluded via
+   the Policy Engine). The MRU list is LOCAL-only (localStorage) — no Firebase
+   schema change. The dropdown is a sibling of the input and is patched in place,
+   so the focused field is never replaced (no caret loss). */
+const PC_UNIT_MRU_KEY = 'pcUnitMru';
+function getUnitMru() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(PC_UNIT_MRU_KEY) || '[]');
+    return Array.isArray(arr) ? arr.filter((x) => typeof x === 'string' && x.trim()) : [];
+  } catch (_) { return []; }
+}
+function recordUnitMru(value) {
+  try { localStorage.setItem(PC_UNIT_MRU_KEY, JSON.stringify(pushMru(getUnitMru(), value))); } catch (_) {}
+}
+/** Roster names + locally-learned custom units → the suggestion source. */
+function unitCandidates() {
+  return svc.bidangRoster().map((b) => b.name).concat(getUnitMru());
+}
+/** Learn a custom unit on save — only for "Others" with a real name (Feature 4). */
+function recordCustomUnitUse(f) {
+  if (f && f.unit === 'Others' && f.customUnit && f.customUnit.trim()) recordUnitMru(f.customUnit.trim());
+}
+
+function acMenuInnerHtml() {
+  if (!st._acItems.length) {
+    return `<div class="pc-ac-empty">Tidak ada saran — tekan Enter untuk memakai teks yang diketik.</div>`;
+  }
+  return st._acItems.map((it, i) => {
+    const active = i === st._acIndex;
+    const tag = it.mru ? `<span class="pc-ac-tag">Baru</span>` : '';
+    return `<div class="pc-ac-item${active ? ' pc-ac-active' : ''}" role="option" aria-selected="${active ? 'true' : 'false'}" data-act="acPick" data-val="${esc(it.name)}" data-i="${i}">
+      <span class="pc-ac-name">${esc(it.name)}</span>${tag}</div>`;
+  }).join('');
+}
+/** Recompute suggestions for the current customUnit text and patch the menu DOM. */
+function refreshUnitAc({ open } = {}) {
+  if (!root) return;
+  const query = st.form.customUnit || '';
+  st._acItems = rankUnitSuggestions(query, unitCandidates(), getUnitMru());
+  if (open != null) st._acOpen = open;
+  if (st._acIndex >= st._acItems.length) st._acIndex = st._acItems.length - 1;
+  paintUnitAc();
+}
+/** Push the current AC state into the DOM (menu open/closed, items, highlight). */
+function paintUnitAc() {
+  if (!root) return;
+  const menu = root.querySelector('#pcUnitAcMenu');
+  const input = root.querySelector('[data-ac-input]');
+  if (!menu || !input) return;
+  const show = st._acOpen && st._acItems.length > 0;
+  menu.hidden = !show;
+  input.setAttribute('aria-expanded', show ? 'true' : 'false');
+  if (show) menu.innerHTML = acMenuInnerHtml();
+}
+function closeUnitAc() {
+  st._acOpen = false; st._acIndex = -1;
+  const menu = root && root.querySelector('#pcUnitAcMenu');
+  const input = root && root.querySelector('[data-ac-input]');
+  if (menu) menu.hidden = true;
+  if (input) input.setAttribute('aria-expanded', 'false');
+}
+/** Commit a chosen value into the form + input, then close the menu. */
+function commitUnitAc(value) {
+  st.form.customUnit = value; st.form._err = '';
+  const input = root && root.querySelector('[data-ac-input]');
+  if (input) { input.value = value; }
+  clearAddError();
+  closeUnitAc();
+  if (input) input.focus();
+}
+/** Keyboard handler for the Nama Unit field (Arrow / Enter / Tab / Escape). */
+function onUnitAcKeydown(e) {
+  const input = e.target.closest && e.target.closest('[data-ac-input]');
+  if (!input) return;
+  const n = st._acItems.length;
+  switch (e.key) {
+    case 'ArrowDown':
+      e.preventDefault();
+      if (!st._acOpen) { refreshUnitAc({ open: true }); st._acIndex = 0; paintUnitAc(); return; }
+      st._acIndex = n ? (st._acIndex + 1) % n : -1; paintUnitAc(); return;
+    case 'ArrowUp':
+      e.preventDefault();
+      if (!st._acOpen) { refreshUnitAc({ open: true }); st._acIndex = n - 1; paintUnitAc(); return; }
+      st._acIndex = n ? (st._acIndex - 1 + n) % n : -1; paintUnitAc(); return;
+    case 'Enter':
+      if (st._acOpen && st._acIndex >= 0 && st._acItems[st._acIndex]) {
+        e.preventDefault(); commitUnitAc(st._acItems[st._acIndex].name);
+      }
+      return;
+    case 'Tab': {
+      // IDE-style: a highlighted item, or the sole remaining suggestion, fills.
+      if (st._acOpen && st._acIndex >= 0 && st._acItems[st._acIndex]) {
+        e.preventDefault(); commitUnitAc(st._acItems[st._acIndex].name); return;
+      }
+      const sole = soleCompletion(st.form.customUnit || '', st._acItems);
+      if (sole) { e.preventDefault(); commitUnitAc(sole); }
+      return;
+    }
+    case 'Escape':
+      if (st._acOpen) { e.preventDefault(); e.stopPropagation(); closeUnitAc(); }
+      return;
+    default:
+      return;
+  }
 }
 function amountRegionHtml(f) {
   if (!formIsReimburse(f)) {
@@ -1204,6 +1325,18 @@ function bindDelegation() {
   root.addEventListener('click', onClick);
   root.addEventListener('input', onInput);
   root.addEventListener('change', onChange);
+  // Nama Unit autocomplete (v1.17.4): keyboard navigation + close-on-blur.
+  root.addEventListener('keydown', onUnitAcKeydown);
+  root.addEventListener('focusout', (e) => {
+    // Close the dropdown when focus truly leaves the autocomplete (not when it
+    // moves to a menu item). A microtask defer lets the click on an item land.
+    const ac = e.target.closest && e.target.closest('[data-pc-ac]');
+    if (!ac) return;
+    setTimeout(() => {
+      const active = document.activeElement;
+      if (!active || !active.closest || !active.closest('[data-pc-ac]')) closeUnitAc();
+    }, 0);
+  });
 }
 
 function actorEl(e) { return e.target.closest('[data-act]'); }
@@ -1235,6 +1368,7 @@ async function onClick(e) {
     case 'closeDetail': setState({ detailId: null }); return;
     case 'pickReceipt': { const inp = root.querySelector('#pcReceiptInput'); if (inp) inp.click(); return; }
     case 'submitAdd': return submitAdd();
+    case 'acPick': { e.preventDefault(); commitUnitAc(el.dataset.val || ''); return; }
     case 'deleteExpense': return doDeleteExpense(id);
     case 'archiveExpense': return doArchiveExpense(id);
     case 'restoreExpense': return doRestoreExpense(id);
@@ -1283,7 +1417,12 @@ function onInput(e) {
   // value, so state just needs to stay in sync for the next structural render
   // (open/close/submit). Read-only previews that depend on a field are patched
   // in place below, without touching the form. (v1.13.2 focus-retention fix)
-  if (act === 'formInput') { st.form[el.name] = v; st.form._err = ''; clearAddError(); return; }
+  if (act === 'formInput') {
+    st.form[el.name] = v; st.form._err = ''; clearAddError();
+    // Nama Unit (Others): recompute + open the suggestion dropdown in place.
+    if (el.name === 'customUnit') { st._acIndex = -1; refreshUnitAc({ open: true }); }
+    return;
+  }
   // Reimbursement component: update state and recompute the read-only total in
   // place (no structural rebuild) so the typed field keeps focus + caret.
   if (act === 'reimburseInput') {
@@ -1337,6 +1476,9 @@ function patchSettingsStats() {
    and TAB order all preserved. Replaces the former full render() on Unit change. */
 function patchFormDynamic() {
   if (!root) return;
+  // Toggling Unit rebuilds the Nama Unit region — reset the autocomplete so a
+  // stale dropdown never lingers when the field appears/disappears.
+  st._acOpen = false; st._acIndex = -1; st._acItems = [];
   const ue = root.querySelector('#pcUnitExtra');
   if (ue) ue.innerHTML = unitExtraHtml(st.form);
   const ar = root.querySelector('#pcAmountRegion');
@@ -1420,10 +1562,12 @@ async function submitAdd() {
   try {
     if (st.editId) {
       const updated = await svc.updateExpense(st.editId, payload);
+      recordCustomUnitUse(f);
       setState({ addOpen: false, editId: null, form: blankForm() });
       toast(`Pengeluaran ${updated.refNumber} diperbarui`);
     } else {
       const exp = await svc.createExpense(payload);
+      recordCustomUnitUse(f);
       setState({ addOpen: false, form: blankForm() });
       toast(`Pengeluaran ${exp.refNumber} tersimpan`);
     }

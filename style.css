@@ -3359,3 +3359,168 @@ input[type="number"]::-webkit-inner-spin-button {
   background: linear-gradient(to left, rgba(255,255,255,0.85), transparent);
   opacity: 1;
 }
+
+/* ============================================================
+   REQUEST MODE SELECTOR + CONFIRMATION SHEET (v1.17.4 — Part B)
+   Premium Apple-style option cards that replace the legacy request
+   checkboxes, plus a minimal Human-Interface confirmation sheet.
+   Colors use platform.css tokens (--surface / --accent / --muted …)
+   so the whole component is dark-mode safe with no overrides.
+   ============================================================ */
+
+/* Hidden source-of-truth checkboxes (read by requests.js). */
+.req-mode-input {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0; border: 0;
+  clip: rect(0 0 0 0); clip-path: inset(50%);
+  overflow: hidden; white-space: nowrap;
+}
+
+.request-mode-group { display: flex; flex-direction: column; gap: 9px; }
+.request-mode-group__label {
+  font-size: 12px; font-weight: 600; color: var(--muted, #5B5953);
+  letter-spacing: .01em;
+}
+
+.req-mode-grid { display: flex; gap: 12px; }
+
+/* ── Option card ── */
+.req-mode-card {
+  position: relative;
+  flex: 1 1 0; min-width: 0;
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 14px 15px;
+  text-align: left;
+  background: var(--surface, #fff);
+  border: 1.5px solid var(--border-strong, #DAD7D2);
+  border-radius: 14px;
+  cursor: pointer;
+  font: inherit; color: var(--text, #1A1917);
+  transition: border-color .16s ease, box-shadow .16s ease, background .16s ease, transform .08s ease;
+}
+.req-mode-card:hover { border-color: var(--accent, #A8292F); box-shadow: 0 0 0 3px rgba(168,41,47,.07); }
+.req-mode-card:active { transform: scale(.985); }
+.req-mode-card:focus-visible { outline: 2px solid var(--accent, #A8292F); outline-offset: 2px; }
+.req-mode-card[hidden] { display: none; }
+
+.req-mode-card.is-selected {
+  border-color: var(--accent, #A8292F);
+  background: var(--surface-2, #FBFAF8);
+  box-shadow: 0 0 0 3px rgba(168,41,47,.12);
+}
+
+.req-mode-card__icon {
+  flex: none;
+  width: 38px; height: 38px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 11px;
+  background: var(--hover, #F2F0EC);
+  color: var(--muted, #5B5953);
+  transition: background .16s ease, color .16s ease;
+}
+.req-mode-card__icon svg { width: 21px; height: 21px; }
+.req-mode-card.is-selected .req-mode-card__icon { background: var(--accent, #A8292F); color: var(--on-accent, #fff); }
+
+.req-mode-card__main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.req-mode-card__title { font-size: 13.5px; font-weight: 650; color: var(--text, #1A1917); }
+.req-mode-card__desc { font-size: 11.5px; line-height: 1.45; color: var(--muted, #5B5953); }
+
+.req-mode-card__tick {
+  position: absolute; top: 11px; right: 11px;
+  width: 20px; height: 20px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 999px;
+  background: var(--accent, #A8292F); color: var(--on-accent, #fff);
+  opacity: 0; transform: scale(.4);
+  transition: opacity .16s ease, transform .18s cubic-bezier(.34,1.56,.64,1);
+}
+.req-mode-card__tick svg { width: 12px; height: 12px; }
+.req-mode-card.is-selected .req-mode-card__tick { opacity: 1; transform: scale(1); }
+
+/* ── Context hint (Feature 10) — subtle, secondary, no warning color ── */
+.req-mode-hint {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: var(--surface-2, #FBFAF8);
+  border: 1px solid var(--border, #E8E6E2);
+  color: var(--muted, #5B5953);
+  font-size: 11.5px; line-height: 1.4;
+  animation: reqHintIn .2s ease;
+}
+.req-mode-hint[hidden] { display: none; }
+.req-mode-hint svg { flex: none; width: 15px; height: 15px; color: var(--info, #3B5BA9); }
+@keyframes reqHintIn { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ── Apple confirmation sheet (Feature 9) ── */
+.req-sheet-overlay {
+  position: fixed; inset: 0; z-index: 400;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  background: var(--scrim, rgba(28,26,23,.36));
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  opacity: 0; transition: opacity .2s ease;
+}
+.req-sheet-overlay[hidden] { display: none; }
+.req-sheet-overlay.is-open { opacity: 1; }
+
+.req-sheet {
+  width: 100%; max-width: 340px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #E8E6E2);
+  border-radius: 18px;
+  box-shadow: var(--shadow-lg, 0 18px 50px -12px rgba(28,26,23,.28));
+  padding: 22px 22px 16px;
+  text-align: center;
+  transform: scale(.92) translateY(8px);
+  opacity: .6;
+  transition: transform .24s cubic-bezier(.34,1.3,.64,1), opacity .2s ease;
+}
+.req-sheet-overlay.is-open .req-sheet { transform: scale(1) translateY(0); opacity: 1; }
+
+.req-sheet__grab {
+  display: none;
+  width: 38px; height: 4px; margin: 0 auto 14px;
+  border-radius: 999px; background: var(--border-strong, #DAD7D2);
+}
+.req-sheet__title { font-size: 16px; font-weight: 700; color: var(--text, #1A1917); margin: 0 0 6px; }
+.req-sheet__body { font-size: 12.5px; line-height: 1.5; color: var(--muted, #5B5953); margin: 0 0 18px; }
+.req-sheet__actions { display: flex; gap: 10px; }
+.req-sheet__btn {
+  flex: 1 1 0;
+  padding: 11px 14px;
+  border-radius: 11px;
+  font: inherit; font-size: 13.5px; font-weight: 650;
+  cursor: pointer;
+  transition: background .14s ease, border-color .14s ease, transform .08s ease;
+}
+.req-sheet__btn:active { transform: scale(.97); }
+.req-sheet__btn:focus-visible { outline: 2px solid var(--accent, #A8292F); outline-offset: 2px; }
+.req-sheet__btn--cancel {
+  background: var(--surface-2, #FBFAF8);
+  border: 1px solid var(--border-strong, #DAD7D2);
+  color: var(--text, #1A1917);
+}
+.req-sheet__btn--cancel:hover { background: var(--hover, #F2F0EC); }
+.req-sheet__btn--confirm {
+  background: var(--accent, #A8292F);
+  border: 1px solid var(--accent, #A8292F);
+  color: var(--on-accent, #fff);
+}
+.req-sheet__btn--confirm:hover { filter: brightness(1.06); }
+
+/* Mobile: bottom sheet that slides up; swipe-to-dismiss handled in JS. */
+@media (max-width: 560px) {
+  .req-mode-grid { flex-direction: column; }
+  .req-sheet-overlay { align-items: flex-end; padding: 0; }
+  .req-sheet {
+    max-width: 100%;
+    border-radius: 20px 20px 0 0;
+    padding: 12px 20px calc(18px + env(safe-area-inset-bottom, 0px));
+    transform: translateY(100%);
+    opacity: 1;
+  }
+  .req-sheet-overlay.is-open .req-sheet { transform: translateY(0); }
+  .req-sheet__grab { display: block; }
+}

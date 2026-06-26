@@ -24,6 +24,11 @@
 
 'use strict';
 
+// v1.17.3 Unified Scoring System — the ONE source of band/color/capacity
+// interpretation (higher = better). The dashboard reuses these; it never
+// re-implements a band or color or inverts a score locally.
+import { scoreColor, capacityScore, scoreLabelId } from '../services/unified-scoring.js';
+
 const STYLE_ID = 'daa-dashboard-styles';
 
 const CSS = `
@@ -108,6 +113,7 @@ const CSS = `
 .daa-pill{display:inline-block;font-size:.64rem;font-weight:700;border-radius:999px;padding:.1rem .45rem;
   border:1px solid var(--border);color:var(--muted);background:var(--surface-2);}
 .daa-pill--ok{color:var(--ok);background:var(--ok-bg);border-color:var(--ok);}
+.daa-pill--info{color:var(--info);background:var(--info-bg);border-color:var(--info);}
 .daa-pill--warn{color:var(--warn);background:var(--warn-bg);border-color:var(--warn);}
 .daa-pill--danger{color:var(--danger);background:var(--danger-bg);border-color:var(--danger);}
 
@@ -210,12 +216,10 @@ function fmtTime(iso) {
   const mi = String(d.getMinutes()).padStart(2, '0');
   return `${dd} ${mo} ${hh}:${mi}`;
 }
-/** Acceptance/quality color class from a 0–100 rate. */
+/** Acceptance/quality color class from a 0–100 rate — the unified color scale
+ *  (higher = better → greener). Single source: unified-scoring scoreColor. */
 function rateClass(rate) {
-  const r = Number(rate) || 0;
-  if (r >= 75) return 'ok';
-  if (r >= 50) return 'warn';
-  return 'danger';
+  return scoreColor(rate);
 }
 
 /* ── section renderers ────────────────────────────────────────────────── */
@@ -294,7 +298,7 @@ function driverTable(rows) {
     <td class="daa-num"><span class="daa-pill daa-pill--${rateClass(r.acceptance)}">${pct(r.acceptance)}</span></td>
     <td class="daa-num">${pct(r.overrideRate)}</td>
     <td class="daa-num">${esc(r.avgScore)}</td>
-    <td class="daa-num">${pct(r.capacityUtilization)}</td>
+    <td class="daa-num"><span class="daa-pill daa-pill--${scoreColor(capacityScore(r.capacityUtilization))}" title="Skor kapasitas (100 = paling lengang/tersedia)">${capacityScore(r.capacityUtilization)}</span></td>
     <td class="daa-num">${pct(r.conflictAvoidance)}</td>
     <td>${esc(fmtTime(r.lastRecommendation))}</td>
   </tr>`).join('');
@@ -340,7 +344,7 @@ function vehicleTable(rows) {
     <td class="daa-num">${pct(r.overrideRate)}</td>
     <td class="daa-num">${esc(r.avgScore)}</td>
     <td class="daa-num">${pct(r.utilization)}</td>
-    <td class="daa-num">${pct(r.idle)}</td>
+    <td class="daa-num"><span class="daa-pill daa-pill--${scoreColor(capacityScore(r.utilization))}" title="Skor kapasitas (100 = paling lengang/tersedia)">${capacityScore(r.utilization)}</span></td>
     <td class="daa-num">${pct(r.conflictAvoidance)}</td>
   </tr>`).join('');
   return `<div class="daa-tablewrap"><table class="daa-table">

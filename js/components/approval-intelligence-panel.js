@@ -34,6 +34,9 @@ import {
   buildComparison,
   buildTimeline,
 } from '../services/dispatch-presentation.js';
+// v1.17.3 Unified Scoring System — single source of score color + quality label
+// (higher = better). The score badge is tinted + labeled through these helpers.
+import { scoreColorVar, scoreLabelId } from '../services/unified-scoring.js';
 
 const STYLE_ID = 'aip-panel-styles';
 
@@ -218,7 +221,11 @@ function renderHero(driverName, vehicleName, score, confidence) {
 
   const metrics = el('div', 'aip__metrics');
   const scoreM = el('div', 'aip__metric');
-  scoreM.append(el('span', 'aip__metric-num', `${score}`), el('span', 'aip__metric-lbl', 'Skor / 100'));
+  // Unified scale: higher = better. Tint the number + show the quality band so
+  // the score reads as "95 = Sangat Baik", never as an inverted value.
+  const scoreNum = el('span', 'aip__metric-num', `${score}`);
+  scoreNum.style.color = scoreColorVar(score);
+  scoreM.append(scoreNum, el('span', 'aip__metric-lbl', `Skor / 100 · ${scoreLabelId(score)}`));
   const confM = el('div', 'aip__metric');
   confM.append(el('span', 'aip__stars', confidence.glyph), el('span', 'aip__conf-lbl', confidence.label), el('span', 'aip__metric-lbl', 'Confidence'));
   metrics.append(scoreM, confM);

@@ -27,6 +27,8 @@
 'use strict';
 
 import { recommendDispatch } from './dispatch-scoring-engine.js';
+import { recommendVehicle } from './vehicle-recommendation-engine.js';
+import { applyDispatchPolicy } from './dispatch-policy-engine.js';
 import {
   computeDriverAccuracy,
   createOverrideRecord,
@@ -286,6 +288,67 @@ export function buildRequestRecommendation(input = {}, options = {}) {
   };
 }
 
+/**
+ * Feature 3 — "Tanpa Driver" path. The Driver Recommendation Engine, Driver
+ * Capacity and Workload are all skipped; the dispatch is evaluated on the
+ * VEHICLE only. We reuse the Vehicle Recommendation Engine verbatim (no scoring
+ * duplicated) and synthesize a dispatch package whose recommendedDispatch has a
+ * null/empty driver — the assignment remains valid with no driver. The dispatch
+ * shape mirrors recommendDispatch so every downstream consumer (the compact
+ * builder, the panel) keeps working.
+ */
+function buildVehicleOnlyPackage(input, options = {}) {
+  const { request, vehicles, assignments, base } = input;
+  const mappedVehicles = (Array.isArray(vehicles) ? vehicles : [])
+    .map((v) => (v && v.vehicleId == null && v.id != null ? { ...v, vehicleId: v.id } : v));
+  const vrec = recommendVehicle(request, mappedVehicles, assignments, options);
+
+  // Re-shape the vehicle diagnostics into the dispatch diagnostic contract,
+  // with a "Tanpa Driver" placeholder for the driver side.
+  const diagnostics = (vrec.diagnostics || []).map((d, i) => ({
+    driverId: '', driverName: 'Tanpa Driver',
+    vehicleId: d.vehicleId, vehicleName: d.vehicleName,
+    dispatchScore: d.score, driverScore: 0, vehicleScore: d.score,
+    rank: i + 1, valid: !!(d.available && !d.overCapacity),
+    reasons: d.conflict ? ['vehicle_conflict'] : (d.overCapacity ? ['vehicle_over_capacity'] : []),
+  }));
+  const rv = vrec.recommendedVehicle;
+  const recommendedDispatch = rv
+    ? { driverId: '', vehicleId: rv.vehicleId, dispatchScore: rv.score, rank: 1 }
+    : null;
+  const dispatch = {
+    generatedAt: vrec.generatedAt,
+    request,
+    recommendedDispatch,
+    alternatives: (vrec.alternatives || []).map((a) => ({ driverId: '', vehicleId: a.vehicleId, dispatchScore: a.score, rank: a.rank })),
+    diagnostics,
+    driverRecommendation: null,
+    vehicleRecommendation: vrec,
+  };
+
+  if (!recommendedDispatch) {
+    return {
+      ...base,
+      state: PANEL_STATE.NO_RECOMMENDATION,
+      dispatchRecommendation: dispatch,
+      vehicleRecommendation: vrec,
+      generatedAt: vrec.generatedAt,
+      summary: 'Tidak ada kendaraan yang valid untuk permintaan ini (tanpa driver).',
+    };
+  }
+  const vehName = (diagnostics.find((d) => d.vehicleId === rv.vehicleId) || {}).vehicleName || rv.vehicleId;
+  return {
+    ...base,
+    state: PANEL_STATE.READY,
+    dispatchRecommendation: dispatch,
+    vehicleRecommendation: vrec,
+    recommendedDispatch,
+    generatedAt: vrec.generatedAt,
+    acceptanceRisk: null,
+    summary: `Tanpa Driver + ${vehName} · skor kendaraan ${rv.score}`,
+  };
+}
+
 export function buildRecommendationPackage(input = {}, options = {}) {
   const { request = {}, drivers = [], vehicles = [], assignments = [], overrideLogs = [] } = input;
   const generatedAt = new Date(options.now || Date.now()).toISOString();
@@ -301,6 +364,7 @@ export function buildRecommendationPackage(input = {}, options = {}) {
     vehicleRecommendation: null,
     recommendedDispatch: null,
     acceptanceRisk: null,
+    policyDiagnostics: null,
     summary: '',
   };
 
@@ -308,7 +372,24 @@ export function buildRecommendationPackage(input = {}, options = {}) {
     return { ...base, state: PANEL_STATE.NOT_READY };
   }
 
-  const dispatch = generateDispatchRecommendation(request, drivers, vehicles, assignments, options);
+  // ── Dispatch Policy Engine (v1.17.2) ──────────────────────────────────
+  // The single eligibility gate BEFORE every recommendation engine. The
+  // engines only ever see already-filtered entities and never learn why an
+  // entity was filtered (the reasons live in policyDiagnostics). Default
+  // context = {} → ambulance kept out of the normal pool, leave/disabled
+  // drivers dropped; explicit options.policy enables medical mode, the
+  // ambulance exception, "Tanpa Driver", or an admin override.
+  const policy = applyDispatchPolicy({ drivers, vehicles, context: options.policy || {} });
+  base.policyDiagnostics = policy.diagnostics;
+  const eligibleDrivers = policy.drivers;
+  const eligibleVehicles = policy.vehicles;
+
+  // Feature 3 — "Tanpa Driver": skip the driver engines, evaluate vehicle only.
+  if (policy.driverSkipped) {
+    return buildVehicleOnlyPackage({ request, vehicles: eligibleVehicles, assignments, base }, options);
+  }
+
+  const dispatch = generateDispatchRecommendation(request, eligibleDrivers, eligibleVehicles, assignments, options);
   const rec = dispatch.recommendedDispatch;
 
   if (!rec) {

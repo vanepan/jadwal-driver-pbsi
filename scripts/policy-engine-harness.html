@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <title>Policy Engine Harness</title>
+</head>
+<body>
+<!-- Loads the REAL Dispatch Policy Engine + recommendation pipeline modules in a
+     browser and exposes them on window, so the DOM check can prove the policy
+     filters drivers/vehicles end-to-end (no Firebase / DOM dependency). -->
+<script type="module">
+  import {
+    applyDispatchPolicy,
+    applyAnalyticsPolicy,
+    isSpecialVehicle,
+    isMedicalRequester,
+    isAkuntesRequester,
+  } from '../js/services/dispatch-policy-engine.js';
+  import { buildRecommendationPackage } from '../js/services/request-intelligence-service.js';
+
+  window.__applyDispatchPolicy = applyDispatchPolicy;
+  window.__applyAnalyticsPolicy = applyAnalyticsPolicy;
+  window.__isSpecialVehicle = isSpecialVehicle;
+  window.__isMedicalRequester = isMedicalRequester;
+  window.__isAkuntesRequester = isAkuntesRequester;
+  window.__buildRecommendationPackage = buildRecommendationPackage;
+  window.__ready = true;
+</script>
+</body>
+</html>
