@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.17.4';
-export const RELEASE_NAME = 'Petty Cash Intelligence + Request Experience Polish';
+export const APP_VERSION = '1.17.4.1';
+export const RELEASE_NAME = 'Petty Cash Reimbursement Detail Enhancement';
 
 /**
  * Web Push VAPID PUBLIC key (v1.11.3). Safe to ship — it is an
@@ -17,6 +17,16 @@ export const RELEASE_NAME = 'Petty Cash Intelligence + Request Experience Polish
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.17.4.1',
+    date: '2026-06-26',
+    summary: 'Petty Cash Reimbursement Detail Enhancement — a PRESENTATION-ONLY patch that gives reimbursement (Unit=Driver · Category="Reimbursement Driver") transactions a clean master-detail layout across the NOR Preview, generated NOR PDF, Excel export, and the expense detail drawer. NO business logic, Firebase schema, NOR numbering, approval workflow, petty-cash/reimbursement calculation, audit history, PDF engine, or Excel engine changed — only rendering. The breakdown REUSES the existing reimbursementDetail ({ bbm, tol, parkir, lembur, others }) already stored on the source expense; nothing is recalculated or re-stored. Because the denormalised NOR line-item snapshot never carried the breakdown, the NOR view model and Excel exporter resolve it live from the source expense via the snapshot expenseId (the same data the detail drawer reads). NOR Preview + PDF: each reimbursement line shows a small, slightly-indented, lighter-weight detail INSIDE the existing Rincian cell — no new columns, no wider table, no extra table, no borders/icons/bullets/chips; zero-value components are omitted entirely. Excel: explicit BBM/Tol/Parkir/Lembur/Others columns added between Keterangan and Biaya, populated only on reimbursement rows (every other expense leaves them blank); Biaya (Rp) stays the single total (components are not re-summed). Detail drawer: empty categories now read as an em dash (—) instead of "Rp0" while still listing all five components. Non-reimbursement rows are byte-for-byte unchanged. APP_VERSION 1.17.4 → 1.17.4.1 re-stamps SW_VERSION → CACHE_NAME, version.json, and the index.html app.js cache-bust via scripts/sync-version.mjs.',
+    highlights: [
+      'js/petty-cash/nor-document-engine.js: new pure reimburseLines(expenseId) helper resolves the source expense (getExpenseById) and emits only NON-ZERO components ([{ label, amountFmt }]) onto each view-model item; returns [] for non-reimbursement/legacy/missing-expense lines. Read-only — the line amount and totals still come from the snapshot, never recomputed. js/petty-cash/nor-paper.js (on-screen preview) and js/docs/templates/nor.js (pdfmake) render the breakdown as an indented 7.5pt dimmed detail within the Rincian cell so the on-screen NOR and the generated PDF stay in lock-step; cells switched to vertical-align:top.',
+      'js/petty-cash/nor-excel-exporter.js: shared rincianSheet gains BBM/Tol/Parkir/Lembur/Others columns (generated from REIMBURSE_ITEMS) between Keterangan and Biaya, with widths/merges/total-row extended generically; only reimbursement rows populate them. The NOR workbook enriches its rows with the live reimbursementDetail (the snapshot lacked it); the current-cycle workbook already had it on the raw expenses. js/petty-cash/petty-cash-center.js: the detail drawer "RINCIAN REIMBURSEMENT" section shows — (muted) for zero components instead of Rp0.',
+      'Verification: node --check clean on all five edited files; 9/9 invariant assertions against the REAL petty-cash-config.js (zero components hidden in NOR, reimbursement subtotal equals the transaction total, non-reimbursement lines emit no detail, an all-zero reimbursement renders nothing, drawer em-dash vs currency). Known limitation: a historical NOR whose source expenses were already cleared (cycle reset/archive that deleted the expenses) shows no breakdown, since the snapshot does not carry it — recent/active NORs are unaffected; storing it in the snapshot was intentionally avoided to honour the no-schema-change constraint.',
+    ],
+  },
   {
     version: '1.17.4',
     date: '2026-06-26',
