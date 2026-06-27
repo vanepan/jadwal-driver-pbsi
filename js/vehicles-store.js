@@ -1,8 +1,8 @@
 'use strict';
 
 import {
-  fetchFirebaseData,
   isFirebaseConfigured,
+  readNode,
   storeFirebaseData,
   subscribeFirebasePath,
   updateFirebaseData,
@@ -125,7 +125,14 @@ function refreshVehiclesCache(nextVehicles) {
 async function seedVehiclesIfEmpty() {
   if (!isFirebaseConfigured()) return;
 
-  const raw = await fetchFirebaseData(VEHICLES_PATH);
+  const readResult = await readNode(VEHICLES_PATH);
+  if (!readResult || typeof readResult !== 'object' || readResult.status !== 'ok') {
+    const status = readResult && typeof readResult === 'object' ? readResult.status : 'unknown';
+    const code = readResult && typeof readResult === 'object' ? readResult.code : '';
+    throw new Error(`[VehiclesStore] readNode failed (${status}${code ? `:${code}` : ''})`);
+  }
+
+  const raw = readResult.value;
   const hasExisting = raw && typeof raw === 'object' && Object.keys(raw).length > 0;
 
   if (hasExisting) {
