@@ -41,10 +41,18 @@ fs.writeFileSync(VJSON, JSON.stringify({ version }, null, 2) + '\n');
 let html = fs.readFileSync(INDEX, 'utf8');
 const idxBefore = html.match(/src="js\/app\.js\?v=([^"]+)"/)?.[1];
 html = html.replace(/(src="js\/app\.js\?v=)[^"]+(")/, `$1${version}$2`);
+
+// 3b) Stamp CSS stylesheet cache-bust parameters so style.css and petty-cash.css
+//     stay in sync with app.js — prevents stale CSS while app.js is fresh.
+html = html.replace(/(href="style\.css\?v=)[^"]+(")/, `$1${version}$2`);
+html = html.replace(/(href="petty-cash\.css\?v=)[^"]+(")/, `$1${version}$2`);
+
 fs.writeFileSync(INDEX, html);
 
 console.log(`APP_VERSION (source) : ${version}`);
 console.log(`service-worker.js    : SW_VERSION ${before} → ${version}`);
 console.log(`version.json         : { "version": "${version}" }`);
 console.log(`index.html           : app.js?v ${idxBefore} → ${version}`);
+console.log(`index.html           : style.css?v → ${version}`);
+console.log(`index.html           : petty-cash.css?v → ${version}`);
 console.log('Done. CACHE_NAME is now sarpras-cache-v' + version);
