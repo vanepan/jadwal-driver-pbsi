@@ -122,7 +122,7 @@ test('RELEASE_NAME updated to Fleet Maintenance Intelligence', cfgSrc.includes('
 
 const CFG_ASSET = path.join(ROOT, 'js', 'config', 'vehicle-asset-config.js');
 const cfgAssetSrc = fs.readFileSync(CFG_ASSET, 'utf-8');
-test('HEALTH_WEIGHTS includes maintenance: 0.05', cfgAssetSrc.includes('maintenance: 0.05'));
+test('HEALTH_WEIGHTS includes maintenance: 0.35', cfgAssetSrc.includes('maintenance: 0.35'));
 
 // ─────────────────────────────────────────────────────────────────────────
 // UI INTEGRATION

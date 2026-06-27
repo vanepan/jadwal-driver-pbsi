@@ -88,6 +88,21 @@ test('Exports vehicleTypeIconName', icons.includes('export function vehicleTypeI
 test('Has a motorcycle glyph (no emoji fallback)', icons.includes("'vehicle-motorcycle'"));
 test('Has asset-strip glyphs (tax/shield/wrench/clock)', ["'doc-tax'", "'doc-shield'", "'tool-wrench'", "'time-clock'"].every(s => icons.includes(s)));
 
+section('Import integrity — every vehicle-asset-service fn used is imported');
+// v1.18.3 regression — renderV2AdminVehicles called searchFilterVehicles() but
+// app.js never imported it → "ReferenceError: searchFilterVehicles is not
+// defined" thrown at the filter step, AFTER the dashboard rendered, blanking the
+// grid. Guard: the app.js import from vehicle-asset-service must contain every
+// one of that module's functions actually called in app.js.
+{
+  const m = app.match(/import\s*\{([^}]*)\}\s*from\s*['"]\.\/services\/vehicle-asset-service\.js['"]/);
+  const imported = m ? m[1].split(',').map(s => s.trim()).filter(Boolean) : [];
+  for (const fn of ['computeFleetAssetModel', 'findVehicleAsset', 'searchFilterVehicles']) {
+    const usedAsCall = new RegExp(`[^.\\w]${fn}\\s*\\(`).test(app);
+    test(`${fn} is imported (used as a call: ${usedAsCall})`, !usedAsCall || imported.includes(fn));
+  }
+}
+
 section('Business logic untouched');
 test('computeFleetAssetModel still used', app.includes('computeFleetAssetModel'));
 test('Vehicle store functions unchanged', app.includes('deactivateVehicle') && app.includes('archiveVehicle') && app.includes('restoreVehicle'));

@@ -162,6 +162,20 @@ check('findVehicleAsset locates a normalized asset', findVehicleAsset(model, 'v1
 check('includeArchived surfaces archived units', computeFleetAssetModel({ vehicles, now: NOW, includeArchived: true }).vehicles.length === 6);
 check('empty input is safe', computeFleetAssetModel({ vehicles: [] }).dashboard.totalAssets === 0);
 check('corrupt input is safe', computeFleetAssetModel({ vehicles: [null, undefined, 42, {}] }).vehicles.length === 1);
+// v1.18.1 regression — a malformed maintenanceRecords array (RTDB deleted-index
+// holes, non-object elements) must NOT throw. This is the exact root cause that
+// blanked the Fleet Dashboard + inventory: normalizeVehicleAsset → maintenance
+// health/summary dereferenced a null record. The model must still normalize.
+let dirtyMaintOk = true;
+try {
+  const m = computeFleetAssetModel({ vehicles: [
+    { id: 'd1', name: 'Holey', type: 'mobil', status: 'active', maintenanceRecords: [null, { status: 'completed', category: 'service', date: '2025-01-01', cost: 100 }] },
+    { id: 'd2', name: 'AllNull', type: 'mobil', status: 'active', maintenanceRecords: [null, null] },
+    { id: 'd3', name: 'Junk', type: 'mobil', status: 'active', maintenanceRecords: ['x', 7] },
+  ], now: NOW, includeArchived: true });
+  dirtyMaintOk = m.vehicles.length === 3 && m.vehicles.every(v => v.health && typeof v.health.overall === 'number');
+} catch (_) { dirtyMaintOk = false; }
+check('malformed maintenanceRecords (null holes) do not throw', dirtyMaintOk);
 check('clampScore guard (Unified Scoring reuse)', clampScore(150) === 100 && clampScore(-5) === 0);
 
 console.log(`\n${pass} passed, ${fail} failed`);

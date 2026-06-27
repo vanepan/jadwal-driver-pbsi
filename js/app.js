@@ -96,7 +96,7 @@ import { openDriverWellnessDrawer } from './components/driver-wellness-drawer.js
 // timeline) and renders the Fleet Dashboard + Apple-style detail drawer. Reuses
 // Unified Scoring + the Dispatch Policy Engine (no dispatch/recommendation change).
 import { validateMaintenanceRecord, normalizeMaintenanceRecord } from './services/maintenance-service.js';
-import { computeFleetAssetModel, findVehicleAsset } from './services/vehicle-asset-service.js';
+import { computeFleetAssetModel, findVehicleAsset, searchFilterVehicles } from './services/vehicle-asset-service.js';
 import { injectFleetDashboardStyles, renderFleetDashboard } from './components/fleet-dashboard.js';
 import { renderIcon, vehicleTypeIconName } from './components/icon-system.js';
 import { openVehicleDetailDrawer } from './components/vehicle-detail-drawer.js';
@@ -4531,14 +4531,26 @@ function renderV2AdminVehicles() {
 
   const allVehicles = getVehicles();
 
-  // Feature 10/11/12 — executive Fleet Dashboard (non-archived inventory).
-  injectFleetDashboardStyles();
-  const dashHost = document.getElementById('v2FleetDashboard');
-  const dashModel = computeFleetAssetModel({ vehicles: allVehicles });
-  if (dashHost) dashHost.innerHTML = renderFleetDashboard(dashModel);
+  // v1.18.1 — production hardening. Normalizing the fleet model can throw on a
+  // single malformed store record (e.g. a maintenanceRecords RTDB hole). Before,
+  // that aborted the whole function AFTER the overview "Total Kendaraan" count
+  // had rendered, leaving the Fleet Dashboard + inventory silently blank. Now any
+  // failure renders a VISIBLE, diagnosable error state instead of a blank list,
+  // and never takes down the surrounding workspace.
+  try {
+    // Feature 10/11/12 — executive Fleet Dashboard (non-archived inventory).
+    injectFleetDashboardStyles();
+    const dashHost = document.getElementById('v2FleetDashboard');
+    const dashModel = computeFleetAssetModel({ vehicles: allVehicles });
+    if (dashHost) dashHost.innerHTML = renderFleetDashboard(dashModel);
 
-  // Full normalized model (incl. archived) — drives the cards + detail drawer.
-  _fleetAssetModel = computeFleetAssetModel({ vehicles: allVehicles, includeArchived: true });
+    // Full normalized model (incl. archived) — drives the cards + detail drawer.
+    _fleetAssetModel = computeFleetAssetModel({ vehicles: allVehicles, includeArchived: true });
+  } catch (err) {
+    console.error('[VehicleInventory] render failed', err);
+    list.innerHTML = '<div class="v2-admin-empty">Gagal memuat inventaris kendaraan. Data armada mungkin tidak valid. Muat ulang halaman; jika berlanjut, hubungi admin sistem.</div>';
+    return;
+  }
 
   // Feature 13 — search & filter (type / status / fuel / transmission / query).
   let assets = _fleetAssetModel.vehicles.filter(v => {
@@ -4561,9 +4573,33 @@ function renderV2AdminVehicles() {
   }
 
   const lastByVehicle = _latestAssignmentByVehicle();
-  list.innerHTML = assets
-    .map(a => buildVehicleCard(a, lastByVehicle.get(String(a.name || '').trim())))
-    .join('');
+
+  // v1.18.1 — per-card resilience + runtime instrumentation. The previous code
+  // built every card in a single .map().join(); if ONE asset made buildVehicleCard
+  // throw, the whole expression threw and the grid was left silently blank while
+  // the dashboard + toolbar above (already rendered) survived — the exact reported
+  // symptom. Now each card is built in isolation: a failure is logged WITH the
+  // offending asset and skipped, so every well-formed vehicle still renders.
+  const cards = [];
+  let cardFailures = 0;
+  for (const a of assets) {
+    try {
+      cards.push(buildVehicleCard(a, lastByVehicle.get(String(a.name || '').trim())));
+    } catch (err) {
+      cardFailures++;
+      console.error('[VehicleInventory] buildVehicleCard threw for asset id=%s', a && a.id, { asset: a, error: err });
+    }
+  }
+  console.log('[VehicleInventory] raw=%d normalized=%d afterFilter=%d cardsBuilt=%d failures=%d container=%o',
+    allVehicles.length,
+    (_fleetAssetModel && _fleetAssetModel.vehicles ? _fleetAssetModel.vehicles.length : -1),
+    assets.length, cards.length, cardFailures, list);
+
+  if (!cards.length) {
+    list.innerHTML = '<div class="v2-admin-empty">Inventaris kendaraan gagal dirender — lihat console (Filter [VehicleInventory]) untuk asset yang bermasalah.</div>';
+    return;
+  }
+  list.innerHTML = cards.join('');
 
   // Lifecycle actions now live in the drawer footer (cards are pure navigation
   // objects). These read-only handlers mirror the prior inline-button behavior;

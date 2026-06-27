@@ -258,7 +258,12 @@ export function computeMaintenanceTimeline(records, now) {
  * @returns {Object} Summary statistics
  */
 export function deriveMaintenanceSummary(records) {
-  if (!Array.isArray(records) || records.length === 0) {
+  // v1.18.1 — null-element safety. RTDB arrays with deleted indices arrive as
+  // holes (e.g. [null, {...}]); filtering null/non-object elements here prevents
+  // the downstream `str(r.status)` reads from throwing on a null record (which
+  // aborted normalizeVehicleAsset → blank Fleet Dashboard + inventory).
+  records = (Array.isArray(records) ? records : []).filter(r => r && typeof r === 'object');
+  if (records.length === 0) {
     return {
       lastDate: null,
       lastCategory: null,
@@ -342,7 +347,10 @@ export function deriveMaintenanceSummary(records) {
  * @returns {{score: number, label: string, tone: string, components: Object}}
  */
 export function computeMaintenanceHealth(records, now) {
-  if (!Array.isArray(records) || records.length === 0) {
+  // v1.18.1 — null-element safety (see deriveMaintenanceSummary): drop RTDB
+  // array holes so the `str(r.status)` filters below never deref a null record.
+  records = (Array.isArray(records) ? records : []).filter(r => r && typeof r === 'object');
+  if (records.length === 0) {
     return {
       score: 50,
       label: 'Unknown',

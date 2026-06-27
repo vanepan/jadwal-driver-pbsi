@@ -1,7 +1,7 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.18.1';
+export const APP_VERSION = '1.18.3';
 export const RELEASE_NAME = 'Fleet Maintenance Intelligence';
 
 /**

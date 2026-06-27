@@ -130,7 +130,13 @@ export function computeVehicleHealth(parts) {
   const legal = legalScores.length ? clampScore(legalScores.reduce((a, b) => a + b, 0) / legalScores.length) : null;
 
   const docScore = clampScore(documents ? documents.completeness : 0);
-  const maintScore = maintenance && maintenance.score != null ? clampScore(maintenance.score) : null;
+  // v1.18.1 — a vehicle with NO maintenance history must EXCLUDE maintenance from
+  // the weighting (re-normalized over the present components), never count it as a
+  // neutral/zero score. computeMaintenanceHealth signals "no data" with the
+  // 'Unknown' label (default score 50); treat that as absent so a fully-legal,
+  // active, fully-documented vehicle is not dragged down by missing service data.
+  const hasMaint = maintenance && maintenance.score != null && maintenance.label !== 'Unknown';
+  const maintScore = hasMaint ? clampScore(maintenance.score) : null;
 
   const comps = [
     { v: operational, w: HEALTH_WEIGHTS.operational },
