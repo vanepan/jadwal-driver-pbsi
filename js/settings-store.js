@@ -1,7 +1,7 @@
 'use strict';
 
 import {
-  fetchFirebaseData,
+  readNode,
   isFirebaseConfigured,
   storeFirebaseData,
   subscribeFirebasePath,
@@ -59,7 +59,14 @@ function refreshSettingsCache(nextSettings) {
 async function seedSettingsIfEmpty() {
   if (!isFirebaseConfigured()) return;
 
-  const raw = await fetchFirebaseData(SETTINGS_PATH);
+  const readResult = await readNode(SETTINGS_PATH);
+  if (!readResult || typeof readResult !== 'object' || readResult.status !== 'ok') {
+    const status = readResult && typeof readResult === 'object' ? readResult.status : 'unknown';
+    const code = readResult && typeof readResult === 'object' ? readResult.code : '';
+    throw new Error(`[SettingsStore] readNode failed (${status}${code ? `:${code}` : ''})`);
+  }
+
+  const raw = readResult.value;
   const hasExisting = raw && typeof raw === 'object' && Object.keys(raw).length > 0;
 
   if (hasExisting) {

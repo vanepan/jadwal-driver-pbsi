@@ -21,6 +21,7 @@
 import {
   isFirebaseConfigured,
   fetchFirebaseData,
+  readNode,
   storeFirebaseData,
   updateFirebaseData,
   subscribeFirebasePath,
@@ -66,13 +67,27 @@ export function genId(prefix) {
    On first run, write canonical settings and open cycle #1 so the
    dashboard has a coherent starting state. */
 async function seedIfEmpty() {
-  const rawSettings = await fetchFirebaseData(PATH.settings);
+  const readResult = await readNode(PATH.settings);
+  if (!readResult || typeof readResult !== 'object' || readResult.status !== 'ok') {
+    const status = readResult && typeof readResult === 'object' ? readResult.status : 'unknown';
+    const code = readResult && typeof readResult === 'object' ? readResult.code : '';
+    throw new Error(`[PettyCash] readNode failed (${status}${code ? `:${code}` : ''})`);
+  }
+
+  const rawSettings = readResult.value;
   if (!rawSettings || typeof rawSettings !== 'object') {
     await storeFirebaseData(PATH.settings, DEFAULT_SETTINGS);
     cache.settings = { ...DEFAULT_SETTINGS };
   }
 
-  const rawCycles = await fetchFirebaseData(PATH.cycles);
+  const cycleReadResult = await readNode(PATH.cycles);
+  if (!cycleReadResult || typeof cycleReadResult !== 'object' || cycleReadResult.status !== 'ok') {
+    const status = cycleReadResult && typeof cycleReadResult === 'object' ? cycleReadResult.status : 'unknown';
+    const code = cycleReadResult && typeof cycleReadResult === 'object' ? cycleReadResult.code : '';
+    throw new Error(`[PettyCash] readNode failed (${status}${code ? `:${code}` : ''})`);
+  }
+
+  const rawCycles = cycleReadResult.value;
   const hasCycle = rawCycles && Object.keys(rawCycles).length > 0;
   if (!hasCycle) {
     const opening = (cache.settings && cache.settings.openingBalance) || DEFAULT_SETTINGS.openingBalance;
