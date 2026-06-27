@@ -31,7 +31,7 @@
    no drift between deployed and installed.
    ============================================================ */
 
-const SW_VERSION  = '1.18.0';   // stamped from config.js — do not edit by hand
+const SW_VERSION  = '1.18.1';   // stamped from config.js — do not edit by hand
 const CACHE_NAME  = `sarpras-cache-v${SW_VERSION}`;
 const OFFLINE_URL = '/offline.html';
 const VERSION_URL = '/version.json';
@@ -50,12 +50,21 @@ const BYPASS_ORIGINS = [
 /* File extensions that qualify as cacheable static assets */
 const STATIC_EXT = /\.(css|js|mjs|png|jpg|jpeg|webp|svg|ico|woff2?|ttf|otf|json)(\?|$)/i;
 
+/* Same-origin APPLICATION CODE (ES modules + stylesheets). These are the bytes
+   that define the UI and MUST never be served stale — see the network-first
+   branch in fetch() for the full root-cause rationale (v1.18.1 cache fix). */
+const APP_CODE_EXT = /\.(css|js|mjs)(\?|$)/i;
+
 function _isBypassOrigin(url) {
   return BYPASS_ORIGINS.some(o => url.hostname.endsWith(o));
 }
 
 function _isStaticAsset(url) {
   return STATIC_EXT.test(url.pathname);
+}
+
+function _isAppCode(url) {
+  return url.origin === self.location.origin && APP_CODE_EXT.test(url.pathname);
 }
 
 /* ── Install ─────────────────────────────────────────────── */
@@ -116,7 +125,39 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  /* Static assets: cache-first, fill cache on network hit */
+  /* Same-origin application code (.js / .mjs / .css): NETWORK-FIRST.
+
+     ROOT CAUSE (v1.18.1) — why cache-first was wrong here:
+     The entry point is cache-busted (index.html → app.js?v=APP_VERSION,
+     style.css?v=APP_VERSION), but the ES-module IMPORTS inside the app graph
+     carry NO ?v= query (e.g. `import … from './components/fleet-dashboard.js'`).
+     Under the old cache-first rule the SW returned whatever copy of those
+     modules it had cached FIRST. On the refresh that triggers a deploy the
+     OLD worker is still in control of the in-flight page, so a FRESH app.js
+     (new ?v= URL → cache miss → network) ran against STALE component modules
+     (old URL → cache hit). That mismatch produced BOTH reported defects: the
+     "old vehicle UI on a normal F5" and the blank inventory regression (the
+     fresh card builder threw on the stale asset shape). Only a hard refresh
+     (which bypasses the SW) loaded a consistent graph.
+
+     FIX: serve app code network-first so every normal refresh loads the latest
+     UI, independent of per-import cache-busting. The cache is still written on
+     every success and used as the OFFLINE fallback, so installed/offline use
+     is unchanged. Images/fonts/json stay cache-first below (large, stable). */
+  if (_isAppCode(url)) {
+    event.respondWith(
+      fetch(request).then(response => {
+        if (response && response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(c => c.put(request, clone));
+        }
+        return response;
+      }).catch(() => caches.match(request))
+    );
+    return;
+  }
+
+  /* Other static assets (images, fonts, json): cache-first, fill on network hit */
   if (_isStaticAsset(url)) {
     event.respondWith(
       caches.match(request).then(cached => {

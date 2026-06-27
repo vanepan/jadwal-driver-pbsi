@@ -33,12 +33,12 @@ function fnBody(name) {
   return APP.slice(i, i + 600);
 }
 
-/* The Dispatch Intelligence surfaces this patch makes desktop-reachable. RA is
-   embedded inside the Dispatch Analytics section, so its target section is
-   dispatchanalytics + a scroll to its own container. */
+/* The Dispatch Intelligence surfaces this patch makes desktop-reachable.
+   v1.18.1: Recommendation Accuracy is now its OWN render page/section
+   ('recommendationaccuracy') — independently rendered, no anchor scroll. */
 const SURFACES = [
   { label: 'Dispatch Analytics', buttonId: 'v2NavDispatchAnalytics', navFn: 'navDispatchAnalytics', section: 'dispatchanalytics', render: 'renderDispatchAnalyticsSection', container: 'v2DispatchAnalyticsDashboard' },
-  { label: 'Recommendation Accuracy', buttonId: 'v2NavRecommendationAccuracy', navFn: 'navRecommendationAccuracy', section: 'dispatchanalytics', render: 'renderRecommendationAccuracySection', container: 'v2RecommendationAccuracyDashboard', embedded: true },
+  { label: 'Recommendation Accuracy', buttonId: 'v2NavRecommendationAccuracy', navFn: 'navRecommendationAccuracy', section: 'recommendationaccuracy', render: 'renderRecommendationAccuracySection', container: 'v2RecommendationAccuracyDashboard' },
   { label: 'Driver Wellness', buttonId: 'v2NavDriverWellness', navFn: 'navDriverWellness', section: 'wellness', render: 'renderDriverWellnessSection', container: 'v2DriverWellnessDashboard' },
 ];
 
@@ -70,20 +70,13 @@ for (const s of SURFACES) {
   check(`${s.navFn} highlights its panel item`, body.includes(`setV2PanelNavActive('${s.buttonId}')`));
 }
 const raBody = fnBody('navRecommendationAccuracy');
-check('navRecommendationAccuracy scrolls its embedded container into view',
-  raBody.includes('v2RecommendationAccuracyDashboard') && /scrollIntoView/.test(raBody));
+check('navRecommendationAccuracy is its own page (no anchor scrollIntoView)',
+  !/scrollIntoView/.test(raBody));
 
 console.log('\n[Feature 5 — render branch + render function + container]');
 for (const s of SURFACES) {
   const branch = new RegExp(`activeAdminSection === '${s.section}'[\\s\\S]{0,400}?${s.render}\\(\\)`);
-  // The dispatchanalytics branch invokes renderDispatchAnalyticsSection, which in
-  // turn calls renderRecommendationAccuracySection — verify that chain for RA.
-  if (s.embedded) {
-    check(`renderDispatchAnalyticsSection invokes ${s.render}()`,
-      new RegExp(`function renderDispatchAnalyticsSection[\\s\\S]*?${s.render}\\(\\)`).test(APP));
-  } else {
-    check(`renderV2AdminWorkspace branch '${s.section}' → ${s.render}()`, branch.test(APP));
-  }
+  check(`renderV2AdminWorkspace branch '${s.section}' → ${s.render}()`, branch.test(APP));
   check(`render function ${s.render} defined`, APP.includes(`function ${s.render}(`));
   check(`container #${s.container} exists in workspace template`, APP.includes(`id="${s.container}"`) || APP.includes(`id='${s.container}'`));
   check(`${s.render} writes into #${s.container}`,
@@ -113,9 +106,15 @@ check('mobile Analytics segmented nav (#v2AnalyticsMobileNav) still present',
 check('mobile segmented nav still maps to driver/petty/exec only (unchanged)',
   /data-analytics-mnav="driver"/.test(APP) && /data-analytics-mnav="petty"/.test(APP) && /data-analytics-mnav="exec"/.test(APP));
 
-console.log('\n[non-goals — no engine/dashboard/section invented]');
-check('no new admin section key beyond the existing registered set',
-  /\{ key: 'wellness'/.test(APP) && !/\{ key: 'recommendationaccuracy'/.test(APP)); // RA stays embedded, not a new section
+console.log('\n[v1.18.1 — Recommendation Accuracy is its own registered section]');
+check('recommendationaccuracy registered in ADMIN_SECTION_DEFS',
+  /\{ key: 'recommendationaccuracy'/.test(APP));
+check('recommendationaccuracy is centrally hidden unless active',
+  /v2AdminSectionRecommendationAccuracy[\s\S]{0,200}?activeAdminSection === 'recommendationaccuracy'/.test(APP));
+const daStart = APP.indexOf('function renderDispatchAnalyticsSection');
+const daBody = daStart < 0 ? '' : APP.slice(daStart, APP.indexOf('\nfunction ', daStart + 1));
+check('Dispatch Analytics no longer renders RA inline (decoupled)',
+  daBody.length > 0 && !daBody.includes('renderRecommendationAccuracySection('));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

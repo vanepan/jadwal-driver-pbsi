@@ -46,6 +46,10 @@ import {
   archiveVehicle,
   restoreVehicle,
   deleteVehicle,
+  addMaintenanceRecord,
+  updateMaintenanceRecord,
+  deleteMaintenanceRecord,
+  getMaintenanceRecords,
 } from './vehicles-store.js';
 import { initSettingsStore, getSetting, updateSetting, registerSettingsChangeListener } from './settings-store.js';
 import { initPWA, getPWAState, registerPWAStateListener, triggerInstallPrompt, showIOSInstallModal } from './pwa.js';
@@ -91,8 +95,10 @@ import { openDriverWellnessDrawer } from './components/driver-wellness-drawer.js
 // source; this layer interprets it (health, tax/insurance status, eligibility,
 // timeline) and renders the Fleet Dashboard + Apple-style detail drawer. Reuses
 // Unified Scoring + the Dispatch Policy Engine (no dispatch/recommendation change).
+import { validateMaintenanceRecord, normalizeMaintenanceRecord } from './services/maintenance-service.js';
 import { computeFleetAssetModel, findVehicleAsset } from './services/vehicle-asset-service.js';
 import { injectFleetDashboardStyles, renderFleetDashboard } from './components/fleet-dashboard.js';
+import { renderIcon, vehicleTypeIconName } from './components/icon-system.js';
 import { openVehicleDetailDrawer } from './components/vehicle-detail-drawer.js';
 import { FUEL_TYPES, TRANSMISSION_TYPES, VEHICLE_TYPE_REGISTRY, VEHICLE_STATUS_REGISTRY } from './config/vehicle-asset-config.js';
 import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver } from './auth.js';
@@ -261,6 +267,7 @@ const ADMIN_SECTION_DEFS = [
   { key: 'config', label: 'Konfigurasi', subtitle: 'Atur parameter operasional, notifikasi, sistem, dan integrasi Telegram.' },
   { key: 'analytics', label: 'Analytics', subtitle: 'Ringkasan operasional berbasis data aktual — assignment, driver, kendaraan, dan bidang.' },
   { key: 'dispatchanalytics', label: 'Dispatch Analytics', subtitle: 'Dashboard eksekutif Dispatch Intelligence — akurasi, override, confidence, intelijen driver/kendaraan, dan tren.' },
+  { key: 'recommendationaccuracy', label: 'Recommendation Accuracy', subtitle: 'Seberapa akurat rekomendasi dispatch — akurasi, kalibrasi confidence, severity override, dan tren pembelajaran.' },
   { key: 'wellness', label: 'Driver Wellness', subtitle: 'Keberlanjutan operasional — skor kesehatan, kelelahan, burnout, dan capacity health per driver.' },
 ];
 
@@ -271,7 +278,7 @@ const ADMIN_SECTION_DEFS = [
 const ADMIN_MODULE_SECTIONS = {
   driverops:   ['drivers', 'vehicles', 'audit'],
   konfigurasi: ['users', 'config'],
-  analytics:   ['analytics', 'dispatchanalytics', 'wellness'],
+  analytics:   ['analytics', 'dispatchanalytics', 'recommendationaccuracy', 'wellness'],
 };
 
 /**
@@ -976,10 +983,9 @@ async function navAnalyticsExecutive() {
    set the analytics module + the target admin section, then render the shared
    administration workspace (setWorkspace('administration') → renderV2AdminWorkspace
    → the section's existing render branch). No new section, render fn, or logic.
-   Recommendation Accuracy renders WITHIN the Dispatch Analytics section
-   (#v2RecommendationAccuracyDashboard, rendered beside it by
-   renderDispatchAnalyticsSection), so it navigates to that section and scrolls
-   the accuracy dashboard into view. */
+   v1.18.1: Recommendation Accuracy is now its OWN render page/section
+   (activeAdminSection='recommendationaccuracy') instead of an anchor-scroll
+   inside Dispatch Analytics — each Analytics surface is independently rendered. */
 function navDispatchAnalytics() {
   activeAdminModule = 'analytics';
   activeAdminSection = 'dispatchanalytics';
@@ -989,12 +995,10 @@ function navDispatchAnalytics() {
 }
 function navRecommendationAccuracy() {
   activeAdminModule = 'analytics';
-  activeAdminSection = 'dispatchanalytics'; // RA renders inside the Dispatch Analytics section
+  activeAdminSection = 'recommendationaccuracy'; // v1.18.1 — its own render page (no anchor scroll)
   setV2PanelNavActive('v2NavRecommendationAccuracy');
   setCrumb('ANALYTICS', 'Recommendation Accuracy');
   setWorkspace('administration');
-  const host = document.getElementById('v2RecommendationAccuracyDashboard');
-  if (host && host.scrollIntoView) host.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 function navDriverWellness() {
   activeAdminModule = 'analytics';
@@ -2582,12 +2586,16 @@ function initV2AdministrationWorkspace() {
         </div>
         <div id="v2AdminSectionVehicles" style="display:none;">
           <div id="v2FleetDashboard"></div>
+          <div class="vm-inv__head">
+            <div class="vm-inv__title">Inventaris Kendaraan</div>
+            <div class="vm-inv__sub">Kelola seluruh aset kendaraan. Klik kartu untuk membuka detail dan tindakan.</div>
+          </div>
           <div class="v2-admin-toolbar">
             <input type="search" id="v2AdminVehicleSearch" class="v2-admin-search"
                    placeholder="Cari nama, plat, merek, atau tahun…" autocomplete="off" />
             <select id="v2AdminVehicleTypeFilter" class="v2-admin-filter">
               <option value="all">Semua Tipe</option>
-              ${VEHICLE_TYPE_REGISTRY.map(t => `<option value="${t.key}">${t.icon} ${t.label}</option>`).join('')}
+              ${VEHICLE_TYPE_REGISTRY.map(t => `<option value="${t.key}">${t.label}</option>`).join('')}
             </select>
             <select id="v2AdminVehicleStatusFilter" class="v2-admin-filter">
               <option value="all">Semua Status</option>
@@ -2602,10 +2610,18 @@ function initV2AdministrationWorkspace() {
               <option value="all">Semua Transmisi</option>
               ${TRANSMISSION_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
             </select>
+            <button id="v2AdminVehicleReset" class="v2-analytics-reset-btn" type="button">Reset Filter</button>
+            <div class="v2-analytics-export" id="v2VehicleExport">
+              <button id="v2VehicleExportBtn" class="v2-analytics-export-btn" type="button" aria-haspopup="true" aria-expanded="false" title="Ekspor laporan armada">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg>
+                <span class="v2-analytics-export-label">Export</span>
+                <svg class="v2-analytics-export-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <div id="v2VehicleExportMenu" class="v2-analytics-export-menu" role="menu" aria-label="Pilih laporan armada" hidden></div>
+            </div>
             <button id="v2AdminAddVehicle" class="v2-admin-add-btn" type="button">+ Tambah Kendaraan</button>
           </div>
-          <div id="v2AdminVehicleStats"></div>
-          <div id="v2AdminVehicleList" class="v2-admin-user-list"></div>
+          <div id="v2AdminVehicleList" class="vm-grid"></div>
         </div>
         <div id="v2AdminSectionAudit" style="display:none;">
           <div class="v2-admin-toolbar">
@@ -2630,7 +2646,9 @@ function initV2AdministrationWorkspace() {
         <div id="v2AdminSectionConfig" style="display:none;"></div>
         <div id="v2AdminSectionDispatchAnalytics" style="display:none;">
           <div id="v2DispatchAnalyticsDashboard"></div>
-          <div id="v2RecommendationAccuracyDashboard" style="margin-top:1.1rem;"></div>
+        </div>
+        <div id="v2AdminSectionRecommendationAccuracy" style="display:none;">
+          <div id="v2RecommendationAccuracyDashboard"></div>
         </div>
         <div id="v2AdminSectionWellness" style="display:none;">
           <div id="v2DriverWellnessDashboard"></div>
@@ -2982,6 +3000,49 @@ function initV2AdministrationWorkspace() {
     if (e.key === 'Escape') _closeAnalyticsExportMenu();
   });
 
+  // Vehicle Inventory toolbar — Reset + Export reuse the Analytics components
+  // (v2-analytics-reset-btn / v2-analytics-export). Export delegates to the
+  // shared runAnalyticsExport() pipeline (the existing "Laporan Armada" report),
+  // so no new export logic is introduced here.
+  document.getElementById('v2AdminVehicleReset')?.addEventListener('click', () => {
+    vehicleSearch = '';
+    vehicleStatusFilter = 'all';
+    vehicleTypeFilter = 'all';
+    vehicleFuelFilter = 'all';
+    vehicleTransmissionFilter = 'all';
+    renderV2AdminWorkspace();
+  });
+  const _vehExportBtn  = document.getElementById('v2VehicleExportBtn');
+  const _vehExportMenu = document.getElementById('v2VehicleExportMenu');
+  if (_vehExportMenu) {
+    _vehExportMenu.innerHTML =
+      '<button class="v2-analytics-export-item" type="button" role="menuitem" data-report="vehicle">Laporan Armada (PDF)</button>';
+  }
+  const _closeVehExportMenu = () => {
+    if (_vehExportMenu) _vehExportMenu.hidden = true;
+    _vehExportBtn?.setAttribute('aria-expanded', 'false');
+  };
+  _vehExportBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (activeAdminSection !== 'vehicles' || !_vehExportMenu) return;
+    if (_vehExportBtn.disabled) return;
+    const willOpen = _vehExportMenu.hidden;
+    _vehExportMenu.hidden = !willOpen;
+    _vehExportBtn.setAttribute('aria-expanded', String(willOpen));
+  });
+  _vehExportMenu?.addEventListener('click', (e) => {
+    const item = e.target.closest('[data-report]');
+    if (!item) return;
+    _closeVehExportMenu();
+    runAnalyticsExport(item.dataset.report, _vehExportBtn);
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#v2VehicleExport')) _closeVehExportMenu();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') _closeVehExportMenu();
+  });
+
   // Export Center live refresh — when an export record is written, re-render
   // the §06 history + summary in place from the metadata cache (no Firebase
   // query from the UI). outerHTML keeps #ecRoot stable for the next update.
@@ -3138,6 +3199,12 @@ function renderV2AdminWorkspace() {
   // own — set centrally so the per-section branches below don't each need a line.
   if (dispatchAnalyticsSection) {
     dispatchAnalyticsSection.style.display = (activeAdminSection === 'dispatchanalytics') ? '' : 'none';
+  }
+  // v1.18.1: Recommendation Accuracy is now its OWN render page (was an in-section
+  // anchor inside Dispatch Analytics) — same central-hide pattern.
+  const recommendationAccuracySection = document.getElementById('v2AdminSectionRecommendationAccuracy');
+  if (recommendationAccuracySection) {
+    recommendationAccuracySection.style.display = (activeAdminSection === 'recommendationaccuracy') ? '' : 'none';
   }
   // v1.17.6: the Driver Wellness section follows the same central-hide pattern.
   if (wellnessSection) {
@@ -3415,6 +3482,18 @@ function renderV2AdminWorkspace() {
     if (_auditSec3) _auditSec3.style.display = 'none';
     if (overviewRow) overviewRow.innerHTML = '';
     renderDispatchAnalyticsSection();
+
+  } else if (activeAdminSection === 'recommendationaccuracy') {
+    if (usersSection)       usersSection.style.display       = 'none';
+    if (driversSection)     driversSection.style.display     = 'none';
+    if (vehiclesSection)    vehiclesSection.style.display    = 'none';
+    if (configSection)      configSection.style.display      = 'none';
+    if (analyticsSection)   analyticsSection.style.display   = 'none';
+    if (placeholderSection) placeholderSection.style.display = 'none';
+    const _auditSecRA = document.getElementById('v2AdminSectionAudit');
+    if (_auditSecRA) _auditSecRA.style.display = 'none';
+    if (overviewRow) overviewRow.innerHTML = '';
+    renderRecommendationAccuracySection();
 
   } else if (activeAdminSection === 'wellness') {
     if (usersSection)       usersSection.style.display       = 'none';
@@ -4067,7 +4146,7 @@ function initVehicleFormModal() {
             <div class="form-group">
               <label for="vehicleFieldType">Tipe Kendaraan *</label>
               <select id="vehicleFieldType">
-                ${VEHICLE_TYPE_REGISTRY.map(t => `<option value="${t.key}">${t.icon} ${t.label}</option>`).join('')}
+                ${VEHICLE_TYPE_REGISTRY.map(t => `<option value="${t.key}">${t.label}</option>`).join('')}
               </select>
             </div>
             <div class="form-group">
@@ -4347,100 +4426,103 @@ async function handleVehicleFormSubmit(event) {
   }
 }
 
-// v1.18.0 — accepts a NORMALIZED asset (vehicle-asset-service). The card is the
-// entry point into the Apple-style detail drawer (data-vehicle-detail); action
-// buttons stopPropagation so they don't also open the drawer.
-function buildVehicleCard(asset) {
-  const active   = asset.status === 'active';
-  const archived = asset.archived === true;
-  const color    = asset.color || '#555';
-  const plate    = asset.plateNumber || '—';
-  const cap      = asset.capacity ? `${asset.capacity} kursi` : '—';
-  const typeChip = `<span class="v2-vehicle-cap-chip">${esc(asset.typeInfo.icon)} ${esc(asset.typeInfo.label)}</span>`;
-  const healthChip = `<span class="v2-vehicle-cap-chip" style="color:var(--${esc(asset.health.color)});border-color:var(--${esc(asset.health.color)});">♥ ${esc(asset.health.overall)}</span>`;
+/* ── Vehicle Inventory presentation helpers (v1.18.2) ────────────────────────
+   The asset card is a pure NAVIGATION object: the whole card opens the detail
+   drawer; it carries NO inline action buttons (all lifecycle actions live in the
+   drawer footer). It reuses the platform pill vocabulary and tokens — a vehicle
+   is an asset, so it does NOT reuse the People card (.v2-user-card). */
 
-  if (archived) {
-    const refCount = countVehicleReferences(asset);
-    const deleteBtnHtml = refCount === 0
-      ? `<button class="v2-user-btn v2-user-btn--delete"
-                data-vehicle-delete="${esc(asset.id)}" type="button">Hapus Permanen</button>`
-      : `<span class="v2-delete-blocked-hint">${refCount} referensi</span>`;
-    return `
-      <div class="v2-user-card v2-user-card--archived" data-vehicle-detail="${esc(asset.id)}" role="button" tabindex="0">
-        <div class="v2-vehicle-avatar" style="background:${esc(color)}20; border-color:${esc(color)};">
-          <span class="v2-vehicle-color-dot" style="background:${esc(color)};"></span>
-        </div>
-        <div class="v2-user-info">
-          <span class="v2-user-display-name">${esc(asset.name)}</span>
-          <span class="v2-user-username">${esc(plate)}</span>
-        </div>
-        <div class="v2-user-meta">
-          ${typeChip}
-          <span class="v2-entity-badge v2-entity-badge--archived">Arsip</span>
-        </div>
-        <div class="v2-user-card-actions">
-          <button class="v2-user-btn v2-user-btn--restore"
-                  data-vehicle-restore="${esc(asset.id)}" type="button">Pulihkan</button>
-          ${deleteBtnHtml}
-        </div>
-      </div>`;
-  }
-
-  return `
-    <div class="v2-user-card${active ? '' : ' v2-user-card--inactive'}" data-vehicle-detail="${esc(asset.id)}" role="button" tabindex="0">
-      <div class="v2-vehicle-avatar" style="background:${esc(color)}20; border-color:${esc(color)};">
-        <span class="v2-vehicle-color-dot" style="background:${esc(color)};"></span>
-      </div>
-      <div class="v2-user-info">
-        <span class="v2-user-display-name">${esc(asset.name)}</span>
-        <span class="v2-user-username">${esc(plate)}</span>
-      </div>
-      <div class="v2-user-meta">
-        ${typeChip}
-        ${healthChip}
-        <span class="v2-user-status-pill${active ? '' : ' v2-status-pill--inactive'}" style="${active ? '' : `color:var(--${esc(asset.statusInfo.tone === 'muted' ? 'muted' : asset.statusInfo.tone)});`}">${esc(asset.statusInfo.labelId)}</span>
-      </div>
-      <div class="v2-user-card-actions">
-        <button class="v2-user-btn v2-user-btn--edit"
-                data-vehicle-edit="${esc(asset.id)}" type="button">Edit</button>
-        <button class="v2-user-btn v2-user-btn--toggle"
-                data-vehicle-toggle="${esc(asset.id)}" type="button">
-          ${active ? 'Nonaktifkan' : 'Aktifkan'}
-        </button>
-        <button class="v2-user-btn v2-user-btn--archive"
-                data-vehicle-archive="${esc(asset.id)}" type="button">Arsipkan</button>
-      </div>
-    </div>`;
+function _vmShortDate(s) {
+  if (!s) return '—';
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return String(s);
+  const mo = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'][d.getMonth()];
+  return `${String(d.getDate()).padStart(2,'0')} ${mo} ${d.getFullYear()}`;
 }
 
-function renderV2AdminVehicleStats(allVehicles) {
-  const el = document.getElementById('v2AdminVehicleStats');
-  if (!el) return;
+// Read-only VIEW index: the latest assignment per vehicle NAME, derived from the
+// already-loaded in-memory `assignments` (no service/analytics/dispatch call).
+// Used only to render the card's "last activity" line.
+function _latestAssignmentByVehicle() {
+  const map = new Map();
+  for (const a of (Array.isArray(assignments) ? assignments : [])) {
+    const key = String(a.vehicle || '').trim();
+    if (!key) continue;
+    const ts = `${a.date || ''} ${a.startTime || ''}`;
+    const cur = map.get(key);
+    if (!cur || ts > cur.ts) map.set(key, { ts, driver: String(a.driver || '').trim(), date: a.date || '' });
+  }
+  return map;
+}
 
-  const nonArchived   = allVehicles.filter(v => v.archived !== true);
-  const activeCount   = nonArchived.filter(v => v.active !== false).length;
-  const inactiveCount = nonArchived.length - activeCount;
-  const archivedCount = allVehicles.length - nonArchived.length;
-  const archivedChip  = archivedCount > 0
-    ? `<span class="v2-admin-stats-chip v2-stats-chip--archived">
-        <span class="v2-admin-stats-chip-label">Arsip</span>
-        <span class="v2-admin-stats-chip-count">${archivedCount}</span>
-      </span>` : '';
+// v1.18.2 — executive ASSET card. Accepts a NORMALIZED asset
+// (vehicle-asset-service) + an optional last-activity record. Entire card opens
+// the Apple-style detail drawer (data-vehicle-detail). No inline buttons.
+function buildVehicleCard(asset, lastActivity) {
+  const archived = asset.archived === true;
+  const active   = asset.status === 'active';
+  const plate    = asset.plateNumber || 'Tanpa plat';
+  const typeIcon = renderIcon(vehicleTypeIconName(asset.type), '1.45rem', 'currentColor');
+  const healthTone = ['ok','warn','danger'].includes(asset.health.color) ? asset.health.color : '';
+  const toneClass = (t) => (t === 'ok' || t === 'warn' || t === 'danger' || t === 'info') ? t : '';
+  const pill = (tone, icon, text) =>
+    `<span class="vm-pill${tone ? ' vm-pill--' + tone : ''}">${icon ? renderIcon(icon, '0.62rem', 'currentColor') : ''}<span>${esc(text)}</span></span>`;
 
-  el.innerHTML = `<div class="v2-admin-stats">
-    <div class="v2-admin-stats-total">Total Kendaraan <strong>${nonArchived.length}</strong></div>
-    <div class="v2-admin-stats-chips">
-      <span class="v2-admin-stats-chip">
-        <span class="v2-admin-stats-chip-label">Aktif</span>
-        <span class="v2-admin-stats-chip-count">${activeCount}</span>
-      </span>
-      <span class="v2-admin-stats-chip">
-        <span class="v2-admin-stats-chip-label">Nonaktif</span>
-        <span class="v2-admin-stats-chip-count">${inactiveCount}</span>
-      </span>
-      ${archivedChip}
-    </div>
-  </div>`;
+  const meta = [asset.typeInfo.label, asset.year, asset.transmission, asset.fuel]
+    .filter(Boolean).map(esc).join(' · ');
+
+  const identity = `
+    <div class="vm-asset__top">
+      <span class="vm-asset__ico">${typeIcon}</span>
+      <div class="vm-asset__id">
+        <span class="vm-asset__name">${esc(asset.name || 'Tanpa nama')}</span>
+        <span class="vm-asset__plate">${esc(plate)}</span>
+      </div>
+      <span class="vm-asset__health"><b${healthTone ? ` data-tone="${healthTone}"` : ''}>${esc(asset.health.overall)}</b><i>Health</i></span>
+    </div>`;
+
+  if (archived) {
+    return `
+      <article class="vm-asset vm-asset--archived" data-vehicle-detail="${esc(asset.id)}" role="button" tabindex="0" aria-label="Detail kendaraan ${esc(asset.name)}">
+        ${identity}
+        ${meta ? `<div class="vm-asset__meta">${meta}</div>` : ''}
+        <div class="vm-asset__strip">
+          <span class="vm-pill">${renderIcon('action-archive','0.62rem','currentColor')}<span>Diarsipkan</span></span>
+        </div>
+        <div class="vm-asset__foot">${renderIcon('time-clock','0.7rem','currentColor')} <span>Buka untuk pulihkan atau hapus</span></div>
+      </article>`;
+  }
+
+  const statusIcon = asset.status === 'active' ? 'status-active'
+    : asset.status === 'maintenance' ? 'status-maintenance' : 'status-inactive';
+  const stnkIcon = asset.stnk?.status === 'valid' ? 'legal-valid'
+    : asset.stnk?.status === 'due_soon' ? 'legal-warning' : 'legal-expired';
+  const maint = asset.status === 'maintenance'
+    ? { tone: 'warn', text: 'Servis' }
+    : ((asset.maintenanceSummary?.totalRecords || 0) > 0
+        ? { tone: 'ok', text: 'Terawat' }
+        : { tone: '', text: 'Belum ada' });
+
+  const strip = `
+    <div class="vm-asset__strip">
+      ${pill(toneClass(asset.statusInfo.tone), statusIcon, asset.statusInfo.labelId)}
+      ${pill(toneClass(asset.tax.tone), 'doc-tax', `Pajak: ${asset.tax.label}`)}
+      ${pill(toneClass(asset.stnk.tone), stnkIcon, `STNK: ${asset.stnk.label}`)}
+      ${pill(toneClass(asset.insurance.tone), 'doc-shield', `Asuransi: ${asset.insurance.label}`)}
+      ${pill(maint.tone, 'tool-wrench', maint.text)}
+    </div>`;
+
+  const foot = lastActivity
+    ? `<div class="vm-asset__foot">${renderIcon('time-clock','0.7rem','currentColor')} <span>Terakhir: <b>${esc(lastActivity.driver || '—')}</b> · ${esc(_vmShortDate(lastActivity.date))}</span></div>`
+    : `<div class="vm-asset__foot">${renderIcon('time-clock','0.7rem','currentColor')} <span>Belum pernah ditugaskan</span></div>`;
+
+  return `
+    <article class="vm-asset${active ? '' : ' vm-asset--inactive'}" data-vehicle-detail="${esc(asset.id)}" role="button" tabindex="0" aria-label="Detail kendaraan ${esc(asset.name)}">
+      ${identity}
+      ${meta ? `<div class="vm-asset__meta">${meta}</div>` : ''}
+      ${strip}
+      ${foot}
+    </article>`;
 }
 
 function renderV2AdminVehicles() {
@@ -4448,7 +4530,6 @@ function renderV2AdminVehicles() {
   if (!list) return;
 
   const allVehicles = getVehicles();
-  renderV2AdminVehicleStats(allVehicles);
 
   // Feature 10/11/12 — executive Fleet Dashboard (non-archived inventory).
   injectFleetDashboardStyles();
@@ -4479,86 +4560,66 @@ function renderV2AdminVehicles() {
     return;
   }
 
-  list.innerHTML = assets.map(buildVehicleCard).join('');
+  const lastByVehicle = _latestAssignmentByVehicle();
+  list.innerHTML = assets
+    .map(a => buildVehicleCard(a, lastByVehicle.get(String(a.name || '').trim())))
+    .join('');
 
-  // Card → Apple-style detail drawer (replaces the old detail modal).
+  // Lifecycle actions now live in the drawer footer (cards are pure navigation
+  // objects). These read-only handlers mirror the prior inline-button behavior;
+  // the registerVehiclesChangeListener callback re-renders once the cache updates.
+  const _toggleVehicle = async (id) => {
+    const vehicle = getVehicles().find(v => v.id === id);
+    if (!vehicle) return;
+    try {
+      const u = getCurrentUser();
+      if (vehicle.active !== false) {
+        await deactivateVehicle(id);
+        logAction({ userId: u?.id, username: u?.username, action: 'vehicle_deactivated', targetId: id });
+      } else {
+        await reactivateVehicle(id);
+        logAction({ userId: u?.id, username: u?.username, action: 'vehicle_reactivated', targetId: id });
+      }
+    } catch (err) { showToast(err.message || 'Gagal mengubah status kendaraan.'); }
+  };
+  const _archiveVehicleAction = async (id) => {
+    try {
+      await archiveVehicle(id);
+      logAction({ userId: getCurrentUser()?.id, username: getCurrentUser()?.username, action: 'vehicle_archived', targetId: id });
+      showToast('Kendaraan berhasil diarsipkan.');
+    } catch (err) { showToast(err.message || 'Gagal mengarsipkan kendaraan.', 'error'); }
+  };
+  const _restoreVehicleAction = async (id) => {
+    try {
+      await restoreVehicle(id);
+      logAction({ userId: getCurrentUser()?.id, username: getCurrentUser()?.username, action: 'vehicle_restored', targetId: id });
+      showToast('Kendaraan berhasil dipulihkan.');
+    } catch (err) { showToast(err.message || 'Gagal memulihkan kendaraan.', 'error'); }
+  };
+  const _deleteVehicleAction = (id) => {
+    const vehicle = getVehicles().find(v => v.id === id);
+    if (!vehicle) return;
+    openDeleteConfirmModal({ type: 'vehicle', id, name: vehicle.name, refCount: countVehicleReferences(vehicle) });
+  };
+
+  // Card → Apple-style detail drawer (single source of truth for actions).
   const openDetail = (id) => {
     const asset = findVehicleAsset(_fleetAssetModel, id);
-    if (asset) openVehicleDetailDrawer(asset, { onEdit: openVehicleFormModal });
+    if (!asset) return;
+    openVehicleDetailDrawer(asset, {
+      onEdit:    openVehicleFormModal,
+      onToggle:  _toggleVehicle,
+      onArchive: _archiveVehicleAction,
+      onRestore: _restoreVehicleAction,
+      onDelete:  _deleteVehicleAction,
+    });
   };
   list.querySelectorAll('[data-vehicle-detail]').forEach(card => {
-    card.addEventListener('click', e => {
-      if (e.target.closest('button')) return; // action buttons handle themselves
-      openDetail(card.dataset.vehicleDetail);
-    });
+    card.addEventListener('click', () => openDetail(card.dataset.vehicleDetail));
     card.addEventListener('keydown', e => {
       if (e.key !== 'Enter' && e.key !== ' ') return;
-      if (e.target.closest('button')) return;
       e.preventDefault();
       openDetail(card.dataset.vehicleDetail);
-    });
-  });
-
-  list.querySelectorAll('[data-vehicle-edit]').forEach(btn => {
-    btn.addEventListener('click', () => openVehicleFormModal(btn.dataset.vehicleEdit));
-  });
-
-  list.querySelectorAll('[data-vehicle-toggle]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const vehicleId = btn.dataset.vehicleToggle;
-      const vehicle = getVehicles().find(v => v.id === vehicleId);
-      if (!vehicle) return;
-      btn.disabled = true;
-      try {
-        const currentUser = getCurrentUser();
-        if (vehicle.active !== false) {
-          await deactivateVehicle(vehicleId);
-          logAction({ userId: currentUser?.id, username: currentUser?.username, action: 'vehicle_deactivated', targetId: vehicleId });
-        } else {
-          await reactivateVehicle(vehicleId);
-          logAction({ userId: currentUser?.id, username: currentUser?.username, action: 'vehicle_reactivated', targetId: vehicleId });
-        }
-        // Render is handled by registerVehiclesChangeListener callback once cache is updated.
-      } catch (err) {
-        showToast(err.message || 'Gagal mengubah status kendaraan.');
-        btn.disabled = false;
-      }
-    });
-  });
-  list.querySelectorAll('[data-vehicle-archive]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const vehicleId = btn.dataset.vehicleArchive;
-      btn.disabled = true;
-      try {
-        await archiveVehicle(vehicleId);
-        logAction({ userId: getCurrentUser()?.id, username: getCurrentUser()?.username, action: 'vehicle_archived', targetId: vehicleId });
-        showToast('Kendaraan berhasil diarsipkan.');
-      } catch (err) {
-        showToast(err.message || 'Gagal mengarsipkan kendaraan.', 'error');
-        btn.disabled = false;
-      }
-    });
-  });
-  list.querySelectorAll('[data-vehicle-restore]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const vehicleId = btn.dataset.vehicleRestore;
-      btn.disabled = true;
-      try {
-        await restoreVehicle(vehicleId);
-        logAction({ userId: getCurrentUser()?.id, username: getCurrentUser()?.username, action: 'vehicle_restored', targetId: vehicleId });
-        showToast('Kendaraan berhasil dipulihkan.');
-      } catch (err) {
-        showToast(err.message || 'Gagal memulihkan kendaraan.', 'error');
-        btn.disabled = false;
-      }
-    });
-  });
-  list.querySelectorAll('[data-vehicle-delete]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const vehicleId = btn.dataset.vehicleDelete;
-      const vehicle = getVehicles().find(v => v.id === vehicleId);
-      if (!vehicle) return;
-      openDeleteConfirmModal({ type: 'vehicle', id: vehicleId, name: vehicle.name, refCount: countVehicleReferences(vehicle) });
     });
   });
 }
@@ -5655,8 +5716,6 @@ function renderDispatchAnalyticsSection() {
       host.innerHTML = '<div class="daa"><div class="daa-sec"><div class="daa-empty"><div class="daa-empty__ic">⚠️</div><div class="daa-empty__t">Gagal memuat Dispatch Analytics</div><div class="daa-empty__d">Terjadi kesalahan saat menyusun data. Coba muat ulang halaman.</div></div></div></div>';
     }
   }
-  // v1.17.1 — render the Recommendation Accuracy dashboard beside it.
-  renderRecommendationAccuracySection();
 }
 
 /* ── Recommendation Accuracy (v1.17.1) ─────────────────────────────────────
@@ -9105,6 +9164,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateAllModules();   // also calls setDashboardAssignments + renderDriverDashboard
     renderViews();
     if (activeAdminSection === 'dispatchanalytics') renderDispatchAnalyticsSection();
+    if (activeAdminSection === 'recommendationaccuracy') renderRecommendationAccuracySection();
     if (activeAdminSection === 'wellness') renderDriverWellnessSection();
     checkAndSendH1Reminders(assignments, requests, getUserByUsername, getUsers);
     checkAndSendHoursReminders(assignments, requests, getUserByUsername, getUsers);
@@ -9117,6 +9177,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateAllModules();
     updatePermissionUI();
     if (activeAdminSection === 'dispatchanalytics') renderDispatchAnalyticsSection();
+    if (activeAdminSection === 'recommendationaccuracy') renderRecommendationAccuracySection();
     if (activeAdminSection === 'wellness') renderDriverWellnessSection();
     // Refresh comment modal if open for one of the updated requests
     refreshCommentThreadIfOpen(requests);

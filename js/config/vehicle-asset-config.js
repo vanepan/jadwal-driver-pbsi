@@ -66,11 +66,22 @@ export const DOCUMENT_FIELDS = Object.freeze([
 export const DUE_SOON_DAYS = 30;
 
 /** Health composition weights (Feature 11 — Overall Asset Health). Higher = better
- *  for every sub-score (Unified Scoring philosophy). Weights sum to 1. */
+ *  for every sub-score (Unified Scoring philosophy). Weights sum to 1.
+ *
+ *  v1.18.1 RE-WEIGHT (fleets < 15 vehicles): the prior model led with operational
+ *  STATUS (0.40), but status (active/inactive/retired) is a STATE the admin sets,
+ *  not a measure of asset health — it made an idle-but-fully-legal vehicle score
+ *  the same as a maintained one, and let an expired-STNK vehicle still read
+ *  "healthy" because it was Active. For a small fleet the real risk is LEGAL
+ *  lapse (STNK/tax/insurance) and MAINTENANCE neglect, so those now lead. Each
+ *  sub-score is still re-normalized over only the PRESENT components, so a
+ *  vehicle with no maintenance history is not penalized to zero — its weight is
+ *  redistributed to the components that do have data. */
 export const HEALTH_WEIGHTS = Object.freeze({
-  operational: 0.40, // status-derived
-  legal:       0.35, // STNK + tax + insurance validity
-  documents:   0.25, // completeness
+  legal:       0.40, // STNK + tax + insurance validity — the #1 fleet risk
+  maintenance: 0.35, // recency + frequency + compliance (v1.18.1)
+  operational: 0.15, // status-derived (a state, not a health measure)
+  documents:   0.10, // completeness of the asset record
 });
 
 /** Operational-status health points (Feature 11 — higher = better). */

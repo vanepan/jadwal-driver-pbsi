@@ -25,6 +25,8 @@
 import { clampScore, scoreBand, scoreColor, scoreLabel, scoreLabelId } from './unified-scoring.js';
 import { isSpecialVehicle } from './dispatch-policy-engine.js';
 import { computeFleetAnalytics } from '../analytics/vehicle-asset-analytics.js';
+import { computeMaintenanceHealth, computeMaintenanceTimeline, deriveMaintenanceSummary } from './maintenance-service.js';
+import { buildMaintenanceAnalytics } from '../analytics/maintenance-analytics.js';
 import {
   vehicleTypeInfo, vehicleStatusInfo, vehicleTypeKeys, vehicleStatusKeys,
   TYPE_ELIGIBILITY, DOCUMENT_FIELDS, DUE_SOON_DAYS, HEALTH_WEIGHTS, STATUS_HEALTH,
@@ -119,7 +121,7 @@ export function computeDocumentCompleteness(vehicle) {
  * penalized to zero). Returns band / color / label from Unified Scoring.
  */
 export function computeVehicleHealth(parts) {
-  const { status, stnk, tax, insurance, documents } = parts;
+  const { status, stnk, tax, insurance, documents, maintenance } = parts;
   const operational = clampScore(STATUS_HEALTH[status] != null ? STATUS_HEALTH[status] : 30);
 
   const legalScores = [stnk, tax, insurance]
@@ -128,11 +130,13 @@ export function computeVehicleHealth(parts) {
   const legal = legalScores.length ? clampScore(legalScores.reduce((a, b) => a + b, 0) / legalScores.length) : null;
 
   const docScore = clampScore(documents ? documents.completeness : 0);
+  const maintScore = maintenance && maintenance.score != null ? clampScore(maintenance.score) : null;
 
   const comps = [
     { v: operational, w: HEALTH_WEIGHTS.operational },
     { v: legal,       w: HEALTH_WEIGHTS.legal },
     { v: docScore,    w: HEALTH_WEIGHTS.documents },
+    { v: maintScore,  w: HEALTH_WEIGHTS.maintenance },
   ].filter((c) => c.v != null);
   const wsum = comps.reduce((a, c) => a + c.w, 0) || 1;
   const overall = clampScore(comps.reduce((a, c) => a + c.v * c.w, 0) / wsum);
@@ -141,6 +145,7 @@ export function computeVehicleHealth(parts) {
     operational,
     legal,
     documents: docScore,
+    maintenance: maintScore,
     overall,
     band: scoreBand(overall),
     color: scoreColor(overall),
@@ -247,9 +252,12 @@ export function normalizeVehicleAsset(vehicle, now) {
   const tax = deriveTaxStatus(v, now);
   const insurance = deriveDocStatus(v.insuranceExpiry, now);
   const documents = computeDocumentCompleteness(v);
-  const health = computeVehicleHealth({ status, stnk, tax, insurance, documents });
+  const maintenance = computeMaintenanceHealth(Array.isArray(v.maintenanceRecords) ? v.maintenanceRecords : [], now);
+  const health = computeVehicleHealth({ status, stnk, tax, insurance, documents, maintenance });
   const eligibility = evaluateOperationalEligibility(v);
   const timeline = buildVehicleTimeline(v, now);
+  const maintenanceSummary = deriveMaintenanceSummary(Array.isArray(v.maintenanceRecords) ? v.maintenanceRecords : []);
+  const maintenanceTimeline = computeMaintenanceTimeline(Array.isArray(v.maintenanceRecords) ? v.maintenanceRecords : [], now);
 
   return {
     id: v.id,
@@ -273,6 +281,8 @@ export function normalizeVehicleAsset(vehicle, now) {
     insuranceCompany: str(v.insuranceCompany), policyNumber: str(v.policyNumber),
     coverage: str(v.coverage), insuranceExpiry: str(v.insuranceExpiry),
     insurance,
+    // Maintenance (v1.18.1)
+    maintenance, maintenanceSummary, maintenanceTimeline,
     // Derived blocks
     documents, health, eligibility,
     taxHistory: Array.isArray(v.taxHistory) ? v.taxHistory.slice() : [],
@@ -352,8 +362,9 @@ export function computeFleetAssetModel(input = {}) {
   };
 
   const analytics = computeFleetAnalytics({ vehicles, now });
+  const maintenanceAnalytics = buildMaintenanceAnalytics(source, now);
 
-  return { now, dashboard, analytics, vehicles };
+  return { now, dashboard, analytics: { ...analytics, maintenance: maintenanceAnalytics }, vehicles };
 }
 
 /** Locate a normalized asset in a fleet model by id. */

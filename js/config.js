@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.18.0';
-export const RELEASE_NAME = 'Vehicle Asset Intelligence';
+export const APP_VERSION = '1.18.1';
+export const RELEASE_NAME = 'Fleet Maintenance Intelligence';
 
 /**
  * Web Push VAPID PUBLIC key (v1.11.3). Safe to ship — it is an

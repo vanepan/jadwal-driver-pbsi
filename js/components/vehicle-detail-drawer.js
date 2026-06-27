@@ -21,6 +21,8 @@
 
 'use strict';
 
+import { renderIcon, vehicleTypeIconName } from './icon-system.js';
+
 const STYLE_ID = 'vad-drawer-styles';
 const ROOT_ID = 'vehicleDetailDrawer';
 
@@ -181,11 +183,26 @@ function healthBar(label, score, tone) {
 function renderOverview(a) {
   const sec = section('Overview', a.health.label);
   const bd = el('div', 'vad-bd');
+  // v1.18.1 — full explainability: every weighted sub-score of Overall Asset
+  // Health is shown (Legal + Maintenance now lead the weighting). N/A when a
+  // component has no data (it is excluded from the re-weighted overall, not zero).
+  const band3 = (s) => (s == null ? null : s >= 70 ? 'ok' : s >= 40 ? 'warn' : 'danger');
+  bd.append(healthBar('Status Legal', a.health.legal, band3(a.health.legal)));
+  bd.append(healthBar('Perawatan', a.health.maintenance, band3(a.health.maintenance)));
   bd.append(healthBar('Status Operasional', a.health.operational, a.statusInfo.tone === 'muted' ? 'info' : a.statusInfo.tone));
-  bd.append(healthBar('Status Legal', a.health.legal, a.health.legal == null ? null : (a.health.legal >= 70 ? 'ok' : a.health.legal >= 40 ? 'warn' : 'danger')));
-  bd.append(healthBar('Kelengkapan Dokumen', a.health.documents, a.health.documents >= 80 ? 'ok' : a.health.documents >= 40 ? 'warn' : 'danger'));
+  bd.append(healthBar('Kelengkapan Dokumen', a.health.documents, band3(a.health.documents)));
   bd.append(healthBar('Overall Asset Health', a.health.overall, a.health.color));
   sec.append(bd);
+  return sec;
+}
+
+function renderOperational(a) {
+  const sec = section('Operational');
+
+  const grid = el('div', 'vad-kv');
+  kv(grid, 'Status', a.statusInfo.labelId);
+  kv(grid, 'Tipe Aset', a.typeInfo.label);
+  sec.append(grid);
 
   const elig = el('div', 'vad-badges');
   elig.style.marginTop = '.2rem';
@@ -272,19 +289,35 @@ function renderInsurance(a) {
   return sec;
 }
 
-function renderTimeline(a) {
-  const sec = section('Timeline');
-  if (!a.timeline.length) { sec.append(el('div', 'vad-empty', 'Belum ada peristiwa.')); return sec; }
+function renderMaintenance(a) {
+  const sec = section('Maintenance', ' (v1.18.1)');
+  
+  // Summary row
+  const sumGrid = el('div', 'vad-kv');
+  const summary = a.maintenanceSummary || {};
+  kv(sumGrid, 'Total Catatan', String(summary.totalRecords || 0));
+  kv(sumGrid, 'Terakhir', summary.lastDate ? fmtDate(summary.lastDate) : 'Belum ada');
+  kv(sumGrid, 'Kategori Terakhir', summary.lastCategoryLabel || '—');
+  kv(sumGrid, 'Biaya Terakhir', summary.lastCostDisplay || 'Rp 0');
+  sec.append(sumGrid);
+  
+  // Timeline of maintenance records
+  if (!a.maintenanceTimeline || !a.maintenanceTimeline.length) {
+    sec.append(el('div', 'vad-empty', 'Belum ada catatan perawatan.'));
+    return sec;
+  }
+  
   const ul = el('ul', 'vad-tl');
-  const rows = a.timeline.slice().sort((x, y) => new Date(y.date) - new Date(x.date));
-  for (const ev of rows) {
+  const rows = a.maintenanceTimeline.slice(0, 8);
+  for (const rec of rows) {
     const li = el('li');
     li.append(el('span', 'vad-tl__dot'));
     const body = el('div', 'vad-tl__body');
-    body.append(el('span', 'vad-tl__label', ev.label));
-    if (ev.detail) body.append(el('span', 'vad-tl__detail', ev.detail));
+    body.append(el('span', 'vad-tl__label', rec.categoryLabel || 'Perawatan'));
+    const detail = [rec.statusLabel, rec.costDisplay, rec.workshopName].filter(Boolean).join(' · ');
+    if (detail) body.append(el('span', 'vad-tl__detail', detail));
     li.append(body);
-    li.append(el('span', 'vad-tl__time', fmtDate(ev.date)));
+    li.append(el('span', 'vad-tl__time', fmtDate(rec.date)));
     ul.append(li);
   }
   sec.append(ul);
@@ -300,6 +333,29 @@ function renderHistory(a) {
   kv(grid, 'Diperbarui', fmtDate(a.updatedAt));
   kv(grid, 'Diarsipkan', a.archived ? 'Ya' : 'Tidak');
   sec.append(grid);
+
+  // Chronological event timeline (merged in from the former Timeline section).
+  const tl = el('div', null);
+  tl.style.marginTop = '.5rem';
+  tl.append(el('div', 'vad-sec__title', 'Linimasa'));
+  if (!a.timeline.length) {
+    tl.append(el('div', 'vad-empty', 'Belum ada peristiwa.'));
+  } else {
+    const ul = el('ul', 'vad-tl');
+    const rows = a.timeline.slice().sort((x, y) => new Date(y.date) - new Date(x.date));
+    for (const ev of rows) {
+      const li = el('li');
+      li.append(el('span', 'vad-tl__dot'));
+      const body = el('div', 'vad-tl__body');
+      body.append(el('span', 'vad-tl__label', ev.label));
+      if (ev.detail) body.append(el('span', 'vad-tl__detail', ev.detail));
+      li.append(body);
+      li.append(el('span', 'vad-tl__time', fmtDate(ev.date)));
+      ul.append(li);
+    }
+    tl.append(ul);
+  }
+  sec.append(tl);
   return sec;
 }
 
@@ -317,7 +373,9 @@ function buildSheet(asset, opts) {
   const head = el('div', 'vad-head');
   const top = el('div', 'vad-head__top');
   const brand = el('div', 'vad-head__brand');
-  brand.append(el('span', null, '🚘'), el('span', null, 'Vehicle Asset'));
+  const brandIc = el('span', null);
+  brandIc.innerHTML = renderIcon('vehicle-car', '0.95rem', 'currentColor');
+  brand.append(brandIc, el('span', null, 'Vehicle Asset'));
   top.append(brand);
   top.append(el('span', 'vad-head__tag', 'Asset Intelligence'));
   const x = el('button', 'vad-x', '×');
@@ -327,7 +385,9 @@ function buildSheet(asset, opts) {
 
   const hero = el('div', 'vad-hero');
   const id = el('div', 'vad-hero__id');
-  id.append(el('span', 'vad-hero__avatar', asset.typeInfo.icon));
+  const avatar = el('span', 'vad-hero__avatar');
+  avatar.innerHTML = renderIcon(vehicleTypeIconName(asset.type), '1.5rem', 'currentColor');
+  id.append(avatar);
   const txt = el('div', 'vad-hero__txt');
   txt.append(el('span', 'vad-hero__name', asset.name || '—'));
   txt.append(el('span', 'vad-hero__plate', asset.plateNumber || 'Tanpa plat'));
@@ -339,32 +399,66 @@ function buildSheet(asset, opts) {
   head.append(hero);
 
   const badges = el('div', 'vad-badges');
-  badges.append(pill(`${asset.typeInfo.icon} ${asset.typeInfo.label}`, 'info'));
+  badges.append(pill(asset.typeInfo.label, 'info'));
   badges.append(pill(asset.statusInfo.labelId, asset.statusInfo.tone === 'muted' ? null : asset.statusInfo.tone));
   badges.append(pill(asset.health.label, asset.health.color));
   head.append(badges);
   sheet.append(head);
 
-  // Body — six sections (NO Gallery)
+  // Body — seven sections (NO Gallery). Order improves the information
+  // hierarchy: high-level health, then operational eligibility, then the record.
   const body = el('div', 'vad-body');
   body.append(renderOverview(asset));
+  body.append(renderOperational(asset));
   body.append(renderRegistration(asset));
   body.append(renderTax(asset));
   body.append(renderInsurance(asset));
-  body.append(renderTimeline(asset));
+  body.append(renderMaintenance(asset));
   body.append(renderHistory(asset));
   sheet.append(body);
 
-  // Footer
+  // Footer — the drawer is the SINGLE source of truth for lifecycle actions
+  // (cards carry none). Each action closes the drawer first, then delegates to
+  // the host handler; the host re-renders via its vehicles-change listener.
   const foot = el('div', 'vad-foot');
+  foot.style.flexWrap = 'wrap';
   const closeBtn = el('button', 'vad-btn vad-btn--ghost', 'Tutup');
   closeBtn.type = 'button'; closeBtn.id = 'vadCloseBtn';
   foot.append(closeBtn);
-  if (typeof opts.onEdit === 'function') {
-    const editBtn = el('button', 'vad-btn vad-btn--accent', 'Edit Aset');
-    editBtn.type = 'button'; editBtn.id = 'vadEditBtn';
-    editBtn.addEventListener('click', () => { closeVehicleDetailDrawer(); opts.onEdit(asset.id); });
-    foot.append(editBtn);
+
+  const act = (handler) => (id) => { closeVehicleDetailDrawer(); handler(id); };
+  if (asset.archived) {
+    if (typeof opts.onRestore === 'function') {
+      const b = el('button', 'vad-btn vad-btn--ghost', 'Pulihkan');
+      b.type = 'button'; b.id = 'vadRestoreBtn';
+      b.addEventListener('click', () => act(opts.onRestore)(asset.id));
+      foot.append(b);
+    }
+    if (typeof opts.onDelete === 'function') {
+      const b = el('button', 'vad-btn vad-btn--accent', 'Hapus');
+      b.type = 'button'; b.id = 'vadDeleteBtn';
+      b.addEventListener('click', () => act(opts.onDelete)(asset.id));
+      foot.append(b);
+    }
+  } else {
+    if (typeof opts.onToggle === 'function') {
+      const b = el('button', 'vad-btn vad-btn--ghost', asset.status === 'active' ? 'Nonaktifkan' : 'Aktifkan');
+      b.type = 'button'; b.id = 'vadToggleBtn';
+      b.addEventListener('click', () => act(opts.onToggle)(asset.id));
+      foot.append(b);
+    }
+    if (typeof opts.onArchive === 'function') {
+      const b = el('button', 'vad-btn vad-btn--ghost', 'Arsipkan');
+      b.type = 'button'; b.id = 'vadArchiveBtn';
+      b.addEventListener('click', () => act(opts.onArchive)(asset.id));
+      foot.append(b);
+    }
+    if (typeof opts.onEdit === 'function') {
+      const editBtn = el('button', 'vad-btn vad-btn--accent', 'Edit Aset');
+      editBtn.type = 'button'; editBtn.id = 'vadEditBtn';
+      editBtn.addEventListener('click', () => act(opts.onEdit)(asset.id));
+      foot.append(editBtn);
+    }
   }
   sheet.append(foot);
 
@@ -377,7 +471,9 @@ function buildSheet(asset, opts) {
 /**
  * Open (or replace) the vehicle detail drawer for a normalized asset.
  * @param {Object} asset  normalizeVehicleAsset() result
- * @param {{onEdit?:(id:string)=>void}} [opts]
+ * @param {{onEdit?:(id:string)=>void, onToggle?:(id:string)=>void,
+ *          onArchive?:(id:string)=>void, onRestore?:(id:string)=>void,
+ *          onDelete?:(id:string)=>void}} [opts]
  * @returns {HTMLElement} the drawer root
  */
 export function openVehicleDetailDrawer(asset, opts = {}) {

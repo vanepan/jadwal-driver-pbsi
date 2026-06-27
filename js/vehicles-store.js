@@ -110,6 +110,7 @@ function buildSeedVehicles() {
       createdAt: now,
       updatedAt: now,
       inactiveAt: null,
+      maintenanceRecords: [],
     };
     return map;
   }, {});
@@ -230,6 +231,7 @@ export async function createVehicle({ name, plateNumber, capacity, color, active
     createdAt: now,
     updatedAt: now,
     inactiveAt: isActive ? null : now,
+    maintenanceRecords: [],
     ...sanitizeAssetFields(assetInput),
   };
 
@@ -368,6 +370,138 @@ export async function deleteVehicle(id) {
     return;
   }
   await storeFirebaseData(VEHICLES_PATH + '/' + id, null);
+}
+
+/* ── Maintenance Records (v1.18.1) ────────────────────────────────────────── */
+
+/**
+ * Get maintenance records for a vehicle.
+ * @param {string} vehicleId - Vehicle ID
+ * @returns {Array} Maintenance records (or empty array if vehicle/records not found)
+ */
+export function getMaintenanceRecords(vehicleId) {
+  const vehicle = vehicles.find(v => v.id === vehicleId);
+  if (!vehicle || !Array.isArray(vehicle.maintenanceRecords)) return [];
+  return vehicle.maintenanceRecords;
+}
+
+/**
+ * Add a maintenance record to a vehicle.
+ * @param {string} vehicleId - Vehicle ID
+ * @param {Object} record - Maintenance record (will be assigned an id and timestamps)
+ * @returns {Object} Created record with id and timestamps
+ */
+export async function addMaintenanceRecord(vehicleId, record) {
+  const existing = vehicles.find(v => v.id === vehicleId);
+  if (!existing) throw new Error('Kendaraan tidak ditemukan.');
+
+  // Generate ID and timestamps
+  const id = 'maint_' + Math.random().toString(36).substr(2, 9);
+  const now = new Date().toISOString();
+  const newRecord = {
+    ...record,
+    id,
+    vehicleId,
+    createdAt: now,
+    updatedAt: now
+  };
+
+  // Initialize maintenance array if not present
+  if (!Array.isArray(existing.maintenanceRecords)) {
+    existing.maintenanceRecords = [];
+  }
+
+  existing.maintenanceRecords.push(newRecord);
+  const updates = {
+    maintenanceRecords: existing.maintenanceRecords,
+    updatedAt: now
+  };
+
+  if (!isFirebaseConfigured()) {
+    refreshVehiclesCache(mapFirebaseVehicles(Object.fromEntries(
+      vehicles.map(v => [v.id, v.id === vehicleId ? { ...v, ...updates } : v])
+    )));
+    return newRecord;
+  }
+
+  await updateFirebaseData(VEHICLES_PATH + '/' + vehicleId, updates);
+  return newRecord;
+}
+
+/**
+ * Update a maintenance record.
+ * @param {string} vehicleId - Vehicle ID
+ * @param {string} recordId - Maintenance record ID
+ * @param {Object} updates - Fields to update
+ * @returns {Object} Updated record
+ */
+export async function updateMaintenanceRecord(vehicleId, recordId, updates) {
+  const vehicle = vehicles.find(v => v.id === vehicleId);
+  if (!vehicle) throw new Error('Kendaraan tidak ditemukan.');
+  if (!Array.isArray(vehicle.maintenanceRecords)) {
+    throw new Error('Kendaraan tidak memiliki catatan perawatan.');
+  }
+
+  const recordIndex = vehicle.maintenanceRecords.findIndex(r => r.id === recordId);
+  if (recordIndex < 0) throw new Error('Catatan perawatan tidak ditemukan.');
+
+  const now = new Date().toISOString();
+  const updated = {
+    ...vehicle.maintenanceRecords[recordIndex],
+    ...updates,
+    id: recordId,  // never change ID
+    vehicleId,     // never change vehicle reference
+    createdAt: vehicle.maintenanceRecords[recordIndex].createdAt,  // preserve creation time
+    updatedAt: now
+  };
+
+  vehicle.maintenanceRecords[recordIndex] = updated;
+  const vUpdates = {
+    maintenanceRecords: vehicle.maintenanceRecords,
+    updatedAt: now
+  };
+
+  if (!isFirebaseConfigured()) {
+    refreshVehiclesCache(mapFirebaseVehicles(Object.fromEntries(
+      vehicles.map(v => [v.id, v.id === vehicleId ? { ...v, ...vUpdates } : v])
+    )));
+    return updated;
+  }
+
+  await updateFirebaseData(VEHICLES_PATH + '/' + vehicleId, vUpdates);
+  return updated;
+}
+
+/**
+ * Delete a maintenance record.
+ * @param {string} vehicleId - Vehicle ID
+ * @param {string} recordId - Maintenance record ID
+ */
+export async function deleteMaintenanceRecord(vehicleId, recordId) {
+  const vehicle = vehicles.find(v => v.id === vehicleId);
+  if (!vehicle) throw new Error('Kendaraan tidak ditemukan.');
+  if (!Array.isArray(vehicle.maintenanceRecords)) {
+    throw new Error('Kendaraan tidak memiliki catatan perawatan.');
+  }
+
+  const recordIndex = vehicle.maintenanceRecords.findIndex(r => r.id === recordId);
+  if (recordIndex < 0) throw new Error('Catatan perawatan tidak ditemukan.');
+
+  vehicle.maintenanceRecords.splice(recordIndex, 1);
+  const now = new Date().toISOString();
+  const updates = {
+    maintenanceRecords: vehicle.maintenanceRecords,
+    updatedAt: now
+  };
+
+  if (!isFirebaseConfigured()) {
+    refreshVehiclesCache(mapFirebaseVehicles(Object.fromEntries(
+      vehicles.map(v => [v.id, v.id === vehicleId ? { ...v, ...updates } : v])
+    )));
+    return;
+  }
+
+  await updateFirebaseData(VEHICLES_PATH + '/' + vehicleId, updates);
 }
 
 console.info('Vehicles store module loaded');

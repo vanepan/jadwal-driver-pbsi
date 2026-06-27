@@ -71,49 +71,61 @@ const result = await page.evaluate(async () => {
   const host = document.getElementById('host');
   host.innerHTML = dash.renderFleetDashboard(model);
 
-  const root = host.querySelector('.fld');
-  const qa = (s) => [...root.querySelectorAll(s)];
+  // v1.18.2 — thin Executive Summary strip (.vms) + executive asset grid below.
+  const root = host.querySelector('.vms');
+  const qa = (s) => (root ? [...root.querySelectorAll(s)] : []);
 
-  // Open the detail drawer for the first asset.
+  // Render the executive asset cards too (the inventory hero).
+  const cardHost = document.createElement('div');
+  cardHost.className = 'vm-grid';
+  // buildVehicleCard lives in app.js; here we assert the model + drawer instead.
+
+  // Open the detail drawer for the first asset (with lifecycle handlers so the
+  // footer actions render — cards carry none; the drawer is the action surface).
   const asset = svc.findVehicleAsset(model, 'v1');
-  drawer.openVehicleDetailDrawer(asset);
+  const noop = () => {};
+  drawer.openVehicleDetailDrawer(asset, { onEdit: noop, onToggle: noop, onArchive: noop, onRestore: noop, onDelete: noop });
   const drw = document.getElementById('vehicleDetailDrawer');
   const drwTitles = drw ? [...drw.querySelectorAll('.vad-sec__title')].map((e) => e.textContent.trim()) : [];
 
-  const dashStyle = document.getElementById('fld-dashboard-styles');
+  const dashStyle = document.getElementById('vm-summary-styles');
   const drwStyle = document.getElementById('vad-drawer-styles');
   const noHardWhite = (s) => (s ? !/#fff(\b|;)|#ffffff/i.test(s.textContent) : false);
+  // Emoji guard — the redesign forbids emoji in rendered output.
+  const EMOJI = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u;
 
   return {
-    kpiCards: qa('.fld-kpi').length,
-    healthBlock: !!root.querySelector('.fld-health__num'),
-    distCharts: qa('.fld-dist').length,
-    distRows: qa('.fld-row').length,
+    summaryStrip: !!root,
+    kpiCards: qa('.vms__kpi').length,
+    dashNoEmoji: !EMOJI.test(host.textContent || ''),
     drawerOpen: !!drw,
     drawerSheet: !!(drw && drw.querySelector('.vad-sheet')),
     drawerTitles: drwTitles,
     drawerHero: drw ? (drw.querySelector('.vad-hero__num') || {}).textContent : '',
     healthBars: drw ? drw.querySelectorAll('.vad-bd__row').length : 0,
     taxHistoryItems: drw ? drw.querySelectorAll('.vad-tl li').length : 0,
+    operationalSection: drwTitles.some((t) => t.includes('Operational')),
+    footerActions: drw ? !!(drw.querySelector('#vadToggleBtn') && drw.querySelector('#vadArchiveBtn') && drw.querySelector('#vadEditBtn')) : false,
+    drawerNoEmoji: drw ? !EMOJI.test(drw.textContent || '') : false,
     noGallery: drw ? !/gallery/i.test(drw.textContent) : false,
     closeBtn: !!(drw && drw.querySelector('#vadCloseBtn')),
     noHardWhite: noHardWhite(dashStyle) && noHardWhite(drwStyle),
   };
 });
 
-console.log('\n[Feature 10 — Fleet dashboard]');
-check('executive KPI cards render (≥9: total/active/maint/inactive/retired/cars/motor/amb/tax/stnk)', result.kpiCards >= 9);
-check('average asset health block renders (Feature 11)', result.healthBlock);
+console.log('\n[Executive Summary — thin strip]');
+check('summary strip renders (.vms)', result.summaryStrip);
+check('exactly 5 executive KPI tiles', result.kpiCards === 5);
+check('dashboard has zero emoji', result.dashNoEmoji);
 
-console.log('\n[Feature 12 — Fleet analytics]');
-check('fleet analytics distribution cards render (composition/age/fuel/transmission/docs/tax = 6)', result.distCharts === 6);
-check('distribution rows render', result.distRows >= 6);
-
-console.log('\n[Feature 4 — Detail drawer]');
+console.log('\n[Detail drawer]');
 check('detail drawer opens', result.drawerOpen && result.drawerSheet);
 check('drawer hero shows asset health score', /\d/.test(result.drawerHero || ''));
-const want = ['Overview', 'Registration', 'Tax', 'Insurance', 'Timeline', 'History'];
+const want = ['Overview', 'Operational', 'Registration', 'Tax', 'Insurance', 'Maintenance', 'History'];
 for (const w of want) check(`§ ${w}`, result.drawerTitles.some((t) => t.includes(w)));
+check('Operational section present (new)', result.operationalSection);
+check('footer carries lifecycle actions (toggle/archive/edit)', result.footerActions);
+check('drawer has zero emoji', result.drawerNoEmoji);
 check('NO Gallery section (reserved for future roadmap)', result.noGallery);
 
 console.log('\n[Feature 11/7 — drawer content]');

@@ -5278,11 +5278,33 @@ html.theme-anim .timeline-scroll-fade-right {
 .v2-admin-toolbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 20px 0;
+  gap: 0.5rem;
+  padding: 1rem 0;
   flex-wrap: wrap;
-  margin-bottom: 20px;
+  margin-bottom: 1rem;
   border-bottom: 1px solid var(--border);
+}
+
+/* Toolbar sections — search left, filters center, actions right */
+.v2-admin-toolbar__search {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.v2-admin-toolbar__filters {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+  min-width: 0;
+}
+
+.v2-admin-toolbar__actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-left: auto;
 }
 
 .v2-admin-search {
@@ -5290,13 +5312,13 @@ html.theme-anim .timeline-scroll-fade-right {
   min-width: 0;
   background: var(--input-bg);
   border: 1px solid var(--input-border);
-  border-radius: 6px;
-  padding: 10px 12px;
-  font-size: 13px;
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.76rem;
   color: var(--text);
   font-family: inherit;
   outline: none;
-  transition: border-color .12s, box-shadow .12s;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .v2-admin-search::placeholder {
@@ -5312,18 +5334,22 @@ html.theme-anim .timeline-scroll-fade-right {
   flex: 0 0 auto;
   background: var(--input-bg);
   border: 1px solid var(--input-border);
-  border-radius: 6px;
-  padding: 10px 12px;
-  font-size: 13px;
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+  font-size: 0.74rem;
   color: var(--text);
   font-family: inherit;
   outline: none;
   cursor: pointer;
-  transition: border-color .12s;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 
 .v2-admin-filter:focus {
   border-color: var(--accent);
+}
+
+.v2-admin-filter:hover {
+  background: var(--surface-2);
 }
 
 .v2-admin-add-btn {
@@ -5331,23 +5357,22 @@ html.theme-anim .timeline-scroll-fade-right {
   background: var(--accent);
   color: var(--on-accent);
   border: none;
-  border-radius: 6px;
-  padding: 10px 14px;
-  font-size: 13px;
-  font-weight: 600;
+  border-radius: 8px;
+  padding: 0.65rem 1rem;
+  font-size: 0.74rem;
+  font-weight: 700;
   font-family: inherit;
   cursor: pointer;
   outline: none;
-  transition: background .12s, opacity .12s;
+  transition: filter 0.15s ease;
 }
 
 .v2-admin-add-btn:hover {
-  background: var(--accent-dark, color-mix(in srgb, var(--accent) 85%, black));
-  opacity: 0.9;
+  filter: brightness(1.05);
 }
 
 .v2-admin-add-btn:active {
-  opacity: 0.8;
+  filter: brightness(0.95);
 }
 
 /* ── Stats layer ───────────────────────────────────────────────────── */
@@ -5489,22 +5514,22 @@ html.theme-anim .timeline-scroll-fade-right {
 .v2-user-card {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 1rem;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 14px 16px;
-  box-shadow: none;
-  transition: box-shadow .15s, border-color .15s;
+  border-radius: 14px;
+  padding: 0.95rem 1.1rem;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow .15s ease, border-color .15s ease;
 }
 
 .v2-user-card:hover {
   border-color: var(--border-strong, color-mix(in srgb, var(--border) 85%, black));
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-md);
 }
 
 .v2-user-card--inactive {
-  opacity: 0.55;
+  opacity: 0.6;
 }
 
 /* Avatar ring — role-coloured border */
@@ -5575,16 +5600,20 @@ html.theme-anim .timeline-scroll-fade-right {
 .v2-role-pill--viewer  { background: var(--ok-bg);      color: var(--ok);      }
 
 .v2-user-status-pill {
-  font-size: 10px;
-  font-weight: 600;
-  padding: 2px 7px;
-  border-radius: 20px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
   background: var(--ok-bg);
   color: var(--ok);
+  transition: background 0.15s ease;
 }
 .v2-user-status-pill.v2-status-pill--inactive {
-  background: var(--border);
+  background: var(--surface-2);
   color: var(--muted);
+  border: 1px solid var(--border);
 }
 /* Leave statuses (Cuti/Sakit/Izin) — amber, theme-aware via --warn tokens. v1.16.4.4 */
 .v2-user-status-pill.v2-status-pill--leave {
@@ -5595,40 +5624,112 @@ html.theme-anim .timeline-scroll-fade-right {
 /* Action buttons */
 .v2-user-card-actions {
   display: flex;
-  gap: 6px;
+  gap: 0.5rem;
   flex-shrink: 0;
 }
 .v2-user-btn {
-  font-size: 11.5px;
-  font-weight: 600;
+  font-size: 0.74rem;
+  font-weight: 700;
   font-family: inherit;
-  border-radius: 6px;
-  padding: 5px 10px;
+  border-radius: 9px;
+  padding: 0.4rem 0.75rem;
   cursor: pointer;
-  border: 1px solid transparent;
-  transition: filter .12s, background .12s;
+  border: 1px solid var(--border);
+  transition: filter 0.12s ease, background 0.12s ease;
   white-space: nowrap;
+  background: var(--surface-2);
+  color: var(--text);
+}
+.v2-user-btn:hover {
+  filter: brightness(0.96);
 }
 .v2-user-btn--edit {
-  background: var(--input-bg);
+  background: var(--surface-2);
   border-color: var(--border);
   color: var(--text);
 }
-.v2-user-btn--edit:hover { filter: brightness(.95); }
+.v2-user-btn--edit:hover {
+  filter: brightness(0.94);
+}
 
 .v2-user-btn--toggle {
+  background: var(--warn-bg);
+  color: var(--warn);
+  border-color: var(--warn);
+}
+.v2-user-btn--toggle:hover {
+  filter: brightness(0.92);
+}
+
+.v2-user-btn--archive {
   background: var(--danger-bg);
   color: var(--danger);
-  border-color: transparent;
+  border-color: var(--danger);
 }
-.v2-user-btn--toggle:hover { filter: brightness(.94); }
-.v2-user-btn:disabled { opacity: .5; cursor: not-allowed; }
+.v2-user-btn--archive:hover {
+  filter: brightness(0.92);
+}
+
+.v2-user-btn--delete {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.v2-user-btn--delete:hover {
+  filter: brightness(0.92);
+}
+
+.v2-user-btn--restore {
+  background: var(--ok-bg);
+  color: var(--ok);
+  border-color: var(--ok);
+}
+.v2-user-btn--restore:hover {
+  filter: brightness(0.92);
+}
+.v2-user-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 /* Responsive: collapse meta + actions on narrow widths */
+@media (max-width: 800px) {
+  .v2-user-card {
+    gap: 0.85rem;
+    padding: 0.85rem 0.95rem;
+  }
+  .v2-user-btn {
+    padding: 0.35rem 0.6rem;
+    font-size: 0.7rem;
+  }
+}
+
 @media (max-width: 560px) {
-  .v2-user-card { flex-wrap: wrap; }
-  .v2-user-meta { order: 3; width: 100%; margin-left: 50px; }
-  .v2-user-card-actions { order: 4; width: 100%; margin-left: 50px; }
+  .v2-user-card {
+    flex-wrap: wrap;
+    gap: 0.7rem;
+    padding: 0.8rem 0.9rem;
+  }
+  .v2-user-info {
+    flex: 1 1 100%;
+    order: 1;
+  }
+  .v2-user-meta {
+    order: 2;
+    width: 100%;
+    gap: 0.5rem;
+  }
+  .v2-user-card-actions {
+    order: 3;
+    width: 100%;
+    gap: 0.4rem;
+  }
+  .v2-user-btn {
+    flex: 1 1 auto;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.68rem;
+    border-radius: 8px;
+  }
 }
 
 /* ── V1.5.0 Phase 3.1: Driver linked-account pill ───────────── */
@@ -5643,35 +5744,40 @@ html.theme-anim .timeline-scroll-fade-right {
 
 /* Vehicle avatar — colored ring using the vehicle's timeline color */
 .v2-vehicle-avatar {
-  width: 38px;
-  height: 38px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   border: 2px solid transparent;
+  background-size: cover;
+  background-position: center;
 }
 
 .v2-vehicle-color-dot {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   display: block;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
-/* Capacity chip */
+/* Capacity chip — lighter, more breathing room */
 .v2-vehicle-cap-chip {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
-  border-radius: 10px;
+  padding: 0.35rem 0.65rem;
+  border-radius: 12px;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text);
   white-space: nowrap;
+  transition: background 0.15s ease;
 }
 
 /* Color picker row in vehicle form */
@@ -5722,6 +5828,195 @@ html.theme-anim .timeline-scroll-fade-right {
 }
 [data-theme="dark"] .v2-user-card:hover {
   box-shadow: 0 3px 12px rgba(0,0,0,.50);
+}
+
+
+/* ════════════════════════════════════════════════════════════════
+   VEHICLE INVENTORY (v1.18.2) — Executive Asset presentation
+
+   The inventory is the HERO of Vehicle Management. These styles inherit the
+   Dispatch Analytics design language (token-driven, daa-sec geometry: 18px
+   radius, --shadow-sm, surface/border tokens, same type rhythm) but define a
+   purpose-built ASSET card — a vehicle is an asset, never a person, so it does
+   NOT reuse .v2-user-card. Cards are pure navigation objects (whole card opens
+   the drawer; no inline action buttons). Tokens only — dark-mode automatic.
+   ════════════════════════════════════════════════════════════════ */
+
+/* Section header — mirrors .daa-top title/subtitle rhythm */
+.vm-inv__head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+  margin-bottom: 0.85rem;
+}
+.vm-inv__title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.vm-inv__sub {
+  font-size: 0.76rem;
+  color: var(--muted);
+  max-width: 42rem;
+}
+
+/* Responsive asset grid: desktop auto-fill, tablet 2-col, mobile 1-col */
+.vm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+  gap: var(--workspace-card-gap, 16px);
+  min-width: 0;
+}
+.vm-grid .v2-admin-empty { grid-column: 1 / -1; }
+
+/* Executive asset card — daa-sec geometry, clickable surface */
+.vm-asset {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  padding: 1rem 1.05rem;
+  cursor: pointer;
+  min-width: 0;
+  transition: box-shadow .16s ease, border-color .16s ease, transform .16s ease;
+  text-align: left;
+}
+.vm-asset:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+.vm-asset:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.vm-asset--inactive { opacity: 0.72; }
+.vm-asset--archived { background: var(--surface-2); }
+
+/* Identity row */
+.vm-asset__top {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-width: 0;
+}
+.vm-asset__ico {
+  flex: 0 0 auto;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+}
+.vm-asset__id {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.vm-asset__name {
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vm-asset__plate {
+  font-size: 0.74rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.vm-asset__health {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.02;
+}
+.vm-asset__health b {
+  font-size: 1.4rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.vm-asset__health b[data-tone="ok"] { color: var(--ok); }
+.vm-asset__health b[data-tone="warn"] { color: var(--warn); }
+.vm-asset__health b[data-tone="danger"] { color: var(--danger); }
+.vm-asset__health i {
+  font-style: normal;
+  font-size: 0.56rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+/* Secondary metadata line (type · year · transmission · fuel) */
+.vm-asset__meta {
+  font-size: 0.72rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* Status strip — reuses the platform pill vocabulary (.daa-pill family) */
+.vm-asset__strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.vm-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  font-size: 0.64rem;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 0.16rem 0.5rem;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  background: var(--surface-2);
+  white-space: nowrap;
+}
+.vm-pill--ok { color: var(--ok); background: var(--ok-bg); border-color: var(--ok); }
+.vm-pill--info { color: var(--info); background: var(--info-bg); border-color: var(--info); }
+.vm-pill--warn { color: var(--warn); background: var(--warn-bg); border-color: var(--warn); }
+.vm-pill--danger { color: var(--danger); background: var(--danger-bg); border-color: var(--danger); }
+
+/* Footer — last activity */
+.vm-asset__foot {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.7rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.vm-asset__foot b { color: var(--text); font-weight: 700; }
+
+@media (max-width: 720px) {
+  .vm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 520px) {
+  .vm-grid { grid-template-columns: 1fr; }
+  .vm-inv__title { font-size: 1.05rem; }
 }
 
 
