@@ -389,6 +389,74 @@ function setV2PanelNavActive(id) {
   document.querySelectorAll('#v2Panel .v2-panel-nav-item').forEach(btn => {
     btn.classList.toggle('v2-panel-nav-item--active', btn.id === id);
   });
+  syncV2ResponsiveNavReuse();
+}
+
+/**
+ * Reuse the same V2 navigation renderer on desktop and mobile.
+ * Desktop: rail + panel mounted in .app-layout.
+ * Mobile:  rail + panel mounted inside the legacy sidebar drawer container.
+ */
+function initV2ResponsiveNavReuse() {
+  if (!window.__pbsiV2NavReuseBound) {
+    window.addEventListener('resize', syncV2ResponsiveNavReuse);
+    window.__pbsiV2NavReuseBound = true;
+  }
+  syncV2ResponsiveNavReuse();
+}
+
+function syncV2ResponsiveNavReuse() {
+  const panel = document.getElementById('v2Panel');
+  const rail = document.getElementById('v2Rail');
+  const sidebar = document.getElementById('sidebar');
+  const sidebarNav = sidebar?.querySelector('.sidebar-nav');
+  const appLayout = document.querySelector('.app-layout');
+  if (!panel || !rail || !sidebar || !sidebarNav || !appLayout) return;
+
+  const isMobile = window.matchMedia('(max-width: 767px)').matches;
+
+  if (isMobile) {
+    sidebarNav.querySelectorAll('.sidebar-nav-group').forEach(group => {
+      group.dataset.v2LegacyNav = 'true';
+      group.style.display = 'none';
+    });
+
+    let host = document.getElementById('v2MobileNavHost');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'v2MobileNavHost';
+      sidebarNav.insertBefore(host, sidebarNav.firstChild);
+    }
+
+    if (panel.parentElement !== host) host.appendChild(panel);
+    if (rail.parentElement !== host) host.appendChild(rail);
+    panel.classList.add('v2-panel--mobile-drawer');
+    rail.classList.add('v2-rail--mobile-drawer');
+
+    // Presentation-only mobile relabeling (desktop source stays unchanged).
+    panel.querySelectorAll('.v2-panel-section').forEach(sec => {
+      if (!sec.dataset.desktopTitle) sec.dataset.desktopTitle = sec.textContent.trim();
+      const key = sec.dataset.desktopTitle.toLowerCase();
+      if (key === 'operasional') sec.textContent = 'Operational';
+      else if (key === 'master data') sec.textContent = 'Master Data';
+      else if (key === 'audit') sec.textContent = 'Audit';
+    });
+    return;
+  }
+
+  sidebarNav.querySelectorAll('.sidebar-nav-group[data-v2-legacy-nav="true"]').forEach(group => {
+    group.style.display = '';
+  });
+
+  panel.classList.remove('v2-panel--mobile-drawer');
+  rail.classList.remove('v2-rail--mobile-drawer');
+
+  panel.querySelectorAll('.v2-panel-section').forEach(sec => {
+    if (sec.dataset.desktopTitle) sec.textContent = sec.dataset.desktopTitle;
+  });
+
+  if (rail.parentElement !== appLayout) appLayout.insertBefore(rail, sidebar);
+  if (panel.parentElement !== appLayout) appLayout.insertBefore(panel, sidebar);
 }
 
 /**
@@ -614,6 +682,7 @@ function updatePermissionUI(resetNavActive = false) {
   // Reset bottom nav only on auth changes — same reasoning as panel nav above.
   if (resetNavActive) setBottomNavActive('bottomNavDashboard');
   renderKPIStrip();
+  syncV2ResponsiveNavReuse();
 }
 
 /**
@@ -873,6 +942,7 @@ function setRailModule(name) {
 
   // Land on the module's default menu.
   def.land();
+  syncV2ResponsiveNavReuse();
 }
 
 /* ──────────────────────────────────────────────────────────────────
@@ -1423,6 +1493,12 @@ function initV2Panel() {
         </button>
       </div>
     </div>
+    <button class="v2-panel-footer-logout-direct" id="v2FooterLogoutDirect" type="button" style="display:none;">
+      <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true">
+        <path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 102 0V4a1 1 0 00-1-1zm10.293 9.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L14.586 9H7a1 1 0 100 2h7.586l-1.293 1.293z" clip-rule="evenodd"/>
+      </svg>
+      Keluar
+    </button>
 
   `;
 
@@ -1514,6 +1590,10 @@ function initV2Panel() {
   document.getElementById('v2FooterMenuKeluar')?.addEventListener('click', () => {
     if (footerMenu) footerMenu.style.display = 'none';
     footerAvatar?.setAttribute('aria-expanded', 'false');
+    document.getElementById('btnLogout')?.click();
+  });
+
+  document.getElementById('v2FooterLogoutDirect')?.addEventListener('click', () => {
     document.getElementById('btnLogout')?.click();
   });
 
@@ -1700,7 +1780,7 @@ function initV2KpiStrip() {
           <path d="M3 4a1 1 0 00-1 1v10a1 1 0 001 1h1.05a2.5 2.5 0 014.9 0H11a1 1 0 001-1V5a1 1 0 00-1-1H3zM14 7a1 1 0 00-1 1v6.05A2.5 2.5 0 0115.95 16H17a1 1 0 001-1v-5a1 1 0 00-.293-.707l-2-2A1 1 0 0015 7h-1z"/>
         </svg>
       </div>
-      <span class="v2-kpi-label">Trip Aktif</span>
+      <span class="v2-kpi-label" data-short="Aktif">Trip Aktif</span>
       <span class="v2-kpi-value" id="v2KpiTripAktif" aria-live="polite">—</span>
       <span class="v2-kpi-sub">Sedang berlangsung</span>
     </div>
@@ -1710,7 +1790,7 @@ function initV2KpiStrip() {
           <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/>
         </svg>
       </div>
-      <span class="v2-kpi-label">Driver Bertugas</span>
+      <span class="v2-kpi-label" data-short="Driver">Driver Bertugas</span>
       <span class="v2-kpi-value" id="v2KpiDriverBertugas" aria-live="polite">—</span>
       <span class="v2-kpi-sub">Sedang ditugaskan</span>
     </div>
@@ -1720,7 +1800,7 @@ function initV2KpiStrip() {
           <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/>
         </svg>
       </div>
-      <span class="v2-kpi-label">Menunggu Approval</span>
+      <span class="v2-kpi-label" data-short="Pending">Menunggu Approval</span>
       <span class="v2-kpi-value" id="v2KpiMenunggu" aria-live="polite">—</span>
       <span class="v2-kpi-sub">Perlu ditinjau</span>
     </div>
@@ -1730,7 +1810,7 @@ function initV2KpiStrip() {
           <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
         </svg>
       </div>
-      <span class="v2-kpi-label">Selesai Hari Ini</span>
+      <span class="v2-kpi-label" data-short="Selesai">Selesai Hari Ini</span>
       <span class="v2-kpi-value" id="v2KpiSelesai" aria-live="polite">—</span>
       <span class="v2-kpi-sub">Penugasan tuntas</span>
     </div>
@@ -8852,6 +8932,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (appFlags.visualShellV2 === true) {
     initV2Rail();
     initV2Panel();
+    initV2ResponsiveNavReuse();
     // VSM-3: must run before sidebar-toggle and initDateControls() handler binding
     initV2Topbar();
     initV2KpiStrip();             // VSM-4: inject KPI strip placeholder above timeline
@@ -8954,6 +9035,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     item.addEventListener('click', () => {
       if (window.innerWidth < 768) closeSidebar();
     });
+  });
+
+  // V2 parity: close drawer when interacting with V2 nav nodes on mobile.
+  sidebar?.addEventListener('click', (e) => {
+    if (window.innerWidth >= 768) return;
+    if (e.target.closest('.v2-panel-nav-item, .v2-rail-item, #v2FooterLogoutDirect')) {
+      closeSidebar();
+    }
   });
 
   // ── Sidebar active state: set per click, never reset by data refreshes ──

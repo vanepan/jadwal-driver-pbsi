@@ -11848,3 +11848,484 @@ body.v2-shell-active .block-status-badge--overtime {
   .exec-drawer, .exec-drawer-overlay { transition: none; }
 }
 /* ── end Executive UI Kit ─────────────────────────────────────────────────── */
+
+/* ============================================================
+   v1.18.3 HOTFIX — Executive Navigation Refinement
+   Single V2 renderer reused for desktop shell + mobile drawer.
+   ============================================================ */
+
+/* Desktop panel: lighter hierarchy, more breathing room, premium grouping. */
+.v2-panel-header {
+  padding: 24px 18px 12px;
+}
+
+.v2-panel-title {
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.v2-panel-subtitle {
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--faint);
+}
+
+.v2-panel-nav {
+  gap: 10px;
+  padding: 10px 10px 0;
+}
+
+.v2-panel-section {
+  margin: 4px 6px 2px;
+  padding: 0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--faint);
+  text-transform: uppercase;
+}
+
+.v2-panel-nav-item {
+  min-height: 42px;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  font-weight: 520;
+  color: var(--text-dim);
+  transition: background-color 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.v2-panel-nav-item:hover,
+.v2-panel-nav-item:focus-visible {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  color: var(--text);
+  transform: translateX(2px);
+}
+
+.v2-panel-nav-item--active {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.v2-panel-nav-item--active::before {
+  left: 7px;
+  width: 4px;
+  height: 18px;
+  border-radius: 999px;
+  opacity: 0.95;
+}
+
+.v2-panel-nav-icon {
+  width: 18px;
+  height: 18px;
+  opacity: 0.66;
+  flex-shrink: 0;
+}
+
+.v2-panel-nav-item--active .v2-panel-nav-icon {
+  opacity: 1;
+}
+
+/* Rail polish: calmer modules, consistent icon sizing and spacing. */
+.v2-rail-modules {
+  gap: 8px;
+}
+
+.v2-rail-item {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  transition: background-color 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.v2-rail-item:hover,
+.v2-rail-item:focus-visible {
+  transform: translateX(2px);
+}
+
+.v2-rail-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.v2-rail-item--active {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.v2-rail-item--active::before {
+  width: 4px;
+  height: 20px;
+  border-radius: 999px;
+}
+
+/* User card refinement (macOS-like sidebar footer tone). */
+.v2-panel-footer-user {
+  margin: 6px 8px 10px;
+  padding-top: 8px;
+}
+
+.v2-footer-avatar {
+  min-height: 52px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+  background: color-mix(in srgb, var(--surface-2) 72%, transparent);
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+.v2-footer-avatar:hover {
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface-2));
+}
+
+.v2-footer-avatar-circle {
+  width: 30px;
+  height: 30px;
+  font-size: 11px;
+}
+
+.v2-footer-display-name {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.v2-footer-role-label {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.v2-footer-version-label {
+  font-size: 9px;
+  letter-spacing: 0.05em;
+}
+
+.v2-panel-footer-logout-direct {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  width: 100%;
+  min-height: 40px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 32%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--danger) 7%, transparent);
+  color: var(--danger);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 160ms ease;
+}
+
+.v2-panel-footer-logout-direct:hover,
+.v2-panel-footer-logout-direct:focus-visible {
+  background: color-mix(in srgb, var(--danger) 11%, transparent);
+}
+
+/* Mobile drawer reuse: same V2 panel + rail rendered inside #sidebar. */
+#v2MobileNavHost {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  height: 100%;
+  padding: 8px 0 0;
+}
+
+.v2-panel--mobile-drawer {
+  position: static;
+  left: auto;
+  top: auto;
+  width: 100%;
+  height: auto;
+  display: flex !important;
+  background: transparent;
+  border-right: 0;
+  z-index: auto;
+  overflow: visible;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.v2-panel--mobile-drawer .v2-panel-header,
+.v2-panel--mobile-drawer .v2-panel-divider,
+.v2-panel--mobile-drawer .v2-panel-cta,
+.v2-panel--mobile-drawer .v2-panel-spacer,
+.v2-panel--mobile-drawer .v2-panel-footer-user,
+.v2-panel--mobile-drawer .v2-panel-nav--admin {
+  display: none !important;
+}
+
+.v2-panel--mobile-drawer .v2-panel-nav {
+  display: none !important;
+  gap: 8px;
+  padding: 0 8px;
+}
+
+.v2-panel--mobile-drawer .v2-panel-nav:not([style*="display: none"]) {
+  display: flex !important;
+  flex-direction: column;
+  gap: 0;
+  padding: 0 8px;
+}
+
+.v2-panel--mobile-drawer .v2-panel-nav:not([style*="display:none"]) {
+  display: flex !important;
+}
+
+.v2-panel--mobile-drawer .v2-panel-nav-item {
+  min-height: 48px;
+  margin: 0;
+  padding: 0 14px;
+  border-radius: 12px;
+  gap: 12px;
+  font-size: 15px;
+  font-weight: 500;
+  align-items: center;
+  color: var(--side-text);
+  transition: background-color 130ms ease, color 130ms ease, box-shadow 130ms ease;
+}
+
+.v2-panel--mobile-drawer .v2-panel-nav-item:hover,
+.v2-panel--mobile-drawer .v2-panel-nav-item:focus-visible {
+  color: var(--side-strong);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.v2-panel--mobile-drawer .v2-panel-nav-item--active {
+  color: var(--side-strong);
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 24%, transparent), 0 1px 4px rgba(0, 0, 0, 0.16);
+}
+
+.v2-panel--mobile-drawer .v2-panel-nav-item--active::before {
+  left: 6px;
+  width: 2px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.v2-panel--mobile-drawer .v2-panel-nav-icon {
+  width: 19px;
+  height: 19px;
+  opacity: 0.8;
+}
+
+.v2-panel--mobile-drawer .v2-panel-section {
+  margin: 12px 6px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--side-faint);
+}
+
+.v2-panel--mobile-drawer .v2-panel-nav > .v2-panel-section:first-child {
+  margin-top: 4px;
+}
+
+.v2-rail--mobile-drawer {
+  position: static;
+  left: auto;
+  top: auto;
+  width: 100%;
+  height: auto;
+  display: flex !important;
+  background: transparent;
+  border-right: 0;
+  border-top: 1px solid var(--side-border);
+  padding: 8px 0 0;
+  margin-top: 10px;
+  overflow: visible;
+}
+
+.v2-rail--mobile-drawer .v2-rail-crest,
+.v2-rail--mobile-drawer .v2-rail-footer,
+.v2-rail--mobile-drawer #v2RailDriverOps {
+  display: none !important;
+}
+
+.v2-rail--mobile-drawer .v2-rail-modules {
+  width: 100%;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.v2-rail--mobile-drawer .v2-rail-modules::before {
+  content: 'Modules';
+  display: block;
+  margin: 0 14px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--side-faint);
+}
+
+.v2-rail--mobile-drawer .v2-rail-item {
+  width: 100%;
+  height: 48px;
+  justify-content: flex-start;
+  padding: 0 14px;
+  border-radius: 12px;
+  margin: 0 8px;
+  width: calc(100% - 16px);
+  transition: background-color 130ms ease, color 130ms ease, box-shadow 130ms ease;
+  color: var(--side-text);
+  background: transparent;
+}
+
+.v2-rail--mobile-drawer .v2-rail-item:hover,
+.v2-rail--mobile-drawer .v2-rail-item:focus-visible {
+  color: var(--side-strong);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.v2-rail--mobile-drawer .v2-rail-item--active {
+  color: var(--side-strong);
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 24%, transparent), 0 1px 4px rgba(0, 0, 0, 0.16);
+}
+
+.v2-rail--mobile-drawer .v2-rail-item--active::before {
+  left: 6px;
+  width: 2px;
+  height: 16px;
+  border-radius: 999px;
+}
+
+.v2-rail--mobile-drawer .v2-rail-item::after {
+  content: attr(aria-label);
+  margin-left: 12px;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.v2-rail--mobile-drawer .v2-rail-icon {
+  width: 19px;
+  height: 19px;
+}
+
+.v2-rail--mobile-drawer .v2-rail-tooltip {
+  display: none !important;
+}
+
+.v2-panel--mobile-drawer .v2-panel-footer-logout-direct {
+  display: inline-flex;
+  margin: auto 8px 8px;
+  min-height: 48px;
+  padding: 0 14px;
+  border-radius: 12px;
+}
+
+/* Mobile KPI density and shortened label treatment. */
+@media (max-width: 767px) {
+  #v2KpiStrip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    padding: 10px 12px 0;
+  }
+
+  .v2-kpi-card {
+    min-height: 98px;
+    padding: 10px 10px;
+    border-radius: 12px;
+    align-items: flex-start;
+    gap: 3px;
+  }
+
+  .v2-kpi-icon {
+    width: 20px;
+    height: 20px;
+    margin-bottom: 2px;
+  }
+
+  .v2-kpi-label {
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+
+  .v2-kpi-label::after {
+    content: attr(data-short);
+  }
+
+  .v2-kpi-label {
+    font-size: 0;
+  }
+
+  .v2-kpi-label::after {
+    font-size: 10px;
+  }
+
+  .v2-kpi-value {
+    font-size: 22px;
+    line-height: 1.05;
+  }
+
+  .v2-kpi-sub {
+    display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  #v2KpiStrip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Vehicle edit modal presentation (grouped sections, Apple-like form rhythm). */
+#modalVehicleForm .modal-box {
+  max-width: 920px;
+  border-radius: 18px;
+}
+
+#modalVehicleForm .modal-header {
+  padding: 18px 24px 12px;
+}
+
+#modalVehicleForm .modal-title {
+  font-size: 20px;
+  letter-spacing: -0.01em;
+}
+
+#modalVehicleForm .modal-body {
+  padding: 10px 24px 24px;
+}
+
+#modalVehicleForm .form-section-label {
+  margin-top: 32px;
+  margin-bottom: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+#modalVehicleForm .form-grid {
+  gap: 12px 14px;
+}
+
+#modalVehicleForm .form-group label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+#modalVehicleForm .form-group input,
+#modalVehicleForm .form-group select {
+  min-height: 48px;
+  border-radius: 14px;
+}
+
+#modalVehicleForm .form-actions {
+  margin-top: 32px;
+  gap: 10px;
+}
+

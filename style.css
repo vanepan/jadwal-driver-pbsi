@@ -389,25 +389,26 @@ body {
   position: fixed;
   bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 14px);
   right: 16px;
-  height: 50px;
+  height: 54px;
   width: auto;
-  padding: 0 20px 0 14px;
-  gap: 8px;
+  min-width: 128px;
+  padding: 0 14px 0 10px;
+  gap: 7px;
   background: var(--red);
   color: var(--white);
   border: none;
-  border-radius: 25px;
+  border-radius: 27px;
   cursor: pointer;
-  box-shadow: 0 4px 18px rgba(211,47,47,0.45);
+  box-shadow: 0 10px 26px rgba(20, 22, 28, 0.18), 0 2px 7px rgba(211,47,47,0.22);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 98;
-  transition: transform 0.15s, box-shadow 0.15s, background 0.15s;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease, opacity 0.16s ease;
   -webkit-tap-highlight-color: transparent;
 }
-.fab-add:hover  { transform: scale(1.03); box-shadow: 0 6px 22px rgba(211,47,47,0.52); }
-.fab-add:active { transform: scale(0.97); background: var(--red-mid); }
+.fab-add:hover  { transform: translateY(-1px); box-shadow: 0 12px 28px rgba(20, 22, 28, 0.2), 0 2px 8px rgba(211,47,47,0.24); }
+.fab-add:active { transform: translateY(0); background: var(--red-mid); opacity: 0.96; }
 .fab-icon { flex-shrink: 0; }
 .fab-label {
   font-family: var(--font-sans);

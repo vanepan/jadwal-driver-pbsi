@@ -28,12 +28,12 @@ const ROOT_ID = 'vehicleDetailDrawer';
 
 const CSS = `
 .vad-overlay{position:fixed;inset:0;z-index:6000;display:flex;justify-content:flex-end;
-  background:rgba(15,17,21,.42);opacity:0;transition:opacity .28s ease;
+  background:rgba(15,17,21,.42);opacity:0;transition:opacity .22s ease;
   -webkit-backdrop-filter:saturate(140%) blur(3px);backdrop-filter:saturate(140%) blur(3px);}
 .vad-overlay[data-open="true"]{opacity:1;}
 .vad-sheet{position:relative;width:min(560px,100%);height:100%;display:flex;flex-direction:column;
   background:var(--surface);border-left:1px solid var(--border);box-shadow:-24px 0 60px rgba(0,0,0,.28);
-  transform:translateX(100%);transition:transform .32s cubic-bezier(.32,.72,0,1);color:var(--text);
+  transform:translateX(100%);transition:transform .22s cubic-bezier(.32,.72,0,1);color:var(--text);
   font-family:var(--font-sans, inherit);min-width:0;}
 .vad-overlay[data-open="true"] .vad-sheet{transform:translateX(0);}
 
@@ -90,9 +90,11 @@ const CSS = `
 .vad-bd__pts{flex:0 0 2.6rem;text-align:right;font-size:.84rem;font-weight:700;font-variant-numeric:tabular-nums;}
 
 /* Key/value grid */
-.vad-kv{display:grid;grid-template-columns:auto 1fr;gap:.35rem .9rem;font-size:.82rem;}
-.vad-kv__k{color:var(--muted);}
-.vad-kv__v{font-weight:600;text-align:right;overflow-wrap:anywhere;}
+.vad-kv{display:flex;flex-direction:column;gap:.46rem;font-size:.82rem;}
+.vad-kv__row{display:flex;align-items:flex-start;justify-content:space-between;gap:.9rem;padding:.62rem .72rem;
+  border:1px solid var(--border);border-radius:11px;background:var(--surface-2);}
+.vad-kv__k{color:var(--muted);font-size:.67rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;}
+.vad-kv__v{font-size:.9rem;font-weight:700;text-align:right;overflow-wrap:anywhere;}
 
 /* Timeline / tax history rail */
 .vad-tl{display:flex;flex-direction:column;gap:0;margin:0;padding:0;list-style:none;}
@@ -110,13 +112,19 @@ const CSS = `
 .vad-empty{font-size:.84rem;color:var(--muted);}
 
 /* Footer */
-.vad-foot{flex:0 0 auto;display:flex;gap:.6rem;padding:.85rem 1.15rem;border-top:1px solid var(--border);background:var(--surface);}
+.vad-foot{flex:0 0 auto;display:flex;gap:.6rem;padding:.85rem 1.15rem;border-top:1px solid var(--border);background:var(--surface);justify-content:flex-end;}
 .vad-btn{flex:1 1 auto;display:inline-flex;align-items:center;justify-content:center;gap:.4rem;cursor:pointer;
   font-size:.86rem;font-weight:700;border-radius:11px;padding:.62rem .9rem;transition:filter .15s ease;}
 .vad-btn--ghost{background:var(--surface);border:1px solid var(--border);color:var(--text);}
 .vad-btn--ghost:hover{background:var(--surface-2);}
 .vad-btn--accent{background:var(--accent);border:1px solid var(--accent);color:var(--on-accent);}
 .vad-btn--accent:hover{filter:brightness(1.06);}
+#vadEditBtn{order:1;min-width:8.6rem;}
+#vadToggleBtn{order:2;}
+#vadArchiveBtn{order:3;color:var(--danger);border-color:var(--danger);background:var(--danger-bg);}
+#vadCloseBtn{order:4;flex:0 0 auto;min-width:6.4rem;}
+#vadRestoreBtn{order:1;}
+#vadDeleteBtn{order:2;color:var(--danger);border-color:var(--danger);background:var(--danger-bg);}
 
 @media (max-width:560px){
   .vad-sheet{width:100%;border-left:0;}
@@ -156,7 +164,9 @@ function pill(text, tone) {
 }
 
 function kv(grid, k, v) {
-  grid.append(el('span', 'vad-kv__k', k), el('span', 'vad-kv__v', v == null || v === '' ? '—' : v));
+  const row = el('div', 'vad-kv__row');
+  row.append(el('span', 'vad-kv__k', k), el('span', 'vad-kv__v', v == null || v === '' ? '—' : v));
+  grid.append(row);
 }
 
 function fmtDate(s) {
@@ -424,7 +434,6 @@ function buildSheet(asset, opts) {
   foot.style.flexWrap = 'wrap';
   const closeBtn = el('button', 'vad-btn vad-btn--ghost', 'Tutup');
   closeBtn.type = 'button'; closeBtn.id = 'vadCloseBtn';
-  foot.append(closeBtn);
 
   const act = (handler) => (id) => { closeVehicleDetailDrawer(); handler(id); };
   if (asset.archived) {
@@ -440,6 +449,7 @@ function buildSheet(asset, opts) {
       b.addEventListener('click', () => act(opts.onDelete)(asset.id));
       foot.append(b);
     }
+    foot.append(closeBtn);
   } else {
     if (typeof opts.onToggle === 'function') {
       const b = el('button', 'vad-btn vad-btn--ghost', asset.status === 'active' ? 'Nonaktifkan' : 'Aktifkan');
@@ -459,6 +469,7 @@ function buildSheet(asset, opts) {
       editBtn.addEventListener('click', () => act(opts.onEdit)(asset.id));
       foot.append(editBtn);
     }
+    foot.append(closeBtn);
   }
   sheet.append(foot);
 
@@ -501,5 +512,5 @@ export function closeVehicleDetailDrawer() {
   const existing = document.getElementById(ROOT_ID);
   if (!existing) return;
   existing.setAttribute('data-open', 'false');
-  setTimeout(() => { if (existing.parentNode) existing.parentNode.removeChild(existing); }, 320);
+  setTimeout(() => { if (existing.parentNode) existing.parentNode.removeChild(existing); }, 220);
 }
