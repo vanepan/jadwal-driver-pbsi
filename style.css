@@ -978,6 +978,24 @@ z-index: 1;
   line-height: 1.3;
 }
 
+.block-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.block-meta-separator {
+  flex: 0 0 auto;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  color: rgba(255,255,255,0.72);
+}
+
 /* Assignment sedang berlangsung — pulsing border */
 .assignment-block.is-started {
   outline: 2px solid rgba(255,255,255,0.85);
@@ -986,16 +1004,19 @@ z-index: 1;
 
 /* Badge SELESAI / JALAN di dalam blok timeline */
 .block-status-badge {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.4px;
   background: rgba(0,0,0,0.28);
   border-radius: 3px;
   padding: 1px 5px;
-  line-height: 1.5;
-  width: fit-content;
-  margin-top: 1px;
+  line-height: 1.25;
+  width: auto;
+  max-width: 100%;
+  margin-top: 0;
+  white-space: nowrap;
 }
 .block-status-badge--started {
   background: rgba(255,255,255,0.25);

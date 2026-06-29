@@ -416,10 +416,26 @@ function syncV2ResponsiveNavReuse() {
   const isMobile = window.matchMedia('(max-width: 767px)').matches;
 
   if (isMobile) {
+    const mobileNavVisibility = [
+      ['v2PanelDriverOpsNav', true],
+      ['v2PanelPettyCashNav', isAdmin()],
+      ['v2PanelAnalyticsNav', isAdmin()],
+      ['v2PanelKonfigurasiNav', isAdmin()],
+    ];
+    mobileNavVisibility.forEach(([id, allowed]) => {
+      const nav = document.getElementById(id);
+      if (nav) nav.dataset.mobileDrawer = allowed ? 'true' : 'false';
+    });
+
     sidebarNav.querySelectorAll('.sidebar-nav-group').forEach(group => {
       group.dataset.v2LegacyNav = 'true';
       group.style.display = 'none';
     });
+    const legacyFooter = sidebar.querySelector('.sidebar-footer');
+    if (legacyFooter) {
+      legacyFooter.dataset.v2LegacyFooter = 'true';
+      legacyFooter.style.display = 'none';
+    }
 
     let host = document.getElementById('v2MobileNavHost');
     if (!host) {
@@ -437,7 +453,7 @@ function syncV2ResponsiveNavReuse() {
     panel.querySelectorAll('.v2-panel-section').forEach(sec => {
       if (!sec.dataset.desktopTitle) sec.dataset.desktopTitle = sec.textContent.trim();
       const key = sec.dataset.desktopTitle.toLowerCase();
-      if (key === 'operasional') sec.textContent = 'Operational';
+      if (key === 'operasional') sec.textContent = 'Driver Operations';
       else if (key === 'master data') sec.textContent = 'Master Data';
       else if (key === 'audit') sec.textContent = 'Audit';
     });
@@ -447,9 +463,14 @@ function syncV2ResponsiveNavReuse() {
   sidebarNav.querySelectorAll('.sidebar-nav-group[data-v2-legacy-nav="true"]').forEach(group => {
     group.style.display = '';
   });
+  const legacyFooter = sidebar.querySelector('.sidebar-footer[data-v2-legacy-footer="true"]');
+  if (legacyFooter) legacyFooter.style.display = '';
 
   panel.classList.remove('v2-panel--mobile-drawer');
   rail.classList.remove('v2-rail--mobile-drawer');
+  panel.querySelectorAll('.v2-panel-nav[data-mobile-drawer]').forEach(nav => {
+    delete nav.dataset.mobileDrawer;
+  });
 
   panel.querySelectorAll('.v2-panel-section').forEach(sec => {
     if (sec.dataset.desktopTitle) sec.textContent = sec.dataset.desktopTitle;
@@ -677,6 +698,7 @@ function updatePermissionUI(resetNavActive = false) {
       // Reset rail to Driver Operations module
       if (activeRailModule !== 'driverops') setRailModule('driverops');
     }
+    syncV2ResponsiveNavReuse();
   }
 
   // Reset bottom nav only on auth changes — same reasoning as panel nav above.

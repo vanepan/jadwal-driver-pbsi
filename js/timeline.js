@@ -363,12 +363,16 @@ function createAssignmentBlock(assignment) {
     ? 'Penuh Hari'
     : `${minutesToTime(displayStartMin)}–${minutesToTime(displayEndMin)}`;
 
+  const metadataBadges = [
+    isCompleted ? '<span class="block-status-badge">✓ Selesai</span>' : '',
+    isOvertime  ? '<span class="block-status-badge block-status-badge--overtime">Lembur</span>' : '',
+    isStarted   ? '<span class="block-status-badge block-status-badge--started">Jalan</span>' : '',
+  ].filter(Boolean).join('<span class="block-meta-separator">•</span>');
+
   block.innerHTML = `
     <span class="block-time">${blockTimeLabel}</span>
     <span class="block-purpose">${assignment.purpose}</span>
-    ${isCompleted ? '<span class="block-status-badge">✓ Selesai</span>' : ''}
-    ${isStarted   ? '<span class="block-status-badge block-status-badge--started">▶ Jalan</span>' : ''}
-    ${isOvertime  ? '<span class="block-status-badge block-status-badge--overtime">⏱ Lembur</span>' : ''}
+    ${metadataBadges ? `<span class="block-meta-row">${metadataBadges}</span>` : ''}
     <div class="resize-handle"></div>
   `;
 
