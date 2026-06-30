@@ -598,37 +598,78 @@ function escPreview(value) {
 const PAX_MIN = 0;
 const PAX_MAX = 20;
 
+const _clampPax = (val) => Math.max(PAX_MIN, Math.min(PAX_MAX, parseInt(val, 10) || PAX_MIN));
+
+/**
+ * Commit a pax value: clamp to [PAX_MIN, PAX_MAX] and write it to the canonical
+ * hidden field, the visible (now editable) display, and the +/- disabled state.
+ * This is the single COMMIT path — buttons, arrows, Enter, blur, reset and the
+ * edit-populate path all go through it, so the visible input is normalised.
+ */
 function _syncPaxDisplay(val) {
-  const n = Math.max(PAX_MIN, Math.min(PAX_MAX, parseInt(val, 10) || PAX_MIN));
+  const n = _clampPax(val);
   const hidden  = document.getElementById('fieldPax');
   const display = document.getElementById('paxDisplay');
   const minus   = document.getElementById('btnPaxMinus');
   const plus    = document.getElementById('btnPaxPlus');
   if (hidden)  hidden.value = n;
-  if (display) display.textContent = n;
+  if (display) display.value = n;
   if (minus)   minus.disabled = n <= PAX_MIN;
   if (plus)    plus.disabled  = n >= PAX_MAX;
 }
 
 function initPaxStepper() {
-  const minus = document.getElementById('btnPaxMinus');
-  const plus  = document.getElementById('btnPaxPlus');
+  const minus   = document.getElementById('btnPaxMinus');
+  const plus    = document.getElementById('btnPaxPlus');
+  const display = document.getElementById('paxDisplay');
   if (!minus || !plus) return;
 
-  minus.addEventListener('click', () => {
-    _syncPaxDisplay(parseInt(document.getElementById('fieldPax')?.value, 10) - 1);
-  });
-  plus.addEventListener('click', () => {
-    _syncPaxDisplay(parseInt(document.getElementById('fieldPax')?.value, 10) + 1);
-  });
+  const current = () => parseInt(document.getElementById('fieldPax')?.value, 10) || PAX_MIN;
+
+  minus.addEventListener('click', () => _syncPaxDisplay(current() - 1));
+  plus.addEventListener('click',  () => _syncPaxDisplay(current() + 1));
 
   // Arrow key support when a stepper button has keyboard focus
   [minus, plus].forEach(btn => {
     btn.addEventListener('keydown', e => {
-      if (e.key === 'ArrowUp')   { e.preventDefault(); _syncPaxDisplay(parseInt(document.getElementById('fieldPax')?.value, 10) + 1); }
-      if (e.key === 'ArrowDown') { e.preventDefault(); _syncPaxDisplay(parseInt(document.getElementById('fieldPax')?.value, 10) - 1); }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); _syncPaxDisplay(current() + 1); }
+      if (e.key === 'ArrowDown') { e.preventDefault(); _syncPaxDisplay(current() - 1); }
     });
   });
+
+  // ── Manual numeric input (v1.18.3.3) ──
+  // The middle display is now an editable numeric field. While the user types
+  // we only strip non-digits and live-update the canonical hidden value +
+  // button states; we do NOT rewrite the visible field mid-typing (so e.g.
+  // clearing it to retype, or typing a second digit, is not clobbered). The
+  // value is normalised (empty/NaN/negative → 0, clamped to max) on commit
+  // (blur / Enter) and on every button/arrow press via _syncPaxDisplay.
+  if (display) {
+    display.addEventListener('input', () => {
+      const cleaned = display.value.replace(/[^0-9]/g, '');
+      if (cleaned !== display.value) {
+        const caret = Math.max(0, (display.selectionStart || 0) - 1);
+        display.value = cleaned;
+        try { display.setSelectionRange(caret, caret); } catch (_) { /* ignore */ }
+      }
+      const n = _clampPax(cleaned);
+      const hidden = document.getElementById('fieldPax');
+      if (hidden) hidden.value = n;
+      minus.disabled = n <= PAX_MIN;
+      plus.disabled  = n >= PAX_MAX;
+    });
+
+    // Commit on blur and Enter; Enter must not submit the form.
+    display.addEventListener('blur', () => _syncPaxDisplay(display.value));
+    display.addEventListener('keydown', e => {
+      if (e.key === 'Enter')     { e.preventDefault(); display.blur(); }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); _syncPaxDisplay(current() + 1); }
+      if (e.key === 'ArrowDown') { e.preventDefault(); _syncPaxDisplay(current() - 1); }
+    });
+
+    // Prevent the scroll wheel from changing the value while focused.
+    display.addEventListener('wheel', e => { if (document.activeElement === display) e.preventDefault(); }, { passive: false });
+  }
 }
 
 /**

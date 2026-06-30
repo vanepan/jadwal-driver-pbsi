@@ -21,9 +21,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Archivo:wght@400;500;600;700;800;900&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=1.18.3" />
-  <link rel="stylesheet" href="platform.css?v=2.1.0" />
-  <link rel="stylesheet" href="petty-cash.css?v=1.18.3" />
+  <link rel="stylesheet" href="style.css?v=1.18.3.3" />
+  <link rel="stylesheet" href="platform.css?v=2.1.2" />
+  <link rel="stylesheet" href="petty-cash.css?v=1.18.3.3" />
   <link rel="stylesheet" href="vendor/flatpickr.min.css" />
 
   <!-- Startup gating: hides V1 layout until V2 shell is ready.
@@ -909,7 +909,7 @@
             <label id="fieldPaxLabel">Jumlah Penumpang</label>
             <div class="pbsi-stepper" id="paxStepper" role="group" aria-labelledby="fieldPaxLabel">
               <button type="button" class="pbsi-stepper-btn" id="btnPaxMinus" aria-label="Kurangi penumpang" disabled>−</button>
-              <span class="pbsi-stepper-display" id="paxDisplay" aria-live="polite" aria-atomic="true">0</span>
+              <input type="text" inputmode="numeric" pattern="[0-9]*" class="pbsi-stepper-display" id="paxDisplay" value="0" autocomplete="off" aria-labelledby="fieldPaxLabel" />
               <button type="button" class="pbsi-stepper-btn" id="btnPaxPlus" aria-label="Tambah penumpang">+</button>
               <input type="hidden" id="fieldPax" value="0" />
             </div>
@@ -1155,6 +1155,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="vendor/flatpickr.min.js"></script>
-<script type="module" src="js/app.js?v=1.18.3"></script>
+<script type="module" src="js/app.js?v=1.18.3.3"></script>
 </body>
 </html>

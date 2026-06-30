@@ -414,28 +414,19 @@ function syncV2ResponsiveNavReuse() {
   if (!panel || !rail || !sidebar || !sidebarNav || !appLayout) return;
 
   const isMobile = window.matchMedia('(max-width: 767px)').matches;
+  const logoutDirect = document.getElementById('v2FooterLogoutDirect');
+  const footerUser = document.getElementById('v2FooterUser');
 
   if (isMobile) {
-    const mobileNavVisibility = [
-      ['v2PanelDriverOpsNav', true],
-      ['v2PanelPettyCashNav', isAdmin()],
-      ['v2PanelAnalyticsNav', isAdmin()],
-      ['v2PanelKonfigurasiNav', isAdmin()],
-    ];
-    mobileNavVisibility.forEach(([id, allowed]) => {
-      const nav = document.getElementById(id);
-      if (nav) nav.dataset.mobileDrawer = allowed ? 'true' : 'false';
-    });
-
+    // Mobile drawer = the SAME live #v2Rail + #v2Panel relocated into the
+    // sidebar. The active module's menu (panel) renders expanded; the rail
+    // becomes the "Bottom Modules" switcher list; the legacy sidebar nav
+    // groups are hidden. Module/permission visibility is owned entirely by
+    // updatePermissionUI() — this function only moves DOM + toggles layout.
     sidebarNav.querySelectorAll('.sidebar-nav-group').forEach(group => {
       group.dataset.v2LegacyNav = 'true';
       group.style.display = 'none';
     });
-    const legacyFooter = sidebar.querySelector('.sidebar-footer');
-    if (legacyFooter) {
-      legacyFooter.dataset.v2LegacyFooter = 'true';
-      legacyFooter.style.display = 'none';
-    }
 
     let host = document.getElementById('v2MobileNavHost');
     if (!host) {
@@ -444,40 +435,39 @@ function syncV2ResponsiveNavReuse() {
       sidebarNav.insertBefore(host, sidebarNav.firstChild);
     }
 
+    // Order inside the drawer: active module menu → Bottom Modules → Logout.
     if (panel.parentElement !== host) host.appendChild(panel);
     if (rail.parentElement !== host) host.appendChild(rail);
+    if (logoutDirect && logoutDirect.parentElement !== host) host.appendChild(logoutDirect);
     panel.classList.add('v2-panel--mobile-drawer');
     rail.classList.add('v2-rail--mobile-drawer');
 
-    // Presentation-only mobile relabeling (desktop source stays unchanged).
-    panel.querySelectorAll('.v2-panel-section').forEach(sec => {
-      if (!sec.dataset.desktopTitle) sec.dataset.desktopTitle = sec.textContent.trim();
-      const key = sec.dataset.desktopTitle.toLowerCase();
-      if (key === 'operasional') sec.textContent = 'Driver Operations';
-      else if (key === 'master data') sec.textContent = 'Master Data';
-      else if (key === 'audit') sec.textContent = 'Audit';
-    });
+    // Hide the rail ("Bottom Modules") when the current role has no module to
+    // switch to beyond the active one. Reads the permission-driven rail-item
+    // visibility already set by updatePermissionUI — no duplicate gating here.
+    const switchable = Array.from(rail.querySelectorAll('.v2-rail-item')).filter(item =>
+      !item.classList.contains('v2-rail-item--active')
+      && item.style.display !== 'none'
+      && item.getAttribute('aria-hidden') !== 'true'
+    ).length;
+    rail.classList.toggle('v2-rail--mobile-empty', switchable === 0);
     return;
   }
 
+  // ── Desktop: restore the rail + panel to .app-layout ──
   sidebarNav.querySelectorAll('.sidebar-nav-group[data-v2-legacy-nav="true"]').forEach(group => {
     group.style.display = '';
   });
-  const legacyFooter = sidebar.querySelector('.sidebar-footer[data-v2-legacy-footer="true"]');
-  if (legacyFooter) legacyFooter.style.display = '';
 
   panel.classList.remove('v2-panel--mobile-drawer');
-  rail.classList.remove('v2-rail--mobile-drawer');
-  panel.querySelectorAll('.v2-panel-nav[data-mobile-drawer]').forEach(nav => {
-    delete nav.dataset.mobileDrawer;
-  });
-
-  panel.querySelectorAll('.v2-panel-section').forEach(sec => {
-    if (sec.dataset.desktopTitle) sec.textContent = sec.dataset.desktopTitle;
-  });
+  rail.classList.remove('v2-rail--mobile-drawer', 'v2-rail--mobile-empty');
 
   if (rail.parentElement !== appLayout) appLayout.insertBefore(rail, sidebar);
   if (panel.parentElement !== appLayout) appLayout.insertBefore(panel, sidebar);
+  // Return the direct-logout button to its panel home (hidden on desktop).
+  if (logoutDirect && footerUser && logoutDirect.previousElementSibling !== footerUser) {
+    footerUser.after(logoutDirect);
+  }
 }
 
 /**
