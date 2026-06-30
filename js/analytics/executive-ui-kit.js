@@ -31,6 +31,7 @@
 import {
   anIcon,
   renderEyebrow,
+  renderAnalyticsSection,
   renderHeroSection,
   renderRingGauge,
   renderAnalyticsKPICard,
@@ -80,6 +81,7 @@ export {
   renderHeroSection as ExecutiveHero,
   renderRingGauge as ExecutiveRing,
   renderEyebrow as ExecutiveSection,
+  renderAnalyticsSection as ExecutiveSectionShell,
   renderAnalyticsKPICard as ExecutiveKPICardBase,
   renderKPIGrid as ExecutiveKPIGrid,
   renderTrendIndicator as ExecutiveTrend,

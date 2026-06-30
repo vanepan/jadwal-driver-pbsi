@@ -29,6 +29,26 @@
 // re-implements a band or color or inverts a score locally.
 import { scoreColor, capacityScore, scoreLabelId } from '../services/unified-scoring.js';
 
+// v1.18.5 Executive UI Sprint 3 — Dispatch Analytics now consumes the Executive
+// UI Kit as its single design authority (header, toolbar, KPIs, section shells,
+// tables, badges, sparkline, empty states, and the one icon engine). The shared
+// `.daa-*` style block is KEPT below because Recommendation Accuracy still imports
+// injectDispatchAnalyticsStyles() and renders `.daa-*` (its migration is a later
+// sprint). Only the inner micro-viz (distribution/funnel/rank/timeline/reason
+// chips) — which have no kit primitive — still use those shared classes.
+import {
+  ExecutiveHeader,
+  ExecutiveToolbar,
+  ExecutiveKPICard,
+  ExecutiveKPIGrid,
+  ExecutiveSectionShell,
+  ExecutiveTable,
+  ExecutiveStatusPill,
+  ExecutiveSparkline,
+  ExecutiveEmptyState,
+  anIcon,
+} from '../analytics/executive-ui-kit.js';
+
 const STYLE_ID = 'daa-dashboard-styles';
 
 const CSS = `
@@ -202,9 +222,11 @@ function esc(v) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 function pct(n) { return `${Math.round(Number(n) || 0)}%`; }
-function stars(n) {
-  const s = Math.max(0, Math.min(5, Math.round(Number(n) || 0)));
-  return '★'.repeat(s) + '☆'.repeat(5 - s);
+/** Numeric confidence display (replaces the ★ rating glyphs). Mean → 1 decimal,
+ *  shown on the system's 5-band scale (e.g. "3.2 / 5"). */
+function conf(n) {
+  const v = Number(n) || 0;
+  return `${Number.isInteger(v) ? v : v.toFixed(1)} / 5`;
 }
 function fmtTime(iso) {
   if (!iso) return '—';
@@ -222,53 +244,53 @@ function rateClass(rate) {
   return scoreColor(rate);
 }
 
-/* ── section renderers ────────────────────────────────────────────────── */
+/* ── section renderers ────────────────────────────────────────────────────────
+   Every section now uses the Executive UI Kit: ExecutiveSectionShell (the Driver
+   Analytics section card), ExecutiveKPICard/Grid, ExecutiveTable, ExecutiveStatusPill,
+   ExecutiveSparkline, ExecutiveEmptyState, and anIcon (single engine — no emoji).
+   The inner micro-viz (distribution/funnel/rank/timeline/reason chips) reuse the
+   shared `.daa-*` classes (no kit primitive; token-driven; RAA-shared). */
 
 const TREND_WINDOWS = ['7d', '30d', '90d', 'ytd'];
 
+/** Section title = single-engine glyph + label (inline-flex, no emoji). */
+function secTitle(icon, label) {
+  return `<span style="display:inline-flex;align-items:center;gap:8px">${anIcon(icon, { size: 16 })}${esc(label)}</span>`;
+}
+
 function renderHeader(model, opts) {
   const win = TREND_WINDOWS.includes(opts.trendWindow) ? opts.trendWindow : '30d';
-  const toggles = model.trends.windows.map((w) =>
-    `<button type="button" class="daa-toggle__b" data-daa-window="${esc(w.key)}" data-active="${w.key === win}">${esc(w.label)}</button>`,
-  ).join('');
-  return `
-    <div class="daa-top">
-      <div class="daa-top__l">
-        <div class="daa-top__title">📊 Dispatch Intelligence Analytics</div>
-        <div class="daa-top__sub">Dashboard eksekutif untuk riwayat keputusan Dispatch Intelligence — akurasi, override, confidence, dan tren. Read-only; tidak mengubah rekomendasi atau penugasan.</div>
-        <div class="daa-top__meta">Diperbarui ${esc(fmtTime(model.generatedAt))} · ${esc(model.totals.decisions)} keputusan tercatat</div>
-      </div>
-      <div class="daa-top__actions">
-        <div class="daa-toggle" role="group" aria-label="Rentang tren">${toggles}</div>
-        <button type="button" class="daa-btn" data-daa-export="pdf">⬇️ PDF</button>
-        <button type="button" class="daa-btn daa-btn--accent" data-daa-export="excel">⬇️ Excel</button>
-      </div>
-    </div>`;
+  // Executive segmented control — preserves the data-daa-window / data-active
+  // contract the host's delegated handler binds (no workflow change).
+  const toggle = `<div class="seg" role="tablist" aria-label="Rentang tren">${model.trends.windows.map((w) =>
+    `<button type="button" class="${w.key === win ? 'on' : ''}" data-daa-window="${esc(w.key)}" data-active="${w.key === win}">${esc(w.label)}</button>`,
+  ).join('')}</div>`;
+  // Export buttons keep the data-daa-export contract + the byte-identical pipeline.
+  const exportBtns =
+    `<button type="button" class="exec-reset" data-daa-export="pdf">${anIcon('download', { size: 14 })}PDF</button>` +
+    `<button type="button" class="exec-reset" data-daa-export="excel">${anIcon('download', { size: 14 })}Excel</button>`;
+  return ExecutiveHeader({
+    title: 'Dispatch Intelligence Analytics',
+    subtitle: 'Dashboard eksekutif untuk riwayat keputusan Dispatch Intelligence — akurasi, override, confidence, dan tren. Read-only; tidak mengubah rekomendasi atau penugasan.',
+    meta: `Diperbarui ${fmtTime(model.generatedAt)} · ${model.totals.decisions} keputusan tercatat`,
+    icon: 'analytics',
+  }) + ExecutiveToolbar({ left: toggle, right: exportBtns });
 }
 
 function renderKpis(model) {
   const k = model.kpi;
-  // `value` is pre-formatted markup the caller controls (numbers, percent
-  // strings, or a star <span>); `sub` is likewise caller-built. Static labels +
-  // engine numbers only — no user text flows in unescaped here.
-  const card = (lbl, value, sub, hero) =>
-    `<div class="daa-kpi${hero ? ' daa-kpi--hero' : ''}">
-      <div class="daa-kpi__lbl">${esc(lbl)}</div>
-      <div class="daa-kpi__num">${value}</div>
-      <div class="daa-kpi__sub">${sub}</div>
-    </div>`;
-  return `
-    <div class="daa-sec">
-      <div class="daa-sec__head"><div class="daa-sec__title">Ringkasan Eksekutif</div>
-        <div class="daa-sec__sub">${esc(k.sampleSize)} sampel keputusan</div></div>
-      <div class="daa-kpis">
-        ${card('Akurasi Dispatch', pct(k.dispatchAccuracy), 'Rekomendasi diterima / total', true)}
-        ${card('Tingkat Override', pct(k.overrideRate), 'Keputusan override / total')}
-        ${card('Penerimaan Rekomendasi', pct(k.recommendationAcceptance), 'Diterima tanpa perubahan')}
-        ${card('Rata-rata Skor Dispatch', esc(k.avgDispatchScore), 'Skala 0–100')}
-        ${card('Rata-rata Confidence', `<span class="daa-kpi__stars">${esc(stars(k.avgConfidence.stars))}</span>`, `${esc(k.avgConfidence.label)} · ${esc(k.avgConfidence.stars)}★ rata-rata`)}
-      </div>
-    </div>`;
+  const cards = [
+    ExecutiveKPICard({ title: 'Akurasi Dispatch', value: pct(k.dispatchAccuracy), subtitle: 'Rekomendasi diterima / total', status: 'info', icon: anIcon('target', { size: 14 }) }),
+    ExecutiveKPICard({ title: 'Tingkat Override', value: pct(k.overrideRate), subtitle: 'Keputusan override / total' }),
+    ExecutiveKPICard({ title: 'Penerimaan Rekomendasi', value: pct(k.recommendationAcceptance), subtitle: 'Diterima tanpa perubahan' }),
+    ExecutiveKPICard({ title: 'Rata-rata Skor Dispatch', value: esc(k.avgDispatchScore), subtitle: 'Skala 0–100' }),
+    ExecutiveKPICard({ title: 'Rata-rata Confidence', value: conf(k.avgConfidence.stars), subtitle: `${esc(k.avgConfidence.label)} · rata-rata` }),
+  ];
+  return ExecutiveSectionShell({
+    title: secTitle('analytics', 'Ringkasan Eksekutif'),
+    description: `${esc(k.sampleSize)} sampel keputusan`,
+    content: ExecutiveKPIGrid(cards),
+  });
 }
 
 function renderDistribution(model) {
@@ -276,100 +298,114 @@ function renderDistribution(model) {
   const rows = model.confidenceDistribution.map((r) => {
     const cls = r.count === 0 ? '' : rateClass(r.acceptanceRate);
     return `<div class="daa-dist__row">
-      <div class="daa-dist__stars" title="${esc(r.label)}">${esc(r.glyph)}</div>
+      <div class="daa-dist__stars" title="${esc(r.label)}">${esc(r.stars)}/5</div>
       <div class="daa-bar"><div class="daa-bar__fill${cls ? ' daa-bar__fill--' + cls : ''}" style="width:${esc(r.percentage)}%"></div></div>
       <div class="daa-dist__meta"><b>${esc(r.count)}</b> · ${esc(r.percentage)}% · terima ${esc(r.acceptanceRate)}%</div>
     </div>`;
   }).join('');
-  return `
-    <div class="daa-sec">
-      <div class="daa-sec__head"><div class="daa-sec__title">Distribusi Confidence</div>
-        <div class="daa-sec__hint">Skala 2★–5★ (banding sistem); 1★ kosong sesuai definisi</div></div>
-      <div class="daa-dist">${rows || emptyInline('Belum ada keputusan.')}</div>
-      <div class="daa-sec__sub">${total} keputusan · kolom: jumlah · porsi · tingkat penerimaan per band</div>
-    </div>`;
-}
-
-function driverTable(rows) {
-  if (!rows.length) return emptyInline('Belum ada rekomendasi driver.');
-  const body = rows.map((r) => `<tr>
-    <td class="daa-name">${esc(r.driverName)}</td>
-    <td class="daa-num">${esc(r.recommended)}</td>
-    <td class="daa-num"><span class="daa-pill daa-pill--${rateClass(r.acceptance)}">${pct(r.acceptance)}</span></td>
-    <td class="daa-num">${pct(r.overrideRate)}</td>
-    <td class="daa-num">${esc(r.avgScore)}</td>
-    <td class="daa-num"><span class="daa-pill daa-pill--${scoreColor(capacityScore(r.capacityUtilization))}" title="Skor kapasitas (100 = paling lengang/tersedia)">${capacityScore(r.capacityUtilization)}</span></td>
-    <td class="daa-num">${pct(r.conflictAvoidance)}</td>
-    <td>${esc(fmtTime(r.lastRecommendation))}</td>
-  </tr>`).join('');
-  return `<div class="daa-tablewrap"><table class="daa-table">
-    <thead><tr><th>Driver</th><th class="daa-num">Rek.</th><th class="daa-num">Terima</th>
-      <th class="daa-num">Override</th><th class="daa-num">Skor</th><th class="daa-num">Kapasitas</th>
-      <th class="daa-num">Anti-Konflik</th><th>Terakhir</th></tr></thead>
-    <tbody>${body}</tbody></table></div>`;
+  const content = `<div class="daa-dist">${rows || ExecutiveEmptyState({ message: 'Belum ada keputusan.' })}</div>
+    <div class="v2-analytics-section-desc" style="margin:10px 0 0;color:var(--text-dim);font-size:13px;">${total} keputusan · kolom: jumlah · porsi · tingkat penerimaan per band</div>`;
+  return ExecutiveSectionShell({
+    title: secTitle('analytics', 'Distribusi Confidence'),
+    description: 'Skala 2–5 (banding sistem); band 1 kosong sesuai definisi',
+    content,
+  });
 }
 
 function rankList(items, valueFn) {
-  if (!items.length) return `<div class="daa-sec__sub">—</div>`;
+  if (!items.length) return `<div class="v2-analytics-section-desc" style="color:var(--text-dim)">—</div>`;
   return `<ul class="daa-rank__list">${items.map((it, i) =>
     `<li class="daa-rank__item"><span class="daa-rank__n">${i + 1}</span>
       <span class="daa-rank__nm">${esc(it.name)}</span>
       <span class="daa-rank__v">${valueFn(it)}</span></li>`).join('')}</ul>`;
 }
 
+/** Capacity / acceptance status pill via the kit (replaces .daa-pill). */
+function tonePill(text, tone, title) {
+  return ExecutiveStatusPill(text, tone, title || '');
+}
+
+function driverTable(rows) {
+  if (!rows.length) return ExecutiveEmptyState({ message: 'Belum ada rekomendasi driver.' });
+  const columns = [
+    { key: 'driver', label: 'Driver', primary: true },
+    { key: 'recommended', label: 'Rek.', align: 'right' },
+    { key: 'acceptance', label: 'Terima', align: 'right', render: (v) => tonePill(pct(v), rateClass(v)) },
+    { key: 'override', label: 'Override', align: 'right', render: (v) => pct(v) },
+    { key: 'score', label: 'Skor', align: 'right' },
+    { key: 'capacity', label: 'Kapasitas', align: 'right', render: (v) => tonePill(String(v.score), v.tone, 'Skor kapasitas (100 = paling lengang/tersedia)') },
+    { key: 'conflict', label: 'Anti-Konflik', align: 'right', render: (v) => pct(v) },
+    { key: 'last', label: 'Terakhir' },
+  ];
+  const data = rows.map((r) => {
+    const cap = capacityScore(r.capacityUtilization);
+    return {
+      driver: r.driverName, recommended: r.recommended, acceptance: r.acceptance,
+      override: r.overrideRate, score: r.avgScore,
+      capacity: { score: cap, tone: scoreColor(cap) }, conflict: r.conflictAvoidance,
+      last: fmtTime(r.lastRecommendation),
+    };
+  });
+  return ExecutiveTable({ columns, rows: data, ariaLabel: 'Intelijen Driver' });
+}
+
 function renderDriverIntel(model) {
   const di = model.driverIntelligence;
-  return `
-    <div class="daa-sec">
-      <div class="daa-sec__head"><div class="daa-sec__title">🧑‍✈️ Intelijen Driver</div>
-        <div class="daa-sec__hint">Rekomendasi & penerimaan = historis · kapasitas/anti-konflik = kondisi terkini</div></div>
-      ${driverTable(di.rows)}
-      <div class="daa-cols">
+  const content = `${driverTable(di.rows)}
+      <div class="daa-cols" style="margin-top:14px">
         <div class="daa-rank"><div class="daa-rank__h">Paling Direkomendasikan</div>
           ${rankList(di.rankings.topRecommended, (it) => `<b>${esc(it.recommended)}</b> rek.`)}</div>
         <div class="daa-rank"><div class="daa-rank__h">Paling Diterima</div>
           ${rankList(di.rankings.mostAccepted, (it) => `<b>${esc(it.accepted)}</b> diterima`)}</div>
         <div class="daa-rank"><div class="daa-rank__h">Paling Sering Di-override</div>
           ${rankList(di.rankings.mostOverridden, (it) => `<b>${esc(it.overridden)}</b> override`)}</div>
-      </div>
-    </div>`;
+      </div>`;
+  return ExecutiveSectionShell({
+    title: secTitle('user', 'Intelijen Driver'),
+    description: 'Rekomendasi & penerimaan = historis · kapasitas/anti-konflik = kondisi terkini',
+    content,
+  });
 }
 
 function vehicleTable(rows) {
-  if (!rows.length) return emptyInline('Belum ada rekomendasi kendaraan.');
-  const body = rows.map((r) => `<tr>
-    <td class="daa-name">${esc(r.vehicleName)}</td>
-    <td class="daa-num">${esc(r.recommended)}</td>
-    <td class="daa-num"><span class="daa-pill daa-pill--${rateClass(r.acceptance)}">${pct(r.acceptance)}</span></td>
-    <td class="daa-num">${pct(r.overrideRate)}</td>
-    <td class="daa-num">${esc(r.avgScore)}</td>
-    <td class="daa-num">${pct(r.utilization)}</td>
-    <td class="daa-num"><span class="daa-pill daa-pill--${scoreColor(capacityScore(r.utilization))}" title="Skor kapasitas (100 = paling lengang/tersedia)">${capacityScore(r.utilization)}</span></td>
-    <td class="daa-num">${pct(r.conflictAvoidance)}</td>
-  </tr>`).join('');
-  return `<div class="daa-tablewrap"><table class="daa-table">
-    <thead><tr><th>Kendaraan</th><th class="daa-num">Rek.</th><th class="daa-num">Terima</th>
-      <th class="daa-num">Override</th><th class="daa-num">Skor</th><th class="daa-num">Utilisasi</th>
-      <th class="daa-num">Idle</th><th class="daa-num">Anti-Konflik</th></tr></thead>
-    <tbody>${body}</tbody></table></div>`;
+  if (!rows.length) return ExecutiveEmptyState({ message: 'Belum ada rekomendasi kendaraan.' });
+  const columns = [
+    { key: 'vehicle', label: 'Kendaraan', primary: true },
+    { key: 'recommended', label: 'Rek.', align: 'right' },
+    { key: 'acceptance', label: 'Terima', align: 'right', render: (v) => tonePill(pct(v), rateClass(v)) },
+    { key: 'override', label: 'Override', align: 'right', render: (v) => pct(v) },
+    { key: 'score', label: 'Skor', align: 'right' },
+    { key: 'utilization', label: 'Utilisasi', align: 'right', render: (v) => pct(v) },
+    { key: 'idle', label: 'Idle', align: 'right', render: (v) => tonePill(String(v.score), v.tone, 'Skor kapasitas (100 = paling lengang/tersedia)') },
+    { key: 'conflict', label: 'Anti-Konflik', align: 'right', render: (v) => pct(v) },
+  ];
+  const data = rows.map((r) => {
+    const cap = capacityScore(r.utilization);
+    return {
+      vehicle: r.vehicleName, recommended: r.recommended, acceptance: r.acceptance,
+      override: r.overrideRate, score: r.avgScore, utilization: r.utilization,
+      idle: { score: cap, tone: scoreColor(cap) }, conflict: r.conflictAvoidance,
+    };
+  });
+  return ExecutiveTable({ columns, rows: data, ariaLabel: 'Intelijen Kendaraan' });
 }
 
 function renderVehicleIntel(model) {
   const vi = model.vehicleIntelligence;
-  return `
-    <div class="daa-sec">
-      <div class="daa-sec__head"><div class="daa-sec__title">🚐 Intelijen Kendaraan</div>
-        <div class="daa-sec__hint">Utilisasi/idle = kondisi terkini dari penugasan</div></div>
-      ${vehicleTable(vi.rows)}
-      <div class="daa-cols">
+  const content = `${vehicleTable(vi.rows)}
+      <div class="daa-cols" style="margin-top:14px">
         <div class="daa-rank"><div class="daa-rank__h">Paling Direkomendasikan</div>
           ${rankList(vi.rankings.topRecommended, (it) => `<b>${esc(it.recommended)}</b> rek.`)}</div>
         <div class="daa-rank"><div class="daa-rank__h">Paling Diterima</div>
           ${rankList(vi.rankings.mostAccepted, (it) => `<b>${esc(it.accepted)}</b> diterima`)}</div>
         <div class="daa-rank"><div class="daa-rank__h">Paling Sering Di-override</div>
           ${rankList(vi.rankings.mostOverridden, (it) => `<b>${esc(it.overridden)}</b> override`)}</div>
-      </div>
-    </div>`;
+      </div>`;
+  return ExecutiveSectionShell({
+    title: secTitle('vehicle', 'Intelijen Kendaraan'),
+    description: 'Utilisasi/idle = kondisi terkini dari penugasan',
+    content,
+  });
 }
 
 function renderOverrideAnalytics(model, opts) {
@@ -380,11 +416,8 @@ function renderOverrideAnalytics(model, opts) {
     <div class="daa-bar"><div class="daa-bar__fill daa-bar__fill--${cls}" style="width:${total ? Math.round((n / total) * 100) : 0}%"></div></div>
     <div class="daa-funnel__meta"><b>${esc(n)}</b> · ${total ? Math.round((n / total) * 100) : 0}%</div></div>`;
   const win = model.trends.windows.find((w) => w.key === (TREND_WINDOWS.includes(opts.trendWindow) ? opts.trendWindow : '30d')) || model.trends.windows[1];
-  return `
-    <div class="daa-sec">
-      <div class="daa-sec__head"><div class="daa-sec__title">🔁 Analitik Override</div>
-        <div class="daa-sec__sub">Rentang tren: ${esc(win ? win.label : '')}</div></div>
-      <div class="daa-cols">
+  const series = (win && Array.isArray(win.series) ? win.series : []).map((s) => Number(s.acceptanceRate) || 0);
+  const content = `<div class="daa-cols">
         <div class="daa-funnel">
           ${reasonRow('Diterima', b.accepted, 'ok')}
           ${reasonRow('Override Driver', b.driver, 'warn')}
@@ -393,35 +426,46 @@ function renderOverrideAnalytics(model, opts) {
         </div>
         <div>
           <div class="daa-rank__h" style="margin-bottom:.5rem;">Tren Penerimaan vs Override</div>
-          ${sparkline(win ? win.series : [], 'acceptanceRate')}
-          <div class="daa-sec__sub" style="margin-top:.35rem;">Penerimaan ${pct(win ? win.acceptanceRate : 0)} · Override ${pct(win ? win.overrideRate : 0)} · ${win ? win.total : 0} keputusan</div>
+          ${series.length >= 2 ? ExecutiveSparkline(series, { tone: 'info' }) : '<div class="v2-analytics-section-desc" style="color:var(--text-dim)">Tidak ada data dalam rentang.</div>'}
+          <div class="v2-analytics-section-desc" style="margin-top:8px;color:var(--text-dim);font-size:13px;">Penerimaan ${pct(win ? win.acceptanceRate : 0)} · Override ${pct(win ? win.overrideRate : 0)} · ${win ? win.total : 0} keputusan</div>
         </div>
-      </div>
-    </div>`;
+      </div>`;
+  return ExecutiveSectionShell({
+    title: secTitle('repeat', 'Analitik Override'),
+    description: `Rentang tren: ${esc(win ? win.label : '')}`,
+    content,
+  });
 }
 
 function renderBidang(model) {
   const rows = model.bidangIntelligence;
-  const body = rows.length ? rows.map((r) => `<tr>
-    <td class="daa-name">${esc(r.bidang)}</td>
-    <td class="daa-num">${esc(r.requests)}</td>
-    <td class="daa-num"><span class="daa-pill daa-pill--${rateClass(r.acceptanceRate)}">${pct(r.acceptanceRate)}</span></td>
-    <td class="daa-num">${pct(r.overrideRate)}</td>
-    <td class="daa-num">${esc(r.avgScore)}</td>
-    <td class="daa-num">${esc(stars(r.avgConfidenceStars))}</td>
-    <td>${esc(r.topDestination || '—')}</td>
-    <td class="daa-num">${pct(r.conflictRate)}</td>
-  </tr>`).join('') : '';
-  return `
-    <div class="daa-sec">
-      <div class="daa-sec__head"><div class="daa-sec__title">🏢 Intelijen Bidang</div>
-        <div class="daa-sec__hint">Konflik = porsi override penuh (driver & kendaraan diganti)</div></div>
-      ${body ? `<div class="daa-tablewrap"><table class="daa-table">
-        <thead><tr><th>Bidang</th><th class="daa-num">Request</th><th class="daa-num">Terima</th>
-          <th class="daa-num">Override</th><th class="daa-num">Skor</th><th class="daa-num">Confidence</th>
-          <th>Tujuan Teratas</th><th class="daa-num">Konflik</th></tr></thead>
-        <tbody>${body}</tbody></table></div>` : emptyInline('Belum ada request yang diproses per bidang.')}
-    </div>`;
+  if (!rows.length) {
+    return ExecutiveSectionShell({
+      title: secTitle('building', 'Intelijen Bidang'),
+      description: 'Konflik = porsi override penuh (driver & kendaraan diganti)',
+      content: ExecutiveEmptyState({ message: 'Belum ada request yang diproses per bidang.' }),
+    });
+  }
+  const columns = [
+    { key: 'bidang', label: 'Bidang', primary: true },
+    { key: 'requests', label: 'Request', align: 'right' },
+    { key: 'acceptance', label: 'Terima', align: 'right', render: (v) => tonePill(pct(v), rateClass(v)) },
+    { key: 'override', label: 'Override', align: 'right', render: (v) => pct(v) },
+    { key: 'score', label: 'Skor', align: 'right' },
+    { key: 'confidence', label: 'Confidence', align: 'right' },
+    { key: 'topDestination', label: 'Tujuan Teratas' },
+    { key: 'conflict', label: 'Konflik', align: 'right', render: (v) => pct(v) },
+  ];
+  const data = rows.map((r) => ({
+    bidang: r.bidang, requests: r.requests, acceptance: r.acceptanceRate,
+    override: r.overrideRate, score: r.avgScore, confidence: conf(r.avgConfidenceStars),
+    topDestination: r.topDestination || '—', conflict: r.conflictRate,
+  }));
+  return ExecutiveSectionShell({
+    title: secTitle('building', 'Intelijen Bidang'),
+    description: 'Konflik = porsi override penuh (driver & kendaraan diganti)',
+    content: ExecutiveTable({ columns, rows: data, ariaLabel: 'Intelijen Bidang' }),
+  });
 }
 
 function renderQuality(model) {
@@ -431,19 +475,20 @@ function renderQuality(model) {
     <div class="daa-funnel__k">${esc(f.label)}</div>
     <div class="daa-bar"><div class="daa-bar__fill daa-bar__fill--${cls[f.key] || 'info'}" style="width:${esc(f.percentage)}%"></div></div>
     <div class="daa-funnel__meta"><b>${esc(f.count)}</b> · ${esc(f.percentage)}%</div></div>`).join('');
-  return `
-    <div class="daa-sec">
-      <div class="daa-sec__head"><div class="daa-sec__title">🎯 Kualitas Rekomendasi</div>
-        <div class="daa-sec__sub">Rekomendasi AI → keputusan akhir admin</div></div>
-      <div class="daa-funnel">${rows}</div>
-    </div>`;
+  return ExecutiveSectionShell({
+    title: secTitle('target', 'Kualitas Rekomendasi'),
+    description: 'Rekomendasi AI → keputusan akhir admin',
+    content: `<div class="daa-funnel">${rows}</div>`,
+  });
 }
 
 function renderTimeline(model) {
   const ev = model.timeline;
   if (!ev.length) {
-    return `<div class="daa-sec"><div class="daa-sec__head"><div class="daa-sec__title">🕑 Linimasa Dispatch</div></div>
-      ${emptyInline('Belum ada riwayat keputusan.')}</div>`;
+    return ExecutiveSectionShell({
+      title: secTitle('history', 'Linimasa Dispatch'),
+      content: ExecutiveEmptyState({ message: 'Belum ada riwayat keputusan.' }),
+    });
   }
   const dotCls = { ACCEPTED: 'ok', DRIVER_OVERRIDE: 'warn', VEHICLE_OVERRIDE: 'warn', FULL_OVERRIDE: 'danger' };
   const outLabel = { ACCEPTED: 'Diterima', DRIVER_OVERRIDE: 'Override Driver', VEHICLE_OVERRIDE: 'Override Kendaraan', FULL_OVERRIDE: 'Override Penuh' };
@@ -454,84 +499,64 @@ function renderTimeline(model) {
         <span class="daa-tl__title">${esc(outLabel[e.outcome] || 'Keputusan')}</span></div>
       <div class="daa-tl__d">${esc(e.driverName)} · ${esc(e.vehicleName)} · skor ${esc(e.score)}${e.bidang ? ' · ' + esc(e.bidang) : ''}</div>
     </div></li>`).join('');
-  return `
-    <div class="daa-sec">
-      <div class="daa-sec__head"><div class="daa-sec__title">🕑 Linimasa Dispatch</div>
-        <div class="daa-sec__sub">${ev.length} keputusan terbaru</div></div>
-      <ul class="daa-tl">${items}</ul>
-    </div>`;
+  return ExecutiveSectionShell({
+    title: secTitle('history', 'Linimasa Dispatch'),
+    description: `${ev.length} keputusan terbaru`,
+    content: `<ul class="daa-tl">${items}</ul>`,
+  });
 }
 
 function reasonList(items, emptyText) {
-  if (!items.length) return `<div class="daa-sec__sub">${esc(emptyText)}</div>`;
+  if (!items.length) return `<div class="v2-analytics-section-desc" style="color:var(--text-dim)">${esc(emptyText)}</div>`;
   return `<ul class="daa-reasons">${items.map((r) =>
     `<li class="daa-reasons__li"><span class="daa-reasons__txt">${esc(r.text)}</span><span class="daa-reasons__n">${esc(r.count)}×</span></li>`).join('')}</ul>`;
 }
 
 function renderExplainability(model) {
   const ex = model.explainability;
-  return `
-    <div class="daa-sec">
-      <div class="daa-sec__head"><div class="daa-sec__title">💡 Explainability</div>
-        <div class="daa-sec__sub">Alasan rekomendasi & alasan override admin</div></div>
-      <div class="daa-cols">
+  const content = `<div class="daa-cols">
         <div class="daa-rank"><div class="daa-rank__h">Alasan Rekomendasi Teratas</div>
           ${reasonList(ex.topReasons, 'Belum ada ringkasan alasan.')}</div>
         <div class="daa-rank"><div class="daa-rank__h">Alasan Override Admin</div>
           ${reasonList(ex.adminOverrideReasons, 'Belum ada override dengan alasan.')}</div>
-      </div>
-    </div>`;
+      </div>`;
+  return ExecutiveSectionShell({
+    title: secTitle('bulb', 'Explainability'),
+    description: 'Alasan rekomendasi & alasan override admin',
+    content,
+  });
 }
 
 function renderTrends(model, opts) {
   const win = model.trends.windows.find((w) => w.key === (TREND_WINDOWS.includes(opts.trendWindow) ? opts.trendWindow : '30d')) || model.trends.windows[1];
-  const card = (lbl, num, sub) => `<div class="daa-trendcard">
-    <div class="daa-trendcard__lbl">${esc(lbl)}</div><div class="daa-trendcard__num">${num}</div>
-    <div class="daa-trendcard__sub">${esc(sub)}</div></div>`;
   if (!win) return '';
-  return `
-    <div class="daa-sec">
-      <div class="daa-sec__head"><div class="daa-sec__title">📈 Tren — ${esc(win.label)}</div>
-        <div class="daa-sec__sub">${win.total} keputusan dalam rentang</div></div>
-      <div class="daa-trendcards">
-        ${card('Penerimaan', pct(win.acceptanceRate), 'rata-rata rentang')}
-        ${card('Override', pct(win.overrideRate), 'rata-rata rentang')}
-        ${card('Skor Dispatch', esc(win.avgScore), 'rata-rata')}
-        ${card('Confidence', `<span class="daa-kpi__stars">${esc(stars(win.avgConfidenceStars))}</span>`, `${esc(win.avgConfidenceStars)}★ rata-rata`)}
-      </div>
-      <div>
+  const cards = [
+    ExecutiveKPICard({ title: 'Penerimaan', value: pct(win.acceptanceRate), subtitle: 'rata-rata rentang' }),
+    ExecutiveKPICard({ title: 'Override', value: pct(win.overrideRate), subtitle: 'rata-rata rentang' }),
+    ExecutiveKPICard({ title: 'Skor Dispatch', value: esc(win.avgScore), subtitle: 'rata-rata' }),
+    ExecutiveKPICard({ title: 'Confidence', value: conf(win.avgConfidenceStars), subtitle: 'rata-rata' }),
+  ];
+  const series = (Array.isArray(win.series) ? win.series : []).map((s) => Number(s.avgScore) || 0);
+  const content = `${ExecutiveKPIGrid(cards)}
+      <div style="margin-top:14px">
         <div class="daa-rank__h" style="margin-bottom:.35rem;">Skor Dispatch Harian</div>
-        ${sparkline(win.series, 'avgScore')}
-      </div>
-    </div>`;
-}
-
-function sparkline(series, field) {
-  const list = Array.isArray(series) ? series : [];
-  if (!list.length) return `<div class="daa-sec__sub">Tidak ada data dalam rentang.</div>`;
-  const max = Math.max(1, ...list.map((s) => Number(s[field]) || 0));
-  const cols = list.map((s) => {
-    const v = Number(s[field]) || 0;
-    const h = Math.max(4, Math.round((v / max) * 100));
-    return `<div class="daa-spark__col${v === 0 ? ' daa-spark__col--empty' : ''}" style="height:${h}%" title="${esc(s.label)}: ${esc(v)}"></div>`;
-  }).join('');
-  return `<div class="daa-spark">${cols}</div>`;
-}
-
-function emptyInline(text) {
-  return `<div class="daa-empty"><div class="daa-empty__ic">📭</div>
-    <div class="daa-empty__d">${esc(text)}</div></div>`;
+        ${series.length >= 2 ? ExecutiveSparkline(series, { tone: 'info' }) : '<div class="v2-analytics-section-desc" style="color:var(--text-dim)">Tidak ada data dalam rentang.</div>'}
+      </div>`;
+  return ExecutiveSectionShell({
+    title: secTitle('trend', `Tren — ${win.label}`),
+    description: `${win.total} keputusan dalam rentang`,
+    content,
+  });
 }
 
 function renderGlobalEmpty() {
-  return `
-    <div class="daa-sec">
-      <div class="daa-empty">
-        <div class="daa-empty__ic">📊</div>
-        <div class="daa-empty__t">Belum ada data analytics</div>
-        <div class="daa-empty__d">Dashboard ini terisi setelah ada persetujuan request (override log). Setujui beberapa request melalui Dispatch Intelligence untuk melihat akurasi, distribusi confidence, intelijen driver/kendaraan, dan tren.</div>
-      </div>
-    </div>`;
+  return ExecutiveSectionShell({
+    title: secTitle('analytics', 'Belum ada data analytics'),
+    content: ExecutiveEmptyState({
+      message: 'Dashboard ini terisi setelah ada persetujuan request (override log).',
+      hint: 'Setujui beberapa request melalui Dispatch Intelligence untuk melihat akurasi, distribusi confidence, intelijen driver/kendaraan, dan tren.',
+    }),
+  });
 }
 
 /* ── public render ────────────────────────────────────────────────────── */
@@ -543,10 +568,14 @@ function renderGlobalEmpty() {
  * @returns {string}
  */
 export function renderDispatchAnalyticsDashboard(model, opts = {}) {
-  if (!model) return `<div class="daa">${renderGlobalEmpty()}</div>`;
+  // Root keeps `.daa` for layout + the shared inner-viz scope, and adds
+  // `exec-ui v2-analytics-claude` so the kit/analytics classes (and the dark-mode
+  // variant) resolve even though the dashboard renders outside an analytics scope.
+  const ROOT = 'daa exec-ui v2-analytics-claude';
+  if (!model) return `<div class="${ROOT}">${renderGlobalEmpty()}</div>`;
   const o = { trendWindow: TREND_WINDOWS.includes(opts.trendWindow) ? opts.trendWindow : '30d' };
   const hasData = model.totals && model.totals.decisions > 0;
-  return `<div class="daa">
+  return `<div class="${ROOT}">
     ${renderHeader(model, o)}
     ${hasData ? '' : renderGlobalEmpty()}
     ${renderKpis(model)}

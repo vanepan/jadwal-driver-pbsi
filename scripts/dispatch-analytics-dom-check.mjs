@@ -113,22 +113,32 @@ const result = await page.evaluate(async () => {
   const root = host.querySelector('.daa');
   const q = (s) => host.querySelector(s);
   const styleEl = document.getElementById('daa-dashboard-styles');
+  // v1.18.5 — Executive UI structure. KPIs use .v2-analytics-kpi-card; sections
+  // use the Driver Analytics shell (.v2-analytics-section + -header); tables use
+  // .exec-table; sparkline is .exec-spark. The inner micro-viz (distribution/
+  // funnel/timeline/reason chips) keep the shared .daa-* classes.
+  const sections = [...host.querySelectorAll('.v2-analytics-section')];
+  const firstTable = host.querySelector('.exec-table');
+  // Broad emoji detector — the migration forbids ALL emoji (★ ratings now gone).
+  const EMOJI = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}⭐★☆]/u;
   return {
     decisions: model.totals.decisions,
     hasRoot: !!root,
-    header: (q('.daa-top__title') || {}).textContent || '',
-    kpiCount: host.querySelectorAll('.daa-kpi').length,
+    header: (q('.exec-head__title') || {}).textContent || '',
+    kpiCount: sections[0] ? sections[0].querySelectorAll('.v2-analytics-kpi-card').length : 0,
     distRows: host.querySelectorAll('.daa-dist__row').length,
-    driverTable: !!q('.daa-table') && host.querySelectorAll('.daa-table')[0].querySelectorAll('tbody tr').length,
-    sections: host.querySelectorAll('.daa-sec').length,
+    driverTable: !!firstTable && firstTable.querySelectorAll('tbody tr').length,
+    sections: sections.length,
     funnelRows: host.querySelectorAll('.daa-funnel__row').length,
     timelineItems: host.querySelectorAll('.daa-tl__li').length,
     reasonItems: host.querySelectorAll('.daa-reasons__li').length,
-    trendCards: host.querySelectorAll('.daa-trendcard').length,
+    trendCards: sections.length ? sections[sections.length - 1].querySelectorAll('.v2-analytics-kpi-card').length : 0,
     toggleBtns: host.querySelectorAll('[data-daa-window]').length,
     exportBtns: host.querySelectorAll('[data-daa-export]').length,
-    sparkCols: host.querySelectorAll('.daa-spark__col').length,
-    titles: [...host.querySelectorAll('.daa-sec__title')].map((e) => e.textContent.trim()),
+    sparklines: host.querySelectorAll('.exec-spark').length,
+    execTables: host.querySelectorAll('.exec-table').length,
+    titles: sections.map((e) => { const h = e.querySelector('.v2-analytics-section-header'); return h ? h.textContent.trim() : ''; }),
+    noEmoji: !EMOJI.test(host.textContent || ''),
     noHardWhite: styleEl ? !/#fff(\b|;)|#ffffff/i.test(styleEl.textContent) : false,
   };
 });
@@ -136,26 +146,28 @@ const result = await page.evaluate(async () => {
 console.log('\n[model]');
 check('seeded model has 22 decisions', result.decisions === 22);
 
-console.log('\n[structure]');
+console.log('\n[structure — Executive UI]');
 check('dashboard root .daa renders', result.hasRoot);
-check('header title present', result.header.includes('Dispatch Intelligence Analytics'));
-check('5 KPI cards', result.kpiCount === 5);
+check('Executive header title present (.exec-head__title)', result.header.includes('Dispatch Intelligence Analytics'));
+check('5 Executive KPI cards in summary section', result.kpiCount === 5);
 check('confidence distribution has 5 rows', result.distRows === 5);
+check('Executive tables render (driver/vehicle/bidang)', result.execTables >= 3);
 check('driver table has rows', result.driverTable >= 1);
-check('section shells rendered (≥ 10)', result.sections >= 10);
+check('Executive section shells rendered (≥ 10)', result.sections >= 10);
 check('quality funnel has 4 rows', result.funnelRows >= 4);
 check('timeline renders events', result.timelineItems >= 1);
 check('explainability reason items render', result.reasonItems >= 1);
-check('trend window cards render (4)', result.trendCards === 4);
-check('trend window toggle has 4 buttons', result.toggleBtns === 4);
-check('export buttons (PDF + Excel) present', result.exportBtns === 2);
-check('sparkline columns render', result.sparkCols >= 1);
+check('trend window KPI cards render (4)', result.trendCards === 4);
+check('trend window toggle has 4 buttons (data-daa-window preserved)', result.toggleBtns === 4);
+check('export buttons (PDF + Excel) present (data-daa-export preserved)', result.exportBtns === 2);
+check('Executive sparklines render (SVG)', result.sparklines >= 1);
 
 console.log('\n[sections present]');
 const want = ['Ringkasan Eksekutif', 'Distribusi Confidence', 'Intelijen Driver', 'Intelijen Kendaraan', 'Analitik Override', 'Intelijen Bidang', 'Kualitas Rekomendasi', 'Linimasa Dispatch', 'Explainability', 'Tren'];
 for (const w of want) check(`§ ${w}`, result.titles.some((t) => t.includes(w)));
 
 console.log('\n[design / regression]');
+check('zero emoji anywhere (★ ratings replaced with numeric)', result.noEmoji);
 check('scoped stylesheet uses CSS vars (no hard-coded white — dark-mode safe)', result.noHardWhite);
 check('no console errors during render', consoleErrors.length === 0);
 if (consoleErrors.length) consoleErrors.forEach((e) => console.log('   • ' + e.slice(0, 200)));
@@ -185,16 +197,16 @@ await new Promise((r) => setTimeout(r, 200));
 await shot('dispatch-analytics-mobile-light.png');
 
 // No horizontal PAGE scroll at mobile width. Wide tables are allowed to scroll
-// internally inside `.daa-tablewrap` (an intentional, contained scroll region),
+// internally inside `.exec-table-wrap` (an intentional, contained scroll region),
 // so the only failure is a LAYOUT element wider than the viewport OUTSIDE that
 // region (which would force the whole page to scroll sideways).
 const overflow = await page.evaluate(() => {
   const h = document.getElementById('daaTestHost');
   const offenders = [...h.querySelectorAll('*')]
-    .filter((el) => !el.closest('.daa-tablewrap') && el.offsetWidth > h.clientWidth + 2)
+    .filter((el) => !el.closest('.exec-table-wrap') && el.offsetWidth > h.clientWidth + 2)
     .slice(0, 8)
     .map((el) => `${(el.className || el.tagName).toString().split(' ')[0]}[ow${el.offsetWidth}]`);
-  const wrap = h.querySelector('.daa-tablewrap');
+  const wrap = h.querySelector('.exec-table-wrap');
   return { clientW: h.clientWidth, offenders, tableContained: wrap ? wrap.offsetWidth <= h.clientWidth + 2 : true };
 });
 if (overflow.offenders.length) console.log('   offenders:', overflow.offenders.join(' | '));

@@ -152,6 +152,7 @@ import {
   renderInsightDividerList,
   renderSeg,
 } from './analytics/analytics-shell.js';
+import { renderExecutiveStatusPill as ExecutiveStatusPill } from './analytics/executive-table.js';
 import { derivePreviousPeriod } from './analytics/analytics-period.js';
 import {
   initRequestHandlers,
@@ -2676,42 +2677,53 @@ function initV2AdministrationWorkspace() {
           <div id="v2AdminDriverStats"></div>
           <div id="v2AdminDriverList" class="v2-admin-user-list"></div>
         </div>
-        <div id="v2AdminSectionVehicles" style="display:none;">
+        <div id="v2AdminSectionVehicles" class="exec-ui" style="display:none;">
           <div id="v2FleetDashboard"></div>
-          <div class="vm-inv__head">
-            <div class="vm-inv__title">Inventaris Kendaraan</div>
-            <div class="vm-inv__sub">Kelola seluruh aset kendaraan. Klik kartu untuk membuka detail dan tindakan.</div>
-          </div>
-          <div class="v2-admin-toolbar">
-            <input type="search" id="v2AdminVehicleSearch" class="v2-admin-search"
-                   placeholder="Cari nama, plat, merek, atau tahun…" autocomplete="off" />
-            <select id="v2AdminVehicleTypeFilter" class="v2-admin-filter">
-              <option value="all">Semua Tipe</option>
-              ${VEHICLE_TYPE_REGISTRY.map(t => `<option value="${t.key}">${t.label}</option>`).join('')}
-            </select>
-            <select id="v2AdminVehicleStatusFilter" class="v2-admin-filter">
-              <option value="all">Semua Status</option>
-              ${VEHICLE_STATUS_REGISTRY.map(s => `<option value="${s.key}">${s.labelId}</option>`).join('')}
-              <option value="archived">Diarsipkan</option>
-            </select>
-            <select id="v2AdminVehicleFuelFilter" class="v2-admin-filter">
-              <option value="all">Semua BBM</option>
-              ${FUEL_TYPES.map(f => `<option value="${f}">${f}</option>`).join('')}
-            </select>
-            <select id="v2AdminVehicleTransmissionFilter" class="v2-admin-filter">
-              <option value="all">Semua Transmisi</option>
-              ${TRANSMISSION_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
-            </select>
-            <button id="v2AdminVehicleReset" class="v2-analytics-reset-btn" type="button">Reset Filter</button>
-            <div class="v2-analytics-export" id="v2VehicleExport">
-              <button id="v2VehicleExportBtn" class="v2-analytics-export-btn" type="button" aria-haspopup="true" aria-expanded="false" title="Ekspor laporan armada">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg>
-                <span class="v2-analytics-export-label">Export</span>
-                <svg class="v2-analytics-export-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
-              </button>
-              <div id="v2VehicleExportMenu" class="v2-analytics-export-menu" role="menu" aria-label="Pilih laporan armada" hidden></div>
+          <div class="exec-head">
+            <div class="exec-head__l">
+              <h2 class="exec-head__title">Inventaris Kendaraan</h2>
+              <p class="exec-head__sub">Kelola seluruh aset kendaraan. Klik kartu untuk membuka detail dan tindakan.</p>
             </div>
-            <button id="v2AdminAddVehicle" class="v2-admin-add-btn" type="button">+ Tambah Kendaraan</button>
+          </div>
+          <div class="exec-toolbar">
+            <div class="exec-toolbar__l">
+              <div class="exec-search">
+                <span class="exec-search__ico" aria-hidden="true">${anIcon('search', { size: 14 })}</span>
+                <input type="search" id="v2AdminVehicleSearch" class="exec-search__input"
+                       placeholder="Cari nama, plat, merek, atau tahun…" autocomplete="off" aria-label="Cari kendaraan" />
+              </div>
+              <select id="v2AdminVehicleTypeFilter" class="v2-admin-filter">
+                <option value="all">Semua Tipe</option>
+                ${VEHICLE_TYPE_REGISTRY.map(t => `<option value="${t.key}">${t.label}</option>`).join('')}
+              </select>
+              <select id="v2AdminVehicleStatusFilter" class="v2-admin-filter">
+                <option value="all">Semua Status</option>
+                ${VEHICLE_STATUS_REGISTRY.map(s => `<option value="${s.key}">${s.labelId}</option>`).join('')}
+                <option value="archived">Diarsipkan</option>
+              </select>
+              <select id="v2AdminVehicleFuelFilter" class="v2-admin-filter">
+                <option value="all">Semua BBM</option>
+                ${FUEL_TYPES.map(f => `<option value="${f}">${f}</option>`).join('')}
+              </select>
+              <select id="v2AdminVehicleTransmissionFilter" class="v2-admin-filter">
+                <option value="all">Semua Transmisi</option>
+                ${TRANSMISSION_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
+              </select>
+            </div>
+            <div class="exec-toolbar__r">
+              <button id="v2AdminVehicleReset" class="exec-reset" type="button">
+                <span class="exec-reset__ico" aria-hidden="true">${anIcon('reset', { size: 14 })}</span>Reset Filter
+              </button>
+              <div class="v2-analytics-export" id="v2VehicleExport">
+                <button id="v2VehicleExportBtn" class="v2-analytics-export-btn" type="button" aria-haspopup="true" aria-expanded="false" title="Ekspor laporan armada">
+                  ${anIcon('download', { size: 14 })}
+                  <span class="v2-analytics-export-label">Export</span>
+                  <svg class="v2-analytics-export-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+                </button>
+                <div id="v2VehicleExportMenu" class="v2-analytics-export-menu" role="menu" aria-label="Pilih laporan armada" hidden></div>
+              </div>
+              <button id="v2AdminAddVehicle" class="v2-admin-add-btn" type="button">+ Tambah Kendaraan</button>
+            </div>
           </div>
           <div id="v2AdminVehicleList" class="vm-grid"></div>
         </div>
@@ -4554,11 +4566,12 @@ function buildVehicleCard(asset, lastActivity) {
   const archived = asset.archived === true;
   const active   = asset.status === 'active';
   const plate    = asset.plateNumber || 'Tanpa plat';
-  const typeIcon = renderIcon(vehicleTypeIconName(asset.type), '1.45rem', 'currentColor');
+  // Single icon engine (anIcon) — vehicle-type glyph (1.45rem ≈ 23px).
+  const typeIcon = anIcon(vehicleTypeIconName(asset.type), { size: 23 });
   const healthTone = ['ok','warn','danger'].includes(asset.health.color) ? asset.health.color : '';
-  const toneClass = (t) => (t === 'ok' || t === 'warn' || t === 'danger' || t === 'info') ? t : '';
-  const pill = (tone, icon, text) =>
-    `<span class="vm-pill${tone ? ' vm-pill--' + tone : ''}">${icon ? renderIcon(icon, '0.62rem', 'currentColor') : ''}<span>${esc(text)}</span></span>`;
+  // Executive Badge System — one pill grammar (tone falls back to neutral).
+  const toneClass = (t) => (t === 'ok' || t === 'warn' || t === 'danger' || t === 'info') ? t : 'neutral';
+  const pill = (tone, text) => ExecutiveStatusPill(text, tone);
 
   const meta = [asset.typeInfo.label, asset.year, asset.transmission, asset.fuel]
     .filter(Boolean).map(esc).join(' · ');
@@ -4579,34 +4592,30 @@ function buildVehicleCard(asset, lastActivity) {
         ${identity}
         ${meta ? `<div class="vm-asset__meta">${meta}</div>` : ''}
         <div class="vm-asset__strip">
-          <span class="vm-pill">${renderIcon('action-archive','0.62rem','currentColor')}<span>Diarsipkan</span></span>
+          ${ExecutiveStatusPill('Diarsipkan', 'neutral')}
         </div>
-        <div class="vm-asset__foot">${renderIcon('time-clock','0.7rem','currentColor')} <span>Buka untuk pulihkan atau hapus</span></div>
+        <div class="vm-asset__foot">${anIcon('time-clock', { size: 11 })} <span>Buka untuk pulihkan atau hapus</span></div>
       </article>`;
   }
 
-  const statusIcon = asset.status === 'active' ? 'status-active'
-    : asset.status === 'maintenance' ? 'status-maintenance' : 'status-inactive';
-  const stnkIcon = asset.stnk?.status === 'valid' ? 'legal-valid'
-    : asset.stnk?.status === 'due_soon' ? 'legal-warning' : 'legal-expired';
   const maint = asset.status === 'maintenance'
     ? { tone: 'warn', text: 'Servis' }
     : ((asset.maintenanceSummary?.totalRecords || 0) > 0
         ? { tone: 'ok', text: 'Terawat' }
-        : { tone: '', text: 'Belum ada' });
+        : { tone: 'neutral', text: 'Belum ada' });
 
   const strip = `
     <div class="vm-asset__strip">
-      ${pill(toneClass(asset.statusInfo.tone), statusIcon, asset.statusInfo.labelId)}
-      ${pill(toneClass(asset.tax.tone), 'doc-tax', `Pajak: ${asset.tax.label}`)}
-      ${pill(toneClass(asset.stnk.tone), stnkIcon, `STNK: ${asset.stnk.label}`)}
-      ${pill(toneClass(asset.insurance.tone), 'doc-shield', `Asuransi: ${asset.insurance.label}`)}
-      ${pill(maint.tone, 'tool-wrench', maint.text)}
+      ${pill(toneClass(asset.statusInfo.tone), asset.statusInfo.labelId)}
+      ${pill(toneClass(asset.tax.tone), `Pajak: ${asset.tax.label}`)}
+      ${pill(toneClass(asset.stnk.tone), `STNK: ${asset.stnk.label}`)}
+      ${pill(toneClass(asset.insurance.tone), `Asuransi: ${asset.insurance.label}`)}
+      ${pill(maint.tone, maint.text)}
     </div>`;
 
   const foot = lastActivity
-    ? `<div class="vm-asset__foot">${renderIcon('time-clock','0.7rem','currentColor')} <span>Terakhir: <b>${esc(lastActivity.driver || '—')}</b> · ${esc(_vmShortDate(lastActivity.date))}</span></div>`
-    : `<div class="vm-asset__foot">${renderIcon('time-clock','0.7rem','currentColor')} <span>Belum pernah ditugaskan</span></div>`;
+    ? `<div class="vm-asset__foot">${anIcon('time-clock', { size: 11 })} <span>Terakhir: <b>${esc(lastActivity.driver || '—')}</b> · ${esc(_vmShortDate(lastActivity.date))}</span></div>`
+    : `<div class="vm-asset__foot">${anIcon('time-clock', { size: 11 })} <span>Belum pernah ditugaskan</span></div>`;
 
   return `
     <article class="vm-asset${active ? '' : ' vm-asset--inactive'}" data-vehicle-detail="${esc(asset.id)}" role="button" tabindex="0" aria-label="Detail kendaraan ${esc(asset.name)}">
@@ -5841,7 +5850,7 @@ function renderDispatchAnalyticsSection() {
       host.innerHTML = renderDispatchAnalyticsDashboard(model, { trendWindow: dispatchAnalyticsTrendWindow });
     } catch (err) {
       console.warn('[DispatchAnalytics] render failed', err);
-      host.innerHTML = '<div class="daa"><div class="daa-sec"><div class="daa-empty"><div class="daa-empty__ic">⚠️</div><div class="daa-empty__t">Gagal memuat Dispatch Analytics</div><div class="daa-empty__d">Terjadi kesalahan saat menyusun data. Coba muat ulang halaman.</div></div></div></div>';
+      host.innerHTML = '<div class="daa exec-ui v2-analytics-claude"><div class="daa-sec"><div class="daa-empty"><div class="daa-empty__ic">' + anIcon('alert', { size: 26 }) + '</div><div class="daa-empty__t">Gagal memuat Dispatch Analytics</div><div class="daa-empty__d">Terjadi kesalahan saat menyusun data. Coba muat ulang halaman.</div></div></div></div>';
     }
   }
 }

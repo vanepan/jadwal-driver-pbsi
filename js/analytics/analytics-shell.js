@@ -410,6 +410,39 @@ const AN_ICON_PATHS = {
   sort:           'M7 4v15M4 8l3-4 3 4M17 20V5M14 16l3 4 3-4',
   lock:           'M6 10V8a6 6 0 0 1 12 0v2M5 10h14a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1Zm7 4.5v2',
   offline:        'M2 4l20 20M8.5 16.6a5 5 0 0 1 7 0M5 12.9a10 10 0 0 1 3.2-2.1M19 12.9a10 10 0 0 0-7.4-2.8M12 20h.01',
+  // ── v1.18.4 Executive UI Sprint 2 — Vehicle Management glyph port. The
+  //    genuinely-new status/legal/health/archive glyphs (others reuse existing
+  //    names via the alias map below). Outline only, currentColor, 24×24.
+  status:         'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-1 9 2 2 3-3.5',
+  'status-active':      'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-3.5 9 2.5 2.5L16 9',
+  'status-inactive':    'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18ZM9 9l6 6M15 9l-6 6',
+  'status-maintenance': 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18ZM8 15a4.5 4.5 0 0 0 8 0M9 9.5h.01M15 9.5h.01',
+  'legal-valid':        'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-3.5 9 2.5 2.5L16 9',
+  'legal-warning':      'M10.3 4.3 2.6 18a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0ZM12 9v4M12 17h.01',
+  'legal-expired':      'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18ZM8 15h8M9 9.5h.01M15 9.5h.01',
+  'health-ok':          'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-3.5 9 2.5 2.5L16 9',
+  'health-warn':        'M10.3 4.3 2.6 18a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0ZM12 9v4M12 17h.01',
+  'health-danger':      'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18ZM9 9l6 6M15 9l-6 6',
+  archive:        'M3 7h18M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M4 7l1.4-2.7A1 1 0 0 1 6.3 4h11.4a1 1 0 0 1 .9.3L20 7M10 12h4',
+  // ── v1.18.5 Executive UI Sprint 3 — Dispatch Analytics glyph port.
+  //    Outline only, currentColor, 24×24. No emoji.
+  repeat:         'M4 9a5 5 0 0 1 5-5h8M17 4l3 3-3 3M20 15a5 5 0 0 1-5 5H7M7 20l-3-3 3-3',
+  target:         'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 4a5 5 0 1 0 0 10 5 5 0 0 0 0-10Zm0 4a1 1 0 1 0 0 2 1 1 0 0 0 0-2Z',
+  bulb:           'M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.45 1 1.15 1.1 1.9l.1.8h4.8l.1-.8c.1-.75.5-1.45 1.1-1.9A6 6 0 0 0 12 3Z',
+  inbox:          'M3 13h5l1.5 2.5h5L16 13h5M3 13l3-8h12l3 8M3 13v5a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-5',
+};
+
+/* Sprint-2 alias map: vehicle-surface icon names that resolve to an EXISTING
+   glyph (no duplicate paths). Resolved inside anIcon(). */
+const AN_ICON_ALIASES = {
+  'doc-tax':       'tax',
+  'doc-shield':    'insurance',
+  'tool-wrench':   'maintenance',
+  'time-clock':    'history',
+  'action-archive':'archive',
+  'vehicle-car':   'vehicle',
+  'vehicle-motorcycle': 'motorcycle',
+  'vehicle-ambulance':  'ambulance',
 };
 
 /**
@@ -418,7 +451,8 @@ const AN_ICON_PATHS = {
  * @param {{size?:number,stroke?:number,fill?:boolean,cls?:string}} [opt]
  */
 export function anIcon(name, { size = 16, stroke = 2, fill = false, cls = '' } = {}) {
-  const d = AN_ICON_PATHS[name] || '';
+  const resolved = AN_ICON_ALIASES[name] || name;
+  const d = AN_ICON_PATHS[resolved] || '';
   const classAttr = cls ? ` class="${cls}"` : '';
   return `<svg${classAttr} width="${size}" height="${size}" viewBox="0 0 24 24" fill="${fill ? 'currentColor' : 'none'}" stroke="${fill ? 'none' : 'currentColor'}" stroke-width="${stroke}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
 }

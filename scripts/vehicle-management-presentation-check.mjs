@@ -1,19 +1,21 @@
 #!/usr/bin/env node
 /**
  * vehicle-management-presentation-check.mjs
- * Presentation-layer contract for the Vehicle Management EXECUTIVE REDESIGN
- * (v1.18.2). Authoritative replacement for the earlier (superseded) v1.18.1 /
- * v1.18.1.1 checks, which asserted the very patterns this redesign removes
- * (People-card inventory, inline card buttons, KPI/insights wall).
+ * Presentation-layer contract for the Vehicle Management EXECUTIVE UI MIGRATION
+ * (v1.18.4 — Sprint 2). Authoritative replacement for the v1.18.2 redesign check,
+ * which asserted the bespoke patterns this migration RETIRES (.vms__kpi tiles,
+ * .vad-* drawer, renderIcon, .vm-pill badges).
  *
- * Verifies, file-statically (no DOM):
- *   • Executive Summary is a THIN strip (5 KPIs, no insights wall, no export).
- *   • Inventory is the hero (section header + responsive asset grid).
- *   • Asset cards replace .v2-user-card and carry NO inline action buttons.
- *   • Toolbar reuses the Analytics Reset + Export components.
- *   • Drawer gains an Operational section + footer lifecycle actions.
- *   • ZERO emoji anywhere in the Vehicle Management presentation files.
- *   • Tokens only; business logic untouched.
+ * Verifies, file-statically (no DOM), that Vehicle Management now consumes the
+ * Executive UI Kit as its SINGLE design authority:
+ *   • Dashboard KPIs use ExecutiveKPICard + the single icon engine (anIcon).
+ *   • Inventory header + toolbar use the Executive header/toolbar (.exec-*),
+ *     while PRESERVING the filter ids + the shared runAnalyticsExport pipeline.
+ *   • Asset cards use ExecutiveStatusPill + anIcon (no .vm-pill, no renderIcon).
+ *   • The detail drawer is the Executive drawer (openExecutiveDrawer + slots),
+ *     not the bespoke .vad-* overlay.
+ *   • The icon engine gained the ported vehicle glyphs (+ alias map).
+ *   • ZERO emoji anywhere; tokens only; business logic + Firebase untouched.
  */
 
 'use strict';
@@ -25,11 +27,12 @@ const ROOT = process.cwd();
 const P = (...p) => path.join(ROOT, ...p);
 const read = (rel) => fs.readFileSync(P(rel), 'utf-8');
 
-const dash  = read('js/components/fleet-dashboard.js');
+const dash   = read('js/components/fleet-dashboard.js');
 const drawer = read('js/components/vehicle-detail-drawer.js');
-const icons = read('js/components/icon-system.js');
-const app   = read('js/app.js');
-const css   = read('platform.css');
+const icons  = read('js/components/icon-system.js');
+const shell  = read('js/analytics/analytics-shell.js');
+const app    = read('js/app.js');
+const css    = read('platform.css');
 
 let PASS = 0, FAIL = 0;
 const test = (label, ok) => { if (ok) { console.log(`✓ ${label}`); PASS++; } else { console.log(`✗ ${label}`); FAIL++; } };
@@ -42,58 +45,63 @@ const cardSrc = cardStart >= 0 ? app.slice(cardStart, cardStart + 5000) : '';
 // Broad emoji detector (pictographs + the unicode check marks/dashes the old UI used).
 const EMOJI = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}✔✗✅❌️]/u;
 
-section('Executive Summary — thin strip');
+section('Icon engine — single source (anIcon), vehicle glyphs ported');
+test('analytics-shell defines an alias map', shell.includes('AN_ICON_ALIASES'));
+test('ported status glyph present', shell.includes("'status-active'") && shell.includes("'status-inactive'"));
+test('ported legal/health glyphs present', shell.includes("'legal-warning'") && shell.includes("'health-ok'"));
+test('archive glyph present', /archive:\s*'/.test(shell));
+test('aliases resolve doc-tax / tool-wrench / time-clock / vehicle-car', ["'doc-tax'", "'tool-wrench'", "'time-clock'", "'vehicle-car'"].every(s => shell.includes(s)));
+
+section('Executive Summary — thin strip on the kit');
 test('Dashboard exports renderFleetDashboard', dash.includes('export function renderFleetDashboard'));
 test('Dashboard exports injectFleetDashboardStyles', dash.includes('export function injectFleetDashboardStyles'));
-test('Uses thin .vms summary prefix', dash.includes('.vms{') || dash.includes('class="vms"'));
+test('Uses thin .vms summary prefix', dash.includes('.vms{') || dash.includes('class="vms'));
+test('KPIs use ExecutiveKPICard / ExecutiveKPIGrid from the kit', dash.includes('ExecutiveKPICard') && dash.includes('executive-ui-kit'));
 test('Has exactly the 5 executive KPIs', ['Armada', 'Perlu Perhatian', 'Kesehatan', 'Pajak Jatuh Tempo', 'Perawatan'].every(s => dash.includes(s)));
-test('Insights wall removed (no renderInsights / .vm-insights)', !dash.includes('renderInsights') && !dash.includes('vm-insights'));
-test('Export buttons removed from dashboard (no data-vm-export)', !dash.includes('data-vm-export'));
-test('Imports the SVG icon system', dash.includes("import { renderIcon }") && dash.includes('renderIcon('));
+test('Bespoke .vms__kpi tiles removed', !dash.includes('vms__kpi'));
+test('Single icon engine (anIcon, not renderIcon)', dash.includes('anIcon(') && !dash.includes('renderIcon'));
 test('No emoji in dashboard', !EMOJI.test(dash));
 test('Token-driven (no hard-coded #fff/#000)', !dash.includes('#fff') && !dash.includes('#000'));
 
-section('Inventory — the hero');
-test('Section header present (Inventaris Kendaraan)', app.includes('vm-inv__title') && app.includes('Inventaris Kendaraan'));
+section('Inventory header + toolbar — Executive UI, ids preserved');
+test('Header uses Executive header (.exec-head)', app.includes('class="exec-head"') && app.includes('Inventaris Kendaraan'));
+test('Old .vm-inv__ header retired', !app.includes('vm-inv__'));
+test('Toolbar uses Executive toolbar/search/reset', app.includes('exec-toolbar') && app.includes('exec-search') && app.includes('exec-reset'));
 test('Inventory list is a responsive grid (vm-grid)', app.includes('id="v2AdminVehicleList" class="vm-grid"'));
-test('CSS defines .vm-grid responsive grid', css.includes('.vm-grid') && css.includes('repeat(auto-fill'));
-test('CSS defines executive asset card .vm-asset', css.includes('.vm-asset'));
-test('CSS defines section header .vm-inv__title', css.includes('.vm-inv__title'));
+{
+  const ids = ['v2AdminVehicleSearch', 'v2AdminVehicleTypeFilter', 'v2AdminVehicleStatusFilter', 'v2AdminVehicleFuelFilter', 'v2AdminVehicleTransmissionFilter', 'v2AdminVehicleReset', 'v2VehicleExportBtn', 'v2VehicleExportMenu', 'v2AdminAddVehicle'];
+  test('All toolbar element ids preserved (wiring intact)', ids.every(id => app.includes(`id="${id}"`)));
+}
+test('Export still delegates to shared pipeline (runAnalyticsExport)', app.includes('runAnalyticsExport(item.dataset.report, _vehExportBtn)'));
 
-section('Asset card — not a person, no inline buttons');
+section('Asset card — Executive badges + single icon engine');
 test('buildVehicleCard renders .vm-asset card', cardSrc.includes('class="vm-asset'));
 test('Asset card does NOT reuse the People card (.v2-user-card)', !cardSrc.includes('v2-user-card'));
 test('No inline action buttons on the card', !cardSrc.includes('data-vehicle-edit') && !cardSrc.includes('data-vehicle-toggle') && !cardSrc.includes('data-vehicle-archive'));
-test('Card uses SVG vehicle-type icon', cardSrc.includes('vehicleTypeIconName('));
-test('Card shows a status strip of platform pills', cardSrc.includes('vm-asset__strip') && cardSrc.includes('vm-pill'));
+test('Card uses SVG vehicle-type icon via anIcon', cardSrc.includes('vehicleTypeIconName(') && cardSrc.includes('anIcon('));
+test('Card status strip uses ExecutiveStatusPill (no .vm-pill)', cardSrc.includes('ExecutiveStatusPill') && !cardSrc.includes('vm-pill'));
+test('Card no longer uses renderIcon', !cardSrc.includes('renderIcon('));
 test('Card shows last-activity footer', cardSrc.includes('vm-asset__foot') && (cardSrc.includes('Terakhir') || cardSrc.includes('Belum pernah ditugaskan')));
 test('Whole card opens the drawer (data-vehicle-detail)', cardSrc.includes('data-vehicle-detail'));
+test('app.js imports ExecutiveStatusPill', app.includes('ExecutiveStatusPill'));
+test('Bespoke .vm-pill CSS removed from platform.css', !css.includes('.vm-pill'));
 test('No emoji in the vehicle card', !EMOJI.test(cardSrc));
 
-section('Toolbar — reuse Analytics components');
-test('Reuses Analytics reset button', app.includes('v2-analytics-reset-btn') && app.includes('v2AdminVehicleReset'));
-test('Reuses Analytics export component', app.includes('id="v2VehicleExport"') && app.includes('v2-analytics-export'));
-test('Export delegates to shared pipeline (runAnalyticsExport)', app.includes("runAnalyticsExport(item.dataset.report, _vehExportBtn)"));
-test('Type filter options carry no emoji', !/VEHICLE_TYPE_REGISTRY\.map\(t => `<option value="\$\{t\.key\}">\$\{t\.icon\}/.test(app));
-test('app.js imports vehicleTypeIconName', app.includes('vehicleTypeIconName'));
-
-section('Drawer — Operational section + footer actions');
-test('Drawer imports icon system', drawer.includes("import { renderIcon, vehicleTypeIconName }"));
-test('Drawer adds an Operational section', drawer.includes("function renderOperational") && drawer.includes("section('Operational')"));
-test('Footer carries lifecycle actions', ['vadToggleBtn', 'vadArchiveBtn', 'vadRestoreBtn', 'vadDeleteBtn', 'vadEditBtn'].every(id => drawer.includes(id)));
+section('Detail drawer — the Executive drawer (kit), not .vad-*');
+test('Drawer imports the Executive UI Kit', drawer.includes('executive-ui-kit.js'));
+test('Drawer opens via openExecutiveDrawer (ExecutiveDrawerOpen)', drawer.includes('ExecutiveDrawerOpen') && drawer.includes('openExecutiveDrawer('));
+test('Drawer composes with kit slots (section/metrics/timeline)', drawer.includes('execDrawerSection') && drawer.includes('execDrawerMetrics') && drawer.includes('execDrawerTimeline'));
+test('Keeps an Operational section', drawer.includes("title: 'Operational'") || drawer.includes("'Operational'"));
+test('Footer carries lifecycle actions', ["'toggle'", "'archive'", "'edit'", "'restore'", "'delete'"].every(a => drawer.includes(a)));
+test('Bespoke .vad-* overlay retired', !drawer.includes('vad-overlay') && !drawer.includes('vad-sheet'));
+test('Public openVehicleDetailDrawer signature retained', drawer.includes('export function openVehicleDetailDrawer'));
+test('Drawer uses the single icon engine (no renderIcon)', !drawer.includes('renderIcon'));
 test('No emoji in the drawer', !EMOJI.test(drawer));
 
-section('Icon system');
-test('Exports vehicleTypeIconName', icons.includes('export function vehicleTypeIconName'));
-test('Has a motorcycle glyph (no emoji fallback)', icons.includes("'vehicle-motorcycle'"));
-test('Has asset-strip glyphs (tax/shield/wrench/clock)', ["'doc-tax'", "'doc-shield'", "'tool-wrench'", "'time-clock'"].every(s => icons.includes(s)));
+section('Icon system — still serves the OTHER (non-vehicle) modules');
+test('icon-system retains vehicleTypeIconName', icons.includes('export function vehicleTypeIconName'));
 
 section('Import integrity — every vehicle-asset-service fn used is imported');
-// v1.18.3 regression — renderV2AdminVehicles called searchFilterVehicles() but
-// app.js never imported it → "ReferenceError: searchFilterVehicles is not
-// defined" thrown at the filter step, AFTER the dashboard rendered, blanking the
-// grid. Guard: the app.js import from vehicle-asset-service must contain every
-// one of that module's functions actually called in app.js.
 {
   const m = app.match(/import\s*\{([^}]*)\}\s*from\s*['"]\.\/services\/vehicle-asset-service\.js['"]/);
   const imported = m ? m[1].split(',').map(s => s.trim()).filter(Boolean) : [];

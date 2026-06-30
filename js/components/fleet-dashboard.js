@@ -1,5 +1,6 @@
 /* ============================================================
-   FLEET-DASHBOARD.JS — Vehicle Management Executive Summary (v1.18.2)
+   FLEET-DASHBOARD.JS — Vehicle Management Executive Summary
+   (v1.18.4 — Executive UI Sprint 2)
 
    A THIN executive summary strip (≤20% of page height) that sits ABOVE the
    Vehicle Inventory. It is NOT a second analytics page: it answers only the five
@@ -10,22 +11,25 @@
      • Tax falling due?
      • In maintenance?
 
-   It inherits the Dispatch Analytics design LANGUAGE (token-driven KPI tiles,
-   gradient hero, soft shadow, same type rhythm) without forking the `.daa-sec`
-   section system — there is no section shell here, only a compact KPI row, so
-   the inventory below stays the visual hero.
+   v1.18.4 migration: the bespoke KPI tiles + local `kpi()` builder are
+   GONE. The five KPIs are now rendered with the Executive UI Kit
+   (ExecutiveKPICard / ExecutiveKPIGrid) — the SAME grammar as Analytics Driver —
+   and every glyph comes from the single icon engine (anIcon). Only the thin
+   eyebrow strip keeps a tiny local style; the KPI styling lives in platform.css.
 
    PURE PRESENTATION. Every value comes from computeFleetAssetModel() in
    vehicle-asset-service.js. This file computes nothing and changes no business
-   logic. All glyphs are SVG via the platform icon system — zero emoji.
+   logic. Zero emoji — all glyphs are SVG via the platform icon engine.
    ============================================================ */
 
 'use strict';
 
-import { renderIcon } from './icon-system.js';
+import { ExecutiveKPICard, ExecutiveKPIGrid, anIcon } from '../analytics/executive-ui-kit.js';
 
 const STYLE_ID = 'vm-summary-styles';
 
+/* Only the thin eyebrow strip needs local style now — the KPI tiles inherit the
+   canonical `.v2-analytics-kpi-*` grammar from platform.css (Executive UI). */
 const CSS = `
 .vms{display:flex;flex-direction:column;gap:.55rem;min-width:0;margin-bottom:var(--space-section,26px);
   color:var(--text);font-family:var(--font-sans, inherit);}
@@ -34,30 +38,6 @@ const CSS = `
 .vms__title{font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
   display:flex;align-items:center;gap:.4rem;}
 .vms__meta{font-size:.66rem;color:var(--muted);font-variant-numeric:tabular-nums;}
-
-/* KPI row — gradient tiles in the Dispatch Analytics idiom, compact density */
-.vms__kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr));gap:.6rem;}
-.vms__kpi{border:1px solid var(--border);border-radius:14px;padding:.7rem .8rem;
-  background:linear-gradient(180deg, var(--surface-2), var(--surface));
-  display:flex;flex-direction:column;gap:.25rem;min-width:0;box-shadow:var(--shadow-sm);}
-.vms__kpi--hero{border-color:var(--info);background:linear-gradient(180deg, var(--info-bg), var(--surface));}
-.vms__lbl{font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);
-  display:flex;align-items:center;gap:.32rem;}
-.vms__num{font-size:1.5rem;font-weight:800;letter-spacing:-.02em;line-height:1.05;color:var(--text);
-  font-variant-numeric:tabular-nums;}
-.vms__num[data-tone="ok"]{color:var(--ok);}
-.vms__num[data-tone="warn"]{color:var(--warn);}
-.vms__num[data-tone="danger"]{color:var(--danger);}
-.vms__sub{font-size:.62rem;color:var(--muted);}
-
-@media (max-width:800px){
-  .vms__kpis{grid-template-columns:repeat(auto-fit,minmax(7rem,1fr));}
-}
-@media (max-width:560px){
-  .vms__kpis{grid-template-columns:repeat(2,1fr);gap:.5rem;}
-  .vms__kpi{padding:.6rem .7rem;}
-  .vms__num{font-size:1.35rem;}
-}
 `;
 
 export function injectFleetDashboardStyles() {
@@ -102,14 +82,16 @@ function countIssues(vehicles) {
   }, 0);
 }
 
-function kpi({ label, icon, num, tone, sub, hero }) {
-  const ic = icon ? renderIcon(icon, '0.72rem', 'currentColor') : '';
-  return `
-    <div class="vms__kpi${hero ? ' vms__kpi--hero' : ''}">
-      <div class="vms__lbl">${ic} ${esc(label)}</div>
-      <div class="vms__num"${tone ? ` data-tone="${esc(tone)}"` : ''}>${esc(num)}</div>
-      <div class="vms__sub">${esc(sub)}</div>
-    </div>`;
+/** One executive KPI tile — the kit's ONE KPI grammar (replaces the old local
+ *  `kpi()` builder). `tone` (ok/warn/danger/info) becomes the card status accent. */
+function fleetKpi({ label, icon, num, tone, sub }) {
+  return ExecutiveKPICard({
+    title: esc(label),
+    value: esc(num),
+    icon: icon ? anIcon(icon, { size: 14 }) : '',
+    status: tone || '',
+    subtitle: esc(sub),
+  });
 }
 
 /* ── main export ─────────────────────────────────────────────────── */
@@ -125,18 +107,20 @@ export function renderFleetDashboard(model) {
   const taxDue = d.taxDueSoon || 0;
   const maint = d.maintenance || 0;
 
+  const cards = [
+    fleetKpi({ label: 'Armada', icon: 'vehicle-car', num: d.totalAssets || 0, tone: 'info', sub: 'total kendaraan' }),
+    fleetKpi({ label: 'Perlu Perhatian', icon: 'legal-warning', num: issues, tone: issues > 0 ? 'danger' : 'ok', sub: 'aset bermasalah' }),
+    fleetKpi({ label: 'Kesehatan', icon: 'health-' + healthTone, num: health, tone: healthTone, sub: 'rata-rata 0–100' }),
+    fleetKpi({ label: 'Pajak Jatuh Tempo', icon: 'doc-tax', num: taxDue, tone: taxDue > 0 ? 'warn' : 'ok', sub: 'segera kedaluwarsa' }),
+    fleetKpi({ label: 'Perawatan', icon: 'tool-wrench', num: maint, tone: maint > 0 ? 'warn' : 'ok', sub: 'sedang servis' }),
+  ];
+
   return `
-    <section class="vms" aria-label="Ringkasan Armada">
+    <section class="vms exec-ui v2-analytics-claude" aria-label="Ringkasan Armada">
       <div class="vms__head">
-        <div class="vms__title">${renderIcon('vehicle-car', '0.85rem', 'currentColor')} Ringkasan Armada</div>
+        <div class="vms__title">${anIcon('vehicle-car', { size: 14 })} Ringkasan Armada</div>
         <div class="vms__meta">Diperbarui ${esc(fmtTime(model.now))}</div>
       </div>
-      <div class="vms__kpis">
-        ${kpi({ label: 'Armada', icon: 'vehicle-car', num: d.totalAssets || 0, sub: 'total kendaraan', hero: true })}
-        ${kpi({ label: 'Perlu Perhatian', icon: 'legal-warning', num: issues, tone: issues > 0 ? 'danger' : 'ok', sub: 'aset bermasalah' })}
-        ${kpi({ label: 'Kesehatan', icon: 'health-' + (healthTone === 'ok' ? 'ok' : healthTone === 'warn' ? 'warn' : 'danger'), num: health, tone: healthTone, sub: 'rata-rata 0–100' })}
-        ${kpi({ label: 'Pajak Jatuh Tempo', icon: 'doc-tax', num: taxDue, tone: taxDue > 0 ? 'warn' : 'ok', sub: 'segera kedaluwarsa' })}
-        ${kpi({ label: 'Perawatan', icon: 'tool-wrench', num: maint, tone: maint > 0 ? 'warn' : 'ok', sub: 'sedang servis' })}
-      </div>
+      ${ExecutiveKPIGrid(cards)}
     </section>`;
 }

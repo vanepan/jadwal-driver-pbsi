@@ -85,30 +85,30 @@ const result = await page.evaluate(async () => {
   const asset = svc.findVehicleAsset(model, 'v1');
   const noop = () => {};
   drawer.openVehicleDetailDrawer(asset, { onEdit: noop, onToggle: noop, onArchive: noop, onRestore: noop, onDelete: noop });
-  const drw = document.getElementById('vehicleDetailDrawer');
-  const drwTitles = drw ? [...drw.querySelectorAll('.vad-sec__title')].map((e) => e.textContent.trim()) : [];
+  const drw = document.getElementById('execDrawerOverlay');
+  const drwTitles = drw ? [...drw.querySelectorAll('.exec-drawer-sec__h')].map((e) => e.textContent.trim()) : [];
 
   const dashStyle = document.getElementById('vm-summary-styles');
-  const drwStyle = document.getElementById('vad-drawer-styles');
+  const drwStyle = document.getElementById('vad-hero-styles');
   const noHardWhite = (s) => (s ? !/#fff(\b|;)|#ffffff/i.test(s.textContent) : false);
   // Emoji guard — the redesign forbids emoji in rendered output.
   const EMOJI = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u;
 
   return {
     summaryStrip: !!root,
-    kpiCards: qa('.vms__kpi').length,
+    kpiCards: qa('.v2-analytics-kpi-card').length,
     dashNoEmoji: !EMOJI.test(host.textContent || ''),
     drawerOpen: !!drw,
-    drawerSheet: !!(drw && drw.querySelector('.vad-sheet')),
+    drawerSheet: !!(drw && drw.querySelector('.exec-drawer')),
     drawerTitles: drwTitles,
-    drawerHero: drw ? (drw.querySelector('.vad-hero__num') || {}).textContent : '',
-    healthBars: drw ? drw.querySelectorAll('.vad-bd__row').length : 0,
-    taxHistoryItems: drw ? drw.querySelectorAll('.vad-tl li').length : 0,
+    drawerHero: drw ? (drw.querySelector('.exec-vad-hero__num') || {}).textContent : '',
+    healthBars: drw ? drw.querySelectorAll('.exec-vad-bd__row').length : 0,
+    taxHistoryItems: drw ? drw.querySelectorAll('.exec-drawer-tl__li').length : 0,
     operationalSection: drwTitles.some((t) => t.includes('Operational')),
-    footerActions: drw ? !!(drw.querySelector('#vadToggleBtn') && drw.querySelector('#vadArchiveBtn') && drw.querySelector('#vadEditBtn')) : false,
+    footerActions: drw ? !!(drw.querySelector('[data-exec-drawer-action="toggle"]') && drw.querySelector('[data-exec-drawer-action="archive"]') && drw.querySelector('[data-exec-drawer-action="edit"]')) : false,
     drawerNoEmoji: drw ? !EMOJI.test(drw.textContent || '') : false,
     noGallery: drw ? !/gallery/i.test(drw.textContent) : false,
-    closeBtn: !!(drw && drw.querySelector('#vadCloseBtn')),
+    closeBtn: !!(drw && drw.querySelector('.exec-drawer__close')),
     noHardWhite: noHardWhite(dashStyle) && noHardWhite(drwStyle),
   };
 });
@@ -155,7 +155,7 @@ await new Promise((r) => setTimeout(r, 250));
 await shot('vehicle-asset-mobile-light.png');
 
 const overflow = await page.evaluate(() => {
-  const sheet = document.querySelector('.vad-sheet');
+  const sheet = document.querySelector('.exec-drawer');
   return sheet ? sheet.offsetWidth <= window.innerWidth + 2 : true;
 });
 check('mobile drawer sheet does not exceed viewport width', overflow);

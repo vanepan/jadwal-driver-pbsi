@@ -5842,28 +5842,8 @@ html.theme-anim .timeline-scroll-fade-right {
    the drawer; no inline action buttons). Tokens only — dark-mode automatic.
    ════════════════════════════════════════════════════════════════ */
 
-/* Section header — mirrors .daa-top title/subtitle rhythm */
-.vm-inv__head {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  min-width: 0;
-  margin-bottom: 0.85rem;
-}
-.vm-inv__title {
-  font-size: 1.15rem;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  color: var(--text);
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.vm-inv__sub {
-  font-size: 0.76rem;
-  color: var(--muted);
-  max-width: 42rem;
-}
+/* v1.18.4 — the section header migrated to the Executive UI Kit (.exec-head);
+   the old .vm-inv__* header rules were removed (see js/app.js inventory markup). */
 
 /* Responsive asset grid: desktop auto-fill, tablet 2-col, mobile 1-col */
 .vm-grid {
@@ -5974,29 +5954,14 @@ html.theme-anim .timeline-scroll-fade-right {
   overflow-wrap: anywhere;
 }
 
-/* Status strip — reuses the platform pill vocabulary (.daa-pill family) */
+/* Status strip — now uses the Executive Badge System (exec-pill, one grammar).
+   v1.18.4: the bespoke pill family was removed; cards render
+   ExecutiveStatusPill (see buildVehicleCard in js/app.js). */
 .vm-asset__strip {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
 }
-.vm-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.28rem;
-  font-size: 0.64rem;
-  font-weight: 700;
-  border-radius: 999px;
-  padding: 0.16rem 0.5rem;
-  border: 1px solid var(--border);
-  color: var(--muted);
-  background: var(--surface-2);
-  white-space: nowrap;
-}
-.vm-pill--ok { color: var(--ok); background: var(--ok-bg); border-color: var(--ok); }
-.vm-pill--info { color: var(--info); background: var(--info-bg); border-color: var(--info); }
-.vm-pill--warn { color: var(--warn); background: var(--warn-bg); border-color: var(--warn); }
-.vm-pill--danger { color: var(--danger); background: var(--danger-bg); border-color: var(--danger); }
 
 /* Footer — last activity */
 .vm-asset__foot {
@@ -6016,7 +5981,6 @@ html.theme-anim .timeline-scroll-fade-right {
 }
 @media (max-width: 520px) {
   .vm-grid { grid-template-columns: 1fr; }
-  .vm-inv__title { font-size: 1.05rem; }
 }
 
 
@@ -9462,11 +9426,13 @@ input[type="time"].v2-admin-config-input {
   line-height: 1.35;
 }
 /* status accents (left edge) */
-.v2-analytics-kpi-card--ok   { box-shadow: inset 3px 0 0 var(--ok); }
-.v2-analytics-kpi-card--warn { box-shadow: inset 3px 0 0 var(--warn); }
-.v2-analytics-kpi-card--info { box-shadow: inset 3px 0 0 var(--info); }
-.v2-analytics-kpi-card--ok   .v2-analytics-kpi-card-value { color: var(--ok); }
-.v2-analytics-kpi-card--warn .v2-analytics-kpi-card-value { color: var(--warn); }
+.v2-analytics-kpi-card--ok     { box-shadow: inset 3px 0 0 var(--ok); }
+.v2-analytics-kpi-card--warn   { box-shadow: inset 3px 0 0 var(--warn); }
+.v2-analytics-kpi-card--info   { box-shadow: inset 3px 0 0 var(--info); }
+.v2-analytics-kpi-card--danger { box-shadow: inset 3px 0 0 var(--danger); }
+.v2-analytics-kpi-card--ok     .v2-analytics-kpi-card-value { color: var(--ok); }
+.v2-analytics-kpi-card--warn   .v2-analytics-kpi-card-value { color: var(--warn); }
+.v2-analytics-kpi-card--danger .v2-analytics-kpi-card-value { color: var(--danger); }
 
 /* trend chip */
 .v2-analytics-kpi-trend {
