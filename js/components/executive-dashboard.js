@@ -48,6 +48,7 @@
 import { injectDispatchAnalyticsStyles } from './dispatch-analytics-dashboard.js';
 import {
   ExecutiveHeader,
+  ExecutiveToolbar,
   ExecutiveKPICard,
   ExecutiveKPIGrid,
   ExecutiveSectionShell,
@@ -142,9 +143,11 @@ function toneFromScore(n) {
   return 'danger';
 }
 
-/* ── safe model accessors (every field below is an existing engine output) ─ */
+/* ── safe model accessors (every field below is an existing engine output) ─
+   Exported (pick / verdict / buildHighlights) so the Executive Report exporter
+   projects the SAME derived values — one source, no duplicated logic. */
 
-function pick(model) {
+export function pick(model) {
   const exec = model.exec || null;
   return {
     exec,
@@ -166,7 +169,7 @@ function pick(model) {
  *  Score (computeExecutiveAnalytics). No new status is computed; the engine's
  *  own level/label/tone drives the card. Falls back to fleet-wide readiness only
  *  so the page still renders when the score is unavailable. */
-function verdict(d) {
+export function verdict(d) {
   if (d.score && d.score.value != null) {
     const tone = d.score.tone === 'green' ? 'good' : d.score.tone === 'crit' ? 'danger' : 'warn';
     return { tone, level: d.score.label || '—', value: d.score.value };
@@ -199,11 +202,18 @@ function renderHero(model, d, v) {
       ${stat(activeVeh || '—', 'kendaraan aktif')}
     </div>`;
 
+  // Export buttons — the printable Executive Report (PDF | Excel). Same
+  // `exec-reset` grammar + `download` glyph the siblings use; the host binds the
+  // data-exa-export contract and runs the registered exporter.
+  const exportBtns =
+    `<button type="button" class="exec-reset" data-exa-export="pdf" aria-label="Unduh laporan PDF">${anIcon('download', { size: 14 })}PDF</button>` +
+    `<button type="button" class="exec-reset" data-exa-export="excel" aria-label="Unduh laporan Excel">${anIcon('download', { size: 14 })}Excel</button>`;
+
   return ExecutiveHeader({
     title: 'Executive Analytics',
     subtitle,
     meta: `Diperbarui ${fmtTime(model.generatedAt)}`,
-  }) + band;
+  }) + band + ExecutiveToolbar({ right: exportBtns });
 }
 
 /* ── 2. EXECUTIVE STATUS — ONE large verdict card. One level word, one sentence.
@@ -257,7 +267,7 @@ function renderKpis(d) {
 
 const SEV = { danger: 0, warn: 1, info: 2, ok: 3 };
 
-function buildHighlights(d) {
+export function buildHighlights(d) {
   const items = [];
 
   // Driver readiness (wellness).

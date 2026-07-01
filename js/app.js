@@ -109,6 +109,7 @@ import './exports/analytics/dispatch-analytics-export.js'; // v1.17.0 — window
 import './exports/analytics/recommendation-accuracy-export.js'; // v1.17.1 — window.exportRecommendationAccuracyPdf/Excel()
 import './exports/analytics/decision-replay-export.js'; // v1.17.5 — window.exportDecisionReplayPdf/Excel()
 import './exports/analytics/driver-wellness-export.js'; // v1.17.6 — window.exportDriverWellnessPdf/Excel()
+import './exports/analytics/executive-dashboard-export.js'; // v1.18.8 — window.exportExecutiveDashboardPdf/Excel()
 import { listExportReports, getExportReport, runExportReport } from './exports/export-registry.js'; // single source of truth for report exports
 import { logExportSuccess, logExportFailure, ensureExportHistoryLoadedAndSubscribed, resetExportHistorySync, getExportHistoryCache, subscribeExportHistoryChangeListener } from './exports/export-history.js'; // metadata logging for every export
 import { renderExportCenter as renderModernExportCenter } from './exports/export-center.js'; // v1.12.1C modern Export Center (registry + metadata)
@@ -2979,6 +2980,13 @@ function initV2AdministrationWorkspace() {
     const raaExportBtn = e.target.closest('[data-raa-export]');
     if (raaExportBtn) {
       exportRecommendationAccuracy(raaExportBtn.dataset.raaExport, raaExportBtn);
+      return;
+    }
+
+    // v1.18.8: Executive Analytics Report export buttons (PDF | Excel).
+    const exaExportBtn = e.target.closest('[data-exa-export]');
+    if (exaExportBtn) {
+      exportExecutiveDashboard(exaExportBtn.dataset.exaExport, exaExportBtn);
       return;
     }
 
@@ -6141,10 +6149,52 @@ function renderExecutiveDashboardSection() {
   try {
     const model = buildExecutiveDashboardModel();
     window._lastExecutiveDashboardModel = model;
+    // Publish for the export hooks (mirrors the sibling analytics exports).
+    window._executiveDashboardMeta = { generatedBy: (getCurrentUser() && (getCurrentUser().name || getCurrentUser().username)) || '—', appVersion: APP_VERSION, periodLabel: 'Kondisi terkini' };
     host.innerHTML = renderExecutiveDashboard(model);
   } catch (err) {
     console.warn('[ExecutiveDashboard] render failed', err);
     host.innerHTML = '<div class="exa daa exec-ui v2-analytics-claude"><div class="daa-status daa-status--warn"><div class="daa-status__eye">Executive Analytics</div><div class="daa-status__level">Gagal memuat</div><div class="daa-status__msg">Terjadi kesalahan saat menyusun data. Coba muat ulang halaman.</div></div></div>';
+  }
+}
+
+/** Export the Executive Analytics Report (PDF | Excel) via the export registry
+ *  + export-history log (mirrors exportDriverWellness). */
+async function exportExecutiveDashboard(format, btn) {
+  const isExcel = format === 'excel';
+  const reportId = isExcel ? 'executive-dashboard-excel' : 'executive-dashboard-pdf';
+  const def = getExportReport(reportId);
+  if (!def) return;
+  const prev = btn ? btn.textContent : null;
+  if (btn) { btn.disabled = true; btn.textContent = isExcel ? '⏳ Excel…' : '⏳ PDF…'; }
+
+  const u = getCurrentUser();
+  const exportCtx = {
+    reportId: def.id, reportTitle: def.title,
+    periodLabel: 'Kondisi terkini', dateRangeKey: 'all', filters: {},
+    generatedBy: (u && (u.displayName || u.name || u.username)) || '—',
+    userId: u?.id, username: u?.username, appVersion: APP_VERSION,
+  };
+  const startedAt = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const elapsed = () => Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt);
+
+  try {
+    const result = await runExportReport(reportId);
+    if (result && result.blob) {
+      const url = URL.createObjectURL(result.blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = result.filename || `${reportId}.${isExcel ? 'xlsx' : 'pdf'}`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    }
+    logExportSuccess(exportCtx, { fileSize: result?.blob?.size, durationMs: elapsed() });
+    showToast(isExcel ? 'Excel berhasil dibuat.' : 'PDF berhasil dibuat.');
+  } catch (err) {
+    console.error('[ExecutiveDashboard] export failed:', err);
+    logExportFailure(exportCtx, { error: err, durationMs: elapsed() });
+    showToast(isExcel ? 'Gagal membuat Excel.' : 'Gagal membuat PDF.');
+  } finally {
+    if (btn) { btn.disabled = false; if (prev != null) btn.textContent = prev; }
   }
 }
 

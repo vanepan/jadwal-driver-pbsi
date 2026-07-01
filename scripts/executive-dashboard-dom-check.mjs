@@ -129,6 +129,7 @@ const result = await page.evaluate(async () => {
     spotlights: qa('.daa-spot').length,
     navCards: qa('.exa-nav__card').length,
     navKeys: qa('.exa-nav__card').map((b) => b.getAttribute('data-exa-nav')),
+    exportBtns: qa('[data-exa-export]').map((b) => b.getAttribute('data-exa-export')),
     sections: sections.length,
     titles: sectionTitles,
     noEmoji: !EMOJI.test(root.textContent || ''),
@@ -153,6 +154,8 @@ check("Today's Highlights feed renders (≥1, ≤5)", result.highlightItems >= 1
 check('Operational Overview renders 6 domain cards', result.overviewCards === 6);
 check('every domain card carries a status pill', result.overviewPills === 6);
 check('ONE Executive Spotlight renders', result.spotlights === 1);
+check('Executive Report export buttons (PDF + Excel, data-exa-export)',
+  result.exportBtns.includes('pdf') && result.exportBtns.includes('excel'));
 check('Quick Navigation renders 6 premium cards', result.navCards === 6);
 check('Quick Nav cards route to every page (data-exa-nav)',
   ['driver', 'dispatch', 'recommendation', 'wellness', 'vehicle', 'petty'].every((k) => result.navKeys.includes(k)));

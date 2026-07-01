@@ -165,6 +165,27 @@ export const EXPORT_REPORTS = {
     template: 'driver-wellness',
     run: (meta = {}) => window.exportDriverWellnessExcel(meta),
   },
+  // v1.18.8 — Executive Analytics Report. The printable executive briefing that
+  // AGGREGATES the sibling module outputs. Same CLIENT-side blob pipeline
+  // (pdfmake / xlsx) as the analytics exports; excluded from EXPORT_REPORT_ORDER
+  // so it stays out of the operational Analytics dropdown — the Executive
+  // Analytics dashboard owns its own export buttons and resolves these by id.
+  'executive-dashboard-pdf': {
+    id: 'executive-dashboard-pdf',
+    title: 'Executive Analytics (PDF)',
+    description: 'Laporan eksekutif lintas modul sebagai PDF.',
+    icon: ICONS.complete,
+    template: 'executive-dashboard',
+    run: (meta = {}) => window.exportExecutiveDashboardPdf(meta),
+  },
+  'executive-dashboard-excel': {
+    id: 'executive-dashboard-excel',
+    title: 'Executive Analytics (Excel)',
+    description: 'Laporan eksekutif lintas modul — satu worksheet per modul.',
+    icon: ICONS.complete,
+    template: 'executive-dashboard',
+    run: (meta = {}) => window.exportExecutiveDashboardExcel(meta),
+  },
 };
 
 /** Stable display/menu order for every consumer. */

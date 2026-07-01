@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.18.8';
-export const RELEASE_NAME = 'Executive Analytics Dashboard';
+export const APP_VERSION = '1.18.8.1';
+export const RELEASE_NAME = 'Executive Analytics Report Export';
 
 /**
  * Web Push VAPID PUBLIC key (v1.11.3). Safe to ship — it is an
@@ -17,6 +17,16 @@ export const RELEASE_NAME = 'Executive Analytics Dashboard';
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.18.8.1',
+    date: '2026-07-01',
+    summary: 'Executive Analytics Report Export — adds the printable EXECUTIVE REPORT (PDF + Excel) to the v1.18.8 Executive Analytics Dashboard. Unlike the module dashboards this is a CROSS-DOMAIN executive briefing, not a single-module export. It REUSES the platform export pipeline verbatim (the pdfmake backend js/docs/pdf-exporter.js + the xlsx-js-style loader — the SAME client-side blob path as the Dispatch Analytics / Recommendation Accuracy / Driver Wellness exporters; no new exporter type) and REUSES the dashboard\'s OWN projection helpers (pick / verdict / buildHighlights, now exported from executive-dashboard.js) so the report shows the SAME derived values as the screen — ONE source of truth, no duplicated export logic and NO new calculation. Every figure is an existing engine output aggregated in the model from Analytics Driver · Dispatch Analytics · Recommendation Accuracy · Driver Wellness · Vehicle Analytics · Petty Cash Analytics. PDF (A4): Executive Summary → Operational Status (verdict reused from the Operational Health Score) → Executive KPIs (the six dashboard indicators) → Highlights (today\'s feed) → Module summaries (one small table per module). Excel: a lead "Ringkasan Eksekutif" sheet (status + KPIs + highlights) plus ONE worksheet per module summary (Analytics Driver / Dispatch Analytics / Recommendation Accuracy / Driver Wellness / Vehicle Analytics / Petty Cash Analytics). The dashboard stays lightweight — export is the printable report. APP_VERSION 1.18.8 → 1.18.8.1 re-stamps SW_VERSION → CACHE_NAME, version.json, and the index.html cache-busts via scripts/sync-version.mjs.',
+    highlights: [
+      'New js/exports/analytics/executive-dashboard-export.js — PURE, node-testable builders buildExecutiveReportDocDefinition (pdfmake) + buildExecutiveReportSheets (one { name, aoa } per module) wrapped by exportExecutiveReportPdf/Excel (getExporter(\'pdfmake\') + the shared xlsx loader). Imports pick/verdict/buildHighlights from executive-dashboard.js so the report projects the identical derived KPIs, status verdict and highlights — no recomputation. Registered in export-registry as executive-dashboard-pdf/-excel (kept OUT of EXPORT_REPORT_ORDER — the dashboard owns its own buttons). window.exportExecutiveDashboardPdf/Excel read window._lastExecutiveDashboardModel + window._executiveDashboardMeta.',
+      'Host wiring (js/app.js): imports the export module (registers the window hooks); renderExecutiveDashboardSection now publishes window._executiveDashboardMeta; new exportExecutiveDashboard(format, btn) runner (mirrors exportDriverWellness — runExportReport by id + export-history logExportSuccess/Failure + blob download + toast); delegated [data-exa-export] click handler. The dashboard Hero gains PDF + Excel buttons (exec-reset grammar + download glyph) via ExecutiveToolbar. No engine, scoring, recommendation, Firebase, or business-logic change.',
+      'Tests: scripts/executive-dashboard-export-check.mjs (PURE node — 18 assertions: the five PDF sections, all six module tables, the verdict reused from exec.score.label, the seven Excel sheets = summary + one per module, wellness/fleet values traced back to the real engine models, and empty/null safety). scripts/executive-dashboard-dom-check.mjs extended to 34 (asserts the PDF + Excel export buttons render). smoke-boot 0 fatal; sibling suites remain green.',
+    ],
+  },
   {
     version: '1.18.8',
     date: '2026-07-01',
