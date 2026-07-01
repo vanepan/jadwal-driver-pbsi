@@ -177,7 +177,22 @@ import {
   mountPettyCash, setPettyCashScreen, closePettyCashCenter, openPettyCashAddExpense,
 } from './petty-cash/petty-cash-center.js';
 import { mountAnalyticsPettyCash, closeAnalyticsPettyCash, refreshAnalyticsPettyCash } from './analytics/views/analytics-petty-cash-view.js';
-import { mountAnalyticsExecutive, closeAnalyticsExecutive, refreshAnalyticsExecutive } from './analytics/views/analytics-executive-view.js';
+// v1.18.8: mountAnalyticsExecutive is retired — the "Analytics Executive" entry
+// now renders the new Executive Analytics Dashboard sibling section (below). The
+// close/refresh hooks stay imported for the dormant analyticsExec workspace guard.
+import { closeAnalyticsExecutive, refreshAnalyticsExecutive } from './analytics/views/analytics-executive-view.js';
+// v1.18.8 Executive Analytics Dashboard — the platform's executive home page. It
+// REUSES existing engine outputs only (no new business logic): the Operational
+// Health Score (computeExecutiveAnalytics over the driver + petty models), plus
+// the Dispatch / Recommendation / Wellness / Fleet models already built below.
+import { renderExecutiveDashboard, injectExecutiveDashboardStyles } from './components/executive-dashboard.js';
+import { computeExecutiveAnalytics } from './analytics/executive-analytics.js';
+import { computePettyCashAnalytics } from './analytics/petty-cash-analytics.js';
+import { bidangRoster } from './petty-cash/petty-cash-service.js';
+import {
+  isReady as pcReady, getExpenses as getPcExpenses, getNors as getPcNors,
+  getActiveCycle as getPcActiveCycle, getSettings as getPcSettings,
+} from './petty-cash/petty-cash-store.js';
 import { initNotificationUI, setNotificationData, openNotificationsModal } from './notifications.js';
 import { setTelegramBotToken } from './telegram.js';
 import { subscribeLogsChangeListener, getLogs, logAction, ensureLogsLoadedAndSubscribed, resetLogsSync } from './logs.js';
@@ -270,6 +285,7 @@ const ADMIN_SECTION_DEFS = [
   { key: 'dispatchanalytics', label: 'Dispatch Analytics', subtitle: 'Dashboard eksekutif Dispatch Intelligence — akurasi, override, confidence, intelijen driver/kendaraan, dan tren.' },
   { key: 'recommendationaccuracy', label: 'Recommendation Accuracy', subtitle: 'Seberapa akurat rekomendasi dispatch — akurasi, kalibrasi confidence, severity override, dan tren pembelajaran.' },
   { key: 'wellness', label: 'Driver Wellness', subtitle: 'Keberlanjutan operasional — skor kesehatan, kelelahan, burnout, dan capacity health per driver.' },
+  { key: 'executive', label: 'Executive Analytics', subtitle: 'Kondisi operasional hari ini — status, indikator utama, sorotan, dan navigasi ke setiap laporan.' },
 ];
 
 /* v1.14.0: which admin sections belong to which platform module. Drives the
@@ -279,7 +295,7 @@ const ADMIN_SECTION_DEFS = [
 const ADMIN_MODULE_SECTIONS = {
   driverops:   ['drivers', 'vehicles', 'audit'],
   konfigurasi: ['users', 'config'],
-  analytics:   ['analytics', 'dispatchanalytics', 'recommendationaccuracy', 'wellness'],
+  analytics:   ['analytics', 'dispatchanalytics', 'recommendationaccuracy', 'wellness', 'executive'],
 };
 
 /**
@@ -1052,12 +1068,19 @@ async function navAnalyticsPettyCash() {
   analyticsPettyMounted = true;
   await mountAnalyticsPettyCash(document.getElementById('v2AnalyticsPettyWorkspace'));
 }
-async function navAnalyticsExecutive() {
+/* v1.18.8 — "Analytics Executive" is repointed to the new Executive Analytics
+   Dashboard (the platform's executive home page), rendered as a SIBLING admin
+   section in the Analytics module — exactly like Dispatch Analytics, Recommendation
+   Accuracy, and Driver Wellness. The legacy combined driver+petty executive view
+   (analyticsExec workspace / analytics-executive-view.js) is retired from
+   navigation; its Operational Health Score ENGINE (computeExecutiveAnalytics) is
+   reused by the new dashboard. */
+function navAnalyticsExecutive() {
+  activeAdminModule = 'analytics';
+  activeAdminSection = 'executive';
   setV2PanelNavActive('v2NavAnalyticsGabungan');
-  setCrumb('ANALYTICS', 'Analytics Executive');
-  setWorkspace('analyticsExec');
-  analyticsExecMounted = true;
-  await mountAnalyticsExecutive(document.getElementById('v2AnalyticsExecWorkspace'));
+  setCrumb('ANALYTICS', 'Executive Analytics');
+  setWorkspace('administration');
 }
 
 /* v1.17.6.1 Analytics Navigation Integration — desktop panel entry points for
@@ -1441,7 +1464,7 @@ function initV2Panel() {
       </button>
       <button class="v2-panel-nav-item" id="v2NavAnalyticsGabungan" type="button">
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M5 3a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V5a2 2 0 00-2-2H5zm2.5 9a1.5 1.5 0 100-3 1.5 1.5 0 000 3zm5 0a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/></svg>
-        Analytics Executive
+        Executive Analytics
       </button>
     </nav>
 
@@ -2558,7 +2581,9 @@ function syncAnalyticsMobileNav() {
   if (!inAnalytics) return;
   let key = 'driver';
   if (currentWorkspace === 'analyticsPetty')     key = 'petty';
-  else if (currentWorkspace === 'analyticsExec') key = 'exec';
+  // v1.18.8: Executive is now a sibling admin section (administration workspace),
+  // not the retired analyticsExec workspace — detect it by the active section.
+  else if (currentWorkspace === 'administration' && activeAdminSection === 'executive') key = 'exec';
   nav.querySelectorAll('[data-analytics-mnav]').forEach(btn => {
     btn.classList.toggle('v2-admin-nav-tab--active', btn.dataset.analyticsMnav === key);
   });
@@ -2757,6 +2782,9 @@ function initV2AdministrationWorkspace() {
         <div id="v2AdminSectionWellness" style="display:none;">
           <div id="v2DriverWellnessDashboard"></div>
         </div>
+        <div id="v2AdminSectionExecutive" style="display:none;">
+          <div id="v2ExecutiveDashboard"></div>
+        </div>
         <div id="v2AdminSectionAnalytics" class="v2-analytics-claude v2-analytics-shell" style="display:none;">
           <!-- Analytics Header (command area): title + date range + filters + export -->
           <div class="v2-analytics-header" id="v2AnalyticsHeader">
@@ -2951,6 +2979,20 @@ function initV2AdministrationWorkspace() {
     const raaExportBtn = e.target.closest('[data-raa-export]');
     if (raaExportBtn) {
       exportRecommendationAccuracy(raaExportBtn.dataset.raaExport, raaExportBtn);
+      return;
+    }
+
+    // v1.18.8: Executive Analytics quick-navigation cards → one-click routing to
+    // each detailed report page. Reuses the existing nav* routing (no new logic).
+    const exaNavBtn = e.target.closest('[data-exa-nav]');
+    if (exaNavBtn) {
+      const dest = exaNavBtn.dataset.exaNav;
+      if (dest === 'driver') navAnalyticsDriver();
+      else if (dest === 'dispatch') navDispatchAnalytics();
+      else if (dest === 'recommendation') navRecommendationAccuracy();
+      else if (dest === 'wellness') navDriverWellness();
+      else if (dest === 'vehicle') navManajemenKendaraan();
+      else if (dest === 'petty') navAnalyticsPettyCash();
       return;
     }
 
@@ -3317,6 +3359,11 @@ function renderV2AdminWorkspace() {
   if (wellnessSection) {
     wellnessSection.style.display = (activeAdminSection === 'wellness') ? '' : 'none';
   }
+  // v1.18.8: the Executive Analytics section follows the same central-hide pattern.
+  const executiveSection = document.getElementById('v2AdminSectionExecutive');
+  if (executiveSection) {
+    executiveSection.style.display = (activeAdminSection === 'executive') ? '' : 'none';
+  }
 
   // v1.14.0: the tab strip is the mobile sub-nav — show only the tabs that
   // belong to the active platform module so it mirrors the new module IA.
@@ -3613,6 +3660,18 @@ function renderV2AdminWorkspace() {
     if (_auditSec4) _auditSec4.style.display = 'none';
     if (overviewRow) overviewRow.innerHTML = '';
     renderDriverWellnessSection();
+
+  } else if (activeAdminSection === 'executive') {
+    if (usersSection)       usersSection.style.display       = 'none';
+    if (driversSection)     driversSection.style.display     = 'none';
+    if (vehiclesSection)    vehiclesSection.style.display    = 'none';
+    if (configSection)      configSection.style.display      = 'none';
+    if (analyticsSection)   analyticsSection.style.display   = 'none';
+    if (placeholderSection) placeholderSection.style.display = 'none';
+    const _auditSec5 = document.getElementById('v2AdminSectionAudit');
+    if (_auditSec5) _auditSec5.style.display = 'none';
+    if (overviewRow) overviewRow.innerHTML = '';
+    renderExecutiveDashboardSection();
 
   } else {
     if (usersSection)       usersSection.style.display       = 'none';
@@ -6032,6 +6091,60 @@ function renderDriverWellnessSection() {
   } catch (err) {
     console.warn('[DriverWellness] render failed', err);
     host.innerHTML = '<div class="dwi daa exec-ui v2-analytics-claude"><div class="daa-status daa-status--warn"><div class="daa-status__eye">Driver Wellness</div><div class="daa-status__level">Gagal memuat</div><div class="daa-status__msg">Terjadi kesalahan saat menyusun data. Coba muat ulang halaman.</div></div></div>';
+  }
+}
+
+/* ── Executive Analytics Dashboard (v1.18.8) ───────────────────────────────
+   The platform's executive HOME page — it answers "Bagaimana kondisi operasional
+   hari ini?" by AGGREGATING existing engine outputs into one briefing. It adds
+   NO new score and duplicates NO calculation: every domain model here is the
+   SAME one that domain's own page builds. Presentation happens in
+   js/components/executive-dashboard.js. */
+
+/** Best-effort petty model — included ONLY when the petty store is already
+ *  loaded (e.g. the Petty Cash Center was opened). Never forces a load, so this
+ *  stays synchronous and side-effect-free. When absent, computeExecutiveAnalytics
+ *  cleanly re-normalizes the Operational Health Score over driver + vehicle. */
+function buildPettyAnalyticsModelIfReady() {
+  try {
+    if (typeof pcReady !== 'function' || !pcReady()) return null;
+    return computePettyCashAnalytics({
+      expenses: getPcExpenses(), nors: getPcNors(), activeCycle: getPcActiveCycle(),
+      settings: getPcSettings(), bidangRoster: bidangRoster(), range: '30d',
+    });
+  } catch (err) { console.warn('[ExecutiveDashboard] petty model unavailable', err); return null; }
+}
+
+/** Aggregate the existing engine outputs into the executive model. Each domain
+ *  is built by the SAME function its sibling page uses — no duplicated math. */
+function buildExecutiveDashboardModel() {
+  const safe = (label, fn) => { try { return fn(); } catch (err) { console.warn(`[ExecutiveDashboard] ${label} unavailable`, err); return null; } };
+  const dispatch       = safe('dispatch', () => buildDispatchAnalyticsModel());
+  const recommendation = safe('recommendation', () => buildRecommendationAccuracyModel());
+  const wellness       = safe('wellness', () => buildDriverWellnessModel());
+  const fleet          = safe('fleet', () => computeFleetAssetModel({ vehicles: getVehicles() }));
+  const petty          = buildPettyAnalyticsModelIfReady();
+  // The ONE cross-domain verdict — Operational Health Score from the existing
+  // Executive Score Engine (driver + petty). Driver model via the shared builder.
+  const exec = safe('exec', () => {
+    const driverModel = computeDriverModelForRange('30d', {});
+    return computeExecutiveAnalytics({ driverModel, pettyModel: petty, meta: { periodLabel: '30 Hari' } });
+  });
+  return { generatedAt: new Date().toISOString(), exec, dispatch, recommendation, wellness, fleet, petty };
+}
+
+/** Render (or re-render) the Executive Analytics dashboard into its container. */
+function renderExecutiveDashboardSection() {
+  const host = document.getElementById('v2ExecutiveDashboard');
+  if (!host) return;
+  injectExecutiveDashboardStyles();
+  try {
+    const model = buildExecutiveDashboardModel();
+    window._lastExecutiveDashboardModel = model;
+    host.innerHTML = renderExecutiveDashboard(model);
+  } catch (err) {
+    console.warn('[ExecutiveDashboard] render failed', err);
+    host.innerHTML = '<div class="exa daa exec-ui v2-analytics-claude"><div class="daa-status daa-status--warn"><div class="daa-status__eye">Executive Analytics</div><div class="daa-status__level">Gagal memuat</div><div class="daa-status__msg">Terjadi kesalahan saat menyusun data. Coba muat ulang halaman.</div></div></div>';
   }
 }
 
@@ -9315,6 +9428,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (activeAdminSection === 'dispatchanalytics') renderDispatchAnalyticsSection();
     if (activeAdminSection === 'recommendationaccuracy') renderRecommendationAccuracySection();
     if (activeAdminSection === 'wellness') renderDriverWellnessSection();
+    if (activeAdminSection === 'executive') renderExecutiveDashboardSection();
     checkAndSendH1Reminders(assignments, requests, getUserByUsername, getUsers);
     checkAndSendHoursReminders(assignments, requests, getUserByUsername, getUsers);
   });
@@ -9328,6 +9442,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (activeAdminSection === 'dispatchanalytics') renderDispatchAnalyticsSection();
     if (activeAdminSection === 'recommendationaccuracy') renderRecommendationAccuracySection();
     if (activeAdminSection === 'wellness') renderDriverWellnessSection();
+    if (activeAdminSection === 'executive') renderExecutiveDashboardSection();
     // Refresh comment modal if open for one of the updated requests
     refreshCommentThreadIfOpen(requests);
   });
