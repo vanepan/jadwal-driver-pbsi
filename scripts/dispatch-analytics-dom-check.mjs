@@ -125,14 +125,28 @@ const result = await page.evaluate(async () => {
     decisions: model.totals.decisions,
     hasRoot: !!root,
     header: (q('.exec-head__title') || {}).textContent || '',
-    kpiCount: sections[0] ? sections[0].querySelectorAll('.v2-analytics-kpi-card').length : 0,
-    distRows: host.querySelectorAll('.daa-dist__row').length,
+    // Summary section is located by title (Status card + hero band precede it).
+    kpiCount: (() => {
+      const s = sections.find((e) => { const h = e.querySelector('.v2-analytics-section-header'); return h && h.textContent.trim() === 'Ringkasan Eksekutif'; });
+      return s ? s.querySelectorAll('.v2-analytics-kpi-card').length : 0;
+    })(),
     driverTable: !!firstTable && firstTable.querySelectorAll('tbody tr').length,
     sections: sections.length,
     funnelRows: host.querySelectorAll('.daa-funnel__row').length,
     timelineItems: host.querySelectorAll('.daa-tl__li').length,
     reasonItems: host.querySelectorAll('.daa-reasons__li').length,
-    trendCards: sections.length ? sections[sections.length - 1].querySelectorAll('.v2-analytics-kpi-card').length : 0,
+    // v1.18.5.3 — hero stat band (3 figures), ONE Executive Status card, and the
+    // premium entity spotlights.
+    heroStats: host.querySelectorAll('.daa-hero-stat').length,
+    statusCard: host.querySelectorAll('.daa-status').length,
+    statusLevel: (q('.daa-status__level') || {}).textContent || '',
+    spotlights: host.querySelectorAll('.daa-spot').length,
+    // Performa Dispatch (merged Trend + Quality) carries the two movement
+    // sparklines (acceptance + admin-change).
+    trendSparks: (() => {
+      const t = sections.find((e) => { const h = e.querySelector('.v2-analytics-section-header'); return h && h.textContent.trim() === 'Performa Dispatch'; });
+      return t ? t.querySelectorAll('.exec-spark').length : 0;
+    })(),
     toggleBtns: host.querySelectorAll('[data-daa-window]').length,
     exportBtns: host.querySelectorAll('[data-daa-export]').length,
     sparklines: host.querySelectorAll('.exec-spark').length,
@@ -148,23 +162,31 @@ check('seeded model has 22 decisions', result.decisions === 22);
 
 console.log('\n[structure — Executive UI]');
 check('dashboard root .daa renders', result.hasRoot);
-check('Executive header title present (.exec-head__title)', result.header.includes('Dispatch Intelligence Analytics'));
-check('5 Executive KPI cards in summary section', result.kpiCount === 5);
-check('confidence distribution has 5 rows', result.distRows === 5);
+check('Executive header title present (.exec-head__title)', result.header.trim() === 'Dispatch Intelligence');
+check('4 Executive KPI cards in summary section (deduplicated)', result.kpiCount === 4);
+check('hero stat band renders 3 headline figures', result.heroStats === 3);
+check('ONE Executive Status card renders (not a checklist)', result.statusCard === 1);
+check('Status card states a verdict level', result.statusLevel.trim().length > 0);
+check('entity spotlights render (driver + vehicle + bidang)', result.spotlights === 3);
 check('Executive tables render (driver/vehicle/bidang)', result.execTables >= 3);
 check('driver table has rows', result.driverTable >= 1);
-check('Executive section shells rendered (≥ 10)', result.sections >= 10);
+check('Executive section shells rendered (merged → 6)', result.sections >= 6);
 check('quality funnel has 4 rows', result.funnelRows >= 4);
 check('timeline renders events', result.timelineItems >= 1);
-check('explainability reason items render', result.reasonItems >= 1);
-check('trend window KPI cards render (4)', result.trendCards === 4);
+check('decision-history reason items render', result.reasonItems >= 1);
+check('Performa Dispatch renders 2 movement sparklines', result.trendSparks === 2);
 check('trend window toggle has 4 buttons (data-daa-window preserved)', result.toggleBtns === 4);
 check('export buttons (PDF + Excel) present (data-daa-export preserved)', result.exportBtns === 2);
 check('Executive sparklines render (SVG)', result.sparklines >= 1);
 
 console.log('\n[sections present]');
-const want = ['Ringkasan Eksekutif', 'Distribusi Confidence', 'Intelijen Driver', 'Intelijen Kendaraan', 'Analitik Override', 'Intelijen Bidang', 'Kualitas Rekomendasi', 'Linimasa Dispatch', 'Explainability', 'Tren'];
-for (const w of want) check(`§ ${w}`, result.titles.some((t) => t.includes(w)));
+// Executive briefing vocabulary (v1.18.5.3): merged sections, operational
+// language only — no engineering terms and no leftover pre-merge section titles.
+const want = ['Ringkasan Eksekutif', 'Performa Dispatch', 'Ringkasan Driver', 'Ringkasan Kendaraan', 'Ringkasan Bidang', 'Riwayat Keputusan'];
+for (const w of want) check(`§ ${w}`, result.titles.some((t) => t.trim() === w));
+// Guard against regressing to engineering vocabulary or un-merged sections.
+const banned = ['Intelijen', 'Override', 'Confidence', 'Explainability', 'Linimasa', 'Distribusi', 'Kualitas Rekomendasi', 'Tren', 'Alasan'];
+for (const b of banned) check(`no legacy/engineering term "${b}" in titles`, !result.titles.some((t) => t.includes(b)));
 
 console.log('\n[design / regression]');
 check('zero emoji anywhere (★ ratings replaced with numeric)', result.noEmoji);

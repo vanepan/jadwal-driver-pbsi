@@ -2930,9 +2930,11 @@ function initV2AdministrationWorkspace() {
       exportDriverWellness(dwiExportBtn.dataset.dwiExport, dwiExportBtn);
       return;
     }
-    const dwiRow = e.target.closest('[data-dwi-driver]');
+    // v1.18.7: Driver Wellness table rows are now Executive-table clickable rows
+    // (data-row-id = driverId). Scoped to `.dwi` so no other exec-table is caught.
+    const dwiRow = e.target.closest('.dwi .exec-tr--click');
     if (dwiRow) {
-      openDriverWellnessDetail(dwiRow.dataset.dwiDriver);
+      openDriverWellnessDetail(dwiRow.dataset.rowId);
       return;
     }
 
@@ -2963,13 +2965,14 @@ function initV2AdministrationWorkspace() {
     }
   });
 
-  // v1.17.6: keyboard-open the Driver Wellness detail drawer (rows are role=button).
+  // v1.18.7: keyboard-open the Driver Wellness detail drawer (Executive-table
+  // clickable rows are role=button/tabindex=0; data-row-id = driverId).
   ws.addEventListener('keydown', e => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
-    const dwiRow = e.target.closest && e.target.closest('[data-dwi-driver]');
+    const dwiRow = e.target.closest && e.target.closest('.dwi .exec-tr--click');
     if (dwiRow) {
       e.preventDefault();
-      openDriverWellnessDetail(dwiRow.dataset.dwiDriver);
+      openDriverWellnessDetail(dwiRow.dataset.rowId);
     }
   });
 
@@ -6028,7 +6031,7 @@ function renderDriverWellnessSection() {
     host.innerHTML = renderDriverWellnessDashboard(model);
   } catch (err) {
     console.warn('[DriverWellness] render failed', err);
-    host.innerHTML = '<div class="dwi"><div class="dwi-sec"><div class="dwi-empty"><div class="dwi-empty__ic">⚠️</div><div class="dwi-empty__t">Gagal memuat Driver Wellness</div><div class="dwi-empty__d">Terjadi kesalahan saat menyusun data. Coba muat ulang halaman.</div></div></div></div>';
+    host.innerHTML = '<div class="dwi daa exec-ui v2-analytics-claude"><div class="daa-status daa-status--warn"><div class="daa-status__eye">Driver Wellness</div><div class="daa-status__level">Gagal memuat</div><div class="daa-status__msg">Terjadi kesalahan saat menyusun data. Coba muat ulang halaman.</div></div></div>';
   }
 }
 

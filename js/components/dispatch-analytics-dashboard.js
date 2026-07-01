@@ -31,11 +31,17 @@ import { scoreColor, capacityScore, scoreLabelId } from '../services/unified-sco
 
 // v1.18.5 Executive UI Sprint 3 — Dispatch Analytics now consumes the Executive
 // UI Kit as its single design authority (header, toolbar, KPIs, section shells,
-// tables, badges, sparkline, empty states, and the one icon engine). The shared
-// `.daa-*` style block is KEPT below because Recommendation Accuracy still imports
-// injectDispatchAnalyticsStyles() and renders `.daa-*` (its migration is a later
-// sprint). Only the inner micro-viz (distribution/funnel/rank/timeline/reason
-// chips) — which have no kit primitive — still use those shared classes.
+// tables, badges, sparkline, empty states, and the one icon engine). Only the
+// inner micro-viz (hero stat band, Executive Status, entity spotlights, movement
+// headline, funnel/rank/timeline/reason chips) — which have no kit primitive —
+// still use the scoped `.daa-*` classes below.
+// v1.18.6 — Recommendation Accuracy has now ALSO migrated to the Executive UI Kit
+// and SHARES this same `.daa-*` micro-viz block (spotlight, status, hero stats,
+// funnel, bar, cols, detail-cap, movement). This block therefore remains the
+// single source of truth for both dashboards. The presentation classes that were
+// only used by the pre-migration dashboards (`.daa-top/.daa-btn/.daa-toggle`,
+// `.daa-kpi*`, `.daa-dist*`, `.daa-spark*`) were removed as dead code in the RAA
+// migration — the kit's ExecutiveHeader/Toolbar/KPICard/Sparkline own those now.
 import {
   ExecutiveHeader,
   ExecutiveToolbar,
@@ -73,52 +79,63 @@ const CSS = `
 .daa-empty__t{font-size:.9rem;font-weight:700;color:var(--text);}
 .daa-empty__d{font-size:.76rem;max-width:32rem;}
 
-/* KPI hero grid */
-.daa-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr));gap:.8rem;}
-.daa-kpi{border:1px solid var(--border);border-radius:15px;padding:.85rem .95rem;
-  background:linear-gradient(180deg, var(--surface-2), var(--surface));
-  display:flex;flex-direction:column;gap:.3rem;min-width:0;}
-.daa-kpi--hero{border-color:var(--info);background:linear-gradient(180deg, var(--info-bg), var(--surface));}
-.daa-kpi__lbl{font-size:.64rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);}
-.daa-kpi__num{font-size:1.9rem;font-weight:800;letter-spacing:-.02em;color:var(--text);line-height:1.05;}
-.daa-kpi__sub{font-size:.66rem;color:var(--muted);}
-.daa-kpi__stars{font-size:1rem;color:var(--warn);letter-spacing:.06em;}
+/* Hero stat band — the three headline figures under the hero title. Large,
+   de-boxed, whitespace-led: the hero is the strongest visual element on the page. */
+.daa-hero-stats{display:flex;flex-wrap:wrap;gap:2.4rem;margin:.35rem 0 .1rem;}
+.daa-hero-stat{display:flex;flex-direction:column;gap:.15rem;min-width:0;}
+.daa-hero-stat__v{font-size:2.1rem;font-weight:800;letter-spacing:-.03em;color:var(--text);line-height:1;}
+.daa-hero-stat__l{font-size:.72rem;font-weight:600;color:var(--muted);}
 
-/* Header band */
-.daa-top{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;}
-.daa-top__l{display:flex;flex-direction:column;gap:.25rem;min-width:0;}
-.daa-top__title{font-size:1.15rem;font-weight:800;letter-spacing:-.02em;color:var(--text);
-  display:flex;align-items:center;gap:.5rem;}
-.daa-top__sub{font-size:.76rem;color:var(--muted);max-width:42rem;}
-.daa-top__meta{font-size:.66rem;color:var(--muted);}
-.daa-top__actions{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;}
-.daa-btn{display:inline-flex;align-items:center;gap:.35rem;cursor:pointer;
-  font-size:.76rem;font-weight:700;color:var(--text);background:var(--surface);
-  border:1px solid var(--border);border-radius:10px;padding:.45rem .75rem;
-  transition:filter .15s ease, background .15s ease;}
-.daa-btn:hover{background:var(--surface-2);}
-.daa-btn--accent{color:var(--on-accent);background:var(--accent);border-color:var(--accent);}
-.daa-btn--accent:hover{filter:brightness(1.06);background:var(--accent);}
+/* Executive Status — one verdict card (replaces the four-row checklist). Tinted
+   by tone; the largest single message block below the hero. */
+.daa-status{display:flex;flex-direction:column;gap:.3rem;padding:1.2rem 1.35rem;
+  border:1px solid var(--border);border-left-width:4px;border-radius:16px;background:var(--surface-2);}
+.daa-status__eye{font-size:.64rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
+.daa-status__level{font-size:1.5rem;font-weight:800;letter-spacing:-.02em;line-height:1.1;color:var(--text);}
+.daa-status__msg{font-size:.86rem;color:var(--muted);max-width:44rem;line-height:1.45;}
+.daa-status--good{border-left-color:var(--ok);background:var(--ok-bg);}
+.daa-status--good .daa-status__level{color:var(--ok);}
+.daa-status--info{border-left-color:var(--info);background:var(--info-bg);}
+.daa-status--info .daa-status__level{color:var(--info);}
+.daa-status--warn{border-left-color:var(--warn);background:var(--warn-bg);}
+.daa-status--warn .daa-status__level{color:var(--warn);}
 
-/* Toggle group */
-.daa-toggle{display:inline-flex;border:1px solid var(--border);border-radius:10px;overflow:hidden;}
-.daa-toggle__b{cursor:pointer;font-size:.72rem;font-weight:700;color:var(--muted);
-  background:var(--surface);border:0;padding:.4rem .7rem;transition:background .15s ease,color .15s ease;}
-.daa-toggle__b + .daa-toggle__b{border-left:1px solid var(--border);}
-.daa-toggle__b[data-active="true"]{background:var(--accent);color:var(--on-accent);}
+/* Executive spotlight — the premium "who to trust" card leading each entity
+   section (Driver / Kendaraan / Bidang). Apple-Health/Linear feel: big name, one
+   large primary figure, minimal supporting metadata, generous whitespace. */
+.daa-spot{display:flex;flex-direction:column;gap:.15rem;padding:1.45rem 1.5rem;margin-bottom:1.15rem;
+  border:1px solid var(--border);border-radius:18px;
+  background:linear-gradient(180deg, var(--info-bg), var(--surface));min-width:0;}
+.daa-spot__eye{font-size:.64rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--info);}
+.daa-spot__name{font-size:1.55rem;font-weight:800;letter-spacing:-.01em;color:var(--text);line-height:1.15;
+  text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;}
+.daa-spot__score{display:flex;align-items:baseline;gap:.5rem;margin-top:.55rem;}
+.daa-spot__score-v{font-size:2.9rem;font-weight:800;letter-spacing:-.03em;color:var(--text);line-height:.95;}
+.daa-spot__score-l{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);}
+.daa-spot__meta{font-size:.8rem;color:var(--muted);margin-top:.5rem;}
+.daa-spot__meta b{color:var(--text);font-weight:700;}
 
-/* Distribution rows */
-.daa-dist{display:flex;flex-direction:column;gap:.45rem;}
-.daa-dist__row{display:grid;grid-template-columns:6.5rem 1fr auto;align-items:center;gap:.7rem;}
-.daa-dist__stars{font-size:.92rem;color:var(--warn);letter-spacing:.04em;white-space:nowrap;}
+/* "Rincian" caption that demotes the detail table below each spotlight. */
+.daa-detail-cap{font-size:.66rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--muted);margin:.15rem 0 .55rem;}
+
+/* Trend movement headline — direction + magnitude, not a statistic. */
+.daa-move{display:flex;flex-direction:column;gap:.2rem;}
+.daa-move__row{display:flex;align-items:baseline;gap:.5rem;}
+.daa-move__dir{font-size:1.35rem;font-weight:800;line-height:1;letter-spacing:-.02em;}
+.daa-move__dir--up{color:var(--ok);}
+.daa-move__dir--down{color:var(--danger);}
+.daa-move__dir--flat{color:var(--muted);}
+.daa-move__t{font-size:.9rem;font-weight:700;color:var(--text);}
+.daa-move__sub{font-size:.72rem;color:var(--muted);}
+
+/* Bar (funnel / calibration ladder fill) */
 .daa-bar{height:.62rem;border-radius:999px;background:var(--surface-2);border:1px solid var(--border);
   overflow:hidden;min-width:2rem;}
 .daa-bar__fill{height:100%;background:var(--info);border-radius:999px;}
 .daa-bar__fill--ok{background:var(--ok);}
 .daa-bar__fill--warn{background:var(--warn);}
 .daa-bar__fill--danger{background:var(--danger);}
-.daa-dist__meta{font-size:.74rem;color:var(--muted);white-space:nowrap;text-align:right;}
-.daa-dist__meta b{color:var(--text);font-weight:700;}
 
 /* Tables */
 .daa-tablewrap{width:100%;min-width:0;max-width:100%;overflow-x:auto;
@@ -191,14 +208,7 @@ const CSS = `
 .daa-trendcard__num{font-size:1.25rem;font-weight:800;color:var(--text);}
 .daa-trendcard__sub{font-size:.62rem;color:var(--muted);}
 
-/* Sparkline (CSS columns) */
-.daa-spark{display:flex;align-items:flex-end;gap:3px;height:3.2rem;padding-top:.2rem;}
-.daa-spark__col{flex:1 1 auto;min-width:3px;background:var(--info);border-radius:3px 3px 0 0;opacity:.85;}
-.daa-spark__col--empty{background:var(--surface-2);}
-
 @media (max-width:560px){
-  .daa-dist__row{grid-template-columns:5rem 1fr;}
-  .daa-dist__meta{grid-column:1 / -1;text-align:left;}
   .daa-funnel__row{grid-template-columns:7rem 1fr;}
   .daa-funnel__meta{grid-column:1 / -1;text-align:left;}
 }
@@ -245,18 +255,15 @@ function rateClass(rate) {
 }
 
 /* ── section renderers ────────────────────────────────────────────────────────
-   Every section now uses the Executive UI Kit: ExecutiveSectionShell (the Driver
+   Every section uses the Executive UI Kit: ExecutiveSectionShell (the Driver
    Analytics section card), ExecutiveKPICard/Grid, ExecutiveTable, ExecutiveStatusPill,
-   ExecutiveSparkline, ExecutiveEmptyState, and anIcon (single engine — no emoji).
-   The inner micro-viz (distribution/funnel/rank/timeline/reason chips) reuse the
-   shared `.daa-*` classes (no kit primitive; token-driven; RAA-shared). */
+   ExecutiveSparkline, ExecutiveEmptyState. Section titles are plain executive text
+   (no glyphs beside them — matches Analytics Driver); anIcon is reserved for KPI
+   cards and toolbar controls. The inner micro-viz (distribution/funnel/rank/
+   timeline/reason chips) reuse the shared `.daa-*` classes (no kit primitive;
+   token-driven; RAA-shared). */
 
 const TREND_WINDOWS = ['7d', '30d', '90d', 'ytd'];
-
-/** Section title = single-engine glyph + label (inline-flex, no emoji). */
-function secTitle(icon, label) {
-  return `<span style="display:inline-flex;align-items:center;gap:8px">${anIcon(icon, { size: 16 })}${esc(label)}</span>`;
-}
 
 function renderHeader(model, opts) {
   const win = TREND_WINDOWS.includes(opts.trendWindow) ? opts.trendWindow : '30d';
@@ -269,46 +276,80 @@ function renderHeader(model, opts) {
   const exportBtns =
     `<button type="button" class="exec-reset" data-daa-export="pdf">${anIcon('download', { size: 14 })}PDF</button>` +
     `<button type="button" class="exec-reset" data-daa-export="excel">${anIcon('download', { size: 14 })}Excel</button>`;
+  // Hero = title + one verdict subtitle + a band of three headline figures. No
+  // icon, no decorative graphic; the numbers carry the emotional weight. Every
+  // value is read straight from the model — the hero states the verdict, it does
+  // not compute a new one.
+  const k = model.kpi;
+  const total = model.totals.decisions;
+  const acceptedCount = (model.recommendationQuality.funnel.find((f) => f.key === 'ACCEPTED') || {}).count || 0;
+  const changedCount = Math.max(0, total - acceptedCount);
+  const accept = Number(k.recommendationAcceptance) || 0;
+  const subtitle = accept >= 95
+    ? 'AI membantu hampir seluruh keputusan operasional.'
+    : accept >= 80
+      ? 'AI membantu sebagian besar keputusan operasional.'
+      : 'AI membantu pengambilan keputusan operasional.';
+  const stat = (v, l) => `<div class="daa-hero-stat"><span class="daa-hero-stat__v">${esc(v)}</span><span class="daa-hero-stat__l">${esc(l)}</span></div>`;
+  const statBand = `<div class="daa-hero-stats">
+      ${stat(total, 'rekomendasi')}
+      ${stat(pct(accept), 'diterima')}
+      ${stat(changedCount, 'diubah admin')}
+    </div>`;
   return ExecutiveHeader({
-    title: 'Dispatch Intelligence Analytics',
-    subtitle: 'Dashboard eksekutif untuk riwayat keputusan Dispatch Intelligence — akurasi, override, confidence, dan tren. Read-only; tidak mengubah rekomendasi atau penugasan.',
-    meta: `Diperbarui ${fmtTime(model.generatedAt)} · ${model.totals.decisions} keputusan tercatat`,
-    icon: 'analytics',
-  }) + ExecutiveToolbar({ left: toggle, right: exportBtns });
+    title: 'Dispatch Intelligence',
+    subtitle,
+    meta: `Diperbarui ${fmtTime(model.generatedAt)} · ${total} keputusan`,
+  }) + statBand + ExecutiveToolbar({ left: toggle, right: exportBtns });
+}
+
+/**
+ * Executive Status — ONE verdict card directly under the hero (replaces the
+ * four-row checklist). It states a single operational status, a matching level
+ * word, and one supporting sentence, all read from values already in the model
+ * (no prediction, no new analytics). Tone drives the accent only.
+ */
+function renderStatus(model) {
+  const k = model.kpi;
+  const accept = Number(k.recommendationAcceptance) || 0;
+  const override = Number(k.overrideRate) || 0;
+
+  let tone, level, msg;
+  if (override <= 5 && accept >= 95) {
+    tone = 'good'; level = 'Sangat Baik';
+    msg = 'Hampir semua rekomendasi digunakan tanpa perubahan.';
+  } else if (override <= 20 && accept >= 80) {
+    tone = 'good'; level = 'Baik';
+    msg = `Sebagian besar rekomendasi digunakan admin — ${pct(accept)} tanpa perubahan.`;
+  } else if (override <= 40) {
+    tone = 'info'; level = 'Cukup Stabil';
+    msg = `Sebagian keputusan masih disesuaikan admin — ${pct(override)} diubah.`;
+  } else {
+    tone = 'warn'; level = 'Perlu Perhatian';
+    msg = `${pct(override)} rekomendasi masih sering diubah admin.`;
+  }
+  return `<div class="daa-status daa-status--${tone}">
+      <div class="daa-status__eye">Status Operasional</div>
+      <div class="daa-status__level">${esc(level)}</div>
+      <div class="daa-status__msg">${esc(msg)}</div>
+    </div>`;
 }
 
 function renderKpis(model) {
   const k = model.kpi;
+  // Four indicators that read as a left-to-right story: how much AI is used, how
+  // often admin steps in, how good the decisions are, how sure the AI is. Every
+  // subtitle says why the number matters. (dispatchAccuracy and
+  // recommendationAcceptance are the SAME engine value, so only one is shown.)
   const cards = [
-    ExecutiveKPICard({ title: 'Akurasi Dispatch', value: pct(k.dispatchAccuracy), subtitle: 'Rekomendasi diterima / total', status: 'info', icon: anIcon('target', { size: 14 }) }),
-    ExecutiveKPICard({ title: 'Tingkat Override', value: pct(k.overrideRate), subtitle: 'Keputusan override / total' }),
-    ExecutiveKPICard({ title: 'Penerimaan Rekomendasi', value: pct(k.recommendationAcceptance), subtitle: 'Diterima tanpa perubahan' }),
-    ExecutiveKPICard({ title: 'Rata-rata Skor Dispatch', value: esc(k.avgDispatchScore), subtitle: 'Skala 0–100' }),
-    ExecutiveKPICard({ title: 'Rata-rata Confidence', value: conf(k.avgConfidence.stars), subtitle: `${esc(k.avgConfidence.label)} · rata-rata` }),
+    ExecutiveKPICard({ title: 'Rekomendasi Digunakan', value: pct(k.recommendationAcceptance), subtitle: 'AI dipakai langsung tanpa koreksi', icon: anIcon('check', { size: 15 }) }),
+    ExecutiveKPICard({ title: 'Perubahan Admin', value: pct(k.overrideRate), subtitle: 'Seberapa sering admin turun tangan', icon: anIcon('repeat', { size: 15 }) }),
+    ExecutiveKPICard({ title: 'Kualitas Dispatch', value: esc(k.avgDispatchScore), subtitle: 'Mutu keputusan penugasan (0–100)', icon: anIcon('target', { size: 15 }) }),
+    ExecutiveKPICard({ title: 'Keyakinan AI', value: conf(k.avgConfidence.stars), subtitle: `Seberapa yakin AI · ${esc(k.avgConfidence.label).toLowerCase()}`, icon: anIcon('bulb', { size: 15 }) }),
   ];
   return ExecutiveSectionShell({
-    title: secTitle('analytics', 'Ringkasan Eksekutif'),
-    description: `${esc(k.sampleSize)} sampel keputusan`,
+    title: 'Ringkasan Eksekutif',
     content: ExecutiveKPIGrid(cards),
-  });
-}
-
-function renderDistribution(model) {
-  const total = model.totals.decisions;
-  const rows = model.confidenceDistribution.map((r) => {
-    const cls = r.count === 0 ? '' : rateClass(r.acceptanceRate);
-    return `<div class="daa-dist__row">
-      <div class="daa-dist__stars" title="${esc(r.label)}">${esc(r.stars)}/5</div>
-      <div class="daa-bar"><div class="daa-bar__fill${cls ? ' daa-bar__fill--' + cls : ''}" style="width:${esc(r.percentage)}%"></div></div>
-      <div class="daa-dist__meta"><b>${esc(r.count)}</b> · ${esc(r.percentage)}% · terima ${esc(r.acceptanceRate)}%</div>
-    </div>`;
-  }).join('');
-  const content = `<div class="daa-dist">${rows || ExecutiveEmptyState({ message: 'Belum ada keputusan.' })}</div>
-    <div class="v2-analytics-section-desc" style="margin:10px 0 0;color:var(--text-dim);font-size:13px;">${total} keputusan · kolom: jumlah · porsi · tingkat penerimaan per band</div>`;
-  return ExecutiveSectionShell({
-    title: secTitle('analytics', 'Distribusi Confidence'),
-    description: 'Skala 2–5 (banding sistem); band 1 kosong sesuai definisi',
-    content,
   });
 }
 
@@ -325,16 +366,31 @@ function tonePill(text, tone, title) {
   return ExecutiveStatusPill(text, tone, title || '');
 }
 
+/**
+ * Executive spotlight card — the premium "who to trust" summary that leads each
+ * entity section. Reads an already-ranked entity from the model (no new
+ * calculation): big name, one large primary figure, one line of supporting
+ * metadata. The section answers itself before the detail table is ever read.
+ */
+function spotlight({ eyebrow, name, primary, meta }) {
+  return `<div class="daa-spot">
+      <div class="daa-spot__eye">${esc(eyebrow)}</div>
+      <div class="daa-spot__name">${esc(name)}</div>
+      <div class="daa-spot__score"><span class="daa-spot__score-v">${esc(primary.value)}</span><span class="daa-spot__score-l">${esc(primary.label)}</span></div>
+      <div class="daa-spot__meta">${meta}</div>
+    </div>`;
+}
+
 function driverTable(rows) {
   if (!rows.length) return ExecutiveEmptyState({ message: 'Belum ada rekomendasi driver.' });
   const columns = [
     { key: 'driver', label: 'Driver', primary: true },
-    { key: 'recommended', label: 'Rek.', align: 'right' },
-    { key: 'acceptance', label: 'Terima', align: 'right', render: (v) => tonePill(pct(v), rateClass(v)) },
-    { key: 'override', label: 'Override', align: 'right', render: (v) => pct(v) },
+    { key: 'recommended', label: 'Direkomendasikan', align: 'right' },
+    { key: 'acceptance', label: 'Diterima', align: 'right', render: (v) => tonePill(pct(v), rateClass(v)) },
+    { key: 'override', label: 'Diubah', align: 'right', render: (v) => pct(v) },
     { key: 'score', label: 'Skor', align: 'right' },
     { key: 'capacity', label: 'Kapasitas', align: 'right', render: (v) => tonePill(String(v.score), v.tone, 'Skor kapasitas (100 = paling lengang/tersedia)') },
-    { key: 'conflict', label: 'Anti-Konflik', align: 'right', render: (v) => pct(v) },
+    { key: 'conflict', label: 'Hindar Konflik', align: 'right', render: (v) => pct(v) },
     { key: 'last', label: 'Terakhir' },
   ];
   const data = rows.map((r) => {
@@ -351,18 +407,27 @@ function driverTable(rows) {
 
 function renderDriverIntel(model) {
   const di = model.driverIntelligence;
-  const content = `${driverTable(di.rows)}
+  const top = di.rankings.mostAccepted[0];
+  const spot = top ? spotlight({
+    eyebrow: 'Driver Paling Dipercaya',
+    name: top.name,
+    primary: { value: top.avgScore, label: 'Kualitas' },
+    meta: `<b>${pct(top.acceptance)}</b> diterima · <b>${esc(top.recommended)}</b> rekomendasi`,
+  }) : '';
+  const content = `${spot}
+      ${di.rows.length ? '<div class="daa-detail-cap">Rincian per driver</div>' : ''}
+      ${driverTable(di.rows)}
       <div class="daa-cols" style="margin-top:14px">
         <div class="daa-rank"><div class="daa-rank__h">Paling Direkomendasikan</div>
           ${rankList(di.rankings.topRecommended, (it) => `<b>${esc(it.recommended)}</b> rek.`)}</div>
         <div class="daa-rank"><div class="daa-rank__h">Paling Diterima</div>
           ${rankList(di.rankings.mostAccepted, (it) => `<b>${esc(it.accepted)}</b> diterima`)}</div>
-        <div class="daa-rank"><div class="daa-rank__h">Paling Sering Di-override</div>
-          ${rankList(di.rankings.mostOverridden, (it) => `<b>${esc(it.overridden)}</b> override`)}</div>
+        <div class="daa-rank"><div class="daa-rank__h">Paling Sering Diubah</div>
+          ${rankList(di.rankings.mostOverridden, (it) => `<b>${esc(it.overridden)}</b> diubah`)}</div>
       </div>`;
   return ExecutiveSectionShell({
-    title: secTitle('user', 'Intelijen Driver'),
-    description: 'Rekomendasi & penerimaan = historis · kapasitas/anti-konflik = kondisi terkini',
+    title: 'Ringkasan Driver',
+    description: 'Driver mana yang paling sering direkomendasikan dan dipercaya',
     content,
   });
 }
@@ -371,13 +436,13 @@ function vehicleTable(rows) {
   if (!rows.length) return ExecutiveEmptyState({ message: 'Belum ada rekomendasi kendaraan.' });
   const columns = [
     { key: 'vehicle', label: 'Kendaraan', primary: true },
-    { key: 'recommended', label: 'Rek.', align: 'right' },
-    { key: 'acceptance', label: 'Terima', align: 'right', render: (v) => tonePill(pct(v), rateClass(v)) },
-    { key: 'override', label: 'Override', align: 'right', render: (v) => pct(v) },
+    { key: 'recommended', label: 'Direkomendasikan', align: 'right' },
+    { key: 'acceptance', label: 'Diterima', align: 'right', render: (v) => tonePill(pct(v), rateClass(v)) },
+    { key: 'override', label: 'Diubah', align: 'right', render: (v) => pct(v) },
     { key: 'score', label: 'Skor', align: 'right' },
     { key: 'utilization', label: 'Utilisasi', align: 'right', render: (v) => pct(v) },
-    { key: 'idle', label: 'Idle', align: 'right', render: (v) => tonePill(String(v.score), v.tone, 'Skor kapasitas (100 = paling lengang/tersedia)') },
-    { key: 'conflict', label: 'Anti-Konflik', align: 'right', render: (v) => pct(v) },
+    { key: 'idle', label: 'Kapasitas', align: 'right', render: (v) => tonePill(String(v.score), v.tone, 'Skor kapasitas (100 = paling lengang/tersedia)') },
+    { key: 'conflict', label: 'Hindar Konflik', align: 'right', render: (v) => pct(v) },
   ];
   const data = rows.map((r) => {
     const cap = capacityScore(r.utilization);
@@ -392,47 +457,27 @@ function vehicleTable(rows) {
 
 function renderVehicleIntel(model) {
   const vi = model.vehicleIntelligence;
-  const content = `${vehicleTable(vi.rows)}
+  const top = vi.rankings.mostAccepted[0];
+  const spot = top ? spotlight({
+    eyebrow: 'Kendaraan Paling Diandalkan',
+    name: top.name,
+    primary: { value: top.avgScore, label: 'Kualitas' },
+    meta: `<b>${pct(top.acceptance)}</b> diterima · <b>${esc(top.recommended)}</b> rekomendasi`,
+  }) : '';
+  const content = `${spot}
+      ${vi.rows.length ? '<div class="daa-detail-cap">Rincian per kendaraan</div>' : ''}
+      ${vehicleTable(vi.rows)}
       <div class="daa-cols" style="margin-top:14px">
         <div class="daa-rank"><div class="daa-rank__h">Paling Direkomendasikan</div>
           ${rankList(vi.rankings.topRecommended, (it) => `<b>${esc(it.recommended)}</b> rek.`)}</div>
         <div class="daa-rank"><div class="daa-rank__h">Paling Diterima</div>
           ${rankList(vi.rankings.mostAccepted, (it) => `<b>${esc(it.accepted)}</b> diterima`)}</div>
-        <div class="daa-rank"><div class="daa-rank__h">Paling Sering Di-override</div>
-          ${rankList(vi.rankings.mostOverridden, (it) => `<b>${esc(it.overridden)}</b> override`)}</div>
+        <div class="daa-rank"><div class="daa-rank__h">Paling Sering Diubah</div>
+          ${rankList(vi.rankings.mostOverridden, (it) => `<b>${esc(it.overridden)}</b> diubah`)}</div>
       </div>`;
   return ExecutiveSectionShell({
-    title: secTitle('vehicle', 'Intelijen Kendaraan'),
-    description: 'Utilisasi/idle = kondisi terkini dari penugasan',
-    content,
-  });
-}
-
-function renderOverrideAnalytics(model, opts) {
-  const b = model.overrideAnalytics.reasonBreakdown;
-  const total = model.totals.decisions;
-  const reasonRow = (lbl, n, cls) => `<div class="daa-funnel__row">
-    <div class="daa-funnel__k">${esc(lbl)}</div>
-    <div class="daa-bar"><div class="daa-bar__fill daa-bar__fill--${cls}" style="width:${total ? Math.round((n / total) * 100) : 0}%"></div></div>
-    <div class="daa-funnel__meta"><b>${esc(n)}</b> · ${total ? Math.round((n / total) * 100) : 0}%</div></div>`;
-  const win = model.trends.windows.find((w) => w.key === (TREND_WINDOWS.includes(opts.trendWindow) ? opts.trendWindow : '30d')) || model.trends.windows[1];
-  const series = (win && Array.isArray(win.series) ? win.series : []).map((s) => Number(s.acceptanceRate) || 0);
-  const content = `<div class="daa-cols">
-        <div class="daa-funnel">
-          ${reasonRow('Diterima', b.accepted, 'ok')}
-          ${reasonRow('Override Driver', b.driver, 'warn')}
-          ${reasonRow('Override Kendaraan', b.vehicle, 'warn')}
-          ${reasonRow('Override Keduanya', b.full, 'danger')}
-        </div>
-        <div>
-          <div class="daa-rank__h" style="margin-bottom:.5rem;">Tren Penerimaan vs Override</div>
-          ${series.length >= 2 ? ExecutiveSparkline(series, { tone: 'info' }) : '<div class="v2-analytics-section-desc" style="color:var(--text-dim)">Tidak ada data dalam rentang.</div>'}
-          <div class="v2-analytics-section-desc" style="margin-top:8px;color:var(--text-dim);font-size:13px;">Penerimaan ${pct(win ? win.acceptanceRate : 0)} · Override ${pct(win ? win.overrideRate : 0)} · ${win ? win.total : 0} keputusan</div>
-        </div>
-      </div>`;
-  return ExecutiveSectionShell({
-    title: secTitle('repeat', 'Analitik Override'),
-    description: `Rentang tren: ${esc(win ? win.label : '')}`,
+    title: 'Ringkasan Kendaraan',
+    description: 'Kendaraan mana yang paling efektif dan tersedia',
     content,
   });
 }
@@ -441,18 +486,17 @@ function renderBidang(model) {
   const rows = model.bidangIntelligence;
   if (!rows.length) {
     return ExecutiveSectionShell({
-      title: secTitle('building', 'Intelijen Bidang'),
-      description: 'Konflik = porsi override penuh (driver & kendaraan diganti)',
+      title: 'Ringkasan Bidang',
       content: ExecutiveEmptyState({ message: 'Belum ada request yang diproses per bidang.' }),
     });
   }
   const columns = [
     { key: 'bidang', label: 'Bidang', primary: true },
     { key: 'requests', label: 'Request', align: 'right' },
-    { key: 'acceptance', label: 'Terima', align: 'right', render: (v) => tonePill(pct(v), rateClass(v)) },
-    { key: 'override', label: 'Override', align: 'right', render: (v) => pct(v) },
+    { key: 'acceptance', label: 'Diterima', align: 'right', render: (v) => tonePill(pct(v), rateClass(v)) },
+    { key: 'override', label: 'Diubah', align: 'right', render: (v) => pct(v) },
     { key: 'score', label: 'Skor', align: 'right' },
-    { key: 'confidence', label: 'Confidence', align: 'right' },
+    { key: 'confidence', label: 'Keyakinan', align: 'right' },
     { key: 'topDestination', label: 'Tujuan Teratas' },
     { key: 'conflict', label: 'Konflik', align: 'right', render: (v) => pct(v) },
   ];
@@ -461,48 +505,72 @@ function renderBidang(model) {
     override: r.overrideRate, score: r.avgScore, confidence: conf(r.avgConfidenceStars),
     topDestination: r.topDestination || '—', conflict: r.conflictRate,
   }));
+  // rows are pre-sorted by requests desc, so [0] is the busiest bidang.
+  const top = rows[0];
+  const spot = spotlight({
+    eyebrow: 'Bidang Paling Aktif',
+    name: top.bidang,
+    primary: { value: top.requests, label: 'Permintaan' },
+    meta: `<b>${pct(top.acceptanceRate)}</b> diterima · kualitas <b>${esc(top.avgScore)}</b>`,
+  });
   return ExecutiveSectionShell({
-    title: secTitle('building', 'Intelijen Bidang'),
-    description: 'Konflik = porsi override penuh (driver & kendaraan diganti)',
-    content: ExecutiveTable({ columns, rows: data, ariaLabel: 'Intelijen Bidang' }),
+    title: 'Ringkasan Bidang',
+    description: 'Bidang mana yang paling banyak dilayani dan tingkat penerimaannya',
+    content: `${spot}
+      <div class="daa-detail-cap">Rincian per bidang</div>
+      ${ExecutiveTable({ columns, rows: data, ariaLabel: 'Ringkasan Bidang' })}`,
   });
 }
 
-function renderQuality(model) {
+/** One movement headline — direction + magnitude read from a window series
+ *  (last minus first). `goodDir` decides which direction is green. Copy only;
+ *  the delta is a subtraction of two values already in the model. */
+function movementCard(label, series, unit, goodDir, phrases) {
+  const arr = (Array.isArray(series) ? series : []).map((n) => Number(n) || 0);
+  const spark = arr.length >= 2 ? ExecutiveSparkline(arr, { tone: 'info' })
+    : '<div class="v2-analytics-section-desc" style="color:var(--text-dim)">Belum cukup data</div>';
+  let dirCls = 'flat', arrow = '→', mag = '', phrase = phrases.flat;
+  if (arr.length >= 2) {
+    const delta = Math.round(arr[arr.length - 1] - arr[0]);
+    if (delta > 0) { dirCls = goodDir === 'up' ? 'up' : 'down'; arrow = '↑'; mag = `${Math.abs(delta)}${unit}`; phrase = phrases.up; }
+    else if (delta < 0) { dirCls = goodDir === 'down' ? 'up' : 'down'; arrow = '↓'; mag = `${Math.abs(delta)}${unit}`; phrase = phrases.down; }
+  }
+  return `<div class="daa-trendcard">
+      <div class="daa-trendcard__lbl">${esc(label)}</div>
+      <div class="daa-move__row"><span class="daa-move__dir daa-move__dir--${dirCls}">${arrow}${mag ? ' ' + esc(mag) : ''}</span><span class="daa-move__t">${esc(phrase)}</span></div>
+      <div style="margin-top:.5rem">${spark}</div>
+    </div>`;
+}
+
+/**
+ * Performa Dispatch — the single "is dispatch healthy and improving?" section.
+ * MERGES the old Trend + Recommendation Quality blocks: first the movement
+ * (direction + magnitude over the selected window), then the flow from AI
+ * recommendation to the admin's final decision. No new analytics.
+ */
+function renderPerforma(model, opts) {
+  const win = model.trends.windows.find((w) => w.key === (TREND_WINDOWS.includes(opts.trendWindow) ? opts.trendWindow : '30d')) || model.trends.windows[1];
+  const s = win && Array.isArray(win.series) ? win.series : [];
+  const acceptSeries = s.map((d) => Number(d.acceptanceRate) || 0);
+  const overrideSeries = s.map((d) => Number(d.overrideRate) || 0);
+  const movement = `<div class="daa-cols">
+      ${movementCard('Penerimaan AI', acceptSeries, '%', 'up', { up: 'AI makin dipercaya', down: 'AI makin jarang dipakai', flat: 'Penerimaan stabil' })}
+      ${movementCard('Perubahan Admin', overrideSeries, '%', 'down', { up: 'Admin makin sering mengubah', down: 'Admin makin jarang mengubah', flat: 'Perubahan admin stabil' })}
+    </div>`;
+
   const q = model.recommendationQuality;
   const cls = { ACCEPTED: 'ok', DRIVER_OVERRIDE: 'warn', VEHICLE_OVERRIDE: 'warn', FULL_OVERRIDE: 'danger' };
-  const rows = q.funnel.map((f) => `<div class="daa-funnel__row">
+  const funnel = q.funnel.map((f) => `<div class="daa-funnel__row">
     <div class="daa-funnel__k">${esc(f.label)}</div>
     <div class="daa-bar"><div class="daa-bar__fill daa-bar__fill--${cls[f.key] || 'info'}" style="width:${esc(f.percentage)}%"></div></div>
     <div class="daa-funnel__meta"><b>${esc(f.count)}</b> · ${esc(f.percentage)}%</div></div>`).join('');
-  return ExecutiveSectionShell({
-    title: secTitle('target', 'Kualitas Rekomendasi'),
-    description: 'Rekomendasi AI → keputusan akhir admin',
-    content: `<div class="daa-funnel">${rows}</div>`,
-  });
-}
 
-function renderTimeline(model) {
-  const ev = model.timeline;
-  if (!ev.length) {
-    return ExecutiveSectionShell({
-      title: secTitle('history', 'Linimasa Dispatch'),
-      content: ExecutiveEmptyState({ message: 'Belum ada riwayat keputusan.' }),
-    });
-  }
-  const dotCls = { ACCEPTED: 'ok', DRIVER_OVERRIDE: 'warn', VEHICLE_OVERRIDE: 'warn', FULL_OVERRIDE: 'danger' };
-  const outLabel = { ACCEPTED: 'Diterima', DRIVER_OVERRIDE: 'Override Driver', VEHICLE_OVERRIDE: 'Override Kendaraan', FULL_OVERRIDE: 'Override Penuh' };
-  const items = ev.map((e) => `<li class="daa-tl__li">
-    <div class="daa-tl__rail"><span class="daa-tl__dot daa-tl__dot--${dotCls[e.outcome] || 'info'}"></span><span class="daa-tl__line"></span></div>
-    <div class="daa-tl__body">
-      <div class="daa-tl__top"><span class="daa-tl__when">${esc(fmtTime(e.decidedAt))}</span>
-        <span class="daa-tl__title">${esc(outLabel[e.outcome] || 'Keputusan')}</span></div>
-      <div class="daa-tl__d">${esc(e.driverName)} · ${esc(e.vehicleName)} · skor ${esc(e.score)}${e.bidang ? ' · ' + esc(e.bidang) : ''}</div>
-    </div></li>`).join('');
   return ExecutiveSectionShell({
-    title: secTitle('history', 'Linimasa Dispatch'),
-    description: `${ev.length} keputusan terbaru`,
-    content: `<ul class="daa-tl">${items}</ul>`,
+    title: 'Performa Dispatch',
+    description: win ? `${win.label} · ${win.total} keputusan` : '',
+    content: `${movement}
+      <div class="daa-detail-cap" style="margin-top:1rem">Dari rekomendasi ke keputusan akhir</div>
+      <div class="daa-funnel">${funnel}</div>`,
   });
 }
 
@@ -512,49 +580,52 @@ function reasonList(items, emptyText) {
     `<li class="daa-reasons__li"><span class="daa-reasons__txt">${esc(r.text)}</span><span class="daa-reasons__n">${esc(r.count)}×</span></li>`).join('')}</ul>`;
 }
 
-function renderExplainability(model) {
+/**
+ * Riwayat Keputusan — the single "what happened, and why?" section. MERGES the
+ * old Reason + Timeline blocks: why AI recommended / why admin changed, then the
+ * most recent decision events. One narrative, top to bottom.
+ */
+function renderDecisionHistory(model) {
   const ex = model.explainability;
-  const content = `<div class="daa-cols">
-        <div class="daa-rank"><div class="daa-rank__h">Alasan Rekomendasi Teratas</div>
+  const reasons = `<div class="daa-cols">
+        <div class="daa-rank"><div class="daa-rank__h">Mengapa AI Merekomendasikan</div>
           ${reasonList(ex.topReasons, 'Belum ada ringkasan alasan.')}</div>
-        <div class="daa-rank"><div class="daa-rank__h">Alasan Override Admin</div>
-          ${reasonList(ex.adminOverrideReasons, 'Belum ada override dengan alasan.')}</div>
+        <div class="daa-rank"><div class="daa-rank__h">Mengapa Admin Mengubah</div>
+          ${reasonList(ex.adminOverrideReasons, 'Belum ada perubahan dengan alasan.')}</div>
       </div>`;
-  return ExecutiveSectionShell({
-    title: secTitle('bulb', 'Explainability'),
-    description: 'Alasan rekomendasi & alasan override admin',
-    content,
-  });
-}
 
-function renderTrends(model, opts) {
-  const win = model.trends.windows.find((w) => w.key === (TREND_WINDOWS.includes(opts.trendWindow) ? opts.trendWindow : '30d')) || model.trends.windows[1];
-  if (!win) return '';
-  const cards = [
-    ExecutiveKPICard({ title: 'Penerimaan', value: pct(win.acceptanceRate), subtitle: 'rata-rata rentang' }),
-    ExecutiveKPICard({ title: 'Override', value: pct(win.overrideRate), subtitle: 'rata-rata rentang' }),
-    ExecutiveKPICard({ title: 'Skor Dispatch', value: esc(win.avgScore), subtitle: 'rata-rata' }),
-    ExecutiveKPICard({ title: 'Confidence', value: conf(win.avgConfidenceStars), subtitle: 'rata-rata' }),
-  ];
-  const series = (Array.isArray(win.series) ? win.series : []).map((s) => Number(s.avgScore) || 0);
-  const content = `${ExecutiveKPIGrid(cards)}
-      <div style="margin-top:14px">
-        <div class="daa-rank__h" style="margin-bottom:.35rem;">Skor Dispatch Harian</div>
-        ${series.length >= 2 ? ExecutiveSparkline(series, { tone: 'info' }) : '<div class="v2-analytics-section-desc" style="color:var(--text-dim)">Tidak ada data dalam rentang.</div>'}
-      </div>`;
+  const ev = model.timeline;
+  let events;
+  if (!ev.length) {
+    events = ExecutiveEmptyState({ message: 'Belum ada riwayat keputusan.' });
+  } else {
+    const dotCls = { ACCEPTED: 'ok', DRIVER_OVERRIDE: 'warn', VEHICLE_OVERRIDE: 'warn', FULL_OVERRIDE: 'danger' };
+    const outLabel = { ACCEPTED: 'Diterima', DRIVER_OVERRIDE: 'Driver diganti', VEHICLE_OVERRIDE: 'Kendaraan diganti', FULL_OVERRIDE: 'Keduanya diganti' };
+    const items = ev.map((e) => `<li class="daa-tl__li">
+      <div class="daa-tl__rail"><span class="daa-tl__dot daa-tl__dot--${dotCls[e.outcome] || 'info'}"></span><span class="daa-tl__line"></span></div>
+      <div class="daa-tl__body">
+        <div class="daa-tl__top"><span class="daa-tl__when">${esc(fmtTime(e.decidedAt))}</span>
+          <span class="daa-tl__title">${esc(outLabel[e.outcome] || 'Keputusan')}</span></div>
+        <div class="daa-tl__d">${esc(e.driverName)} · ${esc(e.vehicleName)} · skor ${esc(e.score)}${e.bidang ? ' · ' + esc(e.bidang) : ''}</div>
+      </div></li>`).join('');
+    events = `<ul class="daa-tl">${items}</ul>`;
+  }
+
   return ExecutiveSectionShell({
-    title: secTitle('trend', `Tren — ${win.label}`),
-    description: `${win.total} keputusan dalam rentang`,
-    content,
+    title: 'Riwayat Keputusan',
+    description: ev.length ? `${ev.length} keputusan terbaru` : '',
+    content: `${reasons}
+      <div class="daa-detail-cap" style="margin-top:1rem">Keputusan terbaru</div>
+      ${events}`,
   });
 }
 
 function renderGlobalEmpty() {
   return ExecutiveSectionShell({
-    title: secTitle('analytics', 'Belum ada data analytics'),
+    title: 'Belum ada data',
     content: ExecutiveEmptyState({
-      message: 'Dashboard ini terisi setelah ada persetujuan request (override log).',
-      hint: 'Setujui beberapa request melalui Dispatch Intelligence untuk melihat akurasi, distribusi confidence, intelijen driver/kendaraan, dan tren.',
+      message: 'Dashboard ini terisi setelah ada persetujuan request.',
+      hint: 'Setujui beberapa request melalui Dispatch Intelligence untuk melihat akurasi, keyakinan AI, dan tren keputusan.',
     }),
   });
 }
@@ -575,18 +646,21 @@ export function renderDispatchAnalyticsDashboard(model, opts = {}) {
   if (!model) return `<div class="${ROOT}">${renderGlobalEmpty()}</div>`;
   const o = { trendWindow: TREND_WINDOWS.includes(opts.trendWindow) ? opts.trendWindow : '30d' };
   const hasData = model.totals && model.totals.decisions > 0;
+  // Executive experience hierarchy (v1.18.5.3) — the page answers itself in <5s,
+  // then offers detail. Each block carries a different visual weight:
+  //   Hero (stat band) → Status (one verdict) → KPI (four-number story) →
+  //   Performa (movement + quality, merged) → Driver → Vehicle → Bidang
+  //   (spotlight-led) → Riwayat (why + history, merged).
+  // First screen is only Hero → Status → KPI; the standalone confidence
+  // distribution was retired (its story now lives in the KPI + Status).
   return `<div class="${ROOT}">
     ${renderHeader(model, o)}
-    ${hasData ? '' : renderGlobalEmpty()}
+    ${hasData ? renderStatus(model) : renderGlobalEmpty()}
     ${renderKpis(model)}
-    ${renderDistribution(model)}
+    ${renderPerforma(model, o)}
     ${renderDriverIntel(model)}
     ${renderVehicleIntel(model)}
-    ${renderOverrideAnalytics(model, o)}
     ${renderBidang(model)}
-    ${renderQuality(model)}
-    ${renderTimeline(model)}
-    ${renderExplainability(model)}
-    ${renderTrends(model, o)}
+    ${renderDecisionHistory(model)}
   </div>`;
 }

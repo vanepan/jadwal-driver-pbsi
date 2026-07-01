@@ -1,25 +1,46 @@
 /* ============================================================
-   RECOMMENDATION-ACCURACY-DASHBOARD.JS — Recommendation Accuracy Engine
-   (v1.17.1)
+   RECOMMENDATION-ACCURACY-DASHBOARD.JS — Recommendation Accuracy
+   (v1.18.6 — Executive Migration)
 
    The premium executive render layer over the Recommendation Accuracy model
-   (js/analytics/recommendation-accuracy-engine.js). It is a PURE RENDER layer:
-   it computes nothing; it turns the model into markup.
+   (js/analytics/recommendation-accuracy-engine.js). PURE RENDER: it computes
+   nothing; it turns the model into markup. The engine is untouched, so every
+   business value is byte-identical to before — only the presentation changed.
 
-   DESIGN REUSE: it REUSES the Dispatch Analytics design system — the same scoped
-   `.daa-*` classes (KPI hero cards, section shells, tables, pills, rankings,
-   funnels, sparklines, typography, dark-mode-safe CSS variables). It only injects
-   a SMALL `.raa-*` supplement for the calibration chart, the severity meter, the
-   delta chips, and the insight cards. So it inherits the exact layout, spacing,
-   and dark-mode behaviour of v1.17.0 with no duplicated design tokens. Every
-   dynamic value is HTML-escaped.
+   ── ONE QUESTION ────────────────────────────────────────────────────────────
+   The page answers a single executive question, top to bottom:
+     "Apakah rekomendasi AI memang semakin akurat?"
+   Everything here supports answering that; nothing else is on the page.
+
+   ── DESIGN AUTHORITY ────────────────────────────────────────────────────────
+   Recommendation Accuracy is now a SIBLING of Analytics Driver and Dispatch
+   Analytics. It consumes the SAME Executive UI Kit as its single design language
+   (ExecutiveHeader/Toolbar, ExecutiveKPICard/Grid, ExecutiveSectionShell,
+   ExecutiveTable, ExecutiveStatusPill, ExecutiveSparkline, ExecutiveEmptyState,
+   the one icon engine). The inner micro-viz that has no kit primitive — the hero
+   stat band, the Executive Status verdict, the entity spotlights, the movement
+   headline, and the calibration/history ladders — reuses the SHARED `.daa-*`
+   classes owned by Dispatch Analytics (injected via injectDispatchAnalyticsStyles).
+   That is the single source of truth; this file only adds the tiny `.raa-*`
+   supplement for the per-entity search/sort controls.
+
+   Page structure (v1.18.6):
+     Hero (stat band) → Executive Status (one verdict) → Executive KPI
+     → Performa Akurasi (movement + calibration, merged) → Driver Spotlight
+     → Vehicle Spotlight → Riwayat Rekomendasi.
+   (No Bidang Spotlight: the accuracy engine computes no per-bidang block, and
+   adding one would be a business-logic change — out of scope for a presentation
+   sprint. See the migration report.)
+
+   Every dynamic value is HTML-escaped and emoji-free (numeric confidence, no ★),
+   matching the Dispatch Analytics executive vocabulary.
 
    API:
-     injectRecommendationAccuracyStyles()                           — idempotent <style>
-     renderRecommendationAccuracyDashboard(model, opts) → string    — dashboard HTML
-   `opts.trendWindow` (7d|30d|90d|ytd) selects the learning-trend window;
-   `opts.driverSort` / `opts.driverSearch` / `opts.vehicleSort` / `opts.vehicleSearch`
-   drive the per-entity sort + search (the host re-renders on change).
+     injectRecommendationAccuracyStyles()                        — idempotent <style>
+     renderRecommendationAccuracyDashboard(model, opts) → string — dashboard HTML
+   `opts.trendWindow` (7d|30d|90d|ytd) selects the learning-trend window that
+   feeds Performa Akurasi + Riwayat Rekomendasi; `opts.driverSort/driverSearch/
+   vehicleSort/vehicleSearch` drive the per-entity sort + search (host re-renders).
    ============================================================ */
 
 'use strict';
@@ -27,71 +48,35 @@
 import { injectDispatchAnalyticsStyles } from './dispatch-analytics-dashboard.js';
 // v1.17.3 Unified Scoring System — single source of color interpretation (higher = better).
 import { scoreColor } from '../services/unified-scoring.js';
+// v1.18.6 Executive UI — the shared design authority (same kit Dispatch Analytics uses).
+import {
+  ExecutiveHeader,
+  ExecutiveToolbar,
+  ExecutiveKPICard,
+  ExecutiveKPIGrid,
+  ExecutiveSectionShell,
+  ExecutiveTable,
+  ExecutiveStatusPill,
+  ExecutiveSparkline,
+  ExecutiveEmptyState,
+  anIcon,
+} from '../analytics/executive-ui-kit.js';
 
 const STYLE_ID = 'raa-dashboard-styles';
 
-// Supplements the .daa-* system (which must already be injected). Only the few
-// shapes the accuracy dashboard adds beyond Dispatch Analytics.
+// The ONLY shapes Recommendation Accuracy adds beyond the shared `.daa-*` system:
+// the per-entity search + sort controls (whose data-raa-* contract the host binds).
+// Everything else is the Executive UI Kit or the shared `.daa-*` micro-viz.
 const CSS = `
-.raa-deltas{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.15rem;}
-.raa-chip{display:inline-flex;align-items:center;gap:.25rem;font-size:.62rem;font-weight:700;
-  border-radius:999px;padding:.1rem .45rem;border:1px solid var(--border);color:var(--muted);background:var(--surface-2);}
-.raa-chip--up{color:var(--ok);background:var(--ok-bg);border-color:var(--ok);}
-.raa-chip--down{color:var(--danger);background:var(--danger-bg);border-color:var(--danger);}
-
-/* Calibration chart: a confidence band ladder with an acceptance fill. */
-.raa-cal{display:flex;flex-direction:column;gap:.5rem;}
-.raa-cal__row{display:grid;grid-template-columns:6.5rem 1fr auto;align-items:center;gap:.7rem;}
-.raa-cal__stars{font-size:.92rem;color:var(--warn);letter-spacing:.04em;white-space:nowrap;}
-.raa-cal__track{height:.7rem;border-radius:999px;background:var(--surface-2);border:1px solid var(--border);overflow:hidden;position:relative;min-width:2rem;}
-.raa-cal__fill{height:100%;border-radius:999px;background:var(--ok);}
-.raa-cal__fill--warn{background:var(--warn);}
-.raa-cal__fill--danger{background:var(--danger);}
-.raa-cal__meta{font-size:.72rem;color:var(--muted);white-space:nowrap;text-align:right;}
-.raa-cal__meta b{color:var(--text);}
-
-/* Severity meter — four-segment stacked bar. */
-.raa-sev{display:flex;height:1rem;border-radius:999px;overflow:hidden;border:1px solid var(--border);background:var(--surface-2);}
-.raa-sev__seg{height:100%;}
-.raa-sev__seg--minor{background:var(--ok);}
-.raa-sev__seg--medium{background:var(--info);}
-.raa-sev__seg--major{background:var(--warn);}
-.raa-sev__seg--critical{background:var(--danger);}
-.raa-sevlegend{display:flex;gap:.8rem;flex-wrap:wrap;margin-top:.5rem;}
-.raa-sevlegend__i{display:inline-flex;align-items:center;gap:.35rem;font-size:.7rem;color:var(--muted);}
-.raa-dot{width:.6rem;height:.6rem;border-radius:50%;display:inline-block;}
-.raa-dot--minor{background:var(--ok);}.raa-dot--medium{background:var(--info);}
-.raa-dot--major{background:var(--warn);}.raa-dot--critical{background:var(--danger);}
-
-/* Insight cards. */
-.raa-insights{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:.7rem;}
-.raa-insight{border:1px solid var(--border);border-left-width:3px;border-radius:12px;padding:.65rem .8rem;
-  background:var(--surface-2);display:flex;flex-direction:column;gap:.2rem;}
-.raa-insight--success{border-left-color:var(--ok);}
-.raa-insight--warning{border-left-color:var(--warn);}
-.raa-insight--info{border-left-color:var(--info);}
-.raa-insight__t{font-size:.8rem;font-weight:800;color:var(--text);}
-.raa-insight__d{font-size:.72rem;color:var(--muted);}
-.raa-insight__s{font-size:.6rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;}
-
-/* Entity controls (search + sort). */
-.raa-controls{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.2rem;}
+.raa-controls{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin:.15rem 0 .55rem;}
 .raa-search{font-size:.74rem;color:var(--text);background:var(--surface);border:1px solid var(--border);
   border-radius:9px;padding:.35rem .6rem;min-width:9rem;}
 .raa-sort{font-size:.72rem;color:var(--text);background:var(--surface);border:1px solid var(--border);
   border-radius:9px;padding:.35rem .5rem;}
-.raa-pii{font-size:.78rem;color:var(--text);}
-
-/* Big stat tiles (false-high-confidence / unexpected acceptance). */
-.raa-bigs{display:grid;grid-template-columns:repeat(auto-fit,minmax(11rem,1fr));gap:.8rem;}
-.raa-big{border:1px solid var(--border);border-radius:15px;padding:.85rem .95rem;background:var(--surface-2);
-  display:flex;flex-direction:column;gap:.25rem;}
-.raa-big__num{font-size:1.7rem;font-weight:800;letter-spacing:-.02em;color:var(--text);line-height:1.05;}
-.raa-big__lbl{font-size:.64rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);}
-.raa-big__sub{font-size:.66rem;color:var(--muted);}
+.raa-controls__count{font-size:.72rem;color:var(--muted);}
 `;
 
-/** Inject the supplement stylesheet (and ensure the base .daa-* styles exist). */
+/** Inject the supplement stylesheet (and ensure the shared .daa-* styles exist). */
 export function injectRecommendationAccuracyStyles() {
   injectDispatchAnalyticsStyles();
   if (typeof document === 'undefined') return;
@@ -110,100 +95,204 @@ function esc(v) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 function pct(n) { return `${Math.round(Number(n) || 0)}%`; }
-function stars(n) {
-  const s = Math.max(0, Math.min(5, Math.round(Number(n) || 0)));
-  return '★'.repeat(s) + '☆'.repeat(5 - s);
+/** Numeric confidence display (no ★ glyphs — matches Dispatch Analytics). */
+function conf(n) {
+  const v = Number(n) || 0;
+  return `${Number.isInteger(v) ? v : v.toFixed(1)} / 5`;
 }
-/** Unified color scale (higher = better). Single source: scoreColor. */
-function rateClass(rate) {
-  return scoreColor(rate);
+function fmtTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mo = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'][d.getMonth()];
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  return `${dd} ${mo} ${hh}:${mi}`;
 }
-/** Calibration fill mapped through the unified color scale (ok/info → green fill). */
-function calFillClass(rate) {
-  const tone = scoreColor(rate);
-  if (tone === 'warn') return ' raa-cal__fill--warn';
-  if (tone === 'danger') return ' raa-cal__fill--danger';
-  return '';
-}
+/** Unified color scale (higher = better → greener). Single source: scoreColor. */
+function rateClass(rate) { return scoreColor(rate); }
+/** Capacity/quality status pill via the kit (replaces the old .daa-pill). */
+function tonePill(text, tone, title) { return ExecutiveStatusPill(text, tone, title || ''); }
 
 const TREND_WINDOWS = ['7d', '30d', '90d', 'ytd'];
 
-/* ── header ───────────────────────────────────────────────────────────── */
+function activeWindow(model, opts) {
+  const key = TREND_WINDOWS.includes(opts.trendWindow) ? opts.trendWindow : '30d';
+  const ws = model.learningTrend.windows;
+  return ws.find((w) => w.key === key) || ws[1] || ws[0] || null;
+}
+
+/* ── 1. HERO — title + one verdict subtitle + a band of three headline figures.
+   No icon, no technical explanation; the numbers carry the confidence. Every
+   value is read straight from the model — the hero states the verdict, it does
+   not compute a new one. ─────────────────────────────────────────────────── */
 
 function renderHeader(model, opts) {
   const win = TREND_WINDOWS.includes(opts.trendWindow) ? opts.trendWindow : '30d';
-  const toggles = model.learningTrend.windows.map((w) =>
-    `<button type="button" class="daa-toggle__b" data-raa-window="${esc(w.key)}" data-active="${w.key === win}">${esc(w.label)}</button>`,
-  ).join('');
-  return `
-    <div class="daa-top">
-      <div class="daa-top__l">
-        <div class="daa-top__title">🎯 Recommendation Accuracy</div>
-        <div class="daa-top__sub">Seberapa AKURAT rekomendasi Dispatch Intelligence dari waktu ke waktu — akurasi, kalibrasi confidence, keparahan override, dan tren pembelajaran. Read-only; tidak mengubah rekomendasi atau penugasan.</div>
-        <div class="daa-top__meta">${esc(model.totals.decisions)} keputusan dievaluasi</div>
-      </div>
-      <div class="daa-top__actions">
-        <div class="daa-toggle" role="group" aria-label="Rentang tren pembelajaran">${toggles}</div>
-        <button type="button" class="daa-btn" data-raa-export="pdf">⬇️ PDF</button>
-        <button type="button" class="daa-btn daa-btn--accent" data-raa-export="excel">⬇️ Excel</button>
-      </div>
+  // Executive segmented control — SAME `seg` control Dispatch uses, keeping the
+  // data-raa-window contract the host's delegated handler binds (no workflow change).
+  const toggle = `<div class="seg" role="tablist" aria-label="Rentang tren pembelajaran">${model.learningTrend.windows.map((w) =>
+    `<button type="button" class="${w.key === win ? 'on' : ''}" data-raa-window="${esc(w.key)}" data-active="${w.key === win}">${esc(w.label)}</button>`,
+  ).join('')}</div>`;
+  // Export buttons keep the data-raa-export contract + the byte-identical pipeline.
+  const exportBtns =
+    `<button type="button" class="exec-reset" data-raa-export="pdf">${anIcon('download', { size: 14 })}PDF</button>` +
+    `<button type="button" class="exec-reset" data-raa-export="excel">${anIcon('download', { size: 14 })}Excel</button>`;
+
+  const k = model.kpi;
+  const total = model.totals.decisions;
+  const accuracy = Number(k.recommendationAccuracy) || 0;
+  const overridden = model.totals.overridden;
+  const dAcc = Math.round(Number((k.previousPeriod && k.previousPeriod.delta && k.previousPeriod.delta.recommendationAccuracy)) || 0);
+  const subtitle = dAcc > 0
+    ? 'Rekomendasi AI makin konsisten digunakan.'
+    : accuracy >= 90
+      ? 'Rekomendasi AI konsisten dipakai tanpa koreksi.'
+      : accuracy >= 75
+        ? 'Rekomendasi AI dipakai untuk sebagian besar keputusan.'
+        : 'Akurasi rekomendasi AI sedang dipantau.';
+  const stat = (v, l) => `<div class="daa-hero-stat"><span class="daa-hero-stat__v">${esc(v)}</span><span class="daa-hero-stat__l">${esc(l)}</span></div>`;
+  const statBand = `<div class="daa-hero-stats">
+      ${stat(total, 'rekomendasi')}
+      ${stat(pct(accuracy), 'tepat')}
+      ${stat(overridden, 'dikoreksi admin')}
+    </div>`;
+  return ExecutiveHeader({
+    title: 'Recommendation Accuracy',
+    subtitle,
+    meta: `Diperbarui ${fmtTime(model.generatedAt)} · ${total} keputusan dievaluasi`,
+  }) + statBand + ExecutiveToolbar({ left: toggle, right: exportBtns });
+}
+
+/* ── 2. EXECUTIVE STATUS — ONE verdict card directly under the hero. It states a
+   single accuracy status, a matching level word, and one supporting sentence,
+   all read from values already in the model (no prediction, no new analytics).
+   The trend delta decides whether "membaik" is part of the story. ─────────── */
+
+function renderStatus(model) {
+  const k = model.kpi;
+  const acc = Number(k.recommendationAccuracy) || 0;
+  const dAcc = Math.round(Number((k.previousPeriod && k.previousPeriod.delta && k.previousPeriod.delta.recommendationAccuracy)) || 0);
+  const improving = dAcc > 0, declining = dAcc < 0;
+
+  let tone, level, msg;
+  if (acc >= 90 && !declining) {
+    tone = 'good'; level = 'Sangat Baik';
+    msg = `Rekomendasi hampir selalu tepat — ${pct(acc)} dipakai admin tanpa perubahan.`;
+  } else if (acc >= 75 && !declining) {
+    tone = 'good'; level = 'Baik';
+    msg = improving
+      ? `Akurasi membaik — kini ${pct(acc)} rekomendasi dipakai tanpa koreksi.`
+      : `Sebagian besar rekomendasi dipakai tanpa koreksi — ${pct(acc)} tepat.`;
+  } else if (improving) {
+    tone = 'info'; level = 'Membaik';
+    msg = `Akurasi naik ${Math.abs(dAcc)} poin dibanding periode sebelumnya — arah sudah tepat.`;
+  } else if (acc >= 60) {
+    tone = 'info'; level = 'Cukup Stabil';
+    msg = `Akurasi bertahan di ${pct(acc)}, sebagian keputusan masih dikoreksi admin.`;
+  } else {
+    tone = 'warn'; level = 'Perlu Perhatian';
+    msg = `Rekomendasi masih sering dikoreksi — baru ${pct(acc)} dipakai tanpa perubahan.`;
+  }
+  return `<div class="daa-status daa-status--${tone}">
+      <div class="daa-status__eye">Status Akurasi</div>
+      <div class="daa-status__level">${esc(level)}</div>
+      <div class="daa-status__msg">${esc(msg)}</div>
     </div>`;
 }
 
-/* ── Feature 1 — overall KPI ──────────────────────────────────────────── */
-
-function deltaChip(label, value, invert) {
-  const v = Math.round(Number(value) || 0);
-  if (v === 0) return `<span class="raa-chip">${esc(label)} ±0</span>`;
-  // For most metrics up = good; for override/invert metrics up = bad.
-  const good = invert ? v < 0 : v > 0;
-  const cls = good ? 'raa-chip--up' : 'raa-chip--down';
-  const arrow = v > 0 ? '▲' : '▼';
-  return `<span class="raa-chip ${cls}">${esc(label)} ${arrow}${Math.abs(v)}</span>`;
-}
+/* ── 3. EXECUTIVE KPI — four indicators in business language. Every subtitle says
+   why the number matters. AI/model/developer terminology is avoided. ──────── */
 
 function renderKpis(model) {
   const k = model.kpi;
-  const d = (k.previousPeriod && k.previousPeriod.delta) || {};
-  const card = (lbl, value, sub, hero) =>
-    `<div class="daa-kpi${hero ? ' daa-kpi--hero' : ''}">
-      <div class="daa-kpi__lbl">${esc(lbl)}</div>
-      <div class="daa-kpi__num">${value}</div>
-      <div class="daa-kpi__sub">${sub}</div>
-    </div>`;
-  return `
-    <div class="daa-sec">
-      <div class="daa-sec__head"><div class="daa-sec__title">Ringkasan Akurasi</div>
-        <div class="daa-sec__sub">${esc(k.sampleSize)} sampel keputusan</div></div>
-      <div class="daa-kpis">
-        ${card('Akurasi Rekomendasi', pct(k.recommendationAccuracy), 'Diterima tanpa perubahan', true)}
-        ${card('Tingkat Penerimaan', pct(k.acceptanceRate), 'Rekomendasi diterima / total')}
-        ${card('Tingkat Override', pct(k.overrideRate), 'Override / total')}
-        ${card('Override Driver', pct(k.driverOverrideRate), 'Driver diganti')}
-        ${card('Override Kendaraan', pct(k.vehicleOverrideRate), 'Kendaraan diganti')}
-        ${card('Override Penuh', pct(k.fullOverrideRate), 'Driver & kendaraan diganti')}
-        ${card('Rata-rata Skor Dispatch', esc(k.avgDispatchScore), 'Skala 0–100')}
-        ${card('Rata-rata Confidence', `<span class="daa-kpi__stars">${esc(stars(k.avgConfidence.stars))}</span>`, `${esc(k.avgConfidence.label)} · ${esc(k.avgConfidence.stars)}★`)}
-      </div>
-      <div>
-        <div class="daa-sec__hint">${esc((k.previousPeriod && k.previousPeriod.label) || 'Perbandingan periode')}</div>
-        <div class="raa-deltas">
-          ${deltaChip('Akurasi', d.recommendationAccuracy, false)}
-          ${deltaChip('Penerimaan', d.acceptanceRate, false)}
-          ${deltaChip('Override', d.overrideRate, true)}
-          ${deltaChip('Skor', d.avgDispatchScore, false)}
-        </div>
-      </div>
+  const cards = [
+    ExecutiveKPICard({ title: 'Rekomendasi Tepat', value: pct(k.recommendationAccuracy), subtitle: 'Dipakai admin tanpa koreksi', icon: anIcon('check', { size: 15 }) }),
+    ExecutiveKPICard({ title: 'Perubahan Admin', value: pct(k.overrideRate), subtitle: 'Seberapa sering admin mengoreksi', icon: anIcon('repeat', { size: 15 }) }),
+    ExecutiveKPICard({ title: 'Kualitas Keputusan', value: esc(k.avgDispatchScore), subtitle: 'Mutu penugasan yang dipilih (0–100)', icon: anIcon('target', { size: 15 }) }),
+    ExecutiveKPICard({ title: 'Keyakinan AI', value: conf(k.avgConfidence.stars), subtitle: `Seberapa yakin sistem · ${esc(k.avgConfidence.label).toLowerCase()}`, icon: anIcon('bulb', { size: 15 }) }),
+  ];
+  return ExecutiveSectionShell({
+    title: 'Ringkasan Eksekutif',
+    content: ExecutiveKPIGrid(cards),
+  });
+}
+
+/* ── 4. PERFORMA AKURASI — the single "is accuracy healthy and improving?" section.
+   MERGES the movement (direction + magnitude over the selected window) with the
+   confidence-calibration ladder (does higher AI confidence really earn higher
+   acceptance?). No new analytics — both read straight from the model. ─────── */
+
+/** One movement headline — direction + magnitude read from a window series
+ *  (last minus first). `goodDir` decides which direction is green. */
+function movementCard(label, series, unit, goodDir, phrases) {
+  const arr = (Array.isArray(series) ? series : []).map((n) => Number(n) || 0);
+  const spark = arr.length >= 2 ? ExecutiveSparkline(arr, { tone: 'info' })
+    : '<div class="daa-move__sub">Belum cukup data</div>';
+  let dirCls = 'flat', arrow = '→', mag = '', phrase = phrases.flat;
+  if (arr.length >= 2) {
+    const delta = Math.round(arr[arr.length - 1] - arr[0]);
+    if (delta > 0) { dirCls = goodDir === 'up' ? 'up' : 'down'; arrow = '↑'; mag = `${Math.abs(delta)}${unit}`; phrase = phrases.up; }
+    else if (delta < 0) { dirCls = goodDir === 'down' ? 'up' : 'down'; arrow = '↓'; mag = `${Math.abs(delta)}${unit}`; phrase = phrases.down; }
+  }
+  return `<div class="daa-trendcard">
+      <div class="daa-trendcard__lbl">${esc(label)}</div>
+      <div class="daa-move__row"><span class="daa-move__dir daa-move__dir--${dirCls}">${arrow}${mag ? ' ' + esc(mag) : ''}</span><span class="daa-move__t">${esc(phrase)}</span></div>
+      <div style="margin-top:.5rem">${spark}</div>
     </div>`;
 }
 
-/* ── Feature 2 & 3 — driver / vehicle accuracy (shared renderer) ──────── */
+function renderPerforma(model, opts) {
+  const win = activeWindow(model, opts);
+  const s = win && Array.isArray(win.series) ? win.series : [];
+  const accSeries = s.map((m) => Number(m.recommendationAccuracy) || 0);
+  const ovrSeries = s.map((m) => Number(m.overrideRate) || 0);
+  const movement = `<div class="daa-cols">
+      ${movementCard('Akurasi Rekomendasi', accSeries, '%', 'up', { up: 'AI makin akurat', down: 'AI makin sering meleset', flat: 'Akurasi stabil' })}
+      ${movementCard('Perubahan Admin', ovrSeries, '%', 'down', { up: 'Admin makin sering mengoreksi', down: 'Admin makin jarang mengoreksi', flat: 'Perubahan admin stabil' })}
+    </div>`;
+
+  // Calibration ladder — only bands the AI actually produced, high confidence
+  // first. A well-calibrated engine shows acceptance rising with confidence.
+  const buckets = model.calibration.buckets.filter((b) => b.generated > 0);
+  const ladder = buckets.length ? `<div class="daa-funnel">${buckets.map((b) => {
+    const tone = scoreColor(b.acceptancePct);
+    const fillCls = tone === 'ok' ? ' daa-bar__fill--ok' : tone === 'warn' ? ' daa-bar__fill--warn' : tone === 'danger' ? ' daa-bar__fill--danger' : '';
+    return `<div class="daa-funnel__row">
+        <div class="daa-funnel__k">${esc(b.label)}</div>
+        <div class="daa-bar"><div class="daa-bar__fill${fillCls}" style="width:${esc(b.acceptancePct)}%"></div></div>
+        <div class="daa-funnel__meta"><b>${esc(b.acceptancePct)}%</b> diterima · ${esc(b.generated)} rek.</div></div>`;
+  }).join('')}</div>` : ExecutiveEmptyState({ message: 'Belum cukup rekomendasi untuk menilai kalibrasi.' });
+
+  return ExecutiveSectionShell({
+    title: 'Performa Akurasi',
+    description: win ? `${win.label} · ${win.total} keputusan` : '',
+    content: `${movement}
+      <div class="daa-detail-cap" style="margin-top:1rem">Makin yakin AI, makin sering diterima?</div>
+      ${ladder}`,
+  });
+}
+
+/* ── 5 & 6. ENTITY SPOTLIGHTS — Driver / Kendaraan. Each section leads with the
+   premium "who is most accurate" spotlight (big name, one large figure, minimal
+   metadata), then the detail table. The per-entity search + sort controls keep
+   their data-raa-* contract. ────────────────────────────────────────────── */
+
+function spotlight({ eyebrow, name, primary, meta }) {
+  return `<div class="daa-spot">
+      <div class="daa-spot__eye">${esc(eyebrow)}</div>
+      <div class="daa-spot__name">${esc(name)}</div>
+      <div class="daa-spot__score"><span class="daa-spot__score-v">${esc(primary.value)}</span><span class="daa-spot__score-l">${esc(primary.label)}</span></div>
+      <div class="daa-spot__meta">${meta}</div>
+    </div>`;
+}
 
 const ENTITY_SORTS = [
   { key: 'ranking', label: 'Peringkat' },
   { key: 'accuracy', label: 'Akurasi' },
   { key: 'recommendations', label: 'Rekomendasi' },
-  { key: 'overridden', label: 'Override' },
+  { key: 'overridden', label: 'Diubah' },
   { key: 'score', label: 'Skor' },
 ];
 
@@ -219,229 +308,108 @@ function sortEntityRows(rows, sortKey) {
   return list;
 }
 
-function entitySection(title, hint, rows, kind, opts) {
+function entityTable(view, head) {
+  if (!view.length) return ExecutiveEmptyState({ message: 'Tidak ada hasil pencarian.' });
+  const columns = [
+    { key: 'ranking', label: '#', align: 'right' },
+    { key: 'name', label: head, primary: true },
+    { key: 'recommendations', label: 'Rekomendasi', align: 'right' },
+    { key: 'accepted', label: 'Diterima', align: 'right' },
+    { key: 'overridden', label: 'Diubah', align: 'right' },
+    { key: 'accuracy', label: 'Akurasi', align: 'right', render: (v) => tonePill(pct(v), rateClass(v)) },
+    { key: 'score', label: 'Skor', align: 'right' },
+  ];
+  const rows = view.map((r) => ({
+    ranking: r.ranking, name: r.name, recommendations: r.recommendations,
+    accepted: r.accepted, overridden: r.overridden, accuracy: r.accuracyPct, score: r.avgDispatchScore,
+  }));
+  return ExecutiveTable({ columns, rows, ariaLabel: `Akurasi ${head}` });
+}
+
+function entitySection({ title, description, eyebrow, rows, kind, opts }) {
+  const head = kind === 'driver' ? 'Driver' : 'Kendaraan';
+  if (!rows.length) {
+    return ExecutiveSectionShell({
+      title,
+      content: ExecutiveEmptyState({ message: `Belum ada rekomendasi ${head.toLowerCase()}.` }),
+    });
+  }
+  // Spotlight = the overall most-accurate entity (rows are ranked by accuracy),
+  // shown regardless of any active search term.
+  const top = rows[0];
+  const spot = spotlight({
+    eyebrow,
+    name: top.name,
+    primary: { value: pct(top.accuracyPct), label: 'Akurat' },
+    meta: `<b>${esc(top.recommendations)}</b> rekomendasi · skor <b>${esc(top.avgDispatchScore)}</b>`,
+  });
+
   const sortKey = opts.sort || 'ranking';
   const search = String(opts.search || '');
   const term = search.trim().toLowerCase();
   let view = term ? rows.filter((r) => r.name.toLowerCase().includes(term)) : rows;
   view = sortEntityRows(view, sortKey);
 
-  const head = kind === 'driver' ? 'Driver' : 'Kendaraan';
-  const sortOpts = ENTITY_SORTS.map((s) =>
-    `<option value="${esc(s.key)}"${s.key === sortKey ? ' selected' : ''}>Urut: ${esc(s.label)}</option>`).join('');
-  const controls = `
-    <div class="raa-controls">
+  const sortOpts = ENTITY_SORTS.map((so) =>
+    `<option value="${esc(so.key)}"${so.key === sortKey ? ' selected' : ''}>Urut: ${esc(so.label)}</option>`).join('');
+  const controls = `<div class="raa-controls">
       <input type="search" class="raa-search" data-raa-search="${esc(kind)}" value="${esc(search)}" placeholder="Cari ${esc(head.toLowerCase())}…" aria-label="Cari ${esc(head)}" />
       <select class="raa-sort" data-raa-sort="${esc(kind)}" aria-label="Urutkan">${sortOpts}</select>
-      <span class="daa-sec__sub">${view.length}/${rows.length} ${esc(head.toLowerCase())}</span>
+      <span class="raa-controls__count">${view.length}/${rows.length} ${esc(head.toLowerCase())}</span>
     </div>`;
 
-  const body = view.length ? view.map((r) => `<tr>
-    <td class="daa-num">${esc(r.ranking)}</td>
-    <td class="daa-name">${esc(r.name)}</td>
-    <td class="daa-num">${esc(r.recommendations)}</td>
-    <td class="daa-num">${esc(r.accepted)}</td>
-    <td class="daa-num">${esc(r.overridden)}</td>
-    <td class="daa-num"><span class="daa-pill daa-pill--${rateClass(r.accuracyPct)}">${pct(r.accuracyPct)}</span></td>
-    <td class="daa-num">${pct(r.acceptancePct)}</td>
-    <td class="daa-num">${esc(r.avgDispatchScore)}</td>
-    <td class="daa-num">${esc(stars(r.avgConfidenceStars))}</td>
-    <td class="daa-num">${esc(r.avgOverrideDifference)}</td>
-  </tr>`).join('') : '';
-
-  const table = body ? `<div class="daa-tablewrap"><table class="daa-table">
-      <thead><tr><th class="daa-num">#</th><th>${esc(head)}</th><th class="daa-num">Rek.</th><th class="daa-num">Terima</th>
-        <th class="daa-num">Override</th><th class="daa-num">Akurasi</th><th class="daa-num">Penerimaan</th>
-        <th class="daa-num">Skor</th><th class="daa-num">Confidence</th><th class="daa-num">Selisih</th></tr></thead>
-      <tbody>${body}</tbody></table></div>`
-    : `<div class="daa-empty"><div class="daa-empty__ic">📭</div><div class="daa-empty__d">${term ? 'Tidak ada hasil pencarian.' : 'Belum ada rekomendasi.'}</div></div>`;
-
-  return `
-    <div class="daa-sec">
-      <div class="daa-sec__head"><div class="daa-sec__title">${esc(title)}</div>
-        <div class="daa-sec__hint">${esc(hint)}</div></div>
+  return ExecutiveSectionShell({
+    title,
+    description,
+    content: `${spot}
       ${controls}
-      ${table}
-    </div>`;
+      <div class="daa-detail-cap">Rincian per ${esc(head.toLowerCase())}</div>
+      ${entityTable(view, head)}`,
+  });
 }
 
-/* ── Feature 4 — confidence calibration ───────────────────────────────── */
+/* ── 7. RIWAYAT REKOMENDASI — the final section: the month-by-month record of
+   accuracy over the selected window, so the reader can see the trajectory that
+   the hero + status summarised. No new analytics — the monthly series is the
+   engine's. ─────────────────────────────────────────────────────────────── */
 
-function renderCalibration(model) {
-  const rows = model.calibration.buckets.map((b) => `<div class="raa-cal__row">
-    <div class="raa-cal__stars" title="${esc(b.label)}">${esc(b.glyph)}</div>
-    <div class="raa-cal__track"><div class="raa-cal__fill${calFillClass(b.acceptancePct)}" style="width:${esc(b.acceptancePct)}%"></div></div>
-    <div class="raa-cal__meta"><b>${esc(b.generated)}</b> dibuat · terima ${esc(b.acceptancePct)}% · skor ${esc(b.avgDispatchScore)}</div>
-  </div>`).join('');
-  return `
-    <div class="daa-sec">
-      <div class="daa-sec__head"><div class="daa-sec__title">🎚️ Kalibrasi Confidence</div>
-        <div class="daa-sec__hint">Penerimaan aktual per band (kalibrasi tinggi = penerimaan naik seiring bintang)</div></div>
-      <div class="raa-cal">${rows}</div>
-    </div>`;
-}
-
-/* ── Feature 5 — override severity ────────────────────────────────────── */
-
-function renderSeverity(model) {
-  const s = model.severity;
-  const total = s.totalOverrides || 0;
-  const segs = s.categories.map((c) => {
-    const w = total ? Math.round((c.count / total) * 100) : 0;
-    return w > 0 ? `<div class="raa-sev__seg raa-sev__seg--${esc(c.key)}" style="width:${w}%" title="${esc(c.label)}: ${esc(c.count)}"></div>` : '';
-  }).join('');
-  const legend = s.categories.map((c) =>
-    `<span class="raa-sevlegend__i"><span class="raa-dot raa-dot--${esc(c.key)}"></span>${esc(c.label)} <b>${esc(c.count)}</b> · ${esc(c.percentage)}%</span>`).join('');
-  const worst = s.worstCases.slice(0, 6).map((c) => `<tr>
-    <td class="daa-name">${esc(c.driverName)} · ${esc(c.vehicleName)}</td>
-    <td><span class="daa-pill daa-pill--${c.severity === 'critical' ? 'danger' : c.severity === 'major' ? 'warn' : ''}">${esc(c.severityLabel)}</span></td>
-    <td class="daa-num">${esc(c.recommendedScore)} → ${esc(c.selectedScore)}</td>
-    <td class="daa-num">−${esc(c.combinedDifference)}</td>
-    <td>${esc(c.reason || '—')}</td>
-  </tr>`).join('');
-  return `
-    <div class="daa-sec">
-      <div class="daa-sec__head"><div class="daa-sec__title">⚠️ Keparahan Override</div>
-        <div class="daa-sec__hint">Selisih skor dispatch antara rekomendasi & pilihan admin · gabungan rata-rata −${esc(s.avgCombinedDifference)}</div></div>
-      ${total ? `<div class="raa-sev">${segs}</div><div class="raa-sevlegend">${legend}</div>
-      <div class="daa-tablewrap" style="margin-top:.6rem;"><table class="daa-table">
-        <thead><tr><th>Penugasan Dipilih</th><th>Keparahan</th><th class="daa-num">Skor</th><th class="daa-num">Selisih</th><th>Alasan</th></tr></thead>
-        <tbody>${worst}</tbody></table></div>`
-      : `<div class="daa-empty"><div class="daa-empty__ic">✅</div><div class="daa-empty__d">Belum ada override untuk dianalisis.</div></div>`}
-    </div>`;
-}
-
-/* ── Feature 6 — override reason analytics ────────────────────────────── */
-
-function renderReasons(model) {
-  const ra = model.reasonAnalytics;
-  const total = ra.totalOverrides || 0;
-  const cats = ra.categories.map((c) => `<div class="daa-funnel__row">
-    <div class="daa-funnel__k">${esc(c.label)}</div>
-    <div class="daa-bar"><div class="daa-bar__fill" style="width:${esc(c.percentage)}%"></div></div>
-    <div class="daa-funnel__meta"><b>${esc(c.count)}</b> · ${esc(c.percentage)}%</div></div>`).join('');
-  const top = ra.topReasons.length ? `<ul class="daa-reasons">${ra.topReasons.map((r) =>
-    `<li class="daa-reasons__li"><span class="daa-reasons__txt">${esc(r.text)}</span><span class="daa-reasons__n">${esc(r.count)}× · ${esc(r.percentage)}%</span></li>`).join('')}</ul>`
-    : `<div class="daa-sec__sub">Belum ada alasan override tercatat.</div>`;
-  const months = ra.monthlyTrend.length ? `<ul class="daa-reasons">${ra.monthlyTrend.map((m) =>
-    `<li class="daa-reasons__li"><span class="daa-reasons__txt">${esc(m.label)} — teratas: ${esc(m.topCategory)}</span><span class="daa-reasons__n">${esc(m.total)}×</span></li>`).join('')}</ul>`
-    : `<div class="daa-sec__sub">Belum ada tren bulanan.</div>`;
-  return `
-    <div class="daa-sec">
-      <div class="daa-sec__head"><div class="daa-sec__title">🗂️ Analitik Alasan Override</div>
-        <div class="daa-sec__sub">${total} override · ${ra.reasonedOverrides} beralasan</div></div>
-      <div class="daa-cols">
-        <div><div class="daa-rank__h" style="margin-bottom:.4rem;">Kategori Alasan</div><div class="daa-funnel">${cats}</div></div>
-        <div class="daa-rank"><div class="daa-rank__h">Alasan Teratas</div>${top}</div>
-      </div>
-      <div class="daa-rank"><div class="daa-rank__h">Tren Bulanan</div>${months}</div>
-    </div>`;
-}
-
-/* ── Feature 7 & 8 — false-high-confidence + unexpected acceptance ────── */
-
-function renderConfidenceVsDecision(model) {
-  const fhc = model.falseHighConfidence;
-  const ua = model.unexpectedAcceptance;
-  const worst = fhc.worstCases.slice(0, 5).map((c) => `<tr>
-    <td class="daa-name">${esc(c.driverName)} · ${esc(c.vehicleName)}</td>
-    <td class="daa-num">${esc(c.recommendedScore)} → ${esc(c.selectedScore)}</td>
-    <td class="daa-num">−${esc(c.drop)}</td>
-    <td>${esc(c.reason || '—')}</td>
-  </tr>`).join('');
-  return `
-    <div class="daa-sec">
-      <div class="daa-sec__head"><div class="daa-sec__title">🔎 Confidence vs Keputusan</div>
-        <div class="daa-sec__hint">False High Confidence = ★★★★★ tetap di-override · Penerimaan Tak Terduga = ≤3★ tetap diterima</div></div>
-      <div class="raa-bigs">
-        <div class="raa-big">
-          <div class="raa-big__lbl">False High Confidence</div>
-          <div class="raa-big__num">${pct(fhc.falseHighConfidencePct)}</div>
-          <div class="raa-big__sub">${esc(fhc.overridden)} dari ${esc(fhc.total)} rekomendasi ★★★★★ di-override</div>
-        </div>
-        <div class="raa-big">
-          <div class="raa-big__lbl">Penerimaan Tak Terduga</div>
-          <div class="raa-big__num">${pct(ua.acceptancePct)}</div>
-          <div class="raa-big__sub">${esc(ua.accepted)} dari ${esc(ua.totalLowConfidence)} rekomendasi ≤3★ diterima</div>
-        </div>
-      </div>
-      ${worst ? `<div class="daa-tablewrap"><table class="daa-table">
-        <thead><tr><th>Penugasan (★★★★★ di-override)</th><th class="daa-num">Skor</th><th class="daa-num">Selisih</th><th>Alasan</th></tr></thead>
-        <tbody>${worst}</tbody></table></div>` : `<div class="daa-sec__sub">Tidak ada kasus false high confidence — semua rekomendasi ★★★★★ diterima.</div>`}
-    </div>`;
-}
-
-/* ── Feature 9 — learning trend ───────────────────────────────────────── */
-
-function sparkline(series, field) {
-  const list = Array.isArray(series) ? series : [];
-  if (!list.length) return `<div class="daa-sec__sub">Tidak ada data dalam rentang.</div>`;
-  const max = Math.max(1, ...list.map((s) => Number(s[field]) || 0));
-  const cols = list.map((s) => {
-    const v = Number(s[field]) || 0;
-    const h = Math.max(4, Math.round((v / max) * 100));
-    return `<div class="daa-spark__col${v === 0 ? ' daa-spark__col--empty' : ''}" style="height:${h}%" title="${esc(s.label)}: ${esc(v)}"></div>`;
-  }).join('');
-  return `<div class="daa-spark">${cols}</div>`;
-}
-
-function renderLearningTrend(model, opts) {
-  const win = model.learningTrend.windows.find((w) => w.key === (TREND_WINDOWS.includes(opts.trendWindow) ? opts.trendWindow : '30d')) || model.learningTrend.windows[1];
-  if (!win) return '';
-  const card = (lbl, value, sub) => `<div class="daa-trendcard">
-    <div class="daa-trendcard__lbl">${esc(lbl)}</div><div class="daa-trendcard__num">${value}</div>
-    <div class="daa-trendcard__sub">${esc(sub)}</div></div>`;
-  const monthly = win.series.length
-    ? `<div class="daa-tablewrap"><table class="daa-table">
-        <thead><tr><th>Bulan</th><th class="daa-num">Keputusan</th><th class="daa-num">Akurasi</th><th class="daa-num">Override</th><th class="daa-num">Skor</th></tr></thead>
-        <tbody>${win.series.map((m) => `<tr><td class="daa-name">${esc(m.label)}</td><td class="daa-num">${esc(m.total)}</td>
-          <td class="daa-num">${pct(m.recommendationAccuracy)}</td><td class="daa-num">${pct(m.overrideRate)}</td><td class="daa-num">${esc(m.avgDispatchScore)}</td></tr>`).join('')}</tbody></table></div>`
-    : `<div class="daa-sec__sub">Tidak ada data bulanan dalam rentang.</div>`;
-  return `
-    <div class="daa-sec">
-      <div class="daa-sec__head"><div class="daa-sec__title">📈 Tren Pembelajaran — ${esc(win.label)}</div>
-        <div class="daa-sec__sub">${esc(win.total)} keputusan dalam rentang</div></div>
-      <div class="daa-trendcards">
-        ${card('Akurasi', pct(win.recommendationAccuracy), 'rata-rata rentang')}
-        ${card('Penerimaan', pct(win.acceptanceRate), 'rata-rata rentang')}
-        ${card('Override', pct(win.overrideRate), 'rata-rata rentang')}
-        ${card('Skor', esc(win.avgDispatchScore), 'rata-rata')}
-        ${card('Confidence', `<span class="daa-kpi__stars">${esc(stars(win.avgConfidenceStars))}</span>`, `${esc(win.avgConfidenceStars)}★`)}
-      </div>
-      <div><div class="daa-rank__h" style="margin-bottom:.35rem;">Akurasi per Bulan</div>${sparkline(win.series, 'recommendationAccuracy')}</div>
-      ${monthly}
-    </div>`;
-}
-
-/* ── Feature 10 — executive insights ──────────────────────────────────── */
-
-function renderInsights(model) {
-  const ins = model.insights || [];
-  const cards = ins.length ? `<div class="raa-insights">${ins.map((i) => `<div class="raa-insight raa-insight--${esc(i.type)}">
-    <div class="raa-insight__s">${esc(i.source || '')}</div>
-    <div class="raa-insight__t">${esc(i.title)}</div>
-    <div class="raa-insight__d">${esc(i.description)}</div>
-  </div>`).join('')}</div>`
-    : `<div class="daa-empty"><div class="daa-empty__ic">💡</div><div class="daa-empty__d">Belum cukup data untuk menyusun insight eksekutif.</div></div>`;
-  return `
-    <div class="daa-sec">
-      <div class="daa-sec__head"><div class="daa-sec__title">💡 Insight Eksekutif</div>
-        <div class="daa-sec__sub">Temuan otomatis dari metrik akurasi</div></div>
-      ${cards}
-    </div>`;
+function renderHistory(model, opts) {
+  const win = activeWindow(model, opts);
+  const series = win && Array.isArray(win.series) ? win.series : [];
+  if (!series.length) {
+    return ExecutiveSectionShell({
+      title: 'Riwayat Rekomendasi',
+      content: ExecutiveEmptyState({ message: 'Belum ada riwayat bulanan dalam rentang ini.' }),
+    });
+  }
+  const columns = [
+    { key: 'label', label: 'Bulan', primary: true },
+    { key: 'total', label: 'Keputusan', align: 'right' },
+    { key: 'accuracy', label: 'Akurasi', align: 'right', render: (v) => tonePill(pct(v), rateClass(v)) },
+    { key: 'override', label: 'Dikoreksi', align: 'right', render: (v) => pct(v) },
+    { key: 'score', label: 'Skor', align: 'right' },
+  ];
+  const rows = series.map((m) => ({
+    label: m.label, total: m.total, accuracy: m.recommendationAccuracy,
+    override: m.overrideRate, score: m.avgDispatchScore,
+  }));
+  return ExecutiveSectionShell({
+    title: 'Riwayat Rekomendasi',
+    description: `${win.label} · ${win.total} keputusan`,
+    content: ExecutiveTable({ columns, rows, ariaLabel: 'Riwayat Rekomendasi' }),
+  });
 }
 
 /* ── global empty ─────────────────────────────────────────────────────── */
 
 function renderGlobalEmpty() {
-  return `
-    <div class="daa-sec">
-      <div class="daa-empty">
-        <div class="daa-empty__ic">🎯</div>
-        <div class="daa-empty__t">Belum ada data akurasi</div>
-        <div class="daa-empty__d">Dashboard ini mengukur akurasi rekomendasi setelah ada persetujuan request (override log). Setujui beberapa request melalui Dispatch Intelligence untuk melihat akurasi, kalibrasi confidence, keparahan override, dan tren pembelajaran.</div>
-      </div>
-    </div>`;
+  return ExecutiveSectionShell({
+    title: 'Belum ada data akurasi',
+    content: ExecutiveEmptyState({
+      message: 'Dashboard ini terisi setelah ada persetujuan request.',
+      hint: 'Setujui beberapa request melalui Dispatch Intelligence untuk melihat apakah rekomendasi AI semakin akurat dari waktu ke waktu.',
+    }),
+  });
 }
 
 /* ── public render ────────────────────────────────────────────────────── */
@@ -453,24 +421,29 @@ function renderGlobalEmpty() {
  * @returns {string}
  */
 export function renderRecommendationAccuracyDashboard(model, opts = {}) {
-  if (!model) return `<div class="daa raa">${renderGlobalEmpty()}</div>`;
+  // Root keeps `.daa raa` for layout + the shared inner-viz scope, and adds
+  // `exec-ui v2-analytics-claude` so the kit/analytics classes (and the dark-mode
+  // variant) resolve even though the dashboard renders outside an analytics scope.
+  const ROOT = 'daa raa exec-ui v2-analytics-claude';
+  if (!model) return `<div class="${ROOT}">${renderGlobalEmpty()}</div>`;
   const o = {
     trendWindow: TREND_WINDOWS.includes(opts.trendWindow) ? opts.trendWindow : '30d',
     driverSort: opts.driverSort || 'ranking', driverSearch: opts.driverSearch || '',
     vehicleSort: opts.vehicleSort || 'ranking', vehicleSearch: opts.vehicleSearch || '',
   };
   const hasData = model.totals && model.totals.decisions > 0;
-  return `<div class="daa raa">
+  // Executive experience hierarchy (v1.18.6) — the page answers "apakah AI makin
+  // akurat?" in <5s, then offers detail. Each block carries a different visual
+  // weight: Hero (stat band) → Status (one verdict) → KPI (four-number story) →
+  // Performa Akurasi (movement + calibration, merged) → Driver → Vehicle
+  // (spotlight-led) → Riwayat (monthly record).
+  return `<div class="${ROOT}">
     ${renderHeader(model, o)}
-    ${hasData ? '' : renderGlobalEmpty()}
+    ${hasData ? renderStatus(model) : renderGlobalEmpty()}
     ${renderKpis(model)}
-    ${entitySection('🧑‍✈️ Akurasi Rekomendasi Driver', 'Per driver: rekomendasi, penerimaan, akurasi, skor, selisih override', model.driverAccuracy.rows, 'driver', { sort: o.driverSort, search: o.driverSearch })}
-    ${entitySection('🚐 Akurasi Rekomendasi Kendaraan', 'Mesin yang sama dengan akurasi driver — satu sumber kebenaran', model.vehicleAccuracy.rows, 'vehicle', { sort: o.vehicleSort, search: o.vehicleSearch })}
-    ${renderCalibration(model)}
-    ${renderSeverity(model)}
-    ${renderReasons(model)}
-    ${renderConfidenceVsDecision(model)}
-    ${renderLearningTrend(model, o)}
-    ${renderInsights(model)}
+    ${renderPerforma(model, o)}
+    ${entitySection({ title: 'Ringkasan Driver', description: 'Driver mana yang rekomendasinya paling akurat', eyebrow: 'Driver Paling Akurat', rows: model.driverAccuracy.rows, kind: 'driver', opts: { sort: o.driverSort, search: o.driverSearch } })}
+    ${entitySection({ title: 'Ringkasan Kendaraan', description: 'Kendaraan mana yang rekomendasinya paling akurat', eyebrow: 'Kendaraan Paling Akurat', rows: model.vehicleAccuracy.rows, kind: 'vehicle', opts: { sort: o.vehicleSort, search: o.vehicleSearch } })}
+    ${renderHistory(model, o)}
   </div>`;
 }

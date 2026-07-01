@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.18.3.3';
-export const RELEASE_NAME = 'Fleet Maintenance Intelligence';
+export const APP_VERSION = '1.18.7';
+export const RELEASE_NAME = 'Unified Executive Analytics UI';
 
 /**
  * Web Push VAPID PUBLIC key (v1.11.3). Safe to ship — it is an
@@ -17,6 +17,16 @@ export const RELEASE_NAME = 'Fleet Maintenance Intelligence';
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.18.7',
+    date: '2026-07-01',
+    summary: 'Driver Wellness Executive Migration — the final Executive Analytics UI sprint. Driver Wellness becomes a SIBLING of Analytics Driver, Dispatch Analytics (v1.18.5.x), and Recommendation Accuracy (v1.18.6), rendered in ONE Executive UI language. It is PRESENTATION-ONLY: NO wellness/fatigue/workload/health/capacity engine, recommendation, Firebase, export, routing, permission, filter, or business-logic change — the driver-wellness-service output is byte-identical (scripts/driver-wellness-check.mjs still 47/47). The dashboard component (js/components/driver-wellness-dashboard.js) was rewritten off its private ~120-line `.dwi-*` stylesheet onto the Executive UI Kit (ExecutiveHeader/Toolbar, ExecutiveKPICard/Grid, ExecutiveSectionShell, ExecutiveTable, ExecutiveStatusPill, ExecutiveSparkline, ExecutiveEmptyState, the one anIcon engine) and the shared `.daa-*` micro-viz (hero stat band, Executive Status verdict, spotlight, performance headlines, band ladder, event feed). The page now answers ONE executive question — "Apakah kondisi driver masih sehat untuk operasional?" — top to bottom: Hero (stat band) → Executive Health Status (one verdict: Sangat Baik / Baik / Perlu Perhatian / Kritis) → Executive KPI (Driver Siap Bertugas · Perlu Istirahat · Risiko Tinggi · Skor Kesehatan Operasional, business-impact subtitles) → Performa Wellness (health + recovery headlines merged with the health-band ladder) → Kondisi Driver (premium spotlight on the driver most needing attention + one concise 6-column detail table) → Riwayat Wellness (latest operational wellness events). KPI names were rewritten from medical/technical wording into operational language; the four distribution charts + separate trend block were merged into one performance section; emoji were removed. APP_VERSION 1.18.3.3 → 1.18.7 re-stamps SW_VERSION → CACHE_NAME, version.json, and the index.html app.js/style.css/petty-cash.css cache-bust via scripts/sync-version.mjs.',
+    highlights: [
+      'js/components/driver-wellness-dashboard.js rewritten as a pure render layer over the SAME model: deleted the entire private `.dwi-*` CSS block (top/btn/toggle/sec/kpi/dist/bar/spark/trendcard/table/name/pill/hint/empty/cols) and all obsolete render helpers (renderSummary/renderDistributions/renderTrend/distChart/sparkline/renderDriverTable/kpiCard/pill/emptyInline). Now imports injectDispatchAnalyticsStyles + the Executive UI Kit; the only added CSS is the two-line `.daa-status--danger` tone (the shared block only ever needed good/info/warn). Root class `dwi daa exec-ui v2-analytics-claude` so the kit + dark-mode tokens resolve outside an analytics scope.',
+      'Host wiring (js/app.js): driver rows are now Executive-table clickable rows (data-row-id = driverId → the `.exec-tr--click` contract) instead of the old `data-dwi-driver` attribute; the delegated click + keyboard handlers were updated to `.dwi .exec-tr--click` and the render-failure fallback swapped to the shared `.daa-status` markup. The window-toggle (data-dwi-window) + export (data-dwi-export) contracts and the exportDriverWellness/openDriverWellnessDetail pipelines are untouched. The wellness detail drawer (js/components/driver-wellness-drawer.js) was intentionally left unchanged.',
+      'Tests: scripts/driver-wellness-check.mjs (PURE service invariants) unchanged at 47/47. scripts/driver-wellness-dom-check.mjs rewritten for the Executive structure (Executive header/hero-band/status/KPI/performance-sparklines/band-ladder/spotlight/exec-table/event-feed + emoji-free + dark-mode-safe + drawer-from-clickable-row + 0 console errors) — 47/47, screenshots driver-wellness-{desktop-light,desktop-dark,mobile-light}.png refreshed. Sibling suites (dispatch-analytics / recommendation-accuracy dom-checks, executive-ui-kit-check, smoke-boot) remain green.',
+    ],
+  },
   {
     version: '1.18.0',
     date: '2026-06-26',
