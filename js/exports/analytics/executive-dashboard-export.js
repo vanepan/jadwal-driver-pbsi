@@ -151,28 +151,39 @@ function moduleSummaries(d) {
 /* ── PDF docDefinition (pure) ──────────────────────────────────────────────── */
 
 const ACCENT = '#A8292F';
-function sectionHeader(text) { return { text, style: 'h2', margin: [0, 14, 0, 6] }; }
-function simpleTable(headers, rows, widths) {
+const INK = '#1c1c1e';
+const DIM = '#6b6b70';
+const HAIR = '#e4e4e8';
+const TONE_HEX = { ok: '#2F7D62', good: '#2F7D62', info: '#2f5fa8', warn: '#946420', danger: '#A8292F', neutral: DIM };
+function verdictColor(tone) { return tone === 'good' ? '#2F7D62' : tone === 'danger' ? ACCENT : tone === 'warn' ? '#946420' : DIM; }
+const PAGE_W = 595 - 34 * 2; // A4 content width at the report's page margins.
+
+function sectionHeader(text) { return { text, style: 'h2', margin: [0, 18, 0, 8] }; }
+/** Editorial table — a single hairline under the header, airy rows, no fills or
+ *  vertical rules (presentation-quality, not spreadsheet-quality). */
+function editorialTable(rows, widths) {
   return {
     table: {
-      headerRows: 1,
-      widths: widths || headers.map(() => '*'),
-      body: [
-        headers.map((h) => ({ text: h, style: 'th' })),
-        ...(rows.length ? rows : [headers.map(() => ({ text: '—', style: 'td' }))]).map((r) => r.map((c) => (typeof c === 'object' ? c : { text: String(c), style: 'td' }))),
-      ],
+      headerRows: 0,
+      widths: widths || ['*', 'auto'],
+      body: (rows.length ? rows : [['—', '—']]).map((r) => r.map((c, i) => (
+        typeof c === 'object' ? c : { text: String(c), style: i === 0 ? 'tdKey' : 'tdVal' }
+      ))),
     },
     layout: {
-      hLineWidth: (i) => (i === 1 ? 1 : 0.5),
-      hLineColor: () => '#d9d9de',
+      hLineWidth: (i, node) => (i === 0 || i === node.table.body.length ? 0 : 0.5),
+      hLineColor: () => HAIR,
       vLineWidth: () => 0,
-      paddingTop: () => 4, paddingBottom: () => 4,
+      paddingTop: () => 5, paddingBottom: () => 5, paddingLeft: () => 0, paddingRight: () => 0,
     },
   };
 }
 
 /**
- * Build the pdfmake docDefinition for the Executive Analytics Report.
+ * Build the pdfmake docDefinition for the Executive Analytics Report — an
+ * executive briefing (presentation-quality), not a spreadsheet. It REUSES the
+ * exact same data (pick / verdict / kpiRows / moduleSummaries / buildHighlights);
+ * only the presentation is composed here — no new calculation.
  * @param {Object} model aggregate model { generatedAt, exec, dispatch, recommendation, wellness, fleet, petty }
  * @param {Object} [meta] { periodLabel, generatedBy, appVersion }
  * @returns {Object} pdfmake docDefinition
@@ -183,6 +194,8 @@ export function buildExecutiveReportDocDefinition(model, meta = {}) {
   const v = verdict(d);
   const content = [];
 
+  // ── Masthead ──────────────────────────────────────────────────────────────
+  content.push({ text: 'LAPORAN EKSEKUTIF', style: 'eyebrow' });
   content.push({ text: 'Executive Analytics', style: 'h1' });
   content.push({
     text: [
@@ -190,56 +203,82 @@ export function buildExecutiveReportDocDefinition(model, meta = {}) {
       `Dibuat ${fmtTime(m.generatedAt || new Date().toISOString())}`,
       meta.generatedBy ? ` · oleh ${meta.generatedBy}` : '',
     ].join(''),
-    style: 'meta', margin: [0, 2, 0, 4],
+    style: 'meta', margin: [0, 3, 0, 10],
+  });
+  content.push({ canvas: [{ type: 'line', x1: 0, y1: 0, x2: PAGE_W, y2: 0, lineWidth: 1.5, lineColor: ACCENT }], margin: [0, 0, 0, 4] });
+
+  // ── Operational Score + Executive Verdict (the centerpiece) ────────────────
+  const scoreStr = (d.score && d.score.value != null) ? scoreTxt(d.score.value) : '—';
+  const facts = [];
+  if (num(d.wellness.driverCount) > 0) facts.push(`${num(d.wellness.healthyDrivers)}/${num(d.wellness.driverCount)} driver kondisi sehat`);
+  if (num(d.fleet.totalAssets) > 0) facts.push(`${num(d.fleet.active)} kendaraan aktif`);
+  { const acc = d.recKpi.acceptanceRate != null ? d.recKpi.acceptanceRate : d.dispatchKpi.recommendationAcceptance; if (acc != null) facts.push(`${round(acc)}% rekomendasi diterima`); }
+  content.push({
+    columns: [
+      { width: 132, stack: [
+        { text: 'Skor Operasional', style: 'blockEye' },
+        { text: scoreStr, style: 'bigScore' },
+        { text: 'dari 100', style: 'meta' },
+      ] },
+      { width: '*', stack: [
+        { text: v.level || '—', style: 'bigVerdict', color: verdictColor(v.tone) },
+        { text: STATUS_MSG[v.tone] || '', style: 'say', margin: [0, 4, 0, 0] },
+        facts.length ? { text: facts.join('   ·   '), style: 'facts', margin: [0, 10, 0, 0] } : {},
+      ] },
+    ],
+    columnGap: 22, margin: [0, 16, 0, 4],
   });
 
-  // Executive Summary
-  content.push(sectionHeader('Ringkasan Eksekutif'));
-  content.push(simpleTable(['Indikator', 'Nilai'], [
-    ['Skor Operasional', d.score && d.score.value != null ? scoreTxt(d.score.value) : '—'],
-    ['Driver Siap Bertugas', num(d.wellness.driverCount) ? `${num(d.wellness.healthyDrivers)} / ${num(d.wellness.driverCount)}` : '—'],
-    ['Kendaraan Aktif', num(d.fleet.totalAssets) ? `${num(d.fleet.active)} / ${num(d.fleet.totalAssets)}` : '—'],
-  ], ['*', 140]));
-
-  // Operational Status (one verdict + one sentence)
-  content.push(sectionHeader('Status Operasional Hari Ini'));
-  content.push({ text: v.level || '—', style: 'verdict' });
-  content.push({ text: STATUS_MSG[v.tone] || '', style: 'td', margin: [0, 2, 0, 2] });
-
-  // Executive KPIs
-  content.push(sectionHeader('Indikator Utama'));
-  content.push(simpleTable(['KPI', 'Nilai'], kpiRows(d), ['*', 140]));
-
-  // Highlights
-  content.push(sectionHeader('Sorotan Hari Ini'));
+  // ── Operational Highlights ─────────────────────────────────────────────────
+  content.push(sectionHeader('Sorotan Operasional'));
   const hl = buildHighlights(d);
-  content.push(simpleTable(['Status', 'Sorotan', 'Rincian'],
-    hl.map((h) => [HIGHLIGHT_TONE[h.tone] || '—', h.label, h.detail || '—']),
-    [60, '*', '*']));
+  if (hl.length) {
+    content.push({
+      stack: hl.map((h) => ({
+        columns: [
+          { width: 10, margin: [0, 4, 0, 0], canvas: [{ type: 'ellipse', x: 3, y: 3, r1: 3, r2: 3, color: TONE_HEX[h.tone] || DIM }] },
+          { width: '*', stack: [
+            { text: h.label, style: 'hlLabel' },
+            h.detail ? { text: h.detail, style: 'hlDetail' } : {},
+          ] },
+        ],
+        columnGap: 8, margin: [0, 0, 0, 8],
+      })),
+    });
+  } else {
+    content.push({ text: 'Belum ada sorotan operasional pada periode ini.', style: 'say' });
+  }
 
-  // Module summaries
-  content.push(sectionHeader('Ringkasan per Modul'));
+  // ── Domain Summary ─────────────────────────────────────────────────────────
+  content.push(sectionHeader('Ringkasan per Domain'));
   for (const mod of moduleSummaries(d)) {
-    content.push({ text: mod.title, style: 'h3', margin: [0, 8, 0, 4] });
-    content.push(simpleTable(['Metrik', 'Nilai'], mod.rows, ['*', 140]));
+    content.push({ text: mod.title, style: 'h3', margin: [0, 10, 0, 3] });
+    content.push(editorialTable(mod.rows, ['*', 'auto']));
   }
 
   return {
     pageSize: 'A4',
-    pageMargins: [34, 36, 34, 40],
-    info: { title: 'Executive Analytics' },
+    pageMargins: [34, 40, 34, 44],
+    info: { title: 'Executive Analytics — Laporan Eksekutif' },
     content,
     styles: {
-      h1: { fontSize: 16, bold: true, color: ACCENT },
-      h2: { fontSize: 11, bold: true, color: '#222' },
-      h3: { fontSize: 10, bold: true, color: '#444' },
-      verdict: { fontSize: 13, bold: true, color: ACCENT },
-      meta: { fontSize: 8, color: '#666' },
-      th: { fontSize: 8, bold: true, color: '#444', fillColor: '#f4f4f6' },
-      td: { fontSize: 8, color: '#222' },
+      eyebrow: { fontSize: 8, bold: true, color: DIM, characterSpacing: 1.4 },
+      h1: { fontSize: 22, bold: true, color: INK },
+      h2: { fontSize: 12, bold: true, color: INK },
+      h3: { fontSize: 10, bold: true, color: INK },
+      meta: { fontSize: 8, color: DIM },
+      blockEye: { fontSize: 8, bold: true, color: DIM, margin: [0, 0, 0, 2] },
+      bigScore: { fontSize: 40, bold: true, color: INK, lineHeight: 1 },
+      bigVerdict: { fontSize: 24, bold: true },
+      say: { fontSize: 9.5, color: DIM, lineHeight: 1.35 },
+      facts: { fontSize: 8.5, color: INK },
+      hlLabel: { fontSize: 9.5, bold: true, color: INK },
+      hlDetail: { fontSize: 8.5, color: DIM, margin: [0, 1, 0, 0] },
+      tdKey: { fontSize: 9, color: DIM },
+      tdVal: { fontSize: 9, bold: true, color: INK, alignment: 'right' },
     },
-    defaultStyle: { fontSize: 9 },
-    footer: (current, total) => ({ text: `Executive Analytics · ${meta.appVersion || ''} · ${current}/${total}`, style: 'meta', alignment: 'center', margin: [0, 8, 0, 0] }),
+    defaultStyle: { fontSize: 9, color: INK },
+    footer: (current, total) => ({ text: `Executive Analytics · ${meta.appVersion || ''} · ${current}/${total}`, style: 'meta', alignment: 'center', margin: [0, 10, 0, 0] }),
   };
 }
 

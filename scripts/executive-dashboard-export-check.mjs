@@ -54,14 +54,16 @@ console.log('\n[PDF docDefinition]');
 const doc = buildExecutiveReportDocDefinition(model, meta);
 const texts = JSON.stringify(doc.content);
 check('docDefinition is A4 with content', doc.pageSize === 'A4' && Array.isArray(doc.content) && doc.content.length > 0);
-check('§ Ringkasan Eksekutif (Executive Summary)', texts.includes('Ringkasan Eksekutif'));
-check('§ Status Operasional Hari Ini (Operational Status)', texts.includes('Status Operasional Hari Ini'));
-check('§ Indikator Utama (Executive KPIs)', texts.includes('Indikator Utama'));
-check('§ Sorotan Hari Ini (Highlights)', texts.includes('Sorotan Hari Ini'));
-check('§ Ringkasan per Modul (Module summaries)', texts.includes('Ringkasan per Modul'));
+// Presentation-quality executive report (not a spreadsheet): masthead + a
+// prominent Operational Score + Executive Verdict + Highlights + Domain Summary.
+check('masthead: "Laporan Eksekutif" + "Executive Analytics"', texts.includes('LAPORAN EKSEKUTIF') && texts.includes('Executive Analytics'));
+check('prominent Operational Score block', texts.includes('Skor Operasional') && texts.includes('bigScore'));
+check('Executive Verdict reused from the engine score (large)', texts.includes('bigVerdict') && texts.includes(exec.score.label));
+check('§ Sorotan Operasional (Operational Highlights)', texts.includes('Sorotan Operasional'));
+check('§ Ringkasan per Domain (Domain Summary)', texts.includes('Ringkasan per Domain'));
 check('every module title present in PDF', ['Analytics Driver', 'Dispatch Analytics', 'Recommendation Accuracy', 'Driver Wellness', 'Vehicle Analytics', 'Petty Cash Analytics'].every((t) => texts.includes(t)));
-check('operational status verdict reused from engine score', texts.includes(exec.score.label));
-check('title + version in footer', doc.info.title === 'Executive Analytics' && typeof doc.footer === 'function');
+check('editorial styling (no spreadsheet header fills / th style)', !texts.includes('"style":"th"'));
+check('report title + version footer present', /Executive Analytics/.test(doc.info.title) && typeof doc.footer === 'function');
 
 console.log('\n[Excel workbook — one worksheet per module]');
 const sheets = buildExecutiveReportSheets(model);

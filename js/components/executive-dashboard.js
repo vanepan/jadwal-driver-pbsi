@@ -1,10 +1,10 @@
 /* ============================================================
-   EXECUTIVE-DASHBOARD.JS — Executive Analytics (v1.18.8)
+   EXECUTIVE-DASHBOARD.JS — Executive Analytics (v1.18.8.4)
 
    The executive HOME PAGE for the entire Sarpras Operations platform. It is
    NOT another analytics page: it answers ONE question, within five seconds —
 
-     "Bagaimana kondisi operasional hari ini?"
+     "Bagaimana kondisi operasional PBSI hari ini?"
 
    Everything on the page supports that question; nothing else is here.
 
@@ -14,82 +14,129 @@
    computeExecutiveAnalytics, plus the Dispatch Analytics, Recommendation
    Accuracy, Driver Wellness and Fleet Asset models) and turns those outputs
    into an operational briefing. No new scoring, prediction, or business logic;
-   no duplicated calculation.
+   no duplicated calculation. The PDF/Excel exporter reuses pick / verdict /
+   buildHighlights from here, so those three are kept byte-identical.
 
-   ── DESIGN AUTHORITY ────────────────────────────────────────────────────────
-   Executive Analytics is the design authority for executive reporting. It is a
-   SIBLING of Analytics Driver, Dispatch Analytics, Recommendation Accuracy and
-   Driver Wellness and speaks the SAME Executive UI Kit as its only design
-   language (ExecutiveHeader, ExecutiveKPICard/Grid, ExecutiveSectionShell,
-   ExecutiveStatusPill, ExecutiveEmptyState, the one icon engine). The inner
-   micro-viz that has no kit primitive — the hero stat band, the Executive
-   Status verdict, the spotlight and the event feed — reuses the SHARED `.daa-*`
-   classes owned by Dispatch Analytics (injected via injectDispatchAnalyticsStyles).
-   The only net-new shapes are the domain-overview grid and the premium quick-
-   navigation cards (`.exa-*`), which no sibling had before.
+   ── APPLE REFINEMENT (v1.18.8.3) ────────────────────────────────────────────
+   A refinement pass (not a redesign): less UI, better hierarchy, better
+   storytelling. Meaning leads, numbers support.
+     • Hero + Status are UNIFIED into one meaning-first centerpiece: an elegant,
+       lighter Operational Ring holds the score, but the VERDICT ("Sangat Baik")
+       is the dominant element, followed by one calm sentence. The separate
+       status card was removed (prefer removing UI to adding it).
+     • Supporting metrics each explain themselves ("5 kendaraan aktif / Semua
+       armada siap operasional") — never a number alone.
+     • The KPI gauges keep a quality word + a REFINED (thin, long, subtle) bar.
+     • "Sorotan Hari Ini" reads conversationally: a domain, a status word, and a
+       sentence — not a KPI card.
+     • Typography is editorial: natural case (no shouty uppercase eyebrows or
+       section dividers), calmer rhythm, more whitespace.
+   Business terminology stays honest — the wellness "healthy" count is surfaced
+   as "driver kondisi sehat" (condition), never "tersedia/available".
 
-   Page structure (v1.18.8):
-     Hero → Executive Status → Executive KPI → Today's Highlights →
-     Operational Overview → Executive Spotlight → Quick Navigation.
-
-   Every dynamic value is HTML-escaped and emoji-free, matching the sibling
-   executive vocabulary. The language reads like an operational briefing — no
-   developer, AI, technical, engineering, or medical wording.
+   Page structure (v1.18.8.4 — final premium polish): the KPI-gauge "Ringkasan"
+   and the domain cards are merged into ONE meaning-first editorial section, the
+   verdict is the largest textual element, and the ring is a lighter visual
+   anchor:
+     Hero (ring anchor + large verdict + self-explaining metrics) → Sorotan Hari
+     Ini (one editorial insight per domain) → Sorotan Eksekutif (one spotlight)
+     → Navigasi (one-click cards).
 
    API:
      injectExecutiveDashboardStyles()                  — idempotent <style>
      renderExecutiveDashboard(model) → string          — full dashboard HTML
    Quick-navigation cards are `data-exa-nav="<key>"` buttons; the host routes
-   the click to the matching page (one-click navigation).
+   the click to the matching page. Export buttons are `data-exa-export`.
    ============================================================ */
 
 'use strict';
 
 import { injectDispatchAnalyticsStyles } from './dispatch-analytics-dashboard.js';
 import {
-  ExecutiveHeader,
-  ExecutiveToolbar,
-  ExecutiveKPICard,
-  ExecutiveKPIGrid,
   ExecutiveSectionShell,
-  ExecutiveStatusPill,
   ExecutiveEmptyState,
   anIcon,
 } from '../analytics/executive-ui-kit.js';
 
 const STYLE_ID = 'exa-dashboard-styles';
 
-/* The ONLY shapes Executive Analytics adds beyond the shared `.daa-*` system:
-   the `danger` Executive-Status tone (Dispatch only ever needed good/info/warn),
-   the domain-overview grid, and the premium quick-navigation cards. All colours
-   come from the platform tokens (dark-mode safe — no hard-coded #fff). */
+/* Premium, editorial `.exa-*` surface. Platform tokens only (dark-mode safe —
+   no hard-coded #fff). Natural-case typography, few borders, generous
+   whitespace, one focus per block. */
 const CSS = `
-.daa-status--danger{border-left-color:var(--danger);background:var(--danger-bg);}
-.daa-status--danger .daa-status__level{color:var(--danger);}
+.exa{ --exa-gap: clamp(2rem, 4vw, 3.25rem); }
+/* Editorial section headers — natural case, no shouty divider (less UI). */
+.exa .v2-analytics-section{ margin-top: var(--exa-gap); gap: 4px; }
+.exa .v2-analytics-section-header{ text-transform:none; letter-spacing:-.01em; font-size:1.05rem;
+  font-weight:800; color:var(--text); border-bottom:0; padding-bottom:0; }
+/* Editorial: soften the one remaining uppercase eyebrow (the shared spotlight). */
+.exa .daa-spot__eye{ text-transform:none; letter-spacing:.01em; font-weight:700; }
 
-/* Operational Overview — one calm card per domain answering "Apakah semuanya baik?" */
-.exa-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:1rem;}
-.exa-dom{border:1px solid var(--border);border-radius:14px;padding:1rem 1.1rem;background:var(--surface-2);
-  display:flex;flex-direction:column;gap:.5rem;}
-.exa-dom__head{display:flex;align-items:center;justify-content:space-between;gap:.6rem;}
-.exa-dom__name{display:flex;align-items:center;gap:.5rem;font-size:.86rem;font-weight:800;color:var(--text);letter-spacing:-.01em;}
-.exa-dom__ico{display:inline-flex;color:var(--muted);}
-.exa-dom__line{font-size:.76rem;color:var(--muted);line-height:1.4;}
+.exa-dot{display:inline-block;width:.5rem;height:.5rem;border-radius:50%;background:var(--muted);flex:0 0 auto;}
+.exa-dot--ok,.exa-dot--good{background:var(--ok);} .exa-dot--info{background:var(--info);}
+.exa-dot--warn{background:var(--warn);} .exa-dot--danger{background:var(--danger);} .exa-dot--neutral{background:var(--muted);}
 
-/* Quick Navigation — premium one-click cards to every executive page. */
-.exa-nav{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:1rem;}
-.exa-nav__card{display:flex;align-items:center;gap:.85rem;text-align:left;width:100%;
-  border:1px solid var(--border);border-radius:16px;padding:1.05rem 1.15rem;background:var(--surface);
-  cursor:pointer;transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease,background .16s ease;
-  font:inherit;color:inherit;}
-.exa-nav__card:hover{transform:translateY(-2px);border-color:var(--info);box-shadow:0 10px 28px -18px rgba(0,0,0,.45);}
+/* Hairline progress indicator — thin, long, subtle, rounded (Apple restraint). */
+.exa-bar{height:.28rem;border-radius:999px;background:color-mix(in srgb, var(--muted) 16%, transparent);overflow:hidden;}
+.exa-bar__fill{height:100%;border-radius:999px;background:var(--info);transition:width .6s ease;}
+.exa-bar__fill--ok{background:var(--ok);} .exa-bar__fill--info{background:var(--info);}
+.exa-bar__fill--warn{background:var(--warn);} .exa-bar__fill--danger{background:var(--danger);}
+.exa-bar__fill--neutral{background:var(--muted);opacity:.5;}
+
+/* ── HERO — one meaning-first centerpiece (ring + verdict + metrics). ──────── */
+.exa-hero{padding:.25rem 0 0;}
+.exa-hero__top{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;}
+.exa-hero__title{font-size:1.2rem;font-weight:800;letter-spacing:-.02em;color:var(--text);margin:0;}
+.exa-hero__q{font-size:.92rem;color:var(--muted);margin:.35rem 0 0;line-height:1.5;}
+.exa-hero__actions{display:flex;flex-direction:column;align-items:flex-end;gap:.5rem;}
+.exa-hero__btns{display:flex;gap:.5rem;}
+.exa-hero__ts{font-size:.7rem;color:var(--muted);}
+.exa-hero__body{display:flex;align-items:center;gap:clamp(2rem,5vw,4.5rem);flex-wrap:wrap;margin-top:1.75rem;}
+.exa-ring{position:relative;flex:0 0 auto;width:196px;height:196px;display:flex;align-items:center;justify-content:center;}
+.exa-ring__svg{display:block;}
+.exa-ring__c{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+.exa-ring__v{font-size:2rem;font-weight:700;letter-spacing:-.03em;line-height:1;color:var(--text);}
+.exa-ring__u{font-size:.68rem;font-weight:600;color:var(--muted);margin-top:.22rem;letter-spacing:.02em;}
+.exa-hero__meta{display:flex;flex-direction:column;min-width:0;flex:1 1 18rem;}
+.exa-hero__eye{font-size:.82rem;font-weight:600;color:var(--muted);}
+/* The verdict is the LARGEST textual element — meaning leads, the score supports. */
+.exa-hero__verdict{font-size:clamp(2.4rem,4vw,3rem);font-weight:800;letter-spacing:-.03em;line-height:1.02;margin:.1rem 0 .45rem;color:var(--text);}
+.exa-hero__verdict--good{color:var(--ok);} .exa-hero__verdict--warn{color:var(--warn);} .exa-hero__verdict--danger{color:var(--danger);}
+.exa-hero__say{font-size:.92rem;color:var(--muted);line-height:1.5;max-width:34rem;}
+.exa-hero__metrics{display:flex;flex-wrap:wrap;gap:clamp(1.75rem,4vw,3.5rem);margin-top:2rem;}
+.exa-metric{display:flex;flex-direction:column;gap:.2rem;min-width:0;max-width:16rem;}
+.exa-metric__head{font-size:1.05rem;color:var(--text);letter-spacing:-.01em;}
+.exa-metric__head b{font-size:1.5rem;font-weight:800;margin-right:.3rem;}
+.exa-metric__say{font-size:.8rem;color:var(--muted);line-height:1.45;}
+
+/* ── SOROTAN HARI INI — one meaning-first editorial insight per domain: a verdict
+   word, a plain sentence, and a hairline health cue. (Merges the old KPI gauges
+   + domain cards into a single premium section — less dashboard, one language.) */
+.exa-sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(17rem,1fr));gap:1.25rem;}
+.exa-sumcard{display:flex;flex-direction:column;gap:.7rem;padding:1.5rem 1.6rem;border-radius:22px;
+  background:var(--surface-2);transition:transform .18s ease,box-shadow .18s ease;}
+.exa-sumcard:hover{transform:translateY(-2px);box-shadow:0 16px 36px -26px rgba(0,0,0,.5);}
+.exa-sumcard__top{display:flex;align-items:center;gap:.55rem;}
+.exa-sumcard__ico{display:inline-flex;color:var(--muted);}
+.exa-sumcard__name{font-size:.92rem;font-weight:800;color:var(--text);letter-spacing:-.01em;}
+.exa-sumcard__tag{margin-left:auto;display:inline-flex;align-items:center;gap:.4rem;font-size:.78rem;font-weight:700;}
+.exa-sumcard__tag--good{color:var(--ok);} .exa-sumcard__tag--warn{color:var(--warn);}
+.exa-sumcard__tag--danger{color:var(--danger);} .exa-sumcard__tag--neutral{color:var(--muted);}
+.exa-sumcard__msg{font-size:1.05rem;font-weight:500;color:var(--text);line-height:1.5;letter-spacing:-.01em;}
+.exa-sumcard__bar{margin-top:.15rem;}
+
+/* ── NAVIGASI — premium one-click cards to every executive page. ────────────── */
+.exa-nav{display:grid;grid-template-columns:repeat(auto-fit,minmax(15.5rem,1fr));gap:1.1rem;}
+.exa-nav__card{display:flex;align-items:center;gap:.9rem;text-align:left;width:100%;
+  border:1px solid var(--border);border-radius:18px;padding:1.1rem 1.25rem;background:var(--surface);
+  cursor:pointer;transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease;font:inherit;color:inherit;}
+.exa-nav__card:hover{transform:translateY(-2px);border-color:var(--info);box-shadow:0 14px 34px -22px rgba(0,0,0,.5);}
 .exa-nav__card:focus-visible{outline:2px solid var(--info);outline-offset:2px;}
-.exa-nav__ico{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;
-  width:2.4rem;height:2.4rem;border-radius:12px;background:var(--info-bg);color:var(--info);}
-.exa-nav__tx{display:flex;flex-direction:column;gap:.12rem;min-width:0;}
-.exa-nav__t{font-size:.88rem;font-weight:800;color:var(--text);letter-spacing:-.01em;}
-.exa-nav__s{font-size:.72rem;color:var(--muted);line-height:1.35;}
-.exa-nav__go{margin-left:auto;flex:0 0 auto;color:var(--muted);opacity:.7;}
+.exa-nav__ico{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:2.5rem;height:2.5rem;border-radius:13px;background:var(--info-bg);color:var(--info);}
+.exa-nav__tx{display:flex;flex-direction:column;gap:.15rem;min-width:0;}
+.exa-nav__t{font-size:.9rem;font-weight:800;color:var(--text);letter-spacing:-.01em;}
+.exa-nav__s{font-size:.74rem;color:var(--muted);line-height:1.35;}
+.exa-nav__go{margin-left:auto;flex:0 0 auto;color:var(--muted);opacity:.65;}
 `;
 
 /** Inject the supplement (and ensure the shared .daa-* styles exist). Idempotent. */
@@ -123,29 +170,31 @@ function fmtTime(iso) {
   const mi = String(d.getMinutes()).padStart(2, '0');
   return `${dd} ${mo} ${hh}:${mi}`;
 }
-/** Compact Indonesian Rupiah — reads at a glance in a KPI cell. */
-function rpCompact(v) {
-  const n = num(v);
-  if (n === 0) return 'Rp 0';
-  const abs = Math.abs(n);
-  if (abs >= 1e9) return `Rp ${(n / 1e9).toFixed(abs >= 1e10 ? 0 : 1)} M`;
-  if (abs >= 1e6) return `Rp ${(n / 1e6).toFixed(abs >= 1e7 ? 0 : 1)} Jt`;
-  if (abs >= 1e3) return `Rp ${Math.round(n / 1e3)} Rb`;
-  return `Rp ${Math.round(n)}`;
-}
-/** Map an existing 0–100 score to a pill tone. PRESENTATION ONLY — this chooses
- *  a colour for a number the engine already produced; it computes no score. */
-function toneFromScore(n) {
-  const s = num(n);
-  if (s >= 70) return 'ok';
-  if (s >= 55) return 'info';
-  if (s >= 40) return 'warn';
-  return 'danger';
+/** Elegant, static, correctly-filled Operational Ring (SVG). Reuses the ring-
+ *  gauge visual grammar of the Executive UI Kit but renders at its final value
+ *  so it is right without host animation (robust in tests + print). Thinner and
+ *  larger than before for a more premium, minimal proportion. */
+function operationalRing(value01, toneKey) {
+  const size = 196, th = 10;
+  const r = (size - th) / 2;
+  const cx = size / 2;
+  const circ = 2 * Math.PI * r;
+  const v = Math.max(0, Math.min(1, Number(value01) || 0));
+  const filled = (v * circ).toFixed(1);
+  const rest = (circ - v * circ).toFixed(1);
+  const color = toneKey === 'good' ? 'var(--ok)' : toneKey === 'warn' ? 'var(--warn)' : toneKey === 'danger' ? 'var(--danger)' : 'var(--info)';
+  const track = 'color-mix(in srgb, var(--muted) 16%, transparent)';
+  return `<svg class="exa-ring__svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-hidden="true">
+      <circle cx="${cx}" cy="${cx}" r="${r.toFixed(2)}" fill="none" stroke="${track}" stroke-width="${th}"/>
+      <circle cx="${cx}" cy="${cx}" r="${r.toFixed(2)}" fill="none" stroke="${color}" stroke-width="${th}"
+        stroke-linecap="round" stroke-dasharray="${filled} ${rest}" transform="rotate(-90 ${cx} ${cx})"/>
+    </svg>`;
 }
 
 /* ── safe model accessors (every field below is an existing engine output) ─
    Exported (pick / verdict / buildHighlights) so the Executive Report exporter
-   projects the SAME derived values — one source, no duplicated logic. */
+   projects the SAME derived values — one source, no duplicated logic. These
+   three are kept byte-identical across the polish (exports unchanged). */
 
 export function pick(model) {
   const exec = model.exec || null;
@@ -180,90 +229,167 @@ export function verdict(d) {
   return { tone, level: d.fleet.healthLabel || 'Belum Ada Data', value: d.score ? d.score.value : null };
 }
 
-/* ── 1. HERO — title, one concise verdict subtitle, and a band of three headline
-   figures. No icon, no technical explanation; the numbers carry the message. ─ */
+/* ── 1. HERO — the meaning-first centerpiece. An elegant ring holds the score,
+   but the VERDICT leads; one calm sentence follows; three supporting metrics
+   each explain themselves (never a number alone). ─────────────────────────── */
 
 function renderHero(model, d, v) {
-  const subtitle = v.tone === 'good'
-    ? 'Operasional berjalan normal.'
+  const scoreTxt = (d.score && d.score.value != null) ? String(round(d.score.value)) : '—';
+  const ringVal = (d.score && d.score.value != null) ? num(d.score.value) / 100 : 0;
+
+  const say = v.tone === 'good'
+    ? 'Operasional berjalan normal. Tidak ada area yang memerlukan tindakan segera.'
     : v.tone === 'warn'
-      ? 'Beberapa area memerlukan perhatian.'
-      : 'Beberapa area memerlukan perhatian segera.';
+      ? 'Sebagian besar berjalan baik; beberapa area memerlukan perhatian.'
+      : 'Beberapa area operasional memerlukan tindak lanjut segera.';
 
   const total = num(d.wellness.driverCount);
   const healthy = num(d.wellness.healthyDrivers);
-  const activeVeh = num(d.fleet.active);
-  const scoreTxt = (d.score && d.score.value != null) ? String(round(d.score.value)) : '—';
+  const risk = num(d.wellness.highFatigue) + num(d.wellness.burnoutRisk);
+  const active = num(d.fleet.active);
+  const maint = num(d.fleet.maintenance);
+  const taxDue = num(d.fleet.taxDueSoon);
+  const totalVeh = num(d.fleet.totalAssets);
+  const acceptance = d.recKpi.acceptanceRate != null ? d.recKpi.acceptanceRate : d.dispatchKpi.recommendationAcceptance;
 
-  const stat = (val, lbl) => `<div class="daa-hero-stat"><span class="daa-hero-stat__v">${esc(val)}</span><span class="daa-hero-stat__l">${esc(lbl)}</span></div>`;
-  const band = `<div class="daa-hero-stats">
-      ${stat(scoreTxt, 'skor operasional')}
-      ${stat(total ? `${healthy}/${total}` : '—', 'driver siap bertugas')}
-      ${stat(activeVeh || '—', 'kendaraan aktif')}
-    </div>`;
+  // Each supporting metric answers "so what?" — a headline fact + a plain line.
+  // Business-validated: the wellness "healthy" count is drivers in HEALTHY
+  // CONDITION (fit for duty), never "tersedia/available".
+  const metric = (head, say2) => `<div class="exa-metric"><div class="exa-metric__head">${head}</div><div class="exa-metric__say">${esc(say2)}</div></div>`;
+  const metrics = [
+    total > 0
+      ? metric(`<b>${healthy}</b> driver kondisi sehat`, risk > 0 ? `${risk} memerlukan pemulihan` : 'Semua dalam kondisi sehat')
+      : metric('<b>—</b> data driver', 'Belum ada data kesehatan'),
+    totalVeh > 0
+      ? metric(`<b>${active}</b> kendaraan aktif`, (maint > 0 || taxDue > 0)
+        ? [maint > 0 ? `${maint} dalam perawatan` : '', taxDue > 0 ? `${taxDue} pajak jatuh tempo` : ''].filter(Boolean).join(' · ')
+        : 'Semua armada siap operasional')
+      : metric('<b>—</b> data armada', 'Belum ada data kendaraan'),
+    acceptance == null
+      ? metric('<b>—</b> dispatch', 'Belum ada keputusan dispatch')
+      : metric(`<b>${round(acceptance)}%</b> rekomendasi diterima`, acceptance >= 80 ? 'Dispatch berjalan konsisten' : 'Sebagian disesuaikan admin'),
+  ].join('');
 
-  // Export buttons — the printable Executive Report (PDF | Excel). Same
-  // `exec-reset` grammar + `download` glyph the siblings use; the host binds the
-  // data-exa-export contract and runs the registered exporter.
   const exportBtns =
     `<button type="button" class="exec-reset" data-exa-export="pdf" aria-label="Unduh laporan PDF">${anIcon('download', { size: 14 })}PDF</button>` +
     `<button type="button" class="exec-reset" data-exa-export="excel" aria-label="Unduh laporan Excel">${anIcon('download', { size: 14 })}Excel</button>`;
 
-  return ExecutiveHeader({
-    title: 'Executive Analytics',
-    subtitle,
-    meta: `Diperbarui ${fmtTime(model.generatedAt)}`,
-  }) + band + ExecutiveToolbar({ right: exportBtns });
+  return `<section class="exa-hero">
+      <div class="exa-hero__top">
+        <div>
+          <h1 class="exa-hero__title">Executive Analytics</h1>
+          <p class="exa-hero__q">Bagaimana kondisi operasional PBSI hari ini?</p>
+        </div>
+        <div class="exa-hero__actions">
+          <div class="exa-hero__btns">${exportBtns}</div>
+          <div class="exa-hero__ts">Diperbarui ${esc(fmtTime(model.generatedAt))}</div>
+        </div>
+      </div>
+      <div class="exa-hero__body">
+        <div class="exa-ring">
+          ${operationalRing(ringVal, v.tone)}
+          <div class="exa-ring__c"><span class="exa-ring__v">${esc(scoreTxt)}</span><span class="exa-ring__u">dari 100</span></div>
+        </div>
+        <div class="exa-hero__meta">
+          <div class="exa-hero__eye">Skor Operasional</div>
+          <div class="exa-hero__verdict exa-hero__verdict--${esc(v.tone)}">${esc(v.level)}</div>
+          <div class="exa-hero__say">${esc(say)}</div>
+        </div>
+      </div>
+      <div class="exa-hero__metrics">${metrics}</div>
+    </section>`;
 }
 
-/* ── 2. EXECUTIVE STATUS — ONE large verdict card. One level word, one sentence.
-   No checklist. The sentence reuses the executive narrative the engine already
-   wrote (or a calm default when it is absent). ────────────────────────────── */
+/* ── 2. SOROTAN HARI INI — one meaning-first editorial insight per domain. Each
+   reads as a sentence (a verdict word + a plain line) with a hairline health cue;
+   the number never dominates. Merges the old KPI gauges + domain cards into a
+   single premium section — less dashboard, one presentation language. Every fact
+   is an existing engine field. ─────────────────────────────────────────────── */
 
-function renderStatus(d, v) {
-  // One verdict-coherent sentence. The cross-domain verdict is operational, so a
-  // tone-matched line (not the driver/petty-specific engine narrative) always
-  // reads in step with the level word above it.
-  const msg = v.tone === 'good'
-    ? 'Seluruh indikator operasional berada dalam kondisi yang sehat hari ini.'
-    : v.tone === 'warn'
-      ? 'Sebagian besar operasional berjalan baik; beberapa area memerlukan perhatian.'
-      : 'Beberapa area operasional memerlukan tindak lanjut segera.';
-  return `<div class="daa-status daa-status--${v.tone}">
-      <div class="daa-status__eye">Status Operasional Hari Ini</div>
-      <div class="daa-status__level">${esc(v.level)}</div>
-      <div class="daa-status__msg">${esc(msg)}</div>
+/** 0–100 score → the domain's editorial verdict word + tone (presentation). */
+function domainVerdict(score) {
+  if (score == null) return { tone: 'neutral', word: 'Belum ada data' };
+  const s = num(score);
+  if (s >= 70) return { tone: 'good', word: 'Baik' };
+  if (s >= 40) return { tone: 'warn', word: 'Perlu perhatian' };
+  return { tone: 'danger', word: 'Kritis' };
+}
+
+function insightCard({ icon, name, msg, score }) {
+  const { tone, word } = domainVerdict(score);
+  const has = score != null;
+  const bar = has
+    ? `<div class="exa-bar exa-sumcard__bar"><div class="exa-bar__fill exa-bar__fill--${tone === 'good' ? 'ok' : tone}" style="width:${Math.max(3, round(score))}%"></div></div>`
+    : '';
+  return `<div class="exa-sumcard">
+      <div class="exa-sumcard__top">
+        <span class="exa-sumcard__ico">${anIcon(icon, { size: 16 })}</span>
+        <span class="exa-sumcard__name">${esc(name)}</span>
+        <span class="exa-sumcard__tag exa-sumcard__tag--${tone}"><span class="exa-dot exa-dot--${tone}"></span>${esc(word)}</span>
+      </div>
+      <div class="exa-sumcard__msg">${esc(msg)}</div>
+      ${bar}
     </div>`;
 }
 
-/* ── 3. EXECUTIVE KPI — six indicators in operational language. Every value is an
-   existing engine output; every subtitle states the business meaning. ─────── */
+function domainSummaries(d) {
+  const cards = [];
 
-function renderKpis(d) {
-  const total = num(d.wellness.driverCount);
-  const healthy = num(d.wellness.healthyDrivers);
-  const activeVeh = num(d.fleet.active);
-  const totalVeh = num(d.fleet.totalAssets);
-  const maint = num(d.fleet.maintenance);
-  const acceptance = d.recKpi.acceptanceRate != null ? d.recKpi.acceptanceRate : d.dispatchKpi.recommendationAcceptance;
-  const scoreVal = (d.score && d.score.value != null) ? String(round(d.score.value)) : '—';
-  const scoreSub = (d.score && d.score.label) ? d.score.label : 'Kesehatan operasional (0–100)';
-  const pettyVal = d.hasPetty ? rpCompact(d.pettyKpis.consumedSpend || d.pettyKpis.actualBurnYtd) : '—';
+  // Driver — Driver Wellness (fitness for duty). The bar reflects average health.
+  if (num(d.wellness.driverCount) > 0) {
+    const risk = num(d.wellness.highFatigue) + num(d.wellness.burnoutRisk);
+    cards.push({
+      icon: 'user', name: 'Driver', score: d.wellness.averageHealth,
+      msg: risk > 0 ? `${risk} driver membutuhkan pemulihan.` : 'Semua driver dalam kondisi sehat.',
+    });
+  } else {
+    cards.push({ icon: 'user', name: 'Driver', score: null, msg: 'Belum ada data kesehatan driver.' });
+  }
 
-  const cards = [
-    ExecutiveKPICard({ title: 'Driver Siap Bertugas', value: total ? `${healthy} / ${total}` : '—', subtitle: 'Kondisi sehat untuk operasional', icon: anIcon('check', { size: 15 }) }),
-    ExecutiveKPICard({ title: 'Penerimaan Rekomendasi', value: acceptance == null ? '—' : pct(acceptance), subtitle: 'Rekomendasi diterima tanpa perubahan', icon: anIcon('target', { size: 15 }) }),
-    ExecutiveKPICard({ title: 'Kendaraan Aktif', value: totalVeh ? `${activeVeh} / ${totalVeh}` : (activeVeh || '—'), subtitle: 'Armada siap operasional', icon: anIcon('vehicle', { size: 15 }) }),
-    ExecutiveKPICard({ title: 'Kendaraan Dalam Perawatan', value: String(maint), subtitle: 'Sedang servis — belum siap bertugas', icon: anIcon('maintenance', { size: 15 }) }),
-    ExecutiveKPICard({ title: 'Dana Petty Cash', value: pettyVal, subtitle: d.hasPetty ? 'Realisasi periode berjalan' : 'Belum tersedia periode ini', icon: anIcon('pettycash', { size: 15 }) }),
-    ExecutiveKPICard({ title: 'Skor Operasional', value: scoreVal, subtitle: esc(scoreSub), icon: anIcon('pulse', { size: 15 }) }),
-  ];
-  return ExecutiveSectionShell({ title: 'Ringkasan Eksekutif', content: ExecutiveKPIGrid(cards) });
+  // Vehicle — fleet servicing; the bar reflects average fleet health.
+  if (num(d.fleet.totalAssets) > 0) {
+    const maint = num(d.fleet.maintenance);
+    const taxDue = num(d.fleet.taxDueSoon);
+    let msg;
+    if (taxDue > 0 && maint === 0) msg = `${taxDue} pajak kendaraan akan jatuh tempo.`;
+    else if (maint > 0) msg = `${maint} kendaraan dalam perawatan.${taxDue > 0 ? ` ${taxDue} pajak jatuh tempo.` : ''}`;
+    else msg = 'Seluruh armada aktif dan siap.';
+    cards.push({ icon: 'vehicle', name: 'Kendaraan', score: d.fleet.healthAvg, msg });
+  } else {
+    cards.push({ icon: 'vehicle', name: 'Kendaraan', score: null, msg: 'Belum ada data armada.' });
+  }
+
+  // Dispatch — recommendation acceptance (share used as-is); bar reflects the
+  // dispatch quality score when available, else the acceptance rate.
+  const acc = d.recKpi.acceptanceRate != null ? d.recKpi.acceptanceRate : d.dispatchKpi.recommendationAcceptance;
+  const dispatchScore = num(d.dispatchKpi.sampleSize) > 0 ? d.dispatchKpi.avgDispatchScore : (acc != null ? acc : null);
+  cards.push(acc != null
+    ? { icon: 'dispatch', name: 'Dispatch', score: dispatchScore, msg: `${round(acc)}% rekomendasi digunakan.` }
+    : { icon: 'dispatch', name: 'Dispatch', score: null, msg: 'Belum ada keputusan dispatch.' });
+
+  // Petty Cash — health of the active period; bar reflects the petty health score.
+  if (d.pettyHealth && d.pettyHealth.score != null) {
+    const s = num(d.pettyHealth.score);
+    cards.push({ icon: 'pettycash', name: 'Petty Cash', score: s, msg: s >= 70 ? 'Tidak ada perhatian hari ini.' : 'Kesehatan petty cash perlu perhatian.' });
+  } else {
+    cards.push({ icon: 'pettycash', name: 'Petty Cash', score: null, msg: 'Belum terdapat transaksi periode ini.' });
+  }
+
+  return cards;
 }
 
-/* ── 4. TODAY'S HIGHLIGHTS — a simple executive feed (max 5), most urgent first.
-   Each item is read from an existing engine field; the dot colour carries the
-   tone (no emoji). Short, readable, operational. ──────────────────────────── */
+function renderSummaryCards(d) {
+  const cards = domainSummaries(d);
+  return ExecutiveSectionShell({
+    title: 'Sorotan Hari Ini',
+    content: `<div class="exa-sum">${cards.map(insightCard).join('')}</div>`,
+  });
+}
+
+/* ── 4. TODAY'S HIGHLIGHTS (data projection) — kept for the PDF/Excel exporter,
+   which reuses this alongside pick + verdict. The on-screen dashboard shows the
+   conversational domain cards above; this builds the report's highlight feed
+   (max 5, most urgent first) from the same existing engine fields. ─────────── */
 
 const SEV = { danger: 0, warn: 1, info: 2, ok: 3 };
 
@@ -319,105 +445,7 @@ export function buildHighlights(d) {
   return items.slice(0, 5);
 }
 
-function renderHighlights(d) {
-  const items = buildHighlights(d);
-  if (!items.length) {
-    return ExecutiveSectionShell({
-      title: 'Sorotan Hari Ini',
-      content: ExecutiveEmptyState({ message: 'Belum ada sorotan operasional untuk ditampilkan.' }),
-    });
-  }
-  const li = items.map((e) => `<li class="daa-tl__li">
-      <div class="daa-tl__rail"><span class="daa-tl__dot daa-tl__dot--${esc(e.tone)}"></span><span class="daa-tl__line"></span></div>
-      <div class="daa-tl__body">
-        <div class="daa-tl__top"><span class="daa-tl__title">${esc(e.label)}</span></div>
-        ${e.detail ? `<div class="daa-tl__d">${esc(e.detail)}</div>` : ''}
-      </div></li>`).join('');
-  return ExecutiveSectionShell({
-    title: 'Sorotan Hari Ini',
-    description: `${items.length} sorotan operasional`,
-    content: `<ul class="daa-tl">${li}</ul>`,
-  });
-}
-
-/* ── 5. OPERATIONAL OVERVIEW — one very concise card per domain, each answering
-   "Apakah semuanya baik?" via an existing metric mapped to a status pill. No
-   charts. ─────────────────────────────────────────────────────────────────── */
-
-function domCard(icon, name, score, pillText, tone, line) {
-  const t = tone || toneFromScore(score);
-  return `<div class="exa-dom">
-      <div class="exa-dom__head">
-        <div class="exa-dom__name"><span class="exa-dom__ico">${anIcon(icon, { size: 15 })}</span>${esc(name)}</div>
-        ${ExecutiveStatusPill(pillText, t)}
-      </div>
-      <div class="exa-dom__line">${esc(line)}</div>
-    </div>`;
-}
-
-function renderOverview(d) {
-  const cards = [];
-
-  // Driver Operations — from the Operational Health Score's driver sub-score.
-  const driverScore = (d.exec && d.exec.scoreBreakdown && d.exec.scoreBreakdown.driverScore != null)
-    ? d.exec.scoreBreakdown.driverScore : num(d.driverKpis.compRate);
-  cards.push(domCard('user', 'Driver', driverScore,
-    driverScore >= 70 ? 'Baik' : driverScore >= 40 ? 'Perhatian' : 'Kritis', null,
-    `${round(d.driverKpis.driverUtilization)}% driver aktif bertugas`));
-
-  // Dispatch — acceptance/accuracy.
-  if (num(d.dispatchKpi.sampleSize) > 0) {
-    const s = num(d.dispatchKpi.dispatchAccuracy);
-    cards.push(domCard('dispatch', 'Dispatch', s, s >= 70 ? 'Baik' : s >= 40 ? 'Perhatian' : 'Kritis', null,
-      `${round(s)}% keputusan sesuai rekomendasi`));
-  } else {
-    cards.push(domCard('dispatch', 'Dispatch', 0, 'Belum Ada Data', 'neutral', 'Belum ada riwayat keputusan dispatch'));
-  }
-
-  // Recommendation — acceptance rate.
-  if (d.recKpi.acceptanceRate != null) {
-    const s = num(d.recKpi.acceptanceRate);
-    cards.push(domCard('target', 'Rekomendasi', s, s >= 70 ? 'Baik' : s >= 40 ? 'Perhatian' : 'Kritis', null,
-      `${round(s)}% rekomendasi diterima`));
-  } else {
-    cards.push(domCard('target', 'Rekomendasi', 0, 'Belum Ada Data', 'neutral', 'Belum ada rekomendasi untuk dinilai'));
-  }
-
-  // Wellness — average health.
-  if (num(d.wellness.driverCount) > 0) {
-    const s = num(d.wellness.averageHealth);
-    cards.push(domCard('wellness', 'Wellness', s, s >= 70 ? 'Sehat' : s >= 40 ? 'Perhatian' : 'Kritis', null,
-      `${num(d.wellness.healthyDrivers)} dari ${num(d.wellness.driverCount)} driver siap`));
-  } else {
-    cards.push(domCard('wellness', 'Wellness', 0, 'Belum Ada Data', 'neutral', 'Belum ada data kesehatan driver'));
-  }
-
-  // Vehicle — fleet health average.
-  if (num(d.fleet.totalAssets) > 0) {
-    const s = num(d.fleet.healthAvg);
-    cards.push(domCard('vehicle', 'Kendaraan', s, s >= 70 ? 'Baik' : s >= 40 ? 'Perhatian' : 'Kritis', null,
-      `${num(d.fleet.active)} aktif · ${num(d.fleet.maintenance)} servis`));
-  } else {
-    cards.push(domCard('vehicle', 'Kendaraan', 0, 'Belum Ada Data', 'neutral', 'Belum ada data armada'));
-  }
-
-  // Petty Cash — health score (present only when the petty period has data).
-  if (d.pettyHealth && d.pettyHealth.score != null) {
-    const s = num(d.pettyHealth.score);
-    cards.push(domCard('pettycash', 'Petty Cash', s, d.pettyHealth.levelLabel || (s >= 70 ? 'Sehat' : 'Perhatian'), null,
-      `Kesehatan petty cash ${String(d.pettyHealth.levelLabel || '').toLowerCase() || round(s)}`));
-  } else {
-    cards.push(domCard('pettycash', 'Petty Cash', 0, 'Belum Ada Data', 'neutral', 'Belum cukup data petty cash'));
-  }
-
-  return ExecutiveSectionShell({
-    title: 'Tinjauan Operasional',
-    description: 'Kondisi ringkas setiap domain',
-    content: `<div class="exa-grid">${cards.join('')}</div>`,
-  });
-}
-
-/* ── 6. EXECUTIVE SPOTLIGHT — one operational spotlight, rotated deterministically
+/* ── 5. SOROTAN EKSEKUTIF — one operational spotlight, rotated deterministically
    by day across whichever domains have data. Every figure is an existing engine
    output; no new calculation. ─────────────────────────────────────────────── */
 
@@ -482,8 +510,8 @@ function renderSpotlight(d, model) {
   return ExecutiveSectionShell({ title: 'Sorotan Eksekutif', content: spot });
 }
 
-/* ── 7. QUICK NAVIGATION — premium one-click cards to every executive page. The
-   host routes `data-exa-nav` to the matching nav function. ─────────────────── */
+/* ── 6. NAVIGASI — premium one-click cards to every executive page. The host
+   routes `data-exa-nav` to the matching nav function. ─────────────────────── */
 
 const NAV_CARDS = [
   { key: 'driver', icon: 'chart', title: 'Analytics Driver', sub: 'Kinerja operasional & utilisasi driver' },
@@ -502,7 +530,7 @@ function renderQuickNav() {
       <span class="exa-nav__go" aria-hidden="true">${arrow}</span>
     </button>`).join('');
   return ExecutiveSectionShell({
-    title: 'Navigasi Cepat',
+    title: 'Navigasi',
     description: 'Buka laporan rinci dengan satu klik',
     content: `<div class="exa-nav">${cards}</div>`,
   });
@@ -536,24 +564,20 @@ export function renderExecutiveDashboard(model) {
   if (!model) return `<div class="${ROOT}">${renderGlobalEmpty()}</div>`;
 
   const d = pick(model);
+  const v = verdict(d);
   const hasAny = !!d.exec
     || num(d.wellness.driverCount) > 0
     || num(d.fleet.totalAssets) > 0
     || num(d.dispatchKpi.sampleSize) > 0;
-  if (!hasAny) return `<div class="${ROOT}">${renderHero(model, d, verdict(d))}${renderGlobalEmpty()}${renderQuickNav()}</div>`;
+  if (!hasAny) return `<div class="${ROOT}">${renderHero(model, d, v)}${renderGlobalEmpty()}${renderQuickNav()}</div>`;
 
-  const v = verdict(d);
-  // Executive experience hierarchy (v1.18.8) — the page answers "bagaimana
-  // kondisi operasional hari ini?" in <5s, then offers supporting detail. Each
-  // block carries a different visual weight: Hero (stat band) → Status (one
-  // verdict) → KPI (six-number story) → Sorotan (feed) → Tinjauan (per-domain)
-  // → Sorotan Eksekutif (one spotlight) → Navigasi Cepat.
+  // Executive briefing hierarchy (v1.18.8.4) — meaning leads, numbers support;
+  // less dashboard, more whitespace. Hero (ring anchor + large verdict + self-
+  // explaining metrics) → Sorotan Hari Ini (one editorial insight per domain) →
+  // Sorotan Eksekutif (spotlight) → Navigasi.
   return `<div class="${ROOT}">
     ${renderHero(model, d, v)}
-    ${renderStatus(d, v)}
-    ${renderKpis(d)}
-    ${renderHighlights(d)}
-    ${renderOverview(d)}
+    ${renderSummaryCards(d)}
     ${renderSpotlight(d, model)}
     ${renderQuickNav()}
   </div>`;

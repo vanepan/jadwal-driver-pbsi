@@ -104,9 +104,9 @@ const result = await page.evaluate(async () => {
   const qa = (s) => [...root.querySelectorAll(s)];
   const sections = qa('.v2-analytics-section');
   const sectionTitles = sections.map((e) => { const h = e.querySelector('.v2-analytics-section-header'); return h ? h.textContent.trim() : ''; });
-  const kpiIn = (title) => {
+  const cardsIn = (title, sel) => {
     const s = sections.find((e) => { const h = e.querySelector('.v2-analytics-section-header'); return h && h.textContent.trim() === title; });
-    return s ? s.querySelectorAll('.v2-analytics-kpi-card').length : 0;
+    return s ? s.querySelectorAll(sel).length : 0;
   };
 
   const exaStyle = document.getElementById('exa-dashboard-styles');
@@ -117,15 +117,27 @@ const result = await page.evaluate(async () => {
   return {
     execScore: exec && exec.score ? exec.score.value : null,
     hasRoot: !!root,
-    header: (q('.exec-head__title') || {}).textContent || '',
-    heroStats: qa('.daa-hero-stat').length,
-    statusCard: qa('.daa-status').length,
-    statusLevel: (q('.daa-status__level') || {}).textContent || '',
-    statusMsg: (q('.daa-status__msg') || {}).textContent || '',
-    kpiCount: kpiIn('Ringkasan Eksekutif'),
-    highlightItems: qa('.daa-tl__li').length,
-    overviewCards: qa('.exa-dom').length,
-    overviewPills: qa('.exa-dom .exec-pill').length,
+    header: (q('.exa-hero__title') || {}).textContent || '',
+    // Meaning-first hero — the verdict leads; an elegant ring holds the score.
+    ring: qa('.exa-ring__svg').length,
+    ringScore: (q('.exa-ring__v') || {}).textContent || '',
+    heroVerdict: (q('.exa-hero__verdict') || {}).textContent || '',
+    heroSay: (q('.exa-hero__say') || {}).textContent || '',
+    heroMetrics: qa('.exa-hero__metrics .exa-metric').length,
+    heroMetricSays: qa('.exa-hero__metrics .exa-metric__say').filter((e) => e.textContent.trim().length > 0).length,
+    // Hero + Status are unified — there is no separate status card anymore.
+    legacyStatusCard: qa('.exa-status, .daa-status').length,
+    // The KPI-gauge section was merged away — no `.exa-kpi` gauges remain.
+    legacyGauges: qa('.exa-kpi').length,
+    // ONE meaning-first editorial insight per domain (sentence + verdict tag +
+    // a hairline health cue); the number never dominates.
+    summaryCards: cardsIn('Sorotan Hari Ini', '.exa-sumcard'),
+    summaryMsgs: qa('.exa-sumcard .exa-sumcard__msg').filter((e) => e.textContent.trim().length > 0).length,
+    summaryTags: qa('.exa-sumcard .exa-sumcard__tag').length,
+    summaryHairlines: qa('.exa-sumcard .exa-bar__fill').length,
+    // Business terminology: never claim "tersedia/available" for the wellness
+    // healthy count (which represents condition, not availability).
+    noAvailabilityClaim: !/driver\s+tersedia/i.test(root.textContent || ''),
     spotlights: qa('.daa-spot').length,
     navCards: qa('.exa-nav__card').length,
     navKeys: qa('.exa-nav__card').map((b) => b.getAttribute('data-exa-nav')),
@@ -142,31 +154,44 @@ const result = await page.evaluate(async () => {
 console.log('\n[model — reused engine outputs]');
 check('Operational Health Score computed (0–100 or null)', result.execScore === null || (result.execScore >= 0 && result.execScore <= 100));
 
-console.log('\n[structure — Executive UI]');
+console.log('\n[meaning-first hero]');
 check('dashboard root .exa.daa renders', result.hasRoot);
 check('Executive header title is "Executive Analytics"', result.header.trim() === 'Executive Analytics');
-check('hero stat band renders 3 headline figures', result.heroStats === 3);
-check('ONE Executive Status verdict card (not a checklist)', result.statusCard === 1);
-check('Status card states a verdict level', result.statusLevel.trim().length > 0);
-check('Status card states one supporting sentence', result.statusMsg.trim().length > 0);
-check('6 Executive KPI cards in Ringkasan Eksekutif', result.kpiCount === 6);
-check("Today's Highlights feed renders (≥1, ≤5)", result.highlightItems >= 1 && result.highlightItems <= 5);
-check('Operational Overview renders 6 domain cards', result.overviewCards === 6);
-check('every domain card carries a status pill', result.overviewPills === 6);
+check('elegant Operational Ring renders (visual centerpiece)', result.ring === 1);
+check('ring holds the Operational Score', /\d|—/.test(result.ringScore));
+check('the VERDICT leads (large, meaning first)', result.heroVerdict.trim().length > 0);
+check('one calm sentence follows the verdict', result.heroSay.trim().length > 0);
+check('three supporting metrics render', result.heroMetrics === 3);
+check('every supporting metric explains itself (a "so what" line)', result.heroMetricSays === 3);
+
+console.log('\n[less UI — merged sections]');
+check('no separate status card (merged into the hero centerpiece)', result.legacyStatusCard === 0);
+check('no KPI-gauge grid (merged into the editorial insights)', result.legacyGauges === 0);
+
+console.log('\n[visual storytelling — one editorial insight per domain]');
+check('Sorotan Hari Ini = 4 editorial insight cards', result.summaryCards === 4);
+check('every insight reads like a sentence', result.summaryMsgs === 4);
+check('every insight carries a verdict tag (meaning first)', result.summaryTags === 4);
+check('insights carry a hairline health cue (thin indicator)', result.summaryHairlines >= 1);
 check('ONE Executive Spotlight renders', result.spotlights === 1);
+
+console.log('\n[navigation + export]');
 check('Executive Report export buttons (PDF + Excel, data-exa-export)',
   result.exportBtns.includes('pdf') && result.exportBtns.includes('excel'));
-check('Quick Navigation renders 6 premium cards', result.navCards === 6);
-check('Quick Nav cards route to every page (data-exa-nav)',
+check('Navigasi renders 6 premium cards', result.navCards === 6);
+check('Navigasi cards route to every page (data-exa-nav)',
   ['driver', 'dispatch', 'recommendation', 'wellness', 'vehicle', 'petty'].every((k) => result.navKeys.includes(k)));
-check('Executive section shells rendered (5)', result.sections === 5);
+check('three Executive section shells (fewer, calmer)', result.sections === 3);
 
 console.log('\n[sections present]');
-const want = ['Ringkasan Eksekutif', 'Sorotan Hari Ini', 'Tinjauan Operasional', 'Sorotan Eksekutif', 'Navigasi Cepat'];
+const want = ['Sorotan Hari Ini', 'Sorotan Eksekutif', 'Navigasi'];
 for (const w of want) check(`§ ${w}`, result.titles.some((t) => t === w));
 // Guard against regressing into a developer / AI / technical dashboard.
 const banned = ['Confidence', 'Override', 'Calibration', 'Explainability', 'Burnout', 'Fatigue', 'Engine'];
 for (const b of banned) check(`no technical/AI/medical term "${b}" in titles`, !result.titles.some((t) => t.includes(b)));
+
+console.log('\n[business terminology validation]');
+check('does not misrepresent the wellness count as "driver tersedia/available"', result.noAvailabilityClaim);
 
 console.log('\n[design / regression]');
 check('reuses the shared design system (.daa-* styles present)', result.reusesBaseStyles);
