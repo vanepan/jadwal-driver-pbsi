@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.18.8.4';
-export const RELEASE_NAME = 'Executive Analytics Final Premium Polish';
+export const APP_VERSION = '1.18.8.5';
+export const RELEASE_NAME = 'Reimbursement Actual-Time Fix';
 
 /**
  * Web Push VAPID PUBLIC key (v1.11.3). Safe to ship — it is an
@@ -17,6 +17,16 @@ export const RELEASE_NAME = 'Executive Analytics Final Premium Polish';
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.18.8.5',
+    date: '2026-07-02',
+    summary: 'Reimbursement Actual-Time Fix — a PRESENTATION-ONLY bug fix so Form Reimbursement, an operational document, shows what ACTUALLY happened instead of the plan. Assignment scheduling already renders actual operational times (startedAt/completedAt) on the timeline, but the reimbursement view model (js/reimbursement.js buildViewModel) still read the PLANNED window (startTime/endTime) into "Jam Berangkat"/"Jam Kembali" — so a trip run 09:08–10:50 printed the planned 09:30–11:30. Fixed by resolving departure/return with the SAME fallback order the timeline uses: actual (startedAt/completedAt → local HH:MM) ↓ planned (fullDay sentinel or startTime/endTime). No scheduling, assignment-engine, Firebase, or analytics change; the template (js/docs/templates/reimbursement.js) is untouched — it already consumes vm.startT/vm.endT, so preview, PDF, print, and download all resolve from this one source. FULLY BACKWARD COMPATIBLE: assignments without actual timestamps print exactly as before via the planned fallback. The "(Penuh Hari)" annotation is suppressed once a concrete actual time is shown. APP_VERSION 1.18.8.4 → 1.18.8.5 re-stamps SW_VERSION → CACHE_NAME, version.json, and the index.html cache-busts via scripts/sync-version.mjs.',
+    highlights: [
+      'js/reimbursement.js: new isoToClock() helper (ISO → local HH:MM, mirrors timeline.js/computeWorkTime reading of startedAt/completedAt); buildViewModel now sets startT = actualStart ?? plannedStart ?? "—" and endT = actualEnd ?? plannedEnd ?? "—", where plannedStart/End preserve the fullDay 00:00/23:59 sentinel. The vm.fullDay annotation flag is now false whenever an actual time is displayed.',
+      'Audit: buildViewModel was the ONLY reimbursement path reading planned startTime/endTime for display; the template consumes vm.startT/vm.endT, so preview + PDF + print + download share the single resolved source. Overtime status for completed trips already followed actuals (computeWorkTime.finalStatus); the schedule-based calculateOvertimeStatus remains the fallback for not-yet-completed trips (no actuals to use).',
+      'No engine, Firebase, analytics, or scheduling logic changed; sched fields (date/startTime/endTime) are never mutated — read only for fallback. Version bump + sync-version.mjs re-stamps the service worker / version.json / index.html cache-busts so installed PWAs purge the stale bundle.',
+    ],
+  },
   {
     version: '1.18.8.4',
     date: '2026-07-02',

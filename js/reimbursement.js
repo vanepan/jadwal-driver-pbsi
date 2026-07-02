@@ -71,6 +71,19 @@ function getRequesterInfo(a) {
   return { label: 'PIC / Requester', value: '—' };
 }
 
+/**
+ * Format an operational-timestamp ISO string as local HH:MM, or null when it
+ * is absent/unparseable. Actuals are stored as `startedAt`/`completedAt`
+ * (ISO) — the same ground-truth fields the timeline renders (timeline.js) and
+ * computeWorkTime consumes; this mirrors their local-time reading.
+ */
+function isoToClock(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 /** License plate for a vehicle, or '-' when not yet configured. */
 function getVehiclePlate(vehicleName) {
   const v = getVehicles().find(veh => veh.name === vehicleName);
@@ -112,6 +125,24 @@ function buildViewModel(a, docNumber) {
   const fmtOdo = v => (v != null ? `${Number(v).toLocaleString('id-ID')} km` : '—');
   const requester = getRequesterInfo(a);
 
+  // Operational times (v1.18.8.5): a reimbursement is an operational document,
+  // so departure/return must show what ACTUALLY happened, not the plan.
+  // Resolution mirrors the timeline (timeline.js): prefer the actual
+  // ground-truth timestamps (startedAt/completedAt → local HH:MM), fall back to
+  // the planned window (fullDay sentinel or startTime/endTime) when a trip has
+  // no actuals yet. Fully backward compatible — records without actuals print
+  // exactly as before.
+  const actualStart = isoToClock(a.startedAt);
+  const actualEnd   = isoToClock(a.completedAt);
+  const plannedStart = a.fullDay ? '00:00' : (a.startTime || null);
+  const plannedEnd   = a.fullDay ? '23:59' : (a.endTime   || null);
+  const startT = actualStart || plannedStart || '—';
+  const endT   = actualEnd   || plannedEnd   || '—';
+  // The "(Penuh Hari)" annotation describes a PLANNED full-day booking; once a
+  // concrete actual window is shown it no longer applies, so suppress it as
+  // soon as either side resolves to an actual time.
+  const fullDayLabel = !!a.fullDay && !actualStart && !actualEnd;
+
   return {
     docNumber,
     assignmentRef: formatAssignmentRef(a),
@@ -127,9 +158,9 @@ function buildViewModel(a, docNumber) {
     vehicle:        vehicleLabel(a.vehicle),   // v1.15.6: '' → "Tanpa Kendaraan"
     vehiclePlate:   getVehiclePlate(a.vehicle),
 
-    startT:  a.fullDay ? '00:00' : (a.startTime || '—'),
-    endT:    a.fullDay ? '23:59' : (a.endTime   || '—'),
-    fullDay: !!a.fullDay,
+    startT,
+    endT,
+    fullDay: fullDayLabel,
     pax:     a.pax ?? 0,
 
     startOdo: fmtOdo(a.startOdometer),
