@@ -188,6 +188,14 @@ import { closeAnalyticsExecutive, refreshAnalyticsExecutive } from './analytics/
 // the Dispatch / Recommendation / Wellness / Fleet models already built below.
 import { renderExecutiveDashboard, injectExecutiveDashboardStyles } from './components/executive-dashboard.js';
 import { computeExecutiveAnalytics } from './analytics/executive-analytics.js';
+// v1.19.4 Driver Prediction — the FIRST consumer of the Prediction Service. A
+// PURE presentation dashboard that answers "what is likely to happen to driver
+// operational readiness over the next several days?". It consumes ONLY the
+// Prediction Service (via the dashboard component) — never the prediction
+// engine / validator / provider — so the UI stays decoupled from every
+// prediction implementation. Adds NO business logic; the service is called
+// exactly once per refresh from inside the component.
+import { renderDriverPredictionDashboard, injectDriverPredictionStyles } from './components/driver-prediction-dashboard.js';
 import { computePettyCashAnalytics } from './analytics/petty-cash-analytics.js';
 import { bidangRoster } from './petty-cash/petty-cash-service.js';
 import {
@@ -286,6 +294,7 @@ const ADMIN_SECTION_DEFS = [
   { key: 'dispatchanalytics', label: 'Dispatch Analytics', subtitle: 'Dashboard eksekutif Dispatch Intelligence — akurasi, override, confidence, intelijen driver/kendaraan, dan tren.' },
   { key: 'recommendationaccuracy', label: 'Recommendation Accuracy', subtitle: 'Seberapa akurat rekomendasi dispatch — akurasi, kalibrasi confidence, severity override, dan tren pembelajaran.' },
   { key: 'wellness', label: 'Driver Wellness', subtitle: 'Keberlanjutan operasional — skor kesehatan, kelelahan, burnout, dan capacity health per driver.' },
+  { key: 'prediction', label: 'Driver Prediction', subtitle: 'Proyeksi kesiapan operasional driver beberapa hari ke depan — status, risiko mendatang, tindakan, dan linimasa prediksi.' },
   { key: 'executive', label: 'Executive Analytics', subtitle: 'Kondisi operasional hari ini — status, indikator utama, sorotan, dan navigasi ke setiap laporan.' },
 ];
 
@@ -296,7 +305,7 @@ const ADMIN_SECTION_DEFS = [
 const ADMIN_MODULE_SECTIONS = {
   driverops:   ['drivers', 'vehicles', 'audit'],
   konfigurasi: ['users', 'config'],
-  analytics:   ['analytics', 'dispatchanalytics', 'recommendationaccuracy', 'wellness', 'executive'],
+  analytics:   ['analytics', 'dispatchanalytics', 'recommendationaccuracy', 'wellness', 'prediction', 'executive'],
 };
 
 /**
@@ -1114,6 +1123,15 @@ function navDriverWellness() {
   setCrumb('ANALYTICS', 'Driver Wellness');
   setWorkspace('administration');
 }
+// v1.19.4 — Driver Prediction sibling section (Analytics module). Same pattern
+// as its siblings; the render layer consumes ONLY the Prediction Service.
+function navDriverPrediction() {
+  activeAdminModule = 'analytics';
+  activeAdminSection = 'prediction';
+  setV2PanelNavActive('v2NavDriverPrediction');
+  setCrumb('ANALYTICS', 'Driver Prediction');
+  setWorkspace('administration');
+}
 
 /* ── MODUL: Konfigurasi ── */
 function navManajemenUser() {
@@ -1459,6 +1477,10 @@ function initV2Panel() {
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"/></svg>
         Driver Wellness
       </button>
+      <button class="v2-panel-nav-item" id="v2NavDriverPrediction" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M3.293 9.707a1 1 0 010-1.414l4-4a1 1 0 011.414 0l3.293 3.293 4.293-4.293a1 1 0 111.414 1.414l-5 5a1 1 0 01-1.414 0L8 6.414l-3.293 3.293a1 1 0 01-1.414 0zM3 13a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3z" clip-rule="evenodd"/></svg>
+        Driver Prediction
+      </button>
       <button class="v2-panel-nav-item" id="v2NavAnalyticsPetty" type="button">
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
         Analytics Petty Cash
@@ -1598,6 +1620,7 @@ function initV2Panel() {
   document.getElementById('v2NavDispatchAnalytics')?.addEventListener('click', navDispatchAnalytics);
   document.getElementById('v2NavRecommendationAccuracy')?.addEventListener('click', navRecommendationAccuracy);
   document.getElementById('v2NavDriverWellness')?.addEventListener('click', navDriverWellness);
+  document.getElementById('v2NavDriverPrediction')?.addEventListener('click', navDriverPrediction);
   document.getElementById('v2NavAnalyticsPetty')?.addEventListener('click', navAnalyticsPettyCash);
   document.getElementById('v2NavAnalyticsGabungan')?.addEventListener('click', navAnalyticsExecutive);
 
@@ -2783,6 +2806,9 @@ function initV2AdministrationWorkspace() {
         <div id="v2AdminSectionWellness" style="display:none;">
           <div id="v2DriverWellnessDashboard"></div>
         </div>
+        <div id="v2AdminSectionPrediction" style="display:none;">
+          <div id="v2DriverPredictionDashboard"></div>
+        </div>
         <div id="v2AdminSectionExecutive" style="display:none;">
           <div id="v2ExecutiveDashboard"></div>
         </div>
@@ -3367,6 +3393,11 @@ function renderV2AdminWorkspace() {
   if (wellnessSection) {
     wellnessSection.style.display = (activeAdminSection === 'wellness') ? '' : 'none';
   }
+  // v1.19.4: the Driver Prediction section follows the same central-hide pattern.
+  const predictionSection = document.getElementById('v2AdminSectionPrediction');
+  if (predictionSection) {
+    predictionSection.style.display = (activeAdminSection === 'prediction') ? '' : 'none';
+  }
   // v1.18.8: the Executive Analytics section follows the same central-hide pattern.
   const executiveSection = document.getElementById('v2AdminSectionExecutive');
   if (executiveSection) {
@@ -3668,6 +3699,18 @@ function renderV2AdminWorkspace() {
     if (_auditSec4) _auditSec4.style.display = 'none';
     if (overviewRow) overviewRow.innerHTML = '';
     renderDriverWellnessSection();
+
+  } else if (activeAdminSection === 'prediction') {
+    if (usersSection)       usersSection.style.display       = 'none';
+    if (driversSection)     driversSection.style.display     = 'none';
+    if (vehiclesSection)    vehiclesSection.style.display    = 'none';
+    if (configSection)      configSection.style.display      = 'none';
+    if (analyticsSection)   analyticsSection.style.display   = 'none';
+    if (placeholderSection) placeholderSection.style.display = 'none';
+    const _auditSecDP = document.getElementById('v2AdminSectionAudit');
+    if (_auditSecDP) _auditSecDP.style.display = 'none';
+    if (overviewRow) overviewRow.innerHTML = '';
+    renderDriverPredictionSection();
 
   } else if (activeAdminSection === 'executive') {
     if (usersSection)       usersSection.style.display       = 'none';
@@ -6099,6 +6142,48 @@ function renderDriverWellnessSection() {
   } catch (err) {
     console.warn('[DriverWellness] render failed', err);
     host.innerHTML = '<div class="dwi daa exec-ui v2-analytics-claude"><div class="daa-status daa-status--warn"><div class="daa-status__eye">Driver Wellness</div><div class="daa-status__level">Gagal memuat</div><div class="daa-status__msg">Terjadi kesalahan saat menyusun data. Coba muat ulang halaman.</div></div></div>';
+  }
+}
+
+/* ── Driver Prediction (v1.19.4) ───────────────────────────────────────────
+   The first consumer of the Prediction Service. app.js only AGGREGATES the
+   existing platform models into the service INPUT; it imports NO prediction
+   engine / validator / provider. The dashboard component calls the Prediction
+   Service exactly once per refresh and renders the certified result. No new
+   business logic, no new prediction — presentation only. */
+
+/** Aggregate the existing engine outputs into the Prediction Service input. Each
+ *  domain model is built by the SAME function its sibling page uses (no new math),
+ *  and every source is best-effort so a missing module degrades gracefully. Driver
+ *  signals come primarily from the Driver Wellness model. No `now` is passed → the
+ *  service uses the wall clock for generatedAt (a live view), while the cache key
+ *  stays stable across re-renders until the underlying data changes. */
+function buildDriverPredictionInput() {
+  const safe = (label, fn) => { try { return fn(); } catch (err) { console.warn(`[DriverPrediction] ${label} unavailable`, err); return null; } };
+  return {
+    drivers: getDrivers(),
+    vehicles: getVehicles(),
+    wellness: safe('wellness', () => buildDriverWellnessModel()),
+    dispatch: safe('dispatch', () => buildDispatchAnalyticsModel()),
+    recommendation: safe('recommendation', () => buildRecommendationAccuracyModel()),
+    finance: buildPettyAnalyticsModelIfReady(),
+  };
+}
+
+/** Render (or re-render) the Driver Prediction dashboard into its container. */
+function renderDriverPredictionSection() {
+  const host = document.getElementById('v2DriverPredictionDashboard');
+  if (!host) return;
+  injectDriverPredictionStyles();
+  try {
+    const input = buildDriverPredictionInput();
+    // The dashboard calls the Prediction Service exactly once and renders the
+    // certified result; we publish the input for parity/diagnostics only.
+    window._lastDriverPredictionInput = input;
+    host.innerHTML = renderDriverPredictionDashboard(input);
+  } catch (err) {
+    console.warn('[DriverPrediction] render failed', err);
+    host.innerHTML = '<div class="dpr daa exec-ui v2-analytics-claude"><div class="daa-status daa-status--warn"><div class="daa-status__eye">Driver Prediction</div><div class="daa-status__level">Gagal memuat</div><div class="daa-status__msg">Terjadi kesalahan saat menyusun data. Coba muat ulang halaman.</div></div></div>';
   }
 }
 
@@ -9478,6 +9563,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (activeAdminSection === 'dispatchanalytics') renderDispatchAnalyticsSection();
     if (activeAdminSection === 'recommendationaccuracy') renderRecommendationAccuracySection();
     if (activeAdminSection === 'wellness') renderDriverWellnessSection();
+    if (activeAdminSection === 'prediction') renderDriverPredictionSection();
     if (activeAdminSection === 'executive') renderExecutiveDashboardSection();
     checkAndSendH1Reminders(assignments, requests, getUserByUsername, getUsers);
     checkAndSendHoursReminders(assignments, requests, getUserByUsername, getUsers);
@@ -9492,6 +9578,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (activeAdminSection === 'dispatchanalytics') renderDispatchAnalyticsSection();
     if (activeAdminSection === 'recommendationaccuracy') renderRecommendationAccuracySection();
     if (activeAdminSection === 'wellness') renderDriverWellnessSection();
+    if (activeAdminSection === 'prediction') renderDriverPredictionSection();
     if (activeAdminSection === 'executive') renderExecutiveDashboardSection();
     // Refresh comment modal if open for one of the updated requests
     refreshCommentThreadIfOpen(requests);
