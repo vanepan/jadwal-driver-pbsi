@@ -100,6 +100,7 @@ import { computeFleetAssetModel, findVehicleAsset, searchFilterVehicles } from '
 import { injectFleetDashboardStyles, renderFleetDashboard } from './components/fleet-dashboard.js';
 import { renderIcon, vehicleTypeIconName } from './components/icon-system.js';
 import { openVehicleDetailDrawer } from './components/vehicle-detail-drawer.js';
+import { renderVehiclePredictionDashboard, injectVehiclePredictionStyles, getCertifiedVehiclePredictions } from './components/vehicle-prediction-dashboard.js';
 import { FUEL_TYPES, TRANSMISSION_TYPES, VEHICLE_TYPE_REGISTRY, VEHICLE_STATUS_REGISTRY } from './config/vehicle-asset-config.js';
 import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver } from './auth.js';
 import * as DocumentEngine from './docs/doc-engine.js';
@@ -153,7 +154,7 @@ import {
   renderInsightDividerList,
   renderSeg,
 } from './analytics/analytics-shell.js';
-import { renderExecutiveStatusPill as ExecutiveStatusPill } from './analytics/executive-table.js';
+import { renderExecutiveStatusPill as ExecutiveStatusPill, bindExecutiveTable } from './analytics/executive-table.js';
 import { derivePreviousPeriod } from './analytics/analytics-period.js';
 import {
   initRequestHandlers,
@@ -267,6 +268,12 @@ let vehicleTypeFilter = 'all';
 let vehicleFuelFilter = 'all';
 let vehicleTransmissionFilter = 'all';
 let _fleetAssetModel = null;
+// v1.19.5 — Vehicle Management is a multi-view module. 'inventory' (the vehicle
+// list) or 'prediction' (the Vehicle Prediction dashboard, a read-only forecast
+// view that consumes ONLY the Prediction Service). A sub-view of the same
+// module — NOT a new sidebar section.
+let vehicleView = 'inventory';
+let _vehiclePredictionById = {}; // id → certified per-vehicle projection (for the drawer)
 // V1.5.3: Archive & deletion state
 let userStatusFilter = 'all';    // 'all' | 'active' | 'inactive' | 'archived'
 let pendingDeleteEntity = null;  // { type, id, name } — set before opening delete confirm modal
@@ -1022,6 +1029,7 @@ function navManajemenDriver() {
 function navManajemenKendaraan() {
   activeAdminModule = 'driverops';
   activeAdminSection = 'vehicles';
+  vehicleView = 'inventory'; // land on the inventory view; re-renders keep the active view
   setV2PanelNavActive('v2NavMasterVehicles');
   setCrumb('DRIVER OPS', 'Manajemen Kendaraan');
   setWorkspace('administration');
@@ -2726,7 +2734,12 @@ function initV2AdministrationWorkspace() {
           <div id="v2AdminDriverStats"></div>
           <div id="v2AdminDriverList" class="v2-admin-user-list"></div>
         </div>
-        <div id="v2AdminSectionVehicles" class="exec-ui" style="display:none;">
+        <div id="v2AdminSectionVehicles" class="exec-ui v2-analytics-claude" style="display:none;">
+          <div class="v2-analytics-tabs" id="v2VehicleViewTabs" role="tablist" aria-label="Tampilan Manajemen Kendaraan">
+            <button type="button" class="v2-analytics-tab is-active" data-vehicle-view="inventory" role="tab" aria-selected="true">${anIcon('vehicle-car', { size: 14 })}<span>Inventaris</span></button>
+            <button type="button" class="v2-analytics-tab" data-vehicle-view="prediction" role="tab" aria-selected="false">${anIcon('pulse', { size: 14 })}<span>Prediksi</span></button>
+          </div>
+          <div id="v2VehicleInventoryView">
           <div id="v2FleetDashboard"></div>
           <div class="exec-head">
             <div class="exec-head__l">
@@ -2775,6 +2788,10 @@ function initV2AdministrationWorkspace() {
             </div>
           </div>
           <div id="v2AdminVehicleList" class="vm-grid"></div>
+          </div>
+          <div id="v2VehiclePredictionView" style="display:none;">
+            <div id="v2VehiclePredictionDashboard"></div>
+          </div>
         </div>
         <div id="v2AdminSectionAudit" style="display:none;">
           <div class="v2-admin-toolbar">
@@ -3183,6 +3200,14 @@ function initV2AdministrationWorkspace() {
     if (e.key === 'Escape') _closeAnalyticsExportMenu();
   });
 
+  // v1.19.5 — Vehicle Management view selector (Inventaris / Prediksi). A sub-view
+  // switch inside the module, not a sidebar navigation. Delegated so it survives
+  // the section's single injection.
+  document.getElementById('v2VehicleViewTabs')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-vehicle-view]');
+    if (btn) setVehicleView(btn.dataset.vehicleView);
+  });
+
   // Vehicle Inventory toolbar — Reset + Export reuse the Analytics components
   // (v2-analytics-reset-btn / v2-analytics-export). Export delegates to the
   // shared runAnalyticsExport() pipeline (the existing "Laporan Armada" report),
@@ -3520,44 +3545,10 @@ function renderV2AdminWorkspace() {
     if (placeholderSection) placeholderSection.style.display = 'none';
     const _auditSec = document.getElementById('v2AdminSectionAudit');
     if (_auditSec) _auditSec.style.display = 'none';
-    if (overviewRow) {
-      const allVehicles   = getVehicles();
-      const nonArchived   = allVehicles.filter(v => v.archived !== true);
-      const activeCount   = nonArchived.filter(v => v.active !== false).length;
-      const inactiveCount = nonArchived.length - activeCount;
-      const archivedCount = allVehicles.length - nonArchived.length;
-      overviewRow.innerHTML = `
-        <div class="v2-admin-overview-cards">
-          <div class="v2-admin-overview-card">
-            <span class="v2-admin-overview-value">${nonArchived.length}</span>
-            <span class="v2-admin-overview-label">Total Kendaraan</span>
-          </div>
-          <div class="v2-admin-overview-card">
-            <span class="v2-admin-overview-value">${activeCount}</span>
-            <span class="v2-admin-overview-label">Kendaraan Aktif</span>
-          </div>
-          <div class="v2-admin-overview-card">
-            <span class="v2-admin-overview-value">${inactiveCount}</span>
-            <span class="v2-admin-overview-label">Kendaraan Nonaktif</span>
-          </div>
-          ${archivedCount > 0 ? `<div class="v2-admin-overview-card v2-admin-overview-card--archived">
-            <span class="v2-admin-overview-value">${archivedCount}</span>
-            <span class="v2-admin-overview-label">Diarsipkan</span>
-          </div>` : ''}
-        </div>
-      `;
-    }
-    const searchEl = document.getElementById('v2AdminVehicleSearch');
-    if (searchEl) searchEl.value = vehicleSearch;
-    const filterEl = document.getElementById('v2AdminVehicleStatusFilter');
-    if (filterEl) filterEl.value = vehicleStatusFilter;
-    const typeFilterEl = document.getElementById('v2AdminVehicleTypeFilter');
-    if (typeFilterEl) typeFilterEl.value = vehicleTypeFilter;
-    const fuelFilterEl = document.getElementById('v2AdminVehicleFuelFilter');
-    if (fuelFilterEl) fuelFilterEl.value = vehicleFuelFilter;
-    const transFilterEl = document.getElementById('v2AdminVehicleTransmissionFilter');
-    if (transFilterEl) transFilterEl.value = vehicleTransmissionFilter;
-    renderV2AdminVehicles();
+    // v1.19.5 — Vehicle Management is multi-view. applyVehicleView() renders
+    // whichever sub-view (inventory / prediction) is active, and owns the overview
+    // strip + filter sync for the inventory view.
+    applyVehicleView(overviewRow);
 
   } else if (activeAdminSection === 'audit') {
     if (usersSection)       usersSection.style.display       = 'none';
@@ -4815,54 +4806,15 @@ function renderV2AdminVehicles() {
   }
   list.innerHTML = cards.join('');
 
-  // Lifecycle actions now live in the drawer footer (cards are pure navigation
-  // objects). These read-only handlers mirror the prior inline-button behavior;
-  // the registerVehiclesChangeListener callback re-renders once the cache updates.
-  const _toggleVehicle = async (id) => {
-    const vehicle = getVehicles().find(v => v.id === id);
-    if (!vehicle) return;
-    try {
-      const u = getCurrentUser();
-      if (vehicle.active !== false) {
-        await deactivateVehicle(id);
-        logAction({ userId: u?.id, username: u?.username, action: 'vehicle_deactivated', targetId: id });
-      } else {
-        await reactivateVehicle(id);
-        logAction({ userId: u?.id, username: u?.username, action: 'vehicle_reactivated', targetId: id });
-      }
-    } catch (err) { showToast(err.message || 'Gagal mengubah status kendaraan.'); }
-  };
-  const _archiveVehicleAction = async (id) => {
-    try {
-      await archiveVehicle(id);
-      logAction({ userId: getCurrentUser()?.id, username: getCurrentUser()?.username, action: 'vehicle_archived', targetId: id });
-      showToast('Kendaraan berhasil diarsipkan.');
-    } catch (err) { showToast(err.message || 'Gagal mengarsipkan kendaraan.', 'error'); }
-  };
-  const _restoreVehicleAction = async (id) => {
-    try {
-      await restoreVehicle(id);
-      logAction({ userId: getCurrentUser()?.id, username: getCurrentUser()?.username, action: 'vehicle_restored', targetId: id });
-      showToast('Kendaraan berhasil dipulihkan.');
-    } catch (err) { showToast(err.message || 'Gagal memulihkan kendaraan.', 'error'); }
-  };
-  const _deleteVehicleAction = (id) => {
-    const vehicle = getVehicles().find(v => v.id === id);
-    if (!vehicle) return;
-    openDeleteConfirmModal({ type: 'vehicle', id, name: vehicle.name, refCount: countVehicleReferences(vehicle) });
-  };
-
-  // Card → Apple-style detail drawer (single source of truth for actions).
+  // Card → Apple-style detail drawer. Lifecycle actions live in the drawer footer
+  // (cards are pure navigation objects). The handlers are the module-level
+  // vehicleDrawerHandlers() — the SINGLE source of truth shared with the
+  // Prediction view drawer; the registerVehiclesChangeListener callback re-renders
+  // once the cache updates.
   const openDetail = (id) => {
     const asset = findVehicleAsset(_fleetAssetModel, id);
     if (!asset) return;
-    openVehicleDetailDrawer(asset, {
-      onEdit:    openVehicleFormModal,
-      onToggle:  _toggleVehicle,
-      onArchive: _archiveVehicleAction,
-      onRestore: _restoreVehicleAction,
-      onDelete:  _deleteVehicleAction,
-    });
+    openVehicleDetailDrawer(asset, vehicleDrawerHandlers());
   };
   list.querySelectorAll('[data-vehicle-detail]').forEach(card => {
     card.addEventListener('click', () => openDetail(card.dataset.vehicleDetail));
@@ -6185,6 +6137,197 @@ function renderDriverPredictionSection() {
     console.warn('[DriverPrediction] render failed', err);
     host.innerHTML = '<div class="dpr daa exec-ui v2-analytics-claude"><div class="daa-status daa-status--warn"><div class="daa-status__eye">Driver Prediction</div><div class="daa-status__level">Gagal memuat</div><div class="daa-status__msg">Terjadi kesalahan saat menyusun data. Coba muat ulang halaman.</div></div></div>';
   }
+}
+
+/* ── Vehicle Prediction (v1.19.5) ───────────────────────────────────────────
+   A VIEW inside Vehicle Management (not a new section). It consumes ONLY the
+   Prediction Service — the SAME certified gateway the Driver Prediction sibling
+   uses — and the engine already emits `model.vehicles`, so no new prediction
+   logic lives here. The service input is identical to the driver one (the model
+   holds every domain), so we reuse the SAME builder rather than duplicate it. */
+
+/** Aggregate the platform models into the Prediction Service input (shared with
+ *  Driver Prediction — one input, one cached certified model per refresh). */
+function buildVehiclePredictionInput() {
+  return buildDriverPredictionInput();
+}
+
+/** Vehicle lifecycle action handlers — the SINGLE source of truth shared by the
+ *  Inventory cards and the Prediction view drawer. Each reads the live Vehicle
+ *  Store and re-renders via the registered vehicles-change listener. */
+async function _vehicleActionToggle(id) {
+  const vehicle = getVehicles().find(v => v.id === id);
+  if (!vehicle) return;
+  try {
+    const u = getCurrentUser();
+    if (vehicle.active !== false) {
+      await deactivateVehicle(id);
+      logAction({ userId: u?.id, username: u?.username, action: 'vehicle_deactivated', targetId: id });
+    } else {
+      await reactivateVehicle(id);
+      logAction({ userId: u?.id, username: u?.username, action: 'vehicle_reactivated', targetId: id });
+    }
+  } catch (err) { showToast(err.message || 'Gagal mengubah status kendaraan.'); }
+}
+async function _vehicleActionArchive(id) {
+  try {
+    await archiveVehicle(id);
+    logAction({ userId: getCurrentUser()?.id, username: getCurrentUser()?.username, action: 'vehicle_archived', targetId: id });
+    showToast('Kendaraan berhasil diarsipkan.');
+  } catch (err) { showToast(err.message || 'Gagal mengarsipkan kendaraan.', 'error'); }
+}
+async function _vehicleActionRestore(id) {
+  try {
+    await restoreVehicle(id);
+    logAction({ userId: getCurrentUser()?.id, username: getCurrentUser()?.username, action: 'vehicle_restored', targetId: id });
+    showToast('Kendaraan berhasil dipulihkan.');
+  } catch (err) { showToast(err.message || 'Gagal memulihkan kendaraan.', 'error'); }
+}
+function _vehicleActionDelete(id) {
+  const vehicle = getVehicles().find(v => v.id === id);
+  if (!vehicle) return;
+  openDeleteConfirmModal({ type: 'vehicle', id, name: vehicle.name, refCount: countVehicleReferences(vehicle) });
+}
+/** The standard vehicle drawer footer handlers (used by both views). */
+function vehicleDrawerHandlers() {
+  return {
+    onEdit:    openVehicleFormModal,
+    onToggle:  _vehicleActionToggle,
+    onArchive: _vehicleActionArchive,
+    onRestore: _vehicleActionRestore,
+    onDelete:  _vehicleActionDelete,
+  };
+}
+
+/** Open the vehicle detail drawer from the Prediction view — the SAME drawer as
+ *  Inventory, enriched with the certified per-vehicle projection when available. */
+function openVehiclePredictionDetail(id) {
+  if (!id) return;
+  // The prediction view can be opened before the inventory ever renders, so make
+  // sure the normalized fleet model (the drawer's data source) exists.
+  if (!_fleetAssetModel) {
+    try { _fleetAssetModel = computeFleetAssetModel({ vehicles: getVehicles(), includeArchived: true }); }
+    catch (err) { console.warn('[VehiclePrediction] fleet model unavailable', err); return; }
+  }
+  const asset = findVehicleAsset(_fleetAssetModel, id);
+  if (!asset) return;
+  openVehicleDetailDrawer(asset, { ...vehicleDrawerHandlers(), prediction: _vehiclePredictionById[String(id)] });
+}
+
+/** Wire prediction cards / spotlight / table rows to open the enriched drawer. */
+function bindVehiclePredictionInteractions(host) {
+  if (!host) return;
+  host.querySelectorAll('[data-vehicle-predict]').forEach((el) => {
+    el.addEventListener('click', () => openVehiclePredictionDetail(el.dataset.vehiclePredict));
+    el.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      openVehiclePredictionDetail(el.dataset.vehiclePredict);
+    });
+  });
+  // Risk Ranking table — the kit enhancer emits 'exec-table:row' with detail.id.
+  // Bind the persistent host ONCE: delegation survives the innerHTML re-render, so
+  // re-binding on every refresh would stack duplicate listeners.
+  if (!host.__vprTableBound) {
+    host.__vprTableBound = true;
+    bindExecutiveTable(host);
+    host.addEventListener('exec-table:row', (e) => openVehiclePredictionDetail(e.detail && e.detail.id));
+  }
+}
+
+/** Render (or re-render) the Vehicle Prediction dashboard into its container. */
+function renderVehiclePredictionSection() {
+  const host = document.getElementById('v2VehiclePredictionDashboard');
+  if (!host) return;
+  injectVehiclePredictionStyles();
+  try {
+    const input = buildVehiclePredictionInput();
+    // The dashboard calls the Prediction Service exactly once and renders the
+    // certified result; we publish the input for parity/diagnostics only.
+    window._lastVehiclePredictionInput = input;
+    host.innerHTML = renderVehiclePredictionDashboard(input);
+    // The drawer index comes from the SAME service call (cached — a structurally
+    // equal input returns the same frozen result), so the drawer never touches an
+    // engine either.
+    _vehiclePredictionById = getCertifiedVehiclePredictions(input).byId || {};
+    bindVehiclePredictionInteractions(host);
+  } catch (err) {
+    console.warn('[VehiclePrediction] render failed', err);
+    _vehiclePredictionById = {};
+    host.innerHTML = '<div class="vpr daa exec-ui v2-analytics-claude"><div class="daa-status daa-status--warn"><div class="daa-status__eye">Vehicle Prediction</div><div class="daa-status__level">Gagal memuat</div><div class="daa-status__msg">Terjadi kesalahan saat menyusun data. Coba muat ulang halaman.</div></div></div>';
+  }
+}
+
+/** Switch the active Vehicle Management sub-view and re-apply it. */
+function setVehicleView(view) {
+  vehicleView = view === 'prediction' ? 'prediction' : 'inventory';
+  applyVehicleView();
+}
+
+/** Apply the active Vehicle Management sub-view: toggle the tab state + the two
+ *  view containers, and render the active one. Owns the inventory overview strip
+ *  + filter sync (moved here from the section switch) so the two views stay
+ *  cleanly separated. */
+function applyVehicleView(overviewRow) {
+  if (!overviewRow) overviewRow = document.getElementById('v2AdminOverviewRow');
+  const inventoryView  = document.getElementById('v2VehicleInventoryView');
+  const predictionView = document.getElementById('v2VehiclePredictionView');
+  const tabs = document.getElementById('v2VehicleViewTabs');
+  if (tabs) tabs.querySelectorAll('[data-vehicle-view]').forEach((b) => {
+    const active = b.dataset.vehicleView === vehicleView;
+    b.classList.toggle('is-active', active);
+    b.setAttribute('aria-selected', String(active));
+  });
+
+  if (vehicleView === 'prediction') {
+    if (inventoryView)  inventoryView.style.display  = 'none';
+    if (predictionView) predictionView.style.display = '';
+    if (overviewRow) overviewRow.innerHTML = '';   // the dashboard carries its own hero
+    renderVehiclePredictionSection();
+    return;
+  }
+
+  // Inventory (default) view.
+  if (predictionView) predictionView.style.display = 'none';
+  if (inventoryView)  inventoryView.style.display  = '';
+  if (overviewRow) {
+    const allVehicles   = getVehicles();
+    const nonArchived   = allVehicles.filter(v => v.archived !== true);
+    const activeCount   = nonArchived.filter(v => v.active !== false).length;
+    const inactiveCount = nonArchived.length - activeCount;
+    const archivedCount = allVehicles.length - nonArchived.length;
+    overviewRow.innerHTML = `
+      <div class="v2-admin-overview-cards">
+        <div class="v2-admin-overview-card">
+          <span class="v2-admin-overview-value">${nonArchived.length}</span>
+          <span class="v2-admin-overview-label">Total Kendaraan</span>
+        </div>
+        <div class="v2-admin-overview-card">
+          <span class="v2-admin-overview-value">${activeCount}</span>
+          <span class="v2-admin-overview-label">Kendaraan Aktif</span>
+        </div>
+        <div class="v2-admin-overview-card">
+          <span class="v2-admin-overview-value">${inactiveCount}</span>
+          <span class="v2-admin-overview-label">Kendaraan Nonaktif</span>
+        </div>
+        ${archivedCount > 0 ? `<div class="v2-admin-overview-card v2-admin-overview-card--archived">
+          <span class="v2-admin-overview-value">${archivedCount}</span>
+          <span class="v2-admin-overview-label">Diarsipkan</span>
+        </div>` : ''}
+      </div>
+    `;
+  }
+  const searchEl = document.getElementById('v2AdminVehicleSearch');
+  if (searchEl) searchEl.value = vehicleSearch;
+  const filterEl = document.getElementById('v2AdminVehicleStatusFilter');
+  if (filterEl) filterEl.value = vehicleStatusFilter;
+  const typeFilterEl = document.getElementById('v2AdminVehicleTypeFilter');
+  if (typeFilterEl) typeFilterEl.value = vehicleTypeFilter;
+  const fuelFilterEl = document.getElementById('v2AdminVehicleFuelFilter');
+  if (fuelFilterEl) fuelFilterEl.value = vehicleFuelFilter;
+  const transFilterEl = document.getElementById('v2AdminVehicleTransmissionFilter');
+  if (transFilterEl) transFilterEl.value = vehicleTransmissionFilter;
+  renderV2AdminVehicles();
 }
 
 /* ── Executive Analytics Dashboard (v1.18.8) ───────────────────────────────

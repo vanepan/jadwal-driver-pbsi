@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.19.4';
-export const RELEASE_NAME = 'Driver Prediction Dashboard';
+export const APP_VERSION = '1.19.5';
+export const RELEASE_NAME = 'Vehicle Prediction Dashboard';
 
 /**
  * Web Push VAPID PUBLIC key (v1.11.3). Safe to ship — it is an

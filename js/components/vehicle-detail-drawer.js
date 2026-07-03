@@ -230,6 +230,52 @@ function maintenanceSection(a) {
   return execDrawerSection({ title: 'Maintenance', content: metrics + tl });
 }
 
+/* ── Prediction section (v1.19.5, optional) ────────────────────────────────────
+   Rendered ONLY when the caller passes `opts.prediction` — the certified
+   per-vehicle projection from the Prediction Service (model.vehicles[i]). The
+   drawer recomputes nothing: it presents the maintenance / administrative /
+   availability risk levels, a confidence band, and the plain-language reasons
+   the service already produced. Signals, weights and validator internals are
+   never shown. Backward compatible: inventory callers pass no prediction and the
+   drawer is byte-identical to before. */
+
+const PRED_CONF_WORD = { HIGH: 'Tinggi', MEDIUM: 'Sedang', LOW: 'Rendah' };
+const PRED_CONF_TONE = { HIGH: 'ok', MEDIUM: 'info', LOW: 'warn' };
+
+/** Pick the highest-scoring risk of the three the engine emitted (no new math). */
+function predDominant(p) {
+  const parts = [p.maintenanceRisk, p.administrativeRisk, p.availabilityForecast].filter(Boolean);
+  let dom = parts[0] || {};
+  for (const r of parts) if ((Number(r.score) || 0) > (Number(dom.score) || 0)) dom = r;
+  return dom;
+}
+
+function predictionSection(p) {
+  const mr = p.maintenanceRisk || {};
+  const ar = p.administrativeRisk || {};
+  const af = p.availabilityForecast || {};
+  const dom = predDominant(p);
+  const cLvl = dom.confidenceLevel || 'LOW';
+
+  const badges = badgeRow([
+    ExecutiveStatusPill(`Keyakinan ${PRED_CONF_WORD[cLvl] || 'Rendah'}`, PRED_CONF_TONE[cLvl] || 'warn'),
+  ]);
+  const metrics = execDrawerMetrics([
+    m('Risiko Perawatan', mr.levelLabelId || '—', tone3(mr.tone, 'info')),
+    m('Risiko Administrasi', ar.levelLabelId || '—', tone3(ar.tone, 'info')),
+    m('Ketersediaan', af.levelLabelId || '—', tone3(af.tone, 'info')),
+    m('Keyakinan Prediksi', PRED_CONF_WORD[cLvl] || 'Rendah'),
+  ]);
+  const summary = dom.summary
+    ? `<p style="font-size:13px;color:var(--muted)">${esc(dom.summary)}</p>` : '';
+  const reasons = Array.isArray(dom.reasons) ? dom.reasons.filter(Boolean) : [];
+  const factors = reasons.length
+    ? '<div class="exec-drawer-sec__h">Faktor Risiko</div>' +
+      `<ul style="margin:.3rem 0 0 1.1rem;padding:0;font-size:13px;color:var(--muted);line-height:1.6">${reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul>`
+    : '';
+  return execDrawerSection({ title: 'Prediction', content: badges + summary + metrics + factors });
+}
+
 function historySection(a) {
   const metrics = execDrawerMetrics([
     m('Tipe Aset', a.typeInfo.label),
@@ -267,7 +313,10 @@ function buildFooter(asset, opts) {
  * @param {Object} asset  normalizeVehicleAsset() result
  * @param {{onEdit?:(id:string)=>void, onToggle?:(id:string)=>void,
  *          onArchive?:(id:string)=>void, onRestore?:(id:string)=>void,
- *          onDelete?:(id:string)=>void}} [opts]
+ *          onDelete?:(id:string)=>void,
+ *          prediction?:Object}} [opts]  `prediction` = certified per-vehicle
+ *          projection (model.vehicles[i]); when present a Prediction section is
+ *          shown. Omit it for the plain (inventory) drawer.
  * @returns {HTMLElement|null} the drawer overlay root
  */
 export function openVehicleDetailDrawer(asset, opts = {}) {
@@ -277,6 +326,9 @@ export function openVehicleDetailDrawer(asset, opts = {}) {
   const body = [
     heroBlock(asset),
     overviewSection(asset),
+    // v1.19.5 — Prediction summary sits high (right after health) when the caller
+    // supplies a certified per-vehicle projection; omitted entirely otherwise.
+    (opts.prediction && typeof opts.prediction === 'object') ? predictionSection(opts.prediction) : '',
     operationalSection(asset),
     registrationSection(asset),
     taxSection(asset),
