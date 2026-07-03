@@ -101,6 +101,7 @@ import { injectFleetDashboardStyles, renderFleetDashboard } from './components/f
 import { renderIcon, vehicleTypeIconName } from './components/icon-system.js';
 import { openVehicleDetailDrawer } from './components/vehicle-detail-drawer.js';
 import { renderVehiclePredictionDashboard, injectVehiclePredictionStyles, getCertifiedVehiclePredictions } from './components/vehicle-prediction-dashboard.js';
+import { mountSimulationPanel, getActiveSimulation } from './analytics/simulation-panel.js';
 import { FUEL_TYPES, TRANSMISSION_TYPES, VEHICLE_TYPE_REGISTRY, VEHICLE_STATUS_REGISTRY } from './config/vehicle-asset-config.js';
 import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver } from './auth.js';
 import * as DocumentEngine from './docs/doc-engine.js';
@@ -6211,7 +6212,14 @@ function openVehiclePredictionDetail(id) {
   }
   const asset = findVehicleAsset(_fleetAssetModel, id);
   if (!asset) return;
-  openVehicleDetailDrawer(asset, { ...vehicleDrawerHandlers(), prediction: _vehiclePredictionById[String(id)] });
+  // v1.19.8 — when a scenario simulation is active, hand the drawer the current
+  // simulation so it can show the Current-vs-Simulation result for this vehicle.
+  // Read-only: the drawer never mutates the simulation or production.
+  openVehicleDetailDrawer(asset, {
+    ...vehicleDrawerHandlers(),
+    prediction: _vehiclePredictionById[String(id)],
+    simulation: getActiveSimulation(),
+  });
 }
 
 /** Wire prediction cards / spotlight / table rows to open the enriched drawer. */
@@ -6251,6 +6259,10 @@ function renderVehiclePredictionSection() {
     // engine either.
     _vehiclePredictionById = getCertifiedVehiclePredictions(input).byId || {};
     bindVehiclePredictionInteractions(host);
+    // v1.19.8 — mount the Scenario Simulation panel. It clones this SAME input,
+    // applies a scenario, and re-forecasts through the Prediction Service; it
+    // NEVER writes to production. The session is discarded on the next re-render.
+    mountSimulationPanel(host.querySelector('#vprSimMount'), input);
   } catch (err) {
     console.warn('[VehiclePrediction] render failed', err);
     _vehiclePredictionById = {};

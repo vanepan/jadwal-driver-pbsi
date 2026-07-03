@@ -55,6 +55,13 @@ import {
   DataCoveragePanel,
   NotesList,
 } from '../analytics/prediction-explainability-panel.js';
+// v1.19.7 — Fleet Recommendation Engine: the recommendation drawer sections
+// (What / Why / Priority / Expected benefit / Prediction reference / Source).
+// EXTENDS the prediction drawer; never removes existing content.
+import { recommendationDrawerSections } from '../vehicle/vehicle-recommendation-panel.js';
+// v1.19.8 — Scenario Simulation: when a simulation is active, the drawer shows its
+// Current-vs-Simulation result for this vehicle. EXTENDS the drawer; read-only.
+import { simulationDrawerSections } from '../vehicle/vehicle-simulation-panel.js';
 
 const STYLE_ID = 'vad-hero-styles';
 
@@ -311,6 +318,9 @@ function predictionSection(p) {
     execDrawerSection({ title: 'Data Coverage', content: DataCoveragePanel(dataCoverage(p)) }),
     execDrawerSection({ title: 'Operational Notes', content: NotesList(operationalNotes(p), 'ok') }),
     execDrawerSection({ title: 'Limitations', content: NotesList(limitations(p), 'warn') }),
+    // v1.19.7 — the actionable Recommendation, distilled from this SAME certified
+    // projection by the Fleet Recommendation Engine (extends, never replaces).
+    recommendationDrawerSections(p),
   ];
   return sections.join('');
 }
@@ -368,6 +378,9 @@ export function openVehicleDetailDrawer(asset, opts = {}) {
     // v1.19.5 — Prediction summary sits high (right after health) when the caller
     // supplies a certified per-vehicle projection; omitted entirely otherwise.
     (opts.prediction && typeof opts.prediction === 'object') ? predictionSection(opts.prediction) : '',
+    // v1.19.8 — the active scenario simulation's Current-vs-Simulation result for
+    // this vehicle (only when a simulation is running); read-only, extends only.
+    (opts.simulation && typeof opts.simulation === 'object') ? simulationDrawerSections(opts.simulation, asset.id) : '',
     operationalSection(asset),
     registrationSection(asset),
     taxSection(asset),

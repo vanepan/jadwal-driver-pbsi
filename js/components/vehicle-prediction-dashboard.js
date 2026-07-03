@@ -57,10 +57,25 @@
    explainability, table tweaks) — tokens only, dark-mode safe, no hardcoded
    colours, no heavy charts.
 
-   Page structure (v1.19.6):
+   Page structure (v1.19.8):
      Hero → Prediction Status → Prediction Summary → Fleet Heatmap →
      Fleet Insight → Executive Insights → Maintenance Forecast →
-     Recommended Actions → Prediction Timeline → Risk Ranking (Prediction Detail)
+     Fleet Recommendation Board → Recommendation Priority Timeline →
+     Executive Decision Support → Scenario Simulation → Prediction Timeline →
+     Risk Ranking
+
+   v1.19.8 — Scenario Simulation Engine. A "what happens if I change something
+   before deciding?" panel extends the Decision Support experience. The dashboard
+   renders the panel markup; app.js binds it (mountSimulationPanel). Simulation
+   clones the input, applies a scenario, and re-forecasts through the SAME
+   Prediction Service — it NEVER modifies production data.
+
+   v1.19.7 — Fleet Recommendation Engine. The thin "Recommended Actions" list is
+   superseded by the Recommendation layer: the Fleet Recommendation Board, the
+   Priority Timeline and Executive Decision Support. These consume ONLY the Fleet
+   Recommendation Engine (js/recommendation/*), which itself consumes ONLY the
+   certified model + the Explainability layer — no engine/service change, no new
+   prediction logic. Recommendations are also surfaced in the vehicle drawer.
 
    API:
      injectVehiclePredictionStyles()                          — idempotent <style>
@@ -90,6 +105,27 @@ import {
   FleetHeatmap,
   ExecutiveInsightCards,
 } from '../analytics/prediction-explainability-panel.js';
+// v1.19.7 — Fleet Recommendation Engine. PURE derivations (board / priority
+// timeline / decision support, all arrangements of the SAME certified model +
+// Explainability layer — no new prediction logic) + their presentation.
+import {
+  recommendationBoard,
+  recommendationTimeline,
+  decisionSupport,
+  noRecommendationState,
+} from '../recommendation/recommendation-summary.js';
+import {
+  injectRecommendationBoardStyles,
+  FleetRecommendationBoard,
+  RecommendationTimeline,
+  DecisionSupportInsights,
+  NoRecommendationState,
+} from '../analytics/recommendation-board.js';
+// v1.19.8 — Scenario Simulation Engine. Interactive "what if?" decision-support
+// panel; consumes ONLY the Prediction Service (via scenario-engine) + Explainability
+// + Recommendation, and NEVER writes to production. The dashboard renders the panel
+// markup (scenario cards); app.js binds it via mountSimulationPanel after render.
+import { injectSimulationStyles, renderSimulationMount } from '../analytics/simulation-panel.js';
 
 const STYLE_ID = 'vpr-dashboard-styles';
 
@@ -213,6 +249,8 @@ const CSS = `
 export function injectVehiclePredictionStyles() {
   injectDispatchAnalyticsStyles();
   injectExplainabilityStyles();
+  injectRecommendationBoardStyles();
+  injectSimulationStyles();
   if (typeof document === 'undefined') return;
   if (document.getElementById(STYLE_ID)) return;
   const el = document.createElement('style');
@@ -578,51 +616,61 @@ function renderRisks(model) {
   });
 }
 
-/* ── 6. RECOMMENDED ACTIONS — render the Prediction Service's own vehicle
-   recommendations as large cards. Confidence is read from the SAME certified
-   projection each recommendation was distilled from (join by vehicle). ─────── */
+/* ── 6. FLEET RECOMMENDATION BOARD — the v1.19.7 Recommendation layer. The
+   Fleet Recommendation Engine (PURE, consumes ONLY the certified model + the
+   Explainability layer) turns each certified projection into an operational,
+   explainable recommendation; these three sections present the board, the
+   priority timeline, and the executive decision support. When the fleet needs no
+   action a POSITIVE No-Recommendation state leads the board. This SUPERSEDES the
+   old thin "Recommended Actions" list — every recommendation now answers What /
+   Why / Priority / Expected benefit and references its prediction. ──────────── */
 
-const ACTION_LABEL = { maintenance: 'Jadwalkan Perawatan', administrative: 'Perbarui Dokumen' };
-
-function renderActions(model) {
-  const recs = (Array.isArray(model.recommendations) ? model.recommendations : []).filter((r) => r.domain === 'vehicle');
-  if (!recs.length) {
-    return ExecutiveSectionShell({
-      title: 'Tindakan yang Disarankan',
-      content: ExecutiveEmptyState({
-        message: 'Kondisi operasional saat ini tidak memerlukan intervensi.',
-        hint: 'Prediction Engine tidak menyarankan tindakan armada — pertahankan pemantauan rutin.',
-      }),
-    });
-  }
-  // Join each recommendation to the vehicle projection it came from → confidence.
-  const byName = new Map((Array.isArray(model.vehicles) ? model.vehicles : []).map((v) => [String(v.name), v]));
-  const cards = recs.slice(0, 6).map((r) => {
-    const v = byName.get(String(r.target));
-    const src = v ? dominantRisk(v).pred : null;
-    const tone = src && src.tone ? src.tone : 'info';
-    const label = ACTION_LABEL[r.action] || 'Tindakan Operasional';
-    const reason = Array.isArray(r.reasons) && r.reasons.length ? r.reasons[0] : '';
-    const cls = `vpr-card vpr-card--${esc(tone)}${v ? ' vpr-card--click' : ''}`;
-    const click = v ? ` data-vehicle-predict="${esc(v.id)}" tabindex="0" role="button" aria-label="Detail prediksi ${esc(r.target)}"` : '';
-    const win = v ? cardWindow(v) : HORIZON_LABEL;
-    return `<div class="${cls}"${click}>
-        <div class="vpr-card__top">
-          <span class="vpr-card__title">${esc(r.message)}</span>
-          ${src ? confPill(src) : ExecutiveStatusPill('Keyakinan Sedang', 'info')}
-        </div>
-        <div class="vpr-card__who"><span class="vpr-card__foot-l">${esc(label)}</span> · ${esc(r.target)}</div>
-        ${reason ? `<div class="vpr-card__reason">${esc(reason)}</div>` : ''}
-        <div class="vpr-card__foot">
-          <span class="vpr-card__foot-l">Metode · ${esc(PRED_METHOD)}</span>
-          <span class="vpr-card__foot-l">Jendela · ${esc(win)}</span>
-        </div>
-      </div>`;
-  }).join('');
+function renderRecommendationBoard(model) {
+  const board = recommendationBoard(model);
+  const boardHtml = FleetRecommendationBoard(board);
+  // Positive enterprise messaging first when no intervention is required.
+  const content = board.isHealthyFleet
+    ? `${NoRecommendationState(noRecommendationState(model))}${boardHtml}`
+    : boardHtml;
+  const { counts } = board;
+  const pending = counts.critical + counts.upcoming;
   return ExecutiveSectionShell({
-    title: 'Tindakan yang Disarankan',
-    description: `${recs.length} tindakan prioritas`,
-    content: `<div class="vpr-cards">${cards}</div>`,
+    title: 'Papan Rekomendasi Armada',
+    description: pending
+      ? `${pending} rekomendasi menunggu tindakan · ${counts.healthy} armada sehat`
+      : `${counts.healthy} armada sehat — tidak ada tindakan mendesak`,
+    content,
+  });
+}
+
+function renderRecommendationTimeline(model) {
+  return ExecutiveSectionShell({
+    title: 'Linimasa Prioritas Rekomendasi',
+    description: 'Kapan setiap rekomendasi sebaiknya dijalankan',
+    content: RecommendationTimeline(recommendationTimeline(model)),
+  });
+}
+
+function renderDecisionSupport(model) {
+  return ExecutiveSectionShell({
+    title: 'Dukungan Keputusan Eksekutif',
+    description: 'Rekomendasi paling berdampak dari data tersertifikasi',
+    content: DecisionSupportInsights(decisionSupport(model)),
+  });
+}
+
+/* ── 6d. SCENARIO SIMULATION — the v1.19.8 Decision Support extension. An
+   interactive "what happens if I change something before deciding?" panel. The
+   dashboard only renders the panel MARKUP (scenario cards + result region); the
+   temporary clone → getPrediction → compare pipeline and all interaction are wired
+   by app.js (mountSimulationPanel) so this string builder stays pure. Simulation
+   NEVER modifies production data. ────────────────────────────────────────────── */
+
+function renderSimulation() {
+  return ExecutiveSectionShell({
+    title: 'Simulasi Skenario',
+    description: 'Uji dampak keputusan sebelum diterapkan — tanpa mengubah data produksi',
+    content: `<div id="vprSimMount">${renderSimulationMount()}</div>`,
   });
 }
 
@@ -811,7 +859,10 @@ export function renderVehiclePredictionDashboard(input) {
     ${renderInsight(model, metaCtx)}
     ${renderExecutiveInsights(model)}
     ${renderRisks(model)}
-    ${renderActions(model)}
+    ${renderRecommendationBoard(model)}
+    ${renderRecommendationTimeline(model)}
+    ${renderDecisionSupport(model)}
+    ${renderSimulation()}
     ${renderTimeline(model)}
     ${renderDetail(model)}
   </div>`;
