@@ -33,6 +33,28 @@ import {
   escHtml,
 } from '../analytics/executive-ui-kit.js';
 import { vehicleTypeIconName } from './icon-system.js';
+// v1.19.6 — the Fleet Explainability layer. PURE derivations (arrangements of the
+// SAME certified projection) + their presentation panels; no prediction logic.
+import {
+  dominantRisk as predDominantRisk,
+  contributingFactors,
+  confidenceAnalytics,
+  historicalComparison,
+  predictionMethodology,
+  predictionWindow,
+  dataCoverage,
+  limitations,
+  operationalNotes,
+} from '../prediction/explainability.js';
+import {
+  injectExplainabilityStyles,
+  ContributingFactorsPanel,
+  ConfidenceAnalyticsPanel,
+  MethodologyPanel,
+  HistoricalTrendPanel,
+  DataCoveragePanel,
+  NotesList,
+} from '../analytics/prediction-explainability-panel.js';
 
 const STYLE_ID = 'vad-hero-styles';
 
@@ -63,6 +85,10 @@ const CSS = `
 
 function ensureStyles() {
   if (typeof document === 'undefined') return;
+  // The Explainability sections (shown only for the prediction drawer) reuse the
+  // shared `.pex-*` supplement — inject it here so it is always present when a
+  // prediction is passed. Idempotent + a no-op for the plain inventory drawer.
+  injectExplainabilityStyles();
   if (document.getElementById(STYLE_ID)) return;
   const style = document.createElement('style');
   style.id = STYLE_ID;
@@ -230,50 +256,63 @@ function maintenanceSection(a) {
   return execDrawerSection({ title: 'Maintenance', content: metrics + tl });
 }
 
-/* ── Prediction section (v1.19.5, optional) ────────────────────────────────────
+/* ── Explainability Drawer (v1.19.6, optional) ─────────────────────────────────
    Rendered ONLY when the caller passes `opts.prediction` — the certified
    per-vehicle projection from the Prediction Service (model.vehicles[i]). The
-   drawer recomputes nothing: it presents the maintenance / administrative /
-   availability risk levels, a confidence band, and the plain-language reasons
-   the service already produced. Signals, weights and validator internals are
-   never shown. Backward compatible: inventory callers pass no prediction and the
-   drawer is byte-identical to before. */
+   drawer recomputes NOTHING: the Fleet Explainability layer (js/prediction/
+   explainability.js) ARRANGES that same certified projection into executive,
+   plain-language transparency, and the panels present it. Answers, without
+   technical knowledge: why was this prediction generated? how reliable is it?
+   which factors influenced it? how much data supports it? should action be taken?
+
+   Signals, weights, thresholds and validator internals are never shown — only a
+   factor's plain-language share of the decision + operational reason. Backward
+   compatible: inventory callers pass no prediction and the drawer is unchanged. */
 
 const PRED_CONF_WORD = { HIGH: 'Tinggi', MEDIUM: 'Sedang', LOW: 'Rendah' };
 const PRED_CONF_TONE = { HIGH: 'ok', MEDIUM: 'info', LOW: 'warn' };
 
-/** Pick the highest-scoring risk of the three the engine emitted (no new math). */
-function predDominant(p) {
-  const parts = [p.maintenanceRisk, p.administrativeRisk, p.availabilityForecast].filter(Boolean);
-  let dom = parts[0] || {};
-  for (const r of parts) if ((Number(r.score) || 0) > (Number(dom.score) || 0)) dom = r;
-  return dom;
-}
-
-function predictionSection(p) {
+/** Prediction Summary — the existing at-a-glance risk snapshot (kept first). */
+function predictionSummarySection(p, dom) {
   const mr = p.maintenanceRisk || {};
   const ar = p.administrativeRisk || {};
   const af = p.availabilityForecast || {};
-  const dom = predDominant(p);
   const cLvl = dom.confidenceLevel || 'LOW';
+  const win = predictionWindow(p);
 
   const badges = badgeRow([
     ExecutiveStatusPill(`Keyakinan ${PRED_CONF_WORD[cLvl] || 'Rendah'}`, PRED_CONF_TONE[cLvl] || 'warn'),
+    ExecutiveStatusPill(`Jendela ${win.label}`, 'info'),
   ]);
+  const summary = dom.summary
+    ? `<p style="font-size:13px;color:var(--muted)">${esc(dom.summary)}</p>` : '';
   const metrics = execDrawerMetrics([
     m('Risiko Perawatan', mr.levelLabelId || '—', tone3(mr.tone, 'info')),
     m('Risiko Administrasi', ar.levelLabelId || '—', tone3(ar.tone, 'info')),
     m('Ketersediaan', af.levelLabelId || '—', tone3(af.tone, 'info')),
     m('Keyakinan Prediksi', PRED_CONF_WORD[cLvl] || 'Rendah'),
   ]);
-  const summary = dom.summary
-    ? `<p style="font-size:13px;color:var(--muted)">${esc(dom.summary)}</p>` : '';
-  const reasons = Array.isArray(dom.reasons) ? dom.reasons.filter(Boolean) : [];
-  const factors = reasons.length
-    ? '<div class="exec-drawer-sec__h">Faktor Risiko</div>' +
-      `<ul style="margin:.3rem 0 0 1.1rem;padding:0;font-size:13px;color:var(--muted);line-height:1.6">${reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul>`
-    : '';
-  return execDrawerSection({ title: 'Prediction', content: badges + summary + metrics + factors });
+  return execDrawerSection({ title: 'Prediction Summary', content: badges + summary + metrics });
+}
+
+/**
+ * The full Explainability drawer body for a certified projection. Returns several
+ * ExecutiveDrawerSections concatenated (the caller joins them into the body).
+ */
+function predictionSection(p) {
+  const dom = predDominantRisk(p).pred;
+
+  const sections = [
+    predictionSummarySection(p, dom),
+    execDrawerSection({ title: 'Contributing Factors', content: ContributingFactorsPanel(contributingFactors(p)) }),
+    execDrawerSection({ title: 'Prediction Confidence', content: ConfidenceAnalyticsPanel(confidenceAnalytics(p)) }),
+    execDrawerSection({ title: 'Historical Trend', content: HistoricalTrendPanel(historicalComparison(p)) }),
+    execDrawerSection({ title: 'Prediction Methodology', content: MethodologyPanel(predictionMethodology()) }),
+    execDrawerSection({ title: 'Data Coverage', content: DataCoveragePanel(dataCoverage(p)) }),
+    execDrawerSection({ title: 'Operational Notes', content: NotesList(operationalNotes(p), 'ok') }),
+    execDrawerSection({ title: 'Limitations', content: NotesList(limitations(p), 'warn') }),
+  ];
+  return sections.join('');
 }
 
 function historySection(a) {

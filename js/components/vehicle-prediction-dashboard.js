@@ -1,5 +1,13 @@
 /* ============================================================
-   VEHICLE-PREDICTION-DASHBOARD.JS — Vehicle Prediction (v1.19.5)
+   VEHICLE-PREDICTION-DASHBOARD.JS — Vehicle Prediction (v1.19.6)
+
+   v1.19.6 — Fleet Explainability & Prediction Analytics. Two presentation-only
+   sections are added (Fleet Heatmap + Executive Insights), both fed by the PURE
+   Fleet Explainability layer (js/prediction/explainability.js) that ARRANGES the
+   SAME certified model — no new prediction logic, no engine/service change. The
+   drawer (opened via the unchanged `data-vehicle-predict` binder) now carries the
+   full Explainability experience (contributing factors, confidence analytics,
+   methodology, historical trend, data coverage, limitations, operational notes).
 
    The SECOND consumer of the Prediction Service (after Driver Prediction) and
    an additional VIEW inside the existing Vehicle Management module — NOT a new
@@ -49,10 +57,10 @@
    explainability, table tweaks) — tokens only, dark-mode safe, no hardcoded
    colours, no heavy charts.
 
-   Page structure (v1.19.5):
-     Hero → Prediction Status → Prediction Summary → Fleet Insight →
-     Maintenance Forecast → Recommended Actions → Prediction Timeline →
-     Risk Ranking (Prediction Detail)
+   Page structure (v1.19.6):
+     Hero → Prediction Status → Prediction Summary → Fleet Heatmap →
+     Fleet Insight → Executive Insights → Maintenance Forecast →
+     Recommended Actions → Prediction Timeline → Risk Ranking (Prediction Detail)
 
    API:
      injectVehiclePredictionStyles()                          — idempotent <style>
@@ -74,6 +82,14 @@ import {
   anIcon,
   escHtml as esc,
 } from '../analytics/executive-ui-kit.js';
+// v1.19.6 — Fleet Explainability layer: PURE fleet-level derivations + their
+// presentation. Both only ARRANGE the certified model (no new prediction logic).
+import { fleetHeatmap, executiveInsights } from '../prediction/explainability.js';
+import {
+  injectExplainabilityStyles,
+  FleetHeatmap,
+  ExecutiveInsightCards,
+} from '../analytics/prediction-explainability-panel.js';
 
 const STYLE_ID = 'vpr-dashboard-styles';
 
@@ -193,9 +209,10 @@ const CSS = `
 }
 `;
 
-/** Inject the supplement (and ensure the shared `.daa-*` styles exist). */
+/** Inject the supplement (and ensure the shared `.daa-*` + `.pex-*` styles exist). */
 export function injectVehiclePredictionStyles() {
   injectDispatchAnalyticsStyles();
+  injectExplainabilityStyles();
   if (typeof document === 'undefined') return;
   if (document.getElementById(STYLE_ID)) return;
   const el = document.createElement('style');
@@ -703,6 +720,35 @@ function renderDetail(model) {
   });
 }
 
+/* ── 9. FLEET HEATMAP — an at-a-glance executive fleet overview: one cell per
+   vehicle, toned by its dominant projected concern. Cells carry the shared
+   `data-vehicle-predict` hook, so selecting one opens the enriched Explainability
+   drawer through the SAME binder the cards/rows use. Arranges certified
+   projections only — no new metric. ─────────────────────────────────────────── */
+
+function renderHeatmap(model) {
+  const cells = fleetHeatmap(model);
+  return ExecutiveSectionShell({
+    title: 'Peta Kesiapan Armada',
+    description: 'Ringkasan kesiapan setiap kendaraan — pilih untuk penjelasan lengkap',
+    content: FleetHeatmap(cells),
+  });
+}
+
+/* ── 10. EXECUTIVE INSIGHTS — fleet-wide analytics distilled from the certified
+   projections (highest / lowest confidence, most influential factor, highest
+   operational risk). Each insight is a SELECTION over certified data — no new
+   business logic — and links to the vehicle it describes. ──────────────────── */
+
+function renderExecutiveInsights(model) {
+  const insights = executiveInsights(model);
+  return ExecutiveSectionShell({
+    title: 'Wawasan Eksekutif',
+    description: 'Analitik prediksi dari data tersertifikasi',
+    content: ExecutiveInsightCards(insights),
+  });
+}
+
 /* ── empty / insufficient-data state ──────────────────────────────────────────
    When the service cannot certify a model, or confidence is LOW, or there is no
    vehicle to project, we DO NOT invent predictions — we state honestly that the
@@ -761,7 +807,9 @@ export function renderVehiclePredictionDashboard(input) {
     ${hero}
     ${renderStatus(model, metaCtx)}
     ${renderSummary(model)}
+    ${renderHeatmap(model)}
     ${renderInsight(model, metaCtx)}
+    ${renderExecutiveInsights(model)}
     ${renderRisks(model)}
     ${renderActions(model)}
     ${renderTimeline(model)}
