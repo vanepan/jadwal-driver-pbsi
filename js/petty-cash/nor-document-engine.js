@@ -17,7 +17,7 @@ import '../docs/templates/nor.js'; // side-effect: registers 'nor'
 import { getSettings, getCycles, getExpenseById } from './petty-cash-store.js';
 import {
   fmtLong, fmtShort, rpDoc, rpTable, terbilangCap, splitList,
-  REIMBURSE_ITEMS, isReimburseExpense, hasReimburseDetail,
+  REIMBURSE_ITEMS, isReimburseExpense, hasReimburseDetail, sortTransactions,
 } from './petty-cash-config.js';
 
 /** Resolve the opening-balance date shown on the NOR ("Dana Awal (…)"). */
@@ -57,7 +57,7 @@ export function buildNorViewModel(nor) {
   const sigs = (settings.signatories || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0));
   const recap = (settings.recapSignatories || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0));
 
-  const items = (nor.items || []).map((it, i) => ({
+  const items = sortTransactions(nor.items || [], 'ASC').map((it, i) => ({
     no: i + 1,
     dateFmt: fmtShort(it.expenseDate || it.date),
     description: it.description || it.desc || '',

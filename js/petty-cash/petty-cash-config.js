@@ -282,6 +282,71 @@ export function unitDisplay(e) {
   return e && e.unit === 'Others' ? (e.customUnit || 'Others') : (e && e.unit) || '—';
 }
 
+/* ── Shared transaction ordering (v1.19.6.x) ───────────────────────
+   Deterministic petty-cash ordering used by every consumer:
+   primary = transaction date, secondary = createdAt, fallback = transaction number. */
+function txDateValue(tx) {
+  const iso = String(tx && (tx.expenseDate || tx.transactionDate || tx.date) || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+    const y = Number(iso.slice(0, 4));
+    const m = Number(iso.slice(5, 7)) - 1;
+    const d = Number(iso.slice(8, 10));
+    return Date.UTC(y, m, d);
+  }
+  const parsed = Date.parse(iso);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function txCreatedAtValue(tx) {
+  const n = Number(tx && tx.createdAt);
+  return Number.isFinite(n) ? n : null;
+}
+
+function txNumberValue(tx) {
+  return String(tx && (tx.refNumber || tx.transactionNumber || tx.number) || '').trim();
+}
+
+function txNumberRank(value) {
+  const m = String(value || '').match(/(\d+)(?!.*\d)/);
+  return m ? Number(m[1]) : null;
+}
+
+function compareTxNumber(a, b) {
+  const ar = txNumberRank(a);
+  const br = txNumberRank(b);
+  if (ar != null && br != null && ar !== br) return ar - br;
+  return String(a || '').localeCompare(String(b || ''), 'id', { numeric: true, sensitivity: 'base' });
+}
+
+/**
+ * Sort petty-cash transactions deterministically.
+ * @param {Array<Object>} transactions
+ * @param {'ASC'|'DESC'|'asc'|'desc'} direction
+ * @returns {Array<Object>}
+ */
+export function sortTransactions(transactions, direction = 'DESC') {
+  const list = Array.isArray(transactions) ? transactions.slice() : [];
+  const asc = String(direction || '').toUpperCase() === 'ASC';
+  const dir = asc ? 1 : -1;
+  return list.sort((a, b) => {
+    const dateDiff = txDateValue(a) - txDateValue(b);
+    if (dateDiff) return dateDiff * dir;
+
+    const aCreated = txCreatedAtValue(a);
+    const bCreated = txCreatedAtValue(b);
+    if (aCreated != null && bCreated != null && aCreated !== bCreated) {
+      return (aCreated - bCreated) * dir;
+    }
+
+    const numDiff = compareTxNumber(txNumberValue(a), txNumberValue(b));
+    if (numDiff) return numDiff * dir;
+
+    const aid = String((a && (a.id || a.expenseId)) || '');
+    const bid = String((b && (b.id || b.expenseId)) || '');
+    return aid.localeCompare(bid, 'id', { numeric: true, sensitivity: 'base' }) * dir;
+  });
+}
+
 /* ── Terbilang (Indonesian number-to-words) ─────────────────────── */
 const ONES = ['', 'satu', 'dua', 'tiga', 'empat', 'lima', 'enam', 'tujuh', 'delapan', 'sembilan', 'sepuluh', 'sebelas'];
 export function terbilang(n) {

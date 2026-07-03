@@ -23,7 +23,7 @@ import { getUserList } from '../users.js';
 import { matchBidang } from './bidang-matcher.js';
 import {
   EXPENSE_STATUS, NOR_STATUS, NOR_TYPE, CYCLE_STATUS, AUDIT_ACTION, AUDIT_LABEL, AUDIT_COLOR,
-  norAutoSubject, unitDisplay, todayISO, rp, fmtShort,
+  norAutoSubject, unitDisplay, todayISO, rp, fmtShort, sortTransactions,
   REIMBURSE_ITEMS, reimburseSum, isReimburseExpense,
 } from './petty-cash-config.js';
 import {
@@ -100,9 +100,10 @@ export function getExpenseAudit(expenseId) {
 
 /* ── Active expense set (non-archived = current cycle) ───────────── */
 export function activeExpenses() {
-  return getExpenses()
-    .filter(e => e.status !== EXPENSE_STATUS.ARCHIVED)
-    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  return sortTransactions(
+    getExpenses().filter(e => e.status !== EXPENSE_STATUS.ARCHIVED),
+    'DESC',
+  );
 }
 export function availableExpenses() {
   return activeExpenses().filter(e => e.status === EXPENSE_STATUS.AVAILABLE);
@@ -337,7 +338,10 @@ export async function generateNor({ expenseIds, norNumber, norDate, type }) {
   const norType = type === NOR_TYPE.TEST ? NOR_TYPE.TEST : NOR_TYPE.OFFICIAL;
   const isTest = norType === NOR_TYPE.TEST;
   const ids = (expenseIds || []).slice();
-  const selected = availableExpenses().filter(e => ids.includes(e.id));
+  const selected = sortTransactions(
+    availableExpenses().filter(e => ids.includes(e.id)),
+    'ASC',
+  );
   if (!selected.length) throw new Error('Pilih minimal satu nota untuk direalisasikan.');
 
   const cycle = getActiveCycle();

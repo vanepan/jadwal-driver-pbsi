@@ -23,7 +23,7 @@ import {
 import { activeExpenses, recordNorExport } from './petty-cash-service.js';
 import {
   fmtShort, fmtLong, terbilangCap, unitDisplay, splitList, AUDIT_LABEL, todayISO,
-  REIMBURSE_ITEMS, isReimburseExpense,
+  REIMBURSE_ITEMS, isReimburseExpense, sortTransactions,
 } from './petty-cash-config.js';
 
 const XLSX_SRC = 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js';
@@ -183,7 +183,7 @@ function download(XLSX, wb, filename) {
 export async function exportNorExcel(nor) {
   const XLSX = await loadXLSX();
   const settings = getSettings();
-  const rows = (nor.items || []).map(it => {
+  const rows = sortTransactions(nor.items || [], 'ASC').map(it => {
     // Reimbursement detail is resolved live from the source expense (the snapshot
     // never stored it) so the component columns can populate. Read-only — the
     // amount/total still come from the snapshot. (v1.17.4.1)
@@ -220,7 +220,7 @@ export async function exportExpensesExcel() {
   const XLSX = await loadXLSX();
   const settings = getSettings();
   const cycle = getActiveCycle();
-  const rows = activeExpenses();
+  const rows = sortTransactions(activeExpenses(), 'ASC');
   const realized = rows.reduce((a, e) => a + (e.amount || 0), 0);
   const opening = cycle ? cycle.openingBalance : settings.openingBalance;
 

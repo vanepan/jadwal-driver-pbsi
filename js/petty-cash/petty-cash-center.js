@@ -39,7 +39,7 @@ import {
   UNITS, CATEGORIES, EXPENSE_STATUS, NOR_STATUS, NOR_TYPE, AUDIT_LABEL,
   rp, fmtShort, fmtLong, todayISO, parseAmount, unitColor, unitDisplay,
   norAutoSubject, norStatusMeta, norNumberFromSequence, isValidNorSequence,
-  REIMBURSE_ITEMS, reimburseSum, isReimburseExpense, hasReimburseDetail, blankReimburseDetail,
+  REIMBURSE_ITEMS, reimburseSum, isReimburseExpense, hasReimburseDetail, blankReimburseDetail, sortTransactions,
 } from './petty-cash-config.js';
 
 const LOGO_SRC = 'assets/Logo-PBSI.png';
@@ -630,7 +630,10 @@ function expensesScreen(m) {
 /* ── GENERATE NOR ────────────────────────────────────────────────── */
 function previewVm(m) {
   const cycle = getActiveCycle();
-  const selected = svc.availableExpenses().filter(e => st.selectedIds.includes(e.id));
+  const selected = sortTransactions(
+    svc.availableExpenses().filter(e => st.selectedIds.includes(e.id)),
+    'ASC',
+  );
   const realized = selected.reduce((a, e) => a + (e.amount || 0), 0);
   const opening = cycle ? cycle.openingBalance : m.opening;
   const pseudo = {
@@ -657,7 +660,7 @@ function generateScreen(m) {
     </div>`;
   }
 
-  const avail = svc.availableExpenses().filter(e => {
+  const avail = sortTransactions(svc.availableExpenses(), 'ASC').filter(e => {
     const q = (st.norSearch || '').trim().toLowerCase();
     if (!q) return true;
     return (e.refNumber || '').toLowerCase().includes(q) || (e.description || '').toLowerCase().includes(q);
