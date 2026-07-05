@@ -737,6 +737,19 @@ button:disabled:hover {
 /* ============================================================
    MAIN CONTENT
    ============================================================ */
+/* v1.20.2 — adaptive analytics search: highlight + ring for the matched
+   KPI/section/card that the contextual search scrolls into view. */
+.adaptive-search-hit {
+  outline: 2px solid var(--red, #d32f2f);
+  outline-offset: 3px;
+  border-radius: 10px;
+  animation: adaptiveSearchPulse 1.4s ease-out 1;
+}
+@keyframes adaptiveSearchPulse {
+  0%   { box-shadow: 0 0 0 0 rgba(211, 47, 47, 0.28); }
+  100% { box-shadow: 0 0 0 12px rgba(211, 47, 47, 0); }
+}
+
 .main-content {
   max-width: 1400px;
   margin: 0 auto;

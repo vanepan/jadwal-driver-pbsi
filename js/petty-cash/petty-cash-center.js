@@ -218,6 +218,15 @@ export function openPettyCashAddExpense() {
 /** Current active screen key. */
 export function getPettyCashScreen() { return st.screen; }
 
+/** Adaptive global-search hook (v1.20.2) — real filtering by NOR / unit (bidang) /
+ *  vendor / transaction. Surfaces results on the Pengeluaran list when querying. */
+export function setPettyCashSearch(q) {
+  if (!opened) return;
+  st.fSearch = q || '';
+  if (st.fSearch && st.screen !== 'expenses') st.screen = 'expenses';
+  render();
+}
+
 /** Leaving the module — keep state, stop reacting to store changes while hidden. */
 export function closePettyCashCenter() { opened = false; }
 

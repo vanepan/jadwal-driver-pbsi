@@ -1,0 +1,166 @@
+<!-- @dsCard group="Engineering Operations" viewport="1440x900" name="Engineering Operations" subtitle="Field execution module — Sarpras Operations Platform" -->
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Engineering Operations — Sarpras Operations Platform</title>
+<link rel="stylesheet" href="_ds/sarpras-operations-design-system-d29aee74-9401-4f97-bb4a-9cd76a9a4dde/tokens/fonts.css" />
+<link rel="stylesheet" href="_ds/sarpras-operations-design-system-d29aee74-9401-4f97-bb4a-9cd76a9a4dde/tokens/colors.css" />
+<link rel="stylesheet" href="_ds/sarpras-operations-design-system-d29aee74-9401-4f97-bb4a-9cd76a9a4dde/tokens/typography.css" />
+<link rel="stylesheet" href="_ds/sarpras-operations-design-system-d29aee74-9401-4f97-bb4a-9cd76a9a4dde/tokens/spacing.css" />
+<link rel="stylesheet" href="_ds/sarpras-operations-design-system-d29aee74-9401-4f97-bb4a-9cd76a9a4dde/tokens/base.css" />
+<link rel="stylesheet" href="_ds/sarpras-operations-design-system-d29aee74-9401-4f97-bb4a-9cd76a9a4dde/styles.css" />
+<link rel="stylesheet" href="eng/eng.css" />
+<script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="_ds/sarpras-operations-design-system-d29aee74-9401-4f97-bb4a-9cd76a9a4dde/_ds_bundle.js"></script>
+<script src="eng/store.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" src="eng/common.jsx"></script>
+<script type="text/babel" src="eng/Timeline.jsx"></script>
+<script type="text/babel" src="eng/AssignmentDrawer.jsx"></script>
+<script type="text/babel" src="eng/AssignmentQueue.jsx"></script>
+<script type="text/babel" src="eng/CoordinatorDashboard.jsx"></script>
+<script type="text/babel" src="eng/MemberDashboard.jsx"></script>
+<script type="text/babel" src="eng/TimelinePage.jsx"></script>
+<script type="text/babel" src="eng/Extras.jsx"></script>
+<script type="text/babel" src="eng/MobileMember.jsx"></script>
+<script type="text/babel" src="eng/Shell.jsx"></script>
+<script type="text/babel">
+const DS = window.SarprasOperationsDesignSystem_d29aee;
+const S = window.EngStore;
+
+const NAV = {
+  admin: [
+    { id: 'dash', icon: 'grid', label: 'Dashboard' },
+    { id: 'timeline', icon: 'history', label: 'Timeline' },
+    { id: 'analytics', icon: 'chart', label: 'Analytics' },
+    { id: 'settings', icon: 'gear', label: 'Pengaturan' },
+  ],
+  coordinator: [
+    { id: 'dash', icon: 'grid', label: 'Dashboard' },
+    { id: 'timeline', icon: 'history', label: 'Timeline' },
+    { id: 'history', icon: 'file', label: 'Riwayat' },
+  ],
+  member: [
+    { id: 'dash', icon: 'wrench', label: 'Dashboard' },
+    { id: 'timeline', icon: 'history', label: 'Timeline Saya' },
+    { id: 'history', icon: 'file', label: 'Riwayat Saya' },
+  ],
+};
+
+const USER = {
+  admin: { name: 'Sri Wahyuni', ini: 'SW', role: 'Admin Sarpras' },
+  coordinator: { name: 'Tono Sugianto', ini: 'TS', role: 'Koordinator Engineering' },
+  member: { name: 'Isep Saepudin', ini: 'IS', role: 'Engineering' },
+};
+const ME = { coordinator: 'Tono Sugianto', member: 'Isep Saepudin', admin: 'Sri Wahyuni' };
+
+function CreateModal({ onClose }) {
+  const { Button } = DS;
+  const [f, setF] = React.useState({ title: '', location: '', category: 'umum', priority: 'sedang', requester: 'Bidang Umum', target: 'Hari ini · 16:00', note: '' });
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const inp = { width: '100%', height: 42, borderRadius: 11, border: '1px solid var(--border)', background: 'var(--surface-2)', padding: '0 13px', fontFamily: 'var(--font-sans)', fontSize: 13.5, color: 'var(--text)' };
+  const lbl = { fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-faint)', marginBottom: 7, display: 'block' };
+  const submit = () => { if (!f.title) return; S.actions.create(f); onClose(); };
+  return (
+    <div className="scrim open" style={{ justifyContent: 'center', alignItems: 'center' }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 540, maxWidth: '94vw', maxHeight: '90vh', overflowY: 'auto', background: 'var(--surface)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-lg)', border: '1px solid var(--border)', padding: 28 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.13em', textTransform: 'uppercase', color: 'var(--text-faint)', marginBottom: 6 }}>Penugasan Baru</div>
+            <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 23, letterSpacing: '-0.022em', margin: 0 }}>Buat Penugasan</h2>
+          </div>
+          <button className="tb-icon" onClick={onClose}><window.EngIcon name="close" size={18} /></button>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div><label style={lbl}>Judul pekerjaan</label><input style={inp} value={f.title} onChange={set('title')} placeholder="mis. Ganti lampu koridor Lantai 2" /></div>
+          <div><label style={lbl}>Lokasi</label><input style={inp} value={f.location} onChange={set('location')} placeholder="Gedung · Lantai · Ruang" /></div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div><label style={lbl}>Kategori</label><select style={inp} value={f.category} onChange={set('category')}>{Object.keys(S.CATEGORIES).map((k) => <option key={k} value={k}>{S.CATEGORIES[k].label}</option>)}</select></div>
+            <div><label style={lbl}>Prioritas</label><select style={inp} value={f.priority} onChange={set('priority')}>{Object.keys(S.PRIORITIES).map((k) => <option key={k} value={k}>{S.PRIORITIES[k].label}</option>)}</select></div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div><label style={lbl}>Pemohon</label><input style={inp} value={f.requester} onChange={set('requester')} /></div>
+            <div><label style={lbl}>Target selesai</label><input style={inp} value={f.target} onChange={set('target')} /></div>
+          </div>
+          <div><label style={lbl}>Catatan</label><textarea style={{ ...inp, height: 80, padding: '10px 13px', resize: 'vertical' }} value={f.note} onChange={set('note')} placeholder="Deskripsi singkat pekerjaan…" /></div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 24, paddingTop: 18, borderTop: '1px solid var(--border-faint)' }}>
+          <span style={{ fontSize: 12, color: 'var(--text-faint)', display: 'inline-flex', alignItems: 'center', gap: 7 }}><window.EngIcon name="bell" size={14} /> Notifikasi terkirim ke semua teknisi</span>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <Button variant="ghost" onClick={onClose}>Batal</Button>
+            <Button variant="primary" onClick={submit} icon={<window.EngIcon name="check-circle" size={15} />}>Publikasikan</Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [role, setRole] = React.useState('admin');
+  const [panel, setPanel] = React.useState('dash');
+  const [drawerId, setDrawerId] = React.useState(null);
+  const [creating, setCreating] = React.useState(false);
+  const [mobileOpen, setMobileOpen] = React.useState(false);
+  const [theme, setTheme] = React.useState('light');
+
+  React.useEffect(() => { document.documentElement.setAttribute('data-theme', theme); }, [theme]);
+
+  function pickRole(r) { setRole(r); setPanel('dash'); setDrawerId(null); setMobileOpen(false); }
+  function open(id) {
+    if (id === '__new') { setCreating(true); return; }
+    if (id === '__timeline') { setPanel('timeline'); return; }
+    if (id === '__analytics') { setPanel('analytics'); return; }
+    if (id === '__mobile') { setMobileOpen(true); return; }
+    setDrawerId(id);
+  }
+
+  const me = ME[role];
+  const nav = NAV[role];
+  const cta = role === 'admin' ? 'Buat Penugasan' : null;
+  const labelOf = (nav.find((n) => n.id === panel) || {}).label || '';
+  const crumb = ['Engineering Operations', mobileOpen ? 'Tampilan Ponsel' : labelOf];
+
+  let screen;
+  if (mobileOpen) screen = <window.MobileMember me={me} />;
+  else if (panel === 'dash') screen = role === 'member' ? <window.MemberDashboard role={role} me={me} onOpen={open} /> : <window.OpsDashboard role={role} me={me} onOpen={open} />;
+  else if (panel === 'timeline') screen = <window.TimelinePage role={role} me={me} onOpen={open} />;
+  else if (panel === 'history') screen = <window.EngHistory role={role} me={me} onOpen={open} />;
+  else if (panel === 'analytics') screen = <window.EngAnalytics onOpen={open} />;
+  else if (panel === 'settings') screen = <window.EngSettings />;
+  else screen = <div style={{ paddingTop: 40 }}><DS.EmptyState title="Modul mendatang" hint="Arsitektur UI sudah disiapkan. Fitur ini akan aktif pada versi berikutnya tanpa perlu mendesain ulang modul." /></div>;
+
+  const extraTopbar = role === 'member'
+    ? (mobileOpen
+        ? <button className="role-btn" onClick={() => setMobileOpen(false)} style={{ height: 36 }}><window.EngIcon name="arrow-left" size={15} /><span style={{ fontSize: 12.5, fontWeight: 700 }}>Kembali</span></button>
+        : <button className="role-btn" onClick={() => setMobileOpen(true)} style={{ height: 36 }}><window.EngIcon name="phone" size={15} /><span style={{ fontSize: 12.5, fontWeight: 700 }}>Ponsel</span></button>)
+    : null;
+
+  return (
+    <React.Fragment>
+      <window.EngShell
+        panelItems={nav} activePanel={panel} onPanel={(p) => { if (nav.find((n) => n.id === p && n.future)) return; setPanel(p); }}
+        crumb={crumb} role={role} onRole={pickRole}
+        theme={theme} onTheme={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+        user={USER[role]} cta={cta} onCta={() => setCreating(true)} extraTopbar={extraTopbar}>
+        {screen}
+      </window.EngShell>
+      <window.AssignmentDrawer id={drawerId} role={role} me={me} onClose={() => setDrawerId(null)} />
+      {creating && <CreateModal onClose={() => setCreating(false)} />}
+    </React.Fragment>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+<template id="__bundler_thumbnail">
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100" fill="#cf4a43"/><g fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M58 38a11 11 0 0 1-14 14L34 62l-6-6 10-10a11 11 0 0 1 14-14l-6 6 2 6 6 2 4-8z"/></g></svg>
+</template>
+</body>
+</html>

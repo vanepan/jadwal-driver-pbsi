@@ -20,6 +20,13 @@ import {
   authReady,
   resolveAuthReadyManually,
 } from './firebase.js';
+import {
+  can as registryCan,
+  roleLabelsForGroup,
+  isEngineeringRole,
+  ROLE_GROUP,
+  ENGINEERING_ROLE,
+} from './config/role-registry.js';
 
 const SESSION_KEY = 'pbsi_current_user';
 
@@ -48,6 +55,10 @@ const ROLE_LABELS = {
   bidang: 'Bidang',
   driver: 'Driver',
   viewer: 'Viewer',
+  // Engineering roles (v1.20.1) — first-class production roles sourced from the
+  // central role registry so labels stay in one place and future role families
+  // (Executive) extend without editing this map.
+  ...roleLabelsForGroup(ROLE_GROUP.ENGINEERING),
 };
 
 const PERMISSIONS = {
@@ -273,6 +284,43 @@ export function isViewer() {
 export function isDriver() {
   const user = getCurrentUser();
   return Boolean(user && user.role === 'driver');
+}
+
+/* ── Engineering roles + capabilities (v1.20.1) ──────────────────────────
+   Additive layer over the existing role model. Driver-Ops `PERMISSIONS` /
+   `hasPermission()` are untouched; Engineering gates through the central
+   role-registry capability matrix so it stays extensible to future roles. */
+
+/** The current session's role id (or null when signed out). */
+export function currentRole() {
+  const user = getCurrentUser();
+  return user ? user.role : null;
+}
+
+/**
+ * Engineering capability check for the CURRENT user.
+ * Admin always passes (full Engineering access) via the registry matrix.
+ * @param {string} capability  e.g. 'eng.verify', 'eng.create'
+ * @returns {boolean}
+ */
+export function canEng(capability) {
+  const role = currentRole();
+  return !!role && registryCan(capability, role);
+}
+
+/** Whether the current user is the Engineering Coordinator role. */
+export function isEngineeringCoordinator() {
+  return currentRole() === ENGINEERING_ROLE.COORDINATOR;
+}
+
+/** Whether the current user is an Engineering Member. */
+export function isEngineeringMember() {
+  return currentRole() === ENGINEERING_ROLE.MEMBER;
+}
+
+/** Whether the current user holds any Engineering role. */
+export function isEngineeringUser() {
+  return isEngineeringRole(currentRole());
 }
 
 /**

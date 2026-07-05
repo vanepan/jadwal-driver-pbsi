@@ -1,0 +1,8 @@
+/* ============================================================
+   Sarpras Operations — Webfonts
+   All three families are Google Fonts (matching production).
+   Archivo (display), Manrope (UI), JetBrains Mono (numeric).
+   Imported from Google Fonts CDN exactly as production does.
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');

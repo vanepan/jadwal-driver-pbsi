@@ -15,11 +15,14 @@ let users = [];
 let editingUsername = null;
 
 const ROLE_CONFIG = [
-  { key: 'admin',       label: 'ADMIN',       defaultExpanded: true,  visible: true  },
-  { key: 'bidang',      label: 'BIDANG',       defaultExpanded: false, visible: true  },
-  { key: 'driver',      label: 'DRIVER',       defaultExpanded: false, visible: true  },
-  { key: 'viewer',      label: 'VIEWER',       defaultExpanded: false, visible: true  },
-  { key: 'engineering', label: 'ENGINEERING',  defaultExpanded: false, visible: false },
+  { key: 'admin',                   label: 'ADMIN',                  defaultExpanded: true,  visible: true  },
+  { key: 'bidang',                  label: 'BIDANG',                 defaultExpanded: false, visible: true  },
+  { key: 'driver',                  label: 'DRIVER',                 defaultExpanded: false, visible: true  },
+  { key: 'viewer',                  label: 'VIEWER',                 defaultExpanded: false, visible: true  },
+  // Engineering (v1.20.2) — the two concrete stored roles; the "Engineering"
+  // role option in the form is a sentinel that resolves to one of these.
+  { key: 'engineering_coordinator', label: 'KOORDINATOR ENGINEERING', defaultExpanded: false, visible: true },
+  { key: 'engineering_member',      label: 'ENGINEERING',            defaultExpanded: false, visible: true  },
 ];
 
 const groupExpanded = {};
@@ -124,6 +127,14 @@ function attachAdminButtons() {
   const form = document.getElementById('userForm');
   if (form) form.addEventListener('submit', handleUserFormSubmit);
 
+  // Engineering role → reveal the Koordinator/Anggota segment (v1.20.2).
+  const roleSelect = document.getElementById('userFieldRole');
+  if (roleSelect) roleSelect.addEventListener('change', () => syncEngineeringLevelUI());
+  // Single-select: checking one Engineering level card unchecks the other.
+  document.querySelectorAll('#userEngineeringLevelGroup [data-eng-level]').forEach((cb) => {
+    cb.addEventListener('change', () => setEngineeringLevel(cb.checked ? cb.dataset.engLevel : null));
+  });
+
   const profileForm = document.getElementById('profileForm');
   if (profileForm) profileForm.addEventListener('submit', handleProfileSubmit);
 
@@ -217,7 +228,16 @@ export function openUserFormModal(username = null) {
         usernameField.disabled = true;
       }
       if (displayNameField) displayNameField.value = user.displayName || user.username;
-      if (roleField) roleField.value = user.role;
+      // Engineering roles map back to the "engineering" sentinel + segment level.
+      if (roleField) {
+        if (user.role === 'engineering_coordinator' || user.role === 'engineering_member') {
+          roleField.value = 'engineering';
+          setEngineeringLevel(user.role === 'engineering_coordinator' ? 'coordinator' : 'member');
+        } else {
+          roleField.value = user.role;
+          setEngineeringLevel(null);
+        }
+      }
       if (pinField) pinField.value = user.pin || '';
       if (activeField) activeField.checked = Boolean(user.active);
     }
@@ -228,10 +248,12 @@ export function openUserFormModal(username = null) {
     }
     if (displayNameField) displayNameField.value = '';
     if (roleField) roleField.value = 'viewer';
+    setEngineeringLevel(null);
     if (pinField) pinField.value = '';
     if (activeField) activeField.checked = true;
   }
   syncPbsiSelect(roleField);
+  syncEngineeringLevelUI();
 
   const modal = document.getElementById('modalUserForm');
   if (modal) modal.style.display = 'flex';
@@ -241,6 +263,36 @@ function closeUserFormModal() {
   const modal = document.getElementById('modalUserForm');
   if (modal) modal.style.display = 'none';
   editingUsername = null;
+}
+
+/* ── Engineering level segment (v1.20.2) ──────────────────────────────────
+   The role select's "Engineering" option is a sentinel; the concrete stored
+   role (engineering_coordinator | engineering_member) is chosen via the
+   Koordinator/Anggota segment. These helpers keep the segment in sync. */
+
+/** Show/hide the segment based on the current role select value. */
+function syncEngineeringLevelUI() {
+  const roleField = document.getElementById('userFieldRole');
+  const group = document.getElementById('userEngineeringLevelGroup');
+  if (!roleField || !group) return;
+  group.style.display = (roleField.value === 'engineering') ? '' : 'none';
+}
+
+/** Enforce single-select across the two level cards. `level` = 'coordinator' | 'member' | null. */
+function setEngineeringLevel(level) {
+  const koord = document.getElementById('userEngKoordinator');
+  const angg = document.getElementById('userEngAnggota');
+  if (koord) koord.checked = (level === 'coordinator');
+  if (angg) angg.checked = (level === 'member');
+}
+
+/** The concrete role selected by the segment, or '' when none is chosen. */
+function currentEngineeringRole() {
+  const koord = document.getElementById('userEngKoordinator');
+  const angg = document.getElementById('userEngAnggota');
+  if (koord && koord.checked) return 'engineering_coordinator';
+  if (angg && angg.checked) return 'engineering_member';
+  return '';
 }
 
 async function handleUserFormSubmit(event) {
@@ -254,13 +306,23 @@ async function handleUserFormSubmit(event) {
 
   const username = usernameField ? usernameField.value.trim() : '';
   const displayName = displayNameField ? displayNameField.value.trim() : '';
-  const role = roleField ? roleField.value : 'viewer';
+  let role = roleField ? roleField.value : 'viewer';
   const pin = pinField ? pinField.value.trim() : '';
   const active = activeField ? activeField.checked : true;
 
     if (!username || !displayName || !role) {
       showToast('Lengkapi username, display name, dan role.');
       return;
+    }
+
+    // Engineering sentinel → resolve to the concrete role via the segment (v1.20.2).
+    if (role === 'engineering') {
+      const resolved = currentEngineeringRole();
+      if (!resolved) {
+        showToast('Pilih tingkat Engineering: Koordinator atau Anggota.');
+        return;
+      }
+      role = resolved;
     }
 
     // PIN required only for new user creation
@@ -551,7 +613,10 @@ async function openProfileModal() {
   }
 
   if (roleEl && currentUser) {
-    const roleLabels = { admin: 'Admin', bidang: 'Bidang', viewer: 'Viewer', driver: 'Driver' };
+    const roleLabels = {
+      admin: 'Admin', bidang: 'Bidang', viewer: 'Viewer', driver: 'Driver',
+      engineering_coordinator: 'Koordinator Engineering', engineering_member: 'Engineering',
+    };
     roleEl.textContent = roleLabels[currentUser.role] || currentUser.role || '';
     roleEl.dataset.role = currentUser.role || '';
   }

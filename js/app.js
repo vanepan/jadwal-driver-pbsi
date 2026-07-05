@@ -103,7 +103,7 @@ import { openVehicleDetailDrawer } from './components/vehicle-detail-drawer.js';
 import { renderVehiclePredictionDashboard, injectVehiclePredictionStyles, getCertifiedVehiclePredictions } from './components/vehicle-prediction-dashboard.js';
 import { mountSimulationPanel, getActiveSimulation } from './analytics/simulation-panel.js';
 import { FUEL_TYPES, TRANSMISSION_TYPES, VEHICLE_TYPE_REGISTRY, VEHICLE_STATUS_REGISTRY } from './config/vehicle-asset-config.js';
-import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver } from './auth.js';
+import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver, isEngineeringUser } from './auth.js';
 import * as DocumentEngine from './docs/doc-engine.js';
 import './docs/templates/analytics-summary.js';   // registers 'analytics-summary'
 import './exports/analytics/analytics-export-client.js'; // Analytics Export Phase A — window.exportAnalyticsPoc()
@@ -177,8 +177,23 @@ import { renderDriverDashboard, setAssignments as setDashboardAssignments } from
 import { initCommentHandlers, openCommentModal, closeCommentModal, setRequests as setCommentRequests, registerCommentSaveCallback, refreshCommentThreadIfOpen } from './comments.js';
 import { initAdminUI, updateAdminButtons, openUserFormModal } from './admin.js';
 import {
-  mountPettyCash, setPettyCashScreen, closePettyCashCenter, openPettyCashAddExpense,
+  mountPettyCash, setPettyCashScreen, closePettyCashCenter, openPettyCashAddExpense, setPettyCashSearch,
 } from './petty-cash/petty-cash-center.js';
+// v1.20.1 Engineering Operations UI — embedded native module (mirrors Petty Cash).
+import {
+  mountEngineering, setEngineeringScreen, closeEngineering, openEngineeringCreate, setEngineeringSearch,
+} from './engineering/ui/engineering-center.js';
+import {
+  registerSearchAdapter, searchPlaceholder, runModuleSearch, clearModuleSearch,
+} from './services/adaptive-search.js';
+// v1.20.2 — Engineering Analytics migrated into the global Analytics module.
+import { renderEngineeringAnalyticsView } from './analytics/views/analytics-engineering-view.js';
+import { buildEngineeringAnalytics } from './engineering/analytics/engineering-analytics.js';
+import { listAssignments as engListAssignments } from './engineering/stores/engineering-store.js';
+import { loadAll as engLoadAll } from './engineering/providers/engineering-provider.js';
+import { createDevSeedAdapter as engCreateDevSeedAdapter } from './engineering/providers/dev-seed-adapter.js';
+import { isDevelopment } from './config.js';
+import './exports/analytics/engineering-analytics-export.js';  // registers window.exportEngineeringAnalytics* hooks
 import { mountAnalyticsPettyCash, closeAnalyticsPettyCash, refreshAnalyticsPettyCash } from './analytics/views/analytics-petty-cash-view.js';
 // v1.18.8: mountAnalyticsExecutive is retired — the "Analytics Executive" entry
 // now renders the new Executive Analytics Dashboard sibling section (below). The
@@ -249,6 +264,7 @@ let activeRailModule = 'driverops';
 let activeAdminModule = 'konfigurasi';
 // v1.14.0: lazy mount flag for the embedded Petty Cash module.
 let pettyCashMounted = false;
+let engineeringMounted = false;
 // v1.15.0: lazy mount flags for the new Analytics workspaces.
 let analyticsPettyMounted = false;
 let analyticsExecMounted = false;
@@ -304,6 +320,7 @@ const ADMIN_SECTION_DEFS = [
   { key: 'wellness', label: 'Driver Wellness', subtitle: 'Keberlanjutan operasional — skor kesehatan, kelelahan, burnout, dan capacity health per driver.' },
   { key: 'prediction', label: 'Driver Prediction', subtitle: 'Proyeksi kesiapan operasional driver beberapa hari ke depan — status, risiko mendatang, tindakan, dan linimasa prediksi.' },
   { key: 'executive', label: 'Executive Analytics', subtitle: 'Kondisi operasional hari ini — status, indikator utama, sorotan, dan navigasi ke setiap laporan.' },
+  { key: 'engineeringanalytics', label: 'Engineering Analytics', subtitle: 'Ringkasan operasional Engineering — throughput, distribusi kategori & gedung, beban tim, dan antrean verifikasi.' },
 ];
 
 /* v1.14.0: which admin sections belong to which platform module. Drives the
@@ -313,7 +330,7 @@ const ADMIN_SECTION_DEFS = [
 const ADMIN_MODULE_SECTIONS = {
   driverops:   ['drivers', 'vehicles', 'audit'],
   konfigurasi: ['users', 'config'],
-  analytics:   ['analytics', 'dispatchanalytics', 'recommendationaccuracy', 'wellness', 'prediction', 'executive'],
+  analytics:   ['analytics', 'dispatchanalytics', 'recommendationaccuracy', 'wellness', 'prediction', 'executive', 'engineeringanalytics'],
 };
 
 /**
@@ -697,6 +714,25 @@ function updatePermissionUI(resetNavActive = false) {
     const v2RailAdmin = document.getElementById('v2RailAdmin');
     if (v2RailAdmin) v2RailAdmin.style.display = 'none';
 
+    // Engineering Operations (v1.20.1): rail visible to Admin + Engineering roles.
+    // Panel menu items + labels are role-scoped (Admin: Dashboard/Timeline/
+    // Analytics/Pengaturan; Coordinator: +Riwayat; Member: personal Timeline/Riwayat).
+    const engRole = isEngineeringUser();
+    const engMember = getCurrentUser()?.role === 'engineering_member';
+    const v2RailEng = document.getElementById('v2RailEngineering');
+    if (v2RailEng) v2RailEng.style.display = (adminOnly || engRole) ? 'flex' : 'none';
+    const btnEngMobile = document.getElementById('btnEngineering');
+    if (btnEngMobile) btnEngMobile.style.display = (adminOnly || engRole) ? 'flex' : 'none';
+    const setDisp = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? 'flex' : 'none'; };
+    setDisp('v2NavEngHistory', engRole);          // coordinator + member
+    setDisp('v2NavEngSettings', adminOnly);       // admin only
+    // Engineering Analytics now lives in the global Analytics module (v1.20.2).
+    setDisp('v2NavAnalyticsEngineering', adminOnly);
+    const engTlLabel = document.getElementById('v2NavEngTimelineLabel');
+    if (engTlLabel) engTlLabel.textContent = engMember ? 'Timeline Saya' : 'Timeline';
+    const engHiLabel = document.getElementById('v2NavEngHistoryLabel');
+    if (engHiLabel) engHiLabel.textContent = engMember ? 'Riwayat Saya' : 'Riwayat';
+
     // Driver Operations panel — Master Data + Audit sections are admin-only.
     const v2PanelDriverMaster = document.getElementById('v2PanelDriverMaster');
     if (v2PanelDriverMaster) v2PanelDriverMaster.style.display = adminOnly ? '' : 'none';
@@ -852,6 +888,12 @@ const MODULE_DEFS = {
     title: 'Konfigurasi', subtitle: 'Manajemen Platform', crumb: 'KONFIGURASI',
     land: () => navManajemenUser(),
   },
+  // v1.20.1: Engineering Operations — embedded native module (Petty Cash pattern).
+  engineering: {
+    railId: 'v2RailEngineering', navId: 'v2PanelEngineeringNav',
+    title: 'Engineering Operations', subtitle: 'Unit Eksekusi · Bidang Sarpras', crumb: 'ENGINEERING',
+    land: () => navEngineering('dashboard', 'v2NavEngDashboard'),
+  },
 };
 
 /** Set the two-line topbar breadcrumb (module label + section title). */
@@ -890,6 +932,12 @@ function resolvePrimaryCta() {
     if (isAdmin())  return { kind: 'pengeluaran', label: 'Tambah Pengeluaran' };
     return null;
   }
+  if (activeRailModule === 'engineering') {
+    // Create is admin-only (eng.create capability) — the sidebar CTA mirrors
+    // Driver "Tambah Jadwal" / Petty Cash "Tambah Pengeluaran".
+    if (isAdmin())  return { kind: 'buat-penugasan', label: 'Buat Penugasan' };
+    return null;
+  }
   // analytics + konfigurasi → read-only, no primary CTA
   return null;
 }
@@ -908,6 +956,73 @@ function runPrimaryCta() {
     if (activeRailModule !== 'pettycash') { navPettyCash('dashboard', 'v2NavPcDashboard'); }
     openPettyCashAddExpense();
   }
+  else if (resolved.kind === 'buat-penugasan') {
+    // Guard: ensure the Engineering module is mounted/active before opening.
+    if (activeRailModule !== 'engineering') { navEngineering('dashboard', 'v2NavEngDashboard'); }
+    openEngineeringCreate();
+  }
+}
+
+/* ── Adaptive global search adapters (v1.20.2) ─────────────────────────────
+   Each module registers HOW it responds to the shared search box. Driver /
+   Engineering / Petty Cash do real data filtering; Analytics does contextual
+   search (jump / highlight / scroll) since a KPI dashboard has no list. */
+let _searchAdaptersRegistered = false;
+function registerSearchAdapters() {
+  if (_searchAdaptersRegistered) return;
+  _searchAdaptersRegistered = true;
+
+  registerSearchAdapter({
+    id: 'driverops',
+    placeholder: 'Cari driver, kendaraan, tujuan, plat…',
+    run: (q) => {
+      searchQuery = q;
+      updateAllModules();
+      renderViews();
+      if (currentWorkspace === 'pending') renderPendingWorkspace();
+    },
+  });
+
+  registerSearchAdapter({
+    id: 'engineering',
+    placeholder: 'Cari penugasan, ruangan, gedung, teknisi, kategori…',
+    run: (q) => setEngineeringSearch(q),
+  });
+
+  registerSearchAdapter({
+    id: 'pettycash',
+    placeholder: 'Cari NOR, pemohon, bidang, vendor, transaksi…',
+    run: (q) => setPettyCashSearch(q),
+  });
+
+  registerSearchAdapter({
+    id: 'analytics',
+    placeholder: 'Cari KPI, metrik, laporan, ekspor…',
+    run: (q) => runAnalyticsContextualSearch(q),
+  });
+}
+
+/* Analytics contextual search: no row filtering (a KPI dashboard has no list) —
+   instead jump to the matching KPI/section/card, highlight it, and scroll it
+   into view. Also matches export/report list items. */
+function runAnalyticsContextualSearch(q) {
+  const scope = document.getElementById('v2AdministrationWorkspace') || document;
+  scope.querySelectorAll('.adaptive-search-hit').forEach((el) => el.classList.remove('adaptive-search-hit'));
+  const query = (q || '').trim().toLowerCase();
+  if (!query) return;
+  const candidates = scope.querySelectorAll(
+    'h1,h2,h3,h4,.daa-kpi,.daa-sec__head,.daa-card,.an-kpi-card,.an-export-item,.v2-analytics-kpi-card,[data-search-label]'
+  );
+  let firstHit = null;
+  candidates.forEach((el) => {
+    if (el.offsetParent === null) return;   // skip hidden elements
+    const text = (el.dataset.searchLabel || el.textContent || '').toLowerCase();
+    if (text.includes(query)) {
+      el.classList.add('adaptive-search-hit');
+      if (!firstHit) firstHit = el;
+    }
+  });
+  if (firstHit) firstHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 /**
@@ -941,10 +1056,12 @@ function updatePanelCta() {
   const btnJadwal = document.getElementById('v2BtnTambahJadwal');
   const btnAjukan = document.getElementById('v2BtnAjukanRequest');
   const btnPc     = document.getElementById('v2BtnTambahPengeluaran');
+  const btnEng    = document.getElementById('v2BtnBuatPenugasan');
   if (cta) {
-    if (btnJadwal) btnJadwal.style.display = (resolved && resolved.kind === 'jadwal')      ? 'flex' : 'none';
-    if (btnAjukan) btnAjukan.style.display = (resolved && resolved.kind === 'ajukan')      ? 'flex' : 'none';
-    if (btnPc)     btnPc.style.display     = (resolved && resolved.kind === 'pengeluaran') ? 'flex' : 'none';
+    if (btnJadwal) btnJadwal.style.display = (resolved && resolved.kind === 'jadwal')        ? 'flex' : 'none';
+    if (btnAjukan) btnAjukan.style.display = (resolved && resolved.kind === 'ajukan')        ? 'flex' : 'none';
+    if (btnPc)     btnPc.style.display     = (resolved && resolved.kind === 'pengeluaran')   ? 'flex' : 'none';
+    if (btnEng)    btnEng.style.display    = (resolved && resolved.kind === 'buat-penugasan') ? 'flex' : 'none';
     cta.style.display = resolved ? 'flex' : 'none';
   }
 
@@ -976,7 +1093,7 @@ function setRailModule(name) {
   });
 
   // Panel-nav block visibility — show only the active module's menu.
-  ['v2PanelDriverOpsNav', 'v2PanelPettyCashNav', 'v2PanelAnalyticsNav', 'v2PanelKonfigurasiNav']
+  ['v2PanelDriverOpsNav', 'v2PanelPettyCashNav', 'v2PanelAnalyticsNav', 'v2PanelKonfigurasiNav', 'v2PanelEngineeringNav']
     .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = (id === def.navId) ? '' : 'none'; });
 
   const panelTitle    = document.getElementById('v2PanelTitle');
@@ -986,6 +1103,18 @@ function setRailModule(name) {
 
   // Module-aware primary CTA (v1.14.1) — also re-syncs the mobile FAB (v1.15.2).
   updatePanelCta();
+
+  // v1.20.2: adaptive search — swap the placeholder to the active module and
+  // reset the box so a query never leaks across modules.
+  const searchInput = document.getElementById('v2SearchInput');
+  if (searchInput) {
+    searchInput.placeholder = searchPlaceholder(name);
+    searchInput.value = '';
+    const clr = document.getElementById('v2SearchClear');
+    if (clr) clr.style.display = 'none';
+  }
+  searchQuery = '';
+  clearModuleSearch(name);
 
   // Land on the module's default menu.
   def.land();
@@ -1072,6 +1201,22 @@ const PC_MENU_TITLES = {
   norHistory: 'Riwayat NOR', settings: 'Pengaturan',
 };
 
+/* ── MODUL: Engineering Operations ── (embedded native module, v1.20.1) */
+const ENG_MENU_TITLES = {
+  dashboard: 'Dashboard', timeline: 'Timeline', history: 'Riwayat',
+  settings: 'Pengaturan',
+};
+async function navEngineering(screen, navId) {
+  setCrumb('ENGINEERING', ENG_MENU_TITLES[screen] || 'Engineering Operations');
+  if (navId) setV2PanelNavActive(navId);
+  setWorkspace('engineering');
+  if (!engineeringMounted) {
+    engineeringMounted = true;
+    await mountEngineering(document.getElementById('v2EngineeringWorkspace'));
+  }
+  setEngineeringScreen(screen);
+}
+
 /* ── MODUL: Analytics ── */
 function navAnalyticsDriver() {
   activeAdminModule = 'analytics';
@@ -1099,6 +1244,19 @@ function navAnalyticsExecutive() {
   activeAdminSection = 'executive';
   setV2PanelNavActive('v2NavAnalyticsGabungan');
   setCrumb('ANALYTICS', 'Executive Analytics');
+  setWorkspace('administration');
+}
+
+/* Engineering Analytics (v1.20.2) — migrated from the Engineering module into
+   the global Analytics module. Same navAnalyticsDriver pattern: set the module +
+   section, render the shared administration workspace. The Engineering module
+   now exposes only its analytics PROVIDER (buildEngineeringAnalytics); this
+   section renders it with the shared Analytics kit + shared export component. */
+function navAnalyticsEngineering() {
+  activeAdminModule = 'analytics';
+  activeAdminSection = 'engineeringanalytics';
+  setV2PanelNavActive('v2NavAnalyticsEngineering');
+  setCrumb('ANALYTICS', 'Engineering Analytics');
   setWorkspace('administration');
 }
 
@@ -1216,6 +1374,19 @@ function initV2Rail() {
         <div class="v2-rail-tooltip" aria-hidden="true">Petty Cash Center</div>
       </div>
 
+      <!-- Engineering Operations — admin + engineering roles; shown by updatePermissionUI() (v1.20.1).
+           Sits BEFORE Analytics per the global sidebar hierarchy: operational
+           modules → Analytics → Global Configuration (gear, always last) (v1.20.2). -->
+      <div class="v2-rail-item" id="v2RailEngineering"
+           role="button" tabindex="0"
+           aria-label="Engineering Operations" aria-current="false" style="display:none;">
+        <svg class="v2-rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M15.5 7a4.5 4.5 0 0 1-5.9 5.9L4 18.5 5.5 20l5.6-5.6A4.5 4.5 0 0 0 16.7 8.6l-2.6 2.6-2-.5-.5-2 2.6-2.6A4.5 4.5 0 0 0 15.5 7z"/>
+        </svg>
+        <div class="v2-rail-tooltip" aria-hidden="true">Engineering Operations</div>
+      </div>
+
       <!-- Analytics — admin only; shown by updatePermissionUI() (v1.14.0) -->
       <div class="v2-rail-item" id="v2RailAnalytics"
            role="button" tabindex="0"
@@ -1226,7 +1397,8 @@ function initV2Rail() {
         <div class="v2-rail-tooltip" aria-hidden="true">Analytics</div>
       </div>
 
-      <!-- Konfigurasi — admin only; shown by updatePermissionUI() (v1.14.0) -->
+      <!-- Konfigurasi (Global Configuration, gear) — admin only; ALWAYS the last
+           global navigation item (v1.14.0 / hierarchy locked v1.20.2) -->
       <div class="v2-rail-item" id="v2RailKonfigurasi"
            role="button" tabindex="0"
            aria-label="Konfigurasi" aria-current="false" style="display:none;">
@@ -1280,6 +1452,7 @@ function initV2Rail() {
   const railPetty   = document.getElementById('v2RailPettyCash');
   const railAnalytics = document.getElementById('v2RailAnalytics');
   const railKonfig  = document.getElementById('v2RailKonfigurasi');
+  const railEng     = document.getElementById('v2RailEngineering');
   const railTheme   = document.getElementById('v2RailThemeBtn');
 
   crest?.addEventListener('click', () => {
@@ -1291,12 +1464,14 @@ function initV2Rail() {
   railPetty?.addEventListener('click', () => setRailModule('pettycash'));
   railAnalytics?.addEventListener('click', () => setRailModule('analytics'));
   railKonfig?.addEventListener('click', () => setRailModule('konfigurasi'));
+  railEng?.addEventListener('click', () => setRailModule('engineering'));
 
   // Mobile (rail hidden <768px): repointed sidebar drawer buttons are the
   // module entry points. Sidebar auto-closes on .sidebar-nav-item click.
   document.getElementById('btnUserMgmt')?.addEventListener('click', () => setRailModule('konfigurasi'));
   document.getElementById('btnPettyCash')?.addEventListener('click', () => setRailModule('pettycash'));
   document.getElementById('btnAnalytics')?.addEventListener('click', () => setRailModule('analytics'));
+  document.getElementById('btnEngineering')?.addEventListener('click', () => setRailModule('engineering'));
 
   railTheme?.addEventListener('click', () => {
     const current = document.documentElement.getAttribute('data-theme') || 'light';
@@ -1311,7 +1486,7 @@ function initV2Rail() {
   };
 
   // Keyboard: Enter/Space activates any focusable rail element
-  [crest, driverOps, railPetty, railAnalytics, railKonfig].forEach(el => {
+  [crest, driverOps, railPetty, railAnalytics, railKonfig, railEng].forEach(el => {
     el?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
@@ -1368,6 +1543,13 @@ function initV2Panel() {
           <path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"/>
         </svg>
         Tambah Pengeluaran
+      </button>
+      <!-- Engineering primary CTA (v1.20.2) — shown only when the Engineering module is active -->
+      <button class="v2-panel-btn v2-panel-btn--primary" id="v2BtnBuatPenugasan" type="button" style="display:none;">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true">
+          <path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"/>
+        </svg>
+        Buat Penugasan
       </button>
     </div>
 
@@ -1498,6 +1680,12 @@ function initV2Panel() {
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M5 3a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V5a2 2 0 00-2-2H5zm2.5 9a1.5 1.5 0 100-3 1.5 1.5 0 000 3zm5 0a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/></svg>
         Executive Analytics
       </button>
+      <!-- Engineering Analytics (v1.20.2) — migrated from the Engineering module;
+           reuses the Analytics architecture + shared export component. -->
+      <button class="v2-panel-nav-item" id="v2NavAnalyticsEngineering" type="button" style="display:none;">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.5 7a4.5 4.5 0 0 1-5.9 5.9L4 18.5 5.5 20l5.6-5.6A4.5 4.5 0 0 0 16.7 8.6l-2.6 2.6-2-.5-.5-2 2.6-2.6A4.5 4.5 0 0 0 15.5 7z"/></svg>
+        Engineering Analytics
+      </button>
     </nav>
 
     <!-- ═══ MODUL: Konfigurasi ═══ (admin only) -->
@@ -1512,6 +1700,29 @@ function initV2Panel() {
       <button class="v2-panel-nav-item" id="v2NavKonfGlobal" type="button">
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
         Konfigurasi Global
+      </button>
+    </nav>
+
+    <!-- ═══ MODUL: Engineering Operations ═══ (v1.20.1 — admin + engineering roles) -->
+    <nav class="v2-panel-nav v2-panel-nav--engineering" id="v2PanelEngineeringNav"
+         aria-label="Engineering Operations menu" style="display:none;">
+      <button class="v2-panel-nav-item v2-panel-nav-item--active" id="v2NavEngDashboard" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M3 4a1 1 0 011-1h5a1 1 0 011 1v5a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM11 4a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1V4zM11 10a1 1 0 011-1h4a1 1 0 011 1v6a1 1 0 01-1 1h-4a1 1 0 01-1-1v-6zM3 13a1 1 0 011-1h5a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3z"/></svg>
+        Dashboard
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavEngTimeline" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
+        <span id="v2NavEngTimelineLabel">Timeline</span>
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavEngHistory" type="button" style="display:none;">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h4a1 1 0 100-2H7z" clip-rule="evenodd"/></svg>
+        <span id="v2NavEngHistoryLabel">Riwayat</span>
+      </button>
+      <!-- Engineering Analytics moved into the global Analytics module (v1.20.2) —
+           Engineering no longer owns an Analytics page; it exposes the provider only. -->
+      <button class="v2-panel-nav-item" id="v2NavEngSettings" type="button" style="display:none;">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
+        Pengaturan
       </button>
     </nav>
 
@@ -1605,6 +1816,14 @@ function initV2Panel() {
     openPettyCashAddExpense();
   });
 
+  // Buat Penugasan (v1.20.2): Engineering primary CTA → open the create-assignment
+  // modal. Ensure the module is mounted/active first (covers a direct click).
+  document.getElementById('v2BtnBuatPenugasan')?.addEventListener('click', async () => {
+    if (!isAdmin()) return;
+    if (activeRailModule !== 'engineering') await navEngineering('dashboard', 'v2NavEngDashboard');
+    openEngineeringCreate();
+  });
+
   // ── Panel MENU handlers — all delegate to the v1.14.0 routing layer ──
   // MODUL Driver Operations
   document.getElementById('v2NavDashboard')?.addEventListener('click', navJadwalDriver);
@@ -1636,6 +1855,13 @@ function initV2Panel() {
   // MODUL Konfigurasi
   document.getElementById('v2NavKonfUsers')?.addEventListener('click', navManajemenUser);
   document.getElementById('v2NavKonfGlobal')?.addEventListener('click', navKonfigurasiGlobal);
+
+  // MODUL Engineering Operations (v1.20.1)
+  document.getElementById('v2NavEngDashboard')?.addEventListener('click', () => navEngineering('dashboard', 'v2NavEngDashboard'));
+  document.getElementById('v2NavEngTimeline')?.addEventListener('click', () => navEngineering('timeline', 'v2NavEngTimeline'));
+  document.getElementById('v2NavEngHistory')?.addEventListener('click', () => navEngineering('history', 'v2NavEngHistory'));
+  document.getElementById('v2NavAnalyticsEngineering')?.addEventListener('click', navAnalyticsEngineering);
+  document.getElementById('v2NavEngSettings')?.addEventListener('click', () => navEngineering('settings', 'v2NavEngSettings'));
 
   // Legacy Administration entry (hidden) — kept wired for rollback safety.
   document.getElementById('v2NavAdminUsers')?.addEventListener('click', navManajemenUser);
@@ -2357,6 +2583,7 @@ function setWorkspace(name) {
   const isPh    = name === 'placeholder';
   const isAnPc  = name === 'analyticsPetty';
   const isAnEx  = name === 'analyticsExec';
+  const isEng   = name === 'engineering';
 
   const timelineSurface = document.getElementById('v2TimelineSurface');
   const driverDash      = document.getElementById('driverDashboard');
@@ -2366,8 +2593,10 @@ function setWorkspace(name) {
   const phWs            = document.getElementById('v2PlaceholderWorkspace');
   const anPcWs          = document.getElementById('v2AnalyticsPettyWorkspace');
   const anExWs          = document.getElementById('v2AnalyticsExecWorkspace');
+  const engWs           = document.getElementById('v2EngineeringWorkspace');
 
   if (timelineSurface) timelineSurface.style.display = isDash ? ''      : 'none';
+  if (engWs)           engWs.style.display           = isEng   ? 'block' : 'none';
   if (driverDash)      driverDash.style.display      = isDash && isDriver() ? 'block' : 'none';
   if (pendingWs)       pendingWs.style.display       = isPend  ? 'block' : 'none';
   if (adminWs)         adminWs.style.display         = isAdmWs ? 'block' : 'none';
@@ -2379,6 +2608,8 @@ function setWorkspace(name) {
   // Pause the embedded Petty Cash module's live re-render when it is hidden;
   // navPettyCash()/setPettyCashScreen() resume it on return.
   if (!isPc && pettyCashMounted) closePettyCashCenter();
+  // Engineering module: pause its live re-render when hidden (v1.20.1).
+  if (!isEng && engineeringMounted) closeEngineering();
   // Pause the new Analytics workspaces' live re-render when hidden, and force a
   // fresh recompute whenever one becomes visible — so a data change made while it
   // was hidden (e.g. a NOR Official↔Test convert) is always reflected without a
@@ -2527,6 +2758,20 @@ function initV2PettyCashWorkspace() {
   ws.style.display = 'none';
   document.querySelector('.main-content')?.appendChild(ws);
   console.log('[v1.14.0] Petty Cash workspace host injected');
+}
+
+/**
+ * v1.20.1: Inject the embedded Engineering Operations module host
+ * (#v2EngineeringWorkspace). Carries class .eng-root so the module's scoped
+ * design tokens resolve. Mounts lazily on first navigation (navEngineering).
+ */
+function initV2EngineeringWorkspace() {
+  const ws = document.createElement('div');
+  ws.id = 'v2EngineeringWorkspace';
+  ws.className = 'v2-workspace eng-root';
+  ws.style.display = 'none';
+  document.querySelector('.main-content')?.appendChild(ws);
+  console.log('[v1.20.1] Engineering workspace host injected');
 }
 
 /**
@@ -2830,6 +3075,9 @@ function initV2AdministrationWorkspace() {
         <div id="v2AdminSectionExecutive" style="display:none;">
           <div id="v2ExecutiveDashboard"></div>
         </div>
+        <div id="v2AdminSectionEngineeringAnalytics" style="display:none;">
+          <div id="v2EngineeringAnalyticsDashboard"></div>
+        </div>
         <div id="v2AdminSectionAnalytics" class="v2-analytics-claude v2-analytics-shell" style="display:none;">
           <!-- Analytics Header (command area): title + date range + filters + export -->
           <div class="v2-analytics-header" id="v2AnalyticsHeader">
@@ -2900,6 +3148,9 @@ function initV2AdministrationWorkspace() {
         if (activeAdminSection === 'analytics') exportAnalyticsReport(actionBtn);
         return;
       }
+      // v1.20.2 — Engineering Analytics export (reuses the shared export pipeline).
+      if (action === 'export-engineering-analytics-pdf') { exportEngineeringAnalytics('pdf', actionBtn); return; }
+      if (action === 'export-engineering-analytics-excel') { exportEngineeringAnalytics('excel', actionBtn); return; }
       if (action === 'ec-generate') {
         // Export Center catalog card → registry-driven export + metadata log,
         // showing the clicked card's own busy state.
@@ -3429,6 +3680,11 @@ function renderV2AdminWorkspace() {
   if (executiveSection) {
     executiveSection.style.display = (activeAdminSection === 'executive') ? '' : 'none';
   }
+  // v1.20.2: Engineering Analytics — own render page, same central-hide pattern.
+  const engineeringAnalyticsSection = document.getElementById('v2AdminSectionEngineeringAnalytics');
+  if (engineeringAnalyticsSection) {
+    engineeringAnalyticsSection.style.display = (activeAdminSection === 'engineeringanalytics') ? '' : 'none';
+  }
 
   // v1.14.0: the tab strip is the mobile sub-nav — show only the tabs that
   // belong to the active platform module so it mirrors the new module IA.
@@ -3715,6 +3971,18 @@ function renderV2AdminWorkspace() {
     if (_auditSec5) _auditSec5.style.display = 'none';
     if (overviewRow) overviewRow.innerHTML = '';
     renderExecutiveDashboardSection();
+
+  } else if (activeAdminSection === 'engineeringanalytics') {
+    if (usersSection)       usersSection.style.display       = 'none';
+    if (driversSection)     driversSection.style.display     = 'none';
+    if (vehiclesSection)    vehiclesSection.style.display    = 'none';
+    if (configSection)      configSection.style.display      = 'none';
+    if (analyticsSection)   analyticsSection.style.display   = 'none';
+    if (placeholderSection) placeholderSection.style.display = 'none';
+    const _auditSec6 = document.getElementById('v2AdminSectionAudit');
+    if (_auditSec6) _auditSec6.style.display = 'none';
+    if (overviewRow) overviewRow.innerHTML = '';
+    renderEngineeringAnalyticsSection();
 
   } else {
     if (usersSection)       usersSection.style.display       = 'none';
@@ -6432,6 +6700,62 @@ async function exportExecutiveDashboard(format, btn) {
   } catch (err) {
     console.error('[ExecutiveDashboard] export failed:', err);
     logExportFailure(exportCtx, { error: err, durationMs: elapsed() });
+    showToast(isExcel ? 'Gagal membuat Excel.' : 'Gagal membuat PDF.');
+  } finally {
+    if (btn) { btn.disabled = false; if (prev != null) btn.textContent = prev; }
+  }
+}
+
+/* ── Engineering Analytics section (v1.20.2) ───────────────────────────────
+   Renders the Engineering analytics PROVIDER snapshot inside the global
+   Analytics module (reusing the shared Analytics kit) and publishes it for the
+   shared export component. In Development the Engineering store is hydrated from
+   the dev seed if the user lands here before opening the Engineering module. */
+let _engineeringAnalyticsHydrating = false;
+async function renderEngineeringAnalyticsSection() {
+  const host = document.getElementById('v2EngineeringAnalyticsDashboard');
+  if (!host) return;
+  if (engListAssignments().length === 0 && isDevelopment() && !_engineeringAnalyticsHydrating) {
+    _engineeringAnalyticsHydrating = true;
+    try { await engLoadAll(engCreateDevSeedAdapter()); } catch (_) { /* empty state below */ }
+    _engineeringAnalyticsHydrating = false;
+  }
+  try {
+    const snapshot = buildEngineeringAnalytics(engListAssignments(), { now: Date.now() });
+    const u = getCurrentUser();
+    window._lastEngineeringAnalyticsSnapshot = snapshot;
+    window._engineeringAnalyticsMeta = {
+      generatedBy: (u && (u.displayName || u.name || u.username)) || '—',
+      appVersion: APP_VERSION, periodLabel: 'Semua riwayat',
+    };
+    host.innerHTML = renderEngineeringAnalyticsView(snapshot);
+  } catch (err) {
+    console.warn('[EngineeringAnalytics] render failed', err);
+    host.innerHTML = '<div class="daa exec-ui v2-analytics-claude"><div class="daa-sec"><div class="daa-empty"><div class="daa-empty__t">Gagal memuat Engineering Analytics</div></div></div></div>';
+  }
+}
+
+/** Export the Engineering Analytics report (PDF | Excel) via the shared export
+ *  registry (mirrors exportExecutiveDashboard / exportDriverWellness). */
+async function exportEngineeringAnalytics(format, btn) {
+  const isExcel = format === 'excel';
+  const reportId = isExcel ? 'engineering-analytics-excel' : 'engineering-analytics-pdf';
+  const def = getExportReport(reportId);
+  if (!def) return;
+  const prev = btn ? btn.textContent : null;
+  if (btn) { btn.disabled = true; btn.textContent = isExcel ? '⏳ Excel…' : '⏳ PDF…'; }
+  try {
+    const result = await runExportReport(reportId);
+    if (result && result.blob) {
+      const url = URL.createObjectURL(result.blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = result.filename || `${reportId}.${isExcel ? 'xlsx' : 'pdf'}`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    }
+    showToast(isExcel ? 'Excel berhasil dibuat.' : 'PDF berhasil dibuat.');
+  } catch (err) {
+    console.error('[EngineeringAnalytics] export failed:', err);
     showToast(isExcel ? 'Gagal membuat Excel.' : 'Gagal membuat PDF.');
   } finally {
     if (btn) { btn.disabled = false; if (prev != null) btn.textContent = prev; }
@@ -9368,42 +9692,38 @@ document.addEventListener('DOMContentLoaded', async () => {
     initV2PendingWorkspace();     // VSM-9: inline pending workspace
     initV2AdministrationWorkspace(); // VSM-9: admin-only administration workspace
     initV2PettyCashWorkspace();   // v1.14.0: embedded Petty Cash module host
+    initV2EngineeringWorkspace(); // v1.20.1: embedded Engineering module host
     initV2PlaceholderWorkspace(); // v1.14.0: shared "coming soon" placeholder
     initV2AnalyticsWorkspaces();  // v1.15.0: Analytics Petty Cash + Executive hosts
     initV2AnalyticsMobileNav();   // v1.15.2: mobile parity sub-nav for the 3 Analytics screens
     initThemeManager();           // VSM-9: dark mode toggle wired to #v2TopbarThemeBtn
   }
 
-  // VSM-9: Search input events — wired after topbar exists
+  // v1.20.2: Adaptive, module-aware global search — one box, per-module adapters.
+  registerSearchAdapters();
+
+  // VSM-9 / v1.20.2: Search input events — delegate to the active module's adapter.
   const v2SearchInput = document.getElementById('v2SearchInput');
   const v2SearchClear = document.getElementById('v2SearchClear');
 
   if (v2SearchInput) {
     v2SearchInput.addEventListener('input', () => {
-      searchQuery = v2SearchInput.value;
-      if (v2SearchClear) v2SearchClear.style.display = searchQuery ? 'flex' : 'none';
-      updateAllModules();
-      renderViews();
-      if (currentWorkspace === 'pending') renderPendingWorkspace();
+      const q = v2SearchInput.value;
+      if (v2SearchClear) v2SearchClear.style.display = q ? 'flex' : 'none';
+      runModuleSearch(activeRailModule, q);
     });
     v2SearchInput.addEventListener('keydown', e => {
       if (e.key !== 'Escape') return;
-      searchQuery = '';
       v2SearchInput.value = '';
       if (v2SearchClear) v2SearchClear.style.display = 'none';
-      updateAllModules();
-      renderViews();
-      if (currentWorkspace === 'pending') renderPendingWorkspace();
+      runModuleSearch(activeRailModule, '');
     });
   }
   if (v2SearchClear) {
     v2SearchClear.addEventListener('click', () => {
-      searchQuery = '';
       if (v2SearchInput) v2SearchInput.value = '';
       v2SearchClear.style.display = 'none';
-      updateAllModules();
-      renderViews();
-      if (currentWorkspace === 'pending') renderPendingWorkspace();
+      runModuleSearch(activeRailModule, '');
     });
   }
 
