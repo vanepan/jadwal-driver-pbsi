@@ -174,6 +174,11 @@ import {
   normalizeRequest,
 } from './requests.js';
 import { renderDriverDashboard, setAssignments as setDashboardAssignments } from './driver-dashboard.js';
+// v1.19.9 Executive Command Center — the Workspace presentation layer. Home
+// resolves role → workspace → widgets → render. PURE: the router, registries,
+// and widgets consume existing models + deep-link into existing modules; no
+// business logic, engines, or Firebase writes live here.
+import { renderHome, refreshHome, resolveWorkspaceForRole } from './workspace/home-router.js';
 import { initCommentHandlers, openCommentModal, closeCommentModal, setRequests as setCommentRequests, registerCommentSaveCallback, refreshCommentThreadIfOpen } from './comments.js';
 import { initAdminUI, updateAdminButtons, openUserFormModal } from './admin.js';
 import {
@@ -198,6 +203,14 @@ import { computeExecutiveAnalytics } from './analytics/executive-analytics.js';
 // prediction implementation. Adds NO business logic; the service is called
 // exactly once per refresh from inside the component.
 import { renderDriverPredictionDashboard, injectDriverPredictionStyles } from './components/driver-prediction-dashboard.js';
+// v1.19.10 Executive Briefing — the certified Recommendation path, reused (no new
+// logic): getPrediction(buildDriverPredictionInput()) → certified model →
+// recommendationBoard / decisionSupport / allRecommendations. Consumed READ-ONLY
+// by the Executive Command Center briefing widgets (Priority / Decision /
+// Recommendation). The prediction service caches by input, so no extra work.
+import { getPrediction } from './services/prediction-service.js';
+import { recommendationBoard, decisionSupport, noRecommendationState } from './recommendation/recommendation-summary.js';
+import { allRecommendations } from './recommendation/fleet-recommendation-engine.js';
 import { computePettyCashAnalytics } from './analytics/petty-cash-analytics.js';
 import { bidangRoster } from './petty-cash/petty-cash-service.js';
 import {
@@ -714,14 +727,14 @@ function updatePermissionUI(resetNavActive = false) {
       v2FooterRoleLabel.textContent = roleNames[currentUser?.role] || '';
     }
 
-    // Reset active state to Dashboard only on auth changes (login/logout/startup).
-    // Skipped for Firebase data-refresh calls so another device's update does not
-    // disturb the current user's navigation position.
+    // Reset landing only on auth changes (login/logout/startup). Skipped for
+    // Firebase data-refresh calls so another device's update does not disturb
+    // the current user's navigation position.
+    // v1.19.9 — every role now lands on Home (the role-tailored Workspace):
+    // admin → Executive Command Center, bidang → Request, driver → Driver.
+    // setRailModule('home') → navHome() sets the panel/breadcrumb + renders.
     if (resetNavActive) {
-      setV2PanelNavActive('v2NavDashboard');
-      if (document.getElementById('v2PendingWorkspace')) setWorkspace('dashboard');
-      // Reset rail to Driver Operations module
-      if (activeRailModule !== 'driverops') setRailModule('driverops');
+      setRailModule('home');
     }
     syncV2ResponsiveNavReuse();
   }
@@ -828,6 +841,14 @@ async function loadFeatureFlags() {
    subtitle, breadcrumb label and the default landing action.
    ────────────────────────────────────────────────────────────────── */
 const MODULE_DEFS = {
+  // v1.19.9 — Home is the Workspace Loader: the default post-login landing for
+  // EVERY role. It renders a role-tailored workspace (Executive Command Center
+  // for admin, Request for bidang, Driver for driver) above the existing modules.
+  home: {
+    railId: 'v2RailHome', navId: 'v2PanelHomeNav',
+    title: 'Home', subtitle: 'Ruang Kerja', crumb: 'HOME',
+    land: () => navHome(),
+  },
   driverops: {
     railId: 'v2RailDriverOps', navId: 'v2PanelDriverOpsNav',
     title: 'Driver Operations', subtitle: 'Operasional Kendaraan', crumb: 'DRIVER OPS',
@@ -976,7 +997,7 @@ function setRailModule(name) {
   });
 
   // Panel-nav block visibility — show only the active module's menu.
-  ['v2PanelDriverOpsNav', 'v2PanelPettyCashNav', 'v2PanelAnalyticsNav', 'v2PanelKonfigurasiNav']
+  ['v2PanelHomeNav', 'v2PanelDriverOpsNav', 'v2PanelPettyCashNav', 'v2PanelAnalyticsNav', 'v2PanelKonfigurasiNav']
     .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = (id === def.navId) ? '' : 'none'; });
 
   const panelTitle    = document.getElementById('v2PanelTitle');
@@ -999,6 +1020,114 @@ function setRailModule(name) {
    any mobile sub-nav all call these — single source of truth for routing.
    Each sets the active panel item, breadcrumb, workspace and any sub-state.
    ────────────────────────────────────────────────────────────────── */
+
+/* ── MODUL: Home (Workspace Loader, v1.19.9) ── */
+
+/**
+ * Build the immutable context handed to the Workspace renderer + widgets.
+ * This is the ONLY bridge between app state and the presentation layer:
+ * widgets receive already-shaped data + an `actions` map of existing nav /
+ * modal functions, so they never import app internals or run business logic.
+ */
+function buildHomeContext() {
+  const user = getCurrentUser();
+  const role = user?.role || 'viewer';
+  const myRequests = (requests || []).filter(r =>
+    user && (r.requesterId === user.id || r.requesterName === user.name));
+
+  const ctx = {
+    user, role,
+    assignments,
+    myAssignments: filterAssignmentsForUser(assignments),
+    requests,
+    myRequests,
+    logs: auditLogs,
+    models: null,
+    recommendations: null,
+    actions: {
+      openFormModal: () => openFormModal(),
+      openRequestFormModal: () => openRequestFormModal(),
+      openRequestsList: () => openRequestsListModal(),
+      openDetail: (id) => openDetailModal(id),
+      navPending: () => navPending(),
+      navAnalyticsDriver: () => navAnalyticsDriver(),
+      navAnalyticsExecutive: () => navAnalyticsExecutive(),
+      navRecommendationAccuracy: () => navRecommendationAccuracy(),
+      navDriverPrediction: () => navDriverPrediction(),
+      navPettyCash: () => navPettyCash('dashboard', 'v2NavPcDashboard'),
+      navPettyCashNor: () => navPettyCash('norGenerate'),
+      navVehicles: () => navManajemenKendaraan(),
+      navDriverOps: () => navJadwalDriver(),
+      navHome: () => navHome(),
+    },
+  };
+
+  // Admin-only intelligence (the Executive Command Center is the sole consumer).
+  // Both are failure-safe: a hiccup leaves the field null and the widgets fall
+  // back to honest empty states.
+  if (isAdmin()) {
+    try { ctx.models = buildExecutiveDashboardModel(); }
+    catch (err) { console.warn('[Home] executive model unavailable', err); ctx.models = null; }
+    ctx.recommendations = buildExecutiveRecommendations();
+  }
+  return ctx;
+}
+
+/**
+ * Build the certified recommendation package for the Executive briefing by
+ * REUSING the existing pipeline end-to-end: buildDriverPredictionInput() →
+ * getPrediction() (the certified service, cached) → the Fleet Recommendation
+ * Engine's pure summarisers. NO new recommendation/prediction logic. Honours the
+ * same certification gate the Prediction dashboards use (never invent a forecast).
+ * @returns {{certified:boolean, confidence?:Object, board?:Object, decisions?:Array, recs?:Array, positive?:Object}}
+ */
+function buildExecutiveRecommendations() {
+  try {
+    const input = buildDriverPredictionInput();
+    const result = getPrediction(input);
+    const confidence = (result && result.metadata && result.metadata.predictionConfidence) || { score: 0, level: 'LOW' };
+    const model = result && result.model;
+    const vehicles = model && Array.isArray(model.vehicles) ? model.vehicles : [];
+    const certified = !!(result && result.ok && model && confidence.level !== 'LOW' && vehicles.length > 0);
+    if (!certified) return { certified: false, board: null, decisions: [], recs: [] };
+    return {
+      certified: true,
+      confidence,
+      board: recommendationBoard(model),      // { critical, upcoming, optimization, healthy, counts, isHealthyFleet }
+      decisions: decisionSupport(model),       // executive Insight[]
+      recs: allRecommendations(model),         // Recommendation[] (vehicle actions + optimizations)
+      positive: noRecommendationState(model),  // positive "operating normally" copy when healthy
+    };
+  } catch (err) {
+    console.warn('[Home] executive recommendations unavailable', err);
+    return { certified: false, board: null, decisions: [], recs: [] };
+  }
+}
+
+/** Land on Home: resolve the role's workspace, set breadcrumb, show the host. */
+function navHome() {
+  const ws = resolveWorkspaceForRole(getCurrentUser()?.role);
+  setV2PanelNavActive('v2NavHome');
+  setCrumb('HOME', ws ? ws.title : 'Home');
+  setWorkspace('home');
+}
+
+/** Full render of the Home workspace into its host (skeleton-first). */
+function renderHomeWorkspace() {
+  const host = document.getElementById('v2HomeWorkspace');
+  if (!host) return;
+  const ctx = buildHomeContext();
+  const ws = resolveWorkspaceForRole(ctx.role);
+  setCrumb('HOME', ws ? ws.title : 'Home');
+  renderHome(host, ctx);
+}
+
+/** In-place refresh of the Home workspace on live data changes (no flicker). */
+function refreshHomeWorkspace() {
+  const host = document.getElementById('v2HomeWorkspace');
+  if (!host || host.style.display === 'none') return;
+  refreshHome(host, buildHomeContext());
+}
 
 /* ── MODUL: Driver Operations ── */
 function navJadwalDriver() {
@@ -1190,9 +1319,19 @@ function initV2Rail() {
     </div>
 
     <nav class="v2-rail-modules" aria-label="Navigasi modul">
-      <div class="v2-rail-item v2-rail-item--active" id="v2RailDriverOps"
+      <!-- Home — the Workspace Loader; default landing for every role (v1.19.9) -->
+      <div class="v2-rail-item v2-rail-item--active" id="v2RailHome"
            role="button" tabindex="0"
-           aria-label="Driver Operations" aria-current="true">
+           aria-label="Home" aria-current="true">
+        <svg class="v2-rail-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h3a1 1 0 001-1v-3h2v3a1 1 0 001 1h3a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/>
+        </svg>
+        <div class="v2-rail-tooltip" aria-hidden="true">Home</div>
+      </div>
+
+      <div class="v2-rail-item" id="v2RailDriverOps"
+           role="button" tabindex="0"
+           aria-label="Driver Operations" aria-current="false">
         <svg class="v2-rail-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
           <path fill-rule="evenodd"
                 d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0
@@ -1276,6 +1415,7 @@ function initV2Rail() {
   // ── Event handlers ──
 
   const crest       = document.getElementById('v2RailCrest');
+  const railHome    = document.getElementById('v2RailHome');
   const driverOps   = document.getElementById('v2RailDriverOps');
   const railPetty   = document.getElementById('v2RailPettyCash');
   const railAnalytics = document.getElementById('v2RailAnalytics');
@@ -1287,6 +1427,7 @@ function initV2Rail() {
   });
 
   // ── Rail MODULE switching (v1.14.0) ──
+  railHome?.addEventListener('click', () => setRailModule('home'));
   driverOps?.addEventListener('click', () => setRailModule('driverops'));
   railPetty?.addEventListener('click', () => setRailModule('pettycash'));
   railAnalytics?.addEventListener('click', () => setRailModule('analytics'));
@@ -1311,7 +1452,7 @@ function initV2Rail() {
   };
 
   // Keyboard: Enter/Space activates any focusable rail element
-  [crest, driverOps, railPetty, railAnalytics, railKonfig].forEach(el => {
+  [crest, railHome, driverOps, railPetty, railAnalytics, railKonfig].forEach(el => {
     el?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
@@ -1370,6 +1511,18 @@ function initV2Panel() {
         Tambah Pengeluaran
       </button>
     </div>
+
+    <!-- ═══ MODUL: Home — Workspace Loader (v1.19.9) ═══ -->
+    <nav class="v2-panel-nav v2-panel-nav--home" id="v2PanelHomeNav"
+         aria-label="Home menu" style="display:none;">
+      <div class="v2-panel-section">Ruang Kerja</div>
+      <button class="v2-panel-nav-item v2-panel-nav-item--active" id="v2NavHome" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h3a1 1 0 001-1v-3h2v3a1 1 0 001 1h3a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/>
+        </svg>
+        Ruang Kerja Saya
+      </button>
+    </nav>
 
     <!-- ═══ MODUL: Driver Operations ═══ -->
     <nav class="v2-panel-nav v2-panel-nav--driverops" id="v2PanelDriverOpsNav"
@@ -1606,6 +1759,8 @@ function initV2Panel() {
   });
 
   // ── Panel MENU handlers — all delegate to the v1.14.0 routing layer ──
+  // MODUL Home (v1.19.9)
+  document.getElementById('v2NavHome')?.addEventListener('click', navHome);
   // MODUL Driver Operations
   document.getElementById('v2NavDashboard')?.addEventListener('click', navJadwalDriver);
   document.getElementById('v2NavPending')?.addEventListener('click', navPending);
@@ -2357,6 +2512,7 @@ function setWorkspace(name) {
   const isPh    = name === 'placeholder';
   const isAnPc  = name === 'analyticsPetty';
   const isAnEx  = name === 'analyticsExec';
+  const isHome  = name === 'home';
 
   const timelineSurface = document.getElementById('v2TimelineSurface');
   const driverDash      = document.getElementById('driverDashboard');
@@ -2366,6 +2522,7 @@ function setWorkspace(name) {
   const phWs            = document.getElementById('v2PlaceholderWorkspace');
   const anPcWs          = document.getElementById('v2AnalyticsPettyWorkspace');
   const anExWs          = document.getElementById('v2AnalyticsExecWorkspace');
+  const homeWs          = document.getElementById('v2HomeWorkspace');
 
   if (timelineSurface) timelineSurface.style.display = isDash ? ''      : 'none';
   if (driverDash)      driverDash.style.display      = isDash && isDriver() ? 'block' : 'none';
@@ -2375,6 +2532,7 @@ function setWorkspace(name) {
   if (phWs)            phWs.style.display            = isPh    ? 'block' : 'none';
   if (anPcWs)          anPcWs.style.display          = isAnPc  ? 'block' : 'none';
   if (anExWs)          anExWs.style.display          = isAnEx  ? 'block' : 'none';
+  if (homeWs)          homeWs.style.display          = isHome  ? 'block' : 'none';
 
   // Pause the embedded Petty Cash module's live re-render when it is hidden;
   // navPettyCash()/setPettyCashScreen() resume it on return.
@@ -2399,6 +2557,7 @@ function setWorkspace(name) {
 
   if (isPend)  renderPendingWorkspace();
   if (isAdmWs) renderV2AdminWorkspace();
+  if (isHome)  renderHomeWorkspace();
 
   // Keep the mobile Analytics sub-nav in lockstep with the active screen.
   syncAnalyticsMobileNav();
@@ -2540,6 +2699,21 @@ function initV2PlaceholderWorkspace() {
   ws.style.display = 'none';
   document.querySelector('.main-content')?.appendChild(ws);
   console.log('[v1.14.0] Placeholder workspace injected');
+}
+
+/**
+ * v1.19.9: Inject the Home workspace host (#v2HomeWorkspace). It carries
+ * `exec-ui v2-analytics-claude` so the Executive design tokens + dark mode
+ * inherit — the Workspace layer reuses the existing design language, never a
+ * new one. Rendered lazily by renderHomeWorkspace() on first navigation.
+ */
+function initV2HomeWorkspace() {
+  const ws = document.createElement('div');
+  ws.id = 'v2HomeWorkspace';
+  ws.className = 'v2-workspace exec-ui v2-analytics-claude';
+  ws.style.display = 'none';
+  document.querySelector('.main-content')?.appendChild(ws);
+  console.log('[v1.19.9] Home workspace injected');
 }
 
 /**
@@ -9370,6 +9544,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initV2PettyCashWorkspace();   // v1.14.0: embedded Petty Cash module host
     initV2PlaceholderWorkspace(); // v1.14.0: shared "coming soon" placeholder
     initV2AnalyticsWorkspaces();  // v1.15.0: Analytics Petty Cash + Executive hosts
+    initV2HomeWorkspace();        // v1.19.9: Home workspace host (Executive Command Center)
     initV2AnalyticsMobileNav();   // v1.15.2: mobile parity sub-nav for the 3 Analytics screens
     initThemeManager();           // VSM-9: dark mode toggle wired to #v2TopbarThemeBtn
   }
@@ -9705,6 +9880,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (currentWorkspace === 'administration' && activeAdminSection === 'audit') {
       renderV2AdminWorkspace();
     }
+    if (currentWorkspace === 'home') refreshHomeWorkspace(); // v1.19.9 — Home activity/events widgets
   });
 
   // Setup callbacks untuk cross-module communication
@@ -9720,6 +9896,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (activeAdminSection === 'wellness') renderDriverWellnessSection();
     if (activeAdminSection === 'prediction') renderDriverPredictionSection();
     if (activeAdminSection === 'executive') renderExecutiveDashboardSection();
+    if (currentWorkspace === 'home') refreshHomeWorkspace(); // v1.19.9 live Home refresh
     checkAndSendH1Reminders(assignments, requests, getUserByUsername, getUsers);
     checkAndSendHoursReminders(assignments, requests, getUserByUsername, getUsers);
   });
@@ -9735,6 +9912,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (activeAdminSection === 'wellness') renderDriverWellnessSection();
     if (activeAdminSection === 'prediction') renderDriverPredictionSection();
     if (activeAdminSection === 'executive') renderExecutiveDashboardSection();
+    if (currentWorkspace === 'home') refreshHomeWorkspace(); // v1.19.9 live Home refresh
     // Refresh comment modal if open for one of the updated requests
     refreshCommentThreadIfOpen(requests);
   });

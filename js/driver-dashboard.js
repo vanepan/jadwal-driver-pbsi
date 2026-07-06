@@ -31,36 +31,34 @@ export function setAssignments(newAssignments) {
 }
 
 /**
- * Render the driver dashboard into #driverDashboard.
- * Safe to call even when the container is hidden — exits early.
+ * Bucket a driver's assignments into Active / Today / Upcoming / History.
+ * PURE + exported so the Driver Workspace widgets (js/widgets/driver/) reuse
+ * the EXACT same logic the dashboard renders — one source of truth, no
+ * duplicated date math.
+ * @param {Array} items  assignments already filtered to the current driver
+ * @param {string} [today]
+ * @returns {{active:Array, today:Array, upcoming:Array, history:Array}}
  */
-export function renderDriverDashboard() {
-  const container = document.getElementById('driverDashboard');
-  if (!container || container.style.display === 'none') return;
+export function getDriverAssignmentBuckets(items, today = todayString()) {
+  const src = Array.isArray(items) ? items : [];
 
-  const today = todayString();
-
-  // Active: currently in-progress (any date)
-  const active = assignments
+  const active = src
     .filter(a => a.status === 'started')
-    .sort((a, b) => a.startTime.localeCompare(b.startTime));
+    .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
 
-  // Today: today's assignments that are not yet started or completed
-  const todayList = assignments
+  const todayList = src
     .filter(a => a.date === today && a.status === 'assigned')
-    .sort((a, b) => a.startTime.localeCompare(b.startTime));
+    .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
 
-  // Upcoming: future dates, not completed and not cancelled
-  const upcoming = assignments
+  const upcoming = src
     .filter(a => a.date > today && a.status !== 'completed' && a.status !== 'cancelled')
-    .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime))
+    .sort((a, b) => a.date.localeCompare(b.date) || (a.startTime || '').localeCompare(b.startTime || ''))
     .slice(0, 20);
 
-  // History: completed + cancelled (any date) + overdue non-completed past assignments
   const historyRaw = [
-    ...assignments.filter(a => a.status === 'completed'),
-    ...assignments.filter(a => a.status === 'cancelled'),
-    ...assignments.filter(a => a.date < today && a.status !== 'completed' && a.status !== 'started' && a.status !== 'cancelled'),
+    ...src.filter(a => a.status === 'completed'),
+    ...src.filter(a => a.status === 'cancelled'),
+    ...src.filter(a => a.date < today && a.status !== 'completed' && a.status !== 'started' && a.status !== 'cancelled'),
   ];
   const seen = new Set();
   const history = historyRaw
@@ -71,6 +69,19 @@ export function renderDriverDashboard() {
       return db.localeCompare(da);
     })
     .slice(0, 20);
+
+  return { active, today: todayList, upcoming, history };
+}
+
+/**
+ * Render the driver dashboard into #driverDashboard.
+ * Safe to call even when the container is hidden — exits early.
+ */
+export function renderDriverDashboard() {
+  const container = document.getElementById('driverDashboard');
+  if (!container || container.style.display === 'none') return;
+
+  const { active, today: todayList, upcoming, history } = getDriverAssignmentBuckets(assignments);
 
   const activeEl   = document.getElementById('dashActiveSection');
   const todayEl    = document.getElementById('dashTodaySection');

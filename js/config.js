@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.19.8';
-export const RELEASE_NAME = 'Scenario Simulation Engine';
+export const APP_VERSION = '1.19.9';
+export const RELEASE_NAME = 'Executive Command Center';
 
 /**
  * Web Push VAPID PUBLIC key (v1.11.3). Safe to ship — it is an
@@ -17,6 +17,16 @@ export const RELEASE_NAME = 'Scenario Simulation Engine';
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.19.9',
+    date: '2026-07-03',
+    summary: 'Executive Command Center Foundation — Sprint 1 of the Executive Experience. Replaces the one-size-fits-all post-login landing with a Workspace presentation layer: after login the system resolves role → workspace → widgets → render, so every user immediately enters a workspace tailored to their responsibilities. Admin lands on the Executive Command Center ("what requires my attention today?"), Bidang on the Request Workspace, Driver on the Driver Workspace; Engineering is scaffolded (architecture-only placeholder widgets). This is PRESENTATION ONLY: no business logic, engines, Firebase paths, or Prediction/Explainability/Recommendation/Simulation code changed. Widgets CONSUME existing models (the certified Executive Dashboard aggregate, the driver assignment buckets, the user request store) and DEEP-LINK into the existing modules — business modules are untouched. New centralized architecture under js/workspace/ (workspace-registry: the single role→workspace source of truth; widget-registry: centralized widget metadata + lazy per-group loading; workspace-loader; workspace-renderer: skeleton→content→empty/error, a11y, live-ctx event delegation; home-router: the Home entry point; workspace-styles: scoped .wsp-* tokens, dark-mode inherited) and role widget groups under js/widgets/{executive,request,driver,engineering}/ over a shared _widget-base.js contract. Only the active workspace\'s widget bundle is imported (lazy). INTEGRATION (additive, backward compatible): a new "Home" rail item + panel-nav is the first module and the default landing for every role; all existing modules stay reachable via the rail. app.js gains navHome / buildHomeContext / renderHomeWorkspace / refreshHomeWorkspace and a #v2HomeWorkspace host (carries exec-ui v2-analytics-claude so Executive tokens + dark mode inherit); the Firebase data/request/log listeners refresh Home in place when active. driver-dashboard.js exports getDriverAssignmentBuckets() so the Driver widgets reuse the EXACT dashboard bucketing (no duplication). No engine, prediction, recommendation, simulation, or schema changes. APP_VERSION 1.19.8 → 1.19.9 re-stamps SW_VERSION → CACHE_NAME, version.json, and index.html cache-busts via scripts/sync-version.mjs.',
+    highlights: [
+      'New Workspace presentation layer under js/workspace/: workspace-registry (role→workspace, the ONLY role→workspace decision point), widget-registry (centralized widget metadata + lazy per-group import — only the active workspace\'s widgets load), workspace-loader, workspace-renderer (labelled skeletons → widget bodies → empty/error, region/aria roles, one delegated handler that routes declarative deep links to the LIVE ctx), home-router (Resolve Role → Resolve Workspace → Load Widgets → Render), and workspace-styles (scoped .wsp-* built entirely on the existing v2-analytics-claude tokens — dark-mode automatic, no :root mutation, no hardcoded colors).',
+      'Four role workspaces over a shared _widget-base contract: Executive Command Center (admin) — Operational Readiness (Operational Health Score), Snapshot, Critical Items, Recommendation Feed, Decision & Simulation centers, Latest Events, Recent Activity, Quick Actions; Request Workspace (bidang) — My Requests, Approval Status, Today\'s Schedule, Assigned Vehicle/Driver, Announcements, Quick Request, History; Driver Workspace (driver) — Today\'s Assignment, Assigned Vehicle, Schedule, Trip Timeline, Reminder, History (reusing getDriverAssignmentBuckets from driver-dashboard.js); Engineering — architecture-only placeholders. Widgets are pure, surface existing data, and deep-link into the owning module; drivers/bidang never see executive/intelligence widgets.',
+      'Backward-compatible integration: a new "Home" rail item + panel-nav is the first module and the default post-login landing for EVERY role (updatePermissionUI resets to Home), while Driver Operations / Petty Cash / Analytics / Konfigurasi stay reachable via the rail. app.js adds a #v2HomeWorkspace host + navHome/buildHomeContext/render/refresh wrappers; live Firebase listeners refresh Home in place. New scripts/workspace-foundation-check.mjs (headless) asserts every role resolves its workspace, the widget registry is lazy, the renderer emits the expected widget counts, and Engineering yields placeholders. smoke-boot + executive-ui-kit-check remain green. Version bump re-stamps SW/version.json/index.html via scripts/sync-version.mjs.',
+    ],
+  },
   {
     version: '1.19.8',
     date: '2026-07-03',
