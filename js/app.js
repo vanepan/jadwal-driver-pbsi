@@ -766,11 +766,12 @@ function updatePermissionUI(resetNavActive = false) {
     // Reset landing only on auth changes (login/logout/startup). Skipped for
     // Firebase data-refresh calls so another device's update does not disturb
     // the current user's navigation position.
-    // v1.19.9 — every role now lands on Home (the role-tailored Workspace):
-    // admin → Executive Command Center, bidang → Request, driver → Driver.
-    // setRailModule('home') → navHome() sets the panel/breadcrumb + renders.
+    // v1.19.9 — role-tailored Home Workspace is the default landing (admin →
+    // Executive Command Center, bidang → Request, driver → Driver).
+    // v1.20.2 integration — Engineering roles keep landing in their own module
+    // (production UX preserved); everyone else enters Home.
     if (resetNavActive) {
-      setRailModule('home');
+      setRailModule(isEngineeringUser() ? 'engineering' : 'home');
     }
     syncV2ResponsiveNavReuse();
   }

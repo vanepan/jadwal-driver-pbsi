@@ -96,12 +96,17 @@ export const WORKSPACES = {
   },
 };
 
-/** role → workspace id. The ONLY role→workspace decision point in the app. */
+/** role → workspace id. The ONLY role→workspace decision point in the app.
+ *  The Engineering roles (v1.20.x role registry) map to the engineering
+ *  workspace; their primary experience is the Engineering MODULE (reached via
+ *  the rail), but this keeps Home coherent if they open it. */
 const ROLE_TO_WORKSPACE = {
   admin: 'executive',
   bidang: 'request',
   driver: 'driver',
   engineering: 'engineering',
+  engineering_coordinator: 'engineering',
+  engineering_member: 'engineering',
 };
 
 /** Roles without a bespoke workspace fall back to the read-only Request view. */

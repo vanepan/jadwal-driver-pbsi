@@ -87,7 +87,7 @@ const result = await page.evaluate(async () => {
   }
 
   // 4) Lazy load resolves a render function for a sample widget in each group
-  const sampleImpl = await wreg.loadWidgetImpl('exec-readiness');
+  const sampleImpl = await wreg.loadWidgetImpl('exec-hero');
   out.lazyRenderFn = !!(sampleImpl && typeof sampleImpl.render === 'function');
 
   // 5) Render each role, count mounted cards
