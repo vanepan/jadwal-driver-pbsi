@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.20.2';
-export const RELEASE_NAME = 'Engineering UI Stabilization';
+export const APP_VERSION = '1.20.3';
+export const RELEASE_NAME = 'Executive Briefing Experience';
 
 /* ============================================================
    APP_ENV — the single source of truth for the runtime environment.
@@ -49,6 +49,16 @@ export function isDevelopment() {
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.20.3',
+    date: '2026-07-06',
+    summary: 'Executive Briefing Experience — turns the Executive Command Center from a widget grid into an operational briefing that answers, within ~10 seconds, "How healthy is today’s operation? What needs my attention? What should I do next?". Ships on top of the Workspace architecture introduced alongside this line (js/workspace/ role→workspace→widget pipeline + js/widgets/ role groups) and the Engineering Operations module (v1.20.x), both preserved unchanged. PRESENTATION ONLY: no prediction, recommendation, or simulation logic changes; those layers are consumed READ-ONLY and deep-linked. The renderer gains hero/section chrome variants + full-width span (backward compatible — non-executive widgets are byte-identical cards). The Executive workspace is rebuilt into eight briefing widgets: Executive Briefing Hero (deterministic greeting/date, Operational Readiness score + status, a plain-language narrative and Today’s Summary — no AI/LLM, all derived from certified data), Operational Priority (severity-ranked Critical→Warning→Healthy cards with reason + primary action + deep link), Decision Center (a lightweight operational inbox: Assign Vehicle / Approve Request / Review Maintenance with priority, reason, recommended action, deep link, estimated impact), Recommendation Center (reuses the certified Fleet Recommendation Engine via getPrediction → recommendationBoard/allRecommendations — confidence, reason, expected benefit, deep link), Simulation Center (an improved launcher — logic unchanged), Operational Snapshot (executive summary cards: value + status + deep link), a unified Operational Activity Feed (merges events + activity, grouped Today/Yesterday/Earlier, deduped), and a role-aware Executive Launcher (chips; horizontally scrollable on mobile). New app.js buildExecutiveRecommendations() builds the certified package by reusing the existing pipeline end-to-end (buildDriverPredictionInput → getPrediction → recommendation summarisers) with the same certification gate — no new logic, service cache reused, no new Firebase listeners. Mobile: the hero collapses to one column and the launcher scrolls horizontally; a11y (native buttons, aria, focus, reduced motion) and token-only dark-mode styling (scoped .wsp-*) preserved. Integration note: Engineering roles keep landing in their own module; all Engineering + Workspace + smoke checks stay green. APP_VERSION 1.20.2 → 1.20.3 re-stamps SW/version.json/index.html cache-busts via scripts/sync-version.mjs.',
+    highlights: [
+      'Executive Command Center rebuilt as a briefing: Hero (greeting + date + Operational Readiness score/status + deterministic narrative + Today’s Summary), severity-ranked Operational Priority, a lightweight Decision Center inbox, a Recommendation Center that reuses the certified Fleet Recommendation Engine, an improved Simulation launcher, Executive Summary snapshot cards, a unified grouped Activity Feed, and a role-aware Launcher. Every widget summarizes, prioritizes, or recommends — never plain data; narratives are deterministic (no AI/LLM).',
+      'Presentation-only + architecture-stable: the Workspace renderer gains hero/section chrome variants + full-width span (non-executive widgets unchanged); briefing widgets consume ctx.models (Executive aggregate) + ctx.recommendations (certified package built by reusing buildDriverPredictionInput → getPrediction → recommendationBoard/decisionSupport/allRecommendations under the same certification gate). No prediction/recommendation/simulation logic changed; no new Firebase listeners; scoped .wsp-* styles, dark-mode + mobile (collapsing hero, scrollable chips) + a11y preserved.',
+      'Integrated cleanly with Engineering Operations (v1.20.2): Engineering roles land in their own module (no UX regression); the workspace registry maps them for coherence. Verified green: workspace-foundation-check 24/24, engineering foundation/ui/master-data/analytics/ui-dom (116/60/26/10/43), executive-ui-kit-check 46, and full-app smoke-boot. Version 1.20.2 → 1.20.3, RELEASE_NAME ‘Executive Briefing Experience’; sync-version.mjs re-stamps SW/version.json/index.html.',
+    ],
+  },
   {
     version: '1.20.2',
     date: '2026-07-06',
