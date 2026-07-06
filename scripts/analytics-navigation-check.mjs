@@ -88,10 +88,21 @@ const modMatch = APP.match(/analytics:\s*\[([^\]]*)\]/);
 const moduleSections = modMatch ? [...modMatch[1].matchAll(/'([^']+)'/g)].map((m) => m[1]) : [];
 check('ADMIN_MODULE_SECTIONS.analytics parsed', moduleSections.length > 0);
 // Every section in the analytics module must be reachable on desktop: either the
-// module landing ('analytics' = navAnalyticsDriver) or via a new panel item.
-const reachable = new Set(['analytics', ...SURFACES.map((s) => s.section)]);
+// module landing ('analytics' = navAnalyticsDriver) or via a panel item. The
+// SURFACES list above covers the Dispatch Intelligence sections; the remaining
+// analytics sections each have their own panel button + nav fn + render branch:
+//   prediction → v2NavDriverPrediction / navDriverPrediction
+//   executive  → v2NavAnalyticsGabungan / navAnalyticsExecutive
+//   engineeringanalytics → v2NavAnalyticsEngineering / navAnalyticsEngineering (v1.20.2)
+const OTHER_REACHABLE = { prediction: 'navDriverPrediction', executive: 'navAnalyticsExecutive', engineeringanalytics: 'navAnalyticsEngineering' };
+const reachable = new Set(['analytics', ...SURFACES.map((s) => s.section), ...Object.keys(OTHER_REACHABLE)]);
 for (const sec of moduleSections) {
   check(`analytics-module section '${sec}' is desktop-reachable`, reachable.has(sec));
+}
+// And each of those extra sections must actually wire a nav function that lands on it.
+for (const [sec, navFn] of Object.entries(OTHER_REACHABLE)) {
+  check(`section '${sec}' nav fn ${navFn} sets its activeAdminSection`,
+    new RegExp(`function ${navFn}[\\s\\S]*?activeAdminSection\\s*=\\s*'${sec}'`).test(APP));
 }
 check('module landing navAnalyticsDriver sets activeAdminSection = \'analytics\'',
   /activeAdminSection\s*=\s*'analytics'/.test(fnBody('navAnalyticsDriver')));

@@ -1,0 +1,37 @@
+/* ============================================================
+   Sarpras Operations — Typography Tokens
+   Archivo   → display / headings (grotesque, tight tracking)
+   Manrope   → UI body / labels
+   JetBrains Mono → numbers, codes, timestamps, plate IDs
+   Base UI size 14px, line-height 1.55, -0.006em optical tracking.
+   ============================================================ */
+
+:root {
+  --font-display: 'Archivo', system-ui, -apple-system, sans-serif;
+  --font-sans:    'Manrope', system-ui, -apple-system, sans-serif;
+  --font-mono:    'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+
+  /* type scale (px) — display leans large, tightly tracked */
+  --fs-display: 62px;  /* hero keynote (clamps down responsively) */
+  --fs-h1:      32px;  /* page title */
+  --fs-h2:      19px;  /* section header */
+  --fs-h3:      15.5px;/* card title */
+  --fs-body:    14px;  /* base UI text */
+  --fs-sm:      13px;  /* dense UI text */
+  --fs-cap:     12.5px;/* captions, secondary */
+  --fs-micro:   11px;  /* eyebrows, labels */
+  --fs-mono:    12.5px;/* numeric mono default */
+
+  /* weights */
+  --fw-regular:  400; /* @kind font */
+  --fw-medium:   500; /* @kind font */
+  --fw-semibold: 600; /* @kind font */
+  --fw-bold:     700; /* @kind font */
+  --fw-heavy:    800; /* @kind font */
+
+  /* tracking */
+  --track-tight:  -0.038em; /* hero display */
+  --track-snug:   -0.025em; /* h1 */
+  --track-base:   -0.006em; /* body */
+  --track-eyebrow: 0.13em;  /* uppercase eyebrows */
+}

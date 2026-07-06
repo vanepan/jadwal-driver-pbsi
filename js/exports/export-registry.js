@@ -186,6 +186,26 @@ export const EXPORT_REPORTS = {
     template: 'executive-dashboard',
     run: (meta = {}) => window.exportExecutiveDashboardExcel(meta),
   },
+  // v1.20.2 — Engineering Analytics. Same CLIENT-side blob pipeline (pdfmake /
+  // xlsx) as the sibling module dashboards; excluded from EXPORT_REPORT_ORDER so
+  // it stays out of the operational Analytics dropdown — the Engineering Analytics
+  // section owns its own export buttons and resolves these by id.
+  'engineering-analytics-pdf': {
+    id: 'engineering-analytics-pdf',
+    title: 'Engineering Analytics (PDF)',
+    description: 'Ringkasan operasional Engineering sebagai PDF.',
+    icon: ICONS.complete,
+    template: 'engineering-analytics',
+    run: (meta = {}) => window.exportEngineeringAnalyticsPdf(meta),
+  },
+  'engineering-analytics-excel': {
+    id: 'engineering-analytics-excel',
+    title: 'Engineering Analytics (Excel)',
+    description: 'Ringkasan operasional Engineering sebagai workbook .xlsx.',
+    icon: ICONS.complete,
+    template: 'engineering-analytics',
+    run: (meta = {}) => window.exportEngineeringAnalyticsExcel(meta),
+  },
 };
 
 /** Stable display/menu order for every consumer. */
