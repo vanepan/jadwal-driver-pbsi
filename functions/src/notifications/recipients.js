@@ -39,6 +39,14 @@ function admins(users) {
   return users.filter(u => u.role === 'admin' && isActive(u));
 }
 
+/** All active Engineering coordinators / members (v1.20.4). */
+function engCoordinators(users) {
+  return users.filter(u => u.role === 'engineering_coordinator' && isActive(u));
+}
+function engMembers(users) {
+  return users.filter(u => u.role === 'engineering_member' && isActive(u));
+}
+
 /** Resolve a user by username (= uid). */
 function byUsername(users, username) {
   if (!username) return null;
@@ -161,6 +169,51 @@ function resolveRecipients(event, users) {
       admins(users).forEach(a => add(a, { excludeActor: true }));
       add(byUsername(users, p.requesterId), { excludeActor: true });
       add(resolveDriver(users, p), { excludeActor: true });
+      break;
+    }
+
+    /* ── Engineering Operations (v1.20.4) — role-based fan-out ──────────────
+       Recipients resolve from the user directory by Engineering role, plus the
+       assignment's own participant members (by workerId = username) for the
+       verify/reject/postpone/cancel outcomes. Actor is excluded so no one is
+       notified of their own action. */
+    case 'engineering.published': {
+      // New work published → whole Engineering team can pick it up.
+      engCoordinators(users).forEach(u => add(u));
+      engMembers(users).forEach(u => add(u));
+      break;
+    }
+    case 'engineering.accepted':
+    case 'engineering.joined':
+    case 'engineering.resumed': {
+      // Field progress → supervisors (admins + coordinators), minus the actor.
+      admins(users).forEach(a => add(a, { excludeActor: true }));
+      engCoordinators(users).forEach(u => add(u, { excludeActor: true }));
+      break;
+    }
+    case 'engineering.completed': {
+      // Work finished → verification requested → the verifiers.
+      admins(users).forEach(a => add(a, { excludeActor: true }));
+      engCoordinators(users).forEach(u => add(u, { excludeActor: true }));
+      break;
+    }
+    case 'engineering.verified': {
+      // Certified → the members who did the work + admins, minus the verifier.
+      (p.participantIds || []).forEach(id => add(byUsername(users, id), { excludeActor: true }));
+      admins(users).forEach(a => add(a, { excludeActor: true }));
+      break;
+    }
+    case 'engineering.rejected': {
+      // Sent back → the members who did the work + coordinators, minus the verifier.
+      (p.participantIds || []).forEach(id => add(byUsername(users, id), { excludeActor: true }));
+      engCoordinators(users).forEach(u => add(u, { excludeActor: true }));
+      break;
+    }
+    case 'engineering.postponed':
+    case 'engineering.cancelled': {
+      admins(users).forEach(a => add(a, { excludeActor: true }));
+      engCoordinators(users).forEach(u => add(u, { excludeActor: true }));
+      (p.participantIds || []).forEach(id => add(byUsername(users, id), { excludeActor: true }));
       break;
     }
     default:

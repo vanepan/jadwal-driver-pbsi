@@ -8,7 +8,7 @@
 'use strict';
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
-import { getDatabase, onValue, ref, set, get, update, remove, runTransaction } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
+import { getDatabase, onValue, ref, set, get, update, remove, runTransaction, goOffline, goOnline } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 import { getAuth, signInWithCustomToken, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
 import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-functions.js';
 import { showToast } from './utils.js';
@@ -371,6 +371,33 @@ export function storeFirebaseData(path, value) {
     return Promise.resolve();
   }
   return set(dbRef, value);
+}
+
+/**
+ * Atomic read-modify-write on a single node (reuses the shared runTransaction —
+ * no parallel Firebase path). `updater(current)` receives the CURRENT committed
+ * value (null when the node is absent) and returns the next value; returning
+ * `undefined` ABORTS the transaction with no write. This prevents lost updates
+ * and last-write-wins races when multiple clients mutate the same node
+ * concurrently (e.g. two members joining the same assignment at once).
+ * @param {string} path
+ * @param {(current:*) => *} updater
+ * @returns {Promise<{committed:boolean, value:*}>}
+ */
+export async function runNodeTransaction(path, updater) {
+  const dbRef = getFirebaseRef(path);
+  if (!dbRef) { showFirebaseConfigWarning(); return { committed: false, value: null }; }
+  const result = await runTransaction(dbRef, (current) => updater(current));
+  return { committed: !!result.committed, value: result.snapshot ? result.snapshot.val() : null };
+}
+
+/* DIAGNOSTIC (removable): force a realtime reconnect (goOffline → goOnline) so a
+   tester can verify offline→reconnect from the Production Diagnostic panel. */
+export function reconnectFirebaseRealtime() {
+  const db = firebaseDb || initFirebaseApp();
+  if (!db) return false;
+  try { goOffline(db); setTimeout(() => goOnline(db), 250); return true; }
+  catch (err) { console.warn('[firebase] reconnect failed', err); return false; }
 }
 
 export function updateFirebaseData(path, value) {

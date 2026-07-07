@@ -49,12 +49,22 @@ function kpiRows(s) {
   const waiting = (s.statusDistribution && s.statusDistribution[STATUS.WAITING_VERIFICATION]) || 0;
   return [
     ['Total Penugasan', s.totalAssignments || 0],
+    ['Laporan Pekerjaan', s.totalWorkReports || 0],
     ['Task Selesai', s.completedAssignments || 0],
     ['Overdue', overdue],
     ['Rata Penyelesaian (jam)', avgH],
     ['Antrean Verifikasi', waiting],
   ];
 }
+/* Per-technician rows (v1.20.6, Objective 4). Keyed by uid to stay pure/node-safe
+   (no User Management dependency in the export layer); uid = username. */
+function technicianRows(s) {
+  return (s.technicianAnalytics || []).map((t) => [
+    t.uid, t.participation, t.completed, t.active, t.overdue, t.reports, t.critical,
+    hours(t.averageCompletionMs), hours(t.workingMs),
+  ]);
+}
+const TECH_HEADERS = ['Teknisi (uid)', 'Partisipasi', 'Selesai', 'Aktif', 'Overdue', 'Laporan', 'Kritis', 'Rata (jam)', 'Jam Kerja'];
 function categoryRows(s) {
   const d = s.categoryDistribution || {};
   return Object.keys(d).map((k) => [catLabel(k), d[k]]).sort((a, b) => b[1] - a[1]);
@@ -88,6 +98,11 @@ export function buildEngineeringAnalyticsDocDefinition(snapshot, meta = {}) {
       table(['Gedung', 'Jumlah'], buildingRows(s)),
       { text: 'Beban Engineering (jam)', fontSize: 13, bold: true, margin: [0, 0, 0, 4] },
       table(['Teknisi', 'Jam'], workloadRows(s)),
+      { text: 'Analitik per Teknisi', fontSize: 13, bold: true, margin: [0, 0, 0, 4] },
+      {
+        table: { headerRows: 1, widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'], body: [TECH_HEADERS.map((h) => ({ text: h, bold: true, fontSize: 8 })), ...technicianRows(s).map((r) => r.map((c) => ({ text: String(c), fontSize: 8 })))] },
+        layout: 'lightHorizontalLines', margin: [0, 4, 0, 14],
+      },
     ],
     footer: (page, count) => ({ text: `${meta.generatedBy || ''}  ·  Halaman ${page} / ${count}`, fontSize: 8, color: '#999', margin: [40, 0] }),
     defaultStyle: { fontSize: 10 },
@@ -102,6 +117,7 @@ export function buildEngineeringAnalyticsSheets(snapshot) {
     { name: 'Kategori', aoa: [['Kategori', 'Jumlah'], ...categoryRows(s)] },
     { name: 'Gedung', aoa: [['Gedung', 'Jumlah'], ...buildingRows(s)] },
     { name: 'Beban', aoa: [['Teknisi', 'Jam'], ...workloadRows(s)] },
+    { name: 'Teknisi', aoa: [TECH_HEADERS, ...technicianRows(s)] },
   ];
 }
 

@@ -33,6 +33,18 @@ export function urgencyScore(a) {
 const DONE = new Set([STATUS.VERIFIED, STATUS.COMPLETED]);
 export const canJoinTask = (a) => new Set([STATUS.AVAILABLE, STATUS.IN_PROGRESS, STATUS.CONTINUE_TOMORROW]).has(a.status);
 
+/** The single searchable projection of an assignment — the one source of truth
+ *  for both the in-module search and the global adaptive search. Covers title,
+ *  building, room, location, id/number, category, status, priority, requester
+ *  and every assigned member's name. */
+export function searchableText(a) {
+  const members = (a.participants || []).map((p) => p && p.name).filter(Boolean).join(' ');
+  return [
+    a.title, a.building, a.room, a.location, a.assignmentNumber, a.id,
+    a.category, a.status, a.priority, a.requester, members,
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
 export function targetTone(a) {
   if (DONE.has(a.status)) return 'c-green';
   if (a.priority === PRIORITY.CRITICAL) return 'crit';
@@ -140,7 +152,7 @@ export function renderQueue(assignments, ctx) {
 
   let rows = assignments.filter((a) => !DONE.has(a.status) && a.status !== STATUS.ARCHIVED && a.status !== STATUS.CANCELLED);
   if (catFilter !== 'all') rows = rows.filter((a) => a.category === catFilter);
-  if (q) rows = rows.filter((a) => `${a.title} ${a.location} ${a.assignmentNumber} ${a.requester}`.toLowerCase().includes(q));
+  if (q) rows = rows.filter((a) => searchableText(a).includes(q));
   rows = rows.slice().sort((x, y) => urgencyScore(x) - urgencyScore(y));
 
   const chips = CAT_FILTERS.map(([k, l]) => `<button class="eng-chip" data-on="${catFilter === k}" data-act="eng-filter-cat" data-val="${k}">${esc(l)}</button>`).join('');

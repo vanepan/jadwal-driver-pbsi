@@ -247,8 +247,11 @@ export function finishAssignment(assignment, options = {}) {
   return recordEvents(base, event);
 }
 
-/** IN_PROGRESS / AVAILABLE → POSTPONED. Stamps postponedTime, records POSTPONED. */
+/** IN_PROGRESS / AVAILABLE → POSTPONED. Stamps postponedTime, records POSTPONED.
+ *  Guarded to AVAILABLE/IN_PROGRESS so a duplicate/concurrent postpone aborts
+ *  (rather than recording a second POSTPONED event via the same-status self-loop). */
 export function postponeAssignment(assignment, options = {}) {
+  assertState(assignment, [STATUS.AVAILABLE, STATUS.IN_PROGRESS], 'postpone');
   return transitionAssignment(assignment, STATUS.POSTPONED, {
     eventType: TIMELINE_EVENT.POSTPONED,
     actor: options.actor,

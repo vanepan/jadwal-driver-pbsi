@@ -1,6 +1,7 @@
 'use strict';
 
 import { readNode, subscribeNode, storeFirebaseData, updateFirebaseData, isFirebaseConfigured } from './firebase.js';
+import { ENGINEERING_ROLE } from './config/role-registry.js';
 
 const USERS_PATH = 'users';
 
@@ -30,8 +31,13 @@ function isValidPin(value) {
   return /^\d{4}$/.test(String(value || '').trim());
 }
 
+// v1.20.3 RC1 — the Engineering roles are first-class stored roles (role-registry).
+// They were missing here, so createUser/updateUser silently fell back to 'viewer',
+// turning every new Engineering user into a Viewer. Keep this list in sync with the
+// grantable roles: the core four + the two Engineering segments.
 function isValidRole(value) {
-  return ['admin', 'bidang', 'viewer', 'driver'].includes(value);
+  return ['admin', 'bidang', 'viewer', 'driver',
+    ENGINEERING_ROLE.COORDINATOR, ENGINEERING_ROLE.MEMBER].includes(value);
 }
 
 function mapFirebaseUsers(value) {

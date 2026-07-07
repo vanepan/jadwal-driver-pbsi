@@ -1,39 +1,56 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.20.3';
-export const RELEASE_NAME = 'Executive Briefing Experience';
+export const APP_VERSION = '1.20.6';
+export const RELEASE_NAME = 'Engineering Operational Workspace';
 
 /* ============================================================
-   APP_ENV — the single source of truth for the runtime environment.
-   (v1.20.2)
+   APP_ENV — the AUTHORITATIVE runtime environment (v1.20.3 RC1).
 
    Values: 'development' | 'staging' | 'production'.
 
-   Leave it as `undefined` (the default below) to AUTO-INFER from the host:
-   localhost / 127.0.0.1 → development, everything else → production.
-   Set it explicitly to pin an environment (e.g. a staging deploy).
+   This constant — and ONLY this constant — decides runtime behaviour. It is
+   NEVER inferred from the hostname: running on localhost does not make the app
+   "development", and no dev-only fixture (the Engineering dev seed / Seed
+   Manager, demo data, debug utilities) may execute unless APP_ENV is explicitly
+   'development'. An unknown/blank value FAILS SAFE to 'production' (the most
+   locked-down mode: no seeds, no dev tools, empty stores until real storage).
 
-   ALL development-only fixtures (the Engineering dev seed, demo data, debug
-   utilities) MUST gate on `isDevelopment()` — never on scattered hostname
-   checks. This is the one place the environment is decided.
+   Deploy contract:
+     • production (SHIPPED DEFAULT) — no dev tools, no seeding, empty until Firebase.
+     • staging                      — same as production; empty, no seeding.
+     • development                  — dev tools available; data still starts EMPTY
+                                      and is only ever populated by the developer
+                                      explicitly using the Seed Manager.
+   To work with demo data locally, set APP_ENV = 'development' here.
    ============================================================ */
-export const APP_ENV = undefined;
+export const APP_ENV = 'production';
 
-const DEV_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '']);
+const VALID_ENVS = new Set(['development', 'staging', 'production']);
 
-/** The resolved environment: explicit APP_ENV, else inferred from the host. */
-export function getAppEnv() {
-  if (APP_ENV === 'development' || APP_ENV === 'staging' || APP_ENV === 'production') {
-    return APP_ENV;
-  }
-  const host = (typeof location !== 'undefined' && location.hostname) ? location.hostname : '';
-  return DEV_HOSTS.has(host) ? 'development' : 'production';
+/** Coerce any value to a valid environment; unknown/blank → 'production' (fail-safe). */
+export function normalizeEnv(value) {
+  return VALID_ENVS.has(value) ? value : 'production';
 }
 
-/** True only in Development — the gate for every dev-only fixture. */
+/** The resolved environment — driven solely by APP_ENV (never the hostname). */
+export function getAppEnv() {
+  return normalizeEnv(APP_ENV);
+}
+
+/** True only in Development — the single gate for every dev-only fixture. */
 export function isDevelopment() {
   return getAppEnv() === 'development';
+}
+
+/** True only in Staging. */
+export function isStaging() {
+  return getAppEnv() === 'staging';
+}
+
+/** True only in Production (also the fail-safe target for unknown APP_ENV). */
+export function isProduction() {
+  return getAppEnv() === 'production';
 }
 
 /**
@@ -50,8 +67,21 @@ export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss
 
 export const VERSION_HISTORY = [
   {
+    version: '1.20.6',
+    date: '2026-07-07',
+    summary: 'Engineering Operational Workspace — hardens Engineering Operations into a true role-based operational workspace and lays down long-term operational datasets for future ML, reusing every existing engine, provider, analytics pipeline, notification path and the role registry (no architecture redesign). FIVE objectives. (1) STRICT ROLE ISOLATION: a single canAccessModule() resolver now drives rail visibility AND a setRailModule() mount guard, so Engineering users can never see or mount Driver Operations (the Driver rail was previously ungated) and Driver/Bidang can never reach Engineering — unrelated modules do not mount, not merely hidden; Admin keeps full access. (2) ASSIGNMENT DELETION (admin only): a new pure isDeletable() predicate splits the two cases — an assignment never worked on (draft/published/available, no active participant, no start/finish) is HARD-deleted (store removeAssignment + provider deleteAssignmentThrough); one with execution history is cancelled→archived through the existing transactional commitTx path so timeline + analytics are preserved. One drawer control decides which. (3) CATAT PEKERJAAN (Operational Work Report): a NEW data-acquisition feature (explicitly NOT an assignment) persisted in its own engineering/workReports node with its own model/store slice/provider+adapter methods; it reuses the Create Assignment modal in report mode (Publish→Simpan Laporan) adding Work Date, Start/Finish time, Root Cause, Action Taken, Recommendation, Materials, Estimated Cost, and future-ready Photo slots; available to Admin + Coordinator (new eng.report.create capability); records an informational notification and surfaces in History, search, analytics and export. (4) ASSIGNED ENGINEERING PERSONNEL: assignments and work reports now record who performed the work as UID REFERENCES (assignedUsers { uid:true }) resolved to names at render time from User Management — no second roster, no denormalized user data. A searchable, multi-select personnel picker (avatar + name + formatted role, active Engineering users, Coordinator-first) appears in both modals. The personnel resolver reads an INJECTED users source (it never imports js/users.js) so analytics/UI stay Node-harness-safe. Analytics gains per-technician metrics keyed by uid (participation, completed, active, overdue, critical, reports, avg completion, working time) unioning designation + self-join across assignments AND reports, plus executive leaders (Most Active / Highest Workload / Fastest Completion / Most Critical) surfaced in the global Analytics view + export; the Executive model carries the same. (5) ROLE PRESENTATION CONSISTENCY: every role label now routes through the single roleLabel() registry formatter — removed the duplicate role→label maps in auth.js and comments.js, derived the group headers in admin.js and app.js (V2_ROLE_CONFIG + unknown roles) from the registry, and paired the diagnostic raw claim with its formatted label; no raw role id renders in the UI. Regression: engineering runtime 53 / routing 16 / concurrency 12 / analytics-export 11 / foundation 116 / master-data 26 / ui 61 / ui-dom 50, workspace-foundation 24, smoke-boot 0 fatal, plus 30 new unit checks. APP_VERSION 1.20.3 → 1.20.6 re-stamps SW/version.json/index.html via scripts/sync-version.mjs.',
+    highlights: [
+      'Strict per-role isolation: canAccessModule() resolver + setRailModule() mount guard — Engineering never sees/mounts Driver Operations; Driver/Bidang never reach Engineering; Admin keeps full access.',
+      'Assignment deletion (admin): isDeletable() hard-deletes never-worked assignments; worked ones are cancelled→archived via the transactional path so analytics/timeline survive.',
+      'Catat Pekerjaan: new engineering/workReports node + model/store/provider/adapters; reuses the create modal in report mode with operational-capture fields; feeds analytics, search, History, export and an informational notification.',
+      'Assigned personnel from User Management: assignedUsers { uid:true } references resolved to names at render; searchable multi-select picker; per-technician analytics + executive leaders (Most Active / Highest Workload / Fastest / Most Critical).',
+      'Role presentation: one roleLabel() source of truth — removed duplicate role maps (auth.js, comments.js) and derived all group headers (admin.js, app.js) from the registry; no raw role ids in the UI.',
+    ],
+  },
+  {
     version: '1.20.3',
     date: '2026-07-06',
+    rc1: 'RC1 Production Stabilization (2026-07-06) — a no-feature, no-redesign hardening pass over the Engineering + Executive integration; version intentionally held at 1.20.3. (1) ENGINEERING USER ROLE FIX: js/users.js isValidRole() listed only the four core roles, so createUser/updateUser silently fell back to \'viewer\' — every new Engineering user became a Viewer. It now accepts ENGINEERING_ROLE.COORDINATOR/MEMBER (sourced from the role registry), so the Koordinator/Anggota segment resolves to engineering_coordinator / engineering_member through creation, editing, display, grouping and permission resolution. (2) TIMELINE ALIGNMENT FIX (pure CSS): the timeline time-column used fixed widths (76/58/52px) that clipped "Kemarin HH:MM"; because the right-aligned timestamp overflowed rightward it collided with the event circle in the dense (card-body) and mobile rails. The time column is now auto-sized (fits the full timestamp at any font size/locale) and the node column always equals the dot diameter, so time · dot · label stay aligned and the connector stays centred — verified by rendered-geometry screenshots across non-dense, dense and 320px mobile. (3) RUNTIME ARCHITECTURE HARDENING — deterministic, environment-driven Engineering startup with NO implicit seeding anywhere (Firebase-ready). APP_ENV is now AUTHORITATIVE: hostname inference is removed (localhost no longer implies "development"), APP_ENV ships as \'production\', and any unknown value fails safe to production via normalizeEnv(); added isStaging()/isProduction(). A new ProviderRegistry (js/engineering/providers/provider-registry.js) maps env→adapter (registerAdapter/resolveAdapter); staging & production resolve to null (no storage configured → empty store), and the dev adapter is registered ONLY in Development (dynamically imported, so the demo seed is not even loaded elsewhere). The DevSeedAdapter is rewritten as an in-memory plugin that STARTS EMPTY and implements the full Firebase-ready interface (initialize/fetchData/saveAssignment/updateAssignment/deleteAssignment/subscribe/dispose); it exposes development-only __dev_loadSeed/__dev_clear hooks that the Provider/Firebase adapter will never have. A new Seed Manager (js/engineering/providers/seed-manager.js) is the ONLY path to demo data — Load Demo / Reset Demo / Clear All — surfaced as a dev-only panel in Engineering Settings (rendered only when ctx.isDev; the old unconditional "Muat ulang data demo" button is gone) and double-gated (UI env-gate + adapter-capability gate). Engineering startup is now: getAppEnv() → resolveAdapter → initializeProvider → loadAll, which returns EMPTY in every environment until data exists; the previous auto-seed-on-localhost in mountEngineering and the dev auto-hydrate in app.renderEngineeringAnalyticsSection are both removed. The dashboard roster is now DATA-DRIVEN (distinct assignment participants) instead of the hardcoded SEED_MEMBERS, so production shows 0 members until real data exists. The provider gains guarded write-through/subscribe/dispose seams for the future Firebase adapter (no Firebase implemented). Every Engineering screen (Dashboard/Timeline/History/Detail/Verification/Analytics/Settings/Search) verified to render with 0 assignments, 0 members, 0 analytics — no crashes, no undefined, no placeholder demo cards. Executive Briefing verified unchanged (executive-dashboard-dom-check 37/37). Regression green: new engineering-runtime-check 35 (env/registry/adapter-interface/empty-startup/seed-manager/empty-analytics), engineering foundation/ui/ui-dom/master-data/analytics-export 116/61/44/26/10, workspace-foundation 24, analytics-navigation 56, adaptive-search 10, and full-app smoke-boot. (4) PRODUCTION WIRING — Engineering is now a usable, persistent module (no interface-only stubs). A real FirebaseAdapter (js/engineering/providers/firebase-adapter.js) reuses the shared platform Firebase infra (readNode/storeFirebaseData/subscribeNode) to implement the full adapter interface with surgical per-id writes + a single realtime root subscription; it is registered for staging/production and the dev-seed adapter for development, so a browser refresh preserves data and every device stays in sync. Every store mutation funnels through one commit() (optimistic upsert + persist) and the adapter subscription reconciles. The create flow is centralized and reachable from Dashboard/Timeline/Settings/Queue + empty-state (one modal, admin-capability gated); Building & Room are now free-text (intentionally un-normalized for future ML), the Floor field is removed, the deadline uses the shared PBSI date picker (stored as ISO deadlineAt, displayed via fmtDeadline: Hari ini/Besok/"7 Jul"), and the requester comes from the shared bidangRoster (single source). The dashboard roster is derived from real participants (no hardcoded members). Global/in-module search covers title/building/room/category/status/priority/requester/members via one searchableText projection; the publish notification is recorded through the notification engine; Engineering analytics flow live into the Engineering Dashboard, Engineering Analytics and the Executive model (buildExecutiveDashboardModel gains an engineering slice from the same builder over the live store). Engineering roles resolve correctly through creation/edit/persistence (isValidRole fix). New engineering-runtime-check grows to 52 (adds Firebase-adapter interface, deadlineAt/fmtDeadline, searchableText, createBtn); engineering-ui-dom-check 50; create workflow verified end-to-end in a headless browser (free-text building/room, date picker, ISO deadline, lifecycle → store). No engine/store/model redesign; Executive Briefing presentation unchanged; no version bump.',
     summary: 'Executive Briefing Experience — turns the Executive Command Center from a widget grid into an operational briefing that answers, within ~10 seconds, "How healthy is today’s operation? What needs my attention? What should I do next?". Ships on top of the Workspace architecture introduced alongside this line (js/workspace/ role→workspace→widget pipeline + js/widgets/ role groups) and the Engineering Operations module (v1.20.x), both preserved unchanged. PRESENTATION ONLY: no prediction, recommendation, or simulation logic changes; those layers are consumed READ-ONLY and deep-linked. The renderer gains hero/section chrome variants + full-width span (backward compatible — non-executive widgets are byte-identical cards). The Executive workspace is rebuilt into eight briefing widgets: Executive Briefing Hero (deterministic greeting/date, Operational Readiness score + status, a plain-language narrative and Today’s Summary — no AI/LLM, all derived from certified data), Operational Priority (severity-ranked Critical→Warning→Healthy cards with reason + primary action + deep link), Decision Center (a lightweight operational inbox: Assign Vehicle / Approve Request / Review Maintenance with priority, reason, recommended action, deep link, estimated impact), Recommendation Center (reuses the certified Fleet Recommendation Engine via getPrediction → recommendationBoard/allRecommendations — confidence, reason, expected benefit, deep link), Simulation Center (an improved launcher — logic unchanged), Operational Snapshot (executive summary cards: value + status + deep link), a unified Operational Activity Feed (merges events + activity, grouped Today/Yesterday/Earlier, deduped), and a role-aware Executive Launcher (chips; horizontally scrollable on mobile). New app.js buildExecutiveRecommendations() builds the certified package by reusing the existing pipeline end-to-end (buildDriverPredictionInput → getPrediction → recommendation summarisers) with the same certification gate — no new logic, service cache reused, no new Firebase listeners. Mobile: the hero collapses to one column and the launcher scrolls horizontally; a11y (native buttons, aria, focus, reduced motion) and token-only dark-mode styling (scoped .wsp-*) preserved. Integration note: Engineering roles keep landing in their own module; all Engineering + Workspace + smoke checks stay green. APP_VERSION 1.20.2 → 1.20.3 re-stamps SW/version.json/index.html cache-busts via scripts/sync-version.mjs.',
     highlights: [
       'Executive Command Center rebuilt as a briefing: Hero (greeting + date + Operational Readiness score/status + deterministic narrative + Today’s Summary), severity-ranked Operational Priority, a lightweight Decision Center inbox, a Recommendation Center that reuses the certified Fleet Recommendation Engine, an improved Simulation launcher, Executive Summary snapshot cards, a unified grouped Activity Feed, and a role-aware Launcher. Every widget summarizes, prioritizes, or recommends — never plain data; narratives are deterministic (no AI/LLM).',

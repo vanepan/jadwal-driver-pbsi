@@ -100,6 +100,11 @@
 .eng-btn.-big{height:52px;font-size:14.5px;border-radius:13px;flex:1;min-width:150px;}
 .eng-btn.-tone-violet{background:var(--c-violet-weak);color:var(--c-violet);border:none;}
 .eng-btn.-tone-muted{color:var(--text-dim);}
+.eng-btn.-danger{color:var(--crit,#d64545);border-color:var(--border);}
+.eng-btn.-danger:hover{background:var(--c-red-weak,rgba(214,69,69,.10));border-color:var(--crit,#d64545);color:var(--crit,#d64545);}
+/* Admin-only delete/archive control (v1.20.6, Objective 2) */
+.eng-danger-zone{display:flex;align-items:center;gap:12px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border-faint);}
+.eng-danger-hint{font-size:11.5px;line-height:1.35;color:var(--text-faint);}
 .eng-icon-btn{width:36px;height:36px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text-dim);display:grid;place-items:center;cursor:pointer;flex:none;}
 .eng-icon-btn:hover{color:var(--text);background:var(--surface-2);}
 
@@ -280,8 +285,12 @@
 
 /* ── timeline rail ────────────────────────────────────────────────────── */
 .eng-tl{display:flex;flex-direction:column;}
-.eng-tl-row{display:grid;grid-template-columns:76px 26px 1fr;gap:14px;align-items:start;}
-.eng-tl.-dense .eng-tl-row{grid-template-columns:58px 22px 1fr;gap:10px;}
+/* v1.20.3 RC1 — the time column is `auto`-sized so it always contains the full
+   timestamp ("Kemarin 09:45", dates, any locale) at any font size; the fixed
+   widths clipped it, letting the timestamp overflow into the event circle. The
+   node column always equals the dot diameter so the connector stays centred. */
+.eng-tl-row{display:grid;grid-template-columns:auto 26px 1fr;gap:14px;align-items:start;}
+.eng-tl.-dense .eng-tl-row{grid-template-columns:auto 22px 1fr;gap:12px;}
 /* v1.20.2 — the timestamp is vertically centred against the dot via line-height
    (matching the dot's height) instead of a guessed padding, so time · dot · label
    share one baseline. */
@@ -302,6 +311,12 @@
 .eng-tl-reason{margin-top:8px;display:inline-flex;align-items:center;gap:8px;padding:6px 11px;border-radius:9px;background:var(--surface-2);color:var(--text-dim);font-size:12.5px;font-weight:600;}
 .eng-tl-reason[data-warn="true"]{background:var(--c-amber-weak);color:var(--c-amber);}
 .eng-tl-reason-tag{font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;opacity:.85;}
+
+/* ── Development Seed Manager (dev-only; never rendered in staging/prod) ──── */
+.eng-seedmgr{display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap;border-style:dashed;border-color:var(--border-strong);}
+.eng-seedmgr-t{font-size:13.5px;font-weight:700;}
+.eng-seedmgr-s{font-size:12px;color:var(--text-faint);margin-top:3px;max-width:52ch;}
+.eng-seedmgr-actions{display:flex;gap:8px;flex-wrap:wrap;}
 
 /* ── timeline cards (page) ────────────────────────────────────────────── */
 .eng-tl-cards{display:flex;flex-direction:column;gap:16px;}
@@ -347,18 +362,37 @@
 .eng-attach-placeholder{display:flex;align-items:center;gap:12px;padding:16px;border-radius:12px;border:1px dashed var(--border-strong);color:var(--text-faint);}
 .eng-attach-t{font-size:12.5px;font-weight:600;} .eng-attach-s{color:var(--text-ghost);margin-top:2px;font-size:12px;}
 .eng-note-body{font-size:13px;color:var(--text-dim);line-height:1.6;margin:0;}
-.eng-modal-box{width:540px;max-width:94vw;max-height:90vh;overflow-y:auto;background:var(--surface);border-radius:20px;box-shadow:var(--shadow-lg);border:1px solid var(--border);padding:28px;}
-.eng-modal-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;}
-.eng-modal-kicker{font-size:11px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--text-faint);margin-bottom:6px;}
-.eng-modal-title{font-family:var(--font-display);font-weight:800;font-size:23px;letter-spacing:-.022em;margin:0;}
-.eng-modal-body{display:flex;flex-direction:column;gap:16px;}
-.eng-field{display:flex;flex-direction:column;gap:7px;} .eng-field>span{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-faint);}
-.eng-field-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
-.eng-input{width:100%;height:42px;border-radius:11px;border:1px solid var(--border);background:var(--surface-2);padding:0 13px;font-family:var(--font-sans);font-size:13.5px;color:var(--text);}
+/* v1.20.x stabilization (Issue 3): the modal box is a capped FLEX COLUMN — the
+   header and footer are pinned (flex:0 0 auto) and only the BODY scrolls, so the
+   Publish/Simpan action is always reachable without scrolling the whole dialog.
+   Spacing tightened so the common field set fits a desktop viewport with no scroll. */
+.eng-modal-box{width:540px;max-width:94vw;max-height:90vh;display:flex;flex-direction:column;background:var(--surface);border-radius:20px;box-shadow:var(--shadow-lg);border:1px solid var(--border);padding:22px 24px;}
+.eng-modal-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex:0 0 auto;}
+.eng-modal-kicker{font-size:11px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--text-faint);margin-bottom:4px;}
+.eng-modal-title{font-family:var(--font-display);font-weight:800;font-size:21px;letter-spacing:-.022em;margin:0;}
+.eng-modal-body{display:flex;flex-direction:column;gap:12px;overflow-y:auto;flex:1 1 auto;min-height:0;padding-right:2px;}
+.eng-field{display:flex;flex-direction:column;gap:6px;} .eng-field>span{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-faint);}
+.eng-field-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.eng-input{width:100%;height:40px;border-radius:11px;border:1px solid var(--border);background:var(--surface-2);padding:0 13px;font-family:var(--font-sans);font-size:13.5px;color:var(--text);}
 .eng-input:focus{outline:2px solid var(--accent-line);outline-offset:1px;}
-.eng-textarea{height:80px;padding:10px 13px;resize:vertical;}
-.eng-modal-foot{display:flex;justify-content:space-between;align-items:center;margin-top:24px;padding-top:18px;border-top:1px solid var(--border-faint);flex-wrap:wrap;gap:12px;}
+.eng-textarea{height:68px;padding:9px 13px;resize:vertical;}
+.eng-modal-foot{display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding-top:14px;border-top:1px solid var(--border-faint);flex-wrap:wrap;gap:12px;flex:0 0 auto;}
 .eng-modal-hint{font-size:12px;color:var(--text-faint);display:inline-flex;align-items:center;gap:7px;} .eng-modal-actions{display:flex;gap:10px;}
+.eng-opt{font-weight:600;text-transform:none;letter-spacing:0;color:var(--text-faint);font-style:normal;opacity:.8;}
+.eng-attach-placeholder--form{margin-top:2px;}
+
+/* ── Engineering Personnel selector (v1.20.6, Objective 4) ─────────────── */
+.eng-person-list{display:flex;flex-direction:column;max-height:210px;overflow-y:auto;border:1px solid var(--border);border-radius:11px;background:var(--surface-2);}
+.eng-person-row{display:flex;align-items:center;gap:11px;padding:9px 12px;background:transparent;border:none;border-bottom:1px solid var(--border-faint);cursor:pointer;text-align:left;font-family:var(--font-sans);color:var(--text);}
+.eng-person-row:last-child{border-bottom:none;}
+.eng-person-row:hover{background:var(--surface);}
+.eng-person-row.-on{background:var(--accent-line,rgba(80,120,255,.10));}
+.eng-person-ava{width:30px;height:30px;flex:none;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:800;color:#fff;background:linear-gradient(180deg,var(--accent-2),var(--accent));}
+.eng-person-meta{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1;}
+.eng-person-name{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.eng-person-role{font-size:11px;color:var(--text-faint);}
+.eng-person-check{flex:none;color:var(--accent);display:inline-flex;}
+.eng-person-empty{padding:14px 12px;font-size:12.5px;color:var(--text-faint);}
 
 /* ── entry animation ──────────────────────────────────────────────────── */
 @media (prefers-reduced-motion:no-preference){.eng-content{animation:engFadeUp .4s cubic-bezier(.2,.7,.2,1) both;}}
@@ -377,8 +411,9 @@
   .eng-drawer{width:100%;max-width:100%;}
   .eng-btn.-big{min-width:0;}
   .eng-bar-row{grid-template-columns:90px 1fr auto;}
-  /* timeline: tighten the time column so the body never clips on narrow screens */
-  .eng-tl-row{grid-template-columns:52px 22px 1fr;gap:10px;}
+  /* timeline: keep the time column auto-sized (never clips the timestamp) and the
+     node column matched to the 26px dot so time · dot · label stay aligned. */
+  .eng-tl-row{grid-template-columns:auto 26px 1fr;gap:10px;}
   .eng-tl-time{font-size:11px;}
   .eng-tlc-head{padding:16px;gap:12px;}
   .eng-tlc-collapsed{padding:0 16px 16px;}

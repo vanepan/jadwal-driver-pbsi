@@ -58,7 +58,7 @@ export const ROLES = Object.freeze([
   { id: 'viewer', label: 'Viewer', group: ROLE_GROUP.CORE },
   // engineering (new)
   { id: ENGINEERING_ROLE.COORDINATOR, label: 'Koordinator Engineering', group: ROLE_GROUP.ENGINEERING },
-  { id: ENGINEERING_ROLE.MEMBER, label: 'Engineering', group: ROLE_GROUP.ENGINEERING },
+  { id: ENGINEERING_ROLE.MEMBER, label: 'Anggota Engineering', group: ROLE_GROUP.ENGINEERING },
   // executive (reserved — declared, not yet granted capabilities)
   { id: EXECUTIVE_ROLE.KETUA_UMUM, label: 'Ketua Umum', group: ROLE_GROUP.EXECUTIVE },
   { id: EXECUTIVE_ROLE.WAKETUM, label: 'Wakil Ketua Umum', group: ROLE_GROUP.EXECUTIVE },
@@ -89,6 +89,8 @@ export const CAPABILITIES = Object.freeze({
   'eng.create': [ADMIN],
   'eng.edit': [ADMIN],
   'eng.delete': [ADMIN],
+  // operational work report — "Catat Pekerjaan" (data acquisition, not an assignment)
+  'eng.report.create': [ADMIN, COORDINATOR],
   // field operations
   'eng.join': [ADMIN, COORDINATOR, MEMBER],
   'eng.start': [ADMIN, COORDINATOR, MEMBER],

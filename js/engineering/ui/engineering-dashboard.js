@@ -154,8 +154,9 @@ export function renderOpsDashboard(all, ctx) {
     : `<div class="eng-card -pad">${sectionHeader('TERSEDIA', 'Engineering Tersedia', `${availEng} siap`)}
         ${roster.map((n) => `<div class="eng-avail-row">${avatar(n, 30)}<span class="eng-avail-name">${esc(n)}</span><span class="eng-pill" data-pill="${busy.has(n) ? 'active' : 'done'}">${busy.has(n) ? 'Bekerja' : 'Tersedia'}</span></div>`).join('')}</div>`;
 
-  // The primary "Buat Penugasan" action lives in the left sidebar CTA (platform
-  // convention, v1.20.2) — no floating action inside content.
+  // The ONLY "Buat Penugasan" action in the entire Engineering workspace is the
+  // left sidebar CTA (platform convention, v1.20.2) — no in-content create button
+  // on any screen, and no CTA in the empty state.
   return `<div class="eng-screen">
     ${pageHeader('ENGINEERING OPERATIONS', 'Dashboard',
       `${inProg.length} penugasan berjalan, ${verify.length} menunggu verifikasi.`)}

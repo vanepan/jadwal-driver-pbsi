@@ -37,14 +37,13 @@
 import { generateId, formatDateTime, formatDateShort, showToast } from './utils.js';
 import { getCurrentUser, isAdmin, isBidang, isDriver } from './auth.js';
 import { getVehicleColor } from './drivers.js';
+import { roleLabel as formatRole } from './config/role-registry.js';   // single source of role labels
 
 /* ── Module State ── */
 let requests = [];
 let onCommentSaveCallback = null;
 
-const ROLE_LABELS = {
-  admin: 'Admin', bidang: 'Bidang', driver: 'Driver', viewer: 'Viewer',
-};
+// Role labels come from the shared role registry (Objective 5) — no local map.
 
 /* ── Public: state setters ── */
 
@@ -230,7 +229,7 @@ function _renderContext(req) {
 function _buildCommentItem(comment) {
   const user     = getCurrentUser();
   const isOwn    = comment.userId === user?.id;
-  const roleLabel = ROLE_LABELS[comment.role] || '';
+  const roleLabel = comment.role ? formatRole(comment.role) : '';
   const roleBadge = roleLabel ? `<span class="comment-role-badge">${esc(roleLabel)}</span>` : '';
 
   // Support both `createdAt` (new) and legacy `timestamp` field

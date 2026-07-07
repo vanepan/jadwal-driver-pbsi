@@ -195,6 +195,56 @@ const TEMPLATES = {
   },
 };
 
+/* ── Engineering Operations (v1.20.4) ──────────────────────────────────────
+   In-app + push copy, recipient-agnostic (Engineering notifications fan out to
+   coordinators/members/admins — no single "you" perspective). One helper builds
+   the "Title — Gedung · Ruang. <action>" line from the payload. */
+function engWhere(p) { return [p.building, p.room].filter(Boolean).join(' · '); }
+function engLine(e, tail) {
+  const p = e.payload || {};
+  const head = [p.title, engWhere(p)].filter(Boolean).join(' — ');
+  return head ? `${head}. ${tail}` : tail;
+}
+
+Object.assign(TEMPLATES, {
+  'engineering.published': {
+    title: () => 'Penugasan Engineering Baru',
+    body: (e) => engLine(e, 'Penugasan baru tersedia — ketuk untuk bergabung.'),
+  },
+  'engineering.accepted': {
+    title: () => 'Penugasan Dikerjakan',
+    body: (e) => engLine(e, `${actorName(e)} mulai mengerjakan.`),
+  },
+  'engineering.joined': {
+    title: () => 'Anggota Bergabung',
+    body: (e) => engLine(e, `${actorName(e)} bergabung ke penugasan.`),
+  },
+  'engineering.resumed': {
+    title: () => 'Penugasan Dilanjutkan',
+    body: (e) => engLine(e, 'Pekerjaan dilanjutkan kembali.'),
+  },
+  'engineering.postponed': {
+    title: () => 'Penugasan Ditunda',
+    body: (e) => engLine(e, `Ditunda oleh ${actorName(e)}.`),
+  },
+  'engineering.completed': {
+    title: () => 'Menunggu Verifikasi',
+    body: (e) => engLine(e, 'Pekerjaan selesai — menunggu verifikasi.'),
+  },
+  'engineering.verified': {
+    title: () => 'Penugasan Terverifikasi',
+    body: (e) => engLine(e, `Diverifikasi oleh ${actorName(e)}.`),
+  },
+  'engineering.rejected': {
+    title: () => 'Verifikasi Ditolak',
+    body: (e) => engLine(e, 'Perlu perbaikan — dikembalikan untuk dikerjakan.'),
+  },
+  'engineering.cancelled': {
+    title: () => 'Penugasan Dibatalkan',
+    body: (e) => engLine(e, `Dibatalkan oleh ${actorName(e)}.`),
+  },
+});
+
 /**
  * Build a deep-link target the PWA can resolve from a push click
  * ("/?view=assignment&id=ASG-…"). Derived from the canonical entity.

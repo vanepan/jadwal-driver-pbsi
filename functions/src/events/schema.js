@@ -33,7 +33,7 @@ const ENVELOPE_VERSION = 1;
 const EVENTS_PATH = 'events';
 
 /** Recognized entity kinds. */
-const ENTITY_KINDS = ['assignment', 'request', 'comment', 'notification'];
+const ENTITY_KINDS = ['assignment', 'request', 'comment', 'notification', 'engineering'];
 
 /**
  * Canonical event type namespace (domain.action). Additive — new
@@ -55,6 +55,20 @@ const EVENT_TYPES = [
   // v1.11.4 Reminder Engine — additive, system-originated time-based reminder.
   // H-1d vs H-1h is data (payload.offset), not a separate type.
   'assignment.reminder',
+  // v1.20.4 Engineering Operations — additive lifecycle types. Ride the SAME
+  // /events → onEventWrite → engine pipeline; only new TYPES, no new machinery.
+  // (.updated/.deleted are declared for validity but stay out of the registry.)
+  'engineering.published',
+  'engineering.accepted',
+  'engineering.joined',
+  'engineering.resumed',
+  'engineering.postponed',
+  'engineering.completed',
+  'engineering.verified',
+  'engineering.rejected',
+  'engineering.cancelled',
+  'engineering.updated',
+  'engineering.deleted',
 ];
 const EVENT_TYPE_SET = new Set(EVENT_TYPES);
 

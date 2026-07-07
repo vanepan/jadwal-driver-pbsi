@@ -15,6 +15,8 @@
 
 import { STATUS, PARTICIPANT_STATUS } from '../config/engineering-config.js';
 import { ENGINEERING_ROLE } from '../../config/role-registry.js';
+import { isDeletable } from '../models/engineering-assignment.js';
+import { resolveAssignedUsers } from '../personnel/engineering-personnel.js';
 import {
   esc, icon, catTile, catMeta, statusPill, priorityTag, avatar,
   fmtDuration, workerElapsedMin, actualMinutes, activeParticipants,
@@ -27,6 +29,13 @@ const JOINABLE = new Set([STATUS.AVAILABLE, STATUS.IN_PROGRESS, STATUS.CONTINUE_
 function findMine(a, me) {
   if (!me) return null;
   return (a.participants || []).find((p) => p.workerId === me.id || p.name === me.name) || null;
+}
+
+/** Designated personnel (assignedUsers) resolved to names from User Management. */
+function assignedNames(a) {
+  const uids = a && a.assignedUsers ? Object.keys(a.assignedUsers) : [];
+  if (!uids.length) return '';
+  return resolveAssignedUsers(uids).map((p) => p.name).join(', ');
 }
 
 function btn(act, label, iconName, opts = {}) {
@@ -86,6 +95,25 @@ function actionZone(a, ctx) {
   return `<div class="eng-action-row">${btns.join('')}</div>`;
 }
 
+/**
+ * Admin-only "danger zone" (v1.20.6, Objective 2). The SAME button either hard-
+ * deletes an assignment that was never worked on, or cancels+archives one that
+ * already has execution history — so analytics/timeline are always preserved.
+ * The mode here is advisory; the center re-checks isDeletable() authoritatively.
+ */
+function deleteZone(a) {
+  if (a.status === STATUS.ARCHIVED) return '';
+  const hard = isDeletable(a);
+  const label = hard ? 'Hapus Penugasan' : 'Batalkan & Arsipkan';
+  const hint = hard
+    ? 'Belum pernah dikerjakan — dapat dihapus permanen.'
+    : 'Sudah memiliki riwayat — akan diarsipkan (riwayat & analitik dipertahankan).';
+  return `<div class="eng-danger-zone">
+    <button class="eng-btn -ghost -danger" data-act="eng-delete" data-id="${esc(a.id)}" data-mode="${hard ? 'hard' : 'archive'}">${icon(hard ? 'trash' : 'archive', { size: 15 })}<span>${esc(label)}</span></button>
+    <span class="eng-danger-hint">${esc(hint)}</span>
+  </div>`;
+}
+
 function memberRow(a, p, me, now) {
   const stMap = {
     [PARTICIPANT_STATUS.WORKING]: { l: 'Sedang bekerja', c: 'c-blue' },
@@ -142,6 +170,7 @@ export function renderDrawer(a, ctx) {
           ${kv('Prioritas', priorityTag(a.priority, false))}
           ${a.requester ? kv('Pemohon', esc(a.requester)) : ''}
           ${a.dueDate ? kv('Target selesai', `<span${a.priority === 'critical' ? ' style="color:var(--crit)"' : ''}>${esc(a.dueDate)}</span>`) : ''}
+          ${assignedNames(a) ? kv('Ditugaskan', esc(assignedNames(a))) : ''}
         </div>
 
         <div class="eng-sec">
@@ -178,7 +207,7 @@ export function renderDrawer(a, ctx) {
         </div>` : ''}
       </div>
 
-      <div class="eng-drawer-foot">${actionZone(a, ctx)}</div>
+      <div class="eng-drawer-foot">${actionZone(a, ctx)}${ctx.canEng('eng.delete') ? deleteZone(a) : ''}</div>
     </div>
   </div>`;
 }

@@ -2,6 +2,7 @@
 
 import { getUserList } from './users.js';
 import { getCurrentUser } from './auth.js';
+import { subscribeNode } from './firebase.js';
 
 /* ── Helpers ── */
 
@@ -156,6 +157,80 @@ const READ_AT_KEY = 'pbsi_notif_read_at';
 let allLogs = [];
 let pendingCount = 0;
 
+/* ── Server notification outbox (v1.20.5) ─────────────────────────────────
+   The legacy bell above is /logs-based and covers Driver/Request lifecycle.
+   The notification ENGINE (Cloud Functions) persists every recipient's records
+   to /notifications/{uid}. Engineering lifecycle notifications live ONLY there,
+   so the bell must subscribe to it too — otherwise Engineering users see nothing
+   in-app even though the pipeline delivered. This is additive: we ingest only
+   records the /logs bell does NOT already render (no ACTION_META for their type
+   — today that is the Engineering lifecycle), so Driver/Request counts are
+   unchanged and nothing is double-counted. */
+let serverNotifs = [];            // normalized /notifications records for the current user
+let _serverNotifUnsub = null;     // realtime unsubscribe
+let _serverNotifUid = null;       // uid we are currently subscribed for
+let _diagLastNotifAt = null;      /* DIAGNOSTIC (removable) */
+let _diagLastNotifTitle = null;   /* DIAGNOSTIC (removable) */
+
+/** Normalize a server /notifications record into the bell's entry shape. */
+function normalizeServerNotif(id, rec) {
+  return {
+    id,
+    _server: true,
+    action: rec.type || 'notification',          // e.g. 'engineering.published'
+    title: rec.title || 'Notifikasi',
+    desc: rec.body || '',
+    timestamp: rec.createdAt || new Date().toISOString(),
+  };
+}
+
+/**
+ * (Re)subscribe the bell to /notifications/{currentUid}. Idempotent per uid;
+ * detaches cleanly on user change / logout. Safe when Firebase is unconfigured
+ * (subscribeNode no-ops). Feeds the badge + list in realtime — no refresh.
+ */
+export function syncServerNotifications() {
+  const u = getCurrentUser();
+  const uid = (u && (u.username || u.id)) || null;
+  if (uid === _serverNotifUid) return;                       // already current
+  if (_serverNotifUnsub) { try { _serverNotifUnsub(); } catch (_) {} _serverNotifUnsub = null; }
+  serverNotifs = [];
+  _serverNotifUid = uid;
+  if (!uid) { renderNotificationBadge(); return; }
+  _serverNotifUnsub = subscribeNode(
+    `notifications/${uid}`,
+    (snapshot) => {
+      const val = snapshot && typeof snapshot.val === 'function' ? snapshot.val() : null;
+      const list = val ? Object.entries(val).map(([id, rec]) => normalizeServerNotif(id, rec)) : [];
+      // Surface ONLY Engineering lifecycle notifications from the outbox. Driver/
+      // Request/comment notifications already render via the legacy /logs bell, so
+      // ingesting only 'engineering.*' guarantees nothing is double-counted.
+      serverNotifs = list
+        .filter((n) => String(n.action).startsWith('engineering.'))
+        .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      if (serverNotifs.length) {   /* DIAGNOSTIC (removable) */
+        _diagLastNotifAt = Date.now(); _diagLastNotifTitle = serverNotifs[0].title;
+      }
+      renderNotificationBadge();
+      if (document.getElementById('modalNotifications')?.style.display === 'flex') renderNotificationsList();
+    },
+    { onDenied: () => {}, onError: () => {} },
+  );
+}
+
+/* DIAGNOSTIC (removable): read-only snapshot for the Production Diagnostic panel. */
+export function getNotificationRuntimeInfo() {
+  const readAt = getReadAt();
+  return {
+    recipientUid: _serverNotifUid,
+    serverCount: serverNotifs.length,
+    unreadCount: serverNotifs.filter(n => new Date(n.timestamp).getTime() > readAt).length,
+    lastReceivedAt: _diagLastNotifAt,
+    lastTitle: _diagLastNotifTitle,
+    source: _serverNotifUid ? `notifications/${_serverNotifUid} (server) + /logs (legacy)` : '/logs (legacy)',
+  };
+}
+
 function getReadAt() {
   try { return parseInt(localStorage.getItem(READ_AT_KEY), 10) || 0; } catch { return 0; }
 }
@@ -250,8 +325,10 @@ function renderNotificationBadge() {
   if (!btn || !badge) return;
 
   const visible = filterForCurrentUser(allLogs);
+  const readAt  = getReadAt();
   const unread  = countUnread(visible);
-  const total   = pendingCount + unread;
+  const serverUnread = serverNotifs.filter(n => new Date(n.timestamp).getTime() > readAt).length;
+  const total   = pendingCount + unread + serverUnread;
 
   badge.style.display = total > 0 ? 'inline-flex' : 'none';
   badge.textContent   = total > 0 ? String(total) : '';
@@ -276,6 +353,18 @@ function buildDetailHtml(detailFn, entry) {
 }
 
 function renderCard(entry, isUnread) {
+  // Server-outbox records (e.g. Engineering) carry pre-rendered title/body from
+  // the Cloud Functions templates — render them directly (no ACTION_META).
+  if (entry._server) {
+    return `
+    <div class="notif-card notif-priority-normal${isUnread ? ' notif-unread' : ''}">
+      <div class="notif-card-top">
+        <span class="notif-card-title">🔧 ${escapeHTML(entry.title)}${isUnread ? '<span class="notif-new-dot"></span>' : ''}</span>
+        <span class="notif-card-time">${escapeHTML(timeAgo(entry.timestamp))}</span>
+      </div>
+      <div class="notif-card-desc">${escapeHTML(entry.desc)}</div>
+    </div>`;
+  }
   const meta = ACTION_META[entry.action];
   if (!meta) return '';
   return `
@@ -296,7 +385,11 @@ function renderNotificationsList() {
   if (!container) return;
 
   const readAt  = getReadAt();
-  const visible = filterForCurrentUser(allLogs).slice(0, 30);
+  // Merge the /logs-derived notifications with the server outbox (Engineering),
+  // newest first — one unified, time-ordered list.
+  const visible = [...filterForCurrentUser(allLogs), ...serverNotifs]
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+    .slice(0, 30);
 
   if (visible.length === 0) {
     container.innerHTML = '<div class="empty-request-state">Belum ada notifikasi untuk Anda.</div>';
@@ -372,6 +465,10 @@ export function initNotificationUI() {
 export function setNotificationData({ pendingRequests = 0, recentLogs = [] }) {
   pendingCount = Number(pendingRequests) || 0;
   allLogs = Array.isArray(recentLogs) ? recentLogs : [];
+  // Keep the server-outbox subscription pointed at the current user (idempotent
+  // per uid): login attaches it, logout detaches it. This is how Engineering
+  // in-app notifications arrive in realtime through the shared bell.
+  syncServerNotifications();
   renderNotificationBadge();
 }
 

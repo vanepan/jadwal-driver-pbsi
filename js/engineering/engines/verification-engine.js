@@ -24,7 +24,7 @@
 import { cleanString, nowISO } from '../utils/engineering-utils.js';
 import { STATUS, VERIFICATION_STATUS } from '../config/engineering-config.js';
 import { TIMELINE_EVENT, createTimelineEvent, recordEvents } from '../timeline/timeline-engine.js';
-import { transitionAssignment } from './assignment-engine.js';
+import { transitionAssignment, TransitionError } from './assignment-engine.js';
 
 /**
  * @typedef {Object} VerificationRecord
@@ -60,6 +60,12 @@ export function createVerificationRecord(verifier = {}, options = {}) {
  * @returns {Object} new assignment (VERIFIED)
  */
 export function verifyAssignment(assignment, verifier = {}, options = {}) {
+  // Guard the SOURCE state so a duplicate/concurrent verify (two coordinators at
+  // once, or a retry) throws instead of appending a second VERIFIED event. Under
+  // the transactional commit path this makes the loser abort as a clean no-op.
+  if (!assignment || assignment.status !== STATUS.WAITING_VERIFICATION) {
+    throw new TransitionError(assignment && assignment.status, `${STATUS.VERIFIED}(requires ${STATUS.WAITING_VERIFICATION})`);
+  }
   const record = createVerificationRecord(verifier, options);
   const participants = (assignment.participants || []).map((p) => ({
     ...p, verificationStatus: VERIFICATION_STATUS.VERIFIED,

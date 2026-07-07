@@ -178,8 +178,10 @@ export function createAssignmentModel(input = {}, options = {}) {
     room: cleanString(input.room),
     location: cleanString(input.location),
     requester: cleanString(input.requester),   // optional: requesting bidang/unit
-    dueDate: cleanString(input.dueDate),        // optional: display target completion
+    deadlineAt: input.deadlineAt ? nowISO(input.deadlineAt) : null,  // ISO deadline (structured)
+    dueDate: cleanString(input.dueDate),        // display label derived from deadlineAt
     creator: normalizeActor(input.creator),
+    assignedUsers: normalizeAssignedUsers(input.assignedUsers),  // { uid: true } — User Management refs
     participants,
     timeline: Array.isArray(input.timeline) ? input.timeline.slice() : [],
     attachments: Array.isArray(input.attachments) ? input.attachments.slice() : [],
@@ -195,6 +197,29 @@ export function createAssignmentModel(input = {}, options = {}) {
     verification: emptyVerification(input),
     references: emptyReferences(input),
   };
+}
+
+/**
+ * Normalize an `assignedUsers` value to a `{ uid: true }` map (v1.20.6,
+ * Objective 4). Accepts either the map form or an array of uids. Stores UID
+ * REFERENCES only — never denormalized user data; names are resolved from User
+ * Management at render time. Empty/invalid → {}.
+ * @param {Object|Array|undefined} raw
+ * @returns {Object<string, true>}
+ */
+export function normalizeAssignedUsers(raw) {
+  const out = {};
+  if (Array.isArray(raw)) {
+    for (const uid of raw) { const id = cleanString(uid); if (id) out[id] = true; }
+  } else if (isPlainObject(raw)) {
+    for (const uid of Object.keys(raw)) { const id = cleanString(uid); if (id && raw[uid]) out[id] = true; }
+  }
+  return out;
+}
+
+/** The uids (string[]) designated on an assignment/report's assignedUsers map. */
+export function assignedUserIds(record) {
+  return record ? Object.keys(normalizeAssignedUsers(record.assignedUsers)) : [];
 }
 
 /** Normalize a { id, name } actor (creator / verifier); null when empty. */
@@ -230,6 +255,26 @@ export function serializeAssignment(assignment) {
 export function hasActiveParticipants(assignment) {
   return !!assignment && Array.isArray(assignment.participants)
     && assignment.participants.some((p) => p && p.status !== PARTICIPANT_STATUS.LEFT);
+}
+
+/** Statuses an assignment can hold BEFORE any execution work happens. */
+const PRE_WORK_STATUSES = [STATUS.DRAFT, STATUS.PUBLISHED, STATUS.AVAILABLE];
+
+/**
+ * Whether an assignment has NEVER been worked on and may be HARD-deleted
+ * (v1.20.6, Objective 2). True only when it is still pre-work: an early status
+ * (draft/published/available), no active participant has claimed it, and no
+ * start/finish timestamp exists. Anything past this has execution history and
+ * must be cancelled/archived instead — preserving analytics.
+ * @param {?EngineeringAssignment} assignment
+ * @returns {boolean}
+ */
+export function isDeletable(assignment) {
+  if (!assignment) return false;
+  return PRE_WORK_STATUSES.includes(assignment.status)
+    && !hasActiveParticipants(assignment)
+    && !assignment.startedTime
+    && !assignment.finishedTime;
 }
 
 /** Find a participant by worker id; null when absent. */

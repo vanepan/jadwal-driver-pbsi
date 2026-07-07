@@ -57,6 +57,25 @@
     "pettyCashAudit": {
       ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
       ".write": "auth.token.role === 'admin'"
+    },
+
+    "engineering": {
+      "assignments": {
+        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.role === 'engineering_coordinator' || auth.token.role === 'engineering_member'",
+        ".indexOn": ["status", "priority", "category"],
+        "$assignmentId": {
+          ".write": "auth.token.role === 'admin' || auth.token.role === 'developer' || ((auth.token.role === 'engineering_coordinator' || auth.token.role === 'engineering_member') && data.exists() && newData.exists() && data.child('status').val() !== 'verified')",
+          ".validate": "newData.hasChildren(['id', 'status'])"
+        }
+      },
+      "notifications": {
+        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.role === 'engineering_coordinator' || auth.token.role === 'engineering_member'",
+        ".write": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.role === 'engineering_coordinator' || auth.token.role === 'engineering_member'"
+      },
+      "settings": {
+        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.role === 'engineering_coordinator' || auth.token.role === 'engineering_member'",
+        ".write": "auth.token.role === 'admin' || auth.token.role === 'developer'"
+      }
     }
   }
 }

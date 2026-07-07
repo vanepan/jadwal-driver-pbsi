@@ -43,6 +43,19 @@ const REGISTRY = {
   // arm; whether it SENDS is the REMINDER_FLAGS gate (dispatcher.liveFor),
   // independent of the lifecycle NOTIFICATION_FLAGS.
   'assignment.reminder':  { channels: [IN_APP, TELEGRAM, PUSH], template: 'assignment.reminder' },
+
+  // v1.20.4 Engineering Operations — in-app + push (the live channels). No
+  // Telegram: Engineering members are notified in-app and via Web Push, the
+  // same delivery every other live notifiable event uses.
+  'engineering.published': { channels: [IN_APP, PUSH], template: 'engineering.published' },
+  'engineering.accepted':  { channels: [IN_APP, PUSH], template: 'engineering.accepted' },
+  'engineering.joined':    { channels: [IN_APP, PUSH], template: 'engineering.joined' },
+  'engineering.resumed':   { channels: [IN_APP, PUSH], template: 'engineering.resumed' },
+  'engineering.postponed': { channels: [IN_APP, PUSH], template: 'engineering.postponed' },
+  'engineering.completed': { channels: [IN_APP, PUSH], template: 'engineering.completed' },
+  'engineering.verified':  { channels: [IN_APP, PUSH], template: 'engineering.verified' },
+  'engineering.rejected':  { channels: [IN_APP, PUSH], template: 'engineering.rejected' },
+  'engineering.cancelled': { channels: [IN_APP, PUSH], template: 'engineering.cancelled' },
 };
 
 /** Registry entry for a canonical type, or null if not notifiable. */

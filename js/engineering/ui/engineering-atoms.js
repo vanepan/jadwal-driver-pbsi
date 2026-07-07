@@ -64,6 +64,8 @@ const ICONS = {
   chair: { d: 'M6 10V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v4M5 10h14v3H5zM7 13v7M17 13v7' },
   door: { d: 'M6 21V3h11v18M5 21h13M14 12h.6' },
   box: { d: 'M4 4h16v16H4zM12 4v16M9 9v3M15 9v3' },
+  trash: { d: 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6' },
+  archive: { d: 'M3 4h18v4H3zM5 8v12h14V8M9 12h6' },
 };
 
 /**
@@ -157,6 +159,22 @@ export function actualMinutes(a, now = Date.now()) {
     .reduce((s, p) => s + workerElapsedMin(p, now), 0);
 }
 export const activeParticipants = (a) => (a.participants || []).filter((p) => p.status !== 'left');
+
+/* ── Deadline display (from the structured deadlineAt ISO) ─────────────────
+   Renders a human label: Hari ini · Besok · Kemarin · "7 Jul" · "7 Jul 2027". */
+const _MON_ID = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+export function fmtDeadline(iso, now = Date.now()) {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return '';
+  const d = new Date(t), n = new Date(now);
+  const midnight = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const dayDiff = Math.round((midnight(d) - midnight(n)) / 86400000);
+  if (dayDiff === 0) return 'Hari ini';
+  if (dayDiff === 1) return 'Besok';
+  if (dayDiff === -1) return 'Kemarin';
+  const base = `${d.getDate()} ${_MON_ID[d.getMonth()]}`;
+  return d.getFullYear() === n.getFullYear() ? base : `${base} ${d.getFullYear()}`;
+}
 
 /* ── Fragments ────────────────────────────────────────────────────────── */
 export function catTile(categoryId, size = 42, radius = 12) {

@@ -30,6 +30,7 @@ import { TIMELINE_EVENT, createTimelineEvent } from '../timeline/timeline-engine
 /** Notification kinds this engine can build. */
 export const NOTIFICATION_TYPE = Object.freeze({
   ASSIGNMENT_PUBLISHED: 'assignment_published',
+  WORK_REPORT_LOGGED: 'work_report_logged',
 });
 
 /** Audience roles a notification can target (denormalized — resolved by transport). */
@@ -90,6 +91,46 @@ export function buildPublishNotification(assignment = {}, options = {}) {
       building: cleanString(assignment.building),
       room: cleanString(assignment.room),
       source: cleanString(assignment.source) || SOURCE.DIRECT,
+    },
+    createdTime: nowISO(options.now),
+  };
+}
+
+/**
+ * Build an INFORMATIONAL notification for a logged Operational Work Report
+ * ("Catat Pekerjaan", v1.20.6). Purely informational — a report is completed
+ * work, not an assignment to act on — targeted at the Coordinator + members so
+ * the team sees recorded operational activity. No lifecycle, no deep-link CTA.
+ * @param {Object} report
+ * @param {Object} [options]
+ * @param {Date|number|string} [options.now]
+ * @returns {EngineeringNotification}
+ */
+export function buildWorkReportNotification(report = {}, options = {}) {
+  const title = cleanString(report.title) || 'Laporan Pekerjaan';
+  const number = cleanString(report.reportNumber);
+  const where = [cleanString(report.building), cleanString(report.room)]
+    .filter(Boolean).join(' · ');
+  const body = [
+    'Laporan pekerjaan dicatat',
+    where && `di ${where}`,
+    report.workDate && `(${cleanString(report.workDate)})`,
+  ].filter(Boolean).join(' ');
+
+  return {
+    id: generateId('ntf', options.now),
+    type: NOTIFICATION_TYPE.WORK_REPORT_LOGGED,
+    workReportId: cleanString(report.id),
+    reportNumber: number,
+    title: number ? `${title} (${number})` : title,
+    body,
+    audiences: [AUDIENCE.ENGINEERING_COORDINATOR, AUDIENCE.ENGINEERING_MEMBERS],
+    data: {
+      workReportId: cleanString(report.id),
+      category: cleanString(report.category),
+      priority: cleanString(report.priority),
+      building: cleanString(report.building),
+      room: cleanString(report.room),
     },
     createdTime: nowISO(options.now),
   };

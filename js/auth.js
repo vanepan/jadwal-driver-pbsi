@@ -22,9 +22,8 @@ import {
 } from './firebase.js';
 import {
   can as registryCan,
-  roleLabelsForGroup,
+  roleLabel as registryRoleLabel,
   isEngineeringRole,
-  ROLE_GROUP,
   ENGINEERING_ROLE,
 } from './config/role-registry.js';
 
@@ -50,16 +49,8 @@ function isDirectPinMode() {
   }
 }
 
-const ROLE_LABELS = {
-  admin: 'Admin',
-  bidang: 'Bidang',
-  driver: 'Driver',
-  viewer: 'Viewer',
-  // Engineering roles (v1.20.1) — first-class production roles sourced from the
-  // central role registry so labels stay in one place and future role families
-  // (Executive) extend without editing this map.
-  ...roleLabelsForGroup(ROLE_GROUP.ENGINEERING),
-};
+// Role display labels come from the shared role registry — the SINGLE source of
+// truth for role presentation (Objective 5). No local role→label map here.
 
 const PERMISSIONS = {
   view: ['admin', 'bidang', 'viewer', 'driver'],
@@ -253,6 +244,69 @@ export function getCurrentUser() {
 }
 
 /**
+ * Resolve the set of identity strings that denote the given user AS A DRIVER,
+ * for matching against an assignment's stored `driver` name.
+ *
+ * SINGLE SOURCE OF TRUTH for "does this assignment belong to this driver?" —
+ * the dashboard visibility filter (app.js filterAssignmentsForUser) and the
+ * lifecycle action gate (modal.js canActOnAssignment) BOTH call this, so a
+ * driver can always act on an assignment they can see. Previously these two
+ * checks built DIFFERENT candidate sets (visibility: username+name+displayName+
+ * capitalized+"driver " prefix; action: only username+name), so an assignment
+ * matched by a candidate unique to the visibility set rendered as visible but
+ * could not be started/finished — surfacing as the "changing displayName breaks
+ * the driver lifecycle" bug (v1.20.7 Obj 9).
+ *
+ * NOTE: this still accepts the mutable display fields (name/displayName) as a
+ * backward-compatible fallback for assignments written before a stable key
+ * existed. The durable fix is an immutable `driverUsername`/uid written at
+ * assignment time and matched exclusively — see the v1.20.7 identity migration.
+ * @param {Object} user  a getCurrentUser() object
+ * @returns {Set<string>} normalized lowercase identity candidates
+ */
+export function driverIdentityCandidates(user) {
+  if (!user) return new Set();
+  const cap = user.username
+    ? user.username.charAt(0).toUpperCase() + user.username.slice(1).toLowerCase()
+    : '';
+  const candidates = [user.username, user.name, user.displayName, cap]
+    .filter(Boolean)
+    .flatMap((value) => {
+      const normalized = String(value).trim().toLowerCase();
+      return normalized.startsWith('driver ')
+        ? [normalized, normalized.replace(/^driver\s+/, '')]
+        : [normalized];
+    });
+  return new Set(candidates);
+}
+
+/**
+ * Whether `assignment` belongs to `user` (as a driver). Matches the assignment's
+ * stored driver name against driverIdentityCandidates(user).
+ * @param {Object} assignment
+ * @param {Object} user
+ * @returns {boolean}
+ */
+export function assignmentBelongsToDriver(assignment, user) {
+  if (!assignment || !user) return false;
+  // Immutable-identity match (v1.20.x stabilization, Issue 9): when the assignment
+  // carries a stable `driverUsername` (stamped at creation from the driver record's
+  // linkedUserUsername — see app.js resolveDriverUsername/stampDriverIdentity),
+  // ownership resolves on that key EXCLUSIVELY. A later display-name or driver-name
+  // edit can never break Start/Finish, because the key never changes. Legacy
+  // assignments (no driverUsername) fall back to the mutable name-candidate match,
+  // so existing records behave exactly as before (no regression).
+  const stableUser = String(assignment.driverUsername || '').trim().toLowerCase();
+  if (stableUser) {
+    const uname = String(user.username || '').trim().toLowerCase();
+    return !!uname && stableUser === uname;
+  }
+  const driverName = String(assignment.driver || '').trim().toLowerCase();
+  if (!driverName) return false;
+  return driverIdentityCandidates(user).has(driverName);
+}
+
+/**
  * Cek apakah user saat ini punya permission tertentu.
  * Permission yang dipakai: view, create, request, edit, delete.
  * @param {string} permission
@@ -384,9 +438,9 @@ export function updateAuthUI() {
   const displayNameEl = document.getElementById('headerDisplayName');
 
   if (badge) {
-    badge.textContent = user ? (ROLE_LABELS[user.role] || user.role) : 'Belum Login';
+    badge.textContent = user ? registryRoleLabel(user.role) : 'Belum Login';
     badge.dataset.role = user ? user.role : 'guest';
-    badge.title = user ? `${user.name} · ${ROLE_LABELS[user.role]}` : 'Silakan login';
+    badge.title = user ? `${user.name} · ${registryRoleLabel(user.role)}` : 'Silakan login';
   }
 
   if (displayNameEl) {
@@ -405,7 +459,7 @@ export function updateAuthUI() {
 }
 
 export function getRoleLabel(role) {
-  return ROLE_LABELS[role] || 'Guest';
+  return role ? registryRoleLabel(role) : 'Guest';
 }
 
 async function handleLoginSubmit(event) {

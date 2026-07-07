@@ -37,14 +37,16 @@ const pick = (s) => all.find((a) => a.status === s);
 /* ── Dashboards ───────────────────────────────────────────────────────── */
 console.log('\n[dashboards]');
 const opsA = renderOpsDashboard(all, admin);
-// v1.20.2 — the primary action moved to the sidebar CTA; there must be NO
-// in-content create button anywhere on the dashboard.
-check('admin dashboard has NO in-content Buat Penugasan (moved to sidebar)', !has(opsA, 'data-act="eng-create"'));
+// v1.20.4 — SINGLE global create entry point: the sidebar CTA is the ONLY
+// "Buat Penugasan" action. No screen renders an in-content create button for
+// ANY role (admin included).
+check('admin dashboard has NO in-content Buat Penugasan', !has(opsA, 'data-act="eng-create"'));
 check('admin dashboard has health ring', has(opsA, 'eng-ring'));
 check('admin dashboard has 4-KPI hero', has(opsA, '-c4'));
 check('admin dashboard has Perlu Tindakan', has(opsA, 'Perlu Tindakan'));
 check('admin dashboard has verify banner', has(opsA, 'eng-verify-banner'));
 const opsC = renderOpsDashboard(all, coord);
+// Create is admin-capability only — coordinator never sees it.
 check('coordinator dashboard has NO create CTA', !has(opsC, 'data-act="eng-create"'));
 check('coordinator dashboard has 5-KPI strip', has(opsC, '-c5'));
 check('coordinator dashboard shows Engineering Tersedia', has(opsC, 'Engineering Tersedia'));
@@ -59,6 +61,15 @@ const q = renderQueue(all, admin);
 check('queue renders cards', has(q, 'eng-card'));
 check('queue has category chips', has(q, 'data-act="eng-filter-cat"'));
 check('queue omits archived/done', !has(q, 'Terverifikasi'));
+check('queue (admin) has NO in-content Buat Penugasan', !has(q, 'data-act="eng-create"'));
+// v1.20.3 — search matches building/room/category/status/priority/member/requester.
+const openInProg = pick(STATUS.IN_PROGRESS);
+const bldgTerm = (openInProg.building || '').split(/\s+/)[0].toLowerCase();
+check('queue search matches by building', bldgTerm.length > 0
+  && has(renderQueue(all, { ...admin, filters: { cat: 'all', q: bldgTerm } }), openInProg.assignmentNumber));
+const memberName = (openInProg.participants || []).find((p) => p.name);
+check('queue search matches by member name', !memberName
+  || has(renderQueue(all, { ...admin, filters: { cat: 'all', q: memberName.name.split(' ')[0].toLowerCase() } }), 'eng-card'));
 const critCard = renderAssignmentCard(pick(STATUS.IN_PROGRESS), member);
 check('member card on available shows Mulai', has(renderAssignmentCard(pick(STATUS.AVAILABLE), member), 'Mulai Mengerjakan'));
 check('coordinator card on waiting shows Verifikasi', has(renderAssignmentCard(pick(STATUS.WAITING_VERIFICATION), coord), 'Verifikasi'));
@@ -89,6 +100,9 @@ console.log('\n[views]');
 const tl = renderTimelinePage(all, admin);
 check('timeline page has expandable cards', has(tl, 'data-act="eng-tl-toggle"'));
 check('timeline page has filter chips', has(tl, 'data-act="eng-tl-filter"'));
+// v1.20.3 — create available from Timeline (admin) but not for non-creators.
+check('timeline (admin) has NO in-content Buat Penugasan', !has(tl, 'data-act="eng-create"'));
+check('timeline (member) has NO Buat Penugasan', !has(renderTimelinePage(all, member), 'data-act="eng-create"'));
 // v1.20.2 — collapsed by default (no card is data-open when expandedId is null),
 // and exactly the selected card expands (single-expand).
 check('timeline collapsed by default (expandedId=null)', !has(tl, 'data-open="true"'));
@@ -107,10 +121,16 @@ check('global engineering analytics view has category + building sections', has(
 check('global engineering analytics reuses shared export center', has(engAn, 'export-engineering-analytics-pdf') && has(engAn, 'export-engineering-analytics-excel'));
 check('engineering module no longer imports its own renderAnalytics', typeof renderEngineeringAnalyticsView === 'function');
 const set = renderSettings(all, admin);
+check('settings (admin) has NO in-content Buat Penugasan', !has(set, 'data-act="eng-create"'));
 check('settings has master data', has(set, 'Data Operasional'));
 check('settings has roadmap placeholders', has(set, 'Spare Parts') && has(set, 'Bidang Request') && has(set, 'Preventive Maintenance'));
-check('settings has reset-seed', has(set, 'data-act="eng-reset-seed"'));
 check('settings toggles reflect settings store', has(set, 'eng-toggle'));
+// v1.20.3 RC1 — the Seed Manager (3 dev-only ops) renders ONLY when ctx.isDev,
+// and NEVER in staging/production. The old unconditional "reload demo" button is gone.
+const setDev = renderSettings(all, { ...admin, isDev: true });
+check('settings dev: Seed Manager present', has(setDev, 'eng-seedmgr') && has(setDev, 'data-act="eng-seed-load"') && has(setDev, 'data-act="eng-seed-reset"') && has(setDev, 'data-act="eng-seed-clear"'));
+const setProd = renderSettings(all, { ...admin, isDev: false });
+check('settings prod: NO Seed Manager / no demo controls', !has(setProd, 'eng-seedmgr') && !has(setProd, 'eng-seed-') && !has(setProd, 'eng-reset-seed'));
 
 /* ── Escaping ─────────────────────────────────────────────────────────── */
 console.log('\n[escaping]');

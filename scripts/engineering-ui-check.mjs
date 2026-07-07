@@ -27,7 +27,7 @@ const ADMIN = 'admin', { COORDINATOR, MEMBER } = ENGINEERING_ROLE;
 console.log('\n[role registry]');
 check('engineering roles are first-class', rolesInGroup(ROLE_GROUP.ENGINEERING).length === 2);
 check('coordinator label', roleLabel(COORDINATOR) === 'Koordinator Engineering');
-check('member label', roleLabel(MEMBER) === 'Engineering');
+check('member label', roleLabel(MEMBER) === 'Anggota Engineering');
 check('executive family reserved', rolesInGroup(ROLE_GROUP.EXECUTIVE).length === 3);
 check('executive roles hold no capability yet', capabilitiesOf(EXECUTIVE_ROLE.KETUA_UMUM).length === 0);
 check('isEngineeringRole true for coordinator', isEngineeringRole(COORDINATOR));
@@ -83,8 +83,14 @@ check('roster exposed', Array.isArray(SEED_MEMBERS) && SEED_MEMBERS.length >= 5)
 /* ── 4. Provider hydration (the module always loads through the provider) ─ */
 console.log('\n[provider hydration]');
 resetEngineeringStore();
-const result = await loadAll(createDevSeedAdapter(), { now: Date.now() });
-check('loadAll reports 10 assignments', result.assignments === 10);
+const adapter = createDevSeedAdapter();
+// v1.20.3 RC1 — the dev adapter STARTS EMPTY: loading through it seeds nothing.
+const emptyResult = await loadAll(adapter, { now: Date.now() });
+check('fresh dev adapter → loadAll EMPTY (no auto seed)', emptyResult.assignments === 0 && listAssignments().length === 0);
+// The Seed Manager's explicit hook is the ONLY thing that populates it.
+adapter.__dev_loadSeed();
+const result = await loadAll(adapter, { now: Date.now() });
+check('loadAll after __dev_loadSeed reports 10 assignments', result.assignments === 10);
 check('store hydrated to 10', listAssignments().length === 10);
 check('analytics computed + cached', !!getEngineeringState().analytics && getEngineeringState().analytics.totalAssignments === 10);
 check('analytics completed = 2', getEngineeringState().analytics.completedAssignments === 2);

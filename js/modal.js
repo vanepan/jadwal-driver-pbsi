@@ -9,7 +9,7 @@
 
 import { formatDateLong, formatDateTime, getTimePeriod, parseLocalDate, showToast, vehicleLabel, computeWorkTime } from './utils.js';
 import { getVehicleColor } from './drivers.js';
-import { hasPermission, getCurrentUser } from './auth.js';
+import { hasPermission, getCurrentUser, assignmentBelongsToDriver } from './auth.js';
 import { validateOdometer } from './validation.js';
 import { printReimbursementForm } from './reimbursement.js';
 import { getSetting } from './settings-store.js';
@@ -65,11 +65,11 @@ function canActOnAssignment(permission, assignment) {
   if (!user) return false;
   if (user.role === 'admin') return true;
   if (user.role === 'driver' && assignment) {
-    const driverName = String(assignment.driver || '').trim().toLowerCase();
-    const candidates = [user.username, user.name]
-      .filter(Boolean)
-      .map(v => String(v).trim().toLowerCase());
-    return candidates.some(c => c === driverName);
+    // Same shared ownership predicate the dashboard visibility filter uses, so a
+    // driver can act on every assignment they can see. Previously this gate used
+    // a NARROWER identity set than visibility (username+name only), so renaming
+    // the display name left assignments visible-but-not-actionable (v1.20.7 Obj 9).
+    return assignmentBelongsToDriver(assignment, user);
   }
   return false;
 }

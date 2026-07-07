@@ -21,6 +21,7 @@ import {
   initDriversStore,
   getDrivers,
   getActiveDrivers,
+  findDriverByLegacyName,
   registerDriversChangeListener,
   createDriver,
   updateDriver,
@@ -103,7 +104,7 @@ import { openVehicleDetailDrawer } from './components/vehicle-detail-drawer.js';
 import { renderVehiclePredictionDashboard, injectVehiclePredictionStyles, getCertifiedVehiclePredictions } from './components/vehicle-prediction-dashboard.js';
 import { mountSimulationPanel, getActiveSimulation } from './analytics/simulation-panel.js';
 import { FUEL_TYPES, TRANSMISSION_TYPES, VEHICLE_TYPE_REGISTRY, VEHICLE_STATUS_REGISTRY } from './config/vehicle-asset-config.js';
-import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver, isEngineeringUser } from './auth.js';
+import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver, isEngineeringUser, assignmentBelongsToDriver } from './auth.js';
 import * as DocumentEngine from './docs/doc-engine.js';
 import './docs/templates/analytics-summary.js';   // registers 'analytics-summary'
 import './exports/analytics/analytics-export-client.js'; // Analytics Export Phase A — window.exportAnalyticsPoc()
@@ -179,6 +180,11 @@ import { renderDriverDashboard, setAssignments as setDashboardAssignments } from
 // and widgets consume existing models + deep-link into existing modules; no
 // business logic, engines, or Firebase writes live here.
 import { renderHome, refreshHome, resolveWorkspaceForRole } from './workspace/home-router.js';
+// Single source of role display labels (incl. Engineering) — reused everywhere a
+// role is shown so no internal identifier is ever exposed and no map is duplicated.
+import { roleLabel as formatRole } from './config/role-registry.js';
+/* DIAGNOSTIC (removable): Production Diagnostic Mode overlay (Ctrl+Shift+D). */
+import { initEngineeringDiagnostics } from './engineering/diagnostics/engineering-diagnostics.js';
 import { initCommentHandlers, openCommentModal, closeCommentModal, setRequests as setCommentRequests, registerCommentSaveCallback, refreshCommentThreadIfOpen } from './comments.js';
 import { initAdminUI, updateAdminButtons, openUserFormModal } from './admin.js';
 import {
@@ -186,18 +192,18 @@ import {
 } from './petty-cash/petty-cash-center.js';
 // v1.20.1 Engineering Operations UI — embedded native module (mirrors Petty Cash).
 import {
-  mountEngineering, setEngineeringScreen, closeEngineering, openEngineeringCreate, setEngineeringSearch,
+  mountEngineering, setEngineeringScreen, closeEngineering, openEngineeringCreate, openEngineeringReport, setEngineeringSearch,
 } from './engineering/ui/engineering-center.js';
+// v1.20.6 — inject the live User Management source into the Engineering personnel
+// resolver (it deliberately does not import users.js to stay Node-harness-safe).
+import { setEngineeringUsersSource } from './engineering/personnel/engineering-personnel.js';
 import {
   registerSearchAdapter, searchPlaceholder, runModuleSearch, clearModuleSearch,
 } from './services/adaptive-search.js';
 // v1.20.2 — Engineering Analytics migrated into the global Analytics module.
 import { renderEngineeringAnalyticsView } from './analytics/views/analytics-engineering-view.js';
 import { buildEngineeringAnalytics } from './engineering/analytics/engineering-analytics.js';
-import { listAssignments as engListAssignments } from './engineering/stores/engineering-store.js';
-import { loadAll as engLoadAll } from './engineering/providers/engineering-provider.js';
-import { createDevSeedAdapter as engCreateDevSeedAdapter } from './engineering/providers/dev-seed-adapter.js';
-import { isDevelopment } from './config.js';
+import { listAssignments as engListAssignments, listWorkReports as engListWorkReports } from './engineering/stores/engineering-store.js';
 import './exports/analytics/engineering-analytics-export.js';  // registers window.exportEngineeringAnalytics* hooks
 import { mountAnalyticsPettyCash, closeAnalyticsPettyCash, refreshAnalyticsPettyCash } from './analytics/views/analytics-petty-cash-view.js';
 // v1.18.8: mountAnalyticsExecutive is retired — the "Analytics Executive" entry
@@ -359,30 +365,54 @@ function filterAssignmentsForUser(allAssignments) {
   if (!currentUser) return [];
 
   if (isDriver()) {
-    const identityCandidates = [
-      currentUser.username,
-      currentUser.name,
-      currentUser.displayName,
-      currentUser.username ? currentUser.username.charAt(0).toUpperCase() + currentUser.username.slice(1).toLowerCase() : '',
-    ]
-      .filter(Boolean)
-      .flatMap(value => {
-        const normalized = String(value).trim().toLowerCase();
-        return normalized.startsWith('driver ')
-          ? [normalized, normalized.replace(/^driver\s+/, '')]
-          : [normalized];
-      });
-
-    const uniqueDriverIdentities = new Set(identityCandidates);
-
-    return allAssignments.filter(assignment => {
-      const assignedDriver = String(assignment.driver || '').trim().toLowerCase();
-      return uniqueDriverIdentities.has(assignedDriver);
-    });
+    // Ownership is resolved by the SINGLE shared predicate (auth.js) that the
+    // lifecycle action gate (modal.js) also uses — so a visible assignment is
+    // always actionable (v1.20.7 Obj 9). Behaviour here is unchanged; the logic
+    // simply no longer lives in two places that could drift apart.
+    return allAssignments.filter(assignment => assignmentBelongsToDriver(assignment, currentUser));
   }
 
   // Admin, Bidang, Viewer lihat semua
   return allAssignments;
+}
+
+/**
+ * Resolve a driver display name → the IMMUTABLE linked user account username
+ * (v1.20.x stabilization, Issue 9). Uses the drivers registry's legacy-name
+ * matcher (also matches renamed drivers via their legacyNames). Returns '' when
+ * the name is unknown OR the matched driver is not linked to a user account — in
+ * that case the assignment keeps name-only ownership (never a wrong stable key).
+ * @param {string} driverName
+ * @returns {string}
+ */
+function resolveDriverUsername(driverName) {
+  const name = String(driverName || '').trim();
+  if (!name) return '';
+  const driver = findDriverByLegacyName(name);
+  return driver && driver.linkedUserUsername ? String(driver.linkedUserUsername).trim() : '';
+}
+
+/**
+ * Stamp an assignment with its immutable `driverUsername` so ownership can never
+ * break on a later display-name/driver-name edit (Issue 9).
+ *
+ * Called ONLY at write chokepoints (create / approve / edit-save). With
+ * `force:true` (a save) it recomputes from the assignment's CURRENT driver name,
+ * so a reassignment updates the key — and clears a now-stale key when the new
+ * driver is not linked to a user account (falls back to name matching). Without
+ * force it stamps only when absent (never overwrites). Never guesses: an
+ * unresolvable name leaves the record on name-only ownership.
+ * @param {Object} assignment
+ * @param {{force?:boolean}} [opts]
+ * @returns {Object} the same assignment (mutated in place for the caller's convenience)
+ */
+function stampDriverIdentity(assignment, { force = false } = {}) {
+  if (!assignment) return assignment;
+  if (assignment.driverUsername && !force) return assignment;
+  const uname = resolveDriverUsername(assignment.driver);
+  if (uname) assignment.driverUsername = uname;
+  else if (force && assignment.driverUsername) delete assignment.driverUsername;
+  return assignment;
 }
 
 /**
@@ -401,6 +431,16 @@ function normalizeAssignmentStatus(a) {
  * Dipanggil setiap kali ada perubahan data (Firebase sync, form submit, delete, etc)
  */
 function updateAllModules() {
+  // Strict per-role isolation (Issue 1/12): for a role without Driver-Ops access
+  // (Engineering) the Driver timeline, dashboard and KPI strip are not part of the
+  // experience — never render them (not render-then-hide). Requests/comment data
+  // are cheap non-render state feeds and stay in sync harmlessly.
+  if (!canAccessModule('driverops')) {
+    setRequestsModule(requests);
+    setCommentRequests(requests);
+    return;
+  }
+
   // Timeline shows search-filtered view; modal/conflict-check always see ALL
   setTimelineAssignments(getFilteredAssignments());
   setModalAssignments(assignments);
@@ -631,6 +671,11 @@ function updatePermissionUI(resetNavActive = false) {
   const bottomNavNotifications = document.getElementById('bottomNavNotifications');
   const bottomNavProfile = document.getElementById('bottomNavProfile');
 
+  // Bottom-nav "Dashboard" opens Driver Operations — hide it for Engineering
+  // users (strict isolation, v1.20.6) so mobile matches the desktop rail matrix.
+  const bottomNavDashboard = document.getElementById('bottomNavDashboard');
+  if (bottomNavDashboard) bottomNavDashboard.style.display = canAccessModule('driverops') ? 'flex' : 'none';
+
   if (bottomNavRequests) {
     bottomNavRequests.style.display = canAdd ? 'flex' : 'none';
     if (bottomNavRequestsBadge) {
@@ -679,8 +724,7 @@ function updatePermissionUI(resetNavActive = false) {
   // VSM-7 Part 7: full role name in topbar profile card
   const topbarRole = document.getElementById('v2TopbarRoleLabel');
   if (topbarRole) {
-    const roleNames = { admin: 'Administrator', bidang: 'Bidang', driver: 'Driver', viewer: 'Viewer' };
-    topbarRole.textContent = roleNames[currentUser?.role] || '';
+    topbarRole.textContent = currentUser?.role ? formatRole(currentUser.role) : '';
   }
 
   // ── VSM-2: V2 context panel role-gating ──
@@ -714,8 +758,12 @@ function updatePermissionUI(resetNavActive = false) {
       v2PanelBadge.style.display = showBadge ? 'inline-flex' : 'none';
     }
 
-    // ── Rail modules: Petty Cash, Analytics, Konfigurasi are admin-only ──
+    // ── Strict per-role isolation (v1.20.6): every rail item is driven by the
+    //    canAccessModule() resolver so unrelated modules are never shown. The
+    //    Driver Operations rail is now gated — Engineering users must NOT see it. ──
     const adminOnly = isAdmin();
+    const v2RailDriverOps = document.getElementById('v2RailDriverOps');
+    if (v2RailDriverOps) v2RailDriverOps.style.display = canAccessModule('driverops') ? 'flex' : 'none';
     const v2RailPettyCash = document.getElementById('v2RailPettyCash');
     if (v2RailPettyCash) v2RailPettyCash.style.display = adminOnly ? 'flex' : 'none';
     const v2RailAnalytics = document.getElementById('v2RailAnalytics');
@@ -732,13 +780,19 @@ function updatePermissionUI(resetNavActive = false) {
     // Analytics/Pengaturan; Coordinator: +Riwayat; Member: personal Timeline/Riwayat).
     const engRole = isEngineeringUser();
     const engMember = getCurrentUser()?.role === 'engineering_member';
+    const canEng = canAccessModule('engineering');
     const v2RailEng = document.getElementById('v2RailEngineering');
-    if (v2RailEng) v2RailEng.style.display = (adminOnly || engRole) ? 'flex' : 'none';
+    if (v2RailEng) v2RailEng.style.display = canEng ? 'flex' : 'none';
     const btnEngMobile = document.getElementById('btnEngineering');
-    if (btnEngMobile) btnEngMobile.style.display = (adminOnly || engRole) ? 'flex' : 'none';
+    if (btnEngMobile) btnEngMobile.style.display = canEng ? 'flex' : 'none';
     const setDisp = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? 'flex' : 'none'; };
     setDisp('v2NavEngHistory', engRole);          // coordinator + member
     setDisp('v2NavEngSettings', adminOnly);       // admin only
+    // Catat Pekerjaan — Admin + Coordinator (matches eng.report.create). Promoted
+    // to a PRIMARY panel CTA (#v2BtnCatatPekerjaan, updatePanelCta) + mobile FAB;
+    // the old menu entry is retired to avoid a duplicate entry point (mirrors
+    // Petty Cash, which surfaces create only as a CTA).
+    setDisp('v2NavEngReport', false);
     // Engineering Analytics now lives in the global Analytics module (v1.20.2).
     setDisp('v2NavAnalyticsEngineering', adminOnly);
     const engTlLabel = document.getElementById('v2NavEngTimelineLabel');
@@ -759,8 +813,7 @@ function updatePermissionUI(resetNavActive = false) {
     if (v2FooterDisplayName) v2FooterDisplayName.textContent = displayName;
     const v2FooterRoleLabel = document.getElementById('v2FooterRoleLabel');
     if (v2FooterRoleLabel) {
-      const roleNames = { admin: 'Administrator', bidang: 'Bidang', driver: 'Driver', viewer: 'Viewer' };
-      v2FooterRoleLabel.textContent = roleNames[currentUser?.role] || '';
+      v2FooterRoleLabel.textContent = currentUser?.role ? formatRole(currentUser.role) : '';
     }
 
     // Reset landing only on auth changes (login/logout/startup). Skipped for
@@ -771,13 +824,17 @@ function updatePermissionUI(resetNavActive = false) {
     // v1.20.2 integration — Engineering roles keep landing in their own module
     // (production UX preserved); everyone else enters Home.
     if (resetNavActive) {
-      setRailModule(isEngineeringUser() ? 'engineering' : 'home');
+      setRailModule(defaultModuleForRole());
     }
     syncV2ResponsiveNavReuse();
   }
 
   // Reset bottom nav only on auth changes — same reasoning as panel nav above.
-  if (resetNavActive) setBottomNavActive('bottomNavDashboard');
+  // Role-aware default (v1.20.7 Obj 5): only Driver-Ops roles get the Dashboard
+  // tab active. Engineering (and any role without Driver-Ops access) must never
+  // have a Driver tab marked active — clear the active state instead so mobile
+  // never presents a Driver entry point for them.
+  if (resetNavActive) setBottomNavActive(canAccessModule('driverops') ? 'bottomNavDashboard' : null);
   renderKPIStrip();
   syncV2ResponsiveNavReuse();
 }
@@ -955,9 +1012,15 @@ function resolvePrimaryCta() {
     return null;
   }
   if (activeRailModule === 'engineering') {
-    // Create is admin-only (eng.create capability) — the sidebar CTA mirrors
-    // Driver "Tambah Jadwal" / Petty Cash "Tambah Pengeluaran".
+    // Assignment create is admin-only (eng.create). The PRIMARY (mobile-FAB)
+    // action is Buat Penugasan for admin; for the Coordinator — who cannot create
+    // assignments but owns operational reporting — the primary action is Catat
+    // Pekerjaan. The desktop panel additionally shows BOTH for admin (see
+    // updatePanelCta); this resolver only picks the single FAB/primary action.
     if (isAdmin())  return { kind: 'buat-penugasan', label: 'Buat Penugasan' };
+    if (getCurrentUser()?.role === 'engineering_coordinator') {
+      return { kind: 'catat-pekerjaan', label: 'Catat Pekerjaan' };
+    }
     return null;
   }
   // analytics + konfigurasi → read-only, no primary CTA
@@ -982,6 +1045,11 @@ function runPrimaryCta() {
     // Guard: ensure the Engineering module is mounted/active before opening.
     if (activeRailModule !== 'engineering') { navEngineering('dashboard', 'v2NavEngDashboard'); }
     openEngineeringCreate();
+  }
+  else if (resolved.kind === 'catat-pekerjaan') {
+    // Guard: ensure the Engineering module is mounted/active before opening.
+    if (activeRailModule !== 'engineering') { navEngineering('dashboard', 'v2NavEngDashboard'); }
+    openEngineeringReport();
   }
 }
 
@@ -1079,16 +1147,59 @@ function updatePanelCta() {
   const btnAjukan = document.getElementById('v2BtnAjukanRequest');
   const btnPc     = document.getElementById('v2BtnTambahPengeluaran');
   const btnEng    = document.getElementById('v2BtnBuatPenugasan');
+  const btnEngReport = document.getElementById('v2BtnCatatPekerjaan');
+
+  // Engineering shows up to TWO primary CTAs on the desktop panel (the mobile FAB
+  // still shows the single primary from resolvePrimaryCta):
+  //   admin        → Buat Penugasan + Catat Pekerjaan
+  //   coordinator  → Catat Pekerjaan
+  const engActive = activeRailModule === 'engineering';
+  const engRoleCoord = getCurrentUser()?.role === 'engineering_coordinator';
+  const showBuat  = engActive && isAdmin();
+  const showCatat = engActive && (isAdmin() || engRoleCoord);
+
   if (cta) {
     if (btnJadwal) btnJadwal.style.display = (resolved && resolved.kind === 'jadwal')        ? 'flex' : 'none';
     if (btnAjukan) btnAjukan.style.display = (resolved && resolved.kind === 'ajukan')        ? 'flex' : 'none';
     if (btnPc)     btnPc.style.display     = (resolved && resolved.kind === 'pengeluaran')   ? 'flex' : 'none';
-    if (btnEng)    btnEng.style.display    = (resolved && resolved.kind === 'buat-penugasan') ? 'flex' : 'none';
-    cta.style.display = resolved ? 'flex' : 'none';
+    if (btnEng)    btnEng.style.display    = showBuat  ? 'flex' : 'none';
+    if (btnEngReport) btnEngReport.style.display = showCatat ? 'flex' : 'none';
+    cta.style.display = (resolved || showBuat || showCatat) ? 'flex' : 'none';
   }
 
   // Mobile FAB — same resolver, no duplicated mapping.
   updateFabCta(resolved);
+}
+
+/* ──────────────────────────────────────────────────────────────────
+   Strict per-role module isolation (v1.20.6, Objective 1)
+
+   The SINGLE decision point for which rail modules a role may SEE and MOUNT.
+   Engineering users must never reach Driver Operations, and Driver/Bidang must
+   never reach Engineering — enforced here (rail visibility + a mount guard),
+   not by merely hiding menus. Admin keeps full platform access.
+     • admin                → every module
+     • engineering roles     → Home + Engineering only
+     • driver / bidang       → Home + Driver Operations only
+     • Petty / Analytics /
+       Konfigurasi           → admin-only (unchanged)
+   ────────────────────────────────────────────────────────────────── */
+function canAccessModule(name) {
+  if (name === 'home') return true;                 // Home workspace: every role
+  if (isAdmin()) return true;                        // admin: full access
+  switch (name) {
+    case 'engineering': return isEngineeringUser();
+    case 'driverops':   return !isEngineeringUser(); // bidang + driver
+    case 'pettycash':
+    case 'analytics':
+    case 'konfigurasi': return false;                // admin-only
+    default:            return false;
+  }
+}
+
+/** The module a role lands on by default (Engineering keeps its own module). */
+function defaultModuleForRole() {
+  return isEngineeringUser() ? 'engineering' : 'home';
 }
 
 /**
@@ -1100,6 +1211,9 @@ function setRailModule(name) {
   // 'administration' is no longer a visible module — fold legacy callers into
   // Konfigurasi (which now owns user management + global config).
   if (name === 'administration') name = 'konfigurasi';
+  // Strict isolation guard: a role can never mount a module outside its set,
+  // even via a stale deep link / mobile drawer — redirect to its default.
+  if (!canAccessModule(name)) name = defaultModuleForRole();
   const def = MODULE_DEFS[name];
   if (!def) return;
   activeRailModule = name;
@@ -1693,6 +1807,18 @@ function initV2Panel() {
         </svg>
         Buat Penugasan
       </button>
+      <!-- Engineering secondary primary CTA (v1.20.x stabilization) — "Catat
+           Pekerjaan" (Operational Work Report). Admin + Coordinator, shown only
+           when the Engineering module is active; promoted from the panel menu to a
+           primary operational action (mirrors Driver / Petty Cash create CTAs). -->
+      <button class="v2-panel-btn v2-panel-btn--primary" id="v2BtnCatatPekerjaan" type="button" style="display:none;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+             stroke-linecap="round" stroke-linejoin="round" width="14" height="14" aria-hidden="true">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <path d="M14 2v6h6M9 13h6M9 17h6"/>
+        </svg>
+        Catat Pekerjaan
+      </button>
     </div>
 
     <!-- ═══ MODUL: Home — Workspace Loader (v1.19.9) ═══ -->
@@ -1872,6 +1998,12 @@ function initV2Panel() {
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h4a1 1 0 100-2H7z" clip-rule="evenodd"/></svg>
         <span id="v2NavEngHistoryLabel">Riwayat</span>
       </button>
+      <!-- Catat Pekerjaan (Operational Work Report, v1.20.6) — opens the report
+           modal; Admin + Engineering Coordinator only (eng.report.create). -->
+      <button class="v2-panel-nav-item" id="v2NavEngReport" type="button" style="display:none;">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm4.707 6.293a1 1 0 00-1.414 1.414l1 1a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L9 10.586l-.293-.293z" clip-rule="evenodd"/></svg>
+        Catat Pekerjaan
+      </button>
       <!-- Engineering Analytics moved into the global Analytics module (v1.20.2) —
            Engineering no longer owns an Analytics page; it exposes the provider only. -->
       <button class="v2-panel-nav-item" id="v2NavEngSettings" type="button" style="display:none;">
@@ -1978,6 +2110,15 @@ function initV2Panel() {
     openEngineeringCreate();
   });
 
+  // Catat Pekerjaan (v1.20.x stabilization): Engineering secondary primary CTA →
+  // open the Operational Work Report modal. Admin + Coordinator (matches
+  // eng.report.create). Ensure the module is mounted/active first.
+  document.getElementById('v2BtnCatatPekerjaan')?.addEventListener('click', async () => {
+    if (!(isAdmin() || getCurrentUser()?.role === 'engineering_coordinator')) return;
+    if (activeRailModule !== 'engineering') await navEngineering('dashboard', 'v2NavEngDashboard');
+    openEngineeringReport();
+  });
+
   // ── Panel MENU handlers — all delegate to the v1.14.0 routing layer ──
   // MODUL Home (v1.19.9)
   document.getElementById('v2NavHome')?.addEventListener('click', navHome);
@@ -2016,6 +2157,12 @@ function initV2Panel() {
   document.getElementById('v2NavEngDashboard')?.addEventListener('click', () => navEngineering('dashboard', 'v2NavEngDashboard'));
   document.getElementById('v2NavEngTimeline')?.addEventListener('click', () => navEngineering('timeline', 'v2NavEngTimeline'));
   document.getElementById('v2NavEngHistory')?.addEventListener('click', () => navEngineering('history', 'v2NavEngHistory'));
+  // Catat Pekerjaan (v1.20.6) — opens the work-report modal without leaving the
+  // current screen; ensure the Engineering module is mounted/active first.
+  document.getElementById('v2NavEngReport')?.addEventListener('click', async () => {
+    if (activeRailModule !== 'engineering') await navEngineering('dashboard', 'v2NavEngDashboard');
+    openEngineeringReport();
+  });
   document.getElementById('v2NavAnalyticsEngineering')?.addEventListener('click', navAnalyticsEngineering);
   document.getElementById('v2NavEngSettings')?.addEventListener('click', () => navEngineering('settings', 'v2NavEngSettings'));
 
@@ -2295,7 +2442,10 @@ function renderKPIStrip() {
   // Driver role: personal dashboard is the KPI surface. Strip absent.
   // Unauthenticated: no data to show.
   const dashHeader = document.getElementById('v2DashHeader');
-  if (!currentUser || isDriver()) {
+  // Driver role: personal dashboard is the KPI surface. Unauthenticated: nothing.
+  // Engineering (no Driver-Ops access, Issue 1/12): the Driver KPI strip is not
+  // part of their experience — never compute/paint it.
+  if (!currentUser || isDriver() || !canAccessModule('driverops')) {
     strip.style.display = 'none';
     if (dashHeader) dashHeader.style.display = 'none';
     return;
@@ -2490,6 +2640,13 @@ function setDashboardView(view) {
  * renderTimeline() call site now calls renderViews() instead.
  */
 function renderViews() {
+  // Strict per-role isolation (Issue 1/12): the Driver Operations timeline + list
+  // must NEVER render for a role without Driver-Ops access (Engineering). We skip
+  // execution entirely rather than render-into-a-hidden-surface, so a stray async
+  // refresh can never flash Driver cards onto the Engineering experience. Admin /
+  // Driver / Bidang (canAccessModule('driverops') === true) are unaffected.
+  if (!canAccessModule('driverops')) return;
+
   renderTimeline(); // always — unchanged behaviour, engine state fully preserved
 
   if (currentDashboardView === 'list') {
@@ -3042,13 +3199,16 @@ function syncAnalyticsMobileNav() {
   });
 }
 
+// Labels DERIVED from the shared role registry (formatRole) — single source of
+// truth (Objective 5). 'engineering' is a non-registry grouping sentinel; it
+// falls back to its own id → 'ENGINEERING'.
 const V2_ROLE_CONFIG = [
-  { key: 'admin',       label: 'ADMIN',       defaultExpanded: true,  visible: true  },
-  { key: 'bidang',      label: 'BIDANG',       defaultExpanded: false, visible: true  },
-  { key: 'driver',      label: 'DRIVER',       defaultExpanded: false, visible: true  },
-  { key: 'viewer',      label: 'VIEWER',       defaultExpanded: false, visible: true  },
-  { key: 'engineering', label: 'ENGINEERING',  defaultExpanded: false, visible: false },
-];
+  { key: 'admin',       defaultExpanded: true,  visible: true  },
+  { key: 'bidang',      defaultExpanded: false, visible: true  },
+  { key: 'driver',      defaultExpanded: false, visible: true  },
+  { key: 'viewer',      defaultExpanded: false, visible: true  },
+  { key: 'engineering', defaultExpanded: false, visible: false },
+].map((r) => ({ ...r, label: formatRole(r.key).toUpperCase() }));
 const v2GroupExpanded = {};
 
 /**
@@ -3720,7 +3880,7 @@ function buildUserCard(user) {
   const role = user.role || 'viewer';
   const active = user.active !== false;
   const archived = user.archived === true;
-  const roleLabel = { admin: 'Admin', bidang: 'Bidang', driver: 'Driver', viewer: 'Viewer' }[role] || role;
+  const roleLabel = formatRole(role);   // reuse the central formatter (covers Engineering; never raw id)
 
   if (archived) {
     const refCount = countUserReferences(user);
@@ -4232,7 +4392,7 @@ function renderV2AdminUsers() {
   const unknownRoles = Object.keys(byRole).filter(k => !knownKeys.has(k));
   const allRoles = [
     ...V2_ROLE_CONFIG,
-    ...unknownRoles.map(k => ({ key: k, label: k.toUpperCase(), defaultExpanded: false, visible: true })),
+    ...unknownRoles.map(k => ({ key: k, label: formatRole(k).toUpperCase(), defaultExpanded: false, visible: true })),
   ];
 
   // When role filter is active show only that group; otherwise show all visible
@@ -6821,7 +6981,11 @@ function buildExecutiveDashboardModel() {
     const driverModel = computeDriverModelForRange('30d', {});
     return computeExecutiveAnalytics({ driverModel, pettyModel: petty, meta: { periodLabel: '30 Hari' } });
   });
-  return { generatedAt: new Date().toISOString(), exec, dispatch, recommendation, wellness, fleet, petty };
+  // Engineering flows into the executive model from the SAME analytics builder its
+  // own page uses, over the LIVE store — so create/verify/postpone/finish changes
+  // are reflected on the next render with no manual refresh and no duplicated math.
+  const engineering = safe('engineering', () => buildEngineeringAnalytics(engListAssignments(), { now: Date.now(), workReports: engListWorkReports() }));
+  return { generatedAt: new Date().toISOString(), exec, dispatch, recommendation, wellness, fleet, petty, engineering };
 }
 
 /** Render (or re-render) the Executive Analytics dashboard into its container. */
@@ -6881,22 +7045,19 @@ async function exportExecutiveDashboard(format, btn) {
   }
 }
 
-/* ── Engineering Analytics section (v1.20.2) ───────────────────────────────
+/* ── Engineering Analytics section (v1.20.2 · v1.20.3 RC1) ──────────────────
    Renders the Engineering analytics PROVIDER snapshot inside the global
    Analytics module (reusing the shared Analytics kit) and publishes it for the
-   shared export component. In Development the Engineering store is hydrated from
-   the dev seed if the user lands here before opening the Engineering module. */
-let _engineeringAnalyticsHydrating = false;
+   shared export component. It reflects the LIVE Engineering store exactly — no
+   implicit seeding of any kind. An empty store renders empty analytics (handled
+   gracefully by the view); data appears only once the store is populated (in
+   Development, via the Seed Manager; in production, via the future Firebase
+   adapter). */
 async function renderEngineeringAnalyticsSection() {
   const host = document.getElementById('v2EngineeringAnalyticsDashboard');
   if (!host) return;
-  if (engListAssignments().length === 0 && isDevelopment() && !_engineeringAnalyticsHydrating) {
-    _engineeringAnalyticsHydrating = true;
-    try { await engLoadAll(engCreateDevSeedAdapter()); } catch (_) { /* empty state below */ }
-    _engineeringAnalyticsHydrating = false;
-  }
   try {
-    const snapshot = buildEngineeringAnalytics(engListAssignments(), { now: Date.now() });
+    const snapshot = buildEngineeringAnalytics(engListAssignments(), { now: Date.now(), workReports: engListWorkReports() });
     const u = getCurrentUser();
     window._lastEngineeringAnalyticsSnapshot = snapshot;
     window._engineeringAnalyticsMeta = {
@@ -9490,6 +9651,9 @@ function commitApproval(requestId, decision = {}) {
 
   const dispatchDecision = { driver: effDriver, vehicle: effVehicle };
   const newAssignments = dates.map(date => requestToAssignment(request, admin, date, dispatchDecision));
+  // Issue 9: stamp the immutable driverUsername at creation so ownership survives
+  // later driver/display-name edits (approval path).
+  newAssignments.forEach(a => stampDriverIdentity(a, { force: true }));
   assignments = [...assignments, ...newAssignments];
 
   // Record the acceptance/override outcome in the EXISTING override log (Part 4/7).
@@ -9993,6 +10157,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ── Bottom nav: Dashboard (scroll timeline to focus) ──
   document.getElementById('bottomNavDashboard')?.addEventListener('click', () => {
+    // Strict mobile isolation (v1.20.7 Obj 5): Engineering (and any role without
+    // Driver-Ops access) must NEVER enter Driver routes via the bottom nav. Route
+    // them to their own default module instead of forcing the Driver workspace.
+    // Previously this always set workspace 'dashboard' + renderViews() (Driver
+    // Timeline) even after setRailModule() redirected the rail away — the exact
+    // "Engineering mobile Dashboard opens Driver Timeline" bug.
+    if (!canAccessModule('driverops')) {
+      setBottomNavActive(null);
+      setRailModule(defaultModuleForRole());
+      return;
+    }
     setBottomNavActive('bottomNavDashboard');
     // Always restore the Driver Operations workspace. Previously this only
     // re-rendered the timeline, which stayed display:none while the user was
@@ -10057,6 +10232,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // PWA cold launch / delayed session restore / fresh PIN login. The store
   // ensure* helpers are idempotent (already-subscribed = no-op).
   async function loadAuthedAdminData() {
+    // Wire the Engineering personnel resolver to the live users cache (idempotent).
+    setEngineeringUsersSource(getUserList);
     await ensureUsersLoadedAndSubscribed();
     await ensureLogsLoadedAndSubscribed();
     await ensureExportHistoryLoadedAndSubscribed(); // v1.12.1B export metadata cache
@@ -10093,10 +10270,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       console.warn('[DI Persistence] init failed — continuing on memory.', err);
     }
 
-    // Re-render with authoritative data + refresh permissioned UI
+    // Re-render with authoritative data + refresh permissioned UI.
+    // ORDER (v1.20.7 Obj 1/2): resolve role → select workspace BEFORE rendering
+    // driver-ops content. updatePermissionUI(true) runs setRailModule(
+    // defaultModuleForRole()), which selects the role's module and hides every
+    // other panel; only then does renderViews() populate the driver-ops timeline
+    // — into an already-hidden panel for Engineering roles, so Driver content
+    // never paints for a frame. (Was: render → resolve role, which flashed
+    // Driver cards on the Engineering dashboard before navigation hid them.)
     updateAllModules();
-    renderViews();
     updatePermissionUI(true);
+    renderViews();
     updateAdminButtons();
     setNotificationData({
       pendingRequests: getMyPendingRequestCount(),
@@ -10137,6 +10321,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   await initAdminUI();                   // Setup admin user management (UI wiring only)
   initNotificationUI();                  // Setup notification badge & modal
+  initEngineeringDiagnostics();          /* DIAGNOSTIC (removable): wire Ctrl+Shift+D */
   initDriverSelect();                    // Isi dropdown driver
   initDateControls();                    // Setup date navigation buttons
   initFormHandlers();                    // Setup form events
@@ -10151,8 +10336,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   _initAllPbsiSelects();                 // Wrap all native selects after options are populated
   _initAllPbsiDatepickers();             // Wrap filterDate + wire nav button sync
   initCommentHandlers();                 // Setup comment thread events
+  // Resolve role → select workspace BEFORE the first content render (v1.20.7
+  // Obj 1/2): the role's module + panel visibility are set first, so renderViews()
+  // paints the driver-ops timeline into an already-hidden panel for Engineering.
+  updatePermissionUI(true);              // startup → select role's default module
   renderViews();                         // Render timeline + list view pertama kali
-  updatePermissionUI(true);              // startup → reset nav to Dashboard
   updateAdminButtons();                  // Show admin controls properly
   setNotificationData({
     pendingRequests: getMyPendingRequestCount(),
@@ -10251,6 +10439,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     checkAssignmentSafety(beforeCount);
 
     assignments = updatedAssignments;
+
+    // Issue 9: stamp the immutable driverUsername from the CURRENT driver name so
+    // ownership survives later name edits / reassignments. New records (not in
+    // prevAssignments) and the edited object are (re)stamped BEFORE persistence,
+    // so the key is written to both localStorage and Firebase.
+    if (isNewAssignment) {
+      const _prevIds = new Set(prevAssignments.map(a => a.id));
+      for (const a of updatedAssignments) { if (!_prevIds.has(a.id)) stampDriverIdentity(a, { force: true }); }
+    } else if (newAssignment) {
+      stampDriverIdentity(newAssignment, { force: true });
+    }
+
     updateAllModules();
 
     if (isNewAssignment) {

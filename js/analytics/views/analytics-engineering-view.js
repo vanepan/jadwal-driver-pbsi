@@ -16,6 +16,10 @@ import {
   renderInsightList, renderExportCenter, renderAnalyticsEmptyState, anIcon,
 } from '../analytics-shell.js';
 import { CATEGORY_SEED, STATUS } from '../../engineering/config/engineering-config.js';
+import { resolveAssignedUsers } from '../../engineering/personnel/engineering-personnel.js';
+
+/** Resolve a technician uid → display name (from User Management). */
+const techName = (uid) => (resolveAssignedUsers([uid])[0] || { name: uid }).name;
 
 const CAT_LABEL = Object.fromEntries(CATEGORY_SEED.map((c) => [c.id, c.label]));
 const catLabel = (id) => CAT_LABEL[id] || id;
@@ -34,6 +38,45 @@ function barList(items, unit) {
     </div>`).join('')}</div>`;
 }
 
+/** Executive "leaders" highlight strip (v1.20.6, Objective 4). */
+function leadersStrip(leaders) {
+  const L = leaders || {};
+  const card = (label, t, valueFn) => {
+    if (!t) return `<div style="flex:1;min-width:150px;padding:12px 14px;border:1px solid var(--border-faint,#ececf0);border-radius:12px;background:var(--surface-2,#f7f7fa);">
+      <div style="font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--text-dim,#5b5b64);font-weight:700;">${esc(label)}</div>
+      <div style="font-size:13px;color:var(--text-dim,#5b5b64);margin-top:6px;">—</div></div>`;
+    return `<div style="flex:1;min-width:150px;padding:12px 14px;border:1px solid var(--border-faint,#ececf0);border-radius:12px;background:var(--surface-2,#f7f7fa);">
+      <div style="font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--text-dim,#5b5b64);font-weight:700;">${esc(label)}</div>
+      <div style="font-size:14px;font-weight:800;color:var(--text,#18181d);margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(techName(t.uid))}</div>
+      <div style="font-size:11.5px;color:var(--text-dim,#5b5b64);margin-top:2px;">${esc(valueFn(t))}</div></div>`;
+  };
+  return `<div style="display:flex;gap:12px;flex-wrap:wrap;">
+    ${card('Paling Aktif', L.mostActive, (t) => `${t.participation} kontribusi`)}
+    ${card('Beban Tertinggi', L.highestWorkload, (t) => `${hours(t.workingMs)} jam kerja`)}
+    ${card('Penyelesaian Tercepat', L.fastestCompletion, (t) => `${hours(t.averageCompletionMs)} jam / task`)}
+    ${card('Terbanyak Kritis', L.mostCritical, (t) => `${t.critical} penugasan kritis`)}
+  </div>`;
+}
+
+/** Per-technician analytics table (v1.20.6, Objective 4) — names from Users. */
+function technicianTable(rows) {
+  if (!rows.length) return '<div style="padding:14px 2px;color:var(--text-dim,#5b5b64);font-size:13px;">Belum ada data teknisi.</div>';
+  const head = ['Teknisi', 'Partisipasi', 'Selesai', 'Aktif', 'Overdue', 'Laporan', 'Kritis', 'Rata (jam)', 'Jam Kerja']
+    .map((h, i) => `<th style="text-align:${i === 0 ? 'left' : 'right'};padding:7px 10px;font-size:11px;color:var(--text-dim,#5b5b64);font-weight:700;">${h}</th>`).join('');
+  const body = rows.map((t) => `<tr style="border-top:1px solid var(--border-faint,#ececf0);">
+    <td style="padding:8px 10px;font-size:12.5px;font-weight:700;color:var(--text,#18181d);">${esc(techName(t.uid))}</td>
+    <td style="padding:8px 10px;text-align:right;font-family:var(--font-mono,monospace);font-size:12px;">${t.participation}</td>
+    <td style="padding:8px 10px;text-align:right;font-family:var(--font-mono,monospace);font-size:12px;">${t.completed}</td>
+    <td style="padding:8px 10px;text-align:right;font-family:var(--font-mono,monospace);font-size:12px;">${t.active}</td>
+    <td style="padding:8px 10px;text-align:right;font-family:var(--font-mono,monospace);font-size:12px;color:${t.overdue > 0 ? 'var(--accent,#cf4a43)' : 'inherit'};">${t.overdue}</td>
+    <td style="padding:8px 10px;text-align:right;font-family:var(--font-mono,monospace);font-size:12px;">${t.reports}</td>
+    <td style="padding:8px 10px;text-align:right;font-family:var(--font-mono,monospace);font-size:12px;">${t.critical}</td>
+    <td style="padding:8px 10px;text-align:right;font-family:var(--font-mono,monospace);font-size:12px;">${hours(t.averageCompletionMs) || '—'}</td>
+    <td style="padding:8px 10px;text-align:right;font-family:var(--font-mono,monospace);font-size:12px;">${hours(t.workingMs)}</td>
+  </tr>`).join('');
+  return `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;min-width:640px;"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
 /**
  * Render the Engineering Analytics view from a provider snapshot.
  * @param {Object} snapshot  buildEngineeringAnalytics() output
@@ -42,10 +85,10 @@ function barList(items, unit) {
  */
 export function renderEngineeringAnalyticsView(snapshot, opts = {}) {
   const s = snapshot || {};
-  if (!s.totalAssignments) {
+  if (!s.totalAssignments && !s.totalWorkReports) {
     return `<div class="daa exec-ui v2-analytics-claude">
       ${renderEyebrow({ tag: 'ENGINEERING', title: 'Engineering Analytics', sub: 'Ringkasan operasional Engineering.' })}
-      ${renderAnalyticsEmptyState({ message: 'Belum ada data Engineering.', hint: 'Analytics akan terisi setelah ada penugasan Engineering.' })}
+      ${renderAnalyticsEmptyState({ message: 'Belum ada data Engineering.', hint: 'Analytics akan terisi setelah ada penugasan Engineering atau laporan pekerjaan.' })}
     </div>`;
   }
 
@@ -81,9 +124,14 @@ export function renderEngineeringAnalyticsView(snapshot, opts = {}) {
     ],
   });
 
+  const technicians = (s.technicianAnalytics || []).slice(0, 20);
+  const reportsNote = s.totalWorkReports ? ` · ${s.totalWorkReports} laporan pekerjaan` : '';
+
   return `<div class="daa exec-ui v2-analytics-claude">
-    ${renderEyebrow({ tag: 'ENGINEERING', title: 'Engineering Analytics', sub: `Ringkasan operasional Engineering — ${s.totalAssignments} penugasan.` })}
+    ${renderEyebrow({ tag: 'ENGINEERING', title: 'Engineering Analytics', sub: `Ringkasan operasional Engineering — ${s.totalAssignments} penugasan${reportsNote}.` })}
     ${kpis}
+    ${renderAnalyticsSection({ id: 'eng-an-leaders', title: 'Sorotan Teknisi', description: 'Teknisi paling menonjol lintas penugasan & laporan', content: leadersStrip(s.technicianLeaders) })}
+    ${renderAnalyticsSection({ id: 'eng-an-technicians', title: 'Analitik per Teknisi', description: 'Beban, penyelesaian & partisipasi per teknisi (penugasan + laporan)', content: technicianTable(technicians) })}
     ${renderAnalyticsSection({ id: 'eng-an-workload', title: 'Beban Engineering', description: 'Jam kerja aktual per teknisi', content: barList(workItems, 'jam') })}
     ${renderAnalyticsSection({ id: 'eng-an-category', title: 'Task per Kategori', description: `${s.totalAssignments} total`, content: barList(catItems, 'task') })}
     ${renderAnalyticsSection({ id: 'eng-an-building', title: 'Task per Gedung', description: 'Lokasi paling sering', content: barList(bldItems, 'task') })}

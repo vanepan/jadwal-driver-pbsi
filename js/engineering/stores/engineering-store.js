@@ -25,16 +25,19 @@
 
 import { dayISO, isPlainObject, num } from '../utils/engineering-utils.js';
 import { normalizeAssignment } from '../models/engineering-assignment.js';
+import { normalizeWorkReport } from '../models/engineering-work-report.js';
 import { getEngineeringSettings } from '../settings/engineering-settings.js';
 
 function freshState() {
   return {
     assignments: {},        // id → EngineeringAssignment (timeline embedded)
+    workReports: {},        // id → WorkReport (operational "Catat Pekerjaan" records)
     notifications: [],      // chronological EngineeringNotification[]
     analytics: null,        // cached analytics snapshot (engineering-analytics)
     filters: {},            // active list filters (status/category/priority/…)
     session: {},            // ephemeral UI session (selected id, view, …)
     sequenceByDay: {},      // yyyymmdd → highest assignment-number sequence used
+    reportSequenceByDay: {},// yyyymmdd → highest work-report-number sequence used
   };
 }
 
@@ -106,6 +109,82 @@ export function removeAssignment(id) {
   state.assignments = next;
   notify();
   return true;
+}
+
+/* ── Work Reports ("Catat Pekerjaan") ────────────────────────────────────
+   A parallel slice to assignments: operational records that are NOT assignments
+   (no lifecycle). Kept in their own map + own per-day number sequence, and only
+   unified with assignments inside analytics / timeline / search. */
+
+/** Insert or replace a work report (by id). Tracks its per-day sequence. */
+export function upsertWorkReport(report) {
+  if (!report || !report.id) return report;
+  state.workReports = { ...state.workReports, [report.id]: report };
+  trackReportSequence(report.reportNumber);
+  notify();
+  return report;
+}
+
+/** Read one work report by id; null when absent. */
+export function getWorkReport(id) {
+  return state.workReports[id] || null;
+}
+
+/** List all work reports. */
+export function listWorkReports() {
+  return Object.values(state.workReports);
+}
+
+/** Remove a work report by id. Returns whether it existed. */
+export function removeWorkReport(id) {
+  if (!state.workReports[id]) return false;
+  const next = { ...state.workReports };
+  delete next[id];
+  state.workReports = next;
+  notify();
+  return true;
+}
+
+/** Record a report number's sequence into the per-day high-water map. */
+function trackReportSequence(reportNumber) {
+  const m = /-(\d{8})-(\d+)$/.exec(String(reportNumber || ''));
+  if (!m) return;
+  const [, day, seq] = m;
+  const n = num(seq);
+  if (n > (state.reportSequenceByDay[day] || 0)) {
+    state.reportSequenceByDay = { ...state.reportSequenceByDay, [day]: n };
+  }
+}
+
+/** The next work-report-number sequence for a day (1-based, gap-free). */
+export function nextReportSequence(now) {
+  const day = dayISO(now).replace(/-/g, '');
+  const next = (state.reportSequenceByDay[day] || 0) + 1;
+  state.reportSequenceByDay = { ...state.reportSequenceByDay, [day]: next };
+  return next;
+}
+
+/** Replace the work-reports map from a persisted node (array or keyed object). */
+export function hydrateWorkReports(node) {
+  const list = Array.isArray(node)
+    ? node
+    : (isPlainObject(node) ? Object.values(node) : []);
+  const map = {};
+  const reportSequenceByDay = {};
+  for (const raw of list) {
+    const r = normalizeWorkReport(raw);
+    if (!r || !r.id) continue;
+    map[r.id] = r;
+    const m = /-(\d{8})-(\d+)$/.exec(String(r.reportNumber || ''));
+    if (m) {
+      const [, day, seq] = m;
+      if (num(seq) > (reportSequenceByDay[day] || 0)) reportSequenceByDay[day] = num(seq);
+    }
+  }
+  state.workReports = map;
+  state.reportSequenceByDay = reportSequenceByDay;
+  notify();
+  return state.workReports;
 }
 
 /* ── Assignment-number sequence (per day) ────────────────────────────── */

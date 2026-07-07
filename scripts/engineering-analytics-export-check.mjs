@@ -28,7 +28,8 @@ check('footer is a function (page numbers)', typeof doc.footer === 'function');
 
 console.log('\n[xlsx sheets]');
 const sheets = buildEngineeringAnalyticsSheets(snapshot);
-check('produces four sheets', sheets.length === 4);
+check('produces five sheets (incl. per-technician)', sheets.length === 5);
+check('includes a Teknisi (per-technician) sheet', sheets.some((s) => s.name === 'Teknisi'));
 check('every sheet has a name + aoa with a header row', sheets.every((s) => s.name && Array.isArray(s.aoa) && s.aoa.length >= 1));
 check('summary sheet reflects total assignments', (() => {
   const sum = sheets.find((s) => s.name === 'Ringkasan');
@@ -39,7 +40,7 @@ check('summary sheet reflects total assignments', (() => {
 console.log('\n[empty snapshot safety]');
 const emptyDoc = buildEngineeringAnalyticsDocDefinition({}, {});
 check('empty snapshot still builds a valid docDefinition', Array.isArray(emptyDoc.content));
-check('empty snapshot still builds sheets', buildEngineeringAnalyticsSheets({}).length === 4);
+check('empty snapshot still builds sheets', buildEngineeringAnalyticsSheets({}).length === 5);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

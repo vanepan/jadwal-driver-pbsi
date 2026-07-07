@@ -31,6 +31,7 @@ const { verifyPin } = require('./src/auth/verifyPin');
 const { publishEvent } = require('./src/events/publishEvent');
 const { onAssignmentWrite } = require('./src/events/onAssignmentWrite');
 const { onRequestWrite } = require('./src/events/onRequestWrite');
+const { onEngineeringAssignmentWrite } = require('./src/events/onEngineeringAssignmentWrite');
 const { onEventWrite } = require('./src/events/onEventWrite');
 
 const { telegramProxy } = require('./src/telegram/proxyEndpoint');
@@ -49,6 +50,12 @@ exports.verifyPin = verifyPin;
 exports.publishEvent = publishEvent;
 exports.onAssignmentWrite = onAssignmentWrite;
 exports.onRequestWrite = onRequestWrite;
+
+/* Engineering Operations (v1.20.4) — /engineering/assignments trigger →
+   engineering.* events. Rides the existing /events → onEventWrite → engine
+   pipeline (in-app + Web Push). No parallel notification system. */
+exports.onEngineeringAssignmentWrite = onEngineeringAssignmentWrite;
+
 exports.onEventWrite = onEventWrite;
 
 exports.telegramProxy = telegramProxy;

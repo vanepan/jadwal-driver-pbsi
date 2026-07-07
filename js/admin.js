@@ -1,6 +1,7 @@
 'use strict';
 
 import { getCurrentUser, isAdmin, logout } from './auth.js';
+import { roleLabel } from './config/role-registry.js';   // single source of role display labels
 import { createUser, getUserByUsername, getUsers, updateUser, deactivateUser, validateUsername, registerUsersChangeListener, getUserList } from './users.js';
 import { logAction } from './logs.js';
 import { sendNotification } from './telegram.js';
@@ -14,16 +15,19 @@ const TELEGRAM_BOT_URL = `https://t.me/${TELEGRAM_BOT_USERNAME}`;
 let users = [];
 let editingUsername = null;
 
+// Role group headers. Labels are DERIVED from the shared role registry
+// (roleLabel) — the single source of truth for role presentation (Objective 5).
+// No hardcoded role strings here; renaming a role in the registry updates these.
 const ROLE_CONFIG = [
-  { key: 'admin',                   label: 'ADMIN',                  defaultExpanded: true,  visible: true  },
-  { key: 'bidang',                  label: 'BIDANG',                 defaultExpanded: false, visible: true  },
-  { key: 'driver',                  label: 'DRIVER',                 defaultExpanded: false, visible: true  },
-  { key: 'viewer',                  label: 'VIEWER',                 defaultExpanded: false, visible: true  },
+  { key: 'admin',                   defaultExpanded: true,  visible: true  },
+  { key: 'bidang',                  defaultExpanded: false, visible: true  },
+  { key: 'driver',                  defaultExpanded: false, visible: true  },
+  { key: 'viewer',                  defaultExpanded: false, visible: true  },
   // Engineering (v1.20.2) — the two concrete stored roles; the "Engineering"
   // role option in the form is a sentinel that resolves to one of these.
-  { key: 'engineering_coordinator', label: 'KOORDINATOR ENGINEERING', defaultExpanded: false, visible: true },
-  { key: 'engineering_member',      label: 'ENGINEERING',            defaultExpanded: false, visible: true  },
-];
+  { key: 'engineering_coordinator', defaultExpanded: false, visible: true },
+  { key: 'engineering_member',      defaultExpanded: false, visible: true  },
+].map((r) => ({ ...r, label: roleLabel(r.key).toUpperCase() }));
 
 const groupExpanded = {};
 
@@ -390,7 +394,9 @@ function renderAdminList() {
   const unknownRoles = Object.keys(byRole).filter(k => !knownKeys.has(k));
   const allRoles = [
     ...ROLE_CONFIG,
-    ...unknownRoles.map(k => ({ key: k, label: k.toUpperCase(), defaultExpanded: false, visible: true })),
+    // Never render a raw identifier: resolve any unmapped role through the
+    // central formatter (falls back to the id only for a truly unknown role).
+    ...unknownRoles.map(k => ({ key: k, label: roleLabel(k).toUpperCase(), defaultExpanded: false, visible: true })),
   ];
 
   let html = '';
@@ -613,11 +619,7 @@ async function openProfileModal() {
   }
 
   if (roleEl && currentUser) {
-    const roleLabels = {
-      admin: 'Admin', bidang: 'Bidang', viewer: 'Viewer', driver: 'Driver',
-      engineering_coordinator: 'Koordinator Engineering', engineering_member: 'Engineering',
-    };
-    roleEl.textContent = roleLabels[currentUser.role] || currentUser.role || '';
+    roleEl.textContent = currentUser.role ? roleLabel(currentUser.role) : '';
     roleEl.dataset.role = currentUser.role || '';
   }
 

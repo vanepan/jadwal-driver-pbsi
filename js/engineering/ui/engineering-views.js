@@ -26,6 +26,14 @@ import {
 } from './engineering-atoms.js';
 import { renderTimeline, eventMeta, formatEventTime } from './engineering-timeline.js';
 import { pageHeader, sectionHeader, emptyState } from './engineering-queue.js';
+import { resolveAssignedUsers } from '../personnel/engineering-personnel.js';
+
+/** Short comma-joined display of designated personnel (resolved from Users). */
+function personnelNames(record) {
+  const uids = record && record.assignedUsers ? Object.keys(record.assignedUsers) : [];
+  if (!uids.length) return '';
+  return resolveAssignedUsers(uids).map((p) => p.name).join(', ');
+}
 
 const DONE = new Set([STATUS.VERIFIED, STATUS.COMPLETED]);
 const latestTs = (a) => (a.timeline || []).reduce((mx, e) => Math.max(mx, Date.parse(e.timestamp) || 0), 0);
@@ -123,6 +131,31 @@ export function renderHistory(all, ctx) {
       personal ? 'Penugasan yang pernah Anda kerjakan dan telah ditutup.' : 'Arsip penugasan yang telah diverifikasi atau ditunda — jejak operasional lengkap.')}
     <div class="eng-filterbar"><div class="eng-search"><input type="search" class="eng-search-input" data-act="eng-hsearch" value="${esc((ctx.filters && ctx.filters.hq) || '')}" placeholder="Cari riwayat…" /></div></div>
     <div class="eng-card -pad">${body}</div>
+    ${workReportsSection(ctx, q, personal, me)}
+  </div>`;
+}
+
+/* Operational Work Reports ("Catat Pekerjaan") section — completed work logged
+   outside assignments (v1.20.6, Objective 3). Members see only reports they were
+   assigned to. Rendered under the assignment history so both live in one place. */
+function workReportsSection(ctx, q, personal, me) {
+  let reports = Array.isArray(ctx.workReports) ? ctx.workReports.slice() : [];
+  if (personal) reports = reports.filter((r) => r.assignedUsers && r.assignedUsers[me.id]);
+  if (q) reports = reports.filter((r) => `${r.title} ${r.location} ${r.reportNumber} ${personnelNames(r)}`.toLowerCase().includes(q));
+  reports.sort((x, y) => (Date.parse(y.createdTime) || 0) - (Date.parse(x.createdTime) || 0));
+  if (reports.length === 0) return '';
+  const rows = reports.map((r) => `<tr>
+      <td><span class="eng-td-title"><span class="eng-cat-dot" style="background:var(--${catMeta(r.category).tone})"></span>${esc(r.title)}</span></td>
+      <td>${esc((r.location || '').split(' · ')[0] || '—')}</td>
+      <td>${esc(personnelNames(r) || '—')}</td>
+      <td>${esc(r.workDate || '—')}</td>
+      <td class="-right -mono">${esc([r.startTime, r.finishTime].filter(Boolean).join('–') || '—')}</td>
+    </tr>`).join('');
+  return `<div class="eng-level" style="margin-top:22px;">
+    ${sectionHeader('CATAT PEKERJAAN', 'Laporan Pekerjaan Operasional', 'Pekerjaan nyata yang dicatat di luar penugasan formal — dataset operasional untuk analitik & ML.')}
+    <div class="eng-card -pad"><div class="eng-table-wrap"><table class="eng-table"><thead><tr>
+      <th>Pekerjaan</th><th>Lokasi</th><th>Teknisi</th><th>Tanggal</th><th class="-right">Waktu</th></tr></thead>
+      <tbody>${rows}</tbody></table></div></div>
   </div>`;
 }
 
@@ -174,6 +207,17 @@ export function renderSettings(all, ctx) {
       </div></div>
     <div class="eng-level">${sectionHeader('ROADMAP', 'Arsitektur Mendatang', 'Disiapkan, belum aktif')}
       <div class="eng-grid -2">${future.map(([t, d]) => `<div class="eng-card -pad eng-roadmap"><span class="eng-roadmap-ic">${icon('layers', { size: 18 })}</span><div class="eng-roadmap-txt"><div class="eng-roadmap-t">${esc(t)}</div><div class="eng-roadmap-d">${esc(d)}</div></div><span class="eng-pill" data-pill="cancel">Segera</span></div>`).join('')}</div></div>
-    <div class="eng-level"><button class="eng-btn -ghost" data-act="eng-reset-seed">${icon('reset', { size: 15 })} Muat ulang data demo</button></div>
+    ${ctx.isDev ? `<div class="eng-level">${sectionHeader('DEVELOPMENT', 'Seed Manager', 'Alat pengembang — tidak tersedia di staging / produksi')}
+      <div class="eng-card -pad eng-seedmgr">
+        <div class="eng-seedmgr-txt">
+          <div class="eng-seedmgr-t">Data demo Engineering</div>
+          <div class="eng-seedmgr-s">Startup selalu kosong. Data demo hanya dimuat saat Anda menekannya di sini — tidak pernah otomatis.</div>
+        </div>
+        <div class="eng-seedmgr-actions">
+          <button class="eng-btn -sm -primary" data-act="eng-seed-load">${icon('reset', { size: 14 })} Muat Data Demo</button>
+          <button class="eng-btn -sm -ghost" data-act="eng-seed-reset">${icon('history', { size: 14 })} Reset Data Demo</button>
+          <button class="eng-btn -sm -ghost" data-act="eng-seed-clear">${icon('x-circle', { size: 14 })} Kosongkan Semua</button>
+        </div>
+      </div></div>` : ''}
   </div>`;
 }

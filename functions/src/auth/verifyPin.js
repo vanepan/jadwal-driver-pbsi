@@ -29,7 +29,15 @@ const { auth, db } = require('../config/admin');
 
 const USERNAME_RE = /^[a-z0-9._-]{3,30}$/;
 const PIN_RE = /^\d{4}$/;
-const VALID_ROLES = ['admin', 'bidang', 'driver', 'viewer'];
+// Authoritative role vocabulary minted into the token claim (request.auth.token.role).
+// MUST stay in sync with js/config/role-registry.js ROLES. Engineering roles are
+// first-class here so an Engineering account is NEVER downgraded to 'viewer' at
+// token-mint time (which would break workspace routing, sidebar, RTDB role rules
+// and every eng.* capability check for that user).
+const VALID_ROLES = [
+  'admin', 'bidang', 'driver', 'viewer',
+  'engineering_coordinator', 'engineering_member',
+];
 
 /** Mirror of users.js#normalizeUsername — must stay in sync. */
 function normalizeUsername(value) {
