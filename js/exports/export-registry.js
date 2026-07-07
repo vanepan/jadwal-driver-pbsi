@@ -230,16 +230,43 @@ export function listExportReports() {
     .filter(Boolean);
 }
 
+/* ── Lazy-loaded handler modules (v1.20.8, Objective 2/3) ──────────────────
+   Every report's `run()` above delegates to a `window.export*()` hook that
+   these modules attach as a side effect of being imported. They used to be
+   static top-level imports in js/app.js, downloaded on every boot regardless
+   of role. Converted to dynamic import(), following the exact map-of-loaders
+   + cache idiom already proven by js/workspace/widget-registry.js's
+   GROUP_LOADERS/loadGroup() — loaded once, on first actual export attempt,
+   not before. Covers every EXPORT_REPORTS entry except 'engineeringanalytics'
+   (still statically imported in app.js — a separate, not-yet-converted
+   bundle; unaffected by this change). */
+const EXPORT_MODULE_LOADERS = [
+  () => import('./analytics/analytics-export-client.js'),
+  () => import('./analytics/dispatch-analytics-export.js'),
+  () => import('./analytics/recommendation-accuracy-export.js'),
+  () => import('./analytics/decision-replay-export.js'),
+  () => import('./analytics/driver-wellness-export.js'),
+  () => import('./analytics/executive-dashboard-export.js'),
+];
+let _exportModulesPromise = null;
+function ensureExportModulesLoaded() {
+  if (!_exportModulesPromise) {
+    _exportModulesPromise = Promise.all(EXPORT_MODULE_LOADERS.map((load) => load()));
+  }
+  return _exportModulesPromise;
+}
+
 /**
  * Run a report by id through its registered handler.
  * @param {string} id
  * @param {Object} [meta] optional overrides merged into the export meta.
  * @returns {Promise<{blob:Blob,filename:string}>}
  */
-export function runExportReport(id, meta = {}) {
+export async function runExportReport(id, meta = {}) {
   const report = getExportReport(id);
   if (!report) {
-    return Promise.reject(new Error(`runExportReport: unknown report id "${id}".`));
+    throw new Error(`runExportReport: unknown report id "${id}".`);
   }
+  await ensureExportModulesLoaded();
   return report.run(meta);
 }

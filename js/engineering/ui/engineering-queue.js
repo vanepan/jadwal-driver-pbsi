@@ -16,7 +16,7 @@ import { STATUS, PARTICIPANT_STATUS, PRIORITY } from '../config/engineering-conf
 import { ENGINEERING_ROLE } from '../../config/role-registry.js';
 import {
   esc, icon, catTile, priorityTag, statusPill,
-  fmtDuration, actualMinutes, activeParticipants, workerStack,
+  fmtDuration, actualMinutes, activeParticipants, workerStack, myParticipant,
 } from './engineering-atoms.js';
 
 const STATUS_RANK = {
@@ -71,10 +71,7 @@ export function opsContextLine(a) {
   return { text: `${paused} Engineering menunggu lanjut`, tone: 'c-violet', icon: 'moon' };
 }
 
-function findMine(a, me) {
-  if (!me) return null;
-  return (a.participants || []).find((p) => p.workerId === me.id || p.name === me.name) || null;
-}
+const findMine = myParticipant;
 
 /** The small primary action on a card, role-aware. */
 function cardAction(a, ctx) {

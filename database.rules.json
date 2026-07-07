@@ -32,6 +32,14 @@
       }
     },
 
+    "notification_state": {
+      ".write": "false",
+      "$uid": {
+        ".read": "auth.uid === $uid",
+        ".write": "auth.uid === $uid"
+      }
+    },
+
     "reminders": {
       ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
       ".write": "false",

@@ -107,12 +107,12 @@ import { FUEL_TYPES, TRANSMISSION_TYPES, VEHICLE_TYPE_REGISTRY, VEHICLE_STATUS_R
 import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver, isEngineeringUser, assignmentBelongsToDriver } from './auth.js';
 import * as DocumentEngine from './docs/doc-engine.js';
 import './docs/templates/analytics-summary.js';   // registers 'analytics-summary'
-import './exports/analytics/analytics-export-client.js'; // Analytics Export Phase A — window.exportAnalyticsPoc()
-import './exports/analytics/dispatch-analytics-export.js'; // v1.17.0 — window.exportDispatchAnalyticsPdf/Excel()
-import './exports/analytics/recommendation-accuracy-export.js'; // v1.17.1 — window.exportRecommendationAccuracyPdf/Excel()
-import './exports/analytics/decision-replay-export.js'; // v1.17.5 — window.exportDecisionReplayPdf/Excel()
-import './exports/analytics/driver-wellness-export.js'; // v1.17.6 — window.exportDriverWellnessPdf/Excel()
-import './exports/analytics/executive-dashboard-export.js'; // v1.18.8 — window.exportExecutiveDashboardPdf/Excel()
+// v1.20.8 — the 6 exports/analytics/* side-effect imports that used to load here
+// unconditionally (analytics-export-client, dispatch/recommendation/decision-replay/
+// driver-wellness/executive-dashboard-export) are now dynamically imported inside
+// export-registry.js's runExportReport(), on first actual export attempt — see
+// ensureExportModulesLoaded() there. A driver/bidang session that never opens an
+// export dialog now never downloads any of them.
 import { listExportReports, getExportReport, runExportReport } from './exports/export-registry.js'; // single source of truth for report exports
 import { logExportSuccess, logExportFailure, ensureExportHistoryLoadedAndSubscribed, resetExportHistorySync, getExportHistoryCache, subscribeExportHistoryChangeListener } from './exports/export-history.js'; // metadata logging for every export
 import { renderExportCenter as renderModernExportCenter } from './exports/export-center.js'; // v1.12.1C modern Export Center (registry + metadata)
@@ -174,7 +174,7 @@ import {
   requestToAssignment,
   normalizeRequest,
 } from './requests.js';
-import { renderDriverDashboard, setAssignments as setDashboardAssignments } from './driver-dashboard.js';
+import { renderDriverDashboard, setAssignments as setDashboardAssignments, renderDriverHistoryScreen } from './driver-dashboard.js';
 // v1.19.9 Executive Command Center — the Workspace presentation layer. Home
 // resolves role → workspace → widgets → render. PURE: the router, registries,
 // and widgets consume existing models + deep-link into existing modules; no
@@ -183,6 +183,7 @@ import { renderHome, refreshHome, resolveWorkspaceForRole } from './workspace/ho
 // Single source of role display labels (incl. Engineering) — reused everywhere a
 // role is shown so no internal identifier is ever exposed and no map is duplicated.
 import { roleLabel as formatRole } from './config/role-registry.js';
+import { BOTTOM_NAV_ITEMS, bottomNavIconPath } from './config/bottom-nav-registry.js';
 /* DIAGNOSTIC (removable): Production Diagnostic Mode overlay (Ctrl+Shift+D). */
 import { initEngineeringDiagnostics } from './engineering/diagnostics/engineering-diagnostics.js';
 import { initCommentHandlers, openCommentModal, closeCommentModal, setRequests as setCommentRequests, registerCommentSaveCallback, refreshCommentThreadIfOpen } from './comments.js';
@@ -193,6 +194,7 @@ import {
 // v1.20.1 Engineering Operations UI — embedded native module (mirrors Petty Cash).
 import {
   mountEngineering, setEngineeringScreen, closeEngineering, openEngineeringCreate, openEngineeringReport, setEngineeringSearch,
+  openEngineeringAssignment,
 } from './engineering/ui/engineering-center.js';
 // v1.20.6 — inject the live User Management source into the Engineering personnel
 // resolver (it deliberately does not import users.js to stay Node-harness-safe).
@@ -238,7 +240,7 @@ import {
   isReady as pcReady, getExpenses as getPcExpenses, getNors as getPcNors,
   getActiveCycle as getPcActiveCycle, getSettings as getPcSettings,
 } from './petty-cash/petty-cash-store.js';
-import { initNotificationUI, setNotificationData, openNotificationsModal } from './notifications.js';
+import { initNotificationUI, setNotificationData, openNotificationsModal, markNotificationRead } from './notifications.js';
 import { setTelegramBotToken } from './telegram.js';
 import { subscribeLogsChangeListener, getLogs, logAction, ensureLogsLoadedAndSubscribed, resetLogsSync } from './logs.js';
 import { publishEvent } from './events.js';
@@ -467,6 +469,196 @@ function setBottomNavActive(id) {
   });
 }
 
+/* ── State restoration (v1.20.8, Objective 12) ────────────────────────────
+   Persist + restore the current top-level module, search query, and scroll
+   position across app reopen — "continue exactly where you left off."
+   Restoration calls the SAME setRailModule()/runModuleSearch() a user click
+   would call; it never builds a second navigation path. Deliberately
+   narrower than a full deep-link restore — no assignment/report/modal-open
+   state — since that would mean threading restoration through every
+   module's own independent internal screen state; this covers the safe,
+   high-value layer instead: which module, what search, how far scrolled. */
+const NAV_STATE_KEY = 'pbsi_nav_state';
+
+function saveNavState() {
+  try {
+    const prev = JSON.parse(localStorage.getItem(NAV_STATE_KEY) || '{}');
+    localStorage.setItem(NAV_STATE_KEY, JSON.stringify({
+      ...prev,
+      module: activeRailModule,
+      searchQuery: document.getElementById('v2SearchInput')?.value || '',
+    }));
+  } catch (_) {}
+}
+
+/** Called once from startAuthenticatedSession(), after the role's default
+ *  landing module is already set — never restores into a logged-out state. */
+function restoreNavState() {
+  let state = null;
+  try { state = JSON.parse(localStorage.getItem(NAV_STATE_KEY)); } catch (_) {}
+  if (!state || !state.module || !canAccessModule(state.module)) return;
+
+  if (state.module !== activeRailModule) setRailModule(state.module);
+
+  if (state.searchQuery) {
+    const input = document.getElementById('v2SearchInput');
+    if (input) {
+      input.value = state.searchQuery;
+      const clr = document.getElementById('v2SearchClear');
+      if (clr) clr.style.display = 'flex';
+      runModuleSearch(activeRailModule, state.searchQuery);
+    }
+  }
+  if (typeof state.scrollY === 'number' && state.scrollY > 0) {
+    // Deferred: workspace content for the restored module mounts async.
+    setTimeout(() => { document.querySelector('.main-content')?.scrollTo(0, state.scrollY); }, 150);
+  }
+}
+
+/** Debounced scroll-position save. #main-content is the single scroll
+ *  container every workspace renders into. */
+let _scrollSaveTimer = null;
+function wireScrollStateSave() {
+  const mainContent = document.querySelector('.main-content');
+  if (!mainContent) return;
+  mainContent.addEventListener('scroll', () => {
+    clearTimeout(_scrollSaveTimer);
+    _scrollSaveTimer = setTimeout(() => {
+      try {
+        const state = JSON.parse(localStorage.getItem(NAV_STATE_KEY) || '{}');
+        state.scrollY = mainContent.scrollTop;
+        localStorage.setItem(NAV_STATE_KEY, JSON.stringify(state));
+      } catch (_) {}
+    }, 300);
+  }, { passive: true });
+}
+
+/**
+ * Bottom-nav action map (v1.20.8) — resolves each BOTTOM_NAV_ITEMS `action`
+ * string to the existing function/proxy it should run. Mirrors the exact
+ * declarative-binding idiom buildHomeContext().actions already uses for Home
+ * widgets: every entry here is a thin call into an already-existing
+ * nav/open function, never new navigation logic.
+ */
+function bottomNavActionMap() {
+  return {
+    navHome: () => navHome(),
+    navDriverTimeline: () => { setRailModule('driverops'); setDashboardView('timeline'); },
+    navDriverList: () => { setRailModule('driverops'); setDashboardView('list'); },
+    navDriverHistory: () => navDriverHistory(),
+    navEngDashboard: () => navEngineering('dashboard', 'v2NavEngDashboard'),
+    navEngTimeline: () => navEngineering('timeline', 'v2NavEngTimeline'),
+    navEngMyJobs: () => navEngineering('myjobs'),
+    navEngHistory: () => navEngineering('history', 'v2NavEngHistory'),
+    openRequestForm: () => document.getElementById('btnAddAssignment')?.click(),
+    openRequestsList: () => document.getElementById('btnRequests')?.click(),
+    openNotifications: () => document.getElementById('btnNotifications')?.click(),
+    openProfile: () => document.getElementById('btnProfile')?.click(),
+    navOperasional: () => setRailModule('driverops'),
+    navAnalytics: () => setRailModule('analytics'),
+    openMoreSheet: () => openBottomNavMoreSheet(),
+  };
+}
+
+/**
+ * Render the mobile bottom nav for the current role's workspace — v1.20.8,
+ * Native App Experience Objective 5. Data-driven: reads BOTTOM_NAV_ITEMS
+ * keyed by resolveWorkspaceForRole()'s workspace id (the SAME join key
+ * Home/workspace-registry already uses — no parallel role→nav table).
+ * Re-wires clicks every call, same idiom as renderRequestsList()'s
+ * data-request-action re-wiring after each innerHTML rebuild.
+ */
+function renderBottomNav() {
+  const bottomNav = document.getElementById('bottomNav');
+  if (!bottomNav) return;
+  const user = getCurrentUser();
+  if (!user) { bottomNav.innerHTML = ''; return; }
+
+  const ws = resolveWorkspaceForRole(user.role);
+  const items = BOTTOM_NAV_ITEMS[ws.id] || [];
+  const actions = bottomNavActionMap();
+
+  bottomNav.innerHTML = items.map((item) => {
+    // Stable ids regardless of which role/item carries them, so notifications.js's
+    // existing renderNotificationBadge() (id: bottomNavNotifDot) and the pending-
+    // count logic below (id: bottomNavRequestsBadge) keep working unchanged.
+    const badgeHtml = item.badge === 'requests'
+      ? `<span class="bottom-nav-badge" id="bottomNavRequestsBadge" style="display:none;"></span>`
+      : item.badge === 'notif'
+        ? `<span class="bottom-nav-dot" id="bottomNavNotifDot" style="display:none;"></span>`
+        : '';
+    return `<button class="bottom-nav-item" id="${item.id}" type="button">
+      <svg viewBox="0 0 20 20" fill="currentColor" width="22" height="22"><path d="${bottomNavIconPath(item.icon)}"/></svg>
+      <span>${item.label}</span>
+      ${badgeHtml}
+    </button>`;
+  }).join('');
+
+  bottomNav.querySelectorAll('.bottom-nav-item').forEach((btn) => {
+    const item = items.find((it) => it.id === btn.id);
+    if (!item) return;
+    btn.addEventListener('click', () => {
+      setBottomNavActive(item.id);
+      const fn = actions[item.action];
+      if (fn) fn();
+    });
+  });
+
+  updateBottomNavBadges();
+}
+
+/** Refresh the pending-requests bottom-nav badge without a full re-render. */
+function updateBottomNavBadges() {
+  const requestsBadge = document.getElementById('bottomNavRequestsBadge');
+  if (requestsBadge) {
+    const pendingCount = getPendingRequestCount();
+    const showCount = isAdmin() && pendingCount > 0;
+    requestsBadge.textContent = String(pendingCount);
+    requestsBadge.style.display = showCount ? 'inline-flex' : 'none';
+  }
+  // #bottomNavNotifDot is refreshed by notifications.js's own
+  // renderNotificationBadge() — unaffected, its id is stable across re-renders.
+}
+
+/**
+ * "Lainnya" bottom sheet (v1.20.8, Objective 5/6d) — Administrator-only bottom
+ * nav destination. Pure presentation: every item proxies an existing sidebar
+ * button's click handler, zero new action logic. Reuses Phase 2's motion
+ * tokens for the slide-up transition.
+ */
+const BOTTOM_NAV_MORE_ITEMS = [
+  { label: 'Petty Cash', proxy: 'btnPettyCash' },
+  { label: 'Konfigurasi', proxy: 'btnUserMgmt' },
+  { label: 'Engineering', proxy: 'btnEngineering', requiresModule: 'engineering' },
+  { label: 'Keluar', proxy: 'btnLogout' },
+];
+function openBottomNavMoreSheet() {
+  const content = document.getElementById('bottomNavMoreContent');
+  const overlay = document.getElementById('bottomNavMoreOverlay');
+  const sheet = document.getElementById('bottomNavMoreSheet');
+  if (!content || !overlay || !sheet) return;
+
+  content.innerHTML = BOTTOM_NAV_MORE_ITEMS
+    .filter((it) => !it.requiresModule || canAccessModule(it.requiresModule))
+    .map((it) => `<button type="button" class="bottom-sheet-item" data-proxy="${it.proxy}">${it.label}</button>`)
+    .join('');
+  content.querySelectorAll('[data-proxy]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      closeBottomNavMoreSheet();
+      document.getElementById(btn.dataset.proxy)?.click();
+    });
+  });
+
+  overlay.classList.add('bottom-sheet-visible');
+  requestAnimationFrame(() => sheet.classList.add('bottom-sheet-open'));
+}
+function closeBottomNavMoreSheet() {
+  const overlay = document.getElementById('bottomNavMoreOverlay');
+  const sheet = document.getElementById('bottomNavMoreSheet');
+  sheet?.classList.remove('bottom-sheet-open');
+  setTimeout(() => overlay?.classList.remove('bottom-sheet-visible'), 200); // matches --motion-base
+}
+
 /**
  * Set the active item in the desktop sidebar navigation.
  * Removes sidebar-nav-item--active from every nav item, then adds it to the
@@ -665,44 +857,18 @@ function updatePermissionUI(resetNavActive = false) {
   // Called unconditionally here; setRailModule() refreshes it on module switch.
   updateFabCta();
 
-  // Bottom nav items
-  const bottomNavRequests = document.getElementById('bottomNavRequests');
-  const bottomNavRequestsBadge = document.getElementById('bottomNavRequestsBadge');
-  const bottomNavNotifications = document.getElementById('bottomNavNotifications');
-  const bottomNavProfile = document.getElementById('bottomNavProfile');
-
-  // Bottom-nav "Dashboard" opens Driver Operations — hide it for Engineering
-  // users (strict isolation, v1.20.6) so mobile matches the desktop rail matrix.
-  const bottomNavDashboard = document.getElementById('bottomNavDashboard');
-  if (bottomNavDashboard) bottomNavDashboard.style.display = canAccessModule('driverops') ? 'flex' : 'none';
-
-  if (bottomNavRequests) {
-    bottomNavRequests.style.display = canAdd ? 'flex' : 'none';
-    if (bottomNavRequestsBadge) {
-      const pendingCount = getPendingRequestCount();
-      const showCount = isAdmin() && pendingCount > 0;
-      bottomNavRequestsBadge.textContent = String(pendingCount);
-      bottomNavRequestsBadge.style.display = showCount ? 'inline-flex' : 'none';
-    }
-  }
-  // Notification bell: all authenticated users (content is already role-filtered)
-  if (bottomNavNotifications) {
-    bottomNavNotifications.style.display = currentUser ? 'flex' : 'none';
-  }
-  if (bottomNavProfile) {
-    bottomNavProfile.style.display = currentUser ? 'flex' : 'none';
-  }
+  // Bottom nav (v1.20.8 — data-driven per role/workspace; see renderBottomNav()
+  // and js/config/bottom-nav-registry.js). Rebuilds the whole nav from the
+  // registry, including the "Antrian"/"Riwayat" style badges baked into each
+  // role's own item set, so there is no separate visibility/label wiring here
+  // anymore — and no risk of the old "Engineering sees a Driver tab" bug class,
+  // since Engineering's item list simply never includes a driverops action.
+  renderBottomNav();
 
   // Header notification bell — all authenticated users, desktop only (CSS hides on mobile)
   const btnHeaderNotif = document.getElementById('btnHeaderNotif');
   if (btnHeaderNotif) {
     btnHeaderNotif.style.display = currentUser ? 'flex' : 'none';
-  }
-
-  // Bottom nav label — admin sees pending queue ("Antrian"), bidang sees history ("Riwayat")
-  const bottomNavRequestsLabel = document.getElementById('bottomNavRequestsLabel');
-  if (bottomNavRequestsLabel) {
-    bottomNavRequestsLabel.textContent = isAdmin() ? 'Antrian' : 'Riwayat';
   }
 
   // ── VSM-1 + VSM-5C Part 5: avatar initials — rail and topbar ──
@@ -830,11 +996,16 @@ function updatePermissionUI(resetNavActive = false) {
   }
 
   // Reset bottom nav only on auth changes — same reasoning as panel nav above.
-  // Role-aware default (v1.20.7 Obj 5): only Driver-Ops roles get the Dashboard
-  // tab active. Engineering (and any role without Driver-Ops access) must never
-  // have a Driver tab marked active — clear the active state instead so mobile
-  // never presents a Driver entry point for them.
-  if (resetNavActive) setBottomNavActive(canAccessModule('driverops') ? 'bottomNavDashboard' : null);
+  // v1.20.8: highlight whichever tab is first in the current role's own
+  // BOTTOM_NAV_ITEMS list (each role's registry entry already starts on its
+  // own landing tab — Hari Ini / Dashboard / Permintaan / Dashboard) — no more
+  // hardcoded 'bottomNavDashboard' id, and no isolation special-case needed
+  // since a role's item list simply never contains another role's tabs.
+  if (resetNavActive) {
+    const ws = resolveWorkspaceForRole(getCurrentUser()?.role);
+    const firstItem = (BOTTOM_NAV_ITEMS[ws.id] || [])[0];
+    setBottomNavActive(firstItem ? firstItem.id : null);
+  }
   renderKPIStrip();
   syncV2ResponsiveNavReuse();
 }
@@ -1255,6 +1426,7 @@ function setRailModule(name) {
   // Land on the module's default menu.
   def.land();
   syncV2ResponsiveNavReuse();
+  saveNavState(); // v1.20.8 — persist the module for state restoration on reopen
 }
 
 /* ──────────────────────────────────────────────────────────────────
@@ -1393,6 +1565,12 @@ function navJadwalSaya() {
   setWorkspace('dashboard');
   setTimeout(() => document.getElementById('driverDashboard')?.scrollIntoView({ behavior: 'smooth' }), 50);
 }
+/** Land on the driver's dedicated History screen — v1.20.8 bottom-nav "Riwayat". */
+function navDriverHistory() {
+  setCrumb('DRIVER OPS', 'Riwayat');
+  setWorkspace('driverHistory');
+  renderDriverHistoryScreen(document.getElementById('v2DriverHistoryWorkspace'));
+}
 function navManajemenDriver() {
   activeAdminModule = 'driverops';
   activeAdminSection = 'drivers';
@@ -1448,7 +1626,7 @@ const PC_MENU_TITLES = {
 /* ── MODUL: Engineering Operations ── (embedded native module, v1.20.1) */
 const ENG_MENU_TITLES = {
   dashboard: 'Dashboard', timeline: 'Timeline', history: 'Riwayat',
-  settings: 'Pengaturan',
+  myjobs: 'Pekerjaan', settings: 'Pengaturan',
 };
 async function navEngineering(screen, navId) {
   setCrumb('ENGINEERING', ENG_MENU_TITLES[screen] || 'Engineering Operations');
@@ -1459,6 +1637,65 @@ async function navEngineering(screen, navId) {
     await mountEngineering(document.getElementById('v2EngineeringWorkspace'));
   }
   setEngineeringScreen(screen);
+}
+
+/* ── Push notification deep-link (v1.20.8) ───────────────────────────────
+   Wires the pbsi:push-nav event (js/push.js _emitNav) that has fired since
+   the notification engine shipped but had no listener — tapping a push
+   notification opened/focused the app but never navigated past whatever
+   page happened to already be open. Pure client wiring: every destination
+   below already exists (openDetailModal, openRequestsListModal,
+   openEngineeringAssignment) — this only routes to it. */
+function initPushNavHandler() {
+  window.addEventListener('pbsi:push-nav', (ev) => {
+    const { view, id } = ev.detail || {};
+    if (!view || !id) return;
+    switch (view) {
+      case 'assignment':
+        setRailModule('driverops');
+        openDetailModal(id);
+        markNotificationRead(id);
+        break;
+      case 'request':
+        openRequestsListModal(id);
+        markNotificationRead(id);
+        break;
+      case 'engineering':
+        navEngineering('dashboard', 'v2NavEngDashboard').then(() => {
+          openEngineeringAssignment(id);
+          markNotificationRead(id);
+        });
+        break;
+      default:
+        break;
+    }
+  });
+}
+
+/* ── Offline experience (v1.20.8, Objective 11) ──────────────────────────
+   Purely informational — never interrupts the workflow. Reuses the existing
+   toast primitive (js/utils.js showToast) rather than a new banner component.
+   The SW-level offline.html navigation fallback is untouched; this only adds
+   the in-session case (app already loaded, connectivity drops mid-use) which
+   previously had no indicator at all. Debounced so a flapping connection
+   doesn't spam toasts. */
+function initOfflineExperience() {
+  let offlineToastShown = false;
+  let debounceTimer = null;
+  function handle(isOnline) {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      if (!isOnline && !offlineToastShown) {
+        offlineToastShown = true;
+        showToast('Offline — perubahan akan tersinkron otomatis saat koneksi kembali.');
+      } else if (isOnline && offlineToastShown) {
+        offlineToastShown = false;
+        showToast('Kembali online.');
+      }
+    }, 400);
+  }
+  window.addEventListener('offline', () => handle(false));
+  window.addEventListener('online', () => handle(true));
 }
 
 /* ── MODUL: Analytics ── */
@@ -2898,6 +3135,7 @@ function setWorkspace(name) {
   const isAnEx  = name === 'analyticsExec';
   const isHome  = name === 'home';
   const isEng   = name === 'engineering';
+  const isDrvHist = name === 'driverHistory';
 
   const timelineSurface = document.getElementById('v2TimelineSurface');
   const driverDash      = document.getElementById('driverDashboard');
@@ -2909,6 +3147,7 @@ function setWorkspace(name) {
   const anExWs          = document.getElementById('v2AnalyticsExecWorkspace');
   const homeWs          = document.getElementById('v2HomeWorkspace');
   const engWs           = document.getElementById('v2EngineeringWorkspace');
+  const drvHistWs       = document.getElementById('v2DriverHistoryWorkspace');
 
   if (timelineSurface) timelineSurface.style.display = isDash ? ''      : 'none';
   if (engWs)           engWs.style.display           = isEng   ? 'block' : 'none';
@@ -2920,6 +3159,7 @@ function setWorkspace(name) {
   if (anPcWs)          anPcWs.style.display          = isAnPc  ? 'block' : 'none';
   if (anExWs)          anExWs.style.display          = isAnEx  ? 'block' : 'none';
   if (homeWs)          homeWs.style.display          = isHome  ? 'block' : 'none';
+  if (drvHistWs)       drvHistWs.style.display       = isDrvHist ? 'block' : 'none';
 
   // Pause the embedded Petty Cash module's live re-render when it is hidden;
   // navPettyCash()/setPettyCashScreen() resume it on return.
@@ -3117,6 +3357,21 @@ function initV2HomeWorkspace() {
   ws.style.display = 'none';
   document.querySelector('.main-content')?.appendChild(ws);
   console.log('[v1.19.9] Home workspace injected');
+}
+
+/**
+ * v1.20.8: Inject the Driver History workspace host (#v2DriverHistoryWorkspace)
+ * — a dedicated screen for the bottom-nav "Riwayat" tab (Objective 5/6b),
+ * distinct from the capped history section inside #driverDashboard. Same
+ * injection idiom as every other v2-workspace host on this page.
+ */
+function initV2DriverHistoryWorkspace() {
+  const ws = document.createElement('div');
+  ws.id = 'v2DriverHistoryWorkspace';
+  ws.className = 'v2-workspace';
+  ws.style.display = 'none';
+  document.querySelector('.main-content')?.appendChild(ws);
+  console.log('[v1.20.8] Driver History workspace injected');
 }
 
 /**
@@ -10035,6 +10290,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initV2PlaceholderWorkspace(); // v1.14.0: shared "coming soon" placeholder
     initV2AnalyticsWorkspaces();  // v1.15.0: Analytics Petty Cash + Executive hosts
     initV2HomeWorkspace();        // v1.19.9: Home workspace host (Executive Command Center)
+    initV2DriverHistoryWorkspace(); // v1.20.8: Driver "Riwayat" bottom-nav screen host
     initV2AnalyticsMobileNav();   // v1.15.2: mobile parity sub-nav for the 3 Analytics screens
     initThemeManager();           // VSM-9: dark mode toggle wired to #v2TopbarThemeBtn
   }
@@ -10132,6 +10388,64 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  // ── Native drawer swipe gestures (v1.20.8, Objective 4) ──────────────
+  // Edge-swipe-from-left opens the drawer; swipe-left while open closes it —
+  // same feel as Gmail/Drive. Desktop is unaffected: the isMobile() guard
+  // no-ops the gesture above the existing 768px drawer breakpoint (the same
+  // breakpoint the click-to-close logic above already uses). Follows the
+  // touchstart/touchmove/touchend shape already proven by wireSwipe() in
+  // js/components/request-mode-selector.js — live-follows the drag, then
+  // either commits (openSidebar/closeSidebar) or springs back via the
+  // existing CSS transition, never blocks native vertical scroll.
+  if (sidebar) {
+    const EDGE_ZONE = 24;      // px from the left edge that arms an open-swipe
+    const OPEN_THRESHOLD = 60; // px dragged before the gesture commits
+    const isMobileDrawer = () => window.innerWidth < 768;
+    let swipeStartX = null, swipeStartY = null, swipeDragging = false, swipeMode = null;
+
+    document.addEventListener('touchstart', (e) => {
+      if (!isMobileDrawer()) return;
+      const t = e.touches[0];
+      const isOpen = sidebar.classList.contains('sidebar-open');
+      if (!isOpen && t.clientX > EDGE_ZONE) return; // only arm open-swipe from the edge
+      swipeStartX = t.clientX;
+      swipeStartY = t.clientY;
+      swipeDragging = false;
+      swipeMode = isOpen ? 'close' : 'open';
+    }, { passive: true });
+
+    document.addEventListener('touchmove', (e) => {
+      if (swipeStartX == null) return;
+      const t = e.touches[0];
+      const dx = t.clientX - swipeStartX;
+      const dy = t.clientY - swipeStartY;
+      if (!swipeDragging) {
+        if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+        if (Math.abs(dy) > Math.abs(dx)) { swipeStartX = null; return; } // vertical scroll — let it through
+        swipeDragging = true;
+        sidebar.style.transition = 'none';
+      }
+      if (swipeMode === 'open' && dx > 0) {
+        sidebar.style.transform = `translateX(${Math.min(dx - 240, 0)}px)`;
+      } else if (swipeMode === 'close' && dx < 0) {
+        sidebar.style.transform = `translateX(${dx}px)`;
+      }
+    }, { passive: true });
+
+    document.addEventListener('touchend', (e) => {
+      if (swipeStartX == null) return;
+      sidebar.style.transition = '';
+      sidebar.style.transform = '';
+      if (swipeDragging) {
+        const t = e.changedTouches[0];
+        const dx = t.clientX - swipeStartX;
+        if (swipeMode === 'open' && dx > OPEN_THRESHOLD) openSidebar();
+        else if (swipeMode === 'close' && dx < -OPEN_THRESHOLD) closeSidebar();
+      }
+      swipeStartX = null; swipeStartY = null; swipeDragging = false; swipeMode = null;
+    });
+  }
+
   // ── Sidebar active state: set per click, never reset by data refreshes ──
   // Tambah Jadwal (CTA) and Logout are intentionally excluded.
   document.getElementById('btnRequests')?.addEventListener('click', () => setSidebarActive('btnRequests'));
@@ -10155,44 +10469,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Ajukan Jadwal / Tambah Pengeluaran). No-op on read-only workspaces. ──
   document.getElementById('fabAdd')?.addEventListener('click', runPrimaryCta);
 
-  // ── Bottom nav: Dashboard (scroll timeline to focus) ──
-  document.getElementById('bottomNavDashboard')?.addEventListener('click', () => {
-    // Strict mobile isolation (v1.20.7 Obj 5): Engineering (and any role without
-    // Driver-Ops access) must NEVER enter Driver routes via the bottom nav. Route
-    // them to their own default module instead of forcing the Driver workspace.
-    // Previously this always set workspace 'dashboard' + renderViews() (Driver
-    // Timeline) even after setRailModule() redirected the rail away — the exact
-    // "Engineering mobile Dashboard opens Driver Timeline" bug.
-    if (!canAccessModule('driverops')) {
-      setBottomNavActive(null);
-      setRailModule(defaultModuleForRole());
-      return;
+  // Bottom nav clicks are wired per-render inside renderBottomNav() (v1.20.8) —
+  // the fixed-id proxy listeners this block used to set up no longer apply
+  // now that nav items are generated per role/workspace from the registry.
+  document.getElementById('bottomNavMoreOverlay')?.addEventListener('click', closeBottomNavMoreSheet);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.getElementById('bottomNavMoreSheet')?.classList.contains('bottom-sheet-open')) {
+      closeBottomNavMoreSheet();
     }
-    setBottomNavActive('bottomNavDashboard');
-    // Always restore the Driver Operations workspace. Previously this only
-    // re-rendered the timeline, which stayed display:none while the user was
-    // in Administration — stranding them there (iPhone PWA nav trap). Resetting
-    // the rail + workspace guarantees the timeline becomes visible again.
-    if (activeRailModule !== 'driverops') setRailModule('driverops');
-    setV2PanelNavActive('v2NavDashboard');
-    setWorkspace('dashboard');
-    setCurrentDate(getCurrentDate()); // resets lastAutoFocusedDate
-    renderViews();
-    if (isDriver()) renderDriverDashboard();
-  });
-
-  // ── Bottom nav proxy buttons ──
-  document.getElementById('bottomNavRequests')?.addEventListener('click', () => {
-    setBottomNavActive('bottomNavRequests');
-    document.getElementById('btnRequests')?.click();
-  });
-  document.getElementById('bottomNavNotifications')?.addEventListener('click', () => {
-    setBottomNavActive('bottomNavNotifications');
-    document.getElementById('btnNotifications')?.click();
-  });
-  document.getElementById('bottomNavProfile')?.addEventListener('click', () => {
-    setBottomNavActive('bottomNavProfile');
-    document.getElementById('btnProfile')?.click();
   });
 
   // Setup global debug namespace for console/legacy access
@@ -10281,6 +10565,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateAllModules();
     updatePermissionUI(true);
     renderViews();
+    restoreNavState(); // v1.20.8 — resume the module/search/scroll state from last session
     updateAdminButtons();
     setNotificationData({
       pendingRequests: getMyPendingRequestCount(),
@@ -10321,6 +10606,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   await initAdminUI();                   // Setup admin user management (UI wiring only)
   initNotificationUI();                  // Setup notification badge & modal
+  initPushNavHandler();                  // v1.20.8 — deep-link a tapped push notification to its content
+  initOfflineExperience();               // v1.20.8 — non-blocking offline/online toast
+  wireScrollStateSave();                 // v1.20.8 — debounced scroll-position save for state restoration
   initEngineeringDiagnostics();          /* DIAGNOSTIC (removable): wire Ctrl+Shift+D */
   initDriverSelect();                    // Isi dropdown driver
   initDateControls();                    // Setup date navigation buttons

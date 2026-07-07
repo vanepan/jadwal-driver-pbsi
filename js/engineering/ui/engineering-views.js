@@ -22,10 +22,10 @@ import {
 } from '../settings/engineering-settings.js';
 import {
   esc, icon, catTile, catMeta, prioMeta, statusPill, priorityTag,
-  fmtDuration, actualMinutes, workerStack, activeParticipants,
+  fmtDuration, actualMinutes, workerStack, activeParticipants, isMyAssignment,
 } from './engineering-atoms.js';
 import { renderTimeline, eventMeta, formatEventTime } from './engineering-timeline.js';
-import { pageHeader, sectionHeader, emptyState } from './engineering-queue.js';
+import { pageHeader, sectionHeader, emptyState, renderAssignmentCard } from './engineering-queue.js';
 import { resolveAssignedUsers } from '../personnel/engineering-personnel.js';
 
 /** Short comma-joined display of designated personnel (resolved from Users). */
@@ -53,7 +53,7 @@ export function renderTimelinePage(all, ctx) {
   const personal = ctx.role === ENGINEERING_ROLE.MEMBER;
   const me = ctx.me || {};
   let list = all.filter((a) => a.status !== STATUS.ARCHIVED);
-  if (personal) list = list.filter((a) => (a.participants || []).some((p) => p.workerId === me.id || p.name === me.name));
+  if (personal) list = list.filter((a) => isMyAssignment(a, me));
   list.sort((x, y) => latestTs(y) - latestTs(x));
 
   const filterId = (ctx.filters && ctx.filters.tl) || 'semua';
@@ -104,13 +104,39 @@ function timelineCard(a, open, ctx) {
   </div>`;
 }
 
+/* ── My Jobs (Pekerjaan) ──────────────────────────────────────────────────
+   v1.20.8 — bottom-nav "Pekerjaan" (Objective 5/6c). The member/coordinator's
+   personal work queue: every assignment they participate in, across
+   joined/active/waiting-verification/completed states — distinct from
+   Timeline (the operational activity feed, ALL states) and Riwayat
+   (closed-only). Reuses the exact same card + selector machinery as the
+   Queue and History screens; no new data logic. */
+const MY_JOBS_STATUSES = new Set([
+  STATUS.AVAILABLE, STATUS.IN_PROGRESS, STATUS.WAITING_VERIFICATION,
+  STATUS.VERIFIED, STATUS.COMPLETED,
+]);
+
+export function renderMyJobs(all, ctx) {
+  const me = ctx.me || {};
+  const rows = all
+    .filter((a) => MY_JOBS_STATUSES.has(a.status) && isMyAssignment(a, me))
+    .sort((x, y) => latestTs(y) - latestTs(x));
+
+  return `<div class="eng-screen">
+    ${pageHeader('ENGINEERING OPERATIONS', 'Pekerjaan', 'Penugasan yang melibatkan Anda — dari bergabung hingga selesai diverifikasi.')}
+    ${rows.length === 0
+      ? emptyState('Belum ada pekerjaan', 'Penugasan yang Anda ikuti akan muncul di sini.')
+      : `<div class="eng-card-grid">${rows.map((a) => renderAssignmentCard(a, ctx)).join('')}</div>`}
+  </div>`;
+}
+
 /* ── History ──────────────────────────────────────────────────────────── */
 export function renderHistory(all, ctx) {
   const personal = ctx.role === ENGINEERING_ROLE.MEMBER;
   const me = ctx.me || {};
   const q = ((ctx.filters && ctx.filters.hq) || '').toLowerCase();
   let rows = all.filter((a) => DONE.has(a.status) || a.status === STATUS.POSTPONED);
-  if (personal) rows = rows.filter((a) => (a.participants || []).some((p) => p.workerId === me.id || p.name === me.name));
+  if (personal) rows = rows.filter((a) => isMyAssignment(a, me));
   if (q) rows = rows.filter((a) => `${a.title} ${a.location} ${a.assignmentNumber}`.toLowerCase().includes(q));
   rows.sort((x, y) => latestTs(y) - latestTs(x));
 

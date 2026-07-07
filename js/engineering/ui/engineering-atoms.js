@@ -16,6 +16,20 @@
 
 import { STATUS, PRIORITY } from '../config/engineering-config.js';
 
+/**
+ * v1.20.8 — the "is this assignment mine" predicate, extracted from the 3
+ * places it was independently duplicated (engineering-views.js's Timeline
+ * and History screens, engineering-queue.js's findMine). Same matching rule
+ * everywhere: a participant entry matching by workerId, falling back to name.
+ */
+export function myParticipant(a, me) {
+  if (!me) return null;
+  return (a.participants || []).find((p) => p.workerId === me.id || p.name === me.name) || null;
+}
+export function isMyAssignment(a, me) {
+  return !!myParticipant(a, me);
+}
+
 /** HTML-escape (attribute/text safe). */
 export function esc(v) {
   return String(v == null ? '' : v)

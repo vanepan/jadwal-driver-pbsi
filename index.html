@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Sarpras · Jadwal Driver Operasional</title>
 
   <!-- PWA -->
@@ -260,36 +260,16 @@
       <span class="fab-label" id="fabLabel">Tambah Jadwal</span>
     </button>
 
-    <!-- ===== MOBILE BOTTOM NAV ===== -->
-    <nav class="bottom-nav" id="bottomNav" aria-label="Navigasi utama">
+    <!-- ===== MOBILE BOTTOM NAV (v1.20.8 — data-driven per role/workspace;
+         see js/config/bottom-nav-registry.js + renderBottomNav() in app.js) ===== -->
+    <nav class="bottom-nav" id="bottomNav" aria-label="Navigasi utama"></nav>
 
-      <!-- Dashboard — always visible when logged in -->
-      <button class="bottom-nav-item" id="bottomNavDashboard" type="button">
-        <svg viewBox="0 0 20 20" fill="currentColor" width="22" height="22"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/></svg>
-        <span>Dashboard</span>
-      </button>
-
-      <!-- Riwayat / Antrian (Requests) — admin & bidang only; label is role-aware via JS -->
-      <button class="bottom-nav-item" id="bottomNavRequests" type="button" style="display:none;">
-        <svg viewBox="0 0 20 20" fill="currentColor" width="22" height="22"><path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/><path fill-rule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clip-rule="evenodd"/></svg>
-        <span id="bottomNavRequestsLabel">Riwayat</span>
-        <span class="bottom-nav-badge" id="bottomNavRequestsBadge" style="display:none;"></span>
-      </button>
-
-      <!-- Notifikasi — all authenticated users -->
-      <button class="bottom-nav-item" id="bottomNavNotifications" type="button" style="display:none;">
-        <svg viewBox="0 0 20 20" fill="currentColor" width="22" height="22"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/></svg>
-        <span>Notifikasi</span>
-        <span class="bottom-nav-dot" id="bottomNavNotifDot" style="display:none;"></span>
-      </button>
-
-      <!-- Profil — logged in users -->
-      <button class="bottom-nav-item" id="bottomNavProfile" type="button" style="display:none;">
-        <svg viewBox="0 0 20 20" fill="currentColor" width="22" height="22"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/></svg>
-        <span>Profil</span>
-      </button>
-
-    </nav>
+    <!-- ===== BOTTOM SHEET: "Lainnya" (Administrator more menu, v1.20.8) ===== -->
+    <div class="bottom-sheet-overlay" id="bottomNavMoreOverlay"></div>
+    <div class="bottom-sheet" id="bottomNavMoreSheet" role="dialog" aria-modal="true" aria-label="Menu lainnya">
+      <div class="bottom-sheet-handle"></div>
+      <div class="bottom-sheet-content" id="bottomNavMoreContent"></div>
+    </div>
 
   </div><!-- /main-area -->
 

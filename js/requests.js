@@ -394,7 +394,11 @@ export function closeRequestFormModal() {
   editingRequestId = null;
 }
 
-export function openRequestsListModal() {
+/**
+ * @param {string} [highlightId] - v1.20.8 notification deep-link: scroll to and
+ *   briefly highlight this request's card after the list renders.
+ */
+export function openRequestsListModal(highlightId) {
   renderRequestsList();
 
   const title = document.getElementById('requestsListTitle');
@@ -404,6 +408,15 @@ export function openRequestsListModal() {
 
   const modal = document.getElementById('modalRequestsList');
   if (modal) modal.style.display = 'flex';
+
+  if (highlightId) {
+    const card = document.querySelector(`#requestsListContent [data-request-id="${highlightId}"]`);
+    if (card) {
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      card.classList.add('request-card--highlight');
+      setTimeout(() => card.classList.remove('request-card--highlight'), 2000);
+    }
+  }
 }
 
 export function closeRequestsListModal() {
@@ -679,7 +692,7 @@ function createRequestCardHTML(request) {
   `;
 
   return `
-    <div class="request-card" data-status="${r.status}">
+    <div class="request-card" data-status="${r.status}" data-request-id="${r.id}">
       <div class="request-card-header">
         <div class="request-card-info">
           <div class="request-title">${escapeHTML(r.purpose)}</div>

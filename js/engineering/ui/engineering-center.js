@@ -49,7 +49,7 @@ import { excludeAkuntesFromSuggestions } from '../../services/dispatch-policy-en
 import { esc, icon, fmtDeadline } from './engineering-atoms.js';
 import { renderQueue } from './engineering-queue.js';
 import { renderOpsDashboard, renderMemberDashboard } from './engineering-dashboard.js';
-import { renderTimelinePage, renderHistory, renderSettings } from './engineering-views.js';
+import { renderTimelinePage, renderHistory, renderSettings, renderMyJobs } from './engineering-views.js';
 import { renderDrawer } from './engineering-drawer.js';
 
 const st = {
@@ -226,6 +226,16 @@ export function setEngineeringSearch(q) {
 
 export function closeEngineering() { /* shell hides the host; state is retained */ }
 
+/**
+ * Open a specific assignment's drawer directly — v1.20.8, notification deep-link.
+ * Same effect as the internal 'eng-open' delegated action (onClick, case 'eng-open'),
+ * just exposed for callers outside this module (e.g. the push-notification nav handler).
+ */
+export function openEngineeringAssignment(id) {
+  st.drawerId = id;
+  render();
+}
+
 /* ── render ───────────────────────────────────────────────────────────── */
 function render() {
   if (!host) return;
@@ -243,6 +253,7 @@ function render() {
   let screen;
   switch (st.screen) {
     case 'timeline': screen = renderTimelinePage(all, c); break;
+    case 'myjobs': screen = renderMyJobs(all, c); break;
     case 'history': screen = renderHistory(all, c); break;
     case 'settings': screen = c.canEng('eng.settings') ? renderSettings(all, c) : denied(); break;
     case 'queue': screen = renderQueue(all, c); break;

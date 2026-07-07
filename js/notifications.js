@@ -2,7 +2,7 @@
 
 import { getUserList } from './users.js';
 import { getCurrentUser } from './auth.js';
-import { subscribeNode } from './firebase.js';
+import { subscribeNode, updateFirebaseData } from './firebase.js';
 
 /* ── Helpers ── */
 
@@ -220,11 +220,10 @@ export function syncServerNotifications() {
 
 /* DIAGNOSTIC (removable): read-only snapshot for the Production Diagnostic panel. */
 export function getNotificationRuntimeInfo() {
-  const readAt = getReadAt();
   return {
     recipientUid: _serverNotifUid,
     serverCount: serverNotifs.length,
-    unreadCount: serverNotifs.filter(n => new Date(n.timestamp).getTime() > readAt).length,
+    unreadCount: serverNotifs.filter(n => !isEntryArchived(n) && !isEntryRead(n)).length,
     lastReceivedAt: _diagLastNotifAt,
     lastTitle: _diagLastNotifTitle,
     source: _serverNotifUid ? `notifications/${_serverNotifUid} (server) + /logs (legacy)` : '/logs (legacy)',
@@ -237,6 +236,65 @@ function getReadAt() {
 
 function markAllRead() {
   try { localStorage.setItem(READ_AT_KEY, String(Date.now())); } catch {}
+}
+
+/* ── Per-item read/archive state (v1.20.8) ────────────────────────────────
+   Additive sibling node, /notification_state/{uid}/{notifId}: {read, archived}.
+   Mirrors the existing push_subscriptions sibling-node pattern — never touches
+   /notifications itself (server-authoritative, client-write-locked). Presentation
+   /state layer only; does not change what triggers a send.
+
+   Per-item state takes priority when present; entries without it fall back to
+   the legacy global READ_AT_KEY cutoff, so pre-existing notifications from
+   before this feature shipped are unaffected. */
+let notifState = {};             // { [notifId]: { read?: boolean, archived?: boolean } }
+let _notifStateUnsub = null;
+let _notifStateUid = null;
+let showArchived = false;        // Notification Center: toggled view state
+
+function isEntryRead(entry) {
+  const s = notifState[entry.id];
+  if (s && typeof s.read === 'boolean') return s.read;
+  return new Date(entry.timestamp).getTime() <= getReadAt();
+}
+
+function isEntryArchived(entry) {
+  return !!(notifState[entry.id] && notifState[entry.id].archived);
+}
+
+/** (Re)subscribe to /notification_state/{uid}. Mirrors syncServerNotifications(). */
+function syncNotificationState() {
+  const u = getCurrentUser();
+  const uid = (u && (u.username || u.id)) || null;
+  if (uid === _notifStateUid) return;
+  if (_notifStateUnsub) { try { _notifStateUnsub(); } catch (_) {} _notifStateUnsub = null; }
+  notifState = {};
+  _notifStateUid = uid;
+  if (!uid) return;
+  _notifStateUnsub = subscribeNode(
+    `notification_state/${uid}`,
+    (snapshot) => {
+      const val = snapshot && typeof snapshot.val === 'function' ? snapshot.val() : null;
+      notifState = val || {};
+      renderNotificationBadge();
+      if (document.getElementById('modalNotifications')?.style.display === 'flex') renderNotificationsList();
+    },
+    { onDenied: () => {}, onError: () => {} },
+  );
+}
+
+function markItemState(id, patch) {
+  const u = getCurrentUser();
+  const uid = u && (u.username || u.id);
+  if (!uid || !id) return;
+  notifState[id] = { ...(notifState[id] || {}), ...patch }; // optimistic — subscription confirms
+  updateFirebaseData(`notification_state/${uid}/${id}`, { ...patch, updatedAt: Date.now() });
+}
+
+/** Exposed for the push-notification deep-link handler (js/app.js). */
+export function markNotificationRead(id) {
+  markItemState(id, { read: true });
+  renderNotificationBadge();
 }
 
 /* ── Visibility filter ── */
@@ -311,8 +369,7 @@ function filterForCurrentUser(logs) {
 }
 
 function countUnread(filteredLogs) {
-  const readAt = getReadAt();
-  return filteredLogs.filter(e => new Date(e.timestamp).getTime() > readAt).length;
+  return filteredLogs.filter(e => !isEntryArchived(e) && !isEntryRead(e)).length;
 }
 
 /* ── Badge ── */
@@ -325,9 +382,8 @@ function renderNotificationBadge() {
   if (!btn || !badge) return;
 
   const visible = filterForCurrentUser(allLogs);
-  const readAt  = getReadAt();
   const unread  = countUnread(visible);
-  const serverUnread = serverNotifs.filter(n => new Date(n.timestamp).getTime() > readAt).length;
+  const serverUnread = serverNotifs.filter(n => !isEntryArchived(n) && !isEntryRead(n)).length;
   const total   = pendingCount + unread + serverUnread;
 
   badge.style.display = total > 0 ? 'inline-flex' : 'none';
@@ -352,66 +408,122 @@ function buildDetailHtml(detailFn, entry) {
   }</div>`;
 }
 
+function renderCardActions(entry, isUnread) {
+  if (showArchived) return ''; // read-only view — no actions
+  return `
+    <div class="notif-card-actions">
+      ${isUnread ? `<button type="button" class="notif-action-btn" data-notif-action="read">Tandai dibaca</button>` : ''}
+      <button type="button" class="notif-action-btn" data-notif-action="archive">Arsipkan</button>
+    </div>`;
+}
+
 function renderCard(entry, isUnread) {
   // Server-outbox records (e.g. Engineering) carry pre-rendered title/body from
   // the Cloud Functions templates — render them directly (no ACTION_META).
   if (entry._server) {
     return `
-    <div class="notif-card notif-priority-normal${isUnread ? ' notif-unread' : ''}">
+    <div class="notif-card notif-priority-normal${isUnread ? ' notif-unread' : ''}" data-id="${escapeHTML(entry.id)}">
       <div class="notif-card-top">
         <span class="notif-card-title">🔧 ${escapeHTML(entry.title)}${isUnread ? '<span class="notif-new-dot"></span>' : ''}</span>
         <span class="notif-card-time">${escapeHTML(timeAgo(entry.timestamp))}</span>
       </div>
       <div class="notif-card-desc">${escapeHTML(entry.desc)}</div>
+      ${renderCardActions(entry, isUnread)}
     </div>`;
   }
   const meta = ACTION_META[entry.action];
   if (!meta) return '';
   return `
-    <div class="notif-card notif-priority-${meta.priority}${isUnread ? ' notif-unread' : ''}">
+    <div class="notif-card notif-priority-${meta.priority}${isUnread ? ' notif-unread' : ''}" data-id="${escapeHTML(entry.id)}">
       <div class="notif-card-top">
         <span class="notif-card-title">${meta.icon} ${escapeHTML(meta.title)}${isUnread ? '<span class="notif-new-dot"></span>' : ''}</span>
         <span class="notif-card-time">${escapeHTML(timeAgo(entry.timestamp))}</span>
       </div>
       <div class="notif-card-desc">${escapeHTML(meta.desc(entry))}</div>
       ${buildDetailHtml(meta.detail, entry)}
+      ${renderCardActions(entry, isUnread)}
     </div>`;
 }
 
 /* ── Notification Center render ── */
 
+function archiveToggleHtml(archivedCount) {
+  if (!archivedCount && !showArchived) return '';
+  return `<button type="button" class="notif-archive-toggle" id="btnToggleArchived">${
+    showArchived ? '← Kembali ke notifikasi' : `Lihat yang diarsipkan (${archivedCount})`
+  }</button>`;
+}
+
+function wireNotificationCardActions(container) {
+  container.querySelectorAll('[data-notif-action]').forEach((btn) => {
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const id = btn.closest('[data-id]')?.dataset.id;
+      if (!id) return;
+      if (btn.dataset.notifAction === 'read') markItemState(id, { read: true });
+      else if (btn.dataset.notifAction === 'archive') markItemState(id, { archived: true });
+      renderNotificationsList();
+      renderNotificationBadge();
+    });
+  });
+  document.getElementById('btnToggleArchived')?.addEventListener('click', () => {
+    showArchived = !showArchived;
+    renderNotificationsList();
+  });
+}
+
 function renderNotificationsList() {
   const container = document.getElementById('notificationsContent');
   if (!container) return;
 
-  const readAt  = getReadAt();
   // Merge the /logs-derived notifications with the server outbox (Engineering),
   // newest first — one unified, time-ordered list.
-  const visible = [...filterForCurrentUser(allLogs), ...serverNotifs]
+  const merged = [...filterForCurrentUser(allLogs), ...serverNotifs]
     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-    .slice(0, 30);
+    .slice(0, 60);
 
-  if (visible.length === 0) {
-    container.innerHTML = '<div class="empty-request-state">Belum ada notifikasi untuk Anda.</div>';
+  const archived = merged.filter(isEntryArchived);
+  const active   = merged.filter(e => !isEntryArchived(e));
+  const list     = showArchived ? archived : active;
+
+  if (list.length === 0) {
+    container.innerHTML = `<div class="empty-request-state">${
+      showArchived ? 'Belum ada notifikasi diarsipkan.' : 'Belum ada notifikasi untuk Anda.'
+    }</div>${archiveToggleHtml(archived.length)}`;
+    wireNotificationCardActions(container);
     return;
   }
 
-  const unread  = visible.filter(e => new Date(e.timestamp).getTime() > readAt);
-  const history = visible.filter(e => new Date(e.timestamp).getTime() <= readAt);
+  // Unread/Today/Yesterday/Earlier grouping (v1.20.8) — pure reshape of the
+  // already-timestamped list, no new subscriptions. Archived view skips the
+  // unread bucket entirely (read-only browsing of what's been put away).
+  const now = new Date();
+  const startOfToday     = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfYesterday = startOfToday - 86400000;
+
+  const buckets = { unread: [], today: [], yesterday: [], earlier: [] };
+  list.forEach((e) => {
+    if (!showArchived && !isEntryRead(e)) { buckets.unread.push(e); return; }
+    const t = new Date(e.timestamp).getTime();
+    if (t >= startOfToday) buckets.today.push(e);
+    else if (t >= startOfYesterday) buckets.yesterday.push(e);
+    else buckets.earlier.push(e);
+  });
 
   let html = '';
+  const section = (label, items, withCount) => {
+    if (!items.length) return;
+    html += `<div class="notif-section-header${html ? ' notif-section-header--gap' : ''}">${label}${withCount ? ` (${items.length})` : ''}</div>`;
+    html += items.map(e => renderCard(e, !isEntryRead(e))).join('');
+  };
+  section('Belum Dibaca', buckets.unread, true);
+  section('Hari Ini', buckets.today, false);
+  section('Kemarin', buckets.yesterday, false);
+  section('Lebih Awal', buckets.earlier, false);
 
-  if (unread.length > 0) {
-    html += `<div class="notif-section-header">Belum Dibaca (${unread.length})</div>`;
-    html += unread.map(e => renderCard(e, true)).join('');
-  }
-
-  if (history.length > 0) {
-    html += `<div class="notif-section-header${unread.length > 0 ? ' notif-section-header--gap' : ''}">Riwayat</div>`;
-    html += history.map(e => renderCard(e, false)).join('');
-  }
-
+  html += archiveToggleHtml(archived.length);
   container.innerHTML = html;
+  wireNotificationCardActions(container);
 }
 
 /* ── Init ── */
@@ -469,6 +581,7 @@ export function setNotificationData({ pendingRequests = 0, recentLogs = [] }) {
   // per uid): login attaches it, logout detaches it. This is how Engineering
   // in-app notifications arrive in realtime through the shared bell.
   syncServerNotifications();
+  syncNotificationState();
   renderNotificationBadge();
 }
 
@@ -481,8 +594,8 @@ export function openNotificationsModal() {
     actLogBtn.style.display = getCurrentUser()?.role === 'admin' ? '' : 'none';
   }
 
+  showArchived = false;
   renderNotificationsList();
-  markAllRead();
   renderNotificationBadge();
   const modal = document.getElementById('modalNotifications');
   if (modal) modal.style.display = 'flex';

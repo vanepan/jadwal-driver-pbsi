@@ -103,6 +103,24 @@ export function renderDriverDashboard() {
   });
 }
 
+/**
+ * Render a dedicated, full History screen (v1.20.8 — bottom-nav "Riwayat"
+ * for the driver role). Reuses the exact same bucket + card markup as the
+ * dashboard's own history section (getDriverAssignmentBuckets, buildSection,
+ * buildCard, openDetailModal) — a standalone screen instead of a section
+ * inside the dashboard, same data and visual language, no new logic.
+ */
+export function renderDriverHistoryScreen(container) {
+  if (!container) return;
+  const { history } = getDriverAssignmentBuckets(assignments);
+  container.innerHTML = buildSection('Riwayat', history, {
+    showDate: true, muted: true, emptyText: 'Belum ada riwayat penugasan',
+  });
+  container.querySelectorAll('[data-asgn-id]').forEach(card => {
+    card.addEventListener('click', () => openDetailModal(card.dataset.asgnId));
+  });
+}
+
 /* ── Private Helpers ── */
 
 function buildSection(title, items, opts = {}) {

@@ -1823,7 +1823,7 @@ body.v2-shell-active .header {
 /* ── Topbar container ── */
 .v2-topbar {
   display: none; /* hidden by default; shown via body.v2-shell-active below */
-  height: 56px;
+  height: calc(56px + env(safe-area-inset-top, 0px)); /* v1.20.8 — clears notch/status bar now that viewport-fit=cover is set */
   position: sticky;
   top: 0;
   background: var(--topbar-bg, #FFFFFF);
@@ -1831,7 +1831,7 @@ body.v2-shell-active .header {
   z-index: 50;
   align-items: center;
   gap: 10px;
-  padding: 0 16px;
+  padding: env(safe-area-inset-top, 0px) 16px 0;
   flex-shrink: 0;
   box-sizing: border-box;
   width: 100%;
@@ -5485,15 +5485,6 @@ html.theme-anim .timeline-scroll-fade-right {
   font-weight: 700;
   font-size: 14px;
 }
-  font-size: 13px;
-  font-weight: 600;
-  font-family: inherit;
-  cursor: pointer;
-  transition: filter .12s;
-  white-space: nowrap;
-}
-.v2-admin-add-btn:hover  { filter: brightness(.92); }
-.v2-admin-add-btn:active { filter: brightness(.86); }
 
 .v2-admin-user-list {
   display: flex;
@@ -6917,7 +6908,7 @@ textarea:disabled { opacity: 0.55; }
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--page-bg, #F5F3EF);
+  background: var(--page-bg, #FBFAF8); /* v1.20.8 — matches manifest.json background_color so the OS-drawn splash (Android) doesn't flash a mismatched color before this splash paints */
   transition: opacity 0.18s ease;
 }
 
@@ -9449,6 +9440,10 @@ input[type="time"].v2-admin-config-input {
 .v2-analytics-kpi-skel {
   background: var(--hover);
   border-radius: 6px;
+  /* v1.20.8 — was a static block; now pulses via the shared skeleton-pulse
+     keyframe (style.css) so this reads as the same loading language as the
+     rest of the app instead of a dead gray placeholder. */
+  animation: skeleton-pulse 1.3s ease-in-out infinite;
 }
 .v2-analytics-kpi-skel--line  { height: 12px; width: 55%; }
 .v2-analytics-kpi-skel--value { height: 28px; width: 70%; }
