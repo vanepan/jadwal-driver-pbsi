@@ -27,18 +27,20 @@ export const WORKSPACES = {
     role: 'admin',
     title: 'Executive Command Center',
     subtitle: 'Ringkasan operasional — apa yang membutuhkan perhatian Anda hari ini.',
-    // v1.19.10 briefing order: Hero → Priority → Decision → Recommendation →
-    // Simulation → Snapshot → Activity → Launcher. Answers "how healthy? / what
-    // needs attention? / what next?" top-to-bottom.
+    // v1.22.2 briefing-flow order: Hero (incl. Health) → Priority → Attention →
+    // Decision → Today's Story → Recommendation → Simulation → Snapshot
+    // (Insight) → Launcher — matches the "what's the condition? / what needs
+    // attention? / what's next?" reading order the Executive Design Language
+    // sprint specified. Pure reorder of existing ids — nothing added/removed.
     widgets: [
       'exec-hero',
       'exec-priority',
       'exec-attention',
       'exec-decision',
+      'exec-activity',
       'exec-recommendation',
       'exec-simulation',
       'exec-snapshot',
-      'exec-activity',
       'exec-quick',
     ],
   },

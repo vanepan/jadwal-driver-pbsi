@@ -34,7 +34,7 @@ export const WIDGETS = {
   'exec-recommendation': { id: 'exec-recommendation', title: 'Rekomendasi Hari Ini',   span: 1,      variant: 'card',    group: 'executive' },
   'exec-simulation':     { id: 'exec-simulation',     title: 'Pusat Simulasi',         span: 1,      variant: 'card',    group: 'executive' },
   'exec-snapshot':       { id: 'exec-snapshot',       title: 'Snapshot Operasional',   span: 'full', variant: 'section', group: 'executive' },
-  'exec-activity':       { id: 'exec-activity',       title: 'Aktivitas Operasional',  span: 2,      variant: 'card',    group: 'executive' },
+  'exec-activity':       { id: 'exec-activity',       title: 'Hari Ini',               span: 2,      variant: 'card',    group: 'executive' },
   'exec-quick':          { id: 'exec-quick',          title: 'Peluncur Eksekutif',     span: 'full', variant: 'section', group: 'executive' },
 
   /* ── Request Workspace (bidang) ── */

@@ -34,10 +34,16 @@ function skeletonWidget(def) {
   if (!def) return '';
   const variant = def.variant || 'card';
   const skel = '<div class="wsp-skeleton" aria-hidden="true"><span></span><span></span><span></span></div>';
+  // v1.22.1 Objective 12 — Premium Motion: a quiet reveal on workspace
+  // mount/switch. `fade-up`/`anFadeUp` already exists globally under
+  // `.v2-analytics-claude` (platform.css) and already respects
+  // prefers-reduced-motion, so this needs zero new CSS. renderShell() only
+  // redraws the skeleton on mount/role-switch (never on a data-only refresh —
+  // see home-router.js), so the reveal never replays on live data updates.
 
   if (variant === 'card') {
     return `
-    <section class="wsp-card ${spanClass(def)} wsp-card--loading"
+    <section class="wsp-card ${spanClass(def)} wsp-card--loading fade-up"
              data-widget-id="${def.id}" role="listitem" aria-label="${def.title}" aria-busy="true">
       <header class="wsp-card__head"><h3 class="wsp-card__title">${def.title}</h3></header>
       <div class="wsp-card__body">${skel}</div>
@@ -48,7 +54,7 @@ function skeletonWidget(def) {
     ? `<header class="wsp-block__head"><h2 class="wsp-block__title">${def.title}</h2></header>`
     : '';
   return `
-    <section class="wsp-block wsp-block--${variant} ${spanClass(def)} wsp-block--loading"
+    <section class="wsp-block wsp-block--${variant} ${spanClass(def)} wsp-block--loading fade-up"
              data-widget-id="${def.id}" role="listitem" aria-label="${def.title}" aria-busy="true">
       ${head}
       <div class="wsp-block__body">${skel}</div>
