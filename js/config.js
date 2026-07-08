@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.20.6';
-export const RELEASE_NAME = 'Engineering Operational Workspace';
+export const APP_VERSION = '1.20.9';
+export const RELEASE_NAME = 'Native Runtime Excellence';
 
 /* ============================================================
    APP_ENV — the AUTHORITATIVE runtime environment (v1.20.3 RC1).
@@ -66,6 +66,17 @@ export function isProduction() {
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.20.9',
+    date: '2026-07-08',
+    summary: 'Native Runtime Excellence + Mobile Zoom Hardening — a presentation/runtime-layer sprint, zero business-logic/Firebase-schema/analytics/lifecycle/permission changes. Two parts. PART B (shipped first, standalone): eliminates iOS Safari input auto-zoom and disables accidental pinch-zoom. Root cause was that an existing "iOS Safari zoom prevention" mobile CSS convention was incomplete — .date-input sat inside the same fix block yet was excluded, and .login-card .form-group input had higher CSS specificity than the generic fix so it silently kept Username zooming regardless; five more real inputs (comment reply box, executive search, global topbar search, admin audit-log date filter, engineering search) were never covered at all. Fixed all of them to >=16px, and disabled pinch-zoom via the viewport meta (maximum-scale=1, user-scalable=no) — reversing v1.20.8\'s deliberate choice to leave it on, since iOS\'s system-level Accessibility Zoom is unaffected by the viewport meta and still gives low-vision users a zoom path. New scripts/zoom-hardening-check.mjs (13/13 pass). PART A: finishes the module-level code-splitting v1.20.8\'s Phase 10 scoped to 1 of 5 steps. A1: 12 modules (5,929 lines / 308 KB) — vehicle/driver prediction, simulation panel, driver wellness, dispatch/petty-cash/executive analytics engines + views, executive dashboard — converted from static imports in app.js to dynamic import(), via a new js/config/module-loader-registry.js extending the existing Map-cache idiom (widget-registry.js/export-registry.js). Home\'s admin briefing (buildHomeContext → buildExecutiveDashboardModel/buildExecutiveRecommendations) is first-paint-critical for every admin session, so those builders stay synchronous and degrade to null via a background ensureAdminEnginesLoaded() (reusing the exact graceful-degradation shape buildPettyAnalyticsModelIfReady already used), then refresh Home in place via the existing refreshHomeWorkspace() once real data arrives — no signature changes to Home\'s render path, no double-render. Explicit-nav sections (Dispatch/Executive/Driver Prediction/Wellness/Petty Cash Analytics) await the loaders directly. 3 candidate modules (recommendation-accuracy-engine, fleet-recommendation-engine, engineering-analytics) were found still forced in eagerly by unrelated static chains (decision-replay-drawer, recommendation-summary, vehicle-detail-drawer, engineering-center) and left static rather than churned for zero measured benefit. A2 (memory audit): the 12 new lazy modules register no timers/observers; everything else audited was already correctly torn down bar one bounded, documented-not-fixed finding (a driver-ops timer keeps ticking off-screen for admin/driver/bidang sessions). A3: found and fixed a real race the A1 conversion introduced — async section renders could resolve after a user navigated away and paint into a hidden container; fixed with a render-token guard reusing home-router.js\'s existing __wspToken pattern. A4: Notification Center + offline toast (v1.20.8) audited, already well-built, no changes needed. A5: new scripts/runtime-perf-report.mjs measures (not estimates) the unauthenticated boot path — 149 JS modules, 2,756 KB, 688ms first paint, and proves 0/12 A1-converted modules leak into that boot. Full regression sweep green throughout: smoke-boot, workspace-foundation-check (24/24), engineering-ui-check (61/61), engineering-ui-dom-check (50/50), executive-dashboard-export-check (18/18), dispatch-analytics-check (72/72), recommendation-accuracy-check (81/81), prediction-engine/service-check, pettycash-intelligence-check (29/29). Known gap: no authenticated-admin-session puppeteer harness exists yet in this repo, so A1/A3\'s async logic was verified by structural checks + manual trace, not a live click-through — flagged, not glossed over. APP_VERSION 1.20.6 → 1.20.9 re-stamps SW/version.json/index.html via scripts/sync-version.mjs.',
+    highlights: [
+      'Mobile Zoom Hardening: pinch-zoom disabled (viewport meta) and 9 real form fields (login username, date filters, search bars, comment box) fixed to >=16px — root cause was an existing zoom-prevention CSS convention that was incomplete/overridden, not absent.',
+      'Module-Level Code Splitting: 12 admin-only analytics/prediction modules (5,929 lines) converted from static to dynamic import() — driver/bidang/engineering-role sessions now never fetch any of it.',
+      'Home stays first-paint-safe: the admin briefing aggregator degrades gracefully and backfills in the background via the existing refreshHomeWorkspace() — zero signature changes to Home\'s render path, zero double-render.',
+      'Runtime audits (memory/render/navigation/notification/offline) + a new measurement script (scripts/runtime-perf-report.mjs) that proves, not estimates, the boot-time reduction; a same-pass render-race bug (offscreen paint after navigating away) was found and fixed via a reused render-token pattern.',
+    ],
+  },
   {
     version: '1.20.6',
     date: '2026-07-07',

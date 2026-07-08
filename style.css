@@ -84,7 +84,7 @@ body {
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior-x: none; /* prevents accidental horizontal overscroll bounce */
   overscroll-behavior-y: contain; /* v1.20.8 — kills rubber-band bounce on vertical scroll */
-  touch-action: manipulation; /* v1.20.8 — kills double-tap-zoom + ~300ms tap delay without disabling pinch-zoom */
+  touch-action: manipulation; /* v1.20.8 — kills double-tap-zoom + ~300ms tap delay; pinch-zoom is disabled separately via the viewport meta (v1.20.9) */
 }
 
 /* v1.20.8 — Native App Experience: every real button/role=button loses the
@@ -3061,7 +3061,8 @@ input[type="number"]::-webkit-inner-spin-button {
   .brand-logo  { width: 26px; height: 26px; }
   .brand-title { font-size: 12px; }
 
-  .date-input { min-width: 78px; font-size: 11px; color-scheme: light; }
+  /* 16px minimum prevents iOS Safari auto-zoom on <input type="date"> focus */
+  .date-input { min-width: 96px; font-size: 16px; color-scheme: light; }
   .btn-today  { font-size: 11px; padding: 3px 7px; }
 
   .header-display-name { max-width: 90px; font-size: 12px; }
@@ -3107,6 +3108,10 @@ input[type="number"]::-webkit-inner-spin-button {
   .time-pair-group .time-pair input {
     font-size: 16px;
     padding: 9px 6px;
+  }
+
+  .comment-input-area textarea {
+    font-size: 16px;
   }
 
   .form-grid {

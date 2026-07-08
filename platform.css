@@ -599,7 +599,7 @@ html.theme-anim *::after {
   border: 1px solid var(--input-border);
   border-radius: 9px;
   padding: 10px 12px;
-  font-size: 14px;
+  font-size: 16px; /* 16px minimum prevents iOS Safari auto-zoom on focus (was 14px, overrode the .form-group mobile fix via higher specificity) */
   color: var(--text);
   outline: none;
   font-family: inherit;
@@ -4962,6 +4962,11 @@ body.v2-shell-active .main-content > #v2KpiStrip { padding-left: 0; padding-righ
 .v2-topbar-search-input::placeholder { color: var(--faint); }
 .v2-topbar-search-input::-webkit-search-cancel-button { display: none; }
 
+/* ── Mobile: 16px font prevents iOS Safari zoom on focus ──── */
+@media (max-width: 600px) {
+  .v2-topbar-search-input { font-size: 16px; }
+}
+
 .v2-topbar-search-clear {
   width: 16px;
   height: 16px;
@@ -8671,7 +8676,7 @@ span.flatpickr-weekday {
   .v2-audit-col--action   { grid-column: 2; text-align: right; font-size: 12px; }
   .v2-audit-col--summary  { display: none; }
   .v2-audit-header-row    { display: none; }
-  .v2-audit-date-input      { min-width: 120px; font-size: 12px; }
+  .v2-audit-date-input      { min-width: 132px; font-size: 16px; }
   .v2-audit-summary-grid    { grid-template-columns: 1fr; }
   .v2-audit-human-label     { flex: 0 0 110px; font-size: 12px; }
   .v2-audit-change-label    { flex: 0 0 110px; font-size: 12px; }
@@ -11708,6 +11713,11 @@ body.v2-shell-active .block-status-badge--overtime {
 .exec-search__ico { color: var(--text-faint, var(--faint, #94918b)); display: inline-flex; }
 .exec-search__input { border: 0; background: transparent; padding: 8px 2px; font: inherit; font-size: var(--type-body, 14px); color: var(--text, #1a1917); min-width: 9rem; outline: none; }
 .exec-search:focus-within { border-color: var(--accent, #a8292f); box-shadow: var(--exec-focus-ring); }
+
+/* ── Mobile: 16px font prevents iOS Safari zoom on focus ──── */
+@media (max-width: 600px) {
+  .exec-search__input { font-size: 16px; }
+}
 
 .exec-reset { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font: inherit; font-size: var(--type-body, 14px); font-weight: 600; color: var(--text-dim, var(--muted, #5b5953)); background: transparent; border: 1px solid var(--border, #e8e6e2); border-radius: var(--radius-sm, 11px); padding: 7px 12px; transition: background var(--exec-dur-fast, .14s), border-color var(--exec-dur-fast, .14s); }
 .exec-reset:hover { background: var(--hover, #f2f0ec); border-color: var(--border-strong, #dad7d2); }

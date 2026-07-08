@@ -166,6 +166,11 @@
 .eng-search-input{height:38px;width:300px;max-width:100%;border-radius:11px;border:1px solid var(--border);background:var(--surface-2);padding:0 14px;font-family:var(--font-sans);font-size:13px;color:var(--text);}
 .eng-search-input:focus{outline:2px solid var(--accent-line);outline-offset:1px;}
 
+/* Mobile: 16px font prevents iOS Safari zoom on focus */
+@media (max-width: 600px){
+  .eng-search-input{font-size:16px;}
+}
+
 /* ── assignment card ──────────────────────────────────────────────────── */
 .eng-card[data-act]{cursor:pointer;padding:20px;position:relative;overflow:hidden;transition:box-shadow .15s,transform .15s,border-color .15s;}
 .eng-card[data-act]:hover{box-shadow:var(--shadow-md);transform:translateY(-1px);border-color:var(--border-strong);}

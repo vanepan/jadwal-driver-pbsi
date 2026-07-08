@@ -64,7 +64,6 @@ import { initFormHandlers, openFormModal, closeFormModal, registerSaveCallback, 
 import { initAssignmentDispatchHints } from './components/assignment-dispatch-hints.js';
 // beta.3: admin approval override → records the decision in the existing override log.
 import { saveOverrideLog, getOverrideLogs, getAllRequestRecommendations } from './stores/dispatch-intelligence-store.js';
-import { computeDispatchAnalyticsModel } from './analytics/dispatch-analytics-engine.js';
 import { injectDispatchAnalyticsStyles, renderDispatchAnalyticsDashboard } from './components/dispatch-analytics-dashboard.js';
 // v1.17.1 Recommendation Accuracy Engine — read-only accuracy analytics rendered
 // beside the Dispatch Analytics dashboard (same admin section).
@@ -90,7 +89,6 @@ import { openDecisionReplay, closeDecisionReplayDrawer } from './components/deci
 // (health score, fatigue, burnout, capacity health) rendered as its own admin
 // section in the Analytics module. Reuses capacity + workload + unified scoring.
 import { computeDriverWellnessModel, findDriverWellness } from './services/driver-wellness-service.js';
-import { injectDriverWellnessStyles, renderDriverWellnessDashboard } from './components/driver-wellness-dashboard.js';
 import { openDriverWellnessDrawer } from './components/driver-wellness-drawer.js';
 // v1.18.0 Vehicle Asset Intelligence — the Vehicle Store is the single asset
 // source; this layer interprets it (health, tax/insurance status, eligibility,
@@ -101,9 +99,18 @@ import { computeFleetAssetModel, findVehicleAsset, searchFilterVehicles } from '
 import { injectFleetDashboardStyles, renderFleetDashboard } from './components/fleet-dashboard.js';
 import { renderIcon, vehicleTypeIconName } from './components/icon-system.js';
 import { openVehicleDetailDrawer } from './components/vehicle-detail-drawer.js';
-import { renderVehiclePredictionDashboard, injectVehiclePredictionStyles, getCertifiedVehiclePredictions } from './components/vehicle-prediction-dashboard.js';
-import { mountSimulationPanel, getActiveSimulation } from './analytics/simulation-panel.js';
 import { FUEL_TYPES, TRANSMISSION_TYPES, VEHICLE_TYPE_REGISTRY, VEHICLE_STATUS_REGISTRY } from './config/vehicle-asset-config.js';
+// v1.20.9 — heavy, role-exclusive modules (admin-only analytics/prediction
+// dashboards + engines) converted from static imports to dynamic import(),
+// loaded on first entry into the section that needs them. See
+// js/config/module-loader-registry.js for the memoized loader idiom (same
+// Map-cache pattern as widget-registry.js / export-registry.js).
+import {
+  loadVehiclePrediction, loadSimulationPanel, loadDriverWellnessDashboard,
+  loadDispatchAnalyticsEngine, loadPettyCashAnalytics, loadExecutiveAnalytics,
+  loadPredictionService, loadDriverPredictionDashboard, loadExecutiveDashboard,
+  loadPettyCashAnalyticsView, loadExecutiveAnalyticsView,
+} from './config/module-loader-registry.js';
 import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver, isEngineeringUser, assignmentBelongsToDriver } from './auth.js';
 import * as DocumentEngine from './docs/doc-engine.js';
 import './docs/templates/analytics-summary.js';   // registers 'analytics-summary'
@@ -207,34 +214,19 @@ import { renderEngineeringAnalyticsView } from './analytics/views/analytics-engi
 import { buildEngineeringAnalytics } from './engineering/analytics/engineering-analytics.js';
 import { listAssignments as engListAssignments, listWorkReports as engListWorkReports } from './engineering/stores/engineering-store.js';
 import './exports/analytics/engineering-analytics-export.js';  // registers window.exportEngineeringAnalytics* hooks
-import { mountAnalyticsPettyCash, closeAnalyticsPettyCash, refreshAnalyticsPettyCash } from './analytics/views/analytics-petty-cash-view.js';
 // v1.18.8: mountAnalyticsExecutive is retired — the "Analytics Executive" entry
 // now renders the new Executive Analytics Dashboard sibling section (below). The
-// close/refresh hooks stay imported for the dormant analyticsExec workspace guard.
-import { closeAnalyticsExecutive, refreshAnalyticsExecutive } from './analytics/views/analytics-executive-view.js';
-// v1.18.8 Executive Analytics Dashboard — the platform's executive home page. It
-// REUSES existing engine outputs only (no new business logic): the Operational
-// Health Score (computeExecutiveAnalytics over the driver + petty models), plus
-// the Dispatch / Recommendation / Wellness / Fleet models already built below.
-import { renderExecutiveDashboard, injectExecutiveDashboardStyles } from './components/executive-dashboard.js';
-import { computeExecutiveAnalytics } from './analytics/executive-analytics.js';
-// v1.19.4 Driver Prediction — the FIRST consumer of the Prediction Service. A
-// PURE presentation dashboard that answers "what is likely to happen to driver
-// operational readiness over the next several days?". It consumes ONLY the
-// Prediction Service (via the dashboard component) — never the prediction
-// engine / validator / provider — so the UI stays decoupled from every
-// prediction implementation. Adds NO business logic; the service is called
-// exactly once per refresh from inside the component.
-import { renderDriverPredictionDashboard, injectDriverPredictionStyles } from './components/driver-prediction-dashboard.js';
+// close/refresh hooks stay dynamically loaded for the dormant analyticsExec
+// workspace guard (v1.20.9 — analytics-petty-cash-view.js, analytics-executive-view.js,
+// executive-dashboard.js, executive-analytics.js, driver-prediction-dashboard.js,
+// prediction-service.js are all now lazy — see module-loader-registry.js import above).
 // v1.19.10 Executive Briefing — the certified Recommendation path, reused (no new
 // logic): getPrediction(buildDriverPredictionInput()) → certified model →
 // recommendationBoard / decisionSupport / allRecommendations. Consumed READ-ONLY
 // by the Executive Command Center briefing widgets (Priority / Decision /
 // Recommendation). The prediction service caches by input, so no extra work.
-import { getPrediction } from './services/prediction-service.js';
 import { recommendationBoard, decisionSupport, noRecommendationState } from './recommendation/recommendation-summary.js';
 import { allRecommendations } from './recommendation/fleet-recommendation-engine.js';
-import { computePettyCashAnalytics } from './analytics/petty-cash-analytics.js';
 import { bidangRoster } from './petty-cash/petty-cash-service.js';
 import {
   isReady as pcReady, getExpenses as getPcExpenses, getNors as getPcNors,
@@ -289,6 +281,13 @@ let engineeringMounted = false;
 // v1.15.0: lazy mount flags for the new Analytics workspaces.
 let analyticsPettyMounted = false;
 let analyticsExecMounted = false;
+// v1.20.9 — analytics-petty-cash-view.js / analytics-executive-view.js are now
+// dynamically imported; these hold the resolved mount/close/refresh functions
+// once loaded (populated in navAnalyticsPettyCash() — see there for the guard
+// invariant that makes it safe for setWorkspace() to call these synchronously).
+let _fnMountAnalyticsPettyCash = null;
+let _fnCloseAnalyticsPettyCash = null;
+let _fnRefreshAnalyticsPettyCash = null;
 
 // V1.5.0 Phase 2.5.1: Administration workspace section state
 let activeAdminSection = 'users';
@@ -1499,8 +1498,11 @@ function buildHomeContext() {
  */
 function buildExecutiveRecommendations() {
   try {
+    // v1.20.9 — getPrediction (prediction-service.js) is now lazy-loaded as part
+    // of ensureAdminEnginesLoaded(); degrade to uncertified until it resolves.
+    if (!_fnGetPredictionForHome) { ensureAdminEnginesLoaded(); return { certified: false, board: null, decisions: [], recs: [] }; }
     const input = buildDriverPredictionInput();
-    const result = getPrediction(input);
+    const result = _fnGetPredictionForHome(input);
     const confidence = (result && result.metadata && result.metadata.predictionConfidence) || { score: 0, level: 'LOW' };
     const model = result && result.model;
     const vehicles = model && Array.isArray(model.vehicles) ? model.vehicles : [];
@@ -1711,7 +1713,15 @@ async function navAnalyticsPettyCash() {
   setCrumb('ANALYTICS', 'Analytics Petty Cash');
   setWorkspace('analyticsPetty');
   analyticsPettyMounted = true;
-  await mountAnalyticsPettyCash(document.getElementById('v2AnalyticsPettyWorkspace'));
+  // v1.20.9 — analytics-petty-cash-view.js is now dynamically imported; its
+  // resolved mount/close/refresh functions are cached below for setWorkspace()'s
+  // guard (lines further down), which only ever runs once this has resolved
+  // (guarded by analyticsPettyMounted, set true only after this await starts).
+  const { mountAnalyticsPettyCash, closeAnalyticsPettyCash, refreshAnalyticsPettyCash } = await loadPettyCashAnalyticsView();
+  _fnMountAnalyticsPettyCash = mountAnalyticsPettyCash;
+  _fnCloseAnalyticsPettyCash = closeAnalyticsPettyCash;
+  _fnRefreshAnalyticsPettyCash = refreshAnalyticsPettyCash;
+  await _fnMountAnalyticsPettyCash(document.getElementById('v2AnalyticsPettyWorkspace'));
 }
 /* v1.18.8 — "Analytics Executive" is repointed to the new Executive Analytics
    Dashboard (the platform's executive home page), rendered as a SIBLING admin
@@ -3170,10 +3180,16 @@ function setWorkspace(name) {
   // fresh recompute whenever one becomes visible — so a data change made while it
   // was hidden (e.g. a NOR Official↔Test convert) is always reflected without a
   // page refresh, on every show path (desktop panel-nav + shared mobile sub-nav).
-  if (!isAnPc && analyticsPettyMounted) closeAnalyticsPettyCash();
-  if (!isAnEx && analyticsExecMounted) closeAnalyticsExecutive();
-  if (isAnPc && analyticsPettyMounted) refreshAnalyticsPettyCash();
-  if (isAnEx && analyticsExecMounted) refreshAnalyticsExecutive();
+  // v1.20.9 — analytics-petty-cash-view.js is dynamically imported; these are
+  // only ever reachable once navAnalyticsPettyCash() has already resolved it
+  // (analyticsPettyMounted is only ever set true there), so the cached fns
+  // are guaranteed populated. analyticsExecMounted is never set true anywhere
+  // in the codebase (v1.18.8 retired that workspace) — analytics-executive-view.js
+  // is loaded lazily here too, purely to keep this dormant guard's shape intact.
+  if (!isAnPc && analyticsPettyMounted) _fnCloseAnalyticsPettyCash && _fnCloseAnalyticsPettyCash();
+  if (!isAnEx && analyticsExecMounted) loadExecutiveAnalyticsView().then(m => m.closeAnalyticsExecutive());
+  if (isAnPc && analyticsPettyMounted) _fnRefreshAnalyticsPettyCash && _fnRefreshAnalyticsPettyCash();
+  if (isAnEx && analyticsExecMounted) loadExecutiveAnalyticsView().then(m => m.refreshAnalyticsExecutive());
 
   if (isDash) {
     renderKPIStrip();
@@ -6735,6 +6751,34 @@ function _animateAnalyticsRegion(root) {
   });
 }
 
+/* v1.20.9 — the 4 admin-only analytics engines (dispatch/petty/executive
+   analytics + the prediction service) used to be static top-level imports,
+   parsed on every boot regardless of role. Loaded once, in the background —
+   triggered the first time an admin session needs them (Home) or on-demand
+   when a session explicitly navigates to a section that needs them — and
+   memoized via module-loader-registry.js's own cache, so this Promise.all
+   only ever runs once per session. The sync build*Model() functions below
+   degrade to null until it resolves (the SAME graceful-degradation shape
+   buildPettyAnalyticsModelIfReady already used for "petty store not loaded
+   yet"), then Home is refreshed in place once real data is available. */
+let _fnComputeDispatchAnalyticsModel = null;
+let _fnComputePettyCashAnalytics = null;
+let _fnComputeExecutiveAnalytics = null;
+let _fnGetPredictionForHome = null;
+let _adminEnginesPromise = null;
+function ensureAdminEnginesLoaded() {
+  if (_adminEnginesPromise) return _adminEnginesPromise;
+  _adminEnginesPromise = Promise.all([
+    loadDispatchAnalyticsEngine().then(m => { _fnComputeDispatchAnalyticsModel = m.computeDispatchAnalyticsModel; }),
+    loadPettyCashAnalytics().then(m => { _fnComputePettyCashAnalytics = m.computePettyCashAnalytics; }),
+    loadExecutiveAnalytics().then(m => { _fnComputeExecutiveAnalytics = m.computeExecutiveAnalytics; }),
+    loadPredictionService().then(m => { _fnGetPredictionForHome = m.getPrediction; }),
+  ]).then(() => {
+    if (currentWorkspace === 'home') refreshHomeWorkspace();
+  });
+  return _adminEnginesPromise;
+}
+
 /* ── Dispatch Intelligence Analytics (v1.17.0) ─────────────────────────────
    A dedicated, READ-ONLY executive dashboard over the Dispatch Intelligence
    decision history. It computes nothing operational — it aggregates the
@@ -6746,12 +6790,15 @@ let dispatchAnalyticsTrendWindow = '30d';
 /** Build the analytics model from live subsystem + operational data. The
  *  Dispatch Policy Engine filters the INPUTS first so ambulance (F5) and Akuntes
  *  (F6) never participate in analytics — without changing any analytics math and
- *  without deleting operational data (history/audit/export still see everything). */
+ *  without deleting operational data (history/audit/export still see everything).
+ *  v1.20.9 — computeDispatchAnalyticsModel is now lazy-loaded; returns null (and
+ *  kicks off the background load) until it resolves. */
 function buildDispatchAnalyticsModel() {
+  if (!_fnComputeDispatchAnalyticsModel) { ensureAdminEnginesLoaded(); return null; }
   const filtered = applyAnalyticsPolicy({
     vehicles: getVehicles(), requests, assignments, overrideLogs: getOverrideLogs(),
   });
-  return computeDispatchAnalyticsModel({
+  return _fnComputeDispatchAnalyticsModel({
     overrideLogs:           filtered.overrideLogs,
     requestRecommendations: getAllRequestRecommendations(),
     requests:               filtered.requests,
@@ -6761,10 +6808,21 @@ function buildDispatchAnalyticsModel() {
   });
 }
 
-/** Render (or re-render) the Dispatch Analytics section into its container. */
-function renderDispatchAnalyticsSection() {
+/** Render (or re-render) the Dispatch Analytics section into its container.
+ *  v1.20.9 — explicit navigation into this section always awaits the shared
+ *  admin engines first, so it shows real data rather than the degraded-null
+ *  state Home briefly tolerates on first load. */
+async function renderDispatchAnalyticsSection() {
   const host = document.getElementById('v2DispatchAnalyticsDashboard');
   if (host) {
+    // v1.20.9 — render-token guard (same idiom as home-router.js's __wspToken):
+    // if the user navigates away while ensureAdminEnginesLoaded() is still in
+    // flight, a superseding render/navigation wins and this stale one is
+    // dropped rather than painting into a now-hidden/abandoned container.
+    host.__renderToken = (host.__renderToken || 0) + 1;
+    const _token = host.__renderToken;
+    await ensureAdminEnginesLoaded();
+    if (host.__renderToken !== _token) return;
     injectDispatchAnalyticsStyles();
     try {
       const model = buildDispatchAnalyticsModel();
@@ -6939,12 +6997,19 @@ function buildDriverWellnessModel() {
   });
 }
 
-/** Render (or re-render) the Driver Wellness section into its container. */
-function renderDriverWellnessSection() {
+/** Render (or re-render) the Driver Wellness section into its container.
+ *  v1.20.9 — driver-wellness-dashboard.js (presentation only; the wellness
+ *  engine itself is unaffected) is now dynamically imported on first entry. */
+async function renderDriverWellnessSection() {
   const host = document.getElementById('v2DriverWellnessDashboard');
   if (!host) return;
-  injectDriverWellnessStyles();
+  // v1.20.9 — render-token guard; see renderDispatchAnalyticsSection for why.
+  host.__renderToken = (host.__renderToken || 0) + 1;
+  const _token = host.__renderToken;
   try {
+    const { renderDriverWellnessDashboard, injectDriverWellnessStyles } = await loadDriverWellnessDashboard();
+    if (host.__renderToken !== _token) return;
+    injectDriverWellnessStyles();
     const model = buildDriverWellnessModel();
     // Publish for the export hooks (mirrors the Dispatch Analytics exports).
     window._lastDriverWellnessModel = model;
@@ -6981,12 +7046,22 @@ function buildDriverPredictionInput() {
   };
 }
 
-/** Render (or re-render) the Driver Prediction dashboard into its container. */
-function renderDriverPredictionSection() {
+/** Render (or re-render) the Driver Prediction dashboard into its container.
+ *  v1.20.9 — driver-prediction-dashboard.js is now dynamically imported;
+ *  explicit navigation into this section also awaits the shared admin
+ *  engines first so buildDriverPredictionInput()'s dispatch/finance fields
+ *  are real, not degraded-null. */
+async function renderDriverPredictionSection() {
   const host = document.getElementById('v2DriverPredictionDashboard');
   if (!host) return;
-  injectDriverPredictionStyles();
+  // v1.20.9 — render-token guard; see renderDispatchAnalyticsSection for why.
+  host.__renderToken = (host.__renderToken || 0) + 1;
+  const _token = host.__renderToken;
   try {
+    const [{ renderDriverPredictionDashboard, injectDriverPredictionStyles }] =
+      await Promise.all([loadDriverPredictionDashboard(), ensureAdminEnginesLoaded()]);
+    if (host.__renderToken !== _token) return;
+    injectDriverPredictionStyles();
     const input = buildDriverPredictionInput();
     // The dashboard calls the Prediction Service exactly once and renders the
     // certified result; we publish the input for parity/diagnostics only.
@@ -7058,6 +7133,14 @@ function vehicleDrawerHandlers() {
   };
 }
 
+// v1.20.9 — vehicle-prediction-dashboard.js + simulation-panel.js are now
+// dynamically imported (see module-loader-registry.js). These module-scope
+// caches hold the resolved exports once renderVehiclePredictionSection() has
+// loaded them; by the time a user can click a prediction card (bound inside
+// that same render), both are already resolved.
+let _fnGetActiveSimulation = null;
+let _fnMountSimulationPanel = null;
+
 /** Open the vehicle detail drawer from the Prediction view — the SAME drawer as
  *  Inventory, enriched with the certified per-vehicle projection when available. */
 function openVehiclePredictionDetail(id) {
@@ -7076,7 +7159,7 @@ function openVehiclePredictionDetail(id) {
   openVehicleDetailDrawer(asset, {
     ...vehicleDrawerHandlers(),
     prediction: _vehiclePredictionById[String(id)],
-    simulation: getActiveSimulation(),
+    simulation: _fnGetActiveSimulation ? _fnGetActiveSimulation() : null,
   });
 }
 
@@ -7101,12 +7184,27 @@ function bindVehiclePredictionInteractions(host) {
   }
 }
 
-/** Render (or re-render) the Vehicle Prediction dashboard into its container. */
-function renderVehiclePredictionSection() {
+/** Render (or re-render) the Vehicle Prediction dashboard into its container.
+ *  v1.20.9 — loads vehicle-prediction-dashboard.js + simulation-panel.js on
+ *  first entry into this view (dynamic import(), memoized thereafter). Also
+ *  ensures the shared admin analytics engines (dispatch/petty/exec/prediction)
+ *  are loading in the background so buildVehiclePredictionInput() → …
+ *  buildDriverPredictionInput() has real (not degraded) dispatch/petty data. */
+async function renderVehiclePredictionSection() {
   const host = document.getElementById('v2VehiclePredictionDashboard');
   if (!host) return;
-  injectVehiclePredictionStyles();
+  // v1.20.9 — render-token guard; see renderDispatchAnalyticsSection for why.
+  host.__renderToken = (host.__renderToken || 0) + 1;
+  const _token = host.__renderToken;
   try {
+    const [
+      { renderVehiclePredictionDashboard, injectVehiclePredictionStyles, getCertifiedVehiclePredictions },
+      { mountSimulationPanel, getActiveSimulation },
+    ] = await Promise.all([loadVehiclePrediction(), loadSimulationPanel(), ensureAdminEnginesLoaded()]);
+    if (host.__renderToken !== _token) return;
+    _fnGetActiveSimulation = getActiveSimulation;
+    _fnMountSimulationPanel = mountSimulationPanel;
+    injectVehiclePredictionStyles();
     const input = buildVehiclePredictionInput();
     // The dashboard calls the Prediction Service exactly once and renders the
     // certified result; we publish the input for parity/diagnostics only.
@@ -7210,11 +7308,14 @@ function applyVehicleView(overviewRow) {
 /** Best-effort petty model — included ONLY when the petty store is already
  *  loaded (e.g. the Petty Cash Center was opened). Never forces a load, so this
  *  stays synchronous and side-effect-free. When absent, computeExecutiveAnalytics
- *  cleanly re-normalizes the Operational Health Score over driver + vehicle. */
+ *  cleanly re-normalizes the Operational Health Score over driver + vehicle.
+ *  v1.20.9 — computePettyCashAnalytics is now lazy-loaded (ensureAdminEnginesLoaded);
+ *  degrades to null the same way an unloaded petty store already did. */
 function buildPettyAnalyticsModelIfReady() {
   try {
     if (typeof pcReady !== 'function' || !pcReady()) return null;
-    return computePettyCashAnalytics({
+    if (!_fnComputePettyCashAnalytics) { ensureAdminEnginesLoaded(); return null; }
+    return _fnComputePettyCashAnalytics({
       expenses: getPcExpenses(), nors: getPcNors(), activeCycle: getPcActiveCycle(),
       settings: getPcSettings(), bidangRoster: bidangRoster(), range: '30d',
     });
@@ -7222,7 +7323,11 @@ function buildPettyAnalyticsModelIfReady() {
 }
 
 /** Aggregate the existing engine outputs into the executive model. Each domain
- *  is built by the SAME function its sibling page uses — no duplicated math. */
+ *  is built by the SAME function its sibling page uses — no duplicated math.
+ *  v1.20.9 — stays fully SYNCHRONOUS on purpose: this feeds buildHomeContext()
+ *  (Home's first paint, every admin session), so it must never block on a
+ *  dynamic import. computeExecutiveAnalytics degrades to null (via `safe`)
+ *  until ensureAdminEnginesLoaded() resolves, then Home is refreshed in place. */
 function buildExecutiveDashboardModel() {
   const safe = (label, fn) => { try { return fn(); } catch (err) { console.warn(`[ExecutiveDashboard] ${label} unavailable`, err); return null; } };
   const dispatch       = safe('dispatch', () => buildDispatchAnalyticsModel());
@@ -7233,8 +7338,9 @@ function buildExecutiveDashboardModel() {
   // The ONE cross-domain verdict — Operational Health Score from the existing
   // Executive Score Engine (driver + petty). Driver model via the shared builder.
   const exec = safe('exec', () => {
+    if (!_fnComputeExecutiveAnalytics) { ensureAdminEnginesLoaded(); return null; }
     const driverModel = computeDriverModelForRange('30d', {});
-    return computeExecutiveAnalytics({ driverModel, pettyModel: petty, meta: { periodLabel: '30 Hari' } });
+    return _fnComputeExecutiveAnalytics({ driverModel, pettyModel: petty, meta: { periodLabel: '30 Hari' } });
   });
   // Engineering flows into the executive model from the SAME analytics builder its
   // own page uses, over the LIVE store — so create/verify/postpone/finish changes
@@ -7243,12 +7349,21 @@ function buildExecutiveDashboardModel() {
   return { generatedAt: new Date().toISOString(), exec, dispatch, recommendation, wellness, fleet, petty, engineering };
 }
 
-/** Render (or re-render) the Executive Analytics dashboard into its container. */
-function renderExecutiveDashboardSection() {
+/** Render (or re-render) the Executive Analytics dashboard into its container.
+ *  v1.20.9 — executive-dashboard.js is now dynamically imported; explicit
+ *  navigation into this section also awaits the shared admin engines first
+ *  so buildExecutiveDashboardModel() shows real data, not degraded-null. */
+async function renderExecutiveDashboardSection() {
   const host = document.getElementById('v2ExecutiveDashboard');
   if (!host) return;
-  injectExecutiveDashboardStyles();
+  // v1.20.9 — render-token guard; see renderDispatchAnalyticsSection for why.
+  host.__renderToken = (host.__renderToken || 0) + 1;
+  const _token = host.__renderToken;
   try {
+    const [{ renderExecutiveDashboard, injectExecutiveDashboardStyles }] =
+      await Promise.all([loadExecutiveDashboard(), ensureAdminEnginesLoaded()]);
+    if (host.__renderToken !== _token) return;
+    injectExecutiveDashboardStyles();
     const model = buildExecutiveDashboardModel();
     window._lastExecutiveDashboardModel = model;
     // Publish for the export hooks (mirrors the sibling analytics exports).
