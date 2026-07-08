@@ -18,8 +18,20 @@
 
 'use strict';
 
-/** Default Formula-V1 weights (Executive Operational Health Score). */
+/** Default Formula-V1 weights (Executive Operational Health Score). Retained for
+ *  callers that still compose the 3-domain score; superseded by V2 below. */
 export const SCORE_WEIGHTS_V1 = Object.freeze({ driverOps: 0.4, vehicleUtil: 0.3, pettyCash: 0.3 });
+
+/** Formula-V2 weights (v1.21.0 — Executive Command Center: Operational Briefing).
+ *  Five operational pillars, Driver Operations and Engineering Operations weighted
+ *  as equal core pillars (transport + facilities), Fleet/Request/Petty Cash as
+ *  supporting domains. `calculateScore` is generic over any weights object — a
+ *  future domain (Inventory, Procurement, Engineering Assets, ...) is added here
+ *  by adding one weight key + one sub-score helper, never by redesigning the
+ *  engine. */
+export const SCORE_WEIGHTS_V2 = Object.freeze({
+  driverOps: 0.25, engineering: 0.25, vehicleUtil: 0.20, request: 0.15, pettyCash: 0.15,
+});
 
 /** Petty Cash Health Score weights (v1.16.2 recomposition, spec-locked). */
 export const PC_SCORE_WEIGHTS_V1 = Object.freeze({ compliance: 0.35, budget: 0.30, cash: 0.25, stability: 0.10 });
@@ -131,6 +143,40 @@ export function driverOpsScore({ compRate = 0, driverUtilization = 0, totalTrips
 export function vehicleUtilScore({ vehiclesWithTrips = 0, activeVehicles = 0 } = {}) {
   if (!(Number(activeVehicles) > 0)) return null;
   return clamp100((vehiclesWithTrips / activeVehicles) * 100);
+}
+
+/**
+ * Engineering Operations sub-score (v1.21.0). Mirrors `driverOpsScore`'s
+ * contract: completion stays dominant, overdue backlog is the penalty term.
+ * Returns null when there is no operational data (totalAssignments === 0) —
+ * No Data ≠ 0. Reuses ONLY fields `buildEngineeringAnalytics` already computes
+ * (`completedAssignments`, `totalAssignments`, `overdueAssignments.count`) —
+ * no new query/metric/engine.
+ * @param {{completedAssignments?:number, totalAssignments?:number, overdueCount?:number}} m
+ * @returns {number|null}
+ */
+export function engineeringOpsScore({ completedAssignments = 0, totalAssignments = 0, overdueCount = 0 } = {}) {
+  if (!(Number(totalAssignments) > 0)) return null;
+  const completionRate = clamp100((completedAssignments / totalAssignments) * 100);
+  const overdueRate = clamp100((overdueCount / totalAssignments) * 100);
+  return Math.round(completionRate * 0.75 + (100 - overdueRate) * 0.25);
+}
+
+/**
+ * Request Domain sub-score (v1.21.0 — FOUNDATION V1). No domain-wide Request
+ * analytics model exists anywhere in the codebase yet (only per-request
+ * scoring in request-intelligence-service.js), so this is deliberately a
+ * single-factor metric — share of requests already resolved (not pending) —
+ * rather than a new engine. Returns null when there is no data
+ * (totalRequests === 0). Extensible later (e.g. SLA/turnaround) without
+ * changing this function's shape.
+ * @param {{totalRequests?:number, pendingCount?:number}} m
+ * @returns {number|null}
+ */
+export function requestScore({ totalRequests = 0, pendingCount = 0 } = {}) {
+  if (!(Number(totalRequests) > 0)) return null;
+  const resolvedRatio = (totalRequests - pendingCount) / totalRequests;
+  return clamp100(resolvedRatio * 100);
 }
 
 /**

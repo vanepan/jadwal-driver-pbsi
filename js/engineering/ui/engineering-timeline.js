@@ -30,6 +30,7 @@ const EVENT_META = {
   [TIMELINE_EVENT.VERIFIED]: { icon: 'check-circle', tone: 'accent', label: 'Pekerjaan diverifikasi · ditutup', status: 'Terverifikasi' },
   [TIMELINE_EVENT.CANCELLED]: { icon: 'x-circle', tone: 'crit', label: 'Penugasan dibatalkan', status: 'Dibatalkan' },
   [TIMELINE_EVENT.ARCHIVED]: { icon: 'file', tone: 'text-faint', label: 'Diarsipkan' },
+  [TIMELINE_EVENT.WORK_REPORT_SUBMITTED]: { icon: 'check-circle', tone: 'c-green', label: 'Laporan pekerjaan dicatat', status: 'Selesai' },
 };
 export const eventMeta = (type) => EVENT_META[type] || EVENT_META[TIMELINE_EVENT.PUBLISHED];
 

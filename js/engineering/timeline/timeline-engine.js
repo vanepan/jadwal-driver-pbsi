@@ -40,6 +40,12 @@ export const TIMELINE_EVENT = Object.freeze({
   VERIFIED: 'verified',
   CANCELLED: 'cancelled',
   ARCHIVED: 'archived',
+  // v1.21.2 — an Operational Work Report ("Catat Pekerjaan") has no lifecycle
+  // of its own (see engineering-work-report.js): it is a single completed
+  // record, never a multi-stage assignment. It gets exactly ONE synthesized
+  // event of this type (see `workReportTimelineEvent` below) so it can be
+  // represented in the SAME timeline model/renderer as assignment events.
+  WORK_REPORT_SUBMITTED: 'work_report_submitted',
 });
 
 const KNOWN_EVENT_TYPES = new Set(Object.values(TIMELINE_EVENT));
@@ -147,4 +153,30 @@ export function latestEvent(timeline) {
 /** The first event of a type (e.g. the CREATED / PUBLISHED marker); null absent. */
 export function firstEventOfType(timeline, type) {
   return eventsOfType(timeline, type)[0] || null;
+}
+
+/**
+ * Synthesize the ONE timeline event an Operational Work Report ("Catat
+ * Pekerjaan") contributes to the unified timeline model (v1.21.2). Work
+ * reports are NOT assignments and carry no `.timeline` array of their own
+ * (see engineering-work-report.js) — this is the single place that bridges
+ * a persisted report into the SAME event shape assignment lifecycle events
+ * use, so every consumer (Timeline page, Executive Timeline) renders both
+ * through the ONE existing renderer/model instead of a parallel one.
+ *
+ * Deterministic: keyed off the report's own id/createdTime, never a random
+ * id or "now" — calling this twice for the same report yields an
+ * identical event, safe to recompute at render time on every pass.
+ * @param {Object} report  a normalized work-report record (createWorkReportModel shape)
+ * @returns {?TimelineEvent}
+ */
+export function workReportTimelineEvent(report) {
+  if (!isPlainObject(report) || !report.id) return null;
+  return createTimelineEvent(TIMELINE_EVENT.WORK_REPORT_SUBMITTED, {
+    id: `wrevt-${report.id}`,
+    now: report.createdTime,
+    actor: report.creator,
+    metadata: { reportId: report.id, reportNumber: report.reportNumber, category: report.category },
+    notes: report.category ? `Kategori: ${report.category}` : '',
+  });
 }

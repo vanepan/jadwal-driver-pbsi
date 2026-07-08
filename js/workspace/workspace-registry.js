@@ -33,6 +33,7 @@ export const WORKSPACES = {
     widgets: [
       'exec-hero',
       'exec-priority',
+      'exec-attention',
       'exec-decision',
       'exec-recommendation',
       'exec-simulation',

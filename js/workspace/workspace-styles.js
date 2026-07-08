@@ -153,6 +153,12 @@ const CSS = `
 .wsp-hero__score--warn .wsp-hero__scoreval { color: var(--wsp-warn); }
 .wsp-hero__score--danger .wsp-hero__scoreval { color: var(--wsp-danger); }
 .wsp-hero__score--info .wsp-hero__scoreval { color: var(--wsp-info); }
+/* Explainability breakdown (v1.21.0 Objective 9) — the 5 Health Score domains */
+.wsp-hero__breakdown { display: flex; flex-direction: column; gap: 3px; margin-top: 8px; width: 100%; }
+.wsp-hero__bd-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: .74rem; }
+.wsp-hero__bd-label { color: var(--text-faint); }
+.wsp-hero__bd-weight { color: var(--text-ghost); }
+.wsp-hero__bd-value { font-weight: 700; color: var(--text-dim); font-variant-numeric: tabular-nums; }
 .wsp-hero__summary { grid-area: summary; align-self: end; }
 .wsp-hero__summary-title { font-size: .7rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 6px; }
 .wsp-hero__list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 4px 18px; }
@@ -210,6 +216,12 @@ const CSS = `
 .wsp-summary__status--good { background: color-mix(in srgb, var(--wsp-good) 14%, transparent); color: var(--wsp-good); }
 .wsp-summary__status--warn { background: color-mix(in srgb, var(--wsp-warn) 16%, transparent); color: var(--wsp-warn); }
 .wsp-summary__status--danger { background: color-mix(in srgb, var(--wsp-danger) 14%, transparent); color: var(--wsp-danger); }
+.wsp-summary--static { cursor: default; }
+.wsp-summary--static:hover { border-color: var(--border); box-shadow: var(--shadow-sm); }
+
+/* Operational Snapshot — Today/Week/Month period sections (v1.21.0) */
+.wsp-snapshot-period + .wsp-snapshot-period { margin-top: 16px; }
+.wsp-snapshot-period__label { font-size: .68rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--text-faint); margin: 0 0 8px; }
 
 /* Activity Feed — grouped */
 .wsp-feed { display: flex; flex-direction: column; gap: 4px; }

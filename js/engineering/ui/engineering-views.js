@@ -27,6 +27,8 @@ import {
 import { renderTimeline, eventMeta, formatEventTime } from './engineering-timeline.js';
 import { pageHeader, sectionHeader, emptyState, renderAssignmentCard } from './engineering-queue.js';
 import { resolveAssignedUsers } from '../personnel/engineering-personnel.js';
+import { WORK_REPORT_KIND } from '../models/engineering-work-report.js';
+import { workReportTimelineEvent } from '../timeline/timeline-engine.js';
 
 /** Short comma-joined display of designated personnel (resolved from Users). */
 function personnelNames(record) {
@@ -36,7 +38,20 @@ function personnelNames(record) {
 }
 
 const DONE = new Set([STATUS.VERIFIED, STATUS.COMPLETED]);
-const latestTs = (a) => (a.timeline || []).reduce((mx, e) => Math.max(mx, Date.parse(e.timestamp) || 0), 0);
+// v1.21.2 — a Work Report has no `.timeline` array (it is a single completed
+// record, not a lifecycle); fall back to its own createdTime so it sorts
+// correctly alongside assignments in the merged Timeline feed.
+const latestTs = (a) => {
+  const events = a.timeline || [];
+  if (events.length) return events.reduce((mx, e) => Math.max(mx, Date.parse(e.timestamp) || 0), 0);
+  return Date.parse(a.createdTime || a.updatedTime || 0) || 0;
+};
+
+/** A Work Report tagged for the merged Timeline feed — `status: COMPLETED` so
+ *  it satisfies the SAME status-based filters (TL_FILTERS, DONE) real
+ *  assignments use, with zero new filter logic. Presentation-only tag, never
+ *  persisted (the report's own stored record is untouched). */
+const asTimelineItem = (r) => ({ ...r, status: STATUS.COMPLETED });
 
 /* ── Timeline page ────────────────────────────────────────────────────── */
 const TL_FILTERS = [
@@ -54,6 +69,12 @@ export function renderTimelinePage(all, ctx) {
   const me = ctx.me || {};
   let list = all.filter((a) => a.status !== STATUS.ARCHIVED);
   if (personal) list = list.filter((a) => isMyAssignment(a, me));
+
+  // v1.21.2 — Work Reports ("Catat Pekerjaan") are operational activity too;
+  // merge them into the SAME feed instead of a separate/parallel timeline.
+  let reports = (Array.isArray(ctx.workReports) ? ctx.workReports : []).map(asTimelineItem);
+  if (personal) reports = reports.filter((r) => r.assignedUsers && r.assignedUsers[me.id]);
+  list = [...list, ...reports];
   list.sort((x, y) => latestTs(y) - latestTs(x));
 
   const filterId = (ctx.filters && ctx.filters.tl) || 'semua';
@@ -75,7 +96,7 @@ export function renderTimelinePage(all, ctx) {
     ${pageHeader('ENGINEERING OPERATIONS', personal ? 'Timeline Saya' : 'Timeline', lede)}
     <div class="eng-filterbar"><div class="eng-chips">${chips}</div><span class="eng-newest">${icon('history', { size: 14 })} Terbaru dahulu</span></div>
     ${rows.length === 0 ? emptyState('Tidak ada aktivitas', 'Tidak ada penugasan pada filter ini. Coba filter lain.')
-      : `<div class="eng-tl-cards">${rows.map((a) => timelineCard(a, isOpen(a), ctx)).join('')}</div>`}
+      : `<div class="eng-tl-cards">${rows.map((a) => a.kind === WORK_REPORT_KIND ? workReportCard(a, isOpen(a), ctx) : timelineCard(a, isOpen(a), ctx)).join('')}</div>`}
   </div>`;
 }
 
@@ -101,6 +122,35 @@ function timelineCard(a, open, ctx) {
           <span class="eng-tlc-cdot" data-tone="${eventMeta(latest.type).tone}">${icon(eventMeta(latest.type).icon, { size: 11, tone: eventMeta(latest.type).tone })}</span>
           <span class="eng-tlc-clabel">${esc(eventMeta(latest.type).label)}${latest.actor && latest.actor.name ? ` — ${esc(latest.actor.name)}` : ''}</span>
           <span class="eng-tlc-ccount">${(a.timeline || []).length} aktivitas</span></div>` : '')}
+  </div>`;
+}
+
+/* v1.21.2 — Work Report card: same visual family as timelineCard, reusing
+   catTile/priorityTag/statusPill/renderTimeline verbatim. A report has no
+   participants/lifecycle, so it renders its ONE synthesized event
+   (workReportTimelineEvent) and never wires an "eng-open" detail-drawer
+   action — getAssignment(reportId) would resolve to nothing; the drawer is
+   assignment-only, out of scope for this hotfix. */
+function workReportCard(r, open, ctx) {
+  const ev = workReportTimelineEvent(r);
+  const room = (r.location || '').split(' · ').slice(-1)[0] || r.room || '';
+  const names = personnelNames(r);
+  return `<div class="eng-tlc" data-open="${open}">
+    <div class="eng-tlc-head" data-act="eng-tl-toggle" data-id="${esc(r.id)}">
+      ${catTile(r.category, 44, 13)}
+      <div class="eng-tlc-main">
+        <div class="eng-tlc-badges"><span class="eng-card-id">${esc(r.reportNumber || r.id)}</span>${statusPill(STATUS.COMPLETED)}${priorityTag(r.priority)}</div>
+        <div class="eng-tlc-title">${esc(r.title)}</div>
+        <div class="eng-tlc-meta"><span class="eng-tlc-metalbl">Ruang</span> <span>${esc(room)}</span>
+          ${names ? `<span class="eng-tlc-metalbl">Teknisi</span> <span>${esc(names)}</span>` : '<span class="eng-muted-inline">Tidak ada teknisi tercatat</span>'}</div>
+      </div>
+      <div class="eng-tlc-right"><span class="eng-tlc-time">${esc(formatEventTime(ev.timestamp, ctx.now))}</span>${icon('chevron-down', { size: 16, cls: 'eng-chev' })}</div>
+    </div>
+    ${open ? `<div class="eng-tlc-body">${renderTimeline([ev], { dense: true, now: ctx.now })}</div>`
+      : `<div class="eng-tlc-collapsed" data-act="eng-tl-toggle" data-id="${esc(r.id)}">
+          <span class="eng-tlc-cdot" data-tone="${eventMeta(ev.type).tone}">${icon(eventMeta(ev.type).icon, { size: 11, tone: eventMeta(ev.type).tone })}</span>
+          <span class="eng-tlc-clabel">${esc(eventMeta(ev.type).label)}${ev.actor && ev.actor.name ? ` — ${esc(ev.actor.name)}` : ''}</span>
+          <span class="eng-tlc-ccount">1 aktivitas</span></div>`}
   </div>`;
 }
 

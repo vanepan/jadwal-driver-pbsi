@@ -100,7 +100,18 @@ function buildModels() {
   // transparency facts bake the SAME horizon the dashboard shows (and the PDF,
   // which reads this stored model, stays in parity).
   const meta = { periodLabel: EXEC_PERIOD_LABELS[executiveFilterState.period] || '' };
-  return { pettyModel, driverModel, exec: computeExecutiveAnalytics({ driverModel, pettyModel, meta }) };
+  // v1.21.0 — Engineering + Request via the SAME window bridge pattern as the
+  // driver model above, so this page's Health Score matches Home's exactly.
+  let engineeringModel = null;
+  try { if (typeof window.__computeEngineeringAnalyticsModel === 'function') engineeringModel = window.__computeEngineeringAnalyticsModel(); }
+  catch (err) { console.warn('[AnalyticsExecutive] engineering model unavailable', err); }
+  let requestList = [];
+  try { if (typeof window.__getRequestList === 'function') requestList = window.__getRequestList() || []; }
+  catch (err) { console.warn('[AnalyticsExecutive] request list unavailable', err); }
+  return {
+    pettyModel, driverModel,
+    exec: computeExecutiveAnalytics({ driverModel, pettyModel, engineeringModel, requestList, meta }),
+  };
 }
 
 function heroBlock(exec) {

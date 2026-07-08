@@ -213,6 +213,7 @@ import {
 import { renderEngineeringAnalyticsView } from './analytics/views/analytics-engineering-view.js';
 import { buildEngineeringAnalytics } from './engineering/analytics/engineering-analytics.js';
 import { listAssignments as engListAssignments, listWorkReports as engListWorkReports } from './engineering/stores/engineering-store.js';
+import { workReportTimelineEvent } from './engineering/timeline/timeline-engine.js';
 import './exports/analytics/engineering-analytics-export.js';  // registers window.exportEngineeringAnalytics* hooks
 // v1.18.8: mountAnalyticsExecutive is retired — the "Analytics Executive" entry
 // now renders the new Executive Analytics Dashboard sibling section (below). The
@@ -227,7 +228,13 @@ import './exports/analytics/engineering-analytics-export.js';  // registers wind
 // Recommendation). The prediction service caches by input, so no extra work.
 import { recommendationBoard, decisionSupport, noRecommendationState } from './recommendation/recommendation-summary.js';
 import { allRecommendations } from './recommendation/fleet-recommendation-engine.js';
-import { bidangRoster } from './petty-cash/petty-cash-service.js';
+// v1.21.0 — Engineering/Request have no prediction layer, so their recommendations
+// come from a separate, deterministic, non-prediction rule set (see file header).
+// Merged into the SAME `recs` array the widgets already consume — no new UI shape.
+import { engineeringRecommendations, requestRecommendations } from './recommendation/operational-recommendations.js';
+import { bidangRoster, computeMetrics as computePettyCashMetrics } from './petty-cash/petty-cash-service.js';
+import { registerChangeListener as registerPettyChangeListener } from './petty-cash/petty-cash-store.js';
+import { registerEngineeringChangeListener } from './engineering/stores/engineering-store.js';
 import {
   isReady as pcReady, getExpenses as getPcExpenses, getNors as getPcNors,
   getActiveCycle as getPcActiveCycle, getSettings as getPcSettings,
@@ -1459,6 +1466,7 @@ function buildHomeContext() {
     logs: auditLogs,
     models: null,
     recommendations: null,
+    engineeringEvents: [],
     actions: {
       openFormModal: () => openFormModal(),
       openRequestFormModal: () => openRequestFormModal(),
@@ -1473,6 +1481,7 @@ function buildHomeContext() {
       navPettyCashNor: () => navPettyCash('norGenerate'),
       navVehicles: () => navManajemenKendaraan(),
       navDriverOps: () => navJadwalDriver(),
+      navEngineering: () => navEngineering(),
       navHome: () => navHome(),
     },
   };
@@ -1483,7 +1492,24 @@ function buildHomeContext() {
   if (isAdmin()) {
     try { ctx.models = buildExecutiveDashboardModel(); }
     catch (err) { console.warn('[Home] executive model unavailable', err); ctx.models = null; }
-    ctx.recommendations = buildExecutiveRecommendations();
+    ctx.recommendations = buildExecutiveRecommendations(ctx.models?.engineering);
+    // v1.21.0 Objective 5 — flatten Engineering's per-assignment timelines (the
+    // SAME store buildExecutiveDashboardModel() already reads) so the Activity
+    // widget can merge them with the audit-log feed chronologically.
+    // v1.21.2 — Work Reports ("Catat Pekerjaan") have no `.timeline` of their
+    // own (they are single completed records, not assignments); each one
+    // contributes its ONE synthesized event via workReportTimelineEvent (the
+    // SAME builder the Engineering Timeline page now uses — one event model,
+    // one source of truth), tagged with `assignmentTitle` so the widget's
+    // existing meta-suffix rendering needs no special-casing.
+    try {
+      const assignmentEvents = engListAssignments().flatMap((a) =>
+        (a.timeline || []).map((e) => ({ ...e, assignmentId: a.id, assignmentTitle: a.title })));
+      const reportEvents = engListWorkReports()
+        .map((r) => { const e = workReportTimelineEvent(r); return e && { ...e, assignmentId: r.id, assignmentTitle: r.title }; })
+        .filter(Boolean);
+      ctx.engineeringEvents = [...assignmentEvents, ...reportEvents];
+    } catch (err) { console.warn('[Home] engineering events unavailable', err); ctx.engineeringEvents = []; }
   }
   return ctx;
 }
@@ -1496,29 +1522,35 @@ function buildHomeContext() {
  * same certification gate the Prediction dashboards use (never invent a forecast).
  * @returns {{certified:boolean, confidence?:Object, board?:Object, decisions?:Array, recs?:Array, positive?:Object}}
  */
-function buildExecutiveRecommendations() {
+function buildExecutiveRecommendations(engineeringModel) {
+  // v1.21.0 — deterministic, non-prediction recs (Engineering + Request) are
+  // computed unconditionally: they must not wait on Fleet prediction certification.
+  const operationalRecs = [
+    ...engineeringRecommendations(engineeringModel),
+    ...requestRecommendations(requests),
+  ];
   try {
     // v1.20.9 — getPrediction (prediction-service.js) is now lazy-loaded as part
     // of ensureAdminEnginesLoaded(); degrade to uncertified until it resolves.
-    if (!_fnGetPredictionForHome) { ensureAdminEnginesLoaded(); return { certified: false, board: null, decisions: [], recs: [] }; }
+    if (!_fnGetPredictionForHome) { ensureAdminEnginesLoaded(); return { certified: false, board: null, decisions: [], recs: operationalRecs }; }
     const input = buildDriverPredictionInput();
     const result = _fnGetPredictionForHome(input);
     const confidence = (result && result.metadata && result.metadata.predictionConfidence) || { score: 0, level: 'LOW' };
     const model = result && result.model;
     const vehicles = model && Array.isArray(model.vehicles) ? model.vehicles : [];
     const certified = !!(result && result.ok && model && confidence.level !== 'LOW' && vehicles.length > 0);
-    if (!certified) return { certified: false, board: null, decisions: [], recs: [] };
+    if (!certified) return { certified: false, board: null, decisions: [], recs: operationalRecs };
     return {
       certified: true,
       confidence,
       board: recommendationBoard(model),      // { critical, upcoming, optimization, healthy, counts, isHealthyFleet }
       decisions: decisionSupport(model),       // executive Insight[]
-      recs: allRecommendations(model),         // Recommendation[] (vehicle actions + optimizations)
+      recs: [...allRecommendations(model), ...operationalRecs],  // Fleet + Engineering + Request
       positive: noRecommendationState(model),  // positive "operating normally" copy when healthy
     };
   } catch (err) {
     console.warn('[Home] executive recommendations unavailable', err);
-    return { certified: false, board: null, decisions: [], recs: [] };
+    return { certified: false, board: null, decisions: [], recs: operationalRecs };
   }
 }
 
@@ -4129,10 +4161,15 @@ function initV2AdministrationWorkspace() {
   });
   registerVehiclesChangeListener(() => {
     if (currentWorkspace === 'administration' && activeAdminSection === 'vehicles') renderV2AdminWorkspace();
+    refreshHomeWorkspace(); // v1.21.0 — Fleet feeds the Health Score + Attention Center
   });
   registerSettingsChangeListener(() => {
     if (activeAdminSection === 'analytics') refreshAnalyticsDisplay();
   });
+  // v1.21.0 Objective 11 — Petty Cash and Engineering both feed the Executive
+  // Health Score + Attention Center; neither previously refreshed Home.
+  registerPettyChangeListener(() => refreshHomeWorkspace());
+  registerEngineeringChangeListener(() => refreshHomeWorkspace());
 
   initDriverFormModal();
   initVehicleFormModal();
@@ -7335,18 +7372,26 @@ function buildExecutiveDashboardModel() {
   const wellness       = safe('wellness', () => buildDriverWellnessModel());
   const fleet          = safe('fleet', () => computeFleetAssetModel({ vehicles: getVehicles() }));
   const petty          = buildPettyAnalyticsModelIfReady();
-  // The ONE cross-domain verdict — Operational Health Score from the existing
-  // Executive Score Engine (driver + petty). Driver model via the shared builder.
-  const exec = safe('exec', () => {
-    if (!_fnComputeExecutiveAnalytics) { ensureAdminEnginesLoaded(); return null; }
-    const driverModel = computeDriverModelForRange('30d', {});
-    return _fnComputeExecutiveAnalytics({ driverModel, pettyModel: petty, meta: { periodLabel: '30 Hari' } });
-  });
   // Engineering flows into the executive model from the SAME analytics builder its
   // own page uses, over the LIVE store — so create/verify/postpone/finish changes
   // are reflected on the next render with no manual refresh and no duplicated math.
+  // Computed BEFORE `exec` (v1.21.0) because the Health Score now consumes it.
   const engineering = safe('engineering', () => buildEngineeringAnalytics(engListAssignments(), { now: Date.now(), workReports: engListWorkReports() }));
-  return { generatedAt: new Date().toISOString(), exec, dispatch, recommendation, wellness, fleet, petty, engineering };
+  // The ONE cross-domain verdict — Operational Health Score from the existing
+  // Executive Score Engine (driver + engineering + fleet + request + petty, v1.21.0).
+  // Driver model via the shared builder; requests read from the module-level store.
+  const exec = safe('exec', () => {
+    if (!_fnComputeExecutiveAnalytics) { ensureAdminEnginesLoaded(); return null; }
+    const driverModel = computeDriverModelForRange('30d', {});
+    return _fnComputeExecutiveAnalytics({
+      driverModel, pettyModel: petty, engineeringModel: engineering, requestList: requests,
+      meta: { periodLabel: '30 Hari' },
+    });
+  });
+  // Petty Cash low-balance status (v1.21.0 Attention Center) — reuses the SAME
+  // computeMetrics() the Petty Cash Center itself calls; no new threshold logic.
+  const pettyLowBalance = safe('pettyLowBalance', () => (typeof pcReady === 'function' && pcReady()) ? computePettyCashMetrics() : null);
+  return { generatedAt: new Date().toISOString(), exec, dispatch, recommendation, wellness, fleet, petty, engineering, pettyLowBalance };
 }
 
 /** Render (or re-render) the Executive Analytics dashboard into its container.
@@ -7617,6 +7662,12 @@ function computeDriverModelForRange(dateRange, scope = {}) {
 if (typeof window !== 'undefined') {
   window.__computeDriverAnalyticsModel = computeDriverModelForRange;
   window.__APP_VERSION__ = APP_VERSION;
+  // v1.21.0 — same cross-module bridge pattern as __computeDriverAnalyticsModel:
+  // lets analytics-executive-view.js (a separate module, no access to app.js's
+  // module-level stores) compute the SAME Engineering model + request list Home
+  // uses, so the Operational Health Score is byte-identical on both surfaces.
+  window.__computeEngineeringAnalyticsModel = () => buildEngineeringAnalytics(engListAssignments(), { now: Date.now(), workReports: engListWorkReports() });
+  window.__getRequestList = () => requests;
 }
 
 function refreshAnalyticsDisplay() {

@@ -29,6 +29,7 @@ export const WIDGETS = {
      band), card (default titled card). */
   'exec-hero':           { id: 'exec-hero',           title: 'Ringkasan Eksekutif',    span: 'full', variant: 'hero',    group: 'executive' },
   'exec-priority':       { id: 'exec-priority',       title: 'Prioritas Operasional',  span: 'full', variant: 'section', group: 'executive' },
+  'exec-attention':      { id: 'exec-attention',      title: 'Pusat Perhatian',        span: 'full', variant: 'section', group: 'executive' },
   'exec-decision':       { id: 'exec-decision',       title: 'Pusat Keputusan',        span: 2,      variant: 'card',    group: 'executive' },
   'exec-recommendation': { id: 'exec-recommendation', title: 'Rekomendasi Hari Ini',   span: 1,      variant: 'card',    group: 'executive' },
   'exec-simulation':     { id: 'exec-simulation',     title: 'Pusat Simulasi',         span: 1,      variant: 'card',    group: 'executive' },

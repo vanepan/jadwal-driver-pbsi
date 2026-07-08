@@ -11,7 +11,8 @@
 'use strict';
 
 import {
-  calculateScore, healthLevel, driverOpsScore, vehicleUtilScore, SCORE_WEIGHTS_V1,
+  calculateScore, healthLevel, driverOpsScore, vehicleUtilScore, engineeringOpsScore,
+  requestScore, SCORE_WEIGHTS_V2,
 } from './engines/executive-score-engine.js';
 import { generateInsights, generateNarrative } from './engines/insight-engine.js';
 
@@ -70,16 +71,30 @@ function pettyNarrative(components, levelLabel, hasScore) {
   return `Kesehatan petty cash ${lvl} — ditopang ${strongest.label.toLowerCase()} (${strongest.score}) namun perlu perhatian pada ${weakest.label.toLowerCase()} (${weakest.score}).`;
 }
 
+/** Display metadata for the five Operational Health Score V2 components, in
+ *  formula-weight order (v1.21.0). Drives the Explainability breakdown. */
+const SCORE_COMPONENT_META = [
+  { key: 'driverOps', label: 'Operasional Driver', weightPct: 25 },
+  { key: 'engineering', label: 'Operasional Teknisi', weightPct: 25 },
+  { key: 'vehicleUtil', label: 'Utilisasi Armada', weightPct: 20 },
+  { key: 'request', label: 'Permintaan', weightPct: 15 },
+  { key: 'pettyCash', label: 'Petty Cash', weightPct: 15 },
+];
+
 /**
  * Compose the executive model.
  * @param {Object} ctx
- * @param {Object} ctx.driverModel - AnalyticsModel from analytics-engine.js (may be null)
- * @param {Object} ctx.pettyModel  - model from petty-cash-analytics.js (may be null)
+ * @param {Object} ctx.driverModel      - AnalyticsModel from analytics-engine.js (may be null)
+ * @param {Object} ctx.pettyModel       - model from petty-cash-analytics.js (may be null)
+ * @param {Object} ctx.engineeringModel - model from engineering-analytics.js buildEngineeringAnalytics (may be null)
+ * @param {Array}  ctx.requestList      - raw requests array (may be null/undefined)
  * @returns {Object} ExecutiveAnalyticsModel
  */
-export function computeExecutiveAnalytics({ driverModel, pettyModel, meta } = {}) {
+export function computeExecutiveAnalytics({ driverModel, pettyModel, engineeringModel, requestList, meta } = {}) {
   const dk = (driverModel && driverModel.kpis) || {};
   const pc = pettyModel || {};
+  const eng = engineeringModel || {};
+  const reqList = Array.isArray(requestList) ? requestList : [];
   const pcCycle = pc.cycle || {};
   const pcHero = pc.hero || {};
   const pcBudget = pc.budget || {};
@@ -126,12 +141,22 @@ export function computeExecutiveAnalytics({ driverModel, pettyModel, meta } = {}
   // the existing calculateScore re-normalization drop the petty component cleanly
   // so the Executive score stays stable (B3).
   const pettyCashV2 = pc.healthScore == null ? null : clampPct(pc.healthScore);
+
+  // ── Engineering + Request KPIs (v1.21.0) ─────────────────────────────────
+  const engTotal = num(eng.totalAssignments);
+  const engCompleted = num(eng.completedAssignments);
+  const engOverdue = num((eng.overdueAssignments || {}).count);
+  const reqTotal = reqList.length;
+  const reqPending = reqList.filter((r) => r && r.status === 'pending').length;
+
   const components = {
     driverOps: driverOpsScore({ compRate: dk.compRate, driverUtilization, totalTrips: totalTrip }),
+    engineering: engineeringOpsScore({ completedAssignments: engCompleted, totalAssignments: engTotal, overdueCount: engOverdue }),
     vehicleUtil: vehicleUtilScore({ vehiclesWithTrips, activeVehicles }),
+    request: requestScore({ totalRequests: reqTotal, pendingCount: reqPending }),
     pettyCash: pettyCashV2,
   };
-  const scored = calculateScore(components, SCORE_WEIGHTS_V1);
+  const scored = calculateScore(components, SCORE_WEIGHTS_V2);
   // v1.15.8 — null score (no domain available) maps to an explicit No-Data
   // health state rather than the misleading "Perlu Perhatian" that healthLevel
   // would return for a coerced 0.
@@ -241,11 +266,19 @@ export function computeExecutiveAnalytics({ driverModel, pettyModel, meta } = {}
     // Engine without changing the current hero. `usedWeight` lets a consumer see
     // how much of the formula's weight actually contributed.
     scoreBreakdown: {
-      driverScore: components.driverOps,     // 0–100 | null
-      fleetScore: components.vehicleUtil,    // 0–100 | null
-      pettyCashScore: components.pettyCash,  // 0–100 | null
+      driverScore: components.driverOps,         // 0–100 | null
+      engineeringScore: components.engineering,  // 0–100 | null (v1.21.0)
+      fleetScore: components.vehicleUtil,        // 0–100 | null
+      requestScore: components.request,          // 0–100 | null (v1.21.0)
+      pettyCashScore: components.pettyCash,      // 0–100 | null
       weights: scored.weights,
       usedWeight: scored.usedWeight,
+      // v1.21.0 — Explainability (Objective 9): ready-to-render per-domain rows
+      // (label + weight + score), derived STRICTLY from `components` above —
+      // no recomputation. Consumed by the exec-hero breakdown affordance.
+      components: SCORE_COMPONENT_META.map((m) => ({
+        key: m.key, label: m.label, weightPct: m.weightPct, score: components[m.key] == null ? null : components[m.key],
+      })),
     },
     // v1.16.3 Phase C — Petty Cash Health Score V2 explainability for the
     // Executive view: the four component sub-scores (with formula weights) plus a
