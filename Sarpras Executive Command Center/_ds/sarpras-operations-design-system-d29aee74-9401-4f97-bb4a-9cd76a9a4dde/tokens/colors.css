@@ -1,0 +1,140 @@
+/* ============================================================
+   Sarpras Operations — Color Tokens
+   Executive language (Analytics V2, the design authority).
+   Apple-bright near-whites, hairline borders, restrained
+   brand red used sparingly, low-chroma semantic data series.
+   Light is default; dark is a full inversion under [data-theme].
+   ============================================================ */
+
+:root,
+:root[data-theme="light"] {
+  /* surfaces — Apple-bright near-whites, minimal chroma */
+  --canvas:    #fbfbfd;
+  --rail:      #ffffff;
+  --surface:   #ffffff;
+  --surface-2: #f5f5f7;
+  --surface-3: #ededf0;
+  --hover:     rgba(17,17,26,0.03);
+
+  /* lines — hairline, nearly invisible */
+  --border:        rgba(17,18,28,0.055);
+  --border-strong: rgba(17,18,28,0.10);
+  --border-faint:  rgba(17,18,28,0.035);
+
+  /* text hierarchy */
+  --text:       #18181d;
+  --text-dim:   #5b5b64;
+  --text-faint: #8a8a93;
+  --text-ghost: #b0b0b8;
+
+  /* accent — refined brand red (desaturated, used sparingly) */
+  --accent:      #cf4a43;
+  --accent-2:    #d65a52;
+  --accent-weak: rgba(207,74,67,0.10);
+  --accent-line: rgba(207,74,67,0.22);
+  --accent-fg:   #ffffff;
+
+  /* critical / alert — fixed (never follows an accent tweak) */
+  --crit:      #cf4a43;
+  --crit-weak: rgba(207,74,67,0.10);
+  --crit-line: rgba(207,74,67,0.22);
+
+  /* semantic data series — low chroma, grayscale-safe ordering */
+  --c-green:   #2f9e6b;
+  --c-blue:    #3f72d6;
+  --c-amber:   #c4892c;
+  --c-violet:  #8b6fd1;
+  --c-teal:    #2f9ea4;
+  --c-neutral: #8c8c95;
+
+  /* soft tints of the data series (for pill / insight backgrounds) */
+  --c-green-weak:  rgba(47,158,107,0.12);
+  --c-blue-weak:   rgba(63,114,214,0.12);
+  --c-amber-weak:  rgba(196,137,44,0.13);
+  --c-violet-weak: rgba(139,111,209,0.12);
+  --c-teal-weak:   rgba(47,158,164,0.12);
+
+  /* status aliases (assignment / work-order lifecycle) */
+  --st-done:   var(--c-green);
+  --st-active: var(--c-blue);
+  --st-sched:  var(--c-amber);
+  --st-cancel: #a6a6ad;
+
+  /* vehicle fleet palette — drives timeline bars, legend swatches,
+     card accents. Mapped onto the semantic data series so the fleet
+     stays grayscale-safe and on-brand. */
+  --v-innova: var(--c-blue);
+  --v-luxio:  var(--c-green);
+  --v-poly:   var(--c-amber);
+  --v-hiace:  var(--c-violet);
+
+  /* elevation — whisper-soft; depth from light, not lines */
+  --shadow-sm: 0 1px 2px rgba(16,17,26,0.025);
+  --shadow-md: 0 1px 3px rgba(16,17,26,0.03), 0 10px 24px -16px rgba(16,17,26,0.09);
+  --shadow-lg: 0 4px 12px rgba(16,17,26,0.05), 0 26px 52px -26px rgba(16,17,26,0.16);
+  --grad-soft: 0.18; /* @kind other */
+
+  --scrim: rgba(16,17,26,0.42);
+
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --canvas:    #0a0a0c;
+  --rail:      #0d0d10;
+  --surface:   #141417;
+  --surface-2: #1a1a1e;
+  --surface-3: #212126;
+  --hover:     rgba(255,255,255,0.04);
+
+  --border:        rgba(255,255,255,0.08);
+  --border-strong: rgba(255,255,255,0.15);
+  --border-faint:  rgba(255,255,255,0.05);
+
+  --text:       #f3f3f5;
+  --text-dim:   #a4a4ac;
+  --text-faint: #6f6f78;
+  --text-ghost: #4c4c54;
+
+  --accent:      #e0574f;
+  --accent-2:    #ec6a62;
+  --accent-weak: rgba(224,87,79,0.15);
+  --accent-line: rgba(224,87,79,0.32);
+  --accent-fg:   #ffffff;
+
+  --crit:      #e0574f;
+  --crit-weak: rgba(224,87,79,0.15);
+  --crit-line: rgba(224,87,79,0.32);
+
+  --c-green:   #3fb27f;
+  --c-blue:    #5a8cef;
+  --c-amber:   #d8a23e;
+  --c-violet:  #a583e0;
+  --c-teal:    #46b9bd;
+  --c-neutral: #7d7d86;
+
+  --c-green-weak:  rgba(63,178,127,0.15);
+  --c-blue-weak:   rgba(90,140,239,0.15);
+  --c-amber-weak:  rgba(216,162,62,0.16);
+  --c-violet-weak: rgba(165,131,224,0.15);
+  --c-teal-weak:   rgba(70,185,189,0.15);
+
+  --st-done:   var(--c-green);
+  --st-active: var(--c-blue);
+  --st-sched:  var(--c-amber);
+  --st-cancel: #8a8a93;
+
+  --v-innova: var(--c-blue);
+  --v-luxio:  var(--c-green);
+  --v-poly:   var(--c-amber);
+  --v-hiace:  var(--c-violet);
+
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.4);
+  --shadow-md: 0 2px 8px rgba(0,0,0,0.4), 0 18px 40px -18px rgba(0,0,0,0.8);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.5), 0 34px 64px -22px rgba(0,0,0,0.85);
+  --grad-soft: 0.28; /* @kind other */
+
+  --scrim: rgba(0,0,0,0.62);
+
+  color-scheme: dark;
+}
