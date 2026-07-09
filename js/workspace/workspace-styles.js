@@ -142,14 +142,27 @@ const CSS = `
 .wsp-block__body { display: flex; flex-direction: column; gap: 12px; }
 .wsp-block--loading .wsp-block__body { min-height: 60px; }
 
-/* Hero — v1.22.2 redesign: the briefing's single dominant surface. Health
-   Score is promoted to its OWN standalone hero metric (Objective 2) — number
-   first, status second, category caption last/smallest — stacked ABOVE the
-   secondary stat row, not squeezed beside it. Whitespace (not dividers)
-   separates every block (Objective 3/10). */
-.wsp-hero { display: flex; flex-direction: column; gap: 0; padding: 6px 2px 4px; }
-.wsp-hero__top { display: flex; flex-direction: column; gap: 12px; }
-.wsp-hero__eyebrow { font-size: .74rem; font-weight: 600; color: var(--text-faint); }
+/* ════════ Hero — Phase 1 (Executive Hero) ════════
+   The Hero is ONE composite object (Greeting/Headline/Narrative/Health
+   Score/Operational Pulse) per the approved Hero Composite decision — no
+   sibling widget may exist for any of these, and nothing outside this
+   block schedules Hero animation. Layout is a single CSS Grid whose
+   grid-template-areas is reassigned per breakpoint below; the DOM never
+   changes shape, only the area map — so the Hero stays "one composed
+   object" at every size instead of becoming a stack of swapped-out
+   fragments. Base rules here are the Mobile layout (ring-first, centered)
+   per the approved Design Review mobile board; ≥768px and ≥1280px
+   overrides restore the Tablet and Desktop boards respectively. */
+.wsp-hero {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-areas: "eyebrow" "health" "verdict" "stats" "details";
+  gap: 28px;
+  padding: 6px 2px 4px;
+  text-align: center;
+}
+.wsp-hero__eyebrow { grid-area: eyebrow; font-size: .74rem; font-weight: 600; color: var(--text-faint); }
+.wsp-hero__verdict { grid-area: verdict; display: flex; flex-direction: column; gap: 12px; }
 .wsp-hero__headline { font-family: var(--font-display); font-weight: 800; font-size: clamp(1.8rem, 4.2vw, 2.75rem);
   line-height: 1.1; letter-spacing: -0.025em; margin: 0; color: var(--text); }
 .wsp-hero__hl--good { color: var(--wsp-good); }
@@ -157,24 +170,99 @@ const CSS = `
 .wsp-hero__hl--danger { color: var(--wsp-danger); }
 .wsp-hero__hl--info { color: var(--wsp-info); }
 .wsp-hero__hl--neutral { color: var(--text-faint); }
-.wsp-hero__insight { font-size: .96rem; font-weight: 400; color: var(--text-faint); line-height: 1.45; margin: 0; max-width: 56ch; }
+.wsp-hero__insight { font-size: .96rem; font-weight: 400; color: var(--text-faint); line-height: 1.45; margin: 0 auto; max-width: 56ch; }
 
-/* Health metric — standalone, full width, ABOVE the stat row. */
-.wsp-hero__metrics { display: flex; flex-direction: column; gap: 36px; margin-top: 36px; }
-.wsp-hero__health { display: flex; align-items: center; gap: 22px; }
+/* Health Score — the dominant visual element (mobile: centered, ring first). */
+.wsp-hero__health { grid-area: health; display: flex; flex-direction: column; align-items: center; gap: 14px; }
 .wsp-hero__gwrap { position: relative; flex: none; display: flex; }
 .wsp-hero__scorewrap { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
 .wsp-hero__scoreval { font-family: var(--font-display); font-weight: 800; font-size: 2.6rem; line-height: 1; letter-spacing: -0.03em; color: var(--text); font-variant-numeric: tabular-nums; }
 .wsp-hero__scoreval--muted { color: var(--text-ghost); }
 .wsp-hero__scoreunit { font-size: .68rem; color: var(--text-faint); font-weight: 600; }
-.wsp-hero__healthmeta { display: flex; flex-direction: column; gap: 7px; align-items: flex-start; }
+.wsp-hero__healthmeta { display: flex; flex-direction: column; gap: 7px; align-items: center; }
 .wsp-hero__panel-label { font-size: .7rem; font-weight: 600; color: var(--text-faint); }
 
-/* Secondary stat row — quiet, whitespace-separated, no column rules. */
-.wsp-hero__stats { display: flex; flex-wrap: wrap; gap: 36px; }
-.wsp-hero__stat { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+/* Operational Pulse — communicates NOW (not Snapshot's Today/Week/Month).
+   Mobile: a horizontal swipe shelf of boxed tiles, per the approved mobile
+   board. tabindex+role make the shelf itself keyboard-scrollable, since its
+   children are plain text (not focusable) — addresses the accessibility
+   concern a purely visual swipe shelf would otherwise raise. */
+.wsp-hero__stats { grid-area: stats; display: flex; gap: 12px; overflow-x: auto; padding: 2px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.wsp-hero__stats::-webkit-scrollbar { display: none; }
+.wsp-hero__stat {
+  flex: 0 0 132px; min-width: 0; display: flex; flex-direction: column; gap: 6px; text-align: left;
+  padding: var(--pad); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm);
+}
 .wsp-hero__stat-lbl { font-size: .68rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-faint); }
 .wsp-hero__stat-big { font-family: var(--font-display); font-weight: 700; font-size: 1.3rem; letter-spacing: -0.015em; color: var(--text-dim); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+/* Panel label — only meaningful once the stats become their own boxed
+   panel (desktop); orphaned/redundant on mobile+tablet, so hidden there. */
+.wsp-hero__stats-label { display: none; font-size: .7rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-faint); }
+
+/* Hero Micro Motion — the Hero's OWN entrance choreography, wired from
+   motion-profiles.js (js/widgets/executive/motion-profiles.js). Deliberately
+   a NEW, Hero-scoped keyframe rather than reusing platform.css's shared
+   anFadeUp/.fade-up (that rule is DO-NOT-TOUCH and shared with the
+   Analytics module) — this is what keeps Macro Motion (the page's fade-up,
+   applied externally by workspace-renderer.js) and Micro Motion (this)
+   completely independent, per the approved Conflict Resolution. Duration/
+   easing/delay arrive as inline custom properties from render() (mood- and
+   beat-specific); onMount sets animation:none inline on every refresh
+   after the first, so the entrance never replays on a realtime update. */
+@keyframes wspHeroReveal { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: none; } }
+@keyframes wspHeroRevealReduced { from { opacity: 0; } to { opacity: 1; } }
+.wsp-hero-anim {
+  animation-name: wspHeroReveal;
+  animation-duration: var(--wsp-hero-dur, 500ms);
+  animation-timing-function: var(--wsp-hero-ease, cubic-bezier(.2,.7,.2,1));
+  animation-delay: var(--wsp-hero-delay, 0ms);
+  animation-fill-mode: both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .wsp-hero-anim { animation-name: wspHeroRevealReduced !important; animation-duration: 200ms !important; animation-delay: 0ms !important; }
+}
+[data-anim="off"] .wsp-hero-anim { animation-name: wspHeroRevealReduced !important; animation-duration: 200ms !important; animation-delay: 0ms !important; }
+
+/* Tablet (Landscape + Portrait, 768–1279px) — single column, reading order
+   restored (verdict before health), ring+status and the Operational Pulse
+   trio share one divided row — matches the approved Tablet Landscape board;
+   Tablet Portrait inherits the same rules (no separate board was approved
+   for portrait — see Phase 1 deliverables). */
+@media (min-width: 768px) {
+  .wsp-hero {
+    grid-template-columns: auto 1fr;
+    grid-template-areas: "eyebrow eyebrow" "verdict verdict" "health stats";
+    text-align: left;
+  }
+  .wsp-hero__insight { margin: 0; }
+  .wsp-hero__health {
+    flex-direction: row; align-items: center; text-align: left;
+    padding-top: 28px; padding-right: 28px; border-top: 1px solid var(--border-faint); border-right: 1px solid var(--border-faint);
+  }
+  .wsp-hero__healthmeta { align-items: flex-start; }
+  .wsp-hero__stats { flex-wrap: wrap; overflow-x: visible; align-items: center; padding-top: 28px; padding-left: 28px; border-top: 1px solid var(--border-faint); }
+  .wsp-hero__stat { flex: 1 1 110px; padding: 0; background: none; border: none; box-shadow: none; }
+}
+
+/* Desktop + Laptop (≥1280px) — two-column: text+ring ~64% left, a boxed
+   "Denyut Operasional" panel ~36% right (spanning the verdict+health rows)
+   — matches the approved Desktop board exactly, including the one
+   deliberate exception to the platform's general de-boxed philosophy at
+   this specific spot. */
+@media (min-width: 1280px) {
+  .wsp-hero {
+    grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr);
+    grid-template-areas: "eyebrow eyebrow" "verdict stats" "health stats";
+    column-gap: 40px;
+  }
+  .wsp-hero__health { border-right: none; padding-right: 0; }
+  .wsp-hero__stats {
+    flex-direction: column; align-items: stretch; align-self: start; gap: 22px; overflow-x: visible; padding: var(--pad);
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius);
+  }
+  .wsp-hero__stat { flex: none; padding: 0; background: none; border: none; box-shadow: none; }
+  .wsp-hero__stats-label { display: block; }
+}
 
 /* Score breakdown / explainability — secondary, behind a native disclosure */
 .wsp-hero__details { margin-top: 28px; }
@@ -308,31 +396,25 @@ const CSS = `
 .wsp-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .wsp-chip__icon { display: inline-flex; }
 
-/* ════════ v1.22.2 Objectives 10/11 — Adaptive Layout ════════
-   Health-metric-above-stats is now the Hero's layout at EVERY breakpoint (no
-   longer a tablet-only override), so these tiers only need to handle true
-   layout differences: grid density and the stat row's wrap behavior. Mobile
-   is a genuine redesign, not a shrunk desktop (Objective 11) — no area is
-   ever forced to scroll horizontally; the stat row wraps like everything
-   else instead of the v1.22.1 horizontal-scroll strip. */
+/* ════════ v1.22.2 Objectives 10/11 — Adaptive Layout (non-Hero) ════════
+   Hero's own responsive tiers (mobile/tablet/desktop) now live entirely
+   with the rest of the Hero CSS, above (Phase 1) — the Hero is one grid
+   whose grid-template-areas is reassigned per breakpoint there, not
+   handled by these page-level rules. What remains here is the PAGE'S own
+   adaptive layout (the .wsp-grid card grid for every other section). */
 
 /* Tablet (≤1024px) — still 2 columns, medium density. */
 @media (max-width: 1024px) {
   .wsp-root { padding: 4px 0 32px; gap: 36px; }
 }
 
-/* Mobile (≤600px) — single column; Hero is the true first screen: score +
-   status immediately visible, stats wrap into a natural 2-column grid (never
-   a forced horizontal strip), the score-breakdown disclosure stays collapsed
-   below the fold. */
+/* Mobile (≤600px) — single column. Hero-specific rules now live with the
+   rest of the Hero's own responsive tiers, above (Phase 1); this block is
+   unrelated non-Hero sections only (untouched this phase). */
 @media (max-width: 600px) {
   .wsp-root { gap: 32px; }
   .wsp-grid { grid-template-columns: 1fr; }
   .wsp-card--span2 { grid-column: span 1; }
-  .wsp-hero__headline { font-size: clamp(1.5rem, 7vw, 1.9rem); }
-  .wsp-hero__gwrap svg { width: 116px; height: 116px; }
-  .wsp-hero__health { gap: 16px; }
-  .wsp-hero__stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
   .wsp-chips { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
   .wsp-chips::-webkit-scrollbar { display: none; }
   .wsp-chip { flex: 0 0 auto; }

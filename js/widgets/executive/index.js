@@ -22,12 +22,16 @@ import { renderRingGauge, anIcon } from '../../analytics/analytics-shell.js';
 // v1.22.4 Executive Narrative Intelligence — Situation/Impact/Recommendation
 // composition, extracted so the Hero's own render() stays presentation-only.
 import { buildHeroNarrative } from './narrative-builder.js';
+// Phase 0 Executive Foundation — presentation primitives + tone adapters
+// extracted out of this file (previously private, now shared/reusable).
+// Pure move: same markup, same CSS classes, zero visual change.
+import { rankedList, compactSuccessLine, severityRank, toneFromLevel, toneFromEngine as engineTone } from './ui-kit.js';
+// Phase 1 (Hero) — Motion Profiles defined in Phase 0, first consumed here.
+// Macro Motion (page-level section reveal) is unaffected by this import —
+// it stays owned by workspace-renderer.js's existing fade-up class.
+import { resolveMotionProfile, REALTIME_TWEEN, cssEaseToFn } from './motion-profiles.js';
 
 /* ── deterministic view helpers ── */
-const LEVEL_TONE = { high: 'good', medium: 'info', low: 'warn', insufficient: 'neutral', nodata: 'neutral' };
-// Recommendation-engine tones → workspace tones.
-const ENGINE_TONE = { ok: 'good', good: 'good', info: 'info', warn: 'warn', danger: 'danger', critical: 'danger' };
-const engineTone = (t) => ENGINE_TONE[t] || 'neutral';
 const n = (v) => (v == null || Number.isNaN(Number(v)) ? '—' : Number(v));
 const numOr0 = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
@@ -126,70 +130,113 @@ function facts(ctx) {
   };
 }
 
-/** v1.22.1 Objective 12 — Premium Motion: count-up + ring-draw, ported from
- *  app.js's private Analytics motion helper (_animateCountUp/_animateAnalyticsRegion)
- *  so the widget module stays self-contained (no reaching into app.js
- *  internals). Same reduced-motion contract: data-anim="off" or the OS
- *  preference disables animation and snaps straight to the final values. */
+/** Reduced-motion contract, unchanged since v1.22.1: data-anim="off" or the
+ *  OS preference disables animation and snaps straight to final values. */
 function motionOff() {
   if (typeof document === 'undefined') return true;
   if (document.documentElement.getAttribute('data-anim') === 'off') return true;
   try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (_) { return false; }
 }
-function animateHeroMotion(root) {
+
+/** Phase 1 (Hero) — mood-aware entrance + continuity-safe score/ring tween.
+ *  Replaces the old flat 900ms animateHeroMotion(). Two concerns, kept
+ *  distinct per the approved Conflict Resolution:
+ *
+ *  1) Micro Motion (entrance choreography) — every `.wsp-hero-anim` element
+ *     already carries its correct per-mood duration/easing/delay as inline
+ *     CSS custom properties, baked in by render() itself. This function's
+ *     only job for them is to suppress replay: `root.dataset.heroMounted`
+ *     persists on the Hero's body element across a live refresh (the DOM
+ *     node itself is NOT recreated on refresh — only its innerHTML is), so
+ *     "already mounted" is reliably known, and the entrance is hard-disabled
+ *     (inline `animation:none`, set synchronously before first paint) on
+ *     every mount after the first. The Hero's entrance never replays.
+ *
+ *  2) Score/ring value — on first mount, tweens 0 → target using the mood's
+ *     first-paint profile (ring via a per-instance CSS transition override;
+ *     .an-ring-val's shared 900ms rule in platform.css is DO-NOT-TOUCH, so
+ *     this overrides duration/easing inline on this one instance only,
+ *     touching nothing shared). On a refresh, tweens the LAST shown value →
+ *     the new one using REALTIME_TWEEN (one fixed continuity timing, not
+ *     mood-dependent, per Motion Language §07) — driven entirely in JS
+ *     since the DOM node is fresh and has no "old" CSS state to transition
+ *     from. Either way it never resets to zero on a refresh. */
+function mountHeroMotion(root, ctx) {
   if (!root) return;
+  const f = facts(ctx);
+  const { headline } = buildHeroNarrative(f);
+  const profile = resolveMotionProfile(headline.tone);
   const reduce = motionOff();
-  root.querySelectorAll('[data-countup]').forEach((el) => {
-    const target = parseFloat(el.getAttribute('data-countup'));
-    if (!Number.isFinite(target)) return;
-    if (reduce) { el.textContent = String(Math.round(target)); return; }
-    const duration = 900;
-    const ease = (x) => 1 - Math.pow(1 - x, 3);
-    const t0 = performance.now();
+  const alreadyMounted = root.dataset.heroMounted === '1';
+  root.dataset.heroMounted = '1';
+
+  // Micro Motion: suppress replay synchronously, before the browser paints.
+  root.querySelectorAll('.wsp-hero-anim').forEach((el) => {
+    if (reduce || alreadyMounted) el.style.animation = 'none';
+  });
+
+  const hasScore = !!(f.score && f.score.value != null);
+  const targetScore = hasScore ? f.score.value : 0;
+  const lastScoreRaw = Number(root.dataset.heroLastScore);
+  const fromScore = alreadyMounted && Number.isFinite(lastScoreRaw) ? lastScoreRaw : 0;
+  root.dataset.heroLastScore = String(targetScore);
+
+  const scoreEl = root.querySelector('[data-countup]');
+  const ringEl = root.querySelector('.an-ring-val[data-ring-len]');
+  const circ = ringEl ? parseFloat(ringEl.getAttribute('data-ring-circ')) : null;
+  const targetLen = ringEl ? parseFloat(ringEl.getAttribute('data-ring-len')) : null;
+  const fromLen = alreadyMounted && circ != null ? (fromScore / 100) * circ : 0;
+
+  if (reduce) {
+    if (scoreEl) scoreEl.textContent = String(Math.round(targetScore));
+    if (ringEl && circ != null) ringEl.setAttribute('stroke-dasharray', `${targetLen} ${circ}`);
+    return;
+  }
+
+  const tween = alreadyMounted ? REALTIME_TWEEN : { duration: profile.ringDuration, ease: profile.ease };
+  const ease = cssEaseToFn(tween.ease);
+  const t0 = performance.now();
+
+  if (ringEl && circ != null) {
+    if (!alreadyMounted) {
+      // First mount: the shared CSS transition draws 0 -> target; only its
+      // duration/easing are overridden per-instance for this mood.
+      ringEl.style.transitionDuration = `${tween.duration}ms`;
+      ringEl.style.transitionTimingFunction = tween.ease;
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        ringEl.setAttribute('stroke-dasharray', `${targetLen} ${circ}`);
+      }));
+    } else {
+      // Refresh: this DOM node is freshly built, so there is no "old" state
+      // for a CSS transition to ease from — interpolate it in JS instead,
+      // from the previously-displayed value, so it still eases directly to
+      // the new sweep and never resets to zero.
+      ringEl.style.transition = 'none';
+      const tick = (now) => {
+        const p = Math.min(1, (now - t0) / tween.duration);
+        const len = fromLen + (targetLen - fromLen) * ease(p);
+        ringEl.setAttribute('stroke-dasharray', `${len.toFixed(1)} ${circ}`);
+        if (p < 1) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    }
+  }
+
+  if (scoreEl) {
     const tick = (now) => {
-      const p = Math.min(1, (now - t0) / duration);
-      el.textContent = String(Math.round(target * ease(p)));
+      const p = Math.min(1, (now - t0) / tween.duration);
+      const v = fromScore + (targetScore - fromScore) * ease(p);
+      scoreEl.textContent = String(Math.round(v));
       if (p < 1) requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
-  });
-  root.querySelectorAll('.an-ring-val[data-ring-len]').forEach((el) => {
-    const len = el.getAttribute('data-ring-len');
-    const circ = el.getAttribute('data-ring-circ');
-    if (len == null || circ == null) return;
-    const apply = () => el.setAttribute('stroke-dasharray', `${len} ${circ}`);
-    if (reduce) apply();
-    else requestAnimationFrame(() => requestAnimationFrame(apply));
-  });
+  }
 }
 
-const SEV_META = {
-  critical: { rank: 0, label: 'Kritis', tone: 'danger' },
-  warn: { rank: 1, label: 'Perlu Perhatian', tone: 'warn' },
-};
-
-/** v1.22.1 Objectives 6/7 — Priority/Attention as a de-boxed severity list
- *  (Apple-style "things requiring attention"), not a wall of bordered cards. */
-function severityRow(i) {
-  const m = SEV_META[i.sev];
-  return `
-    <div class="wsp-sevrow wsp-sevrow--${i.sev}">
-      <span class="wsp-sevrow__bar" aria-hidden="true"></span>
-      <div class="wsp-sevrow__body">
-        <div class="wsp-sevrow__title"><span class="wsp-sevrow__sev">${esc(m.label)}</span>${esc(i.title)}</div>
-        <div class="wsp-sevrow__reason">${esc(i.reason)}</div>
-      </div>
-      ${i.action ? actionBtn(i.actionLabel, i.action, { variant: 'ghost' }) : ''}
-    </div>`;
-}
-function severityList(items) {
-  return `<div class="wsp-sevlist">${items.map(severityRow).join('')}</div>`;
-}
-/** Compact success state — a single quiet line, not a full-width card, for
- *  when there is nothing to brief on. */
-function compactSuccess(message) {
-  return `<div class="wsp-compact-ok"><span class="wsp-compact-ok__dot" aria-hidden="true"></span>${esc(message)}</div>`;
-}
+/* v1.22.1 Objectives 6/7 — Priority/Attention as a de-boxed severity list
+   (Apple-style "things requiring attention"), not a wall of bordered cards.
+   rankedList/compactSuccessLine/severityRank now live in ui-kit.js (Phase 0
+   Executive Foundation) — same output, reusable across sections. */
 
 /* v1.21.1 Objective 2 — the Executive Timeline is OPERATIONAL intelligence,
    never an audit trail: authentication (login/logout), session, and other
@@ -454,15 +501,20 @@ export const widgets = {
       const now = new Date();
       const { headline, body } = buildHeroNarrative(f);
       const hasScore = !!(f.score && f.score.value != null);
-      const pillTone = hasScore ? (LEVEL_TONE[f.score.level] || 'neutral') : 'neutral';
+      const pillTone = hasScore ? toneFromLevel(f.score.level) : 'neutral';
       const ringValue = hasScore ? Math.max(0, Math.min(100, f.score.value)) / 100 : 0;
       const ring = renderRingGauge({ value: ringValue, size: 152, thickness: 11, color: `var(--wsp-${headline.tone})`, track: 'var(--border-faint)' });
 
+      // Phase 1 — Operational Pulse: exactly the three metrics that
+      // communicate NOW (Snapshot owns Today/Week/Month, never duplicated
+      // here). "Status Armada" is dropped from this row on purpose — it's
+      // already covered by the ring/score itself and by the explainability
+      // disclosure directly below, so keeping it here only added density
+      // without adding clarity.
       const stats = [
         { lbl: 'Kendaraan Siap', big: n(f.dk.activeVehicles) },
         { lbl: 'Driver Aktif', big: n(f.dk.activeDrivers) },
         { lbl: 'Permintaan Tertunda', big: f.pending },
-        { lbl: 'Status Armada', big: f.fleetNormal ? 'Normal' : `${f.criticalVehicles} Tindakan` },
       ];
 
       // v1.21.0/v1.22.0 Explainability — now secondary, behind a disclosure.
@@ -478,38 +530,53 @@ export const widgets = {
           <span class="wsp-hero__explain-sign">${r.good ? '+' : '−'}</span>${esc(r.text)}
         </div>`).join('');
 
+      // Phase 1 — Motion Profile for THIS mood (Micro Motion only; the
+      // page's Macro fade-up is untouched and lives in workspace-renderer.js
+      // /platform.css). Every `.wsp-hero-anim` element gets its own delay
+      // (the internal beat order: greeting -> ring -> headline -> pulse)
+      // plus this mood's duration/easing — baked in here so the entrance is
+      // correct even before onMount runs; onMount's only remaining job is
+      // to suppress it on a refresh (see mountHeroMotion).
+      const profile = resolveMotionProfile(headline.tone);
+      const beat = (ms) => `--wsp-hero-delay:${ms}ms;--wsp-hero-dur:${profile.entranceDuration}ms;--wsp-hero-ease:${profile.ease}`;
+
+      const scoreAria = hasScore
+        ? `Skor kesehatan operasional ${esc(f.score.value)} dari 100, status ${esc(f.score.label || 'Kondisi Operasional')}`
+        : 'Skor kesehatan operasional belum tersedia';
+
       return `
         <div class="wsp-hero">
-          <div class="wsp-hero__top">
-            <div class="wsp-hero__eyebrow">${esc(greeting(now))}, ${esc(name)} · ${esc(fmtLongDate(now))}</div>
+          <div class="wsp-hero__eyebrow wsp-hero-anim" style="${beat(profile.micro.greeting)}">${esc(greeting(now))}, ${esc(name)} · ${esc(fmtLongDate(now))}</div>
+
+          <div class="wsp-hero__health wsp-hero-anim" style="${beat(profile.micro.ring)}" aria-label="${scoreAria}">
+            <div class="wsp-hero__gwrap" aria-hidden="true">
+              ${ring}
+              <div class="wsp-hero__scorewrap">
+                ${hasScore
+                  ? `<span class="wsp-hero__scoreval" data-countup="${esc(f.score.value)}">0</span><span class="wsp-hero__scoreunit">/100</span>`
+                  : `<span class="wsp-hero__scoreval wsp-hero__scoreval--muted">—</span>`}
+              </div>
+            </div>
+            <div class="wsp-hero__healthmeta" aria-hidden="true">
+              ${pill(hasScore ? (f.score.label || 'Kondisi Operasional') : 'Menyusun data', pillTone)}
+              <div class="wsp-hero__panel-label">Kesiapan Operasional</div>
+            </div>
+          </div>
+
+          <div class="wsp-hero__verdict wsp-hero-anim" style="${beat(profile.micro.headline)}">
             <h2 class="wsp-hero__headline">${esc(headline.prefix)} <span class="wsp-hero__hl wsp-hero__hl--${headline.tone}">${esc(headline.highlight)}</span>.</h2>
             <p class="wsp-hero__insight">${esc(body)}</p>
           </div>
-          <div class="wsp-hero__metrics">
-            <!-- v1.22.2 Objective 2 — Health Score is its OWN hero metric, full
-                 width, standing above the stat row (not squeezed beside it):
-                 number first (biggest), status second, the "Kesiapan
-                 Operasional" category last as the smallest caption. -->
-            <div class="wsp-hero__health">
-              <div class="wsp-hero__gwrap">
-                ${ring}
-                <div class="wsp-hero__scorewrap">
-                  ${hasScore
-                    ? `<span class="wsp-hero__scoreval" data-countup="${esc(f.score.value)}">0</span><span class="wsp-hero__scoreunit">/100</span>`
-                    : `<span class="wsp-hero__scoreval wsp-hero__scoreval--muted">—</span>`}
-                </div>
-              </div>
-              <div class="wsp-hero__healthmeta">
-                ${pill(hasScore ? (f.score.label || 'Kondisi Operasional') : 'Menyusun data', pillTone)}
-                <div class="wsp-hero__panel-label">Kesiapan Operasional</div>
-              </div>
-            </div>
-            <div class="wsp-hero__stats">${stats.map(s => `
+
+          <div class="wsp-hero__stats wsp-hero-anim" style="${beat(profile.micro.pulse)}" tabindex="0" role="group" aria-label="Denyut operasional saat ini">
+            <span class="wsp-hero__stats-label">Denyut Operasional</span>
+            ${stats.map(s => `
               <div class="wsp-hero__stat">
                 <span class="wsp-hero__stat-lbl">${esc(s.lbl)}</span>
                 <span class="wsp-hero__stat-big">${esc(s.big)}</span>
-              </div>`).join('')}</div>
+              </div>`).join('')}
           </div>
+
           ${(breakdownRows || explainRowsHtml) ? `
           <details class="wsp-hero__details">
             <summary>Lihat rincian skor</summary>
@@ -520,7 +587,7 @@ export const widgets = {
           </details>` : ''}
         </div>`;
     },
-    onMount(bodyEl) { animateHeroMotion(bodyEl); },
+    onMount(bodyEl, ctx) { mountHeroMotion(bodyEl, ctx); },
   },
 
   /* ── Operational Priority ── (v1.22.1: de-boxed severity list, Critical →
@@ -535,9 +602,9 @@ export const widgets = {
       if (f.pending > 0) items.push({ sev: 'warn', title: `${f.pending} permintaan menunggu persetujuan`, reason: 'Permintaan bidang menunggu keputusan admin.', action: 'navPending', actionLabel: 'Tinjau Antrian' });
       (f.rec.board?.upcoming || []).slice(0, 2).forEach(r => items.push({ sev: 'warn', title: `${r.vehicleName} — ${r.categoryLabel}`, reason: r.reason, action: 'navDriverPrediction', actionLabel: 'Tinjau Prediksi' }));
 
-      if (!items.length) return compactSuccess('Tidak ada tindakan prioritas hari ini — operasional berjalan normal.');
-      items.sort((a, b) => SEV_META[a.sev].rank - SEV_META[b.sev].rank);
-      return severityList(items.slice(0, 5));
+      if (!items.length) return compactSuccessLine('Tidak ada tindakan prioritas hari ini — operasional berjalan normal.');
+      items.sort((a, b) => severityRank(a.sev) - severityRank(b.sev));
+      return rankedList(items.slice(0, 5));
     },
   },
 
@@ -558,10 +625,10 @@ export const widgets = {
       if (f.atRiskDrivers > 0) items.push({ sev: 'warn', title: `${f.atRiskDrivers} driver berisiko kelelahan/burnout`, reason: 'Beban kerja driver melewati ambang aman dalam periode berjalan.', action: 'navAnalyticsDriver', actionLabel: 'Tinjau Wellness' });
       if (f.pettyLow) items.push({ sev: 'critical', title: 'Saldo petty cash rendah', reason: 'Saldo siklus berjalan berada di bawah ambang notifikasi.', action: 'navPettyCash', actionLabel: 'Tinjau Petty Cash' });
 
-      if (!items.length) return compactSuccess('Seluruh domain operasional dalam kondisi aman.');
-      items.sort((a, b) => SEV_META[a.sev].rank - SEV_META[b.sev].rank);
+      if (!items.length) return compactSuccessLine('Seluruh domain operasional dalam kondisi aman.');
+      items.sort((a, b) => severityRank(a.sev) - severityRank(b.sev));
       // v1.22.0 Objective 6 — an executive briefs on 3-5 items, not every issue.
-      return severityList(items.slice(0, 5));
+      return rankedList(items.slice(0, 5));
     },
   },
 
