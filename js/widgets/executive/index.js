@@ -492,6 +492,13 @@ function topInsightLine(ctx) {
  *  Matches the approved Design Review prototype's own `attentionShowCount`. */
 const ATTENTION_VISIBLE_CAP = 2;
 
+/** Phase 3 (Executive Decision Center) — recommended actions always visible
+ *  before disclosure: one dominant (primary) action plus two supporting
+ *  (secondary) ones, matching the prior hard cap of 3 exactly so a fleet with
+ *  ≤3 actionable recommendations renders identically to before this phase —
+ *  the only new behavior is disclosure appearing once there is more. */
+const RECOMMENDATION_VISIBLE_CAP = 3;
+
 export const widgets = {
   /* ── Executive Briefing Hero ── (v1.22.1 redesign: de-boxed, ring gauge +
      huge score as the visual anchor, one verdict headline, one insight
@@ -714,7 +721,17 @@ export const widgets = {
     },
   },
 
-  /* ── Recommendation Center ── (reuses the certified Recommendation Engine) */
+  /* ── Executive Decision Center (Recommended Actions) ── (Phase 3: the
+     Recommendation section redesigned per the approved Design Review — it
+     answers "what decision should I make next?", not "what information
+     exists?". Reuses the certified Recommendation Engine's own fields
+     one-to-one, never a second recommendation vocabulary: r.title is already
+     an imperative ACTION ("Jadwalkan perawatan …"), r.reason is the ENGINE's
+     own reason, r.expectedBenefit is the IMPACT, r.priority is the PRIORITY —
+     nothing here is invented. Same explainable-card + primary/secondary size
+     hierarchy + progressive disclosure shape already established for the
+     Decision Center (exec-decision, wsp-inbox) and Attention (disclosure) —
+     "no second recommendation vocabulary" per the implementation contract. */
   'exec-recommendation': {
     render(ctx) {
       const rec = ctx.recommendations || { certified: false };
@@ -725,18 +742,51 @@ export const widgets = {
         return lead('Rekomendasi tersedia setelah data prediksi mencukupi.') +
           actionBtn('Buka Prediksi', 'navDriverPrediction', { variant: 'ghost' });
       }
-      const items = (rec.recs || []).filter(r => r.actionable && r.category !== 'none' && r.category !== 'fleet-optimization').slice(0, 3);
+      const items = (rec.recs || [])
+        .filter(r => r.actionable && r.category !== 'none' && r.category !== 'fleet-optimization')
+        .slice()
+        .sort((a, b) => (a.priority?.rank ?? 9) - (b.priority?.rank ?? 9));
       if (!items.length) {
         const msg = (rec.positive && rec.positive.messages && rec.positive.messages[0]) || 'Armada beroperasi normal.';
         return lead(msg) + actionBtn('Buka Prediksi', 'navDriverPrediction', { variant: 'ghost' });
       }
-      const rows = items.map(r => `
-        <div class="wsp-reco">
-          <div class="wsp-reco__top">${pill(r.confidence?.levelWord || 'Keyakinan', engineTone(r.confidence?.tone))}<span class="wsp-reco__benefit">${esc(r.estimatedImpact?.label || '')}</span></div>
-          <div class="wsp-reco__title">${esc(r.title)}</div>
-          <div class="wsp-reco__reason">${esc(r.expectedBenefit || r.reason)}</div>
-        </div>`).join('');
-      return rows + actionBtn('Buka Rekomendasi', 'navDriverPrediction', { variant: 'ghost' });
+
+      // v1.22.2 Objective 6's Decision Center hierarchy, reused verbatim: only
+      // the single top (highest-priority) action is ever "primary" — every
+      // other action, visible or behind disclosure, is "secondary". Reason
+      // and Impact are two DISTINCT, labeled lines (not merged into one) per
+      // the Decision Center contract: Action / Reason / Impact / Priority
+      // must each be independently identifiable within 10 seconds.
+      const row = (r, variant) => `
+        <div class="wsp-inbox__item wsp-inbox__item--${variant}">
+          <div class="wsp-inbox__top">${pill(r.priority?.label || 'Prioritas', engineTone(r.priority?.tone))}</div>
+          <div class="wsp-inbox__title">${esc(r.title)}</div>
+          <div class="wsp-inbox__explain">
+            <div class="wsp-inbox__explain-row"><span class="wsp-inbox__explain-label">Alasan</span>${esc(r.reason)}</div>
+            <div class="wsp-inbox__explain-row"><span class="wsp-inbox__explain-label">Dampak</span>${esc(r.expectedBenefit || r.estimatedImpact?.label || '—')}</div>
+          </div>
+          ${actionBtn('Tinjau Prediksi', 'navDriverPrediction', { variant: 'ghost' })}
+        </div>`;
+
+      const visible = items.slice(0, RECOMMENDATION_VISIBLE_CAP);
+      const rest = items.slice(RECOMMENDATION_VISIBLE_CAP);
+      const visibleHtml = visible.map((r, i) => row(r, i === 0 ? 'primary' : 'secondary')).join('');
+      const disclosure = rest.length ? `
+        <div class="wsp-reco__more" data-reco-more>${rest.map(r => row(r, 'secondary')).join('')}</div>
+        <button type="button" class="wsp-reco__toggle" data-reco-toggle aria-expanded="false">Lihat ${esc(rest.length)} tindakan lainnya</button>` : '';
+
+      return `<div class="wsp-inbox">${visibleHtml}${disclosure}</div>`;
+    },
+    onMount(bodyEl) {
+      const btn = bodyEl.querySelector('[data-reco-toggle]');
+      const more = bodyEl.querySelector('[data-reco-more]');
+      if (!btn || !more) return;
+      const totalMore = more.querySelectorAll('.wsp-inbox__item').length;
+      btn.addEventListener('click', () => {
+        const open = more.classList.toggle('wsp-reco__more--open');
+        btn.setAttribute('aria-expanded', String(open));
+        btn.textContent = open ? 'Sembunyikan' : `Lihat ${totalMore} tindakan lainnya`;
+      });
     },
   },
 

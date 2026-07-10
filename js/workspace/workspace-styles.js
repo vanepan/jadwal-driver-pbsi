@@ -341,7 +341,12 @@ const CSS = `
 
 /* Decision Center — a call-to-action, not a flat list (v1.22.2 Objective 6):
    whitespace-separated (no row divider), with a real size hierarchy — the
-   first (highest-impact) decision is visibly bigger than the 2nd/3rd. */
+   first (highest-impact/priority) item is visibly bigger than the rest.
+   Phase 3 (Executive Decision Center) — this is now the ONE explainable-
+   action vocabulary shared by exec-decision AND exec-recommendation (the
+   Recommendation section, redesigned per the approved Design Review to
+   communicate "Recommended Actions" the same way) — no second card
+   language was introduced for the latter. */
 .wsp-inbox { display: flex; flex-direction: column; gap: 20px; }
 .wsp-inbox__item { display: flex; flex-direction: column; gap: 5px; }
 .wsp-inbox__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -354,13 +359,31 @@ const CSS = `
 .wsp-inbox__item--secondary .wsp-inbox__title { font-size: .84rem; }
 .wsp-inbox__item--secondary .wsp-inbox__reason { font-size: .76rem; }
 
-/* Recommendation Center — same whitespace-separated list language (spacing
-   comes from the parent .wsp-card__body gap, same as every other card). */
-.wsp-reco { display: flex; flex-direction: column; gap: 4px; }
-.wsp-reco__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.wsp-reco__benefit { font-size: .72rem; color: var(--text-faint); }
-.wsp-reco__title { font-size: .88rem; font-weight: 700; color: var(--text); }
-.wsp-reco__reason { font-size: .8rem; color: var(--text-dim); line-height: 1.45; }
+/* Recommended Actions explainability (Phase 3, exec-recommendation only) —
+   Reason and Impact as two distinct labeled lines (not merged into one
+   sentence like the pre-Phase-3 card), so both are independently readable
+   within the "under 10 seconds" contract. Additive only: exec-decision's
+   existing .wsp-inbox__reason/.wsp-inbox__impact usage is untouched. */
+.wsp-inbox__explain { display: flex; flex-direction: column; gap: 4px; }
+.wsp-inbox__explain-row { font-size: .8rem; color: var(--text-dim); line-height: 1.45; }
+.wsp-inbox__explain-label { font-size: .64rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--text-faint); margin-right: 7px; }
+.wsp-inbox__item--secondary .wsp-inbox__explain-row { font-size: .76rem; }
+
+/* Recommended Actions disclosure (Phase 3) — anything beyond
+   RECOMMENDATION_VISIBLE_CAP reveals in place, same "never remove/recreate,
+   only reveal" continuity rule and the same EASE/timing already established
+   for the Attention Center's own disclosure (.wsp-attn__more), kept as a
+   dedicated rule set rather than reused directly since Attention is
+   out of scope for this phase. */
+.wsp-reco__more { display: flex; flex-direction: column; gap: 20px;
+  max-height: 0; opacity: 0; overflow: hidden; transition: max-height 340ms ${EASE}, opacity 240ms ${EASE}; }
+.wsp-reco__more--open { max-height: 3000px; opacity: 1; }
+.wsp-reco__toggle { align-self: flex-start; font: inherit; font-size: .8rem; font-weight: 700; color: var(--accent);
+  background: none; border: none; cursor: pointer; padding: 8px 2px; }
+.wsp-reco__toggle:hover { text-decoration: underline; }
+.wsp-reco__toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .wsp-reco__more { transition: none; } }
+[data-anim="off"] .wsp-reco__more { transition: none; }
 
 /* Simulation Center launcher */
 .wsp-sim { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
