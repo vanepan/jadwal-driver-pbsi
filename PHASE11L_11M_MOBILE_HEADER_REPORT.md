@@ -1,9 +1,19 @@
 # Phase 11L–11M — Mobile Header Layout Polish & Profile Entry Integration
 ### Full Report
 
-Status: implemented, **not committed, not pushed**. Follow-up to `PHASE11_UX_STABILIZATION_REPORT.md` (11A–11H) and `PHASE11I_11K_MOBILE_STABILIZATION_REPORT.md` (11I–11K).
+Status: implemented. Original version committed/pushed in `bd8f755`; **corrected in a follow-up commit** per a real-device screenshot (see Addendum below) — that follow-up is what's pending commit as of this revision. Follow-up to `PHASE11_UX_STABILIZATION_REPORT.md` (11A–11H) and `PHASE11I_11K_MOBILE_STABILIZATION_REPORT.md` (11I–11K).
 
 Files touched: `platform.css` only. No JS, no DOM structure, no HTML changed.
+
+---
+
+## Addendum — Correction from live device feedback
+
+The original 11L implementation (below) put the hamburger **alone on its own row**, with date-nav + avatar sharing row 2 — this was my reading of the original brief's ASCII diagram, which turned out to be ambiguous. A real device screenshot showed the actual desired layout is a **single row**: `[hamburger] [date-nav] [avatar]` together, with the hamburger never isolated on its own line.
+
+Fixed by switching the ≤600px rule to a 3-column grid (`auto 1fr auto` — leading icon, flexible center, trailing icon; the same layout used everywhere in this app for its topbar shell), which is single-row by default. Below ~380px, date-nav's own protected touch targets (2×44px arrows + 96px date-input) can no longer fit in one row alongside both the hamburger and the avatar without shrinking one of them, so a narrower fallback keeps the hamburger paired with the avatar on row 1 (never alone) and gives date-nav its own row 2 below. This preserves the "no touch-target shrinking, no overlap" guarantees from the original 11L work while actually matching the requested single-row layout everywhere it can fit.
+
+No DOM changes here either — same `grid-area`-only approach as the original fix, so tab order remains unaffected.
 
 ---
 

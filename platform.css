@@ -5187,33 +5187,36 @@ body.v2-shell-active .v2-kpi-value { font-size: 22px; }
    meant it always occupied its wrapped line alone, and the header-user-area
    (avatar) came AFTER it in flex order (order:60, set unconditionally
    further up this file), so flex-wrap pushed the avatar onto a THIRD line
-   below date-nav instead of sharing date-nav's line — the "avatar sits on
-   its own row, wasting height" bug. CSS Grid with explicit grid-area
-   placement sidesteps the whole order-cascade fight (order has no effect
-   once an item has an explicit grid-area) and needs no DOM changes — every
-   participant stays exactly where it already is in the DOM, so tab order
-   and desktop/tablet layout (a separate, untouched breakpoint) are
-   unaffected. Row 1 = hamburger alone; Row 2 = date-nav + avatar together,
-   centered as a group between two equal flexible tracks. */
+   below date-nav instead of sharing date-nav's line. CSS Grid with explicit
+   grid-area placement sidesteps the whole order-cascade fight (order has no
+   effect once an item has an explicit grid-area) and needs no DOM changes —
+   every participant stays exactly where it already is in the DOM, so tab
+   order and desktop/tablet layout (a separate, untouched breakpoint) are
+   unaffected.
+
+   Phase 11L (revised — live device report): the first version of this fix
+   still put the hamburger alone on its own row (row 1 = "ham ham ham ham"),
+   with date-nav + avatar sharing row 2 below it — a real device screenshot
+   showed this reads as "hamburger stranded above the date," not the
+   single-row toolbar actually wanted: [hamburger] [date-nav] [avatar]
+   together. Single row is the default now, using a 3-column grid
+   (auto | 1fr | auto) the same way a native app toolbar lays out a
+   leading icon, flexible center content, and a trailing icon. Below
+   ~380px this can no longer fit date-nav's own protected touch targets
+   (2×44px arrows + 96px date-input) alongside the hamburger and avatar
+   too, so a narrower fallback keeps the hamburger paired with the avatar
+   on row 1 and gives date-nav its own row 2 — the hamburger is never
+   alone on a row at any width, which was the actual complaint. */
 @media (max-width: 600px) {
   body.v2-shell-active .v2-topbar {
     display: grid;
-    grid-template-columns: 1fr auto auto 1fr;
-    grid-template-areas:
-      "ham  ham    ham    ham"
-      ".    dnav   avatar .";
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas: "ham dnav avatar";
     align-items: center;
-    row-gap: 6px;
-    /* Tight but deliberate: date-nav's content already has ~266px of
-       non-shrinkable minimum width (2×44px touch-target arrows + 96px
-       date-input, both intentionally protected) plus ~70px for the
-       "Hari Ini" chip, leaving very little slack at a 320px viewport once
-       the avatar (26px) joins the row — every px of padding/gap here is
-       reserved deliberately, not arbitrary. */
     column-gap: 6px;
     height: auto;
     min-height: 44px;
-    padding: 6px 8px 8px;
+    padding: 6px 8px;
   }
   body.v2-shell-active .v2-topbar #sidebarToggle {
     grid-area: ham;
@@ -5221,6 +5224,7 @@ body.v2-shell-active .v2-kpi-value { font-size: 22px; }
   body.v2-shell-active .v2-topbar .date-nav {
     grid-area: dnav;
     flex-shrink: 0;
+    justify-self: center;
   }
   body.v2-shell-active .v2-topbar .header-user-area {
     grid-area: avatar;
@@ -5232,19 +5236,26 @@ body.v2-shell-active .v2-kpi-value { font-size: 22px; }
   }
 }
 
-/* Defensive fallback below every required verification width (320px is the
-   narrowest listed) — protects genuinely narrower/unusual devices without
-   affecting anything in the 320-430px range this phase targets. Row 2
-   itself wraps to two lines (date-nav, then avatar centered beneath it)
-   rather than ever compressing the protected 44px touch targets. */
-@media (max-width: 300px) {
+/* Below ~380px, date-nav's own protected touch targets (2×44px arrows +
+   96px date-input) no longer fit in one row alongside both the hamburger
+   and the avatar without shrinking one of them — so date-nav alone drops
+   to its own row 2. The hamburger stays paired with the avatar on row 1
+   (never stranded alone), which was the actual bug being fixed here. */
+@media (max-width: 380px) {
   body.v2-shell-active .v2-topbar {
-    grid-template-columns: 1fr;
+    grid-template-columns: auto 1fr;
     grid-template-areas:
-      "ham"
-      "dnav"
-      "avatar";
-    justify-items: center;
+      "ham    avatar"
+      "dnav   dnav";
+    row-gap: 6px;
+  }
+  body.v2-shell-active .v2-topbar .date-nav {
+    grid-area: dnav;
+    justify-self: center;
+  }
+  body.v2-shell-active .v2-topbar .header-user-area {
+    grid-area: avatar;
+    justify-self: end;
   }
 }
 
