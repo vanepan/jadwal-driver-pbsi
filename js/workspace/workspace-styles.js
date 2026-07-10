@@ -441,6 +441,7 @@ const CSS = `
    adds information. Icon carries the category; its background tint carries
    the accent color (Objective 6/7/8). */
 .wsp-feed { display: flex; flex-direction: column; }
+.wsp-feed__list, .wsp-feed__more, .wsp-feed__sublist { list-style: none; margin: 0; padding: 0; }
 .wsp-feed__row { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; }
 .wsp-feed__icon { flex: none; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
   color: var(--wsp-neutral); background: color-mix(in srgb, var(--wsp-neutral) 14%, transparent); margin-top: 1px; }
@@ -453,6 +454,20 @@ const CSS = `
 .wsp-feed__sentence { font-size: .92rem; font-weight: 600; color: var(--text); line-height: 1.4; }
 .wsp-feed__meta { font-size: .74rem; font-weight: 400; color: var(--text-faint); }
 .wsp-feed__time { flex: none; font-size: .72rem; font-weight: 500; color: var(--text-faint); font-variant-numeric: tabular-nums; margin-top: 3px; }
+
+/* Phase 5 — Narrative group ("small story" for a run of 2+ distinct actions
+   in the same operational context). Same row grammar as .wsp-feed__row
+   (icon + label + time) for the header; sub-rows drop the icon (already
+   carried once by the header) and read one size down — visual hierarchy is
+   "section header -> narrative group -> chronological flow" per the Design
+   Review, not a flat list of equally-weighted rows. */
+.wsp-feed__block { padding: 10px 0; }
+.wsp-feed__block-head { display: flex; align-items: center; gap: 12px; }
+.wsp-feed__block-label { flex: 1; min-width: 0; font-size: .92rem; font-weight: 700; color: var(--text); }
+.wsp-feed__sublist { margin-top: 6px; padding-left: 38px; display: flex; flex-direction: column; gap: 5px; }
+.wsp-feed__subrow { display: flex; align-items: baseline; gap: 10px; }
+.wsp-feed__subrow-sentence { flex: 1; min-width: 0; font-size: .84rem; font-weight: 500; color: var(--text-dim); line-height: 1.4; }
+.wsp-feed__subrow-time { flex: none; font-size: .7rem; font-weight: 500; color: var(--text-faint); font-variant-numeric: tabular-nums; }
 
 /* Expand/Collapse (Objectives 3/10) — CSS-only smooth reveal; a generous
    fixed max-height is enough for a "motion ringan" feel without measuring

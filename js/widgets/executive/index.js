@@ -52,6 +52,12 @@ function fmtTime(ts) {
   const d = new Date(t);
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
+/** Phase 5 — a block's time meta: a single stamp when it started and ended
+ *  in the same minute, otherwise the span. */
+function fmtStoryRange(tsStart, tsEnd) {
+  const a = fmtTime(tsStart), b = fmtTime(tsEnd);
+  return a === b ? a : `${a}–${b}`;
+}
 
 /* v1.21.1 Objective 1 — a "Tanpa Kendaraan" (empty vehicle field) assignment is
    NOT an operational problem: PBSI legitimately runs trips on kendaraan
@@ -376,6 +382,63 @@ function groupStoryItems(items) {
     i = j + 1;
   }
   return out;
+}
+
+/** Phase 5 (Executive Operational Story) — the operational CONTEXT each event
+ *  belongs to, for narrative grouping ("Driver Operations", "Engineering",
+ *  "Kendaraan", "Permintaan"). "Petty Cash" is defined per the Design Review's
+ *  own category list but currently has no logAction() call sites feeding the
+ *  timeline (grep-verified) — it stays reserved, never fabricated. */
+const STORY_DOMAINS = {
+  driverOps: { label: 'Operasional Driver', icon: 'car' },
+  request: { label: 'Permintaan', icon: 'inbox' },
+  vehicle: { label: 'Kendaraan', icon: 'vehicle' },
+  engineering: { label: 'Teknik', icon: 'maintenance' },
+  pettyCash: { label: 'Petty Cash', icon: 'pettycash' },
+};
+function storyDomainKey(source, groupKey) {
+  if (source === 'eng') return 'engineering';
+  if (groupKey.startsWith('assignment_')) return 'driverOps';
+  if (groupKey.startsWith('request_')) return 'request';
+  if (groupKey.startsWith('vehicle_')) return 'vehicle';
+  return 'driverOps';
+}
+const STORY_TONE_RANK = { good: 0, neutral: 1, info: 2, warn: 3, danger: 4 };
+
+/** Phase 5 — group consecutive events sharing the same operational CONTEXT
+ *  (domain) into one narrative "block" ("Each group should tell a small
+ *  story"), reusing groupStoryItems() for the fine-grained same-action
+ *  aggregation WITHIN the run — no new event data, no synthetic summaries.
+ *  A block whose run collapses to exactly one line (an isolated event, or a
+ *  run that's already one repeated action) renders identically to the old
+ *  flat feed row — the domain header only appears once a run genuinely mixes
+ *  2+ distinct actions within the same context, which is the actual "small
+ *  story" case ("3 penugasan dibuat, 1 dibatalkan"). Adjacency-based, same
+ *  reasoning as groupStoryItems: the input is already chronological. */
+function buildStoryBlocks(items) {
+  const blocks = [];
+  let i = 0;
+  while (i < items.length) {
+    let j = i;
+    while (j + 1 < items.length && items[j + 1].domainKey === items[i].domainKey) j++;
+    const run = items.slice(i, j + 1);
+    const lines = groupStoryItems(run);
+    const domain = STORY_DOMAINS[run[0].domainKey];
+    const tone = lines.reduce((acc, l) => (STORY_TONE_RANK[l.tone] > STORY_TONE_RANK[acc] ? l.tone : acc), lines[0].tone);
+    blocks.push({
+      key: `block:${run[0].key}`,
+      domainKey: run[0].domainKey,
+      domainLabel: domain.label,
+      domainIcon: domain.icon,
+      tone,
+      tsStart: run[0].ts,
+      tsEnd: run[run.length - 1].ts,
+      count: run.length,
+      lines,
+    });
+    i = j + 1;
+  }
+  return blocks;
 }
 
 /** v1.22.0 Objective 5 — Health Score Explainability: one deterministic +/−
@@ -965,12 +1028,17 @@ export const widgets = {
     },
   },
 
-  /* ── Operational Story ── (v1.22.3 Executive Presence: "Hari Ini" as a
-     highlight reel, not an audit log — grouped, capped at 5 with a smooth
-     expand/collapse, icon+color per category, natural sentences naming the
-     actor/subject. Chronological, today-only, merging the audit-log feed with
-     Engineering's structured timeline exactly as v1.21.0 did — no new query,
-     same ctx.engineeringEvents. ) */
+  /* ── Executive Operational Story ── (Phase 5: "How has today's operation
+     unfolded", not "what events occurred" — narrative groups by operational
+     CONTEXT (Driver Operations / Teknik / Kendaraan / Permintaan), not just
+     adjacent same-action runs, per the approved Design Review. Reuses the
+     exact same audit-log + Engineering-timeline merge v1.22.3/v1.21.0 built
+     (no new query, no synthetic events) — buildStoryBlocks() groups
+     consecutive same-context items into one small narrative, falling back to
+     the original flat row for an isolated event or an already-uniform run
+     (the common case, unchanged look). Disclosure now caps on total activity
+     COUNT across blocks (still 5, unchanged threshold), and realtime refresh
+     never replays the whole Story — see onMount. */
   'exec-activity': {
     render(ctx) {
       const seen = new Set();
@@ -981,6 +1049,7 @@ export const widgets = {
           return {
             key: l.id || `log:${l.action}:${l.createdAt || l.timestamp}`,
             groupKey: l.action,
+            domainKey: storyDomainKey('audit', l.action),
             ts: Date.parse(l.createdAt || l.timestamp || 0),
             icon: meta.icon, tone: meta.tone,
             sentence: meta.sentence(l, ctx),
@@ -995,6 +1064,7 @@ export const widgets = {
           return {
             key: e.id || `eng:${e.type}:${e.timestamp}`,
             groupKey: e.type,
+            domainKey: storyDomainKey('eng', e.type),
             ts: Date.parse(e.timestamp || 0),
             icon: meta.icon, tone: meta.tone,
             sentence: engEventSentence(e.type, e.assignmentTitle),
@@ -1009,39 +1079,118 @@ export const widgets = {
         .sort((a, b) => a.ts - b.ts);
       if (!raw.length) return empty('Belum ada aktivitas penting hari ini.');
 
-      const story = groupStoryItems(raw);
+      const blocks = buildStoryBlocks(raw);
+
       const row = (it) => `
-        <div class="wsp-feed__row">
+        <li class="wsp-feed__row" data-story-key="${esc(it.key)}">
           <span class="wsp-feed__icon wsp-feed__icon--${it.tone}" aria-hidden="true">${anIcon(it.icon, { size: 15 })}</span>
           <div class="wsp-feed__body">
             <div class="wsp-feed__sentence">${esc(it.sentence)}</div>
             ${it.meta ? `<div class="wsp-feed__meta">${esc(it.meta)}</div>` : ''}
           </div>
           <span class="wsp-feed__time">${esc(fmtTime(it.ts))}</span>
-        </div>`;
+        </li>`;
 
+      // A block that collapsed to one line (an isolated event, or a run that
+      // was already a single repeated action) IS the old flat row — no
+      // header needed, nothing new to disclose. A header only earns its
+      // place once a run genuinely mixes 2+ distinct actions in the same
+      // context ("3 penugasan dibuat, 1 dibatalkan").
+      const blockItem = (b) => {
+        if (b.lines.length === 1) return row(b.lines[0]);
+        return `
+        <li class="wsp-feed__block" data-story-key="${esc(b.key)}">
+          <div class="wsp-feed__block-head">
+            <span class="wsp-feed__icon wsp-feed__icon--${b.tone}" aria-hidden="true">${anIcon(b.domainIcon, { size: 15 })}</span>
+            <span class="wsp-feed__block-label">${esc(b.domainLabel)}</span>
+            <span class="wsp-feed__time">${esc(fmtStoryRange(b.tsStart, b.tsEnd))}</span>
+          </div>
+          <ul class="wsp-feed__sublist">
+            ${b.lines.map(l => `
+            <li class="wsp-feed__subrow" data-story-key="${esc(`${b.key}:${l.key}`)}">
+              <span class="wsp-feed__subrow-sentence">${esc(l.sentence)}</span>
+              <span class="wsp-feed__subrow-time">${esc(fmtTime(l.ts))}</span>
+            </li>`).join('')}
+          </ul>
+        </li>`;
+      };
+
+      // Disclosure caps on total ACTIVITY count across blocks (unchanged
+      // threshold, 5), not block count — a contiguous chronological prefix,
+      // never a gap. The first block always shows in full even if its own
+      // count alone exceeds the cap (never split a block mid-narrative).
       const VISIBLE_CAP = 5;
-      const visible = story.slice(0, VISIBLE_CAP);
-      const rest = story.slice(VISIBLE_CAP);
+      const visible = [];
+      const rest = [];
+      let acc = 0;
+      for (const b of blocks) {
+        if (!rest.length && (acc === 0 || acc + b.count <= VISIBLE_CAP)) { visible.push(b); acc += b.count; }
+        else rest.push(b);
+      }
+      const hiddenCount = rest.reduce((sum, b) => sum + b.count, 0);
       const toggle = rest.length
-        ? `<button type="button" class="wsp-feed__toggle" data-feed-toggle aria-expanded="false">Lihat seluruh aktivitas (${rest.length} lagi)</button>`
+        ? `<button type="button" class="wsp-feed__toggle" data-feed-toggle data-feed-hidden-count="${hiddenCount}" aria-expanded="false">Lihat ${hiddenCount} aktivitas lainnya</button>`
         : '';
       const moreBlock = rest.length
-        ? `<div class="wsp-feed__more" data-feed-more>${rest.map(row).join('')}</div>`
+        ? `<ul class="wsp-feed__more" data-feed-more role="list">${rest.map(blockItem).join('')}</ul>`
         : '';
 
-      return `<div class="wsp-feed">${visible.map(row).join('')}${moreBlock}${toggle}</div>`;
+      return `<div class="wsp-feed">
+        <ul class="wsp-feed__list" role="list">${visible.map(blockItem).join('')}</ul>
+        ${moreBlock}
+        ${toggle}
+      </div>`;
     },
     onMount(bodyEl) {
       const btn = bodyEl.querySelector('[data-feed-toggle]');
       const more = bodyEl.querySelector('[data-feed-more]');
-      if (!btn || !more) return;
-      const totalMore = more.querySelectorAll('.wsp-feed__row').length;
-      btn.addEventListener('click', () => {
-        const open = more.classList.toggle('wsp-feed__more--open');
-        btn.setAttribute('aria-expanded', String(open));
-        btn.textContent = open ? 'Sembunyikan' : `Lihat seluruh aktivitas (${totalMore} lagi)`;
-      });
+
+      // Disclosure state persists across a live refresh — bodyEl is the same
+      // node every mount (only its innerHTML is rebuilt), same continuity
+      // contract as exec-snapshot's applySnapshotPeriod. Without this, every
+      // Firebase update would silently re-collapse a Story the admin had
+      // opened — the ONE new behavior Motion Language calls out for Story.
+      if (btn && more) {
+        if (bodyEl.dataset.wspStoryOpen === '1') {
+          more.classList.add('wsp-feed__more--open');
+          btn.setAttribute('aria-expanded', 'true');
+          btn.textContent = 'Sembunyikan';
+        }
+        btn.addEventListener('click', () => {
+          const open = more.classList.toggle('wsp-feed__more--open');
+          bodyEl.dataset.wspStoryOpen = open ? '1' : '0';
+          btn.setAttribute('aria-expanded', String(open));
+          btn.textContent = open ? 'Sembunyikan' : btn.dataset.feedHiddenCount ? `Lihat ${btn.dataset.feedHiddenCount} aktivitas lainnya` : '';
+        });
+      } else {
+        delete bodyEl.dataset.wspStoryOpen;
+      }
+
+      // Realtime append, never a replay: the first mount has nothing to diff
+      // against (the section's own Macro fade-up already covers that
+      // entrance — see MACRO_STAGGER.story), so nothing animates here. Every
+      // mount after that is a live data refresh rebuilding this same body
+      // node from scratch; only rows/sub-rows whose key is NEW since the
+      // PREVIOUS mount ease in (REALTIME_TWEEN — the same continuity timing
+      // the Hero's score/ring correction already uses). Everything already
+      // seen appears exactly as it looked a moment ago — the Story is never
+      // replayed wholesale on a data poll.
+      const nodes = Array.from(bodyEl.querySelectorAll('[data-story-key]'));
+      const prevSeen = bodyEl.__wspStorySeen;
+      if (prevSeen && !motionOff()) {
+        nodes.forEach((el) => {
+          if (prevSeen.has(el.dataset.storyKey)) return;
+          el.style.transition = 'none';
+          el.style.opacity = '0';
+          el.style.transform = 'translateY(-4px)';
+          requestAnimationFrame(() => requestAnimationFrame(() => {
+            el.style.transition = `opacity ${REALTIME_TWEEN.duration}ms ${REALTIME_TWEEN.ease}, transform ${REALTIME_TWEEN.duration}ms ${REALTIME_TWEEN.ease}`;
+            el.style.opacity = '1';
+            el.style.transform = 'none';
+          }));
+        });
+      }
+      bodyEl.__wspStorySeen = new Set(nodes.map(el => el.dataset.storyKey));
     },
   },
 

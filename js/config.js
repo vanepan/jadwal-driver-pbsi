@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.22.6';
-export const RELEASE_NAME = 'Executive Health Score Classification Fix';
+export const APP_VERSION = '1.22.10';
+export const RELEASE_NAME = 'Executive Operational Story';
 
 /* ============================================================
    APP_ENV — the AUTHORITATIVE runtime environment (v1.20.3 RC1).
