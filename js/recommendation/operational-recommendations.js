@@ -41,7 +41,7 @@ export function engineeringRecommendations(engineeringModel) {
       category: 'engineering-overdue',
       actionable: true,
       title: 'Jadwalkan Ulang Pekerjaan Overdue',
-      reason: `${overdue} assignment teknik telah melewati batas waktu penyelesaian.`,
+      reason: `${overdue} penugasan teknik telah melewati batas waktu penyelesaian.`,
       expectedBenefit: 'Mencegah eskalasi risiko fasilitas dan menjaga SLA operasional.',
       confidence: CONFIDENCE_HIGH,
       estimatedImpact: { label: 'Kepatuhan SLA' },

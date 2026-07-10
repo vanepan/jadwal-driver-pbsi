@@ -75,7 +75,7 @@ function pettyNarrative(components, levelLabel, hasScore) {
  *  formula-weight order (v1.21.0). Drives the Explainability breakdown. */
 const SCORE_COMPONENT_META = [
   { key: 'driverOps', label: 'Operasional Driver', weightPct: 25 },
-  { key: 'engineering', label: 'Operasional Teknisi', weightPct: 25 },
+  { key: 'engineering', label: 'Operasional Teknik', weightPct: 25 },
   { key: 'vehicleUtil', label: 'Utilisasi Armada', weightPct: 20 },
   { key: 'request', label: 'Permintaan', weightPct: 15 },
   { key: 'pettyCash', label: 'Petty Cash', weightPct: 15 },

@@ -5,9 +5,11 @@
 
      • 3 approved reference viewports (Desktop 1440x900, Tablet 1194x834,
        Mobile 402x874) x 2 themes = 6 structural combos.
-     • Fixed order — the approved 9-destination sequence (Driver / Engineering
+     • Fixed order — the approved 9-destination sequence (Driver / Teknik
        / Kendaraan / Permintaan / Petty Cash / Analitik / Prediksi /
        Rekomendasi / Simulasi) never reorders, regardless of ctx.models.
+       (Phase 10A terminology reconciliation: label 'Engineering' -> 'Teknik';
+       action key stays 'navEngineering', unchanged.)
      • Role visibility — hides, never reorders, destinations the current
        role lacks (a synthetic non-admin role is used ONLY to prove the
        filter mechanism is real; production routing never sends a non-admin
@@ -75,7 +77,7 @@ const VIEWPORTS = {
 
 const EXPECTED_ORDER = [
   { label: 'Driver', action: 'navDriverOps' },
-  { label: 'Engineering', action: 'navEngineering' },
+  { label: 'Teknik', action: 'navEngineering' },
   { label: 'Kendaraan', action: 'navVehicles' },
   { label: 'Permintaan', action: 'navPending' },
   { label: 'Petty Cash', action: 'navPettyCash' },

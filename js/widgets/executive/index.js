@@ -351,9 +351,9 @@ const ENG_TIMELINE_ALLOW = new Set(['published', 'started', 'finished', 'verifie
  *  of a title line plus a separate "actor · module · object" meta line. */
 const ENG_STORY_META = {
   published: { icon: 'maintenance', tone: 'info', sentence: (t) => `Penugasan ${t} dipublikasikan.`, aggregate: (n) => `${n} penugasan teknik dipublikasikan.` },
-  started: { icon: 'maintenance', tone: 'info', sentence: (t) => `Pekerjaan ${t} dimulai.`, aggregate: (n) => `${n} pekerjaan Engineering dimulai.` },
-  finished: { icon: 'maintenance', tone: 'info', sentence: (t) => `Engineering menyelesaikan ${t}.`, aggregate: (n) => `${n} pekerjaan Engineering selesai.` },
-  verified: { icon: 'maintenance', tone: 'info', sentence: (t) => `Pekerjaan ${t} diverifikasi.`, aggregate: (n) => `${n} pekerjaan Engineering diverifikasi.` },
+  started: { icon: 'maintenance', tone: 'info', sentence: (t) => `Pekerjaan ${t} dimulai.`, aggregate: (n) => `${n} pekerjaan Teknik dimulai.` },
+  finished: { icon: 'maintenance', tone: 'info', sentence: (t) => `Pekerjaan ${t} selesai dikerjakan.`, aggregate: (n) => `${n} pekerjaan Teknik selesai.` },
+  verified: { icon: 'maintenance', tone: 'info', sentence: (t) => `Pekerjaan ${t} diverifikasi.`, aggregate: (n) => `${n} pekerjaan Teknik diverifikasi.` },
   cancelled: { icon: 'maintenance', tone: 'danger', sentence: (t) => `Penugasan ${t} dibatalkan.`, aggregate: (n) => `${n} penugasan teknik dibatalkan.` },
   // v1.21.2 — Operational Work Report ("Catat Pekerjaan"): a single completed
   // record with no verification stage of its own (see TIMELINE_EVENT.WORK_REPORT_SUBMITTED).
@@ -455,10 +455,10 @@ function buildStoryBlocks(items) {
  *  already compute (no new signal, no recomputation). A domain with a null
  *  score (no data) is skipped rather than given an invented verdict. */
 const EXPLAIN_RULES = {
-  driverOps: (f) => f.atRiskDrivers > 0 ? `${f.atRiskDrivers} driver berisiko kelelahan/burnout` : 'Driver workload sehat',
-  engineering: (f) => f.engOverdue > 0 ? `${f.engOverdue} pekerjaan Engineering overdue` : 'Engineering stabil',
+  driverOps: (f) => f.atRiskDrivers > 0 ? `${f.atRiskDrivers} driver berisiko kelelahan/burnout` : 'Beban kerja driver sehat',
+  engineering: (f) => f.engOverdue > 0 ? `${f.engOverdue} pekerjaan Teknik overdue` : 'Teknik stabil',
   vehicleUtil: (f) => f.criticalVehicles > 0 ? `${f.criticalVehicles} kendaraan perlu perhatian` : 'Armada beroperasi normal',
-  request: (f) => f.pending > 0 ? `${f.pending} permintaan menunggu persetujuan` : 'Tidak ada request tertunda',
+  request: (f) => f.pending > 0 ? `${f.pending} permintaan menunggu persetujuan` : 'Tidak ada permintaan tertunda',
   pettyCash: (f) => f.pettyLow ? 'Saldo petty cash rendah' : 'Petty cash dalam batas aman',
 };
 const EXPLAIN_ISSUE = {
@@ -494,9 +494,9 @@ function buildInsight(ctx) {
   const engYesterday = finishedTs.filter(t => inRange(t, yestStart, todayStart)).length;
   if (engYesterday > 0) {
     const pct = Math.round(((engToday - engYesterday) / engYesterday) * 100);
-    if (pct > 0) lines.push(`Engineering meningkat ${pct}% dibanding kemarin.`);
-    else if (pct < 0) lines.push(`Engineering menurun ${Math.abs(pct)}% dibanding kemarin.`);
-    else lines.push('Engineering stabil dibanding kemarin.');
+    if (pct > 0) lines.push(`Teknik meningkat ${pct}% dibanding kemarin.`);
+    else if (pct < 0) lines.push(`Teknik menurun ${Math.abs(pct)}% dibanding kemarin.`);
+    else lines.push('Teknik stabil dibanding kemarin.');
   } else if (engToday > 0) {
     lines.push(`${engToday} pekerjaan engineering selesai hari ini.`);
   }
@@ -508,9 +508,9 @@ function buildInsight(ctx) {
   const reqYesterday = reqTs.filter(t => inRange(t, yestStart, todayStart)).length;
   if (reqYesterday > 0) {
     const pct = Math.round(((reqToday - reqYesterday) / reqYesterday) * 100);
-    if (pct > 0) lines.push(`Request naik ${pct}% dibanding kemarin.`);
-    else if (pct < 0) lines.push(`Request turun ${Math.abs(pct)}% dibanding kemarin.`);
-    else lines.push('Request stabil dibanding kemarin.');
+    if (pct > 0) lines.push(`Permintaan naik ${pct}% dibanding kemarin.`);
+    else if (pct < 0) lines.push(`Permintaan turun ${Math.abs(pct)}% dibanding kemarin.`);
+    else lines.push('Permintaan stabil dibanding kemarin.');
   }
 
   const byAssignment = new Map();
@@ -661,7 +661,7 @@ function wireSnapshotSegmented(bodyEl) {
  *  merely claims to be role-aware. */
 const LAUNCHER_DESTINATIONS = [
   { label: 'Driver', icon: 'user', action: 'navDriverOps', visibleFor: ['admin'] },
-  { label: 'Engineering', icon: 'maintenance', action: 'navEngineering', visibleFor: ['admin'] },
+  { label: 'Teknik', icon: 'maintenance', action: 'navEngineering', visibleFor: ['admin'] },
   { label: 'Kendaraan', icon: 'vehicle', action: 'navVehicles', visibleFor: ['admin'] },
   { label: 'Permintaan', icon: 'file', action: 'navPending', visibleFor: ['admin'] },
   { label: 'Petty Cash', icon: 'pettycash', action: 'navPettyCash', visibleFor: ['admin'] },
@@ -758,8 +758,8 @@ export const widgets = {
             <p class="wsp-hero__insight">${esc(body)}</p>
           </div>
 
-          <div class="wsp-hero__stats wsp-hero-anim" style="${beat(profile.micro.pulse)}" tabindex="0" role="group" aria-label="Denyut operasional saat ini">
-            <span class="wsp-hero__stats-label">Denyut Operasional</span>
+          <div class="wsp-hero__stats wsp-hero-anim" style="${beat(profile.micro.pulse)}" tabindex="0" role="group" aria-label="Status operasional saat ini">
+            <span class="wsp-hero__stats-label">Status Operasional</span>
             ${stats.map(s => `
               <div class="wsp-hero__stat">
                 <span class="wsp-hero__stat-lbl">${esc(s.lbl)}</span>
@@ -823,7 +823,7 @@ export const widgets = {
         const suffix = criticalVehicleList.length > 1 ? ` (+${criticalVehicleList.length - 1} lainnya)` : '';
         items.push({ sev: 'critical', title: `${top.vehicleName} — ${top.categoryLabel}${suffix}`, reason: top.reason, action: 'navDriverPrediction', actionLabel: 'Tinjau Armada' });
       }
-      if (f.engOverdue > 0) items.push({ sev: 'critical', title: `${f.engOverdue} pekerjaan teknisi overdue`, reason: 'Assignment teknik melewati batas waktu penyelesaian.', action: 'navEngineering', actionLabel: 'Tinjau Teknik' });
+      if (f.engOverdue > 0) items.push({ sev: 'critical', title: `${f.engOverdue} pekerjaan teknisi overdue`, reason: 'Penugasan teknik melewati batas waktu penyelesaian.', action: 'navEngineering', actionLabel: 'Tinjau Teknik' });
       if (f.pendingVerify > 0) {
         const top = f.engUnverifiedList[0];
         const suffix = f.pendingVerify > 1 ? ` (+${f.pendingVerify - 1} lainnya)` : '';
@@ -1015,10 +1015,10 @@ export const widgets = {
         { key: 'bulan', segLabel: 'Bulan', values: periodValues(sinceYmd(30), sinceMs(30)) },
       ];
       const TILE_META = [
-        { key: 'trip', title: 'Trip Dijalankan', desc: 'Total trip terjadwal pada periode ini' },
-        { key: 'completed', title: 'Penugasan Selesai', desc: 'Trip yang telah diselesaikan driver' },
+        { key: 'trip', title: 'Penugasan Dijalankan', desc: 'Total penugasan terjadwal pada periode ini' },
+        { key: 'completed', title: 'Penugasan Selesai', desc: 'Penugasan yang telah diselesaikan driver' },
         { key: 'vehicles', title: 'Kendaraan Terpakai', desc: 'Kendaraan unik yang digunakan' },
-        { key: 'engReports', title: 'Laporan Teknik Selesai', desc: 'Pekerjaan Engineering yang selesai' },
+        { key: 'engReports', title: 'Laporan Teknik Selesai', desc: 'Pekerjaan Teknik yang selesai' },
         { key: 'reqResolved', title: 'Permintaan Diproses', desc: 'Permintaan bidang yang telah diputuskan' },
       ];
 
@@ -1038,18 +1038,18 @@ export const widgets = {
 
       // v1.22.2 Objective 8 — Executive Insight, Apple-Health style: exactly
       // ONE sentence (topInsightLine), not a bulleted list of up to 4.
-      const insightLine = topInsightLine(ctx) || 'Data historis belum cukup untuk menghasilkan insight perbandingan.';
+      const insightLine = topInsightLine(ctx) || 'Data historis belum cukup untuk menghasilkan wawasan perbandingan.';
 
       return `
         <div class="wsp-segmented" role="tablist" aria-label="Pilih periode Snapshot Operasional" data-wsp-segmented>${segButtons}</div>
         <div class="wsp-snapshot__panels">${panels}</div>
         <div class="wsp-snapshot-period">
-          <div class="wsp-snapshot-period__label">Insight</div>
+          <div class="wsp-snapshot-period__label">Wawasan</div>
           <p class="wsp-insight">${esc(insightLine)}</p>
         </div>
         <div class="wsp-summary-grid">
           <button type="button" class="wsp-summary" data-wsp-action="navPending">
-            <span class="wsp-summary__title">Pending Approval</span>
+            <span class="wsp-summary__title">Permintaan Tertunda</span>
             <span class="wsp-summary__value">${esc(f.pending)}</span>
             <span class="wsp-summary__status wsp-summary__status--${f.pending > 0 ? 'warn' : 'good'}">${f.pending > 0 ? 'Menunggu' : 'Bersih'}</span>
           </button>
