@@ -499,6 +499,75 @@ const ATTENTION_VISIBLE_CAP = 2;
  *  the only new behavior is disclosure appearing once there is more. */
 const RECOMMENDATION_VISIBLE_CAP = 3;
 
+/** Phase 4 (Operational Snapshot) — crossfades the active period panel in
+ *  place instead of recreating the section, per Motion Language's "content
+ *  morphs, the section is never recreated". All three panels render the
+ *  identical 5-tile grid shape and share one grid cell
+ *  (.wsp-snapshot__panels), so switching never shifts layout — only opacity
+ *  animates (GPU-friendly), and reduced motion / animate=false drops
+ *  straight to the end state. Selection is persisted on bodyEl's dataset
+ *  (the body node survives a data refresh — only its innerHTML is replaced,
+ *  same continuity contract mountHeroMotion relies on) so a realtime update
+ *  never resets the admin's chosen period back to "Hari". */
+function applySnapshotPeriod(bodyEl, period, animate) {
+  const buttons = bodyEl.querySelectorAll('[data-wsp-seg]');
+  const panels = bodyEl.querySelectorAll('[data-snapshot-panel]');
+  const nextPanel = bodyEl.querySelector(`[data-snapshot-panel="${period}"]`);
+  if (!nextPanel) return;
+  if (bodyEl.dataset.wspActivePeriod === period && !nextPanel.hidden) return;
+  const activePanel = Array.from(panels).find(p => !p.hidden && p !== nextPanel);
+
+  buttons.forEach(b => {
+    const on = b.dataset.wspSeg === period;
+    b.classList.toggle('wsp-segmented__btn--active', on);
+    b.setAttribute('aria-selected', String(on));
+    b.tabIndex = on ? 0 : -1;
+  });
+  bodyEl.dataset.wspActivePeriod = period;
+
+  if (bodyEl.__wspSnapshotTimer) { clearTimeout(bodyEl.__wspSnapshotTimer); bodyEl.__wspSnapshotTimer = null; }
+
+  if (!animate || motionOff()) {
+    panels.forEach(p => { p.hidden = p !== nextPanel; p.style.opacity = ''; });
+    return;
+  }
+
+  nextPanel.hidden = false;
+  nextPanel.style.opacity = '0';
+  if (activePanel) activePanel.style.opacity = '0';
+  requestAnimationFrame(() => requestAnimationFrame(() => { nextPanel.style.opacity = '1'; }));
+  bodyEl.__wspSnapshotTimer = window.setTimeout(() => {
+    panels.forEach(p => {
+      if (p === nextPanel) { p.style.opacity = ''; return; }
+      p.hidden = true;
+      p.style.opacity = '';
+    });
+    bodyEl.__wspSnapshotTimer = null;
+  }, 220);
+}
+
+/** Native tablist keyboard pattern (Left/Right/Home/End move focus AND
+ *  activate — a segmented control, not a deferred-activation tab strip). */
+function wireSnapshotSegmented(bodyEl) {
+  const list = bodyEl.querySelector('[data-wsp-segmented]');
+  if (!list) return;
+  const buttons = Array.from(list.querySelectorAll('[data-wsp-seg]'));
+  buttons.forEach((btn, i) => {
+    btn.addEventListener('click', () => applySnapshotPeriod(bodyEl, btn.dataset.wspSeg, true));
+    btn.addEventListener('keydown', (e) => {
+      let idx = null;
+      if (e.key === 'ArrowRight') idx = (i + 1) % buttons.length;
+      else if (e.key === 'ArrowLeft') idx = (i - 1 + buttons.length) % buttons.length;
+      else if (e.key === 'Home') idx = 0;
+      else if (e.key === 'End') idx = buttons.length - 1;
+      if (idx == null) return;
+      e.preventDefault();
+      buttons[idx].focus();
+      applySnapshotPeriod(bodyEl, buttons[idx].dataset.wspSeg, true);
+    });
+  });
+}
+
 export const widgets = {
   /* ── Executive Briefing Hero ── (v1.22.1 redesign: de-boxed, ring gauge +
      huge score as the visual anchor, one verdict headline, one insight
@@ -807,12 +876,17 @@ export const widgets = {
     },
   },
 
-  /* ── Operational Snapshot ── (v1.21.0 Objective 6: Today / This Week / This
-     Month — period-filtered slices of data already loaded in ctx, no new
-     query. Rolling windows (not calendar-aligned), matching the existing
-     "30 Hari" convention used elsewhere in the Executive model. Operational
-     Hours is intentionally omitted: no existing source can be re-windowed to
-     Today/Week without a new engine, which is out of scope here.) */
+  /* ── Operational Snapshot ── (Phase 4: "what happened over the selected
+     period", not "what exists" — a Segmented control (Hari/Minggu/Bulan,
+     per the approved Design Review) drives ONE active summary-card panel
+     instead of the old always-all-three-visible KPI stack. Same rolling
+     Today/Week/Month windows and the same 5 metrics as v1.21.0 — reused,
+     never recomputed differently — plus a static, non-fabricated supporting
+     description per card (no invented trend/delta: none is available for
+     these metrics yet, so none is shown, per the "never fabricate trends"
+     contract). Insight and Pending Approval are unchanged in substance,
+     just no longer nested under a per-period label since only one period is
+     ever visible now.) */
   'exec-snapshot': {
     render(ctx) {
       const f = facts(ctx);
@@ -826,45 +900,55 @@ export const widgets = {
       const requests = ctx.requests || [];
       const engEvents = ctx.engineeringEvents || [];
 
-      function periodCard(label, fromYmd, fromMs) {
+      function periodValues(fromYmd, fromMs) {
         const asg = assignments.filter(a => a.date && a.date >= fromYmd && a.date <= todayYmd);
-        const completed = asg.filter(a => a.status === 'completed').length;
-        const vehiclesUsed = new Set(asg.map(a => (a.vehicle || '').trim()).filter(Boolean)).size;
-        const engReports = engEvents.filter(e => e.type === 'finished' && Date.parse(e.timestamp || 0) >= fromMs).length;
-        const reqResolved = requests.filter(r => r.createdAt && Date.parse(r.createdAt) >= fromMs && r.status !== 'pending').length;
-        return { label, tiles: [
-          { title: 'Trip Dijalankan', value: asg.length },
-          { title: 'Penugasan Selesai', value: completed },
-          { title: 'Kendaraan Terpakai', value: vehiclesUsed },
-          { title: 'Laporan Teknik Selesai', value: engReports },
-          { title: 'Permintaan Diproses', value: reqResolved },
-        ] };
+        return {
+          trip: asg.length,
+          completed: asg.filter(a => a.status === 'completed').length,
+          vehicles: new Set(asg.map(a => (a.vehicle || '').trim()).filter(Boolean)).size,
+          engReports: engEvents.filter(e => e.type === 'finished' && Date.parse(e.timestamp || 0) >= fromMs).length,
+          reqResolved: requests.filter(r => r.createdAt && Date.parse(r.createdAt) >= fromMs && r.status !== 'pending').length,
+        };
       }
 
-      const periods = [
-        periodCard('Hari Ini', todayYmd, sinceMs(1)),
-        periodCard('Minggu Ini', sinceYmd(7), sinceMs(7)),
-        periodCard('Bulan Ini', sinceYmd(30), sinceMs(30)),
+      const PERIODS = [
+        { key: 'hari', segLabel: 'Hari', values: periodValues(todayYmd, sinceMs(1)) },
+        { key: 'minggu', segLabel: 'Minggu', values: periodValues(sinceYmd(7), sinceMs(7)) },
+        { key: 'bulan', segLabel: 'Bulan', values: periodValues(sinceYmd(30), sinceMs(30)) },
       ];
+      const TILE_META = [
+        { key: 'trip', title: 'Trip Dijalankan', desc: 'Total trip terjadwal pada periode ini' },
+        { key: 'completed', title: 'Penugasan Selesai', desc: 'Trip yang telah diselesaikan driver' },
+        { key: 'vehicles', title: 'Kendaraan Terpakai', desc: 'Kendaraan unik yang digunakan' },
+        { key: 'engReports', title: 'Laporan Teknik Selesai', desc: 'Pekerjaan Engineering yang selesai' },
+        { key: 'reqResolved', title: 'Permintaan Diproses', desc: 'Permintaan bidang yang telah diputuskan' },
+      ];
+
+      const segButtons = PERIODS.map((p, i) => `
+        <button type="button" role="tab" id="wsp-seg-${p.key}" class="wsp-segmented__btn${i === 0 ? ' wsp-segmented__btn--active' : ''}"
+          data-wsp-seg="${p.key}" aria-selected="${i === 0}" aria-controls="wsp-panel-${p.key}" tabindex="${i === 0 ? '0' : '-1'}">${esc(p.segLabel)}</button>`).join('');
+
+      const panels = PERIODS.map((p, i) => `
+        <div class="wsp-snapshot__panel" id="wsp-panel-${p.key}" data-snapshot-panel="${p.key}" role="tabpanel" aria-labelledby="wsp-seg-${p.key}"${i === 0 ? '' : ' hidden'}>
+          <div class="wsp-summary-grid">${TILE_META.map(m => `
+            <div class="wsp-summary wsp-summary--static">
+              <span class="wsp-summary__title">${esc(m.title)}</span>
+              <span class="wsp-summary__value">${esc(p.values[m.key])}</span>
+              <span class="wsp-summary__desc">${esc(m.desc)}</span>
+            </div>`).join('')}</div>
+        </div>`).join('');
 
       // v1.22.2 Objective 8 — Executive Insight, Apple-Health style: exactly
       // ONE sentence (topInsightLine), not a bulleted list of up to 4.
       const insightLine = topInsightLine(ctx) || 'Data historis belum cukup untuk menghasilkan insight perbandingan.';
-      const insightHtml = `
+
+      return `
+        <div class="wsp-segmented" role="tablist" aria-label="Pilih periode Snapshot Operasional" data-wsp-segmented>${segButtons}</div>
+        <div class="wsp-snapshot__panels">${panels}</div>
         <div class="wsp-snapshot-period">
           <div class="wsp-snapshot-period__label">Insight</div>
           <p class="wsp-insight">${esc(insightLine)}</p>
-        </div>`;
-
-      return periods.map(p => `
-        <div class="wsp-snapshot-period">
-          <div class="wsp-snapshot-period__label">${esc(p.label)}</div>
-          <div class="wsp-summary-grid">${p.tiles.map(t => `
-            <div class="wsp-summary wsp-summary--static">
-              <span class="wsp-summary__title">${esc(t.title)}</span>
-              <span class="wsp-summary__value">${esc(t.value)}</span>
-            </div>`).join('')}</div>
-        </div>`).join('') + insightHtml + `
+        </div>
         <div class="wsp-summary-grid">
           <button type="button" class="wsp-summary" data-wsp-action="navPending">
             <span class="wsp-summary__title">Pending Approval</span>
@@ -872,6 +956,12 @@ export const widgets = {
             <span class="wsp-summary__status wsp-summary__status--${f.pending > 0 ? 'warn' : 'good'}">${f.pending > 0 ? 'Menunggu' : 'Bersih'}</span>
           </button>
         </div>`;
+    },
+    onMount(bodyEl) {
+      wireSnapshotSegmented(bodyEl);
+      const saved = bodyEl.dataset.wspActivePeriod;
+      if (saved && saved !== 'hari') applySnapshotPeriod(bodyEl, saved, false);
+      else bodyEl.dataset.wspActivePeriod = 'hari';
     },
   },
 

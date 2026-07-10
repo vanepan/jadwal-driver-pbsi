@@ -408,8 +408,28 @@ const CSS = `
 .wsp-summary--static { cursor: default; }
 .wsp-summary--static:hover { border-color: var(--border-faint); }
 
-/* Operational Snapshot — Today/Week/Month period sections (v1.21.0) */
-.wsp-snapshot-period + .wsp-snapshot-period { margin-top: 16px; }
+/* Operational Snapshot — Phase 4: Segmented period control (Hari/Minggu/
+   Bulan) + one active summary-card panel, replacing the old always-all-
+   three-visible period stack (v1.21.0). Visual spec matches the approved
+   Design Review's Segmented primitive exactly (pill track, boxed active
+   pill). Panels share one grid cell so switching crossfades in place
+   instead of recreating the section (Motion Language) — every period
+   renders the identical 5-tile grid shape, so there is no layout shift to
+   animate around; only opacity moves (GPU-friendly). */
+.wsp-segmented { display: inline-flex; gap: 3px; padding: 4px; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 13px; align-self: flex-start; }
+.wsp-segmented__btn { appearance: none; border: none; background: transparent; color: var(--text-dim); cursor: pointer; font: inherit;
+  font-weight: 600; font-size: .82rem; padding: 7px 15px; border-radius: 9px; white-space: nowrap;
+  transition: color .14s ease, background-color .14s ease, box-shadow .14s ease; }
+.wsp-segmented__btn:hover { color: var(--text); }
+.wsp-segmented__btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wsp-segmented__btn--active { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
+.wsp-snapshot__panels { display: grid; }
+.wsp-snapshot__panel { grid-area: 1 / 1; transition: opacity 180ms ${EASE}; }
+.wsp-snapshot__panel[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .wsp-snapshot__panel { transition: none; } }
+[data-anim="off"] .wsp-snapshot__panel { transition: none; }
+.wsp-summary__desc { font-size: .72rem; color: var(--text-faint); line-height: 1.35; }
 .wsp-snapshot-period__label { font-size: .68rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--text-faint); margin: 0 0 8px; }
 /* Executive Insight — v1.22.2 Objective 8: exactly ONE Apple-Health-style
    sentence, not a bulleted list. */
