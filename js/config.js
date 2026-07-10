@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.22.5';
-export const RELEASE_NAME = 'Executive Hero & Motion Foundation';
+export const APP_VERSION = '1.22.6';
+export const RELEASE_NAME = 'Executive Health Score Classification Fix';
 
 /* ============================================================
    APP_ENV — the AUTHORITATIVE runtime environment (v1.20.3 RC1).
@@ -66,6 +66,16 @@ export function isProduction() {
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.22.6',
+    date: '2026-07-10',
+    summary: 'Executive Health Score Classification Fix — found during mandatory Phase 1 (Executive Hero) browser verification, not part of that phase\'s own scope, and fixed here as its own change per explicit approval. ROOT CAUSE: js/analytics/executive-analytics.js\'s healthLevel() (which computes ctx.models.exec.score.level) has always returned one of \'excellent\'/\'good\'/\'fair\'/\'attention\' (or \'nodata\') — but its two Executive-side consumers checked for a completely different vocabulary, \'high\'/\'medium\'/\'low\'/\'insufficient\', which is not this function\'s vocabulary at all — it belongs to the unrelated computeConfidence() (a petty-cash transaction-count confidence helper) elsewhere in the same file, strongly suggesting the two were confused during authoring. Practical effect: narrative-builder.js\'s classifyState() checked `score.level === \'high\'`/`\'medium\'` to produce the Hero\'s \'healthy\'/\'good\' narrative states — those checks never matched anything the real engine emits, so ANY score with zero cross-domain findings silently fell through to the \'warning\' catch-all, regardless of whether the actual score was 95 or 60. Separately, ui-kit.js\'s LEVEL_TONE (Phase 0 - moved verbatim from the pre-existing index.js, bug inherited unchanged) had the identical mismatch, so the Hero\'s status pill defaulted to neutral/gray instead of ever showing green. FIX: classifyState() (js/widgets/executive/narrative-builder.js) now checks score.level === \'excellent\'/\'good\' (was \'high\'/\'medium\'); LEVEL_TONE (js/widgets/executive/ui-kit.js) remapped to the real 4-level vocabulary (excellent/good/fair/attention) + nodata, choosing tones by actual meaning (excellent/good positive, fair/attention warn) rather than a positional guess. Both are one-line, mechanical vocabulary corrections — no thresholds, weights, or narrative wording changed. VERIFIED: extended scripts/executive-hero-verification-check.mjs (built for Phase 1\'s own mandatory browser verification) with a regression guard feeding score.level=\'excellent\' + zero findings through the REAL renderHome() pipeline — confirms the Hero now renders the healthy narrative state and a green status pill, where before the fix it rendered as a warning with a gray pill. Files modified: js/widgets/executive/narrative-builder.js (classifyState, 2 lines), js/widgets/executive/ui-kit.js (LEVEL_TONE table), js/config.js (this entry).',
+    highlights: [
+      'Fixed a real, pre-existing bug (predates the Executive Hero redesign): the Executive Command Center Hero could never actually render its intended "Healthy"/"Good" narrative or status-pill color for a genuinely good health score — a vocabulary mismatch between the score engine (excellent/good/fair/attention) and its two consumers (which checked for high/medium/low/insufficient) meant every finding-free score silently read as a generic warning.',
+      'classifyState() (narrative-builder.js) and LEVEL_TONE (ui-kit.js) corrected to the score engine\'s real vocabulary — no thresholds, weights, or copy changed, purely a lookup-key correction.',
+      'Discovered and verified via the new mandatory browser verification harness for the Executive Hero (scripts/executive-hero-verification-check.mjs), not part of that phase\'s own change — fixed separately, with its own regression-guard assertion added to the same harness.',
+    ],
+  },
   {
     version: '1.22.5',
     date: '2026-07-09',

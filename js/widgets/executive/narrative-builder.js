@@ -120,9 +120,15 @@ function classifyState(findings, score) {
   if (findings.some(x => x.severity === 'critical')) return 'critical';
   if (findings.length > 0) return 'warning';
   if (!score || score.value == null) return 'neutral';
-  if (score.level === 'high') return 'healthy';
-  if (score.level === 'medium') return 'good';
-  // Score exists and is below "stabil" (low/insufficient) but no single
+  // v1.22.6 fix — js/analytics/executive-analytics.js's healthLevel() has
+  // always emitted 'excellent'|'good'|'fair'|'attention' (never 'high'/
+  // 'medium'); those two checks never matched anything real, so a healthy
+  // or good score with zero findings silently fell through to 'warning'
+  // below. Corrected to the engine's actual vocabulary — no other line here
+  // changes, 'fair'/'attention' still correctly fall through to 'warning'.
+  if (score.level === 'excellent') return 'healthy';
+  if (score.level === 'good') return 'good';
+  // Score exists and is below "stabil" (fair/attention) but no single
   // domain crossed its own threshold — a genuine state, not an omission:
   // brief on the score itself rather than fabricate a specific domain cause.
   return 'warning';

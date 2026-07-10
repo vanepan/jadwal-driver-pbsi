@@ -22,8 +22,14 @@ import { esc, actionBtn } from '../_widget-base.js';
  *  input adapters (below), instead of each widget inventing its own. */
 export const EXEC_TONES = ['good', 'warn', 'danger', 'info', 'neutral'];
 
-/** score.level (executive-score-engine.js) → Executive tone. */
-const LEVEL_TONE = { high: 'good', medium: 'info', low: 'warn', insufficient: 'neutral', nodata: 'neutral' };
+/** score.level (executive-score-engine.js's healthLevel(), via
+ *  executive-analytics.js) → Executive tone.
+ *  v1.22.6 fix — this previously keyed on 'high'/'medium'/'low'/'insufficient',
+ *  a vocabulary healthLevel() has never emitted (it returns 'excellent'/
+ *  'good'/'fair'/'attention'; 'high'/'medium'/'low'/'insufficient' belongs to
+ *  the unrelated computeConfidence() elsewhere in executive-analytics.js) —
+ *  every non-nodata level silently fell through to the 'neutral' default. */
+const LEVEL_TONE = { excellent: 'good', good: 'info', fair: 'warn', attention: 'warn', nodata: 'neutral' };
 export function toneFromLevel(level) { return LEVEL_TONE[level] || 'neutral'; }
 
 /** Recommendation-engine tone → Executive tone. */
