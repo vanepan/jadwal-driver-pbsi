@@ -27,20 +27,19 @@ export const WORKSPACES = {
     role: 'admin',
     title: 'Executive Command Center',
     subtitle: 'Ringkasan operasional — apa yang membutuhkan perhatian Anda hari ini.',
-    // v1.22.2 briefing-flow order: Hero (incl. Health) → Priority → Attention →
-    // Decision → Today's Story → Recommendation → Simulation → Snapshot
-    // (Insight) → Launcher — matches the "what's the condition? / what needs
-    // attention? / what's next?" reading order the Executive Design Language
-    // sprint specified. Pure reorder of existing ids — nothing added/removed.
+    // Phase 7C (Executive Consolidation) — the final six-question briefing
+    // order approved in the Phase 7B Information Architecture Review: Hero →
+    // Attention → Recommended Actions → Operational Snapshot → Operational
+    // Story → Launcher. exec-priority/exec-decision/exec-simulation are
+    // removed (their unique information was merged into exec-attention, or —
+    // for Simulation — remains reachable via exec-quick's existing 'Simulasi'
+    // destination); their underlying engines are untouched.
     widgets: [
       'exec-hero',
-      'exec-priority',
       'exec-attention',
-      'exec-decision',
-      'exec-activity',
       'exec-recommendation',
-      'exec-simulation',
       'exec-snapshot',
+      'exec-activity',
       'exec-quick',
     ],
   },

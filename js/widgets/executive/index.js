@@ -109,8 +109,8 @@ function topPendingRequest(ctx) {
 }
 
 /** Trivial derived facts shared by several widgets — ONE computation per
- *  render pass so exec-hero/exec-priority/exec-attention/exec-decision never
- *  duplicate the same cross-domain reads. */
+ *  render pass so exec-hero/exec-attention never duplicate the same
+ *  cross-domain reads. */
 function facts(ctx) {
   const ex = ctx.models?.exec;
   const dk = ex?.driverKpis || {};
@@ -633,19 +633,23 @@ function wireSnapshotSegmented(bodyEl) {
 
 /** Executive Launcher — the fixed destination catalogue (Phase 6). Order is
  *  the approved, frozen sequence (Design Review LAUNCHER data) and NEVER
- *  varies by health/attention/recommendation/prediction/simulation state —
- *  this is the one section of the briefing an executive should be able to
- *  find by muscle memory. `visibleFor` is the ONLY axis allowed to vary:
- *  a destination is hidden, never reordered, when the viewing role lacks
- *  it. Today `resolveWorkspaceForRole()` (workspace-registry.js) sends only
+ *  varies by health/attention/recommendation state — this is the one section
+ *  of the briefing an executive should be able to find by muscle memory.
+ *  `visibleFor` is the ONLY axis allowed to vary: a destination is hidden,
+ *  never reordered, when the viewing role lacks it. Today
+ *  `resolveWorkspaceForRole()` (workspace-registry.js) sends only
  *  role==='admin' into this workspace at all, and admin already has working
  *  access to every destination below via other Executive widgets' own CTAs
- *  (exec-decision → navPending/navEngineering, exec-simulation/
- *  exec-recommendation → navDriverPrediction) — so this list currently
- *  resolves to "show all 9" for the only role that ever renders it. The
- *  check is real, not decorative: it reads ctx.role so a future narrower
- *  role reaching this workspace is filtered correctly with zero code change
- *  here, instead of a comment that merely claims to be role-aware. */
+ *  (exec-attention → navPending/navEngineering, exec-recommendation →
+ *  navDriverPrediction) — so this list currently resolves to "show all 9"
+ *  for the only role that ever renders it. Phase 7C (Executive
+ *  Consolidation) removed the standalone exec-simulation card; its
+ *  'Simulasi' destination stays here unchanged — this catalogue was always
+ *  the one place Simulation belonged as a destination rather than a second,
+ *  content-free briefing section. The check is real, not decorative: it
+ *  reads ctx.role so a future narrower role reaching this workspace is
+ *  filtered correctly with zero code change here, instead of a comment that
+ *  merely claims to be role-aware. */
 const LAUNCHER_DESTINATIONS = [
   { label: 'Driver', icon: 'user', action: 'navDriverOps', visibleFor: ['admin'] },
   { label: 'Engineering', icon: 'maintenance', action: 'navEngineering', visibleFor: ['admin'] },
@@ -767,24 +771,6 @@ export const widgets = {
     onMount(bodyEl, ctx) { mountHeroMotion(bodyEl, ctx); },
   },
 
-  /* ── Operational Priority ── (v1.22.1: de-boxed severity list, Critical →
-     Warning; a compact success line replaces the fake "healthy" list item
-     when there is nothing to brief on — Objective 6.) */
-  'exec-priority': {
-    render(ctx) {
-      const f = facts(ctx);
-      const items = [];
-
-      (f.rec.board?.critical || []).slice(0, 3).forEach(r => items.push({ sev: 'critical', title: `${r.vehicleName} — ${r.categoryLabel}`, reason: r.reason, action: 'navDriverPrediction', actionLabel: 'Tinjau Prediksi' }));
-      if (f.pending > 0) items.push({ sev: 'warn', title: `${f.pending} permintaan menunggu persetujuan`, reason: 'Permintaan bidang menunggu keputusan admin.', action: 'navPending', actionLabel: 'Tinjau Antrian' });
-      (f.rec.board?.upcoming || []).slice(0, 2).forEach(r => items.push({ sev: 'warn', title: `${r.vehicleName} — ${r.categoryLabel}`, reason: r.reason, action: 'navDriverPrediction', actionLabel: 'Tinjau Prediksi' }));
-
-      if (!items.length) return compactSuccessLine('Tidak ada tindakan prioritas hari ini — operasional berjalan normal.');
-      items.sort((a, b) => severityRank(a.sev) - severityRank(b.sev));
-      return rankedList(items.slice(0, 5));
-    },
-  },
-
   /* ── Attention Center ── (v1.21.0 Objective 3: only actionable cross-domain
      items — critical assignments/vehicle maintenance, engineering verification
      pending + overdue, driver fatigue/burnout, outstanding requests, petty
@@ -799,16 +785,46 @@ export const widgets = {
      (Phase 0 ui-kit.js) for every row — no second severity-row vocabulary. The
      pulsing dot reuses the exact per-mood pulse spec already defined in
      motion-profiles.js's MOTION_PROFILES (critical/warning) — Motion Language
-     §04's "Attention pulse" catalogue entry, first wired in here. */
+     §04's "Attention pulse" catalogue entry, first wired in here.
+
+     Phase 7C (Executive Consolidation) — absorbs the one non-duplicated
+     signal each removed section carried: exec-priority named its top
+     critical vehicle instead of a bare count, and exec-decision named the
+     single oldest pending request / top unverified engineering item instead
+     of a bare count. Folded in here as the row TITLE (top instance + a "+N
+     lainnya" suffix when there's more than one) using the exact same
+     f.rec.board.critical / f.topPendingRequest / f.engUnverifiedList facts()
+     already computes — no new query, no new vocabulary, no second severity
+     list. Reason/action/tone per row are unchanged. (exec-priority's OTHER
+     source, f.rec.board.upcoming, is deliberately NOT surfaced here: those
+     are the Recommendation Engine's own MODERATE/"monitoring" tier —
+     actionable:false by the engine's own classification — and Attention's
+     contract is actionable items only; surfacing a non-actionable tier here
+     would reintroduce the noise this consolidation removes. ELEVATED/
+     "preventive" vehicles in that same bucket remain visible by name in
+     exec-recommendation, unaffected.) */
   'exec-attention': {
     render(ctx) {
       const f = facts(ctx);
       const items = [];
 
-      if (f.criticalVehicles > 0) items.push({ sev: 'critical', title: `${f.criticalVehicles} kendaraan perlu pemeliharaan segera`, reason: 'Prediksi armada menandai risiko kritis.', action: 'navDriverPrediction', actionLabel: 'Tinjau Armada' });
+      const criticalVehicleList = f.rec.board?.critical || [];
+      if (criticalVehicleList.length > 0) {
+        const top = criticalVehicleList[0];
+        const suffix = criticalVehicleList.length > 1 ? ` (+${criticalVehicleList.length - 1} lainnya)` : '';
+        items.push({ sev: 'critical', title: `${top.vehicleName} — ${top.categoryLabel}${suffix}`, reason: top.reason, action: 'navDriverPrediction', actionLabel: 'Tinjau Armada' });
+      }
       if (f.engOverdue > 0) items.push({ sev: 'critical', title: `${f.engOverdue} pekerjaan teknisi overdue`, reason: 'Assignment teknik melewati batas waktu penyelesaian.', action: 'navEngineering', actionLabel: 'Tinjau Teknik' });
-      if (f.pendingVerify > 0) items.push({ sev: 'warn', title: `${f.pendingVerify} laporan menunggu verifikasi`, reason: 'Pekerjaan teknisi selesai namun belum diverifikasi koordinator.', action: 'navEngineering', actionLabel: 'Verifikasi Laporan' });
-      if (f.pending > 0) items.push({ sev: 'warn', title: `${f.pending} permintaan belum diproses`, reason: 'Permintaan bidang menunggu keputusan admin.', action: 'navPending', actionLabel: 'Tinjau Permintaan' });
+      if (f.pendingVerify > 0) {
+        const top = f.engUnverifiedList[0];
+        const suffix = f.pendingVerify > 1 ? ` (+${f.pendingVerify - 1} lainnya)` : '';
+        items.push({ sev: 'warn', title: `Verifikasi Pekerjaan — ${top.title}${suffix}`, reason: 'Pekerjaan teknisi selesai namun belum diverifikasi koordinator.', action: 'navEngineering', actionLabel: 'Verifikasi Laporan' });
+      }
+      if (f.pending > 0) {
+        const label = f.topPendingRequest.purpose || f.topPendingRequest.destination || f.topPendingRequest.requesterName || 'Bidang';
+        const suffix = f.pending > 1 ? ` (+${f.pending - 1} lainnya)` : '';
+        items.push({ sev: 'warn', title: `Setujui Permintaan — ${label}${suffix}`, reason: 'Permintaan bidang menunggu keputusan admin.', action: 'navPending', actionLabel: 'Tinjau Permintaan' });
+      }
       if (f.atRiskDrivers > 0) items.push({ sev: 'warn', title: `${f.atRiskDrivers} driver berisiko kelelahan/burnout`, reason: 'Beban kerja driver melewati ambang aman dalam periode berjalan.', action: 'navAnalyticsDriver', actionLabel: 'Tinjau Wellness' });
       if (f.pettyLow) items.push({ sev: 'critical', title: 'Saldo petty cash rendah', reason: 'Saldo siklus berjalan berada di bawah ambang notifikasi.', action: 'navPettyCash', actionLabel: 'Tinjau Petty Cash' });
 
@@ -847,46 +863,6 @@ export const widgets = {
     },
   },
 
-  /* ── Decision Center ── (v1.22.0 Objective 2: Top 3 Decisions, ranked by
-     impact — not push/timestamp order. Every candidate is NAMED (which
-     request, which assignment, which vehicle), never a bare count. ) */
-  'exec-decision': {
-    render(ctx) {
-      const f = facts(ctx);
-      const IMPACT_RANK = { danger: 0, warn: 1, info: 2 };
-      const decisions = [];
-
-      const topReq = f.topPendingRequest;
-      if (topReq) {
-        const label = topReq.purpose || topReq.destination || topReq.requesterName || 'Bidang';
-        decisions.push({ tone: 'warn', priority: 'Tinggi', title: `Setujui Permintaan — ${label}`, reason: f.pending > 1 ? `${f.pending} permintaan menunggu persetujuan.` : 'Permintaan bidang menunggu keputusan admin.', action: 'navPending', actionLabel: 'Buka Antrian', impact: 'Kelancaran operasional bidang' });
-      }
-      f.engUnverifiedList.slice(0, 2).forEach(item => {
-        decisions.push({ tone: 'warn', priority: 'Tinggi', title: `Verifikasi Pekerjaan — ${item.title}`, reason: 'Pekerjaan teknisi selesai namun belum diverifikasi koordinator.', action: 'navEngineering', actionLabel: 'Verifikasi', impact: 'Validasi kualitas pekerjaan teknik' });
-      });
-      (f.rec.recs || [])
-        .filter(r => r.actionable && (r.category === 'maintenance' || r.category === 'availability'))
-        .forEach(r => decisions.push({ tone: engineTone(r.priority.tone), priority: r.priority.label, title: `Jadwalkan Pemeliharaan — ${r.vehicleName}`, reason: r.reason, action: 'navDriverPrediction', actionLabel: 'Tinjau', impact: r.estimatedImpact?.label || '—' }));
-
-      if (!decisions.length) return empty('Tidak ada keputusan tertunda. Semua tertangani.');
-
-      decisions.sort((a, b) => (IMPACT_RANK[a.tone] ?? 3) - (IMPACT_RANK[b.tone] ?? 3));
-      const top3 = decisions.slice(0, 3);
-      // v1.22.2 Objective 6 — Decision is a call-to-action, not a flat list:
-      // the first (highest-impact) decision renders visibly larger than the
-      // 2nd/3rd, a real size hierarchy rather than list order alone.
-      const RANK_CLASS = ['wsp-inbox__item--primary', 'wsp-inbox__item--secondary', 'wsp-inbox__item--secondary'];
-
-      return `<div class="wsp-inbox">${top3.map((d, i) => `
-        <div class="wsp-inbox__item ${RANK_CLASS[i] || 'wsp-inbox__item--secondary'}">
-          <div class="wsp-inbox__top">${pill(d.priority, d.tone)}<span class="wsp-inbox__impact">${esc(d.impact)}</span></div>
-          <div class="wsp-inbox__title">${esc(d.title)}</div>
-          <div class="wsp-inbox__reason">${esc(d.reason)}</div>
-          ${actionBtn(d.actionLabel, d.action, { variant: 'ghost' })}
-        </div>`).join('')}</div>`;
-    },
-  },
-
   /* ── Executive Decision Center (Recommended Actions) ── (Phase 3: the
      Recommendation section redesigned per the approved Design Review — it
      answers "what decision should I make next?", not "what information
@@ -896,8 +872,13 @@ export const widgets = {
      own reason, r.expectedBenefit is the IMPACT, r.priority is the PRIORITY —
      nothing here is invented. Same explainable-card + primary/secondary size
      hierarchy + progressive disclosure shape already established for the
-     Decision Center (exec-decision, wsp-inbox) and Attention (disclosure) —
-     "no second recommendation vocabulary" per the implementation contract. */
+     .wsp-inbox vocabulary and Attention's own disclosure — "no second
+     recommendation vocabulary" per the implementation contract. (Phase 7C
+     Executive Consolidation removed the standalone exec-decision widget that
+     originally established this .wsp-inbox shape alongside this one; its
+     unique named-entity signals were folded into exec-attention, and its
+     duplicated fleet-maintenance recommendations were already redundant with
+     this section — see exec-attention's own comment for the migration.) */
   'exec-recommendation': {
     render(ctx) {
       const rec = ctx.recommendations || { certified: false };
@@ -953,23 +934,6 @@ export const widgets = {
         btn.setAttribute('aria-expanded', String(open));
         btn.textContent = open ? 'Sembunyikan' : `Lihat ${totalMore} tindakan lainnya`;
       });
-    },
-  },
-
-  /* ── Simulation Center ── (a launcher; logic unchanged, lives in Prediction) */
-  'exec-simulation': {
-    render() {
-      return `
-        <div class="wsp-sim">
-          ${pill('Simulasi Siap', 'info')}
-          <p class="wsp-lead">Uji skenario penugasan & pemeliharaan sebelum diterapkan — tanpa menyentuh data produksi.</p>
-          <ul class="wsp-sim__examples">
-            <li>Menunda pemeliharaan</li>
-            <li>Mengganti kendaraan</li>
-            <li>Menyesuaikan utilisasi</li>
-          </ul>
-          ${actionBtn('Buka Skenario', 'navDriverPrediction', { variant: 'primary' })}
-        </div>`;
     },
   },
 

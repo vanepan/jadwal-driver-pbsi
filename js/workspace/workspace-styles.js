@@ -288,9 +288,12 @@ const CSS = `
 .wsp-hero__explain-row--good .wsp-hero__explain-sign { color: var(--wsp-good); }
 .wsp-hero__explain-row--bad .wsp-hero__explain-sign { color: var(--wsp-danger); }
 
-/* Operational Priority / Attention — v1.22.2 Objective 5: a quiet bulleted
-   briefing list ("• 2 kendaraan membutuhkan perhatian."), whitespace-separated
-   (no row divider) with a small round bullet instead of a colored bar. */
+/* Executive Attention — v1.22.2 Objective 5: a quiet bulleted briefing list
+   ("• 2 kendaraan membutuhkan perhatian."), whitespace-separated (no row
+   divider) with a small round bullet instead of a colored bar. (Phase 7C
+   Executive Consolidation removed the standalone exec-priority widget that
+   originally shared this .wsp-sevlist shape; Attention is now its only
+   consumer.) */
 .wsp-sevlist { display: flex; flex-direction: column; gap: 18px; }
 .wsp-sevrow { display: flex; align-items: flex-start; gap: 14px; }
 .wsp-sevrow__bar { flex: none; width: 6px; height: 6px; border-radius: 50%; margin-top: 7px; background: var(--wsp-neutral); }
@@ -339,14 +342,12 @@ const CSS = `
 @media (prefers-reduced-motion: reduce) { .wsp-attn__more { transition: none; } }
 [data-anim="off"] .wsp-attn__more { transition: none; }
 
-/* Decision Center — a call-to-action, not a flat list (v1.22.2 Objective 6):
-   whitespace-separated (no row divider), with a real size hierarchy — the
-   first (highest-impact/priority) item is visibly bigger than the rest.
-   Phase 3 (Executive Decision Center) — this is now the ONE explainable-
-   action vocabulary shared by exec-decision AND exec-recommendation (the
-   Recommendation section, redesigned per the approved Design Review to
-   communicate "Recommended Actions" the same way) — no second card
-   language was introduced for the latter. */
+/* Recommended Actions — a call-to-action, not a flat list (v1.22.2
+   Objective 6): whitespace-separated (no row divider), with a real size
+   hierarchy — the first (highest-impact/priority) item is visibly bigger
+   than the rest. Phase 3 (Executive Decision Center) established this
+   explainable-action vocabulary jointly with the (now-removed, Phase 7C)
+   exec-decision widget; exec-recommendation is its only consumer today. */
 .wsp-inbox { display: flex; flex-direction: column; gap: 20px; }
 .wsp-inbox__item { display: flex; flex-direction: column; gap: 5px; }
 .wsp-inbox__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -362,8 +363,7 @@ const CSS = `
 /* Recommended Actions explainability (Phase 3, exec-recommendation only) —
    Reason and Impact as two distinct labeled lines (not merged into one
    sentence like the pre-Phase-3 card), so both are independently readable
-   within the "under 10 seconds" contract. Additive only: exec-decision's
-   existing .wsp-inbox__reason/.wsp-inbox__impact usage is untouched. */
+   within the "under 10 seconds" contract. */
 .wsp-inbox__explain { display: flex; flex-direction: column; gap: 4px; }
 .wsp-inbox__explain-row { font-size: .8rem; color: var(--text-dim); line-height: 1.45; }
 .wsp-inbox__explain-label { font-size: .64rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--text-faint); margin-right: 7px; }
@@ -384,12 +384,6 @@ const CSS = `
 .wsp-reco__toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .wsp-reco__more { transition: none; } }
 [data-anim="off"] .wsp-reco__more { transition: none; }
-
-/* Simulation Center launcher */
-.wsp-sim { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
-.wsp-sim__examples { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
-.wsp-sim__examples li { position: relative; padding-left: 14px; font-size: .82rem; color: var(--text-dim); }
-.wsp-sim__examples li::before { content: "→"; position: absolute; left: 0; color: var(--text-ghost); }
 
 /* Operational Snapshot — v1.22.1: hairline tiles, no shadow (Objective 3);
    bigger numerals / smaller uppercase labels (Objective 2). */

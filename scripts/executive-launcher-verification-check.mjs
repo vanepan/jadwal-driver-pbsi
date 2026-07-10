@@ -141,7 +141,7 @@ async function readLauncher() {
       animationDelay: section ? getComputedStyle(section).animationDelay : null,
       heroPresent: !!document.querySelector('[data-widget-id="exec-hero"]'),
       attentionPresent: !!document.querySelector('[data-widget-id="exec-attention"]'),
-      decisionPresent: !!document.querySelector('[data-widget-id="exec-decision"]'),
+      decisionGone: !document.querySelector('[data-widget-id="exec-decision"]'),
       snapshotPresent: !!document.querySelector('[data-widget-id="exec-snapshot"]'),
       storyPresent: !!document.querySelector('[data-widget-id="exec-activity"]'),
     };
@@ -252,7 +252,8 @@ check('mobile: chips become a horizontal-scroll strip (nowrap + overflow-x auto)
 console.log('\n[10] Sibling Executive sections untouched (regression guard)');
 check('Hero still renders', desktop.heroPresent);
 check('Attention still renders', desktop.attentionPresent);
-check('Decision Center still renders', desktop.decisionPresent);
+// Phase 7C (Executive Consolidation) — exec-decision was intentionally removed.
+check('Decision Center is gone (removed per Phase 7C consolidation)', desktop.decisionGone);
 check('Snapshot still renders', desktop.snapshotPresent);
 check('Story still renders', desktop.storyPresent);
 

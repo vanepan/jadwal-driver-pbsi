@@ -375,13 +375,14 @@ const siblingResult = await page.evaluate(async (buildCtxSrc) => {
   return {
     heroPresent: !!host.querySelector('[data-widget-id="exec-hero"] .wsp-hero'),
     attentionPresent: !!host.querySelector('[data-widget-id="exec-attention"]'),
-    decisionPresent: !!host.querySelector('[data-widget-id="exec-decision"] .wsp-inbox'),
+    decisionGone: !host.querySelector('[data-widget-id="exec-decision"]'),
     recommendationPresent: !!host.querySelector('[data-widget-id="exec-recommendation"]'),
   };
 }, BUILD_CTX_FN);
 check('exec-hero still renders (untouched)', siblingResult.heroPresent);
 check('exec-attention still renders (untouched)', siblingResult.attentionPresent);
-check('exec-decision still renders its .wsp-inbox (untouched)', siblingResult.decisionPresent);
+// Phase 7C (Executive Consolidation) — exec-decision was intentionally removed.
+check('exec-decision is gone (removed per Phase 7C consolidation)', siblingResult.decisionGone);
 check('exec-recommendation still renders (untouched)', siblingResult.recommendationPresent);
 
 console.log('\n[13] Representative screenshots (scratch/snapshot-*.png)');

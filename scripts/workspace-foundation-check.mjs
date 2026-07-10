@@ -131,7 +131,10 @@ check('driver → driver workspace', result.roles.driver === 'driver');
 check('engineering → engineering workspace', result.roles.engineering === 'engineering');
 check('unknown role → safe fallback (request)', result.roles.viewer === 'request');
 
-check('executive workspace has widgets', result.counts.executive >= 8);
+// Phase 7C (Executive Consolidation) — the briefing is deliberately fixed at
+// exactly 6 sections (Hero/Attention/Recommendation/Snapshot/Story/Launcher);
+// exec-priority/exec-decision/exec-simulation were removed, not just thinned.
+check('executive workspace has exactly 6 widgets (post-consolidation)', result.counts.executive === 6);
 check('request workspace has widgets', result.counts.request >= 8);
 check('driver workspace has widgets', result.counts.driver >= 8);
 check('engineering workspace has widgets', result.counts.engineering >= 6);

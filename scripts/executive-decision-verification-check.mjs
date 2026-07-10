@@ -20,9 +20,13 @@
      • Reduced motion (prefers-reduced-motion + data-anim="off") on the
        disclosure transition.
      • Regression guard — .wsp-inbox / .wsp-inbox__item is the SAME markup
-       vocabulary exec-decision already uses (no second recommendation
-       vocabulary introduced), and exec-decision itself is byte-for-byte
-       unaffected by this phase.
+       vocabulary exec-decision originally established (no second
+       recommendation vocabulary introduced). Updated for Phase 7C (Executive
+       Consolidation): exec-decision itself is now intentionally REMOVED (its
+       named-entity information was folded into exec-attention; its
+       fleet-maintenance recommendations were already duplicated by this
+       section) — this guard now asserts exec-decision's absence rather than
+       its byte-for-byte survival.
 
    Run: node scripts/executive-decision-verification-check.mjs (exit 0 = pass) */
 
@@ -295,25 +299,22 @@ check('disclosure button has type="button" (no accidental form submit)', a11yRes
 check('disclosure button is keyboard-focusable', a11yResult.focusable);
 check('every per-action button is a native, keyboard-focusable <button type="button">', a11yResult.everyActionBtnIsButton);
 
-console.log('\n[9] Regression guard — shared Decision Center vocabulary, exec-decision untouched');
+console.log('\n[9] Regression guard — shared vocabulary; exec-decision intentionally removed (Phase 7C Executive Consolidation)');
 const vocabResult = await page.evaluate(() => {
   const reco = document.querySelector('[data-widget-id="exec-recommendation"]');
-  const decision = document.querySelector('[data-widget-id="exec-decision"]');
   return {
     recoUsesInbox: !!reco.querySelector('.wsp-inbox'),
     recoUsesExplain: !!reco.querySelector('.wsp-inbox__explain'),
     recoNoForeignCard: !reco.querySelector('.wsp-reco, .wsp-reco__title, .wsp-reco__benefit'),
-    decisionStillInbox: !!decision.querySelector('.wsp-inbox'),
-    decisionItemCount: decision.querySelectorAll('.wsp-inbox__item').length,
-    decisionUnaffectedByExplain: !decision.querySelector('.wsp-inbox__explain'),
+    decisionGone: !document.querySelector('[data-widget-id="exec-decision"]'),
+    decisionNotRegistered: !Array.from(document.querySelectorAll('[data-widget-id]')).some((el) => el.dataset.widgetId === 'exec-decision'),
   };
 });
 check('exec-recommendation reuses .wsp-inbox (no second recommendation vocabulary)', vocabResult.recoUsesInbox);
 check('exec-recommendation adds the explainability rows (Reason/Impact)', vocabResult.recoUsesExplain);
 check('exec-recommendation no longer emits the old flat .wsp-reco card markup', vocabResult.recoNoForeignCard);
-check('exec-decision (Pusat Keputusan) still renders its own .wsp-inbox — untouched by this phase', vocabResult.decisionStillInbox);
-check('exec-decision still shows its own top-3 decisions', vocabResult.decisionItemCount === 3);
-check('exec-decision markup unaffected by the new explainability rows (additive-only CSS)', vocabResult.decisionUnaffectedByExplain);
+check('exec-decision (Pusat Keputusan) is gone — removed per the approved Phase 7B/7C consolidation', vocabResult.decisionGone);
+check('exec-decision does not appear anywhere in the rendered workspace', vocabResult.decisionNotRegistered);
 
 console.log('\n[10] Representative screenshots (scratch/decision-*.png)');
 async function shot(scenario, vp, theme, tag = '') {
