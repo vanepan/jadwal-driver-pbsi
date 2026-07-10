@@ -30,6 +30,15 @@ import { rankedList, compactSuccessLine, severityRank, toneFromLevel, toneFromEn
 // Macro Motion (page-level section reveal) is unaffected by this import —
 // it stays owned by workspace-renderer.js's existing fade-up class.
 import { resolveMotionProfile, REALTIME_TWEEN, cssEaseToFn, MOTION_PROFILES } from './motion-profiles.js';
+// v1.23.0 hotfix — the assignment-level "pending engineering verification"
+// computation moved to a shared module so Attention and Recommendation can
+// no longer compute two different counts for the same fact (see that
+// module's own header for why).
+import { unverifiedEngineeringAssignments } from '../../recommendation/engineering-verification.js';
+// v1.23.0 hotfix — the engineering-overdue critical/high decision is now
+// made in exactly one place, shared with Hero (narrative-builder.js), so
+// Attention can no longer classify the same engOverdue count differently.
+import { classifyEngineeringOverdue } from '../../recommendation/engineering-overdue.js';
 
 /* ── deterministic view helpers ── */
 const n = (v) => (v == null || Number.isNaN(Number(v)) ? '—' : Number(v));
@@ -76,28 +85,6 @@ function startOfDay(offsetDays = 0) {
 }
 const DAY_MS = 86400000;
 
-/** v1.22.0 Objective 2 — assignments that finished but were never verified,
- *  computed ONCE from ctx.engineeringEvents (the same allowlisted timeline
- *  data exec-activity already reads) so the Attention count and the Decision
- *  item's name always agree — no second, technician-level tally that could
- *  drift from it. */
-function unverifiedEngineeringAssignments(ctx) {
-  const byAssignment = new Map();
-  for (const e of ctx.engineeringEvents || []) {
-    const id = e.assignmentId;
-    if (id == null) continue;
-    if (!byAssignment.has(id)) byAssignment.set(id, { title: e.assignmentTitle, finishedAt: null, verified: false, cancelled: false });
-    const rec = byAssignment.get(id);
-    if (e.type === 'finished') rec.finishedAt = Date.parse(e.timestamp || 0) || rec.finishedAt;
-    if (e.type === 'verified') rec.verified = true;
-    if (e.type === 'cancelled') rec.cancelled = true;
-  }
-  return [...byAssignment.entries()]
-    .filter(([, r]) => r.finishedAt != null && !r.verified && !r.cancelled)
-    .map(([id, r]) => ({ id, title: r.title || 'Penugasan', finishedAt: r.finishedAt }))
-    .sort((a, b) => a.finishedAt - b.finishedAt);
-}
-
 /** v1.22.0 Objective 2 — the single pending request most worth naming in a
  *  briefing: the oldest one still waiting. Named via purpose/destination so
  *  the Decision card can say "Setujui Permintaan — Transport Pelatnas"
@@ -121,7 +108,7 @@ function facts(ctx) {
   const rec = ctx.recommendations || { certified: false };
   const criticalVehicles = (rec.board?.critical || []).length;
   const engOverdue = numOr0((eng.overdueAssignments || {}).count);
-  const engUnverifiedList = unverifiedEngineeringAssignments(ctx);
+  const engUnverifiedList = unverifiedEngineeringAssignments(ctx.engineeringEvents);
   const pendingVerify = engUnverifiedList.length;
   const atRiskDrivers = numOr0(wellness.summary?.burnoutRisk) + numOr0(wellness.summary?.highFatigue);
   const pettyLow = !!petty.low;
@@ -456,7 +443,7 @@ function buildStoryBlocks(items) {
  *  score (no data) is skipped rather than given an invented verdict. */
 const EXPLAIN_RULES = {
   driverOps: (f) => f.atRiskDrivers > 0 ? `${f.atRiskDrivers} driver berisiko kelelahan/burnout` : 'Beban kerja driver sehat',
-  engineering: (f) => f.engOverdue > 0 ? `${f.engOverdue} pekerjaan Teknik overdue` : 'Teknik stabil',
+  engineering: (f) => f.engOverdue > 0 ? `${f.engOverdue} pekerjaan Teknik melewati batas waktu` : 'Teknik stabil',
   vehicleUtil: (f) => f.criticalVehicles > 0 ? `${f.criticalVehicles} kendaraan perlu perhatian` : 'Armada beroperasi normal',
   request: (f) => f.pending > 0 ? `${f.pending} permintaan menunggu persetujuan` : 'Tidak ada permintaan tertunda',
   pettyCash: (f) => f.pettyLow ? 'Saldo petty cash rendah' : 'Petty cash dalam batas aman',
@@ -498,7 +485,7 @@ function buildInsight(ctx) {
     else if (pct < 0) lines.push(`Teknik menurun ${Math.abs(pct)}% dibanding kemarin.`);
     else lines.push('Teknik stabil dibanding kemarin.');
   } else if (engToday > 0) {
-    lines.push(`${engToday} pekerjaan engineering selesai hari ini.`);
+    lines.push(`${engToday} pekerjaan Teknik selesai hari ini.`);
   }
 
   const reqTs = (ctx.requests || [])
@@ -532,8 +519,8 @@ function buildInsight(ctx) {
   const durYesterday = avg(durations.filter(d => inRange(d.finished, yestStart, todayStart)).map(d => d.mins));
   if (durToday != null && durYesterday != null) {
     const diff = Math.round(durYesterday - durToday);
-    if (diff > 0) lines.push(`Rata-rata penyelesaian engineering lebih cepat ${diff} menit dibanding kemarin.`);
-    else if (diff < 0) lines.push(`Rata-rata penyelesaian engineering lebih lambat ${Math.abs(diff)} menit dibanding kemarin.`);
+    if (diff > 0) lines.push(`Rata-rata penyelesaian Teknik lebih cepat ${diff} menit dibanding kemarin.`);
+    else if (diff < 0) lines.push(`Rata-rata penyelesaian Teknik lebih lambat ${Math.abs(diff)} menit dibanding kemarin.`);
   }
 
   const localYmd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -823,11 +810,11 @@ export const widgets = {
         const suffix = criticalVehicleList.length > 1 ? ` (+${criticalVehicleList.length - 1} lainnya)` : '';
         items.push({ sev: 'critical', title: `${top.vehicleName} — ${top.categoryLabel}${suffix}`, reason: top.reason, action: 'navDriverPrediction', actionLabel: 'Tinjau Armada' });
       }
-      if (f.engOverdue > 0) items.push({ sev: 'critical', title: `${f.engOverdue} pekerjaan teknisi overdue`, reason: 'Penugasan teknik melewati batas waktu penyelesaian.', action: 'navEngineering', actionLabel: 'Tinjau Teknik' });
+      if (f.engOverdue > 0) items.push({ sev: classifyEngineeringOverdue(f.engOverdue).critical ? 'critical' : 'warn', title: `${f.engOverdue} pekerjaan Teknik melewati batas waktu`, reason: 'Penugasan teknik melewati batas waktu penyelesaian.', action: 'navEngineering', actionLabel: 'Tinjau Teknik' });
       if (f.pendingVerify > 0) {
         const top = f.engUnverifiedList[0];
         const suffix = f.pendingVerify > 1 ? ` (+${f.pendingVerify - 1} lainnya)` : '';
-        items.push({ sev: 'warn', title: `Verifikasi Pekerjaan — ${top.title}${suffix}`, reason: 'Pekerjaan teknisi selesai namun belum diverifikasi koordinator.', action: 'navEngineering', actionLabel: 'Verifikasi Laporan' });
+        items.push({ sev: 'warn', title: `Verifikasi Pekerjaan — ${top.title}${suffix}`, reason: 'Pekerjaan Teknik selesai namun belum diverifikasi koordinator.', action: 'navEngineering', actionLabel: 'Verifikasi Laporan' });
       }
       if (f.pending > 0) {
         const label = f.topPendingRequest.purpose || f.topPendingRequest.destination || f.topPendingRequest.requesterName || 'Bidang';

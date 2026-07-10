@@ -13,6 +13,10 @@
 'use strict';
 
 import { priorityRank } from '../../recommendation/recommendation-priority.js';
+// v1.23.0 hotfix — the engineering-overdue critical/high decision is now
+// made in exactly one place, shared with Attention (index.js), so the two
+// sections can no longer classify the same engOverdue count differently.
+import { classifyEngineeringOverdue } from '../../recommendation/engineering-overdue.js';
 
 /** Indonesian-comma join: a / a dan b / a, b, dan c. */
 function joinNatural(items) {
@@ -51,12 +55,12 @@ const DOMAINS = [
   {
     key: 'engineeringOverdue', order: 2,
     trigger: (f) => f.engOverdue > 0,
-    severity: (f) => f.engOverdue >= 3 ? 'critical' : 'high',
+    severity: (f) => classifyEngineeringOverdue(f.engOverdue).severity,
     situation: (f) => f.engOverdue === 1
-      ? 'satu pekerjaan engineering melewati batas waktu penyelesaian'
-      : `${f.engOverdue} pekerjaan engineering melewati batas waktu penyelesaian`,
-    recommendation: () => 'penyelesaian pekerjaan engineering yang overdue',
-    healthy: 'seluruh pekerjaan engineering berada dalam target',
+      ? 'satu pekerjaan Teknik melewati batas waktu penyelesaian'
+      : `${f.engOverdue} pekerjaan Teknik melewati batas waktu penyelesaian`,
+    recommendation: () => 'penyelesaian pekerjaan Teknik yang melewati batas waktu',
+    healthy: 'seluruh pekerjaan Teknik berada dalam target',
   },
   {
     key: 'request', order: 3,
@@ -75,7 +79,7 @@ const DOMAINS = [
     situation: (f) => f.pendingVerify === 1
       ? 'satu laporan pekerjaan menunggu verifikasi'
       : `${f.pendingVerify} laporan pekerjaan menunggu verifikasi`,
-    recommendation: () => 'verifikasi laporan pekerjaan teknisi',
+    recommendation: () => 'verifikasi laporan pekerjaan Teknik',
     healthy: null, // covered by engineeringOverdue's healthy phrase
   },
   {

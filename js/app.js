@@ -1492,7 +1492,6 @@ function buildHomeContext() {
   if (isAdmin()) {
     try { ctx.models = buildExecutiveDashboardModel(); }
     catch (err) { console.warn('[Home] executive model unavailable', err); ctx.models = null; }
-    ctx.recommendations = buildExecutiveRecommendations(ctx.models?.engineering);
     // v1.21.0 Objective 5 — flatten Engineering's per-assignment timelines (the
     // SAME store buildExecutiveDashboardModel() already reads) so the Activity
     // widget can merge them with the audit-log feed chronologically.
@@ -1502,6 +1501,10 @@ function buildHomeContext() {
     // SAME builder the Engineering Timeline page now uses — one event model,
     // one source of truth), tagged with `assignmentTitle` so the widget's
     // existing meta-suffix rendering needs no special-casing.
+    // v1.23.0 hotfix — computed BEFORE buildExecutiveRecommendations() below
+    // (previously came after): buildExecutiveRecommendations now consumes
+    // this same array for its pending-verification count, so Attention and
+    // Recommendation can no longer disagree on that fact.
     try {
       const assignmentEvents = engListAssignments().flatMap((a) =>
         (a.timeline || []).map((e) => ({ ...e, assignmentId: a.id, assignmentTitle: a.title })));
@@ -1510,6 +1513,7 @@ function buildHomeContext() {
         .filter(Boolean);
       ctx.engineeringEvents = [...assignmentEvents, ...reportEvents];
     } catch (err) { console.warn('[Home] engineering events unavailable', err); ctx.engineeringEvents = []; }
+    ctx.recommendations = buildExecutiveRecommendations(ctx.models?.engineering, ctx.engineeringEvents);
   }
   return ctx;
 }
@@ -1520,13 +1524,17 @@ function buildHomeContext() {
  * getPrediction() (the certified service, cached) → the Fleet Recommendation
  * Engine's pure summarisers. NO new recommendation/prediction logic. Honours the
  * same certification gate the Prediction dashboards use (never invent a forecast).
+ * @param {Object} engineeringModel
+ * @param {Array} engineeringEvents  ctx.engineeringEvents — passed through to
+ *   engineeringRecommendations() so its pending-verification count reads the
+ *   SAME assignment-level source the Attention widget uses (v1.23.0 hotfix).
  * @returns {{certified:boolean, confidence?:Object, board?:Object, decisions?:Array, recs?:Array, positive?:Object}}
  */
-function buildExecutiveRecommendations(engineeringModel) {
+function buildExecutiveRecommendations(engineeringModel, engineeringEvents) {
   // v1.21.0 — deterministic, non-prediction recs (Engineering + Request) are
   // computed unconditionally: they must not wait on Fleet prediction certification.
   const operationalRecs = [
-    ...engineeringRecommendations(engineeringModel),
+    ...engineeringRecommendations(engineeringModel, engineeringEvents),
     ...requestRecommendations(requests),
   ];
   try {

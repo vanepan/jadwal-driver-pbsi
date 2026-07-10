@@ -97,8 +97,12 @@ const scenarioCtx = {
     ctx.recommendations = { certified: true, board: { isHealthyFleet: false, critical: [{ vehicleName: 'Innova B1', categoryLabel: 'Servis', reason: 'Jadwal servis terlewat.' }], upcoming: [] }, recs: [] }; // critical
     ctx.requests = [{ id: 'r1', status: 'pending', createdAt: new Date().toISOString(), purpose: 'Transport Pelatnas' }]; // warn
     ctx.models.wellness = { summary: { burnoutRisk: 1, highFatigue: 1 } }; // warn (2)
-    ctx.models.engineering = { overdueAssignments: { count: 2 } }; // critical
-    return ctx; // 5 items total: 3 critical + 2 warn -> visible 2, rest 3
+    // v1.23.0 hotfix — engineering-overdue severity now comes from the SAME
+    // shared classifier Hero uses (classifyEngineeringOverdue): critical
+    // only at >=3, so a count of 2 is 'warn', not 'critical'. This fixture
+    // previously encoded the pre-fix behavior (engOverdue>0 always critical).
+    ctx.models.engineering = { overdueAssignments: { count: 2 } }; // warn (<3 threshold)
+    return ctx; // 5 items total: 2 critical + 3 warn -> visible 2, rest 3
   },
 };
 
@@ -185,7 +189,7 @@ check('multiple: 3 rows waiting behind disclosure', multiResult.moreRowCount ===
 check('multiple: disclosure collapsed by default', multiResult.moreOpen === false);
 check('multiple: toggle aria-expanded="false" initially', multiResult.toggleAriaExpanded === 'false');
 check('multiple: toggle label names the exact hidden count', multiResult.toggleText === 'Lihat 3 lainnya');
-check('multiple: summary names total + critical breakdown', multiResult.countText === '5 area memerlukan tindakan · 3 kritis');
+check('multiple: summary names total + critical breakdown', multiResult.countText === '5 area memerlukan tindakan · 2 kritis');
 check('multiple: pulse dot uses the critical (scale) amplitude — top severity is critical', (multiResult.dotClass || '').includes('wsp-attn-pulse--scale'));
 check('multiple: pulse dot duration matches MOTION_PROFILES.critical.pulse.periodMs (1600ms)', multiResult.dotAnimDuration === '1600ms');
 

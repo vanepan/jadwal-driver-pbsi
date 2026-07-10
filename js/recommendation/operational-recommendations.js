@@ -20,6 +20,13 @@
 
 'use strict';
 
+// v1.23.0 hotfix — pending-verification is now the same assignment-level
+// count Attention uses (see that module's own header). Previously this
+// file summed workerProductivity's per-participant finished-minus-verified
+// counts, which double-counts any backlog assignment with more than one
+// worker relative to Attention's per-assignment tally.
+import { unverifiedEngineeringAssignments } from './engineering-verification.js';
+
 const CONFIDENCE_HIGH = { levelWord: 'Tinggi', tone: 'good' };
 const CONFIDENCE_MEDIUM = { levelWord: 'Sedang', tone: 'warn' };
 
@@ -27,11 +34,14 @@ function num(v) { const n = Number(v); return Number.isFinite(n) ? n : 0; }
 
 /**
  * Deterministic recommendations from the Engineering domain. Reuses ONLY
- * fields `buildEngineeringAnalytics` already computes — no new query.
+ * fields `buildEngineeringAnalytics` already computes, plus the same
+ * engineering timeline events Attention reads for its own unverified count
+ * — no new query, and no second tally of the same fact.
  * @param {Object} engineeringModel  the model from engineering-analytics.js
+ * @param {Array} engineeringEvents  ctx.engineeringEvents (see app.js)
  * @returns {Array<Object>}
  */
-export function engineeringRecommendations(engineeringModel) {
+export function engineeringRecommendations(engineeringModel, engineeringEvents) {
   const m = engineeringModel || {};
   const out = [];
 
@@ -40,7 +50,7 @@ export function engineeringRecommendations(engineeringModel) {
     out.push({
       category: 'engineering-overdue',
       actionable: true,
-      title: 'Jadwalkan Ulang Pekerjaan Overdue',
+      title: 'Jadwalkan Ulang Pekerjaan Teknik yang Melewati Batas Waktu',
       reason: `${overdue} penugasan teknik telah melewati batas waktu penyelesaian.`,
       expectedBenefit: 'Mencegah eskalasi risiko fasilitas dan menjaga SLA operasional.',
       confidence: CONFIDENCE_HIGH,
@@ -49,13 +59,12 @@ export function engineeringRecommendations(engineeringModel) {
     });
   }
 
-  const pendingVerify = (m.workerProductivity || [])
-    .reduce((a, w) => a + Math.max(0, num(w.finished) - num(w.verified)), 0);
+  const pendingVerify = unverifiedEngineeringAssignments(engineeringEvents).length;
   if (pendingVerify > 0) {
     out.push({
       category: 'engineering-verification',
       actionable: true,
-      title: 'Verifikasi Laporan Teknisi',
+      title: 'Verifikasi Laporan Teknik',
       reason: `${pendingVerify} pekerjaan telah selesai namun belum diverifikasi koordinator.`,
       expectedBenefit: 'Menutup siklus kerja dan memastikan kualitas pekerjaan tercatat.',
       confidence: CONFIDENCE_MEDIUM,
