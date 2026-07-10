@@ -29,7 +29,7 @@ import { rankedList, compactSuccessLine, severityRank, toneFromLevel, toneFromEn
 // Phase 1 (Hero) — Motion Profiles defined in Phase 0, first consumed here.
 // Macro Motion (page-level section reveal) is unaffected by this import —
 // it stays owned by workspace-renderer.js's existing fade-up class.
-import { resolveMotionProfile, REALTIME_TWEEN, cssEaseToFn } from './motion-profiles.js';
+import { resolveMotionProfile, REALTIME_TWEEN, cssEaseToFn, MOTION_PROFILES } from './motion-profiles.js';
 
 /* ── deterministic view helpers ── */
 const n = (v) => (v == null || Number.isNaN(Number(v)) ? '—' : Number(v));
@@ -488,6 +488,10 @@ function topInsightLine(ctx) {
   return lines[0] || null;
 }
 
+/** Phase 2 (Executive Attention) — findings always visible before disclosure.
+ *  Matches the approved Design Review prototype's own `attentionShowCount`. */
+const ATTENTION_VISIBLE_CAP = 2;
+
 export const widgets = {
   /* ── Executive Briefing Hero ── (v1.22.1 redesign: de-boxed, ring gauge +
      huge score as the visual anchor, one verdict headline, one insight
@@ -612,7 +616,17 @@ export const widgets = {
      items — critical assignments/vehicle maintenance, engineering verification
      pending + overdue, driver fatigue/burnout, outstanding requests, petty
      cash low balance. Reuses ctx.models (already computed for the Health
-     Score) — introduces no new query.) */
+     Score) — introduces no new query.
+
+     Phase 2 (Executive Attention) — rebuilt as the operational inbox per the
+     approved Design Review: severity summary (pulsing dot + area count) above
+     the ranked findings, then progressive disclosure for anything beyond the
+     first ATTENTION_VISIBLE_CAP items — "Lihat N lainnya" per the Design
+     Review's own `attentionShowCount = 2`. Still rankedList()/rankedItem()
+     (Phase 0 ui-kit.js) for every row — no second severity-row vocabulary. The
+     pulsing dot reuses the exact per-mood pulse spec already defined in
+     motion-profiles.js's MOTION_PROFILES (critical/warning) — Motion Language
+     §04's "Attention pulse" catalogue entry, first wired in here. */
   'exec-attention': {
     render(ctx) {
       const f = facts(ctx);
@@ -627,8 +641,36 @@ export const widgets = {
 
       if (!items.length) return compactSuccessLine('Seluruh domain operasional dalam kondisi aman.');
       items.sort((a, b) => severityRank(a.sev) - severityRank(b.sev));
-      // v1.22.0 Objective 6 — an executive briefs on 3-5 items, not every issue.
-      return rankedList(items.slice(0, 5));
+
+      const topSev = items[0].sev;
+      const criticalCount = items.filter(i => i.sev === 'critical').length;
+      const pulse = (topSev === 'critical' ? MOTION_PROFILES.critical : MOTION_PROFILES.warning).pulse;
+
+      const visible = items.slice(0, ATTENTION_VISIBLE_CAP);
+      const rest = items.slice(ATTENTION_VISIBLE_CAP);
+
+      const summary = `
+        <div class="wsp-attn__summary">
+          <span class="wsp-attn__dot wsp-attn__dot--${topSev} wsp-attn-pulse wsp-attn-pulse--${pulse.amplitude}" style="animation-duration:${pulse.periodMs}ms" aria-hidden="true"></span>
+          <span class="wsp-attn__count">${esc(items.length)} area memerlukan tindakan${criticalCount ? ` · ${esc(criticalCount)} kritis` : ''}</span>
+        </div>`;
+
+      const disclosure = rest.length ? `
+        <div class="wsp-attn__more" data-attn-more>${rankedList(rest)}</div>
+        <button type="button" class="wsp-attn__toggle" data-attn-toggle aria-expanded="false">Lihat ${esc(rest.length)} lainnya</button>` : '';
+
+      return `<div class="wsp-attn">${summary}${rankedList(visible)}${disclosure}</div>`;
+    },
+    onMount(bodyEl) {
+      const btn = bodyEl.querySelector('[data-attn-toggle]');
+      const more = bodyEl.querySelector('[data-attn-more]');
+      if (!btn || !more) return;
+      const totalMore = more.querySelectorAll('.wsp-sevrow').length;
+      btn.addEventListener('click', () => {
+        const open = more.classList.toggle('wsp-attn__more--open');
+        btn.setAttribute('aria-expanded', String(open));
+        btn.textContent = open ? 'Sembunyikan' : `Lihat ${totalMore} lainnya`;
+      });
     },
   },
 

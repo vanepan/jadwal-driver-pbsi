@@ -10,6 +10,12 @@
 
 'use strict';
 
+// Phase 2 (Executive Attention) — reuse the ONE motion constant (Motion
+// Language's "Measured" rhythm curve) rather than re-deriving the bezier
+// here; keeps the disclosure transition on the same easing vocabulary as
+// the rest of the Executive motion system (motion-profiles.js).
+import { EASE } from '../widgets/executive/motion-profiles.js';
+
 let _injected = false;
 
 export function injectWorkspaceStyles() {
@@ -303,6 +309,35 @@ const CSS = `
    nothing to brief on (Objective 6). */
 .wsp-compact-ok { display: flex; align-items: center; gap: 10px; font-size: .88rem; color: var(--text-dim); padding: 6px 0; }
 .wsp-compact-ok__dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--wsp-good); }
+
+/* Attention Center — Phase 2 (Executive Attention). Severity summary (pulsing
+   dot + area count) sits above the ranked findings (.wsp-sevlist, unchanged);
+   .wsp-attn__more / __toggle add progressive disclosure for anything beyond
+   ATTENTION_VISIBLE_CAP, same "reveal in place, never remove" shape already
+   established for Today's Story's own disclosure. */
+.wsp-attn { display: flex; flex-direction: column; gap: 16px; }
+.wsp-attn__summary { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.wsp-attn__count { font-size: .8rem; font-weight: 600; color: var(--text-dim); }
+.wsp-attn__dot { flex: none; width: 8px; height: 8px; border-radius: 50%; }
+.wsp-attn__dot--critical { background: var(--wsp-danger); }
+.wsp-attn__dot--warn { background: var(--wsp-warn); }
+/* Motion Language §04 "Attention pulse" — the platform's one sanctioned
+   persistent motion; amplitude/period come from motion-profiles.js's
+   per-mood MOTION_PROFILES (critical: 1600ms scale, warning: 2400ms low). */
+.wsp-attn-pulse--low { animation-name: wspAttnPulseLow; animation-timing-function: ease-in-out; animation-iteration-count: infinite; }
+.wsp-attn-pulse--scale { animation-name: wspAttnPulseScale; animation-timing-function: ease-in-out; animation-iteration-count: infinite; }
+@keyframes wspAttnPulseLow { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+@keyframes wspAttnPulseScale { 0%, 100% { opacity: .6; transform: scale(1); } 50% { opacity: 1; transform: scale(1.35); } }
+@media (prefers-reduced-motion: reduce) { .wsp-attn-pulse--low, .wsp-attn-pulse--scale { animation: none; } }
+[data-anim="off"] .wsp-attn-pulse--low, [data-anim="off"] .wsp-attn-pulse--scale { animation: none; }
+.wsp-attn__more { max-height: 0; opacity: 0; overflow: hidden; transition: max-height 340ms ${EASE}, opacity 240ms ${EASE}; }
+.wsp-attn__more--open { max-height: 2000px; opacity: 1; }
+.wsp-attn__toggle { align-self: flex-start; font: inherit; font-size: .8rem; font-weight: 700; color: var(--accent);
+  background: none; border: none; cursor: pointer; padding: 8px 2px; }
+.wsp-attn__toggle:hover { text-decoration: underline; }
+.wsp-attn__toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .wsp-attn__more { transition: none; } }
+[data-anim="off"] .wsp-attn__more { transition: none; }
 
 /* Decision Center — a call-to-action, not a flat list (v1.22.2 Objective 6):
    whitespace-separated (no row divider), with a real size hierarchy — the
