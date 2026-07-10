@@ -3343,6 +3343,29 @@ body.v2-shell-active #v2TimelineSurface .v2-tl-view-btn {
   white-space: nowrap;
 }
 
+/* Phase 11N (adaptive topbar): #v2TopbarCrumb is purely decorative
+   (aria-hidden="true" — set in initV2Topbar(); its content duplicates the
+   page's own <h1> title shown right below the topbar) and was the last
+   flex-shrink:0 element in the row with no size cap at all. On a
+   viewport-width media-query strategy alone, every new "resolution where
+   it still breaks" needs its own new breakpoint chasing whatever content
+   happens to overflow that specific width — not truly adaptive. Making
+   crumb (and only crumb — .date-nav and .header-user-area, the profile
+   avatar, stay flex-shrink:0 and fully protected) shrink and truncate
+   continuously means the browser's own flex algorithm absorbs whatever
+   space is missing at ANY width, not just the handful of pixel values
+   that happened to get tested. Same ID specificity as the rule above,
+   later in source, so it wins the flex-shrink tug-of-war. */
+#v2TopbarCrumb {
+  flex-shrink: 1;
+  min-width: 0;
+}
+.v2-topbar-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 
 /* ── Part 2: Search bar parity ─────────────────────────────────
    Upgraded from VSM-5C placeholder — wider, more structured.
