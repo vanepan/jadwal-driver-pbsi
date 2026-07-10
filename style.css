@@ -618,6 +618,31 @@ button, [role="button"] {
   color: #E65100;
 }
 
+/* Phase 11A: dark-mode counterparts — these were hardcoded pastel hex with no
+   dark variant anywhere, so they stayed as light "islands" inside dark mode.
+   Mapped onto the same semantic families platform.css already uses for
+   status colors in dark mode (danger/ok/info/warn), so meaning is preserved. */
+[data-theme="dark"] .role-badge[data-role="admin"] {
+  background: var(--danger-bg, #2E2120);
+  border-color: var(--danger, #D6817C);
+  color: var(--danger, #D6817C);
+}
+[data-theme="dark"] .role-badge[data-role="bidang"] {
+  background: var(--info-bg, #242B39);
+  border-color: var(--info, #8AA0CF);
+  color: var(--info, #8AA0CF);
+}
+[data-theme="dark"] .role-badge[data-role="viewer"] {
+  background: var(--ok-bg, #1F2C27);
+  border-color: var(--ok, #72AF8F);
+  color: var(--ok, #72AF8F);
+}
+[data-theme="dark"] .role-badge[data-role="driver"] {
+  background: var(--warn-bg, #2C2719);
+  border-color: var(--warn, #C7A05B);
+  color: var(--warn, #C7A05B);
+}
+
 /* Legacy header button styles (kept for modals/forms that may still reference them) */
 .btn-logout {
   font-family: var(--font-sans);
@@ -1161,7 +1186,7 @@ z-index: 1;
   justify-content: center;
   padding: 16px;
   backdrop-filter: blur(2px);
-  animation: fadeIn 0.15s ease;
+  animation: fadeIn var(--motion-fast, 0.15s) var(--ease-standard, ease);
 }
 
 /* ── Odometer Modal — Enterprise SaaS Style ──────────────────
@@ -2357,6 +2382,20 @@ input[type="number"]::-webkit-inner-spin-button {
 .badge-status--started   { background: #fff3e0; color: #e65100; border-color: #ffcc80; }
 .badge-status--completed { background: #ede7f6; color: #6a1b9a; border-color: #ce93d8; }
 
+/* Phase 11A: dark-mode counterparts — see .role-badge dark block above for
+   rationale. approved/assigned/started reuse the same info/ok/warn families
+   platform.css already defines for dark mode; pending (yellow) and
+   completed (purple) have no existing dark token pair, so a desaturated
+   variant is added here following the same treatment as the existing ones
+   (e.g. --warn dark: amber-on-umber). */
+[data-theme="dark"] .badge-aktif   { background: var(--ok-bg, #1F2C27); color: var(--ok, #72AF8F); border-color: var(--ok, #72AF8F); }
+[data-theme="dark"] .badge-selesai { background: #2A2030; color: #C9A0D9; border-color: #4A3752; }
+[data-theme="dark"] .badge-status--pending   { background: #332D16; color: #D8C15C; border-color: #5C5024; }
+[data-theme="dark"] .badge-status--approved  { background: var(--info-bg, #242B39); color: var(--info, #8AA0CF); border-color: var(--info, #8AA0CF); }
+[data-theme="dark"] .badge-status--assigned  { background: var(--ok-bg, #1F2C27); color: var(--ok, #72AF8F); border-color: var(--ok, #72AF8F); }
+[data-theme="dark"] .badge-status--started   { background: var(--warn-bg, #2C2719); color: var(--warn, #C7A05B); border-color: var(--warn, #C7A05B); }
+[data-theme="dark"] .badge-status--completed { background: #2A2030; color: #C9A0D9; border-color: #4A3752; }
+
 /* Timestamp shown inside lifecycle audit rows */
 .detail-ts {
   font-size: 11px;
@@ -3020,6 +3059,13 @@ input[type="number"]::-webkit-inner-spin-button {
   body.sidebar-is-open { overflow: hidden; }
 }
 
+/* Phase 11K — shared bottom-sheet scroll lock (js/ui/sheet-gesture.js).
+   Same technique as .sidebar-is-open above, generically named since it's
+   shared by every bottom sheet/modal (Lainnya, Notifications, Profile,
+   request-mode confirm), not just the drawer. Unscoped by width — these
+   sheets can also open on desktop. */
+body.sheet-scroll-lock { overflow: hidden; }
+
 @media (max-width: 600px) {
 
   /* ============================================================
@@ -3070,7 +3116,11 @@ input[type="number"]::-webkit-inner-spin-button {
   /* ============================================================
      MAIN CONTENT
      ============================================================ */
-  .main-content        { padding: 10px 8px 32px; }
+  /* Bottom clearance intentionally omitted here — the ≤767px rule above
+     (line ~3010) already sets padding-bottom to the safe-area-aware
+     --mobile-safe-bottom token; a shorthand `padding` here would clobber it
+     back down to a flat value with no env(safe-area-inset-bottom) term. */
+  .main-content        { padding-top: 10px; padding-left: 8px; padding-right: 8px; }
   .timeline-date-label { font-size: 13px; margin-bottom: 8px; }
 
   /* ============================================================

@@ -542,6 +542,16 @@ const CSS = `
   .wsp-chip { flex: 0 0 auto; }
 }
 
+/* Phase 11J — defensive pass: no reproducible overflow/clip bug was found in
+   this grid (min-width:0 + collapse-to-1-column already make it safe), but
+   no breakpoint below 600px existed to trim gutters on the narrowest real
+   phones (320-375px). Mirrors the same tightening already proven for
+   Analytics' .hm-stats (platform.css, @media max-width:380px). */
+@media (max-width: 380px) {
+  .wsp-grid { gap: 12px; }
+  .wsp-card { padding: 16px 14px 14px; }
+}
+
 /* ════════ Apple-style staggered reveal — Macro Motion ════════
    fade-up/anFadeUp is unchanged (still global in platform.css, still
    reduced-motion-safe); this cascades each of the six Executive Briefing

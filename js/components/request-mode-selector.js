@@ -18,6 +18,7 @@ import {
   REQUEST_MODE, REQUEST_MODE_SHEET,
   requestModeVisibility, resolveRequestMode,
 } from '../services/request-mode.js';
+import { wireSheetSwipeDismiss, lockBodyScroll, unlockBodyScroll } from '../ui/sheet-gesture.js';
 
 const ID = {
   group: 'requestModeGroup',
@@ -97,6 +98,7 @@ function openSheet(mode) {
   el(ID.sheetConfirm).textContent = copy.confirm;
   el(ID.sheetCancel).textContent = copy.cancel;
   overlay.hidden = false;
+  lockBodyScroll();
   requestAnimationFrame(() => overlay.classList.add('is-open'));
   setTimeout(() => { const c = el(ID.sheetConfirm); if (c) c.focus(); }, 10);
 }
@@ -120,6 +122,7 @@ function closeSheet(instant) {
     if (instant) overlay.hidden = true;
     else setTimeout(() => { if (!overlay.classList.contains('is-open')) overlay.hidden = true; }, 220);
   }
+  unlockBodyScroll();
   if (lastFocusedCard && typeof lastFocusedCard.focus === 'function') {
     try { lastFocusedCard.focus(); } catch (_) {}
   }
@@ -137,25 +140,6 @@ function onCardActivate(mode, cardEl) {
     lastFocusedCard = cardEl || cardFor(mode);
     openSheet(mode);
   }
-}
-
-/* ── Swipe-to-dismiss (mobile) ────────────────────────────────────── */
-function wireSwipe(overlay) {
-  const sheet = overlay.querySelector('.req-sheet');
-  if (!sheet) return;
-  let startY = null;
-  sheet.addEventListener('touchstart', (e) => { startY = e.touches[0].clientY; }, { passive: true });
-  sheet.addEventListener('touchmove', (e) => {
-    if (startY == null) return;
-    const dy = e.touches[0].clientY - startY;
-    if (dy > 0) sheet.style.transform = `translateY(${dy}px)`;
-  }, { passive: true });
-  sheet.addEventListener('touchend', (e) => {
-    const dy = (e.changedTouches[0] ? e.changedTouches[0].clientY : startY) - (startY || 0);
-    sheet.style.transform = '';
-    startY = null;
-    if (dy > 70) closeSheet();
-  });
 }
 
 /** Wire the cards + sheet once. Idempotent. */
@@ -179,7 +163,8 @@ export function initRequestModeSelector() {
   const overlay = el(ID.sheet);
   if (overlay) {
     overlay.addEventListener('click', (e) => { if (e.target === overlay) closeSheet(); }); // outside click
-    wireSwipe(overlay);
+    const sheet = overlay.querySelector('.req-sheet');
+    if (sheet) wireSheetSwipeDismiss(sheet, overlay, () => closeSheet());
   }
 
   // ESC dismiss — capture phase + stopImmediatePropagation so it never also

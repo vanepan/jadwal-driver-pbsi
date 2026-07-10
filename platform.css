@@ -202,6 +202,28 @@
   --v-luxio:        #479B79;
   --v-poly:         #BE9350;
   --v-hiace:        #8470B5;
+
+  /* ── Phase 11A: legacy V1 token bridge (the "white-trap" fix) ──────────
+     style.css's original tokens (--gray-1..4, --text-muted) were never
+     remapped for dark mode anywhere in this file — every V1-era card,
+     badge, input, and border still rendered with its light-mode value in
+     dark mode (previously patched ad hoc per-selector; see the
+     #v2TimelineSurface scoped fix a few hundred lines down as the prior
+     art this generalizes). Bridging them here fixes every consumer at the
+     source instead of one selector at a time.
+     --dark / --dark-2 / --dark-3 / --white are intentionally NOT bridged
+     here: they're dual-use in style.css (e.g. --dark is both `.sidebar`'s
+     always-dark background AND ~28 places' primary text color; --white is
+     both "card surface" background AND "text on a colored badge/button").
+     A blind remap of either would fix one usage and break the other into
+     an actual invisible-text regression, worse than today's visual
+     inconsistency. Left for a follow-up that first splits the token by
+     usage (see Phase 11 report, Remaining Findings). */
+  --gray-1:     var(--surface-2);
+  --gray-2:     var(--border);
+  --gray-3:     var(--border-strong);
+  --gray-4:     var(--muted);
+  --text-muted: var(--muted);
 }
 
 
@@ -3194,13 +3216,17 @@ body.v2-shell-active .bottom-nav-dot {
   animation: vsm6-dot-pulse 1.8s var(--motion-ease) 1;
 }
 
-/* Topbar avatar */
+/* Topbar avatar — universal profile entry point (Phase 11B) */
 body.v2-shell-active .v2-topbar-avatar {
   transition: opacity var(--motion-fast) var(--motion-ease);
-  cursor: default;
+  cursor: pointer;
 }
 @media (hover: hover) {
   body.v2-shell-active .v2-topbar-avatar:hover { opacity: 0.78; }
+}
+body.v2-shell-active .v2-topbar-avatar:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* View toggle buttons in timeline header */
@@ -5146,6 +5172,82 @@ body.v2-shell-active .v2-kpi-value { font-size: 22px; }
   #v2TopbarCrumb       { display: none !important; }
 }
 
+/* Phase 11I: the "keep everything on one row" rule above (Part 7,
+   ≤767px) has higher specificity than platform.css's own ≤600px two-row
+   fallback (~line 1930) and comes later in the file, so it silently wins
+   at every width ≤600px too — squeezing #btnToday + 2×.btn-icon (44px
+   min-width each) + #filterDate (96px min-width) onto one row with the
+   hamburger/avatar with nothing left to shrink them, causing overlap on
+   narrow phones (320-430px). This block restores a compact mobile layout
+   at this same specificity, scoped tighter (≤600px) so the 601-767px
+   single-row layout is untouched.
+
+   Phase 11L: an earlier version of this block fixed the overlap with pure
+   flex (order + date-nav width:100%) — but forcing date-nav to 100% width
+   meant it always occupied its wrapped line alone, and the header-user-area
+   (avatar) came AFTER it in flex order (order:60, set unconditionally
+   further up this file), so flex-wrap pushed the avatar onto a THIRD line
+   below date-nav instead of sharing date-nav's line — the "avatar sits on
+   its own row, wasting height" bug. CSS Grid with explicit grid-area
+   placement sidesteps the whole order-cascade fight (order has no effect
+   once an item has an explicit grid-area) and needs no DOM changes — every
+   participant stays exactly where it already is in the DOM, so tab order
+   and desktop/tablet layout (a separate, untouched breakpoint) are
+   unaffected. Row 1 = hamburger alone; Row 2 = date-nav + avatar together,
+   centered as a group between two equal flexible tracks. */
+@media (max-width: 600px) {
+  body.v2-shell-active .v2-topbar {
+    display: grid;
+    grid-template-columns: 1fr auto auto 1fr;
+    grid-template-areas:
+      "ham  ham    ham    ham"
+      ".    dnav   avatar .";
+    align-items: center;
+    row-gap: 6px;
+    /* Tight but deliberate: date-nav's content already has ~266px of
+       non-shrinkable minimum width (2×44px touch-target arrows + 96px
+       date-input, both intentionally protected) plus ~70px for the
+       "Hari Ini" chip, leaving very little slack at a 320px viewport once
+       the avatar (26px) joins the row — every px of padding/gap here is
+       reserved deliberately, not arbitrary. */
+    column-gap: 6px;
+    height: auto;
+    min-height: 44px;
+    padding: 6px 8px 8px;
+  }
+  body.v2-shell-active .v2-topbar #sidebarToggle {
+    grid-area: ham;
+  }
+  body.v2-shell-active .v2-topbar .date-nav {
+    grid-area: dnav;
+    flex-shrink: 0;
+  }
+  body.v2-shell-active .v2-topbar .header-user-area {
+    grid-area: avatar;
+  }
+  /* Not part of the mobile toolbar row — remove from the grid entirely so
+     it can't consume an implicit extra row via auto-placement. */
+  body.v2-shell-active .v2-topbar .v2-topbar-spacer {
+    display: none;
+  }
+}
+
+/* Defensive fallback below every required verification width (320px is the
+   narrowest listed) — protects genuinely narrower/unusual devices without
+   affecting anything in the 320-430px range this phase targets. Row 2
+   itself wraps to two lines (date-nav, then avatar centered beneath it)
+   rather than ever compressing the protected 44px touch targets. */
+@media (max-width: 300px) {
+  body.v2-shell-active .v2-topbar {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "ham"
+      "dnav"
+      "avatar";
+    justify-items: center;
+  }
+}
+
 
 /* ════════════════════════════════════════════════════════════════
    VSM-10 — Dark Mode Cleanup + Bidang UX Fix
@@ -5978,6 +6080,15 @@ html.theme-anim .timeline-scroll-fade-right {
 @media (max-width: 520px) {
   .vm-grid { grid-template-columns: 1fr; }
 }
+/* Phase 11J — defensive pass: .vm-grid/.vm-asset already have min-width:0
+   and collapse to 1 column at 520px, so no reproducible overflow bug was
+   found; --workspace-card-gap has no narrow-width tier at all, so this adds
+   one for the smallest real phones, mirroring the same tightening already
+   proven for Analytics' .hm-stats. */
+@media (max-width: 380px) {
+  .vm-grid { gap: 12px; }
+  .vm-asset { padding: 0.85rem 0.9rem; }
+}
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -6389,6 +6500,15 @@ textarea:disabled { opacity: 0.55; }
 [data-theme="dark"] .modal-box {
   background: var(--surface);
   border-color: var(--border);
+}
+
+/* Phase 11I: same white-trap this block already fixes for .modal-box —
+   .bottom-sheet (the "Lainnya" more-menu) used var(--white) directly and
+   was missed in this pass, so its text (already correctly dark-remapped)
+   rendered near-invisible on a white background. */
+[data-theme="dark"] .bottom-sheet {
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
 }
 
 [data-theme="dark"] .modal-header {
@@ -8842,6 +8962,12 @@ input[type="time"].v2-admin-config-input {
     grid-template-columns: 1fr;
   }
 }
+/* Phase 11J — defensive pass: already collapses to 1fr at 720px; no narrow
+   tier existed for the smallest real phones. */
+@media (max-width: 380px) {
+  .v2-admin-config-groups { gap: 14px; }
+  .v2-admin-config-group { padding: 16px 16px; }
+}
 
 /* Dark mode overrides */
 @media (prefers-color-scheme: dark) {
@@ -8907,6 +9033,12 @@ input[type="time"].v2-admin-config-input {
   .v2-analytics-groups {
     grid-template-columns: 1fr;
   }
+}
+/* Phase 11J — defensive pass: already collapses to 1fr at 720px; no narrow
+   tier existed for the smallest real phones (mirrors the ≤380px trim
+   already added for .v2-admin-config-groups above). */
+@media (max-width: 380px) {
+  .v2-analytics-groups { gap: 14px; }
 }
 
 /* KPI stat list — vertical stack of label/value rows */

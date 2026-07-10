@@ -8,6 +8,7 @@ import { sendNotification } from './telegram.js';
 import { showToast } from './utils.js';
 import { syncPbsiSelect } from './pbsi-select.js';
 import { enablePush, isPushSupported } from './push.js';
+import { wireSheetSwipeDismiss, lockBodyScroll, unlockBodyScroll } from './ui/sheet-gesture.js'; // Phase 11K
 
 const TELEGRAM_BOT_USERNAME = 'PBSI_Assistant_Bot';
 const TELEGRAM_BOT_URL = `https://t.me/${TELEGRAM_BOT_USERNAME}`;
@@ -659,12 +660,16 @@ async function openProfileModal() {
   if (darkToggle) darkToggle.checked = isDark;
   syncSettingStatus('statusDarkModeToggle', isDark);
 
+  const profileBox = modal.querySelector('.modal-box');
+  if (profileBox) wireSheetSwipeDismiss(profileBox, modal, closeProfileModal);
   modal.style.display = 'flex';
+  lockBodyScroll();
 }
 
 function closeProfileModal() {
   const modal = document.getElementById('modalProfile');
   if (modal) modal.style.display = 'none';
+  unlockBodyScroll();
   const form = document.getElementById('profileForm');
   if (form) form.reset();
 }

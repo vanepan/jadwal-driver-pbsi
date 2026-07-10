@@ -123,6 +123,7 @@ import './docs/templates/analytics-summary.js';   // registers 'analytics-summar
 import { listExportReports, getExportReport, runExportReport } from './exports/export-registry.js'; // single source of truth for report exports
 import { logExportSuccess, logExportFailure, ensureExportHistoryLoadedAndSubscribed, resetExportHistorySync, getExportHistoryCache, subscribeExportHistoryChangeListener } from './exports/export-history.js'; // metadata logging for every export
 import { renderExportCenter as renderModernExportCenter } from './exports/export-center.js'; // v1.12.1C modern Export Center (registry + metadata)
+import { wireSheetSwipeDismiss, lockBodyScroll, unlockBodyScroll } from './ui/sheet-gesture.js'; // Phase 11K — shared bottom-sheet swipe-to-dismiss
 import {
   computeAnalyticsModel,
   normDestKey as _normDestKey,
@@ -475,6 +476,43 @@ function setBottomNavActive(id) {
   });
 }
 
+/* ── Phase 11F: navigation state synchronization ──────────────────────────
+   setBottomNavActive() was previously called ONLY from the bottom nav's own
+   click handler (renderBottomNav()) and the login/logout reset — never from
+   any of the sidebar/rail route functions (navHome, navDriverHistory,
+   navEngineering, etc.). Navigating via the sidebar/drawer/deep-link updated
+   the rail highlight + header title but left the bottom-nav tab stale.
+   syncBottomNavAction() is the single place that resolves "what should be
+   highlighted" for the CURRENT role's bottom nav (same BOTTOM_NAV_ITEMS join
+   key renderBottomNav() already uses), with a fallback (typically the
+   "Lainnya" sheet) for destinations that have no dedicated tab, and a clear
+   (never a stale/wrong tab) when neither matches. Route functions call this
+   instead of poking setBottomNavActive() directly with a guessed id. */
+function syncBottomNavAction(action, fallbackAction) {
+  const user = getCurrentUser();
+  if (!user) return;
+  const ws = resolveWorkspaceForRole(user.role);
+  const items = BOTTOM_NAV_ITEMS[ws.id] || [];
+  const match = items.find(it => it.action === action) ||
+    (fallbackAction && items.find(it => it.action === fallbackAction));
+  if (match) setBottomNavActive(match.id);
+  else document.querySelectorAll('#bottomNav .bottom-nav-item').forEach(btn => btn.classList.remove('bottom-nav-active'));
+}
+
+/** Module-level default bottom-nav action per MODULE_DEFS key — applied by
+ *  setRailModule() before def.land() runs. Screen-level nav functions
+ *  (navEngineering's screen param, setDashboardView's view param,
+ *  navDriverHistory, etc.) call syncBottomNavAction() again afterward with a
+ *  more precise action, which simply supersedes this default. */
+const RAIL_MODULE_BOTTOM_NAV_ACTION = {
+  home: 'navHome',
+  driverops: 'navDriverTimeline',
+  pettycash: 'openMoreSheet',
+  analytics: 'navAnalytics',
+  konfigurasi: 'openMoreSheet',
+  engineering: 'navEngDashboard',
+};
+
 /* ── State restoration (v1.20.8, Objective 12) ────────────────────────────
    Persist + restore the current top-level module, search query, and scroll
    position across app reopen — "continue exactly where you left off."
@@ -655,13 +693,16 @@ function openBottomNavMoreSheet() {
     });
   });
 
+  wireSheetSwipeDismiss(sheet, overlay, closeBottomNavMoreSheet);
   overlay.classList.add('bottom-sheet-visible');
+  lockBodyScroll();
   requestAnimationFrame(() => sheet.classList.add('bottom-sheet-open'));
 }
 function closeBottomNavMoreSheet() {
   const overlay = document.getElementById('bottomNavMoreOverlay');
   const sheet = document.getElementById('bottomNavMoreSheet');
   sheet?.classList.remove('bottom-sheet-open');
+  unlockBodyScroll();
   setTimeout(() => overlay?.classList.remove('bottom-sheet-visible'), 200); // matches --motion-base
 }
 
@@ -1429,6 +1470,10 @@ function setRailModule(name) {
   searchQuery = '';
   clearModuleSearch(name);
 
+  // Phase 11F: coarse module-level bottom-nav sync; def.land() below may
+  // refine this further (e.g. navEngineering's screen-level sync).
+  syncBottomNavAction(RAIL_MODULE_BOTTOM_NAV_ACTION[name], 'openMoreSheet');
+
   // Land on the module's default menu.
   def.land();
   syncV2ResponsiveNavReuse();
@@ -1568,6 +1613,7 @@ function navHome() {
   setV2PanelNavActive('v2NavHome');
   setCrumb('HOME', ws ? ws.title : 'Home');
   setWorkspace('home');
+  syncBottomNavAction('navHome');
 }
 
 /** Full render of the Home workspace into its host (skeleton-first). */
@@ -1614,23 +1660,27 @@ function navJadwalDriver() {
   setWorkspace('dashboard');
   renderViews();
   if (isDriver()) renderDriverDashboard();
+  syncBottomNavAction('navDriverTimeline', 'navOperasional');
 }
 function navPending() {
   setV2PanelNavActive('v2NavPending');
   setCrumb('DRIVER OPS', isAdmin() ? 'Pending — Antrian' : 'Pending — Riwayat');
   setWorkspace('pending');
+  syncBottomNavAction('navPending', 'navOperasional');
 }
 function navJadwalSaya() {
   setV2PanelNavActive('v2NavJadwalSaya');
   setCrumb('DRIVER OPS', 'Jadwal Saya');
   setWorkspace('dashboard');
   setTimeout(() => document.getElementById('driverDashboard')?.scrollIntoView({ behavior: 'smooth' }), 50);
+  syncBottomNavAction('navJadwalSaya', 'navOperasional');
 }
 /** Land on the driver's dedicated History screen — v1.20.8 bottom-nav "Riwayat". */
 function navDriverHistory() {
   setCrumb('DRIVER OPS', 'Riwayat');
   setWorkspace('driverHistory');
   renderDriverHistoryScreen(document.getElementById('v2DriverHistoryWorkspace'));
+  syncBottomNavAction('navDriverHistory', 'navOperasional');
 }
 function navManajemenDriver() {
   activeAdminModule = 'driverops';
@@ -1689,6 +1739,10 @@ const ENG_MENU_TITLES = {
   dashboard: 'Dashboard', timeline: 'Timeline', history: 'Riwayat',
   myjobs: 'Pekerjaan', settings: 'Pengaturan',
 };
+const ENG_SCREEN_BOTTOM_NAV_ACTION = {
+  dashboard: 'navEngDashboard', timeline: 'navEngTimeline',
+  myjobs: 'navEngMyJobs', history: 'navEngHistory',
+};
 async function navEngineering(screen, navId) {
   setCrumb('ENGINEERING', ENG_MENU_TITLES[screen] || 'Engineering Operations');
   if (navId) setV2PanelNavActive(navId);
@@ -1698,6 +1752,7 @@ async function navEngineering(screen, navId) {
     await mountEngineering(document.getElementById('v2EngineeringWorkspace'));
   }
   setEngineeringScreen(screen);
+  syncBottomNavAction(ENG_SCREEN_BOTTOM_NAV_ACTION[screen] || 'navEngDashboard', 'openMoreSheet');
 }
 
 /* ── Push notification deep-link (v1.20.8) ───────────────────────────────
@@ -2612,8 +2667,18 @@ function initV2Topbar() {
     const topbarAvatar = document.createElement('span');
     topbarAvatar.id = 'v2TopbarAvatar';
     topbarAvatar.className = 'v2-topbar-avatar';
-    topbarAvatar.setAttribute('aria-hidden', 'true');
+    topbarAvatar.setAttribute('role', 'button');
+    topbarAvatar.setAttribute('tabindex', '0');
+    topbarAvatar.setAttribute('aria-label', 'Buka menu profil');
     topbarAvatar.textContent = '?';
+    const openProfileFromTopbar = () => document.getElementById('btnProfile')?.click();
+    topbarAvatar.addEventListener('click', openProfileFromTopbar);
+    topbarAvatar.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openProfileFromTopbar();
+      }
+    });
 
     // User info column: display name + full role text
     const userInfo = document.createElement('div');
@@ -2751,7 +2816,13 @@ function renderKPIStrip() {
   // Driver role: personal dashboard is the KPI surface. Unauthenticated: nothing.
   // Engineering (no Driver-Ops access, Issue 1/12): the Driver KPI strip is not
   // part of their experience — never compute/paint it.
-  if (!currentUser || isDriver() || !canAccessModule('driverops')) {
+  // Phase 11H: this strip belongs to the Driver Operations workspace only.
+  // renderKPIStrip() is also called from live-data refreshes (updateAllModules())
+  // and updatePermissionUI(), which fire regardless of which workspace is
+  // currently active — without this check, a background data update while an
+  // admin/executive is viewing Home/Executive would re-show the Driver Ops
+  // strip that setWorkspace() had already hidden (a cross-workspace leak).
+  if (!currentUser || isDriver() || !canAccessModule('driverops') || currentWorkspace !== 'dashboard') {
     strip.style.display = 'none';
     if (dashHeader) dashHeader.style.display = 'none';
     return;
@@ -2933,6 +3004,8 @@ function setDashboardView(view) {
     btn.classList.toggle('v2-tl-view-btn--active', active);
     btn.setAttribute('aria-current', active ? 'true' : 'false');
   });
+
+  syncBottomNavAction(view === 'list' ? 'navDriverList' : 'navDriverTimeline', 'navOperasional');
 }
 
 /**
@@ -3193,7 +3266,22 @@ function getMyPendingRequestCount() {
  * Show one workspace and hide the rest.
  * @param {'dashboard'|'pending'|'administration'} name
  */
+/** Phase 11H: every modal in this app is built once at init as a permanent
+ *  `.modal-overlay` node appended to document.body (never scoped to any
+ *  workspace container) and opened/closed by toggling its inline
+ *  style.display — setWorkspace() never swept these, so a modal opened in
+ *  one workspace could remain attached/visible after switching to another.
+ *  Closing here reuses the exact same display-toggle every modal's own
+ *  close*Modal() function already performs — no new modal system, no
+ *  business-logic/state side effects, just the visual dismissal. */
+function sweepOpenModalsOnWorkspaceChange() {
+  document.querySelectorAll('.modal-overlay').forEach(modal => {
+    if (modal.style.display !== 'none') modal.style.display = 'none';
+  });
+}
+
 function setWorkspace(name) {
+  sweepOpenModalsOnWorkspaceChange();
   currentWorkspace = name;
   const isDash  = name === 'dashboard';
   const isPend  = name === 'pending';
@@ -3227,7 +3315,14 @@ function setWorkspace(name) {
   if (phWs)            phWs.style.display            = isPh    ? 'block' : 'none';
   if (anPcWs)          anPcWs.style.display          = isAnPc  ? 'block' : 'none';
   if (anExWs)          anExWs.style.display          = isAnEx  ? 'block' : 'none';
-  if (homeWs)          homeWs.style.display          = isHome  ? 'block' : 'none';
+  if (homeWs) {
+    homeWs.style.display = isHome ? 'block' : 'none';
+    // Phase 11D/11H: leaving Home invalidates any in-flight renderHome() call
+    // (home-router.js awaits a lazy widget import before mounting) so a late
+    // resolve can never write stale content into a hidden/inactive host —
+    // the render token it captured no longer matches.
+    if (!isHome) homeWs.__wspToken = Symbol('wsp-render-invalidated');
+  }
   if (drvHistWs)       drvHistWs.style.display       = isDrvHist ? 'block' : 'none';
 
   // Pause the embedded Petty Cash module's live re-render when it is hidden;
@@ -10627,13 +10722,26 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.addEventListener('touchend', (e) => {
       if (swipeStartX == null) return;
-      sidebar.style.transition = '';
-      sidebar.style.transform = '';
       if (swipeDragging) {
         const t = e.changedTouches[0];
         const dx = t.clientX - swipeStartX;
+        // Commit the class change (or leave it as-is for a spring-back) FIRST,
+        // while the inline drag-tracking transform + transition:none are still
+        // applied — the class swap stays invisible until the next line runs.
+        // Only then release the inline overrides, deferred one frame so the
+        // browser has a real painted "from" position (the drag position) to
+        // interpolate from via the CSS class transition. Clearing the inline
+        // styles in the same tick as the class toggle removes that "from"
+        // frame and can make the drawer snap to rest before animating.
         if (swipeMode === 'open' && dx > OPEN_THRESHOLD) openSidebar();
         else if (swipeMode === 'close' && dx < -OPEN_THRESHOLD) closeSidebar();
+        requestAnimationFrame(() => {
+          sidebar.style.transition = '';
+          sidebar.style.transform = '';
+        });
+      } else {
+        sidebar.style.transition = '';
+        sidebar.style.transform = '';
       }
       swipeStartX = null; swipeStartY = null; swipeDragging = false; swipeMode = null;
     });

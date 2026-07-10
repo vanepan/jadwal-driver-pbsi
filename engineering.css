@@ -424,3 +424,11 @@
   .eng-tlc-collapsed{padding:0 16px 16px;}
   .eng-tlc-body{padding:16px;}
 }
+/* Phase 11J — defensive pass: no reproducible overflow/clip bug found (grid
+   already collapses to 1fr at 760px, card padding already flows from the
+   shared --workspace-pad-* tokens which platform.css already tightens at
+   600px); no breakpoint below that existed for the narrowest real phones. */
+@media (max-width:380px){
+  .eng-card-grid{gap:12px;}
+  .eng-hero-stats.-c4,.eng-hero-stats.-c5,.eng-hero-stats.-c3{gap:12px 0;}
+}

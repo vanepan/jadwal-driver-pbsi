@@ -3,6 +3,7 @@
 import { getUserList } from './users.js';
 import { getCurrentUser } from './auth.js';
 import { subscribeNode, updateFirebaseData } from './firebase.js';
+import { wireSheetSwipeDismiss, lockBodyScroll, unlockBodyScroll } from './ui/sheet-gesture.js'; // Phase 11K
 
 /* ── Helpers ── */
 
@@ -598,12 +599,18 @@ export function openNotificationsModal() {
   renderNotificationsList();
   renderNotificationBadge();
   const modal = document.getElementById('modalNotifications');
-  if (modal) modal.style.display = 'flex';
+  if (modal) {
+    const box = modal.querySelector('.modal-box');
+    if (box) wireSheetSwipeDismiss(box, modal, closeNotificationsModal);
+    modal.style.display = 'flex';
+    lockBodyScroll();
+  }
 }
 
 export function closeNotificationsModal() {
   const modal = document.getElementById('modalNotifications');
   if (modal) modal.style.display = 'none';
+  unlockBodyScroll();
 }
 
 /* ── Activity Log ── */

@@ -48,6 +48,11 @@ export async function renderHome(host, ctx, { skeleton = true } = {}) {
 
   const resolved = await loadWorkspaceWidgets(workspace);
   if (host.__wspToken !== token) return workspace; // a newer render took over
+  // Phase 11D/11H: the host was hidden (workspace switched away) while the
+  // widget import/load above was in flight — app.js's setWorkspace() also
+  // invalidates the token on nav-away, but this display check is a second,
+  // independent guard against writing into an inactive workspace container.
+  if (host.style.display === 'none') return workspace;
 
   // Ensure the shell exists (e.g. refresh path before any shell was drawn).
   if (host.__wspWorkspaceId !== workspace.id) renderShell(host, workspace);
