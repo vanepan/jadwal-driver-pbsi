@@ -5,9 +5,14 @@
    stagger), per Sarpras Motion Language v1.0 §02/§03/§05/§06/§07 and
    the approved Conflict Resolution.
 
-   PHASE 0 SCOPE: architecture only. Nothing in this file is wired into
-   rendering or animation yet — js/widgets/executive/index.js does not
-   import it. The Hero (Phase 1) is the first consumer.
+   Phase 0 shipped this file as architecture only, with nothing wired in.
+   Phase 1 (Hero) became the first real consumer. Phase 8 (Motion Polish)
+   finished the job: MACRO_STAGGER is now imported directly by
+   workspace-styles.js (previously dead — the page's actual reveal order
+   was driven by a disconnected, position-based nth-child rule instead; see
+   MACRO_STAGGER's own comment below), and RESPONSIVE/MEASURED consolidate
+   every remaining hand-rolled hover/focus/disclosure timing in the same
+   file onto this one source.
 
    Two independent timelines (Conflict Resolution #1 — Macro vs Micro
    motion are separated because they answer different questions and
@@ -39,7 +44,15 @@
 export const EASE = 'cubic-bezier(.2,.7,.2,1)';
 export const EASE_URGENT = 'cubic-bezier(.4,0,.2,1)';
 
-/** Macro Motion — page-level section reveal (ms, relative to page mount). */
+/** Macro Motion — page-level section reveal (ms, relative to page mount).
+ *  Phase 8 (Motion Polish) — now wired directly into workspace-styles.js's
+ *  `[data-widget-id="..."]` selectors, one per key below (pageHeader is not
+ *  consumed: .wsp-header carries no entrance animation of its own, and is
+ *  not one of the six Executive Briefing sections). Previously these
+ *  numbers were exported but never imported anywhere — the page's actual
+ *  reveal order came from a generic, identity-blind `.wsp-grid > *:nth-child`
+ *  position rule instead, which (before Phase 7C's widget-count fix) didn't
+ *  even preserve the right ORDER, let alone these exact values. */
 export const MACRO_STAGGER = {
   pageHeader: 0,
   hero: 80,
@@ -47,12 +60,8 @@ export const MACRO_STAGGER = {
   recommendation: 220,
   snapshot: 280,
   story: 340,
-  // Phase 6 — Motion Language's walkthrough beat: "The way out to the rest
-  // of the platform arrives last, quietly." Calm tempo, no pulse. Actually
-  // applied via a dedicated `[data-widget-id="exec-quick"]` override in
-  // workspace-styles.js (the generic `.wsp-grid > *:nth-child` cascade caps
-  // at 220ms for the 6th+ item, which would otherwise fire the Launcher
-  // alongside Recommendation/Simulation/Snapshot instead of after Story).
+  // Motion Language's walkthrough beat: "The way out to the rest of the
+  // platform arrives last, quietly." Calm tempo, no pulse.
   launcher: 600,
 };
 
@@ -88,6 +97,26 @@ export const MOTION_PROFILES = {
  *  table (unlike the first-paint reveal above, which is per-mood) —
  *  the arc eases directly to the new sweep and is never reset to zero. */
 export const REALTIME_TWEEN = { duration: 560, ease: EASE };
+
+/** Phase 8 (Motion Polish) — the two remaining Motion Language §02 rhythm
+ *  tiers, promoted from ad hoc per-rule literals scattered across
+ *  workspace-styles.js into one shared source, same as REALTIME_TWEEN above.
+ *
+ *  RESPONSIVE — "Hover lift, focus ring, small local state. Feels connected
+ *  to the pointer." (spec range 120–170ms; 160ms is the tier's own canonical
+ *  value.) Before this phase, hover/focus feedback across the briefing used
+ *  four different hand-rolled durations (120/140/150ms) with the plain
+ *  'ease' keyword instead of the platform's actual curve — all now read
+ *  from here.
+ *
+ *  MEASURED — "Disclosure, section expansion, list reflow. Long enough to
+ *  follow, short enough to trust." (spec: 340ms, EASE.) Before this phase,
+ *  Attention/Recommendation's disclosure already used these exact numbers
+ *  but as an inline literal per rule; Story's own disclosure independently
+ *  used 350ms/250ms with plain 'ease' — a drift this constant removes by
+ *  giving all three ONE definition instead of three copies. */
+export const RESPONSIVE = { duration: 160, ease: EASE };
+export const MEASURED = { duration: 340, opacityDuration: 240, ease: EASE };
 
 /** Maps the app's real, exported state vocabulary onto a Motion Profile
  *  key. narrative-builder.js's classifyState() is private — the only

@@ -853,13 +853,30 @@ export const widgets = {
     onMount(bodyEl) {
       const btn = bodyEl.querySelector('[data-attn-toggle]');
       const more = bodyEl.querySelector('[data-attn-more]');
-      if (!btn || !more) return;
-      const totalMore = more.querySelectorAll('.wsp-sevrow').length;
-      btn.addEventListener('click', () => {
-        const open = more.classList.toggle('wsp-attn__more--open');
-        btn.setAttribute('aria-expanded', String(open));
-        btn.textContent = open ? 'Sembunyikan' : `Lihat ${totalMore} lainnya`;
-      });
+      // Phase 8 (Motion Polish) — Realtime Continuity: disclosure state now
+      // persists across a live refresh, the same dataset-on-bodyEl contract
+      // Story (exec-activity) and Snapshot's period selector already use —
+      // bodyEl is the same node every mount (only its innerHTML is rebuilt),
+      // so "already open" is reliably known. Previously a Firebase update
+      // would silently re-collapse an Attention list the admin had
+      // expanded; this was the one section (with Recommendation) that
+      // hadn't yet adopted the pattern Story already established.
+      if (btn && more) {
+        const totalMore = more.querySelectorAll('.wsp-sevrow').length;
+        if (bodyEl.dataset.wspAttnOpen === '1') {
+          more.classList.add('wsp-attn__more--open');
+          btn.setAttribute('aria-expanded', 'true');
+          btn.textContent = 'Sembunyikan';
+        }
+        btn.addEventListener('click', () => {
+          const open = more.classList.toggle('wsp-attn__more--open');
+          bodyEl.dataset.wspAttnOpen = open ? '1' : '0';
+          btn.setAttribute('aria-expanded', String(open));
+          btn.textContent = open ? 'Sembunyikan' : `Lihat ${totalMore} lainnya`;
+        });
+      } else {
+        delete bodyEl.dataset.wspAttnOpen;
+      }
     },
   },
 
@@ -927,13 +944,24 @@ export const widgets = {
     onMount(bodyEl) {
       const btn = bodyEl.querySelector('[data-reco-toggle]');
       const more = bodyEl.querySelector('[data-reco-more]');
-      if (!btn || !more) return;
-      const totalMore = more.querySelectorAll('.wsp-inbox__item').length;
-      btn.addEventListener('click', () => {
-        const open = more.classList.toggle('wsp-reco__more--open');
-        btn.setAttribute('aria-expanded', String(open));
-        btn.textContent = open ? 'Sembunyikan' : `Lihat ${totalMore} tindakan lainnya`;
-      });
+      // Phase 8 (Motion Polish) — Realtime Continuity, same pattern as
+      // exec-attention above and exec-activity's own established contract.
+      if (btn && more) {
+        const totalMore = more.querySelectorAll('.wsp-inbox__item').length;
+        if (bodyEl.dataset.wspRecoOpen === '1') {
+          more.classList.add('wsp-reco__more--open');
+          btn.setAttribute('aria-expanded', 'true');
+          btn.textContent = 'Sembunyikan';
+        }
+        btn.addEventListener('click', () => {
+          const open = more.classList.toggle('wsp-reco__more--open');
+          bodyEl.dataset.wspRecoOpen = open ? '1' : '0';
+          btn.setAttribute('aria-expanded', String(open));
+          btn.textContent = open ? 'Sembunyikan' : `Lihat ${totalMore} tindakan lainnya`;
+        });
+      } else {
+        delete bodyEl.dataset.wspRecoOpen;
+      }
     },
   },
 

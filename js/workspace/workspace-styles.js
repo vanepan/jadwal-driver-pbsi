@@ -10,11 +10,14 @@
 
 'use strict';
 
-// Phase 2 (Executive Attention) — reuse the ONE motion constant (Motion
-// Language's "Measured" rhythm curve) rather than re-deriving the bezier
-// here; keeps the disclosure transition on the same easing vocabulary as
-// the rest of the Executive motion system (motion-profiles.js).
-import { EASE } from '../widgets/executive/motion-profiles.js';
+// Phase 8 (Motion Polish) — every timing/easing constant this stylesheet
+// uses now comes from motion-profiles.js, the single source of truth:
+// MACRO_STAGGER drives the page-level reveal order (replacing a
+// disconnected, position-based nth-child rule), MEASURED drives every
+// progressive-disclosure transition (Attention/Recommendation/Story, one
+// definition instead of three), and RESPONSIVE drives every hover/focus
+// micro-transition (previously four different hand-rolled durations).
+import { EASE, MACRO_STAGGER, MEASURED, RESPONSIVE } from '../widgets/executive/motion-profiles.js';
 
 let _injected = false;
 
@@ -62,6 +65,10 @@ const CSS = `
 .wsp-skeleton span:nth-child(1) { width: 80%; } .wsp-skeleton span:nth-child(2) { width: 55%; } .wsp-skeleton span:nth-child(3) { width: 68%; }
 @keyframes wsp-pulse { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .wsp-skeleton span { animation: none; } }
+/* Phase 8 — this guard was missing; the loading skeleton previously kept
+   pulsing indefinitely even with the app's manual data-anim="off" switch
+   engaged, until the OS-level preference also happened to be set. */
+[data-anim="off"] .wsp-skeleton span { animation: none; }
 
 /* Empty / placeholder */
 .wsp-empty { font-size: .88rem; color: var(--text-faint); padding: 6px 0; }
@@ -95,9 +102,10 @@ const CSS = `
 .wsp-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border-faint);
   width: 100%; text-align: left; background: none; border-left: 0; border-right: 0; border-top: 0; font: inherit; color: inherit; }
 .wsp-list .wsp-row:last-child { border-bottom: 0; }
-.wsp-row--click { cursor: pointer; border-radius: 8px; transition: background-color .12s ease; }
+.wsp-row--click { cursor: pointer; border-radius: 8px; outline: 2px solid transparent; outline-offset: 2px;
+  transition: background-color ${RESPONSIVE.duration}ms ${RESPONSIVE.ease}, outline-color ${RESPONSIVE.duration}ms ${RESPONSIVE.ease}; }
 .wsp-row--click:hover { background: var(--border-faint); }
-.wsp-row--click:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wsp-row--click:focus-visible { outline-color: var(--accent); }
 .wsp-row__dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--wsp-neutral); }
 .wsp-row__dot--good { background: var(--wsp-good); } .wsp-row__dot--warn { background: var(--wsp-warn); }
 .wsp-row__dot--danger { background: var(--wsp-danger); } .wsp-row__dot--info { background: var(--wsp-info); }
@@ -109,12 +117,14 @@ const CSS = `
 /* Buttons / actions */
 .wsp-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .wsp-btn { display: inline-flex; align-items: center; gap: 6px; font-size: .8rem; font-weight: 600; font-family: inherit;
-  padding: 8px 13px; border-radius: var(--radius-sm); cursor: pointer; transition: background-color .12s ease, border-color .12s ease; border: 1px solid var(--border); }
+  padding: 8px 13px; border-radius: var(--radius-sm); cursor: pointer; border: 1px solid var(--border);
+  outline: 2px solid transparent; outline-offset: 2px;
+  transition: background-color ${RESPONSIVE.duration}ms ${RESPONSIVE.ease}, border-color ${RESPONSIVE.duration}ms ${RESPONSIVE.ease}, outline-color ${RESPONSIVE.duration}ms ${RESPONSIVE.ease}; }
 .wsp-btn--ghost { background: var(--surface); color: var(--text); }
 .wsp-btn--ghost:hover { background: var(--border-faint); border-color: var(--border-strong); }
 .wsp-btn--primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 .wsp-btn--primary:hover { filter: brightness(1.05); }
-.wsp-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wsp-btn:focus-visible { outline-color: var(--accent); }
 .wsp-btn__icon { display: inline-flex; }
 /* A lone button placed directly in a card body should hug its content, not
    stretch to the flex-column width. Buttons inside .wsp-actions are exempt. */
@@ -274,8 +284,12 @@ const CSS = `
 .wsp-hero__details { margin-top: 28px; }
 .wsp-hero__details summary { font-size: .78rem; font-weight: 700; color: var(--text-dim); cursor: pointer; list-style: none; width: fit-content; }
 .wsp-hero__details summary::-webkit-details-marker { display: none; }
-.wsp-hero__details summary::before { content: "▸"; display: inline-block; margin-right: 6px; color: var(--text-faint); transition: transform .15s ease; }
+.wsp-hero__details summary::before { content: "▸"; display: inline-block; margin-right: 6px; color: var(--text-faint); transition: transform ${RESPONSIVE.duration}ms ${RESPONSIVE.ease}; }
 .wsp-hero__details[open] summary::before { transform: rotate(90deg); }
+/* Phase 8 — this was the one remaining transform-based transition with no
+   reduced-motion guard anywhere in the briefing; closes that gap. */
+@media (prefers-reduced-motion: reduce) { .wsp-hero__details summary::before { transition: none; } }
+[data-anim="off"] .wsp-hero__details summary::before { transition: none; }
 .wsp-hero__details-body { padding-top: 14px; display: flex; flex-direction: column; gap: 4px; max-width: 420px; }
 .wsp-hero__breakdown { display: flex; flex-direction: column; gap: 3px; }
 .wsp-hero__bd-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: .74rem; }
@@ -326,19 +340,27 @@ const CSS = `
 .wsp-attn__dot--warn { background: var(--wsp-warn); }
 /* Motion Language §04 "Attention pulse" — the platform's one sanctioned
    persistent motion; amplitude/period come from motion-profiles.js's
-   per-mood MOTION_PROFILES (critical: 1600ms scale, warning: 2400ms low). */
+   per-mood MOTION_PROFILES (critical: 1600ms scale, warning: 2400ms low).
+   Phase 8 (Motion Polish) reviewed this and deliberately left the timing
+   function as the plain 'ease-in-out' keyword rather than switching it to
+   EASE/EASE_URGENT: those are one-shot "settle" curves for a reveal that
+   runs once and stops, and would look wrong on a symmetric infinite
+   breathing loop that must accelerate away from AND back to the same
+   resting state — 'ease-in-out' is the correct primitive for that, not an
+   overlooked duplicate. */
 .wsp-attn-pulse--low { animation-name: wspAttnPulseLow; animation-timing-function: ease-in-out; animation-iteration-count: infinite; }
 .wsp-attn-pulse--scale { animation-name: wspAttnPulseScale; animation-timing-function: ease-in-out; animation-iteration-count: infinite; }
 @keyframes wspAttnPulseLow { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
 @keyframes wspAttnPulseScale { 0%, 100% { opacity: .6; transform: scale(1); } 50% { opacity: 1; transform: scale(1.35); } }
 @media (prefers-reduced-motion: reduce) { .wsp-attn-pulse--low, .wsp-attn-pulse--scale { animation: none; } }
 [data-anim="off"] .wsp-attn-pulse--low, [data-anim="off"] .wsp-attn-pulse--scale { animation: none; }
-.wsp-attn__more { max-height: 0; opacity: 0; overflow: hidden; transition: max-height 340ms ${EASE}, opacity 240ms ${EASE}; }
+.wsp-attn__more { max-height: 0; opacity: 0; overflow: hidden; transition: max-height ${MEASURED.duration}ms ${MEASURED.ease}, opacity ${MEASURED.opacityDuration}ms ${MEASURED.ease}; }
 .wsp-attn__more--open { max-height: 2000px; opacity: 1; }
 .wsp-attn__toggle { align-self: flex-start; font: inherit; font-size: .8rem; font-weight: 700; color: var(--accent);
-  background: none; border: none; cursor: pointer; padding: 8px 2px; }
+  background: none; border: none; cursor: pointer; padding: 8px 2px; outline: 2px solid transparent; outline-offset: 2px;
+  transition: outline-color ${RESPONSIVE.duration}ms ${RESPONSIVE.ease}; }
 .wsp-attn__toggle:hover { text-decoration: underline; }
-.wsp-attn__toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wsp-attn__toggle:focus-visible { outline-color: var(--accent); }
 @media (prefers-reduced-motion: reduce) { .wsp-attn__more { transition: none; } }
 [data-anim="off"] .wsp-attn__more { transition: none; }
 
@@ -376,12 +398,13 @@ const CSS = `
    dedicated rule set rather than reused directly since Attention is
    out of scope for this phase. */
 .wsp-reco__more { display: flex; flex-direction: column; gap: 20px;
-  max-height: 0; opacity: 0; overflow: hidden; transition: max-height 340ms ${EASE}, opacity 240ms ${EASE}; }
+  max-height: 0; opacity: 0; overflow: hidden; transition: max-height ${MEASURED.duration}ms ${MEASURED.ease}, opacity ${MEASURED.opacityDuration}ms ${MEASURED.ease}; }
 .wsp-reco__more--open { max-height: 3000px; opacity: 1; }
 .wsp-reco__toggle { align-self: flex-start; font: inherit; font-size: .8rem; font-weight: 700; color: var(--accent);
-  background: none; border: none; cursor: pointer; padding: 8px 2px; }
+  background: none; border: none; cursor: pointer; padding: 8px 2px; outline: 2px solid transparent; outline-offset: 2px;
+  transition: outline-color ${RESPONSIVE.duration}ms ${RESPONSIVE.ease}; }
 .wsp-reco__toggle:hover { text-decoration: underline; }
-.wsp-reco__toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wsp-reco__toggle:focus-visible { outline-color: var(--accent); }
 @media (prefers-reduced-motion: reduce) { .wsp-reco__more { transition: none; } }
 [data-anim="off"] .wsp-reco__more { transition: none; }
 
@@ -390,9 +413,10 @@ const CSS = `
 .wsp-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
 .wsp-summary { display: flex; flex-direction: column; gap: 6px; text-align: left; padding: 14px 16px; background: var(--surface);
   border: 1px solid var(--border-faint); border-radius: var(--radius-sm); box-shadow: none; cursor: pointer; font: inherit; color: inherit;
-  transition: border-color .12s ease; }
+  outline: 2px solid transparent; outline-offset: 2px;
+  transition: border-color ${RESPONSIVE.duration}ms ${RESPONSIVE.ease}, outline-color ${RESPONSIVE.duration}ms ${RESPONSIVE.ease}; }
 .wsp-summary:hover { border-color: var(--border-strong); }
-.wsp-summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wsp-summary:focus-visible { outline-color: var(--accent); }
 .wsp-summary__title { font-size: .68rem; color: var(--text-faint); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 .wsp-summary__value { font-family: var(--font-display); font-size: 2.1rem; font-weight: 800; color: var(--text); letter-spacing: -0.02em; line-height: 1.05; font-variant-numeric: tabular-nums; }
 .wsp-summary__status { font-size: .7rem; font-weight: 700; width: fit-content; padding: 2px 8px; border-radius: 999px; background: var(--border-faint); color: var(--text-dim); }
@@ -414,9 +438,10 @@ const CSS = `
   border-radius: 13px; align-self: flex-start; }
 .wsp-segmented__btn { appearance: none; border: none; background: transparent; color: var(--text-dim); cursor: pointer; font: inherit;
   font-weight: 600; font-size: .82rem; padding: 7px 15px; border-radius: 9px; white-space: nowrap;
-  transition: color .14s ease, background-color .14s ease, box-shadow .14s ease; }
+  outline: 2px solid transparent; outline-offset: 2px;
+  transition: color ${RESPONSIVE.duration}ms ${RESPONSIVE.ease}, background-color ${RESPONSIVE.duration}ms ${RESPONSIVE.ease}, box-shadow ${RESPONSIVE.duration}ms ${RESPONSIVE.ease}, outline-color ${RESPONSIVE.duration}ms ${RESPONSIVE.ease}; }
 .wsp-segmented__btn:hover { color: var(--text); }
-.wsp-segmented__btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wsp-segmented__btn:focus-visible { outline-color: var(--accent); }
 .wsp-segmented__btn--active { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
 .wsp-snapshot__panels { display: grid; }
 .wsp-snapshot__panel { grid-area: 1 / 1; transition: opacity 180ms ${EASE}; }
@@ -465,22 +490,32 @@ const CSS = `
 
 /* Expand/Collapse (Objectives 3/10) — CSS-only smooth reveal; a generous
    fixed max-height is enough for a "motion ringan" feel without measuring
-   real content height in JS. */
-.wsp-feed__more { max-height: 0; opacity: 0; overflow: hidden; transition: max-height .35s ease, opacity .25s ease; }
+   real content height in JS. Phase 8 (Motion Polish) — was independently
+   hand-rolled at 350ms/250ms with the plain 'ease' keyword; now shares
+   MEASURED with Attention's and Recommendation's own disclosure, so all
+   three progressive-disclosure controls in the briefing move identically. */
+.wsp-feed__more { max-height: 0; opacity: 0; overflow: hidden; transition: max-height ${MEASURED.duration}ms ${MEASURED.ease}, opacity ${MEASURED.opacityDuration}ms ${MEASURED.ease}; }
 .wsp-feed__more--open { max-height: 2000px; opacity: 1; }
 .wsp-feed__toggle { margin-top: 8px; font: inherit; font-size: .8rem; font-weight: 700; color: var(--accent);
-  background: none; border: 0; padding: 0; cursor: pointer; }
+  background: none; border: 0; padding: 0; cursor: pointer; outline: 2px solid transparent; outline-offset: 2px;
+  transition: outline-color ${RESPONSIVE.duration}ms ${RESPONSIVE.ease}; }
 .wsp-feed__toggle:hover { text-decoration: underline; }
-.wsp-feed__toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wsp-feed__toggle:focus-visible { outline-color: var(--accent); }
 @media (prefers-reduced-motion: reduce) { .wsp-feed__more { transition: none; } }
+/* Phase 8 — this guard was missing; Story's disclosure previously respected
+   only the OS-level reduced-motion preference, not the app's own manual
+   data-anim="off" switch (Attention's/Recommendation's disclosure already
+   had both). */
+[data-anim="off"] .wsp-feed__more { transition: none; }
 
 /* Executive Launcher chips (mobile: horizontal scroll) */
 .wsp-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .wsp-chip { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: .82rem; font-weight: 600; white-space: nowrap;
   padding: 9px 15px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer;
-  transition: border-color .12s ease, background-color .12s ease; }
+  outline: 2px solid transparent; outline-offset: 2px;
+  transition: border-color ${RESPONSIVE.duration}ms ${RESPONSIVE.ease}, background-color ${RESPONSIVE.duration}ms ${RESPONSIVE.ease}, outline-color ${RESPONSIVE.duration}ms ${RESPONSIVE.ease}; }
 .wsp-chip:hover { border-color: var(--border-strong); background: var(--border-faint); }
-.wsp-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wsp-chip:focus-visible { outline-color: var(--accent); }
 .wsp-chip__icon { display: inline-flex; }
 
 /* ════════ v1.22.2 Objectives 10/11 — Adaptive Layout (non-Hero) ════════
@@ -507,20 +542,20 @@ const CSS = `
   .wsp-chip { flex: 0 0 auto; }
 }
 
-/* ════════ v1.22.2 Objective 12 — Apple-style staggered reveal ════════
+/* ════════ Apple-style staggered reveal — Macro Motion ════════
    fade-up/anFadeUp is unchanged (still global in platform.css, still
-   reduced-motion-safe); this just cascades each top-level section in a beat
-   apart instead of all at once — quiet, short, capped at 6 steps so it never
-   delays content far down the page. */
-.wsp-grid > *:nth-child(1) { animation-delay: 0ms; }
-.wsp-grid > *:nth-child(2) { animation-delay: 60ms; }
-.wsp-grid > *:nth-child(3) { animation-delay: 100ms; }
-.wsp-grid > *:nth-child(4) { animation-delay: 140ms; }
-.wsp-grid > *:nth-child(5) { animation-delay: 180ms; }
-.wsp-grid > *:nth-child(n+6) { animation-delay: 220ms; }
-
-/* Phase 6 — Executive Launcher arrives last, quietly (Motion Language:
-   launcher: 600ms, Calm tempo, no pulse), overriding the generic nth-child
-   cap above by source order (same selector specificity, declared later). */
-.wsp-grid > [data-widget-id="exec-quick"] { animation-delay: 600ms; }
+   reduced-motion-safe); this cascades each of the six Executive Briefing
+   sections in its own named beat instead of all at once. Phase 8 (Motion
+   Polish) replaces the previous generic, identity-blind
+   .wsp-grid > *:nth-child position rule with MACRO_STAGGER's own
+   per-section values (motion-profiles.js) — the actual source of truth
+   this page always claimed to follow but never imported. One rule per
+   section, in briefing order, so the delay travels with the SECTION, not
+   with whatever position it happens to render in. */
+.wsp-grid > [data-widget-id="exec-hero"] { animation-delay: ${MACRO_STAGGER.hero}ms; }
+.wsp-grid > [data-widget-id="exec-attention"] { animation-delay: ${MACRO_STAGGER.attention}ms; }
+.wsp-grid > [data-widget-id="exec-recommendation"] { animation-delay: ${MACRO_STAGGER.recommendation}ms; }
+.wsp-grid > [data-widget-id="exec-snapshot"] { animation-delay: ${MACRO_STAGGER.snapshot}ms; }
+.wsp-grid > [data-widget-id="exec-activity"] { animation-delay: ${MACRO_STAGGER.story}ms; }
+.wsp-grid > [data-widget-id="exec-quick"] { animation-delay: ${MACRO_STAGGER.launcher}ms; }
 `;
