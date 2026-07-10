@@ -631,6 +631,40 @@ function wireSnapshotSegmented(bodyEl) {
   });
 }
 
+/** Executive Launcher — the fixed destination catalogue (Phase 6). Order is
+ *  the approved, frozen sequence (Design Review LAUNCHER data) and NEVER
+ *  varies by health/attention/recommendation/prediction/simulation state —
+ *  this is the one section of the briefing an executive should be able to
+ *  find by muscle memory. `visibleFor` is the ONLY axis allowed to vary:
+ *  a destination is hidden, never reordered, when the viewing role lacks
+ *  it. Today `resolveWorkspaceForRole()` (workspace-registry.js) sends only
+ *  role==='admin' into this workspace at all, and admin already has working
+ *  access to every destination below via other Executive widgets' own CTAs
+ *  (exec-decision → navPending/navEngineering, exec-simulation/
+ *  exec-recommendation → navDriverPrediction) — so this list currently
+ *  resolves to "show all 9" for the only role that ever renders it. The
+ *  check is real, not decorative: it reads ctx.role so a future narrower
+ *  role reaching this workspace is filtered correctly with zero code change
+ *  here, instead of a comment that merely claims to be role-aware. */
+const LAUNCHER_DESTINATIONS = [
+  { label: 'Driver', icon: 'user', action: 'navDriverOps', visibleFor: ['admin'] },
+  { label: 'Engineering', icon: 'maintenance', action: 'navEngineering', visibleFor: ['admin'] },
+  { label: 'Kendaraan', icon: 'vehicle', action: 'navVehicles', visibleFor: ['admin'] },
+  { label: 'Permintaan', icon: 'file', action: 'navPending', visibleFor: ['admin'] },
+  { label: 'Petty Cash', icon: 'pettycash', action: 'navPettyCash', visibleFor: ['admin'] },
+  { label: 'Analitik', icon: 'chart', action: 'navAnalyticsDriver', visibleFor: ['admin'] },
+  { label: 'Prediksi', icon: 'trend', action: 'navDriverPrediction', visibleFor: ['admin'] },
+  { label: 'Rekomendasi', icon: 'recommendation', action: 'navRecommendationAccuracy', visibleFor: ['admin'] },
+  { label: 'Simulasi', icon: 'reset', action: 'navDriverPrediction', visibleFor: ['admin'] },
+];
+
+/** Filters the fixed catalogue by role — a `.filter()` preserves source
+ *  order by construction, so this can only ever hide items, never reorder
+ *  them. */
+function launcherDestinationsFor(role) {
+  return LAUNCHER_DESTINATIONS.filter(d => d.visibleFor.includes(role));
+}
+
 export const widgets = {
   /* ── Executive Briefing Hero ── (v1.22.1 redesign: de-boxed, ring gauge +
      huge score as the visual anchor, one verdict headline, one insight
@@ -1194,18 +1228,17 @@ export const widgets = {
     },
   },
 
-  /* ── Executive Launcher ── (role-aware; horizontally scrollable on mobile) */
+  /* ── Executive Launcher ── (Phase 6: the exit point of the briefing, not
+     another decision surface — "where do I go next," never "what should I
+     do." Fixed 9-destination order (LAUNCHER_DESTINATIONS above), genuinely
+     role-filtered via ctx.role (see that const's comment for why this is a
+     no-op today), horizontally scrollable on mobile via the existing
+     .wsp-chips rule — unchanged from before this phase. */
   'exec-quick': {
-    render() {
-      return chipRow([
-        chip('Buat Jadwal', 'openFormModal'),
-        chip('Buat Permintaan', 'openRequestFormModal'),
-        chip('Generate NOR', 'navPettyCashNor'),
-        chip('Manajemen Kendaraan', 'navVehicles'),
-        chip('Driver Operations', 'navDriverOps'),
-        chip('Analytics', 'navAnalyticsDriver'),
-        chip('Petty Cash', 'navPettyCash'),
-      ]);
+    render(ctx) {
+      const items = launcherDestinationsFor(ctx?.role);
+      if (!items.length) return empty('Tidak ada tujuan yang tersedia untuk peran ini.');
+      return chipRow(items.map(d => chip(d.label, d.action, { icon: anIcon(d.icon, { size: 16 }) })));
     },
   },
 };

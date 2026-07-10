@@ -524,4 +524,9 @@ const CSS = `
 .wsp-grid > *:nth-child(4) { animation-delay: 140ms; }
 .wsp-grid > *:nth-child(5) { animation-delay: 180ms; }
 .wsp-grid > *:nth-child(n+6) { animation-delay: 220ms; }
+
+/* Phase 6 — Executive Launcher arrives last, quietly (Motion Language:
+   launcher: 600ms, Calm tempo, no pulse), overriding the generic nth-child
+   cap above by source order (same selector specificity, declared later). */
+.wsp-grid > [data-widget-id="exec-quick"] { animation-delay: 600ms; }
 `;

@@ -47,6 +47,13 @@ export const MACRO_STAGGER = {
   recommendation: 220,
   snapshot: 280,
   story: 340,
+  // Phase 6 — Motion Language's walkthrough beat: "The way out to the rest
+  // of the platform arrives last, quietly." Calm tempo, no pulse. Actually
+  // applied via a dedicated `[data-widget-id="exec-quick"]` override in
+  // workspace-styles.js (the generic `.wsp-grid > *:nth-child` cascade caps
+  // at 220ms for the 6th+ item, which would otherwise fire the Launcher
+  // alongside Recommendation/Simulation/Snapshot instead of after Story).
+  launcher: 600,
 };
 
 /** Micro Motion — Hero-internal choreography (ms, relative to the
