@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.22.12';
-export const RELEASE_NAME = 'Executive Terminology Alignment';
+export const APP_VERSION = '1.23.0';
+export const RELEASE_NAME = 'Executive Briefing GA — Cross-Widget Consistency Hotfixes';
 
 /* ============================================================
    APP_ENV — the AUTHORITATIVE runtime environment (v1.20.3 RC1).
@@ -66,6 +66,17 @@ export function isProduction() {
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.23.0',
+    date: '2026-07-11',
+    summary: 'Executive Briefing GA — two release-blocking correctness fixes found during the final v1.23.0 Production Readiness Review, both fixing the same class of defect: two Executive Briefing sections independently computing/classifying the same operational fact and reaching different answers. BLOCKER 1 (verification-count divergence): exec-attention counted "pending engineering verification" at the ASSIGNMENT level (unverifiedEngineeringAssignments(), grouping ctx.engineeringEvents by assignmentId), while js/recommendation/operational-recommendations.js\'s engineeringRecommendations() independently summed workerProductivity\'s per-participant finished-minus-verified counts — since verification stamps every participant of an assignment atomically, any backlog assignment with 2+ workers (a normal case for equal-worker participant assignments) produced two different numbers on the same screen (e.g. Attention "1", Recommendation "2"). FIX: extracted the assignment-level computation into js/recommendation/engineering-verification.js; both call sites now derive from the identical function over the identical ctx.engineeringEvents array (js/app.js reordered so that array is built before buildExecutiveRecommendations() consumes it). Also removed 8 residual English/mixed-vocabulary strings ("overdue", "teknisi", bare "engineering") that survived the v1.22.12 terminology pass, unifying on "melewati batas waktu" / "Teknik" across Hero, Attention, and Recommendation. BLOCKER 2 (severity-classification divergence, found in the SAME final review one round later): Hero (narrative-builder.js) classified overdue engineering work as critical only at engOverdue>=3 (else "high"), while Attention (index.js) classified any engOverdue>0 as critical unconditionally — so for exactly 1 or 2 overdue jobs, Hero\'s headline read "Operasional memerlukan perhatian" (calm, warning tone) while Attention simultaneously showed a "Kritis" badge with the fast 1600ms urgent pulse, for the identical fact, in adjacent sections. FIX: extracted the decision into a new pure module, js/recommendation/engineering-overdue.js, exporting classifyEngineeringOverdue(engOverdue) → {critical, severity} — the >=3 threshold now exists in exactly one place; Hero reads .severity into its existing five-tier priority vocabulary, Attention reads .critical into its existing two-tier badge vocabulary, with no vocabulary merge and no motion/CSS/layout changes (Attention\'s pulse tempo is driven by the same `sev` value, so it self-corrected as a consequence of the input now being right, not because motion code changed). Files modified: js/app.js, js/recommendation/operational-recommendations.js, js/widgets/executive/index.js, js/widgets/executive/narrative-builder.js, scripts/executive-attention-verification-check.mjs (one fixture/assertion updated — it had encoded the pre-fix "engOverdue=2 is critical" behavior as expected output). New files: js/recommendation/engineering-verification.js, js/recommendation/engineering-overdue.js. Both fixes verified with dedicated throwaway Node fixtures (not committed) proving Attention/Hero agreement across one-assignment/two-workers, two-assignments/one-worker-each, mixed verified/unverified, and engOverdue ∈ {0,1,2,3,5} boundary cases, plus a full re-run of all 8 Executive verification suites (533 assertions total, 0 failed, 0 console errors) after each fix.',
+    highlights: [
+      'Verification-count fix: Attention and Recommendation now derive "pending engineering verification" from ONE assignment-level function (engineering-verification.js) instead of two independently-computed numbers that diverged on any multi-worker backlog assignment.',
+      'Severity-classification fix: Hero and Attention now derive engineering-overdue critical/warning status from ONE shared classifier (engineering-overdue.js, engOverdue>=3 threshold) instead of disagreeing on 1-2 overdue jobs.',
+      'Removed 8 remaining English/mixed-vocabulary strings ("overdue", "teknisi", bare "engineering") missed by the v1.22.12 terminology pass, unifying on "melewati batas waktu" / "Teknik" across Hero, Attention, and Recommendation.',
+      'No motion, CSS, layout, routing, Recommendation Engine, Prediction Engine, Simulation Engine, or Firebase changes. All 8 Executive verification suites re-run clean (533 assertions, 0 failed) after both fixes.',
+    ],
+  },
   {
     version: '1.22.12',
     date: '2026-07-10',
