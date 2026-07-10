@@ -2721,7 +2721,18 @@ body.v2-shell-active #driverDashboard .vehicle-badge {
   order: 30; /* between crumb (20) and date-nav (40) — see order renumbering below */
   cursor: default;
 }
-@media (min-width: 1024px) {
+/* Phase 11N: was ≥1024px — but #v2TopbarCrumb, .date-nav, and
+   .header-user-area (the profile avatar/name card) are ALL flex-shrink:0
+   with no wrap on .v2-topbar, so the only thing that could absorb space
+   was the spacer. At 1024-1279px ("laptop") their combined natural width
+   already exceeds what's left after the rail nav, so turning on this
+   field — decorative only, pointer-events:none, no handlers, the single
+   most expendable element in the row — right at 1024px pushed the
+   avatar/notif/theme controls off the right edge, clipped by an ancestor's
+   overflow. Deferring it to ≥1280px (where Part 9's own comment already
+   states "all elements visible" was the original design assumption)
+   directly frees that space without touching anything load-bearing. */
+@media (min-width: 1280px) {
   .v2-topbar-search { display: flex; }
 }
 .v2-topbar-search-placeholder {
@@ -4353,6 +4364,20 @@ body.v2-shell-active #driverDashboard .dash-empty {
   .v2-kpi-icon  { width: 30px; height: 30px; margin-bottom: 6px; }
   body.v2-shell-active .v2-topbar { padding: 0 10px; gap: 6px; }
   .v2-topbar-search { min-width: 160px; max-width: 200px; }
+  /* Phase 11N: .v2-topbar-search is display:none in this range now (see
+     ~line 2724), so its own min/max-width above are moot — kept as-is,
+     harmless. Safety margin: crumb text length varies per workspace
+     (module titles aren't all as short as "Home") and had no cap at all,
+     so a longer title could still starve the avatar/notif/theme controls
+     the same way search did. Capping + truncating it here means the
+     avatar (the one control that must never disappear) is never at the
+     mercy of how long a given workspace's title happens to be. */
+  .v2-topbar-title {
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 /* 768–1023px: tablet — compact */
