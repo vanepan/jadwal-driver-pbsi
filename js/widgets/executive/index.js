@@ -119,19 +119,15 @@ function facts(ctx) {
   const petty = ctx.models?.pettyLowBalance || {};
   const pending = (ctx.requests || []).filter(r => r.status === 'pending').length;
   const rec = ctx.recommendations || { certified: false };
-  const fleetNormal = rec.certified && rec.board ? rec.board.isHealthyFleet : true;
   const criticalVehicles = (rec.board?.critical || []).length;
-  const upcomingMaintenance = (rec.board?.upcoming || []).length;
   const engOverdue = numOr0((eng.overdueAssignments || {}).count);
   const engUnverifiedList = unverifiedEngineeringAssignments(ctx);
   const pendingVerify = engUnverifiedList.length;
   const atRiskDrivers = numOr0(wellness.summary?.burnoutRisk) + numOr0(wellness.summary?.highFatigue);
   const pettyLow = !!petty.low;
-  const todayStart = startOfDay(0);
-  const engToday = (ctx.engineeringEvents || []).filter(e => e.type === 'finished' && Date.parse(e.timestamp || 0) >= todayStart).length;
   return {
-    ex, dk, pending, rec, fleetNormal, criticalVehicles, upcomingMaintenance, engOverdue,
-    engUnverifiedList, pendingVerify, atRiskDrivers, pettyLow, engToday,
+    ex, dk, pending, rec, criticalVehicles, engOverdue,
+    engUnverifiedList, pendingVerify, atRiskDrivers, pettyLow,
     topPendingRequest: topPendingRequest(ctx), score: ex?.score,
   };
 }
@@ -176,6 +172,17 @@ function mountHeroMotion(root, ctx) {
   const alreadyMounted = root.dataset.heroMounted === '1';
   root.dataset.heroMounted = '1';
 
+  // Hardening (RC) — `root` (the Hero's body element) is NOT recreated on a
+  // live refresh, only its innerHTML is (see this function's own doc above).
+  // Without a generation guard, a rAF tick loop started by an EARLIER mount
+  // keeps calling itself (nothing here previously stopped it) and keeps
+  // writing to scoreEl/ringEl references that are now DETACHED nodes once a
+  // newer refresh replaces the innerHTML — wasted work that compounds under
+  // back-to-back Firebase updates (each refresh spawns its own loop). Every
+  // mount now invalidates any loop from a prior mount before starting its own.
+  const gen = (root.__heroAnimGen = (root.__heroAnimGen || 0) + 1);
+  const stale = () => root.__heroAnimGen !== gen;
+
   // Micro Motion: suppress replay synchronously, before the browser paints.
   root.querySelectorAll('.wsp-hero-anim').forEach((el) => {
     if (reduce || alreadyMounted) el.style.animation = 'none';
@@ -219,6 +226,7 @@ function mountHeroMotion(root, ctx) {
       // the new sweep and never resets to zero.
       ringEl.style.transition = 'none';
       const tick = (now) => {
+        if (stale()) return;
         const p = Math.min(1, (now - t0) / tween.duration);
         const len = fromLen + (targetLen - fromLen) * ease(p);
         ringEl.setAttribute('stroke-dasharray', `${len.toFixed(1)} ${circ}`);
@@ -230,6 +238,7 @@ function mountHeroMotion(root, ctx) {
 
   if (scoreEl) {
     const tick = (now) => {
+      if (stale()) return;
       const p = Math.min(1, (now - t0) / tween.duration);
       const v = fromScore + (targetScore - fromScore) * ease(p);
       scoreEl.textContent = String(Math.round(v));

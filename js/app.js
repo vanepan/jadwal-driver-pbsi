@@ -1572,11 +1572,30 @@ function renderHomeWorkspace() {
   renderHome(host, ctx);
 }
 
-/** In-place refresh of the Home workspace on live data changes (no flicker). */
+/** In-place refresh of the Home workspace on live data changes (no flicker).
+ *
+ *  Hardening (RC) — assignments/requests/vehicles/petty/engineering/logs each
+ *  fire their OWN Firebase change listener, and several call this in direct
+ *  succession for a single underlying write (e.g. completing a trip touches
+ *  both assignments and engineering). Previously every call ran its own full
+ *  widget-tree rebuild (all six Executive sections re-rendered + re-mounted)
+ *  even when a newer call was about to immediately supersede it. Coalesced
+ *  onto one rAF: any calls arriving before the frame fires collapse into the
+ *  single flush below, which reads ctx fresh at that point (always the
+ *  latest data, never stale) — same one-refresh-per-frame idiom already used
+ *  for the Snapshot crossfade elsewhere in this file. */
+let _homeRefreshQueued = false;
 function refreshHomeWorkspace() {
   const host = document.getElementById('v2HomeWorkspace');
   if (!host || host.style.display === 'none') return;
-  refreshHome(host, buildHomeContext());
+  if (_homeRefreshQueued) return;
+  _homeRefreshQueued = true;
+  requestAnimationFrame(() => {
+    _homeRefreshQueued = false;
+    const liveHost = document.getElementById('v2HomeWorkspace');
+    if (!liveHost || liveHost.style.display === 'none') return;
+    refreshHome(liveHost, buildHomeContext());
+  });
 }
 
 /* ── MODUL: Driver Operations ── */
