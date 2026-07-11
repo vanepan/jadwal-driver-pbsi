@@ -26,7 +26,7 @@ const _domainTypes = new Map();
 
 /**
  * @param {string} id     e.g. 'nor'
- * @param {string} label  e.g. 'Nota Operasional Reimbursement'
+ * @param {string} label  e.g. 'Nota Organisasi Realisasi'
  */
 export function registerDomainType(id, label) {
   if (typeof id !== 'string' || !id) throw new Error('registerDomainType: id must be a non-empty string');
@@ -55,7 +55,7 @@ export function resetDomainTypeRegistry() {
 /* ── bootstrap: the domainTypes named as first-class in the architecture
    doc's Decision 1 — registered as data, not as branches of logic. ────────── */
 function bootstrap() {
-  registerDomainType('nor', 'Nota Operasional Reimbursement');
+  registerDomainType('nor', 'Nota Organisasi Realisasi');
   registerDomainType('memorandum', 'Memorandum');
   registerDomainType('sop', 'Standard Operating Procedure');
   registerDomainType('internal_letter', 'Internal Letter');
