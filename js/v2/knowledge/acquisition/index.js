@@ -17,4 +17,6 @@ export * from './contracts/extraction-contract.js';
 export * from './contracts/normalization-contract.js';
 export * from './contracts/session-contract.js';
 export * from './contracts/import-report-contract.js';
+export * from './contracts/event-contract.js';
+export * from './cursor-store.js';
 export * from './acquisition-engine.js';

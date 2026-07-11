@@ -14,7 +14,8 @@
    with MemoryRepository active gets a genuine, versioned transition.
 
    DEPENDENCIES: knowledge/contracts/lifecycle-contract.js,
-   knowledge/repository/knowledge-repository.js.
+   knowledge/repository/knowledge-repository.js,
+   knowledge/lifecycle/contracts/event-contract.js (Phase 9.1).
 
    NON-GOALS: does not decide WHO may request a transition into a
    human-gated state (Approved) — that is knowledge/review/
@@ -29,11 +30,27 @@
 
 import { canTransition, isHumanGated, LIFECYCLE_STATE } from '../contracts/lifecycle-contract.js';
 import { appendVersion } from '../repository/knowledge-repository.js';
+import { makeLifecycleEvent } from './contracts/event-contract.js';
 
 export const LIFECYCLE_ENGINE_ERRORS = Object.freeze({
   ILLEGAL_TRANSITION: 'ILLEGAL_TRANSITION',
   HUMAN_GATE_REQUIRED: 'HUMAN_GATE_REQUIRED',
 });
+
+/** @type {Function[]} */
+const _listeners = [];
+
+/** Phase 9.1 — Lifecycle Events, mirroring repository/knowledge-repository.js's
+ *  own listener registry (and, further back, V1's petty-cash-store.js
+ *  registerChangeListener() precedent). */
+export function registerLifecycleListener(cb) {
+  if (typeof cb === 'function') _listeners.push(cb);
+}
+
+export function unregisterLifecycleListener(cb) {
+  const i = _listeners.indexOf(cb);
+  if (i !== -1) _listeners.splice(i, 1);
+}
 
 /**
  * Validate (but do not perform) a requested transition.
@@ -73,7 +90,13 @@ export function validateTransition(fromState, toState, opts = {}) {
 export function requestTransition(id, fromState, toState, extraPatch = {}, opts = {}) {
   const validation = validateTransition(fromState, toState, opts);
   if (!validation.ok) return validation;
-  return appendVersion(id, { ...extraPatch, lifecycleState: toState });
+  const result = appendVersion(id, { ...extraPatch, lifecycleState: toState });
+  if (result.ok) {
+    const event = makeLifecycleEvent({ id, fromState, toState, viaReviewDecision: !!opts.viaReviewDecision });
+    for (const cb of _listeners) cb(event);
+  }
+  return result;
 }
 
 export { LIFECYCLE_STATE };
+export { LIFECYCLE_EVENT_TYPE } from './contracts/event-contract.js';

@@ -53,22 +53,28 @@ export const CONNECTOR_ERRORS = Object.freeze({
  * @property {import('./knowledge-item-contract.js').KnowledgeItem[]|null} items - always Draft-lifecycle items; never Approved
  * @property {{code: string, message: string}|null} error
  * @property {string} connectorId
+ * @property {import('../observability/contracts/warning-contract.js').KnowledgeWarning[]} warnings
+ *   - non-fatal, per-record problems (e.g. one malformed source record
+ *     skipped) that did NOT fail the fetch as a whole (Phase 9.1). Always
+ *     `[]` for a connector that has nothing to warn about — additive field,
+ *     existing callers that never read it are unaffected.
  */
 
 export const CONNECTOR_CONTRACT = Object.freeze({
   schema: CONNECTOR_SCHEMA,
   connector: Object.freeze(['id', 'version', 'description', 'fetch']),
-  result: Object.freeze(['ok', 'items', 'error', 'connectorId']),
+  result: Object.freeze(['ok', 'items', 'error', 'connectorId', 'warnings']),
   errorCodes: CONNECTOR_ERRORS,
 });
 
 /** A successful fetch. Every emitted item MUST already be Draft-lifecycle. */
-export function connectorSuccess(items, { connectorId } = {}) {
+export function connectorSuccess(items, { connectorId, warnings } = {}) {
   return Object.freeze({
     ok: true,
     items: Object.freeze(items ?? []),
     error: null,
     connectorId: connectorId ?? null,
+    warnings: Object.freeze(warnings ?? []),
   });
 }
 

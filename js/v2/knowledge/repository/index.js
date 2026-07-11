@@ -21,6 +21,7 @@
 'use strict';
 
 export * from './contracts/repository-contract.js';
+export * from './contracts/event-contract.js';
 export * from './knowledge-repository.js';
 export * as registry from './repository-registry.js';
 export * as implementations from './implementations-index.js';

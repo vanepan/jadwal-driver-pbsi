@@ -59,11 +59,15 @@ export function completeSession(session, status) {
  * @property {number} itemsWritten   - created + appended
  * @property {number} itemsSkipped
  * @property {import('./extraction-contract.js').KnowledgeExtractionError[]} errors
+ * @property {import('../../observability/contracts/warning-contract.js').KnowledgeWarning[]} warnings
+ *   - non-fatal (Phase 9.1) — carried through from the connector's
+ *     ConnectorResult.warnings, never blocks `ok: true`.
  */
 
-export function makeAcquisitionResult({ ok, session, itemsExtracted = 0, itemsWritten = 0, itemsSkipped = 0, errors = [] }) {
+export function makeAcquisitionResult({ ok, session, itemsExtracted = 0, itemsWritten = 0, itemsSkipped = 0, errors = [], warnings = [] }) {
   return Object.freeze({
     ok, session, itemsExtracted, itemsWritten, itemsSkipped,
     errors: Object.freeze([...errors]),
+    warnings: Object.freeze([...warnings]),
   });
 }

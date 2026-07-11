@@ -31,6 +31,7 @@ export const IMPORT_REPORT_SCHEMA = 'knowledge-import-report@1';
  * @property {number} itemsUpdated
  * @property {number} itemsSkipped
  * @property {{code: string, message: string}[]} errors
+ * @property {import('../../observability/contracts/warning-contract.js').KnowledgeWarning[]} warnings
  * @property {string} generatedAt - ISO 8601
  */
 
@@ -48,6 +49,7 @@ export function buildImportReport(result, { itemsCreated = 0, itemsUpdated = 0 }
     itemsUpdated,
     itemsSkipped: result.itemsSkipped,
     errors: Object.freeze(result.errors.map((e) => ({ code: e.code, message: e.message }))),
+    warnings: Object.freeze([...(result.warnings || [])]),
     generatedAt: new Date().toISOString(),
   });
 }

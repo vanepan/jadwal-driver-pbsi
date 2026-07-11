@@ -1,5 +1,5 @@
 /* ============================================================
-   ACQUISITION-ENGINE.JS — Knowledge Acquisition (V2, Phase 9)
+   ACQUISITION-ENGINE.JS — Knowledge Acquisition (V2, Phase 9 / Phase 9.1)
 
    PURPOSE: the generic orchestration between a Connector and the
    Repository — "call this connector, wrap its output into a session, write
@@ -8,15 +8,32 @@
    Source -> Acquisition -> Builder -> Repository), and the ONLY module
    that both calls a connector's fetch() and writes to the repository.
 
-   RESPONSIBILITY: `runAcquisition(connectorId, { since })` — resolve the
-   connector from connector-registry.js, call `fetch(since)`, write every
-   returned item to the repository (create, or appendVersion on a
-   DUPLICATE_ID collision — the deterministic id scheme from
+   RESPONSIBILITY: `runAcquisition(connectorId, { since, onEvent })` —
+   resolve the connector from connector-registry.js, call `fetch(since)`,
+   write every returned item to the repository (create, or appendVersion on
+   a DUPLICATE_ID collision — the deterministic id scheme from
    identity-contract.js is what makes that collision meaningful instead of
    accidental), and return a KnowledgeAcquisitionResult + KnowledgeImportReport.
 
+   Phase 9.1 (Knowledge Observability) additions, all additive:
+   - Acquisition Events via an optional `opts.onEvent` callback, mirroring
+     builder-orchestrator.js's onEvent idiom exactly.
+   - Progress Reporting — a ProgressReport advanced once per item, carried
+     as the `detail` of every ITEM_WRITTEN/ITEM_SKIPPED event.
+   - Warning Reporting — a connector's ConnectorResult.warnings flow
+     through into the KnowledgeAcquisitionResult/KnowledgeImportReport.
+   - Import Statistics — every report is appended to an in-memory log
+     (`listImportReports`/`resetImportReportLog`) an observability
+     consumer can aggregate via observability/contracts/
+     import-statistics-contract.js#buildImportStatistics.
+   - Incremental Cursor — a successful run advances cursor-store.js's
+     cursor for that connector; `runAcquisitionIncremental()` reads it back
+     automatically, without changing `runAcquisition()`'s own signature or
+     behavior.
+
    DEPENDENCIES: knowledge/registry/connector-registry.js,
-   knowledge/repository/knowledge-repository.js, every acquisition/contracts/*.js.
+   knowledge/repository/knowledge-repository.js, every acquisition/contracts/*.js,
+   acquisition/cursor-store.js, observability/contracts/progress-contract.js.
 
    NON-GOALS: does not decide which connectors are "active" — every
    registered connector can be acquired from; it is builder/stages/* that
@@ -36,6 +53,9 @@ import { makeBatch } from './contracts/batch-contract.js';
 import { makeExtractionContext, makeExtractionError, EXTRACTION_ERRORS } from './contracts/extraction-contract.js';
 import { startSession, completeSession, SESSION_STATUS, makeAcquisitionResult } from './contracts/session-contract.js';
 import { buildImportReport } from './contracts/import-report-contract.js';
+import { ACQUISITION_EVENT_TYPE, makeAcquisitionEvent } from './contracts/event-contract.js';
+import { makeProgressReport, advanceProgress } from '../observability/contracts/progress-contract.js';
+import { getCursor, setCursor } from './cursor-store.js';
 
 const DEFAULT_SOURCE = (connectorId) => makeSource({
   id: `${connectorId}.default`,
@@ -44,23 +64,39 @@ const DEFAULT_SOURCE = (connectorId) => makeSource({
   representation: SOURCE_REPRESENTATION.STORE_RECORD,
 });
 
+/** @type {import('./contracts/import-report-contract.js').KnowledgeImportReport[]} */
+const _reportLog = [];
+
+function emit(onEvent, type, sessionId, connectorId, detail) {
+  if (typeof onEvent === 'function') onEvent(makeAcquisitionEvent(type, { sessionId, connectorId, detail }));
+}
+
+function logAndReturn(result, extraCounts) {
+  const report = buildImportReport(result, extraCounts);
+  _reportLog.push(report);
+  return { result, report };
+}
+
 /**
  * @param {string} connectorId
- * @param {{since?: string|null}} [opts]
+ * @param {{since?: string|null, onEvent?: Function}} [opts]
  * @returns {{result: import('./contracts/session-contract.js').KnowledgeAcquisitionResult, report: import('./contracts/import-report-contract.js').KnowledgeImportReport}}
  */
 export function runAcquisition(connectorId, opts = {}) {
   const since = opts.since ?? null;
+  const onEvent = opts.onEvent;
   const connector = getConnector(connectorId);
   const source = (connector && connector.source) || DEFAULT_SOURCE(connectorId);
 
   const session0 = startSession({ connectorId, sourceId: source.id, since });
+  emit(onEvent, ACQUISITION_EVENT_TYPE.STARTED, session0.sessionId, connectorId, { since });
 
   if (!connector) {
     const session = completeSession(session0, SESSION_STATUS.FAILED);
     const error = makeExtractionError(EXTRACTION_ERRORS.RECORD_EXTRACTION_FAILED, `No connector registered under "${connectorId}".`, { connectorId });
     const result = makeAcquisitionResult({ ok: false, session, errors: [error] });
-    return { result, report: buildImportReport(result) };
+    emit(onEvent, ACQUISITION_EVENT_TYPE.FAILED, session.sessionId, connectorId, { error });
+    return logAndReturn(result);
   }
 
   makeExtractionContext({ connectorId, sourceId: source.id, since }); // built for parity with the contract; the session already carries the same fields
@@ -75,11 +111,16 @@ export function runAcquisition(connectorId, opts = {}) {
       { connectorId },
     );
     const result = makeAcquisitionResult({ ok: false, session, errors: [error] });
-    return { result, report: buildImportReport(result) };
+    emit(onEvent, ACQUISITION_EVENT_TYPE.FAILED, session.sessionId, connectorId, { error });
+    return logAndReturn(result);
   }
 
-  const batch = makeBatch(connectorId, source.id, fetchResult.items);
+  emit(onEvent, ACQUISITION_EVENT_TYPE.FETCHED, session0.sessionId, connectorId, { count: fetchResult.items.length });
 
+  const batch = makeBatch(connectorId, source.id, fetchResult.items);
+  const warnings = [...(fetchResult.warnings || [])];
+
+  let progress = makeProgressReport(connectorId, batch.items.length);
   let itemsCreated = 0;
   let itemsUpdated = 0;
   let itemsSkipped = 0;
@@ -89,20 +130,28 @@ export function runAcquisition(connectorId, opts = {}) {
     const createResult = create(item);
     if (createResult.ok) {
       itemsCreated += 1;
+      progress = advanceProgress(progress);
+      emit(onEvent, ACQUISITION_EVENT_TYPE.ITEM_WRITTEN, session0.sessionId, connectorId, { itemId: item.id, op: 'create', progress });
       continue;
     }
     if (createResult.error && createResult.error.code === REPOSITORY_ERRORS.DUPLICATE_ID) {
       const appendResult = appendVersion(item.id, item);
       if (appendResult.ok) {
         itemsUpdated += 1;
+        progress = advanceProgress(progress);
+        emit(onEvent, ACQUISITION_EVENT_TYPE.ITEM_WRITTEN, session0.sessionId, connectorId, { itemId: item.id, op: 'append', progress });
       } else {
         itemsSkipped += 1;
+        progress = advanceProgress(progress);
         errors.push(makeExtractionError(EXTRACTION_ERRORS.NORMALIZATION_FAILED, appendResult.error.message, { connectorId, sourceRef: item.id }));
+        emit(onEvent, ACQUISITION_EVENT_TYPE.ITEM_SKIPPED, session0.sessionId, connectorId, { itemId: item.id, progress });
       }
       continue;
     }
     itemsSkipped += 1;
+    progress = advanceProgress(progress);
     errors.push(makeExtractionError(EXTRACTION_ERRORS.NORMALIZATION_FAILED, createResult.error ? createResult.error.message : 'create() failed.', { connectorId, sourceRef: item.id }));
+    emit(onEvent, ACQUISITION_EVENT_TYPE.ITEM_SKIPPED, session0.sessionId, connectorId, { itemId: item.id, progress });
   }
 
   const session = completeSession(session0, SESSION_STATUS.COMPLETED);
@@ -113,7 +162,36 @@ export function runAcquisition(connectorId, opts = {}) {
     itemsWritten: itemsCreated + itemsUpdated,
     itemsSkipped,
     errors,
+    warnings,
   });
-  const report = buildImportReport(result, { itemsCreated, itemsUpdated });
-  return { result, report };
+
+  setCursor(connectorId, { lastIndexedAt: session.startedAt });
+  emit(onEvent, ACQUISITION_EVENT_TYPE.COMPLETED, session.sessionId, connectorId, { itemsWritten: itemsCreated + itemsUpdated, progress });
+
+  return logAndReturn(result, { itemsCreated, itemsUpdated });
+}
+
+/**
+ * Convenience wrapper: reads the connector's persisted cursor
+ * (acquisition/cursor-store.js) and acquires only what's changed since —
+ * without changing runAcquisition()'s own signature or behavior for
+ * existing callers that pass `since` explicitly.
+ * @param {string} connectorId
+ * @param {{onEvent?: Function}} [opts]
+ */
+export function runAcquisitionIncremental(connectorId, opts = {}) {
+  const cursor = getCursor(connectorId);
+  return runAcquisition(connectorId, { ...opts, since: cursor ? cursor.lastIndexedAt : null });
+}
+
+/** Import Statistics support — every completed or failed run's report,
+ *  oldest first. Feed to observability/contracts/
+ *  import-statistics-contract.js#buildImportStatistics for a rollup. */
+export function listImportReports(connectorId = null) {
+  return connectorId ? _reportLog.filter((r) => r.connectorId === connectorId) : [..._reportLog];
+}
+
+/** Test/teardown helper. Not used by any runtime path. */
+export function resetImportReportLog() {
+  _reportLog.length = 0;
 }

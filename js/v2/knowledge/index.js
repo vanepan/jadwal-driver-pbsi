@@ -48,9 +48,12 @@ export * as repository from './repository/index.js';
 export * as lifecycleEngine from './lifecycle/lifecycle-engine.js';
 export * as builder from './builder/index.js';
 export * as acquisition from './acquisition/index.js';
+export * as observability from './observability/index.js';
 export * as metricsEngine from './metrics/knowledge-metrics-engine.js';
 export * as explainabilityEngine from './explainability/knowledge-explainability-engine.js';
-export * as reviewWorkflowEngine from './review/review-workflow-engine.js';
+export * as review from './review/index.js';
+export * as promotion from './promotion/index.js';
+export * as learning from './learning/index.js';
 export * as dependencyGraphEngine from './dependency-graph/knowledge-dependency-graph-engine.js';
 
 export * as services from './services/index.js';

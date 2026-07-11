@@ -25,6 +25,7 @@ export * as review from './review-service.js';
 export * as metrics from './metrics-service.js';
 export * as explainability from './explainability-service.js';
 export * as dependencyGraph from './dependency-graph-service.js';
+export * as trace from './trace-service.js';
 export * as health from './health-service.js';
 export * as versioning from './versioning-service.js';
 export * as lifecycle from './lifecycle-service.js';

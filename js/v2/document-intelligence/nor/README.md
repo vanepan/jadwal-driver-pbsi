@@ -1,4 +1,4 @@
-# document-intelligence/nor/ — NOR Intelligence Foundation (Phase 8, dormant)
+# document-intelligence/nor/ — NOR Intelligence Runtime (Phase 8 contracts / V2.0.6, Phase 9.5)
 
 ## Purpose
 
@@ -22,25 +22,39 @@ principle, be re-derived for any other domainType.
   shape of a query into Knowledge scoped to `domainType: 'nor'`.
 - `nor-generator-contract.js` — NorGenerator shape + the standard
   `NOR_PIPELINE` instance (uses Document Intelligence's generic step
-  vocabulary, fixed to `domainType: 'nor'`).
+  vocabulary, fixed to `domainType: 'nor'`). Its own `proposeNorFields`
+  stays a locked `NOT_IMPLEMENTED` stub by design — shape lock only, see
+  its header.
+- `nor-analyzer.js` / `nor-generator.js` / `nor-validator.js` /
+  `nor-explainer.js` / `nor-recommender.js` (V2.0.6, Phase 9.5) — the five
+  REAL pipeline steps, registered into `../registry/step-registry.js` for
+  `domainType: 'nor'`. See `document-intelligence/README.md` for the full
+  table of what each does.
 
 ## Dependencies
 
-`document-intelligence/contracts/*` only. Cites, but does not import,
-`js/petty-cash/nor-document-engine.js` and `js/docs/templates/nor*.js` — the
-existing renderer this pilot will eventually feed, never replace.
+`document-intelligence/contracts/*`, `../registry/*`,
+`knowledge/repository/knowledge-repository.js`,
+`knowledge/services/explainability-service.js`. Cites, but does not
+import, `js/petty-cash/nor-document-engine.js` and `js/docs/templates/nor*.js`
+— the existing renderer this pilot feeds suggestions toward, never
+replaces or calls.
 
 ## Non-goals
 
-- Does not generate a NOR document.
-- Does not implement AI, templates, or PDF rendering.
-- No NorGenerator is implemented or registered — `proposeNorFields()` is a
-  `NOT_IMPLEMENTED` stub.
+- Does not generate, render, or write a NOR document — `petty-cash-service.js#generateNor()`
+  and `buildNorViewModel` remain the only things that do.
+- Does not implement AI — every suggestion is a statistical rollup over
+  Approved Knowledge (Jaccard-free, just counts/averages), never a
+  generated or inferred sentence.
+- Never proposes business-specific content (`norNumber`, `subject`,
+  signatory names) — only structural cardinalities a population of
+  Approved items can honestly support.
 
-## Future evolution
+## Real since V2.0.6 (Phase 9.5)
 
-A real pilot implementation (beyond this architecture-only phase) reads
-Approved `domainType: 'nor'` Knowledge (template_pattern/vocabulary items,
-once a Documents connector exists — still unimplemented, see
-`knowledge/connectors/README.md`) and proposes field values a human reviews
-before they reach the unchanged existing `buildNorViewModel` renderer.
+`nor-generator.js#computeNorStructuralStats()` queries Approved
+`domainType:'nor', kind:'structure'` Knowledge (the connector activated in
+V2.0.2) and averages signatory/item counts across them —
+`proposeNorFields()`'s real body, registered as the `draft` step rather
+than replacing the contract file's locked stub.

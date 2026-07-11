@@ -50,10 +50,11 @@ js/v2/
     registry/          adapter registry (mirrors js/prediction/prediction-provider.js's registry)
     adapters/          claude / openai / local-model — all NOT_IMPLEMENTED stubs
 
-  document-intelligence/  first CONSUMER of knowledge/ (Phase 7). See document-intelligence/README.md.
+  document-intelligence/  first CONSUMER of knowledge/ (Phase 7 contracts / V2.0.6 runtime). See document-intelligence/README.md.
     contracts/         Analyzer/Classifier/Intent/Structure, Context/Session, Draft/Validation/Explanation/Recommendation, Pipeline
-    registry/          analyzer registry — empty
-    nor/               the NOR pilot (Phase 8) — see document-intelligence/nor/README.md
+    registry/          analyzer registry + step registry — real, populated by nor/
+    session-store.js   real DocumentSession store (V2.0.6)
+    nor/               the NOR pilot — 5 real pipeline steps (V2.0.6) — see document-intelligence/nor/README.md
 
   index.js           dormant barrel — a structural no-op proving nothing auto-runs
 ```

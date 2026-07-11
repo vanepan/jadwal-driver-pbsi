@@ -18,7 +18,8 @@
    js/petty-cash/nor-document-engine.js (read-only, buildNorViewModel()),
    contracts/connector-contract.js, contracts/identity-contract.js,
    contracts/lifecycle-contract.js, acquisition/contracts/{source,
-   normalization}-contract.js, registry/connector-registry.js (self-
+   normalization}-contract.js, observability/contracts/warning-contract.js,
+   registry/connector-registry.js (self-
    registers at the bottom of this file — NOT bootstrapped by the registry
    itself, see connector-registry.js's own NON-GOALS: this module
    transitively loads the real Firebase SDK via petty-cash-store.js ->
@@ -42,6 +43,7 @@ import { LIFECYCLE_STATE } from '../contracts/lifecycle-contract.js';
 import { makeSource, SOURCE_REPRESENTATION } from '../acquisition/contracts/source-contract.js';
 import { makeNormalization } from '../acquisition/contracts/normalization-contract.js';
 import { registerConnector } from '../registry/connector-registry.js';
+import { makeWarning, WARNING_SEVERITY } from '../observability/contracts/warning-contract.js';
 
 export const NOR_CONNECTOR_ID = 'nor';
 export const NOR_CONNECTOR_VERSION = 'nor-connector@1';
@@ -112,13 +114,27 @@ function toKnowledgeItem(nor) {
   });
 }
 
+/** One malformed NOR record must never sink the whole fetch — every
+ *  eligible record is mapped independently, and a record that throws
+ *  (e.g. a corrupt line item) is skipped with a Warning instead of failing
+ *  the entire connector run (Phase 9.1 — Warning Reporting). */
 function fetch(since = null) {
   try {
-    const items = getNors()
-      .filter(isEligible)
-      .filter((nor) => isNewerThan(nor, since))
-      .map(toKnowledgeItem);
-    return connectorSuccess(items, { connectorId: NOR_CONNECTOR_ID });
+    const eligible = getNors().filter(isEligible).filter((nor) => isNewerThan(nor, since));
+    const items = [];
+    const warnings = [];
+    for (const nor of eligible) {
+      try {
+        items.push(toKnowledgeItem(nor));
+      } catch (e) {
+        warnings.push(makeWarning(
+          'RECORD_MAPPING_FAILED',
+          e && e.message ? e.message : `Failed to build a ViewModel for NOR "${nor.id}".`,
+          { connectorId: NOR_CONNECTOR_ID, sourceRef: nor.id, severity: WARNING_SEVERITY.MEDIUM },
+        ));
+      }
+    }
+    return connectorSuccess(items, { connectorId: NOR_CONNECTOR_ID, warnings });
   } catch (e) {
     return connectorFailure(
       CONNECTOR_ERRORS.FETCH_FAILED,
