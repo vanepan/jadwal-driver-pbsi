@@ -12,6 +12,7 @@
   --text:#18181d; --text-dim:#5b5b64; --text-faint:#8a8a93;
   --accent:#cf4a43;
   --c-green:#2f9e6b; --c-green-weak:rgba(47,158,107,.12);
+  --c-blue:#3f72d6; --c-blue-weak:rgba(63,114,214,.12);
   --c-neutral:#8c8c95; --c-neutral-weak:rgba(140,140,149,.12);
   --shadow-sm:0 1px 2px rgba(16,17,26,.03);
   --font-display:'Archivo',system-ui,-apple-system,sans-serif;
@@ -26,11 +27,18 @@
   --text:#f3f3f5; --text-dim:#a4a4ac; --text-faint:#6f6f78;
   --accent:#e0574f;
   --c-green:#3fb27f; --c-green-weak:rgba(63,178,127,.15);
+  --c-blue:#5a8cef; --c-blue-weak:rgba(90,140,239,.15);
   --c-neutral:#7d7d86; --c-neutral-weak:rgba(125,125,134,.15);
   --shadow-sm:0 1px 2px rgba(0,0,0,.4);
 }
 
 .sic-root *,.sic-root *::before,.sic-root *::after{box-sizing:border-box;}
+
+/* Persistent sibling screen containers (V2.0.11) — mount once, toggle
+   display; see sarpras-intelligence-center.js#buildShell(). No layout of
+   their own — each screen owns its own inner wrapper (.sic-content,
+   .v2-module-placeholder, or nor-center.css's .nc-root). */
+.sic-screen{min-height:100%;}
 
 .sic-content{
   max-width:var(--workspace-max-width, 1180px);
@@ -63,6 +71,7 @@
   padding:4px 10px;border-radius:999px;white-space:nowrap;
 }
 .sic-roadmap-status--done{color:var(--c-green);background:var(--c-green-weak);}
+.sic-roadmap-status--foundation{color:var(--c-blue);background:var(--c-blue-weak);}
 .sic-roadmap-status--soon{color:var(--c-neutral);background:var(--c-neutral-weak);}
 
 @media (max-width: 640px) {

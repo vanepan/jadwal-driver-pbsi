@@ -1,0 +1,126 @@
+/* ============================================================
+   NOR-CENTER.CSS — NOR Center Foundation (V2.0.11)
+
+   Scoped under `.nc-root`, nested inside Sarpras Intelligence's
+   `.sic-root` (sarpras-intelligence.css). Deliberately does NOT redeclare
+   the design-token palette — `.nc-root` has no [data-theme] block of its
+   own; every colour here is `var(--text)`/`var(--surface)`/... inherited
+   by CSS cascade from the ancestor `.sic-root`. One extra token
+   (--c-amber-weak, for the "ready" outcome tone) is added locally since
+   Sarpras Intelligence's own dashboard never needed an amber tone.
+   ============================================================ */
+
+.nc-root { --c-amber:#c4892c; --c-amber-weak:rgba(196,137,44,.13); }
+:root[data-theme="dark"] .nc-root { --c-amber:#d8a23e; --c-amber-weak:rgba(216,162,62,.16); }
+
+.nc-root *,.nc-root *::before,.nc-root *::after{box-sizing:border-box;}
+
+/* ── shell: tab bar + content ─────────────────────────────────────── */
+.nc-shell{display:flex;flex-direction:column;min-height:100%;}
+.nc-tabbar{
+  display:flex;gap:4px;padding:0 24px;border-bottom:1px solid var(--border);
+  overflow-x:auto;flex-shrink:0;
+}
+.nc-tab{
+  appearance:none;background:none;border:none;cursor:pointer;
+  font-family:var(--font-sans);font-size:13px;font-weight:600;color:var(--text-faint);
+  padding:14px 14px 12px;border-bottom:2px solid transparent;white-space:nowrap;
+}
+.nc-tab:hover{color:var(--text-dim);}
+.nc-tab--active{color:var(--accent);border-bottom-color:var(--accent);}
+
+.nc-content{flex:1;}
+
+.nc-page{
+  max-width:var(--workspace-max-width, 1180px);
+  padding:var(--workspace-pad-top, 28px) var(--workspace-pad-inline, 24px) var(--workspace-pad-bottom, 40px);
+}
+
+.nc-page-head{margin-bottom:8px;}
+.nc-page-crumb{font-size:11px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--text-faint);margin-bottom:8px;}
+.nc-page-title{font-family:var(--font-display);font-weight:800;font-size:26px;letter-spacing:-.025em;margin:0;color:var(--text);}
+.nc-page-lede{font-size:14px;color:var(--text-dim);margin:8px 0 0;max-width:680px;line-height:1.6;}
+
+/* ── generic section ─────────────────────────────────────────────── */
+.nc-sec{margin-top:32px;}
+.nc-sec-title{font-family:var(--font-display);font-weight:800;font-size:14px;letter-spacing:-.01em;color:var(--text);margin-bottom:12px;}
+
+/* ── empty state (shared across Dashboard/Drafts/Archive/Review) ───── */
+.nc-empty{
+  background:var(--surface);border:1px dashed var(--border);border-radius:14px;
+  padding:28px 20px;text-align:center;color:var(--text-faint);
+}
+.nc-empty-icon{width:28px;height:28px;margin:0 auto 10px;opacity:.6;}
+.nc-empty-title{font-size:13.5px;font-weight:700;color:var(--text-dim);}
+.nc-empty-sub{font-size:12.5px;margin-top:4px;color:var(--text-faint);}
+
+/* ── row list (archive / review entries) ─────────────────────────── */
+.nc-row-list{list-style:none;margin:0;padding:0;background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden;}
+.nc-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 16px;border-top:1px solid var(--border);}
+.nc-row:first-child{border-top:none;}
+.nc-row-primary{font-size:13.5px;font-weight:600;color:var(--text);}
+.nc-row-secondary{font-family:var(--font-mono);font-size:11.5px;color:var(--text-faint);}
+
+/* ── status grid (Knowledge Status / Archive Health) ─────────────── */
+.nc-status-grid{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;}
+.nc-status-item{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:4px;}
+.nc-status-count{font-family:var(--font-display);font-weight:800;font-size:22px;color:var(--text);}
+.nc-status-label{font-size:11.5px;color:var(--text-faint);font-weight:600;}
+
+/* ── quick actions ────────────────────────────────────────────────── */
+.nc-quick-actions{display:flex;flex-wrap:wrap;gap:10px;}
+.nc-quick-btn{
+  appearance:none;cursor:pointer;font-family:var(--font-sans);font-size:13px;font-weight:700;
+  color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:10px;
+  padding:10px 16px;
+}
+.nc-quick-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+/* ── Generate NOR ─────────────────────────────────────────────────── */
+.nc-generate-card{
+  margin-top:24px;display:flex;gap:10px;flex-wrap:wrap;
+}
+.nc-generate-input{
+  flex:1 1 360px;font-family:var(--font-sans);font-size:16px;color:var(--text);
+  background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  padding:16px 18px;box-shadow:var(--shadow-sm);
+}
+.nc-generate-input:focus{outline:none;border-color:var(--accent);}
+.nc-generate-submit{
+  appearance:none;cursor:pointer;font-family:var(--font-sans);font-size:14px;font-weight:800;
+  color:#fff;background:var(--accent);border:none;border-radius:14px;padding:0 22px;
+}
+.nc-generate-submit:disabled{opacity:.4;cursor:not-allowed;}
+
+.nc-outcome{margin-top:20px;border-radius:14px;padding:18px 20px;border:1px solid var(--border);max-width:680px;}
+.nc-outcome--coming-soon{background:var(--c-neutral-weak);}
+.nc-outcome--ready{background:var(--c-amber-weak);}
+.nc-outcome-title{font-family:var(--font-display);font-weight:800;font-size:14px;color:var(--text);}
+.nc-outcome-message{font-size:13px;color:var(--text-dim);margin-top:6px;line-height:1.55;}
+.nc-outcome-detail{font-family:var(--font-mono);font-size:11.5px;color:var(--text-faint);margin-top:8px;}
+
+/* ── Archive: upload area + timeline ─────────────────────────────── */
+.nc-upload-area{
+  border:1px dashed var(--border-strong, var(--border));border-radius:14px;
+  padding:32px 20px;text-align:center;background:var(--surface);
+}
+.nc-timeline{list-style:none;margin:0;padding:0;background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden;}
+.nc-timeline-row{display:flex;align-items:center;gap:10px;padding:12px 16px;border-top:1px solid var(--border);}
+.nc-timeline-row:first-child{border-top:none;}
+.nc-timeline-dot{width:8px;height:8px;border-radius:50%;background:var(--c-neutral);flex-shrink:0;}
+.nc-timeline-dot--done{background:var(--c-green);}
+
+/* ── Settings ─────────────────────────────────────────────────────── */
+.nc-settings-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;max-width:640px;}
+.nc-settings-row{display:flex;justify-content:space-between;gap:16px;padding:10px 0;border-top:1px solid var(--border);}
+.nc-settings-row:first-child{border-top:none;}
+.nc-settings-label{font-size:12.5px;color:var(--text-faint);font-weight:600;}
+.nc-settings-value{font-size:13px;color:var(--text);font-weight:600;text-align:right;}
+.nc-settings-mono{font-family:var(--font-mono);font-size:12px;}
+.nc-settings-note{font-size:12px;color:var(--text-faint);line-height:1.6;margin-top:14px;padding-top:14px;border-top:1px solid var(--border);}
+
+@media (max-width: 640px) {
+  .nc-page-title{font-size:21px;}
+  .nc-tabbar{padding:0 16px;}
+  .nc-generate-submit{padding:14px 22px;}
+}
