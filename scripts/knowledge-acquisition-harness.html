@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <title>Knowledge Acquisition Harness</title>
+</head>
+<body>
+<!-- Loads the REAL NOR connector, the REAL Builder pipeline, and the REAL
+     Memory repository in a browser and exposes them on window, so the DOM
+     check can prove NOR acquisition end-to-end (nor-connector.js
+     transitively imports js/firebase.js's CDN-hosted SDK, which only a
+     browser can resolve — see knowledge-acquisition-check.mjs for the
+     Node-only coverage of the generic acquisition framework). -->
+<script type="module">
+  import { hasConnector, getConnector, listConnectors } from '../js/v2/knowledge/registry/connector-registry.js';
+  import { hasStage, listStages } from '../js/v2/knowledge/builder/stage-registry.js';
+  import { runIncremental, runFull } from '../js/v2/knowledge/builder/knowledge-builder.js';
+  import { setActiveRepository, list as repoList } from '../js/v2/knowledge/repository/knowledge-repository.js';
+  import { runAcquisition } from '../js/v2/knowledge/acquisition/acquisition-engine.js';
+  import '../js/v2/knowledge/builder/stages/index.js'; // registers the 'acquire-nor' stage (and, transitively, the 'nor' connector)
+  import { NOR_CONNECTOR_ID } from '../js/v2/knowledge/connectors/nor-connector.js';
+
+  setActiveRepository('memory');
+
+  window.__hasConnector = hasConnector;
+  window.__getConnector = getConnector;
+  window.__listConnectors = listConnectors;
+  window.__hasStage = hasStage;
+  window.__listStages = listStages;
+  window.__runIncremental = runIncremental;
+  window.__runFull = runFull;
+  window.__runAcquisition = runAcquisition;
+  window.__repoList = repoList;
+  window.__NOR_CONNECTOR_ID = NOR_CONNECTOR_ID;
+  window.__ready = true;
+</script>
+</body>
+</html>

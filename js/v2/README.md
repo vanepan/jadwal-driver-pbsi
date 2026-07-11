@@ -1,8 +1,12 @@
-# js/v2 — V2 Architecture Foundation (Phase 3)
+# js/v2 — V2 Architecture Foundation (Phase 3 contracts / Phase 9 first acquisition)
 
-> Status: **dormant scaffold**. No file under `js/v2/` is imported by anything
-> outside this tree. No runtime behavior anywhere in the application changes
-> as a result of this directory existing. This is architecture only — see
+> Status: **dormant to the rest of the app**. No file under `js/v2/` is
+> imported by anything outside this tree, and nothing here runs
+> automatically. As of Phase 9 (V2.0.2), the Knowledge Platform can do real
+> work when deliberately invoked — one real connector (`nor`) acquires
+> Draft Knowledge from live NOR records — but no runtime behavior anywhere
+> *else* in the application changes as a result of this directory existing,
+> and no AI/LLM code exists anywhere in this tree. See
 > `docs/V2_ARCHITECTURE_AUDIT_AND_PROPOSAL.md` for the audit and the ten
 > binding decisions this scaffold implements the shape of.
 
@@ -10,15 +14,17 @@
 
 The frozen V2 architecture proposal decided that **V2 is not an AI project —
 V2 is a Knowledge Platform**, with AI as one replaceable, optional client of
-that platform. This directory is the schema-and-contract-only Phase 3
-foundation for that platform. It defines *shapes* (JSDoc typedefs, frozen
-enums, registry interfaces, stub functions that return `NOT_IMPLEMENTED`) so
-that Phase 4+ can build real connectors, a real repository, and real
-providers against a stable contract — without redesigning it.
+that platform. Phase 3 built the schema-and-contract foundation for that
+platform (JSDoc typedefs, frozen enums, registry interfaces). Phase 9
+(V2.0.2) built the first real vertical slice on top of it — one connector
+(`nor`), a generic acquisition engine, and a real Builder Stage — without
+redesigning any Phase 3 shape.
 
-Nothing in this directory computes, persists, calls an LLM, parses a
-document, or changes any existing engine's behavior. Every "engine" file here
-is a locked interface, not an implementation.
+Nothing in this directory calls an LLM, renders a document, or changes any
+*existing* (V1) engine's behavior. Contracts stay locked interfaces;
+`repository/`, `builder/`, `acquisition/`, and `connectors/` now contain
+real, working logic (not `NOT_IMPLEMENTED` stubs) — `metrics/`,
+`explainability/`, `review/`, and `dependency-graph/` still do.
 
 ## Layout
 
@@ -27,14 +33,17 @@ js/v2/
   knowledge/        THE PLATFORM CORE. Domain-agnostic. See knowledge/README.md.
     contracts/         typedefs + frozen shape constants — no logic
     registry/          domainType / kind / connector registries — vocabulary only
-    repository/        empty repository skeleton — NOT_IMPLEMENTED
+    repository/        real (Phase 5): MemoryRepository + NullRepository default
     lifecycle/         the 5-state transition graph + a pure guard check
-    builder/           empty builder skeleton — NOT_IMPLEMENTED
+    builder/           real orchestrator (Phase 4) + 1 real Stage, acquire-nor (Phase 9,
+                       stages/ — explicit opt-in, not re-exported by builder/index.js)
     metrics/           empty KnowledgeHealthReport computer — NOT_IMPLEMENTED
     explainability/    empty provenance/corroboration describer — NOT_IMPLEMENTED
     review/            empty Draft→Candidate→Pending Review→Approved workflow — NOT_IMPLEMENTED
     dependency-graph/  empty relationship-graph accessor — NOT_IMPLEMENTED
-    connectors/        README only — zero connectors implemented
+    connectors/        1 real connector (nor) + 11 inactive placeholders (Phase 9)
+    acquisition/       Connector -> Repository orchestration: Source, Batch, Session,
+                       Extraction/Normalization contracts, acquisition-engine.js (Phase 9)
 
   ai-foundation/     ADAPTER LAYER ONLY. May depend on knowledge/. See ai-foundation/README.md.
     contracts/         the Adapter contract (mirrors js/prediction/prediction-provider.js)
@@ -68,25 +77,24 @@ V1 (js/app.js, any *-store.js, any engine)  ──never depends on──>  js/v2
   lifecycle code — adding a new domain must never require touching
   `knowledge/repository/` or `knowledge/lifecycle/`.
 
-## What Phase 3 explicitly does NOT do
+## What this tree still does NOT do (true as of Phase 9)
 
 See each module's own README/header for its own non-goals. Platform-wide:
 
-- No real connector reads any V1 data yet.
-- No repository persists anything (in-memory or otherwise) — the repository
-  skeleton's methods return `NOT_IMPLEMENTED` results, they do not fake success.
-- No LLM/AI provider is called — every adapter is a stub, exactly like
-  `js/prediction/python-provider.js` today.
-- No existing engine, store, or `app.js` is modified or reads from `js/v2/`.
+- No LLM/AI provider is called — every adapter under `ai-foundation/` is
+  still a stub, exactly like `js/prediction/python-provider.js` today.
+- No existing engine, store, or `app.js` is modified, and nothing outside
+  `js/v2/` reads from it — the dormancy rule holds. `nor-connector.js`
+  reads V1 read-only; it never writes back.
 - No UI exists for review, metrics, or anything else in this tree.
-- No document is parsed, extracted, indexed, or mined.
+- No document is rendered, and no document is parsed beyond a structural
+  ViewModel fingerprint — no PDF/HTML is ever read as a knowledge source.
+- Nothing is auto-approved — every acquired item is `lifecycleState: 'draft'`.
 
-## Future evolution (Phase 4+, not started)
+## Future evolution (Phase 10+, not started)
 
-Real connector implementations (Documents connector piloted against NOR per
-the architecture doc's §4.4), a real repository (in-memory or Firebase-backed
-via a provider adapter, mirroring `js/engineering/providers/`), real metric
-computation, a review-queue UI, a first real AI adapter, state-machine and
-module-registry generalization, and reconciling this third explainability
-surface with the two that already exist (`js/prediction/explainability.js`,
+A review-queue UI, real metric computation, activating one or more of the
+11 placeholder connectors (following `nor-connector.js`'s pattern), a first
+real AI adapter, and reconciling this third explainability surface with the
+two that already exist (`js/prediction/explainability.js`,
 `js/services/dispatch-presentation.js`). None of this is in scope now.

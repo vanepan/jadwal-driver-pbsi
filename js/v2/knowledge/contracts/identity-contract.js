@@ -1,25 +1,23 @@
 /* ============================================================
-   IDENTITY-CONTRACT.JS — Knowledge Platform (V2, Phase 3)
+   IDENTITY-CONTRACT.JS — Knowledge Platform (V2, Phase 3 / Phase 9)
 
    PURPOSE: fix HOW a KnowledgeItem's identity and version are formed, kept
-   separate from the item shape itself so identity policy (Phase 4+: likely
-   a domainType-prefixed id, mirroring js/engineering/config's id-prefix
-   tunable) can evolve without touching the KnowledgeItem contract.
+   separate from the item shape itself so identity policy can evolve
+   without touching the KnowledgeItem contract.
 
-   RESPONSIBILITY: document the identity/version invariants and provide a
-   locked (stub) id-generation entry point. Real id generation is Phase 4+
-   work — see NON-GOALS.
+   RESPONSIBILITY: document the identity/version invariants and generate a
+   real, deterministic id.
 
    DEPENDENCIES: none.
 
-   NON-GOALS: does not generate a real id yet. `generateKnowledgeId()`
-   throws NOT_IMPLEMENTED rather than returning a plausible-looking fake id,
-   so no Phase 3 caller can accidentally depend on placeholder identity
-   semantics.
+   NON-GOALS: does not decide version numbers beyond simple increment — see
+   repository/implementations/memory-repository.js for how create()/
+   appendVersion() actually use nextVersion().
 
-   FUTURE EVOLUTION: Phase 4+ implements real id generation (format TBD —
-   candidate: `${domainType}:${sourceType}:${ulid}`) and wires
-   `nextVersion()` into the repository's append-only write path.
+   FUTURE EVOLUTION: none expected — this format is now load-bearing for
+   idempotent re-acquisition (Phase 9, V2.0.2): the same sourceRef from the
+   same connector always resolves to the same id, so re-running acquisition
+   appends a version instead of creating a duplicate row.
    ============================================================ */
 
 'use strict';
@@ -38,13 +36,19 @@ export const IDENTITY_INVARIANTS = Object.freeze({
 });
 
 /**
- * STUB. Locks the entry point a real id generator will occupy. Never called
- * by any Phase 3 code path.
- * @param {{domainType: string, sourceType: string}} _seed
- * @returns {never}
+ * Deterministic identity: `${domainType}:${sourceType}:${sourceRef}`. The
+ * same underlying source record always maps to the same KnowledgeItem id,
+ * regardless of how many times a connector re-acquires it — this is what
+ * makes incremental acquisition idempotent instead of duplicate-generating.
+ * @param {{domainType: string, sourceType: string, sourceRef: string}} seed
+ * @returns {string}
  */
-export function generateKnowledgeId(_seed) {
-  throw new Error('generateKnowledgeId: NOT_IMPLEMENTED — identity generation is Phase 4+ work.');
+export function generateKnowledgeId(seed) {
+  const { domainType, sourceType, sourceRef } = seed || {};
+  if (typeof domainType !== 'string' || !domainType) throw new Error('generateKnowledgeId: domainType must be a non-empty string');
+  if (typeof sourceType !== 'string' || !sourceType) throw new Error('generateKnowledgeId: sourceType must be a non-empty string');
+  if (typeof sourceRef !== 'string' || !sourceRef) throw new Error('generateKnowledgeId: sourceRef must be a non-empty string');
+  return `${domainType}:${sourceType}:${sourceRef}`;
 }
 
 /**

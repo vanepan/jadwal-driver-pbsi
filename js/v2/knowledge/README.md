@@ -1,4 +1,4 @@
-# knowledge/ — Knowledge Platform Core (Phase 3, dormant)
+# knowledge/ — Knowledge Platform Core (Phase 3 contracts / Phase 9 first acquisition)
 
 ## Purpose
 
@@ -20,7 +20,13 @@ it. AI is a client of this core, never a dependency of it.
 - Define the five-state lifecycle (Draft → Candidate → Pending Review →
   Approved → Deprecated) as data, plus a pure transition guard.
 - Define the connector contract that every future knowledge source conforms
-  to, and an empty registry for them.
+  to, and a registry holding it — `nor` (real) plus 11 inactive placeholders
+  (Phase 9, see `connectors/README.md`).
+- Define the acquisition layer (`acquisition/`, Phase 9) that sits between
+  a Connector and the Repository — Source, Batch, Extraction Context/Error,
+  Normalization, Acquisition Session/Result, and Import Report — and the
+  one generic engine (`acquisition/acquisition-engine.js`) that writes every
+  connector's Draft output to the repository, idempotently.
 - Define the explainability contract (provenance, corroboration,
   preference rationale) every Approved item must satisfy.
 - Define the review/approval workflow contract that structurally enforces
@@ -28,37 +34,42 @@ it. AI is a client of this core, never a dependency of it.
   automatic.
 - Define the `KnowledgeHealthReport` metrics shape (types only).
 - Define the dependency-graph contract for `relationship`-kind items.
-- Provide empty skeletons (repository, builder, lifecycle engine, metrics
-  engine, explainability engine, review workflow engine, dependency-graph
-  engine) whose methods are locked interfaces returning `NOT_IMPLEMENTED` —
-  not fake success, not partial behavior.
+- `repository/` (Phase 5) is real — `MemoryRepository` enforces append-only
+  versioning and legal lifecycle transitions; `NullRepository` stays the
+  default backend. `builder/` (Phase 4) orchestration is real
+  (`runPipeline`, `runIncremental`/`runFull`); metrics/explainability/
+  review-workflow/dependency-graph engines remain locked
+  `NOT_IMPLEMENTED` interfaces.
 
 ## Dependencies
 
-- May reference V1 **read-only**, through `*-store.js` getters or a
-  `ctx`-shaped handoff, once real connectors exist (Phase 4+). Phase 3 has
-  no real connectors, so no file in this tree imports any V1 module yet.
+- `nor-connector.js` (Phase 9) reads V1 **read-only**, through
+  `js/petty-cash/petty-cash-store.js` getters and
+  `js/petty-cash/nor-document-engine.js#buildNorViewModel` — the first real
+  exercise of the read-only seam Phase 3 reserved. It self-registers and is
+  never eagerly imported by this barrel (see `index.js`'s own header) —
+  activating it is always a deliberate act by the caller.
 - May be depended on by `js/v2/ai-foundation/`.
 - Must never depend on `js/v2/ai-foundation/` or any AI/LLM code, in either
   direction, at any phase.
 
-## Non-goals (Phase 3)
+## Non-goals (still true as of Phase 9)
 
-- No connector reads real V1 data.
-- No repository persists anything — `repository/knowledge-repository.js`'s
-  methods return `NOT_IMPLEMENTED` results.
 - No metric is computed — `metrics/knowledge-metrics-engine.js` returns
   `NOT_IMPLEMENTED`.
-- No review UI, no real approval, no real corroboration count.
-- No document is parsed or mined. No domain-specific code (no `nor-*.js`)
-  exists anywhere in this tree — domain specificity is data (registry
-  entries) and, later, connector implementations, never core logic.
+- No review UI, no real approval, no real corroboration count — every
+  acquired item lands as `lifecycleState: 'draft'`, never auto-approved.
+- No document is parsed or mined beyond structural ViewModel fingerprints.
+  No AI, no LLM, no document generation exists anywhere in this tree.
+- NOR-specific code is confined to the connector seam
+  (`connectors/nor-connector.js`, `builder/stages/nor-acquisition-stage.js`)
+  — `acquisition/acquisition-engine.js` and every core contract remain
+  domain-agnostic.
 
 ## Future evolution
 
-Phase 4+: implement the Documents connector (NOR pilot, per the
-architecture doc's §4.4), a real (in-memory, then Firebase-backed)
-repository, real lifecycle persistence, real metric computation, a review
-queue UI, and incremental-indexing watermarks in the builder. This document
-does not commit to *when* — only to the fact that the shapes above must not
-need to change to accommodate that work.
+Phase 10+: a review-queue UI, real metric computation, activating one or
+more of the 11 placeholder connectors, and (independently) a first real AI
+adapter under `ai-foundation/`. This document does not commit to *when* —
+only to the fact that the shapes above must not need to change to
+accommodate that work.

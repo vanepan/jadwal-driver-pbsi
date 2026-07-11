@@ -1,22 +1,29 @@
 /* ============================================================
-   INDEX.JS — Knowledge Platform public barrel (V2, Phase 3)
+   INDEX.JS — Knowledge Platform public barrel (V2, Phase 3 / Phase 9)
 
    PURPOSE: the single lazy-load entry point for the Knowledge Platform
-   core, mirroring js/engineering/index.js's barrel pattern, so Phase 4+
-   callers reach contracts/registries/engines through one tree-shakeable
-   surface instead of deep-importing.
+   core, mirroring js/engineering/index.js's barrel pattern, so callers
+   reach contracts/registries/engines through one tree-shakeable surface
+   instead of deep-importing.
 
    RESPONSIBILITY: re-export only. Adds no logic of its own.
 
-   DEPENDENCIES: every module under knowledge/ except connectors/ (which
-   has no code yet, only a README).
+   DEPENDENCIES: every module under knowledge/ except connectors/ and
+   builder/stages/ (deliberately excluded — see NON-GOALS).
 
-   NON-GOALS: not imported by anything outside js/v2/ in Phase 3 — see
-   js/v2/README.md's dormancy rule.
+   NON-GOALS: does NOT re-export knowledge/connectors/ or
+   knowledge/builder/stages/. The `nor` connector transitively loads the
+   real Firebase SDK (js/petty-cash/petty-cash-store.js -> js/firebase.js);
+   folding it into this barrel would mean any caller of this file — even
+   one that only wants LIFECYCLE_STATE — silently loads live Firebase
+   machinery. Getting real connectors/stages requires importing
+   knowledge/connectors/index.js or knowledge/builder/stages/index.js
+   explicitly. This preserves the dormancy rule (js/v2/README.md) for this
+   barrel specifically, even though connectors/ itself is no longer empty.
 
-   FUTURE EVOLUTION: as connectors are added under connectors/, they
-   register themselves at their own module load time rather than being
-   re-exported here (registration, not export, is the connector seam).
+   FUTURE EVOLUTION: acquisition/ is safe to include here (no V1
+   dependency of its own — it only resolves whatever's already registered
+   in connector-registry.js at call time).
    ============================================================ */
 
 'use strict';
@@ -40,6 +47,7 @@ export * from './registry/connector-registry.js';
 export * as repository from './repository/index.js';
 export * as lifecycleEngine from './lifecycle/lifecycle-engine.js';
 export * as builder from './builder/index.js';
+export * as acquisition from './acquisition/index.js';
 export * as metricsEngine from './metrics/knowledge-metrics-engine.js';
 export * as explainabilityEngine from './explainability/knowledge-explainability-engine.js';
 export * as reviewWorkflowEngine from './review/review-workflow-engine.js';
