@@ -54,6 +54,8 @@ export * as explainabilityEngine from './explainability/knowledge-explainability
 export * as review from './review/index.js';
 export * as promotion from './promotion/index.js';
 export * as learning from './learning/index.js';
+export * as extraction from './extraction/index.js';
+export * as machineLearning from './machine-learning/index.js';
 export * as dependencyGraphEngine from './dependency-graph/knowledge-dependency-graph-engine.js';
 
 export * as services from './services/index.js';

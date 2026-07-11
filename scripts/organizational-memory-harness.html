@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <title>Organizational Memory Harness</title>
+</head>
+<body>
+<!-- Loads the REAL nor archive source (transitively imports js/firebase.js's
+     CDN-hosted SDK, which only a browser can resolve) and exposes it on
+     window, mirroring scripts/knowledge-acquisition-harness.html's pattern. -->
+<script type="module">
+  import { hasArchiveSource, getArchiveSource, listArchiveSources } from '../js/v2/organizational-memory/registry/archive-source-registry.js';
+  import { resetArchiveRepository, list as listArchive } from '../js/v2/organizational-memory/repository/archive-repository.js';
+  import { ingestArchive } from '../js/v2/organizational-memory/archive-ingestion-engine.js';
+  import { computeArchiveHealth } from '../js/v2/organizational-memory/archive-health-engine.js';
+  import '../js/v2/organizational-memory/sources/index.js'; // registers the real 'nor' archive source
+  import { NOR_ARCHIVE_SOURCE_ID } from '../js/v2/organizational-memory/sources/nor-archive-source.js';
+
+  resetArchiveRepository();
+
+  window.__hasArchiveSource = hasArchiveSource;
+  window.__getArchiveSource = getArchiveSource;
+  window.__listArchiveSources = listArchiveSources;
+  window.__listArchive = listArchive;
+  window.__ingestArchive = ingestArchive;
+  window.__computeArchiveHealth = computeArchiveHealth;
+  window.__NOR_ARCHIVE_SOURCE_ID = NOR_ARCHIVE_SOURCE_ID;
+  window.__ready = true;
+</script>
+</body>
+</html>
