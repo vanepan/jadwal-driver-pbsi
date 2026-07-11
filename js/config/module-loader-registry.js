@@ -52,3 +52,9 @@ export const loadPettyCashAnalyticsView = () =>
   loadModule('petty-cash-analytics-view', () => import('../analytics/views/analytics-petty-cash-view.js'));
 export const loadExecutiveAnalyticsView = () =>
   loadModule('executive-analytics-view', () => import('../analytics/views/analytics-executive-view.js'));
+
+/* ── Sarpras Intelligence (V2.0.10) — gated to a single pilot identity via
+   isV2Enabled() (js/config/feature-gates.js), so it must never be a static
+   top-level import: every other user's session should never fetch it. ── */
+export const loadSarprasIntelligence = () =>
+  loadModule('sarpras-intelligence', () => import('../v2/ui/sarpras-intelligence-center.js'));

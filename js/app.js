@@ -109,9 +109,12 @@ import {
   loadVehiclePrediction, loadSimulationPanel, loadDriverWellnessDashboard,
   loadDispatchAnalyticsEngine, loadPettyCashAnalytics, loadExecutiveAnalytics,
   loadPredictionService, loadDriverPredictionDashboard, loadExecutiveDashboard,
-  loadPettyCashAnalyticsView, loadExecutiveAnalyticsView,
+  loadPettyCashAnalyticsView, loadExecutiveAnalyticsView, loadSarprasIntelligence,
 } from './config/module-loader-registry.js';
 import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver, isEngineeringUser, assignmentBelongsToDriver } from './auth.js';
+// V2.0.10 — single reusable gate for the V2 pilot surface (Sarpras Intelligence).
+// See js/config/feature-gates.js for the rule and its evolution path.
+import { isV2Enabled } from './config/feature-gates.js';
 import * as DocumentEngine from './docs/doc-engine.js';
 import './docs/templates/analytics-summary.js';   // registers 'analytics-summary'
 // v1.20.8 — the 6 exports/analytics/* side-effect imports that used to load here
@@ -296,6 +299,14 @@ let analyticsExecMounted = false;
 let _fnMountAnalyticsPettyCash = null;
 let _fnCloseAnalyticsPettyCash = null;
 let _fnRefreshAnalyticsPettyCash = null;
+// V2.0.10 — sarpras-intelligence-center.js is dynamically imported (gated,
+// single-pilot module); these hold the resolved mount/setScreen/close
+// functions once loaded (populated in navSarprasIntelligence()), same idiom
+// as the Analytics Petty Cash view above.
+let sarprasIntelMounted = false;
+let _fnMountSarprasIntel = null;
+let _fnSetSarprasIntelScreen = null;
+let _fnCloseSarprasIntel = null;
 
 // V1.5.0 Phase 2.5.1: Administration workspace section state
 let activeAdminSection = 'users';
@@ -511,6 +522,7 @@ const RAIL_MODULE_BOTTOM_NAV_ACTION = {
   analytics: 'navAnalytics',
   konfigurasi: 'openMoreSheet',
   engineering: 'navEngDashboard',
+  sarprasIntelligence: 'openMoreSheet',
 };
 
 /* ── State restoration (v1.20.8, Objective 12) ────────────────────────────
@@ -1013,6 +1025,13 @@ function updatePermissionUI(resetNavActive = false) {
     const engHiLabel = document.getElementById('v2NavEngHistoryLabel');
     if (engHiLabel) engHiLabel.textContent = engMember ? 'Riwayat Saya' : 'Riwayat';
 
+    // Sarpras Intelligence (V2.0.10): rail + mobile entry visible ONLY to the
+    // single V2 pilot identity (isV2Enabled) — never to admin generally. No
+    // visual trace, no disabled state, for anyone else (dormancy contract).
+    const canSarpras = isV2Enabled(currentUser);
+    setDisp('v2RailSarprasIntel', canSarpras);
+    setDisp('btnSarprasIntel', canSarpras);
+
     // Driver Operations panel — Master Data + Audit sections are admin-only.
     const v2PanelDriverMaster = document.getElementById('v2PanelDriverMaster');
     if (v2PanelDriverMaster) v2PanelDriverMaster.style.display = adminOnly ? '' : 'none';
@@ -1190,6 +1209,14 @@ const MODULE_DEFS = {
     railId: 'v2RailEngineering', navId: 'v2PanelEngineeringNav',
     title: 'Engineering Operations', subtitle: 'Unit Eksekusi · Bidang Sarpras', crumb: 'ENGINEERING',
     land: () => navEngineering('dashboard', 'v2NavEngDashboard'),
+  },
+  // V2.0.10: Sarpras Intelligence — embedded native module (same pattern as
+  // Petty Cash / Engineering), gated to a single pilot identity via
+  // canAccessModule() below. Everyone else never sees this entry at all.
+  sarprasIntelligence: {
+    railId: 'v2RailSarprasIntel', navId: 'v2PanelSarprasIntelNav',
+    title: 'Sarpras Intelligence', subtitle: 'Organizational Learning Platform', crumb: 'SARPRAS INTELLIGENCE',
+    land: () => navSarprasIntelligence('dashboard', 'v2NavSicDashboard'),
   },
 };
 
@@ -1404,6 +1431,11 @@ function updatePanelCta() {
    ────────────────────────────────────────────────────────────────── */
 function canAccessModule(name) {
   if (name === 'home') return true;                 // Home workspace: every role
+  // V2.0.10 — Sarpras Intelligence is gated by isV2Enabled(), NOT by the
+  // blanket admin bypass below: it must resolve BEFORE `if (isAdmin())
+  // return true`, otherwise every admin (not just the single V2 pilot
+  // identity) would gain access.
+  if (name === 'sarprasIntelligence') return isV2Enabled(getCurrentUser());
   if (isAdmin()) return true;                        // admin: full access
   switch (name) {
     case 'engineering': return isEngineeringUser();
@@ -1447,7 +1479,7 @@ function setRailModule(name) {
   });
 
   // Panel-nav block visibility — show only the active module's menu.
-  ['v2PanelHomeNav', 'v2PanelDriverOpsNav', 'v2PanelPettyCashNav', 'v2PanelAnalyticsNav', 'v2PanelKonfigurasiNav', 'v2PanelEngineeringNav']
+  ['v2PanelHomeNav', 'v2PanelDriverOpsNav', 'v2PanelPettyCashNav', 'v2PanelAnalyticsNav', 'v2PanelKonfigurasiNav', 'v2PanelEngineeringNav', 'v2PanelSarprasIntelNav']
     .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = (id === def.navId) ? '' : 'none'; });
 
   const panelTitle    = document.getElementById('v2PanelTitle');
@@ -1755,6 +1787,30 @@ async function navEngineering(screen, navId) {
   syncBottomNavAction(ENG_SCREEN_BOTTOM_NAV_ACTION[screen] || 'navEngDashboard', 'openMoreSheet');
 }
 
+/* ── MODUL: Sarpras Intelligence ── (V2.0.10, embedded native module, single
+   pilot identity only — see isV2Enabled() / canAccessModule('sarprasIntelligence')) */
+const SIC_MENU_TITLES = {
+  dashboard: 'Dashboard', nor: 'NOR Center', archive: 'Archive Center',
+  knowledge: 'Knowledge Center', learning: 'Learning Dashboard',
+};
+async function navSarprasIntelligence(screen, navId) {
+  // Deep-link / stale-state guard: mirrors setRailModule()'s canAccessModule
+  // redirect, so a direct call can never mount this for a non-piloted user.
+  if (!canAccessModule('sarprasIntelligence')) { setRailModule(defaultModuleForRole()); return; }
+  setCrumb('SARPRAS INTELLIGENCE', SIC_MENU_TITLES[screen] || 'Sarpras Intelligence');
+  if (navId) setV2PanelNavActive(navId);
+  setWorkspace('sarprasIntelligence');
+  if (!sarprasIntelMounted) {
+    sarprasIntelMounted = true;
+    const { mountSarprasIntelligence, setSarprasIntelligenceScreen, closeSarprasIntelligence } = await loadSarprasIntelligence();
+    _fnMountSarprasIntel = mountSarprasIntelligence;
+    _fnSetSarprasIntelScreen = setSarprasIntelligenceScreen;
+    _fnCloseSarprasIntel = closeSarprasIntelligence;
+    await _fnMountSarprasIntel(document.getElementById('v2SarprasIntelWorkspace'));
+  }
+  _fnSetSarprasIntelScreen && _fnSetSarprasIntelScreen(screen);
+}
+
 /* ── Push notification deep-link (v1.20.8) ───────────────────────────────
    Wires the pbsi:push-nav event (js/push.js _emitNav) that has fired since
    the notification engine shipped but had no listener — tapping a push
@@ -2012,6 +2068,22 @@ function initV2Rail() {
         <div class="v2-rail-tooltip" aria-hidden="true">Analytics</div>
       </div>
 
+      <!-- Sarpras Intelligence — V2.0.10, gated to a single pilot identity via
+           isV2Enabled() (js/config/feature-gates.js). Hidden for every other
+           user: no visual trace, no disabled state — updatePermissionUI() is
+           the only place this display:none is ever flipped. Sits after
+           Analytics, before Konfigurasi (which stays locked last, v1.20.2). -->
+      <div class="v2-rail-item" id="v2RailSarprasIntel"
+           role="button" tabindex="0"
+           aria-label="Sarpras Intelligence" aria-current="false" style="display:none;">
+        <svg class="v2-rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 2a5 5 0 0 0-5 5c0 2 1 3 2 4l.5 4h5l.5-4c1-1 2-2 2-4a5 5 0 0 0-5-5z"/>
+          <path d="M9.5 19h5M10 22h4"/>
+        </svg>
+        <div class="v2-rail-tooltip" aria-hidden="true">Sarpras Intelligence</div>
+      </div>
+
       <!-- Konfigurasi (Global Configuration, gear) — admin only; ALWAYS the last
            global navigation item (v1.14.0 / hierarchy locked v1.20.2) -->
       <div class="v2-rail-item" id="v2RailKonfigurasi"
@@ -2069,6 +2141,7 @@ function initV2Rail() {
   const railAnalytics = document.getElementById('v2RailAnalytics');
   const railKonfig  = document.getElementById('v2RailKonfigurasi');
   const railEng     = document.getElementById('v2RailEngineering');
+  const railSarpras = document.getElementById('v2RailSarprasIntel');
   const railTheme   = document.getElementById('v2RailThemeBtn');
 
   crest?.addEventListener('click', () => {
@@ -2082,6 +2155,7 @@ function initV2Rail() {
   railAnalytics?.addEventListener('click', () => setRailModule('analytics'));
   railKonfig?.addEventListener('click', () => setRailModule('konfigurasi'));
   railEng?.addEventListener('click', () => setRailModule('engineering'));
+  railSarpras?.addEventListener('click', () => setRailModule('sarprasIntelligence'));
 
   // Mobile (rail hidden <768px): repointed sidebar drawer buttons are the
   // module entry points. Sidebar auto-closes on .sidebar-nav-item click.
@@ -2089,6 +2163,7 @@ function initV2Rail() {
   document.getElementById('btnPettyCash')?.addEventListener('click', () => setRailModule('pettycash'));
   document.getElementById('btnAnalytics')?.addEventListener('click', () => setRailModule('analytics'));
   document.getElementById('btnEngineering')?.addEventListener('click', () => setRailModule('engineering'));
+  document.getElementById('btnSarprasIntel')?.addEventListener('click', () => setRailModule('sarprasIntelligence'));
 
   railTheme?.addEventListener('click', () => {
     const current = document.documentElement.getAttribute('data-theme') || 'light';
@@ -2103,7 +2178,7 @@ function initV2Rail() {
   };
 
   // Keyboard: Enter/Space activates any focusable rail element
-  [crest, railHome, driverOps, railPetty, railAnalytics, railKonfig, railEng].forEach(el => {
+  [crest, railHome, driverOps, railPetty, railAnalytics, railKonfig, railEng, railSarpras].forEach(el => {
     el?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
@@ -2373,6 +2448,31 @@ function initV2Panel() {
       </button>
     </nav>
 
+    <!-- ═══ MODUL: Sarpras Intelligence ═══ (V2.0.10 — single pilot identity only) -->
+    <nav class="v2-panel-nav v2-panel-nav--sarpras-intelligence" id="v2PanelSarprasIntelNav"
+         aria-label="Sarpras Intelligence menu" style="display:none;">
+      <button class="v2-panel-nav-item v2-panel-nav-item--active" id="v2NavSicDashboard" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M3 4a1 1 0 011-1h5a1 1 0 011 1v5a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM11 4a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1V4zM11 10a1 1 0 011-1h4a1 1 0 011 1v6a1 1 0 01-1 1h-4a1 1 0 01-1-1v-6zM3 13a1 1 0 011-1h5a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3z"/></svg>
+        Dashboard
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavSicNor" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h4a1 1 0 100-2H7z" clip-rule="evenodd"/></svg>
+        NOR Center
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavSicArchive" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4z"/><path fill-rule="evenodd" d="M3 8h14v7a2 2 0 01-2 2H5a2 2 0 01-2-2V8zm5 3a1 1 0 000 2h4a1 1 0 100-2H8z" clip-rule="evenodd"/></svg>
+        Archive Center
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavSicKnowledge" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838L7.667 9.088l1.94.831a1 1 0 00.787 0l7-3a1 1 0 000-1.838l-7-3zM3.31 9.397L5 10.12v4.102a8.969 8.969 0 00-1.05-.174 1 1 0 01-.89-.89 11.115 11.115 0 01.25-3.762zM9.3 16.573A9.026 9.026 0 007 14.935v-3.957l1.818.78a3 3 0 002.364 0l5.508-2.361a11.026 11.026 0 01.25 3.762 1 1 0 01-.89.89 8.968 8.968 0 00-5.35 2.524 1 1 0 01-1.4 0z"/></svg>
+        Knowledge Center
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavSicLearning" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M3.293 9.707a1 1 0 010-1.414l4-4a1 1 0 011.414 0l3.293 3.293 4.293-4.293a1 1 0 111.414 1.414l-5 5a1 1 0 01-1.414 0L8 6.414l-3.293 3.293a1 1 0 01-1.414 0zM3 13a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3z"/></svg>
+        Learning Dashboard
+      </button>
+    </nav>
+
     <!-- Legacy Administration nav — retired from navigation (hidden), kept for
          rollback compatibility. No rail entry activates this block. -->
     <nav class="v2-panel-nav v2-panel-nav--admin" id="v2PanelAdminNav"
@@ -2526,6 +2626,14 @@ function initV2Panel() {
   });
   document.getElementById('v2NavAnalyticsEngineering')?.addEventListener('click', navAnalyticsEngineering);
   document.getElementById('v2NavEngSettings')?.addEventListener('click', () => navEngineering('settings', 'v2NavEngSettings'));
+
+  // MODUL Sarpras Intelligence (V2.0.10) — Dashboard is real; the other four
+  // land on the shared "Coming Soon" screen inside the module itself.
+  document.getElementById('v2NavSicDashboard')?.addEventListener('click', () => navSarprasIntelligence('dashboard', 'v2NavSicDashboard'));
+  document.getElementById('v2NavSicNor')?.addEventListener('click', () => navSarprasIntelligence('nor', 'v2NavSicNor'));
+  document.getElementById('v2NavSicArchive')?.addEventListener('click', () => navSarprasIntelligence('archive', 'v2NavSicArchive'));
+  document.getElementById('v2NavSicKnowledge')?.addEventListener('click', () => navSarprasIntelligence('knowledge', 'v2NavSicKnowledge'));
+  document.getElementById('v2NavSicLearning')?.addEventListener('click', () => navSarprasIntelligence('learning', 'v2NavSicLearning'));
 
   // Legacy Administration entry (hidden) — kept wired for rollback safety.
   document.getElementById('v2NavAdminUsers')?.addEventListener('click', navManajemenUser);
@@ -3292,6 +3400,7 @@ function setWorkspace(name) {
   const isAnEx  = name === 'analyticsExec';
   const isHome  = name === 'home';
   const isEng   = name === 'engineering';
+  const isSic   = name === 'sarprasIntelligence';
   const isDrvHist = name === 'driverHistory';
 
   const timelineSurface = document.getElementById('v2TimelineSurface');
@@ -3304,10 +3413,12 @@ function setWorkspace(name) {
   const anExWs          = document.getElementById('v2AnalyticsExecWorkspace');
   const homeWs          = document.getElementById('v2HomeWorkspace');
   const engWs           = document.getElementById('v2EngineeringWorkspace');
+  const sicWs           = document.getElementById('v2SarprasIntelWorkspace');
   const drvHistWs       = document.getElementById('v2DriverHistoryWorkspace');
 
   if (timelineSurface) timelineSurface.style.display = isDash ? ''      : 'none';
   if (engWs)           engWs.style.display           = isEng   ? 'block' : 'none';
+  if (sicWs)           sicWs.style.display           = isSic   ? 'block' : 'none';
   if (driverDash)      driverDash.style.display      = isDash && isDriver() ? 'block' : 'none';
   if (pendingWs)       pendingWs.style.display       = isPend  ? 'block' : 'none';
   if (adminWs)         adminWs.style.display         = isAdmWs ? 'block' : 'none';
@@ -3330,6 +3441,9 @@ function setWorkspace(name) {
   if (!isPc && pettyCashMounted) closePettyCashCenter();
   // Engineering module: pause its live re-render when hidden (v1.20.1).
   if (!isEng && engineeringMounted) closeEngineering();
+  // Sarpras Intelligence: pause when hidden (V2.0.10). Dynamically imported —
+  // guarded by the cached fn ref exactly like the Analytics Petty Cash view.
+  if (!isSic && sarprasIntelMounted) _fnCloseSarprasIntel && _fnCloseSarprasIntel();
   // Pause the new Analytics workspaces' live re-render when hidden, and force a
   // fresh recompute whenever one becomes visible — so a data change made while it
   // was hidden (e.g. a NOR Official↔Test convert) is always reflected without a
@@ -3499,6 +3613,23 @@ function initV2EngineeringWorkspace() {
   ws.style.display = 'none';
   document.querySelector('.main-content')?.appendChild(ws);
   console.log('[v1.20.1] Engineering workspace host injected');
+}
+
+/**
+ * V2.0.10: Inject the embedded Sarpras Intelligence module host
+ * (#v2SarprasIntelWorkspace). Carries class .sic-root so the module's scoped
+ * design tokens resolve. Injected unconditionally for every session (same as
+ * every other v2-workspace host) — it stays an empty, hidden, never-mounted
+ * div for every user except the single V2 pilot identity, since nothing ever
+ * calls navSarprasIntelligence() without first passing canAccessModule().
+ */
+function initV2SarprasIntelligenceWorkspace() {
+  const ws = document.createElement('div');
+  ws.id = 'v2SarprasIntelWorkspace';
+  ws.className = 'v2-workspace sic-root';
+  ws.style.display = 'none';
+  document.querySelector('.main-content')?.appendChild(ws);
+  console.log('[V2.0.10] Sarpras Intelligence workspace host injected');
 }
 
 /**
@@ -10575,6 +10706,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initV2AdministrationWorkspace(); // VSM-9: admin-only administration workspace
     initV2PettyCashWorkspace();   // v1.14.0: embedded Petty Cash module host
     initV2EngineeringWorkspace(); // v1.20.1: embedded Engineering module host
+    initV2SarprasIntelligenceWorkspace(); // V2.0.10: embedded Sarpras Intelligence module host
     initV2PlaceholderWorkspace(); // v1.14.0: shared "coming soon" placeholder
     initV2AnalyticsWorkspaces();  // v1.15.0: Analytics Petty Cash + Executive hosts
     initV2HomeWorkspace();        // v1.19.9: Home workspace host (Executive Command Center)

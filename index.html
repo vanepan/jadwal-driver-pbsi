@@ -26,6 +26,7 @@
   <link rel="stylesheet" href="platform.css?v=2.1.2" />
   <link rel="stylesheet" href="petty-cash.css?v=1.23.0" />
   <link rel="stylesheet" href="engineering.css?v=1.23.0" />
+  <link rel="stylesheet" href="sarpras-intelligence.css?v=1.23.0" />
   <link rel="stylesheet" href="vendor/flatpickr.min.css" />
 
   <!-- Startup gating: hides V1 layout until V2 shell is ready.
@@ -131,6 +132,14 @@
         <button class="sidebar-nav-item sidebar-nav-tertiary" id="btnEngineering" type="button" style="display:none;">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 7a4.5 4.5 0 0 1-5.9 5.9L4 18.5 5.5 20l5.6-5.6A4.5 4.5 0 0 0 16.7 8.6l-2.6 2.6-2-.5-.5-2 2.6-2.6A4.5 4.5 0 0 0 15.5 7z"/></svg>
           Engineering
+        </button>
+
+        <!-- MODUL Sarpras Intelligence: V2 pilot gate only (mobile module entry, V2.0.10).
+             Hidden for every user except the single V2 pilot identity — see
+             isV2Enabled() in js/config/feature-gates.js. No visual trace for anyone else. -->
+        <button class="sidebar-nav-item sidebar-nav-tertiary" id="btnSarprasIntel" type="button" style="display:none;">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a5 5 0 0 0-5 5c0 2 1 3 2 4l.5 4h5l.5-4c1-1 2-2 2-4a5 5 0 0 0-5-5z"/><path d="M9.5 19h5M10 22h4"/></svg>
+          Sarpras Intelligence
         </button>
 
         <!-- MODUL Konfigurasi: admin only (mobile module entry; was "Admin Panel") -->
