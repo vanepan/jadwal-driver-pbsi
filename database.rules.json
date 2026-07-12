@@ -67,6 +67,21 @@
       ".write": "auth.token.role === 'admin'"
     },
 
+    "v2_sarpras": {
+      "import_sessions": {
+        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+        ".write": "auth.token.role === 'admin'"
+      },
+      "import_batches": {
+        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+        ".write": "auth.token.role === 'admin'"
+      },
+      "file_storage": {
+        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+        ".write": "auth.token.role === 'admin'"
+      }
+    },
+
     "engineering": {
       "assignments": {
         ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.role === 'engineering_coordinator' || auth.token.role === 'engineering_member'",

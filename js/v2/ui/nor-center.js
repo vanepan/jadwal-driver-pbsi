@@ -1,51 +1,59 @@
 /* ============================================================
-   NOR-CENTER.JS — NOR Center Foundation (V2.0.11)
+   NOR-CENTER.JS — NOR Center Foundation (V2.0.11 → V2.1 GA completion)
 
    The flagship application of Sarpras Intelligence. Nested inside the
    Sarpras Intelligence workspace (mounted by ./sarpras-intelligence-center.js
    when its "nor" screen is shown), owning its OWN internal navigation —
-   Dashboard / Generate NOR / Drafts / Archive / Review / Settings — exactly
-   as a real product would, even though most of it is presentation over
-   honestly-empty state today.
+   Dashboard / Generate NOR / Drafts / Archive / Profil Organisasi / Review /
+   Settings — exactly as a real product would.
 
-   MISSION (V2.0.11 — foundation, not intelligence):
-     - Build the WORKSPACE future intelligence will live inside, not the
-       intelligence itself. No AI call. No fabricated NLP. No fake numbers.
-     - Generate NOR routes the request through the REAL, already-registered
-       Document Intelligence NOR pipeline (document-intelligence/nor/*.js,
-       V2.0.6 Phase 9.5) — analyze -> draft -> validate -> explain ->
-       recommend. Today that pipeline honestly halts at the DRAFT step with
-       NO_KNOWLEDGE (no repository backend is selected yet — see
-       knowledge/repository/repository-registry.js — and even once one is,
-       no Approved `nor`/`structure` Knowledge exists to draft from), so the
-       page shows "Generation engine coming soon." — a REAL outcome, not a
-       hardcoded string.
-     - Archive reads the REAL Organizational Memory engines
-       (archive-health-engine.js, archive-timeline-engine.js,
-       archive-repository.js) scoped to domainType 'nor'. Currently empty
-       (nothing has run archive ingestion yet), so every number shown is a
-       real, currently-zero computation — never invented.
-     - Review reads the REAL Knowledge repository facade, filtered to
-       domainType 'nor', reusing the SAME lifecycle vocabulary
-       (Pending Review / Candidate / Approved — knowledge/contracts/
-       lifecycle-contract.js) the Knowledge Review Workflow already defines.
-     - Settings is READ-ONLY and pulls LIVE from
-       js/petty-cash/petty-cash-store.js#getSettings() — the actual NOR
-       configuration (signatories, sender title, numbering format). NOR
-       Center never duplicates this configuration; it only references it.
-     - Drafts has no backing store yet (a genuinely new concept — authored-
-       but-unfinished NOR documents — distinct from Knowledge's "Draft"
-       lifecycle state shown on the Dashboard/Review pages) — an honest
-       empty page, not a fake one.
+   V2.1 CHANGES (Knowledge Acquisition Operational Readiness / GA):
+     - The Archive tab's "Unggah Dokumen — Coming Soon" static block (a
+       real, unconditional placeholder — the Operational Readiness Audit's
+       one confirmed finding) is REMOVED and replaced with a real, working
+       upload surface: ./dataset-import-center.js's controller, scoped to
+       domainType:'nor', embedded directly in this tab. Every upload here
+       walks the real Import Session lifecycle (Uploaded -> Pending Review
+       -> Approved -> Knowledge Imported -> Archived).
+     - Generate NOR's "Generation engine coming soon." string is reworded
+       to name its real, honest blocking condition (no Approved `nor`
+       Knowledge exists yet to draft from) — the underlying pipeline call
+       and its NO_KNOWLEDGE outcome are UNCHANGED, only the wording no
+       longer reads like a dummy placeholder.
+     - A new "Profil Organisasi" tab: the computed Organizational Profiles
+       (profiles/profile-engine.js, unchanged, promoted from a small
+       Dashboard card to a full tab), the editable Profile Override layer
+       (knowledge/profiles/overrides/*, draft -> candidate -> pending
+       review -> approve, reusing the real unmodified Knowledge lifecycle),
+       and Pattern Discovery's Candidate Recommendations
+       (knowledge/profiles/pattern-discovery-engine.js) — read-only
+       statistical evidence a human may turn into an override draft.
+       Organizational Profiles are updated ONLY after a human approves an
+       override; nothing here auto-applies anything.
+     - Migrated onto js/v2/ui/shared/workspace-list-kit.js (the deferred
+       V2.0.19 hardening task) — every generic render helper (tab shell,
+       empty state, row list, stat cards) now reuses the shared kit
+       instead of this file's own local duplicates. Verified markup-
+       identical: nor-center.css's nc-shell / nc-tabbar / nc-tab / nc-page
+       / nc-sec / nc-empty / nc-row / nc-status rules are byte-identical
+       (same CSS property values) to workspace-list-kit.css's wlk-
+       counterparts — this file's own header already documented that the
+       kit was "generalized FROM nor-center.js's own local helpers".
+       Genuinely NOR-specific markup with no shared-kit equivalent (Quick
+       Actions, the Generate NOR card + outcome panel, Timeline rows,
+       Settings card) keeps its own local nc-* styles unchanged.
+
+   MISSION (unchanged from V2.0.11 — foundation, not intelligence):
+     - No AI call. No fabricated NLP. No fake numbers.
+     - Archive/Review/Settings/Drafts/Dashboard all still read the SAME
+       real engines they always did — see each section's own comment
+       below for the specific reuse trace.
 
    REUSE, NEVER DUPLICATE: no new PDF pipeline, no new numbering logic, no
    new Petty Cash settings UI, no new Knowledge repository, no new Archive
-   repository. Every number on this page traces to an existing engine call.
-
-   NON-GOALS (explicitly deferred, do not build here): the intelligent
-   generator itself, a live editable composer, diff-based learning, Archive
-   Center / Knowledge Center / Learning Dashboard (siblings under Sarpras
-   Intelligence, still flat "Coming Soon" — see sarpras-intelligence-center.js).
+   repository, no second diff algorithm, no second upload mechanism (the
+   Archive tab's upload reuses ./dataset-import-center.js unchanged — the
+   SAME controller Archive Center embeds).
    ============================================================ */
 
 'use strict';
@@ -59,35 +67,68 @@ import { NOR_PIPELINE } from '../document-intelligence/nor/index.js';
 import { startDocumentSession, transitionDocumentSession } from '../document-intelligence/session-store.js';
 import { DOCUMENT_SESSION_STATE } from '../document-intelligence/contracts/document-context-contract.js';
 
-import { list as knowledgeList } from '../knowledge/repository/knowledge-repository.js';
+import { list as knowledgeList, getById as knowledgeGetById } from '../knowledge/repository/knowledge-repository.js';
 import { LIFECYCLE_STATE, LIFECYCLE_STATE_DEFS } from '../knowledge/contracts/lifecycle-contract.js';
+import { generateKnowledgeId } from '../knowledge/contracts/identity-contract.js';
+import { buildAllProfiles, listProfileTypes } from '../knowledge/profiles/profile-engine.js';
+import { listDatasets } from '../knowledge/datasets/registry/dataset-registry.js';
 
 import { computeArchiveHealth } from '../organizational-memory/archive-health-engine.js';
 import { getArchiveTimeline } from '../organizational-memory/archive-timeline-engine.js';
 import { list as archiveList } from '../organizational-memory/repository/archive-repository.js';
+import { checkKnowledgeContribution } from '../organizational-memory/knowledge-contribution-engine.js';
+
+import { getComposerTimeline, getRevisionHistory } from '../document-intelligence/composer/composer-store.js';
 
 import {
   initPettyCashStore, registerChangeListener as onPettyCashChange, getSettings as getPettyCashSettings,
 } from '../../petty-cash/petty-cash-store.js';
 import { norNumberFromSequence, todayISO } from '../../petty-cash/petty-cash-config.js';
 
-function esc(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
+import {
+  esc, renderEmptyState, renderTabShell, renderRowList, renderStatCards,
+  renderFilterBar, renderDetailSection, renderKvList, renderDetail, renderDiffTable,
+} from './shared/workspace-list-kit.js';
+import { createDatasetImportController } from './dataset-import-center.js';
+
+import {
+  PROFILE_OVERRIDE_TYPE, OVERRIDE_ACTION, OVERRIDE_PAYLOAD_SHAPE, isOverlayType, isStandaloneType,
+  createOverrideDraft, promoteOverrideToCandidate, submitOverrideForReview, approveOverride, rejectOverride,
+  getEffectiveProfile, listOverrides,
+} from '../knowledge/services/profile-override-service.js';
+import { computePatternRecommendations } from '../knowledge/services/pattern-discovery-service.js';
 
 const SECTIONS = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'generate', label: 'Generate NOR' },
   { id: 'drafts', label: 'Drafts' },
   { id: 'archive', label: 'Archive' },
+  { id: 'profiles', label: 'Profil Organisasi' },
   { id: 'review', label: 'Review' },
   { id: 'settings', label: 'Settings' },
+];
+
+const PROFILE_SUBTABS = [
+  { id: 'computed', label: 'Profil Terhitung' },
+  { id: 'overrides', label: 'Override' },
+  { id: 'recommendations', label: 'Rekomendasi' },
 ];
 
 const st = {
   section: 'dashboard',
   generateText: '',
   generateOutcome: null, // {kind:'coming-soon'|'ready', title, message, detail} | null
+  draftsSelectedId: null,
+  archiveLinkId: null,
+  reviewLinkId: null,
+  profilesSubtab: 'computed',
+  override: {
+    overrideType: PROFILE_OVERRIDE_TYPE.RECIPIENT,
+    key: '',
+    action: OVERRIDE_ACTION.PIN,
+    payloadText: '{"rationale": ""}',
+    payloadError: null,
+  },
 };
 
 let host = null;
@@ -95,32 +136,37 @@ let contentEl = null;
 let mounted = false;
 let pcLiveStarted = false;
 
+// V2.1 — this Archive tab's upload surface is the SAME controller Archive
+// Center embeds (./dataset-import-center.js), scoped to domainType:'nor'
+// so an upload started here can never be misfiled under another domain.
+const importController = createDatasetImportController({ domainType: 'nor', lockDomainType: true });
+
 /* ── mount / teardown ─────────────────────────────────────────────── */
 
 export async function mountNorCenter(hostEl) {
   if (!hostEl) return;
   host = hostEl;
-  host.classList.add('nc-root');
+  host.classList.add('nc-root', 'wlk-root');
+  // V2.1.2 — repository activation + RTDB persistence sync moved to
+  // sarpras-intelligence-center.js's own mount (the true single entry
+  // point both Archive Center and NOR Center sit behind) — see that
+  // file's header for why.
   if (!mounted) {
     mounted = true;
-    host.innerHTML = shellMarkup();
-    contentEl = host.querySelector('.nc-content');
+    host.innerHTML = renderTabShell(SECTIONS, st.section, { ariaLabel: 'NOR Center' });
+    contentEl = host.querySelector('.wlk-content');
     host.addEventListener('click', onClick);
     host.addEventListener('input', onInput);
+    host.addEventListener('change', onChange);
+    // V2.1 — real drag & drop for the Archive tab's embedded Dataset
+    // Import Center controller (Part F).
+    host.addEventListener('dragover', (e) => { if (e.target.closest && e.target.closest('[data-act="dic-dropzone"]')) e.preventDefault(); });
+    host.addEventListener('drop', onDrop);
   }
   render();
 }
 
 export function closeNorCenter() { /* shell hides the host; state is retained */ }
-
-function shellMarkup() {
-  const tabs = SECTIONS.map((s) => `<button class="nc-tab" data-act="nc-tab" data-id="${s.id}" type="button">${s.label}</button>`).join('');
-  return `
-    <div class="nc-shell">
-      <div class="nc-tabbar" role="tablist" aria-label="NOR Center">${tabs}</div>
-      <div class="nc-content"></div>
-    </div>`;
-}
 
 /* ── render dispatch ──────────────────────────────────────────────── */
 
@@ -129,14 +175,15 @@ const RENDERERS = {
   generate: renderGenerateSection,
   drafts: renderDraftsSection,
   archive: renderArchiveSection,
+  profiles: renderProfilesSection,
   review: renderReviewSection,
   settings: renderSettingsSection,
 };
 
 function render() {
   if (!contentEl) return;
-  host.querySelectorAll('.nc-tab').forEach((btn) => {
-    btn.classList.toggle('nc-tab--active', btn.dataset.id === st.section);
+  host.querySelectorAll('.wlk-tab').forEach((btn) => {
+    btn.classList.toggle('wlk-tab--active', btn.dataset.id === st.section);
   });
   contentEl.innerHTML = (RENDERERS[st.section] || renderDashboardSection)();
   if (st.section === 'settings') ensurePettyCashSettingsLive();
@@ -153,8 +200,28 @@ function onClick(e) {
   const el = e.target.closest('[data-act]');
   if (!el) return;
   const act = el.dataset.act;
-  if (act === 'nc-tab') { setSection(el.dataset.id); return; }
+  if (act.startsWith('dic-')) { importController.onClick(el, render); return; }
+  if (act === 'wlk-tab') { setSection(el.dataset.id); return; }
   if (act === 'nc-generate-submit') { handleGenerateSubmit(); return; }
+  if (act === 'nc-draft-row') { st.draftsSelectedId = st.draftsSelectedId === el.dataset.id ? null : el.dataset.id; render(); return; }
+  if (act === 'nc-archive-row') { st.archiveLinkId = st.archiveLinkId === el.dataset.id ? null : el.dataset.id; render(); return; }
+  if (act === 'nc-review-row') { st.reviewLinkId = st.reviewLinkId === el.dataset.id ? null : el.dataset.id; render(); return; }
+  if (act === 'nc-profiles-subtab') { st.profilesSubtab = el.dataset.id; render(); return; }
+  if (act === 'nc-override-promote') { promoteOverrideToCandidate(el.dataset.id); render(); return; }
+  if (act === 'nc-override-submit') { submitOverrideForReview(el.dataset.id); render(); return; }
+  if (act === 'nc-override-approve') {
+    approveOverride(el.dataset.id, { approverId: 'evan', decidedAt: new Date().toISOString(), preferenceRationale: 'Ditinjau dan disetujui melalui Profil Organisasi.' });
+    render(); return;
+  }
+  if (act === 'nc-override-reject') { rejectOverride(el.dataset.id, { approverId: 'evan', decidedAt: new Date().toISOString() }); render(); return; }
+  if (act === 'nc-override-create') { handleOverrideCreate(); return; }
+  if (act === 'nc-rec-to-override') {
+    st.override.overrideType = el.dataset.patternType;
+    st.override.key = el.dataset.value;
+    st.override.action = isOverlayType(el.dataset.patternType) ? OVERRIDE_ACTION.PIN : OVERRIDE_ACTION.DEFINE;
+    st.profilesSubtab = 'overrides';
+    render(); return;
+  }
 }
 
 function onInput(e) {
@@ -162,31 +229,25 @@ function onInput(e) {
     st.generateText = e.target.value;
     const btn = host.querySelector('[data-act="nc-generate-submit"]');
     if (btn) btn.disabled = !st.generateText.trim();
+    return;
   }
+  const overrideField = e.target.closest && e.target.closest('[data-act="nc-override-field"]');
+  if (overrideField) {
+    st.override[overrideField.dataset.field] = overrideField.value;
+    if (overrideField.dataset.field === 'overrideType') {
+      st.override.action = isOverlayType(overrideField.value) ? OVERRIDE_ACTION.PIN : OVERRIDE_ACTION.DEFINE;
+    }
+    return;
+  }
+  importController.onInput(e, render);
 }
 
-/* ── shared presentation helpers ──────────────────────────────────── */
-
-function emptyState(title, subtitle) {
-  return `
-    <div class="nc-empty">
-      <svg class="nc-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 5-6"/>
-      </svg>
-      <div class="nc-empty-title">${esc(title)}</div>
-      ${subtitle ? `<div class="nc-empty-sub">${esc(subtitle)}</div>` : ''}
-    </div>`;
+function onChange(e) {
+  importController.onChange(e, render);
 }
 
-function renderArchiveRows(records) {
-  return `
-    <ul class="nc-row-list">
-      ${records.map((r) => `
-        <li class="nc-row">
-          <span class="nc-row-primary">${esc(r.documentNumber)}</span>
-          <span class="nc-row-secondary">${esc(r.documentDate || r.archivedAt || '—')}</span>
-        </li>`).join('')}
-    </ul>`;
+function onDrop(e) {
+  if (importController.onDrop(e, render)) e.preventDefault();
 }
 
 /* ── data helpers (thin reads over existing engines — no new stores) ── */
@@ -207,48 +268,84 @@ function getNorKnowledgeStatus() {
     .map((s) => ({ id: s.id, label: s.label, count: safeKnowledgeList({ domainType: 'nor', lifecycleState: s.id }).length }));
 }
 
+/** Archive <-> Knowledge cross-link — reuses the SAME deterministic id
+ *  scheme knowledge-contribution-engine.js already established. */
+function renderArchiveLinkPanel(recordId) {
+  const record = getNorArchiveRecords().find((r) => r.id === recordId);
+  if (!record) return '';
+  const contributed = checkKnowledgeContribution(record);
+  let knowledgeSummary = 'Belum ada Knowledge yang terhubung ke dokumen ini.';
+  if (contributed) {
+    const knowledgeId = generateKnowledgeId({ domainType: record.sourceDomainType, sourceType: record.sourceDomainType, sourceRef: record.sourceId });
+    const knowledgeResult = knowledgeGetById(knowledgeId);
+    knowledgeSummary = knowledgeResult.ok ? `${knowledgeResult.data.kind} — status ${knowledgeResult.data.lifecycleState}` : 'Belum ada Knowledge yang terhubung ke dokumen ini.';
+  }
+  return `
+    <div class="wlk-sec">
+      <div class="wlk-sec-title">Knowledge Terkait — ${esc(record.documentNumber)}</div>
+      ${renderEmptyState(knowledgeSummary)}
+    </div>`;
+}
+
 /* ── Dashboard ─────────────────────────────────────────────────────── */
 
 function renderDashboardSection() {
   const archives = getNorArchiveRecords().slice(-5).reverse();
   const knowledgeStatus = getNorKnowledgeStatus();
+  const drafts = getComposerTimeline('nor');
+  const profileReport = buildAllProfiles('nor');
+  const computedProfiles = Object.values(profileReport.profiles).filter((r) => r.ok);
+  const norDatasets = listDatasets({ domainType: 'nor' });
 
   return `
-    <div class="nc-page">
-      <div class="nc-page-head">
-        <div class="nc-page-crumb">NOR CENTER</div>
-        <h1 class="nc-page-title">NOR Center</h1>
-        <p class="nc-page-lede">Ruang kerja terpadu untuk Nota Organisasi — draf, arsip, dan pengetahuan organisasi dalam satu tempat.</p>
+    <div class="wlk-page">
+      <div class="wlk-page-head">
+        <div class="wlk-page-crumb">NOR CENTER</div>
+        <h1 class="wlk-page-title">NOR Center</h1>
+        <p class="wlk-page-lede">Ruang kerja terpadu untuk Nota Organisasi — draf, arsip, dan pengetahuan organisasi dalam satu tempat.</p>
       </div>
 
-      <div class="nc-sec">
-        <div class="nc-sec-title">Draft Terbaru</div>
-        ${emptyState('Belum ada draft tersimpan.', 'Draft yang Anda mulai akan muncul di sini.')}
+      <div class="wlk-sec">
+        <div class="wlk-sec-title">Draft Terbaru</div>
+        ${drafts.length ? renderDraftRows(drafts.slice(-5).reverse()) : renderEmptyState('Belum ada draft tersimpan.', 'Draft yang Anda mulai melalui Composer akan muncul di sini.')}
       </div>
 
-      <div class="nc-sec">
-        <div class="nc-sec-title">Arsip Terbaru</div>
-        ${archives.length ? renderArchiveRows(archives) : emptyState('Belum ada dokumen yang diarsipkan.', 'NOR resmi yang diarsipkan akan muncul di sini.')}
+      <div class="wlk-sec">
+        <div class="wlk-sec-title">Arsip Terbaru</div>
+        ${archives.length ? renderArchiveRows(archives) : renderEmptyState('Belum ada dokumen yang diarsipkan.', 'NOR resmi yang diarsipkan akan muncul di sini.')}
       </div>
 
-      <div class="nc-sec">
-        <div class="nc-sec-title">Status Pengetahuan</div>
-        <ul class="nc-status-grid">
-          ${knowledgeStatus.map((s) => `
-            <li class="nc-status-item">
-              <span class="nc-status-count">${s.count}</span>
-              <span class="nc-status-label">${esc(s.label)}</span>
-            </li>`).join('')}
-        </ul>
+      <div class="wlk-sec">
+        <div class="wlk-sec-title">Status Pengetahuan</div>
+        ${renderStatCards(knowledgeStatus.map((s) => ({ count: s.count, label: s.label })))}
       </div>
 
-      <div class="nc-sec">
-        <div class="nc-sec-title">Aksi Cepat</div>
+      <div class="wlk-sec">
+        <div class="wlk-sec-title">Organizational Profile — NOR</div>
+        ${computedProfiles.length ? renderRowList(computedProfiles, (r) => `
+          <li class="wlk-row">
+            <span class="wlk-row-primary">${esc(r.profile.profileType)}</span>
+            <span class="wlk-row-secondary">${r.profile.sampleCount} sampel</span>
+          </li>`) : renderEmptyState('Belum ada Profile yang terbangun untuk domain NOR.', 'Lihat tab "Profil Organisasi" untuk detail dan override.')}
+      </div>
+
+      <div class="wlk-sec">
+        <div class="wlk-sec-title">Dataset Terkait — NOR</div>
+        ${norDatasets.length ? renderRowList(norDatasets, (d) => `
+          <li class="wlk-row">
+            <span class="wlk-row-primary">${esc(d.name)}</span>
+            <span class="wlk-row-secondary">${esc(d.datasetType)}</span>
+          </li>`) : renderEmptyState('Belum ada dataset terdaftar untuk domain NOR.')}
+      </div>
+
+      <div class="wlk-sec">
+        <div class="wlk-sec-title">Aksi Cepat</div>
         <div class="nc-quick-actions">
-          <button class="nc-quick-btn" data-act="nc-tab" data-id="generate" type="button">Generate NOR</button>
-          <button class="nc-quick-btn" data-act="nc-tab" data-id="drafts" type="button">Lihat Draft</button>
-          <button class="nc-quick-btn" data-act="nc-tab" data-id="archive" type="button">Buka Arsip</button>
-          <button class="nc-quick-btn" data-act="nc-tab" data-id="review" type="button">Antrean Review</button>
+          <button class="nc-quick-btn" data-act="wlk-tab" data-id="generate" type="button">Generate NOR</button>
+          <button class="nc-quick-btn" data-act="wlk-tab" data-id="drafts" type="button">Lihat Draft</button>
+          <button class="nc-quick-btn" data-act="wlk-tab" data-id="archive" type="button">Buka Arsip</button>
+          <button class="nc-quick-btn" data-act="wlk-tab" data-id="profiles" type="button">Profil Organisasi</button>
+          <button class="nc-quick-btn" data-act="wlk-tab" data-id="review" type="button">Antrean Review</button>
         </div>
       </div>
     </div>`;
@@ -258,11 +355,11 @@ function renderDashboardSection() {
 
 function renderGenerateSection() {
   return `
-    <div class="nc-page">
-      <div class="nc-page-head">
-        <div class="nc-page-crumb">NOR CENTER · GENERATE</div>
-        <h1 class="nc-page-title">Apa yang ingin Anda buat hari ini?</h1>
-        <p class="nc-page-lede">Sarpras Intelligence akan menyusun draf berdasarkan pengetahuan organisasi yang telah disetujui — Anda tetap meninjau dan menyetujui setiap draf sebelum diterbitkan.</p>
+    <div class="wlk-page">
+      <div class="wlk-page-head">
+        <div class="wlk-page-crumb">NOR CENTER · GENERATE</div>
+        <h1 class="wlk-page-title">Apa yang ingin Anda buat hari ini?</h1>
+        <p class="wlk-page-lede">Sarpras Intelligence akan menyusun draf berdasarkan pengetahuan organisasi yang telah disetujui — Anda tetap meninjau dan menyetujui setiap draf sebelum diterbitkan.</p>
       </div>
 
       <div class="nc-generate-card">
@@ -313,8 +410,8 @@ function handleGenerateSubmit() {
     transitionDocumentSession(session.id, DOCUMENT_SESSION_STATE.ABANDONED);
     st.generateOutcome = {
       kind: 'coming-soon',
-      title: 'Generation engine coming soon.',
-      message: 'Sarpras Intelligence belum memiliki pengetahuan organisasi yang disetujui untuk menyusun draf.',
+      title: 'Belum ada Knowledge Approved untuk didraf',
+      message: 'Generator NOR menyusun draf dari Knowledge domain "nor" yang berstatus Approved — saat ini belum ada. Unggah dan setujui dokumen melalui tab Archive untuk mulai membangun Knowledge.',
       detail: (result.error && result.error.message) || null,
     };
   }
@@ -324,14 +421,56 @@ function handleGenerateSubmit() {
 /* ── Drafts ────────────────────────────────────────────────────────── */
 
 function renderDraftsSection() {
+  const drafts = getComposerTimeline('nor');
+
   return `
-    <div class="nc-page">
-      <div class="nc-page-head">
-        <div class="nc-page-crumb">NOR CENTER · DRAFTS</div>
-        <h1 class="nc-page-title">Draft Repository</h1>
-        <p class="nc-page-lede">Draf yang sedang disusun akan tersimpan di sini, siap ditinjau sebelum diterbitkan sebagai NOR resmi.</p>
+    <div class="wlk-page">
+      <div class="wlk-page-head">
+        <div class="wlk-page-crumb">NOR CENTER · DRAFTS</div>
+        <h1 class="wlk-page-title">Draft Repository</h1>
+        <p class="wlk-page-lede">Draf yang sedang disusun melalui Composer — setiap perubahan tercatat sebagai revisi dengan perbedaan (diff) yang nyata, bukan simulasi.</p>
       </div>
-      ${emptyState('Belum ada draft tersimpan.', 'Repositori draf akan aktif pada pembaruan mendatang.')}
+
+      <div class="wlk-sec">
+        <div class="wlk-sec-title">Draft Tersimpan</div>
+        ${drafts.length ? renderDraftRows(drafts) : renderEmptyState('Belum ada draft tersimpan.', 'Draft yang Anda mulai melalui Composer akan muncul di sini.')}
+      </div>
+
+      ${st.draftsSelectedId ? renderDraftDetail(st.draftsSelectedId) : ''}
+    </div>`;
+}
+
+function renderDraftRows(drafts) {
+  return renderRowList(drafts, (d) => `
+    <li class="wlk-row" data-act="nc-draft-row" data-id="${esc(d.documentId)}" data-clickable="1">
+      <span class="wlk-row-primary">${esc(d.documentId)}</span>
+      <span class="wlk-row-secondary">v${d.version} · ${esc(d.updatedAt)}</span>
+    </li>`);
+}
+
+function renderArchiveRows(records) {
+  return renderRowList(records, (r) => `
+    <li class="wlk-row" data-act="nc-archive-row" data-id="${esc(r.id)}" data-clickable="1">
+      <span class="wlk-row-primary">${esc(r.documentNumber)}</span>
+      <span class="wlk-row-secondary">${esc(r.documentDate || r.archivedAt || '—')}</span>
+    </li>`);
+}
+
+/** Composer History — every revision of one draft, oldest first, each with
+ *  its own precomputed Diff against the immediate predecessor (composer-store.js
+ *  already computes this at edit time — never recomputed here). */
+function renderDraftDetail(documentId) {
+  const revisions = getRevisionHistory(documentId);
+  if (!revisions.length) return '';
+
+  return `
+    <div class="wlk-sec">
+      <div class="wlk-sec-title">Riwayat Revisi — ${esc(documentId)}</div>
+      ${revisions.map((rev) => `
+        <div class="wlk-sec">
+          <div class="wlk-sec-title">Versi ${rev.version}${rev.editedBy ? ` · oleh ${esc(rev.editedBy)}` : ''}</div>
+          ${rev.diff ? renderDiffTable(rev.diff) : renderEmptyState('Revisi awal — belum ada perbedaan.')}
+        </div>`).join('')}
     </div>`;
 }
 
@@ -343,56 +482,174 @@ function renderArchiveSection() {
   const health = computeArchiveHealth('nor');
 
   return `
-    <div class="nc-page">
-      <div class="nc-page-head">
-        <div class="nc-page-crumb">NOR CENTER · ARCHIVE</div>
-        <h1 class="nc-page-title">Digital Archive</h1>
-        <p class="nc-page-lede">Arsip terstruktur untuk setiap NOR resmi — status, linimasa, dan kesehatan arsip dalam satu tempat.</p>
+    <div class="wlk-page">
+      <div class="wlk-page-head">
+        <div class="wlk-page-crumb">NOR CENTER · ARCHIVE</div>
+        <h1 class="wlk-page-title">Digital Archive</h1>
+        <p class="wlk-page-lede">Arsip terstruktur untuk setiap NOR resmi — status, linimasa, dan kesehatan arsip dalam satu tempat.</p>
       </div>
 
-      <div class="nc-sec">
-        <div class="nc-sec-title">Unggah Dokumen</div>
-        <div class="nc-upload-area">
-          <svg class="nc-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
-          </svg>
-          <div class="nc-empty-title">Unggah Dokumen — Coming Soon</div>
-          <div class="nc-empty-sub">Digital Archive untuk dokumen hasil pindai akan hadir pada pembaruan mendatang.</div>
-        </div>
+      <div class="wlk-sec">
+        <div class="wlk-sec-title">Unggah Dokumen</div>
+        ${importController.render()}
       </div>
 
-      <div class="nc-sec">
-        <div class="nc-sec-title">Daftar Arsip</div>
-        ${records.length ? renderArchiveRows(records) : emptyState('Belum ada dokumen yang diarsipkan.', 'NOR resmi yang diarsipkan akan muncul di sini.')}
+      <div class="wlk-sec">
+        <div class="wlk-sec-title">Daftar Arsip</div>
+        ${records.length ? renderArchiveRows(records) : renderEmptyState('Belum ada dokumen yang diarsipkan.', 'NOR resmi yang diarsipkan akan muncul di sini.')}
       </div>
 
-      <div class="nc-sec">
-        <div class="nc-sec-title">Linimasa Arsip</div>
-        ${timeline.length ? renderTimelineRows(timeline) : emptyState('Belum ada entri pada linimasa arsip.')}
+      <div class="wlk-sec">
+        <div class="wlk-sec-title">Linimasa Arsip</div>
+        ${timeline.length ? renderTimelineRows(timeline) : renderEmptyState('Belum ada entri pada linimasa arsip.')}
       </div>
 
-      <div class="nc-sec">
-        <div class="nc-sec-title">Kesehatan Arsip</div>
-        <ul class="nc-status-grid">
-          <li class="nc-status-item"><span class="nc-status-count">${health.healthScore}</span><span class="nc-status-label">Skor Kesehatan</span></li>
-          <li class="nc-status-item"><span class="nc-status-count">${health.totalArchived}</span><span class="nc-status-label">Total Terarsip</span></li>
-          <li class="nc-status-item"><span class="nc-status-count">${health.openGapCount}</span><span class="nc-status-label">Gap Terbuka</span></li>
-          <li class="nc-status-item"><span class="nc-status-count">${health.knowledgeContributionPct}%</span><span class="nc-status-label">Kontribusi Pengetahuan</span></li>
-        </ul>
+      <div class="wlk-sec">
+        <div class="wlk-sec-title">Kesehatan Arsip</div>
+        ${renderStatCards([
+          { count: health.healthScore, label: 'Skor Kesehatan' },
+          { count: health.totalArchived, label: 'Total Terarsip' },
+          { count: health.openGapCount, label: 'Gap Terbuka' },
+          { count: `${health.knowledgeContributionPct}%`, label: 'Kontribusi Pengetahuan' },
+        ])}
       </div>
+
+      ${st.archiveLinkId ? renderArchiveLinkPanel(st.archiveLinkId) : ''}
     </div>`;
 }
 
+/** Archive Timeline dot-indicator rows — kept as a local nor-center.js
+ *  renderer; workspace-list-kit.js has no timeline-with-status-dot
+ *  equivalent (its consumers don't need one). CSS (.nc-timeline*) stays
+ *  local for the same reason. */
 function renderTimelineRows(entries) {
   return `
     <ul class="nc-timeline">
       ${entries.map((e) => `
         <li class="nc-timeline-row">
           <span class="nc-timeline-dot ${e.hasContributedKnowledge ? 'nc-timeline-dot--done' : ''}"></span>
-          <span class="nc-row-primary">${esc(e.documentNumber)}</span>
-          <span class="nc-row-secondary">${esc(e.documentDate || e.archivedAt || '—')}</span>
+          <span class="wlk-row-primary">${esc(e.documentNumber)}</span>
+          <span class="wlk-row-secondary">${esc(e.documentDate || e.archivedAt || '—')}</span>
         </li>`).join('')}
     </ul>`;
+}
+
+/* ── Profil Organisasi (V2.1) ─────────────────────────────────────── */
+
+function renderProfilesSection() {
+  const nav = renderFilterBar(PROFILE_SUBTABS, st.profilesSubtab, { act: 'nc-profiles-subtab' });
+  const body = {
+    computed: renderProfilesComputed,
+    overrides: renderProfilesOverrides,
+    recommendations: renderProfilesRecommendations,
+  }[st.profilesSubtab] || renderProfilesComputed;
+
+  return `
+    <div class="wlk-page">
+      <div class="wlk-page-head">
+        <div class="wlk-page-crumb">NOR CENTER · PROFIL ORGANISASI</div>
+        <h1 class="wlk-page-title">Profil Organisasi</h1>
+        <p class="wlk-page-lede">Profil dihitung otomatis dari Knowledge Approved. Override tetap manual dan hanya berlaku setelah disetujui manusia — tidak ada perubahan otomatis.</p>
+      </div>
+      <div class="wlk-sec">${nav}</div>
+      ${body()}
+    </div>`;
+}
+
+function renderProfilesComputed() {
+  const sections = listProfileTypes().map((profileType) => {
+    const effective = getEffectiveProfile('nor', profileType);
+    const body = effective.ok && effective.profile.entries.length
+      ? renderRowList(effective.profile.entries, (entry) => `
+          <li class="wlk-row">
+            <span class="wlk-row-primary">${esc(entry.value)}${entry.pinnedByOverride ? ' · dipin' : ''}</span>
+            <span class="wlk-row-secondary">${entry.sampleCount} sampel · confidence ${entry.confidence}</span>
+          </li>`)
+      : renderEmptyState('Belum ada populasi untuk profil ini.', 'Profil terbangun dari Knowledge Approved domain "nor".');
+    const title = `${profileType}${effective.overridesApplied ? ` (${effective.overridesApplied} override diterapkan)` : ''}`;
+    return renderDetailSection(title, body);
+  });
+  return `<div class="wlk-sec">${renderDetail(sections)}</div>`;
+}
+
+function overrideTypeOptions() {
+  return Object.values(PROFILE_OVERRIDE_TYPE).map((t) => `<option value="${esc(t)}" ${st.override.overrideType === t ? 'selected' : ''}>${esc(t)}</option>`).join('');
+}
+
+function overrideActionOptions() {
+  const actions = isOverlayType(st.override.overrideType)
+    ? [OVERRIDE_ACTION.PIN, OVERRIDE_ACTION.SUPPRESS, OVERRIDE_ACTION.RENAME]
+    : [OVERRIDE_ACTION.DEFINE];
+  return actions.map((a) => `<option value="${esc(a)}" ${st.override.action === a ? 'selected' : ''}>${esc(a)}</option>`).join('');
+}
+
+function overrideNextAction(o) {
+  if (o.lifecycleState === LIFECYCLE_STATE.DRAFT) return { act: 'nc-override-promote', label: 'Promosikan ke Candidate' };
+  if (o.lifecycleState === LIFECYCLE_STATE.CANDIDATE) return { act: 'nc-override-submit', label: 'Ajukan untuk Review' };
+  if (o.lifecycleState === LIFECYCLE_STATE.PENDING_REVIEW) return { act: 'nc-override-approve', label: 'Setujui' };
+  return null;
+}
+
+function renderProfilesOverrides() {
+  const shapeHint = isStandaloneType(st.override.overrideType) ? JSON.stringify(OVERRIDE_PAYLOAD_SHAPE[st.override.overrideType] || []) : '["rationale"] atau ["renameTo"]';
+  const existing = listOverrides({ domainType: 'nor' });
+  const overrides = existing.ok ? existing.data : [];
+
+  return `
+    <div class="wlk-sec">
+      <div class="wlk-sec-title">Buat Override Baru</div>
+      <div class="wlk-form-row"><label>Tipe Override</label><select data-act="nc-override-field" data-field="overrideType" class="wlk-select">${overrideTypeOptions()}</select></div>
+      <div class="wlk-form-row"><label>Key</label><input data-act="nc-override-field" data-field="key" class="wlk-input" type="text" value="${esc(st.override.key)}" placeholder="Nilai yang ditimpa, mis. nama penerima"/></div>
+      <div class="wlk-form-row"><label>Aksi</label><select data-act="nc-override-field" data-field="action" class="wlk-select">${overrideActionOptions()}</select></div>
+      <div class="wlk-form-row"><label>Payload (JSON) — field yang diharapkan: ${esc(shapeHint)}</label><input data-act="nc-override-field" data-field="payloadText" class="wlk-input" type="text" value="${esc(st.override.payloadText)}"/></div>
+      ${st.override.payloadError ? renderKvList([['Error Payload', st.override.payloadError]]) : ''}
+      <button class="wlk-btn" data-act="nc-override-create" type="button">Buat Draft Override</button>
+    </div>
+
+    <div class="wlk-sec">
+      <div class="wlk-sec-title">Override (${overrides.length})</div>
+      ${overrides.length ? renderRowList(overrides, (o) => {
+        const next = overrideNextAction(o);
+        const rejectBtn = o.lifecycleState === LIFECYCLE_STATE.PENDING_REVIEW ? `<button class="wlk-btn wlk-btn--ghost" data-act="nc-override-reject" data-id="${esc(o.id)}" type="button">Tolak</button>` : '';
+        return `
+          <li class="wlk-row">
+            <span class="wlk-row-primary">${esc(o.overrideType)} — ${esc(o.key)} (${esc(o.action)})</span>
+            <span class="wlk-row-secondary">${esc(o.lifecycleState)}</span>
+            ${next ? `<button class="wlk-btn" data-act="${next.act}" data-id="${esc(o.id)}" type="button">${esc(next.label)}</button>` : ''}
+            ${rejectBtn}
+          </li>`;
+      }) : renderEmptyState('Belum ada override.', 'Override yang dibuat di sini tidak pernah berlaku otomatis — harus melalui review dan persetujuan.')}
+    </div>`;
+}
+
+function handleOverrideCreate() {
+  const o = st.override;
+  let payload;
+  try {
+    payload = JSON.parse(o.payloadText);
+    st.override.payloadError = null;
+  } catch (err) {
+    st.override.payloadError = err && err.message ? err.message : 'JSON tidak valid.';
+    render();
+    return;
+  }
+  createOverrideDraft({ domainType: 'nor', overrideType: o.overrideType, key: o.key, action: o.action, payload, authoredBy: 'evan' });
+  render();
+}
+
+function renderProfilesRecommendations() {
+  const recommendations = computePatternRecommendations('nor');
+  return `
+    <div class="wlk-sec">
+      <div class="wlk-sec-title">Candidate Recommendations (${recommendations.length})</div>
+      <p class="wlk-page-lede">Statistik deterministik dari Knowledge Approved — bukan AI. Setiap rekomendasi hanya menjadi Override setelah Anda memilih untuk membuatnya, dan tetap memerlukan persetujuan manusia.</p>
+      ${recommendations.length ? renderRowList(recommendations, (r) => `
+        <li class="wlk-row">
+          <span class="wlk-row-primary">${esc(r.patternType)} — ${esc(r.value)}</span>
+          <span class="wlk-row-secondary">support ${r.evidence.supportCount} · confidence ${r.evidence.confidence}</span>
+          <button class="wlk-btn" data-act="nc-rec-to-override" data-pattern-type="${esc(r.patternType)}" data-value="${esc(r.value)}" type="button">Buat Draft Override</button>
+        </li>`) : renderEmptyState('Belum ada rekomendasi.', 'Rekomendasi muncul setelah ada Knowledge Approved di domain "nor".')}
+    </div>`;
 }
 
 /* ── Review ────────────────────────────────────────────────────────── */
@@ -402,34 +659,45 @@ function renderReviewSection() {
   const candidate = safeKnowledgeList({ domainType: 'nor', lifecycleState: LIFECYCLE_STATE.CANDIDATE });
 
   return `
-    <div class="nc-page">
-      <div class="nc-page-head">
-        <div class="nc-page-crumb">NOR CENTER · REVIEW</div>
-        <h1 class="nc-page-title">Review Queue</h1>
-        <p class="nc-page-lede">Pengetahuan yang diusulkan sistem menunggu tinjauan manusia sebelum berstatus Approved.</p>
+    <div class="wlk-page">
+      <div class="wlk-page-head">
+        <div class="wlk-page-crumb">NOR CENTER · REVIEW</div>
+        <h1 class="wlk-page-title">Review Queue</h1>
+        <p class="wlk-page-lede">Pengetahuan yang diusulkan sistem menunggu tinjauan manusia sebelum berstatus Approved.</p>
       </div>
 
-      <div class="nc-sec">
-        <div class="nc-sec-title">Pending Review</div>
-        ${pending.length ? renderReviewRows(pending) : emptyState('Tidak ada item dalam antrean Pending Review.')}
+      <div class="wlk-sec">
+        <div class="wlk-sec-title">Pending Review</div>
+        ${pending.length ? renderReviewRows(pending) : renderEmptyState('Tidak ada item dalam antrean Pending Review.')}
       </div>
 
-      <div class="nc-sec">
-        <div class="nc-sec-title">Candidate</div>
-        ${candidate.length ? renderReviewRows(candidate) : emptyState('Tidak ada item berstatus Candidate.')}
+      <div class="wlk-sec">
+        <div class="wlk-sec-title">Candidate</div>
+        ${candidate.length ? renderReviewRows(candidate) : renderEmptyState('Tidak ada item berstatus Candidate.')}
       </div>
+
+      ${st.reviewLinkId ? renderReviewLinkPanel(st.reviewLinkId) : ''}
     </div>`;
 }
 
 function renderReviewRows(items) {
+  return renderRowList(items, (it) => `
+    <li class="wlk-row" data-act="nc-review-row" data-id="${esc(it.id)}" data-clickable="1">
+      <span class="wlk-row-primary">${esc(it.kind || it.id)}</span>
+      <span class="wlk-row-secondary">${esc(String(it.updatedAt || '').slice(0, 10))}</span>
+    </li>`);
+}
+
+/** Knowledge <-> Archive cross-link, the reverse direction of
+ *  renderArchiveLinkPanel — same deterministic id scheme, no new lookup
+ *  mechanism. */
+function renderReviewLinkPanel(itemId) {
+  const record = getNorArchiveRecords().find((r) => generateKnowledgeId({ domainType: r.sourceDomainType, sourceType: r.sourceDomainType, sourceRef: r.sourceId }) === itemId);
   return `
-    <ul class="nc-row-list">
-      ${items.map((it) => `
-        <li class="nc-row">
-          <span class="nc-row-primary">${esc(it.kind || it.id)}</span>
-          <span class="nc-row-secondary">${esc(String(it.updatedAt || '').slice(0, 10))}</span>
-        </li>`).join('')}
-    </ul>`;
+    <div class="wlk-sec">
+      <div class="wlk-sec-title">Arsip Terkait</div>
+      ${renderEmptyState(record ? `${record.documentNumber} — diarsipkan ${record.archivedAt}` : 'Belum ada dokumen arsip yang terhubung ke Knowledge ini.')}
+    </div>`;
 }
 
 /* ── Settings (read-only reference — never a parallel configuration) ── */
@@ -441,14 +709,14 @@ function renderSettingsSection() {
   const recapCount = (settings.recapSignatories || []).length;
 
   return `
-    <div class="nc-page">
-      <div class="nc-page-head">
-        <div class="nc-page-crumb">NOR CENTER · SETTINGS</div>
-        <h1 class="nc-page-title">Pengaturan</h1>
-        <p class="nc-page-lede">NOR Center menggunakan konfigurasi NOR yang sama dengan Petty Cash Center — tidak ada konfigurasi terpisah.</p>
+    <div class="wlk-page">
+      <div class="wlk-page-head">
+        <div class="wlk-page-crumb">NOR CENTER · SETTINGS</div>
+        <h1 class="wlk-page-title">Pengaturan</h1>
+        <p class="wlk-page-lede">NOR Center menggunakan konfigurasi NOR yang sama dengan Petty Cash Center — tidak ada konfigurasi terpisah.</p>
       </div>
 
-      <div class="nc-sec">
+      <div class="wlk-sec">
         <div class="nc-settings-card">
           <div class="nc-settings-row"><span class="nc-settings-label">Pejabat Pengirim</span><span class="nc-settings-value">${esc(settings.senderTitle || '—')}</span></div>
           <div class="nc-settings-row"><span class="nc-settings-label">Penandatangan</span><span class="nc-settings-value">${topCount} penandatangan utama · ${recapCount} penandatangan rekap</span></div>

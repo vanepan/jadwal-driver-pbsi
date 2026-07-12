@@ -11,8 +11,12 @@
 
    DEPENDENCIES: knowledge/contracts/connector-contract.js,
    knowledge/connectors/placeholder-connector.js + the 11 placeholder
-   connector modules (bootstrap only — see NON-GOALS for why `nor` is
-   deliberately NOT among them).
+   connector modules, and connectors/manual-file-connector.js (V2.1,
+   Knowledge Acquisition Operational Readiness — the one REAL connector
+   bootstrapped here rather than self-registering, since it has zero V1/
+   Firebase dependency, same reasoning that keeps the 11 placeholders
+   here too — see NON-GOALS for why `nor` is deliberately NOT among
+   them).
 
    NON-GOALS: does NOT import or register `nor-connector.js` here. Unlike
    the 11 placeholders (pure, zero dependencies), the NOR connector
@@ -37,6 +41,7 @@
 'use strict';
 
 import { isConnector } from '../contracts/connector-contract.js';
+import { manualFileConnector } from '../connectors/manual-file-connector.js';
 import { memorandumConnector } from '../connectors/memorandum-connector.js';
 import { sopConnector } from '../connectors/sop-connector.js';
 import { configurationConnector } from '../connectors/configuration-connector.js';
@@ -101,6 +106,7 @@ export function resetConnectorRegistry() {
    provider.js's own built-in registration at the bottom of that file.
    `nor` is deliberately excluded (see NON-GOALS above). ────────────────── */
 function bootstrap() {
+  registerConnector(manualFileConnector);
   registerConnector(memorandumConnector);
   registerConnector(sopConnector);
   registerConnector(configurationConnector);

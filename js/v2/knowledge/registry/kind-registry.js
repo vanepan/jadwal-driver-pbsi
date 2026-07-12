@@ -70,6 +70,10 @@ function bootstrap() {
   registerKind('attachment', 'Attachment Pattern');
   registerKind('department', 'Department');
   registerKind('document_category', 'Document Category');
+  // V2.1 — Knowledge Acquisition Operational Readiness: generic fallback
+  // for manual-entry facts (connectors/manual-file-connector.js) that
+  // don't match a more specific existing kind above.
+  registerKind('document_fact', 'Document Fact');
 }
 
 bootstrap();

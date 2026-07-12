@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <title>Sarpras Intelligence Workspace Harness</title>
+</head>
+<body>
+<!-- Mounts the real outer shell (sarpras-intelligence-center.js) and, via
+     its own dynamic imports, each of the four nested workspaces (NOR
+     Center, Archive Center, Knowledge Center, Learning Dashboard) into a
+     detached host div — mirrors organizational-memory-harness.html's
+     pattern, but exercises actual DOM mounting/rendering instead of just
+     engine calls, since these are presentation-layer files. -->
+<div id="host" style="display:none;"></div>
+<script type="module">
+  import {
+    mountSarprasIntelligence, setSarprasIntelligenceScreen, closeSarprasIntelligence,
+  } from '../js/v2/ui/sarpras-intelligence-center.js';
+
+  const host = document.getElementById('host');
+  window.__mount = () => mountSarprasIntelligence(host);
+  window.__setScreen = (id) => setSarprasIntelligenceScreen(id);
+  window.__close = () => closeSarprasIntelligence();
+  window.__hostText = () => host.textContent;
+  window.__hostHTML = () => host.innerHTML;
+  window.__ready = true;
+</script>
+</body>
+</html>

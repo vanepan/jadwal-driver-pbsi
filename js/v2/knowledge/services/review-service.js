@@ -27,8 +27,9 @@
 
 import { submitForReview, approve, reject, rollback, canSubmitForReview } from '../review/review-workflow-engine.js';
 import { getPendingReview } from '../repository/knowledge-repository.js';
+import { getReviewQueue, getCandidateQueue } from '../review/review-queue-engine.js';
 
-export { submitForReview, approve, reject, rollback, canSubmitForReview };
+export { submitForReview, approve, reject, rollback, canSubmitForReview, getReviewQueue, getCandidateQueue };
 
 /** Everything currently sitting in the review queue. */
 export function listPendingReview() {

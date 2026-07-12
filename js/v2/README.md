@@ -1,101 +1,137 @@
-# js/v2 — V2 Architecture Foundation (Phase 3 contracts / Phase 9 first acquisition)
+# js/v2 — Sarpras Intelligence (RC1, V2.0.18–V2.0.20)
 
-> Status: **dormant to the rest of the app**. No file under `js/v2/` is
-> imported by anything outside this tree, and nothing here runs
-> automatically. As of Phase 9 (V2.0.2), the Knowledge Platform can do real
-> work when deliberately invoked — one real connector (`nor`) acquires
-> Draft Knowledge from live NOR records — but no runtime behavior anywhere
-> *else* in the application changes as a result of this directory existing,
-> and no AI/LLM code exists anywhere in this tree. See
-> `docs/V2_ARCHITECTURE_AUDIT_AND_PROPOSAL.md` for the audit and the ten
-> binding decisions this scaffold implements the shape of.
+> Status: **dormant to everyone except one pilot user**. `js/config/feature-gates.js#isV2Enabled`
+> gates the single entry point (`sarprasIntelligence`) to `role:'admin'` AND
+> `username:'evan'`. Nothing under `js/v2/` is statically imported by any
+> file outside this tree; the outer shell (`ui/sarpras-intelligence-center.js`)
+> is reached only through a dynamic `import()` in
+> `js/config/module-loader-registry.js`, itself only ever called after the
+> gate passes. No AI/LLM/OCR/NLP code exists anywhere in this tree.
 
 ## What this is
 
-The frozen V2 architecture proposal decided that **V2 is not an AI project —
-V2 is a Knowledge Platform**, with AI as one replaceable, optional client of
-that platform. Phase 3 built the schema-and-contract foundation for that
-platform (JSDoc typedefs, frozen enums, registry interfaces). Phase 9
-(V2.0.2) built the first real vertical slice on top of it — one connector
-(`nor`), a generic acquisition engine, and a real Builder Stage — without
-redesigning any Phase 3 shape.
-
-Nothing in this directory calls an LLM, renders a document, or changes any
-*existing* (V1) engine's behavior. Contracts stay locked interfaces;
-`repository/`, `builder/`, `acquisition/`, and `connectors/` now contain
-real, working logic (not `NOT_IMPLEMENTED` stubs) — `metrics/`,
-`explainability/`, `review/`, and `dependency-graph/` still do.
+Sarpras Intelligence is an Organizational Learning Platform: Knowledge is
+extracted from real organizational documents, curated through an explicit
+human review workflow, and organized into reusable Profiles and Datasets —
+never invented, never auto-approved. As of RC1 the platform itself
+(engines + presentation) is complete; what's deliberately still empty is
+**content** — no real Organizational Knowledge, Bootstrap Dataset, or
+Official NOR Archive has been authored yet. That is the next phase, and it
+is out of scope for this tree's engineering.
 
 ## Layout
 
 ```
 js/v2/
-  knowledge/        THE PLATFORM CORE. Domain-agnostic. See knowledge/README.md.
-    contracts/         typedefs + frozen shape constants — no logic
-    registry/          domainType / kind / connector registries — vocabulary only
-    repository/        real (Phase 5): MemoryRepository + NullRepository default
-    lifecycle/         the 5-state transition graph + a pure guard check
-    builder/           real orchestrator (Phase 4) + 1 real Stage, acquire-nor (Phase 9,
-                       stages/ — explicit opt-in, not re-exported by builder/index.js)
-    metrics/           empty KnowledgeHealthReport computer — NOT_IMPLEMENTED
-    explainability/    empty provenance/corroboration describer — NOT_IMPLEMENTED
-    review/            empty Draft→Candidate→Pending Review→Approved workflow — NOT_IMPLEMENTED
-    dependency-graph/  empty relationship-graph accessor — NOT_IMPLEMENTED
-    connectors/        1 real connector (nor) + 11 inactive placeholders (Phase 9)
-    acquisition/       Connector -> Repository orchestration: Source, Batch, Session,
-                       Extraction/Normalization contracts, acquisition-engine.js (Phase 9)
+  ai-foundation/          ADAPTER LAYER ONLY. May depend on knowledge/, never the reverse.
+    adapters/               claude / openai / local-model — all NOT_IMPLEMENTED stubs
+    registry/               adapter registry (real)
 
-  ai-foundation/     ADAPTER LAYER ONLY. May depend on knowledge/. See ai-foundation/README.md.
-    contracts/         the Adapter contract (mirrors js/prediction/prediction-provider.js)
-    registry/          adapter registry (mirrors js/prediction/prediction-provider.js's registry)
-    adapters/          claude / openai / local-model — all NOT_IMPLEMENTED stubs
+  document-intelligence/  first CONSUMER of knowledge/. See its own README.
+    nor/                    the NOR pilot — 5 real pipeline steps (analyze/draft/validate/explain/recommend)
+    composer/               Live Editable Composer (V2.0.15) — composer-store.js is real; a
+                            ComposerDocument's write side (editSection) has no authoring UI yet
+    session-store.js       real DocumentSession store
+    registry/               analyzer/step registries, populated by nor/
 
-  document-intelligence/  first CONSUMER of knowledge/ (Phase 7 contracts / V2.0.6 runtime). See document-intelligence/README.md.
-    contracts/         Analyzer/Classifier/Intent/Structure, Context/Session, Draft/Validation/Explanation/Recommendation, Pipeline
-    registry/          analyzer registry + step registry — real, populated by nor/
-    session-store.js   real DocumentSession store (V2.0.6)
-    nor/               the NOR pilot — 5 real pipeline steps (V2.0.6) — see document-intelligence/nor/README.md
+  knowledge/              THE PLATFORM CORE. Domain-agnostic. See its own README.
+    contracts/              typedefs + frozen shape constants — vocabulary, no logic
+    registry/               domainType / kind / connector registries
+    repository/             real: MemoryRepository (default-active) + NullRepository
+    lifecycle/              the 5-state transition graph (draft→candidate→pending_review→approved→deprecated)
+                            — there is deliberately NO "rejected" state; reject() returns an
+                            item to candidate (see review/review-workflow-engine.js)
+    acquisition/            Connector -> Repository orchestration (real)
+    connectors/             1 real connector (nor) + 11 inactive placeholders
+    extraction/             pattern/vocabulary/relationship extraction + the Approved-item index
+    review/                 real: workflow, queue, session, conflict detection
+    learning/               real: Correction Pipeline, shared Diff Model (diff-engine.js),
+                            Diff Learning (submits a Composer edit as a Correction),
+                            Similarity Detection, Knowledge Evolution, LearningMetrics aggregator
+    machine-learning/       real: clustering, pattern mining, statistics, outlier detection, confidence
+    metrics/                real: computeHealthReport() (coverage, confidence distribution, health score)
+    explainability/         real: explain(item) — the 5 fixed explainability questions
+    dependency-graph/       real: single-hop getDependencies() + multi-hop KnowledgeGraph (BFS)
+    profiles/                real: buildProfile/buildAllProfiles — Organizational Knowledge Profiles
+    datasets/                real registries/contracts for Dataset & DatasetPack classification
+                            (OFFICIAL/HISTORICAL/SYNTHETIC/TRAINING/CORRECTION) — deliberately a
+                            SEPARATE table from ArchiveRecord, never a field on it
+    services/                the intended single import surface — namespaced facades
+                            (review/metrics/explainability/dependencyGraph/knowledgeGraph/
+                            confidence/statistics/profiles/...) over the engines above
 
-  index.js           dormant barrel — a structural no-op proving nothing auto-runs
+  organizational-memory/  Archive/Timeline/Gap/Duplicate/Upload-recommendation engines,
+                          downstream of knowledge/ (reads it, never the reverse). See its own README.
+    repository/              real, append-only ArchiveRecord store
+    sources/                 real 'nor' archive source + 3 inactive placeholders (excluded from
+                            the barrel — importing sources/index.js is what registers 'nor')
+
+  ui/                     the ONLY presentation layer. Four real nested workspaces, mounted
+                          lazily (dynamic import) by sarpras-intelligence-center.js:
+    sarpras-intelligence-center.js   outer shell — Dashboard (static roadmap) + 4 workspace mounts
+    nor-center.js                    NOR Center — Dashboard/Generate/Drafts/Archive/Review/Settings,
+                                     scoped to domainType:'nor'
+    archive-center.js                Archive Center — cross-domain generalization of the SAME
+                                     Organizational Memory engines nor-center.js's own Archive tab
+                                     uses, plus a Dataset-classification browser (Official/
+                                     Bootstrap/Synthetic Archive)
+    knowledge-center.js               Knowledge Center — cross-domain Knowledge browser with a
+                                     Detail drawer cross-linking Profile/Dataset/Archive
+    learning-dashboard.js             Learning Dashboard — composes existing metrics/learning
+                                     engines into one dashboard; invents no new number
+    shared/workspace-list-kit.js      presentational-only rendering kit (tab shell, row list,
+                                     filter bar, detail drawer, diff table) shared by the three
+                                     newer workspaces; nor-center.js keeps its own local
+                                     equivalents for now (a planned, not-yet-done, hardening dedupe)
+
+  index.js                dormant barrel — a structural no-op proving nothing auto-runs
 ```
 
-## Dependency direction (binding, from §4.1 of the architecture doc)
+## Dependency direction (binding)
 
 ```
-ai-foundation/  ──depends on──>  knowledge/
-knowledge/      ──never depends on──>  ai-foundation/ or any AI/LLM code
-knowledge/      ──depends on──>  V1, read-only, through *-store.js getters or a ctx-shaped handoff
+ai-foundation/          ──depends on──>  knowledge/
+knowledge/              ──never depends on──>  ai-foundation/ or any AI/LLM code
+organizational-memory/  ──depends on──>  knowledge/ (read-only cross-reference)
+knowledge/              ──never depends on──>  organizational-memory/
+ui/                     ──depends on──>  knowledge/, organizational-memory/, document-intelligence/
+knowledge/ & organizational-memory/  ──never depend on──>  ui/
+knowledge/              ──depends on──>  V1, read-only, through *-store.js getters
 V1 (js/app.js, any *-store.js, any engine)  ──never depends on──>  js/v2/*
 ```
 
-- `knowledge/` must be fully buildable, queryable, and reviewable with **zero**
-  AI providers registered, forever — not just at Phase 3.
-- Nothing outside `js/v2/` may import from `js/v2/`. This is the dormancy
-  rule: it is enforced by convention right now (Phase 3 — nothing wires it in)
-  and should be enforced by lint/CI once Phase 4 starts writing real callers.
-- `domainType` and `kind` are registry-backed values (see
-  `knowledge/registry/`), never a hardcoded switch inside repository or
-  lifecycle code — adding a new domain must never require touching
-  `knowledge/repository/` or `knowledge/lifecycle/`.
+- `knowledge/` must be fully buildable, queryable, and reviewable with
+  **zero** AI providers registered, forever.
+- Nothing outside `js/v2/` may statically import from `js/v2/`. The one
+  reach-in is `js/config/module-loader-registry.js`'s dynamic `import()`,
+  itself only ever invoked after `isV2Enabled()` passes.
+- `domainType` and `kind` are registry-backed values, never a hardcoded
+  switch inside repository or lifecycle code.
 
-## What this tree still does NOT do (true as of Phase 9)
-
-See each module's own README/header for its own non-goals. Platform-wide:
+## What this tree still does NOT do (true as of RC1)
 
 - No LLM/AI provider is called — every adapter under `ai-foundation/` is
-  still a stub, exactly like `js/prediction/python-provider.js` today.
-- No existing engine, store, or `app.js` is modified, and nothing outside
-  `js/v2/` reads from it — the dormancy rule holds. `nor-connector.js`
-  reads V1 read-only; it never writes back.
-- No UI exists for review, metrics, or anything else in this tree.
+  still a stub.
+- No existing V1 engine, store, or `app.js` is modified; every V1 read goes
+  through that module's own public getter (e.g. `petty-cash-store.js#getSettings`).
 - No document is rendered, and no document is parsed beyond a structural
-  ViewModel fingerprint — no PDF/HTML is ever read as a knowledge source.
-- Nothing is auto-approved — every acquired item is `lifecycleState: 'draft'`.
+  ViewModel fingerprint.
+- Nothing is auto-approved — every human-gated lifecycle move still
+  requires an explicit `ReviewDecision`.
+- The NOR generator itself (`document-intelligence/nor/nor-generator-contract.js#proposeNorFields`)
+  is an intentional, honest `NOT_IMPLEMENTED` throw (Phase 8, architecture-only)
+  — NOR Center reports this outcome truthfully rather than faking a draft.
+- No file-upload/Storage mechanism exists anywhere in this codebase —
+  Archive Center's "Upload Queue" is a workflow status marker
+  (`gap-workflow-engine.js`), never a real upload.
+- `js/prediction/explainability.js` and `js/services/dispatch-presentation.js`
+  remain unreconciled with `knowledge/explainability/knowledge-explainability-engine.js`
+  — three explainability surfaces exist; unifying them would touch V1 and is
+  deliberately out of scope.
 
-## Future evolution (Phase 10+, not started)
+## Future evolution (next phase — NOT engineering)
 
-A review-queue UI, real metric computation, activating one or more of the
-11 placeholder connectors (following `nor-connector.js`'s pattern), a first
-real AI adapter, and reconciling this third explainability surface with the
-two that already exist (`js/prediction/explainability.js`,
-`js/services/dispatch-presentation.js`). None of this is in scope now.
+Per the frozen roadmap, engineering work stops at RC1. What follows is
+content authoring against the platform built here: Organizational Knowledge,
+Bootstrap Dataset, Official NOR Archive, and Continuous Learning. None of
+that content is created by this tree.

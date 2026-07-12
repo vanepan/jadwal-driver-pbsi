@@ -3,7 +3,8 @@
 
    PURPOSE: single entry point for every Knowledge service — Phase 6's
    original eleven, plus confidence/statistics/knowledgeGraph (V2.0.12),
-   plus profiles (V2.0.12.5).
+   plus profiles (V2.0.12.5), plus importSession/profileOverrides/
+   patternDiscovery (V2.1, Knowledge Acquisition Operational Readiness).
 
    RESPONSIBILITY: re-export only, NAMESPACED per service (rather than
    flattened) — `rollback` is exposed by both review-service.js (the named
@@ -39,3 +40,7 @@ export * as confidence from './confidence-service.js';
 export * as statistics from './statistics-service.js';
 export * as knowledgeGraph from './knowledge-graph-service.js';
 export * as profiles from './profile-service.js';
+// V2.1 — Knowledge Acquisition Operational Readiness.
+export * as importSession from './import-session-service.js';
+export * as profileOverrides from './profile-override-service.js';
+export * as patternDiscovery from './pattern-discovery-service.js';

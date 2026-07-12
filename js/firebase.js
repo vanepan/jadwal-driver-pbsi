@@ -11,6 +11,12 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/fireba
 import { getDatabase, onValue, ref, set, get, update, remove, runTransaction, goOffline, goOnline } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 import { getAuth, signInWithCustomToken, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
 import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-functions.js';
+// V2.1 — Sarpras Intelligence File Storage Foundation (js/v2/file-storage/).
+// Aliased to `storageRef` — `ref` above is already the Realtime Database
+// ref() and must not be shadowed. Storage is the ONLY new Firebase product
+// this milestone activates; every other export below is unchanged V1
+// behavior.
+import { getStorage, ref as storageRef, uploadBytes, getBytes } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js';
 import { showToast } from './utils.js';
 import { getSetting } from './settings-store.js';
 
@@ -813,6 +819,75 @@ export async function acquireReimbursementDocNumber(dateStr) {
   } catch (err) {
     console.error('[RMB] Gagal acquire nomor dokumen:', err);
     return `PBSI/RMB/${year}/${month}/${String(Date.now()).slice(-4).padStart(4, '0')}`;
+  }
+}
+
+/* ============================================================
+   V2.1 — Sarpras Intelligence File Storage Foundation.
+
+   PURPOSE: the ONLY Storage primitive this milestone needs — upload one
+   file's bytes to the already-provisioned `firebaseConfig.storageBucket`,
+   reusing the SAME firebaseApp singleton every other export in this file
+   already initializes (never a second parallel Firebase app instance).
+
+   RESPONSIBILITY: initFirebaseStorageLayer(), uploadFileToStorage(),
+   downloadFileFromStorage() (V2.1.2, Document Preview — Part L).
+
+   NON-GOALS (explicit, minimal scope): no getDownloadURL() call (no
+   signed/public URLs) — downloadFileFromStorage() uses getBytes() instead,
+   which requires the SAME authenticated SDK/security-rules context as any
+   other read, never a public link. No delete/list/metadata-update
+   helpers, no lifecycle or retention policy.
+   js/v2/file-storage/file-storage-engine.js and js/v2/ui/
+   dataset-import-center.js (preview only) are the ONLY callers.
+   ============================================================ */
+let firebaseStorage = null;
+
+export function initFirebaseStorageLayer() {
+  if (firebaseStorage) return firebaseStorage;
+  if (!firebaseApp) initFirebaseApp();
+  if (!firebaseApp) return null;
+  firebaseStorage = getStorage(firebaseApp);
+  return firebaseStorage;
+}
+
+/**
+ * Uploads one file's bytes to Firebase Storage. No download URL is ever
+ * requested — the caller stores only the storage path (per this
+ * milestone's explicit "no signed URLs" scope).
+ * @param {string} storagePath - e.g. `sarpras-intelligence/<sha256>`
+ * @param {Blob|File} file
+ * @returns {Promise<{ok: boolean, fullPath: string|null, error: string|null}>}
+ */
+export async function uploadFileToStorage(storagePath, file) {
+  const storage = firebaseStorage || initFirebaseStorageLayer();
+  if (!storage) return { ok: false, fullPath: null, error: 'Firebase Storage belum siap.' };
+  try {
+    const target = storageRef(storage, storagePath);
+    const snapshot = await uploadBytes(target, file);
+    return { ok: true, fullPath: snapshot.ref.fullPath, error: null };
+  } catch (err) {
+    console.error('[firebase] uploadFileToStorage gagal:', err);
+    return { ok: false, fullPath: null, error: err && err.message ? err.message : 'Upload gagal.' };
+  }
+}
+
+/**
+ * Downloads one file's real bytes for in-browser preview (Part L) — never
+ * a signed/public URL, always through the authenticated SDK.
+ * @param {string} storagePath
+ * @returns {Promise<{ok: boolean, bytes: ArrayBuffer|null, error: string|null}>}
+ */
+export async function downloadFileFromStorage(storagePath) {
+  const storage = firebaseStorage || initFirebaseStorageLayer();
+  if (!storage) return { ok: false, bytes: null, error: 'Firebase Storage belum siap.' };
+  try {
+    const target = storageRef(storage, storagePath);
+    const bytes = await getBytes(target);
+    return { ok: true, bytes, error: null };
+  } catch (err) {
+    console.error('[firebase] downloadFileFromStorage gagal:', err);
+    return { ok: false, bytes: null, error: err && err.message ? err.message : 'Unduh gagal.' };
   }
 }
 

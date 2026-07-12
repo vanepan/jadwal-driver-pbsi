@@ -18,57 +18,90 @@
    every trip back to the Dashboard.
 
    SCOPE: Dashboard is a static roadmap/status panel — no analytics are
-   computed here, nothing is invented. Archive Center, Knowledge Center and
-   Learning Dashboard are still honest "Coming Soon" placeholders (reusing
-   the platform's existing .v2-module-placeholder markup/classes — the same
-   ones showModulePlaceholder() in app.js uses). NOR Center (V2.0.11) is the
-   first real nested workspace — see ./nor-center.js.
+   computed here, nothing is invented. NOR Center (V2.0.11), Archive Center,
+   Knowledge Center and Learning Dashboard (all V2.0.18) are real nested
+   workspaces — see ./nor-center.js, ./archive-center.js,
+   ./knowledge-center.js, ./learning-dashboard.js.
+
+   V2.1.2 — this is now the ONE true entry point for repository activation
+   and RTDB persistence sync (moved here from nor-center.js's own mount,
+   where it was only arbitrarily first needed — Archive Center needs the
+   same activation without ever visiting NOR Center). setActiveRepository
+   and the three init*Sync() functions imported below are all safe to
+   import STATICALLY here: none of them eagerly touch js/firebase.js at
+   module load — the real Firebase import happens lazily INSIDE each
+   init*Sync() function, only once actually CALLED (see
+   import-session-repository.js's header for the full reasoning) — so
+   this file's own "nothing loads Firebase until a screen needs it"
+   design is preserved; mounting Sarpras Intelligence at all is now
+   exactly the trigger point that design already existed for.
    ============================================================ */
 
 'use strict';
+
+import { setActiveRepository } from '../knowledge/repository/knowledge-repository.js';
+import { initImportSessionSync, initImportBatchSync } from '../knowledge/services/import-session-service.js';
+import { initFileStorageSync } from '../file-storage/file-storage-registry.js';
 
 const ROADMAP = [
   { label: 'Foundation', tier: 'done' },
   { label: 'Knowledge Platform', tier: 'done' },
   { label: 'Machine Learning Foundation', tier: 'done' },
   { label: 'NOR Center', tier: 'foundation' },
-  { label: 'Knowledge Center', tier: 'soon' },
-  { label: 'Archive Center', tier: 'soon' },
-  { label: 'Learning Dashboard', tier: 'soon' },
+  { label: 'Knowledge Center', tier: 'foundation' },
+  { label: 'Archive Center', tier: 'foundation' },
+  { label: 'Learning Dashboard', tier: 'foundation' },
 ];
 
+// V2.1 — the 'soon' tier and its label were dead code (every ROADMAP row
+// is 'done'/'foundation'; nothing has used tier 'soon' since V2.0.18) and
+// contained the one remaining literal "Coming Soon" string outside a doc
+// comment in js/v2/ui/ — removed per the Operational Readiness Audit.
 const ROADMAP_TIER_LABEL = {
   done: '✓ Selesai',
   foundation: 'Foundation Ready',
-  soon: 'Coming Soon',
-};
-
-const COMING_SOON = {
-  archive: { title: 'Archive Center', message: 'Pusat arsip organisasi — segera hadir di Sarpras Intelligence.' },
-  knowledge: { title: 'Knowledge Center', message: 'Pusat pengetahuan organisasi — segera hadir di Sarpras Intelligence.' },
-  learning: { title: 'Learning Dashboard', message: 'Dasbor pembelajaran organisasi — segera hadir di Sarpras Intelligence.' },
 };
 
 const SCREEN_IDS = ['dashboard', 'nor', 'archive', 'knowledge', 'learning'];
 
+// Each nested workspace pulls in its own slice of Organizational Memory /
+// Knowledge / Document Intelligence — dynamically imported on first visit
+// to its screen only, never at Sarpras Intelligence's own load time,
+// mirroring the Analytics Petty Cash view's lazy-view idiom in app.js
+// (loadPettyCashAnalyticsView / _fnMountAnalyticsPettyCash).
+const WORKSPACES = {
+  nor: { modulePath: './nor-center.js', mountName: 'mountNorCenter', closeName: 'closeNorCenter' },
+  archive: { modulePath: './archive-center.js', mountName: 'mountArchiveCenter', closeName: 'closeArchiveCenter' },
+  knowledge: { modulePath: './knowledge-center.js', mountName: 'mountKnowledgeCenter', closeName: 'closeKnowledgeCenter' },
+  learning: { modulePath: './learning-dashboard.js', mountName: 'mountLearningDashboard', closeName: 'closeLearningDashboard' },
+};
+
 let host = null;
 let screen = 'dashboard';
 let sections = null;   // {screenId: HTMLElement}
-let norMounted = false;
-// nor-center.js pulls in the whole Document Intelligence + Organizational
-// Memory + Knowledge + Petty Cash store surface (and its import is what
-// registers the NOR pilot's pipeline steps — see that file's own header).
-// Dynamically imported on first visit to "nor" only, never at Sarpras
-// Intelligence's own load time, mirroring the Analytics Petty Cash view's
-// lazy-view idiom in app.js (loadPettyCashAnalyticsView / _fnMountAnalyticsPettyCash).
-let _fnMountNorCenter = null;
-let _fnCloseNorCenter = null;
+const mountedState = {};   // {screenId: {mounted: boolean, mount: Function, close: Function}}
+
+let _persistenceStarted = false;
 
 /** Mount into a platform-owned host (mirrors mountEngineering/mountPettyCash). */
 export async function mountSarprasIntelligence(hostEl) {
   if (!hostEl) return;
   host = hostEl;
   host.classList.add('sic-root');
+  // V2.1.2 — activate the in-memory repository AND real RTDB persistence
+  // sync exactly once, on the first mount of Sarpras Intelligence itself
+  // (not gated to any one nested screen). Session-scoped in-memory
+  // activation is unchanged from V2.1; RTDB sync is the new, explicitly
+  // authorized reversal of the prior dormant/no-persistence design (see
+  // this milestone's plan, Decision 1) — still only ever reachable behind
+  // the existing pilot feature gate.
+  if (!_persistenceStarted) {
+    _persistenceStarted = true;
+    setActiveRepository('memory');
+    initImportSessionSync().catch((err) => console.error('[sarpras-intelligence-center] import session sync failed:', err));
+    initImportBatchSync().catch((err) => console.error('[sarpras-intelligence-center] import batch sync failed:', err));
+    initFileStorageSync().catch((err) => console.error('[sarpras-intelligence-center] file storage sync failed:', err));
+  }
   if (!sections) buildShell();
   showScreen(screen);
 }
@@ -81,10 +114,8 @@ function buildShell() {
   sections = {};
   host.querySelectorAll('[data-sic-screen]').forEach((el) => { sections[el.dataset.sicScreen] = el; });
   sections.dashboard.innerHTML = renderDashboard();
-  sections.archive.innerHTML = renderComingSoon('archive');
-  sections.knowledge.innerHTML = renderComingSoon('knowledge');
-  sections.learning.innerHTML = renderComingSoon('learning');
-  // #nor is left empty — nor-center.js owns its own content once mounted.
+  // #nor / #archive / #knowledge / #learning are left empty — each nested
+  // workspace module owns its own content once mounted (see WORKSPACES).
 }
 
 export function setSarprasIntelligenceScreen(nextScreen) {
@@ -94,18 +125,19 @@ export function setSarprasIntelligenceScreen(nextScreen) {
 
 function showScreen(id) {
   SCREEN_IDS.forEach((key) => { sections[key].style.display = key === id ? '' : 'none'; });
-  if (id === 'nor' && !norMounted) {
-    norMounted = true;
-    import('./nor-center.js').then(({ mountNorCenter, closeNorCenter }) => {
-      _fnMountNorCenter = mountNorCenter;
-      _fnCloseNorCenter = closeNorCenter;
-      _fnMountNorCenter(sections.nor);
+  const workspace = WORKSPACES[id];
+  if (workspace && !mountedState[id]) {
+    mountedState[id] = { mounted: true, mount: null, close: null };
+    import(workspace.modulePath).then((mod) => {
+      mountedState[id].mount = mod[workspace.mountName];
+      mountedState[id].close = mod[workspace.closeName];
+      mountedState[id].mount(sections[id]);
     });
   }
 }
 
 export function closeSarprasIntelligence() {
-  if (norMounted) _fnCloseNorCenter && _fnCloseNorCenter();
+  Object.values(mountedState).forEach((entry) => { if (entry.close) entry.close(); });
 }
 
 function renderDashboard() {
@@ -133,21 +165,6 @@ function renderDashboard() {
           <div class="sic-card-h-sub">Fondasi platform yang telah diverifikasi, dan modul yang akan menyusul.</div>
         </div>
         <ul class="sic-roadmap">${rows}</ul>
-      </div>
-    </div>`;
-}
-
-function renderComingSoon(screenId) {
-  const copy = COMING_SOON[screenId] || COMING_SOON.archive;
-  return `
-    <div class="v2-module-placeholder">
-      <div class="v2-module-placeholder-card">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
-             stroke-linecap="round" stroke-linejoin="round" width="40" height="40" aria-hidden="true">
-          <path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 5-6"/>
-        </svg>
-        <h2 class="v2-module-placeholder-title">${copy.title}</h2>
-        <p class="v2-module-placeholder-text">${copy.message}</p>
       </div>
     </div>`;
 }

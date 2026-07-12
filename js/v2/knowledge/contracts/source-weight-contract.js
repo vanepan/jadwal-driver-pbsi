@@ -83,6 +83,7 @@ export function resetSourceWeights() {
 function bootstrap() {
   register('correction', 1.0, 'Explicit human statement — the platform\'s highest-trust input by design (Decision 6).');
   register('nor', 0.9, 'A real connector reading V1 directly (knowledge/connectors/nor-connector.js).');
+  register('manual-file', 0.95, 'Human-verified facts read directly from an uploaded document (knowledge/connectors/manual-file-connector.js) — trusted nearly as highly as an explicit correction, one notch below it because the human is transcribing/confirming an external document rather than directly correcting existing Knowledge.');
   register('extraction', 0.7, 'Mechanically derived from already-Approved knowledge (knowledge/extraction/, V2.0.8) — real evidence, one level removed from a primary source.');
   register('merge', 0.6, 'promotion/knowledge-merge-engine.js\'s intentionally naive shallow-merge strategy (V2.0.4) — real but the least interpretive.');
 }
