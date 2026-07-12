@@ -9,10 +9,11 @@ engine or the repository directly.
 
 ## Responsibility
 
-Fourteen services: the original eleven named in the master prompt's Phase 6
+Fifteen services: the original eleven named in the master prompt's Phase 6
 list — Review, Metrics, Explainability, Dependency Graph, Health,
 Versioning, Lifecycle, Source Weight, Validation, Identity, Registry — plus
-three added in V2.0.12: Confidence, Statistics, Knowledge Graph. Every one
+three added in V2.0.12: Confidence, Statistics, Knowledge Graph — plus one
+added in V2.0.12.5: Profiles. Every one
 of them is **pure delegation/composition** — no service computes anything
 an underlying engine, contract, or registry doesn't already compute. Where
 two services both need the same underlying call (e.g. `review-service.js`

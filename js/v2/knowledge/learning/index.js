@@ -2,7 +2,8 @@
    INDEX.JS — Teach Once, Learn Forever public barrel (V2.0.5, Phase 9.4)
 
    PURPOSE: single entry point for the Correction Pipeline, Similarity
-   Detection, and Knowledge Evolution.
+   Detection, Knowledge Evolution, the Diff Model (V2.0.15/V2.0.16), and
+   Diff Learning (V2.0.16).
 
    RESPONSIBILITY: re-export only.
 
@@ -21,3 +22,6 @@ export * from './contracts/similarity-contract.js';
 export * from './contracts/evolution-contract.js';
 export * from './contracts/learning-metrics-contract.js';
 export * from './contracts/event-contract.js';
+export * from './contracts/diff-contract.js';
+export * from './diff-engine.js';
+export * from './diff-learning-engine.js';

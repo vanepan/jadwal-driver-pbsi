@@ -2,7 +2,8 @@
    INDEX.JS — Knowledge Services public barrel (V2, Phase 6)
 
    PURPOSE: single entry point for every Knowledge service — Phase 6's
-   original eleven, plus confidence/statistics/knowledgeGraph (V2.0.12).
+   original eleven, plus confidence/statistics/knowledgeGraph (V2.0.12),
+   plus profiles (V2.0.12.5).
 
    RESPONSIBILITY: re-export only, NAMESPACED per service (rather than
    flattened) — `rollback` is exposed by both review-service.js (the named
@@ -37,3 +38,4 @@ export * as registry from './registry-service.js';
 export * as confidence from './confidence-service.js';
 export * as statistics from './statistics-service.js';
 export * as knowledgeGraph from './knowledge-graph-service.js';
+export * as profiles from './profile-service.js';

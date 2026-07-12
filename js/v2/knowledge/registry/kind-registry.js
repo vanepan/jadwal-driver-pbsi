@@ -60,6 +60,16 @@ function bootstrap() {
   registerKind('correction', 'Correction');
   registerKind('statistic', 'Statistic');
   registerKind('policy', 'Policy');
+  // V2.0.12.5 — Organizational Knowledge Profiles (recipients, signatories,
+  // etc. are organizational EXPERIENCE, never configuration — see
+  // profiles/profile-engine.js's header for the Config/Knowledge split).
+  registerKind('recipient', 'Recipient');
+  registerKind('signatory', 'Signatory');
+  registerKind('cc', 'CC');
+  registerKind('approval_chain', 'Approval Chain');
+  registerKind('attachment', 'Attachment Pattern');
+  registerKind('department', 'Department');
+  registerKind('document_category', 'Document Category');
 }
 
 bootstrap();

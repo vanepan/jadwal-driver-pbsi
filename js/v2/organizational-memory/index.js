@@ -29,6 +29,7 @@ export * from './contracts/gap-contract.js';
 export * from './contracts/numbering-contract.js';
 export * from './contracts/health-contract.js';
 export * from './contracts/event-contract.js';
+export * from './contracts/upload-recommendation-contract.js';
 
 export * from './registry/archive-source-registry.js';
 export * from './repository/archive-repository.js';
@@ -42,3 +43,4 @@ export * from './duplicate-detection-engine.js';
 export * from './archive-timeline-engine.js';
 export * from './archive-health-engine.js';
 export * from './knowledge-contribution-engine.js';
+export * from './upload-recommendation-engine.js';
