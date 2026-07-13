@@ -145,7 +145,111 @@
 /* ── V2.1.2 — Document Preview (Part L) ───────────────────────────── */
 .dic-pdf-preview{width:100%;height:640px;border:1px solid var(--border);border-radius:10px;}
 
+/* ============================================================
+   Phase 2 (Autonomous Learning Pipeline) — Apple-style Upload Center,
+   Unified Import Workspace, live pipeline stages. Every colour below is
+   an EXISTING token from this kit / sarpras-intelligence.css — nothing
+   new invented, so light/dark mode stay consistent with the rest of the
+   platform (Part 4).
+   ============================================================ */
+
+/* Redesigned dropzone: generous whitespace, minimal borders, large
+   typography, calm — replaces the old dense/HTML-like file chooser. */
+.dic-dropzone{
+  border:1.5px dashed var(--border-strong, var(--border));border-radius:20px;
+  padding:56px 32px;text-align:center;background:var(--surface);
+  transition:border-color .18s ease, background-color .18s ease, transform .18s ease;
+}
+.dic-dropzone.dic-dropzone--active{border-color:var(--accent);background:var(--canvas);transform:scale(1.005);}
+.dic-dropzone-icon{
+  width:52px;height:52px;margin:0 auto 18px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:22px;color:var(--accent);background:var(--c-neutral-weak);
+}
+.dic-dropzone-title{font-family:var(--font-display);font-weight:800;font-size:20px;letter-spacing:-.02em;color:var(--text);}
+.dic-dropzone-sub{font-size:13.5px;color:var(--text-dim);margin-top:6px;}
+.dic-dropzone-actions{display:flex;justify-content:center;gap:10px;margin-top:22px;flex-wrap:wrap;}
+.dic-dropzone-btn{margin:0;padding:11px 22px;border-radius:999px;font-size:13px;}
+.dic-dropzone-hint{font-size:12px;color:var(--text-faint);margin-top:18px;max-width:420px;margin-left:auto;margin-right:auto;line-height:1.5;}
+.dic-dropzone-domain{display:inline-flex;align-items:center;gap:10px;margin-top:22px;font-size:12.5px;color:var(--text-faint);}
+.dic-dropzone-domain label{font-weight:700;}
+.dic-dropzone-domain select{width:auto;padding:6px 10px;}
+
+/* Visually hidden but fully functional (real click target, folder
+   support unchanged) — never the raw browser file-chooser look. */
+.dic-file-input-hidden{
+  position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0,0,0,0);white-space:nowrap;border:0;
+}
+
+/* ── Utilities menu (Part 5 — Level 2 nav, de-emphasized) ──────────── */
+.dic-utilities-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.dic-utilities{position:relative;margin-left:auto;}
+.dic-utilities-menu{
+  position:absolute;right:0;top:calc(100% + 6px);z-index:5;min-width:220px;
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  box-shadow:var(--shadow-sm);padding:6px;display:flex;flex-direction:column;gap:2px;
+}
+.dic-utilities-item{
+  appearance:none;text-align:left;cursor:pointer;border:none;background:none;
+  font-family:var(--font-sans);font-size:13px;font-weight:600;color:var(--text-dim);
+  padding:9px 10px;border-radius:8px;width:100%;
+}
+.dic-utilities-item:hover{background:var(--canvas);}
+.dic-utilities-item--active{color:var(--accent);}
+
+/* ── Normal/Developer presentation mode toggle (Phase 2 Follow-up) ──── */
+.dic-mode-toggle{display:inline-flex;border:1px solid var(--border);border-radius:999px;padding:2px;background:var(--surface);}
+.dic-mode-btn{
+  appearance:none;cursor:pointer;border:none;background:none;border-radius:999px;
+  font-family:var(--font-sans);font-size:12px;font-weight:700;color:var(--text-faint);padding:6px 14px;
+}
+.dic-mode-btn--active{color:#fff;background:var(--accent);}
+
+/* ── Per-row persisted stage badge (Phase 2 Follow-up) ──────────────── */
+.dic-stage-badge{
+  display:inline-block;font-family:var(--font-mono);font-size:10px;font-weight:700;
+  color:var(--c-blue);background:var(--c-blue-weak);border-radius:999px;padding:2px 8px;
+  vertical-align:middle;margin-left:4px;
+}
+
+/* ── Live pipeline stage checklist (Part 1) ─────────────────────────── */
+.dic-stage-list{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:8px 18px;}
+.dic-stage{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;color:var(--text-faint);}
+.dic-stage-dot{width:8px;height:8px;border-radius:50%;background:var(--border);flex-shrink:0;}
+.dic-stage--done .dic-stage-dot{background:var(--c-green);}
+.dic-stage--done{color:var(--text-dim);}
+.dic-stage--active .dic-stage-dot{background:var(--accent);animation:dic-pulse 1.1s ease-in-out infinite;}
+.dic-stage--active{color:var(--text);}
+
+/* ── Success state + a completed progress bar turns green (Part 4) ── */
+.dic-progress--done .dic-progress-fill{background:var(--c-green);}
+.dic-success{
+  display:flex;align-items:center;gap:10px;padding:14px 16px;border-radius:12px;
+  background:var(--c-green-weak);color:var(--c-green);font-size:13.5px;font-weight:700;
+  margin-bottom:14px;animation:dic-success-in .3s ease-out;
+}
+.dic-success-check{
+  width:24px;height:24px;border-radius:50%;background:var(--c-green);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;
+}
+@keyframes dic-pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.35;transform:scale(1.3);}}
+@keyframes dic-success-in{from{opacity:0;transform:translateY(-4px);}to{opacity:1;transform:translateY(0);}}
+
+/* ── Recent Imports — collapsed, de-emphasized by default (Part 3) ── */
+.dic-recent{border:1px solid var(--border);border-radius:14px;background:var(--surface);padding:4px;}
+.dic-recent summary{
+  cursor:pointer;list-style:none;padding:14px 16px;font-family:var(--font-display);
+  font-weight:800;font-size:13px;color:var(--text-dim);
+}
+.dic-recent summary::-webkit-details-marker{display:none;}
+.dic-recent summary::before{content:'›';display:inline-block;margin-right:8px;transition:transform .15s ease;}
+.dic-recent[open] summary::before{transform:rotate(90deg);}
+.dic-recent-body{padding:0 4px 4px;}
+
 @media (max-width: 640px) {
   .wlk-page-title{font-size:21px;}
   .wlk-tabbar{padding:0 16px;}
+  .dic-dropzone{padding:40px 18px;}
+  .dic-utilities{margin-left:0;}
 }

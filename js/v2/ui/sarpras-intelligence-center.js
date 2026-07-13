@@ -40,8 +40,12 @@
 'use strict';
 
 import { setActiveRepository } from '../knowledge/repository/knowledge-repository.js';
-import { initImportSessionSync, initImportBatchSync } from '../knowledge/services/import-session-service.js';
+import { initImportSessionSync, initImportBatchSync, registerImportSessionChangeListener } from '../knowledge/services/import-session-service.js';
 import { initFileStorageSync } from '../file-storage/file-storage-registry.js';
+// Phase 2.5 Part 3 — make the in-memory knowledge repo a deterministic
+// projection of the persisted Import Sessions, so imported Knowledge
+// survives a refresh (and picks up another tab's RTDB-hydrated sessions).
+import { rehydrateKnowledgeFromSessions } from '../knowledge/datasets/import-session/knowledge-rehydration-engine.js';
 
 const ROADMAP = [
   { label: 'Foundation', tier: 'done' },
@@ -97,8 +101,22 @@ export async function mountSarprasIntelligence(hostEl) {
   // the existing pilot feature gate.
   if (!_persistenceStarted) {
     _persistenceStarted = true;
+    // setActiveRepository('memory') MUST run before any import can create
+    // Knowledge (otherwise a create no-ops against NullRepository while the
+    // session still flips to Knowledge Imported). It runs here, at the
+    // single mount, strictly before any import UI is reachable — the
+    // defensive ordering guarantee.
     setActiveRepository('memory');
-    initImportSessionSync().catch((err) => console.error('[sarpras-intelligence-center] import session sync failed:', err));
+    // Phase 2.5 Part 3 — re-project Knowledge from the persisted sessions
+    // on every remote hydration (idempotent), AND once after the initial
+    // sync resolves. registerImportSessionChangeListener fires on
+    // RTDB-originated snapshots (initial load + other tabs), so this keeps
+    // the knowledge projection in step with the authoritative sessions
+    // without polling.
+    registerImportSessionChangeListener(() => { try { rehydrateKnowledgeFromSessions(); } catch (err) { console.error('[sarpras-intelligence-center] knowledge rehydration failed:', err); } });
+    initImportSessionSync()
+      .then(() => { rehydrateKnowledgeFromSessions(); })
+      .catch((err) => console.error('[sarpras-intelligence-center] import session sync failed:', err));
     initImportBatchSync().catch((err) => console.error('[sarpras-intelligence-center] import batch sync failed:', err));
     initFileStorageSync().catch((err) => console.error('[sarpras-intelligence-center] file storage sync failed:', err));
   }

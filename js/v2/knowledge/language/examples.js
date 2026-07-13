@@ -22,7 +22,7 @@
 'use strict';
 
 export const EXAMPLE_VOCABULARY_ENTRY = Object.freeze({
-  term: 'Nota Organisasi Realisasi',
+  term: 'Nota Organisasi',
   definition: 'A short internal memo authorizing an operational expense.',
   synonyms: Object.freeze([Object.freeze({ term: 'NO', weight: 0.9 })]),
   aliases: Object.freeze([Object.freeze({ term: 'Nota Ops', reason: 'common shorthand' })]),

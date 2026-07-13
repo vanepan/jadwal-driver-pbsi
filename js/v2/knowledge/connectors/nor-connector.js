@@ -2,7 +2,7 @@
    NOR-CONNECTOR.JS — Knowledge Connector (V2, Phase 9)
 
    PURPOSE: the ONE real connector for V2.0.2 — acquires Draft Knowledge
-   from generated NOR (Nota Organisasi Realisasi — the registered label,
+   from generated NOR (Nota Organisasi — the registered label,
    see knowledge/registry/domain-type-registry.js) records. Reads the
    highest-level pre-render representation available
    (js/petty-cash/nor-document-engine.js#buildNorViewModel — "pure data, no

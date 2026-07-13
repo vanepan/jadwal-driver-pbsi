@@ -21,7 +21,7 @@ import { getSourceWeight } from '../js/v2/knowledge/contracts/source-weight-cont
 import { DATASET_TYPE } from '../js/v2/knowledge/datasets/contracts/dataset-contract.js';
 
 import {
-  IMPORT_SESSION_STATE, canTransitionImportSession, isValidImportDecision, IMPORT_SESSION_KIND,
+  IMPORT_SESSION_STATE, canTransitionImportSession, isValidImportDecision, IMPORT_SESSION_KIND, PIPELINE_STAGE,
 } from '../js/v2/knowledge/datasets/import-session/contracts/import-session-contract.js';
 import { resetImportSessionRepository } from '../js/v2/knowledge/datasets/import-session/repository/import-session-repository.js';
 import { validateImportSession, IMPORT_VALIDATION_ERRORS } from '../js/v2/knowledge/datasets/import-session/import-validation-engine.js';
@@ -87,11 +87,17 @@ const created = createImportSession({
 check('createImportSession succeeds at state Uploaded', created.ok && created.data.state === IMPORT_SESSION_STATE.UPLOADED);
 const sessionId = created.data.id;
 
+// Phase 2 Follow-up — pipelineStage is the persisted, source-of-truth
+// progress marker, seeded at creation and advanced by the SAME transition
+// writes (zero new writes).
+check('a created session is seeded at pipelineStage CLASSIFICATION (already fingerprinted+dedup-checked+classified)', created.data.pipelineStage === PIPELINE_STAGE.CLASSIFICATION);
+
 attachManualEntryFacts(sessionId, { value: 'Kepala Sekolah', documentNumber: 'NOR-2026-001', senderOrigin: 'Sarpras' });
 attachDocumentHash(sessionId, 'fnv1a-test-hash');
 
 const submitted = submitImportSessionForReview(sessionId);
 check('submitImportSessionForReview succeeds once facts are attached', submitted.ok && submitted.data.state === IMPORT_SESSION_STATE.PENDING_REVIEW);
+check('reaching Pending Review advances pipelineStage to POLICY_VALIDATION (folded into the existing write)', submitted.data.pipelineStage === PIPELINE_STAGE.POLICY_VALIDATION);
 
 const decision = { approverId: 'evan', decidedAt: new Date().toISOString(), preferenceRationale: 'Verified against the source PDF by hand.' };
 const approved = approveImportSession(sessionId, decision);
@@ -99,6 +105,7 @@ check('approveImportSession succeeds with a valid ImportDecision', approved.ok &
 
 const imported = markKnowledgeImported(sessionId);
 check('markKnowledgeImported succeeds', imported.ok && imported.data.state === IMPORT_SESSION_STATE.KNOWLEDGE_IMPORTED);
+check('markKnowledgeImported advances pipelineStage to KNOWLEDGE_EXTRACTION', imported.data.pipelineStage === PIPELINE_STAGE.KNOWLEDGE_EXTRACTION);
 
 const expectedKnowledgeId = generateKnowledgeId({ domainType: 'nor', sourceType: 'manual-file', sourceRef: sessionId });
 check('markKnowledgeImported records the deterministic knowledgeItemId', imported.data.knowledgeItemId === expectedKnowledgeId);
@@ -110,6 +117,7 @@ check('the manual-file source weight is registered at 0.95', getSourceWeight('ma
 
 const archived = markArchived(sessionId, 'archive:test:1');
 check('markArchived succeeds and records the reference', archived.ok && archived.data.state === IMPORT_SESSION_STATE.ARCHIVED && archived.data.archiveRecordId === 'archive:test:1');
+check('markArchived advances pipelineStage to COMPLETED (terminal)', archived.data.pipelineStage === PIPELINE_STAGE.COMPLETED);
 
 console.log('\n[V2.1 Decision 2 — content-fact gate relocated to markKnowledgeImported]');
 const zeroConfigSession = createImportSession({

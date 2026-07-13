@@ -16,6 +16,12 @@
   import {
     mountSarprasIntelligence, setSarprasIntelligenceScreen, closeSarprasIntelligence,
   } from '../js/v2/ui/sarpras-intelligence-center.js';
+  // Phase 2.5 — test affordance: create a real Draft KnowledgeItem through
+  // the SAME facade + canonical mapping a live import uses, so a DOM test
+  // can verify the event-driven dashboard re-render (Part 3/7) in a real
+  // browser without needing the File/Firebase upload path.
+  import { create as knowledgeCreate } from '../js/v2/knowledge/repository/knowledge-repository.js';
+  import { buildManualFileKnowledgeItem } from '../js/v2/knowledge/connectors/manual-file-connector.js';
 
   const host = document.getElementById('host');
   window.__mount = () => mountSarprasIntelligence(host);
@@ -23,6 +29,9 @@
   window.__close = () => closeSarprasIntelligence();
   window.__hostText = () => host.textContent;
   window.__hostHTML = () => host.innerHTML;
+  window.__createKnowledgeItem = (sessionRef) => knowledgeCreate(buildManualFileKnowledgeItem({
+    importSessionId: sessionRef, domainType: 'nor', kind: 'document_fact', parsedContent: { value: `seed-${sessionRef}` },
+  })).ok;
   window.__ready = true;
 </script>
 </body>

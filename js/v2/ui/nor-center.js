@@ -167,6 +167,12 @@ export async function mountNorCenter(hostEl) {
     // Import Center controller (Part F).
     host.addEventListener('dragover', (e) => { if (e.target.closest && e.target.closest('[data-act="dic-dropzone"]')) e.preventDefault(); });
     host.addEventListener('drop', onDrop);
+    // Phase 2 (Autonomous Learning Pipeline), Part 4 — the dropzone's
+    // ".dic-dropzone--active" visual state existed in CSS since V2.1 but
+    // nothing ever toggled it; wired here the same way dragover/drop
+    // already are.
+    host.addEventListener('dragenter', (e) => { const zone = e.target.closest && e.target.closest('[data-act="dic-dropzone"]'); if (zone) zone.classList.add('dic-dropzone--active'); });
+    host.addEventListener('dragleave', (e) => { const zone = e.target.closest && e.target.closest('[data-act="dic-dropzone"]'); if (zone && (!e.relatedTarget || !zone.contains(e.relatedTarget))) zone.classList.remove('dic-dropzone--active'); });
   }
   ensureImportPipelineLive();
   render();

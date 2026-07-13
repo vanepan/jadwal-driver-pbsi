@@ -26,7 +26,7 @@ const _domainTypes = new Map();
 
 /**
  * @param {string} id     e.g. 'nor'
- * @param {string} label  e.g. 'Nota Organisasi Realisasi'
+ * @param {string} label  e.g. 'Nota Organisasi'
  */
 export function registerDomainType(id, label) {
   if (typeof id !== 'string' || !id) throw new Error('registerDomainType: id must be a non-empty string');
@@ -55,7 +55,12 @@ export function resetDomainTypeRegistry() {
 /* ── bootstrap: the domainTypes named as first-class in the architecture
    doc's Decision 1 — registered as data, not as branches of logic. ────────── */
 function bootstrap() {
-  registerDomainType('nor', 'Nota Organisasi Realisasi');
+  // Phase 2.5 Part 2 — the canonical label for the 'nor' domain is
+  // "Nota Organisasi". The prior "Realisasi" specialization was an
+  // unconditional over-specification (no deterministic evidence ever
+  // derived it); the registry label is the single source every
+  // domainLabel()/getDomainType() consumer reads.
+  registerDomainType('nor', 'Nota Organisasi');
   registerDomainType('memorandum', 'Memorandum');
   registerDomainType('sop', 'Standard Operating Procedure');
   registerDomainType('internal_letter', 'Internal Letter');

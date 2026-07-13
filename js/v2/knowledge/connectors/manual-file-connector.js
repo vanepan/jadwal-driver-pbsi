@@ -65,7 +65,15 @@ export const manualFileSource = makeSource({
   representation: SOURCE_REPRESENTATION.HUMAN_CORRECTION,
 });
 
-function toKnowledgeItem(entry) {
+/**
+ * The ONE canonical mapping from a queued manual entry to its Draft
+ * KnowledgeItem. Exported (Phase 2.5) so the session→knowledge rehydration
+ * projection can reconstruct the EXACT same item shape from a persisted
+ * Import Session after a refresh, rather than duplicating this mapping —
+ * keeping the KnowledgeItem's shape defined in exactly one place.
+ * @param {{importSessionId: string, domainType: string, kind: string, facts?: Object|null, parsedContent?: Object|null}} entry
+ */
+export function buildManualFileKnowledgeItem(entry) {
   const now = new Date().toISOString();
   const payload = entry.parsedContent && typeof entry.parsedContent === 'object'
     ? { ...entry.parsedContent, normalization: NORMALIZATION }
@@ -86,6 +94,10 @@ function toKnowledgeItem(entry) {
     createdAt: now,
     updatedAt: now,
   });
+}
+
+function toKnowledgeItem(entry) {
+  return buildManualFileKnowledgeItem(entry);
 }
 
 /** `since` is accepted for contract-shape parity with every other

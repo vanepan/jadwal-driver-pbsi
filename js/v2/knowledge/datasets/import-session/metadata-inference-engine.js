@@ -40,6 +40,12 @@ import { listKinds } from '../../registry/kind-registry.js';
 import { DATASET_TYPE } from '../contracts/dataset-contract.js';
 import { computePatternRecommendations } from '../../services/pattern-discovery-service.js';
 import { hasStoredFile, getStoredFileBySha256 } from '../../../file-storage/file-storage-registry.js';
+// Phase 2 Follow-up — the real deterministic confidence engine that
+// replaces the old Math.min() placeholder. See its header for the
+// availability rule and the two honest gaps.
+import { computeImportConfidence } from './import-confidence-engine.js';
+import { listOverrides } from '../../profiles/overrides/profile-override-engine.js';
+import { LIFECYCLE_STATE } from '../../contracts/lifecycle-contract.js';
 
 /** The one threshold deciding "auto-populate" vs "fall back to Advanced
  *  Metadata" — defined once, read by both this engine's callers and the
@@ -84,12 +90,50 @@ function bestLabelMatch(tokens, candidates) {
   return best;
 }
 
-/**
- * Infers administrative metadata ONLY — never the document's content.
- * @param {{filename: string, mimeType: string, sizeBytes: number, folderPath?: string, sha256?: string|null, scopedDomainType?: string|null}} input
- */
-export function inferMetadata({ filename, mimeType, sizeBytes, folderPath = '', sha256 = null, scopedDomainType = null }) {
+/** Max Pattern Discovery support count among patterns whose value tokens
+ *  match the filename — the real historical-similarity evidence, reusing
+ *  the existing engine unchanged. 0 when there is no precedent. */
+function historicalSupportFor(domainValue, filename, folderPath) {
+  if (!domainValue) return 0;
+  let max = 0;
   const tokens = [...tokenize(filename), ...tokenize(folderPath)];
+  for (const r of computePatternRecommendations(domainValue)) {
+    const valueTokens = tokenize(r.value);
+    if (valueTokens.some((vt) => tokens.includes(vt)) && r.evidence && typeof r.evidence.supportCount === 'number') {
+      if (r.evidence.supportCount > max) max = r.evidence.supportCount;
+    }
+  }
+  return max;
+}
+
+/** Real count of approved Profile Overrides for the domain — feeds the
+ *  honest (non-scoring) policyMatch rationale. 0 (the norm today) means
+ *  "no policy to match against". */
+function approvedOverrideCountFor(domainValue) {
+  if (!domainValue) return 0;
+  const result = listOverrides({ domainType: domainValue, lifecycleState: LIFECYCLE_STATE.APPROVED });
+  return result.ok ? result.data.length : 0;
+}
+
+/**
+ * Infers administrative metadata ONLY — never the document's content
+ * (except reading an already-parsed JSON object the caller passes in, for
+ * the confidence engine's structure/content signals — still no OCR/parse
+ * of PDF/DOCX). `parsedContent`/`kind` are optional so every existing
+ * caller keeps working; when omitted, the JSON-only confidence signals are
+ * simply reported unavailable (honest, neutral).
+ * @param {{filename: string, mimeType: string, sizeBytes: number, folderPath?: string, sha256?: string|null, scopedDomainType?: string|null, kind?: string|null, parsedContent?: Object|null}} input
+ */
+export function inferMetadata({ filename, mimeType, sizeBytes, folderPath = '', sha256 = null, scopedDomainType = null, kind = null, parsedContent = null }) {
+  const tokens = [...tokenize(filename), ...tokenize(folderPath)];
+
+  // rawMatch tracks the ACTUAL filename-token evidence per field (0 when a
+  // default/scoped value was used) — kept separate from the field's final
+  // confidence, so the confidence engine can weigh real filename evidence
+  // without a scoped/default value masquerading as filename similarity.
+  const rawMatch = { domainType: 0, datasetType: 0, knowledgeKind: 0 };
+  // fieldResolution: 1 = matched real evidence, 0.65 = sensible default, 0 = unresolved.
+  const fieldResolution = { domainType: 0, datasetType: 0, knowledgeKind: 0 };
 
   const domainType = scopedDomainType
     ? { value: scopedDomainType, confidence: 1, rationale: 'Domain terkunci oleh workspace ini.' }
@@ -99,6 +143,12 @@ export function inferMetadata({ filename, mimeType, sizeBytes, folderPath = '', 
         ? { value: match.id, confidence: match.confidence, rationale: match.rationale }
         : { value: null, confidence: 0, rationale: 'Tidak ada token nama file/folder yang cocok dengan domain terdaftar.' };
     })();
+  if (scopedDomainType) {
+    fieldResolution.domainType = 1; // a locked domain is a known-good resolution (just not filename-derived, so rawMatch stays 0)
+  } else if (domainType.value) {
+    rawMatch.domainType = domainType.confidence;
+    fieldResolution.domainType = 1;
+  }
 
   // Defaults deliberately sit ABOVE the auto-populate threshold: "Official"
   // is the sane default for most real document uploads, and
@@ -111,19 +161,38 @@ export function inferMetadata({ filename, mimeType, sizeBytes, folderPath = '', 
   const datasetType = datasetTypeMatch
     ? { value: datasetTypeMatch.id, confidence: Math.max(datasetTypeMatch.confidence, 0.7), rationale: datasetTypeMatch.rationale }
     : { value: DATASET_TYPE.OFFICIAL, confidence: 0.65, rationale: 'Default: official — tidak ada token yang menunjukkan tipe dataset lain.' };
+  if (datasetTypeMatch) { rawMatch.datasetType = datasetTypeMatch.confidence; fieldResolution.datasetType = 1; } else { fieldResolution.datasetType = 0.65; }
 
   const kindMatch = bestLabelMatch(tokens, listKinds());
   const knowledgeKind = kindMatch
     ? { value: kindMatch.id, confidence: kindMatch.confidence, rationale: kindMatch.rationale }
     : { value: 'document_fact', confidence: 0.65, rationale: 'Default: document_fact — tidak ada token yang menunjukkan kind spesifik.' };
+  if (kindMatch) { rawMatch.knowledgeKind = kindMatch.confidence; fieldResolution.knowledgeKind = 1; } else { fieldResolution.knowledgeKind = 0.65; }
 
   const duplicate = sha256 && hasStoredFile(sha256)
     ? { isDuplicate: true, existingRecord: getStoredFileBySha256(sha256) }
     : { isDuplicate: false, existingRecord: null };
 
+  // Phase 2 Follow-up — the real, deterministic, explainable confidence
+  // (replaces the old Math.min() placeholder). Every repository read
+  // happens HERE (pattern discovery, profile overrides); the engine itself
+  // stays a pure function of the assembled evidence.
+  const confidenceReport = computeImportConfidence({
+    filenameMatch: rawMatch,
+    fieldResolution,
+    isDuplicate: duplicate.isDuplicate,
+    kind,
+    parsedContent,
+    historicalSupport: historicalSupportFor(domainType.value, filename, folderPath),
+    approvedOverrideCount: approvedOverrideCountFor(domainType.value),
+  });
+
   return {
     domainType, datasetType, knowledgeKind, duplicate,
-    overallConfidence: Math.min(domainType.confidence, datasetType.confidence, knowledgeKind.confidence),
+    // overallConfidence is now the confidence engine's real weighted score
+    // (the auto-populate/auto-import thresholds read this, unchanged).
+    overallConfidence: confidenceReport.score,
+    confidenceReport,
   };
 }
 

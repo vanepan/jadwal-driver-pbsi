@@ -92,11 +92,13 @@ check('isRecommendationEvidence rejects a missing rationale', !isRecommendationE
   confidence: 0.8, generatedAt: new Date().toISOString(),
 }));
 
-console.log('\n[Domain-type-registry — NOR label fix]');
-check('getDomainType("nor").label is now "Nota Organisasi Realisasi"', getDomainType('nor').label === 'Nota Organisasi Realisasi');
-check('the stale label is gone', getDomainType('nor').label !== 'Nota Operasional Reimbursement');
+console.log('\n[Domain-type-registry — NOR label]');
+// Phase 2.5 Part 2 — the canonical NOR label is "Nota Organisasi" (the
+// prior "...Realisasi" was an unconditional over-specification).
+check('getDomainType("nor").label is "Nota Organisasi"', getDomainType('nor').label === 'Nota Organisasi');
+check('the over-specified "Realisasi" label is gone', getDomainType('nor').label !== 'Nota Organisasi Realisasi');
 resetDomainTypeRegistry();
-check('resetDomainTypeRegistry() re-bootstraps the corrected label, not the old one', getDomainType('nor').label === 'Nota Organisasi Realisasi');
+check('resetDomainTypeRegistry() re-bootstraps the corrected label', getDomainType('nor').label === 'Nota Organisasi');
 
 console.log('\n[KnowledgeGraph — fixture: A<-B corroborates, A<-C supersedes, C<-D corroborates]');
 const A = makeItem('nor', 'oktest', 'graph-a');

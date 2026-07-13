@@ -38,7 +38,7 @@
 'use strict';
 
 import {
-  IMPORT_SESSION_STATE, makeImportSessionRecord, isValidImportDecision, canTransitionImportSession,
+  IMPORT_SESSION_STATE, PIPELINE_STAGE, makeImportSessionRecord, isValidImportDecision, canTransitionImportSession,
 } from './contracts/import-session-contract.js';
 import {
   create as repoCreate, appendVersion as repoAppendVersion, getById as repoGetById,
@@ -151,7 +151,10 @@ export function submitImportSessionForReview(id, opts = {}) {
     repoAppendVersion(id, { validationErrors: errors, validationWarnings: warnings });
     return failure(IMPORT_SESSION_ENGINE_ERRORS.VALIDATION_FAILED, `Import session "${id}" has ${errors.length} validation error(s) — blocked from review.`);
   }
-  return repoAppendVersion(id, { state: IMPORT_SESSION_STATE.PENDING_REVIEW, validationErrors: errors, validationWarnings: warnings });
+  // Phase 2 Follow-up — pipelineStage rides this EXISTING appendVersion
+  // write (zero new writes, D1): reaching Pending Review means Dataset
+  // Validation (the "Policy Validation" step) has run.
+  return repoAppendVersion(id, { state: IMPORT_SESSION_STATE.PENDING_REVIEW, pipelineStage: PIPELINE_STAGE.POLICY_VALIDATION, validationErrors: errors, validationWarnings: warnings });
 }
 
 export function approveImportSession(id, importDecision) {
@@ -241,6 +244,7 @@ export function markKnowledgeImported(id, opts = {}) {
 
   return repoAppendVersion(id, {
     state: IMPORT_SESSION_STATE.KNOWLEDGE_IMPORTED,
+    pipelineStage: PIPELINE_STAGE.KNOWLEDGE_EXTRACTION, // Phase 2 Follow-up — folded into this existing write
     importReport: importResult.report,
     knowledgeItemId,
   });
@@ -257,9 +261,17 @@ export function markArchived(id, archiveRecordId) {
   if (current.data.state !== IMPORT_SESSION_STATE.KNOWLEDGE_IMPORTED) {
     return failure(IMPORT_SESSION_ENGINE_ERRORS.NOT_KNOWLEDGE_IMPORTED, `Import session "${id}" must be Knowledge Imported before it can be Archived (current: "${current.data.state}").`);
   }
-  return repoAppendVersion(id, { state: IMPORT_SESSION_STATE.ARCHIVED, archiveRecordId });
+  // Phase 2 Follow-up — the terminal stage. Learning (the passive Pattern
+  // Discovery / Knowledge Graph recompute) is instantaneous and needs no
+  // resting stage of its own, so it folds into this final write.
+  return repoAppendVersion(id, { state: IMPORT_SESSION_STATE.ARCHIVED, pipelineStage: PIPELINE_STAGE.COMPLETED, archiveRecordId });
 }
 
 export function getImportSession(id) { return repoGetById(id); }
 export function listImportSessions(filter = {}) { return repoList(filter); }
 export function getImportSessionHistory(id) { return repoGetHistory(id); }
+
+// Phase 2 Follow-up — re-exported so callers reading the engine's surface
+// (UI, check scripts) get the pipeline-stage vocabulary from the same
+// import as the transition functions that advance it.
+export { PIPELINE_STAGE };

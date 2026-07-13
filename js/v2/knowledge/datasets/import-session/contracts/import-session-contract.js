@@ -124,6 +124,34 @@ export const IMPORT_SESSION_KIND = Object.freeze({
   SYNTHETIC: 'synthetic',
 });
 
+/** Phase 2 Follow-up — the SINGLE source of truth for pipeline progress.
+ *  A persisted, RTDB-backed annotation on the session (never a transient
+ *  local UI callback), so progress survives refresh/reconnection/restart/
+ *  multi-tab exactly like every other session field. This is a progress
+ *  MARKER orthogonal to the 5-state IMPORT_SESSION_STATE lifecycle — it
+ *  never gates a transition and appendVersion never legality-checks it.
+ *  These are the seven real, deterministic steps a file passes through
+ *  (see js/v2/ui/dataset-import-center.js#processOneFile); Normal-mode UI
+ *  collapses them to five friendly labels, Developer-mode shows all seven
+ *  — one truth, two vocabularies (never a second stage concept). */
+export const PIPELINE_STAGE = Object.freeze({
+  FINGERPRINTING: 'fingerprinting',
+  DEDUPLICATION: 'deduplication',
+  CLASSIFICATION: 'classification',
+  POLICY_VALIDATION: 'policy_validation',
+  KNOWLEDGE_EXTRACTION: 'knowledge_extraction',
+  LEARNING: 'learning',
+  COMPLETED: 'completed',
+});
+
+/** Ordered, so a caller can compute "how far has this session got" as an
+ *  index without hardcoding the sequence in two places. */
+export const PIPELINE_STAGE_ORDER = Object.freeze([
+  PIPELINE_STAGE.FINGERPRINTING, PIPELINE_STAGE.DEDUPLICATION, PIPELINE_STAGE.CLASSIFICATION,
+  PIPELINE_STAGE.POLICY_VALIDATION, PIPELINE_STAGE.KNOWLEDGE_EXTRACTION, PIPELINE_STAGE.LEARNING,
+  PIPELINE_STAGE.COMPLETED,
+]);
+
 /**
  * @typedef {Object} ImportSessionRecord
  * @property {string} id                 - deterministic, `import-session:<domainType>:<counter>`
@@ -146,6 +174,7 @@ export const IMPORT_SESSION_KIND = Object.freeze({
  * @property {number|null} confidence    - V2.1.2: the real inferMetadata() overallConfidence at creation time, persisted (previously only ever transient batch-processing state) — drives both the Advanced Metadata prompt and the auto-import decision, and is shown honestly in Review/Session Viewer
  * @property {Object|null} confidenceRationale - V2.1.2: per-field {domainType, datasetType, knowledgeKind} rationale strings from the same inference call, for explainability (Part K "every review item must display... supporting evidence")
  * @property {boolean} autoImported      - V2.1.2: true if this session's confidence cleared AUTO_IMPORT_CONFIDENCE_THRESHOLD and it was walked through Approve->Knowledge Imported->Archived without a manual click
+ * @property {string} pipelineStage      - Phase 2 Follow-up: one of PIPELINE_STAGE — the persisted, RTDB-backed progress marker (source of truth for the live pipeline display; never derived from a transient callback). Defaults to CLASSIFICATION at creation (fingerprint+dedup+classify all complete before a session record exists), advanced by the engine's existing transition writes (submit->POLICY_VALIDATION, markKnowledgeImported->KNOWLEDGE_EXTRACTION, markArchived->COMPLETED) — folded into those writes, never a separate write
  * @property {string|null} batchId       - V2.1.2: the ImportBatchRecord.id this session was created as part of (Part M "Import Batch" metadata link) — null only for a session created outside a batch (should not happen via the UI, kept nullable for contract honesty)
  * @property {Object[]} validationWarnings
  * @property {Object[]} validationErrors
@@ -166,6 +195,12 @@ export function makeImportSessionRecord({ id, domainType, datasetType, filename,
   return Object.freeze({
     id, version: 1, domainType, datasetType, filename, mimeType, sizeBytes, kind, knowledgeKind,
     state: IMPORT_SESSION_STATE.UPLOADED,
+    // Phase 2 Follow-up — a session that exists in the repository has, by
+    // construction, already been fingerprinted, dedup-checked and
+    // classified (all synchronous, before createImportSession runs), so
+    // CLASSIFICATION is the honest starting stage; earlier stages are
+    // pre-session and instantaneous.
+    pipelineStage: PIPELINE_STAGE.CLASSIFICATION,
     datasetId,
     batchId,
     manualEntryFacts: null,

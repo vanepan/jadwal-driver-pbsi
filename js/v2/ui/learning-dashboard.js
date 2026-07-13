@@ -31,6 +31,7 @@ import { listCorrectionLog } from '../knowledge/learning/correction-pipeline-eng
 import { computeHealthReport } from '../knowledge/metrics/knowledge-metrics-engine.js';
 import {
   list as knowledgeList, getById as knowledgeGetById, getHistory as knowledgeGetHistory, getMetrics as knowledgeGetMetrics,
+  registerRepositoryListener,
 } from '../knowledge/repository/knowledge-repository.js';
 import { LIFECYCLE_STATE } from '../knowledge/contracts/lifecycle-contract.js';
 import { listDomainTypes, getDomainType } from '../knowledge/registry/domain-type-registry.js';
@@ -61,6 +62,18 @@ let host = null;
 let contentEl = null;
 let mounted = false;
 
+/* ── Phase 2.5 Part 3+7 — event-driven synchronization ──────────────
+   Subscribe to the knowledge repository's Repository Events so the
+   draft-aware tiles (Knowledge Created, Datasets Imported, Growth,
+   Distribution) update live when an import or a rehydration creates
+   knowledge — instead of showing a stale first-visit snapshot. Coalesced
+   to O(1) redraws per burst; deterministic, never polling. */
+let _renderTimer = null;
+function scheduleRender() {
+  if (_renderTimer) return;
+  _renderTimer = setTimeout(() => { _renderTimer = null; render(); }, 100);
+}
+
 /* ── mount / teardown ─────────────────────────────────────────────── */
 
 export async function mountLearningDashboard(hostEl) {
@@ -72,6 +85,7 @@ export async function mountLearningDashboard(hostEl) {
     host.innerHTML = renderTabShell(SECTIONS, st.section, { ariaLabel: 'Learning Dashboard' });
     contentEl = host.querySelector('.wlk-content');
     host.addEventListener('click', onClick);
+    registerRepositoryListener(scheduleRender);
   }
   render();
 }

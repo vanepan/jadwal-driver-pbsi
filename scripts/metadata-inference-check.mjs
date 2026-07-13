@@ -49,8 +49,14 @@ const ruleFile = inferMetadata({ filename: 'rule-no-weekend-approval.pdf', mimeT
 check('a filename token matching a registered kind infers it', ruleFile.knowledgeKind.value === 'rule' && ruleFile.knowledgeKind.confidence > 0);
 check('an unmatched filename defaults knowledgeKind to document_fact (honest, above-threshold default)', noMatch.knowledgeKind.value === 'document_fact' && noMatch.knowledgeKind.confidence === 0.65);
 
-console.log('\n[inferMetadata — overallConfidence + duplicate history]');
-check('overallConfidence is the minimum of the three field confidences', scoped.overallConfidence === Math.min(scoped.domainType.confidence, scoped.datasetType.confidence, scoped.knowledgeKind.confidence));
+console.log('\n[inferMetadata — overallConfidence (deterministic confidence engine) + duplicate history]');
+// Phase 2 Follow-up — overallConfidence is now the real weighted confidence
+// engine's score (NOT the old Math.min placeholder), and it carries an
+// explainable per-signal breakdown.
+check('overallConfidence is a real 0..1 score from the confidence engine', typeof scoped.overallConfidence === 'number' && scoped.overallConfidence >= 0 && scoped.overallConfidence <= 1);
+check('inferMetadata now returns a confidenceReport with a level and a non-empty signals array', !!scoped.confidenceReport && ['low', 'medium', 'high'].includes(scoped.confidenceReport.level) && Array.isArray(scoped.confidenceReport.signals) && scoped.confidenceReport.signals.length > 0);
+check('the confidence score is NOT constant — a rich JSON differs from a bare scoped PDF', synthetic.overallConfidence !== inferMetadata({ filename: 'scan001.pdf', mimeType: 'application/pdf', sizeBytes: 100, scopedDomainType: 'nor' }).overallConfidence);
+check('the two honest-gap signals (policyMatch, knowledgeGraphEvidence) are present and reported unavailable, never fabricated', ['policyMatch', 'knowledgeGraphEvidence'].every((id) => { const sig = scoped.confidenceReport.signals.find((x) => x.id === id); return sig && sig.available === false; }));
 check('a brand-new file is not flagged as duplicate', scoped.duplicate.isDuplicate === false);
 
 const sha256Fixture = 'a'.repeat(64);

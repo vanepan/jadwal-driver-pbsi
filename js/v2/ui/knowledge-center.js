@@ -22,7 +22,10 @@
 
 'use strict';
 
-import { list as knowledgeList, getById as knowledgeGetById, getHistory as knowledgeGetHistory } from '../knowledge/repository/knowledge-repository.js';
+import {
+  list as knowledgeList, getById as knowledgeGetById, getHistory as knowledgeGetHistory,
+  registerRepositoryListener,
+} from '../knowledge/repository/knowledge-repository.js';
 import { LIFECYCLE_STATE, LIFECYCLE_STATE_DEFS } from '../knowledge/contracts/lifecycle-contract.js';
 import { listDomainTypes, getDomainType } from '../knowledge/registry/domain-type-registry.js';
 import { listKinds } from '../knowledge/registry/kind-registry.js';
@@ -60,6 +63,20 @@ let host = null;
 let contentEl = null;
 let mounted = false;
 
+/* ── Phase 2.5 Part 3+7 — event-driven synchronization ──────────────
+   Subscribe to the knowledge repository's Repository Events (fired once
+   per create/appendVersion/rollback on the facade). A live import or a
+   rehydration-from-sessions creates Draft KnowledgeItems -> this fires ->
+   Knowledge Center re-renders, so it never shows a stale first-visit
+   snapshot. Coalesced (a single scheduled render per 100ms burst) so a
+   bulk import's N writes trigger O(1) redraws, not N — preserving O(N).
+   Deterministic and event-triggered, never polling. */
+let _renderTimer = null;
+function scheduleRender() {
+  if (_renderTimer) return;
+  _renderTimer = setTimeout(() => { _renderTimer = null; render(); }, 100);
+}
+
 /* ── mount / teardown ─────────────────────────────────────────────── */
 
 export async function mountKnowledgeCenter(hostEl) {
@@ -71,6 +88,7 @@ export async function mountKnowledgeCenter(hostEl) {
     host.innerHTML = renderTabShell(SECTIONS, st.section, { ariaLabel: 'Knowledge Center' });
     contentEl = host.querySelector('.wlk-content');
     host.addEventListener('click', onClick);
+    registerRepositoryListener(scheduleRender);
   }
   render();
 }
