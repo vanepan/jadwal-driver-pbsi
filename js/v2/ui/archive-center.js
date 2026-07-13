@@ -53,7 +53,11 @@ import {
   renderFilterBar, renderSearchBox, renderDetailSection, renderKvList,
   renderDetail, renderDiffTable, deriveRejectedFromCandidateQueue, formatFileSize,
 } from './shared/workspace-list-kit.js';
-import { createDatasetImportController } from './dataset-import-center.js';
+import { createDatasetImportController, reviewReasons } from './dataset-import-center.js';
+import {
+  registerImportSessionChangeListener, registerImportBatchChangeListener,
+} from '../knowledge/services/import-session-service.js';
+import { registerChangeListener as registerFileStorageChangeListener } from '../file-storage/file-storage-registry.js';
 
 const SECTIONS = [
   { id: 'dashboard', label: 'Dashboard' },
@@ -91,6 +95,22 @@ const st = {
 let host = null;
 let contentEl = null;
 let mounted = false;
+let importPipelineLiveStarted = false;
+
+/** Phase 1 (Operational Engine Hardening) — cross-tab realtime sync,
+ *  mirroring nor-center.js's ensureImportPipelineLive() exactly. The
+ *  underlying RTDB sync is already started once, unconditionally, by
+ *  sarpras-intelligence-center.js's mount; this only registers the
+ *  re-render hook so a change made in another browser tab is reflected
+ *  here without a manual refresh. Guarded so it only ever runs once. */
+function ensureImportPipelineLive() {
+  if (importPipelineLiveStarted) return;
+  importPipelineLiveStarted = true;
+  const onRemoteChange = () => { if (st.section === 'dashboard' || st.section === 'import') render(); };
+  registerImportSessionChangeListener(onRemoteChange);
+  registerImportBatchChangeListener(onRemoteChange);
+  registerFileStorageChangeListener(onRemoteChange);
+}
 
 /* ── mount / teardown ─────────────────────────────────────────────── */
 
@@ -110,6 +130,7 @@ export async function mountArchiveCenter(hostEl) {
     host.addEventListener('dragover', (e) => { if (e.target.closest && e.target.closest('[data-act="dic-dropzone"]')) e.preventDefault(); });
     host.addEventListener('drop', onDrop);
   }
+  ensureImportPipelineLive();
   render();
 }
 
@@ -212,7 +233,12 @@ function computeOperationalStats() {
   const paused = batches.filter((b) => b.status === BATCH_STATUS.PAUSED).length;
   const completed = batches.filter((b) => b.status === BATCH_STATUS.COMPLETED).length;
   const queued = sessions.filter((s) => s.state === IMPORT_SESSION_STATE.UPLOADED).length;
-  const failed = sessions.filter((s) => (s.validationErrors || []).length > 0).length;
+  // Phase 1 (Operational Engine Hardening) — reuses the SAME exception
+  // logic the Dataset Import Center's own "Perlu Perhatian" filter uses
+  // (Low Confidence / Duplicate Ambiguity / Unsupported Format / Missing
+  // Content Facts), not a narrower re-derived count. Previously this only
+  // counted hard validationErrors, disagreeing with the Queue's own filter.
+  const needsAttention = sessions.filter((s) => reviewReasons(s).length > 0).length;
   const knowledgeProduced = sessions.filter((s) => !!s.knowledgeItemId).length;
   const storageConsumedBytes = storedFiles.reduce((n, f) => n + (f.sizeBytes || 0), 0);
   // Duplicate Savings — real bytes NOT re-uploaded thanks to dedup: every
@@ -220,7 +246,7 @@ function computeOperationalStats() {
   // that was skipped because the content already existed.
   const duplicateSavingsBytes = storedFiles.reduce((n, f) => n + Math.max(0, f.linkedSessionIds.length - 1) * (f.sizeBytes || 0), 0);
 
-  return { processing, queued, paused, failed, completed, knowledgeProduced, storageConsumedBytes, duplicateSavingsBytes };
+  return { processing, queued, paused, needsAttention, completed, knowledgeProduced, storageConsumedBytes, duplicateSavingsBytes };
 }
 
 function renderDashboardSection() {
@@ -242,7 +268,7 @@ function renderDashboardSection() {
           { count: ops.processing, label: 'Processing Uploads' },
           { count: ops.queued, label: 'Queued Uploads' },
           { count: ops.paused, label: 'Paused Uploads' },
-          { count: ops.failed, label: 'Failed Uploads' },
+          { count: ops.needsAttention, label: 'Perlu Perhatian' },
           { count: ops.completed, label: 'Completed Uploads' },
           { count: ops.knowledgeProduced, label: 'Knowledge Produced' },
           { count: formatFileSize(ops.storageConsumedBytes), label: 'Storage Consumed' },

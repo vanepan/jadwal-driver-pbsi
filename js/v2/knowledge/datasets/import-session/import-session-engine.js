@@ -181,6 +181,19 @@ export function rejectImportSession(id, importDecision) {
 }
 
 /**
+ * Whether `session` carries real, human-verified content — a human-typed
+ * fact (PDF/DOCX) or genuinely parsed JSON content, never fabricated.
+ * Exported (Phase 1) so the exception-based review UI can surface a
+ * session stuck on this exact gate instead of re-deriving the check.
+ * @param {object} session
+ */
+export function hasContentFacts(session) {
+  return session.kind === 'json'
+    ? !!session.parsedContent && Object.keys(session.parsedContent).length > 0
+    : !!session.manualEntryFacts && Object.keys(session.manualEntryFacts).length > 0;
+}
+
+/**
  * Approved -> Knowledge Imported. Reuses dataset-import-service.js#
  * importDataset() completely unchanged.
  * @param {string} id
@@ -198,10 +211,7 @@ export function markKnowledgeImported(id, opts = {}) {
   // upload can reach Approved on administrative metadata alone, but
   // reaching real Knowledge still requires either a human-typed fact
   // (PDF/DOCX) or genuinely parsed JSON content — never fabricated.
-  const hasContentFacts = session.kind === 'json'
-    ? !!session.parsedContent && Object.keys(session.parsedContent).length > 0
-    : !!session.manualEntryFacts && Object.keys(session.manualEntryFacts).length > 0;
-  if (!hasContentFacts) {
+  if (!hasContentFacts(session)) {
     return failure('MISSING_CONTENT_FACTS', `Import session "${id}" has no human-verified content yet — attach manual-entry facts (or JSON content) via Advanced Metadata before it can become Knowledge.`);
   }
 

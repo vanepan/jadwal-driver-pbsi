@@ -80,12 +80,26 @@ let _syncStarted = false;
 let _hydrateTimer = null;
 let _pendingRawSnapshot = undefined;
 
+// Cross-tab live wiring — same shape as js/petty-cash/petty-cash-store.js's
+// registerChangeListener/notify. Only fired from applyRemoteSnapshot()
+// (remote-originated changes), never from local create()/appendVersion(),
+// since a local write is already reflected synchronously by the caller's
+// own render()/rerender() in the same tick — firing here too would just
+// re-render redundantly on every one of a 5000-file batch's local writes.
+const _changeListeners = [];
+export function registerChangeListener(cb) { if (typeof cb === 'function') _changeListeners.push(cb); }
+function notifyChange() {
+  _changeListeners.forEach((cb) => { try { cb(); } catch (e) { console.error('[import-session-repository] listener error', e); } });
+}
+
 function applyRemoteSnapshot(raw) {
   _store.clear();
-  if (!raw) return;
-  for (const [id, versions] of Object.entries(raw)) {
-    if (Array.isArray(versions) && versions.length) _store.set(id, versions);
+  if (raw) {
+    for (const [id, versions] of Object.entries(raw)) {
+      if (Array.isArray(versions) && versions.length) _store.set(id, versions);
+    }
   }
+  notifyChange();
 }
 
 function scheduleHydrate(raw) {

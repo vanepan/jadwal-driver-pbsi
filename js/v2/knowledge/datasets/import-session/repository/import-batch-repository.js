@@ -55,12 +55,22 @@ let _syncStarted = false;
 let _hydrateTimer = null;
 let _pendingRawSnapshot = undefined;
 
+// Cross-tab live wiring — see import-session-repository.js's identical
+// comment for why notify() only fires from applyRemoteSnapshot().
+const _changeListeners = [];
+export function registerChangeListener(cb) { if (typeof cb === 'function') _changeListeners.push(cb); }
+function notifyChange() {
+  _changeListeners.forEach((cb) => { try { cb(); } catch (e) { console.error('[import-batch-repository] listener error', e); } });
+}
+
 function applyRemoteSnapshot(raw) {
   _store.clear();
-  if (!raw) return;
-  for (const [id, versions] of Object.entries(raw)) {
-    if (Array.isArray(versions) && versions.length) _store.set(id, versions);
+  if (raw) {
+    for (const [id, versions] of Object.entries(raw)) {
+      if (Array.isArray(versions) && versions.length) _store.set(id, versions);
+    }
   }
+  notifyChange();
 }
 
 function scheduleHydrate(raw) {

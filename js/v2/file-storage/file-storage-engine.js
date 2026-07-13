@@ -32,6 +32,7 @@
 import { computeSha256 } from './file-hash.js';
 import { getStoredFileBySha256, registerStoredFile, linkSessionToStoredFile } from './file-storage-registry.js';
 import { makeStoredFileRecord } from './contracts/file-storage-contract.js';
+import { withRetryAsync } from './retry-with-backoff.js';
 import { uploadFileToStorage } from '../../firebase.js';
 
 export { computeSha256 };
@@ -57,7 +58,11 @@ export async function uploadFile(file, { domainType, importSessionId }) {
     return { ok: true, record: linked, wasDuplicate: true, sha256, error: null };
   }
 
-  const uploadResult = await uploadFileToStorage(storagePathFor(domainType, sha256), file);
+  // Phase 1 (Operational Engine Hardening) — a network hiccup uploading to
+  // Storage is exactly the kind of transient failure the engine should
+  // recover from on its own; 3 attempts (~300ms/900ms backoff) before
+  // this becomes a real, honestly-reported failure the caller must handle.
+  const uploadResult = await withRetryAsync(() => uploadFileToStorage(storagePathFor(domainType, sha256), file));
   if (!uploadResult.ok) {
     return { ok: false, record: null, wasDuplicate: false, sha256, error: uploadResult.error };
   }

@@ -28,7 +28,7 @@ import { validateImportSession, IMPORT_VALIDATION_ERRORS } from '../js/v2/knowle
 import {
   createImportSession, attachManualEntryFacts, attachDocumentHash, submitImportSessionForReview,
   approveImportSession, rejectImportSession, markKnowledgeImported, markArchived, getImportSession,
-  updateSessionMetadata,
+  updateSessionMetadata, hasContentFacts,
 } from '../js/v2/knowledge/datasets/import-session/import-session-engine.js';
 
 let pass = 0, fail = 0;
@@ -127,6 +127,12 @@ check('markKnowledgeImported correctly BLOCKS without content facts', zcBlocked.
 attachManualEntryFacts(zcId, { value: 'Filled in via Advanced Metadata.' });
 const zcRetry = markKnowledgeImported(zcId);
 check('after Advanced Metadata fills the facts, markKnowledgeImported succeeds', zcRetry.ok && zcRetry.data.state === IMPORT_SESSION_STATE.KNOWLEDGE_IMPORTED);
+
+console.log('\n[Phase 1 — hasContentFacts() exported and matches markKnowledgeImported\'s own gate]');
+check('hasContentFacts is false for a PDF session with no facts yet (same session that was blocked above)', hasContentFacts({ kind: IMPORT_SESSION_KIND.PDF, manualEntryFacts: null, parsedContent: null }) === false);
+check('hasContentFacts is true once manualEntryFacts exists (mirrors the successful retry above)', hasContentFacts({ kind: IMPORT_SESSION_KIND.PDF, manualEntryFacts: { value: 'x' }, parsedContent: null }) === true);
+check('hasContentFacts for a JSON-kind session checks parsedContent, not manualEntryFacts', hasContentFacts({ kind: IMPORT_SESSION_KIND.JSON, manualEntryFacts: null, parsedContent: { a: 1 } }) === true);
+check('hasContentFacts is false for a JSON-kind session with an empty parsedContent object', hasContentFacts({ kind: IMPORT_SESSION_KIND.JSON, manualEntryFacts: null, parsedContent: {} }) === false);
 
 console.log('\n[Reject edge — Pending Review -> Uploaded]');
 const created2 = createImportSession({

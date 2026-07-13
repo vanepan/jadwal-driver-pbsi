@@ -57,6 +57,7 @@ import {
   attachInferenceResult, markAutoImported,
   updateSessionMetadata, submitImportSessionForReview, approveImportSession, rejectImportSession,
   markKnowledgeImported, markArchived, getImportSession, listImportSessions, getImportSessionHistory,
+  hasContentFacts,
 } from '../knowledge/datasets/import-session/import-session-engine.js';
 import {
   inferMetadata, inferPatternAssisted, AUTO_POPULATE_CONFIDENCE_THRESHOLD, AUTO_IMPORT_CONFIDENCE_THRESHOLD,
@@ -139,6 +140,56 @@ function fileKind(mimeType) {
  * @param {{domainType?: string|null, lockDomainType?: boolean}} [opts]
  * @returns {{render: () => string, onClick: (el: HTMLElement, rerender: () => void) => boolean, onInput: (e: Event, rerender: () => void) => boolean, onChange: (e: Event, rerender: () => void) => boolean, onDrop: (e: DragEvent, rerender: () => void) => boolean}}
  */
+/** Duplicate-against-the-Archive check — lives HERE (the UI layer), not
+ *  in import-validation-engine.js, since it's the one cross-layer read
+ *  the one-way dependency rule forbids inside knowledge/. Module-scope
+ *  (Phase 1) so other workspaces can reuse the real check instead of
+ *  re-deriving a narrower one — it has no dependency on controller state. */
+export function archiveDuplicateWarning(session) {
+  if (!session.documentHash) return null;
+  const result = archiveList({ sourceDomainType: session.domainType });
+  if (!result.ok) return null;
+  const matches = result.data.filter((r) => r.documentHash === session.documentHash);
+  if (matches.length === 0) return null;
+  return `Dokumen dengan hash yang sama sudah ada di Archive (${matches.length} kecocokan: ${matches.map((r) => r.documentNumber).join(', ')}) — kemungkinan duplikat.`;
+}
+
+/** V2.1.2 Part K — Exception-Based Review. Real reasons only, computed
+ *  from signals already on the session (never fabricated): Low
+ *  Confidence, Duplicate Ambiguity (within sessions or against the
+ *  Archive), Unsupported Format, and (Phase 1) Missing Content Facts — a
+ *  session Approved but not yet Knowledge Imported because no human-typed
+ *  fact or parsed JSON content exists yet (markKnowledgeImported's own
+ *  gate, reused via the exported hasContentFacts() rather than
+ *  re-derived) was previously invisible to this filter despite being
+ *  genuinely stuck waiting on a human. "Profile Conflict" is intentionally
+ *  NOT implemented as a fabricated always-empty check — it would need
+ *  design work beyond this milestone's scope (comparing a session's
+ *  not-yet-typed content facts against Approved Profile Overrides is
+ *  usually a no-op before Knowledge Imported) and is documented as a
+ *  known gap in the final report rather than faked. Module-scope
+ *  (Phase 1) so other workspaces can reuse the real exception logic. */
+export function reviewReasons(session) {
+  const reasons = [];
+  if (typeof session.confidence === 'number' && session.confidence < AUTO_POPULATE_CONFIDENCE_THRESHOLD) {
+    reasons.push({ code: 'LOW_CONFIDENCE', message: `Confidence ${session.confidence} di bawah ambang batas populasi otomatis (${AUTO_POPULATE_CONFIDENCE_THRESHOLD}).`, confidence: session.confidence, evidence: session.confidenceRationale });
+  }
+  for (const w of session.validationWarnings || []) {
+    if (w.code === 'DUPLICATE_FILENAME' || w.code === 'DUPLICATE_METADATA') {
+      reasons.push({ code: 'DUPLICATE_AMBIGUITY', message: w.message, confidence: session.confidence, evidence: null });
+    }
+  }
+  const archiveDup = archiveDuplicateWarning(session);
+  if (archiveDup) reasons.push({ code: 'DUPLICATE_AMBIGUITY', message: archiveDup, confidence: session.confidence, evidence: null });
+  for (const e of session.validationErrors || []) {
+    if (e.code === 'UNSUPPORTED_FORMAT') reasons.push({ code: 'UNSUPPORTED_FORMAT', message: e.message, confidence: session.confidence, evidence: null });
+  }
+  if (session.state === IMPORT_SESSION_STATE.APPROVED && !hasContentFacts(session)) {
+    reasons.push({ code: 'MISSING_CONTENT_FACTS', message: 'Belum ada fakta konten (manual atau JSON) — Knowledge Imported tertunda.', confidence: session.confidence, evidence: null });
+  }
+  return reasons;
+}
+
 export function createDatasetImportController(opts = {}) {
   const scopedDomainType = opts.domainType || null;
   const lockDomainType = !!opts.lockDomainType;
@@ -248,8 +299,14 @@ export function createDatasetImportController(opts = {}) {
     const next = nextActionFor(s);
     const rejectBtn = s.state === IMPORT_SESSION_STATE.PENDING_REVIEW
       ? `<button class="wlk-btn wlk-btn--ghost" data-act="dic-reject" data-id="${esc(s.id)}" type="button">Tolak</button>` : '';
-    const advancedBtn = `<button class="wlk-btn wlk-btn--ghost" data-act="dic-advanced-open" data-id="${esc(s.id)}" type="button">Advanced Metadata</button>`;
     const reasons = reviewReasons(s);
+    // Phase 1 (Operational Engine Hardening) — this button used to render
+    // unconditionally on every row, including already-Archived ones. The
+    // engine should only ask for human input when it genuinely lacks
+    // confidence to proceed on its own; a clean, non-exceptional session
+    // has nothing for Advanced Metadata to fix.
+    const advancedBtn = reasons.length
+      ? `<button class="wlk-btn wlk-btn--ghost" data-act="dic-advanced-open" data-id="${esc(s.id)}" type="button">Advanced Metadata</button>` : '';
     const reasonLine = reasons.length
       ? `<div class="wlk-row-secondary">Alasan: ${reasons.map((r) => esc(r.message)).join(' · ')} — Saran: ${esc(suggestedActionFor(reasons[0].code))}</div>` : '';
     return `
@@ -263,50 +320,12 @@ export function createDatasetImportController(opts = {}) {
       </li>`;
   }
 
-  /** Duplicate-against-the-Archive check — lives HERE (the UI layer), not
-   *  in import-validation-engine.js, since it's the one cross-layer read
-   *  the one-way dependency rule forbids inside knowledge/. */
-  function archiveDuplicateWarning(session) {
-    if (!session.documentHash) return null;
-    const result = archiveList({ sourceDomainType: session.domainType });
-    if (!result.ok) return null;
-    const matches = result.data.filter((r) => r.documentHash === session.documentHash);
-    if (matches.length === 0) return null;
-    return `Dokumen dengan hash yang sama sudah ada di Archive (${matches.length} kecocokan: ${matches.map((r) => r.documentNumber).join(', ')}) — kemungkinan duplikat.`;
-  }
-
-  /** V2.1.2 Part K — Exception-Based Review. Real reasons only, computed
-   *  from signals already on the session (never fabricated): Low
-   *  Confidence, Duplicate Ambiguity (within sessions or against the
-   *  Archive), Unsupported Format. "Profile Conflict" is intentionally
-   *  NOT implemented as a fabricated always-empty check — it would need
-   *  design work beyond this milestone's scope (comparing a session's
-   *  not-yet-typed content facts against Approved Profile Overrides is
-   *  usually a no-op before Knowledge Imported) and is documented as a
-   *  known gap in the final report rather than faked. */
-  function reviewReasons(session) {
-    const reasons = [];
-    if (typeof session.confidence === 'number' && session.confidence < AUTO_POPULATE_CONFIDENCE_THRESHOLD) {
-      reasons.push({ code: 'LOW_CONFIDENCE', message: `Confidence ${session.confidence} di bawah ambang batas populasi otomatis (${AUTO_POPULATE_CONFIDENCE_THRESHOLD}).`, confidence: session.confidence, evidence: session.confidenceRationale });
-    }
-    for (const w of session.validationWarnings || []) {
-      if (w.code === 'DUPLICATE_FILENAME' || w.code === 'DUPLICATE_METADATA') {
-        reasons.push({ code: 'DUPLICATE_AMBIGUITY', message: w.message, confidence: session.confidence, evidence: null });
-      }
-    }
-    const archiveDup = archiveDuplicateWarning(session);
-    if (archiveDup) reasons.push({ code: 'DUPLICATE_AMBIGUITY', message: archiveDup, confidence: session.confidence, evidence: null });
-    for (const e of session.validationErrors || []) {
-      if (e.code === 'UNSUPPORTED_FORMAT') reasons.push({ code: 'UNSUPPORTED_FORMAT', message: e.message, confidence: session.confidence, evidence: null });
-    }
-    return reasons;
-  }
-
   function suggestedActionFor(reasonCode) {
     return {
       LOW_CONFIDENCE: 'Buka Advanced Metadata untuk melengkapi/mengoreksi.',
       DUPLICATE_AMBIGUITY: 'Bandingkan dengan dokumen yang sudah ada sebelum melanjutkan.',
       UNSUPPORTED_FORMAT: 'Format tidak didukung — dokumen ini tidak dapat diproses lebih lanjut.',
+      MISSING_CONTENT_FACTS: 'Buka Advanced Metadata untuk melampirkan fakta konten sebelum menjadi Knowledge.',
     }[reasonCode] || 'Tinjau secara manual.';
   }
 

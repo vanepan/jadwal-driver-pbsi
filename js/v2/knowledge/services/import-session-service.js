@@ -54,3 +54,10 @@ export {
 // header). The ONLY caller is sarpras-intelligence-center.js's mount.
 export { initImportSessionSync } from '../datasets/import-session/repository/import-session-repository.js';
 export { initImportBatchSync } from '../datasets/import-session/repository/import-batch-repository.js';
+
+// Phase 1 (Operational Engine Hardening) — cross-tab live wiring. Aliased
+// on re-export since both repositories name their hook the same thing
+// locally (see each repository's own header comment for why notify()
+// only fires on remote-originated hydration, never a local write).
+export { registerChangeListener as registerImportSessionChangeListener } from '../datasets/import-session/repository/import-session-repository.js';
+export { registerChangeListener as registerImportBatchChangeListener } from '../datasets/import-session/repository/import-batch-repository.js';

@@ -90,6 +90,10 @@ import {
   renderFilterBar, renderDetailSection, renderKvList, renderDetail, renderDiffTable,
 } from './shared/workspace-list-kit.js';
 import { createDatasetImportController } from './dataset-import-center.js';
+import {
+  registerImportSessionChangeListener, registerImportBatchChangeListener,
+} from '../knowledge/services/import-session-service.js';
+import { registerChangeListener as registerFileStorageChangeListener } from '../file-storage/file-storage-registry.js';
 
 import {
   PROFILE_OVERRIDE_TYPE, OVERRIDE_ACTION, OVERRIDE_PAYLOAD_SHAPE, isOverlayType, isStandaloneType,
@@ -135,6 +139,7 @@ let host = null;
 let contentEl = null;
 let mounted = false;
 let pcLiveStarted = false;
+let importPipelineLiveStarted = false;
 
 // V2.1 — this Archive tab's upload surface is the SAME controller Archive
 // Center embeds (./dataset-import-center.js), scoped to domainType:'nor'
@@ -163,6 +168,7 @@ export async function mountNorCenter(hostEl) {
     host.addEventListener('dragover', (e) => { if (e.target.closest && e.target.closest('[data-act="dic-dropzone"]')) e.preventDefault(); });
     host.addEventListener('drop', onDrop);
   }
+  ensureImportPipelineLive();
   render();
 }
 
@@ -735,4 +741,18 @@ function ensurePettyCashSettingsLive() {
   pcLiveStarted = true;
   initPettyCashStore().catch(() => {});
   onPettyCashChange(() => { if (st.section === 'settings') render(); });
+}
+
+/** Phase 1 (Operational Engine Hardening) — cross-tab realtime sync. The
+ *  underlying RTDB sync itself is already started once, unconditionally,
+ *  by sarpras-intelligence-center.js's mount; this only registers the
+ *  re-render hook so a change made in another browser tab is reflected
+ *  here without a manual refresh. Guarded so it only ever runs once. */
+function ensureImportPipelineLive() {
+  if (importPipelineLiveStarted) return;
+  importPipelineLiveStarted = true;
+  const onRemoteChange = () => { if (st.section === 'archive') render(); };
+  registerImportSessionChangeListener(onRemoteChange);
+  registerImportBatchChangeListener(onRemoteChange);
+  registerFileStorageChangeListener(onRemoteChange);
 }
