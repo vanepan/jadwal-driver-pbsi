@@ -33,11 +33,26 @@ import {
 } from '../js/v2/knowledge/datasets/import-session/import-session-engine.js';
 import { AUTO_POPULATE_CONFIDENCE_THRESHOLD } from '../js/v2/knowledge/datasets/import-session/metadata-inference-engine.js';
 import { makeStoredFileRecord } from '../js/v2/file-storage/contracts/file-storage-contract.js';
-import { createBatch, recordBatchItem } from '../js/v2/knowledge/datasets/import-session/import-batch-engine.js';
+import { createBatch, recordBatchItem, cancelBatch } from '../js/v2/knowledge/datasets/import-session/import-batch-engine.js';
 import {
   createDatasetImportController, reviewReasons, archiveDuplicateWarning,
   cascadeFromApproved, findReusableContentFacts, effectiveStage, computeBatchCounters,
 } from '../js/v2/ui/dataset-import-center.js';
+import { setPresentationMode } from '../js/v2/ui/shared/workspace-list-kit.js';
+
+// Sprint 0 (Presentation Truth) — isDeveloperMode()/setPresentationMode()
+// read/write real localStorage (no in-memory fallback, unlike the old
+// per-controller loadPresentationMode() this replaced); Node has none, so
+// a minimal in-memory stub lets this script exercise the Normal/Developer
+// toggle exactly like a browser would.
+if (typeof globalThis.localStorage === 'undefined') {
+  const _store = new Map();
+  globalThis.localStorage = {
+    getItem: (k) => (_store.has(k) ? _store.get(k) : null),
+    setItem: (k, v) => _store.set(k, String(v)),
+    removeItem: (k) => _store.delete(k),
+  };
+}
 
 let pass = 0, fail = 0;
 function check(name, cond) {
@@ -171,6 +186,14 @@ attachInferenceResult(cleanCreated.data.id, { confidence: 0.95, confidenceRation
 attachParsedContent(cleanCreated.data.id, { value: 'real parsed JSON content' });
 submitImportSessionForReview(cleanCreated.data.id);
 approveImportSession(cleanCreated.data.id, { approverId: 'evan', decidedAt: new Date().toISOString(), preferenceRationale: 'Clean fixture for Phase 1 button-suppression check.' });
+// Sprint 1 (Autonomy Closure, Part 4) — a real "clean" session's real-app
+// path (the dic-approve click handler) ALWAYS calls cascadeFromApproved()
+// immediately after approveImportSession() succeeds; a fixture that stops
+// at bare approveImportSession() is exactly the KNOWLEDGE_IMPORT_STALLED
+// state reviewReasons() now correctly flags (this was the actual, previously
+// invisible bug this sprint fixed). Complete the cascade here so this
+// fixture represents a genuinely resolved session, same as production.
+cascadeFromApproved(cleanCreated.data.id);
 
 const needsAttentionCreated = createImportSession({
   domainType: 'nor', datasetType: DATASET_TYPE.OFFICIAL, filename: 'phase1-needs-attention-session.pdf',
@@ -224,15 +247,19 @@ console.log('\n[Phase 2 Follow-up — the SAME persisted stage renders in the ri
     mimeType: 'application/pdf', sizeBytes: 10, kind: IMPORT_SESSION_KIND.PDF,
     knowledgeKind: 'document_fact', uploadedBy: 'evan',
   });
-  // Default mode is Normal (localStorage unavailable under Node -> 'normal').
+  // Sprint 0 (Presentation Truth) — the Normal/Developer toggle moved out
+  // of this controller's own local state into the ONE shared platform-wide
+  // flag (workspace-list-kit.js#isDeveloperMode/setPresentationMode), set
+  // from sarpras-intelligence-center.js's shell toggle instead of a
+  // per-file "dic-mode" click action (now removed).
+  setPresentationMode('normal');
   const normalHtml = modeController.render();
   check('in Normal mode, a CLASSIFICATION-stage session shows the friendly phase "Uploading"', normalHtml.includes('dic-stage-badge">Uploading') && !normalHtml.includes('dic-stage-badge">Classification'));
 
-  // Toggle to Developer via the real controller click handler.
-  const modeHandled = modeController.onClick({ dataset: { act: 'dic-mode', id: 'developer' }, closest: () => null }, () => {});
+  setPresentationMode('developer');
   const devHtml = modeController.render();
-  check('onClick("dic-mode","developer") is handled', modeHandled === true);
   check('in Developer mode, the SAME session shows the detailed stage "Classification"', devHtml.includes('dic-stage-badge">Classification') && !devHtml.includes('dic-stage-badge">Uploading'));
+  setPresentationMode('normal'); // restore default for any later checks in this run
 }
 
 console.log('\n[Phase 2.5 Part 1 — metadata editor keystroke must NOT trigger a re-render]');
@@ -294,6 +321,97 @@ console.log('\n[Phase 2.5 Part 5 — batch counters computed from persisted sess
   check('one facts-less pending PDF is counted as Waiting Review', counters.waitingReview === 1);
   check('the 2 not-yet-started files roll into Uploading (X / total)', counters.uploading === 2);
   check('every counter is a real number, never fabricated/animated', [counters.processing, counters.knowledgeExtraction, counters.learning, counters.failed].every((n) => typeof n === 'number'));
+}
+
+console.log('\n[Sprint 1 (Autonomy Closure) Part 4 — KNOWLEDGE_IMPORT_STALLED, the previously-invisible root cause]');
+{
+  const created = createImportSession({
+    domainType: 'nor', datasetType: DATASET_TYPE.OFFICIAL, filename: 'stalled-cascade.json',
+    mimeType: 'application/json', sizeBytes: 20, kind: IMPORT_SESSION_KIND.JSON,
+    knowledgeKind: 'document_fact', uploadedBy: 'evan',
+  });
+  const id = created.data.id;
+  attachParsedContent(id, { value: 'real parsed content' });
+  submitImportSessionForReview(id);
+  approveImportSession(id, { approverId: 'evan', decidedAt: new Date().toISOString(), preferenceRationale: 'Sprint 1 stalled-cascade fixture.' });
+  // Deliberately NOT calling cascadeFromApproved() here — this simulates
+  // the real bug: a session Approved with real content facts present,
+  // whose cascade never ran to completion. Before this sprint's fix,
+  // reviewReasons() had no branch for this and returned [] forever.
+  const stuck = getImportSession(id).data;
+  check('a session Approved-with-facts whose cascade never ran is flagged KNOWLEDGE_IMPORT_STALLED', reviewReasons(stuck).some((r) => r.code === 'KNOWLEDGE_IMPORT_STALLED'));
+
+  // Part 4 fix #2 — the "Impor sebagai Knowledge" button (dic-import) now
+  // retries the WHOLE remaining cascade in one click, not just the first
+  // step. Exercised the same way the existing "Setujui" test above drives
+  // onClick — a dataset.id lookup, no real DOM node needed.
+  const retryController = createDatasetImportController({});
+  const clicked = retryController.onClick({ dataset: { act: 'dic-import', id }, closest: () => null }, () => {});
+  check('dic-import click is handled', clicked === true);
+  const resolved = getImportSession(id).data;
+  check('one dic-import click drives the FULL cascade to Archived (no second "Arsipkan" click required)', resolved.state === IMPORT_SESSION_STATE.ARCHIVED);
+  check('the resolved session no longer reports KNOWLEDGE_IMPORT_STALLED', !reviewReasons(resolved).some((r) => r.code === 'KNOWLEDGE_IMPORT_STALLED'));
+}
+
+console.log('\n[Sprint 1 (Autonomy Closure) Part 2 — BATCH_CANCELLED makes straggler sessions visible]');
+{
+  const batch = createBatch({ createdBy: 'evan', domainType: 'nor', totalFiles: 1 });
+  const batchId = batch.data.id;
+  const created = createImportSession({
+    domainType: 'nor', datasetType: DATASET_TYPE.OFFICIAL, filename: 'straggler.pdf',
+    mimeType: 'application/pdf', sizeBytes: 30, kind: IMPORT_SESSION_KIND.PDF,
+    knowledgeKind: 'document_fact', uploadedBy: 'evan', batchId,
+  });
+  const id = created.data.id;
+  // Left exactly where a crash/refresh mid-batch would leave it: created,
+  // never even submitted for review — reviewReasons() was previously []
+  // for this (nothing to flag), so it sat in "Aktivitas Langsung" forever
+  // with zero action buttons, indistinguishable from healthy in-progress work.
+  const beforeCancel = getImportSession(id).data;
+  check('a fresh straggler session has no reasons before its batch is cancelled', reviewReasons(beforeCancel).length === 0);
+
+  const cancelResult = cancelBatch(batchId);
+  check('cancelBatch succeeds on a batch that was never completed', cancelResult.ok === true);
+  const afterCancel = getImportSession(id).data;
+  check('the straggler session is now flagged BATCH_CANCELLED (visible in Perlu Perhatian)', reviewReasons(afterCancel).some((r) => r.code === 'BATCH_CANCELLED'));
+
+  // An already-Archived session from a batch that gets cancelled AFTER
+  // completion must never be retroactively flagged — completed work is
+  // never disturbed by a cancel.
+  const archivedCreated = createImportSession({
+    domainType: 'nor', datasetType: DATASET_TYPE.OFFICIAL, filename: 'already-done.json',
+    mimeType: 'application/json', sizeBytes: 12, kind: IMPORT_SESSION_KIND.JSON,
+    knowledgeKind: 'document_fact', uploadedBy: 'evan', batchId,
+  });
+  attachParsedContent(archivedCreated.data.id, { value: 'x' });
+  submitImportSessionForReview(archivedCreated.data.id);
+  approveImportSession(archivedCreated.data.id, { approverId: 'evan', decidedAt: new Date().toISOString(), preferenceRationale: 'f' });
+  cascadeFromApproved(archivedCreated.data.id);
+  const archivedAfterCancel = getImportSession(archivedCreated.data.id).data;
+  check('an already-Archived session from the same (now-cancelled) batch is NOT flagged — completed work is never disturbed', !reviewReasons(archivedAfterCancel).some((r) => r.code === 'BATCH_CANCELLED'));
+}
+
+console.log('\n[Sprint 1 (Autonomy Closure) Part 8 — Pipeline Self-Diagnostics, Developer Mode only]');
+{
+  const created = createImportSession({
+    domainType: 'nor', datasetType: DATASET_TYPE.OFFICIAL, filename: 'diagnostics-fixture.json',
+    mimeType: 'application/json', sizeBytes: 15, kind: IMPORT_SESSION_KIND.JSON,
+    knowledgeKind: 'document_fact', uploadedBy: 'evan',
+  });
+  const id = created.data.id;
+  const diagController = createDatasetImportController({});
+  diagController.onClick({ dataset: { act: 'dic-session-row', id }, closest: () => null }, () => {});
+
+  setPresentationMode('normal');
+  const normalDetailHtml = diagController.render();
+  check('Normal Mode never shows the Pipeline Self-Diagnostics section', !normalDetailHtml.includes('Diagnostik Pipeline'));
+
+  setPresentationMode('developer');
+  const devDetailHtml = diagController.render();
+  check('Developer Mode shows the Pipeline Self-Diagnostics section', devDetailHtml.includes('Diagnostik Pipeline'));
+  check('...with a real Next Stage value (not fabricated — freshly-created session is at Classification, next is a real later stage)', devDetailHtml.includes('Next Stage'));
+  check('...with a real Elapsed Time value', devDetailHtml.includes('Elapsed Time'));
+  setPresentationMode('normal'); // restore default
 }
 
 console.log(`\n${pass}/${pass + fail} checks passed.`);

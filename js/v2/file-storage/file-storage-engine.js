@@ -32,7 +32,7 @@
 import { computeSha256 } from './file-hash.js';
 import { getStoredFileBySha256, registerStoredFile, linkSessionToStoredFile } from './file-storage-registry.js';
 import { makeStoredFileRecord } from './contracts/file-storage-contract.js';
-import { withRetryAsync } from './retry-with-backoff.js';
+import { withRetryAsync, withTimeout } from './retry-with-backoff.js';
 import { uploadFileToStorage } from '../../firebase.js';
 
 export { computeSha256 };
@@ -40,6 +40,11 @@ export { computeSha256 };
 function storagePathFor(domainType, sha256) {
   return `sarpras-intelligence/${domainType}/${sha256}`;
 }
+
+// Sprint 1 (Autonomy Closure, Part 4) — see retry-with-backoff.js#withTimeout's
+// header: bounds each individual upload attempt so a true network hang
+// can't freeze the whole batch forever.
+const UPLOAD_ATTEMPT_TIMEOUT_MS = 30000;
 
 /**
  * Uploads `file` if (and only if) its content has never been stored
@@ -62,7 +67,11 @@ export async function uploadFile(file, { domainType, importSessionId }) {
   // Storage is exactly the kind of transient failure the engine should
   // recover from on its own; 3 attempts (~300ms/900ms backoff) before
   // this becomes a real, honestly-reported failure the caller must handle.
-  const uploadResult = await withRetryAsync(() => uploadFileToStorage(storagePathFor(domainType, sha256), file));
+  const uploadResult = await withRetryAsync(() => withTimeout(
+    uploadFileToStorage(storagePathFor(domainType, sha256), file),
+    UPLOAD_ATTEMPT_TIMEOUT_MS,
+    'STORAGE_UPLOAD_TIMEOUT',
+  ));
   if (!uploadResult.ok) {
     return { ok: false, record: null, wasDuplicate: false, sha256, error: uploadResult.error };
   }

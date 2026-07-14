@@ -51,7 +51,11 @@ const outerShellSrc = fs.readFileSync(path.join(ROOT, 'js/v2/ui/sarpras-intellig
 check('outer shell has no COMING_SOON object', !/COMING_SOON/.test(outerShellSrc));
 check('outer shell has no renderComingSoon function', !/renderComingSoon/.test(outerShellSrc));
 check('outer shell SCREEN_IDS unchanged (roadmap frozen)', /SCREEN_IDS = \['dashboard', 'nor', 'archive', 'knowledge', 'learning'\]/.test(outerShellSrc));
-check('outer shell roadmap has zero "soon"-tier rows', !/tier: 'soon'/.test(outerShellSrc));
+// Sprint 1 (Autonomy Closure, Part 1) — the old static roadmap (a second,
+// duplicated "which module is done" identity) is removed entirely, not
+// just gated. Developer Mode's additive content is real diagnostics.
+check('outer shell no longer defines the old ROADMAP/renderRoadmap (removed, not just gated)', !/const ROADMAP =/.test(outerShellSrc) && !/function renderRoadmap/.test(outerShellSrc));
+check('outer shell Developer Mode renders real Technical Diagnostics instead', /function renderTechnicalDiagnostics/.test(outerShellSrc) && /computeTechnicalDiagnostics/.test(outerShellSrc));
 
 // ── No literal "Coming Soon" / placeholder string survives anywhere new ──
 // V2.1: nor-center.js and dataset-import-center.js added. nor-center.js's
@@ -135,6 +139,36 @@ for (const file of workspaceFiles) {
   check(`${file} does not import a sibling workspace file (no circular dep)`, !importsSibling);
 }
 check('dataset-import-center.js does not import any of the 4 workspace files back (no circular dep)', !workspaceFiles.some((f) => datasetImportSrc.includes(`./${f}`)));
+
+// ── Sprint 1 (Autonomy Closure) — structural verification of the Part
+//    3/10 live-listener widening. These fixes can't be exercised live in
+//    sarpras-workspace-dom-check.mjs's harness without a genuine remote
+//    RTDB snapshot (import-session-repository.js's own header: its change
+//    listeners are deliberately remote-snapshot-only, never fired by a
+//    local write) — verified here as source-text assertions instead. ────
+check('archive-center.js no longer gates its live re-render on which internal tab is active', !/st\.section === 'dashboard' \|\| st\.section === 'import'\) render\(\)/.test(archiveSrc));
+check('archive-center.js registers its live listeners with a coalesced scheduleLiveRender (matches knowledge-center.js/learning-dashboard.js\'s idiom)', /scheduleLiveRender/.test(archiveSrc));
+check('nor-center.js no longer gates its live re-render on st.section === \'archive\'', !/st\.section === 'archive'\) render\(\)/.test(norCenterSrc2));
+check('nor-center.js registers its live listeners with a coalesced scheduleLiveRender', /scheduleLiveRender/.test(norCenterSrc2));
+check('sarpras-intelligence-center.js registers all 3 live-update listeners for its own Executive Briefing', outerShellSrc.includes('registerImportSessionChangeListener(scheduleRender)') && outerShellSrc.includes('registerImportBatchChangeListener(scheduleRender)') && outerShellSrc.includes('registerRepositoryListener(scheduleRender)'));
+
+// ── Sprint 1 (Autonomy Closure) — Part 2/4 reviewReasons() extension and
+//    the dic-import full-cascade retry (behavioral coverage lives in
+//    dataset-import-center-check.mjs; this just confirms the code is
+//    actually present, not accidentally reverted). ─────────────────────
+check('dataset-import-center.js\'s reviewReasons() covers KNOWLEDGE_IMPORT_STALLED (Approved-with-facts cascade stall)', datasetImportSrc.includes("code: 'KNOWLEDGE_IMPORT_STALLED'"));
+check('dataset-import-center.js\'s reviewReasons() covers BATCH_CANCELLED (straggler sessions from a cancelled batch)', datasetImportSrc.includes("code: 'BATCH_CANCELLED'"));
+check('dic-import now retries the FULL cascade (cascadeFromApproved), not just markKnowledgeImported', /act === 'dic-import'\) \{ cascadeFromApproved\(id\)/.test(datasetImportSrc));
+
+// ── Sprint 1 (Autonomy Closure) — Part 5/8 additive UI, Part 4 timeout ──
+check('dataset-import-center.js has the always-visible Live Operation View (Part 5)', /function renderOperationalOverview/.test(datasetImportSrc) && datasetImportSrc.includes('Ringkasan Operasional'));
+check('dataset-import-center.js has the Developer-Mode-only Pipeline Self-Diagnostics section (Part 8)', datasetImportSrc.includes('Diagnostik Pipeline (Developer Mode)'));
+{
+  const retrySrc = fs.readFileSync(path.join(ROOT, 'js/v2/file-storage/retry-with-backoff.js'), 'utf8');
+  check('retry-with-backoff.js exports withTimeout (Part 4 — bounds a hanging upload attempt)', /export function withTimeout/.test(retrySrc));
+  const fileStorageEngineSrc = fs.readFileSync(path.join(ROOT, 'js/v2/file-storage/file-storage-engine.js'), 'utf8');
+  check('file-storage-engine.js\'s uploadFile() wraps the real Storage call in withTimeout', /withTimeout\(\s*\n?\s*uploadFileToStorage/.test(fileStorageEngineSrc));
+}
 
 console.log(`\n${pass}/${pass + fail} checks passed.`);
 if (fail > 0) process.exitCode = 1;

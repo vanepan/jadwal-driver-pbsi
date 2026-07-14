@@ -33,7 +33,7 @@ import {
   list as knowledgeList, getById as knowledgeGetById, getHistory as knowledgeGetHistory, getMetrics as knowledgeGetMetrics,
   registerRepositoryListener,
 } from '../knowledge/repository/knowledge-repository.js';
-import { LIFECYCLE_STATE } from '../knowledge/contracts/lifecycle-contract.js';
+import { LIFECYCLE_STATE, LIFECYCLE_STATE_DEFS } from '../knowledge/contracts/lifecycle-contract.js';
 import { listDomainTypes, getDomainType } from '../knowledge/registry/domain-type-registry.js';
 import { getCandidateQueue, getReviewQueue } from '../knowledge/review/review-queue-engine.js';
 import { profiles } from '../knowledge/services/index.js';
@@ -42,10 +42,11 @@ import { getComposerTimeline } from '../document-intelligence/composer/composer-
 import { computePatternRecommendations } from '../knowledge/services/pattern-discovery-service.js';
 import { manualFileSource } from '../knowledge/connectors/manual-file-connector.js';
 import { listOverrides } from '../knowledge/services/profile-override-service.js';
+import { getKind } from '../knowledge/registry/kind-registry.js';
 
 import {
   esc, renderEmptyState, renderTabShell, renderRowList, renderStatCards, renderKvList,
-  deriveRejectedFromCandidateQueue,
+  deriveRejectedFromCandidateQueue, isDeveloperMode,
 } from './shared/workspace-list-kit.js';
 
 const SECTIONS = [
@@ -131,6 +132,16 @@ function safeList(fn, filter) {
 function domainLabel(id) {
   const registered = getDomainType(id);
   return registered ? registered.label : id;
+}
+
+/** Sprint 0 (Presentation Truth) — a bare Knowledge Item Id is an internal
+ *  ID a normal user should never see; show the item's kind label instead
+ *  (Developer Mode keeps the raw id at each call site). */
+function kindLabelForItem(itemId) {
+  const r = knowledgeGetById(itemId);
+  if (!r.ok) return itemId;
+  const k = getKind(r.data.kind);
+  return k ? k.label : r.data.kind;
 }
 
 function approvedItems() { return safeList(knowledgeList, { lifecycleState: LIFECYCLE_STATE.APPROVED }); }
@@ -297,6 +308,7 @@ function renderActivitySection() {
   }
   const topCorrections = [...byItem.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
   const mostActiveDomains = [...byDomain.entries()].sort((a, b) => b[1] - a[1]);
+  const devMode = isDeveloperMode();
 
   return `
     <div class="wlk-page">
@@ -307,28 +319,28 @@ function renderActivitySection() {
       </div>
 
       <div class="wlk-sec">
-        <div class="wlk-sec-title">Recent Learning</div>
+        <div class="wlk-sec-title">Koreksi Terbaru</div>
         ${recent.length ? renderRowList(recent, (l) => `
           <li class="wlk-row">
-            <span class="wlk-row-primary">${esc(l.itemId)}</span>
+            <span class="wlk-row-primary">${esc(devMode ? l.itemId : kindLabelForItem(l.itemId))}</span>
             <span class="wlk-row-secondary">${esc(l.at)}</span>
           </li>`) : renderEmptyState('Belum ada koreksi tercatat.')}
       </div>
 
       <div class="wlk-sec">
-        <div class="wlk-sec-title">Learning Timeline</div>
+        <div class="wlk-sec-title">Linimasa Pembelajaran</div>
         ${timeline.length ? renderRowList(timeline, (t) => `
           <li class="wlk-row">
-            <span class="wlk-row-primary">${t.kind === 'composer' ? esc(t.documentId) : esc(t.itemId)}</span>
-            <span class="wlk-row-secondary">${esc(t.kind)} · ${esc(t.at || t.updatedAt || '—')}</span>
+            <span class="wlk-row-primary">${t.kind === 'composer' ? esc(t.documentId) : esc(devMode ? t.itemId : kindLabelForItem(t.itemId))}</span>
+            <span class="wlk-row-secondary">${esc(t.kind === 'composer' ? 'draft' : 'koreksi')} · ${esc(t.at || t.updatedAt || '—')}</span>
           </li>`) : renderEmptyState('Belum ada aktivitas pembelajaran.')}
       </div>
 
       <div class="wlk-sec">
-        <div class="wlk-sec-title">Top Corrections</div>
+        <div class="wlk-sec-title">Koreksi Terbanyak</div>
         ${topCorrections.length ? renderRowList(topCorrections, ([itemId, count]) => `
           <li class="wlk-row">
-            <span class="wlk-row-primary">${esc(itemId)}</span>
+            <span class="wlk-row-primary">${esc(devMode ? itemId : kindLabelForItem(itemId))}</span>
             <span class="wlk-row-secondary">${count} koreksi</span>
           </li>`) : renderEmptyState('Belum ada item yang dikoreksi.')}
       </div>
@@ -351,6 +363,11 @@ function renderDistributionSection() {
   const metrics = metricsResult.ok ? metricsResult.data : null;
   const healthResult = computeHealthReport();
   const health = healthResult.ok ? healthResult.data : null;
+  const devMode = isDeveloperMode();
+  const statusLabel = (id) => {
+    const def = LIFECYCLE_STATE_DEFS.find((d) => d.id === id);
+    return def ? def.label : id;
+  };
 
   return `
     <div class="wlk-page">
@@ -361,19 +378,20 @@ function renderDistributionSection() {
       </div>
 
       <div class="wlk-sec">
-        <div class="wlk-sec-title">Knowledge Distribution — per Domain</div>
+        <div class="wlk-sec-title">Distribusi Pengetahuan — per Domain</div>
         ${metrics && Object.keys(metrics.byDomainType).length ? renderKvList(Object.entries(metrics.byDomainType).map(([d, c]) => [domainLabel(d), c])) : renderEmptyState('Belum ada item pengetahuan.')}
       </div>
 
       <div class="wlk-sec">
-        <div class="wlk-sec-title">Knowledge Distribution — per Status</div>
-        ${metrics && Object.keys(metrics.byLifecycleState).length ? renderKvList(Object.entries(metrics.byLifecycleState)) : renderEmptyState('Belum ada item pengetahuan.')}
+        <div class="wlk-sec-title">Distribusi Pengetahuan — per Status</div>
+        ${metrics && Object.keys(metrics.byLifecycleState).length ? renderKvList(Object.entries(metrics.byLifecycleState).map(([s, c]) => [devMode ? s : statusLabel(s), c])) : renderEmptyState('Belum ada item pengetahuan.')}
       </div>
 
+      ${devMode ? `
       <div class="wlk-sec">
         <div class="wlk-sec-title">Confidence Distribution (item Approved)</div>
         ${health ? renderKvList(Object.entries(health.confidenceDistribution)) : renderEmptyState('Belum ada laporan distribusi kepercayaan.')}
-      </div>
+      </div>` : ''}
     </div>`;
 }
 
@@ -390,39 +408,42 @@ function renderQueuesSection() {
   const correctionLog = listCorrectionLog().slice().sort((a, b) => b.at.localeCompare(a.at));
   const domains = listDomainTypes();
   const recommendations = domains.flatMap((d) => computePatternRecommendations(d.id).map((r) => ({ ...r, domainLabel: d.label })));
+  const devMode = isDeveloperMode();
 
   return `
     <div class="wlk-page">
       <div class="wlk-page-head">
         <div class="wlk-page-crumb">LEARNING DASHBOARD · ANTREAN</div>
         <h1 class="wlk-page-title">Antrean Pembelajaran</h1>
-        <p class="wlk-page-lede">Learning Queue (Candidate + Pending Review), Correction Queue (log koreksi), dan Candidate Recommendations (bukti statistik deterministik dari Pattern Discovery) — tidak ada yang diterapkan otomatis.</p>
+        <p class="wlk-page-lede">${devMode
+          ? 'Learning Queue (Candidate + Pending Review), Correction Queue (log koreksi), dan Candidate Recommendations (bukti statistik deterministik dari Pattern Discovery) — tidak ada yang diterapkan otomatis.'
+          : 'Pengetahuan yang menunggu tinjauan, koreksi yang tercatat, dan saran berdasarkan pola dari dokumen yang sudah disetujui — tidak ada yang diterapkan otomatis.'}</p>
       </div>
 
       <div class="wlk-sec">
-        <div class="wlk-sec-title">Learning Queue (${learningQueue.length})</div>
+        <div class="wlk-sec-title">Menunggu Tinjauan (${learningQueue.length})</div>
         ${learningQueue.length ? renderRowList(learningQueue, (e) => `
           <li class="wlk-row">
-            <span class="wlk-row-primary">${esc(e.itemId)}</span>
+            <span class="wlk-row-primary">${esc(devMode ? e.itemId : kindLabelForItem(e.itemId))}</span>
             <span class="wlk-row-secondary">v${e.itemVersion} · masuk antrean ${esc(e.enteredQueueAt)}${e.hasConflict ? ' · konflik' : ''}</span>
           </li>`) : renderEmptyState('Antrean pembelajaran kosong.', 'Item Candidate dan Pending Review akan muncul di sini.')}
       </div>
 
       <div class="wlk-sec">
-        <div class="wlk-sec-title">Correction Queue (${correctionLog.length})</div>
+        <div class="wlk-sec-title">Riwayat Koreksi (${correctionLog.length})</div>
         ${correctionLog.length ? renderRowList(correctionLog, (l) => `
           <li class="wlk-row">
-            <span class="wlk-row-primary">${esc(l.itemId)}</span>
-            <span class="wlk-row-secondary">${l.generatedNew ? 'candidate baru' : 'update item ada'}${l.similarityMatchFound ? ' · kecocokan kemiripan' : ''} · ${esc(l.at)}</span>
+            <span class="wlk-row-primary">${esc(devMode ? l.itemId : kindLabelForItem(l.itemId))}</span>
+            <span class="wlk-row-secondary">${l.generatedNew ? 'usulan baru' : 'pembaruan item ada'}${l.similarityMatchFound ? ' · kecocokan kemiripan' : ''} · ${esc(l.at)}</span>
           </li>`) : renderEmptyState('Belum ada koreksi tercatat.')}
       </div>
 
       <div class="wlk-sec">
-        <div class="wlk-sec-title">Candidate Recommendations (${recommendations.length})</div>
+        <div class="wlk-sec-title">${devMode ? 'Candidate Recommendations' : 'Saran Berdasarkan Pola'} (${recommendations.length})</div>
         ${recommendations.length ? renderRowList(recommendations, (r) => `
           <li class="wlk-row">
             <span class="wlk-row-primary">${esc(r.domainLabel)} · ${esc(r.patternType)} — ${esc(r.value)}</span>
-            <span class="wlk-row-secondary">support ${r.evidence.supportCount} · confidence ${r.evidence.confidence}</span>
+            <span class="wlk-row-secondary">${devMode ? `support ${r.evidence.supportCount} · confidence ${r.evidence.confidence}` : `didukung ${r.evidence.supportCount} dokumen serupa`}</span>
           </li>`) : renderEmptyState('Belum ada rekomendasi.', 'Rekomendasi muncul setelah ada Knowledge Approved. Lihat NOR Center → Profil Organisasi untuk mengubah rekomendasi menjadi Override.')}
       </div>
     </div>`;

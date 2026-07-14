@@ -35,9 +35,10 @@ import {
 } from '../organizational-memory/index.js';
 
 import { list as knowledgeList, getById as knowledgeGetById, getHistory as knowledgeGetHistory } from '../knowledge/repository/knowledge-repository.js';
-import { LIFECYCLE_STATE } from '../knowledge/contracts/lifecycle-contract.js';
+import { LIFECYCLE_STATE, LIFECYCLE_STATE_DEFS } from '../knowledge/contracts/lifecycle-contract.js';
 import { generateKnowledgeId } from '../knowledge/contracts/identity-contract.js';
 import { listDomainTypes, getDomainType } from '../knowledge/registry/domain-type-registry.js';
+import { getKind } from '../knowledge/registry/kind-registry.js';
 import { listDatasets } from '../knowledge/datasets/registry/dataset-registry.js';
 import { listPacks } from '../knowledge/datasets/registry/pack-registry.js';
 import { DATASET_TYPE } from '../knowledge/datasets/contracts/dataset-contract.js';
@@ -52,6 +53,7 @@ import {
   esc, renderEmptyState, renderTabShell, renderRowList, renderStatCards,
   renderFilterBar, renderSearchBox, renderDetailSection, renderKvList,
   renderDetail, renderDiffTable, deriveRejectedFromCandidateQueue, formatFileSize,
+  isDeveloperMode,
 } from './shared/workspace-list-kit.js';
 import { createDatasetImportController, reviewReasons } from './dataset-import-center.js';
 import {
@@ -97,19 +99,31 @@ let contentEl = null;
 let mounted = false;
 let importPipelineLiveStarted = false;
 
+// Sprint 1 (Autonomy Closure, Part 3/10) — same coalesced-render idiom
+// knowledge-center.js/learning-dashboard.js already use.
+let _liveRenderTimer = null;
+function scheduleLiveRender() {
+  if (_liveRenderTimer) return;
+  _liveRenderTimer = setTimeout(() => { _liveRenderTimer = null; render(); }, 100);
+}
+
 /** Phase 1 (Operational Engine Hardening) — cross-tab realtime sync,
  *  mirroring nor-center.js's ensureImportPipelineLive() exactly. The
  *  underlying RTDB sync is already started once, unconditionally, by
  *  sarpras-intelligence-center.js's mount; this only registers the
  *  re-render hook so a change made in another browser tab is reflected
- *  here without a manual refresh. Guarded so it only ever runs once. */
+ *  here without a manual refresh. Guarded so it only ever runs once.
+ *  Sprint 1 — previously only re-rendered while `st.section` was
+ *  'dashboard'/'import'; every other internal tab (Records/Timeline/
+ *  Datasets/Upload Queue/Review) sat stale until manually clicked away
+ *  and back. Now re-renders whichever tab is active, matching how
+ *  knowledge-center.js/learning-dashboard.js already behave. */
 function ensureImportPipelineLive() {
   if (importPipelineLiveStarted) return;
   importPipelineLiveStarted = true;
-  const onRemoteChange = () => { if (st.section === 'dashboard' || st.section === 'import') render(); };
-  registerImportSessionChangeListener(onRemoteChange);
-  registerImportBatchChangeListener(onRemoteChange);
-  registerFileStorageChangeListener(onRemoteChange);
+  registerImportSessionChangeListener(scheduleLiveRender);
+  registerImportBatchChangeListener(scheduleLiveRender);
+  registerFileStorageChangeListener(scheduleLiveRender);
 }
 
 /* ── mount / teardown ─────────────────────────────────────────────── */
@@ -213,6 +227,22 @@ function allDomainTypeIds() {
 function domainLabel(id) {
   const registered = getDomainType(id);
   return registered ? registered.label : id;
+}
+
+/** Sprint 0 (Presentation Truth) — friendly label for a Knowledge `kind`
+ *  id (e.g. "policy" -> "Policy"), same registry lookup pattern
+ *  domainLabel() above already uses for domainType. */
+function kindLabel(id) {
+  const k = getKind(id);
+  return k ? k.label : id;
+}
+
+/** Sprint 0 — the registered human label (e.g. "Pending Review") instead
+ *  of the raw lowercase enum id (e.g. "pending_review") a normal user
+ *  should never see. */
+function lifecycleLabel(id) {
+  const def = LIFECYCLE_STATE_DEFS.find((d) => d.id === id);
+  return def ? def.label : id;
 }
 
 function findKnowledgeIdForRecord(record) {
@@ -346,32 +376,39 @@ function renderRecordDetail(id) {
   const record = archiveGetById(id);
   if (!record.ok) return '';
   const r = record.data;
+  const devMode = isDeveloperMode();
   const history = safeList(archiveGetHistory, id);
   const knowledgeId = findKnowledgeIdForRecord(r);
   const contributed = checkKnowledgeContribution(r);
   const linkedKnowledge = contributed && knowledgeId ? knowledgeGetById(knowledgeId) : null;
 
-  const metadata = renderKvList([
+  // Sprint 0 (Presentation Truth) — Sumber (raw sourceType) and Hash
+  // Dokumen (internal content hash) are Developer-only; Normal Mode never
+  // sees them.
+  const metadataPairs = [
     ['Nomor Dokumen', r.documentNumber],
     ['Domain', domainLabel(r.sourceDomainType)],
     ['Tanggal Dokumen', r.documentDate],
     ['Dari', r.senderOrigin],
-    ['Sumber', r.sourceType],
-    ['Hash Dokumen', r.documentHash],
     ['Diarsipkan', r.archivedAt],
     ['Diperbarui', r.updatedAt],
-  ]);
+  ];
+  if (devMode) metadataPairs.splice(4, 0, ['Sumber', r.sourceType], ['Hash Dokumen', r.documentHash]);
+  const metadata = renderKvList(metadataPairs);
 
   const evidence = renderKvList(Object.entries(r.sourceSnapshot || {}));
 
   const relationships = contributed
-    ? renderKvList([['Knowledge Terkait', linkedKnowledge && linkedKnowledge.ok ? `${linkedKnowledge.data.kind} (${linkedKnowledge.data.lifecycleState})` : knowledgeId]])
+    ? renderKvList([['Knowledge Terkait', linkedKnowledge && linkedKnowledge.ok
+      ? `${kindLabel(linkedKnowledge.data.kind)} (${devMode ? linkedKnowledge.data.lifecycleState : lifecycleLabel(linkedKnowledge.data.lifecycleState)})`
+      : knowledgeId]])
     : renderEmptyState('Belum ada Knowledge yang terhubung ke dokumen ini.');
 
   const historyList = history.length ? renderKvList(history.map((v) => [`Versi ${v.version}`, v.updatedAt])) : null;
 
+  // Diff Viewer shows raw field/before/after JSON — internal, Developer only.
   let diffHtml = null;
-  if (history.length >= 2) {
+  if (devMode && history.length >= 2) {
     const diff = computeDiff(history[history.length - 2], history[history.length - 1]);
     diffHtml = renderDiffTable(diff);
   }
@@ -491,20 +528,30 @@ function renderUploadQueueSection() {
 /* ── Review (Pending / Approved / Rejected) ───────────────────────── */
 
 function renderReviewSection() {
+  const devMode = isDeveloperMode();
   const filters = [
     { id: 'pending', label: 'Pending Review' },
     { id: 'approved', label: 'Approved' },
     { id: 'rejected', label: 'Rejected' },
   ];
 
+  // Sprint 0 (Presentation Truth) — a bare Knowledge Item Id used to be
+  // the row's primary text always; Normal Mode now shows the item's kind
+  // label instead (a normal user never needs the internal id), Developer
+  // Mode keeps the raw id.
+  const kindLabelFor = (itemId) => {
+    const r = knowledgeGetById(itemId);
+    return r.ok ? kindLabel(r.data.kind) : itemId;
+  };
+
   let rows = [];
   if (st.reviewFilter === 'pending') {
-    rows = getReviewQueue().map((e) => ({ id: e.itemId, meta: 'Pending Review' }));
+    rows = getReviewQueue().map((e) => ({ id: e.itemId, primary: kindLabelFor(e.itemId), meta: 'Pending Review' }));
   } else if (st.reviewFilter === 'approved') {
-    rows = safeList(knowledgeList, { lifecycleState: LIFECYCLE_STATE.APPROVED }).map((i) => ({ id: i.id, meta: `Approved · ${esc(i.kind)}` }));
+    rows = safeList(knowledgeList, { lifecycleState: LIFECYCLE_STATE.APPROVED }).map((i) => ({ id: i.id, primary: kindLabel(i.kind), meta: 'Approved' }));
   } else {
     const candidateEntries = getCandidateQueue();
-    rows = deriveRejectedFromCandidateQueue(candidateEntries, knowledgeGetHistory).map((e) => ({ id: e.itemId, meta: `Ditolak pada versi ${e.rejectedAtVersion}` }));
+    rows = deriveRejectedFromCandidateQueue(candidateEntries, knowledgeGetHistory).map((e) => ({ id: e.itemId, primary: kindLabelFor(e.itemId), meta: `Ditolak pada versi ${e.rejectedAtVersion}` }));
   }
 
   return `
@@ -520,8 +567,8 @@ function renderReviewSection() {
       <div class="wlk-sec">
         ${rows.length ? renderRowList(rows, (row) => `
           <li class="wlk-row">
-            <span class="wlk-row-primary">${esc(row.id)}</span>
-            <span class="wlk-row-secondary">${row.meta}</span>
+            <span class="wlk-row-primary">${esc(devMode ? row.id : row.primary)}</span>
+            <span class="wlk-row-secondary">${esc(row.meta)}</span>
           </li>`) : renderEmptyState(`Tidak ada item pada status "${filters.find((f) => f.id === st.reviewFilter).label}".`)}
       </div>
     </div>`;

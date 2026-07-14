@@ -1790,7 +1790,7 @@ async function navEngineering(screen, navId) {
 /* ── MODUL: Sarpras Intelligence ── (V2.0.10, embedded native module, single
    pilot identity only — see isV2Enabled() / canAccessModule('sarprasIntelligence')) */
 const SIC_MENU_TITLES = {
-  dashboard: 'Dashboard', nor: 'NOR Center', archive: 'Archive Center',
+  dashboard: 'Ringkasan', nor: 'NOR Center', archive: 'Archive Center',
   knowledge: 'Knowledge Center', learning: 'Learning Dashboard',
 };
 async function navSarprasIntelligence(screen, navId) {
@@ -2453,7 +2453,7 @@ function initV2Panel() {
          aria-label="Sarpras Intelligence menu" style="display:none;">
       <button class="v2-panel-nav-item v2-panel-nav-item--active" id="v2NavSicDashboard" type="button">
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M3 4a1 1 0 011-1h5a1 1 0 011 1v5a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM11 4a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1V4zM11 10a1 1 0 011-1h4a1 1 0 011 1v6a1 1 0 01-1 1h-4a1 1 0 01-1-1v-6zM3 13a1 1 0 011-1h5a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3z"/></svg>
-        Dashboard
+        Ringkasan
       </button>
       <button class="v2-panel-nav-item" id="v2NavSicNor" type="button">
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h4a1 1 0 100-2H7z" clip-rule="evenodd"/></svg>

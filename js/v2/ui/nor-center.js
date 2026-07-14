@@ -72,6 +72,7 @@ import { LIFECYCLE_STATE, LIFECYCLE_STATE_DEFS } from '../knowledge/contracts/li
 import { generateKnowledgeId } from '../knowledge/contracts/identity-contract.js';
 import { buildAllProfiles, listProfileTypes } from '../knowledge/profiles/profile-engine.js';
 import { listDatasets } from '../knowledge/datasets/registry/dataset-registry.js';
+import { getKind } from '../knowledge/registry/kind-registry.js';
 
 import { computeArchiveHealth } from '../organizational-memory/archive-health-engine.js';
 import { getArchiveTimeline } from '../organizational-memory/archive-timeline-engine.js';
@@ -88,6 +89,7 @@ import { norNumberFromSequence, todayISO } from '../../petty-cash/petty-cash-con
 import {
   esc, renderEmptyState, renderTabShell, renderRowList, renderStatCards,
   renderFilterBar, renderDetailSection, renderKvList, renderDetail, renderDiffTable,
+  isDeveloperMode,
 } from './shared/workspace-list-kit.js';
 import { createDatasetImportController } from './dataset-import-center.js';
 import {
@@ -280,6 +282,21 @@ function getNorKnowledgeStatus() {
     .map((s) => ({ id: s.id, label: s.label, count: safeKnowledgeList({ domainType: 'nor', lifecycleState: s.id }).length }));
 }
 
+/** Sprint 0 (Presentation Truth) — friendly label for a Knowledge `kind`
+ *  id, same registry-lookup pattern archive-center.js/knowledge-center.js
+ *  already use. */
+function kindLabel(id) {
+  const k = getKind(id);
+  return k ? k.label : id;
+}
+
+/** Sprint 0 — the registered human label instead of the raw lowercase
+ *  lifecycleState enum id a normal user should never see. */
+function lifecycleLabel(id) {
+  const def = LIFECYCLE_STATE_DEFS.find((d) => d.id === id);
+  return def ? def.label : id;
+}
+
 /** Archive <-> Knowledge cross-link — reuses the SAME deterministic id
  *  scheme knowledge-contribution-engine.js already established. */
 function renderArchiveLinkPanel(recordId) {
@@ -290,7 +307,10 @@ function renderArchiveLinkPanel(recordId) {
   if (contributed) {
     const knowledgeId = generateKnowledgeId({ domainType: record.sourceDomainType, sourceType: record.sourceDomainType, sourceRef: record.sourceId });
     const knowledgeResult = knowledgeGetById(knowledgeId);
-    knowledgeSummary = knowledgeResult.ok ? `${knowledgeResult.data.kind} — status ${knowledgeResult.data.lifecycleState}` : 'Belum ada Knowledge yang terhubung ke dokumen ini.';
+    const devMode = isDeveloperMode();
+    knowledgeSummary = knowledgeResult.ok
+      ? `${devMode ? knowledgeResult.data.kind : kindLabel(knowledgeResult.data.kind)} — status ${devMode ? knowledgeResult.data.lifecycleState : lifecycleLabel(knowledgeResult.data.lifecycleState)}`
+      : 'Belum ada Knowledge yang terhubung ke dokumen ini.';
   }
   return `
     <div class="wlk-sec">
@@ -626,7 +646,7 @@ function renderProfilesOverrides() {
         return `
           <li class="wlk-row">
             <span class="wlk-row-primary">${esc(o.overrideType)} — ${esc(o.key)} (${esc(o.action)})</span>
-            <span class="wlk-row-secondary">${esc(o.lifecycleState)}</span>
+            <span class="wlk-row-secondary">${esc(isDeveloperMode() ? o.lifecycleState : lifecycleLabel(o.lifecycleState))}</span>
             ${next ? `<button class="wlk-btn" data-act="${next.act}" data-id="${esc(o.id)}" type="button">${esc(next.label)}</button>` : ''}
             ${rejectBtn}
           </li>`;
@@ -693,9 +713,10 @@ function renderReviewSection() {
 }
 
 function renderReviewRows(items) {
+  const devMode = isDeveloperMode();
   return renderRowList(items, (it) => `
     <li class="wlk-row" data-act="nc-review-row" data-id="${esc(it.id)}" data-clickable="1">
-      <span class="wlk-row-primary">${esc(it.kind || it.id)}</span>
+      <span class="wlk-row-primary">${esc(devMode ? (it.kind || it.id) : kindLabel(it.kind || it.id))}</span>
       <span class="wlk-row-secondary">${esc(String(it.updatedAt || '').slice(0, 10))}</span>
     </li>`);
 }
@@ -749,16 +770,27 @@ function ensurePettyCashSettingsLive() {
   onPettyCashChange(() => { if (st.section === 'settings') render(); });
 }
 
+// Sprint 1 (Autonomy Closure, Part 3/10) — same coalesced-render idiom
+// knowledge-center.js/learning-dashboard.js already use.
+let _liveRenderTimer = null;
+function scheduleLiveRender() {
+  if (_liveRenderTimer) return;
+  _liveRenderTimer = setTimeout(() => { _liveRenderTimer = null; render(); }, 100);
+}
+
 /** Phase 1 (Operational Engine Hardening) — cross-tab realtime sync. The
  *  underlying RTDB sync itself is already started once, unconditionally,
  *  by sarpras-intelligence-center.js's mount; this only registers the
  *  re-render hook so a change made in another browser tab is reflected
- *  here without a manual refresh. Guarded so it only ever runs once. */
+ *  here without a manual refresh. Guarded so it only ever runs once.
+ *  Sprint 1 — previously only re-rendered while `st.section === 'archive'`;
+ *  every other internal tab (Dashboard/Generate/Drafts/Profiles/Review/
+ *  Settings) sat stale until manually clicked away and back. Now
+ *  re-renders whichever tab is active. */
 function ensureImportPipelineLive() {
   if (importPipelineLiveStarted) return;
   importPipelineLiveStarted = true;
-  const onRemoteChange = () => { if (st.section === 'archive') render(); };
-  registerImportSessionChangeListener(onRemoteChange);
-  registerImportBatchChangeListener(onRemoteChange);
-  registerFileStorageChangeListener(onRemoteChange);
+  registerImportSessionChangeListener(scheduleLiveRender);
+  registerImportBatchChangeListener(scheduleLiveRender);
+  registerFileStorageChangeListener(scheduleLiveRender);
 }

@@ -92,7 +92,7 @@ import { listStoredFiles, getStoredFileBySha256 } from '../file-storage/file-sto
 
 import {
   esc, renderEmptyState, renderRowList, renderStatCards, renderFilterBar, renderSearchBox,
-  renderDetailSection, renderKvList, renderDetail, renderDiffTable, formatFileSize,
+  renderDetailSection, renderKvList, renderDetail, renderDiffTable, formatFileSize, isDeveloperMode,
 } from './shared/workspace-list-kit.js';
 
 /** Phase 2 (Autonomous Learning Pipeline), Part 5 — "Unified Import
@@ -128,6 +128,22 @@ const MIME_TO_KIND = Object.freeze({
 const STATE_LABEL = Object.freeze(
   IMPORT_SESSION_STATE_DEFS.reduce((acc, d) => ({ ...acc, [d.id]: d.label }), {}),
 );
+
+/** Sprint 0 (Presentation Truth) — Normal Mode's plain-Indonesian label for
+ *  the raw lifecycle state, used ONLY where the filter/stat-card axis is
+ *  genuinely the 5-state lifecycle (not the 5-phase pipeline vocabulary —
+ *  the two enumerate different things and collapsing state onto phase here
+ *  would make distinct filter chips like "Pending Review" and "Approved"
+ *  render with the identical label "Processing"). Same "translate the enum
+ *  label, keep a 1:1 mapping" pattern BATCH_STATUS_LABEL below already
+ *  uses. Developer Mode keeps the raw STATE_LABEL unchanged. */
+const NORMAL_STATE_LABEL = Object.freeze({
+  [IMPORT_SESSION_STATE.UPLOADED]: 'Diunggah',
+  [IMPORT_SESSION_STATE.PENDING_REVIEW]: 'Menunggu Tinjauan',
+  [IMPORT_SESSION_STATE.APPROVED]: 'Disetujui',
+  [IMPORT_SESSION_STATE.KNOWLEDGE_IMPORTED]: 'Menjadi Pengetahuan',
+  [IMPORT_SESSION_STATE.ARCHIVED]: 'Diarsipkan',
+});
 
 const QUEUE_ROW_CAP = 50;
 
@@ -205,6 +221,17 @@ export function effectiveStage(session) {
   return PIPELINE_STAGE_ORDER[idx];
 }
 
+/** Sprint 0 (Presentation Truth) — the friendly phase label for a bare
+ *  session `state` string (history/timeline entries only ever record
+ *  `state`, never a per-version `pipelineStage`). Reuses the SAME
+ *  state-implied floor effectiveStage() already relies on — never a
+ *  second stage-inference, just applied without a pipelineStage input. */
+function friendlyStateLabel(state) {
+  const stage = STATE_MIN_STAGE[state] || PIPELINE_STAGE.CLASSIFICATION;
+  const phaseIndex = STAGE_TO_NORMAL_PHASE_INDEX[stage] ?? 0;
+  return NORMAL_PHASES[phaseIndex].label;
+}
+
 /** Phase 2.5 Part 5 — genuine operational counters computed DIRECTLY from
  *  persisted Import Sessions (never the transient `p.items`, never
  *  estimated/animated). Each session in the batch is classified into
@@ -257,19 +284,6 @@ export function computeBatchCounters(p) {
     failed,
     waitingReview: buckets.waitingReview,
   };
-}
-
-const PRESENTATION_MODE_KEY = 'sarpras.import.presentationMode';
-
-function loadPresentationMode() {
-  try {
-    const v = typeof localStorage !== 'undefined' ? localStorage.getItem(PRESENTATION_MODE_KEY) : null;
-    return v === 'developer' ? 'developer' : 'normal';
-  } catch { return 'normal'; }
-}
-
-function savePresentationMode(mode) {
-  try { if (typeof localStorage !== 'undefined') localStorage.setItem(PRESENTATION_MODE_KEY, mode); } catch { /* private mode / disabled storage — non-fatal, just won't persist */ }
 }
 
 function domainLabel(id) {
@@ -331,6 +345,33 @@ export function reviewReasons(session) {
     // auto-completion genuinely could not finish (a real engine error);
     // a human decision is legitimately needed. Rare, never routine noise.
     reasons.push({ code: 'PENDING_DECISION', message: 'Bukti lengkap tetapi belum selesai otomatis — perlu keputusan manual.', confidence: session.confidence, evidence: null });
+  } else if (session.state === IMPORT_SESSION_STATE.APPROVED) {
+    // Sprint 1 (Autonomy Closure, Part 4) — reaching this branch means
+    // `awaitingContent` was true AND `hasContentFacts` was true (the first
+    // branch's `!hasContentFacts` was false), yet the session is STILL
+    // sitting at Approved. cascadeFromApproved() runs synchronously right
+    // after approval on every path (auto-import and the manual "Setujui"
+    // click) — the only way to observe Approved-with-facts afterward is
+    // that cascadeFromApproved() itself returned false (markKnowledgeImported
+    // or doArchive failed internally). This was previously invisible: no
+    // branch here covered it, so the session sat in "processing" forever
+    // with zero indication anything was wrong. Root-caused via full
+    // pipeline trace, not guessed.
+    reasons.push({ code: 'KNOWLEDGE_IMPORT_STALLED', message: 'Fakta konten lengkap tetapi belum berhasil menjadi Knowledge secara otomatis — coba lagi secara manual.', confidence: session.confidence, evidence: null });
+  }
+  // Sprint 1 (Autonomy Closure, Part 2) — a batch left mid-flight by a
+  // crash/refresh and then cancelled via the resume banner ("Batalkan
+  // Batch Ini") previously left its straggler sessions invisible: cancelBatch()
+  // only ever touches the ImportBatchRecord, never the sessions it created.
+  // Without this check a facts-less/never-submitted straggler had zero
+  // reviewReasons and sat in "Aktivitas Langsung" forever, indistinguishable
+  // from healthy in-progress work — which is why the cancel button looked
+  // like it "did nothing" to the one thing the user was actually watching.
+  if (session.batchId && session.state !== IMPORT_SESSION_STATE.ARCHIVED) {
+    const batchResult = getBatch(session.batchId);
+    if (batchResult.ok && batchResult.data.status === BATCH_STATUS.CANCELLED) {
+      reasons.push({ code: 'BATCH_CANCELLED', message: 'Batch impor untuk sesi ini telah dibatalkan — tidak akan dilanjutkan secara otomatis.', confidence: session.confidence, evidence: null });
+    }
   }
   if (typeof session.confidence === 'number' && session.confidence < AUTO_POPULATE_CONFIDENCE_THRESHOLD) {
     reasons.push({ code: 'LOW_CONFIDENCE', message: `Confidence ${session.confidence} di bawah ambang batas populasi otomatis (${AUTO_POPULATE_CONFIDENCE_THRESHOLD}).`, confidence: session.confidence, evidence: session.confidenceRationale });
@@ -443,6 +484,21 @@ export function findReusableContentFacts(storedFileRecord, currentSessionId) {
   return null;
 }
 
+/** Sprint 0 (Presentation Truth) — Advanced Metadata open/save/close all
+ *  call `rerender()`, which does `contentEl.innerHTML = controller.render()`
+ *  inside the host's real scrolling container (`.main-content` — same
+ *  element app.js's own workspace-switch scrollY restore already targets).
+ *  A full innerHTML replace drops the user's scroll position, losing their
+ *  place in a long queue right after opening/saving/closing the panel.
+ *  Keystrokes are already safe (see onInput's own comment on why it never
+ *  calls rerender) — this covers the three remaining click actions. */
+function rerenderPreservingScroll(rerender) {
+  const scrollEl = typeof document !== 'undefined' ? document.querySelector('.main-content') : null;
+  const top = scrollEl ? scrollEl.scrollTop : 0;
+  rerender();
+  if (scrollEl) requestAnimationFrame(() => { scrollEl.scrollTop = top; });
+}
+
 export function createDatasetImportController(opts = {}) {
   const scopedDomainType = opts.domainType || null;
   const lockDomainType = !!opts.lockDomainType;
@@ -453,9 +509,6 @@ export function createDatasetImportController(opts = {}) {
     // UTILITY_VIEWS / renderUtilitiesBar()).
     view: 'workspace',
     utilitiesOpen: false,
-    // Phase 2 Follow-up (Req 3) — Normal (friendly, 5 phases) vs Developer
-    // (detailed, 7 stages), persisted per-user in localStorage.
-    presentationMode: loadPresentationMode(),
     queueStateFilter: '__all',
     selectedSessionId: null,
     reportSessionId: null,
@@ -522,7 +575,6 @@ export function createDatasetImportController(opts = {}) {
     return `
       <div class="wlk-sec dic-utilities-bar">
         ${backLink}
-        ${renderModeToggle()}
         <div class="dic-utilities">
           <button class="wlk-btn wlk-btn--ghost" data-act="dic-utilities-toggle" type="button">Utilities ${st.utilitiesOpen ? '▴' : '▾'}</button>
           ${st.utilitiesOpen ? `<div class="dic-utilities-menu">${menuItems}</div>` : ''}
@@ -535,6 +587,32 @@ export function createDatasetImportController(opts = {}) {
    *  click required for the daily flow (Part 3's exception-only default
    *  lives here too — Needs Attention is prominent, Recent Imports is a
    *  collapsed, de-emphasized `<details>`). */
+  /** Sprint 1 (Autonomy Closure, Part 5) — "Live Operation View": real,
+   *  always-visible operational counts across EVERY session (not just an
+   *  active batch, unlike the transient renderBatchProgress() stat cards
+   *  below), bucketed by the same friendly NORMAL_PHASES vocabulary the
+   *  stage badges already use. Every count is a fresh read of `sessions()`
+   *  — no estimation, no separate counter store. There is no distinct
+   *  persisted "Archiving" state (Learning/Archive both fold into a
+   *  single synchronous doArchive() call, per markArchived's own header),
+   *  so this reuses the SAME 5-phase collapse as the per-row stage badge
+   *  rather than inventing a bucket no persisted state actually occupies.
+   */
+  function computeOperationalOverview(all) {
+    const counts = NORMAL_PHASES.map(() => 0);
+    all.forEach((s) => { counts[STAGE_TO_NORMAL_PHASE_INDEX[effectiveStage(s)] ?? 0] += 1; });
+    return NORMAL_PHASES.map((phase, i) => ({ label: phase.label, count: counts[i] }));
+  }
+
+  function renderOperationalOverview(all) {
+    const cards = computeOperationalOverview(all).map((b) => ({ count: b.count, label: b.label }));
+    return `
+      <div class="wlk-sec">
+        <div class="wlk-sec-title">Ringkasan Operasional</div>
+        ${renderStatCards(cards)}
+      </div>`;
+  }
+
   function renderWorkspace() {
     const p = st.batchProgress;
     const all = sessions();
@@ -566,6 +644,8 @@ export function createDatasetImportController(opts = {}) {
 
         <div class="wlk-sec">${renderUploadZone()}</div>
 
+        ${renderOperationalOverview(all)}
+
         ${progressBlock}
 
         ${inFlight.length ? `
@@ -596,17 +676,6 @@ export function createDatasetImportController(opts = {}) {
       </div>`;
   }
 
-  /** Phase 2 Follow-up (Req 3) — the Normal/Developer toggle, persisted to
-   *  localStorage. Placed in the Utilities bar so it stays out of the way
-   *  of the daily flow but is always reachable. */
-  function renderModeToggle() {
-    return `
-      <div class="dic-mode-toggle" role="group" aria-label="Mode tampilan pipeline">
-        <button class="dic-mode-btn${st.presentationMode === 'normal' ? ' dic-mode-btn--active' : ''}" data-act="dic-mode" data-id="normal" type="button">Normal</button>
-        <button class="dic-mode-btn${st.presentationMode === 'developer' ? ' dic-mode-btn--active' : ''}" data-act="dic-mode" data-id="developer" type="button">Developer</button>
-      </div>`;
-  }
-
   /** Phase 4 — the redesigned drag zone: large, generous whitespace, a
    *  hidden native `<input>` triggered by a real styled button (never the
    *  raw browser file-chooser look), folder support unchanged/reused. */
@@ -625,7 +694,9 @@ export function createDatasetImportController(opts = {}) {
           <button class="wlk-btn dic-dropzone-btn" data-act="dic-choose-files" type="button">Pilih File</button>
           <button class="wlk-btn wlk-btn--ghost dic-dropzone-btn" data-act="dic-choose-folder" type="button">Pilih Folder</button>
         </div>
-        <div class="dic-dropzone-hint">Metadata terisi otomatis dari nama file/folder, riwayat duplikat, dan Pattern Discovery — Advanced Metadata hanya muncul bila benar-benar diperlukan.</div>
+        <div class="dic-dropzone-hint">${isDeveloperMode()
+          ? 'Metadata terisi otomatis dari nama file/folder, riwayat duplikat, dan Pattern Discovery — Advanced Metadata hanya muncul bila benar-benar diperlukan.'
+          : 'Metadata terisi otomatis dari nama file/folder dan riwayat dokumen sebelumnya — formulir tambahan hanya muncul bila benar-benar diperlukan.'}</div>
         <div class="dic-dropzone-domain"><label>Domain Unggahan</label>${domainSelect}</div>
         <input data-act="dic-file-input" class="dic-file-input-hidden" type="file" multiple accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/json,.json"/>
         <input data-act="dic-folder-input" class="dic-file-input-hidden" type="file" multiple webkitdirectory directory/>
@@ -636,10 +707,12 @@ export function createDatasetImportController(opts = {}) {
 
   function renderQueue() {
     const all = sessions();
+    const devMode = isDeveloperMode();
+    const stateLabelOf = (id) => (devMode ? STATE_LABEL[id] : NORMAL_STATE_LABEL[id]) || id;
     const stateFilters = [
       { id: '__all', label: 'Semua' },
       { id: '__needs_review', label: `Perlu Perhatian (${all.filter((s) => reviewReasons(s).length > 0).length})` },
-      ...IMPORT_SESSION_STATE_DEFS.map((d) => ({ id: d.id, label: d.label })),
+      ...IMPORT_SESSION_STATE_DEFS.map((d) => ({ id: d.id, label: stateLabelOf(d.id) })),
     ];
     const filtered = st.queueStateFilter === '__all' ? all
       : st.queueStateFilter === '__needs_review' ? all.filter((s) => reviewReasons(s).length > 0)
@@ -647,7 +720,7 @@ export function createDatasetImportController(opts = {}) {
     const rows = filtered.slice(0, QUEUE_ROW_CAP);
     const hiddenCount = filtered.length - rows.length;
 
-    const cards = IMPORT_SESSION_STATE_DEFS.map((d) => ({ count: all.filter((s) => s.state === d.id).length, label: d.label }));
+    const cards = IMPORT_SESSION_STATE_DEFS.map((d) => ({ count: all.filter((s) => s.state === d.id).length, label: stateLabelOf(d.id) }));
 
     return `
       <div class="wlk-page">
@@ -706,10 +779,17 @@ export function createDatasetImportController(opts = {}) {
     // Phase 2 Follow-up — the persisted pipeline stage in the active
     // vocabulary (Normal/Developer), read from the session itself.
     const stageBadge = `<span class="dic-stage-badge">${esc(stageLabelFor(s))}</span>`;
+    // Sprint 0 (Presentation Truth) — Normal Mode shows the friendly stage
+    // badge ONLY; the raw lifecycle label (STATE_LABEL) used to render
+    // right next to it, the exact double-vocabulary the IX audit flagged.
+    // Developer Mode keeps both, since the raw state is genuinely useful
+    // there.
+    const devMode = isDeveloperMode();
+    const stateText = devMode ? ` — ${esc(STATE_LABEL[s.state] || s.state)}` : '';
     return `
       <li class="wlk-row" data-act="dic-session-row" data-id="${esc(s.id)}" data-clickable="1">
-        <span class="wlk-row-primary">${esc(s.filename)} — ${esc(STATE_LABEL[s.state] || s.state)}${s.autoImported ? ' · otomatis' : ''} ${stageBadge}</span>
-        <span class="wlk-row-secondary">${esc(domainLabel(s.domainType))} · ${esc(s.kind)} · ${formatFileSize(s.sizeBytes)}${typeof s.confidence === 'number' ? ` · confidence ${s.confidence}` : ''}${s.validationWarnings && s.validationWarnings.length ? ` · ${s.validationWarnings.length} peringatan` : ''}</span>
+        <span class="wlk-row-primary">${esc(s.filename)}${stateText}${s.autoImported ? ' · otomatis' : ''} ${stageBadge}</span>
+        <span class="wlk-row-secondary">${esc(domainLabel(s.domainType))} · ${esc(s.kind)} · ${formatFileSize(s.sizeBytes)}${typeof s.confidence === 'number' && devMode ? ` · confidence ${s.confidence}` : ''}${s.validationWarnings && s.validationWarnings.length ? ` · ${s.validationWarnings.length} peringatan` : ''}</span>
         ${reasonLine}
         ${nextBtn}
         ${rejectBtn}
@@ -725,6 +805,8 @@ export function createDatasetImportController(opts = {}) {
       UNSUPPORTED_FORMAT: 'Format tidak didukung — dokumen ini tidak dapat diproses lebih lanjut.',
       MISSING_CONTENT_FACTS: 'Buka Advanced Metadata untuk melampirkan fakta konten sebelum menjadi Knowledge.',
       ARCHIVE_PENDING: 'Coba arsipkan ulang secara manual.',
+      KNOWLEDGE_IMPORT_STALLED: 'Klik "Impor sebagai Knowledge" untuk mencoba lagi.',
+      BATCH_CANCELLED: 'Tolak sesi ini, atau lengkapi dan lanjutkan secara manual jika ingin tetap memprosesnya.',
     }[reasonCode] || 'Tinjau secara manual.';
   }
 
@@ -732,64 +814,77 @@ export function createDatasetImportController(opts = {}) {
     const result = getImportSession(id);
     if (!result.ok) return '';
     const s = result.data;
-    const metadata = renderKvList([
+    const devMode = isDeveloperMode();
+    // Sprint 0 (Presentation Truth) — Normal Mode never shows Dataset Type,
+    // Knowledge Kind, the raw lifecycle label, or internal IDs (the exact
+    // terms the mission names); Developer Mode still sees all of it. Status
+    // itself uses the same friendly phase vocabulary as the stage badge —
+    // no more STATE_LABEL sitting next to the friendly badge.
+    const metadataPairs = [
       ['Nama File', s.filename], ['Tipe', s.mimeType], ['Ukuran', formatFileSize(s.sizeBytes)],
-      ['Domain', domainLabel(s.domainType)], ['Tipe Dataset', s.datasetType], ['Knowledge Kind', s.knowledgeKind],
-      ['Status', STATE_LABEL[s.state] || s.state], ['Import Batch', s.batchId],
-      ['Diunggah oleh', s.uploadedBy], ['Disetujui oleh', s.approvedBy], ['Knowledge Item Id', s.knowledgeItemId],
-      ['Archive Record Id', s.archiveRecordId], ['Diimpor Otomatis', s.autoImported ? 'Ya (confidence tinggi)' : 'Tidak'],
-    ]);
+      ['Domain', domainLabel(s.domainType)],
+      ['Status', devMode ? (STATE_LABEL[s.state] || s.state) : stageLabelFor(s)],
+      ['Import Batch', s.batchId],
+      ['Diunggah oleh', s.uploadedBy], ['Disetujui oleh', s.approvedBy],
+      ['Diimpor Otomatis', s.autoImported ? 'Ya' : 'Tidak'],
+    ];
+    if (devMode) {
+      metadataPairs.splice(4, 0, ['Tipe Dataset', s.datasetType], ['Knowledge Kind', s.knowledgeKind]);
+      metadataPairs.push(['Knowledge Item Id', s.knowledgeItemId], ['Archive Record Id', s.archiveRecordId]);
+    }
+    const metadata = renderKvList(metadataPairs);
     // V2.1.2 Part M — Metadata & Audit Improvements: Confidence Score +
-    // Inference Source (Pattern Used), shown separately from the raw
-    // metadata list for visibility.
-    const confidenceKv = typeof s.confidence === 'number' ? renderKvList([
+    // Inference Source (Pattern Used) — internal/technical, Developer only.
+    const confidenceKv = devMode && typeof s.confidence === 'number' ? renderKvList([
       ['Confidence Score', `${s.confidence}${s.confidenceRationale && s.confidenceRationale.level ? ` (${s.confidenceRationale.level})` : ''}`],
       ['Sumber Inferensi — Domain', s.confidenceRationale ? s.confidenceRationale.domainType : '—'],
       ['Sumber Inferensi — Tipe Dataset', s.confidenceRationale ? s.confidenceRationale.datasetType : '—'],
       ['Sumber Inferensi — Knowledge Kind', s.confidenceRationale ? s.confidenceRationale.knowledgeKind : '—'],
     ]) : null;
     // Phase 2 Follow-up — the real, explainable confidence signal
-    // breakdown persisted by the deterministic confidence engine. Each
-    // signal shows whether it contributed (available) and why; the two
-    // honest gaps (policyMatch/knowledgeGraphEvidence) render as
-    // "not available" with their real rationale, never a fabricated score.
+    // breakdown persisted by the deterministic confidence engine. Developer
+    // only (raw scores/weights) — a normal user gets the same explanation
+    // via the row's plain-language "Alasan"/"Saran" text instead.
     const signals = s.confidenceRationale && Array.isArray(s.confidenceRationale.signals) ? s.confidenceRationale.signals : null;
-    const confidenceSignalsKv = signals && signals.length ? renderKvList(signals.map((sig) => [
+    const confidenceSignalsKv = devMode && signals && signals.length ? renderKvList(signals.map((sig) => [
       sig.label,
       sig.available ? `${sig.subScore} (bobot ${sig.weight}) — ${sig.rationale}` : `tidak tersedia — ${sig.rationale}`,
     ])) : null;
-    // Part H — Storage Hardening display: Original Size / Stored Size
-    // (identical — no compression exists, shown honestly, never a
-    // fabricated ratio) / Deduplication Status / Storage Path.
-    const storageKv = s.storagePath ? renderKvList([
+    // Part H — Storage Hardening display (SHA-256/path/dedup) — internal,
+    // Developer only.
+    const storageKv = !devMode ? null : (s.storagePath ? renderKvList([
       ['SHA-256', s.sha256],
       ['Storage Path', s.storagePath],
       ['Original Size', formatFileSize(s.sizeBytes)],
       ['Stored Size', formatFileSize(s.sizeBytes)],
       ['Deduplication Status', s.fileStorageId && listStoredFiles().find((f) => f.id === s.fileStorageId && f.linkedSessionIds.length > 1) ? 'Duplikat — bytes tidak diunggah ulang' : 'Unggahan baru'],
-    ]) : (s.sha256 ? renderKvList([['SHA-256', s.sha256], ['Storage Path', 'Belum diunggah ke Storage (lihat error unggahan bila ada)']]) : null);
+    ]) : (s.sha256 ? renderKvList([['SHA-256', s.sha256], ['Storage Path', 'Belum diunggah ke Storage (lihat error unggahan bila ada)']]) : null));
     const previewHtml = renderDocumentPreview(s);
     const archiveDup = archiveDuplicateWarning(s);
     const warningPairs = [
       ...(s.validationWarnings || []).map((w) => [w.code, w.message]),
       ...(archiveDup ? [['DUPLICATE_ARCHIVE_MATCH', archiveDup]] : []),
     ];
-    const warnings = warningPairs.length ? renderKvList(warningPairs) : null;
-    const errors = s.validationErrors && s.validationErrors.length
+    // Raw validation codes are Developer-only — the row's own "Alasan"/
+    // "Saran" text already surfaces the equivalent message to everyone.
+    const warnings = devMode && warningPairs.length ? renderKvList(warningPairs) : null;
+    const errors = devMode && s.validationErrors && s.validationErrors.length
       ? renderKvList(s.validationErrors.map((e) => [e.code, e.message])) : null;
     const facts = s.manualEntryFacts ? renderKvList(Object.entries(s.manualEntryFacts))
       : (s.parsedContent ? renderKvList(Object.entries(s.parsedContent)) : null);
 
     // V2.1 — Import Session Viewer: Knowledge status, Archive status,
-    // Timeline, Pattern recommendations.
-    const knowledgeStatusKv = s.knowledgeItemId ? renderKvList([['Knowledge Item', s.knowledgeItemId], ['Status', 'draft (menunggu review Knowledge terpisah)']]) : null;
-    const archiveStatusKv = s.archiveRecordId ? renderKvList([['Archive Record', s.archiveRecordId]]) : null;
+    // Timeline, Pattern recommendations. Status Knowledge/Archive carry
+    // raw internal IDs — Developer only (Status already conveys this).
+    const knowledgeStatusKv = devMode && s.knowledgeItemId ? renderKvList([['Knowledge Item', s.knowledgeItemId], ['Status', 'draft (menunggu review Knowledge terpisah)']]) : null;
+    const archiveStatusKv = devMode && s.archiveRecordId ? renderKvList([['Archive Record', s.archiveRecordId]]) : null;
     const historyResult = getImportSessionHistory(id);
     const timeline = historyResult.ok
-      ? renderKvList(historyResult.data.map((v) => [`Versi ${v.version}`, `${STATE_LABEL[v.state] || v.state} — ${v.updatedAt}`])) : null;
+      ? renderKvList(historyResult.data.map((v) => [`Versi ${v.version}`, `${devMode ? (STATE_LABEL[v.state] || v.state) : friendlyStateLabel(v.state)} — ${v.updatedAt}`])) : null;
     const patternSuggestions = inferPatternAssisted(s.domainType, s.filename);
     const patternKv = patternSuggestions.length
-      ? renderKvList(patternSuggestions.map((p) => [`${p.patternType}: ${p.value}`, `support ${p.supportCount} · confidence ${p.confidence}`])) : null;
+      ? renderKvList(patternSuggestions.map((p) => [`${p.patternType}: ${p.value}`,
+        devMode ? `support ${p.supportCount} · confidence ${p.confidence}` : `didukung ${p.supportCount} dokumen serupa`])) : null;
 
     // Phase 2, Part 6 — "Autonomous Learning" made honest, not fabricated:
     // once this session has a real KnowledgeItem, it is IMMEDIATELY
@@ -797,8 +892,9 @@ export function createDatasetImportController(opts = {}) {
     // recomputation) and already factored into Pattern Discovery's own
     // continuous, deterministic recompute above — no separate "run
     // learning now" step exists or is needed, because both are pure reads
-    // over the repository this session just became part of.
-    const learningKv = s.knowledgeItemId ? (() => {
+    // over the repository this session just became part of. Engine names
+    // ("Knowledge Graph"/"Pattern Discovery") — Developer only.
+    const learningKv = devMode && s.knowledgeItemId ? (() => {
       const neighbors = getNeighbors(s.knowledgeItemId);
       const relatedCount = neighbors.ok ? neighbors.data.length : 0;
       return renderKvList([
@@ -809,12 +905,45 @@ export function createDatasetImportController(opts = {}) {
 
     const advancedPanel = st.advancedEditId === id ? renderAdvancedMetadataPanel(s) : '';
 
+    // Sprint 1 (Autonomy Closure, Part 8) — Pipeline Self-Diagnostics,
+    // Developer Mode only ("this information... Normal users should never
+    // see"). Every field is honestly derived from data that already
+    // exists on this session/its history — no fabricated field, no new
+    // contract/schema. Reuses the SAME `historyResult` already computed
+    // above for the Timeline section rather than re-fetching.
+    const diagnosticsKv = devMode ? (() => {
+      const reasons = reviewReasons(s);
+      const stage = effectiveStage(s);
+      const stageIdx = PIPELINE_STAGE_ORDER.indexOf(stage);
+      const nextStage = stageIdx >= 0 && stageIdx < PIPELINE_STAGE_ORDER.length - 1 ? PIPELINE_STAGE_ORDER[stageIdx + 1] : null;
+      const versions = historyResult.ok ? historyResult.data : [];
+      // "Retry Count" — no such counter is persisted anywhere (adding one
+      // would be a contract change); the honest, real proxy is how many
+      // versions have been written while the session sat in its CURRENT
+      // state (every attach/approve/etc. call bumps the version, even one
+      // that doesn't itself change `state`).
+      const retryCount = Math.max(0, versions.filter((v) => v.state === s.state).length - 1);
+      const elapsedMs = s.updatedAt ? Date.now() - new Date(s.updatedAt).getTime() : 0;
+      const elapsedText = elapsedMs > 3600000 ? `${Math.floor(elapsedMs / 3600000)} jam`
+        : elapsedMs > 60000 ? `${Math.floor(elapsedMs / 60000)} menit`
+          : `${Math.max(0, Math.floor(elapsedMs / 1000))} detik`;
+      return renderKvList([
+        ['Current / Last Successful Stage', DEV_STAGE_LABEL[stage] || stage],
+        ['Current Wait Reason', reasons.length ? reasons[0].message : 'Tidak ada — berjalan normal'],
+        ['Blocked By', reasons.length ? reasons[0].code : '—'],
+        ['Retry Count', String(retryCount)],
+        ['Elapsed Time', elapsedText],
+        ['Next Stage', nextStage ? (DEV_STAGE_LABEL[nextStage] || nextStage) : 'Tidak ada — sudah selesai'],
+      ]);
+    })() : null;
+
     return `
       <div class="wlk-sec">
         <div class="wlk-sec-title">Detail — ${esc(s.filename)}</div>
         ${renderDetail([
           renderDetailSection('Metadata', metadata),
-          renderDetailSection(`Pipeline (${st.presentationMode === 'developer' ? 'Developer' : 'Normal'})`, renderPipelineStages(s)),
+          renderDetailSection(devMode ? 'Pipeline (Developer)' : 'Status', renderPipelineStages(s)),
+          renderDetailSection('Diagnostik Pipeline (Developer Mode)', diagnosticsKv),
           renderDetailSection('Confidence & Sumber Inferensi', confidenceKv),
           renderDetailSection('Rincian Sinyal Confidence', confidenceSignalsKv),
           renderDetailSection('Storage', storageKv),
@@ -826,7 +955,7 @@ export function createDatasetImportController(opts = {}) {
           renderDetailSection('Status Archive', archiveStatusKv),
           renderDetailSection('Pembelajaran & Knowledge Graph', learningKv),
           renderDetailSection('Timeline', timeline),
-          renderDetailSection('Rekomendasi Pattern Discovery', patternKv),
+          renderDetailSection(devMode ? 'Rekomendasi Pattern Discovery' : 'Saran Berdasarkan Pola', patternKv),
         ])}
         ${advancedPanel}
       </div>`;
@@ -957,7 +1086,7 @@ export function createDatasetImportController(opts = {}) {
   function renderPipelineStages(session) {
     if (!session) return '';
     const stage = effectiveStage(session); // Phase 2.5 Part 4 — never behind the authoritative state
-    if (st.presentationMode === 'developer') {
+    if (isDeveloperMode()) {
       const currentIndex = PIPELINE_STAGE_ORDER.indexOf(stage);
       const items = PIPELINE_STAGE_ORDER.map((s, i) => {
         const state = i < currentIndex ? 'done' : i === currentIndex ? 'active' : 'pending';
@@ -978,7 +1107,7 @@ export function createDatasetImportController(opts = {}) {
    *  again read from the persisted stage. */
   function stageLabelFor(session) {
     const stage = effectiveStage(session); // Phase 2.5 Part 4 — authoritative-state-derived, never stale
-    if (st.presentationMode === 'developer') return DEV_STAGE_LABEL[stage] || stage;
+    if (isDeveloperMode()) return DEV_STAGE_LABEL[stage] || stage;
     const phaseIndex = STAGE_TO_NORMAL_PHASE_INDEX[stage] ?? 0;
     return NORMAL_PHASES[phaseIndex].label;
   }
@@ -1026,7 +1155,7 @@ export function createDatasetImportController(opts = {}) {
         ${successBanner}
         ${liveActivity}
         ${controls}
-        ${renderStatCards([
+        ${renderStatCards(isDeveloperMode() ? [
           { count: `${counters.uploading} / ${counters.total}`, label: 'Uploading' },
           { count: counters.processing, label: 'Processing (Policy Validation)' },
           { count: counters.knowledgeExtraction, label: 'Knowledge Extraction' },
@@ -1034,6 +1163,17 @@ export function createDatasetImportController(opts = {}) {
           { count: counters.completed, label: 'Completed' },
           { count: counters.waitingReview, label: 'Waiting Review' },
           { count: counters.failed, label: 'Failed' },
+        ] : [
+          // Sprint 0 (Presentation Truth) — no raw pipeline-stage names
+          // ("Policy Validation", "Knowledge Extraction") in Normal Mode;
+          // same real counters, plain-language labels only.
+          { count: `${counters.uploading} / ${counters.total}`, label: 'Diunggah' },
+          { count: counters.processing, label: 'Diproses' },
+          { count: counters.knowledgeExtraction, label: 'Menjadi Pengetahuan' },
+          { count: counters.learning, label: 'Pembelajaran' },
+          { count: counters.completed, label: 'Selesai' },
+          { count: counters.waitingReview, label: 'Menunggu Tinjauan' },
+          { count: counters.failed, label: 'Gagal' },
         ])}
         ${isDone || isCancelled ? renderRowList(p.items, (i) => `
           <li class="wlk-row" ${i.sessionId ? `data-act="dic-session-row" data-id="${esc(i.sessionId)}" data-clickable="1"` : ''}>
@@ -1127,7 +1267,7 @@ export function createDatasetImportController(opts = {}) {
           ${candidates.length ? renderRowList(candidates.slice(0, QUEUE_ROW_CAP), (s) => `
             <li class="wlk-row" data-act="dic-report-row" data-id="${esc(s.id)}" data-clickable="1">
               <span class="wlk-row-primary">${esc(s.filename)}</span>
-              <span class="wlk-row-secondary">${esc(STATE_LABEL[s.state] || s.state)}</span>
+              <span class="wlk-row-secondary">${esc(isDeveloperMode() ? (STATE_LABEL[s.state] || s.state) : stageLabelFor(s))}</span>
             </li>`) : renderEmptyState('Belum ada laporan impor.', 'Laporan muncul setelah sebuah sesi mencapai Knowledge Imported.')}
         </div>
 
@@ -1350,6 +1490,15 @@ export function createDatasetImportController(opts = {}) {
               factsReusedFromDuplicate = true;
             }
           }
+        } else {
+          // Sprint 1 (Autonomy Closure, Part 4) — uploadFile() RETURNING
+          // {ok:false} (the real shape a permission-denied/exhausted-retry
+          // Storage failure takes) previously had no `else` here at all —
+          // completely silent, no log, no session field, and the pipeline
+          // proceeded as if the file had been stored. This doesn't change
+          // session state (never fabricate a stored file that isn't
+          // there) — it only makes a real failure visible for triage.
+          console.error('[dataset-import-center] Storage upload returned failure for', file.name, uploadResult.error);
         }
       } catch (err) {
         console.error('[dataset-import-center] uploadFile failed for', file.name, err);
@@ -1503,8 +1652,6 @@ export function createDatasetImportController(opts = {}) {
     if (act === 'dic-view') { st.view = id; st.utilitiesOpen = false; rerender(); return true; }
     // Part 5 — the Utilities menu itself.
     if (act === 'dic-utilities-toggle') { st.utilitiesOpen = !st.utilitiesOpen; rerender(); return true; }
-    // Phase 2 Follow-up (Req 3) — Normal/Developer presentation mode.
-    if (act === 'dic-mode') { st.presentationMode = id === 'developer' ? 'developer' : 'normal'; savePresentationMode(st.presentationMode); rerender(); return true; }
     // Part 4 — the redesigned dropzone's real buttons trigger the same
     // hidden, unchanged file inputs (folder support included) rather than
     // showing the native browser file-chooser control directly.
@@ -1556,7 +1703,14 @@ export function createDatasetImportController(opts = {}) {
       rejectImportSession(id, { approverId: 'evan', decidedAt: new Date().toISOString() });
       rerender(); return true;
     }
-    if (act === 'dic-import') { markKnowledgeImported(id); rerender(); return true; }
+    // Sprint 1 (Autonomy Closure, Part 4) — retries the WHOLE remaining
+    // cascade (Knowledge Import -> Archive) in one click, not just the
+    // first step. Previously this called bare markKnowledgeImported(),
+    // so a session stuck here after a failed cascade needed a SECOND
+    // manual "Arsipkan" click even though the button read "Impor sebagai
+    // Knowledge" — matches the "never ask the user to manually continue
+    // the pipeline" decision cascadeFromApproved() itself already documents.
+    if (act === 'dic-import') { cascadeFromApproved(id); rerender(); return true; }
     if (act === 'dic-archive') { doArchive(id); rerender(); return true; }
 
     if (act === 'dic-advanced-open') {
@@ -1568,16 +1722,23 @@ export function createDatasetImportController(opts = {}) {
           facts: current.data.manualEntryFacts || { value: '', documentNumber: '', senderOrigin: '', notes: '' },
         };
       }
-      rerender(); return true;
+      rerenderPreservingScroll(rerender); return true;
     }
-    if (act === 'dic-advanced-close') { st.advancedEditId = null; st.advancedEdit = null; rerender(); return true; }
+    if (act === 'dic-advanced-close') { st.advancedEditId = null; st.advancedEdit = null; rerenderPreservingScroll(rerender); return true; }
     if (act === 'dic-advanced-save') {
       if (st.advancedEdit) {
         updateSessionMetadata(id, { domainType: st.advancedEdit.domainType, datasetType: st.advancedEdit.datasetType, knowledgeKind: st.advancedEdit.knowledgeKind });
-        if (st.advancedEdit.facts.value) attachManualEntryFacts(id, st.advancedEdit.facts);
+        // Sprint 0 (Presentation Truth) — any typed fact (not just "Nilai
+        // Pokok") must be persisted. Gating on `facts.value` alone silently
+        // discarded documentNumber/senderOrigin/notes whenever value was
+        // left blank, so hasContentFacts() never became true and the
+        // session could never reach Knowledge Imported (the "empty
+        // Knowledge" bug).
+        const hasAnyFact = Object.values(st.advancedEdit.facts).some((v) => v && String(v).trim());
+        if (hasAnyFact) attachManualEntryFacts(id, st.advancedEdit.facts);
       }
       st.advancedEditId = null; st.advancedEdit = null;
-      rerender(); return true;
+      rerenderPreservingScroll(rerender); return true;
     }
 
     return false;

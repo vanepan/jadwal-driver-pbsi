@@ -35,6 +35,28 @@ export function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+/* ── presentation mode (Sprint 0 — Presentation Truth) ────────────────
+   ONE global Normal/Developer flag for the whole Sarpras Intelligence
+   platform (not per-workspace) — "teach once, one source of truth" per
+   the Product Constitution. Previously dataset-import-center.js kept its
+   own private, file-scoped copy of exactly this read/write pair, gating
+   only its own pipeline-stage widget; generalized here so every workspace
+   reads the SAME flag and the single toggle (sarpras-intelligence-
+   center.js's shell) governs all of them. Reads localStorage directly
+   (not an engine call) — same "pure presentational state" category as
+   every other render input this kit already accepts as a parameter. */
+const PRESENTATION_MODE_KEY = 'sarpras.presentationMode';
+
+export function isDeveloperMode() {
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem(PRESENTATION_MODE_KEY) === 'developer';
+  } catch { return false; }
+}
+
+export function setPresentationMode(mode) {
+  try { if (typeof localStorage !== 'undefined') localStorage.setItem(PRESENTATION_MODE_KEY, mode === 'developer' ? 'developer' : 'normal'); } catch { /* private mode / disabled storage — non-fatal, just won't persist */ }
+}
+
 /** V2.1 — "Display file sizes in KB/MB/GB. Never raw bytes." The one
  *  shared formatter every sizeBytes display in Sarpras Intelligence
  *  reuses (Dataset Import Center rows, session detail) rather than each

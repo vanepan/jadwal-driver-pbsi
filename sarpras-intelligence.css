@@ -59,22 +59,35 @@
 .sic-card-h-title{font-family:var(--font-display);font-weight:800;font-size:15px;letter-spacing:-.01em;color:var(--text);}
 .sic-card-h-sub{font-size:12px;color:var(--text-faint);margin-top:4px;line-height:1.5;}
 
-.sic-roadmap{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;}
-.sic-roadmap-item{
-  display:flex;justify-content:space-between;align-items:center;gap:12px;
-  padding:12px 0;border-top:1px solid var(--border);
+/* Sprint 0 (Presentation Truth) — ONE shared Normal/Developer toggle,
+   persistent above all five screens (mode bar). See
+   sarpras-intelligence-center.js#buildShell()/renderModeBar(). */
+.sic-mode-bar{
+  max-width:var(--workspace-max-width, 1180px);
+  padding:14px 24px 0;
 }
-.sic-roadmap-item:first-child{border-top:none;}
-.sic-roadmap-label{font-size:14px;font-weight:600;color:var(--text);}
-.sic-roadmap-status{
-  font-family:var(--font-mono);font-size:11px;font-weight:700;letter-spacing:.02em;
-  padding:4px 10px;border-radius:999px;white-space:nowrap;
+.sic-mode-toggle{display:inline-flex;border:1px solid var(--border);border-radius:999px;padding:3px;gap:2px;background:var(--surface);}
+.sic-mode-btn{
+  font-family:var(--font-sans);font-size:12px;font-weight:700;letter-spacing:.01em;
+  border:none;background:transparent;color:var(--text-faint);padding:6px 14px;border-radius:999px;cursor:pointer;
 }
-.sic-roadmap-status--done{color:var(--c-green);background:var(--c-green-weak);}
-.sic-roadmap-status--foundation{color:var(--c-blue);background:var(--c-blue-weak);}
-.sic-roadmap-status--soon{color:var(--c-neutral);background:var(--c-neutral-weak);}
+.sic-mode-btn--active{background:var(--c-blue-weak);color:var(--c-blue);}
+
+/* Executive Briefing — five plain-language question cards, reusing
+   .sic-card's existing surface/border/shadow. */
+.sic-brief-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;}
+.sic-brief-list li{
+  display:flex;align-items:baseline;gap:10px;
+  padding:9px 0;border-top:1px solid var(--border);
+}
+.sic-brief-list li:first-child{border-top:none;}
+.sic-brief-count{font-family:var(--font-display);font-weight:800;font-size:20px;color:var(--accent);min-width:2ch;}
+.sic-brief-label{font-size:13px;color:var(--text-dim);}
+.sic-card--next{border-color:var(--c-blue);}
+.sic-next-action{font-size:14px;color:var(--text);line-height:1.55;margin:0;}
 
 @media (max-width: 640px) {
   .sic-page-title{font-size:24px;}
   .sic-card{padding:18px;}
+  .sic-mode-bar{padding:12px 16px 0;}
 }

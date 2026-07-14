@@ -28,7 +28,7 @@ import {
 } from '../knowledge/repository/knowledge-repository.js';
 import { LIFECYCLE_STATE, LIFECYCLE_STATE_DEFS } from '../knowledge/contracts/lifecycle-contract.js';
 import { listDomainTypes, getDomainType } from '../knowledge/registry/domain-type-registry.js';
-import { listKinds } from '../knowledge/registry/kind-registry.js';
+import { listKinds, getKind } from '../knowledge/registry/kind-registry.js';
 import { computeHealthReport } from '../knowledge/metrics/knowledge-metrics-engine.js';
 import {
   confidence, dependencyGraph, knowledgeGraph, explainability, profiles,
@@ -42,7 +42,7 @@ import {
 import {
   esc, renderEmptyState, renderTabShell, renderRowList, renderStatCards,
   renderFilterBar, renderDetailSection, renderKvList, renderDetail,
-  deriveRejectedFromCandidateQueue,
+  deriveRejectedFromCandidateQueue, isDeveloperMode,
 } from './shared/workspace-list-kit.js';
 
 const SECTIONS = [
@@ -141,6 +141,20 @@ function domainLabel(id) {
   return registered ? registered.label : id;
 }
 
+/** Sprint 0 (Presentation Truth) — friendly label for a Knowledge `kind`
+ *  id, same registry-lookup pattern domainLabel() above already uses. */
+function kindLabel(id) {
+  const k = getKind(id);
+  return k ? k.label : id;
+}
+
+/** Sprint 0 — the registered human label instead of the raw lowercase
+ *  lifecycleState enum id a normal user should never see. */
+function lifecycleLabel(id) {
+  const def = LIFECYCLE_STATE_DEFS.find((d) => d.id === id);
+  return def ? def.label : id;
+}
+
 /* ── Dashboard ─────────────────────────────────────────────────────── */
 
 function renderDashboardSection() {
@@ -209,11 +223,17 @@ function renderListSection() {
 
       <div class="wlk-sec">
         <div class="wlk-sec-title">Item (${items.length})</div>
-        ${items.length ? renderRowList(items, (i) => `
+        ${items.length ? renderRowList(items, (i) => {
+          const devMode = isDeveloperMode();
+          const kindText = devMode ? i.kind : kindLabel(i.kind);
+          const statusText = devMode ? i.lifecycleState : lifecycleLabel(i.lifecycleState);
+          const confText = devMode ? `conf ${Math.round((i.confidence || 0) * 100)}%` : `keyakinan ${Math.round((i.confidence || 0) * 100)}%`;
+          return `
           <li class="wlk-row" data-act="kc-item-row" data-id="${esc(i.id)}" data-clickable="1">
-            <span class="wlk-row-primary">${esc(i.kind)} — ${esc(domainLabel(i.domainType))}</span>
-            <span class="wlk-row-secondary">${esc(i.lifecycleState)} · conf ${Math.round((i.confidence || 0) * 100)}%</span>
-          </li>`) : renderEmptyState('Tidak ada item yang cocok dengan filter ini.')}
+            <span class="wlk-row-primary">${esc(kindText)} — ${esc(domainLabel(i.domainType))}</span>
+            <span class="wlk-row-secondary">${esc(statusText)} · ${esc(confText)}</span>
+          </li>`;
+        }) : renderEmptyState('Tidak ada item yang cocok dengan filter ini.')}
       </div>
 
       ${st.selectedId ? renderItemDetail(st.selectedId) : ''}
@@ -224,49 +244,58 @@ function renderItemDetail(id) {
   const result = knowledgeGetById(id);
   if (!result.ok) return '';
   const item = result.data;
+  const devMode = isDeveloperMode();
 
-  const metadata = renderKvList([
-    ['ID', item.id],
+  // Sprint 0 (Presentation Truth) — internal ID, raw Kind/Source Type/
+  // Status enum values, and the raw Confidence percentage are Developer
+  // Mode only; Normal Mode gets the friendly kind/status labels instead.
+  const metadataPairs = [
     ['Domain', domainLabel(item.domainType)],
-    ['Kind', item.kind],
-    ['Source Type', item.sourceType],
-    ['Status', item.lifecycleState],
-    ['Confidence', `${Math.round((item.confidence || 0) * 100)}%`],
+    ['Jenis Pengetahuan', kindLabel(item.kind)],
+    ['Status', lifecycleLabel(item.lifecycleState)],
     ['Dibuat', item.createdAt],
     ['Diperbarui', item.updatedAt],
-  ]);
+  ];
+  if (devMode) {
+    metadataPairs.splice(0, 0, ['ID', item.id]);
+    metadataPairs.splice(3, 0, ['Kind', item.kind], ['Source Type', item.sourceType], ['Status (raw)', item.lifecycleState]);
+    metadataPairs.push(['Confidence', `${Math.round((item.confidence || 0) * 100)}%`]);
+  }
+  const metadata = renderKvList(metadataPairs);
 
+  // Confidence Score explainability, Dependency Graph, Knowledge Graph,
+  // and Explainability are all engine-named/internal — Developer only.
   const confidenceExplain = confidence.explainConfidenceAsEvidence(item);
-  const evidence = confidenceExplain.ok && confidenceExplain.data.length
+  const evidence = devMode && confidenceExplain.ok && confidenceExplain.data.length
     ? renderKvList(confidenceExplain.data.map((e) => [e.kind, e.rationale]))
     : null;
 
   const depsResult = dependencyGraph.getDependencies(item.id);
-  const relationships = depsResult.ok && depsResult.data.length
+  const relationships = devMode && depsResult.ok && depsResult.data.length
     ? renderKvList(depsResult.data.map((d) => [d.payload && d.payload.type, `${d.payload && d.payload.fromId} → ${d.payload && d.payload.toId}`]))
     : null;
 
   const neighborsResult = knowledgeGraph.getNeighbors(item.id);
-  const dependencies = neighborsResult.ok && neighborsResult.data.length
-    ? renderKvList(neighborsResult.data.map((n) => [n.neighborId, `${n.direction} · ${n.neighbor ? n.neighbor.kind : 'tidak ditemukan'}`]))
+  const dependencies = devMode && neighborsResult.ok && neighborsResult.data.length
+    ? renderKvList(neighborsResult.data.map((n) => [n.neighborId, `${n.direction} · ${n.neighbor ? kindLabel(n.neighbor.kind) : 'tidak ditemukan'}`]))
     : null;
 
   const historyResult = knowledgeGetHistory(item.id);
   const versions = historyResult.ok ? historyResult.data : [];
-  const versionHistory = versions.length ? renderKvList(versions.map((v) => [`Versi ${v.version}`, `${v.lifecycleState} · ${v.updatedAt}`])) : null;
+  const versionHistory = versions.length ? renderKvList(versions.map((v) => [`Versi ${v.version}`, `${devMode ? v.lifecycleState : lifecycleLabel(v.lifecycleState)} · ${v.updatedAt}`])) : null;
   const approvalHistory = versions.filter((v) => v.lifecycleState === LIFECYCLE_STATE.APPROVED).length
     ? renderKvList(versions.filter((v) => v.lifecycleState === LIFECYCLE_STATE.APPROVED).map((v) => [`Versi ${v.version}`, `oleh ${v.approvedBy || '—'} pada ${v.approvedAt || '—'}`]))
     : null;
 
   const explainResult = explainability.explain(item);
-  const explainHtml = explainResult.ok
+  const explainHtml = !devMode ? null : (explainResult.ok
     ? renderKvList([
       ['Dipelajari Dari', explainResult.data.whereLearned && explainResult.data.whereLearned.connectorId],
       ['Jumlah Korroborasi', explainResult.data.corroborationCount],
       ['Disetujui Oleh', explainResult.data.approvedBy],
       ['Alasan Preferensi', explainResult.data.whyPreferred],
     ])
-    : renderEmptyState('Explainability tersedia hanya untuk item dengan provenance yang valid.');
+    : renderEmptyState('Explainability tersedia hanya untuk item dengan provenance yang valid.'));
 
   const profileTypes = profiles.listProfileTypes();
   const profileLinks = profileTypes
@@ -276,9 +305,11 @@ function renderItemDetail(id) {
     ? renderKvList(profileLinks.map((x) => [x.pt, `${x.r.profile.sampleCount} sampel`]))
     : renderEmptyState('Belum ada Profile yang terbangun untuk domain ini.');
 
+  // Dataset Link — the raw Dataset Type value is Developer-only.
   const datasetLink = (() => {
     const ds = listDatasets({ domainType: item.domainType });
-    return ds.length ? renderKvList(ds.map((d) => [d.name, d.datasetType])) : renderEmptyState('Belum ada dataset terdaftar untuk domain ini.');
+    if (!ds.length) return renderEmptyState('Belum ada dataset terdaftar untuk domain ini.');
+    return renderKvList(ds.map((d) => [d.name, devMode ? d.datasetType : '—']));
   })();
 
   const archiveLink = (() => {
@@ -288,7 +319,7 @@ function renderItemDetail(id) {
 
   return `
     <div class="wlk-sec">
-      <div class="wlk-sec-title">Detail — ${esc(item.id)}</div>
+      <div class="wlk-sec-title">Detail — ${esc(devMode ? item.id : kindLabel(item.kind))}</div>
       ${renderDetail([
         renderDetailSection('Metadata', metadata),
         renderDetailSection('Evidence', evidence),
@@ -313,13 +344,21 @@ function renderReviewSection() {
     { id: 'rejected', label: 'Rejected' },
   ];
 
+  // Sprint 0 (Presentation Truth) — the row used to show the bare
+  // Knowledge Item Id always; Normal Mode now shows the item's kind label
+  // instead (Developer Mode keeps the raw id).
+  const kindLabelFor = (itemId) => {
+    const r = knowledgeGetById(itemId);
+    return r.ok ? kindLabel(r.data.kind) : itemId;
+  };
+
   let rows = [];
   if (st.reviewFilter === 'pending') {
-    rows = getReviewQueue().map((e) => ({ id: e.itemId, meta: e.hasConflict ? 'Konflik terdeteksi' : 'Menunggu review' }));
+    rows = getReviewQueue().map((e) => ({ id: e.itemId, primary: kindLabelFor(e.itemId), meta: e.hasConflict ? 'Konflik terdeteksi' : 'Menunggu review' }));
   } else if (st.reviewFilter === 'candidate') {
-    rows = getCandidateQueue().map((e) => ({ id: e.itemId, meta: e.hasConflict ? 'Konflik terdeteksi' : 'Menunggu pengajuan' }));
+    rows = getCandidateQueue().map((e) => ({ id: e.itemId, primary: kindLabelFor(e.itemId), meta: e.hasConflict ? 'Konflik terdeteksi' : 'Menunggu pengajuan' }));
   } else {
-    rows = deriveRejectedFromCandidateQueue(getCandidateQueue(), knowledgeGetHistory).map((e) => ({ id: e.itemId, meta: `Ditolak pada versi ${e.rejectedAtVersion}` }));
+    rows = deriveRejectedFromCandidateQueue(getCandidateQueue(), knowledgeGetHistory).map((e) => ({ id: e.itemId, primary: kindLabelFor(e.itemId), meta: `Ditolak pada versi ${e.rejectedAtVersion}` }));
   }
 
   return `
@@ -335,7 +374,7 @@ function renderReviewSection() {
       <div class="wlk-sec">
         ${rows.length ? renderRowList(rows, (row) => `
           <li class="wlk-row">
-            <span class="wlk-row-primary">${esc(row.id)}</span>
+            <span class="wlk-row-primary">${esc(isDeveloperMode() ? row.id : row.primary)}</span>
             <span class="wlk-row-secondary">${esc(row.meta)}</span>
           </li>`) : renderEmptyState(`Tidak ada item pada "${filters.find((f) => f.id === st.reviewFilter).label}".`)}
       </div>

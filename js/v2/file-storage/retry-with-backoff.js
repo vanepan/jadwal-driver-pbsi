@@ -24,6 +24,26 @@
 function sleep(ms) { return new Promise((resolve) => { setTimeout(resolve, ms); }); }
 
 /**
+ * Sprint 1 (Autonomy Closure, Part 4) — bounds one attempt's wall-clock
+ * time. Full pipeline trace found NO timeout anywhere between
+ * processOneFile()'s `await uploadFile(...)` and the real Firebase
+ * `uploadBytes()` call — a genuinely-hanging (never settling, not merely
+ * rejecting) upload would freeze every remaining file in a batch forever,
+ * since processBatch() awaits each file sequentially. A timeout turns a
+ * hang into an ordinary rejection, which withRetryAsync (below) already
+ * retries and the caller's existing catch already handles gracefully —
+ * no new failure shape, no fabricated success.
+ * @param {Promise<*>} promise
+ * @param {number} ms
+ * @param {string} [code]
+ */
+export function withTimeout(promise, ms, code = 'TIMEOUT') {
+  let timer;
+  const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(code)), ms); });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+/**
  * Calls `fn()` (an async function returning `{ok: boolean, ...}`, matching
  * this codebase's own success/failure envelope convention) up to
  * `attempts` times, waiting `delaysMs[i]` between attempt i and i+1.

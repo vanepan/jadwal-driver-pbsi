@@ -54,8 +54,10 @@ await page.evaluate(() => window.__mount());
 check('outer shell mounts with zero fatal boot errors', !bootErrors.some((e) => FATAL_PATTERN.test(e)));
 
 const dashboardHtml = await page.evaluate(() => window.__hostHTML());
-check('Dashboard renders the roadmap panel', dashboardHtml.includes('sic-roadmap'));
-check('Dashboard shows zero "soon"-tier roadmap rows (no placeholder workspaces left)', !dashboardHtml.includes('sic-roadmap-status--soon'));
+// Sprint 0 (Presentation Truth) — the Dashboard is now an Executive
+// Briefing by default (Normal Mode); the old static roadmap only renders
+// under Developer Mode (see below), never unconditionally again.
+check('Dashboard renders the Executive Briefing (Normal Mode default)', dashboardHtml.includes('sic-brief-list') && !dashboardHtml.includes('sic-roadmap'));
 
 for (const screenId of ['nor', 'archive', 'knowledge', 'learning']) {
   bootErrors.length = 0;
@@ -118,24 +120,34 @@ const dragActiveAfterLeave = await page.evaluate(() => {
 check('dragleave removes the dropzone active-drag visual state', dragActiveAfterLeave === false);
 check('no fatal errors during Utilities/drag interaction', !bootErrors.some((e) => FATAL_PATTERN.test(e)));
 
-// Phase 2 Follow-up — the Normal/Developer presentation-mode toggle
-// switches the pipeline stage vocabulary (Requirement 3).
+// Sprint 0 (Presentation Truth) — ONE shared Normal/Developer toggle now
+// lives in the outer shell (sarpras-intelligence-center.js's mode bar),
+// not a per-workspace "dic-mode" button; every workspace (Dataset Import
+// Center included) reads the SAME platform-wide flag.
 bootErrors.length = 0;
-const modeToggleExists = await page.evaluate(() => !!document.querySelector('#host [data-act="dic-mode"]'));
-check('the Normal/Developer mode toggle is present in the workspace', modeToggleExists === true);
+const modeToggleExists = await page.evaluate(() => !!document.querySelector('#host [data-act="sic-mode"]'));
+check('the ONE shared Normal/Developer mode toggle is present in the outer shell', modeToggleExists === true);
 const devActivated = await page.evaluate(() => {
-  const btn = [...document.querySelectorAll('#host [data-act="dic-mode"]')].find((b) => b.dataset.id === 'developer');
+  const btn = [...document.querySelectorAll('#host [data-act="sic-mode"]')].find((b) => b.dataset.id === 'developer');
   if (!btn) return null;
   btn.click();
-  const active = document.querySelector('#host [data-act="dic-mode"][data-id="developer"]');
-  return active && active.classList.contains('dic-mode-btn--active');
+  const active = document.querySelector('#host [data-act="sic-mode"][data-id="developer"]');
+  return active && active.classList.contains('sic-mode-btn--active');
 });
 check('clicking Developer marks it active (mode switch handled, no fatal error)', devActivated === true && !bootErrors.some((e) => FATAL_PATTERN.test(e)));
-const persisted = await page.evaluate(() => { try { return localStorage.getItem('sarpras.import.presentationMode'); } catch { return null; } });
+const persisted = await page.evaluate(() => { try { return localStorage.getItem('sarpras.presentationMode'); } catch { return null; } });
 check('the chosen presentation mode is persisted to localStorage', persisted === 'developer');
+// Sprint 1 (Autonomy Closure, Part 1) — the old static roadmap is REMOVED
+// entirely (it was itself a second, duplicated dashboard identity).
+// Developer Mode's additive content is now real technical diagnostics.
+await page.evaluate((id) => window.__setScreen(id), 'dashboard');
+await new Promise((r) => setTimeout(r, 100));
+const devDashboardHtml = await page.evaluate(() => window.__hostHTML());
+check('Developer Mode reveals real Technical Diagnostics, not a duplicated roadmap', devDashboardHtml.includes('Diagnostik Teknis') && !devDashboardHtml.includes('sic-roadmap'));
+check('the Executive Briefing itself is still present in Developer Mode (one identity, additive)', devDashboardHtml.includes('sic-brief-list'));
 // Reset back to normal so the preference does not leak into other checks.
 await page.evaluate(() => {
-  const btn = [...document.querySelectorAll('#host [data-act="dic-mode"]')].find((b) => b.dataset.id === 'normal');
+  const btn = [...document.querySelectorAll('#host [data-act="sic-mode"]')].find((b) => b.dataset.id === 'normal');
   if (btn) btn.click();
 });
 
@@ -155,6 +167,32 @@ check('Knowledge Center reflects the new Draft item live (event-driven re-render
 check('the knowledge event propagation caused no fatal error', !bootErrors.some((e) => FATAL_PATTERN.test(e)));
 const secondSeed = await page.evaluate(() => window.__createKnowledgeItem('dom-sync-1'));
 check('re-creating the same deterministic-id item is idempotent (no duplicate created)', secondSeed === false);
+
+// Sprint 1 (Autonomy Closure, Part 3/10) — the Executive Briefing
+// previously had ZERO live listeners; a change made anywhere in the
+// platform never reflected here without navigating away and back.
+// registerRepositoryListener (Knowledge) is the one event source in this
+// codebase already confirmed to fire on a LOCAL write (not just remote
+// RTDB snapshots — see the Knowledge Center test right above, which
+// exercises the exact same mechanism), so it's the one usable here
+// without a real second browser tab / RTDB round-trip. The
+// registerImportSessionChangeListener/registerImportBatchChangeListener
+// wiring this sprint ALSO adds to the Dashboard, and the widened
+// Archive/NOR Center gates, are deliberately remote-snapshot-only by
+// existing architecture (import-session-repository.js's own header) —
+// verified structurally instead, in sarpras-workspace-completion-check.mjs.
+console.log('\n[Sprint 1 (Autonomy Closure) Part 3/10 — Dashboard updates live, no navigation]');
+bootErrors.length = 0;
+await page.evaluate((id) => window.__setScreen(id), 'dashboard');
+await new Promise((r) => setTimeout(r, 150));
+const dashboardBefore = await page.evaluate(() => window.__hostText());
+const dashboardSeeded = await page.evaluate(() => window.__createKnowledgeItem('sprint1-dashboard-live'));
+check('a Draft KnowledgeItem was created for the dashboard live-update check', dashboardSeeded === true);
+// Wait past the 100ms coalescing window, WITHOUT navigating away and back.
+await new Promise((r) => setTimeout(r, 300));
+const dashboardAfter = await page.evaluate(() => window.__hostText());
+check('Dashboard reflects the new Knowledge Item live (event-driven re-render, no manual refresh)', dashboardBefore !== dashboardAfter);
+check('no fatal errors during the live dashboard update', !bootErrors.some((e) => FATAL_PATTERN.test(e)));
 
 let closeError = null;
 try {
