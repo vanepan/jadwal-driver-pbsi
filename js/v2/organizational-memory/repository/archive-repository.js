@@ -27,7 +27,48 @@
 'use strict';
 
 import { nextVersion } from '../../knowledge/contracts/identity-contract.js';
-import { isArchiveRecord } from '../contracts/archive-record-contract.js';
+import { isArchiveRecord, normalizeArchiveRecord } from '../contracts/archive-record-contract.js';
+
+/* ══════════════════════════════════════════════════════════════════════
+   PHASE 4, PART 8 — THE ARCHIVE REPOSITORY BOUNDARY, DECLARED.
+
+   These exports are NOT equal, and nothing in the language says so — every one
+   of them looks identical to an autocomplete. Same three tiers Knowledge's
+   repository already declares (knowledge-repository.js), for the same reasons.
+
+   ── PUBLIC (safe for anyone) ─────────────────────────────────────────
+     ARCHIVE_REPOSITORY_ERRORS   error codes. Data, not behaviour.
+
+   ── INTERNAL (one legitimate caller: services/archive-service.js) ────
+     getById · getVersion · list · search · getHistory
+       Reads. Harmless alone, but every consumer now goes through the Archive
+       Service so that "who reads organizational memory?" has ONE answer, and
+       any future filtering, caching or access-control has one place to live.
+
+   ── UNSAFE (one legitimate caller, enforced by test) ─────────────────
+     create · appendVersion
+       These WRITE organizational memory. Called directly they bypass:
+         · duplicate detection   (a re-archived document silently doubles)
+         · the lifecycle graph   (a record can be born SUPERSEDED)
+         · the replacement chain (one-directional links nobody can follow back)
+         · provenance            (archiveReason/archivedBy simply absent)
+       Exactly this happened: ui/dataset-import-center.js#doArchive called raw
+       create() on the pipeline's PRIMARY archive path, bypassing every one of
+       the above. Their ONLY legitimate caller is services/archive-service.js.
+       Enforced by scripts/archive-ownership-check.mjs.
+
+   ── NOTE: THERE IS NO DELETE, AND THAT IS DELIBERATE ─────────────────
+     An organizational memory that can forget on request is not a memory.
+     Documents are superseded, deprecated or marked duplicate — never erased.
+     See contracts/archive-record-contract.js on why DELETED is not a state.
+
+   ── WHY THESE ARE NOT PRIVATE (yet) ──────────────────────────────────
+     Same answer as Knowledge: privatising means a module-boundary refactor
+     across the check scripts that import resetArchiveRepository(). No module
+     outside the owner calls the writers any more — the door is unlocked, but
+     nobody walks through, and a failing test names the rule far more loudly
+     than a private field would. Encapsulation deserves its own phase.
+   ══════════════════════════════════════════════════════════════════════ */
 
 export const ARCHIVE_REPOSITORY_ERRORS = Object.freeze({
   NOT_FOUND: 'NOT_FOUND',
@@ -41,13 +82,23 @@ function failure(code, message) { return Object.freeze({ ok: false, data: null, 
 /** @type {Map<string, object[]>} id -> ordered version array, oldest first */
 const _store = new Map();
 
+/* Phase 4 — every read returns a record in its FULL declared shape. Records
+   written before this phase have no `state`, no `archiveReason`, no
+   relationship fields; normalizeArchiveRecord() restores them from the record's
+   own facts (a record that already contributed knowledge is REFERENCED; one
+   that did not is AVAILABLE — see the contract). Normalising at the read
+   boundary means no downstream engine has to defensively re-check a field the
+   contract promised, and no `...spread` merge carries a hole forward. Exactly
+   the lesson the Import Session repository learned the hard way in Phase 2.6,
+   applied before it costs anything here. */
 function latestOf(id) {
   const versions = _store.get(id);
-  return versions && versions.length ? versions[versions.length - 1] : null;
+  if (!versions || !versions.length) return null;
+  return normalizeArchiveRecord(versions[versions.length - 1]);
 }
 
 function allLatest() {
-  return [..._store.values()].map((versions) => versions[versions.length - 1]);
+  return [..._store.values()].map((versions) => normalizeArchiveRecord(versions[versions.length - 1]));
 }
 
 export function getById(id) {

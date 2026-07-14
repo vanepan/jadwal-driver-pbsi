@@ -55,7 +55,7 @@
 'use strict';
 
 import { nextVersion } from '../../../contracts/identity-contract.js';
-import { isImportSessionRecord, canTransitionImportSession } from '../contracts/import-session-contract.js';
+import { isImportSessionRecord, canTransitionImportSession, normalizeImportSessionRecord } from '../contracts/import-session-contract.js';
 
 export const IMPORT_SESSION_REPOSITORY_ERRORS = Object.freeze({
   NOT_FOUND: 'NOT_FOUND',
@@ -92,11 +92,20 @@ function notifyChange() {
   _changeListeners.forEach((cb) => { try { cb(); } catch (e) { console.error('[import-session-repository] listener error', e); } });
 }
 
+/** Phase 2.6 — RTDB strips `null` values and EMPTY ARRAYS from everything it
+ *  stores, so a rehydrated record is missing keys the contract declares (see
+ *  ../contracts/import-session-contract.js#normalizeImportSessionRecord for
+ *  the full failure story). Normalizing at this boundary — the ONE place a
+ *  remote record enters the cache — means every downstream reader and every
+ *  subsequent appendVersion() merge sees a structurally complete record, and
+ *  no caller has to defensively re-check a field the contract promised. */
 function applyRemoteSnapshot(raw) {
   _store.clear();
   if (raw) {
     for (const [id, versions] of Object.entries(raw)) {
-      if (Array.isArray(versions) && versions.length) _store.set(id, versions);
+      if (Array.isArray(versions) && versions.length) {
+        _store.set(id, versions.map((v) => Object.freeze(normalizeImportSessionRecord(v))));
+      }
     }
   }
   notifyChange();

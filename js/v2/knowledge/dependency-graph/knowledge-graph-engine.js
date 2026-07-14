@@ -31,7 +31,10 @@
 
 import { RELATIONSHIP_TYPE } from '../contracts/dependency-graph-contract.js';
 import { getDependencies } from './knowledge-dependency-graph-engine.js';
-import { getById, list } from '../repository/knowledge-repository.js';
+import {
+  getKnowledge as getById,
+  listKnowledge as list,
+} from '../services/knowledge-service.js';
 
 function neighborIdAndDirection(itemId, payload) {
   if (payload.fromId === itemId) return { neighborId: payload.toId, direction: 'outgoing' };

@@ -22,10 +22,31 @@
 
 'use strict';
 
+// Phase 3 — Knowledge Center is the ONE place a human governs organizational
+// knowledge, and it reaches the domain through its owner. Note what is imported
+// here: the GOVERNANCE verbs (promote/requestChanges/reject/archive), never a
+// raw lifecycle mutator. The audit found this workspace had exactly one
+// interactive action — selecting a row — which meant every Draft the autonomous
+// pipeline produced stayed Draft forever, invisible to Pattern Discovery,
+// Coverage and the knowledge index (all of which filter on APPROVED). The gate
+// existed in the engines and was tested; nothing was wired to it. That is what
+// these imports fix.
 import {
-  list as knowledgeList, getById as knowledgeGetById, getHistory as knowledgeGetHistory,
-  registerRepositoryListener,
-} from '../knowledge/repository/knowledge-repository.js';
+  listKnowledge as knowledgeList,
+  getKnowledge as knowledgeGetById,
+  getKnowledgeHistory as knowledgeGetHistory,
+  registerKnowledgeListener as registerRepositoryListener,
+  promoteKnowledge, requestChanges, rejectKnowledge, archiveKnowledge,
+  explainKnowledge,
+} from '../knowledge/services/knowledge-service.js';
+// The UI is the one layer permitted to see both domains, so it — not the
+// Knowledge Service — resolves an item's `importSessionId` back to the real
+// uploaded document (see knowledge-service.js#explainKnowledge on why the
+// Service deliberately returns a bare reference instead of importing this).
+import { getImportSession } from '../knowledge/datasets/import-session/import-session-engine.js';
+// Phase 5, Part 3 — "Request Changes" is a real, already-firing human
+// correction: a person declaring existing Knowledge needs rework.
+import { recordCorrection, CORRECTION_TYPE } from '../learning/services/learning-service.js';
 import { LIFECYCLE_STATE, LIFECYCLE_STATE_DEFS } from '../knowledge/contracts/lifecycle-contract.js';
 import { listDomainTypes, getDomainType } from '../knowledge/registry/domain-type-registry.js';
 import { listKinds, getKind } from '../knowledge/registry/kind-registry.js';
@@ -35,8 +56,16 @@ import {
 } from '../knowledge/services/index.js';
 import { getReviewQueue, getCandidateQueue } from '../knowledge/review/review-queue-engine.js';
 import { listDatasets } from '../knowledge/datasets/registry/dataset-registry.js';
+// Phase 4 — the UI is the one layer allowed to see both domains, so it is the
+// one place that can close the loop between them: when a human REJECTS
+// knowledge, the archived document that produced it is no longer a source of
+// live organizational knowledge, and the Archive should say so. Neither domain
+// can reach across to the other (knowledge/ may not import
+// organizational-memory/ at all), so this composition happens here — exactly as
+// dataset-import-center.js#doArchive already composes the other direction.
 import {
-  list as archiveList, checkKnowledgeContribution,
+  listArchive as archiveList, checkKnowledgeContribution,
+  archiveRejectedKnowledge,
 } from '../organizational-memory/index.js';
 
 import {
@@ -57,7 +86,15 @@ const st = {
   statusFilter: null,
   selectedId: null,
   reviewFilter: 'pending',
+  // Phase 3 — governance. `govNote` is the reviewer's rationale; approving
+  // organizational knowledge without one is refused by the contract
+  // (review-contract.js#isValidReviewDecision), and rightly so: "approved by
+  // evan, reason: (blank)" is not an audit trail.
+  govNote: '',
+  govError: null,
 };
+
+const ACTOR_ID = 'evan';
 
 let host = null;
 let contentEl = null;
@@ -88,6 +125,7 @@ export async function mountKnowledgeCenter(hostEl) {
     host.innerHTML = renderTabShell(SECTIONS, st.section, { ariaLabel: 'Knowledge Center' });
     contentEl = host.querySelector('.wlk-content');
     host.addEventListener('click', onClick);
+    host.addEventListener('input', onInput);
     registerRepositoryListener(scheduleRender);
   }
   render();
@@ -125,8 +163,72 @@ function onClick(e) {
   if (act === 'wlk-tab') { setSection(el.dataset.id); return; }
   if (act === 'kc-domain-filter') { st.domainFilter = el.dataset.id === '__all' ? null : el.dataset.id; st.selectedId = null; render(); return; }
   if (act === 'kc-status-filter') { st.statusFilter = el.dataset.id === '__all' ? null : el.dataset.id; st.selectedId = null; render(); return; }
-  if (act === 'kc-item-row') { st.selectedId = st.selectedId === el.dataset.id ? null : el.dataset.id; render(); return; }
+  if (act === 'kc-item-row') { st.selectedId = st.selectedId === el.dataset.id ? null : el.dataset.id; st.govNote = ''; st.govError = null; render(); return; }
   if (act === 'kc-review-filter') { st.reviewFilter = el.dataset.id; render(); return; }
+
+  /* ── Phase 3, Part 4 — HUMAN GOVERNANCE. Every one of these goes through the
+     Knowledge Service. This workspace does not import, and cannot reach, a raw
+     lifecycle mutator — enforced by scripts/knowledge-ownership-check.mjs. ── */
+  if (act === 'kc-gov-approve' || act === 'kc-gov-reject' || act === 'kc-gov-changes' || act === 'kc-gov-archive') {
+    const id = el.dataset.id;
+    const note = st.govNote.trim();
+    const decidedAt = new Date().toISOString();
+    let result;
+
+    if (act === 'kc-gov-approve') {
+      // The contract demands a real rationale for APPROVED and refuses a blank
+      // one. Rather than fabricate a default to satisfy it, ask for the reason —
+      // approving knowledge on behalf of an organization without saying why is
+      // not governance, it is a rubber stamp with an audit trail that lies.
+      if (!note) { st.govError = 'Tuliskan alasan persetujuan — keputusan organisasi harus dapat dipertanggungjawabkan.'; render(); return; }
+      result = promoteKnowledge(id, { approverId: ACTOR_ID, decidedAt, preferenceRationale: note });
+    } else if (act === 'kc-gov-changes') {
+      const before = knowledgeGetById(id);
+      result = requestChanges(id, { approverId: ACTOR_ID, decidedAt });
+      // Phase 5, Part 3 — a human declaring existing Knowledge needs rework IS
+      // a knowledge correction: "this is not right yet, fix it." Recorded
+      // best-effort; the lifecycle transition above already committed.
+      if (result.ok && before.ok) {
+        recordCorrection({
+          domainType: before.data.domainType,
+          correctionType: CORRECTION_TYPE.KNOWLEDGE,
+          targetKey: id,
+          actorId: ACTOR_ID,
+          reason: note || 'Diminta perubahan melalui Knowledge Center.',
+          before: { lifecycleState: before.data.lifecycleState },
+          after: { lifecycleState: 'candidate', requestedChangeAt: decidedAt },
+          affectedKnowledgeId: id,
+        });
+      }
+    } else if (act === 'kc-gov-reject') {
+      result = rejectKnowledge(id, { actorId: ACTOR_ID, reason: note || null });
+      // Phase 4 — close the loop into the Archive. The DOCUMENT stays archived
+      // (a rejected fact does not unmake the paper it was written on) but it is
+      // no longer a live source of organizational knowledge. Best-effort and
+      // non-fatal: if no archive record cites this item, there is simply nothing
+      // to retire, and the knowledge rejection still stands on its own.
+      if (result.ok) {
+        const source = archiveList({}).data.find((r) => r.knowledgeItemId === id);
+        if (source) archiveRejectedKnowledge(source.id, { actorId: ACTOR_ID, reason: note || null });
+      }
+    } else {
+      result = archiveKnowledge(id, { actorId: ACTOR_ID, reason: note || null });
+    }
+
+    // Report the engine's REAL error, never a silent no-op. A governance button
+    // that fails quietly is the exact defect Phase 2.6 spent itself removing.
+    st.govError = result.ok ? null : (result.error ? result.error.message : 'Tindakan gagal.');
+    if (result.ok) st.govNote = '';
+    render();
+  }
+}
+
+function onInput(e) {
+  const el = e.target.closest('[data-act="kc-gov-note"]');
+  if (!el) return;
+  // State only — never re-render on a keystroke, or the focused <input> is
+  // destroyed mid-word (the same lesson dataset-import-center.js already learned).
+  st.govNote = el.value;
 }
 
 /* ── data helpers ──────────────────────────────────────────────────── */
@@ -157,6 +259,34 @@ function lifecycleLabel(id) {
 
 /* ── Dashboard ─────────────────────────────────────────────────────── */
 
+/** Part 5 — DRAFT VISIBILITY. The real population of every lifecycle state,
+ *  counted from the repository, Drafts first.
+ *
+ *  Drafts were not merely un-promotable before this phase — they were
+ *  effectively unmentioned. Coverage and health metrics count Approved
+ *  knowledge only (knowledge-metrics-engine.js:45), so a platform holding
+ *  hundreds of Drafts and zero Approved items reported itself as holding
+ *  nothing at all. A Draft is not noise waiting to be filtered out; it is
+ *  organizational work-in-progress, and hiding it made the pipeline's entire
+ *  output invisible to the person who was supposed to act on it. */
+function renderLifecycleDistribution() {
+  const all = safeList(knowledgeList, {});
+  const cards = LIFECYCLE_STATE_DEFS.map((d) => ({
+    count: all.filter((i) => i.lifecycleState === d.id).length,
+    label: isDeveloperMode() ? d.id : d.label,
+  }));
+  const drafts = all.filter((i) => i.lifecycleState === LIFECYCLE_STATE.DRAFT).length;
+  const note = drafts > 0
+    ? `<p class="wlk-page-lede">${drafts} pengetahuan berstatus Draft menunggu keputusan Anda. Draft belum dihitung dalam cakupan (Coverage) dan belum dipakai Pattern Discovery — keduanya hanya membaca pengetahuan yang sudah Disetujui.</p>`
+    : '';
+  return `
+    <div class="wlk-sec">
+      <div class="wlk-sec-title">Distribusi Siklus Hidup (${all.length} item)</div>
+      ${renderStatCards(cards)}
+      ${note}
+    </div>`;
+}
+
 function renderDashboardSection() {
   const healthResult = computeHealthReport();
   const health = healthResult.ok ? healthResult.data : null;
@@ -170,6 +300,8 @@ function renderDashboardSection() {
         <h1 class="wlk-page-title">Knowledge Center</h1>
         <p class="wlk-page-lede">Pengetahuan organisasi lintas domain — cakupan, antrean review, dan distribusi kepercayaan dalam satu tempat.</p>
       </div>
+
+      ${renderLifecycleDistribution()}
 
       ${health ? `
       <div class="wlk-sec">
@@ -320,8 +452,10 @@ function renderItemDetail(id) {
   return `
     <div class="wlk-sec">
       <div class="wlk-sec-title">Detail — ${esc(devMode ? item.id : kindLabel(item.kind))}</div>
+      ${renderGovernancePanel(item)}
       ${renderDetail([
         renderDetailSection('Metadata', metadata),
+        renderDetailSection('Asal & Alasan (Mengapa pengetahuan ini ada?)', renderProvenance(item)),
         renderDetailSection('Evidence', evidence),
         renderDetailSection('Relationships', relationships),
         renderDetailSection('Dependencies', dependencies),
@@ -333,6 +467,103 @@ function renderItemDetail(id) {
         renderDetailSection('Archive Link', archiveLink),
       ])}
     </div>`;
+}
+
+/** Part 4 — HUMAN GOVERNANCE. The only place in the platform where a human
+ *  decides that knowledge is true of the organization.
+ *
+ *  The operational pipeline stays fully autonomous: it produces Drafts without
+ *  asking anyone. What it may NOT do — and what the Knowledge Service now
+ *  refuses at the door (knowledge-service.js#INGESTABLE_STATES) — is call that
+ *  knowledge approved. That is this panel's job, and nothing else's.
+ *
+ *  Which buttons appear is decided by the item's real state, not by taste:
+ *    Draft / Candidate / Pending Review  → Approve · Request Changes · Reject
+ *    Approved                            → Archive (supersede)
+ *    Deprecated                          → nothing; it is retired.
+ */
+function renderGovernancePanel(item) {
+  const state = item.lifecycleState;
+  const noteField = `
+    <div class="wlk-form-row">
+      <label>Alasan / Rasional Keputusan</label>
+      <input data-act="kc-gov-note" class="wlk-input" type="text" value="${esc(st.govNote)}"
+             placeholder="Mengapa Anda menyetujui atau menolak pengetahuan ini?"/>
+    </div>`;
+  const errorLine = st.govError
+    ? `<div class="wlk-row-secondary" style="color:var(--danger,#c0392b);">${esc(st.govError)}</div>` : '';
+
+  if (state === LIFECYCLE_STATE.DEPRECATED) {
+    return `
+      <div class="wlk-sec">
+        <div class="wlk-sec-title">Tata Kelola</div>
+        ${renderEmptyState('Pengetahuan ini sudah tidak berlaku.', 'Tidak ada tindakan tata kelola yang tersisa.')}
+      </div>`;
+  }
+
+  if (state === LIFECYCLE_STATE.APPROVED) {
+    return `
+      <div class="wlk-sec">
+        <div class="wlk-sec-title">Tata Kelola</div>
+        <p class="wlk-page-lede">Pengetahuan ini sudah disetujui dan berlaku bagi organisasi. Mengarsipkannya berarti menyatakan pengetahuan ini tidak lagi berlaku (supersession) — riwayatnya tetap utuh.</p>
+        ${noteField}
+        ${errorLine}
+        <button class="wlk-btn wlk-btn--ghost" data-act="kc-gov-archive" data-id="${esc(item.id)}" type="button">Arsipkan (Tidak Berlaku Lagi)</button>
+      </div>`;
+  }
+
+  return `
+    <div class="wlk-sec">
+      <div class="wlk-sec-title">Tata Kelola</div>
+      <p class="wlk-page-lede">Pipeline sudah menghasilkan pengetahuan ini secara otomatis. Yang tersisa adalah satu keputusan yang hanya bisa diambil manusia: apakah ini benar bagi organisasi?</p>
+      ${noteField}
+      ${errorLine}
+      <button class="wlk-btn" data-act="kc-gov-approve" data-id="${esc(item.id)}" type="button">Setujui</button>
+      <button class="wlk-btn wlk-btn--ghost" data-act="kc-gov-changes" data-id="${esc(item.id)}" type="button">Minta Perubahan</button>
+      <button class="wlk-btn wlk-btn--ghost" data-act="kc-gov-reject" data-id="${esc(item.id)}" type="button">Tolak</button>
+    </div>`;
+}
+
+/** Part 6 — EXPLAINABILITY. "Why does this knowledge exist?", answered from
+ *  data the item and its history already carry. Every field is real or null —
+ *  a missing origin is reported as missing, never filled with a plausible
+ *  guess. Deliberately NOT Developer-gated: a person being asked to approve
+ *  knowledge on behalf of the organization is exactly the person who needs to
+ *  see where it came from. */
+function renderProvenance(item) {
+  const result = explainKnowledge(item.id);
+  if (!result.ok) return null;
+  const x = result.data;
+
+  // The Service hands back a bare importSessionId; the UI resolves it, because
+  // the UI is the layer allowed to see both domains.
+  let originDoc = '—';
+  let originDetail = null;
+  if (x.importSessionId) {
+    const session = getImportSession(x.importSessionId);
+    if (session.ok) {
+      const s = session.data;
+      originDoc = s.filename;
+      originDetail = `${s.kind} · ${s.state}${typeof s.confidence === 'number' ? ` · confidence unggahan ${s.confidence}` : ''}`;
+    } else {
+      originDoc = `Sesi impor ${x.importSessionId} tidak ditemukan lagi`;
+    }
+  }
+
+  const pairs = [
+    ['Dokumen Asal', originDoc],
+    ...(originDetail ? [['Detail Dokumen', originDetail]] : []),
+    ['Sumber', x.origin.connectorId || x.origin.sourceType || '—'],
+    ['Direkam Pada', x.origin.capturedAt || '—'],
+    ['Alasan Ekstraksi', x.extractionRationale ? (x.extractionRationale.notes || x.extractionRationale.normalizerId || '—') : 'Tidak ada catatan normalisasi'],
+    ['Keyakinan', x.confidence === null ? '—' : `${Math.round(x.confidence * 100)}%`],
+    ['Suntingan Manual', x.manualEdits.length ? `${x.manualEdits.length} kali (versi ${x.manualEdits.map((e) => e.version).join(', ')})` : 'Belum pernah disunting'],
+    ['Riwayat Keputusan', x.approvalHistory.length
+      ? x.approvalHistory.map((a) => `v${a.version}: ${a.fromState || 'baru'} → ${a.toState}${a.by ? ` oleh ${a.by}` : ''}${a.rationale ? ` (${a.rationale})` : ''}`).join(' · ')
+      : 'Belum ada keputusan'],
+    ['Jumlah Versi', String(x.versionHistory.length)],
+  ];
+  return renderKvList(pairs);
 }
 
 /* ── Review (Review Queue / Candidate Queue / Rejected) ────────────── */
@@ -373,10 +604,12 @@ function renderReviewSection() {
 
       <div class="wlk-sec">
         ${rows.length ? renderRowList(rows, (row) => `
-          <li class="wlk-row">
+          <li class="wlk-row" data-act="kc-item-row" data-id="${esc(row.id)}" data-clickable="1">
             <span class="wlk-row-primary">${esc(isDeveloperMode() ? row.id : row.primary)}</span>
             <span class="wlk-row-secondary">${esc(row.meta)}</span>
           </li>`) : renderEmptyState(`Tidak ada item pada "${filters.find((f) => f.id === st.reviewFilter).label}".`)}
       </div>
+
+      ${st.selectedId ? renderItemDetail(st.selectedId) : ''}
     </div>`;
 }

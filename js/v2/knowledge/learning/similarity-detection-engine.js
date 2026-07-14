@@ -25,7 +25,9 @@
 
 'use strict';
 
-import { list } from '../repository/knowledge-repository.js';
+import {
+  listKnowledge as list,
+} from '../services/knowledge-service.js';
 import { makeSimilarityResult } from './contracts/similarity-contract.js';
 
 /** Pure. Jaccard similarity over top-level keys whose values are ===-equal

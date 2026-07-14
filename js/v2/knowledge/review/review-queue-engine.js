@@ -21,7 +21,9 @@
 
 'use strict';
 
-import { list } from '../repository/knowledge-repository.js';
+import {
+  listKnowledge as list,
+} from '../services/knowledge-service.js';
 import { LIFECYCLE_STATE } from '../contracts/lifecycle-contract.js';
 import { detectConflicts } from './conflict-detection-engine.js';
 import { REVIEW_EVENT_TYPE, makeReviewEvent } from './contracts/event-contract.js';

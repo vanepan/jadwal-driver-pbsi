@@ -46,8 +46,14 @@
 'use strict';
 
 import { getConnector } from '../registry/connector-registry.js';
-import { create, appendVersion } from '../repository/knowledge-repository.js';
-import { REPOSITORY_ERRORS } from '../repository/contracts/repository-contract.js';
+// Phase 3 — a CLIENT of the Knowledge Service, no longer a writer. This engine
+// used to call repository create()/appendVersion() directly, which meant an
+// item arriving from a connector already stamped `lifecycleState: 'approved'`
+// would have been persisted as approved, with no human ever deciding so. The
+// Service refuses that at the door (knowledge-service.js#INGESTABLE_STATES) —
+// the human gate is now enforced where knowledge enters, not merely described
+// where it is displayed.
+import { ingest } from '../services/knowledge-service.js';
 import { makeSource, SOURCE_REPRESENTATION } from './contracts/source-contract.js';
 import { makeBatch } from './contracts/batch-contract.js';
 import { makeExtractionContext, makeExtractionError, EXTRACTION_ERRORS } from './contracts/extraction-contract.js';
@@ -127,30 +133,21 @@ export function runAcquisition(connectorId, opts = {}) {
   const errors = [];
 
   for (const item of batch.items) {
-    const createResult = create(item);
-    if (createResult.ok) {
-      itemsCreated += 1;
+    // ONE call. The create-or-append-on-DUPLICATE_ID branching this loop used
+    // to carry now lives in the Service (knowledge-service.js#ingest), which
+    // reports which of the two it did via `op` — so the counters below stay
+    // exactly as honest as they were, without this engine knowing how the
+    // repository decides.
+    const result = ingest(item);
+    if (result.ok) {
+      if (result.op === 'create') itemsCreated += 1; else itemsUpdated += 1;
       progress = advanceProgress(progress);
-      emit(onEvent, ACQUISITION_EVENT_TYPE.ITEM_WRITTEN, session0.sessionId, connectorId, { itemId: item.id, op: 'create', progress });
-      continue;
-    }
-    if (createResult.error && createResult.error.code === REPOSITORY_ERRORS.DUPLICATE_ID) {
-      const appendResult = appendVersion(item.id, item);
-      if (appendResult.ok) {
-        itemsUpdated += 1;
-        progress = advanceProgress(progress);
-        emit(onEvent, ACQUISITION_EVENT_TYPE.ITEM_WRITTEN, session0.sessionId, connectorId, { itemId: item.id, op: 'append', progress });
-      } else {
-        itemsSkipped += 1;
-        progress = advanceProgress(progress);
-        errors.push(makeExtractionError(EXTRACTION_ERRORS.NORMALIZATION_FAILED, appendResult.error.message, { connectorId, sourceRef: item.id }));
-        emit(onEvent, ACQUISITION_EVENT_TYPE.ITEM_SKIPPED, session0.sessionId, connectorId, { itemId: item.id, progress });
-      }
+      emit(onEvent, ACQUISITION_EVENT_TYPE.ITEM_WRITTEN, session0.sessionId, connectorId, { itemId: item.id, op: result.op, progress });
       continue;
     }
     itemsSkipped += 1;
     progress = advanceProgress(progress);
-    errors.push(makeExtractionError(EXTRACTION_ERRORS.NORMALIZATION_FAILED, createResult.error ? createResult.error.message : 'create() failed.', { connectorId, sourceRef: item.id }));
+    errors.push(makeExtractionError(EXTRACTION_ERRORS.NORMALIZATION_FAILED, result.error ? result.error.message : 'ingest() failed.', { connectorId, sourceRef: item.id }));
     emit(onEvent, ACQUISITION_EVENT_TYPE.ITEM_SKIPPED, session0.sessionId, connectorId, { itemId: item.id, progress });
   }
 

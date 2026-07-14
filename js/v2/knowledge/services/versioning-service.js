@@ -19,6 +19,14 @@
 
 'use strict';
 
-import { getVersion, getHistory, rollback } from '../repository/knowledge-repository.js';
+// Phase 3 — reads and the rollback WRITE both go through the Knowledge Service.
+// `rollback` used to come straight off the repository facade, which meant this
+// service could re-approve a prior version of organizational knowledge without
+// the domain's owner ever knowing.
+import {
+  getKnowledgeVersion as getVersion,
+  getKnowledgeHistory as getHistory,
+  restoreKnowledge as rollback,
+} from './knowledge-service.js';
 
 export { getVersion, getHistory, rollback };

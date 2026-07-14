@@ -19,7 +19,7 @@
 
 'use strict';
 
-import { list } from './repository/archive-repository.js';
+import { listArchive as list } from './services/archive-service.js';
 import { majorityTemplateGroup } from './numbering-engine.js';
 import { makeGap } from './contracts/gap-contract.js';
 

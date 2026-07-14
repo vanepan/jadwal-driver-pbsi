@@ -28,11 +28,17 @@
 
 import { buildLearningMetrics } from '../knowledge/learning/contracts/learning-metrics-contract.js';
 import { listCorrectionLog } from '../knowledge/learning/correction-pipeline-engine.js';
+// Phase 3, Part 8 — the Correction Log is officially DORMANT (its writer has no
+// caller yet). It must SAY so rather than render a confident, permanent zero.
+import { dormantNote } from '../dormant-subsystems.js';
 import { computeHealthReport } from '../knowledge/metrics/knowledge-metrics-engine.js';
 import {
-  list as knowledgeList, getById as knowledgeGetById, getHistory as knowledgeGetHistory, getMetrics as knowledgeGetMetrics,
-  registerRepositoryListener,
-} from '../knowledge/repository/knowledge-repository.js';
+  listKnowledge as knowledgeList,
+  getKnowledge as knowledgeGetById,
+  getKnowledgeHistory as knowledgeGetHistory,
+  getKnowledgeMetrics as knowledgeGetMetrics,
+  registerKnowledgeListener as registerRepositoryListener,
+} from '../knowledge/services/knowledge-service.js';
 import { LIFECYCLE_STATE, LIFECYCLE_STATE_DEFS } from '../knowledge/contracts/lifecycle-contract.js';
 import { listDomainTypes, getDomainType } from '../knowledge/registry/domain-type-registry.js';
 import { getCandidateQueue, getReviewQueue } from '../knowledge/review/review-queue-engine.js';
@@ -43,9 +49,16 @@ import { computePatternRecommendations } from '../knowledge/services/pattern-dis
 import { manualFileSource } from '../knowledge/connectors/manual-file-connector.js';
 import { listOverrides } from '../knowledge/services/profile-override-service.js';
 import { getKind } from '../knowledge/registry/kind-registry.js';
+// Phase 5 — the six explainable Coverage dimensions (Part 7) and the
+// eight-fact Organization Memory report (Part 5), replacing the old
+// three-different-percentages-called-"Coverage" and giving Organization
+// Memory a real, reachable reader.
+import { computeCoverageReport } from '../organizational-memory/coverage-engine.js';
+import { computeOrganizationalMemory } from '../organizational-memory/organizational-memory-engine.js';
+import { listLearningEvents, LEARNING_KIND } from '../learning/services/learning-service.js';
 
 import {
-  esc, renderEmptyState, renderTabShell, renderRowList, renderStatCards, renderKvList,
+  esc, renderEmptyState, renderTabShell, renderRowList, renderStatCards, renderKvList, renderFilterBar,
   deriveRejectedFromCandidateQueue, isDeveloperMode,
 } from './shared/workspace-list-kit.js';
 
@@ -55,9 +68,14 @@ const SECTIONS = [
   { id: 'activity', label: 'Aktivitas' },
   { id: 'distribution', label: 'Distribusi' },
   { id: 'queues', label: 'Antrean' },
+  // Phase 5, Part 5 — Organization Memory is a first-class domain now, so it
+  // gets a real, reachable tab — not a number computed and never displayed
+  // (exactly the "writer > 0, reader = 0" defect this whole mission exists
+  // to eliminate, applied to the engine THIS phase itself just built).
+  { id: 'organization', label: 'Memori Organisasi' },
 ];
 
-const st = { section: 'overview' };
+const st = { section: 'overview', omDomain: null };
 
 let host = null;
 let contentEl = null;
@@ -101,6 +119,7 @@ const RENDERERS = {
   activity: renderActivitySection,
   distribution: renderDistributionSection,
   queues: renderQueuesSection,
+  organization: renderOrganizationSection,
 };
 
 function render() {
@@ -120,6 +139,7 @@ function onClick(e) {
   const el = e.target.closest('[data-act]');
   if (!el) return;
   if (el.dataset.act === 'wlk-tab') setSection(el.dataset.id);
+  if (el.dataset.act === 'ld-om-domain') { st.omDomain = el.dataset.id; render(); }
 }
 
 /* ── data helpers ──────────────────────────────────────────────────── */
@@ -232,38 +252,48 @@ function renderOverviewSection() {
 
 /* ── Approval / Correction Rate + Profile / Dataset Coverage ──────── */
 
+/** Phase 5, Part 7 — "Instead of Coverage 72%, expose six named dimensions,
+ *  each explaining itself." This used to be FOUR percentages
+ *  (Approval Rate / Correction Rate / Profile Coverage / Dataset Coverage),
+ *  none named "Coverage" consistently and none carrying a stated formula —
+ *  replaced by the six real dimensions coverage-engine.js computes, each
+ *  with its own `explanation` string rendered right under the number. */
+function renderCoverageCards(report) {
+  const dims = [
+    ['knowledgeCoverage', 'Knowledge Coverage'],
+    ['relationshipCoverage', 'Relationship Coverage'],
+    ['metadataCoverage', 'Metadata Coverage'],
+    ['patternCoverage', 'Pattern Coverage'],
+    ['correctionCoverage', 'Correction Coverage'],
+    ['gapCoverage', 'Gap Coverage'],
+  ];
+  return `
+    ${renderStatCards(dims.map(([key, label]) => ({
+    count: report[key].pct === null ? '—' : `${report[key].pct}%`, label,
+  })))}
+    <ul class="wlk-brief-list" style="margin-top:8px;">
+      ${dims.map(([key, label]) => `<li class="wlk-row-secondary">${esc(label)}: ${esc(report[key].explanation)}</li>`).join('')}
+    </ul>`;
+}
+
 function renderRatesSection() {
-  const approvedCount = approvedItems().length;
-  const rejectedCount = rejectedEntries().length;
-  const approvalRate = (approvedCount + rejectedCount) > 0 ? Math.round((approvedCount / (approvedCount + rejectedCount)) * 100) : null;
-  const totalCorrections = buildLearningMetrics(listCorrectionLog()).totalCorrections;
-  const correctionRate = approvedCount > 0 ? Math.round((totalCorrections / approvedCount) * 100) / 100 : null;
-
+  const platformCoverage = computeCoverageReport().data;
   const domains = listDomainTypes();
-  const profileCoverage = domains.map((d) => ({ id: d.id, label: d.label, result: profiles.buildAllProfiles(d.id) }));
-  const profileCoveredCount = profileCoverage.filter((x) => x.result.profileTypesComputed > 0).length;
-  const profileCoveragePct = domains.length ? Math.round((profileCoveredCount / domains.length) * 100) : 0;
 
+  const profileCoverage = domains.map((d) => ({ id: d.id, label: d.label, result: profiles.buildAllProfiles(d.id) }));
   const datasetCoverage = domains.map((d) => ({ id: d.id, label: d.label, count: listDatasets({ domainType: d.id }).length }));
-  const datasetCoveredCount = datasetCoverage.filter((x) => x.count > 0).length;
-  const datasetCoveragePct = domains.length ? Math.round((datasetCoveredCount / domains.length) * 100) : 0;
 
   return `
     <div class="wlk-page">
       <div class="wlk-page-head">
         <div class="wlk-page-crumb">LEARNING DASHBOARD · APPROVAL &amp; COVERAGE</div>
         <h1 class="wlk-page-title">Approval &amp; Coverage</h1>
-        <p class="wlk-page-lede">Rasio persetujuan dan koreksi, serta cakupan Profile dan Dataset per domain.</p>
+        <p class="wlk-page-lede">Enam dimensi cakupan yang dapat dijelaskan sendiri — setiap angka menyatakan pembilang dan penyebutnya, bukan satu persentase yang tidak jelas artinya.</p>
       </div>
 
       <div class="wlk-sec">
-        <div class="wlk-sec-title">Rasio</div>
-        ${renderStatCards([
-          { count: approvalRate === null ? '—' : `${approvalRate}%`, label: 'Approval Rate' },
-          { count: correctionRate === null ? '—' : correctionRate, label: 'Correction Rate' },
-          { count: `${profileCoveragePct}%`, label: 'Profile Coverage' },
-          { count: `${datasetCoveragePct}%`, label: 'Dataset Coverage' },
-        ])}
+        <div class="wlk-sec-title">Cakupan (Platform)</div>
+        ${renderCoverageCards(platformCoverage)}
       </div>
 
       <div class="wlk-sec">
@@ -282,6 +312,78 @@ function renderRatesSection() {
             <span class="wlk-row-primary">${esc(d.label)}</span>
             <span class="wlk-row-secondary">${d.count} dataset</span>
           </li>`) : renderEmptyState('Belum ada domain terdaftar.')}
+      </div>
+    </div>`;
+}
+
+/** Phase 5, Part 5 — Organization Memory: the eight facts, per domain (a
+ *  platform-wide merge would blur "common terminology" across domains that
+ *  legitimately use different vocabulary — the per-domain view is the
+ *  honest one, matching how Profile/Dataset Coverage above are already
+ *  shown per domain, not merged). */
+function renderOrganizationSection() {
+  const domains = listDomainTypes();
+  if (!domains.length) {
+    return `
+      <div class="wlk-page">
+        <div class="wlk-page-head">
+          <div class="wlk-page-crumb">LEARNING DASHBOARD · MEMORI ORGANISASI</div>
+          <h1 class="wlk-page-title">Memori Organisasi</h1>
+        </div>
+        ${renderEmptyState('Belum ada domain terdaftar.')}
+      </div>`;
+  }
+  const activeDomain = st.omDomain && domains.some((d) => d.id === st.omDomain) ? st.omDomain : domains[0].id;
+  const chips = domains.map((d) => ({ id: d.id, label: d.label }));
+  const om = computeOrganizationalMemory(activeDomain, { limit: 8 }).data;
+
+  const factSection = (title, items, renderItem, emptyHint) => `
+    <div class="wlk-sec">
+      <div class="wlk-sec-title">${esc(title)} (${items.length})</div>
+      ${items.length ? renderRowList(items, renderItem) : renderEmptyState('Belum ada data.', emptyHint)}
+    </div>`;
+
+  return `
+    <div class="wlk-page">
+      <div class="wlk-page-head">
+        <div class="wlk-page-crumb">LEARNING DASHBOARD · MEMORI ORGANISASI</div>
+        <h1 class="wlk-page-title">Memori Organisasi</h1>
+        <p class="wlk-page-lede">Struktur, istilah, dan pola yang berulang dalam organisasi — disusun dari Knowledge Approved dan Learning Event yang nyata, bukan dihitung ulang.</p>
+      </div>
+
+      <div class="wlk-sec">${renderFilterBar(chips, activeDomain, { act: 'ld-om-domain' })}</div>
+
+      ${factSection('Struktur Dokumen Umum', om.commonDocumentStructures,
+    (f) => `<li class="wlk-row"><span class="wlk-row-primary">${esc(f.value)}</span><span class="wlk-row-secondary">${f.supportCount} sampel · confidence ${f.confidence}</span></li>`,
+    'Muncul setelah Knowledge Approved memiliki pola paragraf yang cukup.')}
+
+      ${factSection('Istilah Umum', om.commonTerminology,
+    (f) => `<li class="wlk-row"><span class="wlk-row-primary">${esc(f.value)}</span><span class="wlk-row-secondary">${f.supportCount} sampel · confidence ${f.confidence}</span></li>`,
+    'Muncul setelah Knowledge Approved memiliki data kosakata yang cukup.')}
+
+      ${factSection('Frasa Organisasi Umum', om.commonOrganizationalPhrases,
+    (f) => `<li class="wlk-row"><span class="wlk-row-primary">${esc(f.value)}</span><span class="wlk-row-secondary">${f.supportCount} sampel · confidence ${f.confidence}</span></li>`,
+    'Muncul setelah Knowledge Approved memiliki data gaya penulisan yang cukup.')}
+
+      ${factSection('Pola Persetujuan Umum', om.commonApprovalPatterns,
+    (f) => `<li class="wlk-row"><span class="wlk-row-primary">${esc(f.value)}</span><span class="wlk-row-secondary">${f.supportCount} sampel · confidence ${f.confidence}</span></li>`,
+    'Muncul setelah Knowledge Approved memiliki data rantai persetujuan yang cukup.')}
+
+      ${factSection('Pengetahuan Paling Sering Digunakan Ulang', om.frequentlyReusedKnowledge,
+    (f) => `<li class="wlk-row"><span class="wlk-row-primary">${esc(f.knowledgeItemId)}</span><span class="wlk-row-secondary">dikutip ${f.referencedByCount} arsip</span></li>`,
+    'Muncul saat lebih dari satu Archive Record mengutip Knowledge yang sama.')}
+
+      ${factSection('Pengetahuan Paling Sering Dikoreksi', om.frequentlyCorrectedKnowledge,
+    (f) => `<li class="wlk-row"><span class="wlk-row-primary">${esc(f.key)}</span><span class="wlk-row-secondary">${f.count} kali dikoreksi (${esc(f.correctionType)}) · terakhir ${esc(f.lastAt)}</span></li>`,
+    'Muncul saat sesuatu dikoreksi lebih dari sekali.')}
+
+      <div class="wlk-sec">
+        <div class="wlk-sec-title">Ringkasan</div>
+        ${renderStatCards([
+    { count: om.frequentlyMissingMetadataCount, label: 'Koreksi Metadata Tercatat' },
+    { count: om.frequentlyMissingRelationshipsCount, label: 'Koreksi Relasi Tercatat' },
+    { count: om.totalLearningEvents, label: 'Total Learning Event (Koreksi)' },
+  ])}
       </div>
     </div>`;
 }
@@ -324,7 +426,7 @@ function renderActivitySection() {
           <li class="wlk-row">
             <span class="wlk-row-primary">${esc(devMode ? l.itemId : kindLabelForItem(l.itemId))}</span>
             <span class="wlk-row-secondary">${esc(l.at)}</span>
-          </li>`) : renderEmptyState('Belum ada koreksi tercatat.')}
+          </li>`) : renderEmptyState('Belum ada koreksi tercatat.', dormantNote('correction-log'))}
       </div>
 
       <div class="wlk-sec">
@@ -342,7 +444,7 @@ function renderActivitySection() {
           <li class="wlk-row">
             <span class="wlk-row-primary">${esc(devMode ? itemId : kindLabelForItem(itemId))}</span>
             <span class="wlk-row-secondary">${count} koreksi</span>
-          </li>`) : renderEmptyState('Belum ada item yang dikoreksi.')}
+          </li>`) : renderEmptyState('Belum ada item yang dikoreksi.', dormantNote('correction-log'))}
       </div>
 
       <div class="wlk-sec">
@@ -351,7 +453,7 @@ function renderActivitySection() {
           <li class="wlk-row">
             <span class="wlk-row-primary">${esc(domainLabel(domainType))}</span>
             <span class="wlk-row-secondary">${count} koreksi</span>
-          </li>`) : renderEmptyState('Belum ada domain dengan aktivitas koreksi.')}
+          </li>`) : renderEmptyState('Belum ada domain dengan aktivitas koreksi.', dormantNote('correction-log'))}
       </div>
     </div>`;
 }
@@ -435,7 +537,7 @@ function renderQueuesSection() {
           <li class="wlk-row">
             <span class="wlk-row-primary">${esc(devMode ? l.itemId : kindLabelForItem(l.itemId))}</span>
             <span class="wlk-row-secondary">${l.generatedNew ? 'usulan baru' : 'pembaruan item ada'}${l.similarityMatchFound ? ' · kecocokan kemiripan' : ''} · ${esc(l.at)}</span>
-          </li>`) : renderEmptyState('Belum ada koreksi tercatat.')}
+          </li>`) : renderEmptyState('Belum ada koreksi tercatat.', dormantNote('correction-log'))}
       </div>
 
       <div class="wlk-sec">

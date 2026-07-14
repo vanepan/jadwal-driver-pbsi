@@ -11,7 +11,7 @@
 
 'use strict';
 
-import { list } from './repository/archive-repository.js';
+import { listArchive as list } from './services/archive-service.js';
 
 /**
  * @param {string} domainType

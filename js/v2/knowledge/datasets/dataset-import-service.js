@@ -43,7 +43,9 @@ import { getDataset } from './registry/dataset-registry.js';
 import { getDatasetTypeWeight, isBootstrapType } from './contracts/dataset-classification-contract.js';
 import { listConnectors, getConnector } from '../registry/connector-registry.js';
 import { runAcquisition, listImportReports } from '../acquisition/acquisition-engine.js';
-import { rollback } from '../repository/knowledge-repository.js';
+// Phase 3 — rollback is a WRITE against organizational knowledge, so it comes
+// from the Knowledge Service, not straight off the repository facade.
+import { restoreKnowledge as rollback } from '../services/knowledge-service.js';
 
 export const DATASET_IMPORT_ERRORS = Object.freeze({
   DATASET_NOT_FOUND: 'DATASET_NOT_FOUND',

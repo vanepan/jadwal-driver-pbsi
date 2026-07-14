@@ -52,16 +52,23 @@ import { LIFECYCLE_STATE } from '../../contracts/lifecycle-contract.js';
  *  UI layer, per Part A/E of the roadmap. */
 export const AUTO_POPULATE_CONFIDENCE_THRESHOLD = 0.6;
 
-/** V2.1.2 (Part C) — a SEPARATE, higher bar: populating a field and
- *  trusting it enough to skip human review entirely are different
- *  questions. At or above this threshold, an Import Session may proceed
- *  straight through Approve -> Knowledge Imported -> Archived without a
- *  manual click — but this ONLY ever affects the Import Session's own
- *  administrative lifecycle, never the resulting KnowledgeItem's own
- *  separate, unchanged, human-gated curation lifecycle (still Draft,
- *  still requires its own review in Knowledge Center before it is real
- *  "Approved Knowledge" — see the V2.1.2 plan's Decision 5). */
-export const AUTO_IMPORT_CONFIDENCE_THRESHOLD = 0.85;
+/* Phase 2.6 — AUTO_IMPORT_CONFIDENCE_THRESHOLD (0.85) was REMOVED here.
+ *
+ * It was a second, higher confidence bar that once decided whether a session
+ * could "skip human review entirely". Phase 2.5 superseded it with a better
+ * question — is the real content EVIDENCE present? — and left the constant
+ * behind, exported, referenced by nothing but its own explanatory comment. A
+ * threshold that no longer gates anything is not documentation; it is a
+ * plausible-looking number that the next reader will assume is load-bearing.
+ *
+ * What actually decides autonomy now, in exactly one place
+ * (../pipeline-scheduler.js):
+ *   - AUTO_POPULATE_CONFIDENCE_THRESHOLD (below) OR a human's
+ *     `metadataConfirmedBy`  -> is the METADATA trustworthy?
+ *   - hasContentFacts()      -> does the real EVIDENCE exist?
+ * Both true, and the pipeline completes on its own. Either false, and it
+ * parks and says why. Confidence never again decides whether a human must
+ * click a button. */
 
 /** Lower-case, extension-stripped, punctuation-split tokens — the one
  *  deterministic signal every inference below reads. */

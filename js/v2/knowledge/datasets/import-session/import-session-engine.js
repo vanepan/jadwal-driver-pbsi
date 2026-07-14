@@ -39,6 +39,7 @@
 
 import {
   IMPORT_SESSION_STATE, PIPELINE_STAGE, makeImportSessionRecord, isValidImportDecision, canTransitionImportSession,
+  isTerminalImportSessionState,
 } from './contracts/import-session-contract.js';
 import {
   create as repoCreate, appendVersion as repoAppendVersion, getById as repoGetById,
@@ -46,7 +47,7 @@ import {
 } from './repository/import-session-repository.js';
 import { validateImportSession } from './import-validation-engine.js';
 import { makeDatasetSpec } from '../contracts/dataset-contract.js';
-import { registerDataset } from '../registry/dataset-registry.js';
+import { registerDataset, hasDataset } from '../registry/dataset-registry.js';
 import { importDataset } from '../dataset-import-service.js';
 import { manualFileSource, MANUAL_FILE_CONNECTOR_ID } from '../../connectors/manual-file-connector.js';
 import { queueManualEntry, setActiveImportSession, clearActiveImportSession } from '../../acquisition/manual-import-queue-store.js';
@@ -59,6 +60,7 @@ export const IMPORT_SESSION_ENGINE_ERRORS = Object.freeze({
   INVALID_IMPORT_DECISION: 'INVALID_IMPORT_DECISION',
   NOT_APPROVED: 'NOT_APPROVED',
   NOT_KNOWLEDGE_IMPORTED: 'NOT_KNOWLEDGE_IMPORTED',
+  ALREADY_TERMINAL: 'ALREADY_TERMINAL',
 });
 
 function failure(code, message) {
@@ -72,6 +74,49 @@ function nextImportSessionId(domainType) {
 }
 
 /**
+ * Phase 2.6 — THE AUTONOMOUS-IMPORT ROOT CAUSE, fixed.
+ *
+ * Every Import Session owns a DatasetSpec, derived ENTIRELY from the session
+ * itself (`datasetId` is literally `<sessionId>:dataset`), and
+ * markKnowledgeImported() cannot run without it — importDataset() resolves
+ * the spec to find the connector that reads it.
+ *
+ * But the dataset registry is a plain in-memory Map, while Import Sessions
+ * are RTDB-persisted and rehydrate on load. So after ANY page refresh the
+ * sessions came back and their DatasetSpecs did not. markKnowledgeImported()
+ * then failed with DATASET_NOT_FOUND, cascadeFromApproved() returned false,
+ * and the session parked at Approved — which the UI dutifully surfaced as
+ * "Fakta konten lengkap tetapi belum berhasil menjadi Knowledge" with an
+ * "Impor sebagai Knowledge" button that called the very same failing path
+ * and so could never work, no matter how many times it was clicked. That is
+ * the reported defect in Part 3 AND the second half of the redundant
+ * Setujui → Impor double-approval in Part 4: one dead in-memory registry
+ * entry, surfacing as two "the engine is asking me to do its job" bugs.
+ *
+ * The spec is a pure, deterministic function of the session, so it can
+ * always be re-derived — nothing is fabricated and nothing is guessed.
+ * Making it self-healing HERE (rather than in a separate rehydration pass)
+ * means the engine is correct on its own, for every caller, whether or not
+ * anyone remembered to run a projection first.
+ *
+ * Idempotent and O(1): registerDataset() is already idempotent per id, and
+ * hasDataset() short-circuits the common case where the spec is present.
+ */
+export function ensureDatasetForSession(session) {
+  if (!session || !session.datasetId) return null;
+  if (hasDataset(session.datasetId)) return session.datasetId;
+  registerDataset(makeDatasetSpec({
+    datasetId: session.datasetId,
+    name: session.filename,
+    datasetType: session.datasetType,
+    domainType: session.domainType,
+    sourceId: manualFileSource.id,
+    description: `Auto-registered for Import Session "${session.id}".`,
+  }));
+  return session.datasetId;
+}
+
+/**
  * Creates a new Import Session at Uploaded, and auto-registers a
  * DatasetSpec wired to manual-file's source — an uploaded file genuinely
  * IS "a named, classified, versioned collection wired to a sourceId", the
@@ -80,11 +125,9 @@ function nextImportSessionId(domainType) {
 export function createImportSession({ domainType, datasetType, filename, mimeType, sizeBytes, kind, knowledgeKind, uploadedBy, batchId = null }) {
   const id = nextImportSessionId(domainType);
   const datasetId = `${id}:dataset`;
-  registerDataset(makeDatasetSpec({
-    datasetId, name: filename, datasetType, domainType, sourceId: manualFileSource.id,
-    description: `Auto-registered when Import Session "${id}" was uploaded.`,
-  }));
   const record = makeImportSessionRecord({ id, domainType, datasetType, filename, mimeType, sizeBytes, kind, knowledgeKind, datasetId, uploadedBy, batchId });
+  // Same derivation as the rehydration path — one formula, one place.
+  ensureDatasetForSession(record);
   return repoCreate(record);
 }
 
@@ -104,12 +147,117 @@ export function attachParsedContent(id, parsedContent) {
  *  as attachManualEntryFacts. Only the three inferred fields are
  *  patchable here; filename/mimeType/sizeBytes/kind are the file's own
  *  real properties and never editable. */
-export function updateSessionMetadata(id, { domainType, datasetType, knowledgeKind } = {}) {
+export function updateSessionMetadata(id, { domainType, datasetType, knowledgeKind, confirmedBy = null } = {}) {
   const patch = {};
   if (domainType) patch.domainType = domainType;
   if (datasetType) patch.datasetType = datasetType;
   if (knowledgeKind) patch.knowledgeKind = knowledgeKind;
-  return repoAppendVersion(id, patch);
+  // Phase 2.6 — record WHO confirmed the metadata, and fix a real
+  // stuck-forever bug while we're here. `confidence` is the score the
+  // automatic INFERENCE achieved; it is a historical fact about that
+  // inference and it never changes afterwards. So a session that scored below
+  // AUTO_POPULATE_CONFIDENCE_THRESHOLD kept re-reporting LOW_CONFIDENCE
+  // FOREVER — including after a human had opened Advanced Metadata and
+  // corrected every field by hand. It could never leave the attention queue,
+  // because the thing being measured (the machine's guess) was no longer the
+  // thing that mattered (the human's correction). A human confirmation is
+  // strictly better evidence than any inference score, so once it exists the
+  // low-confidence gate is satisfied — see ../pipeline-scheduler.js and
+  // dataset-import-center.js#reviewReasons, which both read this field.
+  if (confirmedBy) patch.metadataConfirmedBy = confirmedBy;
+  const result = repoAppendVersion(id, patch);
+  // The DatasetSpec is derived from domainType/datasetType — a corrected
+  // session must re-register its spec or the import would run against stale
+  // classification.
+  if (result.ok) ensureDatasetForSession(result.data);
+  return result;
+}
+
+/** Phase 2.6 — the ONLY honest "Uploading" marker. Written immediately
+ *  BEFORE the real, network-bound Storage upload begins (the one genuinely
+ *  slow step in this pipeline, and the only one worth its own resting
+ *  stage). Before this, nothing ever wrote an uploading stage at all: the
+ *  Normal-mode display simply RELABELLED the persisted `classification`
+ *  stage as the word "Uploading", so every file that stopped advancing —
+ *  low confidence, unsupported format, failed validation — sat under a
+ *  permanent "Uploading" badge describing an upload that had finished long
+ *  ago (or never started). Part 2's defect, at its source. */
+export function markUploading(id) {
+  return repoAppendVersion(id, { pipelineStage: PIPELINE_STAGE.UPLOADING });
+}
+
+/** Phase 2.6 — the "Pending Human Evidence" off-ramp: the pipeline looked at
+ *  this session, found the deterministic evidence it needs GENUINELY absent
+ *  (no content fact a PDF/DOCX can never self-derive; or metadata the
+ *  inference could not classify confidently and no human has confirmed), and
+ *  stopped on purpose. This is a real conclusion, not a stall — and saying so
+ *  in the persisted stage is what stops it from masquerading as in-flight
+ *  work. Deliberately does NOT touch `state`: the session is still legally at
+ *  Uploaded/Pending Review and will resume the instant the evidence arrives.
+ *  Idempotent — re-marking an already-awaiting session writes nothing, so a
+ *  repeated sweep costs zero writes. */
+export function markAwaitingEvidence(id) {
+  const current = repoGetById(id);
+  if (!current.ok) return failure(IMPORT_SESSION_ENGINE_ERRORS.NOT_FOUND, current.error.message);
+  if (current.data.pipelineStage === PIPELINE_STAGE.AWAITING_EVIDENCE) return current; // no-op, no write
+  return repoAppendVersion(id, { pipelineStage: PIPELINE_STAGE.AWAITING_EVIDENCE });
+}
+
+/** Phase 2.6 — terminal: the operator cancelled the batch this session
+ *  belongs to. Idempotent (already-cancelled is a successful no-op), and it
+ *  REFUSES to touch a session that already reached a terminal state — a file
+ *  that finished before the cancel landed stays finished. Cancelling never
+ *  destroys completed work. */
+export function cancelImportSession(id, reason = 'Batch impor dibatalkan oleh operator.') {
+  const current = repoGetById(id);
+  if (!current.ok) return failure(IMPORT_SESSION_ENGINE_ERRORS.NOT_FOUND, current.error.message);
+  const s = current.data;
+  if (s.state === IMPORT_SESSION_STATE.CANCELLED) return current; // converged
+  if (isTerminalImportSessionState(s.state)) {
+    return failure(IMPORT_SESSION_ENGINE_ERRORS.ALREADY_TERMINAL, `Import session "${id}" is already terminal ("${s.state}") — completed work is never un-done by a cancel.`);
+  }
+  if (!canTransitionImportSession(s.state, IMPORT_SESSION_STATE.CANCELLED)) {
+    // Knowledge Imported has no cancel edge by design — it already produced
+    // real Knowledge, so its only honest move is to finish archiving.
+    return failure(IMPORT_SESSION_ENGINE_ERRORS.ILLEGAL_TRANSITION, `Cannot cancel import session "${id}" from state "${s.state}".`);
+  }
+  return repoAppendVersion(id, {
+    state: IMPORT_SESSION_STATE.CANCELLED,
+    pipelineStage: PIPELINE_STAGE.CANCELLED,
+    failureReason: reason,
+  });
+}
+
+/** Phase 2.6 — terminal: a deterministic, non-recoverable condition (an
+ *  unsupported format; an automatic step that genuinely could not succeed
+ *  after its bounded retries). `reason` is ALWAYS a real engine message or a
+ *  real detected condition — never a fabricated explanation. This is the
+ *  state that makes the terminal-state guarantee actually terminate: without
+ *  it, a session the pipeline cannot finish has nowhere to go, and "retry
+ *  forever" is indistinguishable from "stuck forever". */
+export function failImportSession(id, reason) {
+  const current = repoGetById(id);
+  if (!current.ok) return failure(IMPORT_SESSION_ENGINE_ERRORS.NOT_FOUND, current.error.message);
+  const s = current.data;
+  if (s.state === IMPORT_SESSION_STATE.FAILED) return current; // converged
+  if (isTerminalImportSessionState(s.state)) {
+    return failure(IMPORT_SESSION_ENGINE_ERRORS.ALREADY_TERMINAL, `Import session "${id}" is already terminal ("${s.state}").`);
+  }
+  return repoAppendVersion(id, {
+    state: IMPORT_SESSION_STATE.FAILED,
+    pipelineStage: PIPELINE_STAGE.FAILED,
+    failureReason: reason || 'Pipeline tidak dapat menyelesaikan sesi ini.',
+  });
+}
+
+/** Phase 2.6 — records that ONE automatic advance attempt failed. Bounded by
+ *  the scheduler (MAX_PIPELINE_ATTEMPTS); on exhaustion it calls
+ *  failImportSession() with the last real error. Never incremented by a
+ *  human-initiated action — a person may retry as often as they like. */
+export function recordPipelineAttempt(id) {
+  const current = repoGetById(id);
+  if (!current.ok) return failure(IMPORT_SESSION_ENGINE_ERRORS.NOT_FOUND, current.error.message);
+  return repoAppendVersion(id, { pipelineAttempts: (current.data.pipelineAttempts || 0) + 1 });
 }
 
 /** V2.1.2 — persists the real inferMetadata() result at creation time
@@ -119,10 +267,12 @@ export function attachInferenceResult(id, { confidence, confidenceRationale }) {
   return repoAppendVersion(id, { confidence, confidenceRationale });
 }
 
-/** V2.1.2 — records that markKnowledgeImported() ran automatically
- *  because confidence cleared AUTO_IMPORT_CONFIDENCE_THRESHOLD, purely
- *  for honest display (Review Experience, Batch History) — never changes
- *  what markKnowledgeImported() itself does. */
+/** Records that this session completed AUTOMATICALLY — the pipeline had all
+ *  the deterministic evidence it needed and finished without a human click.
+ *  Purely for honest display/provenance (Review Experience, Batch History);
+ *  never changes what markKnowledgeImported() itself does.
+ *  Phase 2.6 — set by the scheduler, which is now the only thing that can
+ *  complete a session automatically. */
 export function markAutoImported(id) {
   return repoAppendVersion(id, { autoImported: true });
 }
@@ -217,6 +367,14 @@ export function markKnowledgeImported(id, opts = {}) {
   if (!hasContentFacts(session)) {
     return failure('MISSING_CONTENT_FACTS', `Import session "${id}" has no human-verified content yet — attach manual-entry facts (or JSON content) via Advanced Metadata before it can become Knowledge.`);
   }
+
+  // Phase 2.6 — self-heal the DatasetSpec before importing. The registry is
+  // in-memory; the session is RTDB-persisted. After a refresh the session
+  // came back and its spec did not, so importDataset() below returned
+  // DATASET_NOT_FOUND and this session could NEVER become Knowledge —
+  // no matter how many times a human pressed "Impor sebagai Knowledge".
+  // See ensureDatasetForSession()'s header for the full failure story.
+  ensureDatasetForSession(session);
 
   queueManualEntry({
     importSessionId: id,

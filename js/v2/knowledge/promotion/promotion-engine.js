@@ -32,9 +32,17 @@
 
 'use strict';
 
-import { requestTransition, LIFECYCLE_STATE } from '../lifecycle/lifecycle-engine.js';
+// Phase 3 — a CLIENT of the Knowledge Service. promoteToCandidate() and
+// deprecate() used to call lifecycle-engine.requestTransition() directly; they
+// now go through the one owner. The PromotionRecord/event bookkeeping this file
+// exists for is untouched — that IS its job, and it is the only module doing it.
+import { LIFECYCLE_STATE } from '../contracts/lifecycle-contract.js';
+import {
+  getKnowledge as getById,
+  promoteToCandidate as servicePromoteToCandidate,
+  archiveKnowledge,
+} from '../services/knowledge-service.js';
 import { rollback as workflowRollback } from '../review/review-workflow-engine.js';
-import { getById } from '../repository/knowledge-repository.js';
 import { makePromotionRecord } from '../review/contracts/promotion-contract.js';
 import { recordPromotion } from '../review/review-history.js';
 import { PROMOTION_EVENT_TYPE, makePromotionEvent } from './contracts/event-contract.js';
@@ -68,7 +76,7 @@ function record(id, fromState, result, actorId, rationale) {
  *  though no ReviewDecision is required. */
 export function promoteToCandidate(id, { actorId = null, onEvent } = {}) {
   const fromState = currentState(id);
-  const result = requestTransition(id, fromState, LIFECYCLE_STATE.CANDIDATE);
+  const result = servicePromoteToCandidate(id);
   if (result.ok) {
     record(id, fromState, result, actorId, null);
     emit(onEvent, PROMOTION_EVENT_TYPE.PROMOTED, id, { fromState, toState: LIFECYCLE_STATE.CANDIDATE });
@@ -82,7 +90,7 @@ export function promoteToCandidate(id, { actorId = null, onEvent } = {}) {
  *  required to construct it). */
 export function deprecate(id, reason, { actorId = null, onEvent } = {}) {
   const fromState = currentState(id);
-  const result = requestTransition(id, fromState, LIFECYCLE_STATE.DEPRECATED);
+  const result = archiveKnowledge(id, { actorId, reason });
   if (result.ok) {
     record(id, fromState, result, actorId, reason ?? null);
     emit(onEvent, PROMOTION_EVENT_TYPE.DEPRECATED, id, { fromState, reason: reason ?? null });

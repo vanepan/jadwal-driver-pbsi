@@ -18,7 +18,26 @@
    Plus one reject edge, Pending Review → Uploaded (send back for
    revision), mirroring lifecycle-contract.js's own Pending Review →
    Candidate reject precedent rather than leaving a bad upload stuck
-   forever.
+   forever, and (Phase 2.6) two terminal off-ramps — Cancelled and Failed —
+   without which a file the pipeline could not finish had no legal place to
+   land and simply sat in its last state forever.
+
+   PHASE 2.6 — WHERE THE HUMAN GATE ACTUALLY LIVES. This file used to
+   declare IMPORT_SESSION_HUMAN_GATED_STATES = [APPROVED] ("no path into
+   Approved without an explicit human review action"). That flag was read by
+   nothing — a dead constant — and the intent behind it was, on inspection,
+   in the wrong place: an Import Session's `state` tracks an ADMINISTRATIVE
+   fact (has this file been fingerprinted, validated, extracted, archived),
+   not an EDITORIAL one. Approving an Import Session moves data between
+   engines; it does not bless the resulting knowledge as organizationally
+   true. The real, load-bearing human gate is one layer down and unchanged:
+   every KnowledgeItem this pipeline produces lands as DRAFT
+   (contracts/lifecycle-contract.js, connectors/manual-file-connector.js),
+   and a human promotes it in Knowledge Center. So the administrative
+   lifecycle here auto-advances whenever deterministic evidence is complete,
+   and the ImportDecision below is an AUDIT RECORD of who/why (engine or
+   human) — never a demand for a UI click. Two human approvals for one
+   deterministic process was the bug, not the design.
 
    RESPONSIBILITY: define the state set, the transition graph, a pure
    canTransition check, and ImportDecision validation (mirrors
@@ -29,8 +48,9 @@
 
    NON-GOALS: does not persist anything (see
    ../repository/import-session-repository.js), does not perform a
-   transition (see ../import-session-engine.js), does not decide WHO may
-   approve (approverId is accepted and recorded, never authorized, same
+   transition (see ../import-session-engine.js), does not drive a session
+   through the pipeline (see ../pipeline-scheduler.js), does not decide WHO
+   may approve (approverId is accepted and recorded, never authorized, same
    open question review-contract.js leaves).
    ============================================================ */
 
@@ -44,6 +64,15 @@ export const IMPORT_SESSION_STATE = Object.freeze({
   APPROVED: 'approved',
   KNOWLEDGE_IMPORTED: 'knowledge_imported',
   ARCHIVED: 'archived',
+  // Phase 2.6 — the two missing TERMINAL off-ramps. Before this, the graph
+  // had exactly one sink (Archived), so a file the pipeline could never
+  // finish (an unsupported format, a batch the operator cancelled) had
+  // nowhere legal to land: it sat at `uploaded` forever, which is precisely
+  // why "Uploading" badges never cleared and why cancellation could not be
+  // represented at all. A lifecycle with unreachable terminals is not a
+  // lifecycle — see IMPORT_SESSION_TERMINAL_STATES below.
+  CANCELLED: 'cancelled',
+  FAILED: 'failed',
 });
 
 export const IMPORT_SESSION_STATE_DEFS = Object.freeze([
@@ -52,24 +81,54 @@ export const IMPORT_SESSION_STATE_DEFS = Object.freeze([
   Object.freeze({ id: IMPORT_SESSION_STATE.APPROVED, label: 'Approved' }),
   Object.freeze({ id: IMPORT_SESSION_STATE.KNOWLEDGE_IMPORTED, label: 'Knowledge Imported' }),
   Object.freeze({ id: IMPORT_SESSION_STATE.ARCHIVED, label: 'Archived' }),
+  Object.freeze({ id: IMPORT_SESSION_STATE.CANCELLED, label: 'Cancelled' }),
+  Object.freeze({ id: IMPORT_SESSION_STATE.FAILED, label: 'Failed' }),
 ]);
 
-/** The ONE authority on legal Import Session moves. */
+/** The ONE authority on legal Import Session moves.
+ *
+ *  Phase 2.6 — every non-terminal state now has an edge to CANCELLED (the
+ *  operator cancelled the batch it belongs to) and to FAILED (the pipeline
+ *  hit a deterministic, non-recoverable condition — an unsupported format,
+ *  or an automatic step that genuinely could not succeed after its bounded
+ *  retries). KNOWLEDGE_IMPORTED deliberately has NO cancel edge: that
+ *  session already produced real Knowledge, so its only honest remaining
+ *  move is to finish archiving (partial progress is preserved, never
+ *  thrown away — cancelling a batch never un-does completed work). */
 export const IMPORT_SESSION_GRAPH = Object.freeze({
-  [IMPORT_SESSION_STATE.UPLOADED]: Object.freeze([IMPORT_SESSION_STATE.PENDING_REVIEW]),
+  [IMPORT_SESSION_STATE.UPLOADED]: Object.freeze([
+    IMPORT_SESSION_STATE.PENDING_REVIEW, IMPORT_SESSION_STATE.CANCELLED, IMPORT_SESSION_STATE.FAILED,
+  ]),
   // reject edge: a reviewer sends a bad upload back for revision instead of
   // leaving it stuck — mirrors lifecycle-contract.js's Pending Review ->
   // Candidate precedent.
-  [IMPORT_SESSION_STATE.PENDING_REVIEW]: Object.freeze([IMPORT_SESSION_STATE.APPROVED, IMPORT_SESSION_STATE.UPLOADED]),
-  [IMPORT_SESSION_STATE.APPROVED]: Object.freeze([IMPORT_SESSION_STATE.KNOWLEDGE_IMPORTED]),
-  [IMPORT_SESSION_STATE.KNOWLEDGE_IMPORTED]: Object.freeze([IMPORT_SESSION_STATE.ARCHIVED]),
+  [IMPORT_SESSION_STATE.PENDING_REVIEW]: Object.freeze([
+    IMPORT_SESSION_STATE.APPROVED, IMPORT_SESSION_STATE.UPLOADED,
+    IMPORT_SESSION_STATE.CANCELLED, IMPORT_SESSION_STATE.FAILED,
+  ]),
+  [IMPORT_SESSION_STATE.APPROVED]: Object.freeze([
+    IMPORT_SESSION_STATE.KNOWLEDGE_IMPORTED, IMPORT_SESSION_STATE.CANCELLED, IMPORT_SESSION_STATE.FAILED,
+  ]),
+  [IMPORT_SESSION_STATE.KNOWLEDGE_IMPORTED]: Object.freeze([
+    IMPORT_SESSION_STATE.ARCHIVED, IMPORT_SESSION_STATE.FAILED,
+  ]),
   [IMPORT_SESSION_STATE.ARCHIVED]: Object.freeze([]),
+  [IMPORT_SESSION_STATE.CANCELLED]: Object.freeze([]),
+  [IMPORT_SESSION_STATE.FAILED]: Object.freeze([]),
 });
 
-/** States never automatic — same Decision 6 discipline as
- *  lifecycle-contract.js's HUMAN_GATED_STATES: no path into Approved may be
- *  taken without an explicit human review action. */
-export const IMPORT_SESSION_HUMAN_GATED_STATES = Object.freeze([IMPORT_SESSION_STATE.APPROVED]);
+/** The three absorbing states. The scheduler's terminal-state guarantee
+ *  (pipeline-scheduler.js) is exactly: every session eventually reaches one
+ *  of these, OR rests at AWAITING_EVIDENCE (PIPELINE_STAGE below) because a
+ *  human genuinely has to supply a fact the engine cannot invent. Those are
+ *  the only four permanent resting places in this system. */
+export const IMPORT_SESSION_TERMINAL_STATES = Object.freeze([
+  IMPORT_SESSION_STATE.ARCHIVED, IMPORT_SESSION_STATE.CANCELLED, IMPORT_SESSION_STATE.FAILED,
+]);
+
+export function isTerminalImportSessionState(state) {
+  return IMPORT_SESSION_TERMINAL_STATES.includes(state);
+}
 
 /**
  * Pure structural check: is `from -> to` a legal single-step transition?
@@ -80,11 +139,6 @@ export const IMPORT_SESSION_HUMAN_GATED_STATES = Object.freeze([IMPORT_SESSION_S
 export function canTransitionImportSession(from, to) {
   const reachable = IMPORT_SESSION_GRAPH[from];
   return Array.isArray(reachable) && reachable.includes(to);
-}
-
-/** Whether `to` requires the structural human-approval gate. */
-export function isImportSessionHumanGated(to) {
-  return IMPORT_SESSION_HUMAN_GATED_STATES.includes(to);
 }
 
 /**
@@ -124,32 +178,92 @@ export const IMPORT_SESSION_KIND = Object.freeze({
   SYNTHETIC: 'synthetic',
 });
 
-/** Phase 2 Follow-up — the SINGLE source of truth for pipeline progress.
- *  A persisted, RTDB-backed annotation on the session (never a transient
- *  local UI callback), so progress survives refresh/reconnection/restart/
- *  multi-tab exactly like every other session field. This is a progress
- *  MARKER orthogonal to the 5-state IMPORT_SESSION_STATE lifecycle — it
- *  never gates a transition and appendVersion never legality-checks it.
- *  These are the seven real, deterministic steps a file passes through
- *  (see js/v2/ui/dataset-import-center.js#processOneFile); Normal-mode UI
- *  collapses them to five friendly labels, Developer-mode shows all seven
- *  — one truth, two vocabularies (never a second stage concept). */
+/** Phase 2 Follow-up / Phase 2.6 — the SINGLE source of truth for pipeline
+ *  progress. A persisted, RTDB-backed annotation on the session (never a
+ *  transient local UI callback), so progress survives refresh/reconnection/
+ *  restart/multi-tab exactly like every other session field.
+ *
+ *  THE LADDER (the ten conceptual steps a document passes through):
+ *
+ *    Preparing → Fingerprinting → Duplicate Detection → Classification →
+ *    Uploading → Policy Validation → Knowledge Extraction →
+ *    Learning Registration → Archive → Completed
+ *
+ *  ...plus three OFF-RAMPS a document may legitimately leave the ladder on:
+ *  Awaiting Evidence, Cancelled, Failed.
+ *
+ *  PERSISTED vs PASSED-THROUGH (Phase 2.6 — read this before adding a
+ *  stage write). Only a stage a session can actually be OBSERVED AT is ever
+ *  written; the rest are passed through synchronously inside a single
+ *  engine call and have no resting point to persist. Writing a marker for
+ *  an instantaneous step would be a fabricated state, and an enum member no
+ *  session can ever hold is a dead branch. So:
+ *
+ *    PREPARING / FINGERPRINTING / DEDUPLICATION  pre-session — they all run
+ *      to completion BEFORE createImportSession() has a record to write to.
+ *      A session that exists has, by construction, passed all three.
+ *    CLASSIFICATION      written once by createImportSession()
+ *    UPLOADING           written once by markUploading(), immediately before
+ *                        the real (slow, network-bound) Storage upload. This
+ *                        is the ONLY stage that honestly means "uploading" —
+ *                        before Phase 2.6 the display mapped CLASSIFICATION
+ *                        to the word "Uploading", which is why every file
+ *                        that never advanced sat under a permanent, lying
+ *                        "Uploading" badge.
+ *    POLICY_VALIDATION   written once by submitImportSessionForReview()
+ *    KNOWLEDGE_EXTRACTION written once by markKnowledgeImported()
+ *    LEARNING / ARCHIVE  passed through inside markArchived()'s single write
+ *      (Learning Registration is a pure recompute over the repository the
+ *      new item just joined — Knowledge Graph + Pattern Discovery are reads,
+ *      not jobs; there is no work to wait on and so no resting point).
+ *    COMPLETED           written once by markArchived()
+ *
+ *  Every one of those writes RIDES AN EXISTING appendVersion() — no stage
+ *  costs a second write (D1), and each fires exactly once. */
 export const PIPELINE_STAGE = Object.freeze({
+  PREPARING: 'preparing',
   FINGERPRINTING: 'fingerprinting',
   DEDUPLICATION: 'deduplication',
   CLASSIFICATION: 'classification',
+  UPLOADING: 'uploading',
   POLICY_VALIDATION: 'policy_validation',
   KNOWLEDGE_EXTRACTION: 'knowledge_extraction',
   LEARNING: 'learning',
+  ARCHIVE: 'archive',
   COMPLETED: 'completed',
+  // Off-ramps — deliberately NOT in PIPELINE_STAGE_ORDER (they are not
+  // "further along the ladder", they are exits from it).
+  AWAITING_EVIDENCE: 'awaiting_evidence',
+  CANCELLED: 'cancelled',
+  FAILED: 'failed',
 });
 
-/** Ordered, so a caller can compute "how far has this session got" as an
- *  index without hardcoding the sequence in two places. */
+/** The linear ladder, ordered, so a caller can compute "how far has this
+ *  session got" as an index without hardcoding the sequence in two places.
+ *  Off-ramp stages are excluded by design — see PIPELINE_OFF_RAMP_STAGES. */
 export const PIPELINE_STAGE_ORDER = Object.freeze([
-  PIPELINE_STAGE.FINGERPRINTING, PIPELINE_STAGE.DEDUPLICATION, PIPELINE_STAGE.CLASSIFICATION,
-  PIPELINE_STAGE.POLICY_VALIDATION, PIPELINE_STAGE.KNOWLEDGE_EXTRACTION, PIPELINE_STAGE.LEARNING,
+  PIPELINE_STAGE.PREPARING, PIPELINE_STAGE.FINGERPRINTING, PIPELINE_STAGE.DEDUPLICATION,
+  PIPELINE_STAGE.CLASSIFICATION, PIPELINE_STAGE.UPLOADING, PIPELINE_STAGE.POLICY_VALIDATION,
+  PIPELINE_STAGE.KNOWLEDGE_EXTRACTION, PIPELINE_STAGE.LEARNING, PIPELINE_STAGE.ARCHIVE,
   PIPELINE_STAGE.COMPLETED,
+]);
+
+/** A session sitting on one of these is OFF the ladder — its stage index is
+ *  meaningless and must never be compared against PIPELINE_STAGE_ORDER. */
+export const PIPELINE_OFF_RAMP_STAGES = Object.freeze([
+  PIPELINE_STAGE.AWAITING_EVIDENCE, PIPELINE_STAGE.CANCELLED, PIPELINE_STAGE.FAILED,
+]);
+
+export function isOffRampStage(stage) {
+  return PIPELINE_OFF_RAMP_STAGES.includes(stage);
+}
+
+/** The four permanent resting places — the scheduler's terminal guarantee
+ *  (see ../pipeline-scheduler.js). AWAITING_EVIDENCE is permanent only
+ *  until a human supplies the missing fact; the other three are absorbing. */
+export const PIPELINE_RESTING_STAGES = Object.freeze([
+  PIPELINE_STAGE.COMPLETED, PIPELINE_STAGE.CANCELLED, PIPELINE_STAGE.FAILED,
+  PIPELINE_STAGE.AWAITING_EVIDENCE,
 ]);
 
 /**
@@ -173,9 +287,12 @@ export const PIPELINE_STAGE_ORDER = Object.freeze([
  * @property {string|null} fileStorageId - V2.1: the StoredFileRecord.id this session's original file is linked to
  * @property {number|null} confidence    - V2.1.2: the real inferMetadata() overallConfidence at creation time, persisted (previously only ever transient batch-processing state) — drives both the Advanced Metadata prompt and the auto-import decision, and is shown honestly in Review/Session Viewer
  * @property {Object|null} confidenceRationale - V2.1.2: per-field {domainType, datasetType, knowledgeKind} rationale strings from the same inference call, for explainability (Part K "every review item must display... supporting evidence")
- * @property {boolean} autoImported      - V2.1.2: true if this session's confidence cleared AUTO_IMPORT_CONFIDENCE_THRESHOLD and it was walked through Approve->Knowledge Imported->Archived without a manual click
- * @property {string} pipelineStage      - Phase 2 Follow-up: one of PIPELINE_STAGE — the persisted, RTDB-backed progress marker (source of truth for the live pipeline display; never derived from a transient callback). Defaults to CLASSIFICATION at creation (fingerprint+dedup+classify all complete before a session record exists), advanced by the engine's existing transition writes (submit->POLICY_VALIDATION, markKnowledgeImported->KNOWLEDGE_EXTRACTION, markArchived->COMPLETED) — folded into those writes, never a separate write
+ * @property {boolean} autoImported      - true if the pipeline walked this session through Approve->Knowledge Imported->Archived with no human click, because its deterministic evidence was complete. Phase 2.6: the old AUTO_IMPORT_CONFIDENCE_THRESHOLD that once decided this is gone — autonomy is decided by real evidence (content facts + trustworthy metadata), not by a score
+ * @property {string} pipelineStage      - Phase 2 Follow-up: one of PIPELINE_STAGE — the persisted, RTDB-backed progress marker (source of truth for the live pipeline display; never derived from a transient callback). Defaults to CLASSIFICATION at creation (preparing+fingerprint+dedup+classify all complete before a session record exists); see PIPELINE_STAGE above for the exact, one-write-each transition table
  * @property {string|null} batchId       - V2.1.2: the ImportBatchRecord.id this session was created as part of (Part M "Import Batch" metadata link) — null only for a session created outside a batch (should not happen via the UI, kept nullable for contract honesty)
+ * @property {string|null} metadataConfirmedBy - Phase 2.6: who manually confirmed/corrected this session's inferred metadata via Advanced Metadata. Fixes a real stuck-forever bug: `confidence` is the score the INFERENCE achieved and never changes afterwards, so a low-confidence session a human had already fixed kept re-reporting LOW_CONFIDENCE and could never leave the attention queue. A human's correction is better evidence than any score — once this is set, the low-confidence gate is satisfied
+ * @property {number} pipelineAttempts   - Phase 2.6: how many times an AUTOMATIC advance of this session failed. Bounded by MAX_PIPELINE_ATTEMPTS in ../pipeline-scheduler.js; on exhaustion the session moves to FAILED with a real `failureReason` rather than retrying forever. This is what makes the terminal-state guarantee actually terminate
+ * @property {string|null} failureReason - Phase 2.6: the real error message that sent this session to FAILED (never fabricated — always an engine's own returned message, or the deterministic condition that was detected)
  * @property {Object[]} validationWarnings
  * @property {Object[]} validationErrors
  * @property {string|null} knowledgeItemId
@@ -196,7 +313,7 @@ export function makeImportSessionRecord({ id, domainType, datasetType, filename,
     id, version: 1, domainType, datasetType, filename, mimeType, sizeBytes, kind, knowledgeKind,
     state: IMPORT_SESSION_STATE.UPLOADED,
     // Phase 2 Follow-up — a session that exists in the repository has, by
-    // construction, already been fingerprinted, dedup-checked and
+    // construction, already been prepared, fingerprinted, dedup-checked and
     // classified (all synchronous, before createImportSession runs), so
     // CLASSIFICATION is the honest starting stage; earlier stages are
     // pre-session and instantaneous.
@@ -211,7 +328,10 @@ export function makeImportSessionRecord({ id, domainType, datasetType, filename,
     fileStorageId: null,
     confidence: null,
     confidenceRationale: null,
+    metadataConfirmedBy: null,
     autoImported: false,
+    pipelineAttempts: 0,
+    failureReason: null,
     validationWarnings: Object.freeze([]),
     validationErrors: Object.freeze([]),
     knowledgeItemId: null,
@@ -236,4 +356,53 @@ export function isImportSessionRecord(r) {
     && typeof r.mimeType === 'string' && r.mimeType.length > 0
     && typeof r.state === 'string' && Object.values(IMPORT_SESSION_STATE).includes(r.state)
     && typeof r.datasetId === 'string' && r.datasetId.length > 0;
+}
+
+/** Phase 2.6 — THE RTDB ROUND-TRIP NORMALIZER, and one of this milestone's
+ *  two most consequential fixes.
+ *
+ *  Firebase RTDB does not store `null` and does not store an EMPTY ARRAY —
+ *  both are simply absent from the snapshot it hands back. So a record
+ *  written as `{..., validationErrors: [], archiveRecordId: null}` rehydrates
+ *  after a refresh as `{...}` — those keys are GONE, not empty. Every
+ *  `...spread`-based appendVersion() then carries the hole forward, and any
+ *  `Array.isArray()`/`.length` read against it is a latent crash or, worse, a
+ *  silent structural-validation failure that makes the write vanish with no
+ *  error surfaced anywhere (this is precisely how "Batalkan Batch Ini" came
+ *  to do nothing — see ./import-batch-contract.js#normalizeImportBatchRecord,
+ *  where the very same hole made isImportBatchRecord() reject every merged
+ *  record after a refresh, so cancelBatch()'s appendVersion silently failed).
+ *
+ *  Rehydration therefore re-establishes the record's full declared shape
+ *  before anything reads it. It only ever restores an ABSENT key to its
+ *  documented default — it never overwrites a value RTDB actually returned,
+ *  so no real persisted fact can be clobbered by it.
+ */
+export function normalizeImportSessionRecord(r) {
+  if (!r || typeof r !== 'object') return r;
+  return {
+    ...r,
+    pipelineStage: r.pipelineStage || PIPELINE_STAGE.CLASSIFICATION,
+    validationWarnings: Array.isArray(r.validationWarnings) ? r.validationWarnings : [],
+    validationErrors: Array.isArray(r.validationErrors) ? r.validationErrors : [],
+    manualEntryFacts: r.manualEntryFacts ?? null,
+    parsedContent: r.parsedContent ?? null,
+    documentHash: r.documentHash ?? null,
+    sha256: r.sha256 ?? null,
+    storagePath: r.storagePath ?? null,
+    fileStorageId: r.fileStorageId ?? null,
+    confidence: typeof r.confidence === 'number' ? r.confidence : null,
+    confidenceRationale: r.confidenceRationale ?? null,
+    metadataConfirmedBy: r.metadataConfirmedBy ?? null,
+    autoImported: !!r.autoImported,
+    pipelineAttempts: typeof r.pipelineAttempts === 'number' ? r.pipelineAttempts : 0,
+    failureReason: r.failureReason ?? null,
+    knowledgeItemId: r.knowledgeItemId ?? null,
+    importReport: r.importReport ?? null,
+    archiveRecordId: r.archiveRecordId ?? null,
+    batchId: r.batchId ?? null,
+    approvedBy: r.approvedBy ?? null,
+    approvedAt: r.approvedAt ?? null,
+    preferenceRationale: r.preferenceRationale ?? null,
+  };
 }

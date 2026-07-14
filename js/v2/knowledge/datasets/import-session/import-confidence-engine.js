@@ -43,12 +43,16 @@
 
 'use strict';
 
-/** Level bands — mirror metadata-inference-engine.js's
- *  AUTO_IMPORT_CONFIDENCE_THRESHOLD (0.85) and
- *  AUTO_POPULATE_CONFIDENCE_THRESHOLD (0.6). Defined locally (not imported)
- *  purely to avoid an import cycle — metadata-inference-engine.js imports
- *  THIS file. Kept in sync deliberately; see that file's exported constants
- *  which remain the single source of truth for the actual auto-decisions. */
+/** Level bands — purely DESCRIPTIVE labels ("high"/"medium"/"low") for the
+ *  explainability report. Defined locally (not imported) to avoid an import
+ *  cycle — metadata-inference-engine.js imports THIS file.
+ *
+ *  Phase 2.6 — LEVEL_HIGH no longer mirrors any decision threshold: the 0.85
+ *  auto-import bar it used to track has been removed (see
+ *  metadata-inference-engine.js's note on why). The ONE confidence value that
+ *  still gates anything is AUTO_POPULATE_CONFIDENCE_THRESHOLD (0.6), which
+ *  LEVEL_MEDIUM matches. 0.85 survives here only as the boundary of the word
+ *  "high" in a human-readable report — it decides nothing. */
 const LEVEL_HIGH = 0.85;
 const LEVEL_MEDIUM = 0.6;
 

@@ -22,8 +22,13 @@
 'use strict';
 
 import { getArchiveSource } from './registry/archive-source-registry.js';
-import { create, appendVersion } from './repository/archive-repository.js';
-import { ARCHIVE_REPOSITORY_ERRORS } from './repository/archive-repository.js';
+// Phase 4 — a CLIENT of the Archive Service, no longer a writer. The
+// create-or-append-on-DUPLICATE_ID dance this engine used to perform itself now
+// lives once, in the one module that owns organizational memory
+// (services/archive-service.js#archiveDocument) — which additionally does the
+// content-level duplicate detection this engine never did, and stamps the
+// provenance (reason, actor, lifecycle state) that ArchiveRecords never carried.
+import { archiveDocument } from './services/archive-service.js';
 import { ARCHIVE_EVENT_TYPE, makeArchiveEvent } from './contracts/event-contract.js';
 
 function emit(onEvent, type, sourceId, detail) {
@@ -61,26 +66,17 @@ export function ingestArchive(sourceId, opts = {}) {
   const errors = [];
 
   for (const record of fetchResult.items) {
-    const createResult = create(record);
-    if (createResult.ok) {
-      itemsCreated += 1;
-      emit(onEvent, ARCHIVE_EVENT_TYPE.RECORD_ARCHIVED, sourceId, { id: record.id, op: 'create' });
-      continue;
-    }
-    if (createResult.error && createResult.error.code === ARCHIVE_REPOSITORY_ERRORS.DUPLICATE_ID) {
-      const appendResult = appendVersion(record.id, record);
-      if (appendResult.ok) {
-        itemsUpdated += 1;
-        emit(onEvent, ARCHIVE_EVENT_TYPE.RECORD_ARCHIVED, sourceId, { id: record.id, op: 'append' });
-      } else {
-        itemsSkipped += 1;
-        errors.push({ itemId: record.id, message: appendResult.error.message });
-        emit(onEvent, ARCHIVE_EVENT_TYPE.RECORD_SKIPPED, sourceId, { id: record.id });
-      }
+    // ONE call. The Service reports which of create/append it performed via
+    // `op`, so the counters below stay exactly as honest as they were — without
+    // this engine needing to know how the repository decides.
+    const result = archiveDocument(record);
+    if (result.ok) {
+      if (result.op === 'create') itemsCreated += 1; else itemsUpdated += 1;
+      emit(onEvent, ARCHIVE_EVENT_TYPE.RECORD_ARCHIVED, sourceId, { id: record.id, op: result.op });
       continue;
     }
     itemsSkipped += 1;
-    errors.push({ itemId: record.id, message: createResult.error ? createResult.error.message : 'create() failed.' });
+    errors.push({ itemId: record.id, message: result.error ? result.error.message : 'archiveDocument() failed.' });
     emit(onEvent, ARCHIVE_EVENT_TYPE.RECORD_SKIPPED, sourceId, { id: record.id });
   }
 

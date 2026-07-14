@@ -25,7 +25,9 @@
 'use strict';
 
 import { RELATIONSHIP_TYPE } from '../contracts/dependency-graph-contract.js';
-import { getDependencies as repositoryGetDependencies } from '../repository/knowledge-repository.js';
+import {
+  getKnowledgeDependencies as repositoryGetDependencies,
+} from '../services/knowledge-service.js';
 
 /**
  * Returns every relationship-kind item that references `itemId`,

@@ -25,7 +25,7 @@
 
 'use strict';
 
-import { list } from './repository/archive-repository.js';
+import { listArchive as list } from './services/archive-service.js';
 import { getGapsWithWorkflowState } from './gap-workflow-engine.js';
 import { findDuplicateArchiveRecords } from './duplicate-detection-engine.js';
 import { checkKnowledgeContribution } from './knowledge-contribution-engine.js';

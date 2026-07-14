@@ -50,21 +50,43 @@
 'use strict';
 
 import {
-  IMPORT_SESSION_STATE, IMPORT_SESSION_STATE_DEFS, IMPORT_SESSION_GRAPH, IMPORT_SESSION_KIND,
-  PIPELINE_STAGE, PIPELINE_STAGE_ORDER,
+  IMPORT_SESSION_STATE, IMPORT_SESSION_STATE_DEFS, IMPORT_SESSION_KIND,
+  PIPELINE_STAGE, PIPELINE_STAGE_ORDER, isOffRampStage, isTerminalImportSessionState,
 } from '../knowledge/datasets/import-session/contracts/import-session-contract.js';
+// Phase 2.6 HARDENING — EVERYTHING IMPORTED HERE IS A READ, OR AN EVIDENCE
+// WRITE. Not one lifecycle mutator appears in this list, and that is the whole
+// invariant, made checkable by inspection:
+//
+//   createImportSession   creation (the UI holds the File; nothing else can)
+//   attach* / updateSessionMetadata
+//                         EVIDENCE — facts, hashes, storage refs, human
+//                         metadata confirmation. None of these touch `state`
+//                         or `pipelineStage`.
+//   get* / list* / hasContentFacts
+//                         reads.
+//
+// submitImportSessionForReview, approveImportSession, markKnowledgeImported,
+// markArchived, markUploading, markAwaitingEvidence, cancelImportSession,
+// failImportSession and rejectImportSession are deliberately NOT imported.
+// The UI collects evidence; the scheduler decides what it means.
 import {
   createImportSession, attachManualEntryFacts, attachParsedContent, attachFileStorage,
-  attachInferenceResult, markAutoImported,
-  updateSessionMetadata, submitImportSessionForReview, approveImportSession, rejectImportSession,
-  markKnowledgeImported, markArchived, getImportSession, listImportSessions, getImportSessionHistory,
-  hasContentFacts,
+  attachInferenceResult, updateSessionMetadata,
+  getImportSession, listImportSessions, getImportSessionHistory, hasContentFacts,
 } from '../knowledge/datasets/import-session/import-session-engine.js';
+// The ONE driver of the pipeline. This UI no longer sequences submit ->
+// approve -> import -> archive by hand (that duplicated logic was exactly what
+// let a refresh orphan a session forever); it hands a session to the scheduler
+// and renders whatever the scheduler honestly concluded.
+import {
+  registerArchiver, advanceSession, cancelImportBatch, discardImportSession,
+  reportUploadStarted, MAX_PIPELINE_ATTEMPTS,
+} from '../knowledge/datasets/import-session/pipeline-scheduler.js';
 import {
   inferMetadata, inferPatternAssisted, AUTO_POPULATE_CONFIDENCE_THRESHOLD,
 } from '../knowledge/datasets/import-session/metadata-inference-engine.js';
 import {
-  createBatch, recordBatchItem, pauseBatch, resumeBatch, cancelBatch, completeBatch,
+  createBatch, recordBatchItem, pauseBatch, resumeBatch, completeBatch,
   getBatch, listBatches, getBatchHistory, BATCH_STATUS,
 } from '../knowledge/datasets/import-session/import-batch-engine.js';
 import { DATASET_TYPE } from '../knowledge/datasets/contracts/dataset-contract.js';
@@ -72,8 +94,19 @@ import { listDatasets } from '../knowledge/datasets/registry/dataset-registry.js
 import { manualFileSource } from '../knowledge/connectors/manual-file-connector.js';
 import { listDomainTypes, getDomainType } from '../knowledge/registry/domain-type-registry.js';
 import { listKinds } from '../knowledge/registry/kind-registry.js';
-import { computeDocumentHash, create as archiveCreate, list as archiveList } from '../organizational-memory/index.js';
+// Phase 4 — Archive is reached ONLY through its owner. `create as archiveCreate`
+// used to be imported here, straight off the repository via the barrel; that was
+// the second-owner defect the Phase 2.6 audit named, on the pipeline's primary
+// archive path.
+import { computeDocumentHash } from '../organizational-memory/index.js';
+import {
+  archiveImportedKnowledge, listArchive as archiveList,
+} from '../organizational-memory/services/archive-service.js';
 import { generateKnowledgeId } from '../knowledge/contracts/identity-contract.js';
+// Phase 5, Part 3 — a human confirming previously-untrusted Advanced Metadata
+// is a real, already-firing metadata correction. Recorded through the
+// Learning Service, the ONE owner of organizational learning.
+import { recordCorrection, CORRECTION_TYPE } from '../learning/services/learning-service.js';
 // Phase 2 (Autonomous Learning Pipeline), Part 6 — a real, already-
 // existing, zero-AI engine (BFS over KnowledgeItem relationships); safe
 // to import statically like every other knowledge/ engine here, since it
@@ -143,19 +176,33 @@ const NORMAL_STATE_LABEL = Object.freeze({
   [IMPORT_SESSION_STATE.APPROVED]: 'Disetujui',
   [IMPORT_SESSION_STATE.KNOWLEDGE_IMPORTED]: 'Menjadi Pengetahuan',
   [IMPORT_SESSION_STATE.ARCHIVED]: 'Diarsipkan',
+  [IMPORT_SESSION_STATE.CANCELLED]: 'Dibatalkan',
+  [IMPORT_SESSION_STATE.FAILED]: 'Gagal',
 });
 
 const QUEUE_ROW_CAP = 50;
 
+/** Phase 2.6 — the per-file batch-item status is now a straight projection of
+ *  the SCHEDULER's own outcome. It used to be an independent little
+ *  vocabulary the UI computed for itself ('needs_advanced', 'pending_review',
+ *  'approved', 'unsupported'...), which drifted from what the session
+ *  actually did — a file reported as 'pending_review' in the batch summary
+ *  could be sitting at any of three real states. One conclusion, one name. */
+const BATCH_ITEM_STATUS_FOR_OUTCOME = Object.freeze({
+  completed: 'archived',
+  cancelled: 'cancelled',
+  failed: 'failed',
+  awaiting_evidence: 'awaiting_evidence',
+});
+
 const BATCH_STATUS_LABEL = Object.freeze({
-  pending_review: 'Otomatis ke Pending Review',
-  approved: 'Disetujui Otomatis (menunggu konten)',
-  archived: 'Diimpor & Diarsipkan Otomatis',
-  needs_advanced: 'Perlu Advanced Metadata',
-  needs_attention: 'Perlu Perhatian (validasi gagal)',
-  unsupported: 'Format Tidak Didukung',
+  archived: 'Selesai — Diimpor & Diarsipkan Otomatis',
+  awaiting_evidence: 'Menunggu Bukti dari Anda',
+  cancelled: 'Dibatalkan',
+  failed: 'Gagal — tidak dapat diproses',
   blocked: 'Terhalang — tidak ada domain',
   error: 'Error',
+  needs_attention: 'Perlu Perhatian',
 });
 
 /* Phase 2 Follow-up — the canonical 7 pipeline stages (PIPELINE_STAGE /
@@ -164,27 +211,46 @@ const BATCH_STATUS_LABEL = Object.freeze({
    session), never redefined here. Below are the two DISPLAY vocabularies
    over that one truth (Requirement 3). */
 
-/** Developer mode — the seven real stages, full detail. */
+/** Developer mode — the full ladder plus the three off-ramps, raw names. */
 const DEV_STAGE_LABEL = Object.freeze({
+  [PIPELINE_STAGE.PREPARING]: 'Preparing',
   [PIPELINE_STAGE.FINGERPRINTING]: 'Fingerprinting',
-  [PIPELINE_STAGE.DEDUPLICATION]: 'Deduplication',
+  [PIPELINE_STAGE.DEDUPLICATION]: 'Duplicate Detection',
   [PIPELINE_STAGE.CLASSIFICATION]: 'Classification',
+  [PIPELINE_STAGE.UPLOADING]: 'Uploading',
   [PIPELINE_STAGE.POLICY_VALIDATION]: 'Policy Validation',
   [PIPELINE_STAGE.KNOWLEDGE_EXTRACTION]: 'Knowledge Extraction',
-  [PIPELINE_STAGE.LEARNING]: 'Learning',
+  [PIPELINE_STAGE.LEARNING]: 'Learning Registration',
+  [PIPELINE_STAGE.ARCHIVE]: 'Archive',
   [PIPELINE_STAGE.COMPLETED]: 'Completed',
+  [PIPELINE_STAGE.AWAITING_EVIDENCE]: 'Awaiting Evidence',
+  [PIPELINE_STAGE.CANCELLED]: 'Cancelled',
+  [PIPELINE_STAGE.FAILED]: 'Failed',
 });
 
-/** Normal mode — the five friendly phases. Ordered; each maps to a SET of
- *  canonical stages (the 7->5 collapse), so the same persisted stage lands
- *  in the right friendly phase. */
+/** Normal mode — the friendly phases over the same one truth.
+ *
+ *  Phase 2.6 — "Uploading" now means UPLOADING. It used to be the label for
+ *  CLASSIFICATION, which is why a file that had long since finished uploading
+ *  (and in many cases had been fully classified, validated and given up on)
+ *  still displayed a confident "Uploading" badge forever. The label described
+ *  a step the session had already left, so the badge could never clear. */
 const NORMAL_PHASES = Object.freeze([
-  { id: 'preparing', label: 'Preparing', stages: [PIPELINE_STAGE.FINGERPRINTING, PIPELINE_STAGE.DEDUPLICATION] },
-  { id: 'uploading', label: 'Uploading', stages: [PIPELINE_STAGE.CLASSIFICATION] },
+  { id: 'preparing', label: 'Preparing', stages: [PIPELINE_STAGE.PREPARING, PIPELINE_STAGE.FINGERPRINTING, PIPELINE_STAGE.DEDUPLICATION, PIPELINE_STAGE.CLASSIFICATION] },
+  { id: 'uploading', label: 'Uploading', stages: [PIPELINE_STAGE.UPLOADING] },
   { id: 'processing', label: 'Processing', stages: [PIPELINE_STAGE.POLICY_VALIDATION, PIPELINE_STAGE.KNOWLEDGE_EXTRACTION] },
-  { id: 'finishing', label: 'Finishing', stages: [PIPELINE_STAGE.LEARNING] },
+  { id: 'finishing', label: 'Finishing', stages: [PIPELINE_STAGE.LEARNING, PIPELINE_STAGE.ARCHIVE] },
   { id: 'completed', label: 'Completed', stages: [PIPELINE_STAGE.COMPLETED] },
 ]);
+
+/** The off-ramps get their own plain-language labels — they are NOT points on
+ *  the ladder, and rendering them as a ladder position is what made a stopped
+ *  document look like a moving one. */
+const OFF_RAMP_LABEL = Object.freeze({
+  [PIPELINE_STAGE.AWAITING_EVIDENCE]: 'Menunggu Bukti',
+  [PIPELINE_STAGE.CANCELLED]: 'Dibatalkan',
+  [PIPELINE_STAGE.FAILED]: 'Gagal',
+});
 
 /** The canonical stage -> normal-phase index (built once from the collapse
  *  map above), so a session's persisted stage resolves to its friendly
@@ -195,12 +261,12 @@ const STAGE_TO_NORMAL_PHASE_INDEX = (() => {
   return Object.freeze(m);
 })();
 
-/** Phase 2.5 Part 4 — the authoritative 5-state lifecycle implies a MINIMUM
- *  pipeline stage a session must have reached. `state` is persisted and
- *  authoritative; `pipelineStage` is an annotation that can be missing on a
- *  legacy or rehydrated session. effectiveStage() below takes the FURTHER
- *  of the two, so a Knowledge-Imported/Archived row can never display an
- *  earlier stage like "Uploading" even when pipelineStage is absent/stale. */
+/** Phase 2.5 Part 4 — the authoritative lifecycle implies a MINIMUM pipeline
+ *  stage a session must have reached. `state` is persisted and authoritative;
+ *  `pipelineStage` is an annotation that can be missing on a legacy or
+ *  rehydrated session. effectiveStage() below takes the FURTHER of the two,
+ *  so a Knowledge-Imported/Archived row can never display an earlier stage
+ *  even when pipelineStage is absent/stale. */
 const STATE_MIN_STAGE = Object.freeze({
   [IMPORT_SESSION_STATE.UPLOADED]: PIPELINE_STAGE.CLASSIFICATION,
   [IMPORT_SESSION_STATE.PENDING_REVIEW]: PIPELINE_STAGE.POLICY_VALIDATION,
@@ -209,14 +275,36 @@ const STATE_MIN_STAGE = Object.freeze({
   [IMPORT_SESSION_STATE.ARCHIVED]: PIPELINE_STAGE.COMPLETED,
 });
 
-/** The real, never-stale pipeline stage for display: the later (by
- *  PIPELINE_STAGE_ORDER) of the persisted pipelineStage and the
- *  state-implied minimum. Deterministic, no fabrication — it only ever
- *  advances the displayed stage to match the authoritative persisted state,
- *  never invents progress the session hasn't made. */
+/** Phase 2.6 — a terminal STATE always wins over whatever stage annotation a
+ *  record happens to carry. This is the belt to the scheduler's braces: even
+ *  a legacy row persisted before this milestone (stage `classification`,
+ *  state `cancelled`) renders as Cancelled, never as a ghost still climbing
+ *  the ladder. */
+const STATE_TERMINAL_STAGE = Object.freeze({
+  [IMPORT_SESSION_STATE.ARCHIVED]: PIPELINE_STAGE.COMPLETED,
+  [IMPORT_SESSION_STATE.CANCELLED]: PIPELINE_STAGE.CANCELLED,
+  [IMPORT_SESSION_STATE.FAILED]: PIPELINE_STAGE.FAILED,
+});
+
+/** The real, never-stale pipeline stage for display. Deterministic, no
+ *  fabrication — it only ever reconciles the displayed stage with the
+ *  authoritative persisted state, never invents progress the session hasn't
+ *  made.
+ *
+ *  Three cases, in priority order:
+ *   1. a terminal state fixes the stage outright (Completed/Cancelled/Failed);
+ *   2. an off-ramp stage (Awaiting Evidence) is reported as-is — it is not a
+ *      ladder position and must never be max()'d against one, or a session
+ *      resting off the ladder would be dragged back onto it;
+ *   3. otherwise, the later of the persisted stage and the state-implied
+ *      minimum. */
 export function effectiveStage(session) {
-  const fromStage = PIPELINE_STAGE_ORDER.indexOf(session && session.pipelineStage);
-  const fromState = PIPELINE_STAGE_ORDER.indexOf(STATE_MIN_STAGE[session && session.state] || PIPELINE_STAGE.CLASSIFICATION);
+  if (!session) return PIPELINE_STAGE.CLASSIFICATION;
+  const terminal = STATE_TERMINAL_STAGE[session.state];
+  if (terminal) return terminal;
+  if (isOffRampStage(session.pipelineStage)) return session.pipelineStage;
+  const fromStage = PIPELINE_STAGE_ORDER.indexOf(session.pipelineStage);
+  const fromState = PIPELINE_STAGE_ORDER.indexOf(STATE_MIN_STAGE[session.state] || PIPELINE_STAGE.CLASSIFICATION);
   const idx = Math.max(fromStage, fromState, 0);
   return PIPELINE_STAGE_ORDER[idx];
 }
@@ -227,7 +315,11 @@ export function effectiveStage(session) {
  *  state-implied floor effectiveStage() already relies on — never a
  *  second stage-inference, just applied without a pipelineStage input. */
 function friendlyStateLabel(state) {
-  const stage = STATE_MIN_STAGE[state] || PIPELINE_STAGE.CLASSIFICATION;
+  // Phase 2.6 — the terminal states have no ladder position; they have a
+  // plain-language name of their own.
+  const terminal = STATE_TERMINAL_STAGE[state];
+  if (terminal && isOffRampStage(terminal)) return OFF_RAMP_LABEL[terminal];
+  const stage = terminal || STATE_MIN_STAGE[state] || PIPELINE_STAGE.CLASSIFICATION;
   const phaseIndex = STAGE_TO_NORMAL_PHASE_INDEX[stage] ?? 0;
   return NORMAL_PHASES[phaseIndex].label;
 }
@@ -248,40 +340,46 @@ export function computeBatchCounters(p) {
   const total = batch ? batch.totalFiles : p.total;
 
   const sessionIds = batch ? batch.sessionIds : (p.items || []).map((i) => i.sessionId).filter(Boolean);
-  const buckets = { classification: 0, policy_validation: 0, knowledge_extraction: 0, learning: 0, completed: 0, waitingReview: 0, failed: 0 };
+  const buckets = {
+    preparing: 0, uploading: 0, policy_validation: 0, knowledge_extraction: 0,
+    completed: 0, waitingReview: 0, failed: 0, cancelled: 0,
+  };
   let started = 0;
   for (const sid of sessionIds) {
     const r = getImportSession(sid);
     if (!r.ok) continue;
     started += 1;
     const s = r.data;
-    const hasUnsupported = (s.validationErrors || []).some((e) => e.code === 'UNSUPPORTED_FORMAT');
-    const reasons = reviewReasons(s);
-    if (hasUnsupported) { buckets.failed += 1; continue; }
+    // Phase 2.6 — bucket by the session's REAL terminal state first. These are
+    // persisted facts now, not inferences over validation arrays: a file the
+    // pipeline gave up on is FAILED, a file the operator cancelled is
+    // CANCELLED, and neither can be mistaken for in-flight work.
     if (s.state === IMPORT_SESSION_STATE.ARCHIVED) { buckets.completed += 1; continue; }
-    if (reasons.length) { buckets.waitingReview += 1; continue; }
+    if (s.state === IMPORT_SESSION_STATE.FAILED) { buckets.failed += 1; continue; }
+    if (s.state === IMPORT_SESSION_STATE.CANCELLED) { buckets.cancelled += 1; continue; }
+    if (reviewReasons(s).length) { buckets.waitingReview += 1; continue; }
     // In-flight, non-terminal, nothing blocking — bucket by real stage.
     const stage = effectiveStage(s);
     if (stage === PIPELINE_STAGE.KNOWLEDGE_EXTRACTION) buckets.knowledge_extraction += 1;
-    else if (stage === PIPELINE_STAGE.LEARNING) buckets.learning += 1;
     else if (stage === PIPELINE_STAGE.POLICY_VALIDATION) buckets.policy_validation += 1;
-    else buckets.classification += 1; // fingerprint/dedup/classify span
+    else if (stage === PIPELINE_STAGE.UPLOADING) buckets.uploading += 1;
+    else buckets.preparing += 1; // prepare/fingerprint/dedup/classify span
   }
   // Files selected but not yet given a session (blocked with no domain, or
   // not started yet). The batch's persisted `error` tally counts real
-  // failures (blocked/error/unsupported/needs_attention) that may have no
-  // session; use the larger of it and the session-derived failed count so
-  // a blocked-no-session file is still counted.
+  // failures that may have no session at all; use the larger of it and the
+  // session-derived failed count so a blocked-no-session file is still shown.
   const failed = Math.max(buckets.failed, batch ? batch.error : 0);
   const notStarted = Math.max(0, total - started);
   return {
     total,
-    uploading: buckets.classification + notStarted, // "Uploading X / total": classifying + not-yet-started
+    preparing: buckets.preparing + notStarted, // classifying + not-yet-started
+    uploading: buckets.uploading,              // genuinely uploading bytes, nothing else
     processing: buckets.policy_validation,
     knowledgeExtraction: buckets.knowledge_extraction,
-    learning: buckets.learning,
     completed: buckets.completed,
     failed,
+    cancelled: buckets.cancelled,
     waitingReview: buckets.waitingReview,
   };
 }
@@ -330,52 +428,69 @@ export function archiveDuplicateWarning(session) {
  *  (Phase 1) so other workspaces can reuse the real exception logic. */
 export function reviewReasons(session) {
   const reasons = [];
-  // Phase 2.5 Part 6 — the pipeline now auto-completes any fully-evidenced
-  // file, so a session that has NOT completed is, deterministically, one
-  // whose evidence is genuinely missing or ambiguous. Missing content
-  // facts (a PDF/DOCX whose human-typed fact does not exist yet) is the
-  // single most common honest pause — surfaced here for Pending Review AND
-  // Approved (previously only Approved), since a fully-autonomous pipeline
-  // never leaves a facts-complete file waiting at Pending Review.
-  const awaitingContent = (session.state === IMPORT_SESSION_STATE.PENDING_REVIEW || session.state === IMPORT_SESSION_STATE.APPROVED);
-  if (awaitingContent && !hasContentFacts(session)) {
+
+  // Phase 2.6 — CANCELLED is a terminal state now, not an exception. It used
+  // to produce a BATCH_CANCELLED "reason", which meant every cancelled file
+  // piled into "Perlu Perhatian" demanding attention for a decision the
+  // operator had ALREADY made. Cancelling a batch should empty the queue, not
+  // fill it. A cancelled session is done; there is nothing to review.
+  if (session.state === IMPORT_SESSION_STATE.CANCELLED) return reasons;
+
+  // ARCHIVED is the happy terminal — nothing to say about it either.
+  if (session.state === IMPORT_SESSION_STATE.ARCHIVED) return reasons;
+
+  // FAILED is terminal but IS a genuine exception: a human should know this
+  // document will never be processed, and why. The reason is always the real
+  // recorded failure, never a fabricated explanation.
+  if (session.state === IMPORT_SESSION_STATE.FAILED) {
+    const unsupported = (session.validationErrors || []).some((e) => e.code === 'UNSUPPORTED_FORMAT')
+      || session.kind === 'unsupported';
+    reasons.push({
+      code: unsupported ? 'UNSUPPORTED_FORMAT' : 'PIPELINE_FAILED',
+      message: session.failureReason || 'Pipeline tidak dapat menyelesaikan dokumen ini.',
+      confidence: session.confidence,
+      evidence: null,
+    });
+    return reasons;
+  }
+
+  // ── Phase 2.6 — THE ONE GATE. A non-terminal session needs a human if, and
+  // only if, the SCHEDULER PARKED IT — which it records in the persisted
+  // pipelineStage as AWAITING_EVIDENCE. Anything else non-terminal is in
+  // flight and belongs to the engine, not to a person.
+  //
+  // This inverts the old logic, which re-derived "is this stuck?" from state
+  // + facts + confidence right here in the view. That second, independent
+  // opinion is what produced the reported noise: a file still being uploaded
+  // has no content facts YET, so the view declared it "needs attention"
+  // while the engine was actively working on it — and a file the engine had
+  // long since given up on looked identical to one it had never reached.
+  // There is now exactly one authority on "is this waiting for me", and the
+  // view reads it rather than guessing alongside it.
+  if (session.pipelineStage !== PIPELINE_STAGE.AWAITING_EVIDENCE) return reasons;
+
+  // Parked. Now explain WHY, from the same deterministic facts the scheduler
+  // itself used — never a different opinion, just the same one, in words.
+
+  // The most common honest pause: a PDF/DOCX cannot derive its own facts
+  // (no OCR, no AI — by design), so if no human has typed one, there is
+  // genuinely nothing to import.
+  if (!hasContentFacts(session)) {
     reasons.push({ code: 'MISSING_CONTENT_FACTS', message: 'Belum ada fakta konten (manual atau JSON) — lampirkan fakta agar dapat diselesaikan.', confidence: session.confidence, evidence: null });
-  } else if (session.state === IMPORT_SESSION_STATE.PENDING_REVIEW) {
-    // Facts ARE present yet the file is still at Pending Review — the
-    // auto-completion genuinely could not finish (a real engine error);
-    // a human decision is legitimately needed. Rare, never routine noise.
-    reasons.push({ code: 'PENDING_DECISION', message: 'Bukti lengkap tetapi belum selesai otomatis — perlu keputusan manual.', confidence: session.confidence, evidence: null });
-  } else if (session.state === IMPORT_SESSION_STATE.APPROVED) {
-    // Sprint 1 (Autonomy Closure, Part 4) — reaching this branch means
-    // `awaitingContent` was true AND `hasContentFacts` was true (the first
-    // branch's `!hasContentFacts` was false), yet the session is STILL
-    // sitting at Approved. cascadeFromApproved() runs synchronously right
-    // after approval on every path (auto-import and the manual "Setujui"
-    // click) — the only way to observe Approved-with-facts afterward is
-    // that cascadeFromApproved() itself returned false (markKnowledgeImported
-    // or doArchive failed internally). This was previously invisible: no
-    // branch here covered it, so the session sat in "processing" forever
-    // with zero indication anything was wrong. Root-caused via full
-    // pipeline trace, not guessed.
-    reasons.push({ code: 'KNOWLEDGE_IMPORT_STALLED', message: 'Fakta konten lengkap tetapi belum berhasil menjadi Knowledge secara otomatis — coba lagi secara manual.', confidence: session.confidence, evidence: null });
   }
-  // Sprint 1 (Autonomy Closure, Part 2) — a batch left mid-flight by a
-  // crash/refresh and then cancelled via the resume banner ("Batalkan
-  // Batch Ini") previously left its straggler sessions invisible: cancelBatch()
-  // only ever touches the ImportBatchRecord, never the sessions it created.
-  // Without this check a facts-less/never-submitted straggler had zero
-  // reviewReasons and sat in "Aktivitas Langsung" forever, indistinguishable
-  // from healthy in-progress work — which is why the cancel button looked
-  // like it "did nothing" to the one thing the user was actually watching.
-  if (session.batchId && session.state !== IMPORT_SESSION_STATE.ARCHIVED) {
-    const batchResult = getBatch(session.batchId);
-    if (batchResult.ok && batchResult.data.status === BATCH_STATUS.CANCELLED) {
-      reasons.push({ code: 'BATCH_CANCELLED', message: 'Batch impor untuk sesi ini telah dibatalkan — tidak akan dilanjutkan secara otomatis.', confidence: session.confidence, evidence: null });
-    }
-  }
-  if (typeof session.confidence === 'number' && session.confidence < AUTO_POPULATE_CONFIDENCE_THRESHOLD) {
+
+  // Phase 2.6 — LOW_CONFIDENCE now clears once a human has confirmed the
+  // metadata. `confidence` is the score the INFERENCE achieved and never
+  // changes, so this reason used to persist forever — a session a human had
+  // fully corrected by hand still reported "confidence too low" and could
+  // never leave the attention queue. A human's confirmation is better
+  // evidence than the machine's original guess.
+  if (typeof session.confidence === 'number'
+    && session.confidence < AUTO_POPULATE_CONFIDENCE_THRESHOLD
+    && !session.metadataConfirmedBy) {
     reasons.push({ code: 'LOW_CONFIDENCE', message: `Confidence ${session.confidence} di bawah ambang batas populasi otomatis (${AUTO_POPULATE_CONFIDENCE_THRESHOLD}).`, confidence: session.confidence, evidence: session.confidenceRationale });
   }
+
   for (const w of session.validationWarnings || []) {
     if (w.code === 'DUPLICATE_FILENAME' || w.code === 'DUPLICATE_METADATA') {
       reasons.push({ code: 'DUPLICATE_AMBIGUITY', message: w.message, confidence: session.confidence, evidence: null });
@@ -383,77 +498,127 @@ export function reviewReasons(session) {
   }
   const archiveDup = archiveDuplicateWarning(session);
   if (archiveDup) reasons.push({ code: 'DUPLICATE_AMBIGUITY', message: archiveDup, confidence: session.confidence, evidence: null });
+
+  // A real validation ERROR the pipeline could not get past (e.g.
+  // DOMAIN_MISMATCH — the file's domain drifted from the one the upload was
+  // started under). A human CAN fix these in Advanced Metadata, so they are
+  // not terminal — but they must be visible, with the engine's own message.
   for (const e of session.validationErrors || []) {
-    if (e.code === 'UNSUPPORTED_FORMAT') reasons.push({ code: 'UNSUPPORTED_FORMAT', message: e.message, confidence: session.confidence, evidence: null });
+    if (e.code === 'UNSUPPORTED_FORMAT') continue; // that path terminates as FAILED, handled above
+    reasons.push({ code: 'VALIDATION_ERROR', message: e.message, confidence: session.confidence, evidence: null });
   }
-  // Phase 2 — the Approved -> Knowledge Imported -> Archived cascade now
-  // runs immediately once content facts exist (see cascadeFromApproved);
-  // a session still sitting at Knowledge Imported with no archiveRecordId
-  // means that cascade's own doArchive() step genuinely failed (a real
-  // system error, e.g. archiveCreate() rejecting the record) — a rare but
-  // real exception the engine could not resolve on its own.
-  if (session.state === IMPORT_SESSION_STATE.KNOWLEDGE_IMPORTED && !session.archiveRecordId) {
-    reasons.push({ code: 'ARCHIVE_PENDING', message: 'Knowledge Imported, tetapi belum berhasil diarsipkan otomatis.', confidence: session.confidence, evidence: null });
+
+  // A session the scheduler tried to advance automatically and could not —
+  // it still has retries left (on exhaustion it becomes FAILED and is handled
+  // above). Surfaced so a real engine problem is visible while it is still
+  // being retried, rather than silently burning its attempts.
+  if ((session.pipelineAttempts || 0) > 0 && session.failureReason) {
+    reasons.push({
+      code: 'PIPELINE_RETRYING',
+      message: `${session.failureReason} (percobaan ${session.pipelineAttempts}/${MAX_PIPELINE_ATTEMPTS})`,
+      confidence: session.confidence,
+      evidence: null,
+    });
   }
+
+  // THE INVISIBILITY GUARD. A parked session is, by definition, waiting for a
+  // human — so it MUST give that human something to read. If none of the
+  // specific explanations above matched, the session would otherwise render
+  // with an empty reason list: excluded from "Aktivitas Langsung" (it is off
+  // the ladder) AND from "Perlu Perhatian" (no reasons), i.e. visible
+  // nowhere, waiting forever, for nobody. That is the exact failure mode this
+  // whole milestone exists to eliminate, so it gets an explicit floor rather
+  // than a hope that the branches above are exhaustive.
+  if (reasons.length === 0) {
+    reasons.push({
+      code: 'PENDING_HUMAN_EVIDENCE',
+      message: 'Pipeline berhenti dan menunggu tinjauan Anda — periksa metadata dan fakta dokumen ini.',
+      confidence: session.confidence,
+      evidence: null,
+    });
+  }
+
   return reasons;
 }
 
-/** Archive composition (unchanged from prior milestone) — the ONE UI-layer
- *  function allowed to see both knowledge/ (Import Session) and
- *  organizational-memory/ (ArchiveRecord). Module-scope (Phase 2, same
- *  "promote for reuse/testability" convention as reviewReasons above) —
- *  it never touched controller closure state (`st`/`scopedDomainType`),
- *  only module-level engine imports. */
-function doArchive(sessionId) {
-  const current = getImportSession(sessionId);
-  if (!current.ok) return false;
-  const s = current.data;
+/** THE ARCHIVER — the ONE UI-layer function allowed to see both knowledge/
+ *  (Import Session) and organizational-memory/ (ArchiveRecord).
+ *
+ *  Phase 2.6 HARDENING — its contract is deliberately narrow: it CONSTRUCTS
+ *  AND WRITES the ArchiveRecord and returns its id. Nothing else. It used to
+ *  also call markArchived() — meaning the pipeline's final lifecycle
+ *  transition was still written by UI code, which quietly falsified the claim
+ *  that the scheduler is the only driver. The scheduler now performs
+ *  markArchived() itself from the id returned here, so this function cannot
+ *  move a session at all, even if someone called it out of band.
+ *
+ *  @param {object} s — the Import Session record (passed in by the scheduler).
+ *  @returns {string|null} the new ArchiveRecord's id, or null if the write failed.
+ */
+/*  PHASE 4 — this function no longer WRITES the archive. It describes a
+ *  document, and hands that description to the Archive Service.
+ *
+ *  It used to call the archive repository's raw create() directly, which made
+ *  the UI Archive's SECOND owner — on the pipeline's PRIMARY archive path, no
+ *  less. Every uploaded document went through here, and every one of them
+ *  bypassed:
+ *
+ *    · duplicate detection   — a document archived twice simply doubled
+ *    · the lifecycle          — records were born with no state at all
+ *    · the replacement chain  — nothing could supersede anything
+ *    · provenance             — no reason, no actor, no import-session link
+ *
+ *  archiveImportedKnowledge() does all four, deterministically, in one call. The
+ *  UI's job is to know what the document IS (it holds the Import Session); the
+ *  Service's job is to know what archiving MEANS.
+ */
+function doArchive(s) {
+  if (!s || !s.id) return null;
   const facts = s.manualEntryFacts || s.parsedContent || {};
-  const now = new Date().toISOString();
-  const record = Object.freeze({
+  const result = archiveImportedKnowledge({
     id: generateKnowledgeId({ domainType: s.domainType, sourceType: 'manual-file', sourceRef: `archive:${s.id}` }),
-    version: 1, sourceDomainType: s.domainType, sourceId: s.id, sourceType: 'manual-file',
+    sourceDomainType: s.domainType,
+    sourceId: s.id,
+    sourceType: 'manual-file',
     documentNumber: facts.documentNumber || s.filename,
     documentDate: facts.documentDate || null,
     senderOrigin: facts.senderOrigin || null,
     documentHash: s.sha256 || s.documentHash || computeDocumentHash({ filename: s.filename, mimeType: s.mimeType, sizeBytes: s.sizeBytes }),
-    hasContributedKnowledge: !!s.knowledgeItemId,
     sourceSnapshot: facts,
-    hasOriginalFile: !!s.storagePath, fileRef: s.storagePath || null,
-    archivedAt: now, updatedAt: now,
+    hasOriginalFile: !!s.storagePath,
+    fileRef: s.storagePath || null,
+    // Part 4 — provenance. Every one of these is a REAL reference the session
+    // already carries; none is inferred. An archived document can now answer
+    // "which upload produced me, what did I become, and which dataset am I in?"
+    importSessionId: s.id,
+    knowledgeItemId: s.knowledgeItemId || null,
+    datasetId: s.datasetId || null,
+    archivedBy: s.uploadedBy || null,
   });
-  const result = archiveCreate(record);
-  if (!result.ok) return false;
-  const archived = markArchived(sessionId, result.data.id);
-  return archived.ok;
+  return result.ok ? result.data.id : null;
 }
 
-/** Phase 2 (Autonomous Learning Pipeline), Decision 4 — "never ask the
- *  user to manually continue the pipeline": Approved -> Knowledge
- *  Imported -> Archived now runs as one uninterrupted cascade the
- *  moment a session has real content facts, whether it got to Approved
- *  through the confidence-based auto-chain (processOneFile) or a human's
- *  manual "Setujui" click (onClick's dic-approve handler) — approval
- *  IS the human decision point; a second click to "continue" the same
- *  decision has nothing left to decide. Never called on a session
- *  missing content facts — markKnowledgeImported's own gate correctly
- *  refuses, surfaced honestly via reviewReasons' MISSING_CONTENT_FACTS.
- *  `auto:true` records provenance (markAutoImported) ONLY for the fully
- *  automatic path — a manually-approved session's later steps are still
- *  engine-driven, but the decision itself was a human's, so it keeps its
- *  own honest provenance rather than being mislabeled "automatic".
- *  Module-scope (Phase 2) so it's independently testable — see
- *  scripts/dataset-import-center-check.mjs.
- * @returns {boolean} true if the session reached Archived.
- */
-export function cascadeFromApproved(sessionId, { auto = false } = {}) {
-  const current = getImportSession(sessionId);
-  if (!current.ok || !hasContentFacts(current.data)) return false;
-  const importResult = markKnowledgeImported(sessionId);
-  if (!importResult.ok) return false;
-  if (auto) markAutoImported(sessionId);
-  return doArchive(sessionId);
-}
+/** Phase 2.6 — THE CROSS-LAYER SEAM, made explicit.
+ *
+ *  js/v2/README.md's dependency rule is absolute: `knowledge/ ──never
+ *  depends on──> organizational-memory/`. The pipeline's final step
+ *  (Knowledge Imported -> Archived) has to write an ArchiveRecord, which
+ *  lives in organizational-memory/ — so the scheduler, which lives in
+ *  knowledge/, cannot perform it. This file is the ONE place allowed to see
+ *  both layers, so it supplies the step and the scheduler calls back into it.
+ *
+ *  Registered at module load, which is guaranteed to run before any
+ *  scheduler sweep: sarpras-intelligence-center.js imports this module (for
+ *  reviewReasons/effectiveStage) at ITS module load, and only calls
+ *  sweepPipeline() later, from mount.
+ *
+ *  This replaces cascadeFromApproved(), which no longer exists: it was a
+ *  SECOND, UI-resident copy of the pipeline's tail (approve -> import ->
+ *  archive), and having two engines that both believed they owned the same
+ *  transitions is the structural reason a session could end up half-advanced
+ *  with nobody responsible for finishing it. There is now one driver
+ *  (pipeline-scheduler.js) and one injected step (below). */
+registerArchiver(doArchive);
 
 /** Phase 2, Decision 3 — "If duplicate -> Archive", made real. A
  *  confirmed byte-identical duplicate (same sha256, `uploadFile()`
@@ -617,15 +782,15 @@ export function createDatasetImportController(opts = {}) {
     const p = st.batchProgress;
     const all = sessions();
     const needsAttention = all.filter((s) => reviewReasons(s).length > 0);
-    // Live Activity (D3) — derived from the repository's PERSISTED session
-    // state, never a transient callback: a session is "in flight" when its
-    // pipelineStage has not yet reached COMPLETED AND it has no reviewReason
-    // holding it for a human. Empty after a refresh (nothing is actively
-    // processing once the tab reloaded — the resume banner covers that),
-    // which is the honest truth.
-    const inFlight = all.filter((s) => s.pipelineStage !== PIPELINE_STAGE.COMPLETED && reviewReasons(s).length === 0 && s.state !== IMPORT_SESSION_STATE.ARCHIVED);
+    // Live Activity — derived from the repository's PERSISTED session state,
+    // never a transient callback. Phase 2.6: "in flight" is now exactly "not
+    // terminal, and not parked off the ladder". A cancelled or failed session
+    // is finished business and never appears here again; before this, neither
+    // state existed, so both kinds of dead document kept marching in the live
+    // list forever.
+    const inFlight = all.filter((s) => !isTerminalImportSessionState(s.state) && !isOffRampStage(s.pipelineStage));
     const recent = all
-      .filter((s) => reviewReasons(s).length === 0)
+      .filter((s) => isTerminalImportSessionState(s.state) || reviewReasons(s).length === 0)
       .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))
       .slice(0, RECENT_ROW_CAP);
     const resumeBanner = (!p && !st.resumeBannerDismissed) ? renderResumeBanner() : '';
@@ -743,39 +908,42 @@ export function createDatasetImportController(opts = {}) {
       </div>`;
   }
 
-  function nextActionFor(session) {
-    const legal = IMPORT_SESSION_GRAPH[session.state] || [];
-    if (legal.includes(IMPORT_SESSION_STATE.PENDING_REVIEW)) return { act: 'dic-submit', label: 'Ajukan untuk Review' };
-    if (session.state === IMPORT_SESSION_STATE.PENDING_REVIEW) return { act: 'dic-approve', label: 'Setujui' };
-    if (session.state === IMPORT_SESSION_STATE.APPROVED) return { act: 'dic-import', label: 'Impor sebagai Knowledge' };
-    if (session.state === IMPORT_SESSION_STATE.KNOWLEDGE_IMPORTED) return { act: 'dic-archive', label: 'Arsipkan' };
-    return null;
+  /** Phase 2.6 — PART 4, "REMOVE REDUNDANT HUMAN APPROVAL", made real.
+   *
+   *  This used to hand back "Setujui", then "Impor sebagai Knowledge", then
+   *  "Arsipkan" — three buttons that asked a human to press, in sequence, the
+   *  three transitions the ENGINE already knows how to make and is capable of
+   *  making unattended. That is not approval; it is manual labour dressed as
+   *  governance. Worse, the two front buttons appeared TOGETHER on the same
+   *  document (approve it, then separately import it) — two human decisions
+   *  for one deterministic process, with nothing to decide between them.
+   *
+   *  What a human can genuinely do on a parked session, and nothing more:
+   *    - supply the evidence the engine cannot invent  -> Advanced Metadata
+   *    - decide this document should not be imported   -> Tolak (reject)
+   *
+   *  Everything else the engine does by itself, the moment the evidence
+   *  exists. Organizational approval still exists, unchanged and unweakened —
+   *  it just lives where it belongs: on the DRAFT KnowledgeItem, in Knowledge
+   *  Center. Moving data between engines was never a thing to approve. */
+  function humanActionsFor(session, reasons) {
+    if (!reasons.length) return ''; // the engine has this — offer nothing
+    if (session.state === IMPORT_SESSION_STATE.FAILED) {
+      // Terminal and non-recoverable. There is no honest button here: an
+      // unsupported format does not become supported by clicking. The row's
+      // reason line says why, and that is the whole truth.
+      return '';
+    }
+    const advanced = `<button class="wlk-btn" data-act="dic-advanced-open" data-id="${esc(session.id)}" type="button">Lengkapi Metadata &amp; Fakta</button>`;
+    const reject = `<button class="wlk-btn wlk-btn--ghost" data-act="dic-reject" data-id="${esc(session.id)}" type="button">Tolak</button>`;
+    return `${advanced}${reject}`;
   }
 
   function renderQueueRow(s) {
-    const next = nextActionFor(s);
-    const rejectBtn = s.state === IMPORT_SESSION_STATE.PENDING_REVIEW
-      ? `<button class="wlk-btn wlk-btn--ghost" data-act="dic-reject" data-id="${esc(s.id)}" type="button">Tolak</button>` : '';
     const reasons = reviewReasons(s);
-    // Phase 1 (Operational Engine Hardening) — this button used to render
-    // unconditionally on every row, including already-Archived ones. The
-    // engine should only ask for human input when it genuinely lacks
-    // confidence to proceed on its own; a clean, non-exceptional session
-    // has nothing for Advanced Metadata to fix.
-    const advancedBtn = reasons.length
-      ? `<button class="wlk-btn wlk-btn--ghost" data-act="dic-advanced-open" data-id="${esc(s.id)}" type="button">Advanced Metadata</button>` : '';
     const reasonLine = reasons.length
       ? `<div class="wlk-row-secondary">Alasan: ${reasons.map((r) => esc(r.message)).join(' · ')} — Saran: ${esc(suggestedActionFor(reasons[0].code))}</div>` : '';
-    // Phase 2 (Autonomous Learning Pipeline) — "never ask the user to
-    // manually continue the pipeline": a next-action button only earns a
-    // spot on a clean row's UI when the engine has a REAL, reviewReasons-
-    // backed reason it couldn't already finish the step itself (approval
-    // now cascades all the way to Archived on its own — see
-    // cascadeFromApproved). Still fully wired (Human Override stays
-    // possible on any exceptional row), just no longer offered where
-    // there is nothing left for a human to decide.
-    const nextBtn = (next && reasons.length)
-      ? `<button class="wlk-btn" data-act="${next.act}" data-id="${esc(s.id)}" type="button">${esc(next.label)}</button>` : '';
+    const actions = humanActionsFor(s, reasons);
     // Phase 2 Follow-up — the persisted pipeline stage in the active
     // vocabulary (Normal/Developer), read from the session itself.
     const stageBadge = `<span class="dic-stage-badge">${esc(stageLabelFor(s))}</span>`;
@@ -791,22 +959,26 @@ export function createDatasetImportController(opts = {}) {
         <span class="wlk-row-primary">${esc(s.filename)}${stateText}${s.autoImported ? ' · otomatis' : ''} ${stageBadge}</span>
         <span class="wlk-row-secondary">${esc(domainLabel(s.domainType))} · ${esc(s.kind)} · ${formatFileSize(s.sizeBytes)}${typeof s.confidence === 'number' && devMode ? ` · confidence ${s.confidence}` : ''}${s.validationWarnings && s.validationWarnings.length ? ` · ${s.validationWarnings.length} peringatan` : ''}</span>
         ${reasonLine}
-        ${nextBtn}
-        ${rejectBtn}
-        ${advancedBtn}
+        ${actions}
       </li>`;
   }
 
+  /** Phase 2.6 — every suggestion now names something a human can ACTUALLY
+   *  do. The old list told the user to press buttons that were the engine's
+   *  job ('Klik "Impor sebagai Knowledge" untuk mencoba lagi', 'Coba arsipkan
+   *  ulang secara manual', 'Setujui atau Tolak sesi ini') — advice that was,
+   *  in the one case it mattered most, an instruction to keep clicking a
+   *  button that could never succeed. */
   function suggestedActionFor(reasonCode) {
     return {
-      PENDING_DECISION: 'Setujui atau Tolak sesi ini.',
-      LOW_CONFIDENCE: 'Buka Advanced Metadata untuk melengkapi/mengoreksi.',
+      LOW_CONFIDENCE: 'Buka "Lengkapi Metadata & Fakta" untuk mengoreksi metadata — pipeline akan melanjutkan sendiri setelah disimpan.',
       DUPLICATE_AMBIGUITY: 'Bandingkan dengan dokumen yang sudah ada sebelum melanjutkan.',
-      UNSUPPORTED_FORMAT: 'Format tidak didukung — dokumen ini tidak dapat diproses lebih lanjut.',
-      MISSING_CONTENT_FACTS: 'Buka Advanced Metadata untuk melampirkan fakta konten sebelum menjadi Knowledge.',
-      ARCHIVE_PENDING: 'Coba arsipkan ulang secara manual.',
-      KNOWLEDGE_IMPORT_STALLED: 'Klik "Impor sebagai Knowledge" untuk mencoba lagi.',
-      BATCH_CANCELLED: 'Tolak sesi ini, atau lengkapi dan lanjutkan secara manual jika ingin tetap memprosesnya.',
+      UNSUPPORTED_FORMAT: 'Format tidak didukung — dokumen ini tidak dapat diproses. Unggah ulang sebagai PDF, DOCX, atau JSON.',
+      MISSING_CONTENT_FACTS: 'Buka "Lengkapi Metadata & Fakta" dan lampirkan fakta dari dokumen — pipeline akan menyelesaikan sisanya secara otomatis.',
+      PIPELINE_FAILED: 'Pipeline tidak dapat menyelesaikan dokumen ini — unggah ulang bila perlu.',
+      PIPELINE_RETRYING: 'Pipeline masih mencoba secara otomatis — tidak ada tindakan yang diperlukan saat ini.',
+      VALIDATION_ERROR: 'Buka "Lengkapi Metadata & Fakta" untuk memperbaiki metadata yang ditolak validasi.',
+      PENDING_HUMAN_EVIDENCE: 'Buka "Lengkapi Metadata & Fakta" untuk meninjau dokumen ini.',
     }[reasonCode] || 'Tinjau secara manual.';
   }
 
@@ -916,24 +1088,27 @@ export function createDatasetImportController(opts = {}) {
       const stage = effectiveStage(s);
       const stageIdx = PIPELINE_STAGE_ORDER.indexOf(stage);
       const nextStage = stageIdx >= 0 && stageIdx < PIPELINE_STAGE_ORDER.length - 1 ? PIPELINE_STAGE_ORDER[stageIdx + 1] : null;
-      const versions = historyResult.ok ? historyResult.data : [];
-      // "Retry Count" — no such counter is persisted anywhere (adding one
-      // would be a contract change); the honest, real proxy is how many
-      // versions have been written while the session sat in its CURRENT
-      // state (every attach/approve/etc. call bumps the version, even one
-      // that doesn't itself change `state`).
-      const retryCount = Math.max(0, versions.filter((v) => v.state === s.state).length - 1);
       const elapsedMs = s.updatedAt ? Date.now() - new Date(s.updatedAt).getTime() : 0;
       const elapsedText = elapsedMs > 3600000 ? `${Math.floor(elapsedMs / 3600000)} jam`
         : elapsedMs > 60000 ? `${Math.floor(elapsedMs / 60000)} menit`
           : `${Math.max(0, Math.floor(elapsedMs / 1000))} detik`;
+      // Phase 2.6 — "Next Stage" must not claim a parked or cancelled session
+      // is "sudah selesai". An off-ramp is not the end of the ladder; it is a
+      // departure from it, and the honest next step is a human's, not the
+      // engine's. "Retry Count" is now a REAL persisted counter
+      // (pipelineAttempts, bounded by MAX_PIPELINE_ATTEMPTS) rather than the
+      // version-count proxy it used to guess from.
+      const nextStageText = isTerminalImportSessionState(s.state) ? 'Tidak ada — sudah terminal'
+        : effectiveStage(s) === PIPELINE_STAGE.AWAITING_EVIDENCE ? 'Menunggu bukti dari manusia — pipeline berhenti di sini'
+          : nextStage ? (DEV_STAGE_LABEL[nextStage] || nextStage) : 'Tidak ada';
       return renderKvList([
         ['Current / Last Successful Stage', DEV_STAGE_LABEL[stage] || stage],
         ['Current Wait Reason', reasons.length ? reasons[0].message : 'Tidak ada — berjalan normal'],
         ['Blocked By', reasons.length ? reasons[0].code : '—'],
-        ['Retry Count', String(retryCount)],
+        ['Automatic Retry Count', `${s.pipelineAttempts || 0} / ${MAX_PIPELINE_ATTEMPTS}`],
+        ['Failure Reason', s.failureReason || '—'],
         ['Elapsed Time', elapsedText],
-        ['Next Stage', nextStage ? (DEV_STAGE_LABEL[nextStage] || nextStage) : 'Tidak ada — sudah selesai'],
+        ['Next Stage', nextStageText],
       ]);
     })() : null;
 
@@ -1086,6 +1261,26 @@ export function createDatasetImportController(opts = {}) {
   function renderPipelineStages(session) {
     if (!session) return '';
     const stage = effectiveStage(session); // Phase 2.5 Part 4 — never behind the authoritative state
+
+    // Phase 2.6 — a session that left the ladder is NOT rendered as a position
+    // on it. Drawing "Awaiting Evidence"/"Cancelled"/"Failed" as a half-filled
+    // progress checklist is precisely the lie that made stopped documents look
+    // like moving ones. Say what actually happened instead.
+    if (isOffRampStage(stage)) {
+      const reachedIdx = PIPELINE_STAGE_ORDER.indexOf(
+        isOffRampStage(session.pipelineStage) ? (STATE_MIN_STAGE[session.state] || PIPELINE_STAGE.CLASSIFICATION) : session.pipelineStage,
+      );
+      const reached = PIPELINE_STAGE_ORDER[Math.max(reachedIdx, 0)];
+      const detail = session.failureReason
+        ? `<div class="wlk-row-secondary">${esc(session.failureReason)}</div>` : '';
+      return `
+        <div class="dic-stage-halt">
+          <div class="wlk-row-primary">${esc(isDeveloperMode() ? (DEV_STAGE_LABEL[stage] || stage) : (OFF_RAMP_LABEL[stage] || stage))}</div>
+          <div class="wlk-row-secondary">Berhenti setelah: ${esc(isDeveloperMode() ? (DEV_STAGE_LABEL[reached] || reached) : (NORMAL_PHASES[STAGE_TO_NORMAL_PHASE_INDEX[reached] ?? 0].label))}</div>
+          ${detail}
+        </div>`;
+    }
+
     if (isDeveloperMode()) {
       const currentIndex = PIPELINE_STAGE_ORDER.indexOf(stage);
       const items = PIPELINE_STAGE_ORDER.map((s, i) => {
@@ -1108,6 +1303,7 @@ export function createDatasetImportController(opts = {}) {
   function stageLabelFor(session) {
     const stage = effectiveStage(session); // Phase 2.5 Part 4 — authoritative-state-derived, never stale
     if (isDeveloperMode()) return DEV_STAGE_LABEL[stage] || stage;
+    if (isOffRampStage(stage)) return OFF_RAMP_LABEL[stage] || stage;
     const phaseIndex = STAGE_TO_NORMAL_PHASE_INDEX[stage] ?? 0;
     return NORMAL_PHASES[phaseIndex].label;
   }
@@ -1116,7 +1312,11 @@ export function createDatasetImportController(opts = {}) {
     const counters = computeBatchCounters(p);
     const failed = p.items.filter((i) => ['error', 'blocked', 'needs_attention'].includes(i.status));
     const isDone = p.processed === p.total && p.total > 0;
-    const isCancelled = p.control.cancelled;
+    // Phase 2.6 — read the PERSISTED batch status, not only this tab's local
+    // flag, so a cancel issued from the recovery banner or another tab is
+    // reflected here too (before, this panel would keep offering "Jeda" and
+    // "Batalkan" for a batch that had already been cancelled elsewhere).
+    const isCancelled = batchCancelled(p.batchId);
     const isPaused = p.control.paused;
 
     // Part J — real ETA/speed from measured elapsed time, never fabricated.
@@ -1156,24 +1356,26 @@ export function createDatasetImportController(opts = {}) {
         ${liveActivity}
         ${controls}
         ${renderStatCards(isDeveloperMode() ? [
-          { count: `${counters.uploading} / ${counters.total}`, label: 'Uploading' },
+          { count: `${counters.preparing} / ${counters.total}`, label: 'Preparing' },
+          { count: counters.uploading, label: 'Uploading' },
           { count: counters.processing, label: 'Processing (Policy Validation)' },
           { count: counters.knowledgeExtraction, label: 'Knowledge Extraction' },
-          { count: counters.learning, label: 'Learning' },
           { count: counters.completed, label: 'Completed' },
-          { count: counters.waitingReview, label: 'Waiting Review' },
+          { count: counters.waitingReview, label: 'Awaiting Evidence' },
           { count: counters.failed, label: 'Failed' },
+          { count: counters.cancelled, label: 'Cancelled' },
         ] : [
           // Sprint 0 (Presentation Truth) — no raw pipeline-stage names
           // ("Policy Validation", "Knowledge Extraction") in Normal Mode;
           // same real counters, plain-language labels only.
-          { count: `${counters.uploading} / ${counters.total}`, label: 'Diunggah' },
+          { count: `${counters.preparing} / ${counters.total}`, label: 'Disiapkan' },
+          { count: counters.uploading, label: 'Diunggah' },
           { count: counters.processing, label: 'Diproses' },
           { count: counters.knowledgeExtraction, label: 'Menjadi Pengetahuan' },
-          { count: counters.learning, label: 'Pembelajaran' },
           { count: counters.completed, label: 'Selesai' },
-          { count: counters.waitingReview, label: 'Menunggu Tinjauan' },
+          { count: counters.waitingReview, label: 'Menunggu Bukti' },
           { count: counters.failed, label: 'Gagal' },
+          { count: counters.cancelled, label: 'Dibatalkan' },
         ])}
         ${isDone || isCancelled ? renderRowList(p.items, (i) => `
           <li class="wlk-row" ${i.sessionId ? `data-act="dic-session-row" data-id="${esc(i.sessionId)}" data-clickable="1"` : ''}>
@@ -1212,23 +1414,18 @@ export function createDatasetImportController(opts = {}) {
 
   /* ── Import Report / Dashboard ─────────────────────────────────── */
 
-  /** A session was genuinely rejected if its history shows a real
-   *  pending_review -> uploaded transition — mirrors workspace-list-kit.js#
-   *  deriveRejectedFromCandidateQueue's exact reasoning. */
+  /** Phase 2.6 — a rejected session is one a human TERMINALLY declined, which
+   *  is now a persisted state (Cancelled), not a pattern to be archaeologically
+   *  reconstructed from version history.
+   *
+   *  This used to scan every session's full history for a pending_review ->
+   *  uploaded edge. Nothing produces that edge any more (see the dic-reject
+   *  handler), so the counter would have read a permanent, confident ZERO —
+   *  a stat that is not merely useless but actively misleading, since
+   *  rejections would still be happening. It is also O(N * versions); this is
+   *  O(N) over data already in hand. */
   function countRejectedSessions(all) {
-    let n = 0;
-    for (const s of all) {
-      const historyResult = getImportSessionHistory(s.id);
-      if (!historyResult.ok) continue;
-      const versions = historyResult.data;
-      for (let i = 1; i < versions.length; i += 1) {
-        if (versions[i - 1].state === IMPORT_SESSION_STATE.PENDING_REVIEW && versions[i].state === IMPORT_SESSION_STATE.UPLOADED) {
-          n += 1;
-          break;
-        }
-      }
-    }
-    return n;
+    return all.filter((s) => s.state === IMPORT_SESSION_STATE.CANCELLED).length;
   }
 
   function renderReport() {
@@ -1259,7 +1456,7 @@ export function createDatasetImportController(opts = {}) {
           { count: unsupportedCount, label: 'Unsupported' },
           { count: warningsTotal, label: 'Warnings' },
           { count: knowledgeProduced, label: 'Knowledge Produced' },
-          { count: rejectedTotal, label: 'Dikirim Kembali (Reject)' },
+          { count: rejectedTotal, label: 'Ditolak / Dibatalkan' },
         ])}</div>
 
         <div class="wlk-sec">
@@ -1384,41 +1581,43 @@ export function createDatasetImportController(opts = {}) {
       </div>`;
   }
 
-  /* ── Archive composition + Phase 2 cascade/dedup-reuse helpers now live
-     at module scope (doArchive/cascadeFromApproved/findReusableContentFacts,
-     above createDatasetImportController) — reused here via closure, same
-     as any other module-level import in this file. ──────────────────── */
+  /* ── Archive composition + dedup-reuse helpers live at module scope
+     (doArchive / findReusableContentFacts, above
+     createDatasetImportController) — reused here via closure, same as any
+     other module-level import in this file. ──────────────────────────── */
 
-  /* ── Zero-config batch processing (V2.1 -> V2.1.2) ────────────────── */
+  /* ── Zero-config batch processing (V2.1 -> V2.6) ──────────────────── */
 
   /**
-   * Processes ONE real file: hash -> infer metadata -> create Import
-   * Session -> upload to Storage (dedup-checked) -> submit for review
-   * (metadata confidence clears AUTO_POPULATE_CONFIDENCE_THRESHOLD, else it
-   * pauses for Advanced Metadata) -> and, Phase 2.5 Part 6, auto-run
-   * straight through Approve -> Knowledge Imported -> Archived whenever the
-   * real content facts needed to proceed are present (JSON parsed content,
-   * or a verified duplicate's reused human facts). Never fabricates a
-   * result — every branch reflects a real engine call's actual outcome, and
-   * PDF/DOCX can never auto-reach Knowledge Imported unless real content
-   * facts exist somewhere (markKnowledgeImported's own content-fact gate,
-   * unchanged, still requires a human-typed fact those formats can never
-   * auto-derive from nothing).
+   * Processes ONE real file — the FILE-BOUND half of the pipeline, and the
+   * only half that must happen here.
+   *
+   *   hash -> parse (JSON) -> infer metadata -> create Import Session ->
+   *   upload to Storage (dedup-checked) -> hand off to the scheduler
+   *
+   * Everything up to the hand-off needs the actual File object: bytes to
+   * hash, bytes to upload, text to parse. A File handle cannot survive a
+   * refresh, so this genuinely can only run in the tab that received the
+   * drop. Everything AFTER it is lifecycle, and lifecycle belongs to
+   * pipeline-scheduler.js — which works from the persisted session and can
+   * therefore be re-run by any tab, at any time, after any interruption.
+   *
+   * That split is the entire Phase 2.6 correction. This function used to own
+   * the whole lifecycle, which meant the lifecycle only ever ran while this
+   * function was on the stack.
+   *
+   * Never fabricates a result: every branch reflects a real engine call's
+   * actual outcome, and PDF/DOCX can never auto-reach Knowledge Imported
+   * unless real content facts exist somewhere (markKnowledgeImported's own
+   * content-fact gate, unchanged, still requires a human-typed fact those
+   * formats can never auto-derive from nothing).
+   *
    * @param {File} file
    * @param {string} folderPath
    * @param {string|null} batchId
-   *
-   * Phase 2 Follow-up — there is deliberately NO `onStage` callback anymore
-   * (D3): pipeline progress is now the session's own persisted
-   * `pipelineStage` field, advanced by the engine transitions below
-   * (createImportSession seeds CLASSIFICATION; submit -> POLICY_VALIDATION;
-   * markKnowledgeImported -> KNOWLEDGE_EXTRACTION; markArchived ->
-   * COMPLETED), which is what makes progress survive refresh/restart/
-   * multi-tab. The UI reads that persisted stage, never a local callback.
    */
   async function processOneFile(file, folderPath, batchId = null) {
     const kind = fileKind(file.type);
-    const isUnsupported = !kind;
     const domainType = st.batchDomainType;
     const base = { filename: file.name, sizeBytes: file.size, fileRef: file, folderPath, sessionId: null, wasDuplicate: false, warningCount: 0, storageBytes: 0 };
 
@@ -1474,6 +1673,13 @@ export function createDatasetImportController(opts = {}) {
     // that would kill every file still queued behind it.
     let factsReusedFromDuplicate = false;
     if (sha256) {
+      // Phase 2.6 — the ONE honest "Uploading" marker, written immediately
+      // before the real network upload starts and nowhere else. Everything
+      // before this line was synchronous and instant; everything after it has
+      // genuinely finished uploading. A badge reading "Uploading" now means a
+      // file is uploading. Reported THROUGH the scheduler (not written here)
+      // so that no UI module writes pipelineStage directly.
+      reportUploadStarted(sessionId);
       try {
         const { uploadFile } = await import('../file-storage/file-storage-engine.js');
         const uploadResult = await uploadFile(file, { domainType: inferred.domainType.value || domainType, importSessionId: sessionId });
@@ -1505,51 +1711,29 @@ export function createDatasetImportController(opts = {}) {
       }
     }
 
-    if (isUnsupported) {
-      submitImportSessionForReview(sessionId, { expectedDomainType: scopedDomainType || undefined });
-      return { ...base, status: 'unsupported', error: null };
-    }
+    // Phase 2.6 — HAND OFF TO THE ONE DRIVER. Everything above this line is
+    // the part only the UI can do: it has the actual File object (bytes to
+    // hash, bytes to upload, text to parse) and a File handle cannot survive
+    // a refresh. Everything below it is lifecycle, and lifecycle now belongs
+    // to exactly one place.
+    //
+    // This replaces a hand-rolled submit -> approve -> cascade chain that was
+    // a SECOND implementation of the state machine, living in the view. It
+    // was also the only implementation that ever ran: nothing else in the
+    // system advanced a session, so when this function returned — or the tab
+    // closed, or the user refreshed — whatever it had not finished stayed
+    // unfinished forever. The scheduler reads the same persisted session and
+    // reaches the same conclusions, but it can be re-run by anyone, at any
+    // time, from any tab. That is the whole difference between a pipeline and
+    // a one-shot script.
+    const outcome = advanceSession(sessionId);
 
-    if (inferred.overallConfidence < AUTO_POPULATE_CONFIDENCE_THRESHOLD) {
-      return { ...base, status: 'needs_advanced', error: null };
-    }
+    const finalResult = getImportSession(sessionId);
+    if (finalResult.ok) base.warningCount = (finalResult.data.validationWarnings || []).length;
+    if (factsReusedFromDuplicate) base.factsReusedFromDuplicate = true;
 
-    const submitResult = submitImportSessionForReview(sessionId, { expectedDomainType: scopedDomainType || undefined });
-    if (!submitResult.ok) {
-      return { ...base, status: 'needs_attention', error: submitResult.error.message };
-    }
-    base.warningCount = (submitResult.data.validationWarnings || []).length;
-
-    // Phase 2.5 Part 6 — FULLY AUTONOMOUS COMPLETION. The engine now
-    // auto-runs Approve -> Knowledge Imported -> Archived whenever the
-    // deterministic evidence needed to proceed is genuinely present, and
-    // pauses ONLY when it is genuinely missing. "Evidence present" =
-    // real content facts exist (JSON parsed content, or a verified
-    // duplicate's reused human facts) — this is what markKnowledgeImported
-    // requires anyway, so completing here fabricates nothing. This
-    // deliberately supersedes the old 0.85 confidence gate: confidence
-    // now decides only whether metadata needed Advanced review (the
-    // <AUTO_POPULATE branch above), not whether a fully-evidenced file
-    // must wait for a redundant human "Setujui" click. The resulting
-    // KnowledgeItem still lands as DRAFT (human-gated — Decision 6); only
-    // the Import Session's own administrative lifecycle auto-advances.
-    const current = getImportSession(sessionId);
-    const hasEvidence = current.ok && hasContentFacts(current.data);
-    if (hasEvidence) {
-      const rationale = factsReusedFromDuplicate
-        ? 'Diselesaikan otomatis — duplikat konten terverifikasi; fakta digunakan kembali dari sesi sebelumnya.'
-        : `Diselesaikan otomatis — bukti konten lengkap (confidence ${inferred.overallConfidence}).`;
-      const approveResult = approveImportSession(sessionId, { approverId: 'evan', decidedAt: new Date().toISOString(), preferenceRationale: rationale });
-      if (approveResult.ok && cascadeFromApproved(sessionId, { auto: true })) {
-        return { ...base, status: 'archived', error: null };
-      }
-    }
-
-    // Genuinely missing evidence (PDF/DOCX with no human-typed facts yet):
-    // the session rests at Pending Review and is surfaced honestly by
-    // reviewReasons() as MISSING_CONTENT_FACTS — a real "needs a human
-    // fact", never a fabricated completion.
-    return { ...base, status: 'pending_review', error: null };
+    if (!outcome.ok) return { ...base, status: 'error', error: outcome.error };
+    return { ...base, status: BATCH_ITEM_STATUS_FOR_OUTCOME[outcome.outcome] || 'needs_attention', error: null };
   }
 
   /**
@@ -1562,6 +1746,26 @@ export function createDatasetImportController(opts = {}) {
    * @param {(file: File) => string} folderPathFor
    * @param {() => void} rerender
    */
+  /** Phase 2.6 — PART 1, "THE ACTIVE WORKER STOPS SAFELY".
+   *
+   *  The loop's cancellation check used to read `st.batchProgress.control
+   *  .cancelled` — a flag on a plain object in THIS controller's closure. So
+   *  the worker could only ever be stopped by the one button rendered inside
+   *  the one panel in the one tab that happened to be running it. A cancel
+   *  issued from the Upload Recovery banner, or from a second tab, updated
+   *  the persisted batch record and the worker sailed straight past it,
+   *  cheerfully creating more sessions for a batch that no longer existed.
+   *
+   *  The persisted ImportBatchRecord is the source of truth, so the worker
+   *  asks IT, every iteration. Cancellation from anywhere now stops the
+   *  worker everywhere — which is what "cancel" is supposed to mean. */
+  function batchCancelled(batchId) {
+    if (st.batchProgress && st.batchProgress.control.cancelled) return true;
+    if (!batchId) return false;
+    const result = getBatch(batchId);
+    return result.ok && result.data.status === BATCH_STATUS.CANCELLED;
+  }
+
   async function processBatch(files, folderPathFor, rerender) {
     const batchResult = createBatch({ createdBy: 'evan', domainType: st.batchDomainType || 'unknown', totalFiles: files.length });
     const batchId = batchResult.ok ? batchResult.data.id : null;
@@ -1573,13 +1777,16 @@ export function createDatasetImportController(opts = {}) {
     rerender();
 
     for (const file of files) {
-      if (st.batchProgress.control.cancelled) break;
+      if (batchCancelled(batchId)) break;
       // eslint-disable-next-line no-await-in-loop
-      while (st.batchProgress.control.paused && !st.batchProgress.control.cancelled) {
+      while (st.batchProgress.control.paused && !batchCancelled(batchId)) {
         // eslint-disable-next-line no-await-in-loop
         await new Promise((resolve) => { setTimeout(resolve, 200); });
       }
-      if (st.batchProgress.control.cancelled) break;
+      // Re-checked AFTER the pause loop and AFTER the await below: a cancel
+      // can land during either, and a worker that only checks before it
+      // starts waiting is a worker that ignores anything said while it waits.
+      if (batchCancelled(batchId)) break;
 
       let item;
       try {
@@ -1598,10 +1805,13 @@ export function createDatasetImportController(opts = {}) {
       st.batchProgress.processed += 1;
       if (batchId) {
         recordBatchItem(batchId, item.sessionId, {
-          imported: ['pending_review', 'approved', 'archived'].includes(item.status),
+          // Phase 2.6 — "imported" means a real Import Session exists and is
+          // progressing or done; only a file that never got one (blocked) or
+          // that the pipeline terminally failed is an error.
+          imported: ['archived', 'awaiting_evidence'].includes(item.status),
           duplicate: item.wasDuplicate,
           warningCount: item.warningCount || 0,
-          error: ['blocked', 'error', 'unsupported', 'needs_attention'].includes(item.status),
+          error: ['blocked', 'error', 'failed'].includes(item.status),
           knowledgeProduced: item.status === 'archived',
           storageBytes: item.storageBytes || 0,
         });
@@ -1609,8 +1819,13 @@ export function createDatasetImportController(opts = {}) {
       rerender();
     }
 
+    // Phase 2.6 — settle the batch through the SCHEDULER, so cancelling also
+    // cancels the sessions this loop already created (see cancelImportBatch).
+    // completeBatch() now refuses to overwrite a CANCELLED batch, so a cancel
+    // that landed while the last file was still in flight is no longer
+    // silently resurrected as "Selesai" here.
     if (batchId) {
-      if (st.batchProgress.control.cancelled) cancelBatch(batchId);
+      if (batchCancelled(batchId)) cancelImportBatch(batchId);
       else completeBatch(batchId);
     }
     rerender();
@@ -1621,19 +1836,32 @@ export function createDatasetImportController(opts = {}) {
    *  creates a duplicate session. A 'blocked' item (Domain Unggahan was
    *  empty, no session was ever created) has nothing to retry until the
    *  administrator sets a domain and re-selects the file. */
+  /** V2.1.2 Part G — re-attempts a session that already exists but did not
+   *  finish. Phase 2.6: a retry is just "run the scheduler again" — the same
+   *  deterministic driver, from wherever the session actually is. It no longer
+   *  hard-codes `submitImportSessionForReview` as THE retry step, which was
+   *  only ever correct for a session sitting at Uploaded and did nothing at
+   *  all for one stuck further down.
+   *
+   *  A 'blocked' item (Domain Unggahan was empty, so no session was ever
+   *  created) has nothing to retry until the administrator sets a domain and
+   *  re-selects the file. */
   function retryFailedItem(item, rerender) {
     if (!item.sessionId) return;
-    const submitResult = submitImportSessionForReview(item.sessionId, { expectedDomainType: scopedDomainType || undefined });
-    item.error = submitResult.ok ? null : (submitResult.error ? submitResult.error.message : item.error);
-    item.status = submitResult.ok ? 'pending_review' : item.status;
-    if (submitResult.ok) item.warningCount = (submitResult.data.validationWarnings || []).length;
+    const outcome = advanceSession(item.sessionId);
+    item.status = outcome.ok
+      ? (BATCH_ITEM_STATUS_FOR_OUTCOME[outcome.outcome] || item.status)
+      : item.status;
+    item.error = outcome.ok ? null : outcome.error;
+    const fresh = getImportSession(item.sessionId);
+    if (fresh.ok) item.warningCount = (fresh.data.validationWarnings || []).length;
     rerender();
   }
 
   function retryAllFailed(rerender) {
     if (!st.batchProgress) return;
     for (const item of st.batchProgress.items) {
-      if (['error', 'unsupported', 'needs_attention'].includes(item.status)) retryFailedItem(item, rerender);
+      if (['error', 'failed', 'needs_attention', 'awaiting_evidence'].includes(item.status)) retryFailedItem(item, rerender);
     }
   }
 
@@ -1670,7 +1898,19 @@ export function createDatasetImportController(opts = {}) {
     // V2.1.2 Part G — Upload Queue Controls.
     if (act === 'dic-batch-pause') { if (st.batchProgress) { st.batchProgress.control.paused = true; if (st.batchProgress.batchId) pauseBatch(st.batchProgress.batchId); } rerender(); return true; }
     if (act === 'dic-batch-resume') { if (st.batchProgress) { st.batchProgress.control.paused = false; if (st.batchProgress.batchId) resumeBatch(st.batchProgress.batchId); } rerender(); return true; }
-    if (act === 'dic-batch-cancel') { if (st.batchProgress) st.batchProgress.control.cancelled = true; rerender(); return true; }
+    // Phase 2.6 — cancel now PERSISTS immediately (not at the end of the
+    // worker loop, where it used to sit until the loop happened to fall out).
+    // The local flag stops the loop this tick; cancelImportBatch() writes the
+    // batch AND cancels its unfinished sessions, so the state is real, is
+    // durable, survives a refresh, and is visible to every other tab — the
+    // moment the operator asks for it, not whenever the loop gets around to it.
+    if (act === 'dic-batch-cancel') {
+      if (st.batchProgress) {
+        st.batchProgress.control.cancelled = true;
+        if (st.batchProgress.batchId) cancelImportBatch(st.batchProgress.batchId);
+      }
+      rerender(); return true;
+    }
     if (act === 'dic-batch-retry-all') { retryAllFailed(rerender); return true; }
     if (act === 'dic-batch-retry-one') {
       const item = st.batchProgress && st.batchProgress.items.find((i) => i.sessionId === id);
@@ -1680,7 +1920,14 @@ export function createDatasetImportController(opts = {}) {
 
     // V2.1.2 Part E — Upload Recovery.
     if (act === 'dic-resume-banner-dismiss') { st.resumeBannerDismissed = true; rerender(); return true; }
-    if (act === 'dic-resume-batch-cancel') { cancelBatch(id); rerender(); return true; }
+    // Phase 2.6 — THE REPORTED BUG. This called bare cancelBatch(), which
+    // (a) silently failed its structural validation on any rehydrated batch —
+    // the only kind this banner can ever show — and (b) even on success only
+    // ever touched the ImportBatchRecord, leaving every session it had created
+    // still sitting in the queue looking like live work. Both halves are fixed:
+    // the record round-trips correctly now (normalizeImportBatchRecord), and
+    // cancelling a batch cancels its unfinished sessions.
+    if (act === 'dic-resume-batch-cancel') { cancelImportBatch(id); rerender(); return true; }
 
     // V2.1.2 Part I — Batch History.
     if (act === 'dic-batch-status-filter') { st.batchStatusFilter = id; rerender(); return true; }
@@ -1690,28 +1937,35 @@ export function createDatasetImportController(opts = {}) {
     // V2.1.2 Part L — Document Preview.
     if (act === 'dic-preview-load') { loadDocumentPreview(id, el.dataset.path, rerender); return true; }
 
-    if (act === 'dic-submit') { submitImportSessionForReview(id, { expectedDomainType: scopedDomainType || undefined }); rerender(); return true; }
-    if (act === 'dic-approve') {
-      // Phase 2, Decision 4 — approval IS the human decision point; once
-      // made, the engine finishes the rest of the pipeline itself instead
-      // of waiting for two more separate clicks (see cascadeFromApproved).
-      const approveResult = approveImportSession(id, { approverId: 'evan', decidedAt: new Date().toISOString(), preferenceRationale: 'Ditinjau dan disetujui melalui Dataset Import Center.' });
-      if (approveResult.ok) cascadeFromApproved(id);
-      rerender(); return true;
-    }
+    // Phase 2.6 — PART 4. `dic-submit`, `dic-approve`, `dic-import` and
+    // `dic-archive` are GONE. Each of them asked a human to press a button
+    // whose entire job was to invoke an engine call that the engine was
+    // already capable of making, and already responsible for making. They
+    // were not decisions; they were the pipeline, wearing a person as a
+    // clock. `dic-approve` and `dic-import` in particular could BOTH appear
+    // for the same document — the two-approvals-for-one-process defect this
+    // milestone was called to fix.
+    //
+    // What survives is the one genuine human decision at this layer: "this
+    // document should not be imported at all."
+    //
+    // Phase 2.6 HARDENING — this used to call rejectImportSession() directly,
+    // and it was broken in BOTH cases it could actually be reached:
+    //
+    //   - parked at Pending Review: reject moved the session back to Uploaded,
+    //     and the next sweep drove it straight back to Pending Review. The
+    //     scheduler silently overruled the human; the row never left the queue.
+    //   - parked at Uploaded (low confidence): Uploaded -> Uploaded is not a
+    //     legal edge, so the call failed with INVALID_IMPORT_DECISION and the
+    //     button did nothing whatsoever.
+    //
+    // A "no" that the engine overturns on the next tick is not a no. Rejection
+    // is now what it always meant — TERMINAL — and it is the scheduler that
+    // records it, so no sweep can ever undo it.
     if (act === 'dic-reject') {
-      rejectImportSession(id, { approverId: 'evan', decidedAt: new Date().toISOString() });
+      discardImportSession(id, { actor: 'evan' });
       rerender(); return true;
     }
-    // Sprint 1 (Autonomy Closure, Part 4) — retries the WHOLE remaining
-    // cascade (Knowledge Import -> Archive) in one click, not just the
-    // first step. Previously this called bare markKnowledgeImported(),
-    // so a session stuck here after a failed cascade needed a SECOND
-    // manual "Arsipkan" click even though the button read "Impor sebagai
-    // Knowledge" — matches the "never ask the user to manually continue
-    // the pipeline" decision cascadeFromApproved() itself already documents.
-    if (act === 'dic-import') { cascadeFromApproved(id); rerender(); return true; }
-    if (act === 'dic-archive') { doArchive(id); rerender(); return true; }
 
     if (act === 'dic-advanced-open') {
       const current = getImportSession(id);
@@ -1727,7 +1981,49 @@ export function createDatasetImportController(opts = {}) {
     if (act === 'dic-advanced-close') { st.advancedEditId = null; st.advancedEdit = null; rerenderPreservingScroll(rerender); return true; }
     if (act === 'dic-advanced-save') {
       if (st.advancedEdit) {
-        updateSessionMetadata(id, { domainType: st.advancedEdit.domainType, datasetType: st.advancedEdit.datasetType, knowledgeKind: st.advancedEdit.knowledgeKind });
+        // Phase 5, Part 3/9 — Correction Log, ACTIVATED. The original
+        // dormant-subsystems.js finding was that submitCorrection() (the
+        // engine built for KNOWLEDGE payload edits) has zero real callers —
+        // and it still does; there is genuinely no payload-editing UI, and
+        // inventing one just to make a counter move would be the wrong
+        // reason to build a feature. But Advanced Metadata's save IS a real,
+        // already-firing human correction — a person looking at metadata the
+        // pipeline could not trust and vouching for it — which is exactly
+        // Part 3's "Metadata correction" example. Capture the BEFORE state
+        // here, before the write, so the recorded correction is a real diff.
+        const before = getImportSession(id);
+        const beforeSnapshot = before.ok
+          ? { domainType: before.data.domainType, datasetType: before.data.datasetType, knowledgeKind: before.data.knowledgeKind }
+          : null;
+        // `confirmedBy` is what releases the low-confidence gate: a human has
+        // now looked at this metadata and vouched for it, which is strictly
+        // better evidence than the inference score that flagged it. Without
+        // this, a session a human had fully corrected went on reporting
+        // "confidence too low" forever and could never leave the queue.
+        updateSessionMetadata(id, {
+          domainType: st.advancedEdit.domainType,
+          datasetType: st.advancedEdit.datasetType,
+          knowledgeKind: st.advancedEdit.knowledgeKind,
+          confirmedBy: 'evan',
+        });
+        // Recorded ONLY when this was a genuine correction — the session's
+        // metadata was not yet human-confirmed. A save that merely re-confirms
+        // already-trusted metadata (opening the panel and clicking Save with
+        // nothing to fix) is not a correction and recordCorrection()'s own
+        // idempotency would collapse it to a no-op anyway, but gating here
+        // keeps the intent honest at the call site too.
+        if (before.ok && !before.data.metadataConfirmedBy) {
+          recordCorrection({
+            domainType: st.advancedEdit.domainType,
+            correctionType: CORRECTION_TYPE.METADATA,
+            targetKey: id,
+            actorId: 'evan',
+            reason: 'Advanced Metadata dikonfirmasi manusia setelah confidence otomatis rendah.',
+            before: beforeSnapshot,
+            after: { domainType: st.advancedEdit.domainType, datasetType: st.advancedEdit.datasetType, knowledgeKind: st.advancedEdit.knowledgeKind },
+            sourceDocumentId: id,
+          });
+        }
         // Sprint 0 (Presentation Truth) — any typed fact (not just "Nilai
         // Pokok") must be persisted. Gating on `facts.value` alone silently
         // discarded documentNumber/senderOrigin/notes whenever value was
@@ -1736,6 +2032,20 @@ export function createDatasetImportController(opts = {}) {
         // Knowledge" bug).
         const hasAnyFact = Object.values(st.advancedEdit.facts).some((v) => v && String(v).trim());
         if (hasAnyFact) attachManualEntryFacts(id, st.advancedEdit.facts);
+
+        // Phase 2.6 — PART 3, THE MISSING HALF OF THE AUTONOMOUS PIPELINE.
+        // Saving here is the exact moment the evidence the engine was waiting
+        // for comes into existence. Previously nothing happened next: the fact
+        // was written, and the session just sat there — still parked, still in
+        // the attention queue — until a human noticed and pressed a further
+        // two buttons ("Setujui", then "Impor sebagai Knowledge") to walk it
+        // through steps it could have taken by itself. The engine had
+        // everything it needed and was still asking for permission.
+        //
+        // Now the arrival of evidence resumes the pipeline immediately, and it
+        // runs to its terminal state. Supplying a fact is the human's whole
+        // job; finishing the import is the engine's.
+        advanceSession(id);
       }
       st.advancedEditId = null; st.advancedEdit = null;
       rerenderPreservingScroll(rerender); return true;

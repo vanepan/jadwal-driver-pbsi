@@ -37,6 +37,53 @@ import { getActiveRepository, setActiveRepository, getActiveRepositoryId, listRe
 import { repositoryFailure, REPOSITORY_ERRORS } from './contracts/repository-contract.js';
 import { REPOSITORY_EVENT_TYPE, makeRepositoryEvent } from './contracts/event-contract.js';
 
+/* ══════════════════════════════════════════════════════════════════════
+   PHASE 3, PART 9 — THE REPOSITORY BOUNDARY, DECLARED.
+
+   This module's exports are NOT all equal. They fall into three tiers, and the
+   difference matters enough to write down, because nothing in the language
+   expresses it: every export below looks identical to an autocomplete.
+
+   ── PUBLIC (safe for anyone) ─────────────────────────────────────────
+     registerRepositoryListener / unregisterRepositoryListener
+       Event subscription. Mutates nothing.
+
+   ── INTERNAL (one legitimate caller: services/knowledge-service.js) ──
+     getById · getVersion · list · search · getHistory · getMetrics ·
+     getPendingReview · getDependencies
+       Reads. Harmless in isolation — a stray read corrupts nothing — but every
+       consumer now goes through the Knowledge Service anyway, so that "who
+       reads knowledge?" has one answer and future caching, filtering or
+       access-control has exactly one place to live.
+
+   ── UNSAFE (one legitimate caller, enforced by test) ─────────────────
+     create · appendVersion · rollback
+       These WRITE organizational knowledge. Called directly, they bypass:
+         · the human gate  (nothing stops `create({lifecycleState:'approved'})`)
+         · the mutability rule (Approved knowledge silently rewritten in place)
+         · the lifecycle graph (appendVersion honours it; create does not)
+       Their ONLY legitimate callers are services/knowledge-service.js (the
+       domain owner) and lifecycle/lifecycle-engine.js (the transition mechanism
+       the owner delegates to). Enforced by scripts/knowledge-ownership-check.mjs.
+
+     setActiveRepository
+       Swaps the persistence backend process-wide. A bootstrap concern, called
+       once from the platform mount. Re-exported by the Knowledge Service as
+       `setKnowledgeBackend` so no other module needs to import this file at all.
+
+   ── WHY THESE ARE NOT PRIVATE (yet) ──────────────────────────────────
+   Privatising them means a module-boundary refactor across four repositories
+   and the 20+ check scripts that import their reset*() teardown helpers. The
+   Phase 2.6 audit found that NO module outside the owner actually calls them —
+   the doors are unlocked, but nobody walks through. So the real risk is a
+   FUTURE developer, and a failing test names the rule far more loudly than a
+   private field would. Encapsulation is worth doing; it is worth doing as its
+   own phase, with its own verification, rather than smuggled into this one.
+
+   Deferred deliberately. Not forgotten. See the Phase 3 report's "technical
+   debt intentionally deferred".
+   ══════════════════════════════════════════════════════════════════════ */
+
 function active(method, ...args) {
   const repo = getActiveRepository();
   if (!repo) return repositoryFailure(REPOSITORY_ERRORS.NO_BACKEND_CONFIGURED, `No active repository (method: ${method}).`);

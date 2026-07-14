@@ -34,7 +34,9 @@
 
 'use strict';
 
-import { list } from '../../knowledge/repository/knowledge-repository.js';
+import {
+  listKnowledge as list,
+} from '../../knowledge/services/knowledge-service.js';
 import { LIFECYCLE_STATE } from '../../knowledge/contracts/lifecycle-contract.js';
 import { registerStep } from '../registry/step-registry.js';
 import { DOCUMENT_PIPELINE_STEP } from '../contracts/document-pipeline-contract.js';

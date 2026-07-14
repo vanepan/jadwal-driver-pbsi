@@ -29,12 +29,23 @@
 
 import {
   computeArchiveHealth, getArchiveTimeline, buildUploadRecommendations,
-  getGapsWithWorkflowState, checkKnowledgeContribution, GAP_STATUS,
-  getById as archiveGetById, getHistory as archiveGetHistory,
-  list as archiveList, search as archiveSearch,
+  getGapsWithWorkflowState, flagGapForUpload, resolveGap, checkKnowledgeContribution, GAP_STATUS,
+  findArchiveRecord as archiveGetById, getArchiveHistory as archiveGetHistory,
+  listArchive as archiveList, searchArchive as archiveSearch,
+  // Phase 4 — Archive's lifecycle, explainability and relationships, reached
+  // ONLY through the Archive Service. Before this phase this workspace could
+  // say nothing about a document beyond its metadata: there was no state to
+  // show, no reason it was archived, and no link to anything else.
+  explainArchiveRecord, getArchiveRelationships, getReplacementChain,
+  restoreDocument, deprecateDocument,
+  ARCHIVE_STATE, ARCHIVE_STATE_DEFS,
 } from '../organizational-memory/index.js';
 
-import { list as knowledgeList, getById as knowledgeGetById, getHistory as knowledgeGetHistory } from '../knowledge/repository/knowledge-repository.js';
+import {
+  listKnowledge as knowledgeList,
+  getKnowledge as knowledgeGetById,
+  getKnowledgeHistory as knowledgeGetHistory,
+} from '../knowledge/services/knowledge-service.js';
 import { LIFECYCLE_STATE, LIFECYCLE_STATE_DEFS } from '../knowledge/contracts/lifecycle-contract.js';
 import { generateKnowledgeId } from '../knowledge/contracts/identity-contract.js';
 import { listDomainTypes, getDomainType } from '../knowledge/registry/domain-type-registry.js';
@@ -92,6 +103,11 @@ const st = {
   timelineDomainFilter: null,
   datasetTab: DATASET_TYPE.OFFICIAL,
   reviewFilter: 'pending',    // 'pending' | 'approved' | 'rejected'
+  // Phase 4 — the Archive lifecycle panel. `archiveNote` is the human's reason;
+  // a document declared no-longer-valid without one is a change nobody can
+  // account for later.
+  archiveNote: '',
+  archiveError: null,
 };
 
 let host = null;
@@ -193,10 +209,35 @@ function onClick(e) {
   if (act === 'ac-timeline-domain') { st.timelineDomainFilter = el.dataset.id === '__all' ? null : el.dataset.id; render(); return; }
   if (act === 'ac-dataset-tab') { st.datasetTab = el.dataset.id; render(); return; }
   if (act === 'ac-review-filter') { st.reviewFilter = el.dataset.id; render(); return; }
-  if (act === 'ac-record-row') { st.recordSelectedId = st.recordSelectedId === el.dataset.id ? null : el.dataset.id; render(); return; }
+  if (act === 'ac-record-row') { st.recordSelectedId = st.recordSelectedId === el.dataset.id ? null : el.dataset.id; st.archiveNote = ''; st.archiveError = null; render(); return; }
+  // Phase 4, Part 3 — the Archive lifecycle, operated by a human. These are the
+  // callers restoreDocument()/deprecateDocument() exist for; a transition verb
+  // with no caller is dead code, which is exactly the defect Phase 3 removed.
+  // Note there is no Delete: archive is append-only, and an organizational
+  // memory that can forget on request is not a memory.
+  if (act === 'ac-arch-deprecate' || act === 'ac-arch-restore') {
+    const note = st.archiveNote.trim();
+    const result = act === 'ac-arch-deprecate'
+      ? deprecateDocument(el.dataset.id, { actorId: 'evan', reason: note || null })
+      : restoreDocument(el.dataset.id, { actorId: 'evan', reason: note || null });
+    // Report the engine's REAL error rather than failing silently.
+    st.archiveError = result.ok ? null : (result.error ? result.error.message : 'Tindakan gagal.');
+    if (result.ok) st.archiveNote = '';
+    render(); return;
+  }
+  // Phase 3, Part 8 — the two writers gap-workflow-engine.js had been waiting
+  // for since V2.0.7. Before these, its state Map could never be written, and
+  // both this screen and the Executive Briefing counted a number that was
+  // structurally incapable of being anything but zero.
+  if (act === 'ac-gap-flag') { flagGapForUpload(el.dataset.domain, el.dataset.number); render(); return; }
+  if (act === 'ac-gap-resolve') { resolveGap(el.dataset.domain, el.dataset.number); render(); return; }
 }
 
 function onInput(e) {
+  // State only — never re-render on a keystroke, or the focused input is
+  // destroyed mid-word (the lesson dataset-import-center.js already learned).
+  const noteEl = e.target && e.target.closest ? e.target.closest('[data-act="ac-arch-note"]') : null;
+  if (noteEl) { st.archiveNote = noteEl.value; return; }
   if (e.target && e.target.id === 'acRecordSearch') {
     st.recordSearch = e.target.value;
     render();
@@ -418,12 +459,113 @@ function renderRecordDetail(id) {
       <div class="wlk-sec-title">Detail — ${esc(r.documentNumber)}</div>
       ${renderDetail([
         renderDetailSection('Metadata', metadata),
+        renderDetailSection('Asal & Alasan (Mengapa dokumen ini ada?)', renderArchiveProvenance(r)),
+        renderDetailSection('Hubungan Dokumen', renderArchiveRelationships(r)),
+        renderDetailSection('Rantai Penggantian', renderReplacementChain(r)),
         renderDetailSection('Evidence (Snapshot Sumber)', evidence),
         renderDetailSection('Relationships', relationships),
         renderDetailSection('History &amp; Version', historyList),
         renderDetailSection('Diff Viewer (versi terakhir vs sebelumnya)', diffHtml),
       ])}
+      ${renderArchiveLifecyclePanel(r)}
     </div>`;
+}
+
+/** Phase 4, Part 4 — "Nothing should exist without provenance."
+ *
+ *  Every field is a REAL recorded fact on the record, or null. Before this
+ *  phase an ArchiveRecord could answer none of these questions: it had no
+ *  state, no reason, no actor, no link to the upload that produced it and no
+ *  link to the knowledge it became. It was a row. */
+function renderArchiveProvenance(r) {
+  const result = explainArchiveRecord(r.id);
+  if (!result.ok) return null;
+  const x = result.data;
+  const pairs = [
+    ['Status', archiveStateLabel(x.state)],
+    ['Alasan Diarsipkan', x.archiveReason || '—'],
+    ['Diarsipkan Oleh', x.archivedBy || '—'],
+    ['Diarsipkan Pada', x.archivedAt || '—'],
+    ['Konektor Sumber', x.sourceConnector || '—'],
+    ['Sesi Impor Asal', x.importSessionId || '—'],
+    ['Menjadi Knowledge', x.knowledgeItemId || 'Belum'],
+    ['Dataset', x.datasetId || '—'],
+  ];
+  if (x.duplicateOf) {
+    pairs.push(['Duplikat Dari', `${x.duplicateOf.documentNumber || x.duplicateOf.id} — ${x.duplicateOf.kind || 'duplikat'}`]);
+    if (x.duplicateOf.rationale) pairs.push(['Alasan Duplikat', x.duplicateOf.rationale]);
+  }
+  if (x.lifecycleHistory.length) {
+    pairs.push(['Riwayat Siklus Hidup',
+      x.lifecycleHistory.map((h) => `v${h.version}: ${h.fromState || 'baru'} → ${h.toState}${h.reason ? ` (${h.reason})` : ''}`).join(' · ')]);
+  }
+  return renderKvList(pairs);
+}
+
+/** Phase 4, Part 5 — Archive is no longer a flat list. Every relationship shown
+ *  is deterministic: a recorded reference, or a pure function of facts already
+ *  present (an identical hash, an identical document number). Nothing is
+ *  scored, and nothing is guessed. */
+function renderArchiveRelationships(r) {
+  const result = getArchiveRelationships(r.id);
+  if (!result.ok || !result.data.length) {
+    return renderEmptyState('Dokumen ini belum memiliki hubungan dengan dokumen lain.', 'Hubungan muncul otomatis saat ada duplikat, revisi, atau dokumen turunan.');
+  }
+  return renderKvList(result.data.map((rel) => [rel.type, `${rel.targetId || '—'} — ${rel.rationale}`]));
+}
+
+function renderReplacementChain(r) {
+  const result = getReplacementChain(r.id);
+  if (!result.ok || result.data.length < 2) return null; // a chain of one is not a chain
+  return renderRowList(result.data, (c) => `
+    <li class="wlk-row"${c.id !== r.id ? ` data-act="ac-record-row" data-id="${esc(c.id)}" data-clickable="1"` : ''}>
+      <span class="wlk-row-primary">${esc(c.documentNumber)}${c.id === r.id ? ' (dokumen ini)' : ''}</span>
+      <span class="wlk-row-secondary">${esc(archiveStateLabel(c.state))} · ${esc(c.archivedAt)}</span>
+    </li>`);
+}
+
+/** Phase 4, Part 3 — the Archive lifecycle, made operable.
+ *
+ *  These are the callers the Archive Service's transition verbs exist for. A
+ *  verb with no caller is dead code — the exact reader-without-writer defect
+ *  Phase 3 spent itself removing — so they are wired here, where a human can
+ *  actually make the decision they encode.
+ *
+ *  Note what is NOT here: there is no Delete. Archive is append-only, and an
+ *  organizational memory that can forget on request is not a memory. */
+function renderArchiveLifecyclePanel(r) {
+  if (r.state === ARCHIVE_STATE.DUPLICATE) {
+    return `
+      <div class="wlk-sec">
+        <div class="wlk-sec-title">Siklus Hidup Arsip</div>
+        ${renderEmptyState('Dokumen ini adalah duplikat.', `Isinya identik dengan dokumen ${r.duplicateOfId || 'lain'} yang sudah diarsipkan. Duplikat tidak dapat dipulihkan menjadi dokumen utama — pulihkan dokumen aslinya.`)}
+      </div>`;
+  }
+  const noteField = `
+    <div class="wlk-form-row">
+      <label>Alasan</label>
+      <input data-act="ac-arch-note" class="wlk-input" type="text" value="${esc(st.archiveNote)}" placeholder="Mengapa dokumen ini tidak lagi berlaku, atau mengapa dipulihkan?"/>
+    </div>`;
+  const errorLine = st.archiveError
+    ? `<div class="wlk-row-secondary" style="color:var(--danger,#c0392b);">${esc(st.archiveError)}</div>` : '';
+
+  const canRestore = r.state === ARCHIVE_STATE.SUPERSEDED || r.state === ARCHIVE_STATE.DEPRECATED;
+  const canDeprecate = r.state === ARCHIVE_STATE.AVAILABLE || r.state === ARCHIVE_STATE.REFERENCED;
+
+  return `
+    <div class="wlk-sec">
+      <div class="wlk-sec-title">Siklus Hidup Arsip</div>
+      <p class="wlk-page-lede">Arsip bersifat append-only — dokumen tidak pernah dihapus, hanya digantikan atau dinyatakan tidak berlaku. Riwayatnya selalu utuh.</p>
+      ${noteField}
+      ${errorLine}
+      ${canDeprecate ? `<button class="wlk-btn wlk-btn--ghost" data-act="ac-arch-deprecate" data-id="${esc(r.id)}" type="button">Nyatakan Tidak Berlaku</button>` : ''}
+      ${canRestore ? `<button class="wlk-btn" data-act="ac-arch-restore" data-id="${esc(r.id)}" type="button">Pulihkan</button>` : ''}
+    </div>`;
+}
+
+function archiveStateLabel(state) {
+  const def = ARCHIVE_STATE_DEFS.find((d) => d.id === state);
+  return def ? def.label : (state || '—');
 }
 
 /* ── Timeline ──────────────────────────────────────────────────────── */
@@ -492,10 +634,31 @@ function renderDatasetsSection() {
 
 /* ── Upload Queue ──────────────────────────────────────────────────── */
 
+/** Phase 3, Part 8 — GAP WORKFLOW: ACTIVATED.
+ *
+ *  The ownership audit found gap-workflow-engine.js had readers but NO writers:
+ *  flagGapForUpload() and resolveGap() had zero callers anywhere in the
+ *  platform, so `_workflowState` could never be written — while this screen AND
+ *  the Executive Briefing both counted FLAGGED_FOR_UPLOAD gaps and therefore
+ *  displayed a confident, permanent 0. A number that cannot become non-zero is
+ *  worse than a missing number: it is a lie that no one will question.
+ *
+ *  The engine's own header (written back in V2.0.7) said this outright: "gives
+ *  the workflow a real, persisted place to live so a FUTURE UI can wire an
+ *  actual upload button to flagGapForUpload/resolveGap without redesigning
+ *  anything here." The future UI simply never arrived. It is these two buttons.
+ *
+ *  Note honestly what "flag" means: it is a workflow MARKER ("we know this
+ *  document is missing and we are chasing it"), not a file upload. The upload
+ *  itself happens in the Dataset Import Center, which is embedded on this very
+ *  screen. Nothing here pretends otherwise.
+ */
 function renderUploadQueueSection() {
   const domains = allDomainTypeIds();
   const recommendations = domains.flatMap((id) => buildUploadRecommendations(id));
-  const flagged = domains.flatMap((id) => getGapsWithWorkflowState(id).filter((g) => g.status === GAP_STATUS.FLAGGED_FOR_UPLOAD));
+  const allGaps = domains.flatMap((id) => getGapsWithWorkflowState(id));
+  const open = allGaps.filter((g) => g.status !== GAP_STATUS.FLAGGED_FOR_UPLOAD);
+  const flagged = allGaps.filter((g) => g.status === GAP_STATUS.FLAGGED_FOR_UPLOAD);
 
   return `
     <div class="wlk-page">
@@ -515,11 +678,22 @@ function renderUploadQueueSection() {
       </div>
 
       <div class="wlk-sec">
-        <div class="wlk-sec-title">Ditandai untuk Diunggah</div>
+        <div class="wlk-sec-title">Gap Terdeteksi (${open.length})</div>
+        ${open.length ? renderRowList(open, (g) => `
+          <li class="wlk-row">
+            <span class="wlk-row-primary">${esc(g.expectedNumber)}</span>
+            <span class="wlk-row-secondary">${esc(domainLabel(g.domainType))} · belum ditandai</span>
+            <button class="wlk-btn wlk-btn--ghost" data-act="ac-gap-flag" data-domain="${esc(g.domainType)}" data-number="${esc(g.expectedNumber)}" type="button">Tandai untuk Diunggah</button>
+          </li>`) : renderEmptyState('Tidak ada gap terbuka.', 'Setiap nomor dokumen dalam urutan sudah terarsip.')}
+      </div>
+
+      <div class="wlk-sec">
+        <div class="wlk-sec-title">Ditandai untuk Diunggah (${flagged.length})</div>
         ${flagged.length ? renderRowList(flagged, (g) => `
           <li class="wlk-row">
             <span class="wlk-row-primary">${esc(g.expectedNumber)}</span>
-            <span class="wlk-row-secondary">${esc(domainLabel(g.domainType))}</span>
+            <span class="wlk-row-secondary">${esc(domainLabel(g.domainType))} · sedang dicari</span>
+            <button class="wlk-btn wlk-btn--ghost" data-act="ac-gap-resolve" data-domain="${esc(g.domainType)}" data-number="${esc(g.expectedNumber)}" type="button">Tandai Selesai</button>
           </li>`) : renderEmptyState('Tidak ada gap yang ditandai untuk diunggah.')}
       </div>
     </div>`;

@@ -62,8 +62,16 @@
 
 'use strict';
 
-import { setActiveRepository, list as knowledgeList, registerRepositoryListener } from '../knowledge/repository/knowledge-repository.js';
-import { initImportSessionSync, initImportBatchSync, registerImportSessionChangeListener, registerImportBatchChangeListener } from '../knowledge/services/import-session-service.js';
+import {
+  setKnowledgeBackend as setActiveRepository,
+  listKnowledge as knowledgeList,
+  registerKnowledgeListener as registerRepositoryListener,
+} from '../knowledge/services/knowledge-service.js';
+import {
+  initImportSessionSync, initImportBatchSync,
+  registerImportSessionChangeListener, registerImportBatchChangeListener,
+  sweepPipeline,
+} from '../knowledge/services/import-session-service.js';
 import { initFileStorageSync } from '../file-storage/file-storage-registry.js';
 // Phase 2.5 Part 3 — make the in-memory knowledge repo a deterministic
 // projection of the persisted Import Sessions, so imported Knowledge
@@ -76,8 +84,11 @@ import { rehydrateKnowledgeFromSessions } from '../knowledge/datasets/import-ses
 // never recomputes what an engine already computes.
 import { reviewReasons, effectiveStage } from './dataset-import-center.js';
 import { listImportSessions } from '../knowledge/datasets/import-session/import-session-engine.js';
-import { IMPORT_SESSION_STATE, PIPELINE_STAGE, PIPELINE_STAGE_ORDER } from '../knowledge/datasets/import-session/contracts/import-session-contract.js';
-import { list as archiveList, getGapsWithWorkflowState, GAP_STATUS } from '../organizational-memory/index.js';
+import {
+  IMPORT_SESSION_STATE, PIPELINE_STAGE_ORDER, PIPELINE_OFF_RAMP_STAGES,
+  isTerminalImportSessionState, isOffRampStage,
+} from '../knowledge/datasets/import-session/contracts/import-session-contract.js';
+import { listArchive as archiveList, getGapsWithWorkflowState, GAP_STATUS } from '../organizational-memory/index.js';
 import { listDomainTypes } from '../knowledge/registry/domain-type-registry.js';
 import { listKinds } from '../knowledge/registry/kind-registry.js';
 import { getReviewQueue, getCandidateQueue } from '../knowledge/review/review-queue-engine.js';
@@ -85,9 +96,23 @@ import { listOverrides } from '../knowledge/services/profile-override-service.js
 import { LIFECYCLE_STATE } from '../knowledge/contracts/lifecycle-contract.js';
 import { listDatasets } from '../knowledge/datasets/registry/dataset-registry.js';
 import { manualFileSource } from '../knowledge/connectors/manual-file-connector.js';
-import { computePatternRecommendations } from '../knowledge/services/pattern-discovery-service.js';
-import { buildLearningMetrics } from '../knowledge/learning/contracts/learning-metrics-contract.js';
-import { listCorrectionLog } from '../knowledge/learning/correction-pipeline-engine.js';
+import { computePatternRecommendations, discoverAndRecordPatterns } from '../knowledge/services/pattern-discovery-service.js';
+// Phase 5, Part 8 — "Executive Learning": every number in the new card below
+// comes from the Learning Service, the Organization Memory engine, or the
+// Coverage engine — real, persisted, dated facts, never a fabricated metric.
+// buildLearningMetrics/listCorrectionLog (the OLD, still-dormant correction
+// mechanism — see dormant-subsystems.js) are no longer imported here: the
+// broader "Correction Log" concept the mission asks for is now genuinely
+// live via Learning Events, fed by three real producers (metadata/knowledge/
+// pattern corrections — see dataset-import-center.js, knowledge-center.js,
+// nor-center.js).
+import { listLearningEvents, LEARNING_KIND } from '../learning/services/learning-service.js';
+import { computeOrganizationalMemory } from '../organizational-memory/organizational-memory-engine.js';
+import { computeCoverageReport } from '../organizational-memory/coverage-engine.js';
+import { countResolvedGaps } from '../organizational-memory/gap-workflow-engine.js';
+// Phase 3, Part 8 — see js/v2/dormant-subsystems.js. This briefing used to
+// count the OLD correction log's always-zero value.
+import { dormantNote } from '../dormant-subsystems.js';
 import { esc, isDeveloperMode, setPresentationMode } from './shared/workspace-list-kit.js';
 
 const SCREEN_IDS = ['dashboard', 'nor', 'archive', 'knowledge', 'learning'];
@@ -153,9 +178,40 @@ export async function mountSarprasIntelligence(hostEl) {
     // RTDB-originated snapshots (initial load + other tabs), so this keeps
     // the knowledge projection in step with the authoritative sessions
     // without polling.
-    registerImportSessionChangeListener(() => { try { rehydrateKnowledgeFromSessions(); } catch (err) { console.error('[sarpras-intelligence-center] knowledge rehydration failed:', err); } });
+    //
+    // Phase 2.6 — THE RESUMPTION HOOK, and the answer to "why did documents
+    // get stuck?". Nothing in this system ever looked at an Import Session
+    // again once the tab that uploaded it moved on. A batch interrupted by a
+    // refresh, a crash, or simply closing the tab left its sessions in flight
+    // FOREVER — not because a stage was mis-computed, but because no engine
+    // owned them any more.
+    //
+    // sweepPipeline() adopts them. It drives every non-terminal session to a
+    // real terminal (Completed / Cancelled / Failed) or parks it honestly at
+    // Awaiting Evidence, working entirely from the PERSISTED session — so it
+    // does not care which tab uploaded the file, or whether that tab still
+    // exists. It runs here on real events only, never on a timer:
+    //
+    //   - once the initial RTDB hydration resolves (a refresh's first breath),
+    //   - and on every subsequent session change (another tab's writes).
+    //
+    // It is O(N), idempotent, and writes NOTHING once every session has come
+    // to rest — so a converged system settles instead of oscillating, and the
+    // event loop terminates rather than feeding itself.
+    const rehydrateAndSweep = () => {
+      try {
+        // Order matters: project Knowledge from finished sessions first, then
+        // sweep the unfinished ones (a sweep may finish more, which fires
+        // another change event and re-projects them on the next pass).
+        rehydrateKnowledgeFromSessions();
+        sweepPipeline();
+      } catch (err) {
+        console.error('[sarpras-intelligence-center] pipeline rehydration/sweep failed:', err);
+      }
+    };
+    registerImportSessionChangeListener(rehydrateAndSweep);
     initImportSessionSync()
-      .then(() => { rehydrateKnowledgeFromSessions(); })
+      .then(rehydrateAndSweep)
       .catch((err) => console.error('[sarpras-intelligence-center] import session sync failed:', err));
     initImportBatchSync().catch((err) => console.error('[sarpras-intelligence-center] import batch sync failed:', err));
     initFileStorageSync().catch((err) => console.error('[sarpras-intelligence-center] file storage sync failed:', err));
@@ -165,6 +221,24 @@ export async function mountSarprasIntelligence(hostEl) {
     registerImportSessionChangeListener(scheduleRender);
     registerImportBatchChangeListener(scheduleRender);
     registerRepositoryListener(scheduleRender);
+
+    // Phase 5, Part 6/9 — Pattern Discovery as a LEARNING PRODUCER, driven
+    // on real events, never a timer. A Knowledge change (a new Approval) or
+    // an Import Session change (a metadata correction) is exactly when a
+    // pattern's support could have moved. discoverAndRecordPatterns() is
+    // idempotent-when-unchanged (see pattern-discovery-service.js's header),
+    // so calling it on every such event is safe: a converged pattern set
+    // performs zero writes, and only a real change produces one new,
+    // explainable Learning Event.
+    const discoverPatterns = () => {
+      try {
+        for (const d of listDomainTypes()) discoverAndRecordPatterns(d.id);
+      } catch (err) {
+        console.error('[sarpras-intelligence-center] pattern discovery failed:', err);
+      }
+    };
+    registerRepositoryListener(discoverPatterns);
+    registerImportSessionChangeListener(discoverPatterns);
   }
   if (!sections) buildShell();
   showScreen(screen);
@@ -262,14 +336,14 @@ function computeTodaySummary() {
 }
 
 /** "Apa yang sedang berjalan?" — reuses the EXACT "in flight" derivation
- *  Dataset Import Center's own workspace view uses (renderWorkspace):
- *  not yet at the terminal pipeline stage, no reviewReasons blocking it,
- *  not yet Archived. */
+ *  Dataset Import Center's own workspace view uses (renderWorkspace).
+ *  Phase 2.6: in flight = not terminal, and not parked off the ladder. A
+ *  cancelled or failed document is finished business; before those states
+ *  existed, both kinds counted as "sedang diproses otomatis" forever, and
+ *  this number could only ever go up. */
 function computeRunningCount() {
   const sessions = safeList(listImportSessions, {});
-  return sessions.filter((s) => s.pipelineStage !== PIPELINE_STAGE.COMPLETED
-    && reviewReasons(s).length === 0
-    && s.state !== IMPORT_SESSION_STATE.ARCHIVED).length;
+  return sessions.filter((s) => !isTerminalImportSessionState(s.state) && !isOffRampStage(s.pipelineStage)).length;
 }
 
 /** "Apa yang butuh perhatian?" — sums the SAME exception queues Dataset
@@ -293,16 +367,100 @@ function computeAttention() {
 
 /** "Apa yang telah dipelajari platform?" — reuses Learning Dashboard's own
  *  insight reads (computeLearningInsights' shape) plus its Learning
- *  Overview metrics — no second computation, same engine calls. */
+ *  Overview metrics — no second computation, same engine calls.
+ *  Phase 5 — `totalCorrections` now counts REAL Learning Events (kind=
+ *  CORRECTION), fed by the three genuine producers (Advanced Metadata
+ *  confirmation, Knowledge Center's Request Changes, Profile Override
+ *  approval). This is a different, larger number than the old dormant
+ *  correction-pipeline-engine.js log — it counts corrections that actually
+ *  happen in this platform today, not the narrower knowledge-payload-edit
+ *  mechanism nothing has ever called. */
 function computeLearnedSummary() {
   const domains = listDomainTypes();
   const datasetsImported = domains.reduce((n, d) => n + listDatasets({ domainType: d.id }).filter((ds) => ds.sourceId === manualFileSource.id).length, 0);
   const knowledgeCreated = safeList(knowledgeList, {}).filter((i) => i.sourceType === 'manual-file').length;
   const patternDiscoveries = domains.reduce((n, d) => n + computePatternRecommendations(d.id).length, 0);
-  const totalCorrections = buildLearningMetrics(listCorrectionLog()).totalCorrections;
+  const correctionEvents = listLearningEvents({ kind: LEARNING_KIND.CORRECTION });
+  const totalCorrections = correctionEvents.ok ? correctionEvents.data.length : 0;
   return {
     datasetsImported, knowledgeCreated, patternDiscoveries, totalCorrections,
   };
+}
+
+/** Part 8 — "Executive Learning". Every field here is a real aggregation
+ *  over persisted Learning Events / Organization Memory / Coverage — no
+ *  fabricated metric, no invented trend.
+ *
+ *  Trends are computed the same honest way learning-dashboard.js's own
+ *  "Knowledge Growth" already documents its own limits: a real comparison
+ *  of two real, dated buckets (the last 7 days vs the 7 days before), not a
+ *  smoothed or modelled projection. */
+function computeExecutiveLearning() {
+  const domains = listDomainTypes();
+
+  // "Most corrected knowledge" / "Most reused knowledge" — real per-domain
+  // Organization Memory reports, merged and re-ranked across every domain.
+  const correctedByTarget = new Map();
+  const reusedByKnowledgeId = new Map();
+  for (const d of domains) {
+    const om = computeOrganizationalMemory(d.id, { limit: 25 });
+    if (!om.ok) continue;
+    for (const c of om.data.frequentlyCorrectedKnowledge) {
+      const existing = correctedByTarget.get(c.key);
+      if (!existing || c.count > existing.count) correctedByTarget.set(c.key, { key: c.key, count: c.count, domainType: d.id });
+    }
+    for (const r of om.data.frequentlyReusedKnowledge) {
+      const existing = reusedByKnowledgeId.get(r.knowledgeItemId);
+      if (!existing || r.referencedByCount > existing.referencedByCount) {
+        reusedByKnowledgeId.set(r.knowledgeItemId, { knowledgeItemId: r.knowledgeItemId, referencedByCount: r.referencedByCount, domainType: d.id });
+      }
+    }
+  }
+  const mostCorrectedKnowledge = [...correctedByTarget.values()].sort((a, b) => b.count - a.count).slice(0, 3);
+  const mostReusedKnowledge = [...reusedByKnowledgeId.values()].sort((a, b) => b.referencedByCount - a.referencedByCount).slice(0, 3);
+
+  // "Most frequent gaps" — real resolved+open counts per domain, from the
+  // SAME gap-workflow-engine.js reads Coverage's Gap dimension already uses.
+  const gapsByDomain = domains.map((d) => ({
+    domainType: d.id,
+    count: countResolvedGaps(d.id) + getGapsWithWorkflowState(d.id).length,
+  })).filter((x) => x.count > 0).sort((a, b) => b.count - a.count).slice(0, 3);
+
+  // "Fastest growing domains" — real createdAt-bucketed counts, same
+  // derivation style learning-dashboard.js's "Knowledge Growth" already uses
+  // and documents the limits of (not a true time series, a live derivation).
+  const allKnowledge = safeList(knowledgeList, {});
+  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const growthByDomain = new Map();
+  for (const item of allKnowledge) {
+    const t = new Date(item.createdAt || 0).getTime();
+    if (Number.isNaN(t) || t < sevenDaysAgo) continue;
+    growthByDomain.set(item.domainType, (growthByDomain.get(item.domainType) || 0) + 1);
+  }
+  const fastestGrowingDomains = [...growthByDomain.entries()]
+    .map(([domainType, count]) => ({ domainType, count }))
+    .sort((a, b) => b.count - a.count).slice(0, 3);
+
+  // Trends — a real week-over-week comparison of dated Learning Events.
+  const allEvents = listLearningEvents({});
+  const events = allEvents.ok ? allEvents.data : [];
+  function trendFor(kind) {
+    const now = Date.now();
+    const oneWeek = 7 * 24 * 60 * 60 * 1000;
+    const inWindow = (e, from, to) => { const t = new Date(e.observedAt).getTime(); return t >= from && t < to; };
+    const thisWeek = events.filter((e) => (!kind || e.kind === kind) && inWindow(e, now - oneWeek, now)).length;
+    const lastWeek = events.filter((e) => (!kind || e.kind === kind) && inWindow(e, now - 2 * oneWeek, now - oneWeek)).length;
+    const direction = thisWeek > lastWeek ? 'naik' : thisWeek < lastWeek ? 'turun' : 'stabil';
+    return { thisWeek, lastWeek, direction };
+  }
+  const learningTrend = trendFor(null);
+  const correctionTrend = trendFor(LEARNING_KIND.CORRECTION);
+  const knowledgeQualityTrendReport = computeCoverageReport();
+
+  return Object.freeze({
+    mostCorrectedKnowledge, mostReusedKnowledge, gapsByDomain, fastestGrowingDomains,
+    learningTrend, correctionTrend, knowledgeCoveragePct: knowledgeQualityTrendReport.data.knowledgeCoverage.pct,
+  });
 }
 
 /** "Apa yang harus saya lakukan selanjutnya?" — deterministic: names the
@@ -319,11 +477,24 @@ function computeNextAction(attention) {
   return buckets[0].text;
 }
 
+/** Phase 3, Part 8 — this briefing used to report "0 koreksi tercatat" as a
+ *  flat fact. It was not a fact: the Correction Log has no writer with a
+ *  caller, so that number was structurally incapable of ever being anything but
+ *  zero. An executive reading it would conclude the organization makes no
+ *  corrections. What it actually means is that corrections cannot yet be made.
+ *  Those are very different sentences, and only one of them is true. */
+function correctionsLabel(total) {
+  return total === 0
+    ? `koreksi tercatat — ${dormantNote('correction-log')}`
+    : 'koreksi tercatat';
+}
+
 function renderDashboard() {
   const today = computeTodaySummary();
   const running = computeRunningCount();
   const attention = computeAttention();
   const learned = computeLearnedSummary();
+  const executiveLearning = computeExecutiveLearning();
   const nextAction = computeNextAction(attention);
 
   return `
@@ -369,8 +540,38 @@ function renderDashboard() {
           <li><span class="sic-brief-count">${learned.datasetsImported}</span><span class="sic-brief-label">dataset diimpor</span></li>
           <li><span class="sic-brief-count">${learned.knowledgeCreated}</span><span class="sic-brief-label">pengetahuan dibuat dari dokumen</span></li>
           <li><span class="sic-brief-count">${learned.patternDiscoveries}</span><span class="sic-brief-label">pola baru ditemukan</span></li>
-          <li><span class="sic-brief-count">${learned.totalCorrections}</span><span class="sic-brief-label">koreksi tercatat</span></li>
+          <li><span class="sic-brief-count">${learned.totalCorrections}</span><span class="sic-brief-label">${esc(correctionsLabel(learned.totalCorrections))}</span></li>
         </ul>
+      </div>
+
+      <div class="sic-card">
+        <div class="sic-card-head"><div class="sic-card-h-title">Wawasan Pembelajaran (Executive Learning)</div></div>
+        <ul class="sic-brief-list">
+          <li><span class="sic-brief-count">${executiveLearning.knowledgeCoveragePct}%</span><span class="sic-brief-label">cakupan pengetahuan (tren minggu ini: ${executiveLearning.correctionTrend.thisWeek} koreksi, ${esc(executiveLearning.correctionTrend.direction)} dari minggu lalu)</span></li>
+          <li><span class="sic-brief-count">${executiveLearning.learningTrend.thisWeek}</span><span class="sic-brief-label">peristiwa pembelajaran minggu ini (${esc(executiveLearning.learningTrend.direction)} dari ${executiveLearning.learningTrend.lastWeek} minggu lalu)</span></li>
+        </ul>
+        ${executiveLearning.mostCorrectedKnowledge.length ? `
+        <div class="sic-brief-sub">Paling sering dikoreksi</div>
+        <ul class="sic-brief-list">
+          ${executiveLearning.mostCorrectedKnowledge.map((x) => `<li><span class="sic-brief-count">${x.count}×</span><span class="sic-brief-label">${esc(x.key)} (${esc(x.domainType)})</span></li>`).join('')}
+        </ul>` : ''}
+        ${executiveLearning.mostReusedKnowledge.length ? `
+        <div class="sic-brief-sub">Paling sering digunakan ulang</div>
+        <ul class="sic-brief-list">
+          ${executiveLearning.mostReusedKnowledge.map((x) => `<li><span class="sic-brief-count">${x.referencedByCount}×</span><span class="sic-brief-label">${esc(x.knowledgeItemId)}</span></li>`).join('')}
+        </ul>` : ''}
+        ${executiveLearning.gapsByDomain.length ? `
+        <div class="sic-brief-sub">Domain dengan gap terbanyak</div>
+        <ul class="sic-brief-list">
+          ${executiveLearning.gapsByDomain.map((x) => `<li><span class="sic-brief-count">${x.count}</span><span class="sic-brief-label">${esc(x.domainType)}</span></li>`).join('')}
+        </ul>` : ''}
+        ${executiveLearning.fastestGrowingDomains.length ? `
+        <div class="sic-brief-sub">Domain tumbuh tercepat (7 hari terakhir)</div>
+        <ul class="sic-brief-list">
+          ${executiveLearning.fastestGrowingDomains.map((x) => `<li><span class="sic-brief-count">${x.count}</span><span class="sic-brief-label">${esc(x.domainType)}</span></li>`).join('')}
+        </ul>` : ''}
+        ${!executiveLearning.mostCorrectedKnowledge.length && !executiveLearning.mostReusedKnowledge.length && !executiveLearning.gapsByDomain.length && !executiveLearning.fastestGrowingDomains.length
+          ? '<p class="wlk-page-lede" style="margin-top:0;">Belum cukup aktivitas untuk menampilkan wawasan lebih lanjut — boleh jujur menunjukkan ini.</p>' : ''}
       </div>
 
       <div class="sic-card sic-card--next">
@@ -392,16 +593,30 @@ function renderDashboard() {
  *  failure Part 4 makes visible for the first time. Every number here is
  *  a direct read of data already loaded elsewhere on this page — no new
  *  engine, no estimation. */
+/** Phase 2.6 — the stage histogram now covers the OFF-RAMPS too. It used to
+ *  iterate PIPELINE_STAGE_ORDER only, so a cancelled, failed, or
+ *  awaiting-evidence session was counted nowhere and simply vanished from the
+ *  diagnostic — the very sessions an operator most needs to see. `retrying`
+ *  replaces the old `stalledCascades` counter: a failing automatic step is now
+ *  a bounded, visible retry that ends in a real FAILED terminal, not an
+ *  unbounded stall with no name. */
+const ALL_DIAGNOSTIC_STAGES = Object.freeze([...PIPELINE_STAGE_ORDER, ...PIPELINE_OFF_RAMP_STAGES]);
+
 function computeTechnicalDiagnostics() {
   const sessions = safeList(listImportSessions, {});
   const byStage = {};
-  PIPELINE_STAGE_ORDER.forEach((stage) => { byStage[stage] = 0; });
-  sessions.forEach((s) => { byStage[effectiveStage(s)] = (byStage[effectiveStage(s)] || 0) + 1; });
-  const stalledCascades = sessions.filter((s) => reviewReasons(s).some((r) => r.code === 'KNOWLEDGE_IMPORT_STALLED')).length;
+  ALL_DIAGNOSTIC_STAGES.forEach((stage) => { byStage[stage] = 0; });
+  sessions.forEach((s) => {
+    const stage = effectiveStage(s);
+    byStage[stage] = (byStage[stage] || 0) + 1;
+  });
+  const retrying = sessions.filter((s) => (s.pipelineAttempts || 0) > 0 && !isTerminalImportSessionState(s.state)).length;
+  const stuck = sessions.filter((s) => !isTerminalImportSessionState(s.state) && !isOffRampStage(effectiveStage(s))).length;
   return {
     totalSessions: sessions.length,
     byStage,
-    stalledCascades,
+    retrying,
+    stuck,
     domainTypeCount: listDomainTypes().length,
     kindCount: listKinds().length,
   };
@@ -409,7 +624,7 @@ function computeTechnicalDiagnostics() {
 
 function renderTechnicalDiagnostics() {
   const diag = computeTechnicalDiagnostics();
-  const stageRows = PIPELINE_STAGE_ORDER.map((stage) => `
+  const stageRows = ALL_DIAGNOSTIC_STAGES.map((stage) => `
     <li><span class="sic-brief-count">${diag.byStage[stage] || 0}</span><span class="sic-brief-label">${esc(stage)}</span></li>`).join('');
 
   return `
@@ -420,7 +635,8 @@ function renderTechnicalDiagnostics() {
       </div>
       <ul class="sic-brief-list">${stageRows}</ul>
       <ul class="sic-brief-list">
-        <li><span class="sic-brief-count">${diag.stalledCascades}</span><span class="sic-brief-label">sesi dengan cascade Knowledge Import macet (KNOWLEDGE_IMPORT_STALLED)</span></li>
+        <li><span class="sic-brief-count">${diag.retrying}</span><span class="sic-brief-label">sesi sedang dicoba ulang otomatis oleh scheduler</span></li>
+        <li><span class="sic-brief-count">${diag.stuck}</span><span class="sic-brief-label">sesi masih bergerak di pipeline (bukan terminal, bukan menunggu bukti)</span></li>
       </ul>
     </div>`;
 }

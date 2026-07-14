@@ -152,13 +152,40 @@ check('nor-center.js no longer gates its live re-render on st.section === \'arch
 check('nor-center.js registers its live listeners with a coalesced scheduleLiveRender', /scheduleLiveRender/.test(norCenterSrc2));
 check('sarpras-intelligence-center.js registers all 3 live-update listeners for its own Executive Briefing', outerShellSrc.includes('registerImportSessionChangeListener(scheduleRender)') && outerShellSrc.includes('registerImportBatchChangeListener(scheduleRender)') && outerShellSrc.includes('registerRepositoryListener(scheduleRender)'));
 
-// ── Sprint 1 (Autonomy Closure) — Part 2/4 reviewReasons() extension and
-//    the dic-import full-cascade retry (behavioral coverage lives in
-//    dataset-import-center-check.mjs; this just confirms the code is
-//    actually present, not accidentally reverted). ─────────────────────
-check('dataset-import-center.js\'s reviewReasons() covers KNOWLEDGE_IMPORT_STALLED (Approved-with-facts cascade stall)', datasetImportSrc.includes("code: 'KNOWLEDGE_IMPORT_STALLED'"));
-check('dataset-import-center.js\'s reviewReasons() covers BATCH_CANCELLED (straggler sessions from a cancelled batch)', datasetImportSrc.includes("code: 'BATCH_CANCELLED'"));
-check('dic-import now retries the FULL cascade (cascadeFromApproved), not just markKnowledgeImported', /act === 'dic-import'\) \{ cascadeFromApproved\(id\)/.test(datasetImportSrc));
+// ── Phase 2.6 (Pipeline State Machine & Autonomous Completion Hardening) —
+//    the three assertions that stood here asserted the PRESENCE of code this
+//    milestone deliberately deleted: the KNOWLEDGE_IMPORT_STALLED and
+//    BATCH_CANCELLED review reasons, and the dic-import cascade retry. Each
+//    was a workaround for a defect that has now been fixed at its source:
+//
+//      KNOWLEDGE_IMPORT_STALLED  surfaced a cascade that failed because the
+//        DatasetSpec had not survived a refresh — the spec now self-heals, so
+//        the cascade does not fail, so there is no stall to surface.
+//      BATCH_CANCELLED           made a cancelled batch's sessions VISIBLE in
+//        the attention queue because cancelBatch() never actually cancelled
+//        them — they are now really Cancelled (terminal), so there is nothing
+//        to flag.
+//      dic-import                was the "press this to continue the pipeline"
+//        button, which is the redundant approval Part 4 removed outright.
+//
+//    They are replaced by assertions that the REPLACEMENT architecture is
+//    present and has not been accidentally reverted. Behavioural coverage
+//    lives in pipeline-state-machine-check.mjs and dataset-import-center-check.mjs.
+check('the pipeline scheduler exists — the ONE driver of the Import Session lifecycle', fs.existsSync(path.join(ROOT, 'js/v2/knowledge/datasets/import-session/pipeline-scheduler.js')));
+check('dataset-import-center.js hands the lifecycle to the scheduler (advanceSession), not a hand-rolled cascade', datasetImportSrc.includes('advanceSession(sessionId)') && !datasetImportSrc.includes('export function cascadeFromApproved'));
+check('dataset-import-center.js injects the real archiver across the knowledge/ -> organizational-memory/ seam', /registerArchiver\(doArchive\)/.test(datasetImportSrc));
+check('Part 4 — NO redundant approval actions remain (dic-approve / dic-import / dic-archive / dic-submit)', !datasetImportSrc.includes('data-act="dic-approve"') && !datasetImportSrc.includes('data-act="dic-import"') && !datasetImportSrc.includes('data-act="dic-archive"') && !datasetImportSrc.includes('data-act="dic-submit"'));
+check('Part 1 — the worker loop obeys the PERSISTED batch status, not only a local flag', /function batchCancelled/.test(datasetImportSrc) && datasetImportSrc.includes('cancelImportBatch'));
+check('Part 5 — the mount runs the resumption sweep, so a refresh never orphans a session', outerShellSrc.includes('sweepPipeline'));
+{
+  const schedulerSrc = fs.readFileSync(path.join(ROOT, 'js/v2/knowledge/datasets/import-session/pipeline-scheduler.js'), 'utf8');
+  // Strip BOTH block and line comments — the layering rule is about real
+  // `import` statements, and the scheduler legitimately *discusses* the rule
+  // (and the layer it may not touch) at length in its prose.
+  const schedulerCode = schedulerSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  check('the scheduler honours the one-way layering rule (never imports organizational-memory/)', !/organizational-memory/.test(schedulerCode));
+  check('the scheduler bounds its automatic retries, so "retry forever" can never masquerade as a terminal state', /MAX_PIPELINE_ATTEMPTS/.test(schedulerSrc));
+}
 
 // ── Sprint 1 (Autonomy Closure) — Part 5/8 additive UI, Part 4 timeout ──
 check('dataset-import-center.js has the always-visible Live Operation View (Part 5)', /function renderOperationalOverview/.test(datasetImportSrc) && datasetImportSrc.includes('Ringkasan Operasional'));

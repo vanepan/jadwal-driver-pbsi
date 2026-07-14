@@ -18,8 +18,12 @@
 
 'use strict';
 
-import { create, appendVersion } from '../repository/knowledge-repository.js';
-import { REPOSITORY_ERRORS } from '../repository/contracts/repository-contract.js';
+// Phase 3 — a CLIENT of the Knowledge Service, no longer a writer. The
+// create-or-append-on-DUPLICATE_ID dance this file used to perform itself is
+// the same one acquisition-engine.js performed, character for character; it
+// now lives once, in the one module that owns knowledge (services/
+// knowledge-service.js#ingest).
+import { ingest } from '../services/knowledge-service.js';
 import { LIFECYCLE_STATE } from '../contracts/lifecycle-contract.js';
 
 /**
@@ -27,14 +31,11 @@ import { LIFECYCLE_STATE } from '../contracts/lifecycle-contract.js';
  * @returns {{ok: boolean, data: object|null, error: object|null, op: 'create'|'append'|null}}
  */
 export function writeExtractedCandidate(item) {
+  // Extraction's own narrower rule (its output is always a Candidate — never a
+  // Draft) stays here, where it belongs: the Service enforces what is true of
+  // ALL knowledge, this file enforces what is true of EXTRACTED knowledge.
   if (item.lifecycleState !== LIFECYCLE_STATE.CANDIDATE) {
     return { ok: false, data: null, error: { code: 'INVALID_ITEM', message: 'writeExtractedCandidate: extraction output must be lifecycleState "candidate".' }, op: null };
   }
-  const createResult = create(item);
-  if (createResult.ok) return { ...createResult, op: 'create' };
-  if (createResult.error && createResult.error.code === REPOSITORY_ERRORS.DUPLICATE_ID) {
-    const appendResult = appendVersion(item.id, item);
-    return { ...appendResult, op: 'append' };
-  }
-  return { ...createResult, op: null };
+  return ingest(item);
 }

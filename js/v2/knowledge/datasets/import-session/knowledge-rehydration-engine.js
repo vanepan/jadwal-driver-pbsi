@@ -44,7 +44,10 @@
 import { listImportSessions, hasContentFacts } from './import-session-engine.js';
 import { IMPORT_SESSION_STATE } from './contracts/import-session-contract.js';
 import { buildManualFileKnowledgeItem } from '../../connectors/manual-file-connector.js';
-import { getById as knowledgeGetById, create as knowledgeCreate } from '../../repository/knowledge-repository.js';
+// Phase 3 — a CLIENT of the Knowledge Service. createDraft() is idempotent by
+// id (an item that already exists is returned untouched), which is exactly the
+// guarantee this projection needs and used to hand-roll with a getById probe.
+import { getKnowledge, createDraft } from '../../services/knowledge-service.js';
 
 /**
  * Reconstructs any missing Draft KnowledgeItem from the persisted Import
@@ -69,7 +72,7 @@ export function rehydrateKnowledgeFromSessions() {
     if (!producedKnowledge || !s.knowledgeItemId || !hasContentFacts(s)) { ineligible += 1; continue; }
 
     // Idempotent — the item id is deterministic and equals s.knowledgeItemId.
-    if (knowledgeGetById(s.knowledgeItemId).ok) { skipped += 1; continue; }
+    if (getKnowledge(s.knowledgeItemId).ok) { skipped += 1; continue; }
 
     const item = buildManualFileKnowledgeItem({
       importSessionId: s.id,
@@ -78,7 +81,7 @@ export function rehydrateKnowledgeFromSessions() {
       facts: s.manualEntryFacts,
       parsedContent: s.parsedContent,
     });
-    if (knowledgeCreate(item).ok) created += 1;
+    if (createDraft(item).ok) created += 1;
   }
 
   return { ok: true, created, skipped, ineligible };

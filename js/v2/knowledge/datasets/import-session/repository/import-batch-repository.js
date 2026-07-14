@@ -22,7 +22,7 @@
 'use strict';
 
 import { nextVersion } from '../../../contracts/identity-contract.js';
-import { isImportBatchRecord } from '../contracts/import-batch-contract.js';
+import { isImportBatchRecord, normalizeImportBatchRecord } from '../contracts/import-batch-contract.js';
 
 export const IMPORT_BATCH_REPOSITORY_ERRORS = Object.freeze({
   NOT_FOUND: 'NOT_FOUND',
@@ -63,11 +63,20 @@ function notifyChange() {
   _changeListeners.forEach((cb) => { try { cb(); } catch (e) { console.error('[import-batch-repository] listener error', e); } });
 }
 
+/** Phase 2.6 — THE cancellation fix. RTDB drops `sessionIds: []` and
+ *  `finishedAt: null` entirely, so a rehydrated batch fails
+ *  isImportBatchRecord()'s `Array.isArray(r.sessionIds)` check on the NEXT
+ *  appendVersion() — which is why cancelBatch() silently wrote nothing after
+ *  a refresh. Normalizing here, at the one boundary a remote record enters
+ *  the cache, restores the declared shape before anything reads or merges it.
+ *  See ../contracts/import-batch-contract.js#normalizeImportBatchRecord. */
 function applyRemoteSnapshot(raw) {
   _store.clear();
   if (raw) {
     for (const [id, versions] of Object.entries(raw)) {
-      if (Array.isArray(versions) && versions.length) _store.set(id, versions);
+      if (Array.isArray(versions) && versions.length) {
+        _store.set(id, versions.map((v) => Object.freeze(normalizeImportBatchRecord(v))));
+      }
     }
   }
   notifyChange();

@@ -15,7 +15,9 @@
 
 'use strict';
 
-import { getHistory } from '../repository/knowledge-repository.js';
+import {
+  getKnowledgeHistory as getHistory,
+} from '../services/knowledge-service.js';
 import { makeEvolutionEntry } from './contracts/evolution-contract.js';
 
 /**

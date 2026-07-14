@@ -1,21 +1,21 @@
-/* dataset-import-center-check.mjs — Node check for Phase 1 "Operational
-   Engine Hardening" AND Phase 2 "Autonomous Learning Pipeline":
-   js/v2/ui/dataset-import-center.js's exported reviewReasons()/
-   archiveDuplicateWarning() (promoted from a closure to module scope so
-   other workspaces can reuse the real exception logic instead of
-   re-deriving a narrower one), the Advanced-Metadata-button-suppression
-   behavior it drives, and (Phase 2) cascadeFromApproved()/
-   findReusableContentFacts() — the "approval cascades immediately" and
-   "duplicate -> archive via fact reuse" decisions, also promoted to
-   module scope for the same reason.
+/* dataset-import-center-check.mjs — Node check for js/v2/ui/dataset-import-center.js's
+   exported, module-scope logic: reviewReasons(), archiveDuplicateWarning(),
+   findReusableContentFacts(), effectiveStage(), computeBatchCounters(), and
+   the real render()/onClick() output they drive.
 
-   This file was previously only covered indirectly (batch-performance-
-   check.mjs for throughput, the puppeteer DOM check for "renders without
-   a fatal error") — no prior script exercised reviewReasons()/render()
-   output directly. No OCR, no AI, no production writes (memory
-   repository only, no Firebase touch — dataset-import-center.js only
-   lazily import()s file-storage-engine.js inside the real upload path,
-   never at module load).
+   PHASE 2.6 REWRITE. This file previously asserted, at length, the exact
+   behaviours this milestone was called to remove — that a Pending Review
+   session is "always flagged PENDING_DECISION", that clicking "Setujui"
+   cascades to Archived, that a CLASSIFICATION-stage session displays the
+   badge "Uploading". Those assertions were faithful to the old code and are
+   false of the new state machine, so they are replaced rather than patched.
+   The behaviours they were protecting (never fabricate content; never show a
+   button with nothing to decide; never let a stage badge outrun the truth)
+   are all still asserted here — against the lifecycle that now exists.
+
+   No OCR, no AI, no production writes (memory repository only, no Firebase
+   touch — dataset-import-center.js only lazily import()s file-storage-engine.js
+   inside the real upload path, never at module load).
    Run: node scripts/dataset-import-center-check.mjs   (exit 0 = pass) */
 
 import { setActiveRepository } from '../js/v2/knowledge/repository/knowledge-repository.js';
@@ -24,27 +24,29 @@ import { resetDatasetRegistry } from '../js/v2/knowledge/datasets/registry/datas
 import { resetImportReportLog } from '../js/v2/knowledge/acquisition/acquisition-engine.js';
 import { resetManualImportQueue } from '../js/v2/knowledge/acquisition/manual-import-queue-store.js';
 import { resetImportSessionRepository } from '../js/v2/knowledge/datasets/import-session/repository/import-session-repository.js';
+import { resetImportBatchRepository } from '../js/v2/knowledge/datasets/import-session/repository/import-batch-repository.js';
 import { resetArchiveRepository } from '../js/v2/organizational-memory/repository/archive-repository.js';
 import { DATASET_TYPE } from '../js/v2/knowledge/datasets/contracts/dataset-contract.js';
-import { IMPORT_SESSION_KIND, IMPORT_SESSION_STATE, PIPELINE_STAGE } from '../js/v2/knowledge/datasets/import-session/contracts/import-session-contract.js';
+import {
+  IMPORT_SESSION_KIND, IMPORT_SESSION_STATE, PIPELINE_STAGE,
+} from '../js/v2/knowledge/datasets/import-session/contracts/import-session-contract.js';
 import {
   createImportSession, attachParsedContent, attachManualEntryFacts, attachInferenceResult,
-  submitImportSessionForReview, approveImportSession, markKnowledgeImported, markArchived, getImportSession,
+  updateSessionMetadata, getImportSession, markAwaitingEvidence,
 } from '../js/v2/knowledge/datasets/import-session/import-session-engine.js';
+import { advanceSession } from '../js/v2/knowledge/datasets/import-session/pipeline-scheduler.js';
 import { AUTO_POPULATE_CONFIDENCE_THRESHOLD } from '../js/v2/knowledge/datasets/import-session/metadata-inference-engine.js';
 import { makeStoredFileRecord } from '../js/v2/file-storage/contracts/file-storage-contract.js';
-import { createBatch, recordBatchItem, cancelBatch } from '../js/v2/knowledge/datasets/import-session/import-batch-engine.js';
+import { createBatch, recordBatchItem } from '../js/v2/knowledge/datasets/import-session/import-batch-engine.js';
 import {
   createDatasetImportController, reviewReasons, archiveDuplicateWarning,
-  cascadeFromApproved, findReusableContentFacts, effectiveStage, computeBatchCounters,
+  findReusableContentFacts, effectiveStage, computeBatchCounters,
 } from '../js/v2/ui/dataset-import-center.js';
 import { setPresentationMode } from '../js/v2/ui/shared/workspace-list-kit.js';
 
-// Sprint 0 (Presentation Truth) — isDeveloperMode()/setPresentationMode()
-// read/write real localStorage (no in-memory fallback, unlike the old
-// per-controller loadPresentationMode() this replaced); Node has none, so
-// a minimal in-memory stub lets this script exercise the Normal/Developer
-// toggle exactly like a browser would.
+// isDeveloperMode()/setPresentationMode() read/write real localStorage; Node
+// has none, so a minimal in-memory stub lets this script exercise the
+// Normal/Developer toggle exactly like a browser would.
 if (typeof globalThis.localStorage === 'undefined') {
   const _store = new Map();
   globalThis.localStorage = {
@@ -54,364 +56,255 @@ if (typeof globalThis.localStorage === 'undefined') {
   };
 }
 
-let pass = 0, fail = 0;
+let pass = 0; let fail = 0;
 function check(name, cond) {
-  if (cond) { pass++; console.log(`  ✓ ${name}`); }
-  else { fail++; console.log(`  ✗ ${name}`); }
+  if (cond) { pass++; console.log(`  ✓ ${name}`); } else { fail++; console.log(`  ✗ ${name}`); }
 }
 
 setActiveRepository('memory');
 resetConnectorRegistry();
 resetDatasetRegistry();
 resetImportSessionRepository();
+resetImportBatchRepository();
 resetManualImportQueue();
 resetImportReportLog();
 resetArchiveRepository();
 
-console.log('\n[reviewReasons — a genuinely clean (terminal) session has no reasons]');
-// Phase 2, Decision 4 — PENDING_REVIEW is no longer "clean": it always
-// means a human decision is still outstanding (see the next block). The
-// only truly clean fixture is one that has nothing left to decide.
-const cleanSession = {
-  state: IMPORT_SESSION_STATE.ARCHIVED, confidence: 0.95, confidenceRationale: null,
-  validationWarnings: [], validationErrors: [], documentHash: null, domainType: 'nor',
-  kind: IMPORT_SESSION_KIND.JSON, manualEntryFacts: null, parsedContent: { a: 1 },
-  archiveRecordId: 'archive-record:fixture',
-};
-check('an Archived session with no warnings/errors has zero reasons', reviewReasons(cleanSession).length === 0);
+/** A JSON session whose real parsed content satisfies hasContentFacts(). */
+function newJsonSession(filename, batchId = null) {
+  const created = createImportSession({
+    domainType: 'nor', datasetType: DATASET_TYPE.OFFICIAL, filename,
+    mimeType: 'application/json', sizeBytes: 20, kind: IMPORT_SESSION_KIND.JSON,
+    knowledgeKind: 'document_fact', uploadedBy: 'evan', batchId,
+  });
+  attachParsedContent(created.data.id, { value: 'real parsed content' });
+  return created.data.id;
+}
 
-console.log('\n[reviewReasons — Phase 2: PENDING_DECISION]');
-const pendingReviewSession = { ...cleanSession, state: IMPORT_SESSION_STATE.PENDING_REVIEW, archiveRecordId: null };
-check('a Pending Review session is always flagged PENDING_DECISION — a human decision is genuinely outstanding', reviewReasons(pendingReviewSession).some((r) => r.code === 'PENDING_DECISION'));
+/** A PDF session — the format that can NEVER derive its own facts. */
+function newPdfSession(filename, batchId = null) {
+  const created = createImportSession({
+    domainType: 'nor', datasetType: DATASET_TYPE.OFFICIAL, filename,
+    mimeType: 'application/pdf', sizeBytes: 30, kind: IMPORT_SESSION_KIND.PDF,
+    knowledgeKind: 'document_fact', uploadedBy: 'evan', batchId,
+  });
+  return created.data.id;
+}
 
-console.log('\n[reviewReasons — Phase 2: ARCHIVE_PENDING]');
-const stuckKnowledgeImported = { ...cleanSession, state: IMPORT_SESSION_STATE.KNOWLEDGE_IMPORTED, archiveRecordId: null };
-check('Knowledge Imported with no archiveRecordId means the auto-cascade\'s doArchive() genuinely failed — flagged ARCHIVE_PENDING', reviewReasons(stuckKnowledgeImported).some((r) => r.code === 'ARCHIVE_PENDING'));
-const successfullyArchived = { ...stuckKnowledgeImported, state: IMPORT_SESSION_STATE.ARCHIVED, archiveRecordId: 'archive-record:fixture-2' };
-check('once archiveRecordId is set (state Archived), ARCHIVE_PENDING no longer fires', reviewReasons(successfullyArchived).every((r) => r.code !== 'ARCHIVE_PENDING'));
-
-console.log('\n[reviewReasons — LOW_CONFIDENCE]');
-const lowConfidenceSession = { ...cleanSession, confidence: AUTO_POPULATE_CONFIDENCE_THRESHOLD - 0.1 };
-const lowConfReasons = reviewReasons(lowConfidenceSession);
-check('a session below the auto-populate threshold is flagged LOW_CONFIDENCE', lowConfReasons.some((r) => r.code === 'LOW_CONFIDENCE'));
-
-console.log('\n[reviewReasons — DUPLICATE_AMBIGUITY (within-session warning)]');
-const dupWarningSession = { ...cleanSession, validationWarnings: [{ code: 'DUPLICATE_FILENAME', message: 'same filename as another session' }] };
-check('a DUPLICATE_FILENAME warning is surfaced as DUPLICATE_AMBIGUITY', reviewReasons(dupWarningSession).some((r) => r.code === 'DUPLICATE_AMBIGUITY'));
-
-console.log('\n[reviewReasons — UNSUPPORTED_FORMAT]');
-const unsupportedSession = { ...cleanSession, validationErrors: [{ code: 'UNSUPPORTED_FORMAT', message: 'not a supported format' }] };
-check('an UNSUPPORTED_FORMAT error is surfaced', reviewReasons(unsupportedSession).some((r) => r.code === 'UNSUPPORTED_FORMAT'));
-
-console.log('\n[reviewReasons — Phase 1 new code: MISSING_CONTENT_FACTS]');
-const approvedNoFacts = { ...cleanSession, state: IMPORT_SESSION_STATE.APPROVED, kind: IMPORT_SESSION_KIND.PDF, parsedContent: null, manualEntryFacts: null };
-check('an Approved PDF session with no facts yet is flagged MISSING_CONTENT_FACTS', reviewReasons(approvedNoFacts).some((r) => r.code === 'MISSING_CONTENT_FACTS'));
-const approvedWithFacts = { ...approvedNoFacts, manualEntryFacts: { value: 'filled in' } };
-check('the same session is clean once facts are attached', reviewReasons(approvedWithFacts).every((r) => r.code !== 'MISSING_CONTENT_FACTS'));
-// Phase 2.5 Part 6 — full autonomy means MISSING_CONTENT_FACTS now ALSO
-// fires at Pending Review (not only Approved): a fully-evidenced file
-// auto-completes, so a facts-less file left at Pending Review is genuinely
-// waiting on a human fact and must surface honestly.
-const pendingNoFacts = { ...approvedNoFacts, state: IMPORT_SESSION_STATE.PENDING_REVIEW };
-check('MISSING_CONTENT_FACTS now fires at Pending Review too (Part 6 — facts-less files never auto-complete)', reviewReasons(pendingNoFacts).some((r) => r.code === 'MISSING_CONTENT_FACTS'));
-const uploadedNoFacts = { ...approvedNoFacts, state: IMPORT_SESSION_STATE.UPLOADED };
-check('MISSING_CONTENT_FACTS does NOT fire pre-submission (Uploaded) — the gate is submission-onward', reviewReasons(uploadedNoFacts).every((r) => r.code !== 'MISSING_CONTENT_FACTS'));
-
-console.log('\n[archiveDuplicateWarning — no documentHash short-circuits to null]');
-check('a session with no documentHash never produces a warning (nothing to compare)', archiveDuplicateWarning({ documentHash: null, domainType: 'nor' }) === null);
-
-console.log('\n[cascadeFromApproved — Phase 2, Decision 4: real engine flow, both possible outcomes]');
+console.log('\n[reviewReasons — the ONE gate: only a scheduler-parked session needs a human]');
 {
-  const withFacts = createImportSession({
-    domainType: 'nor', datasetType: DATASET_TYPE.OFFICIAL, filename: 'cascade-with-facts.json',
-    mimeType: 'application/json', sizeBytes: 10, kind: IMPORT_SESSION_KIND.JSON,
-    knowledgeKind: 'document_fact', uploadedBy: 'evan',
-  });
-  attachParsedContent(withFacts.data.id, { value: 'real parsed content' });
-  submitImportSessionForReview(withFacts.data.id);
-  approveImportSession(withFacts.data.id, { approverId: 'evan', decidedAt: new Date().toISOString(), preferenceRationale: 'fixture' });
-  const cascaded = cascadeFromApproved(withFacts.data.id);
-  const afterCascade = getImportSession(withFacts.data.id);
-  check('a session with real content facts cascades straight to Archived — no separate click needed', cascaded === true && afterCascade.ok && afterCascade.data.state === IMPORT_SESSION_STATE.ARCHIVED);
+  // A session mid-pipeline is the ENGINE's business, not a person's. The old
+  // logic re-derived "is this stuck?" from state+facts here in the view, so a
+  // file still being processed (no content facts YET) was announced as
+  // needing attention while the engine was actively working on it.
+  const inFlight = newPdfSession('in-flight.pdf');
+  check('a session still moving through the pipeline reports NO reasons (it belongs to the engine)',
+    reviewReasons(getImportSession(inFlight).data).length === 0);
 
-  const withoutFacts = createImportSession({
-    domainType: 'nor', datasetType: DATASET_TYPE.OFFICIAL, filename: 'cascade-no-facts.pdf',
-    mimeType: 'application/pdf', sizeBytes: 10, kind: IMPORT_SESSION_KIND.PDF,
-    knowledgeKind: 'document_fact', uploadedBy: 'evan',
-  });
-  submitImportSessionForReview(withoutFacts.data.id);
-  approveImportSession(withoutFacts.data.id, { approverId: 'evan', decidedAt: new Date().toISOString(), preferenceRationale: 'fixture' });
-  const notCascaded = cascadeFromApproved(withoutFacts.data.id);
-  const afterNoCascade = getImportSession(withoutFacts.data.id);
-  check('a session with NO content facts anywhere correctly stays at Approved — never fabricates content to force the cascade', notCascaded === false && afterNoCascade.ok && afterNoCascade.data.state === IMPORT_SESSION_STATE.APPROVED);
-  check('...and that honest stall is exactly what reviewReasons flags as MISSING_CONTENT_FACTS', reviewReasons(afterNoCascade.data).some((r) => r.code === 'MISSING_CONTENT_FACTS'));
+  markAwaitingEvidence(inFlight);
+  const parked = getImportSession(inFlight).data;
+  check('the SAME session, once the scheduler parks it at AWAITING_EVIDENCE, reports MISSING_CONTENT_FACTS',
+    reviewReasons(parked).some((r) => r.code === 'MISSING_CONTENT_FACTS'));
 }
 
-console.log('\n[findReusableContentFacts — Phase 2, Decision 3: duplicate -> Archive via honest fact reuse]');
+console.log('\n[reviewReasons — terminal states]');
 {
-  const original = createImportSession({
-    domainType: 'nor', datasetType: DATASET_TYPE.OFFICIAL, filename: 'original.pdf',
-    mimeType: 'application/pdf', sizeBytes: 10, kind: IMPORT_SESSION_KIND.PDF,
-    knowledgeKind: 'document_fact', uploadedBy: 'evan',
-  });
-  attachManualEntryFacts(original.data.id, { value: 'a real fact a human typed', documentNumber: 'DOC-1', senderOrigin: '', notes: '' });
+  const completed = newJsonSession('completed.json');
+  advanceSession(completed);
+  const done = getImportSession(completed).data;
+  check('setup: a fully-evidenced JSON file reaches Archived with no human input at all', done.state === IMPORT_SESSION_STATE.ARCHIVED);
+  check('an Archived (Completed) session has zero reasons — nothing to review', reviewReasons(done).length === 0);
 
-  const duplicate = createImportSession({
-    domainType: 'nor', datasetType: DATASET_TYPE.OFFICIAL, filename: 'original-copy.pdf',
-    mimeType: 'application/pdf', sizeBytes: 10, kind: IMPORT_SESSION_KIND.PDF,
-    knowledgeKind: 'document_fact', uploadedBy: 'evan',
-  });
+  // Phase 2.6 — a cancelled session used to be flagged BATCH_CANCELLED, which
+  // meant cancelling a batch FILLED the attention queue with documents whose
+  // fate the operator had just decided. Cancelling should empty the queue.
+  const cancelled = { ...done, state: IMPORT_SESSION_STATE.CANCELLED, pipelineStage: PIPELINE_STAGE.CANCELLED };
+  check('a Cancelled session has zero reasons — the operator already decided; it is not an exception',
+    reviewReasons(cancelled).length === 0);
 
-  const storedFileRecord = { ...makeStoredFileRecord({ sha256: 'a'.repeat(64), originalFilename: 'original.pdf', mimeType: 'application/pdf', sizeBytes: 10, storagePath: 'sarpras-intelligence/nor/aaaa' }), linkedSessionIds: [original.data.id, duplicate.data.id] };
-  const reused = findReusableContentFacts(storedFileRecord, duplicate.data.id);
-  check('a confirmed duplicate finds its sibling\'s real, human-verified facts', reused !== null && reused.manualEntryFacts.value === 'a real fact a human typed');
-
-  const orphanRecord = { ...makeStoredFileRecord({ sha256: 'b'.repeat(64), originalFilename: 'never-verified.pdf', mimeType: 'application/pdf', sizeBytes: 10, storagePath: 'sarpras-intelligence/nor/bbbb' }), linkedSessionIds: [duplicate.data.id] };
-  check('a duplicate with no sibling that has real facts honestly returns null — never fabricates content', findReusableContentFacts(orphanRecord, duplicate.data.id) === null);
-
-  check('a StoredFileRecord with no entry at all also returns null (defensive)', findReusableContentFacts(null, duplicate.data.id) === null);
+  const failed = {
+    ...done,
+    state: IMPORT_SESSION_STATE.FAILED,
+    pipelineStage: PIPELINE_STAGE.FAILED,
+    failureReason: 'Format "unsupported" tidak didukung.',
+    validationErrors: [{ code: 'UNSUPPORTED_FORMAT', message: 'not supported' }],
+  };
+  const failedReasons = reviewReasons(failed);
+  check('a Failed session IS an exception — surfaced with its REAL recorded reason, never a fabricated one',
+    failedReasons.some((r) => r.code === 'UNSUPPORTED_FORMAT') && failedReasons[0].message.includes('tidak didukung'));
 }
 
-console.log('\n[Real render() — Advanced Metadata button only appears when reviewReasons() is non-empty]');
-const controller = createDatasetImportController({});
-
-const cleanCreated = createImportSession({
-  domainType: 'nor', datasetType: DATASET_TYPE.OFFICIAL, filename: 'phase1-clean-session.json',
-  mimeType: 'application/json', sizeBytes: 42, kind: IMPORT_SESSION_KIND.JSON,
-  knowledgeKind: 'document_fact', uploadedBy: 'evan',
-});
-attachInferenceResult(cleanCreated.data.id, { confidence: 0.95, confidenceRationale: null });
-// JSON kind's own parsedContent is what satisfies hasContentFacts() — attach
-// it the same way processOneFile's real JSON path does, BEFORE submitting.
-attachParsedContent(cleanCreated.data.id, { value: 'real parsed JSON content' });
-submitImportSessionForReview(cleanCreated.data.id);
-approveImportSession(cleanCreated.data.id, { approverId: 'evan', decidedAt: new Date().toISOString(), preferenceRationale: 'Clean fixture for Phase 1 button-suppression check.' });
-// Sprint 1 (Autonomy Closure, Part 4) — a real "clean" session's real-app
-// path (the dic-approve click handler) ALWAYS calls cascadeFromApproved()
-// immediately after approveImportSession() succeeds; a fixture that stops
-// at bare approveImportSession() is exactly the KNOWLEDGE_IMPORT_STALLED
-// state reviewReasons() now correctly flags (this was the actual, previously
-// invisible bug this sprint fixed). Complete the cascade here so this
-// fixture represents a genuinely resolved session, same as production.
-cascadeFromApproved(cleanCreated.data.id);
-
-const needsAttentionCreated = createImportSession({
-  domainType: 'nor', datasetType: DATASET_TYPE.OFFICIAL, filename: 'phase1-needs-attention-session.pdf',
-  mimeType: 'application/pdf', sizeBytes: 99, kind: IMPORT_SESSION_KIND.PDF,
-  knowledgeKind: 'document_fact', uploadedBy: 'evan',
-});
-attachInferenceResult(needsAttentionCreated.data.id, { confidence: 0.2, confidenceRationale: null });
-
-const html = controller.render();
-function rowFor(html_, filename) {
-  const rows = html_.split('<li class="wlk-row"');
-  return rows.find((r) => r.includes(filename)) || '';
-}
-const cleanRow = rowFor(html, 'phase1-clean-session.json');
-const needsAttentionRow = rowFor(html, 'phase1-needs-attention-session.pdf');
-check('both fixture sessions actually rendered into the queue', cleanRow.length > 0 && needsAttentionRow.length > 0);
-check('the clean, high-confidence session\'s row has NO Advanced Metadata button', !cleanRow.includes('Advanced Metadata'));
-check('the low-confidence session\'s row DOES show an Advanced Metadata button', needsAttentionRow.includes('Advanced Metadata'));
-
-console.log('\n[Real onClick() — Phase 2: clicking "Setujui" cascades all the way to Archived, driving the actual controller]');
+console.log('\n[reviewReasons — LOW_CONFIDENCE clears once a human confirms the metadata]');
 {
-  const manualApproveController = createDatasetImportController({});
-  const manualCreated = createImportSession({
-    domainType: 'nor', datasetType: DATASET_TYPE.OFFICIAL, filename: 'manual-approve-cascade.json',
-    mimeType: 'application/json', sizeBytes: 12, kind: IMPORT_SESSION_KIND.JSON,
-    knowledgeKind: 'document_fact', uploadedBy: 'evan',
-  });
-  attachInferenceResult(manualCreated.data.id, { confidence: 0.7, confidenceRationale: null }); // below AUTO_IMPORT, above AUTO_POPULATE — lands on Pending Review, needs a human decision
-  attachParsedContent(manualCreated.data.id, { value: 'real parsed content' });
-  submitImportSessionForReview(manualCreated.data.id);
-  const beforeClick = getImportSession(manualCreated.data.id);
-  check('setup: session genuinely sits at Pending Review before any click', beforeClick.ok && beforeClick.data.state === IMPORT_SESSION_STATE.PENDING_REVIEW);
+  const lowConf = newPdfSession('low-confidence.pdf');
+  attachInferenceResult(lowConf, { confidence: AUTO_POPULATE_CONFIDENCE_THRESHOLD - 0.1, confidenceRationale: null });
+  advanceSession(lowConf); // scheduler parks it: metadata is not trustworthy
+  const parked = getImportSession(lowConf).data;
+  check('a below-threshold session is parked at AWAITING_EVIDENCE by the scheduler', parked.pipelineStage === PIPELINE_STAGE.AWAITING_EVIDENCE);
+  check('...and flagged LOW_CONFIDENCE', reviewReasons(parked).some((r) => r.code === 'LOW_CONFIDENCE'));
 
-  const handled = manualApproveController.onClick({ dataset: { act: 'dic-approve', id: manualCreated.data.id } }, () => {});
-  const afterClick = getImportSession(manualCreated.data.id);
-  check('onClick("dic-approve") reports it handled the click', handled === true);
-  check('ONE click on "Setujui" reaches Archived directly — no separate "Impor sebagai Knowledge"/"Arsipkan" click required', afterClick.ok && afterClick.data.state === IMPORT_SESSION_STATE.ARCHIVED);
-
-  const renderedAfter = manualApproveController.render();
-  check('the now-Archived session has nothing left to show a manual next-action button for', !rowFor(renderedAfter, 'manual-approve-cascade.json').includes('data-act="dic-import"') && !rowFor(renderedAfter, 'manual-approve-cascade.json').includes('data-act="dic-archive"'));
+  // THE BUG: `confidence` is the score the INFERENCE achieved and never
+  // changes. So a session a human had fully corrected by hand kept reporting
+  // "confidence too low" forever and could never leave the attention queue.
+  updateSessionMetadata(lowConf, { domainType: 'nor', confirmedBy: 'evan' });
+  const confirmed = getImportSession(lowConf).data;
+  check('once a human CONFIRMS the metadata, LOW_CONFIDENCE no longer fires (a human beats a guess)',
+    !reviewReasons(confirmed).some((r) => r.code === 'LOW_CONFIDENCE'));
+  check('...but the honest MISSING_CONTENT_FACTS reason remains — a PDF still has no facts',
+    reviewReasons(confirmed).some((r) => r.code === 'MISSING_CONTENT_FACTS'));
 }
 
-console.log('\n[Phase 2 Follow-up — the SAME persisted stage renders in the right vocabulary per presentation mode]');
+console.log('\n[reviewReasons — DUPLICATE_AMBIGUITY]');
+{
+  const dup = newPdfSession('dup.pdf');
+  markAwaitingEvidence(dup);
+  const s = { ...getImportSession(dup).data, validationWarnings: [{ code: 'DUPLICATE_FILENAME', message: 'same filename as another session' }] };
+  check('a DUPLICATE_FILENAME warning on a parked session is surfaced as DUPLICATE_AMBIGUITY',
+    reviewReasons(s).some((r) => r.code === 'DUPLICATE_AMBIGUITY'));
+}
+
+console.log('\n[archiveDuplicateWarning]');
+check('a session with no documentHash never produces a warning (nothing to compare)',
+  archiveDuplicateWarning({ documentHash: null, domainType: 'nor' }) === null);
+
+console.log('\n[findReusableContentFacts — a confirmed duplicate may honestly reuse a sibling\'s verified facts]');
+{
+  const original = newPdfSession('original.pdf');
+  attachManualEntryFacts(original, { value: 'a real fact a human typed', documentNumber: 'DOC-1', senderOrigin: '', notes: '' });
+  const duplicate = newPdfSession('original-copy.pdf');
+
+  const storedFileRecord = {
+    ...makeStoredFileRecord({ sha256: 'a'.repeat(64), originalFilename: 'original.pdf', mimeType: 'application/pdf', sizeBytes: 10, storagePath: 'sarpras-intelligence/nor/aaaa' }),
+    linkedSessionIds: [original, duplicate],
+  };
+  const reused = findReusableContentFacts(storedFileRecord, duplicate);
+  check('a confirmed duplicate finds its sibling\'s real, human-verified facts',
+    reused !== null && reused.manualEntryFacts.value === 'a real fact a human typed');
+
+  const orphanRecord = {
+    ...makeStoredFileRecord({ sha256: 'b'.repeat(64), originalFilename: 'never-verified.pdf', mimeType: 'application/pdf', sizeBytes: 10, storagePath: 'sarpras-intelligence/nor/bbbb' }),
+    linkedSessionIds: [duplicate],
+  };
+  check('a duplicate with no sibling that has real facts honestly returns null — never fabricates content',
+    findReusableContentFacts(orphanRecord, duplicate) === null);
+  check('a StoredFileRecord with no entry at all also returns null (defensive)',
+    findReusableContentFacts(null, duplicate) === null);
+}
+
+console.log('\n[render() — PART 4: no redundant approval buttons anywhere, ever]');
+{
+  const controller = createDatasetImportController({});
+
+  const completed = newJsonSession('render-completed.json');
+  attachInferenceResult(completed, { confidence: 0.95, confidenceRationale: null });
+  advanceSession(completed);
+
+  const parked = newPdfSession('render-parked.pdf');
+  attachInferenceResult(parked, { confidence: 0.2, confidenceRationale: null });
+  advanceSession(parked);
+
+  const html = controller.render();
+  const rowFor = (h, filename) => (h.split('<li class="wlk-row"').find((r) => r.includes(filename)) || '');
+  const completedRow = rowFor(html, 'render-completed.json');
+  const parkedRow = rowFor(html, 'render-parked.pdf');
+  check('both fixture sessions actually rendered', completedRow.length > 0 && parkedRow.length > 0);
+
+  // THE HEADLINE ASSERTION of Part 4. These four actions asked a human to
+  // press buttons whose entire job was to invoke engine calls the engine was
+  // already capable of making — and "Setujui" + "Impor sebagai Knowledge"
+  // could BOTH appear for the same document: two approvals, one process.
+  check('render() emits NO "Setujui" (dic-approve) action anywhere', !html.includes('data-act="dic-approve"'));
+  check('render() emits NO "Impor sebagai Knowledge" (dic-import) action anywhere', !html.includes('data-act="dic-import"'));
+  check('render() emits NO "Arsipkan" (dic-archive) action anywhere', !html.includes('data-act="dic-archive"'));
+  check('render() emits NO "Ajukan untuk Review" (dic-submit) action anywhere', !html.includes('data-act="dic-submit"'));
+
+  check('a completed row offers no human action at all — there is nothing left to decide',
+    !completedRow.includes('<button'));
+  check('a parked row DOES offer the one thing a human can genuinely supply (metadata & facts)',
+    parkedRow.includes('data-act="dic-advanced-open"'));
+  check('...and the one genuine human decision at this layer (reject)',
+    parkedRow.includes('data-act="dic-reject"'));
+}
+
+console.log('\n[render() — the same persisted stage, two vocabularies]');
 {
   const modeController = createDatasetImportController({});
-  // A freshly created session sits at pipelineStage CLASSIFICATION and has
-  // no reviewReasons -> it shows in the workspace's Live Activity with a
-  // stage badge.
-  createImportSession({
-    domainType: 'nor', datasetType: DATASET_TYPE.OFFICIAL, filename: 'mode-vocab-fixture.pdf',
-    mimeType: 'application/pdf', sizeBytes: 10, kind: IMPORT_SESSION_KIND.PDF,
-    knowledgeKind: 'document_fact', uploadedBy: 'evan',
-  });
-  // Sprint 0 (Presentation Truth) — the Normal/Developer toggle moved out
-  // of this controller's own local state into the ONE shared platform-wide
-  // flag (workspace-list-kit.js#isDeveloperMode/setPresentationMode), set
-  // from sarpras-intelligence-center.js's shell toggle instead of a
-  // per-file "dic-mode" click action (now removed).
+  const fresh = newPdfSession('mode-vocab-fixture.pdf');
+
   setPresentationMode('normal');
   const normalHtml = modeController.render();
-  check('in Normal mode, a CLASSIFICATION-stage session shows the friendly phase "Uploading"', normalHtml.includes('dic-stage-badge">Uploading') && !normalHtml.includes('dic-stage-badge">Classification'));
+  // Phase 2.6 — a freshly-created session is at CLASSIFICATION, which now
+  // honestly reads "Preparing". It used to read "Uploading" — a label for a
+  // step it had already finished, which is exactly why the badge never cleared.
+  check('in Normal mode, a CLASSIFICATION-stage session reads "Preparing" (NOT "Uploading")',
+    normalHtml.includes('dic-stage-badge">Preparing') && !normalHtml.includes('dic-stage-badge">Uploading'));
 
   setPresentationMode('developer');
   const devHtml = modeController.render();
-  check('in Developer mode, the SAME session shows the detailed stage "Classification"', devHtml.includes('dic-stage-badge">Classification') && !devHtml.includes('dic-stage-badge">Uploading'));
-  setPresentationMode('normal'); // restore default for any later checks in this run
+  check('in Developer mode, the SAME session reads the raw stage "Classification"',
+    devHtml.includes('dic-stage-badge">Classification'));
+  setPresentationMode('normal');
+  void fresh;
 }
 
-console.log('\n[Phase 2.5 Part 1 — metadata editor keystroke must NOT trigger a re-render]');
+console.log('\n[Advanced Metadata — keystrokes must NOT trigger a re-render]');
 {
-  // The scroll/focus/caret loss was caused by a full workspace innerHTML
-  // rebuild on every keystroke. The fix: a field/fact keystroke updates
-  // state ONLY, never calls rerender — so the focused <input> node is never
-  // destroyed. This verifies that mechanism directly (no browser needed).
   const editController = createDatasetImportController({});
-  const lowConf = createImportSession({
-    domainType: 'nor', datasetType: DATASET_TYPE.OFFICIAL, filename: 'metadata-editor.pdf',
-    mimeType: 'application/pdf', sizeBytes: 10, kind: IMPORT_SESSION_KIND.PDF,
-    knowledgeKind: 'document_fact', uploadedBy: 'evan',
-  });
-  attachInferenceResult(lowConf.data.id, { confidence: 0.2, confidenceRationale: null }); // low -> has reviewReasons -> Advanced Metadata available
-  // Open the Advanced Metadata panel (this legitimately DOES render).
-  editController.onClick({ dataset: { act: 'dic-advanced-open', id: lowConf.data.id }, closest: () => null }, () => {});
+  const lowConf = newPdfSession('metadata-editor.pdf');
+  attachInferenceResult(lowConf, { confidence: 0.2, confidenceRationale: null });
+  advanceSession(lowConf);
+  editController.onClick({ dataset: { act: 'dic-advanced-open', id: lowConf }, closest: () => null }, () => {});
 
   let rerenders = 0;
   const rerenderSpy = () => { rerenders += 1; };
-  // A minimal DOM-less event whose target resolves the adv-fact selector.
   const factEvent = { target: { id: '', closest: (sel) => (sel.includes('dic-adv-fact') ? { dataset: { field: 'value' }, value: 'typed by a human' } : null) } };
-  const handled = editController.onInput(factEvent, rerenderSpy);
-  check('a content-fact keystroke is handled by the controller', handled === true);
-  check('a content-fact keystroke triggers ZERO re-renders (form node never rebuilt -> focus/caret/scroll preserved)', rerenders === 0);
+  check('a content-fact keystroke is handled by the controller', editController.onInput(factEvent, rerenderSpy) === true);
+  check('a content-fact keystroke triggers ZERO re-renders (focus/caret/scroll preserved)', rerenders === 0);
 
   const fieldEvent = { target: { id: '', closest: (sel) => (sel.includes('dic-adv-field') ? { dataset: { field: 'datasetType' }, value: 'historical' } : null) } };
   editController.onInput(fieldEvent, rerenderSpy);
   check('a metadata-field keystroke also triggers ZERO re-renders', rerenders === 0);
 }
 
-console.log('\n[Phase 2.5 Part 4 — effectiveStage never falls behind the authoritative state]');
-check('an Archived session with a MISSING pipelineStage still resolves to COMPLETED (never "Uploading")', effectiveStage({ state: IMPORT_SESSION_STATE.ARCHIVED }) === PIPELINE_STAGE.COMPLETED);
-check('an Archived session with a STALE CLASSIFICATION pipelineStage still resolves to COMPLETED', effectiveStage({ state: IMPORT_SESSION_STATE.ARCHIVED, pipelineStage: PIPELINE_STAGE.CLASSIFICATION }) === PIPELINE_STAGE.COMPLETED);
-check('a Knowledge-Imported session floors at KNOWLEDGE_EXTRACTION even if pipelineStage is behind', effectiveStage({ state: IMPORT_SESSION_STATE.KNOWLEDGE_IMPORTED, pipelineStage: PIPELINE_STAGE.CLASSIFICATION }) === PIPELINE_STAGE.KNOWLEDGE_EXTRACTION);
-check('a persisted pipelineStage AHEAD of the state floor is respected', effectiveStage({ state: IMPORT_SESSION_STATE.UPLOADED, pipelineStage: PIPELINE_STAGE.POLICY_VALIDATION }) === PIPELINE_STAGE.POLICY_VALIDATION);
+console.log('\n[effectiveStage — the badge can never outrun, or lag behind, the truth]');
+check('an Archived session with a MISSING pipelineStage still resolves to COMPLETED',
+  effectiveStage({ state: IMPORT_SESSION_STATE.ARCHIVED }) === PIPELINE_STAGE.COMPLETED);
+check('an Archived session with a STALE CLASSIFICATION pipelineStage still resolves to COMPLETED',
+  effectiveStage({ state: IMPORT_SESSION_STATE.ARCHIVED, pipelineStage: PIPELINE_STAGE.CLASSIFICATION }) === PIPELINE_STAGE.COMPLETED);
+check('a Knowledge-Imported session floors at KNOWLEDGE_EXTRACTION even if pipelineStage is behind',
+  effectiveStage({ state: IMPORT_SESSION_STATE.KNOWLEDGE_IMPORTED, pipelineStage: PIPELINE_STAGE.CLASSIFICATION }) === PIPELINE_STAGE.KNOWLEDGE_EXTRACTION);
+check('a persisted pipelineStage AHEAD of the state floor is respected',
+  effectiveStage({ state: IMPORT_SESSION_STATE.UPLOADED, pipelineStage: PIPELINE_STAGE.POLICY_VALIDATION }) === PIPELINE_STAGE.POLICY_VALIDATION);
+// Phase 2.6 — off-ramps are NOT ladder positions and must never be max()'d
+// against one, or a session resting off the ladder gets dragged back onto it.
+check('an AWAITING_EVIDENCE session reports the off-ramp, not a ladder position',
+  effectiveStage({ state: IMPORT_SESSION_STATE.UPLOADED, pipelineStage: PIPELINE_STAGE.AWAITING_EVIDENCE }) === PIPELINE_STAGE.AWAITING_EVIDENCE);
+check('a CANCELLED state fixes the stage outright, even with a stale CLASSIFICATION annotation',
+  effectiveStage({ state: IMPORT_SESSION_STATE.CANCELLED, pipelineStage: PIPELINE_STAGE.CLASSIFICATION }) === PIPELINE_STAGE.CANCELLED);
+check('a FAILED state fixes the stage outright — a dead document never displays as climbing',
+  effectiveStage({ state: IMPORT_SESSION_STATE.FAILED, pipelineStage: PIPELINE_STAGE.UPLOADING }) === PIPELINE_STAGE.FAILED);
 
-console.log('\n[Phase 2.5 Part 5 — batch counters computed from persisted sessions]');
+console.log('\n[computeBatchCounters — every counter is a real read of a persisted session]');
 {
   const batch = createBatch({ createdBy: 'evan', domainType: 'nor', totalFiles: 4 });
   const batchId = batch.data.id;
-  // s1: archived (completed)
-  const s1 = createImportSession({ domainType: 'nor', datasetType: DATASET_TYPE.OFFICIAL, filename: 'c1.json', mimeType: 'application/json', sizeBytes: 10, kind: IMPORT_SESSION_KIND.JSON, knowledgeKind: 'document_fact', uploadedBy: 'evan', batchId });
-  attachParsedContent(s1.data.id, { value: 'x' });
-  submitImportSessionForReview(s1.data.id);
-  approveImportSession(s1.data.id, { approverId: 'evan', decidedAt: new Date().toISOString(), preferenceRationale: 'f' });
-  markKnowledgeImported(s1.data.id);
-  markArchived(s1.data.id, 'archive:c1');
-  recordBatchItem(batchId, s1.data.id, { imported: true, knowledgeProduced: true });
-  // s2: pending review, PDF no facts -> waiting review (MISSING_CONTENT_FACTS)
-  const s2 = createImportSession({ domainType: 'nor', datasetType: DATASET_TYPE.OFFICIAL, filename: 'w1.pdf', mimeType: 'application/pdf', sizeBytes: 10, kind: IMPORT_SESSION_KIND.PDF, knowledgeKind: 'document_fact', uploadedBy: 'evan', batchId });
-  submitImportSessionForReview(s2.data.id);
-  recordBatchItem(batchId, s2.data.id, { imported: true });
+
+  const done = newJsonSession('c1.json', batchId);
+  advanceSession(done);
+  recordBatchItem(batchId, done, { imported: true, knowledgeProduced: true });
+
+  const waiting = newPdfSession('w1.pdf', batchId);
+  advanceSession(waiting); // parks at AWAITING_EVIDENCE — a PDF has no facts
+  recordBatchItem(batchId, waiting, { imported: true });
+
   // (2 files never got a session — not started)
-  const p = { batchId, total: 4, items: [] };
-  const counters = computeBatchCounters(p);
+  const counters = computeBatchCounters({ batchId, total: 4, items: [] });
   check('counters.total reflects the persisted batch total (4)', counters.total === 4);
-  check('one archived session is counted as Completed', counters.completed === 1);
-  check('one facts-less pending PDF is counted as Waiting Review', counters.waitingReview === 1);
-  check('the 2 not-yet-started files roll into Uploading (X / total)', counters.uploading === 2);
-  check('every counter is a real number, never fabricated/animated', [counters.processing, counters.knowledgeExtraction, counters.learning, counters.failed].every((n) => typeof n === 'number'));
-}
-
-console.log('\n[Sprint 1 (Autonomy Closure) Part 4 — KNOWLEDGE_IMPORT_STALLED, the previously-invisible root cause]');
-{
-  const created = createImportSession({
-    domainType: 'nor', datasetType: DATASET_TYPE.OFFICIAL, filename: 'stalled-cascade.json',
-    mimeType: 'application/json', sizeBytes: 20, kind: IMPORT_SESSION_KIND.JSON,
-    knowledgeKind: 'document_fact', uploadedBy: 'evan',
-  });
-  const id = created.data.id;
-  attachParsedContent(id, { value: 'real parsed content' });
-  submitImportSessionForReview(id);
-  approveImportSession(id, { approverId: 'evan', decidedAt: new Date().toISOString(), preferenceRationale: 'Sprint 1 stalled-cascade fixture.' });
-  // Deliberately NOT calling cascadeFromApproved() here — this simulates
-  // the real bug: a session Approved with real content facts present,
-  // whose cascade never ran to completion. Before this sprint's fix,
-  // reviewReasons() had no branch for this and returned [] forever.
-  const stuck = getImportSession(id).data;
-  check('a session Approved-with-facts whose cascade never ran is flagged KNOWLEDGE_IMPORT_STALLED', reviewReasons(stuck).some((r) => r.code === 'KNOWLEDGE_IMPORT_STALLED'));
-
-  // Part 4 fix #2 — the "Impor sebagai Knowledge" button (dic-import) now
-  // retries the WHOLE remaining cascade in one click, not just the first
-  // step. Exercised the same way the existing "Setujui" test above drives
-  // onClick — a dataset.id lookup, no real DOM node needed.
-  const retryController = createDatasetImportController({});
-  const clicked = retryController.onClick({ dataset: { act: 'dic-import', id }, closest: () => null }, () => {});
-  check('dic-import click is handled', clicked === true);
-  const resolved = getImportSession(id).data;
-  check('one dic-import click drives the FULL cascade to Archived (no second "Arsipkan" click required)', resolved.state === IMPORT_SESSION_STATE.ARCHIVED);
-  check('the resolved session no longer reports KNOWLEDGE_IMPORT_STALLED', !reviewReasons(resolved).some((r) => r.code === 'KNOWLEDGE_IMPORT_STALLED'));
-}
-
-console.log('\n[Sprint 1 (Autonomy Closure) Part 2 — BATCH_CANCELLED makes straggler sessions visible]');
-{
-  const batch = createBatch({ createdBy: 'evan', domainType: 'nor', totalFiles: 1 });
-  const batchId = batch.data.id;
-  const created = createImportSession({
-    domainType: 'nor', datasetType: DATASET_TYPE.OFFICIAL, filename: 'straggler.pdf',
-    mimeType: 'application/pdf', sizeBytes: 30, kind: IMPORT_SESSION_KIND.PDF,
-    knowledgeKind: 'document_fact', uploadedBy: 'evan', batchId,
-  });
-  const id = created.data.id;
-  // Left exactly where a crash/refresh mid-batch would leave it: created,
-  // never even submitted for review — reviewReasons() was previously []
-  // for this (nothing to flag), so it sat in "Aktivitas Langsung" forever
-  // with zero action buttons, indistinguishable from healthy in-progress work.
-  const beforeCancel = getImportSession(id).data;
-  check('a fresh straggler session has no reasons before its batch is cancelled', reviewReasons(beforeCancel).length === 0);
-
-  const cancelResult = cancelBatch(batchId);
-  check('cancelBatch succeeds on a batch that was never completed', cancelResult.ok === true);
-  const afterCancel = getImportSession(id).data;
-  check('the straggler session is now flagged BATCH_CANCELLED (visible in Perlu Perhatian)', reviewReasons(afterCancel).some((r) => r.code === 'BATCH_CANCELLED'));
-
-  // An already-Archived session from a batch that gets cancelled AFTER
-  // completion must never be retroactively flagged — completed work is
-  // never disturbed by a cancel.
-  const archivedCreated = createImportSession({
-    domainType: 'nor', datasetType: DATASET_TYPE.OFFICIAL, filename: 'already-done.json',
-    mimeType: 'application/json', sizeBytes: 12, kind: IMPORT_SESSION_KIND.JSON,
-    knowledgeKind: 'document_fact', uploadedBy: 'evan', batchId,
-  });
-  attachParsedContent(archivedCreated.data.id, { value: 'x' });
-  submitImportSessionForReview(archivedCreated.data.id);
-  approveImportSession(archivedCreated.data.id, { approverId: 'evan', decidedAt: new Date().toISOString(), preferenceRationale: 'f' });
-  cascadeFromApproved(archivedCreated.data.id);
-  const archivedAfterCancel = getImportSession(archivedCreated.data.id).data;
-  check('an already-Archived session from the same (now-cancelled) batch is NOT flagged — completed work is never disturbed', !reviewReasons(archivedAfterCancel).some((r) => r.code === 'BATCH_CANCELLED'));
-}
-
-console.log('\n[Sprint 1 (Autonomy Closure) Part 8 — Pipeline Self-Diagnostics, Developer Mode only]');
-{
-  const created = createImportSession({
-    domainType: 'nor', datasetType: DATASET_TYPE.OFFICIAL, filename: 'diagnostics-fixture.json',
-    mimeType: 'application/json', sizeBytes: 15, kind: IMPORT_SESSION_KIND.JSON,
-    knowledgeKind: 'document_fact', uploadedBy: 'evan',
-  });
-  const id = created.data.id;
-  const diagController = createDatasetImportController({});
-  diagController.onClick({ dataset: { act: 'dic-session-row', id }, closest: () => null }, () => {});
-
-  setPresentationMode('normal');
-  const normalDetailHtml = diagController.render();
-  check('Normal Mode never shows the Pipeline Self-Diagnostics section', !normalDetailHtml.includes('Diagnostik Pipeline'));
-
-  setPresentationMode('developer');
-  const devDetailHtml = diagController.render();
-  check('Developer Mode shows the Pipeline Self-Diagnostics section', devDetailHtml.includes('Diagnostik Pipeline'));
-  check('...with a real Next Stage value (not fabricated — freshly-created session is at Classification, next is a real later stage)', devDetailHtml.includes('Next Stage'));
-  check('...with a real Elapsed Time value', devDetailHtml.includes('Elapsed Time'));
-  setPresentationMode('normal'); // restore default
+  check('the fully-evidenced JSON file is counted as Completed', counters.completed === 1);
+  check('the facts-less PDF is counted as Awaiting Evidence', counters.waitingReview === 1);
+  check('the 2 not-yet-started files roll into Preparing (X / total)', counters.preparing === 2);
+  check('every counter is a real number, never fabricated/animated',
+    [counters.uploading, counters.processing, counters.knowledgeExtraction, counters.failed, counters.cancelled].every((n) => typeof n === 'number'));
 }
 
 console.log(`\n${pass}/${pass + fail} checks passed.`);

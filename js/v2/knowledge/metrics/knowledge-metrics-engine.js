@@ -30,7 +30,11 @@
 
 'use strict';
 
-import { list, getMetrics as repositoryMetrics, getPendingReview } from '../repository/knowledge-repository.js';
+import {
+  listKnowledge as list,
+  getKnowledgeMetrics as repositoryMetrics,
+  getPendingReviewKnowledge as getPendingReview,
+} from '../services/knowledge-service.js';
 import { listDomainTypes } from '../registry/domain-type-registry.js';
 import { LIFECYCLE_STATE } from '../contracts/lifecycle-contract.js';
 import { scoreBand } from '../../../services/unified-scoring.js';

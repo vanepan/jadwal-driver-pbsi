@@ -23,9 +23,11 @@
 
 'use strict';
 
-import { list } from './repository/archive-repository.js';
+import { listArchive as list } from './services/archive-service.js';
 import { generateKnowledgeId } from '../knowledge/contracts/identity-contract.js';
-import { getById } from '../knowledge/repository/knowledge-repository.js';
+import {
+  getKnowledge as getById,
+} from '../knowledge/services/knowledge-service.js';
 
 /**
  * @param {import('./contracts/archive-record-contract.js').ArchiveRecord} archiveRecord

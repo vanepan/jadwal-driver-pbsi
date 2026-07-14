@@ -31,7 +31,9 @@ import {
 import { makePromotionRecord } from './contracts/promotion-contract.js';
 import { REVIEW_EVENT_TYPE, makeReviewEvent } from './contracts/event-contract.js';
 import { recordPromotion } from './review-history.js';
-import { getById } from '../repository/knowledge-repository.js';
+import {
+  getKnowledge as getById,
+} from '../services/knowledge-service.js';
 
 function emit(onEvent, type, sessionId, detail) {
   if (typeof onEvent === 'function') onEvent(makeReviewEvent(type, { sessionId, detail }));

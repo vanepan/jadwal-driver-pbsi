@@ -67,7 +67,10 @@ import { NOR_PIPELINE } from '../document-intelligence/nor/index.js';
 import { startDocumentSession, transitionDocumentSession } from '../document-intelligence/session-store.js';
 import { DOCUMENT_SESSION_STATE } from '../document-intelligence/contracts/document-context-contract.js';
 
-import { list as knowledgeList, getById as knowledgeGetById } from '../knowledge/repository/knowledge-repository.js';
+import {
+  listKnowledge as knowledgeList,
+  getKnowledge as knowledgeGetById,
+} from '../knowledge/services/knowledge-service.js';
 import { LIFECYCLE_STATE, LIFECYCLE_STATE_DEFS } from '../knowledge/contracts/lifecycle-contract.js';
 import { generateKnowledgeId } from '../knowledge/contracts/identity-contract.js';
 import { buildAllProfiles, listProfileTypes } from '../knowledge/profiles/profile-engine.js';
@@ -76,10 +79,13 @@ import { getKind } from '../knowledge/registry/kind-registry.js';
 
 import { computeArchiveHealth } from '../organizational-memory/archive-health-engine.js';
 import { getArchiveTimeline } from '../organizational-memory/archive-timeline-engine.js';
-import { list as archiveList } from '../organizational-memory/repository/archive-repository.js';
+import { listArchive as archiveList } from '../organizational-memory/services/archive-service.js';
 import { checkKnowledgeContribution } from '../organizational-memory/knowledge-contribution-engine.js';
 
 import { getComposerTimeline, getRevisionHistory } from '../document-intelligence/composer/composer-store.js';
+// Phase 3, Part 8 — the Composer is officially DORMANT (createDocument/
+// editSection have no caller). See js/v2/dormant-subsystems.js.
+import { dormantNote } from '../dormant-subsystems.js';
 
 import {
   initPettyCashStore, registerChangeListener as onPettyCashChange, getSettings as getPettyCashSettings,
@@ -100,9 +106,13 @@ import { registerChangeListener as registerFileStorageChangeListener } from '../
 import {
   PROFILE_OVERRIDE_TYPE, OVERRIDE_ACTION, OVERRIDE_PAYLOAD_SHAPE, isOverlayType, isStandaloneType,
   createOverrideDraft, promoteOverrideToCandidate, submitOverrideForReview, approveOverride, rejectOverride,
-  getEffectiveProfile, listOverrides,
+  getEffectiveProfile, listOverrides, getOverride,
 } from '../knowledge/services/profile-override-service.js';
 import { computePatternRecommendations } from '../knowledge/services/pattern-discovery-service.js';
+// Phase 5, Part 3 — approving a Profile Override is a real, already-firing
+// pattern correction: a human overriding what the deterministic pattern
+// engine inferred.
+import { recordCorrection, CORRECTION_TYPE } from '../learning/services/learning-service.js';
 
 const SECTIONS = [
   { id: 'dashboard', label: 'Dashboard' },
@@ -224,7 +234,23 @@ function onClick(e) {
   if (act === 'nc-override-promote') { promoteOverrideToCandidate(el.dataset.id); render(); return; }
   if (act === 'nc-override-submit') { submitOverrideForReview(el.dataset.id); render(); return; }
   if (act === 'nc-override-approve') {
-    approveOverride(el.dataset.id, { approverId: 'evan', decidedAt: new Date().toISOString(), preferenceRationale: 'Ditinjau dan disetujui melalui Profil Organisasi.' });
+    const before = getOverride(el.dataset.id);
+    const approved = approveOverride(el.dataset.id, { approverId: 'evan', decidedAt: new Date().toISOString(), preferenceRationale: 'Ditinjau dan disetujui melalui Profil Organisasi.' });
+    // Phase 5, Part 3 — approving a Profile Override IS a pattern correction:
+    // a human overriding/pinning what the deterministic pattern engine
+    // inferred. Recorded best-effort; the override approval already committed.
+    if (approved.ok && before.ok) {
+      recordCorrection({
+        domainType: before.data.domainType,
+        correctionType: CORRECTION_TYPE.PATTERN,
+        targetKey: el.dataset.id,
+        actorId: 'evan',
+        reason: `Override ${before.data.overrideType}:${before.data.key} disetujui.`,
+        before: null,
+        after: { overrideType: before.data.overrideType, key: before.data.key, action: before.data.action, payload: before.data.payload },
+        evidence: { overrideId: el.dataset.id },
+      });
+    }
     render(); return;
   }
   if (act === 'nc-override-reject') { rejectOverride(el.dataset.id, { approverId: 'evan', decidedAt: new Date().toISOString() }); render(); return; }
@@ -339,7 +365,7 @@ function renderDashboardSection() {
 
       <div class="wlk-sec">
         <div class="wlk-sec-title">Draft Terbaru</div>
-        ${drafts.length ? renderDraftRows(drafts.slice(-5).reverse()) : renderEmptyState('Belum ada draft tersimpan.', 'Draft yang Anda mulai melalui Composer akan muncul di sini.')}
+        ${drafts.length ? renderDraftRows(drafts.slice(-5).reverse()) : renderEmptyState('Belum ada draft tersimpan.', dormantNote('composer-timeline'))}
       </div>
 
       <div class="wlk-sec">
@@ -465,7 +491,7 @@ function renderDraftsSection() {
 
       <div class="wlk-sec">
         <div class="wlk-sec-title">Draft Tersimpan</div>
-        ${drafts.length ? renderDraftRows(drafts) : renderEmptyState('Belum ada draft tersimpan.', 'Draft yang Anda mulai melalui Composer akan muncul di sini.')}
+        ${drafts.length ? renderDraftRows(drafts) : renderEmptyState('Belum ada draft tersimpan.', dormantNote('composer-timeline'))}
       </div>
 
       ${st.draftsSelectedId ? renderDraftDetail(st.draftsSelectedId) : ''}

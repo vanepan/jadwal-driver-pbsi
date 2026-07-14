@@ -73,3 +73,44 @@ export function isImportBatchRecord(r) {
     && Object.values(BATCH_STATUS).includes(r.status)
     && Array.isArray(r.sessionIds);
 }
+
+/** Phase 2.6 — THE "BATALKAN BATCH INI DOES NOTHING" ROOT CAUSE, fixed.
+ *
+ *  A fresh batch is created with `sessionIds: []` and `finishedAt: null`.
+ *  Firebase RTDB stores NEITHER an empty array NOR a null — both keys are
+ *  simply absent from the snapshot it returns. So after a browser refresh —
+ *  which is exactly and only when the Upload Recovery banner (and therefore
+ *  its "Batalkan Batch Ini" button) is reachable at all — the rehydrated
+ *  batch record has NO `sessionIds` key.
+ *
+ *  cancelBatch() then calls appendVersion(), which merges `{...latest,
+ *  status: 'cancelled'}` and structurally validates the result with
+ *  isImportBatchRecord() above. `Array.isArray(undefined)` is false, so the
+ *  merged record is rejected as INVALID_RECORD, the write is discarded, and
+ *  the failure envelope is returned to a UI call site that never checked it.
+ *  Net effect: the button ran, wrote nothing, reported nothing, and the
+ *  banner re-rendered unchanged. It was not a UI bug, an event-dispatch bug,
+ *  or a worker-loop bug — it was a persistence round-trip that silently
+ *  destroyed the record's shape.
+ *
+ *  Restoring the declared shape on rehydration fixes cancellation at the
+ *  source, for every batch write — not just the cancel path. Absent keys are
+ *  restored to their documented defaults; a value RTDB actually returned is
+ *  never overwritten.
+ */
+export function normalizeImportBatchRecord(r) {
+  if (!r || typeof r !== 'object') return r;
+  const num = (v) => (typeof v === 'number' ? v : 0);
+  return {
+    ...r,
+    sessionIds: Array.isArray(r.sessionIds) ? r.sessionIds.filter((s) => typeof s === 'string' && s) : [],
+    finishedAt: r.finishedAt ?? null,
+    imported: num(r.imported),
+    duplicate: num(r.duplicate),
+    warning: num(r.warning),
+    error: num(r.error),
+    knowledgeProduced: num(r.knowledgeProduced),
+    storageUsedBytes: num(r.storageUsedBytes),
+    totalFiles: num(r.totalFiles),
+  };
+}

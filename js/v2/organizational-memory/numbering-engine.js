@@ -22,7 +22,7 @@
 
 'use strict';
 
-import { list } from './repository/archive-repository.js';
+import { listArchive as list } from './services/archive-service.js';
 import { makeNumberingSuggestion } from './contracts/numbering-contract.js';
 
 /** Splits "NOR-2026-014" into { template: "NOR-2026-{}", numeric: 14, width: 3 }.

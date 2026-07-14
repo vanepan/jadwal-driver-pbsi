@@ -38,7 +38,9 @@
 
 import { getNors, getSettings } from '../../../petty-cash/petty-cash-store.js';
 import { generateKnowledgeId } from '../../knowledge/contracts/identity-contract.js';
-import { getById as getKnowledgeItemById } from '../../knowledge/repository/knowledge-repository.js';
+import {
+  getKnowledge as getKnowledgeItemById,
+} from '../../knowledge/services/knowledge-service.js';
 import { archiveSourceSuccess, archiveSourceFailure, ARCHIVE_SOURCE_ERRORS } from '../contracts/archive-source-contract.js';
 import { computeDocumentHash } from '../document-hash.js';
 import { registerArchiveSource } from '../registry/archive-source-registry.js';

@@ -35,7 +35,12 @@
 
 'use strict';
 
-import { getById, create, appendVersion } from '../repository/knowledge-repository.js';
+// Phase 3 — a CLIENT of the Knowledge Service. Its two writes map exactly onto
+// the Service's two write verbs, and the Service now enforces the invariant
+// this engine used to enforce for itself (MUTABLE_STATES): Approved knowledge
+// is never edited in place — a correction to it becomes a new superseding
+// Candidate. One rule, stated in one place, applied to every writer.
+import { getKnowledge as getById, ingest, updateDraft } from '../services/knowledge-service.js';
 import { LIFECYCLE_STATE } from '../contracts/lifecycle-contract.js';
 import { generateKnowledgeId } from '../contracts/identity-contract.js';
 import { RELATIONSHIP_TYPE } from '../contracts/dependency-graph-contract.js';
@@ -87,7 +92,7 @@ export function submitCorrection(session, correction, opts = {}) {
   const existing = correction.itemId ? getById(correction.itemId) : null;
 
   if (existing && existing.ok && MUTABLE_STATES.includes(existing.data.lifecycleState)) {
-    const result = appendVersion(correction.itemId, {
+    const result = updateDraft(correction.itemId, {
       payload: correction.correctedPayload,
       provenance: Object.freeze({ connectorId: 'correction', sourceRef: correction.itemId, capturedAt: new Date().toISOString() }),
     });
@@ -113,13 +118,13 @@ export function submitCorrection(session, correction, opts = {}) {
     approvedBy: null, approvedAt: null, preferenceRationale: null, createdAt: now, updatedAt: now,
   });
 
-  const createResult = create(newItem);
+  const createResult = ingest(newItem);
   if (!createResult.ok) return { session, ok: false, error: createResult.error, result: createResult };
 
   let relationshipItem = null;
   if (correction.itemId) {
     relationshipItem = buildDerivedFromRelationship(correction.domainType, newItem.id, correction.itemId);
-    create(relationshipItem);
+    ingest(relationshipItem);
   }
 
   _correctionLog.push({ itemId: newItem.id, generatedNew: true, similarityMatchFound: similar.length > 0, at: now });

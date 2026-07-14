@@ -19,7 +19,9 @@
 
 'use strict';
 
-import { getById } from '../repository/knowledge-repository.js';
+import {
+  getKnowledge as getById,
+} from './knowledge-service.js';
 import { explain } from './explainability-service.js';
 import { getDependencies } from './dependency-graph-service.js';
 import { getKnowledgeEvolution } from '../learning/knowledge-evolution-engine.js';
