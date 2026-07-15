@@ -23,6 +23,7 @@
 'use strict';
 
 import { isAdmin, getCurrentUser } from '../auth.js';
+import { createFocusGuard } from '../ui/focus-preserving-render.js';
 import {
   initPettyCashStore, registerChangeListener, getSettings, getActiveCycle,
   getNors, getNorById, getExpenses, getExpenseById,
@@ -150,23 +151,12 @@ function emptyState(title, sub, icon) {
     </div>`;
 }
 
-/* ── Focus preservation across full re-render ────────────────────── */
-let pendingFocus = null;
-function captureFocus() {
-  const el = document.activeElement;
-  if (el && root && root.contains(el) && el.dataset && el.dataset.focus) {
-    pendingFocus = { key: el.dataset.focus, start: el.selectionStart, end: el.selectionEnd };
-  } else pendingFocus = null;
-}
-function restoreFocus() {
-  if (!pendingFocus) return;
-  const el = root.querySelector(`[data-focus="${CSS.escape(pendingFocus.key)}"]`);
-  if (el) {
-    el.focus();
-    try { if (pendingFocus.start != null) el.setSelectionRange(pendingFocus.start, pendingFocus.end); } catch (_) {}
-  }
-  pendingFocus = null;
-}
+/* ── Focus preservation across full re-render ──────────────────────
+   v1.25.3: relocated to js/ui/focus-preserving-render.js (shared with
+   Overtime Management) — identical algorithm, zero behavior change. */
+const focusGuard = createFocusGuard();
+function captureFocus() { focusGuard.capture(root); }
+function restoreFocus() { focusGuard.restore(root); }
 
 /* ── Mount / render — embedded native module (v1.14.0) ─────────────
    The Petty Cash Center is no longer a full-screen `.pc-root` overlay.

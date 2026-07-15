@@ -37,10 +37,16 @@ export const AUDIT_ACTION = {
   EMPLOYEE_UPDATED: 'employee_updated',
   EMPLOYEE_ACTIVATED: 'employee_activated',
   EMPLOYEE_DEACTIVATED: 'employee_deactivated',
+  EMPLOYEE_REORDERED: 'employee_reordered',
   RATE_VERSION_CREATED: 'rate_version_created',
   RATE_VERSION_UPDATED: 'rate_version_updated',
   RATE_VERSION_DELETED: 'rate_version_deleted',
   RATE_VERSION_RESTORED: 'rate_version_restored',
+  HOLIDAY_CREATED: 'holiday_created',
+  HOLIDAY_UPDATED: 'holiday_updated',
+  HOLIDAY_ACTIVATED: 'holiday_activated',
+  HOLIDAY_DEACTIVATED: 'holiday_deactivated',
+  DAILY_ENTRY_SAVED: 'daily_entry_saved',
 };
 
 /** Human labels (id-ID) for audit actions. */
@@ -53,10 +59,16 @@ export const AUDIT_LABEL = {
   [AUDIT_ACTION.EMPLOYEE_UPDATED]: 'Karyawan diperbarui',
   [AUDIT_ACTION.EMPLOYEE_ACTIVATED]: 'Karyawan diaktifkan',
   [AUDIT_ACTION.EMPLOYEE_DEACTIVATED]: 'Karyawan dinonaktifkan',
+  [AUDIT_ACTION.EMPLOYEE_REORDERED]: 'Urutan karyawan diubah',
   [AUDIT_ACTION.RATE_VERSION_CREATED]: 'Tarif baru dibuat',
   [AUDIT_ACTION.RATE_VERSION_UPDATED]: 'Catatan tarif diperbarui',
   [AUDIT_ACTION.RATE_VERSION_DELETED]: 'Tarif dihapus (soft)',
   [AUDIT_ACTION.RATE_VERSION_RESTORED]: 'Tarif dipulihkan',
+  [AUDIT_ACTION.HOLIDAY_CREATED]: 'Hari libur ditambahkan',
+  [AUDIT_ACTION.HOLIDAY_UPDATED]: 'Hari libur diperbarui',
+  [AUDIT_ACTION.HOLIDAY_ACTIVATED]: 'Hari libur diaktifkan',
+  [AUDIT_ACTION.HOLIDAY_DEACTIVATED]: 'Hari libur dinonaktifkan',
+  [AUDIT_ACTION.DAILY_ENTRY_SAVED]: 'Entri lembur harian disimpan',
 };
 
 /** Accent color per audit action (matches the timeline dot convention). */
@@ -69,11 +81,27 @@ export const AUDIT_COLOR = {
   [AUDIT_ACTION.EMPLOYEE_UPDATED]: '#a9781a',
   [AUDIT_ACTION.EMPLOYEE_ACTIVATED]: '#2f7d5b',
   [AUDIT_ACTION.EMPLOYEE_DEACTIVATED]: '#8b857c',
+  [AUDIT_ACTION.EMPLOYEE_REORDERED]: '#a9781a',
   [AUDIT_ACTION.RATE_VERSION_CREATED]: '#2f7d5b',
   [AUDIT_ACTION.RATE_VERSION_UPDATED]: '#a9781a',
   [AUDIT_ACTION.RATE_VERSION_DELETED]: '#9a1b2d',
   [AUDIT_ACTION.RATE_VERSION_RESTORED]: '#2f7d5b',
+  [AUDIT_ACTION.HOLIDAY_CREATED]: '#2f7d5b',
+  [AUDIT_ACTION.HOLIDAY_UPDATED]: '#a9781a',
+  [AUDIT_ACTION.HOLIDAY_ACTIVATED]: '#2f7d5b',
+  [AUDIT_ACTION.HOLIDAY_DEACTIVATED]: '#8b857c',
+  [AUDIT_ACTION.DAILY_ENTRY_SAVED]: '#2f7d5b',
 };
+
+/** Holiday categories (spec: National Holiday / Collective Leave / Custom). */
+export const HOLIDAY_TYPES = [
+  { key: 'national', label: 'National Holiday' },
+  { key: 'collective', label: 'Collective Leave' },
+  { key: 'custom', label: 'Custom Holiday' },
+];
+
+/** The rate tier a holiday uses when no explicit override is chosen. */
+export const DEFAULT_HOLIDAY_TIER_KEY = 'nationalHoliday';
 
 /** Today as ISO yyyy-mm-dd (local) — same shape as petty-cash-config.js todayISO(). */
 export function todayISO() {

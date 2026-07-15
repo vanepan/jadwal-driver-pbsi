@@ -1802,7 +1802,7 @@ async function navOvertime(screen, navId) {
   setOvertimeScreen(screen);
 }
 const OT_MENU_TITLES = {
-  dashboard: 'Dashboard', employees: 'Employees', units: 'Unit', rates: 'Rates',
+  dashboard: 'Dashboard', employees: 'Employees', dailyEntry: 'Daily Entry', rates: 'Rates', holidays: 'Holidays',
 };
 
 /* ── MODUL: Engineering Operations ── (embedded native module, v1.20.1) */
@@ -2446,13 +2446,17 @@ function initV2Panel() {
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10 2a4 4 0 100 8 4 4 0 000-8zM3 18a7 7 0 0114 0H3z"/></svg>
         Employees
       </button>
-      <button class="v2-panel-nav-item" id="v2NavOtUnits" type="button">
-        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M4 4h6v6H4V4zM14 4h6v6h-6V4zM4 14h6v6H4v-6zM14 14h6v6h-6v-6z"/></svg>
-        Unit
+      <button class="v2-panel-nav-item" id="v2NavOtDailyEntry" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V4a2 2 0 00-2-2H6zm2 5a1 1 0 000 2h4a1 1 0 100-2H8zm-1 5a1 1 0 011-1h4a1 1 0 110 2H8a1 1 0 01-1-1z" clip-rule="evenodd"/></svg>
+        Daily Entry
       </button>
       <button class="v2-panel-nav-item" id="v2NavOtRates" type="button">
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.09c-1.2.24-2.25 1-2.25 2.16 0 1.4 1.28 2 2.63 2.37l.37.1v2.4c-.6-.1-.98-.42-1-.87H6.7c.04 1.2 1.05 2.1 2.3 2.32V15a1 1 0 102 0v-.1c1.3-.23 2.4-1 2.4-2.28 0-1.45-1.36-2.03-2.65-2.38l-.37-.1V7.8c.5.1.85.4.87.8H12.9c-.05-1.14-1-2-2.2-2.24V5z" clip-rule="evenodd"/></svg>
         Rates
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavOtHolidays" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"/></svg>
+        Holidays
       </button>
     </nav>
 
@@ -2702,8 +2706,9 @@ function initV2Panel() {
   // MODUL Overtime Management (v1.25.0)
   document.getElementById('v2NavOtDashboard')?.addEventListener('click', () => navOvertime('dashboard', 'v2NavOtDashboard'));
   document.getElementById('v2NavOtEmployees')?.addEventListener('click', () => navOvertime('employees', 'v2NavOtEmployees'));
-  document.getElementById('v2NavOtUnits')?.addEventListener('click', () => navOvertime('units', 'v2NavOtUnits'));
+  document.getElementById('v2NavOtDailyEntry')?.addEventListener('click', () => navOvertime('dailyEntry', 'v2NavOtDailyEntry'));
   document.getElementById('v2NavOtRates')?.addEventListener('click', () => navOvertime('rates', 'v2NavOtRates'));
+  document.getElementById('v2NavOtHolidays')?.addEventListener('click', () => navOvertime('holidays', 'v2NavOtHolidays'));
 
   // MODUL Analytics
   document.getElementById('v2NavAnalyticsDriver')?.addEventListener('click', navAnalyticsDriver);

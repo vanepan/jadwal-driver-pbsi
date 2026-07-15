@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.25.2';
-export const RELEASE_NAME = 'Overtime Management — Employee Management + Rate Engine (Sprint 2-3, Domain Model Correction #2)';
+export const APP_VERSION = '1.25.3';
+export const RELEASE_NAME = 'Overtime Management — Focus Stability Fix, Grouped Employees, Holiday Engine, Daily Entry, Employee History (Sprints 4-6)';
 
 /* ============================================================
    APP_ENV — the AUTHORITATIVE runtime environment (v1.20.3 RC1).
@@ -66,6 +66,18 @@ export function isProduction() {
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.25.3',
+    date: '2026-07-16',
+    summary: 'Overtime Management — a required-fixes pass over Sprints 1-3 plus Sprints 4-6. FIX 1 (HIGH PRIORITY, root-caused): a real focus-loss bug — typing into any Overtime form field lost focus after one character, requiring a re-click. Root cause found via empirical binary-search reproduction in headless Chromium (not guesswork): overtime-center.js\'s bindDelegation() bound BOTH \'input\' and \'change\' to the SAME render()-triggering handler; removing a focused, edited field from the DOM (as part of its own re-render) synchronously fires an implicit \'change\' event on it, which re-entered render() before the outer DOM mutation had finished — Chrome threw "Failed to set the innerHTML property... moved in a \'blur\' event handler" and focus landed on <body>. Fixed at the architecture level, not just patched: plain form fields (name/amount/note/date) now update state WITHOUT calling render() at all, matching the pattern petty-cash-center.js and engineering-center.js already use correctly (verified via source audit — neither was broken); only \'input\' is ever bound now, never both. The capture/restore mechanism itself was extracted into shared js/ui/focus-preserving-render.js (createFocusGuard()), documented with the full root-cause writeup, and petty-cash-center.js now consumes the same shared utility (byte-identical algorithm relocated, zero behavior change — engineering-center.js keeps its own different, already-correct focus-tracking mechanism, left untouched). FIX 2/3: Employees screen redesigned as a grouped, collapsible list (User Management style) — Unit is no longer a standalone screen, only a presentational grouping label; Unit CRUD (add/rename/deactivate) is now reachable inline from the Employees screen. Employee gained displayOrder (up/down reorder within its unit) — Daily Entry\'s checklist follows this order. FIX 4: Rate Engine gained a Default Active Rate concept (DEFAULT_TIER_KEY = \'normal\', getDefaultRate()) so Daily Entry never needs a manual tier pick on a non-holiday date. SPRINT 4 — Holiday Engine: overtimeHolidays node (National/Collective/Custom types, mapped to a Rate Engine tier — never a raw hardcoded amount), resolveEntryRate(date) is the single holiday-aware function Daily Entry calls. SPRINT 5 — Daily Entry, the core workflow: date → unit → checklist → Save with zero extra dialogs; batch save (one atomic multi-node write + one audit entry for N employees, mirrors petty-cash-service.js\'s receiveReplenishment() shape); non-blocking duplicate detection (employee already has an entry that date+unit); Bulk Copy Yesterday (pre-fills, never auto-saves); Favorite Unit via localStorage; Recent Entry list; Override Rate (per-transaction only, never touches the master rate or holiday calendar). Every save also updates overtimeDailySummary/overtimeMonthlySummary in the SAME atomic write — Analytics Preparation: Dashboard now reads today\'s summary instead of recomputing from every record. SPRINT 6 — Employee History: a drawer opened by clicking an employee (profile, total days/nominal, average per month/year, last overtime, most active month, monthly/yearly bar charts, transaction list, CSV export via a small local serializer — no new export engine).',
+    highlights: [
+      'FIX 1 (HIGH PRIORITY): focus-loss-after-one-character bug root-caused via empirical binary-search reproduction (not guesswork) — reentrant render() triggered by binding both \'input\' and \'change\' to the same handler. Fixed architecturally (plain fields never render() on keystroke) and extracted to shared js/ui/focus-preserving-render.js, also adopted by petty-cash-center.js.',
+      'FIX 2/3: Employees redesigned as a grouped/collapsible list (Unit = presentational grouping only, no standalone screen); Employee gained displayOrder + up/down reorder, which Daily Entry\'s checklist follows.',
+      'FIX 4 + Sprint 4: Rate Engine gained a Default Active Rate; new Holiday Engine (overtimeHolidays) resolves the active tier automatically — Daily Entry needs zero manual rate clicks on any date.',
+      'Sprint 5: Daily Entry — the core workflow (date/unit/checklist/save), one atomic batch write per Save (records + daily/monthly summary + one audit entry), duplicate detection, Bulk Copy Yesterday, Favorite Unit, Recent Entry, per-transaction Override Rate.',
+      'Sprint 6: Employee History drawer (totals, averages, monthly/yearly bar charts, transactions, CSV export) opened by clicking any employee in the grouped list.',
+    ],
+  },
   {
     version: '1.25.2',
     date: '2026-07-15',

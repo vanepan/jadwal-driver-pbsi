@@ -31,6 +31,7 @@ import {
   isFirebaseConfigured,
   readNode,
   storeFirebaseData,
+  updateFirebaseData,
   subscribeFirebasePath,
 } from '../firebase.js';
 import { SEED_UNITS } from './overtime-config.js';
@@ -41,6 +42,10 @@ const PATH = {
   employees: 'overtimeEmployees',
   rates: 'overtimeRates',
   rateVersions: 'overtimeRateVersions',
+  holidays: 'overtimeHolidays',
+  records: 'overtimeRecords',
+  dailySummary: 'overtimeDailySummary',
+  monthlySummary: 'overtimeMonthlySummary',
   audit: 'overtimeAudit',
 };
 
@@ -50,6 +55,10 @@ const cache = {
   employees: {},
   rates: {},
   rateVersions: {},
+  holidays: {},
+  records: {},
+  dailySummary: {},
+  monthlySummary: {},
   audit: {},
 };
 
@@ -171,6 +180,10 @@ export async function initOvertimeStore() {
     subscribeFirebasePath(PATH.employees, snap => { cache.employees = snap.val() || {}; notify(); });
     subscribeFirebasePath(PATH.rates, snap => { cache.rates = snap.val() || {}; notify(); });
     subscribeFirebasePath(PATH.rateVersions, snap => { cache.rateVersions = snap.val() || {}; notify(); });
+    subscribeFirebasePath(PATH.holidays, snap => { cache.holidays = snap.val() || {}; notify(); });
+    subscribeFirebasePath(PATH.records, snap => { cache.records = snap.val() || {}; notify(); });
+    subscribeFirebasePath(PATH.dailySummary, snap => { cache.dailySummary = snap.val() || {}; notify(); });
+    subscribeFirebasePath(PATH.monthlySummary, snap => { cache.monthlySummary = snap.val() || {}; notify(); });
     subscribeFirebasePath(PATH.audit, snap => { cache.audit = snap.val() || {}; notify(); });
   }
   notify();
@@ -186,6 +199,10 @@ export function getEmployees() { return mapToArray(cache.employees); }
 export function getEmployeeById(id) { return cache.employees[id] ? { ...cache.employees[id] } : null; }
 export function getRates() { return mapToArray(cache.rates); }
 export function getRateVersions() { return mapToArray(cache.rateVersions); }
+export function getHolidays() { return mapToArray(cache.holidays); }
+export function getRecords() { return mapToArray(cache.records); }
+export function getDailySummary(dateISO) { return cache.dailySummary[dateISO] ? { ...cache.dailySummary[dateISO] } : null; }
+export function getMonthlySummary(yyyyMM) { return cache.monthlySummary[yyyyMM] ? { ...cache.monthlySummary[yyyyMM] } : null; }
 export function getAudit() { return mapToArray(cache.audit); }
 
 /* ── Primitive writes ────────────────────────────────────────────
@@ -212,9 +229,41 @@ export async function putRateVersion(version) {
   await storeFirebaseData(`${PATH.rateVersions}/${version.id}`, version);
 }
 
+export async function putHoliday(holiday) {
+  if (!isFirebaseConfigured()) { localWrite('holidays', holiday.id, holiday); return; }
+  await storeFirebaseData(`${PATH.holidays}/${holiday.id}`, holiday);
+}
+
 export async function putAudit(entry) {
   if (!isFirebaseConfigured()) { localWrite('audit', entry.id, entry); return; }
   await storeFirebaseData(`${PATH.audit}/${entry.id}`, entry);
+}
+
+/* ── Atomic multi-node writes (Daily Entry batch save) ──────────────
+   Mirrors petty-cash-store.js's applyUpdates(): `updates` is a flat map of
+   "node/id" → value (Firebase fan-out shape), e.g.
+   { "overtimeRecords/rec_1": {...}, "overtimeDailySummary/2026-07-16": {...},
+     "overtimeAudit/audit_1": {...} }. Applied to the in-memory cache
+   OPTIMISTICALLY first (so every live view reflects the mutation in the same
+   tick, independent of when the realtime echo arrives — same runtime-sync
+   fix petty-cash-store.js documents), then persisted as a single Firebase
+   multi-path update so a batch of N employee records + the daily/monthly
+   summary + one audit entry commit atomically — never partially. */
+const NODE_TO_CACHE_KEY = Object.fromEntries(Object.entries(PATH).map(([k, v]) => [v, k]));
+function applyUpdatesToCache(updates) {
+  Object.keys(updates).forEach(p => {
+    const parts = p.split('/');
+    const cacheKey = NODE_TO_CACHE_KEY[parts[0]];
+    if (!cacheKey || !cache[cacheKey]) return;
+    const id = parts[1];
+    if (updates[p] === null) delete cache[cacheKey][id]; else cache[cacheKey][id] = updates[p];
+  });
+}
+export async function applyOvertimeUpdates(updates) {
+  applyUpdatesToCache(updates);
+  notify();
+  if (!isFirebaseConfigured()) return;
+  await updateFirebaseData('/', updates);
 }
 
 export const OVERTIME_PATHS = PATH;

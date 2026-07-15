@@ -26,6 +26,13 @@ export const RATE_TIERS = [
   { key: 'specialEvent', label: 'Special Event' },
 ];
 
+/** FIX 4 (2026-07-16): the Default Active Rate — the tier Daily Entry charges
+    when the date is NOT a holiday. Holiday Engine (Sprint 4) resolves a
+    different tier only when the date matches a holiday; everything else
+    falls back to this one, so Daily Entry never has to ask the admin to pick
+    a tier manually. */
+export const DEFAULT_TIER_KEY = 'normal';
+
 export function isValidTierKey(key) {
   return RATE_TIERS.some(t => t.key === key);
 }
