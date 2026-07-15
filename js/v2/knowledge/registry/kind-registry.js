@@ -74,6 +74,14 @@ function bootstrap() {
   // for manual-entry facts (connectors/manual-file-connector.js) that
   // don't match a more specific existing kind above.
   registerKind('document_fact', 'Document Fact');
+  // Phase 4-7 (Organizational Reasoning) — five kinds NOR-Specification.md's
+  // real findings proved missing; see Knowledge-Asset-Specification.md §3.
+  // Purely additive: no existing kind above is renamed or reinterpreted.
+  registerKind('rendering_rule', 'Rendering Rule');
+  registerKind('workflow', 'Workflow');
+  registerKind('ontology', 'Ontology');
+  registerKind('organizational_reasoning', 'Organizational Reasoning');
+  registerKind('question_tree', 'Question Tree');
 }
 
 bootstrap();

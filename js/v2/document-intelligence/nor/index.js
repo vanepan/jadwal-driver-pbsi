@@ -39,3 +39,9 @@ export * from './nor-generator.js';
 export * from './nor-validator.js';
 export * from './nor-explainer.js';
 export * from './nor-recommender.js';
+// Phase 8-10, Part 3 — NOT a pipeline step (see nor-composer.js's own
+// header: composing organizational understanding into a draft is a
+// different act from analyzing/drafting/validating/explaining/
+// recommending ONE document instance, and is never registered against
+// registry/step-registry.js).
+export * from './nor-composer.js';

@@ -72,6 +72,32 @@
    says so precisely. The genuine payload-editing feature this entry has
    always been waiting for is still not built.
 
+   PHASE 8-10 DISPOSITION — 'composer-timeline', READ CAREFULLY
+   --------------------------------------------------------------
+   Phase 8-10 ("Problem Intelligence / Diagnostic Planning / NOR
+   Composition") gave `createDocument` its first real caller:
+   document-intelligence/nor/nor-composer.js#composeNorDocument — a
+   knowledge-driven, fully-explainable NOR draft, composed from Approved
+   Knowledge Assets (patterns, rendering rules) plus genuinely-known facts,
+   is now a real ComposerDocument every time it runs (no fabricated
+   content, per that file's own header).
+
+   THIS ENTRY STAYS IN THE REGISTER ANYWAY, because `editSection` — the
+   part of the Composer that lets a HUMAN then revise a composed section —
+   still has ZERO real callers. No authoring UI exists yet to call it
+   (composeNorDocument only ever calls createDocument; it never calls
+   editSection itself, by design — composing an initial draft and a human
+   subsequently editing it are two different acts, same "provenance
+   fields": a human answers a question, that's `human_answer`; a human
+   ETL's a composed value afterward is a separate, still-unbuilt act).
+   Removing this entry now would claim more than is true: a reader would
+   see "not dormant" and assume the whole authoring flow works, when only
+   the composition half does. `getComposerTimeline()`/`getRevisionHistory()`
+   are real and readable the moment `composeNorDocument` runs at least
+   once; `ui/nor-center.js` and `ui/learning-dashboard.js` still show
+   `dormantNote('composer-timeline')` specifically for the missing
+   authoring/edit surface, not for composition itself.
+
    DEPENDENCIES: none. This is a manifest, read by the UI (to display honesty)
    and by the verification suite (to enforce it).
    ============================================================ */
@@ -104,13 +130,13 @@ export const DORMANT = Object.freeze([
   }),
   Object.freeze({
     id: 'composer-timeline',
-    label: 'Composer Timeline',
+    label: 'Composer Timeline (authoring/edit surface)',
     module: 'js/v2/document-intelligence/composer/composer-store.js',
-    writers: Object.freeze(['createDocument', 'editSection']),
+    writers: Object.freeze(['editSection']),
     readers: Object.freeze(['ui/nor-center.js', 'ui/learning-dashboard.js']),
-    reason: 'The document Composer was scaffolded for a NOR-authoring flow that was never built. No caller exists.',
-    plannedPhase: 'unscheduled',
-    displayNote: 'Composer belum diaktifkan — belum ada dokumen yang dapat disusun di sini.',
+    reason: 'Phase 8-10 gave createDocument a real caller (document-intelligence/nor/nor-composer.js#composeNorDocument) — a knowledge-driven NOR draft is composed for real. editSection, the human-authoring/revision half of the Composer, still has zero callers: no authoring UI exists yet. NOTE: this is narrower than "the Composer" generally — composition is now real; subsequent human editing of a composed section is not.',
+    plannedPhase: 'unscheduled — Composer Authoring UI',
+    displayNote: 'Dokumen NOR sudah dapat disusun otomatis dari pengetahuan yang disetujui, tetapi antarmuka untuk mengedit bagian yang telah disusun belum tersedia — riwayat revisi ini bukan nol karena tidak ada dokumen, melainkan karena belum ada cara manusia menyuntingnya di sini.',
   }),
 ]);
 

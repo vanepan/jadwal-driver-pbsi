@@ -123,8 +123,20 @@ import { globalSearch } from '../services/global-search-service.js';
 // Part 9 (Conversation-first): the REAL, deterministic Conversation Service
 // (Phase 6) — this file only renders what it returns, never reinterprets
 // an utterance itself and never adds a new intent.
-import { startConversation } from '../conversation/services/conversation-service.js';
 import { INTENT } from '../conversation/contracts/intent-contract.js';
+// Phase 10.5 (Home Entry Point Migration, Problem-First Architecture) —
+// EVERY free-text request now enters through beginProblemSolving() first
+// (Problem Classification -> Diagnostic Planning -> Routing Decision).
+// startConversation() (which internally runs the legacy Intent Engine) is
+// no longer imported/called directly by this file at all — it is reached
+// only INSIDE problem-solving-service.js, strictly downstream of routing,
+// exactly Part 1's own migration order. See that file's own header for
+// why this is a graceful-degradation, not a replacement.
+import {
+  beginProblemSolving, continueProblemConversation, composeApprovedNor,
+} from '../problem-solving/services/problem-solving-service.js';
+import { WORKFLOW_ROUTE } from '../problem-solving/contracts/workflow-route-contract.js';
+import { HYPOTHESIS_STATUS } from '../reasoning/contracts/hypothesis-contract.js';
 // Phase 3, Part 8 — see js/v2/dormant-subsystems.js. This briefing used to
 // count the OLD correction log's always-zero value.
 import { dormantNote } from '../dormant-subsystems.js';
@@ -182,6 +194,18 @@ function scheduleRender() {
 const homeState = {
   searchInput: '', searchResult: null,
   conversationInput: '', conversation: null, conversationError: null,
+  // Phase 10.5 — Problem-First Architecture. `activeProblem`/`activeRoute`
+  // persist across turns of a generic Problem Conversation (Diagnostic or
+  // plain); `problemConversationTurn` is the LATEST advanceProblemConversation()
+  // output; `answeredFacts`/`askedFields` accumulate turn over turn so
+  // continueProblemConversation() never re-asks the same field twice.
+  // `lastPipelineTrace` is Developer Mode's own read of the most recent
+  // beginProblemSolving()/continueProblemConversation() call — display
+  // only, never a second computation of anything it shows.
+  activeProblem: null, activeRoute: null, activeCategory: null,
+  problemConversationTurn: null, answeredFacts: {}, askedFields: [],
+  problemAnswerInput: '', clarification: null,
+  lastPipelineTrace: null,
 };
 
 const INTENT_LABEL = Object.freeze({
@@ -251,26 +275,43 @@ function stageLabelForSearch(session) {
   return isTerminalImportSessionState(session.state) ? session.state : effectiveStage(session);
 }
 
-/** Part 9 — a real, minimal Conversation entry point. Renders EXACTLY what
- *  startConversation() returns (intent detected, facts already known,
- *  facts still missing) — no new intent pattern, no second interpretation
- *  of the utterance, no fabricated confirmation. An utterance the real
- *  Intent Engine cannot classify is shown as genuinely unrecognized —
- *  never silently mapped onto the nearest known intent. */
+/** Phase 10.5, Part 1/4 — the Home Entry Point. EVERY free-text request
+ *  now enters through beginProblemSolving() (Problem Classification ->
+ *  Diagnostic Planning -> Routing Decision) BEFORE anything resembling the
+ *  legacy Intent Engine is ever reached — "never reject user input before
+ *  Problem Classification". Renders EXACTLY what the pipeline returns, no
+ *  second interpretation of the utterance, no fabricated confirmation.
+ *  Card title/copy softened per Part 4 ("should feel like speaking with an
+ *  experienced Sarpras staff member, not a command launcher"). */
 function renderConversationEntry() {
-  const c = homeState.conversation;
   return `
     <div class="sic-card sic-card--conversation">
-      <div class="sic-card-head"><div class="sic-card-h-title">Apa yang ingin Anda lakukan?</div></div>
+      <div class="sic-card-head"><div class="sic-card-h-title">Ceritakan apa yang terjadi atau apa yang Anda butuhkan</div></div>
       <div class="sic-search-row">
-        <input class="sic-search-input" data-act="sic-conv-input" type="text" placeholder='Contoh: "saya ingin membuat NOR"' value="${esc(homeState.conversationInput)}" />
-        <button class="wlk-btn" data-act="sic-conv-start" type="button">Mulai</button>
+        <input class="sic-search-input" data-act="sic-conv-input" type="text" placeholder='Contoh: "AC kamar atlet rusak" atau "mau perjalanan dinas"' value="${esc(homeState.conversationInput)}" />
+        <button class="wlk-btn" data-act="sic-conv-start" type="button">Kirim</button>
       </div>
       ${homeState.conversationError ? `<p class="sic-next-action">${esc(homeState.conversationError)}</p>` : ''}
-      ${c ? renderConversationResult(c) : ''}
+      ${renderRoutedResult()}
     </div>`;
 }
 
+/** Part 2 — dispatches purely on the LAST routingDecision this file itself
+ *  received from beginProblemSolving() — never re-derives a route from the
+ *  utterance itself (that would be exactly the "keyword matching alone"
+ *  Part 2 forbids; the Problem Router already decided, once). */
+function renderRoutedResult() {
+  if (homeState.clarification) return renderClarificationResult();
+  if (homeState.conversation) return renderConversationResult(homeState.conversation);
+  if (homeState.problemConversationTurn) return renderProblemConversationTurn();
+  return '';
+}
+
+/** The ONE real path that still reaches the legacy Intent Engine — always
+ *  downstream of Problem Classification + Routing (see
+ *  problem-solving-service.js's own CONVERSATION branch). Rendering itself
+ *  is unchanged from Phase 6/9 — this is the exact backward-compatible
+ *  surface anything already relying on it continues to see. */
 function renderConversationResult(c) {
   if (!c.currentIntent || c.currentIntent.intent === INTENT.UNKNOWN || c.state === 'failed') {
     return `<p class="sic-next-action">Permintaan ini belum dikenali platform. Coba salah satu: "saya ingin membuat NOR", "saya ingin mengunggah dokumen", "saya ingin meninjau pengetahuan".</p>`;
@@ -284,7 +325,158 @@ function renderConversationResult(c) {
         <div class="sic-brief-sub">Masih diperlukan</div>
         <ul class="sic-brief-list">${c.missingFacts.map((q) => `<li><span class="sic-brief-label">${esc(q.prompt)}</span></li>`).join('')}</ul>`
     : '<p class="sic-next-action">Semua data yang diperlukan sudah ada.</p>'}
+      ${c.state === 'ready' ? `<p class="sic-next-action">Semua data terkumpul. <button class="wlk-btn" data-act="sic-compose-nor" data-id="${esc(c.id)}" type="button">Susun NOR</button></p>` : ''}
     </div>`;
+}
+
+/** Phase 10.5, Parts 2/4 — the generic, category-agnostic turn loop
+ *  (Diagnostic Conversation for 'facility'; plain Conversation fallback
+ *  for any category with no real Intent mapping yet). Renders leading
+ *  Hypotheses ONLY when the engine actually produced any (facility only,
+ *  and only once real Approved Knowledge exists to cite — cite-or-abstain,
+ *  never a placeholder "we don't know" hypothesis). */
+function renderProblemConversationTurn() {
+  const turn = homeState.problemConversationTurn;
+  const categoryLabel = homeState.activeCategory || '';
+
+  if (!turn.isComplete && turn.nextQuestion) {
+    return `
+      <div class="sic-conv-result">
+        <p class="sic-next-action">Baik. Saya akan membantu menyiapkan ini (${esc(categoryLabel)}).</p>
+        ${renderHypotheses(turn.hypotheses)}
+        <p class="sic-brief-sub">${esc(turn.nextQuestion.prompt)}</p>
+        <div class="sic-search-row">
+          <input class="sic-search-input" data-act="sic-pc-answer-input" type="text" placeholder="${esc(turn.nextQuestion.label)}" value="${esc(homeState.problemAnswerInput)}" />
+          <button class="wlk-btn" data-act="sic-pc-answer-submit" type="button">Lanjut</button>
+        </div>
+      </div>`;
+  }
+
+  // Complete — Part "Reasoning -> Recommendation" of the pipeline.
+  const rec = turn.recommendation;
+  return `
+    <div class="sic-conv-result">
+      <p class="sic-next-action">Semua data yang diperlukan sudah ada. Terima kasih.</p>
+      ${renderHypotheses(turn.hypotheses)}
+      ${rec
+    ? `<div class="sic-brief-sub">Rekomendasi</div><p class="sic-next-action">${esc(rec.claim)}</p>`
+    : `<p class="sic-next-action">Belum ada aturan organisasi yang cocok untuk memberi rekomendasi otomatis — informasi ini akan diteruskan untuk tinjauan manual.</p>`}
+    </div>`;
+}
+
+function renderHypotheses(hypotheses) {
+  if (!hypotheses || !hypotheses.length) return '';
+  const candidates = hypotheses.filter((h) => h.status !== HYPOTHESIS_STATUS.RULED_OUT);
+  if (!candidates.length) return '';
+  return `
+    <div class="sic-brief-sub">Kemungkinan penyebab</div>
+    <ul class="sic-brief-list">${candidates.map((h) => `<li><span class="sic-brief-label">${esc(h.cause)} ${h.status === HYPOTHESIS_STATUS.CONFIRMED ? '(terkonfirmasi)' : `(${Math.round(h.likelihood * 100)}%)`}</span></li>`).join('')}</ul>`;
+}
+
+/** Phase 10.5, Part 3 — Unknown Problem Handling. NEVER "Request not
+ *  recognized": always a genuine clarifying question, plus the real,
+ *  registered category labels this platform understands today. */
+function renderClarificationResult() {
+  const c = homeState.clarification;
+  return `
+    <div class="sic-conv-result">
+      <p class="sic-next-action">${esc(c.message)}</p>
+      ${c.partialSignal ? `<p class="sic-brief-sub">${esc(c.partialSignal)}</p>` : ''}
+      ${c.examples.length ? `<p class="sic-brief-sub">Contoh yang sudah dipahami platform: ${c.examples.map(esc).join(', ')}.</p>` : ''}
+    </div>`;
+}
+
+/** Phase 10.5, Part 1 — resets every route-specific field before a new
+ *  classification, so a fresh request never shows a stale prior route's
+ *  leftover state (e.g. a previous Problem Conversation's question)
+ *  alongside the new one. */
+function resetRoutedState() {
+  homeState.conversation = null;
+  homeState.problemConversationTurn = null;
+  homeState.answeredFacts = {};
+  homeState.askedFields = [];
+  homeState.problemAnswerInput = '';
+  homeState.clarification = null;
+  homeState.activeProblem = null;
+  homeState.activeRoute = null;
+  homeState.activeCategory = null;
+}
+
+/** Phase 10.5, Part 1/2 — the Home Entry Point. Never rejects an utterance
+ *  before Problem Classification: beginProblemSolving() itself only ever
+ *  fails on a genuinely empty/invalid input (a real input error, checked
+ *  below the same way it always was), never on "not recognized" — an
+ *  unclassifiable PROBLEM routes to Clarification instead (see
+ *  problem-router.js). */
+function handleProblemSubmit() {
+  const utterance = homeState.conversationInput.trim();
+  if (!utterance) { homeState.conversationError = 'Ketik dulu apa yang ingin Anda lakukan.'; sections.dashboard.innerHTML = renderDashboard(); return; }
+
+  resetRoutedState();
+  const result = beginProblemSolving(utterance, 'evan');
+  homeState.lastPipelineTrace = result.ok ? { stage: 'begin', utterance, ...result.data } : { stage: 'begin', utterance, error: result.error };
+
+  if (!result.ok) { homeState.conversationError = result.error.message; sections.dashboard.innerHTML = renderDashboard(); return; }
+  homeState.conversationError = null;
+
+  const { data } = result;
+  homeState.activeProblem = data.problem;
+  homeState.activeRoute = data.routingDecision.route;
+  homeState.activeCategory = data.category;
+
+  switch (data.routingDecision.route) {
+    case WORKFLOW_ROUTE.SEARCH:
+      // Part 2 — reuses the EXISTING, real search bar/globalSearch, never a
+      // second search implementation.
+      homeState.searchInput = data.searchQuery || utterance;
+      homeState.searchResult = globalSearch(homeState.searchInput);
+      break;
+    case WORKFLOW_ROUTE.KNOWLEDGE_ACQUISITION:
+      // Part 2 — reuses the EXISTING Archive Center navigation, the same
+      // destination the "Unggah Dokumen" quick action already uses.
+      setSarprasIntelligenceScreen('archive');
+      return; // setSarprasIntelligenceScreen already re-renders via showScreen
+    case WORKFLOW_ROUTE.CONVERSATION:
+      if (data.conversation) { homeState.conversation = data.conversation; break; }
+      homeState.problemConversationTurn = data.problemConversationTurn;
+      break;
+    case WORKFLOW_ROUTE.DIAGNOSTIC_CONVERSATION:
+      homeState.problemConversationTurn = data.problemConversationTurn;
+      break;
+    case WORKFLOW_ROUTE.CLARIFICATION_CONVERSATION:
+    default:
+      homeState.clarification = data.clarification;
+      break;
+  }
+  sections.dashboard.innerHTML = renderDashboard();
+}
+
+/** Phase 10.5, Part 2/4 — advances an in-progress Problem Conversation
+ *  (Diagnostic or plain) by exactly one turn, never re-asking a field
+ *  already answered this session (askedFields accumulates, never resets
+ *  mid-conversation). */
+function handleProblemAnswerSubmit() {
+  const turn = homeState.problemConversationTurn;
+  if (!turn || !turn.nextQuestion) return;
+  const value = homeState.problemAnswerInput.trim();
+  if (!value) return;
+
+  const field = turn.nextQuestion.field;
+  homeState.answeredFacts = { ...homeState.answeredFacts, [field]: value };
+  homeState.askedFields = [...homeState.askedFields, field];
+  homeState.problemAnswerInput = '';
+
+  const nextTurn = continueProblemConversation({
+    problem: homeState.activeProblem,
+    answeredFacts: homeState.answeredFacts,
+    askedFields: homeState.askedFields,
+    hypotheses: turn.hypotheses,
+    includeHypotheses: turn.hypotheses.length > 0 || homeState.activeRoute === WORKFLOW_ROUTE.DIAGNOSTIC_CONVERSATION,
+  });
+  homeState.problemConversationTurn = nextTurn;
+  homeState.activeProblem = nextTurn.problem;
+  homeState.lastPipelineTrace = { stage: 'continue', ...nextTurn };
+  sections.dashboard.innerHTML = renderDashboard();
 }
 
 function onDashboardClick(e) {
@@ -296,11 +488,12 @@ function onDashboardClick(e) {
     sections.dashboard.innerHTML = renderDashboard();
     return;
   }
-  if (el.dataset.act === 'sic-conv-start') {
-    const utterance = homeState.conversationInput.trim();
-    if (!utterance) { homeState.conversationError = 'Ketik dulu apa yang ingin Anda lakukan.'; sections.dashboard.innerHTML = renderDashboard(); return; }
-    const result = startConversation({ utterance, actorId: 'evan' });
-    if (result.ok) { homeState.conversation = result.data; homeState.conversationError = null; } else { homeState.conversation = null; homeState.conversationError = result.error.message; }
+  if (el.dataset.act === 'sic-conv-start') { handleProblemSubmit(); return; }
+  if (el.dataset.act === 'sic-pc-answer-submit') { handleProblemAnswerSubmit(); return; }
+  if (el.dataset.act === 'sic-compose-nor') {
+    const composed = composeApprovedNor(el.dataset.id);
+    homeState.conversationError = composed.ok ? null : composed.error.message;
+    if (composed.ok) homeState.lastPipelineTrace = { stage: 'compose', ...composed.data };
     sections.dashboard.innerHTML = renderDashboard();
   }
 }
@@ -310,12 +503,14 @@ function onDashboardClick(e) {
 function onDashboardInput(e) {
   if (e.target.dataset.act === 'sic-search-input') homeState.searchInput = e.target.value;
   if (e.target.dataset.act === 'sic-conv-input') homeState.conversationInput = e.target.value;
+  if (e.target.dataset.act === 'sic-pc-answer-input') homeState.problemAnswerInput = e.target.value;
 }
 
 function onDashboardKeydown(e) {
   if (e.key !== 'Enter') return;
   if (e.target.dataset.act === 'sic-search-input') { homeState.searchResult = globalSearch(homeState.searchInput); sections.dashboard.innerHTML = renderDashboard(); }
   if (e.target.dataset.act === 'sic-conv-input') { document.querySelector('[data-act="sic-conv-start"]')?.click(); }
+  if (e.target.dataset.act === 'sic-pc-answer-input') { document.querySelector('[data-act="sic-pc-answer-submit"]')?.click(); }
 }
 
 /** Mount into a platform-owned host (mirrors mountEngineering/mountPettyCash). */
@@ -775,7 +970,65 @@ function renderDashboard() {
         <p class="sic-next-action">${esc(nextAction)}</p>
       </div>
 
+      ${isDeveloperMode() ? renderPipelineTrace() : ''}
       ${isDeveloperMode() ? renderTechnicalDiagnostics() : ''}
+    </div>`;
+}
+
+/** Phase 10.5, Part 6 — Developer Pipeline Viewer. Displays the COMPLETE
+ *  trace of the most recent Problem Solving pipeline call, end to end:
+ *  User Input -> Problem Classification -> Extracted Entities -> Confidence
+ *  -> Diagnostic Plan -> Knowledge Gap -> Conversation State -> Reasoning
+ *  Chain -> Recommendation -> Current Workflow -> Final Output. Every field
+ *  here is a direct read of `homeState.lastPipelineTrace` — set once, by
+ *  handleProblemSubmit()/handleProblemAnswerSubmit()/the NOR-compose
+ *  handler, from the REAL pipeline's own real return values. No new
+ *  computation, no second interpretation — the same "genuinely ADDITIVE
+ *  technical detail, never a second dashboard" discipline
+ *  renderTechnicalDiagnostics() already established (Sprint 1). */
+function renderPipelineTrace() {
+  const t = homeState.lastPipelineTrace;
+  if (!t) {
+    return `
+    <div class="sic-card">
+      <div class="sic-card-head"><div class="sic-card-h-title">Developer Pipeline Viewer</div></div>
+      <p class="sic-next-action">Belum ada permintaan yang diproses pada sesi ini.</p>
+    </div>`;
+  }
+  if (t.error) {
+    return `
+    <div class="sic-card">
+      <div class="sic-card-head"><div class="sic-card-h-title">Developer Pipeline Viewer</div></div>
+      <p class="sic-next-action">Input: "${esc(t.utterance || '')}" — error: ${esc(t.error.code)} — ${esc(t.error.message)}</p>
+    </div>`;
+  }
+
+  const rows = [];
+  if (t.utterance) rows.push(['User Input', t.utterance]);
+  if (t.category) rows.push(['Problem Classification', `${t.category} (confidence ${(t.categoryConfidence || 0).toFixed(2)})`]);
+  if (t.problem) rows.push(['Extracted Entities', JSON.stringify(t.problem.facts)]);
+  if (t.diagnosticPlan) {
+    rows.push(['Diagnostic Plan — confidence', t.diagnosticPlan.confidence.toFixed(2)]);
+    rows.push(['Diagnostic Plan — recommended next question', t.diagnosticPlan.recommendedNextQuestion ? t.diagnosticPlan.recommendedNextQuestion.prompt : '(none)']);
+  }
+  const gaps = (t.diagnosticPlan && t.diagnosticPlan.missingInformation) || (t.plan && t.plan.missingInformation) || [];
+  if (gaps.length) rows.push(['Knowledge Gap', gaps.map((g) => `${g.gapType} (${g.priority})`).join(', ')]);
+  if (t.conversation) rows.push(['Conversation State', `${t.conversation.state} — intent: ${t.conversation.currentIntent.intent}`]);
+  const hyps = t.hypotheses || (t.plan && t.plan.hypotheses) || [];
+  if (hyps.length) rows.push(['Reasoning Chain — hypotheses', hyps.map((h) => `${h.cause} [${h.status}, ${Math.round(h.likelihood * 100)}%]`).join(' | ')]);
+  const rec = t.recommendation;
+  if (rec) rows.push(['Recommendation', `${rec.claim} (confidence ${rec.confidence.toFixed(2)})`]);
+  if (t.routingDecision) rows.push(['Current Workflow', `${t.routingDecision.route} — ${t.routingDecision.reason}`]);
+  if (t.downstreamNote) rows.push(['Final Output', t.downstreamNote]);
+  if (t.composerDocument) rows.push(['Final Output', `ComposerDocument ${t.composerDocument.documentId} (${t.composerDocument.sections.length} sections)`]);
+  if (t.isComplete !== undefined) rows.push(['Conversation State', t.isComplete ? 'complete' : 'in progress']);
+
+  return `
+    <div class="sic-card">
+      <div class="sic-card-head"><div class="sic-card-h-title">Developer Pipeline Viewer</div></div>
+      <ul class="sic-brief-list">
+        ${rows.map(([label, value]) => `<li><span class="sic-brief-label"><strong>${esc(label)}:</strong> ${esc(String(value))}</span></li>`).join('')}
+      </ul>
     </div>`;
 }
 

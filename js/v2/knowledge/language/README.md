@@ -21,6 +21,11 @@ families):
 | `contracts/reference-contract.js` | Reference, Source (`KnowledgeSource`) |
 | `contracts/metadata-contract.js` | Metadata, Policy |
 | `contracts/statistics-confidence-contract.js` | Statistics, Confidence (banding reuses `js/services/unified-scoring.js`) |
+| `contracts/rendering-rule-contract.js` | Rendering Rule (Phase 4-7 — visual/layout facts a text `PatternEntry` cannot express) |
+| `contracts/workflow-contract.js` | Workflow (Phase 4-7 — the ordered human process a document moves through, distinct from `approval_chain`'s static signer list) |
+| `contracts/ontology-contract.js` | Ontology (Phase 4-7 — the one per-domainType asset answering "what is this document type, and how does it fit the organization") |
+| `contracts/organizational-reasoning-contract.js` | Organizational Reasoning (Phase 4-7 — the payload shape for `js/v2/reasoning/`'s Diagnosis output; deliberately the one validator in this directory that rejects an empty evidence list) |
+| `contracts/question-tree-contract.js` | Question Tree (Phase 4-7 — a structured register of open questions about a domainType, never a fabricated FAQ) |
 
 Six concepts are deliberately **not** duplicated here because Phase 3
 already defined them and this layer just reuses them:

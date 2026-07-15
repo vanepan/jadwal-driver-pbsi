@@ -30,6 +30,17 @@ Five real steps, each registered against `step-registry.js` for
 | explain | `nor-explainer.js` | Reuses `explainability-service.js#explain` for every cited knowledge id. |
 | recommend | `nor-recommender.js` | Reuses the same stats `nor-generator.js` computed — never recomputed twice. |
 
+**Phase 8-10 addition, NOT a pipeline step**: `nor-composer.js#composeNorDocument`
+composes a fully-explainable draft (genuinely-known facts + Approved
+pattern/rendering_rule Knowledge, every field cited) and hands it to the
+long-dormant Composer store (`composer/composer-store.js#createDocument`)
+— see that file's own header for why this is deliberately NOT a sixth
+`step-registry.js` entry (composing organizational understanding into a
+draft is a different act from analyzing/drafting/validating one document
+instance) and why it still never calls `buildNorViewModel` or any
+renderer (see that same header for the three prior decisions this
+respects).
+
 **What Draft Composition deliberately never does**: propose `norNumber`,
 `subject`, recipients, or any other field whose correct value is
 genuinely business-specific data this platform has no statistical basis
