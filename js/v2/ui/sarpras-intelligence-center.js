@@ -72,6 +72,10 @@ import {
   registerImportSessionChangeListener, registerImportBatchChangeListener,
   sweepPipeline,
 } from '../knowledge/services/import-session-service.js';
+// Phase 6.5 (Pipeline Observability Hardening, Part 8) — Worker Health
+// observes the ONE real, event-driven sweepPipeline() call site below; it
+// never calls sweepPipeline() itself and never changes what it decides.
+import { recordSweepTick, getWorkerHealth } from '../knowledge/datasets/import-session/performance-collector.js';
 import { initFileStorageSync } from '../file-storage/file-storage-registry.js';
 // Phase 2.5 Part 3 — make the in-memory knowledge repo a deterministic
 // projection of the persisted Import Sessions, so imported Knowledge
@@ -110,12 +114,29 @@ import { listLearningEvents, LEARNING_KIND } from '../learning/services/learning
 import { computeOrganizationalMemory } from '../organizational-memory/organizational-memory-engine.js';
 import { computeCoverageReport } from '../organizational-memory/coverage-engine.js';
 import { countResolvedGaps } from '../organizational-memory/gap-workflow-engine.js';
+// Experience Architecture phase — Part 6 (Action-first Home): "Continue
+// Previous Batch" is real only when a real unfinished batch exists.
+import { listBatches, BATCH_STATUS } from '../knowledge/datasets/import-session/import-batch-engine.js';
+// Part 5 (Search-first): one aggregator over three already-real services —
+// see global-search-service.js's own header for why it invents nothing.
+import { globalSearch } from '../services/global-search-service.js';
+// Part 9 (Conversation-first): the REAL, deterministic Conversation Service
+// (Phase 6) — this file only renders what it returns, never reinterprets
+// an utterance itself and never adds a new intent.
+import { startConversation } from '../conversation/services/conversation-service.js';
+import { INTENT } from '../conversation/contracts/intent-contract.js';
 // Phase 3, Part 8 — see js/v2/dormant-subsystems.js. This briefing used to
 // count the OLD correction log's always-zero value.
 import { dormantNote } from '../dormant-subsystems.js';
 import { esc, isDeveloperMode, setPresentationMode } from './shared/workspace-list-kit.js';
 
-const SCREEN_IDS = ['dashboard', 'nor', 'archive', 'knowledge', 'learning'];
+// Experience Architecture phase — 'knowledge' keeps its screen id (still a
+// real, mountable, fully-working screen) even though it lost its primary
+// nav button (see js/app.js's nav panel); 'settings' is the one genuinely
+// new screen id this phase adds. Screen ids are internal routing, not user-
+// facing labels — the labels users actually see live in js/app.js's
+// SIC_MENU_TITLES and nav buttons, and in each workspace's own render.
+const SCREEN_IDS = ['dashboard', 'nor', 'archive', 'knowledge', 'learning', 'settings'];
 
 // Each nested workspace pulls in its own slice of Organizational Memory /
 // Knowledge / Document Intelligence — dynamically imported on first visit
@@ -127,6 +148,7 @@ const WORKSPACES = {
   archive: { modulePath: './archive-center.js', mountName: 'mountArchiveCenter', closeName: 'closeArchiveCenter' },
   knowledge: { modulePath: './knowledge-center.js', mountName: 'mountKnowledgeCenter', closeName: 'closeKnowledgeCenter' },
   learning: { modulePath: './learning-dashboard.js', mountName: 'mountLearningDashboard', closeName: 'closeLearningDashboard' },
+  settings: { modulePath: './sarpras-settings.js', mountName: 'mountSarprasSettings', closeName: 'closeSarprasSettings' },
 };
 
 let host = null;
@@ -150,6 +172,150 @@ function scheduleRender() {
     _renderTimer = null;
     if (screen === 'dashboard' && sections) sections.dashboard.innerHTML = renderDashboard();
   }, 100);
+}
+
+/* ── Home — Part 5 (Search) / Part 6 (Action-first) / Part 9 (Conversation)
+   Module-scope, mirroring dataset-import-center.js's own `st` idiom, just
+   without a controller factory (this file has always been a singleton —
+   only one Sarpras Intelligence shell ever mounts). Real, plain interaction
+   state only — no cached query results duplicated anywhere else. ────────── */
+const homeState = {
+  searchInput: '', searchResult: null,
+  conversationInput: '', conversation: null, conversationError: null,
+};
+
+const INTENT_LABEL = Object.freeze({
+  [INTENT.CREATE_NOR]: 'Membuat NOR',
+  [INTENT.UPLOAD_KNOWLEDGE]: 'Mengunggah Dokumen',
+  [INTENT.CORRECT_METADATA]: 'Mengoreksi Metadata',
+  [INTENT.ARCHIVE_DOCUMENT]: 'Mengarsipkan Dokumen',
+  [INTENT.REVIEW_KNOWLEDGE]: 'Meninjau Pengetahuan',
+  [INTENT.GENERATE_EXECUTIVE_BRIEFING]: 'Membuat Ringkasan Eksekutif',
+  [INTENT.UNKNOWN]: 'Tidak Dikenali',
+});
+
+/** Part 6 — real, conditional quick actions. "Lanjutkan Batch Sebelumnya"
+ *  and "Tinjau Pengecualian" only appear when a real reason to show them
+ *  exists (an unfinished batch; a nonzero attention count) — Part 7's "do
+ *  not show actions that cannot currently happen", applied to Home itself. */
+function computeQuickActions(attention) {
+  const actions = [
+    { id: 'upload', label: 'Unggah Dokumen', screen: 'archive' },
+    { id: 'generate-nor', label: 'Buat NOR', screen: 'nor' },
+  ];
+  const batches = safeList(listBatches, {});
+  const unfinished = batches.filter((b) => b.status === BATCH_STATUS.PROCESSING || b.status === BATCH_STATUS.PAUSED);
+  if (unfinished.length) {
+    actions.push({ id: 'continue-batch', label: `Lanjutkan Batch Sebelumnya (${unfinished.length})`, screen: 'archive' });
+  }
+  if (attention.total > 0) {
+    actions.push({ id: 'review', label: `Tinjau Pengecualian (${attention.total})`, screen: 'archive' });
+  }
+  return actions;
+}
+
+function renderQuickActions(actions) {
+  return `
+    <div class="sic-quick-actions">
+      ${actions.map((a) => `<button class="sic-quick-action" data-act="sic-nav" data-id="${esc(a.screen)}" type="button">${esc(a.label)}</button>`).join('')}
+    </div>`;
+}
+
+/** Part 5 — search-first. Submits on Enter/click only, never on keystroke
+ *  (same discipline dataset-import-center.js's Advanced Metadata form
+ *  already established — a keystroke must never cost a re-render, or the
+ *  caret/focus is lost mid-type). */
+function renderSearchBar() {
+  const r = homeState.searchResult;
+  const sections2 = r ? [
+    r.documents.length ? { title: 'Dokumen', items: r.documents.map((d) => `${d.filename} — ${stageLabelForSearch(d)}`) } : null,
+    r.archive.length ? { title: 'Arsip', items: r.archive.map((a) => `${a.documentNumber || a.id}`) } : null,
+    r.knowledge.length ? { title: 'Pengetahuan', items: r.knowledge.map((k) => `${k.kind} — ${k.id}`) } : null,
+  ].filter(Boolean) : [];
+  return `
+    <div class="sic-search">
+      <div class="sic-search-row">
+        <input class="sic-search-input" data-act="sic-search-input" type="text" placeholder="Cari dokumen, arsip, atau pengetahuan…" value="${esc(homeState.searchInput)}" />
+        <button class="wlk-btn" data-act="sic-search-submit" type="button">Cari</button>
+      </div>
+      ${r ? (r.total > 0 ? `
+        <div class="sic-search-results">
+          ${sections2.map((s) => `
+            <div class="sic-brief-sub">${esc(s.title)}</div>
+            <ul class="sic-brief-list">${s.items.map((t) => `<li><span class="sic-brief-label">${esc(t)}</span></li>`).join('')}</ul>`).join('')}
+        </div>` : `<p class="sic-next-action">Tidak ada hasil untuk "${esc(r.query)}".</p>`) : ''}
+    </div>`;
+}
+
+function stageLabelForSearch(session) {
+  return isTerminalImportSessionState(session.state) ? session.state : effectiveStage(session);
+}
+
+/** Part 9 — a real, minimal Conversation entry point. Renders EXACTLY what
+ *  startConversation() returns (intent detected, facts already known,
+ *  facts still missing) — no new intent pattern, no second interpretation
+ *  of the utterance, no fabricated confirmation. An utterance the real
+ *  Intent Engine cannot classify is shown as genuinely unrecognized —
+ *  never silently mapped onto the nearest known intent. */
+function renderConversationEntry() {
+  const c = homeState.conversation;
+  return `
+    <div class="sic-card sic-card--conversation">
+      <div class="sic-card-head"><div class="sic-card-h-title">Apa yang ingin Anda lakukan?</div></div>
+      <div class="sic-search-row">
+        <input class="sic-search-input" data-act="sic-conv-input" type="text" placeholder='Contoh: "saya ingin membuat NOR"' value="${esc(homeState.conversationInput)}" />
+        <button class="wlk-btn" data-act="sic-conv-start" type="button">Mulai</button>
+      </div>
+      ${homeState.conversationError ? `<p class="sic-next-action">${esc(homeState.conversationError)}</p>` : ''}
+      ${c ? renderConversationResult(c) : ''}
+    </div>`;
+}
+
+function renderConversationResult(c) {
+  if (!c.currentIntent || c.currentIntent.intent === INTENT.UNKNOWN || c.state === 'failed') {
+    return `<p class="sic-next-action">Permintaan ini belum dikenali platform. Coba salah satu: "saya ingin membuat NOR", "saya ingin mengunggah dokumen", "saya ingin meninjau pengetahuan".</p>`;
+  }
+  const known = Object.entries(c.gatheredFacts || {}).filter(([, v]) => v !== null && v !== undefined && v !== '');
+  return `
+    <div class="sic-conv-result">
+      <p class="sic-next-action">Terdeteksi: <strong>${esc(INTENT_LABEL[c.currentIntent.intent] || c.currentIntent.intent)}</strong></p>
+      ${known.length ? `<ul class="sic-brief-list">${known.map(([k, v]) => `<li><span class="sic-brief-label">${esc(k)}: ${esc(String(v))}</span></li>`).join('')}</ul>` : ''}
+      ${c.missingFacts && c.missingFacts.length ? `
+        <div class="sic-brief-sub">Masih diperlukan</div>
+        <ul class="sic-brief-list">${c.missingFacts.map((q) => `<li><span class="sic-brief-label">${esc(q.prompt)}</span></li>`).join('')}</ul>`
+    : '<p class="sic-next-action">Semua data yang diperlukan sudah ada.</p>'}
+    </div>`;
+}
+
+function onDashboardClick(e) {
+  const el = e.target.closest('[data-act]');
+  if (!el) return;
+  if (el.dataset.act === 'sic-nav') { setSarprasIntelligenceScreen(el.dataset.id); return; }
+  if (el.dataset.act === 'sic-search-submit') {
+    homeState.searchResult = globalSearch(homeState.searchInput);
+    sections.dashboard.innerHTML = renderDashboard();
+    return;
+  }
+  if (el.dataset.act === 'sic-conv-start') {
+    const utterance = homeState.conversationInput.trim();
+    if (!utterance) { homeState.conversationError = 'Ketik dulu apa yang ingin Anda lakukan.'; sections.dashboard.innerHTML = renderDashboard(); return; }
+    const result = startConversation({ utterance, actorId: 'evan' });
+    if (result.ok) { homeState.conversation = result.data; homeState.conversationError = null; } else { homeState.conversation = null; homeState.conversationError = result.error.message; }
+    sections.dashboard.innerHTML = renderDashboard();
+  }
+}
+
+/** Keystrokes update state only — never a re-render (see renderSearchBar's
+ *  own comment). Submission (click/Enter) is the only thing that redraws. */
+function onDashboardInput(e) {
+  if (e.target.dataset.act === 'sic-search-input') homeState.searchInput = e.target.value;
+  if (e.target.dataset.act === 'sic-conv-input') homeState.conversationInput = e.target.value;
+}
+
+function onDashboardKeydown(e) {
+  if (e.key !== 'Enter') return;
+  if (e.target.dataset.act === 'sic-search-input') { homeState.searchResult = globalSearch(homeState.searchInput); sections.dashboard.innerHTML = renderDashboard(); }
+  if (e.target.dataset.act === 'sic-conv-input') { document.querySelector('[data-act="sic-conv-start"]')?.click(); }
 }
 
 /** Mount into a platform-owned host (mirrors mountEngineering/mountPettyCash). */
@@ -204,7 +370,12 @@ export async function mountSarprasIntelligence(hostEl) {
         // sweep the unfinished ones (a sweep may finish more, which fires
         // another change event and re-projects them on the next pass).
         rehydrateKnowledgeFromSessions();
-        sweepPipeline();
+        // Phase 6.5 (Part 8) — real wall-clock time for this ONE real sweep
+        // call, recorded into the Performance Collector for Worker Health.
+        // Purely observational: the sweep's own decisions are unchanged.
+        const sweepStartMs = Date.now();
+        const summary = sweepPipeline();
+        recordSweepTick(summary, Date.now() - sweepStartMs);
       } catch (err) {
         console.error('[sarpras-intelligence-center] pipeline rehydration/sweep failed:', err);
       }
@@ -258,8 +429,15 @@ function buildShell() {
   sections = {};
   host.querySelectorAll('[data-sic-screen]').forEach((el) => { sections[el.dataset.sicScreen] = el; });
   sections.dashboard.innerHTML = renderDashboard();
-  // #nor / #archive / #knowledge / #learning are left empty — each nested
-  // workspace module owns its own content once mounted (see WORKSPACES).
+  // Home's own interactive elements (quick actions, search, Conversation
+  // entry) — one delegated listener set on the persistent screen container,
+  // same idiom every nested workspace already uses on its own host.
+  sections.dashboard.addEventListener('click', onDashboardClick);
+  sections.dashboard.addEventListener('input', onDashboardInput);
+  sections.dashboard.addEventListener('keydown', onDashboardKeydown);
+  // #nor / #archive / #knowledge / #learning / #settings are left empty —
+  // each nested workspace module owns its own content once mounted (see
+  // WORKSPACES).
 }
 
 function renderModeBar() {
@@ -289,9 +467,22 @@ function onModeBarClick(e) {
   }
 }
 
+// Experience Architecture phase — internal navigation (Home's quick
+// actions, Settings' Power View links) can now switch screens without
+// going through js/app.js's own nav-button click handler, which is the
+// ONLY place that used to keep the outer nav highlight in sync. Same
+// registerChangeListener idiom already used everywhere else in this
+// codebase (repositories, knowledge service) rather than a new mechanism:
+// v2 stays fully decoupled from app.js (it has no idea what a nav button
+// id is), and app.js registers one listener to resync its own highlight.
+const _screenChangeListeners = [];
+export function registerScreenChangeListener(cb) { if (typeof cb === 'function') _screenChangeListeners.push(cb); }
+function notifyScreenChange() { _screenChangeListeners.forEach((cb) => { try { cb(screen); } catch (e) { console.error('[sarpras-intelligence-center] screen change listener error', e); } }); }
+
 export function setSarprasIntelligenceScreen(nextScreen) {
   screen = nextScreen || 'dashboard';
   if (sections) showScreen(screen);
+  notifyScreenChange();
 }
 
 function showScreen(id) {
@@ -469,10 +660,10 @@ function computeExecutiveLearning() {
 function computeNextAction(attention) {
   if (attention.total === 0) return 'Tidak ada yang perlu tindakan Anda saat ini — semua beres.';
   const buckets = [
-    { count: attention.needsAttentionImports, text: `${attention.needsAttentionImports} dokumen impor menunggu tinjauan Anda di Dataset Import Center.` },
-    { count: attention.flaggedGaps, text: `${attention.flaggedGaps} dokumen yang hilang telah ditandai untuk diunggah di Archive Center.` },
-    { count: attention.knowledgeReview, text: `${attention.knowledgeReview} pengetahuan menunggu review di Knowledge Center.` },
-    { count: attention.pendingOverrides, text: `${attention.pendingOverrides} override profil menunggu persetujuan di NOR Center.` },
+    { count: attention.needsAttentionImports, text: `${attention.needsAttentionImports} dokumen menunggu tinjauan Anda di Documents.` },
+    { count: attention.flaggedGaps, text: `${attention.flaggedGaps} dokumen yang hilang telah ditandai untuk diunggah di Documents.` },
+    { count: attention.knowledgeReview, text: `${attention.knowledgeReview} pengetahuan menunggu review — buka Settings → Knowledge Center.` },
+    { count: attention.pendingOverrides, text: `${attention.pendingOverrides} override profil menunggu persetujuan di NOR.` },
   ].filter((b) => b.count > 0).sort((a, b) => b.count - a.count);
   return buckets[0].text;
 }
@@ -496,16 +687,21 @@ function renderDashboard() {
   const learned = computeLearnedSummary();
   const executiveLearning = computeExecutiveLearning();
   const nextAction = computeNextAction(attention);
+  const quickActions = computeQuickActions(attention);
 
   return `
     <div class="sic-content">
       <div class="sic-page-head">
         <div>
           <div class="sic-page-crumb">SARPRAS INTELLIGENCE</div>
-          <h1 class="sic-page-title">Ringkasan</h1>
-          <p class="sic-page-lede">Organizational Learning Platform</p>
+          <h1 class="sic-page-title">Home</h1>
+          <p class="sic-page-lede">Apa yang ingin Anda lakukan hari ini?</p>
         </div>
       </div>
+
+      ${renderSearchBar()}
+      ${renderQuickActions(quickActions)}
+      ${renderConversationEntry()}
 
       <div class="sic-card">
         <div class="sic-card-head"><div class="sic-card-h-title">Apa yang terjadi hari ini?</div></div>
@@ -527,10 +723,10 @@ function renderDashboard() {
         <div class="sic-card-head"><div class="sic-card-h-title">Apa yang butuh perhatian?</div></div>
         <ul class="sic-brief-list">
           <li><span class="sic-brief-count">${attention.total}</span><span class="sic-brief-label">total memerlukan tindakan Anda</span></li>
-          ${attention.needsAttentionImports ? `<li><span class="sic-brief-count">${attention.needsAttentionImports}</span><span class="sic-brief-label">di Dataset Import Center</span></li>` : ''}
-          ${attention.flaggedGaps ? `<li><span class="sic-brief-count">${attention.flaggedGaps}</span><span class="sic-brief-label">di Archive Center</span></li>` : ''}
-          ${attention.knowledgeReview ? `<li><span class="sic-brief-count">${attention.knowledgeReview}</span><span class="sic-brief-label">di Knowledge Center</span></li>` : ''}
-          ${attention.pendingOverrides ? `<li><span class="sic-brief-count">${attention.pendingOverrides}</span><span class="sic-brief-label">di NOR Center</span></li>` : ''}
+          ${attention.needsAttentionImports ? `<li><span class="sic-brief-count">${attention.needsAttentionImports}</span><span class="sic-brief-label">dokumen di Documents</span></li>` : ''}
+          ${attention.flaggedGaps ? `<li><span class="sic-brief-count">${attention.flaggedGaps}</span><span class="sic-brief-label">dokumen hilang ditandai di Documents</span></li>` : ''}
+          ${attention.knowledgeReview ? `<li><span class="sic-brief-count">${attention.knowledgeReview}</span><span class="sic-brief-label">pengetahuan menunggu tinjauan (Settings → Knowledge Center)</span></li>` : ''}
+          ${attention.pendingOverrides ? `<li><span class="sic-brief-count">${attention.pendingOverrides}</span><span class="sic-brief-label">override profil di NOR</span></li>` : ''}
         </ul>
       </div>
 
@@ -619,11 +815,18 @@ function computeTechnicalDiagnostics() {
     stuck,
     domainTypeCount: listDomainTypes().length,
     kindCount: listKinds().length,
+    // Phase 6.5 (Part 8) — real Worker Health, read straight off the
+    // Performance Collector (never recomputed here). `sweepPipeline()` is
+    // deliberately event-driven, never polled (see pipeline-scheduler.js's
+    // own header) — there is no fixed tick interval, so "Sweep" replaces
+    // "Tick" in the labels below to avoid implying one exists.
+    workerHealth: getWorkerHealth(),
   };
 }
 
 function renderTechnicalDiagnostics() {
   const diag = computeTechnicalDiagnostics();
+  const wh = diag.workerHealth;
   const stageRows = ALL_DIAGNOSTIC_STAGES.map((stage) => `
     <li><span class="sic-brief-count">${diag.byStage[stage] || 0}</span><span class="sic-brief-label">${esc(stage)}</span></li>`).join('');
 
@@ -637,6 +840,19 @@ function renderTechnicalDiagnostics() {
       <ul class="sic-brief-list">
         <li><span class="sic-brief-count">${diag.retrying}</span><span class="sic-brief-label">sesi sedang dicoba ulang otomatis oleh scheduler</span></li>
         <li><span class="sic-brief-count">${diag.stuck}</span><span class="sic-brief-label">sesi masih bergerak di pipeline (bukan terminal, bukan menunggu bukti)</span></li>
+      </ul>
+      <div class="sic-card-h-title" style="margin-top:12px;">Worker Health (Scheduler — event-driven, tidak ada polling)</div>
+      <ul class="sic-brief-list">
+        <li><span class="sic-brief-count">${wh.queueSize}</span><span class="sic-brief-label">antrean aktif (belum terminal, bukan menunggu bukti)</span></li>
+        <li><span class="sic-brief-count">${wh.awaitingEvidence}</span><span class="sic-brief-label">menunggu bukti manusia</span></li>
+        <li><span class="sic-brief-count">${wh.runningBatches}</span><span class="sic-brief-label">batch sedang diproses</span></li>
+        <li><span class="sic-brief-count">${wh.pausedBatches}</span><span class="sic-brief-label">batch dijeda</span></li>
+        <li><span class="sic-brief-count">${wh.cancelledBatches}</span><span class="sic-brief-label">batch dibatalkan</span></li>
+        <li><span class="sic-brief-count">${wh.retryCount}</span><span class="sic-brief-label">total automatic retry (semua sesi)</span></li>
+        <li><span class="sic-brief-count">${wh.sweepCount}</span><span class="sic-brief-label">sweep nyata sejak tab ini dibuka</span></li>
+        <li><span class="sic-brief-count">${wh.lastSweepDurationMs === null ? '—' : wh.lastSweepDurationMs + ' ms'}</span><span class="sic-brief-label">durasi sweep terakhir</span></li>
+        <li><span class="sic-brief-count">${wh.averageSweepDurationMs === null ? '—' : wh.averageSweepDurationMs + ' ms'}</span><span class="sic-brief-label">rata-rata durasi sweep</span></li>
+        <li><span class="sic-brief-count">${wh.lastSweepAt || '—'}</span><span class="sic-brief-label">waktu sweep terakhir</span></li>
       </ul>
     </div>`;
 }

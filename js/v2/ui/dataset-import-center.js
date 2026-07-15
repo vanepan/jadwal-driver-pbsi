@@ -85,6 +85,14 @@ import {
 import {
   inferMetadata, inferPatternAssisted, AUTO_POPULATE_CONFIDENCE_THRESHOLD,
 } from '../knowledge/datasets/import-session/metadata-inference-engine.js';
+// Phase 6.5 (Pipeline Observability Hardening) — the ONE source of truth for
+// progress/speed/ETA/per-file timing/batch metrics. This UI file no longer
+// computes any of those itself (see renderBatchProgress's old "Part J",
+// removed) — it only reads a snapshot. See performance-collector.js's header.
+import {
+  recordFileTiming, computeFileTimingBreakdown, getSessionStageTimeline, getBatchPerformanceSnapshot,
+} from '../knowledge/datasets/import-session/performance-collector.js';
+import { classifyFailure, classifyUploadError } from '../knowledge/datasets/import-session/failure-classification-engine.js';
 import {
   createBatch, recordBatchItem, pauseBatch, resumeBatch, completeBatch,
   getBatch, listBatches, getBatchHistory, BATCH_STATUS,
@@ -98,7 +106,14 @@ import { listKinds } from '../knowledge/registry/kind-registry.js';
 // used to be imported here, straight off the repository via the barrel; that was
 // the second-owner defect the Phase 2.6 audit named, on the pipeline's primary
 // archive path.
-import { computeDocumentHash } from '../organizational-memory/index.js';
+import {
+  computeDocumentHash, ARCHIVE_STATE_DEFS,
+  // Experience Architecture phase (Part 3/8) — the SAME real Archive
+  // Service reads Archive Center's own detail drawer already uses (same
+  // import source, same functions), now also surfaced inline on the
+  // document itself. Reused verbatim, never recomputed.
+  explainArchiveRecord, getArchiveRelationships, getReplacementChain,
+} from '../organizational-memory/index.js';
 import {
   archiveImportedKnowledge, listArchive as archiveList,
 } from '../organizational-memory/services/archive-service.js';
@@ -113,6 +128,8 @@ import { recordCorrection, CORRECTION_TYPE } from '../learning/services/learning
 // has no Firebase dependency (unlike file-storage-engine.js below).
 import { getNeighbors } from '../knowledge/services/knowledge-graph-service.js';
 import { computeSha256 } from '../file-storage/file-hash.js';
+// Phase 7 (Runtime Hardening, Part 3) — JSON parsing offload; see worker-runtime.js's header.
+import { parseJsonText } from '../file-storage/worker-runtime.js';
 import { listStoredFiles, getStoredFileBySha256 } from '../file-storage/file-storage-registry.js';
 // V2.1 — file-storage-engine.js transitively imports js/firebase.js (the
 // real Storage SDK, from a CDN at module top-level). Lazily imported
@@ -144,6 +161,51 @@ const UTILITY_VIEWS = [
 ];
 
 const RECENT_ROW_CAP = 20;
+
+/** Phase 8 (Experience Architecture, Part 1) — "Smart Import Feed". A
+ *  completed entry older than this, real elapsed time since its own real
+ *  `updatedAt`, is auto-expired from the feed by default (never from
+ *  Archive — this is a display filter only). 24 hours: long enough that
+ *  "what did I just do" stays visible for a full working day, short enough
+ *  that the feed genuinely gets quieter over time exactly as Part 2 asks,
+ *  without any timer — this is a pure function of real timestamps,
+ *  recomputed on every render, never a setInterval. */
+const FEED_AUTO_EXPIRE_MS = 24 * 60 * 60 * 1000;
+
+/** Real, closed set of review-reason codes reviewReasons() actually
+ *  produces (verified by reading every push() site in that function) —
+ *  grouping reads this, never a fabricated finer taxonomy the mission's
+ *  own illustrative examples ("Unknown Vendor", "Unknown Template") don't
+ *  actually correspond to distinct engine signals for. */
+const EXCEPTION_GROUP_LABEL = Object.freeze({
+  MISSING_CONTENT_FACTS: 'Fakta Dokumen Belum Diisi',
+  LOW_CONFIDENCE: 'Metadata Belum Yakin',
+  DUPLICATE_AMBIGUITY: 'Kemungkinan Duplikat',
+  VALIDATION_ERROR: 'Kesalahan Validasi',
+  PIPELINE_RETRYING: 'Sedang Dicoba Ulang Otomatis',
+  UNSUPPORTED_FORMAT: 'Format Tidak Didukung',
+  PIPELINE_FAILED: 'Gagal Diproses',
+});
+
+/** Phase 7 (Runtime Hardening, Part 2) — the parallel upload queue's real,
+ *  code-level "configurable concurrency" (no new settings UI — see this
+ *  milestone's report on why a UI control was deliberately out of scope).
+ *  BASE is where every fresh tab session starts; the running value below
+ *  adapts between batches from each batch's REAL observed failure rate,
+ *  never mid-batch (a running batch's own concurrency stays fixed for the
+ *  whole run — simple to reason about and reproduce, per "pipeline tetap
+ *  deterministic"). Bounded both directions. */
+const BASE_CONCURRENCY = 4;
+const MIN_CONCURRENCY = 1;
+const MAX_CONCURRENCY = 8;
+// Module-scope on purpose: this reflects real, observed network/Storage
+// conditions for THIS BROWSER TAB, not any one workspace's own upload zone —
+// archive-center.js and nor-center.js each embed their own
+// createDatasetImportController() instance (see this file's own header),
+// but they share the same tab, the same network, and the same Storage
+// backend, so a struggling connection discovered in one should throttle
+// the other too, not relearn it from zero.
+let _adaptiveConcurrency = BASE_CONCURRENCY;
 
 const BATCH_STATUS_DISPLAY_LABEL = Object.freeze({
   processing: 'Diproses',
@@ -234,13 +296,21 @@ const DEV_STAGE_LABEL = Object.freeze({
  *  CLASSIFICATION, which is why a file that had long since finished uploading
  *  (and in many cases had been fully classified, validated and given up on)
  *  still displayed a confident "Uploading" badge forever. The label described
- *  a step the session had already left, so the badge could never clear. */
+ *  a step the session had already left, so the badge could never clear.
+ *
+ *  Autonomous Experience phase — labels renamed from the old pipeline-
+ *  shaped words ("Processing", "Finishing", "Completed") to activity words
+ *  that name what is REALLY happening at each phase, not implementation
+ *  detail: "Building Knowledge" is literally when Knowledge Extraction
+ *  runs; "Learning" is literally when Learning Registration + Archive run.
+ *  Only `label` changed — `id`/`stages` (what every reader keys off of) are
+ *  byte-identical, so this is presentation-only, zero logic change. */
 const NORMAL_PHASES = Object.freeze([
   { id: 'preparing', label: 'Preparing', stages: [PIPELINE_STAGE.PREPARING, PIPELINE_STAGE.FINGERPRINTING, PIPELINE_STAGE.DEDUPLICATION, PIPELINE_STAGE.CLASSIFICATION] },
   { id: 'uploading', label: 'Uploading', stages: [PIPELINE_STAGE.UPLOADING] },
-  { id: 'processing', label: 'Processing', stages: [PIPELINE_STAGE.POLICY_VALIDATION, PIPELINE_STAGE.KNOWLEDGE_EXTRACTION] },
-  { id: 'finishing', label: 'Finishing', stages: [PIPELINE_STAGE.LEARNING, PIPELINE_STAGE.ARCHIVE] },
-  { id: 'completed', label: 'Completed', stages: [PIPELINE_STAGE.COMPLETED] },
+  { id: 'processing', label: 'Building Knowledge', stages: [PIPELINE_STAGE.POLICY_VALIDATION, PIPELINE_STAGE.KNOWLEDGE_EXTRACTION] },
+  { id: 'finishing', label: 'Learning', stages: [PIPELINE_STAGE.LEARNING, PIPELINE_STAGE.ARCHIVE] },
+  { id: 'completed', label: 'Ready', stages: [PIPELINE_STAGE.COMPLETED] },
 ]);
 
 /** The off-ramps get their own plain-language labels — they are NOT points on
@@ -384,9 +454,56 @@ export function computeBatchCounters(p) {
   };
 }
 
+/** Phase 8 (Experience Architecture, Part 5) — Progressive Question
+ *  Reduction, made VISIBLE. Buckets an ISO timestamp into the Monday of
+ *  its calendar week (UTC) — a pure date computation, not a new concept. */
+export function isoWeekKey(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const day = (d.getUTCDay() + 6) % 7; // Mon=0 .. Sun=6
+  d.setUTCDate(d.getUTCDate() - day);
+  return d.toISOString().slice(0, 10);
+}
+
+/** "Day 1 many questions, Day 30 fewer, Day 180 almost none" made honest
+ *  and measurable: `autoImported` is a real, persisted boolean the
+ *  scheduler alone sets (markAutoImported — see its own header, "the
+ *  pipeline had all the deterministic evidence it needed and finished
+ *  without a human click"), never fabricated or estimated here. Binning
+ *  TERMINAL sessions (a session mid-pipeline hasn't earned its outcome
+ *  yet) by the real ISO week of their `createdAt` and comparing the share
+ *  that never needed a human, week over week, is a pure aggregation over
+ *  data that already exists — no new engine, no new field, no invented
+ *  number. Module-scope + exported (like effectiveStage/
+ *  computeBatchCounters above) so it is independently testable against
+ *  hand-built session-shaped fixtures, without needing to backdate a real
+ *  repository record. */
+export function computeAutonomyTrend(all) {
+  const byWeek = new Map();
+  for (const s of all) {
+    if (!isTerminalImportSessionState(s.state)) continue;
+    const key = isoWeekKey(s.createdAt);
+    if (!key) continue;
+    if (!byWeek.has(key)) byWeek.set(key, { weekStart: key, total: 0, autonomous: 0 });
+    const bucket = byWeek.get(key);
+    bucket.total += 1;
+    if (s.autoImported) bucket.autonomous += 1;
+  }
+  return [...byWeek.values()]
+    .sort((a, b) => a.weekStart.localeCompare(b.weekStart))
+    .map((w) => ({ ...w, rate: w.total > 0 ? Math.round((w.autonomous / w.total) * 100) : 0 }));
+}
+
 function domainLabel(id) {
   const registered = getDomainType(id);
   return registered ? registered.label : id;
+}
+
+/** Experience Architecture phase — same ARCHIVE_STATE_DEFS lookup
+ *  archive-center.js's own archiveStateLabel() already uses. */
+function archiveStateLabelFor(state) {
+  const def = ARCHIVE_STATE_DEFS.find((d) => d.id === state);
+  return def ? def.label : (state || '—');
 }
 
 function fileKind(mimeType) {
@@ -649,6 +766,36 @@ export function findReusableContentFacts(storedFileRecord, currentSessionId) {
   return null;
 }
 
+/** Phase 8 (Experience Architecture, Part 4) — Consensus Experience.
+ *  "This value was completed automatically from previous approved
+ *  organizational knowledge" is only ever TRUE of one real, already-
+ *  persisted signal: `historicalSimilarity` (see import-confidence-
+ *  engine.js#computeImportConfidence). Its supportCount comes from
+ *  metadata-inference-engine.js#historicalSupportFor ->
+ *  pattern-discovery-engine.js#computePatternRecommendations(), which
+ *  reads ONLY Approved Knowledge (that file's own header: "the platform
+ *  begins collecting statistical evidence from Approved organizational
+ *  knowledge") — so `available:true` here is never a guess, it is a real
+ *  match against decisions humans already approved.
+ *
+ *  Every OTHER signal that can also produce a high confidence score
+ *  (filenameSimilarity, a registered classification default,
+ *  well-formed JSON structure) is real evidence but is NOT organizational
+ *  consensus, and is deliberately left unmentioned — claiming "the
+ *  organization has seen this before" for a session that merely had a
+ *  well-named file would be exactly the fabricated confidence this
+ *  engine's own header rules out. Returns null (nothing to say) whenever
+ *  there is no such precedent. No AI, no fuzzy matching — a plain read of
+ *  a field that already exists on the session. */
+export function consensusExplanation(session) {
+  const signals = session.confidenceRationale && Array.isArray(session.confidenceRationale.signals)
+    ? session.confidenceRationale.signals : null;
+  if (!signals) return null;
+  const historical = signals.find((sig) => sig.id === 'historicalSimilarity');
+  if (!historical || !historical.available) return null;
+  return 'Metadata dokumen ini terisi otomatis karena polanya sudah pernah terlihat dan disetujui sebelumnya sebagai pengetahuan organisasi — bukan tebakan mesin.';
+}
+
 /** Sprint 0 (Presentation Truth) — Advanced Metadata open/save/close all
  *  call `rerender()`, which does `contentEl.innerHTML = controller.render()`
  *  inside the host's real scrolling container (`.main-content` — same
@@ -682,12 +829,31 @@ export function createDatasetImportController(opts = {}) {
     batchProgress: null,
     advancedEditId: null, // sessionId currently showing the Advanced Metadata panel
     advancedEdit: null,   // working copy of {domainType, datasetType, knowledgeKind, facts}
+    advancedApplyToGroup: false, // Phase 8 (Part 3/6) — broadcast this correction to the rest of the LOW_CONFIDENCE group
     resumeBannerDismissed: false, // V2.1.2 Part E — Upload Recovery
     batchSearch: '', // V2.1.2 Part I — Batch History
     batchStatusFilter: '__all',
     batchSort: 'newest', // 'newest' | 'oldest' | 'mostFiles'
     selectedBatchId: null,
     preview: { sessionId: null, url: null, loading: false, error: null }, // V2.1.2 Part L — Document Preview
+    // Autonomous Experience (Part 2) — Progressive Import Queue. Which
+    // in-flight phase buckets are expanded; collapsed by default so a
+    // 500-file batch never renders hundreds of row cards at once — only a
+    // count, until the operator explicitly asks to see one bucket's rows.
+    expandedQueueBuckets: new Set(),
+    // Phase 8 (Experience Architecture, Part 1) — Smart Import Feed. This is
+    // ALL presentation-only state: dismissing/pinning a session id never
+    // calls a single engine mutator, never touches the persisted
+    // ImportSessionRecord or its ArchiveRecord — "Archive is already the
+    // permanent history; the feed is an operational view over it." A
+    // refresh or a second tab legitimately sees every completed session
+    // again (this state is intentionally NOT persisted to localStorage —
+    // the feed is meant to re-derive itself from real data, not remember a
+    // per-browser dismissal forever).
+    feedDismissedIds: new Set(),
+    feedPinnedIds: new Set(),
+    feedSelectedIds: new Set(),
+    feedExpanded: false,
   };
 
   /* ── shared reads ──────────────────────────────────────────────── */
@@ -769,12 +935,194 @@ export function createDatasetImportController(opts = {}) {
     return NORMAL_PHASES.map((phase, i) => ({ label: phase.label, count: counts[i] }));
   }
 
+  /** Autonomous Experience (Part 2) — "Progressive Import Queue". The old
+   *  "Aktivitas Langsung" section rendered every in-flight session as a
+   *  full row card, capped at QUEUE_ROW_CAP but still up to 50 real DOM
+   *  nodes on every single render during a big batch. This buckets the
+   *  SAME sessions by the SAME real phase (STAGE_TO_NORMAL_PHASE_INDEX —
+   *  no new derivation) into collapsed, count-only rows; a bucket's row
+   *  cards are only ever built when the operator explicitly expands it.
+   *  Autonomous, non-actionable work (this is by construction — inFlight
+   *  already excludes terminal/off-ramp sessions, see renderWorkspace())
+   *  stays quiet by default, matching Part 4's "human by exception". */
+  function bucketInFlightByPhase(inFlight) {
+    const buckets = NORMAL_PHASES.map(() => []);
+    inFlight.forEach((s) => { buckets[STAGE_TO_NORMAL_PHASE_INDEX[effectiveStage(s)] ?? 0].push(s); });
+    return buckets;
+  }
+
+  function renderProgressiveQueue(inFlight) {
+    if (!inFlight.length) return '';
+    const buckets = bucketInFlightByPhase(inFlight);
+    const rows = NORMAL_PHASES.map((phase, i) => {
+      const items = buckets[i];
+      if (!items.length) return ''; // an empty phase isn't worth a row at all
+      const expanded = st.expandedQueueBuckets.has(phase.id);
+      const body = expanded
+        ? renderRowList(items.slice(0, QUEUE_ROW_CAP), renderQueueRow)
+        : '';
+      return `
+        <li class="dic-queue-bucket${expanded ? ' dic-queue-bucket--open' : ''}">
+          <button class="dic-queue-bucket-head" data-act="dic-queue-bucket-toggle" data-id="${esc(phase.id)}" type="button" aria-expanded="${expanded}">
+            <span class="dic-queue-bucket-chevron" aria-hidden="true">${expanded ? '▾' : '▸'}</span>
+            <span class="dic-queue-bucket-label">${esc(phase.label)}</span>
+            <span class="dic-queue-bucket-count">${items.length}</span>
+          </button>
+          ${expanded ? `<div class="dic-queue-bucket-body">${body}</div>` : ''}
+        </li>`;
+    }).join('');
+    return `
+      <div class="wlk-sec">
+        <div class="wlk-sec-title">Sedang Diproses (${inFlight.length})</div>
+        <ul class="dic-queue-buckets">${rows}</ul>
+      </div>`;
+  }
+
+  /* ── Smart Import Feed (Phase 8, Part 1/2) ───────────────────────────
+     "Impor Terbaru" stops behaving like a permanent log — Archive already
+     IS the permanent history (verified: every completed session's real
+     ArchiveRecord is untouched by anything below). This is an OPERATIONAL
+     feed: it gets quieter as documents age, and every "clear" action here
+     is a pure display filter, never an engine call. ─────────────────────── */
+
+  /** Real, pure derivation from real timestamps — never a setInterval, no
+   *  hidden timer. Recomputed on every render, so it is always exactly as
+   *  current as the data it reads. */
+  function computeVisibleFeed(recent) {
+    const now = Date.now();
+    const visible = [];
+    let autoExpiredCount = 0;
+    for (const s of recent) {
+      if (st.feedDismissedIds.has(s.id)) continue; // explicitly cleared — gone from the feed only
+      const pinned = st.feedPinnedIds.has(s.id);
+      const age = now - new Date(s.updatedAt || 0).getTime();
+      if (!pinned && age > FEED_AUTO_EXPIRE_MS) { autoExpiredCount += 1; continue; }
+      visible.push(s);
+    }
+    return { visible, autoExpiredCount };
+  }
+
+  function renderFeedRow(s) {
+    const pinned = st.feedPinnedIds.has(s.id);
+    const selected = st.feedSelectedIds.has(s.id);
+    // Phase 8 (Experience Architecture, Part 4) — same compact tag as the
+    // full Queue row (renderQueueRow); a real, deterministic distinction
+    // between "auto-completed" and "auto-completed because the org has
+    // already approved this exact pattern before", never a repeated
+    // sentence in a list that may hold many rows.
+    const autoTag = s.autoImported ? (consensusExplanation(s) ? ' · otomatis (pola organisasi)' : ' · otomatis') : '';
+    return `
+      <li class="wlk-row dic-feed-row${pinned ? ' dic-feed-row--pinned' : ''}" data-act="dic-session-row" data-id="${esc(s.id)}" data-clickable="1">
+        <span class="wlk-row-primary">
+          <input class="dic-feed-checkbox" type="checkbox" data-act="dic-feed-select" data-id="${esc(s.id)}" ${selected ? 'checked' : ''} />
+          ${esc(s.filename)}${autoTag} <span class="dic-stage-badge">${esc(stageLabelFor(s))}</span>${pinned ? ' <span class="dic-feed-pin-badge">📌</span>' : ''}
+        </span>
+        <span class="wlk-row-secondary">${esc(domainLabel(s.domainType))} · ${esc(s.kind)} · ${formatFileSize(s.sizeBytes)}</span>
+        <button class="wlk-btn wlk-btn--ghost" data-act="dic-feed-pin" data-id="${esc(s.id)}" type="button">${pinned ? 'Lepas Pin' : 'Pin'}</button>
+      </li>`;
+  }
+
+  function renderSmartFeed(recent) {
+    const { visible, autoExpiredCount } = computeVisibleFeed(recent);
+    const expanded = st.feedExpanded;
+    const selectedCount = [...st.feedSelectedIds].filter((id) => visible.some((s) => s.id === id)).length;
+    const clearableCount = visible.filter((s) => !st.feedPinnedIds.has(s.id)).length;
+    return `
+      <div class="wlk-sec">
+        <div class="dic-feed-head">
+          <button class="dic-queue-bucket-head" data-act="dic-feed-toggle" type="button" aria-expanded="${expanded}">
+            <span class="dic-queue-bucket-chevron" aria-hidden="true">${expanded ? '▾' : '▸'}</span>
+            <span class="dic-queue-bucket-label">Selesai</span>
+            <span class="dic-queue-bucket-count">${visible.length}</span>
+          </button>
+          <div class="dic-feed-actions">
+            ${selectedCount ? `<button class="wlk-btn wlk-btn--ghost" data-act="dic-feed-clear-selected" type="button">Hapus dari Feed (${selectedCount})</button>` : ''}
+            ${clearableCount ? `<button class="wlk-btn wlk-btn--ghost" data-act="dic-feed-clear-completed" type="button">Bersihkan Semua yang Selesai</button>` : ''}
+          </div>
+        </div>
+        <p class="wlk-row-secondary" style="margin:6px 0 0;">Ini hanya membersihkan notifikasi feed — arsip permanen di Documents tidak berubah.${autoExpiredCount ? ` ${autoExpiredCount} entri lama (&gt;24 jam) otomatis disembunyikan.` : ''}</p>
+        ${expanded ? (visible.length
+    ? `<div class="dic-queue-bucket-body">${renderRowList(visible, renderFeedRow)}</div>`
+    : renderEmptyState('Belum ada impor.', 'Impor yang selesai tanpa masalah akan muncul di sini.')) : ''}
+      </div>`;
+  }
+
+  /* ── Grouped Exceptions (Phase 8, Part 3/6) ──────────────────────────
+     Groups by the REAL, closed set of reviewReasons() codes (verified by
+     reading every push() site in that function) — never a finer,
+     fabricated taxonomy. Only the LOW_CONFIDENCE group gets a real
+     "resolve all" action: classification fields (domain/dataset/kind)
+     genuinely CAN be shared correctly across many documents from the same
+     source; content facts (documentNumber/value) genuinely cannot — giving
+     every group a fake "resolve all" button would mean writing the same
+     unique-per-document fact onto documents it was never true of. ──────── */
+  function groupNeedsAttention(needsAttention) {
+    const groups = new Map(); // code -> sessions[]
+    for (const s of needsAttention) {
+      const reasons = reviewReasons(s);
+      const code = reasons.length ? reasons[0].code : 'UNKNOWN';
+      if (!groups.has(code)) groups.set(code, []);
+      groups.get(code).push(s);
+    }
+    return [...groups.entries()].map(([code, items]) => ({ code, items }))
+      .sort((a, b) => b.items.length - a.items.length);
+  }
+
+  function renderExceptionGroups(needsAttention) {
+    if (!needsAttention.length) return renderEmptyState('Semua beres.', 'Tidak ada sesi yang memerlukan tindakan Anda saat ini.');
+    const groups = groupNeedsAttention(needsAttention);
+    return `<ul class="dic-queue-buckets">${groups.map((g) => {
+      const expanded = st.expandedQueueBuckets.has(`exc:${g.code}`);
+      const label = EXCEPTION_GROUP_LABEL[g.code] || g.code;
+      const canResolveAll = g.code === 'LOW_CONFIDENCE' && g.items.length > 1;
+      return `
+        <li class="dic-queue-bucket${expanded ? ' dic-queue-bucket--open' : ''}">
+          <button class="dic-queue-bucket-head" data-act="dic-queue-bucket-toggle" data-id="exc:${esc(g.code)}" type="button" aria-expanded="${expanded}">
+            <span class="dic-queue-bucket-chevron" aria-hidden="true">${expanded ? '▾' : '▸'}</span>
+            <span class="dic-queue-bucket-label">${esc(label)}</span>
+            <span class="dic-queue-bucket-count">${g.items.length}</span>
+          </button>
+          ${expanded ? `
+          <div class="dic-queue-bucket-body">
+            ${canResolveAll ? `<p class="wlk-row-secondary" style="margin:0 0 8px;">Domain/tipe/kind yang sama sering berlaku untuk seluruh grup ini — buka satu dokumen, lengkapi metadatanya, lalu centang "Terapkan ke ${g.items.length - 1} dokumen lain di grup ini" saat menyimpan.</p>` : ''}
+            ${renderRowList(g.items.slice(0, QUEUE_ROW_CAP), renderQueueRow)}
+          </div>` : ''}
+        </li>`;
+    }).join('')}</ul>`;
+  }
+
   function renderOperationalOverview(all) {
     const cards = computeOperationalOverview(all).map((b) => ({ count: b.count, label: b.label }));
     return `
       <div class="wlk-sec">
         <div class="wlk-sec-title">Ringkasan Operasional</div>
         ${renderStatCards(cards)}
+      </div>`;
+  }
+
+  /** Phase 8 (Experience Architecture, Part 5) — "Day 1 many questions, Day
+   *  30 fewer, Day 180 almost none", made visible AND explained. Silent
+   *  (returns '') when there are fewer than 2 weeks of terminal history —
+   *  an honest empty state, never a fabricated trend from one data point.
+   *  The explanation text names the REAL, already-shipped mechanisms this
+   *  same phase built (Consensus Experience's historicalSimilarity match,
+   *  and the group-broadcast in Advanced Metadata) rather than inventing a
+   *  cause for any single week's number. */
+  function renderAutonomyTrend(all) {
+    const weeks = computeAutonomyTrend(all).slice(-8);
+    if (weeks.length < 2) return '';
+    const first = weeks[0];
+    const last = weeks[weeks.length - 1];
+    const trendRow = (w) => `
+      <li class="wlk-row">
+        <span class="wlk-row-primary">Minggu ${esc(w.weekStart)}</span>
+        <span class="wlk-row-secondary">${w.rate}% dokumen selesai tanpa pertanyaan (${w.autonomous}/${w.total})</span>
+      </li>`;
+    return `
+      <div class="wlk-sec">
+        <div class="wlk-sec-title">Semakin Sedikit Pertanyaan Seiring Waktu</div>
+        <p class="wlk-page-lede">Minggu ${esc(first.weekStart)}: ${first.rate}% otomatis. Minggu ${esc(last.weekStart)}: ${last.rate}% otomatis. Ini terjadi karena setiap metadata yang Anda konfirmasi menjadi preseden nyata untuk dokumen serupa berikutnya (lihat "Konsensus Organisasi" pada detail dokumen), dan satu koreksi pada grup "Metadata Belum Yakin" langsung menyelesaikan dokumen lain dengan alasan yang sama — bukan tebakan, hanya semakin banyak pengetahuan organisasi yang tersedia untuk digunakan kembali.</p>
+        ${renderRowList(weeks, trendRow)}
       </div>`;
   }
 
@@ -789,8 +1137,15 @@ export function createDatasetImportController(opts = {}) {
     // state existed, so both kinds of dead document kept marching in the live
     // list forever.
     const inFlight = all.filter((s) => !isTerminalImportSessionState(s.state) && !isOffRampStage(s.pipelineStage));
+    // Autonomous Experience (Part 6, Quiet UI) — a real, found redundancy:
+    // a FAILED session is terminal AND carries a review reason, so the old
+    // `isTerminalImportSessionState(s.state) || reviewReasons(s).length===0`
+    // put it in BOTH "Perlu Perhatian" (correctly, prominently) AND here
+    // (again, quietly, with no actions — just noise). Excluding anything
+    // still carrying a real reason keeps Archived/Cancelled (which have
+    // none) here, and stops Failed from ever showing twice.
     const recent = all
-      .filter((s) => isTerminalImportSessionState(s.state) || reviewReasons(s).length === 0)
+      .filter((s) => reviewReasons(s).length === 0)
       .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))
       .slice(0, RECENT_ROW_CAP);
     const resumeBanner = (!p && !st.resumeBannerDismissed) ? renderResumeBanner() : '';
@@ -811,31 +1166,18 @@ export function createDatasetImportController(opts = {}) {
 
         ${renderOperationalOverview(all)}
 
+        ${renderAutonomyTrend(all)}
+
         ${progressBlock}
 
-        ${inFlight.length ? `
-        <div class="wlk-sec">
-          <div class="wlk-sec-title">Aktivitas Langsung (${inFlight.length})</div>
-          ${renderRowList(inFlight.slice(0, QUEUE_ROW_CAP), renderQueueRow)}
-        </div>` : ''}
+        ${renderProgressiveQueue(inFlight)}
 
         <div class="wlk-sec">
           <div class="wlk-sec-title">Perlu Perhatian (${needsAttention.length})</div>
-          ${needsAttention.length
-            ? renderRowList(needsAttention.slice(0, QUEUE_ROW_CAP), renderQueueRow)
-            : renderEmptyState('Semua beres.', 'Tidak ada sesi yang memerlukan tindakan Anda saat ini.')}
+          ${renderExceptionGroups(needsAttention)}
         </div>
 
-        <div class="wlk-sec">
-          <details class="dic-recent"${needsAttention.length === 0 ? ' open' : ''}>
-            <summary>Impor Terbaru (${recent.length})</summary>
-            <div class="dic-recent-body">
-              ${recent.length
-                ? renderRowList(recent, renderQueueRow)
-                : renderEmptyState('Belum ada impor.', 'Impor yang selesai tanpa masalah akan muncul di sini.')}
-            </div>
-          </details>
-        </div>
+        ${renderSmartFeed(recent)}
 
         ${st.selectedSessionId ? renderSessionDetail(st.selectedSessionId) : ''}
       </div>`;
@@ -954,9 +1296,16 @@ export function createDatasetImportController(opts = {}) {
     // there.
     const devMode = isDeveloperMode();
     const stateText = devMode ? ` — ${esc(STATE_LABEL[s.state] || s.state)}` : '';
+    // Phase 8 (Experience Architecture, Part 4) — a compact tag, not a
+    // repeated sentence: this row already sits next to hundreds of other
+    // "otomatis" rows in a full queue, so the full Consensus explanation
+    // (see renderSessionDetail) belongs behind one click, not on every
+    // line — the exact "Ready Ready Ready" repetition Part 2 already
+    // fixed elsewhere in this same phase.
+    const autoTag = s.autoImported ? (consensusExplanation(s) ? ' · otomatis (pola organisasi)' : ' · otomatis') : '';
     return `
       <li class="wlk-row" data-act="dic-session-row" data-id="${esc(s.id)}" data-clickable="1">
-        <span class="wlk-row-primary">${esc(s.filename)}${stateText}${s.autoImported ? ' · otomatis' : ''} ${stageBadge}</span>
+        <span class="wlk-row-primary">${esc(s.filename)}${stateText}${autoTag} ${stageBadge}</span>
         <span class="wlk-row-secondary">${esc(domainLabel(s.domainType))} · ${esc(s.kind)} · ${formatFileSize(s.sizeBytes)}${typeof s.confidence === 'number' && devMode ? ` · confidence ${s.confidence}` : ''}${s.validationWarnings && s.validationWarnings.length ? ` · ${s.validationWarnings.length} peringatan` : ''}</span>
         ${reasonLine}
         ${actions}
@@ -1000,6 +1349,14 @@ export function createDatasetImportController(opts = {}) {
       ['Diunggah oleh', s.uploadedBy], ['Disetujui oleh', s.approvedBy],
       ['Diimpor Otomatis', s.autoImported ? 'Ya' : 'Tidak'],
     ];
+    // Phase 8 (Experience Architecture, Part 4) — Consensus Experience,
+    // visible in Normal Mode too (not gated behind devMode like the raw
+    // confidence signals below): the one honest, plain-language answer to
+    // "why was this automatic" that a real Approved-Knowledge precedent
+    // earns. null (rendered as nothing) for every other reason a session
+    // may have auto-completed.
+    const consensusNote = consensusExplanation(s);
+    const consensusHtml = consensusNote ? `<p class="wlk-row-secondary dic-consensus-note">${esc(consensusNote)}</p>` : null;
     if (devMode) {
       metadataPairs.splice(4, 0, ['Tipe Dataset', s.datasetType], ['Knowledge Kind', s.knowledgeKind]);
       metadataPairs.push(['Knowledge Item Id', s.knowledgeItemId], ['Archive Record Id', s.archiveRecordId]);
@@ -1050,6 +1407,52 @@ export function createDatasetImportController(opts = {}) {
     // raw internal IDs — Developer only (Status already conveys this).
     const knowledgeStatusKv = devMode && s.knowledgeItemId ? renderKvList([['Knowledge Item', s.knowledgeItemId], ['Status', 'draft (menunggu review Knowledge terpisah)']]) : null;
     const archiveStatusKv = devMode && s.archiveRecordId ? renderKvList([['Archive Record', s.archiveRecordId]]) : null;
+
+    // Experience Architecture phase (Part 3/8) — "Archive becomes a
+    // document property, not an independent world": the real provenance,
+    // relationships, and replacement chain a human previously had to open
+    // Archive Center to see are now read straight into THIS document's own
+    // detail, from the exact same real Archive Service calls Archive
+    // Center's own detail drawer already uses (explainArchiveRecord /
+    // getArchiveRelationships / getReplacementChain) — no second
+    // computation, no new engine. ALWAYS VISIBLE once a document is
+    // archived (not Developer-only): this is what "the document" means,
+    // not an internals detail. Normal Mode gets plain sentences;
+    // Developer Mode keeps the raw Archive Record id alongside.
+    const archiveDetailKv = s.archiveRecordId ? (() => {
+      const explained = explainArchiveRecord(s.archiveRecordId);
+      if (!explained.ok) return null;
+      const x = explained.data;
+      const rows = [
+        ['Status Arsip', archiveStateLabelFor(x.state)],
+        ['Diarsipkan Pada', x.archivedAt || '—'],
+      ];
+      if (x.archiveReason) rows.push(['Alasan', x.archiveReason]);
+      if (devMode) rows.push(['Archive Record Id', s.archiveRecordId]);
+      return renderKvList(rows);
+    })() : null;
+    const archiveRelationshipsKv = s.archiveRecordId ? (() => {
+      const rel = getArchiveRelationships(s.archiveRecordId);
+      if (!rel.ok || !rel.data.length) return null;
+      // `rationale` is already a real, complete Indonesian sentence (see
+      // archive-relationship-engine.js#deriveRelationships) — that alone
+      // is the Normal Mode row; Developer Mode adds the raw relationship
+      // type/target id as a second line for audit.
+      return renderRowList(rel.data, (r) => `
+        <li class="wlk-row">
+          <span class="wlk-row-primary">${esc(r.rationale)}</span>
+          ${devMode ? `<span class="wlk-row-secondary">${esc(r.type)} → ${esc(r.targetId || '—')}</span>` : ''}
+        </li>`);
+    })() : null;
+    const archiveReplacementChain = s.archiveRecordId ? (() => {
+      const chain = getReplacementChain(s.archiveRecordId);
+      if (!chain.ok || chain.data.length < 2) return null; // a chain of one is not a chain
+      return renderRowList(chain.data, (c) => `
+        <li class="wlk-row">
+          <span class="wlk-row-primary">${esc(c.documentNumber || c.id)}${c.id === s.archiveRecordId ? ' (dokumen ini)' : ''}</span>
+          <span class="wlk-row-secondary">${esc(archiveStateLabelFor(c.state))} · ${esc(c.archivedAt || '—')}</span>
+        </li>`);
+    })() : null;
     const historyResult = getImportSessionHistory(id);
     const timeline = historyResult.ok
       ? renderKvList(historyResult.data.map((v) => [`Versi ${v.version}`, `${devMode ? (STATE_LABEL[v.state] || v.state) : friendlyStateLabel(v.state)} — ${v.updatedAt}`])) : null;
@@ -1107,9 +1510,41 @@ export function createDatasetImportController(opts = {}) {
         ['Blocked By', reasons.length ? reasons[0].code : '—'],
         ['Automatic Retry Count', `${s.pipelineAttempts || 0} / ${MAX_PIPELINE_ATTEMPTS}`],
         ['Failure Reason', s.failureReason || '—'],
+        // Phase 6.5 (Part 9) — a real, closed-taxonomy code classified from
+        // the failure reason above (see failure-classification-engine.js) —
+        // never a fabricated specific cause; UNKNOWN when nothing matches.
+        ['Kategori Kegagalan', s.failureReason ? `${classifyFailure(s).code} — ${classifyFailure(s).label}` : '—'],
         ['Elapsed Time', elapsedText],
         ['Next Stage', nextStageText],
       ]);
+    })() : null;
+
+    // Phase 6.5 (Part 6) — the real per-file timeline. Two independent real
+    // sources, deliberately not merged into one guess:
+    //   - stage durations: derived from this session's own persisted version
+    //     history (getSessionStageTimeline) — works in ANY tab.
+    //   - phase timing (prepare/upload/pipeline): only exists if THIS tab
+    //     actually ran processOneFile() for this file (a File handle cannot
+    //     survive a refresh) — null/absent otherwise, never guessed.
+    const perfKv = devMode ? (() => {
+      const stageTimeline = getSessionStageTimeline(id);
+      const fileTiming = computeFileTimingBreakdown(id);
+      const msText = (n) => (typeof n === 'number' ? `${n} ms` : '—');
+      const rows = stageTimeline.map((entry) => [
+        DEV_STAGE_LABEL[entry.stage] || entry.stage,
+        entry.durationMs === null ? `sejak ${entry.enteredAt} (masih di sini)` : msText(entry.durationMs),
+      ]);
+      if (fileTiming) {
+        rows.push(['— Rincian Real (tab ini) —', '']);
+        rows.push(['Preparing + Fingerprint + Classify', msText(fileTiming.prepareMs)]);
+        rows.push(['Upload', msText(fileTiming.uploadMs)]);
+        rows.push(['Policy Validation + Knowledge + Archive', msText(fileTiming.pipelineMs)]);
+        rows.push(['Total (real, tab ini)', msText(fileTiming.totalMs)]);
+        if (fileTiming.uploadFailed) rows.push(['Upload Gagal', fileTiming.uploadError || 'Gagal — lihat console.']);
+      } else {
+        rows.push(['Rincian per-fase', 'Tidak tersedia — file ini tidak diunggah dari tab ini.']);
+      }
+      return renderKvList(rows);
     })() : null;
 
     return `
@@ -1117,8 +1552,10 @@ export function createDatasetImportController(opts = {}) {
         <div class="wlk-sec-title">Detail — ${esc(s.filename)}</div>
         ${renderDetail([
           renderDetailSection('Metadata', metadata),
+          renderDetailSection('Konsensus Organisasi', consensusHtml),
           renderDetailSection(devMode ? 'Pipeline (Developer)' : 'Status', renderPipelineStages(s)),
           renderDetailSection('Diagnostik Pipeline (Developer Mode)', diagnosticsKv),
+          renderDetailSection('Timeline Per Tahap — Real (Developer Mode)', perfKv),
           renderDetailSection('Confidence & Sumber Inferensi', confidenceKv),
           renderDetailSection('Rincian Sinyal Confidence', confidenceSignalsKv),
           renderDetailSection('Storage', storageKv),
@@ -1128,6 +1565,12 @@ export function createDatasetImportController(opts = {}) {
           renderDetailSection('Error Validasi', errors),
           renderDetailSection('Status Knowledge', knowledgeStatusKv),
           renderDetailSection('Status Archive', archiveStatusKv),
+          // Experience Architecture phase (Part 3/8) — real Archive facts,
+          // always visible once this document is archived (not Developer-
+          // only): this is what "the document" means, not an internals detail.
+          renderDetailSection('Riwayat Arsip', archiveDetailKv),
+          renderDetailSection('Hubungan Dokumen', archiveRelationshipsKv),
+          renderDetailSection('Rantai Penggantian', archiveReplacementChain),
           renderDetailSection('Pembelajaran & Knowledge Graph', learningKv),
           renderDetailSection('Timeline', timeline),
           renderDetailSection(devMode ? 'Rekomendasi Pattern Discovery' : 'Saran Berdasarkan Pola', patternKv),
@@ -1162,10 +1605,22 @@ export function createDatasetImportController(opts = {}) {
     return `<button class="wlk-btn" data-act="dic-preview-load" data-id="${esc(s.id)}" data-path="${esc(s.storagePath)}" type="button">Muat Preview PDF</button>`;
   }
 
+  /** Phase 7 (Runtime Hardening, Part 8 Memory Audit) — a real, found leak:
+   *  every previous call left its Blob URL alive forever (Object URLs are
+   *  never garbage-collected on their own; only URL.revokeObjectURL() or a
+   *  full page unload frees the memory). Loading a second file's preview —
+   *  or even re-loading the same one — pinned another blob's worth of
+   *  memory with no way to release it. Revoking the PRIOR url before
+   *  replacing it is the fix; never revoke the one still in use. */
+  function revokeStalePreviewUrl() {
+    if (st.preview.url) URL.revokeObjectURL(st.preview.url);
+  }
+
   /** Lazily loads Firebase Storage's real bytes (same lazy-import
    *  discipline as the upload path — never eager on mount) and
    *  constructs a LOCAL object URL — never a signed/public link. */
   async function loadDocumentPreview(sessionId, storagePath, rerender) {
+    revokeStalePreviewUrl();
     st.preview = { sessionId, url: null, loading: true, error: null };
     rerender();
     try {
@@ -1190,8 +1645,24 @@ export function createDatasetImportController(opts = {}) {
    *  EXISTING session (updateSessionMetadata/attachManualEntryFacts),
    *  never a pre-creation form — every file already has a real Import
    *  Session by the time this panel can appear. */
+  /** Phase 8 (Part 3/6) — "one action, many documents": other sessions
+   *  currently parked in the SAME real LOW_CONFIDENCE group as `s`. Only
+   *  this ONE group ever gets this treatment (see groupNeedsAttention()'s
+   *  own header on why: classification fields genuinely CAN be shared,
+   *  content facts genuinely cannot). */
+  function lowConfidenceGroupSiblings(s) {
+    const reasons = reviewReasons(s);
+    if (!reasons.length || reasons[0].code !== 'LOW_CONFIDENCE') return [];
+    return sessions().filter((other) => {
+      if (other.id === s.id) return false;
+      const otherReasons = reviewReasons(other);
+      return otherReasons.length > 0 && otherReasons[0].code === 'LOW_CONFIDENCE';
+    });
+  }
+
   function renderAdvancedMetadataPanel(s) {
     const edit = st.advancedEdit || { domainType: s.domainType, datasetType: s.datasetType, knowledgeKind: s.knowledgeKind, facts: s.manualEntryFacts || { value: '', documentNumber: '', senderOrigin: '', notes: '' } };
+    const groupSiblings = lowConfidenceGroupSiblings(s);
     const domainSelect = `
       <select data-act="dic-adv-field" data-field="domainType" class="wlk-select">
         ${listDomainTypes().map((d) => `<option value="${esc(d.id)}" ${edit.domainType === d.id ? 'selected' : ''}>${esc(d.label)}</option>`).join('')}
@@ -1218,6 +1689,13 @@ export function createDatasetImportController(opts = {}) {
         <div class="wlk-form-row"><label>Tipe Dataset</label>${datasetTypeSelect}</div>
         <div class="wlk-form-row"><label>Knowledge Kind</label>${kindSelect}</div>
         ${factsForm}
+        ${groupSiblings.length ? `
+        <div class="wlk-form-row dic-adv-group-apply">
+          <label>
+            <input type="checkbox" data-act="dic-adv-apply-group" ${st.advancedApplyToGroup ? 'checked' : ''} />
+            Terapkan Domain/Tipe Dataset/Knowledge Kind ini ke ${groupSiblings.length} dokumen lain dengan alasan yang sama (Metadata Belum Yakin)
+          </label>
+        </div>` : ''}
         <button class="wlk-btn" data-act="dic-advanced-save" data-id="${esc(s.id)}" type="button">Simpan</button>
         <button class="wlk-btn wlk-btn--ghost" data-act="dic-advanced-close" type="button">Tutup</button>
       </div>`;
@@ -1308,6 +1786,37 @@ export function createDatasetImportController(opts = {}) {
     return NORMAL_PHASES[phaseIndex].label;
   }
 
+  /** Phase 6.5 (Part 5/7) — Developer-Mode-only real batch performance
+   *  numbers, read straight off the Performance Collector's snapshot; this
+   *  UI file never computes any of them. Every '—' below is a genuine
+   *  "unknown" (this tab never measured it — see performance-collector.js's
+   *  header), never a fabricated zero. Shared by the live progress panel
+   *  (renderBatchProgress) and Batch History's detail drill-down
+   *  (renderBatchDetail), which is reachable from ANY tab. */
+  function renderPerformanceSnapshot(perf) {
+    const msText = (n) => (typeof n === 'number' ? `${n} ms` : '—');
+    const fileText = (f) => {
+      if (!f) return '—';
+      const s = getImportSession(f.sessionId);
+      return `${s.ok ? s.data.filename : f.sessionId} — ${msText(f.totalMs)}`;
+    };
+    return renderDetailSection('Performa Batch (Real, Developer Mode)', renderKvList([
+      ['Total File', perf.totalFiles],
+      ['Selesai', perf.completed],
+      ['Gagal', perf.failed],
+      ['Dibatalkan', perf.cancelled],
+      ['Total Byte Terunggah', formatFileSize(perf.bytesUploaded || 0)],
+      ['Kecepatan Rata-rata (sejak mulai, waktu jeda dikecualikan)', typeof perf.bytesPerSecond === 'number' ? `${formatFileSize(perf.bytesPerSecond)}/detik` : '—'],
+      ['File / Menit', typeof perf.filesPerMinute === 'number' ? perf.filesPerMinute.toFixed(1) : '—'],
+      ['Rata-rata Waktu Unggah', msText(perf.averageUploadMs)],
+      ['Rata-rata Waktu Knowledge Pipeline', msText(perf.averageKnowledgeMs)],
+      ['Rata-rata Waktu Total per File', msText(perf.averageTotalMs)],
+      ['File Tercepat', fileText(perf.fastestFile)],
+      ['File Terlambat', fileText(perf.slowestFile)],
+      ['Sampel Timing (diukur di tab ini)', `${perf.sampledFileCount} / ${perf.totalFiles} file`],
+    ]));
+  }
+
   function renderBatchProgress(p) {
     const counters = computeBatchCounters(p);
     const failed = p.items.filter((i) => ['error', 'blocked', 'needs_attention'].includes(i.status));
@@ -1319,13 +1828,16 @@ export function createDatasetImportController(opts = {}) {
     const isCancelled = batchCancelled(p.batchId);
     const isPaused = p.control.paused;
 
-    // Part J — real ETA/speed from measured elapsed time, never fabricated.
-    const elapsedMs = Date.now() - p.startedAtMs;
-    const avgMsPerFile = p.processed > 0 ? elapsedMs / p.processed : 0;
+    // Phase 6.5 (Part 1/2/3/5) — ETA/speed/batch metrics are no longer
+    // computed here. This used to be a SECOND, UI-owned calculation over
+    // the transient `p.items`/`p.startedAtMs` (this milestone's own audit
+    // finding) — it also never excluded paused time from "elapsed", so a
+    // paused batch's ETA silently inflated the longer it stayed paused. The
+    // UI now reads ONE snapshot from the Performance Collector — the single
+    // source of truth over the persisted ImportBatchRecord + this tab's own
+    // real per-file timings. See performance-collector.js#getBatchPerformanceSnapshot.
+    const perf = getBatchPerformanceSnapshot(p.batchId);
     const remaining = p.total - p.processed;
-    const etaMs = avgMsPerFile * remaining;
-    const bytesProcessed = p.items.reduce((n, i) => n + (i.sizeBytes || 0), 0);
-    const bytesPerSecond = elapsedMs > 0 ? (bytesProcessed / (elapsedMs / 1000)) : 0;
 
     const controls = !isDone && !isCancelled ? `
       ${isPaused
@@ -1338,8 +1850,13 @@ export function createDatasetImportController(opts = {}) {
     // is now the session's own persisted pipelineStage, shown live in the
     // repository-derived Live Activity list (renderLiveActivity) and on
     // each session row, not from any transient batch state.
+    // Phase 6.5 — every figure here is either null (rendered '—') or a real
+    // number the collector derived from persisted/measured facts. ETA of
+    // exactly 0 (remaining === 0) is distinguished from "unknown" (null).
+    const etaText = perf && typeof perf.etaMs === 'number' ? `${Math.ceil(perf.etaMs / 1000)} detik` : '—';
+    const speedText = perf && typeof perf.bytesPerSecond === 'number' ? `${formatFileSize(perf.bytesPerSecond)}/detik` : '—';
     const liveActivity = (!isDone && !isCancelled)
-      ? `<p class="wlk-page-lede" style="margin-top:0;">Sisa waktu perkiraan: ${etaMs > 0 ? Math.ceil(etaMs / 1000) + ' detik' : '—'} · Kecepatan: ${formatFileSize(bytesPerSecond)}/detik · Sisa file: ${remaining}</p>`
+      ? `<p class="wlk-page-lede" style="margin-top:0;">Sisa waktu perkiraan: ${etaText} · Kecepatan rata-rata: ${speedText} · Sisa file: ${remaining}</p>`
       : '';
 
     // Part 4 — a real success moment, only ever shown once genuinely
@@ -1350,7 +1867,7 @@ export function createDatasetImportController(opts = {}) {
 
     return `
       <div class="wlk-sec dic-progress${isDone && !isCancelled ? ' dic-progress--done' : ''}">
-        <div class="wlk-sec-title">Progres — ${p.processed}/${p.total} diproses${isPaused ? ' (dijeda)' : ''}${isCancelled ? ' (dibatalkan)' : ''}</div>
+        <div class="wlk-sec-title">Progres — ${p.processed}/${p.total} diproses${isPaused ? ' (dijeda)' : ''}${isCancelled ? ' (dibatalkan)' : ''}${isDeveloperMode() && p.concurrency ? ` · concurrency ${p.concurrency}` : ''}</div>
         <div class="dic-progress-bar"><div class="dic-progress-fill" style="width:${p.total ? Math.round((p.processed / p.total) * 100) : 0}%"></div></div>
         ${successBanner}
         ${liveActivity}
@@ -1377,6 +1894,7 @@ export function createDatasetImportController(opts = {}) {
           { count: counters.failed, label: 'Gagal' },
           { count: counters.cancelled, label: 'Dibatalkan' },
         ])}
+        ${isDeveloperMode() && perf ? renderPerformanceSnapshot(perf) : ''}
         ${isDone || isCancelled ? renderRowList(p.items, (i) => `
           <li class="wlk-row" ${i.sessionId ? `data-act="dic-session-row" data-id="${esc(i.sessionId)}" data-clickable="1"` : ''}>
             <span class="wlk-row-primary">${esc(i.filename)} (${formatFileSize(i.sizeBytes)})</span>
@@ -1569,12 +2087,17 @@ export function createDatasetImportController(opts = {}) {
           <li class="wlk-row" data-act="dic-session-row" data-id="${esc(sid)}" data-clickable="1">
             <span class="wlk-row-primary">${esc(sid)}</span>
           </li>`) : null;
+    // Phase 6.5 (Part 5/7) — works in ANY tab (getBatchPerformanceSnapshot
+    // reads persisted facts first); per-file timing fields inside it degrade
+    // to '—' if this tab never ran the batch's own upload.
+    const perf = isDeveloperMode() ? getBatchPerformanceSnapshot(batchId) : null;
 
     return `
       <div class="wlk-sec">
         <div class="wlk-sec-title">Detail Batch — ${esc(b.id)}</div>
         ${renderDetail([
           renderDetailSection('Ringkasan', summary),
+          perf ? renderPerformanceSnapshot(perf) : '',
           renderDetailSection('Audit Trail', auditTrail),
           renderDetailSection('Sesi dalam Batch Ini', sessionLinks),
         ])}
@@ -1617,6 +2140,9 @@ export function createDatasetImportController(opts = {}) {
    * @param {string|null} batchId
    */
   async function processOneFile(file, folderPath, batchId = null) {
+    // Phase 6.5 — the real start of this file's own timeline (Part 6). A
+    // plain Date.now() capture, nothing computed from it yet.
+    const fileStartMs = Date.now();
     const kind = fileKind(file.type);
     const domainType = st.batchDomainType;
     const base = { filename: file.name, sizeBytes: file.size, fileRef: file, folderPath, sessionId: null, wasDuplicate: false, warningCount: 0, storageBytes: 0 };
@@ -1635,7 +2161,10 @@ export function createDatasetImportController(opts = {}) {
     let parsedContent = null;
     if (kind === IMPORT_SESSION_KIND.JSON) {
       try {
-        parsedContent = JSON.parse(await file.text());
+        // Phase 7 (Part 3) — off the main thread when a Worker is
+        // available (see worker-runtime.js); identical outcome either way,
+        // including on a genuine parse failure.
+        parsedContent = await parseJsonText(await file.text());
       } catch { /* real parse failure — leave null, never fabricate content */ }
     }
 
@@ -1651,6 +2180,11 @@ export function createDatasetImportController(opts = {}) {
     if (!created.ok) return { ...base, status: 'error', error: created.error.message };
     const sessionId = created.data.id;
     base.sessionId = sessionId;
+    // Phase 6.5 — real end of the "prepare" span (hash + parse + infer +
+    // create session all ran synchronously above, no separate resting point
+    // between them — see performance-collector.js's header on why this is
+    // one honest span, not a fabricated finer breakdown).
+    const sessionCreatedMs = Date.now();
 
     // Persist the real confidence score AND the full explainable signal
     // breakdown (Phase 2 Follow-up) onto the session's existing
@@ -1672,6 +2206,12 @@ export function createDatasetImportController(opts = {}) {
     // a real, honest per-file outcome instead of an uncaught rejection
     // that would kill every file still queued behind it.
     let factsReusedFromDuplicate = false;
+    // Phase 6.5 — real upload span + real failure capture (Part 6/9). null
+    // (never 0) when this file never reaches the upload branch at all.
+    let uploadStartMs = null;
+    let uploadEndMs = null;
+    let uploadFailed = false;
+    let uploadErrorMessage = null;
     if (sha256) {
       // Phase 2.6 — the ONE honest "Uploading" marker, written immediately
       // before the real network upload starts and nowhere else. Everything
@@ -1680,9 +2220,17 @@ export function createDatasetImportController(opts = {}) {
       // file is uploading. Reported THROUGH the scheduler (not written here)
       // so that no UI module writes pipelineStage directly.
       reportUploadStarted(sessionId);
+      uploadStartMs = Date.now();
       try {
         const { uploadFile } = await import('../file-storage/file-storage-engine.js');
-        const uploadResult = await uploadFile(file, { domainType: inferred.domainType.value || domainType, importSessionId: sessionId });
+        // Phase 6.5 (Part 10 perf audit) — `sha256` above is already the
+        // real content hash of this exact file; passing it through as
+        // `precomputedSha256` stops uploadFile() from hashing the same
+        // bytes a second time (a real, measured double-hash on every file
+        // this milestone's bottleneck audit found — see file-storage-
+        // engine.js). Purely additive/optional — no behavior change.
+        const uploadResult = await uploadFile(file, { domainType: inferred.domainType.value || domainType, importSessionId: sessionId, precomputedSha256: sha256 });
+        uploadEndMs = Date.now();
         if (uploadResult.ok) {
           attachFileStorage(sessionId, { sha256: uploadResult.sha256, storagePath: uploadResult.record.storagePath, fileStorageId: uploadResult.record.id });
           base.wasDuplicate = uploadResult.wasDuplicate;
@@ -1704,9 +2252,14 @@ export function createDatasetImportController(opts = {}) {
           // proceeded as if the file had been stored. This doesn't change
           // session state (never fabricate a stored file that isn't
           // there) — it only makes a real failure visible for triage.
+          uploadFailed = true;
+          uploadErrorMessage = uploadResult.error;
           console.error('[dataset-import-center] Storage upload returned failure for', file.name, uploadResult.error);
         }
       } catch (err) {
+        uploadEndMs = Date.now();
+        uploadFailed = true;
+        uploadErrorMessage = err && err.message ? err.message : String(err);
         console.error('[dataset-import-center] uploadFile failed for', file.name, err);
       }
     }
@@ -1726,7 +2279,27 @@ export function createDatasetImportController(opts = {}) {
     // reaches the same conclusions, but it can be re-run by anyone, at any
     // time, from any tab. That is the whole difference between a pipeline and
     // a one-shot script.
+    const pipelineStartMs = Date.now();
     const outcome = advanceSession(sessionId);
+    const pipelineDoneMs = Date.now();
+
+    // Phase 6.5 — record this file's REAL timeline (Part 6/7). Every mark
+    // above is a real Date.now() this call actually captured; phases the
+    // file never went through stay null (uploadStartMs/uploadEndMs for a
+    // file with no computable hash, for instance) rather than reporting 0ms.
+    recordFileTiming(sessionId, {
+      batchId,
+      sizeBytes: file.size,
+      fileStartMs,
+      sessionCreatedMs,
+      uploadStartMs,
+      uploadEndMs,
+      pipelineStartMs,
+      pipelineDoneMs,
+      uploadFailed,
+      uploadError: uploadErrorMessage,
+    });
+    if (uploadFailed) base.uploadFailure = classifyUploadError(uploadErrorMessage);
 
     const finalResult = getImportSession(sessionId);
     if (finalResult.ok) base.warningCount = (finalResult.data.validationWarnings || []).length;
@@ -1737,11 +2310,28 @@ export function createDatasetImportController(opts = {}) {
   }
 
   /**
-   * Processes a whole batch sequentially (correctness over speed at this
-   * data scale — Storage upload contention is the limiting factor, not
-   * CPU), updating progress after every file, checking Pause/Cancel
-   * between files, and recording every real outcome onto a persisted
-   * ImportBatchRecord (Part I) so it survives refresh/restart.
+   * Processes a whole batch through a CONCURRENCY-LIMITED pool (Phase 7,
+   * Part 2 — real parallelism, not one file at a time). Storage upload
+   * contention, not CPU, was always the actual limiting factor (see this
+   * milestone's report Part 1 for the proof), so running several uploads
+   * genuinely in flight at once is a real throughput win, not a
+   * cosmetic change.
+   *
+   * WHY THIS IS SAFE (verified, not assumed — see this milestone's report):
+   * every mutation each worker performs — createImportSession's counter,
+   * advanceSession's transitions, recordBatchItem's tallies — is a single,
+   * fully SYNCHRONOUS call with no `await` between its read and its write.
+   * JS's run-to-completion guarantee means two "concurrent" async workers
+   * can never interleave INSIDE one of those calls, so there is no lost-
+   * update race on the shared session/batch state, no matter how many
+   * workers are in flight. The Import Session contract, the scheduler, and
+   * both repositories are UNCHANGED — this only changes how many files are
+   * simultaneously mid-flight in the awaited, I/O-bound parts of
+   * processOneFile() (hashing, the real Storage upload).
+   *
+   * Concurrency is decided ONCE per batch (see _adaptiveConcurrency above)
+   * and stays fixed for the whole run — deterministic and easy to reason
+   * about, never resized mid-flight.
    * @param {File[]} files
    * @param {(file: File) => string} folderPathFor
    * @param {() => void} rerender
@@ -1766,58 +2356,114 @@ export function createDatasetImportController(opts = {}) {
     return result.ok && result.data.status === BATCH_STATUS.CANCELLED;
   }
 
+  /** Phase 7 (Part 4) — wakes every worker CURRENTLY parked in
+   *  waitWhilePaused() below. Replaces the old 200ms setTimeout poll with a
+   *  real event: nothing runs while paused, and resuming (or cancelling)
+   *  acts the instant it happens instead of up to 200ms later. A LIST, not
+   *  a single resolver — with concurrency > 1, several workers can be
+   *  paused at once, and a single shared resolver would silently strand
+   *  every worker but the last one to park (a real deadlock this milestone
+   *  found and fixed before it ever shipped — see the report). */
+  function wakePausedWorkers() {
+    if (!st.batchProgress) return;
+    const listeners = st.batchProgress.control.wakeListeners;
+    st.batchProgress.control.wakeListeners = [];
+    listeners.forEach((resolve) => resolve());
+  }
+
   async function processBatch(files, folderPathFor, rerender) {
     const batchResult = createBatch({ createdBy: 'evan', domainType: st.batchDomainType || 'unknown', totalFiles: files.length });
     const batchId = batchResult.ok ? batchResult.data.id : null;
+    const concurrency = Math.max(MIN_CONCURRENCY, Math.min(_adaptiveConcurrency, MAX_CONCURRENCY, files.length || 1));
     // Phase 2 Follow-up (D3) — no transient per-stage state here anymore.
     // Per-file progress is the batch record + each session's own persisted
     // pipelineStage (read live in renderWorkspace's Live Activity); this
     // local object only tracks batch-level counters + control flags.
-    st.batchProgress = { batchId, total: files.length, processed: 0, items: [], control: { paused: false, cancelled: false }, startedAtMs: Date.now() };
+    st.batchProgress = {
+      batchId, total: files.length, processed: 0, items: [],
+      control: { paused: false, cancelled: false, wakeListeners: [] },
+      startedAtMs: Date.now(),
+      concurrency, // real, decided value — shown in Developer Mode
+    };
     rerender();
 
-    for (const file of files) {
-      if (batchCancelled(batchId)) break;
-      // eslint-disable-next-line no-await-in-loop
-      while (st.batchProgress.control.paused && !batchCancelled(batchId)) {
-        // eslint-disable-next-line no-await-in-loop
-        await new Promise((resolve) => { setTimeout(resolve, 200); });
-      }
-      // Re-checked AFTER the pause loop and AFTER the await below: a cancel
-      // can land during either, and a worker that only checks before it
-      // starts waiting is a worker that ignores anything said while it waits.
-      if (batchCancelled(batchId)) break;
-
-      let item;
-      try {
-        // eslint-disable-next-line no-await-in-loop
-        item = await processOneFile(file, folderPathFor(file), batchId);
-      } catch (err) {
-        // Robustness fix (Part F "no silent skipping"): an unexpected
-        // throw ANYWHERE in processOneFile must still produce a real
-        // result entry and let the batch continue — never silently drop
-        // a file or abort everything queued behind it.
-        console.error('[dataset-import-center] processOneFile threw for', file.name, err);
-        item = { filename: file.name, sizeBytes: file.size, fileRef: file, folderPath: folderPathFor(file), sessionId: null, wasDuplicate: false, warningCount: 0, storageBytes: 0, status: 'error', error: err && err.message ? err.message : 'Unexpected error.' };
-      }
-
-      st.batchProgress.items.push(item);
-      st.batchProgress.processed += 1;
-      if (batchId) {
-        recordBatchItem(batchId, item.sessionId, {
-          // Phase 2.6 — "imported" means a real Import Session exists and is
-          // progressing or done; only a file that never got one (blocked) or
-          // that the pipeline terminally failed is an error.
-          imported: ['archived', 'awaiting_evidence'].includes(item.status),
-          duplicate: item.wasDuplicate,
-          warningCount: item.warningCount || 0,
-          error: ['blocked', 'error', 'failed'].includes(item.status),
-          knowledgeProduced: item.status === 'archived',
-          storageBytes: item.storageBytes || 0,
-        });
-      }
+    // Phase 7 (Part 4) — coalesces a burst of near-simultaneous completions
+    // (now genuinely possible with concurrency > 1) into one render instead
+    // of one per file, the same 80-100ms debounce idiom already used
+    // elsewhere in this codebase (e.g. sarpras-intelligence-center.js's
+    // scheduleRender). Local to this one batch run, not module-scope —
+    // this factory is embedded by multiple controller instances at once
+    // (see this file's header) and must never share a timer across them.
+    let renderTimer = null;
+    function scheduleRerender() {
+      if (renderTimer) return;
+      renderTimer = setTimeout(() => { renderTimer = null; rerender(); }, 80);
+    }
+    function flushRerenderNow() {
+      if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
       rerender();
     }
+
+    async function waitWhilePaused() {
+      while (st.batchProgress.control.paused && !batchCancelled(batchId)) {
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((resolve) => { st.batchProgress.control.wakeListeners.push(resolve); });
+      }
+    }
+
+    let nextIndex = 0;
+    let failuresThisBatch = 0;
+
+    async function worker() {
+      for (;;) {
+        if (batchCancelled(batchId)) return;
+        // eslint-disable-next-line no-await-in-loop
+        await waitWhilePaused();
+        // Re-checked AFTER the pause wait: a cancel can land while parked,
+        // and a worker that only checks before it starts waiting is a
+        // worker that ignores anything said while it waits.
+        if (batchCancelled(batchId)) return;
+        if (nextIndex >= files.length) return;
+        // Synchronous claim — see this function's header on why this can
+        // never race with another worker claiming the same index.
+        const myIndex = nextIndex;
+        nextIndex += 1;
+        const file = files[myIndex];
+
+        let item;
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          item = await processOneFile(file, folderPathFor(file), batchId);
+        } catch (err) {
+          // Robustness fix (Part F "no silent skipping"): an unexpected
+          // throw ANYWHERE in processOneFile must still produce a real
+          // result entry and let the batch continue — never silently drop
+          // a file or abort everything queued behind it.
+          console.error('[dataset-import-center] processOneFile threw for', file.name, err);
+          item = { filename: file.name, sizeBytes: file.size, fileRef: file, folderPath: folderPathFor(file), sessionId: null, wasDuplicate: false, warningCount: 0, storageBytes: 0, status: 'error', error: err && err.message ? err.message : 'Unexpected error.' };
+        }
+        if (item.status === 'error' || item.uploadFailure) failuresThisBatch += 1;
+
+        st.batchProgress.items.push(item);
+        st.batchProgress.processed += 1;
+        if (batchId) {
+          recordBatchItem(batchId, item.sessionId, {
+            // Phase 2.6 — "imported" means a real Import Session exists and is
+            // progressing or done; only a file that never got one (blocked) or
+            // that the pipeline terminally failed is an error.
+            imported: ['archived', 'awaiting_evidence'].includes(item.status),
+            duplicate: item.wasDuplicate,
+            warningCount: item.warningCount || 0,
+            error: ['blocked', 'error', 'failed'].includes(item.status),
+            knowledgeProduced: item.status === 'archived',
+            storageBytes: item.storageBytes || 0,
+          });
+        }
+        scheduleRerender();
+      }
+    }
+
+    await Promise.all(Array.from({ length: concurrency }, () => worker()));
 
     // Phase 2.6 — settle the batch through the SCHEDULER, so cancelling also
     // cancels the sessions this loop already created (see cancelImportBatch).
@@ -1828,7 +2474,15 @@ export function createDatasetImportController(opts = {}) {
       if (batchCancelled(batchId)) cancelImportBatch(batchId);
       else completeBatch(batchId);
     }
-    rerender();
+
+    // Phase 7 (Part 2) — adapt concurrency for the NEXT batch from this
+    // one's real observed failure rate. Decided once, at the end, from a
+    // real number — never mid-flight, never a guess.
+    const failureRate = files.length > 0 ? failuresThisBatch / files.length : 0;
+    if (failureRate > 0.2 && _adaptiveConcurrency > MIN_CONCURRENCY) _adaptiveConcurrency -= 1;
+    else if (failureRate === 0 && _adaptiveConcurrency < MAX_CONCURRENCY) _adaptiveConcurrency += 1;
+
+    flushRerenderNow();
   }
 
   /** V2.1.2 Part G — re-attempts submission for a session that already
@@ -1891,13 +2545,60 @@ export function createDatasetImportController(opts = {}) {
       return true;
     }
     if (act === 'dic-queue-filter') { st.queueStateFilter = id; rerender(); return true; }
-    if (act === 'dic-session-row') { st.selectedSessionId = st.selectedSessionId === id ? null : id; rerender(); return true; }
+    // Autonomous Experience (Part 2) — expand/collapse ONE Progressive
+    // Queue bucket; every other bucket's expand state is untouched, so
+    // opening "Uploading" doesn't also force-render "Building Knowledge".
+    if (act === 'dic-queue-bucket-toggle') {
+      if (st.expandedQueueBuckets.has(id)) st.expandedQueueBuckets.delete(id);
+      else st.expandedQueueBuckets.add(id);
+      rerenderPreservingScroll(rerender);
+      return true;
+    }
+    // Phase 8 (Experience Architecture, Part 1) — Smart Import Feed. Every
+    // one of these mutates ONLY the local `st` Sets above — never a single
+    // engine call, never touching the persisted session or its Archive
+    // Record. See renderSmartFeed()'s own header.
+    if (act === 'dic-feed-toggle') { st.feedExpanded = !st.feedExpanded; rerenderPreservingScroll(rerender); return true; }
+    if (act === 'dic-feed-pin') {
+      if (st.feedPinnedIds.has(id)) st.feedPinnedIds.delete(id); else st.feedPinnedIds.add(id);
+      rerenderPreservingScroll(rerender); return true;
+    }
+    if (act === 'dic-feed-select') {
+      if (st.feedSelectedIds.has(id)) st.feedSelectedIds.delete(id); else st.feedSelectedIds.add(id);
+      rerenderPreservingScroll(rerender); return true;
+    }
+    if (act === 'dic-feed-clear-completed') {
+      const { visible } = computeVisibleFeed(sessions().filter((s) => reviewReasons(s).length === 0)
+        .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || '')).slice(0, RECENT_ROW_CAP));
+      visible.forEach((s) => { if (!st.feedPinnedIds.has(s.id)) st.feedDismissedIds.add(s.id); });
+      rerenderPreservingScroll(rerender); return true;
+    }
+    if (act === 'dic-feed-clear-selected') {
+      st.feedSelectedIds.forEach((sid) => st.feedDismissedIds.add(sid));
+      st.feedSelectedIds.clear();
+      rerenderPreservingScroll(rerender); return true;
+    }
+    if (act === 'dic-session-row') {
+      const next = st.selectedSessionId === id ? null : id;
+      // Phase 7 (Part 8) — leaving this session's detail (closing it, or
+      // switching to a different one) without ever loading a SECOND preview
+      // in the same session used to leak the current preview's Blob URL
+      // forever. Revoke it here too, not only when a new preview replaces it.
+      if (st.preview.sessionId && st.preview.sessionId !== next) revokeStalePreviewUrl();
+      if (st.preview.sessionId !== next) st.preview = { sessionId: null, url: null, loading: false, error: null };
+      st.selectedSessionId = next;
+      rerender();
+      return true;
+    }
     if (act === 'dic-report-row') { st.reportSessionId = st.reportSessionId === id ? null : id; rerender(); return true; }
     if (act === 'dic-batch-clear') { st.batchProgress = null; rerender(); return true; }
 
     // V2.1.2 Part G — Upload Queue Controls.
     if (act === 'dic-batch-pause') { if (st.batchProgress) { st.batchProgress.control.paused = true; if (st.batchProgress.batchId) pauseBatch(st.batchProgress.batchId); } rerender(); return true; }
-    if (act === 'dic-batch-resume') { if (st.batchProgress) { st.batchProgress.control.paused = false; if (st.batchProgress.batchId) resumeBatch(st.batchProgress.batchId); } rerender(); return true; }
+    // Phase 7 (Part 4) — wakePausedWorkers() replaces the old 200ms poll:
+    // every worker (there can be several now, see Part 2) parked in
+    // waitWhilePaused() resumes the instant this fires, not up to 200ms later.
+    if (act === 'dic-batch-resume') { if (st.batchProgress) { st.batchProgress.control.paused = false; if (st.batchProgress.batchId) resumeBatch(st.batchProgress.batchId); wakePausedWorkers(); } rerender(); return true; }
     // Phase 2.6 — cancel now PERSISTS immediately (not at the end of the
     // worker loop, where it used to sit until the loop happened to fall out).
     // The local flag stops the loop this tick; cancelImportBatch() writes the
@@ -1908,6 +2609,9 @@ export function createDatasetImportController(opts = {}) {
       if (st.batchProgress) {
         st.batchProgress.control.cancelled = true;
         if (st.batchProgress.batchId) cancelImportBatch(st.batchProgress.batchId);
+        // Phase 7 (Part 4) — a worker parked mid-pause must also notice a
+        // cancel immediately, not sit stranded until something else wakes it.
+        wakePausedWorkers();
       }
       rerender(); return true;
     }
@@ -1975,10 +2679,12 @@ export function createDatasetImportController(opts = {}) {
           domainType: current.data.domainType, datasetType: current.data.datasetType, knowledgeKind: current.data.knowledgeKind,
           facts: current.data.manualEntryFacts || { value: '', documentNumber: '', senderOrigin: '', notes: '' },
         };
+        st.advancedApplyToGroup = false;
       }
       rerenderPreservingScroll(rerender); return true;
     }
-    if (act === 'dic-advanced-close') { st.advancedEditId = null; st.advancedEdit = null; rerenderPreservingScroll(rerender); return true; }
+    if (act === 'dic-advanced-close') { st.advancedEditId = null; st.advancedEdit = null; st.advancedApplyToGroup = false; rerenderPreservingScroll(rerender); return true; }
+    if (act === 'dic-adv-apply-group') { st.advancedApplyToGroup = !st.advancedApplyToGroup; rerenderPreservingScroll(rerender); return true; }
     if (act === 'dic-advanced-save') {
       if (st.advancedEdit) {
         // Phase 5, Part 3/9 — Correction Log, ACTIVATED. The original
@@ -2046,8 +2752,42 @@ export function createDatasetImportController(opts = {}) {
         // runs to its terminal state. Supplying a fact is the human's whole
         // job; finishing the import is the engine's.
         advanceSession(id);
+
+        // Phase 8 (Experience Architecture, Part 3/6) — "one action, many
+        // documents": broadcasts the SAME classification correction
+        // (domain/dataset/kind — never the unique-per-document content
+        // facts) to every other session in this session's real
+        // LOW_CONFIDENCE group, through the exact same real, audited calls
+        // (updateSessionMetadata + recordCorrection + advanceSession) used
+        // once per sibling — never a new bulk-write engine, never a second
+        // ownership of these transitions.
+        if (st.advancedApplyToGroup && before.ok) {
+          const siblings = lowConfidenceGroupSiblings(before.data);
+          siblings.forEach((sib) => {
+            const beforeSib = getImportSession(sib.id);
+            updateSessionMetadata(sib.id, {
+              domainType: st.advancedEdit.domainType,
+              datasetType: st.advancedEdit.datasetType,
+              knowledgeKind: st.advancedEdit.knowledgeKind,
+              confirmedBy: 'evan',
+            });
+            if (beforeSib.ok && !beforeSib.data.metadataConfirmedBy) {
+              recordCorrection({
+                domainType: st.advancedEdit.domainType,
+                correctionType: CORRECTION_TYPE.METADATA,
+                targetKey: sib.id,
+                actorId: 'evan',
+                reason: `Diterapkan otomatis dari koreksi grup "Metadata Belum Yakin" (sumber: ${id}).`,
+                before: { domainType: beforeSib.data.domainType, datasetType: beforeSib.data.datasetType, knowledgeKind: beforeSib.data.knowledgeKind },
+                after: { domainType: st.advancedEdit.domainType, datasetType: st.advancedEdit.datasetType, knowledgeKind: st.advancedEdit.knowledgeKind },
+                sourceDocumentId: sib.id,
+              });
+            }
+            advanceSession(sib.id);
+          });
+        }
       }
-      st.advancedEditId = null; st.advancedEdit = null;
+      st.advancedEditId = null; st.advancedEdit = null; st.advancedApplyToGroup = false;
       rerenderPreservingScroll(rerender); return true;
     }
 

@@ -43,6 +43,20 @@
 .wlk-sec{margin-top:32px;}
 .wlk-sec-title{font-family:var(--font-display);font-weight:800;font-size:14px;letter-spacing:-.01em;color:var(--text);margin-bottom:12px;}
 
+/* ── "Hari Ini Platform Mempelajari" executive card (Autonomous
+   Experience, Part 10) — calm, real, no chart junk; a short list of plain
+   sentences reusing the same .wlk-sec-title/.wlk-page rhythm as every
+   other section, just with a quiet accent edge to read as the headline. */
+.ld-today-card{
+  border-left:3px solid var(--accent);background:var(--canvas);
+  border-radius:0 14px 14px 0;padding:18px 20px;
+}
+.ld-today-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px;}
+.ld-today-list li{
+  font-size:14.5px;color:var(--text);line-height:1.5;padding-left:20px;position:relative;
+}
+.ld-today-list li::before{content:'';position:absolute;left:0;top:8px;width:6px;height:6px;border-radius:50%;background:var(--accent);}
+
 /* ── empty state ─────────────────────────────────────────────────── */
 .wlk-empty{
   background:var(--surface);border:1px dashed var(--border);border-radius:14px;
@@ -236,16 +250,47 @@
 @keyframes dic-pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.35;transform:scale(1.3);}}
 @keyframes dic-success-in{from{opacity:0;transform:translateY(-4px);}to{opacity:1;transform:translateY(0);}}
 
-/* ── Recent Imports — collapsed, de-emphasized by default (Part 3) ── */
-.dic-recent{border:1px solid var(--border);border-radius:14px;background:var(--surface);padding:4px;}
-.dic-recent summary{
-  cursor:pointer;list-style:none;padding:14px 16px;font-family:var(--font-display);
-  font-weight:800;font-size:13px;color:var(--text-dim);
+/* ── Progressive Import Queue (Autonomous Experience, Part 2) — each
+   phase collapses to a single count row; only an expanded bucket's row
+   cards ever enter the DOM, so a 500-file batch stays a handful of nodes
+   until the operator asks to see one bucket. Reused as-is (Phase 8,
+   Experience Architecture) for the Smart Import Feed's "Selesai" group and
+   for Grouped Exceptions below — one visual idiom for "collapsed by
+   default", not a third one invented per section. ────────────────────── */
+.dic-queue-buckets{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;}
+.dic-queue-bucket{border:1px solid var(--border);border-radius:12px;background:var(--surface);overflow:hidden;}
+.dic-queue-bucket-head{
+  appearance:none;cursor:pointer;border:none;background:none;width:100%;
+  display:flex;align-items:center;gap:10px;padding:12px 14px;
+  font-family:var(--font-display);font-weight:800;font-size:13px;color:var(--text-dim);text-align:left;
 }
-.dic-recent summary::-webkit-details-marker{display:none;}
-.dic-recent summary::before{content:'›';display:inline-block;margin-right:8px;transition:transform .15s ease;}
-.dic-recent[open] summary::before{transform:rotate(90deg);}
-.dic-recent-body{padding:0 4px 4px;}
+.dic-queue-bucket-chevron{
+  display:inline-block;width:12px;flex-shrink:0;color:var(--text-faint);
+  transition:transform .15s ease;
+}
+.dic-queue-bucket--open .dic-queue-bucket-chevron{transform:rotate(90deg);}
+.dic-queue-bucket-label{flex:1;}
+.dic-queue-bucket-count{
+  font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--accent);
+  background:var(--c-blue-weak);border-radius:999px;padding:2px 10px;
+}
+.dic-queue-bucket-body{padding:0 8px 8px;animation:dic-bucket-in .18s ease-out;}
+@keyframes dic-bucket-in{from{opacity:0;}to{opacity:1;}}
+
+/* ── Smart Import Feed (Phase 8, Part 1) ─────────────────────────────── */
+.dic-feed-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;
+  border:1px solid var(--border);border-radius:12px;background:var(--surface);}
+.dic-feed-head .dic-queue-bucket-head{flex:1;min-width:160px;}
+.dic-feed-actions{display:flex;gap:6px;padding:0 10px;flex-wrap:wrap;}
+.dic-feed-checkbox{margin-right:8px;vertical-align:middle;}
+.dic-feed-row--pinned{background:var(--c-blue-weak);}
+.dic-feed-pin-badge{font-size:11px;}
+
+/* ── Consensus Experience (Phase 8, Part 4) ──────────────────────────── */
+.dic-consensus-note{
+  border-left:2px solid var(--accent);padding:8px 10px;margin-top:8px;
+  background:var(--c-blue-weak);border-radius:0 8px 8px 0;
+}
 
 @media (max-width: 640px) {
   .wlk-page-title{font-size:21px;}

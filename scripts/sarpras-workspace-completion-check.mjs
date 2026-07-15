@@ -12,6 +12,7 @@ import {
 import { mountArchiveCenter, closeArchiveCenter } from '../js/v2/ui/archive-center.js';
 import { mountKnowledgeCenter, closeKnowledgeCenter } from '../js/v2/ui/knowledge-center.js';
 import { mountLearningDashboard, closeLearningDashboard } from '../js/v2/ui/learning-dashboard.js';
+import { mountSarprasSettings, closeSarprasSettings } from '../js/v2/ui/sarpras-settings.js';
 // nor-center.js is NOT statically imported here — it transitively imports
 // js/firebase.js's CDN-hosted SDK (via petty-cash-store.js), which only a
 // browser can resolve (same constraint documented in
@@ -41,6 +42,7 @@ check('sarpras-intelligence-center exports mount/setScreen/close', typeof mountS
 check('archive-center exports exactly a mount/close pair', typeof mountArchiveCenter === 'function' && typeof closeArchiveCenter === 'function');
 check('knowledge-center exports exactly a mount/close pair', typeof mountKnowledgeCenter === 'function' && typeof closeKnowledgeCenter === 'function');
 check('learning-dashboard exports exactly a mount/close pair', typeof mountLearningDashboard === 'function' && typeof closeLearningDashboard === 'function');
+check('sarpras-settings exports exactly a mount/close pair', typeof mountSarprasSettings === 'function' && typeof closeSarprasSettings === 'function');
 
 const norCenterSrc = fs.readFileSync(path.join(ROOT, 'js/v2/ui/nor-center.js'), 'utf8');
 check('nor-center.js exports mountNorCenter', /export\s+(async\s+)?function\s+mountNorCenter/.test(norCenterSrc));
@@ -50,7 +52,14 @@ check('nor-center.js exports closeNorCenter', /export\s+function\s+closeNorCente
 const outerShellSrc = fs.readFileSync(path.join(ROOT, 'js/v2/ui/sarpras-intelligence-center.js'), 'utf8');
 check('outer shell has no COMING_SOON object', !/COMING_SOON/.test(outerShellSrc));
 check('outer shell has no renderComingSoon function', !/renderComingSoon/.test(outerShellSrc));
-check('outer shell SCREEN_IDS unchanged (roadmap frozen)', /SCREEN_IDS = \['dashboard', 'nor', 'archive', 'knowledge', 'learning'\]/.test(outerShellSrc));
+// Experience Architecture phase — the RC1 "roadmap frozen" premise this
+// assertion encoded is explicitly superseded by that mission: it adds
+// 'settings' as a genuinely new, reviewed screen id (Part 2's 5th primary
+// nav item). The other 5 ids are untouched (still real, still mountable —
+// 'knowledge' just lost its primary nav BUTTON, not its screen id), so
+// this still guards against silent/accidental SCREEN_IDS drift, just not
+// against this one deliberate, authorized addition.
+check('outer shell SCREEN_IDS is the 5 original ids plus the one authorized addition (settings)', /SCREEN_IDS = \['dashboard', 'nor', 'archive', 'knowledge', 'learning', 'settings'\]/.test(outerShellSrc));
 // Sprint 1 (Autonomy Closure, Part 1) — the old static roadmap (a second,
 // duplicated "which module is done" identity) is removed entirely, not
 // just gated. Developer Mode's additive content is real diagnostics.

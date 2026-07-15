@@ -1790,8 +1790,16 @@ async function navEngineering(screen, navId) {
 /* ── MODUL: Sarpras Intelligence ── (V2.0.10, embedded native module, single
    pilot identity only — see isV2Enabled() / canAccessModule('sarprasIntelligence')) */
 const SIC_MENU_TITLES = {
-  dashboard: 'Ringkasan', nor: 'NOR Center', archive: 'Archive Center',
-  knowledge: 'Knowledge Center', learning: 'Learning Dashboard',
+  dashboard: 'Home', nor: 'NOR', archive: 'Documents',
+  knowledge: 'Knowledge Center', learning: 'Intelligence', settings: 'Settings',
+};
+// Experience Architecture phase — 'knowledge' has no primary nav button
+// (see the nav panel markup), so it maps to null: an internal jump there
+// (Settings' Power View link) updates the crumb but leaves whichever real
+// button was last active alone, since none of them actually represents it.
+const SIC_SCREEN_TO_NAV_ID = {
+  dashboard: 'v2NavSicDashboard', nor: 'v2NavSicNor', archive: 'v2NavSicArchive',
+  knowledge: null, learning: 'v2NavSicLearning', settings: 'v2NavSicSettings',
 };
 async function navSarprasIntelligence(screen, navId) {
   // Deep-link / stale-state guard: mirrors setRailModule()'s canAccessModule
@@ -1802,10 +1810,21 @@ async function navSarprasIntelligence(screen, navId) {
   setWorkspace('sarprasIntelligence');
   if (!sarprasIntelMounted) {
     sarprasIntelMounted = true;
-    const { mountSarprasIntelligence, setSarprasIntelligenceScreen, closeSarprasIntelligence } = await loadSarprasIntelligence();
+    const { mountSarprasIntelligence, setSarprasIntelligenceScreen, closeSarprasIntelligence, registerScreenChangeListener } = await loadSarprasIntelligence();
     _fnMountSarprasIntel = mountSarprasIntelligence;
     _fnSetSarprasIntelScreen = setSarprasIntelligenceScreen;
     _fnCloseSarprasIntel = closeSarprasIntelligence;
+    // Experience Architecture phase — resyncs the outer nav highlight + crumb
+    // when a screen change originates INSIDE v2 (Home's quick actions,
+    // Settings' Power View link) rather than from clicking a nav button here.
+    // The click-driven path above already does both explicitly before this
+    // fires, so this is a harmless, idempotent no-op re-application in that
+    // case — never a second, competing source of truth.
+    registerScreenChangeListener && registerScreenChangeListener((nextScreen) => {
+      setCrumb('SARPRAS INTELLIGENCE', SIC_MENU_TITLES[nextScreen] || 'Sarpras Intelligence');
+      const navId = SIC_SCREEN_TO_NAV_ID[nextScreen];
+      if (navId) setV2PanelNavActive(navId);
+    });
     await _fnMountSarprasIntel(document.getElementById('v2SarprasIntelWorkspace'));
   }
   _fnSetSarprasIntelScreen && _fnSetSarprasIntelScreen(screen);
@@ -2448,28 +2467,33 @@ function initV2Panel() {
       </button>
     </nav>
 
-    <!-- ═══ MODUL: Sarpras Intelligence ═══ (V2.0.10 — single pilot identity only) -->
+    <!-- ═══ MODUL: Sarpras Intelligence ═══ (Experience Architecture phase —
+         5 items, user mental models not engineering domains: Home / NOR /
+         Documents / Intelligence / Settings. "Knowledge Center" is no longer
+         a primary destination — it's still real and mountable (screen id
+         'knowledge' unchanged), reachable as a power view from Settings, so
+         nothing here duplicates a route, only removes it from primary nav. -->
     <nav class="v2-panel-nav v2-panel-nav--sarpras-intelligence" id="v2PanelSarprasIntelNav"
          aria-label="Sarpras Intelligence menu" style="display:none;">
       <button class="v2-panel-nav-item v2-panel-nav-item--active" id="v2NavSicDashboard" type="button">
-        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M3 4a1 1 0 011-1h5a1 1 0 011 1v5a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM11 4a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1V4zM11 10a1 1 0 011-1h4a1 1 0 011 1v6a1 1 0 01-1 1h-4a1 1 0 01-1-1v-6zM3 13a1 1 0 011-1h5a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3z"/></svg>
-        Ringkasan
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/></svg>
+        Home
       </button>
       <button class="v2-panel-nav-item" id="v2NavSicNor" type="button">
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h4a1 1 0 100-2H7z" clip-rule="evenodd"/></svg>
-        NOR Center
+        NOR
       </button>
       <button class="v2-panel-nav-item" id="v2NavSicArchive" type="button">
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4z"/><path fill-rule="evenodd" d="M3 8h14v7a2 2 0 01-2 2H5a2 2 0 01-2-2V8zm5 3a1 1 0 000 2h4a1 1 0 100-2H8z" clip-rule="evenodd"/></svg>
-        Archive Center
-      </button>
-      <button class="v2-panel-nav-item" id="v2NavSicKnowledge" type="button">
-        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838L7.667 9.088l1.94.831a1 1 0 00.787 0l7-3a1 1 0 000-1.838l-7-3zM3.31 9.397L5 10.12v4.102a8.969 8.969 0 00-1.05-.174 1 1 0 01-.89-.89 11.115 11.115 0 01.25-3.762zM9.3 16.573A9.026 9.026 0 007 14.935v-3.957l1.818.78a3 3 0 002.364 0l5.508-2.361a11.026 11.026 0 01.25 3.762 1 1 0 01-.89.89 8.968 8.968 0 00-5.35 2.524 1 1 0 01-1.4 0z"/></svg>
-        Knowledge Center
+        Documents
       </button>
       <button class="v2-panel-nav-item" id="v2NavSicLearning" type="button">
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M3.293 9.707a1 1 0 010-1.414l4-4a1 1 0 011.414 0l3.293 3.293 4.293-4.293a1 1 0 111.414 1.414l-5 5a1 1 0 01-1.414 0L8 6.414l-3.293 3.293a1 1 0 01-1.414 0zM3 13a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3z"/></svg>
-        Learning Dashboard
+        Intelligence
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavSicSettings" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
+        Settings
       </button>
     </nav>
 
@@ -2627,13 +2651,17 @@ function initV2Panel() {
   document.getElementById('v2NavAnalyticsEngineering')?.addEventListener('click', navAnalyticsEngineering);
   document.getElementById('v2NavEngSettings')?.addEventListener('click', () => navEngineering('settings', 'v2NavEngSettings'));
 
-  // MODUL Sarpras Intelligence (V2.0.10) — Dashboard is real; the other four
-  // land on the shared "Coming Soon" screen inside the module itself.
+  // MODUL Sarpras Intelligence — Experience Architecture phase: 5 primary
+  // items (Home/NOR/Documents/Intelligence/Settings). Screen ids are
+  // UNCHANGED internally ('dashboard'/'nor'/'archive'/'learning') — only
+  // the button label/icon a user actually clicks changed; 'knowledge' has
+  // no primary button anymore but stays reachable from the new Settings
+  // screen's Power Views link (navSarprasIntelligence('knowledge', null)).
   document.getElementById('v2NavSicDashboard')?.addEventListener('click', () => navSarprasIntelligence('dashboard', 'v2NavSicDashboard'));
   document.getElementById('v2NavSicNor')?.addEventListener('click', () => navSarprasIntelligence('nor', 'v2NavSicNor'));
   document.getElementById('v2NavSicArchive')?.addEventListener('click', () => navSarprasIntelligence('archive', 'v2NavSicArchive'));
-  document.getElementById('v2NavSicKnowledge')?.addEventListener('click', () => navSarprasIntelligence('knowledge', 'v2NavSicKnowledge'));
   document.getElementById('v2NavSicLearning')?.addEventListener('click', () => navSarprasIntelligence('learning', 'v2NavSicLearning'));
+  document.getElementById('v2NavSicSettings')?.addEventListener('click', () => navSarprasIntelligence('settings', 'v2NavSicSettings'));
 
   // Legacy Administration entry (hidden) — kept wired for rollback safety.
   document.getElementById('v2NavAdminUsers')?.addEventListener('click', navManajemenUser);

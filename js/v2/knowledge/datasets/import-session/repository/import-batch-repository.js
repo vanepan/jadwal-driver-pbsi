@@ -103,12 +103,24 @@ export async function initImportBatchSync() {
   }, { onError: (err) => console.error('[import-batch-repository] RTDB sync error:', err) });
 }
 
+// Phase 7 (Runtime Hardening, Part 5) — same coalescing fix as import-
+// session-repository.js#persistRemote; see that file's comment for the
+// measured proof. Matters even more here once Part 2's parallel upload
+// queue lands: several files completing in the same synchronous burst can
+// all call recordBatchItem() for the SAME batch id.
+const _pendingRemoteWrite = new Set();
+
 function persistRemote(id) {
   if (!_remoteWrite) return;
-  const versions = _store.get(id);
-  if (!versions) return;
-  _remoteWrite(`${RTDB_PATH}/${id}`, versions).catch((err) => {
-    console.error(`[import-batch-repository] RTDB write failed for "${id}":`, err);
+  if (_pendingRemoteWrite.has(id)) return;
+  _pendingRemoteWrite.add(id);
+  queueMicrotask(() => {
+    _pendingRemoteWrite.delete(id);
+    const versions = _store.get(id);
+    if (!versions) return;
+    _remoteWrite(`${RTDB_PATH}/${id}`, versions).catch((err) => {
+      console.error(`[import-batch-repository] RTDB write failed for "${id}":`, err);
+    });
   });
 }
 
@@ -167,4 +179,5 @@ export function resetImportBatchRepository() {
   _store.clear();
   clearTimeout(_hydrateTimer);
   _pendingRawSnapshot = undefined;
+  _pendingRemoteWrite.clear();
 }

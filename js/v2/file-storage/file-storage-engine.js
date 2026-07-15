@@ -51,11 +51,18 @@ const UPLOAD_ATTEMPT_TIMEOUT_MS = 30000;
  * before; otherwise reuses the existing StoredFileRecord and simply
  * records this session as another reference to it.
  * @param {File|Blob} file
- * @param {{domainType: string, importSessionId: string}} opts
+ * @param {{domainType: string, importSessionId: string, precomputedSha256?: string|null}} opts
+ *   Phase 6.5 (Pipeline Observability Hardening, Part 10) — `precomputedSha256`
+ *   lets a caller that already hashed this exact file (dataset-import-
+ *   center.js#processOneFile does, for its own dedup/inference signals)
+ *   skip a second real SHA-256 pass over the same bytes — a genuine,
+ *   measured CPU cost this milestone's bottleneck audit found being paid
+ *   twice per file. Optional and backward-compatible: omitted, this
+ *   function hashes exactly as it always did.
  * @returns {Promise<{ok: boolean, record: import('./contracts/file-storage-contract.js').StoredFileRecord|null, wasDuplicate: boolean, sha256: string, error: string|null}>}
  */
-export async function uploadFile(file, { domainType, importSessionId }) {
-  const sha256 = await computeSha256(file);
+export async function uploadFile(file, { domainType, importSessionId, precomputedSha256 = null }) {
+  const sha256 = precomputedSha256 || await computeSha256(file);
   const existing = getStoredFileBySha256(sha256);
 
   if (existing) {

@@ -10,12 +10,15 @@
 
    RESPONSIBILITY: computeSha256(file).
 
-   DEPENDENCIES: none (Web Crypto API, a platform global — available
-   identically in every modern browser and in Node 19+; verified against
-   Node 24 in this milestone).
+   DEPENDENCIES: ./worker-runtime.js (Phase 7, Part 3 — the actual hashing
+   now runs off the main thread when a Worker is available; this file's own
+   public contract — signature, return shape, Node compatibility — is
+   UNCHANGED, so every existing caller keeps working with zero edits).
    ============================================================ */
 
 'use strict';
+
+import { hashFile } from './worker-runtime.js';
 
 /**
  * Real SHA-256 over a file's actual bytes — not a proxy, not metadata.
@@ -23,7 +26,5 @@
  * @returns {Promise<string>} lowercase hex digest
  */
 export async function computeSha256(file) {
-  const buffer = await file.arrayBuffer();
-  const digest = await crypto.subtle.digest('SHA-256', buffer);
-  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+  return hashFile(file);
 }

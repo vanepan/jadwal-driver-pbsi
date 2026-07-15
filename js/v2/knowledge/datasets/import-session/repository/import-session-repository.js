@@ -139,12 +139,32 @@ export async function initImportSessionSync() {
   }, { onError: (err) => console.error('[import-session-repository] RTDB sync error:', err) });
 }
 
+// Phase 7 (Runtime Hardening, Part 5) — COALESCE same-id remote writes within
+// one synchronous burst. Proven bottleneck: advanceSession() can walk a
+// session through several real transitions (submit -> approve -> knowledge
+// import -> auto-imported -> archive) in ONE synchronous call, and every one
+// of those used to fire its own immediate persistRemote() — a live benchmark
+// measured 8 real writes across one session's real lifecycle, cumulatively
+// sending 22.5x the bytes its final state alone would need (each write
+// resends the full version array — that payload shape is UNCHANGED here;
+// only how many times it gets sent is). Queuing on a microtask means every
+// appendVersion() call in the SAME synchronous burst for the SAME id
+// collapses into exactly one remote write, of whatever the LATEST state is
+// by the time the microtask runs — never a stale one, since it re-reads
+// `_store` at execution time, not at schedule time.
+const _pendingRemoteWrite = new Set();
+
 function persistRemote(id) {
   if (!_remoteWrite) return;
-  const versions = _store.get(id);
-  if (!versions) return;
-  _remoteWrite(`${RTDB_PATH}/${id}`, versions).catch((err) => {
-    console.error(`[import-session-repository] RTDB write failed for "${id}":`, err);
+  if (_pendingRemoteWrite.has(id)) return; // already queued — it will pick up the latest state
+  _pendingRemoteWrite.add(id);
+  queueMicrotask(() => {
+    _pendingRemoteWrite.delete(id);
+    const versions = _store.get(id);
+    if (!versions) return;
+    _remoteWrite(`${RTDB_PATH}/${id}`, versions).catch((err) => {
+      console.error(`[import-session-repository] RTDB write failed for "${id}":`, err);
+    });
   });
 }
 
@@ -229,4 +249,5 @@ export function resetImportSessionRepository() {
   _store.clear();
   clearTimeout(_hydrateTimer);
   _pendingRawSnapshot = undefined;
+  _pendingRemoteWrite.clear();
 }

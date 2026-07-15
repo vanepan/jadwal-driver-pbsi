@@ -22,6 +22,25 @@
   // browser without needing the File/Firebase upload path.
   import { create as knowledgeCreate } from '../js/v2/knowledge/repository/knowledge-repository.js';
   import { buildManualFileKnowledgeItem } from '../js/v2/knowledge/connectors/manual-file-connector.js';
+  // Autonomous Experience (Part 10) — test affordance: records a real
+  // Learning Event through the actual, live producer path (the SAME
+  // recordCorrection() dataset-import-center.js's Advanced Metadata save
+  // calls), so a DOM test can verify the Learning Dashboard's "Hari Ini"
+  // card reflects REAL recorded facts, not just render without throwing.
+  import { recordCorrection, CORRECTION_TYPE } from '../js/v2/learning/services/learning-service.js';
+  // Phase 7 (Runtime Hardening, Part 9) — stress-test affordance: seeds N
+  // REAL Import Sessions through the actual engine (createImportSession +
+  // attachManualEntryFacts + advanceSession — the exact same calls
+  // dataset-import-center.js#processOneFile makes), entirely Firebase-free,
+  // so a puppeteer test can measure REAL render cost at scale (25-500
+  // sessions) without ever touching Storage/RTDB or a File object.
+  import {
+    createImportSession, attachManualEntryFacts, listImportSessions,
+    submitImportSessionForReview, approveImportSession,
+  } from '../js/v2/knowledge/datasets/import-session/import-session-engine.js';
+  import { advanceSession, reportUploadStarted } from '../js/v2/knowledge/datasets/import-session/pipeline-scheduler.js';
+  import { createBatch } from '../js/v2/knowledge/datasets/import-session/import-batch-engine.js';
+  import { DATASET_TYPE } from '../js/v2/knowledge/datasets/contracts/dataset-contract.js';
 
   const host = document.getElementById('host');
   window.__mount = () => mountSarprasIntelligence(host);
@@ -32,6 +51,71 @@
   window.__createKnowledgeItem = (sessionRef) => knowledgeCreate(buildManualFileKnowledgeItem({
     importSessionId: sessionRef, domainType: 'nor', kind: 'document_fact', parsedContent: { value: `seed-${sessionRef}` },
   })).ok;
+  window.__recordTestCorrection = (targetKey) => recordCorrection({
+    domainType: 'nor', correctionType: CORRECTION_TYPE.METADATA, targetKey,
+    actorId: 'test', after: { domainType: 'nor' },
+  }).ok;
+  // Experience Architecture phase — the real archiver (dataset-import-
+  // center.js#doArchive) is ALREADY registered by the time this script's
+  // own top-level code runs: mountSarprasIntelligence's import chain
+  // statically imports dataset-import-center.js (for reviewReasons/
+  // effectiveStage), and registerArchiver(doArchive) is that file's own
+  // module-load side effect (see its header). A fake archiver used to be
+  // registered here instead — it satisfied the terminal-state contract
+  // (returns a truthy id) but never persisted a real ArchiveRecord, so
+  // document-centric-detail-check.mjs's real Archive provenance/
+  // relationship assertions had nothing real to read. Removed: no
+  // registerArchiver() call here at all now, so the real one wins.
+  window.__seedImportSessions = (n, mixArchived = true) => {
+    const t0 = performance.now();
+    const batch = createBatch({ createdBy: 'stress', domainType: 'nor', totalFiles: n });
+    for (let i = 0; i < n; i += 1) {
+      const created = createImportSession({
+        domainType: 'nor', datasetType: DATASET_TYPE.OFFICIAL, filename: `stress-${i}.pdf`,
+        mimeType: 'application/pdf', sizeBytes: 10000 + i, kind: 'pdf', knowledgeKind: 'document_fact',
+        uploadedBy: 'stress', batchId: batch.ok ? batch.data.id : null,
+      });
+      if (!created.ok) continue;
+      // A realistic mix: most files get real facts and auto-complete to
+      // Archived; every 5th is left evidence-less (a real Awaiting Evidence
+      // row) — matching how a real batch actually looks, not a synthetic
+      // best case.
+      if (mixArchived && i % 5 !== 0) {
+        attachManualEntryFacts(created.data.id, { value: `v${i}`, documentNumber: `d${i}`, senderOrigin: 'stress', notes: '' });
+      }
+      advanceSession(created.data.id);
+    }
+    const t1 = performance.now();
+    return { seedMs: t1 - t0, total: listImportSessions({}).ok ? listImportSessions({}).data.length : -1 };
+  };
+  // Autonomous Experience (Part 2) — test affordance: leaves sessions
+  // genuinely RESTING mid-ladder (never calling advanceSession() to walk
+  // them all the way to a terminal), using the real, individual lifecycle
+  // primitives — the exact situation a real batch is in while files are
+  // still actually uploading/being validated. Distributed evenly across
+  // uploading / policy_validation (Building Knowledge bucket reads this
+  // stage) / left at classification (Preparing) so all three Progressive
+  // Queue buckets have real rows to expand.
+  window.__seedInFlightSessions = (n) => {
+    const batch = createBatch({ createdBy: 'stress', domainType: 'nor', totalFiles: n });
+    for (let i = 0; i < n; i += 1) {
+      const created = createImportSession({
+        domainType: 'nor', datasetType: DATASET_TYPE.OFFICIAL, filename: `inflight-${i}.pdf`,
+        mimeType: 'application/pdf', sizeBytes: 5000, kind: 'pdf', knowledgeKind: 'document_fact',
+        uploadedBy: 'stress', batchId: batch.ok ? batch.data.id : null,
+      });
+      if (!created.ok) continue;
+      const id = created.data.id;
+      const bucket = i % 3;
+      if (bucket === 0) {
+        reportUploadStarted(id); // rests at UPLOADING
+      } else if (bucket === 1) {
+        submitImportSessionForReview(id); // rests at POLICY_VALIDATION ("Building Knowledge")
+      }
+      // bucket === 2: left at CLASSIFICATION ("Preparing") — no call at all.
+    }
+    return { total: listImportSessions({}).ok ? listImportSessions({}).data.length : -1 };
+  };
   window.__ready = true;
 </script>
 </body>

@@ -72,14 +72,24 @@ import {
 } from '../knowledge/services/import-session-service.js';
 import { registerChangeListener as registerFileStorageChangeListener } from '../file-storage/file-storage-registry.js';
 
+// Experience Architecture phase — this screen is what a normal PBSI user
+// reaches as "Documents" (see js/app.js's nav button + Part 1's audit,
+// which found "Archive"/"Review" as literal, untranslated engineering
+// words a first-time user would not recognize). Only `label` and tab
+// ORDER changed — every `id` is byte-identical, so `RENDERERS[st.section]`
+// and every existing data-id reference below is completely unaffected.
+// "Unggah" (upload) moves first: Part 3/6's "Documents is the primary
+// workspace, and its primary action is adding a document" — landing here
+// (including from Home's "Unggah Dokumen" quick action) should not need a
+// second click to find the upload zone.
 const SECTIONS = [
-  { id: 'dashboard', label: 'Dashboard' },
-  { id: 'records', label: 'Arsip' },
+  { id: 'dashboard', label: 'Ringkasan' },
+  { id: 'import', label: 'Unggah' },
+  { id: 'records', label: 'Semua Dokumen' },
+  { id: 'uploadQueue', label: 'Antrean Unggah' },
   { id: 'timeline', label: 'Linimasa' },
   { id: 'datasets', label: 'Dataset Terkait' },
-  { id: 'uploadQueue', label: 'Antrean Unggah' },
-  { id: 'import', label: 'Impor Dataset' },
-  { id: 'review', label: 'Review' },
+  { id: 'review', label: 'Tinjauan' },
 ];
 
 // V2.1 — one controller instance for this workspace, unscoped (cross-

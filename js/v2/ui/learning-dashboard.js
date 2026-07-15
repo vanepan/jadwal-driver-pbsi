@@ -55,7 +55,11 @@ import { getKind } from '../knowledge/registry/kind-registry.js';
 // Memory a real, reachable reader.
 import { computeCoverageReport } from '../organizational-memory/coverage-engine.js';
 import { computeOrganizationalMemory } from '../organizational-memory/organizational-memory-engine.js';
-import { listLearningEvents, LEARNING_KIND } from '../learning/services/learning-service.js';
+import { listLearningEvents, LEARNING_KIND, CORRECTION_TYPE } from '../learning/services/learning-service.js';
+// Autonomous Experience (Part 10) — "Today the platform learned..." reads
+// real batch-level duplicate tallies (ImportBatchRecord.duplicate), the one
+// piece of today's real activity Learning Events don't themselves carry.
+import { listBatches } from '../knowledge/datasets/import-session/import-batch-engine.js';
 
 import {
   esc, renderEmptyState, renderTabShell, renderRowList, renderStatCards, renderKvList, renderFilterBar,
@@ -198,6 +202,84 @@ function computeLearningInsights() {
   return { datasetsImported, knowledgeCreated, patternDiscoveries, overridesTotal: overrides.length, overridesApproved };
 }
 
+/** Autonomous Experience (Part 10) — "Today the platform learned...".
+ *  Every number here is a real, date-scoped read of already-real stored
+ *  data — never a second computation, never a fabricated category:
+ *
+ *    - new document facts       -> KnowledgeItems whose real createdAt is
+ *                                   today (a genuinely NEW fact, not a
+ *                                   correction to an existing one)
+ *    - corrections               -> LEARNING_KIND.CORRECTION events whose
+ *                                   real observedAt is today (learning-
+ *                                   service.js's own producers: Advanced
+ *                                   Metadata saves, Knowledge/Pattern
+ *                                   corrections — see that file's header)
+ *    - patterns discovered        -> LEARNING_KIND.PATTERN events observed
+ *                                   today (idempotent-when-unchanged, so a
+ *                                   version here means something REALLY
+ *                                   changed today, not a render artifact)
+ *    - knowledge approved         -> LEARNING_KIND.KNOWLEDGE_EVOLUTION
+ *                                   events observed today
+ *    - gaps resolved               -> LEARNING_KIND.GAP_RESOLUTION events
+ *                                   observed today
+ *    - duplicate document chains  -> the real `duplicate` tally on Import
+ *                                   Batches STARTED today (not a Learning
+ *                                   Event — this is the one fact that lives
+ *                                   on the batch record itself)
+ *
+ *  A category with a real zero shows a real zero — this file's own
+ *  masthead already says so ("setiap angka di sini boleh jujur menunjukkan
+ *  nol"), and nothing here invents a nonzero placeholder to look alive. */
+function computeTodayLearning() {
+  const today = new Date().toISOString().slice(0, 10);
+  const isToday = (iso) => typeof iso === 'string' && iso.slice(0, 10) === today;
+
+  const newFactsToday = safeList(knowledgeList, {}).filter((i) => isToday(i.createdAt)).length;
+
+  const eventsToday = safeList(listLearningEvents, {}).filter((e) => isToday(e.observedAt));
+  const countKind = (kind) => eventsToday.filter((e) => e.kind === kind).length;
+  const correctionsToday = countKind(LEARNING_KIND.CORRECTION);
+  const correctionsByType = {};
+  Object.values(CORRECTION_TYPE).forEach((t) => {
+    correctionsByType[t] = eventsToday.filter((e) => e.kind === LEARNING_KIND.CORRECTION && e.correctionType === t).length;
+  });
+  const patternsToday = countKind(LEARNING_KIND.PATTERN);
+  const knowledgeApprovedToday = countKind(LEARNING_KIND.KNOWLEDGE_EVOLUTION);
+  const gapsResolvedToday = countKind(LEARNING_KIND.GAP_RESOLUTION);
+
+  const batchesResult = listBatches({});
+  const batchesToday = (batchesResult.ok ? batchesResult.data : []).filter((b) => isToday(b.startedAt));
+  const duplicateChainsToday = batchesToday.reduce((n, b) => n + (b.duplicate || 0), 0);
+
+  const totalEventsToday = newFactsToday + correctionsToday + patternsToday + knowledgeApprovedToday + gapsResolvedToday + duplicateChainsToday;
+
+  return {
+    today, newFactsToday, correctionsToday, correctionsByType, patternsToday,
+    knowledgeApprovedToday, gapsResolvedToday, duplicateChainsToday, totalEventsToday,
+  };
+}
+
+function renderTodayLearningCard() {
+  const t = computeTodayLearning();
+  const lines = [
+    t.newFactsToday > 0 ? `${t.newFactsToday} fakta dokumen baru` : null,
+    t.correctionsToday > 0 ? `${t.correctionsToday} koreksi tercatat (Advanced Metadata/Knowledge/Pattern)` : null,
+    t.patternsToday > 0 ? `${t.patternsToday} pola berulang baru ditemukan` : null,
+    t.duplicateChainsToday > 0 ? `${t.duplicateChainsToday} rantai dokumen duplikat terdeteksi` : null,
+    t.knowledgeApprovedToday > 0 ? `${t.knowledgeApprovedToday} pengetahuan disetujui` : null,
+    t.gapsResolvedToday > 0 ? `${t.gapsResolvedToday} celah penomoran diselesaikan` : null,
+  ].filter(Boolean);
+
+  return `
+    <div class="wlk-sec ld-today-card">
+      <div class="wlk-sec-title">Hari Ini Platform Mempelajari</div>
+      ${lines.length ? `
+        <ul class="ld-today-list">
+          ${lines.map((l) => `<li>${esc(l)}</li>`).join('')}
+        </ul>` : renderEmptyState('Belum ada aktivitas pembelajaran hari ini.', 'Angka ini boleh jujur menunjukkan nol — akan terisi begitu ada unggahan, koreksi, atau persetujuan baru hari ini.')}
+    </div>`;
+}
+
 function renderOverviewSection() {
   const metrics = buildLearningMetrics(listCorrectionLog());
   const healthResult = computeHealthReport();
@@ -212,6 +294,8 @@ function renderOverviewSection() {
         <h1 class="wlk-page-title">Learning Dashboard</h1>
         <p class="wlk-page-lede">Ringkasan pembelajaran organisasi — setiap angka di sini boleh jujur menunjukkan nol.</p>
       </div>
+
+      ${renderTodayLearningCard()}
 
       <div class="wlk-sec">
         <div class="wlk-sec-title">Learning Insights</div>
