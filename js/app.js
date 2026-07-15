@@ -202,6 +202,10 @@ import { initAdminUI, updateAdminButtons, openUserFormModal } from './admin.js';
 import {
   mountPettyCash, setPettyCashScreen, closePettyCashCenter, openPettyCashAddExpense, setPettyCashSearch,
 } from './petty-cash/petty-cash-center.js';
+// v1.25.0 Overtime Management UI — embedded native module (mirrors Petty Cash).
+import {
+  mountOvertime, setOvertimeScreen, closeOvertimeCenter, setOvertimeSearch,
+} from './overtime/overtime-center.js';
 // v1.20.1 Engineering Operations UI — embedded native module (mirrors Petty Cash).
 import {
   mountEngineering, setEngineeringScreen, closeEngineering, openEngineeringCreate, openEngineeringReport, setEngineeringSearch,
@@ -289,6 +293,8 @@ let activeAdminModule = 'konfigurasi';
 // v1.14.0: lazy mount flag for the embedded Petty Cash module.
 let pettyCashMounted = false;
 let engineeringMounted = false;
+// v1.25.0: lazy mount flag for the embedded Overtime Management module.
+let overtimeMounted = false;
 // v1.15.0: lazy mount flags for the new Analytics workspaces.
 let analyticsPettyMounted = false;
 let analyticsExecMounted = false;
@@ -519,6 +525,7 @@ const RAIL_MODULE_BOTTOM_NAV_ACTION = {
   home: 'navHome',
   driverops: 'navDriverTimeline',
   pettycash: 'openMoreSheet',
+  overtime: 'openMoreSheet',
   analytics: 'navAnalytics',
   konfigurasi: 'openMoreSheet',
   engineering: 'navEngDashboard',
@@ -684,6 +691,7 @@ function updateBottomNavBadges() {
  */
 const BOTTOM_NAV_MORE_ITEMS = [
   { label: 'Petty Cash', proxy: 'btnPettyCash' },
+  { label: 'Overtime', proxy: 'btnOvertime', requiresModule: 'overtime' },
   { label: 'Konfigurasi', proxy: 'btnUserMgmt' },
   { label: 'Engineering', proxy: 'btnEngineering', requiresModule: 'engineering' },
   { label: 'Keluar', proxy: 'btnLogout' },
@@ -991,6 +999,8 @@ function updatePermissionUI(resetNavActive = false) {
     if (v2RailDriverOps) v2RailDriverOps.style.display = canAccessModule('driverops') ? 'flex' : 'none';
     const v2RailPettyCash = document.getElementById('v2RailPettyCash');
     if (v2RailPettyCash) v2RailPettyCash.style.display = adminOnly ? 'flex' : 'none';
+    const v2RailOvertime = document.getElementById('v2RailOvertime');
+    if (v2RailOvertime) v2RailOvertime.style.display = adminOnly ? 'flex' : 'none';
     const v2RailAnalytics = document.getElementById('v2RailAnalytics');
     if (v2RailAnalytics) v2RailAnalytics.style.display = adminOnly ? 'flex' : 'none';
     const v2RailKonfig = document.getElementById('v2RailKonfigurasi');
@@ -1194,6 +1204,13 @@ const MODULE_DEFS = {
        after the user clicked Dashboard). */
     land: () => navPettyCash('dashboard', 'v2NavPcDashboard'),
   },
+  // v1.25.0: Overtime Management — embedded native module (Petty Cash pattern).
+  // Sits directly under Petty Cash Center, above Engineering/Analytics.
+  overtime: {
+    railId: 'v2RailOvertime', navId: 'v2PanelOvertimeNav',
+    title: 'Overtime Management', subtitle: 'Rekap Lembur Operasional', crumb: 'OVERTIME',
+    land: () => navOvertime('dashboard', 'v2NavOtDashboard'),
+  },
   analytics: {
     railId: 'v2RailAnalytics', navId: 'v2PanelAnalyticsNav',
     title: 'Analytics', subtitle: 'Intelijen Operasional', crumb: 'ANALYTICS',
@@ -1331,6 +1348,12 @@ function registerSearchAdapters() {
   });
 
   registerSearchAdapter({
+    id: 'overtime',
+    placeholder: 'Cari nama karyawan…',
+    run: (q) => setOvertimeSearch(q),
+  });
+
+  registerSearchAdapter({
     id: 'analytics',
     placeholder: 'Cari KPI, metrik, laporan, ekspor…',
     run: (q) => runAnalyticsContextualSearch(q),
@@ -1441,6 +1464,7 @@ function canAccessModule(name) {
     case 'engineering': return isEngineeringUser();
     case 'driverops':   return !isEngineeringUser(); // bidang + driver
     case 'pettycash':
+    case 'overtime':
     case 'analytics':
     case 'konfigurasi': return false;                // admin-only
     default:            return false;
@@ -1455,7 +1479,7 @@ function defaultModuleForRole() {
 /**
  * Switch the active rail module: highlight its rail item, reveal its panel-nav
  * block, set the panel header + breadcrumb, and run its default landing menu.
- * @param {'driverops'|'pettycash'|'analytics'|'konfigurasi'|'administration'} name
+ * @param {'driverops'|'pettycash'|'overtime'|'analytics'|'konfigurasi'|'administration'} name
  */
 function setRailModule(name) {
   // 'administration' is no longer a visible module — fold legacy callers into
@@ -1479,7 +1503,7 @@ function setRailModule(name) {
   });
 
   // Panel-nav block visibility — show only the active module's menu.
-  ['v2PanelHomeNav', 'v2PanelDriverOpsNav', 'v2PanelPettyCashNav', 'v2PanelAnalyticsNav', 'v2PanelKonfigurasiNav', 'v2PanelEngineeringNav', 'v2PanelSarprasIntelNav']
+  ['v2PanelHomeNav', 'v2PanelDriverOpsNav', 'v2PanelPettyCashNav', 'v2PanelOvertimeNav', 'v2PanelAnalyticsNav', 'v2PanelKonfigurasiNav', 'v2PanelEngineeringNav', 'v2PanelSarprasIntelNav']
     .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = (id === def.navId) ? '' : 'none'; });
 
   const panelTitle    = document.getElementById('v2PanelTitle');
@@ -1764,6 +1788,21 @@ async function navPettyCash(screen, navId) {
 const PC_MENU_TITLES = {
   dashboard: 'Dashboard', expenses: 'Pengeluaran', norGenerate: 'Generate NOR',
   norHistory: 'Riwayat NOR', settings: 'Pengaturan',
+};
+
+/* ── MODUL: Overtime Management ── (embedded native module, v1.25.0) */
+async function navOvertime(screen, navId) {
+  setCrumb('OVERTIME', OT_MENU_TITLES[screen] || 'Overtime Management');
+  if (navId) setV2PanelNavActive(navId);
+  setWorkspace('overtime');
+  if (!overtimeMounted) {
+    overtimeMounted = true;
+    await mountOvertime(document.getElementById('v2OvertimeWorkspace'));
+  }
+  setOvertimeScreen(screen);
+}
+const OT_MENU_TITLES = {
+  dashboard: 'Dashboard', employees: 'Employees', units: 'Unit', rates: 'Rates',
 };
 
 /* ── MODUL: Engineering Operations ── (embedded native module, v1.20.1) */
@@ -2064,6 +2103,19 @@ function initV2Rail() {
         <div class="v2-rail-tooltip" aria-hidden="true">Petty Cash Center</div>
       </div>
 
+      <!-- Overtime Management — admin only; shown by updatePermissionUI() (v1.25.0).
+           Sits directly under Petty Cash Center, above Engineering/Analytics. -->
+      <div class="v2-rail-item" id="v2RailOvertime"
+           role="button" tabindex="0"
+           aria-label="Overtime Management" aria-current="false" style="display:none;">
+        <svg class="v2-rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="9"/>
+          <path d="M12 7v5l3.5 2"/>
+        </svg>
+        <div class="v2-rail-tooltip" aria-hidden="true">Overtime Management</div>
+      </div>
+
       <!-- Engineering Operations — admin + engineering roles; shown by updatePermissionUI() (v1.20.1).
            Sits BEFORE Analytics per the global sidebar hierarchy: operational
            modules → Analytics → Global Configuration (gear, always last) (v1.20.2). -->
@@ -2157,6 +2209,7 @@ function initV2Rail() {
   const railHome    = document.getElementById('v2RailHome');
   const driverOps   = document.getElementById('v2RailDriverOps');
   const railPetty   = document.getElementById('v2RailPettyCash');
+  const railOvertime = document.getElementById('v2RailOvertime');
   const railAnalytics = document.getElementById('v2RailAnalytics');
   const railKonfig  = document.getElementById('v2RailKonfigurasi');
   const railEng     = document.getElementById('v2RailEngineering');
@@ -2171,6 +2224,7 @@ function initV2Rail() {
   railHome?.addEventListener('click', () => setRailModule('home'));
   driverOps?.addEventListener('click', () => setRailModule('driverops'));
   railPetty?.addEventListener('click', () => setRailModule('pettycash'));
+  railOvertime?.addEventListener('click', () => setRailModule('overtime'));
   railAnalytics?.addEventListener('click', () => setRailModule('analytics'));
   railKonfig?.addEventListener('click', () => setRailModule('konfigurasi'));
   railEng?.addEventListener('click', () => setRailModule('engineering'));
@@ -2180,6 +2234,7 @@ function initV2Rail() {
   // module entry points. Sidebar auto-closes on .sidebar-nav-item click.
   document.getElementById('btnUserMgmt')?.addEventListener('click', () => setRailModule('konfigurasi'));
   document.getElementById('btnPettyCash')?.addEventListener('click', () => setRailModule('pettycash'));
+  document.getElementById('btnOvertime')?.addEventListener('click', () => setRailModule('overtime'));
   document.getElementById('btnAnalytics')?.addEventListener('click', () => setRailModule('analytics'));
   document.getElementById('btnEngineering')?.addEventListener('click', () => setRailModule('engineering'));
   document.getElementById('btnSarprasIntel')?.addEventListener('click', () => setRailModule('sarprasIntelligence'));
@@ -2197,7 +2252,7 @@ function initV2Rail() {
   };
 
   // Keyboard: Enter/Space activates any focusable rail element
-  [crest, railHome, driverOps, railPetty, railAnalytics, railKonfig, railEng, railSarpras].forEach(el => {
+  [crest, railHome, driverOps, railPetty, railOvertime, railAnalytics, railKonfig, railEng, railSarpras].forEach(el => {
     el?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
@@ -2377,6 +2432,27 @@ function initV2Panel() {
       <button class="v2-panel-nav-item" id="v2NavPcSettings" type="button">
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
         Pengaturan
+      </button>
+    </nav>
+
+    <!-- ═══ MODUL: Overtime Management ═══ (admin only, v1.25.0) -->
+    <nav class="v2-panel-nav v2-panel-nav--overtime" id="v2PanelOvertimeNav"
+         aria-label="Overtime Management menu" style="display:none;">
+      <button class="v2-panel-nav-item v2-panel-nav-item--active" id="v2NavOtDashboard" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M3 4a1 1 0 011-1h5a1 1 0 011 1v5a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM11 4a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1V4zM11 10a1 1 0 011-1h4a1 1 0 011 1v6a1 1 0 01-1 1h-4a1 1 0 01-1-1v-6zM3 13a1 1 0 011-1h5a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3z"/></svg>
+        Dashboard
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavOtEmployees" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10 2a4 4 0 100 8 4 4 0 000-8zM3 18a7 7 0 0114 0H3z"/></svg>
+        Employees
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavOtUnits" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M4 4h6v6H4V4zM14 4h6v6h-6V4zM4 14h6v6H4v-6zM14 14h6v6h-6v-6z"/></svg>
+        Unit
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavOtRates" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.09c-1.2.24-2.25 1-2.25 2.16 0 1.4 1.28 2 2.63 2.37l.37.1v2.4c-.6-.1-.98-.42-1-.87H6.7c.04 1.2 1.05 2.1 2.3 2.32V15a1 1 0 102 0v-.1c1.3-.23 2.4-1 2.4-2.28 0-1.45-1.36-2.03-2.65-2.38l-.37-.1V7.8c.5.1.85.4.87.8H12.9c-.05-1.14-1-2-2.2-2.24V5z" clip-rule="evenodd"/></svg>
+        Rates
       </button>
     </nav>
 
@@ -2622,6 +2698,12 @@ function initV2Panel() {
   document.getElementById('v2NavPcNorGenerate')?.addEventListener('click', () => navPettyCash('norGenerate', 'v2NavPcNorGenerate'));
   document.getElementById('v2NavPcNorHistory')?.addEventListener('click', () => navPettyCash('norHistory', 'v2NavPcNorHistory'));
   document.getElementById('v2NavPcSettings')?.addEventListener('click', () => navPettyCash('settings', 'v2NavPcSettings'));
+
+  // MODUL Overtime Management (v1.25.0)
+  document.getElementById('v2NavOtDashboard')?.addEventListener('click', () => navOvertime('dashboard', 'v2NavOtDashboard'));
+  document.getElementById('v2NavOtEmployees')?.addEventListener('click', () => navOvertime('employees', 'v2NavOtEmployees'));
+  document.getElementById('v2NavOtUnits')?.addEventListener('click', () => navOvertime('units', 'v2NavOtUnits'));
+  document.getElementById('v2NavOtRates')?.addEventListener('click', () => navOvertime('rates', 'v2NavOtRates'));
 
   // MODUL Analytics
   document.getElementById('v2NavAnalyticsDriver')?.addEventListener('click', navAnalyticsDriver);
@@ -3423,6 +3505,7 @@ function setWorkspace(name) {
   const isPend  = name === 'pending';
   const isAdmWs = name === 'administration';
   const isPc    = name === 'pettycash';
+  const isOt    = name === 'overtime';
   const isPh    = name === 'placeholder';
   const isAnPc  = name === 'analyticsPetty';
   const isAnEx  = name === 'analyticsExec';
@@ -3436,6 +3519,7 @@ function setWorkspace(name) {
   const pendingWs       = document.getElementById('v2PendingWorkspace');
   const adminWs         = document.getElementById('v2AdministrationWorkspace');
   const pcWs            = document.getElementById('v2PettyCashWorkspace');
+  const otWs            = document.getElementById('v2OvertimeWorkspace');
   const phWs            = document.getElementById('v2PlaceholderWorkspace');
   const anPcWs          = document.getElementById('v2AnalyticsPettyWorkspace');
   const anExWs          = document.getElementById('v2AnalyticsExecWorkspace');
@@ -3451,6 +3535,7 @@ function setWorkspace(name) {
   if (pendingWs)       pendingWs.style.display       = isPend  ? 'block' : 'none';
   if (adminWs)         adminWs.style.display         = isAdmWs ? 'block' : 'none';
   if (pcWs)            pcWs.style.display            = isPc    ? 'block' : 'none';
+  if (otWs)            otWs.style.display            = isOt    ? 'block' : 'none';
   if (phWs)            phWs.style.display            = isPh    ? 'block' : 'none';
   if (anPcWs)          anPcWs.style.display          = isAnPc  ? 'block' : 'none';
   if (anExWs)          anExWs.style.display          = isAnEx  ? 'block' : 'none';
@@ -3467,6 +3552,8 @@ function setWorkspace(name) {
   // Pause the embedded Petty Cash module's live re-render when it is hidden;
   // navPettyCash()/setPettyCashScreen() resume it on return.
   if (!isPc && pettyCashMounted) closePettyCashCenter();
+  // Overtime Management module: pause its live re-render when hidden (v1.25.0).
+  if (!isOt && overtimeMounted) closeOvertimeCenter();
   // Engineering module: pause its live re-render when hidden (v1.20.1).
   if (!isEng && engineeringMounted) closeEngineering();
   // Sarpras Intelligence: pause when hidden (V2.0.10). Dynamically imported —
@@ -3627,6 +3714,20 @@ function initV2PettyCashWorkspace() {
   ws.style.display = 'none';
   document.querySelector('.main-content')?.appendChild(ws);
   console.log('[v1.14.0] Petty Cash workspace host injected');
+}
+
+/**
+ * v1.25.0: Inject the embedded Overtime Management module host
+ * (#v2OvertimeWorkspace). Carries class .ot-root so the module's scoped
+ * design tokens resolve. Mounts lazily on first navigation (navOvertime).
+ */
+function initV2OvertimeWorkspace() {
+  const ws = document.createElement('div');
+  ws.id = 'v2OvertimeWorkspace';
+  ws.className = 'v2-workspace ot-root';
+  ws.style.display = 'none';
+  document.querySelector('.main-content')?.appendChild(ws);
+  console.log('[v1.25.0] Overtime Management workspace host injected');
 }
 
 /**
@@ -10733,6 +10834,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initV2PendingWorkspace();     // VSM-9: inline pending workspace
     initV2AdministrationWorkspace(); // VSM-9: admin-only administration workspace
     initV2PettyCashWorkspace();   // v1.14.0: embedded Petty Cash module host
+    initV2OvertimeWorkspace();    // v1.25.0: embedded Overtime Management module host
     initV2EngineeringWorkspace(); // v1.20.1: embedded Engineering module host
     initV2SarprasIntelligenceWorkspace(); // V2.0.10: embedded Sarpras Intelligence module host
     initV2PlaceholderWorkspace(); // v1.14.0: shared "coming soon" placeholder

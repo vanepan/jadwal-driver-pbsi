@@ -47,6 +47,7 @@ html = html.replace(/(src="js\/app\.js\?v=)[^"]+(")/, `$1${version}$2`);
 html = html.replace(/(href="style\.css\?v=)[^"]+(")/, `$1${version}$2`);
 html = html.replace(/(href="petty-cash\.css\?v=)[^"]+(")/, `$1${version}$2`);
 html = html.replace(/(href="engineering\.css\?v=)[^"]+(")/, `$1${version}$2`);
+html = html.replace(/(href="overtime\.css\?v=)[^"]+(")/, `$1${version}$2`);
 
 fs.writeFileSync(INDEX, html);
 

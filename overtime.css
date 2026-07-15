@@ -1,0 +1,67 @@
+/* ============================================================
+   OVERTIME.CSS — scoped design tokens for Overtime Management
+
+   Every token and rule is scoped under `.ot-root` so the module's
+   visual language never leaks into — or is overridden by — the
+   global platform stylesheet. Dark mode follows the module root's
+   own data-theme attribute (or the platform's <html data-theme>
+   ancestor), kept in sync by overtime-center.js.
+
+   Token palette is a direct copy of petty-cash.css's `.pc-root` set —
+   same platform, same design language, different scope. See
+   platform.css:206-221 for why `--white`/`--dark*` legacy tokens are
+   never used here (the documented dark-mode trap).
+
+   Sprint 1 (v1.25.0) — Module Skeleton + Unit Management.
+   ============================================================ */
+
+.ot-root {
+  --bg: #f3f2ef; --card: #ffffff; --card2: #faf9f7; --border: #e8e6e1; --border2: #efeeea;
+  --text: #262320; --muted: #8b857c; --label: #a49d93;
+  --primary: #9a1b2d; --primary-fg: #ffffff; --primary-tint: #f7e6e8; --primary-text: #9a1b2d; --primary-hover: #821625;
+  --green: #2f7d5b; --green-tint: #e6f0ea; --green-bd: #cfe3d8;
+  --amber: #a9781a; --amber-tint: #f8eed4; --amber-bd: #ecdcb2;
+  --blue: #4f73a8; --blue-tint: #e7edf5; --blue-bd: #cdd9ea; --purple: #7a5aa8; --purple-tint: #eee9f4;
+  --input: #ffffff; --input-bd: #e1dfd9;
+  --shadow: 0 1px 2px rgba(38,35,32,.05), 0 1px 3px rgba(38,35,32,.04);
+  --shadow-lg: 0 10px 30px rgba(38,35,32,.13), 0 2px 8px rgba(38,35,32,.08);
+
+  font-family: var(--font-sans);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
+.ot-root[data-theme="dark"],
+[data-theme="dark"] .ot-root {
+  --bg: #0d0d0e; --card: #161617; --card2: #1c1c1e; --border: #2a2a2c; --border2: #222224;
+  --text: #ededec; --muted: #8f8a84; --label: #6e6962;
+  --primary: #9a1b2d; --primary-fg: #ffffff; --primary-tint: #2c1418; --primary-text: #df8b95; --primary-hover: #b02234;
+  --green: #5fb98c; --green-tint: #142019; --green-bd: #244236;
+  --amber: #cda34f; --amber-tint: #241f10; --amber-bd: #403718;
+  --blue: #7fa0cf; --blue-tint: #151b25; --blue-bd: #243349; --purple: #a98fd2; --purple-tint: #1c1726;
+  --input: #1b1b1d; --input-bd: #333230;
+  --shadow: 0 1px 2px rgba(0,0,0,.4); --shadow-lg: 0 16px 40px rgba(0,0,0,.55);
+}
+
+.ot-root, .ot-root * { box-sizing: border-box; }
+
+/* Unified workspace geometry (matches .pc-content-pad / Analytics Executive:
+   left-aligned, 1400 max, 56px left edge). */
+.ot-content-pad {
+  max-width: var(--workspace-max-width);
+  margin-left: 0;
+  margin-right: 0;
+  padding: var(--workspace-pad-top) var(--workspace-pad-inline) var(--workspace-pad-bottom);
+}
+
+.ot-root input, .ot-root select, .ot-root textarea, .ot-root button { font-family: inherit; }
+.ot-root input:focus, .ot-root select:focus, .ot-root textarea:focus {
+  outline: none; border-color: var(--primary) !important; box-shadow: 0 0 0 3px var(--primary-tint);
+}
+
+/* Mobile-only in-content screen switcher (hidden ≥768px — the platform panel
+   menu handles navigation on desktop). */
+.ot-embed-nav { display: flex; }
+@media (min-width: 768px) { .ot-embed-nav { display: none !important; } }

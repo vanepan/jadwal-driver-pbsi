@@ -189,6 +189,12 @@ export function updateAdminButtons() {
     btnPettyCash.style.display = isAdmin() ? 'flex' : 'none';
   }
 
+  // Overtime Management — admin only (v1.25.0 mobile module entry).
+  const btnOvertime = document.getElementById('btnOvertime');
+  if (btnOvertime) {
+    btnOvertime.style.display = isAdmin() ? 'flex' : 'none';
+  }
+
   // Analytics module — admin only (v1.14.0 mobile module entry).
   const btnAnalytics = document.getElementById('btnAnalytics');
   if (btnAnalytics) {

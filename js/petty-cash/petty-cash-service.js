@@ -19,7 +19,7 @@
 'use strict';
 
 import { getCurrentUser } from '../auth.js';
-import { getUserList } from '../users.js';
+import { listDepartments } from '../services/department-directory.js';
 import { matchBidang } from './bidang-matcher.js';
 import {
   EXPENSE_STATUS, NOR_STATUS, NOR_TYPE, CYCLE_STATUS, AUDIT_ACTION, AUDIT_LABEL, AUDIT_COLOR,
@@ -44,12 +44,12 @@ export function operationalNors() {
    the Nama Unit free-text is matched against the bidang user roster
    (role='bidang') and the resolved { bidangId, bidangName } is stored as
    analytics metadata (null when no confident match). Engineering / Cleaning
-   Service are fixed operational units and never carry a bidang. */
+   Service are fixed operational units and never carry a bidang.
+   v1.25.1: delegates to the shared department-directory.js (Overtime
+   Management's Operational Unit reuses the SAME Department master — one
+   read path, zero duplicated roster logic). Behavior is unchanged. */
 export function bidangRoster() {
-  return getUserList()
-    .filter(u => u && u.role === 'bidang' && u.archived !== true)
-    .map(u => ({ id: u.username, name: u.displayName || u.username }))
-    .filter(b => b.name);
+  return listDepartments();
 }
 
 /** Resolve { bidangId, bidangName } for an expense input (null when N/A). */

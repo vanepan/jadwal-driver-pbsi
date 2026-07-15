@@ -67,6 +67,27 @@
       ".write": "auth.token.role === 'admin'"
     },
 
+    "overtimeUnits": {
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+      ".write": "auth.token.role === 'admin'"
+    },
+    "overtimeEmployees": {
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+      ".write": "auth.token.role === 'admin'"
+    },
+    "overtimeRates": {
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+      ".write": "auth.token.role === 'admin'"
+    },
+    "overtimeRateVersions": {
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+      ".write": "auth.token.role === 'admin'"
+    },
+    "overtimeAudit": {
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+      ".write": "auth.token.role === 'admin'"
+    },
+
     "v2_sarpras": {
       "import_sessions": {
         ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",

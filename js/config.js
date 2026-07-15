@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.24.0';
-export const RELEASE_NAME = 'Sarpras Intelligence — Organizational Learning Foundation & Conversation Intelligence (Phase 5-6)';
+export const APP_VERSION = '1.25.2';
+export const RELEASE_NAME = 'Overtime Management — Employee Management + Rate Engine (Sprint 2-3, Domain Model Correction #2)';
 
 /* ============================================================
    APP_ENV — the AUTHORITATIVE runtime environment (v1.20.3 RC1).
@@ -66,6 +66,39 @@ export function isProduction() {
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.25.2',
+    date: '2026-07-15',
+    summary: 'Overtime Management — Domain Model Correction #2 (reverting v1.25.1), then Sprint 2 (Employee Management) + Sprint 3 (Overtime Rate Engine). The v1.25.1 "Operational Unit belongs to Department" model was based on a business-process misunderstanding: Engineering/Cleaning Service/Gardener/Laundry/Kantin/Lapangan are NOT organizational units and have NO relation to User Management or the Department (Bidang) master — they are a flat employee CATEGORY used only for filtering/grouping/analytics/reporting/entry. Fully reverted: removed parentDepartmentId, Department validation, and the "Operational Unit" naming from js/overtime/* (js/services/department-directory.js is KEPT — it remains valid, tested infrastructure for js/petty-cash/petty-cash-service.js#bidangRoster(), which is unrelated to Overtime and was never part of the misconception). Corrected model: Employee (PRIMARY master data) → Unit (simple category, RTDB overtimeUnits, unchanged shape from Sprint 1) → Overtime Record. SPRINT 2 — Employee Management: new overtimeEmployees RTDB node ({id, name, unitId, isActive, note, createdAt/updatedAt/createdBy/updatedBy}), deliberately minimal add flow (Nama → Unit → Save, Catatan optional), search by name + filter by unit, soft activate/deactivate, full audit trail — Employee is now the module\'s primary screen and the adaptive-search target. SPRINT 3 — Overtime Rate Engine: new pure js/overtime/overtime-rate-engine.js (3 tiers: Normal/National Holiday/Special Event; resolveActiveRateVersion walks overtimeRateVersions for the latest effectiveFrom <= a given date) + overtimeRates (tier labels, seeded once) + overtimeRateVersions (APPEND-ONLY — "changing a rate" always creates version N+1, never mutates amount/tierKey/effectiveFrom on an existing version) RTDB nodes. Rates screen: per-tier current rate + "Ubah Tarif" (new version) + expandable version history + soft-delete/restore (audit: create/update-note/delete/restore, matching the requested Create/Update/Delete(soft)/Restore lifecycle — "Update" is scoped to a version\'s note only, since mutating amount would violate the append-only invariant the whole versioning feature exists to guarantee). Seed illustrative amounts (100k/150k/200k) written once, editable from day one. Reuses the Unit/Employee store-service-center pattern established in Sprint 1 byte-for-byte; zero new architecture beyond the one new pure-engine-file convention (mirrors js/petty-cash/bidang-matcher.js).',
+    highlights: [
+      'REVERTED v1.25.1: no Department/Organizational Unit concept anywhere in js/overtime/* — Unit is a flat, non-hierarchical employee category again. js/services/department-directory.js kept (still used by petty-cash-service.js#bidangRoster(), unaffected).',
+      'Sprint 2 — Employee Management: overtimeEmployees node, Employee is the module\'s PRIMARY master data screen; add flow is deliberately Nama→Unit→Save; search by name + unit filter; soft activate/deactivate; full audit + createdBy/updatedBy.',
+      'Sprint 3 — Overtime Rate Engine: overtimeRates + overtimeRateVersions (APPEND-ONLY versioning — old history never changes even when the master rate is updated); new pure overtime-rate-engine.js (resolveActiveRateVersion, ready for Holiday Engine/Daily Entry to call in Sprint 4-5); Rates screen with per-tier current rate, new-version modal, expandable history, soft-delete/restore.',
+      'Adaptive-search placeholder now targets Employee search ("Cari nama karyawan…") since Employee, not Unit, is this module\'s primary lookup surface.',
+    ],
+  },
+  {
+    version: '1.25.1',
+    date: '2026-07-15',
+    summary: 'Overtime Management — Domain Model Correction, applied before Sprint 2 started (no data migration needed — the module had not yet been exercised by a real admin session). Sprint 1 modeled Engineering/Cleaning Service/Gardener/Laundry/Kantin/Lapangan as a flat "Unit", which collided with the platform\'s EXISTING global organizational master (Department/Bidang, owned by User Management — every account with role=\'bidang\' is one Department). Corrected model: Department (existing, reused) → Operational Unit (new, belongs to exactly one Department via parentDepartmentId) → Employee (Sprint 2) → Overtime Record. New js/services/department-directory.js is a pure read-only view over the existing Bidang user roster (listDepartments/getDepartmentById/findDepartmentByName) — the ONE place any module resolves Department, so it never gets re-derived. js/petty-cash/petty-cash-service.js#bidangRoster() now delegates to it (byte-identical output, zero behavior change). Renamed throughout js/overtime/*: overtimeUnits→operationalUnits (RTDB node + rules), listUnits→listOperationalUnits, createUnit→createOperationalUnit (now takes parentDepartmentId, validated against the live Department roster), updateUnit→updateOperationalUnit, setUnitActive→setOperationalUnitActive, AUDIT_ACTION.UNIT_*→OPERATIONAL_UNIT_*, UI screen key + labels "Unit"→"Unit Operasional" (with a Department picker in the form, empty-roster handled gracefully), added createdBy/updatedBy fields. Seed-time Department resolution is by NAME ("Sarpras") against the live roster — never a hardcoded id — so it degrades gracefully (parentDepartmentId=null, fixable later) in an environment with no matching Bidang account yet.',
+    highlights: [
+      'New js/services/department-directory.js: the ONE read path for Department (Bidang) — reused by both Petty Cash (bidangRoster, refactored to delegate) and Overtime Management (Operational Unit\'s parentDepartmentId). Zero duplicated roster logic, zero new Department entity.',
+      'Corrected domain model: Department (existing global master) → Operational Unit (new, Overtime-owned, parentDepartmentId FK) → Employee (Sprint 2) → Overtime Record.',
+      'Full rename across store/service/UI/database.rules.json/exports: Unit → Operational Unit — "Unit" is no longer used anywhere in this module to avoid confusion with the global Department master.',
+      'Operational Unit form gained a Department picker (sourced live from User Management\'s Bidang roster) with a graceful empty-state message when no Bidang account exists yet.',
+    ],
+  },
+  {
+    version: '1.25.0',
+    date: '2026-07-15',
+    summary: 'Overtime Management — new V1 admin workspace (js/overtime/), Sprint 1 of an 8-sprint roadmap. Records the overtime lists unit coordinators (Engineering, Cleaning Service, Gardener, Laundry, Kantin, Lapangan) already hand in on paper — approval happens on paper, Sarpras only inputs/recaps/reports. This sprint ships the module skeleton (rail entry under Petty Cash Center, above Engineering/Analytics — same embedded-native-module pattern as Petty Cash/Engineering, admin-only) plus the first complete vertical slice: Unit Management (overtimeUnits RTDB node, seeded with the 6 named units, CRUD + soft activate/deactivate, full audit trail via overtimeAudit). Built entirely on existing platform infrastructure — js/firebase.js, the store/service convention from petty-cash-store.js/petty-cash-service.js, MODULE_DEFS rail mounting, the adaptive-search registry — no new engines. Later sprints add Employee Management, a versioned Rate Engine, Holiday Engine, Daily Entry, Analytics, Reports, and Monthly Closing.',
+    highlights: [
+      'New js/overtime/ module: overtime-config.js (seed units + audit enums), overtime-store.js (RTDB store, mirrors petty-cash-store.js), overtime-service.js (domain rules + audit), overtime-center.js (embedded UI, mirrors petty-cash-center.js).',
+      'Rail entry "Overtime Management" — admin-only, positioned directly under Petty Cash Center, above Engineering/Analytics — desktop panel-nav + mobile sidebar/bottom-sheet entries, adaptive-search adapter.',
+      'Unit Management: overtimeUnits RTDB node (idempotent first-run seed of 6 units), create/rename/activate/deactivate with duplicate-name guard, full audit trail (overtimeAudit).',
+      'New database.rules.json nodes (overtimeUnits, overtimeAudit) — same admin/developer-read, admin-write shape as pettyCash*.',
+    ],
+  },
   {
     version: '1.24.0',
     date: '2026-07-14',
