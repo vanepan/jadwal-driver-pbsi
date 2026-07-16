@@ -48,13 +48,23 @@ function loadXLSX() {
 /* ── Style tokens (matches nor-excel-exporter.js's palette) ───────── */
 const MAROON = '9A1B2D';
 const FILL_HEAD = { fgColor: { rgb: MAROON } };
-const FILL_TINT = { fgColor: { rgb: 'F0E2E4' } };
+// FIX 18 — was a light pink/red tint ('F0E2E4'), which read too close to
+// an alert/error colour once seen alongside the equivalent PDF bug; now
+// the same neutral light-gray fill the module's own overtime.css uses for
+// its page background ('--bg: #f3f2ef'), NOT a distinct accent color —
+// elegant, unmistakably "Sarpras Operations", never reads as an error
+// state. Used for both per-date subtotal cells and the Grand Total row.
+const FILL_TINT = { fgColor: { rgb: 'F3F2EF' } };
 const BORDER_THIN = {
   top: { style: 'thin', color: { rgb: 'B0B0B0' } },
   bottom: { style: 'thin', color: { rgb: 'B0B0B0' } },
   left: { style: 'thin', color: { rgb: 'B0B0B0' } },
   right: { style: 'thin', color: { rgb: 'B0B0B0' } },
 };
+// FIX 18 — "border atas maroon PBSI": a heavier maroon top rule, reserved
+// for the Grand Total row ONLY (not per-date subtotals), mirroring the
+// PDF template's own heavier top rule for the same row.
+const BORDER_TOTAL = { ...BORDER_THIN, top: { style: 'medium', color: { rgb: MAROON } } };
 const RP_FMT = '"Rp" #,##0';
 
 const S = {
@@ -64,14 +74,26 @@ const S = {
   head: { font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 10 }, fill: FILL_HEAD, alignment: { horizontal: 'center', vertical: 'center' }, border: BORDER_THIN },
   cell: { border: BORDER_THIN, alignment: { vertical: 'center' } },
   cellC: { border: BORDER_THIN, alignment: { horizontal: 'center', vertical: 'center' } },
-  money: { border: BORDER_THIN, alignment: { horizontal: 'right' }, numFmt: RP_FMT },
-  total: { font: { bold: true }, fill: FILL_TINT, border: BORDER_THIN, alignment: { horizontal: 'right' }, numFmt: RP_FMT },
+  money: { border: BORDER_THIN, alignment: { horizontal: 'right', vertical: 'center' }, numFmt: RP_FMT },
+  // Per-date SUBTOTAL cells (dataPengajuanSheet) — thin border, unchanged.
+  total: { font: { bold: true }, fill: FILL_TINT, border: BORDER_THIN, alignment: { horizontal: 'right', vertical: 'center' }, numFmt: RP_FMT },
+  // FIX 6/18 — the Grand Total ROW's own label cells ("TOTAL KESELURUHAN"/
+  // "Total Keseluruhan"), separated from the per-date subtotal style above
+  // so ONLY this row gets the heavier maroon top rule — a partial-width
+  // thick border (just the amount cell) would look broken.
+  totalRow: { font: { bold: true }, fill: FILL_TINT, border: BORDER_TOTAL, alignment: { horizontal: 'right', vertical: 'center' } },
+  // Grand Total ROW's own NUMBER cell: bigger, maroon-accented figure, same
+  // neutral fill + heavier top rule as its label — reads as the sheet's
+  // headline number without ever looking like an alert/error state.
+  totalAmount: { font: { bold: true, sz: 12, color: { rgb: MAROON } }, fill: FILL_TINT, border: BORDER_TOTAL, alignment: { horizontal: 'right', vertical: 'center' }, numFmt: RP_FMT },
 };
 
 const T = (v, s) => ({ v: v == null ? '' : v, t: 's', s: s || S.cell });
 const N = (v, s) => ({ v: Number(v || 0), t: 'n', s: s || S.money });
 
-function sheetFromAOA(XLSX, aoa, colWidths, merges) {
+/** @param {number[]} [tallRowIdx] - 0-based row indices to render at FIX 4/6's
+    "sedikit lebih proporsional" height (header + grand total rows). */
+function sheetFromAOA(XLSX, aoa, colWidths, merges, tallRowIdx) {
   const norm = aoa.map(row => row.map(c => (c && typeof c === 'object' && 't' in c) ? c : T(c, { alignment: {} })));
   const ws = XLSX.utils.aoa_to_sheet(norm.map(r => r.map(c => c.v)));
   norm.forEach((row, r) => row.forEach((c, col) => {
@@ -80,6 +102,11 @@ function sheetFromAOA(XLSX, aoa, colWidths, merges) {
   }));
   if (colWidths) ws['!cols'] = colWidths.map(w => ({ wch: w }));
   if (merges) ws['!merges'] = merges;
+  if (tallRowIdx && tallRowIdx.length) {
+    const rowsMeta = [];
+    tallRowIdx.forEach(r => { rowsMeta[r] = { hpx: 22 }; });
+    ws['!rows'] = rowsMeta;
+  }
   return ws;
 }
 
@@ -98,8 +125,9 @@ function dataPengajuanSheet(XLSX, vm) {
     [T('Bidang Sarana dan Prasarana', S.sub)],
     [T(title, S.sectionTitle)],
     [],
-    [T('No', S.head), T('Hari, Tanggal', S.head), T('Nama', S.head), T('Bidang', S.head), T('Rincian', S.head), T('Total', S.head)],
+    [T('No', S.head), T('Hari, Tanggal', S.head), T('Nama', S.head), T('Unit', S.head), T('Rincian', S.head), T('Total', S.head)],
   ];
+  const headerRow = aoa.length - 1;
   const merges = [];
   const groups = vm.dateGroups || [];
 
@@ -125,13 +153,13 @@ function dataPengajuanSheet(XLSX, vm) {
       }
     });
     aoa.push([
-      T('TOTAL KESELURUHAN', S.total), T('', S.total), T('', S.total), T('', S.total), T('', S.total),
-      N(unrp(vm.detailGrandTotal), S.total),
+      T('TOTAL KESELURUHAN', S.totalRow), T('', S.totalRow), T('', S.totalRow), T('', S.totalRow), T('', S.totalRow),
+      N(unrp(vm.detailGrandTotal), S.totalAmount),
     ]);
     merges.push({ s: { r: aoa.length - 1, c: 0 }, e: { r: aoa.length - 1, c: 4 } });
   }
 
-  return sheetFromAOA(XLSX, aoa, [6, 24, 24, 16, 14, 16], merges);
+  return sheetFromAOA(XLSX, aoa, [6, 24, 24, 16, 14, 16], merges, [headerRow, aoa.length - 1]);
 }
 
 /* ── Sheet 2: Rekapitulasi — alphabetical, Total Keseluruhan ─────── */
@@ -142,8 +170,9 @@ function rekapitulasiSheet(XLSX, vm) {
     [T('Bidang Sarana dan Prasarana', S.sub)],
     [T(title, S.sectionTitle)],
     [],
-    [T('No', S.head), T('Nama', S.head), T('Jumlah Hari', S.head), T('Jumlah Lemburan', S.head), T('Bidang', S.head)],
+    [T('No', S.head), T('Nama', S.head), T('Jumlah Hari', S.head), T('Jumlah Lemburan', S.head), T('Unit', S.head)],
   ];
+  const headerRow = aoa.length - 1;
   const rows = vm.recapRows || [];
   if (!rows.length) {
     aoa.push([T('Tidak ada data karyawan pada periode ini.'), T(''), T(''), T(''), T('')]);
@@ -151,9 +180,9 @@ function rekapitulasiSheet(XLSX, vm) {
     rows.forEach(r => aoa.push([
       T(r.no, S.cellC), T(r.name, S.cell), T(r.days, S.cellC), N(unrp(r.amount), S.money), T(r.unitName, S.cell),
     ]));
-    aoa.push([T('Total Keseluruhan', S.total), T('', S.total), T('', S.total), N(unrp(vm.recapGrandTotal), S.total), T('', S.total)]);
+    aoa.push([T('Total Keseluruhan', S.totalRow), T('', S.totalRow), T('', S.totalRow), N(unrp(vm.recapGrandTotal), S.totalAmount), T('', S.totalRow)]);
   }
-  return sheetFromAOA(XLSX, aoa, [6, 26, 12, 18, 20]);
+  return sheetFromAOA(XLSX, aoa, [6, 26, 12, 18, 20], undefined, [headerRow, aoa.length - 1]);
 }
 
 /**
@@ -166,8 +195,9 @@ export async function exportOvertimeExcel(reportModel) {
   XLSX.utils.book_append_sheet(wb, dataPengajuanSheet(XLSX, reportModel), 'Data Pengajuan');
   XLSX.utils.book_append_sheet(wb, rekapitulasiSheet(XLSX, reportModel), 'Rekapitulasi');
 
-  const stamp = new Date().toISOString().slice(0, 10);
-  const safePeriod = String((reportModel.filters && reportModel.filters.periodLabel) || 'periode')
-    .replace(/[^a-z0-9]/gi, '-').replace(/-+/g, '-').toLowerCase();
-  XLSX.writeFile(wb, `Laporan-Overtime-${safePeriod}-${stamp}.xlsx`);
+  // "Rekap Lembur {Scope} - {yyyy-MM}.xlsx" (Production Polish FIX 3) —
+  // computed once in overtime-report-model.js, shared with the PDF/CSV
+  // exporters so all three formats name a file the same way.
+  const filename = (reportModel.meta && reportModel.meta.excelFilename) || 'Rekap Lembur Sarpras.xlsx';
+  XLSX.writeFile(wb, filename);
 }

@@ -544,31 +544,46 @@ function assertPeriodUnlocked(dateISO) {
 
 /**
  * Batch-save Daily Entry: ONE atomic multi-node write covering every
- * selected employee's record + the daily/monthly summary + ONE audit entry
- * — never N separate writes for a single Save click (spec: "Batch Save").
- * `overrideTierKey`, when provided, charges that tier for THIS transaction
- * only — the holiday calendar / master rate are never touched by an
- * override.
+ * selected employee's record (across EVERY unit) + the daily/monthly
+ * summary + ONE audit entry — never N separate writes for a single Save
+ * click (spec: "Batch Save").
+ *
+ * Production Polish Round 2 FIX 13 — Global Save Workflow: the real
+ * business process is "one date, every unit, one Simpan" (never "one unit,
+ * one transaction"). `unitId` is no longer a parameter — each employee's
+ * unit is resolved server-side from the Employee master (never trusted
+ * from the client), so one call can atomically save employees spanning
+ * any number of units for a single date. `overrideTierKey`, when
+ * provided, charges that tier for THIS transaction only — the holiday
+ * calendar / master rate are never touched by an override.
  */
-export async function createDailyEntries({ date, unitId, employeeIds, overrideTierKey, overrideNote }) {
+export async function createDailyEntries({ date, employeeIds, overrideTierKey, overrideNote }) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) throw new Error('Tanggal tidak valid.');
   assertPeriodUnlocked(date);
-  const unit = getUnits().find(u => u.id === unitId);
-  if (!unit) throw new Error('Unit tidak ditemukan.');
   const ids = Array.from(new Set((employeeIds || []).filter(Boolean)));
   if (!ids.length) throw new Error('Pilih minimal satu karyawan.');
+
+  const employeeById = new Map(getEmployees().map(e => [e.id, e]));
+  const unitById = new Map(getUnits().map(u => [u.id, u]));
+  const resolvedEmployees = ids.map(employeeId => {
+    const emp = employeeById.get(employeeId);
+    if (!emp) throw new Error('Karyawan tidak ditemukan.');
+    const unit = unitById.get(emp.unitId);
+    if (!unit) throw new Error(`Unit untuk ${emp.name} tidak ditemukan.`);
+    return { employeeId, unitId: unit.id, unitName: unit.name };
+  });
 
   // Level 2 duplicate detection (atomic, backend): re-checks against the
   // FRESHEST record list immediately before writing — never trusts a
   // possibly-stale render-time snapshot. No override path (unlike the old
   // "confirm and save anyway" UI flow this supersedes) — Level 1 (disabled
   // checkboxes) already prevents this in normal use; this is the safety
-  // net for a race (e.g. two admins saving the same employee/date/unit
-  // within the same few seconds).
-  const dupes = findDuplicateEmployeeIds(date, unitId, ids);
+  // net for a race (e.g. two admins saving the same employee/date within
+  // the same few seconds). Scoped to the WHOLE date now (unitId=null),
+  // not one unit — a global save must never partially collide either.
+  const dupes = findDuplicateEmployeeIds(date, null, ids);
   if (dupes.length) {
-    const employees = getEmployees();
-    const names = dupes.map(did => (employees.find(e => e.id === did) || {}).name || did).join(', ');
+    const names = dupes.map(did => (employeeById.get(did) || {}).name || did).join(', ');
     throw new Error(`${names} sudah memiliki entri pada tanggal ini. Muat ulang data dan coba lagi.`);
   }
 
@@ -580,7 +595,7 @@ export async function createDailyEntries({ date, unitId, employeeIds, overrideTi
 
   const now = Date.now();
   const updates = {};
-  const newRecords = ids.map(employeeId => {
+  const newRecords = resolvedEmployees.map(({ employeeId, unitId }) => {
     const rid = genId('rec');
     const record = {
       id: rid, employeeId, unitId, date,
@@ -593,6 +608,11 @@ export async function createDailyEntries({ date, unitId, employeeIds, overrideTi
     return record;
   });
 
+  // One summary fold per record, regardless of which unit it belongs to —
+  // addRecordToSummary buckets byUnit/byEmployee independently, so mixed-
+  // unit records within the SAME atomic write aggregate correctly (this is
+  // what makes Dashboard/Analytics/History/Report all reflect the save in
+  // one transaction, per FIX 13 — no per-unit summary math needed here).
   let dailySummary = getDailySummary(date);
   let monthlySummary = getMonthlySummary(yyyyMM(date));
   newRecords.forEach(record => {
@@ -602,14 +622,19 @@ export async function createDailyEntries({ date, unitId, employeeIds, overrideTi
   updates[`overtimeDailySummary/${date}`] = dailySummary;
   updates[`overtimeMonthlySummary/${yyyyMM(date)}`] = monthlySummary;
 
+  // ONE audit entry for the whole date, breaking down per-unit counts —
+  // scales the old single-unit audit note to "every unit touched".
+  const unitCounts = new Map();
+  resolvedEmployees.forEach(({ unitId, unitName }) => unitCounts.set(unitId, { name: unitName, count: (unitCounts.get(unitId)?.count || 0) + 1 }));
+  const unitBreakdown = Array.from(unitCounts.values()).map(u => `${u.name}: ${u.count}`).join(', ');
   const auditEntry = buildAudit(
     AUDIT_ACTION.DAILY_ENTRY_SAVED, 'dailyEntry', null,
-    `${ids.length} karyawan unit "${unit.name}" pada ${date} (${resolved.tierLabel}${overrideApplied ? ' · override' : ''}).`,
+    `${ids.length} karyawan (${unitCounts.size} unit — ${unitBreakdown}) pada ${date} (${resolved.tierLabel}${overrideApplied ? ' · override' : ''}).`,
   );
   updates[`overtimeAudit/${auditEntry.id}`] = auditEntry;
 
   await applyOvertimeUpdates(updates);
-  return { count: ids.length, rate: resolved };
+  return { count: ids.length, unitCount: unitCounts.size, rate: resolved };
 }
 
 /** Employee ids that had a record on `dateISO` for `unitId` — source for
@@ -1155,7 +1180,15 @@ export function getReportSnapshot({ period = 'month', refDate, unitId = null, em
     never an unbounded scan. Mirrors the already-established employeeHistory()
     precedent: raw overtimeRecords are read directly for a bounded,
     UI-visible drill-down/detail listing, never for the Dashboard's
-    cross-cutting aggregates (those stay summary-derived, unchanged above). */
+    cross-cutting aggregates (those stay summary-derived, unchanged above).
+
+    Sort order (Production Polish FIX 9 — readability over alphabetical):
+    Tanggal → Unit (sortOrder) → Employee (displayOrder), NOT employee name.
+    This is the exact order a Kabid reads a coordinator's paper recap in —
+    grouped by unit, employees in the same order Daily Entry's own checklist
+    already uses — so the report's date-grouping in overtime-report-model.js
+    (which just projects this array, doing no sorting of its own) naturally
+    comes out unit-clustered within each date for free. */
 function buildDetailRecords(range, unitId, employeeId, units, employees) {
   const employeeById = new Map(employees.map(e => [e.id, e]));
   const unitById = new Map(units.map(u => [u.id, u]));
@@ -1172,7 +1205,14 @@ function buildDetailRecords(range, unitId, employeeId, units, employees) {
       unitName: (unitById.get(r.unitId) || {}).name || '—',
       amount: r.rateAmount || 0,
     }))
-    .sort((a, b) => a.date.localeCompare(b.date) || a.employeeName.localeCompare(b.employeeName));
+    .sort((a, b) => {
+      if (a.date !== b.date) return a.date.localeCompare(b.date);
+      const unitOrder = ((unitById.get(a.unitId) || {}).sortOrder ?? 0) - ((unitById.get(b.unitId) || {}).sortOrder ?? 0);
+      if (unitOrder) return unitOrder;
+      const empOrder = ((employeeById.get(a.employeeId) || {}).displayOrder ?? 0) - ((employeeById.get(b.employeeId) || {}).displayOrder ?? 0);
+      if (empOrder) return empOrder;
+      return a.employeeName.localeCompare(b.employeeName, 'id');
+    });
 }
 
 function sanitizeForFirebase(obj) {

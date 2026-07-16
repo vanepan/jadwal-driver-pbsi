@@ -11,7 +11,7 @@
 'use strict';
 
 import * as svc from '../overtime-service.js';
-import { esc, rp, todayISO } from './overtime-atoms.js';
+import { esc, rp, todayISO, emptyState } from './overtime-atoms.js';
 import { runOvertimeExport } from './overtime-export-runner.js';
 import { APP_VERSION } from '../../config.js';
 
@@ -89,10 +89,44 @@ function buildSnapshot(state) {
   });
 }
 
+/** FIX 12 safety net — a snapshot shaped exactly like svc.getReportSnapshot()'s
+    real output but all-zero, used when buildSnapshot() throws for any reason.
+    The Report Builder must ALWAYS render (never redirect, never a hard
+    error) — falling back to this makes an unexpected failure LOOK
+    identical to "no data yet this period", which is also the one other
+    state the screen must already handle gracefully. */
+function emptySnapshot(state) {
+  return {
+    period: state.reportPeriod || 'month', periodLabel: '—',
+    dateRangeStart: '—', dateRangeEnd: '—',
+    scope: { type: 'all', unitId: null, employeeId: null, label: '—' },
+    kpis: { totalRecords: 0, totalAmount: 0, avgPerDay: 0, unitCount: 0, employeeCount: 0 },
+    unitRows: [], employeeRows: [], detailRecords: [],
+  };
+}
+
+function exportBtn(act, label, primary, disabled) {
+  const bg = disabled ? 'var(--border2)' : (primary ? 'var(--primary)' : 'var(--card)');
+  const color = disabled ? 'var(--muted)' : (primary ? 'var(--primary-fg)' : 'var(--text)');
+  const border = primary ? 'none' : '1px solid var(--border)';
+  return `<button data-act="${act}" type="button" ${disabled ? 'disabled' : ''}
+    style="background:${bg};color:${color};border:${border};border-radius:9px;padding:10px 16px;font-size:13px;font-weight:${primary ? 700 : 600};cursor:${disabled ? 'default' : 'pointer'}">${esc(label)}</button>`;
+}
+
 export function renderReportsScreen(state) {
   const units = svc.listActiveUnits();
   const employees = svc.listActiveEmployees();
-  const snapshot = buildSnapshot(state);
+
+  let snapshot;
+  try {
+    snapshot = buildSnapshot(state);
+  } catch (_) {
+    snapshot = emptySnapshot(state);
+  }
+  // FIX 12 — "no data lembur yet this period" IS a normal, expected state
+  // (a fresh month, a newly-filtered unit with nothing recorded yet), not
+  // an error: the screen stays fully open, exports are just disabled.
+  const isEmpty = !snapshot.detailRecords || snapshot.detailRecords.length === 0;
 
   // Published for the console-reachable window.exportOvertimeReport() hook.
   if (typeof window !== 'undefined') window._lastOvertimeReportSnapshot = snapshot;
@@ -132,16 +166,18 @@ export function renderReportsScreen(state) {
       </div>`).join('')}
     </div>
 
-    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:14px">
-      ${previewTable('Per Unit', ['Unit', 'Hari', 'Pegawai', 'Nominal'], snapshot.unitRows, r => [esc(r.name), r.count, r.employeeCount, esc(rp(r.amount))], 'Tidak ada data unit pada periode ini.')}
-      ${previewTable('Per Karyawan', ['Karyawan', 'Hari', 'Nominal'], snapshot.employeeRows, r => [esc(r.name), r.count, esc(rp(r.amount))], 'Tidak ada data karyawan pada periode ini.')}
-    </div>
+    ${isEmpty
+      ? `<div style="margin-top:14px;background:var(--card);border:1px solid var(--border);border-radius:14px">${emptyState('Belum ada data lembur pada periode ini.', 'Coba pilih periode atau cakupan lain, atau mulai input di Rekap Lembur.')}</div>`
+      : `<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:14px">
+          ${previewTable('Per Unit', ['Unit', 'Hari', 'Pegawai', 'Nominal'], snapshot.unitRows, r => [esc(r.name), r.count, r.employeeCount, esc(rp(r.amount))], 'Tidak ada data unit pada periode ini.')}
+          ${previewTable('Per Karyawan', ['Karyawan', 'Hari', 'Nominal'], snapshot.employeeRows, r => [esc(r.name), r.count, esc(rp(r.amount))], 'Tidak ada data karyawan pada periode ini.')}
+        </div>`}
 
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:18px">
-      <button data-act="exportReportPdf" type="button" style="background:var(--primary);color:var(--primary-fg);border:none;border-radius:9px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer">Export PDF</button>
-      <button data-act="exportReportExcel" type="button" style="border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:9px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer">Export Excel</button>
-      <button data-act="exportReportCsv" type="button" style="border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:9px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer">Export CSV</button>
-      <button data-act="exportReportPrint" type="button" style="border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:9px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer">Print</button>
+      ${exportBtn('exportReportPdf', 'Export PDF', true, isEmpty)}
+      ${exportBtn('exportReportExcel', 'Export Excel', false, isEmpty)}
+      ${exportBtn('exportReportCsv', 'Export CSV', false, isEmpty)}
+      ${exportBtn('exportReportPrint', 'Print', false, isEmpty)}
     </div>`;
 }
 
@@ -158,7 +194,21 @@ async function logResult(state, format, snapshot, status, extra = {}) {
 const FORMAT_LABEL = { pdf: 'PDF', excel: 'Excel', csv: 'CSV', print: 'Print' };
 
 async function runAndLog(state, format, toast) {
-  const snapshot = buildSnapshot(state);
+  let snapshot;
+  try {
+    snapshot = buildSnapshot(state);
+  } catch (err) {
+    // buildSnapshot() throwing must never be a silent/unhandled failure —
+    // the export buttons are disabled whenever the screen has no data, but
+    // this stays as a defense-in-depth guard for callers that bypass the
+    // button (e.g. the console-reachable window.exportOvertimeReport()).
+    toast(err.message || `Gagal membuat laporan ${FORMAT_LABEL[format]}.`);
+    return;
+  }
+  if (!snapshot.detailRecords || !snapshot.detailRecords.length) {
+    toast('Belum ada data lembur pada periode ini.');
+    return;
+  }
   const t0 = Date.now();
   try {
     await runOvertimeExport(format, snapshot, { appVersion: APP_VERSION });

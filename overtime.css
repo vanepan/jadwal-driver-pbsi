@@ -77,3 +77,38 @@
   outline: 2px solid var(--primary);
   outline-offset: -2px;
 }
+
+/* Production Polish FIX 1 — compact "Hari Ini | Kemarin | 📅 Tanggal"
+   date-nav for Rekap Lembur/Daily Entry. Scoped override of the shared
+   .pbsi-datepicker component (platform.css) that pulls the preset strip
+   and trigger button onto one proportional row instead of the component's
+   default full-width stacked layout — replaces the old redundant custom
+   Hari Ini/prev/next button row (the presets already did this job).
+   Deliberately its own class, not a reuse of platform.css's `.date-nav`
+   (the main app header's date filter, with its own JS wiring in app.js)
+   so this stays a pure visual override with zero shared behaviour. */
+.ot-date-nav .pbsi-datepicker {
+  width: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.ot-date-nav .pbsi-datepicker-presets {
+  margin-bottom: 0;
+  flex-wrap: wrap;
+}
+.ot-date-nav .pbsi-datepicker-preset {
+  flex: none;
+  padding: 6px 12px;
+  font-size: 11.5px;
+  border-radius: 999px;
+}
+.ot-date-nav .pbsi-datepicker-trigger {
+  width: auto;
+  min-width: 0;
+  padding: 6px 12px;
+  gap: 5px;
+  font-size: 12px;
+  border-radius: 999px;
+}

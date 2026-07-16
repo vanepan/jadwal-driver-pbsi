@@ -71,7 +71,6 @@ const NAV = [
   { key: 'archive', label: 'Arsip', icon: '<path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1v8a2 2 0 01-2 2H6a2 2 0 01-2-2V7a1 1 0 01-1-1V4zm2 3v8a1 1 0 001 1h8a1 1 0 001-1V7H5zm2-2h6V4H7v1z" clip-rule="evenodd"/>' },
 ];
 
-const FAVORITE_UNIT_KEY = 'ot_favorite_unit';
 const AUTO_ADVANCE_KEY = 'ot_rekap_auto_advance';
 
 /* ── Module state ────────────────────────────────────────────────── */
@@ -103,12 +102,16 @@ const st = {
   // entryConfirmDuplicates' old two-click "confirm and save anyway" flow
   // is gone — superseded by §8 Level 1 disabled checkboxes + Level 2's
   // hard backend rejection, no override path)
+  //
+  // Production Polish Round 2 FIX 13: Save is GLOBAL (one date, every
+  // unit, one atomic write) — there is no more "active unit" to track, so
+  // entryUnitId is gone. entrySelected stays the flat {employeeId:checked}
+  // map across ALL units.
   entryDate: '',
-  entryUnitId: '',
   entrySelected: {},
   entryOverrideOn: false, entryOverrideTierKey: '', entryOverrideNote: '',
   entryErr: '',
-  rekapAutoAdvance: true,
+  rekapAutoAdvance: true, // "Lanjut ke hari berikutnya setelah simpan" (FIX 13 — was per-unit, now per-day)
   saveConfirmData: null,
 
   // Analytics (Sprint 7)
@@ -166,14 +169,12 @@ export async function mountOvertime(container) {
   st.rekapAutoAdvance = loadAutoAdvance();
   render();
   await initOvertimeStore();
-  if (!st.entryUnitId) st.entryUnitId = resolveFavoriteUnit();
 
   // §11 Offline Safety — restore an in-progress Rekap Lembur draft (lost
   // connection or accidental navigation must not lose typed-in checks).
   const draft = loadRekapDraft();
   if (draft) {
     st.entryDate = draft.date;
-    if (draft.unitId) st.entryUnitId = draft.unitId;
     st.entrySelected = draft.selected;
     toast('Draft rekap dipulihkan.');
   }
@@ -182,17 +183,10 @@ export async function mountOvertime(container) {
   render();
 }
 
-function resolveFavoriteUnit() {
-  const units = svc.listActiveUnits();
-  if (!units.length) return '';
-  let fav = null;
-  try { fav = localStorage.getItem(FAVORITE_UNIT_KEY); } catch (_) {}
-  return units.some(u => u.id === fav) ? fav : units[0].id;
-}
-
-/** "Lanjut ke unit berikutnya setelah simpan" — defaults ON (the whole
-    point of the accordion redesign is speed transcribing a coordinator's
-    recap unit-by-unit); persisted the same way as the favorite-unit. */
+/** "Lanjut ke hari berikutnya setelah simpan" (Production Polish Round 2
+    FIX 13 — was per-unit auto-advance, now per-day: a global Save has no
+    more "next unit" to walk to) — defaults ON, persisted the same key as
+    before (the setting's MEANING changed, not its storage). */
 function loadAutoAdvance() {
   try { const v = localStorage.getItem(AUTO_ADVANCE_KEY); return v === null ? true : v === '1'; }
   catch (_) { return true; }
@@ -201,43 +195,20 @@ function saveAutoAdvance(v) {
   try { localStorage.setItem(AUTO_ADVANCE_KEY, v ? '1' : '0'); } catch (_) {}
 }
 
-/** Prev/Next/Today date-nav (§1) — the date field itself is source of
-    truth (mountRekapDatepicker() re-syncs the picker after this render). */
-function setRekapDate(nextDate) {
-  st.entryDate = nextDate;
-  st.entryErr = '';
-  render();
-}
-
-/** §7 Auto Next Unit — walks forward from `fromUnitId`, skipping units
-    where every active employee already has a record for `dateISO`
-    (nothing left to do there), and returns the first workable unit's id
-    (or null if none remain). */
-function findNextWorkableUnit(fromUnitId, dateISO) {
-  const units = svc.listActiveUnits();
-  const idx = units.findIndex(u => u.id === fromUnitId);
-  if (idx === -1) return null;
-  for (let i = idx + 1; i < units.length; i++) {
-    const candidate = units[i];
-    const employees = svc.listActiveEmployees(candidate.id);
-    if (!employees.length) continue;
-    const existingIds = new Set(svc.listRecordsForDate(dateISO, candidate.id).map(r => r.employeeId));
-    if (employees.some(e => !existingIds.has(e.id))) return candidate.id;
-  }
-  return null;
-}
-
 /* ── §11 Offline Safety — in-progress Rekap Lembur draft ────────────
    A lost connection or accidental navigation must not lose typed-in
    checks. Persisted on every checklist change, restored on mount if
-   recent enough, cleared per-unit once that unit's entries are saved. */
+   recent enough. FIX 13: a successful Save now clears the WHOLE draft
+   (localStorage.removeItem, at the one call site in confirmSaveDailyEntry)
+   instead of a per-unit partial clear — a global save has no "other
+   units' still-pending checks" left to preserve afterward. */
 const REKAP_DRAFT_KEY = 'ot_rekap_draft';
 const REKAP_DRAFT_MAX_AGE_MS = 48 * 60 * 60 * 1000; // 48h — survives an overnight gap, not a month-old orphan
 
 function saveRekapDraft() {
   try {
     localStorage.setItem(REKAP_DRAFT_KEY, JSON.stringify({
-      date: st.entryDate, unitId: st.entryUnitId, selected: st.entrySelected, savedAt: Date.now(),
+      date: st.entryDate, selected: st.entrySelected, savedAt: Date.now(),
     }));
   } catch (_) {}
 }
@@ -252,22 +223,6 @@ function loadRekapDraft() {
     if (Date.now() - (draft.savedAt || 0) > REKAP_DRAFT_MAX_AGE_MS) return null;
     return draft;
   } catch (_) { return null; }
-}
-
-/** Clears just one unit's pending checks from the persisted draft (mirrors
-    the in-memory entrySelected clearing after a successful save) — other
-    units' still-pending draft entries are kept. */
-function clearRekapDraftForUnit(unitId) {
-  try {
-    const raw = localStorage.getItem(REKAP_DRAFT_KEY);
-    if (!raw) return;
-    const draft = JSON.parse(raw);
-    if (!draft || !draft.selected) return;
-    const unitEmployeeIds = new Set(svc.listActiveEmployees(unitId).map(e => e.id));
-    const nextSelected = { ...draft.selected };
-    unitEmployeeIds.forEach(id => { delete nextSelected[id]; });
-    localStorage.setItem(REKAP_DRAFT_KEY, JSON.stringify({ ...draft, selected: nextSelected, savedAt: Date.now() }));
-  } catch (_) {}
 }
 
 /** Switch the active screen — driven by the platform panel menu / mobile sub-nav. */
@@ -307,6 +262,14 @@ function render() {
   root.innerHTML = shell();
   focusGuard.restore(root);
   if (st.screen === 'dailyEntry') mountRekapDatepicker();
+  // FIX 14 — confirmation dialogs default focus to their Simpan button,
+  // standard desktop UX. Runs AFTER focusGuard.restore() so it wins even
+  // when the dialog was opened from a [data-focus] checkbox (restore()
+  // would otherwise re-focus that checkbox, behind the dialog).
+  if (st.saveConfirmData) {
+    const btn = document.getElementById('otSaveConfirmBtn');
+    if (btn) btn.focus();
+  }
 }
 
 /** Wraps the (freshly re-created, per the full-innerHTML-replace render
@@ -717,23 +680,27 @@ function holidayModal() {
 /* ── Rekap Lembur screen (Final UX Refinement — always-open workspace)
    Reframed from "Daily Entry" (admin types a timesheet) to "Rekap Lembur"
    (admin transcribes a coordinator's already-grouped-by-unit recap).
-   Superseded twice now: v1 was a single-unit dropdown; v2 (one UX pass
-   ago) was a single-expand accordion; this pass removes the accordion
-   entirely — EVERY active unit's grid renders open at once, and
-   st.entryUnitId is FOCUS-DERIVED (updated silently by onRekapFocusIn(),
-   not by clicking a unit header — there is no header toggle anymore).
+   Superseded three times now: v1 was a single-unit dropdown; v2 (one UX
+   pass ago) was a single-expand accordion; this pass removes the
+   accordion entirely — EVERY active unit's grid renders open at once.
    st.entrySelected stays a FLAT {employeeId: checked} map across ALL
    units (employee ids never collide across units), so moving focus
-   between units never loses another unit's pending checks — this is why
-   confirmSaveDailyEntry/bulkCopyYesterdayUnit below explicitly scope
-   reads/writes to one unit's employee ids instead of trusting the whole
-   map. Native Tab/Shift+Tab cross unit boundaries for free (see
-   onRekapGridKeydown's header comment for why). ── */
+   between units never loses another unit's pending checks. Tab/Shift+Tab
+   jump straight to the next/previous unit's first workable checkbox
+   (Production Polish FIX 2 — matches the paper workflow: admin finishes
+   one unit, Tab moves to the next; Arrow keys still walk employee-by-
+   employee — see onRekapGridKeydown).
+
+   Production Polish Round 2 FIX 13 — Save is now GLOBAL, not per-unit:
+   "Satu tanggal, berisi seluruh Unit, satu kali Simpan" — the admin
+   checklists every unit for one date, the sticky footer shows a running
+   per-unit + grand total, and ONE click atomically writes every selected
+   employee across every unit (svc.createDailyEntries no longer takes a
+   unitId). There is no more "active unit" — entryUnitId is gone; the
+   footer/confirm dialog/save always operate over ALL units at once. ── */
 function dailyEntryScreen() {
   const units = svc.listActiveUnits();
   const date = st.entryDate || todayISO();
-  if (!st.entryUnitId || !units.some(u => u.id === st.entryUnitId)) st.entryUnitId = units[0] ? units[0].id : '';
-  const activeUnit = units.find(u => u.id === st.entryUnitId) || null;
   const resolved = st.entryOverrideOn && st.entryOverrideTierKey
     ? svc.getActiveRate(st.entryOverrideTierKey, date)
     : svc.resolveEntryRate(date);
@@ -741,11 +708,7 @@ function dailyEntryScreen() {
 
   // ONE store call for the whole day, bucketed by unit client-side — not
   // one listRecordsForDate() call per unit block.
-  const existingIdsByUnit = new Map();
-  svc.listRecordsForDate(date).forEach(r => {
-    if (!existingIdsByUnit.has(r.unitId)) existingIdsByUnit.set(r.unitId, new Set());
-    existingIdsByUnit.get(r.unitId).add(r.employeeId);
-  });
+  const existingIdsByUnit = freshExistingIdsByUnit(date);
 
   // §8 Level 3: duplicate warning for whatever's already recorded this
   // month, surfaced right here too (not just Dashboard/Penyesuaian Data)
@@ -771,17 +734,13 @@ function dailyEntryScreen() {
       <div style="font-size:13px;color:var(--muted)">Pindahkan rekap dari koordinator — semua unit terbuka, Tab untuk transkrip cepat.</div>
     </div>
 
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0;align-items:center">
-      <button data-act="rekapToday" type="button" tabindex="-1" style="border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:9px;padding:9px 14px;font-size:12.5px;font-weight:700;cursor:pointer">Hari Ini</button>
-      <button data-act="prevRekapDay" type="button" tabindex="-1" aria-label="Hari sebelumnya" style="border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:9px;width:36px;height:36px;font-size:15px;cursor:pointer">◀</button>
-      <input id="otRekapDateInput" data-focus="entryDate" data-act="input:entryDate" type="date" tabindex="-1" value="${esc(date)}"
-        style="padding:9px 10px;border-radius:9px;border:1px solid var(--input-bd);background:var(--input);color:var(--text);font-size:13.5px" />
-      <button data-act="nextRekapDay" type="button" tabindex="-1" aria-label="Hari berikutnya" style="border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:9px;width:36px;height:36px;font-size:15px;cursor:pointer">▶</button>
-      <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--text);cursor:pointer;margin-left:6px">
-        <input data-act="toggleAutoAdvance" type="checkbox" tabindex="-1" ${st.rekapAutoAdvance ? 'checked' : ''} style="width:15px;height:15px;accent-color:var(--primary)" />
-        Lanjut ke unit berikutnya setelah simpan
-      </label>
+    <div class="ot-date-nav" style="margin:12px 0 8px">
+      <input id="otRekapDateInput" data-focus="entryDate" data-act="input:entryDate" type="date" tabindex="-1" value="${esc(date)}" />
     </div>
+    <label style="display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;color:var(--muted);cursor:pointer;margin:0 0 14px">
+      <input data-act="toggleAutoAdvance" type="checkbox" tabindex="-1" ${st.rekapAutoAdvance ? 'checked' : ''} style="width:14px;height:14px;accent-color:var(--primary)" />
+      Lanjut ke hari berikutnya setelah simpan
+    </label>
 
     <div style="background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <div style="flex:1;min-width:180px">
@@ -802,7 +761,7 @@ function dailyEntryScreen() {
 
     <div style="margin-top:16px">${blocks}</div>
 
-    ${activeUnit ? rekapStickyFooter(activeUnit, date, resolved, existingIdsByUnit.get(activeUnit.id) || new Set()) : ''}
+    ${units.length ? rekapStickyFooter(units, date, resolved, existingIdsByUnit) : ''}
     ${st.entryErr ? `<div style="margin-top:10px;color:var(--primary);font-size:12.5px">${esc(st.entryErr)}</div>` : ''}
 
     <div style="margin-top:22px">
@@ -847,80 +806,134 @@ function unitGridSection(unit, date, existingIds) {
     </div>`;
 }
 
-/** Shared by rekapStickyFooter() (render-time HTML string) AND
-    syncStickyFooterDOM() (focus-time live DOM patch) — the "what counts
-    as dirty/total/canSave" business logic lives in exactly one place.
-    `existingIds`, when the caller already has it (dailyEntryScreen()'s
-    single whole-day listRecordsForDate() call), is reused instead of a
-    second store hit for the same date+unit — event-handler callers that
-    don't have it pre-fetched (Enter, openSaveConfirm, syncStickyFooterDOM)
-    fall back to a fresh lookup, which is also the deliberately-current
-    read those call sites want. */
-function computeFooterValues(unit, date, resolved, existingIds) {
-  const employees = svc.listActiveEmployees(unit.id);
-  const unitEmployeeIds = new Set(employees.map(e => e.id));
-  const selectedIds = Object.keys(st.entrySelected).filter(id => st.entrySelected[id] && unitEmployeeIds.has(id));
-  const existing = existingIds || new Set(svc.listRecordsForDate(date, unit.id).map(r => r.employeeId));
-  const dirty = selectedIds.length !== existing.size || selectedIds.some(id => !existing.has(id));
-  const total = resolved ? resolved.amount * selectedIds.length : 0;
-  const canSave = dirty && selectedIds.length > 0 && !!resolved;
-  return { selectedIds, dirty, total, canSave };
+/** ONE store call for the whole day, bucketed by unit — shared by every
+    caller that needs "what's already recorded for this date" (render,
+    the global Save Confirm, the confirm keyboard shortcut) instead of
+    each hand-rolling its own listRecordsForDate() grouping. */
+function freshExistingIdsByUnit(date) {
+  const map = new Map();
+  svc.listRecordsForDate(date).forEach(r => {
+    if (!map.has(r.unitId)) map.set(r.unitId, new Set());
+    map.get(r.unitId).add(r.employeeId);
+  });
+  return map;
 }
 
-function rekapStickyFooter(unit, date, resolved, existingIds) {
-  const { selectedIds, total, canSave } = computeFooterValues(unit, date, resolved, existingIds);
+/** FIX 13 — GLOBAL footer math: every active unit's pending (checked,
+    not-yet-recorded) count, plus the grand total across all of them. The
+    per-employee "dirty" check the old per-unit version needed is gone —
+    already-recorded employees are excluded from the count by construction
+    (`!existing.has(e.id)`), so a nonzero totalSelected always means real,
+    unsaved work. */
+function computeGlobalFooterValues(units, date, resolved, existingIdsByUnit) {
+  let totalSelected = 0;
+  const perUnit = units.map(unit => {
+    const existing = (existingIdsByUnit && existingIdsByUnit.get(unit.id)) || new Set();
+    const count = svc.listActiveEmployees(unit.id).filter(e => st.entrySelected[e.id] && !existing.has(e.id)).length;
+    totalSelected += count;
+    return { unit, count };
+  });
+  const total = resolved ? resolved.amount * totalSelected : 0;
+  const canSave = totalSelected > 0 && !!resolved;
+  return { perUnit, totalSelected, total, canSave };
+}
+
+/** Global sticky footer (FIX 13) — one per-unit chip row (every active
+    unit, including zero-count ones, so the admin sees the whole date's
+    coverage at a glance) plus ONE Total Pegawai/Total Nominal/Simpan
+    Rekap for the whole date. Replaces the old per-active-unit footer;
+    always re-rendered in full (checkbox toggles already call render()),
+    so there is no live-DOM-patch counterpart anymore. */
+function rekapStickyFooter(units, date, resolved, existingIdsByUnit) {
+  const { perUnit, totalSelected, total, canSave } = computeGlobalFooterValues(units, date, resolved, existingIdsByUnit);
+  const chips = perUnit.map(({ unit, count }) => `
+    <span style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;border:1px solid ${count > 0 ? 'var(--primary)' : 'var(--border)'};background:${count > 0 ? 'var(--primary-tint)' : 'var(--card2)'};color:${count > 0 ? 'var(--primary-text)' : 'var(--muted)'}">${esc(unit.name)}: ${count}</span>`).join('');
   return `
-    <div style="position:sticky;bottom:12px;z-index:5;background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow-lg);padding:12px 16px;margin-top:14px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-      <div>
-        <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Pegawai Dipilih</div>
-        <div id="otFooterCount" style="font-size:15px;font-weight:800">${selectedIds.length}</div>
+    <div style="position:sticky;bottom:12px;z-index:5;background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow-lg);padding:12px 16px;margin-top:14px">
+      ${chips ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${chips}</div>` : ''}
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <div>
+          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Total Pegawai</div>
+          <div style="font-size:15px;font-weight:800">${totalSelected}</div>
+        </div>
+        <div>
+          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Total Nominal</div>
+          <div style="font-size:15px;font-weight:800">${esc(rp(total))}</div>
+        </div>
+        <div>
+          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Tarif Aktif</div>
+          <div style="font-size:15px;font-weight:800">${resolved ? esc(rp(resolved.amount)) : '—'}</div>
+        </div>
+        <div style="flex:1;min-width:90px">
+          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Tanggal</div>
+          <div style="font-size:15px;font-weight:800">${esc(fmtDate(date))}</div>
+        </div>
+        <button data-act="openSaveConfirm" type="button" ${canSave ? '' : 'disabled'}
+          style="background:${canSave ? 'var(--primary)' : 'var(--border2)'};color:${canSave ? 'var(--primary-fg)' : 'var(--muted)'};border:none;border-radius:10px;padding:11px 22px;font-size:13.5px;font-weight:700;cursor:${canSave ? 'pointer' : 'default'}">Simpan Rekap</button>
       </div>
-      <div>
-        <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Total Nominal</div>
-        <div id="otFooterTotal" style="font-size:15px;font-weight:800">${esc(rp(total))}</div>
-      </div>
-      <div>
-        <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Tarif Aktif</div>
-        <div style="font-size:15px;font-weight:800">${resolved ? esc(rp(resolved.amount)) : '—'}</div>
-      </div>
-      <div>
-        <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Unit Aktif</div>
-        <div id="otFooterUnit" style="font-size:15px;font-weight:800">${esc(unit.name)}</div>
-      </div>
-      <div style="flex:1;min-width:90px">
-        <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Tanggal</div>
-        <div style="font-size:15px;font-weight:800">${esc(fmtDate(date))}</div>
-      </div>
-      <button id="otFooterSaveBtn" data-act="openSaveConfirm" type="button" ${canSave ? '' : 'disabled'}
-        style="background:${canSave ? 'var(--primary)' : 'var(--border2)'};color:${canSave ? 'var(--primary-fg)' : 'var(--muted)'};border:none;border-radius:10px;padding:11px 22px;font-size:13.5px;font-weight:700;cursor:${canSave ? 'pointer' : 'default'}">Simpan Rekap</button>
     </div>`;
 }
 
-/** Focus-time live DOM patch (no render()) — see file header note near
-    onRekapFocusIn for why this narrow exception to the render-everything
-    model exists. Tarif Aktif and Tanggal don't depend on the focused
-    unit, so they're not patched here. */
-function syncStickyFooterDOM() {
+/** Opens the global Save Confirm dialog (FIX 13) — shared by the sticky
+    footer's click and the grid's Enter shortcut, so both always agree on
+    what counts as "something to save". No-ops (matching "ENTER/klik tidak
+    boleh melakukan apa pun apabila belum ada perubahan") when nothing is
+    pending. */
+function openGlobalSaveConfirm() {
   const date = st.entryDate || todayISO();
-  const unit = svc.listActiveUnits().find(u => u.id === st.entryUnitId);
-  if (!unit) return;
+  const units = svc.listActiveUnits();
   const resolved = st.entryOverrideOn && st.entryOverrideTierKey
     ? svc.getActiveRate(st.entryOverrideTierKey, date)
     : svc.resolveEntryRate(date);
-  const { selectedIds, total, canSave } = computeFooterValues(unit, date, resolved);
+  const existingIdsByUnit = freshExistingIdsByUnit(date);
+  const { perUnit, totalSelected, total, canSave } = computeGlobalFooterValues(units, date, resolved, existingIdsByUnit);
+  if (!canSave) return;
+  const unitCount = perUnit.filter(p => p.count > 0).length;
+  setState({ saveConfirmData: { date, unitCount, employeeCount: totalSelected, total }, entryErr: '' });
+}
 
-  const countEl = document.getElementById('otFooterCount');
-  const totalEl = document.getElementById('otFooterTotal');
-  const unitEl = document.getElementById('otFooterUnit');
-  const saveBtn = document.getElementById('otFooterSaveBtn');
-  if (countEl) countEl.textContent = String(selectedIds.length);
-  if (totalEl) totalEl.textContent = rp(total);
-  if (unitEl) unitEl.textContent = unit.name;
-  if (saveBtn) {
-    saveBtn.disabled = !canSave;
-    saveBtn.style.background = canSave ? 'var(--primary)' : 'var(--border2)';
-    saveBtn.style.color = canSave ? 'var(--primary-fg)' : 'var(--muted)';
-    saveBtn.style.cursor = canSave ? 'pointer' : 'default';
+function closeSaveConfirm() { setState({ saveConfirmData: null, entryErr: '' }); }
+
+/** Batch-saves EVERY pending (checked, not-yet-recorded) employee across
+    EVERY unit for saveConfirmData.date in one atomic write (FIX 13 —
+    svc.createDailyEntries is date-scoped now, not unit-scoped). Standalone
+    (not inline in onClick's switch) so both the dialog's Simpan button AND
+    its ENTER keyboard shortcut (FIX 14) call the exact same logic. */
+async function confirmSaveDailyEntry() {
+  const d = st.saveConfirmData;
+  if (!d) return;
+  const units = svc.listActiveUnits();
+  const existingIdsByUnit = freshExistingIdsByUnit(d.date);
+  const employeeIds = [];
+  units.forEach(unit => {
+    const existing = existingIdsByUnit.get(unit.id) || new Set();
+    svc.listActiveEmployees(unit.id).forEach(e => {
+      if (st.entrySelected[e.id] && !existing.has(e.id)) employeeIds.push(e.id);
+    });
+  });
+  if (!employeeIds.length) { setState({ entryErr: 'Pilih minimal satu karyawan.' }); return; }
+  try {
+    const overrideTierKey = st.entryOverrideOn && st.entryOverrideTierKey ? st.entryOverrideTierKey : null;
+    const result = await svc.createDailyEntries({
+      date: d.date, employeeIds, overrideTierKey, overrideNote: st.entryOverrideNote,
+    });
+    try { localStorage.removeItem(REKAP_DRAFT_KEY); } catch (_) {}
+
+    // FIX 13 — "Lanjut ke hari berikutnya": auto-advance now moves the
+    // ENTRY DATE forward, not the active unit (a global save has no more
+    // per-unit "next" to walk to — everything for this date just saved
+    // atomically at once).
+    const nextDate = st.rekapAutoAdvance ? addDaysISO(d.date, 1) : d.date;
+
+    setState({
+      entrySelected: {}, entryErr: '', entryOverrideOn: false, entryOverrideTierKey: '',
+      entryDate: nextDate, saveConfirmData: null,
+    });
+    toast(`Tersimpan — ${result.count} karyawan (${result.unitCount} unit) · ${rp(result.rate.amount)}/orang.`);
+    const target = root.querySelector('input[data-act="toggleEntryEmployee"]:not(:disabled)');
+    if (target) target.focus();
+  } catch (err) {
+    setState({ entryErr: err.message || 'Gagal menyimpan.' });
   }
 }
 
@@ -933,7 +946,7 @@ function saveConfirmModal() {
       <div style="position:relative;background:var(--card);border-radius:16px;box-shadow:var(--shadow-lg);width:100%;max-width:400px;padding:22px">
         <div style="font-size:15px;font-weight:800;margin-bottom:14px">Konfirmasi Simpan Rekap</div>
         <div style="display:flex;flex-direction:column;gap:10px">
-          ${[['Tanggal', fmtDate(d.date)], ['Unit', d.unitName], ['Jumlah Pegawai', String(d.count)], ['Total Nominal', rp(d.total)]].map(([k, v]) => `
+          ${[['Tanggal', fmtDate(d.date)], ['Unit', `${d.unitCount} Unit`], ['Pegawai', `${d.employeeCount} Pegawai`], ['Total Nominal', rp(d.total)]].map(([k, v]) => `
             <div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-top:1px solid var(--border)">
               <span style="color:var(--muted)">${esc(k)}</span>
               <span style="font-weight:700;color:var(--text)">${esc(v)}</span>
@@ -941,7 +954,7 @@ function saveConfirmModal() {
         </div>
         ${st.entryErr ? `<div style="color:var(--primary);font-size:12px;margin-top:10px">${esc(st.entryErr)}</div>` : ''}
         <div style="display:flex;gap:8px;margin-top:16px">
-          <button data-act="confirmSaveDailyEntry" type="button" style="flex:1;background:var(--primary);color:var(--primary-fg);border:none;border-radius:10px;padding:11px;font-size:13.5px;font-weight:700;cursor:pointer">Simpan</button>
+          <button id="otSaveConfirmBtn" data-act="confirmSaveDailyEntry" type="button" style="flex:1;background:var(--primary);color:var(--primary-fg);border:none;border-radius:10px;padding:11px;font-size:13.5px;font-weight:700;cursor:pointer">Simpan</button>
           <button data-act="closeSaveConfirm" type="button" style="flex:1;border:1px solid var(--border);background:var(--card2);color:var(--text);border-radius:10px;padding:11px;font-size:13.5px;font-weight:600;cursor:pointer">Batal</button>
         </div>
       </div>
@@ -962,11 +975,9 @@ function bindDelegation() {
   root.addEventListener('input', onInput);
   root.addEventListener('submit', onSubmit);
   // Rekap Lembur keyboard navigation (UX Refinement) — same single-
-  // delegation-root convention, not a second listener architecture.
+  // delegation-root convention, not a second listener architecture. Also
+  // owns the Save Confirm dialog's ENTER/ESC handling (FIX 14).
   root.addEventListener('keydown', onRekapGridKeydown);
-  // focusin bubbles (unlike plain 'focus') — one more delegated listener
-  // on the same root, tracking which unit currently has keyboard focus.
-  root.addEventListener('focusin', onRekapFocusIn);
 }
 
 /** All checkboxes checked in DOM order, disabled (already-recorded) ones
@@ -976,21 +987,62 @@ function rekapCheckboxItems() {
   return Array.from(root.querySelectorAll('input[type="checkbox"][data-act="toggleEntryEmployee"]:not(:disabled)'));
 }
 
+/** Moves focus to the next/previous unit block's first workable (not yet
+    recorded) checkbox — skipping over any fully-done unit in between.
+    Returns false (and touches nothing) when there's no workable unit in
+    that direction, so the caller can fall back to native Tab (exiting the
+    grid towards the Save button / previous control) instead of trapping
+    focus. */
+function focusAdjacentUnitFirstCheckbox(fromUnitBlockId, dir) {
+  const blocks = Array.from(root.querySelectorAll('[data-unit-block]'));
+  const idx = blocks.findIndex(b => b.dataset.unitBlock === fromUnitBlockId);
+  if (idx === -1) return false;
+  for (let i = idx + dir; i >= 0 && i < blocks.length; i += dir) {
+    const target = blocks[i].querySelector('input[type="checkbox"][data-act="toggleEntryEmployee"]:not(:disabled)');
+    if (target) { target.focus(); return true; }
+  }
+  return false;
+}
+
 /** Keyboard-first navigation across the WHOLE always-open grid (Final UX
     Refinement §3 — supersedes the prior pass's single-unit-grid, Enter-
     toggles design). Arrows/Home/End/Ctrl+A/Esc are pure focus/selection
     moves — no render() — only Space (native) and Enter (opens Save
-    Confirmation) touch state. Tab/Shift+Tab need no code at all here:
-    native DOM-order tabbing already crosses unit boundaries correctly
-    because every non-checkbox control in this screen carries
-    tabindex="-1" (see dailyEntryScreen()/unitGridSection()). */
+    Confirmation) touch state. Tab/Shift+Tab (Production Polish FIX 2) jump
+    straight to the next/previous unit's first workable checkbox instead of
+    the native next/previous DOM checkbox — matches the paper workflow
+    ("selesai satu unit, Tab ke unit berikutnya"), while Arrow keys keep
+    walking employee-by-employee within/across the grid unchanged.
+
+    FIX 14 (Round 2): while the Save Confirm dialog is open, it owns ALL
+    keyboard handling — ENTER confirms, ESC cancels, standard desktop
+    dialog UX — and no grid shortcut below may fire underneath it. Guarded
+    on `st.saveConfirmData` rather than DOM containment because these two
+    keys must work regardless of which element inside the dialog has
+    focus (matches native browser confirm() behaviour). */
 function onRekapGridKeydown(e) {
+  if (st.saveConfirmData) {
+    if (e.key === 'Enter') { e.preventDefault(); confirmSaveDailyEntry(); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeSaveConfirm(); }
+    return;
+  }
+
   const el = e.target;
   const isCheckbox = el.matches && el.matches('input[type="checkbox"][data-act="toggleEntryEmployee"]');
 
   if (e.key === 'Escape' && (isCheckbox || (el.matches && el.matches('#otRekapDateInput')))) {
     e.preventDefault();
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    return;
+  }
+
+  if (isCheckbox && e.key === 'Tab') {
+    const unitBlock = el.closest('[data-unit-block]');
+    if (unitBlock && focusAdjacentUnitFirstCheckbox(unitBlock.dataset.unitBlock, e.shiftKey ? -1 : 1)) {
+      e.preventDefault();
+    }
+    // No workable unit in that direction — fall through to native Tab so
+    // focus exits the grid normally (e.g. onto the sticky Save button).
     return;
   }
   if (!isCheckbox) return;
@@ -1032,30 +1084,11 @@ function onRekapGridKeydown(e) {
   }
   if (e.key === 'Enter') {
     e.preventDefault();
-    // "ENTER tidak boleh melakukan apa pun apabila belum ada perubahan" —
-    // reuses the exact same dirty check the footer's Save button uses.
-    const unit = unitBlock && svc.listActiveUnits().find(u => u.id === unitBlock.dataset.unitBlock);
-    if (!unit) return;
-    const date = st.entryDate || todayISO();
-    const resolved = st.entryOverrideOn && st.entryOverrideTierKey ? svc.getActiveRate(st.entryOverrideTierKey, date) : svc.resolveEntryRate(date);
-    const { selectedIds, canSave, total } = computeFooterValues(unit, date, resolved);
-    if (!canSave) return;
-    setState({ saveConfirmData: { date, unitId: unit.id, unitName: unit.name, count: selectedIds.length, total }, entryErr: '' });
+    // FIX 13 — global scope regardless of which unit's checkbox has
+    // focus; "ENTER tidak boleh melakukan apa pun apabila belum ada
+    // perubahan" is enforced inside openGlobalSaveConfirm() itself.
+    openGlobalSaveConfirm();
   }
-}
-
-/** Tracks which unit currently "owns" the sticky footer/Save action —
-    focus-derived (no more accordion expand/collapse state). Deliberately
-    does NOT call render() (see computeFooterValues()/syncStickyFooterDOM()
-    header note) — a full rebuild of every checkbox on every arrow/Tab
-    move would be the exact "unnecessary render" §14 audits against. */
-function onRekapFocusIn(e) {
-  const el = e.target;
-  if (!el.matches || !el.matches('input[type="checkbox"][data-act="toggleEntryEmployee"]')) return;
-  const unitId = el.dataset.unit;
-  if (!unitId || unitId === st.entryUnitId) return;
-  st.entryUnitId = unitId;
-  syncStickyFooterDOM();
 }
 
 function actorEl(e) { return e.target.closest('[data-act]'); }
@@ -1197,65 +1230,13 @@ async function onClick(e) {
       return;
     }
 
-    case 'prevRekapDay': setRekapDate(addDaysISO(st.entryDate || todayISO(), -1)); return;
-    case 'nextRekapDay': setRekapDate(addDaysISO(st.entryDate || todayISO(), 1)); return;
-    case 'rekapToday': setRekapDate(todayISO()); return;
-
-    case 'openSaveConfirm': {
-      const unit = svc.listActiveUnits().find(u => u.id === st.entryUnitId);
-      if (!unit) return;
-      const date = st.entryDate || todayISO();
-      const resolved = st.entryOverrideOn && st.entryOverrideTierKey ? svc.getActiveRate(st.entryOverrideTierKey, date) : svc.resolveEntryRate(date);
-      const { selectedIds, canSave, total } = computeFooterValues(unit, date, resolved);
-      if (!canSave) return; // matches "ENTER tidak boleh melakukan apa pun apabila belum ada perubahan"
-      setState({ saveConfirmData: { date, unitId: unit.id, unitName: unit.name, count: selectedIds.length, total }, entryErr: '' });
-      return;
-    }
-    case 'closeSaveConfirm': setState({ saveConfirmData: null, entryErr: '' }); return;
-
-    case 'confirmSaveDailyEntry': {
-      const d = st.saveConfirmData;
-      if (!d) return;
-      const unitEmployeeIds = new Set(svc.listActiveEmployees(d.unitId).map(e => e.id));
-      const selectedIds = Object.keys(st.entrySelected).filter(k => st.entrySelected[k] && unitEmployeeIds.has(k));
-      if (!selectedIds.length) { setState({ entryErr: 'Pilih minimal satu karyawan.' }); return; }
-      try {
-        const overrideTierKey = st.entryOverrideOn && st.entryOverrideTierKey ? st.entryOverrideTierKey : null;
-        const result = await svc.createDailyEntries({
-          date: d.date, unitId: d.unitId, employeeIds: selectedIds,
-          overrideTierKey, overrideNote: st.entryOverrideNote,
-        });
-        try { localStorage.setItem(FAVORITE_UNIT_KEY, d.unitId); } catch (_) {}
-        // Clear only the just-saved unit's pending checks — other units'
-        // pending selections (if the admin pre-checked ahead) are kept.
-        const entrySelected = { ...st.entrySelected };
-        unitEmployeeIds.forEach(empId => { delete entrySelected[empId]; });
-        clearRekapDraftForUnit(d.unitId);
-
-        // §7 Auto Next Unit: skip units where every active employee is
-        // already recorded (nothing left to do there).
-        let nextUnitId = d.unitId;
-        if (st.rekapAutoAdvance) {
-          const found = findNextWorkableUnit(d.unitId, d.date);
-          if (found) nextUnitId = found;
-        }
-        setState({
-          entrySelected, entryErr: '', entryOverrideOn: false, entryOverrideTierKey: '',
-          entryUnitId: nextUnitId, saveConfirmData: null,
-        });
-        toast(`Tersimpan — ${result.count} karyawan · ${rp(result.rate.amount)}/orang.`);
-        if (st.rekapAutoAdvance && nextUnitId !== d.unitId) {
-          // First workable (non-disabled) checkbox in the next unit's
-          // block — checkboxes render in employee order, so the first
-          // DOM match is the first workable employee.
-          const target = root.querySelector(`[data-unit-block="${nextUnitId}"] input[data-act="toggleEntryEmployee"]:not(:disabled)`);
-          if (target) target.focus();
-        }
-      } catch (err) {
-        setState({ entryErr: err.message || 'Gagal menyimpan.' });
-      }
-      return;
-    }
+    // FIX 13 — global Save workflow; logic lives in the standalone
+    // openGlobalSaveConfirm()/closeSaveConfirm()/confirmSaveDailyEntry()
+    // functions above so the grid's ENTER/ESC shortcuts (FIX 14) call the
+    // exact same code the dialog's own buttons do.
+    case 'openSaveConfirm': openGlobalSaveConfirm(); return;
+    case 'closeSaveConfirm': closeSaveConfirm(); return;
+    case 'confirmSaveDailyEntry': await confirmSaveDailyEntry(); return;
 
     default: {
       // Extension point: each new sprint's screen (Analytics, Reports,

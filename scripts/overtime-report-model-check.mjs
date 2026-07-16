@@ -78,6 +78,59 @@ console.log('[period title variants]');
   check('day period falls back to the literal date range in the title', dayModel.meta.detailTitle.includes('2026-04-03'));
 }
 
+console.log('[Production Polish FIX 3 — filenames: "Nama Laporan + Scope + Periode", never a UUID/timestamp]');
+{
+  const monthAll = buildOvertimeReportModel(snapshot, { appVersion: '1.26.1' });
+  check('PDF filename matches the fix\'s own example (month, all scope)', monthAll.meta.pdfFilename === 'Laporan Lembur Sarpras - April 2026.pdf');
+  check('Excel filename uses the sortable yyyy-MM period (month, all scope)', monthAll.meta.excelFilename === 'Rekap Lembur Sarpras - 2026-04.xlsx');
+  check('CSV filename mirrors the Excel convention', monthAll.meta.csvFilename === 'Rekap Lembur Sarpras - 2026-04.csv');
+  check('no filename contains a UUID or raw millisecond timestamp', ![monthAll.meta.pdfFilename, monthAll.meta.excelFilename, monthAll.meta.csvFilename].some(f => /\d{13,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/i.test(f)));
+
+  const unitScoped = buildOvertimeReportModel({ ...snapshot, scope: { type: 'unit', unitId: 'u1', label: 'Unit: Engineering' } }, { appVersion: '1.26.1' });
+  check('unit-scoped PDF filename uses the bare unit name, matching the fix\'s own example', unitScoped.meta.pdfFilename === 'Laporan Lembur Engineering - April 2026.pdf');
+
+  const employeeScoped = buildOvertimeReportModel({ ...snapshot, scope: { type: 'employee', employeeId: 'e1', label: 'Karyawan: Ahmad' } }, { appVersion: '1.26.1' });
+  check('employee-scoped filename uses the bare employee name', employeeScoped.meta.excelFilename === 'Rekap Lembur Ahmad - 2026-04.xlsx');
+
+  const yearAll = buildOvertimeReportModel({ ...snapshot, period: 'year', dateRangeStart: '2026-01-01', dateRangeEnd: '2026-12-31' }, {});
+  check('year period filename uses the bare year for both PDF and Excel', yearAll.meta.pdfFilename === 'Laporan Lembur Sarpras - 2026.pdf' && yearAll.meta.excelFilename === 'Rekap Lembur Sarpras - 2026.xlsx');
+
+  const dayAll = buildOvertimeReportModel({ ...snapshot, period: 'day', dateRangeStart: '2026-04-03', dateRangeEnd: '2026-04-03' }, {});
+  check('day period Excel filename is the literal ISO date', dayAll.meta.excelFilename === 'Rekap Lembur Sarpras - 2026-04-03.xlsx');
+}
+
+console.log('[Production Polish FIX 9 — date-grouping preserves upstream row order (Unit->displayOrder), does NOT re-sort by name]');
+{
+  // Deliberately fed OUT of alphabetical order — if this file re-sorted by
+  // name (the old behaviour), "Isep" would land after "Sony"; it must not.
+  const unitOrderedSnapshot = {
+    ...snapshot,
+    detailRecords: [
+      { date: '2026-04-03', employeeName: 'Isep', unitName: 'Engineering', amount: 100000 },
+      { date: '2026-04-03', employeeName: 'Maston', unitName: 'Engineering', amount: 100000 },
+      { date: '2026-04-03', employeeName: 'Redho', unitName: 'Cleaning Service', amount: 100000 },
+      { date: '2026-04-03', employeeName: 'Sony', unitName: 'Kantin', amount: 100000 },
+    ],
+  };
+  const m = buildOvertimeReportModel(unitOrderedSnapshot, {});
+  const order = m.dateGroups[0].rows.map(r => r.employeeName);
+  check('within-date row order is passed through verbatim, not re-sorted alphabetically', JSON.stringify(order) === JSON.stringify(['Isep', 'Maston', 'Redho', 'Sony']));
+}
+
+console.log('[Production Polish Round 2 FIX 17 — report title reflects the active scope filter]');
+{
+  check('all-scope detail title is unchanged (org-wide wording)', model.meta.detailTitle === 'DATA PENGAJUAN LEMBUR TIM/KARYAWAN SARPRAS PBSI PERIODE APRIL 2026');
+  check('all-scope recap title is unchanged', model.meta.recapTitle === 'Rekapitulasi Lembur Staf Sarpras Periode April 2026');
+
+  const unitScoped = buildOvertimeReportModel({ ...snapshot, scope: { type: 'unit', unitId: 'u1', label: 'Unit: Engineering' } }, {});
+  check('unit-scoped detail title uses the unit name, matching the fix\'s own example', unitScoped.meta.detailTitle === 'DATA PENGAJUAN LEMBUR ENGINEERING PERIODE APRIL 2026');
+  check('unit-scoped recap title reads "Staf {Unit}"', unitScoped.meta.recapTitle === 'Rekapitulasi Lembur Staf Engineering Periode April 2026');
+
+  const employeeScopedTitle = buildOvertimeReportModel({ ...snapshot, scope: { type: 'employee', employeeId: 'e1', label: 'Karyawan: Ahmad' } }, {});
+  check('employee-scoped detail title uses the bare employee name', employeeScopedTitle.meta.detailTitle === 'DATA PENGAJUAN LEMBUR AHMAD PERIODE APRIL 2026');
+  check('employee-scoped recap title has no "Staf" prefix for one person', employeeScopedTitle.meta.recapTitle === 'Rekapitulasi Lembur Ahmad Periode April 2026');
+}
+
 console.log('\n' + '─'.repeat(50));
 console.log(`Overtime Report Model: ${pass} passed, ${fail} failed`);
 process.exit(fail > 0 ? 1 : 0);
