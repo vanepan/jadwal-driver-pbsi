@@ -1802,7 +1802,9 @@ async function navOvertime(screen, navId) {
   setOvertimeScreen(screen);
 }
 const OT_MENU_TITLES = {
-  dashboard: 'Dashboard', employees: 'Employees', dailyEntry: 'Daily Entry', rates: 'Rates', holidays: 'Holidays',
+  dashboard: 'Dashboard', dailyEntry: 'Rekap Lembur', employees: 'Karyawan', rates: 'Tarif', holidays: 'Hari Libur',
+  reports: 'Laporan', reportHistory: 'Riwayat Laporan',
+  records: 'Penyesuaian Data', closing: 'Tutup Periode', archive: 'Arsip',
 };
 
 /* ── MODUL: Engineering Operations ── (embedded native module, v1.20.1) */
@@ -2442,21 +2444,41 @@ function initV2Panel() {
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M3 4a1 1 0 011-1h5a1 1 0 011 1v5a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM11 4a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1V4zM11 10a1 1 0 011-1h4a1 1 0 011 1v6a1 1 0 01-1 1h-4a1 1 0 01-1-1v-6zM3 13a1 1 0 011-1h5a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3z"/></svg>
         Dashboard
       </button>
-      <button class="v2-panel-nav-item" id="v2NavOtEmployees" type="button">
-        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10 2a4 4 0 100 8 4 4 0 000-8zM3 18a7 7 0 0114 0H3z"/></svg>
-        Employees
-      </button>
       <button class="v2-panel-nav-item" id="v2NavOtDailyEntry" type="button">
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V4a2 2 0 00-2-2H6zm2 5a1 1 0 000 2h4a1 1 0 100-2H8zm-1 5a1 1 0 011-1h4a1 1 0 110 2H8a1 1 0 01-1-1z" clip-rule="evenodd"/></svg>
-        Daily Entry
+        Rekap Lembur
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavOtEmployees" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10 2a4 4 0 100 8 4 4 0 000-8zM3 18a7 7 0 0114 0H3z"/></svg>
+        Karyawan
       </button>
       <button class="v2-panel-nav-item" id="v2NavOtRates" type="button">
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.09c-1.2.24-2.25 1-2.25 2.16 0 1.4 1.28 2 2.63 2.37l.37.1v2.4c-.6-.1-.98-.42-1-.87H6.7c.04 1.2 1.05 2.1 2.3 2.32V15a1 1 0 102 0v-.1c1.3-.23 2.4-1 2.4-2.28 0-1.45-1.36-2.03-2.65-2.38l-.37-.1V7.8c.5.1.85.4.87.8H12.9c-.05-1.14-1-2-2.2-2.24V5z" clip-rule="evenodd"/></svg>
-        Rates
+        Tarif
       </button>
       <button class="v2-panel-nav-item" id="v2NavOtHolidays" type="button">
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"/></svg>
-        Holidays
+        Hari Libur
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavOtReports" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h5.586A2 2 0 0113 2.586L15.414 5A2 2 0 0116 6.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm3 8a1 1 0 000 2h6a1 1 0 100-2H7zm0-4a1 1 0 000 2h6a1 1 0 100-2H7z" clip-rule="evenodd"/></svg>
+        Laporan
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavOtReportHistory" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v5a1 1 0 00.293.707l3 3a1 1 0 001.414-1.414L11 9.586V5z" clip-rule="evenodd"/></svg>
+        Riwayat Laporan
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavOtRecords" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V4a2 2 0 00-2-2H6zm2 5a1 1 0 000 2h4a1 1 0 100-2H8zm-1 5a1 1 0 011-1h4a1 1 0 110 2H8a1 1 0 01-1-1z" clip-rule="evenodd"/></svg>
+        Penyesuaian Data
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavOtClosing" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg>
+        Tutup Periode
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavOtArchive" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1v8a2 2 0 01-2 2H6a2 2 0 01-2-2V7a1 1 0 01-1-1V4zm2 3v8a1 1 0 001 1h8a1 1 0 001-1V7H5zm2-2h6V4H7v1z" clip-rule="evenodd"/></svg>
+        Arsip
       </button>
     </nav>
 
@@ -2709,6 +2731,11 @@ function initV2Panel() {
   document.getElementById('v2NavOtDailyEntry')?.addEventListener('click', () => navOvertime('dailyEntry', 'v2NavOtDailyEntry'));
   document.getElementById('v2NavOtRates')?.addEventListener('click', () => navOvertime('rates', 'v2NavOtRates'));
   document.getElementById('v2NavOtHolidays')?.addEventListener('click', () => navOvertime('holidays', 'v2NavOtHolidays'));
+  document.getElementById('v2NavOtReports')?.addEventListener('click', () => navOvertime('reports', 'v2NavOtReports'));
+  document.getElementById('v2NavOtReportHistory')?.addEventListener('click', () => navOvertime('reportHistory', 'v2NavOtReportHistory'));
+  document.getElementById('v2NavOtRecords')?.addEventListener('click', () => navOvertime('records', 'v2NavOtRecords'));
+  document.getElementById('v2NavOtClosing')?.addEventListener('click', () => navOvertime('closing', 'v2NavOtClosing'));
+  document.getElementById('v2NavOtArchive')?.addEventListener('click', () => navOvertime('archive', 'v2NavOtArchive'));
 
   // MODUL Analytics
   document.getElementById('v2NavAnalyticsDriver')?.addEventListener('click', navAnalyticsDriver);

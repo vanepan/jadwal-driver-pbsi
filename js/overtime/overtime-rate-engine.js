@@ -69,3 +69,22 @@ export function versionsForTier(versions, tierKey) {
     .filter(v => v && v.tierKey === tierKey)
     .sort((a, b) => (b.effectiveFrom || '').localeCompare(a.effectiveFrom || '') || (b.createdAt || 0) - (a.createdAt || 0));
 }
+
+/**
+ * Resolves the DEFAULT tier's rate with a fallback `resolveActiveRateVersion`
+ * doesn't have: backdated entry (Sarpras transcribing a coordinator's recap
+ * for a past period, e.g. entering "April 2026" data later) is the normal
+ * workflow here, not an edge case — a Default Rate that exists anywhere
+ * must never resolve to null purely because the entry date predates the
+ * version's effectiveFrom. Tries the strict resolution first; only falls
+ * back to the EARLIEST version of that tier if nothing strictly qualifies.
+ * Deliberately NOT applied to holiday tiers — those stay date-strict via
+ * resolveActiveRateVersion, called directly.
+ */
+export function resolveDefaultRateVersion(versions, tierKey, atDateISO) {
+  const strict = resolveActiveRateVersion(versions, tierKey, atDateISO);
+  if (strict) return strict;
+  const all = versionsForTier(versions, tierKey);
+  if (!all.length) return null;
+  return all.reduce((best, v) => (!best || v.effectiveFrom < best.effectiveFrom) ? v : best, null);
+}

@@ -22,12 +22,14 @@ import './bidang-template.js';   // self-registers 'analytics-bidang'
 import './complete-template.js'; // self-registers 'analytics-complete'
 import './petty-cash-template.js'; // self-registers 'analytics-petty-cash'
 import './executive-template.js';  // self-registers 'analytics-executive'
+import './overtime-template.js';   // self-registers 'overtime-report'
 import { buildDriverReportModel } from './model/driver-report-model.js';
 import { buildVehicleReportModel } from './model/vehicle-report-model.js';
 import { buildBidangReportModel } from './model/bidang-report-model.js';
 import { buildCompleteReportModel } from './model/complete-report-model.js';
 import { buildPettyCashReportModel } from './model/petty-cash-report-model.js';
 import { buildExecutiveReportModel } from './model/executive-report-model.js';
+import { buildOvertimeReportModel } from './model/overtime-report-model.js';
 import { exportExpensesExcel } from '../../petty-cash/nor-excel-exporter.js';
 
 /**
@@ -171,6 +173,26 @@ export async function exportExecutiveAnalytics(execModel, meta = {}) {
   });
 }
 
+/**
+ * Project an Overtime report snapshot (svc.getReportSnapshot() output) into
+ * its report and render it client-side via pdfmake — NOT the puppeteer
+ * pipeline every export above uses (see overtime-template.js header for
+ * why: no functions/ deploy needed for this report's content).
+ * @param {Object} snapshot svc.getReportSnapshot() output
+ * @param {{ generatedBy?:string, appVersion?:string }} [meta]
+ * @returns {Promise<{blob:Blob, filename:string}>}
+ */
+export async function exportOvertimeReport(snapshot, meta = {}) {
+  if (!snapshot || !snapshot.kpis) {
+    throw new Error('exportOvertimeReport: OvertimeReportSnapshot required.');
+  }
+  const reportModel = buildOvertimeReportModel(snapshot, meta);
+  return DocumentEngine.generateAndOpen('overtime-report', reportModel, {
+    cache: false,
+    viewer: { title: 'Laporan Overtime Management' },
+  });
+}
+
 // Console-reachable verification hooks (Phase A/B). The Driver hook reads
 // the live model that app.js exposes for export.
 if (typeof window !== 'undefined') {
@@ -219,4 +241,12 @@ if (typeof window !== 'undefined') {
   window.exportExecutiveAnalyticsPdf = window.exportExecutiveAnalytics;
   // Petty Cash Excel reuses the existing cycle workbook exporter (no-arg).
   window.exportPettyCashAnalyticsExcel = () => exportExpensesExcel();
+
+  // Overtime Report (Sprint 8) — reads the live snapshot the Reports screen
+  // last built, mirroring the _lastXAnalyticsModel convention above.
+  window.exportOvertimeReport = (meta = {}) => {
+    const snap = window._lastOvertimeReportSnapshot;
+    if (!snap) throw new Error('Buka Overtime > Reports dulu agar snapshot tersedia.');
+    return exportOvertimeReport(snap, { ...(window._overtimeReportMeta || {}), ...meta });
+  };
 }

@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.25.3';
-export const RELEASE_NAME = 'Overtime Management — Focus Stability Fix, Grouped Employees, Holiday Engine, Daily Entry, Employee History (Sprints 4-6)';
+export const APP_VERSION = '1.26.0';
+export const RELEASE_NAME = 'Overtime Management — Analytics Dashboard, Reporting Engine, Record CRUD + Monthly Closing, Production Hardening (Sprints 7-10)';
 
 /* ============================================================
    APP_ENV — the AUTHORITATIVE runtime environment (v1.20.3 RC1).

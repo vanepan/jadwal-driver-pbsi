@@ -65,3 +65,15 @@
    menu handles navigation on desktop). */
 .ot-embed-nav { display: flex; }
 @media (min-width: 768px) { .ot-embed-nav { display: none !important; } }
+
+/* Rekap Lembur (UX Refinement) — space-efficient checklist grid.
+   auto-fill naturally collapses to one column on narrow/mobile widths
+   with zero hand-written breakpoints. */
+.ot-rekap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+.ot-rekap-grid label:focus-within {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}

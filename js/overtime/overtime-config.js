@@ -47,7 +47,27 @@ export const AUDIT_ACTION = {
   HOLIDAY_ACTIVATED: 'holiday_activated',
   HOLIDAY_DEACTIVATED: 'holiday_deactivated',
   DAILY_ENTRY_SAVED: 'daily_entry_saved',
+  BUDGET_TARGET_UPDATED: 'budget_target_updated',
+  SUMMARY_RECALCULATED: 'summary_recalculated',
+  RECORD_UPDATED: 'record_updated',
+  RECORD_DELETED: 'record_deleted',
+  RECORD_RESTORED: 'record_restored',
+  PERIOD_CLOSED: 'period_closed',
+  PERIOD_UNLOCKED: 'period_unlocked',
 };
+
+/** Monthly Closing lock state (Sprint 9) — mirrors petty-cash-config.js's
+    CYCLE_STATUS naming. GLOBAL: one status per yyyy-mm for every unit, not
+    per-unit (confirmed product decision, Sprint 9). */
+export const CLOSING_STATUS = { OPEN: 'open', CLOSED: 'closed' };
+
+/** Record lifecycle status (Final UX Refinement — Production Readiness).
+    Mirrors petty-cash-config.js's EXPENSE_STATUS shape (an enum, not a
+    boolean) — deleteRecord() soft-deletes (DELETED), restoreRecord()
+    reverses it. Records with no `status` field at all (written before this
+    field existed) are treated as ACTIVE by every reader (`status !==
+    DELETED`), so no data migration is needed. */
+export const RECORD_STATUS = { ACTIVE: 'active', DELETED: 'deleted' };
 
 /** Human labels (id-ID) for audit actions. */
 export const AUDIT_LABEL = {
@@ -69,6 +89,13 @@ export const AUDIT_LABEL = {
   [AUDIT_ACTION.HOLIDAY_ACTIVATED]: 'Hari libur diaktifkan',
   [AUDIT_ACTION.HOLIDAY_DEACTIVATED]: 'Hari libur dinonaktifkan',
   [AUDIT_ACTION.DAILY_ENTRY_SAVED]: 'Entri lembur harian disimpan',
+  [AUDIT_ACTION.BUDGET_TARGET_UPDATED]: 'Target anggaran bulanan diperbarui',
+  [AUDIT_ACTION.SUMMARY_RECALCULATED]: 'Ringkasan dihitung ulang',
+  [AUDIT_ACTION.RECORD_UPDATED]: 'Entri lembur diperbarui',
+  [AUDIT_ACTION.RECORD_DELETED]: 'Entri lembur dihapus',
+  [AUDIT_ACTION.RECORD_RESTORED]: 'Entri lembur dipulihkan',
+  [AUDIT_ACTION.PERIOD_CLOSED]: 'Periode ditutup (Closing)',
+  [AUDIT_ACTION.PERIOD_UNLOCKED]: 'Periode dibuka kembali (Unlock)',
 };
 
 /** Accent color per audit action (matches the timeline dot convention). */
@@ -91,6 +118,13 @@ export const AUDIT_COLOR = {
   [AUDIT_ACTION.HOLIDAY_ACTIVATED]: '#2f7d5b',
   [AUDIT_ACTION.HOLIDAY_DEACTIVATED]: '#8b857c',
   [AUDIT_ACTION.DAILY_ENTRY_SAVED]: '#2f7d5b',
+  [AUDIT_ACTION.BUDGET_TARGET_UPDATED]: '#a9781a',
+  [AUDIT_ACTION.SUMMARY_RECALCULATED]: '#a9781a',
+  [AUDIT_ACTION.RECORD_UPDATED]: '#a9781a',
+  [AUDIT_ACTION.RECORD_DELETED]: '#9a1b2d',
+  [AUDIT_ACTION.RECORD_RESTORED]: '#2f7d5b',
+  [AUDIT_ACTION.PERIOD_CLOSED]: '#2f7d5b',
+  [AUDIT_ACTION.PERIOD_UNLOCKED]: '#a9781a',
 };
 
 /** Holiday categories (spec: National Holiday / Collective Leave / Custom). */

@@ -21,15 +21,29 @@
 'use strict';
 
 import { getCurrentUser } from '../auth.js';
-import { AUDIT_ACTION, AUDIT_LABEL, AUDIT_COLOR, HOLIDAY_TYPES, DEFAULT_HOLIDAY_TIER_KEY } from './overtime-config.js';
+import { APP_VERSION } from '../config.js';
+import { AUDIT_ACTION, AUDIT_LABEL, AUDIT_COLOR, HOLIDAY_TYPES, DEFAULT_HOLIDAY_TIER_KEY, CLOSING_STATUS, RECORD_STATUS } from './overtime-config.js';
 import {
   RATE_TIERS, DEFAULT_TIER_KEY, isValidTierKey, tierLabel, resolveActiveRateVersion, versionsForTier,
+  resolveDefaultRateVersion,
 } from './overtime-rate-engine.js';
 import {
   genId, getUnits, getEmployees, getRateVersions, getHolidays, getRecords,
-  getDailySummary, getMonthlySummary, getAudit,
-  putUnit, putEmployee, putRateVersion, putHoliday, putAudit, applyOvertimeUpdates,
+  getDailySummary, getMonthlySummary, getAllDailySummaries, getAllMonthlySummaries, getAudit,
+  getBudget, getReportHistory, getClosing, getAllClosings, getArchive, getAllArchives,
+  putUnit, putEmployee, putRateVersion, putHoliday, putAudit, putBudget,
+  putReportHistoryEntry, applyOvertimeUpdates,
 } from './overtime-store.js';
+import {
+  emptySummary, addRecordToSummary, subtractRecordFromSummary, buildSummaryFromRecords, mergeSummaries,
+  reconcileSummaryEdit,
+  topUnits as rankTopUnits, topEmployees as rankTopEmployees,
+  sumDailySummariesInRange, weekRangeContaining, monthRangeOf, yearRangeOf,
+  buildTrendSeries, buildHeatmapGrid, buildBudgetAnalytics, buildExecutiveCards,
+} from './overtime-analytics-engine.js';
+import {
+  validateMonthForClosing, buildClosingSnapshot, findDuplicateRecords,
+} from './overtime-closing-engine.js';
 
 /* ── Identity helpers (mirrors petty-cash-service.js currentActor/actorLabel) ── */
 function currentActor() {
@@ -300,8 +314,15 @@ export function getActiveRate(tierKey, atDateISO) {
 
 /** FIX 4 (2026-07-16): the Default Active Rate — what Daily Entry charges
     on a non-holiday date, with zero extra clicks. */
+/** The Default Active Rate for `atDateISO` (used when the date is not a
+    holiday) — thin wrapper over the pure resolveDefaultRateVersion(), which
+    falls back to the earliest version when backdated entry predates every
+    version's effectiveFrom (see its own doc comment for why). */
 export function getDefaultRate(atDateISO) {
-  return getActiveRate(DEFAULT_TIER_KEY, atDateISO);
+  const date = atDateISO || todayISOLocal();
+  const version = resolveDefaultRateVersion(getRateVersions(), DEFAULT_TIER_KEY, date);
+  if (!version) return null;
+  return { ...version, tierLabel: tierLabel(DEFAULT_TIER_KEY) };
 }
 
 export function todayISOLocal() {
@@ -477,9 +498,27 @@ export function resolveEntryRate(dateISO) {
 
 /* ── Daily Entry (Sprint 5) ───────────────────────────────────────── */
 
-/** Records already saved for a date (+ optional unit filter). */
+/** A record with no `status` at all (written before RECORD_STATUS existed)
+    is treated as active — no migration needed for pre-existing data. */
+function isActiveRecord(r) { return r.status !== RECORD_STATUS.DELETED; }
+
+/** Records already saved for a date (+ optional unit filter). Excludes
+    soft-deleted records — a deleted entry must not count as "already
+    recorded" (Level 1 duplicate detection would otherwise permanently
+    block re-entering a voided row). */
 export function listRecordsForDate(dateISO, unitId = null) {
-  return getRecords().filter(r => r.date === dateISO && (!unitId || r.unitId === unitId));
+  return getRecords().filter(r => r.date === dateISO && (!unitId || r.unitId === unitId) && isActiveRecord(r));
+}
+
+/** Every record, newest first — the Penyesuaian Data screen's browse
+    source; unlike listRecentRecords(limit) this is never truncated, since
+    the screen's own filters (date/unit/employee/status) are what bound
+    what's actually rendered. Soft-deleted records are excluded by default
+    — pass includeDeleted:true for the "Terhapus" filter. */
+export function listAllRecords({ includeDeleted = false } = {}) {
+  return getRecords()
+    .filter(r => includeDeleted || isActiveRecord(r))
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 }
 
 /** Employee ids among `employeeIds` who already have a record for this
@@ -493,15 +532,14 @@ export function findDuplicateEmployeeIds(dateISO, unitId, employeeIds) {
 
 function yyyyMM(dateISO) { return String(dateISO || '').slice(0, 7); }
 
-/** Merge one batch's totals into a summary object (daily or monthly — same
-    shape). ANALYTICS PREPARATION: never recomputed from scratch by scanning
-    every record — Dashboard/Analytics (Sprint 7) read these instead. */
-function mergeSummary(prev, { count, amount, unitId }) {
-  const base = prev || { totalRecords: 0, totalAmount: 0, byUnit: {} };
-  const byUnit = { ...base.byUnit };
-  const u = byUnit[unitId] || { count: 0, amount: 0 };
-  byUnit[unitId] = { count: u.count + count, amount: u.amount + amount };
-  return { totalRecords: base.totalRecords + count, totalAmount: base.totalAmount + amount, byUnit, updatedAt: Date.now() };
+/** Guards every mutation against a CLOSED period (Sprint 9). Plain `Error`,
+    id-ID message — matches petty-cash-service.js's updateExpense() lock
+    guard convention exactly, no new error contract invented. */
+function assertPeriodUnlocked(dateISO) {
+  const closing = getClosing(yyyyMM(dateISO));
+  if (closing && closing.status === CLOSING_STATUS.CLOSED) {
+    throw new Error(`Periode ${yyyyMM(dateISO)} telah ditutup (Closing). Buka kunci (Unlock) terlebih dahulu untuk mengubah data.`);
+  }
 }
 
 /**
@@ -514,10 +552,25 @@ function mergeSummary(prev, { count, amount, unitId }) {
  */
 export async function createDailyEntries({ date, unitId, employeeIds, overrideTierKey, overrideNote }) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) throw new Error('Tanggal tidak valid.');
+  assertPeriodUnlocked(date);
   const unit = getUnits().find(u => u.id === unitId);
   if (!unit) throw new Error('Unit tidak ditemukan.');
   const ids = Array.from(new Set((employeeIds || []).filter(Boolean)));
   if (!ids.length) throw new Error('Pilih minimal satu karyawan.');
+
+  // Level 2 duplicate detection (atomic, backend): re-checks against the
+  // FRESHEST record list immediately before writing — never trusts a
+  // possibly-stale render-time snapshot. No override path (unlike the old
+  // "confirm and save anyway" UI flow this supersedes) — Level 1 (disabled
+  // checkboxes) already prevents this in normal use; this is the safety
+  // net for a race (e.g. two admins saving the same employee/date/unit
+  // within the same few seconds).
+  const dupes = findDuplicateEmployeeIds(date, unitId, ids);
+  if (dupes.length) {
+    const employees = getEmployees();
+    const names = dupes.map(did => (employees.find(e => e.id === did) || {}).name || did).join(', ');
+    throw new Error(`${names} sudah memiliki entri pada tanggal ini. Muat ulang data dan coba lagi.`);
+  }
 
   const overrideApplied = !!overrideTierKey;
   const resolved = overrideApplied
@@ -527,19 +580,27 @@ export async function createDailyEntries({ date, unitId, employeeIds, overrideTi
 
   const now = Date.now();
   const updates = {};
-  ids.forEach(employeeId => {
+  const newRecords = ids.map(employeeId => {
     const rid = genId('rec');
-    updates[`overtimeRecords/${rid}`] = {
+    const record = {
       id: rid, employeeId, unitId, date,
       tierKey: resolved.tierKey, rateVersionId: resolved.id, rateAmount: resolved.amount,
       overrideApplied, overrideNote: overrideApplied ? (overrideNote || '') : '',
+      status: RECORD_STATUS.ACTIVE,
       createdAt: now, createdBy: actorId(),
     };
+    updates[`overtimeRecords/${rid}`] = record;
+    return record;
   });
 
-  const batchAmount = resolved.amount * ids.length;
-  updates[`overtimeDailySummary/${date}`] = mergeSummary(getDailySummary(date), { count: ids.length, amount: batchAmount, unitId });
-  updates[`overtimeMonthlySummary/${yyyyMM(date)}`] = mergeSummary(getMonthlySummary(yyyyMM(date)), { count: ids.length, amount: batchAmount, unitId });
+  let dailySummary = getDailySummary(date);
+  let monthlySummary = getMonthlySummary(yyyyMM(date));
+  newRecords.forEach(record => {
+    dailySummary = addRecordToSummary(dailySummary, record);
+    monthlySummary = addRecordToSummary(monthlySummary, record);
+  });
+  updates[`overtimeDailySummary/${date}`] = dailySummary;
+  updates[`overtimeMonthlySummary/${yyyyMM(date)}`] = monthlySummary;
 
   const auditEntry = buildAudit(
     AUDIT_ACTION.DAILY_ENTRY_SAVED, 'dailyEntry', null,
@@ -561,8 +622,259 @@ export function getEntryEmployeeIds(dateISO, unitId) {
     on the Daily Entry screen. */
 export function listRecentRecords(limit = 10) {
   return getRecords()
+    .filter(isActiveRecord)
     .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
     .slice(0, limit);
+}
+
+/* ── Record CRUD + Monthly Closing (Sprint 9) ────────────────────────
+   Before this sprint, overtimeRecords were permanently append-only.
+   Product decision (confirmed): full CRUD is required WHILE a period
+   is open — admin can create/edit/delete/reassign any field, every
+   change audited. After Closing, the period is read-only until an
+   explicit, reason-required Unlock. */
+
+function getRecordById(id) {
+  return getRecords().find(r => r.id === id) || null;
+}
+
+/** Edit any field of an existing record (employee/unit/date/tier/rate/
+    note). Re-resolves rateAmount from the (possibly new) tier/version —
+    never trusts a caller-supplied amount, same discipline as
+    createDailyEntries. Reconciles daily+monthly summaries via
+    reconcileSummaryEdit (overtime-analytics-engine.js), one atomic write
+    with the audit entry. */
+export async function updateRecord(id, { employeeId, unitId, date, tierKey, rateVersionId, overrideNote, expectedUpdatedAt } = {}) {
+  const existing = getRecordById(id);
+  if (!existing) throw new Error('Entri lembur tidak ditemukan.');
+  assertNoConflict(existing, expectedUpdatedAt);
+  if (existing.status === RECORD_STATUS.DELETED) throw new Error('Entri ini sudah dihapus — pulihkan terlebih dahulu untuk mengedit.');
+
+  const nextDate = date || existing.date;
+  assertPeriodUnlocked(existing.date);
+  if (nextDate !== existing.date) assertPeriodUnlocked(nextDate);
+
+  const nextUnitId = unitId || existing.unitId;
+  const nextEmployeeId = employeeId || existing.employeeId;
+  const nextTierKey = tierKey || existing.tierKey;
+
+  const versions = getRateVersions();
+  let resolved;
+  if (rateVersionId) {
+    resolved = versions.find(v => v.id === rateVersionId);
+    if (!resolved) throw new Error('Tarif tidak ditemukan.');
+  } else {
+    resolved = resolveActiveRateVersion(versions, nextTierKey, nextDate);
+    if (!resolved) throw new Error('Tarif untuk tanggal ini belum tersedia.');
+  }
+
+  const nextRecord = {
+    ...existing,
+    employeeId: nextEmployeeId, unitId: nextUnitId, date: nextDate,
+    tierKey: nextTierKey, rateVersionId: resolved.id, rateAmount: resolved.amount,
+    overrideNote: overrideNote != null ? overrideNote : existing.overrideNote,
+    updatedAt: Date.now(), updatedBy: actorId(),
+  };
+
+  const dailyPatch = reconcileSummaryEdit(getDailySummary, existing.date, nextDate, existing, nextRecord);
+  const monthlyPatch = reconcileSummaryEdit(getMonthlySummary, yyyyMM(existing.date), yyyyMM(nextDate), existing, nextRecord);
+
+  const updates = { [`overtimeRecords/${id}`]: nextRecord };
+  Object.entries(dailyPatch).forEach(([k, v]) => { updates[`overtimeDailySummary/${k}`] = v; });
+  Object.entries(monthlyPatch).forEach(([k, v]) => { updates[`overtimeMonthlySummary/${k}`] = v; });
+
+  const auditEntry = buildAudit(AUDIT_ACTION.RECORD_UPDATED, 'overtimeRecord', id, `Entri ${existing.date} diperbarui${nextDate !== existing.date ? ` (dipindah ke ${nextDate})` : ''}.`);
+  updates[`overtimeAudit/${auditEntry.id}`] = auditEntry;
+
+  await applyOvertimeUpdates(updates);
+  return nextRecord;
+}
+
+/** Delete a record — subtracts its contribution from the daily/monthly
+    summaries and nulls the record node in one atomic write, with an
+    audit entry. */
+/** Throws the shared conflict-detection error if `expectedUpdatedAt` was
+    captured (e.g. when an edit modal opened) and no longer matches the
+    record's current `updatedAt` — another admin changed it in the
+    meantime. Never-updated records have `updatedAt === undefined`, which
+    still compares correctly (undefined === undefined). Opt-in: callers
+    that don't pass expectedUpdatedAt skip the check entirely. */
+function assertNoConflict(existing, expectedUpdatedAt) {
+  if (expectedUpdatedAt !== undefined && existing.updatedAt !== expectedUpdatedAt) {
+    throw new Error('Data telah berubah. Silakan muat ulang data.');
+  }
+}
+
+/** Soft-deletes a record — status becomes DELETED (never a hard RTDB
+    null-delete), so it can be restored. Still subtracts its contribution
+    from the daily/monthly summaries (a deleted entry must not count
+    toward totals) in the same atomic write as the audit entry. */
+export async function deleteRecord(id, { expectedUpdatedAt } = {}) {
+  const existing = getRecordById(id);
+  if (!existing) throw new Error('Entri lembur tidak ditemukan.');
+  assertNoConflict(existing, expectedUpdatedAt);
+  assertPeriodUnlocked(existing.date);
+  if (existing.status === RECORD_STATUS.DELETED) throw new Error('Entri ini sudah dihapus.');
+
+  const deletedRecord = { ...existing, status: RECORD_STATUS.DELETED, deletedAt: Date.now(), deletedBy: actorId() };
+  const updates = {
+    [`overtimeRecords/${id}`]: deletedRecord,
+    [`overtimeDailySummary/${existing.date}`]: subtractRecordFromSummary(getDailySummary(existing.date), existing),
+    [`overtimeMonthlySummary/${yyyyMM(existing.date)}`]: subtractRecordFromSummary(getMonthlySummary(yyyyMM(existing.date)), existing),
+  };
+  const auditEntry = buildAudit(AUDIT_ACTION.RECORD_DELETED, 'overtimeRecord', id, `Entri ${existing.date} dihapus (${getUnitLabel(existing.unitId) || existing.unitId}).`);
+  updates[`overtimeAudit/${auditEntry.id}`] = auditEntry;
+
+  await applyOvertimeUpdates(updates);
+}
+
+/** Restores a soft-deleted record — re-adds its contribution to the
+    daily/monthly summaries (mirrors petty-cash-service.js's
+    restoreExpense() shape: guarded, audited, one atomic write). */
+export async function restoreRecord(id, { expectedUpdatedAt } = {}) {
+  const existing = getRecordById(id);
+  if (!existing) throw new Error('Entri lembur tidak ditemukan.');
+  assertNoConflict(existing, expectedUpdatedAt);
+  if (existing.status !== RECORD_STATUS.DELETED) throw new Error('Entri ini tidak sedang dihapus.');
+  assertPeriodUnlocked(existing.date);
+
+  const restoredRecord = { ...existing, status: RECORD_STATUS.ACTIVE, deletedAt: null, deletedBy: null, updatedAt: Date.now(), updatedBy: actorId() };
+  const updates = {
+    [`overtimeRecords/${id}`]: restoredRecord,
+    [`overtimeDailySummary/${existing.date}`]: addRecordToSummary(getDailySummary(existing.date), restoredRecord),
+    [`overtimeMonthlySummary/${yyyyMM(existing.date)}`]: addRecordToSummary(getMonthlySummary(yyyyMM(existing.date)), restoredRecord),
+  };
+  const auditEntry = buildAudit(AUDIT_ACTION.RECORD_RESTORED, 'overtimeRecord', id, `Entri ${existing.date} dipulihkan (${getUnitLabel(existing.unitId) || existing.unitId}).`);
+  updates[`overtimeAudit/${auditEntry.id}`] = auditEntry;
+
+  await applyOvertimeUpdates(updates);
+  return restoredRecord;
+}
+
+/* ── Monthly Closing (Sprint 9) ───────────────────────────────────────
+   GLOBAL: one lock per yyyy-mm covering every unit (confirmed product
+   decision — mirrors petty-cash-service.js's single-cycle-at-a-time
+   model rather than a per-unit lock). Validation is WARN-ONLY: it never
+   blocks closeMonth(), it only annotates the closing record with what
+   it found. */
+
+/** Current status for a month, synthesizing an OPEN default for a
+    never-closed month (no RTDB node needed until the first Closing). */
+export function getClosingStatus(yyyyMMKey) {
+  return getClosing(yyyyMMKey) || { yyyyMM: yyyyMMKey, status: CLOSING_STATUS.OPEN, history: [], reopenCount: 0 };
+}
+
+/** Active (non-deleted) records for one month — the single source both
+    runClosingValidation() and closeMonth() read from, so a month's record
+    set is never queried twice with the same filter (Final Audit target). */
+function recordsForMonth(yyyyMMKey) {
+  return getRecords().filter(r => yyyyMM(r.date) === yyyyMMKey && isActiveRecord(r));
+}
+
+/** Duplicate employee+unit+date groups among already-recorded, active
+    records for one month — feeds the Dashboard/Penyesuaian Data warning
+    banners (Final UX Refinement §8 Level 3: Analytics). Reuses the SAME
+    findDuplicateRecords() primitive Closing's own validator calls —
+    never a second implementation of "what counts as a duplicate." */
+export function findDuplicatesInMonth(yyyyMMKey) {
+  return findDuplicateRecords(recordsForMonth(yyyyMMKey));
+}
+
+/** Runs the (never-blocking) pre-closing validator for one month. */
+export function runClosingValidation(yyyyMMKey) {
+  return validateMonthForClosing({
+    records: recordsForMonth(yyyyMMKey), employees: getEmployees(), rateVersions: getRateVersions(),
+    resolveTierForDate: resolveEntryRate,
+  });
+}
+
+export function listClosings() { return getAllClosings(); }
+export function listArchives() { return getAllArchives(); }
+export function getArchiveSnapshot(yyyyMMKey) { return getArchive(yyyyMMKey); }
+
+/**
+ * Closes a month: runs the warn-only validator, freezes an archive
+ * snapshot (version = priorVersion + 1), locks the period. Does NOT
+ * generate the PDF itself — PDF rendering is DOM-dependent and is
+ * orchestrated by the Closing screen AFTER this resolves (calls
+ * getReportSnapshot()+exportOvertimeReport(), then
+ * attachClosingReportRef()) — mixing async DOM rendering into this
+ * atomic data-write function would be a layering violation.
+ */
+export async function closeMonth(yyyyMMKey, { note } = {}) {
+  const existingClosing = getClosing(yyyyMMKey);
+  if (existingClosing && existingClosing.status === CLOSING_STATUS.CLOSED) {
+    throw new Error(`Periode ${yyyyMMKey} sudah ditutup.`);
+  }
+
+  const records = recordsForMonth(yyyyMMKey);
+  const validation = validateMonthForClosing({
+    records, employees: getEmployees(), rateVersions: getRateVersions(), resolveTierForDate: resolveEntryRate,
+  });
+  const summary = getMonthlySummary(yyyyMMKey) || emptySummary();
+  const existingArchive = getArchive(yyyyMMKey);
+
+  const snapshot = buildClosingSnapshot({
+    yyyyMM: yyyyMMKey, summary, recordIds: records.map(r => r.id),
+    warnings: validation.warnings, priorVersion: existingArchive ? existingArchive.version : 0,
+    actorLabel: actorLabel(),
+  });
+
+  const priorHistory = (existingClosing && existingClosing.history) || [];
+  const reopenCount = (existingClosing && existingClosing.reopenCount) || 0;
+  const nextClosing = {
+    yyyyMM: yyyyMMKey, status: CLOSING_STATUS.CLOSED,
+    closedAt: Date.now(), closedBy: actorLabel(), closeNote: note || '',
+    history: [...priorHistory, { event: 'closed', at: Date.now(), by: actorLabel(), note: note || '', reopenCount }],
+    reopenCount,
+    lastValidation: validation,
+    updatedAt: Date.now(),
+  };
+
+  const updates = {
+    [`overtimeClosing/${yyyyMMKey}`]: nextClosing,
+    [`overtimeArchive/${yyyyMMKey}`]: snapshot,
+  };
+  const auditEntry = buildAudit(AUDIT_ACTION.PERIOD_CLOSED, 'overtimeClosing', yyyyMMKey, `Periode ${yyyyMMKey} ditutup (versi ${snapshot.version}, ${validation.warningCount} peringatan).`);
+  updates[`overtimeAudit/${auditEntry.id}`] = auditEntry;
+
+  await applyOvertimeUpdates(updates);
+  return { closing: nextClosing, archive: snapshot };
+}
+
+/** Reopens a closed month. `reason` is MANDATORY — the one place in
+    this module a reason is truly required beyond the standard audit
+    note (confirmed product decision). Does not touch the archive; the
+    next closeMonth() call produces a new, higher version. */
+export async function unlockMonth(yyyyMMKey, { reason } = {}) {
+  if (!reason || !reason.trim()) throw new Error('Alasan wajib diisi untuk membuka kunci periode.');
+  const closing = getClosing(yyyyMMKey);
+  if (!closing || closing.status !== CLOSING_STATUS.CLOSED) throw new Error(`Periode ${yyyyMMKey} tidak sedang ditutup.`);
+
+  const nextReopenCount = (closing.reopenCount || 0) + 1;
+  const nextClosing = {
+    ...closing, status: CLOSING_STATUS.OPEN, reopenCount: nextReopenCount,
+    history: [...(closing.history || []), { event: 'unlocked', at: Date.now(), by: actorLabel(), reason, reopenCount: nextReopenCount }],
+    updatedAt: Date.now(),
+  };
+
+  const updates = { [`overtimeClosing/${yyyyMMKey}`]: nextClosing };
+  const auditEntry = buildAudit(AUDIT_ACTION.PERIOD_UNLOCKED, 'overtimeClosing', yyyyMMKey, `Periode ${yyyyMMKey} dibuka kembali. Alasan: ${reason}`);
+  updates[`overtimeAudit/${auditEntry.id}`] = auditEntry;
+
+  await applyOvertimeUpdates(updates);
+  return nextClosing;
+}
+
+/** Attaches the generated Closing report's history-entry id to the
+    archive snapshot — a small follow-up write made by the UI AFTER the
+    report is generated (kept out of closeMonth() itself; see its header
+    comment for why). */
+export async function attachClosingReportRef(yyyyMMKey, historyEntryId) {
+  const archive = getArchive(yyyyMMKey);
+  if (!archive) return;
+  const nextArchive = { ...archive, reportRef: { format: 'pdf', generatedAt: Date.now(), historyEntryId } };
+  await applyOvertimeUpdates({ [`overtimeArchive/${yyyyMMKey}`]: nextArchive });
 }
 
 /* ── Employee History (Sprint 6) ─────────────────────────────────── */
@@ -570,7 +882,7 @@ export function listRecentRecords(limit = 10) {
 /** All records for one employee, newest first. */
 export function listEmployeeRecords(employeeId) {
   return getRecords()
-    .filter(r => r.employeeId === employeeId)
+    .filter(r => r.employeeId === employeeId && isActiveRecord(r))
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
 }
 
@@ -612,3 +924,310 @@ export function employeeHistory(employeeId) {
     monthlySeries, yearlySeries, transactions: records,
   };
 }
+
+/* ── Analytics (Sprint 7) ─────────────────────────────────────────
+   Reads precomputed daily/monthly summaries only — never scans
+   overtimeRecords. Closes the Sprint 1-6 gap where the Dashboard's own
+   on-screen copy claimed to read summaries while actually calling
+   listRecordsForDate() under the hood. */
+
+/** Public reader for one date's summary (empty shape if none yet). */
+export function getDailySummaryReport(dateISO) {
+  return getDailySummary(dateISO) || emptySummary();
+}
+
+/** Public reader for one month's summary (empty shape if none yet). */
+export function getMonthlySummaryReport(yyyyMMKey) {
+  return getMonthlySummary(yyyyMMKey) || emptySummary();
+}
+
+/** Everything the Dashboard/Analytics screen needs, in ONE call — never
+    one store/service call per card (Sprint 10's "no duplicated queries"
+    requirement is designed in from the start, not patched in later). */
+export function getDashboardAnalytics({ today, trendGranularity = 'daily' } = {}) {
+  const todayD = today || todayISOLocal();
+  const units = getUnits();
+  const employees = getEmployees();
+  const dailySummaries = getAllDailySummaries();
+  const monthlySummaries = getAllMonthlySummaries();
+
+  const yyyyMMToday = todayD.slice(0, 7);
+  const yyyyToday = todayD.slice(0, 4);
+
+  const todaySummary = dailySummaries[todayD] || null;
+  const weekRange = weekRangeContaining(todayD);
+  const weekAgg = sumDailySummariesInRange(dailySummaries, weekRange.start, weekRange.end);
+  const monthSummary = monthlySummaries[yyyyMMToday] || null;
+  const monthRange = monthRangeOf(yyyyMMToday);
+  const monthDaysAgg = sumDailySummariesInRange(dailySummaries, monthRange.start, monthRange.end);
+
+  let yearAmount = 0;
+  Object.entries(monthlySummaries).forEach(([ym, s]) => {
+    if (ym.slice(0, 4) === yyyyToday) yearAmount += s.totalAmount || 0;
+  });
+
+  const heatmapCells = buildHeatmapGrid(dailySummaries, yyyyMMToday);
+  const budget = getBudget();
+  const budgetAnalytics = buildBudgetAnalytics({
+    monthlyAmount: (monthSummary && monthSummary.totalAmount) || 0,
+    yearAmount,
+    target: (budget && budget.monthlyTargetAmount) || 0,
+    today: todayD,
+  });
+
+  return {
+    // UX Refinement: the top KPI row is simplified to 4 cards — all scoped
+    // to the current month, consistent with the rankings/budget/executive
+    // sections below (which were already month-scoped). Superseded the old
+    // today/week/year breakdown as the headline row; `today`/`week`/`year`
+    // are kept in this return value (unused by the simplified view) only in
+    // case a future screen wants them again — cheap to compute, already done.
+    kpis: {
+      totalAmount: (monthSummary && monthSummary.totalAmount) || 0,
+      totalRecords: (monthSummary && monthSummary.totalRecords) || 0,
+      employeeCount: Object.keys((monthSummary && monthSummary.byEmployee) || {}).length,
+      unitCount: Object.keys((monthSummary && monthSummary.byUnit) || {}).length,
+    },
+    today: { count: (todaySummary && todaySummary.totalRecords) || 0, amount: (todaySummary && todaySummary.totalAmount) || 0 },
+    week: { days: weekAgg.days, amount: weekAgg.amount },
+    month: { days: monthDaysAgg.days, amount: (monthSummary && monthSummary.totalAmount) || 0 },
+    year: { amount: yearAmount },
+    topUnits: rankTopUnits(monthSummary, units, employees, 5),
+    topEmployees: rankTopEmployees(monthSummary, employees, 5),
+    trend: buildTrendSeries(dailySummaries, trendGranularity),
+    heatmap: { month: yyyyMMToday, cells: heatmapCells },
+    budget: budgetAnalytics,
+    executive: buildExecutiveCards({ heatmapCells, monthlySummary: monthSummary, units, employees }),
+  };
+}
+
+/** Current monthly budget target amount (0 = unset). */
+export function getBudgetTarget() {
+  const b = getBudget();
+  return b ? (b.monthlyTargetAmount || 0) : 0;
+}
+
+/** Admin sets the recurring monthly budget target used by Budget Analytics. */
+export async function setBudgetTarget(amount) {
+  const n = Number(amount);
+  if (!Number.isFinite(n) || n < 0) throw new Error('Target anggaran tidak valid.');
+  const budget = { monthlyTargetAmount: n, updatedAt: Date.now(), updatedBy: actorId() };
+  await putBudget(budget);
+  await writeAudit(AUDIT_ACTION.BUDGET_TARGET_UPDATED, 'budget', 'default', `Target anggaran bulanan diubah menjadi ${n}.`);
+  return budget;
+}
+
+/**
+ * Admin utility: recompute every daily/monthly summary from
+ * overtimeRecords from scratch, in one atomic write. Needed once to
+ * backfill `byEmployee` onto summaries written before Sprint 7 (which only
+ * tracked `byUnit`); also the drift-recovery escape hatch if incremental
+ * reconciliation is ever suspected of diverging from the record list.
+ * A date/month with no current records gets its summary node CLEARED
+ * (written null), not left stale.
+ */
+export async function rebuildAllSummaries() {
+  // Deleted records must NOT be re-included — their contribution was
+  // already subtracted at delete-time; rebuilding from the full record
+  // list (including deleted ones) would silently reinstate it.
+  const records = getRecords().filter(isActiveRecord);
+  const byDate = new Map();
+  const byMonth = new Map();
+  records.forEach(r => {
+    const d = r.date;
+    const m = yyyyMM(d);
+    if (!byDate.has(d)) byDate.set(d, []);
+    byDate.get(d).push(r);
+    if (!byMonth.has(m)) byMonth.set(m, []);
+    byMonth.get(m).push(r);
+  });
+
+  const existingDaily = getAllDailySummaries();
+  const existingMonthly = getAllMonthlySummaries();
+  const allDateKeys = new Set([...byDate.keys(), ...Object.keys(existingDaily)]);
+  const allMonthKeys = new Set([...byMonth.keys(), ...Object.keys(existingMonthly)]);
+
+  const updates = {};
+  allDateKeys.forEach(d => { updates[`overtimeDailySummary/${d}`] = byDate.has(d) ? buildSummaryFromRecords(byDate.get(d)) : null; });
+  allMonthKeys.forEach(m => { updates[`overtimeMonthlySummary/${m}`] = byMonth.has(m) ? buildSummaryFromRecords(byMonth.get(m)) : null; });
+
+  const auditEntry = buildAudit(
+    AUDIT_ACTION.SUMMARY_RECALCULATED, 'summary', null,
+    `${records.length} rekaman dihitung ulang menjadi ${byDate.size} ringkasan harian dan ${byMonth.size} ringkasan bulanan.`,
+  );
+  updates[`overtimeAudit/${auditEntry.id}`] = auditEntry;
+
+  await applyOvertimeUpdates(updates);
+  return { recordCount: records.length, dailyCount: byDate.size, monthlyCount: byMonth.size };
+}
+
+/* ── Reporting (Sprint 8) ───────────────────────────────────────────
+   getReportSnapshot() is the ONE data source every export format
+   (PDF/Excel/CSV) and the Report Builder preview read from —
+   summary-derived, same "read summaries, never scan records"
+   discipline as getDashboardAnalytics(). */
+
+/** Resolve a period+scope into a summary-derived report snapshot.
+    @param {{period?:'day'|'week'|'month'|'year', refDate?:string, unitId?:string|null, employeeId?:string|null}} [opts] */
+export function getReportSnapshot({ period = 'month', refDate, unitId = null, employeeId = null } = {}) {
+  const ref = refDate || todayISOLocal();
+  const units = getUnits();
+  const employees = getEmployees();
+  const dailySummaries = getAllDailySummaries();
+  const monthlySummaries = getAllMonthlySummaries();
+
+  let range, summary, periodLabel;
+  if (period === 'day') {
+    range = { start: ref, end: ref };
+    summary = dailySummaries[ref] || emptySummary();
+    periodLabel = `Harian — ${ref}`;
+  } else if (period === 'week') {
+    range = weekRangeContaining(ref);
+    const inRange = Object.entries(dailySummaries).filter(([d]) => d >= range.start && d <= range.end).map(([, s]) => s);
+    summary = mergeSummaries(inRange);
+    periodLabel = `Mingguan — ${range.start} s.d. ${range.end}`;
+  } else if (period === 'year') {
+    const yyyy = ref.slice(0, 4);
+    range = yearRangeOf(yyyy);
+    const inRange = Object.entries(monthlySummaries).filter(([m]) => m.slice(0, 4) === yyyy).map(([, s]) => s);
+    summary = mergeSummaries(inRange);
+    periodLabel = `Tahunan — ${yyyy}`;
+  } else {
+    const ymKey = ref.slice(0, 7);
+    range = monthRangeOf(ymKey);
+    summary = monthlySummaries[ymKey] || emptySummary();
+    periodLabel = `Bulanan — ${ymKey}`;
+  }
+
+  // Scope narrowing: a report FOR one unit/employee, not the whole org with
+  // a highlighted row — totals and the sibling table are filtered too.
+  let scopeLabel = 'Semua Unit & Karyawan';
+  let scopedSummary = summary;
+  if (unitId) {
+    const unit = units.find(u => u.id === unitId);
+    const unitEmployeeIds = new Set(employees.filter(e => e.unitId === unitId).map(e => e.id));
+    const bucket = summary.byUnit[unitId] || { count: 0, amount: 0 };
+    const filteredByEmployee = Object.fromEntries(Object.entries(summary.byEmployee || {}).filter(([id]) => unitEmployeeIds.has(id)));
+    scopedSummary = { totalRecords: bucket.count, totalAmount: bucket.amount, byUnit: { [unitId]: bucket }, byEmployee: filteredByEmployee, updatedAt: summary.updatedAt };
+    scopeLabel = unit ? `Unit: ${unit.name}` : scopeLabel;
+  } else if (employeeId) {
+    const emp = employees.find(e => e.id === employeeId);
+    const bucket = summary.byEmployee[employeeId] || { count: 0, amount: 0 };
+    const empUnitBucket = emp ? summary.byUnit[emp.unitId] : null;
+    scopedSummary = {
+      totalRecords: bucket.count, totalAmount: bucket.amount,
+      byUnit: (emp && empUnitBucket) ? { [emp.unitId]: empUnitBucket } : {},
+      byEmployee: { [employeeId]: bucket }, updatedAt: summary.updatedAt,
+    };
+    scopeLabel = emp ? `Karyawan: ${emp.name}` : scopeLabel;
+  }
+
+  const daysInRange = Math.max(1, Math.round((new Date(`${range.end}T00:00:00`) - new Date(`${range.start}T00:00:00`)) / 86400000) + 1);
+  const trendGranularity = period === 'year' ? 'monthly' : period === 'month' ? 'weekly' : 'daily';
+
+  return {
+    period, periodLabel, dateRangeStart: range.start, dateRangeEnd: range.end,
+    scope: { type: unitId ? 'unit' : (employeeId ? 'employee' : 'all'), unitId, employeeId, label: scopeLabel },
+    kpis: {
+      totalRecords: scopedSummary.totalRecords,
+      totalAmount: scopedSummary.totalAmount,
+      avgPerDay: scopedSummary.totalAmount / daysInRange,
+      unitCount: Object.keys(scopedSummary.byUnit).length,
+      employeeCount: Object.keys(scopedSummary.byEmployee).length,
+    },
+    unitRows: rankTopUnits(scopedSummary, units, employees, 50),
+    // Enriched with the employee's assigned unit (Bidang) — needed by the
+    // canonical Rekapitulasi export layout; the ranking engine itself stays
+    // general-purpose (unit-agnostic) since the Dashboard's own rankings
+    // don't need this field.
+    employeeRows: rankTopEmployees(scopedSummary, employees, 50).map(row => {
+      const emp = employees.find(e => e.id === row.employeeId);
+      const empUnit = emp ? units.find(u => u.id === emp.unitId) : null;
+      return { ...row, unitName: empUnit ? empUnit.name : '—' };
+    }),
+    trend: buildTrendSeries(dailySummaries, trendGranularity),
+    detailRecords: buildDetailRecords(range, unitId, employeeId, units, employees),
+  };
+}
+
+/** Raw, per-record transaction detail for the canonical export's date-
+    grouped section — bounded to the report's own date range (and scope),
+    never an unbounded scan. Mirrors the already-established employeeHistory()
+    precedent: raw overtimeRecords are read directly for a bounded,
+    UI-visible drill-down/detail listing, never for the Dashboard's
+    cross-cutting aggregates (those stay summary-derived, unchanged above). */
+function buildDetailRecords(range, unitId, employeeId, units, employees) {
+  const employeeById = new Map(employees.map(e => [e.id, e]));
+  const unitById = new Map(units.map(u => [u.id, u]));
+  return getRecords()
+    .filter(r => r.date >= range.start && r.date <= range.end)
+    .filter(r => !unitId || r.unitId === unitId)
+    .filter(r => !employeeId || r.employeeId === employeeId)
+    .filter(isActiveRecord)
+    .map(r => ({
+      date: r.date,
+      employeeId: r.employeeId,
+      employeeName: (employeeById.get(r.employeeId) || {}).name || '—',
+      unitId: r.unitId,
+      unitName: (unitById.get(r.unitId) || {}).name || '—',
+      amount: r.rateAmount || 0,
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.employeeName.localeCompare(b.employeeName));
+}
+
+function sanitizeForFirebase(obj) {
+  if (!obj || typeof obj !== 'object') return obj === undefined ? null : obj;
+  return Object.fromEntries(Object.entries(obj).map(([k, v]) => {
+    if (v === undefined) return [k, null];
+    if (v && typeof v === 'object' && !Array.isArray(v)) return [k, sanitizeForFirebase(v)];
+    return [k, v];
+  }));
+}
+
+/** Metadata-only log of one export (never the PDF/blob itself — mirrors
+    js/exports/export-history.js's convention). `source: 'closing'` is
+    reserved for Sprint 9's auto-generated Closing report. */
+export async function logReportGenerated({ format, period, periodLabel, dateRangeStart, dateRangeEnd, scope, status, fileSize, durationMs, error, source } = {}) {
+  const entry = sanitizeForFirebase({
+    id: genId('report'),
+    reportTitle: 'Laporan Overtime',
+    generatedAt: Date.now(),
+    generatedBy: actorLabel(),
+    userId: actorId(),
+    periodKey: period || null,
+    periodLabel: periodLabel || null,
+    dateRangeStart: dateRangeStart || null,
+    dateRangeEnd: dateRangeEnd || null,
+    scope: scope || { type: 'all', unitId: null, employeeId: null, label: 'Semua Unit & Karyawan' },
+    format: format || 'pdf',
+    status: status || 'success',
+    fileSize: fileSize == null ? null : fileSize,
+    durationMs: durationMs == null ? null : durationMs,
+    error: error || null,
+    appVersion: APP_VERSION,
+    source: source || 'manual',
+  });
+  await putReportHistoryEntry(entry);
+  return entry;
+}
+
+/** Report History list, newest first. */
+export function listReportHistory() { return getReportHistory(); }
+
+/** Re-derives filters from a stored history entry and rebuilds the
+    snapshot fresh — regenerate-on-demand, never fetches stored bytes
+    (no Firebase Storage is used anywhere in this app). Returns the
+    entry alongside the snapshot so the caller (UI) knows which
+    exporter (`entry.format`) to invoke. */
+export function regenerateReportFromHistory(entryId) {
+  const entry = getReportHistory().find(e => e.id === entryId);
+  if (!entry) throw new Error('Riwayat laporan tidak ditemukan.');
+  const snapshot = getReportSnapshot({
+    period: entry.periodKey || 'month',
+    refDate: entry.dateRangeStart || undefined,
+    unitId: (entry.scope && entry.scope.unitId) || null,
+    employeeId: (entry.scope && entry.scope.employeeId) || null,
+  });
+  return { entry, snapshot };
+}
+

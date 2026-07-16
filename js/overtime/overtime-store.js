@@ -8,7 +8,7 @@
    js/petty-cash/petty-cash-store.js:
 
      overtimeUnits/{id}          overtimeEmployees/{id}
-     overtimeRates/{tierKey}     overtimeRateVersions/{id}
+     overtimeRateVersions/{id}
      overtimeAudit/{id}          (global audit trail)
 
    This module owns subscriptions, the in-memory cache, id
@@ -40,26 +40,32 @@ import { RATE_TIERS } from './overtime-rate-engine.js';
 const PATH = {
   units: 'overtimeUnits',
   employees: 'overtimeEmployees',
-  rates: 'overtimeRates',
   rateVersions: 'overtimeRateVersions',
   holidays: 'overtimeHolidays',
   records: 'overtimeRecords',
   dailySummary: 'overtimeDailySummary',
   monthlySummary: 'overtimeMonthlySummary',
   audit: 'overtimeAudit',
+  budget: 'overtimeBudget',
+  reportHistory: 'overtimeReportHistory',
+  closing: 'overtimeClosing',
+  archive: 'overtimeArchive',
 };
 
 /* ── In-memory cache (maps keyed by id) ──────────────────────────── */
 const cache = {
   units: {},
   employees: {},
-  rates: {},
   rateVersions: {},
   holidays: {},
   records: {},
   dailySummary: {},
   monthlySummary: {},
   audit: {},
+  budget: {},
+  reportHistory: {},
+  closing: {},
+  archive: {},
 };
 
 let initialized = false;
@@ -109,21 +115,19 @@ async function seedIfEmpty() {
     cache.units = seedMap;
   }
 
-  const ratesRead = await readNode(PATH.rates);
-  if (!ratesRead || typeof ratesRead !== 'object' || ratesRead.status !== 'ok') {
-    const status = ratesRead && typeof ratesRead === 'object' ? ratesRead.status : 'unknown';
-    const code = ratesRead && typeof ratesRead === 'object' ? ratesRead.code : '';
+  const versionsRead = await readNode(PATH.rateVersions);
+  if (!versionsRead || typeof versionsRead !== 'object' || versionsRead.status !== 'ok') {
+    const status = versionsRead && typeof versionsRead === 'object' ? versionsRead.status : 'unknown';
+    const code = versionsRead && typeof versionsRead === 'object' ? versionsRead.code : '';
     throw new Error(`[Overtime] readNode failed (${status}${code ? `:${code}` : ''})`);
   }
-  const rawRates = ratesRead.value;
-  if (!rawRates || Object.keys(rawRates).length === 0) {
+  const rawVersions = versionsRead.value;
+  if (!rawVersions || Object.keys(rawVersions).length === 0) {
     const now = Date.now();
     const today = new Date(now - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
     const SEED_AMOUNTS = { normal: 100000, nationalHoliday: 150000, specialEvent: 200000 };
-    const rateMap = {};
     const versionMap = {};
     RATE_TIERS.forEach(t => {
-      rateMap[t.key] = { tierKey: t.key, label: t.label };
       const vid = genId('rv');
       versionMap[vid] = {
         id: vid, tierKey: t.key, amount: SEED_AMOUNTS[t.key] || 0,
@@ -131,9 +135,7 @@ async function seedIfEmpty() {
         createdAt: now, createdBy: null, updatedAt: now, updatedBy: null,
       };
     });
-    await storeFirebaseData(PATH.rates, rateMap);
     await storeFirebaseData(PATH.rateVersions, versionMap);
-    cache.rates = rateMap;
     cache.rateVersions = versionMap;
   }
 }
@@ -149,12 +151,11 @@ export async function initOvertimeStore() {
         cache.units[id] = { id, name, isActive: true, sortOrder: i, createdAt: now, updatedAt: now };
       });
     }
-    if (Object.keys(cache.rates).length === 0) {
+    if (Object.keys(cache.rateVersions).length === 0) {
       const now = Date.now();
       const today = new Date(now - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
       const SEED_AMOUNTS = { normal: 100000, nationalHoliday: 150000, specialEvent: 200000 };
       RATE_TIERS.forEach(t => {
-        cache.rates[t.key] = { tierKey: t.key, label: t.label };
         const vid = genId('rv');
         cache.rateVersions[vid] = {
           id: vid, tierKey: t.key, amount: SEED_AMOUNTS[t.key] || 0,
@@ -178,13 +179,16 @@ export async function initOvertimeStore() {
     subscribed = true;
     subscribeFirebasePath(PATH.units, snap => { cache.units = snap.val() || {}; notify(); });
     subscribeFirebasePath(PATH.employees, snap => { cache.employees = snap.val() || {}; notify(); });
-    subscribeFirebasePath(PATH.rates, snap => { cache.rates = snap.val() || {}; notify(); });
     subscribeFirebasePath(PATH.rateVersions, snap => { cache.rateVersions = snap.val() || {}; notify(); });
     subscribeFirebasePath(PATH.holidays, snap => { cache.holidays = snap.val() || {}; notify(); });
     subscribeFirebasePath(PATH.records, snap => { cache.records = snap.val() || {}; notify(); });
     subscribeFirebasePath(PATH.dailySummary, snap => { cache.dailySummary = snap.val() || {}; notify(); });
     subscribeFirebasePath(PATH.monthlySummary, snap => { cache.monthlySummary = snap.val() || {}; notify(); });
     subscribeFirebasePath(PATH.audit, snap => { cache.audit = snap.val() || {}; notify(); });
+    subscribeFirebasePath(PATH.budget, snap => { cache.budget = snap.val() || {}; notify(); });
+    subscribeFirebasePath(PATH.reportHistory, snap => { cache.reportHistory = snap.val() || {}; notify(); });
+    subscribeFirebasePath(PATH.closing, snap => { cache.closing = snap.val() || {}; notify(); });
+    subscribeFirebasePath(PATH.archive, snap => { cache.archive = snap.val() || {}; notify(); });
   }
   notify();
 }
@@ -197,13 +201,34 @@ export function getUnits() { return mapToArray(cache.units); }
 export function getUnitById(id) { return cache.units[id] ? { ...cache.units[id] } : null; }
 export function getEmployees() { return mapToArray(cache.employees); }
 export function getEmployeeById(id) { return cache.employees[id] ? { ...cache.employees[id] } : null; }
-export function getRates() { return mapToArray(cache.rates); }
 export function getRateVersions() { return mapToArray(cache.rateVersions); }
 export function getHolidays() { return mapToArray(cache.holidays); }
 export function getRecords() { return mapToArray(cache.records); }
 export function getDailySummary(dateISO) { return cache.dailySummary[dateISO] ? { ...cache.dailySummary[dateISO] } : null; }
 export function getMonthlySummary(yyyyMM) { return cache.monthlySummary[yyyyMM] ? { ...cache.monthlySummary[yyyyMM] } : null; }
+/** Full { [dateISO]: summary } / { [yyyy-mm]: summary } maps — Analytics
+    (Sprint 7) buckets/ranges over these, never over raw overtimeRecords. */
+export function getAllDailySummaries() { return { ...cache.dailySummary }; }
+export function getAllMonthlySummaries() { return { ...cache.monthlySummary }; }
 export function getAudit() { return mapToArray(cache.audit); }
+export function getBudget() { return cache.budget.default ? { ...cache.budget.default } : null; }
+/** Report generation metadata only (Sprint 8) — mirrors export-history.js's
+    convention: never the PDF/blob itself, "re-download" = regenerate. */
+export function getReportHistory() {
+  return mapToArray(cache.reportHistory).sort((a, b) => (b.generatedAt || 0) - (a.generatedAt || 0));
+}
+/** Monthly Closing lock state (Sprint 9) — one entry per yyyy-mm, global
+    across all units (confirmed product decision, Sprint 9). */
+export function getClosing(yyyyMM) { return cache.closing[yyyyMM] ? { ...cache.closing[yyyyMM] } : null; }
+export function getAllClosings() {
+  return mapToArray(cache.closing).sort((a, b) => String(b.yyyyMM || '').localeCompare(String(a.yyyyMM || '')));
+}
+/** Frozen monthly archive snapshot — latest version per month (see header
+    comment in overtime-service.js's closeMonth() for the versioning design). */
+export function getArchive(yyyyMM) { return cache.archive[yyyyMM] ? { ...cache.archive[yyyyMM] } : null; }
+export function getAllArchives() {
+  return mapToArray(cache.archive).sort((a, b) => String(b.yyyyMM || '').localeCompare(String(a.yyyyMM || '')));
+}
 
 /* ── Primitive writes ────────────────────────────────────────────
    Writes go to Firebase; the subscription echoes them back into the
@@ -237,6 +262,16 @@ export async function putHoliday(holiday) {
 export async function putAudit(entry) {
   if (!isFirebaseConfigured()) { localWrite('audit', entry.id, entry); return; }
   await storeFirebaseData(`${PATH.audit}/${entry.id}`, entry);
+}
+
+export async function putBudget(budget) {
+  if (!isFirebaseConfigured()) { localWrite('budget', 'default', budget); return; }
+  await storeFirebaseData(`${PATH.budget}/default`, budget);
+}
+
+export async function putReportHistoryEntry(entry) {
+  if (!isFirebaseConfigured()) { localWrite('reportHistory', entry.id, entry); return; }
+  await storeFirebaseData(`${PATH.reportHistory}/${entry.id}`, entry);
 }
 
 /* ── Atomic multi-node writes (Daily Entry batch save) ──────────────
