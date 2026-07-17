@@ -51,6 +51,8 @@ import {
   updateMaintenanceRecord,
   deleteMaintenanceRecord,
   getMaintenanceRecords,
+  getVehicleByName,
+  updateVehicleLastOdometer,
 } from './vehicles-store.js';
 import { initSettingsStore, getSetting, updateSetting, registerSettingsChangeListener } from './settings-store.js';
 import { initPWA, getPWAState, registerPWAStateListener, triggerInstallPrompt, showIOSInstallModal } from './pwa.js';
@@ -10460,7 +10462,13 @@ function commitApproval(requestId, decision = {}) {
   const effDriver  = eff.selectedDriver;
   const effVehicle = eff.selectedVehicle;
 
-  if (!effDriver) {
+  // v1.27.0 Self-Drive Assignment: an empty effDriver is only a hard block when
+  // it's NOT an intentional self-drive choice. It's intentional when either (a)
+  // the request itself asked for "Tanpa Driver" (quick-approve path), or (b) the
+  // admin explicitly decided it via the Edit & Setujui modal — which always
+  // passes a `driver` key in `decision`, even when its value is '' (confirmApproveRequest
+  // already blocks calling this with an untouched/unselected driver select).
+  if (!effDriver && !request.noDriver && !('driver' in decision)) {
     showToast('Tidak ada driver untuk request ini — gunakan "Edit & Setujui".');
     return;
   }
@@ -10471,9 +10479,12 @@ function commitApproval(requestId, decision = {}) {
     return;
   }
 
-  const conflictingDates = dates.filter(date =>
+  // Driver conflict is skipped for Self-Drive (effDriver === '') — there is no
+  // real driver to double-book. Mirrors the existing vehicle-conflict-skip
+  // convention used elsewhere (assignments.js checkVehicleConflict).
+  const conflictingDates = effDriver ? dates.filter(date =>
     checkConflict(effDriver, request.startTime, request.endTime, date)
-  );
+  ) : [];
   if (conflictingDates.length > 0) {
     const dateList = conflictingDates.map(d => formatDateShort(d)).join(', ');
     alert(
@@ -10573,6 +10584,16 @@ let approveModalRequestId = null;
 
 function _escAttr(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
+// v1.27.0: "Tanpa Driver" (Self-Drive) sentinel for #approveDriverSelect — same
+// convention as assignments.js's NO_VEHICLE_SENTINEL/NO_DRIVER_SENTINEL. NEVER
+// persisted or compared as-is; every read site normalizes it to '' first so the
+// AI-vs-Admin comparison, override classification, and reason-required gate all
+// treat "explicitly no driver" the same way they already treat any other driver.
+const NO_DRIVER_SENTINEL = '__none__';
+function _approveNormalizedDriver(rawValue) {
+  return rawValue === NO_DRIVER_SENTINEL ? '' : rawValue;
+}
+
 /**
  * Live-recompute the dispatch recommendation PACKAGE for a request at approval
  * time — read-only, reusing the engines (no scoring duplicated). Powers the
@@ -10624,7 +10645,10 @@ function openApproveRequestModal(requestId) {
   const driverSel  = document.getElementById('approveDriverSelect');
   const vehicleSel = document.getElementById('approveVehicleSelect');
   if (driverSel) {
+    // v1.27.0: "Tanpa Driver" (Self-Drive Assignment) — lets the admin approve
+    // a request as self-drive even when overriding via Edit & Setujui.
     driverSel.innerHTML = '<option value="">-- Pilih Driver --</option>'
+      + '<option value="__none__">Tanpa Driver</option>'
       + getActiveDrivers().map(d => `<option value="${_escAttr(d.name)}">${_escAttr(d.name)}</option>`).join('');
     driverSel.value = '';
   }
@@ -10675,7 +10699,7 @@ function _syncApproveComparison() {
   const driverSel  = document.getElementById('approveDriverSelect');
   const vehicleSel = document.getElementById('approveVehicleSelect');
   updateApprovalComparison('approveIntelligence', {
-    driver:  driverSel  ? driverSel.value  : '',
+    driver:  driverSel  ? _approveNormalizedDriver(driverSel.value) : '',
     vehicle: vehicleSel ? vehicleSel.value : '',
   });
 }
@@ -10705,7 +10729,7 @@ function openDecisionReplayForApproval() {
     request,
     recommended: { driver: request.recommendedDriver || '', vehicle: request.recommendedVehicle || '' },
     selection: {
-      driver:  driverSel  ? driverSel.value  : '',
+      driver:  driverSel  ? _approveNormalizedDriver(driverSel.value) : '',
       vehicle: vehicleSel ? vehicleSel.value : '',
     },
   }, {
@@ -10760,7 +10784,7 @@ function _approveIsOverride() {
   const driverSel  = document.getElementById('approveDriverSelect');
   const vehicleSel = document.getElementById('approveVehicleSelect');
   return isApprovalOverride(request, {
-    driver:  driverSel  ? driverSel.value  : '',
+    driver:  driverSel  ? _approveNormalizedDriver(driverSel.value) : '',
     vehicle: vehicleSel ? vehicleSel.value : '',
   });
 }
@@ -10776,14 +10800,18 @@ function confirmApproveRequest(event) {
   const requestId = approveModalRequestId;
   if (!requestId) return;
 
-  const driverSel  = document.getElementById('approveDriverSelect');
-  const vehicleSel = document.getElementById('approveVehicleSelect');
-  const reasonEl   = document.getElementById('approveReason');
-  const selDriver  = driverSel  ? driverSel.value  : '';
-  const selVehicle = vehicleSel ? vehicleSel.value : '';
-  const reason     = reasonEl ? reasonEl.value.trim() : '';
+  const driverSel   = document.getElementById('approveDriverSelect');
+  const vehicleSel  = document.getElementById('approveVehicleSelect');
+  const reasonEl    = document.getElementById('approveReason');
+  // v1.27.0: selDriverRaw distinguishes "untouched placeholder" ('') — still
+  // blocked below — from an explicit "Tanpa Driver" choice (sentinel, normalizes
+  // to '' in selDriver, the value actually sent to commitApproval).
+  const selDriverRaw = driverSel ? driverSel.value : '';
+  const selDriver   = _approveNormalizedDriver(selDriverRaw);
+  const selVehicle  = vehicleSel ? vehicleSel.value : '';
+  const reason      = reasonEl ? reasonEl.value.trim() : '';
 
-  if (!selDriver) { showToast('Pilih driver dulu.'); return; }
+  if (selDriverRaw === '') { showToast('Pilih driver dulu.'); return; }
   if (_approveIsOverride() && !reason) {
     showToast('Alasan override wajib diisi.');
     return;
@@ -11594,6 +11622,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     saveAssignments(assignments); // localStorage only
     saveOneAssignment(assignments[idx]); // Surgical: hanya update record ini di Firebase
     renderViews();
+
+    // v1.27.0: keep vehicle.lastOdometer in sync so the NEXT assignment (driver
+    // or self-drive, any vehicle) autofills Odometer Awal from it — applies to
+    // every completed trip with a vehicle, not just self-drive. Non-blocking:
+    // a transient Firebase hiccup here must never undo the completion already
+    // committed to `assignments` above.
+    if (assignments[idx].vehicle && endOdometer != null) {
+      const veh = getVehicleByName(assignments[idx].vehicle);
+      if (veh) {
+        updateVehicleLastOdometer(veh.id, endOdometer).catch(err =>
+          console.warn('[lastOdometer] update failed', err)
+        );
+      }
+    }
 
     const completedAssignment = assignments[idx];
     const completedRequesterId = completedAssignment.requestId

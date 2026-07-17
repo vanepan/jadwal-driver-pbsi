@@ -9,6 +9,7 @@
 
 import { formatDateLong, formatDateTime, getTimePeriod, parseLocalDate, showToast, vehicleLabel, computeWorkTime } from './utils.js';
 import { getVehicleColor } from './drivers.js';
+import { getVehicleByName } from './vehicles-store.js';
 import { hasPermission, getCurrentUser, assignmentBelongsToDriver } from './auth.js';
 import { validateOdometer } from './validation.js';
 import { printReimbursementForm } from './reimbursement.js';
@@ -56,8 +57,24 @@ function normalizeStatus(status) {
 }
 
 /**
+ * Whether `assignment` is a request-derived assignment owned by Bidang `user`
+ * (same requestId + createdBy match rule used by cancellation eligibility and,
+ * as of v1.27.0, Self-Drive Start/Complete ownership).
+ */
+function _isOwnBidangAssignment(assignment, user) {
+  if (!assignment || !assignment.requestId) return false;
+  const owner = String(assignment.createdBy || '').trim().toLowerCase();
+  const me = [user.name, user.username]
+    .filter(Boolean)
+    .map(v => String(v).trim().toLowerCase());
+  return owner !== '' && me.includes(owner);
+}
+
+/**
  * Check if current user can perform a lifecycle action on a specific assignment.
- * Admin: always allowed. Driver: only their own assignment.
+ * Admin: always allowed. Driver: only their own assignment. Bidang (v1.27.0):
+ * only their own SELF-DRIVE assignment (no driver) — someone has to be able to
+ * Start/Complete a trip with no driver, and it's the requester who drives it.
  */
 function canActOnAssignment(permission, assignment) {
   if (!hasPermission(permission)) return false;
@@ -70,6 +87,9 @@ function canActOnAssignment(permission, assignment) {
     // a NARROWER identity set than visibility (username+name only), so renaming
     // the display name left assignments visible-but-not-actionable (v1.20.7 Obj 9).
     return assignmentBelongsToDriver(assignment, user);
+  }
+  if (user.role === 'bidang' && assignment) {
+    return !assignment.driver && _isOwnBidangAssignment(assignment, user);
   }
   return false;
 }
@@ -98,12 +118,7 @@ function canCancelAssignment(assignment) {
 
   if (user.role === 'bidang') {
     if (status !== 'assigned') return false;       // not after driver starts
-    if (!assignment.requestId) return false;        // only request-derived
-    const owner = String(assignment.createdBy || '').trim().toLowerCase();
-    const me = [user.name, user.username]
-      .filter(Boolean)
-      .map(v => String(v).trim().toLowerCase());
-    return owner !== '' && me.includes(owner);
+    return _isOwnBidangAssignment(assignment, user);
   }
 
   return false;
@@ -129,12 +144,14 @@ export function setAssignments(newAssignments) {
 let _odoType       = null;  // 'start' | 'complete'
 let _odoId         = null;  // assignmentId
 let _odoAssignment = null;  // assignment object (for context + prev odometer)
+let _odoVehicle    = null;  // v1.27.0: resolved vehicle record (for lastOdometer autofill/reference)
 let _odoCallback   = null;  // (assignmentId, odoData) => void
 
 function _openOdometerModal(type, assignmentId, assignment, callback) {
   _odoType       = type;
   _odoId         = assignmentId;
   _odoAssignment = assignment;
+  _odoVehicle    = assignment?.vehicle ? getVehicleByName(assignment.vehicle) : null;
   _odoCallback   = callback;
 
   const isStart = type === 'start';
@@ -155,7 +172,9 @@ function _openOdometerModal(type, assignmentId, assignment, callback) {
   if (labelEl)   labelEl.textContent = isStart ? 'KM AWAL' : 'KM AKHIR';
   if (confirmEl) confirmEl.textContent = isStart ? 'Mulai Assignment' : 'Selesaikan Assignment';
   if (hintEl)    { hintEl.textContent = ''; }
-  if (input)     { input.value = ''; }
+  // v1.27.0: Start Assignment autofills Odometer Awal from vehicle.lastOdometer
+  // (default value only — stays a normal editable input, never readonly/disabled).
+  if (input)     { input.value = (isStart && _odoVehicle?.lastOdometer != null) ? String(_odoVehicle.lastOdometer) : ''; }
   if (previewEl) { previewEl.style.display = 'none'; }
 
   if (metaEl) {
@@ -196,7 +215,7 @@ function _closeOdometerModal(reopenDetail = false) {
     openDetailModal(_odoId);
   }
 
-  _odoType = _odoId = _odoAssignment = _odoCallback = null;
+  _odoType = _odoId = _odoAssignment = _odoVehicle = _odoCallback = null;
 }
 
 function _updateOdometerPreview() {
@@ -236,8 +255,12 @@ function _handleOdometerConfirm() {
   const prevOdoVal = (!isStart && _odoAssignment?.startOdometer != null)
     ? _odoAssignment.startOdometer
     : undefined;
+  // v1.27.0: warn-only comparison against vehicle.lastOdometer, Start only.
+  const refOdoVal = (isStart && _odoVehicle?.lastOdometer != null)
+    ? _odoVehicle.lastOdometer
+    : undefined;
 
-  const result = validateOdometer({ currentOdometer: raw, previousOdometer: prevOdoVal });
+  const result = validateOdometer({ currentOdometer: raw, previousOdometer: prevOdoVal, referenceOdometer: refOdoVal });
 
   if (hintEl) {
     const msgs = [...result.errors, ...result.warnings];

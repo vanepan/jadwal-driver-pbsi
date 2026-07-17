@@ -65,7 +65,11 @@ export function refreshDriverSelect() {
 
 function _buildDriverOptions(sel) {
   const prev = sel.value;
-  sel.innerHTML = '<option value="">-- Pilih Driver --</option>';
+  // v1.27.0: "Tanpa Driver" (Self-Drive Assignment) sentinel — mirrors the
+  // existing "Tanpa Kendaraan" pattern on #fieldVehicle. NEVER persisted as-is;
+  // assignments.js normalizes it to driver: '' before saving.
+  sel.innerHTML = '<option value="">-- Pilih Driver --</option>'
+    + '<option value="__none__">Tanpa Driver</option>';
   getActiveDriversOrFallback().forEach(d => {
     const opt = document.createElement('option');
     opt.value = d.name;

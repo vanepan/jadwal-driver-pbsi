@@ -370,12 +370,15 @@ export function validateUser(user) {
  * Checks: currentOdometer is a non-negative finite number.
  *         If previousOdometer provided: no backward movement.
  * Warns:  jump > settings operations.odometerWarnJumpKm (anomali tidak wajar).
+ *         If referenceOdometer provided (v1.27.0 — vehicle.lastOdometer at
+ *         Start Assignment): current far below it → WARNING ONLY, never an
+ *         error, since a smaller Odometer Awal can be a legitimate correction.
  *
  * Integration point (v1.2.2): assignment detail modal, start/complete callbacks
  *   const result = validateOdometer({ currentOdometer, previousOdometer });
  *   if (!result.valid) { showToast(result.errors[0]); return; }
  *
- * @param {{ currentOdometer: number, previousOdometer?: number }} data
+ * @param {{ currentOdometer: number, previousOdometer?: number, referenceOdometer?: number }} data
  * @returns {{ valid: boolean, errors: string[], warnings: string[] }}
  */
 export function validateOdometer(data) {
@@ -418,6 +421,25 @@ export function validateOdometer(data) {
       if (jump > getSetting('operations.odometerWarnJumpKm')) {
         warnings.push(
           `Lonjakan odometer tidak wajar: +${jump.toLocaleString()} km sejak pencatatan terakhir. Harap periksa kembali.`
+        );
+      }
+    }
+  }
+
+  // ── Reference odometer (v1.27.0 — vehicle.lastOdometer, warn-only) ──
+  // Unlike previousOdometer above, this NEVER blocks: a smaller Odometer Awal
+  // than the vehicle's last recorded value can be a legitimate correction.
+  const hasRef = d.referenceOdometer !== undefined &&
+                 d.referenceOdometer !== null &&
+                 d.referenceOdometer !== '';
+
+  if (hasRef) {
+    const ref = Number(d.referenceOdometer);
+    if (Number.isFinite(ref) && ref >= 0) {
+      const gap = ref - current;
+      if (gap > getSetting('operations.odometerWarnJumpKm')) {
+        warnings.push(
+          `Odometer Awal (${current.toLocaleString()} km) jauh lebih kecil dibanding catatan kendaraan terakhir (${ref.toLocaleString()} km). Periksa kembali, atau lanjutkan jika ini koreksi pencatatan.`
         );
       }
     }

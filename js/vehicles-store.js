@@ -190,6 +190,37 @@ export function getVehicleColorByName(vehicleName) {
   return v ? v.color : null;
 }
 
+// v1.27.0 Self-Drive Assignment — assignment.vehicle stores the vehicle's NAME
+// (not its RTDB key), so odometer autofill/write-back needs a name → record
+// lookup. Mirrors getVehicleColorByName's matching rule.
+export function getVehicleByName(vehicleName) {
+  if (!vehicleName) return null;
+  return vehicles.find(v => v.name === vehicleName && v.archived !== true) || null;
+}
+
+/**
+ * Update a vehicle's `lastOdometer` — the additive field Start Assignment
+ * autofills Odometer Awal from. Called once an assignment completes with a
+ * captured Odometer Akhir (see app.js registerCompleteCallback). Optional
+ * field: absent on any vehicle until its first completed trip sets it.
+ * @param {string} vehicleId
+ * @param {number} value
+ */
+export async function updateVehicleLastOdometer(vehicleId, value) {
+  const existing = vehicles.find(v => v.id === vehicleId);
+  if (!existing) return;
+
+  const updates = { lastOdometer: Number(value), updatedAt: new Date().toISOString() };
+
+  if (!isFirebaseConfigured()) {
+    refreshVehiclesCache(mapFirebaseVehicles(Object.fromEntries(
+      vehicles.map(v => [v.id, v.id === vehicleId ? { ...v, ...updates } : v])
+    )));
+    return;
+  }
+  await updateFirebaseData(VEHICLES_PATH + '/' + vehicleId, updates);
+}
+
 export function getActiveVehicleNames() {
   return vehicles
     .filter(v => v.active !== false && v.archived !== true)

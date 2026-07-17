@@ -19,6 +19,9 @@ import { initPbsiDatepicker, syncPbsiDatepicker } from './pbsi-datepicker.js';
 // persisted — handleFormSubmit normalizes it to the official representation
 // `vehicle: ''` (assignment performed with a requester / non-PBSI vehicle).
 const NO_VEHICLE_SENTINEL = '__none__';
+// v1.27.0: same convention for the driver select's "Tanpa Driver" (Self-Drive
+// Assignment) option. NEVER persisted — normalized to `driver: ''` below.
+const NO_DRIVER_SENTINEL = '__none__';
 let assignments = [];
 let editingId = null; // null = add mode, or ID = edit mode
 let onSaveCallback = null;
@@ -219,7 +222,9 @@ export function openFormModal(asgnId = null) {
     const a = assignments.find(x => x.id === asgnId);
     if (a) {
       document.getElementById('fieldId').value          = a.id;
-      document.getElementById('fieldDriver').value      = a.driver;
+      // v1.27.0: a stored empty driver ('') is the "Tanpa Driver" (Self-Drive)
+      // state — select the sentinel option so it shows correctly in edit mode.
+      document.getElementById('fieldDriver').value      = (a.driver == null || a.driver === '') ? NO_DRIVER_SENTINEL : a.driver;
       syncPbsiSelect(document.getElementById('fieldDriver'));
       document.getElementById('fieldPhone').value       = a.phone;
       // v1.15.6: a stored empty vehicle ('') is the "Tanpa Kendaraan" state —
@@ -283,7 +288,10 @@ function handleFormSubmit(e) {
     return;
   }
 
-  const driver      = document.getElementById('fieldDriver').value;
+  // v1.27.0: `driverRaw` is the dropdown value (may be the UI sentinel); `driver`
+  // is the persisted value — the sentinel normalizes to '' (Tanpa Driver / Self-Drive).
+  const driverRaw   = document.getElementById('fieldDriver').value;
+  const driver      = driverRaw === NO_DRIVER_SENTINEL ? '' : driverRaw;
   const phone       = document.getElementById('fieldPhone').value;
   // v1.15.6: `vehicleRaw` is the dropdown value (may be the UI sentinel); `vehicle`
   // is the persisted value — the sentinel normalizes to '' (Tanpa Kendaraan).
@@ -316,11 +324,11 @@ function handleFormSubmit(e) {
     datesToCreate = expandDateRange(startDate, endDate);
   }
 
-  // Validasi dasar. v1.15.6: the vehicle field is satisfied as long as the user
-  // made a selection — including "Tanpa Kendaraan" (sentinel → ''). Only an
-  // untouched dropdown (raw '') is invalid. Driver/date/time/destination/purpose
-  // stay mandatory.
-  if (!driver || vehicleRaw === '' || !startDate || !startTime || !endTime || !destination || !purpose) {
+  // Validasi dasar. v1.15.6/v1.27.0: the vehicle AND driver fields are satisfied
+  // as long as the user made a selection — including "Tanpa Kendaraan" /
+  // "Tanpa Driver" (sentinel → ''). Only an untouched dropdown (raw '') is
+  // invalid. Date/time/destination/purpose stay mandatory.
+  if (driverRaw === '' || vehicleRaw === '' || !startDate || !startTime || !endTime || !destination || !purpose) {
     showToast('⚠️ Lengkapi semua field wajib (*)');
     return;
   }
@@ -339,9 +347,11 @@ function handleFormSubmit(e) {
   // Cek konflik untuk semua tanggal dalam rentang (driver dan kendaraan).
   // v1.15.6: vehicle conflict is SKIPPED for "Tanpa Kendaraan" (vehicle === '') —
   // a requester vehicle is not a bookable PBSI resource, so two such assignments
-  // may run concurrently. Driver conflict always applies.
+  // may run concurrently. v1.27.0: driver conflict is likewise SKIPPED for
+  // "Tanpa Driver" (driver === '') — there is no real driver to double-book.
+  // Vehicle conflict checking always applies when a vehicle is chosen.
   const conflictDates = datesToCreate.filter(d =>
-    checkConflict(driver, startTime, endTime, d, editingId) ||
+    (driver !== '' && checkConflict(driver, startTime, endTime, d, editingId)) ||
     (vehicle !== '' && checkVehicleConflict(vehicle, startTime, endTime, d, editingId))
   );
   const warningEl     = document.getElementById('conflictWarning');
@@ -536,7 +546,10 @@ function runConflictPreview() {
   const previewEl = document.getElementById('conflictPreview');
   if (!previewEl) return;
 
-  const driver     = document.getElementById('fieldDriver')?.value;
+  // v1.27.0: normalize the sentinel so the driver preview is skipped for
+  // "Tanpa Driver" (driver === '') exactly like the hard check on submit.
+  const driverRaw  = document.getElementById('fieldDriver')?.value;
+  const driver     = driverRaw === NO_DRIVER_SENTINEL ? '' : driverRaw;
   // v1.15.6: normalize the sentinel so the vehicle preview is skipped for
   // "Tanpa Kendaraan" (vehicle === '') exactly like the hard check on submit.
   const vehicleRaw = document.getElementById('fieldVehicle')?.value;

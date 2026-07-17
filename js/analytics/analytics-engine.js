@@ -433,7 +433,13 @@ export function computeAnalyticsModel(ctx) {
   const vehicleOdoList = vehiclesSorted
     .map(v => ({ name: v.displayName, km: _vehicleOdo.get(v.displayName.toLowerCase()) || 0 }))
     .filter(v => v.km > 0).sort((a, b) => b.km - a.km);
-  const totalKm        = driverOdoList.reduce((s, d) => s + d.km, 0);
+  // v1.27.0: sourced from vehicleOdoList, not driverOdoList — a Self-Drive trip
+  // (empty driver) still has a real vehicle + captured distance, so summing by
+  // driver would silently under-count fleet-wide km. vehicleOdoList already
+  // attributes every trip with a vehicle regardless of driver, so it's the
+  // correct source for this shared KPI (consumed by both the Driver Report and
+  // the Vehicle Report's own "Jarak Tempuh" hero stat).
+  const totalKm        = vehicleOdoList.reduce((s, v) => s + v.km, 0);
   const hasOdoData     = totalKm > 0;
   const odoTripCount   = filteredAsg.filter(a => a.distanceTravelled != null && a.distanceTravelled > 0).length;
   const avgKmPerTrip   = hasOdoData && odoTripCount > 0 ? Math.round(totalKm / odoTripCount) : 0;

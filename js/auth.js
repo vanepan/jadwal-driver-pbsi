@@ -62,8 +62,12 @@ const PERMISSIONS = {
   edit: ['admin'],
   delete: ['admin'],
   manage_users: ['admin'],
-  start: ['admin', 'driver'],
-  complete: ['admin', 'driver'],
+  // v1.27.0: 'bidang' added for Self-Drive Assignment — someone has to be able
+  // to Start/Complete a trip with no driver, and it's the requester who drives
+  // it. Per-assignment ownership (own self-drive assignment only) is enforced
+  // separately in modal.js canActOnAssignment(), not here.
+  start: ['admin', 'driver', 'bidang'],
+  complete: ['admin', 'driver', 'bidang'],
   cancel: ['admin', 'bidang'],
   print_reimbursement: ['admin', 'driver'],
   override_overtime: ['admin'],
