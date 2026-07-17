@@ -180,6 +180,16 @@ const businessTrip = runScenario('Business Trip', 'Buatkan NOR perjalanan dinas 
 const procurement = runScenario('Procurement', 'Buatkan NOR pembelian meja ruang Binpres.');
 const reimbursement = runScenario('Reimbursement', 'Buatkan NOR reimbursement biaya parkir.');
 const administration = runScenario('Administration', 'Buatkan NOR perubahan penanggung jawab.');
+// Phase 9, Sprint 9.1 (Organizational Decision) — proves the two
+// CATEGORY_TO_INTENT routing fixes (docs/SPRINT_9_1_ORGANIZATIONAL_DECISION.md
+// Decisions 2/3) actually take effect for an utterance that classifies
+// into 'procurement'/'administration' WITHOUT also tripping business_trip's
+// own 'nor'+create-verb pattern into a false win (the pre-existing,
+// separate, still-unfixed Critical #1 regression the 'Procurement' scenario
+// above already demonstrates) — i.e. these two utterances are deliberately
+// worded so their own category's keywords/pattern outscore business_trip's.
+const procurementRoutingFix = runScenario('Procurement (category-routing fix)', 'Tolong buatkan NOR, saya mau membeli meja untuk pengadaan ruang Binpres.');
+const administrationRoutingFix = runScenario('Administration (category-routing fix)', 'Buatkan NOR, atlet kami kehilangan kartu identitas dan surat izin.');
 
 console.log('\n[Assertions — regression floor for the North-Star-Gap-Closure work already landed this session]');
 check('Business Trip: real Conversation started', businessTrip.hasRealConversation);
@@ -193,11 +203,27 @@ check('Procurement: asked item/quantity/purpose/budget, NEVER destination/travel
 check('Procurement: reached READY', procurement.reachedReady);
 console.log(`  ⓘ Procurement: patternsCited = ${procurement.patternsCited} (diagnostic — see report for interpretation, not asserted either way)`);
 
-check('Reimbursement: NOR Type resolved as "Reimbursement" from the utterance itself', reimbursement.norType === 'Reimbursement');
-check('Reimbursement: falls back to the trip-shaped schema (KNOWN, deferred gap — Reimbursement fields were never authored)', reimbursement.questionsAsked.every((f) => ['destination', 'traveler', 'departureDate', 'returnDate', 'budget'].includes(f)));
+// Sprint 9.1 Decision 1 — Reimbursement is NOT a NOR Type. Same utterance
+// this harness has always tested; the expectation flipped from "resolves
+// as Reimbursement" to "no longer resolves at all", proving the exclusion
+// holds rather than silently deleting all trace of the prior behavior.
+check('Reimbursement: no longer resolves as a NOR Type (Sprint 9.1 Decision 1 — not a NOR at all)', reimbursement.norType === null);
+check('Reimbursement: "Jenis NOR" is asked first, same as any other unrecognized value (intentional, not a regression)', reimbursement.questionsAsked[0] === 'type');
 
-check('Administration: no registered NOR Type matches this occasion, so "Jenis NOR" is asked first', administration.questionsAsked[0] === 'type');
-check('Administration: an unregistered NOR Type answer falls back to the trip-shaped schema (KNOWN, deferred gap)', administration.questionsAsked.slice(1).every((f) => ['destination', 'traveler', 'departureDate', 'returnDate', 'budget'].includes(f)));
+check('Administration: no registered NOR Type matches this occasion by KEYWORD, so "Jenis NOR" is asked first (registration alone does not add NLU — Decision 3)', administration.questionsAsked[0] === 'type');
+check('Administration: an unregistered-by-keyword occasion falls back to the trip-shaped schema (KNOWN, deferred gap)', administration.questionsAsked.slice(1).every((f) => ['destination', 'traveler', 'departureDate', 'returnDate', 'budget'].includes(f)));
+
+check('Procurement (routing fix): classified as "procurement" category, not "business_trip"', procurementRoutingFix.category === 'procurement');
+check('Procurement (routing fix): reaches a REAL Conversation via the new CATEGORY_TO_INTENT mapping (Decision 2)', procurementRoutingFix.hasRealConversation === true);
+check('Procurement (routing fix): NOR Type resolved as "Pengadaan" from the utterance itself', procurementRoutingFix.norType === 'Pengadaan');
+check('Procurement (routing fix): reached READY', procurementRoutingFix.reachedReady);
+
+check('Administration (routing fix): classified as "administration" category, not "business_trip"', administrationRoutingFix.category === 'administration');
+check('Administration (routing fix): reaches a REAL Conversation via the new CATEGORY_TO_INTENT mapping (Decision 3)', administrationRoutingFix.hasRealConversation === true);
+check('Administration (routing fix): "Jenis NOR" asked first (no keyword-based type extraction authored for Administration — by design, no evidence yet)', administrationRoutingFix.questionsAsked[0] === 'type');
+
+check('Administration is now a registered NOR Type (Sprint 9.1 Decision 3)', listNorTypes().some((t) => t.id === 'Administration'));
+check('Reimbursement is no longer a registered NOR Type (Sprint 9.1 Decision 1)', !listNorTypes().some((t) => t.id === 'Reimbursement'));
 
 console.log('\n[Knowledge Coverage — real counts per registered NOR Type, by kind]');
 const KIND_LIST = ['ontology', 'workflow', 'rule', 'policy', 'rendering_rule', 'sentence_pattern', 'paragraph_pattern', 'template_pattern', 'signatory', 'recipient', 'cc', 'approval_chain'];
@@ -225,7 +251,7 @@ check('composer-timeline is still declared DORMANT (editSection has no real call
 // real ComposerDocument ids appears anywhere in any Learning Event, which
 // is exactly what "editSection has no real caller" means operationally —
 // a human editing a composed draft never becomes organizational learning.
-const composerDocumentIds = [businessTrip, procurement, reimbursement, administration]
+const composerDocumentIds = [businessTrip, procurement, reimbursement, administration, procurementRoutingFix, administrationRoutingFix]
   .map((t) => t.composerDocumentId).filter(Boolean);
 const learningEventsAfterRun = listLearningEvents({}).data || [];
 const composerReferenced = learningEventsAfterRun.some((e) => composerDocumentIds.includes(e.sourceDocumentId) || composerDocumentIds.includes(e.affectedKnowledgeId));

@@ -187,11 +187,12 @@ function scoreRule(rule, normalized) {
 }
 
 /** Mirrors intent-engine.js's own NOR_TYPE_KEYWORDS content exactly — see
- *  header. Both tables recognize the same three registered NOR_TYPE
- *  values; only the consuming category ('business_trip' here) differs. */
+ *  header. Both tables recognize the same two registered NOR_TYPE values
+ *  (Reimbursement removed by Phase 9 Sprint 9.1 Decision 1 — see
+ *  docs/SPRINT_9_1_ORGANIZATIONAL_DECISION.md); only the consuming category
+ *  ('business_trip' here) differs. */
 const NOR_TYPE_KEYWORDS = Object.freeze([
   Object.freeze({ value: NOR_TYPE.PERJALANAN_DINAS, keywords: Object.freeze(['perjalanan dinas', 'dinas', 'perjalanan']) }),
-  Object.freeze({ value: NOR_TYPE.REIMBURSEMENT, keywords: Object.freeze(['reimbursement', 'penggantian']) }),
   Object.freeze({ value: NOR_TYPE.PENGADAAN, keywords: Object.freeze(['pengadaan', 'pembelian']) }),
 ]);
 

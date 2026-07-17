@@ -60,13 +60,27 @@ export const PROBLEM_SOLVING_ERRORS = Object.freeze({
   NOT_READY: 'NOT_READY',
 });
 
-/** The ONE honest category -> intent mapping that exists today. See
- *  header — this is deliberately not exhaustive; every other routable
- *  category now falls through to the generic Problem Conversation loop
- *  instead of getting no downstream workflow at all (Phase 10.5's own
- *  fix to Phase 8-10's Known Limitation #2). */
+/** The honest category -> intent mapping that exists today. See header —
+ *  this is deliberately not exhaustive; every other routable category
+ *  falls through to the generic Problem Conversation loop instead of
+ *  getting no downstream workflow at all (Phase 10.5's own fix to
+ *  Phase 8-10's Known Limitation #2).
+ *
+ *  Phase 9, Sprint 9.1 (Organizational Decision) added `procurement` and
+ *  `administration` — a human confirmed both Pengadaan and Administration
+ *  ARE real NOR Types (see docs/SPRINT_9_1_ORGANIZATIONAL_DECISION.md
+ *  Decisions 2 and 3), so an utterance that correctly classifies into
+ *  either Problem Category must reach CREATE_NOR exactly like
+ *  `business_trip` already does, rather than silently falling to the
+ *  generic, non-NOR-producing loop. This is a routing fix only — it does
+ *  not touch problem-parser.js's classification scoring (the separate,
+ *  already-known Critical #1 regression, where a "NOR"-mentioning
+ *  procurement utterance still gets classified as `business_trip` before
+ *  this table is ever consulted — unchanged, out of scope here). */
 const CATEGORY_TO_INTENT = Object.freeze({
   business_trip: INTENT.CREATE_NOR,
+  procurement: INTENT.CREATE_NOR,
+  administration: INTENT.CREATE_NOR,
 });
 
 /** Only 'facility' is genuinely diagnostic (root-cause hypotheses make

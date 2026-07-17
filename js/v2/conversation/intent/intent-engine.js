@@ -40,6 +40,16 @@
    lists and matching logic stay local and unchanged (registries hold
    vocabulary, never parsing logic).
 
+   PHASE 9, SPRINT 9.1 (ORGANIZATIONAL DECISION) — 'Reimbursement' removed
+   from NOR_TYPE_KEYWORDS entirely. See
+   docs/SPRINT_9_1_ORGANIZATIONAL_DECISION.md Decision 1: a human confirmed
+   it is not a NOR Type at all, so an utterance mentioning it should no
+   longer silently resolve `type`, exactly as if it had never been
+   recognized. Administration (Decision 3) is NOT added here — it is
+   registered as a NOR Type but has no evidenced keyword vocabulary yet;
+   adding one without evidence would be inventing NLU, not registering
+   vocabulary.
+
    DEPENDENCIES: ../contracts/intent-contract.js, ../../knowledge/registry/
    nor-type-registry.js (NOR_TYPE id constants only — vocabulary, itself
    zero-dependency).
@@ -111,7 +121,6 @@ const INTENT_RULES = Object.freeze([
  *  itself — never inferred beyond what is written. */
 const NOR_TYPE_KEYWORDS = Object.freeze([
   Object.freeze({ value: NOR_TYPE.PERJALANAN_DINAS, keywords: Object.freeze(['perjalanan dinas', 'dinas']) }),
-  Object.freeze({ value: NOR_TYPE.REIMBURSEMENT, keywords: Object.freeze(['reimbursement', 'penggantian']) }),
   Object.freeze({ value: NOR_TYPE.PENGADAAN, keywords: Object.freeze(['pengadaan', 'pembelian']) }),
 ]);
 

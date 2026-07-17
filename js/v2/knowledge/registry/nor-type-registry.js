@@ -1,8 +1,8 @@
 /* ============================================================
    NOR-TYPE-REGISTRY.JS — Knowledge Platform (V2, North Star Gap Closure)
 
-   PURPOSE: make NOR Type ("Jenis NOR" — Perjalanan Dinas / Reimbursement /
-   Pengadaan / ...) a registered vocabulary value, exactly like domainType
+   PURPOSE: make NOR Type ("Jenis NOR" — Perjalanan Dinas / Pengadaan /
+   Administration / ...) a registered vocabulary value, exactly like domainType
    (domain-type-registry.js) and kind (kind-registry.js) already are — the
    same Map-backed register/has/get/list shape, for the same reason
    (Decision 1: a new value is a data call, never a hardcoded switch).
@@ -119,8 +119,15 @@ export function resetNorTypeRegistry() {
  *  instead of hand-writing string literals — see header. */
 export const NOR_TYPE = Object.freeze({
   PERJALANAN_DINAS: 'Perjalanan Dinas',
-  REIMBURSEMENT: 'Reimbursement',
   PENGADAAN: 'Pengadaan',
+  // Phase 9, Sprint 9.1 (Organizational Decision) — registered by explicit
+  // human decision, not evidence: the repository owner confirmed
+  // Administration should be onboarded as a real NOR Type. See
+  // docs/SPRINT_9_1_ORGANIZATIONAL_DECISION.md Decision 3. Carries NO
+  // fieldSchema (below) — registration is a vocabulary act, not a
+  // content-authoring act; no Knowledge may be authored for it until real
+  // evidence (a document, or domain-expert input) exists.
+  ADMINISTRATION: 'Administration',
   // Phase 8.5 Iteration 2 (Core NOR Knowledge Pack) — the ONLY NOR Type with
   // real document evidence anywhere in this repository (two real, filled
   // NOR PDFs; see js/v2/knowledge/bootstrap/nor-reverse-engineering-knowledge.js
@@ -142,13 +149,15 @@ export const NOR_TYPE = Object.freeze({
    re-authored here because CREATE_NOR's real Conversation (Question
    Optimizer, Knowledge-backed resolution) and the generic Problem
    Conversation fallback loop are two different consumers, not because the
-   content itself changed. Reimbursement is registered (so it validates and
-   lists like any other NOR Type) but intentionally carries NO fieldSchema
-   yet — deciding its real fields is a content/business question
-   docs/NOR_TYPE_DOMAIN_MODEL.md explicitly deferred, not an oversight;
-   intent-contract.js#getRequiredFacts falls back to Perjalanan Dinas's
-   schema for any NOR Type registered without one of its own, preserving
-   exactly today's pre-existing behavior rather than asking nothing. ────── */
+   content itself changed. Administration is registered (Phase 9, Sprint
+   9.1 Decision 3 — see docs/SPRINT_9_1_ORGANIZATIONAL_DECISION.md) but
+   intentionally carries NO fieldSchema yet — deciding its real fields is a
+   content/business question that needs real evidence first, not an
+   oversight; intent-contract.js#getRequiredFacts falls back to Perjalanan
+   Dinas's schema for any NOR Type registered without one of its own,
+   preserving exactly today's pre-existing behavior rather than asking
+   nothing. Reimbursement (previously registered the same way) was removed
+   entirely by Decision 1 — it is not a NOR Type at all. ────── */
 function bootstrap() {
   registerNorType(NOR_TYPE.PERJALANAN_DINAS, 'Perjalanan Dinas', [
     { field: 'destination', label: 'Tujuan', prompt: 'Tujuan perjalanan/kegiatan ke mana?', optimizable: false },
@@ -163,7 +172,12 @@ function bootstrap() {
     { field: 'purpose', label: 'Tujuan Penggunaan', prompt: 'Untuk keperluan apa?', optimizable: true },
     { field: 'budget', label: 'Estimasi Anggaran', prompt: 'Berapa estimasi anggarannya?', optimizable: false },
   ]);
-  registerNorType(NOR_TYPE.REIMBURSEMENT, 'Reimbursement', []);
+  // Administration (Phase 9, Sprint 9.1 Decision 3) — registered with an
+  // empty fieldSchema, mirroring how Reimbursement was carried before it
+  // was removed (Decision 1): validates and lists like any other NOR Type,
+  // but getRequiredFacts() falls back to Perjalanan Dinas's schema (below)
+  // until real evidence lets a human author Administration's own fields.
+  registerNorType(NOR_TYPE.ADMINISTRATION, 'Administration', []);
   // Realisasi Petty Cash's fieldSchema is deliberately this short — real
   // evidence (NOR-Specification.md's own Business Rules §D.5-D.7) shows the
   // Perihal, recipients, cc, sender and every signatory are ALL fixed/

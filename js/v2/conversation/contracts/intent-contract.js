@@ -129,12 +129,14 @@ export function getRequiredFacts(intent, norType = null) {
   if (intent !== INTENT.CREATE_NOR || !norType) return base;
 
   const ownSchema = hasNorType(norType) ? getNorTypeFieldSchema(norType) : Object.freeze([]);
-  // Registered but not yet specialized (e.g. Reimbursement — see
-  // nor-type-registry.js's own bootstrap comment) or an unregistered value
-  // altogether: fall back to the one schema this platform has always asked
-  // (Perjalanan Dinas's), rather than asking nothing beyond "Jenis NOR" for
-  // a NOR Type nobody has authored real content for yet. Never a
-  // regression from pre-North-Star-Gap-Closure behavior.
+  // Registered but not yet specialized (e.g. Administration — see
+  // nor-type-registry.js's own bootstrap comment, and
+  // docs/SPRINT_9_1_ORGANIZATIONAL_DECISION.md Decision 3) or an
+  // unregistered value altogether: fall back to the one schema this
+  // platform has always asked (Perjalanan Dinas's), rather than asking
+  // nothing beyond "Jenis NOR" for a NOR Type nobody has authored real
+  // content for yet. Never a regression from pre-North-Star-Gap-Closure
+  // behavior.
   const effectiveSchema = ownSchema.length ? ownSchema : getNorTypeFieldSchema(NOR_TYPE.PERJALANAN_DINAS);
   return Object.freeze([...base, ...effectiveSchema]);
 }
