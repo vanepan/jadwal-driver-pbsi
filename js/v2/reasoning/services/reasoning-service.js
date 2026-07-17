@@ -62,6 +62,6 @@ export {
  */
 export function reasonWithGaps(problem) {
   const recommendation = reason(problem);
-  const gaps = detectKnowledgeGaps(problem.domainType);
+  const gaps = detectKnowledgeGaps(problem.domainType, problem.facts && problem.facts.type);
   return Object.freeze({ recommendation, gaps });
 }

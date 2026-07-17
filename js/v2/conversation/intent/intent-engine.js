@@ -29,12 +29,26 @@
 
    RESPONSIBILITY: detectIntent.
 
-   DEPENDENCIES: ../contracts/intent-contract.js.
+   NORTH STAR GAP CLOSURE — NOR_TYPE_KEYWORDS' VALUES NOW COME FROM THE
+   REGISTRY. See docs/NOR_TYPE_DOMAIN_MODEL.md. This file's own extraction
+   table previously hand-wrote 'Perjalanan Dinas'/'Reimbursement'/
+   'Pengadaan' as bare string literals — the same three values
+   problem-parser.js independently hand-wrote a SECOND time (and had
+   already drifted from: that file recognized only one of the three). Both
+   files now import NOR_TYPE (knowledge/registry/nor-type-registry.js) so
+   the values themselves can never silently diverge again; the keyword
+   lists and matching logic stay local and unchanged (registries hold
+   vocabulary, never parsing logic).
+
+   DEPENDENCIES: ../contracts/intent-contract.js, ../../knowledge/registry/
+   nor-type-registry.js (NOR_TYPE id constants only — vocabulary, itself
+   zero-dependency).
    ============================================================ */
 
 'use strict';
 
 import { INTENT, makeIntentResult } from '../contracts/intent-contract.js';
+import { NOR_TYPE } from '../../knowledge/registry/nor-type-registry.js';
 
 export const INTENT_CONFIDENCE_THRESHOLD = 0.2;
 
@@ -44,9 +58,16 @@ export const INTENT_CONFIDENCE_THRESHOLD = 0.2;
 const INTENT_RULES = Object.freeze([
   Object.freeze({
     intent: INTENT.CREATE_NOR,
-    keywords: Object.freeze(['nor', 'buatkan', 'buat', 'bikin', 'susun', 'create']),
+    // North-Star Gap Closure — "membuat" (the me- prefixed form of "buat",
+    // e.g. "Saya ingin membuat NOR...") never matched the old keyword/
+    // pattern list: hasKeyword()'s word-boundary match is deliberately
+    // exact (see its own comment above), so "buat" cannot match inside
+    // "membuat". Added explicitly rather than loosened into a substring
+    // match, preserving the file's own no-double-counting discipline.
+    // Verified: 'membuat' does not appear in any other rule below.
+    keywords: Object.freeze(['nor', 'buatkan', 'buat', 'membuat', 'bikin', 'susun', 'create']),
     patterns: Object.freeze([
-      Object.freeze({ name: 'CREATE_VERB_THEN_NOR', re: /\b(buat(kan)?|bikin|susun|create)\b[^.?!]{0,40}\bnor\b/i }),
+      Object.freeze({ name: 'CREATE_VERB_THEN_NOR', re: /\b(buat(kan)?|membuat|bikin|susun|create)\b[^.?!]{0,40}\bnor\b/i }),
     ]),
   }),
   Object.freeze({
@@ -89,9 +110,9 @@ const INTENT_RULES = Object.freeze([
 /** Deterministic, literal substring facts an utterance can answer about
  *  itself — never inferred beyond what is written. */
 const NOR_TYPE_KEYWORDS = Object.freeze([
-  Object.freeze({ value: 'Perjalanan Dinas', keywords: Object.freeze(['perjalanan dinas', 'dinas']) }),
-  Object.freeze({ value: 'Reimbursement', keywords: Object.freeze(['reimbursement', 'penggantian']) }),
-  Object.freeze({ value: 'Pengadaan', keywords: Object.freeze(['pengadaan', 'pembelian']) }),
+  Object.freeze({ value: NOR_TYPE.PERJALANAN_DINAS, keywords: Object.freeze(['perjalanan dinas', 'dinas']) }),
+  Object.freeze({ value: NOR_TYPE.REIMBURSEMENT, keywords: Object.freeze(['reimbursement', 'penggantian']) }),
+  Object.freeze({ value: NOR_TYPE.PENGADAAN, keywords: Object.freeze(['pengadaan', 'pembelian']) }),
 ]);
 
 const DOMAIN_KEYWORDS = Object.freeze({

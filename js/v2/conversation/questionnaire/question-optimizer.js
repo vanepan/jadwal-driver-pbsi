@@ -145,13 +145,13 @@ function resolveFromArchive(domainType, field) {
 }
 
 /**
- * @param {{intent: string, domainType: string|null, missingQuestions: Object[], previousConversations?: Object[]}} args
+ * @param {{intent: string, domainType: string|null, norType?: string|null, missingQuestions: Object[], previousConversations?: Object[]}} args
  * @returns {{resolved: Object[], stillMissing: Object[]}} ResolvedFact[] and the Question[] still genuinely unanswered
  */
 export function optimizeQuestions({
-  intent, domainType, missingQuestions, previousConversations = [],
+  intent, domainType, norType = null, missingQuestions, previousConversations = [],
 }) {
-  const schema = new Map(getRequiredFacts(intent).map((f) => [f.field, f]));
+  const schema = new Map(getRequiredFacts(intent, norType).map((f) => [f.field, f]));
   const resolved = [];
   const stillMissing = [];
 

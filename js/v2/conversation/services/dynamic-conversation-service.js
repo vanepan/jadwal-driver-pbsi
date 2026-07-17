@@ -68,6 +68,12 @@ function domainTypeOf(intent, gatheredFacts) {
   return gatheredFacts.domainType || null;
 }
 
+/** North Star Gap Closure — same re-derivation precedent as domainTypeOf()
+ *  above, mirroring conversation-service.js's own private norTypeOf(). */
+function norTypeOf(intent, gatheredFacts) {
+  return intent === INTENT.CREATE_NOR ? (gatheredFacts.type || null) : null;
+}
+
 /**
  * @param {string} conversationId
  * @param {{confidenceThreshold?: number}} [opts]
@@ -81,13 +87,14 @@ export function explainDynamicConversation(conversationId, opts = {}) {
 
   const intent = c.currentIntent.intent;
   const domainType = domainTypeOf(intent, c.gatheredFacts);
-  const gaps = domainType ? detectKnowledgeGaps(domainType) : [];
+  const norType = norTypeOf(intent, c.gatheredFacts);
+  const gaps = domainType ? detectKnowledgeGaps(domainType, norType) : [];
 
   const askedDedupKeys = new Set([
     ...c.explainability.questionsAsked.map((q) => q.field),
     ...c.explainability.questionsSkipped.map((q) => q.field),
   ]);
-  const schemaByField = new Map(getRequiredFacts(intent).map((f) => [f.field, f]));
+  const schemaByField = new Map(getRequiredFacts(intent, norType).map((f) => [f.field, f]));
 
   const dynamicQuestions = prioritizeQuestions(c.missingFacts, schemaByField, gaps, askedDedupKeys);
   const nextQuestion = selectNextQuestion(dynamicQuestions);

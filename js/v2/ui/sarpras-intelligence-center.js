@@ -67,6 +67,15 @@ import {
   listKnowledge as knowledgeList,
   registerKnowledgeListener as registerRepositoryListener,
 } from '../knowledge/services/knowledge-service.js';
+// North-Star Gap Closure — the real, already-Approved NOR bootstrap
+// content (docs/KNOWLEDGE_POPULATION_REPORT.md) previously only existed
+// inside the one-off `scripts/nor-knowledge-bootstrap-seed.mjs` process;
+// nothing loaded it into a live session, so reasoning-engine.js/
+// nor-composer.js always retrieved against an empty repository. Safe to
+// import statically (pure in-memory ingest/promote calls, no Firebase —
+// same "safe to import, backend touched lazily" contract this file's own
+// header already documents for every other import here).
+import { seedNorBootstrapKnowledge } from '../knowledge/bootstrap/nor-reverse-engineering-knowledge.js';
 import {
   initImportSessionSync, initImportBatchSync,
   registerImportSessionChangeListener, registerImportBatchChangeListener,
@@ -533,6 +542,21 @@ export async function mountSarprasIntelligence(hostEl) {
     // single mount, strictly before any import UI is reachable — the
     // defensive ordering guarantee.
     setActiveRepository('memory');
+    // North-Star Gap Closure — seed the real, already-authored NOR
+    // bootstrap Knowledge (96 Approved facts/relationships) into THIS
+    // session's repository, right here, right after activation and
+    // strictly before any screen or Conversation can read from it. Errors
+    // are logged, not thrown — seedNorBootstrapKnowledge() already returns
+    // an honest per-item error list rather than a boolean, and a partial
+    // seed should never block the rest of the workspace from mounting.
+    try {
+      const seedResult = seedNorBootstrapKnowledge();
+      if (seedResult.errors.length) {
+        console.warn('[sarpras-intelligence-center] NOR bootstrap knowledge seed had errors:', seedResult.errors);
+      }
+    } catch (err) {
+      console.error('[sarpras-intelligence-center] NOR bootstrap knowledge seed failed:', err);
+    }
     // Phase 2.5 Part 3 — re-project Knowledge from the persisted sessions
     // on every remote hydration (idempotent), AND once after the initial
     // sync resolves. registerImportSessionChangeListener fires on

@@ -21,7 +21,18 @@
    engine reports exactly one gap (missing_context, critical) rather than
    guessing what "complete" should mean for an unrecorded domain.
 
-   RESPONSIBILITY: `detectKnowledgeGaps(domainType)`.
+   NORTH STAR GAP CLOSURE — OPTIONAL NOR TYPE SCOPING. See
+   docs/NOR_TYPE_DOMAIN_MODEL.md. Every Approved-kind lookup below now
+   passes through one more, deliberately narrow filter: a KnowledgeItem
+   whose own `payload.norType` is present must match the Problem's norType
+   to count as real coverage — the same "opaque payload convention" as
+   rule-applicability-engine.js's own `appliesWhen`. An item with NO
+   `payload.norType` is treated as generic (applies regardless), so every
+   existing seeded item — none of which carries this field yet — behaves
+   exactly as before. Passing no norType at all (the default) disables the
+   filter entirely, byte-identical to this file's pre-existing behavior.
+
+   RESPONSIBILITY: `detectKnowledgeGaps(domainType, norType)`.
 
    DEPENDENCIES (read-only — reasoning/ may depend on knowledge/, never the
    reverse): knowledge/services/knowledge-service.js, contracts/
@@ -45,26 +56,34 @@ function recommendedQuestion(question) {
   });
 }
 
-function approvedOfKind(domainType, kind) {
+function matchesNorType(item, norType) {
+  if (!norType) return true;
+  const itemNorType = item.payload && item.payload.norType;
+  return !itemNorType || itemNorType === norType;
+}
+
+function approvedOfKind(domainType, kind, norType) {
   const result = listKnowledge({ domainType, kind, lifecycleState: LIFECYCLE_STATE.APPROVED });
-  return result.ok ? result.data : [];
+  const items = result.ok ? result.data : [];
+  return items.filter((item) => matchesNorType(item, norType));
 }
 
 /**
  * @param {string} domainType
+ * @param {string|null} [norType] - optional NOR Type scoping (see header); omit to check every Approved item regardless of NOR Type, exactly like before this parameter existed.
  * @returns {import('./contracts/knowledge-gap-contract.js').KnowledgeGap[]}
  */
-export function detectKnowledgeGaps(domainType) {
-  const ontologies = approvedOfKind(domainType, 'ontology');
+export function detectKnowledgeGaps(domainType, norType = null) {
+  const ontologies = approvedOfKind(domainType, 'ontology', norType);
   if (!ontologies.length) {
     return [makeKnowledgeGap({
       domainType,
       gapType: GAP_TYPE.MISSING_CONTEXT,
       field: 'ontology',
-      reason: `No Approved Ontology exists for domainType "${domainType}" — without it, no other gap in this domain can be checked against a real expectation.`,
+      reason: `No Approved Ontology exists for domainType "${domainType}"${norType ? ` (NOR Type "${norType}")` : ''} — without it, no other gap in this domain can be checked against a real expectation.`,
       priority: GAP_PRIORITY.CRITICAL,
       confidence: 1,
-      recommendedQuestion: recommendedQuestion(`What is the Ontology for "${domainType}" — intent, trigger, stakeholders, dependencies?`),
+      recommendedQuestion: recommendedQuestion(`What is the Ontology for "${domainType}"${norType ? ` / "${norType}"` : ''} — intent, trigger, stakeholders, dependencies?`),
     })];
   }
 
@@ -74,9 +93,9 @@ export function detectKnowledgeGaps(domainType) {
   // missing_entity — a stakeholder role the Ontology names with no
   // corresponding Approved signatory/recipient/cc/approval_chain knowledge.
   const roleKnowledge = [
-    ...approvedOfKind(domainType, 'signatory'),
-    ...approvedOfKind(domainType, 'recipient'),
-    ...approvedOfKind(domainType, 'cc'),
+    ...approvedOfKind(domainType, 'signatory', norType),
+    ...approvedOfKind(domainType, 'recipient', norType),
+    ...approvedOfKind(domainType, 'cc', norType),
   ];
   for (const stakeholder of (ontology.stakeholders || [])) {
     const backed = roleKnowledge.some((item) => item.payload && (
@@ -98,7 +117,7 @@ export function detectKnowledgeGaps(domainType) {
   // missing_approval — the Ontology's own approvalChainRef is either
   // absent or does not resolve to a real Approved approval_chain item.
   if (ontology.approvalChainRef) {
-    const chains = approvedOfKind(domainType, 'approval_chain');
+    const chains = approvedOfKind(domainType, 'approval_chain', norType);
     const found = chains.some((c) => c.id === ontology.approvalChainRef);
     if (!found) {
       gaps.push(makeKnowledgeGap({
@@ -125,7 +144,7 @@ export function detectKnowledgeGaps(domainType) {
 
   // missing_business_constraint — nothing for the Reasoning Engine to ever
   // cite for this domain.
-  const rules = [...approvedOfKind(domainType, 'rule'), ...approvedOfKind(domainType, 'policy')];
+  const rules = [...approvedOfKind(domainType, 'rule', norType), ...approvedOfKind(domainType, 'policy', norType)];
   if (!rules.length) {
     gaps.push(makeKnowledgeGap({
       domainType,
@@ -140,7 +159,7 @@ export function detectKnowledgeGaps(domainType) {
 
   // missing_reasoning — nothing explaining WHY this domain's process works
   // the way it does (the exact gap Architecture Assessment §3.1 named).
-  const reasoningAssets = approvedOfKind(domainType, 'organizational_reasoning');
+  const reasoningAssets = approvedOfKind(domainType, 'organizational_reasoning', norType);
   if (!reasoningAssets.length) {
     gaps.push(makeKnowledgeGap({
       domainType,

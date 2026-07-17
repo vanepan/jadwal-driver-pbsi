@@ -26,13 +26,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  setKnowledgeBackend, ingest, promoteKnowledge, LIFECYCLE_STATE,
+  setKnowledgeBackend, ingest, promoteKnowledge, listKnowledge, LIFECYCLE_STATE,
 } from '../js/v2/knowledge/services/knowledge-service.js';
 import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
 import { resetConversationRepository } from '../js/v2/conversation/repository/conversation-repository.js';
 import { continueConversation } from '../js/v2/conversation/services/conversation-service.js';
 import { resetComposerStore } from '../js/v2/document-intelligence/composer/composer-store.js';
 import { beginProblemSolving, composeApprovedNor } from '../js/v2/problem-solving/services/problem-solving-service.js';
+import { seedNorBootstrapKnowledge } from '../js/v2/knowledge/bootstrap/nor-reverse-engineering-knowledge.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let pass = 0; let fail = 0;
@@ -131,6 +132,41 @@ console.log('\n[Behaviour — NOR Composition genuinely refuses a Conversation t
   const composed = composeApprovedNor(started.data.conversation.id);
   check('refuses — the Conversation still has genuinely missing facts', !composed.ok);
   check('error code is NOT_READY', composed.error.code === 'NOT_READY');
+}
+
+console.log('\n[North-Star Gap Closure — "Saya ingin membuat NOR..." (no "dinas"/"perjalanan", no bare "buat") now reaches the REAL pipeline]');
+{
+  // Before this fix: problem-parser.js's business_trip rule had no NOR-aware
+  // keyword/pattern, so this utterance scored 0 across every category and
+  // fell to 'unknown' -> generic clarification, never reaching Conversation
+  // at all. Proves Fix A (problem-parser.js) and Fix B (intent-engine.js's
+  // 'membuat' gap) together, on the exact phrase used to justify both.
+  const result = beginProblemSolving('Saya ingin membuat NOR untuk perjalanan ke Surabaya.', 'evan');
+  check('beginProblemSolving succeeds', result.ok);
+  check('category is "business_trip" (Fix A: problem-parser.js recognizes NOR-creation phrasing)', result.data.category === 'business_trip');
+  check('routed to CONVERSATION, not CLARIFICATION_CONVERSATION', result.data.routingDecision.route === 'conversation');
+  check('a REAL Conversation was started (Fix B: intent-engine.js recognizes "membuat")', !!result.data.conversation);
+  check('the mapped intent is create_nor, not unknown', !!result.data.conversation && result.data.conversation.currentIntent.intent === 'create_nor');
+  check('clarification was NOT requested — the real path was reached, not the fallback', result.data.clarification === null);
+}
+
+console.log('\n[North-Star Gap Closure — bootstrap NOR Knowledge (docs/KNOWLEDGE_POPULATION_REPORT.md) is real, Approved, and reachable via the live knowledge-service.js surface]');
+{
+  // Before this fix: seedNorBootstrapKnowledge() was only ever called from
+  // scripts/nor-knowledge-bootstrap-seed.mjs's own one-off Node process —
+  // nothing in the live app's mount path called it, so a real pilot session
+  // always retrieved against an empty repository (docs/
+  // KNOWLEDGE_POPULATION_REPORT.md's own "Known Limitations #1"). Fix C
+  // wires this same function into sarpras-intelligence-center.js's
+  // mountSarprasIntelligence(); this proves the function itself still does
+  // what that fix depends on.
+  const beforeCount = listKnowledge({ domainType: 'nor', lifecycleState: LIFECYCLE_STATE.APPROVED }).data.length;
+  const seedResult = seedNorBootstrapKnowledge();
+  const afterCount = listKnowledge({ domainType: 'nor', lifecycleState: LIFECYCLE_STATE.APPROVED }).data.length;
+  check('seeding real bootstrap knowledge produces zero errors', seedResult.errors.length === 0);
+  check('a large, real batch of Approved nor-domain Knowledge is now present', afterCount - beforeCount >= 90);
+  check('every seeded item genuinely reached Approved (not left Draft/Candidate)', seedResult.items.every((i) => i.lifecycleState === LIFECYCLE_STATE.APPROVED));
+  check('relationships were seeded too', seedResult.relationships.length > 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

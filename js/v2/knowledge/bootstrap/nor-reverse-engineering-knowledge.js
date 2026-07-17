@@ -42,7 +42,27 @@
    knowledge/contracts/dependency-graph-contract.js,
    knowledge/services/knowledge-service.js (ingest, promoteKnowledge — the
    SAME two calls every other producer in this platform uses; this file is
-   a CLIENT, never a fifth writer).
+   a CLIENT, never a fifth writer). Phase 8.5 Iteration 2 adds knowledge/
+   registry/nor-type-registry.js (NOR_TYPE id constants only — vocabulary).
+
+   PHASE 8.5 ITERATION 2 (CORE NOR KNOWLEDGE PACK) — payload.norType TAGGING.
+   See docs/NOR_TYPE_DOMAIN_MODEL.md (the payload convention) and
+   docs/CORE_NOR_KNOWLEDGE_PACK.md (the classification rationale, item by
+   item). Every fact below is evidenced from exactly TWO real, filled NOR
+   PDFs (NOR 113, NOR 120) — both are petty-cash realizations for Bidang
+   Sarana dan Prasarana, never any other NOR Type. Facts whose own content
+   is genuinely petty-cash-specific (the Ontology, the approval chain, the
+   signatories, the petty-cash-worded sentence/paragraph patterns, every
+   Statistic/Organizational-Reasoning/Question-Tree entry) now carry
+   `payload.norType: NOR_TYPE.REALISASI_PETTY_CASH`. Facts that are generic
+   document/rendering/vocabulary conventions with no petty-cash-specific
+   content (salutation, closing sentence, date line, Terbilang convention,
+   typography, margins, most emphasis rules) are deliberately left
+   UNTAGGED — `payload.norType` absent is this platform's own convention
+   for "generic, applies to every NOR Type" (nor-composer.js,
+   knowledge-gap-engine.js). No fact's evidenced text, confidence, or
+   rationale was altered by this tagging pass — only the new `norType` key
+   was added to a payload that judged as type-specific.
    ============================================================ */
 
 'use strict';
@@ -51,6 +71,12 @@ import { generateKnowledgeId } from '../contracts/identity-contract.js';
 import { LIFECYCLE_STATE } from '../contracts/lifecycle-contract.js';
 import { RELATIONSHIP_TYPE } from '../contracts/dependency-graph-contract.js';
 import { ingest, promoteKnowledge } from '../services/knowledge-service.js';
+import { NOR_TYPE } from '../registry/nor-type-registry.js';
+
+/** Shorthand — every tagged payload below spreads this constant in, never a
+ *  re-typed literal string (the exact drift risk docs/NOR_TYPE_DOMAIN_MODEL.md's
+ *  headline finding already warned about). */
+const PETTY_CASH = NOR_TYPE.REALISASI_PETTY_CASH;
 
 export const DOMAIN_TYPE = 'nor';
 export const SOURCE_TYPE = 'manual-file';
@@ -163,7 +189,7 @@ const RENDERING_RULES = [
     sourceRef: 'rendering.balance-recap-layout', confidence: 0.85,
     reviewRationale: 'Directly read from the template source, consistent with both real PDFs.',
     payload: {
-      property: 'layout', scope: 'balanceRecap',
+      property: 'layout', scope: 'balanceRecap', norType: PETTY_CASH,
       rule: 'The Dana Awal / Dana Terealisasi / Sisa Dana balance recap is a fixed, borderless 3-column table with values right-aligned.',
       observedIn: ['NOR-Specification.md §C.3'],
     },
@@ -172,7 +198,7 @@ const RENDERING_RULES = [
     sourceRef: 'rendering.ledger-table-columns', confidence: 0.85,
     reviewRationale: 'Directly read from the template source.',
     payload: {
-      property: 'layout', scope: 'ledgerTable',
+      property: 'layout', scope: 'ledgerTable', norType: PETTY_CASH,
       rule: 'Ledger table columns are fixed-width except "Rincian", the only flexible column ("*" in pdfmake) — it absorbs variable-length descriptions and the optional reimbursement sub-breakdown.',
       observedIn: ['NOR-Specification.md §C.3'],
     },
@@ -190,7 +216,7 @@ const RENDERING_RULES = [
     sourceRef: 'rendering.signature-layout-ledger', confidence: 0.85,
     reviewRationale: 'Directly read from the template source, consistent with both real PDFs.',
     payload: {
-      property: 'signatureLayout', scope: 'ledgerPageSignatures',
+      property: 'signatureLayout', scope: 'ledgerPageSignatures', norType: PETTY_CASH,
       rule: 'Ledger page signatures render as exactly 2 signatories side by side — never a third column.',
       observedIn: ['NOR-Specification.md §C.4'],
     },
@@ -215,7 +241,7 @@ const WORKFLOWS = [
     sourceRef: 'workflow.nor-approval-sequence', confidence: 0.65,
     reviewRationale: 'Workflow sequencing is Medium confidence per NOR-Specification.md\'s own Confidence Analysis — the sequence is evidenced, but two steps\' completion evidence is honestly partial (see openQuestions).',
     payload: {
-      name: 'nor-approval-sequence',
+      name: 'nor-approval-sequence', norType: PETTY_CASH,
       steps: [
         { order: 1, actor: 'Staf Sarana dan Prasarana', action: 'compile-ledger', evidenceOfCompletion: 'Printed name under "Dibuat Oleh" on the ledger page.' },
         { order: 2, actor: 'Plt. Kabid Sarana dan Prasarana', action: 'submit-and-approve-recap', evidenceOfCompletion: 'Printed name appears as both "Diajukan oleh" (page 1) and "Disetujui Oleh" (page 2) — the same individual in both real samples.' },
@@ -239,6 +265,7 @@ const ONTOLOGIES = [
     sourceRef: 'ontology.nor', confidence: 0.8,
     reviewRationale: 'Medium-High per NOR-Specification.md\'s Confidence Analysis — stakeholders/fields are directly evidenced.',
     payload: {
+      norType: PETTY_CASH,
       intent: 'Report actual expenditure of a discretionary operating float (petty cash) for Sarana dan Prasarana, and formally request its replenishment — simultaneously a report, a request, and a compliance/audit artifact.',
       trigger: 'The operating float has been spent down to near-zero (both real samples show ~99.9% utilization against a Rp 15.000.000 float).',
       stakeholders: [
@@ -268,6 +295,7 @@ const APPROVAL_CHAINS = [
     sourceRef: 'approval-chain.nor-signers', confidence: 0.85,
     reviewRationale: 'Both real samples use the identical 4 names/roles despite being separate cycles weeks apart, confirming these are global settings, not per-document choices.',
     payload: {
+      norType: PETTY_CASH,
       signers: [
         { role: 'Plt. Kabid Sarana dan Prasarana', required: true, currentIndividual: 'Raras Ayu Pratama (as of the evidence reviewed — swappable via Settings, not architecturally fixed)' },
         { role: 'Wakil Ketua Umum III', required: true, currentIndividual: 'Armand Darmadji' },
@@ -297,7 +325,9 @@ const SIGNATORIES = [
 ].map((s) => ({
   sourceRef: s.sourceRef, kind: 'signatory', confidence: 0.85,
   reviewRationale: `Directly named in NOR-Specification.md §D.3's stakeholder table, confirmed identical across both real samples.`,
-  payload: { role: s.role, position: s.role, name: s.name, function: s.function },
+  payload: {
+    role: s.role, position: s.role, name: s.name, function: s.function, norType: PETTY_CASH,
+  },
 }));
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -327,7 +357,7 @@ const VOCABULARY = [
     sourceRef: 'vocabulary.org-unit-expense-prefix', confidence: 0.8,
     reviewRationale: 'Directly observed from real ledger line items in both real samples; no code enforces or validates these prefixes (a real, organically-emerged taxonomy, not a system rule).',
     payload: {
-      term: 'organizational-unit expense prefix',
+      term: 'organizational-unit expense prefix', norType: PETTY_CASH,
       definition: 'Ledger line-item descriptions are organically prefixed by the organizational unit the expense actually belongs to — observed prefixes: IT:, OB:, Engineering:, Sekretariat:, Keuangan:, Medis:, Turnamen:, Binpres Daerah:, Binpres:, Sarpras:, Comdev:, Cleaning Service:, Driver:, Kantin:, IT - Risbang:, Lain-lainnya:/Lainnya:.',
       synonyms: [], aliases: [],
     },
@@ -348,6 +378,7 @@ const PATTERNS = [
     sourceRef: 'pattern.context-paragraph', kind: 'paragraph_pattern', confidence: 0.9,
     reviewRationale: 'Byte-identical across both real, independently-generated samples; zero slots — the department name is hardcoded, not a {{department}} slot.',
     payload: {
+      norType: PETTY_CASH,
       template: 'Sehubungan dengan kegiatan operasional bidang sarana dan prasarana, kami melaporkan realisasi petty cash bidang sarana dan prasarana dengan rincian sebagai berikut:',
       slots: [], granularity: 'paragraph',
     },
@@ -356,6 +387,7 @@ const PATTERNS = [
     sourceRef: 'pattern.request-paragraph', kind: 'paragraph_pattern', confidence: 0.9,
     reviewRationale: 'Byte-identical across both real, independently-generated samples; zero slots.',
     payload: {
+      norType: PETTY_CASH,
       template: 'Sehubungan dengan telah direalisasikannya petty cash tersebut, kami memohon agar dana petty cash dapat ditambahkan kembali untuk memastikan kelancaran operasional di bidang Sarana dan Prasarana. Sebagai dasar perhitungan, kami lampirkan laporan realisasi penggunaan dana.',
       slots: [], granularity: 'paragraph',
     },
@@ -368,7 +400,9 @@ const PATTERNS = [
   {
     sourceRef: 'pattern.perihal-subject-line', kind: 'sentence_pattern', confidence: 0.9,
     reviewRationale: 'Matches both real samples exactly, down to punctuation — the single strongest, most confidently evidenced pattern in the whole report.',
-    payload: { template: 'Realisasi Petty Cash Pertanggal {{tanggal}} Bidang Sarana dan Prasarana', slots: [{ name: 'tanggal', type: 'date' }], granularity: 'sentence' },
+    payload: {
+      norType: PETTY_CASH, template: 'Realisasi Petty Cash Pertanggal {{tanggal}} Bidang Sarana dan Prasarana', slots: [{ name: 'tanggal', type: 'date' }], granularity: 'sentence',
+    },
   },
   {
     sourceRef: 'pattern.place-date-line', kind: 'sentence_pattern', confidence: 0.85,
@@ -379,6 +413,7 @@ const PATTERNS = [
     sourceRef: 'pattern.document-number-line', kind: 'sentence_pattern', confidence: 0.85,
     reviewRationale: 'Cross-checked against both real samples — NOR 113\'s Roman numeral matches its Mei date, NOR 120\'s matches its Juni date.',
     payload: {
+      norType: PETTY_CASH,
       template: 'No.{{urutan}}/Nota Organisasi/Sarpras/{{bulanRomawi}}/{{tahun}}',
       slots: [{ name: 'urutan', type: 'string' }, { name: 'bulanRomawi', type: 'string' }, { name: 'tahun', type: 'number' }],
       granularity: 'sentence',
@@ -392,12 +427,15 @@ const PATTERNS = [
   {
     sourceRef: 'pattern.ledger-title-block', kind: 'template_pattern', confidence: 0.9,
     reviewRationale: 'Byte-identical two-line centered title across both real samples.',
-    payload: { template: 'RINCIAN PENGGUNAAN PETTY CASH\nBIDANG SARANA DAN PRASARANA', slots: [], granularity: 'template' },
+    payload: {
+      norType: PETTY_CASH, template: 'RINCIAN PENGGUNAAN PETTY CASH\nBIDANG SARANA DAN PRASARANA', slots: [], granularity: 'template',
+    },
   },
   {
     sourceRef: 'pattern.document-skeleton', kind: 'structure', confidence: 0.9,
     reviewRationale: 'Every observed instance has exactly a cover letter and a ledger — none omits either, and the ledger is never a separate file.',
     payload: {
+      norType: PETTY_CASH,
       template: '{{coverLetter}}<page-break>{{itemizedLedger}}',
       slots: [{ name: 'coverLetter', type: 'section' }, { name: 'itemizedLedger', type: 'section' }],
       granularity: 'structure',
@@ -418,6 +456,7 @@ const RULES = [
     sourceRef: 'rule.subject-is-system-derived', confidence: 0.95,
     reviewRationale: 'Both real samples match this pattern exactly, down to punctuation — the single strongest, most confidently evidenced business rule in the whole report.',
     payload: {
+      norType: PETTY_CASH,
       statement: 'The Perihal (subject) line is never freely authored by a human — it is 100% system-derived as a deterministic function of one date: "Realisasi Petty Cash Pertanggal {tanggal} Bidang Sarana dan Prasarana".',
       scope: 'perihal', observedIn: ['NOR-Specification.md §D.7', 'petty-cash-config.js#norAutoSubject'],
     },
@@ -426,6 +465,7 @@ const RULES = [
     sourceRef: 'rule.numbering-format', confidence: 0.9,
     reviewRationale: 'Cross-checked against both real samples: NOR 113\'s Roman numeral ("V") matches its 18 Mei date; NOR 120\'s ("VI") matches its 02 Juni date.',
     payload: {
+      norType: PETTY_CASH,
       statement: 'The NOR document number is composed as "{sequence}/Nota Organisasi/Sarpras/{Roman month}/{year}", where a human enters only the bare sequence number and the system composes the rest FROM THE NOR\'S OWN DATE — never from the system clock date.',
       scope: 'norNumber', observedIn: ['NOR-Specification.md §D.7'],
     },
@@ -434,6 +474,7 @@ const RULES = [
     sourceRef: 'rule.attachment-count-hardcoded', confidence: 0.9,
     reviewRationale: 'Confirmed in code (templates/nor.js\'s _metaTable hardcodes the string) and in both real samples.',
     payload: {
+      norType: PETTY_CASH,
       statement: 'The "Lampiran" (attachment) line always reads exactly "1 (satu) berkas" — a hardcoded literal, never computed from an actual attached-file count. It almost certainly refers to the ledger, which is physically page 2+ of the same PDF, never a separately uploaded file.',
       scope: 'lampiran', observedIn: ['NOR-Specification.md §D.5'],
     },
@@ -442,6 +483,7 @@ const RULES = [
     sourceRef: 'rule.recipients-fixed', confidence: 0.9,
     reviewRationale: 'Both real samples, weeks apart, list the identical 3 roles in the identical order.',
     payload: {
+      norType: PETTY_CASH,
       statement: 'The "Kepada Yth." recipient list is a fixed set of exactly 3 roles: Wakil Ketua Umum III, Sekretaris Jenderal, Bendahara — configured as a global setting, never a per-document choice.',
       scope: 'recipients', observedIn: ['NOR-Specification.md §A.1 item 5', 'NOR-Specification.md §D.3'],
     },
@@ -450,6 +492,7 @@ const RULES = [
     sourceRef: 'rule.cc-fixed', confidence: 0.9,
     reviewRationale: 'Both real samples list the identical 3 roles in the identical order.',
     payload: {
+      norType: PETTY_CASH,
       statement: 'The "Tembusan Yth." cc list is a fixed set of exactly 3 roles: Ketua Umum (qualified "sebagai laporan"), Audit Internal, Arsip — informational only, no action implied.',
       scope: 'ccRecipients', observedIn: ['NOR-Specification.md §A.1 item 7'],
     },
@@ -458,6 +501,7 @@ const RULES = [
     sourceRef: 'rule.sender-fixed', confidence: 0.9,
     reviewRationale: 'Identical in both real samples.',
     payload: {
+      norType: PETTY_CASH,
       statement: 'The "Dari" (sender) field is always a single fixed role: "Plt. Kabid Sarana dan Prasarana" — never a variable per-document sender.',
       scope: 'sender', observedIn: ['NOR-Specification.md §A.1 item 6'],
     },
@@ -474,6 +518,7 @@ const RULES = [
     sourceRef: 'rule.countersign-both-required', confidence: 0.85,
     reviewRationale: 'Both signature lines are present in both real samples; evidenced as a joint requirement, not an either/or.',
     payload: {
+      norType: PETTY_CASH,
       statement: 'Countersigning requires BOTH the Wakil Ketua Umum III AND the Sekretaris Jenderal — neither signature alone is sufficient.',
       scope: 'countersign', observedIn: ['NOR-Specification.md §D.4 step 3'],
     },
@@ -482,6 +527,7 @@ const RULES = [
     sourceRef: 'rule.budget-scope-cycle-only', confidence: 0.85,
     reviewRationale: 'Neither real sample prints year-to-date or annual-budget framing anywhere on the document.',
     payload: {
+      norType: PETTY_CASH,
       statement: 'A NOR reports only its own cycle\'s realized spend — it never reports year-to-date spend or performance against the annual petty-cash budget, even though that annual figure (Rp 240.000.000/year) exists in platform configuration.',
       scope: 'budgetImpact', observedIn: ['NOR-Specification.md §D.6', 'petty-cash-config.js#DEFAULT_ANNUAL_PETTY_CASH_BUDGET'],
     },
@@ -490,6 +536,7 @@ const RULES = [
     sourceRef: 'rule.float-is-configured-default', confidence: 0.75,
     reviewRationale: 'Both real samples\' realized amounts (~14.98M) sit strikingly close to the 15M ceiling, suggesting the float was calibrated against actual historical spend.',
     payload: {
+      norType: PETTY_CASH,
       statement: 'The operating float amount is a configured default (currently exactly Rp 15.000.000 in both real samples), not a value baked into the NOR document logic itself — it could change without changing the document\'s structure.',
       scope: 'openingBalance', observedIn: ['NOR-Specification.md §E.4'],
     },
@@ -498,6 +545,7 @@ const RULES = [
     sourceRef: 'rule.trigger-is-float-depletion', confidence: 0.8,
     reviewRationale: 'Both real samples show Sisa Dana near-zero against the Rp 15.000.000 float at time of issuance.',
     payload: {
+      norType: PETTY_CASH,
       statement: 'A NOR is triggered by the operating float running down to near-zero (~99.9% utilization observed in both real samples) — it is not issued on a fixed calendar schedule, even though the observed real-world cadence is close to monthly.',
       scope: 'trigger', observedIn: ['NOR-Specification.md §D.1', 'NOR-Specification.md §D.2'],
     },
@@ -658,7 +706,9 @@ const QUESTION_TREE = [
 ].map((q) => ({
   sourceRef: q.sourceRef, kind: 'question_tree', confidence: 0.7,
   reviewRationale: 'A genuine, evidenced structural gap named in NOR-Specification.md §F / its Unknown Patterns table — confident this is a real open question, not confident of any answer.',
-  payload: { question: q.question, raisedBy: 'document-structural-analysis', status: 'open', answerRef: null },
+  payload: {
+    question: q.question, raisedBy: 'document-structural-analysis', status: 'open', answerRef: null, norType: PETTY_CASH,
+  },
 }));
 
 export const NOR_KNOWLEDGE_ITEM_SPECS = Object.freeze([
@@ -670,8 +720,13 @@ export const NOR_KNOWLEDGE_ITEM_SPECS = Object.freeze([
   ...VOCABULARY.map((s) => ({ ...s, kind: 'vocabulary' })),
   ...PATTERNS,
   ...RULES.map((s) => ({ ...s, kind: 'rule' })),
-  ...STATISTICS.map((s) => ({ ...s, kind: 'statistic' })),
-  ...ORGANIZATIONAL_REASONING.map((s) => ({ ...s, kind: 'organizational_reasoning' })),
+  // STATISTICS and ORGANIZATIONAL_REASONING are 100% petty-cash-specific
+  // (every entry is a real number/claim about NOR 113/NOR 120 themselves,
+  // never a platform-wide fact) — tagged here, at the assembly point,
+  // rather than duplicating `norType: PETTY_CASH` inside all 11 individual
+  // payload literals above.
+  ...STATISTICS.map((s) => ({ ...s, kind: 'statistic', payload: { ...s.payload, norType: PETTY_CASH } })),
+  ...ORGANIZATIONAL_REASONING.map((s) => ({ ...s, kind: 'organizational_reasoning', payload: { ...s.payload, norType: PETTY_CASH } })),
   ...QUESTION_TREE,
 ]);
 

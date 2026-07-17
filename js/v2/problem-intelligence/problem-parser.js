@@ -23,14 +23,30 @@
    consumer, e.g. Diagnostic Planning, is what decides how to DISPLAY an
    absent fact, not this parser inventing a sentinel string).
 
+   NORTH STAR GAP CLOSURE — business_trip's OWN "type" EXTRACTION NOW USES
+   THE SAME REGISTERED VOCABULARY intent-engine.js DOES. See
+   docs/NOR_TYPE_DOMAIN_MODEL.md. Before this change this file's own
+   business_trip fact extraction only ever recognized 'Perjalanan Dinas'
+   (via 'dinas'/'perjalanan') — a real, silent drift from
+   conversation/intent/intent-engine.js's own NOR_TYPE_KEYWORDS, which
+   already recognized 'Reimbursement'/'Pengadaan' too. Both files now
+   import the same NOR_TYPE id constants (knowledge/registry/
+   nor-type-registry.js) so their two independent extraction passes over
+   the same utterance can no longer silently disagree on which values
+   exist — the keyword lists and matching logic themselves stay local,
+   exactly as every other entity extraction table in this file already is.
+
    RESPONSIBILITY: parseProblem.
 
-   DEPENDENCIES: contracts/problem-category-contract.js.
+   DEPENDENCIES: contracts/problem-category-contract.js, ../knowledge/
+   registry/nor-type-registry.js (NOR_TYPE id constants only — vocabulary,
+   itself zero-dependency).
    ============================================================ */
 
 'use strict';
 
 import { listProblemCategories } from './contracts/problem-category-contract.js';
+import { NOR_TYPE } from '../knowledge/registry/nor-type-registry.js';
 
 export const PROBLEM_CONFIDENCE_THRESHOLD = 0.2;
 
@@ -61,9 +77,20 @@ const CATEGORY_RULES = Object.freeze([
   }),
   Object.freeze({
     category: 'business_trip',
-    keywords: Object.freeze(['perjalanan dinas', 'dinas', 'perjalanan', 'trip', 'travel']),
+    // North-Star Gap Closure — a user asking to create a NOR by name
+    // ("Saya ingin membuat NOR...") mentioned neither "dinas" nor
+    // "perjalanan" and scored 0 here, falling to 'unknown' before ever
+    // reaching the real Conversation/NOR pipeline. business_trip is the
+    // ONLY category wired to CREATE_NOR (problem-solving-service.js's
+    // CATEGORY_TO_INTENT), so a bare "NOR" creation request belongs here
+    // too. Verified: zero overlap with any other registered category's
+    // keywords/patterns ('nor'/'buat'/'membuat'/'bikin'/'susun' do not
+    // appear in facility/procurement/administration/knowledge_search/
+    // document_upload above or below).
+    keywords: Object.freeze(['perjalanan dinas', 'dinas', 'perjalanan', 'trip', 'travel', 'nor']),
     patterns: Object.freeze([
       Object.freeze({ name: 'TRIP_PHRASE', re: /\b(perjalanan\s+dinas|business\s+trip)\b/i }),
+      Object.freeze({ name: 'NOR_CREATE_PHRASE', re: /\b(buat(kan)?|membuat|bikin|susun)\b[^.?!]{0,40}\bnor\b/i }),
     ]),
   }),
   // Phase 10.5, Part 7 Scenario 3 ("Mau beli meja").
@@ -159,6 +186,15 @@ function scoreRule(rule, normalized) {
   };
 }
 
+/** Mirrors intent-engine.js's own NOR_TYPE_KEYWORDS content exactly — see
+ *  header. Both tables recognize the same three registered NOR_TYPE
+ *  values; only the consuming category ('business_trip' here) differs. */
+const NOR_TYPE_KEYWORDS = Object.freeze([
+  Object.freeze({ value: NOR_TYPE.PERJALANAN_DINAS, keywords: Object.freeze(['perjalanan dinas', 'dinas', 'perjalanan']) }),
+  Object.freeze({ value: NOR_TYPE.REIMBURSEMENT, keywords: Object.freeze(['reimbursement', 'penggantian']) }),
+  Object.freeze({ value: NOR_TYPE.PENGADAAN, keywords: Object.freeze(['pengadaan', 'pembelian']) }),
+]);
+
 function extractFacts(category, normalized) {
   const facts = {};
   if (category === 'facility') {
@@ -170,9 +206,8 @@ function extractFacts(category, normalized) {
     if (symptom) facts.symptom = symptom;
   }
   if (category === 'business_trip') {
-    if (hasKeyword(normalized, 'dinas') || hasKeyword(normalized, 'perjalanan')) {
-      facts.type = 'Perjalanan Dinas';
-    }
+    const type = firstMatch(normalized, NOR_TYPE_KEYWORDS);
+    if (type) facts.type = type;
   }
   if (category === 'procurement') {
     const item = firstMatch(normalized, PROCUREMENT_ITEM_KEYWORDS);

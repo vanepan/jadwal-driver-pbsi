@@ -100,6 +100,14 @@ function domainTypeOf(intent, gatheredFacts) {
   return gatheredFacts.domainType || null;
 }
 
+/** North Star Gap Closure — the extracted/answered "Jenis NOR" fact,
+ *  needed by getRequiredFacts(intent, norType) (intent-contract.js) to pick
+ *  the right NOR Type's fieldSchema. Meaningless for any intent other than
+ *  CREATE_NOR, exactly like domainTypeOf() above. */
+function norTypeOf(intent, gatheredFacts) {
+  return intent === INTENT.CREATE_NOR ? (gatheredFacts.type || null) : null;
+}
+
 /** Real, CONFIRMED prior occasions only — a Conversation still ACTIVE or
  *  READY has not been confirmed as anything yet, and using it as a source
  *  for ANOTHER conversation would let one unfinished guess launder itself
@@ -115,9 +123,10 @@ function advance({
 }) {
   const missing = computeMissingFacts(intent, gatheredFacts);
   const domainType = domainTypeOf(intent, gatheredFacts);
+  const norType = norTypeOf(intent, gatheredFacts);
   const previousConversations = previousConversationsFor(actorId, intent, excludeConversationId);
   const { resolved, stillMissing } = optimizeQuestions({
-    intent, domainType, missingQuestions: missing, previousConversations,
+    intent, domainType, norType, missingQuestions: missing, previousConversations,
   });
 
   const mergedFacts = { ...gatheredFacts };

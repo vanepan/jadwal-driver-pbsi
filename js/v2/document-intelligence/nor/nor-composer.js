@@ -43,6 +43,21 @@
 
    RESPONSIBILITY: composeNorDocument(gatheredFacts, opts).
 
+   NORTH STAR GAP CLOSURE — NOR TYPE SCOPING BEFORE COMPOSITION. See
+   docs/NOR_TYPE_DOMAIN_MODEL.md. This was the single most dangerous
+   finding in docs/NORTH_STAR_READINESS_AUDIT.md's Stage 7: composing
+   against EVERY Approved `nor`-domain item regardless of which NOR Type
+   the gatheredFacts describe let wrong-domain content (petty-cash
+   boilerplate) render into a business-trip draft as if it were correct.
+   Approved items are now filtered against `gatheredFacts.type` before
+   `patterns`/`renderingRules` are derived — an item with no
+   `payload.norType` stays generic (applies to every NOR Type, e.g. a
+   footer/pagination rule), an item WITH one only applies to a matching
+   occasion. No existing seeded item carries `payload.norType` yet, so this
+   filter is presently a no-op for every fixture that predates it; it only
+   starts mattering once real, NOR-Type-tagged content exists (a content
+   decision this design doc explicitly deferred, not part of this change).
+
    DEPENDENCIES: nor-generator.js (proposeNorFields — reused, unchanged),
    knowledge/services/knowledge-service.js, knowledge/services/
    explainability-service.js, knowledge/language/contracts/
@@ -100,7 +115,14 @@ export function composeNorDocument(gatheredFacts = {}, opts = {}) {
   }
 
   const approved = listKnowledge({ domainType: 'nor', lifecycleState: LIFECYCLE_STATE.APPROVED });
-  const items = approved.ok ? approved.data : [];
+  const allItems = approved.ok ? approved.data : [];
+  // NOR Type scoping — see header. An item with no payload.norType is
+  // generic; an item WITH one only applies when it matches this occasion.
+  const norType = gatheredFacts.type || null;
+  const items = allItems.filter((i) => {
+    const itemNorType = i.payload && i.payload.norType;
+    return !itemNorType || itemNorType === norType;
+  });
 
   const patterns = items.filter((i) => PATTERN_KINDS.includes(i.kind) && isPatternEntry(i.payload));
   const renderingRules = items.filter((i) => i.kind === 'rendering_rule' && isRenderingRuleEntry(i.payload));

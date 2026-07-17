@@ -29,13 +29,33 @@
    Memory, an approved Profile Override, or a prior Conversation of the
    same actor) — see question-optimizer.js's header.
 
-   RESPONSIBILITY: INTENT, INTENT_FIELD_SCHEMA, makeIntentResult,
-   isIntentResult.
+   RESPONSIBILITY: INTENT, INTENT_FIELD_SCHEMA, getRequiredFacts,
+   makeIntentResult, isIntentResult.
 
-   DEPENDENCIES: none.
+   NORTH STAR GAP CLOSURE — CREATE_NOR'S SCHEMA IS NOW NOR-TYPE-BRANCHED.
+   See docs/NOR_TYPE_DOMAIN_MODEL.md (the approved design this implements).
+   CREATE_NOR's own INTENT_FIELD_SCHEMA entry below now holds only `type`
+   ("Jenis NOR") — the one fact every CREATE_NOR conversation must resolve
+   regardless of which NOR Type it turns out to be. getRequiredFacts(intent,
+   norType) appends that NOR Type's own fieldSchema (knowledge/registry/
+   nor-type-registry.js — the same registered-vocabulary shape
+   problem-category-contract.js already established for Problem Category)
+   once `type` is known. This is the one deliberate exception to this
+   file's "DEPENDENCIES: none" discipline below: NOR Type is a real,
+   registered vocabulary value (not parsing logic), so importing it here is
+   the same kind of dependency intent-contract.js already accepts none of —
+   except this one, because the alternative (duplicating NOR Type's
+   fieldSchema content inside this file, a second time) is the exact
+   drift risk this whole change exists to close.
+
+   DEPENDENCIES: knowledge/registry/nor-type-registry.js (NOR_TYPE id
+   constants, hasNorType, getNorTypeFieldSchema — vocabulary only, itself
+   zero-dependency).
    ============================================================ */
 
 'use strict';
+
+import { NOR_TYPE, hasNorType, getNorTypeFieldSchema } from '../../knowledge/registry/nor-type-registry.js';
 
 export const INTENT_RESULT_SCHEMA = 'intent-detection-result@1';
 
@@ -66,15 +86,14 @@ export const INTENT = Object.freeze({
 
 /** The mission's own CREATE_NOR walkthrough, named field for field: "Type =
  *  Perjalanan Dinas [known from the utterance]... Missing: Destination,
- *  Traveler, Departure, Return, Budget." */
+ *  Traveler, Departure, Return, Budget." — `type` here is the ONLY field
+ *  every CREATE_NOR conversation asks unconditionally; the rest of that
+ *  walkthrough's fields now live on NOR Type "Perjalanan Dinas" itself
+ *  (knowledge/registry/nor-type-registry.js), reached through
+ *  getRequiredFacts(intent, norType) below once `type` is known. */
 export const INTENT_FIELD_SCHEMA = Object.freeze({
   [INTENT.CREATE_NOR]: Object.freeze([
     Object.freeze({ field: 'type', label: 'Jenis NOR', prompt: 'NOR jenis apa yang ingin dibuat?', optimizable: false }),
-    Object.freeze({ field: 'destination', label: 'Tujuan', prompt: 'Tujuan perjalanan/kegiatan ke mana?', optimizable: false }),
-    Object.freeze({ field: 'traveler', label: 'Pelaksana', prompt: 'Siapa atau unit mana yang melaksanakan?', optimizable: true }),
-    Object.freeze({ field: 'departureDate', label: 'Tanggal Berangkat', prompt: 'Kapan tanggal keberangkatan?', optimizable: false }),
-    Object.freeze({ field: 'returnDate', label: 'Tanggal Kembali', prompt: 'Kapan tanggal kembali?', optimizable: false }),
-    Object.freeze({ field: 'budget', label: 'Estimasi Anggaran', prompt: 'Berapa estimasi anggaran yang dibutuhkan?', optimizable: false }),
   ]),
   [INTENT.UPLOAD_KNOWLEDGE]: Object.freeze([
     Object.freeze({ field: 'domainType', label: 'Domain', prompt: 'Dokumen ini termasuk domain apa (mis. nor)?', optimizable: false }),
@@ -98,8 +117,26 @@ export const INTENT_FIELD_SCHEMA = Object.freeze({
   [INTENT.UNKNOWN]: Object.freeze([]),
 });
 
-export function getRequiredFacts(intent) {
-  return INTENT_FIELD_SCHEMA[intent] || Object.freeze([]);
+/**
+ * @param {string} intent
+ * @param {string|null} [norType] - only consulted for INTENT.CREATE_NOR; the
+ *   extracted/answered "Jenis NOR" fact (gatheredFacts.type). Every other
+ *   intent's schema is unaffected — this parameter is meaningless to them,
+ *   exactly as documented on INTENT_FIELD_SCHEMA itself.
+ */
+export function getRequiredFacts(intent, norType = null) {
+  const base = INTENT_FIELD_SCHEMA[intent] || Object.freeze([]);
+  if (intent !== INTENT.CREATE_NOR || !norType) return base;
+
+  const ownSchema = hasNorType(norType) ? getNorTypeFieldSchema(norType) : Object.freeze([]);
+  // Registered but not yet specialized (e.g. Reimbursement — see
+  // nor-type-registry.js's own bootstrap comment) or an unregistered value
+  // altogether: fall back to the one schema this platform has always asked
+  // (Perjalanan Dinas's), rather than asking nothing beyond "Jenis NOR" for
+  // a NOR Type nobody has authored real content for yet. Never a
+  // regression from pre-North-Star-Gap-Closure behavior.
+  const effectiveSchema = ownSchema.length ? ownSchema : getNorTypeFieldSchema(NOR_TYPE.PERJALANAN_DINAS);
+  return Object.freeze([...base, ...effectiveSchema]);
 }
 
 /**
