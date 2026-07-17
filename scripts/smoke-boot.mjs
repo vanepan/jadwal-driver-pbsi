@@ -45,6 +45,14 @@ const loginVisible = await page.evaluate(() => {
 const pushSectionExists = await page.evaluate(() => !!document.getElementById('profilePushSection'));
 const enablePushBtnExists = await page.evaluate(() => !!document.getElementById('btnEnablePushDevice'));
 const ver = await page.evaluate(async () => (await (await fetch('/version.json')).json()).version);
+// SS1 hotfix (v1.27.1): app-ready is what actually lifts `visibility:hidden`
+// off the whole app shell (see index.html's startup-gating <style> block) —
+// this is the direct, real-browser regression check that the DOMContentLoaded
+// bootstrap chain (feature flags → auth gate → admin UI wiring) still reaches
+// its end and dismisses the splash under normal conditions after the SS1
+// timeout guards were added.
+const appReady = await page.evaluate(() => document.body.classList.contains('app-ready'));
+const splashGone = await page.evaluate(() => !document.getElementById('app-splash'));
 
 // Module/boot errors are fatal. Firebase network noise (unauthenticated reads,
 // permission_denied) is EXPECTED on an unauthenticated load and is not a boot failure.
@@ -56,6 +64,8 @@ console.log('version.json        :', ver);
 console.log('login modal visible :', loginVisible);
 console.log('push section in DOM  :', pushSectionExists);
 console.log('enable-push btn      :', enablePushBtnExists);
+console.log('app-ready reached    :', appReady);
+console.log('splash removed       :', splashGone);
 console.log('fatal boot errors    :', fatal.length);
 if (fatal.length) fatal.forEach(e => console.log('   ✗', e));
 console.log('--- all console errors (informational) ---');
@@ -66,6 +76,6 @@ server.close();
 
 // version.json must match the source APP_VERSION (proves sync-version stamped it);
 // self-updating so it never goes stale on a release bump.
-const pass = ver === APP_VERSION && loginVisible && pushSectionExists && enablePushBtnExists && fatal.length === 0;
+const pass = ver === APP_VERSION && loginVisible && pushSectionExists && enablePushBtnExists && appReady && splashGone && fatal.length === 0;
 console.log('\nSMOKE RESULT:', pass ? 'PASS' : 'FAIL');
 process.exit(pass ? 0 : 1);

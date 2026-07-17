@@ -370,7 +370,7 @@ export function validateUser(user) {
  * Checks: currentOdometer is a non-negative finite number.
  *         If previousOdometer provided: no backward movement.
  * Warns:  jump > settings operations.odometerWarnJumpKm (anomali tidak wajar).
- *         If referenceOdometer provided (v1.27.0 — vehicle.lastOdometer at
+ *         If referenceOdometer provided (v1.27.0/SS2 — vehicle.odometer at
  *         Start Assignment): current far below it → WARNING ONLY, never an
  *         error, since a smaller Odometer Awal can be a legitimate correction.
  *
@@ -426,7 +426,7 @@ export function validateOdometer(data) {
     }
   }
 
-  // ── Reference odometer (v1.27.0 — vehicle.lastOdometer, warn-only) ──
+  // ── Reference odometer (v1.27.0/SS2 — vehicle.odometer, warn-only) ──
   // Unlike previousOdometer above, this NEVER blocks: a smaller Odometer Awal
   // than the vehicle's last recorded value can be a legitimate correction.
   const hasRef = d.referenceOdometer !== undefined &&

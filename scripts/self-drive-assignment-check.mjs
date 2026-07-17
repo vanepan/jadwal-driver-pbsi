@@ -85,12 +85,15 @@ check('...while vehicleOdoList DOES carry it (Requirement 8: Vehicle Analytics s
       in plain Node; see file header)
    ════════════════════════════════════════════════════════════════════════ */
 
-console.log('\n[vehicles-store.js: lastOdometer accessors]');
+console.log('\n[vehicles-store.js: odometer accessors (SS2 hotfix — renamed from lastOdometer)]');
 const vehiclesStoreSrc = src('js/vehicles-store.js');
 check('exports getVehicleByName', vehiclesStoreSrc.includes('export function getVehicleByName'));
-check('exports updateVehicleLastOdometer', vehiclesStoreSrc.includes('export async function updateVehicleLastOdometer'));
-check('updateVehicleLastOdometer writes lastOdometer via updateFirebaseData (partial update, not a full overwrite)', /updateFirebaseData\(VEHICLES_PATH \+ '\/' \+ vehicleId, updates\)/.test(vehiclesStoreSrc));
+check('exports updateVehicleOdometer (renamed from updateVehicleLastOdometer)', vehiclesStoreSrc.includes('export async function updateVehicleOdometer'));
+check('the old updateVehicleLastOdometer export is gone', !vehiclesStoreSrc.includes('export async function updateVehicleLastOdometer'));
+check('updateVehicleOdometer writes the EXISTING odometer field, not a new lastOdometer field', /const updates = \{ odometer: String\(Number\(value\)\), updatedAt:/.test(vehiclesStoreSrc));
+check('updateVehicleOdometer writes via updateFirebaseData (partial update, not a full overwrite)', /updateFirebaseData\(VEHICLES_PATH \+ '\/' \+ vehicleId, updates\)/.test(vehiclesStoreSrc));
 check('local-cache branch (non-Firebase) updates the in-memory vehicle without touching Firebase', /if \(!isFirebaseConfigured\(\)\) \{\s*refreshVehiclesCache/.test(vehiclesStoreSrc));
+check('odometer is still declared exactly once in ASSET_STRING_FIELDS (no schema duplication)', (vehiclesStoreSrc.match(/'odometer'/g) || []).length === 1);
 
 console.log('\n[validation.js: referenceOdometer warn-only param]');
 const validationSrc = src('js/validation.js');
@@ -104,7 +107,10 @@ check('existing previousOdometer hard-block (backward movement) is untouched', v
 console.log('\n[modal.js: odometer autofill + Bidang self-drive ownership]');
 const modalSrc = src('js/modal.js');
 check('imports getVehicleByName from vehicles-store.js', modalSrc.includes("import { getVehicleByName } from './vehicles-store.js';"));
-check('Start Assignment prefills #odoInput from vehicle.lastOdometer', /isStart && _odoVehicle\?\.lastOdometer != null/.test(modalSrc));
+check('no leftover functional reads of the removed vehicle.lastOdometer field', !/_odoVehicle\?\.lastOdometer/.test(modalSrc));
+check('_vehicleOdometerValue helper reads vehicle.odometer (SS2: existing field, not lastOdometer)', /function _vehicleOdometerValue\(vehicle\)/.test(modalSrc) && /const raw = vehicle\?\.odometer;/.test(modalSrc));
+check("_vehicleOdometerValue treats '' (never set) as no value, not 0", /if \(raw == null \|\| raw === ''\) return null;/.test(modalSrc));
+check('Start Assignment prefills #odoInput via _vehicleOdometerValue', /const _odoAutofill = isStart \? _vehicleOdometerValue\(_odoVehicle\) : null;/.test(modalSrc));
 check('field stays a plain input — never marked readonly/disabled for the autofill (Requirement 5)', !/odoInput['"]\)?\.(readOnly|disabled)\s*=\s*true/.test(modalSrc));
 check('_handleOdometerConfirm passes referenceOdometer only on Start', /referenceOdometer: refOdoVal/.test(modalSrc));
 check('_isOwnBidangAssignment helper extracted and shared', (modalSrc.match(/_isOwnBidangAssignment\(/g) || []).length >= 3);
@@ -127,16 +133,17 @@ check('mandatory-field check uses driverRaw (untouched dropdown), not the normal
 check('driver conflict check is skipped when driver === \'\' (Self-Drive)', /driver !== '' && checkConflict\(driver,/.test(assignmentsSrc));
 check('edit-mode populate selects the sentinel for a stored empty driver', /a\.driver === '' \? NO_DRIVER_SENTINEL : a\.driver/.test(assignmentsSrc) || /a\.driver == null \|\| a\.driver === ''\) \? NO_DRIVER_SENTINEL/.test(assignmentsSrc));
 
-console.log('\n[app.js: approval-flow self-drive + lastOdometer write-back]');
+console.log('\n[app.js: approval-flow self-drive + odometer write-back]');
 const appSrc = src('js/app.js');
-check('imports getVehicleByName + updateVehicleLastOdometer from vehicles-store.js', /getVehicleByName,\s*updateVehicleLastOdometer,/.test(appSrc));
+check('imports getVehicleByName + updateVehicleOdometer from vehicles-store.js (SS2: renamed from updateVehicleLastOdometer)', /getVehicleByName,\s*updateVehicleOdometer,/.test(appSrc));
+check('no leftover reference to the removed updateVehicleLastOdometer', !appSrc.includes('updateVehicleLastOdometer'));
 check('commitApproval no longer hard-blocks an intentional self-drive decision', /if \(!effDriver && !request\.noDriver && !\('driver' in decision\)\)/.test(appSrc));
 check('driver-conflict filter is skipped when effDriver is empty (Self-Drive)', /const conflictingDates = effDriver \? dates\.filter/.test(appSrc));
 check('#approveDriverSelect gains a "Tanpa Driver" (__none__) option', appSrc.includes("'<option value=\"__none__\">Tanpa Driver</option>'"));
 check('confirmApproveRequest only blocks on the untouched placeholder, not the explicit self-drive sentinel', appSrc.includes("if (selDriverRaw === '') { showToast('Pilih driver dulu.'); return; }"));
 check('_approveNormalizedDriver collapses the sentinel everywhere it is read', (appSrc.match(/_approveNormalizedDriver\(/g) || []).length >= 4);
-check('registerCompleteCallback writes vehicle.lastOdometer back on every completed trip with a vehicle', /if \(assignments\[idx\]\.vehicle && endOdometer != null\) \{\s*const veh = getVehicleByName/.test(appSrc));
-check('lastOdometer write-back is fire-and-forget (never blocks the completion already committed)', /updateVehicleLastOdometer\(veh\.id, endOdometer\)\.catch/.test(appSrc));
+check('registerCompleteCallback writes vehicle.odometer back on every completed trip with a vehicle', /if \(assignments\[idx\]\.vehicle && endOdometer != null\) \{\s*const veh = getVehicleByName/.test(appSrc));
+check('odometer write-back is fire-and-forget (never blocks the completion already committed)', /updateVehicleOdometer\(veh\.id, endOdometer\)\.catch/.test(appSrc));
 
 console.log('\n[analytics-engine.js: source pattern confirms the runtime result above]');
 const analyticsSrc = src('js/analytics/analytics-engine.js');

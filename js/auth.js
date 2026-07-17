@@ -181,7 +181,16 @@ async function _hydrateFromFirebaseUser(user) {
   let role = 'viewer';
   const cached = getCurrentUser();
   try {
-    const res = await user.getIdTokenResult();
+    // SS1 hotfix (v1.27.1): getIdTokenResult() refreshes over the network when
+    // the cached token is stale, and that request has no built-in timeout — on
+    // a flaky connection at cold-start it can hang indefinitely, which (since
+    // this whole function is awaited before authReady() resolves) froze the
+    // startup splash screen forever. Bounded so a stalled refresh degrades to
+    // the cached role instead of blocking startup; a rejection already did.
+    const res = await Promise.race([
+      user.getIdTokenResult(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('getIdTokenResult timeout')), 5000)),
+    ]);
     role = res.claims?.role || role;
   } catch (_) {
     if (cached && cached.username === user.uid) role = cached.role || role;
@@ -424,7 +433,17 @@ export async function initAuthUI(onAuthChange) {
   // hydrates the session cache and resolves authReady().
   registerAuthStateCallback(_hydrateFromFirebaseUser);
   initFirebaseAuthLayer();
-  await authReady();
+  // SS1 hotfix (v1.27.1): authReady() only resolves once onAuthStateChanged
+  // fires once — normally near-instant, but any hang upstream (Firebase Auth
+  // network hiccup, or a future change to the hydration callback) would
+  // otherwise wait here forever and freeze the startup splash screen, since
+  // this function is awaited before app.js reveals the app. Bounded so the
+  // login gate always opens; the real listener keeps running in the
+  // background and still hydrates/notifies normally once it settles.
+  await Promise.race([
+    authReady(),
+    new Promise(resolve => setTimeout(resolve, 8000)),
+  ]);
   updateAuthUI();
 
   if (!getCurrentUser()) {

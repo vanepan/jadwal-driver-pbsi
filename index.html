@@ -22,11 +22,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Archivo:wght@400;500;600;700;800;900&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=1.27.0" />
+  <link rel="stylesheet" href="style.css?v=1.27.1" />
   <link rel="stylesheet" href="platform.css?v=2.1.2" />
-  <link rel="stylesheet" href="petty-cash.css?v=1.27.0" />
-  <link rel="stylesheet" href="overtime.css?v=1.27.0" />
-  <link rel="stylesheet" href="engineering.css?v=1.27.0" />
+  <link rel="stylesheet" href="petty-cash.css?v=1.27.1" />
+  <link rel="stylesheet" href="overtime.css?v=1.27.1" />
+  <link rel="stylesheet" href="engineering.css?v=1.27.1" />
   <link rel="stylesheet" href="sarpras-intelligence.css?v=1.23.0" />
   <link rel="stylesheet" href="nor-center.css?v=1.23.0" />
   <link rel="stylesheet" href="workspace-list-kit.css?v=1.23.0" />
@@ -53,6 +53,26 @@
       var t = localStorage.getItem('pbsi_theme');
       if (t === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
     })();
+  </script>
+
+  <!-- SS1 hotfix (v1.27.1) — startup deadlock failsafe. Registered synchronously
+       here, in <head>, BEFORE js/app.js (a module script) even starts loading —
+       so this net exists independent of anything inside app.js's async bootstrap
+       chain, including app.js itself failing to load/execute. js/app.js's own
+       DOMContentLoaded handler sets .app-ready normally, almost always in well
+       under a second; the per-await timeouts added alongside this hotfix (auth
+       hydration, auth-ready gate, session bootstrap) make that the common path.
+       This timer is only the last-resort net for anything those don't catch —
+       it must never fire under normal operation. -->
+  <script>
+    window.setTimeout(function () {
+      if (document.body && !document.body.classList.contains('app-ready')) {
+        console.warn('[startup] app-ready timeout after 15s — forcing splash dismissal (SS1 hotfix failsafe).');
+        document.body.classList.add('app-ready');
+        var splash = document.getElementById('app-splash');
+        if (splash) splash.remove();
+      }
+    }, 15000);
   </script>
 </head>
 <body>
@@ -1185,6 +1205,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="vendor/flatpickr.min.js"></script>
-<script type="module" src="js/app.js?v=1.27.0"></script>
+<script type="module" src="js/app.js?v=1.27.1"></script>
 </body>
 </html>

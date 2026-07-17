@@ -199,18 +199,25 @@ export function getVehicleByName(vehicleName) {
 }
 
 /**
- * Update a vehicle's `lastOdometer` — the additive field Start Assignment
+ * Update a vehicle's `odometer` — the existing Vehicle Registration field
+ * (ASSET_STRING_FIELDS above) — the single source of truth Start Assignment
  * autofills Odometer Awal from. Called once an assignment completes with a
- * captured Odometer Akhir (see app.js registerCompleteCallback). Optional
- * field: absent on any vehicle until its first completed trip sets it.
+ * captured Odometer Akhir (see app.js registerCompleteCallback). Stored as a
+ * trimmed string, matching every other admin-edited asset field (and the
+ * Vehicle Registration form, which also writes this field as a string) — the
+ * value is still numeric-safe to read back via Number(vehicle.odometer).
+ * SS2 hotfix (v1.27.1): v1.27.0 introduced a separate additive `lastOdometer`
+ * field for this instead of reusing the existing `odometer` field, so a
+ * vehicle's registration Odometer never advanced and Start Assignment kept
+ * defaulting Odometer Awal to empty. Renamed from updateVehicleLastOdometer.
  * @param {string} vehicleId
  * @param {number} value
  */
-export async function updateVehicleLastOdometer(vehicleId, value) {
+export async function updateVehicleOdometer(vehicleId, value) {
   const existing = vehicles.find(v => v.id === vehicleId);
   if (!existing) return;
 
-  const updates = { lastOdometer: Number(value), updatedAt: new Date().toISOString() };
+  const updates = { odometer: String(Number(value)), updatedAt: new Date().toISOString() };
 
   if (!isFirebaseConfigured()) {
     refreshVehiclesCache(mapFirebaseVehicles(Object.fromEntries(

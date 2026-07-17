@@ -52,7 +52,7 @@ import {
   deleteMaintenanceRecord,
   getMaintenanceRecords,
   getVehicleByName,
-  updateVehicleLastOdometer,
+  updateVehicleOdometer,
 } from './vehicles-store.js';
 import { initSettingsStore, getSetting, updateSetting, registerSettingsChangeListener } from './settings-store.js';
 import { initPWA, getPWAState, registerPWAStateListener, triggerInstallPrompt, showIOSInstallModal } from './pwa.js';
@@ -11223,8 +11223,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Returning user (persisted session restored) → start immediately.
   // (onAuthAvailable also covers this in Firebase mode; startAuthenticatedSession
   // is idempotent so a double-trigger is harmless.)
+  // SS1 hotfix (v1.27.1): startAuthenticatedSession() chains several RTDB
+  // reads (users/logs/export-history/drivers/vehicles/settings) with no
+  // individual timeout — a stalled one on a flaky network would otherwise
+  // hang this await forever and freeze the startup splash screen. Bounded so
+  // app-ready is always reached; the session bootstrap keeps running in the
+  // background (its _sessionInfraStarted guard + onAuthAvailable already make
+  // finishing late safe) and the UI self-heals as each piece completes.
   if (getCurrentUser()) {
-    await startAuthenticatedSession();
+    await Promise.race([
+      startAuthenticatedSession(),
+      new Promise(resolve => setTimeout(resolve, 8000)),
+    ]);
   }
 
   await initAdminUI();                   // Setup admin user management (UI wiring only)
@@ -11623,16 +11633,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     saveOneAssignment(assignments[idx]); // Surgical: hanya update record ini di Firebase
     renderViews();
 
-    // v1.27.0: keep vehicle.lastOdometer in sync so the NEXT assignment (driver
-    // or self-drive, any vehicle) autofills Odometer Awal from it — applies to
-    // every completed trip with a vehicle, not just self-drive. Non-blocking:
-    // a transient Firebase hiccup here must never undo the completion already
-    // committed to `assignments` above.
+    // v1.27.0/SS2: keep vehicle.odometer (the existing Vehicle Registration
+    // field — single source of truth, not a separate `lastOdometer` field) in
+    // sync so the NEXT assignment (driver or self-drive, any vehicle) autofills
+    // Odometer Awal from it — applies to every completed trip with a vehicle,
+    // not just self-drive. Non-blocking: a transient Firebase hiccup here must
+    // never undo the completion already committed to `assignments` above.
     if (assignments[idx].vehicle && endOdometer != null) {
       const veh = getVehicleByName(assignments[idx].vehicle);
       if (veh) {
-        updateVehicleLastOdometer(veh.id, endOdometer).catch(err =>
-          console.warn('[lastOdometer] update failed', err)
+        updateVehicleOdometer(veh.id, endOdometer).catch(err =>
+          console.warn('[odometer] update failed', err)
         );
       }
     }

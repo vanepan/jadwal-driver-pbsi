@@ -144,8 +144,20 @@ export function setAssignments(newAssignments) {
 let _odoType       = null;  // 'start' | 'complete'
 let _odoId         = null;  // assignmentId
 let _odoAssignment = null;  // assignment object (for context + prev odometer)
-let _odoVehicle    = null;  // v1.27.0: resolved vehicle record (for lastOdometer autofill/reference)
+let _odoVehicle    = null;  // v1.27.0: resolved vehicle record (for odometer autofill/reference)
 let _odoCallback   = null;  // (assignmentId, odoData) => void
+
+// SS2 hotfix (v1.27.1): vehicles/{id}/odometer is the existing Vehicle
+// Registration field (stored as a trimmed string — see ASSET_STRING_FIELDS in
+// vehicles-store.js) and is the single source of truth for autofill/reference,
+// not the v1.27.0 `lastOdometer` field. '' (never set) must read as "no value",
+// not as 0.
+function _vehicleOdometerValue(vehicle) {
+  const raw = vehicle?.odometer;
+  if (raw == null || raw === '') return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
 
 function _openOdometerModal(type, assignmentId, assignment, callback) {
   _odoType       = type;
@@ -172,9 +184,10 @@ function _openOdometerModal(type, assignmentId, assignment, callback) {
   if (labelEl)   labelEl.textContent = isStart ? 'KM AWAL' : 'KM AKHIR';
   if (confirmEl) confirmEl.textContent = isStart ? 'Mulai Assignment' : 'Selesaikan Assignment';
   if (hintEl)    { hintEl.textContent = ''; }
-  // v1.27.0: Start Assignment autofills Odometer Awal from vehicle.lastOdometer
+  // v1.27.0/SS2: Start Assignment autofills Odometer Awal from vehicle.odometer
   // (default value only — stays a normal editable input, never readonly/disabled).
-  if (input)     { input.value = (isStart && _odoVehicle?.lastOdometer != null) ? String(_odoVehicle.lastOdometer) : ''; }
+  const _odoAutofill = isStart ? _vehicleOdometerValue(_odoVehicle) : null;
+  if (input)     { input.value = _odoAutofill != null ? String(_odoAutofill) : ''; }
   if (previewEl) { previewEl.style.display = 'none'; }
 
   if (metaEl) {
@@ -255,10 +268,8 @@ function _handleOdometerConfirm() {
   const prevOdoVal = (!isStart && _odoAssignment?.startOdometer != null)
     ? _odoAssignment.startOdometer
     : undefined;
-  // v1.27.0: warn-only comparison against vehicle.lastOdometer, Start only.
-  const refOdoVal = (isStart && _odoVehicle?.lastOdometer != null)
-    ? _odoVehicle.lastOdometer
-    : undefined;
+  // v1.27.0/SS2: warn-only comparison against vehicle.odometer, Start only.
+  const refOdoVal = isStart ? (_vehicleOdometerValue(_odoVehicle) ?? undefined) : undefined;
 
   const result = validateOdometer({ currentOdometer: raw, previousOdometer: prevOdoVal, referenceOdometer: refOdoVal });
 
