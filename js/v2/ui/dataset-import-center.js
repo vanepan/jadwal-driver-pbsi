@@ -72,8 +72,23 @@ import {
 import {
   createImportSession, attachManualEntryFacts, attachParsedContent, attachFileStorage,
   attachInferenceResult, updateSessionMetadata,
+  attachFactsProvenance, attachExtractionSuggestion, listReanalysisCandidates,
   getImportSession, listImportSessions, getImportSessionHistory, hasContentFacts,
 } from '../knowledge/datasets/import-session/import-session-engine.js';
+// V2, Part A1 (Intelligent Ingestion) — real .docx content, not just
+// filename/metadata. An EVIDENCE write exactly like attachManualEntryFacts
+// above (see the invariant comment above this import block) — the only
+// difference is WHO/WHAT computed the evidence being attached.
+import { extractDocxText, extractDocxTextFromBytes } from '../knowledge/datasets/import-session/docx-text-extractor.js';
+import { extractContentFacts } from '../knowledge/datasets/import-session/content-fact-extraction-engine.js';
+import { CURRENT_METADATA_PARSER_VERSION, CURRENT_CONTENT_PARSER_VERSION } from '../knowledge/datasets/import-session/parser-registry.js';
+// V2, Part A2 (Background Re-Analysis) — the pure merge policy, and the
+// dormant-until-now Correction engine, revived for its real intended
+// general-purpose use: safely proposing enrichment against a KnowledgeItem
+// that may already be Approved (never mutated in place — see that file's
+// own header).
+import { mergeExtractedFacts } from '../knowledge/datasets/import-session/fact-merge-engine.js';
+import { startCorrectionSession, submitCorrection, finishCorrectionSession } from '../knowledge/learning/correction-pipeline-engine.js';
 // The ONE driver of the pipeline. This UI no longer sequences submit ->
 // approve -> import -> archive by hand (that duplicated logic was exactly what
 // let a refresh orphan a session forever); it hands a session to the scheduler
@@ -99,7 +114,7 @@ import {
 } from '../knowledge/datasets/import-session/import-batch-engine.js';
 import { DATASET_TYPE } from '../knowledge/datasets/contracts/dataset-contract.js';
 import { listDatasets } from '../knowledge/datasets/registry/dataset-registry.js';
-import { manualFileSource } from '../knowledge/connectors/manual-file-connector.js';
+import { manualFileSource, NORMALIZATION as MANUAL_FILE_NORMALIZATION } from '../knowledge/connectors/manual-file-connector.js';
 import { listDomainTypes, getDomainType } from '../knowledge/registry/domain-type-registry.js';
 import { listKinds } from '../knowledge/registry/kind-registry.js';
 // Phase 4 — Archive is reached ONLY through its owner. `create as archiveCreate`
@@ -528,6 +543,149 @@ export function archiveDuplicateWarning(session) {
   return `Dokumen dengan hash yang sama sudah ada di Archive (${matches.length} kecocokan: ${matches.map((r) => r.documentNumber).join(', ')}) — kemungkinan duplikat.`;
 }
 
+/** V2, Part A2 (Background Re-Analysis) — re-runs content extraction for
+ *  ONE stale `.docx` session against its ALREADY-UPLOADED bytes (a browser
+ *  File handle cannot survive past the original upload — see
+ *  docx-text-extractor.js#extractDocxTextFromBytes's header — so this
+ *  re-fetches from Storage via js/firebase.js#downloadFileFromStorage,
+ *  lazily imported exactly like uploadFile() already is in
+ *  processOneFile(), never eagerly at module load). Module-scope
+ *  (exported), same "no controller-state dependency" shape as
+ *  archiveDuplicateWarning() above, so it can be driven from the sweep
+ *  trigger (sarpras-intelligence-center.js#rehydrateAndSweep) as well as a
+ *  manual "Re-analyze Now" click.
+ *  @param {object} session
+ *  @returns {Promise<{ok: boolean, changed: boolean, changedFields: string[], reason: string|null}>} */
+export async function runReanalysis(session) {
+  const { downloadFileFromStorage } = await import('../../firebase.js');
+  const downloaded = await downloadFileFromStorage(session.storagePath);
+  if (!downloaded.ok) return { ok: false, changed: false, changedFields: [], reason: 'DOWNLOAD_FAILED' };
+
+  const extraction = await extractDocxTextFromBytes(downloaded.bytes);
+  if (!extraction.ok || !extraction.text.trim()) return { ok: false, changed: false, changedFields: [], reason: 'EXTRACTION_FAILED' };
+
+  const fresh = extractContentFacts(extraction.text);
+  const nowIso = new Date().toISOString();
+  // Always record what THIS run found, independent of whether it changed
+  // anything — same transparency contract processOneFile() already gives
+  // a freshly-uploaded file's extraction.
+  attachExtractionSuggestion(session.id, {
+    value: fresh.value, documentNumber: fresh.documentNumber, senderOrigin: fresh.senderOrigin,
+    confidencePerField: fresh.confidencePerField, basisPerField: fresh.basisPerField,
+    parserVersion: fresh.parserVersion, extractedAt: nowIso,
+  });
+
+  const { merged, confidencePerField, changed, changedFields } = mergeExtractedFacts(session.manualEntryFacts, session.factsProvenance, fresh);
+
+  if (!changed) {
+    // Nothing NEW or BETTER this time — but the session must still be
+    // stamped current, or isFactsStale() would flag it again on every
+    // future sweep forever (a permanent, pointless re-download loop).
+    attachFactsProvenance(session.id, {
+      source: (session.factsProvenance && session.factsProvenance.source) || 'auto-extraction',
+      contentParserVersion: CURRENT_CONTENT_PARSER_VERSION,
+      metadataParserVersion: (session.factsProvenance && session.factsProvenance.metadataParserVersion) ?? CURRENT_METADATA_PARSER_VERSION,
+      confidencePerField: (session.factsProvenance && session.factsProvenance.confidencePerField) || confidencePerField,
+      recordedAt: nowIso,
+    });
+    return { ok: true, changed: false, changedFields: [], reason: null };
+  }
+
+  const before = { ...(session.manualEntryFacts || {}) };
+  attachManualEntryFacts(session.id, merged);
+  attachFactsProvenance(session.id, {
+    source: 'auto-extraction', contentParserVersion: CURRENT_CONTENT_PARSER_VERSION,
+    metadataParserVersion: (session.factsProvenance && session.factsProvenance.metadataParserVersion) ?? CURRENT_METADATA_PARSER_VERSION,
+    confidencePerField, recordedAt: nowIso,
+  });
+
+  // If this session already produced a KnowledgeItem, propose the
+  // enrichment through the SAME safety-typed engine every other Knowledge
+  // correction goes through — submitCorrection() structurally cannot
+  // mutate an Approved item in place (see correction-pipeline-engine.js's
+  // own header): Draft/Candidate/PendingReview items are updated
+  // in-place (nothing was human-approved yet); an Approved item instead
+  // gets a new, DERIVED_FROM-linked Candidate that must go through the
+  // SAME human review/promotion queue as any other Knowledge change —
+  // auto-running this never bypasses "human owns final decision".
+  if (session.knowledgeItemId) {
+    const correctionSession = startCorrectionSession(`system:reanalysis-v${CURRENT_CONTENT_PARSER_VERSION}`);
+    const correctionResult = submitCorrection(correctionSession, {
+      itemId: session.knowledgeItemId,
+      domainType: session.domainType,
+      kind: session.knowledgeKind,
+      correctedPayload: { ...merged, normalization: MANUAL_FILE_NORMALIZATION },
+      correctedBy: `system:reanalysis-v${CURRENT_CONTENT_PARSER_VERSION}`,
+      note: `Parser v${CURRENT_CONTENT_PARSER_VERSION} re-analysis found new/better evidence for: ${changedFields.join(', ')}.`,
+    });
+    finishCorrectionSession(correctionResult.session);
+    // The audit trail — reuses learning/services/learning-service.js's own
+    // chained-supersession ledger (Archive/Knowledge Approval already fire
+    // through this exact function), not a second logging mechanism.
+    recordCorrection({
+      domainType: session.domainType,
+      correctionType: CORRECTION_TYPE.KNOWLEDGE,
+      targetKey: session.knowledgeItemId,
+      actorId: `system:reanalysis-v${CURRENT_CONTENT_PARSER_VERSION}`,
+      reason: `Parser upgrade to v${CURRENT_CONTENT_PARSER_VERSION} found new/better evidence for: ${changedFields.join(', ')}.`,
+      before,
+      after: merged,
+      sourceDocumentId: session.id,
+      affectedKnowledgeId: session.knowledgeItemId,
+      evidence: { parserVersion: CURRENT_CONTENT_PARSER_VERSION, changedFields },
+    });
+  }
+
+  return { ok: true, changed: true, changedFields, reason: null };
+}
+
+let _reanalyzing = false;
+// V2, Part A2 — observability fix. runReanalysisSweep() can be triggered
+// from OUTSIDE this controller's own render cycle (sarpras-intelligence-
+// center.js#rehydrateAndSweep calls it directly, fire-and-forget, with no
+// rerender wired to this workspace if it isn't even the mounted screen at
+// the time) — so a user who lands on Documents mid-sweep, or right after
+// one finished, had NO way to tell it had ever run: the manual button's
+// own st.reanalyzing flag only reflects THIS controller's own click path.
+// _lastSweepStatus is written by EVERY sweep regardless of trigger, and
+// renderReanalysisBanner() below reads it fresh on every real render —
+// so the very next time this workspace renders (a navigation, a click, a
+// batch finishing), the banner honestly shows whether a sweep is running
+// right now and what the last completed one found, never silence.
+let _lastSweepStatus = null; // {startedAt, finishedAt: null|string, swept, changed}
+export function isReanalyzing() { return _reanalyzing; }
+export function getLastSweepStatus() { return _lastSweepStatus; }
+
+/** V2, Part A2 — the background trigger. Same event-driven shape
+ *  pipeline-scheduler.js#sweepPipeline() already established (re-entrancy
+ *  guarded, per-item independent — one file's failure never blocks the
+ *  rest, and a re-run just picks up whatever hasn't converged yet): called
+ *  from sarpras-intelligence-center.js#rehydrateAndSweep() right alongside
+ *  sweepPipeline(), and also available as a manual "Re-analyze Now"
+ *  override. Detection (listReanalysisCandidates()) is always cheap and
+ *  synchronous; only EXECUTION here is async/networked. */
+export async function runReanalysisSweep() {
+  if (_reanalyzing) return { swept: 0, changed: 0, results: [] };
+  _reanalyzing = true;
+  _lastSweepStatus = { startedAt: new Date().toISOString(), finishedAt: null, swept: 0, changed: 0 };
+  try {
+    const candidates = listReanalysisCandidates();
+    const results = [];
+    for (const session of candidates) {
+      try {
+        results.push({ sessionId: session.id, ...(await runReanalysis(session)) });
+      } catch (err) {
+        results.push({ sessionId: session.id, ok: false, changed: false, reason: err && err.message ? err.message : String(err) });
+      }
+    }
+    const summary = { swept: candidates.length, changed: results.filter((r) => r.ok && r.changed).length, results };
+    _lastSweepStatus = { startedAt: _lastSweepStatus.startedAt, finishedAt: new Date().toISOString(), swept: summary.swept, changed: summary.changed };
+    return summary;
+  } finally {
+    _reanalyzing = false;
+  }
+}
+
 /** V2.1.2 Part K — Exception-Based Review. Real reasons only, computed
  *  from signals already on the session (never fabricated): Low
  *  Confidence, Duplicate Ambiguity (within sessions or against the
@@ -543,6 +701,30 @@ export function archiveDuplicateWarning(session) {
  *  usually a no-op before Knowledge Imported) and is documented as a
  *  known gap in the final report rather than faked. Module-scope
  *  (Phase 1) so other workspaces can reuse the real exception logic. */
+/** V2, Part A2 — the real, specific reason a `.docx`/PDF session still
+ *  has no content facts, read from the SAME fields the extraction/
+ *  re-analysis pipeline itself writes (extractionSuggestion,
+ *  factsProvenance) — never a second, independently-guessed explanation.
+ *  Exported so both reviewReasons() and any future surface can show the
+ *  identical, honest diagnosis. */
+export function contentFactsGapMessage(session) {
+  if (session.kind === IMPORT_SESSION_KIND.JSON) {
+    return 'Belum ada konten JSON yang berhasil di-parse — lampirkan fakta secara manual agar dapat diselesaikan.';
+  }
+  if (session.kind !== IMPORT_SESSION_KIND.DOCX) {
+    return 'Format PDF tidak memiliki pembaca konten otomatis (memerlukan OCR, di luar cakupan saat ini) — lampirkan fakta secara manual agar dapat diselesaikan.';
+  }
+  const suggestion = session.extractionSuggestion;
+  if (!suggestion) {
+    return 'Belum pernah diproses oleh parser konten (.docx) — akan diperiksa otomatis pada pemeriksaan latar belakang berikutnya, atau lampirkan fakta secara manual sekarang.';
+  }
+  const foundFields = ['value', 'documentNumber', 'senderOrigin'].filter((f) => suggestion[f]);
+  if (foundFields.length === 0) {
+    return `Parser konten (v${suggestion.parserVersion}) membaca dokumen ini tetapi tidak menemukan pola "No./Dari/Perihal" yang dikenali — lampirkan fakta secara manual agar dapat diselesaikan.`;
+  }
+  return `Parser konten (v${suggestion.parserVersion}) menemukan sebagian fakta (${foundFields.length}/3 bidang) — belum cukup untuk otomatis, lengkapi sisanya atau tunggu parser versi berikutnya.`;
+}
+
 export function reviewReasons(session) {
   const reasons = [];
 
@@ -590,10 +772,14 @@ export function reviewReasons(session) {
   // itself used — never a different opinion, just the same one, in words.
 
   // The most common honest pause: a PDF/DOCX cannot derive its own facts
-  // (no OCR, no AI — by design), so if no human has typed one, there is
-  // genuinely nothing to import.
+  // (no OCR — by design for PDF), so if no human has typed one, there is
+  // genuinely nothing to import. V2, Part A2 — the message now names the
+  // REAL, specific reason instead of one generic sentence for every case:
+  // a reviewer asking "why is this still waiting?" should never have to
+  // guess whether the parser hasn't run yet, ran and found nothing, or
+  // isn't capable of running at all for this format.
   if (!hasContentFacts(session)) {
-    reasons.push({ code: 'MISSING_CONTENT_FACTS', message: 'Belum ada fakta konten (manual atau JSON) — lampirkan fakta agar dapat diselesaikan.', confidence: session.confidence, evidence: null });
+    reasons.push({ code: 'MISSING_CONTENT_FACTS', message: contentFactsGapMessage(session), confidence: session.confidence, evidence: session.extractionSuggestion || null });
   }
 
   // Phase 2.6 — LOW_CONFIDENCE now clears once a human has confirmed the
@@ -1149,6 +1335,7 @@ export function createDatasetImportController(opts = {}) {
       .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))
       .slice(0, RECENT_ROW_CAP);
     const resumeBanner = (!p && !st.resumeBannerDismissed) ? renderResumeBanner() : '';
+    const reanalysisBanner = !p ? renderReanalysisBanner() : '';
     const progressBlock = p ? renderBatchProgress(p) : '';
 
     return `
@@ -1156,11 +1343,12 @@ export function createDatasetImportController(opts = {}) {
         <div class="wlk-page-head">
           <div class="wlk-page-crumb">DATASET IMPORT CENTER</div>
           <h1 class="wlk-page-title">Impor Dokumen</h1>
-          <p class="wlk-page-lede">Tidak ada OCR atau AI. Unggah dokumen — fingerprinting, deduplikasi, klasifikasi, validasi, ekstraksi pengetahuan, dan pengarsipan berjalan otomatis. Anda hanya perlu melihat bagian yang benar-benar memerlukan perhatian.</p>
+          <p class="wlk-page-lede">Tidak ada OCR atau AI untuk PDF. Unggah dokumen — fingerprinting, deduplikasi, klasifikasi, ekstraksi konten .docx, validasi, ekstraksi pengetahuan, dan pengarsipan berjalan otomatis. Anda hanya perlu melihat bagian yang benar-benar memerlukan perhatian.</p>
         </div>
 
         ${renderUtilitiesBar()}
         ${resumeBanner}
+        ${reanalysisBanner}
 
         <div class="wlk-sec">${renderUploadZone()}</div>
 
@@ -1639,6 +1827,22 @@ export function createDatasetImportController(opts = {}) {
     rerender();
   }
 
+  /** V2, Part A2 — manual override for the same background sweep
+   *  sarpras-intelligence-center.js#rehydrateAndSweep() already triggers
+   *  automatically on every real event. Fire-and-forget from onClick,
+   *  same shape as loadDocumentPreview() above. */
+  async function triggerReanalysisNow(rerender) {
+    st.reanalyzing = true;
+    rerender();
+    try {
+      await runReanalysisSweep();
+    } catch (err) {
+      console.error('[dataset-import-center] manual re-analysis trigger failed:', err);
+    }
+    st.reanalyzing = false;
+    rerender();
+  }
+
   /** V2.1 — "Advanced Metadata": the manual form, now collapsed by
    *  default and only shown on request (dic-advanced-open) or when a
    *  batch item's confidence was too low to auto-populate. Edits an
@@ -1661,7 +1865,22 @@ export function createDatasetImportController(opts = {}) {
   }
 
   function renderAdvancedMetadataPanel(s) {
-    const edit = st.advancedEdit || { domainType: s.domainType, datasetType: s.datasetType, knowledgeKind: s.knowledgeKind, facts: s.manualEntryFacts || { value: '', documentNumber: '', senderOrigin: '', notes: '' } };
+    // V2, Part A1 — when no human-confirmed manualEntryFacts exist yet,
+    // prefer content-fact-extraction-engine.js's real (if partial) result
+    // over blank defaults, so a document the parser mostly-but-not-fully
+    // understood still opens pre-filled rather than empty.
+    const suggestion = s.extractionSuggestion;
+    const fallbackFacts = suggestion
+      ? { value: suggestion.value, documentNumber: suggestion.documentNumber, senderOrigin: suggestion.senderOrigin, notes: '' }
+      : { value: '', documentNumber: '', senderOrigin: '', notes: '' };
+    const edit = st.advancedEdit || { domainType: s.domainType, datasetType: s.datasetType, knowledgeKind: s.knowledgeKind, facts: s.manualEntryFacts || fallbackFacts };
+    // Only genuinely uncertain when there's no confirmed manualEntryFacts
+    // yet AND extraction ran but came up empty for that specific field —
+    // never shown once a human (or a confident auto-extraction) has set
+    // manualEntryFacts, and never shown for a field extraction simply
+    // never tried (no suggestion at all, e.g. a session with no docx text).
+    const uncertainHint = (field, label) => (!s.manualEntryFacts && suggestion && !suggestion[field]
+      ? `<div class="wlk-hint">${esc(label)} belum ditemukan.</div>` : '');
     const groupSiblings = lowConfidenceGroupSiblings(s);
     const domainSelect = `
       <select data-act="dic-adv-field" data-field="domainType" class="wlk-select">
@@ -1677,9 +1896,9 @@ export function createDatasetImportController(opts = {}) {
       </select>`;
     const isJson = s.kind === IMPORT_SESSION_KIND.JSON;
     const factsForm = isJson ? '' : `
-      <div class="wlk-form-row"><label>Nilai Pokok (value)</label><input data-act="dic-adv-fact" data-field="value" class="wlk-input" type="text" value="${esc(edit.facts.value)}" placeholder="Fakta utama yang benar-benar Anda baca dari dokumen"/></div>
-      <div class="wlk-form-row"><label>Nomor Dokumen</label><input data-act="dic-adv-fact" data-field="documentNumber" class="wlk-input" type="text" value="${esc(edit.facts.documentNumber)}"/></div>
-      <div class="wlk-form-row"><label>Dari (Sender Origin)</label><input data-act="dic-adv-fact" data-field="senderOrigin" class="wlk-input" type="text" value="${esc(edit.facts.senderOrigin)}"/></div>
+      <div class="wlk-form-row"><label>Nilai Pokok (value)</label><input data-act="dic-adv-fact" data-field="value" class="wlk-input" type="text" value="${esc(edit.facts.value)}" placeholder="Fakta utama yang benar-benar Anda baca dari dokumen"/>${uncertainHint('value', 'Nilai pokok')}</div>
+      <div class="wlk-form-row"><label>Nomor Dokumen</label><input data-act="dic-adv-fact" data-field="documentNumber" class="wlk-input" type="text" value="${esc(edit.facts.documentNumber)}"/>${uncertainHint('documentNumber', 'Nomor dokumen')}</div>
+      <div class="wlk-form-row"><label>Dari (Sender Origin)</label><input data-act="dic-adv-fact" data-field="senderOrigin" class="wlk-input" type="text" value="${esc(edit.facts.senderOrigin)}"/>${uncertainHint('senderOrigin', 'Pengirim')}</div>
       <div class="wlk-form-row"><label>Catatan</label><input data-act="dic-adv-fact" data-field="notes" class="wlk-input" type="text" value="${esc(edit.facts.notes)}"/></div>`;
 
     return `
@@ -1726,6 +1945,58 @@ export function createDatasetImportController(opts = {}) {
               <button class="wlk-btn wlk-btn--ghost" data-act="dic-resume-batch-cancel" data-id="${esc(b.id)}" type="button">Batalkan Batch Ini</button>
             </li>`)}
           <button class="wlk-btn wlk-btn--ghost" data-act="dic-resume-banner-dismiss" type="button">Tutup</button>
+        </div>
+      </div>`;
+  }
+
+  /** V2, Part A2 (Background Re-Analysis) — the count is always up to
+   *  date (listReanalysisCandidates() is a cheap, synchronous read) even
+   *  though the actual re-analysis already runs automatically in the
+   *  background (sarpras-intelligence-center.js#rehydrateAndSweep). This
+   *  banner exists for transparency ("the platform is getting smarter,
+   *  here's proof") and as a manual override for forcing an immediate
+   *  pass rather than waiting for the next real event — satisfies both
+   *  UX branches (automatic AND a button) at once.
+   *
+   *  Reads isReanalyzing()/getLastSweepStatus() (module-level, written by
+   *  EVERY sweep regardless of trigger — automatic or manual) so a user
+   *  landing on this screen mid-sweep, or right after one finished, sees
+   *  real evidence instead of silence — the exact gap a real production
+   *  review found: "I cannot find any indication ... running" was true
+   *  because only the manual click path updated st.reanalyzing; a sweep
+   *  triggered from outside this controller never touched it. */
+  function renderReanalysisBanner() {
+    const candidates = listReanalysisCandidates();
+    const running = isReanalyzing();
+    const last = getLastSweepStatus();
+    if (!candidates.length && !running && !last) return '';
+
+    if (running) {
+      return `
+        <div class="wlk-sec">
+          <div class="dic-resume-banner">
+            <div class="wlk-empty-title">Menganalisis ulang dokumen di latar belakang…</div>
+            <div class="wlk-empty-sub">Parser konten (v${CURRENT_CONTENT_PARSER_VERSION}) sedang memeriksa dokumen yang belum diproses dengan versi ini. Halaman ini akan menunjukkan hasilnya begitu Anda kembali membuka atau memuat ulang layar ini.</div>
+          </div>
+        </div>`;
+    }
+
+    if (!candidates.length && last) {
+      return `
+        <div class="wlk-sec">
+          <div class="dic-resume-banner">
+            <div class="wlk-empty-title">Semua dokumen sudah diperbarui ke parser v${CURRENT_CONTENT_PARSER_VERSION}</div>
+            <div class="wlk-empty-sub">Pemeriksaan terakhir selesai ${esc(last.finishedAt || last.startedAt)} — ${last.swept} dokumen diperiksa, ${last.changed} diperbarui.</div>
+          </div>
+        </div>`;
+    }
+
+    return `
+      <div class="wlk-sec">
+        <div class="dic-resume-banner">
+          <div class="wlk-empty-title">${candidates.length} dokumen dapat ditingkatkan dengan parser baru</div>
+          <div class="wlk-empty-sub">Parser konten saat ini (v${CURRENT_CONTENT_PARSER_VERSION}) dapat menemukan fakta yang belum pernah dicoba pada dokumen ini. Ini berjalan otomatis di latar belakang — tombol ini hanya mempercepatnya sekarang, bukan mengunggah ulang.${last ? ` Pemeriksaan terakhir: ${esc(last.finishedAt || last.startedAt)}.` : ''}</div>
+          <button class="wlk-btn" data-act="dic-reanalyze-now" type="button" ${st.reanalyzing ? 'disabled' : ''}>${st.reanalyzing ? 'Menganalisis ulang…' : 'Analisis Ulang Sekarang'}</button>
         </div>
       </div>`;
   }
@@ -2168,7 +2439,59 @@ export function createDatasetImportController(opts = {}) {
       } catch { /* real parse failure — leave null, never fabricate content */ }
     }
 
-    const inferred = inferMetadata({ filename: file.name, mimeType: file.type, sizeBytes: file.size, folderPath, sha256, scopedDomainType: domainType, kind, parsedContent });
+    // V2, Part A1 (Intelligent Ingestion Hotfix) — real .docx content
+    // extraction. PDF is deliberately excluded (would need OCR — a
+    // fundamentally different capability, out of scope; see
+    // docx-text-extractor.js's header). A corrupt/unsupported .docx must
+    // not block the batch: extractDocxText()/extractContentFacts() never
+    // throw out of this function — `contentFacts` simply stays null and
+    // this file falls back to exactly today's behavior (Menunggu Bukti,
+    // blank Advanced Metadata form).
+    let contentFacts = null;
+    if (kind === IMPORT_SESSION_KIND.DOCX) {
+      try {
+        const extraction = await extractDocxText(file);
+        if (extraction.ok && extraction.text.trim()) {
+          contentFacts = extractContentFacts(extraction.text);
+        }
+      } catch { /* real extraction failure — leave null, never fabricate facts */ }
+    }
+
+    const inferred = inferMetadata({
+      filename: file.name, mimeType: file.type, sizeBytes: file.size, folderPath, sha256, scopedDomainType: domainType, kind, parsedContent,
+      // `ran` means text was actually read (contentFacts !== null) — a
+      // .docx Mammoth could not open at all (corrupt/unsupported) must
+      // stay `null` here, not a fabricated "ran with 0 confidence", so
+      // import-confidence-engine.js reports the honest "could not read"
+      // rationale instead of "read but empty".
+      contentExtraction: contentFacts ? { ran: true, overallConfidence: contentFacts.overallConfidence } : null,
+    });
+
+    // V2, Part A1 — the filename-derived documentNumber floor only ever
+    // FILLS A GAP, never overrides a real content-extraction result (which
+    // is always higher-confidence — it read the actual "No." line, not
+    // just a filename token). Also covers the case where extraction
+    // failed outright (corrupt file) but the filename still carries the
+    // number, so the human isn't left with a fully blank form.
+    if (kind === IMPORT_SESSION_KIND.DOCX && inferred.documentNumberFloor.value
+      && (!contentFacts || contentFacts.confidencePerField.documentNumber === 0)) {
+      const floor = inferred.documentNumberFloor;
+      const base = contentFacts || {
+        value: '', senderOrigin: '', documentNumber: '',
+        confidencePerField: { value: 0, senderOrigin: 0, documentNumber: 0 },
+        basisPerField: { value: '', senderOrigin: '', documentNumber: '' },
+        overallConfidence: 0,
+        parserVersion: null,
+      };
+      const foundCount = [base.value, base.senderOrigin].filter(Boolean).length + 1; // +1 for the floor's documentNumber
+      contentFacts = {
+        ...base,
+        documentNumber: floor.value,
+        confidencePerField: { ...base.confidencePerField, documentNumber: floor.confidence },
+        basisPerField: { ...base.basisPerField, documentNumber: floor.rationale },
+        overallConfidence: Math.round((foundCount / 3) * 100) / 100,
+      };
+    }
 
     const created = createImportSession({
       domainType: inferred.domainType.value || domainType,
@@ -2200,6 +2523,39 @@ export function createDatasetImportController(opts = {}) {
       },
     });
     if (parsedContent) attachParsedContent(sessionId, parsedContent);
+
+    // V2, Part A1 — always record what the parser found (even partial/
+    // low-confidence), so Advanced Metadata can pre-fill from real
+    // evidence instead of blank defaults. Only PROMOTE it to
+    // manualEntryFacts (the field the content-fact gate actually reads)
+    // when confidence crosses the SAME auto-populate bar the metadata
+    // side already uses — "IF confidence is high, save automatically;
+    // ELSE ask only for what's missing", never a silent partial gate-pass
+    // that would drop an unfound field on the floor forever.
+    if (contentFacts) {
+      attachExtractionSuggestion(sessionId, {
+        value: contentFacts.value,
+        documentNumber: contentFacts.documentNumber,
+        senderOrigin: contentFacts.senderOrigin,
+        confidencePerField: contentFacts.confidencePerField,
+        basisPerField: contentFacts.basisPerField,
+        parserVersion: contentFacts.parserVersion,
+        extractedAt: new Date().toISOString(),
+      });
+      if (contentFacts.overallConfidence >= AUTO_POPULATE_CONFIDENCE_THRESHOLD) {
+        attachManualEntryFacts(sessionId, {
+          value: contentFacts.value, documentNumber: contentFacts.documentNumber,
+          senderOrigin: contentFacts.senderOrigin, notes: '',
+        });
+        attachFactsProvenance(sessionId, {
+          source: 'auto-extraction',
+          contentParserVersion: contentFacts.parserVersion,
+          metadataParserVersion: CURRENT_METADATA_PARSER_VERSION,
+          confidencePerField: contentFacts.confidencePerField,
+          recordedAt: new Date().toISOString(),
+        });
+      }
+    }
 
     // A Storage failure (network hiccup, permission error) for ONE file
     // must never abort the rest of a bulk batch — caught and recorded as
@@ -2640,6 +2996,7 @@ export function createDatasetImportController(opts = {}) {
 
     // V2.1.2 Part L — Document Preview.
     if (act === 'dic-preview-load') { loadDocumentPreview(id, el.dataset.path, rerender); return true; }
+    if (act === 'dic-reanalyze-now') { if (!st.reanalyzing) triggerReanalysisNow(rerender); return true; }
 
     // Phase 2.6 — PART 4. `dic-submit`, `dic-approve`, `dic-import` and
     // `dic-archive` are GONE. Each of them asked a human to press a button
@@ -2737,7 +3094,23 @@ export function createDatasetImportController(opts = {}) {
         // session could never reach Knowledge Imported (the "empty
         // Knowledge" bug).
         const hasAnyFact = Object.values(st.advancedEdit.facts).some((v) => v && String(v).trim());
-        if (hasAnyFact) attachManualEntryFacts(id, st.advancedEdit.facts);
+        if (hasAnyFact) {
+          attachManualEntryFacts(id, st.advancedEdit.facts);
+          // V2, Part A1/A2 — a human just typed/confirmed these facts
+          // (whether starting from an auto-extraction's pre-fill or a
+          // blank form) — record that as 'human' provenance so Part A2's
+          // future re-analysis sweep never silently overwrites a field a
+          // person actually vouched for, exactly the same "human
+          // confirmation beats any inference score" principle
+          // updateSessionMetadata's confirmedBy already applies above.
+          attachFactsProvenance(id, {
+            source: 'human',
+            contentParserVersion: before.ok && before.data.extractionSuggestion ? before.data.extractionSuggestion.parserVersion : null,
+            metadataParserVersion: CURRENT_METADATA_PARSER_VERSION,
+            confidencePerField: null,
+            recordedAt: new Date().toISOString(),
+          });
+        }
 
         // Phase 2.6 — PART 3, THE MISSING HALF OF THE AUTONOMOUS PIPELINE.
         // Saving here is the exact moment the evidence the engine was waiting

@@ -58,15 +58,6 @@
 
 'use strict';
 
-import { runPipeline } from '../document-intelligence/document-intelligence-engine.js';
-// Side-effect import: this is the explicit opt-in that registers the NOR
-// pilot's 5 pipeline steps (analyze/draft/validate/explain/recommend) into
-// registry/step-registry.js — see nor/index.js's own header. NOR Center is
-// the first real caller.
-import { NOR_PIPELINE } from '../document-intelligence/nor/index.js';
-import { startDocumentSession, transitionDocumentSession } from '../document-intelligence/session-store.js';
-import { DOCUMENT_SESSION_STATE } from '../document-intelligence/contracts/document-context-contract.js';
-
 import {
   listKnowledge as knowledgeList,
   getKnowledge as knowledgeGetById,
@@ -99,14 +90,35 @@ import { setSarprasIntelligenceScreen } from './sarpras-intelligence-center.js';
 import {
   initPettyCashStore, registerChangeListener as onPettyCashChange, getSettings as getPettyCashSettings,
 } from '../../petty-cash/petty-cash-store.js';
-import { norNumberFromSequence, todayISO } from '../../petty-cash/petty-cash-config.js';
+import { norNumberFromSequence, todayISO, fmtLong } from '../../petty-cash/petty-cash-config.js';
+// Sprint 11.1, Workstream 2 (production feedback) — the Generate NOR tab
+// now hosts the REAL conversation natively (never redirects to another
+// screen). Reuses the EXACT same real pipeline sarpras-intelligence-
+// center.js's Home entry point calls — this is a second VIEW over the
+// same engine, never a second pipeline (see that file's own Part
+// 1/2/3/4 comments for what each of these does; the behavior here is
+// intentionally byte-for-byte the same, only the render target and CSS
+// scope differ).
+import { beginProblemSolving, continueProblemConversation, composeApprovedNor } from '../problem-solving/services/problem-solving-service.js';
+import { WORKFLOW_ROUTE } from '../problem-solving/contracts/workflow-route-contract.js';
+import { HYPOTHESIS_STATUS } from '../reasoning/contracts/hypothesis-contract.js';
+import { INTENT } from '../conversation/contracts/intent-contract.js';
+import { globalSearch } from '../services/global-search-service.js';
+// Sprint 11.1, Workstream 2 (production feedback) — PREVIOUSLY UNCALLED
+// anywhere in the UI layer (confirmed by grep before writing this): the
+// legacy CREATE_NOR conversation had a missingFacts LIST but no way to
+// answer it. js/v2/README.md's dependency graph already documents
+// `ui/ -> conversation/` as legal ("not exercised in Phase 6 — no UI
+// caller exists yet") — this is that edge's first real exercise, not a
+// new architectural decision.
+import { continueConversation } from '../conversation/services/conversation-service.js';
 
 import {
   esc, renderEmptyState, renderTabShell, renderRowList, renderStatCards,
   renderFilterBar, renderDetailSection, renderKvList, renderDetail, renderDiffTable,
   isDeveloperMode,
 } from './shared/workspace-list-kit.js';
-import { createDatasetImportController } from './dataset-import-center.js';
+import { createDatasetImportController, effectiveStage } from './dataset-import-center.js';
 import {
   registerImportSessionChangeListener, registerImportBatchChangeListener,
 } from '../knowledge/services/import-session-service.js';
@@ -139,10 +151,31 @@ const PROFILE_SUBTABS = [
   { id: 'recommendations', label: 'Rekomendasi' },
 ];
 
+// Sprint 11.1, Workstream 2 (production feedback) — mirrors sarpras-
+// intelligence-center.js's own homeState conversation fields exactly
+// (same names, same shapes) so the SAME real engine calls
+// (beginProblemSolving/continueProblemConversation/composeApprovedNor)
+// slot in unchanged; only WHERE this state lives (here, not homeState)
+// and how it renders (nc-* tab, not the Home dashboard) differ.
+const NOR_INTENT_LABEL = Object.freeze({
+  [INTENT.CREATE_NOR]: 'Membuat NOR',
+  [INTENT.UPLOAD_KNOWLEDGE]: 'Mengunggah Dokumen',
+  [INTENT.CORRECT_METADATA]: 'Mengoreksi Metadata',
+  [INTENT.ARCHIVE_DOCUMENT]: 'Mengarsipkan Dokumen',
+  [INTENT.REVIEW_KNOWLEDGE]: 'Meninjau Pengetahuan',
+  [INTENT.GENERATE_EXECUTIVE_BRIEFING]: 'Membuat Ringkasan Eksekutif',
+  [INTENT.UNKNOWN]: 'Tidak Dikenali',
+});
+
 const st = {
   section: 'dashboard',
   generateText: '',
-  generateOutcome: null, // {kind:'coming-soon'|'ready', title, message, detail} | null
+  conv: {
+    error: null, conversation: null, problemConversationTurn: null,
+    answeredFacts: {}, askedFields: [], answerInput: '', clarification: null,
+    activeProblem: null, activeRoute: null, activeCategory: null,
+    searchResult: null, missingFactAnswers: {},
+  },
   draftsSelectedId: null,
   archiveLinkId: null,
   reviewLinkId: null,
@@ -184,6 +217,7 @@ export async function mountNorCenter(hostEl) {
     host.addEventListener('click', onClick);
     host.addEventListener('input', onInput);
     host.addEventListener('change', onChange);
+    host.addEventListener('keydown', onKeydown);
     // V2.1 — real drag & drop for the Archive tab's embedded Dataset
     // Import Center controller (Part F).
     host.addEventListener('dragover', (e) => { if (e.target.closest && e.target.closest('[data-act="dic-dropzone"]')) e.preventDefault(); });
@@ -236,6 +270,9 @@ function onClick(e) {
   if (act.startsWith('dic-')) { importController.onClick(el, render); return; }
   if (act === 'wlk-tab') { setSection(el.dataset.id); return; }
   if (act === 'nc-generate-submit') { handleGenerateSubmit(); return; }
+  if (act === 'nc-pc-answer-submit') { handleGenerateAnswerSubmit(); return; }
+  if (act === 'nc-conv-continue') { handleConversationContinue(el.dataset.id); return; }
+  if (act === 'nc-compose-nor') { handleComposeNor(el.dataset.id); return; }
   if (act === 'nc-draft-row') { st.draftsSelectedId = st.draftsSelectedId === el.dataset.id ? null : el.dataset.id; render(); return; }
   if (act === 'nc-open-review') { setSarprasIntelligenceScreen('review'); return; }
   if (act === 'nc-archive-row') { st.archiveLinkId = st.archiveLinkId === el.dataset.id ? null : el.dataset.id; render(); return; }
@@ -281,6 +318,14 @@ function onInput(e) {
     if (btn) btn.disabled = !st.generateText.trim();
     return;
   }
+  // Sprint 11.1, Workstream 2 — keystroke-only, never a re-render (same
+  // discipline sic-pc-answer-input's own equivalent follows) — a
+  // re-render mid-keystroke would lose focus/caret position.
+  if (e.target && e.target.id === 'ncPcAnswerInput') { st.conv.answerInput = e.target.value; return; }
+  // Sprint 11.1, Workstream 2 (production feedback) — one input per
+  // missing fact (data-field distinguishes them), keystroke-only.
+  const convFactInput = e.target.closest && e.target.closest('[data-act="nc-conv-fact-input"]');
+  if (convFactInput) { st.conv.missingFactAnswers = { ...st.conv.missingFactAnswers, [convFactInput.dataset.field]: convFactInput.value }; return; }
   const overrideField = e.target.closest && e.target.closest('[data-act="nc-override-field"]');
   if (overrideField) {
     st.override[overrideField.dataset.field] = overrideField.value;
@@ -298,6 +343,15 @@ function onChange(e) {
 
 function onDrop(e) {
   if (importController.onDrop(e, render)) e.preventDefault();
+}
+
+/** Sprint 11.1, Workstream 2 — Enter-to-submit, matching sarpras-
+ *  intelligence-center.js#onDashboardKeydown's exact same UX for the
+ *  identical two inputs (initial utterance, conversation-turn answer). */
+function onKeydown(e) {
+  if (e.key !== 'Enter') return;
+  if (e.target && e.target.id === 'ncGenerateInput') { host.querySelector('[data-act="nc-generate-submit"]')?.click(); }
+  if (e.target && e.target.id === 'ncPcAnswerInput') { host.querySelector('[data-act="nc-pc-answer-submit"]')?.click(); }
 }
 
 /* ── data helpers (thin reads over existing engines — no new stores) ── */
@@ -427,62 +481,252 @@ function renderGenerateSection() {
       <div class="wlk-page-head">
         <div class="wlk-page-crumb">NOR CENTER · GENERATE</div>
         <h1 class="wlk-page-title">Apa yang ingin Anda buat hari ini?</h1>
-        <p class="wlk-page-lede">Sarpras Intelligence akan menyusun draf berdasarkan pengetahuan organisasi yang telah disetujui — Anda tetap meninjau dan menyetujui setiap draf sebelum diterbitkan.</p>
+        <p class="wlk-page-lede">Ceritakan kebutuhan Anda — Sarpras Intelligence akan bertanya hanya untuk yang belum diketahui, lalu menyusun draf NOR lengkap berdasarkan pengetahuan organisasi yang telah disetujui. Anda tetap meninjau dan menyetujui setiap draf sebelum diterbitkan.</p>
       </div>
 
-      <div class="nc-generate-card">
+      <div class="nc-generate-card sic-card sic-card--conversation">
         <input id="ncGenerateInput" class="nc-generate-input" type="text"
                placeholder="Contoh: Permohonan pembelian mesin potong rumput"
                value="${esc(st.generateText)}" autocomplete="off" />
         <button class="nc-generate-submit" data-act="nc-generate-submit" type="button" ${st.generateText.trim() ? '' : 'disabled'}>Buat Draf</button>
+        ${st.conv.error ? `<p class="sic-next-action">${esc(st.conv.error)}</p>` : ''}
+        ${renderGenerateRoutedResult()}
       </div>
-
-      ${st.generateOutcome ? renderGenerateOutcome(st.generateOutcome) : ''}
     </div>`;
 }
 
-function renderGenerateOutcome(outcome) {
+/** Sprint 11.1, Workstream 2 (production feedback) — dispatches purely on
+ *  the LAST routingDecision THIS tab received from beginProblemSolving(),
+ *  identical dispatch shape to sarpras-intelligence-center.js#
+ *  renderRoutedResult(). */
+function renderGenerateRoutedResult() {
+  if (st.conv.clarification) return renderGenerateClarificationResult();
+  if (st.conv.conversation) return renderGenerateConversationResult(st.conv.conversation);
+  if (st.conv.problemConversationTurn) return renderGenerateProblemConversationTurn();
+  if (st.conv.searchResult) return renderGenerateSearchResult();
+  return '';
+}
+
+function renderGenerateSearchResult() {
+  const r = st.conv.searchResult;
+  const sections2 = [
+    r.documents.length ? { title: 'Dokumen', items: r.documents.map((d) => `${d.filename} — ${effectiveStage(d)}`) } : null,
+    r.archive.length ? { title: 'Arsip', items: r.archive.map((a) => `${a.documentNumber || a.id}`) } : null,
+    r.knowledge.length ? { title: 'Pengetahuan', items: r.knowledge.map((k) => `${k.kind} — ${k.id}`) } : null,
+  ].filter(Boolean);
+  if (r.total === 0) return `<p class="sic-next-action">Tidak ada hasil untuk "${esc(r.query)}".</p>`;
   return `
-    <div class="nc-outcome nc-outcome--${outcome.kind}">
-      <div class="nc-outcome-title">${esc(outcome.title)}</div>
-      <div class="nc-outcome-message">${esc(outcome.message)}</div>
-      ${outcome.detail ? `<div class="nc-outcome-detail">${esc(outcome.detail)}</div>` : ''}
+    <div class="sic-search-results">
+      ${sections2.map((s) => `
+        <div class="sic-brief-sub">${esc(s.title)}</div>
+        <ul class="sic-brief-list">${s.items.map((t) => `<li><span class="sic-brief-label">${esc(t)}</span></li>`).join('')}</ul>`).join('')}
     </div>`;
+}
+
+/** The ONE real path that still reaches the legacy Intent Engine
+ *  (conversation-service.js#startConversation/continueConversation) — the
+ *  path CREATE_NOR (Perjalanan Dinas/Pengadaan/Administration) actually
+ *  takes, per problem-solving-service.js's CATEGORY_TO_INTENT mapping.
+ *
+ *  PRODUCTION FEEDBACK, VERIFIED LIVE — the missingFacts form below is
+ *  NEW: sarpras-intelligence-center.js#renderConversationResult() (this
+ *  function's own prior model) has only ever rendered `missingFacts` as
+ *  static `<li>` text, with NO input to answer them — nothing in that
+ *  file calls continueConversation() at all. Confirmed empirically (a
+ *  real browser run against this exact utterance) before writing this:
+ *  submitting the SAME text again just restarts classification from
+ *  scratch (resetRoutedState()), so the legacy CREATE_NOR conversation
+ *  could never actually be advanced through either UI. This is the real
+ *  fix, not a copy of a working pattern — see the Home-screen version of
+ *  this same fix in sarpras-intelligence-center.js for the twin. */
+function renderGenerateConversationResult(c) {
+  if (!c.currentIntent || c.currentIntent.intent === INTENT.UNKNOWN || c.state === 'failed') {
+    return `<p class="sic-next-action">Permintaan ini belum dikenali platform. Coba salah satu: "saya ingin membuat NOR", "saya ingin mengunggah dokumen", "saya ingin meninjau pengetahuan".</p>`;
+  }
+  const known = Object.entries(c.gatheredFacts || {}).filter(([, v]) => v !== null && v !== undefined && v !== '');
+  return `
+    <div class="sic-conv-result">
+      <p class="sic-next-action">Terdeteksi: <strong>${esc(NOR_INTENT_LABEL[c.currentIntent.intent] || c.currentIntent.intent)}</strong></p>
+      ${known.length ? `<ul class="sic-brief-list">${known.map(([k, v]) => `<li><span class="sic-brief-label">${esc(k)}: ${esc(String(v))}</span></li>`).join('')}</ul>` : ''}
+      ${c.missingFacts && c.missingFacts.length ? `
+        <div class="sic-brief-sub">Masih diperlukan</div>
+        <div class="nc-conv-form">
+          ${c.missingFacts.map((q) => `
+            <div class="wlk-form-row">
+              <label>${esc(q.prompt)}</label>
+              <input data-act="nc-conv-fact-input" data-field="${esc(q.field)}" class="wlk-input" type="text" placeholder="${esc(q.label)}" value="${esc(st.conv.missingFactAnswers[q.field] || '')}" />
+            </div>`).join('')}
+          <button class="wlk-btn" data-act="nc-conv-continue" data-id="${esc(c.id)}" type="button">Lanjutkan</button>
+        </div>`
+    : '<p class="sic-next-action">Semua data yang diperlukan sudah ada.</p>'}
+      ${c.state === 'ready' ? `<p class="sic-next-action">Semua data terkumpul. <button class="wlk-btn" data-act="nc-compose-nor" data-id="${esc(c.id)}" type="button">Susun NOR</button></p>` : ''}
+    </div>`;
+}
+
+/** Generic, category-agnostic turn loop (Diagnostic or plain Problem
+ *  Conversation) — identical dispatch/copy to sarpras-intelligence-
+ *  center.js#renderProblemConversationTurn(). */
+function renderGenerateProblemConversationTurn() {
+  const turn = st.conv.problemConversationTurn;
+  const categoryLabel = st.conv.activeCategory || '';
+
+  if (!turn.isComplete && turn.nextQuestion) {
+    return `
+      <div class="sic-conv-result">
+        <p class="sic-next-action">Baik. Saya akan membantu menyiapkan ini (${esc(categoryLabel)}).</p>
+        ${renderGenerateHypotheses(turn.hypotheses)}
+        <p class="sic-brief-sub">${esc(turn.nextQuestion.prompt)}</p>
+        <div class="sic-search-row">
+          <input id="ncPcAnswerInput" class="sic-search-input" type="text" placeholder="${esc(turn.nextQuestion.label)}" value="${esc(st.conv.answerInput)}" />
+          <button class="wlk-btn" data-act="nc-pc-answer-submit" type="button">Lanjut</button>
+        </div>
+      </div>`;
+  }
+
+  const rec = turn.recommendation;
+  return `
+    <div class="sic-conv-result">
+      <p class="sic-next-action">Semua data yang diperlukan sudah ada. Terima kasih.</p>
+      ${renderGenerateHypotheses(turn.hypotheses)}
+      ${rec
+    ? `<div class="sic-brief-sub">Rekomendasi</div><p class="sic-next-action">${esc(rec.claim)}</p>`
+    : `<p class="sic-next-action">Belum ada aturan organisasi yang cocok untuk memberi rekomendasi otomatis — informasi ini akan diteruskan untuk tinjauan manual.</p>`}
+    </div>`;
+}
+
+function renderGenerateHypotheses(hypotheses) {
+  if (!hypotheses || !hypotheses.length) return '';
+  const candidates = hypotheses.filter((h) => h.status !== HYPOTHESIS_STATUS.RULED_OUT);
+  if (!candidates.length) return '';
+  return `
+    <div class="sic-brief-sub">Kemungkinan penyebab</div>
+    <ul class="sic-brief-list">${candidates.map((h) => `<li><span class="sic-brief-label">${esc(h.cause)} ${h.status === HYPOTHESIS_STATUS.CONFIRMED ? '(terkonfirmasi)' : `(${Math.round(h.likelihood * 100)}%)`}</span></li>`).join('')}</ul>`;
+}
+
+function renderGenerateClarificationResult() {
+  const c = st.conv.clarification;
+  return `
+    <div class="sic-conv-result">
+      <p class="sic-next-action">${esc(c.message)}</p>
+      ${c.partialSignal ? `<p class="sic-brief-sub">${esc(c.partialSignal)}</p>` : ''}
+      ${c.examples.length ? `<p class="sic-brief-sub">Contoh yang sudah dipahami platform: ${c.examples.map(esc).join(', ')}.</p>` : ''}
+    </div>`;
+}
+
+function resetGenerateConversationState() {
+  st.conv = {
+    error: st.conv.error, conversation: null, problemConversationTurn: null,
+    answeredFacts: {}, askedFields: [], answerInput: '', clarification: null,
+    activeProblem: null, activeRoute: null, activeCategory: null, searchResult: null,
+    missingFactAnswers: {},
+  };
 }
 
 /**
- * Route the request through the real Document Intelligence NOR pipeline
- * (analyze -> draft -> validate -> explain -> recommend). Never generates a
- * NOR itself — reports the pipeline's real outcome honestly.
+ * Sprint 11.1, Workstream 2 (production feedback) — the conversation now
+ * runs NATIVELY inside this tab, never redirecting to another screen. This
+ * used to run a separate, dead-end pipeline call
+ * (document-intelligence-engine.js's 5-step NOR pilot, never producing a
+ * ComposerDocument — the literal source of the old "structural guidance"
+ * message), then briefly redirected to Home's conversation entry instead —
+ * both were real gaps, not this tab's own final form. This calls the exact
+ * SAME real pipeline Home's entry point calls
+ * (problem-solving-service.js#beginProblemSolving), rendered here, with
+ * KNOWLEDGE_ACQUISITION routed to THIS tab's own internal Archive section
+ * (setSection('archive')) instead of a cross-screen jump — one further
+ * step toward "never leaves NOR Center" than Home's own version manages,
+ * since Home has no internal Archive tab of its own to redirect to.
  */
 function handleGenerateSubmit() {
-  const text = st.generateText.trim();
-  if (!text) return;
+  const utterance = st.generateText.trim();
+  if (!utterance) return;
 
-  const session = startDocumentSession('nor');
-  const result = runPipeline(NOR_PIPELINE, {
-    sessionId: session.id,
-    input: { domainType: 'nor', text, norNumber: '', expenseIds: [] },
-  });
+  resetGenerateConversationState();
+  const result = beginProblemSolving(utterance, 'evan');
+  if (!result.ok) { st.conv.error = result.error.message; render(); return; }
+  st.conv.error = null;
 
-  if (result.ok) {
-    transitionDocumentSession(session.id, DOCUMENT_SESSION_STATE.DRAFTING);
-    const draftOutput = result.results.draft;
-    st.generateOutcome = {
-      kind: 'ready',
-      title: 'Panduan struktural tersedia',
-      message: `Sarpras Intelligence menemukan panduan struktural dari ${draftOutput.sampleSize} NOR yang telah disetujui.`,
-      detail: 'Penyusunan draf lengkap belum tersedia pada versi ini — panduan ini hanya informasi pendukung untuk tinjauan manual.',
-    };
-  } else {
-    transitionDocumentSession(session.id, DOCUMENT_SESSION_STATE.ABANDONED);
-    st.generateOutcome = {
-      kind: 'coming-soon',
-      title: 'Belum ada Knowledge Approved untuk didraf',
-      message: 'Generator NOR menyusun draf dari Knowledge domain "nor" yang berstatus Approved — saat ini belum ada. Unggah dan setujui dokumen melalui tab Archive untuk mulai membangun Knowledge.',
-      detail: (result.error && result.error.message) || null,
-    };
+  const { data } = result;
+  st.conv.activeProblem = data.problem;
+  st.conv.activeRoute = data.routingDecision.route;
+  st.conv.activeCategory = data.category;
+
+  switch (data.routingDecision.route) {
+    case WORKFLOW_ROUTE.SEARCH:
+      st.conv.searchResult = globalSearch(data.searchQuery || utterance);
+      break;
+    case WORKFLOW_ROUTE.KNOWLEDGE_ACQUISITION:
+      setSection('archive');
+      return; // setSection already re-renders
+    case WORKFLOW_ROUTE.CONVERSATION:
+      if (data.conversation) { st.conv.conversation = data.conversation; break; }
+      st.conv.problemConversationTurn = data.problemConversationTurn;
+      break;
+    case WORKFLOW_ROUTE.DIAGNOSTIC_CONVERSATION:
+      st.conv.problemConversationTurn = data.problemConversationTurn;
+      break;
+    case WORKFLOW_ROUTE.CLARIFICATION_CONVERSATION:
+    default:
+      st.conv.clarification = data.clarification;
+      break;
   }
+  render();
+}
+
+/** Advances an in-progress Problem Conversation by exactly one turn —
+ *  identical logic to sarpras-intelligence-center.js#
+ *  handleProblemAnswerSubmit(). */
+function handleGenerateAnswerSubmit() {
+  const turn = st.conv.problemConversationTurn;
+  if (!turn || !turn.nextQuestion) return;
+  const value = st.conv.answerInput.trim();
+  if (!value) return;
+
+  const field = turn.nextQuestion.field;
+  st.conv.answeredFacts = { ...st.conv.answeredFacts, [field]: value };
+  st.conv.askedFields = [...st.conv.askedFields, field];
+  st.conv.answerInput = '';
+
+  const nextTurn = continueProblemConversation({
+    problem: st.conv.activeProblem,
+    answeredFacts: st.conv.answeredFacts,
+    askedFields: st.conv.askedFields,
+    hypotheses: turn.hypotheses,
+    includeHypotheses: turn.hypotheses.length > 0 || st.conv.activeRoute === WORKFLOW_ROUTE.DIAGNOSTIC_CONVERSATION,
+  });
+  st.conv.problemConversationTurn = nextTurn;
+  st.conv.activeProblem = nextTurn.problem;
+  render();
+}
+
+/** Sprint 11.1, Workstream 3 — same tanggalPanjang composition-date
+ *  formatting sarpras-intelligence-center.js#sic-compose-nor already
+ *  applies (see that handler's own comment for why this is a letterhead
+ *  convention, not a fact about the NOR's own subject matter). */
+function handleComposeNor(conversationId) {
+  const composed = composeApprovedNor(conversationId, { formattingFacts: { tanggalPanjang: fmtLong(todayISO()) } });
+  st.conv.error = composed.ok ? null : composed.error.message;
+  render();
+}
+
+/** Sprint 11.1, Workstream 2 (production feedback) — the real fix: the
+ *  legacy CREATE_NOR conversation's missingFacts previously had no
+ *  submission path anywhere in this codebase's UI (see
+ *  renderGenerateConversationResult()'s header for how this was
+ *  verified). Submits every currently-typed answer in ONE call — matches
+ *  the form's own "one form, multiple fields" shape (missingFacts is a
+ *  list shown all at once, unlike problemConversationTurn's one-at-a-time
+ *  nextQuestion) — and only clears answers for fields the Conversation no
+ *  longer lists as missing, so a field a human left blank keeps its
+ *  partial input rather than silently discarding it. */
+function handleConversationContinue(conversationId) {
+  const answers = { ...st.conv.missingFactAnswers };
+  const result = continueConversation(conversationId, answers);
+  if (!result.ok) { st.conv.error = result.error.message; render(); return; }
+  st.conv.error = null;
+  st.conv.conversation = result.data;
+  const stillMissing = new Set((result.data.missingFacts || []).map((q) => q.field));
+  st.conv.missingFactAnswers = Object.fromEntries(Object.entries(st.conv.missingFactAnswers).filter(([f]) => stillMissing.has(f)));
   render();
 }
 

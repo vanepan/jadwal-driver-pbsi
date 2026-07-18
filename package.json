@@ -2,5 +2,8 @@
   "dependencies": {
     "firebase": "^12.13.0",
     "puppeteer": "^25.1.0"
+  },
+  "devDependencies": {
+    "mammoth": "^1.12.0"
   }
 }

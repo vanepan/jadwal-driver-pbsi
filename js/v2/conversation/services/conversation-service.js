@@ -165,9 +165,21 @@ function mergeExplainability(current, advanced, newHumanAnswers) {
  * new Conversation as far as its real facts (utterance-extracted +
  * Optimizer-resolved) allow in this one call — exactly like Archive's
  * CREATED or Learning's VALIDATED, transient by construction.
- * @param {{utterance: string, actorId: string}} args
+ * @param {{utterance: string, actorId: string, additionalFacts?: Object}} args
+ *   Sprint 11.1 (production feedback, "Adaptive Conversation") —
+ *   `additionalFacts` lets a caller that already extracted facts from the
+ *   SAME utterance through a different, richer parser (problem-parser.js's
+ *   category-level extraction — e.g. `item: 'Kursi'` for a procurement
+ *   utterance) hand them in, instead of this engine's own narrower
+ *   `detectIntent().extractedFacts` (CREATE_NOR extracts only `type`) being
+ *   the only source and everything else being silently discarded — the
+ *   real, verified root cause of "the parser already found X, but the
+ *   Conversation asks for X again anyway". `currentIntent.extractedFacts`
+ *   still wins on a genuine key collision — it is this engine's own,
+ *   intent-scoped read of the exact same text, the more authoritative
+ *   source for any field CREATE_NOR's own vocabulary defines.
  */
-export function startConversation({ utterance, actorId }) {
+export function startConversation({ utterance, actorId, additionalFacts = {} }) {
   if (typeof utterance !== 'string' || !utterance.trim()) {
     return failure(CONVERSATION_SERVICE_ERRORS.INVALID_UTTERANCE, 'startConversation: utterance must be a non-empty string.');
   }
@@ -177,7 +189,7 @@ export function startConversation({ utterance, actorId }) {
 
   const currentIntent = detectIntent(utterance);
   const seed = makeConversation({
-    actorId, utterance, currentIntent, gatheredFacts: { ...currentIntent.extractedFacts }, missingFacts: [],
+    actorId, utterance, currentIntent, gatheredFacts: { ...additionalFacts, ...currentIntent.extractedFacts }, missingFacts: [],
   });
   const created = repoCreate(seed);
   if (!created.ok) return created;

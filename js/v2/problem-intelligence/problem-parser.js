@@ -209,6 +209,21 @@ function extractFacts(category, normalized) {
   if (category === 'business_trip') {
     const type = firstMatch(normalized, NOR_TYPE_KEYWORDS);
     if (type) facts.type = type;
+    // Sprint 11.1 (production feedback, "Adaptive Conversation") — REAL
+    // root cause, verified empirically before this fix (not assumed): an
+    // utterance like "buat NOR pembelian kursi ruang pengadaan" classifies
+    // as 'business_trip' (the "NOR"+creation-phrase pattern outscores
+    // 'procurement's own rule), so this branch — not the 'procurement' one
+    // below — is the one that actually runs for a Pengadaan-type NOR
+    // request. Once `type` resolves to Pengadaan, an item IS this
+    // category's own vocabulary too (nor-type-registry.js's Pengadaan
+    // fieldSchema literally has `field: 'item'`), so it must be extracted
+    // HERE, using the exact SAME table 'procurement' uses — never a
+    // second, drifting item list.
+    if (type === NOR_TYPE.PENGADAAN) {
+      const pengadaanItem = firstMatch(normalized, PROCUREMENT_ITEM_KEYWORDS);
+      if (pengadaanItem) facts.item = pengadaanItem;
+    }
   }
   if (category === 'procurement') {
     const item = firstMatch(normalized, PROCUREMENT_ITEM_KEYWORDS);

@@ -279,8 +279,10 @@ export const PIPELINE_RESTING_STAGES = Object.freeze([
  * @property {string} knowledgeKind       - registry-backed knowledge/registry/kind-registry.js kind (e.g. 'rule', 'recipient', 'document_fact') — what SHAPE of Knowledge this upload becomes, chosen by the human in the manual-entry form, distinct from `kind` (the file format)
  * @property {string} state              - one of IMPORT_SESSION_STATE
  * @property {string} datasetId          - the auto-registered DatasetSpec this session is wired to
- * @property {Object|null} manualEntryFacts - human-typed facts (PDF/DOCX path), pre-Approved capture
+ * @property {Object|null} manualEntryFacts - the content facts actually in effect (PDF/DOCX path), pre-Approved capture — either human-typed via Advanced Metadata, or auto-attached by content-fact-extraction-engine.js when its confidence crossed AUTO_POPULATE_CONFIDENCE_THRESHOLD; see `factsProvenance` for which
  * @property {Object|null} parsedContent    - JSON.parse() result (JSON path only)
+ * @property {Object|null} factsProvenance  - V2, Part A1/A2: `{source: 'human'|'auto-extraction', contentParserVersion: number|null, metadataParserVersion: number|null, confidencePerField: Object|null, recordedAt: string}` — who/what last wrote `manualEntryFacts`, and with what parser version/confidence. Null until the first write. Lets Part A2's re-analysis sweep know a field was human-confirmed (never silently overwritten) vs. auto-extracted (safe to replace with strictly-higher-confidence evidence from a newer parser)
+ * @property {Object|null} extractionSuggestion - V2, Part A1: `{value, documentNumber, senderOrigin, confidencePerField, basisPerField, parserVersion, extractedAt}` — the content-fact-extraction-engine.js result for this session's file, ALWAYS recorded when extraction ran (even partial/low-confidence), independent of whether it was strong enough to auto-populate `manualEntryFacts`. Lets the Advanced Metadata form pre-fill from real (if partial) evidence instead of blank defaults, without that partial evidence silently satisfying the content-fact gate on its own
  * @property {string|null} documentHash  - V2.1: the real SHA-256 file-content hash once file-storage/file-storage-engine.js#uploadFile() runs; falls back to the older metadata-only proxy hash only if no file bytes were ever hashed (never both at once)
  * @property {string|null} sha256        - V2.1: same value as documentHash post-upload, kept as its own named field so callers reading for storage/dedup purposes don't need to know about the historical proxy-hash fallback
  * @property {string|null} storagePath   - V2.1: the real Firebase Storage path (file-storage/file-storage-contract.js#StoredFileRecord.storagePath), or null if not yet uploaded
@@ -322,6 +324,8 @@ export function makeImportSessionRecord({ id, domainType, datasetType, filename,
     batchId,
     manualEntryFacts: null,
     parsedContent: null,
+    factsProvenance: null,
+    extractionSuggestion: null,
     documentHash: null,
     sha256: null,
     storagePath: null,
@@ -387,6 +391,8 @@ export function normalizeImportSessionRecord(r) {
     validationErrors: Array.isArray(r.validationErrors) ? r.validationErrors : [],
     manualEntryFacts: r.manualEntryFacts ?? null,
     parsedContent: r.parsedContent ?? null,
+    factsProvenance: r.factsProvenance ?? null,
+    extractionSuggestion: r.extractionSuggestion ?? null,
     documentHash: r.documentHash ?? null,
     sha256: r.sha256 ?? null,
     storagePath: r.storagePath ?? null,

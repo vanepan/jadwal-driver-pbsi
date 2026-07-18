@@ -90,6 +90,7 @@ function round2(n) {
  * @property {Object|null} parsedContent - JSON.parse() result (JSON only), else null
  * @property {number} historicalSupport - max Pattern Discovery support count for filename-token-matching patterns (0 = no precedent)
  * @property {number} approvedOverrideCount - real count of approved Profile Overrides for the domain (for the honest policyMatch rationale)
+ * @property {{ran: boolean, overallConfidence: number}|null} contentExtraction - V2, Part A1: content-fact-extraction-engine.js's real result for a `.docx` session (docx-text-extractor.js + content-fact-extraction-engine.js), or null when extraction never ran (any non-docx kind, or a docx whose text could not be read at all — see docx-text-extractor.js's honest failure mode). PDF still has no reader, so this stays null for it — the two signals below keep their original `else` branch for anything that isn't a successfully-read docx.
  */
 
 /**
@@ -105,9 +106,11 @@ export function computeImportConfidence(evidence = {}) {
     parsedContent = null,
     historicalSupport = 0,
     approvedOverrideCount = 0,
+    contentExtraction = null,
   } = evidence;
 
   const isJson = kind === 'json';
+  const isExtractedDocx = kind === 'docx' && contentExtraction && contentExtraction.ran;
   const signals = [];
 
   // 1 — filenameSimilarity: available only when a token actually matched.
@@ -149,8 +152,14 @@ export function computeImportConfidence(evidence = {}) {
       }
     }
     signals.push({ id: 'documentStructure', label: 'Struktur Dokumen', weight: SIGNAL_WEIGHTS.documentStructure, subScore: round2(structScore), available: true, rationale: structRationale });
+  } else if (isExtractedDocx) {
+    // V2, Part A1 — real evidence now exists for .docx: the document was
+    // actually read (Mammoth), so "structure" here means "did the known
+    // memo shape (No./Dari/Perihal) resolve" — the same signal
+    // content-fact-extraction-engine.js's own overallConfidence already is.
+    signals.push({ id: 'documentStructure', label: 'Struktur Dokumen', weight: SIGNAL_WEIGHTS.documentStructure, subScore: round2(contentExtraction.overallConfidence), available: true, rationale: `Konten .docx berhasil dibaca (Mammoth) — struktur memo (No./Dari/Perihal) cocok ${round2(contentExtraction.overallConfidence * 3)}/3 bidang.` });
   } else {
-    signals.push({ id: 'documentStructure', label: 'Struktur Dokumen', weight: null, subScore: null, available: false, rationale: 'Konten PDF/DOCX tidak di-parse (tanpa OCR/AI) — struktur tidak dinilai (netral).' });
+    signals.push({ id: 'documentStructure', label: 'Struktur Dokumen', weight: null, subScore: null, available: false, rationale: kind === 'docx' ? 'Konten .docx tidak berhasil dibaca (file rusak/tidak didukung) — struktur tidak dinilai (netral).' : 'Konten PDF tidak di-parse (tanpa OCR/AI) — struktur tidak dinilai (netral).' });
   }
 
   // 5 — contentFacts: JSON only; for PDF/DOCX facts are typed later, so
@@ -158,8 +167,10 @@ export function computeImportConfidence(evidence = {}) {
   if (isJson) {
     const hasContent = !!parsedContent && typeof parsedContent === 'object' && Object.keys(parsedContent).length > 0;
     signals.push({ id: 'contentFacts', label: 'Fakta Konten', weight: SIGNAL_WEIGHTS.contentFacts, subScore: hasContent ? 1 : 0, available: true, rationale: hasContent ? 'Konten JSON nyata sudah tersedia pada saat unggah.' : 'JSON tanpa konten nyata — fakta belum tersedia.' });
+  } else if (isExtractedDocx) {
+    signals.push({ id: 'contentFacts', label: 'Fakta Konten', weight: SIGNAL_WEIGHTS.contentFacts, subScore: round2(contentExtraction.overallConfidence), available: true, rationale: contentExtraction.overallConfidence > 0 ? `Fakta konten diekstraksi otomatis dari isi .docx pada saat unggah (keyakinan ${round2(contentExtraction.overallConfidence)}).` : 'Konten .docx dibaca tetapi tidak ada bidang fakta (No./Dari/Perihal) yang cocok — fakta belum tersedia.' });
   } else {
-    signals.push({ id: 'contentFacts', label: 'Fakta Konten', weight: null, subScore: null, available: false, rationale: 'Fakta PDF/DOCX diisi manusia setelah unggah — belum tersedia (netral).' });
+    signals.push({ id: 'contentFacts', label: 'Fakta Konten', weight: null, subScore: null, available: false, rationale: kind === 'docx' ? 'Konten .docx tidak berhasil dibaca — fakta diisi manusia setelah unggah (netral).' : 'Fakta PDF diisi manusia setelah unggah — belum tersedia (netral).' });
   }
 
   // 6 — historicalSimilarity: available only when there is real precedent.

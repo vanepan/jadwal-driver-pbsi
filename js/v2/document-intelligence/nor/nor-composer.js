@@ -121,7 +121,7 @@ function resolvePattern(patternEntry, facts) {
 
 /**
  * @param {Object} gatheredFacts - facts already genuinely known (e.g. a completed Conversation's own gatheredFacts) — never fetched or invented by this file
- * @param {{sessionId?: string}} [opts]
+ * @param {{sessionId?: string, numberingSuggestion?: {suggestedNumber: string, confidence: number, basis: string}|null, formattingFacts?: Object}} [opts] - Sprint 11.1: numberingSuggestion is organizational-memory/numbering-engine.js#suggestNextNumber()'s real output, computed by the caller (this file has no legal edge to organizational-memory/) — confidence 0 means honestly omit norNumber, never fabricate one. formattingFacts (Workstream 3, e.g. {tanggalPanjang}) is system-derived formatting (never a human answer, never Knowledge) that resolves generic pattern slots ONLY — never merged into fieldMap/humanFields itself
  * @returns {{ok: boolean, data: object|null, error: object|null}}
  */
 export function composeNorDocument(gatheredFacts = {}, opts = {}) {
@@ -143,10 +143,19 @@ export function composeNorDocument(gatheredFacts = {}, opts = {}) {
   const patterns = items.filter((i) => PATTERN_KINDS.includes(i.kind) && isPatternEntry(i.payload));
   const renderingRules = items.filter((i) => i.kind === 'rendering_rule' && isRenderingRuleEntry(i.payload));
 
+  // Sprint 11.1, Workstream 3 — opts.formattingFacts (e.g. tanggalPanjang)
+  // resolve pattern slots ONLY — deliberately never merged into
+  // gatheredFacts itself, or they would also leak into humanFields below
+  // tagged source:'human_answer', which would be false (a human never
+  // answered them; a caller-supplied system format did). Same "receives,
+  // never fetches or invents" contract opts.numberingSuggestion already
+  // established for norNumber.
+  const patternFacts = { ...gatheredFacts, ...(opts.formattingFacts || {}) };
+
   const composedSections = [];
   const unresolvedFields = new Set();
   for (const item of patterns) {
-    const { text, unresolved } = resolvePattern(item.payload, gatheredFacts);
+    const { text, unresolved } = resolvePattern(item.payload, patternFacts);
     unresolved.forEach((u) => unresolvedFields.add(u));
     composedSections.push({
       field: `pattern:${item.id}`, value: text, source: 'knowledge', citedKnowledgeId: item.id, granularity: item.payload.granularity || null,
@@ -162,7 +171,24 @@ export function composeNorDocument(gatheredFacts = {}, opts = {}) {
   const structuralFields = Object.entries(structural.draft.fields)
     .map(([field, value]) => ({ field, value, source: 'knowledge_suggestion', citedKnowledgeId: null }));
 
-  const allSections = [...humanFields, ...structuralFields, ...composedSections];
+  // Sprint 11.1, Workstream 1 — norNumber, sourced (not invented): the
+  // caller (problem-solving-service.js#composeApprovedNor) computes this
+  // via organizational-memory/numbering-engine.js#suggestNextNumber(),
+  // the ONLY legal path (document-intelligence/ has no binding-graph edge
+  // to organizational-memory/ — see js/v2/README.md's dependency graph),
+  // and hands it in through opts, mirroring the existing opts.sessionId
+  // precedent. Same "receives, never fetches" contract this function's
+  // own header already states for every other fact. confidence 0 (no
+  // consistent Archive numbering pattern to infer from) means honest
+  // omission — NOT an UNRESOLVED_MARKER, which is reserved for an
+  // expected-but-unresolved PATTERN SLOT; norNumber never existed as a
+  // field at all before this, so omitting it is the same honest behavior
+  // every other never-populated field already gets.
+  const numberingFields = (opts.numberingSuggestion && opts.numberingSuggestion.confidence > 0)
+    ? [{ field: 'norNumber', value: opts.numberingSuggestion.suggestedNumber, source: 'knowledge_suggestion', citedKnowledgeId: null }]
+    : [];
+
+  const allSections = [...humanFields, ...structuralFields, ...numberingFields, ...composedSections];
   const fieldMap = {};
   for (const s of allSections) fieldMap[s.field] = s.value;
 

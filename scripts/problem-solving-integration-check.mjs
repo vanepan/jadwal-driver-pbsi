@@ -34,6 +34,7 @@ import { continueConversation } from '../js/v2/conversation/services/conversatio
 import { resetComposerStore } from '../js/v2/document-intelligence/composer/composer-store.js';
 import { beginProblemSolving, composeApprovedNor } from '../js/v2/problem-solving/services/problem-solving-service.js';
 import { seedNorBootstrapKnowledge } from '../js/v2/knowledge/bootstrap/nor-reverse-engineering-knowledge.js';
+import { archiveDocument, resetArchiveRepository } from '../js/v2/organizational-memory/index.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let pass = 0; let fail = 0;
@@ -167,6 +168,59 @@ console.log('\n[North-Star Gap Closure — bootstrap NOR Knowledge (docs/KNOWLED
   check('a large, real batch of Approved nor-domain Knowledge is now present', afterCount - beforeCount >= 90);
   check('every seeded item genuinely reached Approved (not left Draft/Candidate)', seedResult.items.every((i) => i.lifecycleState === LIFECYCLE_STATE.APPROVED));
   check('relationships were seeded too', seedResult.relationships.length > 0);
+}
+
+console.log('\n[Sprint 11.1, Workstream 1 — norNumber flows end-to-end from real Archive evidence through composeApprovedNor]');
+{
+  resetArchiveRepository();
+  // A real, consistent Archive numbering pattern for domainType 'nor' —
+  // organizational-memory/numbering-engine.js#suggestNextNumber() infers
+  // the majority template from exactly records like these (no synthetic
+  // stub of the engine itself — this exercises the real one).
+  archiveDocument({ id: 'nor:archive:seq-1', sourceDomainType: 'nor', sourceId: 's1', sourceType: 'manual-file', documentNumber: 'NOR-2026-013', documentHash: 'hash-seq-1', sourceSnapshot: {} });
+  archiveDocument({ id: 'nor:archive:seq-2', sourceDomainType: 'nor', sourceId: 's2', sourceType: 'manual-file', documentNumber: 'NOR-2026-014', documentHash: 'hash-seq-2', sourceSnapshot: {} });
+
+  const started = beginProblemSolving('Buatkan NOR perjalanan dinas.', 'evan');
+  const convId2 = started.data.conversation.id;
+  continueConversation(convId2, { destination: 'Bandung' });
+  continueConversation(convId2, { traveler: 'Unit Engineering' });
+  continueConversation(convId2, { departureDate: '2026-08-01' });
+  continueConversation(convId2, { returnDate: '2026-08-03' });
+  continueConversation(convId2, { budget: '5000000' });
+  const composedWithArchive = composeApprovedNor(convId2);
+
+  check('composition still succeeds with real Archive evidence present', composedWithArchive.ok);
+  const norNumberSection = composedWithArchive.data.composerDocument.sections.find((s) => s.field === 'norNumber');
+  check('norNumber is a REAL section in the composed document, sourced from the real numbering engine — not fetched/invented by nor-composer.js itself', !!norNumberSection);
+  check('the suggested number is the honest next-in-sequence value from the real Archive records seeded above', norNumberSection && norNumberSection.value === 'NOR-2026-015');
+
+  resetArchiveRepository();
+}
+
+console.log('\n[Sprint 11.1 (production feedback, "Adaptive Conversation") — a fact problem-parser.js already extracted is never re-asked]');
+{
+  // The user's own real example: "buat NOR pembelian kursi ruang
+  // pengadaan" — problem-parser.js's PROCUREMENT_ITEM_KEYWORDS table
+  // matches "kursi" -> item:'Kursi' BEFORE this call, in classifyProblem()
+  // (verified directly in problem-parser.js — not assumed). Before this
+  // fix, startConversation() discarded problem.facts entirely and only
+  // ever seeded from detectIntent()'s own narrower extraction (CREATE_NOR
+  // extracts just `type`), so the Conversation re-asked for `item` anyway
+  // — confirmed as the real, verified root cause, not assumed.
+  const result = beginProblemSolving('buat NOR pembelian kursi ruang pengadaan', 'evan');
+  check('beginProblemSolving succeeds', result.ok);
+  check('a real Conversation was started (not the generic Problem Conversation fallback)', !!result.data.conversation);
+  const c = result.data.conversation;
+  check('gatheredFacts.item is ALREADY "Kursi" — carried in from problem-parser.js\'s own extraction, not fetched a second time', c && c.gatheredFacts.item === 'Kursi');
+  check('missingFacts does NOT ask for "item" again — the exact bug reported ("Barang apa yang ingin dibeli?" after the parser already found it) is gone', c && !(c.missingFacts || []).some((q) => q.field === 'item'));
+
+  // Negative control — an utterance where problem-parser.js's item table
+  // genuinely finds nothing MUST still honestly ask (never silently
+  // invent an item just because this fix now merges facts in).
+  resetConversationRepository();
+  const noItem = beginProblemSolving('buat NOR pengadaan barang kantor', 'evan');
+  const c2 = noItem.data.conversation;
+  check('an utterance with no recognizable item keyword still honestly asks for it (never fabricated by this fix)', c2 && (c2.missingFacts || []).some((q) => q.field === 'item'));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

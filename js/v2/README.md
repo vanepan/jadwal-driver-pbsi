@@ -196,6 +196,13 @@ js/v2/
     problem-parser.js         PURE — identical scoring formula to intent-engine.js
     problem-context-builder.js  PURE — a SEPARATE composition from conversation/'s context-builder.js
                             (reusing it would create a backwards, upstream-depends-on-downstream edge)
+    nor-numbering-context.js  Sprint 11.1 — getNumberingSuggestionForNor(), the one legal path from
+                            NOR composition to organizational-memory/numbering-engine.js#
+                            suggestNextNumber() (document-intelligence/ has no edge to
+                            organizational-memory/ — see the dependency graph below). NOT part of
+                            problem-context-builder.js — that function runs at classification time,
+                            before any NOR Type is known; this is called lazily, only from
+                            problem-solving-service.js#composeApprovedNor, only with domainType:'nor'
     services/                problem-classification-service.js — classifyProblem/classifyProblemWithContext
 
   problem-solving/        Phase 8-10, Part 4 — Integration. The ONE place the full pipeline (Problem

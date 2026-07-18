@@ -51,7 +51,12 @@ import { makeNormalization } from '../acquisition/contracts/normalization-contra
 export const MANUAL_FILE_CONNECTOR_ID = 'manual-file';
 export const MANUAL_FILE_CONNECTOR_VERSION = 'manual-file-connector@1';
 
-const NORMALIZATION = makeNormalization({
+// V2, Part A2 — exported so re-analysis (dataset-import-center.js#
+// runReanalysis, via knowledge/learning/correction-pipeline-engine.js#
+// submitCorrection) can build a correctedPayload with the EXACT same
+// shape buildManualFileKnowledgeItem() below already gives every other
+// manual-file-sourced item, rather than a second, drifting definition.
+export const NORMALIZATION = makeNormalization({
   normalizerId: 'manual-file-normalizer',
   normalizerVersion: '1',
   sourceRepresentation: SOURCE_REPRESENTATION.HUMAN_CORRECTION,

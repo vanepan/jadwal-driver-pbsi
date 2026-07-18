@@ -146,6 +146,9 @@
 }
 .wlk-input:focus,.wlk-select:focus{outline:none;border-color:var(--accent);}
 .wlk-file-input{font-family:var(--font-sans);font-size:13px;color:var(--text);margin-bottom:12px;display:block;}
+/* V2, Part A1 — a field the parser genuinely could not determine; shown
+   only while it's still blank, never a validation error. */
+.wlk-hint{font-size:11.5px;color:var(--text-faint);margin-top:5px;font-style:italic;}
 
 /* ── V2.1 — Zero-Configuration Dataset Import: drag & drop, progress ──── */
 .dic-dropzone{

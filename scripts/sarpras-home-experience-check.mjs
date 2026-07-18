@@ -93,6 +93,25 @@ const convOnScript = await page.evaluate(() => {
 });
 check('a real CREATE_NOR-shaped utterance is detected as "Membuat NOR"', convOnScript.includes('Membuat NOR'));
 check('real missing facts (e.g. Tujuan perjalanan) are shown, not fabricated as already-known', convOnScript.includes('Tujuan perjalanan'));
+check('the missing-facts list now renders as a REAL answerable form (production feedback fix — it used to be static text with no input at all)', convOnScript.includes('sic-conv-fact-input') && convOnScript.includes('sic-conv-continue'));
+
+// Sprint 11.1 (production feedback) — the actual fix under test: answer
+// EVERY real missing fact via the new form and submit once, proving
+// continueConversation() is now genuinely reachable and genuinely
+// advances state (nor-center.js's twin test already proves this same
+// mechanism carries a Conversation all the way to a composed
+// ComposerDocument against real seeded Knowledge — this test stays
+// Knowledge-free and just proves the answer path itself works on Home).
+const convAnswered = await page.evaluate(() => {
+  const answers = { destination: 'Bandung', traveler: 'Unit Engineering', departureDate: '2026-08-01', returnDate: '2026-08-03', budget: '5000000' };
+  for (const [field, value] of Object.entries(answers)) {
+    const input = document.querySelector(`[data-act="sic-conv-fact-input"][data-field="${field}"]`);
+    if (input) { input.value = value; input.dispatchEvent(new Event('input', { bubbles: true })); }
+  }
+  document.querySelector('[data-act="sic-conv-continue"]')?.click();
+  return document.getElementById('host').innerHTML;
+});
+check('after answering every real missing fact, the Conversation reports state:ready ("Susun NOR" appears) — continueConversation() genuinely fires and genuinely advances state', convAnswered.includes('Susun NOR'));
 
 // ── Part 9: Conversation — the mission's OWN off-script example utterance.
 // "I need documents about vehicle maintenance" does not match any of the

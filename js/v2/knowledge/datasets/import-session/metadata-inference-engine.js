@@ -122,16 +122,32 @@ function approvedOverrideCountFor(domainValue) {
   return result.ok ? result.data.length : 0;
 }
 
+/** V2, Part A1 (Intelligent Ingestion) — the same PBSI memo numbering
+ *  convention grounded in content-fact-extraction-engine.js (real sample:
+ *  "Nota Organisasi Sarpras 154 - ...docx" / "Memo Sarpras 355 - ...docx")
+ *  is usually ALSO right there in the filename. This stays inside this
+ *  file's own "filename-only" NON-GOAL boundary (still no file content
+ *  read) — a zero-risk floor that works even when content extraction
+ *  fails outright (a corrupt .docx, or a format Mammoth can't parse). */
+function documentNumberFromFilename(filename) {
+  const m = String(filename || '').match(/(?:Nota Organisasi|Memo)\s+Sarpras\s+(\d+)/i);
+  if (!m) return { value: '', confidence: 0, rationale: 'Tidak ada pola "Sarpras <nomor>" pada nama file.' };
+  return { value: m[1], confidence: 0.5, rationale: `Token nomor "${m[1]}" ditemukan pada nama file (bukan dari isi dokumen — lebih rendah dari kepastian ekstraksi konten).` };
+}
+
 /**
  * Infers administrative metadata ONLY — never the document's content
  * (except reading an already-parsed JSON object the caller passes in, for
  * the confidence engine's structure/content signals — still no OCR/parse
- * of PDF/DOCX). `parsedContent`/`kind` are optional so every existing
- * caller keeps working; when omitted, the JSON-only confidence signals are
- * simply reported unavailable (honest, neutral).
- * @param {{filename: string, mimeType: string, sizeBytes: number, folderPath?: string, sha256?: string|null, scopedDomainType?: string|null, kind?: string|null, parsedContent?: Object|null}} input
+ * of PDF/DOCX, except the real evidence content-fact-extraction-engine.js
+ * already computed for a `.docx`, passed in as `contentExtraction` — this
+ * function still never reads a file itself). `parsedContent`/`kind`/
+ * `contentExtraction` are optional so every existing caller keeps
+ * working; when omitted, the JSON/docx-only confidence signals are simply
+ * reported unavailable (honest, neutral).
+ * @param {{filename: string, mimeType: string, sizeBytes: number, folderPath?: string, sha256?: string|null, scopedDomainType?: string|null, kind?: string|null, parsedContent?: Object|null, contentExtraction?: {ran: boolean, overallConfidence: number}|null}} input
  */
-export function inferMetadata({ filename, mimeType, sizeBytes, folderPath = '', sha256 = null, scopedDomainType = null, kind = null, parsedContent = null }) {
+export function inferMetadata({ filename, mimeType, sizeBytes, folderPath = '', sha256 = null, scopedDomainType = null, kind = null, parsedContent = null, contentExtraction = null }) {
   const tokens = [...tokenize(filename), ...tokenize(folderPath)];
 
   // rawMatch tracks the ACTUAL filename-token evidence per field (0 when a
@@ -192,6 +208,7 @@ export function inferMetadata({ filename, mimeType, sizeBytes, folderPath = '', 
     parsedContent,
     historicalSupport: historicalSupportFor(domainType.value, filename, folderPath),
     approvedOverrideCount: approvedOverrideCountFor(domainType.value),
+    contentExtraction,
   });
 
   return {
@@ -200,6 +217,12 @@ export function inferMetadata({ filename, mimeType, sizeBytes, folderPath = '', 
     // (the auto-populate/auto-import thresholds read this, unchanged).
     overallConfidence: confidenceReport.score,
     confidenceReport,
+    // V2, Part A1 — a zero-risk documentNumber floor, filename-only (see
+    // documentNumberFromFilename()'s header). The CALLER (dataset-import-
+    // center.js#processOneFile) decides whether to prefer this or a
+    // higher-confidence content-extraction result; this engine never reads
+    // file content, so it cannot make that comparison itself.
+    documentNumberFloor: documentNumberFromFilename(filename),
   };
 }
 

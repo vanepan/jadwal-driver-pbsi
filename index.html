@@ -1205,6 +1205,14 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="vendor/flatpickr.min.js"></script>
+<!-- V2, Part A1 (Intelligent Ingestion) — real .docx text extraction
+     (js/v2/knowledge/datasets/import-session/docx-text-extractor.js).
+     No bundler in this codebase (js/app.js is a plain <script
+     type="module">, same as every other file here), so this follows the
+     chart.js/flatpickr pattern above (a global-exposing UMD build), not
+     an npm import — mammoth's npm package has no browser-ready ESM
+     build. Exposes window.mammoth. -->
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.12.0/mammoth.browser.min.js"></script>
 <script type="module" src="js/app.js?v=1.27.1"></script>
 </body>
 </html>

@@ -29,7 +29,10 @@ import {
   createImportSession, attachManualEntryFacts, attachDocumentHash, submitImportSessionForReview,
   approveImportSession, rejectImportSession, markKnowledgeImported, markArchived, getImportSession,
   updateSessionMetadata, hasContentFacts,
+  attachFactsProvenance, attachExtractionSuggestion, isFactsStale, listReanalysisCandidates, attachFileStorage,
 } from '../js/v2/knowledge/datasets/import-session/import-session-engine.js';
+import { normalizeImportSessionRecord } from '../js/v2/knowledge/datasets/import-session/contracts/import-session-contract.js';
+import { CURRENT_CONTENT_PARSER_VERSION } from '../js/v2/knowledge/datasets/import-session/parser-registry.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {
@@ -180,6 +183,78 @@ function hasOrgMemoryImport(relPath) {
 }
 check('import-session-engine.js has no organizational-memory import statement', !hasOrgMemoryImport('../js/v2/knowledge/datasets/import-session/import-session-engine.js'));
 check('import-validation-engine.js has no organizational-memory import statement', !hasOrgMemoryImport('../js/v2/knowledge/datasets/import-session/import-validation-engine.js'));
+
+console.log('\n[V2, Part A1 — factsProvenance / extractionSuggestion (Intelligent Ingestion)]');
+const created5 = createImportSession({
+  domainType: 'nor', datasetType: DATASET_TYPE.OFFICIAL, filename: 'auto-extracted.docx',
+  mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', sizeBytes: 500,
+  kind: IMPORT_SESSION_KIND.DOCX, knowledgeKind: 'document_fact', uploadedBy: 'evan',
+});
+check('a freshly-created session has no factsProvenance/extractionSuggestion yet', created5.data.factsProvenance === null && created5.data.extractionSuggestion === null);
+const suggestion = {
+  value: 'Realisasi Petty Cash', documentNumber: '', senderOrigin: 'Kabid Sarpras',
+  confidencePerField: { value: 1, documentNumber: 0, senderOrigin: 1 },
+  basisPerField: { value: 'x', documentNumber: 'not found', senderOrigin: 'x' },
+  parserVersion: 1, extractedAt: new Date().toISOString(),
+};
+const suggested = attachExtractionSuggestion(created5.data.id, suggestion);
+check('attachExtractionSuggestion persists the suggestion without touching manualEntryFacts', suggested.ok && suggested.data.extractionSuggestion.senderOrigin === 'Kabid Sarpras' && suggested.data.manualEntryFacts === null);
+check('a low-confidence suggestion alone does NOT satisfy hasContentFacts (never a silent partial gate-pass)', hasContentFacts(suggested.data) === false);
+const provenanced = attachFactsProvenance(created5.data.id, { source: 'auto-extraction', contentParserVersion: 1, metadataParserVersion: 1, confidencePerField: suggestion.confidencePerField, recordedAt: new Date().toISOString() });
+check('attachFactsProvenance persists source/versions independently of manualEntryFacts', provenanced.ok && provenanced.data.factsProvenance.source === 'auto-extraction' && provenanced.data.factsProvenance.contentParserVersion === 1);
+attachManualEntryFacts(created5.data.id, { value: suggestion.value, documentNumber: '', senderOrigin: suggestion.senderOrigin, notes: '' });
+const promoted = getImportSession(created5.data.id);
+check('once promoted to manualEntryFacts (2/3 fields), hasContentFacts is true — the actual gate only ever reads manualEntryFacts', promoted.ok && hasContentFacts(promoted.data) === true);
+check('extractionSuggestion is untouched by the promotion (still the full original suggestion, incl. the field that was never found)', promoted.data.extractionSuggestion.documentNumber === '');
+
+console.log('\n[V2, Part A2 — isFactsStale / listReanalysisCandidates (Background Re-Analysis)]');
+const pdfSession = createImportSession({
+  domainType: 'nor', datasetType: DATASET_TYPE.OFFICIAL, filename: 'never-relevant.pdf',
+  mimeType: 'application/pdf', sizeBytes: 10, kind: IMPORT_SESSION_KIND.PDF, knowledgeKind: 'document_fact', uploadedBy: 'evan',
+});
+check('a PDF session is never a re-analysis candidate (no content parser for PDF at any version)', isFactsStale(pdfSession.data) === false);
+
+const noStorageSession = createImportSession({
+  domainType: 'nor', datasetType: DATASET_TYPE.OFFICIAL, filename: 'not-yet-uploaded.docx',
+  mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', sizeBytes: 10, kind: IMPORT_SESSION_KIND.DOCX, knowledgeKind: 'document_fact', uploadedBy: 'evan',
+});
+check('a docx session with no storagePath yet is not a candidate (nothing to re-fetch)', isFactsStale(noStorageSession.data) === false);
+
+// Deliverable 7, concretely: a session that predates this feature entirely
+// — created, uploaded, even fully processed to Knowledge Imported — with
+// NO factsProvenance field at all (exactly what every real session
+// uploaded before this Part A2 release looks like; no migration script
+// ever touches it, per parser-registry.js's own "absence IS version 0"
+// design).
+const preFeatureSession = createImportSession({
+  domainType: 'nor', datasetType: DATASET_TYPE.OFFICIAL, filename: 'uploaded-before-mammoth-existed.docx',
+  mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', sizeBytes: 500, kind: IMPORT_SESSION_KIND.DOCX, knowledgeKind: 'document_fact', uploadedBy: 'evan',
+});
+attachManualEntryFacts(preFeatureSession.data.id, { value: 'Manually typed before Part A1 ever existed.' });
+const withStorage = getImportSession(preFeatureSession.data.id).data;
+check('a pre-feature session (factsProvenance === null) is correctly flagged stale — but not yet, since it has no storagePath', isFactsStale(withStorage) === false);
+// Simulate the real post-upload state via attachFileStorage — the real
+// mutator processOneFile() itself calls once the Storage upload resolves.
+attachFileStorage(preFeatureSession.data.id, { sha256: 'deadbeef', storagePath: 'sarpras-intelligence/deadbeef', fileStorageId: 'file:1' });
+const preFeatureWithStorage = getImportSession(preFeatureSession.data.id).data;
+check('once it has a real storagePath, a pre-feature .docx session IS a re-analysis candidate — no re-upload, no migration script, absence alone made it eligible', isFactsStale(preFeatureWithStorage) === true);
+check('listReanalysisCandidates() includes this exact session', listReanalysisCandidates().some((s) => s.id === preFeatureSession.data.id));
+
+const currentVersionSession = createImportSession({
+  domainType: 'nor', datasetType: DATASET_TYPE.OFFICIAL, filename: 'already-current.docx',
+  mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', sizeBytes: 10, kind: IMPORT_SESSION_KIND.DOCX, knowledgeKind: 'document_fact', uploadedBy: 'evan',
+});
+attachFileStorage(currentVersionSession.data.id, { sha256: 'cafe', storagePath: 'sarpras-intelligence/cafe', fileStorageId: 'file:2' });
+attachFactsProvenance(currentVersionSession.data.id, { source: 'auto-extraction', contentParserVersion: CURRENT_CONTENT_PARSER_VERSION, metadataParserVersion: 1, confidencePerField: { value: 1 }, recordedAt: new Date().toISOString() });
+check('a session already stamped at the CURRENT content parser version is not a candidate', isFactsStale(getImportSession(currentVersionSession.data.id).data) === false);
+check('listReanalysisCandidates() does NOT include the already-current session', !listReanalysisCandidates().some((s) => s.id === currentVersionSession.data.id));
+
+console.log('\n[V2, Part A1 — RTDB round-trip normalization for the two new fields]');
+check('a record with no factsProvenance/extractionSuggestion keys at all (pre-feature session) normalizes to null, not undefined/crash', (() => {
+  const stripped = { id: 'x', version: 1 }; // simulates RTDB dropping absent keys entirely
+  const n = normalizeImportSessionRecord(stripped);
+  return n.factsProvenance === null && n.extractionSuggestion === null;
+})());
 
 resetConnectorRegistry();
 resetDatasetRegistry();

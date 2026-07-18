@@ -41,7 +41,7 @@ import { createBatch, recordBatchItem } from '../js/v2/knowledge/datasets/import
 import {
   createDatasetImportController, reviewReasons, archiveDuplicateWarning,
   findReusableContentFacts, effectiveStage, computeBatchCounters, consensusExplanation,
-  isoWeekKey, computeAutonomyTrend,
+  isoWeekKey, computeAutonomyTrend, contentFactsGapMessage, isReanalyzing, getLastSweepStatus,
 } from '../js/v2/ui/dataset-import-center.js';
 import { setPresentationMode } from '../js/v2/ui/shared/workspace-list-kit.js';
 import { list as listLearningEvents, resetLearningRepository } from '../js/v2/learning/repository/learning-repository.js';
@@ -525,6 +525,30 @@ console.log('\n[computeBatchCounters — every counter is a real read of a persi
   check('the 2 not-yet-started files roll into Preparing (X / total)', counters.preparing === 2);
   check('every counter is a real number, never fabricated/animated',
     [counters.uploading, counters.processing, counters.knowledgeExtraction, counters.failed, counters.cancelled].every((n) => typeof n === 'number'));
+}
+
+console.log('\n[V2, Part A2 (production feedback) — contentFactsGapMessage() names the REAL reason, never one generic sentence]');
+{
+  const pdfSession = { kind: IMPORT_SESSION_KIND.PDF };
+  check('PDF gets the honest "no reader at all" message (never confused with a docx that just failed)', contentFactsGapMessage(pdfSession).includes('PDF') && contentFactsGapMessage(pdfSession).includes('OCR'));
+
+  const neverProcessedDocx = { kind: IMPORT_SESSION_KIND.DOCX, extractionSuggestion: null };
+  check('a docx with extractionSuggestion:null (predates the feature, not yet swept) says so specifically, not "belum ada fakta konten"', contentFactsGapMessage(neverProcessedDocx).includes('Belum pernah diproses'));
+
+  const ranButFoundNothing = { kind: IMPORT_SESSION_KIND.DOCX, extractionSuggestion: { value: '', documentNumber: '', senderOrigin: '', parserVersion: 1 } };
+  check('a docx the parser genuinely read but found no recognizable fields in says THAT, distinctly', contentFactsGapMessage(ranButFoundNothing).includes('tidak menemukan pola'));
+
+  const partialFound = { kind: IMPORT_SESSION_KIND.DOCX, extractionSuggestion: { value: 'x', documentNumber: '', senderOrigin: '', parserVersion: 1 } };
+  check('a docx with SOME fields found reports the real fraction (1/3), not a blanket "no facts" statement', contentFactsGapMessage(partialFound).includes('1/3'));
+
+  const jsonNoContent = { kind: IMPORT_SESSION_KIND.JSON };
+  check('JSON gets its own distinct message (never conflated with the docx parser messages)', contentFactsGapMessage(jsonNoContent).includes('JSON'));
+}
+
+console.log('\n[V2, Part A2 (production feedback) — isReanalyzing()/getLastSweepStatus() give the UI something real to observe]');
+{
+  check('isReanalyzing() is a real boolean (false when nothing is running in this fresh process)', isReanalyzing() === false);
+  check('getLastSweepStatus() is honestly null before any sweep has ever run in this process', getLastSweepStatus() === null);
 }
 
 console.log(`\n${pass}/${pass + fail} checks passed.`);

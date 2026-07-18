@@ -140,5 +140,18 @@ console.log('\n[Behaviour — an empty utterance is honestly rejected, never sil
   check('error code is INVALID_UTTERANCE', r.error.code === 'INVALID_UTTERANCE');
 }
 
+console.log('\n[Sprint 11.1, Workstream 1 — nor-numbering-context.js: the ONE legal path to organizational-memory/ for NOR composition]');
+{
+  const src = read('js/v2/problem-intelligence/nor-numbering-context.js');
+  check('imports organizational-memory/numbering-engine.js (the already-legal problem-intelligence -> organizational-memory edge)', /import\s*\{[^}]*suggestNextNumber[^}]*\}\s*from\s*['"]\.\.\/organizational-memory\/numbering-engine\.js['"]/.test(src));
+  check('does NOT import conversation/ (same architectural invariant every other problem-intelligence/ file honors)', !src.split('\n').some((line) => /^\s*import\b.*['"].*\/conversation\//.test(line)));
+
+  const { getNumberingSuggestionForNor } = await import('../js/v2/problem-intelligence/nor-numbering-context.js');
+  const suggestion = getNumberingSuggestionForNor();
+  check('returns a real NumberingSuggestion shape (domainType/suggestedNumber/basis/confidence/computedAt)', typeof suggestion === 'object' && 'domainType' in suggestion && 'suggestedNumber' in suggestion && 'confidence' in suggestion && 'basis' in suggestion);
+  check('is scoped to domainType "nor" specifically, never a caller-supplied value', suggestion.domainType === 'nor');
+  check('with no Archive evidence in this process, confidence is honestly 0 — never a guess', suggestion.confidence === 0);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

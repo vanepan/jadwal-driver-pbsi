@@ -46,6 +46,10 @@
    makes AFTER composition, to store what only THIS layer ever computes:
    the merged Reasoning + Conversation + Composition explainability bundle
    Sprint 10.2's Explainability Workspace reads back).
+   Sprint 11.1: problem-intelligence/nor-numbering-context.js (already a
+   dependency via problem-classification-service.js — this adds a second,
+   direct call for the ONE thing composeApprovedNor needs BEFORE
+   composition, not after).
    ============================================================ */
 
 'use strict';
@@ -57,6 +61,13 @@ import { startConversation, findConversation } from '../../conversation/services
 import { INTENT } from '../../conversation/contracts/intent-contract.js';
 import { composeNorDocument } from '../../document-intelligence/nor/nor-composer.js';
 import { attachExplainability } from '../../document-intelligence/composer/composer-store.js';
+// Sprint 11.1, Workstream 1 — the ONE legal path to organizational-memory/
+// numbering-engine.js#suggestNextNumber() (document-intelligence/ has no
+// binding-graph edge there; problem-intelligence/ does — see that file's
+// own header). Computed BEFORE composeNorDocument(), unlike reason()
+// below, because nor-composer.js needs it to land the norNumber field
+// inside fieldMap itself, not attached as after-the-fact metadata.
+import { getNumberingSuggestionForNor } from '../../problem-intelligence/nor-numbering-context.js';
 import { routeProblem } from '../problem-router.js';
 import { WORKFLOW_ROUTE } from '../contracts/workflow-route-contract.js';
 import { generateClarification } from '../clarification-engine.js';
@@ -166,7 +177,17 @@ export function beginProblemSolving(utterance, actorId) {
       // original V2 architecture proposal (§4.3) already names as the
       // platform's own idiom, applied here for the first time in js/v2/.
       if (mappedIntent) {
-        const started = startConversation({ utterance, actorId });
+        // Sprint 11.1 (production feedback, "Adaptive Conversation") — the
+        // REAL, verified fix: problem.facts (problem-parser.js's own
+        // category-level extraction — e.g. `item: 'Kursi'` for a
+        // procurement utterance) was computed two lines above and then
+        // discarded entirely; startConversation() only ever seeded from
+        // its own narrower detectIntent().extractedFacts (CREATE_NOR
+        // extracts just `type`). `category` is filtered out — it is
+        // problem-parser's own classification label, never a real NOR
+        // fact/fieldSchema field.
+        const { category: _category, ...extractedProblemFacts } = problem.facts;
+        const started = startConversation({ utterance, actorId, additionalFacts: extractedProblemFacts });
         if (started.ok && started.data.currentIntent.intent !== INTENT.UNKNOWN && started.data.state !== 'failed') {
           result.conversation = started.data;
           break;
@@ -251,15 +272,28 @@ export function continueProblemConversation(state) {
  * result is returned exactly as it would have been without this call —
  * Reasoning is additive instrumentation here, never a gate.
  * @param {string} conversationId
+ * @param {{formattingFacts?: Object}} [opts] - Sprint 11.1, Workstream 3: system-derived formatting (e.g. {tanggalPanjang}), computed by the UI layer (the one caller with a legal edge to V1's petty-cash-config.js) and passed straight through to composeNorDocument's own opts.formattingFacts — this file never computes it itself
  */
-export function composeApprovedNor(conversationId) {
+export function composeApprovedNor(conversationId, opts = {}) {
   const current = findConversation(conversationId);
   if (!current.ok) return failure(PROBLEM_SOLVING_ERRORS.NOT_FOUND, `No conversation "${conversationId}".`);
   const c = current.data;
   if (c.state !== 'ready' && c.state !== 'completed') {
     return failure(PROBLEM_SOLVING_ERRORS.NOT_READY, `Conversation "${conversationId}" is "${c.state}" — NOR Composition requires READY or COMPLETED (organizational reasoning must be complete before composition, never before).`);
   }
-  const composed = composeNorDocument(c.gatheredFacts, { sessionId: c.id });
+  // Sprint 11.1, Workstream 1 — best-effort, additive, never a gate: if
+  // the numbering engine throws or finds no consistent Archive pattern
+  // (confidence 0), composition proceeds exactly as it did before this
+  // sprint — nor-composer.js already treats a confidence-0/absent
+  // suggestion as an honest omission, never a fabricated number.
+  let numberingSuggestion = null;
+  try {
+    numberingSuggestion = getNumberingSuggestionForNor();
+  } catch (err) {
+    console.error('[problem-solving-service] getNumberingSuggestionForNor failed:', err);
+  }
+
+  const composed = composeNorDocument(c.gatheredFacts, { sessionId: c.id, numberingSuggestion, formattingFacts: opts.formattingFacts });
   if (!composed.ok) return composed;
 
   let reasoningConsidered;

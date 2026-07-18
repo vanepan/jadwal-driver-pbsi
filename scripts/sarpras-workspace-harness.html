@@ -22,6 +22,13 @@
   // browser without needing the File/Firebase upload path.
   import { create as knowledgeCreate } from '../js/v2/knowledge/repository/knowledge-repository.js';
   import { buildManualFileKnowledgeItem } from '../js/v2/knowledge/connectors/manual-file-connector.js';
+  // Sprint 11.1, Workstream 2 — test affordance: seeds the SAME minimal
+  // real Approved structural+pattern Knowledge nor-composition-check.mjs's
+  // own seedApproved() fixture uses (Node-side), so a real-browser test can
+  // drive the CREATE_NOR conversation all the way to a real composed
+  // ComposerDocument, not just the early turns.
+  import { ingest, promoteKnowledge } from '../js/v2/knowledge/services/knowledge-service.js';
+  import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
   // Autonomous Experience (Part 10) — test affordance: records a real
   // Learning Event through the actual, live producer path (the SAME
   // recordCorrection() dataset-import-center.js's Advanced Metadata save
@@ -55,6 +62,27 @@
     domainType: 'nor', correctionType: CORRECTION_TYPE.METADATA, targetKey,
     actorId: 'test', after: { domainType: 'nor' },
   }).ok;
+  // Sprint 11.1, Workstream 2 — same minimal fixture as nor-composition-
+  // check.mjs's Node-side seedApproved(): one structure item + one real
+  // sentence_pattern citing {{destination}}/{{traveler}} — the smallest
+  // real Approved Knowledge composeApprovedNor() needs to succeed.
+  window.__seedNorCompositionKnowledge = () => {
+    const now = new Date().toISOString();
+    const seed = ({ kind, payload, sourceRef }) => {
+      const id = generateKnowledgeId({ domainType: 'nor', sourceType: 'manual-file', sourceRef });
+      ingest({
+        id, version: 1, domainType: 'nor', sourceType: 'manual-file', kind, payload, confidence: 0.9,
+        lifecycleState: 'draft',
+        provenance: { connectorId: 'manual-file', sourceRef, capturedAt: now },
+        approvedBy: null, approvedAt: null, preferenceRationale: null, createdAt: now, updatedAt: now,
+      });
+      return promoteKnowledge(id, { approverId: 'evan', decidedAt: now, preferenceRationale: 'seed for nor-center-generate-conversation-check.mjs' }).ok;
+    };
+    return [
+      seed({ kind: 'structure', payload: { signatoryTopCount: 4, signatoryBottomCount: 2, itemCount: 10, reimburseLineCount: 0 }, sourceRef: 'nc-harness-struct-1' }),
+      seed({ kind: 'sentence_pattern', payload: { template: 'Sehubungan dengan {{destination}}, kami mengajukan perjalanan dinas untuk {{traveler}}.', slots: [{ name: 'destination' }, { name: 'traveler' }], granularity: 'sentence' }, sourceRef: 'nc-harness-pattern-1' }),
+    ].every(Boolean);
+  };
   // Experience Architecture phase — the real archiver (dataset-import-
   // center.js#doArchive) is ALREADY registered by the time this script's
   // own top-level code runs: mountSarprasIntelligence's import chain

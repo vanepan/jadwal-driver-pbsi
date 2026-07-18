@@ -104,5 +104,37 @@ console.log('\n[Behaviour — a real composition: known facts fill slots, unknow
   check('the human-provided fact ("destination") is cited with source human_answer', result.data.composerDocument.sections.some((s) => s.field === 'destination' && s.value === 'Bandung'));
 }
 
+console.log('\n[Sprint 11.1, Workstream 1 — opts.numberingSuggestion (organizational-memory/numbering-engine.js, wired in at last)]');
+{
+  const withNumber = composeNorDocument({ destination: 'Bandung' }, { sessionId: 'test-session-2', numberingSuggestion: { suggestedNumber: 'NOR-2026-015', confidence: 0.75, basis: 'Next in sequence after "NOR-2026-014".' } });
+  check('a confidence>0 numberingSuggestion lands norNumber in the real ComposerDocument sections', withNumber.ok && withNumber.data.composerDocument.sections.some((s) => s.field === 'norNumber' && s.value === 'NOR-2026-015'));
+
+  const withZeroConfidence = composeNorDocument({ destination: 'Bandung' }, { sessionId: 'test-session-3', numberingSuggestion: { suggestedNumber: '', confidence: 0, basis: 'No archived nor numbers to infer a pattern from.' } });
+  check('confidence:0 (no consistent Archive pattern) honestly OMITS norNumber — never a fabricated number', withZeroConfidence.ok && !withZeroConfidence.data.composerDocument.sections.some((s) => s.field === 'norNumber'));
+  check('confidence:0 does NOT insert an UNRESOLVED_MARKER either — norNumber never existed as a field before, omission is the honest behavior, not a marker', !withZeroConfidence.data.composerDocument.sections.some((s) => s.field === 'norNumber' && String(s.value).includes('UNKNOWN')));
+
+  const withoutOpt = composeNorDocument({ destination: 'Bandung' }, { sessionId: 'test-session-4' });
+  check('composition with NO numberingSuggestion at all (opts.numberingSuggestion omitted) behaves exactly as before this sprint — no norNumber field, no crash', withoutOpt.ok && !withoutOpt.data.composerDocument.sections.some((s) => s.field === 'norNumber'));
+
+  check('a landed norNumber section is source:knowledge_suggestion (same treatment as every other AI-suggested field today, e.g. signatoryTopCount)', withNumber.data.composerDocument.sections.find((s) => s.field === 'norNumber').isOverridden === false);
+}
+
+console.log('\n[Sprint 11.1, Workstream 3 — opts.formattingFacts resolves the real seeded "Jakarta, {{tanggalPanjang}}" pattern]');
+{
+  // The EXACT real generic pattern seeded in production
+  // (nor-reverse-engineering-knowledge.js's 'pattern.place-date-line') —
+  // not a synthetic stand-in, so this proves the real gap actually closes.
+  seedApproved({ kind: 'sentence_pattern', payload: { template: 'Jakarta, {{tanggalPanjang}}', slots: [{ name: 'tanggalPanjang', type: 'date' }], granularity: 'sentence' }, sourceRef: 'place-date-line-test' });
+
+  const withoutFormatting = composeNorDocument({ destination: 'Bandung' }, { sessionId: 'test-session-5' });
+  const dateSectionUnresolved = withoutFormatting.data.composerDocument.sections.find((s) => typeof s.value === 'string' && s.value.startsWith('Jakarta,'));
+  check('WITHOUT formattingFacts, the real date pattern stays an honest UNRESOLVED_MARKER exactly as it does in production today', dateSectionUnresolved && dateSectionUnresolved.value.includes('UNKNOWN'));
+
+  const withFormatting = composeNorDocument({ destination: 'Bandung' }, { sessionId: 'test-session-6', formattingFacts: { tanggalPanjang: '18 Juli 2026' } });
+  const dateSectionResolved = withFormatting.data.composerDocument.sections.find((s) => typeof s.value === 'string' && s.value.startsWith('Jakarta,'));
+  check('WITH formattingFacts.tanggalPanjang, the real pattern resolves to a genuine, human-readable date line', dateSectionResolved && dateSectionResolved.value === 'Jakarta, 18 Juli 2026');
+  check('formattingFacts.tanggalPanjang does NOT leak into humanFields as a fake source:human_answer section (system-derived formatting is never mislabeled as a human answer)', !withFormatting.data.composerDocument.sections.some((s) => s.field === 'tanggalPanjang'));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

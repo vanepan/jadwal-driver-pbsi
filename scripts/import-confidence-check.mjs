@@ -84,5 +84,17 @@ console.log('\n[level bands]');
 check('a strong rich file lands at level "high"', computeImportConfidence(rich).level === 'high');
 check('level is always one of low/medium/high', ['low', 'medium', 'high'].includes(computeImportConfidence(bare).level));
 
+console.log('\n[V2, Part A1 — real .docx extraction evidence, not the old blanket PDF/DOCX gap]');
+const docxRead = computeImportConfidence({ ...bare, kind: 'docx', contentExtraction: { ran: true, overallConfidence: 1 } });
+const docxPartial = computeImportConfidence({ ...bare, kind: 'docx', contentExtraction: { ran: true, overallConfidence: 0.33 } });
+const docxUnread = computeImportConfidence({ ...bare, kind: 'docx', contentExtraction: null });
+check('a fully-extracted docx reports documentStructure/contentFacts as available (real evidence now exists)', ['documentStructure', 'contentFacts'].every((id) => docxRead.signals.find((s) => s.id === id).available === true));
+check('a fully-extracted docx scores those two signals at full confidence', ['documentStructure', 'contentFacts'].every((id) => docxRead.signals.find((s) => s.id === id).subScore === 1));
+check('a partially-extracted docx (1/3 fields) scores those two signals proportionally, not 0 or 1', ['documentStructure', 'contentFacts'].every((id) => { const s = docxPartial.signals.find((x) => x.id === id).subScore; return s > 0 && s < 1; }));
+check('a docx that never got read (Mammoth failed) stays unavailable, same honest gap as PDF', ['documentStructure', 'contentFacts'].every((id) => docxUnread.signals.find((s) => s.id === id).available === false));
+check('a PDF (still no reader at all) stays unavailable exactly as before this feature', ['documentStructure', 'contentFacts'].every((id) => computeImportConfidence(bare).signals.find((s) => s.id === id).available === false));
+check('a fully-extracted docx scores strictly higher than the same file unread', docxRead.score > docxUnread.score);
+check('an unread docx and a PDF score identically (both are the same honest "no content evidence" gap)', docxUnread.score === computeImportConfidence(bare).score);
+
 console.log(`\n${pass}/${pass + fail} checks passed.`);
 if (fail > 0) process.exit(1);

@@ -105,7 +105,7 @@ import { rehydrateKnowledgeFromSessions } from '../knowledge/datasets/import-ses
 // and used by an existing workspace file (see each import's origin below);
 // this file only COMPOSES them into five plain-language questions, it
 // never recomputes what an engine already computes.
-import { reviewReasons, effectiveStage } from './dataset-import-center.js';
+import { reviewReasons, effectiveStage, runReanalysisSweep } from './dataset-import-center.js';
 import { listImportSessions } from '../knowledge/datasets/import-session/import-session-engine.js';
 import {
   IMPORT_SESSION_STATE, PIPELINE_STAGE_ORDER, PIPELINE_OFF_RAMP_STAGES,
@@ -143,6 +143,17 @@ import { globalSearch } from '../services/global-search-service.js';
 // (Phase 6) — this file only renders what it returns, never reinterprets
 // an utterance itself and never adds a new intent.
 import { INTENT } from '../conversation/contracts/intent-contract.js';
+// Sprint 11.1 (production feedback) — PREVIOUSLY UNCALLED anywhere in
+// this file (verified by grep before writing this): renderConversationResult()
+// below has only ever rendered `missingFacts` as static text, with no way
+// to answer them — a real, pre-existing gap confirmed via a live browser
+// run (submitting the same utterance again just restarts classification
+// via resetRoutedState(), never continues). js/v2/README.md's dependency
+// graph already documents `ui/ -> conversation/` as legal ("not exercised
+// in Phase 6 — no UI caller exists yet") — this is that edge's first real
+// exercise, not a new architectural decision. See nor-center.js's twin fix
+// for the identical pattern applied there first.
+import { continueConversation } from '../conversation/services/conversation-service.js';
 // Phase 10.5 (Home Entry Point Migration, Problem-First Architecture) —
 // EVERY free-text request now enters through beginProblemSolving() first
 // (Problem Classification -> Diagnostic Planning -> Routing Decision).
@@ -156,6 +167,10 @@ import {
 } from '../problem-solving/services/problem-solving-service.js';
 import { WORKFLOW_ROUTE } from '../problem-solving/contracts/workflow-route-contract.js';
 import { HYPOTHESIS_STATUS } from '../reasoning/contracts/hypothesis-contract.js';
+// Sprint 11.1, Workstream 3 — the one legal ui/ -> V1 edge for date
+// formatting (js/v2/README.md's dependency graph; nor-center.js already
+// uses this exact same edge, same functions).
+import { fmtLong, todayISO } from '../../petty-cash/petty-cash-config.js';
 // Phase 3, Part 8 — see js/v2/dormant-subsystems.js. This briefing used to
 // count the OLD correction log's always-zero value.
 import { dormantNote } from '../dormant-subsystems.js';
@@ -219,6 +234,10 @@ function scheduleRender() {
 const homeState = {
   searchInput: '', searchResult: null,
   conversationInput: '', conversation: null, conversationError: null,
+  // Sprint 11.1 (production feedback) — in-progress typed answers for the
+  // legacy CREATE_NOR conversation's missingFacts form (see
+  // renderConversationResult()'s own header for why this exists now).
+  missingFactAnswers: {},
   // Phase 10.5 — Problem-First Architecture. `activeProblem`/`activeRoute`
   // persist across turns of a generic Problem Conversation (Diagnostic or
   // plain); `problemConversationTurn` is the LATEST advanceProblemConversation()
@@ -334,9 +353,17 @@ function renderRoutedResult() {
 
 /** The ONE real path that still reaches the legacy Intent Engine — always
  *  downstream of Problem Classification + Routing (see
- *  problem-solving-service.js's own CONVERSATION branch). Rendering itself
- *  is unchanged from Phase 6/9 — this is the exact backward-compatible
- *  surface anything already relying on it continues to see. */
+ *  problem-solving-service.js's own CONVERSATION branch).
+ *
+ *  PRODUCTION FEEDBACK, VERIFIED LIVE — the missingFacts form below is
+ *  NEW. Before this, `missingFacts` rendered as static `<li>` text with no
+ *  input to answer them, and nothing in this file called
+ *  continueConversation() — confirmed empirically (a real browser run)
+ *  before writing this fix: resubmitting the same utterance just restarts
+ *  classification from scratch via resetRoutedState(), so this
+ *  conversation could never actually be advanced through this UI. See
+ *  nor-center.js's twin fix (renderGenerateConversationResult) for the
+ *  identical pattern, built first there. */
 function renderConversationResult(c) {
   if (!c.currentIntent || c.currentIntent.intent === INTENT.UNKNOWN || c.state === 'failed') {
     return `<p class="sic-next-action">Permintaan ini belum dikenali platform. Coba salah satu: "saya ingin membuat NOR", "saya ingin mengunggah dokumen", "saya ingin meninjau pengetahuan".</p>`;
@@ -348,7 +375,14 @@ function renderConversationResult(c) {
       ${known.length ? `<ul class="sic-brief-list">${known.map(([k, v]) => `<li><span class="sic-brief-label">${esc(k)}: ${esc(String(v))}</span></li>`).join('')}</ul>` : ''}
       ${c.missingFacts && c.missingFacts.length ? `
         <div class="sic-brief-sub">Masih diperlukan</div>
-        <ul class="sic-brief-list">${c.missingFacts.map((q) => `<li><span class="sic-brief-label">${esc(q.prompt)}</span></li>`).join('')}</ul>`
+        <div class="nc-conv-form">
+          ${c.missingFacts.map((q) => `
+            <div class="wlk-form-row">
+              <label>${esc(q.prompt)}</label>
+              <input data-act="sic-conv-fact-input" data-field="${esc(q.field)}" class="wlk-input" type="text" placeholder="${esc(q.label)}" value="${esc(homeState.missingFactAnswers[q.field] || '')}" />
+            </div>`).join('')}
+          <button class="wlk-btn" data-act="sic-conv-continue" data-id="${esc(c.id)}" type="button">Lanjutkan</button>
+        </div>`
     : '<p class="sic-next-action">Semua data yang diperlukan sudah ada.</p>'}
       ${c.state === 'ready' ? `<p class="sic-next-action">Semua data terkumpul. <button class="wlk-btn" data-act="sic-compose-nor" data-id="${esc(c.id)}" type="button">Susun NOR</button></p>` : ''}
     </div>`;
@@ -421,6 +455,7 @@ function resetRoutedState() {
   homeState.answeredFacts = {};
   homeState.askedFields = [];
   homeState.problemAnswerInput = '';
+  homeState.missingFactAnswers = {};
   homeState.clarification = null;
   homeState.activeProblem = null;
   homeState.activeRoute = null;
@@ -515,8 +550,17 @@ function onDashboardClick(e) {
   }
   if (el.dataset.act === 'sic-conv-start') { handleProblemSubmit(); return; }
   if (el.dataset.act === 'sic-pc-answer-submit') { handleProblemAnswerSubmit(); return; }
+  if (el.dataset.act === 'sic-conv-continue') { handleConversationContinue(el.dataset.id); return; }
   if (el.dataset.act === 'sic-compose-nor') {
-    const composed = composeApprovedNor(el.dataset.id);
+    // Sprint 11.1, Workstream 3 — tanggalPanjang is the document's real
+    // composition/issuance date (a letterhead convention, not a fact
+    // about the NOR's own subject matter — confirmed with the repository
+    // owner: neither Pengadaan's empty date schema nor Perjalanan Dinas's
+    // two ambiguous candidates, departureDate/returnDate, obviously mean
+    // "the letterhead date"). Computed HERE, not in nor-composer.js/
+    // problem-solving-service.js — this is the one legal edge to V1
+    // (petty-cash-config.js), same edge nor-center.js already uses.
+    const composed = composeApprovedNor(el.dataset.id, { formattingFacts: { tanggalPanjang: fmtLong(todayISO()) } });
     homeState.conversationError = composed.ok ? null : composed.error.message;
     if (composed.ok) homeState.lastPipelineTrace = { stage: 'compose', ...composed.data };
     sections.dashboard.innerHTML = renderDashboard();
@@ -529,6 +573,24 @@ function onDashboardInput(e) {
   if (e.target.dataset.act === 'sic-search-input') homeState.searchInput = e.target.value;
   if (e.target.dataset.act === 'sic-conv-input') homeState.conversationInput = e.target.value;
   if (e.target.dataset.act === 'sic-pc-answer-input') homeState.problemAnswerInput = e.target.value;
+  if (e.target.dataset.act === 'sic-conv-fact-input') {
+    homeState.missingFactAnswers = { ...homeState.missingFactAnswers, [e.target.dataset.field]: e.target.value };
+  }
+}
+
+/** Sprint 11.1 (production feedback) — the real fix for the previously-
+ *  nonexistent CREATE_NOR answer path (see renderConversationResult()'s
+ *  header). Submits every currently-typed answer in one call — matches
+ *  missingFacts's own "list shown all at once" shape. */
+function handleConversationContinue(conversationId) {
+  const answers = { ...homeState.missingFactAnswers };
+  const result = continueConversation(conversationId, answers);
+  if (!result.ok) { homeState.conversationError = result.error.message; sections.dashboard.innerHTML = renderDashboard(); return; }
+  homeState.conversationError = null;
+  homeState.conversation = result.data;
+  const stillMissing = new Set((result.data.missingFacts || []).map((q) => q.field));
+  homeState.missingFactAnswers = Object.fromEntries(Object.entries(homeState.missingFactAnswers).filter(([f]) => stillMissing.has(f)));
+  sections.dashboard.innerHTML = renderDashboard();
 }
 
 function onDashboardKeydown(e) {
@@ -623,6 +685,16 @@ export async function mountSarprasIntelligence(hostEl) {
         const sweepStartMs = Date.now();
         const summary = sweepPipeline();
         recordSweepTick(summary, Date.now() - sweepStartMs);
+        // V2, Part A2 (Background Re-Analysis) — fire-and-forget, exactly
+        // like initImportBatchSync() below: this is a genuinely separate,
+        // async/networked concern (re-fetching bytes from Storage) from
+        // sweepPipeline()'s synchronous lifecycle-advance above, and
+        // nothing here needs to await its result — the next change event
+        // (or the next mount) picks up wherever it left off. Auto-detect
+        // AND auto-execute (confirmed): safe because runReanalysis() can
+        // only ever create a new reviewable Candidate for an Approved
+        // KnowledgeItem, never mutate one in place.
+        runReanalysisSweep().catch((err) => console.error('[sarpras-intelligence-center] re-analysis sweep failed:', err));
       } catch (err) {
         console.error('[sarpras-intelligence-center] pipeline rehydration/sweep failed:', err);
       }
@@ -731,6 +803,17 @@ export function setSarprasIntelligenceScreen(nextScreen) {
   screen = nextScreen || 'dashboard';
   if (sections) showScreen(screen);
   notifyScreenChange();
+}
+
+/** Sprint 11.1, Workstream 2 — lets a caller (nor-center.js's retired
+ *  "Generate NOR" dead end) hand text a user already typed elsewhere into
+ *  the REAL conversational entry point, instead of that text being lost
+ *  on redirect. Pure state seed — does not itself change the screen or
+ *  start a Conversation; call setSarprasIntelligenceScreen('dashboard')
+ *  separately, same "one primitive per concern" shape every other
+ *  cross-screen jump in this codebase already uses. */
+export function seedConversationEntry(text) {
+  homeState.conversationInput = String(text || '');
 }
 
 function showScreen(id) {

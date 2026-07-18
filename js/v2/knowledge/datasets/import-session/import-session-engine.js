@@ -10,7 +10,12 @@
    RESPONSIBILITY: createImportSession, attachManualEntryFacts,
    attachParsedContent, submitImportSessionForReview, approveImportSession,
    rejectImportSession, markKnowledgeImported, markArchived,
-   getImportSession, listImportSessions, getImportSessionHistory.
+   getImportSession, listImportSessions, getImportSessionHistory. V2, Part
+   A1: attachFactsProvenance, attachExtractionSuggestion. V2, Part A2:
+   isFactsStale, listReanalysisCandidates (detection only — the actual
+   re-analysis run is orchestrated one layer up, in dataset-import-
+   center.js, the same layer attachManualEntryFacts's own caller already
+   lives at).
 
    markKnowledgeImported() reuses dataset-import-service.js#importDataset()
    completely UNCHANGED — it queues this session's human-verified content
@@ -52,6 +57,7 @@ import { importDataset } from '../dataset-import-service.js';
 import { manualFileSource, MANUAL_FILE_CONNECTOR_ID } from '../../connectors/manual-file-connector.js';
 import { queueManualEntry, setActiveImportSession, clearActiveImportSession } from '../../acquisition/manual-import-queue-store.js';
 import { generateKnowledgeId } from '../../contracts/identity-contract.js';
+import { CURRENT_CONTENT_PARSER_VERSION } from './parser-registry.js';
 
 export const IMPORT_SESSION_ENGINE_ERRORS = Object.freeze({
   NOT_FOUND: 'NOT_FOUND',
@@ -131,9 +137,34 @@ export function createImportSession({ domainType, datasetType, filename, mimeTyp
   return repoCreate(record);
 }
 
-/** PDF/DOCX path — captures human-typed facts before submission. No state change. */
+/** PDF/DOCX path — captures the content facts actually in effect (either
+ *  human-typed via Advanced Metadata, or auto-attached by
+ *  content-fact-extraction-engine.js once its confidence crossed
+ *  AUTO_POPULATE_CONFIDENCE_THRESHOLD). No state change. Callers that set
+ *  this from an automatic source should also call attachFactsProvenance()
+ *  right after, so Part A2's re-analysis sweep can tell a field was
+ *  auto-extracted (safe to replace with better evidence later) from one a
+ *  human actually typed (never silently overwritten). */
 export function attachManualEntryFacts(id, facts) {
   return repoAppendVersion(id, { manualEntryFacts: facts });
+}
+
+/** V2, Part A1/A2 — records WHO/WHAT last wrote `manualEntryFacts` and
+ *  with what parser version/confidence. See import-session-contract.js's
+ *  `factsProvenance` JSDoc for the exact shape. No state change. */
+export function attachFactsProvenance(id, provenance) {
+  return repoAppendVersion(id, { factsProvenance: provenance });
+}
+
+/** V2, Part A1 — records content-fact-extraction-engine.js's result for
+ *  this session's file, ALWAYS (even when its confidence was too low to
+ *  auto-populate `manualEntryFacts`) — purely so the Advanced Metadata
+ *  form can pre-fill from real (if partial) evidence instead of blank
+ *  defaults. Never itself satisfies the content-fact gate (only
+ *  `manualEntryFacts` does) — see import-session-contract.js's
+ *  `extractionSuggestion` JSDoc. No state change. */
+export function attachExtractionSuggestion(id, suggestion) {
+  return repoAppendVersion(id, { extractionSuggestion: suggestion });
 }
 
 /** JSON path — captures a real JSON.parse() result before submission. No state change. */
@@ -344,6 +375,37 @@ export function hasContentFacts(session) {
   return session.kind === 'json'
     ? !!session.parsedContent && Object.keys(session.parsedContent).length > 0
     : !!session.manualEntryFacts && Object.keys(session.manualEntryFacts).length > 0;
+}
+
+/**
+ * V2, Part A2 (Parser Versioning + Background Re-Analysis) — is this
+ * `.docx` session's content evidence older than the current content
+ * parser? A session with NO `factsProvenance` at all predates this
+ * registry entirely — absence IS version 0, honestly poorer than any real
+ * version, so it is unconditionally eligible (this is the exact mechanism
+ * that lets every pre-Mammoth session become a re-analysis candidate with
+ * no backfill/migration script — see parser-registry.js's header).
+ * Excludes anything with no stored file to re-fetch (nothing to re-read)
+ * and anything that isn't `.docx` (PDF has no parser at any version yet —
+ * same boundary as Part A1).
+ * @param {object} session
+ */
+export function isFactsStale(session) {
+  if (session.kind !== 'docx' || !session.storagePath) return false;
+  const provenance = session.factsProvenance;
+  if (!provenance) return true;
+  return typeof provenance.contentParserVersion !== 'number' || provenance.contentParserVersion < CURRENT_CONTENT_PARSER_VERSION;
+}
+
+/** V2, Part A2 — every `.docx` session eligible for re-analysis under
+ *  isFactsStale(), across every state (unlike sweepPipeline(), this does
+ *  NOT skip terminal states: re-analysis staleness is a content-freshness
+ *  axis, independent of pipeline lifecycle progress — a session that's
+ *  already Archived can still hold outdated facts worth enriching). */
+export function listReanalysisCandidates() {
+  const result = repoList({});
+  if (!result.ok) return [];
+  return result.data.filter(isFactsStale);
 }
 
 /**
