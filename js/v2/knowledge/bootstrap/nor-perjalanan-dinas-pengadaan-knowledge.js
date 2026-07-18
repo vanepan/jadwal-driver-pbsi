@@ -200,24 +200,24 @@ const BPD_RENDERING_RULES = [
 const BPD_PATTERNS = [
   {
     sourceRef: 'pattern.bpd-perihal-subject-line', kind: 'sentence_pattern', confidence: 0.7,
-    reviewRationale: 'Both real samples share the "Pengajuan Biaya Perjalanan Dinas (BPD) Survei Lokasi {{lokasi}}" shape verbatim. Confidence capped below Petty Cash\'s 0.9-tier equivalent because both evidenced occasions are specifically venue-survey trips — this template is not proven to generalize to a non-survey Perjalanan Dinas (e.g. training, competition travel), which this repository has zero evidence for.',
+    reviewRationale: 'Both real samples share the "Pengajuan Biaya Perjalanan Dinas (BPD) Survei Lokasi {{destination}}" shape verbatim. Confidence capped below Petty Cash\'s 0.9-tier equivalent because both evidenced occasions are specifically venue-survey trips — this template is not proven to generalize to a non-survey Perjalanan Dinas (e.g. training, competition travel), which this repository has zero evidence for. Sprint 9.6 correction: the slot was originally named "lokasi", which no real Conversation fact is ever keyed by (nor-composer.js#resolvePattern looks up gatheredFacts BY THE SLOT\'S OWN NAME) — renamed to "destination", the actual registered fieldSchema field this same location fact already flows through, so a real, human-answered Conversation now resolves this pattern instead of it staying an inert, permanently-unresolved placeholder.',
     payload: {
       norType: PERJALANAN_DINAS, status: 'inferred',
-      template: 'Pengajuan Biaya Perjalanan Dinas (BPD) Survei Lokasi {{lokasi}}',
-      slots: [{ name: 'lokasi', type: 'string' }],
+      template: 'Pengajuan Biaya Perjalanan Dinas (BPD) Survei Lokasi {{destination}}',
+      slots: [{ name: 'destination', type: 'string' }],
       granularity: 'sentence',
       observedIn: ['NOR 055: "...Survei Lokasi Sirnas A Kudus, Sirnas B Medan dan Sirnas B Bengkulu 2026"', 'NOR 077: "...Survei Lokasi Sirnas B Bali 2026"'],
     },
   },
   {
     sourceRef: 'pattern.bpd-context-paragraph', kind: 'paragraph_pattern', confidence: 0.75,
-    reviewRationale: 'Near byte-identical opening and closing across both real samples; the middle clause varies with single- vs. multi-destination phrasing (NOR 077 names one date range inline; NOR 055 defers all dates to the per-destination tables) — recorded as one pattern with an honest note, not force-normalized into a single rigid template.',
+    reviewRationale: 'Near byte-identical opening and closing across both real samples; the middle clause varies with single- vs. multi-destination phrasing (NOR 077 names one date range inline; NOR 055 defers all dates to the per-destination tables) — recorded as one pattern with an honest note, not force-normalized into a single rigid template. Sprint 9.6 correction: "nama" renamed to "traveler" (the actual registered fieldSchema field for this fact) for the same reason as pattern.bpd-perihal-subject-line above. "tahun"/"jabatan"/"kegiatan" are NOT renamed — no registered Perjalanan Dinas fieldSchema field captures a year, a traveler\'s role, or a named activity/event; deriving "tahun" from departureDate would require new derivation logic in nor-composer.js (a code change, out of Knowledge-authoring scope), and "jabatan"/"kegiatan" have no evidenced source field at all (see docs/SPRINT_9_6_COMPOSITION_VALIDATION.md) — left honestly unresolved rather than mapped to a guess.',
     payload: {
       norType: PERJALANAN_DINAS,
-      template: 'Sehubungan dengan rencana pelaksanaan Sirkuit Nasional (Sirnas) PBSI {{tahun}} yang dilaksanakan di beberapa daerah, maka dalam memastikan seluruh sarana dan prasarana yang digunakan memadai serta layak digunakan, kami mengajukan biaya perjalanan dinas {{nama}} ({{jabatan}}) untuk meninjau lokasi pelaksanaan {{kegiatan}}...',
-      slots: [{ name: 'tahun', type: 'number' }, { name: 'nama', type: 'string' }, { name: 'jabatan', type: 'string' }, { name: 'kegiatan', type: 'string' }],
+      template: 'Sehubungan dengan rencana pelaksanaan Sirkuit Nasional (Sirnas) PBSI {{tahun}} yang dilaksanakan di beberapa daerah, maka dalam memastikan seluruh sarana dan prasarana yang digunakan memadai serta layak digunakan, kami mengajukan biaya perjalanan dinas {{traveler}} ({{jabatan}}) untuk meninjau lokasi pelaksanaan {{kegiatan}}...',
+      slots: [{ name: 'tahun', type: 'number' }, { name: 'traveler', type: 'string' }, { name: 'jabatan', type: 'string' }, { name: 'kegiatan', type: 'string' }],
       granularity: 'paragraph',
-      note: 'Evidenced only for the venue-survey purpose; single-destination samples name one inline date range, multi-destination samples defer dates to per-destination tables instead.',
+      note: 'Evidenced only for the venue-survey purpose; single-destination samples name one inline date range, multi-destination samples defer dates to per-destination tables instead. "tahun"/"jabatan"/"kegiatan" have no corresponding registered fieldSchema fact and will always render unresolved from a real Conversation today — a known, documented gap (see docs/SPRINT_9_6_COMPOSITION_VALIDATION.md), not an oversight.',
       observedIn: ['NOR 055', 'NOR 077'],
     },
   },
@@ -404,7 +404,7 @@ const PENGADAAN_RENDERING_RULES = [
 const PENGADAAN_PATTERNS = [
   {
     sourceRef: 'pattern.pengadaan-perihal-pembelian', kind: 'sentence_pattern', confidence: 0.8,
-    reviewRationale: '3 of 4 real samples (029, 032, 089) share the "Pengajuan Pembelian Kebutuhan {{kebutuhan}}" shape verbatim.',
+    reviewRationale: '3 of 4 real samples (029, 032, 089) share the "Pengajuan Pembelian Kebutuhan {{kebutuhan}}" shape verbatim. Sprint 9.6 finding, NOT corrected: "kebutuhan" (a procurement CATEGORY, e.g. "Engineering", "Peralatan Cleaning Service") has no clean, unambiguous match among Pengadaan\'s registered fieldSchema fields (item/quantity/purpose/budget) the way pattern.bpd-perihal-subject-line\'s "lokasi"->"destination" rename did — "purpose" is the nearest candidate but is evidenced as a per-occasion justification (e.g. "Kebutuhan ruang Binpres"), not the same thing as a procurement category, and renaming on that guess would be exactly the fabricated-equivalence this platform\'s own discipline forbids. Left unresolved; see docs/SPRINT_9_6_COMPOSITION_VALIDATION.md.',
     payload: {
       norType: PENGADAAN,
       template: 'Pengajuan Pembelian Kebutuhan {{kebutuhan}}',
@@ -432,7 +432,7 @@ const PENGADAAN_PATTERNS = [
       template: 'Sehubungan dengan menunjang operasional kebutuhan {{bidang}}, kami mengajukan pembelian kebutuhan {{bidang}} periode bulan {{bulan}} {{tahun}} dengan rincian sebagai berikut:',
       slots: [{ name: 'bidang', type: 'string' }, { name: 'bulan', type: 'string' }, { name: 'tahun', type: 'number' }],
       granularity: 'paragraph',
-      note: 'Evidenced only for recurring-category procurement (e.g. Engineering supplies); one-off/special-purpose procurement (cleaning-service setup, billboard printing) uses different framing not captured by this template.',
+      note: 'Evidenced only for recurring-category procurement (e.g. Engineering supplies); one-off/special-purpose procurement (cleaning-service setup, billboard printing) uses different framing not captured by this template. "bidang"/"bulan"/"tahun" have no corresponding registered Pengadaan fieldSchema fact (same gap as pattern.pengadaan-perihal-pembelian\'s "kebutuhan") and will render unresolved from a real Conversation today — a known, documented gap, not an oversight; see docs/SPRINT_9_6_COMPOSITION_VALIDATION.md.',
       observedIn: ['NOR 029', 'NOR 089'],
     },
   },

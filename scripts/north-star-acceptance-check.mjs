@@ -214,6 +214,15 @@ const PENGADAAN_ONLY_RULE_REFS = ['rule.pengadaan-itemized-list-required', 'rule
 const BPD_ONLY_RULE_REFS = ['rule.bpd-cost-breakdown-categories', 'rule.bpd-no-pengadaan-involvement', 'rule.bpd-traveler-role-stated', 'rule.bpd-multi-destination-aggregation'];
 check('Business Trip: live Reasoning cites at least one Perjalanan-Dinas-tagged rule, zero Pengadaan-tagged rules', businessTrip.reasoningConsidered.citedRuleIds.some((id) => BPD_ONLY_RULE_REFS.some((ref) => id.endsWith(ref))) && !businessTrip.reasoningConsidered.citedRuleIds.some((id) => PENGADAAN_ONLY_RULE_REFS.some((ref) => id.endsWith(ref))));
 check('Business Trip: live Reasoning citations match the standalone diagnostic probe for the same occasion', JSON.stringify([...businessTrip.reasoningConsidered.citedRuleIds].sort()) === JSON.stringify([...businessTrip.hypotheticalReasoningWouldCite].sort()));
+// Sprint 9.6 (Composition Validation) — real bug found comparing composed
+// output against the real evidence: pattern.bpd-perihal-subject-line's slot
+// was named "lokasi", which no real Conversation fact is ever keyed by
+// (nor-composer.js#resolvePattern looks up gatheredFacts BY THE SLOT'S OWN
+// NAME) — it rendered permanently unresolved no matter what a human
+// answered. Fixed by renaming the slot to "destination"/"traveler" (the
+// actual registered fieldSchema fields) — see docs/SPRINT_9_6_COMPOSITION_VALIDATION.md.
+check('Business Trip: BPD Perihal pattern resolves the real destination answer ("Bandung"), not a permanently-unresolved slot', businessTrip.patternSectionsComposed.some((s) => s.field.includes('bpd-perihal-subject-line') && s.value === 'Pengajuan Biaya Perjalanan Dinas (BPD) Survei Lokasi Bandung'));
+check('Business Trip: BPD context paragraph resolves the real traveler answer ("Unit Sarpras")', businessTrip.patternSectionsComposed.some((s) => s.field.includes('bpd-context-paragraph') && s.value.includes('biaya perjalanan dinas Unit Sarpras (')));
 
 check('Procurement: real Conversation started', procurement.hasRealConversation);
 check('Procurement: NOR Type resolved as "Pengadaan" from the utterance itself', procurement.norType === 'Pengadaan');
