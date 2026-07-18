@@ -34,6 +34,7 @@ import { explainDynamicConversation } from '../js/v2/conversation/services/dynam
 import { resetComposerStore, getComposerTimeline } from '../js/v2/document-intelligence/composer/composer-store.js';
 import { beginProblemSolving, composeApprovedNor } from '../js/v2/problem-solving/services/problem-solving-service.js';
 import { seedNorBootstrapKnowledge } from '../js/v2/knowledge/bootstrap/nor-reverse-engineering-knowledge.js';
+import { seedPerjalananDinasPengadaanKnowledge } from '../js/v2/knowledge/bootstrap/nor-perjalanan-dinas-pengadaan-knowledge.js';
 import { detectKnowledgeGaps, reason, makeProblem } from '../js/v2/reasoning/services/reasoning-service.js';
 import { listNorTypes } from '../js/v2/knowledge/registry/nor-type-registry.js';
 import { resetLearningRepository } from '../js/v2/learning/repository/learning-repository.js';
@@ -50,11 +51,14 @@ resetConversationRepository();
 resetComposerStore();
 resetLearningRepository();
 const seedResult = seedNorBootstrapKnowledge();
+const perjalananDinasPengadaanSeedResult = seedPerjalananDinasPengadaanKnowledge();
 
 console.log('\n[Setup — real bootstrap Knowledge seeded, exactly as the live app does on mount]');
 check('bootstrap seed produced zero errors', seedResult.errors.length === 0);
+check('Perjalanan Dinas/Pengadaan seed (Sprint 9.3) produced zero errors', perjalananDinasPengadaanSeedResult.errors.length === 0);
 const approvedNorCount = listKnowledge({ domainType: 'nor', lifecycleState: LIFECYCLE_STATE.APPROVED }).data.length;
 check(`bootstrap seed produced a real batch of Approved nor-domain Knowledge (got ${approvedNorCount})`, approvedNorCount >= 90);
+check(`Sprint 9.3 correction superseded exactly 2 Petty-Cash-tagged facts to Generic (got ${perjalananDinasPengadaanSeedResult.corrected.length})`, perjalananDinasPengadaanSeedResult.corrected.length === 2);
 
 /** Plausible human answers for every field ANY registered NOR Type schema
  *  (or the legacy fallback schema) might ask — a real human would type

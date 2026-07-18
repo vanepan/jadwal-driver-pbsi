@@ -76,6 +76,11 @@ import {
 // same "safe to import, backend touched lazily" contract this file's own
 // header already documents for every other import here).
 import { seedNorBootstrapKnowledge } from '../knowledge/bootstrap/nor-reverse-engineering-knowledge.js';
+// Phase 9, Sprint 9.3 (Knowledge Authoring) — the second real Knowledge-
+// authoring event (Perjalanan Dinas + Pengadaan, evidenced from 13 real
+// documents; see docs/SPRINT_9_2_EVIDENCE_ONBOARDING.md). Same "safe to
+// import, pure in-memory ingest/promote" contract as the seed above.
+import { seedPerjalananDinasPengadaanKnowledge } from '../knowledge/bootstrap/nor-perjalanan-dinas-pengadaan-knowledge.js';
 import {
   initImportSessionSync, initImportBatchSync,
   registerImportSessionChangeListener, registerImportBatchChangeListener,
@@ -556,6 +561,18 @@ export async function mountSarprasIntelligence(hostEl) {
       }
     } catch (err) {
       console.error('[sarpras-intelligence-center] NOR bootstrap knowledge seed failed:', err);
+    }
+    // Phase 9, Sprint 9.3 — seeded strictly after the Petty Cash bootstrap
+    // above, since this file's own correction step (numbering-format ->
+    // Generic) reads and supersedes an Approved item that seed just
+    // created.
+    try {
+      const perjalananDinasPengadaanResult = seedPerjalananDinasPengadaanKnowledge();
+      if (perjalananDinasPengadaanResult.errors.length) {
+        console.warn('[sarpras-intelligence-center] Perjalanan Dinas/Pengadaan knowledge seed had errors:', perjalananDinasPengadaanResult.errors);
+      }
+    } catch (err) {
+      console.error('[sarpras-intelligence-center] Perjalanan Dinas/Pengadaan knowledge seed failed:', err);
     }
     // Phase 2.5 Part 3 — re-project Knowledge from the persisted sessions
     // on every remote hydration (idempotent), AND once after the initial
