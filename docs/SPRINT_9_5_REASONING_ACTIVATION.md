@@ -87,21 +87,44 @@ inspection).
 
 ---
 
-## 4. What this sprint did NOT do — a real decision point, not an oversight
+## 4. Reasoning wired into the live CREATE_NOR path — repository owner's decision
 
-**`reason()` is still never called anywhere on the real CREATE_NOR path.**
-This sprint fixed reasoning's citation correctness (a prerequisite,
-confirmed necessary the moment Sprint 9.3 gave a second and third NOR Type
-real rules) but did not wire `reason()` into `conversation-service.js` or
-`nor-composer.js`'s live call path. That is a materially different, larger
-change — it touches the main production Conversation/Composition flow for
-every real NOR creation, and requires a design decision this document does
-not make unilaterally: HOW should a cited rule's reasoning surface in a
-composed document (a new section? a citation footnote? dev-only metadata,
-the same "informational, never applied" treatment
-`renderingRulesConsidered` already gets)? Activating it without deciding
-that risks the exact "opaque recommendation" CLAUDE.md's Explainability
-section forbids. This is the next real decision point before Sprint 9.6
-(Composition Validation) can honestly measure anything about live
-Reasoning's effect on Composition — flagged for the repository owner, not
-decided here.
+Asked directly: wire `reason()` into the live path now, and if so, how
+should its output surface? **Decision: wire it in now, as dev-only
+metadata** — the same "informational, never applied to content" treatment
+`renderingRulesConsidered` already gets.
+
+**First attempt was architecturally wrong, caught by the platform's own
+regression suite, not by inspection.** `reason()` was first wired directly
+into `nor-composer.js` (`document-intelligence/`). Running
+`reasoning-engine-check.mjs` immediately failed a real, pre-existing
+architectural invariant: *"reasoning/ is upstream — nothing under
+knowledge/, organizational-memory/, learning/, document-intelligence/ or
+conversation/ imports it, except conversation/services/
+dynamic-conversation-service.js (the one documented exception)."* This is
+exactly the kind of boundary CLAUDE.md's "respect existing architecture"
+directive protects, and the test caught it before it shipped.
+
+**Corrected placement**: `problem-solving/services/problem-solving-
+service.js#composeApprovedNor` — a file that already legitimately depends
+on `reasoning/` (`planDiagnosis`, pre-existing) and sits one layer above
+`document-intelligence/`, never inside it. `composeApprovedNor` now calls
+`composeNorDocument()` exactly as before, unchanged, then separately calls
+`reason()` on the same gathered facts and merges the result into the
+returned data as `reasoningConsidered` — never passed into composition,
+never influencing `fieldMap`/`composedSections`/`citedKnowledgeIds`.
+`nor-composer.js` itself is untouched from Sprint 9.4's state; it remains
+exactly as reasoning-unaware as its own layering rule requires.
+
+**Verified live**, via `scripts/north-star-acceptance-check.mjs` (5 new
+checks, 32/32 total, up from 27/27): Business Trip's real, composed
+`reasoningConsidered.ok === true`, citing `rule.bpd-*` facts and zero
+`rule.pengadaan-*` facts; Procurement's the mirror image; both agree
+exactly with the standalone diagnostic probe for the same occasion
+(`JSON.stringify`-equal `citedRuleIds`, sorted). One test-writing mistake
+surfaced and fixed along the way: an initial assertion used a naive
+substring check (`id.includes('pengadaan-')`) that misfired on
+`rule.bpd-no-pengadaan-involvement` — a real, correctly-cited BPD rule
+whose own name mentions "pengadaan" (it states Pengadaan's *absence*).
+Replaced with a precise sourceRef allowlist per NOR Type. Full regression
+sweep, 15 scripts, all green.

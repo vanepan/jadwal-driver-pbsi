@@ -148,11 +148,13 @@ function runScenario(name, utterance) {
   const gaps = detectKnowledgeGaps('nor', trace.finalNorType);
   trace.knowledgeGaps = gaps.map((g) => ({ gapType: g.gapType, field: g.field, priority: g.priority, reason: g.reason }));
 
-  // Reasoning — DIAGNOSTIC ONLY. reason() is never called on the real
-  // CREATE_NOR path today (confirmed unchanged by this sprint — see
-  // docs/NORTH_STAR_VALIDATION_REPORT.md's Stage 7 finding); this call
-  // exists purely to answer "IF it were wired in, would today's Knowledge
-  // even produce a citation for this occasion?", not to claim it runs live.
+  // Reasoning — kept as a standalone diagnostic probe (same call shape as
+  // before Sprint 9.5) for a quick "would ANY rule apply here" read
+  // independent of Composition. As of Sprint 9.5, reason() is ALSO called
+  // for real, live, inside composeNorDocument() below — see
+  // docs/SPRINT_9_5_REASONING_ACTIVATION.md. This probe and that live call
+  // should agree on citedRuleIds for the same occasion; §hypotheticalReasoningMatchesLive
+  // checks exactly that, later in this file.
   const hypotheticalProblem = makeProblem({ domainType: 'nor', description: utterance, facts: { ...finalState.gatheredFacts, category: trace.category } });
   const hypotheticalReasoning = reason(hypotheticalProblem);
   trace.hypotheticalReasoningWouldCite = hypotheticalReasoning.ok
@@ -171,6 +173,10 @@ function runScenario(name, utterance) {
       trace.patternSectionsComposed = composed.data.composerDocument.sections.filter((s) => s.field.startsWith('pattern:'));
       trace.patternsCited = trace.patternSectionsComposed.length;
       trace.composerDocumentId = composed.data.composerDocument.documentId;
+      // Sprint 9.5 — reason(), now genuinely called live inside
+      // composeNorDocument(), surfaced as dev-only metadata (never part of
+      // fieldMap/composedSections — never rendered into the NOR itself).
+      trace.reasoningConsidered = composed.data.reasoningConsidered;
     } else {
       trace.composeError = composed.error;
     }
@@ -200,11 +206,21 @@ check('Business Trip: real Conversation started', businessTrip.hasRealConversati
 check('Business Trip: NOR Type resolved from the utterance itself (no "Jenis NOR" question needed)', !businessTrip.questionsAsked.includes('type'));
 check('Business Trip: asked destination/traveler/departureDate/returnDate/budget, never Pengadaan fields', businessTrip.questionsAsked.every((f) => ['destination', 'traveler', 'departureDate', 'returnDate', 'budget'].includes(f)));
 check('Business Trip: reached READY and composed', businessTrip.reachedReady && businessTrip.composeOk);
+check('Business Trip: Reasoning now runs LIVE inside composition (Sprint 9.5)', businessTrip.reasoningConsidered && businessTrip.reasoningConsidered.ok === true);
+// Precise sourceRef allowlists, not a naive substring match — rule.bpd-no-pengadaan-involvement
+// (a real, correctly-cited BPD rule) itself contains the word "pengadaan", which a
+// substring check would misread as cross-domain contamination.
+const PENGADAAN_ONLY_RULE_REFS = ['rule.pengadaan-itemized-list-required', 'rule.pengadaan-kabid-approval-required', 'rule.pengadaan-price-justification-optional', 'rule.pengadaan-running-total-reference'];
+const BPD_ONLY_RULE_REFS = ['rule.bpd-cost-breakdown-categories', 'rule.bpd-no-pengadaan-involvement', 'rule.bpd-traveler-role-stated', 'rule.bpd-multi-destination-aggregation'];
+check('Business Trip: live Reasoning cites at least one Perjalanan-Dinas-tagged rule, zero Pengadaan-tagged rules', businessTrip.reasoningConsidered.citedRuleIds.some((id) => BPD_ONLY_RULE_REFS.some((ref) => id.endsWith(ref))) && !businessTrip.reasoningConsidered.citedRuleIds.some((id) => PENGADAAN_ONLY_RULE_REFS.some((ref) => id.endsWith(ref))));
+check('Business Trip: live Reasoning citations match the standalone diagnostic probe for the same occasion', JSON.stringify([...businessTrip.reasoningConsidered.citedRuleIds].sort()) === JSON.stringify([...businessTrip.hypotheticalReasoningWouldCite].sort()));
 
 check('Procurement: real Conversation started', procurement.hasRealConversation);
 check('Procurement: NOR Type resolved as "Pengadaan" from the utterance itself', procurement.norType === 'Pengadaan');
 check('Procurement: asked item/quantity/purpose/budget, NEVER destination/traveler/departureDate/returnDate — the exact audit acceptance criterion', procurement.questionsAsked.every((f) => ['item', 'quantity', 'purpose', 'budget'].includes(f)) && !procurement.questionsAsked.some((f) => ['destination', 'traveler', 'departureDate', 'returnDate'].includes(f)));
 check('Procurement: reached READY', procurement.reachedReady);
+check('Procurement: Reasoning now runs LIVE inside composition (Sprint 9.5)', procurement.reasoningConsidered && procurement.reasoningConsidered.ok === true);
+check('Procurement: live Reasoning cites at least one Pengadaan-tagged rule, zero Perjalanan-Dinas-tagged rules', procurement.reasoningConsidered.citedRuleIds.some((id) => PENGADAAN_ONLY_RULE_REFS.some((ref) => id.endsWith(ref))) && !procurement.reasoningConsidered.citedRuleIds.some((id) => BPD_ONLY_RULE_REFS.some((ref) => id.endsWith(ref))));
 console.log(`  ⓘ Procurement: patternsCited = ${procurement.patternsCited} (diagnostic — see report for interpretation, not asserted either way)`);
 
 // Sprint 9.1 Decision 1 — Reimbursement is NOT a NOR Type. Same utterance

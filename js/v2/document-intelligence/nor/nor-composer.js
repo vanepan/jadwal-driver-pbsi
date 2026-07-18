@@ -68,6 +68,22 @@
    "reactivating a subsystem means deleting its entry, and the check will
    fail if you forget").
 
+   PHASE 9, SPRINT 9.5 (REASONING ACTIVATION) — WHY reason() IS NOT CALLED
+   HERE. See docs/SPRINT_9_5_REASONING_ACTIVATION.md. A first attempt
+   imported reasoning/services/reasoning-service.js directly into this
+   file; reasoning-engine-check.mjs's own architectural invariant
+   (document-intelligence/ may never import reasoning/ — reasoning/ is
+   the more upstream of the two, per js/v2/README.md's binding graph, and
+   conversation/services/dynamic-conversation-service.js is the ONE
+   documented exception) correctly caught this as a real boundary
+   violation, not a style nit. Reasoning is instead computed by the
+   caller (problem-solving/services/problem-solving-service.js#
+   composeApprovedNor, which already legitimately depends on reasoning/
+   for planDiagnosis) and attached to this function's own return value
+   AFTER composeNorDocument returns — never inside it. This file stays
+   exactly as reasoning-unaware as document-intelligence/'s own layering
+   rule requires.
+
    NON-GOALS: never writes anywhere outside the Composer store. Never
    invents a field's value — a slot with no genuinely known fact stays an
    honest, visible placeholder, never guessed content.

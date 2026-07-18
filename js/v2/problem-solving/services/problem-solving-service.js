@@ -45,7 +45,7 @@
 
 import { classifyProblem } from '../../problem-intelligence/services/problem-classification-service.js';
 import { getProblemCategory } from '../../problem-intelligence/contracts/problem-category-contract.js';
-import { planDiagnosis } from '../../reasoning/services/reasoning-service.js';
+import { planDiagnosis, reason, makeProblem } from '../../reasoning/services/reasoning-service.js';
 import { startConversation, findConversation } from '../../conversation/services/conversation-service.js';
 import { INTENT } from '../../conversation/contracts/intent-contract.js';
 import { composeNorDocument } from '../../document-intelligence/nor/nor-composer.js';
@@ -222,6 +222,26 @@ export function continueProblemConversation(state) {
  * text, never invented). Mirrors task-executor.js's own
  * "refuses anything not READY" discipline (conversation-service.js#
  * completeConversation). UNCHANGED since Phase 8-10.
+ *
+ * PHASE 9, SPRINT 9.5 (REASONING ACTIVATION) — reason() is now called
+ * HERE, the first time ever on the real CREATE_NOR path. See
+ * docs/SPRINT_9_5_REASONING_ACTIVATION.md. Deliberately NOT inside
+ * nor-composer.js — document-intelligence/ may never import reasoning/
+ * (reasoning-engine-check.mjs's own architectural invariant;
+ * conversation/services/dynamic-conversation-service.js is the ONE
+ * documented exception). This file already legitimately depends on
+ * reasoning/ (planDiagnosis, above), so the call lives here and its
+ * result is merged into composeNorDocument's own return value AFTER it
+ * returns — never passed in, never influencing composition itself. Per
+ * the repository owner's explicit decision: surfaces as
+ * `reasoningConsidered`, informational/dev-only metadata, the IDENTICAL
+ * treatment `renderingRulesConsidered` already gets — never written into
+ * `fieldMap`/`composedSections`/`citedKnowledgeIds`, never rendered into
+ * the actual NOR text a reviewer sees. Best-effort: `reason()` genuinely
+ * may return NO_APPLICABLE_KNOWLEDGE (an honest, expected outcome, not a
+ * bug) or throw on an unexpected shape; either way composition's own
+ * result is returned exactly as it would have been without this call —
+ * Reasoning is additive instrumentation here, never a gate.
  * @param {string} conversationId
  */
 export function composeApprovedNor(conversationId) {
@@ -231,5 +251,27 @@ export function composeApprovedNor(conversationId) {
   if (c.state !== 'ready' && c.state !== 'completed') {
     return failure(PROBLEM_SOLVING_ERRORS.NOT_READY, `Conversation "${conversationId}" is "${c.state}" — NOR Composition requires READY or COMPLETED (organizational reasoning must be complete before composition, never before).`);
   }
-  return composeNorDocument(c.gatheredFacts, { sessionId: c.id });
+  const composed = composeNorDocument(c.gatheredFacts, { sessionId: c.id });
+  if (!composed.ok) return composed;
+
+  let reasoningConsidered;
+  try {
+    const norType = c.gatheredFacts.type || null;
+    const problem = makeProblem({ domainType: 'nor', description: `NOR composition — norType: ${norType || 'unscoped'}`, facts: { ...c.gatheredFacts, type: norType } });
+    const recommendation = reason(problem);
+    reasoningConsidered = recommendation.ok
+      ? Object.freeze({
+        ok: true,
+        claim: recommendation.data.claim,
+        citedRuleIds: Object.freeze(recommendation.data.citedRuleIds),
+        confidence: recommendation.data.confidence,
+        confidenceBasis: recommendation.data.confidenceBasis,
+        conflicts: Object.freeze(recommendation.data.conflicts),
+      })
+      : Object.freeze({ ok: false, errorCode: recommendation.error ? recommendation.error.code : null });
+  } catch (err) {
+    reasoningConsidered = Object.freeze({ ok: false, errorCode: 'REASONING_THREW', message: err && err.message });
+  }
+
+  return Object.freeze({ ...composed, data: Object.freeze({ ...composed.data, reasoningConsidered }) });
 }
