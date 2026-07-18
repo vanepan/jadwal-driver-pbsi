@@ -258,7 +258,7 @@ const BPD_SIGNATORIES = [
   { sourceRef: 'signatory.bpd-wakil-bendahara', role: 'Wakil Bendahara', name: 'Eddy Prayitno', function: 'acknowledges' },
   { sourceRef: 'signatory.bpd-kabid-sarpras', role: 'Kabid/Plt. Kabid Sarana dan Prasarana', name: 'Monika Yunita (as of the evidence reviewed)', function: 'submits and approves the cost breakdown' },
   { sourceRef: 'signatory.bpd-staf-preparer', role: 'Staf Sarana dan Prasarana', name: 'Grace Widelia', function: 'compiles the itemized cost breakdown' },
-  { sourceRef: 'signatory.bpd-traveler', role: 'Staf bidang Sarpras (traveler)', name: 'Nanang Saepulloh/Saefulloh (spelling varies across real documents)', function: 'conducts the venue survey' },
+  { sourceRef: 'signatory.bpd-traveler', role: 'Staf bidang Sarpras', name: 'Nanang Saepulloh/Saefulloh (spelling varies across real documents)', function: 'the traveler — conducts the venue survey' },
 ].map((s) => ({
   sourceRef: s.sourceRef, kind: 'signatory', confidence: 0.8,
   reviewRationale: 'Directly named in both real BPD samples (traveler/preparer roles) or consistently across the broader 13-document evidence set (approval-chain roles).',
