@@ -54,6 +54,7 @@ function onClick(e) {
   if (!el) return;
   if (el.dataset.act === 'settings-open-knowledge') setSarprasIntelligenceScreen('knowledge');
   if (el.dataset.act === 'settings-open-nor') setSarprasIntelligenceScreen('nor');
+  if (el.dataset.act === 'settings-open-review') setSarprasIntelligenceScreen('review');
 }
 
 function render() {
@@ -85,6 +86,10 @@ function render() {
           <li>
             <span class="sic-brief-label">Menyetujui, menolak, atau meninjau siklus hidup Knowledge secara langsung (di luar konteks satu dokumen)</span>
             <button class="wlk-btn" data-act="settings-open-knowledge" type="button" style="margin-top:8px;">Buka Knowledge Center</button>
+          </li>
+          <li>
+            <span class="sic-brief-label">Meninjau draf NOR yang sudah disusun — isi lengkap, metadata, dan riwayat versi (Phase 10)</span>
+            <button class="wlk-btn" data-act="settings-open-review" type="button" style="margin-top:8px;">Buka Review Workspace</button>
           </li>
         </ul>
       </div>

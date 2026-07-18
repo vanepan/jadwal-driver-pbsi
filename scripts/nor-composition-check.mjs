@@ -46,12 +46,13 @@ console.log('\n[Part 1 — nor-composer.js never imports a renderer]');
   check('no call to buildNorViewModel anywhere in the file', !code.includes('buildNorViewModel'));
 }
 
-console.log('\n[Part 2 — dormant-subsystems.js honestly reflects the partial wake: createDocument real, editSection still dormant]');
+console.log('\n[Part 2 — dormant-subsystems.js honestly reflects the full wake: createDocument AND editSection both real (Phase 10, Sprint 10.3)]');
 {
-  check('composer-timeline is STILL in the register (editSection still has no caller)', isDormant('composer-timeline'));
-  const entry = getDormant('composer-timeline');
-  check('writers list no longer claims createDocument is dormant', !entry.writers.includes('createDocument'));
-  check('writers list still honestly names editSection as dormant', entry.writers.includes('editSection'));
+  // 'composer-timeline' was retired from the register in Sprint 10.3 —
+  // editSection now has a real caller (ui/review-workspace.js's Document
+  // Editor). The entry existing at all would now be the bug.
+  check('composer-timeline is NO LONGER in the register (editSection has a real caller as of Sprint 10.3)', !isDormant('composer-timeline'));
+  check('getDormant returns null for the retired entry', getDormant('composer-timeline') === null);
 }
 
 setKnowledgeBackend('memory');

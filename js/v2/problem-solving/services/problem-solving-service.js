@@ -38,7 +38,14 @@
    ../clarification-engine.js, ../problem-conversation-engine.js,
    conversation/services/conversation-service.js,
    conversation/contracts/intent-contract.js (INTENT only — vocabulary),
-   document-intelligence/nor/nor-composer.js.
+   document-intelligence/nor/nor-composer.js,
+   document-intelligence/composer/composer-store.js (Phase 10, Sprint
+   10.2 — attachExplainability only; composer-store.js is already a
+   transitive dependency via nor-composer.js#composeNorDocument, so this
+   adds no new domain edge, only a direct one for the ONE call this file
+   makes AFTER composition, to store what only THIS layer ever computes:
+   the merged Reasoning + Conversation + Composition explainability bundle
+   Sprint 10.2's Explainability Workspace reads back).
    ============================================================ */
 
 'use strict';
@@ -49,6 +56,7 @@ import { planDiagnosis, reason, makeProblem } from '../../reasoning/services/rea
 import { startConversation, findConversation } from '../../conversation/services/conversation-service.js';
 import { INTENT } from '../../conversation/contracts/intent-contract.js';
 import { composeNorDocument } from '../../document-intelligence/nor/nor-composer.js';
+import { attachExplainability } from '../../document-intelligence/composer/composer-store.js';
 import { routeProblem } from '../problem-router.js';
 import { WORKFLOW_ROUTE } from '../contracts/workflow-route-contract.js';
 import { generateClarification } from '../clarification-engine.js';
@@ -271,6 +279,27 @@ export function composeApprovedNor(conversationId) {
       : Object.freeze({ ok: false, errorCode: recommendation.error ? recommendation.error.code : null });
   } catch (err) {
     reasoningConsidered = Object.freeze({ ok: false, errorCode: 'REASONING_THREW', message: err && err.message });
+  }
+
+  // Phase 10, Sprint 10.2 — persist the SAME bundle this function already
+  // returns (minus the ComposerDocument itself, kept separately by
+  // composer-store.js) alongside the document, so the Explainability
+  // Workspace can show it for ANY document under review later, not only
+  // the one most recently composed in this call. Best-effort: a storage
+  // failure here must never fail composition itself, which already
+  // succeeded — same "additive instrumentation, never a gate" posture the
+  // Reasoning call above already established.
+  try {
+    attachExplainability(composed.data.composerDocument.documentId, {
+      conversationId,
+      unresolvedFields: composed.data.unresolvedFields,
+      citedKnowledgeIds: composed.data.citedKnowledgeIds,
+      explanation: composed.data.explanation,
+      renderingRulesConsidered: composed.data.renderingRulesConsidered,
+      reasoningConsidered,
+    });
+  } catch (err) {
+    console.error('[problem-solving-service] attachExplainability failed:', err);
   }
 
   return Object.freeze({ ...composed, data: Object.freeze({ ...composed.data, reasoningConsidered }) });

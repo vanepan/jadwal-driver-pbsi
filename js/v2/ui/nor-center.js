@@ -83,9 +83,18 @@ import { listArchive as archiveList } from '../organizational-memory/services/ar
 import { checkKnowledgeContribution } from '../organizational-memory/knowledge-contribution-engine.js';
 
 import { getComposerTimeline, getRevisionHistory } from '../document-intelligence/composer/composer-store.js';
-// Phase 3, Part 8 — the Composer is officially DORMANT (createDocument/
-// editSection have no caller). See js/v2/dormant-subsystems.js.
-import { dormantNote } from '../dormant-subsystems.js';
+// Phase 10, Sprint 10.3 — the Composer is fully awake: createDocument
+// (Phase 8-10) AND editSection (this sprint, via ui/review-workspace.js)
+// both now have real callers. js/v2/dormant-subsystems.js's own
+// 'composer-timeline' entry — and every dormantNote() call site that used
+// to read it — is retired; see that file's "PHASE 10, SPRINT 10.3
+// DISPOSITION" comment for the full history.
+// Phase 10, Sprint 10.1 — cross-screen jump into the new Review Workspace,
+// the same setSarprasIntelligenceScreen() primitive sarpras-settings.js's
+// Power View links already use (this file is dynamically imported by
+// sarpras-intelligence-center.js the same way, so the circular-looking
+// import is the same already-proven-safe shape).
+import { setSarprasIntelligenceScreen } from './sarpras-intelligence-center.js';
 
 import {
   initPettyCashStore, registerChangeListener as onPettyCashChange, getSettings as getPettyCashSettings,
@@ -228,6 +237,7 @@ function onClick(e) {
   if (act === 'wlk-tab') { setSection(el.dataset.id); return; }
   if (act === 'nc-generate-submit') { handleGenerateSubmit(); return; }
   if (act === 'nc-draft-row') { st.draftsSelectedId = st.draftsSelectedId === el.dataset.id ? null : el.dataset.id; render(); return; }
+  if (act === 'nc-open-review') { setSarprasIntelligenceScreen('review'); return; }
   if (act === 'nc-archive-row') { st.archiveLinkId = st.archiveLinkId === el.dataset.id ? null : el.dataset.id; render(); return; }
   if (act === 'nc-review-row') { st.reviewLinkId = st.reviewLinkId === el.dataset.id ? null : el.dataset.id; render(); return; }
   if (act === 'nc-profiles-subtab') { st.profilesSubtab = el.dataset.id; render(); return; }
@@ -365,7 +375,7 @@ function renderDashboardSection() {
 
       <div class="wlk-sec">
         <div class="wlk-sec-title">Draft Terbaru</div>
-        ${drafts.length ? renderDraftRows(drafts.slice(-5).reverse()) : renderEmptyState('Belum ada draft tersimpan.', dormantNote('composer-timeline'))}
+        ${drafts.length ? renderDraftRows(drafts.slice(-5).reverse()) : renderEmptyState('Belum ada draft tersimpan.', 'Draf akan muncul di sini setelah Generate NOR menghasilkan draf dari Knowledge yang Disetujui.')}
       </div>
 
       <div class="wlk-sec">
@@ -491,7 +501,7 @@ function renderDraftsSection() {
 
       <div class="wlk-sec">
         <div class="wlk-sec-title">Draft Tersimpan</div>
-        ${drafts.length ? renderDraftRows(drafts) : renderEmptyState('Belum ada draft tersimpan.', dormantNote('composer-timeline'))}
+        ${drafts.length ? renderDraftRows(drafts) : renderEmptyState('Belum ada draft tersimpan.', 'Draf akan muncul di sini setelah Generate NOR menghasilkan draf dari Knowledge yang Disetujui.')}
       </div>
 
       ${st.draftsSelectedId ? renderDraftDetail(st.draftsSelectedId) : ''}
@@ -524,6 +534,8 @@ function renderDraftDetail(documentId) {
   return `
     <div class="wlk-sec">
       <div class="wlk-sec-title">Riwayat Revisi — ${esc(documentId)}</div>
+      <p class="wlk-page-lede">Ini adalah riwayat perbedaan (diff) antar versi. Untuk meninjau isi lengkap draf ini, metadata, dan status, buka Review Workspace.</p>
+      <button class="wlk-btn" data-act="nc-open-review" type="button">Tinjau di Review Workspace</button>
       ${revisions.map((rev) => `
         <div class="wlk-sec">
           <div class="wlk-sec-title">Versi ${rev.version}${rev.editedBy ? ` · oleh ${esc(rev.editedBy)}` : ''}</div>

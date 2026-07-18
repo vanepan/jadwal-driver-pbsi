@@ -60,6 +60,14 @@ import { listLearningEvents, LEARNING_KIND, CORRECTION_TYPE } from '../learning/
 // real batch-level duplicate tallies (ImportBatchRecord.duplicate), the one
 // piece of today's real activity Learning Events don't themselves carry.
 import { listBatches } from '../knowledge/datasets/import-session/import-batch-engine.js';
+// Phase 10, Sprint 10.7 — Pilot UX Validation. computeReviewMetrics()
+// lives under document-intelligence/composer/ (not knowledge/services/ —
+// see that file's own header on why: it reads composer-store.js, and
+// knowledge/ may never depend on document-intelligence/). This file
+// already imports getComposerTimeline from the same composer/ directory
+// (Phase 3, above), so this is not a new domain edge for THIS file.
+import { computeReviewMetrics } from '../document-intelligence/composer/review-metrics-service.js';
+import { composerReviewStateLabel } from '../document-intelligence/composer/contracts/composer-review-contract.js';
 
 import {
   esc, renderEmptyState, renderTabShell, renderRowList, renderStatCards, renderKvList, renderFilterBar,
@@ -77,6 +85,11 @@ const SECTIONS = [
   // (exactly the "writer > 0, reader = 0" defect this whole mission exists
   // to eliminate, applied to the engine THIS phase itself just built).
   { id: 'organization', label: 'Memori Organisasi' },
+  // Phase 10, Sprint 10.7 — Pilot UX Validation, a real, reachable tab for
+  // the review-workflow metrics Sprints 10.1-10.6 already produce data for
+  // (same "writer exists, give it a reader" discipline as 'organization'
+  // above).
+  { id: 'pilot', label: 'Tinjauan Pilot' },
 ];
 
 const st = { section: 'overview', omDomain: null };
@@ -124,6 +137,7 @@ const RENDERERS = {
   distribution: renderDistributionSection,
   queues: renderQueuesSection,
   organization: renderOrganizationSection,
+  pilot: renderPilotSection,
 };
 
 function render() {
@@ -468,6 +482,65 @@ function renderOrganizationSection() {
     { count: om.frequentlyMissingRelationshipsCount, label: 'Koreksi Relasi Tercatat' },
     { count: om.totalLearningEvents, label: 'Total Learning Event (Koreksi)' },
   ])}
+      </div>
+    </div>`;
+}
+
+/* ── Pilot UX Validation (Phase 10, Sprint 10.7) ──────────────────────
+   Every number below is a direct read of computeReviewMetrics() — pure
+   aggregation over Sprints 10.1-10.6's own real data (composer-store.js's
+   documents/revisions, review-history.js's promotion records,
+   nor-explainability-service.js's unknownFacts, satisfaction-log.js's
+   ratings). No new measurement is invented here, only displayed. */
+function formatDurationMs(ms) {
+  if (ms === null) return '—';
+  const minutes = ms / 60000;
+  if (minutes < 60) return `${minutes.toFixed(1)} menit`;
+  return `${(minutes / 60).toFixed(1)} jam`;
+}
+
+function renderPilotSection() {
+  const m = computeReviewMetrics().data;
+
+  const statusRows = Object.entries(m.statusDistribution).map(([status, count]) => ({
+    id: status, primary: composerReviewStateLabel(status), meta: `${count} dokumen`,
+  }));
+
+  return `
+    <div class="wlk-page">
+      <div class="wlk-page-head">
+        <div class="wlk-page-crumb">LEARNING DASHBOARD · TINJAUAN PILOT</div>
+        <h1 class="wlk-page-title">Tinjauan Pilot</h1>
+        <p class="wlk-page-lede">Seberapa lancar proses tinjauan draf berjalan — durasi tinjauan, jumlah suntingan manual, tingkat persetujuan, koreksi yang paling sering terjadi, dan kepuasan peninjau. Semua angka diambil langsung dari riwayat tinjauan yang nyata (Phase 10).</p>
+      </div>
+
+      <div class="wlk-sec">
+        <div class="wlk-sec-title">Ringkasan (${m.totalDocuments} dokumen)</div>
+        ${renderStatCards([
+    { count: m.approvalRate === null ? '—' : `${Math.round(m.approvalRate * 100)}%`, label: 'Tingkat Persetujuan' },
+    { count: formatDurationMs(m.avgReviewDurationMs), label: 'Rata-rata Durasi Tinjauan' },
+    { count: m.avgManualEditsPerDocument === null ? '—' : m.avgManualEditsPerDocument.toFixed(1), label: 'Rata-rata Suntingan Manual / Dokumen' },
+    { count: m.avgSatisfactionRating === null ? '—' : `${m.avgSatisfactionRating.toFixed(1)} / 5`, label: `Kepuasan Peninjau (${m.satisfactionRatingCount} penilaian)` },
+  ])}
+      </div>
+
+      <div class="wlk-sec">
+        <div class="wlk-sec-title">Distribusi Status</div>
+        ${statusRows.length ? renderRowList(statusRows, (r) => `
+          <li class="wlk-row"><span class="wlk-row-primary">${esc(r.primary)}</span><span class="wlk-row-secondary">${esc(r.meta)}</span></li>`)
+    : renderEmptyState('Belum ada draf tersimpan.')}
+      </div>
+
+      <div class="wlk-sec">
+        <div class="wlk-sec-title">Bagian Paling Sering Dikoreksi</div>
+        ${m.topCorrectedFields.length ? renderKvList(m.topCorrectedFields.map((f) => [f.field, `${f.count} dokumen`]))
+    : renderEmptyState('Belum ada bagian yang disunting manusia.', 'Muncul setelah reviewer mengedit sebuah bagian draf melalui Review Workspace.')}
+      </div>
+
+      <div class="wlk-sec">
+        <div class="wlk-sec-title">Kesenjangan Pengetahuan Paling Sering</div>
+        ${m.topKnowledgeGaps.length ? renderKvList(m.topKnowledgeGaps.map((f) => [f.field, `${f.count} dokumen`]))
+    : renderEmptyState('Belum ada fakta yang tidak diketahui tercatat.', 'Muncul saat sebuah draf memiliki field UNKNOWN yang memerlukan masukan manusia.')}
       </div>
     </div>`;
 }

@@ -32,10 +32,16 @@ js/v2/
                             + nor-composer.js (Phase 8-10, NOT a pipeline step) — composes a fully
                             explainable draft from Approved pattern/rendering_rule Knowledge + a
                             completed Conversation's genuine facts, and hands it to composer-store.js
+                            + nor-explainability-service.js (Phase 10, Sprint 10.2) — explainDocument():
+                            merges the persisted Reasoning+Composition explainability bundle with
+                            per-KnowledgeItem provenance for the Review Workspace's Explainability tab
     composer/               Live Editable Composer (V2.0.15) — composer-store.js#createDocument is
-                            now REAL (Phase 8-10, via nor-composer.js); editSection (human authoring/
-                            revision) still has no UI caller — see js/v2/dormant-subsystems.js's
-                            updated 'composer-timeline' entry for the precise, narrower disposition
+                            REAL (Phase 8-10, via nor-composer.js); editSection is ALSO now real
+                            (Phase 10, Sprint 10.3, via ui/review-workspace.js's Document Editor —
+                            js/v2/dormant-subsystems.js's 'composer-timeline' entry is retired) +
+                            composer-document-repository.js (Phase 10, Sprint 10.1) — RTDB-backed
+                            persistence, so a document/its revisions/its attached explainability
+                            survive a refresh
     session-store.js       real DocumentSession store
     registry/               analyzer/step registries, populated by nor/
 
@@ -284,8 +290,13 @@ belongs to neither.
   still a stub.
 - No existing V1 engine, store, or `app.js` is modified; every V1 read goes
   through that module's own public getter (e.g. `petty-cash-store.js#getSettings`).
-- No document is rendered, and no document is parsed beyond a structural
-  ViewModel fingerprint.
+- No document is PARSED beyond a structural ViewModel fingerprint.
+  Rendering an APPROVED ComposerDocument to PDF/Word IS now real (Phase
+  10, Sprint 10.6 — `ui/review-workspace.js`'s "Unduh PDF"/"Unduh Word",
+  via `js/docs/templates/composer-document.js` + `js/docs/docx-exporter.js`)
+  — a generic export of the composed draft's real field/value content,
+  deliberately NOT an attempt at the official PBSI NOR letterhead format
+  (see that template's own header for why).
 - Nothing is auto-approved — every human-gated lifecycle move still
   requires an explicit `ReviewDecision`.
 - The NOR generator itself (`document-intelligence/nor/nor-generator-contract.js#proposeNorFields`)
@@ -322,10 +333,6 @@ belongs to neither.
   `problem-solving/services/problem-solving-service.js`'s own header).
   Only `business_trip` (mapped to the existing `CREATE_NOR` intent) has a
   real path all the way to NOR Composition today.
-- `composer-store.js#createDocument` is real (Phase 8-10, via
-  `nor-composer.js`); `editSection` — a human revising an already-composed
-  section — still has no UI caller. See `dormant-subsystems.js`'s updated
-  `composer-timeline` entry.
 - `nor-composer.js` never calls `buildNorViewModel`, `js/docs/doc-engine.js`,
   or any renderer, and produces no PDF/HTML/Excel — see that file's own
   header for the three prior decisions this respects. "Final NOR" in this

@@ -91,6 +91,11 @@ import {
 // never calls sweepPipeline() itself and never changes what it decides.
 import { recordSweepTick, getWorkerHealth } from '../knowledge/datasets/import-session/performance-collector.js';
 import { initFileStorageSync } from '../file-storage/file-storage-registry.js';
+// Phase 10, Sprint 10.1 — the Review Workspace's foundation: a
+// ComposerDocument (a composed NOR draft) must survive a refresh for a
+// human reviewer to come back to it, same "activate once, at Sarpras
+// Intelligence's own mount" idiom as every init*Sync() call in this block.
+import { initComposerDocumentSync } from '../document-intelligence/composer/composer-document-repository.js';
 // Phase 2.5 Part 3 — make the in-memory knowledge repo a deterministic
 // projection of the persisted Import Sessions, so imported Knowledge
 // survives a refresh (and picks up another tab's RTDB-hydrated sessions).
@@ -162,7 +167,12 @@ import { esc, isDeveloperMode, setPresentationMode } from './shared/workspace-li
 // new screen id this phase adds. Screen ids are internal routing, not user-
 // facing labels — the labels users actually see live in js/app.js's
 // SIC_MENU_TITLES and nav buttons, and in each workspace's own render.
-const SCREEN_IDS = ['dashboard', 'nor', 'archive', 'knowledge', 'learning', 'settings'];
+// Phase 10, Sprint 10.1 — 'review' joins 'knowledge' as a screen with no
+// primary nav button (see js/app.js's nav panel header comment: "5 items,
+// user mental models not engineering domains"). Reachable via Settings'
+// Power View, same as Knowledge Center — a real, mountable, fully-working
+// screen with a deliberately quiet entry point.
+const SCREEN_IDS = ['dashboard', 'nor', 'archive', 'knowledge', 'learning', 'settings', 'review'];
 
 // Each nested workspace pulls in its own slice of Organizational Memory /
 // Knowledge / Document Intelligence — dynamically imported on first visit
@@ -175,6 +185,7 @@ const WORKSPACES = {
   knowledge: { modulePath: './knowledge-center.js', mountName: 'mountKnowledgeCenter', closeName: 'closeKnowledgeCenter' },
   learning: { modulePath: './learning-dashboard.js', mountName: 'mountLearningDashboard', closeName: 'closeLearningDashboard' },
   settings: { modulePath: './sarpras-settings.js', mountName: 'mountSarprasSettings', closeName: 'closeSarprasSettings' },
+  review: { modulePath: './review-workspace.js', mountName: 'mountReviewWorkspace', closeName: 'closeReviewWorkspace' },
 };
 
 let host = null;
@@ -622,6 +633,7 @@ export async function mountSarprasIntelligence(hostEl) {
       .catch((err) => console.error('[sarpras-intelligence-center] import session sync failed:', err));
     initImportBatchSync().catch((err) => console.error('[sarpras-intelligence-center] import batch sync failed:', err));
     initFileStorageSync().catch((err) => console.error('[sarpras-intelligence-center] file storage sync failed:', err));
+    initComposerDocumentSync().catch((err) => console.error('[sarpras-intelligence-center] composer document sync failed:', err));
     // Sprint 1 (Autonomy Closure, Part 3/10) — the Executive Briefing
     // previously had zero live listeners; a change made anywhere in the
     // platform never reflected here without navigating away and back.
@@ -1061,7 +1073,15 @@ function renderPipelineTrace() {
   if (rec) rows.push(['Recommendation', `${rec.claim} (confidence ${rec.confidence.toFixed(2)})`]);
   if (t.routingDecision) rows.push(['Current Workflow', `${t.routingDecision.route} — ${t.routingDecision.reason}`]);
   if (t.downstreamNote) rows.push(['Final Output', t.downstreamNote]);
-  if (t.composerDocument) rows.push(['Final Output', `ComposerDocument ${t.composerDocument.documentId} (${t.composerDocument.sections.length} sections)`]);
+  // Phase 10, Sprint 10.1 — this used to be a bare section COUNT
+  // (`ComposerDocument {id} (19 sections)`), Sprint 9.8's own named example
+  // of the platform's missing review surface. Now lists every section's
+  // real field/value, and points to the Review Workspace as the actual
+  // place to review, edit, and (Sprint 10.4+) approve it.
+  if (t.composerDocument) {
+    rows.push(['Final Output', `ComposerDocument ${t.composerDocument.documentId} (v${t.composerDocument.version}) — lihat Settings → Review Workspace untuk pratinjau lengkap.`]);
+    t.composerDocument.sections.forEach((s) => rows.push([`Section — ${s.field}`, s.value]));
+  }
   if (t.isComplete !== undefined) rows.push(['Conversation State', t.isComplete ? 'complete' : 'in progress']);
 
   return `

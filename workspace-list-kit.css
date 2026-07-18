@@ -105,10 +105,16 @@
 .wlk-detail-sec:first-child{margin-top:0;}
 .wlk-detail-sec-title{font-size:11.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--text-faint);margin-bottom:8px;}
 .wlk-kv-list{list-style:none;margin:0;padding:0;}
-.wlk-kv-row{display:flex;justify-content:space-between;gap:16px;padding:6px 0;border-top:1px solid var(--border);}
+.wlk-kv-row{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px 16px;padding:6px 0;border-top:1px solid var(--border);}
 .wlk-kv-row:first-child{border-top:none;}
 .wlk-kv-key{font-size:12.5px;color:var(--text-faint);font-weight:600;}
 .wlk-kv-val{font-size:13px;color:var(--text);font-weight:600;text-align:right;word-break:break-word;}
+/* Phase 10, Sprint 10.3 — Document Editor's inline-edit row: the input +
+   Save/Cancel buttons need their own line, not squeezed into the same
+   flex row as key/value. */
+.wlk-kv-row--editing{flex-direction:column;align-items:stretch;}
+.wlk-kv-row--editing .wlk-form-row{display:flex;gap:8px;align-items:center;margin-bottom:0;}
+.wlk-kv-row--editing .wlk-input{width:auto;flex:1;}
 
 /* ── diff table ───────────────────────────────────────────────────── */
 .wlk-diff-table{width:100%;border-collapse:collapse;font-size:12.5px;}

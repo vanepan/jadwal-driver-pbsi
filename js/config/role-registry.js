@@ -67,6 +67,7 @@ export const ROLES = Object.freeze([
 
 const { COORDINATOR, MEMBER } = ENGINEERING_ROLE;
 const ADMIN = 'admin';
+const BIDANG = 'bidang';
 
 /**
  * Engineering capability matrix — capability id → allowed role ids.
@@ -102,6 +103,19 @@ export const CAPABILITIES = Object.freeze({
   'eng.reopen': [ADMIN, COORDINATOR],
   // modifiers
   'eng.continueTomorrow.ownOnly': [MEMBER],
+
+  // Sarpras Intelligence — Phase 10, Sprint 10.5 (Approval Workflow).
+  // Reviewer = admin + bidang (can edit a draft and move it through
+  // in_review/needs_revision/rejected); Approver = admin only (the actual
+  // "is this true of the organization" authority — same asymmetry
+  // eng.verify/eng.postpone already establish between Coordinator and
+  // Admin). Note: today's single-pilot gate (js/v2/README.md —
+  // isV2Enabled() requires role:'admin' AND username:'evan') means every
+  // real user who can reach Review Workspace at all already satisfies
+  // both capabilities; this matrix is the real, forward architecture, not
+  // a no-op formality.
+  'sic.review.act': [ADMIN, BIDANG],
+  'sic.approve.act': [ADMIN],
 });
 
 const ROLE_BY_ID = new Map(ROLES.map((r) => [r.id, r]));

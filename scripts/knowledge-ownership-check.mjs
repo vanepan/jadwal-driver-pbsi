@@ -194,16 +194,22 @@ console.log('\n[Part 8 — no subsystem has readers without writers]');
     gapWriters.some((w) => w.rel.startsWith('js/v2/ui/')));
   check('...and is therefore NOT listed as dormant', !DORMANT.some((d) => d.id === 'gap-workflow'));
 
-  // The two genuinely-deferred subsystems must be DECLARED, and must SAY SO
-  // wherever they are displayed — a dormant subsystem may never render a bare 0.
+  // The genuinely-deferred subsystem must be DECLARED, and must SAY SO
+  // wherever it is displayed — a dormant subsystem may never render a bare 0.
   check('the correction log is declared DORMANT with a reason and a planned phase', (() => {
     const d = DORMANT.find((x) => x.id === 'correction-log');
     return !!d && !!d.reason && !!d.plannedPhase && !!d.displayNote;
   })());
-  check('the composer timeline is declared DORMANT with a reason', (() => {
-    const d = DORMANT.find((x) => x.id === 'composer-timeline');
-    return !!d && !!d.reason && !!d.displayNote;
-  })());
+
+  // Phase 10, Sprint 10.3 — 'composer-timeline' was ACTIVATED (editSection
+  // now has a real caller: ui/review-workspace.js's Document Editor),
+  // mirroring the exact 'gap-workflow' precedent above: it must NOT appear
+  // in the register, and must have a real caller outside composer-store.js
+  // itself.
+  const composerWriters = importersOf(/composer-store\.js$/, ['editSection']);
+  check('composer-timeline is ACTIVATED — editSection now has a real caller',
+    composerWriters.some((w) => w.rel.startsWith('js/v2/ui/')));
+  check('...and is therefore NOT listed as dormant', !DORMANT.some((d) => d.id === 'composer-timeline'));
 
   const ld = read('js/v2/ui/learning-dashboard.js');
   const sic = read('js/v2/ui/sarpras-intelligence-center.js');
@@ -212,8 +218,8 @@ console.log('\n[Part 8 — no subsystem has readers without writers]');
     ld.includes("dormantNote('correction-log')"));
   check('the Executive Briefing tells the truth about it too — it used to report a permanent, confident 0',
     sic.includes("dormantNote('correction-log')"));
-  check('NOR Center tells the truth about the dormant Composer',
-    nc.includes("dormantNote('composer-timeline')"));
+  check('NOR Center no longer claims the Composer is dormant (retired call site)',
+    !nc.includes("dormantNote('composer-timeline')"));
 }
 
 /* ══════════════════════════════════════════════════════════════════════

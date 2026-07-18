@@ -31,7 +31,8 @@ import {
 import { resetConversationRepository } from '../js/v2/conversation/repository/conversation-repository.js';
 import { continueConversation, explainConversation } from '../js/v2/conversation/services/conversation-service.js';
 import { explainDynamicConversation } from '../js/v2/conversation/services/dynamic-conversation-service.js';
-import { resetComposerStore, getComposerTimeline } from '../js/v2/document-intelligence/composer/composer-store.js';
+import { resetComposerStore, getComposerTimeline, getExplainability } from '../js/v2/document-intelligence/composer/composer-store.js';
+import { explainDocument } from '../js/v2/document-intelligence/nor/nor-explainability-service.js';
 import { beginProblemSolving, composeApprovedNor } from '../js/v2/problem-solving/services/problem-solving-service.js';
 import { seedNorBootstrapKnowledge } from '../js/v2/knowledge/bootstrap/nor-reverse-engineering-knowledge.js';
 import { seedPerjalananDinasPengadaanKnowledge } from '../js/v2/knowledge/bootstrap/nor-perjalanan-dinas-pengadaan-knowledge.js';
@@ -214,6 +215,20 @@ const PENGADAAN_ONLY_RULE_REFS = ['rule.pengadaan-itemized-list-required', 'rule
 const BPD_ONLY_RULE_REFS = ['rule.bpd-cost-breakdown-categories', 'rule.bpd-no-pengadaan-involvement', 'rule.bpd-traveler-role-stated', 'rule.bpd-multi-destination-aggregation'];
 check('Business Trip: live Reasoning cites at least one Perjalanan-Dinas-tagged rule, zero Pengadaan-tagged rules', businessTrip.reasoningConsidered.citedRuleIds.some((id) => BPD_ONLY_RULE_REFS.some((ref) => id.endsWith(ref))) && !businessTrip.reasoningConsidered.citedRuleIds.some((id) => PENGADAAN_ONLY_RULE_REFS.some((ref) => id.endsWith(ref))));
 check('Business Trip: live Reasoning citations match the standalone diagnostic probe for the same occasion', JSON.stringify([...businessTrip.reasoningConsidered.citedRuleIds].sort()) === JSON.stringify([...businessTrip.hypotheticalReasoningWouldCite].sort()));
+
+// Phase 10, Sprint 10.2 — the REAL end-to-end proof (not the synthetic
+// unit test in composer-foundation-check.mjs) that attachExplainability()
+// actually fires on the real composeApprovedNor() path, and that
+// explainDocument() correctly merges it with REAL, Approved KnowledgeItem
+// provenance — every citedKnowledgeId cited by a real composition IS a
+// real, resolvable item here, unlike the deliberately-unresolvable test
+// ids in composer-foundation-check.mjs.
+const businessTripExplainability = getExplainability(businessTrip.composerDocumentId);
+check('Business Trip: explainability bundle was persisted alongside the real composed document', businessTripExplainability !== null && businessTripExplainability.conversationId);
+const businessTripExplained = explainDocument(businessTrip.composerDocumentId);
+check('Business Trip: explainDocument() succeeds for a real composed document', businessTripExplained.ok === true);
+check('Business Trip: every real citedKnowledgeId resolves to a real, Approved KnowledgeItem (available:true)', businessTripExplained.data.retrievedKnowledge.length > 0 && businessTripExplained.data.retrievedKnowledge.every((k) => k.available === true));
+check('Business Trip: explainDocument()\'s appliedRules match the live Reasoning citedRuleIds', JSON.stringify(businessTripExplained.data.appliedRules.map((r) => r.id).sort()) === JSON.stringify([...businessTrip.reasoningConsidered.citedRuleIds].sort()));
 // Sprint 9.6 (Composition Validation) — real bug found comparing composed
 // output against the real evidence: pattern.bpd-perihal-subject-line's slot
 // was named "lokasi", which no real Conversation fact is ever keyed by
@@ -271,20 +286,24 @@ for (const nt of norTypes) {
 }
 console.log(JSON.stringify(coverage, null, 2));
 
-console.log('\n[Learning — Composer-level learning remains dormant (confirmed fresh, not cited from memory)]');
+console.log('\n[Learning — Composer-level Learning Event recording is STILL a separate, open question (Phase 10, Sprint 10.3 update)]');
 const dormantIds = DORMANT.map((d) => d.id);
-check('composer-timeline is still declared DORMANT (editSection has no real caller)', dormantIds.includes('composer-timeline'));
-// Knowledge PROMOTION (approving the seeded 90+ items) legitimately DOES
-// record real KNOWLEDGE_EVOLUTION Learning Events — the assertion below is
-// narrower and more honest than "zero events total": none of THIS run's 4
-// real ComposerDocument ids appears anywhere in any Learning Event, which
-// is exactly what "editSection has no real caller" means operationally —
-// a human editing a composed draft never becomes organizational learning.
+// Phase 10, Sprint 10.3 — 'composer-timeline' is RETIRED from the register:
+// editSection now has a real caller (ui/review-workspace.js's Document
+// Editor). This assertion flips from "still dormant" to "no longer
+// dormant" — the entry existing would now be the bug, not its absence.
+check('composer-timeline is NO LONGER declared dormant (editSection has a real caller as of Sprint 10.3)', !dormantIds.includes('composer-timeline'));
+// This script itself never calls editSection (only composeApprovedNor), so
+// this assertion is narrower than it may look: it does NOT claim editing
+// is impossible (Sprint 10.3 proved otherwise, in a real browser — see
+// review-workspace-render-check.mjs) — only that recording an edit as
+// organizational Learning is a SEPARATE, still-unwired mechanism, exactly
+// like correction-log's own still-open half (see dormant-subsystems.js).
 const composerDocumentIds = [businessTrip, procurement, reimbursement, administration, procurementRoutingFix, administrationRoutingFix]
   .map((t) => t.composerDocumentId).filter(Boolean);
 const learningEventsAfterRun = listLearningEvents({}).data || [];
 const composerReferenced = learningEventsAfterRun.some((e) => composerDocumentIds.includes(e.sourceDocumentId) || composerDocumentIds.includes(e.affectedKnowledgeId));
-check(`this run's ${composerDocumentIds.length} real ComposerDocuments produced ZERO Learning Events (editSection has no real caller)`, !composerReferenced);
+check(`this run's ${composerDocumentIds.length} real ComposerDocuments produced ZERO Learning Events (editing-as-Correction is not wired yet, a separate question from "can a human edit at all")`, !composerReferenced);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

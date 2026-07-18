@@ -98,6 +98,22 @@
    `dormantNote('composer-timeline')` specifically for the missing
    authoring/edit surface, not for composition itself.
 
+   PHASE 10, SPRINT 10.3 DISPOSITION — 'composer-timeline', ACTIVATED
+   -------------------------------------------------------------------
+   Sprint 10.3 ("Document Editor") gave `editSection` its first real
+   caller: `ui/review-workspace.js`'s inline Draft Preview edit affordance
+   — a real human, through a real UI, can now revise a composed section,
+   producing a real FieldOverride and a new traceable ComposerRevision
+   exactly as this engine always promised. The entry, and every
+   `dormantNote('composer-timeline')` call site, are REMOVED — not because
+   the mechanism changed (editSection's own logic is byte-identical to
+   before this sprint), but because the one thing this entry ever named as
+   missing (a real UI caller) now exists. NOTE what did NOT change:
+   editing a section still does not itself record a Learning Event/
+   Correction (see north-star-acceptance-check.mjs's own updated
+   assertion) — that is a separate, still-open question left to whichever
+   sprint wires Approval (Sprint 10.4/10.5), not silently claimed here.
+
    DEPENDENCIES: none. This is a manifest, read by the UI (to display honesty)
    and by the verification suite (to enforce it).
    ============================================================ */
@@ -128,16 +144,9 @@ export const DORMANT = Object.freeze([
     plannedPhase: 'unscheduled — Knowledge Editing',
     displayNote: 'Alur koreksi payload pengetahuan belum diaktifkan — angka ini bukan nol karena tidak ada koreksi jenis ini, tetapi karena belum ada antarmuka untuk melakukannya. Jenis koreksi lain (metadata, permintaan perubahan, pola) sudah tercatat nyata di Memori Organisasi.',
   }),
-  Object.freeze({
-    id: 'composer-timeline',
-    label: 'Composer Timeline (authoring/edit surface)',
-    module: 'js/v2/document-intelligence/composer/composer-store.js',
-    writers: Object.freeze(['editSection']),
-    readers: Object.freeze(['ui/nor-center.js', 'ui/learning-dashboard.js']),
-    reason: 'Phase 8-10 gave createDocument a real caller (document-intelligence/nor/nor-composer.js#composeNorDocument) — a knowledge-driven NOR draft is composed for real. editSection, the human-authoring/revision half of the Composer, still has zero callers: no authoring UI exists yet. NOTE: this is narrower than "the Composer" generally — composition is now real; subsequent human editing of a composed section is not.',
-    plannedPhase: 'unscheduled — Composer Authoring UI',
-    displayNote: 'Dokumen NOR sudah dapat disusun otomatis dari pengetahuan yang disetujui, tetapi antarmuka untuk mengedit bagian yang telah disusun belum tersedia — riwayat revisi ini bukan nol karena tidak ada dokumen, melainkan karena belum ada cara manusia menyuntingnya di sini.',
-  }),
+  // 'composer-timeline' REMOVED Phase 10, Sprint 10.3 — editSection now has
+  // a real caller (ui/review-workspace.js). See this file's own "PHASE 10,
+  // SPRINT 10.3 DISPOSITION" comment above for the full disposition.
 ]);
 
 export function isDormant(id) {

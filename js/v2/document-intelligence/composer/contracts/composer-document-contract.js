@@ -31,9 +31,19 @@ export const COMPOSER_DOCUMENT_SCHEMA = 'composer-document@1';
  * @property {string} domainType
  * @property {number} version        - append-only, starts at 1
  * @property {import('./editable-section-contract.js').EditableSection[]} sections
+ * @property {string} status         - Phase 10, Sprint 10.1: review-lifecycle status, always 'draft'
+ *                                      until Sprint 10.4's composer-review-contract.js defines real
+ *                                      transitions. Added now (defaulted, additive) rather than
+ *                                      later, so no consumer of this contract sees a breaking shape
+ *                                      change mid-phase.
  * @property {string} createdAt
  * @property {string} updatedAt
  */
+
+/** Phase 10, Sprint 10.1 — the one review-lifecycle status value that exists
+ *  before Sprint 10.4 defines the full graph. Exported so callers never
+ *  hardcode the string 'draft' themselves. */
+export const COMPOSER_DOCUMENT_STATUS_DRAFT = 'draft';
 
 let _counter = 0;
 
@@ -46,6 +56,7 @@ export function makeComposerDocument(domainType, fields = {}) {
     documentId: `composer-doc:${domainType}:${Date.now()}:${_counter}`,
     domainType, version: 1,
     sections: Object.freeze(Object.entries(fields).map(([field, value]) => makeEditableSection({ field, value }))),
+    status: COMPOSER_DOCUMENT_STATUS_DRAFT,
     createdAt: now, updatedAt: now,
   });
 }
@@ -55,5 +66,6 @@ export function isComposerDocument(d) {
     && typeof d.documentId === 'string' && d.documentId.length > 0
     && typeof d.domainType === 'string' && d.domainType.length > 0
     && typeof d.version === 'number' && d.version >= 1
-    && Array.isArray(d.sections) && d.sections.every(isEditableSection);
+    && Array.isArray(d.sections) && d.sections.every(isEditableSection)
+    && typeof d.status === 'string' && d.status.length > 0;
 }

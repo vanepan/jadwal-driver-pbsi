@@ -1835,14 +1835,19 @@ async function navEngineering(screen, navId) {
 const SIC_MENU_TITLES = {
   dashboard: 'Home', nor: 'NOR', archive: 'Documents',
   knowledge: 'Knowledge Center', learning: 'Intelligence', settings: 'Settings',
+  review: 'Review Workspace',
 };
 // Experience Architecture phase — 'knowledge' has no primary nav button
 // (see the nav panel markup), so it maps to null: an internal jump there
 // (Settings' Power View link) updates the crumb but leaves whichever real
 // button was last active alone, since none of them actually represents it.
+// Phase 10, Sprint 10.1 — 'review' joins it the same way: a real, mountable
+// screen (see sarpras-intelligence-center.js's WORKSPACES map), deliberately
+// reachable only from Settings' Power View, not a 6th primary nav button.
 const SIC_SCREEN_TO_NAV_ID = {
   dashboard: 'v2NavSicDashboard', nor: 'v2NavSicNor', archive: 'v2NavSicArchive',
   knowledge: null, learning: 'v2NavSicLearning', settings: 'v2NavSicSettings',
+  review: null,
 };
 async function navSarprasIntelligence(screen, navId) {
   // Deep-link / stale-state guard: mirrors setRailModule()'s canAccessModule
