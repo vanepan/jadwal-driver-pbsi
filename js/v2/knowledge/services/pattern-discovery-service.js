@@ -27,6 +27,11 @@
 'use strict';
 
 import { computePatternRecommendations, computeLearningPatterns } from '../profiles/pattern-discovery-engine.js';
+// Sprint 11.7 (Continuous Organizational Memory) — same "pure delegation,
+// no computation added" idiom this file already follows for the other two
+// readers. See knowledge-drift-engine.js's own header for why this is
+// composed from ALREADY-real signals, never a new decay mechanism.
+import { computeKnowledgeDrift } from '../profiles/knowledge-drift-engine.js';
 import { PATTERN_TYPE, isCandidateRecommendation } from '../contracts/pattern-recommendation-contract.js';
 import { recordPattern } from '../../learning/services/learning-service.js';
 
@@ -61,5 +66,5 @@ export function discoverAndRecordPatterns(domainType) {
 }
 
 export {
-  computePatternRecommendations, computeLearningPatterns, PATTERN_TYPE, isCandidateRecommendation,
+  computePatternRecommendations, computeLearningPatterns, computeKnowledgeDrift, PATTERN_TYPE, isCandidateRecommendation,
 };

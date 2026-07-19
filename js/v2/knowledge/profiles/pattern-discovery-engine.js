@@ -37,6 +37,15 @@
    "consume the Service, not a repository" instruction, satisfied by
    construction rather than by discipline.
 
+   PHASE 11, SPRINT 11.5 — "ORGANIZATIONAL WRITING INTELLIGENCE." A third
+   producer, writingStyleRecommendations(), was added to
+   computeLearningPatterns() below: recurring reviewer wording/phrasing
+   preferences (semantic-diff-engine.js's opening_phrase/closing_phrase/
+   wording_change classifications), reusing the identical recurring-count
+   evidence shape RECURRING_CORRECTION already established. See that
+   function's own comment for the full rationale and the one dimension
+   ("per organizational unit") deliberately left unimplemented.
+
    RESPONSIBILITY: computePatternRecommendations(domainType),
    computeLearningPatterns(domainType).
 
@@ -210,6 +219,64 @@ function recurringDecisionRecommendations(domainType) {
     }));
 }
 
+// Sprint 11.5 (Organizational Writing Intelligence) — "HOW PBSI writes",
+// not only WHAT. Only these three semantic-diff-engine.js diffNature
+// values are a wording/phrasing preference; quantity_correction is a FACT
+// correction (a document-specific value, never a style choice), and the
+// structural ones are a section appearing/disappearing, not a rewording.
+const WRITING_STYLE_DIFF_NATURES = Object.freeze(['opening_phrase', 'closing_phrase', 'wording_change']);
+
+/** Groups CORRECTION Learning Events that carry a semantic-diff wording
+ *  classification (attached by section-learning-bridge.js, computed by
+ *  semantic-diff-engine.js — see that file's own header) by (field,
+ *  preferredValue), and surfaces a preference once it has real recurring
+ *  support. `field` is this platform's real "document family" dimension —
+ *  a NOR's own fieldSchema slot (e.g. a letterhead "perihal" line, or a
+ *  shared `pattern:<id>` citation reused across documents) is already
+ *  scoped to one domainType/one document family by construction; grouping
+ *  by domainType (the outer loop, same as every other producer here) plus
+ *  field is exactly "per NOR Type, per document family" without inventing
+ *  a new dimension. NOTE: "per organizational unit" (Sprint 11.5's third
+ *  named dimension) is deliberately NOT implemented — ComposerDocument's
+ *  own contract (composer-document-contract.js) carries no organizational-
+ *  unit field today, so grouping by one would fabricate a dimension this
+ *  codebase's data model does not actually have. Flagged here as a real
+ *  gap needing a product decision (does a NOR carry a requesting unit at
+ *  all?), not silently implemented either way.
+ *
+ *  Reuses the EXACT SAME recurring-count evidence shape and confidence
+ *  formula (min(1, count/5)) as recurringCorrectionRecommendations/
+ *  recurringDecisionRecommendations above — a wording choice repeated
+ *  across enough real reviewer edits IS a recurring organizational
+ *  decision, structurally identical to a repeated correction, not a
+ *  reason to invent a second formula. */
+function writingStyleRecommendations(domainType) {
+  const result = listLearningEvents({ kind: LEARNING_KIND.CORRECTION, domainType });
+  if (!result.ok) return [];
+  const byFieldValue = new Map();
+  for (const e of result.data) {
+    const diff = e.evidence && e.evidence.semanticDiff;
+    if (!diff || !WRITING_STYLE_DIFF_NATURES.includes(diff.diffNature)) continue;
+    const field = e.evidence.field;
+    const preferredValue = e.after && typeof e.after === 'object' ? e.after[field] : null;
+    if (typeof preferredValue !== 'string' || !preferredValue) continue;
+    const key = `${field}::${preferredValue}`;
+    if (!byFieldValue.has(key)) byFieldValue.set(key, { field, preferredValue, diffNature: diff.diffNature, count: 0, eventIds: [] });
+    const entry = byFieldValue.get(key);
+    entry.count += 1;
+    entry.eventIds.push(e.id);
+  }
+  return [...byFieldValue.values()]
+    .filter((x) => x.count >= RECURRING_THRESHOLD)
+    .map((x) => makeCandidateRecommendation({
+      domainType,
+      patternType: PATTERN_TYPE.WRITING_STYLE,
+      value: `${x.field}:${x.preferredValue}`,
+      evidence: { supportCount: x.count, confidence: round2(Math.min(1, x.count / 5)), affectedDocumentIds: x.eventIds },
+      suggestedAction: `Reviewer memilih "${x.preferredValue}" untuk bagian "${x.field}" sebanyak ${x.count} kali (${x.diffNature}) — pertimbangkan menjadikannya gaya penulisan baku organisasi untuk domain "${domainType}".`,
+    }));
+}
+
 /**
  * Part 6 — patterns that emerge from the platform's OWN accepted
  * organizational learning (corrections, decisions), read through the
@@ -222,5 +289,6 @@ export function computeLearningPatterns(domainType) {
   return Object.freeze([
     ...recurringCorrectionRecommendations(domainType),
     ...recurringDecisionRecommendations(domainType),
+    ...writingStyleRecommendations(domainType),
   ]);
 }

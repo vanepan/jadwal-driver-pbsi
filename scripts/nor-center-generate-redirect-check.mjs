@@ -1,18 +1,30 @@
 /* nor-center-generate-redirect-check.mjs — Sprint 11.1, Workstream 2
-   (production feedback). Real browser, real DOM click flow, reusing
-   sarpras-workspace-harness.html.
+   (production feedback), UPDATED Sprint 11.3 (Document-first Experience).
+   Real browser, real DOM click flow, reusing sarpras-workspace-harness.html.
 
-   PROVES the "Generate NOR" tab's conversation now runs NATIVELY inside
-   NOR Center end to end — Conversation -> Questions -> Draft — without
-   ever navigating to another screen (the exact complaint raised against
-   the earlier "redirect to Home" version of this fix: "the entire
-   conversation should stay inside NOR Center... without redirecting to
-   another page"). Drives a REAL CREATE_NOR utterance through the real
-   pipeline (beginProblemSolving/continueProblemConversation/
-   composeApprovedNor — the SAME functions Home's entry point calls),
-   against real seeded Approved Knowledge, all the way to a real composed
-   ComposerDocument, asserting the NOR CENTER · GENERATE crumb (proof of
-   which screen is showing) never once disappears.
+   PROVES the "Generate NOR" tab's CONVERSATION now runs NATIVELY inside
+   NOR Center end to end — Conversation -> Questions -> ready-to-compose —
+   without ever navigating to another screen mid-conversation (the exact
+   complaint raised against the earlier "redirect to Home" version of this
+   fix: "the entire conversation should stay inside NOR Center... without
+   redirecting to another page"). That invariant is UNCHANGED and still
+   asserted below, right up through the Conversation reaching state:ready.
+
+   Sprint 11.3 SUPERSEDES the ORIGINAL final assertion only ("the crumb
+   never disappears even after composing"): Requirement 1 ("Generate Draft
+   immediately opens Live Preview, not metadata") means a SUCCESSFUL
+   compose must now navigate to the Live Document Workspace automatically
+   — a deliberate, different kind of transition from the one Sprint 11.1
+   guarded against. Sprint 11.1's complaint was about being redirected
+   AWAY from a task never asked to leave (mid-conversation); Sprint 11.3's
+   requirement is about advancing to the NATURAL next step once the
+   conversation is already fully done and "Susun NOR" is clicked. Screen
+   visibility is checked precisely via each screen's own
+   `[data-sic-screen]` element's `style.display` (sarpras-intelligence-
+   center.js#showScreen only ever toggles this — it never destroys a
+   screen's DOM — so a substring search over the full host innerHTML, as
+   this script used before, cannot actually tell which screen a human
+   would see; it would stay true even for a screen now hidden).
    Run: node scripts/nor-center-generate-redirect-check.mjs   (exit 0 = pass) */
 
 import http from 'node:http';
@@ -105,11 +117,20 @@ html = await page.evaluate(() => window.__hostHTML());
 check('the Conversation reached state:ready — "Susun NOR" button is now visible, all inside this tab', html.includes('nc-compose-nor') && html.includes('Susun NOR'));
 
 await page.evaluate(() => { document.querySelector('[data-act="nc-compose-nor"]')?.click(); });
-await new Promise((r) => { setTimeout(r, 300); });
+await new Promise((r) => { setTimeout(r, 500); }); // real dynamic import() of review-workspace.js on its first visit
 
 html = await page.evaluate(() => window.__hostHTML());
-check('composeApprovedNor was actually called and succeeded (no error message shown)', !html.includes('sic-next-action">Error') );
-check('the NOR CENTER · GENERATE crumb NEVER disappeared across the entire flow — the complete "Generate NOR -> Conversation -> Questions -> Draft" journey stayed inside NOR Center', html.includes(CREW_MARKER));
+const screenVisibility = await page.evaluate(() => ({
+  nor: document.querySelector('[data-sic-screen="nor"]')?.style.display,
+  review: document.querySelector('[data-sic-screen="review"]')?.style.display,
+}));
+check('composeApprovedNor was actually called and succeeded (no error message shown)', !html.includes('sic-next-action">Error'));
+check('Sprint 11.3 — a successful compose navigates AWAY from NOR Center (its screen is now hidden)', screenVisibility.nor === 'none');
+check('Sprint 11.3 — the Review Workspace screen is now the one actually visible', screenVisibility.review === '');
+
+const reviewHtml = await page.evaluate(() => document.querySelector('[data-sic-screen="review"]').innerHTML);
+check('Sprint 11.3 Requirement 1 — lands directly on the Live Document Preview (the rendered NOR itself), never a bare list', reviewHtml.includes('rw-doc') && reviewHtml.includes('Nota Organisasi'));
+check('the new document is genuinely OPEN, not just a list the human would still have to click into', reviewHtml.includes('rw-editable'));
 check('zero fatal module/render errors across the whole native-conversation flow', !bootErrors.some((e) => FATAL_PATTERN.test(e)) || (console.log(bootErrors), false));
 
 await browser.close();

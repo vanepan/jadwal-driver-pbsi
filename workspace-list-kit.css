@@ -301,9 +301,104 @@
   background:var(--c-blue-weak);border-radius:0 8px 8px 0;
 }
 
+/* ── Live Document Workspace (Phase 11 Course Correction) ─────────────
+   The rendered NOR itself as the primary review interface — a real
+   document look (centered letterhead, serif body), not a field list.
+   Confidence highlighting reuses the platform's ONE color-tone system
+   (services/unified-scoring.js#scoreColor -> --ok/--warn/--danger, never
+   a hardcoded hex) collapsed to exactly 3 states per the product owner's
+   Grammarly-style ask. ────────────────────────────────────────────── */
+.rw-doc{
+  max-width:680px;margin:0 auto;padding:48px 56px;background:var(--surface);
+  border:1px solid var(--border);border-radius:4px;
+  font-family:var(--font-serif, Georgia, 'Times New Roman', serif);color:var(--text);
+  line-height:1.7;
+}
+.rw-doc-title{text-align:center;font-weight:700;font-size:16px;letter-spacing:.04em;
+  text-transform:uppercase;margin:0 0 20px;font-family:var(--font-serif, Georgia, serif);}
+.rw-doc-dateline{display:flex;justify-content:space-between;gap:12px;margin-bottom:18px;font-size:13.5px;flex-wrap:wrap;}
+.rw-doc-meta{margin-bottom:18px;}
+.rw-doc-meta-row{display:flex;gap:8px;font-size:13.5px;margin-bottom:4px;}
+.rw-doc-meta-label{flex:0 0 140px;color:var(--text-dim);}
+.rw-doc-meta-value{flex:1;min-width:0;}
+.rw-doc-body{margin-top:20px;}
+.rw-doc-para{font-size:13.5px;margin:0 0 12px;white-space:pre-wrap;}
+.rw-doc-signoff{margin-top:32px;font-size:13px;color:var(--text-dim);font-style:italic;}
+
+/* Inline-editable spans — Word-like: no border/box until hovered/focused,
+   a click-target the whole time. */
+.rw-editable{
+  display:inline-block;min-width:24px;border-radius:3px;padding:1px 3px;margin:-1px -3px;
+  outline:none;cursor:text;transition:background-color .12s ease;
+}
+.rw-editable:hover{background:var(--c-blue-weak, rgba(59,91,169,.08));}
+.rw-editable:focus{background:var(--c-blue-weak, rgba(59,91,169,.12));box-shadow:0 0 0 1px var(--accent);}
+.rw-editable--empty{color:var(--text-faint);font-style:italic;}
+.rw-editable--empty::before{content:attr(data-placeholder);}
+/* Sprint 11 UAT gap-closure (Finding 1) — the placeholder is a ::before
+   pseudo-element gated on the render-time `.rw-editable--empty` class.
+   Typing into a contenteditable never triggers a re-render, so without
+   this rule the class (and its pseudo-element placeholder) stayed visible
+   next to the typed text — the reported "Klik untuk mengisi…a" corruption,
+   and Ctrl+A appearing to select the placeholder. Clearing it (and
+   restoring normal text style) on :focus makes it behave like a real
+   placeholder: click → it disappears → the field is genuinely empty →
+   typing/Ctrl+A act on empty content. Pure CSS, no re-render; the data was
+   never affected (textContent — what onFocusOut commits — never included
+   the pseudo-element). */
+.rw-editable--empty:focus{color:var(--text);font-style:normal;}
+.rw-editable--empty:focus::before{content:'';}
+
+/* Confidence highlighting — a subtle underline, never a loud badge; the
+   number itself only ever appears in Developer Mode (rw-conf-detail). */
+.rw-conf-green{border-bottom:2px solid var(--ok);}
+.rw-conf-yellow{border-bottom:2px solid var(--warn);}
+.rw-conf-red{border-bottom:2px solid var(--danger);}
+.rw-conf-detail{font-size:10.5px;color:var(--text-faint);margin-left:4px;font-family:var(--font-sans);font-style:normal;}
+.rw-conf-legend{display:flex;gap:16px;flex-wrap:wrap;font-size:11.5px;color:var(--text-dim);
+  font-family:var(--font-sans);margin:0 0 14px;align-items:center;}
+.rw-conf-legend-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:middle;}
+.rw-conf-legend-dot--green{background:var(--ok);}
+.rw-conf-legend-dot--yellow{background:var(--warn);}
+.rw-conf-legend-dot--red{background:var(--danger);}
+
+.rw-edit-error{font-size:11px;color:var(--danger);margin-top:2px;font-family:var(--font-sans);}
+
+/* Sprint 11.10 — an ACTUAL visual signature area in the Live Document
+   preview (see review-workspace.js#renderSignatureArea), matching what
+   the PDF/Word export now renders: honest blank signing lines driven by
+   nor-generator.js's real suggested count, never a fabricated name. */
+.rw-sig-area{margin-top:32px;font-family:var(--font-serif, Georgia, serif);}
+.rw-sig-row{display:flex;flex-wrap:wrap;gap:24px;margin-top:20px;}
+.rw-sig-slot{flex:1 1 140px;min-width:120px;text-align:center;}
+.rw-sig-line{border-bottom:1px solid var(--text-dim);height:34px;}
+.rw-sig-hint{font-size:11px;color:var(--text-faint);font-family:var(--font-sans);margin-top:4px;}
+
+/* Sprint 11.6 (Reviewer Experience) — Google Docs-style save status. Every
+   edit already commits on focusout (Sprint 11.3); this only makes that
+   already-real save visible, so the reviewer never wonders whether a click
+   away was "safe". Neutral by default, a brief accent flash right after a
+   real commit — never a loud banner. */
+.rw-save-status{
+  font-size:11px;color:var(--text-faint);font-family:var(--font-sans);
+  margin:0 0 10px;transition:color .2s ease;
+}
+.rw-save-status--active{color:var(--ok);font-weight:600;}
+.rw-add-section-btn{
+  font-family:var(--font-sans);font-size:11.5px;color:var(--accent);background:none;border:1px dashed var(--border);
+  border-radius:6px;padding:3px 8px;cursor:pointer;margin-left:8px;
+}
+.rw-mode-toggle-hint{font-size:11.5px;color:var(--text-faint);font-family:var(--font-sans);margin-top:24px;}
+
+/* Single "Terbitkan NOR" publish action (Workstream 7) */
+.rw-publish-bar{display:flex;align-items:center;gap:10px;margin-top:20px;flex-wrap:wrap;}
+.rw-publish-status{font-size:12.5px;color:var(--text-dim);font-family:var(--font-sans);}
+
 @media (max-width: 640px) {
   .wlk-page-title{font-size:21px;}
   .wlk-tabbar{padding:0 16px;}
   .dic-dropzone{padding:40px 18px;}
   .dic-utilities{margin-left:0;}
+  .rw-doc{padding:28px 20px;}
+  .rw-doc-meta-label{flex-basis:110px;}
 }

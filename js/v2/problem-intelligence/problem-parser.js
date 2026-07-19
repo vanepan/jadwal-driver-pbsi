@@ -94,11 +94,52 @@ const CATEGORY_RULES = Object.freeze([
     ]),
   }),
   // Phase 10.5, Part 7 Scenario 3 ("Mau beli meja").
+  // Sprint 11.2 (UAT Issue #1/#3) — REAL production regression, verified
+  // empirically before this fix: "permohonan pembelian kursi kerja",
+  // "pengajuan pembelian printer", "pengadaan meja rapat" etc. each only
+  // ever matched ONE of the six synonym keywords below (never "mau/ingin/
+  // perlu + beli/membeli" together), scoring 1/8 = 0.125 — honestly below
+  // PROBLEM_CONFIDENCE_THRESHOLD (0.2), so the conversation correctly, but
+  // wrongly, fell through to clarification instead of ever reaching
+  // Pengadaan fact-gathering. The fix mirrors 'document_upload's own
+  // UPLOAD_VERB pattern below: two narrow SECOND patterns that fire on the
+  // exact same core nouns the keyword list already honestly recognizes, so
+  // a bare, real-world procurement phrasing scores keyword+pattern
+  // together instead of keyword alone — never a new vocabulary concept,
+  // just credit for the one that already matched. 'kebutuhan sarana'/
+  // 'kebutuhan prasarana' are added as their own keywords (not just inside
+  // a pattern) because neither phrase contains 'pembelian'/'pengadaan' —
+  // without it, "kebutuhan sarana kursi kerja" alone would still score 0
+  // keyword matches.
+  //
+  // WHY TWO NARROW PATTERNS (PROCUREMENT_NOUN / PROCUREMENT_NEED), NOT ONE
+  // WIDE ONE, AND WHY keywords/patterns COUNTS ARE EXACTLY 8/3 — a real,
+  // deliberately preserved invariant from Sprint 11.1
+  // (adaptive-conversation-check.mjs, "the NOR+creation-phrase rule still
+  // outscores procurement's") requires that "Buatkan NOR pembelian 20
+  // kursi ruang pengadaan" (BOTH "pembelian" AND "pengadaan" present)
+  // stays classified as business_trip, never procurement — only
+  // business_trip's own branch extracts `type` (the NOR Type fact CREATE_
+  // NOR's downstream conversation needs to pick Pengadaan's fieldSchema
+  // over Perjalanan Dinas's), so losing that race would silently ask the
+  // WRONG follow-up questions. That utterance scores business_trip a fixed
+  // 3/10 = 0.3 (keyword "nor" + NOR_CREATE_PHRASE); this rule's own dual-
+  // keyword-match ceiling ("pembelian" + "pengadaan" both present, one
+  // pattern firing = score 4) must stay BELOW 0.3, while a single-keyword-
+  // match-plus-pattern (score 3) must stay AT/ABOVE 0.2 — solvable only
+  // for maxScore (keywords.length + patterns.length*2) in the narrow
+  // window [14, 15]. 8 keywords + 3 patterns*2 = 14 is the verified,
+  // tested value; changing either count without re-deriving this window
+  // will silently re-break one of the two scripts this sprint's own
+  // verification ran (adaptive-conversation-check.mjs /
+  // problem-intelligence-check.mjs).
   Object.freeze({
     category: 'procurement',
-    keywords: Object.freeze(['beli', 'membeli', 'pembelian', 'pengadaan', 'procurement', 'purchase']),
+    keywords: Object.freeze(['beli', 'membeli', 'pembelian', 'pengadaan', 'procurement', 'purchase', 'kebutuhan sarana', 'kebutuhan prasarana']),
     patterns: Object.freeze([
       Object.freeze({ name: 'PURCHASE_VERB', re: /\b(mau|ingin|perlu)\b[^.?!]{0,20}\b(beli|membeli)\b/i }),
+      Object.freeze({ name: 'PROCUREMENT_NOUN', re: /\b(pembelian|pengadaan)\b/i }),
+      Object.freeze({ name: 'PROCUREMENT_NEED', re: /\bkebutuhan\s+(sarana|prasarana)\b/i }),
     ]),
   }),
   // Phase 10.5, Part 7 Scenario 5 ("Atlet kehilangan ID Card").
@@ -154,6 +195,13 @@ const PROCUREMENT_ITEM_KEYWORDS = Object.freeze([
   Object.freeze({ value: 'Laptop', keywords: Object.freeze(['laptop']) }),
   Object.freeze({ value: 'Komputer', keywords: Object.freeze(['komputer', 'pc']) }),
   Object.freeze({ value: 'Printer', keywords: Object.freeze(['printer']) }),
+  // Sprint 11.2 (UAT Issue #1) — two real UAT utterances named items this
+  // deliberately small table did not carry yet ("pengajuan pembelian AC",
+  // "permohonan pembelian mesin potong rumput"). Added as literal entries,
+  // same discipline as every row above — an unlisted item still stays
+  // honestly absent, this is not a generic noun extractor.
+  Object.freeze({ value: 'AC', keywords: Object.freeze(['ac']) }),
+  Object.freeze({ value: 'Mesin Potong Rumput', keywords: Object.freeze(['mesin potong rumput', 'mesin pemotong rumput']) }),
 ]);
 /** Phase 10.5, Part 7 Scenario 5. */
 const ADMINISTRATION_ITEM_KEYWORDS = Object.freeze([
@@ -174,6 +222,38 @@ function hasKeyword(normalized, keyword) {
 function firstMatch(normalized, table) {
   const hit = table.find((t) => t.keywords.some((k) => hasKeyword(normalized, k)));
   return hit ? hit.value : null;
+}
+
+/** Same lookup as firstMatch, but returns the matched row's own keywords
+ *  too — needed so quantity extraction anchors to the SAME keyword that
+ *  actually matched (never a different entry's vocabulary). */
+function firstMatchRow(normalized, table) {
+  return table.find((t) => t.keywords.some((k) => hasKeyword(normalized, k))) || null;
+}
+
+/** Sprint 11.2 (Adaptive Conversation) — the first numeric fact this file
+ *  has ever extracted. Unlike every other table here, a quantity has no
+ *  closed vocabulary, so it cannot be a literal keyword table — but it
+ *  must stay just as honest: only a number sitting DIRECTLY next to the
+ *  item keyword that was already matched counts ("20 kursi", "kursi 20",
+ *  "20 unit kursi", "kursi sebanyak 20"). A number anywhere else in the
+ *  utterance (a date, a budget figure) is never mistaken for quantity —
+ *  no match at all is the honest answer, exactly like every other absent
+ *  fact in this file. */
+function extractQuantityNear(normalized, keywords) {
+  for (const kw of keywords) {
+    const esc = escapeRegExp(kw);
+    // Immediate adjacency only, with the number optionally separated by
+    // ONE named connector word ("unit"/"sebanyak"/"sejumlah") — never an
+    // arbitrary character gap. Without this, "kursi tanggal 20 Januari"
+    // (a date, not a quantity) would wrongly match a looser "number
+    // somewhere after the keyword" pattern.
+    const before = new RegExp(`\\b(\\d+)\\s+(?:unit\\s+)?${esc}\\b`, 'i');
+    const after = new RegExp(`\\b${esc}\\b\\s*(?:sebanyak\\s+|sejumlah\\s+)?(\\d+)\\b`, 'i');
+    const m = normalized.match(before) || normalized.match(after);
+    if (m) return Number(m[1]);
+  }
+  return null;
 }
 
 function scoreRule(rule, normalized) {
@@ -221,13 +301,21 @@ function extractFacts(category, normalized) {
     // HERE, using the exact SAME table 'procurement' uses — never a
     // second, drifting item list.
     if (type === NOR_TYPE.PENGADAAN) {
-      const pengadaanItem = firstMatch(normalized, PROCUREMENT_ITEM_KEYWORDS);
-      if (pengadaanItem) facts.item = pengadaanItem;
+      const pengadaanItemRow = firstMatchRow(normalized, PROCUREMENT_ITEM_KEYWORDS);
+      if (pengadaanItemRow) {
+        facts.item = pengadaanItemRow.value;
+        const qty = extractQuantityNear(normalized, pengadaanItemRow.keywords);
+        if (qty !== null) facts.quantity = qty;
+      }
     }
   }
   if (category === 'procurement') {
-    const item = firstMatch(normalized, PROCUREMENT_ITEM_KEYWORDS);
-    if (item) facts.item = item;
+    const itemRow = firstMatchRow(normalized, PROCUREMENT_ITEM_KEYWORDS);
+    if (itemRow) {
+      facts.item = itemRow.value;
+      const qty = extractQuantityNear(normalized, itemRow.keywords);
+      if (qty !== null) facts.quantity = qty;
+    }
   }
   if (category === 'administration') {
     const item = firstMatch(normalized, ADMINISTRATION_ITEM_KEYWORDS);

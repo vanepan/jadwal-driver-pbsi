@@ -29,15 +29,29 @@ import { PROFILE_TYPE } from './profile-contract.js';
 
 export const PATTERN_RECOMMENDATION_SCHEMA = 'pattern-recommendation@1';
 
-/** The seven profile-derived categories (reusing PROFILE_TYPE ids exactly)
- *  plus statistical dimensions with no profile counterpart: two computed over
- *  Knowledge relationships (unchanged since V2.1), and two added in Phase 5
- *  (Part 6, "Pattern Discovery must consume Learning Service") computed over
- *  the Learning domain instead — "Repeated corrections" and "Repeated
- *  organizational decisions" are facts about the platform's OWN correction/
- *  approval history, not about Approved Knowledge content, so they need a
- *  genuinely different source (learning-service.js, never a repository
- *  directly — see profiles/pattern-discovery-engine.js#computeLearningPatterns). */
+/** The ten profile-derived categories (reusing PROFILE_TYPE ids exactly —
+ *  including WRITING_STYLE, already real since profile-contract.js: a
+ *  `kind:'writing_style'` KnowledgeItem grouped by buildProfile() like any
+ *  other profile category) plus statistical dimensions with no profile
+ *  counterpart: two computed over Knowledge relationships (unchanged since
+ *  V2.1), and two added in Phase 5 (Part 6, "Pattern Discovery must consume
+ *  Learning Service") computed over the Learning domain instead — "Repeated
+ *  corrections" and "Repeated organizational decisions" are facts about the
+ *  platform's OWN correction/approval history, not about Approved Knowledge
+ *  content, so they need a genuinely different source (learning-service.js,
+ *  never a repository directly — see profiles/pattern-discovery-engine.js#
+ *  computeLearningPatterns).
+ *
+ *  Phase 11, Sprint 11.5 ("Organizational Writing Intelligence") adds a
+ *  SECOND evidence source into this SAME pre-existing WRITING_STYLE id —
+ *  never a new PATTERN_TYPE member: profile-engine.js's own reads Approved
+ *  historical documents' extracted writing_style Knowledge, while
+ *  pattern-discovery-engine.js's new writingStyleRecommendations() reads
+ *  LIVE reviewer wording corrections (semantic-diff-engine.js's
+ *  opening_phrase/closing_phrase/wording_change classifications). Both
+ *  legitimately answer "what is PBSI's preferred writing style" from two
+ *  different real sources; a caller filtering by patternType ===
+ *  PATTERN_TYPE.WRITING_STYLE sees recommendations from both. */
 export const PATTERN_TYPE = Object.freeze({
   ...PROFILE_TYPE,
   RULE_CONFIDENCE: 'rule_confidence',

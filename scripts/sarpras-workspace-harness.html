@@ -35,6 +35,19 @@
   // calls), so a DOM test can verify the Learning Dashboard's "Hari Ini"
   // card reflects REAL recorded facts, not just render without throwing.
   import { recordCorrection, CORRECTION_TYPE } from '../js/v2/learning/services/learning-service.js';
+  // Sprint 11 UAT gap-closure — test affordance: records a real reviewer
+  // inline edit through the SAME recordSectionEdit() path onFocusOut uses,
+  // so a DOM test can verify the Learning Dashboard reflects an edit made
+  // while the reviewer was on ANOTHER screen (Finding 2a re-render-on-reshow).
+  import { recordSectionEdit } from '../js/v2/document-intelligence/composer/section-learning-bridge.js';
+  // Sprint 11.9 (Persistent Organizational Learning) — test affordances:
+  // drive a real reviewer edit through the real composer-store (which fires
+  // the composer change listener the app registers, projecting persistent
+  // Candidate learning), and read the persistent Candidate queue back.
+  import { createDocument as __createDoc, editSection as __editSection } from '../js/v2/document-intelligence/composer/composer-store.js';
+  import { rehydrateLearningFromDocuments as __rehydrateLearning } from '../js/v2/document-intelligence/composer/reviewer-edit-rehydration-engine.js';
+  import { getCandidateQueue as __getCandidateQueue } from '../js/v2/knowledge/review/review-queue-engine.js';
+  import { getKnowledge as __getKnowledge, submitKnowledgeForReview as __submitForReview, promoteKnowledge as __promote } from '../js/v2/knowledge/services/knowledge-service.js';
   // Phase 7 (Runtime Hardening, Part 9) — stress-test affordance: seeds N
   // REAL Import Sessions through the actual engine (createImportSession +
   // attachManualEntryFacts + advanceSession — the exact same calls
@@ -62,6 +75,16 @@
     domainType: 'nor', correctionType: CORRECTION_TYPE.METADATA, targetKey,
     actorId: 'test', after: { domainType: 'nor' },
   }).ok;
+  window.__recordSectionEditForTest = (documentId, field, before, after) => recordSectionEdit({
+    documentId, domainType: 'nor', field, before, after, actorId: 'test',
+  }).ok;
+  // Sprint 11.9 — persistent organizational learning test affordances.
+  window.__createComposerDoc = (fields) => __createDoc('nor', fields).documentId;
+  window.__editComposerSection = (id, field, value) => __editSection(id, field, value, 'evan').ok;
+  window.__rehydrateLearning = () => __rehydrateLearning();
+  window.__candidateQueueIds = () => __getCandidateQueue().map((e) => e.itemId);
+  window.__knowledgeItem = (id) => { const r = __getKnowledge(id); return r.ok ? { kind: r.data.kind, state: r.data.lifecycleState, value: r.data.payload.value, originalAiOutput: r.data.payload.originalAiOutput } : null; };
+  window.__approveKnowledge = (id) => { __submitForReview(id); return __promote(id, { approverId: 'evan', decidedAt: new Date().toISOString(), preferenceRationale: 'Disetujui untuk pengujian Sprint 11.9.' }).ok; };
   // Sprint 11.1, Workstream 2 — same minimal fixture as nor-composition-
   // check.mjs's Node-side seedApproved(): one structure item + one real
   // sentence_pattern citing {{destination}}/{{traveler}} — the smallest

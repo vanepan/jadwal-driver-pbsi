@@ -15,7 +15,11 @@
    isFactsStale, listReanalysisCandidates (detection only — the actual
    re-analysis run is orchestrated one layer up, in dataset-import-
    center.js, the same layer attachManualEntryFacts's own caller already
-   lives at).
+   lives at). V2, Part B1 (Evidence-First Ingestion): attachConsensusSuggestion
+   (records content-fact-consensus-engine.js's cross-document resolution
+   attempt — the actual evidence-gathering, same as extraction, is
+   orchestrated one layer up in dataset-import-center.js, the one layer
+   allowed to read organizational-memory/ ArchiveRecords).
 
    markKnowledgeImported() reuses dataset-import-service.js#importDataset()
    completely UNCHANGED — it queues this session's human-verified content
@@ -165,6 +169,19 @@ export function attachFactsProvenance(id, provenance) {
  *  `extractionSuggestion` JSDoc. No state change. */
 export function attachExtractionSuggestion(id, suggestion) {
   return repoAppendVersion(id, { extractionSuggestion: suggestion });
+}
+
+/** V2, Part B1 (Evidence-First Ingestion) — records content-fact-consensus-
+ *  engine.js's result for whichever fields this document's own text could
+ *  not answer, ALWAYS (even when the consensus was inconclusive), for the
+ *  exact same reason attachExtractionSuggestion() above always records its
+ *  own attempt: so the Advanced Metadata form and the human-facing gap
+ *  message can honestly describe what was already checked, instead of a
+ *  silent, unexplained "not found". Never itself satisfies the content-fact
+ *  gate on its own (only `manualEntryFacts` does) — see this field's own
+ *  JSDoc on `ImportSessionRecord`. No state change. */
+export function attachConsensusSuggestion(id, suggestion) {
+  return repoAppendVersion(id, { consensusSuggestion: suggestion });
 }
 
 /** JSON path — captures a real JSON.parse() result before submission. No state change. */

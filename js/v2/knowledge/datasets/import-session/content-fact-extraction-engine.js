@@ -119,6 +119,30 @@ function extractValue(lines) {
  *   parserVersion: number,
  * }}
  */
+/** Sprint 11.10 — "IF confidence is high, save automatically; ELSE ask
+ *  only for what's missing" only holds when EVERY field this engine is
+ *  designed to find (documentNumber/senderOrigin/value — see this file's
+ *  own header) was actually found. `overallConfidence` alone hid a real
+ *  gap: 2-of-3 fields found already averages to 0.67 (above the
+ *  auto-populate bar), which used to let the genuinely-blank third field
+ *  ride along into manualEntryFacts as an empty string — silently
+ *  satisfying import-session-engine.js#hasContentFacts()'s "any key
+ *  present" check and skipping the human gate for a fact nobody ever
+ *  confirmed. The one caller that decides "skip the human, auto-import"
+ *  (dataset-import-center.js#processOneFile) uses this instead of the
+ *  average; a partial result still pre-fills the Advanced Metadata form
+ *  (attachExtractionSuggestion runs unconditionally) so the human is
+ *  asked ONLY for the specific field this returns false because of.
+ * @param {{documentNumber: number, senderOrigin: number, value: number}} confidencePerField
+ * @returns {boolean}
+ */
+export function isContentFactsComplete(confidencePerField) {
+  return !!confidencePerField
+    && confidencePerField.documentNumber > 0
+    && confidencePerField.senderOrigin > 0
+    && confidencePerField.value > 0;
+}
+
 export function extractContentFacts(text) {
   const lines = splitLines(text);
   const documentNumber = extractDocumentNumber(text);

@@ -265,6 +265,35 @@ console.log('\n[Behaviour — Part 6: Pattern Discovery consumes the Learning Se
   check('computePatternRecommendations() itself is UNCHANGED — still pure, still no Learning import needed for its own callers',
     Array.isArray(computePatternRecommendations('nor')));
 
+  // Sprint 11.5 (Organizational Writing Intelligence) — the SAME
+  // recordCorrection() call, but with a real evidence.semanticDiff
+  // attached (as section-learning-bridge.js now always does), and the
+  // SAME "after" value chosen twice — a genuine recurring wording
+  // preference, not a fact correction (quantity_correction is excluded on
+  // purpose below).
+  recordCorrection({
+    domainType: 'nor', correctionType: CORRECTION_TYPE.KNOWLEDGE, targetKey: 'doc:style-1:openingLine', actorId: 'evan',
+    before: { openingLine: 'Pengajuan Pembelian' }, after: { openingLine: 'Permohonan Pembelian' },
+    evidence: { field: 'openingLine', editKind: 'edit', patternSourced: false, semanticDiff: { category: 'fact', diffNature: 'opening_phrase', label: 'Preferensi frasa pembuka berubah (Fakta)' } },
+  });
+  recordCorrection({
+    domainType: 'nor', correctionType: CORRECTION_TYPE.KNOWLEDGE, targetKey: 'doc:style-2:openingLine', actorId: 'evan',
+    before: { openingLine: 'Pengajuan Pembelian' }, after: { openingLine: 'Permohonan Pembelian' },
+    evidence: { field: 'openingLine', editKind: 'edit', patternSourced: false, semanticDiff: { category: 'fact', diffNature: 'opening_phrase', label: 'Preferensi frasa pembuka berubah (Fakta)' } },
+  });
+  // A single quantity correction MUST NOT contribute to writing style —
+  // real negative control, not just an absence of a positive assertion.
+  recordCorrection({
+    domainType: 'nor', correctionType: CORRECTION_TYPE.KNOWLEDGE, targetKey: 'doc:style-3:quantity', actorId: 'evan',
+    before: { quantity: '20 kursi' }, after: { quantity: '24 kursi' },
+    evidence: { field: 'quantity', editKind: 'edit', patternSourced: false, semanticDiff: { category: 'fact', diffNature: 'quantity_correction', label: 'Koreksi kuantitas/angka (Fakta)' } },
+  });
+  const learningPatternsAfterStyle = computeLearningPatterns('nor');
+  const styleRec = learningPatternsAfterStyle.find((p) => p.patternType === PATTERN_TYPE.WRITING_STYLE && p.value === 'openingLine:Permohonan Pembelian');
+  check('a wording choice repeated >=2 times surfaces as a WRITING_STYLE pattern', !!styleRec && styleRec.evidence.supportCount === 2);
+  check('its confidence reuses the SAME min(1, count/5) formula as RECURRING_CORRECTION (2/5 = 0.4)', !!styleRec && styleRec.evidence.confidence === 0.4);
+  check('a single quantity_correction (not a wording diffNature) never surfaces as WRITING_STYLE', !learningPatternsAfterStyle.some((p) => p.patternType === PATTERN_TYPE.WRITING_STYLE && p.value.startsWith('quantity:')));
+
   // discoverAndRecordPatterns actually WRITES qualifying patterns as Learning Events.
   const beforeCount = listLearningEvents({ kind: LEARNING_KIND.PATTERN }).data.length;
   discoverAndRecordPatterns('nor');

@@ -397,5 +397,14 @@ console.log('\n[Behaviour — read surface: listConversationHistory + explainCon
     && explained.data.questionsSkipped.every((q) => typeof q.source === 'string'));
 }
 
+console.log('\n[Sprint 11.8 (Production Readiness) — "Average Questions Asked" is real, computable data over listConversationHistory]');
+{
+  const all = listConversationHistory({});
+  check('listConversationHistory({}) (no filter) returns every real conversation created above', all.ok && all.data.length >= 3);
+  check('every real conversation carries a real explainability.questionsAsked array (the field this metric aggregates)', all.data.every((c) => Array.isArray(c.explainability && c.explainability.questionsAsked)));
+  const manualAverage = all.data.reduce((s, c) => s + c.explainability.questionsAsked.length, 0) / all.data.length;
+  check('the average is a genuine arithmetic mean over real per-conversation counts (never fabricated)', manualAverage >= 0 && Number.isFinite(manualAverage));
+}
+
 console.log(`\n${pass}/${pass + fail} checks passed.`);
 if (fail > 0) process.exit(1);

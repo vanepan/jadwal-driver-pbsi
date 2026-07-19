@@ -95,11 +95,18 @@ import { initFileStorageSync } from '../file-storage/file-storage-registry.js';
 // ComposerDocument (a composed NOR draft) must survive a refresh for a
 // human reviewer to come back to it, same "activate once, at Sarpras
 // Intelligence's own mount" idiom as every init*Sync() call in this block.
-import { initComposerDocumentSync } from '../document-intelligence/composer/composer-document-repository.js';
+import { initComposerDocumentSync, registerChangeListener as registerComposerChangeListener } from '../document-intelligence/composer/composer-document-repository.js';
 // Phase 2.5 Part 3 — make the in-memory knowledge repo a deterministic
 // projection of the persisted Import Sessions, so imported Knowledge
 // survives a refresh (and picks up another tab's RTDB-hydrated sessions).
 import { rehydrateKnowledgeFromSessions } from '../knowledge/datasets/import-session/knowledge-rehydration-engine.js';
+// Phase 11, Sprint 11.9 (Persistent Organizational Learning) — the EXACT
+// same "durable source -> projection on load" pattern as
+// rehydrateKnowledgeFromSessions above, applied to the persisted
+// ComposerDocument revisions: a reviewer's reusable wording edits become
+// persistent, governed, promotable Candidate learning that survives refresh/
+// restart/deployment. See that engine's header for the full rationale.
+import { rehydrateLearningFromDocuments } from '../document-intelligence/composer/reviewer-edit-rehydration-engine.js';
 
 // Executive Briefing data sources — every one of these is already imported
 // and used by an existing workspace file (see each import's origin below);
@@ -142,7 +149,7 @@ import { globalSearch } from '../services/global-search-service.js';
 // Part 9 (Conversation-first): the REAL, deterministic Conversation Service
 // (Phase 6) — this file only renders what it returns, never reinterprets
 // an utterance itself and never adds a new intent.
-import { INTENT } from '../conversation/contracts/intent-contract.js';
+import { INTENT, getRequiredFacts } from '../conversation/contracts/intent-contract.js';
 // Sprint 11.1 (production feedback) — PREVIOUSLY UNCALLED anywhere in
 // this file (verified by grep before writing this): renderConversationResult()
 // below has only ever rendered `missingFacts` as static text, with no way
@@ -364,6 +371,14 @@ function renderRoutedResult() {
  *  conversation could never actually be advanced through this UI. See
  *  nor-center.js's twin fix (renderGenerateConversationResult) for the
  *  identical pattern, built first there. */
+/** Sprint 11.2 (Adaptive Conversation) — see nor-center.js's identical
+ *  twin (knownFactLabel) for the header. Resolves a gatheredFacts key to
+ *  the same human-readable label missingFacts already shows. */
+function knownFactLabel(intent, norType, field) {
+  const entry = getRequiredFacts(intent, norType).find((f) => f.field === field);
+  return entry ? entry.label : field;
+}
+
 function renderConversationResult(c) {
   if (!c.currentIntent || c.currentIntent.intent === INTENT.UNKNOWN || c.state === 'failed') {
     return `<p class="sic-next-action">Permintaan ini belum dikenali platform. Coba salah satu: "saya ingin membuat NOR", "saya ingin mengunggah dokumen", "saya ingin meninjau pengetahuan".</p>`;
@@ -372,7 +387,9 @@ function renderConversationResult(c) {
   return `
     <div class="sic-conv-result">
       <p class="sic-next-action">Terdeteksi: <strong>${esc(INTENT_LABEL[c.currentIntent.intent] || c.currentIntent.intent)}</strong></p>
-      ${known.length ? `<ul class="sic-brief-list">${known.map(([k, v]) => `<li><span class="sic-brief-label">${esc(k)}: ${esc(String(v))}</span></li>`).join('')}</ul>` : ''}
+      ${known.length ? `
+        <div class="sic-brief-sub">Sudah diketahui</div>
+        <ul class="sic-brief-list">${known.map(([k, v]) => `<li><span class="sic-brief-label">✓ ${esc(knownFactLabel(c.currentIntent.intent, c.gatheredFacts.type, k))}: ${esc(String(v))}</span></li>`).join('')}</ul>` : ''}
       ${c.missingFacts && c.missingFacts.length ? `
         <div class="sic-brief-sub">Masih diperlukan</div>
         <div class="nc-conv-form">
@@ -385,7 +402,28 @@ function renderConversationResult(c) {
         </div>`
     : '<p class="sic-next-action">Semua data yang diperlukan sudah ada.</p>'}
       ${c.state === 'ready' ? `<p class="sic-next-action">Semua data terkumpul. <button class="wlk-btn" data-act="sic-compose-nor" data-id="${esc(c.id)}" type="button">Susun NOR</button></p>` : ''}
+      ${renderComposeDraftNow(c)}
     </div>`;
+}
+
+/** Sprint 11.10 (Product Architecture Gap Closure) — "Live Preview First" /
+ *  "Automatic Missing Information Discovery": once the intent is confirmed
+ *  and the conversation is genuinely under way (ACTIVE — at least one real
+ *  exchange has happened, not the empty instant right after typing), a
+ *  reviewer may choose to see the almost-finished document immediately
+ *  instead of finishing the guided Q&A first. This is ADDITIVE, not a
+ *  replacement of the existing "answer the remaining questions" flow above
+ *  (Sprint 11.1/11.2's own UAT-hardened "ask only what is unknown" path is
+ *  completely unchanged) — a human explicitly opts in by clicking, exactly
+ *  once, per the architecture report's own documented tradeoff (a forced
+ *  compose-first default risks a new reviewer seeing a mostly-blank
+ *  document with no guidance on what a NOR needs, which is worse UX for
+ *  exactly the "help new employees learn faster" persona CLAUDE.md's
+ *  mission cares about). Never shown once already 'ready' (the button
+ *  above already covers that, with real complete data, not a draft). */
+function renderComposeDraftNow(c) {
+  if (c.state !== 'active') return '';
+  return `<p class="sic-next-action sic-draft-now-hint">Ingin lihat draf sekarang, sebelum semua pertanyaan terjawab? <button class="wlk-btn wlk-btn--ghost" data-act="sic-compose-nor-draft" data-id="${esc(c.id)}" type="button">Susun Draf Sekarang</button></p>`;
 }
 
 /** Phase 10.5, Parts 2/4 — the generic, category-agnostic turn loop
@@ -551,7 +589,7 @@ function onDashboardClick(e) {
   if (el.dataset.act === 'sic-conv-start') { handleProblemSubmit(); return; }
   if (el.dataset.act === 'sic-pc-answer-submit') { handleProblemAnswerSubmit(); return; }
   if (el.dataset.act === 'sic-conv-continue') { handleConversationContinue(el.dataset.id); return; }
-  if (el.dataset.act === 'sic-compose-nor') {
+  if (el.dataset.act === 'sic-compose-nor' || el.dataset.act === 'sic-compose-nor-draft') {
     // Sprint 11.1, Workstream 3 — tanggalPanjang is the document's real
     // composition/issuance date (a letterhead convention, not a fact
     // about the NOR's own subject matter — confirmed with the repository
@@ -560,9 +598,33 @@ function onDashboardClick(e) {
     // "the letterhead date"). Computed HERE, not in nor-composer.js/
     // problem-solving-service.js — this is the one legal edge to V1
     // (petty-cash-config.js), same edge nor-center.js already uses.
-    const composed = composeApprovedNor(el.dataset.id, { formattingFacts: { tanggalPanjang: fmtLong(todayISO()) } });
+    //
+    // Sprint 11.10 — the ONLY difference between the two actions is
+    // allowIncomplete: true for the new "Susun Draf Sekarang" button
+    // (composeApprovedNor's own header explains why this is safe: it's a
+    // no-op for the already-ready case, since 'ready'/'completed' are
+    // always permitted regardless of this flag).
+    const composed = composeApprovedNor(el.dataset.id, {
+      formattingFacts: { tanggalPanjang: fmtLong(todayISO()) },
+      allowIncomplete: el.dataset.act === 'sic-compose-nor-draft',
+    });
     homeState.conversationError = composed.ok ? null : composed.error.message;
-    if (composed.ok) homeState.lastPipelineTrace = { stage: 'compose', ...composed.data };
+    if (composed.ok) {
+      homeState.lastPipelineTrace = { stage: 'compose', ...composed.data };
+      // Sprint 11.3 (Document-first Experience), Requirement 1 — land
+      // straight on the new draft's Live Document Preview instead of
+      // leaving the human on this Home screen to go find it manually.
+      // review-workspace.js is dynamically imported here (never a static
+      // import — same reason WORKSPACES['review'] below already lazy-
+      // loads it: this screen's own doc-engine.js/pdfmake dependency must
+      // not load eagerly the moment the Home screen mounts).
+      const documentId = composed.data.composerDocument.documentId;
+      import('./review-workspace.js').then((mod) => {
+        mod.openReviewDocument(documentId);
+        setSarprasIntelligenceScreen('review');
+      });
+      return;
+    }
     sections.dashboard.innerHTML = renderDashboard();
   }
 }
@@ -705,7 +767,23 @@ export async function mountSarprasIntelligence(hostEl) {
       .catch((err) => console.error('[sarpras-intelligence-center] import session sync failed:', err));
     initImportBatchSync().catch((err) => console.error('[sarpras-intelligence-center] import batch sync failed:', err));
     initFileStorageSync().catch((err) => console.error('[sarpras-intelligence-center] file storage sync failed:', err));
-    initComposerDocumentSync().catch((err) => console.error('[sarpras-intelligence-center] composer document sync failed:', err));
+    // Sprint 11.9 — reviewer edits become PERSISTENT Candidate learning by
+    // re-projecting them from the persisted ComposerDocument revisions, the
+    // same way Knowledge is re-projected from persisted Import Sessions
+    // above. Registered on the composer repository's change listener so it
+    // runs on BOTH a local edit (putRecord -> notifyChange, live
+    // responsiveness) AND an RTDB rehydration (applyRemoteSnapshot ->
+    // notifyChange, the refresh/restart/other-tab path). Idempotent and
+    // human-gate-safe by construction (see the engine's header): a converged
+    // corpus writes nothing, and an Approved candidate is never overwritten.
+    // Best-effort — a projection failure must never block the workspace.
+    const projectReviewerLearning = () => {
+      try { rehydrateLearningFromDocuments(); } catch (err) { console.error('[sarpras-intelligence-center] reviewer-edit learning projection failed:', err); }
+    };
+    registerComposerChangeListener(projectReviewerLearning);
+    initComposerDocumentSync()
+      .then(projectReviewerLearning)
+      .catch((err) => console.error('[sarpras-intelligence-center] composer document sync failed:', err));
     // Sprint 1 (Autonomy Closure, Part 3/10) — the Executive Briefing
     // previously had zero live listeners; a change made anywhere in the
     // platform never reflected here without navigating away and back.
@@ -827,6 +905,21 @@ function showScreen(id) {
       mountedState[id].close = mod[workspace.closeName];
       mountedState[id].mount(sections[id]);
     });
+  } else if (workspace && mountedState[id] && mountedState[id].mount) {
+    // Sprint 11 UAT gap-closure (Finding 2a) — re-show of an ALREADY-mounted
+    // workspace previously only toggled `display`, never re-rendered. So a
+    // reviewer who edited a document in Review Workspace and returned to the
+    // Learning Dashboard saw STALE content ("the second edit never appears"),
+    // because a learning-event write does not fire the dashboard's
+    // knowledge-repository change listener. Re-invoking the workspace's own
+    // mount() forces a fresh render: every workspace mount is idempotent by
+    // construction — it guards its one-time shell/listener setup with an
+    // internal `if (!mounted)` and always calls render() at the end — so
+    // this only recomputes the view against current data, never duplicates
+    // a listener or resets in-progress state. (The `&& .mount` guard skips
+    // the case where the very first dynamic import has not resolved yet;
+    // that pending import will mount on its own when it lands.)
+    mountedState[id].mount(sections[id]);
   }
 }
 

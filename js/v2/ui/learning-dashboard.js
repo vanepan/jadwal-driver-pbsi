@@ -45,7 +45,13 @@ import { getCandidateQueue, getReviewQueue } from '../knowledge/review/review-qu
 import { profiles } from '../knowledge/services/index.js';
 import { listDatasets } from '../knowledge/datasets/registry/dataset-registry.js';
 import { getComposerTimeline } from '../document-intelligence/composer/composer-store.js';
-import { computePatternRecommendations } from '../knowledge/services/pattern-discovery-service.js';
+// Sprint 11.5 — computeLearningPatterns() (recurring corrections/decisions,
+// and now writing-style preferences) was already computed AND recorded
+// into Learning by discoverAndRecordPatterns() (sarpras-intelligence-
+// center.js), but never actually displayed anywhere — a real, pre-existing
+// gap, not something this sprint introduced. Reused here verbatim, same
+// call shape as computePatternRecommendations, never a second engine.
+import { computePatternRecommendations, computeLearningPatterns } from '../knowledge/services/pattern-discovery-service.js';
 import { manualFileSource } from '../knowledge/connectors/manual-file-connector.js';
 import { listOverrides } from '../knowledge/services/profile-override-service.js';
 import { getKind } from '../knowledge/registry/kind-registry.js';
@@ -55,6 +61,9 @@ import { getKind } from '../knowledge/registry/kind-registry.js';
 // Memory a real, reachable reader.
 import { computeCoverageReport } from '../organizational-memory/coverage-engine.js';
 import { computeOrganizationalMemory } from '../organizational-memory/organizational-memory-engine.js';
+// Sprint 11.7 (Continuous Organizational Memory) — same pure-report shape
+// as computeOrganizationalMemory above, reused verbatim, never recomputed.
+import { computeKnowledgeDrift } from '../knowledge/services/pattern-discovery-service.js';
 import { listLearningEvents, LEARNING_KIND, CORRECTION_TYPE } from '../learning/services/learning-service.js';
 // Autonomous Experience (Part 10) — "Today the platform learned..." reads
 // real batch-level duplicate tallies (ImportBatchRecord.duplicate), the one
@@ -68,6 +77,13 @@ import { listBatches } from '../knowledge/datasets/import-session/import-batch-e
 // (Phase 3, above), so this is not a new domain edge for THIS file.
 import { computeReviewMetrics } from '../document-intelligence/composer/review-metrics-service.js';
 import { composerReviewStateLabel } from '../document-intelligence/composer/contracts/composer-review-contract.js';
+// Sprint 11.8 (Production Readiness) — "Average Questions Asked" is a real,
+// already-tracked per-Conversation fact (explainability.questionsAsked,
+// conversation-contract.js) with an already-real bulk reader
+// (listConversationHistory, despite its name — same shape as
+// listLearningEvents/listKnowledge, not a per-item version history). No
+// new capture point, only the missing aggregation.
+import { listConversationHistory } from '../conversation/services/conversation-service.js';
 
 import {
   esc, renderEmptyState, renderTabShell, renderRowList, renderStatCards, renderKvList, renderFilterBar,
@@ -170,6 +186,24 @@ function safeList(fn, filter) {
 function domainLabel(id) {
   const registered = getDomainType(id);
   return registered ? registered.label : id;
+}
+
+// Sprint 11.6 (Reviewer Experience) — "Never expose implementation details
+// to Normal Mode." patternType (e.g. "writing_style", "recurring_correction")
+// is a real PATTERN_TYPE enum id, meant for a developer diagnosing which
+// producer fired; a non-technical reviewer reads it as unexplained jargon.
+// Same devMode-gating idiom kindLabelForItem()/domainLabel() already use
+// elsewhere in this file — never a second label system.
+const PATTERN_TYPE_LABEL = Object.freeze({
+  recipient: 'Penerima', signatory: 'Penandatangan', cc: 'Tembusan',
+  vocabulary: 'Kosakata', paragraph: 'Paragraf', attachment: 'Lampiran',
+  approval: 'Alur Persetujuan', writing_style: 'Gaya Penulisan',
+  department: 'Unit/Departemen', document_category: 'Kategori Dokumen',
+  rule_confidence: 'Keyakinan Aturan', relationship_confidence: 'Keyakinan Relasi',
+  recurring_correction: 'Koreksi Berulang', recurring_decision: 'Keputusan Berulang',
+});
+function patternTypeLabel(patternType) {
+  return PATTERN_TYPE_LABEL[patternType] || patternType;
 }
 
 /** Sprint 0 (Presentation Truth) — a bare Knowledge Item Id is an internal
@@ -419,6 +453,42 @@ function renderRatesSection() {
  *  legitimately use different vocabulary — the per-domain view is the
  *  honest one, matching how Profile/Dataset Coverage above are already
  *  shown per domain, not merged). */
+/* Sprint 11.7 (Continuous Organizational Memory) — "detect obsolete
+   wording, deprecated templates, conflicting organizational styles,
+   knowledge drift" as one composed, explainable view over
+   computeKnowledgeDrift()'s three real signals. Every row here is a
+   REVIEW CANDIDATE, never an automatic change — same "recommendation, a
+   human decides" contract every other Pattern Discovery surface in this
+   dashboard already carries. See knowledge-drift-engine.js's own header
+   for why no time-based decay number was invented. */
+function renderKnowledgeDriftSection(domainType) {
+  const drift = computeKnowledgeDrift(domainType);
+  const devMode = isDeveloperMode();
+
+  return `
+    <div class="wlk-sec">
+      <div class="wlk-sec-title">Evolusi &amp; Konflik Pengetahuan (${drift.lowRelativeConfidence.length + drift.conflictingStyles.length + drift.obsoleteWordingCandidates.length})</div>
+      ${drift.hasDrift ? `
+        <ul class="wlk-kv-list">
+          ${drift.obsoleteWordingCandidates.map((c) => `
+            <li class="wlk-kv-row">
+              <span class="wlk-kv-key">Kemungkinan gaya usang</span>
+              <span class="wlk-kv-val">${esc(c.suggestedAction)}</span>
+            </li>`).join('')}
+          ${drift.conflictingStyles.map((c) => `
+            <li class="wlk-kv-row">
+              <span class="wlk-kv-key">Gaya organisasi berkonflik</span>
+              <span class="wlk-kv-val">${esc(c.rationale)}${devMode ? ` <span class="wlk-row-secondary">(${c.itemIds.map(esc).join(', ')})</span>` : ''}</span>
+            </li>`).join('')}
+          ${drift.lowRelativeConfidence.map((c) => `
+            <li class="wlk-kv-row">
+              <span class="wlk-kv-key">Keyakinan relatif rendah</span>
+              <span class="wlk-kv-val">${esc(c.rationale)}</span>
+            </li>`).join('')}
+        </ul>` : renderEmptyState('Belum ada tanda pergeseran pengetahuan.', 'Muncul saat ada gaya penulisan yang berulang kali ditimpa, beberapa pola Approved untuk peran yang sama, atau item dengan keyakinan jauh di bawah rata-rata kelompoknya.')}
+    </div>`;
+}
+
 function renderOrganizationSection() {
   const domains = listDomainTypes();
   if (!domains.length) {
@@ -475,6 +545,8 @@ function renderOrganizationSection() {
     (f) => `<li class="wlk-row"><span class="wlk-row-primary">${esc(f.key)}</span><span class="wlk-row-secondary">${f.count} kali dikoreksi (${esc(f.correctionType)}) · terakhir ${esc(f.lastAt)}</span></li>`,
     'Muncul saat sesuatu dikoreksi lebih dari sekali.')}
 
+      ${renderKnowledgeDriftSection(activeDomain)}
+
       <div class="wlk-sec">
         <div class="wlk-sec-title">Ringkasan</div>
         ${renderStatCards([
@@ -499,8 +571,20 @@ function formatDurationMs(ms) {
   return `${(minutes / 60).toFixed(1)} jam`;
 }
 
+/** Sprint 11.8 — "Average Questions Asked" over every real, ever-recorded
+ *  Conversation (listConversationHistory — already real, see the import
+ *  above). null with zero real conversations, exactly like every other
+ *  average in this file — never a fabricated placeholder. */
+function computeAverageQuestionsAsked() {
+  const conversations = safeList(listConversationHistory, {});
+  if (!conversations.length) return { average: null, sampleSize: 0 };
+  const counts = conversations.map((c) => (c.explainability && c.explainability.questionsAsked ? c.explainability.questionsAsked.length : 0));
+  return { average: counts.reduce((s, n) => s + n, 0) / counts.length, sampleSize: conversations.length };
+}
+
 function renderPilotSection() {
   const m = computeReviewMetrics().data;
+  const questionsAsked = computeAverageQuestionsAsked();
 
   const statusRows = Object.entries(m.statusDistribution).map(([status, count]) => ({
     id: status, primary: composerReviewStateLabel(status), meta: `${count} dokumen`,
@@ -521,6 +605,7 @@ function renderPilotSection() {
     { count: formatDurationMs(m.avgReviewDurationMs), label: 'Rata-rata Durasi Tinjauan' },
     { count: m.avgManualEditsPerDocument === null ? '—' : m.avgManualEditsPerDocument.toFixed(1), label: 'Rata-rata Suntingan Manual / Dokumen' },
     { count: m.avgSatisfactionRating === null ? '—' : `${m.avgSatisfactionRating.toFixed(1)} / 5`, label: `Kepuasan Peninjau (${m.satisfactionRatingCount} penilaian)` },
+    { count: questionsAsked.average === null ? '—' : questionsAsked.average.toFixed(1), label: `Rata-rata Pertanyaan Diajukan (${questionsAsked.sampleSize} percakapan)` },
   ])}
       </div>
 
@@ -662,11 +747,32 @@ function renderDistributionSection() {
    explicitly-named views (the roadmap's "Candidate Generator" concept
    resolves to Pattern Discovery's Candidate Recommendations here). */
 
+// Sprint 11.4 (Human Learning Intelligence) — the real, itemized answer to
+// "what did reviewers just change", read directly from the SAME
+// recordCorrection() audit trail section-learning-bridge.js writes to on
+// every Live Document Workspace edit (Signal 1 — fires for every edit, not
+// only pattern edits, so this is a genuine superset of correctionLog
+// below, which section-learning-bridge.js's Signal 2 — pattern text edits
+// only — feeds). Only events carrying a real semanticDiff classification
+// (evidence.semanticDiff, attached by semantic-diff-engine.js) are shown;
+// an older or differently-sourced Correction event with no such evidence
+// is honestly left out rather than rendered with a fabricated label.
+function recentSemanticDiffs(limit = 8) {
+  return listLearningEvents({ kind: LEARNING_KIND.CORRECTION }).data
+    .filter((e) => e.evidence && e.evidence.semanticDiff)
+    .sort((a, b) => b.observedAt.localeCompare(a.observedAt))
+    .slice(0, limit);
+}
+
 function renderQueuesSection() {
   const learningQueue = [...getCandidateQueue(), ...getReviewQueue()];
   const correctionLog = listCorrectionLog().slice().sort((a, b) => b.at.localeCompare(a.at));
+  const semanticDiffs = recentSemanticDiffs();
   const domains = listDomainTypes();
-  const recommendations = domains.flatMap((d) => computePatternRecommendations(d.id).map((r) => ({ ...r, domainLabel: d.label })));
+  const recommendations = domains.flatMap((d) => [
+    ...computePatternRecommendations(d.id),
+    ...computeLearningPatterns(d.id),
+  ].map((r) => ({ ...r, domainLabel: d.label })));
   const devMode = isDeveloperMode();
 
   return `
@@ -675,17 +781,18 @@ function renderQueuesSection() {
         <div class="wlk-page-crumb">LEARNING DASHBOARD · ANTREAN</div>
         <h1 class="wlk-page-title">Antrean Pembelajaran</h1>
         <p class="wlk-page-lede">${devMode
-          ? 'Learning Queue (Candidate + Pending Review), Correction Queue (log koreksi), dan Candidate Recommendations (bukti statistik deterministik dari Pattern Discovery) — tidak ada yang diterapkan otomatis.'
-          : 'Pengetahuan yang menunggu tinjauan, koreksi yang tercatat, dan saran berdasarkan pola dari dokumen yang sudah disetujui — tidak ada yang diterapkan otomatis.'}</p>
+          ? 'Learning Queue (Candidate + Pending Review), Correction Queue (log koreksi), dan Candidate Recommendations (bukti statistik deterministik dari Pattern Discovery + pola suntingan reviewer) — tidak ada yang diterapkan otomatis.'
+          : 'Pengetahuan yang menunggu tinjauan, koreksi yang tercatat, dan saran berdasarkan pola — baik dari dokumen yang sudah disetujui maupun dari suntingan reviewer yang berulang — tidak ada yang diterapkan otomatis.'}</p>
       </div>
 
       <div class="wlk-sec">
         <div class="wlk-sec-title">Menunggu Tinjauan (${learningQueue.length})</div>
+        <p class="wlk-row-secondary" style="margin:-4px 0 8px;">Memori organisasi yang persisten: kandidat pengetahuan yang menunggu persetujuan — termasuk preferensi gaya penulisan dari suntingan reviewer yang berulang. Bertahan setelah refresh, restart, dan deployment; tidak ada yang menjadi Pengetahuan sampai disetujui manusia.</p>
         ${learningQueue.length ? renderRowList(learningQueue, (e) => `
           <li class="wlk-row">
             <span class="wlk-row-primary">${esc(devMode ? e.itemId : kindLabelForItem(e.itemId))}</span>
             <span class="wlk-row-secondary">v${e.itemVersion} · masuk antrean ${esc(e.enteredQueueAt)}${e.hasConflict ? ' · konflik' : ''}</span>
-          </li>`) : renderEmptyState('Antrean pembelajaran kosong.', 'Item Candidate dan Pending Review akan muncul di sini.')}
+          </li>`) : renderEmptyState('Antrean pembelajaran kosong.', 'Kandidat (Candidate) dan item Menunggu Tinjauan muncul di sini — termasuk preferensi gaya penulisan yang disusun dari suntingan reviewer di Live Document Workspace.')}
       </div>
 
       <div class="wlk-sec">
@@ -698,12 +805,22 @@ function renderQueuesSection() {
       </div>
 
       <div class="wlk-sec">
+        <div class="wlk-sec-title">Perubahan Terbaru (${semanticDiffs.length})</div>
+        <p class="wlk-row-secondary" style="margin:-4px 0 8px;">Umpan cepat sesi kerja ini — untuk keterbacaan langsung. Preferensi gaya penulisan yang berulang dari suntingan ini juga menjadi kandidat PERSISTEN di "Menunggu Tinjauan" di atas (bertahan setelah refresh); daftar ini sendiri adalah memori turunan yang disusun ulang tiap sesi.</p>
+        ${semanticDiffs.length ? renderRowList(semanticDiffs, (e) => `
+          <li class="wlk-row">
+            <span class="wlk-row-primary">${esc(e.evidence.semanticDiff.label)}</span>
+            <span class="wlk-row-secondary">${devMode ? `${esc(e.evidence.field)} · ${esc(e.evidence.semanticDiff.category)}` : esc(domainLabel(e.domainType))} · ${esc(e.observedAt)}</span>
+          </li>`) : renderEmptyState('Belum ada perubahan reviewer yang tercatat.', 'Setiap suntingan di Live Document Workspace akan muncul di sini, dijelaskan dalam bahasa manusia — bukan hanya nilai lama vs baru.')}
+      </div>
+
+      <div class="wlk-sec">
         <div class="wlk-sec-title">${devMode ? 'Candidate Recommendations' : 'Saran Berdasarkan Pola'} (${recommendations.length})</div>
         ${recommendations.length ? renderRowList(recommendations, (r) => `
           <li class="wlk-row">
-            <span class="wlk-row-primary">${esc(r.domainLabel)} · ${esc(r.patternType)} — ${esc(r.value)}</span>
+            <span class="wlk-row-primary">${esc(r.domainLabel)} · ${esc(devMode ? r.patternType : patternTypeLabel(r.patternType))} — ${esc(r.value)}</span>
             <span class="wlk-row-secondary">${devMode ? `support ${r.evidence.supportCount} · confidence ${r.evidence.confidence}` : `didukung ${r.evidence.supportCount} dokumen serupa`}</span>
-          </li>`) : renderEmptyState('Belum ada rekomendasi.', 'Rekomendasi muncul setelah ada Knowledge Approved. Lihat NOR Center → Profil Organisasi untuk mengubah rekomendasi menjadi Override.')}
+          </li>`) : renderEmptyState('Belum ada rekomendasi.', 'Rekomendasi muncul dari pola pada Knowledge yang sudah disetujui, ATAU saat reviewer berulang kali menyunting bagian yang sama dengan cara yang sama (mis. mengubah frasa pembuka) di beberapa dokumen. Lihat NOR Center → Profil Organisasi untuk mengubah rekomendasi menjadi Override.')}
       </div>
     </div>`;
 }

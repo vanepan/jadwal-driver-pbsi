@@ -272,13 +272,34 @@ export function continueProblemConversation(state) {
  * result is returned exactly as it would have been without this call —
  * Reasoning is additive instrumentation here, never a gate.
  * @param {string} conversationId
- * @param {{formattingFacts?: Object}} [opts] - Sprint 11.1, Workstream 3: system-derived formatting (e.g. {tanggalPanjang}), computed by the UI layer (the one caller with a legal edge to V1's petty-cash-config.js) and passed straight through to composeNorDocument's own opts.formattingFacts — this file never computes it itself
+ * @param {{formattingFacts?: Object, allowIncomplete?: boolean}} [opts] - Sprint 11.1, Workstream 3: formattingFacts is system-derived formatting (e.g. {tanggalPanjang}), computed by the UI layer (the one caller with a legal edge to V1's petty-cash-config.js) and passed straight through to composeNorDocument's own opts.formattingFacts — this file never computes it itself. Sprint 11.10, allowIncomplete: see the ACTIVE-state branch below.
  */
 export function composeApprovedNor(conversationId, opts = {}) {
   const current = findConversation(conversationId);
   if (!current.ok) return failure(PROBLEM_SOLVING_ERRORS.NOT_FOUND, `No conversation "${conversationId}".`);
   const c = current.data;
-  if (c.state !== 'ready' && c.state !== 'completed') {
+  // Sprint 11.10 (Product Architecture Gap Closure) — an ADDITIVE early-
+  // exit, never a replacement of the rule above. Composition from READY/
+  // COMPLETED is completely unchanged for every existing caller (Home,
+  // NOR Center's own "Susun NOR" once all facts are gathered — Sprint
+  // 11.1's own regression-tested "ask only what is unknown" flow is
+  // untouched). `allowIncomplete: true` is a NEW, explicit, opt-in
+  // capability a caller uses ONLY for a human-initiated "show me the
+  // draft now" action (never the default): it additionally permits
+  // composing from ACTIVE (intent confirmed, conversation still ongoing).
+  // This is safe by construction, not a new leniency invented here —
+  // nor-composer.js/nor-generator.js already tolerate arbitrarily
+  // incomplete gatheredFacts (every unresolved pattern slot already
+  // becomes UNRESOLVED_MARKER, and review-workspace.js already renders
+  // that as a "Klik untuk mengisi…" placeholder — Sprint 11.3 machinery,
+  // reused here verbatim, never duplicated). Composing from STARTED (the
+  // one state before ACTIVE, meaning no question has even been asked yet)
+  // is deliberately still refused — an intent alone, with not even one
+  // real answer, is not "enough information" by any reading.
+  const readyStates = opts.allowIncomplete
+    ? ['ready', 'completed', 'active']
+    : ['ready', 'completed'];
+  if (!readyStates.includes(c.state)) {
     return failure(PROBLEM_SOLVING_ERRORS.NOT_READY, `Conversation "${conversationId}" is "${c.state}" — NOR Composition requires READY or COMPLETED (organizational reasoning must be complete before composition, never before).`);
   }
   // Sprint 11.1, Workstream 1 — best-effort, additive, never a gate: if
@@ -331,6 +352,14 @@ export function composeApprovedNor(conversationId, opts = {}) {
       explanation: composed.data.explanation,
       renderingRulesConsidered: composed.data.renderingRulesConsidered,
       reasoningConsidered,
+      // Phase 11 Course Correction, Workstream 4 — the REAL numbering-
+      // engine.js confidence computed above (never discarded after
+      // landing in fieldMap), so section-confidence-engine.js's norNumber
+      // tier can read real evidence-backed data instead of always
+      // falling back to its structural-default weight.
+      numberingSuggestion: numberingSuggestion
+        ? { confidence: numberingSuggestion.confidence, basis: numberingSuggestion.basis }
+        : null,
     });
   } catch (err) {
     console.error('[problem-solving-service] attachExplainability failed:', err);

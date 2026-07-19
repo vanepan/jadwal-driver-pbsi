@@ -31,7 +31,7 @@ import { isFieldOverride } from '../js/v2/document-intelligence/composer/contrac
 import { SUGGESTION_STATUS, makeSuggestionPlaceholder, isSuggestionPlaceholder } from '../js/v2/document-intelligence/composer/contracts/suggestion-placeholder-contract.js';
 import { startComposerSession, DOCUMENT_SESSION_STATE, canTransitionDocumentSession } from '../js/v2/document-intelligence/composer/contracts/composer-session-contract.js';
 import {
-  createDocument, getDocument, editSection, getRevisionHistory, getComposerTimeline, listAllDocuments,
+  createDocument, getDocument, editSection, addSection, getRevisionHistory, getComposerTimeline, listAllDocuments,
   attachExplainability, getExplainability, transitionStatus, getReviewHistory, resetComposerStore, COMPOSER_STORE_ERRORS,
 } from '../js/v2/document-intelligence/composer/composer-store.js';
 import { getRecord, putRecord, listRecords } from '../js/v2/document-intelligence/composer/composer-document-repository.js';
@@ -92,6 +92,20 @@ const historyAfterEdit = getRevisionHistory(doc.documentId);
 check('Composer History now has 2 append-only revisions (never overwritten)', historyAfterEdit.length === 2
   && historyAfterEdit[0].version === 1 && historyAfterEdit[1].version === 2);
 check('getDocument reflects the edit', getDocument(doc.documentId).version === 2);
+
+console.log('\n[Phase 11 Course Correction, Workstream 1 — addSection() for genuinely new fields]');
+const versionBeforeAdd = getDocument(doc.documentId).version;
+const addResult = addSection(doc.documentId, 'kepadaYth', 'Kepala Bidang Sarpras', 'evan');
+check('addSection succeeds for a field that does not yet exist', addResult.ok === true);
+check('the new section is created isOverridden:true (a human authored it directly)', addResult.document.sections.find((s) => s.field === 'kepadaYth').isOverridden === true
+  && addResult.document.sections.find((s) => s.field === 'kepadaYth').value === 'Kepala Bidang Sarpras');
+check('addSection bumps the document version', addResult.document.version === versionBeforeAdd + 1);
+check('addSection records a real Diff with the new field as ADDED', addResult.revision.diff.entries.some((e) => e.field === 'kepadaYth' && e.changeType === CHANGE_TYPE.ADDED));
+check('getDocument reflects the newly added section', getDocument(doc.documentId).sections.some((s) => s.field === 'kepadaYth'));
+const addDuplicate = addSection(doc.documentId, 'kepadaYth', 'Someone Else', 'evan');
+check('addSection on a field that already exists returns FIELD_ALREADY_EXISTS (use editSection instead)', addDuplicate.ok === false && addDuplicate.error.code === COMPOSER_STORE_ERRORS.FIELD_ALREADY_EXISTS);
+const addUnknownDoc = addSection('never-created', 'x', 'y', 'evan');
+check('addSection on an unknown documentId returns NOT_FOUND', addUnknownDoc.ok === false && addUnknownDoc.error.code === COMPOSER_STORE_ERRORS.NOT_FOUND);
 
 console.log('\n[Composer store — error paths]');
 const notFound = editSection('never-created', 'subject', 'x', 'evan');

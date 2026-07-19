@@ -67,6 +67,12 @@ const result = await page.evaluate(async () => {
   const { createDocument, editSection } = await import('/js/v2/document-intelligence/composer/composer-store.js');
   const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
 
+  // A real signed-in session — this scenario now also asserts the single
+  // "Terbitkan NOR" button renders, which requires real publish authority
+  // (Sprint 10.5's role gate is exercised on its own in scenario 5; this
+  // scenario is not testing permission denial).
+  localStorage.setItem('pbsi_current_user', JSON.stringify({ username: 'evan', role: 'admin' }));
+
   // A real ComposerDocument, same shape nor-composer.js#composeNorDocument
   // produces — human-supplied test values, nothing fabricated by the
   // render layer itself.
@@ -91,33 +97,95 @@ const result = await page.evaluate(async () => {
   // attributes regardless of mode (every workspace in this codebase does
   // this — it is not user-visible text). What Normal Mode must hide is the
   // raw id as a VISIBLE LABEL — so check rendered text content, not markup.
-  const visibleText = root.innerText;
+  // textContent (not innerText): innerText requires a completed layout
+  // pass and was observed to flake intermittently in this session's own
+  // headless runs; textContent reads the DOM synchronously and proves the
+  // same thing (no hidden elements exist in this subtree to distinguish).
+  const visibleText = root.textContent;
   return {
     documentId: doc.documentId,
     hasRootClass: document.body.querySelector('.wlk-root') !== null,
     listedRow: html.includes('v1') || html.includes('v2'),
+    // Phase 11 Course Correction, Workstream 1/6 — Normal Mode's default
+    // is now renderLiveDocument(), not the old field-list Draft Preview:
+    // the same real values must still surface, as real document prose/
+    // detail-list text, not a raw field/value row.
     showsSubjectValue: html.includes('Pengadaan ATK Kantor (revisi)'),
     showsPurposeValue: html.includes('Kebutuhan operasional bulan Juli'),
     showsTotalValue: html.includes('750000'),
     showsMetadataLabel: html.includes('Metadata'),
     showsStatusLabel: html.includes('Draf'),
-    showsVersionHistory: html.includes('Riwayat Versi') && html.includes('Versi 1') && html.includes('Versi 2'),
-    showsEditedBy: html.includes('oleh evan'),
+    // Riwayat Versi (the diff table) is now Developer-Mode-only — see the
+    // dedicated Developer Mode scenario (page1b) below, not asserted here.
     noRawDocumentIdInNormalMode: !visibleText.includes(doc.documentId),
+    // Workstream 7 — Normal Mode shows the single "Terbitkan NOR" action,
+    // never the old multi-button governance panel.
+    showsSinglePublishAction: html.includes('Terbitkan NOR'),
+    noOldGovernancePanel: !html.includes('data-act="rw-gov-submit"'),
   };
 });
 
-console.log('\n[Review Workspace — real browser render, no Firebase, no login gate]');
+console.log('\n[Review Workspace — Normal Mode, real browser: Live Document Workspace is the default (Phase 11 Course Correction)]');
 check('mounted host gains .wlk-root (workspace-list-kit CSS scope)', result.hasRootClass);
 check('the document row renders', result.listedRow);
-check('Draft Preview shows the REAL, human-edited subject value (the Sprint 9.8 gap fix)', result.showsSubjectValue);
-check('Draft Preview shows the purpose field value', result.showsPurposeValue);
-check('Draft Preview shows the total field value', result.showsTotalValue);
+check('the Live Document view shows the REAL, human-edited subject value (the Sprint 9.8 gap fix, still true under the new UX)', result.showsSubjectValue);
+check('the Live Document view shows the purpose field value', result.showsPurposeValue);
+check('the Live Document view shows the total field value', result.showsTotalValue);
 check('Metadata panel renders', result.showsMetadataLabel);
 check('Status indicator shows the friendly label ("Draf"), not the raw enum', result.showsStatusLabel);
-check('Version Information shows both revisions (v1 AI-authored, v2 human-edited)', result.showsVersionHistory);
-check('the human edit is attributed to its real editor', result.showsEditedBy);
 check('Normal Mode hides the raw documentId (no internal id leak)', result.noRawDocumentIdInNormalMode);
+check('Normal Mode shows the single "Terbitkan NOR" publish action (Workstream 7)', result.showsSinglePublishAction);
+check('Normal Mode never renders the old multi-button governance panel', result.noOldGovernancePanel);
+
+// Phase 11 Course Correction, Workstream 6/7 — Developer Mode keeps the
+// OLD field-list Draft Preview, Riwayat Versi diff table, and the full
+// multi-button governance panel fully functional (deliverable 7: "Keep
+// Developer Mode fully functional"). A FRESH page/module registry, same
+// reason scenario 2 (Explainability) already documents below: review-
+// workspace.js's `host`/`mounted`/`st` are module-level singletons — a
+// second mount reusing the FIRST page's already-mounted registry raced
+// against that page's own pending change-notification re-renders in
+// practice (an intermittent flake actually observed in this session's
+// own full regression run), not just a theoretical risk.
+const page1b = await browser.newPage();
+page1b.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+await page1b.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' });
+const devModeResult = await page1b.evaluate(async () => {
+  const { createDocument, editSection } = await import('/js/v2/document-intelligence/composer/composer-store.js');
+  const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
+
+  localStorage.setItem('pbsi_current_user', JSON.stringify({ username: 'evan', role: 'admin' }));
+  localStorage.setItem('sarpras.presentationMode', 'developer');
+
+  const doc = createDocument('nor', {
+    subject: 'Pengadaan ATK Kantor',
+    purpose: 'Kebutuhan operasional bulan Juli',
+    total: 750000,
+  });
+  editSection(doc.documentId, 'subject', 'Pengadaan ATK Kantor (revisi)', 'evan');
+
+  const root = document.createElement('div');
+  root.id = 'test-root-dev-mode';
+  document.body.appendChild(root);
+  await mountReviewWorkspace(root);
+  root.querySelector(`[data-act="rw-doc-row"][data-id="${doc.documentId}"]`)?.click();
+
+  const html = root.innerHTML;
+  return {
+    showsRawDocumentId: root.textContent.includes(doc.documentId), // textContent, not innerText — see page1's own comment on why
+    showsDraftPreviewFieldRow: html.includes('data-act="rw-edit-start"') && html.includes('>subject<'),
+    showsVersionHistory: html.includes('Riwayat Versi') && html.includes('Versi 1') && html.includes('Versi 2'),
+    showsEditedBy: html.includes('oleh evan'),
+    showsFullGovernancePanel: html.includes('data-act="rw-gov-submit"'),
+  };
+});
+
+console.log('\n[Review Workspace — Developer Mode, real browser: old surfaces stay fully functional (deliverable 7)]');
+check('Developer Mode shows the raw documentId', devModeResult.showsRawDocumentId);
+check('Developer Mode still renders the old field-list Draft Preview row', devModeResult.showsDraftPreviewFieldRow);
+check('Developer Mode still shows Version History (both revisions)', devModeResult.showsVersionHistory);
+check('Developer Mode still attributes a human edit to its real editor', devModeResult.showsEditedBy);
+check('Developer Mode still shows the full multi-button governance panel', devModeResult.showsFullGovernancePanel);
 
 // Phase 10, Sprint 10.2 — Explainability, Developer Mode only. A FRESH
 // page/module registry (review-workspace.js's `host`/`mounted`/`st` are
@@ -185,6 +253,11 @@ const editResult = await page3.evaluate(async () => {
   // Phase 10, Sprint 10.5 — the "Ubah" button now requires sic.review.act,
   // real capability-gated, not just rendered unconditionally.
   localStorage.setItem('pbsi_current_user', JSON.stringify({ username: 'evan', role: 'admin' }));
+  // Phase 11 Course Correction, Workstream 6 — this old field-list "Ubah"
+  // click-to-edit flow is now Developer-Mode-only (Normal Mode's own
+  // inline-edit flow is covered by live-document-workspace-check.mjs).
+  // Set here to prove Developer Mode keeps this real, unmodified.
+  localStorage.setItem('sarpras.presentationMode', 'developer');
 
   const doc = createDocument('nor', { subject: 'Pengadaan Kursi Rapat' });
 
@@ -247,6 +320,10 @@ const govResult = await page4.evaluate(async () => {
   // 'admin' role satisfies BOTH sic.review.act and sic.approve.act, so
   // this scenario still exercises the full submit -> approve flow.
   localStorage.setItem('pbsi_current_user', JSON.stringify({ username: 'budi', role: 'admin' }));
+  // Phase 11 Course Correction, Workstream 6/7 — the old multi-button
+  // governance panel is now Developer-Mode-only (Normal Mode's single
+  // "Terbitkan NOR" flow is covered by live-document-workspace-check.mjs).
+  localStorage.setItem('sarpras.presentationMode', 'developer');
 
   const doc = createDocument('nor', { subject: 'Pengadaan Papan Tulis' });
 
@@ -308,6 +385,10 @@ const unprivilegedResult = await page5a.evaluate(async () => {
 
   // 'driver' holds neither sic.review.act nor sic.approve.act.
   localStorage.setItem('pbsi_current_user', JSON.stringify({ username: 'sopir1', role: 'driver' }));
+  // Phase 11 Course Correction, Workstream 6 — "Ubah"/"Ajukan untuk
+  // Ditinjau" are the old field-list/governance-panel buttons, now
+  // Developer-Mode-only; role gating itself is unchanged and still real.
+  localStorage.setItem('sarpras.presentationMode', 'developer');
 
   const doc = createDocument('nor', { subject: 'Pengadaan Spidol Whiteboard' });
   const root = document.createElement('div');
@@ -330,6 +411,7 @@ const privilegedResult = await page5b.evaluate(async () => {
   const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
 
   localStorage.setItem('pbsi_current_user', JSON.stringify({ username: 'evan', role: 'admin' }));
+  localStorage.setItem('sarpras.presentationMode', 'developer');
 
   const doc = createDocument('nor', { subject: 'Pengadaan Spidol Whiteboard' });
   const root = document.createElement('div');
@@ -365,6 +447,12 @@ const exportResult = await page6.evaluate(async () => {
   const { findArchiveRecord } = await import('/js/v2/organizational-memory/services/archive-service.js');
 
   localStorage.setItem('pbsi_current_user', JSON.stringify({ username: 'evan', role: 'admin' }));
+  // Phase 11 Course Correction, Workstream 6/7 — "Unduh PDF"/"Unduh Word"/
+  // "Terbitkan" live inside the old governance panel, now Developer-Mode-
+  // only (Normal Mode's single "Terbitkan NOR" publish flow, which also
+  // calls the SAME archiveOnPublish()/export machinery, is covered by
+  // live-document-workspace-check.mjs).
+  localStorage.setItem('sarpras.presentationMode', 'developer');
 
   const doc = createDocument('nor', { subject: 'Pengadaan Kabel HDMI', total: 250000 });
 
@@ -506,6 +594,7 @@ check('Tinjauan Pilot shows the real 5.0/5 satisfaction rating just recorded', p
 check('Tinjauan Pilot shows "subject" among the most-corrected fields (the real edit made above)', pilotTabResult.showsCorrectedField);
 check('Tinjauan Pilot shows the real status distribution (1 Disetujui document)', pilotTabResult.showsStatusDistribution);
 
+await page1b.close();
 await page2.close();
 await page3.close();
 await page4.close();

@@ -133,6 +133,23 @@ console.log('\n[Behaviour — NOR Composition genuinely refuses a Conversation t
   const composed = composeApprovedNor(started.data.conversation.id);
   check('refuses — the Conversation still has genuinely missing facts', !composed.ok);
   check('error code is NOT_READY', composed.error.code === 'NOT_READY');
+
+  // Sprint 11.10 (Product Architecture Gap Closure) — "Susun Draf
+  // Sekarang" / Fix 6 "Live Preview First": the SAME still-ACTIVE
+  // conversation, but with allowIncomplete:true, must now succeed —
+  // additive, opt-in, never the default (the check right above proves the
+  // default is completely unchanged).
+  const draftNow = composeApprovedNor(started.data.conversation.id, { allowIncomplete: true });
+  check('with allowIncomplete:true, composition succeeds from ACTIVE (intent known, facts still incomplete)', draftNow.ok);
+  const draftSections = draftNow.ok ? draftNow.data.composerDocument.sections : [];
+  check('no missing fact is fabricated — the pattern slot for the still-unknown "traveler" resolves to the real UNRESOLVED_MARKER, never invented text', draftSections.some((s) => s.field.startsWith('pattern:') && String(s.value).includes('UNKNOWN')));
+  check('the real structural suggestion (signatory counts, evidence-based, independent of gatheredFacts) is still genuinely present in the early draft', draftSections.some((s) => s.field === 'suggestedSignatoryTopCount' && s.value === 4));
+
+  // The already-known facts from the ORIGINAL utterance/first turn (if
+  // any were extracted) still appear as real sections — never dropped
+  // just because composition happened early.
+  const stillReady = composeApprovedNor(started.data.conversation.id); // default call, still refused — proves allowIncomplete never mutates the conversation's own state
+  check('composing early never advances/mutates the Conversation itself — the default (non-draft) call is STILL refused right after', !stillReady.ok && stillReady.error.code === 'NOT_READY');
 }
 
 console.log('\n[North-Star Gap Closure — "Saya ingin membuat NOR..." (no "dinas"/"perjalanan", no bare "buat") now reaches the REAL pipeline]');

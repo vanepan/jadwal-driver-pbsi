@@ -34,17 +34,31 @@
    Knowledge Imported -> Archived edge is composed HERE.
 
    DEPENDENCIES: knowledge/datasets/import-session/* (engine + contract +
-   metadata-inference-engine.js), knowledge/datasets/contracts/
+   metadata-inference-engine.js + content-fact-consensus-engine.js — V2,
+   Part B1), knowledge/datasets/contracts/
    dataset-contract.js, knowledge/datasets/registry/dataset-registry.js,
    knowledge/connectors/manual-file-connector.js, knowledge/registry/
    {domain-type,kind}-registry.js, organizational-memory/index.js (the one
    cross-layer read/write in this milestone), file-storage/* (V2.1, the
    new top-level sibling), ./shared/workspace-list-kit.js.
 
-   NON-GOALS: no OCR, no AI, no PDF/DOCX content parsing — those formats
-   only ever carry auto-derived administrative metadata + human-typed
-   facts. No new persistence beyond the in-memory stores the engines
-   already own, plus the one real Firebase Storage upload.
+   NON-GOALS: no OCR, no AI. No new persistence beyond the in-memory
+   stores the engines already own, plus the one real Firebase Storage
+   upload.
+
+   V2, PART B1 — EVIDENCE-FIRST INGESTION. Before this, a PDF/DOCX whose
+   own text didn't answer documentNumber/senderOrigin/value went STRAIGHT
+   to a human, every time — even when the organization's own archived
+   history already knew the answer. processOneFile() below now runs one
+   more evidence-gathering step, ONLY for the one content fact where prior
+   documents are legitimate cross-document evidence (senderOrigin — see
+   content-fact-consensus-engine.js's own header for exactly why
+   documentNumber/value are deliberately excluded, not merely
+   unimplemented), against this domain's real archived history, BEFORE the
+   pipeline ever parks a session at Awaiting Evidence. This file is the
+   right and only place to compose extraction (knowledge/) with archived
+   history (organizational-memory/) — see the header note above on why
+   this is already the one cross-layer seam.
    ============================================================ */
 
 'use strict';
@@ -72,7 +86,7 @@ import {
 import {
   createImportSession, attachManualEntryFacts, attachParsedContent, attachFileStorage,
   attachInferenceResult, updateSessionMetadata,
-  attachFactsProvenance, attachExtractionSuggestion, listReanalysisCandidates,
+  attachFactsProvenance, attachExtractionSuggestion, attachConsensusSuggestion, listReanalysisCandidates,
   getImportSession, listImportSessions, getImportSessionHistory, hasContentFacts,
 } from '../knowledge/datasets/import-session/import-session-engine.js';
 // V2, Part A1 (Intelligent Ingestion) — real .docx content, not just
@@ -80,7 +94,7 @@ import {
 // above (see the invariant comment above this import block) — the only
 // difference is WHO/WHAT computed the evidence being attached.
 import { extractDocxText, extractDocxTextFromBytes } from '../knowledge/datasets/import-session/docx-text-extractor.js';
-import { extractContentFacts } from '../knowledge/datasets/import-session/content-fact-extraction-engine.js';
+import { extractContentFacts, isContentFactsComplete } from '../knowledge/datasets/import-session/content-fact-extraction-engine.js';
 import { CURRENT_METADATA_PARSER_VERSION, CURRENT_CONTENT_PARSER_VERSION } from '../knowledge/datasets/import-session/parser-registry.js';
 // V2, Part A2 (Background Re-Analysis) — the pure merge policy, and the
 // dormant-until-now Correction engine, revived for its real intended
@@ -88,6 +102,12 @@ import { CURRENT_METADATA_PARSER_VERSION, CURRENT_CONTENT_PARSER_VERSION } from 
 // that may already be Approved (never mutated in place — see that file's
 // own header).
 import { mergeExtractedFacts } from '../knowledge/datasets/import-session/fact-merge-engine.js';
+// V2, Part B1 (Evidence-First Ingestion) — the one new reasoning step:
+// cross-document consensus, only ever attempted for a field where it is a
+// legitimate evidence source (see that engine's own header). Pure — the
+// real prior values are gathered HERE (this file already reads both
+// knowledge/ and organizational-memory/), never inside knowledge/ itself.
+import { computeFieldConsensus } from '../knowledge/datasets/import-session/content-fact-consensus-engine.js';
 import { startCorrectionSession, submitCorrection, finishCorrectionSession } from '../knowledge/learning/correction-pipeline-engine.js';
 // The ONE driver of the pipeline. This UI no longer sequences submit ->
 // approve -> import -> archive by hand (that duplicated logic was exactly what
@@ -192,11 +212,16 @@ const FEED_AUTO_EXPIRE_MS = 24 * 60 * 60 * 1000;
  *  grouping reads this, never a fabricated finer taxonomy the mission's
  *  own illustrative examples ("Unknown Vendor", "Unknown Template") don't
  *  actually correspond to distinct engine signals for. */
+// Sprint 11 (Evidence-First Ingestion, UI wording pass) — group headings
+// describe the REAL REASON a human is needed, never an internal data-model
+// term. "Metadata"/"Fakta" as raw nouns are exactly the kind of engine
+// vocabulary CLAUDE.md's "remove engine terminology from UI" instruction
+// names — a reviewer should read a reason to understand it, not decode it.
 const EXCEPTION_GROUP_LABEL = Object.freeze({
-  MISSING_CONTENT_FACTS: 'Fakta Dokumen Belum Diisi',
-  LOW_CONFIDENCE: 'Metadata Belum Yakin',
+  MISSING_CONTENT_FACTS: 'Perlu Konfirmasi Isi Dokumen',
+  LOW_CONFIDENCE: 'Kategori Dokumen Belum Pasti',
   DUPLICATE_AMBIGUITY: 'Kemungkinan Duplikat',
-  VALIDATION_ERROR: 'Kesalahan Validasi',
+  VALIDATION_ERROR: 'Perlu Diperbaiki',
   PIPELINE_RETRYING: 'Sedang Dicoba Ulang Otomatis',
   UNSUPPORTED_FORMAT: 'Format Tidak Didukung',
   PIPELINE_FAILED: 'Gagal Diproses',
@@ -707,22 +732,45 @@ export async function runReanalysisSweep() {
  *  factsProvenance) — never a second, independently-guessed explanation.
  *  Exported so both reviewReasons() and any future surface can show the
  *  identical, honest diagnosis. */
+/** V2, Part B1 (Evidence-First Ingestion) — the honest, plain-language
+ *  account of what CROSS-DOCUMENT evidence was already checked for
+ *  senderOrigin, so a human reviewing a parked session sees exactly what
+ *  was already tried before being asked, never a silent "not found".
+ *  Reuses content-fact-consensus-engine.js's own rationale text verbatim —
+ *  one honest explanation, not a second, independently-worded one. Empty
+ *  string (nothing to add) when no consensus attempt was ever recorded —
+ *  senderOrigin was already answered by this document's own text, so
+ *  cross-document evidence was never consulted for it. */
+function contentFactsConsensusNote(session) {
+  const c = session.consensusSuggestion && session.consensusSuggestion.senderOrigin;
+  if (!c) return '';
+  return ` Untuk kolom pengirim ("Dari"), kami juga membandingkan dengan dokumen sejenis di domain ini: ${c.rationale}`;
+}
+
+/** Sprint 11 (Evidence-First Ingestion, UI wording pass) — every message
+ *  below states the REAL, specific reason a human is needed, in plain
+ *  language, never an internal engine/data-model term ("Parser konten
+ *  (vX)", "fakta konten") — a reviewer should never have to decode what
+ *  the system means. The underlying diagnosis is unchanged (still read
+ *  from the same real, persisted `extractionSuggestion`/
+ *  `consensusSuggestion` fields, never a fabricated explanation) — only
+ *  the WORDING changed. */
 export function contentFactsGapMessage(session) {
   if (session.kind === IMPORT_SESSION_KIND.JSON) {
-    return 'Belum ada konten JSON yang berhasil di-parse — lampirkan fakta secara manual agar dapat diselesaikan.';
+    return 'Kami belum berhasil membaca isi file JSON ini — mohon lengkapi secara manual agar dokumen ini dapat diselesaikan.';
   }
   if (session.kind !== IMPORT_SESSION_KIND.DOCX) {
-    return 'Format PDF tidak memiliki pembaca konten otomatis (memerlukan OCR, di luar cakupan saat ini) — lampirkan fakta secara manual agar dapat diselesaikan.';
+    return `Kami belum bisa membaca isi file PDF ini secara otomatis (perlu OCR, di luar cakupan saat ini) — mohon lengkapi secara manual agar dokumen ini dapat diselesaikan.${contentFactsConsensusNote(session)}`;
   }
   const suggestion = session.extractionSuggestion;
   if (!suggestion) {
-    return 'Belum pernah diproses oleh parser konten (.docx) — akan diperiksa otomatis pada pemeriksaan latar belakang berikutnya, atau lampirkan fakta secara manual sekarang.';
+    return `Belum pernah diproses secara otomatis — akan diperiksa pada pemeriksaan latar belakang berikutnya, atau Anda bisa melengkapinya sekarang.${contentFactsConsensusNote(session)}`;
   }
   const foundFields = ['value', 'documentNumber', 'senderOrigin'].filter((f) => suggestion[f]);
   if (foundFields.length === 0) {
-    return `Parser konten (v${suggestion.parserVersion}) membaca dokumen ini tetapi tidak menemukan pola "No./Dari/Perihal" yang dikenali — lampirkan fakta secara manual agar dapat diselesaikan.`;
+    return `Kami sudah membaca dokumen ini tetapi tidak menemukan pola "No./Dari/Perihal" yang biasa digunakan — mohon lengkapi secara manual agar dokumen ini dapat diselesaikan.${contentFactsConsensusNote(session)}`;
   }
-  return `Parser konten (v${suggestion.parserVersion}) menemukan sebagian fakta (${foundFields.length}/3 bidang) — belum cukup untuk otomatis, lengkapi sisanya atau tunggu parser versi berikutnya.`;
+  return `Kami menemukan sebagian dari yang dibutuhkan (${foundFields.length}/3 bagian) dari dokumen ini — lengkapi sisanya, atau tunggu pemeriksaan otomatis berikutnya.${contentFactsConsensusNote(session)}`;
 }
 
 export function reviewReasons(session) {
@@ -791,7 +839,7 @@ export function reviewReasons(session) {
   if (typeof session.confidence === 'number'
     && session.confidence < AUTO_POPULATE_CONFIDENCE_THRESHOLD
     && !session.metadataConfirmedBy) {
-    reasons.push({ code: 'LOW_CONFIDENCE', message: `Confidence ${session.confidence} di bawah ambang batas populasi otomatis (${AUTO_POPULATE_CONFIDENCE_THRESHOLD}).`, confidence: session.confidence, evidence: session.confidenceRationale });
+    reasons.push({ code: 'LOW_CONFIDENCE', message: 'Kami belum cukup yakin dokumen ini termasuk kategori/domain yang mana — mohon konfirmasi kategorinya.', confidence: session.confidence, evidence: session.confidenceRationale });
   }
 
   for (const w of session.validationWarnings || []) {
@@ -835,7 +883,7 @@ export function reviewReasons(session) {
   if (reasons.length === 0) {
     reasons.push({
       code: 'PENDING_HUMAN_EVIDENCE',
-      message: 'Pipeline berhenti dan menunggu tinjauan Anda — periksa metadata dan fakta dokumen ini.',
+      message: 'Kami berhenti dan menunggu tinjauan Anda untuk dokumen ini.',
       confidence: session.confidence,
       evidence: null,
     });
@@ -1307,7 +1355,7 @@ export function createDatasetImportController(opts = {}) {
     return `
       <div class="wlk-sec">
         <div class="wlk-sec-title">Semakin Sedikit Pertanyaan Seiring Waktu</div>
-        <p class="wlk-page-lede">Minggu ${esc(first.weekStart)}: ${first.rate}% otomatis. Minggu ${esc(last.weekStart)}: ${last.rate}% otomatis. Ini terjadi karena setiap metadata yang Anda konfirmasi menjadi preseden nyata untuk dokumen serupa berikutnya (lihat "Konsensus Organisasi" pada detail dokumen), dan satu koreksi pada grup "Metadata Belum Yakin" langsung menyelesaikan dokumen lain dengan alasan yang sama — bukan tebakan, hanya semakin banyak pengetahuan organisasi yang tersedia untuk digunakan kembali.</p>
+        <p class="wlk-page-lede">Minggu ${esc(first.weekStart)}: ${first.rate}% otomatis. Minggu ${esc(last.weekStart)}: ${last.rate}% otomatis. Ini terjadi karena setiap metadata yang Anda konfirmasi menjadi preseden nyata untuk dokumen serupa berikutnya (lihat "Konsensus Organisasi" pada detail dokumen), dan satu koreksi pada grup "Kategori Dokumen Belum Pasti" langsung menyelesaikan dokumen lain dengan alasan yang sama — bukan tebakan, hanya semakin banyak pengetahuan organisasi yang tersedia untuk digunakan kembali.</p>
         ${renderRowList(weeks, trendRow)}
       </div>`;
   }
@@ -1391,7 +1439,7 @@ export function createDatasetImportController(opts = {}) {
         </div>
         <div class="dic-dropzone-hint">${isDeveloperMode()
           ? 'Metadata terisi otomatis dari nama file/folder, riwayat duplikat, dan Pattern Discovery — Advanced Metadata hanya muncul bila benar-benar diperlukan.'
-          : 'Metadata terisi otomatis dari nama file/folder dan riwayat dokumen sebelumnya — formulir tambahan hanya muncul bila benar-benar diperlukan.'}</div>
+          : 'Detail dokumen terisi otomatis dari nama file/folder dan pola dokumen serupa sebelumnya — Anda hanya akan diminta konfirmasi bila kami benar-benar belum yakin.'}</div>
         <div class="dic-dropzone-domain"><label>Domain Unggahan</label>${domainSelect}</div>
         <input data-act="dic-file-input" class="dic-file-input-hidden" type="file" multiple accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/json,.json"/>
         <input data-act="dic-folder-input" class="dic-file-input-hidden" type="file" multiple webkitdirectory directory/>
@@ -1464,7 +1512,7 @@ export function createDatasetImportController(opts = {}) {
       // reason line says why, and that is the whole truth.
       return '';
     }
-    const advanced = `<button class="wlk-btn" data-act="dic-advanced-open" data-id="${esc(session.id)}" type="button">Lengkapi Metadata &amp; Fakta</button>`;
+    const advanced = `<button class="wlk-btn" data-act="dic-advanced-open" data-id="${esc(session.id)}" type="button">Tinjau Dokumen Ini</button>`;
     const reject = `<button class="wlk-btn wlk-btn--ghost" data-act="dic-reject" data-id="${esc(session.id)}" type="button">Tolak</button>`;
     return `${advanced}${reject}`;
   }
@@ -1508,14 +1556,14 @@ export function createDatasetImportController(opts = {}) {
    *  button that could never succeed. */
   function suggestedActionFor(reasonCode) {
     return {
-      LOW_CONFIDENCE: 'Buka "Lengkapi Metadata & Fakta" untuk mengoreksi metadata — pipeline akan melanjutkan sendiri setelah disimpan.',
+      LOW_CONFIDENCE: 'Buka "Tinjau Dokumen Ini" untuk mengonfirmasi kategorinya — sisanya akan dilanjutkan otomatis setelah disimpan.',
       DUPLICATE_AMBIGUITY: 'Bandingkan dengan dokumen yang sudah ada sebelum melanjutkan.',
       UNSUPPORTED_FORMAT: 'Format tidak didukung — dokumen ini tidak dapat diproses. Unggah ulang sebagai PDF, DOCX, atau JSON.',
-      MISSING_CONTENT_FACTS: 'Buka "Lengkapi Metadata & Fakta" dan lampirkan fakta dari dokumen — pipeline akan menyelesaikan sisanya secara otomatis.',
-      PIPELINE_FAILED: 'Pipeline tidak dapat menyelesaikan dokumen ini — unggah ulang bila perlu.',
-      PIPELINE_RETRYING: 'Pipeline masih mencoba secara otomatis — tidak ada tindakan yang diperlukan saat ini.',
-      VALIDATION_ERROR: 'Buka "Lengkapi Metadata & Fakta" untuk memperbaiki metadata yang ditolak validasi.',
-      PENDING_HUMAN_EVIDENCE: 'Buka "Lengkapi Metadata & Fakta" untuk meninjau dokumen ini.',
+      MISSING_CONTENT_FACTS: 'Buka "Tinjau Dokumen Ini" dan lengkapi bagian yang belum kami temukan — sisanya akan diselesaikan otomatis.',
+      PIPELINE_FAILED: 'Dokumen ini tidak dapat diselesaikan — unggah ulang bila perlu.',
+      PIPELINE_RETRYING: 'Kami masih mencoba secara otomatis — tidak ada tindakan yang diperlukan saat ini.',
+      VALIDATION_ERROR: 'Buka "Tinjau Dokumen Ini" untuk memperbaiki bagian yang ditolak.',
+      PENDING_HUMAN_EVIDENCE: 'Buka "Tinjau Dokumen Ini" untuk meninjau dokumen ini.',
     }[reasonCode] || 'Tinjau secara manual.';
   }
 
@@ -1879,8 +1927,21 @@ export function createDatasetImportController(opts = {}) {
     // never shown once a human (or a confident auto-extraction) has set
     // manualEntryFacts, and never shown for a field extraction simply
     // never tried (no suggestion at all, e.g. a session with no docx text).
-    const uncertainHint = (field, label) => (!s.manualEntryFacts && suggestion && !suggestion[field]
-      ? `<div class="wlk-hint">${esc(label)} belum ditemukan.</div>` : '');
+    //
+    // V2, Part B1 (Evidence-First Ingestion) — for senderOrigin specifically,
+    // when a cross-document consensus attempt was recorded but could not
+    // clear the auto-accept bar (see content-fact-consensus-engine.js), the
+    // REAL reason it's still asking replaces the generic "not found": either
+    // there isn't enough archived history yet, or similar documents in this
+    // domain genuinely disagree — the exact "we found two different patterns
+    // and need your confirmation" case, never a silent guess.
+    const uncertainHint = (field, label) => {
+      if (s.manualEntryFacts || !suggestion || suggestion[field]) return '';
+      if (field === 'senderOrigin' && s.consensusSuggestion && s.consensusSuggestion.senderOrigin) {
+        return `<div class="wlk-hint">${esc(s.consensusSuggestion.senderOrigin.rationale)}</div>`;
+      }
+      return `<div class="wlk-hint">${esc(label)} belum ditemukan pada dokumen ini.</div>`;
+    };
     const groupSiblings = lowConfidenceGroupSiblings(s);
     const domainSelect = `
       <select data-act="dic-adv-field" data-field="domainType" class="wlk-select">
@@ -1896,14 +1957,14 @@ export function createDatasetImportController(opts = {}) {
       </select>`;
     const isJson = s.kind === IMPORT_SESSION_KIND.JSON;
     const factsForm = isJson ? '' : `
-      <div class="wlk-form-row"><label>Nilai Pokok (value)</label><input data-act="dic-adv-fact" data-field="value" class="wlk-input" type="text" value="${esc(edit.facts.value)}" placeholder="Fakta utama yang benar-benar Anda baca dari dokumen"/>${uncertainHint('value', 'Nilai pokok')}</div>
+      <div class="wlk-form-row"><label>Perihal</label><input data-act="dic-adv-fact" data-field="value" class="wlk-input" type="text" value="${esc(edit.facts.value)}" placeholder="Inti dokumen yang benar-benar Anda baca"/>${uncertainHint('value', 'Perihal')}</div>
       <div class="wlk-form-row"><label>Nomor Dokumen</label><input data-act="dic-adv-fact" data-field="documentNumber" class="wlk-input" type="text" value="${esc(edit.facts.documentNumber)}"/>${uncertainHint('documentNumber', 'Nomor dokumen')}</div>
-      <div class="wlk-form-row"><label>Dari (Sender Origin)</label><input data-act="dic-adv-fact" data-field="senderOrigin" class="wlk-input" type="text" value="${esc(edit.facts.senderOrigin)}"/>${uncertainHint('senderOrigin', 'Pengirim')}</div>
+      <div class="wlk-form-row"><label>Pengirim (Dari)</label><input data-act="dic-adv-fact" data-field="senderOrigin" class="wlk-input" type="text" value="${esc(edit.facts.senderOrigin)}"/>${uncertainHint('senderOrigin', 'Pengirim')}</div>
       <div class="wlk-form-row"><label>Catatan</label><input data-act="dic-adv-fact" data-field="notes" class="wlk-input" type="text" value="${esc(edit.facts.notes)}"/></div>`;
 
     return `
       <div class="wlk-sec">
-        <div class="wlk-sec-title">Advanced Metadata — ${esc(s.filename)}</div>
+        <div class="wlk-sec-title">Tinjau Dokumen Ini — ${esc(s.filename)}</div>
         <div class="wlk-form-row"><label>Domain</label>${domainSelect}</div>
         <div class="wlk-form-row"><label>Tipe Dataset</label>${datasetTypeSelect}</div>
         <div class="wlk-form-row"><label>Knowledge Kind</label>${kindSelect}</div>
@@ -1912,7 +1973,7 @@ export function createDatasetImportController(opts = {}) {
         <div class="wlk-form-row dic-adv-group-apply">
           <label>
             <input type="checkbox" data-act="dic-adv-apply-group" ${st.advancedApplyToGroup ? 'checked' : ''} />
-            Terapkan Domain/Tipe Dataset/Knowledge Kind ini ke ${groupSiblings.length} dokumen lain dengan alasan yang sama (Metadata Belum Yakin)
+            Terapkan Domain/Tipe Dataset/Knowledge Kind ini ke ${groupSiblings.length} dokumen lain dengan alasan yang sama (Kategori Dokumen Belum Pasti)
           </label>
         </div>` : ''}
         <button class="wlk-btn" data-act="dic-advanced-save" data-id="${esc(s.id)}" type="button">Simpan</button>
@@ -2467,13 +2528,24 @@ export function createDatasetImportController(opts = {}) {
       contentExtraction: contentFacts ? { ran: true, overallConfidence: contentFacts.overallConfidence } : null,
     });
 
+    const resolvedDomainType = inferred.domainType.value || domainType;
+
     // V2, Part A1 — the filename-derived documentNumber floor only ever
     // FILLS A GAP, never overrides a real content-extraction result (which
     // is always higher-confidence — it read the actual "No." line, not
     // just a filename token). Also covers the case where extraction
     // failed outright (corrupt file) but the filename still carries the
     // number, so the human isn't left with a fully blank form.
-    if (kind === IMPORT_SESSION_KIND.DOCX && inferred.documentNumberFloor.value
+    //
+    // V2, Part B1 (Evidence-First Ingestion) — extended to PDF too. The
+    // floor is purely a filename-token read (documentNumberFromFilename in
+    // metadata-inference-engine.js never opens the file), so restricting it
+    // to `.docx` was never a real safety boundary — it was simply never
+    // extended when PDF was added. PDF has zero content extraction (no
+    // OCR), so this filename floor is the ONLY evidence source available to
+    // it at all; excluding it meant every PDF's documentNumber unconditionally
+    // required a human, even when the filename already answered it.
+    if ((kind === IMPORT_SESSION_KIND.DOCX || kind === IMPORT_SESSION_KIND.PDF) && inferred.documentNumberFloor.value
       && (!contentFacts || contentFacts.confidencePerField.documentNumber === 0)) {
       const floor = inferred.documentNumberFloor;
       const base = contentFacts || {
@@ -2493,8 +2565,46 @@ export function createDatasetImportController(opts = {}) {
       };
     }
 
+    // V2, Part B1 (Evidence-First Ingestion) — THE NEW RESOLUTION STEP.
+    // Before falling back to a blank human-entry form, ask whether the
+    // ORGANIZATION already knows the answer. senderOrigin is the one
+    // content fact where a prior document's real, archived value is
+    // legitimate cross-document evidence — see content-fact-consensus-
+    // engine.js's own header for exactly why documentNumber/value are
+    // deliberately excluded (they are irreducibly per-document facts; no
+    // amount of sibling agreement can answer THIS document's own number or
+    // subject). Only attempted when this document's own text (or, for
+    // documentNumber above, its filename) could not already answer it —
+    // same "never overrides real, higher-confidence evidence" discipline
+    // the floor above follows. `archiveList` is a real read of this
+    // domain's actual archived history (organizational-memory/), not a
+    // sample or an estimate.
+    let consensusResult = null;
+    if (!contentFacts || !contentFacts.confidencePerField.senderOrigin) {
+      const priorArchived = archiveList({ sourceDomainType: resolvedDomainType });
+      const priorSenderOrigins = priorArchived.ok ? priorArchived.data.map((r) => r.senderOrigin) : [];
+      consensusResult = computeFieldConsensus(priorSenderOrigins);
+      if (consensusResult.eligible) {
+        const base = contentFacts || {
+          value: '', senderOrigin: '', documentNumber: '',
+          confidencePerField: { value: 0, senderOrigin: 0, documentNumber: 0 },
+          basisPerField: { value: '', senderOrigin: '', documentNumber: '' },
+          overallConfidence: 0,
+          parserVersion: null,
+        };
+        const foundCount = [base.value, base.documentNumber].filter(Boolean).length + 1; // +1 for the resolved senderOrigin
+        contentFacts = {
+          ...base,
+          senderOrigin: consensusResult.value,
+          confidencePerField: { ...base.confidencePerField, senderOrigin: consensusResult.confidence },
+          basisPerField: { ...base.basisPerField, senderOrigin: consensusResult.rationale },
+          overallConfidence: Math.round((foundCount / 3) * 100) / 100,
+        };
+      }
+    }
+
     const created = createImportSession({
-      domainType: inferred.domainType.value || domainType,
+      domainType: resolvedDomainType,
       datasetType: inferred.datasetType.value,
       filename: file.name, mimeType: file.type, sizeBytes: file.size,
       kind: kind || 'unsupported', knowledgeKind: inferred.knowledgeKind.value,
@@ -2524,6 +2634,19 @@ export function createDatasetImportController(opts = {}) {
     });
     if (parsedContent) attachParsedContent(sessionId, parsedContent);
 
+    // V2, Part B1 — record the consensus attempt itself, ALWAYS, exactly
+    // like extractionSuggestion below — even when it was inconclusive
+    // (not enough prior documents, or their values disagreed). This is
+    // what lets the human-facing gap message and Advanced Metadata form
+    // honestly say WHAT was already checked, instead of the human having
+    // to wonder whether the engine even tried.
+    if (consensusResult) {
+      attachConsensusSuggestion(sessionId, {
+        senderOrigin: consensusResult,
+        computedAt: new Date().toISOString(),
+      });
+    }
+
     // V2, Part A1 — always record what the parser found (even partial/
     // low-confidence), so Advanced Metadata can pre-fill from real
     // evidence instead of blank defaults. Only PROMOTE it to
@@ -2542,13 +2665,25 @@ export function createDatasetImportController(opts = {}) {
         parserVersion: contentFacts.parserVersion,
         extractedAt: new Date().toISOString(),
       });
-      if (contentFacts.overallConfidence >= AUTO_POPULATE_CONFIDENCE_THRESHOLD) {
+      // Sprint 11.10 — the auto-populate gate now checks PER-FIELD
+      // completeness (isContentFactsComplete, content-fact-extraction-
+      // engine.js), not only the average — see that function's own header
+      // for why averaging silently let a genuinely-blank field ride along.
+      // documentNumber may have been filled by the filename floor above;
+      // senderOrigin may have been resolved by cross-document consensus
+      // above — both are real evidence too, so they count.
+      if (isContentFactsComplete(contentFacts.confidencePerField) && contentFacts.overallConfidence >= AUTO_POPULATE_CONFIDENCE_THRESHOLD) {
         attachManualEntryFacts(sessionId, {
           value: contentFacts.value, documentNumber: contentFacts.documentNumber,
           senderOrigin: contentFacts.senderOrigin, notes: '',
         });
         attachFactsProvenance(sessionId, {
-          source: 'auto-extraction',
+          // V2, Part B1 — honestly distinguishes "read entirely from this
+          // document's own text/filename" from "at least one field came
+          // from cross-document evidence instead" — never claims 'human'
+          // either way. See ImportSessionRecord.factsProvenance's own
+          // JSDoc for what each source value means downstream.
+          source: (consensusResult && consensusResult.eligible) ? 'evidence-resolution' : 'auto-extraction',
           contentParserVersion: contentFacts.parserVersion,
           metadataParserVersion: CURRENT_METADATA_PARSER_VERSION,
           confidencePerField: contentFacts.confidencePerField,
@@ -3081,7 +3216,7 @@ export function createDatasetImportController(opts = {}) {
             correctionType: CORRECTION_TYPE.METADATA,
             targetKey: id,
             actorId: 'evan',
-            reason: 'Advanced Metadata dikonfirmasi manusia setelah confidence otomatis rendah.',
+            reason: 'Kategori dokumen dikonfirmasi oleh manusia setelah sistem belum cukup yakin secara otomatis.',
             before: beforeSnapshot,
             after: { domainType: st.advancedEdit.domainType, datasetType: st.advancedEdit.datasetType, knowledgeKind: st.advancedEdit.knowledgeKind },
             sourceDocumentId: id,
@@ -3150,7 +3285,7 @@ export function createDatasetImportController(opts = {}) {
                 correctionType: CORRECTION_TYPE.METADATA,
                 targetKey: sib.id,
                 actorId: 'evan',
-                reason: `Diterapkan otomatis dari koreksi grup "Metadata Belum Yakin" (sumber: ${id}).`,
+                reason: `Diterapkan otomatis dari koreksi grup "Kategori Dokumen Belum Pasti" (sumber: ${id}).`,
                 before: { domainType: beforeSib.data.domainType, datasetType: beforeSib.data.datasetType, knowledgeKind: beforeSib.data.knowledgeKind },
                 after: { domainType: st.advancedEdit.domainType, datasetType: st.advancedEdit.datasetType, knowledgeKind: st.advancedEdit.knowledgeKind },
                 sourceDocumentId: sib.id,

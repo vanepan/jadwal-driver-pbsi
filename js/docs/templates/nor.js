@@ -25,19 +25,28 @@
 'use strict';
 
 import { register } from '../template-registry.js';
-import { CONTENT_W } from '../doc-theme.js';
+// Sprint 11.10 — orgLogo/signatureBlock/signatureGrid extracted FROM this
+// file into doc-theme.js (the shared "universal renderer" primitives every
+// template already imports CONTENT_W/etc. from); this file is now a
+// consumer of its own former inline code, not a second copy of it.
+import { CONTENT_W, orgLogo, signatureBlock } from '../doc-theme.js';
+// Phase 12 Sprint 12.1 — the official PBSI NOR layout (page geometry,
+// colours, rincian grid, column widths, heading sizes) is now declared in
+// the Document Design System, not hardcoded here. `nor` v1 was seeded
+// byte-for-byte FROM the constants this file used to own, so the printed
+// PDF is pixel-identical; the numbers just live in one governed, versioned,
+// explainable place now (a future Template Manager / Live Editor edits
+// that, never this source file).
+import { getDesignSystem, pageGeometry, tableGridLayout } from '../design-system/document-design-system.js';
 import { APP_VERSION } from '../../config.js';
-import { PBSI_LOGO_DATA_URI } from './reimbursement-logo.js';
 
-const INK = '#000000';
-const DIM = '#3a3a3a';
+const NOR_DS = getDesignSystem('nor');
+const INK = NOR_DS.color.ink;
+const DIM = NOR_DS.color.dim;
 
-/* Black 1pt grid for the rincian table (matches the official borders). */
-const GRID = {
-  hLineWidth: () => 1, vLineWidth: () => 1,
-  hLineColor: () => INK, vLineColor: () => INK,
-  paddingLeft: () => 4, paddingRight: () => 4, paddingTop: () => 2, paddingBottom: () => 2,
-};
+/* Black 1pt grid for the rincian table (matches the official borders).
+   Built from `nor` v1's `table` block — same 1pt ink borders / 4·2 padding. */
+const GRID = tableGridLayout(NOR_DS);
 
 /* Label : value block (Kepada Yth / Dari / …). Borderless. */
 function _metaTable(d) {
@@ -50,7 +59,7 @@ function _metaTable(d) {
   ]);
   return {
     table: {
-      widths: [96, 10, '*'],
+      widths: NOR_DS.layout.metaWidths,
       body: [
         row('Kepada Yth.', recipients),
         row('Dari', d.senderTitle || ''),
@@ -64,8 +73,11 @@ function _metaTable(d) {
   };
 }
 
-/* Dana Awal / Terealisasi / Sisa recap (borderless, right-aligned values). */
-function _balanceTable(d, awalWidth) {
+/* Dana Awal / Terealisasi / Sisa recap (borderless, right-aligned values).
+   `widths` is a 3-element column spec from the Document Design System
+   (`nor` v1's layout.balanceWidthsPage1/2 — the recap block is a touch
+   wider on page 2). */
+function _balanceTable(d, widths) {
   const row = (label, value) => ([
     { text: label, fontSize: 10 },
     { text: ': Rp', fontSize: 10 },
@@ -73,7 +85,7 @@ function _balanceTable(d, awalWidth) {
   ]);
   return {
     table: {
-      widths: [awalWidth || 206, 30, 104],
+      widths,
       body: [
         row(`Dana Awal (${d.danaAwalDate || '-'})`, d.openingDoc),
         row('Dana Terealisasi', d.realizedDoc),
@@ -85,24 +97,16 @@ function _balanceTable(d, awalWidth) {
   };
 }
 
-/* One signatory block: label, / POSITION / signing gap / Name (underlined). */
-function _signBlock(s, gap) {
-  if (!s) return { text: '' };
-  return {
-    stack: [
-      { text: `${s.label},`, fontSize: 10 },
-      { text: (s.position || '').toUpperCase(), fontSize: 10, bold: true },
-      { text: '', margin: [0, 0, 0, gap || 38] },
-      { text: s.name || '', fontSize: 10, bold: true, decoration: 'underline' },
-    ],
-  };
-}
-
 function build(vm) {
   const d = vm || {};
   const top = d.letterTop || [];
   const bottom = d.letterBottom || [];
   const recap = d.recap || [];
+  // The null-safety `_signBlock(undefined) -> {text:''}` used to provide
+  // inline — signatureBlock() itself intentionally does not swallow a bad
+  // call, so that guard stays here, at the one place this template calls
+  // it with a possibly-missing array slot.
+  const sb = (s, gap) => (s ? signatureBlock({ ...s, gap }) : { text: '' });
 
   /* Rincian cell — description plus an optional reimbursement breakdown. The
      breakdown is a clean indented detail inside the same cell: no new columns,
@@ -139,11 +143,9 @@ function build(vm) {
   ];
 
   return {
-    pageSize: 'A4',
-    pageOrientation: 'portrait',
-    pageMargins: [56, 40, 56, 40],
+    ...pageGeometry(NOR_DS),
     info: { title: `Nota Organisasi — ${d.norNumber || ''}`, author: 'Sarpras Operations' },
-    defaultStyle: { fontSize: 10, color: INK, lineHeight: 1.3 },
+    defaultStyle: NOR_DS.typography.default,
     // Page 1 (NOTA ORGANISASI) is a formal PBSI document — NO footer at all
     // (no app name, no branding, no page number). Footer appears on page 2+
     // only (RINCIAN PENGGUNAAN PETTY CASH). (v1.13.2)
@@ -162,8 +164,8 @@ function build(vm) {
         text: 'TEST ONLY — DOKUMEN TIDAK SAH', fontSize: 9, bold: true, color: INK,
         alignment: 'center', characterSpacing: 1.5, margin: [0, 0, 0, 12],
       }] : []),
-      { image: PBSI_LOGO_DATA_URI, width: 56, alignment: 'center', margin: [0, 0, 0, 6] },
-      { text: 'NOTA ORGANISASI', fontSize: 13, bold: true, alignment: 'center', margin: [0, 0, 0, 14] },
+      orgLogo({ width: 56 }),
+      { text: 'NOTA ORGANISASI', fontSize: NOR_DS.typography.documentTitle.fontSize, bold: true, alignment: 'center', margin: [0, 0, 0, 14] },
 
       { text: `Jakarta, ${d.dateLong || ''}`, fontSize: 10, margin: [0, 0, 0, 0] },
       { text: `No.${d.norNumber || ''}`, fontSize: 10, margin: [0, 0, 0, 12] },
@@ -174,7 +176,7 @@ function build(vm) {
       { text: 'Sehubungan dengan kegiatan operasional bidang sarana dan prasarana, kami melaporkan realisasi petty cash bidang sarana dan prasarana dengan rincian sebagai berikut:',
         fontSize: 10, alignment: 'justify', margin: [0, 0, 0, 6] },
 
-      _balanceTable(d, 206),
+      _balanceTable(d, NOR_DS.layout.balanceWidthsPage1),
       { text: `Terbilang: ${d.terbilang || ''}`, fontSize: 10, margin: [0, 0, 0, 6] },
 
       { text: 'Sehubungan dengan telah direalisasikannya petty cash tersebut, kami memohon agar dana petty cash dapat ditambahkan kembali untuk memastikan kelancaran operasional di bidang Sarana dan Prasarana. Sebagai dasar perhitungan, kami lampirkan laporan realisasi penggunaan dana.',
@@ -183,21 +185,21 @@ function build(vm) {
         fontSize: 10, alignment: 'justify', margin: [0, 0, 0, 18] },
 
       { columns: [
-        _signBlock(top[0], 40), _signBlock(top[1], 40), _signBlock(top[2], 40),
+        sb(top[0], 40), sb(top[1], 40), sb(top[2], 40),
       ], columnGap: 8 },
       bottom.length
-        ? { columns: [_signBlock(bottom[0], 40), { text: '' }, { text: '' }], columnGap: 8, margin: [0, 10, 0, 0] }
+        ? { columns: [sb(bottom[0], 40), { text: '' }, { text: '' }], columnGap: 8, margin: [0, 10, 0, 0] }
         : { text: '' },
 
       /* ── PAGE 2: RINCIAN PENGGUNAAN PETTY CASH ───────────────── */
-      { text: 'RINCIAN PENGGUNAAN PETTY CASH', fontSize: 11, bold: true, alignment: 'center',
+      { text: 'RINCIAN PENGGUNAAN PETTY CASH', fontSize: NOR_DS.typography.sectionHeading.fontSize, bold: true, alignment: 'center',
         pageBreak: 'before', margin: [0, 0, 0, 0] },
       { text: 'BIDANG SARANA DAN PRASARANA', fontSize: 10, alignment: 'center', margin: [0, 0, 0, 10] },
 
       {
         table: {
           headerRows: 1,
-          widths: [26, 70, '*', 92, 86],
+          widths: NOR_DS.layout.itemTableWidths,
           body: [
             [
               { text: 'No', fontSize: 9, bold: true, alignment: 'center' },
@@ -214,11 +216,11 @@ function build(vm) {
         margin: [0, 0, 0, 12],
       },
 
-      _balanceTable(d, 216),
+      _balanceTable(d, NOR_DS.layout.balanceWidthsPage2),
       { text: `Terbilang: ${d.terbilang || ''}`, fontSize: 10, margin: [0, 0, 0, 18] },
 
       { columns: [
-        _signBlock(recap[0], 38), _signBlock(recap[1], 38),
+        sb(recap[0], 38), sb(recap[1], 38),
       ], columnGap: 8, margin: [0, 0, 0, 0] },
     ],
   };

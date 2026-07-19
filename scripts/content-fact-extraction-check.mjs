@@ -11,7 +11,7 @@
 
 import fs from 'node:fs';
 import mammoth from 'mammoth';
-import { extractContentFacts } from '../js/v2/knowledge/datasets/import-session/content-fact-extraction-engine.js';
+import { extractContentFacts, isContentFactsComplete } from '../js/v2/knowledge/datasets/import-session/content-fact-extraction-engine.js';
 import { CURRENT_CONTENT_PARSER_VERSION } from '../js/v2/knowledge/datasets/import-session/parser-registry.js';
 
 let pass = 0, fail = 0;
@@ -74,6 +74,26 @@ console.log('\n[continuation-line guard — does not swallow the NEXT field]');
 {
   const noSwallow = extractContentFacts('Perihal\t:\tPengajuan sesuatu\n\nLampiran\t: 1 (satu) berkas');
   check('a continuation candidate that is itself a known label ("Lampiran:") is NOT appended to value', noSwallow.value === 'Pengajuan sesuatu');
+}
+
+console.log('\n[Sprint 11.10 — isContentFactsComplete gates auto-populate on PER-FIELD completeness, not the average]');
+{
+  const buffer = fs.readFileSync('Petty Cash Center/uploads/Memo Sarpras 362 - Realisasi Petty Cash Pertanggal 18 September 2025 Bidang Sarana dan Prasarana.docx');
+  const { value: text } = await mammoth.extractRawText({ buffer });
+  const full = extractContentFacts(text);
+  check('a real document with all 3 fields found reports complete', isContentFactsComplete(full.confidencePerField) === true);
+
+  // Real regression scenario: the SAME real document with only the "Dari"
+  // line removed — 2 of 3 fields found, overallConfidence 0.67 (already
+  // above the 0.6 auto-populate bar this file's own header documents).
+  const missingSender = text.split('\n').filter((line) => !/^Dari\s*:?/i.test(line.trim())).join('\n');
+  const partial = extractContentFacts(missingSender);
+  check('the same real document with "Dari" removed still finds 2 of 3 fields', partial.documentNumber !== '' && partial.value !== '' && partial.senderOrigin === '');
+  check('overallConfidence for that 2-of-3 case crosses the auto-populate bar (0.6) — proving averaging alone would auto-populate', partial.overallConfidence >= 0.6);
+  check('isContentFactsComplete correctly reports FALSE for the same 2-of-3 case — this is the fix', isContentFactsComplete(partial.confidencePerField) === false);
+
+  check('a fully-empty result is never reported complete', isContentFactsComplete({ documentNumber: 0, senderOrigin: 0, value: 0 }) === false);
+  check('a null/undefined confidencePerField never throws and reports incomplete', isContentFactsComplete(null) === false && isContentFactsComplete(undefined) === false);
 }
 
 console.log(`\n${pass}/${pass + fail} checks passed.`);

@@ -41,6 +41,7 @@
 'use strict';
 
 import { makeComposerDocument } from './contracts/composer-document-contract.js';
+import { makeEditableSection } from './contracts/editable-section-contract.js';
 import { makeFieldOverride } from './contracts/field-override-contract.js';
 import { makeComposerRevision } from './contracts/composer-revision-contract.js';
 import { computeDiff } from '../../knowledge/learning/diff-engine.js';
@@ -58,6 +59,7 @@ import { recordPromotion, listReviewHistory } from '../../knowledge/review/revie
 export const COMPOSER_STORE_ERRORS = Object.freeze({
   NOT_FOUND: 'NOT_FOUND',
   UNKNOWN_FIELD: 'UNKNOWN_FIELD',
+  FIELD_ALREADY_EXISTS: 'FIELD_ALREADY_EXISTS',
   ILLEGAL_TRANSITION: 'ILLEGAL_TRANSITION',
   RATIONALE_REQUIRED: 'RATIONALE_REQUIRED',
 });
@@ -116,6 +118,49 @@ export function editSection(documentId, field, overrideValue, overriddenBy) {
   putRecord(documentId, updatedDoc, [...record.revisions, revision]);
 
   return { ok: true, document: updatedDoc, revision, override, error: null };
+}
+
+/**
+ * Phase 11 Course Correction, Workstream 1 — creates a genuinely NEW
+ * section that did not exist in the document before (e.g. "Kepada Yth."/
+ * "Dari"/"Tembusan Yth." on a document composed before those were part of
+ * any NOR Type's fieldSchema). `editSection` above deliberately refuses
+ * this (UNKNOWN_FIELD) — a field appearing out of nowhere on an EXISTING
+ * document would be indistinguishable from a silent fabrication; this
+ * function exists precisely so that distinction stays real: a NEW field
+ * only ever enters a document through this ONE explicit call, always
+ * starting from a human directly typing it (the Live Document Workspace's
+ * inline "+ Tambahkan Bagian" affordance is its only caller), never
+ * pre-populated with guessed content. Same Diff/Revision shape as
+ * editSection — `before` is the empty-string convention every other
+ * "field did not exist yet" read in this codebase already uses (matches
+ * content-fact-extraction-engine.js's own '' -> found value shape), never
+ * `undefined` (computeDiff must see two real, comparable field maps).
+ * @param {string} documentId @param {string} field @param {*} value @param {string} addedBy
+ */
+export function addSection(documentId, field, value, addedBy) {
+  const record = getRecord(documentId);
+  if (!record) {
+    return { ok: false, document: null, revision: null, error: { code: COMPOSER_STORE_ERRORS.NOT_FOUND, message: `No ComposerDocument "${documentId}".` } };
+  }
+  const doc = record.document;
+  if (doc.sections.some((s) => s.field === field)) {
+    return { ok: false, document: null, revision: null, error: { code: COMPOSER_STORE_ERRORS.FIELD_ALREADY_EXISTS, message: `ComposerDocument "${documentId}" already has a section "${field}" — use editSection instead.` } };
+  }
+
+  const before = sectionsToFieldMap(doc.sections);
+  const newSection = Object.freeze({ ...makeEditableSection({ field, value }), isOverridden: true });
+  const newSections = [...doc.sections, newSection];
+  const after = sectionsToFieldMap(newSections);
+  const diff = computeDiff(before, after);
+
+  const version = doc.version + 1;
+  const updatedDoc = Object.freeze({ ...doc, sections: Object.freeze(newSections), version, updatedAt: new Date().toISOString() });
+
+  const revision = makeComposerRevision({ documentId, version, sections: newSections, diff, editedBy: addedBy });
+  putRecord(documentId, updatedDoc, [...record.revisions, revision]);
+
+  return { ok: true, document: updatedDoc, revision, error: null };
 }
 
 /** Composer History — every revision, oldest first. */

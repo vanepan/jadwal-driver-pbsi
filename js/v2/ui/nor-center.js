@@ -102,7 +102,7 @@ import { norNumberFromSequence, todayISO, fmtLong } from '../../petty-cash/petty
 import { beginProblemSolving, continueProblemConversation, composeApprovedNor } from '../problem-solving/services/problem-solving-service.js';
 import { WORKFLOW_ROUTE } from '../problem-solving/contracts/workflow-route-contract.js';
 import { HYPOTHESIS_STATUS } from '../reasoning/contracts/hypothesis-contract.js';
-import { INTENT } from '../conversation/contracts/intent-contract.js';
+import { INTENT, getRequiredFacts } from '../conversation/contracts/intent-contract.js';
 import { globalSearch } from '../services/global-search-service.js';
 // Sprint 11.1, Workstream 2 (production feedback) — PREVIOUSLY UNCALLED
 // anywhere in the UI layer (confirmed by grep before writing this): the
@@ -272,7 +272,8 @@ function onClick(e) {
   if (act === 'nc-generate-submit') { handleGenerateSubmit(); return; }
   if (act === 'nc-pc-answer-submit') { handleGenerateAnswerSubmit(); return; }
   if (act === 'nc-conv-continue') { handleConversationContinue(el.dataset.id); return; }
-  if (act === 'nc-compose-nor') { handleComposeNor(el.dataset.id); return; }
+  if (act === 'nc-compose-nor') { handleComposeNor(el.dataset.id, { allowIncomplete: false }); return; }
+  if (act === 'nc-compose-nor-draft') { handleComposeNor(el.dataset.id, { allowIncomplete: true }); return; }
   if (act === 'nc-draft-row') { st.draftsSelectedId = st.draftsSelectedId === el.dataset.id ? null : el.dataset.id; render(); return; }
   if (act === 'nc-open-review') { setSarprasIntelligenceScreen('review'); return; }
   if (act === 'nc-archive-row') { st.archiveLinkId = st.archiveLinkId === el.dataset.id ? null : el.dataset.id; render(); return; }
@@ -539,6 +540,17 @@ function renderGenerateSearchResult() {
  *  could never actually be advanced through either UI. This is the real
  *  fix, not a copy of a working pattern — see the Home-screen version of
  *  this same fix in sarpras-intelligence-center.js for the twin. */
+/** Sprint 11.2 (Adaptive Conversation) — resolves a gatheredFacts key to
+ *  the same human-readable label missingFacts already shows (getRequiredFacts
+ *  is the one schema both draw from), so the known-facts summary reads
+ *  "Barang: Kursi" instead of the raw camelCase field key. Falls back to
+ *  the field name only for a key the schema doesn't name (never hides a
+ *  fact for lack of a label). */
+function knownFactLabel(intent, norType, field) {
+  const entry = getRequiredFacts(intent, norType).find((f) => f.field === field);
+  return entry ? entry.label : field;
+}
+
 function renderGenerateConversationResult(c) {
   if (!c.currentIntent || c.currentIntent.intent === INTENT.UNKNOWN || c.state === 'failed') {
     return `<p class="sic-next-action">Permintaan ini belum dikenali platform. Coba salah satu: "saya ingin membuat NOR", "saya ingin mengunggah dokumen", "saya ingin meninjau pengetahuan".</p>`;
@@ -547,7 +559,9 @@ function renderGenerateConversationResult(c) {
   return `
     <div class="sic-conv-result">
       <p class="sic-next-action">Terdeteksi: <strong>${esc(NOR_INTENT_LABEL[c.currentIntent.intent] || c.currentIntent.intent)}</strong></p>
-      ${known.length ? `<ul class="sic-brief-list">${known.map(([k, v]) => `<li><span class="sic-brief-label">${esc(k)}: ${esc(String(v))}</span></li>`).join('')}</ul>` : ''}
+      ${known.length ? `
+        <div class="sic-brief-sub">Sudah diketahui</div>
+        <ul class="sic-brief-list">${known.map(([k, v]) => `<li><span class="sic-brief-label">✓ ${esc(knownFactLabel(c.currentIntent.intent, c.gatheredFacts.type, k))}: ${esc(String(v))}</span></li>`).join('')}</ul>` : ''}
       ${c.missingFacts && c.missingFacts.length ? `
         <div class="sic-brief-sub">Masih diperlukan</div>
         <div class="nc-conv-form">
@@ -560,6 +574,7 @@ function renderGenerateConversationResult(c) {
         </div>`
     : '<p class="sic-next-action">Semua data yang diperlukan sudah ada.</p>'}
       ${c.state === 'ready' ? `<p class="sic-next-action">Semua data terkumpul. <button class="wlk-btn" data-act="nc-compose-nor" data-id="${esc(c.id)}" type="button">Susun NOR</button></p>` : ''}
+      ${c.state === 'active' ? `<p class="sic-next-action sic-draft-now-hint">Ingin lihat draf sekarang, sebelum semua pertanyaan terjawab? <button class="wlk-btn wlk-btn--ghost" data-act="nc-compose-nor-draft" data-id="${esc(c.id)}" type="button">Susun Draf Sekarang</button></p>` : ''}
     </div>`;
 }
 
@@ -702,10 +717,27 @@ function handleGenerateAnswerSubmit() {
 /** Sprint 11.1, Workstream 3 — same tanggalPanjang composition-date
  *  formatting sarpras-intelligence-center.js#sic-compose-nor already
  *  applies (see that handler's own comment for why this is a letterhead
- *  convention, not a fact about the NOR's own subject matter). */
-function handleComposeNor(conversationId) {
-  const composed = composeApprovedNor(conversationId, { formattingFacts: { tanggalPanjang: fmtLong(todayISO()) } });
+ *  convention, not a fact about the NOR's own subject matter).
+ *
+ *  Sprint 11.3 (Document-first Experience), Requirement 1 — a successful
+ *  compose now navigates straight into the Live Document Preview instead
+ *  of leaving the human on this same conversation tab to go find their new
+ *  draft manually. review-workspace.js is dynamically imported here (never
+ *  a static import — this file must not eagerly pull in that screen's own
+ *  doc-engine.js/pdfmake dependency the moment nor-center.js loads), the
+ *  SAME lazy-load path sarpras-intelligence-center.js's own SCREENS
+ *  registry already uses for this exact module. */
+function handleComposeNor(conversationId, { allowIncomplete = false } = {}) {
+  const composed = composeApprovedNor(conversationId, { formattingFacts: { tanggalPanjang: fmtLong(todayISO()) }, allowIncomplete });
   st.conv.error = composed.ok ? null : composed.error.message;
+  if (composed.ok) {
+    const documentId = composed.data.composerDocument.documentId;
+    import('./review-workspace.js').then((mod) => {
+      mod.openReviewDocument(documentId);
+      setSarprasIntelligenceScreen('review');
+    });
+    return;
+  }
   render();
 }
 
