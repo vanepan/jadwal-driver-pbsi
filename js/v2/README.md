@@ -27,6 +27,41 @@ js/v2/
     adapters/               claude / openai / local-model — all NOT_IMPLEMENTED stubs
     registry/               adapter registry (real)
 
+  body/                   Phase 12.5 — Body Intelligence. A PEER of knowledge/, not
+                          downstream of it: represents V1 operational objects (Vehicle,
+                          Driver, Assignment — 3 real Sensors; 16 more entity types
+                          registered but placeholder-only) as read-model `Entity`
+                          snapshots. NEVER a system of record — see its own README §1
+                          for why it deliberately has no lifecycle/ directory. Depends
+                          only on V1 (read-only, *-store.js getters) + two precedented
+                          pure-leaf contract reuses from knowledge/; never on any
+                          knowledge/organizational-memory/learning/conversation/
+                          reasoning/... ENGINE or SERVICE. conversation/, reasoning/,
+                          problem-intelligence/ MAY depend on it (read-only,
+                          services-only) — not exercised yet. See its own README.
+    contracts/               Entity/EntityState/Sensor/EntityRelationship/BodyEvent/
+                            EntityHealthReport shapes — vocabulary, no logic
+    registry/               entity-type-registry (19 types) + sensor-registry (16
+                            placeholders bootstrapped; the 3 real sensors self-register
+                            outside it, same dormancy-by-omission as connector-registry.js)
+    sensors/                 vehicle/driver/assignment (real, V1-reading) +
+                            placeholder-sensor.js (factory for the other 16)
+    repository/              entity-repository (Memory+Null, Knowledge-style) +
+                            relationship-repository + body-event-repository
+                            (direct-function, Learning-style)
+    graph/                   entity-relationship-graph-engine.js — getNeighbors/
+                            getSubgraph/getGraphStats over DERIVED (never hand-authored)
+                            edges; disambiguated from knowledge/'s KnowledgeGraph
+    health/                  entity-health-engine.js — passes through a real
+                            V1-computed score where one exists, never invents one
+    services/                entity-service.js (Entity write owner) +
+                            body-sensing-service.js (the orchestrator) +
+                            entity-graph-service.js / entity-health-service.js
+                            (thin delegation) + index.js (namespaced barrel)
+    context/                 body-context-builder.js — ships complete, zero callers
+                            outside its own tests (same bar this file sets for the
+                            whole platform)
+
   document-intelligence/  first CONSUMER of knowledge/. See its own README.
     nor/                    the NOR pilot — 5 real pipeline steps (analyze/draft/validate/explain/recommend)
                             + nor-composer.js (Phase 8-10, NOT a pipeline step) — composes a fully
@@ -273,6 +308,23 @@ problem-solving/        ──depends on──>  problem-intelligence/, reasonin
                         to see all four, same role js/v2/README.md already reserves for ui/)
 problem-intelligence/ & reasoning/ & conversation/ & document-intelligence/  ──never depend
                         on──>  problem-solving/
+body/                   ──depends on──>  V1, read-only, through *-store.js getters (same
+                        rule as knowledge/), plus two precedented pure-leaf contract
+                        reuses (knowledge/contracts/identity-contract.js#nextVersion,
+                        knowledge/observability/contracts/warning-contract.js — Phase
+                        12.5, allowlisted by name in scripts/body-ownership-check.mjs,
+                        same as learning/'s identical reuse)
+body/                   ──never depends on──>  any ENGINE or SERVICE in knowledge/,
+                        organizational-memory/, learning/, conversation/, reasoning/,
+                        problem-intelligence/, problem-solving/, document-intelligence/,
+                        ui/, ai-foundation/ (Phase 12.5 — body/ is a PEER of knowledge/,
+                        not downstream of it)
+conversation/ & reasoning/ & problem-intelligence/  ──may depend on──>  body/ (read-only,
+                        services-only, optional, same relationship they already have to
+                        knowledge/ — Phase 12.5, NOT exercised yet, no live caller exists)
+knowledge/ & organizational-memory/ & learning/ & conversation/ & reasoning/ &
+                        problem-intelligence/ & problem-solving/ & document-intelligence/
+                        & ui/ & ai-foundation/  ──never depend on──>  body/
 ```
 
 This is a STRICT EXTENSION of the graph, not a revision of it — no edge that
