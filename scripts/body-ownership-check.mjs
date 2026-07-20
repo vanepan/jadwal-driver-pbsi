@@ -12,8 +12,11 @@
       reasoning/, problem-intelligence/, problem-solving/,
       document-intelligence/, ui/, ai-foundation/ ENGINES OR SERVICES —
       only the 2 precedented pure-leaf contract reuses, allowlisted by
-      name; nothing OUTSIDE js/v2/body/ imports js/v2/body/ yet (Phase
-      12.5 dormancy); the 3 real pilot sensors are NEVER imported by
+      name; nothing OUTSIDE js/v2/body/ imports js/v2/body/, except
+      js/v2/learning-bridge/ (Phase 12.6's one approved, narrowly-scoped
+      bridge — see Part 4's own comment and
+      scripts/learning-signal-ownership-check.mjs for what exactly it may
+      import); the 3 real pilot sensors are NEVER imported by
       registry/sensor-registry.js, body/index.js, or
       services/body-sensing-service.js (dormancy-by-omission).
 
@@ -130,17 +133,27 @@ console.log('\n[Part 3 — body/ is a PEER of knowledge/, never depends on any E
   check('the identity-contract.js reuse is exactly where documented (contracts/identity-contract.js only)', identityReuseFiles.length === 1 && identityReuseFiles[0].rel === 'js/v2/body/contracts/identity-contract.js');
 }
 
-console.log('\n[Part 4 — nothing OUTSIDE js/v2/body/ imports js/v2/body/ yet (Phase 12.5 dormancy)]');
+console.log('\n[Part 4 — nothing OUTSIDE js/v2/body/ imports js/v2/body/, except the one Phase 12.6-approved bridge (Phase 12.5 dormancy, narrowed by Phase 12.6)]');
 {
+  // js/v2/learning-bridge/ is the ONE deliberate, approved exception,
+  // added in Phase 12.6 specifically because body/ and learning/ are
+  // mutually forbidden from importing each other (see body/README.md and
+  // learning-service.js's own headers) — something outside both has to
+  // bridge them, mirroring problem-solving/'s "sees everyone" precedent.
+  // scripts/learning-signal-ownership-check.mjs is the authority on
+  // EXACTLY what learning-bridge/ may import from body/ (read-only:
+  // body-event-repository.js's list()/getForEntity() + the bare
+  // body-event-contract.js leaf, never append()) — this check only
+  // confirms no OTHER file anywhere still reaches into body/.
   const offenders = [];
   for (const { rel, code } of V2_FILES) {
-    if (rel.startsWith('js/v2/body/')) continue;
+    if (rel.startsWith('js/v2/body/') || rel.startsWith('js/v2/learning-bridge/')) continue;
     for (const { target } of importTargets(code)) {
       const resolved = resolveRelative(rel, target);
       if (resolved.includes('/v2/body/')) offenders.push(`${rel} -> ${resolved}`);
     }
   }
-  check(`no js/v2/* file outside body/ imports body/${offenders.length ? ` — FOUND: ${offenders.join(', ')}` : ''}`, offenders.length === 0);
+  check(`no js/v2/* file outside body/ or learning-bridge/ imports body/${offenders.length ? ` — FOUND: ${offenders.join(', ')}` : ''}`, offenders.length === 0);
 
   // Also the wider repo — a grep-for-importers sweep, same technique
   // js/v2/index.js's own header prescribes for the whole platform.

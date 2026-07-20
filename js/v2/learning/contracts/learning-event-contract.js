@@ -92,13 +92,25 @@ export const LEARNING_EVENT_SCHEMA = 'learning-event@1';
  *  stages the mission's architecture diagram names, plus the two producers
  *  Part 9 explicitly expects (Knowledge Approval, Archive Relationships)
  *  folded into CORRECTION/EVOLUTION since they are both, structurally, "the
- *  organization learned a fact just changed." */
+ *  organization learned a fact just changed."
+ *
+ *  OBSERVATION (Phase 12.6, Universal Learning Engine) — the one additive
+ *  value this phase adds: a domain-agnostic fact reported through
+ *  services/learning-signal-service.js#emitLearningSignal() that is not
+ *  yet validated as any of the five kinds above (no domain-specific
+ *  correction/gap/pattern/coverage/evolution shape claimed for it). See
+ *  registry/learning-signal-type-registry.js for the registered signal
+ *  types that map onto it. Surgical, additive: LEARNING_STATE/LEARNING_GRAPH
+ *  are keyed by state not kind, isLearningEvent()'s kind check is a pure
+ *  membership test that silently widens, and none of this file's existing
+ *  callers reference it — zero behavior change for the 5 pre-existing kinds. */
 export const LEARNING_KIND = Object.freeze({
   CORRECTION: 'correction',           // a human corrected something (see CORRECTION_TYPE)
   GAP_RESOLUTION: 'gap_resolution',   // a detected numbering gap was resolved
   PATTERN: 'pattern',                 // Pattern Discovery found real statistical support
   COVERAGE_SNAPSHOT: 'coverage_snapshot', // a Coverage Report was computed
   KNOWLEDGE_EVOLUTION: 'knowledge_evolution', // a KnowledgeItem reached Approved
+  OBSERVATION: 'observation',         // Phase 12.6 — a domain-agnostic Learning Signal
 });
 
 /** Part 3's five correction categories — a closed, deterministic taxonomy.

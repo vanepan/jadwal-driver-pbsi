@@ -129,14 +129,62 @@ js/v2/
                           domain: it depends on nothing above it (see services/
                           learning-service.js's header for the full rationale). Every
                           correction/gap-resolution/pattern/coverage-snapshot/knowledge-
-                          approval the platform records is a LearningEvent here.
+                          approval the platform records is a LearningEvent here. Phase
+                          12.6 (Universal Learning Engine) additively extends this domain
+                          with a generic signal-intake pipeline sitting ALONGSIDE the 14
+                          existing recordX() call sites — none of them touched, none of
+                          them required to change — see services/learning-signal-service.js.
     contracts/               LearningEvent shape + lifecycle (Observed→Validated→Accepted→
-                            Applied→Historical) + the 5-category correction taxonomy
-    repository/              real, append-only LearningEvent store
+                            Applied→Historical) + the 5-category correction taxonomy +
+                            (Phase 12.6) the 6th LEARNING_KIND, OBSERVATION, plus new
+                            LearningScope/LearningSignal/LearningConfidence/
+                            LearningRecommendation/LearningLineage shapes
+    registry/                (Phase 12.6) learning-signal-type-registry.js (registered
+                            signalType -> LEARNING_KIND mapping, optional metadata, never
+                            a gate) + learning-source-weight-registry.js (a NEW id space,
+                            deliberately not knowledge/'s own source-weight-contract.js)
+    repository/              real, append-only LearningEvent store — UNCHANGED by Phase 12.6
     services/                learning-service.js — recordCorrection/recordGapResolution/
-                            recordPattern/recordCoverage/recordKnowledgeEvolution +
-                            explainLearningEvent. create/appendVersion have exactly one
-                            caller in the platform: this file.
+                            recordPattern/recordCoverage/recordKnowledgeEvolution/
+                            recordLearningEvent (already generic) + explainLearningEvent.
+                            create/appendVersion have exactly one caller in the platform:
+                            this file — UNCHANGED by Phase 12.6. (Phase 12.6, new)
+                            learning-signal-service.js#emitLearningSignal() — the ONE new
+                            generalized entry point, threading Observe→Normalize→Validate→
+                            Merge→Dedup→Conflict→Confidence→Persist (via the existing,
+                            unmodified recordLearningEvent — see
+                            scripts/learning-signal-ownership-check.mjs for the "exactly
+                            one write" proof) + learning-outcome-service.js
+                            (recordLearningOutcome — a thin wrapper over emitLearningSignal,
+                            the natural future home for reasoning/'s already-deferred
+                            "Recommendation → LearningEvent" wiring, NOT wired live here)
+    (root)                   (Phase 12.6, flat at learning/'s root, mirroring
+                            organizational-memory/'s own flat-engine style)
+                            learning-confidence-engine.js (cites/extends
+                            knowledge/machine-learning/confidence-engine.js's formula —
+                            reimplemented, not imported: learning/ may not depend on a
+                            knowledge/ ENGINE) + learning-signal-similarity-engine.js
+                            (reimplements knowledge/learning/similarity-detection-engine.js's
+                            ~10-line Jaccard formula, same reason) +
+                            learning-conflict-detection-engine.js (fresh, scope-exact,
+                            mirrors archive-relationship-engine.js's bucket-then-pairwise
+                            SHAPE only) + learning-recommendation-engine.js
+                            (computeRecommendations — pure, never stored, disambiguated
+                            from reasoning/'s own Recommendation) +
+                            learning-lineage-engine.js (traceLineage — composes
+                            explainLearningEvent()'s existing chain-walk, never re-walks it)
+
+  learning-bridge/        Phase 12.6 — the Body pull adapter. A separate, cross-cutting
+                          domain (mirrors problem-solving/'s "sees everyone" precedent),
+                          NOT nested inside learning/ or body/, because body/ and learning/
+                          are mutually forbidden from importing each other's engines. See
+                          its own README.
+    adapters/                body-signal-adapter.js — pure BodyEvent -> LearningSignal
+                            seed mapping
+    services/                body-learning-bridge-service.js — the one impure
+                            orchestrator: reads body/'s body-event-repository.js#list()
+                            (read-only, never append()), calls learning/'s
+                            emitLearningSignal(). No scheduler, no live caller this phase.
 
   ui/                     the ONLY presentation layer. Four real nested workspaces, mounted
                           lazily (dynamic import) by sarpras-intelligence-center.js:
@@ -322,9 +370,23 @@ body/                   ──never depends on──>  any ENGINE or SERVICE in 
 conversation/ & reasoning/ & problem-intelligence/  ──may depend on──>  body/ (read-only,
                         services-only, optional, same relationship they already have to
                         knowledge/ — Phase 12.5, NOT exercised yet, no live caller exists)
-knowledge/ & organizational-memory/ & learning/ & conversation/ & reasoning/ &
-                        problem-intelligence/ & problem-solving/ & document-intelligence/
+knowledge/ & organizational-memory/ & learning/ & problem-solving/ & document-intelligence/
                         & ui/ & ai-foundation/  ──never depend on──>  body/
+                        (Phase 12.6 fix — conversation/, reasoning/, problem-intelligence/
+                        were previously listed in BOTH this line and the "may depend on"
+                        line above, a direct self-contradiction introduced when Phase
+                        12.5's graph lines were added; js/v2/body/README.md's own
+                        dependency section was always the correct, more specific version
+                        — this line is now consistent with it)
+learning-bridge/        ──depends on──>  body/ (Phase 12.6 — read-only:
+                        body/repository/body-event-repository.js's list()/getForEntity()
+                        only, never append()) and learning/ (via learning/services/
+                        learning-signal-service.js#emitLearningSignal() only, never
+                        learning-repository.js directly) — mirrors problem-solving/'s
+                        own precedent as "the ONE layer allowed to see" two domains that
+                        may never see each other (body/ and learning/ are mutually
+                        forbidden from importing one another's engines)
+body/ & learning/       ──never depend on──>  learning-bridge/
 ```
 
 This is a STRICT EXTENSION of the graph, not a revision of it — no edge that
