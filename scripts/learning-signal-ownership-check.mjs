@@ -129,14 +129,32 @@ console.log('\n[Part 4 — learning-outcome-service.js and body-learning-bridge-
 
   const bridgeServiceSrc = stripComments(read('js/v2/learning-bridge/services/body-learning-bridge-service.js'));
   check('body-learning-bridge-service.js imports ONLY emitLearningSignal from learning/, nothing else write-shaped', /emitLearningSignal/.test(bridgeServiceSrc) && !/learning-repository\.js/.test(bridgeServiceSrc) && !/recordLearningEvent\(/.test(bridgeServiceSrc));
+
+  // Phase 12.7.6 — recognition/'s own emission service is the third legal
+  // caller (see Part 5's header below for why no bridge was needed here).
+  const recognitionEmissionSrc = stripComments(read('js/v2/recognition/services/learning-emission-service.js'));
+  check('recognition/services/learning-emission-service.js imports ONLY emitLearningSignal from learning/, nothing else write-shaped', /emitLearningSignal/.test(recognitionEmissionSrc) && !/learning-repository\.js/.test(recognitionEmissionSrc) && !/recordLearningEvent\(/.test(recognitionEmissionSrc));
 }
 
-console.log('\n[Part 5 — nothing outside learning/ + learning-bridge/ imports the new files yet (dormancy — same discipline as Phase 12.5)]');
+console.log('\n[Part 5 — nothing outside learning/ + learning-bridge/ + recognition/ imports the new files yet (dormancy — same discipline as Phase 12.5)]');
 {
+  // Phase 12.7.6 (Continuous Learning Refinement) narrowed this assertion:
+  // js/v2/recognition/services/learning-emission-service.js is now a
+  // deliberate, approved THIRD caller of emitLearningSignal() — legally, the
+  // same way knowledge/ and organizational-memory/ already call it directly
+  // (recognition/ carries none of body/'s "must stay a pure zero-write peer"
+  // constraint that required learning-bridge/ as an intermediary — see that
+  // file's own header). This mirrors EXACTLY how Phase 12.6.7 itself already
+  // narrowed scripts/body-ownership-check.mjs's analogous assertion after
+  // learning-bridge/ became a deliberate, approved exception there — a stale
+  // assertion fixed the moment a new, legitimate caller made it stale, not
+  // silently left to rot. scripts/recognition-learning-emission-check.mjs is
+  // the authority on exactly what recognition/ may import from learning/
+  // (emitLearningSignal only, never learning-repository.js directly).
   const offenders = [];
   const scan = (dir) => {
     (function walk(rel) {
-      if (rel === 'js/v2/learning' || rel === 'js/v2/learning-bridge') return;
+      if (rel === 'js/v2/learning' || rel === 'js/v2/learning-bridge' || rel === 'js/v2/recognition') return;
       for (const entry of fs.readdirSync(path.join(ROOT, rel), { withFileTypes: true })) {
         const r = `${rel}/${entry.name}`;
         if (entry.isDirectory()) { walk(r); continue; }
@@ -152,7 +170,7 @@ console.log('\n[Part 5 — nothing outside learning/ + learning-bridge/ imports 
     }(dir));
   };
   scan('js/v2');
-  check(`no file outside js/v2/learning/ or js/v2/learning-bridge/ imports any Phase 12.6 file yet${offenders.length ? ` — FOUND: ${offenders.join(', ')}` : ''}`, offenders.length === 0);
+  check(`no file outside js/v2/learning/, js/v2/learning-bridge/, or js/v2/recognition/ imports any Phase 12.6 file yet${offenders.length ? ` — FOUND: ${offenders.join(', ')}` : ''}`, offenders.length === 0);
 }
 
 console.log('\n[Part 6 — regression: the EXISTING learning-ownership-check.mjs, re-run unmodified]');

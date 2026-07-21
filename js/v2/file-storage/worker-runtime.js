@@ -25,6 +25,20 @@
 
    DEPENDENCIES: ./cpu-worker.js (the actual Worker script, only ever
    reached via `new Worker(new URL(...))`, never statically imported).
+
+   NAMING, Phase 12.7.0 (Import Pipeline Observability Hardening) — "worker"
+   means three genuinely different things across this pipeline, and none of
+   them share code or a lifecycle with the other two:
+     1. THIS FILE — one real browser Worker thread, offloading two pure CPU
+        ops. Lifecycle: created lazily, torn down permanently on any failure.
+     2. knowledge/datasets/import-session/pipeline-scheduler.js#sweepPipeline
+        — not a thread at all; an event-driven state-machine sweep, whose
+        tick counters performance-collector.js reports as "Worker Health".
+     3. ui/dataset-import-center.js's per-batch `worker()` — a plain async
+        function run N-at-once in a `Promise.all` pool (the concurrency-
+        limited upload queue), not a Worker thread and not a scheduler tick.
+   Documented here, once, so a future reader does not assume any of the
+   three shares infrastructure with the other two — they don't, on purpose.
    ============================================================ */
 
 'use strict';

@@ -44,3 +44,6 @@ export * as profiles from './profile-service.js';
 export * as importSession from './import-session-service.js';
 export * as profileOverrides from './profile-override-service.js';
 export * as patternDiscovery from './pattern-discovery-service.js';
+// Phase 12.7.3 — Recognition's Similarity Strategy Registry is the first
+// cross-domain caller; see similarity-service.js's own header.
+export * as similarity from './similarity-service.js';

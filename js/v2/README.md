@@ -296,6 +296,66 @@ js/v2/
                           Intent mapping today ('facility' does not — no FACILITY_ISSUE intent exists).
     services/                problem-solving-service.js — beginProblemSolving/composeApprovedNor
 
+  recognition/            Phase 12.7 ("Apple Photos Learning") — Recognition. Derives
+                          comparable Signatures from knowledge/, organizational-memory/,
+                          and body/ records, compares them, groups matches into Clusters,
+                          discovers cross-domain Relationships, and suggests
+                          Classifications — as its own durable, versioned,
+                          evidence-backed RecognitionRecords. A cross-cutting peer,
+                          mirroring problem-solving/'s "sees everyone" precedent, NOT
+                          nested inside knowledge/, organizational-memory/, or body/. See
+                          its own README for the full rationale.
+    contracts/               RecognitionScope (mirrors LearningScope in spirit/naming,
+                            kept separate — see header) + RecognitionRecord (the ONE
+                            envelope, RECORD_TYPE: signature/cluster/relationship/
+                            classification/recommendation) + one contract per
+                            RECORD_TYPE's payload shape. Reuses knowledge/contracts/
+                            evidence-contract.js's Evidence directly (a precedented
+                            pure-leaf reuse, same as identity-contract.js#nextVersion).
+    registry/                recognition-signature-type-registry.js (wraps this
+                            platform's existing, unrelated "fingerprint" mechanisms —
+                            replaces none) + recognition-relationship-type-registry.js
+                            (a FOURTH disambiguated "relationship" vocabulary, on
+                            purpose — see contract header) + recognition-recommendation-
+                            type-registry.js (Recognition is the first real producer of
+                            knowledge/contracts/recommendation-evidence-contract.js's
+                            RecommendationEvidence — a pre-built, previously-unproduced
+                            shape, not a new competing contract)
+    repository/              Memory + Null + registry, Knowledge/Body-style —
+                            recognition-repository.js is the ONE facade
+    classification/          Sprint 12.7.2 — classification-suggestion-engine.js,
+                            the one genuinely NEW capability this phase adds
+    similarity/               Sprint 12.7.3 — similarity-strategy-registry.js
+                            generalizes 3 pre-existing single-domain
+                            similarity/duplicate primitives, duplicating none
+    clustering/               Sprint 12.7.4 — structural-clustering-engine.js
+                            ("Structural," not "Semantic" — no NLP anywhere)
+    graph/                    Sprint 12.7.5 — recognition-graph-engine.js (a
+                            THIRD, now genuinely node-type-agnostic, occurrence
+                            of getNeighbors/getSubgraph/getGraphStats) +
+                            relationship-discovery-engine.js (emits only the
+                            honest CO_CLUSTERED label, never a guessed richer one)
+    services/                recognition-service.js — the ONE write owner
+                            (recordObservation create-or-append reconciliation,
+                            mirrors body/'s entity-service.js#observeEntity();
+                            explainRecognition() — "Recognition Explanation," a
+                            third, deliberately disambiguated explainability
+                            surface alongside knowledge/explainability/ and
+                            prediction/dispatch's own) + classification-/
+                            similarity-/clustering-/graph-/learning-emission-
+                            service.js (thin per-sprint delegation) + index.js
+                            (namespaced barrel). Sprint 12.7.6's
+                            learning-emission-service.js activates 2
+                            Phase-12.6-dormant Learning Signal categories
+                            (document_structure_recurrence/entity_relationship_
+                            recurrence) — no bridge domain needed, unlike body/
+                            (see js/v2/recognition/README.md §1)
+    index.js                 dormant barrel — imports nothing yet, same as every
+                            prior domain's own Foundation sprint. Verified,
+                            not just claimed: scripts/recognition-ownership-
+                            check.mjs confirms zero live callers and that all
+                            26 files import cleanly in plain Node
+
   dormant-subsystems.js   the register of BUILT, TESTED, REACHABLE subsystems nothing
                           currently drives — a dormant subsystem must SAY SO wherever it is
                           displayed, never quietly render a zero (Phase 3, Part 8). reasoning/ and
@@ -387,6 +447,32 @@ learning-bridge/        ──depends on──>  body/ (Phase 12.6 — read-only
                         may never see each other (body/ and learning/ are mutually
                         forbidden from importing one another's engines)
 body/ & learning/       ──never depend on──>  learning-bridge/
+recognition/            ──depends on──>  knowledge/, organizational-memory/, body/,
+                        document-intelligence/ (Phase 12.7 — ALL read-only,
+                        services-only, never a repository, never an engine that
+                        itself owns writes — same rule reasoning/ already follows
+                        toward knowledge/)
+recognition/            ──depends on──>  learning/ (Phase 12.7 — may both read AND
+                        call learning/services/learning-signal-service.js#
+                        emitLearningSignal() as a normal producer, the SAME legal
+                        status knowledge/ and organizational-memory/ already have
+                        toward learning/ — no learning-bridge/-style intermediary
+                        needed, because recognition/ carries none of body/'s "must
+                        stay a pure zero-write peer" constraint that made a bridge
+                        necessary there)
+knowledge/ & organizational-memory/ & body/ & learning/ & document-intelligence/
+                        ──never depend on──>  recognition/ (Phase 12.7 —
+                        recognition/ is purely downstream, the same posture
+                        problem-solving/ and ui/ already hold, never a dependency
+                        of anything it reads)
+conversation/ & reasoning/ & problem-intelligence/  ──may depend on──>
+                        recognition/ (Phase 12.7 — read-only, services-only,
+                        optional, NOT exercised yet, same "structurally complete,
+                        zero live callers" precedent body/ and learning-bridge/
+                        both shipped under)
+ui/                     ──may depend on──>  recognition/ (Phase 12.7 — not
+                        exercised this phase — no Recognition Center/UI panel
+                        ships)
 ```
 
 This is a STRICT EXTENSION of the graph, not a revision of it — no edge that

@@ -227,6 +227,12 @@ const EXCEPTION_GROUP_LABEL = Object.freeze({
   PIPELINE_FAILED: 'Gagal Diproses',
 });
 
+/** Phase 12.7.0 — this file's `worker()` (below) is a plain async function
+ *  run N-at-once in a Promise.all pool, NOT a browser Worker thread
+ *  (file-storage/worker-runtime.js) and NOT pipeline-scheduler.js's
+ *  event-driven sweep (dashboarded elsewhere as "Worker Health") — three
+ *  unrelated things share this one English word in this codebase; see
+ *  worker-runtime.js's header for the full disambiguation. */
 /** Phase 7 (Runtime Hardening, Part 2) — the parallel upload queue's real,
  *  code-level "configurable concurrency" (no new settings UI — see this
  *  milestone's report on why a UI control was deliberately out of scope).
@@ -2199,7 +2205,7 @@ export function createDatasetImportController(opts = {}) {
 
     return `
       <div class="wlk-sec dic-progress${isDone && !isCancelled ? ' dic-progress--done' : ''}">
-        <div class="wlk-sec-title">Progres — ${p.processed}/${p.total} diproses${isPaused ? ' (dijeda)' : ''}${isCancelled ? ' (dibatalkan)' : ''}${isDeveloperMode() && p.concurrency ? ` · concurrency ${p.concurrency}` : ''}</div>
+        <div class="wlk-sec-title">Progres — ${p.processed}/${p.total} diproses${isPaused ? ' (dijeda)' : ''}${isCancelled ? ' (dibatalkan)' : ''}${isDeveloperMode() && p.concurrency ? ` · concurrency ${p.concurrency} (${p.busy || 0} sibuk sekarang)` : ''}</div>
         <div class="dic-progress-bar"><div class="dic-progress-fill" style="width:${p.total ? Math.round((p.processed / p.total) * 100) : 0}%"></div></div>
         ${successBanner}
         ${liveActivity}
@@ -2875,6 +2881,13 @@ export function createDatasetImportController(opts = {}) {
       control: { paused: false, cancelled: false, wakeListeners: [] },
       startedAtMs: Date.now(),
       concurrency, // real, decided value — shown in Developer Mode
+      // Phase 12.7.0 — real, live occupancy: how many of `concurrency`
+      // worker() loops are inside processOneFile() RIGHT NOW, versus idle
+      // (parked at the pause gate, or the pool is simply smaller than
+      // `concurrency` because there are fewer files left than workers).
+      // Previously only the fixed `concurrency` SETTING was ever shown —
+      // never how many of them were actually busy at a given moment.
+      busy: 0,
     };
     rerender();
 
@@ -2922,6 +2935,11 @@ export function createDatasetImportController(opts = {}) {
         const file = files[myIndex];
 
         let item;
+        // Phase 12.7.0 — real occupancy: this worker() loop is busy for
+        // exactly the span it is inside processOneFile(); always decremented
+        // via `finally`, so a thrown error never leaves `busy` stuck high.
+        st.batchProgress.busy += 1;
+        scheduleRerender();
         try {
           // eslint-disable-next-line no-await-in-loop
           item = await processOneFile(file, folderPathFor(file), batchId);
@@ -2933,6 +2951,7 @@ export function createDatasetImportController(opts = {}) {
           console.error('[dataset-import-center] processOneFile threw for', file.name, err);
           item = { filename: file.name, sizeBytes: file.size, fileRef: file, folderPath: folderPathFor(file), sessionId: null, wasDuplicate: false, warningCount: 0, storageBytes: 0, status: 'error', error: err && err.message ? err.message : 'Unexpected error.' };
         }
+        st.batchProgress.busy -= 1; // covers both the try and catch paths above
         if (item.status === 'error' || item.uploadFailure) failuresThisBatch += 1;
 
         st.batchProgress.items.push(item);

@@ -61,6 +61,25 @@
    supersession is recorded as a relationship-correction Learning Event —
    see that file's header on why organizational-memory/ may depend on
    learning/ but never the reverse).
+
+   PHASE 12.7.0 (Import Pipeline Observability Hardening) — registerArchiveObserver.
+   A future domain (Phase 12.7's Recognition layer) needs an event-driven,
+   zero-polling signal of "a real write just landed in the Archive" to know
+   when there is something new to recognize — the same problem
+   pipeline-scheduler.js already solved for its own archiver with an
+   injected callback (registerArchiver). archive-repository.js is a plain
+   in-memory Map (see its own header — no RTDB, no remote snapshot), so
+   there is no cross-tab concern here and no debounced-listener machinery
+   to build: every write already happens synchronously, in this process, in
+   this file. writeCreate()/writeAppendVersion() below are the two ONLY
+   places repoCreate/repoAppendVersion are actually called (every write
+   function in this file was migrated onto them in this sprint) — so
+   notifying observers from exactly those two functions is a complete,
+   exhaustive hook, not a best-effort one. Nothing calls
+   registerArchiveObserver yet this phase (dormant, same "structurally
+   complete, zero live callers" precedent body/ and learning-bridge/ both
+   shipped under) — this is the seam a later sprint wires, not a live
+   integration today.
    ============================================================ */
 
 'use strict';
@@ -95,6 +114,14 @@ export const ARCHIVE_SERVICE_ERRORS = Object.freeze({
   ALREADY_TERMINAL: 'ALREADY_TERMINAL',
 });
 
+/** Phase 12.7.0 — the two real events an observer can be notified of. Data,
+ *  not behaviour, same idiom as PIPELINE_OUTCOME/ACQUISITION_EVENT_TYPE
+ *  elsewhere in this tree. */
+export const ARCHIVE_OBSERVER_EVENT = Object.freeze({
+  CREATED: 'created',
+  VERSION_APPENDED: 'version_appended',
+});
+
 function failure(code, message) {
   return Object.freeze({ ok: false, data: null, error: Object.freeze({ code, message }) });
 }
@@ -102,6 +129,52 @@ function failure(code, message) {
 function allRecords(domainType = null) {
   const result = domainType ? repoList({ sourceDomainType: domainType }) : repoList({});
   return result.ok ? result.data : [];
+}
+
+/* ── Phase 12.7.0 — observer registration (see header) ────────────────── */
+
+/** @type {Array<(record: object, event: string) => void>} */
+const _observers = [];
+
+/**
+ * Registers a callback fired synchronously, in-process, after every real
+ * write this service makes (never on a failed write). Mirrors
+ * pipeline-scheduler.js#registerArchiver's injected-callback shape — an
+ * observer never blocks or reverses a write; a throwing observer is caught
+ * and logged, never allowed to undo an already-committed Archive write.
+ * @param {(record: object, event: string) => void} fn
+ */
+export function registerArchiveObserver(fn) {
+  if (typeof fn === 'function') _observers.push(fn);
+}
+
+function notifyArchiveObservers(record, event) {
+  for (const fn of _observers) {
+    try { fn(record, event); } catch (err) { console.error('[archive-service] observer failed:', err); }
+  }
+}
+
+/** The ONLY two call sites allowed to touch repoCreate/repoAppendVersion
+ *  (enforced the same way as every other rule in this file, by
+ *  scripts/archive-ownership-check.mjs) — every write function below routes
+ *  through these two wrappers, so "a real write landed" can be observed
+ *  exhaustively, not on a best-effort subset of call sites. */
+function writeCreate(record) {
+  const result = repoCreate(record);
+  if (result.ok) notifyArchiveObservers(result.data, ARCHIVE_OBSERVER_EVENT.CREATED);
+  return result;
+}
+
+function writeAppendVersion(id, patch) {
+  const result = repoAppendVersion(id, patch);
+  if (result.ok) notifyArchiveObservers(result.data, ARCHIVE_OBSERVER_EVENT.VERSION_APPENDED);
+  return result;
+}
+
+/** Test/teardown helper — mirrors every other resetX() idiom in this tree.
+ *  Not used by any runtime path. */
+export function resetArchiveObservers() {
+  _observers.length = 0;
 }
 
 /* ══ WRITE ════════════════════════════════════════════════════════════ */
@@ -132,7 +205,7 @@ export function archiveDocument(seed) {
   if (existing.ok) {
     // Same id: this is a re-archive of the SAME document (an ArchiveSource
     // re-ingesting, or the pipeline re-running). Append, never duplicate.
-    const merged = repoAppendVersion(seed.id, {
+    const merged = writeAppendVersion(seed.id, {
       ...normalizeArchiveRecord({ ...existing.data, ...seed }),
       version: undefined, // the repository owns versioning
       id: seed.id,
@@ -154,10 +227,10 @@ export function archiveDocument(seed) {
     duplicateOfId: original ? original.id : (seed.duplicateOfId || null),
   });
 
-  const created = repoCreate(record);
+  const created = writeCreate(record);
   if (!created.ok) {
     if (created.error && created.error.code === ARCHIVE_REPOSITORY_ERRORS.DUPLICATE_ID) {
-      const appended = repoAppendVersion(record.id, record);
+      const appended = writeAppendVersion(record.id, record);
       return { ...appended, op: 'append', duplicateOf: original ? original.id : null };
     }
     return { ...created, op: null, duplicateOf: null };
@@ -168,7 +241,7 @@ export function archiveDocument(seed) {
   if (record.supersedesId) {
     const predecessor = repoGetById(record.supersedesId);
     if (predecessor.ok && canTransitionArchive(predecessor.data.state, ARCHIVE_STATE.SUPERSEDED)) {
-      repoAppendVersion(record.supersedesId, {
+      writeAppendVersion(record.supersedesId, {
         state: ARCHIVE_STATE.SUPERSEDED,
         supersededById: record.id,
         archiveReason: ARCHIVE_REASON.SUPERSEDED,
@@ -225,7 +298,7 @@ export function archiveImportedKnowledge(seed) {
   if (current.data.state === ARCHIVE_STATE.DUPLICATE) return result;
   if (!canTransitionArchive(current.data.state, ARCHIVE_STATE.REFERENCED)) return result;
 
-  const referenced = repoAppendVersion(result.data.id, {
+  const referenced = writeAppendVersion(result.data.id, {
     state: ARCHIVE_STATE.REFERENCED,
     hasContributedKnowledge: true,
     knowledgeItemId: seed.knowledgeItemId,
@@ -243,7 +316,7 @@ export function archiveRejectedKnowledge(id, { actorId = null, reason = null } =
   if (!canTransitionArchive(current.data.state, ARCHIVE_STATE.DEPRECATED)) {
     return failure(ARCHIVE_SERVICE_ERRORS.ILLEGAL_TRANSITION, `Cannot deprecate "${id}" from "${current.data.state}".`);
   }
-  return repoAppendVersion(id, {
+  return writeAppendVersion(id, {
     state: ARCHIVE_STATE.DEPRECATED,
     archiveReason: ARCHIVE_REASON.KNOWLEDGE_REJECTED,
     archivedBy: actorId,
@@ -258,7 +331,7 @@ export function archiveSupersededKnowledge(id, supersededById, { actorId = null 
   if (!canTransitionArchive(current.data.state, ARCHIVE_STATE.SUPERSEDED)) {
     return failure(ARCHIVE_SERVICE_ERRORS.ILLEGAL_TRANSITION, `Cannot supersede "${id}" from "${current.data.state}".`);
   }
-  const result = repoAppendVersion(id, {
+  const result = writeAppendVersion(id, {
     state: ARCHIVE_STATE.SUPERSEDED,
     supersededById,
     archiveReason: ARCHIVE_REASON.SUPERSEDED,
@@ -267,7 +340,7 @@ export function archiveSupersededKnowledge(id, supersededById, { actorId = null 
   // The other end of the chain.
   const successor = repoGetById(supersededById);
   if (result.ok && successor.ok && !successor.data.supersedesId) {
-    repoAppendVersion(supersededById, { supersedesId: id });
+    writeAppendVersion(supersededById, { supersedesId: id });
   }
   // Phase 5, Part 9 — Archive Relationships as a Learning producer. A
   // supersession IS a relationship correction: the organization's
@@ -305,7 +378,7 @@ export function restoreDocument(id, { actorId = null, reason = null } = {}) {
   if (!canTransitionArchive(current.data.state, ARCHIVE_STATE.AVAILABLE)) {
     return failure(ARCHIVE_SERVICE_ERRORS.ILLEGAL_TRANSITION, `Cannot restore "${id}" from "${current.data.state}".`);
   }
-  return repoAppendVersion(id, {
+  return writeAppendVersion(id, {
     state: ARCHIVE_STATE.AVAILABLE,
     supersededById: null,
     archiveReason: ARCHIVE_REASON.RESTORED,
@@ -321,7 +394,7 @@ export function deprecateDocument(id, { actorId = null, reason = null } = {}) {
   if (!canTransitionArchive(current.data.state, ARCHIVE_STATE.DEPRECATED)) {
     return failure(ARCHIVE_SERVICE_ERRORS.ILLEGAL_TRANSITION, `Cannot deprecate "${id}" from "${current.data.state}".`);
   }
-  return repoAppendVersion(id, {
+  return writeAppendVersion(id, {
     state: ARCHIVE_STATE.DEPRECATED,
     archiveReason: ARCHIVE_REASON.DEPRECATED,
     archivedBy: actorId,
@@ -338,7 +411,7 @@ export function markReferenced(id, knowledgeItemId) {
   if (!canTransitionArchive(current.data.state, ARCHIVE_STATE.REFERENCED)) {
     return failure(ARCHIVE_SERVICE_ERRORS.ILLEGAL_TRANSITION, `Cannot mark "${id}" referenced from "${current.data.state}".`);
   }
-  return repoAppendVersion(id, {
+  return writeAppendVersion(id, {
     state: ARCHIVE_STATE.REFERENCED,
     hasContributedKnowledge: true,
     knowledgeItemId,

@@ -61,6 +61,14 @@
    RESPONSIBILITY: registerArchiver, advanceSession, sweepPipeline,
    cancelImportBatch, PIPELINE_OUTCOME.
 
+   NAMING, Phase 12.7.0 — sweepPipeline()'s tick counters are surfaced by
+   performance-collector.js#getWorkerHealth() as "Worker Health". This is
+   NOT a Worker thread (see file-storage/worker-runtime.js) and NOT the
+   concurrent upload pool (see ui/dataset-import-center.js's `worker()`) —
+   it is this file's own event-driven scheduler sweep, named "worker" only
+   in that one dashboard label. Three unrelated things, one English word;
+   see worker-runtime.js's header for the full disambiguation.
+
    DEPENDENCIES: ./import-session-engine.js, ./import-batch-engine.js,
    ./contracts/import-session-contract.js, ./metadata-inference-engine.js
    (the AUTO_POPULATE threshold, read — never re-derived).
