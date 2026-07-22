@@ -82,7 +82,7 @@ console.log('\n[Part 2 — reasoning/ is upstream: nothing under knowledge/, org
     }
   }
   // conversation/dynamic-conversation-service.js is the ONE documented exception.
-  const realOffenders = offenders.filter((o) => !o.startsWith('js/v2/conversation/services/dynamic-conversation-service.js'));
+  const realOffenders = offenders.filter((o) => !o.startsWith('src/conversation/services/dynamic-conversation-service.js'));
   check(`no module outside conversation/'s Phase 4-7 dynamic-conversation files imports reasoning/${realOffenders.length ? ` — FOUND: ${realOffenders.join(', ')}` : ''}`,
     realOffenders.length === 0);
 }

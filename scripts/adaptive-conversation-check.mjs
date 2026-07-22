@@ -32,7 +32,7 @@ import puppeteer from 'puppeteer';
 
 import { parseProblem } from '../js/v2/problem-intelligence/problem-parser.js';
 import { setKnowledgeBackend } from '../js/v2/knowledge/services/knowledge-service.js';
-import { resetConversationRepository } from '../js/v2/conversation/repository/conversation-repository.js';
+import { resetConversationRepository } from '../src/conversation/repository/conversation-repository.js';
 import { beginProblemSolving } from '../js/v2/problem-solving/services/problem-solving-service.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');

@@ -33,11 +33,11 @@
 'use strict';
 
 import { makeConversationContext } from '../contracts/context-contract.js';
-import { listKnowledge, LIFECYCLE_STATE } from '../../knowledge/services/knowledge-service.js';
-import { listApprovedOverrides, PROFILE_OVERRIDE_TYPE } from '../../knowledge/services/profile-override-service.js';
-import { computePatternRecommendations } from '../../knowledge/services/pattern-discovery-service.js';
-import { listArchive } from '../../../../src/organizational-memory/services/archive-service.js';
-import { computeOrganizationalMemory } from '../../../../src/organizational-memory/organizational-memory-engine.js';
+import { listKnowledge, LIFECYCLE_STATE } from '../../../js/v2/knowledge/services/knowledge-service.js';
+import { listApprovedOverrides, PROFILE_OVERRIDE_TYPE } from '../../../js/v2/knowledge/services/profile-override-service.js';
+import { computePatternRecommendations } from '../../../js/v2/knowledge/services/pattern-discovery-service.js';
+import { listArchive } from '../../organizational-memory/services/archive-service.js';
+import { computeOrganizationalMemory } from '../../organizational-memory/organizational-memory-engine.js';
 
 /**
  * @param {{domainType: string|null, conversationHistory?: Object[]}} args

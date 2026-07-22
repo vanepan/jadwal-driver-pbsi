@@ -58,7 +58,7 @@
 'use strict';
 
 import { INTENT, makeIntentResult } from '../contracts/intent-contract.js';
-import { NOR_TYPE } from '../../knowledge/registry/nor-type-registry.js';
+import { NOR_TYPE } from '../../../js/v2/knowledge/registry/nor-type-registry.js';
 
 export const INTENT_CONFIDENCE_THRESHOLD = 0.2;
 

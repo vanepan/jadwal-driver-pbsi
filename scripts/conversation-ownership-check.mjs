@@ -28,17 +28,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { resetConversationRepository } from '../js/v2/conversation/repository/conversation-repository.js';
+import { resetConversationRepository } from '../src/conversation/repository/conversation-repository.js';
 import {
   startConversation, continueConversation, completeConversation, cancelConversation,
   resumeConversation, listConversationHistory, explainConversation, findConversation,
   CONVERSATION_STATE,
-} from '../js/v2/conversation/services/conversation-service.js';
+} from '../src/conversation/services/conversation-service.js';
 import {
   CONVERSATION_GRAPH, canTransitionConversation, isTerminalConversationState,
-} from '../js/v2/conversation/contracts/conversation-contract.js';
-import { detectIntent } from '../js/v2/conversation/intent/intent-engine.js';
-import { INTENT } from '../js/v2/conversation/contracts/intent-contract.js';
+} from '../src/conversation/contracts/conversation-contract.js';
+import { detectIntent } from '../src/conversation/intent/intent-engine.js';
+import { INTENT } from '../src/conversation/contracts/intent-contract.js';
 
 import { resetLearningRepository } from '../js/v2/learning/repository/learning-repository.js';
 import { listLearningEvents, LEARNING_KIND, CORRECTION_TYPE } from '../js/v2/learning/services/learning-service.js';
@@ -81,7 +81,7 @@ function allSourceFiles() {
 }
 const FILES = allSourceFiles();
 
-const OWNER = 'js/v2/conversation/services/conversation-service.js';
+const OWNER = 'src/conversation/services/conversation-service.js';
 const REPO_RE = /conversation\/repository\/conversation-repository\.js$/;
 
 /* ══ 1. ONE OWNER ═════════════════════════════════════════════════════ */
@@ -116,11 +116,11 @@ console.log('\n[Part 1 — exactly ONE owner writes the Conversation Repository]
 console.log('\n[Part 2 — Conversation never bypasses a sibling domain\'s service boundary]');
 {
   const engineFiles = [
-    'js/v2/conversation/questionnaire/question-optimizer.js',
-    'js/v2/conversation/context/context-builder.js',
-    'js/v2/conversation/task-executor.js',
-    'js/v2/conversation/intent/intent-engine.js',
-    'js/v2/conversation/questionnaire/questionnaire-engine.js',
+    'src/conversation/questionnaire/question-optimizer.js',
+    'src/conversation/context/context-builder.js',
+    'src/conversation/task-executor.js',
+    'src/conversation/intent/intent-engine.js',
+    'src/conversation/questionnaire/questionnaire-engine.js',
   ];
   const offenders = [];
   for (const rel of engineFiles) {
@@ -173,7 +173,7 @@ console.log('\n[Part 3 — no orphan lifecycle states, exactly one authority]');
 
 console.log('\n[Part 6 — every named Task Executor dispatch has a REAL call site, not just a function]');
 {
-  const src = stripComments(read('js/v2/conversation/task-executor.js'));
+  const src = stripComments(read('src/conversation/task-executor.js'));
   const dispatches = [
     ['CREATE_NOR -> proposeNorFields', 'proposeNorFields('],
     ['CORRECT_METADATA -> recordCorrection', 'recordCorrection('],

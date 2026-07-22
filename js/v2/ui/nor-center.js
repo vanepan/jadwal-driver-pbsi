@@ -102,7 +102,7 @@ import { norNumberFromSequence, todayISO, fmtLong } from '../../petty-cash/petty
 import { beginProblemSolving, continueProblemConversation, composeApprovedNor } from '../problem-solving/services/problem-solving-service.js';
 import { WORKFLOW_ROUTE } from '../problem-solving/contracts/workflow-route-contract.js';
 import { HYPOTHESIS_STATUS } from '../reasoning/contracts/hypothesis-contract.js';
-import { INTENT, getRequiredFacts } from '../conversation/contracts/intent-contract.js';
+import { INTENT, getRequiredFacts } from '../../../src/conversation/contracts/intent-contract.js';
 import { globalSearch } from '../services/global-search-service.js';
 // Sprint 11.1, Workstream 2 (production feedback) — PREVIOUSLY UNCALLED
 // anywhere in the UI layer (confirmed by grep before writing this): the
@@ -111,7 +111,7 @@ import { globalSearch } from '../services/global-search-service.js';
 // `ui/ -> conversation/` as legal ("not exercised in Phase 6 — no UI
 // caller exists yet") — this is that edge's first real exercise, not a
 // new architectural decision.
-import { continueConversation } from '../conversation/services/conversation-service.js';
+import { continueConversation } from '../../../src/conversation/services/conversation-service.js';
 
 import {
   esc, renderEmptyState, renderTabShell, renderRowList, renderStatCards,

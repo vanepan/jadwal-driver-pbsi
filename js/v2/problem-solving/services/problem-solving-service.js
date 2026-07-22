@@ -57,8 +57,8 @@
 import { classifyProblem } from '../../problem-intelligence/services/problem-classification-service.js';
 import { getProblemCategory } from '../../problem-intelligence/contracts/problem-category-contract.js';
 import { planDiagnosis, reason, makeProblem } from '../../reasoning/services/reasoning-service.js';
-import { startConversation, findConversation } from '../../conversation/services/conversation-service.js';
-import { INTENT } from '../../conversation/contracts/intent-contract.js';
+import { startConversation, findConversation } from '../../../../src/conversation/services/conversation-service.js';
+import { INTENT } from '../../../../src/conversation/contracts/intent-contract.js';
 import { composeNorDocument } from '../../../../src/document-intelligence/nor/nor-composer.js';
 import { attachExplainability } from '../../../../src/document-intelligence/composer/composer-store.js';
 // Sprint 11.1, Workstream 1 — the ONE legal path to organizational-memory/

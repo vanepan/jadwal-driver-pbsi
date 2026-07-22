@@ -149,7 +149,7 @@ import { globalSearch } from '../services/global-search-service.js';
 // Part 9 (Conversation-first): the REAL, deterministic Conversation Service
 // (Phase 6) — this file only renders what it returns, never reinterprets
 // an utterance itself and never adds a new intent.
-import { INTENT, getRequiredFacts } from '../conversation/contracts/intent-contract.js';
+import { INTENT, getRequiredFacts } from '../../../src/conversation/contracts/intent-contract.js';
 // Sprint 11.1 (production feedback) — PREVIOUSLY UNCALLED anywhere in
 // this file (verified by grep before writing this): renderConversationResult()
 // below has only ever rendered `missingFacts` as static text, with no way
@@ -160,7 +160,7 @@ import { INTENT, getRequiredFacts } from '../conversation/contracts/intent-contr
 // in Phase 6 — no UI caller exists yet") — this is that edge's first real
 // exercise, not a new architectural decision. See nor-center.js's twin fix
 // for the identical pattern applied there first.
-import { continueConversation } from '../conversation/services/conversation-service.js';
+import { continueConversation } from '../../../src/conversation/services/conversation-service.js';
 // Phase 10.5 (Home Entry Point Migration, Problem-First Architecture) —
 // EVERY free-text request now enters through beginProblemSolving() first
 // (Problem Classification -> Diagnostic Planning -> Routing Decision).

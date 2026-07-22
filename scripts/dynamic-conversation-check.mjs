@@ -26,13 +26,13 @@ import { fileURLToPath } from 'node:url';
 import {
   setKnowledgeBackend,
 } from '../js/v2/knowledge/services/knowledge-service.js';
-import { resetConversationRepository } from '../js/v2/conversation/repository/conversation-repository.js';
-import { startConversation, continueConversation } from '../js/v2/conversation/services/conversation-service.js';
-import { explainDynamicConversation } from '../js/v2/conversation/services/dynamic-conversation-service.js';
+import { resetConversationRepository } from '../src/conversation/repository/conversation-repository.js';
+import { startConversation, continueConversation } from '../src/conversation/services/conversation-service.js';
+import { explainDynamicConversation } from '../src/conversation/services/dynamic-conversation-service.js';
 import {
   prioritizeQuestions, selectNextQuestion, computeConversationConfidence, hasReachedConfidenceThreshold,
-} from '../js/v2/conversation/dynamic-conversation-engine.js';
-import { DYNAMIC_QUESTION_PRIORITY } from '../js/v2/conversation/contracts/dynamic-question-contract.js';
+} from '../src/conversation/dynamic-conversation-engine.js';
+import { DYNAMIC_QUESTION_PRIORITY } from '../src/conversation/contracts/dynamic-question-contract.js';
 import { GAP_PRIORITY } from '../js/v2/reasoning/contracts/knowledge-gap-contract.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -45,8 +45,8 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8').replace(/\/\*[\s
 console.log('\n[Part 1 — Part 4 added ZERO new writers against the Conversation Repository]');
 {
   const files = [
-    'js/v2/conversation/dynamic-conversation-engine.js',
-    'js/v2/conversation/services/dynamic-conversation-service.js',
+    'src/conversation/dynamic-conversation-engine.js',
+    'src/conversation/services/dynamic-conversation-service.js',
   ];
   const offenders = [];
   for (const rel of files) {
@@ -59,7 +59,7 @@ console.log('\n[Part 1 — Part 4 added ZERO new writers against the Conversatio
   }
   check(`neither Phase 4-7 file imports conversation-repository.js directly${offenders.length ? ` — FOUND: ${offenders.join(', ')}` : ''}`,
     offenders.length === 0);
-  const serviceCode = read('js/v2/conversation/services/dynamic-conversation-service.js');
+  const serviceCode = read('src/conversation/services/dynamic-conversation-service.js');
   check('dynamic-conversation-service.js reaches Conversation ONLY through conversation-service.js\'s public findConversation',
     /from\s*'\.\/conversation-service\.js'/.test(serviceCode) && /findConversation/.test(serviceCode));
 }

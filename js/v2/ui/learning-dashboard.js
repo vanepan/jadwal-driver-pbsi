@@ -83,7 +83,7 @@ import { composerReviewStateLabel } from '../../../src/document-intelligence/com
 // (listConversationHistory, despite its name — same shape as
 // listLearningEvents/listKnowledge, not a per-item version history). No
 // new capture point, only the missing aggregation.
-import { listConversationHistory } from '../conversation/services/conversation-service.js';
+import { listConversationHistory } from '../../../src/conversation/services/conversation-service.js';
 
 import {
   esc, renderEmptyState, renderTabShell, renderRowList, renderStatCards, renderKvList, renderFilterBar,

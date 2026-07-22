@@ -1,4 +1,4 @@
-# js/v2/conversation — Conversation Intelligence Foundation (Phase 6)
+# src/conversation — Conversation Intelligence Foundation (Phase 6)
 
 > Status: architecture-only, same as Phase 8's NOR Generator contract before
 > Phase 9.5 gave it a real implementation. Built, tested (see
@@ -29,7 +29,7 @@ LLM adapter could ever plug in, and nothing here depends on it.
 ## Layout
 
 ```
-js/v2/conversation/
+src/conversation/
   contracts/
     conversation-contract.js   Conversation shape + lifecycle (Started/Active/Ready/Completed/Cancelled/Failed)
     intent-contract.js         INTENT enum + INTENT_FIELD_SCHEMA (the required-fact table per intent)

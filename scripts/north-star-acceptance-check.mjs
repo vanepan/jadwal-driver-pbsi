@@ -28,9 +28,9 @@
 import {
   setKnowledgeBackend, listKnowledge, LIFECYCLE_STATE,
 } from '../js/v2/knowledge/services/knowledge-service.js';
-import { resetConversationRepository } from '../js/v2/conversation/repository/conversation-repository.js';
-import { continueConversation, explainConversation } from '../js/v2/conversation/services/conversation-service.js';
-import { explainDynamicConversation } from '../js/v2/conversation/services/dynamic-conversation-service.js';
+import { resetConversationRepository } from '../src/conversation/repository/conversation-repository.js';
+import { continueConversation, explainConversation } from '../src/conversation/services/conversation-service.js';
+import { explainDynamicConversation } from '../src/conversation/services/dynamic-conversation-service.js';
 import { resetComposerStore, getComposerTimeline, getExplainability } from '../src/document-intelligence/composer/composer-store.js';
 import { explainDocument } from '../src/document-intelligence/nor/nor-explainability-service.js';
 import { beginProblemSolving, composeApprovedNor } from '../js/v2/problem-solving/services/problem-solving-service.js';

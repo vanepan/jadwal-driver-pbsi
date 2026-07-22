@@ -121,7 +121,7 @@ console.log('\n[Part 3 — body/ is a PEER of knowledge/, never depends on any E
   // (substring-safe for either the old or new root) so this stays a real
   // assertion instead of silently never matching a path that no longer
   // contains '/v2/'.
-  const FORBIDDEN_TREES = ['/v2/knowledge/', '/organizational-memory/', '/v2/learning/', '/v2/conversation/', '/v2/reasoning/', '/v2/problem-intelligence/', '/v2/problem-solving/', '/document-intelligence/', '/v2/ui/'];
+  const FORBIDDEN_TREES = ['/v2/knowledge/', '/organizational-memory/', '/v2/learning/', '/conversation/', '/v2/reasoning/', '/v2/problem-intelligence/', '/v2/problem-solving/', '/document-intelligence/', '/v2/ui/'];
   const ALLOWLISTED_PURE_LEAF_REUSE = ['js/v2/knowledge/contracts/identity-contract.js', 'js/v2/knowledge/observability/contracts/warning-contract.js'];
   const leaks = [];
   for (const { rel, code } of BODY_FILES) {

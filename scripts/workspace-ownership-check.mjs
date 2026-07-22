@@ -121,7 +121,7 @@ console.log('\n[Part 3 — workspace/ never imports ui/, conversation/, problem-
   // problem-intelligence/ and problem-solving/ remain forbidden — this
   // sprint did not touch those. ai-foundation/ was deleted (confirmed dead,
   // zero real callers anywhere) during Phase 1 Repository Refoundation.
-  const FORBIDDEN_TREES = ['/v2/ui/', '/v2/conversation/', '/v2/problem-intelligence/', '/v2/problem-solving/'];
+  const FORBIDDEN_TREES = ['/v2/ui/', '/conversation/', '/v2/problem-intelligence/', '/v2/problem-solving/'];
   const leaks = [];
   for (const { rel, code } of WORKSPACE_FILES) {
     for (const { target } of importTargets(code)) {

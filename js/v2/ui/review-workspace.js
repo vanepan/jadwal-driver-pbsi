@@ -160,7 +160,7 @@ import { computeSectionConfidence, confidenceHighlightTone } from '../../../src/
 import { recordSectionEdit } from '../../../src/document-intelligence/composer/section-learning-bridge.js';
 import { COMPOSER_REVIEW_STATE, composerReviewStateLabel } from '../../../src/document-intelligence/composer/contracts/composer-review-contract.js';
 import { explainDocument } from '../../../src/document-intelligence/nor/nor-explainability-service.js';
-import { getConversationHistory } from '../conversation/services/conversation-service.js';
+import { getConversationHistory } from '../../../src/conversation/services/conversation-service.js';
 import {
   esc, renderEmptyState, renderRowList, renderDetail, renderDetailSection,
   renderKvList, renderDiffTable, isDeveloperMode,
