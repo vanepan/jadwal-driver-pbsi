@@ -74,7 +74,7 @@ function scheduleHydrate(raw) {
 export async function initFileStorageSync() {
   if (_syncStarted) return;
   _syncStarted = true;
-  const { subscribeNode, storeFirebaseData, readNode } = await import('../../firebase.js');
+  const { subscribeNode, storeFirebaseData, readNode } = await import('../../js/firebase.js');
   _remoteWrite = storeFirebaseData;
   const initial = await readNode(RTDB_PATH);
   if (initial.status === 'ok') applyRemoteSnapshot(initial.value);

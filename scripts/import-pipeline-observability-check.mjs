@@ -30,8 +30,8 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import {
   archiveDocument, registerArchiveObserver, resetArchiveObservers, ARCHIVE_OBSERVER_EVENT,
-} from '../js/v2/organizational-memory/services/archive-service.js';
-import { resetArchiveRepository } from '../js/v2/organizational-memory/repository/archive-repository.js';
+} from '../src/organizational-memory/services/archive-service.js';
+import { resetArchiveRepository } from '../src/organizational-memory/repository/archive-repository.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');

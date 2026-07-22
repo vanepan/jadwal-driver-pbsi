@@ -4,7 +4,7 @@
    PURPOSE: "Scope Detection" — distinguishes "this is how EVERYONE does
    it" (organization-wide) from "this is a specific exception/variant",
    using ONLY signals already inside the Knowledge Repository. Deliberately
-   does NOT read js/v2/organizational-memory/ (which carries the real
+   does NOT read src/organizational-memory/ (which carries the real
    "Dari"/origin signal, `senderOrigin`) — Organizational Memory sits
    DOWNSTREAM of Knowledge Repository in the frozen architecture (Official
    Documents -> Knowledge Acquisition -> Knowledge Repository ->

@@ -32,7 +32,7 @@ import { resetImportReportLog } from '../js/v2/knowledge/acquisition/acquisition
 import { resetManualImportQueue } from '../js/v2/knowledge/acquisition/manual-import-queue-store.js';
 import { resetImportSessionRepository } from '../js/v2/knowledge/datasets/import-session/repository/import-session-repository.js';
 import { resetImportBatchRepository } from '../js/v2/knowledge/datasets/import-session/repository/import-batch-repository.js';
-import { resetArchiveRepository } from '../js/v2/organizational-memory/repository/archive-repository.js';
+import { resetArchiveRepository } from '../src/organizational-memory/repository/archive-repository.js';
 import { resetLearningRepository } from '../js/v2/learning/repository/learning-repository.js';
 import { DATASET_TYPE } from '../js/v2/knowledge/datasets/contracts/dataset-contract.js';
 import { IMPORT_SESSION_KIND, IMPORT_SESSION_STATE } from '../js/v2/knowledge/datasets/import-session/contracts/import-session-contract.js';
@@ -44,8 +44,8 @@ import { isContentFactsComplete } from '../js/v2/knowledge/datasets/import-sessi
 import { computeFieldConsensus } from '../js/v2/knowledge/datasets/import-session/content-fact-consensus-engine.js';
 import { AUTO_POPULATE_CONFIDENCE_THRESHOLD } from '../js/v2/knowledge/datasets/import-session/metadata-inference-engine.js';
 import { advanceSession } from '../js/v2/knowledge/datasets/import-session/pipeline-scheduler.js';
-import { archiveImportedKnowledge, listArchive as archiveList } from '../js/v2/organizational-memory/services/archive-service.js';
-import { computeDocumentHash } from '../js/v2/organizational-memory/index.js';
+import { archiveImportedKnowledge, listArchive as archiveList } from '../src/organizational-memory/services/archive-service.js';
+import { computeDocumentHash } from '../src/organizational-memory/index.js';
 import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
 import {
   createDatasetImportController, contentFactsGapMessage,

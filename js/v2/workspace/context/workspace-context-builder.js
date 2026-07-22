@@ -53,7 +53,7 @@ import { getById as getWorkspaceById } from '../repository/workspace-repository.
 import { getDocument } from '../../document-intelligence/composer/composer-store.js';
 import { sectionsToLiveBlocks } from '../adapters/block-adapter.js';
 import { context as bodyContext } from '../../body/services/index.js';
-import { computeOrganizationalMemory } from '../../organizational-memory/organizational-memory-engine.js';
+import { computeOrganizationalMemory } from '../../../../src/organizational-memory/organizational-memory-engine.js';
 import { records as recognitionRecords } from '../../recognition/services/index.js';
 import { computeRecommendations } from '../../learning/learning-recommendation-engine.js';
 // Phase 12.8.x, Sprint 2 ("Live Entity Recognition") — deterministic,

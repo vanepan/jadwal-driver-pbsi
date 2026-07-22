@@ -13,20 +13,20 @@ import { LIFECYCLE_STATE } from '../js/v2/knowledge/contracts/lifecycle-contract
 import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
 import { setActiveRepository, create as knowledgeCreate } from '../js/v2/knowledge/repository/knowledge-repository.js';
 
-import { registerArchiveSource, listArchiveSources, resetArchiveSourceRegistry } from '../js/v2/organizational-memory/registry/archive-source-registry.js';
-import { archiveSourceSuccess } from '../js/v2/organizational-memory/contracts/archive-source-contract.js';
-import { isArchiveRecord } from '../js/v2/organizational-memory/contracts/archive-record-contract.js';
-import { resetArchiveRepository, getById as getArchiveById, list as listArchive } from '../js/v2/organizational-memory/repository/archive-repository.js';
-import { ingestArchive } from '../js/v2/organizational-memory/archive-ingestion-engine.js';
-import { computeDocumentHash } from '../js/v2/organizational-memory/document-hash.js';
-import { suggestNextNumber } from '../js/v2/organizational-memory/numbering-engine.js';
-import { detectGaps } from '../js/v2/organizational-memory/gap-detection-engine.js';
-import { GAP_STATUS } from '../js/v2/organizational-memory/contracts/gap-contract.js';
-import { flagGapForUpload, resolveGap, getGapsWithWorkflowState, resetGapWorkflowState } from '../js/v2/organizational-memory/gap-workflow-engine.js';
-import { findDuplicateArchiveRecords } from '../js/v2/organizational-memory/duplicate-detection-engine.js';
-import { getArchiveTimeline } from '../js/v2/organizational-memory/archive-timeline-engine.js';
-import { computeArchiveHealth } from '../js/v2/organizational-memory/archive-health-engine.js';
-import { checkKnowledgeContribution } from '../js/v2/organizational-memory/knowledge-contribution-engine.js';
+import { registerArchiveSource, listArchiveSources, resetArchiveSourceRegistry } from '../src/organizational-memory/registry/archive-source-registry.js';
+import { archiveSourceSuccess } from '../src/organizational-memory/contracts/archive-source-contract.js';
+import { isArchiveRecord } from '../src/organizational-memory/contracts/archive-record-contract.js';
+import { resetArchiveRepository, getById as getArchiveById, list as listArchive } from '../src/organizational-memory/repository/archive-repository.js';
+import { ingestArchive } from '../src/organizational-memory/archive-ingestion-engine.js';
+import { computeDocumentHash } from '../src/organizational-memory/document-hash.js';
+import { suggestNextNumber } from '../src/organizational-memory/numbering-engine.js';
+import { detectGaps } from '../src/organizational-memory/gap-detection-engine.js';
+import { GAP_STATUS } from '../src/organizational-memory/contracts/gap-contract.js';
+import { flagGapForUpload, resolveGap, getGapsWithWorkflowState, resetGapWorkflowState } from '../src/organizational-memory/gap-workflow-engine.js';
+import { findDuplicateArchiveRecords } from '../src/organizational-memory/duplicate-detection-engine.js';
+import { getArchiveTimeline } from '../src/organizational-memory/archive-timeline-engine.js';
+import { computeArchiveHealth } from '../src/organizational-memory/archive-health-engine.js';
+import { checkKnowledgeContribution } from '../src/organizational-memory/knowledge-contribution-engine.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {
@@ -42,7 +42,7 @@ console.log('\n[Archive source registry bootstrap]');
 check('all 3 placeholders registered (memorandum/sop/internal_letter)', ['memorandum', 'sop', 'internal_letter'].every((id) => listArchiveSources().some((s) => s.id === id)));
 check('nor is NOT registered (never imported in this Node process)', !listArchiveSources().some((s) => s.id === 'nor'));
 
-const memorandumSource = (await import('../js/v2/organizational-memory/sources/memorandum-archive-source.js')).memorandumArchiveSource;
+const memorandumSource = (await import('../src/organizational-memory/sources/memorandum-archive-source.js')).memorandumArchiveSource;
 const placeholderResult = memorandumSource.fetch();
 check('placeholder source fetch fails NOT_IMPLEMENTED', placeholderResult.ok === false && placeholderResult.error.code === 'NOT_IMPLEMENTED');
 

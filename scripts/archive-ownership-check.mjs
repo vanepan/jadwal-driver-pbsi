@@ -19,7 +19,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { resetArchiveRepository } from '../js/v2/organizational-memory/repository/archive-repository.js';
+import { resetArchiveRepository } from '../src/organizational-memory/repository/archive-repository.js';
 import {
   archiveDocument, archiveDuplicate, archiveImportedKnowledge,
   archiveRejectedKnowledge, archiveSupersededKnowledge,
@@ -27,13 +27,13 @@ import {
   findArchiveRecord, listArchive, searchArchive,
   explainArchiveRecord, getArchiveRelationships, getReplacementChain, getDuplicateIntelligence,
   ARCHIVE_SERVICE_ERRORS,
-} from '../js/v2/organizational-memory/services/archive-service.js';
+} from '../src/organizational-memory/services/archive-service.js';
 import {
   ARCHIVE_STATE, ARCHIVE_GRAPH, ARCHIVE_REASON, ARCHIVE_RELATIONSHIP,
-} from '../js/v2/organizational-memory/contracts/archive-record-contract.js';
+} from '../src/organizational-memory/contracts/archive-record-contract.js';
 import {
   DUPLICATE_KIND, classifyDuplicate, findDuplicateIntelligence, deriveRelationships, buildReplacementChain,
-} from '../js/v2/organizational-memory/archive-relationship-engine.js';
+} from '../src/organizational-memory/archive-relationship-engine.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -58,7 +58,7 @@ function allSourceFiles() {
 }
 const FILES = allSourceFiles();
 
-const OWNER = 'js/v2/organizational-memory/services/archive-service.js';
+const OWNER = 'src/organizational-memory/services/archive-service.js';
 const REPO_RE = /repository\/archive-repository\.js$/;
 
 /* ══ 1. ONE OWNER ═════════════════════════════════════════════════════ */
@@ -91,7 +91,7 @@ console.log('\n[Part 1/2 — exactly ONE owner writes the Archive Repository]');
 
   // The audit found TWO creators. Name each, so a regression is legible.
   for (const f of [
-    'js/v2/organizational-memory/archive-ingestion-engine.js',
+    'src/organizational-memory/archive-ingestion-engine.js',
     'js/v2/ui/dataset-import-center.js',
   ]) {
     check(`${f.replace('js/v2/', '')} is now a CLIENT, not a writer`,
@@ -101,7 +101,7 @@ console.log('\n[Part 1/2 — exactly ONE owner writes the Archive Repository]');
 
 console.log('\n[Part 2 — the barrel no longer leaks the repository]');
 {
-  const barrel = stripComments(read('js/v2/organizational-memory/index.js'));
+  const barrel = stripComments(read('src/organizational-memory/index.js'));
   check('organizational-memory/index.js no longer does `export * from` the repository',
     !/export\s+\*\s+from\s+'\.\/repository\/archive-repository\.js'/.test(barrel));
   check('...it exports the Archive Service instead',
@@ -352,7 +352,7 @@ console.log('\n[Behaviour — Part 4: nothing exists without provenance]');
 
 console.log('\n[Behaviour — the pure engine is genuinely pure (no repository, no state)]');
 {
-  const engineSrc = stripComments(read('js/v2/organizational-memory/archive-relationship-engine.js'));
+  const engineSrc = stripComments(read('src/organizational-memory/archive-relationship-engine.js'));
   check('archive-relationship-engine.js imports NO repository — it takes records in, returns facts out',
     !/repository/.test(engineSrc));
   check('...and holds no module-level state', !/^(const|let)\s+_/m.test(engineSrc));

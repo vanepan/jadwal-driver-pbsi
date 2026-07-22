@@ -34,7 +34,7 @@ import { continueConversation } from '../js/v2/conversation/services/conversatio
 import { resetComposerStore } from '../js/v2/document-intelligence/composer/composer-store.js';
 import { beginProblemSolving, composeApprovedNor } from '../js/v2/problem-solving/services/problem-solving-service.js';
 import { seedNorBootstrapKnowledge } from '../js/v2/knowledge/bootstrap/nor-reverse-engineering-knowledge.js';
-import { archiveDocument, resetArchiveRepository } from '../js/v2/organizational-memory/index.js';
+import { archiveDocument, resetArchiveRepository } from '../src/organizational-memory/index.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let pass = 0; let fail = 0;

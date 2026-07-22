@@ -118,7 +118,7 @@ import {
   IMPORT_SESSION_STATE, PIPELINE_STAGE_ORDER, PIPELINE_OFF_RAMP_STAGES,
   isTerminalImportSessionState, isOffRampStage,
 } from '../knowledge/datasets/import-session/contracts/import-session-contract.js';
-import { listArchive as archiveList, getGapsWithWorkflowState, GAP_STATUS } from '../organizational-memory/index.js';
+import { listArchive as archiveList, getGapsWithWorkflowState, GAP_STATUS } from '../../../src/organizational-memory/index.js';
 import { listDomainTypes } from '../knowledge/registry/domain-type-registry.js';
 import { listKinds } from '../knowledge/registry/kind-registry.js';
 import { getReviewQueue, getCandidateQueue } from '../knowledge/review/review-queue-engine.js';
@@ -137,9 +137,9 @@ import { computePatternRecommendations, discoverAndRecordPatterns } from '../kno
 // pattern corrections — see dataset-import-center.js, knowledge-center.js,
 // nor-center.js).
 import { listLearningEvents, LEARNING_KIND } from '../learning/services/learning-service.js';
-import { computeOrganizationalMemory } from '../organizational-memory/organizational-memory-engine.js';
-import { computeCoverageReport } from '../organizational-memory/coverage-engine.js';
-import { countResolvedGaps } from '../organizational-memory/gap-workflow-engine.js';
+import { computeOrganizationalMemory } from '../../../src/organizational-memory/organizational-memory-engine.js';
+import { computeCoverageReport } from '../../../src/organizational-memory/coverage-engine.js';
+import { countResolvedGaps } from '../../../src/organizational-memory/gap-workflow-engine.js';
 // Experience Architecture phase — Part 6 (Action-first Home): "Continue
 // Previous Batch" is real only when a real unfinished batch exists.
 import { listBatches, BATCH_STATUS } from '../knowledge/datasets/import-session/import-batch-engine.js';

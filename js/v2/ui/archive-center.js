@@ -39,7 +39,7 @@ import {
   explainArchiveRecord, getArchiveRelationships, getReplacementChain,
   restoreDocument, deprecateDocument,
   ARCHIVE_STATE, ARCHIVE_STATE_DEFS,
-} from '../organizational-memory/index.js';
+} from '../../../src/organizational-memory/index.js';
 
 import {
   listKnowledge as knowledgeList,

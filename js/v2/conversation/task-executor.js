@@ -68,9 +68,9 @@ import { INTENT } from './contracts/intent-contract.js';
 import { proposeNorFields } from '../document-intelligence/nor/nor-generator.js';
 import { recordCorrection, CORRECTION_TYPE } from '../learning/services/learning-service.js';
 import { getPendingReviewKnowledge, getKnowledgeMetrics } from '../knowledge/services/knowledge-service.js';
-import { listArchive } from '../organizational-memory/services/archive-service.js';
-import { computeCoverageReport } from '../organizational-memory/coverage-engine.js';
-import { computeOrganizationalMemory } from '../organizational-memory/organizational-memory-engine.js';
+import { listArchive } from '../../../src/organizational-memory/services/archive-service.js';
+import { computeCoverageReport } from '../../../src/organizational-memory/coverage-engine.js';
+import { computeOrganizationalMemory } from '../../../src/organizational-memory/organizational-memory-engine.js';
 
 export const TASK_EXECUTOR_ERRORS = Object.freeze({
   UNKNOWN_INTENT: 'UNKNOWN_INTENT',

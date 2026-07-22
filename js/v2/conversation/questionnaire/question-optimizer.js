@@ -62,8 +62,8 @@ import { getRequiredFacts } from '../contracts/intent-contract.js';
 import { makeResolvedFact, QUESTION_SOURCE } from '../contracts/question-contract.js';
 import { listKnowledge, LIFECYCLE_STATE } from '../../knowledge/services/knowledge-service.js';
 import { listApprovedOverrides, PROFILE_OVERRIDE_TYPE } from '../../knowledge/services/profile-override-service.js';
-import { listArchive, ARCHIVE_STATE } from '../../organizational-memory/services/archive-service.js';
-import { computeOrganizationalMemory } from '../../organizational-memory/organizational-memory-engine.js';
+import { listArchive, ARCHIVE_STATE } from '../../../../src/organizational-memory/services/archive-service.js';
+import { computeOrganizationalMemory } from '../../../../src/organizational-memory/organizational-memory-engine.js';
 
 /** A single sample is noise, not memory — same bar
  *  knowledge/services/pattern-discovery-service.js#MIN_SUPPORT_TO_RECORD

@@ -3,7 +3,7 @@
 
    Modeled on petty-cash's own archivedExpenses()/archiveExpense()
    pattern (immutable period-record snapshots) rather than the
-   js/v2/organizational-memory archive engine, which is built for
+   src/organizational-memory archive engine, which is built for
    knowledge/document provenance (duplicate/hash detection) — a
    different shape of problem than "browse frozen monthly snapshots."
 

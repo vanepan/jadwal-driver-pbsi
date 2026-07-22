@@ -22,8 +22,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { resetLearningRepository } from '../js/v2/learning/repository/learning-repository.js';
-import { resetArchiveRepository } from '../js/v2/organizational-memory/repository/archive-repository.js';
-import { resetGapWorkflowState } from '../js/v2/organizational-memory/gap-workflow-engine.js';
+import { resetArchiveRepository } from '../src/organizational-memory/repository/archive-repository.js';
+import { resetGapWorkflowState } from '../src/organizational-memory/gap-workflow-engine.js';
 import { resetDatasetRegistry } from '../js/v2/knowledge/datasets/registry/dataset-registry.js';
 import {
   recordCorrection, recordGapResolution, recordPattern, recordCoverage, recordKnowledgeEvolution,
@@ -37,12 +37,12 @@ import { setKnowledgeBackend, ingest, promoteKnowledge, getKnowledge } from '../
 import { LIFECYCLE_STATE } from '../js/v2/knowledge/contracts/lifecycle-contract.js';
 import { computePatternRecommendations, computeLearningPatterns, discoverAndRecordPatterns } from '../js/v2/knowledge/services/pattern-discovery-service.js';
 import { PATTERN_TYPE } from '../js/v2/knowledge/contracts/pattern-recommendation-contract.js';
-import { computeCoverageReport, recordCoverageSnapshot } from '../js/v2/organizational-memory/coverage-engine.js';
-import { computeOrganizationalMemory } from '../js/v2/organizational-memory/organizational-memory-engine.js';
+import { computeCoverageReport, recordCoverageSnapshot } from '../src/organizational-memory/coverage-engine.js';
+import { computeOrganizationalMemory } from '../src/organizational-memory/organizational-memory-engine.js';
 import {
   archiveDocument, archiveSupersededKnowledge, findArchiveRecord,
-} from '../js/v2/organizational-memory/services/archive-service.js';
-import { flagGapForUpload, resolveGap, getGapsWithWorkflowState, countResolvedGaps } from '../js/v2/organizational-memory/gap-workflow-engine.js';
+} from '../src/organizational-memory/services/archive-service.js';
+import { flagGapForUpload, resolveGap, getGapsWithWorkflowState, countResolvedGaps } from '../src/organizational-memory/gap-workflow-engine.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -163,10 +163,10 @@ console.log('\n[Part 9 — every mission-named producer has a REAL call site, no
     ['Correction (metadata)', 'js/v2/ui/dataset-import-center.js', 'recordCorrection'],
     ['Correction (knowledge)', 'js/v2/ui/knowledge-center.js', 'recordCorrection'],
     ['Correction (pattern)', 'js/v2/ui/nor-center.js', 'recordCorrection'],
-    ['Correction (relationship / Archive Relationships)', 'js/v2/organizational-memory/services/archive-service.js', 'recordCorrection'],
-    ['Gap Resolution', 'js/v2/organizational-memory/gap-workflow-engine.js', 'recordGapResolution'],
+    ['Correction (relationship / Archive Relationships)', 'src/organizational-memory/services/archive-service.js', 'recordCorrection'],
+    ['Gap Resolution', 'src/organizational-memory/gap-workflow-engine.js', 'recordGapResolution'],
     ['Pattern Discovery', 'js/v2/knowledge/services/pattern-discovery-service.js', 'recordPattern'],
-    ['Coverage', 'js/v2/organizational-memory/coverage-engine.js', 'recordCoverage'],
+    ['Coverage', 'src/organizational-memory/coverage-engine.js', 'recordCoverage'],
     ['Knowledge Approval', 'js/v2/knowledge/services/knowledge-service.js', 'recordKnowledgeEvolution'],
   ];
   for (const [label, file, fn] of producers) {
@@ -178,8 +178,8 @@ console.log('\n[Part 9 — every consumer reads through a Service, never a repos
 {
   const consumers = [
     'js/v2/knowledge/profiles/pattern-discovery-engine.js',
-    'js/v2/organizational-memory/coverage-engine.js',
-    'js/v2/organizational-memory/organizational-memory-engine.js',
+    'src/organizational-memory/coverage-engine.js',
+    'src/organizational-memory/organizational-memory-engine.js',
     'js/v2/ui/learning-dashboard.js',
     'js/v2/ui/sarpras-intelligence-center.js',
   ];
@@ -332,7 +332,7 @@ console.log('\n[Behaviour — Part 5: Organization Memory — eight facts, all r
     // Verified architecturally: PARAGRAPH (paragraph_pattern) vs WRITING_STYLE
     // (writing_style) are different PROFILE_TYPE/kind pairs — see
     // organizational-memory-engine.js's own comment at the call site.
-    const src = stripComments(read('js/v2/organizational-memory/organizational-memory-engine.js'));
+    const src = stripComments(read('src/organizational-memory/organizational-memory-engine.js'));
     return src.includes('PROFILE_TYPE.PARAGRAPH') && src.includes('PROFILE_TYPE.WRITING_STYLE')
       && !new RegExp(`commonOrganizationalPhrases[\\s\\S]{0,40}PROFILE_TYPE\\.PARAGRAPH`).test(src);
   })());

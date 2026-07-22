@@ -33,7 +33,7 @@ import { computeSha256 } from './file-hash.js';
 import { getStoredFileBySha256, registerStoredFile, linkSessionToStoredFile } from './file-storage-registry.js';
 import { makeStoredFileRecord } from './contracts/file-storage-contract.js';
 import { withRetryAsync, withTimeout } from './retry-with-backoff.js';
-import { uploadFileToStorage } from '../../firebase.js';
+import { uploadFileToStorage } from '../../js/firebase.js';
 
 export { computeSha256 };
 

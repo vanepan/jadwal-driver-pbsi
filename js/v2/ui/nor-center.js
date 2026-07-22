@@ -68,10 +68,10 @@ import { buildAllProfiles, listProfileTypes } from '../knowledge/profiles/profil
 import { listDatasets } from '../knowledge/datasets/registry/dataset-registry.js';
 import { getKind } from '../knowledge/registry/kind-registry.js';
 
-import { computeArchiveHealth } from '../organizational-memory/archive-health-engine.js';
-import { getArchiveTimeline } from '../organizational-memory/archive-timeline-engine.js';
-import { listArchive as archiveList } from '../organizational-memory/services/archive-service.js';
-import { checkKnowledgeContribution } from '../organizational-memory/knowledge-contribution-engine.js';
+import { computeArchiveHealth } from '../../../src/organizational-memory/archive-health-engine.js';
+import { getArchiveTimeline } from '../../../src/organizational-memory/archive-timeline-engine.js';
+import { listArchive as archiveList } from '../../../src/organizational-memory/services/archive-service.js';
+import { checkKnowledgeContribution } from '../../../src/organizational-memory/knowledge-contribution-engine.js';
 
 import { getComposerTimeline, getRevisionHistory } from '../document-intelligence/composer/composer-store.js';
 // Phase 10, Sprint 10.3 — the Composer is fully awake: createDocument

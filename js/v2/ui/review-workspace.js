@@ -204,8 +204,8 @@ import {
 // avoids one (html-docx-js's base64-image support stays unverified).
 import { PBSI_LOGO_DATA_URI } from '../../docs/templates/reimbursement-logo.js';
 import { exportHtmlToDocx } from '../../docs/docx-exporter.js';
-import { archiveDocument } from '../organizational-memory/services/archive-service.js';
-import { computeDocumentHash } from '../organizational-memory/document-hash.js';
+import { archiveDocument } from '../../../src/organizational-memory/services/archive-service.js';
+import { computeDocumentHash } from '../../../src/organizational-memory/document-hash.js';
 import { recordSatisfactionRating } from '../document-intelligence/composer/satisfaction-log.js';
 // Phase 12.8.4 — Live Word Workspace's first real UI caller. Gated behind
 // WORKSPACE_LIVE_SUGGESTIONS_ENABLED (workspace-flags.js) — merging this

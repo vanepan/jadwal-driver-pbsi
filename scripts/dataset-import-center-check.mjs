@@ -25,7 +25,7 @@ import { resetImportReportLog } from '../js/v2/knowledge/acquisition/acquisition
 import { resetManualImportQueue } from '../js/v2/knowledge/acquisition/manual-import-queue-store.js';
 import { resetImportSessionRepository } from '../js/v2/knowledge/datasets/import-session/repository/import-session-repository.js';
 import { resetImportBatchRepository } from '../js/v2/knowledge/datasets/import-session/repository/import-batch-repository.js';
-import { resetArchiveRepository } from '../js/v2/organizational-memory/repository/archive-repository.js';
+import { resetArchiveRepository } from '../src/organizational-memory/repository/archive-repository.js';
 import { DATASET_TYPE } from '../js/v2/knowledge/datasets/contracts/dataset-contract.js';
 import {
   IMPORT_SESSION_KIND, IMPORT_SESSION_STATE, PIPELINE_STAGE,

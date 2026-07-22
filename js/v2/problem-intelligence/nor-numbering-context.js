@@ -32,10 +32,10 @@
 
 'use strict';
 
-import { suggestNextNumber } from '../organizational-memory/numbering-engine.js';
+import { suggestNextNumber } from '../../../src/organizational-memory/numbering-engine.js';
 
 /**
- * @returns {import('../organizational-memory/contracts/numbering-contract.js').NumberingSuggestion}
+ * @returns {import('../../../src/organizational-memory/contracts/numbering-contract.js').NumberingSuggestion}
  */
 export function getNumberingSuggestionForNor() {
   return suggestNextNumber('nor');

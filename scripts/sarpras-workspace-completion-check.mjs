@@ -84,7 +84,7 @@ for (const file of ['js/v2/ui/archive-center.js', 'js/v2/ui/knowledge-center.js'
 // ── Reuse discipline: the new files import from existing engines only,
 //    never redefine a v2-module-placeholder-style stub ─────────────────
 const archiveSrc = fs.readFileSync(path.join(ROOT, 'js/v2/ui/archive-center.js'), 'utf8');
-check('archive-center.js imports the organizational-memory barrel (reuse, not duplication)', archiveSrc.includes("from '../organizational-memory/index.js'"));
+check('archive-center.js imports the organizational-memory barrel (reuse, not duplication)', archiveSrc.includes("from '../../../src/organizational-memory/index.js'"));
 const knowledgeSrc = fs.readFileSync(path.join(ROOT, 'js/v2/ui/knowledge-center.js'), 'utf8');
 check('knowledge-center.js imports the knowledge services barrel (reuse, not duplication)', knowledgeSrc.includes("from '../knowledge/services/index.js'"));
 const learningSrc = fs.readFileSync(path.join(ROOT, 'js/v2/ui/learning-dashboard.js'), 'utf8');
@@ -93,7 +93,7 @@ check('learning-dashboard.js calls buildLearningMetrics(listCorrectionLog()) dir
 // ── V2.1 — Dataset Import Center reuse discipline: composes both layers,
 //    never duplicates either one's engines ──────────────────────────────
 const datasetImportSrc = fs.readFileSync(path.join(ROOT, 'js/v2/ui/dataset-import-center.js'), 'utf8');
-check('dataset-import-center.js imports the organizational-memory barrel (reuse, not duplication)', datasetImportSrc.includes("from '../organizational-memory/index.js'"));
+check('dataset-import-center.js imports the organizational-memory barrel (reuse, not duplication)', datasetImportSrc.includes("from '../../../src/organizational-memory/index.js'"));
 check('dataset-import-center.js imports the Import Session engine (reuse, not duplication)', datasetImportSrc.includes("from '../knowledge/datasets/import-session/import-session-engine.js'"));
 check('archive-center.js embeds the SAME Dataset Import Center controller (no second upload mechanism)', archiveSrc.includes("from './dataset-import-center.js'"));
 const norCenterSrc2 = fs.readFileSync(path.join(ROOT, 'js/v2/ui/nor-center.js'), 'utf8');

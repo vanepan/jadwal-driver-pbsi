@@ -9,12 +9,12 @@
      CDN-hosted SDK, which only a browser can resolve) and exposes it on
      window, mirroring scripts/knowledge-acquisition-harness.html's pattern. -->
 <script type="module">
-  import { hasArchiveSource, getArchiveSource, listArchiveSources } from '../js/v2/organizational-memory/registry/archive-source-registry.js';
-  import { resetArchiveRepository, list as listArchive } from '../js/v2/organizational-memory/repository/archive-repository.js';
-  import { ingestArchive } from '../js/v2/organizational-memory/archive-ingestion-engine.js';
-  import { computeArchiveHealth } from '../js/v2/organizational-memory/archive-health-engine.js';
-  import '../js/v2/organizational-memory/sources/index.js'; // registers the real 'nor' archive source
-  import { NOR_ARCHIVE_SOURCE_ID } from '../js/v2/organizational-memory/sources/nor-archive-source.js';
+  import { hasArchiveSource, getArchiveSource, listArchiveSources } from '../src/organizational-memory/registry/archive-source-registry.js';
+  import { resetArchiveRepository, list as listArchive } from '../src/organizational-memory/repository/archive-repository.js';
+  import { ingestArchive } from '../src/organizational-memory/archive-ingestion-engine.js';
+  import { computeArchiveHealth } from '../src/organizational-memory/archive-health-engine.js';
+  import '../src/organizational-memory/sources/index.js'; // registers the real 'nor' archive source
+  import { NOR_ARCHIVE_SOURCE_ID } from '../src/organizational-memory/sources/nor-archive-source.js';
 
   resetArchiveRepository();
 

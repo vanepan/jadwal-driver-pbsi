@@ -16,14 +16,14 @@ import { LIFECYCLE_STATE } from '../js/v2/knowledge/contracts/lifecycle-contract
 import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
 import { setActiveRepository } from '../js/v2/knowledge/repository/knowledge-repository.js';
 
-import { registerArchiveSource, resetArchiveSourceRegistry } from '../js/v2/organizational-memory/registry/archive-source-registry.js';
-import { archiveSourceSuccess } from '../js/v2/organizational-memory/contracts/archive-source-contract.js';
-import { resetArchiveRepository } from '../js/v2/organizational-memory/repository/archive-repository.js';
-import { ingestArchive } from '../js/v2/organizational-memory/archive-ingestion-engine.js';
-import { computeDocumentHash } from '../js/v2/organizational-memory/document-hash.js';
-import { resetGapWorkflowState } from '../js/v2/organizational-memory/gap-workflow-engine.js';
-import { isUploadRecommendation } from '../js/v2/organizational-memory/contracts/upload-recommendation-contract.js';
-import { buildUploadRecommendations } from '../js/v2/organizational-memory/upload-recommendation-engine.js';
+import { registerArchiveSource, resetArchiveSourceRegistry } from '../src/organizational-memory/registry/archive-source-registry.js';
+import { archiveSourceSuccess } from '../src/organizational-memory/contracts/archive-source-contract.js';
+import { resetArchiveRepository } from '../src/organizational-memory/repository/archive-repository.js';
+import { ingestArchive } from '../src/organizational-memory/archive-ingestion-engine.js';
+import { computeDocumentHash } from '../src/organizational-memory/document-hash.js';
+import { resetGapWorkflowState } from '../src/organizational-memory/gap-workflow-engine.js';
+import { isUploadRecommendation } from '../src/organizational-memory/contracts/upload-recommendation-contract.js';
+import { buildUploadRecommendations } from '../src/organizational-memory/upload-recommendation-engine.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {

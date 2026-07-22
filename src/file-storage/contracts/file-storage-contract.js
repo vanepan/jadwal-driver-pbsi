@@ -3,7 +3,7 @@
 
    PURPOSE: fix the shape of ONE stored original file — a real Firebase
    Storage upload, deduplicated by content hash. This is a NEW top-level
-   sibling module (js/v2/file-storage/), not nested under knowledge/ or
+   sibling module (src/file-storage/), not nested under knowledge/ or
    organizational-memory/, because BOTH need to reference it (an
    ImportSessionRecord's sha256/storagePath, an ArchiveRecord's fileRef)
    without creating a dependency between those two layers — the same

@@ -25,7 +25,7 @@
 'use strict';
 
 import { listImportSessions } from '../knowledge/datasets/import-session/import-session-engine.js';
-import { searchArchive } from '../organizational-memory/services/archive-service.js';
+import { searchArchive } from '../../../src/organizational-memory/services/archive-service.js';
 import { listKnowledge } from '../knowledge/services/knowledge-service.js';
 
 const RESULT_CAP_PER_KIND = 8;

@@ -42,9 +42,9 @@ import { INTENT } from '../js/v2/conversation/contracts/intent-contract.js';
 
 import { resetLearningRepository } from '../js/v2/learning/repository/learning-repository.js';
 import { listLearningEvents, LEARNING_KIND, CORRECTION_TYPE } from '../js/v2/learning/services/learning-service.js';
-import { resetArchiveRepository } from '../js/v2/organizational-memory/repository/archive-repository.js';
-import { computeCoverageReport } from '../js/v2/organizational-memory/coverage-engine.js';
-import { computeOrganizationalMemory } from '../js/v2/organizational-memory/organizational-memory-engine.js';
+import { resetArchiveRepository } from '../src/organizational-memory/repository/archive-repository.js';
+import { computeCoverageReport } from '../src/organizational-memory/coverage-engine.js';
+import { computeOrganizationalMemory } from '../src/organizational-memory/organizational-memory-engine.js';
 import {
   setKnowledgeBackend, ingest, promoteKnowledge,
 } from '../js/v2/knowledge/services/knowledge-service.js';
@@ -66,13 +66,17 @@ const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$
 
 function allSourceFiles() {
   const out = [];
-  (function walk(dir) {
+  function walk(dir) {
     for (const entry of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
       const rel = `${dir}/${entry.name}`;
       if (entry.isDirectory()) walk(rel);
       else if (entry.name.endsWith('.js')) out.push({ rel, code: stripComments(read(rel)) });
     }
-  }('js/v2'));
+  }
+  walk('js/v2');
+  // src/ — the domains moved out of js/v2/ during Phase 1 Repository
+  // Refoundation (organizational-memory/, file-storage/ so far) live here.
+  walk('src');
   return out;
 }
 const FILES = allSourceFiles();
@@ -133,7 +137,11 @@ console.log('\n[Part 2 — Conversation never bypasses a sibling domain\'s servi
 
 console.log('\n[Part 8 — Conversation Memory never contaminates Organization Memory: nothing upstream imports conversation/]');
 {
-  const upstream = FILES.filter((f) => /^js\/v2\/(knowledge|organizational-memory|learning|document-intelligence|ai-foundation|file-storage)\//.test(f.rel));
+  // organizational-memory/ and file-storage/ moved to src/ during Phase 1
+  // Repository Refoundation; ai-foundation/ was deleted (confirmed dead) in
+  // the same phase — dropped from this list entirely rather than matched
+  // against a path that no longer exists.
+  const upstream = FILES.filter((f) => /^js\/v2\/(knowledge|learning|document-intelligence)\//.test(f.rel) || /^src\/(organizational-memory|file-storage)\//.test(f.rel));
   const offenders = [];
   for (const { rel, code } of upstream) {
     const blocks = code.match(/import\s*\{[^}]*\}\s*from\s*'[^']*'/gs) || [];

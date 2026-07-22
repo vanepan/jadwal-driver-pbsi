@@ -230,7 +230,7 @@ await page3.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' })
 const approverResult = await page3.evaluate(async () => {
   const { createDocument, getDocument } = await import('/js/v2/document-intelligence/composer/composer-store.js');
   const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
-  const { findArchiveRecord } = await import('/js/v2/organizational-memory/services/archive-service.js');
+  const { findArchiveRecord } = await import('/src/organizational-memory/services/archive-service.js');
 
   localStorage.setItem('pbsi_current_user', JSON.stringify({ username: 'evan', role: 'admin' }));
 

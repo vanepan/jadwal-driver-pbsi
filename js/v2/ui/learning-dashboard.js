@@ -59,8 +59,8 @@ import { getKind } from '../knowledge/registry/kind-registry.js';
 // eight-fact Organization Memory report (Part 5), replacing the old
 // three-different-percentages-called-"Coverage" and giving Organization
 // Memory a real, reachable reader.
-import { computeCoverageReport } from '../organizational-memory/coverage-engine.js';
-import { computeOrganizationalMemory } from '../organizational-memory/organizational-memory-engine.js';
+import { computeCoverageReport } from '../../../src/organizational-memory/coverage-engine.js';
+import { computeOrganizationalMemory } from '../../../src/organizational-memory/organizational-memory-engine.js';
 // Sprint 11.7 (Continuous Organizational Memory) — same pure-report shape
 // as computeOrganizationalMemory above, reused verbatim, never recomputed.
 import { computeKnowledgeDrift } from '../knowledge/services/pattern-discovery-service.js';

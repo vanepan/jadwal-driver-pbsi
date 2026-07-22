@@ -34,8 +34,8 @@
 'use strict';
 
 import { listKnowledge, LIFECYCLE_STATE } from '../knowledge/services/knowledge-service.js';
-import { listArchive } from '../organizational-memory/services/archive-service.js';
-import { computeOrganizationalMemory } from '../organizational-memory/organizational-memory-engine.js';
+import { listArchive } from '../../../src/organizational-memory/services/archive-service.js';
+import { computeOrganizationalMemory } from '../../../src/organizational-memory/organizational-memory-engine.js';
 
 /**
  * @param {string|null} domainType

@@ -148,10 +148,10 @@ import {
   // import source, same functions), now also surfaced inline on the
   // document itself. Reused verbatim, never recomputed.
   explainArchiveRecord, getArchiveRelationships, getReplacementChain,
-} from '../organizational-memory/index.js';
+} from '../../../src/organizational-memory/index.js';
 import {
   archiveImportedKnowledge, listArchive as archiveList,
-} from '../organizational-memory/services/archive-service.js';
+} from '../../../src/organizational-memory/services/archive-service.js';
 import { generateKnowledgeId } from '../knowledge/contracts/identity-contract.js';
 // Phase 5, Part 3 — a human confirming previously-untrusted Advanced Metadata
 // is a real, already-firing metadata correction. Recorded through the
