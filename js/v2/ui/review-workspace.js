@@ -184,6 +184,13 @@ import { exportHtmlToDocx } from '../../docs/docx-exporter.js';
 import { archiveDocument } from '../organizational-memory/services/archive-service.js';
 import { computeDocumentHash } from '../organizational-memory/document-hash.js';
 import { recordSatisfactionRating } from '../document-intelligence/composer/satisfaction-log.js';
+// Phase 12.8.4 — Live Word Workspace's first real UI caller. Gated behind
+// WORKSPACE_LIVE_SUGGESTIONS_ENABLED (workspace-flags.js) — merging this
+// import does not itself change what a reviewer sees; the flag does. See
+// refreshLiveSuggestions()'s own header for the full cadence/ownership story.
+import { WORKSPACE_LIVE_SUGGESTIONS_ENABLED } from '../workspace/workspace-flags.js';
+import { workspace as workspaceService, explainability as workspaceExplainability } from '../workspace/services/index.js';
+import { SUGGESTION_TYPE_LABELS } from '../workspace/explainability/workspace-explainability-service.js';
 
 // Phase 10, Sprint 10.5 — see this file's own header for why this reads
 // the same session key js/auth.js#getCurrentUser() reads WITHOUT
@@ -235,6 +242,16 @@ const st = {
   // new save path, only the missing positive confirmation of one that was
   // already happening silently.
   liveDocSavedField: null,
+  // Phase 12.8.4 — Live Word Workspace suggestion panel. liveSuggestions
+  // is a computation-time CACHE (see refreshLiveSuggestions()'s header),
+  // never re-derived inline during render — workspace-suggestion-engine.js
+  // mints a fresh suggestionId on every call, so the Accept/Reject click
+  // handler (a separate event from the render that showed the button)
+  // needs the EXACT array that render produced, not a recomputation.
+  liveWorkspaceId: null,
+  liveSuggestions: [],
+  liveSuggestionError: null,
+  liveSuggestionWhyOpenId: null,
 };
 
 let host = null;
@@ -260,6 +277,17 @@ export async function mountReviewWorkspace(hostEl) {
   host.classList.add('wlk-root');
   if (!mounted) {
     mounted = true;
+    // Phase 12.8.2 — workspace/repository/repository-registry.js defaults
+    // to NullRepository, deliberately (same "don't silently pretend to
+    // persist" reasoning body/'s own registry documents) — a real backend
+    // is always an explicit opt-in by a domain's first real caller, the
+    // same shape composer-document-repository.js's own
+    // initComposerDocumentSync() takes. This IS that opt-in: a Workspace
+    // is non-durable across a reload for this pilot (it is a thin
+    // orchestration handle, not a system of record — the ComposerDocument
+    // it wraps already persists via RTDB) — getOrCreateWorkspaceForDocument
+    // reconciles a lost Workspace by creating a fresh one, never a crash.
+    workspaceService.setWorkspaceBackend('memory');
     host.addEventListener('click', onClick);
     host.addEventListener('input', onInput);
     // Workstream 2 — inline contenteditable commit fires on blur.
@@ -357,6 +385,8 @@ function onClick(e) {
     st.exportError = null;
     st.showSatisfactionPrompt = null;
     st.addingField = null; st.publishConfirming = null; st.publishRationale = ''; st.liveDocError = null;
+    st.liveSuggestionWhyOpenId = null; st.liveSuggestionError = null;
+    refreshLiveSuggestions(st.selectedId);
     render();
     return;
   }
@@ -440,6 +470,56 @@ function onClick(e) {
   if (act === 'rw-publish-start') { handlePublishStart(el.dataset.id); return; }
   if (act === 'rw-publish-confirm') { handlePublishConfirm(el.dataset.id); return; }
   if (act === 'rw-publish-cancel') { st.publishConfirming = null; st.publishRationale = ''; st.govError = null; render(); return; }
+  // ── Phase 12.8.4/12.8.5 — Live Suggestion accept/reject and the
+  //    Phase 12.8.6 "why" panel. Looks up the suggestion by id in
+  //    st.liveSuggestions (the array render() just displayed), never
+  //    recomputes — see refreshLiveSuggestions()'s header. ────────────
+  if (act === 'rw-suggestion-accept' || act === 'rw-suggestion-reject') {
+    if (!canReview()) { st.liveSuggestionError = 'Anda tidak memiliki izin untuk menindaklanjuti saran ini.'; render(); return; }
+    const suggestion = st.liveSuggestions.find((s) => s.suggestionId === el.dataset.suggestionId);
+    if (!suggestion || !st.liveWorkspaceId) return;
+    const decision = act === 'rw-suggestion-accept' ? 'accepted' : 'rejected';
+    const result = workspaceService.decideSuggestion(st.liveWorkspaceId, suggestion, decision, { actorId: currentActorId() });
+    st.liveSuggestionError = result.ok ? null : result.error.message;
+    if (result.ok) { st.liveSuggestionWhyOpenId = null; refreshLiveSuggestions(st.selectedId); }
+    render();
+    return;
+  }
+  if (act === 'rw-suggestion-why') {
+    st.liveSuggestionWhyOpenId = st.liveSuggestionWhyOpenId === el.dataset.suggestionId ? null : el.dataset.suggestionId;
+    render();
+    return;
+  }
+}
+
+/** Phase 12.8.4 — computes (never persists) a fresh Live Suggestion list
+ *  for one document. Idle-triggered: called on document selection and on
+ *  a successful edit commit (onFocusOut, below) — the SAME cadence
+ *  composer-store.js#editSection already commits on, never per-keystroke
+ *  (the architecture review's own performance requirement). Cached onto
+ *  st.liveSuggestions so a later Accept/Reject click (a separate DOM
+ *  event from the render that showed the button) resolves the EXACT
+ *  suggestion object shown — workspace-suggestion-engine.js is pure and
+ *  stateless, so re-running it between render and click would mint a
+ *  different suggestionId for what is conceptually the same suggestion.
+ *  Fails silent-and-honest: flag off, no document, or no review
+ *  capability all leave the panel empty, never a fabricated placeholder
+ *  (dormant-subsystems.js's own discipline — this is not a REGISTERED
+ *  dormant subsystem, because it has no asymmetric reader/writer: the
+ *  panel that reads st.liveSuggestions is the same code path that
+ *  writes it, right here). */
+function refreshLiveSuggestions(documentId) {
+  st.liveSuggestions = [];
+  st.liveWorkspaceId = null;
+  if (!WORKSPACE_LIVE_SUGGESTIONS_ENABLED || !documentId || !canReview()) return;
+  try {
+    const ws = workspaceService.getOrCreateWorkspaceForDocument(documentId, { ownerId: currentActorId() });
+    if (!ws.ok) return;
+    st.liveWorkspaceId = ws.data.workspaceId;
+    st.liveSuggestions = workspaceService.computeSuggestionsFor(ws.data.workspaceId);
+  } catch (err) {
+    st.liveSuggestionError = (err && err.message) || 'Gagal memuat saran organisasi.';
+  }
 }
 
 /** Composed HERE (ui/), the one layer allowed to see both document-
@@ -566,6 +646,9 @@ function onFocusOut(e) {
     st.liveDocSavedField = field;
     const savedField = field;
     setTimeout(() => { if (st.liveDocSavedField === savedField) { st.liveDocSavedField = null; render(); } }, 2200);
+    // Phase 12.8.4 — refresh Live Suggestions on the SAME idle cadence a
+    // content edit already commits on (blur), never per-keystroke.
+    refreshLiveSuggestions(documentId);
   }
   render();
 }
@@ -756,6 +839,55 @@ function renderLiveDocument(doc) {
         </ul>` : ''}
       ${renderSignatureArea(structure.signatureSuggestion)}
       ${st.liveDocError ? `<div class="rw-edit-error">${esc(st.liveDocError)}</div>` : ''}
+    </div>`;
+}
+
+/** Phase 12.8.4/12.8.6 — the read-only, dismissible Live Suggestion
+ *  panel. Renders ONLY the cached st.liveSuggestions (see
+ *  refreshLiveSuggestions()) — never computes inline, so this function
+ *  stays a pure view over already-decided state, matching every other
+ *  render* function in this file. Hidden entirely (returns '') when the
+ *  flag is off, the viewer lacks review capability, or there is simply
+ *  nothing to show — never a "0 saran" placeholder implying the system
+ *  checked and found none, since for most documents today it did not
+ *  check anything at all (Recognition/Body still have zero real
+ *  producers wired outside this pilot — see workspace/README.md). */
+function renderSuggestionPanel(doc) {
+  if (!WORKSPACE_LIVE_SUGGESTIONS_ENABLED || !canReview()) return '';
+  if (st.selectedId !== doc.documentId) return '';
+  if (st.liveSuggestionError) {
+    return `<div class="rw-suggestion-panel rw-suggestion-panel--error">${esc(st.liveSuggestionError)}</div>`;
+  }
+  if (!st.liveSuggestions.length) return '';
+  return `
+    <div class="rw-suggestion-panel">
+      <div class="rw-suggestion-panel-title">Saran organisasi (${st.liveSuggestions.length})</div>
+      ${st.liveSuggestions.map((s) => renderSuggestionRow(s)).join('')}
+    </div>`;
+}
+
+function renderSuggestionRow(suggestion) {
+  const label = SUGGESTION_TYPE_LABELS[suggestion.suggestionType] || suggestion.suggestionType;
+  const whyOpen = st.liveSuggestionWhyOpenId === suggestion.suggestionId;
+  const explanation = whyOpen ? workspaceExplainability.explainSuggestion(suggestion) : null;
+  return `
+    <div class="rw-suggestion-row">
+      <div class="rw-suggestion-row-main">
+        <span class="rw-suggestion-label">${esc(label)}</span>
+        <span class="rw-suggestion-confidence">${Math.round(suggestion.confidence * 100)}%</span>
+      </div>
+      <div class="rw-suggestion-actions">
+        <button class="wlk-btn wlk-btn--ghost" data-act="rw-suggestion-why" data-suggestion-id="${esc(suggestion.suggestionId)}" type="button">Kenapa?</button>
+        <button class="wlk-btn wlk-btn--ghost" data-act="rw-suggestion-reject" data-suggestion-id="${esc(suggestion.suggestionId)}" type="button">Abaikan</button>
+        <button class="wlk-btn" data-act="rw-suggestion-accept" data-suggestion-id="${esc(suggestion.suggestionId)}" type="button">Terima</button>
+      </div>
+      ${whyOpen && explanation && explanation.ok ? `
+        <div class="rw-suggestion-why">
+          <p>${esc(explanation.data.why)} — ${Math.round(explanation.data.confidence * 100)}% keyakinan.</p>
+          <ul class="wlk-kv-list">
+            ${explanation.data.evidence.map((ev) => `<li class="wlk-kv-row"><span class="wlk-kv-val">${esc(ev.rationale)}</span></li>`).join('')}
+          </ul>
+        </div>` : ''}
     </div>`;
 }
 
@@ -1083,6 +1215,7 @@ function renderDocDetail(documentId) {
     <div class="wlk-sec">
       <div class="wlk-sec-title">Detail — ${esc(devMode ? doc.documentId : `${domainLabel(doc.domainType)} v${doc.version}`)}</div>
       ${renderLiveDocument(doc)}
+      ${renderSuggestionPanel(doc)}
       ${renderPublishAction(doc)}
       ${renderDetail([
         devMode ? renderDetailSection('Pratinjau Draf (Developer — field mentah)', renderDraftPreview(doc)) : '',

@@ -356,6 +356,60 @@ js/v2/
                             check.mjs confirms zero live callers and that all
                             26 files import cleanly in plain Node
 
+  workspace/              Phase 12.8 ("Live Word Workspace") — the ONE new
+                          orchestration-tier domain this platform was
+                          structurally missing: composes document-intelligence/
+                          + knowledge/ + organizational-memory/ + body/ +
+                          recognition/ + learning/ for one open Workspace,
+                          something nothing before this phase was allowed to
+                          do (ui/ never depends on body/; document-intelligence/
+                          never depends on recognition/). A thin, 1:1 wrapper
+                          around an EXISTING ComposerDocument — never a second
+                          document system. See its own README for the full
+                          rationale.
+    contracts/               Workspace, WorkspaceSession, LiveBlock (a lossless
+                            superset of EditableSection), LiveSuggestion
+                            (cite-or-abstain ENFORCED structurally — evidence
+                            may never be empty, unlike RecognitionRecord's),
+                            WorkspaceTimelineEntry
+    registry/                suggestion-type-registry.js — suggestionType
+                            vocabulary + per-type confidenceFloor
+    repository/              workspace-repository.js (Memory+Null+registry,
+                            Knowledge/Body-style) + workspace-timeline-
+                            repository.js (direct-function, Learning/
+                            BodyEvent-style — immutable log rows)
+    context/                 workspace-context-builder.js#buildWorkspaceContext()
+                            — the ONE function allowed to compose Body +
+                            Organizational Memory + Recognition + Learning
+                            read-only for one Workspace. Reuses
+                            body/services/index.js#context.buildBodyContext()
+                            VERBATIM — body facts stay descriptive-only here
+                            too, never a citation source for reason()
+    suggestion/               workspace-suggestion-engine.js#computeSuggestions()
+                            — pure, stateless, cite-or-abstain, mirrors
+                            learning-recommendation-engine.js's own "never
+                            writes, never auto-applies" discipline. Also the
+                            SECOND real producer of evidence-contract.js's
+                            long-reserved STATISTIC Evidence kind (Recognition
+                            was the first)
+    explainability/           workspace-explainability-service.js#explainSuggestion()
+                            — this platform's 7th disambiguated explain()
+                            surface, MERGING (never reinventing) Recognition's/
+                            Learning's own explain output where one exists
+    snapshot/                 workspace-snapshot-cache.js — narrow, same-process,
+                            honestly-aged cache; NOT wired into js/pwa.js/
+                            service-worker.js this phase
+    services/                 workspace-service.js — the ONE write owner of
+                            both repositories (createWorkspace/
+                            decideSuggestion/getWorkspaceTimeline/
+                            getBlockCitations) + index.js (namespaced barrel)
+    workspace-flags.js        WORKSPACE_LIVE_SUGGESTIONS_ENABLED — a second,
+                            narrower kill switch one level inside isV2Enabled(),
+                            gating ui/review-workspace.js's suggestion panel
+    index.js                  dormant barrel. First real outside caller:
+                            ui/review-workspace.js (Sprint 12.8.4) — verified
+                            by scripts/workspace-ownership-check.mjs
+
   dormant-subsystems.js   the register of BUILT, TESTED, REACHABLE subsystems nothing
                           currently drives — a dormant subsystem must SAY SO wherever it is
                           displayed, never quietly render a zero (Phase 3, Part 8). reasoning/ and
@@ -473,7 +527,37 @@ conversation/ & reasoning/ & problem-intelligence/  ──may depend on──>
 ui/                     ──may depend on──>  recognition/ (Phase 12.7 — not
                         exercised this phase — no Recognition Center/UI panel
                         ships)
+workspace/              ──depends on──>  document-intelligence/ (read-only,
+                        composer-store.js#getDocument only), knowledge/,
+                        organizational-memory/, learning/, body/
+                        (services-only, via body/services/index.js#context —
+                        Phase 12.8's ONE new grant: workspace/ may read
+                        body/ directly, something ui/ itself is still
+                        forbidden from doing), recognition/ (services-only,
+                        via recognition/services/index.js#records)
+document-intelligence/ & knowledge/ & organizational-memory/ & learning/ &
+                        body/ & recognition/  ──never depend on──>
+                        workspace/ (workspace/ is purely downstream, the
+                        same posture problem-solving/ and recognition/
+                        already hold toward what they read)
+workspace/              ──never depends on──>  ui/, ai-foundation/,
+                        conversation/, reasoning/, problem-intelligence/,
+                        problem-solving/
+ui/                     ──depends on──>  workspace/ (Phase 12.8.4 —
+                        ui/review-workspace.js is the one real caller,
+                        gated a second time by its own
+                        workspace-flags.js#WORKSPACE_LIVE_SUGGESTIONS_ENABLED,
+                        independent of isV2Enabled())
 ```
+
+Phase 12.8 adds exactly ONE new edge class to this graph: `workspace/` may
+read `body/` directly, a grant no other domain has (`ui/` is explicitly
+still forbidden from it, two lines above — see body/README.md's own Phase
+12.6 fix). This mirrors `learning-bridge/`'s Phase 12.6 precedent exactly:
+a narrow, explicit, reviewed exception for one named cross-cutting need
+(composing a live document with the organization's live operational
+state), never a general loosening of `body/`'s "peer, not downstream"
+posture. See js/v2/workspace/README.md §2 for the full rationale.
 
 This is a STRICT EXTENSION of the graph, not a revision of it — no edge that
 existed before Phase 5 changed direction. `learning/` sits below both
