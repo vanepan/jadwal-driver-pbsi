@@ -22,7 +22,7 @@
 
 'use strict';
 
-import { isEvidenceList } from '../../../knowledge/contracts/evidence-contract.js';
+import { isEvidenceList } from '../../../../js/v2/knowledge/contracts/evidence-contract.js';
 import { isSuggestionPlaceholder } from './suggestion-placeholder-contract.js';
 
 export const EDITABLE_SECTION_SCHEMA = 'editable-section@1';
@@ -33,7 +33,7 @@ export const EDITABLE_SECTION_SCHEMA = 'editable-section@1';
  * @property {string} field
  * @property {*} value
  * @property {boolean} isOverridden
- * @property {import('../../../knowledge/contracts/evidence-contract.js').Evidence[]} knowledgeReferences
+ * @property {import('../../../../js/v2/knowledge/contracts/evidence-contract.js').Evidence[]} knowledgeReferences
  * @property {import('./suggestion-placeholder-contract.js').SuggestionPlaceholder|null} suggestionPlaceholder
  */
 

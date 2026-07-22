@@ -39,13 +39,13 @@
   // inline edit through the SAME recordSectionEdit() path onFocusOut uses,
   // so a DOM test can verify the Learning Dashboard reflects an edit made
   // while the reviewer was on ANOTHER screen (Finding 2a re-render-on-reshow).
-  import { recordSectionEdit } from '../js/v2/document-intelligence/composer/section-learning-bridge.js';
+  import { recordSectionEdit } from '../src/document-intelligence/composer/section-learning-bridge.js';
   // Sprint 11.9 (Persistent Organizational Learning) — test affordances:
   // drive a real reviewer edit through the real composer-store (which fires
   // the composer change listener the app registers, projecting persistent
   // Candidate learning), and read the persistent Candidate queue back.
-  import { createDocument as __createDoc, editSection as __editSection } from '../js/v2/document-intelligence/composer/composer-store.js';
-  import { rehydrateLearningFromDocuments as __rehydrateLearning } from '../js/v2/document-intelligence/composer/reviewer-edit-rehydration-engine.js';
+  import { createDocument as __createDoc, editSection as __editSection } from '../src/document-intelligence/composer/composer-store.js';
+  import { rehydrateLearningFromDocuments as __rehydrateLearning } from '../src/document-intelligence/composer/reviewer-edit-rehydration-engine.js';
   import { getCandidateQueue as __getCandidateQueue } from '../js/v2/knowledge/review/review-queue-engine.js';
   import { getKnowledge as __getKnowledge, submitKnowledgeForReview as __submitForReview, promoteKnowledge as __promote } from '../js/v2/knowledge/services/knowledge-service.js';
   // Phase 7 (Runtime Hardening, Part 9) — stress-test affordance: seeds N

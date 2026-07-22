@@ -20,11 +20,11 @@ import { submitForReview, approve } from '../js/v2/knowledge/review/review-workf
 import { suggestConfidence } from '../js/v2/knowledge/machine-learning/confidence-engine.js';
 import { getSourceWeight } from '../js/v2/knowledge/contracts/source-weight-contract.js';
 import { scoreColor, clampScore } from '../js/services/unified-scoring.js';
-import { makeEditableSection } from '../js/v2/document-intelligence/composer/contracts/editable-section-contract.js';
+import { makeEditableSection } from '../src/document-intelligence/composer/contracts/editable-section-contract.js';
 import {
   createDocument, addSection, attachExplainability, resetComposerStore,
-} from '../js/v2/document-intelligence/composer/composer-store.js';
-import { computeSectionConfidence, confidenceHighlightTone } from '../js/v2/document-intelligence/composer/section-confidence-engine.js';
+} from '../src/document-intelligence/composer/composer-store.js';
+import { computeSectionConfidence, confidenceHighlightTone } from '../src/document-intelligence/composer/section-confidence-engine.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {

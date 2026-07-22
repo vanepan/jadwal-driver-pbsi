@@ -31,7 +31,7 @@
 /**
  * @typedef {Object} NorKnowledgeResponse
  * @property {boolean} ok
- * @property {import('../../../knowledge/contracts/knowledge-item-contract.js').KnowledgeItem[]} items
+ * @property {import('../../../../js/v2/knowledge/contracts/knowledge-item-contract.js').KnowledgeItem[]} items
  * @property {{code: string, message: string}|null} error
  */
 

@@ -65,7 +65,7 @@
 'use strict';
 
 import { INTENT } from './contracts/intent-contract.js';
-import { proposeNorFields } from '../document-intelligence/nor/nor-generator.js';
+import { proposeNorFields } from '../../../src/document-intelligence/nor/nor-generator.js';
 import { recordCorrection, CORRECTION_TYPE } from '../learning/services/learning-service.js';
 import { getPendingReviewKnowledge, getKnowledgeMetrics } from '../knowledge/services/knowledge-service.js';
 import { listArchive } from '../../../src/organizational-memory/services/archive-service.js';

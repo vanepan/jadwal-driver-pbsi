@@ -19,8 +19,8 @@
 
 import {
   getKnowledge as getById,
-} from '../../knowledge/services/knowledge-service.js';
-import { explain } from '../../knowledge/services/explainability-service.js';
+} from '../../../js/v2/knowledge/services/knowledge-service.js';
+import { explain } from '../../../js/v2/knowledge/services/explainability-service.js';
 import { registerStep } from '../registry/step-registry.js';
 import { DOCUMENT_PIPELINE_STEP } from '../contracts/document-pipeline-contract.js';
 

@@ -31,8 +31,8 @@ import {
 import { resetConversationRepository } from '../js/v2/conversation/repository/conversation-repository.js';
 import { continueConversation, explainConversation } from '../js/v2/conversation/services/conversation-service.js';
 import { explainDynamicConversation } from '../js/v2/conversation/services/dynamic-conversation-service.js';
-import { resetComposerStore, getComposerTimeline, getExplainability } from '../js/v2/document-intelligence/composer/composer-store.js';
-import { explainDocument } from '../js/v2/document-intelligence/nor/nor-explainability-service.js';
+import { resetComposerStore, getComposerTimeline, getExplainability } from '../src/document-intelligence/composer/composer-store.js';
+import { explainDocument } from '../src/document-intelligence/nor/nor-explainability-service.js';
 import { beginProblemSolving, composeApprovedNor } from '../js/v2/problem-solving/services/problem-solving-service.js';
 import { seedNorBootstrapKnowledge } from '../js/v2/knowledge/bootstrap/nor-reverse-engineering-knowledge.js';
 import { seedPerjalananDinasPengadaanKnowledge } from '../js/v2/knowledge/bootstrap/nor-perjalanan-dinas-pengadaan-knowledge.js';

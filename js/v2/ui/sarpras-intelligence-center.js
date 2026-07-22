@@ -95,7 +95,7 @@ import { initFileStorageSync } from '../../../src/file-storage/file-storage-regi
 // ComposerDocument (a composed NOR draft) must survive a refresh for a
 // human reviewer to come back to it, same "activate once, at Sarpras
 // Intelligence's own mount" idiom as every init*Sync() call in this block.
-import { initComposerDocumentSync, registerChangeListener as registerComposerChangeListener } from '../document-intelligence/composer/composer-document-repository.js';
+import { initComposerDocumentSync, registerChangeListener as registerComposerChangeListener } from '../../../src/document-intelligence/composer/composer-document-repository.js';
 // Phase 2.5 Part 3 — make the in-memory knowledge repo a deterministic
 // projection of the persisted Import Sessions, so imported Knowledge
 // survives a refresh (and picks up another tab's RTDB-hydrated sessions).
@@ -106,7 +106,7 @@ import { rehydrateKnowledgeFromSessions } from '../knowledge/datasets/import-ses
 // ComposerDocument revisions: a reviewer's reusable wording edits become
 // persistent, governed, promotable Candidate learning that survives refresh/
 // restart/deployment. See that engine's header for the full rationale.
-import { rehydrateLearningFromDocuments } from '../document-intelligence/composer/reviewer-edit-rehydration-engine.js';
+import { rehydrateLearningFromDocuments } from '../../../src/document-intelligence/composer/reviewer-edit-rehydration-engine.js';
 
 // Executive Briefing data sources — every one of these is already imported
 // and used by an existing workspace file (see each import's origin below);

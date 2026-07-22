@@ -25,8 +25,8 @@ import {
   setKnowledgeBackend, ingest, promoteKnowledge, LIFECYCLE_STATE,
 } from '../js/v2/knowledge/services/knowledge-service.js';
 import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
-import { composeNorDocument, NOR_COMPOSER_ERRORS } from '../js/v2/document-intelligence/nor/nor-composer.js';
-import { getComposerTimeline, resetComposerStore } from '../js/v2/document-intelligence/composer/composer-store.js';
+import { composeNorDocument, NOR_COMPOSER_ERRORS } from '../src/document-intelligence/nor/nor-composer.js';
+import { getComposerTimeline, resetComposerStore } from '../src/document-intelligence/composer/composer-store.js';
 import { isDormant, getDormant } from '../js/v2/dormant-subsystems.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -38,7 +38,7 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8').replace(/\/\*[\s
 
 console.log('\n[Part 1 — nor-composer.js never imports a renderer]');
 {
-  const code = read('js/v2/document-intelligence/nor/nor-composer.js');
+  const code = read('src/document-intelligence/nor/nor-composer.js');
   const blocks = code.match(/import\s*(?:\{[^}]*\}|\S+)\s*from\s*'[^']*'/gs) || [];
   const targets = blocks.map((b) => b.match(/from\s*'([^']*)'/)[1]);
   const offenders = targets.filter((t) => /nor-document-engine\.js|doc-engine\.js|nor-paper\.js|nor-excel-exporter\.js|templates\/nor\.js/.test(t));

@@ -25,7 +25,7 @@ import { submitForReview, approve } from '../js/v2/knowledge/review/review-workf
 import { listKnowledge } from '../js/v2/knowledge/services/knowledge-service.js';
 import { resetLearningRepository } from '../js/v2/learning/repository/learning-repository.js';
 import { listLearningEvents, LEARNING_KIND, CORRECTION_TYPE } from '../js/v2/learning/services/learning-service.js';
-import { recordSectionEdit } from '../js/v2/document-intelligence/composer/section-learning-bridge.js';
+import { recordSectionEdit } from '../src/document-intelligence/composer/section-learning-bridge.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {

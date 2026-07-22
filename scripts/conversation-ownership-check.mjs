@@ -141,7 +141,7 @@ console.log('\n[Part 8 — Conversation Memory never contaminates Organization M
   // Repository Refoundation; ai-foundation/ was deleted (confirmed dead) in
   // the same phase — dropped from this list entirely rather than matched
   // against a path that no longer exists.
-  const upstream = FILES.filter((f) => /^js\/v2\/(knowledge|learning|document-intelligence)\//.test(f.rel) || /^src\/(organizational-memory|file-storage)\//.test(f.rel));
+  const upstream = FILES.filter((f) => /^js\/v2\/(knowledge|learning)\//.test(f.rel) || /^src\/(organizational-memory|file-storage|document-intelligence)\//.test(f.rel));
   const offenders = [];
   for (const { rel, code } of upstream) {
     const blocks = code.match(/import\s*\{[^}]*\}\s*from\s*'[^']*'/gs) || [];

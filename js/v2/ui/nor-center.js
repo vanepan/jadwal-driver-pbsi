@@ -73,7 +73,7 @@ import { getArchiveTimeline } from '../../../src/organizational-memory/archive-t
 import { listArchive as archiveList } from '../../../src/organizational-memory/services/archive-service.js';
 import { checkKnowledgeContribution } from '../../../src/organizational-memory/knowledge-contribution-engine.js';
 
-import { getComposerTimeline, getRevisionHistory } from '../document-intelligence/composer/composer-store.js';
+import { getComposerTimeline, getRevisionHistory } from '../../../src/document-intelligence/composer/composer-store.js';
 // Phase 10, Sprint 10.3 — the Composer is fully awake: createDocument
 // (Phase 8-10) AND editSection (this sprint, via ui/review-workspace.js)
 // both now have real callers. js/v2/dormant-subsystems.js's own

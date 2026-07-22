@@ -64,7 +64,7 @@ page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error
 await page.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' });
 
 const result = await page.evaluate(async () => {
-  const { createDocument, editSection } = await import('/js/v2/document-intelligence/composer/composer-store.js');
+  const { createDocument, editSection } = await import('/src/document-intelligence/composer/composer-store.js');
   const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
 
   // A real signed-in session — this scenario now also asserts the single
@@ -151,7 +151,7 @@ const page1b = await browser.newPage();
 page1b.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 await page1b.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' });
 const devModeResult = await page1b.evaluate(async () => {
-  const { createDocument, editSection } = await import('/js/v2/document-intelligence/composer/composer-store.js');
+  const { createDocument, editSection } = await import('/src/document-intelligence/composer/composer-store.js');
   const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
 
   localStorage.setItem('pbsi_current_user', JSON.stringify({ username: 'evan', role: 'admin' }));
@@ -200,7 +200,7 @@ const page2 = await browser.newPage();
 page2.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 await page2.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' });
 const explainResult = await page2.evaluate(async () => {
-  const { createDocument, attachExplainability } = await import('/js/v2/document-intelligence/composer/composer-store.js');
+  const { createDocument, attachExplainability } = await import('/src/document-intelligence/composer/composer-store.js');
   const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
 
   const doc = createDocument('nor', { subject: 'Pengadaan Meja Ruang Binpres' });
@@ -247,7 +247,7 @@ const page3 = await browser.newPage();
 page3.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 await page3.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' });
 const editResult = await page3.evaluate(async () => {
-  const { createDocument } = await import('/js/v2/document-intelligence/composer/composer-store.js');
+  const { createDocument } = await import('/src/document-intelligence/composer/composer-store.js');
   const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
 
   // Phase 10, Sprint 10.5 — the "Ubah" button now requires sic.review.act,
@@ -310,7 +310,7 @@ const page4 = await browser.newPage();
 page4.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 await page4.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' });
 const govResult = await page4.evaluate(async () => {
-  const { createDocument } = await import('/js/v2/document-intelligence/composer/composer-store.js');
+  const { createDocument } = await import('/src/document-intelligence/composer/composer-store.js');
   const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
 
   // Phase 10, Sprint 10.5 — a DIFFERENT username than every other scenario
@@ -380,7 +380,7 @@ const page5a = await browser.newPage();
 page5a.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 await page5a.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' });
 const unprivilegedResult = await page5a.evaluate(async () => {
-  const { createDocument } = await import('/js/v2/document-intelligence/composer/composer-store.js');
+  const { createDocument } = await import('/src/document-intelligence/composer/composer-store.js');
   const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
 
   // 'driver' holds neither sic.review.act nor sic.approve.act.
@@ -407,7 +407,7 @@ const page5b = await browser.newPage();
 page5b.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 await page5b.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' });
 const privilegedResult = await page5b.evaluate(async () => {
-  const { createDocument } = await import('/js/v2/document-intelligence/composer/composer-store.js');
+  const { createDocument } = await import('/src/document-intelligence/composer/composer-store.js');
   const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
 
   localStorage.setItem('pbsi_current_user', JSON.stringify({ username: 'evan', role: 'admin' }));
@@ -442,7 +442,7 @@ const page6 = await browser.newPage();
 page6.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 await page6.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' });
 const exportResult = await page6.evaluate(async () => {
-  const { createDocument } = await import('/js/v2/document-intelligence/composer/composer-store.js');
+  const { createDocument } = await import('/src/document-intelligence/composer/composer-store.js');
   const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
   const { findArchiveRecord } = await import('/src/organizational-memory/services/archive-service.js');
 
@@ -512,7 +512,7 @@ const exportResult = await page6.evaluate(async () => {
 
   // Phase 10, Sprint 10.7 — the satisfaction prompt appears right after a
   // real publish; clicking a rating records it AND dismisses the prompt.
-  const { listSatisfactionRatings } = await import('/js/v2/document-intelligence/composer/satisfaction-log.js');
+  const { listSatisfactionRatings } = await import('/src/document-intelligence/composer/satisfaction-log.js');
   const showsSatisfactionPrompt = publishedHtml.includes('Seberapa puas Anda');
   root.querySelector('[data-act="rw-rate-satisfaction"][data-rating="4"]')?.click();
   const afterRatingHtml = root.innerHTML;
@@ -561,8 +561,8 @@ const page7 = await browser.newPage();
 page7.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 await page7.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' });
 const pilotTabResult = await page7.evaluate(async () => {
-  const { createDocument, editSection, transitionStatus } = await import('/js/v2/document-intelligence/composer/composer-store.js');
-  const { recordSatisfactionRating } = await import('/js/v2/document-intelligence/composer/satisfaction-log.js');
+  const { createDocument, editSection, transitionStatus } = await import('/src/document-intelligence/composer/composer-store.js');
+  const { recordSatisfactionRating } = await import('/src/document-intelligence/composer/satisfaction-log.js');
   const { mountLearningDashboard } = await import('/js/v2/ui/learning-dashboard.js');
 
   const doc = createDocument('nor', { subject: 'Pengadaan Proyektor' });

@@ -44,7 +44,7 @@ import { listDomainTypes, getDomainType } from '../knowledge/registry/domain-typ
 import { getCandidateQueue, getReviewQueue } from '../knowledge/review/review-queue-engine.js';
 import { profiles } from '../knowledge/services/index.js';
 import { listDatasets } from '../knowledge/datasets/registry/dataset-registry.js';
-import { getComposerTimeline } from '../document-intelligence/composer/composer-store.js';
+import { getComposerTimeline } from '../../../src/document-intelligence/composer/composer-store.js';
 // Sprint 11.5 — computeLearningPatterns() (recurring corrections/decisions,
 // and now writing-style preferences) was already computed AND recorded
 // into Learning by discoverAndRecordPatterns() (sarpras-intelligence-
@@ -75,8 +75,8 @@ import { listBatches } from '../knowledge/datasets/import-session/import-batch-e
 // knowledge/ may never depend on document-intelligence/). This file
 // already imports getComposerTimeline from the same composer/ directory
 // (Phase 3, above), so this is not a new domain edge for THIS file.
-import { computeReviewMetrics } from '../document-intelligence/composer/review-metrics-service.js';
-import { composerReviewStateLabel } from '../document-intelligence/composer/contracts/composer-review-contract.js';
+import { computeReviewMetrics } from '../../../src/document-intelligence/composer/review-metrics-service.js';
+import { composerReviewStateLabel } from '../../../src/document-intelligence/composer/contracts/composer-review-contract.js';
 // Sprint 11.8 (Production Readiness) — "Average Questions Asked" is a real,
 // already-tracked per-Conversation fact (explainability.questionsAsked,
 // conversation-contract.js) with an already-real bulk reader

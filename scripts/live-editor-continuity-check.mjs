@@ -42,7 +42,7 @@ page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error
 await page.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' });
 
 const result = await page.evaluate(async () => {
-  const { createDocument } = await import('/js/v2/document-intelligence/composer/composer-store.js');
+  const { createDocument } = await import('/src/document-intelligence/composer/composer-store.js');
   const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
 
   localStorage.setItem('pbsi_current_user', JSON.stringify({ username: 'evan', role: 'admin' }));

@@ -19,15 +19,15 @@ import { submitForReview, approve } from '../js/v2/knowledge/review/review-workf
 import { traceKnowledge } from '../js/v2/knowledge/services/trace-service.js';
 import { BUILDER_EVENT_TYPE } from '../js/v2/knowledge/builder/contracts/state-contract.js';
 
-import { runPipeline } from '../js/v2/document-intelligence/document-intelligence-engine.js';
-import { listSteps } from '../js/v2/document-intelligence/registry/step-registry.js';
-import { listAnalyzers } from '../js/v2/document-intelligence/registry/document-registry.js';
+import { runPipeline } from '../src/document-intelligence/document-intelligence-engine.js';
+import { listSteps } from '../src/document-intelligence/registry/step-registry.js';
+import { listAnalyzers } from '../src/document-intelligence/registry/document-registry.js';
 import {
   startDocumentSession, transitionDocumentSession, resetDocumentSessionStore,
-} from '../js/v2/document-intelligence/session-store.js';
-import { DOCUMENT_SESSION_STATE } from '../js/v2/document-intelligence/contracts/document-context-contract.js';
-import { validateNorInput } from '../js/v2/document-intelligence/nor/nor-validator.js';
-import { NOR_PIPELINE } from '../js/v2/document-intelligence/nor/index.js'; // side effect: registers all 5 NOR steps
+} from '../src/document-intelligence/session-store.js';
+import { DOCUMENT_SESSION_STATE } from '../src/document-intelligence/contracts/document-context-contract.js';
+import { validateNorInput } from '../src/document-intelligence/nor/nor-validator.js';
+import { NOR_PIPELINE } from '../src/document-intelligence/nor/index.js'; // side effect: registers all 5 NOR steps
 
 let pass = 0, fail = 0;
 function check(name, cond) {

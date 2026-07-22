@@ -24,21 +24,21 @@ import { fileURLToPath } from 'url';
 import { CHANGE_TYPE, isDiff } from '../js/v2/knowledge/learning/contracts/diff-contract.js';
 import { computeDiff } from '../js/v2/knowledge/learning/diff-engine.js';
 
-import { isEditableSection } from '../js/v2/document-intelligence/composer/contracts/editable-section-contract.js';
-import { isComposerDocument, COMPOSER_DOCUMENT_STATUS_DRAFT } from '../js/v2/document-intelligence/composer/contracts/composer-document-contract.js';
-import { isComposerRevision } from '../js/v2/document-intelligence/composer/contracts/composer-revision-contract.js';
-import { isFieldOverride } from '../js/v2/document-intelligence/composer/contracts/field-override-contract.js';
-import { SUGGESTION_STATUS, makeSuggestionPlaceholder, isSuggestionPlaceholder } from '../js/v2/document-intelligence/composer/contracts/suggestion-placeholder-contract.js';
-import { startComposerSession, DOCUMENT_SESSION_STATE, canTransitionDocumentSession } from '../js/v2/document-intelligence/composer/contracts/composer-session-contract.js';
+import { isEditableSection } from '../src/document-intelligence/composer/contracts/editable-section-contract.js';
+import { isComposerDocument, COMPOSER_DOCUMENT_STATUS_DRAFT } from '../src/document-intelligence/composer/contracts/composer-document-contract.js';
+import { isComposerRevision } from '../src/document-intelligence/composer/contracts/composer-revision-contract.js';
+import { isFieldOverride } from '../src/document-intelligence/composer/contracts/field-override-contract.js';
+import { SUGGESTION_STATUS, makeSuggestionPlaceholder, isSuggestionPlaceholder } from '../src/document-intelligence/composer/contracts/suggestion-placeholder-contract.js';
+import { startComposerSession, DOCUMENT_SESSION_STATE, canTransitionDocumentSession } from '../src/document-intelligence/composer/contracts/composer-session-contract.js';
 import {
   createDocument, getDocument, editSection, addSection, getRevisionHistory, getComposerTimeline, listAllDocuments,
   attachExplainability, getExplainability, transitionStatus, getReviewHistory, resetComposerStore, COMPOSER_STORE_ERRORS,
-} from '../js/v2/document-intelligence/composer/composer-store.js';
-import { getRecord, putRecord, listRecords } from '../js/v2/document-intelligence/composer/composer-document-repository.js';
-import { explainDocument, NOR_EXPLAINABILITY_ERRORS } from '../js/v2/document-intelligence/nor/nor-explainability-service.js';
-import { COMPOSER_REVIEW_STATE } from '../js/v2/document-intelligence/composer/contracts/composer-review-contract.js';
-import { computeReviewMetrics } from '../js/v2/document-intelligence/composer/review-metrics-service.js';
-import { recordSatisfactionRating, listSatisfactionRatings, resetSatisfactionLog } from '../js/v2/document-intelligence/composer/satisfaction-log.js';
+} from '../src/document-intelligence/composer/composer-store.js';
+import { getRecord, putRecord, listRecords } from '../src/document-intelligence/composer/composer-document-repository.js';
+import { explainDocument, NOR_EXPLAINABILITY_ERRORS } from '../src/document-intelligence/nor/nor-explainability-service.js';
+import { COMPOSER_REVIEW_STATE } from '../src/document-intelligence/composer/contracts/composer-review-contract.js';
+import { computeReviewMetrics } from '../src/document-intelligence/composer/review-metrics-service.js';
+import { recordSatisfactionRating, listSatisfactionRatings, resetSatisfactionLog } from '../src/document-intelligence/composer/satisfaction-log.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {

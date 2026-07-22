@@ -31,7 +31,7 @@ import {
 import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
 import { resetConversationRepository } from '../js/v2/conversation/repository/conversation-repository.js';
 import { continueConversation } from '../js/v2/conversation/services/conversation-service.js';
-import { resetComposerStore } from '../js/v2/document-intelligence/composer/composer-store.js';
+import { resetComposerStore } from '../src/document-intelligence/composer/composer-store.js';
 import { beginProblemSolving, composeApprovedNor } from '../js/v2/problem-solving/services/problem-solving-service.js';
 import { seedNorBootstrapKnowledge } from '../js/v2/knowledge/bootstrap/nor-reverse-engineering-knowledge.js';
 import { archiveDocument, resetArchiveRepository } from '../src/organizational-memory/index.js';

@@ -13,7 +13,7 @@ import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contr
 import { setActiveRepository, create as repoCreate } from '../js/v2/knowledge/repository/knowledge-repository.js';
 import { promoteToCandidate } from '../js/v2/knowledge/promotion/promotion-engine.js';
 import { submitForReview, approve } from '../js/v2/knowledge/review/review-workflow-engine.js';
-import { classifySemanticDiff } from '../js/v2/document-intelligence/composer/semantic-diff-engine.js';
+import { classifySemanticDiff } from '../src/document-intelligence/composer/semantic-diff-engine.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {

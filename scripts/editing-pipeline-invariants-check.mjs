@@ -93,7 +93,7 @@ await page.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' });
 
 const result = await page.evaluate(async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const { createDocument, attachExplainability, getDocument, getRevisionHistory } = await import('/js/v2/document-intelligence/composer/composer-store.js');
+  const { createDocument, attachExplainability, getDocument, getRevisionHistory } = await import('/src/document-intelligence/composer/composer-store.js');
   const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
   const { listLearningEvents, LEARNING_KIND } = await import('/js/v2/learning/services/learning-service.js');
   const { getCandidateQueue } = await import('/js/v2/knowledge/review/review-queue-engine.js');

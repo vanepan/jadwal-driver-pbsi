@@ -21,7 +21,7 @@
 
 'use strict';
 
-import { isDiff } from '../../../knowledge/learning/contracts/diff-contract.js';
+import { isDiff } from '../../../../js/v2/knowledge/learning/contracts/diff-contract.js';
 
 export const COMPOSER_REVISION_SCHEMA = 'composer-revision@1';
 
@@ -31,7 +31,7 @@ export const COMPOSER_REVISION_SCHEMA = 'composer-revision@1';
  * @property {string} documentId
  * @property {number} version              - matches the ComposerDocument.version this revision produced
  * @property {import('./editable-section-contract.js').EditableSection[]} sections - full snapshot at this version
- * @property {import('../../../knowledge/learning/contracts/diff-contract.js').Diff|null} diff - against the immediate predecessor; null for the first revision
+ * @property {import('../../../../js/v2/knowledge/learning/contracts/diff-contract.js').Diff|null} diff - against the immediate predecessor; null for the first revision
  * @property {string|null} editedBy         - who caused this revision, null for the initial (non-edited) revision
  * @property {string} createdAt             - ISO 8601
  */

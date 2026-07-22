@@ -50,8 +50,8 @@
 'use strict';
 
 import { getExplainability } from '../composer/composer-store.js';
-import { getKnowledge } from '../../knowledge/services/knowledge-service.js';
-import { explain } from '../../knowledge/services/explainability-service.js';
+import { getKnowledge } from '../../../js/v2/knowledge/services/knowledge-service.js';
+import { explain } from '../../../js/v2/knowledge/services/explainability-service.js';
 
 export const NOR_EXPLAINABILITY_ERRORS = Object.freeze({ NO_EXPLAINABILITY: 'NO_EXPLAINABILITY' });
 

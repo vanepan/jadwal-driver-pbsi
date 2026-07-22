@@ -50,7 +50,7 @@
 
 'use strict';
 
-import { recordCorrection, CORRECTION_TYPE } from '../../learning/services/learning-service.js';
+import { recordCorrection, CORRECTION_TYPE } from '../../../js/v2/learning/services/learning-service.js';
 // Sprint 11.3 (Document-first Experience), Learning requirement — "Template
 // edits [carry] Highest learning weight." learning-event-contract.js
 // already registers CORRECTION_TYPE.PATTERN for exactly this concept ("a
@@ -59,8 +59,8 @@ import { recordCorrection, CORRECTION_TYPE } from '../../learning/services/learn
 // edited field was pattern-sourced, an honest classification gap (not a
 // missing weight number to invent): a real, already-registered vocabulary
 // value existed and simply was not being used. See recordSectionEdit below.
-import { submitDraftEditAsCorrection } from '../../knowledge/learning/diff-learning-engine.js';
-import { getKnowledge } from '../../knowledge/services/knowledge-service.js';
+import { submitDraftEditAsCorrection } from '../../../js/v2/knowledge/learning/diff-learning-engine.js';
+import { getKnowledge } from '../../../js/v2/knowledge/services/knowledge-service.js';
 // Sprint 11.4 (Human Learning Intelligence) — WHAT changed, not only that
 // something changed. See that file's own header for why this is a
 // deterministic classification, never an invented confidence number.

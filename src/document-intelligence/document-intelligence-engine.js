@@ -29,7 +29,7 @@
 'use strict';
 
 import { getStep } from './registry/step-registry.js';
-import { BUILDER_EVENT_TYPE, makeBuilderEvent } from '../knowledge/builder/contracts/state-contract.js';
+import { BUILDER_EVENT_TYPE, makeBuilderEvent } from '../../js/v2/knowledge/builder/contracts/state-contract.js';
 
 export const DOCUMENT_INTELLIGENCE_ERRORS = Object.freeze({
   STEP_NOT_FOUND: 'STEP_NOT_FOUND',

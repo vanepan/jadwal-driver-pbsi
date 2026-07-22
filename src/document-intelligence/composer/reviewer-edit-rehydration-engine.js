@@ -97,10 +97,10 @@
 
 import { listAllDocuments, getRevisionHistory } from './composer-store.js';
 import { classifySemanticDiff } from './semantic-diff-engine.js';
-import { CHANGE_TYPE } from '../../knowledge/learning/contracts/diff-contract.js';
-import { generateKnowledgeId } from '../../knowledge/contracts/identity-contract.js';
-import { LIFECYCLE_STATE } from '../../knowledge/contracts/lifecycle-contract.js';
-import { getKnowledge, ingest, updateDraft } from '../../knowledge/services/knowledge-service.js';
+import { CHANGE_TYPE } from '../../../js/v2/knowledge/learning/contracts/diff-contract.js';
+import { generateKnowledgeId } from '../../../js/v2/knowledge/contracts/identity-contract.js';
+import { LIFECYCLE_STATE } from '../../../js/v2/knowledge/contracts/lifecycle-contract.js';
+import { getKnowledge, ingest, updateDraft } from '../../../js/v2/knowledge/services/knowledge-service.js';
 
 /** The three Sprint 11.4 diffNatures that represent a reusable wording/
  *  phrasing preference — the SAME set Sprint 11.5's

@@ -59,8 +59,8 @@ import { getProblemCategory } from '../../problem-intelligence/contracts/problem
 import { planDiagnosis, reason, makeProblem } from '../../reasoning/services/reasoning-service.js';
 import { startConversation, findConversation } from '../../conversation/services/conversation-service.js';
 import { INTENT } from '../../conversation/contracts/intent-contract.js';
-import { composeNorDocument } from '../../document-intelligence/nor/nor-composer.js';
-import { attachExplainability } from '../../document-intelligence/composer/composer-store.js';
+import { composeNorDocument } from '../../../../src/document-intelligence/nor/nor-composer.js';
+import { attachExplainability } from '../../../../src/document-intelligence/composer/composer-store.js';
 // Sprint 11.1, Workstream 1 — the ONE legal path to organizational-memory/
 // numbering-engine.js#suggestNextNumber() (document-intelligence/ has no
 // binding-graph edge there; problem-intelligence/ does — see that file's

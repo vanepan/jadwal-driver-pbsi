@@ -24,10 +24,10 @@ import { buildProfile } from '../js/v2/knowledge/profiles/profile-engine.js';
 import { PROFILE_TYPE } from '../js/v2/knowledge/contracts/profile-contract.js';
 import {
   createDocument, editSection, resetComposerStore,
-} from '../js/v2/document-intelligence/composer/composer-store.js';
+} from '../src/document-intelligence/composer/composer-store.js';
 import {
   rehydrateLearningFromDocuments, projectReviewerEditLearning,
-} from '../js/v2/document-intelligence/composer/reviewer-edit-rehydration-engine.js';
+} from '../src/document-intelligence/composer/reviewer-edit-rehydration-engine.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {

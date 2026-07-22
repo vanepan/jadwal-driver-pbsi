@@ -148,18 +148,18 @@
 import {
   getDocument, getRevisionHistory, listAllDocuments, registerChangeListener, editSection, addSection,
   transitionStatus, getReviewHistory,
-} from '../document-intelligence/composer/composer-store.js';
+} from '../../../src/document-intelligence/composer/composer-store.js';
 // Phase 11 Course Correction, Workstream 4/5 — render-time-only confidence
 // (never persisted; a pattern's own confidence can change as it gains
 // corroboration). See that file's own header for the full documented
 // hierarchy and why every number reuses an existing engine.
-import { computeSectionConfidence, confidenceHighlightTone } from '../document-intelligence/composer/section-confidence-engine.js';
+import { computeSectionConfidence, confidenceHighlightTone } from '../../../src/document-intelligence/composer/section-confidence-engine.js';
 // Workstream 3 — the ONE place a section edit becomes structured
 // learning, automatically. Reviving diff-learning-engine.js's own
 // dormant bridge, not a second one.
-import { recordSectionEdit } from '../document-intelligence/composer/section-learning-bridge.js';
-import { COMPOSER_REVIEW_STATE, composerReviewStateLabel } from '../document-intelligence/composer/contracts/composer-review-contract.js';
-import { explainDocument } from '../document-intelligence/nor/nor-explainability-service.js';
+import { recordSectionEdit } from '../../../src/document-intelligence/composer/section-learning-bridge.js';
+import { COMPOSER_REVIEW_STATE, composerReviewStateLabel } from '../../../src/document-intelligence/composer/contracts/composer-review-contract.js';
+import { explainDocument } from '../../../src/document-intelligence/nor/nor-explainability-service.js';
 import { getConversationHistory } from '../conversation/services/conversation-service.js';
 import {
   esc, renderEmptyState, renderRowList, renderDetail, renderDetailSection,
@@ -206,7 +206,7 @@ import { PBSI_LOGO_DATA_URI } from '../../docs/templates/reimbursement-logo.js';
 import { exportHtmlToDocx } from '../../docs/docx-exporter.js';
 import { archiveDocument } from '../../../src/organizational-memory/services/archive-service.js';
 import { computeDocumentHash } from '../../../src/organizational-memory/document-hash.js';
-import { recordSatisfactionRating } from '../document-intelligence/composer/satisfaction-log.js';
+import { recordSatisfactionRating } from '../../../src/document-intelligence/composer/satisfaction-log.js';
 // Phase 12.8.4 — Live Word Workspace's first real UI caller. Gated behind
 // WORKSPACE_LIVE_SUGGESTIONS_ENABLED (workspace-flags.js) — merging this
 // import does not itself change what a reviewer sees; the flag does. See
