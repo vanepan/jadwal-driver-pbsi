@@ -105,7 +105,7 @@ import {
 // reverse — see learning-service.js's header for the full layering
 // rationale). A document supersession is one of Part 9's expected Learning
 // producers ("Archive Relationships").
-import { recordCorrection, CORRECTION_TYPE } from '../../learning/services/learning-service.js';
+import { recordCorrection, CORRECTION_TYPE } from '../../../js/v2/learning/services/learning-service.js';
 
 export const ARCHIVE_SERVICE_ERRORS = Object.freeze({
   NOT_FOUND: 'NOT_FOUND',

@@ -36,11 +36,11 @@
 
 'use strict';
 
-import { getNors, getSettings } from '../../../petty-cash/petty-cash-store.js';
-import { generateKnowledgeId } from '../../knowledge/contracts/identity-contract.js';
+import { getNors, getSettings } from '../../../js/petty-cash/petty-cash-store.js';
+import { generateKnowledgeId } from '../../../js/v2/knowledge/contracts/identity-contract.js';
 import {
   getKnowledge as getKnowledgeItemById,
-} from '../../knowledge/services/knowledge-service.js';
+} from '../../../js/v2/knowledge/services/knowledge-service.js';
 import { archiveSourceSuccess, archiveSourceFailure, ARCHIVE_SOURCE_ERRORS } from '../contracts/archive-source-contract.js';
 import { computeDocumentHash } from '../document-hash.js';
 import { registerArchiveSource } from '../registry/archive-source-registry.js';

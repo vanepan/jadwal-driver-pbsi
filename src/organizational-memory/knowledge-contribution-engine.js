@@ -24,10 +24,10 @@
 'use strict';
 
 import { listArchive as list } from './services/archive-service.js';
-import { generateKnowledgeId } from '../knowledge/contracts/identity-contract.js';
+import { generateKnowledgeId } from '../../js/v2/knowledge/contracts/identity-contract.js';
 import {
   getKnowledge as getById,
-} from '../knowledge/services/knowledge-service.js';
+} from '../../js/v2/knowledge/services/knowledge-service.js';
 
 /**
  * @param {import('./contracts/archive-record-contract.js').ArchiveRecord} archiveRecord
