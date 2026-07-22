@@ -7,7 +7,7 @@
       writers (create/appendVersion) and workspace-timeline-repository's
       writer (append) have exactly one legitimate caller
       (services/workspace-service.js); workspace/ imports NOTHING from
-      ui/, ai-foundation/, conversation/, reasoning/, problem-intelligence/,
+      ui/, conversation/, reasoning/, problem-intelligence/,
       problem-solving/ (the Phase 12.8 graph extension permits ONLY
       document-intelligence/, knowledge/, organizational-memory/, learning/,
       body/, recognition/); nothing OUTSIDE js/v2/workspace/ imports
@@ -113,14 +113,15 @@ console.log('\n[Part 2 — exactly ONE owner writes the Workspace Timeline Repos
   check('the owner itself DOES write the timeline (it is the orchestrator, not a delegator)', /timelineAppend/.test(ownerSrc));
 }
 
-console.log('\n[Part 3 — workspace/ never imports ui/, ai-foundation/, conversation/, problem-intelligence/, or problem-solving/ (the Phase 12.8/12.8.x graph grants ONLY document-intelligence/, knowledge/, organizational-memory/, learning/, body/, recognition/, reasoning/)]');
+console.log('\n[Part 3 — workspace/ never imports ui/, conversation/, problem-intelligence/, or problem-solving/ (the Phase 12.8/12.8.x graph grants ONLY document-intelligence/, knowledge/, organizational-memory/, learning/, body/, recognition/, reasoning/)]');
 {
   // reasoning/ moved OUT of forbidden and into workspace-context-builder.js's
   // approved imports in Phase 12.8.x, Sprint 3 — the SECOND narrow graph
   // grant (see js/v2/README.md's Phase 12.8.x extension). conversation/ and
   // problem-intelligence/ and problem-solving/ remain forbidden — this
-  // sprint did not touch those.
-  const FORBIDDEN_TREES = ['/v2/ui/', '/v2/ai-foundation/', '/v2/conversation/', '/v2/problem-intelligence/', '/v2/problem-solving/'];
+  // sprint did not touch those. ai-foundation/ was deleted (confirmed dead,
+  // zero real callers anywhere) during Phase 1 Repository Refoundation.
+  const FORBIDDEN_TREES = ['/v2/ui/', '/v2/conversation/', '/v2/problem-intelligence/', '/v2/problem-solving/'];
   const leaks = [];
   for (const { rel, code } of WORKSPACE_FILES) {
     for (const { target } of importTargets(code)) {
@@ -128,7 +129,7 @@ console.log('\n[Part 3 — workspace/ never imports ui/, ai-foundation/, convers
       if (FORBIDDEN_TREES.some((t) => resolved.includes(t))) leaks.push(`${rel} -> ${resolved}`);
     }
   }
-  check(`workspace/ imports NOTHING from ui/ai-foundation/conversation/problem-intelligence/problem-solving/${leaks.length ? ` — FOUND: ${leaks.join(', ')}` : ''}`, leaks.length === 0);
+  check(`workspace/ imports NOTHING from ui/conversation/problem-intelligence/problem-solving/${leaks.length ? ` — FOUND: ${leaks.join(', ')}` : ''}`, leaks.length === 0);
 
   const ALLOWED_TREES = ['/v2/document-intelligence/', '/v2/knowledge/', '/v2/organizational-memory/', '/v2/learning/', '/v2/body/', '/v2/recognition/', '/v2/reasoning/', '/v2/workspace/'];
   const unexpected = [];

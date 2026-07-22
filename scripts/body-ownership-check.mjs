@@ -10,7 +10,7 @@
       (services/body-sensing-service.js); body/ imports NOTHING from
       knowledge/, organizational-memory/, learning/, conversation/,
       reasoning/, problem-intelligence/, problem-solving/,
-      document-intelligence/, ui/, ai-foundation/ ENGINES OR SERVICES —
+      document-intelligence/, ui/ ENGINES OR SERVICES —
       only the 2 precedented pure-leaf contract reuses, allowlisted by
       name; nothing OUTSIDE js/v2/body/ imports js/v2/body/, except
       js/v2/learning-bridge/ (Phase 12.6's one approved, narrowly-scoped
@@ -116,7 +116,7 @@ console.log('\n[Part 2 — exactly ONE owner writes Relationship + BodyEvent rep
 
 console.log('\n[Part 3 — body/ is a PEER of knowledge/, never depends on any ENGINE or SERVICE in it (or any downstream domain)]');
 {
-  const FORBIDDEN_TREES = ['/v2/knowledge/', '/v2/organizational-memory/', '/v2/learning/', '/v2/conversation/', '/v2/reasoning/', '/v2/problem-intelligence/', '/v2/problem-solving/', '/v2/document-intelligence/', '/v2/ui/', '/v2/ai-foundation/'];
+  const FORBIDDEN_TREES = ['/v2/knowledge/', '/v2/organizational-memory/', '/v2/learning/', '/v2/conversation/', '/v2/reasoning/', '/v2/problem-intelligence/', '/v2/problem-solving/', '/v2/document-intelligence/', '/v2/ui/'];
   const ALLOWLISTED_PURE_LEAF_REUSE = ['js/v2/knowledge/contracts/identity-contract.js', 'js/v2/knowledge/observability/contracts/warning-contract.js'];
   const leaks = [];
   for (const { rel, code } of BODY_FILES) {
@@ -127,7 +127,7 @@ console.log('\n[Part 3 — body/ is a PEER of knowledge/, never depends on any E
       leaks.push(`${rel} -> ${resolved}`);
     }
   }
-  check(`body/ imports NOTHING from knowledge/organizational-memory/learning/conversation/reasoning/problem-intelligence/problem-solving/document-intelligence/ui/ai-foundation/ ENGINES/SERVICES, only the 2 allowlisted pure-leaf contracts${leaks.length ? ` — FOUND: ${leaks.join(', ')}` : ''}`, leaks.length === 0);
+  check(`body/ imports NOTHING from knowledge/organizational-memory/learning/conversation/reasoning/problem-intelligence/problem-solving/document-intelligence/ui/ ENGINES/SERVICES, only the 2 allowlisted pure-leaf contracts${leaks.length ? ` — FOUND: ${leaks.join(', ')}` : ''}`, leaks.length === 0);
 
   const identityReuseFiles = BODY_FILES.filter(({ code }) => /knowledge\/contracts\/identity-contract\.js/.test(code));
   check('the identity-contract.js reuse is exactly where documented (contracts/identity-contract.js only)', identityReuseFiles.length === 1 && identityReuseFiles[0].rel === 'js/v2/body/contracts/identity-contract.js');

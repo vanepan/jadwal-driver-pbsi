@@ -313,7 +313,7 @@ console.log('\n[Persistent invariant — no producer-domain ENGINE or SERVICE im
 
 console.log('\n[Dormancy — nothing outside recognition/ imports recognition/ yet]');
 {
-  const roots = ['js/v2/ai-foundation', 'js/v2/body', 'js/v2/knowledge', 'js/v2/organizational-memory', 'js/v2/learning', 'js/v2/learning-bridge', 'js/v2/document-intelligence', 'js/v2/conversation', 'js/v2/reasoning', 'js/v2/problem-intelligence', 'js/v2/problem-solving', 'js/v2/ui'];
+  const roots = ['js/v2/body', 'js/v2/knowledge', 'js/v2/organizational-memory', 'js/v2/learning', 'js/v2/learning-bridge', 'js/v2/document-intelligence', 'js/v2/conversation', 'js/v2/reasoning', 'js/v2/problem-intelligence', 'js/v2/problem-solving', 'js/v2/ui'];
   const offenders = [];
   for (const root of roots) {
     for (const rel of filesUnder(root)) {
