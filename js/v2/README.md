@@ -534,14 +534,18 @@ workspace/              ──depends on──>  document-intelligence/ (read-on
                         Phase 12.8's ONE new grant: workspace/ may read
                         body/ directly, something ui/ itself is still
                         forbidden from doing), recognition/ (services-only,
-                        via recognition/services/index.js#records)
+                        via recognition/services/index.js#records),
+                        reasoning/ (services-only, via reasoning/services/
+                        reasoning-service.js#reasonWithGaps — Phase 12.8.x's
+                        SECOND narrow grant, mirroring the body/ grant
+                        exactly; see js/v2/workspace/README.md §2)
 document-intelligence/ & knowledge/ & organizational-memory/ & learning/ &
-                        body/ & recognition/  ──never depend on──>
+                        body/ & recognition/ & reasoning/  ──never depend on──>
                         workspace/ (workspace/ is purely downstream, the
                         same posture problem-solving/ and recognition/
                         already hold toward what they read)
 workspace/              ──never depends on──>  ui/, ai-foundation/,
-                        conversation/, reasoning/, problem-intelligence/,
+                        conversation/, problem-intelligence/,
                         problem-solving/
 ui/                     ──depends on──>  workspace/ (Phase 12.8.4 —
                         ui/review-workspace.js is the one real caller,
@@ -558,6 +562,17 @@ a narrow, explicit, reviewed exception for one named cross-cutting need
 (composing a live document with the organization's live operational
 state), never a general loosening of `body/`'s "peer, not downstream"
 posture. See js/v2/workspace/README.md §2 for the full rationale.
+
+Phase 12.8.x, Sprint 3 adds a SECOND, equally narrow edge of the same
+class: `workspace/` may also read `reasoning/` directly (services-only,
+`reasonWithGaps()` only — the same existing, unmodified composed
+convenience `problem-solving-service.js#composeApprovedNor`'s own
+`reasoningConsidered` instrumentation already calls). Nothing about
+`reasoning/`'s own rule — cite-or-abstain over Approved KnowledgeItems
+only, never a live Body fact — changes; `workspace-context-builder.js`
+builds its `Problem` the identical way `composeApprovedNor` already does.
+`conversation/`, `problem-intelligence/`, and `problem-solving/` remain
+completely untouched by this grant.
 
 This is a STRICT EXTENSION of the graph, not a revision of it — no edge that
 existed before Phase 5 changed direction. `learning/` sits below both

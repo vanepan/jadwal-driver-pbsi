@@ -136,7 +136,7 @@ console.log('\n[Part 4 — learning-outcome-service.js and body-learning-bridge-
   check('recognition/services/learning-emission-service.js imports ONLY emitLearningSignal from learning/, nothing else write-shaped', /emitLearningSignal/.test(recognitionEmissionSrc) && !/learning-repository\.js/.test(recognitionEmissionSrc) && !/recordLearningEvent\(/.test(recognitionEmissionSrc));
 }
 
-console.log('\n[Part 5 — nothing outside learning/ + learning-bridge/ + recognition/ imports the new files yet (dormancy — same discipline as Phase 12.5)]');
+console.log('\n[Part 5 — nothing outside learning/ + learning-bridge/ + recognition/ + workspace/ imports the new files yet (dormancy — same discipline as Phase 12.5)]');
 {
   // Phase 12.7.6 (Continuous Learning Refinement) narrowed this assertion:
   // js/v2/recognition/services/learning-emission-service.js is now a
@@ -151,10 +151,19 @@ console.log('\n[Part 5 — nothing outside learning/ + learning-bridge/ + recogn
   // silently left to rot. scripts/recognition-learning-emission-check.mjs is
   // the authority on exactly what recognition/ may import from learning/
   // (emitLearningSignal only, never learning-repository.js directly).
+  //
+  // Phase 12.8 narrowed it AGAIN: js/v2/workspace/ is a deliberate, approved
+  // FOURTH caller — workspace-context-builder.js reads
+  // computeRecommendations() (learning-recommendation-engine.js, read-only,
+  // never writes) to compose a WorkspaceContext; workspace-service.js calls
+  // emitLearningSignal() the same legal way recognition/ already does,
+  // never learning-repository.js directly. scripts/workspace-ownership-
+  // check.mjs is the authority on exactly what workspace/ may import from
+  // learning/.
   const offenders = [];
   const scan = (dir) => {
     (function walk(rel) {
-      if (rel === 'js/v2/learning' || rel === 'js/v2/learning-bridge' || rel === 'js/v2/recognition') return;
+      if (rel === 'js/v2/learning' || rel === 'js/v2/learning-bridge' || rel === 'js/v2/recognition' || rel === 'js/v2/workspace') return;
       for (const entry of fs.readdirSync(path.join(ROOT, rel), { withFileTypes: true })) {
         const r = `${rel}/${entry.name}`;
         if (entry.isDirectory()) { walk(r); continue; }
@@ -170,7 +179,15 @@ console.log('\n[Part 5 — nothing outside learning/ + learning-bridge/ + recogn
     }(dir));
   };
   scan('js/v2');
-  check(`no file outside js/v2/learning/, js/v2/learning-bridge/, or js/v2/recognition/ imports any Phase 12.6 file yet${offenders.length ? ` — FOUND: ${offenders.join(', ')}` : ''}`, offenders.length === 0);
+  check(`no file outside js/v2/learning/, js/v2/learning-bridge/, js/v2/recognition/, or js/v2/workspace/ imports any Phase 12.6 file yet${offenders.length ? ` — FOUND: ${offenders.join(', ')}` : ''}`, offenders.length === 0);
+
+  // Phase 12.8 — the SAME symbol-level discipline this Part already
+  // applies to recognition/'s own emission service (above), applied to
+  // workspace/'s two real callers.
+  const contextBuilderSrc = stripComments(read('js/v2/workspace/context/workspace-context-builder.js'));
+  check('workspace-context-builder.js imports ONLY computeRecommendations from learning/ (read-only, never a writer)', /computeRecommendations/.test(contextBuilderSrc) && !/learning-repository\.js/.test(contextBuilderSrc) && !/recordLearningEvent\(/.test(contextBuilderSrc));
+  const workspaceServiceSrc = stripComments(read('js/v2/workspace/services/workspace-service.js'));
+  check('workspace-service.js imports ONLY emitLearningSignal from learning/, nothing else write-shaped', /emitLearningSignal/.test(workspaceServiceSrc) && !/learning-repository\.js/.test(workspaceServiceSrc) && !/recordLearningEvent\(/.test(workspaceServiceSrc));
 }
 
 console.log('\n[Part 6 — regression: the EXISTING learning-ownership-check.mjs, re-run unmodified]');

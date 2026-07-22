@@ -116,6 +116,17 @@ export function buildDocumentStructure(sections) {
   const all = sections || [];
   const dateLineSection = all.find((s) => typeof s.value === 'string' && /^jakarta,/i.test(s.value.trim())) || null;
   const norNumberSection = all.find((s) => s.field === 'norNumber') || null;
+  // Phase 12.8.x (Live Workspace Experience Completion) — recipients[]/
+  // cc[]/signatories{top,bottom} as real structured fields (nor-composer.js
+  // now populates these; see that file's own comment). A document composed
+  // BEFORE this change simply has none of these three fields at all — the
+  // structural decision below falls back to the OLD kepadaYth/tembusanYth
+  // plain-text meta rows and the OLD count-only signatureSuggestion in
+  // that case, so nothing about an already-composed document's rendering
+  // changes retroactively.
+  const recipientsSection = all.find((s) => s.field === 'recipients') || null;
+  const ccSection = all.find((s) => s.field === 'cc') || null;
+  const signatoriesSection = all.find((s) => s.field === 'signatories') || null;
   // Sprint 11.10 — an OPTIONAL reviewer override for the document heading
   // (default "NOTA ORGANISASI" stays in buildContentModel() below,
   // unchanged for the real, only-ever-used 'nor' domain — see that
@@ -133,28 +144,61 @@ export function buildDocumentStructure(sections) {
   // had to mentally translate.
   const signatoryTopSection = all.find((s) => s.field === 'suggestedSignatoryTopCount') || null;
   const signatoryBottomSection = all.find((s) => s.field === 'suggestedSignatoryBottomCount') || null;
+  // Phase 12.8.x — recipients[]/cc[] REPLACE the plain-text kepadaYth/
+  // tembusanYth rows going forward (new documents never populate both at
+  // once — see nor-composer.js), but an OLD already-composed document that
+  // only has the plain-text fields keeps rendering through them unchanged.
+  const hasStructuredRecipients = !!recipientsSection && Array.isArray(recipientsSection.value);
+  const hasStructuredCc = !!ccSection && Array.isArray(ccSection.value);
+  const metaFieldIds = LETTERHEAD_META_FIELDS
+    .map((m) => m.field)
+    .filter((f) => !(f === 'kepadaYth' && hasStructuredRecipients) && !(f === 'tembusanYth' && hasStructuredCc));
   const usedFields = new Set([
     dateLineSection ? dateLineSection.field : null,
     'norNumber',
     'documentTitle',
     'suggestedSignatoryTopCount',
     'suggestedSignatoryBottomCount',
+    'recipients',
+    'cc',
+    'signatories',
     ...LETTERHEAD_META_FIELDS.map((m) => m.field),
   ].filter(Boolean));
+
+  // Phase 12.8.x — when a real, structured `signatories` field exists,
+  // its own array lengths ARE the count (never re-derived from the older
+  // suggestedSignatoryTopCount/BottomCount fields, which still exist
+  // alongside it purely for Rincian-adjacent provenance) — and its real
+  // per-slot {label,position,name} data flows through for every renderer
+  // to use with doc-theme.js#signatureGrid()/signatureBlock(), which have
+  // always supported real data, never just showBlankLine. Falls back to
+  // the OLD count-only behavior (top/bottom stay null; renderers already
+  // handle that via showBlankLine) for a document with no `signatories`
+  // field at all.
+  const signatories = signatoriesSection && signatoriesSection.value ? signatoriesSection.value : null;
+  const signatureSuggestion = signatories
+    ? Object.freeze({
+      topCount: signatories.top.length, bottomCount: signatories.bottom.length,
+      top: Object.freeze(signatories.top), bottom: Object.freeze(signatories.bottom),
+    })
+    : Object.freeze({
+      // null when nor-generator.js had no Approved structural Knowledge to
+      // suggest from (computeNorStructuralStats() returns null, honestly,
+      // in that case) — never a fabricated default count.
+      topCount: signatoryTopSection ? Number(signatoryTopSection.value) || 0 : null,
+      bottomCount: signatoryBottomSection ? Number(signatoryBottomSection.value) || 0 : null,
+      top: null, bottom: null,
+    });
 
   return Object.freeze({
     dateLineSection,
     norNumberSection,
     documentTitleSection,
-    // null when nor-generator.js had no Approved structural Knowledge to
-    // suggest from (computeNorStructuralStats() returns null, honestly, in
-    // that case) — never a fabricated default count.
-    signatureSuggestion: Object.freeze({
-      topCount: signatoryTopSection ? Number(signatoryTopSection.value) || 0 : null,
-      bottomCount: signatoryBottomSection ? Number(signatoryBottomSection.value) || 0 : null,
-    }),
-    metaFields: Object.freeze(LETTERHEAD_META_FIELDS.map((m) => Object.freeze({
-      ...m, section: all.find((s) => s.field === m.field) || null,
+    recipientsSection: hasStructuredRecipients ? recipientsSection : null,
+    ccSection: hasStructuredCc ? ccSection : null,
+    signatureSuggestion,
+    metaFields: Object.freeze(metaFieldIds.map((f) => Object.freeze({
+      ...LETTERHEAD_META_FIELDS.find((m) => m.field === f), section: all.find((s) => s.field === f) || null,
     }))),
     bodySections: Object.freeze(all.filter((s) => s.field.startsWith('pattern:') && !usedFields.has(s.field))),
     detailSections: Object.freeze(all.filter((s) => !s.field.startsWith('pattern:') && !usedFields.has(s.field))),
@@ -192,6 +236,12 @@ export function buildContentModel(data) {
     title: (structure.documentTitleSection && structure.documentTitleSection.value) || 'NOTA ORGANISASI',
     dateLine,
     norNumber,
+    // Phase 12.8.x — real, human-authored role lists (never invented —
+    // see nor-composer.js's own header). null (not []) when this document
+    // predates the structured field, so a renderer can tell "no recipients
+    // field at all" apart from "field exists, human hasn't added any yet".
+    recipientsList: structure.recipientsSection ? structure.recipientsSection.value : null,
+    ccList: structure.ccSection ? structure.ccSection.value : null,
     metaLines: [
       `Domain: ${data.domainType}`,
       `Versi: ${data.version}`,
@@ -202,6 +252,7 @@ export function buildContentModel(data) {
     // absence convention `sections` below already used, never silently
     // dropping a letterhead row just because it is still blank.
     metaFields: structure.metaFields.map((m) => ({
+      field: m.field,
       label: m.label,
       value: m.section && m.section.value != null && m.section.value !== '' ? String(m.section.value) : '—',
     })),
@@ -225,20 +276,51 @@ function chunk3(items) {
   return out;
 }
 
-/** Sprint 11.10 — a real, visual signature area: blank signing lines, one
- *  row per up to 3 signatories, built from nor-generator.js's real
- *  suggested counts (never real names — see this file's own import
- *  comment for why showBlankLine:true is correct here). Returns []
- *  when no Approved structural Knowledge ever existed to suggest a count
- *  from — an honest absence, not a fabricated default row. */
-function signatureRows({ topCount, bottomCount } = {}) {
+/** Sprint 11.10 / Phase 12.8.x — a real, visual signature area, one row
+ *  per up to 3 signatories. `top`/`bottom` (Phase 12.8.x) are the REAL,
+ *  reviewer-editable {label,position,name} slots when the document has a
+ *  structured `signatories` field — signatureBlock() has always rendered
+ *  real data byte-for-byte identically to the official NOR letterhead
+ *  (see doc-theme.js's own header), it simply never received any before.
+ *  A slot with every field still null renders as `showBlankLine` (the
+ *  same honest "count, no identity yet" visual as before). Falls back to
+ *  built-from-count-only blanks (`top`/`bottom` null) for a document that
+ *  predates this field — byte-for-byte the OLD behavior, unchanged.
+ *  Returns [] when there is nothing to suggest a count from at all. */
+function signatureRows({
+  topCount, bottomCount, top, bottom,
+} = {}) {
   const rows = [];
-  for (const count of [topCount, bottomCount]) {
+  const slotsFor = (count, real) => (real || Array.from({ length: count || 0 }, () => null))
+    .map((slot) => (slot && (slot.label || slot.position || slot.name)
+      ? { label: slot.label, position: slot.position, name: slot.name }
+      : { showBlankLine: true }));
+  for (const [count, real] of [[topCount, top], [bottomCount, bottom]]) {
     if (!count) continue;
-    const blanks = Array.from({ length: count }, () => ({ showBlankLine: true }));
-    chunk3(blanks).forEach((row, i) => rows.push({ ...signatureGrid(row, { gap: 36 }), margin: [0, i === 0 ? 20 : 10, 0, 0] }));
+    chunk3(slotsFor(count, real)).forEach((row, i) => rows.push({ ...signatureGrid(row, { gap: 36 }), margin: [0, i === 0 ? 20 : 10, 0, 0] }));
   }
   return rows;
+}
+
+/** Phase 12.8.x — "Kepada Yth. : 1. ... / 2. ..." style numbered role
+ *  list, pdfmake node. `list === null` means the document predates the
+ *  structured field (nothing rendered here — the OLD plain-text metaField
+ *  row already covers it, see buildDocumentStructure()'s own fallback).
+ *  An empty (but present) array renders the label with an honest
+ *  "Klik untuk mengisi…"-equivalent placeholder, never silently absent —
+ *  same discipline every other unfilled field in this platform follows. */
+function roleListNode(label, list) {
+  if (list === null) return [];
+  const items = list.length
+    ? list.map((entry, i) => ({ text: `${i + 1}. ${entry}`, fontSize: 9.5, color: TOKENS.color.ink }))
+    : [{ text: '(belum ada — isi di Live Document Workspace)', italics: true, fontSize: 9.5, color: TOKENS.color.dim }];
+  return [{
+    columns: [
+      { width: 90, text: `${label}:`, bold: true, fontSize: 9.5, color: TOKENS.color.ink },
+      { width: '*', stack: items },
+    ],
+    margin: [0, 0, 0, 2],
+  }];
 }
 
 function build(data) {
@@ -263,7 +345,16 @@ function build(data) {
       ...(model.norNumber ? [{ text: `Nomor: ${model.norNumber}`, alignment: 'center', fontSize: 9, color: TOKENS.color.dim, margin: [0, 0, 0, 2] }] : []),
       ...(model.dateLine ? [{ text: model.dateLine, alignment: 'right', fontSize: 9, color: TOKENS.color.dim, margin: [0, 0, 0, 8] }] : []),
       { text: model.metaLines.join('   ·   '), style: 'subtitle', margin: [0, 0, 0, 12] },
-      ...model.metaFields.map((m) => ({
+      // Phase 12.8.x — real letterhead order: Kepada Yth., Dari, Tembusan
+      // Yth., then the rest (Perihal/Lampiran) — recipientsList/ccList are
+      // null (nothing rendered) for a document that predates the
+      // structured field, so this is a pure addition for new documents.
+      ...roleListNode('Kepada Yth.', model.recipientsList),
+      ...model.metaFields.filter((m) => m.field === 'dari').map((m) => ({
+        text: [{ text: `${m.label}: `, bold: true }, { text: m.value }], fontSize: 9.5, color: TOKENS.color.ink, margin: [0, 0, 0, 2],
+      })),
+      ...roleListNode('Tembusan Yth.', model.ccList),
+      ...model.metaFields.filter((m) => m.field !== 'dari').map((m) => ({
         text: [{ text: `${m.label}: `, bold: true }, { text: m.value }],
         fontSize: 9.5,
         color: TOKENS.color.ink,
@@ -294,7 +385,18 @@ function _escapeHtml(s) {
  *  exportHtmlToDocx() expects. One content model, two thin renderers. */
 export function buildHtml(data) {
   const model = buildContentModel(data);
-  const metaFieldsHtml = model.metaFields.map((m) => `<p><strong>${_escapeHtml(m.label)}:</strong> ${_escapeHtml(m.value)}</p>`).join('\n');
+  const dariHtml = model.metaFields.filter((m) => m.field === 'dari').map((m) => `<p><strong>${_escapeHtml(m.label)}:</strong> ${_escapeHtml(m.value)}</p>`).join('\n');
+  const restMetaHtml = model.metaFields.filter((m) => m.field !== 'dari').map((m) => `<p><strong>${_escapeHtml(m.label)}:</strong> ${_escapeHtml(m.value)}</p>`).join('\n');
+  // Phase 12.8.x — same real-letterhead ordering as build() (PDF), same
+  // null-means-predates-the-field convention as roleListNode() there.
+  const roleListHtml = (label, list) => {
+    if (list === null) return '';
+    const items = list.length
+      ? list.map((entry, i) => `<li>${_escapeHtml(entry)}</li>`).join('')
+      : '<li><em>(belum ada — isi di Live Document Workspace)</em></li>';
+    return `<p><strong>${_escapeHtml(label)}:</strong></p><ol>${items}</ol>`;
+  };
+  const metaFieldsHtml = `${roleListHtml('Kepada Yth.', model.recipientsList)}${dariHtml}${roleListHtml('Tembusan Yth.', model.ccList)}${restMetaHtml}`;
   const bodyHtml = model.bodyParagraphs.length
     ? model.bodyParagraphs.map((p) => `<p>${_escapeHtml(p)}</p>`).join('\n')
     : '<p><em>Belum ada isi surat yang tersusun.</em></p>';
@@ -308,10 +410,19 @@ export function buildHtml(data) {
   // already proven by templates/nor.js), and this export path is real,
   // already-tested, working functionality — not a risk worth taking for a
   // cosmetic addition. See the Sprint 11.10 report's Known Limitations.
-  const signatureRow = (count) => (count
-    ? `<p style="margin-top:24px;">${Array.from({ length: count }, () => 'Tanda Tangan: _________________').join('&nbsp;&nbsp;&nbsp;&nbsp;')}</p>`
-    : '');
-  const signatureHtml = signatureRow(model.signatureSuggestion?.topCount) + signatureRow(model.signatureSuggestion?.bottomCount);
+  // Phase 12.8.x — a slot with real label/position/name now renders that
+  // text instead of a blank line, same "real data when we have it, an
+  // honest blank when we don't" rule signatureRows() (PDF) already follows.
+  const signatureRow = (count, real) => {
+    if (!count) return '';
+    const slots = real || Array.from({ length: count }, () => null);
+    const cells = slots.map((slot) => (slot && (slot.label || slot.position || slot.name)
+      ? `${_escapeHtml(slot.label || 'Tanda Tangan')}, ${_escapeHtml((slot.position || '').toUpperCase())} — ${_escapeHtml(slot.name || '_________________')}`
+      : 'Tanda Tangan: _________________'));
+    return `<p style="margin-top:24px;">${cells.join('&nbsp;&nbsp;&nbsp;&nbsp;')}</p>`;
+  };
+  const signatureHtml = signatureRow(model.signatureSuggestion?.topCount, model.signatureSuggestion?.top)
+    + signatureRow(model.signatureSuggestion?.bottomCount, model.signatureSuggestion?.bottom);
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${_escapeHtml(model.title)}</title></head>
 <body>
 <h1 style="text-align:center;">${_escapeHtml(model.title)}</h1>

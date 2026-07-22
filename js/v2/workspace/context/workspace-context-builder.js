@@ -56,11 +56,21 @@ import { context as bodyContext } from '../../body/services/index.js';
 import { computeOrganizationalMemory } from '../../organizational-memory/organizational-memory-engine.js';
 import { records as recognitionRecords } from '../../recognition/services/index.js';
 import { computeRecommendations } from '../../learning/learning-recommendation-engine.js';
+// Phase 12.8.x, Sprint 2 ("Live Entity Recognition") — deterministic,
+// non-NLP text matching against vocabulary this context has already
+// assembled from body/organizational-memory. See that file's own header.
+import { buildVocabulary, matchEntityMentions } from './entity-text-matcher.js';
+// Phase 12.8.x, Sprint 3 — the SECOND narrow graph grant (js/v2/README.md's
+// Phase 12.8.x extension), mirroring Phase 12.8's body/ grant exactly.
+// reasonWithGaps() is reasoning/'s own existing composed convenience
+// (Phase 4-7, unmodified) — never a second Recommendation/Gap computation.
+import { reasonWithGaps, makeProblem } from '../../reasoning/services/reasoning-service.js';
 
 function emptyContext(workspaceId, asOf) {
   return Object.freeze({
     workspaceId, documentId: null, domainType: null,
     blocks: [], body: null, organizationalMemory: null, recognition: [], learningRecommendations: [],
+    reasoning: null,
     explain: { sourcesQueried: [], asOf },
     builtAt: asOf,
   });
@@ -115,9 +125,45 @@ export function buildWorkspaceContext({ workspaceId, entityIds = [] } = {}) {
     if (learningRecommendations.length > 0) sourcesQueried.push('learning');
   } catch { /* honest empty */ }
 
+  // Phase 12.8.x, Sprint 2 — enrich each block's ALREADY-EXISTING
+  // liveEntityRefs field (reserved by live-block-contract.js since Sprint
+  // 12.8.1 specifically for this) via deterministic text matching. Never
+  // a new contract field; never NLP. A block whose text matches nothing
+  // in the vocabulary keeps its honest, empty liveEntityRefs — exactly
+  // the same "no fabricated match" restraint every suggestion rule in
+  // this platform already follows.
+  const vocabulary = buildVocabulary({ body, organizationalMemory });
+  const enrichedBlocks = vocabulary.length === 0 ? blocks : blocks.map((block) => {
+    const value = typeof block.value === 'string' ? block.value : '';
+    const matches = matchEntityMentions(value, vocabulary);
+    if (!matches.length) return block;
+    return Object.freeze({
+      ...block,
+      liveEntityRefs: Object.freeze(matches.map((m) => m.refId || m.term)),
+    });
+  });
+  if (enrichedBlocks.some((b) => b.liveEntityRefs.length > 0)) sourcesQueried.push('entity-text-match');
+
+  // Phase 12.8.x, Sprint 3 ("Live Organizational Context") — the SAME
+  // Problem-construction shape problem-solving-service.js#composeApprovedNor
+  // already uses for its own `reasoningConsidered` instrumentation (see
+  // that file's own header — this is not a new pattern, a second real
+  // caller of it). `reason()`'s cite-or-abstain machinery only ever cites
+  // Approved KnowledgeItems of kind rule/policy — never a live Body fact
+  // (see body/README.md §1) — so this stays fully consistent with that
+  // constraint. Best-effort: reasoning/ throwing or finding
+  // NO_APPLICABLE_KNOWLEDGE is an honest, expected outcome, never a bug.
+  let reasoning = null;
+  try {
+    const facts = Object.fromEntries(enrichedBlocks.map((b) => [b.field, b.value]));
+    const problem = makeProblem({ domainType: workspace.domainType, description: `Workspace review — ${workspace.documentId}`, facts: { ...facts, type: facts.type || null } });
+    reasoning = reasonWithGaps(problem);
+    if ((reasoning.recommendation.ok) || (reasoning.gaps && reasoning.gaps.length > 0)) sourcesQueried.push('reasoning');
+  } catch { /* honest null, never a guess */ }
+
   return Object.freeze({
     workspaceId, documentId: workspace.documentId, domainType: workspace.domainType,
-    blocks, body, organizationalMemory, recognition, learningRecommendations,
+    blocks: enrichedBlocks, body, organizationalMemory, recognition, learningRecommendations, reasoning,
     explain: { sourcesQueried, asOf },
     builtAt: asOf,
   });

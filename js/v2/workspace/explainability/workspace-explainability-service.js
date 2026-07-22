@@ -54,6 +54,10 @@ export const SUGGESTION_TYPE_LABELS = Object.freeze({
   historical_decision: 'Pernah digunakan pada keputusan historis',
   learning_recommendation: 'Direkomendasikan dari pembelajaran organisasi',
   related_entity: 'Entitas operasional terkait',
+  approval_pattern: 'Pola persetujuan organisasi',
+  frequently_corrected: 'Sering dikoreksi sebelumnya — periksa kembali',
+  reasoning_recommendation: 'Rekomendasi penalaran organisasi',
+  knowledge_gap: 'Informasi organisasi yang belum lengkap',
 });
 
 function failure(code, message) { return Object.freeze({ ok: false, data: null, error: Object.freeze({ code, message }) }); }

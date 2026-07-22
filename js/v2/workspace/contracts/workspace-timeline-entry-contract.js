@@ -32,6 +32,13 @@ export const WORKSPACE_TIMELINE_ENTRY_SCHEMA = 'workspace-timeline-entry@1';
 export const ENTRY_TYPE = Object.freeze({
   CONTEXT_REFRESHED: 'context_refreshed',
   SUGGESTION_ACCEPTED: 'suggestion_accepted',
+  // Phase 12.8.x, Sprint 5 ("Continuous Learning Experience") — a
+  // suggestion that was genuinely shown to a reviewer for at least one
+  // full render cycle and then quietly stopped applying, without ever
+  // being accepted or rejected. A real, low-weight passive signal — see
+  // workspace-service.js#decideSuggestion's own header for how this
+  // differs from an explicit reject.
+  SUGGESTION_IGNORED: 'suggestion_ignored',
   SUGGESTION_REJECTED: 'suggestion_rejected',
   CITATION_BOUND: 'citation_bound',
 });

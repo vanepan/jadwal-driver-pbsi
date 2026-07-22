@@ -115,6 +115,17 @@
 .sic-brief-sub:first-child{margin-top:0;}
 .sic-conv-result{margin-top:14px;}
 
+/* Phase 12.8.x, Sprint 1 — "Buka Draf Sekarang" promoted from a ghost-
+   styled afterthought to the most visually prominent thing shown right
+   after intent detection. Still one deliberate click (Sprint 11.10's own
+   Q&A-first default is unchanged) — this is presentation only. */
+.sic-draft-now-card{
+  margin:10px 0 16px;padding:14px 16px;border:1px solid var(--c-blue, var(--accent));border-radius:8px;
+  background:var(--c-blue-weak, rgba(59,91,169,.08));display:flex;align-items:center;justify-content:space-between;
+  gap:12px;flex-wrap:wrap;
+}
+.sic-draft-now-lede{font-size:13.5px;color:var(--text);margin:0;flex:1;min-width:200px;}
+
 @media (max-width: 640px) {
   .sic-page-title{font-size:24px;}
   .sic-card{padding:18px;}

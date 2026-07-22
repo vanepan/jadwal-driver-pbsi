@@ -58,13 +58,16 @@ export const SUGGESTION_STATUS = Object.freeze({
 
 /** Which upstream domain produced this suggestion's payload — always one
  *  workspace/ is a documented, approved reader of (js/v2/README.md's
- *  Phase 12.8 dependency-direction extension). */
+ *  Phase 12.8 / 12.8.x dependency-direction extensions). REASONING added
+ *  Phase 12.8.x, Sprint 3 — the second, narrow graph grant, mirroring the
+ *  Phase 12.8 body/ grant exactly (see js/v2/workspace/README.md §2). */
 export const SUGGESTION_SOURCE_DOMAIN = Object.freeze({
   KNOWLEDGE: 'knowledge',
   ORGANIZATIONAL_MEMORY: 'organizational-memory',
   RECOGNITION: 'recognition',
   LEARNING: 'learning',
   BODY: 'body',
+  REASONING: 'reasoning',
 });
 
 /**

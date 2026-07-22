@@ -143,20 +143,35 @@ export function computeSuggestionsFor(workspaceId, { blockId = null, entityIds =
   return computeSuggestions(context, { blockId });
 }
 
-const DECISIONS = Object.freeze({ ACCEPTED: 'accepted', REJECTED: 'rejected' });
+const DECISIONS = Object.freeze({ ACCEPTED: 'accepted', REJECTED: 'rejected', IGNORED: 'ignored' });
 const CITATION_SOURCE_DOMAINS = Object.freeze([SUGGESTION_SOURCE_DOMAIN.KNOWLEDGE, SUGGESTION_SOURCE_DOMAIN.ORGANIZATIONAL_MEMORY]);
+const DECISION_ENTRY_TYPE = Object.freeze({
+  [DECISIONS.ACCEPTED]: ENTRY_TYPE.SUGGESTION_ACCEPTED,
+  [DECISIONS.REJECTED]: ENTRY_TYPE.SUGGESTION_REJECTED,
+  // Phase 12.8.x, Sprint 5 — a real, distinct outcome, never conflated
+  // with an explicit reject: "the reviewer said no" and "the reviewer
+  // never engaged with it at all" are different, both real signals
+  // worth Learning recording separately (see learning-recommendation-
+  // engine.js's own FLAG_ANOMALY rule, which this can feed).
+  [DECISIONS.IGNORED]: ENTRY_TYPE.SUGGESTION_IGNORED,
+});
 
 /**
  * The one place a human decision about a LiveSuggestion becomes real —
- * see this file's header for the full two-write shape.
+ * see this file's header for the full two-write shape. 'ignored' is
+ * never fired by a human click — it is the ONE decision a caller (see
+ * ui/review-workspace.js#refreshLiveSuggestions) infers itself, when a
+ * suggestion that was genuinely rendered for at least one prior cycle
+ * quietly stops applying without ever being accepted or rejected.
  * @param {string} workspaceId
  * @param {import('../contracts/live-suggestion-contract.js').LiveSuggestion} suggestion
- * @param {'accepted'|'rejected'} decision
+ * @param {'accepted'|'rejected'|'ignored'} decision
  * @param {{actorId: string, blockId?: string|null}} opts
  */
 export function decideSuggestion(workspaceId, suggestion, decision, { actorId, blockId = null } = {}) {
-  if (decision !== DECISIONS.ACCEPTED && decision !== DECISIONS.REJECTED) {
-    return { ...failure(WORKSPACE_SERVICE_ERRORS.INVALID_DECISION, `decideSuggestion: decision must be "accepted" or "rejected", got "${decision}".`), timelineEntry: null, citationEntry: null, learningResult: null };
+  const entryType = DECISION_ENTRY_TYPE[decision];
+  if (!entryType) {
+    return { ...failure(WORKSPACE_SERVICE_ERRORS.INVALID_DECISION, `decideSuggestion: decision must be "accepted", "rejected", or "ignored", got "${decision}".`), timelineEntry: null, citationEntry: null, learningResult: null };
   }
   const wsResult = repoGetById(workspaceId);
   if (!wsResult.ok) {
@@ -164,8 +179,6 @@ export function decideSuggestion(workspaceId, suggestion, decision, { actorId, b
   }
   const workspace = wsResult.data;
   const resolvedBlockId = blockId ?? suggestion.blockId;
-
-  const entryType = decision === DECISIONS.ACCEPTED ? ENTRY_TYPE.SUGGESTION_ACCEPTED : ENTRY_TYPE.SUGGESTION_REJECTED;
   const timelineEntry = makeWorkspaceTimelineEntry({
     workspaceId, entryType, suggestionId: suggestion.suggestionId, blockId: resolvedBlockId, actorId,
     detail: { suggestionType: suggestion.suggestionType, sourceDomain: suggestion.sourceDomain, confidence: suggestion.confidence },

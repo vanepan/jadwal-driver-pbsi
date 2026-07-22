@@ -188,7 +188,43 @@ export function composeNorDocument(gatheredFacts = {}, opts = {}) {
     ? [{ field: 'norNumber', value: opts.numberingSuggestion.suggestedNumber, source: 'knowledge_suggestion', citedKnowledgeId: null }]
     : [];
 
-  const allSections = [...humanFields, ...structuralFields, ...numberingFields, ...composedSections];
+  // Phase 12.8.x (Live Workspace Experience Completion) — recipients[]/
+  // cc[]/signatories{top,bottom} as REAL structured fields, not flattened
+  // text. No contract change: EditableSection.value has always been typed
+  // `*` (any) — this is simply the first field to use that generality for
+  // a structured value instead of a scalar. See review-workspace.js's own
+  // rendering of these fields for the full rationale; the short version:
+  // recipients/cc stay an honest EMPTY array (no Approved Knowledge today
+  // answers "who receives THIS specific memo" — genuinely business-
+  // specific data nor-generator.js's own header already refuses to
+  // invent), a human adds each one explicitly. signatories are seeded
+  // with exactly as many BLANK slots as nor-generator.js's own real,
+  // evidence-based suggestedSignatoryTopCount/BottomCount already
+  // computed — the SAME statistic as before, now rendered as individually
+  // fillable {label,position,name} slots instead of anonymous blank
+  // lines. Every slot starts fully null — never a guessed label, role, or
+  // name. Auto-suggesting even the role LABEL from Approved 'signatory'
+  // Knowledge was considered and deliberately deferred: which specific
+  // Approved item corresponds to "the first" vs. "the second" top-row
+  // signer has no reliable, well-defined ordering today, and guessing
+  // wrong would be worse than an honest blank.
+  const blankSlot = () => Object.freeze({ label: null, position: null, name: null });
+  const structuralFieldsMap = structural.draft.fields;
+  const signatoryFields = [
+    {
+      field: 'signatories',
+      value: Object.freeze({
+        top: Object.freeze(Array.from({ length: structuralFieldsMap.suggestedSignatoryTopCount || 0 }, blankSlot)),
+        bottom: Object.freeze(Array.from({ length: structuralFieldsMap.suggestedSignatoryBottomCount || 0 }, blankSlot)),
+      }),
+      source: 'knowledge_suggestion',
+      citedKnowledgeId: null,
+    },
+    { field: 'recipients', value: Object.freeze([]), source: 'knowledge_suggestion', citedKnowledgeId: null },
+    { field: 'cc', value: Object.freeze([]), source: 'knowledge_suggestion', citedKnowledgeId: null },
+  ];
+
+  const allSections = [...humanFields, ...structuralFields, ...numberingFields, ...composedSections, ...signatoryFields];
   const fieldMap = {};
   for (const s of allSections) fieldMap[s.field] = s.value;
 

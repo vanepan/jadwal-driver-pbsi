@@ -180,6 +180,29 @@ import { buildHtml, buildDocumentStructure } from '../../docs/templates/composer
 // export is now also STAMPED with its layout version so it renders
 // reproducibly under that version later (Layout Versioning).
 import { resolveLayout } from '../../docs/design-system/document-layout-binding.js';
+// Phase 12.8.x, Sprint 1 — Developer-Mode-only layout provenance (see
+// renderLayoutProvenance()'s own header for why this stays a read-only
+// traceability line rather than converting pdfmake's point-based page
+// geometry into on-screen CSS).
+import {
+  getDesignSystem, designProvenance,
+  // Phase 12.8.x — the layout-knob feature. registerDesignSystemVersion/
+  // latestVersion are the ALREADY-BUILT "sanctioned, validated, append-
+  // only path a future Settings / Live Editor UI writes through" (see
+  // that file's own header on the Template Manager) — this is the first
+  // real caller. Applies immediately (per the repository owner's own
+  // decision): a new version becomes the LATEST the moment it's
+  // registered, so every subsequent getDesignSystem('composer') call
+  // (including this very page's own next render) picks it up.
+  registerDesignSystemVersion, latestVersion,
+} from '../../docs/design-system/document-design-system.js';
+// Phase 12.8.x (Live Workspace Experience Completion) — the real,
+// already-embedded PBSI mark (base64, no network fetch), the SAME
+// constant doc-theme.js#orgLogo() uses for the PDF export. review-
+// workspace.js is plain browser-rendered HTML, so an <img> tag is safe
+// here even though buildHtml()'s docx-export path deliberately still
+// avoids one (html-docx-js's base64-image support stays unverified).
+import { PBSI_LOGO_DATA_URI } from '../../docs/templates/reimbursement-logo.js';
 import { exportHtmlToDocx } from '../../docs/docx-exporter.js';
 import { archiveDocument } from '../organizational-memory/services/archive-service.js';
 import { computeDocumentHash } from '../organizational-memory/document-hash.js';
@@ -252,6 +275,20 @@ const st = {
   liveSuggestions: [],
   liveSuggestionError: null,
   liveSuggestionWhyOpenId: null,
+  // Phase 12.8.x, Sprint 2 — collapsed by default, see renderSuggestionPanel()'s own header.
+  liveSuggestionPanelExpanded: false,
+  // Phase 12.8.x (Live Workspace Experience Completion) — the layout-knob
+  // panel. null when collapsed/not editing; an object {logoWidth,
+  // marginX, marginY} (all pt, as typed, not yet saved) while open — see
+  // renderLayoutPanel()'s own header for why this is number-input+button
+  // rather than a live-drag slider.
+  layoutPanelOpen: false,
+  layoutDraft: null,
+  layoutError: null,
+  // Phase 12.8.x, Sprint 1 — which field Enter was pressed on, so the
+  // post-commit render (below) knows whether to advance focus to the
+  // next block. See advanceFocusAfterEnter()'s own header.
+  liveDocAdvanceFromField: null,
 };
 
 let host = null;
@@ -364,6 +401,32 @@ function buildExportData(doc) {
   };
 }
 
+/** Phase 12.8.x, Sprint 1 ("Live Styles") — Developer-Mode-only
+ *  traceability: which governed Document Design System layout will
+ *  render this document on export, so a reviewer can confirm the
+ *  on-screen editor and the exported PDF/Word are drawing from the SAME
+ *  registered layout rather than two silently-diverging sources.
+ *
+ *  DELIBERATELY DOES NOT convert document-design-system.js's page
+ *  geometry (pdfmake point units — page size, margins, table line
+ *  widths) into on-screen CSS. Doing so would require new unit-
+ *  conversion logic with no existing visual-regression test to catch a
+ *  mistake, against this file's own heavily-tested, currently-correct
+ *  `.rw-doc` appearance — exactly the kind of risk "don't break what
+ *  already works" rules out for a cosmetic, hard-to-verify gain. This
+ *  read-only provenance line is the safe subset of that gap that's
+ *  worth closing now; true WYSIWYG pixel parity is a separate, real
+ *  future task (see the Sprint 12.8.x report's own risk note). */
+function renderLayoutProvenance(doc) {
+  try {
+    const layout = resolveLayout(doc.domainType);
+    const ds = getDesignSystem(layout.templateId, layout.designVersion);
+    return `<p class="wlk-row-secondary">${esc(designProvenance(ds))}</p>`;
+  } catch {
+    return `<p class="wlk-row-secondary">Domain "${esc(doc.domainType)}" belum terikat ke tata letak baku manapun.</p>`;
+  }
+}
+
 function triggerBlobDownload(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -407,6 +470,24 @@ function onClick(e) {
     const result = editSection(el.dataset.id, el.dataset.field, st.editValue, currentActorId());
     if (!result.ok) { st.editError = result.error.message; render(); return; }
     st.editingField = null; st.editValue = ''; st.editError = null;
+    render();
+    return;
+  }
+  // ── Phase 12.8.x — recipients/cc role-list add/remove. Same "read
+  //    current array, patch it, write the whole field back through the
+  //    existing editSection()" shape commitRoleListEntry() uses. ───────
+  if (act === 'rw-role-add' || act === 'rw-role-remove') {
+    if (!canReview()) { st.liveDocError = 'Anda tidak memiliki izin untuk mengedit draf ini.'; render(); return; }
+    const documentId = el.dataset.docId;
+    const field = el.dataset.roleField;
+    const doc = getDocument(documentId);
+    if (!doc) return;
+    const section = doc.sections.find((s) => s.field === field);
+    const list = section && Array.isArray(section.value) ? [...section.value] : [];
+    if (act === 'rw-role-add') list.push('');
+    else list.splice(Number(el.dataset.roleIndex), 1);
+    const result = editSection(documentId, field, list, currentActorId());
+    st.liveDocError = result.ok ? null : result.error.message;
     render();
     return;
   }
@@ -481,12 +562,53 @@ function onClick(e) {
     const decision = act === 'rw-suggestion-accept' ? 'accepted' : 'rejected';
     const result = workspaceService.decideSuggestion(st.liveWorkspaceId, suggestion, decision, { actorId: currentActorId() });
     st.liveSuggestionError = result.ok ? null : result.error.message;
-    if (result.ok) { st.liveSuggestionWhyOpenId = null; refreshLiveSuggestions(st.selectedId); }
+    if (result.ok) { st.liveSuggestionWhyOpenId = null; refreshLiveSuggestions(st.selectedId, { justDecidedSuggestionId: suggestion.suggestionId }); }
     render();
     return;
   }
   if (act === 'rw-suggestion-why') {
     st.liveSuggestionWhyOpenId = st.liveSuggestionWhyOpenId === el.dataset.suggestionId ? null : el.dataset.suggestionId;
+    render();
+    return;
+  }
+  if (act === 'rw-suggestion-panel-toggle') {
+    st.liveSuggestionPanelExpanded = !st.liveSuggestionPanelExpanded;
+    render();
+    return;
+  }
+  // ── Phase 12.8.x — layout-knob panel. ─────────────────────────────
+  if (act === 'rw-layout-toggle') {
+    st.layoutPanelOpen = !st.layoutPanelOpen;
+    // Seed the draft from the CURRENT resolved design system every time
+    // the panel opens — never stale, never carries over a value from a
+    // previous document's own (possibly different) resolved layout.
+    const ds = getDesignSystem('composer');
+    st.layoutDraft = st.layoutPanelOpen ? { logoWidth: ds.logo.width, marginX: ds.page.margins[0], marginY: ds.page.margins[1] } : null;
+    st.layoutError = null;
+    render();
+    return;
+  }
+  if (act === 'rw-layout-save') {
+    if (!canReview()) { st.layoutError = 'Anda tidak memiliki izin untuk mengubah tata letak.'; render(); return; }
+    const draft = st.layoutDraft;
+    if (!draft || !Number.isFinite(draft.logoWidth) || !Number.isFinite(draft.marginX) || !Number.isFinite(draft.marginY)) {
+      st.layoutError = 'Nilai tata letak tidak valid.'; render(); return;
+    }
+    try {
+      const current = getDesignSystem('composer');
+      registerDesignSystemVersion('composer', {
+        ...current,
+        version: latestVersion('composer') + 1,
+        provenance: `Diatur manual oleh ${currentActorId()} pada ${new Date().toISOString()} melalui Live Workspace.`,
+        page: { ...current.page, margins: [draft.marginX, draft.marginY, draft.marginX, draft.marginY] },
+        logo: { ...current.logo, width: draft.logoWidth },
+      });
+      st.layoutError = null;
+      st.layoutPanelOpen = false;
+      st.layoutDraft = null;
+    } catch (err) {
+      st.layoutError = (err && err.message) || 'Gagal menyimpan tata letak.';
+    }
     render();
     return;
   }
@@ -508,7 +630,26 @@ function onClick(e) {
  *  dormant subsystem, because it has no asymmetric reader/writer: the
  *  panel that reads st.liveSuggestions is the same code path that
  *  writes it, right here). */
-function refreshLiveSuggestions(documentId) {
+/** Phase 12.8.x, Sprint 5 — a stable identity for "the same conceptual
+ *  suggestion" across two DIFFERENT computeSuggestionsFor() calls, since
+ *  workspace-suggestion-engine.js mints a fresh suggestionId every time
+ *  (it is pure/stateless — see that file's own header). Never includes
+ *  confidence/evidence: those may legitimately drift call to call without
+ *  it being a genuinely different suggestion. */
+function suggestionKey(s) {
+  return `${s.suggestionType}:${s.sourceDomain}:${s.sourceRecordId}:${s.blockId}`;
+}
+
+/** @param {string} documentId
+ *  @param {{justDecidedSuggestionId?: string|null}} [opts] - Sprint 5:
+ *  the suggestionId a caller JUST explicitly accepted/rejected, moments
+ *  before calling this — excluded from the ignored-diff below so an
+ *  explicit decision is never ALSO counted as "ignored" in the same
+ *  refresh (see decideSuggestion()'s own header for why these must stay
+ *  three distinct, non-overlapping outcomes). */
+function refreshLiveSuggestions(documentId, { justDecidedSuggestionId = null } = {}) {
+  const previous = st.liveSuggestions;
+  const previousWorkspaceId = st.liveWorkspaceId;
   st.liveSuggestions = [];
   st.liveWorkspaceId = null;
   if (!WORKSPACE_LIVE_SUGGESTIONS_ENABLED || !documentId || !canReview()) return;
@@ -517,6 +658,20 @@ function refreshLiveSuggestions(documentId) {
     if (!ws.ok) return;
     st.liveWorkspaceId = ws.data.workspaceId;
     st.liveSuggestions = workspaceService.computeSuggestionsFor(ws.data.workspaceId);
+
+    // Phase 12.8.x, Sprint 5 — "every ignored suggestion" (the brief's own
+    // words). Only compares against the SAME workspace's own immediately
+    // preceding cycle — a genuinely different document/workspace has
+    // nothing meaningful to diff against.
+    if (previousWorkspaceId && previousWorkspaceId === st.liveWorkspaceId) {
+      const currentKeys = new Set(st.liveSuggestions.map(suggestionKey));
+      for (const old of previous) {
+        if (old.suggestionId === justDecidedSuggestionId) continue;
+        if (!currentKeys.has(suggestionKey(old))) {
+          workspaceService.decideSuggestion(st.liveWorkspaceId, old, 'ignored', { actorId: currentActorId() });
+        }
+      }
+    }
   } catch (err) {
     st.liveSuggestionError = (err && err.message) || 'Gagal memuat saran organisasi.';
   }
@@ -617,6 +772,14 @@ function handlePublishConfirm(documentId) {
 function onFocusOut(e) {
   const el = e.target.closest && e.target.closest('.rw-editable');
   if (!el) return;
+
+  // Phase 12.8.x — recipients/cc role-list entries and signatory grid
+  // slots each carry their OWN dataset keys (never data-field/data-new-
+  // field), so they never reach the generic per-scalar-field path below
+  // at all — routed here, first, to their own array-aware commit logic.
+  if (el.dataset.roleField) { commitRoleListEntry(el); return; }
+  if (el.dataset.sigRow) { commitSignatorySlot(el); return; }
+
   const documentId = el.dataset.docId;
   const field = el.dataset.field || el.dataset.newField;
   if (!documentId || !field) return;
@@ -651,6 +814,72 @@ function onFocusOut(e) {
     refreshLiveSuggestions(documentId);
   }
   render();
+  // Phase 12.8.x, Sprint 1 — see advanceFocusAfterEnter()'s own header.
+  // Placed AFTER render() deliberately: the old DOM (including `el`) was
+  // just destroyed by host.innerHTML's reassignment above, so the next
+  // editable element must be looked up fresh, in the newly rendered DOM.
+  advanceFocusAfterEnter(field);
+}
+
+/** Phase 12.8.x — commits ONE role-list entry (recipients/cc). Reads the
+ *  field's CURRENT array value fresh from the document (never from stale
+ *  render-time state), replaces exactly the one edited index, and writes
+ *  the WHOLE array back via the existing, unmodified editSection() —
+ *  computeDiff()'s own shallowEqual (JSON.stringify comparison) already
+ *  handles array/object values correctly, so no change to composer-store.js
+ *  was needed for this. Clearing an entry to empty REMOVES it (splice),
+ *  matching the "+ Tambah" affordance's own expectation that a human who
+ *  changes their mind just empties the row rather than leaving a stray
+ *  numbered blank. Deliberately does NOT call recordSectionEdit() — that
+ *  bridge is specifically for PATTERN TEXT correction learning (semantic
+ *  diff classification of sentence-pattern edits); a recipient/cc role is
+ *  a different kind of fact entirely, not a language pattern. */
+function commitRoleListEntry(el) {
+  const documentId = el.dataset.docId;
+  const field = el.dataset.roleField;
+  const index = Number(el.dataset.roleIndex);
+  const before = el.dataset.originalValue || '';
+  const after = (el.textContent || '').trim();
+  if (after === before) return;
+  if (!canReview()) { st.liveDocError = 'Anda tidak memiliki izin untuk mengedit draf ini.'; el.textContent = before; render(); return; }
+  const doc = getDocument(documentId);
+  if (!doc) return;
+  const section = doc.sections.find((s) => s.field === field);
+  const list = section && Array.isArray(section.value) ? [...section.value] : [];
+  if (after) list[index] = after; else list.splice(index, 1);
+  const result = editSection(documentId, field, list, currentActorId());
+  if (!result.ok) { st.liveDocError = result.error.message; render(); return; }
+  st.liveDocError = null;
+  render();
+}
+
+/** Phase 12.8.x — commits ONE signatory slot's ONE field (label/position/
+ *  name). Same "read current value, patch one slot, write the whole
+ *  structured field back through the existing editSection()" shape as
+ *  commitRoleListEntry above — no composer-store.js change needed. Never
+ *  calls recordSectionEdit(): a signatory identity is not a language
+ *  pattern either. */
+function commitSignatorySlot(el) {
+  const documentId = el.dataset.docId;
+  const rowKey = el.dataset.sigRow;
+  const index = Number(el.dataset.sigIndex);
+  const slotField = el.dataset.sigField;
+  const before = el.dataset.originalValue || '';
+  const after = (el.textContent || '').trim();
+  if (after === before) return;
+  if (!canReview()) { st.liveDocError = 'Anda tidak memiliki izin untuk mengedit draf ini.'; el.textContent = before; render(); return; }
+  const doc = getDocument(documentId);
+  if (!doc) return;
+  const section = doc.sections.find((s) => s.field === 'signatories');
+  if (!section || !section.value) return;
+  const signatories = { top: [...section.value.top], bottom: [...section.value.bottom] };
+  const row = [...signatories[rowKey]];
+  row[index] = { ...row[index], [slotField]: after || null };
+  signatories[rowKey] = row;
+  const result = editSection(documentId, 'signatories', signatories, currentActorId());
+  if (!result.ok) { st.liveDocError = result.error.message; render(); return; }
+  st.liveDocError = null;
+  render();
 }
 
 /** Sprint 11.6 (Reviewer Experience) — "faster editing, minimal clicks."
@@ -666,12 +895,39 @@ function onLiveDocKeydown(e) {
   if (!el) return;
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
+    // Phase 12.8.x, Sprint 1 — "continuous flow" without a rewrite: Enter
+    // already committed the field (Sprint 11.6); recording which field
+    // here lets advanceFocusAfterEnter() (called from onFocusOut, after
+    // the DOM is re-rendered) move focus to the next block, the same way
+    // Tab moves between fields in a real document editor.
+    st.liveDocAdvanceFromField = el.dataset.field || el.dataset.newField;
     el.blur();
   } else if (e.key === 'Escape') {
     e.preventDefault();
     el.textContent = el.dataset.originalValue || '';
     el.blur();
   }
+}
+
+/** Phase 12.8.x, Sprint 1 — moves focus to the next `.rw-editable` block
+ *  after a real, Enter-committed edit, the one piece of "feels like
+ *  Word" achievable without rewriting this file's per-field
+ *  contenteditable commit/diff model into a single continuous surface
+ *  (judged too high-risk against this file's own extensive existing
+ *  test coverage — see review-workspace-render-check.mjs /
+ *  editing-pipeline-invariants-check.mjs). Only fires for the EXACT
+ *  field Enter was pressed on (never a plain blur/click-away commit, and
+ *  never when onFocusOut's own before===after guard already no-op'd the
+ *  keystroke) — a stale flag from a no-op Enter simply fails the
+ *  equality check below and is cleared, never causing a wrong jump. */
+function advanceFocusAfterEnter(committedField) {
+  const wantsAdvance = st.liveDocAdvanceFromField === committedField;
+  st.liveDocAdvanceFromField = null;
+  if (!wantsAdvance || !host) return;
+  const editables = [...host.querySelectorAll('.rw-editable[contenteditable="true"]')];
+  const idx = editables.findIndex((el) => (el.dataset.field || el.dataset.newField) === committedField);
+  const next = idx >= 0 ? editables[idx + 1] : null;
+  if (next) next.focus();
 }
 
 /** State only — never re-render on a keystroke, or the focused <input> is
@@ -683,7 +939,12 @@ function onInput(e) {
   const govEl = e.target.closest('[data-act="rw-gov-note"]');
   if (govEl) { st.govNote = govEl.value; return; }
   const publishRationaleEl = e.target.closest('[data-act="rw-publish-rationale"]');
-  if (publishRationaleEl) { st.publishRationale = publishRationaleEl.value; }
+  if (publishRationaleEl) { st.publishRationale = publishRationaleEl.value; return; }
+  // Phase 12.8.x — layout-knob draft, state only (never render() here —
+  // same reason every other free-text input above doesn't either: it
+  // would destroy the focused control mid-keystroke).
+  const layoutEl = e.target.closest('[data-act="rw-layout-input"]');
+  if (layoutEl && st.layoutDraft) { st.layoutDraft[layoutEl.dataset.layoutField] = Number(layoutEl.value); }
 }
 
 function domainLabel(id) {
@@ -801,23 +1062,50 @@ function humanFieldLabel(field) {
     .replace(/^./, (c) => c.toUpperCase());
 }
 
+/** Phase 12.8.x — pt is what the Document Design System speaks; px is
+ *  what CSS speaks. 96dpi/72pt is the standard conversion every browser
+ *  already uses internally for the reverse direction. */
+function ptToPx(pt) { return Math.round(pt * (96 / 72)); }
+
 function renderLiveDocument(doc) {
   const structure = buildDocumentStructure(doc.sections);
+  const dariField = structure.metaFields.find((m) => m.field === 'dari');
+  const restFields = structure.metaFields.filter((m) => m.field !== 'dari');
+  // Phase 12.8.x — the SAME 'composer' Document Design System the PDF/Word
+  // export resolves (composer-document.js#build()) — always the LATEST
+  // version, so a layout saved via renderLayoutPanel() below is reflected
+  // here on the very next render, not just in future exports.
+  const ds = getDesignSystem('composer');
+  const [marginL, marginT, marginR, marginB] = ds.page.margins;
+  const docStyle = `padding:${ptToPx(marginT)}px ${ptToPx(marginR)}px ${ptToPx(marginB)}px ${ptToPx(marginL)}px;`;
 
   return `
-    <div class="rw-doc">
+    <div class="rw-doc" style="${docStyle}">
       ${canReview() ? `
         <div class="rw-save-status${st.liveDocSavedField ? ' rw-save-status--active' : ''}" aria-live="polite">
           ${st.liveDocSavedField ? '✓ Tersimpan' : 'Tersimpan otomatis'}
         </div>` : ''}
       ${canReview() ? renderConfidenceLegend() : ''}
+      <img class="rw-doc-logo" src="${PBSI_LOGO_DATA_URI}" alt="Logo PBSI" width="${ds.logo.width}" />
       ${renderEditableSpan(doc, structure.documentTitleSection, { field: 'documentTitle', placeholder: 'Nota Organisasi', tag: 'div', extraClass: 'rw-doc-title' })}
       <div class="rw-doc-dateline">
         ${renderEditableSpan(doc, structure.dateLineSection, { field: 'dateline', placeholder: 'Jakarta, [tanggal]' })}
         ${renderEditableSpan(doc, structure.norNumberSection, { field: 'norNumber', placeholder: 'No. [nomor dokumen]' })}
       </div>
       <div class="rw-doc-meta">
-        ${structure.metaFields.map((m) => `
+        <!-- Phase 12.8.x — real letterhead order: Kepada Yth., Dari,
+             Tembusan Yth., then the rest. recipientsSection/ccSection are
+             null for a document that predates the structured field, in
+             which case the OLD kepadaYth/tembusanYth rows already appear
+             among restFields (buildDocumentStructure's own fallback). -->
+        ${structure.recipientsSection ? renderRoleList(doc, 'recipients', 'Kepada Yth.', structure.recipientsSection.value) : ''}
+        ${dariField ? `
+          <div class="rw-doc-meta-row">
+            <span class="rw-doc-meta-label">${esc(dariField.label)}</span>
+            <span class="rw-doc-meta-value">${renderEditableSpan(doc, dariField.section, { field: dariField.field, placeholder: 'Klik untuk mengisi…', tag: 'div' })}</span>
+          </div>` : ''}
+        ${structure.ccSection ? renderRoleList(doc, 'cc', 'Tembusan Yth.', structure.ccSection.value) : ''}
+        ${restFields.map((m) => `
           <div class="rw-doc-meta-row">
             <span class="rw-doc-meta-label">${esc(m.label)}</span>
             <span class="rw-doc-meta-value">${renderEditableSpan(doc, m.section, { field: m.field, placeholder: 'Klik untuk mengisi…', tag: 'div' })}</span>
@@ -837,8 +1125,88 @@ function renderLiveDocument(doc) {
               <span class="wlk-kv-val">${renderEditableSpan(doc, s, { tag: 'span' })}</span>
             </li>`).join('')}
         </ul>` : ''}
-      ${renderSignatureArea(structure.signatureSuggestion)}
+      ${renderSignatoryGrid(doc, structure.signatureSuggestion)}
       ${st.liveDocError ? `<div class="rw-edit-error">${esc(st.liveDocError)}</div>` : ''}
+    </div>
+    ${canReview() ? renderLayoutPanel(ds) : ''}`;
+}
+
+/** Phase 12.8.x (Live Workspace Experience Completion) — "adjust the
+ *  layout, it's remembered for next time." Number-input + explicit
+ *  "Simpan" button, deliberately NOT a live-drag slider: an 'input' event
+ *  firing render() on every keystroke/drag tick would destroy the
+ *  focused control mid-interaction — the same reason onInput() (above)
+ *  already only ever writes to `st`, never calls render(), for every
+ *  other free-text field in this file. Saves through
+ *  registerDesignSystemVersion() — the ALREADY-BUILT, validated,
+ *  append-only Template Manager write path (document-design-system.js's
+ *  own header names this as built for exactly this future UI) — applying
+ *  IMMEDIATELY (the repository owner's own explicit choice): the very
+ *  next render (any document, not just this one) resolves the new
+ *  version, and composer-document.js's PDF/Word export does too, since
+ *  both always resolve the LATEST version, never a cached one.
+ *
+ *  HONEST LIMITATION, DISCLOSED: document-design-system.js is pure,
+ *  in-memory data — "no DOM, no imports, no side effects" by its own
+ *  design (so it can be unit-tested in Node with zero coupling). A
+ *  version saved here lives for this browser session/tab only; a full
+ *  page reload reverts to the last hardcoded version. Durable (RTDB-
+ *  backed) persistence is a real, separate, larger undertaking — the
+ *  panel says so below, never silently implying permanence it doesn't have. */
+function renderLayoutPanel(ds) {
+  if (!st.layoutPanelOpen) {
+    return `<button class="rw-layout-toggle" data-act="rw-layout-toggle" type="button">⚙ Sesuaikan Tata Letak</button>`;
+  }
+  const draft = st.layoutDraft || { logoWidth: ds.logo.width, marginX: ds.page.margins[0], marginY: ds.page.margins[1] };
+  return `
+    <div class="rw-layout-panel">
+      <div class="rw-layout-panel-title">
+        <span>Sesuaikan Tata Letak <span class="rw-layout-panel-hint">(berlaku untuk sesi ini)</span></span>
+        <button class="rw-suggestion-collapse" data-act="rw-layout-toggle" type="button" aria-label="Tutup">✕</button>
+      </div>
+      <div class="rw-layout-row">
+        <label for="rw-layout-logo">Ukuran logo (pt)</label>
+        <input id="rw-layout-logo" data-act="rw-layout-input" data-layout-field="logoWidth" type="number" min="24" max="120" value="${draft.logoWidth}" class="wlk-input" />
+      </div>
+      <div class="rw-layout-row">
+        <label for="rw-layout-mx">Margin kiri/kanan (pt)</label>
+        <input id="rw-layout-mx" data-act="rw-layout-input" data-layout-field="marginX" type="number" min="20" max="100" value="${draft.marginX}" class="wlk-input" />
+      </div>
+      <div class="rw-layout-row">
+        <label for="rw-layout-my">Margin atas/bawah (pt)</label>
+        <input id="rw-layout-my" data-act="rw-layout-input" data-layout-field="marginY" type="number" min="20" max="100" value="${draft.marginY}" class="wlk-input" />
+      </div>
+      ${st.layoutError ? `<div class="rw-edit-error">${esc(st.layoutError)}</div>` : ''}
+      <button class="wlk-btn" data-act="rw-layout-save" type="button">Simpan Tata Letak</button>
+    </div>`;
+}
+
+/** Phase 12.8.x — a real, editable numbered role list (Kepada Yth./
+ *  Tembusan Yth.) — recipients/cc are real string arrays (see
+ *  nor-composer.js's own header: never fabricated, a human types each one
+ *  in). Reuses the SAME `.rw-editable` visual language as every other
+ *  field, distinguished by data-role-field/data-role-index instead of
+ *  data-field/data-new-field, so onFocusOut/onClick can route these to
+ *  their own array-aware commit logic (commitRoleListEntry, below)
+ *  without touching the existing per-scalar-field path at all. */
+function renderRoleList(doc, field, label, list) {
+  const editable = canReview();
+  const items = list || [];
+  return `
+    <div class="rw-doc-meta-row rw-doc-meta-row--list">
+      <span class="rw-doc-meta-label">${esc(label)}</span>
+      <div class="rw-role-list">
+        ${items.map((value, i) => `
+          <div class="rw-role-row">
+            <span class="rw-role-index">${i + 1}.</span>
+            <span class="rw-editable rw-role-entry" data-role-field="${esc(field)}" data-role-index="${i}"
+              data-doc-id="${esc(doc.documentId)}" data-original-value="${esc(value)}"
+              contenteditable="${editable}" spellcheck="false">${esc(value)}</span>
+            ${editable ? `<button class="rw-role-remove" data-act="rw-role-remove" data-role-field="${esc(field)}" data-role-index="${i}" data-doc-id="${esc(doc.documentId)}" type="button" aria-label="Hapus">×</button>` : ''}
+          </div>`).join('')}
+        ${!items.length && !editable ? '<span class="rw-editable--empty">—</span>' : ''}
+        ${editable ? `<button class="rw-role-add" data-act="rw-role-add" data-role-field="${esc(field)}" data-doc-id="${esc(doc.documentId)}" type="button">+ Tambah</button>` : ''}
+      </div>
     </div>`;
 }
 
@@ -852,6 +1220,13 @@ function renderLiveDocument(doc) {
  *  checked and found none, since for most documents today it did not
  *  check anything at all (Recognition/Body still have zero real
  *  producers wired outside this pilot — see workspace/README.md). */
+/** Phase 12.8.x, Sprint 2 ("Invisible Intelligence") — collapsed by
+ *  default. The brief's "no popup, no clutter, AI should appear only
+ *  when valuable" is honored here as a single, quiet summary line the
+ *  reviewer can expand — never an always-open list competing with the
+ *  document for attention. This is a presentation change only: the
+ *  underlying engine/contract/accept-reject pipeline (Phase 12.8.3/12.8.5)
+ *  is completely unchanged, still computing the exact same suggestions. */
 function renderSuggestionPanel(doc) {
   if (!WORKSPACE_LIVE_SUGGESTIONS_ENABLED || !canReview()) return '';
   if (st.selectedId !== doc.documentId) return '';
@@ -859,9 +1234,18 @@ function renderSuggestionPanel(doc) {
     return `<div class="rw-suggestion-panel rw-suggestion-panel--error">${esc(st.liveSuggestionError)}</div>`;
   }
   if (!st.liveSuggestions.length) return '';
+  if (!st.liveSuggestionPanelExpanded) {
+    return `
+      <button class="rw-suggestion-pill" data-act="rw-suggestion-panel-toggle" type="button">
+        💡 ${st.liveSuggestions.length} saran organisasi
+      </button>`;
+  }
   return `
     <div class="rw-suggestion-panel">
-      <div class="rw-suggestion-panel-title">Saran organisasi (${st.liveSuggestions.length})</div>
+      <div class="rw-suggestion-panel-title">
+        <span>Saran organisasi (${st.liveSuggestions.length})</span>
+        <button class="rw-suggestion-collapse" data-act="rw-suggestion-panel-toggle" type="button" aria-label="Sembunyikan">✕</button>
+      </div>
       ${st.liveSuggestions.map((s) => renderSuggestionRow(s)).join('')}
     </div>`;
 }
@@ -900,7 +1284,39 @@ function renderSuggestionRow(suggestion) {
  *  only a count — this is a preview of what the printed signature block
  *  will look like, matching Fix 6's "almost-finished NOR" intent (blank
  *  lines, never a fabricated name). */
-function renderSignatureArea({ topCount, bottomCount } = {}) {
+/** Phase 12.8.x — a real, editable signatory grid matching the official
+ *  letterhead's own visual shape (doc-theme.js#signatureBlock: label
+ *  line, position line, signing gap, name line — see composer-document.js
+ *  for how the SAME structured `signatories` field renders in the PDF/
+ *  Word export). Every slot starts fully blank (nor-composer.js never
+ *  invents a label, role, or name); a reviewer fills in exactly what the
+ *  printed letter will show. Falls back to the OLD blank-line-only
+ *  rendering (renderLegacySignatureArea) for a document that predates
+ *  the structured `signatories` field — zero change to how an
+ *  already-composed document looks. */
+function renderSignatoryGrid(doc, { topCount, bottomCount, top, bottom } = {}) {
+  if (!topCount && !bottomCount) return '';
+  if (top === null || bottom === null) return renderLegacySignatureArea({ topCount, bottomCount });
+
+  const editable = canReview();
+  const FIELD_PLACEHOLDER = { label: 'Menandatangani', position: 'Jabatan', name: 'Nama' };
+  const slot = (rowKey, i, entry) => `
+    <div class="rw-sig-slot rw-sig-slot--editable">
+      ${['label', 'position', 'name'].map((f) => `
+        <span class="rw-editable rw-sig-field rw-sig-field--${f}${!entry[f] ? ' rw-editable--empty' : ''}"
+          data-sig-row="${rowKey}" data-sig-index="${i}" data-sig-field="${f}"
+          data-doc-id="${esc(doc.documentId)}" data-original-value="${esc(entry[f] || '')}"
+          data-placeholder="${esc(FIELD_PLACEHOLDER[f])}"
+          contenteditable="${editable}" spellcheck="false">${esc(entry[f] || '')}</span>`).join('')}
+    </div>`;
+  const row = (rowKey, count, entries) => (count ? `<div class="rw-sig-row">${(entries || []).map((entry, i) => slot(rowKey, i, entry)).join('')}</div>` : '');
+  return `<div class="rw-sig-area">${row('top', topCount, top)}${row('bottom', bottomCount, bottom)}</div>`;
+}
+
+/** Sprint 11.10's original blank-line-only rendering, preserved verbatim
+ *  as the fallback for a document composed before Phase 12.8.x's
+ *  structured `signatories` field existed. */
+function renderLegacySignatureArea({ topCount, bottomCount } = {}) {
   if (!topCount && !bottomCount) return '';
   const row = (count) => (count ? `
     <div class="rw-sig-row">
@@ -1223,6 +1639,7 @@ function renderDocDetail(documentId) {
         renderDetailSection('Metadata', metadata),
         devMode ? renderDetailSection('Detail Internal (Developer)', renderSectionInternals(doc)) : '',
         devMode ? renderDetailSection('Riwayat Versi', renderVersionInfo(documentId)) : '',
+        devMode ? renderDetailSection('Tata Letak Dokumen', renderLayoutProvenance(doc)) : '',
         // Riwayat Keputusan stays visible in Normal Mode, unlike Riwayat
         // Versi's diff table: composerReviewStateLabel()+approverId+
         // rationale is human-readable governance record (WHO decided WHAT

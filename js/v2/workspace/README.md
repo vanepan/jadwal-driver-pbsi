@@ -69,8 +69,10 @@ workspace/
   context/             workspace-context-builder.js — buildWorkspaceContext():
                        the ONE function in this platform allowed to compose
                        Body + Organizational Memory + Recognition + Learning
-                       read-only, for one open Workspace. Ships real, not a
-                       stub — see §2.
+                       + Reasoning read-only, for one open Workspace. Ships
+                       real, not a stub — see §2. Also enriches each Live
+                       Block's own liveEntityRefs via entity-text-matcher.js
+                       (Phase 12.8.x, Sprint 2 — deterministic, non-NLP).
   suggestion/           workspace-suggestion-engine.js — computeSuggestions():
                        pure, stateless, cite-or-abstain, turns a
                        WorkspaceContext into LiveSuggestion[]. Mirrors
@@ -102,13 +104,18 @@ workspace/               ──depends on──>  document-intelligence/ (read-o
                           knowledge/, organizational-memory/, learning/,
                           body/ (services-only, via body/services/index.js#context),
                           recognition/ (services-only, via
-                          recognition/services/index.js#records)
+                          recognition/services/index.js#records),
+                          reasoning/ (services-only, via reasoning/services/
+                          reasoning-service.js#reasonWithGaps — Phase 12.8.x
+                          Sprint 3's SECOND narrow grant, added after body/;
+                          same reason()-stays-cite-or-abstain-over-Approved-
+                          Knowledge-only rule, unchanged)
 workspace/                ──never depends on──>  ui/, ai-foundation/,
-                          conversation/, reasoning/, problem-intelligence/,
+                          conversation/, problem-intelligence/,
                           problem-solving/
 document-intelligence/, knowledge/, organizational-memory/, learning/,
-body/, recognition/       ──never depend on──>  workspace/ (workspace/ is
-                          purely downstream — the same posture
+body/, recognition/, reasoning/  ──never depend on──>  workspace/ (workspace/
+                          is purely downstream — the same posture
                           problem-solving/ and recognition/ already hold
                           toward what they read)
 ui/                        ──depends on──>  workspace/ (Phase 12.8.4 —

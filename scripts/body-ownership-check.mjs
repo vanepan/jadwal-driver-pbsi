@@ -133,27 +133,35 @@ console.log('\n[Part 3 — body/ is a PEER of knowledge/, never depends on any E
   check('the identity-contract.js reuse is exactly where documented (contracts/identity-contract.js only)', identityReuseFiles.length === 1 && identityReuseFiles[0].rel === 'js/v2/body/contracts/identity-contract.js');
 }
 
-console.log('\n[Part 4 — nothing OUTSIDE js/v2/body/ imports js/v2/body/, except the one Phase 12.6-approved bridge (Phase 12.5 dormancy, narrowed by Phase 12.6)]');
+console.log('\n[Part 4 — nothing OUTSIDE js/v2/body/ imports js/v2/body/, except the two approved exceptions (Phase 12.6\'s learning-bridge/, Phase 12.8\'s workspace/)]');
 {
-  // js/v2/learning-bridge/ is the ONE deliberate, approved exception,
-  // added in Phase 12.6 specifically because body/ and learning/ are
-  // mutually forbidden from importing each other (see body/README.md and
-  // learning-service.js's own headers) — something outside both has to
-  // bridge them, mirroring problem-solving/'s "sees everyone" precedent.
-  // scripts/learning-signal-ownership-check.mjs is the authority on
-  // EXACTLY what learning-bridge/ may import from body/ (read-only:
-  // body-event-repository.js's list()/getForEntity() + the bare
-  // body-event-contract.js leaf, never append()) — this check only
-  // confirms no OTHER file anywhere still reaches into body/.
+  // js/v2/learning-bridge/ is the Phase 12.6 exception, added specifically
+  // because body/ and learning/ are mutually forbidden from importing each
+  // other (see body/README.md and learning-service.js's own headers) —
+  // something outside both has to bridge them, mirroring problem-solving/'s
+  // "sees everyone" precedent. scripts/learning-signal-ownership-check.mjs
+  // is the authority on EXACTLY what learning-bridge/ may import from body/
+  // (read-only: body-event-repository.js's list()/getForEntity() + the bare
+  // body-event-contract.js leaf, never append()).
+  //
+  // js/v2/workspace/ is the Phase 12.8 exception — a SECOND, separately
+  // approved, equally narrow grant (js/v2/README.md's Phase 12.8 extension,
+  // js/v2/workspace/README.md §2): workspace/ may read
+  // body/services/index.js#context.buildBodyContext() directly (read-only,
+  // services-only, via workspace-context-builder.js), the one new edge that
+  // phase's own architecture review named. scripts/workspace-ownership-
+  // check.mjs is the authority on exactly what workspace/ may import from
+  // body/ — this check only confirms no OTHER file anywhere still reaches
+  // into body/.
   const offenders = [];
   for (const { rel, code } of V2_FILES) {
-    if (rel.startsWith('js/v2/body/') || rel.startsWith('js/v2/learning-bridge/')) continue;
+    if (rel.startsWith('js/v2/body/') || rel.startsWith('js/v2/learning-bridge/') || rel.startsWith('js/v2/workspace/')) continue;
     for (const { target } of importTargets(code)) {
       const resolved = resolveRelative(rel, target);
       if (resolved.includes('/v2/body/')) offenders.push(`${rel} -> ${resolved}`);
     }
   }
-  check(`no js/v2/* file outside body/ or learning-bridge/ imports body/${offenders.length ? ` — FOUND: ${offenders.join(', ')}` : ''}`, offenders.length === 0);
+  check(`no js/v2/* file outside body/, learning-bridge/, or workspace/ imports body/${offenders.length ? ` — FOUND: ${offenders.join(', ')}` : ''}`, offenders.length === 0);
 
   // Also the wider repo — a grep-for-importers sweep, same technique
   // js/v2/index.js's own header prescribes for the whole platform.

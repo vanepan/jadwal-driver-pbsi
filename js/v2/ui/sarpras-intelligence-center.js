@@ -387,6 +387,7 @@ function renderConversationResult(c) {
   return `
     <div class="sic-conv-result">
       <p class="sic-next-action">Terdeteksi: <strong>${esc(INTENT_LABEL[c.currentIntent.intent] || c.currentIntent.intent)}</strong></p>
+      ${renderComposeDraftNow(c)}
       ${known.length ? `
         <div class="sic-brief-sub">Sudah diketahui</div>
         <ul class="sic-brief-list">${known.map(([k, v]) => `<li><span class="sic-brief-label">✓ ${esc(knownFactLabel(c.currentIntent.intent, c.gatheredFacts.type, k))}: ${esc(String(v))}</span></li>`).join('')}</ul>` : ''}
@@ -402,7 +403,6 @@ function renderConversationResult(c) {
         </div>`
     : '<p class="sic-next-action">Semua data yang diperlukan sudah ada.</p>'}
       ${c.state === 'ready' ? `<p class="sic-next-action">Semua data terkumpul. <button class="wlk-btn" data-act="sic-compose-nor" data-id="${esc(c.id)}" type="button">Susun NOR</button></p>` : ''}
-      ${renderComposeDraftNow(c)}
     </div>`;
 }
 
@@ -411,19 +411,36 @@ function renderConversationResult(c) {
  *  and the conversation is genuinely under way (ACTIVE — at least one real
  *  exchange has happened, not the empty instant right after typing), a
  *  reviewer may choose to see the almost-finished document immediately
- *  instead of finishing the guided Q&A first. This is ADDITIVE, not a
- *  replacement of the existing "answer the remaining questions" flow above
- *  (Sprint 11.1/11.2's own UAT-hardened "ask only what is unknown" path is
- *  completely unchanged) — a human explicitly opts in by clicking, exactly
- *  once, per the architecture report's own documented tradeoff (a forced
- *  compose-first default risks a new reviewer seeing a mostly-blank
- *  document with no guidance on what a NOR needs, which is worse UX for
- *  exactly the "help new employees learn faster" persona CLAUDE.md's
- *  mission cares about). Never shown once already 'ready' (the button
- *  above already covers that, with real complete data, not a draft). */
+ *  instead of finishing the guided Q&A first. ADDITIVE, not a replacement
+ *  of the existing "answer the remaining questions" flow (Sprint
+ *  11.1/11.2's own UAT-hardened "ask only what is unknown" path is
+ *  completely unchanged, still rendered below this) — a human explicitly
+ *  opts in by clicking, per the architecture report's own documented
+ *  tradeoff (a forced compose-first DEFAULT risks a new reviewer seeing a
+ *  mostly-blank document with no guidance on what a NOR needs, which is
+ *  worse UX for exactly the "help new employees learn faster" persona
+ *  CLAUDE.md's mission cares about) — that reasoning is UNCHANGED and this
+ *  sprint does not revisit it: the Q&A form stays the default path.
+ *
+ *  Phase 12.8.x, Sprint 1 (Experience Completion) — PROMOTED, not
+ *  automated. The brief asked for "the document should appear
+ *  immediately"; making this fire automatically would directly reverse
+ *  Sprint 11.10's own considered decision above and would break
+ *  home-generate-live-preview-check.mjs's real-browser assertion that the
+ *  Q&A form is what a human sees first. Instead: this affordance moves
+ *  from LAST (a small ghost-styled hint below the full Q&A form) to
+ *  FIRST (a real, primary-styled callout immediately under intent
+ *  detection) — still one deliberate click, never automatic, but now the
+ *  most visually prominent thing on screen instead of the least. Never
+ *  shown once already 'ready' (the "Susun NOR" button, drawing from real
+ *  complete data rather than a draft, already covers that). */
 function renderComposeDraftNow(c) {
   if (c.state !== 'active') return '';
-  return `<p class="sic-next-action sic-draft-now-hint">Ingin lihat draf sekarang, sebelum semua pertanyaan terjawab? <button class="wlk-btn wlk-btn--ghost" data-act="sic-compose-nor-draft" data-id="${esc(c.id)}" type="button">Susun Draf Sekarang</button></p>`;
+  return `
+    <div class="sic-draft-now-card">
+      <p class="sic-draft-now-lede">Draf lengkap sudah bisa dilihat sekarang — sisanya bisa diisi langsung di dalam dokumen.</p>
+      <button class="wlk-btn" data-act="sic-compose-nor-draft" data-id="${esc(c.id)}" type="button">Susun Draf Sekarang</button>
+    </div>`;
 }
 
 /** Phase 10.5, Parts 2/4 — the generic, category-agnostic turn loop

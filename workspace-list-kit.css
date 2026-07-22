@@ -374,6 +374,28 @@
 .rw-sig-line{border-bottom:1px solid var(--text-dim);height:34px;}
 .rw-sig-hint{font-size:11px;color:var(--text-faint);font-family:var(--font-sans);margin-top:4px;}
 
+/* Phase 12.8.x — real, editable signatory grid (label/position/[gap]/name,
+   matching doc-theme.js#signatureBlock's own printed shape) and the real
+   PBSI logo + editable recipients/cc role lists, in the on-screen Live
+   Document — closing the gap with the official letterhead. */
+.rw-doc-logo{display:block;margin:0 auto 6px;}
+.rw-sig-slot--editable{display:flex;flex-direction:column;gap:2px;}
+.rw-sig-field{display:block;min-height:1.3em;}
+.rw-sig-field--label{font-size:13.5px;}
+.rw-sig-field--position{font-size:13.5px;font-weight:700;text-transform:uppercase;}
+.rw-sig-field--name{margin-top:34px;font-size:13.5px;font-weight:700;text-decoration:underline;}
+.rw-doc-meta-row--list{align-items:flex-start;}
+.rw-role-list{flex:1;min-width:0;}
+.rw-role-row{display:flex;align-items:baseline;gap:6px;margin-bottom:2px;}
+.rw-role-index{color:var(--text-faint);font-size:13.5px;flex:0 0 auto;}
+.rw-role-entry{flex:1;min-width:60px;}
+.rw-role-remove{background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:13px;padding:0 4px;}
+.rw-role-remove:hover{color:var(--danger);}
+.rw-role-add{
+  font-family:var(--font-sans);font-size:11.5px;color:var(--accent);background:none;border:1px dashed var(--border);
+  border-radius:6px;padding:3px 8px;cursor:pointer;margin-top:4px;
+}
+
 /* Sprint 11.6 (Reviewer Experience) — Google Docs-style save status. Every
    edit already commits on focusout (Sprint 11.3); this only makes that
    already-real save visible, so the reviewer never wonders whether a click
@@ -402,7 +424,42 @@
   background:var(--surface-alt, rgba(0,0,0,.02));font-family:var(--font-sans);
 }
 .rw-suggestion-panel--error{color:var(--danger);font-size:12px;}
-.rw-suggestion-panel-title{font-size:11.5px;font-weight:600;color:var(--text-dim);margin-bottom:8px;text-transform:uppercase;letter-spacing:.03em;}
+.rw-suggestion-panel-title{font-size:11.5px;font-weight:600;color:var(--text-dim);margin-bottom:8px;text-transform:uppercase;letter-spacing:.03em;display:flex;align-items:center;justify-content:space-between;}
+.rw-suggestion-collapse{background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:12px;padding:0 2px;}
+/* Phase 12.8.x, Sprint 2 — collapsed-by-default pill: quiet, small, never
+   competing with the document for attention ("invisible AI"). */
+.rw-suggestion-pill{
+  margin-top:16px;padding:5px 12px;border:1px solid var(--border);border-radius:999px;
+  background:var(--surface-alt, rgba(0,0,0,.02));font-family:var(--font-sans);font-size:12px;
+  color:var(--text-dim);cursor:pointer;transition:background-color .15s ease,color .15s ease;
+}
+.rw-suggestion-pill:hover{background:var(--c-blue-weak, rgba(59,91,169,.08));color:var(--text);}
+
+/* Phase 12.8.x — the layout-knob panel (logo/margin adjustment, saved
+   immediately into the Document Design System). Quiet by default, same
+   "invisible until wanted" treatment as the suggestion pill above. */
+.rw-layout-toggle{
+  margin-top:12px;padding:5px 12px;border:1px solid var(--border);border-radius:999px;
+  background:var(--surface-alt, rgba(0,0,0,.02));font-family:var(--font-sans);font-size:12px;
+  color:var(--text-dim);cursor:pointer;
+}
+.rw-layout-toggle:hover{background:var(--c-blue-weak, rgba(59,91,169,.08));color:var(--text);}
+.rw-layout-panel{
+  margin-top:12px;padding:12px 14px;border:1px solid var(--border);border-radius:6px;
+  background:var(--surface-alt, rgba(0,0,0,.02));font-family:var(--font-sans);max-width:320px;
+}
+.rw-layout-panel-title{font-size:11.5px;font-weight:600;color:var(--text-dim);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;text-transform:uppercase;letter-spacing:.03em;}
+.rw-layout-panel-hint{font-weight:400;text-transform:none;letter-spacing:normal;color:var(--text-faint);}
+.rw-layout-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;}
+.rw-layout-row label{font-size:12.5px;color:var(--text-dim);}
+.rw-layout-row input{width:70px;}
+/* Phase 12.8.x, Sprint 6 (Workspace Polish) — a calm fade-in rather than
+   the panel/pill snapping into existence. Sprint 1's auto-advance-on-Enter
+   (review-workspace.js) already lands on a `.rw-editable`, whose existing
+   `:focus` rule (box-shadow ring, above) already makes the new position
+   visible — nothing new needed there. Pure presentation. */
+.rw-suggestion-panel,.rw-suggestion-pill{animation:rw-fade-in .18s ease;}
+@keyframes rw-fade-in{from{opacity:0;}to{opacity:1;}}
 .rw-suggestion-row{padding:8px 0;border-top:1px solid var(--border);}
 .rw-suggestion-row:first-of-type{border-top:none;}
 .rw-suggestion-row-main{display:flex;align-items:center;justify-content:space-between;gap:8px;}

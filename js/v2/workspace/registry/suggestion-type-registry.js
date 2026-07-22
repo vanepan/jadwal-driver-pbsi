@@ -76,8 +76,16 @@ function bootstrap() {
   registerSuggestionType('repeated_pattern', { label: 'Pola berulang', sourceDomain: 'recognition', confidenceFloor: 0.6 });
   registerSuggestionType('organizational_terminology', { label: 'Istilah organisasi', sourceDomain: 'organizational-memory', confidenceFloor: 0.5 });
   registerSuggestionType('historical_decision', { label: 'Keputusan historis', sourceDomain: 'organizational-memory', confidenceFloor: 0.5 });
+  // Phase 12.8.x, Sprint 3 — activates 2 of Organizational Memory's own
+  // 8 facts that Phase 12.8's original suggestion engine left unused
+  // (commonApprovalPatterns, frequentlyCorrectedKnowledge).
+  registerSuggestionType('approval_pattern', { label: 'Pola persetujuan organisasi', sourceDomain: 'organizational-memory', confidenceFloor: 0.5 });
+  registerSuggestionType('frequently_corrected', { label: 'Sering dikoreksi sebelumnya', sourceDomain: 'organizational-memory', confidenceFloor: 0.4 });
   registerSuggestionType('learning_recommendation', { label: 'Rekomendasi pembelajaran', sourceDomain: 'learning', confidenceFloor: 0.5 });
   registerSuggestionType('related_entity', { label: 'Entitas terkait', sourceDomain: 'body', confidenceFloor: 0.7 });
+  // Phase 12.8.x, Sprint 3 — the reasoning/ grant's two suggestion types.
+  registerSuggestionType('reasoning_recommendation', { label: 'Rekomendasi penalaran organisasi', sourceDomain: 'reasoning', confidenceFloor: 0.5 });
+  registerSuggestionType('knowledge_gap', { label: 'Informasi organisasi yang belum lengkap', sourceDomain: 'reasoning', confidenceFloor: 0.5 });
 }
 
 bootstrap();

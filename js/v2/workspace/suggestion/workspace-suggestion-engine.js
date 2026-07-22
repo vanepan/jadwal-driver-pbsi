@@ -121,6 +121,88 @@ function fromOrganizationalMemory(context, workspaceId, blockId) {
       }],
     }));
   }
+
+  // Phase 12.8.x, Sprint 3 — commonApprovalPatterns, same shape/rule as
+  // commonTerminology above (both come from profileFacts()), previously
+  // computed by organizational-memory-engine.js but never consumed by
+  // Phase 12.8's original 4-rule engine.
+  for (const pattern of om.commonApprovalPatterns || []) {
+    if (!pattern.supportCount || pattern.supportCount < MIN_TERMINOLOGY_SUPPORT) continue;
+    const confidence = typeof pattern.confidence === 'number' ? pattern.confidence : 0.5;
+    if (confidence < confidenceFloorFor('approval_pattern')) continue;
+    out.push(makeLiveSuggestion({
+      workspaceId, blockId, suggestionType: 'approval_pattern',
+      payload: { value: pattern.value, supportCount: pattern.supportCount },
+      sourceDomain: SUGGESTION_SOURCE_DOMAIN.ORGANIZATIONAL_MEMORY, sourceRecordId: null,
+      confidence,
+      evidence: [{
+        itemId: `organizational-memory:${context.domainType}:approval:${pattern.value}`,
+        kind: 'statistic', weight: confidence,
+        rationale: `Pola persetujuan ini muncul pada ${pattern.supportCount} dokumen historis domain "${context.domainType}".`,
+      }],
+    }));
+  }
+
+  // Phase 12.8.x, Sprint 3 — frequentlyCorrectedKnowledge: a real caution
+  // signal ("this fact has needed correction before, double-check it"),
+  // the second of the 2 previously-unused Organizational Memory facts.
+  for (const item of om.frequentlyCorrectedKnowledge || []) {
+    if (!item.count || item.count < MIN_TERMINOLOGY_SUPPORT) continue;
+    const confidence = Math.min(1, item.count / 5);
+    if (confidence < confidenceFloorFor('frequently_corrected')) continue;
+    out.push(makeLiveSuggestion({
+      workspaceId, blockId, suggestionType: 'frequently_corrected',
+      payload: { key: item.key, count: item.count, correctionType: item.correctionType },
+      sourceDomain: SUGGESTION_SOURCE_DOMAIN.ORGANIZATIONAL_MEMORY, sourceRecordId: item.key,
+      confidence,
+      evidence: [{
+        itemId: item.key, kind: 'corroboration', weight: confidence,
+        rationale: `Dikoreksi manusia ${item.count} kali sebelumnya (jenis: ${item.correctionType}).`,
+      }],
+    }));
+  }
+  return out;
+}
+
+/** Phase 12.8.x, Sprint 3 — the reasoning/ grant. `context.reasoning` is
+ *  already the exact `{recommendation, gaps}` shape
+ *  reasonWithGaps()/workspace-context-builder.js computed — this
+ *  function only ever RESHAPES an already-real result into LiveSuggestion
+ *  envelopes, never recomputes anything reasoning/ itself owns. */
+function fromReasoning(context, workspaceId, blockId) {
+  const out = [];
+  const reasoning = context.reasoning;
+  if (!reasoning) return out;
+
+  const rec = reasoning.recommendation;
+  if (rec && rec.ok && rec.data.citedRuleIds && rec.data.citedRuleIds.length > 0) {
+    const confidence = rec.data.confidence;
+    if (confidence >= confidenceFloorFor('reasoning_recommendation')) {
+      out.push(makeLiveSuggestion({
+        workspaceId, blockId, suggestionType: 'reasoning_recommendation',
+        payload: { claim: rec.data.claim, confidenceBasis: rec.data.confidenceBasis, conflicts: rec.data.conflicts },
+        sourceDomain: SUGGESTION_SOURCE_DOMAIN.REASONING, sourceRecordId: null,
+        confidence,
+        evidence: rec.data.citedRuleIds.map((id) => ({
+          itemId: id, kind: 'source', weight: confidence, rationale: rec.data.claim,
+        })),
+      }));
+    }
+  }
+
+  for (const gap of reasoning.gaps || []) {
+    if (gap.confidence < confidenceFloorFor('knowledge_gap')) continue;
+    out.push(makeLiveSuggestion({
+      workspaceId, blockId, suggestionType: 'knowledge_gap',
+      payload: { gapType: gap.gapType, field: gap.field, recommendedQuestion: gap.recommendedQuestion },
+      sourceDomain: SUGGESTION_SOURCE_DOMAIN.REASONING, sourceRecordId: null,
+      confidence: gap.confidence,
+      evidence: [{
+        itemId: `reasoning-gap:${context.domainType}:${gap.field}`,
+        kind: 'statistic', weight: gap.confidence, rationale: gap.reason,
+      }],
+    }));
+  }
   return out;
 }
 
@@ -175,5 +257,6 @@ export function computeSuggestions(context, { blockId = null } = {}) {
     ...fromOrganizationalMemory(context, workspaceId, blockId),
     ...fromLearning(context, workspaceId, blockId),
     ...fromBody(context, workspaceId, blockId),
+    ...fromReasoning(context, workspaceId, blockId),
   ];
 }

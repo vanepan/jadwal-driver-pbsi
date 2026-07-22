@@ -113,9 +113,14 @@ console.log('\n[Part 2 — exactly ONE owner writes the Workspace Timeline Repos
   check('the owner itself DOES write the timeline (it is the orchestrator, not a delegator)', /timelineAppend/.test(ownerSrc));
 }
 
-console.log('\n[Part 3 — workspace/ never imports ui/, ai-foundation/, conversation/, reasoning/, problem-intelligence/, or problem-solving/ (the Phase 12.8 graph grants ONLY document-intelligence/, knowledge/, organizational-memory/, learning/, body/, recognition/)]');
+console.log('\n[Part 3 — workspace/ never imports ui/, ai-foundation/, conversation/, problem-intelligence/, or problem-solving/ (the Phase 12.8/12.8.x graph grants ONLY document-intelligence/, knowledge/, organizational-memory/, learning/, body/, recognition/, reasoning/)]');
 {
-  const FORBIDDEN_TREES = ['/v2/ui/', '/v2/ai-foundation/', '/v2/conversation/', '/v2/reasoning/', '/v2/problem-intelligence/', '/v2/problem-solving/'];
+  // reasoning/ moved OUT of forbidden and into workspace-context-builder.js's
+  // approved imports in Phase 12.8.x, Sprint 3 — the SECOND narrow graph
+  // grant (see js/v2/README.md's Phase 12.8.x extension). conversation/ and
+  // problem-intelligence/ and problem-solving/ remain forbidden — this
+  // sprint did not touch those.
+  const FORBIDDEN_TREES = ['/v2/ui/', '/v2/ai-foundation/', '/v2/conversation/', '/v2/problem-intelligence/', '/v2/problem-solving/'];
   const leaks = [];
   for (const { rel, code } of WORKSPACE_FILES) {
     for (const { target } of importTargets(code)) {
@@ -123,9 +128,9 @@ console.log('\n[Part 3 — workspace/ never imports ui/, ai-foundation/, convers
       if (FORBIDDEN_TREES.some((t) => resolved.includes(t))) leaks.push(`${rel} -> ${resolved}`);
     }
   }
-  check(`workspace/ imports NOTHING from ui/ai-foundation/conversation/reasoning/problem-intelligence/problem-solving/${leaks.length ? ` — FOUND: ${leaks.join(', ')}` : ''}`, leaks.length === 0);
+  check(`workspace/ imports NOTHING from ui/ai-foundation/conversation/problem-intelligence/problem-solving/${leaks.length ? ` — FOUND: ${leaks.join(', ')}` : ''}`, leaks.length === 0);
 
-  const ALLOWED_TREES = ['/v2/document-intelligence/', '/v2/knowledge/', '/v2/organizational-memory/', '/v2/learning/', '/v2/body/', '/v2/recognition/', '/v2/workspace/'];
+  const ALLOWED_TREES = ['/v2/document-intelligence/', '/v2/knowledge/', '/v2/organizational-memory/', '/v2/learning/', '/v2/body/', '/v2/recognition/', '/v2/reasoning/', '/v2/workspace/'];
   const unexpected = [];
   for (const { rel, code } of WORKSPACE_FILES) {
     for (const { target } of importTargets(code)) {
@@ -134,7 +139,7 @@ console.log('\n[Part 3 — workspace/ never imports ui/, ai-foundation/, convers
       if (!ALLOWED_TREES.some((t) => resolved.includes(t))) unexpected.push(`${rel} -> ${resolved}`);
     }
   }
-  check(`workspace/'s only js/v2/ imports are the 6 approved trees (+ itself)${unexpected.length ? ` — FOUND: ${unexpected.join(', ')}` : ''}`, unexpected.length === 0);
+  check(`workspace/'s only js/v2/ imports are the 7 approved trees (+ itself)${unexpected.length ? ` — FOUND: ${unexpected.join(', ')}` : ''}`, unexpected.length === 0);
 }
 
 console.log('\n[Part 4 — nothing OUTSIDE js/v2/workspace/ imports js/v2/workspace/, except ui/review-workspace.js (Sprint 12.8.4\'s one approved caller)]');
@@ -175,6 +180,26 @@ console.log('\n[Part 5 — dormancy-by-omission: workspace/index.js is still a s
   check('workspace/index.js imports nothing at all (still a structural no-op)', !/\bimport\b/.test(indexSrc));
 }
 
+console.log('\n[Part 6b — Sprint 2: deterministic entity-text-matcher, pure function, synthetic vocabulary]');
+{
+  const { buildVocabulary, matchEntityMentions } = await import('../js/v2/workspace/context/entity-text-matcher.js');
+  const vocabulary = buildVocabulary({
+    body: { entities: [{ id: 'vehicle:B-1234-XYZ', entityType: 'vehicle', attributes: { plateNumber: 'B 1234 XYZ', name: 'Toyota Avanza' } }] },
+    organizationalMemory: { commonTerminology: [{ value: 'Nota Organisasi', supportCount: 5 }, { value: 'ab' /* too short, must be filtered */ }] },
+  });
+  check('buildVocabulary assembles real terms from body + organizational memory', vocabulary.some((v) => v.term === 'Toyota Avanza') && vocabulary.some((v) => v.term === 'Nota Organisasi'));
+  check('buildVocabulary filters out terms below the minimum length floor', !vocabulary.some((v) => v.term === 'ab'));
+
+  const matches = matchEntityMentions('Kendaraan Toyota Avanza akan digunakan untuk Nota Organisasi ini.', vocabulary);
+  check('matchEntityMentions finds every real vocabulary term present in the text', matches.some((m) => m.term === 'Toyota Avanza') && matches.some((m) => m.term === 'Nota Organisasi'));
+
+  const noMatch = matchEntityMentions('Kalimat ini tidak menyebut apapun yang relevan.', vocabulary);
+  check('matchEntityMentions returns nothing when the text genuinely mentions none of the vocabulary — never a fabricated match', noMatch.length === 0);
+
+  const wordBoundaryGuard = matchEntityMentions('TidakToyota Avanzaland sama sekali.', [{ term: 'Toyota', sourceType: 'body', refId: null, entityType: null }]);
+  check('matchEntityMentions never matches a term as a substring of a LONGER word (word-boundary respected)', wordBoundaryGuard.length === 0);
+}
+
 console.log('\n[Part 6 — behavioural: a real end-to-end flow in plain Node]');
 {
   try {
@@ -204,9 +229,14 @@ console.log('\n[Part 6 — behavioural: a real end-to-end flow in plain Node]');
     const context = ws.buildContext(workspaceId);
     check('buildContext resolves the real documentId/domainType', context.documentId === doc.documentId && context.domainType === 'nor');
     check('buildContext blocks mirror the document\'s own section count', context.blocks.length === doc.sections.length);
+    // Phase 12.8.x, Sprint 3 — reasoning/ is genuinely called (real
+    // detectKnowledgeGaps output for a domainType with no Approved
+    // Ontology yet), never a guess or a silently-skipped field.
+    check('buildContext genuinely calls reasoning/ (reasonWithGaps) and gets a real, structured result back', context.reasoning !== null && Array.isArray(context.reasoning.gaps) && 'recommendation' in context.reasoning);
 
     const suggestions = ws.computeSuggestionsFor(workspaceId);
     check('computeSuggestionsFor returns an array honestly (Recognition/Body have zero real producers yet, so [] is the correct answer, never a throw)', Array.isArray(suggestions));
+    check('computeSuggestionsFor genuinely includes a real knowledge_gap suggestion (no Approved Ontology exists for "nor" in this fixture run — a real, honest gap, not fabricated)', suggestions.some((s) => s.suggestionType === 'knowledge_gap'));
 
     const snap = ws.getLastSnapshot(workspaceId);
     check('getLastSnapshot returns the just-built context, honestly aged (not stale)', snap !== null && snap.stale === false && typeof snap.ageMs === 'number');
@@ -235,6 +265,21 @@ console.log('\n[Part 6 — behavioural: a real end-to-end flow in plain Node]');
 
     const explanation = ws.explainSuggestion(synthetic);
     check('explainSuggestion answers all 5 CLAUDE.md-mandated questions (why/evidence/historical-source/knowledge/confidence)', explanation.ok === true && !!explanation.data.why && explanation.data.evidence.length === 1 && explanation.data.confidence === 0.7 && 'sourceExplanation' in explanation.data);
+
+    // Phase 12.8.x, Sprint 5 — the passive 'ignored' outcome.
+    const ignoredSuggestion = makeLiveSuggestion({
+      workspaceId, blockId: null, suggestionType: 'learning_recommendation', payload: { claim: 'test' },
+      sourceDomain: 'learning', sourceRecordId: 'learning-event:test', confidence: 0.6,
+      evidence: [{ itemId: 'learning-event:test', kind: 'corroboration', weight: 0.6, rationale: 'test' }],
+    });
+    const ignored = ws.decideSuggestion(workspaceId, ignoredSuggestion, 'ignored', { actorId: 'evan' });
+    check('decideSuggestion accepts the new "ignored" outcome and records a real Learning Signal', ignored.ok === true && ignored.learningResult.ok === true);
+    check('an "ignored" decision never binds a citation (only accepted knowledge/org-memory suggestions do)', ignored.citationEntry === null);
+    const timelineAfterIgnore = ws.getWorkspaceTimeline(workspaceId);
+    check('the Workspace Timeline records the ignored decision as its own distinct entry type', timelineAfterIgnore.data.some((e) => e.entryType === 'suggestion_ignored'));
+
+    const badDecision2 = ws.decideSuggestion(workspaceId, ignoredSuggestion, 'maybe', { actorId: 'evan' });
+    check('decideSuggestion still refuses a genuinely invalid decision value after adding "ignored"', badDecision2.ok === false && badDecision2.error.code === 'INVALID_DECISION');
   } catch (err) {
     check(`the full end-to-end flow ran without throwing — FAILED: ${err && err.stack}`, false);
   }
