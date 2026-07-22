@@ -13,10 +13,10 @@
       document-intelligence/, ui/ ENGINES OR SERVICES —
       only the 2 precedented pure-leaf contract reuses, allowlisted by
       name; nothing OUTSIDE js/v2/body/ imports js/v2/body/, except
-      js/v2/learning-bridge/ (Phase 12.6's one approved, narrowly-scoped
-      bridge — see Part 4's own comment and
-      scripts/learning-signal-ownership-check.mjs for what exactly it may
-      import); the 3 real pilot sensors are NEVER imported by
+      js/v2/workspace/ (Phase 12.8's one approved, narrowly-scoped grant —
+      see Part 4's own comment). js/v2/learning-bridge/ (Phase 12.6's
+      former bridge) was deleted, confirmed dead, during Phase 1
+      Repository Refoundation; the 3 real pilot sensors are NEVER imported by
       registry/sensor-registry.js, body/index.js, or
       services/body-sensing-service.js (dormancy-by-omission).
 
@@ -133,19 +133,17 @@ console.log('\n[Part 3 — body/ is a PEER of knowledge/, never depends on any E
   check('the identity-contract.js reuse is exactly where documented (contracts/identity-contract.js only)', identityReuseFiles.length === 1 && identityReuseFiles[0].rel === 'js/v2/body/contracts/identity-contract.js');
 }
 
-console.log('\n[Part 4 — nothing OUTSIDE js/v2/body/ imports js/v2/body/, except the two approved exceptions (Phase 12.6\'s learning-bridge/, Phase 12.8\'s workspace/)]');
+console.log('\n[Part 4 — nothing OUTSIDE js/v2/body/ imports js/v2/body/, except the one approved exception (Phase 12.8\'s workspace/)]');
 {
-  // js/v2/learning-bridge/ is the Phase 12.6 exception, added specifically
+  // js/v2/learning-bridge/ was the Phase 12.6 exception, added specifically
   // because body/ and learning/ are mutually forbidden from importing each
   // other (see body/README.md and learning-service.js's own headers) —
-  // something outside both has to bridge them, mirroring problem-solving/'s
-  // "sees everyone" precedent. scripts/learning-signal-ownership-check.mjs
-  // is the authority on EXACTLY what learning-bridge/ may import from body/
-  // (read-only: body-event-repository.js's list()/getForEntity() + the bare
-  // body-event-contract.js leaf, never append()).
+  // something outside both had to bridge them, mirroring problem-solving/'s
+  // "sees everyone" precedent. That folder was deleted, confirmed dead
+  // (zero real callers anywhere), during Phase 1 Repository Refoundation.
   //
-  // js/v2/workspace/ is the Phase 12.8 exception — a SECOND, separately
-  // approved, equally narrow grant (js/v2/README.md's Phase 12.8 extension,
+  // js/v2/workspace/ is the Phase 12.8 exception — a separately approved,
+  // narrow grant (js/v2/README.md's Phase 12.8 extension,
   // js/v2/workspace/README.md §2): workspace/ may read
   // body/services/index.js#context.buildBodyContext() directly (read-only,
   // services-only, via workspace-context-builder.js), the one new edge that
@@ -155,13 +153,13 @@ console.log('\n[Part 4 — nothing OUTSIDE js/v2/body/ imports js/v2/body/, exce
   // into body/.
   const offenders = [];
   for (const { rel, code } of V2_FILES) {
-    if (rel.startsWith('js/v2/body/') || rel.startsWith('js/v2/learning-bridge/') || rel.startsWith('js/v2/workspace/')) continue;
+    if (rel.startsWith('js/v2/body/') || rel.startsWith('js/v2/workspace/')) continue;
     for (const { target } of importTargets(code)) {
       const resolved = resolveRelative(rel, target);
       if (resolved.includes('/v2/body/')) offenders.push(`${rel} -> ${resolved}`);
     }
   }
-  check(`no js/v2/* file outside body/, learning-bridge/, or workspace/ imports body/${offenders.length ? ` — FOUND: ${offenders.join(', ')}` : ''}`, offenders.length === 0);
+  check(`no js/v2/* file outside body/ or workspace/ imports body/${offenders.length ? ` — FOUND: ${offenders.join(', ')}` : ''}`, offenders.length === 0);
 
   // Also the wider repo — a grep-for-importers sweep, same technique
   // js/v2/index.js's own header prescribes for the whole platform.

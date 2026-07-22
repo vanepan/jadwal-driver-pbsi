@@ -5,17 +5,18 @@
    scripts/learning-ownership-check.mjs, on purpose.
 
    1. ARCHITECTURAL (static, source-scanning). Asserts: no new file under
-      js/v2/learning/ or js/v2/learning-bridge/ imports a producer domain's
-      repository or ENGINE (the same leak-check discipline
-      learning-ownership-check.mjs's own Part 2 already runs, applied to
-      the new files); learning-bridge/ imports ONLY body-event-repository.js's
-      `list`/`getForEntity`, never `append`; learning-signal-service.js's
+      js/v2/learning/ imports a producer domain's repository or ENGINE (the
+      same leak-check discipline learning-ownership-check.mjs's own Part 2
+      already runs, applied to the new files); learning-signal-service.js's
       own source contains exactly one repository-touching call
       (recordLearningEvent) and no other write-shaped token — proving
       "never a second ledger" by direct inspection; learning-outcome-
-      service.js and body-learning-bridge-service.js both route through
-      emitLearningSignal only, never learning-repository.js or
-      learning-service.js's writers directly.
+      service.js routes through emitLearningSignal only, never
+      learning-repository.js or learning-service.js's writers directly.
+      (js/v2/learning-bridge/ — Phase 12.6's narrowly-scoped body/ bridge —
+      was deleted, confirmed dead, during Phase 1 Repository Refoundation;
+      its own former assertions are removed from this file, not just
+      skipped.)
 
    2. REGRESSION. Re-runs the EXISTING, unmodified
       scripts/learning-ownership-check.mjs as a subprocess — its own Part 9
@@ -68,7 +69,6 @@ function resolveRelative(fromRel, target) {
 }
 
 const LEARNING_FILES = allSourceFiles('js/v2/learning');
-const BRIDGE_FILES = allSourceFiles('js/v2/learning-bridge');
 
 console.log('\n[Part 1 — no new learning/ file imports a knowledge/ or organizational-memory/ ENGINE]');
 {
@@ -86,35 +86,7 @@ console.log('\n[Part 1 — no new learning/ file imports a knowledge/ or organiz
   check(`no learning/ file (old or new) imports a knowledge/ or organizational-memory/ ENGINE${leaks.length ? ` — FOUND: ${leaks.join(', ')}` : ''}`, leaks.length === 0);
 }
 
-console.log('\n[Part 2 — learning-bridge/ imports ONLY body-event-repository.js\'s list/getForEntity, never append; and only emitLearningSignal from learning/]');
-{
-  const badBodyImports = [];
-  const badLearningImports = [];
-  const otherImports = [];
-  for (const { rel, code } of BRIDGE_FILES) {
-    for (const { block, target } of importTargets(code)) {
-      const resolved = resolveRelative(rel, target);
-      if (resolved.includes('/v2/body/')) {
-        if (!/body-event-repository\.js$/.test(resolved) && !/body-event-contract\.js$/.test(resolved)) {
-          otherImports.push(`${rel} -> ${resolved}`);
-        }
-        if (/body-event-repository\.js$/.test(resolved)) {
-          const clause = block.match(/\{([^}]*)\}/);
-          if (clause && /(^|[,{\s])append(\s+as\s+\w+)?\s*(,|$)/.test(clause[1])) badBodyImports.push(rel);
-        }
-      }
-      if (resolved.includes('/v2/learning/')) {
-        if (/learning-repository\.js$/.test(resolved)) badLearningImports.push(`${rel} -> ${resolved} (repository, should be emitLearningSignal)`);
-        if (/services\/learning-service\.js$/.test(resolved)) badLearningImports.push(`${rel} -> ${resolved} (should route through emitLearningSignal, not learning-service.js directly)`);
-      }
-    }
-  }
-  check(`learning-bridge/ never imports body-event-repository.js's append()${badBodyImports.length ? ` — FOUND: ${badBodyImports.join(', ')}` : ''}`, badBodyImports.length === 0);
-  check(`learning-bridge/ imports nothing from body/ beyond body-event-repository.js and body-event-contract.js${otherImports.length ? ` — FOUND: ${otherImports.join(', ')}` : ''}`, otherImports.length === 0);
-  check(`learning-bridge/ never imports learning-repository.js or learning-service.js directly (must route through emitLearningSignal)${badLearningImports.length ? ` — FOUND: ${badLearningImports.join(', ')}` : ''}`, badLearningImports.length === 0);
-}
-
-console.log('\n[Part 3 — learning-signal-service.js: exactly one repository-touching call, never a second ledger]');
+console.log('\n[Part 2 — learning-signal-service.js: exactly one repository-touching call, never a second ledger]');
 {
   const src = stripComments(read('js/v2/learning/services/learning-signal-service.js'));
   const writeTokens = (src.match(/\brecordLearningEvent\(/g) || []).length;
@@ -122,34 +94,32 @@ console.log('\n[Part 3 — learning-signal-service.js: exactly one repository-to
   check('no other write-shaped token exists (.set(, new Map(, repoCreate, repoAppendVersion)', !/\.set\(|new Map\(|repoCreate|repoAppendVersion/.test(src));
 }
 
-console.log('\n[Part 4 — learning-outcome-service.js and body-learning-bridge-service.js both route through emitLearningSignal only]');
+console.log('\n[Part 3 — learning-outcome-service.js routes through emitLearningSignal only]');
 {
   const outcomeSrc = stripComments(read('js/v2/learning/services/learning-outcome-service.js'));
   check('learning-outcome-service.js imports ONLY emitLearningSignal from learning-signal-service.js, nothing from learning-repository.js', /emitLearningSignal/.test(outcomeSrc) && !/learning-repository\.js/.test(outcomeSrc) && !/repoCreate|repoAppendVersion/.test(outcomeSrc));
 
-  const bridgeServiceSrc = stripComments(read('js/v2/learning-bridge/services/body-learning-bridge-service.js'));
-  check('body-learning-bridge-service.js imports ONLY emitLearningSignal from learning/, nothing else write-shaped', /emitLearningSignal/.test(bridgeServiceSrc) && !/learning-repository\.js/.test(bridgeServiceSrc) && !/recordLearningEvent\(/.test(bridgeServiceSrc));
-
   // Phase 12.7.6 — recognition/'s own emission service is the third legal
-  // caller (see Part 5's header below for why no bridge was needed here).
+  // caller (see Part 4's header below for why no bridge was needed here).
   const recognitionEmissionSrc = stripComments(read('js/v2/recognition/services/learning-emission-service.js'));
   check('recognition/services/learning-emission-service.js imports ONLY emitLearningSignal from learning/, nothing else write-shaped', /emitLearningSignal/.test(recognitionEmissionSrc) && !/learning-repository\.js/.test(recognitionEmissionSrc) && !/recordLearningEvent\(/.test(recognitionEmissionSrc));
 }
 
-console.log('\n[Part 5 — nothing outside learning/ + learning-bridge/ + recognition/ + workspace/ imports the new files yet (dormancy — same discipline as Phase 12.5)]');
+console.log('\n[Part 4 — nothing outside learning/ + recognition/ + workspace/ imports the new files yet (dormancy — same discipline as Phase 12.5)]');
 {
   // Phase 12.7.6 (Continuous Learning Refinement) narrowed this assertion:
   // js/v2/recognition/services/learning-emission-service.js is now a
   // deliberate, approved THIRD caller of emitLearningSignal() — legally, the
   // same way knowledge/ and organizational-memory/ already call it directly
   // (recognition/ carries none of body/'s "must stay a pure zero-write peer"
-  // constraint that required learning-bridge/ as an intermediary — see that
-  // file's own header). This mirrors EXACTLY how Phase 12.6.7 itself already
-  // narrowed scripts/body-ownership-check.mjs's analogous assertion after
-  // learning-bridge/ became a deliberate, approved exception there — a stale
-  // assertion fixed the moment a new, legitimate caller made it stale, not
-  // silently left to rot. scripts/recognition-learning-emission-check.mjs is
-  // the authority on exactly what recognition/ may import from learning/
+  // constraint that originally required js/v2/learning-bridge/ as an
+  // intermediary — that folder was deleted, confirmed dead, during Phase 1
+  // Repository Refoundation). This mirrors EXACTLY how Phase 12.6.7 itself
+  // already narrowed scripts/body-ownership-check.mjs's analogous assertion
+  // after learning-bridge/ became a deliberate, approved exception there — a
+  // stale assertion fixed the moment a new, legitimate caller made it stale,
+  // not silently left to rot. scripts/recognition-learning-emission-check.mjs
+  // is the authority on exactly what recognition/ may import from learning/
   // (emitLearningSignal only, never learning-repository.js directly).
   //
   // Phase 12.8 narrowed it AGAIN: js/v2/workspace/ is a deliberate, approved
@@ -163,7 +133,7 @@ console.log('\n[Part 5 — nothing outside learning/ + learning-bridge/ + recogn
   const offenders = [];
   const scan = (dir) => {
     (function walk(rel) {
-      if (rel === 'js/v2/learning' || rel === 'js/v2/learning-bridge' || rel === 'js/v2/recognition' || rel === 'js/v2/workspace') return;
+      if (rel === 'js/v2/learning' || rel === 'js/v2/recognition' || rel === 'js/v2/workspace') return;
       for (const entry of fs.readdirSync(path.join(ROOT, rel), { withFileTypes: true })) {
         const r = `${rel}/${entry.name}`;
         if (entry.isDirectory()) { walk(r); continue; }
@@ -171,7 +141,7 @@ console.log('\n[Part 5 — nothing outside learning/ + learning-bridge/ + recogn
         const code = stripComments(read(r));
         for (const { target } of importTargets(code)) {
           const resolved = resolveRelative(r, target);
-          if (resolved.includes('learning-signal-service') || resolved.includes('learning-recommendation-engine') || resolved.includes('learning-outcome-service') || resolved.includes('learning-lineage-engine') || resolved.includes('/v2/learning-bridge/')) {
+          if (resolved.includes('learning-signal-service') || resolved.includes('learning-recommendation-engine') || resolved.includes('learning-outcome-service') || resolved.includes('learning-lineage-engine')) {
             offenders.push(`${r} -> ${resolved}`);
           }
         }
@@ -179,7 +149,7 @@ console.log('\n[Part 5 — nothing outside learning/ + learning-bridge/ + recogn
     }(dir));
   };
   scan('js/v2');
-  check(`no file outside js/v2/learning/, js/v2/learning-bridge/, js/v2/recognition/, or js/v2/workspace/ imports any Phase 12.6 file yet${offenders.length ? ` — FOUND: ${offenders.join(', ')}` : ''}`, offenders.length === 0);
+  check(`no file outside js/v2/learning/, js/v2/recognition/, or js/v2/workspace/ imports any Phase 12.6 file yet${offenders.length ? ` — FOUND: ${offenders.join(', ')}` : ''}`, offenders.length === 0);
 
   // Phase 12.8 — the SAME symbol-level discipline this Part already
   // applies to recognition/'s own emission service (above), applied to
@@ -190,7 +160,7 @@ console.log('\n[Part 5 — nothing outside learning/ + learning-bridge/ + recogn
   check('workspace-service.js imports ONLY emitLearningSignal from learning/, nothing else write-shaped', /emitLearningSignal/.test(workspaceServiceSrc) && !/learning-repository\.js/.test(workspaceServiceSrc) && !/recordLearningEvent\(/.test(workspaceServiceSrc));
 }
 
-console.log('\n[Part 6 — regression: the EXISTING learning-ownership-check.mjs, re-run unmodified]');
+console.log('\n[Part 5 — regression: the EXISTING learning-ownership-check.mjs, re-run unmodified]');
 {
   try {
     execFileSync('node', ['scripts/learning-ownership-check.mjs'], { cwd: ROOT, stdio: 'pipe' });
