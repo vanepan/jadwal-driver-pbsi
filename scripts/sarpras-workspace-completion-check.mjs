@@ -117,14 +117,14 @@ check('sarpras-intelligence-center.js calls all three V2.1.2 persistence sync fu
   return src.includes('initImportSessionSync()') && src.includes('initImportBatchSync()') && src.includes('initFileStorageSync()');
 })());
 
-const fileStorageDir = path.join(ROOT, 'js/v2/file-storage');
+const fileStorageDir = path.join(ROOT, 'src/file-storage');
 function allJsFiles(dir) {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const full = path.join(dir, entry.name);
     return entry.isDirectory() ? allJsFiles(full) : (entry.name.endsWith('.js') ? [full] : []);
   });
 }
-check('js/v2/file-storage/ never imports knowledge/ or organizational-memory/ (leaf module, both depend on it, never the reverse)', allJsFiles(fileStorageDir).every((f) => {
+check('src/file-storage/ never imports knowledge/ or organizational-memory/ (leaf module, both depend on it, never the reverse)', allJsFiles(fileStorageDir).every((f) => {
   const src = fs.readFileSync(f, 'utf8');
   return !src.split('\n').some((line) => /^\s*import\b.*(\.\.\/knowledge\/|\.\.\/organizational-memory\/)/.test(line));
 }));
@@ -132,7 +132,7 @@ check('js/v2/file-storage/ never imports knowledge/ or organizational-memory/ (l
 const metadataInferenceSrc = fs.readFileSync(path.join(ROOT, 'js/v2/knowledge/datasets/import-session/metadata-inference-engine.js'), 'utf8');
 check('metadata-inference-engine.js has no organizational-memory import statement (stays knowledge-layer-pure)', !metadataInferenceSrc.split('\n').some((line) => /^\s*import\b.*organizational-memory/.test(line)));
 
-check('dataset-import-center.js lazily imports file-storage-engine.js (never eager Firebase load on mount)', /await import\(['"]\.\.\/file-storage\/file-storage-engine\.js['"]\)/.test(datasetImportSrc)
+check('dataset-import-center.js lazily imports file-storage-engine.js (never eager Firebase load on mount)', /await import\(['"]\.\.\/\.\.\/\.\.\/src\/file-storage\/file-storage-engine\.js['"]\)/.test(datasetImportSrc)
   && !datasetImportSrc.split('\n').some((line) => /^\s*import\b.*file-storage-engine/.test(line)));
 
 check('dataset-import-center.js\'s hash fallback prefers real sha256 over the old FNV-1a proxy (s.sha256 || s.documentHash || computeDocumentHash)', datasetImportSrc.includes('s.sha256 || s.documentHash || computeDocumentHash'));
@@ -200,9 +200,9 @@ check('Part 5 — the mount runs the resumption sweep, so a refresh never orphan
 check('dataset-import-center.js has the always-visible Live Operation View (Part 5)', /function renderOperationalOverview/.test(datasetImportSrc) && datasetImportSrc.includes('Ringkasan Operasional'));
 check('dataset-import-center.js has the Developer-Mode-only Pipeline Self-Diagnostics section (Part 8)', datasetImportSrc.includes('Diagnostik Pipeline (Developer Mode)'));
 {
-  const retrySrc = fs.readFileSync(path.join(ROOT, 'js/v2/file-storage/retry-with-backoff.js'), 'utf8');
+  const retrySrc = fs.readFileSync(path.join(ROOT, 'src/file-storage/retry-with-backoff.js'), 'utf8');
   check('retry-with-backoff.js exports withTimeout (Part 4 — bounds a hanging upload attempt)', /export function withTimeout/.test(retrySrc));
-  const fileStorageEngineSrc = fs.readFileSync(path.join(ROOT, 'js/v2/file-storage/file-storage-engine.js'), 'utf8');
+  const fileStorageEngineSrc = fs.readFileSync(path.join(ROOT, 'src/file-storage/file-storage-engine.js'), 'utf8');
   check('file-storage-engine.js\'s uploadFile() wraps the real Storage call in withTimeout', /withTimeout\(\s*\n?\s*uploadFileToStorage/.test(fileStorageEngineSrc));
 }
 

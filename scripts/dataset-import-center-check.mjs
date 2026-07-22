@@ -36,7 +36,7 @@ import {
 } from '../js/v2/knowledge/datasets/import-session/import-session-engine.js';
 import { advanceSession } from '../js/v2/knowledge/datasets/import-session/pipeline-scheduler.js';
 import { AUTO_POPULATE_CONFIDENCE_THRESHOLD } from '../js/v2/knowledge/datasets/import-session/metadata-inference-engine.js';
-import { makeStoredFileRecord } from '../js/v2/file-storage/contracts/file-storage-contract.js';
+import { makeStoredFileRecord } from '../src/file-storage/contracts/file-storage-contract.js';
 import { createBatch, recordBatchItem } from '../js/v2/knowledge/datasets/import-session/import-batch-engine.js';
 import {
   createDatasetImportController, reviewReasons, archiveDuplicateWarning,

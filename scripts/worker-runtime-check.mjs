@@ -10,8 +10,8 @@
    (sarpras-workspace-dom-check.mjs) separately proves a real browser can
    load and run this module without a fatal error. */
 import crypto from 'node:crypto';
-import { hashFile, parseJsonText, resetWorkerRuntime } from '../js/v2/file-storage/worker-runtime.js';
-import { computeSha256 } from '../js/v2/file-storage/file-hash.js';
+import { hashFile, parseJsonText, resetWorkerRuntime } from '../src/file-storage/worker-runtime.js';
+import { computeSha256 } from '../src/file-storage/file-hash.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {

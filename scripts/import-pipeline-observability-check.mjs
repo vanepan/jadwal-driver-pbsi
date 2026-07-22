@@ -165,7 +165,7 @@ for (const [n, concurrency] of [[20, 4], [50, 8], [5, 8]]) {
 
 console.log('\n[Terminology disambiguation — the doc-only fix is actually present]');
 {
-  const workerRuntimeSrc = fs.readFileSync(path.join(repoRoot, 'js/v2/file-storage/worker-runtime.js'), 'utf8');
+  const workerRuntimeSrc = fs.readFileSync(path.join(repoRoot, 'src/file-storage/worker-runtime.js'), 'utf8');
   const schedulerSrc = fs.readFileSync(path.join(repoRoot, 'js/v2/knowledge/datasets/import-session/pipeline-scheduler.js'), 'utf8');
   const dicSrc = fs.readFileSync(path.join(repoRoot, 'js/v2/ui/dataset-import-center.js'), 'utf8');
 

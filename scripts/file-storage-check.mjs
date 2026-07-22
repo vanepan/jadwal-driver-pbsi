@@ -9,13 +9,13 @@
    is covered by scripts/sarpras-workspace-dom-check.mjs (a real browser).
    Run: node scripts/file-storage-check.mjs   (exit 0 = pass) */
 
-import { computeSha256 } from '../js/v2/file-storage/file-hash.js';
-import { makeStoredFileRecord, isStoredFileRecord } from '../js/v2/file-storage/contracts/file-storage-contract.js';
+import { computeSha256 } from '../src/file-storage/file-hash.js';
+import { makeStoredFileRecord, isStoredFileRecord } from '../src/file-storage/contracts/file-storage-contract.js';
 import {
   registerStoredFile, getStoredFileBySha256, hasStoredFile, listStoredFiles,
   linkSessionToStoredFile, resetFileStorageRegistry,
   findOrphanedStorageFiles, validateSessionStorageIntegrity,
-} from '../js/v2/file-storage/file-storage-registry.js';
+} from '../src/file-storage/file-storage-registry.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {

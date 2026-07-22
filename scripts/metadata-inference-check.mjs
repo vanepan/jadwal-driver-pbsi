@@ -10,8 +10,8 @@ import { setActiveRepository, create as createKnowledgeItem } from '../js/v2/kno
 import { LIFECYCLE_STATE } from '../js/v2/knowledge/contracts/lifecycle-contract.js';
 import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
 import { DATASET_TYPE } from '../js/v2/knowledge/datasets/contracts/dataset-contract.js';
-import { registerStoredFile, resetFileStorageRegistry } from '../js/v2/file-storage/file-storage-registry.js';
-import { makeStoredFileRecord } from '../js/v2/file-storage/contracts/file-storage-contract.js';
+import { registerStoredFile, resetFileStorageRegistry } from '../src/file-storage/file-storage-registry.js';
+import { makeStoredFileRecord } from '../src/file-storage/contracts/file-storage-contract.js';
 import {
   inferMetadata, inferPatternAssisted, tokenize, AUTO_POPULATE_CONFIDENCE_THRESHOLD,
 } from '../js/v2/knowledge/datasets/import-session/metadata-inference-engine.js';

@@ -39,7 +39,7 @@ import { listDomainTypes } from '../../registry/domain-type-registry.js';
 import { listKinds } from '../../registry/kind-registry.js';
 import { DATASET_TYPE } from '../contracts/dataset-contract.js';
 import { computePatternRecommendations } from '../../services/pattern-discovery-service.js';
-import { hasStoredFile, getStoredFileBySha256 } from '../../../file-storage/file-storage-registry.js';
+import { hasStoredFile, getStoredFileBySha256 } from '../../../../../src/file-storage/file-storage-registry.js';
 // Phase 2 Follow-up — the real deterministic confidence engine that
 // replaces the old Math.min() placeholder. See its header for the
 // availability rule and the two honest gaps.

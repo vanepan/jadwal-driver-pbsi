@@ -16,7 +16,7 @@ import { resetDatasetRegistry } from '../js/v2/knowledge/datasets/registry/datas
 import { resetImportSessionRepository } from '../js/v2/knowledge/datasets/import-session/repository/import-session-repository.js';
 import { resetImportBatchRepository } from '../js/v2/knowledge/datasets/import-session/repository/import-batch-repository.js';
 import { resetManualImportQueue } from '../js/v2/knowledge/acquisition/manual-import-queue-store.js';
-import { resetFileStorageRegistry } from '../js/v2/file-storage/file-storage-registry.js';
+import { resetFileStorageRegistry } from '../src/file-storage/file-storage-registry.js';
 import { createDatasetImportController } from '../js/v2/ui/dataset-import-center.js';
 import { listImportSessions } from '../js/v2/knowledge/datasets/import-session/import-session-engine.js';
 import { listBatches } from '../js/v2/knowledge/datasets/import-session/import-batch-engine.js';

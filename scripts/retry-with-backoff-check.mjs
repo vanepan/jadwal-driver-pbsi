@@ -1,12 +1,12 @@
 /* retry-with-backoff-check.mjs — Node check for Phase 1 "Operational
-   Engine Hardening": the bounded retry mechanism (js/v2/file-storage/
+   Engine Hardening": the bounded retry mechanism (src/file-storage/
    retry-with-backoff.js) that now wraps file-storage-engine.js#uploadFile's
    Storage call. Firebase-free by construction (see that file's header),
    so this exercises the real retry/backoff/give-up logic directly with a
    fake async function — no Storage, no network, no production write.
    Run: node scripts/retry-with-backoff-check.mjs   (exit 0 = pass) */
 
-import { withRetryAsync } from '../js/v2/file-storage/retry-with-backoff.js';
+import { withRetryAsync } from '../src/file-storage/retry-with-backoff.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {

@@ -122,7 +122,7 @@ import { createDatasetImportController, effectiveStage } from './dataset-import-
 import {
   registerImportSessionChangeListener, registerImportBatchChangeListener,
 } from '../knowledge/services/import-session-service.js';
-import { registerChangeListener as registerFileStorageChangeListener } from '../file-storage/file-storage-registry.js';
+import { registerChangeListener as registerFileStorageChangeListener } from '../../../src/file-storage/file-storage-registry.js';
 
 import {
   PROFILE_OVERRIDE_TYPE, OVERRIDE_ACTION, OVERRIDE_PAYLOAD_SHAPE, isOverlayType, isStandaloneType,

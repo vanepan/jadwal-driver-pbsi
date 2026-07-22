@@ -90,7 +90,7 @@ import {
 // observes the ONE real, event-driven sweepPipeline() call site below; it
 // never calls sweepPipeline() itself and never changes what it decides.
 import { recordSweepTick, getWorkerHealth } from '../knowledge/datasets/import-session/performance-collector.js';
-import { initFileStorageSync } from '../file-storage/file-storage-registry.js';
+import { initFileStorageSync } from '../../../src/file-storage/file-storage-registry.js';
 // Phase 10, Sprint 10.1 — the Review Workspace's foundation: a
 // ComposerDocument (a composed NOR draft) must survive a refresh for a
 // human reviewer to come back to it, same "activate once, at Sarpras

@@ -58,7 +58,7 @@ import { getReviewQueue, getCandidateQueue } from '../knowledge/review/review-qu
 import { IMPORT_SESSION_STATE } from '../knowledge/datasets/import-session/contracts/import-session-contract.js';
 import { listImportSessions } from '../knowledge/datasets/import-session/import-session-engine.js';
 import { listBatches, BATCH_STATUS } from '../knowledge/datasets/import-session/import-batch-engine.js';
-import { listStoredFiles } from '../file-storage/file-storage-registry.js';
+import { listStoredFiles } from '../../../src/file-storage/file-storage-registry.js';
 
 import {
   esc, renderEmptyState, renderTabShell, renderRowList, renderStatCards,
@@ -70,7 +70,7 @@ import { createDatasetImportController, reviewReasons } from './dataset-import-c
 import {
   registerImportSessionChangeListener, registerImportBatchChangeListener,
 } from '../knowledge/services/import-session-service.js';
-import { registerChangeListener as registerFileStorageChangeListener } from '../file-storage/file-storage-registry.js';
+import { registerChangeListener as registerFileStorageChangeListener } from '../../../src/file-storage/file-storage-registry.js';
 
 // Experience Architecture phase — this screen is what a normal PBSI user
 // reaches as "Documents" (see js/app.js's nav button + Part 1's audit,

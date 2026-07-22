@@ -11,7 +11,7 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/fireba
 import { getDatabase, onValue, ref, set, get, update, remove, runTransaction, goOffline, goOnline } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 import { getAuth, signInWithCustomToken, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
 import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-functions.js';
-// V2.1 — Sarpras Intelligence File Storage Foundation (js/v2/file-storage/).
+// V2.1 — Sarpras Intelligence File Storage Foundation (src/file-storage/).
 // Aliased to `storageRef` — `ref` above is already the Realtime Database
 // ref() and must not be shadowed. Storage is the ONLY new Firebase product
 // this milestone activates; every other export below is unchanged V1
@@ -838,7 +838,7 @@ export async function acquireReimbursementDocNumber(dateStr) {
    which requires the SAME authenticated SDK/security-rules context as any
    other read, never a public link. No delete/list/metadata-update
    helpers, no lifecycle or retention policy.
-   js/v2/file-storage/file-storage-engine.js and js/v2/ui/
+   src/file-storage/file-storage-engine.js and js/v2/ui/
    dataset-import-center.js (preview only) are the ONLY callers.
    ============================================================ */
 let firebaseStorage = null;
