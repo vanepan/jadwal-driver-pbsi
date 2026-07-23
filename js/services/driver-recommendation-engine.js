@@ -147,9 +147,12 @@ function minutesRelativeToDate(ts, anchorISO) {
  *     still status:'started'. A running assignment has NOT actually
  *     finished no matter what its planned endTime says, so the driver is
  *     hard-excluded — never recommended, not even as a fallback.
- *   - `conflict` — the request would start before the driver's Availability
- *     Time (assignment end + bufferMinutes) on ANY of their same-date
- *     assignments (also true whenever `running` is true, so existing
+ *   - `conflict` — the request falls within `bufferMinutes` of ANY of the
+ *     driver's same-date assignments, checked SYMMETRICALLY: too close
+ *     after an assignment ends (request start < assignment end + buffer)
+ *     OR too close before an assignment starts (assignment start < request
+ *     end + buffer) — the rule doesn't care which one is "existing" vs
+ *     "candidate" (also true whenever `running` is true, so existing
  *     conflict-only consumers keep working unchanged).
  *   - `availabilityMinutes` — the latest (assignment end + bufferMinutes)
  *     among the blocking assignments, i.e. when this driver would actually
@@ -197,8 +200,15 @@ export function evaluateAvailability(driverAssignments, request, bufferMinutes =
       continue;
     }
 
+    // Symmetric buffer: widen the assignment's window by `buffer` on BOTH
+    // sides before testing overlap against the request's raw window. This
+    // rejects equally whether the assignment ends too close before the
+    // request starts, OR the assignment starts too close after the request
+    // ends — the buffer must not depend on which one is "existing" vs
+    // "candidate" (production bug: only the post-end side was buffered).
+    const bufferedStart = aStart - buffer;
     const bufferedEnd = aEnd + buffer;
-    if (aStart < reqEnd && reqStart < bufferedEnd) {
+    if (bufferedStart < reqEnd && reqStart < bufferedEnd) {
       conflict = true;
       if (availabilityMinutes == null || bufferedEnd > availabilityMinutes) availabilityMinutes = bufferedEnd;
     }

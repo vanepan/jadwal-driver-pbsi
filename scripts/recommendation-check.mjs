@@ -175,6 +175,29 @@ const clearedBuffer = evaluateAvailability(
   { date: '2026-06-24', startTime: '12:00', endTime: '13:00' }, 60);
 check('no conflict once the full buffer has elapsed', clearedBuffer.conflict === false);
 
+/* ── Symmetric Recovery Buffer (production bug fix): the buffer must be
+   enforced BOTH after an assignment ends AND before an assignment starts —
+   the reject/pass decision must not depend on which one is "existing" vs
+   "candidate" in the caller's framing. ─────────────────────────────────── */
+console.log('\n[recovery buffer — symmetric enforcement (production bug fix)]');
+const existingAfterCandidate = evaluateAvailability(
+  [{ driver: 'x', date: '2026-06-24', startTime: '11:00', endTime: '17:00', status: 'assigned' }],
+  { date: '2026-06-24', startTime: '09:00', endTime: '11:00' }, 60);
+check('existing 11:00-17:00 vs candidate 09:00-11:00 (0-min gap) → reject',
+  existingAfterCandidate.conflict === true);
+
+const existingBeforeCandidate = evaluateAvailability(
+  [{ driver: 'x', date: '2026-06-24', startTime: '09:00', endTime: '11:00', status: 'assigned' }],
+  { date: '2026-06-24', startTime: '11:00', endTime: '17:00' }, 60);
+check('existing 09:00-11:00 vs candidate 11:00-17:00 (0-min gap, was the bug — only this direction was buffered) → reject',
+  existingBeforeCandidate.conflict === true);
+
+const bufferExactlySatisfied = evaluateAvailability(
+  [{ driver: 'x', date: '2026-06-24', startTime: '12:00', endTime: '17:00', status: 'assigned' }],
+  { date: '2026-06-24', startTime: '09:00', endTime: '11:00' }, 60);
+check('existing 12:00-17:00 vs candidate 09:00-11:00 (60-min gap, buffer satisfied) → available',
+  bufferExactlySatisfied.conflict === false);
+
 /* ── Delay propagation: a late completion uses the ACTUAL end, not the plan ── */
 console.log('\n[recovery buffer — delay propagation]');
 const plannedEndTs = new Date('2026-06-24T11:00:00').getTime();
