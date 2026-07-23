@@ -151,7 +151,21 @@ function validateEnvelope(env) {
   if (!EVENT_TYPE_SET.has(env.type)) errors.push(`unknown type: ${env.type}`);
   if (env.version !== ENVELOPE_VERSION) errors.push(`unexpected version: ${env.version}`);
   if (typeof env.timestamp !== 'string' || !env.timestamp) errors.push('missing timestamp');
-  if (!env.actor || typeof env.actor !== 'object') errors.push('missing actor');
+  // actor is BEST-EFFORT (see the envelope shape comment above) and every
+  // downstream reader already treats it that way (dispatcher.js#_isActorRecipient,
+  // recipients.js, templates.js#actorName all null-guard `event.actor`) — so an
+  // absent actor must not invalidate an otherwise-real event. This also has to
+  // tolerate a real RTDB quirk: deriveActor() legitimately returns an
+  // all-null {uid,role,displayName} for assignment.updated/reassigned (no
+  // writer identity is recorded on the assignment record for a plain edit),
+  // and the Realtime Database PRUNES an object whose every property is null
+  // down to nothing — so `envelope.actor` reads back as null/undefined after
+  // the round-trip through /events, even though buildEnvelope() wrote a
+  // (non-empty-looking) object. Rejecting that as "invalid" silently dropped
+  // every assignment.updated/reassigned notification (drag/resize included)
+  // in production. Only a genuinely malformed actor (present but not an
+  // object) is still an error.
+  if (env.actor != null && typeof env.actor !== 'object') errors.push('actor must be an object');
   if (!env.entity || typeof env.entity !== 'object') {
     errors.push('missing entity');
   } else {
