@@ -301,9 +301,24 @@ let mounted = false;
    putRecord() comment for why local writes notify here, unlike most other
    repositories in this tree). ── */
 let _renderTimer = null;
+/** Phase 3, Stage 1 (Living Document Workspace) — Keyboard: "focus should
+ *  never unexpectedly leave the document." A remote change (another tab
+ *  editing the same document) firing this WHILE a reviewer is mid-keystroke
+ *  in a `.rw-editable` field would otherwise replace host.innerHTML out
+ *  from under them, destroying focus. Deliberately the smallest possible
+ *  fix: if the render lands while a field is focused, re-arm the SAME
+ *  timer and check again shortly — no new state, no change to onFocusOut/
+ *  advanceFocusAfterEnter's own commit-then-render sequencing (that render
+ *  call is separate and still immediate). The deferred render simply
+ *  applies itself the moment focus actually leaves. */
 function scheduleRender() {
   if (_renderTimer) return;
-  _renderTimer = setTimeout(() => { _renderTimer = null; render(); }, 100);
+  _renderTimer = setTimeout(() => {
+    _renderTimer = null;
+    const active = host && document.activeElement;
+    if (active && host.contains(active) && active.classList.contains('rw-editable')) { scheduleRender(); return; }
+    render();
+  }, 100);
 }
 
 /* ── mount / teardown ─────────────────────────────────────────────── */
@@ -952,9 +967,21 @@ function domainLabel(id) {
   return registered ? registered.label : id;
 }
 
+/** Phase 3, Stage 1 (Living Document Workspace) — Canvas. Two distinct
+ *  pages now, not one page that grows a detail section underneath itself:
+ *  the list view (unchanged) when nothing is open, and a quiet document-
+ *  first view once one is — no page title/lede/list sitting above the
+ *  document competing with it for attention ("I am editing a document,"
+ *  not "I am using software"). The back-link reuses the EXISTING
+ *  rw-doc-row toggle handler (clicking the already-selected id deselects
+ *  it) — no new state, no new handler. */
 function renderPage() {
   const docs = listAllDocuments();
+  const selected = st.selectedId && docs.find((d) => d.documentId === st.selectedId);
+  return selected ? renderOpenDocumentPage(selected, docs) : renderDraftListPage(docs);
+}
 
+function renderDraftListPage(docs) {
   return `
     <div class="wlk-page">
       <div class="wlk-page-head">
@@ -967,8 +994,32 @@ function renderPage() {
         <div class="wlk-sec-title">Draf (${docs.length})</div>
         ${docs.length ? renderDocRows(docs) : renderEmptyState('Belum ada draf tersimpan.', 'Draf akan muncul di sini setelah Susun NOR digunakan dari Home.')}
       </div>
+    </div>`;
+}
 
-      ${st.selectedId ? renderDocDetail(st.selectedId) : ''}
+/** The old design kept the full Draf (N) list visible above every open
+ *  document — this is what let a reviewer jump straight from one draft to
+ *  another without a round trip through the list. That real capability is
+ *  preserved here as a quiet chip strip (never the old full-width,
+ *  secondary-text row list) reusing the EXACT SAME data-act="rw-doc-row"
+ *  click contract every row has always used — no new handler, no new
+ *  state, just a smaller/quieter presentation of the same clickable ids. */
+function renderOpenDocumentPage(doc, docs) {
+  const devMode = isDeveloperMode();
+  return `
+    <div class="wlk-page rw-open-page">
+      <button class="rw-back-link" data-act="rw-doc-row" data-id="${esc(doc.documentId)}" type="button">← Semua draf (${docs.length})</button>
+      ${docs.length > 1 ? renderDocSwitcher(docs, doc.documentId, devMode) : ''}
+      ${renderDocDetail(doc.documentId)}
+    </div>`;
+}
+
+function renderDocSwitcher(docs, activeId, devMode) {
+  return `
+    <div class="rw-doc-switcher">
+      ${docs.map((d) => `
+        <button class="rw-doc-chip${d.documentId === activeId ? ' rw-doc-chip--active' : ''}"
+          data-act="rw-doc-row" data-id="${esc(d.documentId)}" type="button">${esc(devMode ? d.documentId : `${domainLabel(d.domainType)} v${d.version}`)}</button>`).join('')}
     </div>`;
 }
 
@@ -1127,8 +1178,7 @@ function renderLiveDocument(doc) {
         </ul>` : ''}
       ${renderSignatoryGrid(doc, structure.signatureSuggestion)}
       ${st.liveDocError ? `<div class="rw-edit-error">${esc(st.liveDocError)}</div>` : ''}
-    </div>
-    ${canReview() ? renderLayoutPanel(ds) : ''}`;
+    </div>`;
 }
 
 /** Phase 12.8.x (Live Workspace Experience Completion) — "adjust the
@@ -1617,6 +1667,7 @@ function renderDocDetail(documentId) {
   const doc = getDocument(documentId);
   if (!doc) return '';
   const devMode = isDeveloperMode();
+  const ds = getDesignSystem('composer');
 
   const metadata = renderKvList([
     ...(devMode ? [['ID Dokumen', doc.documentId]] : []),
@@ -1627,26 +1678,33 @@ function renderDocDetail(documentId) {
     ['Diperbarui', doc.updatedAt],
   ]);
 
+  const detailHtml = renderDetail([
+    devMode ? renderDetailSection('Pratinjau Draf (Developer — field mentah)', renderDraftPreview(doc)) : '',
+    devMode ? renderDetailSection('Tata Kelola (Developer — alur lengkap)', renderGovernancePanel(doc)) : '',
+    renderDetailSection('Metadata', metadata),
+    devMode ? renderDetailSection('Detail Internal (Developer)', renderSectionInternals(doc)) : '',
+    devMode ? renderDetailSection('Riwayat Versi', renderVersionInfo(documentId)) : '',
+    devMode ? renderDetailSection('Tata Letak Dokumen', renderLayoutProvenance(doc)) : '',
+    // Riwayat Keputusan stays visible (inside the disclosure — see below),
+    // unlike Riwayat Versi's diff table: composerReviewStateLabel()+
+    // approverId+rationale is human-readable governance record (WHO
+    // decided WHAT and WHY), not an implementation detail — "governance
+    // stays intact" (Workstream 6/7's own framing), only raw ids/diffs
+    // hide.
+    renderDetailSection('Riwayat Keputusan', renderReviewHistory(documentId)),
+    ...(devMode ? renderExplainabilitySections(documentId) : []),
+  ]);
+
   return `
-    <div class="wlk-sec">
-      <div class="wlk-sec-title">Detail — ${esc(devMode ? doc.documentId : `${domainLabel(doc.domainType)} v${doc.version}`)}</div>
-      ${renderLiveDocument(doc)}
-      ${renderSuggestionPanel(doc)}
-      ${renderPublishAction(doc)}
-      ${renderDetail([
-        devMode ? renderDetailSection('Pratinjau Draf (Developer — field mentah)', renderDraftPreview(doc)) : '',
-        devMode ? renderDetailSection('Tata Kelola (Developer — alur lengkap)', renderGovernancePanel(doc)) : '',
-        renderDetailSection('Metadata', metadata),
-        devMode ? renderDetailSection('Detail Internal (Developer)', renderSectionInternals(doc)) : '',
-        devMode ? renderDetailSection('Riwayat Versi', renderVersionInfo(documentId)) : '',
-        devMode ? renderDetailSection('Tata Letak Dokumen', renderLayoutProvenance(doc)) : '',
-        // Riwayat Keputusan stays visible in Normal Mode, unlike Riwayat
-        // Versi's diff table: composerReviewStateLabel()+approverId+
-        // rationale is human-readable governance record (WHO decided WHAT
-        // and WHY), not an implementation detail — "governance stays
-        // intact" (Workstream 6/7's own framing), only raw ids/diffs hide.
-        renderDetailSection('Riwayat Keputusan', renderReviewHistory(documentId)),
-        ...(devMode ? renderExplainabilitySections(documentId) : []),
-      ])}
-    </div>`;
+    ${renderLiveDocument(doc)}
+    ${canReview() ? `
+      <div class="rw-toolbar">
+        ${renderLayoutPanel(ds)}
+        ${renderSuggestionPanel(doc)}
+      </div>` : ''}
+    ${renderPublishAction(doc)}
+    <details class="rw-detail-disclosure"${devMode ? ' open' : ''}>
+      <summary>Metadata &amp; Riwayat</summary>
+      ${detailHtml}
+    </details>`;
 }

@@ -310,10 +310,67 @@
    Grammarly-style ask. ────────────────────────────────────────────── */
 .rw-doc{
   max-width:680px;margin:0 auto;padding:48px 56px;background:var(--surface);
-  border:1px solid var(--border);border-radius:4px;
+  border:1px solid var(--border);border-radius:6px;box-shadow:var(--shadow-sm);
   font-family:var(--font-serif, Georgia, 'Times New Roman', serif);color:var(--text);
   line-height:1.7;
 }
+
+/* Phase 3, Stage 1 (Living Document Workspace) — Canvas. Opening a
+   document no longer sits under the list page's own title/lede/list
+   (see review-workspace.js#renderOpenDocumentPage) — this quiet text
+   link is the only thing above the document, reusing the EXISTING
+   rw-doc-row toggle handler (no new state). Deliberately NO mount
+   animation on `.rw-open-page` itself: render() replaces host.innerHTML
+   wholesale on every edit commit too (not just on first opening a
+   document), so a container-level animation here would replay on every
+   single autosave, not once — the opposite of "calm." The smaller,
+   genuinely infrequent suggestion pill/panel below keeps its own
+   pre-existing fade (unchanged, out of this stage's scope). */
+.rw-back-link{
+  appearance:none;cursor:pointer;font-family:var(--font-sans);font-size:12.5px;
+  color:var(--text-dim);background:none;border:none;padding:0;margin-bottom:12px;
+  display:block;
+}
+.rw-back-link:hover{color:var(--accent);}
+
+/* Quick document switcher — same rw-doc-row click contract as the full
+   list, just small pills instead of full rows, so jumping between drafts
+   stays possible without the list competing with the open document for
+   attention. */
+.rw-doc-switcher{display:flex;gap:6px;overflow-x:auto;padding-bottom:20px;margin-bottom:0;}
+.rw-doc-chip{
+  appearance:none;cursor:pointer;flex:0 0 auto;font-family:var(--font-sans);font-size:11.5px;font-weight:600;
+  color:var(--text-faint);background:var(--surface);border:1px solid var(--border);border-radius:999px;
+  padding:5px 12px;white-space:nowrap;
+}
+.rw-doc-chip:hover{color:var(--text-dim);border-color:var(--text-faint);}
+.rw-doc-chip--active{color:var(--accent);border-color:var(--accent);background:var(--c-blue-weak, rgba(59,91,169,.08));}
+
+/* Metadata / Riwayat Keputusan / Developer-only sections — real
+   governance record, but not what a reviewer needs to see to read the
+   document itself ("everything unnecessary disappears"). A native
+   <details> disclosure: zero new JS/state, content stays fully present
+   for anything that inspects the rendered markup, only the on-screen
+   collapse is native-browser. Open by default in Developer Mode (see
+   review-workspace.js#renderDocDetail), collapsed in Normal Mode. */
+.rw-detail-disclosure{margin-top:24px;}
+.rw-detail-disclosure > summary{
+  cursor:pointer;font-family:var(--font-sans);font-size:11.5px;font-weight:700;
+  color:var(--text-faint);list-style:none;
+}
+.rw-detail-disclosure > summary::-webkit-details-marker{display:none;}
+.rw-detail-disclosure > summary:hover{color:var(--text-dim);}
+.rw-detail-disclosure > summary::before{content:'▸ ';}
+.rw-detail-disclosure[open] > summary::before{content:'▾ ';}
+.rw-detail-disclosure > .wlk-detail{margin-top:10px;}
+
+/* Phase 3, Stage 1 — Toolbar. The layout knob and the suggestion pill
+   used to be two independently-stacked blocks with their own margin-top;
+   grouped onto one row now so they read as "minor tools," visually
+   subordinate to the one primary action (Terbitkan NOR) below them —
+   same elements, same gating, only the grouping changed. */
+.rw-toolbar{display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px;margin-top:16px;}
+.rw-toolbar > *{margin-top:0;}
 .rw-doc-title{text-align:center;font-weight:700;font-size:16px;letter-spacing:.04em;
   text-transform:uppercase;margin:0 0 20px;font-family:var(--font-serif, Georgia, serif);}
 .rw-doc-dateline{display:flex;justify-content:space-between;gap:12px;margin-bottom:18px;font-size:13.5px;flex-wrap:wrap;}
