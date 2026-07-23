@@ -82,13 +82,13 @@ console.log('\n[Part 2 — no upstream domain ENGINE or REPOSITORY import, only 
   // specifically so this edge could stay "services-only"), plus
   // vocabulary-only registry reads (Phase 12.7.2).
   const ALLOWED_EXACT = [
-    '../../knowledge/contracts/evidence-contract.js',
-    '../../../knowledge/contracts/identity-contract.js',
-    '../../knowledge/services/similarity-service.js',
-    '../../knowledge/registry/domain-type-registry.js',
-    '../../knowledge/registry/kind-registry.js',
-    '../../knowledge/registry/nor-type-registry.js',
-    '../../learning/services/learning-signal-service.js',
+    '../../../../src/knowledge/contracts/evidence-contract.js',
+    '../../../../../src/knowledge/contracts/identity-contract.js',
+    '../../../../src/knowledge/services/similarity-service.js',
+    '../../../../src/knowledge/registry/domain-type-registry.js',
+    '../../../../src/knowledge/registry/kind-registry.js',
+    '../../../../src/knowledge/registry/nor-type-registry.js',
+    '../../../../src/learning/services/learning-signal-service.js',
   ];
   const offenders = [];
   for (const rel of RECOGNITION_FILES) {
@@ -106,7 +106,7 @@ console.log('\n[Part 2 — no upstream domain ENGINE or REPOSITORY import, only 
 
 console.log('\n[Part 3 — dormancy: nothing outside recognition/ imports it yet]');
 {
-  const roots = ['js/v2/body', 'js/v2/knowledge', 'src/organizational-memory', 'js/v2/learning', 'src/document-intelligence', 'src/conversation', 'js/v2/reasoning', 'js/v2/problem-intelligence', 'js/v2/problem-solving', 'js/v2/ui'];
+  const roots = ['js/v2/body', 'src/knowledge', 'src/organizational-memory', 'src/learning', 'src/document-intelligence', 'src/conversation', 'src/reasoning', 'src/intake', 'src/ui'];
   const offenders = [];
   for (const root of roots) {
     for (const rel of filesUnder(root)) {

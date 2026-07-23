@@ -30,10 +30,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer';
 
-import { parseProblem } from '../js/v2/problem-intelligence/problem-parser.js';
-import { setKnowledgeBackend } from '../js/v2/knowledge/services/knowledge-service.js';
+import { parseProblem } from '../src/intake/problem-parser.js';
+import { setKnowledgeBackend } from '../src/knowledge/services/knowledge-service.js';
 import { resetConversationRepository } from '../src/conversation/repository/conversation-repository.js';
-import { beginProblemSolving } from '../js/v2/problem-solving/services/problem-solving-service.js';
+import { beginProblemSolving } from '../src/intake/services/problem-solving-service.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let pass = 0; let fail = 0;

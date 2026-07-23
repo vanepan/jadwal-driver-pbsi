@@ -54,20 +54,20 @@
 
 'use strict';
 
-import { classifyProblem } from '../../problem-intelligence/services/problem-classification-service.js';
-import { getProblemCategory } from '../../problem-intelligence/contracts/problem-category-contract.js';
+import { classifyProblem } from './problem-classification-service.js';
+import { getProblemCategory } from '../contracts/problem-category-contract.js';
 import { planDiagnosis, reason, makeProblem } from '../../reasoning/services/reasoning-service.js';
-import { startConversation, findConversation } from '../../../../src/conversation/services/conversation-service.js';
-import { INTENT } from '../../../../src/conversation/contracts/intent-contract.js';
-import { composeNorDocument } from '../../../../src/document-intelligence/nor/nor-composer.js';
-import { attachExplainability } from '../../../../src/document-intelligence/composer/composer-store.js';
+import { startConversation, findConversation } from '../../conversation/services/conversation-service.js';
+import { INTENT } from '../../conversation/contracts/intent-contract.js';
+import { composeNorDocument } from '../../document-intelligence/nor/nor-composer.js';
+import { attachExplainability } from '../../document-intelligence/composer/composer-store.js';
 // Sprint 11.1, Workstream 1 — the ONE legal path to organizational-memory/
 // numbering-engine.js#suggestNextNumber() (document-intelligence/ has no
 // binding-graph edge there; problem-intelligence/ does — see that file's
 // own header). Computed BEFORE composeNorDocument(), unlike reason()
 // below, because nor-composer.js needs it to land the norNumber field
 // inside fieldMap itself, not attached as after-the-fact metadata.
-import { getNumberingSuggestionForNor } from '../../problem-intelligence/nor-numbering-context.js';
+import { getNumberingSuggestionForNor } from '../nor-numbering-context.js';
 import { routeProblem } from '../problem-router.js';
 import { WORKFLOW_ROUTE } from '../contracts/workflow-route-contract.js';
 import { generateClarification } from '../clarification-engine.js';

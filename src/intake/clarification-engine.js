@@ -20,7 +20,7 @@
 
 'use strict';
 
-import { listProblemCategories } from '../problem-intelligence/contracts/problem-category-contract.js';
+import { listProblemCategories } from './contracts/problem-category-contract.js';
 
 /** A short, fixed set of honest clarifying prompts — rotated deterministically
  *  (by utterance length, never random) so the same short/ambiguous input

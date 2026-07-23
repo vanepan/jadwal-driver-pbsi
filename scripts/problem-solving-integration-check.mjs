@@ -27,13 +27,13 @@ import { fileURLToPath } from 'node:url';
 
 import {
   setKnowledgeBackend, ingest, promoteKnowledge, listKnowledge, LIFECYCLE_STATE,
-} from '../js/v2/knowledge/services/knowledge-service.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
+} from '../src/knowledge/services/knowledge-service.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
 import { resetConversationRepository } from '../src/conversation/repository/conversation-repository.js';
 import { continueConversation } from '../src/conversation/services/conversation-service.js';
 import { resetComposerStore } from '../src/document-intelligence/composer/composer-store.js';
-import { beginProblemSolving, composeApprovedNor } from '../js/v2/problem-solving/services/problem-solving-service.js';
-import { seedNorBootstrapKnowledge } from '../js/v2/knowledge/bootstrap/nor-reverse-engineering-knowledge.js';
+import { beginProblemSolving, composeApprovedNor } from '../src/intake/services/problem-solving-service.js';
+import { seedNorBootstrapKnowledge } from '../src/knowledge/bootstrap/nor-reverse-engineering-knowledge.js';
 import { archiveDocument, resetArchiveRepository } from '../src/organizational-memory/index.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -62,10 +62,18 @@ function importsOf(code) {
 
 console.log('\n[Part 1 — nothing problem-solving/ composes imports problem-solving/ back]');
 {
-  const upstream = allSourceFiles('js/v2').filter((f) => /^js\/v2\/(problem-intelligence|reasoning|conversation|document-intelligence|knowledge|organizational-memory|learning)\//.test(f.rel));
+  // problem-intelligence/ physically merged into src/intake/ alongside
+  // problem-solving/ during Phase 1 Repository Refoundation ("a single
+  // Intake domain") — dropped from this upstream list since it is now the
+  // same file tree being checked, not a separate domain to check for a
+  // back-reference. reasoning/, conversation/, document-intelligence/,
+  // organizational-memory/, and learning/ all moved to src/ during the same
+  // phase — scan both roots so this stays a real assertion.
+  const upstream = [...allSourceFiles('js/v2'), ...allSourceFiles('src')]
+    .filter((f) => /^(js\/v2|src)\/(reasoning|conversation|document-intelligence|knowledge|organizational-memory|learning)\//.test(f.rel));
   const offenders = [];
   for (const { rel, code } of upstream) {
-    for (const t of importsOf(code)) { if (/\/problem-solving\//.test(t)) offenders.push(`${rel} -> ${t}`); }
+    for (const t of importsOf(code)) { if (/\/intake\//.test(t)) offenders.push(`${rel} -> ${t}`); }
   }
   check(`no violation found${offenders.length ? ` — FOUND: ${offenders.join(', ')}` : ''}`, offenders.length === 0);
 }

@@ -23,12 +23,12 @@ import { fileURLToPath } from 'node:url';
 
 import {
   classifyProblem, classifyProblemWithContext, isProblem,
-} from '../js/v2/problem-intelligence/services/problem-classification-service.js';
+} from '../src/intake/services/problem-classification-service.js';
 import {
   registerProblemCategory, hasProblemCategory, listProblemCategories, getProblemCategory,
-} from '../js/v2/problem-intelligence/contracts/problem-category-contract.js';
-import { knownCategories } from '../js/v2/problem-intelligence/problem-parser.js';
-import { setKnowledgeBackend } from '../js/v2/knowledge/services/knowledge-service.js';
+} from '../src/intake/contracts/problem-category-contract.js';
+import { knownCategories } from '../src/intake/problem-parser.js';
+import { setKnowledgeBackend } from '../src/knowledge/services/knowledge-service.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let pass = 0; let fail = 0;
@@ -56,7 +56,23 @@ function importsOf(code) {
 
 console.log('\n[Part 1 — problem-intelligence/ never imports conversation/, never a reasoning/ ENGINE (contract-only)]');
 {
-  const files = allSourceFiles('js/v2/problem-intelligence');
+  // problem-intelligence/ and problem-solving/ physically merged into
+  // src/intake/ during Phase 1 Repository Refoundation ("a single Intake
+  // domain") — but their two original import-ownership rules did NOT merge
+  // (problem-solving/ was always the one layer allowed to see conversation/
+  // and reasoning/'s engines; problem-intelligence/ never was). Scoped to
+  // the explicit file list that was problem-intelligence/ before the move,
+  // not the whole merged folder, or this would false-positive on
+  // problem-solving-service.js's own legitimate conversation/reasoning
+  // engine imports.
+  const PROBLEM_INTELLIGENCE_ORIGIN_FILES = new Set([
+    'src/intake/contracts/problem-category-contract.js',
+    'src/intake/nor-numbering-context.js',
+    'src/intake/problem-context-builder.js',
+    'src/intake/problem-parser.js',
+    'src/intake/services/problem-classification-service.js',
+  ]);
+  const files = allSourceFiles('src/intake').filter((f) => PROBLEM_INTELLIGENCE_ORIGIN_FILES.has(f.rel));
   const offenders = [];
   for (const { rel, code } of files) {
     for (const t of importsOf(code)) {
@@ -69,12 +85,18 @@ console.log('\n[Part 1 — problem-intelligence/ never imports conversation/, ne
 
 console.log('\n[Part 2 — nothing upstream imports problem-intelligence/ back]');
 {
-  const upstream = allSourceFiles('js/v2').filter((f) => /^js\/v2\/(knowledge|organizational-memory|learning|document-intelligence|conversation|reasoning|ai-foundation|file-storage)\//.test(f.rel));
+  // knowledge/ is still under js/v2/; organizational-memory/, learning/,
+  // document-intelligence/, conversation/, and reasoning/ all moved to
+  // src/ during Phase 1 Repository Refoundation — scan both roots so this
+  // stays a real assertion instead of silently checking 1 of 6 domains.
+  // ai-foundation/ was deleted (confirmed dead) during the same phase.
+  const upstream = [...allSourceFiles('js/v2'), ...allSourceFiles('src')]
+    .filter((f) => /^(js\/v2|src)\/(knowledge|organizational-memory|learning|document-intelligence|conversation|reasoning|file-storage)\//.test(f.rel));
   const offenders = [];
   for (const { rel, code } of upstream) {
-    for (const t of importsOf(code)) { if (/\/problem-intelligence\//.test(t)) offenders.push(`${rel} -> ${t}`); }
+    for (const t of importsOf(code)) { if (/\/intake\//.test(t)) offenders.push(`${rel} -> ${t}`); }
   }
-  check(`no upstream domain imports problem-intelligence/${offenders.length ? ` — FOUND: ${offenders.join(', ')}` : ''}`, offenders.length === 0);
+  check(`no upstream domain imports problem-intelligence/ (now intake/) back${offenders.length ? ` — FOUND: ${offenders.join(', ')}` : ''}`, offenders.length === 0);
 }
 
 console.log('\n[Part 3 — "Extensible Problem Types": the registry is real, additive]');
@@ -142,11 +164,11 @@ console.log('\n[Behaviour — an empty utterance is honestly rejected, never sil
 
 console.log('\n[Sprint 11.1, Workstream 1 — nor-numbering-context.js: the ONE legal path to organizational-memory/ for NOR composition]');
 {
-  const src = read('js/v2/problem-intelligence/nor-numbering-context.js');
+  const src = read('src/intake/nor-numbering-context.js');
   check('imports organizational-memory/numbering-engine.js (the already-legal problem-intelligence -> organizational-memory edge)', /import\s*\{[^}]*suggestNextNumber[^}]*\}\s*from\s*['"]\.\.\/organizational-memory\/numbering-engine\.js['"]/.test(src));
   check('does NOT import conversation/ (same architectural invariant every other problem-intelligence/ file honors)', !src.split('\n').some((line) => /^\s*import\b.*['"].*\/conversation\//.test(line)));
 
-  const { getNumberingSuggestionForNor } = await import('../js/v2/problem-intelligence/nor-numbering-context.js');
+  const { getNumberingSuggestionForNor } = await import('../src/intake/nor-numbering-context.js');
   const suggestion = getNumberingSuggestionForNor();
   check('returns a real NumberingSuggestion shape (domainType/suggestedNumber/basis/confidence/computedAt)', typeof suggestion === 'object' && 'domainType' in suggestion && 'suggestedNumber' in suggestion && 'confidence' in suggestion && 'basis' in suggestion);
   check('is scoped to domainType "nor" specifically, never a caller-supplied value', suggestion.domainType === 'nor');

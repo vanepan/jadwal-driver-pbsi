@@ -13,11 +13,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { routeProblem, MIN_ROUTABLE_CONFIDENCE } from '../js/v2/problem-solving/problem-router.js';
-import { WORKFLOW_ROUTE, isRoutingDecision } from '../js/v2/problem-solving/contracts/workflow-route-contract.js';
-import { generateClarification } from '../js/v2/problem-solving/clarification-engine.js';
-import { makeProblem } from '../js/v2/reasoning/contracts/problem-contract.js';
-import { hasProblemCategory, listProblemCategories } from '../js/v2/problem-intelligence/contracts/problem-category-contract.js';
+import { routeProblem, MIN_ROUTABLE_CONFIDENCE } from '../src/intake/problem-router.js';
+import { WORKFLOW_ROUTE, isRoutingDecision } from '../src/intake/contracts/workflow-route-contract.js';
+import { generateClarification } from '../src/intake/clarification-engine.js';
+import { makeProblem } from '../src/reasoning/contracts/problem-contract.js';
+import { hasProblemCategory, listProblemCategories } from '../src/intake/contracts/problem-category-contract.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let pass = 0; let fail = 0;
@@ -34,7 +34,7 @@ function importsOf(code) {
 
 console.log('\n[Part 1 — problem-router.js never imports conversation/ (Never rely on keyword matching alone — a plain lookup on the Problem Model\'s own field)]');
 {
-  const offenders = importsOf(read('js/v2/problem-solving/problem-router.js')).filter((t) => /\/conversation\//.test(t));
+  const offenders = importsOf(read('src/intake/problem-router.js')).filter((t) => /\/conversation\//.test(t));
   check(`no violation${offenders.length ? ` — FOUND: ${offenders.join(', ')}` : ''}`, offenders.length === 0);
 }
 

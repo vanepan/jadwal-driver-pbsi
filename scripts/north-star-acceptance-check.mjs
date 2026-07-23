@@ -27,19 +27,19 @@
 
 import {
   setKnowledgeBackend, listKnowledge, LIFECYCLE_STATE,
-} from '../js/v2/knowledge/services/knowledge-service.js';
+} from '../src/knowledge/services/knowledge-service.js';
 import { resetConversationRepository } from '../src/conversation/repository/conversation-repository.js';
 import { continueConversation, explainConversation } from '../src/conversation/services/conversation-service.js';
 import { explainDynamicConversation } from '../src/conversation/services/dynamic-conversation-service.js';
 import { resetComposerStore, getComposerTimeline, getExplainability } from '../src/document-intelligence/composer/composer-store.js';
 import { explainDocument } from '../src/document-intelligence/nor/nor-explainability-service.js';
-import { beginProblemSolving, composeApprovedNor } from '../js/v2/problem-solving/services/problem-solving-service.js';
-import { seedNorBootstrapKnowledge } from '../js/v2/knowledge/bootstrap/nor-reverse-engineering-knowledge.js';
-import { seedPerjalananDinasPengadaanKnowledge } from '../js/v2/knowledge/bootstrap/nor-perjalanan-dinas-pengadaan-knowledge.js';
-import { detectKnowledgeGaps, reason, makeProblem } from '../js/v2/reasoning/services/reasoning-service.js';
-import { listNorTypes } from '../js/v2/knowledge/registry/nor-type-registry.js';
-import { resetLearningRepository } from '../js/v2/learning/repository/learning-repository.js';
-import { listLearningEvents } from '../js/v2/learning/services/learning-service.js';
+import { beginProblemSolving, composeApprovedNor } from '../src/intake/services/problem-solving-service.js';
+import { seedNorBootstrapKnowledge } from '../src/knowledge/bootstrap/nor-reverse-engineering-knowledge.js';
+import { seedPerjalananDinasPengadaanKnowledge } from '../src/knowledge/bootstrap/nor-perjalanan-dinas-pengadaan-knowledge.js';
+import { detectKnowledgeGaps, reason, makeProblem } from '../src/reasoning/services/reasoning-service.js';
+import { listNorTypes } from '../src/knowledge/registry/nor-type-registry.js';
+import { resetLearningRepository } from '../src/learning/repository/learning-repository.js';
+import { listLearningEvents } from '../src/learning/services/learning-service.js';
 import { DORMANT } from '../js/v2/dormant-subsystems.js';
 
 let pass = 0; let fail = 0;

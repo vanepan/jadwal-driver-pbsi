@@ -61,7 +61,7 @@
 import {
   planDiagnosis, generateHypotheses, updateHypotheses, reason, RECOMMENDATION_ERRORS,
 } from '../reasoning/services/reasoning-service.js';
-import { getProblemCategory } from '../problem-intelligence/contracts/problem-category-contract.js';
+import { getProblemCategory } from './contracts/problem-category-contract.js';
 import { makeProblem } from '../reasoning/contracts/problem-contract.js';
 
 /** A plain, documented completion rule — never a model decision. Complete
