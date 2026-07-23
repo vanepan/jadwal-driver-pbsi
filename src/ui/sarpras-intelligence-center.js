@@ -64,7 +64,6 @@
 
 import {
   setKnowledgeBackend as setActiveRepository,
-  listKnowledge as knowledgeList,
   registerKnowledgeListener as registerRepositoryListener,
 } from '../knowledge/services/knowledge-service.js';
 // North-Star Gap Closure — the real, already-Approved NOR bootstrap
@@ -108,59 +107,32 @@ import { rehydrateKnowledgeFromSessions } from '../knowledge/datasets/import-ses
 // restart/deployment. See that engine's header for the full rationale.
 import { rehydrateLearningFromDocuments } from '../document-intelligence/composer/reviewer-edit-rehydration-engine.js';
 
-// Executive Briefing data sources — every one of these is already imported
-// and used by an existing workspace file (see each import's origin below);
-// this file only COMPOSES them into five plain-language questions, it
-// never recomputes what an engine already computes.
-import { reviewReasons, effectiveStage, runReanalysisSweep } from './dataset-import-center.js';
+// Phase 2, Stage 1 (Prompt -> Generate Foundation) dead-code verification —
+// the old Executive Briefing data sources this comment used to introduce
+// (archiveList, getGapsWithWorkflowState, GAP_STATUS, getReviewQueue,
+// getCandidateQueue, listOverrides, LIFECYCLE_STATE, listDatasets,
+// manualFileSource, computePatternRecommendations, listLearningEvents,
+// LEARNING_KIND, computeOrganizationalMemory, computeCoverageReport,
+// countResolvedGaps, knowledgeList) are removed: repo-wide grep confirmed
+// zero remaining callers anywhere once computeTodaySummary/
+// computeRunningCount/computeAttention/computeLearnedSummary/
+// computeExecutiveLearning/computeNextAction were deleted below — see
+// that deletion's own comment for the verification evidence. Technical
+// Diagnostics (Developer Mode) still needs a few of the SAME source
+// imports below (effectiveStage, listImportSessions, isTerminalImport-
+// SessionState, isOffRampStage, listDomainTypes) — those are kept.
+import { effectiveStage, runReanalysisSweep } from './dataset-import-center.js';
 import { listImportSessions } from '../knowledge/datasets/import-session/import-session-engine.js';
 import {
   IMPORT_SESSION_STATE, PIPELINE_STAGE_ORDER, PIPELINE_OFF_RAMP_STAGES,
   isTerminalImportSessionState, isOffRampStage,
 } from '../knowledge/datasets/import-session/contracts/import-session-contract.js';
-import { listArchive as archiveList, getGapsWithWorkflowState, GAP_STATUS } from '../organizational-memory/index.js';
 import { listDomainTypes } from '../knowledge/registry/domain-type-registry.js';
 import { listKinds } from '../knowledge/registry/kind-registry.js';
-import { getReviewQueue, getCandidateQueue } from '../knowledge/review/review-queue-engine.js';
-import { listOverrides } from '../knowledge/services/profile-override-service.js';
-import { LIFECYCLE_STATE } from '../knowledge/contracts/lifecycle-contract.js';
-import { listDatasets } from '../knowledge/datasets/registry/dataset-registry.js';
-import { manualFileSource } from '../knowledge/connectors/manual-file-connector.js';
-import { computePatternRecommendations, discoverAndRecordPatterns } from '../knowledge/services/pattern-discovery-service.js';
-// Phase 5, Part 8 — "Executive Learning": every number in the new card below
-// comes from the Learning Service, the Organization Memory engine, or the
-// Coverage engine — real, persisted, dated facts, never a fabricated metric.
-// buildLearningMetrics/listCorrectionLog (the OLD, still-dormant correction
-// mechanism — see dormant-subsystems.js) are no longer imported here: the
-// broader "Correction Log" concept the mission asks for is now genuinely
-// live via Learning Events, fed by three real producers (metadata/knowledge/
-// pattern corrections — see dataset-import-center.js, knowledge-center.js,
-// nor-center.js).
-import { listLearningEvents, LEARNING_KIND } from '../learning/services/learning-service.js';
-import { computeOrganizationalMemory } from '../organizational-memory/organizational-memory-engine.js';
-import { computeCoverageReport } from '../organizational-memory/coverage-engine.js';
-import { countResolvedGaps } from '../organizational-memory/gap-workflow-engine.js';
-// Experience Architecture phase — Part 6 (Action-first Home): "Continue
-// Previous Batch" is real only when a real unfinished batch exists.
-import { listBatches, BATCH_STATUS } from '../knowledge/datasets/import-session/import-batch-engine.js';
+import { discoverAndRecordPatterns } from '../knowledge/services/pattern-discovery-service.js';
 // Part 5 (Search-first): one aggregator over three already-real services —
 // see global-search-service.js's own header for why it invents nothing.
 import { globalSearch } from './services/global-search-service.js';
-// Part 9 (Conversation-first): the REAL, deterministic Conversation Service
-// (Phase 6) — this file only renders what it returns, never reinterprets
-// an utterance itself and never adds a new intent.
-import { INTENT, getRequiredFacts } from '../conversation/contracts/intent-contract.js';
-// Sprint 11.1 (production feedback) — PREVIOUSLY UNCALLED anywhere in
-// this file (verified by grep before writing this): renderConversationResult()
-// below has only ever rendered `missingFacts` as static text, with no way
-// to answer them — a real, pre-existing gap confirmed via a live browser
-// run (submitting the same utterance again just restarts classification
-// via resetRoutedState(), never continues). js/v2/README.md's dependency
-// graph already documents `ui/ -> conversation/` as legal ("not exercised
-// in Phase 6 — no UI caller exists yet") — this is that edge's first real
-// exercise, not a new architectural decision. See nor-center.js's twin fix
-// for the identical pattern applied there first.
-import { continueConversation } from '../conversation/services/conversation-service.js';
 // Phase 10.5 (Home Entry Point Migration, Problem-First Architecture) —
 // EVERY free-text request now enters through beginProblemSolving() first
 // (Problem Classification -> Diagnostic Planning -> Routing Decision).
@@ -178,9 +150,6 @@ import { HYPOTHESIS_STATUS } from '../reasoning/contracts/hypothesis-contract.js
 // formatting (js/v2/README.md's dependency graph; nor-center.js already
 // uses this exact same edge, same functions).
 import { fmtLong, todayISO } from '../../js/petty-cash/petty-cash-config.js';
-// Phase 3, Part 8 — see js/v2/dormant-subsystems.js. This briefing used to
-// count the OLD correction log's always-zero value.
-import { dormantNote } from '../../js/v2/dormant-subsystems.js';
 import { esc, isDeveloperMode, setPresentationMode } from './shared/workspace-list-kit.js';
 
 // Experience Architecture phase — 'knowledge' keeps its screen id (still a
@@ -238,13 +207,17 @@ function scheduleRender() {
    without a controller factory (this file has always been a singleton —
    only one Sarpras Intelligence shell ever mounts). Real, plain interaction
    state only — no cached query results duplicated anywhere else. ────────── */
+// Phase 2, Stage 1 (Prompt -> Generate Foundation) — `conversation` and
+// `missingFactAnswers` are gone: a CREATE_NOR-mapped Conversation no longer
+// pauses on a missing-facts form (see attemptGenerateDraft() below) —
+// generation is attempted immediately, and whatever is still genuinely
+// unknown is left honestly blank for the Workspace to complete, never
+// interviewed for first. `searchResult` stays (the prompt box itself can
+// still route to Search — see WORKFLOW_ROUTE.SEARCH below); the old
+// standalone search input is gone.
 const homeState = {
   searchInput: '', searchResult: null,
-  conversationInput: '', conversation: null, conversationError: null,
-  // Sprint 11.1 (production feedback) — in-progress typed answers for the
-  // legacy CREATE_NOR conversation's missingFacts form (see
-  // renderConversationResult()'s own header for why this exists now).
-  missingFactAnswers: {},
+  conversationInput: '', conversationError: null,
   // Phase 10.5 — Problem-First Architecture. `activeProblem`/`activeRoute`
   // persist across turns of a generic Problem Conversation (Diagnostic or
   // plain); `problemConversationTurn` is the LATEST advanceProblemConversation()
@@ -259,67 +232,25 @@ const homeState = {
   lastPipelineTrace: null,
 };
 
-const INTENT_LABEL = Object.freeze({
-  [INTENT.CREATE_NOR]: 'Membuat NOR',
-  [INTENT.UPLOAD_KNOWLEDGE]: 'Mengunggah Dokumen',
-  [INTENT.CORRECT_METADATA]: 'Mengoreksi Metadata',
-  [INTENT.ARCHIVE_DOCUMENT]: 'Mengarsipkan Dokumen',
-  [INTENT.REVIEW_KNOWLEDGE]: 'Meninjau Pengetahuan',
-  [INTENT.GENERATE_EXECUTIVE_BRIEFING]: 'Membuat Ringkasan Eksekutif',
-  [INTENT.UNKNOWN]: 'Tidak Dikenali',
-});
-
-/** Part 6 — real, conditional quick actions. "Lanjutkan Batch Sebelumnya"
- *  and "Tinjau Pengecualian" only appear when a real reason to show them
- *  exists (an unfinished batch; a nonzero attention count) — Part 7's "do
- *  not show actions that cannot currently happen", applied to Home itself. */
-function computeQuickActions(attention) {
-  const actions = [
-    { id: 'upload', label: 'Unggah Dokumen', screen: 'archive' },
-    { id: 'generate-nor', label: 'Buat NOR', screen: 'nor' },
-  ];
-  const batches = safeList(listBatches, {});
-  const unfinished = batches.filter((b) => b.status === BATCH_STATUS.PROCESSING || b.status === BATCH_STATUS.PAUSED);
-  if (unfinished.length) {
-    actions.push({ id: 'continue-batch', label: `Lanjutkan Batch Sebelumnya (${unfinished.length})`, screen: 'archive' });
-  }
-  if (attention.total > 0) {
-    actions.push({ id: 'review', label: `Tinjau Pengecualian (${attention.total})`, screen: 'archive' });
-  }
-  return actions;
-}
-
-function renderQuickActions(actions) {
-  return `
-    <div class="sic-quick-actions">
-      ${actions.map((a) => `<button class="sic-quick-action" data-act="sic-nav" data-id="${esc(a.screen)}" type="button">${esc(a.label)}</button>`).join('')}
-    </div>`;
-}
-
-/** Part 5 — search-first. Submits on Enter/click only, never on keystroke
- *  (same discipline dataset-import-center.js's Advanced Metadata form
- *  already established — a keystroke must never cost a re-render, or the
- *  caret/focus is lost mid-type). */
-function renderSearchBar() {
+/** Phase 2, Stage 1 — the prompt itself can still route to Search
+ *  (WORKFLOW_ROUTE.SEARCH, handled in handleProblemSubmit()); this renders
+ *  ONLY the results, reused verbatim from the old standalone search bar's
+ *  own results markup — the dedicated input/button are gone (one prompt
+ *  field, not two entry points). */
+function renderSearchResults() {
   const r = homeState.searchResult;
-  const sections2 = r ? [
+  if (!r) return '';
+  const sections2 = [
     r.documents.length ? { title: 'Dokumen', items: r.documents.map((d) => `${d.filename} — ${stageLabelForSearch(d)}`) } : null,
     r.archive.length ? { title: 'Arsip', items: r.archive.map((a) => `${a.documentNumber || a.id}`) } : null,
     r.knowledge.length ? { title: 'Pengetahuan', items: r.knowledge.map((k) => `${k.kind} — ${k.id}`) } : null,
-  ].filter(Boolean) : [];
-  return `
-    <div class="sic-search">
-      <div class="sic-search-row">
-        <input class="sic-search-input" data-act="sic-search-input" type="text" placeholder="Cari dokumen, arsip, atau pengetahuan…" value="${esc(homeState.searchInput)}" />
-        <button class="wlk-btn" data-act="sic-search-submit" type="button">Cari</button>
-      </div>
-      ${r ? (r.total > 0 ? `
-        <div class="sic-search-results">
-          ${sections2.map((s) => `
-            <div class="sic-brief-sub">${esc(s.title)}</div>
-            <ul class="sic-brief-list">${s.items.map((t) => `<li><span class="sic-brief-label">${esc(t)}</span></li>`).join('')}</ul>`).join('')}
-        </div>` : `<p class="sic-next-action">Tidak ada hasil untuk "${esc(r.query)}".</p>`) : ''}
-    </div>`;
+  ].filter(Boolean);
+  return r.total > 0 ? `
+    <div class="sic-search-results">
+      ${sections2.map((s) => `
+        <div class="sic-brief-sub">${esc(s.title)}</div>
+        <ul class="sic-brief-list">${s.items.map((t) => `<li><span class="sic-brief-label">${esc(t)}</span></li>`).join('')}</ul>`).join('')}
+    </div>` : `<p class="sic-next-action">Tidak ada hasil untuk "${esc(r.query)}".</p>`;
 }
 
 function stageLabelForSearch(session) {
@@ -332,12 +263,17 @@ function stageLabelForSearch(session) {
  *  legacy Intent Engine is ever reached — "never reject user input before
  *  Problem Classification". Renders EXACTLY what the pipeline returns, no
  *  second interpretation of the utterance, no fabricated confirmation.
- *  Card title/copy softened per Part 4 ("should feel like speaking with an
- *  experienced Sarpras staff member, not a command launcher"). */
+ *
+ *  Phase 2, Stage 1 (Prompt -> Generate Foundation) — promoted from the 4th
+ *  element on a stats-heavy dashboard to the single primary element on Home.
+ *  Heading follows the brief's own literal wording ("What would you like to
+ *  create?") while keeping the box's existing, broader dual purpose (it
+ *  also carries diagnostic/facility utterances that create nothing) — see
+ *  the placeholder text, unchanged. */
 function renderConversationEntry() {
   return `
     <div class="sic-card sic-card--conversation">
-      <div class="sic-card-head"><div class="sic-card-h-title">Ceritakan apa yang terjadi atau apa yang Anda butuhkan</div></div>
+      <div class="sic-card-head"><div class="sic-card-h-title">Apa yang ingin Anda buat?</div></div>
       <div class="sic-search-row">
         <input class="sic-search-input" data-act="sic-conv-input" type="text" placeholder='Contoh: "AC kamar atlet rusak" atau "mau perjalanan dinas"' value="${esc(homeState.conversationInput)}" />
         <button class="wlk-btn" data-act="sic-conv-start" type="button">Kirim</button>
@@ -350,97 +286,22 @@ function renderConversationEntry() {
 /** Part 2 — dispatches purely on the LAST routingDecision this file itself
  *  received from beginProblemSolving() — never re-derives a route from the
  *  utterance itself (that would be exactly the "keyword matching alone"
- *  Part 2 forbids; the Problem Router already decided, once). */
+ *  Part 2 forbids; the Problem Router already decided, once).
+ *
+ *  Phase 2, Stage 1 (Prompt -> Generate Foundation) — a CREATE_NOR-mapped
+ *  Conversation is no longer a state rendered here at all: attemptGenerateDraft()
+ *  (called straight from handleProblemSubmit()) already resolved it to
+ *  either a Workspace navigation (success) or homeState.conversationError
+ *  (a genuine "cannot reasonably be generated" case, e.g. no Approved
+ *  Knowledge yet for this document type) before this function ever runs.
+ *  What's left to route here is exactly the brief's own narrower definition
+ *  of "questions": an unclassifiable utterance (clarification) or a
+ *  non-document diagnostic/fact-gathering turn (problemConversationTurn) —
+ *  both already one-at-a-time, natural language, never a form. */
 function renderRoutedResult() {
   if (homeState.clarification) return renderClarificationResult();
-  if (homeState.conversation) return renderConversationResult(homeState.conversation);
   if (homeState.problemConversationTurn) return renderProblemConversationTurn();
-  return '';
-}
-
-/** The ONE real path that still reaches the legacy Intent Engine — always
- *  downstream of Problem Classification + Routing (see
- *  problem-solving-service.js's own CONVERSATION branch).
- *
- *  PRODUCTION FEEDBACK, VERIFIED LIVE — the missingFacts form below is
- *  NEW. Before this, `missingFacts` rendered as static `<li>` text with no
- *  input to answer them, and nothing in this file called
- *  continueConversation() — confirmed empirically (a real browser run)
- *  before writing this fix: resubmitting the same utterance just restarts
- *  classification from scratch via resetRoutedState(), so this
- *  conversation could never actually be advanced through this UI. See
- *  nor-center.js's twin fix (renderGenerateConversationResult) for the
- *  identical pattern, built first there. */
-/** Sprint 11.2 (Adaptive Conversation) — see nor-center.js's identical
- *  twin (knownFactLabel) for the header. Resolves a gatheredFacts key to
- *  the same human-readable label missingFacts already shows. */
-function knownFactLabel(intent, norType, field) {
-  const entry = getRequiredFacts(intent, norType).find((f) => f.field === field);
-  return entry ? entry.label : field;
-}
-
-function renderConversationResult(c) {
-  if (!c.currentIntent || c.currentIntent.intent === INTENT.UNKNOWN || c.state === 'failed') {
-    return `<p class="sic-next-action">Permintaan ini belum dikenali platform. Coba salah satu: "saya ingin membuat NOR", "saya ingin mengunggah dokumen", "saya ingin meninjau pengetahuan".</p>`;
-  }
-  const known = Object.entries(c.gatheredFacts || {}).filter(([, v]) => v !== null && v !== undefined && v !== '');
-  return `
-    <div class="sic-conv-result">
-      <p class="sic-next-action">Terdeteksi: <strong>${esc(INTENT_LABEL[c.currentIntent.intent] || c.currentIntent.intent)}</strong></p>
-      ${renderComposeDraftNow(c)}
-      ${known.length ? `
-        <div class="sic-brief-sub">Sudah diketahui</div>
-        <ul class="sic-brief-list">${known.map(([k, v]) => `<li><span class="sic-brief-label">✓ ${esc(knownFactLabel(c.currentIntent.intent, c.gatheredFacts.type, k))}: ${esc(String(v))}</span></li>`).join('')}</ul>` : ''}
-      ${c.missingFacts && c.missingFacts.length ? `
-        <div class="sic-brief-sub">Masih diperlukan</div>
-        <div class="nc-conv-form">
-          ${c.missingFacts.map((q) => `
-            <div class="wlk-form-row">
-              <label>${esc(q.prompt)}</label>
-              <input data-act="sic-conv-fact-input" data-field="${esc(q.field)}" class="wlk-input" type="text" placeholder="${esc(q.label)}" value="${esc(homeState.missingFactAnswers[q.field] || '')}" />
-            </div>`).join('')}
-          <button class="wlk-btn" data-act="sic-conv-continue" data-id="${esc(c.id)}" type="button">Lanjutkan</button>
-        </div>`
-    : '<p class="sic-next-action">Semua data yang diperlukan sudah ada.</p>'}
-      ${c.state === 'ready' ? `<p class="sic-next-action">Semua data terkumpul. <button class="wlk-btn" data-act="sic-compose-nor" data-id="${esc(c.id)}" type="button">Susun NOR</button></p>` : ''}
-    </div>`;
-}
-
-/** Sprint 11.10 (Product Architecture Gap Closure) — "Live Preview First" /
- *  "Automatic Missing Information Discovery": once the intent is confirmed
- *  and the conversation is genuinely under way (ACTIVE — at least one real
- *  exchange has happened, not the empty instant right after typing), a
- *  reviewer may choose to see the almost-finished document immediately
- *  instead of finishing the guided Q&A first. ADDITIVE, not a replacement
- *  of the existing "answer the remaining questions" flow (Sprint
- *  11.1/11.2's own UAT-hardened "ask only what is unknown" path is
- *  completely unchanged, still rendered below this) — a human explicitly
- *  opts in by clicking, per the architecture report's own documented
- *  tradeoff (a forced compose-first DEFAULT risks a new reviewer seeing a
- *  mostly-blank document with no guidance on what a NOR needs, which is
- *  worse UX for exactly the "help new employees learn faster" persona
- *  CLAUDE.md's mission cares about) — that reasoning is UNCHANGED and this
- *  sprint does not revisit it: the Q&A form stays the default path.
- *
- *  Phase 12.8.x, Sprint 1 (Experience Completion) — PROMOTED, not
- *  automated. The brief asked for "the document should appear
- *  immediately"; making this fire automatically would directly reverse
- *  Sprint 11.10's own considered decision above and would break
- *  home-generate-live-preview-check.mjs's real-browser assertion that the
- *  Q&A form is what a human sees first. Instead: this affordance moves
- *  from LAST (a small ghost-styled hint below the full Q&A form) to
- *  FIRST (a real, primary-styled callout immediately under intent
- *  detection) — still one deliberate click, never automatic, but now the
- *  most visually prominent thing on screen instead of the least. Never
- *  shown once already 'ready' (the "Susun NOR" button, drawing from real
- *  complete data rather than a draft, already covers that). */
-function renderComposeDraftNow(c) {
-  if (c.state !== 'active') return '';
-  return `
-    <div class="sic-draft-now-card">
-      <p class="sic-draft-now-lede">Draf lengkap sudah bisa dilihat sekarang — sisanya bisa diisi langsung di dalam dokumen.</p>
-      <button class="wlk-btn" data-act="sic-compose-nor-draft" data-id="${esc(c.id)}" type="button">Susun Draf Sekarang</button>
-    </div>`;
+  return renderSearchResults();
 }
 
 /** Phase 10.5, Parts 2/4 — the generic, category-agnostic turn loop
@@ -505,16 +366,15 @@ function renderClarificationResult() {
  *  leftover state (e.g. a previous Problem Conversation's question)
  *  alongside the new one. */
 function resetRoutedState() {
-  homeState.conversation = null;
   homeState.problemConversationTurn = null;
   homeState.answeredFacts = {};
   homeState.askedFields = [];
   homeState.problemAnswerInput = '';
-  homeState.missingFactAnswers = {};
   homeState.clarification = null;
   homeState.activeProblem = null;
   homeState.activeRoute = null;
   homeState.activeCategory = null;
+  homeState.searchResult = null;
 }
 
 /** Phase 10.5, Part 1/2 — the Home Entry Point. Never rejects an utterance
@@ -522,10 +382,21 @@ function resetRoutedState() {
  *  fails on a genuinely empty/invalid input (a real input error, checked
  *  below the same way it always was), never on "not recognized" — an
  *  unclassifiable PROBLEM routes to Clarification instead (see
- *  problem-router.js). */
+ *  problem-router.js).
+ *
+ *  Phase 2, Stage 1 (Prompt -> Generate Foundation), Performance — the
+ *  Workspace's own module (and its transitive doc-engine.js/pdfmake
+ *  dependencies) starts loading HERE, in parallel with classification and
+ *  composition below, instead of only starting after composition succeeds.
+ *  Dynamic import() is cached by specifier — attemptGenerateDraft() below
+ *  reuses this exact same promise, so this is never a double fetch, only an
+ *  earlier one. Nothing here blocks Workspace opening except generation
+ *  itself, per the brief's own Performance section. */
 function handleProblemSubmit() {
   const utterance = homeState.conversationInput.trim();
   if (!utterance) { homeState.conversationError = 'Ketik dulu apa yang ingin Anda lakukan.'; sections.dashboard.innerHTML = renderDashboard(); return; }
+
+  const workspaceModulePrefetch = import('./review-workspace.js');
 
   resetRoutedState();
   const result = beginProblemSolving(utterance, 'evan');
@@ -541,18 +412,24 @@ function handleProblemSubmit() {
 
   switch (data.routingDecision.route) {
     case WORKFLOW_ROUTE.SEARCH:
-      // Part 2 — reuses the EXISTING, real search bar/globalSearch, never a
+      // Part 2 — reuses the EXISTING, real search results renderer, never a
       // second search implementation.
       homeState.searchInput = data.searchQuery || utterance;
       homeState.searchResult = globalSearch(homeState.searchInput);
       break;
     case WORKFLOW_ROUTE.KNOWLEDGE_ACQUISITION:
       // Part 2 — reuses the EXISTING Archive Center navigation, the same
-      // destination the "Unggah Dokumen" quick action already uses.
+      // destination the old "Unggah Dokumen" quick action used to.
       setSarprasIntelligenceScreen('archive');
       return; // setSarprasIntelligenceScreen already re-renders via showScreen
     case WORKFLOW_ROUTE.CONVERSATION:
-      if (data.conversation) { homeState.conversation = data.conversation; break; }
+      // Phase 2, Stage 1 — Draft Generation begins immediately: a real
+      // Conversation (intent confirmed) is always already at least ACTIVE
+      // the moment it exists (conversation-service.js#advance() never
+      // returns anything earlier) — composeApprovedNor(allowIncomplete:true)
+      // already tolerates arbitrarily incomplete gatheredFacts, so there is
+      // nothing left to interview for first. No form, no manual click.
+      if (data.conversation) { attemptGenerateDraft(data.conversation.id, workspaceModulePrefetch); return; }
       homeState.problemConversationTurn = data.problemConversationTurn;
       break;
     case WORKFLOW_ROUTE.DIAGNOSTIC_CONVERSATION:
@@ -564,6 +441,42 @@ function handleProblemSubmit() {
       break;
   }
   sections.dashboard.innerHTML = renderDashboard();
+}
+
+/** Phase 2, Stage 1 (Prompt -> Generate Foundation) — Draft Generation.
+ *  Replaces the old two-step "show a form, wait for a click" flow: fires
+ *  the instant a real Conversation exists, using the SAME allowIncomplete
+ *  semantics Sprint 11.10 already built and proved safe (nor-composer.js
+ *  already tolerates arbitrarily incomplete gatheredFacts — every
+ *  unresolved pattern slot becomes an honest UNRESOLVED_MARKER, never a
+ *  fabricated guess; review-workspace.js already renders that as a "Klik
+ *  untuk mengisi…" placeholder). This is a deliberate reversal of Sprint
+ *  11.10 / Phase 12.8.x Sprint 1's considered opt-in-by-default decision
+ *  (both explicitly weighed "a mostly-blank document with no guidance" as
+ *  a real risk) — Phase 2, Stage 1's own brief is explicit ("Generation
+ *  begins immediately"), and the Workspace is now the place that guidance
+ *  lives instead of a pre-generation form.
+ *
+ *  Only genuinely fails when a draft truly cannot be generated (e.g. no
+ *  Approved Knowledge exists yet for this document type) — an honest
+ *  message, never a fabricated draft, never a question with nothing real
+ *  to ask. */
+function attemptGenerateDraft(conversationId, workspaceModulePrefetch) {
+  const composed = composeApprovedNor(conversationId, {
+    formattingFacts: { tanggalPanjang: fmtLong(todayISO()) },
+    allowIncomplete: true,
+  });
+  if (!composed.ok) {
+    homeState.conversationError = composed.error.message;
+    sections.dashboard.innerHTML = renderDashboard();
+    return;
+  }
+  homeState.lastPipelineTrace = { stage: 'compose', ...composed.data };
+  const documentId = composed.data.composerDocument.documentId;
+  (workspaceModulePrefetch || import('./review-workspace.js')).then((mod) => {
+    mod.openReviewDocument(documentId);
+    setSarprasIntelligenceScreen('review');
+  });
 }
 
 /** Phase 10.5, Part 2/4 — advances an in-progress Problem Conversation
@@ -598,83 +511,20 @@ function onDashboardClick(e) {
   const el = e.target.closest('[data-act]');
   if (!el) return;
   if (el.dataset.act === 'sic-nav') { setSarprasIntelligenceScreen(el.dataset.id); return; }
-  if (el.dataset.act === 'sic-search-submit') {
-    homeState.searchResult = globalSearch(homeState.searchInput);
-    sections.dashboard.innerHTML = renderDashboard();
-    return;
-  }
   if (el.dataset.act === 'sic-conv-start') { handleProblemSubmit(); return; }
   if (el.dataset.act === 'sic-pc-answer-submit') { handleProblemAnswerSubmit(); return; }
-  if (el.dataset.act === 'sic-conv-continue') { handleConversationContinue(el.dataset.id); return; }
-  if (el.dataset.act === 'sic-compose-nor' || el.dataset.act === 'sic-compose-nor-draft') {
-    // Sprint 11.1, Workstream 3 — tanggalPanjang is the document's real
-    // composition/issuance date (a letterhead convention, not a fact
-    // about the NOR's own subject matter — confirmed with the repository
-    // owner: neither Pengadaan's empty date schema nor Perjalanan Dinas's
-    // two ambiguous candidates, departureDate/returnDate, obviously mean
-    // "the letterhead date"). Computed HERE, not in nor-composer.js/
-    // problem-solving-service.js — this is the one legal edge to V1
-    // (petty-cash-config.js), same edge nor-center.js already uses.
-    //
-    // Sprint 11.10 — the ONLY difference between the two actions is
-    // allowIncomplete: true for the new "Susun Draf Sekarang" button
-    // (composeApprovedNor's own header explains why this is safe: it's a
-    // no-op for the already-ready case, since 'ready'/'completed' are
-    // always permitted regardless of this flag).
-    const composed = composeApprovedNor(el.dataset.id, {
-      formattingFacts: { tanggalPanjang: fmtLong(todayISO()) },
-      allowIncomplete: el.dataset.act === 'sic-compose-nor-draft',
-    });
-    homeState.conversationError = composed.ok ? null : composed.error.message;
-    if (composed.ok) {
-      homeState.lastPipelineTrace = { stage: 'compose', ...composed.data };
-      // Sprint 11.3 (Document-first Experience), Requirement 1 — land
-      // straight on the new draft's Live Document Preview instead of
-      // leaving the human on this Home screen to go find it manually.
-      // review-workspace.js is dynamically imported here (never a static
-      // import — same reason WORKSPACES['review'] below already lazy-
-      // loads it: this screen's own doc-engine.js/pdfmake dependency must
-      // not load eagerly the moment the Home screen mounts).
-      const documentId = composed.data.composerDocument.documentId;
-      import('./review-workspace.js').then((mod) => {
-        mod.openReviewDocument(documentId);
-        setSarprasIntelligenceScreen('review');
-      });
-      return;
-    }
-    sections.dashboard.innerHTML = renderDashboard();
-  }
 }
 
-/** Keystrokes update state only — never a re-render (see renderSearchBar's
- *  own comment). Submission (click/Enter) is the only thing that redraws. */
+/** Keystrokes update state only — never a re-render (see
+ *  renderConversationEntry's own comment). Submission (click/Enter) is the
+ *  only thing that redraws. */
 function onDashboardInput(e) {
-  if (e.target.dataset.act === 'sic-search-input') homeState.searchInput = e.target.value;
   if (e.target.dataset.act === 'sic-conv-input') homeState.conversationInput = e.target.value;
   if (e.target.dataset.act === 'sic-pc-answer-input') homeState.problemAnswerInput = e.target.value;
-  if (e.target.dataset.act === 'sic-conv-fact-input') {
-    homeState.missingFactAnswers = { ...homeState.missingFactAnswers, [e.target.dataset.field]: e.target.value };
-  }
-}
-
-/** Sprint 11.1 (production feedback) — the real fix for the previously-
- *  nonexistent CREATE_NOR answer path (see renderConversationResult()'s
- *  header). Submits every currently-typed answer in one call — matches
- *  missingFacts's own "list shown all at once" shape. */
-function handleConversationContinue(conversationId) {
-  const answers = { ...homeState.missingFactAnswers };
-  const result = continueConversation(conversationId, answers);
-  if (!result.ok) { homeState.conversationError = result.error.message; sections.dashboard.innerHTML = renderDashboard(); return; }
-  homeState.conversationError = null;
-  homeState.conversation = result.data;
-  const stillMissing = new Set((result.data.missingFacts || []).map((q) => q.field));
-  homeState.missingFactAnswers = Object.fromEntries(Object.entries(homeState.missingFactAnswers).filter(([f]) => stillMissing.has(f)));
-  sections.dashboard.innerHTML = renderDashboard();
 }
 
 function onDashboardKeydown(e) {
   if (e.key !== 'Enter') return;
-  if (e.target.dataset.act === 'sic-search-input') { homeState.searchResult = globalSearch(homeState.searchInput); sections.dashboard.innerHTML = renderDashboard(); }
   if (e.target.dataset.act === 'sic-conv-input') { document.querySelector('[data-act="sic-conv-start"]')?.click(); }
   if (e.target.dataset.act === 'sic-pc-answer-input') { document.querySelector('[data-act="sic-pc-answer-submit"]')?.click(); }
 }
@@ -844,9 +694,10 @@ function buildShell() {
   sections = {};
   host.querySelectorAll('[data-sic-screen]').forEach((el) => { sections[el.dataset.sicScreen] = el; });
   sections.dashboard.innerHTML = renderDashboard();
-  // Home's own interactive elements (quick actions, search, Conversation
-  // entry) — one delegated listener set on the persistent screen container,
-  // same idiom every nested workspace already uses on its own host.
+  // Home's own interactive elements (the prompt/Conversation entry, the
+  // secondary nav row) — one delegated listener set on the persistent
+  // screen container, same idiom every nested workspace already uses on
+  // its own host.
   sections.dashboard.addEventListener('click', onDashboardClick);
   sections.dashboard.addEventListener('input', onDashboardInput);
   sections.dashboard.addEventListener('keydown', onDashboardKeydown);
@@ -944,280 +795,56 @@ export function closeSarprasIntelligence() {
   Object.values(mountedState).forEach((entry) => { if (entry.close) entry.close(); });
 }
 
-/* ── Executive Briefing — real reads only, no new engine ──────────────── */
-
-function todayISODate() { return new Date().toISOString().slice(0, 10); }
-
+/** Shared by Technical Diagnostics (Developer Mode, below) — a defensive
+ *  read that never throws the render if an engine call fails. */
 function safeList(fn, filter) {
   const result = fn(filter);
   return result.ok ? result.data : [];
 }
 
-/** "Apa yang terjadi hari ini?" — today-only tallies over Import Sessions,
- *  Archive Records and Knowledge Items (each already read elsewhere —
- *  Dataset Import Center, Archive Center, Learning Dashboard). */
-function computeTodaySummary() {
-  const today = todayISODate();
-  const sessions = safeList(listImportSessions, {});
-  const uploadedToday = sessions.filter((s) => String(s.createdAt || '').slice(0, 10) === today).length;
-  const archiveRecords = safeList(archiveList, {});
-  const archivedToday = archiveRecords.filter((r) => String(r.archivedAt || '').slice(0, 10) === today).length;
-  const knowledgeItems = safeList(knowledgeList, {});
-  const knowledgeToday = knowledgeItems.filter((i) => String(i.createdAt || '').slice(0, 10) === today).length;
-  return { uploadedToday, archivedToday, knowledgeToday };
-}
-
-/** "Apa yang sedang berjalan?" — reuses the EXACT "in flight" derivation
- *  Dataset Import Center's own workspace view uses (renderWorkspace).
- *  Phase 2.6: in flight = not terminal, and not parked off the ladder. A
- *  cancelled or failed document is finished business; before those states
- *  existed, both kinds counted as "sedang diproses otomatis" forever, and
- *  this number could only ever go up. */
-function computeRunningCount() {
-  const sessions = safeList(listImportSessions, {});
-  return sessions.filter((s) => !isTerminalImportSessionState(s.state) && !isOffRampStage(s.pipelineStage)).length;
-}
-
-/** "Apa yang butuh perhatian?" — sums the SAME exception queues Dataset
- *  Import Center (reviewReasons), Archive Center (flagged gaps), Knowledge
- *  Center (review/candidate queues) and NOR Center (pending overrides)
- *  each already surface on their own screens — one combined count here,
- *  never a second computation of any of them. */
-function computeAttention() {
-  const sessions = safeList(listImportSessions, {});
-  const needsAttentionImports = sessions.filter((s) => reviewReasons(s).length > 0).length;
-  const domains = listDomainTypes();
-  const flaggedGaps = domains.reduce((n, d) => n + getGapsWithWorkflowState(d.id).filter((g) => g.status === GAP_STATUS.FLAGGED_FOR_UPLOAD).length, 0);
-  const knowledgeReview = getReviewQueue().length + getCandidateQueue().length;
-  const overrides = safeList(listOverrides, {});
-  const pendingOverrides = overrides.filter((o) => o.lifecycleState === LIFECYCLE_STATE.PENDING_REVIEW).length;
-  const total = needsAttentionImports + flaggedGaps + knowledgeReview + pendingOverrides;
-  return {
-    total, needsAttentionImports, flaggedGaps, knowledgeReview, pendingOverrides,
-  };
-}
-
-/** "Apa yang telah dipelajari platform?" — reuses Learning Dashboard's own
- *  insight reads (computeLearningInsights' shape) plus its Learning
- *  Overview metrics — no second computation, same engine calls.
- *  Phase 5 — `totalCorrections` now counts REAL Learning Events (kind=
- *  CORRECTION), fed by the three genuine producers (Advanced Metadata
- *  confirmation, Knowledge Center's Request Changes, Profile Override
- *  approval). This is a different, larger number than the old dormant
- *  correction-pipeline-engine.js log — it counts corrections that actually
- *  happen in this platform today, not the narrower knowledge-payload-edit
- *  mechanism nothing has ever called. */
-function computeLearnedSummary() {
-  const domains = listDomainTypes();
-  const datasetsImported = domains.reduce((n, d) => n + listDatasets({ domainType: d.id }).filter((ds) => ds.sourceId === manualFileSource.id).length, 0);
-  const knowledgeCreated = safeList(knowledgeList, {}).filter((i) => i.sourceType === 'manual-file').length;
-  const patternDiscoveries = domains.reduce((n, d) => n + computePatternRecommendations(d.id).length, 0);
-  const correctionEvents = listLearningEvents({ kind: LEARNING_KIND.CORRECTION });
-  const totalCorrections = correctionEvents.ok ? correctionEvents.data.length : 0;
-  return {
-    datasetsImported, knowledgeCreated, patternDiscoveries, totalCorrections,
-  };
-}
-
-/** Part 8 — "Executive Learning". Every field here is a real aggregation
- *  over persisted Learning Events / Organization Memory / Coverage — no
- *  fabricated metric, no invented trend.
- *
- *  Trends are computed the same honest way learning-dashboard.js's own
- *  "Knowledge Growth" already documents its own limits: a real comparison
- *  of two real, dated buckets (the last 7 days vs the 7 days before), not a
- *  smoothed or modelled projection. */
-function computeExecutiveLearning() {
-  const domains = listDomainTypes();
-
-  // "Most corrected knowledge" / "Most reused knowledge" — real per-domain
-  // Organization Memory reports, merged and re-ranked across every domain.
-  const correctedByTarget = new Map();
-  const reusedByKnowledgeId = new Map();
-  for (const d of domains) {
-    const om = computeOrganizationalMemory(d.id, { limit: 25 });
-    if (!om.ok) continue;
-    for (const c of om.data.frequentlyCorrectedKnowledge) {
-      const existing = correctedByTarget.get(c.key);
-      if (!existing || c.count > existing.count) correctedByTarget.set(c.key, { key: c.key, count: c.count, domainType: d.id });
-    }
-    for (const r of om.data.frequentlyReusedKnowledge) {
-      const existing = reusedByKnowledgeId.get(r.knowledgeItemId);
-      if (!existing || r.referencedByCount > existing.referencedByCount) {
-        reusedByKnowledgeId.set(r.knowledgeItemId, { knowledgeItemId: r.knowledgeItemId, referencedByCount: r.referencedByCount, domainType: d.id });
-      }
-    }
-  }
-  const mostCorrectedKnowledge = [...correctedByTarget.values()].sort((a, b) => b.count - a.count).slice(0, 3);
-  const mostReusedKnowledge = [...reusedByKnowledgeId.values()].sort((a, b) => b.referencedByCount - a.referencedByCount).slice(0, 3);
-
-  // "Most frequent gaps" — real resolved+open counts per domain, from the
-  // SAME gap-workflow-engine.js reads Coverage's Gap dimension already uses.
-  const gapsByDomain = domains.map((d) => ({
-    domainType: d.id,
-    count: countResolvedGaps(d.id) + getGapsWithWorkflowState(d.id).length,
-  })).filter((x) => x.count > 0).sort((a, b) => b.count - a.count).slice(0, 3);
-
-  // "Fastest growing domains" — real createdAt-bucketed counts, same
-  // derivation style learning-dashboard.js's "Knowledge Growth" already uses
-  // and documents the limits of (not a true time series, a live derivation).
-  const allKnowledge = safeList(knowledgeList, {});
-  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  const growthByDomain = new Map();
-  for (const item of allKnowledge) {
-    const t = new Date(item.createdAt || 0).getTime();
-    if (Number.isNaN(t) || t < sevenDaysAgo) continue;
-    growthByDomain.set(item.domainType, (growthByDomain.get(item.domainType) || 0) + 1);
-  }
-  const fastestGrowingDomains = [...growthByDomain.entries()]
-    .map(([domainType, count]) => ({ domainType, count }))
-    .sort((a, b) => b.count - a.count).slice(0, 3);
-
-  // Trends — a real week-over-week comparison of dated Learning Events.
-  const allEvents = listLearningEvents({});
-  const events = allEvents.ok ? allEvents.data : [];
-  function trendFor(kind) {
-    const now = Date.now();
-    const oneWeek = 7 * 24 * 60 * 60 * 1000;
-    const inWindow = (e, from, to) => { const t = new Date(e.observedAt).getTime(); return t >= from && t < to; };
-    const thisWeek = events.filter((e) => (!kind || e.kind === kind) && inWindow(e, now - oneWeek, now)).length;
-    const lastWeek = events.filter((e) => (!kind || e.kind === kind) && inWindow(e, now - 2 * oneWeek, now - oneWeek)).length;
-    const direction = thisWeek > lastWeek ? 'naik' : thisWeek < lastWeek ? 'turun' : 'stabil';
-    return { thisWeek, lastWeek, direction };
-  }
-  const learningTrend = trendFor(null);
-  const correctionTrend = trendFor(LEARNING_KIND.CORRECTION);
-  const knowledgeQualityTrendReport = computeCoverageReport();
-
-  return Object.freeze({
-    mostCorrectedKnowledge, mostReusedKnowledge, gapsByDomain, fastestGrowingDomains,
-    learningTrend, correctionTrend, knowledgeCoveragePct: knowledgeQualityTrendReport.data.knowledgeCoverage.pct,
-  });
-}
-
-/** "Apa yang harus saya lakukan selanjutnya?" — deterministic: names the
- *  single largest real attention bucket, never a fabricated ranking or an
- *  AI suggestion. Honest zero-state when nothing needs a human. */
-function computeNextAction(attention) {
-  if (attention.total === 0) return 'Tidak ada yang perlu tindakan Anda saat ini — semua beres.';
-  const buckets = [
-    { count: attention.needsAttentionImports, text: `${attention.needsAttentionImports} dokumen menunggu tinjauan Anda di Documents.` },
-    { count: attention.flaggedGaps, text: `${attention.flaggedGaps} dokumen yang hilang telah ditandai untuk diunggah di Documents.` },
-    { count: attention.knowledgeReview, text: `${attention.knowledgeReview} pengetahuan menunggu review — buka Settings → Knowledge Center.` },
-    { count: attention.pendingOverrides, text: `${attention.pendingOverrides} override profil menunggu persetujuan di NOR.` },
-  ].filter((b) => b.count > 0).sort((a, b) => b.count - a.count);
-  return buckets[0].text;
-}
-
-/** Phase 3, Part 8 — this briefing used to report "0 koreksi tercatat" as a
- *  flat fact. It was not a fact: the Correction Log has no writer with a
- *  caller, so that number was structurally incapable of ever being anything but
- *  zero. An executive reading it would conclude the organization makes no
- *  corrections. What it actually means is that corrections cannot yet be made.
- *  Those are very different sentences, and only one of them is true. */
-function correctionsLabel(total) {
-  return total === 0
-    ? `koreksi tercatat — ${dormantNote('correction-log')}`
-    : 'koreksi tercatat';
-}
-
+/** Phase 2, Stage 1 (Prompt -> Generate Foundation) dead-code verification
+ *  — this is the second, final pass over the five-card Executive Briefing
+ *  (today/running/attention/learned/executive learning) this stage's own
+ *  Home rewrite stopped calling. computeTodaySummary/computeRunningCount/
+ *  computeAttention/computeLearnedSummary/computeExecutiveLearning/
+ *  computeNextAction (and the now-solely-theirs helper todayISODate) were
+ *  first kept-but-uncalled, per this stage's own "do not delete living
+ *  code" rule, until their production-caller status could be verified
+ *  directly rather than assumed. That verification: a repo-wide grep for
+ *  each function's name found matches in exactly ONE file (this one), and
+ *  within this file each name appeared on exactly its own definition
+ *  line — no call site anywhere, including from each other (computeAttention
+ *  was never called, so even computeNextAction's own dependency chain was
+ *  already fully dead). None are exported. They served no other screen or
+ *  runtime flow — the Executive Briefing card they computed for was Home's
+ *  only caller, and Home no longer has one. Deleted here, along with every
+ *  import that only these six functions kept alive (see the import
+ *  section's own matching comment above for that list) — safeList is the
+ *  one helper from this old section kept, because Technical Diagnostics
+ *  (below) still calls it. */
 function renderDashboard() {
-  const today = computeTodaySummary();
-  const running = computeRunningCount();
-  const attention = computeAttention();
-  const learned = computeLearnedSummary();
-  const executiveLearning = computeExecutiveLearning();
-  const nextAction = computeNextAction(attention);
-  const quickActions = computeQuickActions(attention);
-
   return `
     <div class="sic-content">
-      <div class="sic-page-head">
-        <div>
-          <div class="sic-page-crumb">SARPRAS INTELLIGENCE</div>
-          <h1 class="sic-page-title">Home</h1>
-          <p class="sic-page-lede">Apa yang ingin Anda lakukan hari ini?</p>
-        </div>
-      </div>
-
-      ${renderSearchBar()}
-      ${renderQuickActions(quickActions)}
       ${renderConversationEntry()}
-
-      <div class="sic-card">
-        <div class="sic-card-head"><div class="sic-card-h-title">Apa yang terjadi hari ini?</div></div>
-        <ul class="sic-brief-list">
-          <li><span class="sic-brief-count">${today.uploadedToday}</span><span class="sic-brief-label">dokumen diunggah hari ini</span></li>
-          <li><span class="sic-brief-count">${today.archivedToday}</span><span class="sic-brief-label">dokumen diarsipkan hari ini</span></li>
-          <li><span class="sic-brief-count">${today.knowledgeToday}</span><span class="sic-brief-label">pengetahuan baru dipelajari hari ini</span></li>
-        </ul>
-      </div>
-
-      <div class="sic-card">
-        <div class="sic-card-head"><div class="sic-card-h-title">Apa yang sedang berjalan?</div></div>
-        <ul class="sic-brief-list">
-          <li><span class="sic-brief-count">${running}</span><span class="sic-brief-label">dokumen sedang diproses otomatis</span></li>
-        </ul>
-      </div>
-
-      <div class="sic-card">
-        <div class="sic-card-head"><div class="sic-card-h-title">Apa yang butuh perhatian?</div></div>
-        <ul class="sic-brief-list">
-          <li><span class="sic-brief-count">${attention.total}</span><span class="sic-brief-label">total memerlukan tindakan Anda</span></li>
-          ${attention.needsAttentionImports ? `<li><span class="sic-brief-count">${attention.needsAttentionImports}</span><span class="sic-brief-label">dokumen di Documents</span></li>` : ''}
-          ${attention.flaggedGaps ? `<li><span class="sic-brief-count">${attention.flaggedGaps}</span><span class="sic-brief-label">dokumen hilang ditandai di Documents</span></li>` : ''}
-          ${attention.knowledgeReview ? `<li><span class="sic-brief-count">${attention.knowledgeReview}</span><span class="sic-brief-label">pengetahuan menunggu tinjauan (Settings → Knowledge Center)</span></li>` : ''}
-          ${attention.pendingOverrides ? `<li><span class="sic-brief-count">${attention.pendingOverrides}</span><span class="sic-brief-label">override profil di NOR</span></li>` : ''}
-        </ul>
-      </div>
-
-      <div class="sic-card">
-        <div class="sic-card-head"><div class="sic-card-h-title">Apa yang telah dipelajari platform?</div></div>
-        <ul class="sic-brief-list">
-          <li><span class="sic-brief-count">${learned.datasetsImported}</span><span class="sic-brief-label">dataset diimpor</span></li>
-          <li><span class="sic-brief-count">${learned.knowledgeCreated}</span><span class="sic-brief-label">pengetahuan dibuat dari dokumen</span></li>
-          <li><span class="sic-brief-count">${learned.patternDiscoveries}</span><span class="sic-brief-label">pola baru ditemukan</span></li>
-          <li><span class="sic-brief-count">${learned.totalCorrections}</span><span class="sic-brief-label">${esc(correctionsLabel(learned.totalCorrections))}</span></li>
-        </ul>
-      </div>
-
-      <div class="sic-card">
-        <div class="sic-card-head"><div class="sic-card-h-title">Wawasan Pembelajaran (Executive Learning)</div></div>
-        <ul class="sic-brief-list">
-          <li><span class="sic-brief-count">${executiveLearning.knowledgeCoveragePct}%</span><span class="sic-brief-label">cakupan pengetahuan (tren minggu ini: ${executiveLearning.correctionTrend.thisWeek} koreksi, ${esc(executiveLearning.correctionTrend.direction)} dari minggu lalu)</span></li>
-          <li><span class="sic-brief-count">${executiveLearning.learningTrend.thisWeek}</span><span class="sic-brief-label">peristiwa pembelajaran minggu ini (${esc(executiveLearning.learningTrend.direction)} dari ${executiveLearning.learningTrend.lastWeek} minggu lalu)</span></li>
-        </ul>
-        ${executiveLearning.mostCorrectedKnowledge.length ? `
-        <div class="sic-brief-sub">Paling sering dikoreksi</div>
-        <ul class="sic-brief-list">
-          ${executiveLearning.mostCorrectedKnowledge.map((x) => `<li><span class="sic-brief-count">${x.count}×</span><span class="sic-brief-label">${esc(x.key)} (${esc(x.domainType)})</span></li>`).join('')}
-        </ul>` : ''}
-        ${executiveLearning.mostReusedKnowledge.length ? `
-        <div class="sic-brief-sub">Paling sering digunakan ulang</div>
-        <ul class="sic-brief-list">
-          ${executiveLearning.mostReusedKnowledge.map((x) => `<li><span class="sic-brief-count">${x.referencedByCount}×</span><span class="sic-brief-label">${esc(x.knowledgeItemId)}</span></li>`).join('')}
-        </ul>` : ''}
-        ${executiveLearning.gapsByDomain.length ? `
-        <div class="sic-brief-sub">Domain dengan gap terbanyak</div>
-        <ul class="sic-brief-list">
-          ${executiveLearning.gapsByDomain.map((x) => `<li><span class="sic-brief-count">${x.count}</span><span class="sic-brief-label">${esc(x.domainType)}</span></li>`).join('')}
-        </ul>` : ''}
-        ${executiveLearning.fastestGrowingDomains.length ? `
-        <div class="sic-brief-sub">Domain tumbuh tercepat (7 hari terakhir)</div>
-        <ul class="sic-brief-list">
-          ${executiveLearning.fastestGrowingDomains.map((x) => `<li><span class="sic-brief-count">${x.count}</span><span class="sic-brief-label">${esc(x.domainType)}</span></li>`).join('')}
-        </ul>` : ''}
-        ${!executiveLearning.mostCorrectedKnowledge.length && !executiveLearning.mostReusedKnowledge.length && !executiveLearning.gapsByDomain.length && !executiveLearning.fastestGrowingDomains.length
-          ? '<p class="wlk-page-lede" style="margin-top:0;">Belum cukup aktivitas untuk menampilkan wawasan lebih lanjut — boleh jujur menunjukkan ini.</p>' : ''}
-      </div>
-
-      <div class="sic-card sic-card--next">
-        <div class="sic-card-head"><div class="sic-card-h-title">Apa yang harus saya lakukan selanjutnya?</div></div>
-        <p class="sic-next-action">${esc(nextAction)}</p>
-      </div>
-
+      ${renderSecondaryNav()}
       ${isDeveloperMode() ? renderPipelineTrace() : ''}
       ${isDeveloperMode() ? renderTechnicalDiagnostics() : ''}
+    </div>`;
+}
+
+/** The one deliberately quiet remainder of navigation — plain text links,
+ *  not buttons, not cards, so Archive/Knowledge/Learning/Settings stay
+ *  reachable without Home becoming a second dashboard. */
+function renderSecondaryNav() {
+  const links = [
+    { id: 'archive', label: 'Arsip' },
+    { id: 'knowledge', label: 'Pengetahuan' },
+    { id: 'learning', label: 'Pembelajaran' },
+    { id: 'settings', label: 'Pengaturan' },
+  ];
+  return `
+    <div class="sic-secondary-nav">
+      ${links.map((l) => `<button class="sic-secondary-nav-link" data-act="sic-nav" data-id="${esc(l.id)}" type="button">${esc(l.label)}</button>`).join('')}
     </div>`;
 }
 

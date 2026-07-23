@@ -127,23 +127,33 @@ console.log('\n[Part 3 — genuinely unrecognizable input gets CLARIFICATION, ne
   check('a genuine clarifying question is shown instead', text.includes('?') || text.includes('informasi'));
 }
 
-console.log('\n[Part 5 — backward compatibility: existing quick actions/search still work]');
+console.log('\n[Part 5 — Phase 2, Stage 1: Home is prompt-first, not a dashboard]');
 {
+  await page.evaluate((id) => window.__setScreen(id), 'dashboard');
+  await new Promise((r) => setTimeout(r, 150));
   bootErrors.length = 0;
   const html = await page.evaluate(() => window.__hostHTML());
-  check('the "Buat NOR" quick action button still exists', html.includes('Buat NOR'));
-  check('the "Unggah Dokumen" quick action button still exists', html.includes('Unggah Dokumen'));
-  const searchInputExists = await page.evaluate(() => !!document.querySelector('#host [data-act="sic-search-input"]'));
-  check('the search bar still exists, untouched', searchInputExists);
-  const quickActionBtn = await page.evaluate(() => {
-    const btn = [...document.querySelectorAll('#host [data-act="sic-nav"]')].find((b) => b.textContent.includes('Buat NOR'));
+  check('the old "Buat NOR" quick action button is GONE', !html.includes('sic-quick-action'));
+  check('the old "Unggah Dokumen" quick action button is GONE', !/data-act="sic-nav" data-id="archive"[^>]*>Unggah Dokumen/.test(html));
+  const oldSearchInputExists = await page.evaluate(() => !!document.querySelector('#host [data-act="sic-search-input"]'));
+  check('the old standalone search input is GONE (the prompt field is the one entry point)', !oldSearchInputExists);
+  const promptIsFirst = await page.evaluate(() => {
+    const content = document.querySelector('#host .sic-content');
+    return !!content && content.firstElementChild && content.firstElementChild.classList.contains('sic-card--conversation');
+  });
+  check('the prompt card is the first element on Home', promptIsFirst);
+  // The secondary nav row replaces quick actions/search as the one way to
+  // reach Archive/Knowledge/Learning/Settings from Home — still real
+  // navigation, just not a second dashboard.
+  const secondaryNavBtn = await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('#host [data-act="sic-nav"]')].find((b) => b.textContent.trim() === 'Pengetahuan');
     if (btn) btn.click();
     return !!btn;
   });
-  check('clicking "Buat NOR" still navigates to the NOR Center screen', quickActionBtn);
+  check('the secondary nav\'s "Pengetahuan" link exists and is clickable', secondaryNavBtn);
   await new Promise((r) => setTimeout(r, 300));
-  const norScreenHtml = await page.evaluate(() => window.__hostHTML());
-  check('NOR Center screen mounted with zero fatal errors', !bootErrors.some((e) => FATAL_PATTERN.test(e)) && norScreenHtml.length > 200);
+  const knowledgeScreenHtml = await page.evaluate(() => window.__hostHTML());
+  check('Knowledge Center screen mounted with zero fatal errors', !bootErrors.some((e) => FATAL_PATTERN.test(e)) && knowledgeScreenHtml.length > 200);
 }
 
 console.log('\n[Part 6 — Developer Pipeline Viewer shows the full trace]');

@@ -54,10 +54,14 @@ await page.evaluate(() => window.__mount());
 check('outer shell mounts with zero fatal boot errors', !bootErrors.some((e) => FATAL_PATTERN.test(e)));
 
 const dashboardHtml = await page.evaluate(() => window.__hostHTML());
-// Sprint 0 (Presentation Truth) — the Dashboard is now an Executive
-// Briefing by default (Normal Mode); the old static roadmap only renders
-// under Developer Mode (see below), never unconditionally again.
-check('Dashboard renders the Executive Briefing (Normal Mode default)', dashboardHtml.includes('sic-brief-list') && !dashboardHtml.includes('sic-roadmap'));
+// Phase 2, Stage 1 (Prompt -> Generate Foundation) superseded Sprint 0
+// (Presentation Truth)'s "Dashboard is an Executive Briefing by default"
+// premise: Home is prompt-first now — no dashboard, no statistics, ever,
+// even in Normal Mode (the old sic-brief-list Executive Briefing card and
+// the even-older sic-roadmap are both gone from Home; Developer Mode's
+// Technical Diagnostics, checked further below, is the only place
+// anything roadmap/diagnostics-shaped still renders).
+check('Home renders the prompt-first Conversation entry, never a dashboard/briefing card', dashboardHtml.includes('sic-card--conversation') && !dashboardHtml.includes('sic-brief-list') && !dashboardHtml.includes('sic-roadmap'));
 
 for (const screenId of ['nor', 'archive', 'knowledge', 'learning']) {
   bootErrors.length = 0;

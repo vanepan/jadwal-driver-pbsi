@@ -83,16 +83,17 @@
 .sic-brief-list li:first-child{border-top:none;}
 .sic-brief-count{font-family:var(--font-display);font-weight:800;font-size:20px;color:var(--accent);min-width:2ch;}
 .sic-brief-label{font-size:13px;color:var(--text-dim);}
-.sic-card--next{border-color:var(--c-blue);}
 .sic-next-action{font-size:14px;color:var(--text);line-height:1.55;margin:0;}
 
-/* ── Home — Part 5 (Search) / Part 6 (Action-first) / Part 9 (Conversation),
-   Experience Architecture phase. Search sits above everything else on
-   purpose (Part 5: "navigation becomes secondary, search becomes
-   primary"); quick actions come right after (Part 6); the Conversation
-   entry gets its own card, same visual weight as the Executive Briefing
-   cards below it — a first-class entry point, not an afterthought. ────── */
-.sic-search{max-width:640px;margin-top:20px;}
+/* ── Home — Phase 2, Stage 1 (Prompt -> Generate Foundation). Was Part 5
+   (Search) / Part 6 (Action-first) / Part 9 (Conversation), Experience
+   Architecture phase: a standalone search bar, quick-action buttons, and a
+   4th-position Conversation card. Home is now prompt-first — the
+   Conversation card's own input/button styling (sic-search-row/
+   sic-search-input) is reused as the one prompt field; sic-search-results
+   is reused too (the prompt can still route to Search — see
+   renderSearchResults()). The old standalone search wrapper and quick
+   actions are gone with their UI. ────── */
 .sic-search-row{display:flex;gap:8px;}
 .sic-search-input{
   flex:1;font-family:var(--font-sans);font-size:14px;color:var(--text);
@@ -102,29 +103,19 @@
 .sic-search-input:focus-visible{outline:2px solid var(--c-blue);outline-offset:1px;}
 .sic-search-results{margin-top:14px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 20px;}
 
-.sic-quick-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px;max-width:640px;}
-.sic-quick-action{
-  appearance:none;cursor:pointer;font-family:var(--font-sans);font-size:13.5px;font-weight:700;
-  color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:12px;
-  padding:11px 16px;
-}
-.sic-quick-action:hover{border-color:var(--accent);color:var(--accent);}
-
 .sic-card--conversation{border-color:var(--accent);}
 .sic-brief-sub{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--text-faint);margin:14px 0 6px;}
 .sic-brief-sub:first-child{margin-top:0;}
 .sic-conv-result{margin-top:14px;}
 
-/* Phase 12.8.x, Sprint 1 — "Buka Draf Sekarang" promoted from a ghost-
-   styled afterthought to the most visually prominent thing shown right
-   after intent detection. Still one deliberate click (Sprint 11.10's own
-   Q&A-first default is unchanged) — this is presentation only. */
-.sic-draft-now-card{
-  margin:10px 0 16px;padding:14px 16px;border:1px solid var(--c-blue, var(--accent));border-radius:8px;
-  background:var(--c-blue-weak, rgba(59,91,169,.08));display:flex;align-items:center;justify-content:space-between;
-  gap:12px;flex-wrap:wrap;
-}
-.sic-draft-now-lede{font-size:13.5px;color:var(--text);margin:0;flex:1;min-width:200px;}
+/* Phase 2, Stage 1 (Prompt -> Generate Foundation) — Home became prompt-
+   first: no dashboard, no statistics. This is the one deliberately quiet
+   remainder of navigation, so Archive/Knowledge/Learning/Settings stay
+   reachable without becoming a second dashboard — plain text links, not
+   buttons, not cards. */
+.sic-secondary-nav{display:flex;flex-wrap:wrap;gap:18px;margin-top:32px;padding-top:16px;border-top:1px solid var(--border);max-width:640px;}
+.sic-secondary-nav-link{appearance:none;cursor:pointer;font-family:var(--font-sans);font-size:13px;color:var(--text-dim);background:none;border:none;padding:0;text-decoration:underline;text-underline-offset:3px;}
+.sic-secondary-nav-link:hover{color:var(--accent);}
 
 @media (max-width: 640px) {
   .sic-page-title{font-size:24px;}

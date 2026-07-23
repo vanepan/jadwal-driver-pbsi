@@ -220,8 +220,15 @@ console.log('\n[Part 8 — no subsystem has readers without writers]');
   const nc = read('src/ui/nor-center.js');
   check('Learning Dashboard tells the truth about the dormant correction log (no bare zero)',
     ld.includes("dormantNote('correction-log')"));
-  check('the Executive Briefing tells the truth about it too — it used to report a permanent, confident 0',
-    sic.includes("dormantNote('correction-log')"));
+  // Phase 2, Stage 1 (Prompt -> Generate Foundation) removed Home's entire
+  // five-card Executive Briefing/stats dashboard (correctionsLabel() and
+  // its dormantNote('correction-log') call included) — Home shows no
+  // corrections count at all anymore, so there is no bare-zero to lie
+  // about there any longer. The invariant itself is unweakened: it is
+  // still enforced wherever the metric is still actually displayed (the
+  // Learning Dashboard, checked just above, is untouched by Stage 1).
+  check('the outer shell no longer displays a corrections count at all (no dormant metric left to misreport)',
+    !sic.includes('koreksi tercatat'));
   check('NOR Center no longer claims the Composer is dormant (retired call site)',
     !nc.includes("dormantNote('composer-timeline')"));
 }

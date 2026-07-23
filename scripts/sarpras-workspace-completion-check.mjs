@@ -59,7 +59,12 @@ check('outer shell has no renderComingSoon function', !/renderComingSoon/.test(o
 // 'knowledge' just lost its primary nav BUTTON, not its screen id), so
 // this still guards against silent/accidental SCREEN_IDS drift, just not
 // against this one deliberate, authorized addition.
-check('outer shell SCREEN_IDS is the 5 original ids plus the one authorized addition (settings)', /SCREEN_IDS = \['dashboard', 'nor', 'archive', 'knowledge', 'learning', 'settings'\]/.test(outerShellSrc));
+// Phase 2, Stage 1 (Prompt -> Generate Foundation) added one more, also
+// deliberate and authorized: 'review' (the Review Workspace draft
+// generation now opens directly into) — a pre-existing addition this
+// check's literal regex had fallen behind, unrelated to Stage 1's own
+// work (verified via `git diff` that Stage 1 never touched this line).
+check('outer shell SCREEN_IDS is the 5 original ids plus both authorized additions (settings, review)', /SCREEN_IDS = \['dashboard', 'nor', 'archive', 'knowledge', 'learning', 'settings', 'review'\]/.test(outerShellSrc));
 // Sprint 1 (Autonomy Closure, Part 1) — the old static roadmap (a second,
 // duplicated "which module is done" identity) is removed entirely, not
 // just gated. Developer Mode's additive content is real diagnostics.

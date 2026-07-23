@@ -1,16 +1,36 @@
 /* home-generate-live-preview-check.mjs — Sprint 11.3 (Document-first
    Experience), Requirement 1: "Generate Draft immediately opens Live
-   Preview, not metadata."
+   Preview, not metadata." Re-targeted for Phase 2, Stage 1 (Prompt ->
+   Generate Foundation).
 
    Real browser, real DOM click flow, reusing sarpras-workspace-
    harness.html. Drives the Home screen's OWN Conversation entry point
    (homeState/sic-conv-* — a SEPARATE call site from NOR Center's Generate
-   tab, see nor-center-generate-redirect-check.mjs for that one) through a
-   real CREATE_NOR utterance end to end — Conversation -> Questions ->
-   ready -> "Susun NOR" — and proves the SAME navigation fix applies here
-   too: composeApprovedNor succeeding must land the human directly on the
-   Live Document Workspace showing the real rendered NOR, never leave them
-   on the Home dashboard to go find their new draft manually.
+   tab, see nor-center-generate-redirect-check.mjs for that one).
+
+   Stage 1 made Draft Generation begin immediately once a Conversation
+   starts (sarpras-intelligence-center.js#attemptGenerateDraft), removing
+   both the guided Q&A fact-answering form (sic-conv-fact-input /
+   sic-conv-continue) and the two compose buttons this file used to drive
+   ("Susun NOR" once ready, the Sprint 11.10 opt-in "Susun Draf Sekarang"
+   for an early/incomplete draft) — there is no longer a ready-vs-active
+   distinction a human ever acts on: composeApprovedNor(..., {
+   allowIncomplete: true }) now runs on the very first submission
+   regardless of how many facts the utterance itself carried. That
+   collapses this file's old two-scenario shape (full answers vs. one-of-
+   five) into a single flow — verified directly (see
+   src/intake/problem-parser.js#extractFacts) that 'business_trip'
+   extracts only `type` from the utterance, never `destination`, so no
+   utterance phrasing can pre-fill a fact the old form used to collect by
+   hand; every fact besides `type` is therefore genuinely unknown at
+   generation time in this flow today, on purpose.
+
+   What THIS file still proves, that sarpras-home-experience-check.mjs's
+   own Conversation check does not go looking for as precisely: the
+   destination screen is the actual rendered Live Document Preview
+   (rw-doc / "Nota Organisasi" / rw-editable) — not just "some screen that
+   isn't dashboard" — and every unresolved fact renders as the same honest
+   placeholder, never fabricated content.
 
    Screen visibility is checked precisely via each screen's own
    `[data-sic-screen]` element's `style.display` (sarpras-intelligence-
@@ -58,7 +78,7 @@ await page.waitForFunction('window.__ready === true', { timeout: 15000 });
 await page.evaluate(() => window.__mount());
 await new Promise((r) => { setTimeout(r, 500); });
 
-console.log('\n[Home — real Conversation, real browser, ends on the Live Document Preview]');
+console.log('\n[Home — real Conversation, real browser, one submission lands directly on the Live Document Preview]');
 
 const seeded = await page.evaluate(() => window.__seedNorCompositionKnowledge());
 check('real Approved structural+pattern Knowledge seeded for this run', seeded === true);
@@ -69,92 +89,24 @@ await page.evaluate(() => {
   input.dispatchEvent(new Event('input', { bubbles: true }));
 });
 await page.evaluate(() => { document.querySelector('[data-act="sic-conv-start"]')?.click(); });
-await new Promise((r) => { setTimeout(r, 300); });
-
-let html = await page.evaluate(() => window.__hostHTML());
-check('a real Conversation result renders on Home, with a real answerable form', html.includes('sic-conv-fact-input') && html.includes('sic-conv-continue'));
-
-const ANSWERS = { destination: 'Bandung', traveler: 'Unit Engineering', departureDate: '2026-08-01', returnDate: '2026-08-03', budget: '5000000' };
-await page.evaluate((answers) => {
-  for (const [field, value] of Object.entries(answers)) {
-    const input = document.querySelector(`[data-act="sic-conv-fact-input"][data-field="${field}"]`);
-    if (input) { input.value = value; input.dispatchEvent(new Event('input', { bubbles: true })); }
-  }
-}, ANSWERS);
-await page.evaluate(() => { document.querySelector('[data-act="sic-conv-continue"]')?.click(); });
-await new Promise((r) => { setTimeout(r, 300); });
-
-html = await page.evaluate(() => window.__hostHTML());
-check('the Conversation reached state:ready — "Susun NOR" button is now visible', html.includes('sic-compose-nor') && html.includes('Susun NOR'));
-
-await page.evaluate(() => { document.querySelector('[data-act="sic-compose-nor"]')?.click(); });
 await new Promise((r) => { setTimeout(r, 500); }); // real dynamic import() of review-workspace.js on its first visit
 
-html = await page.evaluate(() => window.__hostHTML());
+const html = await page.evaluate(() => window.__hostHTML());
+check('no intermediate fact-answering form is ever shown — generation began immediately, not gated on a "Susun NOR"/"Susun Draf Sekarang" click', !html.includes('sic-conv-fact-input') && !html.includes('sic-compose-nor'));
+
 const screenVisibility = await page.evaluate(() => ({
   dashboard: document.querySelector('[data-sic-screen="dashboard"]')?.style.display,
   review: document.querySelector('[data-sic-screen="review"]')?.style.display,
 }));
 check('composeApprovedNor was actually called and succeeded (no error message shown)', !html.includes('sic-next-action">Error'));
-check('a successful compose navigates AWAY from the Home dashboard (its screen is now hidden)', screenVisibility.dashboard === 'none');
+check('the single submission navigates AWAY from the Home dashboard (its screen is now hidden)', screenVisibility.dashboard === 'none');
 check('the Review Workspace screen is now the one actually visible', screenVisibility.review === '');
 
 const reviewHtml = await page.evaluate(() => document.querySelector('[data-sic-screen="review"]').innerHTML);
 check('lands directly on the Live Document Preview (the rendered NOR itself), never a bare list', reviewHtml.includes('rw-doc') && reviewHtml.includes('Nota Organisasi'));
 check('the new document is genuinely OPEN, not just a list the human would still have to click into', reviewHtml.includes('rw-editable'));
+check('a genuinely unknown fact (the utterance only carried the NOR type, never a destination — see extractFacts note above) renders the same honest placeholder every other empty field uses, never a fabricated value', reviewHtml.includes('Klik untuk mengisi') || reviewHtml.includes('rw-editable--empty'));
 check('zero fatal module/render errors across the whole flow', !bootErrors.some((e) => FATAL_PATTERN.test(e)) || (console.log(bootErrors), false));
-
-/* ══════════════════════════════════════════════════════════════════════
-   Sprint 11.10 (Product Architecture Gap Closure) — Fix 6 "Live Preview
-   First": a SECOND, separate conversation, answering only PART of the
-   required facts, then using the NEW "Susun Draf Sekarang" opt-in action
-   instead of finishing the guided Q&A — proves the additive early-compose
-   path is real and reachable end to end in the actual mounted app, not
-   just at the service layer (already proven by problem-solving-
-   integration-check.mjs).
-   ══════════════════════════════════════════════════════════════════════ */
-console.log('\n[Home — Sprint 11.10 "Susun Draf Sekarang": an early, incomplete draft opens Live Preview]');
-
-await page.evaluate(() => {
-  const input = document.querySelector('[data-act="sic-conv-input"]');
-  input.value = 'Buatkan NOR perjalanan dinas.';
-  input.dispatchEvent(new Event('input', { bubbles: true }));
-});
-await page.evaluate(() => { document.querySelector('[data-act="sic-conv-start"]')?.click(); });
-await new Promise((r) => { setTimeout(r, 300); });
-
-let draftHtml = await page.evaluate(() => window.__hostHTML());
-check('the still-ACTIVE conversation (no answers given yet) shows the NEW "Susun Draf Sekarang" action', draftHtml.includes('sic-compose-nor-draft') && draftHtml.includes('Susun Draf Sekarang'));
-check('the regular "Susun NOR" button is correctly NOT shown yet — real facts are still missing', !draftHtml.includes('data-act="sic-compose-nor"'));
-
-// Answer only ONE of the five required facts, then compose the draft
-// early — proving genuinely incomplete data still produces a real Live
-// Preview, never blocked, never fabricated.
-await page.evaluate(() => {
-  const input = document.querySelector('[data-act="sic-conv-fact-input"][data-field="destination"]');
-  if (input) { input.value = 'Bandung'; input.dispatchEvent(new Event('input', { bubbles: true })); }
-});
-await page.evaluate(() => { document.querySelector('[data-act="sic-conv-continue"]')?.click(); });
-await new Promise((r) => { setTimeout(r, 300); });
-
-draftHtml = await page.evaluate(() => window.__hostHTML());
-check('after answering only 1 of 5 facts, the conversation is still ACTIVE, not ready — "Susun Draf Sekarang" is still the only compose action shown', draftHtml.includes('sic-compose-nor-draft') && !draftHtml.includes('data-act="sic-compose-nor"'));
-
-await page.evaluate(() => { document.querySelector('[data-act="sic-compose-nor-draft"]')?.click(); });
-await new Promise((r) => { setTimeout(r, 500); });
-
-const draftScreenVisibility = await page.evaluate(() => ({
-  dashboard: document.querySelector('[data-sic-screen="dashboard"]')?.style.display,
-  review: document.querySelector('[data-sic-screen="review"]')?.style.display,
-}));
-check('composing early (allowIncomplete) succeeds — navigates away from the Home dashboard', draftScreenVisibility.dashboard === 'none');
-check('lands on the real Review Workspace screen, exactly like a normal "Susun NOR"', draftScreenVisibility.review === '');
-
-const earlyReviewHtml = await page.evaluate(() => document.querySelector('[data-sic-screen="review"]').innerHTML);
-check('the early draft renders as a real Live Document, not a bare list or an error', earlyReviewHtml.includes('rw-doc') && earlyReviewHtml.includes('rw-editable'));
-check('the one fact the human DID give (Bandung) is genuinely present in the composed draft', earlyReviewHtml.includes('Bandung'));
-check('a still-missing fact renders as the SAME honest "Klik untuk mengisi…" placeholder every other empty field uses — never {{UNKNOWN}}, never raw JSON', earlyReviewHtml.includes('Klik untuk mengisi') || earlyReviewHtml.includes('rw-editable--empty'));
-check('zero fatal module/render errors across the early-compose flow', !bootErrors.some((e) => FATAL_PATTERN.test(e)) || (console.log(bootErrors), false));
 
 await browser.close();
 server.close();
