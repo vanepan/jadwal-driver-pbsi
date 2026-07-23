@@ -11,7 +11,7 @@
 'use strict';
 
 // Import all modules
-import { APP_NAME, APP_VERSION, RELEASE_NAME } from './config.js';
+import { APP_NAME, APP_VERSION, RELEASE_NAME, getAppEnv } from './config.js';
 import { loadAssignments, saveAssignments, saveOneAssignment, removeOneAssignment, loadRequests, saveRequests, initFirebaseSync, registerDataChangeListener, registerRequestsChangeListener, checkAssignmentSafety, fetchFirebaseData, storeFirebaseData, isFirebaseConfigured, onAuthAvailable, onAuthLost } from './firebase.js';
 // rc.1: persist Dispatch Intelligence history (override logs / recommendations / capacity) to RTDB.
 import { hydrateDispatchIntelligence, initDispatchIntelligencePersistence } from './services/dispatch-intelligence-persistence.js';
@@ -548,6 +548,8 @@ const RAIL_MODULE_BOTTOM_NAV_ACTION = {
   konfigurasi: 'openMoreSheet',
   engineering: 'navEngDashboard',
   sarprasIntelligence: 'openMoreSheet',
+  // Phase 1 — Gudang Foundation: no screens yet, lands on the shared placeholder.
+  gudang: 'openMoreSheet',
 };
 
 /* ── State restoration (v1.20.8, Objective 12) ────────────────────────────
@@ -1024,6 +1026,13 @@ function updatePermissionUI(resetNavActive = false) {
     const v2RailKonfig = document.getElementById('v2RailKonfigurasi');
     if (v2RailKonfig) v2RailKonfig.style.display = adminOnly ? 'flex' : 'none';
 
+    // Gudang (V1.28.0 Phase 1 — Foundation): dev-only, no operational
+    // screens yet — canAccessModule('gudang') resolves to APP_ENV==='development'
+    // BEFORE the admin bypass, so this stays hidden for every production user,
+    // admin included (Phase 1.1 Foundation Hardening, Review 7).
+    const v2RailGudang = document.getElementById('v2RailGudang');
+    if (v2RailGudang) v2RailGudang.style.display = canAccessModule('gudang') ? 'flex' : 'none';
+
     // Administration rail module: RETIRED (v1.14.0) — always hidden.
     const v2RailAdmin = document.getElementById('v2RailAdmin');
     if (v2RailAdmin) v2RailAdmin.style.display = 'none';
@@ -1244,6 +1253,18 @@ const MODULE_DEFS = {
     railId: 'v2RailEngineering', navId: 'v2PanelEngineeringNav',
     title: 'Engineering Operations', subtitle: 'Unit Eksekusi · Bidang Sarpras', crumb: 'ENGINEERING',
     land: () => navEngineering('dashboard', 'v2NavEngDashboard'),
+  },
+  // V1.28.0 Phase 1: Gudang Foundation — dev-only visibility (see
+  // canAccessModule's 'gudang' case, resolved before the admin bypass; Phase
+  // 1.1 Foundation Hardening Review 7). No operational screens exist this
+  // phase, so land() shows the shared "coming soon" placeholder (v1.14.0's
+  // showModulePlaceholder) instead of a dedicated workspace — Phase 1's
+  // brief forbids operational UI/dashboards/CRUD, and reusing this existing,
+  // previously-uncalled function means Gudang adds no new UI mechanism.
+  gudang: {
+    railId: 'v2RailGudang', navId: null,
+    title: 'Gudang', subtitle: 'Fondasi Domain — Fase 1', crumb: 'GUDANG',
+    land: () => navGudang(),
   },
   // V2.0.10: Sarpras Intelligence — embedded native module (same pattern as
   // Petty Cash / Engineering), gated to a single pilot identity via
@@ -1477,6 +1498,16 @@ function canAccessModule(name) {
   // return true`, otherwise every admin (not just the single V2 pilot
   // identity) would gain access.
   if (name === 'sarprasIntelligence') return isV2Enabled(getCurrentUser());
+  // V1.28.0 Phase 1.1 (Foundation Hardening, Review 7) — Gudang has ZERO
+  // operational screens; it must resolve BEFORE the admin bypass below,
+  // exactly like sarprasIntelligence above, so no production user — not even
+  // admin — ever sees it. Visible only to a developer running in
+  // APP_ENV=development, mirroring js/engineering/diagnostics's own dev-only
+  // gate. Doc 2 §03 names Sarpras Admin/Warehouse Staff as Gudang's eventual
+  // audience; that describes the FINISHED product, not a zero-screen
+  // foundation build — showing an empty module to a real admin today would
+  // itself violate Doc 1 Art.II's low-cognitive-load standard.
+  if (name === 'gudang') return getAppEnv() === 'development';
   if (isAdmin()) return true;                        // admin: full access
   switch (name) {
     case 'engineering': return isEngineeringUser();
@@ -2078,6 +2109,20 @@ function showModulePlaceholder(title, message) {
     </div>`;
 }
 
+/* ── MODUL: Gudang (V1.28.0 Phase 1 — Foundation) ──
+   Authorized by: Doc 1 Art.I, Doc 3 Ch.03, Doc 4 Art.II. No operational
+   screens exist this phase (see js/gudang/'s STRICTLY FORBIDDEN scope), so
+   this lands on the shared placeholder exactly like any other "coming soon"
+   menu — the same function every other module would use for an unbuilt
+   screen, not a new mechanism invented for Gudang. */
+function navGudang() {
+  setCrumb('GUDANG', 'Fondasi Domain');
+  showModulePlaceholder(
+    'Gudang',
+    'Dokumen 1–4 telah diratifikasi. Fondasi domain (Movement, Stock, Asset, Search, Audit) sudah aktif di baliknya. Alur kerja operasional (Goods In/Out, Stock Opname, Analytics) menyusul di fase berikutnya.'
+  );
+}
+
 function initV2Rail() {
   // Build the rail element
   const rail = document.createElement('div');
@@ -2152,6 +2197,22 @@ function initV2Rail() {
           <path d="M15.5 7a4.5 4.5 0 0 1-5.9 5.9L4 18.5 5.5 20l5.6-5.6A4.5 4.5 0 0 0 16.7 8.6l-2.6 2.6-2-.5-.5-2 2.6-2.6A4.5 4.5 0 0 0 15.5 7z"/>
         </svg>
         <div class="v2-rail-tooltip" aria-hidden="true">Engineering Operations</div>
+      </div>
+
+      <!-- Gudang — V1.28.0 Phase 1 (Foundation), dev-only (APP_ENV=development);
+           shown by updatePermissionUI() via canAccessModule('gudang'), which
+           resolves before the admin bypass (Phase 1.1 Foundation Hardening,
+           Review 7) — no production user, admin included, ever sees this.
+           No operational screens yet — land() shows the shared "coming soon"
+           placeholder (v1.14.0's showModulePlaceholder). -->
+      <div class="v2-rail-item" id="v2RailGudang"
+           role="button" tabindex="0"
+           aria-label="Gudang" aria-current="false" style="display:none;">
+        <svg class="v2-rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1V9.5z"/>
+        </svg>
+        <div class="v2-rail-tooltip" aria-hidden="true">Gudang</div>
       </div>
 
       <!-- Analytics — admin only; shown by updatePermissionUI() (v1.14.0) -->
@@ -2238,6 +2299,7 @@ function initV2Rail() {
   const railAnalytics = document.getElementById('v2RailAnalytics');
   const railKonfig  = document.getElementById('v2RailKonfigurasi');
   const railEng     = document.getElementById('v2RailEngineering');
+  const railGudang  = document.getElementById('v2RailGudang');
   const railSarpras = document.getElementById('v2RailSarprasIntel');
   const railTheme   = document.getElementById('v2RailThemeBtn');
 
@@ -2253,6 +2315,7 @@ function initV2Rail() {
   railAnalytics?.addEventListener('click', () => setRailModule('analytics'));
   railKonfig?.addEventListener('click', () => setRailModule('konfigurasi'));
   railEng?.addEventListener('click', () => setRailModule('engineering'));
+  railGudang?.addEventListener('click', () => setRailModule('gudang'));
   railSarpras?.addEventListener('click', () => setRailModule('sarprasIntelligence'));
 
   // Mobile (rail hidden <768px): repointed sidebar drawer buttons are the

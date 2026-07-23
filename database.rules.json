@@ -136,6 +136,64 @@
         ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.role === 'engineering_coordinator' || auth.token.role === 'engineering_member'",
         ".write": "auth.token.role === 'admin' || auth.token.role === 'developer'"
       }
+    },
+
+    "gudang": {
+      "items": {
+        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+        "$itemId": {
+          ".write": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+          ".validate": "newData.hasChildren(['itemId', 'name', 'itemType', 'createdAt']) && newData.child('itemId').val() === $itemId"
+        }
+      },
+
+      "movements": {
+        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+        "$movementId": {
+          ".write": "(auth.token.role === 'admin' || auth.token.role === 'developer') && !data.exists()",
+          ".validate": "newData.hasChildren(['movementId', 'itemId', 'type', 'quantityDelta', 'reason', 'actorId', 'createdAt']) && newData.child('movementId').val() === $movementId && newData.child('quantityDelta').isNumber()"
+        }
+      },
+
+      "assets": {
+        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+        "$assetId": {
+          ".write": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+          ".validate": "newData.hasChildren(['assetId', 'itemId', 'identity', 'status', 'createdAt']) && newData.child('assetId').val() === $assetId"
+        }
+      },
+
+      "assetHistory": {
+        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+        "$historyId": {
+          ".write": "(auth.token.role === 'admin' || auth.token.role === 'developer') && !data.exists()",
+          ".validate": "newData.hasChildren(['historyId', 'assetId', 'eventType', 'actorId', 'reason', 'occurredAt']) && newData.child('historyId').val() === $historyId"
+        }
+      },
+
+      "locations": {
+        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+        "$locationId": {
+          ".write": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+          ".validate": "newData.hasChildren(['locationId', 'name', 'createdAt']) && newData.child('locationId').val() === $locationId"
+        }
+      },
+
+      "departments": {
+        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+        "$departmentId": {
+          ".write": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+          ".validate": "newData.hasChildren(['departmentId', 'name', 'createdAt']) && newData.child('departmentId').val() === $departmentId"
+        }
+      },
+
+      "stockProjection": {
+        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+        "$itemId": {
+          ".write": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+          ".validate": "newData.hasChildren(['itemId', 'quantity', 'rebuiltAt', 'consistent']) && newData.child('itemId').val() === $itemId && newData.child('quantity').isNumber()"
+        }
+      }
     }
   }
 }
