@@ -70,12 +70,17 @@ function throws(name, fn) {
 /* ── Part A — Contracts ─────────────────────────────────────────────── */
 console.log('\n[Part A — Contracts]');
 {
+  // Phase 2 (Item Foundation) expanded Item's shape substantially — see
+  // scripts/gudang-item-check.mjs for the full identity/alias/category/
+  // normalization/duplicate-prevention/archive coverage. This Part only
+  // re-confirms the ORIGINAL Phase 1 contract-integrity assertions still
+  // hold against the completed shape.
   check('ITEM_TYPE is exactly {consumable, asset}', Object.keys(ITEM_TYPE).length === 2 && ITEM_TYPE.CONSUMABLE === 'consumable' && ITEM_TYPE.ASSET === 'asset');
-  const item = makeItem({ itemId: 'i1', name: 'Tisu Gulung', itemType: ITEM_TYPE.CONSUMABLE });
+  const item = makeItem({ itemId: 'i1', name: 'Tisu Gulung', itemType: ITEM_TYPE.CONSUMABLE, category: 'atk' });
   check('makeItem() round-trips through isItem()', isItem(item));
   check('makeItem() freezes its result', Object.isFrozen(item));
-  throws('makeItem() throws without itemId', () => makeItem({ name: 'x', itemType: ITEM_TYPE.CONSUMABLE }));
-  throws('makeItem() throws on unknown itemType', () => makeItem({ itemId: 'i2', name: 'x', itemType: 'gadget' }));
+  throws('makeItem() throws without itemId', () => makeItem({ name: 'x', itemType: ITEM_TYPE.CONSUMABLE, category: 'atk' }));
+  throws('makeItem() throws on unknown itemType', () => makeItem({ itemId: 'i2', name: 'x', itemType: 'gadget', category: 'atk' }));
 
   check('MOVEMENT_TYPE is exactly the 7 types Doc 3 Ch.04 names', Object.keys(MOVEMENT_TYPE).length === 7);
   check('MOVEMENT_REASON is exactly the 5 reasons Doc 2 §07/§10 name', Object.keys(MOVEMENT_REASON).length === 5);

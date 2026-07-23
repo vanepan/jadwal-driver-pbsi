@@ -92,7 +92,7 @@ console.log('\n[Part 6 — no unnecessary write permissions anywhere under gudan
 console.log('\n[Part 7 — every gudang/* record path has a shape .validate]');
 {
   const expectations = {
-    items: ['itemId', 'name', 'itemType', 'createdAt'],
+    items: ['itemId', 'name', 'itemType', 'category', 'active', 'normalizedName', 'searchTokens', 'createdAt'],
     movements: ['movementId', 'itemId', 'type', 'quantityDelta', 'reason', 'actorId', 'createdAt'],
     assets: ['assetId', 'itemId', 'identity', 'status', 'createdAt'],
     assetHistory: ['historyId', 'assetId', 'eventType', 'actorId', 'reason', 'occurredAt'],
@@ -143,6 +143,14 @@ console.log('\n[Part 8 — Phase 1.2.1: rules protect invariants, not today\'s e
     if (typeof v !== 'string' || !/hasChildren\(\[/.test(v)) hollowOffenders.push(p);
   }
   check(`every gudang/* .validate still enforces its required-field list via hasChildren([...]) — none was hollowed out${hollowOffenders.length ? ` — FOUND: ${hollowOffenders.join(', ')}` : ''}`, hollowOffenders.length === 0);
+}
+
+console.log('\n[Part 9 — Phase 2 (Item Foundation): itemType is immutable at the database level]');
+{
+  const w = gudang?.items?.$itemId?.['.write'];
+  check('gudang/items/$itemId .write allows create OR update, but only when itemType is unchanged from the stored value',
+    typeof w === 'string' && w.includes('!data.exists()') && w.includes("newData.child('itemType').val() === data.child('itemType').val()"));
+  check('gudang/items/$itemId .write remains role-scoped (admin/developer)', typeof w === 'string' && w.includes('auth.token.role'));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

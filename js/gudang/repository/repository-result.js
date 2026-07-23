@@ -26,6 +26,10 @@ export function failure(code, message) {
 export const REPOSITORY_ERROR = Object.freeze({
   INVALID_INPUT: 'INVALID_INPUT',
   DUPLICATE_ID: 'DUPLICATE_ID',
+  // Phase 2 (Item Foundation, Part 8) — a different item already claims this
+  // normalized name or alias. Distinct from DUPLICATE_ID: the id differs, the
+  // identity resolves to the same place, which Search must never allow.
+  DUPLICATE_IDENTITY: 'DUPLICATE_IDENTITY',
   NOT_FOUND: 'NOT_FOUND',
   READ_FAILED: 'READ_FAILED',
   WRITE_FAILED: 'WRITE_FAILED',

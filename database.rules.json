@@ -142,8 +142,8 @@
       "items": {
         ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
         "$itemId": {
-          ".write": "auth.token.role === 'admin' || auth.token.role === 'developer'",
-          ".validate": "newData.hasChildren(['itemId', 'name', 'itemType', 'createdAt']) && newData.child('itemId').val() === $itemId"
+          ".write": "(auth.token.role === 'admin' || auth.token.role === 'developer') && (!data.exists() || newData.child('itemType').val() === data.child('itemType').val())",
+          ".validate": "newData.hasChildren(['itemId', 'name', 'itemType', 'category', 'active', 'normalizedName', 'searchTokens', 'createdAt']) && newData.child('itemId').val() === $itemId"
         }
       },
 

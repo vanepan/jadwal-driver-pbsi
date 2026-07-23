@@ -201,6 +201,30 @@ console.log('\n[Part 9 — STRICTLY FORBIDDEN Phase 1 workflows do not exist as 
   check(`NO file under js/gudang/ implements a forbidden Phase-1 workflow${offenders.length ? ` — FOUND: ${offenders.join(', ')}` : ''}`, offenders.length === 0);
 }
 
+console.log('\n[Part 9.5 — Phase 2 (Item Foundation): contracts/ and config/ never depend on search/]');
+{
+  // item-contract.js computes normalizedName/normalizedAliases/searchTokens
+  // itself (via contracts/text-normalization.js, a neutral leaf) precisely so
+  // it never needs to import anything under search/ — Search Engine reads
+  // Item, not the other way around (Doc 3 Ch.08; Doc 4 F-11 circular
+  // ownership). config/gudang-categories.js quotes ITEM_TYPE's two string
+  // values literally rather than importing item-contract.js, for the same
+  // reason in the opposite direction.
+  const offenders = [];
+  for (const { rel, code } of GUDANG_FILES) {
+    if (!rel.startsWith('js/gudang/contracts/') && !rel.startsWith('js/gudang/config/')) continue;
+    for (const { target } of importTargets(code)) {
+      const resolved = resolveRelative(rel, target);
+      if (resolved.includes('/gudang/search/')) offenders.push(`${rel} -> ${resolved}`);
+    }
+  }
+  check(`NO contracts/ or config/ file imports anything under search/${offenders.length ? ` — FOUND: ${offenders.join(', ')}` : ''}`, offenders.length === 0);
+
+  const categoriesImportsItemContract = importTargets(byRel.get('js/gudang/config/gudang-categories.js')?.code || '')
+    .some((t) => resolveRelative('js/gudang/config/gudang-categories.js', t.target).includes('item-contract.js'));
+  check('config/gudang-categories.js does NOT import contracts/item-contract.js (one-directional: item-contract -> categories, never the reverse)', !categoriesImportsItemContract);
+}
+
 console.log('\n[Part 10 — BEHAVIOURAL: every js/gudang/ file imports cleanly under plain Node]');
 {
   for (const { rel } of GUDANG_FILES) {

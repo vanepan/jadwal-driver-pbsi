@@ -17,8 +17,11 @@
 
 export * from './config/gudang-domain-registry.js';
 export * from './config/gudang-paths.js';
+export * from './config/gudang-categories.js';
 
+export * from './contracts/text-normalization.js';
 export * from './contracts/item-contract.js';
+export * from './contracts/item-identity-rules.js';
 export * from './contracts/movement-contract.js';
 export * from './contracts/asset-contract.js';
 export * from './contracts/location-contract.js';
@@ -39,4 +42,5 @@ export * from './repository/stock-repository.js';
 export * from './projection/stock-projection-engine.js';
 export * from './audit/audit-view.js';
 export * from './search/search-resolver.js';
+export * from './search/item-keyword-index.js';
 export * from './settings/gudang-settings.js';
