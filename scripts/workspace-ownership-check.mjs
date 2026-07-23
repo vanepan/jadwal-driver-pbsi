@@ -55,8 +55,12 @@ function allSourceFiles(dir) {
   return out;
 }
 
-const V2_FILES = allSourceFiles('js/v2');
-const WORKSPACE_FILES = V2_FILES.filter((f) => f.rel.startsWith('js/v2/workspace/'));
+// workspace/ moved to src/workspace/ during Phase 1 Repository Refoundation
+// — scan both roots (js/v2/ still holds the domains that haven't moved yet,
+// review-workspace.js's approved caller among them) so every assertion below
+// keeps seeing the real graph instead of silently losing sight of workspace/.
+const V2_FILES = [...allSourceFiles('js/v2'), ...allSourceFiles('src')];
+const WORKSPACE_FILES = V2_FILES.filter((f) => f.rel.startsWith('src/workspace/'));
 
 function importTargets(code) {
   const blocks = code.match(/import\s*(?:\{[^}]*\}|[\w*\s,]+)\s*from\s*'[^']*'|^import\s*'[^']*'/gms) || [];
@@ -74,7 +78,7 @@ function resolveRelative(fromRel, target) {
 
 console.log('\n[Part 1 — exactly ONE owner writes the Workspace Repository]');
 {
-  const OWNER = 'js/v2/workspace/services/workspace-service.js';
+  const OWNER = 'src/workspace/services/workspace-service.js';
   const REPO_RE = /workspace\/repository\/workspace-repository\.js$/;
   const writers = [];
   for (const { rel, code } of V2_FILES) {
@@ -96,7 +100,7 @@ console.log('\n[Part 1 — exactly ONE owner writes the Workspace Repository]');
 
 console.log('\n[Part 2 — exactly ONE owner writes the Workspace Timeline Repository]');
 {
-  const OWNER = 'js/v2/workspace/services/workspace-service.js';
+  const OWNER = 'src/workspace/services/workspace-service.js';
   const writers = [];
   for (const { rel, code } of V2_FILES) {
     if (rel === OWNER) continue;
@@ -121,7 +125,7 @@ console.log('\n[Part 3 — workspace/ never imports ui/, conversation/, problem-
   // problem-intelligence/ and problem-solving/ remain forbidden — this
   // sprint did not touch those. ai-foundation/ was deleted (confirmed dead,
   // zero real callers anywhere) during Phase 1 Repository Refoundation.
-  const FORBIDDEN_TREES = ['/v2/ui/', '/conversation/', '/v2/problem-intelligence/', '/v2/problem-solving/'];
+  const FORBIDDEN_TREES = ['/v2/ui/', '/conversation/', '/intake/'];
   const leaks = [];
   for (const { rel, code } of WORKSPACE_FILES) {
     for (const { target } of importTargets(code)) {
@@ -131,44 +135,48 @@ console.log('\n[Part 3 — workspace/ never imports ui/, conversation/, problem-
   }
   check(`workspace/ imports NOTHING from ui/conversation/problem-intelligence/problem-solving/${leaks.length ? ` — FOUND: ${leaks.join(', ')}` : ''}`, leaks.length === 0);
 
-  // organizational-memory/ and document-intelligence/ moved out of js/v2/
-  // (to src/organizational-memory/, src/document-intelligence/) during Phase
-  // 1 Repository Refoundation — their resolved import paths no longer
-  // contain '/v2/' at all, so both the gate below and the allowlist match
-  // on the domain name alone (substring-safe for either the old or new
-  // root) rather than requiring '/v2/' to be present, or this assertion
-  // would silently stop checking workspace's real dependency on either.
-  const ALLOWED_TREES = ['/document-intelligence/', '/v2/knowledge/', '/organizational-memory/', '/v2/learning/', '/v2/body/', '/v2/recognition/', '/v2/reasoning/', '/v2/workspace/'];
+  // organizational-memory/, document-intelligence/, reasoning/, learning/,
+  // and now workspace/ itself moved out of js/v2/ (to src/) during Phase 1
+  // Repository Refoundation — their resolved import paths no longer contain
+  // '/v2/' at all, so both the gate below and the allowlist match on the
+  // domain name alone (substring-safe for either the old or new root)
+  // rather than requiring '/v2/' to be present, or this assertion would
+  // silently stop checking workspace's real dependency on any of them.
+  const ALLOWED_TREES = ['/document-intelligence/', '/v2/knowledge/', '/organizational-memory/', '/learning/', '/v2/body/', '/v2/recognition/', '/reasoning/', '/workspace/'];
   const unexpected = [];
   for (const { rel, code } of WORKSPACE_FILES) {
     for (const { target } of importTargets(code)) {
       const resolved = resolveRelative(rel, target);
-      if (!resolved.includes('/v2/') && !resolved.includes('/organizational-memory/') && !resolved.includes('/document-intelligence/')) continue; // relative sibling files under workspace/ itself, or non-v2/non-moved targets checked elsewhere
+      if (!resolved.includes('/v2/') && !resolved.includes('/organizational-memory/') && !resolved.includes('/document-intelligence/') && !resolved.includes('/reasoning/') && !resolved.includes('/learning/')) continue; // relative sibling files under workspace/ itself, or non-v2/non-moved targets checked elsewhere
       if (!ALLOWED_TREES.some((t) => resolved.includes(t))) unexpected.push(`${rel} -> ${resolved}`);
     }
   }
   check(`workspace/'s only js/v2/ (+ moved src/) imports are the 7 approved trees (+ itself)${unexpected.length ? ` — FOUND: ${unexpected.join(', ')}` : ''}`, unexpected.length === 0);
 }
 
-console.log('\n[Part 4 — nothing OUTSIDE js/v2/workspace/ imports js/v2/workspace/, except ui/review-workspace.js (Sprint 12.8.4\'s one approved caller)]');
+console.log('\n[Part 4 — nothing OUTSIDE workspace/ imports workspace/, except ui/review-workspace.js (Sprint 12.8.4\'s one approved caller)]');
 {
-  const APPROVED_CALLER = 'js/v2/ui/review-workspace.js';
+  const APPROVED_CALLER = 'src/ui/review-workspace.js';
   const offenders = [];
   for (const { rel, code } of V2_FILES) {
-    if (rel.startsWith('js/v2/workspace/') || rel === APPROVED_CALLER) continue;
+    if (rel.startsWith('src/workspace/') || rel === APPROVED_CALLER) continue;
     for (const { target } of importTargets(code)) {
       const resolved = resolveRelative(rel, target);
-      if (resolved.includes('/v2/workspace/')) offenders.push(`${rel} -> ${resolved}`);
+      if (resolved.includes('/workspace/')) offenders.push(`${rel} -> ${resolved}`);
     }
   }
-  check(`no js/v2/* file outside workspace/ or ${APPROVED_CALLER} imports workspace/${offenders.length ? ` — FOUND: ${offenders.join(', ')}` : ''}`, offenders.length === 0);
+  check(`no file outside workspace/ or ${APPROVED_CALLER} imports workspace/${offenders.length ? ` — FOUND: ${offenders.join(', ')}` : ''}`, offenders.length === 0);
 
   const approvedSrc = stripComments(read(APPROVED_CALLER));
-  check(`${APPROVED_CALLER} DOES import workspace/ (it is the approved caller, not a stray)`, /\/v2\/workspace\//.test(approvedSrc) || /\.\.\/workspace\//.test(approvedSrc));
+  check(`${APPROVED_CALLER} DOES import workspace/ (it is the approved caller, not a stray)`, /\/workspace\//.test(approvedSrc));
 
+  // Matched on 'src/workspace/' specifically, NOT a bare '/workspace/'
+  // substring — V1 has its own, wholly unrelated js/workspace/ (the
+  // Executive Command Center's home-router.js/workspace-registry.js),
+  // and a loose match false-positives against it.
   const wideOffenders = [];
   (function walk(rel) {
-    if (rel === 'js/v2') return; // handled above, more precisely
+    if (rel === 'js/v2' || rel === 'src') return; // handled above, more precisely
     for (const entry of fs.readdirSync(path.join(ROOT, rel), { withFileTypes: true })) {
       if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
       const r = `${rel}/${entry.name}`;
@@ -176,21 +184,31 @@ console.log('\n[Part 4 — nothing OUTSIDE js/v2/workspace/ imports js/v2/worksp
       if (!entry.name.endsWith('.js') && !entry.name.endsWith('.mjs')) continue;
       if (r.startsWith('scripts/')) continue; // check scripts legitimately import workspace/ directly
       const code = stripComments(read(r));
-      if (/from\s*'[^']*\/v2\/workspace\//.test(code) || /from\s*"[^"]*\/v2\/workspace\//.test(code)) wideOffenders.push(r);
+      if (/from\s*'[^']*src\/workspace\//.test(code) || /from\s*"[^"]*src\/workspace\//.test(code)) wideOffenders.push(r);
     }
   }('js'));
-  check(`no file anywhere under js/ (outside js/v2/workspace/, ${APPROVED_CALLER}, and scripts/) imports js/v2/workspace/${wideOffenders.length && wideOffenders.length > 1 ? ` — FOUND: ${wideOffenders.join(', ')}` : ''}`, wideOffenders.every((f) => f === APPROVED_CALLER));
+  (function walk(rel) {
+    if (rel === 'src/workspace') return;
+    for (const entry of fs.readdirSync(path.join(ROOT, rel), { withFileTypes: true })) {
+      const r = `${rel}/${entry.name}`;
+      if (entry.isDirectory()) { walk(r); continue; }
+      if (!entry.name.endsWith('.js') && !entry.name.endsWith('.mjs')) continue;
+      const code = stripComments(read(r));
+      if (/from\s*'[^']*src\/workspace\//.test(code) || /from\s*"[^"]*src\/workspace\//.test(code)) wideOffenders.push(r);
+    }
+  }('src'));
+  check(`no file anywhere under js/ or src/ (outside workspace/, ${APPROVED_CALLER}, and scripts/) imports workspace/${wideOffenders.length && wideOffenders.length > 1 ? ` — FOUND: ${wideOffenders.join(', ')}` : ''}`, wideOffenders.every((f) => f === APPROVED_CALLER));
 }
 
 console.log('\n[Part 5 — dormancy-by-omission: workspace/index.js is still a structural no-op]');
 {
-  const indexSrc = stripComments(read('js/v2/workspace/index.js'));
+  const indexSrc = stripComments(read('src/workspace/index.js'));
   check('workspace/index.js imports nothing at all (still a structural no-op)', !/\bimport\b/.test(indexSrc));
 }
 
 console.log('\n[Part 6b — Sprint 2: deterministic entity-text-matcher, pure function, synthetic vocabulary]');
 {
-  const { buildVocabulary, matchEntityMentions } = await import('../js/v2/workspace/context/entity-text-matcher.js');
+  const { buildVocabulary, matchEntityMentions } = await import('../src/workspace/context/entity-text-matcher.js');
   const vocabulary = buildVocabulary({
     body: { entities: [{ id: 'vehicle:B-1234-XYZ', entityType: 'vehicle', attributes: { plateNumber: 'B 1234 XYZ', name: 'Toyota Avanza' } }] },
     organizationalMemory: { commonTerminology: [{ value: 'Nota Organisasi', supportCount: 5 }, { value: 'ab' /* too short, must be filtered */ }] },
@@ -212,9 +230,9 @@ console.log('\n[Part 6 — behavioural: a real end-to-end flow in plain Node]');
 {
   try {
     const { createDocument } = await import('../src/document-intelligence/composer/composer-store.js');
-    const { isRoundTripSafe } = await import('../js/v2/workspace/adapters/block-adapter.js');
-    const ws = await import('../js/v2/workspace/services/workspace-service.js');
-    const { makeLiveSuggestion } = await import('../js/v2/workspace/contracts/live-suggestion-contract.js');
+    const { isRoundTripSafe } = await import('../src/workspace/adapters/block-adapter.js');
+    const ws = await import('../src/workspace/services/workspace-service.js');
+    const { makeLiveSuggestion } = await import('../src/workspace/contracts/live-suggestion-contract.js');
 
     // Mirrors ui/review-workspace.js's own explicit opt-in — see that
     // file's mountReviewWorkspace() comment for why NullRepository is the

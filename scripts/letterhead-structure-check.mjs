@@ -25,8 +25,8 @@ function check(name, cond) { if (cond) { pass++; console.log(`  ✓ ${name}`); }
 console.log('\n[Part 1 — composeNorDocument(), plain Node: real structured fields, never fabricated]');
 {
   const { composeNorDocument } = await import('../src/document-intelligence/nor/nor-composer.js');
-  const { setKnowledgeBackend, ingest, promoteKnowledge } = await import('../js/v2/knowledge/services/knowledge-service.js');
-  const { generateKnowledgeId } = await import('../js/v2/knowledge/contracts/identity-contract.js');
+  const { setKnowledgeBackend, ingest, promoteKnowledge } = await import('../src/knowledge/services/knowledge-service.js');
+  const { generateKnowledgeId } = await import('../src/knowledge/contracts/identity-contract.js');
   setKnowledgeBackend('memory');
 
   const now = new Date().toISOString();
@@ -80,7 +80,7 @@ console.log('\n[Part 2 — real browser: logo, editable recipients/cc, editable 
 
   const result = await page.evaluate(async () => {
     const { createDocument } = await import('/src/document-intelligence/composer/composer-store.js');
-    const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
+    const { mountReviewWorkspace } = await import('/src/ui/review-workspace.js');
 
     localStorage.setItem('pbsi_current_user', JSON.stringify({ username: 'evan', role: 'admin' }));
 
@@ -178,7 +178,7 @@ console.log('\n[Part 3 — layout-knob: adjust logo/margins, saves immediately i
 
   const result = await page.evaluate(async () => {
     const { createDocument } = await import('/src/document-intelligence/composer/composer-store.js');
-    const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
+    const { mountReviewWorkspace } = await import('/src/ui/review-workspace.js');
     const { getDesignSystem, latestVersion } = await import('/js/docs/design-system/document-design-system.js');
 
     localStorage.setItem('pbsi_current_user', JSON.stringify({ username: 'evan', role: 'admin' }));

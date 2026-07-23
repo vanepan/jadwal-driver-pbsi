@@ -90,12 +90,12 @@ import {
 // observes the ONE real, event-driven sweepPipeline() call site below; it
 // never calls sweepPipeline() itself and never changes what it decides.
 import { recordSweepTick, getWorkerHealth } from '../knowledge/datasets/import-session/performance-collector.js';
-import { initFileStorageSync } from '../../../src/file-storage/file-storage-registry.js';
+import { initFileStorageSync } from '../file-storage/file-storage-registry.js';
 // Phase 10, Sprint 10.1 — the Review Workspace's foundation: a
 // ComposerDocument (a composed NOR draft) must survive a refresh for a
 // human reviewer to come back to it, same "activate once, at Sarpras
 // Intelligence's own mount" idiom as every init*Sync() call in this block.
-import { initComposerDocumentSync, registerChangeListener as registerComposerChangeListener } from '../../../src/document-intelligence/composer/composer-document-repository.js';
+import { initComposerDocumentSync, registerChangeListener as registerComposerChangeListener } from '../document-intelligence/composer/composer-document-repository.js';
 // Phase 2.5 Part 3 — make the in-memory knowledge repo a deterministic
 // projection of the persisted Import Sessions, so imported Knowledge
 // survives a refresh (and picks up another tab's RTDB-hydrated sessions).
@@ -106,7 +106,7 @@ import { rehydrateKnowledgeFromSessions } from '../knowledge/datasets/import-ses
 // ComposerDocument revisions: a reviewer's reusable wording edits become
 // persistent, governed, promotable Candidate learning that survives refresh/
 // restart/deployment. See that engine's header for the full rationale.
-import { rehydrateLearningFromDocuments } from '../../../src/document-intelligence/composer/reviewer-edit-rehydration-engine.js';
+import { rehydrateLearningFromDocuments } from '../document-intelligence/composer/reviewer-edit-rehydration-engine.js';
 
 // Executive Briefing data sources — every one of these is already imported
 // and used by an existing workspace file (see each import's origin below);
@@ -118,7 +118,7 @@ import {
   IMPORT_SESSION_STATE, PIPELINE_STAGE_ORDER, PIPELINE_OFF_RAMP_STAGES,
   isTerminalImportSessionState, isOffRampStage,
 } from '../knowledge/datasets/import-session/contracts/import-session-contract.js';
-import { listArchive as archiveList, getGapsWithWorkflowState, GAP_STATUS } from '../../../src/organizational-memory/index.js';
+import { listArchive as archiveList, getGapsWithWorkflowState, GAP_STATUS } from '../organizational-memory/index.js';
 import { listDomainTypes } from '../knowledge/registry/domain-type-registry.js';
 import { listKinds } from '../knowledge/registry/kind-registry.js';
 import { getReviewQueue, getCandidateQueue } from '../knowledge/review/review-queue-engine.js';
@@ -137,19 +137,19 @@ import { computePatternRecommendations, discoverAndRecordPatterns } from '../kno
 // pattern corrections — see dataset-import-center.js, knowledge-center.js,
 // nor-center.js).
 import { listLearningEvents, LEARNING_KIND } from '../learning/services/learning-service.js';
-import { computeOrganizationalMemory } from '../../../src/organizational-memory/organizational-memory-engine.js';
-import { computeCoverageReport } from '../../../src/organizational-memory/coverage-engine.js';
-import { countResolvedGaps } from '../../../src/organizational-memory/gap-workflow-engine.js';
+import { computeOrganizationalMemory } from '../organizational-memory/organizational-memory-engine.js';
+import { computeCoverageReport } from '../organizational-memory/coverage-engine.js';
+import { countResolvedGaps } from '../organizational-memory/gap-workflow-engine.js';
 // Experience Architecture phase — Part 6 (Action-first Home): "Continue
 // Previous Batch" is real only when a real unfinished batch exists.
 import { listBatches, BATCH_STATUS } from '../knowledge/datasets/import-session/import-batch-engine.js';
 // Part 5 (Search-first): one aggregator over three already-real services —
 // see global-search-service.js's own header for why it invents nothing.
-import { globalSearch } from '../services/global-search-service.js';
+import { globalSearch } from './services/global-search-service.js';
 // Part 9 (Conversation-first): the REAL, deterministic Conversation Service
 // (Phase 6) — this file only renders what it returns, never reinterprets
 // an utterance itself and never adds a new intent.
-import { INTENT, getRequiredFacts } from '../../../src/conversation/contracts/intent-contract.js';
+import { INTENT, getRequiredFacts } from '../conversation/contracts/intent-contract.js';
 // Sprint 11.1 (production feedback) — PREVIOUSLY UNCALLED anywhere in
 // this file (verified by grep before writing this): renderConversationResult()
 // below has only ever rendered `missingFacts` as static text, with no way
@@ -160,7 +160,7 @@ import { INTENT, getRequiredFacts } from '../../../src/conversation/contracts/in
 // in Phase 6 — no UI caller exists yet") — this is that edge's first real
 // exercise, not a new architectural decision. See nor-center.js's twin fix
 // for the identical pattern applied there first.
-import { continueConversation } from '../../../src/conversation/services/conversation-service.js';
+import { continueConversation } from '../conversation/services/conversation-service.js';
 // Phase 10.5 (Home Entry Point Migration, Problem-First Architecture) —
 // EVERY free-text request now enters through beginProblemSolving() first
 // (Problem Classification -> Diagnostic Planning -> Routing Decision).
@@ -171,16 +171,16 @@ import { continueConversation } from '../../../src/conversation/services/convers
 // why this is a graceful-degradation, not a replacement.
 import {
   beginProblemSolving, continueProblemConversation, composeApprovedNor,
-} from '../problem-solving/services/problem-solving-service.js';
-import { WORKFLOW_ROUTE } from '../problem-solving/contracts/workflow-route-contract.js';
+} from '../intake/services/problem-solving-service.js';
+import { WORKFLOW_ROUTE } from '../intake/contracts/workflow-route-contract.js';
 import { HYPOTHESIS_STATUS } from '../reasoning/contracts/hypothesis-contract.js';
 // Sprint 11.1, Workstream 3 — the one legal ui/ -> V1 edge for date
 // formatting (js/v2/README.md's dependency graph; nor-center.js already
 // uses this exact same edge, same functions).
-import { fmtLong, todayISO } from '../../petty-cash/petty-cash-config.js';
+import { fmtLong, todayISO } from '../../js/petty-cash/petty-cash-config.js';
 // Phase 3, Part 8 — see js/v2/dormant-subsystems.js. This briefing used to
 // count the OLD correction log's always-zero value.
-import { dormantNote } from '../dormant-subsystems.js';
+import { dormantNote } from '../../js/v2/dormant-subsystems.js';
 import { esc, isDeveloperMode, setPresentationMode } from './shared/workspace-list-kit.js';
 
 // Experience Architecture phase — 'knowledge' keeps its screen id (still a

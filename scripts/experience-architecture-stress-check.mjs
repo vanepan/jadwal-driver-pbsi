@@ -24,8 +24,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer';
-import { computeAutonomyTrend } from '../js/v2/ui/dataset-import-center.js';
-import { IMPORT_SESSION_STATE } from '../js/v2/knowledge/datasets/import-session/contracts/import-session-contract.js';
+import { computeAutonomyTrend } from '../src/ui/dataset-import-center.js';
+import { IMPORT_SESSION_STATE } from '../src/knowledge/datasets/import-session/contracts/import-session-contract.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css' };

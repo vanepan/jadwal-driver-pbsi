@@ -10,16 +10,16 @@
    Run: node scripts/batch-performance-check.mjs   (exit 0 = pass, can
    take a minute or two for the 5000-file case — real work, not mocked) */
 
-import { setActiveRepository } from '../js/v2/knowledge/repository/knowledge-repository.js';
-import { resetConnectorRegistry } from '../js/v2/knowledge/registry/connector-registry.js';
-import { resetDatasetRegistry } from '../js/v2/knowledge/datasets/registry/dataset-registry.js';
-import { resetImportSessionRepository } from '../js/v2/knowledge/datasets/import-session/repository/import-session-repository.js';
-import { resetImportBatchRepository } from '../js/v2/knowledge/datasets/import-session/repository/import-batch-repository.js';
-import { resetManualImportQueue } from '../js/v2/knowledge/acquisition/manual-import-queue-store.js';
+import { setActiveRepository } from '../src/knowledge/repository/knowledge-repository.js';
+import { resetConnectorRegistry } from '../src/knowledge/registry/connector-registry.js';
+import { resetDatasetRegistry } from '../src/knowledge/datasets/registry/dataset-registry.js';
+import { resetImportSessionRepository } from '../src/knowledge/datasets/import-session/repository/import-session-repository.js';
+import { resetImportBatchRepository } from '../src/knowledge/datasets/import-session/repository/import-batch-repository.js';
+import { resetManualImportQueue } from '../src/knowledge/acquisition/manual-import-queue-store.js';
 import { resetFileStorageRegistry } from '../src/file-storage/file-storage-registry.js';
-import { createDatasetImportController } from '../js/v2/ui/dataset-import-center.js';
-import { listImportSessions } from '../js/v2/knowledge/datasets/import-session/import-session-engine.js';
-import { listBatches } from '../js/v2/knowledge/datasets/import-session/import-batch-engine.js';
+import { createDatasetImportController } from '../src/ui/dataset-import-center.js';
+import { listImportSessions } from '../src/knowledge/datasets/import-session/import-session-engine.js';
+import { listBatches } from '../src/knowledge/datasets/import-session/import-batch-engine.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {

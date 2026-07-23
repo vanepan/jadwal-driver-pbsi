@@ -65,7 +65,7 @@ await page.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' });
 
 const result = await page.evaluate(async () => {
   const { createDocument, editSection } = await import('/src/document-intelligence/composer/composer-store.js');
-  const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
+  const { mountReviewWorkspace } = await import('/src/ui/review-workspace.js');
 
   // A real signed-in session — this scenario now also asserts the single
   // "Terbitkan NOR" button renders, which requires real publish authority
@@ -152,7 +152,7 @@ page1b.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 await page1b.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' });
 const devModeResult = await page1b.evaluate(async () => {
   const { createDocument, editSection } = await import('/src/document-intelligence/composer/composer-store.js');
-  const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
+  const { mountReviewWorkspace } = await import('/src/ui/review-workspace.js');
 
   localStorage.setItem('pbsi_current_user', JSON.stringify({ username: 'evan', role: 'admin' }));
   localStorage.setItem('sarpras.presentationMode', 'developer');
@@ -201,7 +201,7 @@ page2.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 await page2.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' });
 const explainResult = await page2.evaluate(async () => {
   const { createDocument, attachExplainability } = await import('/src/document-intelligence/composer/composer-store.js');
-  const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
+  const { mountReviewWorkspace } = await import('/src/ui/review-workspace.js');
 
   const doc = createDocument('nor', { subject: 'Pengadaan Meja Ruang Binpres' });
   attachExplainability(doc.documentId, {
@@ -248,7 +248,7 @@ page3.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 await page3.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' });
 const editResult = await page3.evaluate(async () => {
   const { createDocument } = await import('/src/document-intelligence/composer/composer-store.js');
-  const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
+  const { mountReviewWorkspace } = await import('/src/ui/review-workspace.js');
 
   // Phase 10, Sprint 10.5 — the "Ubah" button now requires sic.review.act,
   // real capability-gated, not just rendered unconditionally.
@@ -311,7 +311,7 @@ page4.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 await page4.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' });
 const govResult = await page4.evaluate(async () => {
   const { createDocument } = await import('/src/document-intelligence/composer/composer-store.js');
-  const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
+  const { mountReviewWorkspace } = await import('/src/ui/review-workspace.js');
 
   // Phase 10, Sprint 10.5 — a DIFFERENT username than every other scenario
   // in this file ('budi', not the old hardcoded 'evan') — proves real
@@ -381,7 +381,7 @@ page5a.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 await page5a.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' });
 const unprivilegedResult = await page5a.evaluate(async () => {
   const { createDocument } = await import('/src/document-intelligence/composer/composer-store.js');
-  const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
+  const { mountReviewWorkspace } = await import('/src/ui/review-workspace.js');
 
   // 'driver' holds neither sic.review.act nor sic.approve.act.
   localStorage.setItem('pbsi_current_user', JSON.stringify({ username: 'sopir1', role: 'driver' }));
@@ -408,7 +408,7 @@ page5b.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 await page5b.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' });
 const privilegedResult = await page5b.evaluate(async () => {
   const { createDocument } = await import('/src/document-intelligence/composer/composer-store.js');
-  const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
+  const { mountReviewWorkspace } = await import('/src/ui/review-workspace.js');
 
   localStorage.setItem('pbsi_current_user', JSON.stringify({ username: 'evan', role: 'admin' }));
   localStorage.setItem('sarpras.presentationMode', 'developer');
@@ -443,7 +443,7 @@ page6.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 await page6.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' });
 const exportResult = await page6.evaluate(async () => {
   const { createDocument } = await import('/src/document-intelligence/composer/composer-store.js');
-  const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
+  const { mountReviewWorkspace } = await import('/src/ui/review-workspace.js');
   const { findArchiveRecord } = await import('/src/organizational-memory/services/archive-service.js');
 
   localStorage.setItem('pbsi_current_user', JSON.stringify({ username: 'evan', role: 'admin' }));
@@ -563,7 +563,7 @@ await page7.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' })
 const pilotTabResult = await page7.evaluate(async () => {
   const { createDocument, editSection, transitionStatus } = await import('/src/document-intelligence/composer/composer-store.js');
   const { recordSatisfactionRating } = await import('/src/document-intelligence/composer/satisfaction-log.js');
-  const { mountLearningDashboard } = await import('/js/v2/ui/learning-dashboard.js');
+  const { mountLearningDashboard } = await import('/src/ui/learning-dashboard.js');
 
   const doc = createDocument('nor', { subject: 'Pengadaan Proyektor' });
   editSection(doc.documentId, 'subject', 'Pengadaan Proyektor (revisi)', 'evan');

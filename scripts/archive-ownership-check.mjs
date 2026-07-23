@@ -92,7 +92,7 @@ console.log('\n[Part 1/2 — exactly ONE owner writes the Archive Repository]');
   // The audit found TWO creators. Name each, so a regression is legible.
   for (const f of [
     'src/organizational-memory/archive-ingestion-engine.js',
-    'js/v2/ui/dataset-import-center.js',
+    'src/ui/dataset-import-center.js',
   ]) {
     check(`${f.replace('js/v2/', '')} is now a CLIENT, not a writer`,
       !writers.some((w) => w.startsWith(f)));
@@ -113,7 +113,7 @@ console.log('\n[Part 2 — the barrel no longer leaks the repository]');
 console.log('\n[Part 3 — no UI writes the Archive directly]');
 {
   const offenders = [];
-  for (const { rel, code } of FILES.filter((f) => f.rel.startsWith('js/v2/ui/'))) {
+  for (const { rel, code } of FILES.filter((f) => f.rel.startsWith('src/ui/'))) {
     const blocks = code.match(/import\s*\{[^}]*\}\s*from\s*'[^']*'/gs) || [];
     for (const b of blocks) {
       const m = b.match(/from\s*'([^']*)'/);
@@ -130,11 +130,11 @@ console.log('\n[Part 3 — no UI writes the Archive directly]');
   // Comments stripped: dataset-import-center.js legitimately *discusses* the
   // `create as archiveCreate` import it no longer has, at length. A check that
   // fires on prose is a check people learn to ignore.
-  const dic = stripComments(read('js/v2/ui/dataset-import-center.js'));
+  const dic = stripComments(read('src/ui/dataset-import-center.js'));
   check('the import pipeline archives through the Service (archiveImportedKnowledge), not raw create()',
     dic.includes('archiveImportedKnowledge') && !dic.includes('create as archiveCreate'));
 
-  const ac = read('js/v2/ui/archive-center.js');
+  const ac = read('src/ui/archive-center.js');
   check('Archive Center operates the lifecycle through the Service (restore / deprecate)',
     ac.includes('data-act="ac-arch-restore"') && ac.includes('data-act="ac-arch-deprecate"'));
   check('Archive Center explains WHY each document exists (Part 4)',

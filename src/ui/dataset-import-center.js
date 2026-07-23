@@ -148,10 +148,10 @@ import {
   // import source, same functions), now also surfaced inline on the
   // document itself. Reused verbatim, never recomputed.
   explainArchiveRecord, getArchiveRelationships, getReplacementChain,
-} from '../../../src/organizational-memory/index.js';
+} from '../organizational-memory/index.js';
 import {
   archiveImportedKnowledge, listArchive as archiveList,
-} from '../../../src/organizational-memory/services/archive-service.js';
+} from '../organizational-memory/services/archive-service.js';
 import { generateKnowledgeId } from '../knowledge/contracts/identity-contract.js';
 // Phase 5, Part 3 — a human confirming previously-untrusted Advanced Metadata
 // is a real, already-firing metadata correction. Recorded through the
@@ -162,10 +162,10 @@ import { recordCorrection, CORRECTION_TYPE } from '../learning/services/learning
 // to import statically like every other knowledge/ engine here, since it
 // has no Firebase dependency (unlike file-storage-engine.js below).
 import { getNeighbors } from '../knowledge/services/knowledge-graph-service.js';
-import { computeSha256 } from '../../../src/file-storage/file-hash.js';
+import { computeSha256 } from '../file-storage/file-hash.js';
 // Phase 7 (Runtime Hardening, Part 3) — JSON parsing offload; see worker-runtime.js's header.
-import { parseJsonText } from '../../../src/file-storage/worker-runtime.js';
-import { listStoredFiles, getStoredFileBySha256 } from '../../../src/file-storage/file-storage-registry.js';
+import { parseJsonText } from '../file-storage/worker-runtime.js';
+import { listStoredFiles, getStoredFileBySha256 } from '../file-storage/file-storage-registry.js';
 // V2.1 — file-storage-engine.js transitively imports js/firebase.js (the
 // real Storage SDK, from a CDN at module top-level). Lazily imported
 // INSIDE processOneFile() rather than statically here, so that mounting
@@ -588,7 +588,7 @@ export function archiveDuplicateWarning(session) {
  *  @param {object} session
  *  @returns {Promise<{ok: boolean, changed: boolean, changedFields: string[], reason: string|null}>} */
 export async function runReanalysis(session) {
-  const { downloadFileFromStorage } = await import('../../firebase.js');
+  const { downloadFileFromStorage } = await import('../../js/firebase.js');
   const downloaded = await downloadFileFromStorage(session.storagePath);
   if (!downloaded.ok) return { ok: false, changed: false, changedFields: [], reason: 'DOWNLOAD_FAILED' };
 
@@ -989,7 +989,7 @@ registerArchiver(doArchive);
  *  fabricates) when no sibling session has verified content yet.
  *  Module-scope (Phase 2) — pure, no controller closure dependency,
  *  independently testable.
- * @param {import('../../../src/file-storage/contracts/file-storage-contract.js').StoredFileRecord} storedFileRecord
+ * @param {import('../file-storage/contracts/file-storage-contract.js').StoredFileRecord} storedFileRecord
  * @param {string} currentSessionId
  */
 export function findReusableContentFacts(storedFileRecord, currentSessionId) {
@@ -1866,7 +1866,7 @@ export function createDatasetImportController(opts = {}) {
     st.preview = { sessionId, url: null, loading: true, error: null };
     rerender();
     try {
-      const { downloadFileFromStorage } = await import('../../firebase.js');
+      const { downloadFileFromStorage } = await import('../../js/firebase.js');
       const result = await downloadFileFromStorage(storagePath);
       if (!result.ok) {
         st.preview = { sessionId, url: null, loading: false, error: result.error };
@@ -2719,7 +2719,7 @@ export function createDatasetImportController(opts = {}) {
       reportUploadStarted(sessionId);
       uploadStartMs = Date.now();
       try {
-        const { uploadFile } = await import('../../../src/file-storage/file-storage-engine.js');
+        const { uploadFile } = await import('../file-storage/file-storage-engine.js');
         // Phase 6.5 (Part 10 perf audit) — `sha256` above is already the
         // real content hash of this exact file; passing it through as
         // `precomputedSha256` stops uploadFile() from hashing the same

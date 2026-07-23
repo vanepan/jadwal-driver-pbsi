@@ -18,33 +18,33 @@
    inside the real upload path, never at module load).
    Run: node scripts/dataset-import-center-check.mjs   (exit 0 = pass) */
 
-import { setActiveRepository } from '../js/v2/knowledge/repository/knowledge-repository.js';
-import { resetConnectorRegistry } from '../js/v2/knowledge/registry/connector-registry.js';
-import { resetDatasetRegistry } from '../js/v2/knowledge/datasets/registry/dataset-registry.js';
-import { resetImportReportLog } from '../js/v2/knowledge/acquisition/acquisition-engine.js';
-import { resetManualImportQueue } from '../js/v2/knowledge/acquisition/manual-import-queue-store.js';
-import { resetImportSessionRepository } from '../js/v2/knowledge/datasets/import-session/repository/import-session-repository.js';
-import { resetImportBatchRepository } from '../js/v2/knowledge/datasets/import-session/repository/import-batch-repository.js';
+import { setActiveRepository } from '../src/knowledge/repository/knowledge-repository.js';
+import { resetConnectorRegistry } from '../src/knowledge/registry/connector-registry.js';
+import { resetDatasetRegistry } from '../src/knowledge/datasets/registry/dataset-registry.js';
+import { resetImportReportLog } from '../src/knowledge/acquisition/acquisition-engine.js';
+import { resetManualImportQueue } from '../src/knowledge/acquisition/manual-import-queue-store.js';
+import { resetImportSessionRepository } from '../src/knowledge/datasets/import-session/repository/import-session-repository.js';
+import { resetImportBatchRepository } from '../src/knowledge/datasets/import-session/repository/import-batch-repository.js';
 import { resetArchiveRepository } from '../src/organizational-memory/repository/archive-repository.js';
-import { DATASET_TYPE } from '../js/v2/knowledge/datasets/contracts/dataset-contract.js';
+import { DATASET_TYPE } from '../src/knowledge/datasets/contracts/dataset-contract.js';
 import {
   IMPORT_SESSION_KIND, IMPORT_SESSION_STATE, PIPELINE_STAGE,
-} from '../js/v2/knowledge/datasets/import-session/contracts/import-session-contract.js';
+} from '../src/knowledge/datasets/import-session/contracts/import-session-contract.js';
 import {
   createImportSession, attachParsedContent, attachManualEntryFacts, attachInferenceResult,
   updateSessionMetadata, getImportSession, markAwaitingEvidence,
-} from '../js/v2/knowledge/datasets/import-session/import-session-engine.js';
-import { advanceSession } from '../js/v2/knowledge/datasets/import-session/pipeline-scheduler.js';
-import { AUTO_POPULATE_CONFIDENCE_THRESHOLD } from '../js/v2/knowledge/datasets/import-session/metadata-inference-engine.js';
+} from '../src/knowledge/datasets/import-session/import-session-engine.js';
+import { advanceSession } from '../src/knowledge/datasets/import-session/pipeline-scheduler.js';
+import { AUTO_POPULATE_CONFIDENCE_THRESHOLD } from '../src/knowledge/datasets/import-session/metadata-inference-engine.js';
 import { makeStoredFileRecord } from '../src/file-storage/contracts/file-storage-contract.js';
-import { createBatch, recordBatchItem } from '../js/v2/knowledge/datasets/import-session/import-batch-engine.js';
+import { createBatch, recordBatchItem } from '../src/knowledge/datasets/import-session/import-batch-engine.js';
 import {
   createDatasetImportController, reviewReasons, archiveDuplicateWarning,
   findReusableContentFacts, effectiveStage, computeBatchCounters, consensusExplanation,
   isoWeekKey, computeAutonomyTrend, contentFactsGapMessage, isReanalyzing, getLastSweepStatus,
-} from '../js/v2/ui/dataset-import-center.js';
-import { setPresentationMode } from '../js/v2/ui/shared/workspace-list-kit.js';
-import { list as listLearningEvents, resetLearningRepository } from '../js/v2/learning/repository/learning-repository.js';
+} from '../src/ui/dataset-import-center.js';
+import { setPresentationMode } from '../src/ui/shared/workspace-list-kit.js';
+import { list as listLearningEvents, resetLearningRepository } from '../src/learning/repository/learning-repository.js';
 
 // isDeveloperMode()/setPresentationMode() read/write real localStorage; Node
 // has none, so a minimal in-memory stub lets this script exercise the

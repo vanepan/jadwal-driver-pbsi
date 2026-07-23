@@ -15,26 +15,26 @@
 <script type="module">
   import {
     mountSarprasIntelligence, setSarprasIntelligenceScreen, closeSarprasIntelligence,
-  } from '../js/v2/ui/sarpras-intelligence-center.js';
+  } from '../src/ui/sarpras-intelligence-center.js';
   // Phase 2.5 — test affordance: create a real Draft KnowledgeItem through
   // the SAME facade + canonical mapping a live import uses, so a DOM test
   // can verify the event-driven dashboard re-render (Part 3/7) in a real
   // browser without needing the File/Firebase upload path.
-  import { create as knowledgeCreate } from '../js/v2/knowledge/repository/knowledge-repository.js';
-  import { buildManualFileKnowledgeItem } from '../js/v2/knowledge/connectors/manual-file-connector.js';
+  import { create as knowledgeCreate } from '../src/knowledge/repository/knowledge-repository.js';
+  import { buildManualFileKnowledgeItem } from '../src/knowledge/connectors/manual-file-connector.js';
   // Sprint 11.1, Workstream 2 — test affordance: seeds the SAME minimal
   // real Approved structural+pattern Knowledge nor-composition-check.mjs's
   // own seedApproved() fixture uses (Node-side), so a real-browser test can
   // drive the CREATE_NOR conversation all the way to a real composed
   // ComposerDocument, not just the early turns.
-  import { ingest, promoteKnowledge } from '../js/v2/knowledge/services/knowledge-service.js';
-  import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
+  import { ingest, promoteKnowledge } from '../src/knowledge/services/knowledge-service.js';
+  import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
   // Autonomous Experience (Part 10) — test affordance: records a real
   // Learning Event through the actual, live producer path (the SAME
   // recordCorrection() dataset-import-center.js's Advanced Metadata save
   // calls), so a DOM test can verify the Learning Dashboard's "Hari Ini"
   // card reflects REAL recorded facts, not just render without throwing.
-  import { recordCorrection, CORRECTION_TYPE } from '../js/v2/learning/services/learning-service.js';
+  import { recordCorrection, CORRECTION_TYPE } from '../src/learning/services/learning-service.js';
   // Sprint 11 UAT gap-closure — test affordance: records a real reviewer
   // inline edit through the SAME recordSectionEdit() path onFocusOut uses,
   // so a DOM test can verify the Learning Dashboard reflects an edit made
@@ -46,8 +46,8 @@
   // Candidate learning), and read the persistent Candidate queue back.
   import { createDocument as __createDoc, editSection as __editSection } from '../src/document-intelligence/composer/composer-store.js';
   import { rehydrateLearningFromDocuments as __rehydrateLearning } from '../src/document-intelligence/composer/reviewer-edit-rehydration-engine.js';
-  import { getCandidateQueue as __getCandidateQueue } from '../js/v2/knowledge/review/review-queue-engine.js';
-  import { getKnowledge as __getKnowledge, submitKnowledgeForReview as __submitForReview, promoteKnowledge as __promote } from '../js/v2/knowledge/services/knowledge-service.js';
+  import { getCandidateQueue as __getCandidateQueue } from '../src/knowledge/review/review-queue-engine.js';
+  import { getKnowledge as __getKnowledge, submitKnowledgeForReview as __submitForReview, promoteKnowledge as __promote } from '../src/knowledge/services/knowledge-service.js';
   // Phase 7 (Runtime Hardening, Part 9) — stress-test affordance: seeds N
   // REAL Import Sessions through the actual engine (createImportSession +
   // attachManualEntryFacts + advanceSession — the exact same calls
@@ -57,10 +57,10 @@
   import {
     createImportSession, attachManualEntryFacts, listImportSessions,
     submitImportSessionForReview, approveImportSession,
-  } from '../js/v2/knowledge/datasets/import-session/import-session-engine.js';
-  import { advanceSession, reportUploadStarted } from '../js/v2/knowledge/datasets/import-session/pipeline-scheduler.js';
-  import { createBatch } from '../js/v2/knowledge/datasets/import-session/import-batch-engine.js';
-  import { DATASET_TYPE } from '../js/v2/knowledge/datasets/contracts/dataset-contract.js';
+  } from '../src/knowledge/datasets/import-session/import-session-engine.js';
+  import { advanceSession, reportUploadStarted } from '../src/knowledge/datasets/import-session/pipeline-scheduler.js';
+  import { createBatch } from '../src/knowledge/datasets/import-session/import-batch-engine.js';
+  import { DATASET_TYPE } from '../src/knowledge/datasets/contracts/dataset-contract.js';
 
   const host = document.getElementById('host');
   window.__mount = () => mountSarprasIntelligence(host);

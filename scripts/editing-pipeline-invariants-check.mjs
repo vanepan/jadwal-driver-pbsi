@@ -94,14 +94,14 @@ await page.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' });
 const result = await page.evaluate(async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const { createDocument, attachExplainability, getDocument, getRevisionHistory } = await import('/src/document-intelligence/composer/composer-store.js');
-  const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
-  const { listLearningEvents, LEARNING_KIND } = await import('/js/v2/learning/services/learning-service.js');
-  const { getCandidateQueue } = await import('/js/v2/knowledge/review/review-queue-engine.js');
-  const { LIFECYCLE_STATE } = await import('/js/v2/knowledge/contracts/lifecycle-contract.js');
-  const { generateKnowledgeId } = await import('/js/v2/knowledge/contracts/identity-contract.js');
-  const { setActiveRepository, create: repoCreate } = await import('/js/v2/knowledge/repository/knowledge-repository.js');
-  const { promoteToCandidate } = await import('/js/v2/knowledge/promotion/promotion-engine.js');
-  const { submitForReview, approve } = await import('/js/v2/knowledge/review/review-workflow-engine.js');
+  const { mountReviewWorkspace } = await import('/src/ui/review-workspace.js');
+  const { listLearningEvents, LEARNING_KIND } = await import('/src/learning/services/learning-service.js');
+  const { getCandidateQueue } = await import('/src/knowledge/review/review-queue-engine.js');
+  const { LIFECYCLE_STATE } = await import('/src/knowledge/contracts/lifecycle-contract.js');
+  const { generateKnowledgeId } = await import('/src/knowledge/contracts/identity-contract.js');
+  const { setActiveRepository, create: repoCreate } = await import('/src/knowledge/repository/knowledge-repository.js');
+  const { promoteToCandidate } = await import('/src/knowledge/promotion/promotion-engine.js');
+  const { submitForReview, approve } = await import('/src/knowledge/review/review-workflow-engine.js');
   localStorage.setItem('pbsi_current_user', JSON.stringify({ username: 'evan', role: 'admin' }));
 
   // A REAL, Approved sentence_pattern KnowledgeItem — Signal 2

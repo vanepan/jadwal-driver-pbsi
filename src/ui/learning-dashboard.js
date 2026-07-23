@@ -30,7 +30,7 @@ import { buildLearningMetrics } from '../knowledge/learning/contracts/learning-m
 import { listCorrectionLog } from '../knowledge/learning/correction-pipeline-engine.js';
 // Phase 3, Part 8 — the Correction Log is officially DORMANT (its writer has no
 // caller yet). It must SAY so rather than render a confident, permanent zero.
-import { dormantNote } from '../dormant-subsystems.js';
+import { dormantNote } from '../../js/v2/dormant-subsystems.js';
 import { computeHealthReport } from '../knowledge/metrics/knowledge-metrics-engine.js';
 import {
   listKnowledge as knowledgeList,
@@ -44,7 +44,7 @@ import { listDomainTypes, getDomainType } from '../knowledge/registry/domain-typ
 import { getCandidateQueue, getReviewQueue } from '../knowledge/review/review-queue-engine.js';
 import { profiles } from '../knowledge/services/index.js';
 import { listDatasets } from '../knowledge/datasets/registry/dataset-registry.js';
-import { getComposerTimeline } from '../../../src/document-intelligence/composer/composer-store.js';
+import { getComposerTimeline } from '../document-intelligence/composer/composer-store.js';
 // Sprint 11.5 — computeLearningPatterns() (recurring corrections/decisions,
 // and now writing-style preferences) was already computed AND recorded
 // into Learning by discoverAndRecordPatterns() (sarpras-intelligence-
@@ -59,8 +59,8 @@ import { getKind } from '../knowledge/registry/kind-registry.js';
 // eight-fact Organization Memory report (Part 5), replacing the old
 // three-different-percentages-called-"Coverage" and giving Organization
 // Memory a real, reachable reader.
-import { computeCoverageReport } from '../../../src/organizational-memory/coverage-engine.js';
-import { computeOrganizationalMemory } from '../../../src/organizational-memory/organizational-memory-engine.js';
+import { computeCoverageReport } from '../organizational-memory/coverage-engine.js';
+import { computeOrganizationalMemory } from '../organizational-memory/organizational-memory-engine.js';
 // Sprint 11.7 (Continuous Organizational Memory) — same pure-report shape
 // as computeOrganizationalMemory above, reused verbatim, never recomputed.
 import { computeKnowledgeDrift } from '../knowledge/services/pattern-discovery-service.js';
@@ -75,15 +75,15 @@ import { listBatches } from '../knowledge/datasets/import-session/import-batch-e
 // knowledge/ may never depend on document-intelligence/). This file
 // already imports getComposerTimeline from the same composer/ directory
 // (Phase 3, above), so this is not a new domain edge for THIS file.
-import { computeReviewMetrics } from '../../../src/document-intelligence/composer/review-metrics-service.js';
-import { composerReviewStateLabel } from '../../../src/document-intelligence/composer/contracts/composer-review-contract.js';
+import { computeReviewMetrics } from '../document-intelligence/composer/review-metrics-service.js';
+import { composerReviewStateLabel } from '../document-intelligence/composer/contracts/composer-review-contract.js';
 // Sprint 11.8 (Production Readiness) — "Average Questions Asked" is a real,
 // already-tracked per-Conversation fact (explainability.questionsAsked,
 // conversation-contract.js) with an already-real bulk reader
 // (listConversationHistory, despite its name — same shape as
 // listLearningEvents/listKnowledge, not a per-item version history). No
 // new capture point, only the missing aggregation.
-import { listConversationHistory } from '../../../src/conversation/services/conversation-service.js';
+import { listConversationHistory } from '../conversation/services/conversation-service.js';
 
 import {
   esc, renderEmptyState, renderTabShell, renderRowList, renderStatCards, renderKvList, renderFilterBar,

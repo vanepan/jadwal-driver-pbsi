@@ -57,4 +57,4 @@ export const loadExecutiveAnalyticsView = () =>
    isV2Enabled() (js/config/feature-gates.js), so it must never be a static
    top-level import: every other user's session should never fetch it. ── */
 export const loadSarprasIntelligence = () =>
-  loadModule('sarpras-intelligence', () => import('../v2/ui/sarpras-intelligence-center.js'));
+  loadModule('sarpras-intelligence', () => import('../../src/ui/sarpras-intelligence-center.js'));

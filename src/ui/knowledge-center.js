@@ -66,7 +66,7 @@ import { listDatasets } from '../knowledge/datasets/registry/dataset-registry.js
 import {
   listArchive as archiveList, checkKnowledgeContribution,
   archiveRejectedKnowledge,
-} from '../../../src/organizational-memory/index.js';
+} from '../organizational-memory/index.js';
 
 import {
   esc, renderEmptyState, renderTabShell, renderRowList, renderStatCards,

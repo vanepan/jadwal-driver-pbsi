@@ -64,15 +64,15 @@ page1.on('console', (m) => { if (m.type() === 'error') errors.push('console.erro
 await page1.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' });
 
 const inlineEditResult = await page1.evaluate(async () => {
-  const { LIFECYCLE_STATE } = await import('/js/v2/knowledge/contracts/lifecycle-contract.js');
-  const { generateKnowledgeId } = await import('/js/v2/knowledge/contracts/identity-contract.js');
-  const { setActiveRepository, create: repoCreate, getById } = await import('/js/v2/knowledge/repository/knowledge-repository.js');
-  const { promoteToCandidate } = await import('/js/v2/knowledge/promotion/promotion-engine.js');
-  const { submitForReview, approve } = await import('/js/v2/knowledge/review/review-workflow-engine.js');
-  const { listKnowledge } = await import('/js/v2/knowledge/services/knowledge-service.js');
-  const { listLearningEvents, LEARNING_KIND } = await import('/js/v2/learning/services/learning-service.js');
+  const { LIFECYCLE_STATE } = await import('/src/knowledge/contracts/lifecycle-contract.js');
+  const { generateKnowledgeId } = await import('/src/knowledge/contracts/identity-contract.js');
+  const { setActiveRepository, create: repoCreate, getById } = await import('/src/knowledge/repository/knowledge-repository.js');
+  const { promoteToCandidate } = await import('/src/knowledge/promotion/promotion-engine.js');
+  const { submitForReview, approve } = await import('/src/knowledge/review/review-workflow-engine.js');
+  const { listKnowledge } = await import('/src/knowledge/services/knowledge-service.js');
+  const { listLearningEvents, LEARNING_KIND } = await import('/src/learning/services/learning-service.js');
   const { createDocument } = await import('/src/document-intelligence/composer/composer-store.js');
-  const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
+  const { mountReviewWorkspace } = await import('/src/ui/review-workspace.js');
 
   setActiveRepository('memory');
 
@@ -169,7 +169,7 @@ page2.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 await page2.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' });
 const reviewerOnlyResult = await page2.evaluate(async () => {
   const { createDocument } = await import('/src/document-intelligence/composer/composer-store.js');
-  const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
+  const { mountReviewWorkspace } = await import('/src/ui/review-workspace.js');
 
   // 'bidang' holds sic.review.act only, not sic.approve.act (role-registry.js).
   localStorage.setItem('pbsi_current_user', JSON.stringify({ username: 'siti', role: 'bidang' }));
@@ -229,7 +229,7 @@ page3.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 await page3.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' });
 const approverResult = await page3.evaluate(async () => {
   const { createDocument, getDocument } = await import('/src/document-intelligence/composer/composer-store.js');
-  const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
+  const { mountReviewWorkspace } = await import('/src/ui/review-workspace.js');
   const { findArchiveRecord } = await import('/src/organizational-memory/services/archive-service.js');
 
   localStorage.setItem('pbsi_current_user', JSON.stringify({ username: 'evan', role: 'admin' }));
@@ -304,7 +304,7 @@ page4.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 await page4.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' });
 const needsRevisionResult = await page4.evaluate(async () => {
   const { createDocument, transitionStatus, getDocument } = await import('/src/document-intelligence/composer/composer-store.js');
-  const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
+  const { mountReviewWorkspace } = await import('/src/ui/review-workspace.js');
 
   localStorage.setItem('pbsi_current_user', JSON.stringify({ username: 'siti', role: 'bidang' }));
 
@@ -346,8 +346,8 @@ page5.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 await page5.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' });
 const keyboardResult = await page5.evaluate(async () => {
   const { createDocument } = await import('/src/document-intelligence/composer/composer-store.js');
-  const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
-  const { listLearningEvents, LEARNING_KIND } = await import('/js/v2/learning/services/learning-service.js');
+  const { mountReviewWorkspace } = await import('/src/ui/review-workspace.js');
+  const { listLearningEvents, LEARNING_KIND } = await import('/src/learning/services/learning-service.js');
 
   localStorage.setItem('pbsi_current_user', JSON.stringify({ username: 'evan', role: 'admin' }));
 
@@ -416,7 +416,7 @@ page6.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 await page6.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' });
 const titleAndSignatureResult = await page6.evaluate(async () => {
   const { createDocument } = await import('/src/document-intelligence/composer/composer-store.js');
-  const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
+  const { mountReviewWorkspace } = await import('/src/ui/review-workspace.js');
   localStorage.setItem('pbsi_current_user', JSON.stringify({ username: 'evan', role: 'admin' }));
 
   // Real suggested signatory counts, the exact same shape nor-composer.js

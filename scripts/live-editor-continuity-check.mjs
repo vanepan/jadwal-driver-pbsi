@@ -43,7 +43,7 @@ await page.goto(`http://localhost:${port}/`, { waitUntil: 'domcontentloaded' });
 
 const result = await page.evaluate(async () => {
   const { createDocument } = await import('/src/document-intelligence/composer/composer-store.js');
-  const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
+  const { mountReviewWorkspace } = await import('/src/ui/review-workspace.js');
 
   localStorage.setItem('pbsi_current_user', JSON.stringify({ username: 'evan', role: 'admin' }));
 

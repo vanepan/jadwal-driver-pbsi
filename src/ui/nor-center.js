@@ -68,12 +68,12 @@ import { buildAllProfiles, listProfileTypes } from '../knowledge/profiles/profil
 import { listDatasets } from '../knowledge/datasets/registry/dataset-registry.js';
 import { getKind } from '../knowledge/registry/kind-registry.js';
 
-import { computeArchiveHealth } from '../../../src/organizational-memory/archive-health-engine.js';
-import { getArchiveTimeline } from '../../../src/organizational-memory/archive-timeline-engine.js';
-import { listArchive as archiveList } from '../../../src/organizational-memory/services/archive-service.js';
-import { checkKnowledgeContribution } from '../../../src/organizational-memory/knowledge-contribution-engine.js';
+import { computeArchiveHealth } from '../organizational-memory/archive-health-engine.js';
+import { getArchiveTimeline } from '../organizational-memory/archive-timeline-engine.js';
+import { listArchive as archiveList } from '../organizational-memory/services/archive-service.js';
+import { checkKnowledgeContribution } from '../organizational-memory/knowledge-contribution-engine.js';
 
-import { getComposerTimeline, getRevisionHistory } from '../../../src/document-intelligence/composer/composer-store.js';
+import { getComposerTimeline, getRevisionHistory } from '../document-intelligence/composer/composer-store.js';
 // Phase 10, Sprint 10.3 — the Composer is fully awake: createDocument
 // (Phase 8-10) AND editSection (this sprint, via ui/review-workspace.js)
 // both now have real callers. js/v2/dormant-subsystems.js's own
@@ -89,8 +89,8 @@ import { setSarprasIntelligenceScreen } from './sarpras-intelligence-center.js';
 
 import {
   initPettyCashStore, registerChangeListener as onPettyCashChange, getSettings as getPettyCashSettings,
-} from '../../petty-cash/petty-cash-store.js';
-import { norNumberFromSequence, todayISO, fmtLong } from '../../petty-cash/petty-cash-config.js';
+} from '../../js/petty-cash/petty-cash-store.js';
+import { norNumberFromSequence, todayISO, fmtLong } from '../../js/petty-cash/petty-cash-config.js';
 // Sprint 11.1, Workstream 2 (production feedback) — the Generate NOR tab
 // now hosts the REAL conversation natively (never redirects to another
 // screen). Reuses the EXACT same real pipeline sarpras-intelligence-
@@ -99,11 +99,11 @@ import { norNumberFromSequence, todayISO, fmtLong } from '../../petty-cash/petty
 // 1/2/3/4 comments for what each of these does; the behavior here is
 // intentionally byte-for-byte the same, only the render target and CSS
 // scope differ).
-import { beginProblemSolving, continueProblemConversation, composeApprovedNor } from '../problem-solving/services/problem-solving-service.js';
-import { WORKFLOW_ROUTE } from '../problem-solving/contracts/workflow-route-contract.js';
+import { beginProblemSolving, continueProblemConversation, composeApprovedNor } from '../intake/services/problem-solving-service.js';
+import { WORKFLOW_ROUTE } from '../intake/contracts/workflow-route-contract.js';
 import { HYPOTHESIS_STATUS } from '../reasoning/contracts/hypothesis-contract.js';
-import { INTENT, getRequiredFacts } from '../../../src/conversation/contracts/intent-contract.js';
-import { globalSearch } from '../services/global-search-service.js';
+import { INTENT, getRequiredFacts } from '../conversation/contracts/intent-contract.js';
+import { globalSearch } from './services/global-search-service.js';
 // Sprint 11.1, Workstream 2 (production feedback) — PREVIOUSLY UNCALLED
 // anywhere in the UI layer (confirmed by grep before writing this): the
 // legacy CREATE_NOR conversation had a missingFacts LIST but no way to
@@ -111,7 +111,7 @@ import { globalSearch } from '../services/global-search-service.js';
 // `ui/ -> conversation/` as legal ("not exercised in Phase 6 — no UI
 // caller exists yet") — this is that edge's first real exercise, not a
 // new architectural decision.
-import { continueConversation } from '../../../src/conversation/services/conversation-service.js';
+import { continueConversation } from '../conversation/services/conversation-service.js';
 
 import {
   esc, renderEmptyState, renderTabShell, renderRowList, renderStatCards,
@@ -122,7 +122,7 @@ import { createDatasetImportController, effectiveStage } from './dataset-import-
 import {
   registerImportSessionChangeListener, registerImportBatchChangeListener,
 } from '../knowledge/services/import-session-service.js';
-import { registerChangeListener as registerFileStorageChangeListener } from '../../../src/file-storage/file-storage-registry.js';
+import { registerChangeListener as registerFileStorageChangeListener } from '../file-storage/file-storage-registry.js';
 
 import {
   PROFILE_OVERRIDE_TYPE, OVERRIDE_ACTION, OVERRIDE_PAYLOAD_SHAPE, isOverlayType, isStandaloneType,

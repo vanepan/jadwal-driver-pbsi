@@ -22,33 +22,33 @@
    block, rather than reached over a network).
    Run: node scripts/pipeline-state-machine-check.mjs   (exit 0 = pass) */
 
-import { setActiveRepository, list as knowledgeList } from '../js/v2/knowledge/repository/knowledge-repository.js';
-import { resetConnectorRegistry } from '../js/v2/knowledge/registry/connector-registry.js';
-import { resetDatasetRegistry, hasDataset } from '../js/v2/knowledge/datasets/registry/dataset-registry.js';
-import { resetImportReportLog } from '../js/v2/knowledge/acquisition/acquisition-engine.js';
-import { resetManualImportQueue } from '../js/v2/knowledge/acquisition/manual-import-queue-store.js';
-import { resetImportSessionRepository } from '../js/v2/knowledge/datasets/import-session/repository/import-session-repository.js';
-import { resetImportBatchRepository } from '../js/v2/knowledge/datasets/import-session/repository/import-batch-repository.js';
+import { setActiveRepository, list as knowledgeList } from '../src/knowledge/repository/knowledge-repository.js';
+import { resetConnectorRegistry } from '../src/knowledge/registry/connector-registry.js';
+import { resetDatasetRegistry, hasDataset } from '../src/knowledge/datasets/registry/dataset-registry.js';
+import { resetImportReportLog } from '../src/knowledge/acquisition/acquisition-engine.js';
+import { resetManualImportQueue } from '../src/knowledge/acquisition/manual-import-queue-store.js';
+import { resetImportSessionRepository } from '../src/knowledge/datasets/import-session/repository/import-session-repository.js';
+import { resetImportBatchRepository } from '../src/knowledge/datasets/import-session/repository/import-batch-repository.js';
 import { resetArchiveRepository, list as archiveList } from '../src/organizational-memory/repository/archive-repository.js';
-import { DATASET_TYPE } from '../js/v2/knowledge/datasets/contracts/dataset-contract.js';
+import { DATASET_TYPE } from '../src/knowledge/datasets/contracts/dataset-contract.js';
 import {
   IMPORT_SESSION_STATE, IMPORT_SESSION_KIND, PIPELINE_STAGE, PIPELINE_STAGE_ORDER,
   IMPORT_SESSION_GRAPH, IMPORT_SESSION_TERMINAL_STATES, isTerminalImportSessionState,
   isOffRampStage, normalizeImportSessionRecord,
-} from '../js/v2/knowledge/datasets/import-session/contracts/import-session-contract.js';
+} from '../src/knowledge/datasets/import-session/contracts/import-session-contract.js';
 import {
   BATCH_STATUS, isImportBatchRecord, makeImportBatchRecord, normalizeImportBatchRecord,
-} from '../js/v2/knowledge/datasets/import-session/contracts/import-batch-contract.js';
+} from '../src/knowledge/datasets/import-session/contracts/import-batch-contract.js';
 import {
   createImportSession, attachParsedContent, attachManualEntryFacts, attachInferenceResult,
   getImportSession, listImportSessions, markUploading, updateSessionMetadata, ensureDatasetForSession,
-} from '../js/v2/knowledge/datasets/import-session/import-session-engine.js';
+} from '../src/knowledge/datasets/import-session/import-session-engine.js';
 import {
   createBatch, getBatch, cancelBatch, completeBatch, recordBatchItem,
-} from '../js/v2/knowledge/datasets/import-session/import-batch-engine.js';
+} from '../src/knowledge/datasets/import-session/import-batch-engine.js';
 import {
   advanceSession, sweepPipeline, cancelImportBatch, discardImportSession, PIPELINE_OUTCOME,
-} from '../js/v2/knowledge/datasets/import-session/pipeline-scheduler.js';
+} from '../src/knowledge/datasets/import-session/pipeline-scheduler.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -56,7 +56,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // Importing the UI module registers the real archiver with the scheduler (the
 // one cross-layer seam — see dataset-import-center.js#registerArchiver).
-import { effectiveStage, reviewReasons } from '../js/v2/ui/dataset-import-center.js';
+import { effectiveStage, reviewReasons } from '../src/ui/dataset-import-center.js';
 
 if (typeof globalThis.localStorage === 'undefined') {
   const _store = new Map();
@@ -461,7 +461,7 @@ console.log('\n[HARDENING — no UI module may import a lifecycle mutator]');
     'markKnowledgeImported', 'markArchived', 'markUploading', 'markAwaitingEvidence',
     'cancelImportSession', 'failImportSession', 'recordPipelineAttempt', 'markAutoImported',
   ];
-  const uiDir = path.join(ROOT, 'js/v2/ui');
+  const uiDir = path.join(ROOT, 'src/ui');
   const uiFiles = fs.readdirSync(uiDir).filter((f) => f.endsWith('.js'));
   const offenders = [];
   for (const file of uiFiles) {
@@ -478,7 +478,7 @@ console.log('\n[HARDENING — no UI module may import a lifecycle mutator]');
     offenders.length === 0);
 
   // And the scheduler really is the only caller of them across ALL of js/v2.
-  const engineDir = path.join(ROOT, 'js/v2/knowledge/datasets/import-session');
+  const engineDir = path.join(ROOT, 'src/knowledge/datasets/import-session');
   const schedulerSrc = fs.readFileSync(path.join(engineDir, 'pipeline-scheduler.js'), 'utf8');
   const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
   const transitions = ['submitImportSessionForReview', 'approveImportSession', 'markKnowledgeImported', 'markArchived', 'cancelImportSession', 'failImportSession', 'markAwaitingEvidence'];
@@ -486,7 +486,7 @@ console.log('\n[HARDENING — no UI module may import a lifecycle mutator]');
     transitions.every((t) => new RegExp(`${t}\\(`).test(stripComments(schedulerSrc))));
 
   // The service facade must not hand out the primitives.
-  const serviceSrc = stripComments(fs.readFileSync(path.join(ROOT, 'js/v2/knowledge/services/import-session-service.js'), 'utf8'));
+  const serviceSrc = stripComments(fs.readFileSync(path.join(ROOT, 'src/knowledge/services/import-session-service.js'), 'utf8'));
   const leaked = MUTATORS.filter((m) => new RegExp(`\\b${m}\\b`).test(serviceSrc));
   check(`the service facade re-exports NO lifecycle primitive${leaked.length ? ` — LEAKED: ${leaked.join(', ')}` : ''}`, leaked.length === 0);
   check('the service facade does NOT re-export the unsafe bare cancelBatch', !/\bcancelBatch\b/.test(serviceSrc));

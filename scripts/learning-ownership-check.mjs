@@ -21,22 +21,22 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { resetLearningRepository } from '../js/v2/learning/repository/learning-repository.js';
+import { resetLearningRepository } from '../src/learning/repository/learning-repository.js';
 import { resetArchiveRepository } from '../src/organizational-memory/repository/archive-repository.js';
 import { resetGapWorkflowState } from '../src/organizational-memory/gap-workflow-engine.js';
-import { resetDatasetRegistry } from '../js/v2/knowledge/datasets/registry/dataset-registry.js';
+import { resetDatasetRegistry } from '../src/knowledge/datasets/registry/dataset-registry.js';
 import {
   recordCorrection, recordGapResolution, recordPattern, recordCoverage, recordKnowledgeEvolution,
   recordLearningEvent, findLearningEvent, listLearningEvents, getLearningHistory, explainLearningEvent,
   acceptLearningEvent, applyLearningEvent, LEARNING_SERVICE_ERRORS,
-} from '../js/v2/learning/services/learning-service.js';
+} from '../src/learning/services/learning-service.js';
 import {
   LEARNING_STATE, LEARNING_GRAPH, LEARNING_KIND, CORRECTION_TYPE, canTransitionLearning, isTerminalLearningState,
-} from '../js/v2/learning/contracts/learning-event-contract.js';
-import { setKnowledgeBackend, ingest, promoteKnowledge, getKnowledge } from '../js/v2/knowledge/services/knowledge-service.js';
-import { LIFECYCLE_STATE } from '../js/v2/knowledge/contracts/lifecycle-contract.js';
-import { computePatternRecommendations, computeLearningPatterns, discoverAndRecordPatterns } from '../js/v2/knowledge/services/pattern-discovery-service.js';
-import { PATTERN_TYPE } from '../js/v2/knowledge/contracts/pattern-recommendation-contract.js';
+} from '../src/learning/contracts/learning-event-contract.js';
+import { setKnowledgeBackend, ingest, promoteKnowledge, getKnowledge } from '../src/knowledge/services/knowledge-service.js';
+import { LIFECYCLE_STATE } from '../src/knowledge/contracts/lifecycle-contract.js';
+import { computePatternRecommendations, computeLearningPatterns, discoverAndRecordPatterns } from '../src/knowledge/services/pattern-discovery-service.js';
+import { PATTERN_TYPE } from '../src/knowledge/contracts/pattern-recommendation-contract.js';
 import { computeCoverageReport, recordCoverageSnapshot } from '../src/organizational-memory/coverage-engine.js';
 import { computeOrganizationalMemory } from '../src/organizational-memory/organizational-memory-engine.js';
 import {
@@ -54,7 +54,7 @@ function check(name, cond) {
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 
-function allSourceFiles() {
+function allSourceFiles(root) {
   const out = [];
   (function walk(dir) {
     for (const entry of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
@@ -62,12 +62,15 @@ function allSourceFiles() {
       if (entry.isDirectory()) walk(rel);
       else if (entry.name.endsWith('.js')) out.push({ rel, code: stripComments(read(rel)) });
     }
-  }('js/v2'));
+  }(root));
   return out;
 }
-const FILES = allSourceFiles();
+// learning/ moved to src/learning/ during Phase 1 Repository Refoundation —
+// scan both roots (js/v2/ still holds everything that hasn't moved yet) so
+// this stays a real assertion instead of silently losing sight of learning/.
+const FILES = [...allSourceFiles('js/v2'), ...allSourceFiles('src')];
 
-const OWNER = 'js/v2/learning/services/learning-service.js';
+const OWNER = 'src/learning/services/learning-service.js';
 const REPO_RE = /learning\/repository\/learning-repository\.js$/;
 
 /* ══ 1. ONE OWNER ═════════════════════════════════════════════════════ */
@@ -102,7 +105,7 @@ console.log('\n[Part 1 — exactly ONE owner writes the Learning Repository]');
 console.log('\n[Part 2 — no UI writes Learning directly, and Learning stays the most upstream domain]');
 {
   const offenders = [];
-  for (const { rel, code } of FILES.filter((f) => f.rel.startsWith('js/v2/ui/'))) {
+  for (const { rel, code } of FILES.filter((f) => f.rel.startsWith('src/ui/'))) {
     const blocks = code.match(/import\s*\{[^}]*\}\s*from\s*'[^']*'/gs) || [];
     for (const b of blocks) {
       const m = b.match(/from\s*'([^']*)'/);
@@ -113,12 +116,12 @@ console.log('\n[Part 2 — no UI writes Learning directly, and Learning stays th
   check(`NO ui/*.js imports the Learning Repository directly${offenders.length ? ` — FOUND: ${offenders.join(', ')}` : ''}`, offenders.length === 0);
 
   // Every UI producer reaches Learning through the SERVICE, not the repository.
-  const dic = read('js/v2/ui/dataset-import-center.js');
-  const kc = read('js/v2/ui/knowledge-center.js');
-  const nc = read('js/v2/ui/nor-center.js');
-  check('Import Session metadata correction goes through the Learning Service', /from '\.\.\/learning\/services\/learning-service\.js'/.test(dic) && dic.includes('recordCorrection'));
-  check('Knowledge Center\'s Request Changes goes through the Learning Service', /from '\.\.\/learning\/services\/learning-service\.js'/.test(kc) && kc.includes('recordCorrection'));
-  check('NOR Center\'s Profile Override approval goes through the Learning Service', /from '\.\.\/learning\/services\/learning-service\.js'/.test(nc) && nc.includes('recordCorrection'));
+  const dic = read('src/ui/dataset-import-center.js');
+  const kc = read('src/ui/knowledge-center.js');
+  const nc = read('src/ui/nor-center.js');
+  check('Import Session metadata correction goes through the Learning Service', /from '[^']*\/learning\/services\/learning-service\.js'/.test(dic) && dic.includes('recordCorrection'));
+  check('Knowledge Center\'s Request Changes goes through the Learning Service', /from '[^']*\/learning\/services\/learning-service\.js'/.test(kc) && kc.includes('recordCorrection'));
+  check('NOR Center\'s Profile Override approval goes through the Learning Service', /from '[^']*\/learning\/services\/learning-service\.js'/.test(nc) && nc.includes('recordCorrection'));
 
   // Learning itself imports NOTHING from knowledge/ or organizational-memory/
   // ENGINES OR SERVICES. The one precedented exception, allowlisted here
@@ -127,7 +130,7 @@ console.log('\n[Part 2 — no UI writes Learning directly, and Learning stays th
   // identity-contract.js#nextVersion — verified zero imports of its own) is
   // not a domain dependency, it is the same "don't duplicate a one-line
   // utility" discipline every repository in this platform already follows.
-  const learningFiles = FILES.filter((f) => f.rel.startsWith('js/v2/learning/'));
+  const learningFiles = FILES.filter((f) => f.rel.startsWith('src/learning/'));
   const leaks = [];
   for (const { rel, code } of learningFiles) {
     const blocks = code.match(/import\s*\{[^}]*\}\s*from\s*'[^']*'/gs) || [];
@@ -160,14 +163,14 @@ console.log('\n[Part 3 — no orphan lifecycle states, exactly one authority]');
 console.log('\n[Part 9 — every mission-named producer has a REAL call site, not just a function]');
 {
   const producers = [
-    ['Correction (metadata)', 'js/v2/ui/dataset-import-center.js', 'recordCorrection'],
-    ['Correction (knowledge)', 'js/v2/ui/knowledge-center.js', 'recordCorrection'],
-    ['Correction (pattern)', 'js/v2/ui/nor-center.js', 'recordCorrection'],
+    ['Correction (metadata)', 'src/ui/dataset-import-center.js', 'recordCorrection'],
+    ['Correction (knowledge)', 'src/ui/knowledge-center.js', 'recordCorrection'],
+    ['Correction (pattern)', 'src/ui/nor-center.js', 'recordCorrection'],
     ['Correction (relationship / Archive Relationships)', 'src/organizational-memory/services/archive-service.js', 'recordCorrection'],
     ['Gap Resolution', 'src/organizational-memory/gap-workflow-engine.js', 'recordGapResolution'],
-    ['Pattern Discovery', 'js/v2/knowledge/services/pattern-discovery-service.js', 'recordPattern'],
+    ['Pattern Discovery', 'src/knowledge/services/pattern-discovery-service.js', 'recordPattern'],
     ['Coverage', 'src/organizational-memory/coverage-engine.js', 'recordCoverage'],
-    ['Knowledge Approval', 'js/v2/knowledge/services/knowledge-service.js', 'recordKnowledgeEvolution'],
+    ['Knowledge Approval', 'src/knowledge/services/knowledge-service.js', 'recordKnowledgeEvolution'],
   ];
   for (const [label, file, fn] of producers) {
     check(`${label} calls ${fn}() from ${file}`, stripComments(read(file)).includes(`${fn}(`));
@@ -177,11 +180,11 @@ console.log('\n[Part 9 — every mission-named producer has a REAL call site, no
 console.log('\n[Part 9 — every consumer reads through a Service, never a repository directly]');
 {
   const consumers = [
-    'js/v2/knowledge/profiles/pattern-discovery-engine.js',
+    'src/knowledge/profiles/pattern-discovery-engine.js',
     'src/organizational-memory/coverage-engine.js',
     'src/organizational-memory/organizational-memory-engine.js',
-    'js/v2/ui/learning-dashboard.js',
-    'js/v2/ui/sarpras-intelligence-center.js',
+    'src/ui/learning-dashboard.js',
+    'src/ui/sarpras-intelligence-center.js',
   ];
   for (const file of consumers) {
     const src = stripComments(read(file));

@@ -72,7 +72,7 @@ await page1.evaluate((p) => new Promise((resolve, reject) => {
 
 const setup = await page1.evaluate(async () => {
   const { createDocument } = await import('/src/document-intelligence/composer/composer-store.js');
-  const { mountReviewWorkspace } = await import('/js/v2/ui/review-workspace.js');
+  const { mountReviewWorkspace } = await import('/src/ui/review-workspace.js');
   localStorage.setItem('pbsi_current_user', JSON.stringify({ username: 'evan', role: 'admin' }));
 
   // A doc with NO letterhead meta values -> those rows render as empty,

@@ -148,38 +148,38 @@
 import {
   getDocument, getRevisionHistory, listAllDocuments, registerChangeListener, editSection, addSection,
   transitionStatus, getReviewHistory,
-} from '../../../src/document-intelligence/composer/composer-store.js';
+} from '../document-intelligence/composer/composer-store.js';
 // Phase 11 Course Correction, Workstream 4/5 — render-time-only confidence
 // (never persisted; a pattern's own confidence can change as it gains
 // corroboration). See that file's own header for the full documented
 // hierarchy and why every number reuses an existing engine.
-import { computeSectionConfidence, confidenceHighlightTone } from '../../../src/document-intelligence/composer/section-confidence-engine.js';
+import { computeSectionConfidence, confidenceHighlightTone } from '../document-intelligence/composer/section-confidence-engine.js';
 // Workstream 3 — the ONE place a section edit becomes structured
 // learning, automatically. Reviving diff-learning-engine.js's own
 // dormant bridge, not a second one.
-import { recordSectionEdit } from '../../../src/document-intelligence/composer/section-learning-bridge.js';
-import { COMPOSER_REVIEW_STATE, composerReviewStateLabel } from '../../../src/document-intelligence/composer/contracts/composer-review-contract.js';
-import { explainDocument } from '../../../src/document-intelligence/nor/nor-explainability-service.js';
-import { getConversationHistory } from '../../../src/conversation/services/conversation-service.js';
+import { recordSectionEdit } from '../document-intelligence/composer/section-learning-bridge.js';
+import { COMPOSER_REVIEW_STATE, composerReviewStateLabel } from '../document-intelligence/composer/contracts/composer-review-contract.js';
+import { explainDocument } from '../document-intelligence/nor/nor-explainability-service.js';
+import { getConversationHistory } from '../conversation/services/conversation-service.js';
 import {
   esc, renderEmptyState, renderRowList, renderDetail, renderDetailSection,
   renderKvList, renderDiffTable, isDeveloperMode,
 } from './shared/workspace-list-kit.js';
 import { getDomainType } from '../knowledge/registry/domain-type-registry.js';
-import { can } from '../../config/role-registry.js';
+import { can } from '../../js/config/role-registry.js';
 // Phase 10, Sprint 10.6 — export/publish. generateAndOpen also imports
 // pdf-exporter.js's lazy-loaded pdfmake; the side-effect import below
 // self-registers the 'composer-document' template (template-registry.js's
 // own documented "templates self-register on import" convention).
-import { generateAndOpen } from '../../docs/doc-engine.js';
-import { buildHtml, buildDocumentStructure } from '../../docs/templates/composer-document.js';
+import { generateAndOpen } from '../../js/docs/doc-engine.js';
+import { buildHtml, buildDocumentStructure } from '../../js/docs/templates/composer-document.js';
 // Phase 12 Sprint 12.2 — the pdfmake template and the layout version an
 // exported/published document uses are now resolved from the governed
 // Document Layout Binding (domainType → template + design version), not a
 // hardcoded 'composer-document' string. Same resolved template today; the
 // export is now also STAMPED with its layout version so it renders
 // reproducibly under that version later (Layout Versioning).
-import { resolveLayout } from '../../docs/design-system/document-layout-binding.js';
+import { resolveLayout } from '../../js/docs/design-system/document-layout-binding.js';
 // Phase 12.8.x, Sprint 1 — Developer-Mode-only layout provenance (see
 // renderLayoutProvenance()'s own header for why this stays a read-only
 // traceability line rather than converting pdfmake's point-based page
@@ -195,18 +195,18 @@ import {
   // registered, so every subsequent getDesignSystem('composer') call
   // (including this very page's own next render) picks it up.
   registerDesignSystemVersion, latestVersion,
-} from '../../docs/design-system/document-design-system.js';
+} from '../../js/docs/design-system/document-design-system.js';
 // Phase 12.8.x (Live Workspace Experience Completion) — the real,
 // already-embedded PBSI mark (base64, no network fetch), the SAME
 // constant doc-theme.js#orgLogo() uses for the PDF export. review-
 // workspace.js is plain browser-rendered HTML, so an <img> tag is safe
 // here even though buildHtml()'s docx-export path deliberately still
 // avoids one (html-docx-js's base64-image support stays unverified).
-import { PBSI_LOGO_DATA_URI } from '../../docs/templates/reimbursement-logo.js';
-import { exportHtmlToDocx } from '../../docs/docx-exporter.js';
-import { archiveDocument } from '../../../src/organizational-memory/services/archive-service.js';
-import { computeDocumentHash } from '../../../src/organizational-memory/document-hash.js';
-import { recordSatisfactionRating } from '../../../src/document-intelligence/composer/satisfaction-log.js';
+import { PBSI_LOGO_DATA_URI } from '../../js/docs/templates/reimbursement-logo.js';
+import { exportHtmlToDocx } from '../../js/docs/docx-exporter.js';
+import { archiveDocument } from '../organizational-memory/services/archive-service.js';
+import { computeDocumentHash } from '../organizational-memory/document-hash.js';
+import { recordSatisfactionRating } from '../document-intelligence/composer/satisfaction-log.js';
 // Phase 12.8.4 — Live Word Workspace's first real UI caller. Gated behind
 // WORKSPACE_LIVE_SUGGESTIONS_ENABLED (workspace-flags.js) — merging this
 // import does not itself change what a reviewer sees; the flag does. See

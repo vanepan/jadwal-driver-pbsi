@@ -26,8 +26,8 @@ import {
   submitKnowledgeForReview, promoteToCandidate,
   getKnowledge, listKnowledge, explainKnowledge,
   KNOWLEDGE_SERVICE_ERRORS,
-} from '../js/v2/knowledge/services/knowledge-service.js';
-import { LIFECYCLE_STATE, LIFECYCLE_GRAPH } from '../js/v2/knowledge/contracts/lifecycle-contract.js';
+} from '../src/knowledge/services/knowledge-service.js';
+import { LIFECYCLE_STATE, LIFECYCLE_GRAPH } from '../src/knowledge/contracts/lifecycle-contract.js';
 import { DORMANT } from '../js/v2/dormant-subsystems.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -40,8 +40,8 @@ function check(name, cond) {
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 
-/** Every .js file under js/v2, as {relPath, code} with comments stripped. */
-function allSourceFiles() {
+/** Every .js file under a given root, as {relPath, code} with comments stripped. */
+function allSourceFiles(root) {
   const out = [];
   (function walk(dir) {
     for (const entry of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
@@ -49,10 +49,14 @@ function allSourceFiles() {
       if (entry.isDirectory()) walk(rel);
       else if (entry.name.endsWith('.js')) out.push({ rel, code: stripComments(read(rel)) });
     }
-  }('js/v2'));
+  }(root));
   return out;
 }
-const FILES = allSourceFiles();
+// organizational-memory/, document-intelligence/, conversation/, reasoning/,
+// learning/, workspace/, and ui/ all moved to src/ during Phase 1 Repository
+// Refoundation — scan both roots so this stays a real assertion instead of
+// silently losing sight of every domain that has moved out of js/v2/.
+const FILES = [...allSourceFiles('js/v2'), ...allSourceFiles('src')];
 
 /** Which files import `names` from a module whose path matches `modRe`? */
 function importersOf(modRe, names) {
@@ -77,8 +81,8 @@ function importersOf(modRe, names) {
    1. ARCHITECTURE — Knowledge has exactly ONE owner
    ══════════════════════════════════════════════════════════════════════ */
 
-const OWNER = 'js/v2/knowledge/services/knowledge-service.js';
-const MECHANISM = 'js/v2/knowledge/lifecycle/lifecycle-engine.js';
+const OWNER = 'src/knowledge/services/knowledge-service.js';
+const MECHANISM = 'src/knowledge/lifecycle/lifecycle-engine.js';
 const REPO_RE = /repository\/knowledge-repository\.js$/;
 const WRITERS = ['create', 'appendVersion', 'rollback'];
 
@@ -100,15 +104,15 @@ console.log('\n[Part 1/3 — exactly ONE owner writes the Knowledge Repository]'
 
   // The audit found FIVE writers. Name each one, so a regression is legible.
   const FORMER_WRITERS = [
-    'js/v2/knowledge/acquisition/acquisition-engine.js',
-    'js/v2/knowledge/extraction/extraction-write-helper.js',
-    'js/v2/knowledge/datasets/import-session/knowledge-rehydration-engine.js',
-    'js/v2/knowledge/learning/correction-pipeline-engine.js',
-    'js/v2/knowledge/review/review-workflow-engine.js',
-    'js/v2/knowledge/promotion/promotion-engine.js',
+    'src/knowledge/acquisition/acquisition-engine.js',
+    'src/knowledge/extraction/extraction-write-helper.js',
+    'src/knowledge/datasets/import-session/knowledge-rehydration-engine.js',
+    'src/knowledge/learning/correction-pipeline-engine.js',
+    'src/knowledge/review/review-workflow-engine.js',
+    'src/knowledge/promotion/promotion-engine.js',
   ];
   for (const f of FORMER_WRITERS) {
-    check(`${f.replace('js/v2/knowledge/', '')} is now a CLIENT, not a writer`,
+    check(`${f.replace('src/knowledge/', '')} is now a CLIENT, not a writer`,
       !writers.some((w) => w.rel === f));
   }
 }
@@ -122,7 +126,7 @@ console.log('\n[Part 2 — exactly ONE lifecycle authority]');
     offenders.length === 0 && transitioners.length === 1,
   );
   // The audit's B1: the services barrel used to hand out `lifecycle.requestTransition`.
-  const lifecycleService = stripComments(read('js/v2/knowledge/services/lifecycle-service.js'));
+  const lifecycleService = stripComments(read('src/knowledge/services/lifecycle-service.js'));
   check('lifecycle-service.js (re-exported by the services barrel) no longer leaks requestTransition',
     !/\brequestTransition\b/.test(lifecycleService));
   check('...but still exposes validateTransition, a pure predicate that mutates nothing',
@@ -140,7 +144,7 @@ console.log('\n[Part 3 — no UI imports a Knowledge mutator, and none reads the
   const KNOWLEDGE_MODULE_RE = /knowledge-repository\.js$|knowledge-service\.js$|lifecycle-engine\.js$/;
   const MUTATORS = [...WRITERS, 'requestTransition'];
   const uiOffenders = [];
-  for (const { rel, code } of FILES.filter((f) => f.rel.startsWith('js/v2/ui/'))) {
+  for (const { rel, code } of FILES.filter((f) => f.rel.startsWith('src/ui/'))) {
     const blocks = code.match(/import\s*\{[^}]*\}\s*from\s*'[^']*'/gs) || [];
     for (const b of blocks) {
       const from = b.match(/from\s*'([^']*)'/);
@@ -162,12 +166,12 @@ console.log('\n[Part 3 — no UI imports a Knowledge mutator, and none reads the
     repoImporters.length === 0);
 
   // The governance UI must exist — its ABSENCE was the Phase 2.6 finding.
-  const kc = read('js/v2/ui/knowledge-center.js');
+  const kc = read('src/ui/knowledge-center.js');
   check('Knowledge Center wires the human governance actions (approve / request changes / reject / archive)',
     kc.includes('data-act="kc-gov-approve"') && kc.includes('data-act="kc-gov-changes"')
     && kc.includes('data-act="kc-gov-reject"') && kc.includes('data-act="kc-gov-archive"'));
   check('...and reaches them ONLY through the Knowledge Service',
-    /from '\.\.\/knowledge\/services\/knowledge-service\.js'/.test(kc));
+    /from '[^']*\/knowledge\/services\/knowledge-service\.js'/.test(kc));
   check('Knowledge Center surfaces Drafts rather than hiding them (Part 5)',
     /renderLifecycleDistribution/.test(kc));
   check('Knowledge Center explains WHY each item exists (Part 6)',
@@ -191,7 +195,7 @@ console.log('\n[Part 8 — no subsystem has readers without writers]');
   // so it must NOT appear in the register — and must have real callers.
   const gapWriters = importersOf(/gap-workflow-engine\.js$|organizational-memory\/index\.js$/, ['flagGapForUpload', 'resolveGap']);
   check('gap-workflow is ACTIVATED — flagGapForUpload/resolveGap now have real callers',
-    gapWriters.some((w) => w.rel.startsWith('js/v2/ui/')));
+    gapWriters.some((w) => w.rel.startsWith('src/ui/')));
   check('...and is therefore NOT listed as dormant', !DORMANT.some((d) => d.id === 'gap-workflow'));
 
   // The genuinely-deferred subsystem must be DECLARED, and must SAY SO
@@ -208,12 +212,12 @@ console.log('\n[Part 8 — no subsystem has readers without writers]');
   // itself.
   const composerWriters = importersOf(/composer-store\.js$/, ['editSection']);
   check('composer-timeline is ACTIVATED — editSection now has a real caller',
-    composerWriters.some((w) => w.rel.startsWith('js/v2/ui/')));
+    composerWriters.some((w) => w.rel.startsWith('src/ui/')));
   check('...and is therefore NOT listed as dormant', !DORMANT.some((d) => d.id === 'composer-timeline'));
 
-  const ld = read('js/v2/ui/learning-dashboard.js');
-  const sic = read('js/v2/ui/sarpras-intelligence-center.js');
-  const nc = read('js/v2/ui/nor-center.js');
+  const ld = read('src/ui/learning-dashboard.js');
+  const sic = read('src/ui/sarpras-intelligence-center.js');
+  const nc = read('src/ui/nor-center.js');
   check('Learning Dashboard tells the truth about the dormant correction log (no bare zero)',
     ld.includes("dormantNote('correction-log')"));
   check('the Executive Briefing tells the truth about it too — it used to report a permanent, confident 0',

@@ -25,32 +25,32 @@
    the real, unmodified controller — no replica needed there.
    Run: node scripts/evidence-first-ingestion-check.mjs   (exit 0 = pass) */
 
-import { setActiveRepository } from '../js/v2/knowledge/repository/knowledge-repository.js';
-import { resetConnectorRegistry } from '../js/v2/knowledge/registry/connector-registry.js';
-import { resetDatasetRegistry } from '../js/v2/knowledge/datasets/registry/dataset-registry.js';
-import { resetImportReportLog } from '../js/v2/knowledge/acquisition/acquisition-engine.js';
-import { resetManualImportQueue } from '../js/v2/knowledge/acquisition/manual-import-queue-store.js';
-import { resetImportSessionRepository } from '../js/v2/knowledge/datasets/import-session/repository/import-session-repository.js';
-import { resetImportBatchRepository } from '../js/v2/knowledge/datasets/import-session/repository/import-batch-repository.js';
+import { setActiveRepository } from '../src/knowledge/repository/knowledge-repository.js';
+import { resetConnectorRegistry } from '../src/knowledge/registry/connector-registry.js';
+import { resetDatasetRegistry } from '../src/knowledge/datasets/registry/dataset-registry.js';
+import { resetImportReportLog } from '../src/knowledge/acquisition/acquisition-engine.js';
+import { resetManualImportQueue } from '../src/knowledge/acquisition/manual-import-queue-store.js';
+import { resetImportSessionRepository } from '../src/knowledge/datasets/import-session/repository/import-session-repository.js';
+import { resetImportBatchRepository } from '../src/knowledge/datasets/import-session/repository/import-batch-repository.js';
 import { resetArchiveRepository } from '../src/organizational-memory/repository/archive-repository.js';
-import { resetLearningRepository } from '../js/v2/learning/repository/learning-repository.js';
-import { DATASET_TYPE } from '../js/v2/knowledge/datasets/contracts/dataset-contract.js';
-import { IMPORT_SESSION_KIND, IMPORT_SESSION_STATE } from '../js/v2/knowledge/datasets/import-session/contracts/import-session-contract.js';
+import { resetLearningRepository } from '../src/learning/repository/learning-repository.js';
+import { DATASET_TYPE } from '../src/knowledge/datasets/contracts/dataset-contract.js';
+import { IMPORT_SESSION_KIND, IMPORT_SESSION_STATE } from '../src/knowledge/datasets/import-session/contracts/import-session-contract.js';
 import {
   createImportSession, attachExtractionSuggestion, attachConsensusSuggestion,
   attachManualEntryFacts, attachFactsProvenance, attachInferenceResult, getImportSession,
-} from '../js/v2/knowledge/datasets/import-session/import-session-engine.js';
-import { isContentFactsComplete } from '../js/v2/knowledge/datasets/import-session/content-fact-extraction-engine.js';
-import { computeFieldConsensus } from '../js/v2/knowledge/datasets/import-session/content-fact-consensus-engine.js';
-import { AUTO_POPULATE_CONFIDENCE_THRESHOLD } from '../js/v2/knowledge/datasets/import-session/metadata-inference-engine.js';
-import { advanceSession } from '../js/v2/knowledge/datasets/import-session/pipeline-scheduler.js';
+} from '../src/knowledge/datasets/import-session/import-session-engine.js';
+import { isContentFactsComplete } from '../src/knowledge/datasets/import-session/content-fact-extraction-engine.js';
+import { computeFieldConsensus } from '../src/knowledge/datasets/import-session/content-fact-consensus-engine.js';
+import { AUTO_POPULATE_CONFIDENCE_THRESHOLD } from '../src/knowledge/datasets/import-session/metadata-inference-engine.js';
+import { advanceSession } from '../src/knowledge/datasets/import-session/pipeline-scheduler.js';
 import { archiveImportedKnowledge, listArchive as archiveList } from '../src/organizational-memory/services/archive-service.js';
 import { computeDocumentHash } from '../src/organizational-memory/index.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
 import {
   createDatasetImportController, contentFactsGapMessage,
-} from '../js/v2/ui/dataset-import-center.js';
-import { setPresentationMode } from '../js/v2/ui/shared/workspace-list-kit.js';
+} from '../src/ui/dataset-import-center.js';
+import { setPresentationMode } from '../src/ui/shared/workspace-list-kit.js';
 
 if (typeof globalThis.localStorage === 'undefined') {
   const _store = new Map();
