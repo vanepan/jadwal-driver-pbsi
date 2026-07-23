@@ -62,7 +62,7 @@
 'use strict';
 
 import { isEvidenceList } from '../../knowledge/contracts/evidence-contract.js';
-import { isSuggestionPlaceholder } from '../../../../src/document-intelligence/composer/contracts/suggestion-placeholder-contract.js';
+import { isSuggestionPlaceholder } from '../../document-intelligence/composer/contracts/suggestion-placeholder-contract.js';
 
 export const LIVE_BLOCK_SCHEMA = 'live-block@1';
 
@@ -91,7 +91,7 @@ export function isBlockType(t) {
  * @property {*} value
  * @property {boolean} isOverridden
  * @property {import('../../knowledge/contracts/evidence-contract.js').Evidence[]} knowledgeReferences
- * @property {import('../../../../src/document-intelligence/composer/contracts/suggestion-placeholder-contract.js').SuggestionPlaceholder|null} suggestionPlaceholder
+ * @property {import('../../document-intelligence/composer/contracts/suggestion-placeholder-contract.js').SuggestionPlaceholder|null} suggestionPlaceholder
  * @property {string[]} liveEntityRefs        - Body Entity ids this block currently references, [] by default
  */
 

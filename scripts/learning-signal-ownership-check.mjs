@@ -68,7 +68,7 @@ function resolveRelative(fromRel, target) {
   return path.posix.normalize(path.posix.join(fromDir, target));
 }
 
-const LEARNING_FILES = allSourceFiles('js/v2/learning');
+const LEARNING_FILES = allSourceFiles('src/learning');
 
 console.log('\n[Part 1 — no new learning/ file imports a knowledge/ or organizational-memory/ ENGINE]');
 {
@@ -88,7 +88,7 @@ console.log('\n[Part 1 — no new learning/ file imports a knowledge/ or organiz
 
 console.log('\n[Part 2 — learning-signal-service.js: exactly one repository-touching call, never a second ledger]');
 {
-  const src = stripComments(read('js/v2/learning/services/learning-signal-service.js'));
+  const src = stripComments(read('src/learning/services/learning-signal-service.js'));
   const writeTokens = (src.match(/\brecordLearningEvent\(/g) || []).length;
   check('recordLearningEvent( appears exactly once', writeTokens === 1);
   check('no other write-shaped token exists (.set(, new Map(, repoCreate, repoAppendVersion)', !/\.set\(|new Map\(|repoCreate|repoAppendVersion/.test(src));
@@ -96,7 +96,7 @@ console.log('\n[Part 2 — learning-signal-service.js: exactly one repository-to
 
 console.log('\n[Part 3 — learning-outcome-service.js routes through emitLearningSignal only]');
 {
-  const outcomeSrc = stripComments(read('js/v2/learning/services/learning-outcome-service.js'));
+  const outcomeSrc = stripComments(read('src/learning/services/learning-outcome-service.js'));
   check('learning-outcome-service.js imports ONLY emitLearningSignal from learning-signal-service.js, nothing from learning-repository.js', /emitLearningSignal/.test(outcomeSrc) && !/learning-repository\.js/.test(outcomeSrc) && !/repoCreate|repoAppendVersion/.test(outcomeSrc));
 
   // Phase 12.7.6 — recognition/'s own emission service is the third legal
@@ -130,10 +130,14 @@ console.log('\n[Part 4 — nothing outside learning/ + recognition/ + workspace/
   // never learning-repository.js directly. scripts/workspace-ownership-
   // check.mjs is the authority on exactly what workspace/ may import from
   // learning/.
+  // learning/ moved to src/learning/ during Phase 1 Repository Refoundation
+  // — scan both js/v2/ and src/ (recognition/ and workspace/ haven't moved
+  // yet; learning/'s new home has) so this stays a real assertion instead
+  // of silently stopping at a root that no longer contains everything.
   const offenders = [];
   const scan = (dir) => {
     (function walk(rel) {
-      if (rel === 'js/v2/learning' || rel === 'js/v2/recognition' || rel === 'js/v2/workspace') return;
+      if (rel === 'src/learning' || rel === 'js/v2/recognition' || rel === 'src/workspace') return;
       for (const entry of fs.readdirSync(path.join(ROOT, rel), { withFileTypes: true })) {
         const r = `${rel}/${entry.name}`;
         if (entry.isDirectory()) { walk(r); continue; }
@@ -149,14 +153,15 @@ console.log('\n[Part 4 — nothing outside learning/ + recognition/ + workspace/
     }(dir));
   };
   scan('js/v2');
-  check(`no file outside js/v2/learning/, js/v2/recognition/, or js/v2/workspace/ imports any Phase 12.6 file yet${offenders.length ? ` — FOUND: ${offenders.join(', ')}` : ''}`, offenders.length === 0);
+  scan('src');
+  check(`no file outside learning/, js/v2/recognition/, or js/v2/workspace/ imports any Phase 12.6 file yet${offenders.length ? ` — FOUND: ${offenders.join(', ')}` : ''}`, offenders.length === 0);
 
   // Phase 12.8 — the SAME symbol-level discipline this Part already
   // applies to recognition/'s own emission service (above), applied to
   // workspace/'s two real callers.
-  const contextBuilderSrc = stripComments(read('js/v2/workspace/context/workspace-context-builder.js'));
+  const contextBuilderSrc = stripComments(read('src/workspace/context/workspace-context-builder.js'));
   check('workspace-context-builder.js imports ONLY computeRecommendations from learning/ (read-only, never a writer)', /computeRecommendations/.test(contextBuilderSrc) && !/learning-repository\.js/.test(contextBuilderSrc) && !/recordLearningEvent\(/.test(contextBuilderSrc));
-  const workspaceServiceSrc = stripComments(read('js/v2/workspace/services/workspace-service.js'));
+  const workspaceServiceSrc = stripComments(read('src/workspace/services/workspace-service.js'));
   check('workspace-service.js imports ONLY emitLearningSignal from learning/, nothing else write-shaped', /emitLearningSignal/.test(workspaceServiceSrc) && !/learning-repository\.js/.test(workspaceServiceSrc) && !/recordLearningEvent\(/.test(workspaceServiceSrc));
 }
 

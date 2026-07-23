@@ -44,7 +44,7 @@
 'use strict';
 
 import { isLiveSuggestion, SUGGESTION_SOURCE_DOMAIN } from '../contracts/live-suggestion-contract.js';
-import { records as recognitionRecords } from '../../recognition/services/index.js';
+import { records as recognitionRecords } from '../../../js/v2/recognition/services/index.js';
 import { explainLearningEvent } from '../../learning/services/learning-service.js';
 
 export const SUGGESTION_TYPE_LABELS = Object.freeze({

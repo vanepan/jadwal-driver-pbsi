@@ -44,11 +44,11 @@
 
 'use strict';
 
-import { makeEditableSection, isEditableSection } from '../../../../src/document-intelligence/composer/contracts/editable-section-contract.js';
+import { makeEditableSection, isEditableSection } from '../../document-intelligence/composer/contracts/editable-section-contract.js';
 import { makeLiveBlock, BLOCK_TYPE } from '../contracts/live-block-contract.js';
 
 /**
- * @param {import('../../../../src/document-intelligence/composer/contracts/editable-section-contract.js').EditableSection[]} sections
+ * @param {import('../../document-intelligence/composer/contracts/editable-section-contract.js').EditableSection[]} sections
  * @returns {import('../contracts/live-block-contract.js').LiveBlock[]}
  */
 export function sectionsToLiveBlocks(sections) {
@@ -67,7 +67,7 @@ export function sectionsToLiveBlocks(sections) {
 
 /**
  * @param {import('../contracts/live-block-contract.js').LiveBlock[]} blocks
- * @returns {import('../../../../src/document-intelligence/composer/contracts/editable-section-contract.js').EditableSection[]}
+ * @returns {import('../../document-intelligence/composer/contracts/editable-section-contract.js').EditableSection[]}
  */
 export function liveBlocksToSections(blocks) {
   return [...blocks]

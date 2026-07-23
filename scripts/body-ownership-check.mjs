@@ -116,19 +116,19 @@ console.log('\n[Part 2 — exactly ONE owner writes Relationship + BodyEvent rep
 
 console.log('\n[Part 3 — body/ is a PEER of knowledge/, never depends on any ENGINE or SERVICE in it (or any downstream domain)]');
 {
-  // organizational-memory/ moved to src/organizational-memory/ during Phase 1
-  // Repository Refoundation — matched on '/organizational-memory/' alone
-  // (substring-safe for either the old or new root) so this stays a real
-  // assertion instead of silently never matching a path that no longer
-  // contains '/v2/'.
-  const FORBIDDEN_TREES = ['/v2/knowledge/', '/organizational-memory/', '/v2/learning/', '/conversation/', '/v2/reasoning/', '/v2/problem-intelligence/', '/v2/problem-solving/', '/document-intelligence/', '/v2/ui/'];
-  const ALLOWLISTED_PURE_LEAF_REUSE = ['js/v2/knowledge/contracts/identity-contract.js', 'js/v2/knowledge/observability/contracts/warning-contract.js'];
+  // organizational-memory/, document-intelligence/, conversation/, and now
+  // reasoning/ moved to src/ during Phase 1 Repository Refoundation —
+  // matched on the domain name alone (substring-safe for either the old or
+  // new root) so this stays a real assertion instead of silently never
+  // matching a path that no longer contains '/v2/'.
+  const FORBIDDEN_TREES = ['/v2/knowledge/', '/organizational-memory/', '/v2/learning/', '/conversation/', '/reasoning/', '/intake/', '/document-intelligence/', '/v2/ui/'];
+  const ALLOWLISTED_PURE_LEAF_REUSE = ['src/knowledge/contracts/identity-contract.js', 'src/knowledge/observability/contracts/warning-contract.js'];
   const leaks = [];
   for (const { rel, code } of BODY_FILES) {
     for (const { target } of importTargets(code)) {
       const resolved = resolveRelative(rel, target);
       if (!FORBIDDEN_TREES.some((t) => resolved.includes(t))) continue;
-      if (ALLOWLISTED_PURE_LEAF_REUSE.some((allowed) => resolved.endsWith(allowed.replace('js/v2/knowledge/', '/v2/knowledge/')))) continue;
+      if (ALLOWLISTED_PURE_LEAF_REUSE.some((allowed) => resolved.endsWith(allowed.replace('src/knowledge/', '/v2/knowledge/')))) continue;
       leaks.push(`${rel} -> ${resolved}`);
     }
   }
@@ -158,7 +158,7 @@ console.log('\n[Part 4 — nothing OUTSIDE js/v2/body/ imports js/v2/body/, exce
   // into body/.
   const offenders = [];
   for (const { rel, code } of V2_FILES) {
-    if (rel.startsWith('js/v2/body/') || rel.startsWith('js/v2/workspace/')) continue;
+    if (rel.startsWith('js/v2/body/') || rel.startsWith('src/workspace/')) continue;
     for (const { target } of importTargets(code)) {
       const resolved = resolveRelative(rel, target);
       if (resolved.includes('/v2/body/')) offenders.push(`${rel} -> ${resolved}`);
