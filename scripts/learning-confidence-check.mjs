@@ -10,10 +10,10 @@
    Deterministic.
    Run: node scripts/learning-confidence-check.mjs   (exit 0 = pass) */
 
-import { computeSignalConfidence } from '../js/v2/learning/learning-confidence-engine.js';
-import { makeLearningScope } from '../js/v2/learning/contracts/learning-scope-contract.js';
-import { makeLearningSignal, isLearningSignal } from '../js/v2/learning/contracts/learning-signal-contract.js';
-import { isLearningConfidence } from '../js/v2/learning/contracts/learning-confidence-contract.js';
+import { computeSignalConfidence } from '../src/learning/learning-confidence-engine.js';
+import { makeLearningScope } from '../src/learning/contracts/learning-scope-contract.js';
+import { makeLearningSignal, isLearningSignal } from '../src/learning/contracts/learning-signal-contract.js';
+import { isLearningConfidence } from '../src/learning/contracts/learning-confidence-contract.js';
 
 let pass = 0; let fail = 0;
 function check(name, cond) {

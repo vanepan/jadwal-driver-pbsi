@@ -6,22 +6,22 @@
 
    Entirely V1-free — synthetic items against the Memory repository. */
 
-import { LIFECYCLE_STATE } from '../js/v2/knowledge/contracts/lifecycle-contract.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
-import { isRelationshipPayload, RELATIONSHIP_TYPE } from '../js/v2/knowledge/contracts/dependency-graph-contract.js';
+import { LIFECYCLE_STATE } from '../src/knowledge/contracts/lifecycle-contract.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
+import { isRelationshipPayload, RELATIONSHIP_TYPE } from '../src/knowledge/contracts/dependency-graph-contract.js';
 import {
   setActiveRepository, create as repoCreate, getById,
-} from '../js/v2/knowledge/repository/knowledge-repository.js';
-import { promoteToCandidate } from '../js/v2/knowledge/promotion/promotion-engine.js';
-import { submitForReview, approve } from '../js/v2/knowledge/review/review-workflow-engine.js';
+} from '../src/knowledge/repository/knowledge-repository.js';
+import { promoteToCandidate } from '../src/knowledge/promotion/promotion-engine.js';
+import { submitForReview, approve } from '../src/knowledge/review/review-workflow-engine.js';
 import {
   startCorrectionSession, submitCorrection, finishCorrectionSession, listCorrectionLog, resetCorrectionLog,
-} from '../js/v2/knowledge/learning/correction-pipeline-engine.js';
-import { computeSimilarity, findSimilarItems } from '../js/v2/knowledge/learning/similarity-detection-engine.js';
-import { getKnowledgeEvolution } from '../js/v2/knowledge/learning/knowledge-evolution-engine.js';
-import { buildLearningMetrics } from '../js/v2/knowledge/learning/contracts/learning-metrics-contract.js';
-import { LEARNING_EVENT_TYPE } from '../js/v2/knowledge/learning/contracts/event-contract.js';
-import { LEARNING_SESSION_STATUS } from '../js/v2/knowledge/learning/contracts/session-contract.js';
+} from '../src/knowledge/learning/correction-pipeline-engine.js';
+import { computeSimilarity, findSimilarItems } from '../src/knowledge/learning/similarity-detection-engine.js';
+import { getKnowledgeEvolution } from '../src/knowledge/learning/knowledge-evolution-engine.js';
+import { buildLearningMetrics } from '../src/knowledge/learning/contracts/learning-metrics-contract.js';
+import { LEARNING_EVENT_TYPE } from '../src/knowledge/learning/contracts/event-contract.js';
+import { LEARNING_SESSION_STATUS } from '../src/knowledge/learning/contracts/session-contract.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {

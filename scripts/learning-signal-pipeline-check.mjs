@@ -12,10 +12,10 @@
    Deterministic.
    Run: node scripts/learning-signal-pipeline-check.mjs   (exit 0 = pass) */
 
-import { emitLearningSignal, resolveLearningKind, LEARNING_SIGNAL_SERVICE_ERRORS } from '../js/v2/learning/services/learning-signal-service.js';
-import { findLearningEvent, explainLearningEvent, listLearningEvents } from '../js/v2/learning/services/learning-service.js';
-import { LEARNING_KIND } from '../js/v2/learning/contracts/learning-event-contract.js';
-import { registerSignalType, resetSignalTypeRegistry } from '../js/v2/learning/registry/learning-signal-type-registry.js';
+import { emitLearningSignal, resolveLearningKind, LEARNING_SIGNAL_SERVICE_ERRORS } from '../src/learning/services/learning-signal-service.js';
+import { findLearningEvent, explainLearningEvent, listLearningEvents } from '../src/learning/services/learning-service.js';
+import { LEARNING_KIND } from '../src/learning/contracts/learning-event-contract.js';
+import { registerSignalType, resetSignalTypeRegistry } from '../src/learning/registry/learning-signal-type-registry.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -128,7 +128,7 @@ console.log('\n[Conflict — a CONTRADICTING signal in the same scope lowers con
 
 console.log('\n[Ownership — exactly one repository-touching call in this whole file]');
 {
-  const src = fs.readFileSync(path.join(ROOT, 'js/v2/learning/services/learning-signal-service.js'), 'utf8');
+  const src = fs.readFileSync(path.join(ROOT, 'src/learning/services/learning-signal-service.js'), 'utf8');
   const withoutComments = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
   const writeTokens = (withoutComments.match(/\brecordLearningEvent\(/g) || []).length;
   check('recordLearningEvent( appears exactly once — the pipeline\'s one and only write', writeTokens === 1);

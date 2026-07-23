@@ -26,7 +26,7 @@
 
 'use strict';
 
-import { nextVersion } from '../../../js/v2/knowledge/contracts/identity-contract.js';
+import { nextVersion } from '../../knowledge/contracts/identity-contract.js';
 import { isArchiveRecord, normalizeArchiveRecord } from '../contracts/archive-record-contract.js';
 
 /* ══════════════════════════════════════════════════════════════════════

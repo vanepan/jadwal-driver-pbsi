@@ -36,8 +36,8 @@
 
 'use strict';
 
-import { getNors } from '../../../petty-cash/petty-cash-store.js';
-import { buildNorViewModel } from '../../../petty-cash/nor-document-engine.js';
+import { getNors } from '../../../js/petty-cash/petty-cash-store.js';
+import { buildNorViewModel } from '../../../js/petty-cash/nor-document-engine.js';
 import { connectorSuccess, connectorFailure, CONNECTOR_ERRORS } from '../contracts/connector-contract.js';
 import { generateKnowledgeId } from '../contracts/identity-contract.js';
 import { LIFECYCLE_STATE } from '../contracts/lifecycle-contract.js';

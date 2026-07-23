@@ -8,19 +8,19 @@
    automatically. No production writes (memory repository only).
    Run: node scripts/profile-override-check.mjs   (exit 0 = pass) */
 
-import { setActiveRepository, create as createKnowledgeItem } from '../js/v2/knowledge/repository/knowledge-repository.js';
-import { LIFECYCLE_STATE } from '../js/v2/knowledge/contracts/lifecycle-contract.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
-import { PROFILE_TYPE } from '../js/v2/knowledge/contracts/profile-contract.js';
+import { setActiveRepository, create as createKnowledgeItem } from '../src/knowledge/repository/knowledge-repository.js';
+import { LIFECYCLE_STATE } from '../src/knowledge/contracts/lifecycle-contract.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
+import { PROFILE_TYPE } from '../src/knowledge/contracts/profile-contract.js';
 
-import { resetProfileOverrideRepository, list as listOverridesRaw } from '../js/v2/knowledge/profiles/overrides/repository/profile-override-repository.js';
+import { resetProfileOverrideRepository, list as listOverridesRaw } from '../src/knowledge/profiles/overrides/repository/profile-override-repository.js';
 import {
   PROFILE_OVERRIDE_TYPE, STANDALONE_OVERRIDE_TYPES, OVERRIDE_ACTION, isOverlayType, isStandaloneType,
-} from '../js/v2/knowledge/profiles/overrides/contracts/profile-override-contract.js';
+} from '../src/knowledge/profiles/overrides/contracts/profile-override-contract.js';
 import {
   createOverrideDraft, promoteOverrideToCandidate, submitOverrideForReview, approveOverride, rejectOverride,
-} from '../js/v2/knowledge/profiles/overrides/profile-override-engine.js';
-import { getEffectiveProfile, listApprovedOverrides } from '../js/v2/knowledge/profiles/overrides/profile-override-merge-engine.js';
+} from '../src/knowledge/profiles/overrides/profile-override-engine.js';
+import { getEffectiveProfile, listApprovedOverrides } from '../src/knowledge/profiles/overrides/profile-override-merge-engine.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {

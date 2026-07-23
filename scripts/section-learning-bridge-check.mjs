@@ -17,14 +17,14 @@
    minted for the ordinary review queue.
    Run: node scripts/section-learning-bridge-check.mjs   (exit 0 = pass) */
 
-import { LIFECYCLE_STATE } from '../js/v2/knowledge/contracts/lifecycle-contract.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
-import { setActiveRepository, create as repoCreate, getById } from '../js/v2/knowledge/repository/knowledge-repository.js';
-import { promoteToCandidate } from '../js/v2/knowledge/promotion/promotion-engine.js';
-import { submitForReview, approve } from '../js/v2/knowledge/review/review-workflow-engine.js';
-import { listKnowledge } from '../js/v2/knowledge/services/knowledge-service.js';
-import { resetLearningRepository } from '../js/v2/learning/repository/learning-repository.js';
-import { listLearningEvents, LEARNING_KIND, CORRECTION_TYPE } from '../js/v2/learning/services/learning-service.js';
+import { LIFECYCLE_STATE } from '../src/knowledge/contracts/lifecycle-contract.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
+import { setActiveRepository, create as repoCreate, getById } from '../src/knowledge/repository/knowledge-repository.js';
+import { promoteToCandidate } from '../src/knowledge/promotion/promotion-engine.js';
+import { submitForReview, approve } from '../src/knowledge/review/review-workflow-engine.js';
+import { listKnowledge } from '../src/knowledge/services/knowledge-service.js';
+import { resetLearningRepository } from '../src/learning/repository/learning-repository.js';
+import { listLearningEvents, LEARNING_KIND, CORRECTION_TYPE } from '../src/learning/services/learning-service.js';
 import { recordSectionEdit } from '../src/document-intelligence/composer/section-learning-bridge.js';
 
 let pass = 0, fail = 0;

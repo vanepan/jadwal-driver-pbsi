@@ -30,7 +30,7 @@
 
 'use strict';
 
-import { scoreBand, scoreBandInfo } from '../../../../services/unified-scoring.js';
+import { scoreBand, scoreBandInfo } from '../../../../js/services/unified-scoring.js';
 
 /**
  * Payload shape for `kind: 'statistic'`.

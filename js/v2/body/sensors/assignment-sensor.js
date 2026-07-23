@@ -44,7 +44,7 @@ import { getVehicleByName } from '../../../vehicles-store.js';
 import { senseSuccess, senseFailure, SENSOR_ERRORS } from '../contracts/sensor-contract.js';
 import { generateEntityId } from '../contracts/identity-contract.js';
 import { registerSensor } from '../registry/sensor-registry.js';
-import { makeWarning, WARNING_SEVERITY } from '../../knowledge/observability/contracts/warning-contract.js';
+import { makeWarning, WARNING_SEVERITY } from '../../../../src/knowledge/observability/contracts/warning-contract.js';
 import {
   ASSIGNMENT_SENSOR_ID, ASSIGNMENT_SENSOR_VERSION, toAssignmentEntity,
   deriveAssignmentRelationships, isAssignmentNewerThan,

@@ -12,9 +12,9 @@
    V2.0.7). No AI, no LLM, no production writes.
    Run: node scripts/official-nor-archive-check.mjs   (exit 0 = pass) */
 
-import { LIFECYCLE_STATE } from '../js/v2/knowledge/contracts/lifecycle-contract.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
-import { setActiveRepository } from '../js/v2/knowledge/repository/knowledge-repository.js';
+import { LIFECYCLE_STATE } from '../src/knowledge/contracts/lifecycle-contract.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
+import { setActiveRepository } from '../src/knowledge/repository/knowledge-repository.js';
 
 import { registerArchiveSource, resetArchiveSourceRegistry } from '../src/organizational-memory/registry/archive-source-registry.js';
 import { archiveSourceSuccess } from '../src/organizational-memory/contracts/archive-source-contract.js';

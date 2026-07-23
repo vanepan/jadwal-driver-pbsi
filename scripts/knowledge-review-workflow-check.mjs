@@ -10,21 +10,21 @@
    Lifecycle Events section; this check exercises the NEW V2.0.3 layer
    built on top of it. */
 
-import { LIFECYCLE_STATE } from '../js/v2/knowledge/contracts/lifecycle-contract.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
+import { LIFECYCLE_STATE } from '../src/knowledge/contracts/lifecycle-contract.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
 import {
   setActiveRepository, create as repoCreate,
-} from '../js/v2/knowledge/repository/knowledge-repository.js';
-import { requestTransition } from '../js/v2/knowledge/lifecycle/lifecycle-engine.js';
-import { getReviewQueue, getCandidateQueue } from '../js/v2/knowledge/review/review-queue-engine.js';
-import { detectConflicts } from '../js/v2/knowledge/review/conflict-detection-engine.js';
-import { isKnowledgeConflictReport } from '../js/v2/knowledge/observability/contracts/conflict-report-contract.js';
+} from '../src/knowledge/repository/knowledge-repository.js';
+import { requestTransition } from '../src/knowledge/lifecycle/lifecycle-engine.js';
+import { getReviewQueue, getCandidateQueue } from '../src/knowledge/review/review-queue-engine.js';
+import { detectConflicts } from '../src/knowledge/review/conflict-detection-engine.js';
+import { isKnowledgeConflictReport } from '../src/knowledge/observability/contracts/conflict-report-contract.js';
 import {
   startReviewSession, submitInSession, approveInSession, rejectInSession, finishReviewSession,
-} from '../js/v2/knowledge/review/review-session-engine.js';
-import { REVIEW_EVENT_TYPE } from '../js/v2/knowledge/review/contracts/event-contract.js';
-import { REVIEW_SESSION_STATUS } from '../js/v2/knowledge/review/contracts/session-contract.js';
-import { listReviewHistory, resetReviewHistory } from '../js/v2/knowledge/review/review-history.js';
+} from '../src/knowledge/review/review-session-engine.js';
+import { REVIEW_EVENT_TYPE } from '../src/knowledge/review/contracts/event-contract.js';
+import { REVIEW_SESSION_STATUS } from '../src/knowledge/review/contracts/session-contract.js';
+import { listReviewHistory, resetReviewHistory } from '../src/knowledge/review/review-history.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {

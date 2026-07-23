@@ -12,19 +12,19 @@
 
 import {
   registerConnector, hasConnector, listConnectors, resetConnectorRegistry,
-} from '../js/v2/knowledge/registry/connector-registry.js';
-import { connectorSuccess } from '../js/v2/knowledge/contracts/connector-contract.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
-import { LIFECYCLE_STATE } from '../js/v2/knowledge/contracts/lifecycle-contract.js';
-import { isKnowledgeItem } from '../js/v2/knowledge/contracts/knowledge-item-contract.js';
-import { hasStage } from '../js/v2/knowledge/builder/stage-registry.js';
-import { runAcquisition } from '../js/v2/knowledge/acquisition/acquisition-engine.js';
-import { isKnowledgeSource, SOURCE_REPRESENTATION } from '../js/v2/knowledge/acquisition/contracts/source-contract.js';
-import { makeBatch, isKnowledgeBatch } from '../js/v2/knowledge/acquisition/contracts/batch-contract.js';
-import { makeNormalization, isKnowledgeNormalization } from '../js/v2/knowledge/acquisition/contracts/normalization-contract.js';
+} from '../src/knowledge/registry/connector-registry.js';
+import { connectorSuccess } from '../src/knowledge/contracts/connector-contract.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
+import { LIFECYCLE_STATE } from '../src/knowledge/contracts/lifecycle-contract.js';
+import { isKnowledgeItem } from '../src/knowledge/contracts/knowledge-item-contract.js';
+import { hasStage } from '../src/knowledge/builder/stage-registry.js';
+import { runAcquisition } from '../src/knowledge/acquisition/acquisition-engine.js';
+import { isKnowledgeSource, SOURCE_REPRESENTATION } from '../src/knowledge/acquisition/contracts/source-contract.js';
+import { makeBatch, isKnowledgeBatch } from '../src/knowledge/acquisition/contracts/batch-contract.js';
+import { makeNormalization, isKnowledgeNormalization } from '../src/knowledge/acquisition/contracts/normalization-contract.js';
 import {
   setActiveRepository, list as repoList, getById as repoGetById,
-} from '../js/v2/knowledge/repository/knowledge-repository.js';
+} from '../src/knowledge/repository/knowledge-repository.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {

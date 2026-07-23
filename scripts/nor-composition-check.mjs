@@ -23,8 +23,8 @@ import { fileURLToPath } from 'node:url';
 
 import {
   setKnowledgeBackend, ingest, promoteKnowledge, LIFECYCLE_STATE,
-} from '../js/v2/knowledge/services/knowledge-service.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
+} from '../src/knowledge/services/knowledge-service.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
 import { composeNorDocument, NOR_COMPOSER_ERRORS } from '../src/document-intelligence/nor/nor-composer.js';
 import { getComposerTimeline, resetComposerStore } from '../src/document-intelligence/composer/composer-store.js';
 import { isDormant, getDormant } from '../js/v2/dormant-subsystems.js';

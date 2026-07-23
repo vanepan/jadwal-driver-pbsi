@@ -6,15 +6,15 @@
    confidence and rationale; nothing is fabricated.
    Run: node scripts/metadata-inference-check.mjs   (exit 0 = pass) */
 
-import { setActiveRepository, create as createKnowledgeItem } from '../js/v2/knowledge/repository/knowledge-repository.js';
-import { LIFECYCLE_STATE } from '../js/v2/knowledge/contracts/lifecycle-contract.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
-import { DATASET_TYPE } from '../js/v2/knowledge/datasets/contracts/dataset-contract.js';
+import { setActiveRepository, create as createKnowledgeItem } from '../src/knowledge/repository/knowledge-repository.js';
+import { LIFECYCLE_STATE } from '../src/knowledge/contracts/lifecycle-contract.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
+import { DATASET_TYPE } from '../src/knowledge/datasets/contracts/dataset-contract.js';
 import { registerStoredFile, resetFileStorageRegistry } from '../src/file-storage/file-storage-registry.js';
 import { makeStoredFileRecord } from '../src/file-storage/contracts/file-storage-contract.js';
 import {
   inferMetadata, inferPatternAssisted, tokenize, AUTO_POPULATE_CONFIDENCE_THRESHOLD,
-} from '../js/v2/knowledge/datasets/import-session/metadata-inference-engine.js';
+} from '../src/knowledge/datasets/import-session/metadata-inference-engine.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {

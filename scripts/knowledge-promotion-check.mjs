@@ -5,21 +5,21 @@
 
    Entirely V1-free — synthetic items against the Memory repository. */
 
-import { LIFECYCLE_STATE } from '../js/v2/knowledge/contracts/lifecycle-contract.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
+import { LIFECYCLE_STATE } from '../src/knowledge/contracts/lifecycle-contract.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
 import {
   setActiveRepository, create as repoCreate, getById,
-} from '../js/v2/knowledge/repository/knowledge-repository.js';
-import { submitForReview, approve } from '../js/v2/knowledge/review/review-workflow-engine.js';
-import { detectConflicts } from '../js/v2/knowledge/review/conflict-detection-engine.js';
-import { resetReviewHistory, listReviewHistory } from '../js/v2/knowledge/review/review-history.js';
+} from '../src/knowledge/repository/knowledge-repository.js';
+import { submitForReview, approve } from '../src/knowledge/review/review-workflow-engine.js';
+import { detectConflicts } from '../src/knowledge/review/conflict-detection-engine.js';
+import { resetReviewHistory, listReviewHistory } from '../src/knowledge/review/review-history.js';
 import {
   promoteToCandidate, deprecate, rollbackPromotion,
-} from '../js/v2/knowledge/promotion/promotion-engine.js';
-import { resolveConflict } from '../js/v2/knowledge/promotion/conflict-resolution-engine.js';
-import { mergePayloads, proposeMergedDraft } from '../js/v2/knowledge/promotion/knowledge-merge-engine.js';
-import { PROMOTION_EVENT_TYPE } from '../js/v2/knowledge/promotion/contracts/event-contract.js';
-import { makeMergeProposal, isKnowledgeMergeProposal } from '../js/v2/knowledge/promotion/contracts/merge-contract.js';
+} from '../src/knowledge/promotion/promotion-engine.js';
+import { resolveConflict } from '../src/knowledge/promotion/conflict-resolution-engine.js';
+import { mergePayloads, proposeMergedDraft } from '../src/knowledge/promotion/knowledge-merge-engine.js';
+import { PROMOTION_EVENT_TYPE } from '../src/knowledge/promotion/contracts/event-contract.js';
+import { makeMergeProposal, isKnowledgeMergeProposal } from '../src/knowledge/promotion/contracts/merge-contract.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {

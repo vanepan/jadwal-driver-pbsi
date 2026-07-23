@@ -38,7 +38,7 @@
 
 import { detectGaps } from './gap-detection-engine.js';
 import { GAP_STATUS } from './contracts/gap-contract.js';
-import { recordGapResolution } from '../../js/v2/learning/services/learning-service.js';
+import { recordGapResolution } from '../learning/services/learning-service.js';
 
 /** @type {Map<string, string>} `${domainType}:${expectedNumber}` -> GAP_STATUS */
 const _workflowState = new Map();

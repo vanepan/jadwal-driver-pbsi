@@ -11,28 +11,28 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-import { setActiveRepository, getById as getKnowledgeItemById } from '../js/v2/knowledge/repository/knowledge-repository.js';
-import { resetConnectorRegistry } from '../js/v2/knowledge/registry/connector-registry.js';
-import { resetDatasetRegistry } from '../js/v2/knowledge/datasets/registry/dataset-registry.js';
-import { resetImportReportLog } from '../js/v2/knowledge/acquisition/acquisition-engine.js';
-import { resetManualImportQueue } from '../js/v2/knowledge/acquisition/manual-import-queue-store.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
-import { getSourceWeight } from '../js/v2/knowledge/contracts/source-weight-contract.js';
-import { DATASET_TYPE } from '../js/v2/knowledge/datasets/contracts/dataset-contract.js';
+import { setActiveRepository, getById as getKnowledgeItemById } from '../src/knowledge/repository/knowledge-repository.js';
+import { resetConnectorRegistry } from '../src/knowledge/registry/connector-registry.js';
+import { resetDatasetRegistry } from '../src/knowledge/datasets/registry/dataset-registry.js';
+import { resetImportReportLog } from '../src/knowledge/acquisition/acquisition-engine.js';
+import { resetManualImportQueue } from '../src/knowledge/acquisition/manual-import-queue-store.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
+import { getSourceWeight } from '../src/knowledge/contracts/source-weight-contract.js';
+import { DATASET_TYPE } from '../src/knowledge/datasets/contracts/dataset-contract.js';
 
 import {
   IMPORT_SESSION_STATE, canTransitionImportSession, isValidImportDecision, IMPORT_SESSION_KIND, PIPELINE_STAGE,
-} from '../js/v2/knowledge/datasets/import-session/contracts/import-session-contract.js';
-import { resetImportSessionRepository } from '../js/v2/knowledge/datasets/import-session/repository/import-session-repository.js';
-import { validateImportSession, IMPORT_VALIDATION_ERRORS } from '../js/v2/knowledge/datasets/import-session/import-validation-engine.js';
+} from '../src/knowledge/datasets/import-session/contracts/import-session-contract.js';
+import { resetImportSessionRepository } from '../src/knowledge/datasets/import-session/repository/import-session-repository.js';
+import { validateImportSession, IMPORT_VALIDATION_ERRORS } from '../src/knowledge/datasets/import-session/import-validation-engine.js';
 import {
   createImportSession, attachManualEntryFacts, attachDocumentHash, submitImportSessionForReview,
   approveImportSession, rejectImportSession, markKnowledgeImported, markArchived, getImportSession,
   updateSessionMetadata, hasContentFacts,
   attachFactsProvenance, attachExtractionSuggestion, isFactsStale, listReanalysisCandidates, attachFileStorage,
-} from '../js/v2/knowledge/datasets/import-session/import-session-engine.js';
-import { normalizeImportSessionRecord } from '../js/v2/knowledge/datasets/import-session/contracts/import-session-contract.js';
-import { CURRENT_CONTENT_PARSER_VERSION } from '../js/v2/knowledge/datasets/import-session/parser-registry.js';
+} from '../src/knowledge/datasets/import-session/import-session-engine.js';
+import { normalizeImportSessionRecord } from '../src/knowledge/datasets/import-session/contracts/import-session-contract.js';
+import { CURRENT_CONTENT_PARSER_VERSION } from '../src/knowledge/datasets/import-session/parser-registry.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {
@@ -181,8 +181,8 @@ function hasOrgMemoryImport(relPath) {
   const source = readFileSync(join(__dirname, relPath), 'utf8');
   return source.split('\n').some((line) => /^\s*import\b.*organizational-memory/.test(line));
 }
-check('import-session-engine.js has no organizational-memory import statement', !hasOrgMemoryImport('../js/v2/knowledge/datasets/import-session/import-session-engine.js'));
-check('import-validation-engine.js has no organizational-memory import statement', !hasOrgMemoryImport('../js/v2/knowledge/datasets/import-session/import-validation-engine.js'));
+check('import-session-engine.js has no organizational-memory import statement', !hasOrgMemoryImport('../src/knowledge/datasets/import-session/import-session-engine.js'));
+check('import-validation-engine.js has no organizational-memory import statement', !hasOrgMemoryImport('../src/knowledge/datasets/import-session/import-validation-engine.js'));
 
 console.log('\n[V2, Part A1 — factsProvenance / extractionSuggestion (Intelligent Ingestion)]');
 const created5 = createImportSession({

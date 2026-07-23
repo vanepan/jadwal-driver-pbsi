@@ -47,16 +47,16 @@
 
 'use strict';
 
-import { computeHealthReport } from '../../js/v2/knowledge/metrics/knowledge-metrics-engine.js';
-import { listKnowledge } from '../../js/v2/knowledge/services/knowledge-service.js';
-import { LIFECYCLE_STATE } from '../../js/v2/knowledge/contracts/lifecycle-contract.js';
-import { listImportSessions } from '../../js/v2/knowledge/datasets/import-session/import-session-engine.js';
-import { AUTO_POPULATE_CONFIDENCE_THRESHOLD } from '../../js/v2/knowledge/datasets/import-session/metadata-inference-engine.js';
-import { computePatternRecommendations } from '../../js/v2/knowledge/services/pattern-discovery-service.js';
-import { listDomainTypes } from '../../js/v2/knowledge/registry/domain-type-registry.js';
+import { computeHealthReport } from '../knowledge/metrics/knowledge-metrics-engine.js';
+import { listKnowledge } from '../knowledge/services/knowledge-service.js';
+import { LIFECYCLE_STATE } from '../knowledge/contracts/lifecycle-contract.js';
+import { listImportSessions } from '../knowledge/datasets/import-session/import-session-engine.js';
+import { AUTO_POPULATE_CONFIDENCE_THRESHOLD } from '../knowledge/datasets/import-session/metadata-inference-engine.js';
+import { computePatternRecommendations } from '../knowledge/services/pattern-discovery-service.js';
+import { listDomainTypes } from '../knowledge/registry/domain-type-registry.js';
 import { listArchive } from './services/archive-service.js';
 import { getGapsWithWorkflowState, countResolvedGaps } from './gap-workflow-engine.js';
-import { recordCoverage } from '../../js/v2/learning/services/learning-service.js';
+import { recordCoverage } from '../learning/services/learning-service.js';
 
 function pct(numerator, denominator) {
   return denominator > 0 ? Math.round((numerator / denominator) * 100) : 0;

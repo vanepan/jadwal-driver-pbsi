@@ -37,7 +37,7 @@ import {
 } from '../services/knowledge-service.js';
 import { listDomainTypes } from '../registry/domain-type-registry.js';
 import { LIFECYCLE_STATE } from '../contracts/lifecycle-contract.js';
-import { scoreBand } from '../../../services/unified-scoring.js';
+import { scoreBand } from '../../../js/services/unified-scoring.js';
 
 /**
  * @returns {{ok: boolean, data: import('../contracts/metrics-contract.js').KnowledgeHealthReport|null, error: object|null}}

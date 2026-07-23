@@ -10,15 +10,15 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-import { setActiveRepository, create as createKnowledgeItem } from '../js/v2/knowledge/repository/knowledge-repository.js';
-import { LIFECYCLE_STATE } from '../js/v2/knowledge/contracts/lifecycle-contract.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
-import { PROFILE_TYPE } from '../js/v2/knowledge/contracts/profile-contract.js';
-import { buildProfile } from '../js/v2/knowledge/profiles/profile-engine.js';
-import { suggestConfidence } from '../js/v2/knowledge/machine-learning/confidence-engine.js';
-import { RELATIONSHIP_TYPE } from '../js/v2/knowledge/contracts/dependency-graph-contract.js';
-import { PATTERN_TYPE, isCandidateRecommendation } from '../js/v2/knowledge/contracts/pattern-recommendation-contract.js';
-import { computePatternRecommendations } from '../js/v2/knowledge/profiles/pattern-discovery-engine.js';
+import { setActiveRepository, create as createKnowledgeItem } from '../src/knowledge/repository/knowledge-repository.js';
+import { LIFECYCLE_STATE } from '../src/knowledge/contracts/lifecycle-contract.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
+import { PROFILE_TYPE } from '../src/knowledge/contracts/profile-contract.js';
+import { buildProfile } from '../src/knowledge/profiles/profile-engine.js';
+import { suggestConfidence } from '../src/knowledge/machine-learning/confidence-engine.js';
+import { RELATIONSHIP_TYPE } from '../src/knowledge/contracts/dependency-graph-contract.js';
+import { PATTERN_TYPE, isCandidateRecommendation } from '../src/knowledge/contracts/pattern-recommendation-contract.js';
+import { computePatternRecommendations } from '../src/knowledge/profiles/pattern-discovery-engine.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {
@@ -76,7 +76,7 @@ check('its confidence is the mean of the 2 relationship items\' own confidence (
 
 console.log('\n[Never writes — the engine only reads]');
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const engineSource = readFileSync(join(__dirname, '../js/v2/knowledge/profiles/pattern-discovery-engine.js'), 'utf8');
+const engineSource = readFileSync(join(__dirname, '../src/knowledge/profiles/pattern-discovery-engine.js'), 'utf8');
 check('pattern-discovery-engine.js never calls create(', !/\bcreate\(/.test(engineSource.replace(/makeCandidateRecommendation/g, '')));
 check('pattern-discovery-engine.js never calls appendVersion(', !engineSource.includes('appendVersion('));
 check('pattern-discovery-engine.js has no organizational-memory import statement', !engineSource.split('\n').some((line) => /^\s*import\b.*organizational-memory/.test(line)));

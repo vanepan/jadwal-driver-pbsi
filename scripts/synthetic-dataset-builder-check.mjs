@@ -6,12 +6,12 @@
    No AI, no LLM, no production writes.
    Run: node scripts/synthetic-dataset-builder-check.mjs   (exit 0 = pass) */
 
-import { makePack, isDatasetPack } from '../js/v2/knowledge/datasets/contracts/dataset-pack-contract.js';
+import { makePack, isDatasetPack } from '../src/knowledge/datasets/contracts/dataset-pack-contract.js';
 import {
   registerPack, getPack, listPacks, resetPackRegistry, PACK_REGISTRY_ERRORS,
-} from '../js/v2/knowledge/datasets/registry/pack-registry.js';
-import { getPackLineage, getPackDepth } from '../js/v2/knowledge/datasets/pack-lineage-engine.js';
-import { computePackQuality } from '../js/v2/knowledge/datasets/pack-quality-engine.js';
+} from '../src/knowledge/datasets/registry/pack-registry.js';
+import { getPackLineage, getPackDepth } from '../src/knowledge/datasets/pack-lineage-engine.js';
+import { computePackQuality } from '../src/knowledge/datasets/pack-quality-engine.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {

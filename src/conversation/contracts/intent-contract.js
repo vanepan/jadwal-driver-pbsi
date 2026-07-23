@@ -55,7 +55,7 @@
 
 'use strict';
 
-import { NOR_TYPE, hasNorType, getNorTypeFieldSchema } from '../../../js/v2/knowledge/registry/nor-type-registry.js';
+import { NOR_TYPE, hasNorType, getNorTypeFieldSchema } from '../../knowledge/registry/nor-type-registry.js';
 
 export const INTENT_RESULT_SCHEMA = 'intent-detection-result@1';
 

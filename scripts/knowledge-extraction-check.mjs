@@ -8,20 +8,20 @@
    repository, reusing the existing promotion/review pipeline to reach
    Approved for real (not hand-set). */
 
-import { LIFECYCLE_STATE } from '../js/v2/knowledge/contracts/lifecycle-contract.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
-import { RELATIONSHIP_TYPE } from '../js/v2/knowledge/contracts/dependency-graph-contract.js';
-import { setActiveRepository, create as repoCreate, getById } from '../js/v2/knowledge/repository/knowledge-repository.js';
-import { promoteToCandidate } from '../js/v2/knowledge/promotion/promotion-engine.js';
-import { submitForReview, approve } from '../js/v2/knowledge/review/review-workflow-engine.js';
+import { LIFECYCLE_STATE } from '../src/knowledge/contracts/lifecycle-contract.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
+import { RELATIONSHIP_TYPE } from '../src/knowledge/contracts/dependency-graph-contract.js';
+import { setActiveRepository, create as repoCreate, getById } from '../src/knowledge/repository/knowledge-repository.js';
+import { promoteToCandidate } from '../src/knowledge/promotion/promotion-engine.js';
+import { submitForReview, approve } from '../src/knowledge/review/review-workflow-engine.js';
 
-import { buildKnowledgeIndex, indexGroup } from '../js/v2/knowledge/extraction/index-engine.js';
-import { extractPattern } from '../js/v2/knowledge/extraction/pattern-extraction-engine.js';
-import { extractVocabulary } from '../js/v2/knowledge/extraction/vocabulary-extraction-engine.js';
-import { extractCorroboratingRelationships } from '../js/v2/knowledge/extraction/relationship-extraction-engine.js';
-import { detectScope, SCOPE } from '../js/v2/knowledge/extraction/scope-detection-engine.js';
-import { identifyPromotionCandidates } from '../js/v2/knowledge/extraction/promotion-candidate-engine.js';
-import { computeHealthReport } from '../js/v2/knowledge/metrics/knowledge-metrics-engine.js';
+import { buildKnowledgeIndex, indexGroup } from '../src/knowledge/extraction/index-engine.js';
+import { extractPattern } from '../src/knowledge/extraction/pattern-extraction-engine.js';
+import { extractVocabulary } from '../src/knowledge/extraction/vocabulary-extraction-engine.js';
+import { extractCorroboratingRelationships } from '../src/knowledge/extraction/relationship-extraction-engine.js';
+import { detectScope, SCOPE } from '../src/knowledge/extraction/scope-detection-engine.js';
+import { identifyPromotionCandidates } from '../src/knowledge/extraction/promotion-candidate-engine.js';
+import { computeHealthReport } from '../src/knowledge/metrics/knowledge-metrics-engine.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {

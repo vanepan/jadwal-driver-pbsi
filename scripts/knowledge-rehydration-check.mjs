@@ -9,20 +9,20 @@
    sessions are skipped). No AI, no Firebase, memory repository only.
    Run: node scripts/knowledge-rehydration-check.mjs   (exit 0 = pass) */
 
-import { setActiveRepository, getById as knowledgeGetById, registerRepositoryListener, unregisterRepositoryListener } from '../js/v2/knowledge/repository/knowledge-repository.js';
-import { resetConnectorRegistry } from '../js/v2/knowledge/registry/connector-registry.js';
-import { resetDatasetRegistry } from '../js/v2/knowledge/datasets/registry/dataset-registry.js';
-import { resetImportReportLog } from '../js/v2/knowledge/acquisition/acquisition-engine.js';
-import { resetManualImportQueue } from '../js/v2/knowledge/acquisition/manual-import-queue-store.js';
-import { resetImportSessionRepository } from '../js/v2/knowledge/datasets/import-session/repository/import-session-repository.js';
-import { DATASET_TYPE } from '../js/v2/knowledge/datasets/contracts/dataset-contract.js';
-import { IMPORT_SESSION_KIND, IMPORT_SESSION_STATE } from '../js/v2/knowledge/datasets/import-session/contracts/import-session-contract.js';
-import { LIFECYCLE_STATE } from '../js/v2/knowledge/contracts/lifecycle-contract.js';
+import { setActiveRepository, getById as knowledgeGetById, registerRepositoryListener, unregisterRepositoryListener } from '../src/knowledge/repository/knowledge-repository.js';
+import { resetConnectorRegistry } from '../src/knowledge/registry/connector-registry.js';
+import { resetDatasetRegistry } from '../src/knowledge/datasets/registry/dataset-registry.js';
+import { resetImportReportLog } from '../src/knowledge/acquisition/acquisition-engine.js';
+import { resetManualImportQueue } from '../src/knowledge/acquisition/manual-import-queue-store.js';
+import { resetImportSessionRepository } from '../src/knowledge/datasets/import-session/repository/import-session-repository.js';
+import { DATASET_TYPE } from '../src/knowledge/datasets/contracts/dataset-contract.js';
+import { IMPORT_SESSION_KIND, IMPORT_SESSION_STATE } from '../src/knowledge/datasets/import-session/contracts/import-session-contract.js';
+import { LIFECYCLE_STATE } from '../src/knowledge/contracts/lifecycle-contract.js';
 import {
   createImportSession, attachParsedContent, attachInferenceResult,
   submitImportSessionForReview, approveImportSession, markKnowledgeImported, getImportSession,
-} from '../js/v2/knowledge/datasets/import-session/import-session-engine.js';
-import { rehydrateKnowledgeFromSessions } from '../js/v2/knowledge/datasets/import-session/knowledge-rehydration-engine.js';
+} from '../src/knowledge/datasets/import-session/import-session-engine.js';
+import { rehydrateKnowledgeFromSessions } from '../src/knowledge/datasets/import-session/knowledge-rehydration-engine.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {

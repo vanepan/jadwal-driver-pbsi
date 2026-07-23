@@ -7,34 +7,34 @@
    Entirely V1-free — uses a synthetic connector, exactly like
    knowledge-acquisition-check.mjs, so it runs in plain Node. */
 
-import { registerConnector } from '../js/v2/knowledge/registry/connector-registry.js';
-import { connectorSuccess } from '../js/v2/knowledge/contracts/connector-contract.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
-import { LIFECYCLE_STATE } from '../js/v2/knowledge/contracts/lifecycle-contract.js';
-import { RELATIONSHIP_TYPE } from '../js/v2/knowledge/contracts/dependency-graph-contract.js';
+import { registerConnector } from '../src/knowledge/registry/connector-registry.js';
+import { connectorSuccess } from '../src/knowledge/contracts/connector-contract.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
+import { LIFECYCLE_STATE } from '../src/knowledge/contracts/lifecycle-contract.js';
+import { RELATIONSHIP_TYPE } from '../src/knowledge/contracts/dependency-graph-contract.js';
 import {
   runAcquisition, runAcquisitionIncremental, listImportReports, resetImportReportLog,
-} from '../js/v2/knowledge/acquisition/acquisition-engine.js';
-import { ACQUISITION_EVENT_TYPE } from '../js/v2/knowledge/acquisition/contracts/event-contract.js';
-import { getCursor, resetCursorStore } from '../js/v2/knowledge/acquisition/cursor-store.js';
-import { isKnowledgeSource, SOURCE_REPRESENTATION } from '../js/v2/knowledge/acquisition/contracts/source-contract.js';
-import { buildImportStatistics } from '../js/v2/knowledge/observability/contracts/import-statistics-contract.js';
-import { makeConflictReport, isKnowledgeConflictReport } from '../js/v2/knowledge/observability/contracts/conflict-report-contract.js';
-import { makeWarning } from '../js/v2/knowledge/observability/contracts/warning-contract.js';
+} from '../src/knowledge/acquisition/acquisition-engine.js';
+import { ACQUISITION_EVENT_TYPE } from '../src/knowledge/acquisition/contracts/event-contract.js';
+import { getCursor, resetCursorStore } from '../src/knowledge/acquisition/cursor-store.js';
+import { isKnowledgeSource, SOURCE_REPRESENTATION } from '../src/knowledge/acquisition/contracts/source-contract.js';
+import { buildImportStatistics } from '../src/knowledge/observability/contracts/import-statistics-contract.js';
+import { makeConflictReport, isKnowledgeConflictReport } from '../src/knowledge/observability/contracts/conflict-report-contract.js';
+import { makeWarning } from '../src/knowledge/observability/contracts/warning-contract.js';
 import {
   setActiveRepository, create as repoCreate,
-} from '../js/v2/knowledge/repository/knowledge-repository.js';
+} from '../src/knowledge/repository/knowledge-repository.js';
 import {
   registerRepositoryListener, unregisterRepositoryListener,
-} from '../js/v2/knowledge/repository/knowledge-repository.js';
-import { REPOSITORY_EVENT_TYPE } from '../js/v2/knowledge/repository/contracts/event-contract.js';
+} from '../src/knowledge/repository/knowledge-repository.js';
+import { REPOSITORY_EVENT_TYPE } from '../src/knowledge/repository/contracts/event-contract.js';
 import {
   registerLifecycleListener, unregisterLifecycleListener,
-} from '../js/v2/knowledge/lifecycle/lifecycle-engine.js';
-import { LIFECYCLE_EVENT_TYPE } from '../js/v2/knowledge/lifecycle/contracts/event-contract.js';
+} from '../src/knowledge/lifecycle/lifecycle-engine.js';
+import { LIFECYCLE_EVENT_TYPE } from '../src/knowledge/lifecycle/contracts/event-contract.js';
 import {
   submitForReview, approve,
-} from '../js/v2/knowledge/review/review-workflow-engine.js';
+} from '../src/knowledge/review/review-workflow-engine.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {
@@ -126,7 +126,7 @@ const onLifecycleEvent = (e) => lifecycleEvents.push(e);
 registerLifecycleListener(onLifecycleEvent);
 // directItem is Draft; move it to Candidate first (outside review workflow, a
 // plain transition) so submitForReview()'s CANDIDATE precondition holds.
-const { requestTransition } = await import('../js/v2/knowledge/lifecycle/lifecycle-engine.js');
+const { requestTransition } = await import('../src/knowledge/lifecycle/lifecycle-engine.js');
 requestTransition(directItem.id, LIFECYCLE_STATE.DRAFT, LIFECYCLE_STATE.CANDIDATE);
 const submitResult = submitForReview(directItem.id);
 check('submitForReview succeeds (candidate -> pending_review)', submitResult.ok === true);

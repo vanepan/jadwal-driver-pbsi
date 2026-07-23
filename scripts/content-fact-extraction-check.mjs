@@ -11,8 +11,8 @@
 
 import fs from 'node:fs';
 import mammoth from 'mammoth';
-import { extractContentFacts, isContentFactsComplete } from '../js/v2/knowledge/datasets/import-session/content-fact-extraction-engine.js';
-import { CURRENT_CONTENT_PARSER_VERSION } from '../js/v2/knowledge/datasets/import-session/parser-registry.js';
+import { extractContentFacts, isContentFactsComplete } from '../src/knowledge/datasets/import-session/content-fact-extraction-engine.js';
+import { CURRENT_CONTENT_PARSER_VERSION } from '../src/knowledge/datasets/import-session/parser-registry.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {

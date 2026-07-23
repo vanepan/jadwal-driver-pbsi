@@ -32,7 +32,7 @@
 import { getVehicles } from '../../../vehicles-store.js';
 import { senseSuccess, senseFailure, SENSOR_ERRORS } from '../contracts/sensor-contract.js';
 import { registerSensor } from '../registry/sensor-registry.js';
-import { makeWarning, WARNING_SEVERITY } from '../../knowledge/observability/contracts/warning-contract.js';
+import { makeWarning, WARNING_SEVERITY } from '../../../../src/knowledge/observability/contracts/warning-contract.js';
 import { VEHICLE_SENSOR_ID, VEHICLE_SENSOR_VERSION, toVehicleEntity, isVehicleNewerThan } from './vehicle-mapping.js';
 
 /** One malformed vehicle record must never sink the whole sense — every

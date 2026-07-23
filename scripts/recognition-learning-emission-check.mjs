@@ -24,8 +24,8 @@ import { fileURLToPath } from 'node:url';
 import {
   emitRecognitionLearningSignal, RECOGNITION_LEARNING_SIGNAL_TYPE, LEARNING_EMISSION_ERRORS,
 } from '../js/v2/recognition/services/learning-emission-service.js';
-import { listLearningEvents, findLearningEvent } from '../js/v2/learning/services/learning-service.js';
-import { resetLearningRepository } from '../js/v2/learning/repository/learning-repository.js';
+import { listLearningEvents, findLearningEvent } from '../src/learning/services/learning-service.js';
+import { resetLearningRepository } from '../src/learning/repository/learning-repository.js';
 import { makeRecognitionScope } from '../js/v2/recognition/contracts/recognition-scope-contract.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -117,7 +117,7 @@ console.log('\n[Persistent invariant — this file only ever calls emitLearningS
 {
   const src = fs.readFileSync(path.join(ROOT, 'js/v2/recognition/services/learning-emission-service.js'), 'utf8');
   const stripped = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
-  check('imports only learning-signal-service.js, never learning-repository.js', /from '\.\.\/\.\.\/learning\/services\/learning-signal-service\.js'/.test(stripped) && !/learning-repository/.test(stripped));
+  check('imports only learning-signal-service.js, never learning-repository.js', /from '[^']*\/learning\/services\/learning-signal-service\.js'/.test(stripped) && !/learning-repository/.test(stripped));
   const repositoryTouches = (stripped.match(/recordLearningEvent|learning-repository/g) || []).length;
   check('zero direct repository-shaped calls in this file', repositoryTouches === 0);
 }

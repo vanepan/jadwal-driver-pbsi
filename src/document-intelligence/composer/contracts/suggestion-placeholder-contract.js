@@ -35,7 +35,7 @@ export const SUGGESTION_STATUS = Object.freeze({
  * @property {string} field
  * @property {string} status          - one of SUGGESTION_STATUS; always EMPTY today
  * @property {*|null} suggestedValue  - reserved for a future recommendation engine; always null today
- * @property {import('../../../../js/v2/knowledge/contracts/evidence-contract.js').Evidence[]} citedEvidence - reserved; always [] today
+ * @property {import('../../../knowledge/contracts/evidence-contract.js').Evidence[]} citedEvidence - reserved; always [] today
  * @property {string} reservedAt      - ISO 8601
  */
 

@@ -14,10 +14,10 @@
    means two "concurrent" async workers can never interleave INSIDE one of
    those calls. This script is the empirical check on that architectural
    argument, run against the real modules, not a restated assertion of it. */
-import { createImportSession, attachManualEntryFacts } from '../js/v2/knowledge/datasets/import-session/import-session-engine.js';
-import { advanceSession, registerArchiver } from '../js/v2/knowledge/datasets/import-session/pipeline-scheduler.js';
-import { createBatch, recordBatchItem, getBatch } from '../js/v2/knowledge/datasets/import-session/import-batch-engine.js';
-import { DATASET_TYPE } from '../js/v2/knowledge/datasets/contracts/dataset-contract.js';
+import { createImportSession, attachManualEntryFacts } from '../src/knowledge/datasets/import-session/import-session-engine.js';
+import { advanceSession, registerArchiver } from '../src/knowledge/datasets/import-session/pipeline-scheduler.js';
+import { createBatch, recordBatchItem, getBatch } from '../src/knowledge/datasets/import-session/import-batch-engine.js';
+import { DATASET_TYPE } from '../src/knowledge/datasets/contracts/dataset-contract.js';
 
 registerArchiver((s) => `archive-record:${s.id}`);
 

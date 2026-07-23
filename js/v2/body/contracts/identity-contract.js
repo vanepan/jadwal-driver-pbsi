@@ -27,7 +27,7 @@
 
 'use strict';
 
-import { nextVersion } from '../../knowledge/contracts/identity-contract.js';
+import { nextVersion } from '../../../../src/knowledge/contracts/identity-contract.js';
 
 export const IDENTITY_INVARIANTS = Object.freeze({
   idIsStableAcrossVersions: true,

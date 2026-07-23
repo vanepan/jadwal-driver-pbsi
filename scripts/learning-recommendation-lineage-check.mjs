@@ -10,14 +10,14 @@
    Deterministic.
    Run: node scripts/learning-recommendation-lineage-check.mjs   (exit 0 = pass) */
 
-import { emitLearningSignal } from '../js/v2/learning/services/learning-signal-service.js';
-import { computeRecommendations } from '../js/v2/learning/learning-recommendation-engine.js';
-import { RECOMMENDATION_TYPE, isLearningRecommendation } from '../js/v2/learning/contracts/learning-recommendation-contract.js';
+import { emitLearningSignal } from '../src/learning/services/learning-signal-service.js';
+import { computeRecommendations } from '../src/learning/learning-recommendation-engine.js';
+import { RECOMMENDATION_TYPE, isLearningRecommendation } from '../src/learning/contracts/learning-recommendation-contract.js';
 import {
   recordLearningOutcome, OUTCOME_DECISION, OUTCOME_RESULT,
-} from '../js/v2/learning/services/learning-outcome-service.js';
-import { traceLineage } from '../js/v2/learning/learning-lineage-engine.js';
-import { findLearningEvent } from '../js/v2/learning/services/learning-service.js';
+} from '../src/learning/services/learning-outcome-service.js';
+import { traceLineage } from '../src/learning/learning-lineage-engine.js';
+import { findLearningEvent } from '../src/learning/services/learning-service.js';
 
 let pass = 0; let fail = 0;
 function check(name, cond) {

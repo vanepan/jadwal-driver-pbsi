@@ -92,10 +92,10 @@
 'use strict';
 
 import { proposeNorFields } from './nor-generator.js';
-import { listKnowledge, getKnowledge, LIFECYCLE_STATE } from '../../../js/v2/knowledge/services/knowledge-service.js';
-import { explain } from '../../../js/v2/knowledge/services/explainability-service.js';
-import { isPatternEntry } from '../../../js/v2/knowledge/language/contracts/pattern-contract.js';
-import { isRenderingRuleEntry } from '../../../js/v2/knowledge/language/contracts/rendering-rule-contract.js';
+import { listKnowledge, getKnowledge, LIFECYCLE_STATE } from '../../knowledge/services/knowledge-service.js';
+import { explain } from '../../knowledge/services/explainability-service.js';
+import { isPatternEntry } from '../../knowledge/language/contracts/pattern-contract.js';
+import { isRenderingRuleEntry } from '../../knowledge/language/contracts/rendering-rule-contract.js';
 import { createDocument } from '../composer/composer-store.js';
 
 export const NOR_COMPOSER_ERRORS = Object.freeze({ NO_KNOWLEDGE: 'NO_KNOWLEDGE' });

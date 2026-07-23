@@ -25,7 +25,7 @@
 'use strict';
 
 import { getGapsWithWorkflowState } from './gap-workflow-engine.js';
-import { getDomainType } from '../../js/v2/knowledge/registry/domain-type-registry.js';
+import { getDomainType } from '../knowledge/registry/domain-type-registry.js';
 import { makeUploadRecommendation } from './contracts/upload-recommendation-contract.js';
 
 function formatList(items) {

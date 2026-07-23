@@ -8,11 +8,11 @@
    using only real, deterministic token math, never a fabricated number.
    Run: node scripts/semantic-diff-engine-check.mjs   (exit 0 = pass) */
 
-import { LIFECYCLE_STATE } from '../js/v2/knowledge/contracts/lifecycle-contract.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
-import { setActiveRepository, create as repoCreate } from '../js/v2/knowledge/repository/knowledge-repository.js';
-import { promoteToCandidate } from '../js/v2/knowledge/promotion/promotion-engine.js';
-import { submitForReview, approve } from '../js/v2/knowledge/review/review-workflow-engine.js';
+import { LIFECYCLE_STATE } from '../src/knowledge/contracts/lifecycle-contract.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
+import { setActiveRepository, create as repoCreate } from '../src/knowledge/repository/knowledge-repository.js';
+import { promoteToCandidate } from '../src/knowledge/promotion/promotion-engine.js';
+import { submitForReview, approve } from '../src/knowledge/review/review-workflow-engine.js';
 import { classifySemanticDiff } from '../src/document-intelligence/composer/semantic-diff-engine.js';
 
 let pass = 0, fail = 0;

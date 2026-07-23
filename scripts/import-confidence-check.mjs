@@ -8,7 +8,7 @@
    punitive zero). Pure — no Firebase, no repository, no AI.
    Run: node scripts/import-confidence-check.mjs   (exit 0 = pass) */
 
-import { computeImportConfidence } from '../js/v2/knowledge/datasets/import-session/import-confidence-engine.js';
+import { computeImportConfidence } from '../src/knowledge/datasets/import-session/import-confidence-engine.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {

@@ -10,9 +10,9 @@
 import {
   createBatch, recordBatchItem, pauseBatch, resumeBatch, cancelBatch, completeBatch,
   getBatch, listBatches, getBatchHistory, BATCH_STATUS,
-} from '../js/v2/knowledge/datasets/import-session/import-batch-engine.js';
-import { resetImportBatchRepository } from '../js/v2/knowledge/datasets/import-session/repository/import-batch-repository.js';
-import { isImportBatchRecord } from '../js/v2/knowledge/datasets/import-session/contracts/import-batch-contract.js';
+} from '../src/knowledge/datasets/import-session/import-batch-engine.js';
+import { resetImportBatchRepository } from '../src/knowledge/datasets/import-session/repository/import-batch-repository.js';
+import { isImportBatchRecord } from '../src/knowledge/datasets/import-session/contracts/import-batch-contract.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {

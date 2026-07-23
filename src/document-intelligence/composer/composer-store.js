@@ -44,7 +44,7 @@ import { makeComposerDocument } from './contracts/composer-document-contract.js'
 import { makeEditableSection } from './contracts/editable-section-contract.js';
 import { makeFieldOverride } from './contracts/field-override-contract.js';
 import { makeComposerRevision } from './contracts/composer-revision-contract.js';
-import { computeDiff } from '../../../js/v2/knowledge/learning/diff-engine.js';
+import { computeDiff } from '../../knowledge/learning/diff-engine.js';
 import { getRecord, putRecord, listRecords, resetComposerDocumentRepository } from './composer-document-repository.js';
 // Phase 10, Sprint 10.4 — the ComposerDocument review lifecycle is its OWN
 // graph (see that file's header for why it is NOT a reuse of knowledge/
@@ -53,8 +53,8 @@ import { canTransitionComposerReview, COMPOSER_REVIEW_STATE } from './contracts/
 // Reused VERBATIM — both are already domain-agnostic (itemId is just a
 // string; neither imports KnowledgeItem or anything knowledge-specific),
 // confirmed during Phase 10 planning research. No new audit-log code.
-import { makePromotionRecord } from '../../../js/v2/knowledge/review/contracts/promotion-contract.js';
-import { recordPromotion, listReviewHistory } from '../../../js/v2/knowledge/review/review-history.js';
+import { makePromotionRecord } from '../../knowledge/review/contracts/promotion-contract.js';
+import { recordPromotion, listReviewHistory } from '../../knowledge/review/review-history.js';
 
 export const COMPOSER_STORE_ERRORS = Object.freeze({
   NOT_FOUND: 'NOT_FOUND',

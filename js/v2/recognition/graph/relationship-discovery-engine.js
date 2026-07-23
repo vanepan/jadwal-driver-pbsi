@@ -37,14 +37,14 @@
 'use strict';
 
 import { isRecognitionRelationshipPayload } from '../contracts/recognition-relationship-contract.js';
-import { EVIDENCE_KIND } from '../../knowledge/contracts/evidence-contract.js';
+import { EVIDENCE_KIND } from '../../../../src/knowledge/contracts/evidence-contract.js';
 
 export const CO_CLUSTERED_RELATIONSHIP_TYPE = 'CO_CLUSTERED';
 
 /**
  * @typedef {Object} DiscoveredRelationship
  * @property {import('../contracts/recognition-relationship-contract.js').RecognitionRelationshipPayload} payload
- * @property {import('../../knowledge/contracts/evidence-contract.js').Evidence[]} evidence
+ * @property {import('../../../../src/knowledge/contracts/evidence-contract.js').Evidence[]} evidence
  * @property {number} confidence
  */
 

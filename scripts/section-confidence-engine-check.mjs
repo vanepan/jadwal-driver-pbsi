@@ -12,13 +12,13 @@
    KnowledgeItem.
    Run: node scripts/section-confidence-engine-check.mjs   (exit 0 = pass) */
 
-import { LIFECYCLE_STATE } from '../js/v2/knowledge/contracts/lifecycle-contract.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
-import { setActiveRepository, create as repoCreate, getById } from '../js/v2/knowledge/repository/knowledge-repository.js';
-import { promoteToCandidate } from '../js/v2/knowledge/promotion/promotion-engine.js';
-import { submitForReview, approve } from '../js/v2/knowledge/review/review-workflow-engine.js';
-import { suggestConfidence } from '../js/v2/knowledge/machine-learning/confidence-engine.js';
-import { getSourceWeight } from '../js/v2/knowledge/contracts/source-weight-contract.js';
+import { LIFECYCLE_STATE } from '../src/knowledge/contracts/lifecycle-contract.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
+import { setActiveRepository, create as repoCreate, getById } from '../src/knowledge/repository/knowledge-repository.js';
+import { promoteToCandidate } from '../src/knowledge/promotion/promotion-engine.js';
+import { submitForReview, approve } from '../src/knowledge/review/review-workflow-engine.js';
+import { suggestConfidence } from '../src/knowledge/machine-learning/confidence-engine.js';
+import { getSourceWeight } from '../src/knowledge/contracts/source-weight-contract.js';
 import { scoreColor, clampScore } from '../js/services/unified-scoring.js';
 import { makeEditableSection } from '../src/document-intelligence/composer/contracts/editable-section-contract.js';
 import {

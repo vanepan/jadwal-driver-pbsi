@@ -13,13 +13,13 @@ import { fileURLToPath } from 'url';
 
 import {
   DATASET_TYPE, makeDatasetSpec, reviseDatasetSpec, isDatasetSpec,
-} from '../js/v2/knowledge/datasets/contracts/dataset-contract.js';
+} from '../src/knowledge/datasets/contracts/dataset-contract.js';
 import {
   KNOWLEDGE_PRIORITY_ORDER, getDatasetTypeWeight, isBootstrapType, compareDatasetPriority,
-} from '../js/v2/knowledge/datasets/contracts/dataset-classification-contract.js';
+} from '../src/knowledge/datasets/contracts/dataset-classification-contract.js';
 import {
   registerDataset, getDataset, hasDataset, listDatasets, resetDatasetRegistry, DATASET_REGISTRY_ERRORS,
-} from '../js/v2/knowledge/datasets/registry/dataset-registry.js';
+} from '../src/knowledge/datasets/registry/dataset-registry.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {

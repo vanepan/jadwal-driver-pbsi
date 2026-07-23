@@ -7,7 +7,7 @@
    there's strictly better evidence.
    Run: node scripts/fact-merge-engine-check.mjs   (exit 0 = pass) */
 
-import { mergeExtractedFacts } from '../js/v2/knowledge/datasets/import-session/fact-merge-engine.js';
+import { mergeExtractedFacts } from '../src/knowledge/datasets/import-session/fact-merge-engine.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {

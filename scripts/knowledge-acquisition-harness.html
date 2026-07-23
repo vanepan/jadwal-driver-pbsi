@@ -12,13 +12,13 @@
      browser can resolve — see knowledge-acquisition-check.mjs for the
      Node-only coverage of the generic acquisition framework). -->
 <script type="module">
-  import { hasConnector, getConnector, listConnectors } from '../js/v2/knowledge/registry/connector-registry.js';
-  import { hasStage, listStages } from '../js/v2/knowledge/builder/stage-registry.js';
-  import { runIncremental, runFull } from '../js/v2/knowledge/builder/knowledge-builder.js';
-  import { setActiveRepository, list as repoList } from '../js/v2/knowledge/repository/knowledge-repository.js';
-  import { runAcquisition } from '../js/v2/knowledge/acquisition/acquisition-engine.js';
-  import '../js/v2/knowledge/builder/stages/index.js'; // registers the 'acquire-nor' stage (and, transitively, the 'nor' connector)
-  import { NOR_CONNECTOR_ID } from '../js/v2/knowledge/connectors/nor-connector.js';
+  import { hasConnector, getConnector, listConnectors } from '../src/knowledge/registry/connector-registry.js';
+  import { hasStage, listStages } from '../src/knowledge/builder/stage-registry.js';
+  import { runIncremental, runFull } from '../src/knowledge/builder/knowledge-builder.js';
+  import { setActiveRepository, list as repoList } from '../src/knowledge/repository/knowledge-repository.js';
+  import { runAcquisition } from '../src/knowledge/acquisition/acquisition-engine.js';
+  import '../src/knowledge/builder/stages/index.js'; // registers the 'acquire-nor' stage (and, transitively, the 'nor' connector)
+  import { NOR_CONNECTOR_ID } from '../src/knowledge/connectors/nor-connector.js';
 
   setActiveRepository('memory');
 

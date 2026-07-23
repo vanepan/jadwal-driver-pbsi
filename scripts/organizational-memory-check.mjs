@@ -9,9 +9,9 @@
    a browser (see organizational-memory-dom-check.mjs) because it
    transitively imports js/firebase.js's CDN-hosted SDK. */
 
-import { LIFECYCLE_STATE } from '../js/v2/knowledge/contracts/lifecycle-contract.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
-import { setActiveRepository, create as knowledgeCreate } from '../js/v2/knowledge/repository/knowledge-repository.js';
+import { LIFECYCLE_STATE } from '../src/knowledge/contracts/lifecycle-contract.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
+import { setActiveRepository, create as knowledgeCreate } from '../src/knowledge/repository/knowledge-repository.js';
 
 import { registerArchiveSource, listArchiveSources, resetArchiveSourceRegistry } from '../src/organizational-memory/registry/archive-source-registry.js';
 import { archiveSourceSuccess } from '../src/organizational-memory/contracts/archive-source-contract.js';

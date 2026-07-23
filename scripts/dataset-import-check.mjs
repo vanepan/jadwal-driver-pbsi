@@ -6,19 +6,19 @@
    No production writes (memory repository only).
    Run: node scripts/dataset-import-check.mjs   (exit 0 = pass) */
 
-import { LIFECYCLE_STATE } from '../js/v2/knowledge/contracts/lifecycle-contract.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
-import { setActiveRepository, getById } from '../js/v2/knowledge/repository/knowledge-repository.js';
-import { connectorSuccess } from '../js/v2/knowledge/contracts/connector-contract.js';
-import { makeSource, SOURCE_REPRESENTATION } from '../js/v2/knowledge/acquisition/contracts/source-contract.js';
-import { registerConnector, resetConnectorRegistry } from '../js/v2/knowledge/registry/connector-registry.js';
-import { resetImportReportLog } from '../js/v2/knowledge/acquisition/acquisition-engine.js';
+import { LIFECYCLE_STATE } from '../src/knowledge/contracts/lifecycle-contract.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
+import { setActiveRepository, getById } from '../src/knowledge/repository/knowledge-repository.js';
+import { connectorSuccess } from '../src/knowledge/contracts/connector-contract.js';
+import { makeSource, SOURCE_REPRESENTATION } from '../src/knowledge/acquisition/contracts/source-contract.js';
+import { registerConnector, resetConnectorRegistry } from '../src/knowledge/registry/connector-registry.js';
+import { resetImportReportLog } from '../src/knowledge/acquisition/acquisition-engine.js';
 
-import { DATASET_TYPE, makeDatasetSpec } from '../js/v2/knowledge/datasets/contracts/dataset-contract.js';
-import { registerDataset, resetDatasetRegistry } from '../js/v2/knowledge/datasets/registry/dataset-registry.js';
+import { DATASET_TYPE, makeDatasetSpec } from '../src/knowledge/datasets/contracts/dataset-contract.js';
+import { registerDataset, resetDatasetRegistry } from '../src/knowledge/datasets/registry/dataset-registry.js';
 import {
   importDataset, listDatasetImportReports, DATASET_IMPORT_ERRORS, rollback,
-} from '../js/v2/knowledge/datasets/dataset-import-service.js';
+} from '../src/knowledge/datasets/dataset-import-service.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {

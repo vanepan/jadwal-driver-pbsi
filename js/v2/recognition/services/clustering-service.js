@@ -26,7 +26,7 @@ import { clusterScopes, computeClusterConfidence } from '../clustering/structura
 import { recordObservation } from './recognition-service.js';
 import { RECORD_TYPE } from '../contracts/recognition-record-contract.js';
 import { makeRecognitionScope } from '../contracts/recognition-scope-contract.js';
-import { EVIDENCE_KIND } from '../../knowledge/contracts/evidence-contract.js';
+import { EVIDENCE_KIND } from '../../../../src/knowledge/contracts/evidence-contract.js';
 
 /** Deterministic id from a cluster's own sorted membership — re-deriving
  *  the SAME cluster from the SAME real population reconciles via

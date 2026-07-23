@@ -54,11 +54,11 @@
 
 'use strict';
 
-import { hasDomainType } from '../../knowledge/registry/domain-type-registry.js';
-import { hasKind } from '../../knowledge/registry/kind-registry.js';
-import { hasNorType } from '../../knowledge/registry/nor-type-registry.js';
+import { hasDomainType } from '../../../../src/knowledge/registry/domain-type-registry.js';
+import { hasKind } from '../../../../src/knowledge/registry/kind-registry.js';
+import { hasNorType } from '../../../../src/knowledge/registry/nor-type-registry.js';
 import { isRecognitionClassificationPayload } from '../contracts/recognition-classification-contract.js';
-import { EVIDENCE_KIND } from '../../knowledge/contracts/evidence-contract.js';
+import { EVIDENCE_KIND } from '../../../../src/knowledge/contracts/evidence-contract.js';
 
 /** Deliberately the SAME value as metadata-inference-engine.js's
  *  AUTO_POPULATE_CONFIDENCE_THRESHOLD — not imported (that file is a

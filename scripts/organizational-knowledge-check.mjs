@@ -12,21 +12,21 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import { LIFECYCLE_STATE } from '../js/v2/knowledge/contracts/lifecycle-contract.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
-import { RELATIONSHIP_TYPE } from '../js/v2/knowledge/contracts/dependency-graph-contract.js';
-import { setActiveRepository, create as repoCreate } from '../js/v2/knowledge/repository/knowledge-repository.js';
-import { getDomainType, resetDomainTypeRegistry } from '../js/v2/knowledge/registry/domain-type-registry.js';
+import { LIFECYCLE_STATE } from '../src/knowledge/contracts/lifecycle-contract.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
+import { RELATIONSHIP_TYPE } from '../src/knowledge/contracts/dependency-graph-contract.js';
+import { setActiveRepository, create as repoCreate } from '../src/knowledge/repository/knowledge-repository.js';
+import { getDomainType, resetDomainTypeRegistry } from '../src/knowledge/registry/domain-type-registry.js';
 
-import { EVIDENCE_KIND, isEvidence, isEvidenceList } from '../js/v2/knowledge/contracts/evidence-contract.js';
-import { isRecommendationEvidence } from '../js/v2/knowledge/contracts/recommendation-evidence-contract.js';
+import { EVIDENCE_KIND, isEvidence, isEvidenceList } from '../src/knowledge/contracts/evidence-contract.js';
+import { isRecommendationEvidence } from '../src/knowledge/contracts/recommendation-evidence-contract.js';
 
-import { suggestConfidence as engineSuggestConfidence } from '../js/v2/knowledge/machine-learning/confidence-engine.js';
-import { computeFieldStatistics as engineComputeFieldStatistics } from '../js/v2/knowledge/machine-learning/statistics-engine.js';
+import { suggestConfidence as engineSuggestConfidence } from '../src/knowledge/machine-learning/confidence-engine.js';
+import { computeFieldStatistics as engineComputeFieldStatistics } from '../src/knowledge/machine-learning/statistics-engine.js';
 
-import * as knowledgeGraphService from '../js/v2/knowledge/services/knowledge-graph-service.js';
-import * as confidenceService from '../js/v2/knowledge/services/confidence-service.js';
-import * as statisticsService from '../js/v2/knowledge/services/statistics-service.js';
+import * as knowledgeGraphService from '../src/knowledge/services/knowledge-graph-service.js';
+import * as confidenceService from '../src/knowledge/services/confidence-service.js';
+import * as statisticsService from '../src/knowledge/services/statistics-service.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {
@@ -189,7 +189,7 @@ function importSpecifiers(filePath) {
 
 const allJsFiles = walk(jsRoot);
 const v2Root = path.join(jsRoot, 'v2');
-const knowledgeRoot = path.join(v2Root, 'knowledge');
+const knowledgeRoot = path.join(repoRoot, 'src', 'knowledge');
 const ALLOWED_V2_IMPORTERS = new Set([
   path.join(jsRoot, 'config', 'feature-gates.js'),
   path.join(jsRoot, 'config', 'module-loader-registry.js'),
@@ -212,7 +212,7 @@ for (const file of knowledgeFiles) {
     if (spec.includes('ai-foundation')) aiFoundationViolations.push(file);
   }
 }
-check('js/v2/knowledge/ never imports js/v2/ai-foundation/', aiFoundationViolations.length === 0);
+check('src/knowledge/ never imports js/v2/ai-foundation/', aiFoundationViolations.length === 0);
 
 console.log(`\n${pass}/${pass + fail} checks passed.`);
 process.exit(fail > 0 ? 1 : 0);

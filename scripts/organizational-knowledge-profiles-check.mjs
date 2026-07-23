@@ -12,15 +12,15 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import { LIFECYCLE_STATE } from '../js/v2/knowledge/contracts/lifecycle-contract.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
-import { setActiveRepository, create as repoCreate } from '../js/v2/knowledge/repository/knowledge-repository.js';
-import { hasKind, listKinds } from '../js/v2/knowledge/registry/kind-registry.js';
-import { isEvidence, isEvidenceList } from '../js/v2/knowledge/contracts/evidence-contract.js';
+import { LIFECYCLE_STATE } from '../src/knowledge/contracts/lifecycle-contract.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
+import { setActiveRepository, create as repoCreate } from '../src/knowledge/repository/knowledge-repository.js';
+import { hasKind, listKinds } from '../src/knowledge/registry/kind-registry.js';
+import { isEvidence, isEvidenceList } from '../src/knowledge/contracts/evidence-contract.js';
 import {
   PROFILE_TYPE, PROFILE_VALUE_FIELD, isProfile, isProfileEntry, isProfileEligiblePayload,
-} from '../js/v2/knowledge/contracts/profile-contract.js';
-import { buildProfile, listProfileTypes, PROFILE_KIND_MAP } from '../js/v2/knowledge/services/profile-service.js';
+} from '../src/knowledge/contracts/profile-contract.js';
+import { buildProfile, listProfileTypes, PROFILE_KIND_MAP } from '../src/knowledge/services/profile-service.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {
@@ -142,7 +142,7 @@ function importSpecifiers(filePath) {
 
 const allJsFiles = walk(jsRoot);
 const v2Root = path.join(jsRoot, 'v2');
-const knowledgeRoot = path.join(v2Root, 'knowledge');
+const knowledgeRoot = path.join(repoRoot, 'src', 'knowledge');
 const ALLOWED_V2_IMPORTERS = new Set([
   path.join(jsRoot, 'config', 'feature-gates.js'),
   path.join(jsRoot, 'config', 'module-loader-registry.js'),
@@ -165,7 +165,7 @@ for (const file of knowledgeFiles) {
     if (spec.includes('ai-foundation')) aiFoundationViolations.push(file);
   }
 }
-check('js/v2/knowledge/ never imports js/v2/ai-foundation/', aiFoundationViolations.length === 0);
+check('src/knowledge/ never imports js/v2/ai-foundation/', aiFoundationViolations.length === 0);
 
 console.log(`\n${pass}/${pass + fail} checks passed.`);
 process.exit(fail > 0 ? 1 : 0);

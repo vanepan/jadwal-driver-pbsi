@@ -59,7 +59,7 @@
 
 'use strict';
 
-import { computeSimilarity } from '../../knowledge/services/similarity-service.js';
+import { computeSimilarity } from '../../../../src/knowledge/services/similarity-service.js';
 
 /** @type {Map<string, {id: string, fn: Function}>} */
 const _strategies = new Map();

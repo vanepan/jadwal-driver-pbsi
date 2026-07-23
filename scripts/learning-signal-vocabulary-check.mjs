@@ -11,23 +11,23 @@
    Deterministic. No V1, no Firebase, no AI.
    Run: node scripts/learning-signal-vocabulary-check.mjs   (exit 0 = pass) */
 
-import { LEARNING_KIND, isLearningEvent, makeLearningEvent } from '../js/v2/learning/contracts/learning-event-contract.js';
-import { makeLearningScope, isLearningScope, scopeKey } from '../js/v2/learning/contracts/learning-scope-contract.js';
-import { makeLearningSignal, isLearningSignal } from '../js/v2/learning/contracts/learning-signal-contract.js';
-import { makeLearningConfidence, isLearningConfidence } from '../js/v2/learning/contracts/learning-confidence-contract.js';
+import { LEARNING_KIND, isLearningEvent, makeLearningEvent } from '../src/learning/contracts/learning-event-contract.js';
+import { makeLearningScope, isLearningScope, scopeKey } from '../src/learning/contracts/learning-scope-contract.js';
+import { makeLearningSignal, isLearningSignal } from '../src/learning/contracts/learning-signal-contract.js';
+import { makeLearningConfidence, isLearningConfidence } from '../src/learning/contracts/learning-confidence-contract.js';
 import {
   RECOMMENDATION_TYPE, makeLearningRecommendation, isLearningRecommendation,
-} from '../js/v2/learning/contracts/learning-recommendation-contract.js';
-import { isLearningLineage } from '../js/v2/learning/contracts/learning-lineage-contract.js';
+} from '../src/learning/contracts/learning-recommendation-contract.js';
+import { isLearningLineage } from '../src/learning/contracts/learning-lineage-contract.js';
 import {
   registerSignalType, hasSignalType, getSignalType, listSignalTypes, resetSignalTypeRegistry, SIGNAL_TYPE_REGISTRY_ERRORS,
-} from '../js/v2/learning/registry/learning-signal-type-registry.js';
+} from '../src/learning/registry/learning-signal-type-registry.js';
 import {
   getLearningSourceWeight, listLearningSourceWeights, resetLearningSourceWeights, DEFAULT_LEARNING_SOURCE_WEIGHT,
-} from '../js/v2/learning/registry/learning-source-weight-registry.js';
+} from '../src/learning/registry/learning-source-weight-registry.js';
 import {
   recordCorrection, recordPattern, CORRECTION_TYPE,
-} from '../js/v2/learning/services/learning-service.js';
+} from '../src/learning/services/learning-service.js';
 
 let pass = 0; let fail = 0;
 function check(name, cond) {

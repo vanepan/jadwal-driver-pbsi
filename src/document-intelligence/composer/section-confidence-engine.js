@@ -61,10 +61,10 @@
 
 'use strict';
 
-import { getKnowledge } from '../../../js/v2/knowledge/services/knowledge-service.js';
-import { suggestConfidence } from '../../../js/v2/knowledge/machine-learning/confidence-engine.js';
-import { explainConfidenceAsEvidence } from '../../../js/v2/knowledge/services/confidence-service.js';
-import { getSourceWeight } from '../../../js/v2/knowledge/contracts/source-weight-contract.js';
+import { getKnowledge } from '../../knowledge/services/knowledge-service.js';
+import { suggestConfidence } from '../../knowledge/machine-learning/confidence-engine.js';
+import { explainConfidenceAsEvidence } from '../../knowledge/services/confidence-service.js';
+import { getSourceWeight } from '../../knowledge/contracts/source-weight-contract.js';
 import { getExplainability } from './composer-store.js';
 import { clampScore, scoreColor } from '../../../js/services/unified-scoring.js';
 
@@ -87,7 +87,7 @@ function isUnresolved(value) {
 /**
  * @param {import('./contracts/editable-section-contract.js').EditableSection} section
  * @param {import('./contracts/composer-document-contract.js').ComposerDocument} doc
- * @returns {{confidence: number, tier: string, tone: 'ok'|'info'|'warn'|'danger', rationale: string, evidence: import('../../../js/v2/knowledge/contracts/evidence-contract.js').Evidence[]}}
+ * @returns {{confidence: number, tier: string, tone: 'ok'|'info'|'warn'|'danger', rationale: string, evidence: import('../../knowledge/contracts/evidence-contract.js').Evidence[]}}
  */
 export function computeSectionConfidence(section, doc) {
   const { field, value, isOverridden } = section;

@@ -20,8 +20,8 @@ import {
   dispatchSimilarity, listStrategies, hasStrategy, resetStrategyRegistry, jaccardSetSimilarity, registerStrategy,
   SIMILARITY_STRATEGY_ERRORS,
 } from '../js/v2/recognition/similarity/similarity-strategy-registry.js';
-import { computeSimilarity as knowledgeComputeSimilarity } from '../js/v2/knowledge/services/similarity-service.js';
-import { computeSimilarity as engineComputeSimilarity } from '../js/v2/knowledge/learning/similarity-detection-engine.js';
+import { computeSimilarity as knowledgeComputeSimilarity } from '../src/knowledge/services/similarity-service.js';
+import { computeSimilarity as engineComputeSimilarity } from '../src/knowledge/learning/similarity-detection-engine.js';
 
 let pass = 0; let fail = 0;
 function check(name, cond) {

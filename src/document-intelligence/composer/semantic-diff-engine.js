@@ -71,7 +71,7 @@
 
 'use strict';
 
-import { getKnowledge } from '../../../js/v2/knowledge/services/knowledge-service.js';
+import { getKnowledge } from '../../knowledge/services/knowledge-service.js';
 
 const PATTERN_FIELD_PREFIX = 'pattern:';
 const REWRITE_RATIO_THRESHOLD = 0.5; // see header: a stated algorithm definition, not a fabricated business rule

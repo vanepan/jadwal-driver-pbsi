@@ -11,13 +11,13 @@
    js/firebase.js — unlike knowledge-acquisition-dom-check.mjs, no browser
    is required here. */
 
-import { LIFECYCLE_STATE } from '../js/v2/knowledge/contracts/lifecycle-contract.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
-import { setActiveRepository, create as repoCreate } from '../js/v2/knowledge/repository/knowledge-repository.js';
-import { promoteToCandidate } from '../js/v2/knowledge/promotion/promotion-engine.js';
-import { submitForReview, approve } from '../js/v2/knowledge/review/review-workflow-engine.js';
-import { traceKnowledge } from '../js/v2/knowledge/services/trace-service.js';
-import { BUILDER_EVENT_TYPE } from '../js/v2/knowledge/builder/contracts/state-contract.js';
+import { LIFECYCLE_STATE } from '../src/knowledge/contracts/lifecycle-contract.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
+import { setActiveRepository, create as repoCreate } from '../src/knowledge/repository/knowledge-repository.js';
+import { promoteToCandidate } from '../src/knowledge/promotion/promotion-engine.js';
+import { submitForReview, approve } from '../src/knowledge/review/review-workflow-engine.js';
+import { traceKnowledge } from '../src/knowledge/services/trace-service.js';
+import { BUILDER_EVENT_TYPE } from '../src/knowledge/builder/contracts/state-contract.js';
 
 import { runPipeline } from '../src/document-intelligence/document-intelligence-engine.js';
 import { listSteps } from '../src/document-intelligence/registry/step-registry.js';

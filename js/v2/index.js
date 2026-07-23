@@ -17,7 +17,7 @@
    NON-GOALS: this file must never gain business logic, UI, or Firebase
    access. It is a manifest, not an engine.
 
-   FUTURE EVOLUTION: Phase 4+ adds `export * from './knowledge/index.js'`
+   FUTURE EVOLUTION: Phase 4+ adds `export * from '../../src/knowledge/index.js'`
    and `export * from './ai-foundation/index.js'` once those trees have real
    callers. Until then, this file is imported by nothing — grep the
    repository for "from '.*js/v2" (or the relative equivalent) to verify.

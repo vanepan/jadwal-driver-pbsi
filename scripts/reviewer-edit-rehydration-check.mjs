@@ -15,13 +15,13 @@
    an Approved item is never overwritten by a later re-projection.
    Run: node scripts/reviewer-edit-rehydration-check.mjs   (exit 0 = pass) */
 
-import { LIFECYCLE_STATE } from '../js/v2/knowledge/contracts/lifecycle-contract.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
-import { setActiveRepository } from '../js/v2/knowledge/repository/knowledge-repository.js';
-import { getKnowledge, listKnowledge, promoteKnowledge, submitKnowledgeForReview } from '../js/v2/knowledge/services/knowledge-service.js';
-import { getCandidateQueue } from '../js/v2/knowledge/review/review-queue-engine.js';
-import { buildProfile } from '../js/v2/knowledge/profiles/profile-engine.js';
-import { PROFILE_TYPE } from '../js/v2/knowledge/contracts/profile-contract.js';
+import { LIFECYCLE_STATE } from '../src/knowledge/contracts/lifecycle-contract.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
+import { setActiveRepository } from '../src/knowledge/repository/knowledge-repository.js';
+import { getKnowledge, listKnowledge, promoteKnowledge, submitKnowledgeForReview } from '../src/knowledge/services/knowledge-service.js';
+import { getCandidateQueue } from '../src/knowledge/review/review-queue-engine.js';
+import { buildProfile } from '../src/knowledge/profiles/profile-engine.js';
+import { PROFILE_TYPE } from '../src/knowledge/contracts/profile-contract.js';
 import {
   createDocument, editSection, resetComposerStore,
 } from '../src/document-intelligence/composer/composer-store.js';

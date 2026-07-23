@@ -40,19 +40,19 @@ import {
 import { detectIntent } from '../src/conversation/intent/intent-engine.js';
 import { INTENT } from '../src/conversation/contracts/intent-contract.js';
 
-import { resetLearningRepository } from '../js/v2/learning/repository/learning-repository.js';
-import { listLearningEvents, LEARNING_KIND, CORRECTION_TYPE } from '../js/v2/learning/services/learning-service.js';
+import { resetLearningRepository } from '../src/learning/repository/learning-repository.js';
+import { listLearningEvents, LEARNING_KIND, CORRECTION_TYPE } from '../src/learning/services/learning-service.js';
 import { resetArchiveRepository } from '../src/organizational-memory/repository/archive-repository.js';
 import { computeCoverageReport } from '../src/organizational-memory/coverage-engine.js';
 import { computeOrganizationalMemory } from '../src/organizational-memory/organizational-memory-engine.js';
 import {
   setKnowledgeBackend, ingest, promoteKnowledge,
-} from '../js/v2/knowledge/services/knowledge-service.js';
-import { LIFECYCLE_STATE } from '../js/v2/knowledge/contracts/lifecycle-contract.js';
+} from '../src/knowledge/services/knowledge-service.js';
+import { LIFECYCLE_STATE } from '../src/knowledge/contracts/lifecycle-contract.js';
 import {
   createOverrideDraft, promoteOverrideToCandidate, submitOverrideForReview, approveOverride,
   PROFILE_OVERRIDE_TYPE, OVERRIDE_ACTION,
-} from '../js/v2/knowledge/services/profile-override-service.js';
+} from '../src/knowledge/services/profile-override-service.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 

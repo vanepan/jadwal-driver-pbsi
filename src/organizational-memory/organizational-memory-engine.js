@@ -44,11 +44,11 @@
 
 'use strict';
 
-import { buildProfile } from '../../js/v2/knowledge/profiles/profile-engine.js';
-import { PROFILE_TYPE } from '../../js/v2/knowledge/contracts/profile-contract.js';
+import { buildProfile } from '../knowledge/profiles/profile-engine.js';
+import { PROFILE_TYPE } from '../knowledge/contracts/profile-contract.js';
 import { listArchive } from './services/archive-service.js';
-import { listLearningEvents } from '../../js/v2/learning/services/learning-service.js';
-import { LEARNING_KIND, CORRECTION_TYPE, isTerminalLearningState } from '../../js/v2/learning/contracts/learning-event-contract.js';
+import { listLearningEvents } from '../learning/services/learning-service.js';
+import { LEARNING_KIND, CORRECTION_TYPE, isTerminalLearningState } from '../learning/contracts/learning-event-contract.js';
 
 /** Reframes an existing, already-computed ProfileEntry list — same pattern
  *  pattern-discovery-engine.js#fromProfileEntries already established, reused

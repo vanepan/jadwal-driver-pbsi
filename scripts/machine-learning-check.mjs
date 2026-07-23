@@ -5,20 +5,20 @@
    AI, no LLM.
    Run: node scripts/machine-learning-check.mjs   (exit 0 = pass) */
 
-import { LIFECYCLE_STATE } from '../js/v2/knowledge/contracts/lifecycle-contract.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
-import { RELATIONSHIP_TYPE } from '../js/v2/knowledge/contracts/dependency-graph-contract.js';
-import { getSourceWeight, resetSourceWeights } from '../js/v2/knowledge/contracts/source-weight-contract.js';
-import { setActiveRepository, create as repoCreate, getById } from '../js/v2/knowledge/repository/knowledge-repository.js';
-import { promoteToCandidate } from '../js/v2/knowledge/promotion/promotion-engine.js';
-import { submitForReview, approve } from '../js/v2/knowledge/review/review-workflow-engine.js';
+import { LIFECYCLE_STATE } from '../src/knowledge/contracts/lifecycle-contract.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
+import { RELATIONSHIP_TYPE } from '../src/knowledge/contracts/dependency-graph-contract.js';
+import { getSourceWeight, resetSourceWeights } from '../src/knowledge/contracts/source-weight-contract.js';
+import { setActiveRepository, create as repoCreate, getById } from '../src/knowledge/repository/knowledge-repository.js';
+import { promoteToCandidate } from '../src/knowledge/promotion/promotion-engine.js';
+import { submitForReview, approve } from '../src/knowledge/review/review-workflow-engine.js';
 
-import { buildKnowledgeIndex, indexGroup } from '../js/v2/knowledge/extraction/index-engine.js';
-import { clusterItems } from '../js/v2/knowledge/machine-learning/clustering-engine.js';
-import { minePatternsPerCluster } from '../js/v2/knowledge/machine-learning/pattern-mining-engine.js';
-import { computeFieldStatistics, computeStatistics } from '../js/v2/knowledge/machine-learning/statistics-engine.js';
-import { detectOutliers } from '../js/v2/knowledge/machine-learning/outlier-detection-engine.js';
-import { suggestConfidence } from '../js/v2/knowledge/machine-learning/confidence-engine.js';
+import { buildKnowledgeIndex, indexGroup } from '../src/knowledge/extraction/index-engine.js';
+import { clusterItems } from '../src/knowledge/machine-learning/clustering-engine.js';
+import { minePatternsPerCluster } from '../src/knowledge/machine-learning/pattern-mining-engine.js';
+import { computeFieldStatistics, computeStatistics } from '../src/knowledge/machine-learning/statistics-engine.js';
+import { detectOutliers } from '../src/knowledge/machine-learning/outlier-detection-engine.js';
+import { suggestConfidence } from '../src/knowledge/machine-learning/confidence-engine.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {

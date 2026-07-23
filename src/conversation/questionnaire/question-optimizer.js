@@ -60,8 +60,8 @@
 
 import { getRequiredFacts } from '../contracts/intent-contract.js';
 import { makeResolvedFact, QUESTION_SOURCE } from '../contracts/question-contract.js';
-import { listKnowledge, LIFECYCLE_STATE } from '../../../js/v2/knowledge/services/knowledge-service.js';
-import { listApprovedOverrides, PROFILE_OVERRIDE_TYPE } from '../../../js/v2/knowledge/services/profile-override-service.js';
+import { listKnowledge, LIFECYCLE_STATE } from '../../knowledge/services/knowledge-service.js';
+import { listApprovedOverrides, PROFILE_OVERRIDE_TYPE } from '../../knowledge/services/profile-override-service.js';
 import { listArchive, ARCHIVE_STATE } from '../../organizational-memory/services/archive-service.js';
 import { computeOrganizationalMemory } from '../../organizational-memory/organizational-memory-engine.js';
 

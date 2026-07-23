@@ -26,7 +26,7 @@
 import { getDrivers, effectiveStatus } from '../../../drivers-store.js';
 import { senseSuccess, senseFailure, SENSOR_ERRORS } from '../contracts/sensor-contract.js';
 import { registerSensor } from '../registry/sensor-registry.js';
-import { makeWarning, WARNING_SEVERITY } from '../../knowledge/observability/contracts/warning-contract.js';
+import { makeWarning, WARNING_SEVERITY } from '../../../../src/knowledge/observability/contracts/warning-contract.js';
 import { DRIVER_SENSOR_ID, DRIVER_SENSOR_VERSION, toDriverEntity, isDriverNewerThan } from './driver-mapping.js';
 
 function sense(since = null) {

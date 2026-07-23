@@ -31,7 +31,7 @@
 
 import { REPOSITORY_ERRORS, repositorySuccess, repositoryFailure } from '../contracts/repository-contract.js';
 import { isRecognitionRecord } from '../../contracts/recognition-record-contract.js';
-import { nextVersion } from '../../../knowledge/contracts/identity-contract.js';
+import { nextVersion } from '../../../../../src/knowledge/contracts/identity-contract.js';
 
 export const MEMORY_REPOSITORY_ID = 'memory';
 export const MEMORY_REPOSITORY_VERSION = 'recognition-memory-repository@1';

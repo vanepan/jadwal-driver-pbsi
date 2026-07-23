@@ -9,10 +9,10 @@
    Deterministic.
    Run: node scripts/learning-signal-dedup-check.mjs   (exit 0 = pass) */
 
-import { computeSignalSimilarity, findSimilarSignals } from '../js/v2/learning/learning-signal-similarity-engine.js';
-import { classifySignalConflict, findSignalConflicts } from '../js/v2/learning/learning-conflict-detection-engine.js';
-import { makeLearningScope } from '../js/v2/learning/contracts/learning-scope-contract.js';
-import { makeLearningSignal } from '../js/v2/learning/contracts/learning-signal-contract.js';
+import { computeSignalSimilarity, findSimilarSignals } from '../src/learning/learning-signal-similarity-engine.js';
+import { classifySignalConflict, findSignalConflicts } from '../src/learning/learning-conflict-detection-engine.js';
+import { makeLearningScope } from '../src/learning/contracts/learning-scope-contract.js';
+import { makeLearningSignal } from '../src/learning/contracts/learning-signal-contract.js';
 
 let pass = 0; let fail = 0;
 function check(name, cond) {

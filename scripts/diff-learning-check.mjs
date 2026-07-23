@@ -9,15 +9,15 @@
    (memory repository only).
    Run: node scripts/diff-learning-check.mjs   (exit 0 = pass) */
 
-import { LIFECYCLE_STATE } from '../js/v2/knowledge/contracts/lifecycle-contract.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
-import { setActiveRepository, create as repoCreate, getById } from '../js/v2/knowledge/repository/knowledge-repository.js';
-import { submitForReview, approve } from '../js/v2/knowledge/review/review-workflow-engine.js';
-import { buildProfile } from '../js/v2/knowledge/services/profile-service.js';
-import { PROFILE_TYPE } from '../js/v2/knowledge/contracts/profile-contract.js';
+import { LIFECYCLE_STATE } from '../src/knowledge/contracts/lifecycle-contract.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
+import { setActiveRepository, create as repoCreate, getById } from '../src/knowledge/repository/knowledge-repository.js';
+import { submitForReview, approve } from '../src/knowledge/review/review-workflow-engine.js';
+import { buildProfile } from '../src/knowledge/services/profile-service.js';
+import { PROFILE_TYPE } from '../src/knowledge/contracts/profile-contract.js';
 import {
   submitDraftEditAsCorrection, DIFF_LEARNING_ERRORS,
-} from '../js/v2/knowledge/learning/diff-learning-engine.js';
+} from '../src/knowledge/learning/diff-learning-engine.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {

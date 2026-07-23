@@ -20,20 +20,20 @@
    Deterministic. No AI, no Firebase touch.
    Run: node scripts/knowledge-asset-kinds-check.mjs   (exit 0 = pass) */
 
-import { hasKind, listKinds } from '../js/v2/knowledge/registry/kind-registry.js';
-import { isRenderingRuleEntry } from '../js/v2/knowledge/language/contracts/rendering-rule-contract.js';
-import { isWorkflowEntry } from '../js/v2/knowledge/language/contracts/workflow-contract.js';
-import { isOntologyEntry } from '../js/v2/knowledge/language/contracts/ontology-contract.js';
-import { isOrganizationalReasoningEntry } from '../js/v2/knowledge/language/contracts/organizational-reasoning-contract.js';
-import { isQuestionTreeEntry } from '../js/v2/knowledge/language/contracts/question-tree-contract.js';
+import { hasKind, listKinds } from '../src/knowledge/registry/kind-registry.js';
+import { isRenderingRuleEntry } from '../src/knowledge/language/contracts/rendering-rule-contract.js';
+import { isWorkflowEntry } from '../src/knowledge/language/contracts/workflow-contract.js';
+import { isOntologyEntry } from '../src/knowledge/language/contracts/ontology-contract.js';
+import { isOrganizationalReasoningEntry } from '../src/knowledge/language/contracts/organizational-reasoning-contract.js';
+import { isQuestionTreeEntry } from '../src/knowledge/language/contracts/question-tree-contract.js';
 import {
   EXAMPLE_RENDERING_RULE_ENTRY, EXAMPLE_WORKFLOW_ENTRY, EXAMPLE_ONTOLOGY_ENTRY,
   EXAMPLE_ORGANIZATIONAL_REASONING_ENTRY, EXAMPLE_QUESTION_TREE_ENTRY,
-} from '../js/v2/knowledge/language/examples.js';
+} from '../src/knowledge/language/examples.js';
 import {
   setKnowledgeBackend, ingest, listKnowledge, promoteKnowledge, LIFECYCLE_STATE,
-} from '../js/v2/knowledge/services/knowledge-service.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
+} from '../src/knowledge/services/knowledge-service.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
 
 let pass = 0; let fail = 0;
 function check(name, cond) {

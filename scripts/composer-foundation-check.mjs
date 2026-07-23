@@ -21,8 +21,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import { CHANGE_TYPE, isDiff } from '../js/v2/knowledge/learning/contracts/diff-contract.js';
-import { computeDiff } from '../js/v2/knowledge/learning/diff-engine.js';
+import { CHANGE_TYPE, isDiff } from '../src/knowledge/learning/contracts/diff-contract.js';
+import { computeDiff } from '../src/knowledge/learning/diff-engine.js';
 
 import { isEditableSection } from '../src/document-intelligence/composer/contracts/editable-section-contract.js';
 import { isComposerDocument, COMPOSER_DOCUMENT_STATUS_DRAFT } from '../src/document-intelligence/composer/contracts/composer-document-contract.js';
@@ -225,7 +225,7 @@ resetSatisfactionLog();
 console.log('\n[Dormancy — Composer is document-intelligence-only, never imported by knowledge/]');
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
-const knowledgeRoot = path.join(repoRoot, 'js', 'v2', 'knowledge');
+const knowledgeRoot = path.join(repoRoot, 'src', 'knowledge');
 
 function walk(dir, out = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

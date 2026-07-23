@@ -52,7 +52,7 @@ export const SENSOR_ERRORS = Object.freeze({
  * @property {import('./entity-relationship-contract.js').EntityRelationship[]} relationships - derived edges emitted alongside the entities, [] default
  * @property {{code: string, message: string}|null} error
  * @property {string} sensorId
- * @property {import('../../knowledge/observability/contracts/warning-contract.js').KnowledgeWarning[]} warnings
+ * @property {import('../../../../src/knowledge/observability/contracts/warning-contract.js').KnowledgeWarning[]} warnings
  *   - reused, not reimplemented — same precedented pure-leaf-utility reuse
  *     as contracts/identity-contract.js#nextVersion (see that file's
  *     header). Non-fatal, per-record problems that did not fail the sense

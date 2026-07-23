@@ -61,7 +61,7 @@
 
 'use strict';
 
-import { emitLearningSignal } from '../../learning/services/learning-signal-service.js';
+import { emitLearningSignal } from '../../../../src/learning/services/learning-signal-service.js';
 
 export const RECOGNITION_LEARNING_SIGNAL_TYPE = Object.freeze({
   cluster: 'document_structure_recurrence',

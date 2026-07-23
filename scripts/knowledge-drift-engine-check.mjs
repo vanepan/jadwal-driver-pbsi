@@ -12,15 +12,15 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-import { LIFECYCLE_STATE } from '../js/v2/knowledge/contracts/lifecycle-contract.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
-import { setActiveRepository, create as repoCreate } from '../js/v2/knowledge/repository/knowledge-repository.js';
-import { promoteToCandidate } from '../js/v2/knowledge/promotion/promotion-engine.js';
-import { submitForReview, approve } from '../js/v2/knowledge/review/review-workflow-engine.js';
-import { suggestConfidence } from '../js/v2/knowledge/machine-learning/confidence-engine.js';
-import { resetLearningRepository } from '../js/v2/learning/repository/learning-repository.js';
-import { recordCorrection, CORRECTION_TYPE } from '../js/v2/learning/services/learning-service.js';
-import { computeKnowledgeDrift } from '../js/v2/knowledge/profiles/knowledge-drift-engine.js';
+import { LIFECYCLE_STATE } from '../src/knowledge/contracts/lifecycle-contract.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
+import { setActiveRepository, create as repoCreate } from '../src/knowledge/repository/knowledge-repository.js';
+import { promoteToCandidate } from '../src/knowledge/promotion/promotion-engine.js';
+import { submitForReview, approve } from '../src/knowledge/review/review-workflow-engine.js';
+import { suggestConfidence } from '../src/knowledge/machine-learning/confidence-engine.js';
+import { resetLearningRepository } from '../src/learning/repository/learning-repository.js';
+import { recordCorrection, CORRECTION_TYPE } from '../src/learning/services/learning-service.js';
+import { computeKnowledgeDrift } from '../src/knowledge/profiles/knowledge-drift-engine.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {
@@ -122,7 +122,7 @@ console.log('\n[obsoleteWordingCandidates — reuses Sprint 11.5\'s writingStyle
 console.log('\n[Never writes — the engine only reads]');
 {
   const __dirname = dirname(fileURLToPath(import.meta.url));
-  const engineSource = readFileSync(join(__dirname, '../js/v2/knowledge/profiles/knowledge-drift-engine.js'), 'utf8');
+  const engineSource = readFileSync(join(__dirname, '../src/knowledge/profiles/knowledge-drift-engine.js'), 'utf8');
   check('knowledge-drift-engine.js never calls create(', !engineSource.includes('repoCreate(') && !/[^.]\bcreate\(/.test(engineSource));
   check('knowledge-drift-engine.js never calls appendVersion(', !engineSource.includes('appendVersion('));
   check('knowledge-drift-engine.js never calls recordCorrection/recordPattern (a report, not a producer)', !engineSource.includes('recordCorrection(') && !engineSource.includes('recordPattern('));

@@ -71,7 +71,7 @@ export const DOCUMENT_ANALYZER_ERRORS = Object.freeze({
 /**
  * @typedef {Object} DocumentStructure
  * @property {string[]} sectionLabels  - ordered, e.g. ['header', 'body', 'signature']
- * @property {import('../../../js/v2/knowledge/language/contracts/pattern-contract.js').PatternSlot[]} [slots]
+ * @property {import('../../knowledge/language/contracts/pattern-contract.js').PatternSlot[]} [slots]
  */
 
 export function analysisSuccess({ classification = null, intent = null, structure = null } = {}) {

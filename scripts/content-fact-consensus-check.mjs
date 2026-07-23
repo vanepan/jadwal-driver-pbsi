@@ -10,7 +10,7 @@
 
 import {
   computeFieldConsensus, MIN_CONSENSUS_SUPPORT, MIN_CONSENSUS_AGREEMENT,
-} from '../js/v2/knowledge/datasets/import-session/content-fact-consensus-engine.js';
+} from '../src/knowledge/datasets/import-session/content-fact-consensus-engine.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {
@@ -99,7 +99,7 @@ console.log('\n[determinism — the same input always produces the same output]'
 
 console.log('\n[never writes anything — a pure function, same discipline as pattern-discovery-engine.js]');
 {
-  const src = (await import('node:fs')).readFileSync(new URL('../js/v2/knowledge/datasets/import-session/content-fact-consensus-engine.js', import.meta.url), 'utf8');
+  const src = (await import('node:fs')).readFileSync(new URL('../src/knowledge/datasets/import-session/content-fact-consensus-engine.js', import.meta.url), 'utf8');
   check('no import statement at all — zero repository/Firebase dependency, matching the file\'s own DEPENDENCIES: none', !/^import /m.test(src));
 }
 

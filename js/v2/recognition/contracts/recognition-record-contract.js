@@ -32,7 +32,7 @@
 
 'use strict';
 
-import { isEvidenceList } from '../../knowledge/contracts/evidence-contract.js';
+import { isEvidenceList } from '../../../../src/knowledge/contracts/evidence-contract.js';
 import { isRecognitionScope } from './recognition-scope-contract.js';
 
 export const RECOGNITION_RECORD_SCHEMA = 'recognition-record@1';
@@ -60,7 +60,7 @@ export const RECORD_TYPE = Object.freeze({
  * @property {import('./recognition-scope-contract.js').RecognitionScope} scope
  * @property {object} payload           - shape depends on recordType, see the sibling *-contract.js files
  * @property {number} confidence        - 0–1
- * @property {import('../../knowledge/contracts/evidence-contract.js').Evidence[]} evidence - may be empty (an honest "not enough evidence yet" is a real state, not an error)
+ * @property {import('../../../../src/knowledge/contracts/evidence-contract.js').Evidence[]} evidence - may be empty (an honest "not enough evidence yet" is a real state, not an error)
  * @property {{producerId: string, computedAt: string}} provenance - WHICH engine/extractor produced this, and when — Recognition Ownership, see recognition-service.js's header
  * @property {string} createdAt         - ISO 8601
  * @property {string} updatedAt         - ISO 8601

@@ -128,7 +128,7 @@ function scheduleHydrate(raw) {
 export async function initImportSessionSync() {
   if (_syncStarted) return;
   _syncStarted = true;
-  const { subscribeNode, storeFirebaseData, readNode } = await import('../../../../../firebase.js');
+  const { subscribeNode, storeFirebaseData, readNode } = await import('../../../../../js/firebase.js');
   _remoteWrite = storeFirebaseData;
   // Immediate one-shot read so the FIRST render after a fresh page load
   // already reflects real state, not waiting out the debounce window.
