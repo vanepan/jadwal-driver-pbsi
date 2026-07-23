@@ -8,7 +8,7 @@
 
    ISOLATED ON PURPOSE, same reasoning file-hash.js's own header already
    documents: file-storage-engine.js can never be imported under Node (its
-   top-level `import ... from '../../firebase.js'` is an unresolvable CDN
+   top-level `import ... from '../../js/firebase.js'` is an unresolvable CDN
    URL to Node's ESM loader), so the retry MECHANISM itself (attempt
    counting, backoff, eventual success/failure) needs to live in a
    Firebase-free file to stay directly unit-testable — only the

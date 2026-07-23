@@ -24,12 +24,12 @@ import { fileURLToPath } from 'node:url';
 
 import {
   setKnowledgeBackend, ingest, promoteKnowledge, LIFECYCLE_STATE,
-} from '../js/v2/knowledge/services/knowledge-service.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
+} from '../src/knowledge/services/knowledge-service.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
 import {
   reason, detectKnowledgeGaps, makeProblem, RECOMMENDATION_ERRORS,
-} from '../js/v2/reasoning/services/reasoning-service.js';
-import { isRecommendation } from '../js/v2/reasoning/contracts/recommendation-contract.js';
+} from '../src/reasoning/services/reasoning-service.js';
+import { isRecommendation } from '../src/reasoning/contracts/recommendation-contract.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let pass = 0; let fail = 0;
@@ -61,7 +61,7 @@ function importsOf(code) {
 
 console.log('\n[Part 1 — reasoning/ depends on knowledge/ only, never ai-foundation/, never conversation/]');
 {
-  const reasoningFiles = allSourceFiles('js/v2/reasoning');
+  const reasoningFiles = allSourceFiles('src/reasoning');
   const offenders = [];
   for (const { rel, code } of reasoningFiles) {
     for (const t of importsOf(code)) {

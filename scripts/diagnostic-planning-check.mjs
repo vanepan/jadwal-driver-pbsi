@@ -23,12 +23,12 @@ import { fileURLToPath } from 'node:url';
 
 import {
   setKnowledgeBackend, ingest, promoteKnowledge, LIFECYCLE_STATE,
-} from '../js/v2/knowledge/services/knowledge-service.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
-import { makeProblem } from '../js/v2/reasoning/contracts/problem-contract.js';
+} from '../src/knowledge/services/knowledge-service.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
+import { makeProblem } from '../src/reasoning/contracts/problem-contract.js';
 import {
   planDiagnosis, generateHypotheses, updateHypotheses, HYPOTHESIS_STATUS, isDiagnosticPlan, isHypothesis,
-} from '../js/v2/reasoning/services/reasoning-service.js';
+} from '../src/reasoning/services/reasoning-service.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let pass = 0; let fail = 0;
@@ -45,7 +45,7 @@ function importsOf(code) {
 
 console.log('\n[Part 1 — diagnostic-planning-engine.js / hypothesis-engine.js never import conversation/ or problem-intelligence/]');
 {
-  const files = ['js/v2/reasoning/diagnostic-planning-engine.js', 'js/v2/reasoning/hypothesis-engine.js'];
+  const files = ['src/reasoning/diagnostic-planning-engine.js', 'src/reasoning/hypothesis-engine.js'];
   const offenders = [];
   for (const rel of files) {
     for (const t of importsOf(read(rel))) {

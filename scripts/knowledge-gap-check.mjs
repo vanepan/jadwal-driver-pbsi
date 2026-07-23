@@ -13,10 +13,10 @@
 
 import {
   setKnowledgeBackend, ingest, promoteKnowledge, LIFECYCLE_STATE,
-} from '../js/v2/knowledge/services/knowledge-service.js';
-import { generateKnowledgeId } from '../js/v2/knowledge/contracts/identity-contract.js';
-import { detectKnowledgeGaps } from '../js/v2/reasoning/services/reasoning-service.js';
-import { GAP_TYPE } from '../js/v2/reasoning/contracts/knowledge-gap-contract.js';
+} from '../src/knowledge/services/knowledge-service.js';
+import { generateKnowledgeId } from '../src/knowledge/contracts/identity-contract.js';
+import { detectKnowledgeGaps } from '../src/reasoning/services/reasoning-service.js';
+import { GAP_TYPE } from '../src/reasoning/contracts/knowledge-gap-contract.js';
 
 let pass = 0; let fail = 0;
 function check(name, cond) {

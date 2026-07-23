@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   setKnowledgeBackend,
-} from '../js/v2/knowledge/services/knowledge-service.js';
+} from '../src/knowledge/services/knowledge-service.js';
 import { resetConversationRepository } from '../src/conversation/repository/conversation-repository.js';
 import { startConversation, continueConversation } from '../src/conversation/services/conversation-service.js';
 import { explainDynamicConversation } from '../src/conversation/services/dynamic-conversation-service.js';
@@ -33,7 +33,7 @@ import {
   prioritizeQuestions, selectNextQuestion, computeConversationConfidence, hasReachedConfidenceThreshold,
 } from '../src/conversation/dynamic-conversation-engine.js';
 import { DYNAMIC_QUESTION_PRIORITY } from '../src/conversation/contracts/dynamic-question-contract.js';
-import { GAP_PRIORITY } from '../js/v2/reasoning/contracts/knowledge-gap-contract.js';
+import { GAP_PRIORITY } from '../src/reasoning/contracts/knowledge-gap-contract.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let pass = 0; let fail = 0;

@@ -46,7 +46,7 @@ export const DEFAULT_CONFIDENCE_THRESHOLD = 0.75;
 /**
  * @param {import('./contracts/question-contract.js').Question[]} stillMissingQuestions - questionnaire-engine.js's own output
  * @param {Map<string, {optimizable: boolean}>} schemaByField - getRequiredFacts(intent), keyed by field
- * @param {import('../../js/v2/reasoning/contracts/knowledge-gap-contract.js').KnowledgeGap[]} gaps
+ * @param {import('../reasoning/contracts/knowledge-gap-contract.js').KnowledgeGap[]} gaps
  * @param {Set<string>} askedDedupKeys - field names (or Gap ids) already asked THIS conversation — never re-asked
  * @returns {import('./contracts/dynamic-question-contract.js').DynamicQuestion[]}
  */

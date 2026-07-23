@@ -50,7 +50,7 @@ import {
   prioritizeQuestions, selectNextQuestion, computeConversationConfidence, hasReachedConfidenceThreshold,
   DEFAULT_CONFIDENCE_THRESHOLD,
 } from '../dynamic-conversation-engine.js';
-import { detectKnowledgeGaps } from '../../../js/v2/reasoning/services/reasoning-service.js';
+import { detectKnowledgeGaps } from '../../reasoning/services/reasoning-service.js';
 
 export const DYNAMIC_CONVERSATION_SERVICE_ERRORS = Object.freeze({ NOT_FOUND: 'NOT_FOUND' });
 

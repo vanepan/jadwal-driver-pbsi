@@ -23,12 +23,12 @@
 
    Run: node scripts/nor-knowledge-bootstrap-seed.mjs   (exit 0 = pass) */
 
-import { setKnowledgeBackend, listKnowledge, getKnowledgeMetrics, LIFECYCLE_STATE } from '../js/v2/knowledge/services/knowledge-service.js';
-import { RELATIONSHIP_TYPE } from '../js/v2/knowledge/contracts/dependency-graph-contract.js';
+import { setKnowledgeBackend, listKnowledge, getKnowledgeMetrics, LIFECYCLE_STATE } from '../src/knowledge/services/knowledge-service.js';
+import { RELATIONSHIP_TYPE } from '../src/knowledge/contracts/dependency-graph-contract.js';
 import {
   seedNorBootstrapKnowledge, NOR_KNOWLEDGE_ITEM_SPECS, NOR_KNOWLEDGE_RELATIONSHIP_SPECS, DOMAIN_TYPE,
-} from '../js/v2/knowledge/bootstrap/nor-reverse-engineering-knowledge.js';
-import { detectKnowledgeGaps, reason, makeProblem } from '../js/v2/reasoning/services/reasoning-service.js';
+} from '../src/knowledge/bootstrap/nor-reverse-engineering-knowledge.js';
+import { detectKnowledgeGaps, reason, makeProblem } from '../src/reasoning/services/reasoning-service.js';
 
 let pass = 0; let fail = 0;
 function check(name, cond) {
