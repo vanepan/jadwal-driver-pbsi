@@ -15,8 +15,10 @@
 
 /** Operational units. "Others" reveals a free-text unit name field.
     "Driver" aligns the unit list with the "Reimbursement Driver" category
-    (v1.16.4.1). Order is fixed: Engineering · Cleaning Service · Driver · Others. */
-export const UNITS = ['Engineering', 'Cleaning Service', 'Driver', 'Others'];
+    (v1.16.4.1). "Kantin" added as a built-in unit; Laundry and Gardener
+    remain represented under "Cleaning Service" (no separate units for them).
+    Order is fixed: Engineering · Cleaning Service · Driver · Kantin · Others. */
+export const UNITS = ['Engineering', 'Cleaning Service', 'Driver', 'Kantin', 'Others'];
 
 /**
  * Expense categories. "Reimbursement Driver" consolidates the legacy
@@ -154,6 +156,7 @@ export function unitColor(unit) {
   if (unit === 'Engineering') return '#4f73a8';
   if (unit === 'Cleaning Service') return '#2f7d5b';
   if (unit === 'Driver') return '#c2683d';
+  if (unit === 'Kantin') return '#b8873a';
   return '#7a5aa8';
 }
 

@@ -136,6 +136,25 @@ export function setAssignments(newAssignments) {
   assignments = newAssignments;
 }
 
+/**
+ * Delete an assignment after a confirmation prompt — the single delete entry
+ * point shared by the detail modal's Delete button AND the Timeline's
+ * "Delete Assignment" context-menu action (js/timeline-interactions.js), so
+ * the permission gate and confirmation UX never diverge between the two.
+ * @param {string} id
+ * @returns {boolean} true when the assignment was actually deleted
+ */
+export function requestDeleteAssignment(id) {
+  if (!hasPermission('delete')) {
+    showToast('Anda tidak punya akses untuk menghapus jadwal');
+    return false;
+  }
+  if (!id || !assignments.some(a => a.id === id)) return false;
+  if (!confirm('Yakin ingin menghapus jadwal ini?')) return false;
+  if (onDeleteCallback) onDeleteCallback(id);
+  return true;
+}
+
 /* ── Odometer Modal ─────────────────────────────────────────────
    Shown before Start / Complete to capture KM Awal / KM Akhir.
    Uses Option A: detail modal closes before odometer opens (no stacking).
@@ -457,14 +476,7 @@ export function initModalHandlers() {
 
   // Delete
   document.getElementById('btnDeleteAssignment')?.addEventListener('click', () => {
-    if (!hasPermission('delete')) {
-      showToast('Anda tidak punya akses untuk menghapus jadwal');
-      return;
-    }
-    if (confirm('Yakin ingin menghapus jadwal ini?')) {
-      if (onDeleteCallback) onDeleteCallback(viewingId);
-      closeDetailModal();
-    }
+    if (requestDeleteAssignment(viewingId)) closeDetailModal();
   });
 
   // Start — open odometer modal to capture KM Awal before confirming

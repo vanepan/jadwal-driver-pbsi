@@ -36,6 +36,7 @@ const CSS = `
 .dispatch-hint__name{font-weight:700;color:var(--text);}
 .dispatch-hint__score{color:var(--ok);font-weight:600;}
 .dispatch-hint--none{color:var(--warn);}
+.dispatch-hint--buffer{color:var(--warn);}
 `;
 
 function ensureStyles() {
@@ -59,14 +60,23 @@ function readAssignmentRequest() {
   };
 }
 
-/** Render one hint element from a {name, score} (or null → "no candidate"). */
+/** Render one hint element from a {name, score, bufferSatisfied?} (or null → "no candidate"). */
 function paint(hintEl, best, noneLabel) {
   if (!hintEl) return;
-  hintEl.classList.remove('dispatch-hint--none');
+  hintEl.classList.remove('dispatch-hint--none', 'dispatch-hint--buffer');
   hintEl.replaceChildren();
   if (!best) {
     hintEl.classList.add('dispatch-hint--none');
     hintEl.textContent = `🧭 ${noneLabel}`;
+    hintEl.hidden = false;
+    return;
+  }
+  // Recovery Buffer (v1.25.x): a Step-4 fallback pick is never presented as a
+  // clean recommendation — the admin sees the same driver but with an explicit
+  // "buffer belum terpenuhi" caveat instead of a normal score line.
+  if (best.bufferSatisfied === false) {
+    hintEl.classList.add('dispatch-hint--buffer');
+    hintEl.textContent = `⚠ ${best.name} — buffer pemulihan belum terpenuhi`;
     hintEl.hidden = false;
     return;
   }
@@ -115,7 +125,7 @@ export function initAssignmentDispatchHints() {
       const dTop = dRes.recommendedDriver
         ? (dRes.diagnostics.find((x) => x.driverId === dRes.recommendedDriver.driverId) || null)
         : null;
-      paint(driverHint, dTop ? { name: dTop.driverName, score: dRes.recommendedDriver.score } : null, 'Tidak ada driver tersedia');
+      paint(driverHint, dTop ? { name: dTop.driverName, score: dRes.recommendedDriver.score, bufferSatisfied: dRes.recommendedDriver.bufferSatisfied } : null, 'Tidak ada driver tersedia');
 
       const vRes = recommendVehicle(request, vehicles, assignments);
       const vTop = vRes.recommendedVehicle

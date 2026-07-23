@@ -1,15 +1,19 @@
 /* recommendation-check.mjs — validates the Driver Recommendation Engine
-   (v1.16.4.11-alpha.2). Run: node scripts/recommendation-check.mjs
+   (v1.16.4.11-alpha.2 + v1.25.x Recovery Buffer). Run: node scripts/recommendation-check.mjs
    (exit 0 = all pass)
 
    Covers: the four sub-scores (availability/workload/recency/priority), schedule
    conflict detection, the weighted final score (weights sourced from the store —
    no hardcoded weights), ranking (conflicted drivers can never be #1), the
-   output shape, and diagnostics. */
+   output shape, diagnostics, and the Recovery Buffer rules (Running drivers are
+   hard-excluded even as a fallback, the buffer widens a finished assignment's
+   busy window, delay propagation uses the actual completedAt, and a Step-4
+   fallback pick is explicitly flagged bufferSatisfied:false, never null). */
 
 import {
   recommendDrivers,
   hasScheduleConflict,
+  evaluateAvailability,
   availabilityScore,
   workloadScore,
   recencyScore,
@@ -18,7 +22,7 @@ import {
 } from '../js/services/driver-recommendation-engine.js';
 import { CAPACITY_STATUS } from '../js/services/driver-capacity-engine.js';
 import { setScoringWeights, resetDispatchIntelligence } from '../js/stores/dispatch-intelligence-store.js';
-import { resetDispatchConfig } from '../js/config/dispatch-intelligence-config.js';
+import { resetDispatchConfig, setDispatchConfig, DEFAULT_RECOVERY_BUFFER_MINUTES } from '../js/config/dispatch-intelligence-config.js';
 
 let pass = 0, fail = 0;
 function check(name, cond) {
@@ -130,13 +134,73 @@ check('Strong (conflicted) has higher raw score than Weak (available)', gStrong.
 check('recommendedDriver is the AVAILABLE Weak, not higher-scoring Strong', guard.recommendedDriver.driverId === 'drv_weak');
 check('Weak ranks #1 despite lower score (available-first)', gWeak.rank === 1 && gStrong.rank === 2);
 
-/* ── No available driver → recommendedDriver null ────────────────────── */
-console.log('\n[no availability]');
-const allConflict = recommendDrivers(REQUEST, [{ id: 'drv_c', name: 'Citra' }],
+/* ── Recovery Buffer: sole non-running conflicted driver → Step 4 fallback ── */
+console.log('\n[recovery buffer — fallback pick, never null]');
+const soleConflicted = recommendDrivers(REQUEST, [{ id: 'drv_c', name: 'Citra' }],
   [asg('Citra', 0, { startTime: '09:00', endTime: '11:00', status: 'assigned' })], { now: NOW });
-check('all conflicted → recommendedDriver null', allConflict.recommendedDriver === null);
-check('conflicted driver still present in alternatives + diagnostics',
-  allConflict.alternatives.length === 1 && allConflict.diagnostics.length === 1);
+check('sole conflicted (non-running) driver → still selected as the Step-4 fallback, not null',
+  soleConflicted.recommendedDriver !== null && soleConflicted.recommendedDriver.driverId === 'drv_c');
+check('fallback pick is explicitly marked bufferSatisfied:false (never pretend availability)',
+  soleConflicted.recommendedDriver.bufferSatisfied === false);
+check('conflicted driver still present in diagnostics',
+  soleConflicted.alternatives.length === 0 && soleConflicted.diagnostics.length === 1);
+
+/* ── Running driver: never selectable, not even as a Step-4 fallback ─────── */
+console.log('\n[recovery buffer — Running hard-exclusion]');
+const soleRunning = recommendDrivers(REQUEST, [{ id: 'drv_r', name: 'Rudi' }],
+  [asg('Rudi', 0, { startTime: '06:00', endTime: '09:00', status: 'started' })], { now: NOW });
+check('sole Running driver → recommendedDriver null (never fabricated)',
+  soleRunning.recommendedDriver === null);
+check('Running driver still visible in diagnostics, flagged running:true',
+  soleRunning.diagnostics.length === 1 && soleRunning.diagnostics[0].running === true);
+
+const withRunningAndFree = recommendDrivers(REQUEST,
+  [{ id: 'drv_run', name: 'Rudi' }, { id: 'drv_free', name: 'Fajar' }],
+  [asg('Rudi', 0, { startTime: '06:00', endTime: '09:00', status: 'started' })], { now: NOW });
+check('an available alternative is recommended over a Running driver',
+  withRunningAndFree.recommendedDriver.driverId === 'drv_free');
+check('the Running driver ranks last (below the available driver)',
+  withRunningAndFree.diagnostics.find((d) => d.driverId === 'drv_run').rank === 2);
+
+/* ── Default buffer + widened busy window (the original bug this fixes) ──── */
+console.log('\n[recovery buffer — 60-minute default widens the busy window]');
+check('DEFAULT_RECOVERY_BUFFER_MINUTES is 60', DEFAULT_RECOVERY_BUFFER_MINUTES === 60);
+const justEnded = evaluateAvailability(
+  [{ driver: 'x', date: '2026-06-24', startTime: '09:00', endTime: '11:00', status: 'completed' }],
+  { date: '2026-06-24', startTime: '11:00', endTime: '13:00' }, 60);
+check('starting exactly at the previous assignment\'s planned end is now a buffer conflict (was the bug)',
+  justEnded.conflict === true && justEnded.availabilityMinutes === 12 * 60);
+const clearedBuffer = evaluateAvailability(
+  [{ driver: 'x', date: '2026-06-24', startTime: '09:00', endTime: '11:00', status: 'completed' }],
+  { date: '2026-06-24', startTime: '12:00', endTime: '13:00' }, 60);
+check('no conflict once the full buffer has elapsed', clearedBuffer.conflict === false);
+
+/* ── Delay propagation: a late completion uses the ACTUAL end, not the plan ── */
+console.log('\n[recovery buffer — delay propagation]');
+const plannedEndTs = new Date('2026-06-24T11:00:00').getTime();
+const actualLateEndTs = new Date('2026-06-24T11:45:00').getTime(); // ran 45 min over
+const delayed = evaluateAvailability(
+  [{ driver: 'x', date: '2026-06-24', startTime: '09:00', endTime: '11:00', status: 'completed', completedAt: actualLateEndTs }],
+  { date: '2026-06-24', startTime: '12:00', endTime: '13:00' }, 60);
+check('a delayed completion pushes Availability Time from the ACTUAL end (completedAt), not the plan',
+  delayed.conflict === true && delayed.availabilityMinutes === (11 * 60 + 45 + 60));
+const onTime = evaluateAvailability(
+  [{ driver: 'x', date: '2026-06-24', startTime: '09:00', endTime: '11:00', status: 'completed', completedAt: plannedEndTs }],
+  { date: '2026-06-24', startTime: '12:00', endTime: '13:00' }, 60);
+check('an on-time completion (completedAt == plan) behaves exactly like the plan', onTime.conflict === false);
+
+/* ── The buffer is CENTRALIZED (dispatch-intelligence-config.js) — changing it
+   there, not a literal at the call site, is what changes recommendDrivers(). */
+console.log('\n[recovery buffer — centralized config, not hardcoded]');
+setDispatchConfig({ recoveryBufferMinutes: 0 });
+const noBufferConfigured = recommendDrivers(
+  { date: '2026-06-24', startTime: '11:00', endTime: '13:00' },
+  [{ id: 'drv_c', name: 'Citra' }],
+  [asg('Citra', 0, { startTime: '09:00', endTime: '11:00', status: 'assigned' })],
+  { now: NOW });
+check('recoveryBufferMinutes:0 via setDispatchConfig() removes the buffer conflict (no override option passed)',
+  noBufferConfigured.recommendedDriver.bufferSatisfied === true);
+resetDispatchConfig();
 
 /* ── Weights sourced from the store (NO hardcoded weights) ───────────── */
 console.log('\n[store weights]');

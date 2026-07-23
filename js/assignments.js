@@ -377,8 +377,10 @@ function handleFormSubmit(e) {
     // Update assignment yang ada (selalu single-date) — preserve all lifecycle fields
     const idx = assignments.findIndex(a => a.id === editingId);
     let editedAssignment = null;
+    let previousAssignment = null;
     if (idx !== -1) {
       const existing = assignments[idx];
+      previousAssignment = existing;
       assignments[idx] = {
         id: editingId,
         driver, phone, vehicle, date: startDate,
@@ -404,7 +406,7 @@ function handleFormSubmit(e) {
       editedAssignment = assignments[idx];
     }
     showToast('✅ Jadwal berhasil diperbarui');
-    if (onSaveCallback) onSaveCallback(assignments, false, startDate, editedAssignment);
+    if (onSaveCallback) onSaveCallback(assignments, false, startDate, editedAssignment, previousAssignment);
   } else if (datesToCreate.length > 1) {
     // Multi-day: buat satu assignment per tanggal
     const creatorName = currentUser ? currentUser.name : '';
@@ -504,6 +506,97 @@ export function checkVehicleConflict(vehicleName, startTime, endTime, date, excl
     const aEnd   = timeToMinutes(a.endTime);
     return startMin < aEnd && endMin > aStart;
   });
+}
+
+/**
+ * Create and persist a single assignment from a plain field object — the
+ * non-form entry point used by the Timeline's Paste/Duplicate context-menu
+ * actions (js/timeline-interactions.js). Runs the SAME conflict guards
+ * (checkConflict/checkVehicleConflict) and the SAME onSaveCallback pipeline
+ * (localStorage + surgical Firebase write + audit log) as the manual form's
+ * single-day create path — never a second, divergent persistence path.
+ * @param {Object} fields { driver, phone?, vehicle, date, startTime, endTime, destination, purpose, pic?, pax?, notes?, fullDay? }
+ * @returns {{ok:true, assignment:Object}|{ok:false, reason:string}}
+ */
+export function createAssignmentDirect(fields = {}) {
+  if (!hasPermission('create')) return { ok: false, reason: 'permission' };
+
+  const {
+    driver = '', phone = '', vehicle = '', date, startTime, endTime,
+    destination = '', purpose = '', pic = '', pax = 0, notes = '', fullDay = false,
+  } = fields;
+
+  if (!date || !startTime || !endTime || !destination || !purpose) {
+    return { ok: false, reason: 'invalid' };
+  }
+  if (!fullDay && timeToMinutes(endTime) <= timeToMinutes(startTime)) {
+    return { ok: false, reason: 'invalid' };
+  }
+  if (driver !== '' && checkConflict(driver, startTime, endTime, date)) {
+    return { ok: false, reason: 'driver_conflict' };
+  }
+  if (vehicle !== '' && checkVehicleConflict(vehicle, startTime, endTime, date)) {
+    return { ok: false, reason: 'vehicle_conflict' };
+  }
+
+  const currentUser = getCurrentUser();
+  const now = new Date().toISOString();
+  const creatorName = currentUser ? currentUser.name : '';
+  const newAssignment = {
+    id: generateId(),
+    driver, phone, vehicle, date, startTime, endTime, destination, purpose, pic, pax, notes,
+    fullDay: !!fullDay,
+    createdAt: now, createdBy: creatorName, updatedAt: now,
+    status: 'assigned',
+    assignedAt: now, assignedBy: creatorName,
+    approvedAt: null, approvedBy: null,
+    startedAt: null, startedBy: null,
+    completedAt: null, completedBy: null,
+    startOdometer: null, endOdometer: null, distanceTravelled: null,
+  };
+  assignments.push(newAssignment);
+  if (onSaveCallback) onSaveCallback(assignments, true, date, newAssignment);
+  return { ok: true, assignment: newAssignment };
+}
+
+/**
+ * Update an existing assignment's date/time/driver from a plain patch — the
+ * non-form entry point used by the Timeline's drag (move/reassign) and
+ * resize (duration change) interactions. Only Planned ('assigned' status)
+ * assignments should ever reach this (the caller gates that); it still runs
+ * the SAME conflict guards as the manual edit form so a drag/resize can never
+ * silently create an overlap, and persists through the SAME onSaveCallback
+ * pipeline as every other edit path.
+ * @param {string} id
+ * @param {{driver?:string, date?:string, startTime?:string, endTime?:string}} patch
+ * @returns {{ok:true, assignment:Object}|{ok:false, reason:string}}
+ */
+export function updateAssignmentDirect(id, patch = {}) {
+  if (!hasPermission('edit')) return { ok: false, reason: 'permission' };
+
+  const idx = assignments.findIndex(a => a.id === id);
+  if (idx === -1) return { ok: false, reason: 'not_found' };
+  const existing = assignments[idx];
+
+  const driver    = patch.driver    ?? existing.driver;
+  const date      = patch.date      ?? existing.date;
+  const startTime = patch.startTime ?? existing.startTime;
+  const endTime   = patch.endTime   ?? existing.endTime;
+
+  if (!existing.fullDay && timeToMinutes(endTime) <= timeToMinutes(startTime)) {
+    return { ok: false, reason: 'invalid' };
+  }
+  if (driver !== '' && checkConflict(driver, startTime, endTime, date, id)) {
+    return { ok: false, reason: 'driver_conflict' };
+  }
+  if (existing.vehicle !== '' && checkVehicleConflict(existing.vehicle, startTime, endTime, date, id)) {
+    return { ok: false, reason: 'vehicle_conflict' };
+  }
+
+  const now = new Date().toISOString();
+  assignments[idx] = { ...existing, driver, date, startTime, endTime, updatedAt: now };
+  if (onSaveCallback) onSaveCallback(assignments, false, date, assignments[idx], existing);
+  return { ok: true, assignment: assignments[idx] };
 }
 
 /**

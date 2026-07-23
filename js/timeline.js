@@ -347,12 +347,14 @@ function createAssignmentBlock(assignment) {
   block.className = 'assignment-block';
   block.dataset.id = assignment.id;
   block.dataset.vehicle = assignment.vehicle;
+  block.dataset.status = status; // v1.25.x — lets timeline-interactions.js gate drag/resize without recomputing status
   block.style.left  = `${left}px`;
   block.style.width = `${Math.max(width, 20)}px`;
   block.style.background = getVehicleColor(assignment.vehicle);
 
   if (isCompleted) block.classList.add('is-completed');
   if (isStarted)   block.classList.add('is-started');
+  if (status === 'cancelled') block.classList.add('is-cancelled');
 
   // Overtime (calendar-based) — only meaningful once completed.
   const work = computeWorkTime(assignment, getOfficeHours());

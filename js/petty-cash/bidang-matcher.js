@@ -112,8 +112,9 @@ export function matchBidang(text, roster, { threshold = 0.82 } = {}) {
 
 /** Fixed operational units — never carry a derivable bidang on the `unit` field.
     "Driver" is a fixed operational unit too (v1.16.4.1), so it is excluded from
-    free-text bidang derivation exactly like Engineering / Cleaning Service. */
-const FIXED_UNITS = new Set(['Engineering', 'Cleaning Service', 'Driver', 'Others']);
+    free-text bidang derivation exactly like Engineering / Cleaning Service.
+    "Kantin" is fixed the same way (Petty Cash Unit list, v1.25.x). */
+const FIXED_UNITS = new Set(['Engineering', 'Cleaning Service', 'Driver', 'Kantin', 'Others']);
 
 /**
  * Resolve an expense's bidang for analytics, HYBRID strategy:

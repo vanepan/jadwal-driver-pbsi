@@ -204,6 +204,10 @@
   padding: 5px; display: flex; flex-direction: column; gap: 1px;
   animation: pcAcIn .14s cubic-bezier(.22, .61, .36, 1);
 }
+/* The `display: flex` above must not win over the `hidden` attribute the JS
+   toggles to close the dropdown (author rules otherwise beat the UA
+   [hidden]{display:none} default regardless of specificity). */
+.pc-root .pc-ac-menu[hidden] { display: none; }
 @keyframes pcAcIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
 .pc-root .pc-ac-item {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;

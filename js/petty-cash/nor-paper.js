@@ -99,11 +99,11 @@ export function renderNorPaper(vm, logoSrc, paperId) {
       <div class="pc-nor-table-wrap">
       <table style="width:100%;border-collapse:collapse;font-size:9pt;min-width:460px">
         <thead><tr>
-          <th style="border:1px solid #000;padding:3px 5px;width:26px">No</th>
-          <th style="border:1px solid #000;padding:3px 5px;width:76px">Tanggal</th>
-          <th style="border:1px solid #000;padding:3px 5px;text-align:left">Rincian</th>
-          <th style="border:1px solid #000;padding:3px 5px;width:94px;text-align:right">Biaya</th>
-          <th style="border:1px solid #000;padding:3px 5px;width:88px">Keterangan</th>
+          <th style="border:1px solid #000;padding:3px 5px;width:26px;text-align:center">No</th>
+          <th style="border:1px solid #000;padding:3px 5px;width:76px;text-align:center">Tanggal</th>
+          <th style="border:1px solid #000;padding:3px 5px;text-align:center">Rincian</th>
+          <th style="border:1px solid #000;padding:3px 5px;width:94px;text-align:center">Biaya</th>
+          <th style="border:1px solid #000;padding:3px 5px;width:88px;text-align:center">Keterangan</th>
         </tr></thead>
         <tbody>
           ${itemRows}
