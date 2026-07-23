@@ -11286,10 +11286,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderViews();
     restoreNavState(); // v1.20.8 — resume the module/search/scroll state from last session
     updateAdminButtons();
-    setNotificationData({
-      pendingRequests: getMyPendingRequestCount(),
-      recentLogs: auditLogs,
-    });
+    try {
+      setNotificationData({
+        pendingRequests: getMyPendingRequestCount(),
+        recentLogs: auditLogs,
+      });
+    } catch (err) { console.error('[Bootstrap] setNotificationData failed — continuing without notification data.', err); }
 
     // H-1 / H-2 reminders (v1.25.x Driver Notification V2, Part 1 + Part 5):
     // the browser setInterval reminder path RETIRED HERE — the server-side
@@ -11336,7 +11338,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   await initAdminUI();                   // Setup admin user management (UI wiring only)
-  initNotificationUI();                  // Setup notification badge & modal
+  // Notification is optional; Driver Operations (renderViews() below) is not —
+  // a throw here must never block the timeline/driver list from painting.
+  try { initNotificationUI(); } catch (err) { console.error('[Bootstrap] initNotificationUI failed — continuing without notification UI.', err); }
   initPushNavHandler();                  // v1.20.8 — deep-link a tapped push notification to its content
   initOfflineExperience();               // v1.20.8 — non-blocking offline/online toast
   wireScrollStateSave();                 // v1.20.8 — debounced scroll-position save for state restoration
@@ -11362,10 +11366,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   updatePermissionUI(true);              // startup → select role's default module
   renderViews();                         // Render timeline + list view pertama kali
   updateAdminButtons();                  // Show admin controls properly
-  setNotificationData({
-    pendingRequests: getMyPendingRequestCount(),
-    recentLogs: auditLogs,
-  });
+  try {
+    setNotificationData({
+      pendingRequests: getMyPendingRequestCount(),
+      recentLogs: auditLogs,
+    });
+  } catch (err) { console.error('[Bootstrap] setNotificationData failed — continuing without notification data.', err); }
 
   const btnAdd = document.getElementById('btnAddAssignment');
   if (btnAdd) {

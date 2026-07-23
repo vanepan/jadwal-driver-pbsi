@@ -51,7 +51,7 @@ function timeAgo(isoString) {
    fed by the SAME functions/src/notifications/engine.js canonical event
    Push and Telegram already use) instead of this legacy /logs path — having
    BOTH render the same fact was exactly the "independent notification
-   creator" duplication this hardening pass eliminates. request.*/comment_added
+   creator" duplication this hardening pass eliminates. request.* / comment_added
    are unchanged (still /logs-only; their server-side Telegram/Push cutover
    is a separate, not-yet-scoped migration). */
 const OPERATIONAL_ACTIONS = new Set([
