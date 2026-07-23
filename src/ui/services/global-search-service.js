@@ -1,6 +1,17 @@
 /* ============================================================
    GLOBAL-SEARCH-SERVICE.JS — Experience Architecture phase (Part 5)
 
+   MOVED during Phase 1 Repository Refoundation, Increment 2: was
+   js/v2/services/global-search-service.js, the platform's sole generic
+   services/ folder — dissolved per the approved repository mapping ("no
+   generic services folder shall remain; every service must belong to
+   exactly one domain"). This file owns no domain state of its own (no
+   repository, no lifecycle) and reads across three domains it does not
+   own (knowledge/, organizational-memory/, learning/) for the exclusive
+   benefit of its only two callers, both ui/ screens — so ui/, this
+   platform's own "sees every domain, owns none" layer, is its one honest
+   owning domain, not any of the three it queries.
+
    PURPOSE: "users should not need to remember where Knowledge lives, where
    Archive lives, where Learning lives" — ONE query, over data that already
    exists in three real services. This file computes NOTHING new and stores
@@ -24,9 +35,9 @@
 
 'use strict';
 
-import { listImportSessions } from '../knowledge/datasets/import-session/import-session-engine.js';
-import { searchArchive } from '../../../src/organizational-memory/services/archive-service.js';
-import { listKnowledge } from '../knowledge/services/knowledge-service.js';
+import { listImportSessions } from '../../knowledge/datasets/import-session/import-session-engine.js';
+import { searchArchive } from '../../organizational-memory/services/archive-service.js';
+import { listKnowledge } from '../../knowledge/services/knowledge-service.js';
 
 const RESULT_CAP_PER_KIND = 8;
 
