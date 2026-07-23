@@ -13,15 +13,22 @@
        in-app surface; this records the inApp delivery row.
      • dispatchTelegram — server send via the v1.11.1.3 Telegram
        foundation (sendWithRetry + delivery audit). Idempotent.
-     • dispatchPush    — SCAFFOLD ONLY. Push lifecycle is v1.11.3;
-       no active delivery here. Never invoked (no registry entry
-       enables push this release).
+     • dispatchPush    — live Web Push (v1.11.3 lifecycle, v1.11.4
+       reminders) via the v1.11.3 push foundation. Multi-device, retried,
+       self-pruning on Gone (404/410) subscriptions.
 
-   Migration safety (Phase 8): per-channel flags in
-   config/constants.js#NOTIFICATION_FLAGS. While a channel is OFF the
-   dispatcher records a SHADOW delivery (status queued, shadow:true)
-   and sends nothing — this is the Phase B comparison data and the
-   guard against double-sending alongside the still-live browser path.
+   v1.25.x Driver Notification V2 (Final Hardening): this dispatcher is now
+   the SOLE creator of every assignment-lifecycle notification on every
+   channel — Push, Telegram, and the in-app /notifications record all
+   originate from the SAME canonical notification (one per recipient,
+   engine.js#processEvent), never from a second, independent client-side
+   send. See liveFor() for the live per-channel gate this relies on.
+
+   Migration safety: per-channel flags in config/constants.js#NOTIFICATION_FLAGS
+   / REMINDER_FLAGS, and (for assignment.* lifecycle events specifically)
+   the LIVE /settings/notifications node via config/runtimeSettings.js. While
+   a channel is OFF the dispatcher records a SHADOW delivery (status queued,
+   shadow:true) and sends nothing.
    ============================================================ */
 
 const logger = require('firebase-functions/logger');
@@ -32,35 +39,51 @@ const {
 const { render } = require('./templates');
 const { telegramChatIds } = require('./recipients');
 const { NOTIFICATION_FLAGS, PUSH_CONFIG, REMINDER_FLAGS } = require('../config/constants');
+const { getAssignmentNotifyConfig } = require('../config/runtimeSettings');
 const { sendWithRetry } = require('../telegram/retry');
 const { recordDelivery: recordTelegramAudit } = require('../telegram/deliveryLog');
 const { loadSubscriptions, pruneSubscription } = require('../push/model');
 const { sendPushWithRetry } = require('../push/send');
 
+/** assignment.created/reassigned/updated/completed/cancelled — NOT
+ *  assignment.reminder (its own, separate REMINDER_FLAGS-gated path). */
+function isAssignmentLifecycleType(type) {
+  return typeof type === 'string' && type.startsWith('assignment.') && type !== 'assignment.reminder';
+}
+
 /**
- * The single send-vs-shadow gate (v1.11.4). Reminder-type notifications
- * consult REMINDER_FLAGS; everything else consults NOTIFICATION_FLAGS /
- * PUSH_CONFIG. This MUST read the same REMINDER_FLAGS predicates that
- * onEventWrite uses to load credentials (REV2 §2.2) — gate and credential
- * cannot disagree, or a reminder channel either fails or leaks.
+ * The single send-vs-shadow gate (v1.11.4, extended v1.25.x Final Hardening
+ * Part 1/4). Reminder-type notifications consult REMINDER_FLAGS; assignment
+ * LIFECYCLE notifications (created/reassigned/updated/completed/cancelled)
+ * consult the LIVE /settings/notifications node (config/runtimeSettings.js —
+ * the SAME node js/settings-store.js owns, edited from the app's Settings
+ * screen, Part 3); everything else (request.*, comment.added) is unchanged,
+ * consulting NOTIFICATION_FLAGS/PUSH_CONFIG as before. This MUST read the
+ * same REMINDER_FLAGS predicates that onEventWrite uses to load credentials
+ * (REV2 §2.2) — gate and credential cannot disagree, or a reminder channel
+ * either fails or leaks.
  *
  * @param {string} channel        CHANNELS.*
  * @param {Object} notification   carries `type` and `recipientId`
  * @param {string} recipientId    the resolved recipient (username/uid)
  * @param {string} [recipientRole] the recipient's role (role-based reminder push)
- * @returns {boolean} true → real send; false → shadow.
+ * @returns {Promise<boolean>} true → real send; false → shadow.
  */
-function liveFor(channel, notification, recipientId, recipientRole) {
+async function liveFor(channel, notification, recipientId, recipientRole) {
   const isReminder = notification && notification.type === 'assignment.reminder';
+  const isAssignmentLifecycle = !isReminder && isAssignmentLifecycleType(notification && notification.type);
 
   if (channel === CHANNELS.IN_APP) {
     // In-app is the shared surface; reminders inherit the lifecycle flag.
     return Boolean(NOTIFICATION_FLAGS.channels.inApp);
   }
   if (channel === CHANNELS.TELEGRAM) {
-    return isReminder
-      ? Boolean(REMINDER_FLAGS.channels.telegram)
-      : Boolean(NOTIFICATION_FLAGS.channels.telegram);
+    if (isReminder) return Boolean(REMINDER_FLAGS.channels.telegram);
+    if (isAssignmentLifecycle) {
+      const cfg = await getAssignmentNotifyConfig();
+      return Boolean(cfg.enableTelegramFallback);
+    }
+    return Boolean(NOTIFICATION_FLAGS.channels.telegram); // request.*/comment.added — unchanged
   }
   if (channel === CHANNELS.PUSH) {
     if (isReminder) {
@@ -68,6 +91,11 @@ function liveFor(channel, notification, recipientId, recipientRole) {
       return Boolean(REMINDER_FLAGS.channels.push)
         || _inRoles(REMINDER_FLAGS.pushRoles, recipientRole)
         || _inAllowlist(REMINDER_FLAGS.pilotAllowlist, recipientId);
+    }
+    if (isAssignmentLifecycle) {
+      const cfg = await getAssignmentNotifyConfig();
+      // Can only NARROW the global push flag, never widen it.
+      if (!cfg.enablePushNotification) return false;
     }
     return Boolean(NOTIFICATION_FLAGS.channels.push) || _inAllowlist(PUSH_CONFIG.pilotAllowlist, recipientId);
   }
@@ -155,16 +183,39 @@ async function dispatchInApp(notification) {
     channel: CHANNELS.IN_APP,
     target: notification.recipientId,
   };
-  if (!liveFor(CHANNELS.IN_APP, notification, notification.recipientId)) {
+  if (!(await liveFor(CHANNELS.IN_APP, notification, notification.recipientId))) {
     return recordDelivery({ ...base, status: DELIVERY_STATUS.QUEUED, shadow: true });
   }
   return recordDelivery({ ...base, status: DELIVERY_STATUS.SENT, attempts: 1 });
 }
 
+/**
+ * Push-coverage check (v1.25.x Driver Notification V2, Part 1). "Coverage"
+ * means push would ACTUALLY be attempted for this recipient/notification —
+ * live per liveFor() AND at least one subscription on file — not merely
+ * "could theoretically subscribe". Fails CLOSED toward Telegram on error:
+ * a lookup failure must never silently drop a driver's only notification.
+ */
+async function _hasLivePushCoverage(notification, recipientId, recipientRole) {
+  if (!(await liveFor(CHANNELS.PUSH, notification, recipientId, recipientRole))) return false;
+  try {
+    const subs = await loadSubscriptions(recipientId);
+    return subs.length > 0;
+  } catch (err) {
+    logger.error('[dispatcher] push-coverage check failed', { recipientId, error: err.message });
+    return false;
+  }
+}
+
 /* ── telegram ───────────────────────────────────────────────
    Uses the v1.11.1.3 server Telegram foundation. While the channel
-   flag is OFF (default this release), records a shadow delivery and
-   sends nothing — the browser path remains the live sender. */
+   flag is OFF, records a shadow delivery and sends nothing — the browser
+   path remains the live sender for lifecycle Telegram (reminder Telegram
+   has no browser equivalent — see REMINDER_FLAGS). v1.25.x Part 1: for a
+   DRIVER recipient, Telegram is now a FALLBACK — sent only when Push
+   cannot reach them (no live subscription). Admin/requester Telegram
+   (request.*, comment.added) is unaffected — this gate only applies to
+   role==='driver'. */
 async function dispatchTelegram(notification, { event, recipient, token }) {
   const base = {
     eventId: notification.eventId,
@@ -179,11 +230,28 @@ async function dispatchTelegram(notification, { event, recipient, token }) {
     return recordDelivery({ ...base, status: DELIVERY_STATUS.FAILED, error: 'no telegram target' });
   }
 
-  // Shadow: browser still sends (lifecycle) / reminder channel off. Record
-  // intent, do NOT send. Reminder vs lifecycle gating is in liveFor().
-  if (!liveFor(CHANNELS.TELEGRAM, notification, notification.recipientId)) {
+  // Shadow: channel off (assignment-lifecycle enableTelegramFallback setting
+  // off, reminder channel off, or the unrelated request.*/comment.added
+  // flag off). Record intent, do NOT send. All of that gating (including
+  // the live /settings/notifications read for assignment lifecycle) is in
+  // liveFor() — the ONE place that decides live-vs-shadow per channel.
+  if (!(await liveFor(CHANNELS.TELEGRAM, notification, notification.recipientId))) {
     return recordDelivery({
       ...base, status: DELIVERY_STATUS.QUEUED, shadow: true, target: chatIds.join(','),
+    });
+  }
+
+  // Push-primary fallback gate (Part 1) — driver recipients only. Admin /
+  // requester Telegram (request.*, comment.added, and assignment-lifecycle
+  // admins/requester) never reaches this branch — only a driver's Telegram
+  // is conditional on THEIR OWN push coverage. liveFor() above already
+  // confirmed enableTelegramFallback is on, so reaching here means Telegram
+  // is allowed in principle; this only decides whether THIS driver specifically
+  // still needs it.
+  if (recipient && recipient.role === 'driver'
+      && await _hasLivePushCoverage(notification, notification.recipientId, recipient.role)) {
+    return recordDelivery({
+      ...base, status: DELIVERY_STATUS.QUEUED, shadow: true, target: chatIds.join(','), error: 'push-covered-skip',
     });
   }
 
@@ -262,7 +330,7 @@ async function dispatchPush(notification, { event, recipient, vapid } = {}) {
   // Shadow: record intent + device count, send nothing. Reminder vs
   // lifecycle gating (incl. each pilot allowlist + role pilot) is in liveFor();
   // the recipient's role drives the role-based reminder push pilot.
-  if (!liveFor(CHANNELS.PUSH, notification, notification.recipientId, recipient && recipient.role)) {
+  if (!(await liveFor(CHANNELS.PUSH, notification, notification.recipientId, recipient && recipient.role))) {
     return recordDelivery({
       ...base, status: DELIVERY_STATUS.QUEUED, shadow: true, target: `${subs.length} device(s)`,
     });

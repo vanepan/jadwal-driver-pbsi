@@ -82,6 +82,11 @@ async function processEvent(event, opts = {}) {
       title:       (copy && copy.title) || event.type,
       body:        (copy && copy.body) || '',
       channels:    entry.channels,
+      // Part 6 — In-App Notification Foundation: carry what this
+      // notification is ABOUT, not just who it's for.
+      entityId:    (event.entity && event.entity.id) || null,
+      entityKind:  (event.entity && event.entity.kind) || null,
+      driverId:    (event.payload && (event.payload.driverUsername || event.payload.driver)) || null,
     });
 
     const { created: wasCreated } = await persistNotification(notification);

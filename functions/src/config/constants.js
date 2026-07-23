@@ -117,22 +117,21 @@ const PUSH_CONFIG = {
  *
  * Rollout: A(enabled) → B(pilotAllowlist) → C(channels.telegram + retire
  * browser reminders) → D(channels.push). Flip one field per phase.
+ *
+ * Phase C+D CUTOVER (v1.25.x Driver Notification V2, Part 1 + Part 5): both
+ * channels flipped true in THIS change, together with retiring the browser
+ * reminder path (js/notification-service.js checkAndSendH1Reminders /
+ * checkAndSendHoursReminders — no longer called from js/app.js) in the SAME
+ * deploy, exactly as this file's own migration note required. No double-send:
+ * the browser sender is gone the instant this deploys, and reminder push has
+ * no browser equivalent to begin with.
  */
 const REMINDER_FLAGS = {
-  // Phase A — SHADOW ACTIVATION (v1.11.4 production activation, 2026-06-14).
-  // enabled:true starts row materialization + the tick emitting reminder
-  // events; channels stay OFF so EVERY reminder records a shadow delivery and
-  // SENDS NOTHING. The browser reminder path (notification-service.js
-  // checkAndSendH1/HoursReminders) remains the live sender — no double-send,
-  // no gap. Advancing to telegram/push delivery (Phase C/D) is GATED on
-  // retiring the browser reminders in the SAME deploy + a /reminders backfill
-  // (see REMINDER_PRODUCTION_ACTIVATION_REVIEW.md). Do NOT flip channels.*
-  // true until then.
   enabled: true,
   channels: {
     inApp: true,
-    telegram: false,
-    push: false,
+    telegram: true,
+    push: true,
   },
   pilotAllowlist: [],
   // Role-based reminder PUSH pilot (v1.11.4). A recipient receives REAL
@@ -149,4 +148,52 @@ const REMINDER_FLAGS = {
   pushRoles: ['admin', 'driver'],
 };
 
-module.exports = { SERVICE_NAME, SERVICE_VERSION, REGION, DB_INSTANCE, NOTIFICATION_FLAGS, PUSH_CONFIG, REMINDER_FLAGS };
+/**
+ * Driver Notification V2 — FALLBACK DEFAULTS ONLY (v1.25.x Final Hardening,
+ * Part 1). These are no longer the runtime source of truth: that is
+ * /settings/notifications in Firebase (the SAME node js/settings-store.js
+ * already owns and live-syncs client-side). This object is consulted ONLY
+ * by config/runtimeSettings.js#getAssignmentNotifyConfig() when that live
+ * read is empty or fails — a resilience fallback, not a second copy of the
+ * config an operator is expected to tune. To change these values for real,
+ * edit them in the app's Settings screen (js/app.js, Part 3) or directly at
+ * /settings/notifications; editing this object only changes what happens
+ * during a Firebase outage.
+ *
+ *   changeThresholdMinutes — Part 3: a departure-time-only nudge smaller than
+ *     this many minutes is NOT independently "meaningful" (onAssignmentWrite
+ *     emits no event/notification for it). driver / date / destination /
+ *     vehicle changes are ALWAYS meaningful regardless of this value.
+ *   debounceMs — Part 2/4: onAssignmentWrite sleeps this long before emitting
+ *     an assignment.updated/assignment.reassigned event, then re-reads the
+ *     live assignment; if a newer write has already superseded this one, it
+ *     skips (the newer invocation's own debounce window emits the coalesced,
+ *     final-state event instead). Persistence itself is never delayed —
+ *     only the notification-worthy event this triggers. Deliberately SHORT
+ *     (2s, was 10s) — a real trailing-edge debounce only needs to be long
+ *     enough to catch a rapid follow-up edit, not to feel like a delay.
+ *   enableTelegramFallback — Part 1/4: master switch for whether Telegram is
+ *     live at all for assignment.* lifecycle events (created/reassigned/
+ *     updated/completed/cancelled) — see notifications/dispatcher.js#liveFor.
+ *     When true, a DRIVER recipient additionally only gets it when they have
+ *     no live Push coverage (dispatchTelegram's push-coverage gate);
+ *     admin/requester recipients get it whenever this is true. Telegram for
+ *     request.created/approved/rejected and comment.added is a SEPARATE,
+ *     unrelated flag (NOTIFICATION_FLAGS.channels.telegram, still false) —
+ *     unaffected by this value.
+ *   enablePushNotification — Part 3: master switch for Push specifically for
+ *     assignment.* lifecycle events, ANDed with the existing global
+ *     NOTIFICATION_FLAGS.channels.push (so this can only narrow, never widen,
+ *     what the global flag already allows).
+ */
+const ASSIGNMENT_NOTIFY_DEFAULTS = {
+  changeThresholdMinutes: 15,
+  debounceMs: 2000,
+  enableTelegramFallback: true,
+  enablePushNotification: true,
+};
+
+module.exports = {
+  SERVICE_NAME, SERVICE_VERSION, REGION, DB_INSTANCE,
+  NOTIFICATION_FLAGS, PUSH_CONFIG, REMINDER_FLAGS, ASSIGNMENT_NOTIFY_DEFAULTS,
+};

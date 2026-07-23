@@ -14,8 +14,14 @@
 
    `recipients` is delegated to functions/src/notifications/recipients.js
    (the unified resolver); the registry only declares channels + copy.
-   Types intentionally ABSENT (assignment.updated/deleted, request.updated,
+   Types intentionally ABSENT (assignment.deleted, request.updated,
    notification.sent) are non-notifiable → the engine no-ops on them.
+
+   v1.25.x Driver Notification V2 (Part 2): assignment.updated and the new
+   assignment.reassigned are now BOTH notifiable — onAssignmentWrite.js only
+   ever emits either one after its own meaningful-change + debounce gates
+   (Parts 3 + 4), so by the time an event reaches this registry it is always
+   worth telling the driver about; no additional filtering happens here.
    ============================================================ */
 
 const { CHANNELS } = require('./model');
@@ -28,10 +34,12 @@ const { IN_APP, TELEGRAM, PUSH } = CHANNELS;
    allowlist entry) makes it actually send (v1.11.3 §7). comment.added
    PUSH is intentionally deferred to v1.11.5. */
 const REGISTRY = {
-  'assignment.created':   { channels: [IN_APP, TELEGRAM, PUSH], template: 'assignment.created' },
-  'assignment.started':   { channels: [IN_APP],                 template: 'assignment.started' },
-  'assignment.completed': { channels: [IN_APP, TELEGRAM, PUSH], template: 'assignment.completed' },
-  'assignment.cancelled': { channels: [IN_APP, TELEGRAM, PUSH], template: 'assignment.cancelled' },
+  'assignment.created':    { channels: [IN_APP, TELEGRAM, PUSH], template: 'assignment.created' },
+  'assignment.reassigned': { channels: [IN_APP, TELEGRAM, PUSH], template: 'assignment.reassigned' },
+  'assignment.updated':    { channels: [IN_APP, TELEGRAM, PUSH], template: 'assignment.updated' },
+  'assignment.started':    { channels: [IN_APP],                 template: 'assignment.started' },
+  'assignment.completed':  { channels: [IN_APP, TELEGRAM, PUSH], template: 'assignment.completed' },
+  'assignment.cancelled':  { channels: [IN_APP, TELEGRAM, PUSH], template: 'assignment.cancelled' },
 
   'request.created':      { channels: [IN_APP, TELEGRAM, PUSH], template: 'request.created' },
   'request.approved':     { channels: [IN_APP, TELEGRAM, PUSH], template: 'request.approved' },

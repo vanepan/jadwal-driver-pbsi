@@ -44,14 +44,20 @@ function timeAgo(isoString) {
   });
 }
 
-/* ── Operational whitelist ── */
+/* ── Operational whitelist ──
+   v1.25.x Final Hardening (Part 4 — single event pipeline): assignment_created
+   / assignment_completed / assignment_cancelled were REMOVED from here. They
+   now arrive exclusively through the server outbox (serverNotifs below,
+   fed by the SAME functions/src/notifications/engine.js canonical event
+   Push and Telegram already use) instead of this legacy /logs path — having
+   BOTH render the same fact was exactly the "independent notification
+   creator" duplication this hardening pass eliminates. request.*/comment_added
+   are unchanged (still /logs-only; their server-side Telegram/Push cutover
+   is a separate, not-yet-scoped migration). */
 const OPERATIONAL_ACTIONS = new Set([
   'request_created',
   'request_approved',
   'request_rejected',
-  'assignment_created',
-  'assignment_completed',
-  'assignment_cancelled',
   'comment_added',
 ]);
 
@@ -83,61 +89,10 @@ const ACTION_META = {
     priority: 'high',
     icon: '❌',
   },
-  assignment_created: {
-    title: 'Jadwal Dibuat',
-    desc: e => {
-      const driver = e.metadata?.driver;
-      return driver ? `Driver ${driver} telah ditugaskan.` : `Jadwal baru dibuat oleh ${resolveDisplayName(e)}`;
-    },
-    detail: e => {
-      const m = e.metadata || {};
-      const rows = [];
-      if (m.vehicle)    rows.push({ label: 'Kendaraan', value: m.vehicle });
-      if (m.date)       rows.push({ label: 'Tanggal',   value: formatDateMedium(m.date) });
-      if (m.startTime && m.endTime) rows.push({ label: 'Jam', value: `${m.startTime} – ${m.endTime}` });
-      if (m.destination) rows.push({ label: 'Tujuan',   value: m.destination });
-      return rows.length > 0 ? rows : null;
-    },
-    priority: 'medium',
-    icon: '🚗',
-  },
-  assignment_completed: {
-    title: 'Pengantaran Selesai',
-    desc: e => {
-      const driver = e.metadata?.driver || e.metadata?.completedBy;
-      return driver
-        ? `Driver ${driver} telah menyelesaikan penugasan.`
-        : 'Penugasan telah diselesaikan.';
-    },
-    detail: e => {
-      const m = e.metadata || {};
-      const rows = [];
-      if (m.vehicle)     rows.push({ label: 'Kendaraan', value: m.vehicle });
-      if (m.date)        rows.push({ label: 'Tanggal',   value: formatDateMedium(m.date) });
-      if (m.destination) rows.push({ label: 'Tujuan',    value: m.destination });
-      return rows.length > 0 ? rows : null;
-    },
-    priority: 'medium',
-    icon: '✔️',
-  },
-  assignment_cancelled: {
-    title: 'Assignment Dibatalkan',
-    desc: e => {
-      const by = e.metadata?.cancelledByName || resolveDisplayName(e);
-      return `Assignment dibatalkan oleh ${by}.`;
-    },
-    detail: e => {
-      const m = e.metadata || {};
-      const rows = [];
-      if (m.destination) rows.push({ label: 'Tujuan',    value: m.destination });
-      if (m.vehicle)     rows.push({ label: 'Kendaraan', value: m.vehicle });
-      if (m.date)        rows.push({ label: 'Tanggal',   value: formatDateMedium(m.date) });
-      if (m.reason)      rows.push({ label: 'Alasan',    value: m.reason });
-      return rows.length > 0 ? rows : null;
-    },
-    priority: 'high',
-    icon: '✕',
-  },
+  // assignment_created/completed/cancelled ACTION_META removed (v1.25.x Part 4/6)
+  // — those actions no longer reach this renderer (see OPERATIONAL_ACTIONS
+  // above); assignment.* now renders via the generic _server branch in
+  // renderCard(), with copy from functions/src/notifications/templates.js.
   comment_added: {
     title: 'Komentar Baru',
     desc: e => `${resolveDisplayName(e)} menambahkan komentar`,
@@ -158,15 +113,15 @@ const READ_AT_KEY = 'pbsi_notif_read_at';
 let allLogs = [];
 let pendingCount = 0;
 
-/* ── Server notification outbox (v1.20.5) ─────────────────────────────────
-   The legacy bell above is /logs-based and covers Driver/Request lifecycle.
-   The notification ENGINE (Cloud Functions) persists every recipient's records
-   to /notifications/{uid}. Engineering lifecycle notifications live ONLY there,
-   so the bell must subscribe to it too — otherwise Engineering users see nothing
-   in-app even though the pipeline delivered. This is additive: we ingest only
-   records the /logs bell does NOT already render (no ACTION_META for their type
-   — today that is the Engineering lifecycle), so Driver/Request counts are
-   unchanged and nothing is double-counted. */
+/* ── Server notification outbox (v1.20.5, widened v1.25.x Part 4) ─────────
+   The legacy bell above is /logs-based and covers Request lifecycle +
+   comments only now. The notification ENGINE (Cloud Functions) persists
+   every recipient's records to /notifications/{uid} — Engineering lifecycle
+   AND (as of Driver Notification V2 Final Hardening) assignment lifecycle
+   (created/reassigned/updated/completed/cancelled) live ONLY there; the old
+   /logs-derived assignment_* entries were removed from OPERATIONAL_ACTIONS
+   above specifically so this is the ONE place they render — no double-count,
+   because there is no longer a second path for them to render from. */
 let serverNotifs = [];            // normalized /notifications records for the current user
 let _serverNotifUnsub = null;     // realtime unsubscribe
 let _serverNotifUid = null;       // uid we are currently subscribed for
@@ -203,11 +158,12 @@ export function syncServerNotifications() {
     (snapshot) => {
       const val = snapshot && typeof snapshot.val === 'function' ? snapshot.val() : null;
       const list = val ? Object.entries(val).map(([id, rec]) => normalizeServerNotif(id, rec)) : [];
-      // Surface ONLY Engineering lifecycle notifications from the outbox. Driver/
-      // Request/comment notifications already render via the legacy /logs bell, so
-      // ingesting only 'engineering.*' guarantees nothing is double-counted.
+      // Surface Engineering AND assignment lifecycle notifications from the
+      // outbox (v1.25.x Part 4). request.*/comment.added stay off this list —
+      // they still render via the legacy /logs bell (OPERATIONAL_ACTIONS) —
+      // so nothing is double-counted in either direction.
       serverNotifs = list
-        .filter((n) => String(n.action).startsWith('engineering.'))
+        .filter((n) => String(n.action).startsWith('engineering.') || String(n.action).startsWith('assignment.'))
         .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
       if (serverNotifs.length) {   /* DIAGNOSTIC (removable) */
         _diagLastNotifAt = Date.now(); _diagLastNotifTitle = serverNotifs[0].title;
@@ -326,6 +282,10 @@ function isVisibleToUser(entry, user) {
 
   if (role === 'admin') return true;
 
+  // assignment_created/completed/cancelled cases removed here (v1.25.x
+  // Part 4/6) — those actions no longer reach this filter at all (removed
+  // from OPERATIONAL_ACTIONS above); assignment.* visibility for
+  // bidang/driver is now resolved server-side, functions/src/notifications/recipients.js.
   if (role === 'bidang') {
     switch (action) {
       case 'request_created':
@@ -333,13 +293,9 @@ function isVisibleToUser(entry, user) {
         return entry.username === username;
       case 'request_approved':
       case 'request_rejected':
-        // Admin acted on their request — match via stored requesterId
-        return meta.requesterId === username;
-      case 'assignment_created':
-      case 'assignment_completed':
-      case 'assignment_cancelled':
       case 'comment_added':
-        // Assignment / discussion originated from their request
+        // Admin acted on their request, or a discussion originated from it —
+        // match via stored requesterId
         return meta.requesterId === username;
       default:
         return false;
@@ -348,9 +304,6 @@ function isVisibleToUser(entry, user) {
 
   if (role === 'driver') {
     switch (action) {
-      case 'assignment_created':
-      case 'assignment_completed':
-      case 'assignment_cancelled':
       case 'comment_added':
         // Prefer stable username match (new log entries carry driverUsername).
         // Fall back to display name for log entries written before this fix.
@@ -418,14 +371,30 @@ function renderCardActions(entry, isUnread) {
     </div>`;
 }
 
+/** Icon for a server-outbox record, by canonical event type prefix/exact match
+ *  (v1.25.x Part 4 — widened beyond Engineering's fixed 🔧 now that
+ *  assignment.* renders through this same generic branch). */
+function serverNotifIcon(action) {
+  const a = String(action || '');
+  if (a.startsWith('engineering.')) return '🔧';
+  if (a === 'assignment.created') return '🚗';
+  if (a === 'assignment.reassigned') return 'ℹ️';
+  if (a === 'assignment.updated') return '✏️';
+  if (a === 'assignment.completed') return '✔️';
+  if (a === 'assignment.cancelled') return '✕';
+  if (a === 'assignment.reminder') return '⏰';
+  return '🔔';
+}
+
 function renderCard(entry, isUnread) {
-  // Server-outbox records (e.g. Engineering) carry pre-rendered title/body from
-  // the Cloud Functions templates — render them directly (no ACTION_META).
+  // Server-outbox records (Engineering, assignment lifecycle) carry pre-rendered
+  // title/body from the Cloud Functions templates — render them directly (no
+  // ACTION_META, which only covers the remaining /logs-derived types).
   if (entry._server) {
     return `
     <div class="notif-card notif-priority-normal${isUnread ? ' notif-unread' : ''}" data-id="${escapeHTML(entry.id)}">
       <div class="notif-card-top">
-        <span class="notif-card-title">🔧 ${escapeHTML(entry.title)}${isUnread ? '<span class="notif-new-dot"></span>' : ''}</span>
+        <span class="notif-card-title">${serverNotifIcon(entry.action)} ${escapeHTML(entry.title)}${isUnread ? '<span class="notif-new-dot"></span>' : ''}</span>
         <span class="notif-card-time">${escapeHTML(timeAgo(entry.timestamp))}</span>
       </div>
       <div class="notif-card-desc">${escapeHTML(entry.desc)}</div>

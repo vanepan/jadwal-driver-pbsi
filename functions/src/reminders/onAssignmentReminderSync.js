@@ -9,13 +9,24 @@
    queue. Two triggers on one node is an established additive pattern;
    the cost is one extra invocation per assignment write.
 
-   classify(before, after) mirrors onAssignmentWrite EXACTLY (do not
-   re-invent transition logic) and maps each transition to a queue
+   classify(before, after) mirrors onAssignmentWrite's PRE-v1.25.x transition
+   logic (create/delete/status — deliberately NOT the v1.25.x reassigned-vs-
+   updated split added there for notification wording; this file only cares
+   whether the FIRE TIME needs to move) and maps each transition to a queue
    action:
 
      created                          → upsert two `pending` rows
      date/startTime changed (updated) → recompute fireAt, upsert in place
      started/completed/cancelled/deleted → tombstone (cancelled)
+
+   v1.25.x Driver Notification V2 (Part 5 — Reminder Synchronization): a
+   driver-only reassignment (no date/startTime change) intentionally takes
+   NO action here — and needs none. /reminders rows carry no driver snapshot
+   (schedule.js), and reminders/tick.js re-reads the LIVE /assignments node
+   at fire time, so whoever is CURRENTLY assigned always receives the H-1d/
+   H-1h reminder; a previous driver can never keep receiving reminders after
+   reassignment, and this was true before this change — it just wasn't
+   documented as a deliberate guarantee until now.
 
    Gated on REMINDER_FLAGS.enabled: while false the whole subsystem is
    dormant (no rows written) — deploying the code changes nothing in

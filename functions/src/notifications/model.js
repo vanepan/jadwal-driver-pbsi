@@ -49,8 +49,20 @@ function keySafe(value) {
 /**
  * Build a canonical notification record (id derived from eventId for
  * idempotency). status starts queued; the engine flips it to dispatched.
+ *
+ * v1.25.x Driver Notification V2 (Part 6 — In-App Notification Foundation):
+ * `entityId`/`entityKind` generalize "what this notification is about" for
+ * ANY event type (mirrors event.entity); `assignmentId` is a convenience
+ * alias set only when entityKind is 'assignment', and `driverId` surfaces
+ * the assignment's driver (from the event payload) regardless of who the
+ * RECIPIENT is (an admin's copy of an assignment.reassigned notification
+ * still carries whose assignment it was about). All four are additive —
+ * existing readers of {id,type,title,body,...} are unaffected.
  */
-function buildNotification({ type, eventId, recipientId, title, body, channels }) {
+function buildNotification({
+  type, eventId, recipientId, title, body, channels,
+  entityId = null, entityKind = null, driverId = null,
+}) {
   return {
     id:          keySafe(eventId),
     type:        String(type || ''),
@@ -62,6 +74,10 @@ function buildNotification({ type, eventId, recipientId, title, body, channels }
     status:      NOTIFICATION_STATUS.QUEUED,
     createdAt:   new Date().toISOString(),
     readAt:      null,
+    entityId,
+    entityKind,
+    assignmentId: entityKind === 'assignment' ? entityId : null,
+    driverId,
   };
 }
 

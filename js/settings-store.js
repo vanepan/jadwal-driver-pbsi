@@ -20,16 +20,45 @@ const DEFAULTS = {
     odometerWarnJumpKm: 2000,
   },
   notifications: {
+    // v1.25.x — retained for backward compatibility only (existing Firebase
+    // installations may still carry these under /settings/notifications).
+    // The browser reminder path that read them (checkAndSendH1Reminders /
+    // checkAndSendHoursReminders) was retired in Driver Notification V2 —
+    // the server-side reminder queue (functions/src/reminders/*) replaced it
+    // and needs no client-tunable check interval. No code reads these four
+    // anymore; the Settings UI no longer exposes them (see Part 3 below).
     h2WindowMinFrom: 110,
     h2WindowMinTo: 135,
     h1ReminderCheckIntervalMs: 60 * 60 * 1000,   // 1 hour
     h2ReminderCheckIntervalMs: 5 * 60 * 1000,    // 5 minutes
+
+    // v1.25.x Driver Notification V2 (Final Hardening) — THE single runtime
+    // source of truth for these four values. The client reads them
+    // synchronously via getSetting(); Cloud Functions read the SAME
+    // /settings/notifications node live (functions/src/config/runtimeSettings.js),
+    // falling back to functions/src/config/constants.js#ASSIGNMENT_NOTIFY_DEFAULTS
+    // only when that read is unavailable. Neither runtime hardcodes its own
+    // independent copy of these numbers — see runtimeSettings.js's header.
+    assignmentChangeThresholdMinutes: 15,
+    notificationDebounceMs: 2000,
+    enableTelegramFallback: true,
+    enablePushNotification: true,
   },
   telegram: {},
   system: {
     backupRetentionDays: 30,
   },
   ui: {},
+  // v1.25.x — Dispatch Intelligence's Recovery Buffer (Driver Recommendation
+  // Engine), surfaced in the Settings UI alongside Notification V2 (Part 3).
+  // js/config/dispatch-intelligence-config.js#getDispatchConfig() reads this
+  // live value (falling back to its own DEFAULT_DISPATCH_INTELLIGENCE_CONFIG
+  // literal only when settings-store hasn't loaded) — this is now the ONE
+  // way to actually change it; the setDispatchConfig() setter alone was
+  // never wired to any UI before this.
+  dispatch: {
+    recoveryBufferMinutes: 60,
+  },
 };
 
 let settings = null;

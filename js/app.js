@@ -55,11 +55,13 @@ import {
   updateVehicleOdometer,
 } from './vehicles-store.js';
 import { initSettingsStore, getSetting, updateSetting, registerSettingsChangeListener } from './settings-store.js';
+import { setDispatchConfig } from './config/dispatch-intelligence-config.js';
 import { initPWA, getPWAState, registerPWAStateListener, triggerInstallPrompt, showIOSInstallModal } from './pwa.js';
 import { initPush } from './push.js';
 import { initPbsiSelect } from './pbsi-select.js';
 import { initPbsiDatepicker, syncPbsiDatepicker } from './pbsi-datepicker.js';
 import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate } from './timeline.js';
+import { initTimelineInteractions } from './timeline-interactions.js';
 import { initModalHandlers, openDetailModal, registerEditCallback, registerDeleteCallback, registerStartCallback, registerCompleteCallback, registerCommentCallback as registerModalCommentCallback, registerCancelCallback, registerOvertimeOverrideCallback, setAssignments as setModalAssignments, updateDetailActionButtons } from './modal.js';
 import { initFormHandlers, openFormModal, closeFormModal, registerSaveCallback, setAssignments as setAssignmentsForm, setCurrentDate as setCurrentDateForm, checkConflict, deleteAssignment } from './assignments.js';
 // Request Auto-Fill Intelligence (v1.16.4.11-beta.2): read-only dispatch suggestion panel.
@@ -259,10 +261,6 @@ import {
   sendRequestApprovedNotification,
   sendRequestRejectedNotification,
   sendNewRequestNotificationToAdmins,
-  sendNewAssignmentNotificationToDriver,
-  sendAssignmentCancelledNotification,
-  checkAndSendH1Reminders,
-  checkAndSendHoursReminders,
 } from './notification-service.js';
 
 console.info(`PBSI Scheduler v${APP_VERSION}`);
@@ -379,6 +377,24 @@ const ADMIN_MODULE_SECTIONS = {
   konfigurasi: ['users', 'config'],
   analytics:   ['analytics', 'dispatchanalytics', 'recommendationaccuracy', 'wellness', 'prediction', 'executive', 'engineeringanalytics'],
 };
+
+/**
+ * Pushes the live 'dispatch.recoveryBufferMinutes' setting into
+ * js/config/dispatch-intelligence-config.js's in-memory active config
+ * (v1.25.x Final Hardening, Part 3). That module deliberately does NOT
+ * import settings-store.js itself (doing so would drag in firebase.js's
+ * browser-only CDN import, breaking its use from plain Node —
+ * scripts/recommendation-check.mjs requires it transitively via
+ * driver-recommendation-engine.js) — so this is a PUSH, called once the
+ * settings store has loaded and again on every live settings change (see
+ * the registerSettingsChangeListener call near initSettingsStore()).
+ */
+function wireDispatchRecoveryBufferFromSettings() {
+  const liveBuffer = getSetting('dispatch.recoveryBufferMinutes');
+  if (Number.isFinite(Number(liveBuffer)) && Number(liveBuffer) >= 0) {
+    setDispatchConfig({ recoveryBufferMinutes: Number(liveBuffer) });
+  }
+}
 
 /**
  * Filter assignments berdasarkan user role saat ini.
@@ -6370,6 +6386,36 @@ function initAuditDetailModal() {
   });
 }
 
+/**
+ * Build the audit delta for an assignment edit (v1.25.x Driver Notification
+ * V2, Part 7). Compares the pre-edit snapshot to the post-edit record and
+ * returns ONLY the fields that actually changed, in the SAME {field, from,
+ * to} shape settings_updated already established — buildAuditHumanDetails's
+ * generic `if (Array.isArray(meta.changes)) meta.changes.forEach(c => chg(...))`
+ * already renders this shape for free; assignment_edited/assignment_reassigned
+ * additionally get an explicit case below so they read as a proper delta,
+ * not raw JSON. Returns [] when nothing tracked here actually changed (e.g.
+ * only `updatedAt` differs).
+ */
+function buildAssignmentAuditChanges(before, after) {
+  if (!before || !after) return [];
+  const changes = [];
+  const add = (field, from, to) => {
+    const a = from == null ? '' : String(from);
+    const b = to == null ? '' : String(to);
+    if (a !== b) changes.push({ field, from: a || '-', to: b || '-' });
+  };
+  add('Driver', before.driver, after.driver);
+  add('Tanggal', before.date, after.date);
+  if (before.startTime !== after.startTime || before.endTime !== after.endTime) {
+    add('Waktu', `${before.startTime || '-'} – ${before.endTime || '-'}`, `${after.startTime || '-'} – ${after.endTime || '-'}`);
+  }
+  add('Tujuan', before.destination, after.destination);
+  add('Kendaraan', before.vehicle, after.vehicle);
+  add('Keperluan', before.purpose, after.purpose);
+  return changes;
+}
+
 function buildAuditHumanDetails(log) {
   const meta   = log.metadata || {};
   const action = String(log.action || log.type || '');
@@ -6451,6 +6497,21 @@ function buildAuditHumanDetails(log) {
       f('Tanggal',    meta.date);
       if (meta.startTime && meta.endTime) f('Waktu', `${meta.startTime} – ${meta.endTime}`);
       f('Sumber', meta.requestId ? 'Dari Request' : 'Langsung oleh Admin');
+      break;
+    case 'assignment_edited':
+      // v1.25.x Part 7 — the actual delta (manual edit, or a Timeline
+      // drag/resize). Falls back to the current-state summary fields when
+      // `changes` is empty (older log entries predating this, or an edit
+      // whose only diff isn't tracked in buildAssignmentAuditChanges).
+      if (Array.isArray(meta.changes) && meta.changes.length) {
+        meta.changes.forEach(c => chg(c.field, c.from, c.to));
+      } else {
+        f('Driver',    meta.driver, true);
+        f('Kendaraan', meta.vehicle);
+        f('Tujuan',    meta.destination);
+        f('Tanggal',   meta.date);
+        if (meta.startTime && meta.endTime) f('Waktu', `${meta.startTime} – ${meta.endTime}`);
+      }
       break;
     case 'assignment_started':
       f('Dimulai Oleh',  meta.startedBy);
@@ -6682,38 +6743,52 @@ function renderV2AdminConfig() {
 
       <div class="v2-admin-config-group">
         <h3 class="v2-admin-config-group-title">Pengaturan Notifikasi</h3>
+        <!-- v1.25.x Driver Notification V2 (Final Hardening, Part 3): the old
+             browser-reminder fields (H-2 window, H-1/H-2 check interval) were
+             REMOVED — that reminder path is retired (server-side queue replaced
+             it, functions/src/reminders/*) and nothing reads those settings
+             anymore. Repurposed for the fields that DO control live runtime
+             behaviour now (js/settings-store.js DEFAULTS.notifications /
+             .dispatch — the single source of truth both this UI and Cloud
+             Functions read). -->
         <div class="v2-admin-config-fields">
           <div class="v2-admin-config-field">
-            <label class="v2-admin-config-label" for="cfgH2From">H-2 Window Mulai</label>
+            <label class="v2-admin-config-label" for="cfgRecoveryBuffer">Recovery Buffer</label>
             <div class="v2-admin-config-input-row">
-              <input type="number" id="cfgH2From" class="v2-admin-config-input" min="1" step="1">
+              <input type="number" id="cfgRecoveryBuffer" class="v2-admin-config-input" min="0" step="1">
               <span class="v2-admin-config-unit">menit</span>
             </div>
-            <p class="v2-admin-config-hint">Batas awal pengiriman pengingat H-2.</p>
+            <p class="v2-admin-config-hint">Jeda pemulihan driver setelah assignment berakhir sebelum direkomendasikan lagi (Driver Recommendation Engine).</p>
           </div>
           <div class="v2-admin-config-field">
-            <label class="v2-admin-config-label" for="cfgH2To">H-2 Window Selesai</label>
+            <label class="v2-admin-config-label" for="cfgAssignmentThreshold">Ambang Batas Perubahan Jadwal</label>
             <div class="v2-admin-config-input-row">
-              <input type="number" id="cfgH2To" class="v2-admin-config-input" min="1" step="1">
+              <input type="number" id="cfgAssignmentThreshold" class="v2-admin-config-input" min="0" step="1">
               <span class="v2-admin-config-unit">menit</span>
             </div>
-            <p class="v2-admin-config-hint">Batas akhir pengiriman pengingat H-2.</p>
+            <p class="v2-admin-config-hint">Perubahan jam keberangkatan di bawah ambang ini tidak memicu notifikasi (driver/tujuan/kendaraan tetap selalu memicu).</p>
           </div>
           <div class="v2-admin-config-field">
-            <label class="v2-admin-config-label" for="cfgH1Interval">Interval Pengingat H-1</label>
+            <label class="v2-admin-config-label" for="cfgNotifDebounce">Notification Debounce</label>
             <div class="v2-admin-config-input-row">
-              <input type="number" id="cfgH1Interval" class="v2-admin-config-input" min="1" step="1">
-              <span class="v2-admin-config-unit">menit</span>
+              <input type="number" id="cfgNotifDebounce" class="v2-admin-config-input" min="0" step="1">
+              <span class="v2-admin-config-unit">detik</span>
             </div>
-            <p class="v2-admin-config-hint">Frekuensi pengecekan reminder H-1.</p>
+            <p class="v2-admin-config-hint">Beberapa edit beruntun pada assignment yang sama digabung menjadi satu notifikasi setelah jeda ini.</p>
           </div>
           <div class="v2-admin-config-field">
-            <label class="v2-admin-config-label" for="cfgH2Interval">Interval Pengingat H-2</label>
+            <label class="v2-admin-config-label" for="cfgEnableTelegramFallback">Enable Telegram Fallback</label>
             <div class="v2-admin-config-input-row">
-              <input type="number" id="cfgH2Interval" class="v2-admin-config-input" min="1" step="1">
-              <span class="v2-admin-config-unit">menit</span>
+              <input type="checkbox" id="cfgEnableTelegramFallback">
             </div>
-            <p class="v2-admin-config-hint">Frekuensi pengecekan reminder H-2.</p>
+            <p class="v2-admin-config-hint">Kirim Telegram ke driver hanya ketika Push tidak tersedia untuknya. Matikan untuk push-only.</p>
+          </div>
+          <div class="v2-admin-config-field">
+            <label class="v2-admin-config-label" for="cfgEnablePush">Enable Push Notification</label>
+            <div class="v2-admin-config-input-row">
+              <input type="checkbox" id="cfgEnablePush">
+            </div>
+            <p class="v2-admin-config-hint">Khusus notifikasi assignment (dibuat/dialihkan/diperbarui/dibatalkan) — tidak memengaruhi Push modul lain.</p>
           </div>
         </div>
         <div class="v2-admin-config-footer">
@@ -6782,10 +6857,11 @@ function renderV2AdminConfig() {
   document.getElementById('cfgWorkStart').value    = _cfgMinsToTime(getSetting('operations.workStartMins'));
   document.getElementById('cfgWorkEnd').value      = _cfgMinsToTime(getSetting('operations.workEndMins'));
   document.getElementById('cfgOdometerWarn').value = getSetting('operations.odometerWarnJumpKm');
-  document.getElementById('cfgH2From').value       = getSetting('notifications.h2WindowMinFrom');
-  document.getElementById('cfgH2To').value         = getSetting('notifications.h2WindowMinTo');
-  document.getElementById('cfgH1Interval').value   = Math.round(getSetting('notifications.h1ReminderCheckIntervalMs') / 60000);
-  document.getElementById('cfgH2Interval').value   = Math.round(getSetting('notifications.h2ReminderCheckIntervalMs') / 60000);
+  document.getElementById('cfgRecoveryBuffer').value        = getSetting('dispatch.recoveryBufferMinutes');
+  document.getElementById('cfgAssignmentThreshold').value   = getSetting('notifications.assignmentChangeThresholdMinutes');
+  document.getElementById('cfgNotifDebounce').value         = Math.round(getSetting('notifications.notificationDebounceMs') / 1000);
+  document.getElementById('cfgEnableTelegramFallback').checked = !!getSetting('notifications.enableTelegramFallback');
+  document.getElementById('cfgEnablePush').checked              = !!getSetting('notifications.enablePushNotification');
   document.getElementById('cfgBackupDays').value   = getSetting('system.backupRetentionDays');
 
   // ── Telegram status block ─────────────────────────────────────
@@ -6929,51 +7005,56 @@ function renderV2AdminConfig() {
     } finally { btn.disabled = false; }
   });
 
-  // ── Notification save ─────────────────────────────────────────
+  // ── Notification save (v1.25.x Driver Notification V2, Part 3) ────────
   document.getElementById('cfgResetNotif')?.addEventListener('click', () => {
-    document.getElementById('cfgH2From').value      = getSetting('notifications.h2WindowMinFrom');
-    document.getElementById('cfgH2To').value        = getSetting('notifications.h2WindowMinTo');
-    document.getElementById('cfgH1Interval').value  = Math.round(getSetting('notifications.h1ReminderCheckIntervalMs') / 60000);
-    document.getElementById('cfgH2Interval').value  = Math.round(getSetting('notifications.h2ReminderCheckIntervalMs') / 60000);
+    document.getElementById('cfgRecoveryBuffer').value      = getSetting('dispatch.recoveryBufferMinutes');
+    document.getElementById('cfgAssignmentThreshold').value = getSetting('notifications.assignmentChangeThresholdMinutes');
+    document.getElementById('cfgNotifDebounce').value       = Math.round(getSetting('notifications.notificationDebounceMs') / 1000);
+    document.getElementById('cfgEnableTelegramFallback').checked = !!getSetting('notifications.enableTelegramFallback');
+    document.getElementById('cfgEnablePush').checked             = !!getSetting('notifications.enablePushNotification');
     showToast('Perubahan dibatalkan.');
   });
 
   document.getElementById('cfgSaveNotif')?.addEventListener('click', async function() {
     const btn = this;
-    const newH2From = parseInt(document.getElementById('cfgH2From').value, 10);
-    const newH2To   = parseInt(document.getElementById('cfgH2To').value, 10);
-    const newH1Mins = parseInt(document.getElementById('cfgH1Interval').value, 10);
-    const newH2Mins = parseInt(document.getElementById('cfgH2Interval').value, 10);
+    const newRecoveryBuffer = parseInt(document.getElementById('cfgRecoveryBuffer').value, 10);
+    const newThreshold      = parseInt(document.getElementById('cfgAssignmentThreshold').value, 10);
+    const newDebounceSec    = parseInt(document.getElementById('cfgNotifDebounce').value, 10);
+    const newTelegramFallback = document.getElementById('cfgEnableTelegramFallback').checked;
+    const newEnablePush       = document.getElementById('cfgEnablePush').checked;
 
-    if (!Number.isFinite(newH2From) || newH2From < 1 || !Number.isFinite(newH2To) || newH2To < 1 || newH2From >= newH2To) {
-      showToast('H-2 Window Mulai harus lebih kecil dari H-2 Window Selesai.'); return;
-    }
-    if (!Number.isFinite(newH1Mins) || newH1Mins < 1) { showToast('Interval H-1 harus lebih dari 0 menit.'); return; }
-    if (!Number.isFinite(newH2Mins) || newH2Mins < 1) { showToast('Interval H-2 harus lebih dari 0 menit.'); return; }
+    if (!Number.isFinite(newRecoveryBuffer) || newRecoveryBuffer < 0) { showToast('Recovery Buffer tidak boleh negatif.'); return; }
+    if (!Number.isFinite(newThreshold) || newThreshold < 0) { showToast('Ambang Batas Perubahan Jadwal tidak boleh negatif.'); return; }
+    if (!Number.isFinite(newDebounceSec) || newDebounceSec < 0) { showToast('Notification Debounce tidak boleh negatif.'); return; }
 
     btn.disabled = true;
     try {
-      const prevH2From = getSetting('notifications.h2WindowMinFrom');
-      const prevH2To   = getSetting('notifications.h2WindowMinTo');
-      const prevH1Mins = Math.round(getSetting('notifications.h1ReminderCheckIntervalMs') / 60000);
-      const prevH2Mins = Math.round(getSetting('notifications.h2ReminderCheckIntervalMs') / 60000);
+      const prevRecoveryBuffer = getSetting('dispatch.recoveryBufferMinutes');
+      const prevThreshold      = getSetting('notifications.assignmentChangeThresholdMinutes');
+      const prevDebounceSec    = Math.round(getSetting('notifications.notificationDebounceMs') / 1000);
+      const prevTelegramFallback = !!getSetting('notifications.enableTelegramFallback');
+      const prevEnablePush       = !!getSetting('notifications.enablePushNotification');
       const saves = [];
       const changes = [];
-      if (newH2From !== prevH2From) {
-        saves.push(updateSetting('notifications.h2WindowMinFrom', newH2From));
-        changes.push({ field: 'H-2 Window Mulai', from: `${prevH2From} menit`, to: `${newH2From} menit` });
+      if (newRecoveryBuffer !== prevRecoveryBuffer) {
+        saves.push(updateSetting('dispatch.recoveryBufferMinutes', newRecoveryBuffer));
+        changes.push({ field: 'Recovery Buffer', from: `${prevRecoveryBuffer} menit`, to: `${newRecoveryBuffer} menit` });
       }
-      if (newH2To !== prevH2To) {
-        saves.push(updateSetting('notifications.h2WindowMinTo', newH2To));
-        changes.push({ field: 'H-2 Window Selesai', from: `${prevH2To} menit`, to: `${newH2To} menit` });
+      if (newThreshold !== prevThreshold) {
+        saves.push(updateSetting('notifications.assignmentChangeThresholdMinutes', newThreshold));
+        changes.push({ field: 'Ambang Batas Perubahan Jadwal', from: `${prevThreshold} menit`, to: `${newThreshold} menit` });
       }
-      if (newH1Mins !== prevH1Mins) {
-        saves.push(updateSetting('notifications.h1ReminderCheckIntervalMs', newH1Mins * 60000));
-        changes.push({ field: 'Interval Pengingat H-1', from: `${prevH1Mins} menit`, to: `${newH1Mins} menit` });
+      if (newDebounceSec !== prevDebounceSec) {
+        saves.push(updateSetting('notifications.notificationDebounceMs', newDebounceSec * 1000));
+        changes.push({ field: 'Notification Debounce', from: `${prevDebounceSec} detik`, to: `${newDebounceSec} detik` });
       }
-      if (newH2Mins !== prevH2Mins) {
-        saves.push(updateSetting('notifications.h2ReminderCheckIntervalMs', newH2Mins * 60000));
-        changes.push({ field: 'Interval Pengingat H-2', from: `${prevH2Mins} menit`, to: `${newH2Mins} menit` });
+      if (newTelegramFallback !== prevTelegramFallback) {
+        saves.push(updateSetting('notifications.enableTelegramFallback', newTelegramFallback));
+        changes.push({ field: 'Enable Telegram Fallback', from: prevTelegramFallback ? 'Aktif' : 'Nonaktif', to: newTelegramFallback ? 'Aktif' : 'Nonaktif' });
+      }
+      if (newEnablePush !== prevEnablePush) {
+        saves.push(updateSetting('notifications.enablePushNotification', newEnablePush));
+        changes.push({ field: 'Enable Push Notification', from: prevEnablePush ? 'Aktif' : 'Nonaktif', to: newEnablePush ? 'Aktif' : 'Nonaktif' });
       }
       if (!saves.length) { showToast('Tidak ada perubahan.'); return; }
       await Promise.all(saves);
@@ -10578,7 +10659,13 @@ function commitApproval(requestId, decision = {}) {
   if (dates.length > 1) showToast(`✅ ${dates.length} assignment berhasil dibuat`);
 
   sendRequestApprovedNotification(request, getUserByUsername);
-  if (newAssignments.length > 0) sendNewAssignmentNotificationToDriver(newAssignments[0], getUsers);
+  // v1.25.x Final Hardening (Part 4 — single event pipeline): the driver
+  // notification for these new assignments is no longer sent from here.
+  // The /assignments write above (via saveOneAssignment, already executed
+  // earlier in this function) triggers functions/src/events/onAssignmentWrite.js
+  // → assignment.created → the SAME registry/dispatcher every other channel
+  // uses (Push + Telegram + in-app), so a second, independent client-side
+  // send would just duplicate it.
 }
 
 /* ── Approve / Override modal (beta.3) ──────────────────────────────────
@@ -11164,6 +11251,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     await initDriversStore();              // v1.5.0: seed/sync Firebase driver registry
     await initVehiclesStore();             // v1.5.2: seed/sync Firebase vehicle registry
+    // Registered BEFORE initSettingsStore() so it also catches the initial
+    // load (registerSettingsChangeListener fires on first load, not just
+    // subsequent live changes — see settings-store.js#refreshSettingsCache).
+    registerSettingsChangeListener(wireDispatchRecoveryBufferFromSettings);
     await initSettingsStore();             // v1.7.0: centralized settings foundation
 
     const _telegramSettings = await fetchFirebaseData('settings/telegram');
@@ -11200,13 +11291,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       recentLogs: auditLogs,
     });
 
-    // H-1 / H-2 reminder timers (read assignments/requests/users)
-    const runH1Check = () => checkAndSendH1Reminders(assignments, requests, getUserByUsername, getUsers);
-    runH1Check();
-    setInterval(runH1Check, getSetting('notifications.h1ReminderCheckIntervalMs'));
-    const runH2Check = () => checkAndSendHoursReminders(assignments, requests, getUserByUsername, getUsers);
-    runH2Check();
-    setInterval(runH2Check, getSetting('notifications.h2ReminderCheckIntervalMs'));
+    // H-1 / H-2 reminders (v1.25.x Driver Notification V2, Part 1 + Part 5):
+    // the browser setInterval reminder path RETIRED HERE — the server-side
+    // reminder queue (functions/src/reminders/*) is now the live sender for
+    // both Telegram and Push (REMINDER_FLAGS.channels.{telegram,push}:true,
+    // functions/src/config/constants.js), re-validating the LIVE assignment
+    // at fire time so a reassigned/rescheduled/cancelled trip is always
+    // correct — see docs/REMINDER_PRODUCTION_ACTIVATION_REVIEW.md Phase C.
+    // Removing this without the Cloud Functions deploy would leave a gap;
+    // deploy functions/ first (or together with this change).
 
     // Push (v1.11.3): wire deep-link nav, refresh/heal an existing
     // subscription, and offer the soft-ask once. No-op where unsupported.
@@ -11250,6 +11343,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initEngineeringDiagnostics();          /* DIAGNOSTIC (removable): wire Ctrl+Shift+D */
   initDriverSelect();                    // Isi dropdown driver
   initDateControls();                    // Setup date navigation buttons
+  initTimelineInteractions();            // v1.25.x Timeline Desktop Experience: context menu + drag/resize
   initFormHandlers();                    // Setup form events
   initModalHandlers();                   // Setup modal events
   initRequestHandlers();                 // Setup request workflow events
@@ -11332,8 +11426,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (activeAdminSection === 'prediction') renderDriverPredictionSection();
     if (activeAdminSection === 'executive') renderExecutiveDashboardSection();
     if (currentWorkspace === 'home') refreshHomeWorkspace(); // v1.19.9 live Home refresh
-    checkAndSendH1Reminders(assignments, requests, getUserByUsername, getUsers);
-    checkAndSendHoursReminders(assignments, requests, getUserByUsername, getUsers);
+    // H-1/H-2 reminder re-check retired here too (v1.25.x) — server-side now.
   });
 
   // ── Callback: Firebase requests berubah (dari device lain) ──
@@ -11353,7 +11446,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // ── Callback: Form save (add/update assignment) ──
-  registerSaveCallback((updatedAssignments, isNewAssignment, assignmentDate, newAssignment) => {
+  registerSaveCallback((updatedAssignments, isNewAssignment, assignmentDate, newAssignment, previousAssignment) => {
     // Guard: assignments.js memanggil onSaveCallback dari deleteAssignment() tanpa assignmentDate.
     // Operasi delete sudah ditangani sepenuhnya oleh registerDeleteCallback — abaikan path ini.
     if (!isNewAssignment && assignmentDate === undefined) return;
@@ -11418,6 +11511,14 @@ document.addEventListener('DOMContentLoaded', async () => {
           ((u.displayName || '').trim().toLowerCase() === repDriverName ||
            (u.username   || '').trim().toLowerCase() === repDriverName))
       : null;
+    // v1.25.x Driver Notification V2 (Part 7 — Audit Trail): an edit records
+    // the ACTUAL delta (Driver X → Y, Waktu X → Y, ...), not just the fact
+    // that "something changed" — reuses the {field,from,to} shape
+    // settings_updated already established, so buildAuditHumanDetails's
+    // existing generic renderer displays it with no further change.
+    const assignmentChanges = (!isNewAssignment && previousAssignment)
+      ? buildAssignmentAuditChanges(previousAssignment, repAssignment)
+      : [];
     logAction({
       userId:      currentUser?.id,
       username:    currentUser?.username,
@@ -11437,15 +11538,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         beforeCount,
         afterCount:     assignments.length,
         operationType:  isNewAssignment ? 'create' : 'edit',
+        changes:        assignmentChanges,
       },
     });
 
     renderViews();
 
-    // Notify driver when admin creates a new assignment directly — non-blocking
-    if (isNewAssignment && newAssignment) {
-      sendNewAssignmentNotificationToDriver(newAssignment, getUsers);
-    }
+    // v1.25.x Final Hardening (Part 4 — single event pipeline): no client-side
+    // notification call here anymore for create OR edit. The /assignments
+    // write already performed above (saveOneAssignment/removeOneAssignment,
+    // via the surgical-write block earlier in this callback) is what
+    // functions/src/events/onAssignmentWrite.js reacts to — classifying
+    // created/reassigned/updated and running the ONE registry → dispatcher
+    // pipeline that produces Push, Telegram, and the in-app record alike.
+    // Calling a second, independent sender from here would be exactly the
+    // duplicate notification path this hardening pass removed.
   });
 
   // ── Callback: Bidang submit request ──
@@ -11766,14 +11873,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       },
     });
 
-    // Notify affected parties (driver always; admins or requester depending on who cancelled).
-    sendAssignmentCancelledNotification(
-      cancelledAssignment,
-      { reason, cancelledByRole: currentUser?.role || '', cancelledByName: currentUser?.name || '' },
-      getUserByUsername,
-      getUsers,
-      requests,
-    );
+    // v1.25.x Final Hardening (Part 4): no client-side notification call here
+    // either — saveOneAssignment above already wrote status:'cancelled' with
+    // the cancelledBy shape onAssignmentWrite.js's deriveActor() reads, which
+    // triggers assignment.cancelled through the SAME single event pipeline
+    // (driver always; admins or requester depending on who cancelled — that
+    // branching now lives in functions/src/notifications/recipients.js,
+    // mirroring exactly what this client call used to do).
 
     showToast('✕ Assignment dibatalkan');
   });

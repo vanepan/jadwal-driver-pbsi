@@ -44,6 +44,17 @@ const lc = (v) => String(v || '').trim().toLowerCase();
 const isDriver = (r) => Boolean(r && r.role === 'driver');
 const isRequester = (e, r) => Boolean(r && e.payload && lc(r.username) === lc(e.payload.requesterId));
 const actorName = (e) => (e.actor && e.actor.displayName) || '-';
+/** True when `r` is the PREVIOUS driver of an assignment.reassigned event
+ *  (the one losing the assignment), not the new one. Matches on the stable
+ *  username first, falling back to display name for legacy records that
+ *  predate driverUsername stamping. */
+const isPreviousDriver = (e, r) => {
+  if (!r || !e.payload) return false;
+  const p = e.payload;
+  if (p.previousDriverUsername) return lc(r.username) === lc(p.previousDriverUsername);
+  if (p.previousDriver) return lc(r.displayName) === lc(p.previousDriver);
+  return false;
+};
 
 /* ── Template table (keyed by canonical event type) ── */
 const TEMPLATES = {
@@ -61,6 +72,60 @@ const TEMPLATES = {
         `*Kendaraan:* ${p.vehicle || '-'}\n` +
         `*Driver:* ${p.driver || '-'}\n\n` +
         '_Cek dashboard Anda untuk detail._';
+    },
+  },
+
+  // v1.25.x Driver Notification V2 (Part 2) — driver reassignment. ONE event,
+  // TWO very different recipient perspectives: the previous driver (losing
+  // it) and the new driver (gaining it, worded identically to
+  // assignment.created so it reads the same either way).
+  'assignment.reassigned': {
+    title: (e, r) => (isPreviousDriver(e, r) ? 'Assignment Dialihkan' : 'Penugasan Baru'),
+    body: (e, r) => {
+      if (isPreviousDriver(e, r)) return 'Assignment Anda telah dialihkan ke driver lain.';
+      if (isDriver(r)) return 'Anda mendapatkan penugasan baru.';
+      return e.payload.driver ? `Driver ${e.payload.driver} telah ditugaskan.` : 'Penugasan dialihkan.';
+    },
+    telegram: (e, r) => {
+      const p = e.payload;
+      if (isPreviousDriver(e, r)) {
+        return 'ℹ️ *Assignment Dialihkan*\n\n' +
+          `*Tanggal:* ${fmtDate(p.previousDate || p.date)}\n` +
+          `*Waktu:* ${p.previousStartTime || p.startTime || '-'} – ${p.previousEndTime || p.endTime || '-'}\n` +
+          `*Tujuan:* ${p.previousDestination || p.destination || '-'}\n` +
+          `*Kendaraan:* ${p.previousVehicle || p.vehicle || '-'}\n\n` +
+          '_Assignment ini telah dialihkan ke driver lain oleh admin._';
+      }
+      return '🚗 *Penugasan Baru*\n\n' +
+        `*Tanggal:* ${fmtDate(p.date)}\n` +
+        `*Waktu:* ${p.startTime || '-'} – ${p.endTime || '-'}\n` +
+        `*Tujuan:* ${p.destination || '-'}\n` +
+        `*Kendaraan:* ${p.vehicle || '-'}\n\n` +
+        '_Cek dashboard Anda untuk detail._';
+    },
+  },
+
+  // v1.25.x Driver Notification V2 (Part 2/3) — a meaningful, non-reassignment
+  // change (date/time-beyond-threshold/destination/vehicle). Always shows
+  // what changed, not just the final state, when the previous values differ.
+  'assignment.updated': {
+    title: () => 'Jadwal Diperbarui',
+    body: (e, r) => (isDriver(r)
+      ? 'Jadwal penugasan Anda telah diperbarui.'
+      : `Penugasan diperbarui oleh ${actorName(e)}.`),
+    telegram: (e) => {
+      const p = e.payload;
+      const dateChanged = p.previousDate && p.previousDate !== p.date;
+      const timeChanged = (p.previousStartTime && p.previousStartTime !== p.startTime)
+        || (p.previousEndTime && p.previousEndTime !== p.endTime);
+      const destChanged = p.previousDestination && p.previousDestination !== p.destination;
+      const vehicleChanged = p.previousVehicle && p.previousVehicle !== p.vehicle;
+      return '✏️ *Jadwal Assignment Diperbarui*\n\n' +
+        `*Tujuan:* ${p.destination || '-'}${destChanged ? ` (sebelumnya ${p.previousDestination})` : ''}\n` +
+        `*Tanggal:* ${fmtDate(p.date)}${dateChanged ? ` (sebelumnya ${fmtDate(p.previousDate)})` : ''}\n` +
+        `*Waktu:* ${p.startTime || '-'} – ${p.endTime || '-'}${timeChanged ? ` (sebelumnya ${p.previousStartTime || '-'} – ${p.previousEndTime || '-'})` : ''}\n` +
+        `*Kendaraan:* ${p.vehicle || '-'}${vehicleChanged ? ` (sebelumnya ${p.previousVehicle})` : ''}\n\n` +
+        '_Silakan cek dashboard Anda untuk detail terbaru._';
     },
   },
 

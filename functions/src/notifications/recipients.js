@@ -128,6 +128,30 @@ function resolveRecipients(event, users) {
     case 'assignment.created': {
       add(resolveDriver(users, p));
       add(byUsername(users, p.requesterId));
+      // v1.25.x Final Hardening (Part 4): admins were already seeing this in
+      // the in-app Notification Center via the legacy /logs path (isVisibleToUser
+      // — role==='admin' sees everything). Now that the bell reads assignment.*
+      // from THIS SAME server outbox instead (js/notifications.js), admins must
+      // be a resolved recipient here too, or they'd silently lose that visibility.
+      admins(users).forEach(a => add(a));
+      break;
+    }
+    case 'assignment.reassigned': {
+      // Both drivers are recipients of the SAME event — templates.js branches
+      // per-recipient (previous driver vs new driver) using
+      // payload.previousDriverUsername/previousDriver vs driverUsername/driver.
+      if (p.previousDriverUsername || p.previousDriver) {
+        add(resolveDriver(users, { driver: p.previousDriver, driverUsername: p.previousDriverUsername }));
+      }
+      add(resolveDriver(users, p));
+      add(byUsername(users, p.requesterId));
+      break;
+    }
+    case 'assignment.updated': {
+      // A meaningful, debounced, non-reassignment change (date/time beyond
+      // threshold/destination/vehicle) — v1.25.x Part 2/3.
+      add(resolveDriver(users, p));
+      add(byUsername(users, p.requesterId));
       break;
     }
     case 'assignment.started': {
@@ -217,8 +241,8 @@ function resolveRecipients(event, users) {
       break;
     }
     default:
-      // assignment.updated / request.updated / assignment.started / notification.sent
-      // intentionally resolve to no recipients in this foundation.
+      // request.updated / notification.sent (assignment.started is handled
+      // above) intentionally resolve to no recipients in this foundation.
       break;
   }
 

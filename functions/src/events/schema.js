@@ -42,6 +42,11 @@ const ENTITY_KINDS = ['assignment', 'request', 'comment', 'notification', 'engin
 const EVENT_TYPES = [
   'assignment.created',
   'assignment.updated',
+  // v1.25.x Driver Notification V2 (Part 2) — driver reassignment is now its
+  // OWN canonical type (distinct from the generic assignment.updated) so the
+  // previous driver and the new driver each get the correct, distinct message
+  // (see notifications/templates.js#'assignment.reassigned').
+  'assignment.reassigned',
   'assignment.started',
   'assignment.completed',
   'assignment.cancelled',
