@@ -10,12 +10,27 @@
    the true Asset Detail (Identity/Status/Holder/Maintenance/History),
    which is where Blueprint §08's Asset body zone actually applies.
 
+   Phase 10.3 (Item Visual Identity & Detail Experience) made Item Detail
+   "the central page": Image -> Identity -> Current Stock -> Forecast ->
+   Quick Actions -> Movement History -> Metadata -> Edit Item, one
+   scrolling drawer body, not tabs. Image/Identity/Metadata/Edit Item wrap
+   AROUND the existing per-type body (Consumable vs. Asset unit list) —
+   they describe the Item itself, which both lifecycles share, while
+   Stock/Forecast/Quick Actions/Movement History stay Consumable-only
+   (Assets don't carry stock; each unit has its own Asset Detail below).
+   Quick Actions reuse gudang-home.js's own 'gud-home-quick-out/in/opname'
+   act names/handlers verbatim — no new handler, same dispatch already
+   wired in gudang-center.js.
+
    UI never computes stock/analytics: every figure comes from analytics-
-   engine.js / audit/movement-history-view.js / audit/asset-history-
-   view.js (already built). Lifecycle actions call asset-lifecycle-
-   engine.js#applyAssetTransition (Phase 9) directly — this file only
-   decides which buttons to SHOW (via the same isTransitionAllowed()
-   Phase 9 already exports), never which transitions are legal.
+   engine.js / stock-repository.js / audit/movement-history-view.js /
+   audit/asset-history-view.js (already built). Lifecycle actions call
+   asset-lifecycle-engine.js#applyAssetTransition (Phase 9) directly — this
+   file only decides which buttons to SHOW (via the same
+   isTransitionAllowed() Phase 9 already exports), never which transitions
+   are legal. The photo itself is downloaded through gudang-item-image.js's
+   thin wrapper around js/firebase.js's existing Storage primitives — no
+   new engine, no new domain.
    ============================================================ */
 
 'use strict';
@@ -23,13 +38,16 @@
 import { esc, icon, fmtQty, fmtWhen, emptyState } from './gudang-atoms.js';
 import { ITEM_TYPE } from '../contracts/item-contract.js';
 import { ASSET_STATUS, ASSET_EVENT_TYPE } from '../contracts/asset-contract.js';
+import { categoryLabel } from '../config/gudang-categories.js';
 import { isTransitionAllowed, applyAssetTransition } from '../asset/asset-lifecycle-engine.js';
 import { getMovementHistory } from '../audit/movement-history-view.js';
 import { getAssetHistory } from '../audit/asset-history-view.js';
+import { getProjection } from '../repository/stock-repository.js';
 import {
   getAverageMonthlyConsumption, getDepartmentConsumption, getForecastDaysRemaining,
 } from '../analytics/analytics-engine.js';
 import { forecastSentence } from '../analytics/quiet-intelligence-engine.js';
+import { itemHasPhoto, loadItemPhotoUrl } from './gudang-item-image.js';
 
 const STATUS_LABEL = { available: 'Tersedia', assigned: 'Ditugaskan', maintenance: 'Maintenance', retired: 'Pensiun' };
 const STATUS_PILL = { available: 'ok', assigned: 'info', maintenance: 'warn', retired: 'neutral' };
@@ -40,10 +58,91 @@ export function renderItemDetail(st, c, requestRender) {
   const item = st.data.items.find((i) => i.itemId === st.detail.id);
   if (!item) return drawerShell('Item tidak ditemukan', '', '<div class="gud-muted">Item mungkin sudah dihapus.</div>');
 
-  const body = item.itemType === ITEM_TYPE.CONSUMABLE
-    ? consumableBody(st, item, requestRender)
-    : assetListBody(st, item);
+  ensureDetailImage(st, item, requestRender);
+
+  const body = `
+    ${itemImageBlock(st, item)}
+    ${identityBlock(st, item)}
+    ${item.itemType === ITEM_TYPE.CONSUMABLE ? consumableBody(st, item, requestRender) : assetListBody(st, item)}
+    ${metadataBlock(item)}
+    ${editItemButtonBlock(item)}`;
   return drawerShell(item.name, item.itemType === ITEM_TYPE.CONSUMABLE ? 'Consumable' : 'Asset', body);
+}
+
+function ensureDetailImage(st, item, requestRender) {
+  const cache = st.detail;
+  if (!itemHasPhoto(item)) return;
+  if (cache.imageLoaded === item.itemId || cache.imageLoading) return;
+  cache.imageLoading = true;
+  loadItemPhotoUrl(item.metadata.imageStoragePath, item.metadata.imageContentType).then((res) => {
+    cache.imageLoading = false;
+    cache.imageLoaded = item.itemId;
+    cache.imageUrl = res.ok ? res.url : null;
+    requestRender();
+  });
+}
+
+/** Placeholder — never a broken-image icon (Phase 10.3 spec) — same
+ *  `package` glyph gudang-home.js's catalog card uses for the same reason. */
+function itemImageBlock(st, item) {
+  if (itemHasPhoto(item) && st.detail.imageLoaded === item.itemId && st.detail.imageUrl) {
+    return `<div class="gud-detail-img"><img src="${esc(st.detail.imageUrl)}" alt="" /></div>`;
+  }
+  return `<div class="gud-detail-img -placeholder">${icon('package', { size: 40, tone: 'text-faint' })}</div>`;
+}
+
+/** Name is already the drawer's own title — Identity shows the rest of
+ *  what belongs to the Item itself (Doc 3 Ch.03), the same fields Add/Edit
+ *  Item collects. Omits any field the item simply doesn't have, rather
+ *  than showing empty rows. */
+function identityBlock(st, item) {
+  const loc = item.defaultLocationId ? st.data.locations.find((l) => l.locationId === item.defaultLocationId) : null;
+  const rows = [
+    item.metadata?.variant ? ['Ukuran / Varian', item.metadata.variant] : null,
+    item.metadata?.jenis ? ['Merk / Jenis', item.metadata.jenis] : null,
+    item.category ? ['Kategori', categoryLabel(item.category)] : null,
+    loc ? ['Lokasi', loc.name] : null,
+    item.aliases.length ? ['Alias', item.aliases.join(', ')] : null,
+  ].filter(Boolean);
+  if (!rows.length) return '';
+  return `<div class="gud-sec">
+    <div class="gud-sec-t">IDENTITAS</div>
+    ${rows.map(([k, v]) => `<div class="gud-kv"><span class="gud-kv-k">${esc(k)}</span><span class="gud-kv-v">${esc(v)}</span></div>`).join('')}
+  </div>`;
+}
+
+/** Reuses gudang-home.js's OWN quick-action act names/handlers verbatim
+ *  (gud-home-quick-out/in/opname, already dispatched in gudang-center.js
+ *  via the existing 'gud-home-' prefix route) — no new handler exists here. */
+function quickActionsBlock(item) {
+  return `<div class="gud-sec">
+    <div class="gud-sec-t">AKSI CEPAT</div>
+    <div class="gud-action-row">
+      <button type="button" class="gud-btn" data-act="gud-home-quick-out" data-id="${esc(item.itemId)}">${icon('arrow-out', { size: 14 })} Goods Out</button>
+      <button type="button" class="gud-btn" data-act="gud-home-quick-in" data-id="${esc(item.itemId)}">${icon('arrow-in', { size: 14 })} Goods In</button>
+      <button type="button" class="gud-btn" data-act="gud-home-quick-opname" data-id="${esc(item.itemId)}">${icon('clipboard', { size: 14 })} Stock Opname</button>
+    </div>
+  </div>`;
+}
+
+/** ID + creation timestamp always shown; anything else in the Item's open
+ *  metadata bag beyond what Identity already surfaced (Doc 3 Ch.03: the
+ *  bag is explicitly open-ended) is listed generically, never invented. */
+function metadataBlock(item) {
+  const shown = new Set(['variant', 'jenis', 'imageStoragePath', 'imageContentType']);
+  const extra = Object.entries(item.metadata || {}).filter(([k, v]) => !shown.has(k) && v != null && v !== '');
+  return `<div class="gud-sec">
+    <div class="gud-sec-t">METADATA</div>
+    <div class="gud-kv"><span class="gud-kv-k">ID Item</span><span class="gud-kv-v gud-mono">${esc(item.itemId)}</span></div>
+    <div class="gud-kv"><span class="gud-kv-k">Dibuat</span><span class="gud-kv-v">${esc(fmtWhen(item.createdAt))}</span></div>
+    ${extra.map(([k, v]) => `<div class="gud-kv"><span class="gud-kv-k">${esc(k)}</span><span class="gud-kv-v">${esc(String(v))}</span></div>`).join('')}
+  </div>`;
+}
+
+function editItemButtonBlock(item) {
+  return `<div class="gud-sec">
+    <button type="button" class="gud-btn -ghost" data-act="gud-cat-edit-item" data-id="${esc(item.itemId)}">${icon('wrench', { size: 14 })} Edit Item</button>
+  </div>`;
 }
 
 function ensureConsumableData(st, item, requestRender) {
@@ -51,11 +150,12 @@ function ensureConsumableData(st, item, requestRender) {
   if (cache.loaded === item.itemId || cache.loading) return;
   cache.loading = true;
   Promise.all([
-    getForecastDaysRemaining(item.itemId), getAverageMonthlyConsumption(item.itemId),
+    getProjection(item.itemId), getForecastDaysRemaining(item.itemId), getAverageMonthlyConsumption(item.itemId),
     getDepartmentConsumption(item.itemId), getMovementHistory({ itemId: item.itemId }),
-  ]).then(([forecastRes, consRes, deptRes, histRes]) => {
+  ]).then(([stockRes, forecastRes, consRes, deptRes, histRes]) => {
     cache.loading = false;
     cache.loaded = item.itemId;
+    cache.stock = stockRes.ok ? stockRes.data.quantity : null;
     cache.forecast = forecastRes.ok ? forecastRes.data : null;
     cache.consumption = consRes.ok ? consRes.data : null;
     cache.deptUsage = deptRes.ok ? deptRes.data : [];
@@ -71,21 +171,23 @@ function consumableBody(st, item, requestRender) {
   return `
     <div class="gud-sec">
       <div class="gud-sec-t">STOK</div>
+      <div class="gud-kv"><span class="gud-kv-k">Stok Saat Ini</span><span class="gud-kv-v">${st.detail.stock != null ? `${fmtQty(st.detail.stock)} pcs` : '—'}</span></div>
       <div class="gud-kv"><span class="gud-kv-k">Forecast</span><span class="gud-kv-v">${esc(forecastSentence(st.detail.forecast) || 'Belum cukup riwayat')}</span></div>
       <div class="gud-kv"><span class="gud-kv-k">Rata-rata Konsumsi Bulanan</span><span class="gud-kv-v">${st.detail.consumption != null ? fmtQty(Math.round(st.detail.consumption)) : '—'}</span></div>
     </div>
-    <div class="gud-sec">
-      <div class="gud-sec-t">PENGGUNAAN PER BIDANG</div>
-      ${st.detail.deptUsage.length
-        ? st.detail.deptUsage.map((d) => `<div class="gud-kv"><span class="gud-kv-k">${esc(deptName(st, d.departmentId))}</span><span class="gud-kv-v">${fmtQty(d.quantity)}</span></div>`).join('')
-        : `<div class="gud-muted">Belum ada data.</div>`}
-    </div>
+    ${quickActionsBlock(item)}
     <div class="gud-sec">
       <div class="gud-sec-t">PERGERAKAN TERBARU</div>
       ${st.detail.movements.length
         ? st.detail.movements.map((m) => `<div class="gud-kv"><span class="gud-kv-k">${esc(m.what)} · ${esc(m.why)}</span><span class="gud-kv-v">${esc(fmtWhen(m.when))}</span></div>`).join('')
         : `<div class="gud-muted">Belum ada pergerakan.</div>`}
       <button type="button" class="gud-link-btn gud-mt" data-act="gud-goto" data-val="history">${icon('arrow-right', { size: 12 })} Lihat semua di Movement History</button>
+    </div>
+    <div class="gud-sec">
+      <div class="gud-sec-t">PENGGUNAAN PER BIDANG</div>
+      ${st.detail.deptUsage.length
+        ? st.detail.deptUsage.map((d) => `<div class="gud-kv"><span class="gud-kv-k">${esc(deptName(st, d.departmentId))}</span><span class="gud-kv-v">${fmtQty(d.quantity)}</span></div>`).join('')
+        : `<div class="gud-muted">Belum ada data.</div>`}
     </div>`;
 }
 function deptName(st, id) { return st.data.departments.find((d) => d.departmentId === id)?.name || id; }

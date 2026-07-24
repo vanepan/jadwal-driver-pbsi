@@ -48,6 +48,12 @@ html = html.replace(/(href="style\.css\?v=)[^"]+(")/, `$1${version}$2`);
 html = html.replace(/(href="petty-cash\.css\?v=)[^"]+(")/, `$1${version}$2`);
 html = html.replace(/(href="engineering\.css\?v=)[^"]+(")/, `$1${version}$2`);
 html = html.replace(/(href="overtime\.css\?v=)[^"]+(")/, `$1${version}$2`);
+// Gudang's stylesheet was linked with its own ?v= param (index.html) but
+// never added to this stamping list — it sat frozen at 1.28.0 through
+// 1.28.1 while gudang.css kept changing underneath it, so browsers could
+// keep serving the OLD cached stylesheet after a real visual change
+// shipped. Added here, same pattern as the other module stylesheets.
+html = html.replace(/(href="gudang\.css\?v=)[^"]+(")/, `$1${version}$2`);
 
 fs.writeFileSync(INDEX, html);
 
@@ -58,4 +64,5 @@ console.log(`index.html           : app.js?v ${idxBefore} → ${version}`);
 console.log(`index.html           : style.css?v → ${version}`);
 console.log(`index.html           : petty-cash.css?v → ${version}`);
 console.log(`index.html           : engineering.css?v → ${version}`);
+console.log(`index.html           : gudang.css?v → ${version}`);
 console.log('Done. CACHE_NAME is now sarpras-cache-v' + version);

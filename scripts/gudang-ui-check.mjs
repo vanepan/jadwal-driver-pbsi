@@ -63,7 +63,7 @@ console.log('\n[Part B — UI never re-implements analytics/stock/movement compu
   // Every screen that shows a computed figure actually imports it from the
   // engine layer, rather than deriving it locally — spot-checked per screen.
   const mustImportFrom = {
-    'js/gudang/ui/gudang-home.js': ['../analytics/analytics-engine.js', '../audit/movement-history-view.js'],
+    'js/gudang/ui/gudang-home.js': ['../analytics/analytics-engine.js', '../repository/stock-repository.js'],
     'js/gudang/ui/gudang-analytics.js': ['../analytics/analytics-engine.js', '../analytics/quiet-intelligence-engine.js'],
     'js/gudang/ui/gudang-goods-out.js': ['../consumable/goods-out-engine.js'],
     'js/gudang/ui/gudang-goods-in.js': ['../consumable/goods-in-engine.js'],
@@ -110,6 +110,12 @@ console.log('\n[Part D — No unnecessary abstraction]');
     // closes the gap where nothing in Phases 1-9 ever populated the
     // catalog from the UI.
     'gudang-catalog.js',
+    // Phase 10.3 (Item Visual Identity): photo upload/display plumbing
+    // shared by gudang-catalog.js (Add/Edit Item) and gudang-home.js
+    // (catalog card thumbnail) — not a screen itself, so it is imported by
+    // those two files rather than by gudang-center.js directly (checked
+    // separately below, not via the loop every screen file goes through).
+    'gudang-item-image.js',
   ];
   const actual = fs.readdirSync(path.join(ROOT, 'js/gudang/ui')).filter((f) => f.endsWith('.js')).sort();
   check(`js/gudang/ui/ has exactly the ${expectedFiles.length} files this phase needs — one per screen, no speculative extras`, JSON.stringify(actual) === JSON.stringify([...expectedFiles].sort()));
@@ -118,9 +124,13 @@ console.log('\n[Part D — No unnecessary abstraction]');
   // (proving no orphaned/dead screen module was left behind mid-build).
   const centerCode = read('js/gudang/ui/gudang-center.js');
   for (const f of expectedFiles) {
-    if (f === 'gudang-center.js' || f === 'gudang-atoms.js') continue;
+    if (f === 'gudang-center.js' || f === 'gudang-atoms.js' || f === 'gudang-item-image.js') continue;
     check(`gudang-center.js imports from ${f} (no orphaned screen module)`, centerCode.includes(`./${f}`));
   }
+  const homeCode = read('js/gudang/ui/gudang-home.js');
+  const catalogCode = read('js/gudang/ui/gudang-catalog.js');
+  check('gudang-item-image.js is actually imported (by gudang-home.js and/or gudang-catalog.js), not orphaned',
+    homeCode.includes('./gudang-item-image.js') || catalogCode.includes('./gudang-item-image.js'));
 }
 
 /* ── Part E — Wiring integrity (static source checks) ───────────────────── */

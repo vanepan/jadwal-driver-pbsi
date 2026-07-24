@@ -116,7 +116,7 @@ function itemInsight(st) {
     restockSentence(a.restock),
   ].filter(Boolean);
   if (!sentences.length) {
-    return `<div class="gud-mt">${emptyState({ iconName: 'chart', title: 'Belum cukup riwayat', hint: 'Analitik akan muncul setelah item ini memiliki riwayat pergerakan.' })}</div>`;
+    return `<div class="gud-mt">${emptyState({ iconName: 'chart', title: 'Belum ada riwayat untuk dianalisis', hint: 'Catat Goods Out/In pertama untuk item ini — analitiknya akan muncul di sini secara otomatis.' })}</div>`;
   }
   return `<div class="gud-qi-list gud-mt gud-stagger">${sentences.map((s) => `<div class="gud-qi-sentence">${icon('chart', { size: 14, tone: 'accent' })} ${s}</div>`).join('')}</div>`;
 }

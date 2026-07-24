@@ -41,6 +41,7 @@
   color:var(--text); font-family:var(--font-sans);
   background:transparent; /* inherits the platform canvas — never reads as a separate white panel */
   min-height:100%;
+  color-scheme:light; /* native form-control chrome (focus rings, scrollbars) stays light-appropriate */
 }
 :root[data-theme="dark"] .gud-root {
   --canvas:#0a0a0c; --rail:#0d0d10; --surface:#141417; --surface-2:#1a1a1e; --surface-3:#212126;
@@ -55,6 +56,10 @@
   --shadow-sm:0 1px 2px rgba(0,0,0,.4); --shadow-md:0 2px 8px rgba(0,0,0,.4),0 18px 40px -18px rgba(0,0,0,.8);
   --shadow-lg:0 8px 24px rgba(0,0,0,.5),0 34px 64px -22px rgba(0,0,0,.85);
   --scrim:rgba(0,0,0,.62);
+  color-scheme:dark; /* dark-audit: was unset, so every unstyled <button>'s
+    native UA text color stayed light-mode-appropriate even in dark mode —
+    this is the same root cause as the three explicit fixes below, applied
+    as a systemic baseline for any control this file doesn't style directly. */
 }
 
 .gud-root *,.gud-root *::before,.gud-root *::after{box-sizing:border-box;}
@@ -100,6 +105,8 @@
 .gud-btn.-big{height:52px;font-size:14.5px;border-radius:13px;flex:1;min-width:150px;}
 .gud-icon-btn{width:36px;height:36px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text-dim);display:grid;place-items:center;cursor:pointer;flex:none;}
 .gud-icon-btn:hover{color:var(--text);background:var(--surface-2);}
+.gud-icon-btn.-lg{width:56px;height:56px;border-radius:16px;box-shadow:var(--shadow-sm);transition:box-shadow .15s,border-color .15s;}
+.gud-icon-btn.-lg:hover{box-shadow:var(--shadow-md);border-color:var(--border-strong);color:var(--accent);}
 
 /* ── pills / tags ─────────────────────────────────────────────────────── */
 /* .gud-chip was used (movement-history/stock-opname filter chips, and the
@@ -121,10 +128,43 @@
 /* ── inputs ───────────────────────────────────────────────────────────── */
 .gud-field{display:flex;flex-direction:column;gap:6px;} .gud-field>span{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-faint);}
 .gud-field-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.gud-req{color:var(--accent);}
 .gud-input{width:100%;height:40px;border-radius:11px;border:1px solid var(--border);background:var(--surface-2);padding:0 13px;font-family:var(--font-sans);font-size:13.5px;color:var(--text);}
 .gud-input:focus{outline:2px solid var(--accent-line);outline-offset:1px;}
 .gud-textarea{height:68px;padding:9px 13px;resize:vertical;}
 @media (max-width:600px){ .gud-input{font-size:16px;} } /* iOS zoom guard */
+/* de-emphasized secondary control (Add Item's Consumable/Asset toggle,
+   Phase 10.1 Part 3 — "Dicatat sebagai," a rare/technical decision, not the
+   primary flow) — smaller, quieter, visually separated by a hairline. */
+.gud-field-secondary{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:4px;padding-top:14px;border-top:1px solid var(--border-faint);}
+.gud-field-secondary-label{font-size:11px;font-weight:600;color:var(--text-faint);}
+/* Phase 10.2: Consumable/Asset changed from a chip-button pair to a native
+   radio pair (Doc's own mockup: "○ Consumable  ○ Asset") — same interaction
+   the app already uses for Overtime's alias picker (platform.css
+   .v2-alias-radio-row), just under the gud- namespace and the same tokens. */
+.gud-radio-row{display:flex;align-items:center;gap:14px;}
+.gud-radio{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text-dim);cursor:pointer;}
+.gud-radio input[type="radio"]{flex:none;accent-color:var(--accent);}
+/* Edit Item (Phase 10.3): itemType is immutable once set — the SAME radio
+   pair renders disabled rather than becoming a different read-only widget,
+   so the field looks identical to Add Item at a glance, just inert. */
+.gud-radio:has(input:disabled){cursor:default;color:var(--text-faint);}
+
+/* ── Photo field — drag & drop / browse / paste (Phase 10.3, Add/Edit Item) ──
+   One dropzone, two states: empty (dashed invite) and filled (preview +
+   Ganti/Hapus). The real <input type="file"> stays in the DOM (for the
+   native picker) but is visually hidden — the styled zone around it is
+   what the user actually sees and clicks, same "native control, styled
+   wrapper" approach as every <select> already used for Location/Category. */
+.gud-photo-drop{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:96px;padding:16px;border-radius:14px;border:1.5px dashed var(--border-strong);background:var(--surface-2);cursor:pointer;text-align:center;transition:border-color .12s,background .12s;}
+.gud-photo-drop:hover,.gud-photo-drop:focus-visible{border-color:var(--accent-line);background:var(--accent-weak);outline:none;}
+.gud-photo-drop.-filled{padding:10px;cursor:default;}
+.gud-photo-drop-ic{color:var(--text-faint);}
+.gud-photo-drop-t{font-size:12px;color:var(--text-faint);max-width:280px;line-height:1.5;}
+.gud-photo-preview{display:block;width:100%;height:140px;border-radius:10px;object-fit:cover;}
+.gud-photo-drop-actions{display:flex;gap:14px;margin-top:2px;}
+.gud-photo-file-input{position:absolute;inset:0;opacity:0;pointer-events:none;}
+.gud-link-btn.-danger{color:var(--crit);}
 
 /* ── keyboard hint chips (Doc 2 §12: shown in context, not a cheat sheet) ── */
 .gud-kbd{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;border-radius:5px;border:1px solid var(--border-strong);border-bottom-width:2px;background:var(--surface-2);color:var(--text-dim);font-family:var(--font-mono);font-size:10.5px;font-weight:600;}
@@ -154,6 +194,15 @@
 .gud-sec-t-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;} .gud-sec-t-row .gud-sec-t{margin-bottom:0;}
 .gud-kv{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 0;border-top:1px solid var(--border-faint);font-size:13px;}
 .gud-kv:first-of-type{border-top:none;} .gud-kv-k{color:var(--text-faint);} .gud-kv-v{color:var(--text);font-weight:600;}
+.gud-mono{font-family:var(--font-mono);font-weight:600;font-size:12px;}
+
+/* Item Detail's photo (Phase 10.3) — "the central page," Image first.
+   Larger on desktop, compact on mobile (Doc's own Responsive section) via
+   the media query below, not a second component. */
+.gud-detail-img{width:100%;aspect-ratio:16/10;border-radius:14px;overflow:hidden;background:var(--surface-2);display:grid;place-items:center;}
+.gud-detail-img img{width:100%;height:100%;object-fit:cover;}
+.gud-detail-img.-placeholder{color:var(--text-faint);}
+@media (max-width:480px){ .gud-detail-img{aspect-ratio:16/9;} }
 
 .gud-modal-box{width:520px;max-width:94vw;max-height:90vh;display:flex;flex-direction:column;background:var(--surface);border-radius:20px;box-shadow:var(--shadow-lg);border:1px solid var(--border);padding:22px 24px;}
 .gud-modal-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex:0 0 auto;}
@@ -187,38 +236,83 @@
   .gud-stagger>*:nth-child(5){animation-delay:.14s;} .gud-stagger>*:nth-child(n+6){animation-delay:.17s;}
 }
 
-/* ── Home (Doc 2 §04) ─────────────────────────────────────────────────── */
-.gud-home{display:flex;flex-direction:column;gap:28px;padding-top:8px;}
+/* ── Home (Doc 2 §04) — Phase 10.2 Catalog Experience Redesign ──────────
+   UAT: "feels like an administration system... should feel like looking at
+   a warehouse, not software." Search (hero) -> Filter chips -> Catalog grid
+   -> Floating Actions replaces Search + 3 big cards + Low Stock list +
+   Recent Activity list. Every card recipe below is new (nothing like a
+   dense product-catalog grid existed anywhere in the app yet — Doc 4
+   Art.VI's "only what Gudang genuinely needs" applies here the same way it
+   already did for the Spotlight/line-item rows), but every SPACING/RADIUS/
+   SHADOW/COLOR value is the same token set as every other card in this
+   file — not a new design language, just a new arrangement of it. */
+.gud-home{display:flex;flex-direction:column;gap:20px;padding-top:8px;}
 .gud-home-search{display:flex;align-items:center;gap:12px;width:100%;height:56px;padding:0 18px;border-radius:16px;border:1px solid var(--border);background:var(--surface);box-shadow:var(--shadow-sm);cursor:text;transition:border-color .12s,box-shadow .12s;font-family:var(--font-sans);text-align:left;}
 .gud-home-search:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md);}
 .gud-home-search:focus-visible{outline:2px solid var(--accent-line);outline-offset:2px;}
 .gud-home-search-ph{flex:1;color:var(--text-faint);font-size:15px;font-weight:500;}
 .gud-home-search-kbd{flex:none;}
-/* auto-fit: 2 tiles today, a 3rd (Tambah Item, always visible now — it used
-   to only exist inside the empty-state CTA, which vanished as soon as the
-   catalog had one item) still lays out evenly instead of leaving a gap. */
-.gud-home-quick{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;}
-.gud-quick-tile{display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:18px 20px;border-radius:16px;border:1px solid var(--border);background:var(--surface);cursor:pointer;text-align:left;font-family:var(--font-sans);transition:box-shadow .15s,transform .15s,border-color .15s;}
-.gud-quick-tile:hover{box-shadow:var(--shadow-md);transform:translateY(-1px);border-color:var(--border-strong);}
-.gud-quick-ic{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;}
-.gud-quick-ic[data-tone="c-blue"]{background:var(--c-blue-weak);color:var(--c-blue);}
-.gud-quick-ic[data-tone="c-green"]{background:var(--c-green-weak);color:var(--c-green);}
-.gud-quick-ic[data-tone="c-violet"]{background:var(--c-violet-weak);color:var(--c-violet);}
-.gud-quick-t{font-family:var(--font-display);font-weight:800;font-size:15px;}
-.gud-quick-s{font-size:12.5px;color:var(--text-faint);}
-.gud-home-sections{display:grid;grid-template-columns:1fr 1fr;gap:28px;}
-.gud-home-sec{min-width:0;}
-.gud-insight-list{display:flex;flex-direction:column;}
-.gud-insight-row{display:flex;align-items:center;gap:10px;padding:11px 4px;border-top:1px solid var(--border-faint);cursor:pointer;}
-.gud-insight-row:first-child{border-top:none;}
-.gud-insight-row:hover{background:var(--hover);}
-.gud-insight-dot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--text-faint);}
-.gud-insight-dot[data-tone="warn"]{background:var(--c-amber);} .gud-insight-dot[data-tone="ok"]{background:var(--c-green);} .gud-insight-dot[data-tone="info"]{background:var(--c-blue);}
-.gud-insight-name{flex:1;min-width:0;font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.gud-insight-hint{font-size:11.5px;color:var(--accent);font-weight:600;white-space:nowrap;}
+
+/* Location/Category — a native <select> styled to sit in the same chip
+   row as All/Consumable/Asset/Low Stock without becoming an unbounded
+   chip-per-value list (Kategori/Lokasi are freeform, open-ended — Phase
+   10.1) or an "ERP panel." Native, not a custom dropdown — same reasoning
+   as gudang-catalog.js's freeformField() datalist choice. */
+.gud-chip-select{height:32px;padding:0 12px;border-radius:999px;border:1px solid var(--border);background:var(--surface);color:var(--text-dim);font-family:var(--font-sans);font-weight:600;font-size:12.5px;cursor:pointer;}
+
+/* Catalog grid — dense, product-first (Doc 2 §04 mental model: Tokopedia/
+   Apple Store BROWSING, never their branding/visuals — see Part "Tokopedia
+   is only a mental model"). auto-fill lets it resolve to 3-6 columns on
+   desktop, 2-3 on tablet, 1 on narrow mobile, purely from available width —
+   no separate breakpoint rules needed for the column count itself. */
+.gud-catalog-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;}
+.gud-catalog-card{position:relative;display:flex;flex-direction:column;gap:3px;padding:12px 13px;border-radius:13px;border:1px solid var(--border-faint);background:var(--surface);cursor:pointer;transition:border-color .12s,box-shadow .12s;}
+.gud-catalog-card:hover{border-color:var(--border-strong);box-shadow:var(--shadow-sm);}
+/* Product image (Phase 10.3) — bleeds to the card's own edges via negative
+   margins matching .gud-catalog-card's padding (12px/13px), so it reads as
+   one continuous photo tile rather than an inset thumbnail. aspect-ratio
+   (not a fixed px height) approximates the spec's "~40-50% of card height"
+   across the grid's responsive column widths — a card's total height isn't
+   fixed (name can wrap 1 or 2 lines), so a ratio band is the honest way to
+   hit "approximately," not a pixel value that would drift as content does. */
+.gud-catalog-card-img{margin:-12px -13px 6px;aspect-ratio:4/3;border-radius:13px 13px 0 0;overflow:hidden;background:var(--surface-2);display:grid;place-items:center;}
+.gud-catalog-card-img img{width:100%;height:100%;object-fit:cover;}
+.gud-catalog-card-img.-placeholder{color:var(--text-faint);}
+.gud-catalog-card-name{font-size:13px;font-weight:700;line-height:1.3;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
+.gud-catalog-card-meta{font-size:11px;color:var(--text-faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.gud-catalog-card-stock{font-family:var(--font-mono);font-size:12.5px;font-weight:700;color:var(--text-dim);margin-top:4px;}
+.gud-catalog-card-qi{font-size:11px;color:var(--accent);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+/* Quick actions: hover-revealed on desktop (Doc 2 §13's existing "chevron
+   for secondary, primary stays one tap" idiom, applied here as "the card
+   itself IS the primary tap — Open Detail"); always visible (no :hover) on
+   touch, since there is no hover to reveal them — Part "Card Interaction".
+   NOT position:absolute over the card corner: this card has no thumbnail,
+   so an overlay sits directly on top of the (up to 2-line) name text —
+   confirmed visually (a hovered/touched card read as "Glue Stick K[icons]",
+   the name partly hidden behind the reveal). Expanding a real, reserved row
+   in normal flow avoids covering anything, at the cost of a few px of
+   height change on reveal — an acceptable trade for never hiding the name
+   staff are trying to read. */
+.gud-catalog-card-quick{display:flex;gap:3px;justify-content:flex-end;max-height:0;opacity:0;margin-top:0;overflow:hidden;transition:max-height .15s,opacity .12s,margin-top .15s;}
+.gud-catalog-card:hover .gud-catalog-card-quick{max-height:26px;opacity:1;margin-top:6px;}
+.gud-catalog-quick-btn{width:22px;height:22px;border-radius:7px;background:var(--surface-2);border:1px solid var(--border);color:var(--text-faint);display:grid;place-items:center;}
+.gud-catalog-quick-btn:hover{color:var(--accent);border-color:var(--accent-line);background:var(--accent-weak);}
+.gud-catalog-more{display:flex;justify-content:center;margin-top:14px;}
+
+/* Floating Actions (Part "Home Quick Actions" — Goods Out/In/Add Item
+   demoted from primary equal-weight tiles to small, secondary, always-
+   reachable buttons). Fixed to the viewport, not .gud-home's own flow, so
+   it never competes with or scrolls away from the catalog beneath it. */
+.gud-fab-row{position:fixed;right:24px;bottom:24px;display:flex;flex-direction:column;align-items:center;gap:10px;z-index:60;}
+.gud-fab{width:46px;height:46px;border-radius:50%;border:1px solid var(--border);background:var(--surface);color:var(--text-dim);box-shadow:var(--shadow-lg);display:grid;place-items:center;cursor:pointer;transition:transform .15s,box-shadow .15s,border-color .15s;}
+.gud-fab:hover{transform:translateY(-2px);border-color:var(--border-strong);color:var(--text);}
+.gud-fab.-primary{width:54px;height:54px;background:linear-gradient(180deg,var(--accent-2),var(--accent));color:#fff;border:none;}
+.gud-fab.-primary:hover{filter:brightness(1.05);}
+
 @media (max-width:760px){
-  .gud-home-sections,.gud-home-quick{grid-template-columns:1fr;}
   .gud-home-search-kbd{display:none;} /* Doc 2 §13: no keyboard hints on mobile — same rule already applied to .gud-spotlight-foot */
+  .gud-catalog-grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));}
+  .gud-catalog-card-quick{max-height:26px;opacity:1;margin-top:6px;} /* no hover on touch — permanently expanded, Part "Mobile" */
 }
 
 /* ── Universal Search — anchored results dropdown (Doc 2 §05/§12, Doc 3 Ch.08)
@@ -234,6 +328,8 @@
 .gud-spotlight-scrim{background:transparent;} /* invisible click-outside-to-close catcher only, no dimming */
 .gud-spotlight{position:fixed;max-width:92vw;max-height:50vh;display:flex;flex-direction:column;background:var(--surface);border-radius:14px;box-shadow:var(--shadow-lg);border:1px solid var(--border);overflow:hidden;}
 .gud-spotlight-hint{padding:20px;text-align:center;color:var(--text-faint);font-size:13px;display:flex;align-items:center;justify-content:center;gap:8px;}
+.gud-spotlight-hint.-column{flex-direction:column;gap:10px;}
+.gud-spotlight-hint.-column>div{display:flex;align-items:center;gap:8px;}
 .gud-spotlight-results{overflow-y:auto;padding:8px;flex:1;min-height:0;}
 .gud-spotlight-row{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:11px;cursor:pointer;}
 .gud-spotlight-row:hover,.gud-spotlight-row.-focused{background:var(--hover);}
@@ -266,7 +362,10 @@
 .gud-picker-row{display:block;width:100%;text-align:left;padding:11px 14px;background:transparent;border:none;border-bottom:1px solid var(--border-faint);cursor:pointer;font-family:var(--font-sans);font-size:13.5px;color:var(--text);}
 .gud-picker-row:last-child{border-bottom:none;} .gud-picker-row:hover{background:var(--surface);}
 .gud-reason-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;}
-.gud-reason-tile{padding:16px;border-radius:12px;border:1px solid var(--border);background:var(--surface-2);font-family:var(--font-sans);font-weight:700;font-size:13.5px;cursor:pointer;text-align:center;transition:border-color .12s,background .12s;}
+/* dark-audit: same missing-color bug as .gud-quick-tile above — this is the
+   exact one reported ("tombol Purchase/Return/dll. tidak kelihatan di dark
+   mode"). Text is a direct child of the button, so the fix goes here. */
+.gud-reason-tile{padding:16px;border-radius:12px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-family:var(--font-sans);font-weight:700;font-size:13.5px;cursor:pointer;text-align:center;transition:border-color .12s,background .12s;}
 .gud-reason-tile:hover{border-color:var(--accent-line);background:var(--accent-weak);color:var(--accent);}
 .gud-flow-selected{display:flex;align-items:center;justify-content:space-between;gap:10px;}
 .gud-flow-selected-name{font-size:15px;font-weight:800;font-family:var(--font-display);}
@@ -283,12 +382,17 @@
 .gud-flow-foot{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;}
 .gud-flow-success{display:flex;flex-direction:column;align-items:center;text-align:center;padding:48px 24px;gap:4px;}
 
-/* ── Movement History feed (Doc 2 §09) ──────────────────────────────────── */
-.gud-hist-list{display:flex;flex-direction:column;}
-.gud-hist-row{display:flex;align-items:center;gap:12px;padding:12px 4px;border-top:1px solid var(--border-faint);}
-.gud-hist-row:first-child{border-top:none;}
-.gud-hist-row[data-act]{cursor:pointer;margin:0 -8px;padding-left:8px;padding-right:8px;border-radius:9px;}
-.gud-hist-row[data-act]:hover{background:var(--hover);}
+/* ── Movement History timeline (Doc 2 §09) — Phase 10.2 ─────────────────
+   Was a flat border-top list (the "table feeling" UAT flagged); each entry
+   is now its own bordered card grouped under a day label (GitHub Activity /
+   Apple Wallet mental model) — same fields, same data, denser visual
+   separation instead of hairlines. */
+.gud-timeline-group{margin-top:22px;} .gud-timeline-group:first-child{margin-top:0;}
+.gud-timeline-label{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-ghost);font-weight:700;margin-bottom:8px;}
+.gud-timeline-rows{display:flex;flex-direction:column;gap:6px;}
+.gud-hist-row{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:12px;border:1px solid var(--border-faint);background:var(--surface);}
+.gud-hist-row[data-act]{cursor:pointer;transition:border-color .12s,box-shadow .12s;}
+.gud-hist-row[data-act]:hover{border-color:var(--border-strong);box-shadow:var(--shadow-sm);}
 .gud-hist-ic{width:30px;height:30px;border-radius:9px;flex:none;display:grid;place-items:center;}
 .gud-hist-ic[data-tone="ok"]{background:var(--c-green-weak);color:var(--c-green);}
 .gud-hist-ic[data-tone="crit"]{background:var(--crit-weak);color:var(--crit);}
@@ -305,20 +409,38 @@
    single flat row list, replaced with a grouped grid of cards. Not
    .gud-stagger'd on purpose: searching re-renders this grid on every
    keystroke, and Phase 10.1 already had to fix an identical full-screen
-   flicker caused by an animation replaying on every render(). */
-.gud-cat-group{margin-top:24px;} .gud-cat-group:first-child{margin-top:0;}
-.gud-cat-group-t{display:flex;align-items:center;gap:8px;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-ghost);font-weight:700;margin-bottom:10px;}
+   flicker caused by an animation replaying on every render().
+
+   Phase 10.2: "staff may count hundreds of items — scrolling efficiency
+   matters more than decoration" — tightened padding/gap/min-width so more
+   cards fit per screen. System Quantity itself stays fetched only on open
+   (getExpectedQuantity, one read per item the user actually opens) rather
+   than prefetched for every visible card — prefetching Expected for
+   potentially hundreds of items at once is exactly the unbounded N+1 this
+   session has repeatedly kept bounded elsewhere (see gudang-home.js's own
+   PAGE_SIZE-capped catalog fetch); the density fix here is visual only. */
+.gud-cat-group{margin-top:20px;} .gud-cat-group:first-child{margin-top:0;}
+.gud-cat-group-t{display:flex;align-items:center;gap:8px;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-ghost);font-weight:700;margin-bottom:8px;}
 .gud-cat-group-count{font-family:var(--font-mono);color:var(--text-faint);font-weight:600;}
-.gud-cat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;}
-.gud-cat-card{display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:14px;border:1px solid var(--border-faint);background:var(--surface);text-align:left;font-family:var(--font-sans);cursor:pointer;transition:border-color .12s,box-shadow .12s;}
+.gud-cat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:8px;}
+/* dark-audit: the not-yet-counted state renders this as a <button> (the
+   counting/done states are <div>s, unaffected) — same missing-color bug,
+   caught here before any UAT report since this card shipped last release. */
+.gud-cat-card{display:flex;flex-direction:column;gap:6px;padding:10px 11px;border-radius:12px;border:1px solid var(--border-faint);background:var(--surface);color:var(--text);text-align:left;font-family:var(--font-sans);cursor:pointer;transition:border-color .12s,box-shadow .12s;}
 .gud-cat-card:hover{border-color:var(--border-strong);box-shadow:var(--shadow-sm);}
 .gud-cat-card.-counting{border-color:var(--accent-line);box-shadow:var(--shadow-md);cursor:default;}
 .gud-cat-card.-done{border-color:var(--c-green);background:var(--c-green-weak);cursor:default;}
-.gud-cat-card-top{display:flex;align-items:flex-start;gap:8px;}
-.gud-cat-card-ic{width:26px;height:26px;border-radius:8px;background:var(--surface-2);color:var(--text-faint);display:grid;place-items:center;flex:none;}
+.gud-cat-card-top{display:flex;align-items:flex-start;gap:7px;}
+.gud-cat-card-ic{width:22px;height:22px;border-radius:7px;background:var(--surface-2);color:var(--text-faint);display:grid;place-items:center;flex:none;}
 .gud-cat-card-ic[data-tone="c-green"]{background:var(--c-green-weak);color:var(--c-green);}
-.gud-cat-card-name{flex:1;min-width:0;font-size:13.5px;font-weight:700;line-height:1.3;}
-.gud-cat-card-expected{font-size:11.5px;color:var(--text-faint);}
+.gud-cat-card-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
+/* 2-line clamp, not single-line nowrap: this screen's whole job is telling
+   similarly-named items apart while counting (e.g. two ink colors of the
+   same printer cartridge) — a single truncated line risks exactly that
+   misidentification, so density here stops short of cutting the name. */
+.gud-cat-card-name{font-size:12.5px;font-weight:700;line-height:1.3;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
+.gud-cat-card-loc{display:flex;align-items:center;gap:4px;font-size:10.5px;color:var(--text-faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.gud-cat-card-expected{font-size:11px;color:var(--text-faint);}
 .gud-cat-card-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:auto;}
 .gud-opname-input{max-width:100%;flex:1;min-width:0;}
 .gud-opname-diff{font-family:var(--font-mono);font-weight:700;font-size:13px;flex:none;}

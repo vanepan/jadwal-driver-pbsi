@@ -43,7 +43,13 @@ export function renderSearchOverlay(st, _c, anchorRect) {
     ? `<div class="gud-spotlight-hint">${icon('search', { size: 16, tone: 'text-faint' })} Ketik untuk mencari item, lokasi, atau bidang…</div>`
     : (s.results.length
       ? `<div class="gud-spotlight-results" role="listbox">${rows}</div>`
-      : `<div class="gud-spotlight-hint">Tidak ada hasil untuk "${esc(s.query)}".</div>`);
+      // Phase 10.1 Part 9: "Search resolves into action" (Doc 1) applied to
+      // Add Item's own discovery — searching for something that doesn't
+      // exist yet IS the moment to offer creating it, not a dead end.
+      : `<div class="gud-spotlight-hint -column">
+          <div>${icon('search', { size: 16, tone: 'text-faint' })} Tidak ada hasil untuk "${esc(s.query)}".</div>
+          <button type="button" class="gud-link-btn" data-act="gud-cat-add-item-search" data-val="${esc(s.query)}">${icon('plus', { size: 12 })} Tambah "${esc(s.query)}" sebagai item baru</button>
+        </div>`);
 
   const style = anchorRect
     ? (() => {

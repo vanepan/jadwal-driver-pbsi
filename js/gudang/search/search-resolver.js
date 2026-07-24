@@ -77,9 +77,12 @@ function matches(text, query) {
 }
 
 /**
- * Pure predicate: does this Item match `query`, by name OR by any alias
- * (Doc 1 Art.III — see the header note above). Exported so the rule is
- * unit-testable without a live Firebase connection.
+ * Pure predicate: does this Item match `query`, by name, alias, category, or
+ * its freeform metadata descriptors (Doc 1 Art.III — see the header note
+ * above; Phase 10.1 Part 11 — "Nama/Alias/Ukuran/Jenis/Kategori/Lokasi
+ * participate in search... Item remains the identity owner," so this stays
+ * the one predicate, just reading two more already-owned fields). Exported
+ * so the rule is unit-testable without a live Firebase connection.
  * @param {import('../contracts/item-contract.js').Item} item
  * @param {string} query
  * @returns {boolean}
@@ -88,6 +91,9 @@ export function itemMatchesQuery(item, query) {
   const q = String(query || '').trim().toLowerCase();
   if (!q) return false;
   if (matches(item.name, q)) return true;
+  if (matches(item.category, q)) return true;
+  if (matches(item.metadata?.variant, q)) return true;
+  if (matches(item.metadata?.jenis, q)) return true;
   return (item.aliases || []).some((alias) => matches(alias, q));
 }
 

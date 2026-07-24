@@ -21,9 +21,10 @@ import { fileURLToPath } from 'node:url';
 
 import { ITEM_TYPE, ITEM_SCHEMA, makeItem, updateItemModel, isItem } from '../js/gudang/contracts/item-contract.js';
 import { findIdentityCollision, findItemByNormalizedAlias } from '../js/gudang/contracts/item-identity-rules.js';
+import { itemMatchesQuery } from '../js/gudang/search/search-resolver.js';
 import { normalizeText, tokenize } from '../js/gudang/contracts/text-normalization.js';
 import {
-  CATEGORY_SEED, getCategory, isValidCategory, categoriesForItemType, categoryLabel,
+  CATEGORY_SEED, getCategory, categoriesForItemType, categoryLabel,
 } from '../js/gudang/config/gudang-categories.js';
 import { GUDANG_DOMAINS, getDomain } from '../js/gudang/config/gudang-domain-registry.js';
 import { buildItemKeywordIndex, lookupItemIdsByToken } from '../js/gudang/search/item-keyword-index.js';
@@ -71,7 +72,11 @@ console.log('\n[Part 1 — Identity ownership: Item is the only identity owner]'
   }
   check(`NO other Gudang contract independently defines an Item identity field (aliases/category/normalizedName/normalizedAliases/searchTokens)${offenders.length ? ` — FOUND: ${offenders.join(', ')}` : ''}`, offenders.length === 0);
 
-  throws('makeItem() throws without category (identity is never partial)', () => makeItem({ itemId: 'x', name: 'x', itemType: ITEM_TYPE.CONSUMABLE }));
+  // Phase 10.1 (Experience Review, Part 3): category became optional
+  // freeform text — makeItem() now SUCCEEDS without one (was a throws()
+  // test through Phase 2; inverted here to stay factually accurate).
+  const noCategoryItem = makeItem({ itemId: 'x', name: 'x', itemType: ITEM_TYPE.CONSUMABLE });
+  check('makeItem() succeeds without category — it is optional now (Phase 10.1)', noCategoryItem.category === null);
 }
 
 /* ── Part 2 — Repository ownership ──────────────────────────────────── */
@@ -104,23 +109,23 @@ console.log('\n[Part 3 — Alias resolution: one Item, many aliases, all resolvi
   check('aliases never become identities: the Item\'s own itemId is unrelated to any alias text', tisu.itemId === 'i-tisu' && !tisu.aliases.includes(tisu.itemId));
 }
 
-/* ── Part 4 — Category validation ───────────────────────────────────── */
-console.log('\n[Part 4 — Categories: lightweight, flat, scoped to ItemType]');
+/* ── Part 4 — Category: freeform text, seed kept as suggestions only ─── */
+console.log('\n[Part 4 — Categories: freeform (Phase 10.1) — seed is suggestions, not enforcement]');
 {
   check('CATEGORY_SEED has exactly 14 categories (6 Consumable + 8 Asset)', CATEGORY_SEED.length === 14);
   check('every category is a flat leaf — no parent/child field exists anywhere', CATEGORY_SEED.every((c) => !('parentId' in c) && !('children' in c)));
-  check('isValidCategory("atk", consumable) is true', isValidCategory('atk', ITEM_TYPE.CONSUMABLE));
-  check('isValidCategory("atk", asset) is false — a category never crosses ItemType', !isValidCategory('atk', ITEM_TYPE.ASSET));
-  check('isValidCategory("vehicle", asset) is true', isValidCategory('vehicle', ITEM_TYPE.ASSET));
-  check('isValidCategory("nonexistent", consumable) is false', !isValidCategory('nonexistent', ITEM_TYPE.CONSUMABLE));
   check('categoriesForItemType(consumable) has exactly 6 entries', categoriesForItemType(ITEM_TYPE.CONSUMABLE).length === 6);
   check('categoriesForItemType(asset) has exactly 8 entries', categoriesForItemType(ITEM_TYPE.ASSET).length === 8);
   check('getCategory("gym_equipment") resolves the Asset category, distinct from Consumable\'s "gym"', getCategory('gym_equipment')?.itemType === ITEM_TYPE.ASSET && getCategory('gym')?.itemType === ITEM_TYPE.CONSUMABLE);
   check('categoryLabel("hvac") returns "HVAC"', categoryLabel('hvac') === 'HVAC');
-  check('categoryLabel(unknown id) falls back to the id itself, never throws', categoryLabel('totally-unknown') === 'totally-unknown');
+  check('categoryLabel(a freeform value outside the seed) falls back to the raw text, never throws — this is now the COMMON case, not an edge case', categoryLabel('Perkakas Kebun') === 'Perkakas Kebun');
 
-  throws('makeItem() throws when category does not match itemType (Asset category on a Consumable)', () => makeItem({ itemId: 'x', name: 'x', itemType: ITEM_TYPE.CONSUMABLE, category: 'vehicle' }));
-  throws('makeItem() throws on a category that does not exist at all', () => makeItem({ itemId: 'x', name: 'x', itemType: ITEM_TYPE.CONSUMABLE, category: 'nope' }));
+  // Phase 10.1: category is freeform text, not validated against the seed,
+  // and never scoped to itemType — an Asset-seed label on a Consumable, or
+  // a value that isn't in the seed at all, are both now accepted as-is.
+  check('makeItem() accepts a category from the seed regardless of itemType match (no longer enforced)', makeItem({ itemId: 'x', name: 'x', itemType: ITEM_TYPE.CONSUMABLE, category: 'vehicle' }).category === 'vehicle');
+  check('makeItem() accepts a category that is not in the seed at all', makeItem({ itemId: 'x', name: 'x', itemType: ITEM_TYPE.CONSUMABLE, category: 'Perkakas Kebun' }).category === 'Perkakas Kebun');
+  throws('makeItem() still throws on a blank/whitespace-only category (not "no category" — an actually-empty string is refused)', () => makeItem({ itemId: 'x', name: 'x', itemType: ITEM_TYPE.CONSUMABLE, category: '   ' }));
 }
 
 /* ── Part 5 — Normalization ─────────────────────────────────────────── */
@@ -139,19 +144,29 @@ console.log('\n[Part 5 — Normalization: deterministic, no ranking, no fuzzy ma
 }
 
 /* ── Part 6 — Duplicate prevention ──────────────────────────────────── */
-console.log('\n[Part 6 — Duplicate prevention: identity resolves to exactly one Item]');
+console.log('\n[Part 6 — Duplicate prevention: exact name still unique; ALIASES are not (Phase 10.1)]');
 {
   const a = makeItem({ itemId: 'a', name: 'Kertas A4', itemType: ITEM_TYPE.CONSUMABLE, category: 'atk', aliases: ['Paper A4'] });
   const bSameName = makeItem({ itemId: 'b', name: 'Kertas A4', itemType: ITEM_TYPE.CONSUMABLE, category: 'atk' });
-  const cAliasCollidesWithAName = makeItem({ itemId: 'c', name: 'HVS', itemType: ITEM_TYPE.CONSUMABLE, category: 'atk', aliases: ['Kertas A4'] });
-  const dAliasCollidesWithAAlias = makeItem({ itemId: 'd', name: 'Kertas Print', itemType: ITEM_TYPE.CONSUMABLE, category: 'atk', aliases: ['Paper A4'] });
+  const cAliasMatchesAName = makeItem({ itemId: 'c', name: 'HVS', itemType: ITEM_TYPE.CONSUMABLE, category: 'atk', aliases: ['Kertas A4'] });
+  const dAliasSharedWithAAlias = makeItem({ itemId: 'd', name: 'Kertas Print', itemType: ITEM_TYPE.CONSUMABLE, category: 'atk', aliases: ['Paper A4'] });
   const eDistinct = makeItem({ itemId: 'e', name: 'Pulpen', itemType: ITEM_TYPE.CONSUMABLE, category: 'atk' });
+  // The brief's own example: three genuinely different glue products all
+  // sharing the alias "lem" — searching "lem" must resolve all three.
+  const superGlue25 = makeItem({ itemId: 'glue-25', name: 'Super Glue 25gr', itemType: ITEM_TYPE.CONSUMABLE, category: 'atk', aliases: ['lem'] });
+  const superGlue5 = makeItem({ itemId: 'glue-5', name: 'Super Glue 5gr', itemType: ITEM_TYPE.CONSUMABLE, category: 'atk', aliases: ['lem'] });
+  const glueStick = makeItem({ itemId: 'glue-stick', name: 'Glue Stick', itemType: ITEM_TYPE.CONSUMABLE, category: 'atk', aliases: ['lem'] });
 
-  check('findIdentityCollision catches a duplicate normalizedName', findIdentityCollision(bSameName, [a]) === 'a');
-  check('findIdentityCollision catches an alias colliding with another Item\'s name', findIdentityCollision(cAliasCollidesWithAName, [a]) === 'a');
-  check('findIdentityCollision catches an alias colliding with another Item\'s alias', findIdentityCollision(dAliasCollidesWithAAlias, [a]) === 'a');
+  check('findIdentityCollision still catches a duplicate normalizedName (exact name stays unique)', findIdentityCollision(bSameName, [a]) === 'a');
+  check('findIdentityCollision no longer blocks an alias matching another Item\'s name', findIdentityCollision(cAliasMatchesAName, [a]) === null);
+  check('findIdentityCollision no longer blocks two Items sharing the same alias', findIdentityCollision(dAliasSharedWithAAlias, [a]) === null);
   check('findIdentityCollision returns null for genuinely distinct Items', findIdentityCollision(eDistinct, [a]) === null);
   check('findIdentityCollision excludes the candidate itself (so re-checking an unchanged Item during update never self-collides)', findIdentityCollision(a, [a]) === null);
+  check('three distinct Items can all alias to "lem" — none collide with each other', findIdentityCollision(superGlue5, [superGlue25]) === null && findIdentityCollision(glueStick, [superGlue25, superGlue5]) === null);
+
+  const catalogWithSharedAlias = [superGlue25, superGlue5, glueStick];
+  const lemMatches = catalogWithSharedAlias.filter((item) => item.aliases.some((al) => normalizeText(al) === 'lem'));
+  check('searching "lem" resolves to all three distinct glue Items, not just one (the brief\'s own example)', lemMatches.length === 3);
 }
 
 /* ── Part 7 — Archive behavior ──────────────────────────────────────── */
@@ -210,6 +225,20 @@ console.log('\n[Part 10 — Search preparation: prepared, deterministic, NOT wir
 
   const searchResolverCode = read('js/gudang/search/search-resolver.js');
   check('search-resolver.js (Phase 1 Foundation) does NOT import item-keyword-index.js — prepared, not wired in (Phase 2 Mission: "Do NOT modify Foundation")', !searchResolverCode.includes('item-keyword-index'));
+
+  // Phase 10.1 Part 11 — "Nama/Alias/Ukuran/Jenis/Kategori/Lokasi participate
+  // in search... without introducing duplicated ownership. Item remains the
+  // identity owner." Ukuran/Jenis live in metadata (no contract change);
+  // Kategori is the (now freeform) category field — itemMatchesQuery reads
+  // all of them directly off Item, no second index, no new domain.
+  const glue = makeItem({
+    itemId: 'glue-search', name: 'Super Glue', itemType: ITEM_TYPE.CONSUMABLE,
+    category: 'Perekat', metadata: { variant: '25 gr', jenis: 'Lem Tembak' },
+  });
+  check('itemMatchesQuery matches against category (Kategori participates in search)', itemMatchesQuery(glue, 'perekat'));
+  check('itemMatchesQuery matches against metadata.variant (Ukuran participates in search)', itemMatchesQuery(glue, '25 gr'));
+  check('itemMatchesQuery matches against metadata.jenis (Jenis participates in search)', itemMatchesQuery(glue, 'tembak'));
+  check('itemMatchesQuery does not throw when category/metadata fields are absent', itemMatchesQuery(makeSampleItem({ category: null, metadata: {} }), 'tisu') === true);
 }
 
 /* ── Part 11 — Architecture integrity ───────────────────────────────── */

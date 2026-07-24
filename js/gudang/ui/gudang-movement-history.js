@@ -8,6 +8,13 @@
    client-side over an already-fetched list (Doc 4/Experience brief:
    "no duplicated queries" — one fetch per screen-visit, not one per
    keystroke).
+
+   Phase 10.2: replaced the flat border-top "table feeling" list with a
+   day-grouped timeline (GitHub Activity / Apple Wallet history mental
+   model) — each row is now a standalone card, grouped under "Hari Ini" /
+   "Kemarin" / a plain date label. Grouping is pure display arithmetic over
+   `m.when` (a field formatMovementEntry already returns) — no new data,
+   no re-fetch, same filteredRows() as before feeding a different layout.
    ============================================================ */
 
 'use strict';
@@ -45,9 +52,12 @@ export function renderMovementHistory(st, c, requestRender) {
       </div>
     </div>
 
-    ${st.historyLoading && !st.historyData ? `<div class="gud-muted gud-mt">Memuat…</div>` : (rows.length ? feedList(rows) : `<div class="gud-mt">${emptyState({
-      iconName: 'history', title: 'Belum ada pergerakan',
-      hint: (st.historyData || []).length ? 'Tidak ada yang cocok dengan pencarian/filter saat ini.' : 'Riwayat akan muncul di sini setelah Goods In/Out atau Stock Opname pertama.',
+    ${st.historyLoading && !st.historyData ? `<div class="gud-muted gud-mt">Memuat…</div>` : (rows.length ? feedList(rows) : `<div class="gud-mt">${emptyState((st.historyData || []).length ? {
+      iconName: 'history', title: 'Tidak ada yang cocok',
+      hint: 'Coba kata kunci atau filter lain.',
+    } : {
+      iconName: 'history', title: 'Belum ada aktivitas',
+      hint: 'Aktivitas pertama akan muncul di sini setelah Goods In/Out atau Stock Opname pertama.',
     })}</div>`)}
   </div>`;
 }
@@ -66,23 +76,51 @@ function matchesType(m, type) {
   return m.what === MOVEMENT_TYPE_LABEL[type];
 }
 
+/** Groups rows into "Hari Ini" / "Kemarin" / a plain date label, newest
+ *  group first — reverse-chronological is already guaranteed by
+ *  getMovementHistory(), so grouping only has to be stable, not re-sort. */
 function feedList(rows) {
-  return `<div class="gud-hist-list gud-mt gud-stagger">${rows.map((m) => `
-    <div class="gud-hist-row" ${m.itemId ? `data-act="gud-open-item" data-id="${esc(m.itemId)}"` : ''}>
+  const groups = [];
+  let current = null;
+  for (const m of rows) {
+    const label = dayLabel(m.when);
+    if (!current || current.label !== label) { current = { label, rows: [] }; groups.push(current); }
+    current.rows.push(m);
+  }
+  return `<div class="gud-timeline gud-mt">${groups.map((g) => `
+    <section class="gud-timeline-group">
+      <div class="gud-timeline-label">${esc(g.label)}</div>
+      <div class="gud-timeline-rows gud-stagger">${g.rows.map(historyCard).join('')}</div>
+    </section>`).join('')}</div>`;
+}
+
+function historyCard(m) {
+  return `<div class="gud-hist-row" ${m.itemId ? `data-act="gud-open-item" data-id="${esc(m.itemId)}"` : ''}>
       <span class="gud-hist-ic" data-tone="${m.quantityDelta > 0 ? 'ok' : 'crit'}">${icon(m.quantityDelta > 0 ? 'arrow-in' : 'arrow-out', { size: 15 })}</span>
       <span class="gud-hist-main">
         <span class="gud-hist-title">${esc(m.what)} <span class="gud-hist-qty" data-sign="${m.quantityDelta > 0 ? 'plus' : 'minus'}">${m.quantityDelta > 0 ? '+' : ''}${m.quantityDelta}</span></span>
         <span class="gud-hist-sub">${esc(m.why)} · ${esc(m.who)}</span>
       </span>
-      <span class="gud-hist-time">${esc(fmtWhenShort(m.when))}</span>
-    </div>`).join('')}</div>`;
+      <span class="gud-hist-time">${esc(fmtTimeOnly(m.when))}</span>
+    </div>`;
 }
 
-function fmtWhenShort(iso) {
+function dayLabel(iso) {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return 'Tidak diketahui';
+  const d = new Date(t);
+  const today = new Date();
+  const startOf = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diffDays = Math.round((startOf(today) - startOf(d)) / 86400000);
+  if (diffDays === 0) return 'Hari Ini';
+  if (diffDays === 1) return 'Kemarin';
+  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function fmtTimeOnly(iso) {
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return '—';
-  const d = new Date(t);
-  return d.toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return new Date(t).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 }
 
 export const historyHandlers = {

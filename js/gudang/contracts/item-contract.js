@@ -28,6 +28,18 @@
    normalizedName/normalizedAliases/searchTokens so they never drift from
    the fields they are derived from.
 
+   Phase 10.1 (Experience Review) relaxed two rules at the user's explicit
+   direction, given directly against this file (not a UI-only change, but a
+   deliberate, confirmed exception — see that phase's report):
+     • `category` is now optional freeform text, not a required id validated
+       against config/gudang-categories.js's fixed seed list. The seed stays,
+       now feeding autocomplete SUGGESTIONS rather than enforcement — "no
+       heavyweight master-data management" for Kategori/Jenis/Lokasi.
+     • Aliases are no longer required to be unique across Items (see
+       item-identity-rules.js#findIdentityCollision) — "Super Glue 25gr",
+       "Super Glue 5gr", and "Glue Stick" may all alias to "lem"; searching
+       "lem" is meant to resolve all three, not exactly one.
+
    SEARCH PREPARATION (Phase 2 Part 7): normalizedName/normalizedAliases/
    searchTokens are computed here, at construction/update time, using
    contracts/text-normalization.js — a neutral, Item-owned utility, not a
@@ -46,7 +58,6 @@
 
 'use strict';
 
-import { isValidCategory } from '../config/gudang-categories.js';
 import { normalizeText, tokenize } from './text-normalization.js';
 
 export const ITEM_SCHEMA = 'gudang.item@2';
@@ -74,7 +85,7 @@ function computeSearchFields(name, aliases) {
  * @property {string} name                    - display name
  * @property {'consumable'|'asset'} itemType   - immutable; never both, never neither (Doc 1 Art.V)
  * @property {string[]} aliases               - alternate names Search later resolves; never identities themselves
- * @property {string} category                - one of config/gudang-categories.js's ids, scoped to itemType
+ * @property {?string} category               - freeform, optional (Phase 10.1); no longer validated against a fixed list
  * @property {?string} defaultLocationId       - nullable; where it normally lives
  * @property {boolean} active                 - false once archived; identity is never deleted, only deactivated
  * @property {Object} metadata                 - open bag for future harmless fields (barcode, qrCode, averageCost,
@@ -93,7 +104,7 @@ function computeSearchFields(name, aliases) {
  * @returns {Item}
  */
 export function makeItem({
-  itemId, name, itemType, aliases = [], category,
+  itemId, name, itemType, aliases = [], category = null,
   defaultLocationId = null, active = true, metadata = {},
 }) {
   if (typeof itemId !== 'string' || !itemId) throw new Error('makeItem: itemId is required.');
@@ -104,8 +115,8 @@ export function makeItem({
   if (!Array.isArray(aliases) || !aliases.every((a) => typeof a === 'string')) {
     throw new Error('makeItem: aliases must be an array of strings.');
   }
-  if (!isValidCategory(category, itemType)) {
-    throw new Error(`makeItem: "${category}" is not a valid category for itemType "${itemType}".`);
+  if (category != null && (typeof category !== 'string' || !category.trim())) {
+    throw new Error('makeItem: category, when provided, must be a non-empty string.');
   }
   if (typeof metadata !== 'object' || metadata === null || Array.isArray(metadata)) {
     throw new Error('makeItem: metadata must be a plain object.');
@@ -125,7 +136,7 @@ export function makeItem({
     name,
     itemType,
     aliases: Object.freeze([...aliases]),
-    category,
+    category: category == null ? null : category.trim(),
     defaultLocationId: defaultLocationId == null ? null : String(defaultLocationId),
     active: Boolean(active),
     metadata: Object.freeze({ ...metadata }),
@@ -178,7 +189,7 @@ export function isItem(item) {
     && typeof item.name === 'string' && item.name.length > 0
     && (item.itemType === ITEM_TYPE.CONSUMABLE || item.itemType === ITEM_TYPE.ASSET)
     && Array.isArray(item.aliases) && item.aliases.every((a) => typeof a === 'string')
-    && isValidCategory(item.category, item.itemType)
+    && (item.category === null || (typeof item.category === 'string' && item.category.length > 0))
     && (item.defaultLocationId === null || typeof item.defaultLocationId === 'string')
     && typeof item.active === 'boolean'
     && !!item.metadata && typeof item.metadata === 'object' && !Array.isArray(item.metadata)

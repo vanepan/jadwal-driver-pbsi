@@ -32,7 +32,7 @@ import { listBidang } from '../config/gudang-bidang-source.js';
 import { createInitialSessionState, applySessionEvent } from '../search/search-session-engine.js';
 import { searchAndResolve } from '../search/search-resolver.js';
 
-import { renderHome } from './gudang-home.js';
+import { renderHome, homeHandlers } from './gudang-home.js';
 import { renderSearchOverlay } from './gudang-search-overlay.js';
 import { renderGoodsOut, goodsOutHandlers } from './gudang-goods-out.js';
 import { renderGoodsIn, goodsInHandlers } from './gudang-goods-in.js';
@@ -77,6 +77,15 @@ export async function mountGudang(hostEl) {
     host.addEventListener('click', onClick);
     host.addEventListener('input', onInput);
     host.addEventListener('submit', onSubmit);
+    // Phase 10.3 (Item photo): drag & drop and clipboard-paste are the only
+    // Gudang interactions that fundamentally require these two DOM event
+    // types — there is no way to support "drag a file in" or "Ctrl+V an
+    // image" through the existing click/input delegation alone. Still one
+    // delegated listener per event type, same discipline as the rest of
+    // this file.
+    host.addEventListener('dragover', onDragOver);
+    host.addEventListener('drop', onDrop);
+    host.addEventListener('paste', onPaste);
     document.addEventListener('keydown', onGlobalKeydown, true);
   }
   if (!loaded) {
@@ -134,9 +143,24 @@ export function openGudangSearch() {
   focusSharedSearchInput();
 }
 
+/** Phase 10.1 Part 6: UAT read "click Home's search -> focus silently jumps
+ *  to the real topbar field" as a bug, since nothing showed the connection.
+ *  A brief pulse on the field it just focused makes it visible instead of a
+ *  silent teleport. Uses the Web Animations API directly (not a gudang.css
+ *  class) — #v2SearchInput lives in the shared topbar, outside .gud-root,
+ *  and this file's own header is explicit that nothing here leaks scoped
+ *  CSS onto the rest of the platform. */
+function pulseSharedSearchInput(input) {
+  if (typeof input.animate !== 'function') return; // no-op in an environment without WAAPI (still focuses fine)
+  input.animate(
+    [{ boxShadow: '0 0 0 0 var(--accent-line, rgba(207,74,67,.4))' }, { boxShadow: '0 0 0 6px rgba(207,74,67,0)' }],
+    { duration: 500, easing: 'ease-out' }
+  );
+}
+
 function focusSharedSearchInput() {
   const input = document.getElementById('v2SearchInput');
-  if (input) { input.focus(); input.select(); }
+  if (input) { input.focus(); input.select(); pulseSharedSearchInput(input); }
 }
 
 function closeSearchDropdown() {
@@ -221,6 +245,13 @@ function onClick(e) {
     case 'gud-detail-close': st.detail = null; render(); break;
     case 'gud-quick-goods-out': setGudangScreen('goodsOut'); break;
     case 'gud-quick-goods-in': setGudangScreen('goodsIn'); break;
+    // "Search resolves into action" (Doc 1, Phase 10.1 Part 9) — a
+    // zero-result search hands off to the Add Item modal; close the
+    // dropdown first so the two never render on top of each other.
+    case 'gud-cat-add-item-search':
+      st.search = applySessionEvent(st.search, { type: 'close' }).state;
+      catalogHandlers.onClick(st, act, el, c, render, refreshCatalog);
+      break;
     default:
       if (act.startsWith('gud-go-')) { goodsOutHandlers.onClick(st, act, el, c, render, refreshCatalog); return; }
       if (act.startsWith('gud-gi-')) { goodsInHandlers.onClick(st, act, el, c, render, refreshCatalog); return; }
@@ -228,6 +259,7 @@ function onClick(e) {
       if (act.startsWith('gud-hist-')) { historyHandlers.onClick(st, act, el, c, render); return; }
       if (act.startsWith('gud-asset-action-')) { detailHandlers.onClick(st, act, el, c, render, refreshCatalog); return; }
       if (act.startsWith('gud-cat-')) { catalogHandlers.onClick(st, act, el, c, render, refreshCatalog); return; }
+      if (act.startsWith('gud-home-')) { homeHandlers.onClick(st, act, el, c, render); return; }
       break;
   }
 }
@@ -250,12 +282,41 @@ function onInput(e) {
   if (ds.act === 'gud-an-item-pick') { analyticsOnChange(st, t, render); return; }
   if (ds.act.startsWith('gud-asset-')) { detailHandlers.onInput(st, ds.act, t); return; }
   if (ds.act.startsWith('gud-cat-')) { catalogHandlers.onInput(st, ds.act, t, render); return; }
+  if (ds.act.startsWith('gud-home-')) { homeHandlers.onInput(st, ds.act, t, render); return; }
 }
 
 function onSubmit(e) {
   const form = e.target.closest('form[data-act]');
   if (!form) return;
   e.preventDefault();
+}
+
+/* ── Phase 10.3: photo drag & drop / paste (Add Item / Edit Item only) ──── */
+function onDragOver(e) {
+  if (!e.target.closest('[data-act="gud-cat-photo-zone"]')) return;
+  e.preventDefault(); // required for 'drop' to fire at all
+}
+
+function onDrop(e) {
+  const zone = e.target.closest('[data-act="gud-cat-photo-zone"]');
+  if (!zone) return;
+  e.preventDefault();
+  const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (file) catalogHandlers.onPhotoFile(st, file, render);
+}
+
+/** Paste has no target element to scope by data-act (clipboard events fire
+ *  wherever focus is) — scoped instead to "a photo-capable modal is open,"
+ *  same as the modal's own Escape-to-cancel keyboard handling below. */
+function onPaste(e) {
+  if (!st.modal || (st.modal.kind !== 'addItem' && st.modal.kind !== 'editItem')) return;
+  const items = (e.clipboardData && e.clipboardData.items) || [];
+  const imageItem = Array.from(items).find((it) => it.type && it.type.startsWith('image/'));
+  if (!imageItem) return;
+  const file = imageItem.getAsFile();
+  if (!file) return;
+  e.preventDefault();
+  catalogHandlers.onPhotoFile(st, file, render);
 }
 
 /* ── keyboard: Ctrl+K anywhere inside Gudang, plus the Spotlight session ──

@@ -20,13 +20,23 @@
    never valid for an Asset and vice versa (Doc 1 Art.V: the two lifecycles
    never share a model, including their categorization).
 
-   DEPENDENCY DIRECTION: item-contract.js imports FROM this file (to validate
-   an Item's category at construction time) — so this file must never import
-   FROM item-contract.js, or the two would depend on each other (Doc 4 F-11,
-   circular ownership). The two ItemType strings below are literal mirrors of
-   contracts/item-contract.js's ITEM_TYPE.CONSUMABLE/ASSET values, not a live
-   import — Item's contract is the sole owner of that enum; this file only
-   ever quotes its two known values.
+   Phase 10.1 (Experience Review, Part 3/4 — "Kategori... FREEFORM,
+   Autocomplete... no heavyweight master-data management"): item-contract.js
+   no longer validates an Item's category against this seed — category is
+   now optional freeform text. This list stops being an enforcement source
+   and becomes a SUGGESTIONS source for the Add Item autocomplete (still
+   scoped per itemType, still useful as a starting point) — isValidCategory()
+   was removed since nothing calls it anymore; getCategory/categoriesForItemType/
+   categoryLabel keep working unchanged for that purpose (categoryLabel
+   already fell back to the raw id for anything outside the seed, which is
+   now the common case for a freeform value, not an edge case).
+
+   DEPENDENCY DIRECTION: this file has no dependents left in item-contract.js
+   (category is no longer validated at construction time), but the direction
+   rule still holds for anything that DOES read it — this file must never
+   import FROM item-contract.js (Doc 4 F-11, circular ownership). The two
+   ItemType strings below are literal mirrors of contracts/item-contract.js's
+   ITEM_TYPE.CONSUMABLE/ASSET values, not a live import.
 
    PURE: plain frozen data + lookups. No DOM, no Firebase, no `window`.
    ============================================================ */
@@ -64,12 +74,6 @@ const _byId = new Map(CATEGORY_SEED.map((c) => [c.id, c]));
 /** The category record, or null when `categoryId` is unknown. */
 export function getCategory(categoryId) {
   return _byId.get(categoryId) || null;
-}
-
-/** Whether `categoryId` is a real category belonging to `itemType`. */
-export function isValidCategory(categoryId, itemType) {
-  const cat = _byId.get(categoryId);
-  return !!cat && cat.itemType === itemType;
 }
 
 /** Every category valid for a given ItemType — a flat list, never a tree. */

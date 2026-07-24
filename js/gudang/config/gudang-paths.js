@@ -34,3 +34,11 @@ export const GUDANG_PATHS = Object.freeze({
   departments: `${GUDANG_ROOT}/departments`,
   stock: `${GUDANG_ROOT}/stockProjection`,
 });
+
+/** Phase 10.3 (Item Visual Identity) — Firebase STORAGE, not RTDB; a
+ *  different service/bucket namespace entirely, but still Gudang's own
+ *  prefix, so it lives here rather than being retyped as a literal in
+ *  gudang-item-image.js (Part 7's "no hardcoded path literal outside this
+ *  file" applies to this namespace too, even though it never touches
+ *  GUDANG_PATHS' RTDB tree). */
+export const GUDANG_STORAGE_PREFIX = `${GUDANG_ROOT}/item-photos`;

@@ -66,9 +66,15 @@ export function renderStockOpname(st, c) {
       ? `<div class="gud-mt">${groupByCategory(filtered).map((g) => `
           <section class="gud-cat-group">
             <div class="gud-cat-group-t">${esc(g.label)} <span class="gud-cat-group-count">${g.items.length}</span></div>
-            <div class="gud-cat-grid">${g.items.map((i) => catalogCard(i, o)).join('')}</div>
+            <div class="gud-cat-grid">${g.items.map((i) => catalogCard(i, o, st)).join('')}</div>
           </section>`).join('')}</div>`
-      : `<div class="gud-mt">${emptyState({ iconName: 'clipboard', title: 'Tidak ada item', hint: 'Tidak ada item Consumable yang cocok dengan filter saat ini.' })}</div>`}
+      : `<div class="gud-mt">${emptyState(consumables.length ? {
+          iconName: 'clipboard', title: 'Tidak ada yang cocok',
+          hint: 'Coba kata kunci atau lokasi lain.',
+        } : {
+          iconName: 'clipboard', title: 'Belum ada item untuk dihitung',
+          hint: 'Tambahkan item lewat Home dulu, lalu kembali ke sini untuk mulai opname.',
+        })}</div>`}
 
     ${o.error ? `<div class="gud-flow-error gud-mt">${esc(o.error)}</div>` : ''}
 
@@ -95,15 +101,26 @@ function groupByCategory(items) {
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
-function catalogCard(item, o) {
+/** Part 5/7: each card exposes Name, Location, Counted Quantity, Difference
+ *  — the header (name + location) is identical across all three states, so
+ *  it's built once and reused, not repeated three times. */
+function cardHeader(item, st, iconTone) {
+  const loc = item.defaultLocationId && st.data.locations.find((l) => l.locationId === item.defaultLocationId);
+  return `<div class="gud-cat-card-top">
+      <span class="gud-cat-card-ic"${iconTone ? ` data-tone="${iconTone}"` : ''}>${icon(iconTone ? 'check-circle' : 'box', { size: 15 })}</span>
+      <span class="gud-cat-card-main">
+        <span class="gud-cat-card-name">${esc(item.name)}</span>
+        ${loc ? `<span class="gud-cat-card-loc">${icon('pin', { size: 10 })} ${esc(loc.name)}</span>` : ''}
+      </span>
+    </div>`;
+}
+
+function catalogCard(item, o, st) {
   const counted = o.counted[item.itemId];
   if (counted) {
     const diff = counted.countedQuantity - counted.expectedQuantity;
     return `<div class="gud-cat-card -done">
-      <div class="gud-cat-card-top">
-        <span class="gud-cat-card-ic" data-tone="c-green">${icon('check-circle', { size: 15 })}</span>
-        <span class="gud-cat-card-name">${esc(item.name)}</span>
-      </div>
+      ${cardHeader(item, st, 'c-green')}
       <div class="gud-cat-card-foot">
         <span class="gud-opname-diff" data-sign="${diff === 0 ? 'zero' : diff > 0 ? 'plus' : 'minus'}">${diff === 0 ? 'Sesuai' : (diff > 0 ? `+${diff}` : diff)}</span>
         <button type="button" class="gud-icon-btn -sm" data-act="gud-op-undo" data-id="${esc(item.itemId)}" aria-label="Hitung ulang">${icon('close', { size: 12 })}</button>
@@ -113,20 +130,14 @@ function catalogCard(item, o) {
   const isOpen = o.open[item.itemId];
   if (!isOpen) {
     return `<button type="button" class="gud-cat-card" data-act="gud-op-open" data-id="${esc(item.itemId)}">
-      <div class="gud-cat-card-top">
-        <span class="gud-cat-card-ic">${icon('box', { size: 15 })}</span>
-        <span class="gud-cat-card-name">${esc(item.name)}</span>
-      </div>
+      ${cardHeader(item, st)}
       <div class="gud-cat-card-foot"><span class="gud-link-btn">Hitung</span></div>
     </button>`;
   }
   const expected = o.expected && o.expected[item.itemId];
   const draft = o.draft && o.draft[item.itemId] != null ? o.draft[item.itemId] : '';
   return `<div class="gud-cat-card -counting">
-    <div class="gud-cat-card-top">
-      <span class="gud-cat-card-ic">${icon('box', { size: 15 })}</span>
-      <span class="gud-cat-card-name">${esc(item.name)}</span>
-    </div>
+    ${cardHeader(item, st)}
     <span class="gud-cat-card-expected">${expected == null ? 'Memuat…' : `Ekspektasi: ${fmtQty(expected)}`}</span>
     <div class="gud-cat-card-foot">
       <input class="gud-input gud-opname-input" data-act="gud-op-count" data-id="${esc(item.itemId)}" type="number" min="0" value="${esc(draft)}" placeholder="Hasil hitung" autofocus />
