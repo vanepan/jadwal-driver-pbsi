@@ -218,7 +218,11 @@ console.log('\n[Part 11 — Architecture integrity: no drift introduced by Item 
   check('GUDANG_DOMAINS still has exactly 15 entries — Category was NOT added as a 16th domain', GUDANG_DOMAINS.length === 15);
   check('config/gudang-domain-registry.js was not touched to mention "category" (Doc 3 Ch.03 stays frozen)', !read('js/gudang/config/gudang-domain-registry.js').includes('category'));
   check('the "item" domain entry is unchanged: still authorized by Doc 3 Ch.03', getDomain('item')?.authority === 'Doc 3 Ch.03');
-  check('the "consumable" domain still has no Phase-1/2 foundation (its workflow remains forbidden)', getDomain('consumable')?.hasFoundation === false);
+  // Was `=== false` through Phase 1/2 (Consumable's workflow was forbidden
+  // then). Phase 4 (Goods Out) legitimately built Issuing and flipped this
+  // to true — updated here so this Phase-2 check stays factually accurate,
+  // not because Item Foundation itself changed.
+  check('the "consumable" domain has a foundation as of Phase 4 (Item Foundation itself is unaffected)', getDomain('consumable')?.hasFoundation === true);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -83,7 +83,10 @@ console.log('\n[Part A — Contracts]');
   throws('makeItem() throws on unknown itemType', () => makeItem({ itemId: 'i2', name: 'x', itemType: 'gadget', category: 'atk' }));
 
   check('MOVEMENT_TYPE is exactly the 7 types Doc 3 Ch.04 names', Object.keys(MOVEMENT_TYPE).length === 7);
-  check('MOVEMENT_REASON is exactly the 5 reasons Doc 2 §07/§10 name', Object.keys(MOVEMENT_REASON).length === 5);
+  // Phase 4 (Goods Out) amended this to 6 — ISSUE was added, user-approved,
+  // because Doc 2 §06 never collects a reason at all yet makeMovement()
+  // requires one (see movement-contract.js's header for the full story).
+  check('MOVEMENT_REASON is exactly the 6 reasons Doc 2 §07/§10 name plus Phase 4\'s ISSUE amendment', Object.keys(MOVEMENT_REASON).length === 6);
   const movement = makeMovement({
     movementId: 'm1', itemId: 'i1', type: MOVEMENT_TYPE.GOODS_IN, quantityDelta: 10,
     reason: MOVEMENT_REASON.PURCHASE, actorId: 'u1',
@@ -139,8 +142,11 @@ console.log('\n[Part B — Domain registry]');
   check('isRatifiedDomain("gadget") is false (not a ratified domain)', !isRatifiedDomain('gadget'));
   check('getDomain("movement").authority cites Doc 1 Art.IV', /Doc 1 Art\.IV/.test(getDomain('movement')?.authority || ''));
   check('domainsByStatus(SEAM) has exactly 3 (Supplier, NOR, QR/Barcode/NFC)', domainsByStatus(DOMAIN_STATUS.SEAM).length === 3);
-  check('domainsWithFoundation() has exactly 8 (the domains Phase 1 actually built)', domainsWithFoundation().length === 8);
-  check('Consumable is ratified core but has NO Phase-1 foundation (its workflow is forbidden this phase)', getDomain('consumable')?.status === DOMAIN_STATUS.CORE && getDomain('consumable')?.hasFoundation === false);
+  // Phase 4 (Goods Out) flipped Consumable's hasFoundation to true (8->9);
+  // Phase 8 (Analytics) flipped analytics/forecast/recommendation (9->12).
+  // See config/gudang-domain-registry.js's header for both.
+  check('domainsWithFoundation() has exactly 12 (Phase 1\'s 8 + Consumable [P4] + analytics/forecast/recommendation [P8])', domainsWithFoundation().length === 12);
+  check('Consumable is ratified core and now has a Phase-4 foundation (Goods Out — Issuing)', getDomain('consumable')?.status === DOMAIN_STATUS.CORE && getDomain('consumable')?.hasFoundation === true);
 }
 
 /* ── Part C — Repository guards (no Firebase reached) ───────────────── */
@@ -232,10 +238,15 @@ console.log('\n[Part G — Routing: js/app.js declares Gudang module wiring]');
 {
   const appJs = fs.readFileSync(path.join(ROOT, 'js/app.js'), 'utf8');
   check('MODULE_DEFS has a "gudang" entry', /gudang:\s*\{/.test(appJs));
-  check('canAccessModule() gates "gudang" on APP_ENV=development, resolved before the admin bypass (Phase 1.1 Review 7)',
-    /if \(name === 'gudang'\) return getAppEnv\(\) === 'development';[\s\S]{0,80}if \(isAdmin\(\)\) return true;/.test(appJs));
+  // UPDATED — V1.28.0 Experience Layer: the dev-only gate and placeholder
+  // landing were always temporary (Phase 1.1's own comment called Gudang a
+  // "zero-screen foundation build"). Real screens now exist; the module
+  // graduated to the same admin-only rule Petty Cash/Analytics/Konfigurasi
+  // already use (see canAccessModule's 'gudang' case for the full reasoning).
+  check('canAccessModule() gates "gudang" admin-only (V1.28.0 Experience Layer — same rule as Petty Cash/Analytics/Konfigurasi)',
+    /case 'gudang':\s*return false;/.test(appJs));
   check('navGudang() is defined', /function navGudang\s*\(/.test(appJs));
-  check('navGudang() lands on the shared placeholder (no operational UI)', /function navGudang[\s\S]{0,300}showModulePlaceholder\(/.test(appJs));
+  check('navGudang() mounts the real embedded module (mountGudang), not the placeholder', /function navGudang[\s\S]{0,300}mountGudang\(/.test(appJs));
   check('the rail item id v2RailGudang is declared', /v2RailGudang/.test(appJs));
 }
 

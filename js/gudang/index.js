@@ -40,7 +40,17 @@ export * from './repository/department-repository.js';
 export * from './repository/stock-repository.js';
 
 export * from './projection/stock-projection-engine.js';
+export * from './consumable/goods-out-engine.js';
+export * from './consumable/goods-in-engine.js';
+export * from './consumable/stock-opname-engine.js';
 export * from './audit/audit-view.js';
+export * from './audit/movement-history-view.js';
+export * from './analytics/analytics-engine.js';
+export * from './analytics/quiet-intelligence-engine.js';
+export * from './asset/asset-lifecycle-engine.js';
+export * from './audit/asset-history-view.js';
 export * from './search/search-resolver.js';
 export * from './search/item-keyword-index.js';
+export * from './search/action-resolver.js';
+export * from './search/search-session-engine.js';
 export * from './settings/gudang-settings.js';

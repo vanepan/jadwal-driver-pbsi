@@ -215,6 +215,10 @@ import {
   mountEngineering, setEngineeringScreen, closeEngineering, openEngineeringCreate, openEngineeringReport, setEngineeringSearch,
   openEngineeringAssignment,
 } from './engineering/ui/engineering-center.js';
+// V1.28.0 Experience Layer — Gudang UI, embedded native module (mirrors Engineering).
+import {
+  mountGudang, setGudangScreen, setGudangSearch, openGudangSearch,
+} from './gudang/ui/gudang-center.js';
 // v1.20.6 — inject the live User Management source into the Engineering personnel
 // resolver (it deliberately does not import users.js to stay Node-harness-safe).
 import { setEngineeringUsersSource } from './engineering/personnel/engineering-personnel.js';
@@ -295,6 +299,8 @@ let pettyCashMounted = false;
 let engineeringMounted = false;
 // v1.25.0: lazy mount flag for the embedded Overtime Management module.
 let overtimeMounted = false;
+// V1.28.0: lazy mount flag for the embedded Gudang module.
+let gudangMounted = false;
 // v1.15.0: lazy mount flags for the new Analytics workspaces.
 let analyticsPettyMounted = false;
 let analyticsExecMounted = false;
@@ -548,7 +554,9 @@ const RAIL_MODULE_BOTTOM_NAV_ACTION = {
   konfigurasi: 'openMoreSheet',
   engineering: 'navEngDashboard',
   sarprasIntelligence: 'openMoreSheet',
-  // Phase 1 — Gudang Foundation: no screens yet, lands on the shared placeholder.
+  // V1.28.0 Experience Layer: no dedicated bottom-nav tab slot is allocated
+  // (Section 8 of the Gudang UI investigation) — reached via "Lainnya", same
+  // as Petty Cash/Overtime/Konfigurasi.
   gudang: 'openMoreSheet',
 };
 
@@ -714,6 +722,7 @@ const BOTTOM_NAV_MORE_ITEMS = [
   { label: 'Overtime', proxy: 'btnOvertime', requiresModule: 'overtime' },
   { label: 'Konfigurasi', proxy: 'btnUserMgmt' },
   { label: 'Engineering', proxy: 'btnEngineering', requiresModule: 'engineering' },
+  { label: 'Gudang', proxy: 'btnGudang', requiresModule: 'gudang' },
   { label: 'Keluar', proxy: 'btnLogout' },
 ];
 function openBottomNavMoreSheet() {
@@ -1026,12 +1035,12 @@ function updatePermissionUI(resetNavActive = false) {
     const v2RailKonfig = document.getElementById('v2RailKonfigurasi');
     if (v2RailKonfig) v2RailKonfig.style.display = adminOnly ? 'flex' : 'none';
 
-    // Gudang (V1.28.0 Phase 1 — Foundation): dev-only, no operational
-    // screens yet — canAccessModule('gudang') resolves to APP_ENV==='development'
-    // BEFORE the admin bypass, so this stays hidden for every production user,
-    // admin included (Phase 1.1 Foundation Hardening, Review 7).
+    // Gudang (V1.28.0 Experience Layer): admin-only, same rule as Petty Cash/
+    // Analytics/Konfigurasi (see canAccessModule's 'gudang' case).
     const v2RailGudang = document.getElementById('v2RailGudang');
     if (v2RailGudang) v2RailGudang.style.display = canAccessModule('gudang') ? 'flex' : 'none';
+    const btnGudMobile = document.getElementById('btnGudang');
+    if (btnGudMobile) btnGudMobile.style.display = canAccessModule('gudang') ? 'flex' : 'none';
 
     // Administration rail module: RETIRED (v1.14.0) — always hidden.
     const v2RailAdmin = document.getElementById('v2RailAdmin');
@@ -1254,17 +1263,15 @@ const MODULE_DEFS = {
     title: 'Engineering Operations', subtitle: 'Unit Eksekusi · Bidang Sarpras', crumb: 'ENGINEERING',
     land: () => navEngineering('dashboard', 'v2NavEngDashboard'),
   },
-  // V1.28.0 Phase 1: Gudang Foundation — dev-only visibility (see
-  // canAccessModule's 'gudang' case, resolved before the admin bypass; Phase
-  // 1.1 Foundation Hardening Review 7). No operational screens exist this
-  // phase, so land() shows the shared "coming soon" placeholder (v1.14.0's
-  // showModulePlaceholder) instead of a dedicated workspace — Phase 1's
-  // brief forbids operational UI/dashboards/CRUD, and reusing this existing,
-  // previously-uncalled function means Gudang adds no new UI mechanism.
+  // V1.28.0 Experience Layer: Gudang graduates from the placeholder to a
+  // real embedded module (same pattern as Engineering) — real navId, real
+  // land() screen. See canAccessModule's 'gudang' case: the dev-only gate
+  // is gone, Gudang now falls through to the same admin-only rule Petty
+  // Cash/Analytics/Konfigurasi already use.
   gudang: {
-    railId: 'v2RailGudang', navId: null,
-    title: 'Gudang', subtitle: 'Fondasi Domain — Fase 1', crumb: 'GUDANG',
-    land: () => navGudang(),
+    railId: 'v2RailGudang', navId: 'v2PanelGudangNav',
+    title: 'Gudang', subtitle: 'Warehouse Operating System', crumb: 'GUDANG',
+    land: () => navGudang('home', 'v2NavGudHome'),
   },
   // V2.0.10: Sarpras Intelligence — embedded native module (same pattern as
   // Petty Cash / Engineering), gated to a single pilot identity via
@@ -1397,6 +1404,12 @@ function registerSearchAdapters() {
     placeholder: 'Cari KPI, metrik, laporan, ekspor…',
     run: (q) => runAnalyticsContextualSearch(q),
   });
+
+  registerSearchAdapter({
+    id: 'gudang',
+    placeholder: 'Cari item, lokasi, aset… (Ctrl+K untuk Spotlight)',
+    run: (q) => setGudangSearch(q),
+  });
 }
 
 /* Analytics contextual search: no row filtering (a KPI dashboard has no list) —
@@ -1498,16 +1511,6 @@ function canAccessModule(name) {
   // return true`, otherwise every admin (not just the single V2 pilot
   // identity) would gain access.
   if (name === 'sarprasIntelligence') return isV2Enabled(getCurrentUser());
-  // V1.28.0 Phase 1.1 (Foundation Hardening, Review 7) — Gudang has ZERO
-  // operational screens; it must resolve BEFORE the admin bypass below,
-  // exactly like sarprasIntelligence above, so no production user — not even
-  // admin — ever sees it. Visible only to a developer running in
-  // APP_ENV=development, mirroring js/engineering/diagnostics's own dev-only
-  // gate. Doc 2 §03 names Sarpras Admin/Warehouse Staff as Gudang's eventual
-  // audience; that describes the FINISHED product, not a zero-screen
-  // foundation build — showing an empty module to a real admin today would
-  // itself violate Doc 1 Art.II's low-cognitive-load standard.
-  if (name === 'gudang') return getAppEnv() === 'development';
   if (isAdmin()) return true;                        // admin: full access
   switch (name) {
     case 'engineering': return isEngineeringUser();
@@ -1515,7 +1518,17 @@ function canAccessModule(name) {
     case 'pettycash':
     case 'overtime':
     case 'analytics':
-    case 'konfigurasi': return false;                // admin-only
+    case 'konfigurasi':
+    // V1.28.0 Experience Layer: Gudang has real screens now, but Doc 2 §03
+    // names only two eventual audiences (Sarpras Admin, Warehouse Staff) —
+    // "Warehouse Staff" is not a role this app's role system has today, and
+    // inventing one is a new business capability the Experience brief
+    // explicitly forbids ("No new business capability should be invented").
+    // Gudang is therefore admin-only for now, exactly like its siblings on
+    // this line — widening it to a real Warehouse Staff role is a future,
+    // deliberate product decision, not an Experience-layer implementation
+    // detail.
+    case 'gudang':      return false;                // admin-only
     default:            return false;
   }
 }
@@ -1552,7 +1565,7 @@ function setRailModule(name) {
   });
 
   // Panel-nav block visibility — show only the active module's menu.
-  ['v2PanelHomeNav', 'v2PanelDriverOpsNav', 'v2PanelPettyCashNav', 'v2PanelOvertimeNav', 'v2PanelAnalyticsNav', 'v2PanelKonfigurasiNav', 'v2PanelEngineeringNav', 'v2PanelSarprasIntelNav']
+  ['v2PanelHomeNav', 'v2PanelDriverOpsNav', 'v2PanelPettyCashNav', 'v2PanelOvertimeNav', 'v2PanelAnalyticsNav', 'v2PanelKonfigurasiNav', 'v2PanelEngineeringNav', 'v2PanelGudangNav', 'v2PanelSarprasIntelNav']
     .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = (id === def.navId) ? '' : 'none'; });
 
   const panelTitle    = document.getElementById('v2PanelTitle');
@@ -2109,18 +2122,26 @@ function showModulePlaceholder(title, message) {
     </div>`;
 }
 
-/* ── MODUL: Gudang (V1.28.0 Phase 1 — Foundation) ──
-   Authorized by: Doc 1 Art.I, Doc 3 Ch.03, Doc 4 Art.II. No operational
-   screens exist this phase (see js/gudang/'s STRICTLY FORBIDDEN scope), so
-   this lands on the shared placeholder exactly like any other "coming soon"
-   menu — the same function every other module would use for an unbuilt
-   screen, not a new mechanism invented for Gudang. */
-function navGudang() {
-  setCrumb('GUDANG', 'Fondasi Domain');
-  showModulePlaceholder(
-    'Gudang',
-    'Dokumen 1–4 telah diratifikasi. Fondasi domain (Movement, Stock, Asset, Search, Audit) sudah aktif di baliknya. Alur kerja operasional (Goods In/Out, Stock Opname, Analytics) menyusul di fase berikutnya.'
-  );
+/* ── MODUL: Gudang ── (V1.28.0 Experience Layer — embedded native module,
+   same pattern as Engineering: real navId, real land() screen, lazy mount) */
+const GUD_MENU_TITLES = {
+  home: 'Home', goodsOut: 'Goods Out', goodsIn: 'Goods In',
+  history: 'Movement History', opname: 'Stock Opname', analytics: 'Analytics',
+};
+const GUD_SCREEN_BOTTOM_NAV_ACTION = {
+  home: 'navGudHome', goodsOut: 'navGudGoodsOut', goodsIn: 'navGudGoodsIn',
+  history: 'navGudHistory', opname: 'navGudOpname', analytics: 'navGudAnalytics',
+};
+async function navGudang(screen, navId) {
+  setCrumb('GUDANG', GUD_MENU_TITLES[screen] || 'Gudang');
+  if (navId) setV2PanelNavActive(navId);
+  setWorkspace('gudang');
+  if (!gudangMounted) {
+    gudangMounted = true;
+    await mountGudang(document.getElementById('v2GudangWorkspace'));
+  }
+  setGudangScreen(screen || 'home');
+  syncBottomNavAction(GUD_SCREEN_BOTTOM_NAV_ACTION[screen] || 'navGudHome', 'openMoreSheet');
 }
 
 function initV2Rail() {
@@ -2325,6 +2346,7 @@ function initV2Rail() {
   document.getElementById('btnOvertime')?.addEventListener('click', () => setRailModule('overtime'));
   document.getElementById('btnAnalytics')?.addEventListener('click', () => setRailModule('analytics'));
   document.getElementById('btnEngineering')?.addEventListener('click', () => setRailModule('engineering'));
+  document.getElementById('btnGudang')?.addEventListener('click', () => setRailModule('gudang'));
   document.getElementById('btnSarprasIntel')?.addEventListener('click', () => setRailModule('sarprasIntelligence'));
 
   railTheme?.addEventListener('click', () => {
@@ -2652,6 +2674,35 @@ function initV2Panel() {
       <button class="v2-panel-nav-item" id="v2NavEngSettings" type="button" style="display:none;">
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
         Pengaturan
+      </button>
+    </nav>
+
+    <!-- ═══ MODUL: Gudang ═══ (V1.28.0 Experience Layer — admin only, see canAccessModule) -->
+    <nav class="v2-panel-nav v2-panel-nav--gudang" id="v2PanelGudangNav"
+         aria-label="Gudang menu" style="display:none;">
+      <button class="v2-panel-nav-item v2-panel-nav-item--active" id="v2NavGudHome" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/></svg>
+        Home
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavGudGoodsOut" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M3 4a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 9a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V9zM3 14a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2zM11.293 4.293a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 01-1.414-1.414L12.586 9H10a1 1 0 110-2h2.586l-1.293-1.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        Goods Out
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavGudGoodsIn" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M17 4a1 1 0 00-1-1h-4a1 1 0 100 2h1.586l-1.293 1.293a1 1 0 001.414 1.414L15 6.414V8a1 1 0 102 0V4zM3 4a1 1 0 011-1h4a1 1 0 010 2H6.414l1.293 1.293a1 1 0 11-1.414 1.414L5 6.414V8a1 1 0 01-2 0V4zm0 12a1 1 0 011-1h4a1 1 0 110 2H6.414l1.293 1.293a1 1 0 01-1.414 1.414L5 18.414V17a1 1 0 01-2 0v-1z" clip-rule="evenodd"/></svg>
+        Goods In
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavGudHistory" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
+        Movement History
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavGudOpname" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm4.707 6.293a1 1 0 00-1.414 1.414l1 1a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L9 10.586l-.293-.293z" clip-rule="evenodd"/></svg>
+        Stock Opname
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavGudAnalytics" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M3 4a1 1 0 011-1h5a1 1 0 011 1v5a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM11 4a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1V4zM11 10a1 1 0 011-1h4a1 1 0 011 1v6a1 1 0 01-1 1h-4a1 1 0 01-1-1v-6zM3 13a1 1 0 011-1h5a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3z"/></svg>
+        Analytics
       </button>
     </nav>
 
@@ -3860,6 +3911,21 @@ function initV2EngineeringWorkspace() {
   ws.style.display = 'none';
   document.querySelector('.main-content')?.appendChild(ws);
   console.log('[v1.20.1] Engineering workspace host injected');
+}
+
+/**
+ * V1.28.0 Experience Layer: Inject the embedded Gudang module host
+ * (#v2GudangWorkspace). Carries class .gud-root so the module's scoped
+ * design tokens resolve. Mounts lazily on first navigation (navGudang) —
+ * same pattern as Engineering's host, not a new mounting mechanism.
+ */
+function initV2GudangWorkspace() {
+  const ws = document.createElement('div');
+  ws.id = 'v2GudangWorkspace';
+  ws.className = 'v2-workspace gud-root';
+  ws.style.display = 'none';
+  document.querySelector('.main-content')?.appendChild(ws);
+  console.log('[V1.28.0] Gudang workspace host injected');
 }
 
 /**
@@ -11051,6 +11117,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initV2PettyCashWorkspace();   // v1.14.0: embedded Petty Cash module host
     initV2OvertimeWorkspace();    // v1.25.0: embedded Overtime Management module host
     initV2EngineeringWorkspace(); // v1.20.1: embedded Engineering module host
+    initV2GudangWorkspace();      // V1.28.0: embedded Gudang module host
     initV2SarprasIntelligenceWorkspace(); // V2.0.10: embedded Sarpras Intelligence module host
     initV2PlaceholderWorkspace(); // v1.14.0: shared "coming soon" placeholder
     initV2AnalyticsWorkspaces();  // v1.15.0: Analytics Petty Cash + Executive hosts

@@ -194,11 +194,17 @@ console.log('\n[Part 8 — future seams remain dormant]');
   check(`MOVEMENT_TYPE.FUTURE_RESERVATION is never branched on outside its own contract (reserved vocabulary only)${reservationBranches.length ? ` — FOUND: ${reservationBranches.join(', ')}` : ''}`, reservationBranches.length === 0);
 }
 
-console.log('\n[Part 9 — STRICTLY FORBIDDEN Phase 1 workflows do not exist as files]');
+console.log('\n[Part 9 — STRICTLY FORBIDDEN workflows (not yet ratified for their phase) do not exist as files]');
 {
-  const forbidden = /goods-?in|goods-?out|stock-?opname|forecast|recommendation|dashboard|chart|crud/i;
+  // goods-?out (Phase 4), goods-?in (Phase 5), stock-?opname (Phase 7),
+  // forecast|recommendation (Phase 8 — computed OUTPUTS of analytics-
+  // engine.js, never their own engine/file) were removed from this list as
+  // their phases authorized them. dashboard|chart|crud remain forbidden —
+  // Phase 8's own brief says "No dashboard-first," and no phase has ever
+  // authorized a CRUD screen.
+  const forbidden = /dashboard|chart|crud/i;
   const offenders = GUDANG_FILES.filter((f) => forbidden.test(path.basename(f.rel))).map((f) => f.rel);
-  check(`NO file under js/gudang/ implements a forbidden Phase-1 workflow${offenders.length ? ` — FOUND: ${offenders.join(', ')}` : ''}`, offenders.length === 0);
+  check(`NO file under js/gudang/ implements a workflow not yet authorized for its phase${offenders.length ? ` — FOUND: ${offenders.join(', ')}` : ''}`, offenders.length === 0);
 }
 
 console.log('\n[Part 9.5 — Phase 2 (Item Foundation): contracts/ and config/ never depend on search/]');
@@ -225,9 +231,18 @@ console.log('\n[Part 9.5 — Phase 2 (Item Foundation): contracts/ and config/ n
   check('config/gudang-categories.js does NOT import contracts/item-contract.js (one-directional: item-contract -> categories, never the reverse)', !categoriesImportsItemContract);
 }
 
-console.log('\n[Part 10 — BEHAVIOURAL: every js/gudang/ file imports cleanly under plain Node]');
+console.log('\n[Part 10 — BEHAVIOURAL: every js/gudang/ ENGINE file imports cleanly under plain Node]');
 {
-  for (const { rel } of GUDANG_FILES) {
+  // UPDATED — V1.28.0 Experience Layer: js/gudang/ui/ is excluded from this
+  // loop. This guarantee ("zero transitive Firebase dependency at load
+  // time") was always specifically an ENGINE-layer property — it's what let
+  // Phase 1-9 be tested in this harness with no live credentials. The UI
+  // layer legitimately imports auth.js (real browser auth state) and DOM —
+  // that is its job, not a violation of anything. Holding UI files to an
+  // engine-layer constraint they were never meant to satisfy would make
+  // this check permanently, correctly red, for no architectural reason.
+  const engineFiles = GUDANG_FILES.filter((f) => !f.rel.startsWith('js/gudang/ui/'));
+  for (const { rel } of engineFiles) {
     try {
       await import(pathToFileURL(path.join(ROOT, rel)));
       check(`${rel} imports cleanly (no Firebase credentials required at load time)`, true);

@@ -34,12 +34,25 @@
                          document activates it (Supplier, NOR, QR/Barcode/NFC
                          — Doc 3 Ch.12, Doc 4 Art.VI: seams remain dormant).
 
-   `hasFoundation` says whether Phase 1 gave the domain a contract/repository
-   yet. Consumable is `core` per Document 3, but its only real content —
-   Receiving/Issuing (Doc 3 Ch.07) — is exactly the operational workflow this
-   phase is FORBIDDEN from building (see the Phase 1 brief's STRICTLY
-   FORBIDDEN list), so it has no contract or repository yet. That is not an
-   omission; it is Phase 1 obeying its own scope.
+   `hasFoundation` says whether the domain has been given real code yet
+   (originally: by Phase 1; the flag itself is not phase-scoped, and later
+   phases legitimately flip it — see Consumable below).
+
+   UPDATED — Phase 4 (Goods Out): Consumable's `hasFoundation` flipped to
+   true. Its only real content — Issuing (Doc 3 Ch.07) — was exactly the
+   operational workflow Phase 1 was FORBIDDEN from building; Phase 4 is
+   authorized to build the Issuing half (Goods Out), so the flag now
+   reflects that. Consumable has no dedicated repository of its own (Doc 3
+   Ch.07: it produces Movements, it does not persist a "consumable" record)
+   — its foundation is consumable/goods-out-engine.js, an orchestrator over
+   Movement + Stock + Item, not a new persisted domain.
+
+   UPDATED — Phase 8 (Analytics): analytics/forecast/recommendation all
+   flipped to true. analytics/analytics-engine.js gives Analytics real,
+   deterministic computation (Doc 3 Ch.09); Forecast and Recommendation
+   remain COMPUTED_OUTPUT, not CORE (Ch.03: neither is an engine of its
+   own) — they simply now have real functions producing them
+   (getForecastDaysRemaining, isRestockRecommended) instead of none.
 
    PURE: plain frozen data + lookups. No DOM, no Firebase, no `window`.
    ============================================================ */
@@ -81,10 +94,10 @@ export const GUDANG_DOMAINS = deepFreeze([
   { id: 'movement', label: 'Movement', owns: 'Attributed quantity events for Consumables — the source of truth', status: DOMAIN_STATUS.CORE, hasFoundation: true, authority: 'Doc 1 Art.IV · Doc 3 Ch.04' },
   { id: 'stock', label: 'Stock', owns: 'Current on-hand quantity — a computed projection, never a truth of its own', status: DOMAIN_STATUS.CORE, hasFoundation: true, authority: 'Doc 1 Art.IV · Doc 3 Ch.05' },
   { id: 'asset', label: 'Asset', owns: 'Identity, status, and lifecycle for uniquely-tracked things', status: DOMAIN_STATUS.CORE, hasFoundation: true, authority: 'Doc 1 Art.V · Doc 3 Ch.06' },
-  { id: 'consumable', label: 'Consumable', owns: 'The receive/issue/adjust/opname workflow that produces Movements', status: DOMAIN_STATUS.CORE, hasFoundation: false, authority: 'Doc 3 Ch.03/07' },
-  { id: 'analytics', label: 'Analytics', owns: 'Deterministic computation over Movement, Stock, and Asset History', status: DOMAIN_STATUS.CORE, hasFoundation: false, authority: 'Doc 1 Art.VII · Doc 3 Ch.09' },
-  { id: 'forecast', label: 'Forecast', owns: 'A computed Analytics output — not an engine of its own', status: DOMAIN_STATUS.COMPUTED_OUTPUT, hasFoundation: false, authority: 'Doc 3 Ch.03/09' },
-  { id: 'recommendation', label: 'Recommendation', owns: 'A computed Analytics output — not a suggestion engine', status: DOMAIN_STATUS.COMPUTED_OUTPUT, hasFoundation: false, authority: 'Doc 3 Ch.03/09' },
+  { id: 'consumable', label: 'Consumable', owns: 'The receive/issue/adjust/opname workflow that produces Movements', status: DOMAIN_STATUS.CORE, hasFoundation: true, authority: 'Doc 3 Ch.03/07' },
+  { id: 'analytics', label: 'Analytics', owns: 'Deterministic computation over Movement, Stock, and Asset History', status: DOMAIN_STATUS.CORE, hasFoundation: true, authority: 'Doc 1 Art.VII · Doc 3 Ch.09' },
+  { id: 'forecast', label: 'Forecast', owns: 'A computed Analytics output — not an engine of its own', status: DOMAIN_STATUS.COMPUTED_OUTPUT, hasFoundation: true, authority: 'Doc 3 Ch.03/09' },
+  { id: 'recommendation', label: 'Recommendation', owns: 'A computed Analytics output — not a suggestion engine', status: DOMAIN_STATUS.COMPUTED_OUTPUT, hasFoundation: true, authority: 'Doc 3 Ch.03/09' },
   { id: 'audit', label: 'Audit', owns: 'The guaranteed read-only view of Movement + Asset History', status: DOMAIN_STATUS.BYPRODUCT, hasFoundation: true, authority: 'Doc 1 Art.VI · Doc 3 Ch.11' },
   { id: 'search', label: 'Search', owns: 'Universal entry and action-resolution — owns no domain data', status: DOMAIN_STATUS.CORE, hasFoundation: true, authority: 'Doc 1 Art.III · Doc 2 §05 · Doc 3 Ch.08' },
   { id: 'location', label: 'Location', owns: 'Where a thing is — referenced by Movement and Asset', status: DOMAIN_STATUS.CORE, hasFoundation: true, authority: 'Doc 3 Ch.03' },
