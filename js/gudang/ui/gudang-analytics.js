@@ -70,7 +70,7 @@ export function renderAnalytics(st, c, requestRender) {
         ${topList(st, 'items')}
       </div>
       <div class="gud-card -pad">
-        <div class="gud-card-head"><div class="gud-card-h-title">Departemen Paling Aktif</div></div>
+        <div class="gud-card-head"><div class="gud-card-h-title">Bidang Paling Aktif</div></div>
         ${topList(st, 'departments')}
       </div>
     </div>
@@ -96,7 +96,7 @@ function topList(st, kind) {
     : null;
   return `${headline ? `<div class="gud-qi-sentence">${esc(headline)}</div>` : ''}
     <div class="gud-toplist gud-mt">${rows.map((r, i) => `
-      <div class="gud-toplist-row">
+      <div class="gud-toplist-row" ${kind === 'items' ? `data-act="gud-open-item" data-id="${esc(r.itemId)}"` : ''}>
         <span class="gud-toplist-rank">${i + 1}</span>
         <span class="gud-toplist-name">${esc(kind === 'items' ? itemName(st, r.itemId) : topDeptName(st, r.departmentId))}</span>
         <span class="gud-toplist-val">${fmtQty(r.quantity)}</span>

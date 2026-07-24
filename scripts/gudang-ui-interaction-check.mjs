@@ -93,36 +93,76 @@ console.log('\n[Part A — Home: real click navigation]');
   await page.type(`${HOST} [data-act="gud-go-dept-query"]`, 'gudang utama', { delay: 15 });
   const typedValue = await page.$eval(`${HOST} [data-act="gud-go-dept-query"]`, (el) => el.value);
   check('typing into the department search really updates the input value (no focus loss mid-type)', typedValue === 'gudang utama');
-  const emptyMsg = await page.$eval(HOST, (el) => el.textContent.includes('Belum ada departemen') || el.textContent.includes('Tidak ada departemen'));
+  // Phase 10.1: "departemen" -> "bidang" (sourced from User Management's
+  // real Bidang roster, not a manually-created Gudang department).
+  const emptyMsg = await page.$eval(HOST, (el) => el.textContent.includes('Belum ada bidang') || el.textContent.includes('Tidak ada bidang'));
   check('an empty/no-match catalog renders the correct empty message, not a crash', emptyMsg);
 }
 
 console.log('\n[Part B — Universal Search: real Ctrl+K, real typing, real Escape]');
 {
+  // Phase 10.1 redesign: Search no longer owns a duplicate input box — the
+  // query comes from the shared topbar #v2SearchInput every other module
+  // already searches through. This test host bypasses real navGudang()
+  // mounting (see file header — no live Firebase creds means the real
+  // rail-click -> canAccessModule path can't be exercised here either), so
+  // the real input's own app.js-level routing (runModuleSearch(activeRailModule, q))
+  // never actually reaches Gudang in this harness. What IS fully real here:
+  // Ctrl+K really focusing #v2SearchInput, and really typing into it — both
+  // proven below with actual keyboard events, not direct function calls.
+  // Only the "adapter received it" hop is simulated (mod.setGudangSearch),
+  // exactly the same honest limit this file already documents for
+  // Goods Out/In's populated happy path.
   await page.click(`${HOST} [data-act="gud-goto"][data-val="home"]`).catch(() => {});
   await page.evaluate(() => { window.__gudMod.setGudangScreen('home'); });
   await new Promise((r) => setTimeout(r, 150));
 
+  const hasSharedInput = await page.evaluate(() => !!document.getElementById('v2SearchInput'));
+  check('the shared topbar #v2SearchInput exists on the real page', hasSharedInput);
+
+  // The real #v2SearchInput is legitimately zero-size here: its container
+  // (.v2-topbar-search) is hidden by default absent real navigation (never
+  // exercised in this bypassed-mount harness — same root cause as the
+  // module-setup step above hiding the rest of the real app shell), AND
+  // that shell was itself force-hidden a moment ago to stop it intercepting
+  // clicks meant for the Gudang test host. Un-hide ONLY the direct ancestor
+  // chain up to #v2SearchInput (never its siblings — the real rail/sidebar
+  // stay hidden, so this can't reintroduce the click-interception problem
+  // the earlier hide step exists for) for the duration of this Part only.
+  await page.evaluate(() => {
+    let el = document.getElementById('v2SearchInput');
+    const chain = [];
+    while (el && el !== document.body) { chain.push(el); el = el.parentElement; }
+    chain.forEach((n) => n.style.setProperty('display', n.tagName === 'INPUT' ? 'inline-block' : 'flex', 'important'));
+    window.__gudSearchChain = chain;
+  });
+
   await page.keyboard.down('Control'); await page.keyboard.press('KeyK'); await page.keyboard.up('Control');
   await new Promise((r) => setTimeout(r, 200));
-  check('real Ctrl+K opens the Spotlight overlay', !!(await page.$('.gud-spotlight')));
+  check('real Ctrl+K focuses the shared search input directly (no separate overlay box)', await page.evaluate(() => document.activeElement?.id === 'v2SearchInput'));
+  check('Ctrl+K does NOT open a dropdown by itself — only typing does', !(await page.$('.gud-spotlight')));
 
-  await page.type('.gud-spotlight-input', 'tisu', { delay: 15 });
+  await page.type('#v2SearchInput', 'tisu', { delay: 15 });
+  const typedVal = await page.$eval('#v2SearchInput', (el) => el.value);
+  check('real typing into the shared search input updates its value', typedVal === 'tisu');
+  await page.evaluate((q) => window.__gudMod.setGudangSearch(q), 'tisu');
   await new Promise((r) => setTimeout(r, 400));
-  const inputVal = await page.$eval('.gud-spotlight-input', (el) => el.value);
-  check('real typing into the Spotlight input updates its value without losing focus', inputVal === 'tisu');
-  const stillFocused = await page.evaluate(() => document.activeElement?.dataset?.act === 'gud-search-input');
-  check('the Spotlight input retains actual DOM focus after a full render cycle', stillFocused);
+  check('the results dropdown opens once a query exists', !!(await page.$('.gud-spotlight')));
   check('an empty catalog shows "Tidak ada hasil", not a crash', (await page.$eval('.gud-spotlight', (el) => el.textContent)).includes('Tidak ada hasil'));
 
   await page.keyboard.press('Escape');
   await new Promise((r) => setTimeout(r, 200));
-  check('real Escape (query non-empty) clears the query first (Doc 2 §12), overlay stays open', !!(await page.$('.gud-spotlight')));
-  const clearedVal = await page.$eval('.gud-spotlight-input', (el) => el.value).catch(() => null);
-  check('query was actually cleared by the first Escape', clearedVal === '');
+  check('real Escape (query non-empty) clears the query first (Doc 2 §12), dropdown stays open', !!(await page.$('.gud-spotlight')));
+  check('query was actually cleared by the first Escape', (await page.$eval('.gud-spotlight', (el) => el.textContent)).includes('Ketik untuk mencari'));
   await page.keyboard.press('Escape');
   await new Promise((r) => setTimeout(r, 200));
-  check('a second real Escape (query already empty) closes the overlay entirely', !(await page.$('.gud-spotlight')));
+  check('a second real Escape (query already empty) closes the dropdown entirely', !(await page.$('.gud-spotlight')));
+
+  // Restore the click-safety guarantee (module setup's own hide step, above)
+  // for the remaining Parts — this Part's un-hide was scoped to itself.
+  await page.evaluate(() => {
+    (window.__gudSearchChain || []).forEach((n) => n.style.setProperty('display', 'none', 'important'));
+  });
 }
 
 console.log('\n[Part C — Disabled-state correctness under real DOM inspection]');
@@ -159,20 +199,35 @@ console.log('\n[Part D — Mobile viewport (375x812, real resize + re-render)]')
   check('Home has no horizontal overflow at 375px width', !homeMobileOverflow);
   try { const h = await page.$(HOST); if (h) await h.screenshot({ path: path.join(screenshotsDir, 'home-mobile.png') }); } catch (_) {}
 
-  await page.keyboard.down('Control'); await page.keyboard.press('KeyK'); await page.keyboard.up('Control');
+  // Phase 10.1: the dropdown is anchored to the shared search input and
+  // width-clamped, not forced full-bleed — the property that actually
+  // matters on mobile is that it never overflows the viewport.
+  await page.evaluate((q) => window.__gudMod.setGudangSearch(q), 'tisu');
   await new Promise((r) => setTimeout(r, 250));
-  const spotlightFullWidth = await page.evaluate(() => {
+  const dropdownFits = await page.evaluate(() => {
     const s = document.querySelector('.gud-spotlight');
-    return s ? Math.abs(s.getBoundingClientRect().width - 375) < 2 : false;
+    if (!s) return false;
+    const r = s.getBoundingClientRect();
+    return r.right <= window.innerWidth + 2 && r.left >= -2;
   });
-  check('Spotlight overlay goes full-width/full-height on mobile (Doc 2 §13)', spotlightFullWidth);
+  check('results dropdown stays within the 375px viewport (anchored + width-clamped, Doc 2 §13)', dropdownFits);
   try { const h = await page.$(HOST); if (h) await h.screenshot({ path: path.join(screenshotsDir, 'search-mobile.png') }); } catch (_) {}
-  await page.keyboard.press('Escape');
+  await page.evaluate(() => window.__gudMod.setGudangSearch(''));
   await page.setViewport({ width: 1440, height: 960 });
 }
 
 console.log('\n[Part E — Keyboard-only: Tab order reaches the search bar, Enter actually activates it]');
 {
+  // Same scoped un-hide as Part B — checking real focus lands on
+  // #v2SearchInput requires its container to actually be visible.
+  await page.evaluate(() => {
+    let el = document.getElementById('v2SearchInput');
+    const chain = [];
+    while (el && el !== document.body) { chain.push(el); el = el.parentElement; }
+    chain.forEach((n) => n.style.setProperty('display', n.tagName === 'INPUT' ? 'inline-block' : 'flex', 'important'));
+    window.__gudSearchChain = chain;
+  });
+
   await page.evaluate(() => { window.__gudMod.setGudangScreen('home'); document.activeElement?.blur(); });
   await new Promise((r) => setTimeout(r, 150));
   await page.evaluate(() => { document.querySelector(`${'#__gudTestHost'} [data-act="gud-search-open"]`)?.focus(); });
@@ -180,8 +235,10 @@ console.log('\n[Part E — Keyboard-only: Tab order reaches the search bar, Ente
   check('the Home search bar is a real, focusable, keyboard-reachable element (a native <button>)', searchBarFocusable);
   await page.keyboard.press('Enter');
   await new Promise((r) => setTimeout(r, 250));
-  check('pressing Enter on the focused search bar actually opens the Spotlight overlay (native <button> activation, no custom keydown handler needed)', !!(await page.$('.gud-spotlight')));
-  await page.keyboard.press('Escape');
+  // Phase 10.1: the Home search "button" no longer opens its own overlay —
+  // it moves focus to the shared #v2SearchInput (native <button> activation,
+  // no custom keydown handler needed), matching Ctrl+K's behavior exactly.
+  check('pressing Enter on the focused search bar moves focus to the shared search input (not a separate overlay)', await page.evaluate(() => document.activeElement?.id === 'v2SearchInput'));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

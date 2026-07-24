@@ -217,11 +217,14 @@ import {
 } from './engineering/ui/engineering-center.js';
 // V1.28.0 Experience Layer — Gudang UI, embedded native module (mirrors Engineering).
 import {
-  mountGudang, setGudangScreen, setGudangSearch, openGudangSearch,
+  mountGudang, setGudangScreen, setGudangSearch,
 } from './gudang/ui/gudang-center.js';
 // v1.20.6 — inject the live User Management source into the Engineering personnel
 // resolver (it deliberately does not import users.js to stay Node-harness-safe).
 import { setEngineeringUsersSource } from './engineering/personnel/engineering-personnel.js';
+// V1.28.0 Phase 10.1 — Gudang's Goods Out department picker reads real Bidang
+// users (role='bidang') from User Management, same injection seam as above.
+import { setGudangUsersSource } from './gudang/config/gudang-bidang-source.js';
 import {
   registerSearchAdapter, searchPlaceholder, runModuleSearch, clearModuleSearch,
 } from './services/adaptive-search.js';
@@ -2220,12 +2223,9 @@ function initV2Rail() {
         <div class="v2-rail-tooltip" aria-hidden="true">Engineering Operations</div>
       </div>
 
-      <!-- Gudang — V1.28.0 Phase 1 (Foundation), dev-only (APP_ENV=development);
-           shown by updatePermissionUI() via canAccessModule('gudang'), which
-           resolves before the admin bypass (Phase 1.1 Foundation Hardening,
-           Review 7) — no production user, admin included, ever sees this.
-           No operational screens yet — land() shows the shared "coming soon"
-           placeholder (v1.14.0's showModulePlaceholder). -->
+      <!-- Gudang — V1.28.0 Experience Layer: real operational screens (Phases
+           3-9/10), admin-only — same canAccessModule('gudang') rule as Petty
+           Cash/Analytics/Konfigurasi (see updatePermissionUI() above). -->
       <div class="v2-rail-item" id="v2RailGudang"
            role="button" tabindex="0"
            aria-label="Gudang" aria-current="false" style="display:none;">
@@ -2901,6 +2901,16 @@ function initV2Panel() {
   });
   document.getElementById('v2NavAnalyticsEngineering')?.addEventListener('click', navAnalyticsEngineering);
   document.getElementById('v2NavEngSettings')?.addEventListener('click', () => navEngineering('settings', 'v2NavEngSettings'));
+
+  // MODUL Gudang (V1.28.0 Experience Layer) — was missing entirely; every
+  // other embedded module has a block here, Gudang's real screens (Phases
+  // 3-9) were unreachable through the real sidebar until this was added.
+  document.getElementById('v2NavGudHome')?.addEventListener('click', () => navGudang('home', 'v2NavGudHome'));
+  document.getElementById('v2NavGudGoodsOut')?.addEventListener('click', () => navGudang('goodsOut', 'v2NavGudGoodsOut'));
+  document.getElementById('v2NavGudGoodsIn')?.addEventListener('click', () => navGudang('goodsIn', 'v2NavGudGoodsIn'));
+  document.getElementById('v2NavGudHistory')?.addEventListener('click', () => navGudang('history', 'v2NavGudHistory'));
+  document.getElementById('v2NavGudOpname')?.addEventListener('click', () => navGudang('opname', 'v2NavGudOpname'));
+  document.getElementById('v2NavGudAnalytics')?.addEventListener('click', () => navGudang('analytics', 'v2NavGudAnalytics'));
 
   // MODUL Sarpras Intelligence — Experience Architecture phase: 5 primary
   // items (Home/NOR/Documents/Intelligence/Settings). Screen ids are
@@ -3682,6 +3692,7 @@ function setWorkspace(name) {
   const isEng   = name === 'engineering';
   const isSic   = name === 'sarprasIntelligence';
   const isDrvHist = name === 'driverHistory';
+  const isGudang = name === 'gudang';
 
   const timelineSurface = document.getElementById('v2TimelineSurface');
   const driverDash      = document.getElementById('driverDashboard');
@@ -3696,6 +3707,7 @@ function setWorkspace(name) {
   const engWs           = document.getElementById('v2EngineeringWorkspace');
   const sicWs           = document.getElementById('v2SarprasIntelWorkspace');
   const drvHistWs       = document.getElementById('v2DriverHistoryWorkspace');
+  const gudangWs        = document.getElementById('v2GudangWorkspace');
 
   if (timelineSurface) timelineSurface.style.display = isDash ? ''      : 'none';
   if (engWs)           engWs.style.display           = isEng   ? 'block' : 'none';
@@ -3717,6 +3729,13 @@ function setWorkspace(name) {
     if (!isHome) homeWs.__wspToken = Symbol('wsp-render-invalidated');
   }
   if (drvHistWs)       drvHistWs.style.display       = isDrvHist ? 'block' : 'none';
+  // V1.28.0 Phase 10.1 fix: Gudang was never added to this toggle when its
+  // workspace host was introduced — navGudang() called setWorkspace('gudang')
+  // but nothing here ever flipped #v2GudangWorkspace visible, so it stayed
+  // stuck at the display:none it's created with (initV2GudangWorkspace()),
+  // even though mounting/rendering underneath it worked correctly the whole
+  // time (confirmed via DOM inspection — real markup, just invisible).
+  if (gudangWs)        gudangWs.style.display        = isGudang ? 'block' : 'none';
 
   // Pause the embedded Petty Cash module's live re-render when it is hidden;
   // navPettyCash()/setPettyCashScreen() resume it on return.
@@ -11363,6 +11382,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function loadAuthedAdminData() {
     // Wire the Engineering personnel resolver to the live users cache (idempotent).
     setEngineeringUsersSource(getUserList);
+    // Wire Gudang's Bidang roster resolver the same way (Phase 10.1).
+    setGudangUsersSource(getUserList);
     await ensureUsersLoadedAndSubscribed();
     await ensureLogsLoadedAndSubscribed();
     await ensureExportHistoryLoadedAndSubscribed(); // v1.12.1B export metadata cache

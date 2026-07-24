@@ -80,9 +80,9 @@ export function kbdRow(keys) {
 /** Reusable empty state — icon tile + title + hint + optional CTA, the same
  *  shape as .eng-empty. An empty state always encourages the next
  *  operational action (Doc 2 §14) — never a bare "no data" dead end. */
-export function emptyState({ iconName = 'box', title, hint, ctaLabel = null, ctaAct = null }) {
+export function emptyState({ iconName = 'box', title, hint, ctaLabel = null, ctaAct = null, ctaId = null }) {
   const cta = ctaLabel && ctaAct
-    ? `<button type="button" class="gud-btn -primary gud-empty-cta" data-act="${esc(ctaAct)}">${icon('plus', { size: 15 })} ${esc(ctaLabel)}</button>`
+    ? `<button type="button" class="gud-btn -primary gud-empty-cta" data-act="${esc(ctaAct)}"${ctaId != null ? ` data-id="${esc(ctaId)}"` : ''}>${icon('plus', { size: 15 })} ${esc(ctaLabel)}</button>`
     : '';
   return `<div class="gud-empty">
     <span class="gud-empty-ic">${icon(iconName, { size: 26 })}</span>

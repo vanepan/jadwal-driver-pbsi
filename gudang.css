@@ -102,6 +102,15 @@
 .gud-icon-btn:hover{color:var(--text);background:var(--surface-2);}
 
 /* ── pills / tags ─────────────────────────────────────────────────────── */
+/* .gud-chip was used (movement-history/stock-opname filter chips, and the
+   Phase 10 itemType/add-location chips) as if styled, but no rule ever
+   existed for it — this is why chips rendered as unstyled default buttons.
+   Mirrors .eng-chip/.eng-chips verbatim (same data-on="true" toggle idiom). */
+.gud-chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+.gud-chip{border:1px solid var(--border);background:var(--surface);color:var(--text-dim);font-family:var(--font-sans);font-weight:600;font-size:12.5px;padding:7px 13px;border-radius:999px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:all .12s;}
+.gud-chip:hover{border-color:var(--border-strong);color:var(--text);}
+.gud-chip[data-on="true"]{background:var(--accent-weak);border-color:var(--accent-line);color:var(--accent);}
+
 .gud-pill{display:inline-flex;align-items:center;font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;letter-spacing:.01em;white-space:nowrap;}
 .gud-pill[data-pill="ok"]{background:var(--c-green-weak);color:var(--c-green);}
 .gud-pill[data-pill="warn"]{background:var(--c-amber-weak);color:var(--c-amber);}
@@ -142,6 +151,7 @@
 .gud-drawer-foot{padding:16px 24px;border-top:1px solid var(--border-faint);flex:none;}
 .gud-sec{margin-top:26px;} .gud-sec:first-child{margin-top:0;}
 .gud-sec-t{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-ghost);font-weight:700;margin-bottom:12px;}
+.gud-sec-t-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;} .gud-sec-t-row .gud-sec-t{margin-bottom:0;}
 .gud-kv{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 0;border-top:1px solid var(--border-faint);font-size:13px;}
 .gud-kv:first-of-type{border-top:none;} .gud-kv-k{color:var(--text-faint);} .gud-kv-v{color:var(--text);font-weight:600;}
 
@@ -160,8 +170,13 @@
 .gud-table tbody tr[data-act]{cursor:pointer;} .gud-table tbody tr[data-act]:hover{background:var(--hover);}
 .gud-table .-right{text-align:right;} .gud-table .-mono{font-family:var(--font-mono);}
 
-/* ── entry animation (ported verbatim from .eng-content) ─────────────── */
-@media (prefers-reduced-motion:no-preference){.gud-content{animation:gudFadeUp .4s cubic-bezier(.2,.7,.2,1) both;}}
+/* ── entry animation (ported verbatim from .eng-content) ───────────────
+   Scoped to .-enter (added only when st.screen actually changes, see
+   gudang-center.js#render) rather than every .gud-content, which
+   previously replayed the fade-up on every single keystroke re-render
+   (host.innerHTML replaces this element every render — Phase 10.1 UAT:
+   "menu flickers on every character typed"). */
+@media (prefers-reduced-motion:no-preference){.gud-content.-enter{animation:gudFadeUp .4s cubic-bezier(.2,.7,.2,1) both;}}
 @keyframes gudFadeUp{from{opacity:0;transform:translateY(9px);}to{opacity:1;transform:none;}}
 
 /* list/row stagger (ported from Analytics' anFadeUp nth-child recipe) */
@@ -202,12 +217,19 @@
   .gud-home-search-kbd{display:none;} /* Doc 2 §13: no keyboard hints on mobile — same rule already applied to .gud-spotlight-foot */
 }
 
-/* ── Universal Search / Spotlight overlay (Doc 2 §05/§12, Doc 3 Ch.08) ── */
-.gud-spotlight-scrim{align-items:flex-start;padding-top:12vh;}
-.gud-spotlight{width:600px;max-width:92vw;max-height:70vh;display:flex;flex-direction:column;background:var(--surface);border-radius:18px;box-shadow:var(--shadow-lg);border:1px solid var(--border);overflow:hidden;}
-.gud-spotlight-bar{display:flex;align-items:center;gap:12px;padding:16px 18px;border-bottom:1px solid var(--border-faint);flex:none;}
-.gud-spotlight-input{flex:1;border:none;background:transparent;font-family:var(--font-sans);font-size:16px;color:var(--text);outline:none;}
-.gud-spotlight-hint{padding:28px 20px;text-align:center;color:var(--text-faint);font-size:13px;display:flex;align-items:center;justify-content:center;gap:8px;}
+/* ── Universal Search — anchored results dropdown (Doc 2 §05/§12, Doc 3 Ch.08)
+   Phase 10.1 redesign: the query no longer has its own duplicate input box —
+   it IS the shared topbar #v2SearchInput every other module already uses
+   (Ctrl+K focuses that field directly; gudang-center.js#render only ever
+   positions this dropdown under it via an inline style computed from its
+   real getBoundingClientRect()). Previously this rendered as a second,
+   separately-focused input inside a full-screen dimming scrim that (via a
+   pre-existing CSS bug — .gud-spotlight-scrim never overrode the base
+   .gud-scrim's justify-content:flex-end) always appeared pinned to the top
+   RIGHT corner of the screen, overlapping page content. ── */
+.gud-spotlight-scrim{background:transparent;} /* invisible click-outside-to-close catcher only, no dimming */
+.gud-spotlight{position:fixed;max-width:92vw;max-height:50vh;display:flex;flex-direction:column;background:var(--surface);border-radius:14px;box-shadow:var(--shadow-lg);border:1px solid var(--border);overflow:hidden;}
+.gud-spotlight-hint{padding:20px;text-align:center;color:var(--text-faint);font-size:13px;display:flex;align-items:center;justify-content:center;gap:8px;}
 .gud-spotlight-results{overflow-y:auto;padding:8px;flex:1;min-height:0;}
 .gud-spotlight-row{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:11px;cursor:pointer;}
 .gud-spotlight-row:hover,.gud-spotlight-row.-focused{background:var(--hover);}
@@ -225,8 +247,6 @@
 .gud-spotlight-row.-revealed .gud-spotlight-chevron{transform:rotate(90deg);color:var(--accent);}
 .gud-spotlight-foot{display:flex;align-items:center;gap:16px;padding:10px 16px;border-top:1px solid var(--border-faint);flex:none;background:var(--surface-2);}
 @media (max-width:760px){
-  .gud-spotlight-scrim{padding-top:0;align-items:stretch;}
-  .gud-spotlight{width:100%;max-width:100%;max-height:100%;height:100%;border-radius:0;}
   .gud-spotlight-foot{display:none;} /* Doc 2 §13: no keyboard hints on mobile — nothing depends on hover/keys */
   .gud-spotlight-row-actions{display:none;} /* hidden until the chevron reveals them (Doc 2 §05: "one tap primary action... chevron for secondary") */
   .gud-spotlight-row{flex-wrap:wrap;}
@@ -263,6 +283,8 @@
 .gud-hist-list{display:flex;flex-direction:column;}
 .gud-hist-row{display:flex;align-items:center;gap:12px;padding:12px 4px;border-top:1px solid var(--border-faint);}
 .gud-hist-row:first-child{border-top:none;}
+.gud-hist-row[data-act]{cursor:pointer;margin:0 -8px;padding-left:8px;padding-right:8px;border-radius:9px;}
+.gud-hist-row[data-act]:hover{background:var(--hover);}
 .gud-hist-ic{width:30px;height:30px;border-radius:9px;flex:none;display:grid;place-items:center;}
 .gud-hist-ic[data-tone="ok"]{background:var(--c-green-weak);color:var(--c-green);}
 .gud-hist-ic[data-tone="crit"]{background:var(--crit-weak);color:var(--crit);}
@@ -288,6 +310,8 @@
 .gud-toplist{display:flex;flex-direction:column;gap:2px;}
 .gud-toplist-row{display:flex;align-items:center;gap:12px;padding:9px 0;border-top:1px solid var(--border-faint);}
 .gud-toplist-row:first-child{border-top:none;}
+.gud-toplist-row[data-act]{cursor:pointer;margin:0 -8px;padding-left:8px;padding-right:8px;border-radius:9px;}
+.gud-toplist-row[data-act]:hover{background:var(--hover);}
 .gud-toplist-rank{width:20px;height:20px;border-radius:6px;background:var(--surface-2);color:var(--text-faint);font-size:11px;font-weight:800;display:grid;place-items:center;flex:none;font-family:var(--font-mono);}
 .gud-toplist-name{flex:1;min-width:0;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .gud-toplist-val{font-family:var(--font-mono);font-size:12.5px;color:var(--text-dim);font-weight:700;}

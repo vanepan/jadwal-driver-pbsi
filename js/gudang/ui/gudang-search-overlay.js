@@ -1,6 +1,15 @@
 /* ============================================================
-   GUDANG-SEARCH-OVERLAY.JS — Universal Search / Spotlight overlay
+   GUDANG-SEARCH-OVERLAY.JS — Universal Search results dropdown
    (Doc 2 §05/§12, Doc 3 Ch.08)
+
+   Phase 10.1 redesign: this no longer owns its own input box. The query
+   comes from the shared topbar #v2SearchInput every other module already
+   searches through (Ctrl+K focuses that field directly — gudang-center.js
+   handles that, not this file); this is now purely the results dropdown
+   that appears anchored underneath it. Previously a second, duplicate
+   input lived here inside a full-screen scrim, which — combined with a CSS
+   bug that pinned it to the top-right corner — read as a disruptive
+   floating panel rather than "the search box showing suggestions."
 
    Pure presentation over search-session-engine.js's state — every
    keystroke/arrow/enter/tab/esc is already decided by that reducer
@@ -17,25 +26,34 @@ import { esc, icon, kbdRow } from './gudang-atoms.js';
 import { ACTION_OWNERSHIP } from '../search/action-resolver.js';
 
 const DOMAIN_ICON = { item: 'box', location: 'pin', department: 'users', asset: 'tag' };
-const DOMAIN_LABEL = { item: 'Item', location: 'Lokasi', department: 'Departemen', asset: 'Aset' };
+const DOMAIN_LABEL = { item: 'Item', location: 'Lokasi', department: 'Bidang', asset: 'Aset' };
 
-export function renderSearchOverlay(st, _c) {
+/**
+ * @param {*} st
+ * @param {*} _c
+ * @param {?{top:number,left:number,width:number}} anchorRect — the real
+ *   topbar search input's getBoundingClientRect(); gudang-center.js passes
+ *   this so the dropdown always tracks wherever that shared field actually
+ *   is, on any layout/viewport, instead of a hardcoded position.
+ */
+export function renderSearchOverlay(st, _c, anchorRect) {
   const s = st.search;
   const rows = s.results.map((r, i) => resultRow(r, i, s)).join('');
   const body = !s.query
-    ? `<div class="gud-spotlight-hint">${icon('search', { size: 16, tone: 'text-faint' })} Ketik untuk mencari item, lokasi, atau departemen…</div>`
+    ? `<div class="gud-spotlight-hint">${icon('search', { size: 16, tone: 'text-faint' })} Ketik untuk mencari item, lokasi, atau bidang…</div>`
     : (s.results.length
       ? `<div class="gud-spotlight-results" role="listbox">${rows}</div>`
       : `<div class="gud-spotlight-hint">Tidak ada hasil untuk "${esc(s.query)}".</div>`);
 
+  const style = anchorRect
+    ? (() => {
+        const width = Math.min(Math.max(anchorRect.width, 320), (typeof window !== 'undefined' ? window.innerWidth : 1280) - anchorRect.left - 16);
+        return `top:${Math.round(anchorRect.bottom + 8)}px;left:${Math.round(anchorRect.left)}px;width:${Math.round(width)}px;`;
+      })()
+    : 'top:64px;left:24px;width:360px;';
+
   return `<div class="gud-scrim gud-spotlight-scrim -open" data-act="gud-scrim">
-    <div class="gud-spotlight">
-      <div class="gud-spotlight-bar">
-        ${icon('search', { size: 18, tone: 'text-faint' })}
-        <input class="gud-spotlight-input" data-act="gud-search-input" type="text" value="${esc(s.query)}"
-               placeholder="Cari item, lokasi, aset…" autocomplete="off" autofocus />
-        <button type="button" class="gud-icon-btn -sm" data-act="gud-search-close" aria-label="Tutup">${icon('close', { size: 15 })}</button>
-      </div>
+    <div class="gud-spotlight" style="${style}">
       ${body}
       <div class="gud-spotlight-foot">
         <span class="gud-hint">${kbdRow(['↑', '↓'])} pilih</span>

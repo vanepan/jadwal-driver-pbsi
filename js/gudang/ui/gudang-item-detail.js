@@ -20,7 +20,7 @@
 
 'use strict';
 
-import { esc, icon, fmtQty, fmtWhen } from './gudang-atoms.js';
+import { esc, icon, fmtQty, fmtWhen, emptyState } from './gudang-atoms.js';
 import { ITEM_TYPE } from '../contracts/item-contract.js';
 import { ASSET_STATUS, ASSET_EVENT_TYPE } from '../contracts/asset-contract.js';
 import { isTransitionAllowed, applyAssetTransition } from '../asset/asset-lifecycle-engine.js';
@@ -75,7 +75,7 @@ function consumableBody(st, item, requestRender) {
       <div class="gud-kv"><span class="gud-kv-k">Rata-rata Konsumsi Bulanan</span><span class="gud-kv-v">${st.detail.consumption != null ? fmtQty(Math.round(st.detail.consumption)) : '—'}</span></div>
     </div>
     <div class="gud-sec">
-      <div class="gud-sec-t">PENGGUNAAN PER DEPARTEMEN</div>
+      <div class="gud-sec-t">PENGGUNAAN PER BIDANG</div>
       ${st.detail.deptUsage.length
         ? st.detail.deptUsage.map((d) => `<div class="gud-kv"><span class="gud-kv-k">${esc(deptName(st, d.departmentId))}</span><span class="gud-kv-v">${fmtQty(d.quantity)}</span></div>`).join('')
         : `<div class="gud-muted">Belum ada data.</div>`}
@@ -92,9 +92,19 @@ function deptName(st, id) { return st.data.departments.find((d) => d.departmentI
 
 function assetListBody(st, item) {
   const units = st.data.assets.filter((a) => a.itemId === item.itemId);
-  if (!units.length) return `<div class="gud-muted">Belum ada unit aset untuk item ini.</div>`;
+  if (!units.length) {
+    return emptyState({
+      iconName: 'tag',
+      title: 'Belum ada unit aset',
+      hint: 'Setiap unit aset (serial/tag) untuk item ini dicatat secara individual.',
+      ctaLabel: 'Tambah Unit', ctaAct: 'gud-cat-add-asset-unit', ctaId: item.itemId,
+    });
+  }
   return `<div class="gud-sec">
-    <div class="gud-sec-t">${units.length} UNIT</div>
+    <div class="gud-sec-t-row">
+      <div class="gud-sec-t">${units.length} UNIT</div>
+      <button type="button" class="gud-link-btn" data-act="gud-cat-add-asset-unit" data-id="${esc(item.itemId)}">${icon('plus', { size: 12 })} Tambah Unit</button>
+    </div>
     <div class="gud-asset-list">${units.map((a) => `
       <button type="button" class="gud-asset-row" data-act="gud-open-asset" data-id="${esc(a.assetId)}">
         <span class="gud-asset-identity">${esc(a.identity)}</span>

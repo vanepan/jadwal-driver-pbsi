@@ -84,7 +84,10 @@ function itemLoop(st, b) {
         ${q ? (matches.length
           ? `<div class="gud-picker-list gud-mt">${matches.map((i) => `
               <button type="button" class="gud-picker-row" data-act="gud-gi-item-pick" data-id="${esc(i.itemId)}">${esc(i.name)}</button>`).join('')}</div>`
-          : `<div class="gud-muted gud-mt">Tidak ada item yang cocok.</div>`) : ''}
+          : `<div class="gud-mt">
+              <div class="gud-muted">Tidak ada item yang cocok.</div>
+              <button type="button" class="gud-link-btn gud-mt" data-act="gud-cat-add-item-goodsin">${icon('plus', { size: 12 })} Tambah "${esc(q)}" sebagai item baru</button>
+            </div>`) : ''}
       ` : `
         <div class="gud-flow-selected">
           <span class="gud-flow-selected-name">${esc(selected.name)}</span>

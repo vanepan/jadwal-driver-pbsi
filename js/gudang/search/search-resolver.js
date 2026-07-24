@@ -52,7 +52,10 @@
 
 import { listItems } from '../repository/item-repository.js';
 import { listLocations } from '../repository/location-repository.js';
-import { listDepartments } from '../repository/department-repository.js';
+// Phase 10.1: "department" candidates come from the real Bidang roster in
+// User Management (gudang-bidang-source.js), not department-repository.js,
+// which nothing ever populated — same source Goods Out's picker now uses.
+import { listBidang } from '../config/gudang-bidang-source.js';
 import { makeSearchResult } from '../contracts/search-result-contract.js';
 import { success } from '../repository/repository-result.js';
 
@@ -98,17 +101,17 @@ export async function search(query) {
   const q = String(query || '').trim().toLowerCase();
   if (!q) return success([]);
 
-  const [itemsRes, locationsRes, departmentsRes] = await Promise.all([
-    listItems(), listLocations(), listDepartments(),
+  const [itemsRes, locationsRes] = await Promise.all([
+    listItems(), listLocations(),
   ]);
   if (!itemsRes.ok) return itemsRes;
   if (!locationsRes.ok) return locationsRes;
-  if (!departmentsRes.ok) return departmentsRes;
+  const departments = listBidang(); // sync — an in-memory filter, not a repository read
 
   const candidates = [
     ...itemsRes.data.filter((i) => itemMatchesQuery(i, q)).map((record) => ({ domain: 'item', record })),
     ...locationsRes.data.filter((l) => matches(l.name, q)).map((record) => ({ domain: 'location', record })),
-    ...departmentsRes.data.filter((d) => matches(d.name, q)).map((record) => ({ domain: 'department', record })),
+    ...departments.filter((d) => matches(d.name, q)).map((record) => ({ domain: 'department', record })),
   ];
   return success(candidates);
 }

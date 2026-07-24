@@ -23,8 +23,11 @@ import { esc } from './gudang-atoms.js';
 
 import { listItems } from '../repository/item-repository.js';
 import { listLocations } from '../repository/location-repository.js';
-import { listDepartments } from '../repository/department-repository.js';
 import { listAssets } from '../repository/asset-repository.js';
+// Phase 10.1: "Departemen diganti dengan Bidang" — the picker reads the
+// real Bidang-role roster from User Management (see gudang-bidang-source.js
+// header), not department-repository.js, which nothing had ever populated.
+import { listBidang } from '../config/gudang-bidang-source.js';
 
 import { createInitialSessionState, applySessionEvent } from '../search/search-session-engine.js';
 import { searchAndResolve } from '../search/search-resolver.js';
@@ -37,10 +40,12 @@ import { renderMovementHistory, historyHandlers } from './gudang-movement-histor
 import { renderStockOpname, opnameHandlers } from './gudang-stock-opname.js';
 import { renderAnalytics, analyticsOnChange } from './gudang-analytics.js';
 import { renderItemDetail, renderAssetDetail, detailHandlers } from './gudang-item-detail.js';
+import { renderCatalogModal, catalogHandlers } from './gudang-catalog.js';
 
 const st = {
   screen: 'home',
   detail: null, // { kind: 'item'|'asset', id: string }
+  modal: null, // { kind: 'addItem'|'addLocation'|'addDepartment'|'addAssetUnit', ... } — gudang-catalog.js
   search: createInitialSessionState(),
   data: { items: [], locations: [], departments: [], assets: [], loadedAt: 0 },
   loading: false,
@@ -50,7 +55,7 @@ const st = {
   historyFilters: null, // lazily created by gudang-movement-history.js's own ensure pattern
 };
 
-let host = null, mounted = false, loaded = false;
+let host = null, mounted = false, loaded = false, lastAnimatedScreen = null;
 
 /* ── context (identity) — mirrors Engineering's ctx() shape ───────────── */
 function ctx() {
@@ -87,13 +92,13 @@ export async function mountGudang(hostEl) {
 async function refreshCatalog() {
   st.loading = true;
   render();
-  const [itemsRes, locationsRes, departmentsRes, assetsRes] = await Promise.all([
-    listItems(), listLocations(), listDepartments(), listAssets(),
+  const [itemsRes, locationsRes, assetsRes] = await Promise.all([
+    listItems(), listLocations(), listAssets(),
   ]);
   st.data = {
     items: itemsRes.ok ? itemsRes.data : [],
     locations: locationsRes.ok ? locationsRes.data : [],
-    departments: departmentsRes.ok ? departmentsRes.data : [],
+    departments: listBidang(),
     assets: assetsRes.ok ? assetsRes.data : [],
     loadedAt: Date.now(),
   };
@@ -108,29 +113,51 @@ export function setGudangScreen(screen) {
 }
 
 /** Adaptive global search adapter hook (js/services/adaptive-search.js).
- *  Doc 2 §05: Search IS the product here — typing in the shared topbar
- *  input while inside Gudang opens/updates the SAME Spotlight overlay
- *  Ctrl+K opens, rather than filtering an in-page list (there is no
- *  separate "search results screen" to filter, by design). */
+ *  Phase 10.1 redesign (Doc 2 §05: Search IS the product here): the shared
+ *  topbar #v2SearchInput IS the query field — every keystroke there drives
+ *  this dropdown, exactly the same "one box, per-module adapter" shape
+ *  every other module already uses (js/app.js#registerSearchAdapters).
+ *  An empty query (typed-then-deleted, or the shared Escape/clear-button
+ *  handler in app.js) closes the dropdown rather than showing an empty
+ *  "type to search" hint — there is no separate query box left to hint at. */
 export function setGudangSearch(q) {
-  openSearchOverlay(q);
-}
-
-export function openGudangSearch() {
-  openSearchOverlay('');
-}
-
-function openSearchOverlay(initialQuery) {
-  const opened = applySessionEvent(st.search, { type: 'open' }).state;
-  st.search = opened;
+  if (!q) { closeSearchDropdown(); return; }
+  if (st.search.status !== 'open') st.search = applySessionEvent(st.search, { type: 'open' }).state;
   render();
-  if (initialQuery) driveSearchQuery(initialQuery);
+  driveSearchQuery(q);
+}
+
+/** Ctrl+K's entire job now (Doc 2 §12): move focus to the real search field.
+ *  It does not open anything itself — typing is what opens the dropdown,
+ *  via setGudangSearch above, same as every other module's adapter. */
+export function openGudangSearch() {
+  focusSharedSearchInput();
+}
+
+function focusSharedSearchInput() {
+  const input = document.getElementById('v2SearchInput');
+  if (input) { input.focus(); input.select(); }
+}
+
+function closeSearchDropdown() {
+  if (st.search.status === 'open') {
+    st.search = applySessionEvent(st.search, { type: 'close' }).state;
+    render();
+  }
 }
 
 async function driveSearchQuery(query) {
   const res = await searchAndResolve(query);
   st.search = applySessionEvent(st.search, { type: 'resultsLoaded', query, results: res.ok ? res.data : [] }).state;
   render();
+}
+
+/** Where the results dropdown anchors — the shared topbar search input's
+ *  real on-screen position, not a fixed guess (it must track that field on
+ *  any layout/viewport, and that field lives outside #v2GudangWorkspace). */
+function searchAnchorRect() {
+  const input = document.getElementById('v2SearchInput');
+  return input ? input.getBoundingClientRect() : null;
 }
 
 /* ── render ───────────────────────────────────────────────────────────── */
@@ -150,8 +177,15 @@ function render() {
   const detail = st.detail
     ? (st.detail.kind === 'asset' ? renderAssetDetail(st, c, render) : renderItemDetail(st, c, render))
     : '';
-  const overlay = st.search.status === 'open' ? renderSearchOverlay(st, c) : '';
-  host.innerHTML = `<div class="gud-content">${screen}</div>${detail}${overlay}`;
+  const overlay = st.search.status === 'open' ? renderSearchOverlay(st, c, searchAnchorRect()) : '';
+  const modal = st.modal ? renderCatalogModal(st, c) : '';
+  // Entrance animation plays only when the screen itself changes — every
+  // render() call (e.g. one per keystroke while typing) replaces this whole
+  // div, so an unconditional animation class replayed the fade-up on every
+  // character typed (Phase 10.1 UAT finding).
+  const isNewScreen = st.screen !== lastAnimatedScreen;
+  lastAnimatedScreen = st.screen;
+  host.innerHTML = `<div class="gud-content${isNewScreen ? ' -enter' : ''}">${screen}</div>${detail}${overlay}${modal}`;
   restoreFocus();
 }
 
@@ -160,6 +194,7 @@ function onClick(e) {
   const scrim = e.target.closest('[data-act="gud-scrim"]');
   if (scrim && !e.target.closest('.gud-drawer') && !e.target.closest('.gud-modal-box') && !e.target.closest('.gud-spotlight')) {
     st.detail = null;
+    st.modal = null;
     st.search = applySessionEvent(st.search, { type: 'close' }).state;
     render();
     return;
@@ -174,8 +209,9 @@ function onClick(e) {
   switch (act) {
     case 'gud-goto': setGudangScreen(val); break;
     case 'gud-noop': break;
-    case 'gud-search-open': openSearchOverlay(''); break;
-    case 'gud-search-close': st.search = applySessionEvent(st.search, { type: 'close' }).state; render(); break;
+    // Home's search "button" no longer opens its own overlay — it moves
+    // focus to the real shared search field, same as Ctrl+K (Phase 10.1).
+    case 'gud-search-open': focusSharedSearchInput(); break;
     case 'gud-search-key': handleSearchKeyClick(el, c); break;
     case 'gud-result-row': handleResultFocus(el, false); break;
     case 'gud-result-chip': handleResultFocus(el, true); break;
@@ -191,6 +227,7 @@ function onClick(e) {
       if (act.startsWith('gud-op-')) { opnameHandlers.onClick(st, act, el, c, render, refreshCatalog); return; }
       if (act.startsWith('gud-hist-')) { historyHandlers.onClick(st, act, el, c, render); return; }
       if (act.startsWith('gud-asset-action-')) { detailHandlers.onClick(st, act, el, c, render, refreshCatalog); return; }
+      if (act.startsWith('gud-cat-')) { catalogHandlers.onClick(st, act, el, c, render, refreshCatalog); return; }
       break;
   }
 }
@@ -206,13 +243,13 @@ function onInput(e) {
   // re-focuses + restores the caret. Mirrors Engineering's restoreFocus,
   // generalized to every Gudang live input, not just search.
   st._focusAct = ds.act;
-  if (ds.act === 'gud-search-input') { driveSearchQuery(t.value); return; }
   if (ds.act.startsWith('gud-go-')) { goodsOutHandlers.onInput(st, ds.act, t, render); return; }
   if (ds.act.startsWith('gud-gi-')) { goodsInHandlers.onInput(st, ds.act, t, render); return; }
   if (ds.act.startsWith('gud-op-')) { opnameHandlers.onInput(st, ds.act, t, render); return; }
   if (ds.act.startsWith('gud-hist-')) { historyHandlers.onInput(st, ds.act, t, render); return; }
   if (ds.act === 'gud-an-item-pick') { analyticsOnChange(st, t, render); return; }
   if (ds.act.startsWith('gud-asset-')) { detailHandlers.onInput(st, ds.act, t); return; }
+  if (ds.act.startsWith('gud-cat-')) { catalogHandlers.onInput(st, ds.act, t, render); return; }
 }
 
 function onSubmit(e) {
@@ -226,8 +263,13 @@ function onSubmit(e) {
    but a no-op outside Gudang so it never hijacks other modules' shortcuts). */
 function onGlobalKeydown(e) {
   if (!host || host.offsetParent === null) return; // Gudang not the visible workspace
+  // Ctrl+K focuses the real search field only (Doc 2 §12, Phase 10.1) — it
+  // does not open a dropdown itself; typing there is what does that, via
+  // setGudangSearch (same "one box" contract every other module uses).
   const ctrlK = (e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K');
-  if (ctrlK) { e.preventDefault(); st.search = applySessionEvent(st.search, { type: 'key', key: 'k', ctrlKey: true }).state; render(); return; }
+  if (ctrlK) { e.preventDefault(); focusSharedSearchInput(); return; }
+
+  if (e.key === 'Escape' && st.modal) { e.preventDefault(); st.modal = null; render(); return; }
 
   // Ctrl+Enter — save the whole batch (Doc 2 §12: scoped to Goods In/Out/
   // Stock Opname, "not just the current line") — from anywhere in the flow.

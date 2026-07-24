@@ -104,6 +104,12 @@ console.log('\n[Part D — No unnecessary abstraction]');
     'gudang-atoms.js', 'gudang-center.js', 'gudang-home.js', 'gudang-search-overlay.js',
     'gudang-goods-out.js', 'gudang-goods-in.js', 'gudang-movement-history.js',
     'gudang-stock-opname.js', 'gudang-analytics.js', 'gudang-item-detail.js',
+    // Phase 10 (Experience Completion): contextual catalog creation
+    // (Add Item/Location/Asset Unit — no Add-Department; Phase 10.1 makes
+    // "department" the real Bidang roster from User Management instead)
+    // closes the gap where nothing in Phases 1-9 ever populated the
+    // catalog from the UI.
+    'gudang-catalog.js',
   ];
   const actual = fs.readdirSync(path.join(ROOT, 'js/gudang/ui')).filter((f) => f.endsWith('.js')).sort();
   check(`js/gudang/ui/ has exactly the ${expectedFiles.length} files this phase needs — one per screen, no speculative extras`, JSON.stringify(actual) === JSON.stringify([...expectedFiles].sort()));
@@ -121,7 +127,15 @@ console.log('\n[Part D — No unnecessary abstraction]');
 console.log('\n[Part E — Wiring integrity: app.js/index.html actually mount Gudang]');
 {
   const appJs = read('js/app.js');
-  check('app.js statically imports mountGudang/setGudangScreen/setGudangSearch/openGudangSearch', /import\s*\{[\s\S]{0,120}mountGudang[\s\S]{0,120}\}\s*from ['"]\.\/gudang\/ui\/gudang-center\.js['"]/.test(appJs));
+  check('app.js statically imports mountGudang/setGudangScreen/setGudangSearch from gudang-center.js', /import\s*\{[\s\S]{0,120}mountGudang[\s\S]{0,120}\}\s*from ['"]\.\/gudang\/ui\/gudang-center\.js['"]/.test(appJs));
+  check('app.js does NOT import openGudangSearch (Phase 10: removed as dead code — zero call sites)', !/mountGudang[\s\S]{0,200}openGudangSearch/.test(appJs));
+  check('every v2NavGud* sidebar button has a real click listener (Phase 10: this was the actual UAT bug — screens existed but were unreachable)',
+    ['v2NavGudHome', 'v2NavGudGoodsOut', 'v2NavGudGoodsIn', 'v2NavGudHistory', 'v2NavGudOpname', 'v2NavGudAnalytics']
+      .every((id) => new RegExp(`getElementById\\('${id}'\\)\\?\\.addEventListener\\('click'`).test(appJs)));
+  check('setWorkspace() actually toggles #v2GudangWorkspace visible (Phase 10.1: the real blank-screen bug — Gudang was never added to this toggle, so the host stayed at its initial display:none no matter what navGudang() did)',
+    /const isGudang\s*=\s*name === 'gudang'/.test(appJs)
+    && /getElementById\('v2GudangWorkspace'\)/.test(appJs)
+    && /gudangWs\.style\.display\s*=\s*isGudang/.test(appJs));
   check('initV2GudangWorkspace() is defined and injects a .gud-root host', /function initV2GudangWorkspace[\s\S]{0,300}gud-root/.test(appJs));
   check('initV2GudangWorkspace() is actually called in the startup sequence', /initV2GudangWorkspace\(\);/.test(appJs));
   check('v2PanelGudangNav is declared and included in the panel-clearing array', appJs.includes('v2PanelGudangNav') && /\[.*v2PanelGudangNav.*\]/.test(appJs));

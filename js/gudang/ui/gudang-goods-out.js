@@ -42,7 +42,7 @@ export function renderGoodsOut(st, c) {
   return `<div class="gud-flow">
     <div class="gud-page-head">
       <div><div class="gud-page-crumb">GUDANG</div><h1 class="gud-page-title">Goods Out</h1>
-      <p class="gud-page-lede">Keluarkan barang ke departemen. Setiap baris tercatat sebagai pergerakan tersendiri.</p></div>
+      <p class="gud-page-lede">Keluarkan barang ke bidang. Setiap baris tercatat sebagai pergerakan tersendiri.</p></div>
     </div>
 
     ${!dept ? departmentPicker(st, b) : itemLoop(st, b, dept)}
@@ -55,13 +55,15 @@ function departmentPicker(st, b) {
     ? st.data.departments.filter((d) => d.name.toLowerCase().includes(q))
     : st.data.departments;
   return `<div class="gud-card -pad gud-flow-step">
-    <div class="gud-field"><span>Departemen</span>
-      <input class="gud-input" data-act="gud-go-dept-query" value="${esc(b.departmentQuery)}" placeholder="Cari departemen…" autocomplete="off" autofocus />
+    <div class="gud-field"><span>Bidang</span>
+      <input class="gud-input" data-act="gud-go-dept-query" value="${esc(b.departmentQuery)}" placeholder="Cari bidang…" autocomplete="off" autofocus />
     </div>
     ${matches.length
       ? `<div class="gud-picker-list gud-mt">${matches.map((d) => `
           <button type="button" class="gud-picker-row" data-act="gud-go-dept-pick" data-id="${esc(d.departmentId)}">${esc(d.name)}</button>`).join('')}</div>`
-      : `<div class="gud-muted gud-mt">${st.data.departments.length === 0 ? 'Belum ada departemen terdaftar.' : 'Tidak ada departemen yang cocok.'}</div>`}
+      : `<div class="gud-mt">
+          <div class="gud-muted">${st.data.departments.length === 0 ? 'Belum ada bidang terdaftar di Manajemen User.' : 'Tidak ada bidang yang cocok.'}</div>
+        </div>`}
   </div>`;
 }
 
@@ -85,7 +87,10 @@ function itemLoop(st, b, dept) {
         ${q ? (matches.length
           ? `<div class="gud-picker-list gud-mt">${matches.map((i) => `
               <button type="button" class="gud-picker-row" data-act="gud-go-item-pick" data-id="${esc(i.itemId)}">${esc(i.name)}</button>`).join('')}</div>`
-          : `<div class="gud-muted gud-mt">Tidak ada item yang cocok.</div>`) : ''}
+          : `<div class="gud-mt">
+              <div class="gud-muted">Tidak ada item yang cocok.</div>
+              <button type="button" class="gud-link-btn gud-mt" data-act="gud-cat-add-item-goodsout">${icon('plus', { size: 12 })} Tambah "${esc(q)}" sebagai item baru</button>
+            </div>`) : ''}
       ` : `
         <div class="gud-flow-selected">
           <span class="gud-flow-selected-name">${esc(selected.name)}</span>

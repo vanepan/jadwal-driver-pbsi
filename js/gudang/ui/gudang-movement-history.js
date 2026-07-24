@@ -68,7 +68,7 @@ function matchesType(m, type) {
 
 function feedList(rows) {
   return `<div class="gud-hist-list gud-mt gud-stagger">${rows.map((m) => `
-    <div class="gud-hist-row">
+    <div class="gud-hist-row" ${m.itemId ? `data-act="gud-open-item" data-id="${esc(m.itemId)}"` : ''}>
       <span class="gud-hist-ic" data-tone="${m.quantityDelta > 0 ? 'ok' : 'crit'}">${icon(m.quantityDelta > 0 ? 'arrow-in' : 'arrow-out', { size: 15 })}</span>
       <span class="gud-hist-main">
         <span class="gud-hist-title">${esc(m.what)} <span class="gud-hist-qty" data-sign="${m.quantityDelta > 0 ? 'plus' : 'minus'}">${m.quantityDelta > 0 ? '+' : ''}${m.quantityDelta}</span></span>

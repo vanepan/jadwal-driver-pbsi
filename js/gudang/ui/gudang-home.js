@@ -51,7 +51,7 @@ export function renderHome(st, c, requestRender) {
         <button type="button" class="gud-quick-tile" data-act="gud-quick-goods-out">
           <span class="gud-quick-ic" data-tone="c-blue">${icon('arrow-out', { size: 22 })}</span>
           <span class="gud-quick-t">Goods Out</span>
-          <span class="gud-quick-s">Keluarkan barang ke departemen</span>
+          <span class="gud-quick-s">Keluarkan barang ke bidang</span>
         </button>
         <button type="button" class="gud-quick-tile" data-act="gud-quick-goods-in">
           <span class="gud-quick-ic" data-tone="c-green">${icon('arrow-in', { size: 22 })}</span>
@@ -64,12 +64,14 @@ export function renderHome(st, c, requestRender) {
         iconName: 'box',
         title: 'Belum ada item di Gudang',
         hint: 'Item, lokasi, dan aset akan muncul di sini setelah data pertama tersedia.',
+        ctaLabel: 'Tambah Item Pertama',
+        ctaAct: 'gud-cat-add-item-home',
       }) : renderInsights(st)}
     </div>`;
 }
 
 function renderInsights(st) {
-  if (!st.home) return '';
+  if (!st.home) return `<div class="gud-home-sections"><div class="gud-muted">Memuat…</div></div>`;
   const { lowStock, recent } = st.home;
 
   const lowStockBlock = lowStock.length

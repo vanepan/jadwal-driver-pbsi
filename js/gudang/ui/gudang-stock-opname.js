@@ -47,6 +47,7 @@ export function renderStockOpname(st, c) {
         <button type="button" class="gud-chip" data-on="${!o.locationId}" data-act="gud-op-loc" data-val="">Semua Lokasi</button>
         ${st.data.locations.map((l) => `
           <button type="button" class="gud-chip" data-on="${o.locationId === l.locationId}" data-act="gud-op-loc" data-val="${esc(l.locationId)}">${esc(l.name)}</button>`).join('')}
+        <button type="button" class="gud-chip" data-act="gud-cat-add-loc-opname">${icon('plus', { size: 11 })} Lokasi</button>
       </div>
     </div>
 
