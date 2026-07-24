@@ -58,14 +58,17 @@ export function renderHome(st, c, requestRender) {
           <span class="gud-quick-t">Goods In</span>
           <span class="gud-quick-s">Terima barang masuk</span>
         </button>
+        <button type="button" class="gud-quick-tile" data-act="gud-cat-add-item-home">
+          <span class="gud-quick-ic" data-tone="c-violet">${icon('plus', { size: 22 })}</span>
+          <span class="gud-quick-t">Tambah Item</span>
+          <span class="gud-quick-s">Daftarkan item baru ke katalog</span>
+        </button>
       </div>
 
       ${!hasCatalog && !st.loading ? emptyState({
         iconName: 'box',
         title: 'Belum ada item di Gudang',
-        hint: 'Item, lokasi, dan aset akan muncul di sini setelah data pertama tersedia.',
-        ctaLabel: 'Tambah Item Pertama',
-        ctaAct: 'gud-cat-add-item-home',
+        hint: 'Gunakan tombol "Tambah Item" di atas untuk mendaftarkan item pertama.',
       }) : renderInsights(st)}
     </div>`;
 }

@@ -194,12 +194,16 @@
 .gud-home-search:focus-visible{outline:2px solid var(--accent-line);outline-offset:2px;}
 .gud-home-search-ph{flex:1;color:var(--text-faint);font-size:15px;font-weight:500;}
 .gud-home-search-kbd{flex:none;}
-.gud-home-quick{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+/* auto-fit: 2 tiles today, a 3rd (Tambah Item, always visible now — it used
+   to only exist inside the empty-state CTA, which vanished as soon as the
+   catalog had one item) still lays out evenly instead of leaving a gap. */
+.gud-home-quick{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;}
 .gud-quick-tile{display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:18px 20px;border-radius:16px;border:1px solid var(--border);background:var(--surface);cursor:pointer;text-align:left;font-family:var(--font-sans);transition:box-shadow .15s,transform .15s,border-color .15s;}
 .gud-quick-tile:hover{box-shadow:var(--shadow-md);transform:translateY(-1px);border-color:var(--border-strong);}
 .gud-quick-ic{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;}
 .gud-quick-ic[data-tone="c-blue"]{background:var(--c-blue-weak);color:var(--c-blue);}
 .gud-quick-ic[data-tone="c-green"]{background:var(--c-green-weak);color:var(--c-green);}
+.gud-quick-ic[data-tone="c-violet"]{background:var(--c-violet-weak);color:var(--c-violet);}
 .gud-quick-t{font-family:var(--font-display);font-weight:800;font-size:15px;}
 .gud-quick-s{font-size:12.5px;color:var(--text-faint);}
 .gud-home-sections{display:grid;grid-template-columns:1fr 1fr;gap:28px;}
@@ -296,13 +300,27 @@
 .gud-hist-time{font-family:var(--font-mono);font-size:11.5px;color:var(--text-faint);white-space:nowrap;flex:none;}
 .gud-hist-search{max-width:280px;}
 
-/* ── Stock Opname rows (Doc 2 §10) ──────────────────────────────────────── */
-.gud-opname-list{display:flex;flex-direction:column;gap:8px;}
-.gud-opname-row{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:11px;background:var(--surface-2);border:1px solid var(--border-faint);}
-.gud-opname-row.-counting{background:var(--surface);border-color:var(--accent-line);}
-.gud-opname-name{flex:1;min-width:0;font-size:13.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.gud-opname-expected{font-size:12px;color:var(--text-faint);white-space:nowrap;flex:none;}
-.gud-opname-input{max-width:120px;flex:none;}
+/* ── Stock Opname — category-grouped card catalog (Doc 2 §10) ───────────
+   UAT: "seperti katalog dong agar mudah dilihat dan dipahami" — was a
+   single flat row list, replaced with a grouped grid of cards. Not
+   .gud-stagger'd on purpose: searching re-renders this grid on every
+   keystroke, and Phase 10.1 already had to fix an identical full-screen
+   flicker caused by an animation replaying on every render(). */
+.gud-cat-group{margin-top:24px;} .gud-cat-group:first-child{margin-top:0;}
+.gud-cat-group-t{display:flex;align-items:center;gap:8px;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-ghost);font-weight:700;margin-bottom:10px;}
+.gud-cat-group-count{font-family:var(--font-mono);color:var(--text-faint);font-weight:600;}
+.gud-cat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;}
+.gud-cat-card{display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:14px;border:1px solid var(--border-faint);background:var(--surface);text-align:left;font-family:var(--font-sans);cursor:pointer;transition:border-color .12s,box-shadow .12s;}
+.gud-cat-card:hover{border-color:var(--border-strong);box-shadow:var(--shadow-sm);}
+.gud-cat-card.-counting{border-color:var(--accent-line);box-shadow:var(--shadow-md);cursor:default;}
+.gud-cat-card.-done{border-color:var(--c-green);background:var(--c-green-weak);cursor:default;}
+.gud-cat-card-top{display:flex;align-items:flex-start;gap:8px;}
+.gud-cat-card-ic{width:26px;height:26px;border-radius:8px;background:var(--surface-2);color:var(--text-faint);display:grid;place-items:center;flex:none;}
+.gud-cat-card-ic[data-tone="c-green"]{background:var(--c-green-weak);color:var(--c-green);}
+.gud-cat-card-name{flex:1;min-width:0;font-size:13.5px;font-weight:700;line-height:1.3;}
+.gud-cat-card-expected{font-size:11.5px;color:var(--text-faint);}
+.gud-cat-card-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:auto;}
+.gud-opname-input{max-width:100%;flex:1;min-width:0;}
 .gud-opname-diff{font-family:var(--font-mono);font-weight:700;font-size:13px;flex:none;}
 .gud-opname-diff[data-sign="zero"]{color:var(--c-green);} .gud-opname-diff[data-sign="plus"]{color:var(--c-blue);} .gud-opname-diff[data-sign="minus"]{color:var(--crit);}
 

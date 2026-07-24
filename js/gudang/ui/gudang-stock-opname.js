@@ -7,6 +7,16 @@
    the whole catalog before saving; partial opname is the default shape,
    not a special case.
 
+   UAT ("seperti katalog dong agar mudah dilihat dan dipahami"): the list
+   is presented as a category-grouped card catalog instead of a single
+   flat vertical list — same interaction/state machine as before (a click
+   still opens a card for counting; nothing here recomputes what
+   consumable/stock-opname-engine.js already decides), just organized so a
+   large item count stays scannable. Deliberately NOT .gud-stagger'd —
+   searching re-renders this grid on every keystroke, and animating every
+   card in on every character typed is exactly the full-screen flicker
+   Phase 10.1 UAT already flagged and fixed for .gud-content once.
+
    UI never computes the discrepancy's effect on Stock: consumable/
    stock-opname-engine.js (Phase 7) reads the FRESH expected quantity and
    decides whether/what Movement to create. This file only shows the
@@ -18,6 +28,7 @@
 import { esc, icon, kbdRow, fmtQty, emptyState } from './gudang-atoms.js';
 import { getExpectedQuantity, executeStockOpname } from '../consumable/stock-opname-engine.js';
 import { ITEM_TYPE } from '../contracts/item-contract.js';
+import { categoryLabel } from '../config/gudang-categories.js';
 
 function ensure(st) {
   if (!st.opname) st.opname = { locationId: null, q: '', open: {}, counted: {}, saving: false, error: null, savedResult: null };
@@ -51,7 +62,12 @@ export function renderStockOpname(st, c) {
       </div>
     </div>
 
-    ${filtered.length ? `<div class="gud-opname-list gud-mt gud-stagger">${filtered.map((i) => opnameRow(i, o)).join('')}</div>`
+    ${filtered.length
+      ? `<div class="gud-mt">${groupByCategory(filtered).map((g) => `
+          <section class="gud-cat-group">
+            <div class="gud-cat-group-t">${esc(g.label)} <span class="gud-cat-group-count">${g.items.length}</span></div>
+            <div class="gud-cat-grid">${g.items.map((i) => catalogCard(i, o)).join('')}</div>
+          </section>`).join('')}</div>`
       : `<div class="gud-mt">${emptyState({ iconName: 'clipboard', title: 'Tidak ada item', hint: 'Tidak ada item Consumable yang cocok dengan filter saat ini.' })}</div>`}
 
     ${o.error ? `<div class="gud-flow-error gud-mt">${esc(o.error)}</div>` : ''}
@@ -65,31 +81,58 @@ export function renderStockOpname(st, c) {
   </div>`;
 }
 
-function opnameRow(item, o) {
+/** Category-grouped, alphabetical by label — a stable, predictable shelf
+ *  order, not insertion order (Doc 2 §10: "easy to see and understand"). */
+function groupByCategory(items) {
+  const groups = new Map();
+  for (const item of items) {
+    const key = item.category || '';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
+  }
+  return Array.from(groups.entries())
+    .map(([category, list]) => ({ category, label: categoryLabel(category), items: list }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function catalogCard(item, o) {
   const counted = o.counted[item.itemId];
   if (counted) {
     const diff = counted.countedQuantity - counted.expectedQuantity;
-    return `<div class="gud-opname-row -done">
-      <span class="gud-opname-name">${esc(item.name)}</span>
-      <span class="gud-opname-diff" data-sign="${diff === 0 ? 'zero' : diff > 0 ? 'plus' : 'minus'}">${diff === 0 ? 'Sesuai' : (diff > 0 ? `+${diff}` : diff)}</span>
-      <button type="button" class="gud-icon-btn -sm" data-act="gud-op-undo" data-id="${esc(item.itemId)}" aria-label="Hitung ulang">${icon('close', { size: 13 })}</button>
+    return `<div class="gud-cat-card -done">
+      <div class="gud-cat-card-top">
+        <span class="gud-cat-card-ic" data-tone="c-green">${icon('check-circle', { size: 15 })}</span>
+        <span class="gud-cat-card-name">${esc(item.name)}</span>
+      </div>
+      <div class="gud-cat-card-foot">
+        <span class="gud-opname-diff" data-sign="${diff === 0 ? 'zero' : diff > 0 ? 'plus' : 'minus'}">${diff === 0 ? 'Sesuai' : (diff > 0 ? `+${diff}` : diff)}</span>
+        <button type="button" class="gud-icon-btn -sm" data-act="gud-op-undo" data-id="${esc(item.itemId)}" aria-label="Hitung ulang">${icon('close', { size: 12 })}</button>
+      </div>
     </div>`;
   }
   const isOpen = o.open[item.itemId];
   if (!isOpen) {
-    return `<div class="gud-opname-row">
-      <span class="gud-opname-name">${esc(item.name)}</span>
-      <button type="button" class="gud-btn -sm" data-act="gud-op-open" data-id="${esc(item.itemId)}">Hitung</button>
-    </div>`;
+    return `<button type="button" class="gud-cat-card" data-act="gud-op-open" data-id="${esc(item.itemId)}">
+      <div class="gud-cat-card-top">
+        <span class="gud-cat-card-ic">${icon('box', { size: 15 })}</span>
+        <span class="gud-cat-card-name">${esc(item.name)}</span>
+      </div>
+      <div class="gud-cat-card-foot"><span class="gud-link-btn">Hitung</span></div>
+    </button>`;
   }
   const expected = o.expected && o.expected[item.itemId];
   const draft = o.draft && o.draft[item.itemId] != null ? o.draft[item.itemId] : '';
-  return `<div class="gud-opname-row -counting">
-    <span class="gud-opname-name">${esc(item.name)}</span>
-    <span class="gud-opname-expected">${expected == null ? 'Memuat…' : `Ekspektasi: ${fmtQty(expected)}`}</span>
-    <input class="gud-input gud-opname-input" data-act="gud-op-count" data-id="${esc(item.itemId)}" type="number" min="0" value="${esc(draft)}" placeholder="Hasil hitung" autofocus />
-    <button type="button" class="gud-icon-btn -sm" data-act="gud-op-confirm-count" data-id="${esc(item.itemId)}" aria-label="Konfirmasi" ${draft === '' || expected == null ? 'disabled' : ''}>${icon('check', { size: 13 })}</button>
-    <button type="button" class="gud-icon-btn -sm" data-act="gud-op-cancel" data-id="${esc(item.itemId)}" aria-label="Batal">${icon('close', { size: 13 })}</button>
+  return `<div class="gud-cat-card -counting">
+    <div class="gud-cat-card-top">
+      <span class="gud-cat-card-ic">${icon('box', { size: 15 })}</span>
+      <span class="gud-cat-card-name">${esc(item.name)}</span>
+    </div>
+    <span class="gud-cat-card-expected">${expected == null ? 'Memuat…' : `Ekspektasi: ${fmtQty(expected)}`}</span>
+    <div class="gud-cat-card-foot">
+      <input class="gud-input gud-opname-input" data-act="gud-op-count" data-id="${esc(item.itemId)}" type="number" min="0" value="${esc(draft)}" placeholder="Hasil hitung" autofocus />
+      <button type="button" class="gud-icon-btn -sm" data-act="gud-op-confirm-count" data-id="${esc(item.itemId)}" aria-label="Konfirmasi" ${draft === '' || expected == null ? 'disabled' : ''}>${icon('check', { size: 13 })}</button>
+      <button type="button" class="gud-icon-btn -sm" data-act="gud-op-cancel" data-id="${esc(item.itemId)}" aria-label="Batal">${icon('close', { size: 13 })}</button>
+    </div>
   </div>`;
 }
 
