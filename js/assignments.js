@@ -25,6 +25,8 @@ const NO_DRIVER_SENTINEL = '__none__';
 let assignments = [];
 let editingId = null; // null = add mode, or ID = edit mode
 let onSaveCallback = null;
+let onPersistCallback = null; // v1.28.4: async (records) => {ok, error} — actual Firebase write, awaited BEFORE local state changes
+let isSubmitting = false;      // v1.28.4: re-entrancy guard against double-submit (double-click / Enter race)
 let currentDate = null;
 
 /**
@@ -33,6 +35,24 @@ let currentDate = null;
  */
 export function registerSaveCallback(callback) {
   onSaveCallback = callback;
+}
+
+/**
+ * v1.28.4 — Register the PERSIST callback: the actual Firebase write for
+ * assignment create/edit. Must be an async function that takes an array of
+ * assignment records (length 1 for single-day create or edit, length N for
+ * a multi-day create) and resolves `{ok:true}` or `{ok:false, error}`.
+ *
+ * This runs BEFORE any local state mutation. Firebase is the source of
+ * truth: `handleFormSubmit` awaits this and only updates the in-memory
+ * `assignments` array / fires the success toast / calls onSaveCallback
+ * AFTER it resolves `{ok:true}`. On `{ok:false, ...}` nothing local changes
+ * — no ghost assignment, modal stays open, user input is preserved, and
+ * the Simpan button re-enables for retry.
+ * @param {Function} callback - async (records: Array<Object>) => {ok, error?}
+ */
+export function registerPersistCallback(callback) {
+  onPersistCallback = callback;
 }
 
 /**
@@ -271,10 +291,40 @@ export function closeFormModal() {
 }
 
 /**
+ * v1.28.4 — Toggle the Simpan button's saving/loading state. Disables the
+ * button and swaps its label while a persist is in flight, both to give
+ * the user feedback and to prevent a double-click/Enter race from firing
+ * two overlapping submits (which could otherwise create duplicate
+ * assignments before the first request even resolves).
+ * @param {boolean} saving
+ */
+function setFormSavingUI(saving) {
+  const saveBtn = document.getElementById('btnSaveForm');
+  if (!saveBtn) return;
+  if (saving) {
+    if (saveBtn.dataset.originalLabel === undefined) {
+      saveBtn.dataset.originalLabel = saveBtn.textContent;
+    }
+    saveBtn.disabled = true;
+    saveBtn.textContent = '⏳ Menyimpan…';
+  } else {
+    saveBtn.disabled = false;
+    if (saveBtn.dataset.originalLabel !== undefined) {
+      saveBtn.textContent = saveBtn.dataset.originalLabel;
+    }
+  }
+}
+
+/**
  * Handle form submit (add atau update assignment)
  */
-function handleFormSubmit(e) {
+async function handleFormSubmit(e) {
   e.preventDefault();
+
+  // v1.28.4: re-entrancy guard — a double-click or an Enter-key repeat that
+  // fires a second 'submit' event before the button's `disabled` attribute
+  // has taken visual effect must not start a second, overlapping save.
+  if (isSubmitting) return;
 
   // Safety net: only admin can ever write directly to assignments.
   if (!hasPermission('create')) {
@@ -373,44 +423,54 @@ function handleFormSubmit(e) {
   const currentUser = getCurrentUser();
   const now = new Date().toISOString();
 
+  // v1.28.4 REQUIRED FLOW: build the record(s) first (pure, no state
+  // mutation yet), PERSIST to Firebase, and only touch local `assignments` /
+  // fire the success toast / notify onSaveCallback AFTER persistence is
+  // confirmed. Firebase is the source of truth — nothing here shows success
+  // before the write actually succeeds, and a failure leaves no local ghost
+  // record: local state is untouched, the modal stays open, the user's
+  // input is preserved, and Simpan re-enables for retry.
+  let records;          // the record(s) this submit will persist
+  let kind;              // 'edit' | 'multi' | 'single' — drives the commit step below
+  let previousAssignment = null;
+  let editIdx = -1;
+
   if (editingId) {
-    // Update assignment yang ada (selalu single-date) — preserve all lifecycle fields
-    const idx = assignments.findIndex(a => a.id === editingId);
-    let editedAssignment = null;
-    let previousAssignment = null;
-    if (idx !== -1) {
-      const existing = assignments[idx];
-      previousAssignment = existing;
-      assignments[idx] = {
-        id: editingId,
-        driver, phone, vehicle, date: startDate,
-        startTime, endTime, destination, purpose, pic, pax, notes,
-        fullDay: isFullDay,
-        createdAt:   existing.createdAt,
-        createdBy:   existing.createdBy   ?? null,  // preserve — set at creation time only
-        updatedAt:   now,
-        requestId:   existing.requestId   ?? null,
-        status:      existing.status      ?? 'assigned',
-        approvedAt:  existing.approvedAt  ?? null,
-        approvedBy:  existing.approvedBy  ?? null,
-        assignedAt:  existing.assignedAt  ?? null,
-        assignedBy:  existing.assignedBy  ?? null,
-        startedAt:   existing.startedAt   ?? null,
-        startedBy:   existing.startedBy   ?? null,
-        completedAt: existing.completedAt ?? null,
-        completedBy: existing.completedBy ?? null,
-        startOdometer:     existing.startOdometer     ?? null,
-        endOdometer:       existing.endOdometer       ?? null,
-        distanceTravelled: existing.distanceTravelled ?? null,
-      };
-      editedAssignment = assignments[idx];
+    kind = 'edit';
+    editIdx = assignments.findIndex(a => a.id === editingId);
+    if (editIdx === -1) {
+      showToast('⚠️ Jadwal tidak ditemukan (mungkin sudah dihapus di tempat lain)');
+      return;
     }
-    showToast('✅ Jadwal berhasil diperbarui');
-    if (onSaveCallback) onSaveCallback(assignments, false, startDate, editedAssignment, previousAssignment);
+    const existing = assignments[editIdx];
+    previousAssignment = existing;
+    const edited = {
+      id: editingId,
+      driver, phone, vehicle, date: startDate,
+      startTime, endTime, destination, purpose, pic, pax, notes,
+      fullDay: isFullDay,
+      createdAt:   existing.createdAt,
+      createdBy:   existing.createdBy   ?? null,  // preserve — set at creation time only
+      updatedAt:   now,
+      requestId:   existing.requestId   ?? null,
+      status:      existing.status      ?? 'assigned',
+      approvedAt:  existing.approvedAt  ?? null,
+      approvedBy:  existing.approvedBy  ?? null,
+      assignedAt:  existing.assignedAt  ?? null,
+      assignedBy:  existing.assignedBy  ?? null,
+      startedAt:   existing.startedAt   ?? null,
+      startedBy:   existing.startedBy   ?? null,
+      completedAt: existing.completedAt ?? null,
+      completedBy: existing.completedBy ?? null,
+      startOdometer:     existing.startOdometer     ?? null,
+      endOdometer:       existing.endOdometer       ?? null,
+      distanceTravelled: existing.distanceTravelled ?? null,
+    };
+    records = [edited];
   } else if (datesToCreate.length > 1) {
-    // Multi-day: buat satu assignment per tanggal
+    kind = 'multi';
     const creatorName = currentUser ? currentUser.name : '';
-    const newAssignments = datesToCreate.map(date => ({
+    records = datesToCreate.map(date => ({
       id: generateId(),
       driver, phone, vehicle, date,
       startTime, endTime, destination, purpose, pic, pax, notes,
@@ -423,13 +483,10 @@ function handleFormSubmit(e) {
       completedAt: null, completedBy: null,
       startOdometer: null, endOdometer: null, distanceTravelled: null,
     }));
-    assignments.push(...newAssignments);
-    showToast(`✅ ${datesToCreate.length} jadwal berhasil ditambahkan`);
-    if (onSaveCallback) onSaveCallback(assignments, true, startDate, null);
   } else {
-    // Single-day baru
+    kind = 'single';
     const creatorName = currentUser ? currentUser.name : '';
-    const newAssignment = {
+    records = [{
       id: generateId(),
       driver, phone, vehicle, date: startDate,
       startTime, endTime, destination, purpose, pic, pax, notes,
@@ -441,18 +498,58 @@ function handleFormSubmit(e) {
       startedAt: null, startedBy: null,
       completedAt: null, completedBy: null,
       startOdometer: null, endOdometer: null, distanceTravelled: null,
-    };
-    assignments.push(newAssignment);
-    showToast('✅ Jadwal berhasil ditambahkan');
-    if (onSaveCallback) onSaveCallback(assignments, true, startDate, newAssignment);
+    }];
   }
 
-  // Reset edit mode dan update current date
-  editingId = null;
-  if (currentDate !== startDate) currentDate = startDate;
+  isSubmitting = true;
+  setFormSavingUI(true);
+  try {
+    const result = onPersistCallback
+      ? await onPersistCallback(records)
+      : { ok: true }; // no persist callback registered (e.g. isolated/test usage) — degrade to local-only, unchanged from pre-v1.28.4 behavior
 
-  resetDirty('assignmentForm');
-  closeFormModal();
+    if (!result || !result.ok) {
+      // FAILURE: no local mutation happened, so there is nothing to roll
+      // back. Modal stays open, the user's entered data is untouched, and
+      // Simpan re-enables (in the `finally` below) so they can retry.
+      showToast('❌ Gagal menyimpan jadwal. Silakan periksa koneksi lalu coba lagi.');
+      return;
+    }
+
+    // SUCCESS — Firebase has confirmed the write. Only now does local state
+    // change, immutably (see v1.28.3 note below on why in-place push()/
+    // index-mutation was the original bug).
+    if (kind === 'edit') {
+      assignments = assignments.map((a, i) => (i === editIdx ? records[0] : a));
+      showToast('✅ Jadwal berhasil diperbarui');
+      if (onSaveCallback) onSaveCallback(assignments, false, startDate, records[0], previousAssignment);
+    } else if (kind === 'multi') {
+      // v1.28.3 CRITICAL FIX (kept from the prior hardening pass): build a
+      // NEW array instead of `assignments.push(...records)` in place, and
+      // pass `records` explicitly to onSaveCallback instead of `null` —
+      // in-place mutation of the array app.js also references made a
+      // before/after diff in app.js always return empty, so multi-day
+      // Firebase writes were silently skipped entirely. See CLAUDE.md /
+      // commit history v1.28.3 for the full root-cause writeup.
+      assignments = [...assignments, ...records];
+      showToast(`✅ ${records.length} jadwal berhasil ditambahkan`);
+      if (onSaveCallback) onSaveCallback(assignments, true, startDate, records);
+    } else {
+      assignments = [...assignments, records[0]];
+      showToast('✅ Jadwal berhasil ditambahkan');
+      if (onSaveCallback) onSaveCallback(assignments, true, startDate, records[0]);
+    }
+
+    // Reset edit mode dan update current date — only reached on success.
+    editingId = null;
+    if (currentDate !== startDate) currentDate = startDate;
+
+    resetDirty('assignmentForm');
+    closeFormModal();
+  } finally {
+    isSubmitting = false;
+    setFormSavingUI(false);
+  }
 }
 
 /**

@@ -451,18 +451,86 @@ export function saveAssignments(assignments) {
 }
 
 /**
+ * v1.28.4 — wrap a Firebase write promise with a timeout so an offline
+ * client resolves to an explicit failure within a bounded time instead of
+ * hanging indefinitely. The Firebase JS SDK's write promises do NOT reject
+ * on their own while offline — they stay pending until reconnect — which
+ * would otherwise leave the new Persist → Confirm → Update UI flow stuck
+ * on "Menyimpan…" forever with no error shown. This does not cancel the
+ * underlying write: if the device reconnects later, Firebase may still
+ * complete it — the realtime listener will then (harmlessly) surface the
+ * record. The UI has already told the user it failed by that point, so
+ * they are not left assuming data loss without recourse.
+ * @param {Promise} promise
+ * @param {number} [ms]
+ * @returns {Promise}
+ */
+function _withTimeout(promise, ms = 15000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`Firebase write timeout setelah ${ms}ms (kemungkinan offline)`)),
+      ms
+    );
+    promise.then(
+      val => { clearTimeout(timer); resolve(val); },
+      err => { clearTimeout(timer); reject(err); }
+    );
+  });
+}
+
+/**
  * Tulis SATU assignment ke Firebase secara surgical (aman).
  * Hanya menyentuh node /assignments/{id} — tidak mempengaruhi record lain.
  * @param {Object} assignment - Harus memiliki field `id`
- * @returns {Promise}
+ * @param {{silent?: boolean}} [opts] - `silent: true` suppresses the built-in
+ *   failure toast — used by the create/edit Persist→Confirm→Update-UI flow
+ *   (js/assignments.js), which shows its own, more accurate message (the
+ *   default toast text below, "Data tersimpan di device ini", is WRONG for
+ *   that flow: on failure it explicitly does NOT keep a local-only record).
+ *   Other callers (drag/resize, approve, cancel, complete — which remain
+ *   local-first/optimistic) keep the default toast.
+ * @returns {Promise<{ok:true}|{ok:false, error:Error}>}
  */
-export function saveOneAssignment(assignment) {
-  if (!firebaseDb || !assignment?.id) return Promise.resolve();
+export function saveOneAssignment(assignment, opts = {}) {
+  if (!firebaseDb || !assignment?.id) return Promise.resolve({ ok: false, error: new Error('Firebase belum terkonfigurasi atau assignment tanpa id') });
   const assignRef = ref(firebaseDb, `${FIREBASE_ASSIGNMENTS_PATH}/${assignment.id}`);
-  return set(assignRef, assignment).catch(err => {
-    console.error('Firebase single-assignment save gagal:', err);
-    showToast('Firebase gagal menyimpan. Data tersimpan di device ini.');
-  });
+  return _withTimeout(set(assignRef, assignment))
+    .then(() => ({ ok: true }))
+    .catch(err => {
+      console.error('Firebase single-assignment save gagal:', err);
+      if (!opts.silent) showToast('Firebase gagal menyimpan. Data tersimpan di device ini.');
+      return { ok: false, error: err };
+    });
+}
+
+/**
+ * v1.28.3 — Tulis BEBERAPA assignment ke Firebase dalam SATU operasi atomic
+ * (multi-path update()), khusus untuk Multi Hari (N tanggal dari satu form
+ * submit). Sebelumnya tiap tanggal ditulis lewat saveOneAssignment() secara
+ * terpisah (N panggilan set() independen) — jika salah satu gagal di
+ * tengah jalan (mis. koneksi putus), sebagian tanggal tersimpan dan
+ * sebagian tidak ("partial success"). update() dengan multi-path object
+ * pada satu root ref bersifat atomic di Firebase Realtime Database: semua
+ * path commit bersamaan, atau tidak ada satupun yang commit.
+ * @param {Array<Object>} assignmentList - Setiap item harus punya field `id`
+ * @param {{silent?: boolean}} [opts] - lihat saveOneAssignment() di atas.
+ * @returns {Promise<{ok:true}|{ok:false, error:Error}>}
+ */
+export function saveManyAssignments(assignmentList, opts = {}) {
+  const valid = (assignmentList || []).filter(a => a?.id);
+  if (valid.length === 0) return Promise.resolve({ ok: true });
+  if (!firebaseDb) return Promise.resolve({ ok: false, error: new Error('Firebase belum terkonfigurasi') });
+
+  const updates = {};
+  for (const a of valid) updates[`${FIREBASE_ASSIGNMENTS_PATH}/${a.id}`] = a;
+
+  return _withTimeout(update(ref(firebaseDb), updates))
+    .then(() => ({ ok: true }))
+    .catch(err => {
+      console.error('Firebase multi-assignment save gagal (batch, all-or-nothing):', err);
+      if (!opts.silent) showToast('Firebase gagal menyimpan jadwal multi-hari. Data tersimpan di device ini.');
+      return { ok: false, error: err };
+    });
 }
 
 /**

@@ -12,7 +12,7 @@
 
 // Import all modules
 import { APP_NAME, APP_VERSION, RELEASE_NAME, getAppEnv } from './config.js';
-import { loadAssignments, saveAssignments, saveOneAssignment, removeOneAssignment, loadRequests, saveRequests, initFirebaseSync, registerDataChangeListener, registerRequestsChangeListener, checkAssignmentSafety, fetchFirebaseData, storeFirebaseData, isFirebaseConfigured, onAuthAvailable, onAuthLost } from './firebase.js';
+import { loadAssignments, saveAssignments, saveOneAssignment, saveManyAssignments, removeOneAssignment, loadRequests, saveRequests, initFirebaseSync, registerDataChangeListener, registerRequestsChangeListener, checkAssignmentSafety, fetchFirebaseData, storeFirebaseData, isFirebaseConfigured, onAuthAvailable, onAuthLost } from './firebase.js';
 // rc.1: persist Dispatch Intelligence history (override logs / recommendations / capacity) to RTDB.
 import { hydrateDispatchIntelligence, initDispatchIntelligencePersistence } from './services/dispatch-intelligence-persistence.js';
 import { recoverAssignmentsFromRequests } from './recovery.js';
@@ -63,7 +63,7 @@ import { initPbsiDatepicker, syncPbsiDatepicker } from './pbsi-datepicker.js';
 import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate } from './timeline.js';
 import { initTimelineInteractions } from './timeline-interactions.js';
 import { initModalHandlers, openDetailModal, registerEditCallback, registerDeleteCallback, registerStartCallback, registerCompleteCallback, registerCommentCallback as registerModalCommentCallback, registerCancelCallback, registerOvertimeOverrideCallback, setAssignments as setModalAssignments, updateDetailActionButtons } from './modal.js';
-import { initFormHandlers, openFormModal, closeFormModal, registerSaveCallback, setAssignments as setAssignmentsForm, setCurrentDate as setCurrentDateForm, checkConflict, deleteAssignment } from './assignments.js';
+import { initFormHandlers, openFormModal, closeFormModal, registerSaveCallback, registerPersistCallback, setAssignments as setAssignmentsForm, setCurrentDate as setCurrentDateForm, checkConflict, deleteAssignment } from './assignments.js';
 // Request Auto-Fill Intelligence (v1.16.4.11-beta.2): read-only dispatch suggestion panel.
 import { initAssignmentDispatchHints } from './components/assignment-dispatch-hints.js';
 // beta.3: admin approval override → records the decision in the existing override log.
@@ -10752,7 +10752,23 @@ function commitApproval(requestId, decision = {}) {
   setCurrentDate(request.startDate);
   setCurrentDateForm(request.startDate);
   saveAssignments(assignments);
-  newAssignments.forEach(a => saveOneAssignment(a));
+  // v1.28.4: same atomicity upgrade as the manual Multi Hari form — one
+  // multi-path update() so all N approved dates commit together or not at
+  // all, instead of N independent set() calls that could partially fail.
+  // This path was NOT part of the original Multi Hari bug (it already used
+  // an explicit newAssignments array, not a before/after diff), and stays
+  // local-first/optimistic by design for now — see report "remaining
+  // concerns" for why converting it to the full persist-before-UI flow is
+  // deferred.
+  if (newAssignments.length > 1) {
+    saveManyAssignments(newAssignments).then(result => {
+      if (!result.ok) {
+        showToast(`❌ Gagal menyimpan ${newAssignments.length} jadwal hasil approve ke server. Periksa koneksi lalu coba lagi.`);
+      }
+    });
+  } else {
+    newAssignments.forEach(a => saveOneAssignment(a));
+  }
   saveRequests(requests);
 
   const currentUser = getCurrentUser();
@@ -11602,30 +11618,46 @@ document.addEventListener('DOMContentLoaded', async () => {
     refreshCommentThreadIfOpen(requests);
   });
 
+  // ── Callback: PERSIST assignment — the actual Firebase write ──
+  // v1.28.4 (Persist → Confirm → Update UI): assignments.js now calls and
+  // AWAITS this BEFORE it touches its own local `assignments` state or
+  // shows a success toast. Firebase is the source of truth: nothing is
+  // shown as saved until this resolves `{ok:true}`. Stamping the immutable
+  // driverUsername happens here too (Issue 9) — on the SAME object
+  // references assignments.js will push into local state right after — so
+  // the ownership key lands in the very same write that creates/edits the
+  // record, exactly like before, just correctly sequenced.
+  registerPersistCallback(async (records) => {
+    records.forEach(r => stampDriverIdentity(r, { force: true }));
+    return records.length > 1
+      ? await saveManyAssignments(records, { silent: true })   // multi-day: one atomic multi-path update()
+      : await saveOneAssignment(records[0], { silent: true }); // single-day create OR edit
+  });
+
   // ── Callback: Form save (add/update assignment) ──
+  // v1.28.4: this now ONLY runs AFTER registerPersistCallback above has
+  // confirmed the Firebase write — it is pure local-state sync, localStorage
+  // cache refresh, and audit logging. It never performs its own Firebase
+  // write anymore (that already happened, and re-doing it here would be a
+  // redundant second write of the same data).
   registerSaveCallback((updatedAssignments, isNewAssignment, assignmentDate, newAssignment, previousAssignment) => {
     // Guard: assignments.js memanggil onSaveCallback dari deleteAssignment() tanpa assignmentDate.
     // Operasi delete sudah ditangani sepenuhnya oleh registerDeleteCallback — abaikan path ini.
     if (!isNewAssignment && assignmentDate === undefined) return;
 
-    const prevAssignments = assignments; // used only for multi-day new-assignment detection (prevIds)
-    const beforeCount = prevAssignments.length;
+    // Normalize to a list purely for the audit-log "representative record"
+    // lookup below — single object or array, both already fully resolved
+    // (no diffing anywhere in this callback; see v1.28.3 fix history).
+    const newAssignmentList = Array.isArray(newAssignment)
+      ? newAssignment
+      : (newAssignment ? [newAssignment] : []);
+
+    const beforeCount = assignments.length;
 
     // Safety guard: deteksi jika data lokal jauh lebih sedikit dari Firebase
     checkAssignmentSafety(beforeCount);
 
     assignments = updatedAssignments;
-
-    // Issue 9: stamp the immutable driverUsername from the CURRENT driver name so
-    // ownership survives later name edits / reassignments. New records (not in
-    // prevAssignments) and the edited object are (re)stamped BEFORE persistence,
-    // so the key is written to both localStorage and Firebase.
-    if (isNewAssignment) {
-      const _prevIds = new Set(prevAssignments.map(a => a.id));
-      for (const a of updatedAssignments) { if (!_prevIds.has(a.id)) stampDriverIdentity(a, { force: true }); }
-    } else if (newAssignment) {
-      stampDriverIdentity(newAssignment, { force: true });
-    }
 
     updateAllModules();
 
@@ -11634,31 +11666,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       setCurrentDateForm(assignmentDate);
     }
 
-    saveAssignments(assignments); // localStorage only
-
-    // Surgical Firebase write — hanya tulis yang berubah, tidak overwrite semua
-    if (isNewAssignment && newAssignment) {
-      // Single-day baru: newAssignment sudah diketahui
-      saveOneAssignment(newAssignment);
-    } else if (isNewAssignment && !newAssignment) {
-      // Multi-day baru: cari assignments yang tidak ada di prevAssignments
-      const prevIds = new Set(prevAssignments.map(a => a.id));
-      updatedAssignments.filter(a => !prevIds.has(a.id)).forEach(a => saveOneAssignment(a));
-    } else {
-      // Edit: assignments.js passes the edited object directly as newAssignment.
-      // The shared-array mutation means a diff on prevAssignments is unreliable.
-      if (newAssignment) saveOneAssignment(newAssignment);
-      // Jika tidak ada yang berubah (misal dipanggil dari deleteAssignment internal),
-      // removeOneAssignment sudah ditangani di registerDeleteCallback.
-    }
+    saveAssignments(assignments); // localStorage cache refresh only — Firebase write already confirmed by registerPersistCallback
 
     const currentUser = getCurrentUser();
-    // Resolve representative assignment for ownership metadata
-    let repAssignment = newAssignment;
-    if (!repAssignment && isNewAssignment) {
-      const prevIds = new Set(prevAssignments.map(p => p.id));
-      repAssignment = updatedAssignments.find(a => !prevIds.has(a.id)) || null;
-    }
+    // Resolve representative assignment for ownership metadata — always
+    // available directly (single object or first of the new-records array).
+    const repAssignment = newAssignmentList[0] || newAssignment || null;
     const repRequesterId = repAssignment?.requestId
       ? (requests.find(r => r.id === repAssignment.requestId)?.requesterId || null)
       : null;
