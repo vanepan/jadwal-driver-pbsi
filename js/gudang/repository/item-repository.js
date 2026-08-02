@@ -50,6 +50,37 @@ function fb() {
   return _fbPromise;
 }
 
+/**
+ * Phase 10.4.1 root-cause fix — "Edit Item cannot save" / "existingItem does
+ * not satisfy the Item contract": Firebase RTDB's set() silently OMITS any
+ * key whose value is null, {} (empty object), or [] (empty array) — it never
+ * actually stores them. makeItem()'s own defaults are category:null (Phase
+ * 10.1 made it optional), metadata:{}, and aliases:[] — all three of the
+ * contract's own canonical "nothing here" values. So an Item written with
+ * any of those defaults round-trips back from readNode() with the key
+ * MISSING entirely (`undefined`), not the `null`/`{}`/`[]` isItem() expects.
+ * updateItemModel() then calls isItem(existingItem) on that raw read and
+ * throws, on every edit, for any item that has ever had an unset category,
+ * no location, or empty metadata — which after Phase 10.1 is the common
+ * case, not an edge case.
+ * This restores the canonical shape at the read boundary, before isItem()
+ * ever sees it — isItem()'s own strictness is untouched; the data flowing
+ * into it is what was wrong. */
+function normalizeItemRecord(raw) {
+  if (!raw || typeof raw !== 'object') return raw;
+  return {
+    ...raw,
+    aliases: raw.aliases == null ? [] : raw.aliases,
+    category: raw.category == null ? null : raw.category,
+    defaultLocationId: raw.defaultLocationId == null ? null : raw.defaultLocationId,
+    metadata: raw.metadata == null ? {} : raw.metadata,
+    // normalizedAliases is derived from `aliases` and is legitimately []
+    // for any item with no aliases — exactly as pruneable on write as
+    // `aliases` itself, and isItem() requires it to be a real array.
+    normalizedAliases: raw.normalizedAliases == null ? [] : raw.normalizedAliases,
+  };
+}
+
 /** Create a new Item. Fails on a duplicate itemId, or a name/alias another Item already owns. */
 export async function createItem(item) {
   if (!isItem(item)) return failure(REPOSITORY_ERROR.INVALID_INPUT, 'createItem: item does not satisfy the Item contract.');
@@ -81,7 +112,7 @@ export async function getItem(itemId) {
   const res = await readNode(`${GUDANG_PATHS.items}/${itemId}`);
   if (res.status !== 'ok') return failure(REPOSITORY_ERROR.READ_FAILED, `getItem: read failed (${res.status}).`);
   if (res.value == null) return failure(REPOSITORY_ERROR.NOT_FOUND, `No item with id "${itemId}".`);
-  return success(res.value);
+  return success(normalizeItemRecord(res.value));
 }
 
 /** All Items, as a plain array. */
@@ -90,7 +121,7 @@ export async function listItems() {
   const res = await readNode(GUDANG_PATHS.items);
   if (res.status !== 'ok') return failure(REPOSITORY_ERROR.READ_FAILED, `listItems: read failed (${res.status}).`);
   const value = res.value || {};
-  return success(Object.values(value));
+  return success(Object.values(value).map(normalizeItemRecord));
 }
 
 /**

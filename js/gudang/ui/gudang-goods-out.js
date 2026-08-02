@@ -98,9 +98,16 @@ function itemLoop(st, b, dept) {
         </div>
         <div class="gud-field gud-mt"><span>Jumlah</span>
           <div class="gud-qty-row">
-            <button type="button" class="gud-icon-btn" data-act="gud-go-qty-minus">${icon('minus', { size: 15 })}</button>
-            <input class="gud-input gud-qty-input" data-act="gud-go-qty" type="number" min="0" value="${esc(b.quantity)}" autofocus />
-            <button type="button" class="gud-icon-btn" data-act="gud-go-qty-plus">${icon('plus', { size: 15 })}</button>
+            <button type="button" class="gud-icon-btn" data-act="gud-go-qty-minus" aria-label="Kurangi" title="Kurangi">${icon('minus', { size: 15 })}</button>
+            <!-- Phase 10.4.1 root cause (digit reversal, "10" -> "01"): type="number"
+                 inputs throw InvalidStateError on setSelectionRange() (browsers don't
+                 support cursor/selection APIs for that input type) — restoreFocus()'s
+                 try/catch silently swallowed it, so the caret never actually moved to
+                 the end after each keystroke's full re-render, landing new digits at
+                 position 0 instead. text+inputmode=numeric supports selection fully
+                 (still gets the numeric keyboard on mobile) and fixes the ordering. -->
+            <input class="gud-input gud-qty-input" data-act="gud-go-qty" type="text" inputmode="numeric" pattern="[0-9]*" value="${esc(b.quantity)}" autofocus />
+            <button type="button" class="gud-icon-btn" data-act="gud-go-qty-plus" aria-label="Tambah" title="Tambah">${icon('plus', { size: 15 })}</button>
           </div>
         </div>
         <button type="button" class="gud-btn -primary gud-mt" data-act="gud-go-confirm-line" ${Number(b.quantity) > 0 ? '' : 'disabled'}>
@@ -128,7 +135,7 @@ function lineList(b) {
     <div class="gud-line-row">
       <span class="gud-line-name">${esc(l.name)}</span>
       <span class="gud-line-qty">-${fmtQty(l.quantity)}</span>
-      <button type="button" class="gud-icon-btn -sm" data-act="gud-go-remove-line" data-id="${i}" aria-label="Hapus">${icon('close', { size: 13 })}</button>
+      <button type="button" class="gud-icon-btn -sm" data-act="gud-go-remove-line" data-id="${i}" aria-label="Hapus" title="Hapus baris">${icon('close', { size: 13 })}</button>
     </div>`).join('')}</div>`;
 }
 
@@ -162,18 +169,33 @@ export const goodsOutHandlers = {
   onClick(st, act, el, c, render, refreshCatalog) {
     const b = ensure(st);
     switch (act) {
-      case 'gud-go-dept-pick': b.departmentId = el.dataset.id; b.departmentQuery = ''; render(); break;
-      case 'gud-go-dept-clear': b.departmentId = null; render(); break;
-      case 'gud-go-item-pick': b.selectedItemId = el.dataset.id; b.itemQuery = ''; b.quantity = ''; render(); break;
-      case 'gud-go-item-clear': b.selectedItemId = null; b.quantity = ''; render(); break;
-      case 'gud-go-qty-plus': b.quantity = String((Number(b.quantity) || 0) + 1); render(); break;
-      case 'gud-go-qty-minus': b.quantity = String(Math.max(0, (Number(b.quantity) || 0) - 1)); render(); break;
+      // Each step transition explicitly hands focus to the NEXT field via
+      // the same _focusAct -> restoreFocus() path every other live input
+      // already uses, instead of relying on a fresh `autofocus` attribute
+      // alone — "desktop should require almost zero mouse" needs the next
+      // keystroke to land somewhere, not just the next click.
+      case 'gud-go-dept-pick': b.departmentId = el.dataset.id; b.departmentQuery = ''; st._focusAct = 'gud-go-item-query'; render(); break;
+      // Phase 10.4.2 root cause ("old rows survive a department change"):
+      // lines already confirmed belong to the department that was active
+      // when they were confirmed (Doc 2 §06: department is chosen FIRST,
+      // everything after is scoped to it) — clearing only departmentId left
+      // b.lines behind, so switching departments mid-batch silently
+      // re-attributed already-confirmed rows to whichever department was
+      // picked next. A full reset here is the same one blankBatch() already
+      // does after a save — this is not a new state shape, just applying it
+      // at another point real drafts actually end.
+      case 'gud-go-dept-clear': st.goodsOut = blankBatch(); st._focusAct = 'gud-go-dept-query'; render(); break;
+      case 'gud-go-item-pick': b.selectedItemId = el.dataset.id; b.itemQuery = ''; b.quantity = ''; st._focusAct = 'gud-go-qty'; render(); break;
+      case 'gud-go-item-clear': b.selectedItemId = null; b.quantity = ''; st._focusAct = 'gud-go-item-query'; render(); break;
+      case 'gud-go-qty-plus': b.quantity = String((Number(b.quantity) || 0) + 1); st._focusAct = 'gud-go-qty'; render(); break;
+      case 'gud-go-qty-minus': b.quantity = String(Math.max(0, (Number(b.quantity) || 0) - 1)); st._focusAct = 'gud-go-qty'; render(); break;
       case 'gud-go-confirm-line': {
         const item = st.data.items.find((i) => i.itemId === b.selectedItemId);
         const qty = Number(b.quantity);
         if (!item || !(qty > 0)) return;
         b.lines.push({ itemId: item.itemId, name: item.name, quantity: qty });
         b.selectedItemId = null; b.quantity = ''; b.itemQuery = '';
+        st._focusAct = 'gud-go-item-query';
         render();
         break;
       }

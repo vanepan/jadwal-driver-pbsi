@@ -40,6 +40,27 @@ import { GUDANG_STORAGE_PREFIX } from '../config/gudang-paths.js';
 const MAX_BYTES = 5 * 1024 * 1024; // 5MB — generous for a phone photo, small enough to stay a quick warehouse-floor upload
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
+// Phase 10.4.2 root cause ("upload hangs forever, no success, no failure"):
+// the full chain from this file's calls down to the real Firebase
+// uploadBytes()/getBytes() has no bound anywhere — a genuinely-hanging
+// (never settling, not merely rejecting) request freezes the Promise
+// forever, leaving the modal's `saving` flag stuck true with nothing to
+// show the user. src/file-storage/retry-with-backoff.js#withTimeout
+// already solved the exact same gap for the exact same underlying
+// primitive one layer up (Sarpras Intelligence's own upload path) — this
+// is a LOCAL copy of that same reasoning, not an import from src/, since
+// Gudang's own doctrine (Doc 1 Art.X) forbids depending on that module.
+// Turning a hang into an ordinary rejection is not "hiding" the failure —
+// the existing error surfacing in gudang-catalog.js's confirmEditItem/
+// confirmCatalogCreate (m.error = res.error) already displays whatever
+// error this resolves to; it just never used to resolve at all.
+const STORAGE_TIMEOUT_MS = 30000;
+function withTimeout(promise, ms) {
+  let timer;
+  const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Waktu unggah habis. Periksa koneksi dan coba lagi.')), ms); });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 /** @param {*} file @returns {string|null} an error message, or null if the file is an acceptable photo. */
 export function validateItemPhoto(file) {
   if (!file) return 'Tidak ada file.';
@@ -65,7 +86,12 @@ export async function uploadItemPhoto(itemId, file) {
   if (invalid) return { ok: false, storagePath: null, contentType: null, error: invalid };
   const { uploadFileToStorage } = await import('../../firebase.js');
   const path = `${GUDANG_STORAGE_PREFIX}/${itemId}/${Date.now()}.${safeExt(file.type)}`;
-  const res = await uploadFileToStorage(path, file);
+  let res;
+  try {
+    res = await withTimeout(uploadFileToStorage(path, file), STORAGE_TIMEOUT_MS);
+  } catch (err) {
+    return { ok: false, storagePath: null, contentType: null, error: err.message };
+  }
   if (!res.ok) return { ok: false, storagePath: null, contentType: null, error: res.error };
   return { ok: true, storagePath: res.fullPath || path, contentType: file.type, error: null };
 }
@@ -77,7 +103,12 @@ export async function uploadItemPhoto(itemId, file) {
  */
 export async function loadItemPhotoUrl(storagePath, contentType) {
   const { downloadFileFromStorage } = await import('../../firebase.js');
-  const res = await downloadFileFromStorage(storagePath);
+  let res;
+  try {
+    res = await withTimeout(downloadFileFromStorage(storagePath), STORAGE_TIMEOUT_MS);
+  } catch (err) {
+    return { ok: false, url: null, error: err.message };
+  }
   if (!res.ok) return { ok: false, url: null, error: res.error };
   const blob = new Blob([res.bytes], { type: contentType || 'application/octet-stream' });
   return { ok: true, url: URL.createObjectURL(blob), error: null };

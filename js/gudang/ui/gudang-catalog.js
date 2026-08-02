@@ -106,7 +106,7 @@ export function renderCatalogModal(st, c) {
           <div class="gud-modal-kicker">GUDANG</div>
           <h2 class="gud-modal-title">${esc(CATALOG_TITLE[m.kind])}</h2>
         </div>
-        <button type="button" class="gud-icon-btn" data-act="gud-cat-cancel" aria-label="Tutup">${icon('close', { size: 16 })}</button>
+        <button type="button" class="gud-icon-btn" data-act="gud-cat-cancel" aria-label="Tutup" title="Tutup">${icon('close', { size: 16 })}</button>
       </div>
       <div class="gud-modal-body">
         ${body}
@@ -168,7 +168,7 @@ function itemFormBody(st, m, isEdit) {
  *  as every other Gudang interaction. */
 function photoField(d) {
   return `<div class="gud-field"><span>Foto Item <span class="gud-opt">(opsional)</span></span>
-    <div class="gud-photo-drop${d.photoPreviewUrl ? ' -filled' : ''}" data-act="gud-cat-photo-zone" tabindex="0" role="button" aria-label="Unggah foto item">
+    <div class="gud-photo-drop${d.photoPreviewUrl ? ' -filled' : ''}" data-act="gud-cat-photo-zone" tabindex="0" role="button" aria-label="Unggah foto item" title="Seret, klik, atau tempel untuk mengunggah foto">
       ${d.photoPreviewUrl
         ? `<img class="gud-photo-preview" src="${esc(d.photoPreviewUrl)}" alt="" />
            <div class="gud-photo-drop-actions">

@@ -291,7 +291,7 @@ function drawerShell(title, badge, body, backSlot) {
           ${backSlot ? `<div class="gud-drawer-badges">${backSlot()}</div>` : (badge ? `<div class="gud-drawer-badges"><span class="gud-pill" data-pill="neutral">${esc(badge)}</span></div>` : '')}
           <h2 class="gud-drawer-title">${esc(title)}</h2>
         </div>
-        <button type="button" class="gud-icon-btn" data-act="gud-detail-close">${icon('close', { size: 16 })}</button>
+        <button type="button" class="gud-icon-btn" data-act="gud-detail-close" aria-label="Tutup" title="Tutup">${icon('close', { size: 16 })}</button>
       </div>
       <div class="gud-drawer-body">${body}</div>
     </div>

@@ -83,7 +83,7 @@ function resultRow(result, index, s) {
   // one reducer owns "revealed," not a second UI-only flag.
   const chips = hasSecondary || revealed ? actionChips(result, index, s) : '';
   const chevron = hasSecondary
-    ? `<button type="button" class="gud-spotlight-chevron" data-act="gud-result-reveal" data-index="${index}" aria-label="Aksi lain">${icon('chevron-right', { size: 14 })}</button>`
+    ? `<button type="button" class="gud-spotlight-chevron" data-act="gud-result-reveal" data-index="${index}" aria-label="Aksi lain" title="Aksi lain">${icon('chevron-right', { size: 14 })}</button>`
     : '';
   return `<div class="gud-spotlight-row${focused ? ' -focused' : ''}${revealed ? ' -revealed' : ''}" id="gud-result-${index}"
        role="option" aria-selected="${focused}" data-act="gud-result-row" data-index="${index}">

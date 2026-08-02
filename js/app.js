@@ -217,7 +217,7 @@ import {
 } from './engineering/ui/engineering-center.js';
 // V1.28.0 Experience Layer — Gudang UI, embedded native module (mirrors Engineering).
 import {
-  mountGudang, setGudangScreen, setGudangSearch,
+  mountGudang, setGudangScreen, setGudangSearch, onGudangScreenChange,
 } from './gudang/ui/gudang-center.js';
 // v1.20.6 — inject the live User Management source into the Engineering personnel
 // resolver (it deliberately does not import users.js to stay Node-harness-safe).
@@ -2135,17 +2135,35 @@ const GUD_SCREEN_BOTTOM_NAV_ACTION = {
   home: 'navGudHome', goodsOut: 'navGudGoodsOut', goodsIn: 'navGudGoodsIn',
   history: 'navGudHistory', opname: 'navGudOpname', analytics: 'navGudAnalytics',
 };
+const GUD_SCREEN_NAV_ID = {
+  home: 'v2NavGudHome', goodsOut: 'v2NavGudGoodsOut', goodsIn: 'v2NavGudGoodsIn',
+  history: 'v2NavGudHistory', opname: 'v2NavGudOpname', analytics: 'v2NavGudAnalytics',
+};
+// Phase 10.4.1: gudangMounted only latches once a host actually exists to
+// mount into (setWorkspace('gudang') below guarantees #v2GudangWorkspace
+// exists by the time this runs) — setting it unconditionally, as before,
+// would permanently skip mounting for the rest of the session if this
+// ever ran with a null host.
 async function navGudang(screen, navId) {
   setCrumb('GUDANG', GUD_MENU_TITLES[screen] || 'Gudang');
   if (navId) setV2PanelNavActive(navId);
   setWorkspace('gudang');
-  if (!gudangMounted) {
-    gudangMounted = true;
-    await mountGudang(document.getElementById('v2GudangWorkspace'));
-  }
+  const hostEl = document.getElementById('v2GudangWorkspace');
+  if (!gudangMounted && hostEl) { gudangMounted = true; await mountGudang(hostEl); }
   setGudangScreen(screen || 'home');
   syncBottomNavAction(GUD_SCREEN_BOTTOM_NAV_ACTION[screen] || 'navGudHome', 'openMoreSheet');
 }
+
+// Phase 10.4.1: catches every screen change navGudang() itself doesn't see —
+// Home's FAB, a catalog card's quick-action, "Lihat semua di Movement
+// History" — anything that changes st.screen from INSIDE the Gudang module
+// rather than through the side-nav. Keeps breadcrumb/sidebar-active-state/
+// bottom-nav synchronized regardless of which of those triggered it.
+onGudangScreenChange((screen) => {
+  setCrumb('GUDANG', GUD_MENU_TITLES[screen] || 'Gudang');
+  setV2PanelNavActive(GUD_SCREEN_NAV_ID[screen] || 'v2NavGudHome');
+  syncBottomNavAction(GUD_SCREEN_BOTTOM_NAV_ACTION[screen] || 'navGudHome', 'openMoreSheet');
+});
 
 function initV2Rail() {
   // Build the rail element
@@ -3707,7 +3725,17 @@ function setWorkspace(name) {
   const engWs           = document.getElementById('v2EngineeringWorkspace');
   const sicWs           = document.getElementById('v2SarprasIntelWorkspace');
   const drvHistWs       = document.getElementById('v2DriverHistoryWorkspace');
-  const gudangWs        = document.getElementById('v2GudangWorkspace');
+  // Phase 10.4.1 root cause: restoreNavState() (fired from the auth-available
+  // signal, an independent timing source from this file's own DOMContentLoaded
+  // init sequence) can call setWorkspace('gudang') before initV2GudangWorkspace()
+  // has run — #v2GudangWorkspace wouldn't exist yet, this lookup returned null,
+  // the display toggle below silently no-op'd, and NOTHING ever re-applied it
+  // afterward (the host, once created, stays at the display:none it's born
+  // with). Lazily creating it here — exactly once, guarded — makes this
+  // function correct regardless of call order, instead of assuming a fragile
+  // "init always runs first" ordering between two independent trigger paths.
+  let gudangWs = document.getElementById('v2GudangWorkspace');
+  if (isGudang && !gudangWs) { initV2GudangWorkspace(); gudangWs = document.getElementById('v2GudangWorkspace'); }
 
   if (timelineSurface) timelineSurface.style.display = isDash ? ''      : 'none';
   if (engWs)           engWs.style.display           = isEng   ? 'block' : 'none';

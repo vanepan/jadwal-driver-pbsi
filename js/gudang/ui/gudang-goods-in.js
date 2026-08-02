@@ -95,9 +95,12 @@ function itemLoop(st, b) {
         </div>
         <div class="gud-field gud-mt"><span>Jumlah</span>
           <div class="gud-qty-row">
-            <button type="button" class="gud-icon-btn" data-act="gud-gi-qty-minus">${icon('minus', { size: 15 })}</button>
-            <input class="gud-input gud-qty-input" data-act="gud-gi-qty" type="number" min="0" value="${esc(b.quantity)}" autofocus />
-            <button type="button" class="gud-icon-btn" data-act="gud-gi-qty-plus">${icon('plus', { size: 15 })}</button>
+            <button type="button" class="gud-icon-btn" data-act="gud-gi-qty-minus" aria-label="Kurangi" title="Kurangi">${icon('minus', { size: 15 })}</button>
+            <!-- Phase 10.4.1: type="number" -> text/inputmode=numeric fixes digit-
+                 reversal on typing (setSelectionRange throws for number inputs —
+                 see gudang-goods-out.js's qty field for the full root cause). -->
+            <input class="gud-input gud-qty-input" data-act="gud-gi-qty" type="text" inputmode="numeric" pattern="[0-9]*" value="${esc(b.quantity)}" autofocus />
+            <button type="button" class="gud-icon-btn" data-act="gud-gi-qty-plus" aria-label="Tambah" title="Tambah">${icon('plus', { size: 15 })}</button>
           </div>
         </div>
         ${priceField(b)}
@@ -125,7 +128,7 @@ function priceField(b) {
     return `<button type="button" class="gud-link-btn gud-mt" data-act="gud-gi-price-open">${icon('plus', { size: 12 })} tambah harga <span class="gud-opt">(opsional)</span></button>`;
   }
   return `<div class="gud-field gud-mt"><span>Harga per unit <em class="gud-opt">(opsional)</em></span>
-    <input class="gud-input" data-act="gud-gi-price" type="number" min="0" value="${esc(b.price)}" placeholder="Rp" /></div>`;
+    <input class="gud-input" data-act="gud-gi-price" type="text" inputmode="numeric" pattern="[0-9]*" value="${esc(b.price)}" placeholder="Rp" /></div>`;
 }
 
 function lineList(b) {
@@ -135,7 +138,7 @@ function lineList(b) {
       <span class="gud-line-name">${esc(l.name)}</span>
       ${l.price != null ? `<span class="gud-line-price">${esc(fmtRupiah(l.price))}</span>` : ''}
       <span class="gud-line-qty -in">+${fmtQty(l.quantity)}</span>
-      <button type="button" class="gud-icon-btn -sm" data-act="gud-gi-remove-line" data-id="${i}" aria-label="Hapus">${icon('close', { size: 13 })}</button>
+      <button type="button" class="gud-icon-btn -sm" data-act="gud-gi-remove-line" data-id="${i}" aria-label="Hapus" title="Hapus baris">${icon('close', { size: 13 })}</button>
     </div>`).join('')}</div>`;
 }
 
@@ -169,13 +172,20 @@ export const goodsInHandlers = {
   onClick(st, act, el, c, render, refreshCatalog) {
     const b = ensure(st);
     switch (act) {
-      case 'gud-gi-reason-pick': b.reason = el.dataset.id; render(); break;
-      case 'gud-gi-reason-clear': b.reason = null; render(); break;
-      case 'gud-gi-item-pick': b.selectedItemId = el.dataset.id; b.itemQuery = ''; b.quantity = ''; b.priceOpen = false; b.price = ''; render(); break;
-      case 'gud-gi-item-clear': b.selectedItemId = null; b.quantity = ''; render(); break;
-      case 'gud-gi-qty-plus': b.quantity = String((Number(b.quantity) || 0) + 1); render(); break;
-      case 'gud-gi-qty-minus': b.quantity = String(Math.max(0, (Number(b.quantity) || 0) - 1)); render(); break;
-      case 'gud-gi-price-open': b.priceOpen = true; render(); break;
+      // Same explicit focus handoff as Goods Out — see that file's onClick
+      // for why (_focusAct -> restoreFocus(), not a bare `autofocus`
+      // attribute alone).
+      case 'gud-gi-reason-pick': b.reason = el.dataset.id; st._focusAct = 'gud-gi-item-query'; render(); break;
+      // Phase 10.4.2 root cause ("old rows survive a reason change") — same
+      // fix as Goods Out's dept-clear: lines already confirmed belong to
+      // the reason that was active when they were confirmed; a full reset
+      // is the same blankBatch() shape trySave() already uses after a save.
+      case 'gud-gi-reason-clear': st.goodsIn = blankBatch(); render(); break;
+      case 'gud-gi-item-pick': b.selectedItemId = el.dataset.id; b.itemQuery = ''; b.quantity = ''; b.priceOpen = false; b.price = ''; st._focusAct = 'gud-gi-qty'; render(); break;
+      case 'gud-gi-item-clear': b.selectedItemId = null; b.quantity = ''; st._focusAct = 'gud-gi-item-query'; render(); break;
+      case 'gud-gi-qty-plus': b.quantity = String((Number(b.quantity) || 0) + 1); st._focusAct = 'gud-gi-qty'; render(); break;
+      case 'gud-gi-qty-minus': b.quantity = String(Math.max(0, (Number(b.quantity) || 0) - 1)); st._focusAct = 'gud-gi-qty'; render(); break;
+      case 'gud-gi-price-open': b.priceOpen = true; st._focusAct = 'gud-gi-price'; render(); break;
       case 'gud-gi-confirm-line': {
         const item = st.data.items.find((i) => i.itemId === b.selectedItemId);
         const qty = Number(b.quantity);
@@ -183,6 +193,7 @@ export const goodsInHandlers = {
         const price = b.priceOpen && b.price !== '' ? Number(b.price) : null;
         b.lines.push({ itemId: item.itemId, name: item.name, quantity: qty, price });
         b.selectedItemId = null; b.quantity = ''; b.itemQuery = ''; b.priceOpen = false; b.price = '';
+        st._focusAct = 'gud-gi-item-query';
         render();
         break;
       }

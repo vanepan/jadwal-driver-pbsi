@@ -119,11 +119,15 @@ function catalogCard(item, o, st) {
   const counted = o.counted[item.itemId];
   if (counted) {
     const diff = counted.countedQuantity - counted.expectedQuantity;
+    // Expected/Counted/Difference need visible hierarchy together, not just
+    // the diff on its own — a supervisor reviewing the batch should be able
+    // to see all three without re-opening the card.
     return `<div class="gud-cat-card -done">
       ${cardHeader(item, st, 'c-green')}
+      <span class="gud-cat-card-expected">Ekspektasi ${fmtQty(counted.expectedQuantity)} · Hitung ${fmtQty(counted.countedQuantity)}</span>
       <div class="gud-cat-card-foot">
         <span class="gud-opname-diff" data-sign="${diff === 0 ? 'zero' : diff > 0 ? 'plus' : 'minus'}">${diff === 0 ? 'Sesuai' : (diff > 0 ? `+${diff}` : diff)}</span>
-        <button type="button" class="gud-icon-btn -sm" data-act="gud-op-undo" data-id="${esc(item.itemId)}" aria-label="Hitung ulang">${icon('close', { size: 12 })}</button>
+        <button type="button" class="gud-icon-btn -sm" data-act="gud-op-undo" data-id="${esc(item.itemId)}" aria-label="Hitung ulang" title="Hitung ulang">${icon('close', { size: 12 })}</button>
       </div>
     </div>`;
   }
@@ -140,9 +144,11 @@ function catalogCard(item, o, st) {
     ${cardHeader(item, st)}
     <span class="gud-cat-card-expected">${expected == null ? 'Memuat…' : `Ekspektasi: ${fmtQty(expected)}`}</span>
     <div class="gud-cat-card-foot">
-      <input class="gud-input gud-opname-input" data-act="gud-op-count" data-id="${esc(item.itemId)}" type="number" min="0" value="${esc(draft)}" placeholder="Hasil hitung" autofocus />
-      <button type="button" class="gud-icon-btn -sm" data-act="gud-op-confirm-count" data-id="${esc(item.itemId)}" aria-label="Konfirmasi" ${draft === '' || expected == null ? 'disabled' : ''}>${icon('check', { size: 13 })}</button>
-      <button type="button" class="gud-icon-btn -sm" data-act="gud-op-cancel" data-id="${esc(item.itemId)}" aria-label="Batal">${icon('close', { size: 13 })}</button>
+      <!-- Phase 10.4.1: type="number" -> text/inputmode=numeric fixes digit-
+           reversal on typing (see gudang-goods-out.js's qty field for the root cause). -->
+      <input class="gud-input gud-opname-input" data-act="gud-op-count" data-id="${esc(item.itemId)}" type="text" inputmode="numeric" pattern="[0-9]*" value="${esc(draft)}" placeholder="Hasil hitung" autofocus />
+      <button type="button" class="gud-icon-btn -sm" data-act="gud-op-confirm-count" data-id="${esc(item.itemId)}" aria-label="Konfirmasi" title="Konfirmasi" ${draft === '' || expected == null ? 'disabled' : ''}>${icon('check', { size: 13 })}</button>
+      <button type="button" class="gud-icon-btn -sm" data-act="gud-op-cancel" data-id="${esc(item.itemId)}" aria-label="Batal" title="Batal">${icon('close', { size: 13 })}</button>
     </div>
   </div>`;
 }
@@ -186,7 +192,10 @@ export const opnameHandlers = {
     const id = el.dataset.id;
     switch (act) {
       case 'gud-op-loc': o.locationId = el.dataset.val || null; render(); break;
-      case 'gud-op-open': openRow(st, id, render); break;
+      // Hand focus straight to the count input that just appeared, same
+      // _focusAct -> restoreFocus() path as every other step-transition in
+      // Goods Out/In.
+      case 'gud-op-open': st._focusAct = 'gud-op-count'; openRow(st, id, render); break;
       case 'gud-op-cancel': delete o.open[id]; if (o.draft) delete o.draft[id]; render(); break;
       case 'gud-op-undo': delete o.counted[id]; render(); break;
       case 'gud-op-confirm-count': {

@@ -96,7 +96,7 @@ function topList(st, kind) {
     : null;
   return `${headline ? `<div class="gud-qi-sentence">${esc(headline)}</div>` : ''}
     <div class="gud-toplist gud-mt">${rows.map((r, i) => `
-      <div class="gud-toplist-row" ${kind === 'items' ? `data-act="gud-open-item" data-id="${esc(r.itemId)}"` : ''}>
+      <div class="gud-toplist-row" ${kind === 'items' ? `data-act="gud-open-item" data-id="${esc(r.itemId)}" role="button" tabindex="0"` : ''}>
         <span class="gud-toplist-rank">${i + 1}</span>
         <span class="gud-toplist-name">${esc(kind === 'items' ? itemName(st, r.itemId) : topDeptName(st, r.departmentId))}</span>
         <span class="gud-toplist-val">${fmtQty(r.quantity)}</span>

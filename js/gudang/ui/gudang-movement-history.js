@@ -95,7 +95,7 @@ function feedList(rows) {
 }
 
 function historyCard(m) {
-  return `<div class="gud-hist-row" ${m.itemId ? `data-act="gud-open-item" data-id="${esc(m.itemId)}"` : ''}>
+  return `<div class="gud-hist-row" ${m.itemId ? `data-act="gud-open-item" data-id="${esc(m.itemId)}" role="button" tabindex="0"` : ''}>
       <span class="gud-hist-ic" data-tone="${m.quantityDelta > 0 ? 'ok' : 'crit'}">${icon(m.quantityDelta > 0 ? 'arrow-in' : 'arrow-out', { size: 15 })}</span>
       <span class="gud-hist-main">
         <span class="gud-hist-title">${esc(m.what)} <span class="gud-hist-qty" data-sign="${m.quantityDelta > 0 ? 'plus' : 'minus'}">${m.quantityDelta > 0 ? '+' : ''}${m.quantityDelta}</span></span>

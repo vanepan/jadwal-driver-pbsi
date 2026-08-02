@@ -57,6 +57,17 @@ const st = {
 
 let host = null, mounted = false, loaded = false, lastAnimatedScreen = null;
 
+/** Phase 10.4.1 root cause ("breadcrumb/sidebar out of sync"): js/app.js's
+ *  navGudang() sets the breadcrumb/sidebar-active-state/bottom-nav ONLY when
+ *  the SIDE-NAV itself is clicked. Every in-content navigation (Home's FAB,
+ *  a catalog card's quick-action, "Lihat semua di Movement History") changes
+ *  st.screen directly and never calls back out to app.js, so the shell's
+ *  chrome went stale while the actual content underneath it was correct.
+ *  One listener, set once by app.js, fired from the ONE place every single
+ *  screen change already flows through before the user sees anything. */
+let _onScreenChange = null;
+export function onGudangScreenChange(cb) { _onScreenChange = cb; }
+
 /* ── context (identity) — mirrors Engineering's ctx() shape ───────────── */
 function ctx() {
   const u = getCurrentUser() || {};
@@ -77,6 +88,7 @@ export async function mountGudang(hostEl) {
     host.addEventListener('click', onClick);
     host.addEventListener('input', onInput);
     host.addEventListener('submit', onSubmit);
+    host.addEventListener('keydown', onHostKeydown);
     // Phase 10.3 (Item photo): drag & drop and clipboard-paste are the only
     // Gudang interactions that fundamentally require these two DOM event
     // types — there is no way to support "drag a file in" or "Ctrl+V an
@@ -111,12 +123,44 @@ async function refreshCatalog() {
     assets: assetsRes.ok ? assetsRes.data : [],
     loadedAt: Date.now(),
   };
+  // Phase 10.4.1 root cause ("Catalog stock never refreshes"): per-item
+  // stock/forecast figures are cached once-per-fetch by Home
+  // (st.homeCardData/st.homeLowStockIds, gudang-home.js#ensureCardData/
+  // ensureLowStockSet) and by Item Detail (st.detail's own cache.loaded
+  // guard, gudang-item-detail.js#ensureConsumableData). Every mutating
+  // action (Goods In/Out, Stock Opname) already calls refreshCatalog() on
+  // save, but it only ever refreshed st.data.items/locations/assets —
+  // never these DERIVED per-item caches — so a just-saved stock change
+  // never showed up anywhere without a full page reload, even though the
+  // underlying Stock Projection was already correct. Busting both here,
+  // the one place every mutating action already funnels through.
+  st.homeCardData = null;
+  st.homeLowStockIds = null;
+  st.analyticsTop = null; // same staleness class — Top Consumed/Top Departments (gudang-analytics.js)
+  st.historyData = null; // same staleness class — the feed itself (gudang-movement-history.js)
+  if (st.detail) { st.detail.loaded = null; st.detail.historyLoaded = null; }
   st.loading = false;
   render();
 }
 
+// Phase 10.4.2 root cause ("old rows/errors survive navigation away and
+// back"): st.goodsOut/goodsIn/opname are each lazily created once by their
+// own screen's ensure(st) and never invalidated except by an explicit
+// save/new-batch action — leaving a screen without saving (e.g. to check
+// something on Home) left the whole draft, including any error message,
+// sitting there indefinitely for the next visit to inherit.
+const EPHEMERAL_SCREEN_STATE_KEY = { goodsOut: 'goodsOut', goodsIn: 'goodsIn', opname: 'opname' };
 export function setGudangScreen(screen) {
-  st.screen = screen || 'home';
+  const next = screen || 'home';
+  if (st.screen !== next) {
+    // Nulling the field here lets each screen's own existing ensure()
+    // guard recreate a fresh blank draft on next visit — the same
+    // lazy-init it already does for a screen's very first visit, simply
+    // re-triggered on every subsequent departure too. No new state shape.
+    const key = EPHEMERAL_SCREEN_STATE_KEY[st.screen];
+    if (key) st[key] = null;
+  }
+  st.screen = next;
   st.detail = null;
   render();
 }
@@ -208,6 +252,7 @@ function render() {
   // div, so an unconditional animation class replayed the fade-up on every
   // character typed (Phase 10.1 UAT finding).
   const isNewScreen = st.screen !== lastAnimatedScreen;
+  if (isNewScreen && _onScreenChange) _onScreenChange(st.screen);
   lastAnimatedScreen = st.screen;
   host.innerHTML = `<div class="gud-content${isNewScreen ? ' -enter' : ''}">${screen}</div>${detail}${overlay}${modal}`;
   restoreFocus();
@@ -291,6 +336,36 @@ function onSubmit(e) {
   e.preventDefault();
 }
 
+/** Enter-in-a-line-item-input -> the SAME confirm button a click would hit
+ *  ("desktop should require almost zero mouse usage"). None of Goods Out/
+ *  In/Stock Opname wrap their inputs in a <form>, so Enter did nothing
+ *  before this — clicking the actual button (never reimplementing its
+ *  logic here) keeps every business rule exactly where it already lived. */
+const ENTER_CONFIRMS = {
+  'gud-go-qty': 'gud-go-confirm-line',
+  'gud-gi-qty': 'gud-gi-confirm-line',
+  'gud-op-count': 'gud-op-confirm-count',
+};
+function onHostKeydown(e) {
+  // A clickable <div role="button"> (Home's catalog cards, Analytics'
+  // top-list rows, Movement History rows) must answer Enter AND Space the
+  // same way a real <button> would — WAI-ARIA APG requirement for any
+  // custom role="button", not optional polish.
+  if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.getAttribute('role') === 'button' && e.target.dataset.act) {
+    e.preventDefault();
+    e.target.click();
+    return;
+  }
+  if (e.key !== 'Enter') return;
+  const ds = e.target && e.target.dataset;
+  const confirmAct = ds && ENTER_CONFIRMS[ds.act];
+  if (!confirmAct) return;
+  e.preventDefault();
+  const selector = ds.id != null ? `[data-act="${confirmAct}"][data-id="${CSS.escape(ds.id)}"]` : `[data-act="${confirmAct}"]`;
+  const el = host.querySelector(selector);
+  if (el && !el.disabled) el.click();
+}
+
 /* ── Phase 10.3: photo drag & drop / paste (Add Item / Edit Item only) ──── */
 function onDragOver(e) {
   if (!e.target.closest('[data-act="gud-cat-photo-zone"]')) return;
@@ -330,7 +405,7 @@ function onGlobalKeydown(e) {
   const ctrlK = (e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K');
   if (ctrlK) { e.preventDefault(); focusSharedSearchInput(); return; }
 
-  if (e.key === 'Escape' && st.modal) { e.preventDefault(); st.modal = null; render(); return; }
+  if (e.key === 'Escape' && st.modal) { e.preventDefault(); e.stopPropagation(); st.modal = null; render(); return; }
 
   // Ctrl+Enter — save the whole batch (Doc 2 §12: scoped to Goods In/Out/
   // Stock Opname, "not just the current line") — from anywhere in the flow.
@@ -346,8 +421,35 @@ function onGlobalKeydown(e) {
   // Enter inside the query input still submits the form otherwise (Tab moves
   // focus) — both are meaningful only inside the Spotlight, so prevent default.
   e.preventDefault();
+  // Phase 10.4.1 root cause ("Esc closes immediately" instead of Spotlight's
+  // clear-then-close): #v2SearchInput has its OWN generic Escape listener
+  // (js/app.js, registered directly on the input, bubble/at-target phase)
+  // that unconditionally clears the value and closes whatever dropdown is
+  // open — it always fired right after this capture-phase handler and
+  // stomped on the two-stage result the session-engine had just decided.
+  // stopPropagation() keeps this key event from ever reaching that second
+  // listener once Gudang's own reducer has claimed it.
+  e.stopPropagation();
   const { state, intent } = applySessionEvent(st.search, { type: 'key', key: e.key });
   st.search = state;
+  // Phase 10.4.2 root cause ("results disappear, query text remains"): the
+  // reducer above already clears state.query correctly on Escape — but the
+  // visible textbox is #v2SearchInput, a shared element gudang-center.js's
+  // own render() never touches (it only writes host.innerHTML). Clearing
+  // it used to be a SIDE EFFECT of js/app.js's generic Escape listener —
+  // the one Phase 10.4.1's stopPropagation() fix (correctly) stops from
+  // ever running once this handler claims the key. That fix closed one gap
+  // and opened this one: nothing was left to clear the actual textbox.
+  // Syncing it here, to whatever the reducer just decided query should be,
+  // makes this handler fully own Escape's visible effect end to end,
+  // rather than depending on a side effect of a listener it deliberately
+  // silences.
+  if (e.key === 'Escape') {
+    const input = document.getElementById('v2SearchInput');
+    if (input) input.value = state.query;
+    const clearBtn = document.getElementById('v2SearchClear');
+    if (clearBtn && !state.query) clearBtn.style.display = 'none';
+  }
   render();
   if (intent && intent.ok) resolveSearchIntent(intent.data);
 }

@@ -1,0 +1,23 @@
+rules_version = '2';
+
+// GUDANG ITEM PHOTOS — mirrors database.rules.json's exact role-scoping
+// pattern (admin/developer only), scoped precisely to the one path
+// js/gudang/ui/gudang-item-image.js#uploadItemPhoto ever writes to
+// (js/gudang/config/gudang-paths.js#GUDANG_STORAGE_PREFIX =
+// 'gudang/item-photos'). Everything else is denied by default — Storage
+// Rules only grant access to paths with a matching `match` block.
+//
+// DEPLOYMENT NOTE: this file cannot be deployed until Firebase Storage's
+// default bucket actually exists for this project (Firebase Console ->
+// Storage -> Get Started) — confirmed via a direct Google Cloud Storage
+// API query that the bucket schedule-driver-pbsi.firebasestorage.app
+// currently does not exist. Once it does, deploy with:
+//   firebase deploy --only storage
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /gudang/item-photos/{itemId}/{fileName} {
+      allow read, write: if request.auth != null
+        && (request.auth.token.role == 'admin' || request.auth.token.role == 'developer');
+    }
+  }
+}

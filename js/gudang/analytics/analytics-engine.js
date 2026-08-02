@@ -166,7 +166,15 @@ export async function isRestockRecommended(itemId) {
   const [stockRes, consumptionRes] = await Promise.all([currentStockFor(itemId), getAverageMonthlyConsumption(itemId)]);
   if (!stockRes.ok) return stockRes;
   if (!consumptionRes.ok) return consumptionRes;
-  if (consumptionRes.data <= 0) return success(false); // no consumption history — nothing to recommend against yet
+  // Phase 10.4.1 root cause ("Low Stock indicator: items with zero stock are
+  // not detected"): zero on-hand is an absolute signal that never needed a
+  // consumption pace to justify it — the `consumptionRes.data <= 0` gate
+  // below was returning false for ANY item with no consumption history
+  // BEFORE this ever ran, silently exempting exactly the items with no
+  // Goods Out history yet (new items, or ones already fully depleted by a
+  // Stock Opname correction) from ever being flagged, no matter how empty.
+  if (stockRes.data <= 0) return success(true);
+  if (consumptionRes.data <= 0) return success(false); // no consumption history and some stock left — nothing to recommend against yet
   return success(stockRes.data <= consumptionRes.data);
 }
 

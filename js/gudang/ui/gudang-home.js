@@ -171,6 +171,18 @@ function filteredItems(st, f) {
 }
 
 function renderCatalogSection(st, f, requestRender) {
+  // Phase 10.4.2 root cause ("Semua + Stok Rendah -> 0 items even though
+  // qualifying items exist"): filteredItems()'s lowStock predicate treats
+  // "st.homeLowStockIds hasn't loaded yet" (undefined) identically to
+  // "loaded, and this item just isn't in it" — both filter every item out.
+  // The very first render after toggling Stok Rendah on always hits the
+  // undefined case, since ensureLowStockSet's fetch is still in flight, so
+  // it showed the SAME empty state a genuinely-zero-results search would —
+  // "unknown" was being treated as "empty", which is the predicate itself
+  // violating set logic, not a real absence of qualifying items.
+  if (f.lowStock && !st.homeLowStockIds) {
+    return `<div class="gud-mt gud-muted">Memuat status stok…</div>`;
+  }
   const all = filteredItems(st, f);
   if (!all.length) {
     return `<div class="gud-mt">${emptyState({
@@ -207,11 +219,23 @@ function catalogCard(item, st) {
     qiLine = d && !d.loading ? (forecastSentence(d.forecast) || '') : '';
   }
 
-  return `<div class="gud-catalog-card" data-act="gud-open-item" data-id="${esc(item.itemId)}">
+  // Phase 10.4.1 (Part 10): Location must always show, never silently
+  // disappear when unset — every other meta segment is fine to omit, but
+  // "where is it?" is one of a card's 4 required answers (Part 2).
+  const metaLine = [catLabel, loc ? loc.name : '—'].filter(Boolean).map(esc).join(' · ');
+  // Phase 10.4.2 root cause ("item appears inside Low Stock filter, but
+  // card has no warning indicator"): st.homeLowStockIds is the exact same
+  // membership set the "Stok Rendah" filter already fetches (Analytics'
+  // isRestockRecommended(), via getLowStockAlerts()) — the card render
+  // never read it at all, so the signal reached Home correctly but was
+  // simply never displayed. Reusing the already-fetched Set here, never
+  // recomputing or calling isRestockRecommended a second time.
+  const isLowStock = !isAsset && st.homeLowStockIds && st.homeLowStockIds.has(item.itemId);
+  return `<div class="gud-catalog-card" data-act="gud-open-item" data-id="${esc(item.itemId)}" role="button" tabindex="0" aria-label="${esc(item.name)}">
     ${catalogCardImage(item, st)}
     <div class="gud-catalog-card-name">${esc(item.name)}</div>
-    ${catLabel || loc ? `<div class="gud-catalog-card-meta">${[catLabel, loc?.name].filter(Boolean).map(esc).join(' · ')}</div>` : ''}
-    <div class="gud-catalog-card-stock">${esc(stockLine)}</div>
+    <div class="gud-catalog-card-meta">${metaLine}</div>
+    <div class="gud-catalog-card-stock">${esc(stockLine)} ${isLowStock ? `<span class="gud-pill" data-pill="warn">${icon('gauge', { size: 10 })} Stok Rendah</span>` : ''}</div>
     ${qiLine ? `<div class="gud-catalog-card-qi">${esc(qiLine)}</div>` : ''}
     <div class="gud-catalog-card-quick">
       <span class="gud-catalog-quick-btn" data-act="gud-home-quick-out" data-id="${esc(item.itemId)}" title="Goods Out">${icon('arrow-out', { size: 13 })}</span>

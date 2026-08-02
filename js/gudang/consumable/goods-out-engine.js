@@ -50,7 +50,7 @@
 'use strict';
 
 import { getItem } from '../repository/item-repository.js';
-import { getDepartment } from '../repository/department-repository.js';
+import { listBidang } from '../config/gudang-bidang-source.js';
 import { appendMovement } from '../repository/movement-repository.js';
 import { recalculateStock } from '../projection/stock-projection-engine.js';
 import { makeMovement, MOVEMENT_TYPE, MOVEMENT_REASON } from '../contracts/movement-contract.js';
@@ -87,8 +87,20 @@ export async function validateGoodsOutBatch(batch) {
   const shapeError = validateShape(batch);
   if (shapeError) return failure(REPOSITORY_ERROR.INVALID_INPUT, `validateGoodsOutBatch: ${shapeError}`);
 
-  const departmentRes = await getDepartment(batch.departmentId);
-  if (!departmentRes.ok) return departmentRes;
+  // Phase 10.4.2 root cause: department-repository.js is a ratified but
+  // dormant Gudang domain (Doc 3 Ch.03) — Phase 10.1 sourced the picker
+  // itself from the real Bidang-role roster in User Management
+  // (gudang-bidang-source.js#listBidang) instead, but this validation step
+  // was never updated to match, so it checked batch.departmentId against a
+  // store nothing has ever populated — every batch failed with "No
+  // department with id ..." regardless of which real Bidang was picked.
+  // The identity itself was always correct (a stable User Management
+  // username, never generated from display text); only the EXISTENCE CHECK
+  // was reading from the wrong source. Validating against the exact same
+  // roster the picker itself is built from is the one identity, used
+  // consistently end to end — not a new one, and not a loosened check.
+  const department = listBidang().find((d) => d.departmentId === batch.departmentId);
+  if (!department) return failure(REPOSITORY_ERROR.NOT_FOUND, `No department with id "${batch.departmentId}".`);
 
   for (const [i, line] of batch.lines.entries()) {
     const itemRes = await getItem(line.itemId);

@@ -268,6 +268,7 @@
 .gud-catalog-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;}
 .gud-catalog-card{position:relative;display:flex;flex-direction:column;gap:3px;padding:12px 13px;border-radius:13px;border:1px solid var(--border-faint);background:var(--surface);cursor:pointer;transition:border-color .12s,box-shadow .12s;}
 .gud-catalog-card:hover{border-color:var(--border-strong);box-shadow:var(--shadow-sm);}
+.gud-catalog-card:focus-visible{outline:2px solid var(--accent-line);outline-offset:2px;}
 /* Product image (Phase 10.3) — bleeds to the card's own edges via negative
    margins matching .gud-catalog-card's padding (12px/13px), so it reads as
    one continuous photo tile rather than an inset thumbnail. aspect-ratio
@@ -280,7 +281,7 @@
 .gud-catalog-card-img.-placeholder{color:var(--text-faint);}
 .gud-catalog-card-name{font-size:13px;font-weight:700;line-height:1.3;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
 .gud-catalog-card-meta{font-size:11px;color:var(--text-faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.gud-catalog-card-stock{font-family:var(--font-mono);font-size:12.5px;font-weight:700;color:var(--text-dim);margin-top:4px;}
+.gud-catalog-card-stock{font-family:var(--font-mono);font-size:12.5px;font-weight:700;color:var(--text-dim);margin-top:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
 .gud-catalog-card-qi{font-size:11px;color:var(--accent);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 /* Quick actions: hover-revealed on desktop (Doc 2 §13's existing "chevron
    for secondary, primary stays one tap" idiom, applied here as "the card
@@ -391,6 +392,8 @@
 .gud-timeline-label{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-ghost);font-weight:700;margin-bottom:8px;}
 .gud-timeline-rows{display:flex;flex-direction:column;gap:6px;}
 .gud-hist-row{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:12px;border:1px solid var(--border-faint);background:var(--surface);}
+.gud-hist-row[role="button"]{cursor:pointer;}
+.gud-hist-row:focus-visible{outline:2px solid var(--accent-line);outline-offset:2px;}
 .gud-hist-row[data-act]{cursor:pointer;transition:border-color .12s,box-shadow .12s;}
 .gud-hist-row[data-act]:hover{border-color:var(--border-strong);box-shadow:var(--shadow-sm);}
 .gud-hist-ic{width:30px;height:30px;border-radius:9px;flex:none;display:grid;place-items:center;}
@@ -449,6 +452,8 @@
 /* ── Analytics (Doc 2 §11) ───────────────────────────────────────────────── */
 .gud-toplist{display:flex;flex-direction:column;gap:2px;}
 .gud-toplist-row{display:flex;align-items:center;gap:12px;padding:9px 0;border-top:1px solid var(--border-faint);}
+.gud-toplist-row[role="button"]{cursor:pointer;}
+.gud-toplist-row:focus-visible{outline:2px solid var(--accent-line);outline-offset:-2px;border-radius:8px;}
 .gud-toplist-row:first-child{border-top:none;}
 .gud-toplist-row[data-act]{cursor:pointer;margin:0 -8px;padding-left:8px;padding-right:8px;border-radius:9px;}
 .gud-toplist-row[data-act]:hover{background:var(--hover);}

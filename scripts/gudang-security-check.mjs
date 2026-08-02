@@ -91,8 +91,15 @@ console.log('\n[Part 6 — no unnecessary write permissions anywhere under gudan
 
 console.log('\n[Part 7 — every gudang/* record path has a shape .validate]');
 {
+  // UPDATED — Phase 10.4.2: 'category' removed from items' required-field
+  // list. item-contract.js's own header documents Phase 10.1 making
+  // category optional/nullable (user-approved) — this rule was never
+  // updated to match, so hasChildren(['category']) rejected every write
+  // where category was cleared (RTDB omits null-valued keys entirely on
+  // set(), so the key was never even present to satisfy the check),
+  // surfacing as permission_denied only in that one case.
   const expectations = {
-    items: ['itemId', 'name', 'itemType', 'category', 'active', 'normalizedName', 'searchTokens', 'createdAt'],
+    items: ['itemId', 'name', 'itemType', 'active', 'normalizedName', 'searchTokens', 'createdAt'],
     movements: ['movementId', 'itemId', 'type', 'quantityDelta', 'reason', 'actorId', 'createdAt'],
     assets: ['assetId', 'itemId', 'identity', 'status', 'createdAt'],
     assetHistory: ['historyId', 'assetId', 'eventType', 'actorId', 'reason', 'occurredAt'],
