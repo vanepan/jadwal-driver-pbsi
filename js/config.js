@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.28.9';
-export const RELEASE_NAME = 'Photo Display Fix + Client-Side Compression';
+export const APP_VERSION = '1.28.10';
+export const RELEASE_NAME = 'CORS Allowlist Gap — Real Production Origin (Vercel) Was Missing';
 
 /* ============================================================
    APP_ENV — the AUTHORITATIVE runtime environment (v1.20.3 RC1).
@@ -66,6 +66,16 @@ export function isProduction() {
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.28.10',
+    date: '2026-08-04',
+    summary: 'Corrects a gap in v1.28.8\'s CORS fix, found immediately after that fix was believed complete: photos still failed to display, but only on the app\'s actual real-world production URL, https://jadwal-driver-pbsi.vercel.app — every prior verification in this investigation (the isolated repro, the live re-tests) had been run against either localhost or Firebase Hosting\'s own URL (schedule-driver-pbsi.web.app), neither of which is where real users/staff actually use this app. This session only learned the Vercel deployment existed at all from this report — there is no vercel.json or any other trace of it anywhere in this repo; it auto-deploys straight from GitHub on every push, entirely outside anything `firebase deploy` or this repo\'s own config touches. Confirmed with the user: Vercel is the real production URL; Firebase Hosting has been a secondary/testing deployment this whole investigation. storage-cors.json\'s origin list was missing it entirely (only had localhost + the two Firebase Hosting domains), so every read from the actual production app hit the identical CORS block v1.28.8 diagnosed and fixed for the other origins — same root cause, an origin neither this investigation nor the original bucket setup had ever been told about. Fixed by adding https://jadwal-driver-pbsi.vercel.app to storage-cors.json and re-applying via `gcloud storage buckets update --cors-file=storage-cors.json` (Cloud Shell). storage.rules\' CORS-dependency comment (added in v1.28.8) now explicitly documents that this app has two independent deployment targets (Firebase Hosting + Vercel, the latter auto-deployed from GitHub with zero repo-visible configuration) and that neither this list nor anything else about the Vercel deployment is auto-discovered — if a third deployment target ever appears, it must be added here explicitly too. Files modified: storage-cors.json, storage.rules, js/config.js (this entry). Verified: all 12 scripts/gudang-*-check.mjs suites (534 checks) + 18-check UI interaction suite + smoke test pass unchanged (no Gudang application code changed this release).',
+    highlights: [
+      'v1.28.8\'s CORS fix was correct but incomplete: it only covered localhost and Firebase Hosting\'s own domains, missing the app\'s ACTUAL production URL entirely — https://jadwal-driver-pbsi.vercel.app, a deployment this session had no visibility into until this report (no vercel.json, no trace anywhere in this repo; it auto-deploys from GitHub on every push, independent of `firebase deploy`).',
+      'Same root cause as v1.28.8 (CORS origin not allowlisted on the Storage bucket), different origin — confirms the underlying fix mechanism was right, the origin list just wasn\'t complete.',
+      'Fixed by adding the Vercel origin to storage-cors.json and re-applying via gcloud/Cloud Shell. storage.rules now explicitly documents that this app has two independent, non-auto-discovered deployment targets, so a future missing-origin gap is easier to recognize immediately rather than re-diagnosed from scratch.',
+    ],
+  },
   {
     version: '1.28.9',
     date: '2026-08-04',

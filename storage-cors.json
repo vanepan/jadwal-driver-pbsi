@@ -1,6 +1,6 @@
 [
   {
-    "origin": ["http://127.0.0.1:5500", "https://schedule-driver-pbsi.web.app", "https://schedule-driver-pbsi.firebaseapp.com"],
+    "origin": ["http://127.0.0.1:5500", "https://jadwal-driver-pbsi.vercel.app", "https://schedule-driver-pbsi.web.app", "https://schedule-driver-pbsi.firebaseapp.com"],
     "method": ["GET", "HEAD", "PUT", "POST", "DELETE"],
     "maxAgeSeconds": 3600,
     "responseHeader": ["Content-Type", "Access-Control-Allow-Origin", "x-goog-resumable"]

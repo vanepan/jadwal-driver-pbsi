@@ -29,6 +29,16 @@ rules_version = '2';
 // as 200 OK — CORS blocks the PAGE's JS from reading a response that the
 // server already sent successfully, so this is easy to mistake for
 // backend/server flakiness (Sprint history for the full misdiagnosis).
+//
+// v1.28.10: this app is deployed to TWO places — Firebase Hosting
+// (schedule-driver-pbsi.web.app, this repo's own `firebase deploy`) AND
+// Vercel (jadwal-driver-pbsi.vercel.app, auto-deployed straight from
+// GitHub on every push — this repo has no vercel.json and this session
+// only discovered the Vercel deployment existed after the fact). Vercel
+// is the actual production URL users/staff use day to day. The v1.28.8
+// CORS fix only listed Firebase's own origins and missed Vercel entirely
+// — same symptom, new origin. If a THIRD deployment target ever appears,
+// it needs adding here too; nothing about this list is auto-discovered.
 service firebase.storage {
   match /b/{bucket}/o {
     match /gudang/item-photos/{itemId}/{fileName} {
