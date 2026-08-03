@@ -96,6 +96,21 @@ export async function uploadItemPhoto(itemId, file) {
   return { ok: true, storagePath: res.fullPath || path, contentType: file.type, error: null };
 }
 
+// v1.28.7 — this project's Storage read path was confirmed (via direct
+// Network-tab inspection) to be intermittently flaky: the identical
+// authenticated request to the identical URL sometimes returns a clean 200
+// with the real file bytes, and sometimes a transient 503 that exhausts the
+// SDK's own internal retry budget (storage/retry-limit-exceeded) well under
+// this file's 30s withTimeout ceiling — i.e. the SDK gives up on its own,
+// our wrapper is not what's cutting it short. A single attempt is simply
+// not enough against that failure rate; reopening/retrying empirically does
+// get through. This is a bounded outer retry of fresh attempts (never an
+// unbounded hang — each attempt still carries its own 30s ceiling above).
+const DOWNLOAD_RETRY_DELAYS_MS = [1000, 2000, 4000];
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * Downloads a previously-uploaded photo's bytes and wraps them in a local
  * object URL for an <img> tag. Never a signed/public URL (see header).
@@ -103,15 +118,23 @@ export async function uploadItemPhoto(itemId, file) {
  */
 export async function loadItemPhotoUrl(storagePath, contentType) {
   const { downloadFileFromStorage } = await import('../../firebase.js');
-  let res;
-  try {
-    res = await withTimeout(downloadFileFromStorage(storagePath), STORAGE_TIMEOUT_MS);
-  } catch (err) {
-    return { ok: false, url: null, error: err.message };
+  let lastError = null;
+  for (let attempt = 0; attempt <= DOWNLOAD_RETRY_DELAYS_MS.length; attempt++) {
+    let res;
+    try {
+      res = await withTimeout(downloadFileFromStorage(storagePath), STORAGE_TIMEOUT_MS);
+    } catch (err) {
+      lastError = err.message;
+      res = null;
+    }
+    if (res && res.ok) {
+      const blob = new Blob([res.bytes], { type: contentType || 'application/octet-stream' });
+      return { ok: true, url: URL.createObjectURL(blob), error: null };
+    }
+    if (res && !res.ok) lastError = res.error;
+    if (attempt < DOWNLOAD_RETRY_DELAYS_MS.length) await wait(DOWNLOAD_RETRY_DELAYS_MS[attempt]);
   }
-  if (!res.ok) return { ok: false, url: null, error: res.error };
-  const blob = new Blob([res.bytes], { type: contentType || 'application/octet-stream' });
-  return { ok: true, url: URL.createObjectURL(blob), error: null };
+  return { ok: false, url: null, error: lastError };
 }
 
 /** @param {import('../contracts/item-contract.js').Item} item */

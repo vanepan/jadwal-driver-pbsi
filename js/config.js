@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.28.6';
-export const RELEASE_NAME = 'Critical Fix — Service Worker Misrouting Firebase Storage Downloads Through Static-Asset Cache';
+export const APP_VERSION = '1.28.7';
+export const RELEASE_NAME = 'Resilience Fix — Bounded Retry for Intermittently Flaky Firebase Storage Reads';
 
 /* ============================================================
    APP_ENV — the AUTHORITATIVE runtime environment (v1.20.3 RC1).
@@ -66,6 +66,18 @@ export function isProduction() {
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.28.7',
+    date: '2026-08-04',
+    summary: 'Continues v1.28.6\'s investigation, which fixed a real service-worker bug (Firebase Storage downloads were being misrouted through the static-asset cache) but did not resolve the underlying symptom: Gudang photo downloads still failed with storage/retry-limit-exceeded after that deploy. Live re-verification ruled out every remaining code-level explanation in sequence: App Check (confirmed Unenforced with 0/0 recorded requests, in both the Console\'s Apps and APIs tabs); the raw underlying GCS bucket/object (queried directly via storage.googleapis.com, bypassing Firebase\'s proxy entirely — returned fast, correctly-formatted 401s proving the bucket and object are healthy); and finally, direct Network-tab inspection of the app\'s own real authenticated request, which captured a clean 200 OK with fully valid headers (Content-Length/Content-Type/ETag all matching the real file) for the EXACT SAME request/URL/auth that had just failed with 503 on other attempts moments earlier. That last finding is decisive: it rules out a hard permission or IAM-binding failure (which would fail consistently, not intermittently) and instead confirms this project\'s Firebase Storage read path is genuinely, intermittently flaky at the backend — most read attempts get a transient 503, but not all of them, and the Storage SDK\'s own internal retry budget for a single getBytes() call was consistently being exhausted (throwing storage/retry-limit-exceeded) faster than it could outlast that failure rate. Since this is Google-backend flakiness outside this application\'s control, the fix is client-side resilience rather than further root-cause work: gudang-item-image.js#loadItemPhotoUrl now wraps each download in a bounded outer retry (up to 4 total attempts, 1s/2s/4s backoff between them) — since a FRESH getBytes() call gets its own fresh SDK-internal retry sequence, this mirrors exactly what empirically worked when manually reopening the Item Detail drawer several times during diagnosis. Still strictly bounded (each attempt keeps its own existing 30s ceiling; this can never hang forever) — this only multiplies the number of independent attempts before finally showing the placeholder, it does not change the upload path (uploads have shown no flakiness in any test) or any other Gudang file. Files modified: js/gudang/ui/gudang-item-image.js, js/config.js (this entry). Verified: all 12 scripts/gudang-*-check.mjs suites (534 checks) + 18-check UI interaction suite + smoke test all pass unchanged (this fix is additive retry logic inside one already-owned function, no contract/shape change). NOT independently re-verified live yet — the next step is a fresh browser QA pass to confirm the retry loop measurably improves the real success rate, since backend flakiness by nature cannot be proven "fixed," only made more tolerable.',
+    highlights: [
+      'v1.28.6\'s service-worker fix was confirmed correctly deployed (no regressions, no caching conflicts) but did NOT resolve the photo-display symptom — ruling it out as the sole cause and prompting this session\'s deeper live diagnosis.',
+      'Systematically ruled out App Check (Unenforced, 0/0 metrics) and the underlying GCS bucket/object (raw storage.googleapis.com queries returned fast, correct 401s — proving the bucket and file are healthy) as explanations.',
+      'Decisive finding: captured a clean 200 OK with fully valid headers for the app\'s own real authenticated download request — the exact same request that fails with 503 on other attempts. This proves the read path is intermittently flaky at Google\'s backend, not a hard permission/binding failure, and not anything in this app\'s code, rules, or service worker.',
+      'Fix: loadItemPhotoUrl now retries up to 4 total attempts (1s/2s/4s backoff) instead of one, mirroring the exact behavior that empirically worked during live diagnosis (reopening the drawer a few times eventually succeeded). Still fully bounded — never an unbounded hang.',
+      'Upload path untouched (no flakiness observed there in any test); this is scoped entirely to the read/display side, entirely within gudang-item-image.js.',
+    ],
+  },
   {
     version: '1.28.6',
     date: '2026-08-04',
