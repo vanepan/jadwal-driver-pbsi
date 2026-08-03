@@ -13,6 +13,22 @@ rules_version = '2';
 // API query that the bucket schedule-driver-pbsi.firebasestorage.app
 // currently does not exist. Once it does, deploy with:
 //   firebase deploy --only storage
+//
+// SEPARATE, EASY-TO-LOSE DEPENDENCY (v1.28.8): getBytes() reads from a
+// browser (uploadItemPhoto's upload path was never affected) require the
+// bucket's CORS config to explicitly list this app's origins — this is
+// GCS bucket metadata, NOT part of these Rules and NOT deployed by
+// `firebase deploy` at all, so it is invisible to this repo unless
+// someone knows to look. Config lives in storage-cors.json (repo root);
+// (re)apply with:
+//   gcloud storage buckets update gs://schedule-driver-pbsi.firebasestorage.app --cors-file=storage-cors.json
+// Symptom if this is ever missing/reset: uploads succeed (POST/PUT is
+// unaffected) but every read fails in the browser console with
+// "has been blocked by CORS policy: No 'Access-Control-Allow-Origin'
+// header is present" even though Network tab may show the real response
+// as 200 OK — CORS blocks the PAGE's JS from reading a response that the
+// server already sent successfully, so this is easy to mistake for
+// backend/server flakiness (Sprint history for the full misdiagnosis).
 service firebase.storage {
   match /b/{bucket}/o {
     match /gudang/item-photos/{itemId}/{fileName} {
