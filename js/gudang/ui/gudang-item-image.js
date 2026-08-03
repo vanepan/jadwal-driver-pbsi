@@ -73,6 +73,39 @@ function safeExt(mimeType) {
   return { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' }[mimeType] || 'bin';
 }
 
+// v1.28.9 — every photo uploaded so far has been the raw phone-camera file
+// (routinely several MB), driving up both Storage bytes stored and Storage
+// egress/read cost (billed per byte served, and every card/detail view
+// re-serves the full original). Downscale + re-encode client-side before
+// upload — this only affects the display copy this feature stores, never
+// the user's original file on their own device. GIFs are passed through
+// unchanged to preserve animation (not a realistic case for a warehouse
+// item photo, but ACCEPTED_TYPES already allows it, so don't silently
+// break it). Best-effort: canvas/codec failure of any kind falls back to
+// uploading the original file untouched — compression is a cost
+// optimization, never a reason to block the upload feature itself.
+const COMPRESS_MAX_DIMENSION = 1280;
+const COMPRESS_JPEG_QUALITY = 0.82;
+
+async function compressPhotoForUpload(file) {
+  if (file.type === 'image/gif') return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, COMPRESS_MAX_DIMENSION / Math.max(bitmap.width, bitmap.height));
+    const w = Math.round(bitmap.width * scale);
+    const h = Math.round(bitmap.height * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+    if (bitmap.close) bitmap.close();
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', COMPRESS_JPEG_QUALITY));
+    if (!blob || blob.size >= file.size) return file;
+    return new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' });
+  } catch (_) {
+    return file;
+  }
+}
+
 /**
  * Uploads one photo for `itemId`. Each call gets a fresh timestamped path —
  * replacing a photo never overwrites the old object in Storage (this app's
@@ -84,16 +117,17 @@ function safeExt(mimeType) {
 export async function uploadItemPhoto(itemId, file) {
   const invalid = validateItemPhoto(file);
   if (invalid) return { ok: false, storagePath: null, contentType: null, error: invalid };
+  const upload = await compressPhotoForUpload(file);
   const { uploadFileToStorage } = await import('../../firebase.js');
-  const path = `${GUDANG_STORAGE_PREFIX}/${itemId}/${Date.now()}.${safeExt(file.type)}`;
+  const path = `${GUDANG_STORAGE_PREFIX}/${itemId}/${Date.now()}.${safeExt(upload.type)}`;
   let res;
   try {
-    res = await withTimeout(uploadFileToStorage(path, file), STORAGE_TIMEOUT_MS);
+    res = await withTimeout(uploadFileToStorage(path, upload), STORAGE_TIMEOUT_MS);
   } catch (err) {
     return { ok: false, storagePath: null, contentType: null, error: err.message };
   }
   if (!res.ok) return { ok: false, storagePath: null, contentType: null, error: res.error };
-  return { ok: true, storagePath: res.fullPath || path, contentType: file.type, error: null };
+  return { ok: true, storagePath: res.fullPath || path, contentType: upload.type, error: null };
 }
 
 // v1.28.7 — this project's Storage read path was confirmed (via direct

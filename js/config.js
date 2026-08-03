@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.28.8';
-export const RELEASE_NAME = 'Root Cause Confirmed & Fixed — Storage Bucket CORS Configuration';
+export const APP_VERSION = '1.28.9';
+export const RELEASE_NAME = 'Photo Display Fix + Client-Side Compression';
 
 /* ============================================================
    APP_ENV — the AUTHORITATIVE runtime environment (v1.20.3 RC1).
@@ -66,6 +66,16 @@ export function isProduction() {
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.28.9',
+    date: '2026-08-04',
+    summary: 'Two follow-ups filed directly against v1.28.8 now that photo upload/display is confirmed working end to end. FIX 1 (display cropping): live screenshots showed uploaded photos rendering as an extreme, unrecognizable close-up crop (e.g. a glue stick\'s photo showing only a zoomed sliver of its white cap, no label visible) in both the Item Detail drawer and Catalog cards. Root cause: gudang.css set `object-fit:cover` on all three photo-display rules (.gud-photo-preview, .gud-detail-img img, .gud-catalog-card-img img), which fills a fixed-aspect-ratio box (16:10 for the detail drawer, 4:3 for catalog cards) by cropping whatever doesn\'t fit — for a portrait-oriented phone photo (much taller than wide, the realistic case for a quick warehouse-floor product shot) forced into a landscape box, this crops away most of the photo\'s vertical extent, leaving only a thin, heavily zoomed-in horizontal slice. Changed all three to `object-fit:contain` so the full photo is always visible, letterboxed against the same neutral surface background each container already had — no layout/aspect-ratio change, this is a display-fit fix only, and it applies retroactively to every already-uploaded photo (nothing needed to be re-uploaded). FIX 2 (storage/billing cost): item photos were being uploaded as the raw phone-camera file, routinely several MB, both increasing Storage bytes stored AND Storage read/egress cost (billed per byte served, and every Catalog card + Item Detail view re-serves the full original). gudang-item-image.js gained compressPhotoForUpload() — client-side, canvas-based downscale (capped at 1280px on the longer side) + re-encode as JPEG at 0.82 quality, called inside uploadItemPhoto() before the existing upload call. Animated GIFs are passed through unchanged (to preserve animation — not a realistic case for this feature, but ACCEPTED_TYPES already allows it, so it isn\'t silently broken). Fully best-effort: any canvas/codec failure, or a compressed result that isn\'t actually smaller, falls back to uploading the original file untouched — this is a cost optimization, never a reason to block the upload feature. Only affects new uploads going forward; existing photos in Storage are untouched. Files modified: gudang.css, js/gudang/ui/gudang-item-image.js, js/config.js (this entry). Verified: all 12 scripts/gudang-*-check.mjs suites (534 checks) + 18-check UI interaction suite + smoke test pass unchanged.',
+    highlights: [
+      'Fixed photo display cropping: gudang.css\'s three photo-display rules changed from object-fit:cover to object-fit:contain, so a portrait-oriented phone photo forced into a landscape-shaped box (16:10 detail drawer, 4:3 catalog card) shows the FULL photo letterboxed, instead of being cropped down to an unrecognizable zoomed-in sliver. Applies retroactively to every photo already uploaded.',
+      'Added client-side photo compression before upload (gudang-item-image.js#compressPhotoForUpload): canvas-based downscale to a 1280px max dimension + re-encode as JPEG @ 0.82 quality, reducing both Storage bytes stored and per-view read/egress cost. GIFs pass through unchanged to preserve animation; any failure falls back to the original file untouched.',
+      'Both fixes are scoped entirely to Gudang\'s existing files (gudang.css, gudang-item-image.js) — no new architecture, no change to the upload/download contract or the Storage path scheme.',
+    ],
+  },
   {
     version: '1.28.8',
     date: '2026-08-04',
