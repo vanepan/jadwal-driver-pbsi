@@ -31,18 +31,27 @@
    no drift between deployed and installed.
    ============================================================ */
 
-const SW_VERSION  = '1.28.5';   // stamped from config.js — do not edit by hand
+const SW_VERSION  = '1.28.6';   // stamped from config.js — do not edit by hand
 const CACHE_NAME  = `sarpras-cache-v${SW_VERSION}`;
 const OFFLINE_URL = '/offline.html';
 const VERSION_URL = '/version.json';
 
-/* Origins that must never be served from cache */
+/* Origins that must never be served from cache.
+
+   firebasestorage.googleapis.com (v1.28.6): a Storage download URL's path
+   ends in the file's real extension (…/o/gudang%2Fitem-photos%2F...%2F
+   169….png), which matches STATIC_EXT below regardless of origin. Without
+   this bypass entry, every Storage GET (getBytes()) was silently rerouted
+   through the cache-first static-asset branch below instead of going
+   straight to network — uploads (PUT) were never affected since the fetch
+   handler exempts all non-GET methods before any of this is reached. */
 const BYPASS_ORIGINS = [
   'firebaseio.com',
   'firebase.googleapis.com',
   'identitytoolkit.googleapis.com',
   'securetoken.googleapis.com',
   'firestore.googleapis.com',
+  'firebasestorage.googleapis.com',
   'fonts.googleapis.com',
   'fonts.gstatic.com',
 ];

@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.28.5';
-export const RELEASE_NAME = 'Gudang Phase 10.4.1 + 10.4.2 — Production Stabilization & Hardening';
+export const APP_VERSION = '1.28.6';
+export const RELEASE_NAME = 'Critical Fix — Service Worker Misrouting Firebase Storage Downloads Through Static-Asset Cache';
 
 /* ============================================================
    APP_ENV — the AUTHORITATIVE runtime environment (v1.20.3 RC1).
@@ -66,6 +66,18 @@ export function isProduction() {
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.28.6',
+    date: '2026-08-04',
+    summary: 'Critical fix, closing the one item carried over from v1.28.5\'s report: Gudang photo uploads succeeded (confirmed via the Firebase Storage Console — real files present in the bucket) but the app could never display them back, with the console showing storage/retry-limit-exceeded on every attempt, reproduced identically across two independent QA sessions a full day apart. v1.28.5\'s own report concluded this looked like a transient Google Cloud Storage backend/propagation issue, since both the write path (uploadItemPhoto -> metadata.imageStoragePath -> updateItem()) and the read path (loadItemPhotoUrl -> downloadFileFromStorage -> getBytes()) traced cleanly through every Gudang file with no asymmetry, and storage.rules grants read/write under an identical condition. That conclusion was wrong, and re-examining the SAME failure signature persisting a full day later (ruling out any plausible propagation delay) is what prompted looking one layer further out, at app-wide infrastructure the Gudang-scoped trace never covered: service-worker.js. ROOT CAUSE: the fetch handler\'s BYPASS_ORIGINS list (origins that must always go straight to network, already containing every other Firebase product domain — firebaseio.com, identitytoolkit.googleapis.com, securetoken.googleapis.com, firestore.googleapis.com — for the identical stated reason) was missing firebasestorage.googleapis.com. A Firebase Storage download URL\'s path ends in the file\'s real extension (e.g. …/o/gudang%2Fitem-photos%2F...%2F1785697986112.png), which matches the SW\'s STATIC_EXT regex used to classify "static assets" for cache-first handling — that classification never checks origin, only the pathname. So every photo download (getBytes(), a GET request) was being silently rerouted through the cache-first branch built for same-origin/CDN static assets, instead of going straight to network. Uploads (uploadBytes(), a PUT request) were never affected, because the fetch handler\'s very first line exempts all non-GET methods before any of this routing logic runs — this exactly explains the observed asymmetry (writes always succeeded, reads always failed identically, day after day) that two rounds of Gudang-scoped tracing correctly found no explanation for, because the actual bug lived outside every file that trace covered. FIX: added \'firebasestorage.googleapis.com\' to BYPASS_ORIGINS, the same one-line pattern already used for every other Firebase product domain in the same list, for the same reason. Files modified: service-worker.js, js/config.js (this entry, + sync-version.mjs re-stamp of SW_VERSION/version.json/index.html cache-busts). Verified: node --check clean; all 12 scripts/gudang-*-check.mjs suites (534 checks) + the 18-check UI interaction suite + the smoke test re-run clean (this fix touches shared infrastructure, not any Gudang file, so a full re-run was precautionary, not because any Gudang-specific logic changed). NOT independently re-verified end-to-end in a live browser by this session directly — the fix requires a Firebase Hosting deploy (service-worker.js only takes effect once redeployed and the new worker installs/activates in a real browser) before the originally-reported symptom can be confirmed resolved; this remains the next verification step, consistent with this log\'s established disclosure convention for every Firebase-coupled release in an environment with no real Firebase Auth/Storage/Hosting credentials of its own.',
+    highlights: [
+      'Root cause was NOT in any Gudang file and NOT a transient Google Cloud Storage backend issue (both prior working theories) — it was service-worker.js\'s BYPASS_ORIGINS list missing firebasestorage.googleapis.com, alongside every other already-bypassed Firebase product domain.',
+      'A Firebase Storage download URL\'s path happens to end in the real file extension (…1785697986112.png), which the service worker\'s static-asset classifier (STATIC_EXT) matches regardless of origin — so every photo download (GET) was silently rerouted through cache-first handling meant for same-origin static assets, instead of reaching the network directly.',
+      'Uploads (PUT) were never affected, since the fetch handler exempts all non-GET methods before this routing logic ever runs — this is the exact mechanism behind the asymmetry observed across two independent QA rounds a full day apart (writes always succeeded, reads always failed identically with storage/retry-limit-exceeded).',
+      'One-line fix following the exact existing pattern (add the origin to the list, matching every sibling entry\'s identical stated reason) — no new logic, no architecture change.',
+      'Requires a Firebase Hosting deploy to take effect (a new service worker must install/activate in the browser); this is the next step before the original photo-display bug can be confirmed fixed live.',
+    ],
+  },
   {
     version: '1.28.5',
     date: '2026-08-03',
