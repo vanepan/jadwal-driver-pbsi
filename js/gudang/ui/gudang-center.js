@@ -33,7 +33,7 @@ import { createInitialSessionState, applySessionEvent } from '../search/search-s
 import { searchAndResolve } from '../search/search-resolver.js';
 import { addRecentSearch, clearRecentSearches } from '../search/recent-searches-store.js';
 
-import { renderHome, homeHandlers } from './gudang-home.js';
+import { renderHome, homeHandlers, renderMobileFilterSheet } from './gudang-home.js';
 import { renderSearchOverlay, renderMobileSearchSheet, SEARCH_LISTBOX_ID } from './gudang-search-overlay.js';
 import { renderGoodsOut, goodsOutHandlers } from './gudang-goods-out.js';
 import { renderGoodsIn, goodsInHandlers } from './gudang-goods-in.js';
@@ -55,6 +55,11 @@ const st = {
   opname: null,
   historyFilters: null, // lazily created by gudang-movement-history.js's own ensure pattern
   toast: null, // transient success message (Delete Item) — see showToast()
+  // v1.29.1 (Warehouse Smart Filtering, Feature 11 — mobile bottom sheet):
+  // st.homeFilter (gudang-home.js) is the filter DATA and survives screen
+  // changes; this is only whether the SHEET is currently on screen — reset
+  // on every screen change (setGudangScreen), same lifetime as st.detail.
+  filterSheetOpen: false,
 };
 
 let host = null, mounted = false, loaded = false, lastAnimatedScreen = null, toastTimer = null, searchDebounceTimer = null;
@@ -151,17 +156,23 @@ async function refreshCatalog() {
   };
   // Phase 10.4.1 root cause ("Catalog stock never refreshes"): per-item
   // stock/forecast figures are cached once-per-fetch by Home
-  // (st.homeCardData/st.homeLowStockIds, gudang-home.js#ensureCardData/
-  // ensureLowStockSet) and by Item Detail (st.detail's own cache.loaded
-  // guard, gudang-item-detail.js#ensureConsumableData). Every mutating
-  // action (Goods In/Out, Stock Opname) already calls refreshCatalog() on
-  // save, but it only ever refreshed st.data.items/locations/assets —
-  // never these DERIVED per-item caches — so a just-saved stock change
-  // never showed up anywhere without a full page reload, even though the
-  // underlying Stock Projection was already correct. Busting both here,
-  // the one place every mutating action already funnels through.
+  // (st.homeCardData, gudang-home.js#ensureCardData) and by Item Detail
+  // (st.detail's own cache.loaded guard, gudang-item-detail.js#
+  // ensureConsumableData). Every mutating action (Goods In/Out, Stock
+  // Opname) already calls refreshCatalog() on save, but it only ever
+  // refreshed st.data.items/locations/assets — never these DERIVED
+  // per-item caches — so a just-saved stock change never showed up
+  // anywhere without a full page reload, even though the underlying Stock
+  // Projection was already correct. Busting both here, the one place
+  // every mutating action already funnels through.
   st.homeCardData = null;
-  st.homeLowStockIds = null;
+  // v1.29.1: st.homeStockBulk (filters/stock-status-bulk.js's bulk
+  // classification, superseding the old homeLowStockIds Set) is the same
+  // staleness class — a just-saved Goods Out/In must be reflected the next
+  // time the Stock Status/Forecast filter is used, not held from before
+  // the mutation.
+  st.homeStockBulk = null;
+  st.homeStockBulkLoading = false;
   st.analyticsTop = null; // same staleness class — Top Consumed/Top Departments (gudang-analytics.js)
   st.historyData = null; // same staleness class — the feed itself (gudang-movement-history.js)
   if (st.detail) { st.detail.loaded = null; st.detail.historyLoaded = null; }
@@ -188,6 +199,7 @@ export function setGudangScreen(screen) {
   }
   st.screen = next;
   st.detail = null;
+  st.filterSheetOpen = false;
   render();
 }
 
@@ -337,6 +349,22 @@ function closeMobileSearchSheet() {
   render();
 }
 
+/** v1.29.1 (Warehouse Smart Filtering, Feature 11): mirrors openMobileSearchSheet/
+ *  closeMobileSearchSheet exactly — Home renders the trigger, this file owns
+ *  when the overlay itself is on screen. Focuses the sheet's own close button
+ *  on open (restoreFocus(), end of render()), the same baseline every other
+ *  Gudang overlay already gets via st._focusAct. */
+function openMobileFilterSheet() {
+  st.filterSheetOpen = true;
+  st._focusAct = 'gud-filter-close';
+  render();
+}
+
+function closeMobileFilterSheet() {
+  st.filterSheetOpen = false;
+  render();
+}
+
 /** Both possible inputs (shared desktop field, Gudang-owned mobile sheet
  *  field) may be showing the query at once in principle — only one is ever
  *  actually visible, so syncing both unconditionally is safe and avoids
@@ -407,6 +435,10 @@ function render() {
   const modal = st.modal
     ? (st.modal.kind === 'confirmDeleteItem' ? renderDeleteItemConfirm(st) : renderCatalogModal(st, c))
     : '';
+  // v1.29.1 (Warehouse Smart Filtering, Feature 11): mobile bottom sheet,
+  // same ownership split as `overlay` above — Home only ever renders the
+  // trigger button that opens it (gud-filter-open), never the sheet itself.
+  const filterSheet = st.filterSheetOpen ? renderMobileFilterSheet(st) : '';
   const toast = st.toast ? `<div class="gud-toast">${icon('check-circle', { size: 16 })} ${esc(st.toast)}</div>` : '';
   // Entrance animation plays only when the screen itself changes — every
   // render() call (e.g. one per keystroke while typing) replaces this whole
@@ -415,7 +447,7 @@ function render() {
   const isNewScreen = st.screen !== lastAnimatedScreen;
   if (isNewScreen && _onScreenChange) _onScreenChange(st.screen);
   lastAnimatedScreen = st.screen;
-  host.innerHTML = `<div class="gud-content${isNewScreen ? ' -enter' : ''}">${screen}</div>${detail}${overlay}${modal}${toast}`;
+  host.innerHTML = `<div class="gud-content${isNewScreen ? ' -enter' : ''}">${screen}</div>${detail}${overlay}${filterSheet}${modal}${toast}`;
   restoreFocus();
   syncSearchInputAria();
 }
@@ -450,10 +482,11 @@ function syncSearchInputAria() {
 /* ── delegated events ─────────────────────────────────────────────────── */
 function onClick(e) {
   const scrim = e.target.closest('[data-act="gud-scrim"]');
-  if (scrim && !e.target.closest('.gud-drawer') && !e.target.closest('.gud-modal-box') && !e.target.closest('.gud-spotlight')) {
+  if (scrim && !e.target.closest('.gud-drawer') && !e.target.closest('.gud-modal-box') && !e.target.closest('.gud-spotlight') && !e.target.closest('.gud-filter-sheet')) {
     st.detail = null;
     st.modal = null;
     st.search = applySessionEvent(st.search, { type: 'close' }).state;
+    st.filterSheetOpen = false;
     render();
     return;
   }
@@ -476,6 +509,12 @@ function onClick(e) {
     case 'gud-result-chip': handleResultFocus(el, true); break;
     case 'gud-result-reveal': handleResultReveal(el); break;
     case 'gud-mobile-search-close': closeMobileSearchSheet(); break;
+    // v1.29.1 Feature 11 (mobile bottom sheet) — mirrors gud-search-open/
+    // gud-mobile-search-close's split exactly: Home's trigger button opens
+    // it, the sheet's own close (X) / footer button (or the generic scrim
+    // handler above) closes it.
+    case 'gud-filter-open': openMobileFilterSheet(); break;
+    case 'gud-filter-close': closeMobileFilterSheet(); break;
     case 'gud-recent-search-item': applyRecentSearchQuery(val); break;
     case 'gud-recent-search-clear': clearRecentSearches(); render(); break;
     case 'gud-open-item': st.detail = { kind: 'item', id }; st.search = applySessionEvent(st.search, { type: 'close' }).state; render(); break;
@@ -610,6 +649,11 @@ function onGlobalKeydown(e) {
   if (ctrlK || ctrlF) { e.preventDefault(); openSearchEntry(); return; }
 
   if (e.key === 'Escape' && st.modal) { e.preventDefault(); e.stopPropagation(); st.modal = null; render(); return; }
+
+  // v1.29.1 Feature 12 (Keyboard Experience: "Esc closes Filter Panel") —
+  // same priority tier as the modal check above (a scrim-backed, dialog-
+  // like overlay), ahead of the search/detail branches below.
+  if (e.key === 'Escape' && st.filterSheetOpen) { e.preventDefault(); e.stopPropagation(); st.filterSheetOpen = false; render(); return; }
 
   // v1.28.11 ESC priority (Warehouse UX Enhancement): only one UI layer is
   // ever dismissed per press. When the Spotlight dropdown itself is open

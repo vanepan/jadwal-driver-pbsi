@@ -74,6 +74,9 @@ const ICONS = {
   package: { d: 'M21 8 12 3 3 8v8l9 5 9-5zM3 8l9 5 9-5M12 13v8' },
   scan: { d: 'M4 7V4h3M17 4h3v3M20 17v3h-3M7 20H4v-3M8 8h8v8H8z' },
   trash: { d: 'M4 7h16M9 7V4h6v3M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13M10 11v6M14 11v6' },
+  // v1.29.1 (Warehouse Smart Filtering): the mobile filter trigger's icon —
+  // a standard "sliders" filter glyph, decreasing-length lines.
+  filter: { d: 'M4 6h16M7 12h10M10 18h4' },
 };
 
 /**
@@ -103,9 +106,9 @@ export function kbdRow(keys) {
 /** Reusable empty state — icon tile + title + hint + optional CTA, the same
  *  shape as .eng-empty. An empty state always encourages the next
  *  operational action (Doc 2 §14) — never a bare "no data" dead end. */
-export function emptyState({ iconName = 'box', title, hint, ctaLabel = null, ctaAct = null, ctaId = null }) {
+export function emptyState({ iconName = 'box', title, hint, ctaLabel = null, ctaAct = null, ctaId = null, ctaIcon = 'plus' }) {
   const cta = ctaLabel && ctaAct
-    ? `<button type="button" class="gud-btn -primary gud-empty-cta" data-act="${esc(ctaAct)}"${ctaId != null ? ` data-id="${esc(ctaId)}"` : ''}>${icon('plus', { size: 15 })} ${esc(ctaLabel)}</button>`
+    ? `<button type="button" class="gud-btn -primary gud-empty-cta" data-act="${esc(ctaAct)}"${ctaId != null ? ` data-id="${esc(ctaId)}"` : ''}>${icon(ctaIcon, { size: 15 })} ${esc(ctaLabel)}</button>`
     : '';
   return `<div class="gud-empty">
     <span class="gud-empty-ic">${icon(iconName, { size: 26 })}</span>

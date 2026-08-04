@@ -42,3 +42,23 @@ export async function getProjection(itemId) {
   if (res.value == null) return failure(REPOSITORY_ERROR.NOT_FOUND, `No projection cached for item "${itemId}".`);
   return success(res.value);
 }
+
+/**
+ * v1.29.1 (Warehouse Smart Filtering): one-shot read of EVERY cached
+ * StockProjection in a single request, keyed by itemId — the bulk
+ * counterpart to getProjection(), mirroring listMovements()'s "read the
+ * whole node once" pattern. Additive only; saveProjection/getProjection
+ * are unchanged. This is what lets the Stock Status / Forecast filters
+ * classify the entire catalog without N per-item reads or the old
+ * capped-at-200 scan in analytics-engine.js's getLowStockAlerts().
+ * @returns {Promise<{ok:boolean,data?:Object<string,Object>}>} data is a
+ *   plain object of itemId -> StockProjection (NOT an array — callers
+ *   needing itemId lookups get it for free; callers needing a list use
+ *   Object.values()).
+ */
+export async function listProjections() {
+  const { readNode } = await fb();
+  const res = await readNode(GUDANG_PATHS.stock);
+  if (res.status !== 'ok') return failure(REPOSITORY_ERROR.READ_FAILED, `listProjections: read failed (${res.status}).`);
+  return success(res.value || {});
+}

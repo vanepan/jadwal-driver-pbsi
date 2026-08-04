@@ -43,15 +43,27 @@ import { esc, icon, emptyState, kbdRow, fmtQty } from './gudang-atoms.js';
 import { ITEM_TYPE } from '../contracts/item-contract.js';
 import { categoryLabel } from '../config/gudang-categories.js';
 import { getProjection } from '../repository/stock-repository.js';
-import { getForecastDaysRemaining, getLowStockAlerts } from '../analytics/analytics-engine.js';
+import { getForecastDaysRemaining } from '../analytics/analytics-engine.js';
 import { forecastSentence } from '../analytics/quiet-intelligence-engine.js';
 import { itemHasPhoto, loadItemPhotoUrl } from './gudang-item-image.js';
+// v1.29.1 (Warehouse Smart Filtering, Phase 2): filter STATE/predicate/chip
+// logic lives in filter-engine.js (pure, reusable by future phases per that
+// file's own header) — Home only renders controls and calls into it. Stock
+// Status / Forecast classification is a bulk read (stock-status-bulk.js),
+// replacing analytics-engine.js#getLowStockAlerts' capped per-item scan for
+// filtering purposes; that function itself is untouched and still used
+// elsewhere.
+import {
+  createFilterState, isFilterActive, clearAllFilters, filterItems,
+  activeFilterChips, clearFilterKey, STOCK_STATUS_FILTER, FORECAST_FILTER,
+} from '../filters/filter-engine.js';
+import { classifyStockBulk } from '../filters/stock-status-bulk.js';
 
 const PAGE_SIZE = 48;
 const ASSET_STATUS_LABEL = { available: 'tersedia', assigned: 'ditugaskan', maintenance: 'maintenance', retired: 'pensiun' };
 
 function ensureFilter(st) {
-  if (!st.homeFilter) st.homeFilter = { type: 'all', locationId: '', category: '', lowStock: false, page: PAGE_SIZE };
+  if (!st.homeFilter) st.homeFilter = { ...createFilterState(), page: PAGE_SIZE };
   return st.homeFilter;
 }
 
@@ -92,12 +104,17 @@ function ensureCardImages(st, items, requestRender) {
   });
 }
 
-function ensureLowStockSet(st, requestRender) {
-  if (st.homeLowStockIds || st.homeLowStockLoading) return;
-  st.homeLowStockLoading = true;
-  getLowStockAlerts(200).then((res) => {
-    st.homeLowStockIds = new Set(res.ok ? res.data.map((a) => a.itemId) : []);
-    st.homeLowStockLoading = false;
+/** Bulk stock+forecast classification (Feature 13: Performance — one pair
+ *  of bulk reads, fetched at most once per session, never on every filter
+ *  change), fetched lazily the first time Stock Status or Forecast is
+ *  actually used — same "only when needed" discipline the old
+ *  ensureLowStockSet had for the lowStock chip it replaces. */
+function ensureStockBulk(st, requestRender) {
+  if (st.homeStockBulk || st.homeStockBulkLoading) return;
+  st.homeStockBulkLoading = true;
+  classifyStockBulk(st.data.items).then((res) => {
+    st.homeStockBulk = res.ok ? res.data : {};
+    st.homeStockBulkLoading = false;
     requestRender();
   });
 }
@@ -105,7 +122,7 @@ function ensureLowStockSet(st, requestRender) {
 export function renderHome(st, c, requestRender) {
   const f = ensureFilter(st);
   const hasCatalog = st.data.items.length > 0;
-  if (f.lowStock) ensureLowStockSet(st, requestRender);
+  if (f.stockStatus !== STOCK_STATUS_FILTER.ALL || f.forecast !== FORECAST_FILTER.ALL) ensureStockBulk(st, requestRender);
 
   return `
     <div class="gud-home">
@@ -116,6 +133,8 @@ export function renderHome(st, c, requestRender) {
       </button>
 
       ${hasCatalog ? renderFilterBar(st, f) : ''}
+      ${hasCatalog ? renderMobileFilterTrigger(st, f) : ''}
+      ${hasCatalog ? renderFilterSummary(st, f) : ''}
 
       ${!hasCatalog && !st.loading
         ? emptyState({
@@ -132,14 +151,19 @@ export function renderHome(st, c, requestRender) {
     </div>`;
 }
 
-function renderFilterBar(st, f) {
+/** The controls themselves — Type/Location/Category/Stock Status/Forecast —
+ *  with NO surrounding chrome. "Shared body, different chrome" (the same
+ *  pattern v1.29.0 established for the search dropdown vs. its mobile
+ *  sheet): renderFilterBar wraps this for desktop/tablet, renderMobileFilterSheet
+ *  wraps the identical markup for the mobile bottom sheet — one definition
+ *  of what a filter control looks like and does, two presentations. */
+function renderFilterPanelBody(st, f) {
   const categories = uniqueSorted(st.data.items.map((i) => i.category).filter(Boolean).map((cat) => categoryLabel(cat)));
-  return `<div class="gud-filterbar gud-mt">
+  return `
     <div class="gud-chips">
       <button type="button" class="gud-chip" data-on="${f.type === 'all'}" data-act="gud-home-type" data-val="all">Semua</button>
       <button type="button" class="gud-chip" data-on="${f.type === 'consumable'}" data-act="gud-home-type" data-val="consumable">Consumable</button>
       <button type="button" class="gud-chip" data-on="${f.type === 'asset'}" data-act="gud-home-type" data-val="asset">Asset</button>
-      <button type="button" class="gud-chip" data-on="${f.lowStock}" data-act="gud-home-lowstock">${icon('gauge', { size: 11 })} Stok Rendah</button>
     </div>
     <div class="gud-chips">
       <select class="gud-chip-select" data-act="gud-home-location">
@@ -150,6 +174,84 @@ function renderFilterBar(st, f) {
         <option value="">Semua Kategori</option>
         ${categories.map((cat) => `<option value="${esc(cat)}" ${f.category === cat ? 'selected' : ''}>${esc(cat)}</option>`).join('')}
       </select>
+      <select class="gud-chip-select" data-act="gud-home-stockstatus" aria-label="Filter Status Stok">
+        <option value="all" ${f.stockStatus === 'all' ? 'selected' : ''}>Semua Stok</option>
+        <option value="low" ${f.stockStatus === 'low' ? 'selected' : ''}>Stok Rendah</option>
+        <option value="out" ${f.stockStatus === 'out' ? 'selected' : ''}>Stok Habis</option>
+        <option value="available" ${f.stockStatus === 'available' ? 'selected' : ''}>Stok Tersedia</option>
+      </select>
+      <select class="gud-chip-select" data-act="gud-home-forecast" aria-label="Filter Forecast">
+        <option value="all" ${f.forecast === 'all' ? 'selected' : ''}>Semua Forecast</option>
+        <option value="lt7" ${f.forecast === 'lt7' ? 'selected' : ''}>&lt; 7 Hari</option>
+        <option value="lt30" ${f.forecast === 'lt30' ? 'selected' : ''}>&lt; 30 Hari</option>
+        <option value="available" ${f.forecast === 'available' ? 'selected' : ''}>Forecast Aman</option>
+        <option value="none" ${f.forecast === 'none' ? 'selected' : ''}>Tanpa Forecast</option>
+      </select>
+    </div>`;
+}
+
+/** Desktop/tablet presentation (Feature 11: "same capability, different
+ *  presentation") — the controls stay inline, always visible, exactly as
+ *  before Phase 2 just with two more selects. CSS-hidden below the mobile
+ *  breakpoint (gudang.css), where renderMobileFilterTrigger + the sheet
+ *  take over. */
+function renderFilterBar(st, f) {
+  return `<div class="gud-filterbar gud-mt">${renderFilterPanelBody(st, f)}</div>`;
+}
+
+/** Mobile presentation, part 1: a compact trigger (CSS-visible only below
+ *  the same breakpoint that hides renderFilterBar) showing how many
+ *  filters are active, opening the bottom sheet gudang-center.js owns
+ *  (openMobileFilterSheet — mirrors openMobileSearchSheet's split: Home
+ *  renders the entry point, gudang-center.js owns the overlay itself). */
+function renderMobileFilterTrigger(st, f) {
+  const activeCount = activeFilterChips(f, st.data.locations).length;
+  return `<button type="button" class="gud-filter-trigger gud-mt" data-act="gud-filter-open">
+    ${icon('filter', { size: 15 })} Filter${activeCount ? ` <span class="gud-filter-trigger-badge">${activeCount}</span>` : ''}
+  </button>`;
+}
+
+/** Mobile presentation, part 2: the sheet body itself — same "shared body,
+ *  different chrome" as renderFilterBar above, called from
+ *  gudang-center.js's own render() (mirrors renderMobileSearchSheet's
+ *  split across gudang-search-overlay.js / gudang-center.js exactly).
+ *  Exported (not local like renderFilterBar) because gudang-center.js is
+ *  the one that decides WHEN it's on screen (st.filterSheetOpen), the same
+ *  ownership split the mobile search sheet already uses. */
+export function renderMobileFilterSheet(st) {
+  const f = ensureFilter(st);
+  const total = st.data.items.filter((i) => i.active).length;
+  const shown = filteredItems(st, f).length;
+  return `<div class="gud-scrim -open gud-filter-sheet-scrim" data-act="gud-scrim">
+    <div class="gud-filter-sheet" role="dialog" aria-modal="true" aria-label="Filter">
+      <div class="gud-filter-sheet-head">
+        <span class="gud-filter-sheet-title">Filter</span>
+        <button type="button" class="gud-icon-btn" data-act="gud-filter-close" aria-label="Tutup" title="Tutup">${icon('close', { size: 16 })}</button>
+      </div>
+      <div class="gud-filter-sheet-body">${renderFilterPanelBody(st, f)}</div>
+      <div class="gud-filter-sheet-foot">
+        <button type="button" class="gud-btn" data-act="gud-home-clear-filters" ${isFilterActive(f) ? '' : 'disabled'}>Hapus Semua</button>
+        <button type="button" class="gud-btn -primary" data-act="gud-filter-close">${fmtQty(shown)} dari ${fmtQty(total)} Item</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+/** Feature 2 (removable chips + Clear All) + Feature 9 (result count),
+ *  combined into one summary row — active-filter chips are what's
+ *  currently NARROWING the catalog, distinct from renderFilterBar's
+ *  always-visible controls above. Nothing renders here at all when no
+ *  filter is active (Instant Filtering, Feature 3 — no clutter when idle). */
+function renderFilterSummary(st, f) {
+  const total = st.data.items.filter((i) => i.active).length;
+  const chips = activeFilterChips(f, st.data.locations);
+  if (!chips.length) return `<div class="gud-filter-summary gud-mt gud-muted">${fmtQty(total)} Item</div>`;
+  const shown = filteredItems(st, f).length;
+  return `<div class="gud-filter-summary gud-mt">
+    <div class="gud-filter-count">${fmtQty(shown)} dari ${fmtQty(total)} Item</div>
+    <div class="gud-filter-chips-active">
+      ${chips.map((chip) => `<span class="gud-chip-active">${esc(chip.label)}<button type="button" class="gud-chip-remove" data-act="gud-home-chip-remove" data-key="${esc(chip.key)}" aria-label="Hapus filter ${esc(chip.label)}">${icon('close', { size: 10 })}</button></span>`).join('')}
+      <button type="button" class="gud-filter-clear-all" data-act="gud-home-clear-filters">Hapus Semua</button>
     </div>
   </div>`;
 }
@@ -159,32 +261,36 @@ function uniqueSorted(arr) {
 }
 
 function filteredItems(st, f) {
-  return st.data.items.filter((i) => {
-    if (!i.active) return false;
-    if (f.type === 'consumable' && i.itemType !== ITEM_TYPE.CONSUMABLE) return false;
-    if (f.type === 'asset' && i.itemType !== ITEM_TYPE.ASSET) return false;
-    if (f.locationId && i.defaultLocationId !== f.locationId) return false;
-    if (f.category && (!i.category || categoryLabel(i.category) !== f.category)) return false;
-    if (f.lowStock && !(st.homeLowStockIds && st.homeLowStockIds.has(i.itemId))) return false;
-    return true;
-  });
+  return filterItems(st.data.items, f, st.homeStockBulk || {});
 }
 
 function renderCatalogSection(st, f, requestRender) {
   // Phase 10.4.2 root cause ("Semua + Stok Rendah -> 0 items even though
-  // qualifying items exist"): filteredItems()'s lowStock predicate treats
-  // "st.homeLowStockIds hasn't loaded yet" (undefined) identically to
-  // "loaded, and this item just isn't in it" — both filter every item out.
-  // The very first render after toggling Stok Rendah on always hits the
-  // undefined case, since ensureLowStockSet's fetch is still in flight, so
-  // it showed the SAME empty state a genuinely-zero-results search would —
-  // "unknown" was being treated as "empty", which is the predicate itself
-  // violating set logic, not a real absence of qualifying items.
-  if (f.lowStock && !st.homeLowStockIds) {
+  // qualifying items exist"), same class of bug this generalizes the fix
+  // for: filterItems()'s Stock Status/Forecast predicate treats "bulk
+  // classification hasn't loaded yet" (st.homeStockBulk undefined)
+  // identically to "loaded, and this item just doesn't qualify" — both
+  // filter every Consumable out. The first render after turning on Stock
+  // Status/Forecast always hits the undefined case, since ensureStockBulk's
+  // fetch is still in flight — "unknown" must never be shown as "empty".
+  const needsStockBulk = f.stockStatus !== STOCK_STATUS_FILTER.ALL || f.forecast !== FORECAST_FILTER.ALL;
+  if (needsStockBulk && !st.homeStockBulk) {
     return `<div class="gud-mt gud-muted">Memuat status stok…</div>`;
   }
   const all = filteredItems(st, f);
   if (!all.length) {
+    // Feature 10 (Empty Filter State): a distinct message + Clear Filters
+    // action when a FILTER is why nothing matches, vs. the generic
+    // no-catalog-at-all state — Doc 2 §14: every empty state points to a
+    // next operational action, and "add a new item" is the wrong one when
+    // the catalog already has items that just don't match right now.
+    if (isFilterActive(f)) {
+      return `<div class="gud-mt">${emptyState({
+        iconName: 'search', title: 'Tidak ada item yang cocok dengan filter',
+        hint: 'Coba ubah atau hapus salah satu filter yang aktif.',
+        ctaLabel: 'Hapus Semua Filter', ctaAct: 'gud-home-clear-filters', ctaIcon: 'close',
+      })}</div>`;
+    }
     return `<div class="gud-mt">${emptyState({
       iconName: 'search', title: 'Tidak ada yang cocok',
       hint: 'Coba filter lain, atau langsung tambahkan sebagai item baru.',
@@ -224,13 +330,13 @@ function catalogCard(item, st) {
   // "where is it?" is one of a card's 4 required answers (Part 2).
   const metaLine = [catLabel, loc ? loc.name : '—'].filter(Boolean).map(esc).join(' · ');
   // Phase 10.4.2 root cause ("item appears inside Low Stock filter, but
-  // card has no warning indicator"): st.homeLowStockIds is the exact same
-  // membership set the "Stok Rendah" filter already fetches (Analytics'
-  // isRestockRecommended(), via getLowStockAlerts()) — the card render
-  // never read it at all, so the signal reached Home correctly but was
-  // simply never displayed. Reusing the already-fetched Set here, never
-  // recomputing or calling isRestockRecommended a second time.
-  const isLowStock = !isAsset && st.homeLowStockIds && st.homeLowStockIds.has(item.itemId);
+  // card has no warning indicator"): the card render never read the same
+  // membership signal the filter itself used. v1.29.1: that signal is now
+  // st.homeStockBulk (stock-status-bulk.js's OUT+LOW classification,
+  // consistent with Analytics' isRestockRecommended()) instead of the old
+  // homeLowStockIds Set — reused as-is here, never recomputed.
+  const bulk = st.homeStockBulk && st.homeStockBulk[item.itemId];
+  const isLowStock = !isAsset && bulk && (bulk.status === STOCK_STATUS_FILTER.LOW || bulk.status === STOCK_STATUS_FILTER.OUT);
   return `<div class="gud-catalog-card" data-act="gud-open-item" data-id="${esc(item.itemId)}" role="button" tabindex="0" aria-label="${esc(item.name)}">
     ${catalogCardImage(item, st)}
     <div class="gud-catalog-card-name">${esc(item.name)}</div>
@@ -264,7 +370,11 @@ export const homeHandlers = {
     const f = ensureFilter(st);
     switch (act) {
       case 'gud-home-type': f.type = el.dataset.val; render(); break;
-      case 'gud-home-lowstock': f.lowStock = !f.lowStock; render(); break;
+      // Feature 2 (individually removable chips + Clear All) — reuses the
+      // same filter-engine.js helpers the mobile filter sheet
+      // (gudang-center.js) also calls, so both surfaces stay identical.
+      case 'gud-home-chip-remove': clearFilterKey(f, el.dataset.key); render(); break;
+      case 'gud-home-clear-filters': clearAllFilters(f); render(); break;
       case 'gud-home-load-more': f.page += PAGE_SIZE; render(); break;
       // Quick actions (hover on desktop, tap on mobile — Doc 2 §13): jump
       // straight into the flow with this item already selected, skipping
@@ -301,5 +411,7 @@ export const homeHandlers = {
     const f = ensureFilter(st);
     if (act === 'gud-home-location') { f.locationId = t.value; render(); }
     else if (act === 'gud-home-category') { f.category = t.value; render(); }
+    else if (act === 'gud-home-stockstatus') { f.stockStatus = t.value; render(); }
+    else if (act === 'gud-home-forecast') { f.forecast = t.value; render(); }
   },
 };

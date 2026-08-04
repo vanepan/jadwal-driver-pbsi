@@ -401,6 +401,52 @@
 .gud-mobile-search-body .gud-spotlight-row-actions{display:flex;} /* full-screen sheet has room — no chevron-reveal needed like the cramped dropdown */
 .gud-mobile-search-body .gud-spotlight-chevron{display:none;}
 
+/* ── Smart Filtering (v1.29.1) — inline bar (desktop/tablet) ────────────
+   Feature 11 (Responsive Experience): the inline bar below stays the
+   desktop/tablet presentation unchanged in spirit from v1.28.0's original
+   2-select bar, just two more selects in the same row. Below the mobile
+   breakpoint it's replaced entirely by the trigger + bottom sheet further
+   down — "same capability, different presentation," never two different
+   sets of controls to keep in sync. */
+.gud-filterbar{display:flex;flex-direction:column;gap:8px;}
+
+/* Feature 2 (removable chips + Clear All) + Feature 9 (result count). */
+.gud-filter-summary{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.gud-filter-count{font-size:12.5px;font-weight:700;color:var(--text-faint);white-space:nowrap;}
+.gud-filter-chips-active{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.gud-chip-active{display:inline-flex;align-items:center;gap:5px;background:var(--accent-weak);border:1px solid var(--accent-line);color:var(--accent);font-size:12px;font-weight:700;padding:5px 6px 5px 11px;border-radius:999px;}
+.gud-chip-remove{display:grid;place-items:center;width:17px;height:17px;border-radius:50%;border:none;background:transparent;color:var(--accent);cursor:pointer;flex:none;}
+.gud-chip-remove:hover{background:rgba(0,0,0,.08);}
+:root[data-theme="dark"] .gud-chip-remove:hover{background:rgba(255,255,255,.14);}
+.gud-filter-clear-all{background:none;border:none;color:var(--text-faint);font-family:var(--font-sans);font-weight:700;font-size:12px;cursor:pointer;padding:4px 2px;text-decoration:underline;text-underline-offset:2px;}
+.gud-filter-clear-all:hover{color:var(--crit);}
+
+/* Feature 11 (mobile) — trigger, CSS-visible only below the breakpoint
+   where the inline bar above is hidden (see the media query below). */
+.gud-filter-trigger{display:none;align-items:center;gap:8px;height:38px;padding:0 14px;border-radius:11px;border:1px solid var(--border);background:var(--surface);color:var(--text-dim);font-family:var(--font-sans);font-weight:700;font-size:13px;cursor:pointer;width:100%;justify-content:center;}
+.gud-filter-trigger-badge{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--accent);color:#fff;font-size:10.5px;font-weight:800;}
+
+/* Feature 11 (mobile) — bottom sheet, the genuinely NEW presentation
+   (approved direction: extend the inline bar for desktop/tablet, build a
+   real bottom sheet only for mobile, where no closeable filter panel
+   concept existed before). Reuses .gud-scrim's existing click-outside/
+   dimming mechanism, only overriding where the panel docks (bottom, not
+   .gud-scrim's default right-aligned drawer position). */
+.gud-filter-sheet-scrim{align-items:flex-end;}
+.gud-filter-sheet{width:100%;max-height:80vh;background:var(--surface);border-radius:18px 18px 0 0;box-shadow:var(--shadow-lg);display:flex;flex-direction:column;transform:translateY(16px);opacity:0;transition:transform .2s cubic-bezier(.2,.7,.2,1),opacity .2s;}
+.gud-scrim.-open .gud-filter-sheet{transform:none;opacity:1;}
+.gud-filter-sheet-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--border-faint);flex:none;}
+.gud-filter-sheet-title{font-family:var(--font-display);font-weight:800;font-size:16px;}
+.gud-filter-sheet-body{flex:1;min-height:0;overflow-y:auto;padding:16px 18px;display:flex;flex-direction:column;gap:10px;padding-bottom:max(16px,env(safe-area-inset-bottom));}
+.gud-filter-sheet-body .gud-chip-select{flex:1;min-width:130px;}
+.gud-filter-sheet-foot{display:flex;gap:10px;padding:14px 18px;border-top:1px solid var(--border-faint);flex:none;padding-bottom:max(14px,env(safe-area-inset-bottom));}
+.gud-filter-sheet-foot .gud-btn{flex:1;}
+
+@media (max-width:760px){
+  .gud-filterbar{display:none;}
+  .gud-filter-trigger{display:flex;}
+}
+
 /* ── Goods Out / Goods In flow (Doc 2 §06/§07) ──────────────────────────── */
 .gud-flow{max-width:640px;}
 .gud-flow-dept{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--text-dim);}
