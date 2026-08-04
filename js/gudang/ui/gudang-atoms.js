@@ -23,6 +23,28 @@ export function esc(v) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+/** Search Highlight (v1.29.0 Feature 4): wraps the FIRST case-insensitive
+ *  occurrence of `query` inside `text` in a subtle <mark>. Safe by
+ *  construction, not by escaping-after-the-fact: the match index is found
+ *  on the RAW string, then each of the three pieces (before/match/after) is
+ *  escaped independently through esc() before being reassembled — so this
+ *  can never inject markup even if `text` or `query` contain HTML-special
+ *  characters. Falls back to plain esc(text) when there's no query or no
+ *  match, so every existing call site that used esc(label) for a row's
+ *  label can switch to this with zero behavior change on a non-matching row
+ *  (e.g. a Location/Bidang row matched by a different field than its name). */
+export function highlightMatch(text, query) {
+  const str = String(text == null ? '' : text);
+  const q = String(query || '').trim();
+  if (!q) return esc(str);
+  const idx = str.toLowerCase().indexOf(q.toLowerCase());
+  if (idx === -1) return esc(str);
+  const before = str.slice(0, idx);
+  const match = str.slice(idx, idx + q.length);
+  const after = str.slice(idx + q.length);
+  return `${esc(before)}<mark class="gud-search-highlight">${esc(match)}</mark>${esc(after)}`;
+}
+
 /* ── Icon set — warehouse/operational glyphs, same recipe as engineering-atoms.js ── */
 const ICONS = {
   search: { d: 'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.35-4.35' },

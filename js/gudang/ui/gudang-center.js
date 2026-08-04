@@ -31,9 +31,10 @@ import { listBidang } from '../config/gudang-bidang-source.js';
 
 import { createInitialSessionState, applySessionEvent } from '../search/search-session-engine.js';
 import { searchAndResolve } from '../search/search-resolver.js';
+import { addRecentSearch, clearRecentSearches } from '../search/recent-searches-store.js';
 
 import { renderHome, homeHandlers } from './gudang-home.js';
-import { renderSearchOverlay } from './gudang-search-overlay.js';
+import { renderSearchOverlay, renderMobileSearchSheet, SEARCH_LISTBOX_ID } from './gudang-search-overlay.js';
 import { renderGoodsOut, goodsOutHandlers } from './gudang-goods-out.js';
 import { renderGoodsIn, goodsInHandlers } from './gudang-goods-in.js';
 import { renderMovementHistory, historyHandlers } from './gudang-movement-history.js';
@@ -56,7 +57,12 @@ const st = {
   toast: null, // transient success message (Delete Item) — see showToast()
 };
 
-let host = null, mounted = false, loaded = false, lastAnimatedScreen = null, toastTimer = null;
+let host = null, mounted = false, loaded = false, lastAnimatedScreen = null, toastTimer = null, searchDebounceTimer = null;
+
+/** v1.29.0 Feature 2 (Instant Search): 250-300ms recommended range — the
+ *  "dropdown is open" feedback in setGudangSearch() below is NOT delayed by
+ *  this, only the (potentially Firebase-touching) resolve itself is. */
+const SEARCH_DEBOUNCE_MS = 275;
 
 /** Scoped, self-dismissing toast (mirrors petty-cash-center.js's own local
  *  toast() — same render-driven module-center idiom, no shared #toast DOM
@@ -111,6 +117,14 @@ export async function mountGudang(hostEl) {
     host.addEventListener('drop', onDrop);
     host.addEventListener('paste', onPaste);
     document.addEventListener('keydown', onGlobalKeydown, true);
+    // v1.29.0 Feature 6 ("When the search field gains focus and is empty:
+    // display recent searches") — the shared field lives outside .gud-root,
+    // so this can't be a delegated `host` listener the way every other
+    // Gudang interaction is; scoped by checking Gudang is actually the
+    // visible workspace before acting, same discipline onGlobalKeydown
+    // already uses, so it's a no-op while any other module owns this field.
+    const sharedInput = document.getElementById('v2SearchInput');
+    if (sharedInput) sharedInput.addEventListener('focus', onSharedSearchInputFocus);
   }
   if (!loaded) {
     loaded = true;
@@ -182,21 +196,59 @@ export function setGudangScreen(screen) {
  *  topbar #v2SearchInput IS the query field — every keystroke there drives
  *  this dropdown, exactly the same "one box, per-module adapter" shape
  *  every other module already uses (js/app.js#registerSearchAdapters).
- *  An empty query (typed-then-deleted, or the shared Escape/clear-button
- *  handler in app.js) closes the dropdown rather than showing an empty
- *  "type to search" hint — there is no separate query box left to hint at. */
+ *  v1.29.0: an empty query (typed-then-deleted) now opens Recent Searches
+ *  instead of closing outright — see openRecentSearchesView() below. */
 export function setGudangSearch(q) {
-  if (!q) { closeSearchDropdown(); return; }
+  if (!q) { openRecentSearchesView(); return; }
   if (st.search.status !== 'open') st.search = applySessionEvent(st.search, { type: 'open' }).state;
   render();
-  driveSearchQuery(q);
+  // v1.29.0 Feature 2 (debounce): only the potentially-expensive resolve is
+  // delayed — the render() above already shows the dropdown as open the
+  // instant a key is pressed, so typing never feels laggy.
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(() => driveSearchQuery(q), SEARCH_DEBOUNCE_MS);
 }
 
-/** Ctrl+K's entire job now (Doc 2 §12): move focus to the real search field.
- *  It does not open anything itself — typing is what opens the dropdown,
- *  via setGudangSearch above, same as every other module's adapter. */
+/** v1.29.0 Feature 6 (Recent Searches): "When the search field gains focus
+ *  and is empty: display recent searches." Reused for both the shared
+ *  input's own focus event (see mountGudang) and setGudangSearch's
+ *  empty-query branch above — same state, same trigger condition. Always
+ *  dispatches 'open' (not 'resultsLoaded') since that reducer event already
+ *  guarantees a fully blank session (query/results reset), regardless of
+ *  whatever was there before. */
+function openRecentSearchesView() {
+  if (searchDebounceTimer) { clearTimeout(searchDebounceTimer); searchDebounceTimer = null; }
+  st.search = applySessionEvent(st.search, { type: 'open' }).state;
+  render();
+}
+
+/** v1.29.0 root-cause fix: js/app.js#setRailModule() calls the active
+ *  adapter's `clear()` (js/services/adaptive-search.js#clearModuleSearch)
+ *  on EVERY navigation TO Gudang, not only when a user empties an active
+ *  query — before this existed, Gudang's adapter had no `clear`, so that
+ *  call fell through to run(''), which is setGudangSearch(''), which
+ *  (after Feature 6) now OPENS Recent Searches — meaning simply navigating
+ *  to Gudang from the sidebar popped an uninvited search dropdown open
+ *  every time, confirmed live against the real app. The fix belongs at
+ *  the adapter boundary (js/app.js's own 'gudang' registration now passes
+ *  this as `clear`), not inside setGudangSearch() itself, since "the
+ *  module is being deactivated/reset" and "the user emptied the query
+ *  while actively searching" are genuinely different events that happened
+ *  to share one code path before Feature 6 made them behave differently. */
+export function closeGudangSearch() {
+  if (searchDebounceTimer) { clearTimeout(searchDebounceTimer); searchDebounceTimer = null; }
+  if (st.search.status === 'open') {
+    st.search = applySessionEvent(st.search, { type: 'close' }).state;
+    render();
+  }
+}
+
+/** Ctrl+K/Ctrl+F's entire job now (Doc 2 §12, v1.29.0 Feature 7): move
+ *  focus to the real search field. It does not open anything itself —
+ *  typing is what opens the dropdown, via setGudangSearch above, same as
+ *  every other module's adapter. */
 export function openGudangSearch() {
-  focusSharedSearchInput();
+  openSearchEntry();
 }
 
 /** Phase 10.1 Part 6: UAT read "click Home's search -> focus silently jumps
@@ -214,22 +266,110 @@ function pulseSharedSearchInput(input) {
   );
 }
 
+// Ctrl+K/Ctrl+F/the Home button all share one tested, deliberate contract
+// (Phase 10.1): programmatically focusing the shared field NEVER opens
+// anything by itself — only typing (or, v1.29.0, a genuine user-initiated
+// focus) does. Without this flag, .focus() below would synchronously fire
+// the 'focus' listener registered in mountGudang and incorrectly open
+// Recent Searches on every Ctrl+K press (gudang-ui-interaction-check.mjs
+// caught this exact regression). One-shot: set immediately before the
+// programmatic .focus() call, consumed by the very next focus event.
+let suppressNextSearchFocusOpen = false;
+
 function focusSharedSearchInput() {
   const input = document.getElementById('v2SearchInput');
-  if (input) { input.focus(); input.select(); pulseSharedSearchInput(input); }
+  if (!input) return;
+  suppressNextSearchFocusOpen = true;
+  input.focus(); input.select(); pulseSharedSearchInput(input);
 }
 
-function closeSearchDropdown() {
-  if (st.search.status === 'open') {
-    st.search = applySessionEvent(st.search, { type: 'close' }).state;
-    render();
-  }
+/** v1.29.0 Feature 6: the shared field gained focus — if it's currently
+ *  empty and Gudang is the visible workspace, open Recent Searches (a no-op
+ *  otherwise: not Gudang's turn, a suppressed programmatic focus per above,
+ *  or the user tabbed in with text already there, which setGudangSearch's
+ *  own non-empty path already handles). This only ever fires for a REAL,
+ *  user-initiated focus (a direct click/tap on the field, or Tab landing on
+ *  it) — exactly the case the brief describes, distinct from a keyboard
+ *  shortcut whose own contract is "just focus." */
+function onSharedSearchInputFocus(e) {
+  if (suppressNextSearchFocusOpen) { suppressNextSearchFocusOpen = false; return; }
+  if (!host || host.offsetParent === null) return;
+  if (e.target.value) return;
+  if (st.search.status !== 'open') openRecentSearchesView();
 }
 
+/** v1.29.0 Feature 9 (Responsive Experience): #v2SearchInput is CSS-hidden
+ *  below 1280px, but via its ANCESTOR .v2-topbar-search's `display:none`
+ *  (platform.css), never on the input element itself — the input's own
+ *  computed `display` (e.g. "inline-block") is unaffected by an ancestor
+ *  being hidden, so an earlier version of this check
+ *  (`getComputedStyle(input).display !== 'none'`) always returned true
+ *  regardless of actual visibility, confirmed live at 768px/390px: the
+ *  mobile sheet never opened because this thought the desktop field was
+ *  visible and just silently focused a field that couldn't accept it.
+ *  `offsetParent` is the correct check — it returns null when the element
+ *  OR any ancestor is display:none — and is the same technique already
+ *  used everywhere else in this file (e.g. `host.offsetParent === null`). */
+function sharedSearchInputVisible() {
+  const input = document.getElementById('v2SearchInput');
+  return !!input && input.offsetParent !== null;
+}
+
+/** Every search entry point (Home's "Cari..." button, Ctrl+K, Ctrl+F)
+ *  routes through here: focus the real shared field where it's visible, or
+ *  open Gudang's own full-screen mobile sheet where it isn't (confirmed:
+ *  no separate mobile search UI existed before this) — so the keyboard
+ *  shortcuts and the visible tap target always agree on what "open search"
+ *  means on the current viewport. */
+function openSearchEntry() {
+  if (sharedSearchInputVisible()) focusSharedSearchInput();
+  else openMobileSearchSheet();
+}
+
+function openMobileSearchSheet() {
+  st.search = applySessionEvent(st.search, { type: 'open' }).state;
+  st._focusAct = 'gud-mobile-search-field'; // restoreFocus() (end of render()) focuses it
+  render();
+}
+
+function closeMobileSearchSheet() {
+  st.search = applySessionEvent(st.search, { type: 'close' }).state;
+  render();
+}
+
+/** Both possible inputs (shared desktop field, Gudang-owned mobile sheet
+ *  field) may be showing the query at once in principle — only one is ever
+ *  actually visible, so syncing both unconditionally is safe and avoids
+ *  needing to know which presentation is currently on screen. */
+function syncVisibleSearchInputs(query) {
+  const shared = document.getElementById('v2SearchInput');
+  if (shared) shared.value = query;
+  const mobile = host && host.querySelector('[data-act="gud-mobile-search-field"]');
+  if (mobile) mobile.value = query;
+}
+
+/** v1.29.0 Feature 8 (Performance): searchAndResolve() now takes the
+ *  catalog st.data ALREADY has in memory (populated by refreshCatalog() at
+ *  mount and after every write) instead of forcing search-resolver.js to
+ *  re-read Firebase on every keystroke — the single biggest lever here,
+ *  ahead of the debounce above. See search-resolver.js's own header for
+ *  why this is a safe, additive change to that file's signature. */
 async function driveSearchQuery(query) {
-  const res = await searchAndResolve(query);
+  const res = await searchAndResolve(query, { items: st.data.items, locations: st.data.locations });
   st.search = applySessionEvent(st.search, { type: 'resultsLoaded', query, results: res.ok ? res.data : [] }).state;
   render();
+}
+
+/** A Recent Searches row was clicked (v1.29.0 Feature 6) — re-runs that
+ *  exact query immediately, not debounced (this is a deliberate re-search,
+ *  not live typing), and syncs whichever input is actually visible so the
+ *  field doesn't look empty while showing that query's results. */
+function applyRecentSearchQuery(query) {
+  if (!query) return;
+  syncVisibleSearchInputs(query);
+  if (st.search.status !== 'open') st.search = applySessionEvent(st.search, { type: 'open' }).state;
+  render();
+  driveSearchQuery(query);
 }
 
 /** Where the results dropdown anchors — the shared topbar search input's
@@ -257,7 +397,13 @@ function render() {
   const detail = st.detail
     ? (st.detail.kind === 'asset' ? renderAssetDetail(st, c, render) : renderItemDetail(st, c, render))
     : '';
-  const overlay = st.search.status === 'open' ? renderSearchOverlay(st, c, searchAnchorRect()) : '';
+  // v1.29.0 Feature 9: below the shared field's own breakpoint, its dropdown
+  // presentation makes no sense (nothing to anchor under) — the full-screen
+  // sheet takes over instead. Both render the exact same session state.
+  const mobilePresentation = st.search.status === 'open' && !sharedSearchInputVisible();
+  const overlay = st.search.status === 'open'
+    ? (mobilePresentation ? renderMobileSearchSheet(st, c) : renderSearchOverlay(st, c, searchAnchorRect()))
+    : '';
   const modal = st.modal
     ? (st.modal.kind === 'confirmDeleteItem' ? renderDeleteItemConfirm(st) : renderCatalogModal(st, c))
     : '';
@@ -271,6 +417,34 @@ function render() {
   lastAnimatedScreen = st.screen;
   host.innerHTML = `<div class="gud-content${isNewScreen ? ' -enter' : ''}">${screen}</div>${detail}${overlay}${modal}${toast}`;
   restoreFocus();
+  syncSearchInputAria();
+}
+
+/** v1.29.0 Accessibility: wires the shared field into a real ARIA combobox
+ *  pattern (role=combobox + aria-expanded/aria-controls/aria-activedescendant
+ *  pointing at the listbox gudang-search-overlay.js renders) while Gudang's
+ *  own dropdown owns it — listbox/option roles already existed on the rows
+ *  (Phase 3), but nothing ever linked the INPUT side of that pattern. Scoped
+ *  tightly (host mounted AND visible, dropdown genuinely open) and cleared
+ *  the instant either stops holding, since #v2SearchInput is a SHARED
+ *  element every other module also searches through — these attributes
+ *  must never leak onto it once Gudang isn't the one using it. */
+function syncSearchInputAria() {
+  const input = document.getElementById('v2SearchInput');
+  if (!input || !host || host.offsetParent === null) return;
+  const open = st.search.status === 'open' && sharedSearchInputVisible();
+  if (open) {
+    input.setAttribute('role', 'combobox');
+    input.setAttribute('aria-expanded', 'true');
+    input.setAttribute('aria-controls', SEARCH_LISTBOX_ID);
+    if (st.search.focusedIndex >= 0) input.setAttribute('aria-activedescendant', `gud-result-${st.search.focusedIndex}`);
+    else input.removeAttribute('aria-activedescendant');
+  } else {
+    input.removeAttribute('role');
+    input.removeAttribute('aria-expanded');
+    input.removeAttribute('aria-controls');
+    input.removeAttribute('aria-activedescendant');
+  }
 }
 
 /* ── delegated events ─────────────────────────────────────────────────── */
@@ -293,13 +467,17 @@ function onClick(e) {
   switch (act) {
     case 'gud-goto': setGudangScreen(val); break;
     case 'gud-noop': break;
-    // Home's search "button" no longer opens its own overlay — it moves
-    // focus to the real shared search field, same as Ctrl+K (Phase 10.1).
-    case 'gud-search-open': focusSharedSearchInput(); break;
+    // Home's search "button": focuses the real shared search field where
+    // it's visible (Phase 10.1), or opens Gudang's own mobile sheet where
+    // it isn't (v1.29.0 Feature 9) — openSearchEntry() decides which.
+    case 'gud-search-open': openSearchEntry(); break;
     case 'gud-search-key': handleSearchKeyClick(el, c); break;
     case 'gud-result-row': handleResultFocus(el, false); break;
     case 'gud-result-chip': handleResultFocus(el, true); break;
     case 'gud-result-reveal': handleResultReveal(el); break;
+    case 'gud-mobile-search-close': closeMobileSearchSheet(); break;
+    case 'gud-recent-search-item': applyRecentSearchQuery(val); break;
+    case 'gud-recent-search-clear': clearRecentSearches(); render(); break;
     case 'gud-open-item': st.detail = { kind: 'item', id }; st.search = applySessionEvent(st.search, { type: 'close' }).state; render(); break;
     case 'gud-open-asset': st.detail = { kind: 'asset', id }; st.search = applySessionEvent(st.search, { type: 'close' }).state; render(); break;
     case 'gud-detail-close': st.detail = null; render(); break;
@@ -335,6 +513,9 @@ function onInput(e) {
   // re-focuses + restores the caret. Mirrors Engineering's restoreFocus,
   // generalized to every Gudang live input, not just search.
   st._focusAct = ds.act;
+  // v1.29.0 Feature 9: the mobile search sheet's own input drives the exact
+  // same debounced search path the shared desktop field's adapter uses.
+  if (ds.act === 'gud-mobile-search-field') { setGudangSearch(t.value); return; }
   if (ds.act.startsWith('gud-go-')) { goodsOutHandlers.onInput(st, ds.act, t, render); return; }
   if (ds.act.startsWith('gud-gi-')) { goodsInHandlers.onInput(st, ds.act, t, render); return; }
   if (ds.act.startsWith('gud-op-')) { opnameHandlers.onInput(st, ds.act, t, render); return; }
@@ -414,11 +595,19 @@ function onPaste(e) {
    but a no-op outside Gudang so it never hijacks other modules' shortcuts). */
 function onGlobalKeydown(e) {
   if (!host || host.offsetParent === null) return; // Gudang not the visible workspace
-  // Ctrl+K focuses the real search field only (Doc 2 §12, Phase 10.1) — it
-  // does not open a dropdown itself; typing there is what does that, via
+  // Ctrl+K focuses the real search field (Doc 2 §12, Phase 10.1) — it does
+  // not open a dropdown itself; typing there is what does that, via
   // setGudangSearch (same "one box" contract every other module uses).
+  // v1.29.0 Feature 7: Ctrl+F is ADDITIVE alongside it, never a replacement
+  // (brief: "must not interfere with existing shortcuts") — confirmed
+  // before adding this that no binding anywhere in the app already claims
+  // Ctrl+F, so overriding the browser's native find-in-page here is new
+  // territory, not a collision with anything else. Both route through
+  // openSearchEntry() so keyboard and the visible "Cari..." button always
+  // agree on what "open search" means on the current viewport (Feature 9).
   const ctrlK = (e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K');
-  if (ctrlK) { e.preventDefault(); focusSharedSearchInput(); return; }
+  const ctrlF = (e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F');
+  if (ctrlK || ctrlF) { e.preventDefault(); openSearchEntry(); return; }
 
   if (e.key === 'Escape' && st.modal) { e.preventDefault(); e.stopPropagation(); st.modal = null; render(); return; }
 
@@ -455,6 +644,25 @@ function onGlobalKeydown(e) {
   }
 
   if (st.search.status !== 'open') return;
+  // v1.29.0 root-cause fix: this used to forward Arrow/Enter/Tab to the
+  // session reducer whenever st.search.status === 'open', regardless of
+  // WHERE focus actually was. That was a latent gap even before v1.29.0.
+  // Feature 6 (Recent Searches keeps an empty dropdown open instead of
+  // closing it) made it trivial to hit: with the dropdown open but focus on
+  // some OTHER control (e.g. Home's own "Cari..." button), a plain Enter
+  // press hit this capture-phase listener FIRST, got preventDefault()'d
+  // here (silently no-op'd by the reducer, since focusedIndex is -1 with
+  // zero results), and the render() below then destroyed that still-
+  // focused button by regenerating host.innerHTML — dropping focus to
+  // document.body (gudang-ui-interaction-check.mjs caught this exact
+  // regression). Arrow/Enter/Tab only ever belong to the search box
+  // itself; Escape is left able to close an open dropdown from anywhere,
+  // which is the one case where "state says open" alone is the right test.
+  const searchInputHasFocus = document.activeElement != null && (
+    document.activeElement.id === 'v2SearchInput'
+    || document.activeElement.dataset?.act === 'gud-mobile-search-field'
+  );
+  if (e.key !== 'Escape' && !searchInputHasFocus) return;
   if (!['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'].includes(e.key)) return;
   // Enter inside the query input still submits the form otherwise (Tab moves
   // focus) — both are meaningful only inside the Spotlight, so prevent default.
@@ -483,8 +691,10 @@ function onGlobalKeydown(e) {
   // rather than depending on a side effect of a listener it deliberately
   // silences.
   if (e.key === 'Escape') {
-    const input = document.getElementById('v2SearchInput');
-    if (input) input.value = state.query;
+    // v1.29.0: syncVisibleSearchInputs() covers both possible textboxes now
+    // (the shared field AND the mobile sheet's own input) — see that
+    // function's own comment for why syncing both unconditionally is safe.
+    syncVisibleSearchInputs(state.query);
     const clearBtn = document.getElementById('v2SearchClear');
     if (clearBtn && !state.query) clearBtn.style.display = 'none';
   }
@@ -529,6 +739,12 @@ function handleResultFocus(el, isChip) {
  *  dispatch table for actions that don't exist yet. */
 function resolveSearchIntent(intent) {
   if (intent.type !== 'open') return; // ACTION_UNAVAILABLE etc. — nothing to do yet
+  // v1.29.0 Feature 6: recorded here, the one chokepoint every committed
+  // search (Enter, a clicked row, a tapped action chip) already funnels
+  // through — never on every keystroke, only on an actual, intentional
+  // "I searched for this and opened something" commit. Must read
+  // st.search.query BEFORE the 'close' event below resets it to ''.
+  if (st.search.query) addRecentSearch(st.search.query);
   st.detail = { kind: intent.ownerDomain === 'asset' ? 'asset' : 'item', id: intent.refId };
   st.search = applySessionEvent(st.search, { type: 'close' }).state;
   render();

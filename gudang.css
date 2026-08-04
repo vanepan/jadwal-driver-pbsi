@@ -371,6 +371,36 @@
   .gud-spotlight-chevron{display:flex;} /* only meaningful affordance shown once there IS more than one action */
 }
 
+/* ── Search Highlight (v1.29.0 Feature 4) — subtle, follows the existing
+   accent language rather than a jarring yellow-highlighter default <mark>. */
+.gud-search-highlight{background:var(--accent-weak);color:var(--accent);border-radius:3px;padding:0 1px;font-weight:800;}
+
+/* ── Recent Searches (v1.29.0 Feature 6) — same list-row rhythm as the
+   results list above, so switching between "recent" and "results" inside
+   the identical dropdown/sheet never feels like two different components. */
+.gud-recent-searches{padding:8px;}
+.gud-recent-searches-head{display:flex;align-items:center;justify-content:space-between;padding:6px 4px 8px;font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-ghost);}
+.gud-recent-search-row{display:flex;align-items:center;gap:12px;width:100%;padding:10px 8px;border:none;background:transparent;border-radius:11px;cursor:pointer;font-family:var(--font-sans);text-align:left;color:var(--text);}
+.gud-recent-search-row:hover{background:var(--hover);}
+.gud-recent-search-label{font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+/* ── Mobile Search Sheet (v1.29.0 Feature 9) — the shared topbar field is
+   CSS-hidden below 1280px (platform.css), so this full-screen, Gudang-owned
+   sheet is the ONLY working search entry point at those widths. Reuses the
+   exact same results/recent/empty-state markup as the desktop dropdown
+   (gudang-search-overlay.js#searchDropdownBody) — only this chrome differs. */
+.gud-mobile-search-sheet{position:fixed;inset:0;z-index:420;background:var(--surface);display:flex;flex-direction:column;animation:gudMobileSearchIn .18s cubic-bezier(.2,.7,.2,1);}
+@keyframes gudMobileSearchIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.gud-mobile-search-head{display:flex;align-items:center;gap:10px;flex:none;padding:14px 16px;padding-top:max(14px,env(safe-area-inset-top));border-bottom:1px solid var(--border-faint);}
+.gud-mobile-search-ic{flex:none;color:var(--text-faint);display:flex;}
+.gud-mobile-search-input{flex:1;min-width:0;height:40px;border:none;background:transparent;font-family:var(--font-sans);font-size:16px;color:var(--text);} /* 16px: prevents iOS Safari's auto-zoom-on-focus */
+.gud-mobile-search-input:focus{outline:none;}
+.gud-mobile-search-input::placeholder{color:var(--text-faint);}
+.gud-mobile-search-body{flex:1;min-height:0;overflow-y:auto;padding-bottom:env(safe-area-inset-bottom);}
+.gud-mobile-search-body .gud-spotlight-results{padding:8px 8px 16px;}
+.gud-mobile-search-body .gud-spotlight-row-actions{display:flex;} /* full-screen sheet has room — no chevron-reveal needed like the cramped dropdown */
+.gud-mobile-search-body .gud-spotlight-chevron{display:none;}
+
 /* ── Goods Out / Goods In flow (Doc 2 §06/§07) ──────────────────────────── */
 .gud-flow{max-width:640px;}
 .gud-flow-dept{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--text-dim);}

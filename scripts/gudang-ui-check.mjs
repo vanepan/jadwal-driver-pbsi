@@ -138,7 +138,14 @@ console.log('\n[Part E — Wiring integrity: app.js/index.html actually mount Gu
 {
   const appJs = read('js/app.js');
   check('app.js statically imports mountGudang/setGudangScreen/setGudangSearch from gudang-center.js', /import\s*\{[\s\S]{0,120}mountGudang[\s\S]{0,120}\}\s*from ['"]\.\/gudang\/ui\/gudang-center\.js['"]/.test(appJs));
-  check('app.js does NOT import openGudangSearch (Phase 10: removed as dead code — zero call sites)', !/mountGudang[\s\S]{0,200}openGudangSearch/.test(appJs));
+  // v1.29.0: openGudangSearch() is no longer dead code — the search Clear
+  // (X) button's click handler now reuses it to refocus #v2SearchInput
+  // without re-triggering Recent Searches (Feature 6's focus-when-empty
+  // behavior would otherwise immediately reopen what the click just
+  // closed). Confirms it's imported from gudang-center.js and actually
+  // called from the clear button's handler, not just present in an import list.
+  check('app.js imports openGudangSearch from gudang-center.js', /import\s*\{[\s\S]{0,200}openGudangSearch[\s\S]{0,200}\}\s*from ['"]\.\/gudang\/ui\/gudang-center\.js['"]/.test(appJs));
+  check('the search Clear (X) button handler actually calls openGudangSearch() to keep focus in the field', /v2SearchClear\.addEventListener\('click'[\s\S]{0,400}openGudangSearch\(\)/.test(appJs));
   check('every v2NavGud* sidebar button has a real click listener (Phase 10: this was the actual UAT bug — screens existed but were unreachable)',
     ['v2NavGudHome', 'v2NavGudGoodsOut', 'v2NavGudGoodsIn', 'v2NavGudHistory', 'v2NavGudOpname', 'v2NavGudAnalytics']
       .every((id) => new RegExp(`getElementById\\('${id}'\\)\\?\\.addEventListener\\('click'`).test(appJs)));

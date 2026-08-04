@@ -6,7 +6,7 @@
    Resolution, Spotlight/Raycast interaction model.
 
    Same check()/throws() harness as scripts/gudang-foundation-check.mjs
-   and scripts/gudang-item-check.mjs. Five parts:
+   and scripts/gudang-item-check.mjs. Six parts:
      A. Alias-aware matching  — search-resolver.js's itemMatchesQuery(),
                                  pure, no Firebase (Doc 1 Art.III).
      B. Action Resolution     — action-resolver.js: known/available
@@ -21,6 +21,11 @@
                                  Phase 2's item-keyword-index.js is still
                                  unwired (dormant seam, see search-resolver
                                  header note).
+     F. Ranking (v1.29.0)     — matchTier()/search()'s item ordering: a
+                                 6-item synthetic dataset, each item
+                                 engineered to match ONLY at exactly one
+                                 tier, proves Exact > Starts With > Alias >
+                                 Partial > Category > Other unambiguously.
 
    Deterministic. No live Firebase, no AI.
    Run: node scripts/gudang-search-check.mjs   (exit 0 = pass) */
@@ -29,7 +34,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { itemMatchesQuery, resolve } from '../js/gudang/search/search-resolver.js';
+import { itemMatchesQuery, resolve, search, matchTier } from '../js/gudang/search/search-resolver.js';
 import { makeItem, ITEM_TYPE } from '../js/gudang/contracts/item-contract.js';
 import { makeSearchResult, isSearchResult } from '../js/gudang/contracts/search-result-contract.js';
 import {
@@ -176,6 +181,51 @@ console.log('\n[Part E — Regression: Phase 1 action surface and Phase 2 seam a
 
   const searchResolverCode = read('js/gudang/search/search-resolver.js');
   check('item-keyword-index.js remains unwired into search-resolver.js (see this phase\'s header note on why)', !searchResolverCode.includes('item-keyword-index'));
+}
+
+/* ── Part F — Ranking (v1.29.0 Warehouse Search & Discovery) ────────── */
+console.log('\n[Part F — Ranking: Exact > Starts With > Alias > Partial > Category > Other]');
+{
+  // Six items, each engineered to match "widget" at EXACTLY one tier and
+  // no higher — so the returned order unambiguously proves the priority
+  // chain, not just that ranking exists. Verified live against a real
+  // synthetic dataset before this suite entry was added (v1.29.0 P2 item 5).
+  const tier0 = makeItem({ itemId: 'tier0', name: 'Widget', itemType: ITEM_TYPE.CONSUMABLE, category: 'unrelated-cat' });
+  const tier1 = makeItem({ itemId: 'tier1', name: 'Widget Deluxe', itemType: ITEM_TYPE.CONSUMABLE, category: 'unrelated-cat' });
+  const tier2 = makeItem({ itemId: 'tier2', name: 'Gadget Pro', itemType: ITEM_TYPE.CONSUMABLE, category: 'unrelated-cat', aliases: ['Widget'] });
+  const tier3 = makeItem({ itemId: 'tier3', name: 'Mini Widget Case', itemType: ITEM_TYPE.CONSUMABLE, category: 'unrelated-cat' });
+  const tier4 = makeItem({ itemId: 'tier4', name: 'Unrelated Thing', itemType: ITEM_TYPE.CONSUMABLE, category: 'Widget Supplies' });
+  const tier5 = makeItem({ itemId: 'tier5', name: 'Other Item', itemType: ITEM_TYPE.CONSUMABLE, category: 'unrelated-cat', metadata: { jenis: 'widget-type' } });
+  const items = [tier0, tier1, tier2, tier3, tier4, tier5];
+
+  check('matchTier: exact name match is tier 0', matchTier(tier0, 'widget') === 0);
+  check('matchTier: name-starts-with is tier 1', matchTier(tier1, 'widget') === 1);
+  check('matchTier: alias match is tier 2', matchTier(tier2, 'widget') === 2);
+  check('matchTier: partial (mid-string) name match is tier 3', matchTier(tier3, 'widget') === 3);
+  check('matchTier: category match is tier 4', matchTier(tier4, 'widget') === 4);
+  check('matchTier: everything else itemMatchesQuery already matches (here: Jenis) is tier 5', matchTier(tier5, 'widget') === 5);
+
+  const res = await search('widget', { items, locations: [] });
+  const order = res.data.map((c) => c.record.itemId);
+  check('search() returns items in the exact Exact>StartsWith>Alias>Partial>Category>Other order',
+    res.ok && order.join(',') === 'tier0,tier1,tier2,tier3,tier4,tier5');
+
+  // search() itself owns lowercasing (matchTier's own JSDoc documents that
+  // it expects an already-lowercased `q` from its one caller) — test
+  // case-insensitivity at that real call boundary, brief: "Search must
+  // remain case-insensitive."
+  const resUpper = await search('WIDGET', { items, locations: [] });
+  check('search() is case-insensitive end-to-end (brief: "Search must remain case-insensitive")',
+    resUpper.ok && resUpper.data.map((c) => c.record.itemId).join(',') === 'tier0,tier1,tier2,tier3,tier4,tier5');
+
+  // itemMatchesQuery() — the Goods In/Out item-picker predicate — must
+  // stay completely independent of ranking: matchTier() is a NEW,
+  // additive function; it must never be the thing that decides whether an
+  // item matches at all (see this file's own header + search-resolver.js's
+  // header for why that boundary matters).
+  const searchResolverCodeF = read('js/gudang/search/search-resolver.js');
+  check('itemMatchesQuery() itself does not call matchTier() (matching and ranking stay separate concerns)',
+    !/function itemMatchesQuery[\s\S]{0,400}matchTier/.test(searchResolverCodeF));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

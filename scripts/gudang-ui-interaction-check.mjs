@@ -199,18 +199,32 @@ console.log('\n[Part D — Mobile viewport (375x812, real resize + re-render)]')
   check('Home has no horizontal overflow at 375px width', !homeMobileOverflow);
   try { const h = await page.$(HOST); if (h) await h.screenshot({ path: path.join(screenshotsDir, 'home-mobile.png') }); } catch (_) {}
 
-  // Phase 10.1: the dropdown is anchored to the shared search input and
-  // width-clamped, not forced full-bleed — the property that actually
-  // matters on mobile is that it never overflows the viewport.
+  // v1.29.0 Feature 9: below the shared field's OWN breakpoint (<1280px,
+  // confirmed via computed style, not a hardcoded number here) it is
+  // CSS-hidden entirely (platform.css) — there is nothing left to anchor a
+  // dropdown under, so Gudang now renders its own full-screen mobile
+  // search sheet instead (gud-mobile-search-sheet, not gud-spotlight). This
+  // replaces the old "anchored + width-clamped" assertion, which described
+  // a presentation that no longer applies at this viewport by design.
   await page.evaluate((q) => window.__gudMod.setGudangSearch(q), 'tisu');
-  await new Promise((r) => setTimeout(r, 250));
-  const dropdownFits = await page.evaluate(() => {
-    const s = document.querySelector('.gud-spotlight');
+  // 400ms, not 250ms: .gud-mobile-search-sheet plays a 180ms entrance
+  // animation (translateY(8px) -> 0) on mount — measuring its rect before
+  // that finishes can catch it mid-transform, a few px short of its final
+  // position. Confirmed via a direct rect dump: at 250ms the check flaked:
+  // top/left were off by a few px; once fully settled it lands at exactly
+  // {0,0,innerWidth,innerHeight}. This is animation timing, not a real
+  // positioning bug — the same class of margin every other setTimeout wait
+  // in this file already gives real async work.
+  await new Promise((r) => setTimeout(r, 400));
+  const mobileSheetFits = await page.evaluate(() => {
+    const s = document.querySelector('.gud-mobile-search-sheet');
     if (!s) return false;
     const r = s.getBoundingClientRect();
-    return r.right <= window.innerWidth + 2 && r.left >= -2;
+    return r.right <= window.innerWidth + 2 && r.left >= -2 && r.top >= -2 && r.bottom <= window.innerHeight + 2;
   });
-  check('results dropdown stays within the 375px viewport (anchored + width-clamped, Doc 2 §13)', dropdownFits);
+  check('mobile search sheet (v1.29.0) renders full-screen and stays within the 375px viewport', mobileSheetFits);
+  const mobileSheetHasOwnInput = await page.evaluate(() => !!document.querySelector('[data-act="gud-mobile-search-field"]'));
+  check('mobile search sheet has its own working input (the shared field is hidden at this width)', mobileSheetHasOwnInput);
   try { const h = await page.$(HOST); if (h) await h.screenshot({ path: path.join(screenshotsDir, 'search-mobile.png') }); } catch (_) {}
   await page.evaluate(() => window.__gudMod.setGudangSearch(''));
   await page.setViewport({ width: 1440, height: 960 });

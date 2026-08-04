@@ -25,10 +25,20 @@
    'open' is offered — adding a real action here belongs to the phase that
    builds the engine which owns it, never to this file guessing ahead.
 
-   Explicitly NOT implemented, per the Phase 1 brief: fuzzy ranking (matching
-   is plain case-insensitive substring, first-match order only), QR/Barcode/
-   NFC entry, conversational search. All three are named seams, not silent
-   omissions (Doc 3 Ch.03/12, Doc 4 Art.VI).
+   Explicitly NOT implemented: QR/Barcode/NFC entry, conversational search.
+   Named seams, not silent omissions (Doc 3 Ch.03/12, Doc 4 Art.VI).
+
+   RANKING (v1.29.0, Warehouse Search & Discovery): item candidates are now
+   ordered by match-tier — exact name, starts-with, alias, partial name,
+   category, then everything else itemMatchesQuery() already matched (Ukuran/
+   Jenis) — via matchTier() below, a NEW function. itemMatchesQuery() ITSELF
+   is untouched byte-for-byte: it is also the exact predicate gudang-goods-
+   out.js/gudang-goods-in.js use to filter their own item pickers, and the
+   v1.29.0 brief forbids modifying Goods In/Out — ranking is a strictly
+   additive ORDERING layer over the same match set, never a redefinition of
+   what matches. Locations/departments keep their previous first-match order
+   (out of this brief's stated scope: "Exact Name Match... Category Match"
+   describes an Item's own fields).
 
    EXTENDED — Phase 3 (Universal Search Foundation): item matching now also
    checks Item.aliases, not only Item.name. Doc 1 Art.III is explicit that
@@ -98,24 +108,64 @@ export function itemMatchesQuery(item, query) {
 }
 
 /**
+ * Match-tier for an Item already known to satisfy itemMatchesQuery() — lower
+ * is a stronger match. Mirrors the v1.29.0 brief's stated priority order
+ * exactly: Exact Name > Starts With > Alias > Partial Name > Category >
+ * (everything else — Ukuran/Jenis, the closest owned equivalent to the
+ * brief's "Description," since Item has no literal description field).
+ * Pure, exported for unit testing. Never called by Goods In/Out — they only
+ * ever use the untouched itemMatchesQuery() boolean above.
+ * @param {import('../contracts/item-contract.js').Item} item
+ * @param {string} q - already trimmed + lowercased
+ * @returns {number} 0 (best) .. 6 (weakest)
+ */
+export function matchTier(item, q) {
+  const name = String(item.name || '').toLowerCase();
+  if (name === q) return 0;
+  if (name.startsWith(q)) return 1;
+  const aliases = (item.aliases || []).map((a) => String(a).toLowerCase());
+  if (aliases.some((a) => a === q || a.startsWith(q))) return 2;
+  if (name.includes(q)) return 3;
+  if (matches(item.category, q)) return 4;
+  return 5; // Ukuran/Jenis match, or an alias matched only as a mid-string substring
+}
+
+/**
  * Find raw candidates across every domain Search Engine currently indexes.
- * No ranking — candidates are returned in first-match, domain-listed order.
+ * Item candidates are ordered by matchTier() (v1.29.0); locations and
+ * departments keep first-match, domain-listed order (out of this brief's
+ * stated scope — see this file's header).
  * @param {string} query
+ * @param {{items?:object[], locations?:object[]}} [preloaded] - already-
+ *   loaded catalog arrays (e.g. gudang-center.js's own st.data), so a
+ *   caller that re-searches on every keystroke never forces a fresh
+ *   Firebase read each time (v1.29.0 Feature 8: Performance). Omit either
+ *   to fall back to this file's own repository read, unchanged from before.
  * @returns {Promise<{ok:boolean, data:Array<{domain:string, record:object}>, error:*}>}
  */
-export async function search(query) {
+export async function search(query, preloaded = {}) {
   const q = String(query || '').trim().toLowerCase();
   if (!q) return success([]);
 
   const [itemsRes, locationsRes] = await Promise.all([
-    listItems(), listLocations(),
+    Array.isArray(preloaded.items) ? Promise.resolve(success(preloaded.items)) : listItems(),
+    Array.isArray(preloaded.locations) ? Promise.resolve(success(preloaded.locations)) : listLocations(),
   ]);
   if (!itemsRes.ok) return itemsRes;
   if (!locationsRes.ok) return locationsRes;
   const departments = listBidang(); // sync — an in-memory filter, not a repository read
 
+  const itemCandidates = itemsRes.data
+    .filter((i) => itemMatchesQuery(i, q))
+    .map((record) => ({ domain: 'item', record, _tier: matchTier(record, q) }))
+    // Stable sort (spec engines guarantee this): ties keep their original
+    // relative order, so within a tier this is still "first match wins,"
+    // exactly as before — ranking narrows ties, it never reshuffles them.
+    .sort((a, b) => a._tier - b._tier)
+    .map(({ domain, record }) => ({ domain, record })); // strip the scratch field — candidate shape stays {domain, record}
+
   const candidates = [
-    ...itemsRes.data.filter((i) => itemMatchesQuery(i, q)).map((record) => ({ domain: 'item', record })),
+    ...itemCandidates,
     ...locationsRes.data.filter((l) => matches(l.name, q)).map((record) => ({ domain: 'location', record })),
     ...departments.filter((d) => matches(d.name, q)).map((record) => ({ domain: 'department', record })),
   ];
@@ -140,8 +190,8 @@ export function resolve(candidate) {
 }
 
 /** Convenience: search() then resolve() every candidate in one call. */
-export async function searchAndResolve(query) {
-  const res = await search(query);
+export async function searchAndResolve(query, preloaded = {}) {
+  const res = await search(query, preloaded);
   if (!res.ok) return res;
   return success(res.data.map(resolve));
 }

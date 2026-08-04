@@ -217,7 +217,7 @@ import {
 } from './engineering/ui/engineering-center.js';
 // V1.28.0 Experience Layer — Gudang UI, embedded native module (mirrors Engineering).
 import {
-  mountGudang, setGudangScreen, setGudangSearch, onGudangScreenChange,
+  mountGudang, setGudangScreen, setGudangSearch, closeGudangSearch, openGudangSearch, onGudangScreenChange,
 } from './gudang/ui/gudang-center.js';
 // v1.20.6 — inject the live User Management source into the Engineering personnel
 // resolver (it deliberately does not import users.js to stay Node-harness-safe).
@@ -1412,6 +1412,12 @@ function registerSearchAdapters() {
     id: 'gudang',
     placeholder: 'Cari item, lokasi, aset… (Ctrl+K untuk Spotlight)',
     run: (q) => setGudangSearch(q),
+    // v1.29.0: without this, clearModuleSearch() (fired on EVERY navigation
+    // to Gudang, not just an active clear) fell through to run(''), which
+    // now opens Recent Searches (Feature 6) — popping the dropdown open on
+    // ordinary sidebar navigation. clear closes instead, exactly like
+    // every other adapter's implicit "nothing to show" no-op.
+    clear: () => closeGudangSearch(),
   });
 }
 
@@ -11207,14 +11213,30 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (e.key !== 'Escape') return;
       v2SearchInput.value = '';
       if (v2SearchClear) v2SearchClear.style.display = 'none';
-      runModuleSearch(activeRailModule, '');
+      // v1.29.0: was runModuleSearch(activeRailModule, ''), which is
+      // exactly adapter.run('') — for Gudang that now OPENS Recent
+      // Searches (Feature 6) instead of closing anything. Clearing via
+      // Escape/the X button is a dismiss action, not "show me search
+      // history" — clearModuleSearch() routes to each adapter's own
+      // clear() when one exists (Gudang's does), falling back to run('')
+      // unchanged for every module that still has none.
+      clearModuleSearch(activeRailModule);
     });
   }
   if (v2SearchClear) {
     v2SearchClear.addEventListener('click', () => {
       if (v2SearchInput) v2SearchInput.value = '';
       v2SearchClear.style.display = 'none';
-      runModuleSearch(activeRailModule, '');
+      clearModuleSearch(activeRailModule);
+      // Keep focus in the field after clearing (P1 fix — clicking the X
+      // moves focus to the button itself by default, then hiding it drops
+      // focus to <body>). openGudangSearch() reuses Gudang's own "focus
+      // without auto-opening" contract (the same suppression Ctrl+K/Ctrl+F
+      // rely on) so this refocus can't immediately reopen what
+      // clearModuleSearch() just closed. Every other module just gets its
+      // field refocused directly, as before.
+      if (activeRailModule === 'gudang') openGudangSearch();
+      else if (v2SearchInput) v2SearchInput.focus();
     });
   }
 
