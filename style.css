@@ -1373,6 +1373,16 @@ z-index: 1;
   animation: slideUp 0.2s ease;
 }
 
+/* A small, single-purpose modal (e.g. Renew STNK) — narrower than the
+   standard multi-section .modal-box form. */
+.modal-box--compact { max-width: 420px; }
+
+/* Vehicle Compliance & Financial History — the Renew STNK modal opens ON TOP
+   of an already-open vehicle detail drawer (.exec-drawer-overlay, z-index
+   10000+) and must NOT close it, so its overlay needs to sit above the
+   drawer rather than the default .modal-overlay z-index (200). */
+.modal-overlay--above-drawer { z-index: 10050; }
+
 .modal-detail-box {
   max-width: 480px;
 }
@@ -2137,6 +2147,35 @@ input[type="number"]::-webkit-inner-spin-button {
   border-bottom: 1px solid var(--border, #e5e7eb);
 }
 .form-section-label:first-child { margin-top: 0; }
+
+/* Vehicle Compliance & Financial History — explains why a field left the form */
+.v2-vehicle-form-hint {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted, #6b7280);
+  margin: 4px 0 0;
+}
+
+/* Renew STNK modal — collapsed-by-default "Detail Lainnya" disclosure, so the
+   default view is only the three required fields. */
+.v2-compliance-details { margin-top: 12px; border-top: 1px solid var(--gray-2, #e5e7eb); padding-top: 4px; }
+.v2-compliance-details > .form-group { margin-top: 12px; }
+.v2-compliance-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted, #6b7280);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.v2-compliance-summary::-webkit-details-marker { display: none; }
+.v2-compliance-summary:hover { color: var(--dark); }
+.v2-compliance-chevron { transition: transform 0.2s; font-size: 10px; }
+.v2-compliance-details[open] .v2-compliance-chevron { transform: rotate(180deg); }
 
 /* Assignment form: sticky footer with conflict notices stacked above buttons */
 #assignmentForm .form-actions {

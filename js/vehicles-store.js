@@ -7,6 +7,7 @@ import {
   subscribeFirebasePath,
   updateFirebaseData,
 } from './firebase.js';
+import { COMPLIANCE_TYPES } from './config/compliance-config.js';
 
 const VEHICLES_PATH = 'vehicles';
 
@@ -111,6 +112,7 @@ function buildSeedVehicles() {
       updatedAt: now,
       inactiveAt: null,
       maintenanceRecords: [],
+      complianceHistory: [],
     };
     return map;
   }, {});
@@ -277,6 +279,7 @@ export async function createVehicle({ name, plateNumber, capacity, color, active
     updatedAt: now,
     inactiveAt: isActive ? null : now,
     maintenanceRecords: [],
+    complianceHistory: [],
     ...sanitizeAssetFields(assetInput),
   };
 
@@ -547,6 +550,117 @@ export async function deleteMaintenanceRecord(vehicleId, recordId) {
   }
 
   await updateFirebaseData(VEHICLES_PATH + '/' + vehicleId, updates);
+}
+
+/* ── Compliance History (Vehicle Compliance & Financial History) ─────────────
+   `complianceHistory` is the source of truth for STNK/tax renewals going
+   forward — a NEW, additive field. The legacy `taxHistory` stub (see
+   sanitizeAssetFields above) is left untouched for backward compatibility; it
+   was never actually populated by any write path. Every entry is immutable
+   once saved (no update/delete — a correction is recorded as a new entry).
+   Adding a record also recomputes the vehicle's current-state mirror fields
+   (stnkExpiry / annualTaxDue / fiveYearTaxDue) from the latest entry per
+   type, so the vehicle card + drawer badges + health score stay in sync
+   automatically — those three fields are no longer meant to be hand-edited
+   (removed from the Vehicle Registration form; see app.js). */
+
+/** Derive the current-state mirror (stnkExpiry/annualTaxDue/fiveYearTaxDue)
+ *  from the latest compliance entry per type. An annual OR five-year renewal
+ *  both extend STNK + the annual tax cycle (they coincide in ID); a five-year
+ *  renewal additionally extends the five-year due date. 'other' entries don't
+ *  move any mirror field — they're informational (e.g. a correction/fee). */
+function recomputeComplianceMirror(history) {
+  const list = Array.isArray(history) ? history : [];
+  const latestByType = {};
+  for (const r of list) {
+    if (!r || !COMPLIANCE_TYPES.includes(r.type) || !r.expiryDate) continue;
+    const cur = latestByType[r.type];
+    if (!cur || new Date(r.expiryDate).getTime() > new Date(cur.expiryDate).getTime()) {
+      latestByType[r.type] = r;
+    }
+  }
+  const updates = {};
+  const stnkCandidates = [latestByType.annual_tax, latestByType.five_year_tax].filter(Boolean);
+  if (stnkCandidates.length) {
+    const latest = stnkCandidates.reduce((a, b) =>
+      new Date(a.expiryDate).getTime() > new Date(b.expiryDate).getTime() ? a : b);
+    updates.stnkExpiry = latest.expiryDate;
+    updates.annualTaxDue = latest.expiryDate;
+  }
+  if (latestByType.five_year_tax) updates.fiveYearTaxDue = latestByType.five_year_tax.expiryDate;
+  return updates;
+}
+
+/**
+ * Get the compliance/financial history for a vehicle.
+ * @param {string} vehicleId
+ * @returns {Array} Compliance records (or empty array if vehicle/records not found)
+ */
+export function getComplianceHistory(vehicleId) {
+  const vehicle = vehicles.find(v => v.id === vehicleId);
+  if (!vehicle || !Array.isArray(vehicle.complianceHistory)) return [];
+  return vehicle.complianceHistory;
+}
+
+/**
+ * Record a compliance renewal (STNK / annual tax / five-year tax / other) and
+ * recompute the vehicle's current expiry/tax mirror fields from history.
+ * Mutates the cached record synchronously (mirrors addMaintenanceRecord) so a
+ * `getVehicles()` read immediately after resolving already reflects it,
+ * without waiting on the Firebase echo.
+ * @param {string} vehicleId
+ * @param {{type?:string, renewalDate:string, expiryDate:string, amount:number,
+ *          paymentMethod?:string, receiptNumber?:string, notes?:string, officer?:string}} record
+ * @returns {Object} Created record with id and timestamps
+ */
+export async function addComplianceRecord(vehicleId, record) {
+  const existing = vehicles.find(v => v.id === vehicleId);
+  if (!existing) throw new Error('Kendaraan tidak ditemukan.');
+
+  const renewalDate = String((record && record.renewalDate) || '').trim();
+  const expiryDate = String((record && record.expiryDate) || '').trim();
+  if (!renewalDate) throw new Error('Tanggal perpanjangan wajib diisi.');
+  if (!expiryDate) throw new Error('Tanggal masa berlaku baru wajib diisi.');
+
+  const amount = Number(record && record.amount);
+  if (!Number.isFinite(amount) || amount < 0) throw new Error('Jumlah pembayaran tidak valid.');
+
+  const type = COMPLIANCE_TYPES.includes(record && record.type) ? record.type : 'annual_tax';
+
+  const id = 'comp_' + Math.random().toString(36).substr(2, 9);
+  const now = new Date().toISOString();
+  const newRecord = {
+    id,
+    vehicleId,
+    type,
+    renewalDate,
+    expiryDate,
+    amount,
+    paymentMethod: String((record && record.paymentMethod) || '').trim(),
+    receiptNumber: String((record && record.receiptNumber) || '').trim(),
+    notes: String((record && record.notes) || '').trim(),
+    officer: String((record && record.officer) || '').trim(),
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  if (!Array.isArray(existing.complianceHistory)) existing.complianceHistory = [];
+  existing.complianceHistory.push(newRecord);
+
+  const mirror = recomputeComplianceMirror(existing.complianceHistory);
+  Object.assign(existing, mirror, { updatedAt: now });
+
+  const updates = { complianceHistory: existing.complianceHistory, ...mirror, updatedAt: now };
+
+  if (!isFirebaseConfigured()) {
+    refreshVehiclesCache(mapFirebaseVehicles(Object.fromEntries(
+      vehicles.map(v => [v.id, v.id === vehicleId ? { ...v, ...updates } : v])
+    )));
+    return newRecord;
+  }
+
+  await updateFirebaseData(VEHICLES_PATH + '/' + vehicleId, updates);
+  return newRecord;
 }
 
 console.info('Vehicles store module loaded');

@@ -51,6 +51,7 @@ import {
   updateMaintenanceRecord,
   deleteMaintenanceRecord,
   getMaintenanceRecords,
+  addComplianceRecord,
   getVehicleByName,
   updateVehicleOdometer,
 } from './vehicles-store.js';
@@ -102,8 +103,12 @@ import { validateMaintenanceRecord, normalizeMaintenanceRecord } from './service
 import { computeFleetAssetModel, findVehicleAsset, searchFilterVehicles } from './services/vehicle-asset-service.js';
 import { injectFleetDashboardStyles, renderFleetDashboard } from './components/fleet-dashboard.js';
 import { renderIcon, vehicleTypeIconName } from './components/icon-system.js';
-import { openVehicleDetailDrawer } from './components/vehicle-detail-drawer.js';
+import { openVehicleDetailDrawer, refreshVehicleDetailDrawer } from './components/vehicle-detail-drawer.js';
 import { FUEL_TYPES, TRANSMISSION_TYPES, VEHICLE_TYPE_REGISTRY, VEHICLE_STATUS_REGISTRY } from './config/vehicle-asset-config.js';
+// Vehicle Compliance & Financial History — STNK/tax renewal ledger. See
+// js/vehicles-store.js's "Compliance History" section for the CRUD + mirror
+// recompute, and compliance-config.js for the type/payment-method registries.
+import { COMPLIANCE_TYPE_REGISTRY, COMPLIANCE_PAYMENT_METHOD_REGISTRY } from './config/compliance-config.js';
 // v1.20.9 — heavy, role-exclusive modules (admin-only analytics/prediction
 // dashboards + engines) converted from static imports to dynamic import(),
 // loaded on first entry into the section that needs them. See
@@ -4792,6 +4797,7 @@ function initV2AdministrationWorkspace() {
 
   initDriverFormModal();
   initVehicleFormModal();
+  initComplianceRenewalModal();
   initDeleteConfirmModal();
   initAuditDetailModal();
   initAliasResolutionModal();
@@ -5974,19 +5980,8 @@ function initVehicleFormModal() {
               <label for="vehicleFieldStnkNumber">No. STNK</label>
               <input type="text" id="vehicleFieldStnkNumber" autocomplete="off" />
             </div>
-            <div class="form-group">
-              <label for="vehicleFieldStnkExpiry">Masa Berlaku STNK</label>
-              <input type="date" id="vehicleFieldStnkExpiry" />
-            </div>
-            <div class="form-group">
-              <label for="vehicleFieldAnnualTax">Pajak Tahunan Jatuh Tempo</label>
-              <input type="date" id="vehicleFieldAnnualTax" />
-            </div>
-            <div class="form-group">
-              <label for="vehicleFieldFiveYearTax">Pajak 5 Tahunan Jatuh Tempo</label>
-              <input type="date" id="vehicleFieldFiveYearTax" />
-            </div>
           </div>
+          <p class="v2-vehicle-form-hint">Masa berlaku STNK &amp; status pajak kini dikelola lewat tombol <strong>Perpanjang STNK</strong> di halaman detail kendaraan — setiap perpanjangan tersimpan sebagai riwayat permanen.</p>
           <div class="form-section-label">Asuransi</div>
           <div class="form-grid">
             <div class="form-group">
@@ -6071,9 +6066,6 @@ function openVehicleFormModal(vehicleId = null) {
     setVal('vehicleFieldAcqDate', vehicle.acquisitionDate);
     setVal('vehicleFieldAcqValue', vehicle.acquisitionValue);
     setVal('vehicleFieldStnkNumber', vehicle.stnkNumber);
-    setVal('vehicleFieldStnkExpiry', vehicle.stnkExpiry);
-    setVal('vehicleFieldAnnualTax', vehicle.annualTaxDue);
-    setVal('vehicleFieldFiveYearTax', vehicle.fiveYearTaxDue);
     setVal('vehicleFieldInsCompany', vehicle.insuranceCompany);
     setVal('vehicleFieldPolicyNumber', vehicle.policyNumber);
     setVal('vehicleFieldCoverage', vehicle.coverage);
@@ -6122,9 +6114,6 @@ async function handleVehicleFormSubmit(event) {
     acquisitionDate: val('vehicleFieldAcqDate'),
     acquisitionValue: val('vehicleFieldAcqValue'),
     stnkNumber: val('vehicleFieldStnkNumber'),
-    stnkExpiry: val('vehicleFieldStnkExpiry'),
-    annualTaxDue: val('vehicleFieldAnnualTax'),
-    fiveYearTaxDue: val('vehicleFieldFiveYearTax'),
     insuranceCompany: val('vehicleFieldInsCompany'),
     policyNumber: val('vehicleFieldPolicyNumber'),
     coverage: val('vehicleFieldCoverage'),
@@ -6160,6 +6149,177 @@ async function handleVehicleFormSubmit(event) {
     closeVehicleFormModal();
   } catch (err) {
     showToast(err.message || 'Gagal menyimpan kendaraan.');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+/* ── Renew STNK (Vehicle Compliance & Financial History) ─────────────────────
+   The once/twice-a-year quick-entry modal opened from the vehicle detail
+   drawer's "Perpanjang STNK" footer action. Deliberately NOT the big
+   multi-section vehicle form: three required fields (Renewal Date, New
+   Expiration Date, Amount Paid) with smart defaults, everything else behind
+   a collapsed <details> disclosure. Saves via addComplianceRecord (the
+   Compliance History store, vehicles-store.js), which also recomputes the
+   vehicle's current stnkExpiry/annualTaxDue/fiveYearTaxDue — those fields are
+   no longer hand-edited in the Vehicle Registration form (see
+   initVehicleFormModal). The drawer stays open; only its body is refreshed
+   in place via refreshVehicleDetailDrawer. */
+
+const RENEW_STNK_LAST_PAYMENT_METHOD_KEY = 'pbsi_lastCompliancePaymentMethod';
+let renewingVehicleId = null;
+
+function initComplianceRenewalModal() {
+  const modal = document.createElement('div');
+  modal.id = 'modalRenewSTNK';
+  // modal-overlay--above-drawer: this modal opens ON TOP of an already-open
+  // vehicle detail drawer (z-index 10000+) and must not close it — the
+  // default .modal-overlay z-index (200) would render it BEHIND the drawer.
+  modal.className = 'modal-overlay modal-overlay--above-drawer';
+  modal.style.display = 'none';
+  modal.innerHTML = `
+    <div class="modal-box modal-box--compact">
+      <div class="modal-header">
+        <h2 class="modal-title">Perpanjang STNK</h2>
+        <button class="modal-close" id="btnCloseRenewSTNK" type="button">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="renewSTNKForm" novalidate>
+          <div class="form-group">
+            <label for="stnkFieldRenewalDate">Tanggal Perpanjangan *</label>
+            <input type="date" id="stnkFieldRenewalDate" required />
+          </div>
+          <div class="form-group">
+            <label for="stnkFieldExpiryDate">Masa Berlaku Baru *</label>
+            <input type="date" id="stnkFieldExpiryDate" required />
+          </div>
+          <div class="form-group">
+            <label for="stnkFieldAmount">Jumlah Dibayar (Rp) *</label>
+            <input type="number" id="stnkFieldAmount" min="0" step="1000" placeholder="0" required />
+          </div>
+          <details class="v2-compliance-details" id="renewSTNKAdvanced">
+            <summary class="v2-compliance-summary">Detail Lainnya <span class="v2-compliance-chevron">&#9662;</span></summary>
+            <div class="form-group">
+              <label for="stnkFieldType">Jenis Pembayaran</label>
+              <select id="stnkFieldType">
+                ${COMPLIANCE_TYPE_REGISTRY.map(t => `<option value="${t.key}">${t.label}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="stnkFieldPaymentMethod">Metode Pembayaran</label>
+              <select id="stnkFieldPaymentMethod">
+                <option value="">—</option>
+                ${COMPLIANCE_PAYMENT_METHOD_REGISTRY.map(p => `<option value="${p.key}">${p.label}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="stnkFieldReceiptNumber">No. Kwitansi</label>
+              <input type="text" id="stnkFieldReceiptNumber" autocomplete="off" />
+            </div>
+            <div class="form-group">
+              <label for="stnkFieldNotes">Catatan</label>
+              <textarea id="stnkFieldNotes" rows="2"></textarea>
+            </div>
+          </details>
+          <div class="form-actions">
+            <button type="button" class="btn-secondary" id="btnCancelRenewSTNK">Batal</button>
+            <button type="submit" class="btn-primary" id="btnSaveRenewSTNK">Simpan</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  document.getElementById('btnCloseRenewSTNK')?.addEventListener('click', closeRenewSTNKModal);
+  document.getElementById('btnCancelRenewSTNK')?.addEventListener('click', closeRenewSTNKModal);
+  modal.addEventListener('click', e => { if (e.target === modal) closeRenewSTNKModal(); });
+  document.getElementById('renewSTNKForm')?.addEventListener('submit', handleRenewSTNKSubmit);
+}
+
+function openRenewSTNKModal(vehicleId) {
+  const vehicle = getVehicles().find(v => v.id === vehicleId);
+  if (!vehicle) return;
+  renewingVehicleId = vehicleId;
+
+  const form = document.getElementById('renewSTNKForm');
+  if (form) form.reset();
+
+  const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val == null ? '' : val; };
+
+  // Smart defaults — minimize typing (see block comment above).
+  setVal('stnkFieldRenewalDate', new Date().toISOString().slice(0, 10));
+
+  const prevExpiry = vehicle.stnkExpiry || vehicle.annualTaxDue;
+  const base = prevExpiry && !Number.isNaN(new Date(prevExpiry).getTime()) ? new Date(prevExpiry) : new Date();
+  const suggestedExpiry = new Date(base);
+  suggestedExpiry.setFullYear(suggestedExpiry.getFullYear() + 1);
+  setVal('stnkFieldExpiryDate', suggestedExpiry.toISOString().slice(0, 10));
+
+  setVal('stnkFieldAmount', '');
+  setVal('stnkFieldType', 'annual_tax');
+  setVal('stnkFieldPaymentMethod', localStorage.getItem(RENEW_STNK_LAST_PAYMENT_METHOD_KEY) || '');
+  setVal('stnkFieldReceiptNumber', '');
+  setVal('stnkFieldNotes', '');
+  const advanced = document.getElementById('renewSTNKAdvanced');
+  if (advanced) advanced.open = false;
+
+  const modal = document.getElementById('modalRenewSTNK');
+  if (modal) modal.style.display = 'flex';
+  document.getElementById('stnkFieldAmount')?.focus();
+}
+
+function closeRenewSTNKModal() {
+  const modal = document.getElementById('modalRenewSTNK');
+  if (modal) modal.style.display = 'none';
+  renewingVehicleId = null;
+}
+
+async function handleRenewSTNKSubmit(event) {
+  event.preventDefault();
+  if (!renewingVehicleId) return;
+  const vehicleId = renewingVehicleId;
+  const val = (id) => (document.getElementById(id)?.value ?? '').trim();
+  const paymentMethod = val('stnkFieldPaymentMethod');
+
+  const btn = document.getElementById('btnSaveRenewSTNK');
+  if (btn) btn.disabled = true;
+
+  try {
+    const currentUser = getCurrentUser();
+    await addComplianceRecord(vehicleId, {
+      type: val('stnkFieldType'),
+      renewalDate: val('stnkFieldRenewalDate'),
+      expiryDate: val('stnkFieldExpiryDate'),
+      amount: val('stnkFieldAmount'),
+      paymentMethod,
+      receiptNumber: val('stnkFieldReceiptNumber'),
+      notes: val('stnkFieldNotes'),
+      officer: currentUser?.username || '',
+    });
+
+    // Smart default: remember the payment method for next time.
+    if (paymentMethod) localStorage.setItem(RENEW_STNK_LAST_PAYMENT_METHOD_KEY, paymentMethod);
+
+    logAction({
+      userId: currentUser?.id,
+      username: currentUser?.username,
+      action: 'vehicle_stnk_renewed',
+      targetId: vehicleId,
+      metadata: { type: val('stnkFieldType') },
+    });
+
+    closeRenewSTNKModal();
+    showToast('STNK berhasil diperpanjang.');
+
+    // Refresh the still-open drawer in place — badges, health, and timeline
+    // all recompute from the freshly-normalized asset. The drawer is never
+    // closed (see vehicle-detail-drawer.js's 'renew-stnk' KEEP_OPEN handling).
+    _fleetAssetModel = computeFleetAssetModel({ vehicles: getVehicles(), includeArchived: true });
+    const freshAsset = findVehicleAsset(_fleetAssetModel, vehicleId);
+    if (freshAsset) refreshVehicleDetailDrawer(freshAsset, vehicleDrawerHandlers());
+  } catch (err) {
+    showToast(err.message || 'Gagal menyimpan perpanjangan STNK.');
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -7846,11 +8006,12 @@ function _vehicleActionDelete(id) {
 /** The standard vehicle drawer footer handlers (used by both views). */
 function vehicleDrawerHandlers() {
   return {
-    onEdit:    openVehicleFormModal,
-    onToggle:  _vehicleActionToggle,
-    onArchive: _vehicleActionArchive,
-    onRestore: _vehicleActionRestore,
-    onDelete:  _vehicleActionDelete,
+    onEdit:      openVehicleFormModal,
+    onToggle:    _vehicleActionToggle,
+    onArchive:   _vehicleActionArchive,
+    onRestore:   _vehicleActionRestore,
+    onDelete:    _vehicleActionDelete,
+    onRenewSTNK: openRenewSTNKModal,
   };
 }
 

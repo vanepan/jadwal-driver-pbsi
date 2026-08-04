@@ -33,6 +33,7 @@ import {
   escHtml,
 } from '../analytics/executive-ui-kit.js';
 import { vehicleTypeIconName } from './icon-system.js';
+import { complianceTypeInfo } from '../config/compliance-config.js';
 // v1.19.6 — the Fleet Explainability layer. PURE derivations (arrangements of the
 // SAME certified projection) + their presentation panels; no prediction logic.
 import {
@@ -115,6 +116,21 @@ function tone3(t, fallback = 'neutral') {
 /** Health-bar tone band (3-step). null → null (N/A is excluded, not zero). */
 function band3(s) {
   return s == null ? null : s >= 70 ? 'ok' : s >= 40 ? 'warn' : 'danger';
+}
+
+function fmtRp(n) {
+  const num = Number(n);
+  return Number.isFinite(num) ? num.toLocaleString('id-ID') : String(n == null ? '' : n);
+}
+
+/** Human countdown to a derived doc-status (a.tax / a.stnk / a.insurance) — the
+ *  "Upcoming Renewal" signal. `days` already comes from vehicle-asset-service's
+ *  deriveDocStatus; this only phrases it. */
+function renewalCountdown(doc) {
+  if (!doc || doc.days == null) return 'Tdk diketahui';
+  if (doc.days < 0) return `Terlambat ${Math.abs(doc.days)} hari`;
+  if (doc.days === 0) return 'Jatuh tempo hari ini';
+  return `${doc.days} hari lagi`;
 }
 
 function fmtDate(s) {
@@ -218,18 +234,24 @@ function taxSection(a) {
     m('Masa Berlaku STNK', fmtDate(a.stnkExpiry)),
     m('Pajak Tahunan', fmtDate(a.annualTaxDue)),
     m('Pajak 5 Tahunan', fmtDate(a.fiveYearTaxDue)),
+    m('Perpanjangan Berikutnya', renewalCountdown(a.tax), a.tax.tone),
   ]);
-  // Feature 7 — tax payment history (read-only timeline).
-  const rows = a.taxHistory.slice().sort((x, y) => new Date(y.date || 0) - new Date(x.date || 0));
+  // Vehicle Compliance & Financial History — complianceHistory (renewalDate,
+  // expiryDate, amount, type) is the source of truth for this timeline going
+  // forward. Human-readable only: no field names, no technical values.
+  const rows = a.complianceHistory.slice().sort((x, y) => new Date(y.renewalDate || 0) - new Date(x.renewalDate || 0));
   const tl = rows.length
-    ? execDrawerTimeline(rows.map(tx => ({
-        when: fmtDate(tx.date),
-        title: tx.amount ? `Rp ${tx.amount}` : 'Pembayaran Pajak',
-        desc: [tx.officer && `Petugas: ${tx.officer}`, tx.notes].filter(Boolean).join(' · '),
+    ? execDrawerTimeline(rows.map(rec => ({
+        when: fmtDate(rec.renewalDate),
+        title: complianceTypeInfo(rec.type).timelineTitle,
+        desc: [
+          rec.amount != null ? `Rp ${fmtRp(rec.amount)}` : '',
+          rec.expiryDate ? `Berlaku Hingga ${fmtDate(rec.expiryDate)}` : '',
+        ].filter(Boolean).join(' · '),
         tone: 'info',
       })))
-    : '<div class="exec-drawer-sec__h">Riwayat Pembayaran Pajak</div><p style="font-size:13px;color:var(--muted)">Belum ada riwayat pembayaran.</p>';
-  const histTitle = rows.length ? '<div class="exec-drawer-sec__h">Riwayat Pembayaran Pajak</div>' : '';
+    : '<div class="exec-drawer-sec__h">Riwayat Kepatuhan</div><p style="font-size:13px;color:var(--muted)">Belum ada riwayat perpanjangan.</p>';
+  const histTitle = rows.length ? '<div class="exec-drawer-sec__h">Riwayat Kepatuhan</div>' : '';
   return execDrawerSection({ title: 'Tax', content: badges + metrics + histTitle + tl });
 }
 
@@ -348,31 +370,20 @@ function buildFooter(asset, opts) {
     if (typeof opts.onRestore === 'function') footer.push({ label: 'Pulihkan', action: 'restore' });
     if (typeof opts.onDelete === 'function') footer.push({ label: 'Hapus', action: 'delete', variant: 'danger' });
   } else {
+    // Vehicle Compliance & Financial History — placed first/primary: this is
+    // the once-or-twice-a-year action the drawer exists to make effortless.
+    if (typeof opts.onRenewSTNK === 'function') footer.push({ label: 'Perpanjang STNK', action: 'renew-stnk', variant: 'primary' });
     if (typeof opts.onToggle === 'function') footer.push({ label: asset.status === 'active' ? 'Nonaktifkan' : 'Aktifkan', action: 'toggle' });
     if (typeof opts.onArchive === 'function') footer.push({ label: 'Arsipkan', action: 'archive' });
-    if (typeof opts.onEdit === 'function') footer.push({ label: 'Edit Aset', action: 'edit', variant: 'primary' });
+    if (typeof opts.onEdit === 'function') footer.push({ label: 'Edit Aset', action: 'edit' });
   }
   return footer;
 }
 
-/* ── Public API (signature unchanged) ─────────────────────────────────────── */
-
-/**
- * Open (or replace) the vehicle detail drawer for a normalized asset.
- * @param {Object} asset  normalizeVehicleAsset() result
- * @param {{onEdit?:(id:string)=>void, onToggle?:(id:string)=>void,
- *          onArchive?:(id:string)=>void, onRestore?:(id:string)=>void,
- *          onDelete?:(id:string)=>void,
- *          prediction?:Object}} [opts]  `prediction` = certified per-vehicle
- *          projection (model.vehicles[i]); when present a Prediction section is
- *          shown. Omit it for the plain (inventory) drawer.
- * @returns {HTMLElement|null} the drawer overlay root
- */
-export function openVehicleDetailDrawer(asset, opts = {}) {
-  if (!asset || typeof asset !== 'object') return null;
-  ensureStyles();
-
-  const body = [
+/** Compose the drawer body sections — shared by open + in-place refresh so
+ *  they can never drift apart. */
+function buildDrawerBody(asset, opts) {
+  return [
     heroBlock(asset),
     overviewSection(asset),
     // v1.19.5 — Prediction summary sits high (right after health) when the caller
@@ -388,16 +399,42 @@ export function openVehicleDetailDrawer(asset, opts = {}) {
     maintenanceSection(asset),
     historySection(asset),
   ].join('');
+}
+
+/* ── Public API (signature unchanged) ─────────────────────────────────────── */
+
+/**
+ * Open (or replace) the vehicle detail drawer for a normalized asset.
+ * @param {Object} asset  normalizeVehicleAsset() result
+ * @param {{onEdit?:(id:string)=>void, onToggle?:(id:string)=>void,
+ *          onArchive?:(id:string)=>void, onRestore?:(id:string)=>void,
+ *          onDelete?:(id:string)=>void, onRenewSTNK?:(id:string)=>void,
+ *          prediction?:Object}} [opts]  `prediction` = certified per-vehicle
+ *          projection (model.vehicles[i]); when present a Prediction section is
+ *          shown. Omit it for the plain (inventory) drawer.
+ * @returns {HTMLElement|null} the drawer overlay root
+ */
+export function openVehicleDetailDrawer(asset, opts = {}) {
+  if (!asset || typeof asset !== 'object') return null;
+  ensureStyles();
+
+  const body = buildDrawerBody(asset, opts);
 
   // Footer action → host handler. Mirror the prior order: close the drawer
-  // first, then delegate (the host re-renders via its vehicles-change listener).
+  // first, then delegate (the host re-renders via its vehicles-change listener)
+  // — EXCEPT 'renew-stnk', which opens a small modal ON TOP of this drawer and
+  // must leave it open (Compliance & Financial History spec: "Do NOT close the
+  // drawer automatically"). The host refreshes the open drawer in place via
+  // refreshVehicleDetailDrawer() once the renewal is saved.
   const handlers = {
     restore: opts.onRestore,
     delete: opts.onDelete,
     toggle: opts.onToggle,
     archive: opts.onArchive,
     edit: opts.onEdit,
+    'renew-stnk': opts.onRenewSTNK,
   };
+  const KEEP_OPEN_ACTIONS = new Set(['renew-stnk']);
 
   return openExecutiveDrawer({
     title: asset.name || '—',
@@ -407,7 +444,7 @@ export function openVehicleDetailDrawer(asset, opts = {}) {
     footer: buildFooter(asset, opts),
     onAction: (action, close) => {
       const fn = handlers[action];
-      close();
+      if (!KEEP_OPEN_ACTIONS.has(action)) close();
       if (typeof fn === 'function') fn(asset.id);
     },
   });
@@ -416,4 +453,21 @@ export function openVehicleDetailDrawer(asset, opts = {}) {
 /** Close + remove the drawer (delegates to the kit). */
 export function closeVehicleDetailDrawer() {
   closeExecutiveDrawer();
+}
+
+/**
+ * Re-render the CURRENTLY OPEN drawer's body in place, without closing it —
+ * used after saving a compliance renewal so the timeline/badges/health refresh
+ * immediately while the drawer stays open (see openVehicleDetailDrawer's
+ * 'renew-stnk' handling above). No-op (returns false) if no drawer is open.
+ * @param {Object} asset  fresh normalizeVehicleAsset() result for the same vehicle
+ * @param {Object} [opts] same shape as openVehicleDetailDrawer's opts
+ * @returns {boolean} whether a drawer was found and refreshed
+ */
+export function refreshVehicleDetailDrawer(asset, opts = {}) {
+  if (!asset || typeof asset !== 'object') return false;
+  const bodyEl = document.querySelector('.exec-drawer-overlay .exec-drawer__body');
+  if (!bodyEl) return false;
+  bodyEl.innerHTML = buildDrawerBody(asset, opts);
+  return true;
 }

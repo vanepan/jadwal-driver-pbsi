@@ -31,6 +31,7 @@ import {
   vehicleTypeInfo, vehicleStatusInfo, vehicleTypeKeys, vehicleStatusKeys,
   TYPE_ELIGIBILITY, DOCUMENT_FIELDS, DUE_SOON_DAYS, HEALTH_WEIGHTS, STATUS_HEALTH,
 } from '../config/vehicle-asset-config.js';
+import { complianceTypeInfo } from '../config/compliance-config.js';
 
 const TYPE_KEYS = vehicleTypeKeys();
 const STATUS_KEYS = vehicleStatusKeys();
@@ -228,6 +229,17 @@ export function buildVehicleTimeline(vehicle, now) {
       if (tx && str(tx.date)) add(tx.date, 'tax_paid', 'Pajak Dibayar', [tx.amount && `Rp ${tx.amount}`, tx.officer && `oleh ${tx.officer}`, tx.notes].filter(Boolean).join(' · '));
     }
   }
+  // Vehicle Compliance & Financial History — complianceHistory is the source
+  // of truth for renewals going forward (taxHistory above is a legacy stub
+  // that was never populated by any write path).
+  if (Array.isArray(v.complianceHistory)) {
+    for (const rec of v.complianceHistory) {
+      if (!rec || !str(rec.renewalDate)) continue;
+      const info = complianceTypeInfo(rec.type);
+      add(rec.renewalDate, 'compliance', info.timelineTitle,
+        [rec.amount != null && `Rp ${rec.amount}`, rec.expiryDate && `berlaku hingga ${rec.expiryDate}`].filter(Boolean).join(' · '));
+    }
+  }
   add(v.stnkExpiry, 'stnk', 'STNK Berlaku Hingga', '');
   add(v.insuranceExpiry, 'insurance', 'Asuransi Berlaku Hingga', v.insuranceCompany ? str(v.insuranceCompany) : '');
 
@@ -292,6 +304,7 @@ export function normalizeVehicleAsset(vehicle, now) {
     // Derived blocks
     documents, health, eligibility,
     taxHistory: Array.isArray(v.taxHistory) ? v.taxHistory.slice() : [],
+    complianceHistory: Array.isArray(v.complianceHistory) ? v.complianceHistory.slice() : [],
     timeline,
     createdAt: v.createdAt || null, updatedAt: v.updatedAt || null,
     archived: v.archived === true,

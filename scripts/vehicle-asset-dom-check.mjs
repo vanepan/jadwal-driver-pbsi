@@ -58,6 +58,9 @@ const result = await page.evaluate(async () => {
       stnkNumber: 'S1', stnkExpiry: '2026-07-10', annualTaxDue: '2026-07-10',
       insuranceCompany: 'Sinarmas', policyNumber: 'P1', coverage: 'All Risk', insuranceExpiry: '2027-02-01',
       taxHistory: [{ date: '2026-01-05', amount: '3500000', officer: 'Budi', notes: 'lunas' }],
+      complianceHistory: [
+        { id: 'c1', type: 'annual_tax', renewalDate: '2025-07-01', expiryDate: '2026-07-10', amount: 3500000, paymentMethod: 'cash', receiptNumber: 'RC-1', notes: '', officer: 'Budi', createdAt: '2025-07-01T00:00:00Z', updatedAt: '2025-07-01T00:00:00Z' },
+      ],
       createdAt: '2022-01-10T00:00:00Z', updatedAt: '2026-01-05T00:00:00Z' },
     { id: 'v2', name: 'Beat', type: 'motor', status: 'active', plateNumber: 'B 2 BBB', capacity: 2, brand: 'Honda', year: '2024', fuel: 'Bensin', transmission: 'Otomatis' },
     { id: 'v3', name: 'Ambulance Pelatnas', type: 'ambulance', status: 'maintenance', plateNumber: 'B 3 CCC', capacity: 4, brand: 'Toyota', year: '2019', fuel: 'Solar', transmission: 'Manual', stnkExpiry: '2025-01-01' },
@@ -84,9 +87,58 @@ const result = await page.evaluate(async () => {
   // footer actions render — cards carry none; the drawer is the action surface).
   const asset = svc.findVehicleAsset(model, 'v1');
   const noop = () => {};
-  drawer.openVehicleDetailDrawer(asset, { onEdit: noop, onToggle: noop, onArchive: noop, onRestore: noop, onDelete: noop });
+  const fullHandlers = { onEdit: noop, onToggle: noop, onArchive: noop, onRestore: noop, onDelete: noop, onRenewSTNK: noop };
+  drawer.openVehicleDetailDrawer(asset, fullHandlers);
   const drw = document.getElementById('execDrawerOverlay');
   const drwTitles = drw ? [...drw.querySelectorAll('.exec-drawer-sec__h')].map((e) => e.textContent.trim()) : [];
+
+  // ── Vehicle Compliance & Financial History ────────────────────────────────
+  // openExecutiveDrawer's close of any PRIOR overlay is async (CSS transition
+  // / 260ms fallback) — reopening back-to-back leaves two `#execDrawerOverlay`
+  // nodes briefly coexisting, so every step below waits for the previous
+  // drawer to actually finish removing before opening/querying the next one.
+  const drainDrawer = () => new Promise((r) => setTimeout(r, 350));
+
+  const renewBtn = drw ? drw.querySelector('[data-exec-drawer-action="renew-stnk"]') : null;
+  const taxSectionText = drw ? (drw.textContent || '') : '';
+  document.getElementById('execDrawerOverlay').querySelector('.exec-drawer__close').click();
+  await drainDrawer();
+
+  // Backward compat: callers that don't pass onRenewSTNK (e.g. the Prediction
+  // view drawer) must not gain the button.
+  drawer.openVehicleDetailDrawer(asset, { onEdit: noop, onToggle: noop, onArchive: noop, onRestore: noop, onDelete: noop });
+  const drwNoRenew = document.getElementById('execDrawerOverlay');
+  const noRenewBtnWhenOmitted = !drwNoRenew.querySelector('[data-exec-drawer-action="renew-stnk"]');
+  drwNoRenew.querySelector('.exec-drawer__close').click();
+  await drainDrawer();
+
+  // 'renew-stnk' must NOT close the drawer (spec: "Do NOT close the drawer
+  // automatically") — every other footer action still does (regression guard).
+  drawer.openVehicleDetailDrawer(asset, fullHandlers);
+  document.getElementById('execDrawerOverlay').querySelector('[data-exec-drawer-action="renew-stnk"]').click();
+  await drainDrawer();
+  const openAfterRenewClick = !!document.getElementById('execDrawerOverlay');
+
+  document.getElementById('execDrawerOverlay').querySelector('[data-exec-drawer-action="toggle"]').click();
+  await drainDrawer();
+  const closedAfterToggleClick = !document.getElementById('execDrawerOverlay');
+
+  // refreshVehicleDetailDrawer updates the SAME overlay element in place
+  // (proves no close/reopen) and reflects a newly-added compliance record.
+  drawer.openVehicleDetailDrawer(asset, fullHandlers);
+  const overlayBeforeRefresh = document.getElementById('execDrawerOverlay');
+  const vehiclesAfterRenewal = vehicles.map((v) => v.id !== 'v1' ? v : {
+    ...v,
+    complianceHistory: [...v.complianceHistory, {
+      id: 'c2', type: 'annual_tax', renewalDate: '2026-07-05', expiryDate: '2027-07-10',
+      amount: 3800000, paymentMethod: 'transfer', receiptNumber: 'RC-2', notes: '', officer: 'Siti',
+    }],
+  });
+  const refreshedAsset = svc.findVehicleAsset(svc.computeFleetAssetModel({ vehicles: vehiclesAfterRenewal, now: NOW }), 'v1');
+  const refreshOk = drawer.refreshVehicleDetailDrawer(refreshedAsset, fullHandlers);
+  const overlayAfterRefresh = document.getElementById('execDrawerOverlay');
+  const sameOverlayInstance = overlayBeforeRefresh === overlayAfterRefresh;
+  const refreshedBodyText = overlayAfterRefresh.textContent || '';
 
   const dashStyle = document.getElementById('vm-summary-styles');
   const drwStyle = document.getElementById('vad-hero-styles');
@@ -110,6 +162,16 @@ const result = await page.evaluate(async () => {
     noGallery: drw ? !/gallery/i.test(drw.textContent) : false,
     closeBtn: !!(drw && drw.querySelector('.exec-drawer__close')),
     noHardWhite: noHardWhite(dashStyle) && noHardWhite(drwStyle),
+    // Vehicle Compliance & Financial History
+    renewBtn: !!renewBtn,
+    renewBtnIsPrimary: !!(renewBtn && renewBtn.classList.contains('exec-drawer-btn--primary')),
+    noRenewBtnWhenOmitted,
+    complianceTimelineHumanReadable: /STNK Diperpanjang/.test(taxSectionText) && /Rp\s*3\.500\.000/.test(taxSectionText) && !/annual_tax/.test(taxSectionText),
+    openAfterRenewClick,
+    closedAfterToggleClick,
+    refreshOk,
+    sameOverlayInstance,
+    refreshedShowsNewRecord: /3\.800\.000/.test(refreshedBodyText),
   };
 });
 
@@ -131,6 +193,16 @@ check('NO Gallery section (reserved for future roadmap)', result.noGallery);
 console.log('\n[Feature 11/7 — drawer content]');
 check('overview health bars render', result.healthBars >= 3);
 check('tax history / timeline items render', result.taxHistoryItems >= 2);
+
+console.log('\n[Vehicle Compliance & Financial History]');
+check('footer shows Perpanjang STNK when onRenewSTNK supplied', result.renewBtn);
+check('Perpanjang STNK is the primary footer action', result.renewBtnIsPrimary);
+check('footer omits Perpanjang STNK when onRenewSTNK is not supplied (back-compat)', result.noRenewBtnWhenOmitted);
+check('compliance timeline is human-readable (no raw type/field names)', result.complianceTimelineHumanReadable);
+check('renew-stnk footer action does NOT close the drawer', result.openAfterRenewClick);
+check('other footer actions still close the drawer (regression guard)', result.closedAfterToggleClick);
+check('refreshVehicleDetailDrawer updates the SAME overlay instance (no close/reopen)', result.sameOverlayInstance);
+check('refreshVehicleDetailDrawer reflects the newly-added compliance record', result.refreshOk && result.refreshedShowsNewRecord);
 check('drawer Close button present', result.closeBtn);
 
 console.log('\n[design / regression]');
