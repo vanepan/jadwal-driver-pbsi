@@ -203,14 +203,21 @@
 .gud-mono{font-family:var(--font-mono);font-weight:600;font-size:12px;}
 
 /* Item Detail's photo (Phase 10.3) — "the central page," Image first.
-   Adaptive Image Frame (v1.28.11): a fixed-height, padded, neutral-bg frame
-   so the whole product is always visible — object-fit:contain, never cover,
-   never cropped. Larger on desktop, compact on mobile via the media query
-   below, not a second component. */
-.gud-detail-img{width:100%;height:240px;padding:18px;box-sizing:border-box;border-radius:14px;overflow:hidden;background:var(--surface-2);display:grid;place-items:center;}
+   Adaptive Image Frame (v1.28.11, rebalanced in v1.28.12): a padded,
+   neutral-bg frame so the whole product is always visible —
+   object-fit:contain, never cover, never cropped. v1.28.11 shipped a
+   full-width frame that first shrank in height (240px -> 180px) to stop
+   dominating the metadata below, but at full drawer width (~431px) it
+   still read as a wide banner, not a preview. v1.28.12 reframed the fix
+   around the CONTAINER, not the image: the frame is no longer full-width
+   — a small, centered, SQUARE tile (~230px, margin:0 auto), the rest of
+   the drawer's width left as deliberate surrounding whitespace, closer to
+   a Finder/Files preview than a hero banner. Larger on desktop, compact
+   on mobile via the media query below, not a second component. */
+.gud-detail-img{width:230px;max-width:100%;aspect-ratio:1/1;margin:0 auto;padding:26px;box-sizing:border-box;border-radius:14px;overflow:hidden;background:var(--surface-2);display:grid;place-items:center;}
 .gud-detail-img img{width:100%;height:100%;object-fit:contain;}
 .gud-detail-img.-placeholder{color:var(--text-faint);}
-@media (max-width:480px){ .gud-detail-img{height:220px;padding:16px;} }
+@media (max-width:480px){ .gud-detail-img{width:200px;padding:22px;} }
 
 .gud-modal-box{width:520px;max-width:94vw;max-height:90vh;display:flex;flex-direction:column;background:var(--surface);border-radius:20px;box-shadow:var(--shadow-lg);border:1px solid var(--border);padding:22px 24px;}
 .gud-modal-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex:0 0 auto;}

@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.28.11';
-export const RELEASE_NAME = 'Warehouse UX Refresh + Critical NOR PDF Export Hotfix';
+export const APP_VERSION = '1.28.12';
+export const RELEASE_NAME = 'Item Detail Drawer Image Preview Rebalance';
 
 /* ============================================================
    APP_ENV — the AUTHORITATIVE runtime environment (v1.20.3 RC1).
@@ -66,6 +66,17 @@ export function isProduction() {
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.28.12',
+    date: '2026-08-04',
+    summary: 'Follow-up design refinement to v1.28.11\'s Adaptive Image Frame, filed directly against the shipped Item Detail Drawer preview: after two rounds of live feedback, the drawer\'s photo/placeholder frame is now a small, centered, square preview tile rather than a wide banner. ROUND 1: the original 431px-wide x 240px-tall frame (v1.28.11) read as too image-dominant against the Identity/Stock/Metadata sections beneath it — reduced height to 180px and increased padding to 26px so the image settled to roughly 60-70% of the frame\'s area, but the frame was still full drawer-width. ROUND 2 (this release\'s final state): per explicit follow-up feedback that the frame still "stretched almost the full drawer width," the fix was reframed from resizing the image to resizing the CONTAINER — .gud-detail-img is no longer full-width; it is now a fixed 230px x 230px square (aspect-ratio:1/1), horizontally centered via margin:0 auto, with the remaining ~125px of drawer width on each side left as deliberate surrounding whitespace (live-measured against the real drawer body, 479px wide). Mobile frame reduced proportionally to 200x200px (from a 480px-max-width media query). object-fit:contain, centering, and no-crop/no-stretch behavior are unchanged from v1.28.11 throughout both rounds — every requirement was about the FRAME\'s shape and placement, never the image-fit rule itself. The catalog grid\'s own image frame (.gud-catalog-card-img, the 1:1 square added in v1.28.11) was explicitly out of scope for both rounds and was not touched. Files modified: gudang.css only (no JS changed in either round). Verified: live, end-to-end against the real production catalog (logged in as an authorized admin account, no data written) — Round 2\'s final geometry measured directly via getBoundingClientRect(): 230x230px container, 26px padding, #F5F5F7 background, 125px/125px left/right whitespace (mathematically centered), confirmed square (width===height); mobile viewport (390px) measured at 200x200px. Screenshots at both breakpoints confirm the Identity/Stock/Aksi Cepat/Pergerakan Terbaru sections are now clearly the drawer\'s visual focus, with the photo reading as a small, recognizable identifier rather than a hero image — the explicit goal of both rounds.',
+    highlights: [
+      'Item Detail Drawer\'s photo/placeholder frame is now a small, centered, SQUARE tile (230x230px desktop, 200x200px mobile) instead of a full-width (~431px) banner — reached in two rounds of live-verified refinement against direct user feedback on the shipped v1.28.11 frame.',
+      'The fix in the end was about the FRAME\'s width and shape, not the image itself: object-fit:contain, centering, and no-crop/no-stretch were correct from v1.28.11 onward and were never touched — only .gud-detail-img\'s own width/aspect-ratio/margin changed.',
+      'Live-measured against the real production drawer: 230x230px square, 125px of whitespace on each side within the 479px-wide drawer body (mathematically centered), matching the requested "Apple Files / Finder preview" feel instead of a wide image banner.',
+      'Scoped entirely to gudang.css\'s .gud-detail-img rule — the catalog grid\'s own separate image frame (.gud-catalog-card-img) was explicitly out of scope both rounds and remains unchanged from v1.28.11.',
+    ],
+  },
   {
     version: '1.28.11',
     date: '2026-08-04',
