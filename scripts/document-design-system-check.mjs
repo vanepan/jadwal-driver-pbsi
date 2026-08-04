@@ -158,7 +158,15 @@ console.log('\n[7] Real production templates render geometry/colours/grid straig
     doc.pageSize === 'A4' && doc.pageOrientation === 'portrait' && doc.pageMargins === getDesignSystem('nor').page.margins);
   check('nor PDF default type IS the design system\'s default', doc.defaultStyle === getDesignSystem('nor').typography.default);
   const itemTable = doc.content.find((n) => n.table && n.table.widths && n.table.widths.length === 5);
-  check('nor item-table widths ARE the design system\'s (never re-hardcoded)', itemTable.table.widths === getDesignSystem('nor').layout.itemTableWidths);
+  // v1.28.11 hotfix: this used to assert === (the SAME frozen array object).
+  // That was the production bug — pdfmake's DocMeasure.measureTable mutates
+  // a table's `widths` array in place, which throws on a deep-frozen array
+  // and hangs the export forever (confirmed via stack trace: extendTableWidths
+  // -> measureTable). nor.js now clones this array at its point of use, so
+  // pdfmake gets a disposable working copy. The check's real intent —
+  // "values come from the design system, never re-hardcoded" — is still
+  // exactly proven by value equality; it never required the same reference.
+  check('nor item-table widths ARE the design system\'s (never re-hardcoded)', eq(itemTable.table.widths, getDesignSystem('nor').layout.itemTableWidths));
   check('nor rincian grid borders come from the design system (1pt ink)', itemTable.layout.hLineColor() === '#000000' && itemTable.layout.hLineWidth() === 1);
   const heading = doc.content.find((n) => n.text === 'NOTA ORGANISASI');
   check('nor document-title heading size comes from the design system (13)', heading.fontSize === 13);

@@ -19,7 +19,7 @@
 'use strict';
 
 import { getCurrentUser } from '../../auth.js';
-import { esc } from './gudang-atoms.js';
+import { esc, icon } from './gudang-atoms.js';
 
 import { listItems } from '../repository/item-repository.js';
 import { listLocations } from '../repository/location-repository.js';
@@ -39,7 +39,7 @@ import { renderGoodsIn, goodsInHandlers } from './gudang-goods-in.js';
 import { renderMovementHistory, historyHandlers } from './gudang-movement-history.js';
 import { renderStockOpname, opnameHandlers } from './gudang-stock-opname.js';
 import { renderAnalytics, analyticsOnChange } from './gudang-analytics.js';
-import { renderItemDetail, renderAssetDetail, detailHandlers } from './gudang-item-detail.js';
+import { renderItemDetail, renderAssetDetail, detailHandlers, renderDeleteItemConfirm } from './gudang-item-detail.js';
 import { renderCatalogModal, catalogHandlers } from './gudang-catalog.js';
 
 const st = {
@@ -53,9 +53,21 @@ const st = {
   goodsIn: null,
   opname: null,
   historyFilters: null, // lazily created by gudang-movement-history.js's own ensure pattern
+  toast: null, // transient success message (Delete Item) — see showToast()
 };
 
-let host = null, mounted = false, loaded = false, lastAnimatedScreen = null;
+let host = null, mounted = false, loaded = false, lastAnimatedScreen = null, toastTimer = null;
+
+/** Scoped, self-dismissing toast (mirrors petty-cash-center.js's own local
+ *  toast() — same render-driven module-center idiom, no shared #toast DOM
+ *  element the way js/utils.js#showToast uses, since that element lives
+ *  outside Gudang's own root and this module renders its own tree wholesale. */
+function showToast(msg) {
+  if (toastTimer) clearTimeout(toastTimer);
+  st.toast = msg;
+  render();
+  toastTimer = setTimeout(() => { st.toast = null; render(); }, 2600);
+}
 
 /** Phase 10.4.1 root cause ("breadcrumb/sidebar out of sync"): js/app.js's
  *  navGudang() sets the breadcrumb/sidebar-active-state/bottom-nav ONLY when
@@ -246,7 +258,10 @@ function render() {
     ? (st.detail.kind === 'asset' ? renderAssetDetail(st, c, render) : renderItemDetail(st, c, render))
     : '';
   const overlay = st.search.status === 'open' ? renderSearchOverlay(st, c, searchAnchorRect()) : '';
-  const modal = st.modal ? renderCatalogModal(st, c) : '';
+  const modal = st.modal
+    ? (st.modal.kind === 'confirmDeleteItem' ? renderDeleteItemConfirm(st) : renderCatalogModal(st, c))
+    : '';
+  const toast = st.toast ? `<div class="gud-toast">${icon('check-circle', { size: 16 })} ${esc(st.toast)}</div>` : '';
   // Entrance animation plays only when the screen itself changes — every
   // render() call (e.g. one per keystroke while typing) replaces this whole
   // div, so an unconditional animation class replayed the fade-up on every
@@ -254,7 +269,7 @@ function render() {
   const isNewScreen = st.screen !== lastAnimatedScreen;
   if (isNewScreen && _onScreenChange) _onScreenChange(st.screen);
   lastAnimatedScreen = st.screen;
-  host.innerHTML = `<div class="gud-content${isNewScreen ? ' -enter' : ''}">${screen}</div>${detail}${overlay}${modal}`;
+  host.innerHTML = `<div class="gud-content${isNewScreen ? ' -enter' : ''}">${screen}</div>${detail}${overlay}${modal}${toast}`;
   restoreFocus();
 }
 
@@ -302,7 +317,7 @@ function onClick(e) {
       if (act.startsWith('gud-gi-')) { goodsInHandlers.onClick(st, act, el, c, render, refreshCatalog); return; }
       if (act.startsWith('gud-op-')) { opnameHandlers.onClick(st, act, el, c, render, refreshCatalog); return; }
       if (act.startsWith('gud-hist-')) { historyHandlers.onClick(st, act, el, c, render); return; }
-      if (act.startsWith('gud-asset-action-')) { detailHandlers.onClick(st, act, el, c, render, refreshCatalog); return; }
+      if (act.startsWith('gud-asset-action-') || act.startsWith('gud-item-delete-')) { detailHandlers.onClick(st, act, el, c, render, refreshCatalog, showToast); return; }
       if (act.startsWith('gud-cat-')) { catalogHandlers.onClick(st, act, el, c, render, refreshCatalog); return; }
       if (act.startsWith('gud-home-')) { homeHandlers.onClick(st, act, el, c, render); return; }
       break;
@@ -406,6 +421,29 @@ function onGlobalKeydown(e) {
   if (ctrlK) { e.preventDefault(); focusSharedSearchInput(); return; }
 
   if (e.key === 'Escape' && st.modal) { e.preventDefault(); e.stopPropagation(); st.modal = null; render(); return; }
+
+  // v1.28.11 ESC priority (Warehouse UX Enhancement): only one UI layer is
+  // ever dismissed per press. When the Spotlight dropdown itself is open
+  // (st.search.status === 'open'), it already owns Escape end-to-end via its
+  // own two-stage clear-then-close reducer further below — these two
+  // branches exist for the two states that reducer never covered: the
+  // search field focused with NO dropdown showing (just remove focus), and
+  // the Item Detail/Asset Detail drawer open with search untouched (close
+  // it). Search wins when both could apply, per spec.
+  if (e.key === 'Escape' && st.search.status !== 'open') {
+    const searchInput = document.getElementById('v2SearchInput');
+    if (searchInput && document.activeElement === searchInput) {
+      e.preventDefault(); e.stopPropagation();
+      searchInput.blur();
+      return;
+    }
+    if (st.detail) {
+      e.preventDefault(); e.stopPropagation();
+      st.detail = null;
+      render();
+      return;
+    }
+  }
 
   // Ctrl+Enter — save the whole batch (Doc 2 §12: scoped to Goods In/Out/
   // Stock Opname, "not just the current line") — from anywhere in the flow.

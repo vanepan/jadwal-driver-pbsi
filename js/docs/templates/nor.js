@@ -59,7 +59,14 @@ function _metaTable(d) {
   ]);
   return {
     table: {
-      widths: NOR_DS.layout.metaWidths,
+      // Cloned, never the frozen array itself — pdfmake's DocMeasure
+      // mutates `widths` in place during layout measurement (confirmed via
+      // stack trace: extendTableWidths -> measureTable), which throws on a
+      // deep-frozen array (document-design-system.js's deepFreeze) and
+      // leaves createPdf()'s getBlob() callback never invoked, hanging the
+      // export forever. The registry's source of truth stays frozen; only
+      // the copy handed to pdfmake is mutable. (v1.28.11 hotfix)
+      widths: [...NOR_DS.layout.metaWidths],
       body: [
         row('Kepada Yth.', recipients),
         row('Dari', d.senderTitle || ''),
@@ -85,7 +92,9 @@ function _balanceTable(d, widths) {
   ]);
   return {
     table: {
-      widths,
+      // Cloned for the same reason as _metaTable's widths above — both
+      // callers pass a frozen NOR_DS.layout.balanceWidthsPage1/2 array.
+      widths: [...widths],
       body: [
         row(`Dana Awal (${d.danaAwalDate || '-'})`, d.openingDoc),
         row('Dana Terealisasi', d.realizedDoc),
@@ -199,7 +208,8 @@ function build(vm) {
       {
         table: {
           headerRows: 1,
-          widths: NOR_DS.layout.itemTableWidths,
+          // Cloned for the same reason as _metaTable's widths above.
+          widths: [...NOR_DS.layout.itemTableWidths],
           body: [
             [
               { text: 'No', fontSize: 9, bold: true, alignment: 'center' },

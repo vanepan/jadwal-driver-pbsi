@@ -103,6 +103,11 @@
 .gud-btn.-ghost{background:transparent;border-color:var(--border);}
 .gud-btn.-sm{height:32px;padding:0 12px;font-size:12px;border-radius:9px;}
 .gud-btn.-big{height:52px;font-size:14.5px;border-radius:13px;flex:1;min-width:150px;}
+.gud-btn.-danger{background:var(--crit);color:#fff;border:none;}
+.gud-btn.-danger:hover{filter:brightness(1.08);}
+.gud-btn.-danger:disabled{opacity:.5;cursor:not-allowed;filter:none;}
+.gud-btn.-danger-ghost{background:transparent;border-color:var(--crit-weak);color:var(--crit);}
+.gud-btn.-danger-ghost:hover{background:var(--crit-weak);border-color:var(--crit);color:var(--crit);}
 .gud-icon-btn{width:36px;height:36px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text-dim);display:grid;place-items:center;cursor:pointer;flex:none;}
 .gud-icon-btn:hover{color:var(--text);background:var(--surface-2);}
 .gud-icon-btn.-lg{width:56px;height:56px;border-radius:16px;box-shadow:var(--shadow-sm);transition:box-shadow .15s,border-color .15s;}
@@ -190,6 +195,7 @@
 .gud-drawer-body{padding:20px 24px 28px;flex:1;overflow-y:auto;min-height:0;}
 .gud-drawer-foot{padding:16px 24px;border-top:1px solid var(--border-faint);flex:none;}
 .gud-sec{margin-top:26px;} .gud-sec:first-child{margin-top:0;}
+.gud-sec-danger{border-top:1px solid var(--border-faint);padding-top:18px;}
 .gud-sec-t{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-ghost);font-weight:700;margin-bottom:12px;}
 .gud-sec-t-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;} .gud-sec-t-row .gud-sec-t{margin-bottom:0;}
 .gud-kv{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 0;border-top:1px solid var(--border-faint);font-size:13px;}
@@ -197,12 +203,14 @@
 .gud-mono{font-family:var(--font-mono);font-weight:600;font-size:12px;}
 
 /* Item Detail's photo (Phase 10.3) — "the central page," Image first.
-   Larger on desktop, compact on mobile (Doc's own Responsive section) via
-   the media query below, not a second component. */
-.gud-detail-img{width:100%;aspect-ratio:16/10;border-radius:14px;overflow:hidden;background:var(--surface-2);display:grid;place-items:center;}
+   Adaptive Image Frame (v1.28.11): a fixed-height, padded, neutral-bg frame
+   so the whole product is always visible — object-fit:contain, never cover,
+   never cropped. Larger on desktop, compact on mobile via the media query
+   below, not a second component. */
+.gud-detail-img{width:100%;height:240px;padding:18px;box-sizing:border-box;border-radius:14px;overflow:hidden;background:var(--surface-2);display:grid;place-items:center;}
 .gud-detail-img img{width:100%;height:100%;object-fit:contain;}
 .gud-detail-img.-placeholder{color:var(--text-faint);}
-@media (max-width:480px){ .gud-detail-img{aspect-ratio:16/9;} }
+@media (max-width:480px){ .gud-detail-img{height:220px;padding:16px;} }
 
 .gud-modal-box{width:520px;max-width:94vw;max-height:90vh;display:flex;flex-direction:column;background:var(--surface);border-radius:20px;box-shadow:var(--shadow-lg);border:1px solid var(--border);padding:22px 24px;}
 .gud-modal-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex:0 0 auto;}
@@ -271,12 +279,13 @@
 .gud-catalog-card:focus-visible{outline:2px solid var(--accent-line);outline-offset:2px;}
 /* Product image (Phase 10.3) — bleeds to the card's own edges via negative
    margins matching .gud-catalog-card's padding (12px/13px), so it reads as
-   one continuous photo tile rather than an inset thumbnail. aspect-ratio
-   (not a fixed px height) approximates the spec's "~40-50% of card height"
-   across the grid's responsive column widths — a card's total height isn't
-   fixed (name can wrap 1 or 2 lines), so a ratio band is the honest way to
-   hit "approximately," not a pixel value that would drift as content does. */
-.gud-catalog-card-img{margin:-12px -13px 6px;aspect-ratio:4/3;border-radius:13px 13px 0 0;overflow:hidden;background:var(--surface-2);display:grid;place-items:center;}
+   one continuous photo tile rather than an inset thumbnail. Adaptive Image
+   Frame (v1.28.11): a fixed SQUARE (not a 4:3 band) with internal padding
+   and a neutral background, so tall/wide products (spray bottles, office
+   chairs, keyboards) are never cropped — object-fit:contain does the
+   scaling, this frame just guarantees the same shape and breathing room
+   every time, regardless of the grid's responsive column width. */
+.gud-catalog-card-img{margin:-12px -13px 6px;aspect-ratio:1/1;padding:16px;box-sizing:border-box;border-radius:13px 13px 0 0;overflow:hidden;background:var(--surface-2);display:grid;place-items:center;}
 .gud-catalog-card-img img{width:100%;height:100%;object-fit:contain;}
 .gud-catalog-card-img.-placeholder{color:var(--text-faint);}
 .gud-catalog-card-name{font-size:13px;font-weight:700;line-height:1.3;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
@@ -480,3 +489,7 @@
   .gud-drawer{width:100%;max-width:100%;}
   .gud-btn.-big{min-width:0;}
 }
+
+/* ── toast (v1.28.11 — Delete Item success feedback) ─────────────────────── */
+.gud-toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);z-index:1700;background:var(--text);color:var(--surface);padding:12px 20px;border-radius:11px;font-family:var(--font-sans);font-weight:700;font-size:13px;box-shadow:var(--shadow-lg);display:flex;align-items:center;gap:9px;animation:gudToastIn .25s ease;}
+@keyframes gudToastIn{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translate(-50%,0)}}

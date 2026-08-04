@@ -48,6 +48,7 @@ import {
 } from '../analytics/analytics-engine.js';
 import { forecastSentence } from '../analytics/quiet-intelligence-engine.js';
 import { itemHasPhoto, loadItemPhotoUrl } from './gudang-item-image.js';
+import { archiveItem } from '../repository/item-repository.js';
 
 const STATUS_LABEL = { available: 'Tersedia', assigned: 'Ditugaskan', maintenance: 'Maintenance', retired: 'Pensiun' };
 const STATUS_PILL = { available: 'ok', assigned: 'info', maintenance: 'warn', retired: 'neutral' };
@@ -65,7 +66,8 @@ export function renderItemDetail(st, c, requestRender) {
     ${identityBlock(st, item)}
     ${item.itemType === ITEM_TYPE.CONSUMABLE ? consumableBody(st, item, requestRender) : assetListBody(st, item)}
     ${metadataBlock(item)}
-    ${editItemButtonBlock(item)}`;
+    ${editItemButtonBlock(item)}
+    ${deleteItemButtonBlock(item)}`;
   return drawerShell(item.name, item.itemType === ITEM_TYPE.CONSUMABLE ? 'Consumable' : 'Asset', body);
 }
 
@@ -142,6 +144,52 @@ function metadataBlock(item) {
 function editItemButtonBlock(item) {
   return `<div class="gud-sec">
     <button type="button" class="gud-btn -ghost" data-act="gud-cat-edit-item" data-id="${esc(item.itemId)}">${icon('wrench', { size: 14 })} Edit Item</button>
+  </div>`;
+}
+
+/** Delete, visually separated from normal actions (top divider + destructive
+ *  tint) — never adjacent to Edit Item where a misclick would be easy.
+ *  Calls archiveItem() (identity is never truly deleted, only deactivated —
+ *  item-repository.js's own documented rule), which is functionally
+ *  permanent from this UI: archived items are filtered out of the catalog
+ *  grid (gudang-home.js#filteredItems' `!i.active` check) and there is no
+ *  restore affordance anywhere in Gudang. */
+function deleteItemButtonBlock(item) {
+  return `<div class="gud-sec gud-sec-danger">
+    <button type="button" class="gud-btn -danger-ghost" data-act="gud-item-delete-open" data-id="${esc(item.itemId)}">${icon('trash', { size: 14 })} Hapus Item</button>
+  </div>`;
+}
+
+/** Delete confirmation — a small modal layered above the drawer (st.modal),
+ *  same shell family as gudang-catalog.js's, kept here since it's the Item
+ *  Detail drawer's own destructive action, not a catalog-creation concern. */
+export function renderDeleteItemConfirm(st) {
+  const m = st.modal;
+  const item = st.data.items.find((i) => i.itemId === m.itemId);
+  const name = item ? item.name : 'Item ini';
+  return `<div class="gud-scrim -open -center" data-act="gud-scrim">
+    <div class="gud-modal-box">
+      <div class="gud-modal-head">
+        <div>
+          <div class="gud-modal-kicker">GUDANG</div>
+          <h2 class="gud-modal-title">Hapus Item?</h2>
+        </div>
+        <button type="button" class="gud-icon-btn" data-act="gud-item-delete-cancel" aria-label="Tutup" title="Tutup">${icon('close', { size: 16 })}</button>
+      </div>
+      <div class="gud-modal-body">
+        <p class="gud-muted">"${esc(name)}" beserta seluruh informasinya akan dihapus secara permanen. Tindakan ini tidak dapat dibatalkan.</p>
+        ${m.error ? `<div class="gud-flow-error gud-mt">${esc(m.error)}</div>` : ''}
+      </div>
+      <div class="gud-modal-foot">
+        <span class="gud-modal-hint">Esc untuk batal</span>
+        <div class="gud-modal-actions">
+          <button type="button" class="gud-btn -ghost" data-act="gud-item-delete-cancel" ${m.deleting ? 'disabled' : ''}>Batal</button>
+          <button type="button" class="gud-btn -danger" data-act="gud-item-delete-confirm" ${m.deleting ? 'disabled' : ''}>
+            ${m.deleting ? 'Menghapus…' : `${icon('trash', { size: 14 })} Hapus Item`}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>`;
 }
 
@@ -300,12 +348,15 @@ function drawerShell(title, badge, body, backSlot) {
 
 /* ── handlers ─────────────────────────────────────────────────────────── */
 export const detailHandlers = {
-  onClick(st, act, el, c, render, refreshCatalog) {
+  onClick(st, act, el, c, render, refreshCatalog, showToast) {
     const d = st.detail;
     switch (act) {
       case 'gud-asset-action-open': d.actionOpen = el.dataset.id; d.actionDraft = { reason: '', holderId: '' }; d.actionError = null; render(); break;
       case 'gud-asset-action-cancel': d.actionOpen = null; render(); break;
       case 'gud-asset-action-confirm': confirmAssetAction(st, c, render, refreshCatalog); break;
+      case 'gud-item-delete-open': st.modal = { kind: 'confirmDeleteItem', itemId: el.dataset.id, deleting: false, error: null }; render(); break;
+      case 'gud-item-delete-cancel': st.modal = null; render(); break;
+      case 'gud-item-delete-confirm': confirmDeleteItem(st, render, refreshCatalog, showToast); break;
       default: break;
     }
   },
@@ -326,5 +377,24 @@ async function confirmAssetAction(st, c, render, refreshCatalog) {
   });
   if (!res.ok) { d.actionError = res.error.message; render(); return; }
   d.actionOpen = null; d.actionError = null; d.historyLoaded = null; // force history refetch
+  await refreshCatalog();
+}
+
+/** Deactivates the Item (archiveItem -> active:false), which reads as a
+ *  permanent delete from this UI: filteredItems() already excludes inactive
+ *  items from the catalog grid, and Gudang has no restore affordance. On
+ *  success: close both the confirm modal and the (now-gone) Item Detail
+ *  drawer, toast, and refresh so the grid updates without a reload. On
+ *  failure: keep the confirm modal open with the error shown inline, per
+ *  spec ("keep drawer open, show proper error message"). */
+async function confirmDeleteItem(st, render, refreshCatalog, showToast) {
+  const m = st.modal;
+  if (!m || m.kind !== 'confirmDeleteItem' || m.deleting) return;
+  m.deleting = true; m.error = null; render();
+  const res = await archiveItem(m.itemId);
+  if (!res.ok) { m.deleting = false; m.error = res.error.message; render(); return; }
+  st.modal = null;
+  st.detail = null;
+  if (showToast) showToast('Item berhasil dihapus');
   await refreshCatalog();
 }
