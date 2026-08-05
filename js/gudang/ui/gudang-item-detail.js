@@ -357,8 +357,18 @@ function actionForm(asset, detail) {
 
 /* ── shell ────────────────────────────────────────────────────────────── */
 function drawerShell(title, badge, body, backSlot) {
+  // v1.29.9 (Part F — Accessibility): the mobile filter sheet already
+  // declares role="dialog"/aria-modal (v1.29.1) — the Item Detail
+  // drawer, the single most-opened overlay in Gudang, never did.
+  // aria-label reuses the same dynamic title the visible <h2> already
+  // shows, so a screen reader announces exactly what's on screen, never
+  // a generic "dialog". (The Add/Edit Item modal and the Bulk Operations
+  // modal have the same gap — noted as a follow-up, not fixed here: the
+  // latter's own file is frozen this release (Do Not Modify), and
+  // re-scoping beyond the drawer this pass specifically investigated
+  // risks exactly the "feature creep" this refinement release avoids.)
   return `<div class="gud-scrim -open" data-act="gud-scrim">
-    <div class="gud-drawer">
+    <div class="gud-drawer" role="dialog" aria-modal="true" aria-label="${esc(title)}">
       <div class="gud-drawer-head">
         <div class="gud-drawer-head-txt">
           ${backSlot ? `<div class="gud-drawer-badges">${backSlot()}</div>` : (badge ? `<div class="gud-drawer-badges"><span class="gud-pill" data-pill="neutral">${esc(badge)}</span></div>` : '')}

@@ -22,11 +22,24 @@
 import { esc, icon, emptyState } from './gudang-atoms.js';
 import { getMovementHistory, MOVEMENT_TYPE_LABEL } from '../audit/movement-history-view.js';
 
+/** v1.29.9 (Part E — Performance Audit): st.dashboardActivity (Dashboard's
+ *  own Recent Activity cache, v1.29.7; Intelligence mirrors the same
+ *  fetch into the same key, v1.29.8) holds the EXACT same shape this
+ *  screen was independently re-fetching — getMovementHistory({})'s own
+ *  reverse-chronological, unfiltered result. Whichever of the three
+ *  screens is visited first in a session now pays the one read; the
+ *  other two reuse it, in any order — not just Dashboard/Intelligence
+ *  sharing with each other while History quietly kept its own third copy.
+ *  st.historyData stays the local working variable the rest of this file
+ *  already reads (no wider rewrite) — only the FETCH decision changes. */
 function ensureData(st, requestRender) {
   if (st.historyData || st.historyLoading) return;
+  if (st.dashboardActivity) { st.historyData = st.dashboardActivity.movements; return; }
   st.historyLoading = true;
   getMovementHistory({}).then((res) => {
-    st.historyData = res.ok ? res.data : [];
+    const movements = res.ok ? res.data : [];
+    st.historyData = movements;
+    if (!st.dashboardActivity) st.dashboardActivity = { movements }; // let a later Dashboard/Intelligence visit reuse THIS read too
     st.historyLoading = false;
     requestRender();
   });

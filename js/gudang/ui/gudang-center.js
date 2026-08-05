@@ -77,6 +77,13 @@ import { startQuickPhotoReplace, retryQuickPhotoReplace, cancelQuickPhotoReplace
 // it dispatches through acts gudang-center.js already routes below
 // (gud-goto, gud-open-item, gud-quick-goods-out/in, gud-cat-add-item-home).
 import { renderDashboard } from './gudang-dashboard.js';
+// v1.29.8 (Inventory Intelligence Engine): "what deserves attention?" —
+// PURE composition over intelligence/intelligence-engine.js, itself PURE
+// over data/engines this app already owns (see that file's own header).
+// Two new local acts (gud-intel-expand/-toggle/-threshold), all scoped
+// to this one screen's own local UI state (st.intelligence) — no
+// Firebase write, no cross-screen effect.
+import { renderIntelligence, intelligenceHandlers } from './gudang-intelligence.js';
 
 const st = {
   screen: 'dashboard',
@@ -499,6 +506,7 @@ function render() {
     case 'opname': screen = renderStockOpname(st, c); break;
     case 'analytics': screen = renderAnalytics(st, c, render); break;
     case 'home': screen = renderHome(st, c, render); break;
+    case 'intelligence': screen = renderIntelligence(st, c, render); break;
     case 'dashboard':
     default: screen = renderDashboard(st, c, render);
   }
@@ -616,10 +624,10 @@ function onClick(e) {
         render();
         break;
       }
-      st.detail = { kind: 'item', id }; st.search = applySessionEvent(st.search, { type: 'close' }).state; render();
+      st.detail = { kind: 'item', id }; st.search = applySessionEvent(st.search, { type: 'close' }).state; render(); focusDrawerOnOpen();
       break;
     }
-    case 'gud-open-asset': st.detail = { kind: 'asset', id }; st.search = applySessionEvent(st.search, { type: 'close' }).state; render(); break;
+    case 'gud-open-asset': st.detail = { kind: 'asset', id }; st.search = applySessionEvent(st.search, { type: 'close' }).state; render(); focusDrawerOnOpen(); break;
     case 'gud-detail-close': st.detail = null; render(); break;
     case 'gud-quick-goods-out': setGudangScreen('goodsOut'); break;
     case 'gud-quick-goods-in': setGudangScreen('goodsIn'); break;
@@ -649,6 +657,10 @@ function onClick(e) {
       // Banyak — purely local UI state (st.detail.timeline), no Firebase
       // touched by either act.
       if (act.startsWith('gud-timeline-')) { timelineHandlers.onClick(st, act, el, render); return; }
+      // v1.29.8 (Inventory Intelligence Engine): Insight Card open/scroll,
+      // per-section "Lihat Semua" toggle — purely local UI state
+      // (st.intelligence), no Firebase touched by either act.
+      if (act.startsWith('gud-intel-')) { intelligenceHandlers.onClick(st, act, el, c, render); return; }
       break;
   }
 }
@@ -677,6 +689,7 @@ function onInput(e) {
   if (ds.act.startsWith('gud-home-')) { homeHandlers.onInput(st, ds.act, t, render); return; }
   if (ds.act.startsWith('gud-bulk-')) { bulkHandlers.onInput(st, ds.act, t, render); return; }
   if (ds.act.startsWith('gud-timeline-')) { timelineHandlers.onInput(st, ds.act, t, render); return; }
+  if (ds.act.startsWith('gud-intel-')) { intelligenceHandlers.onInput(st, ds.act, t, render); return; }
 }
 
 function onSubmit(e) {
@@ -1023,6 +1036,23 @@ function resolveSearchIntent(intent) {
   st.detail = { kind: intent.ownerDomain === 'asset' ? 'asset' : 'item', id: intent.refId };
   st.search = applySessionEvent(st.search, { type: 'close' }).state;
   render();
+  focusDrawerOnOpen();
+}
+
+/** v1.29.9 (Part F — Accessibility): moves focus INTO the Item/Asset
+ *  Detail drawer the instant it opens (WAI-ARIA dialog expectation) —
+ *  previously absent, so focus silently stayed wherever it was, often on
+ *  a card/row DOM node this same render() call had just replaced. A
+ *  one-time, DIRECT .focus() call — deliberately NOT routed through
+ *  st._focusAct/restoreFocus(), which re-applies on EVERY subsequent
+ *  render() (that mechanism exists for text inputs mid-keystroke, where
+ *  re-focusing every render is exactly the point). The drawer keeps
+ *  loading async data after it opens (ensureConsumableData's own
+ *  stock/movement fetch) — using the persistent mechanism here would
+ *  yank focus back to the close button on each of those re-renders,
+ *  fighting a user who had already tabbed further into the drawer body. */
+function focusDrawerOnOpen() {
+  host.querySelector('[data-act="gud-detail-close"]')?.focus();
 }
 
 /* ── focus restoration (mirrors Engineering's restoreFocus) ───────────── */

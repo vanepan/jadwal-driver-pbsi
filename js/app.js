@@ -2142,15 +2142,15 @@ function showModulePlaceholder(title, message) {
    same pattern as Engineering: real navId, real land() screen, lazy mount) */
 const GUD_MENU_TITLES = {
   dashboard: 'Dashboard', home: 'Home', goodsOut: 'Goods Out', goodsIn: 'Goods In',
-  history: 'Movement History', opname: 'Stock Opname', analytics: 'Analytics',
+  history: 'Movement History', opname: 'Stock Opname', analytics: 'Analytics', intelligence: 'Inventory Intelligence',
 };
 const GUD_SCREEN_BOTTOM_NAV_ACTION = {
   dashboard: 'navGudDashboard', home: 'navGudHome', goodsOut: 'navGudGoodsOut', goodsIn: 'navGudGoodsIn',
-  history: 'navGudHistory', opname: 'navGudOpname', analytics: 'navGudAnalytics',
+  history: 'navGudHistory', opname: 'navGudOpname', analytics: 'navGudAnalytics', intelligence: 'navGudIntelligence',
 };
 const GUD_SCREEN_NAV_ID = {
   dashboard: 'v2NavGudDashboard', home: 'v2NavGudHome', goodsOut: 'v2NavGudGoodsOut', goodsIn: 'v2NavGudGoodsIn',
-  history: 'v2NavGudHistory', opname: 'v2NavGudOpname', analytics: 'v2NavGudAnalytics',
+  history: 'v2NavGudHistory', opname: 'v2NavGudOpname', analytics: 'v2NavGudAnalytics', intelligence: 'v2NavGudIntelligence',
 };
 // Phase 10.4.1: gudangMounted only latches once a host actually exists to
 // mount into (setWorkspace('gudang') below guarantees #v2GudangWorkspace
@@ -2744,6 +2744,12 @@ function initV2Panel() {
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M3 4a1 1 0 011-1h5a1 1 0 011 1v5a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM11 4a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1V4zM11 10a1 1 0 011-1h4a1 1 0 011 1v6a1 1 0 01-1 1h-4a1 1 0 01-1-1v-6zM3 13a1 1 0 011-1h5a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3z"/></svg>
         Analytics
       </button>
+      <!-- v1.29.8 (Inventory Intelligence Engine) — a distinct light-bulb
+           glyph (not the clock icon Movement History already uses). -->
+      <button class="v2-panel-nav-item" id="v2NavGudIntelligence" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zM8 16v-1h4v1a2 2 0 11-4 0zM12 14c.015-.34.208-.647.477-.859a4 4 0 10-4.954 0c.27.212.462.519.476.859h4.002z"/></svg>
+        Inventory Intelligence
+      </button>
     </nav>
 
     <!-- ═══ MODUL: Sarpras Intelligence ═══ (Experience Architecture phase —
@@ -2952,6 +2958,7 @@ function initV2Panel() {
   document.getElementById('v2NavGudHistory')?.addEventListener('click', () => navGudang('history', 'v2NavGudHistory'));
   document.getElementById('v2NavGudOpname')?.addEventListener('click', () => navGudang('opname', 'v2NavGudOpname'));
   document.getElementById('v2NavGudAnalytics')?.addEventListener('click', () => navGudang('analytics', 'v2NavGudAnalytics'));
+  document.getElementById('v2NavGudIntelligence')?.addEventListener('click', () => navGudang('intelligence', 'v2NavGudIntelligence'));
 
   // MODUL Sarpras Intelligence — Experience Architecture phase: 5 primary
   // items (Home/NOR/Documents/Intelligence/Settings). Screen ids are

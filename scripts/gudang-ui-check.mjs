@@ -74,6 +74,10 @@ console.log('\n[Part B — UI never re-implements analytics/stock/movement compu
     // Category/Location/Forecast Summary figure is composed by dashboard-
     // engine.js, never derived inline in the screen file.
     'js/gudang/ui/gudang-dashboard.js': ['../dashboard/dashboard-engine.js'],
+    // v1.29.8 (Inventory Intelligence Engine): every Dead Stock/Slow-Fast
+    // Moving/Reorder/Overstock/Velocity/Consumption Pattern/Category-
+    // Location Activity figure is composed by intelligence-engine.js.
+    'js/gudang/ui/gudang-intelligence.js': ['../intelligence/intelligence-engine.js'],
   };
   for (const [rel, deps] of Object.entries(mustImportFrom)) {
     const code = read(rel);
@@ -86,6 +90,34 @@ console.log('\n[Part C — Visual consistency: gudang.css reuses the existing de
 {
   check('gudang.css exists at repo root (same convention as engineering.css/petty-cash.css)', exists('gudang.css'));
   const css = read('gudang.css');
+  // v1.29.9 root-cause regression guard: a comment that describes a
+  // wildcard-prefix list with an asterisk immediately touching the next
+  // slash (e.g. two class-name fragments joined "*<slash>") closes a CSS
+  // comment early wherever it appears, even as plain prose — this exact
+  // bug silently dropped .gud-insight-card{}'s base rule in v1.29.8 (only
+  // its :hover/:focus-visible variants survived), so the browser fell
+  // back to native <button> chrome instead. Simulates the real CSS
+  // tokenizer's comment state machine char-by-char — a stray */ found
+  // OUTSIDE an open comment proves some earlier comment closed too soon.
+  {
+    let inComment = false; let strays = 0;
+    for (let i = 0; i < css.length; i++) {
+      if (!inComment && css[i] === '/' && css[i + 1] === '*') { inComment = true; i++; continue; }
+      if (inComment && css[i] === '*' && css[i + 1] === '/') { inComment = false; i++; continue; }
+      if (!inComment && css[i] === '*' && css[i + 1] === '/') strays++;
+    }
+    check('gudang.css has no stray */ outside a comment (proves no comment closed early and corrupted the rule after it — the actual root cause of the v1.29.8 Insight Card outline bug)', strays === 0 && !inComment);
+  }
+  // v1.29.9 (Part G — Responsive Audit): .gud-card is placed as a grid
+  // item inside .gud-grid.-2/-3 on Dashboard/Intelligence — without
+  // min-width:0, a grid item's default min-width:auto floors it at its
+  // content's min-content size (a long item name, a long category
+  // label), which can push the whole card past its track and the PAGE
+  // into horizontal scroll on mobile even though every descendant
+  // already declares its own min-width:0/overflow:hidden. Confirmed via
+  // a real 375px render with a long item name: without this rule the
+  // card measured 46px past the viewport edge; with it, zero overflow.
+  check('.gud-card declares min-width:0 (prevents grid-item content from forcing horizontal overflow on narrow viewports)', /\.gud-card\{[^}]*min-width:0/.test(css));
   check('everything is scoped under .gud-root (never leaks into the rest of the platform)', /^\.gud-root\s*\{/m.test(css));
   check('has a [data-theme="dark"] .gud-root block (same dark-mode mechanism as .eng-root)', /:root\[data-theme="dark"\]\s*\.gud-root/.test(css));
   // Token VALUES copied verbatim from engineering.css (Experience brief:
@@ -144,6 +176,9 @@ console.log('\n[Part D — No unnecessary abstraction]');
     // real screen (has its own gud-goto entry, 'dashboard'), so it goes
     // through the same orphan-check loop below as every other screen file.
     'gudang-dashboard.js',
+    // v1.29.8 (Inventory Intelligence Engine): a real screen (its own
+    // gud-goto entry, 'intelligence') — same orphan-check loop.
+    'gudang-intelligence.js',
   ];
   const actual = fs.readdirSync(path.join(ROOT, 'js/gudang/ui')).filter((f) => f.endsWith('.js')).sort();
   check(`js/gudang/ui/ has exactly the ${expectedFiles.length} files this phase needs — one per screen, no speculative extras`, JSON.stringify(actual) === JSON.stringify([...expectedFiles].sort()));
@@ -175,7 +210,7 @@ console.log('\n[Part E — Wiring integrity: app.js/index.html actually mount Gu
   check('app.js imports openGudangSearch from gudang-center.js', /import\s*\{[\s\S]{0,200}openGudangSearch[\s\S]{0,200}\}\s*from ['"]\.\/gudang\/ui\/gudang-center\.js['"]/.test(appJs));
   check('the search Clear (X) button handler actually calls openGudangSearch() to keep focus in the field', /v2SearchClear\.addEventListener\('click'[\s\S]{0,400}openGudangSearch\(\)/.test(appJs));
   check('every v2NavGud* sidebar button has a real click listener (Phase 10: this was the actual UAT bug — screens existed but were unreachable)',
-    ['v2NavGudDashboard', 'v2NavGudHome', 'v2NavGudGoodsOut', 'v2NavGudGoodsIn', 'v2NavGudHistory', 'v2NavGudOpname', 'v2NavGudAnalytics']
+    ['v2NavGudDashboard', 'v2NavGudHome', 'v2NavGudGoodsOut', 'v2NavGudGoodsIn', 'v2NavGudHistory', 'v2NavGudOpname', 'v2NavGudAnalytics', 'v2NavGudIntelligence']
       .every((id) => new RegExp(`getElementById\\('${id}'\\)\\?\\.addEventListener\\('click'`).test(appJs)));
   check('setWorkspace() actually toggles #v2GudangWorkspace visible (Phase 10.1: the real blank-screen bug — Gudang was never added to this toggle, so the host stayed at its initial display:none no matter what navGudang() did)',
     /const isGudang\s*=\s*name === 'gudang'/.test(appJs)
@@ -186,6 +221,27 @@ console.log('\n[Part E — Wiring integrity: app.js/index.html actually mount Gu
   check('v2PanelGudangNav is declared and included in the panel-clearing array', appJs.includes('v2PanelGudangNav') && /\[.*v2PanelGudangNav.*\]/.test(appJs));
   check('a "gudang" search adapter is registered (Doc 2 §05: search is the product)', /registerSearchAdapter\(\{\s*id:\s*'gudang'/.test(appJs));
   check('canAccessModule has a real, non-dev-only "gudang" case', /case 'gudang':\s*return false;/.test(appJs));
+}
+
+/* ── Part F — v1.29.9 (Part F, Accessibility): drawer focus-on-open ────── */
+console.log('\n[Part F — Item/Asset Detail drawer moves focus into itself on open, without fighting async re-renders]');
+{
+  // Can't drive this end-to-end via gudang-ui-interaction-check.mjs's real
+  // Puppeteer clicks — that harness has no live catalog (this environment
+  // has no Firebase credentials, per its own documented "HONEST LIMIT"),
+  // so there is no real catalog card / search result to click. Verified
+  // statically instead, the same way every other not-live-testable
+  // wiring fact in this Part already is.
+  const centerCode = read('js/gudang/ui/gudang-center.js');
+  check('gudang-center.js defines a ONE-TIME focusDrawerOnOpen() (direct .focus(), not routed through the persistent st._focusAct/restoreFocus() mechanism that re-applies on every render)',
+    /function focusDrawerOnOpen\(\)\s*\{\s*host\.querySelector\('\[data-act="gud-detail-close"\]'\)\?\.focus\(\);\s*\}/.test(centerCode));
+  const detailOpenSites = centerCode.match(/st\.detail = \{[^}]*\};?[\s\S]{0,120}/g) || [];
+  check('every st.detail = {...} open site (gud-open-item, gud-open-asset, resolveSearchIntent) is followed by focusDrawerOnOpen()',
+    detailOpenSites.length >= 3 && detailOpenSites.every((s) => s.includes('focusDrawerOnOpen()')));
+
+  const detailCode = read('js/gudang/ui/gudang-item-detail.js');
+  check('the drawer itself declares role="dialog" aria-modal="true" with a dynamic aria-label (matches the mobile filter sheet\'s own existing pattern)',
+    /<div class="gud-drawer" role="dialog" aria-modal="true" aria-label="\$\{esc\(title\)\}">/.test(detailCode));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

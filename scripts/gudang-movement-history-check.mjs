@@ -80,5 +80,29 @@ console.log('\n[Part B — Architecture: presentation only, no new persistence, 
   check('never branches on FUTURE_RESERVATION by name in actual code (dormant seam stays dormant, Doc 4 Art.VI)', !code.includes('FUTURE_RESERVATION'));
 }
 
+/* ── Part C — v1.29.9 (Part E, Performance Audit): shares Dashboard's cache ── */
+console.log('\n[Part C — gudang-movement-history.js reuses st.dashboardActivity instead of re-fetching]');
+{
+  const { renderMovementHistory } = await import('../js/gudang/ui/gudang-movement-history.js');
+  const items = [{ itemId: 'i1', name: 'Kertas A4', itemType: 'consumable', active: true }];
+  const sharedMovements = [{ movementId: 'mv1', itemId: 'i1', departmentId: null, when: new Date().toISOString(), who: 'u1', what: 'Goods Out', why: 'Issued', quantityDelta: -1, price: null, type: 'goods_out', reason: 'issue', purpose: null, notes: null }];
+
+  const stWithSharedCache = {
+    data: { items, locations: [], departments: [], assets: [] },
+    dashboardActivity: { movements: sharedMovements }, // already populated, e.g. by a prior Dashboard visit
+  };
+  let fetchWouldHaveBeenNeeded = true; // if ensureData() short-circuits on the shared cache, requestRender() is never called
+  renderMovementHistory(stWithSharedCache, {}, () => { fetchWouldHaveBeenNeeded = false; });
+  check('when st.dashboardActivity is already populated, History adopts it synchronously (st.historyData set immediately, no async requestRender callback fired)', stWithSharedCache.historyData === sharedMovements);
+  check('...proving no new Firebase read was even started (a real fetch would only resolve asynchronously, calling requestRender later — never synchronously within this same call)', fetchWouldHaveBeenNeeded);
+
+  const stNoCache = { data: { items, locations: [], departments: [], assets: [] } };
+  renderMovementHistory(stNoCache, {}, () => {});
+  check('when nothing is cached yet, History still starts its own fetch (historyLoading true, unaffected)', stNoCache.historyLoading === true && stNoCache.historyData === undefined);
+
+  const uiCode = read('js/gudang/ui/gudang-movement-history.js');
+  check('History\'s own successful fetch also populates st.dashboardActivity (so a LATER Dashboard/Intelligence visit reuses THIS read too — true 3-way sharing, not one-directional)', /if \(!st\.dashboardActivity\) st\.dashboardActivity = \{ movements \}/.test(uiCode));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

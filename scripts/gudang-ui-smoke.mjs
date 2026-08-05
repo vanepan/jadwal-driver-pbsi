@@ -68,7 +68,7 @@ const result = await page.evaluate(async () => {
     out.steps.push('mount:ok');
     out.htmlLengths.home = host.innerHTML.length;
 
-    for (const screen of ['dashboard', 'goodsOut', 'goodsIn', 'history', 'opname', 'analytics', 'home']) {
+    for (const screen of ['dashboard', 'goodsOut', 'goodsIn', 'history', 'opname', 'analytics', 'intelligence', 'home']) {
       mod.setGudangScreen(screen);
       await new Promise((r) => setTimeout(r, 400)); // let each screen's own async loaders settle
       out.htmlLengths[screen] = host.innerHTML.length;
