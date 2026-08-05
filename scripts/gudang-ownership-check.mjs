@@ -199,10 +199,14 @@ console.log('\n[Part 9 — STRICTLY FORBIDDEN workflows (not yet ratified for th
   // goods-?out (Phase 4), goods-?in (Phase 5), stock-?opname (Phase 7),
   // forecast|recommendation (Phase 8 — computed OUTPUTS of analytics-
   // engine.js, never their own engine/file) were removed from this list as
-  // their phases authorized them. dashboard|chart|crud remain forbidden —
-  // Phase 8's own brief says "No dashboard-first," and no phase has ever
-  // authorized a CRUD screen.
-  const forbidden = /dashboard|chart|crud/i;
+  // their phases authorized them. v1.29.7 (Warehouse Dashboard) now
+  // explicitly authorizes an OPERATIONAL dashboard — js/gudang/dashboard/
+  // dashboard-engine.js and js/gudang/ui/gudang-dashboard.js — so
+  // "dashboard" is removed from the forbidden pattern the same way.
+  // chart|crud remain forbidden: this release's own brief is explicit that
+  // it renders simple bars/pills, "no unnecessary charts," and no phase
+  // has ever authorized a generic CRUD screen.
+  const forbidden = /chart|crud/i;
   const offenders = GUDANG_FILES.filter((f) => forbidden.test(path.basename(f.rel))).map((f) => f.rel);
   check(`NO file under js/gudang/ implements a workflow not yet authorized for its phase${offenders.length ? ` — FOUND: ${offenders.join(', ')}` : ''}`, offenders.length === 0);
 }

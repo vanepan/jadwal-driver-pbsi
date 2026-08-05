@@ -48,6 +48,19 @@
    already fully specifies the behavior, this only gives it a field to live
    in. `price` is nullable and never validated as required.
 
+   AMENDED — v1.29.4 (Bulk Operations Framework, Phase 1: Bulk Goods Out):
+   added optional `purpose`/`notes` string fields, same discipline as
+   `price` above — purely additive, nullable, never required, and every
+   existing Movement (single-line Goods Out/In, Stock Opname) simply omits
+   them exactly as it omits `price` today. The brief's Bulk Goods Out flow
+   names "Purpose" and "Requested By" and "Notes" as three distinct steps;
+   "Requested By" already had a home (`departmentId`, unchanged), but
+   neither of the other two had anywhere to live. This does NOT touch
+   `reason` (still MOVEMENT_REASON.ISSUE for every Goods Out movement,
+   bulk or single — an unrelated, un-reopened business rule) — `purpose`/
+   `notes` are free-text audit context alongside it, not a replacement for
+   it.
+
    PURE: no DOM, no Firebase, no `window`.
    ============================================================ */
 
@@ -91,15 +104,19 @@ const MOVEMENT_REASONS = new Set(Object.values(MOVEMENT_REASON));
  * @property {?string} departmentId
  * @property {string} actorId       - who (Doc 1 Art.VI)
  * @property {?number} price        - optional unit price at receipt (Doc 2 §07); null when not entered; never required
+ * @property {?string} purpose      - optional free-text reason (v1.29.4 Bulk Goods Out); null when not entered
+ * @property {?string} notes        - optional free-text notes (v1.29.4 Bulk Goods Out); null when not entered
  * @property {string} createdAt     - ISO timestamp; immutable once written
  */
 
 /** @param {{movementId:string, itemId:string, type:string, quantityDelta:number,
- *   reason:string, locationId?:?string, departmentId?:?string, actorId:string, price?:?number}} seed
+ *   reason:string, locationId?:?string, departmentId?:?string, actorId:string, price?:?number,
+ *   purpose?:?string, notes?:?string}} seed
  *  @returns {Movement} */
 export function makeMovement({
   movementId, itemId, type, quantityDelta, reason,
   locationId = null, departmentId = null, actorId, price = null,
+  purpose = null, notes = null,
 }) {
   if (typeof movementId !== 'string' || !movementId) throw new Error('makeMovement: movementId is required.');
   if (typeof itemId !== 'string' || !itemId) throw new Error('makeMovement: itemId is required.');
@@ -112,6 +129,8 @@ export function makeMovement({
   if (price != null && (typeof price !== 'number' || !Number.isFinite(price) || price < 0)) {
     throw new Error('makeMovement: price, when provided, must be a non-negative finite number (Doc 2 §07: optional, never required).');
   }
+  if (purpose != null && typeof purpose !== 'string') throw new Error('makeMovement: purpose, when provided, must be a string.');
+  if (notes != null && typeof notes !== 'string') throw new Error('makeMovement: notes, when provided, must be a string.');
 
   return Object.freeze({
     movementId,
@@ -123,6 +142,8 @@ export function makeMovement({
     departmentId: departmentId == null ? null : String(departmentId),
     actorId,
     price: price == null ? null : price,
+    purpose: purpose == null || purpose === '' ? null : purpose,
+    notes: notes == null || notes === '' ? null : notes,
     createdAt: new Date().toISOString(),
   });
 }
@@ -139,5 +160,11 @@ export function isMovement(movement) {
     && (movement.departmentId === null || typeof movement.departmentId === 'string')
     && typeof movement.actorId === 'string' && movement.actorId.length > 0
     && (movement.price === null || (typeof movement.price === 'number' && Number.isFinite(movement.price) && movement.price >= 0))
+    // v1.29.4: purpose/notes are new, so an OLDER Movement record (read
+    // back from RTDB, written before this amendment) legitimately has
+    // `undefined` here, not `null` — Firebase never stored a key that
+    // didn't exist. Both must validate; only a genuinely wrong TYPE fails.
+    && (movement.purpose == null || typeof movement.purpose === 'string')
+    && (movement.notes == null || typeof movement.notes === 'string')
     && typeof movement.createdAt === 'string' && movement.createdAt.length > 0;
 }

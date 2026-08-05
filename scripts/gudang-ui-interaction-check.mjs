@@ -83,6 +83,19 @@ await page.evaluate(async () => {
 
 console.log('\n[Part A — Home: real click navigation]');
 {
+  // v1.29.7 (Warehouse Dashboard): mountGudang() now lands on the new
+  // Dashboard screen by default (st.screen's own default, mirrors
+  // Engineering's dashboard-as-landing-screen convention) — this Part
+  // predates that and specifically exercises HOME, so it now navigates
+  // there explicitly first, same as every other Part in this file already
+  // does for its own screen (Part B/E -> home, Part C -> goodsOut/opname).
+  // Also sidesteps a real race: the Dashboard's own eager ensureStockBulk/
+  // ensureDashboardActivity Firebase reads (in flight from the initial
+  // mount) can resolve mid-click and re-render host.innerHTML out from
+  // under Puppeteer's ElementHandle ("Node is detached from document") —
+  // Home triggers no such eager read on plain navigation.
+  await page.evaluate(() => { window.__gudMod.setGudangScreen('home'); });
+  await new Promise((r) => setTimeout(r, 200));
   await page.click(`${HOST} [data-act="gud-quick-goods-out"]`);
   await new Promise((r) => setTimeout(r, 200));
   const onGoodsOut = await page.$(`${HOST} [data-act="gud-go-dept-query"]`);

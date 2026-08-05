@@ -46,6 +46,13 @@ import { getProjection } from '../repository/stock-repository.js';
 import { getForecastDaysRemaining } from '../analytics/analytics-engine.js';
 import { forecastSentence } from '../analytics/quiet-intelligence-engine.js';
 import { itemHasPhoto, loadItemPhotoUrl } from './gudang-item-image.js';
+// v1.29.5 (Warehouse Upload Experience, Phase 1): drag & drop a photo
+// directly onto a catalog card now replaces that item's photo in place —
+// this is the ONE new render dependency Home needs; the actual upload
+// orchestration (and its state, st.photoUpload) lives entirely in
+// gudang-photo-upload.js, dispatched from gudang-center.js exactly like
+// every other Gudang interaction.
+import { renderQuickPhotoOverlay } from './gudang-photo-upload.js';
 // v1.29.1 (Warehouse Smart Filtering, Phase 2): filter STATE/predicate/chip
 // logic lives in filter-engine.js (pure, reusable by future phases per that
 // file's own header) — Home only renders controls and calls into it. Stock
@@ -117,8 +124,16 @@ function ensureCardImages(st, items, requestRender) {
  *  of bulk reads, fetched at most once per session, never on every filter
  *  change), fetched lazily the first time Stock Status or Forecast is
  *  actually used — same "only when needed" discipline the old
- *  ensureLowStockSet had for the lowStock chip it replaces. */
-function ensureStockBulk(st, requestRender) {
+ *  ensureLowStockSet had for the lowStock chip it replaces.
+ *
+ *  Exported (v1.29.7, Warehouse Dashboard) — the Dashboard's Overview
+ *  Cards/Warehouse Health/Low Stock/Forecast Summary sections all need this
+ *  exact same classification and MUST NOT trigger a second bulk read for
+ *  it (Doc 4 Art.IX/brief Section 9: "no duplicated calculations... no
+ *  duplicated Firebase reads"). Sharing st.homeStockBulk itself (not a
+ *  second cache) means whichever screen — Home or Dashboard — asks first
+ *  pays the one read; the other reuses it for free. */
+export function ensureStockBulk(st, requestRender) {
   if (st.homeStockBulk || st.homeStockBulkLoading) return;
   st.homeStockBulkLoading = true;
   classifyStockBulk(st.data.items).then((res) => {
@@ -187,6 +202,17 @@ function renderSelectionBar(st, f) {
       ${hidden ? `<span class="gud-sel-bar-hidden">(${fmtQty(hidden)} tersembunyi oleh filter)</span>` : ''}
     </div>
     <div class="gud-sel-bar-actions">
+      <!-- v1.29.4 (Bulk Operations Framework): these four dispatch to
+           bulkHandlers via gudang-center.js's gud-bulk- prefix routing —
+           rendering them here (Home) rather than in gudang-bulk-ui.js
+           mirrors how gud-cat-add-item-home already dispatches to
+           catalogHandlers from a button Home renders (act ownership and
+           render location are already decoupled in this codebase). -->
+      <button type="button" class="gud-btn -sm" data-act="gud-bulk-open-goodsout">${icon('arrow-out', { size: 13 })} Goods Out</button>
+      <button type="button" class="gud-btn -sm" data-act="gud-bulk-open-archive">${icon('archive', { size: 13 })} Arsipkan</button>
+      <button type="button" class="gud-btn -sm" data-act="gud-bulk-open-edit">${icon('wrench', { size: 13 })} Edit</button>
+      <button type="button" class="gud-btn -sm" data-act="gud-bulk-open-export">${icon('arrow-right', { size: 13 })} Ekspor</button>
+      <span class="gud-sel-bar-divider"></span>
       <button type="button" class="gud-btn -ghost -sm" data-act="gud-home-sel-all">Pilih Semua</button>
       <button type="button" class="gud-btn -sm" data-act="gud-home-sel-clear">Batal <span class="gud-sel-bar-esc">${kbd('Esc')}</span></button>
     </div>
@@ -400,7 +426,12 @@ function catalogCard(item, st) {
   // body, nested override" pattern the quick-action spans below already
   // rely on (no stopPropagation anywhere needed for either).
   const checked = isSelected(st.selection, item.itemId);
-  return `<div class="gud-catalog-card" data-act="gud-open-item" data-id="${esc(item.itemId)}" data-selected="${checked}" role="button" tabindex="0" aria-label="${esc(item.name)}">
+  // v1.29.5 (Upload Experience, Phase 1): -dragover is a purely visual
+  // highlight class toggled by gudang-center.js's dragover handler
+  // (st.dragOverItemId) — same "state lives in st, class reflects it"
+  // pattern -selected already uses one line up.
+  const dragOver = st.dragOverItemId === item.itemId ? ' -dragover' : '';
+  return `<div class="gud-catalog-card${dragOver}" data-act="gud-open-item" data-id="${esc(item.itemId)}" data-selected="${checked}" role="button" tabindex="0" aria-label="${esc(item.name)}">
     <button type="button" class="gud-sel-checkbox" data-act="gud-home-sel-toggle" data-id="${esc(item.itemId)}" aria-pressed="${checked}" aria-label="${checked ? 'Batalkan pilih' : 'Pilih'} ${esc(item.name)}">${checked ? icon('check', { size: 13 }) : ''}</button>
     ${catalogCardImage(item, st)}
     <div class="gud-catalog-card-name">${esc(item.name)}</div>
@@ -422,6 +453,12 @@ function catalogCard(item, st) {
  *  broken-image icon): the existing `package` glyph, same family as every
  *  other Gudang icon — no new asset. */
 function catalogCardImage(item, st) {
+  // v1.29.5: a quick photo replace in progress for THIS item takes over
+  // the image slot entirely — checked before the cached/placeholder
+  // branches below, since mid-upload there is neither a resolved cache
+  // entry nor "no photo" to show.
+  const overlay = renderQuickPhotoOverlay(st, item.itemId, { size: 32 });
+  if (overlay) return `<div class="gud-catalog-card-img -uploading">${overlay}</div>`;
   const cached = st.homeImageCache && st.homeImageCache[item.itemId];
   if (itemHasPhoto(item) && cached && !cached.loading && cached.url) {
     return `<div class="gud-catalog-card-img"><img src="${esc(cached.url)}" alt="" loading="lazy" /></div>`;

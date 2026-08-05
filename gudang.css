@@ -168,6 +168,32 @@
 .gud-photo-drop-t{font-size:12px;color:var(--text-faint);max-width:280px;line-height:1.5;}
 .gud-photo-preview{display:block;width:100%;height:140px;border-radius:10px;object-fit:contain;background:var(--surface-2);}
 .gud-photo-drop-actions{display:flex;gap:14px;margin-top:2px;}
+
+/* v1.29.5 (Warehouse Upload Experience) — the upload-in-progress / error
+   overlay, shared verbatim by the Add/Edit Item dialog (positioned over
+   .gud-photo-preview, which already has a fixed height) and the Home
+   catalog card / Item Detail drawer image slots (positioned over the
+   whole square, added further below since those two need
+   position:relative added). One dark scrim + ring/label, or one error
+   card + Retry/Cancel — never both at once (renderSessionOverlay always
+   returns exactly one shape). */
+.gud-photo-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:rgba(20,17,16,.55);border-radius:10px;color:#fff;text-align:center;padding:10px;}
+.gud-photo-overlay-label{font-size:11px;font-weight:700;letter-spacing:.02em;}
+.gud-photo-overlay.-error{background:var(--surface);color:var(--text);border:1px solid var(--crit-weak);gap:8px;}
+.gud-photo-overlay-msg{font-size:11.5px;font-weight:600;color:var(--crit);max-width:220px;line-height:1.4;}
+.gud-photo-overlay-actions{display:flex;gap:8px;}
+.gud-progress-ring circle:last-child{transition:stroke-dashoffset .2s ease;}
+@media (prefers-reduced-motion:no-preference){
+  /* Indeterminate state (pct unknown, "preparing…") — a slow, gentle spin
+     reads as "still working," not stalled; real percentage progress
+     (a known stroke-dashoffset) is never animated this way. */
+  .gud-photo-overlay:not(.-error) .gud-progress-ring{animation:gudRingSpin 1.1s linear infinite;}
+}
+@keyframes gudRingSpin{to{transform:rotate(360deg);}}
+/* Drop-zone "animated border" (Phase 1) — a gentle pulse on the accent
+   ring itself, shared by both the catalog card and drawer drop targets
+   (see each element's own -dragover rule for the base box-shadow). */
+@keyframes gudDropPulse{0%,100%{box-shadow:0 0 0 2px var(--accent);}50%{box-shadow:0 0 0 4px var(--accent-line);}}
 .gud-photo-file-input{position:absolute;inset:0;opacity:0;pointer-events:none;}
 .gud-link-btn.-danger{color:var(--crit);}
 
@@ -214,10 +240,19 @@
    the drawer's width left as deliberate surrounding whitespace, closer to
    a Finder/Files preview than a hero banner. Larger on desktop, compact
    on mobile via the media query below, not a second component. */
-.gud-detail-img{width:230px;max-width:100%;aspect-ratio:1/1;margin:0 auto;padding:26px;box-sizing:border-box;border-radius:14px;overflow:hidden;background:var(--surface-2);display:grid;place-items:center;}
+.gud-detail-img{position:relative;width:230px;max-width:100%;aspect-ratio:1/1;margin:0 auto;padding:26px;box-sizing:border-box;border-radius:14px;overflow:hidden;background:var(--surface-2);display:grid;place-items:center;}
 .gud-detail-img img{width:100%;height:100%;object-fit:contain;}
 .gud-detail-img.-placeholder{color:var(--text-faint);}
 @media (max-width:480px){ .gud-detail-img{width:200px;padding:22px;} }
+/* v1.29.5 (Upload Experience, Phase 1) — drop-zone highlight (animated
+   border) while a file is being dragged over the drawer's own image;
+   .-uploading swaps the padding for edge-to-edge so .gud-photo-overlay's
+   inset:0 lines up with the visible square, not the padded content box. */
+.gud-detail-img.-dragover{box-shadow:0 0 0 2px var(--accent);}
+@media (prefers-reduced-motion:no-preference){
+  .gud-detail-img.-dragover{animation:gudDropPulse 1s ease-in-out infinite;}
+}
+.gud-detail-img.-uploading{padding:0;}
 
 .gud-modal-box{width:520px;max-width:94vw;max-height:90vh;display:flex;flex-direction:column;background:var(--surface);border-radius:20px;box-shadow:var(--shadow-lg);border:1px solid var(--border);padding:22px 24px;}
 .gud-modal-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex:0 0 auto;}
@@ -226,6 +261,48 @@
 .gud-modal-body{display:flex;flex-direction:column;gap:12px;overflow-y:auto;flex:1 1 auto;min-height:0;padding-right:2px;}
 .gud-modal-foot{display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding-top:14px;border-top:1px solid var(--border-faint);flex-wrap:wrap;gap:12px;flex:0 0 auto;}
 .gud-modal-hint{font-size:12px;color:var(--text-faint);display:inline-flex;align-items:center;gap:7px;} .gud-modal-actions{display:flex;gap:10px;}
+
+/* v1.29.4 (Warehouse Bulk Operations Framework) — same .gud-modal-box
+   shell every other Gudang modal already uses (Visual Design: "no new
+   design language"), just wider (the per-item quantity list and the
+   fail-detail groups both need more breathing room than a 520px form). */
+.gud-modal-box.-bulk{width:600px;}
+.gud-bulk-qty-input{width:84px;flex:none;text-align:right;}
+.gud-bulk-export-formats{display:flex;gap:10px;flex-wrap:wrap;}
+
+.gud-bulk-edit-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid var(--border-faint);}
+.gud-bulk-edit-row:last-child{border-bottom:none;}
+.gud-bulk-edit-row .gud-input{flex:1;min-width:160px;}
+.gud-check-row{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--text-dim);cursor:pointer;flex:none;}
+.gud-check-row input[type="checkbox"]{accent-color:var(--accent);width:16px;height:16px;}
+
+.gud-bulk-confirm-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding-bottom:12px;border-bottom:1px solid var(--border-faint);}
+.gud-bulk-confirm-op{font-family:var(--font-display);font-weight:800;font-size:17px;}
+.gud-bulk-confirm-count{font-family:var(--font-mono);font-weight:700;font-size:14px;color:var(--accent);}
+.gud-bulk-change-list{margin:0;padding-left:18px;font-size:13px;color:var(--text-dim);display:flex;flex-direction:column;gap:4px;}
+.gud-bulk-impact{margin-top:12px;padding:11px 14px;border-radius:11px;font-size:12.5px;font-weight:600;background:var(--surface-2);color:var(--text-dim);}
+.gud-bulk-impact[data-tone="danger"]{background:var(--crit-weak);color:var(--crit);}
+
+.gud-bulk-progress-label{font-size:13px;font-weight:700;color:var(--text-dim);text-align:center;}
+.gud-bulk-progress-bar{height:8px;border-radius:999px;background:var(--surface-2);overflow:hidden;}
+.gud-bulk-progress-fill{height:100%;background:linear-gradient(90deg,var(--accent-2),var(--accent));transition:width .15s ease;}
+.gud-bulk-progress-count{font-family:var(--font-mono);font-size:12.5px;color:var(--text-faint);text-align:center;}
+
+.gud-bulk-summary-head{display:flex;flex-direction:column;align-items:center;gap:6px;padding:6px 0;}
+.gud-bulk-summary-stats{display:flex;justify-content:center;gap:28px;padding:8px 0 4px;}
+.gud-bulk-stat{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11.5px;font-weight:600;color:var(--text-faint);}
+.gud-bulk-stat-n{font-family:var(--font-mono);font-size:20px;font-weight:800;color:var(--text);}
+.gud-bulk-stat-n[data-tone="ok"]{color:var(--c-green);} .gud-bulk-stat-n[data-tone="crit"]{color:var(--crit);}
+.gud-bulk-fail-list{display:flex;flex-direction:column;gap:8px;max-height:220px;overflow-y:auto;}
+.gud-bulk-fail-group{padding:10px 12px;border-radius:10px;background:var(--surface-2);border:1px solid var(--border-faint);}
+.gud-bulk-fail-reason{font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:8px;}
+.gud-bulk-fail-items{font-size:11.5px;color:var(--text-faint);margin-top:3px;}
+
+.gud-sel-bar-divider{width:1px;align-self:stretch;background:var(--border-strong);margin:0 2px;}
+@media (max-width:760px){
+  .gud-sel-bar-actions{flex-wrap:wrap;}
+  .gud-sel-bar-divider{display:none;}
+}
 
 /* ── table ────────────────────────────────────────────────────────────── */
 .gud-table-wrap{overflow-x:auto;} .gud-table{width:100%;border-collapse:collapse;min-width:560px;}
@@ -279,7 +356,7 @@
 .gud-sel-bar-count{font-family:var(--font-sans);font-weight:700;font-size:13.5px;color:var(--text);display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 .gud-sel-bar-count strong{font-family:var(--font-mono);color:var(--accent);}
 .gud-sel-bar-hidden{font-weight:600;font-size:11.5px;color:var(--text-faint);}
-.gud-sel-bar-actions{display:flex;align-items:center;gap:8px;flex:none;}
+.gud-sel-bar-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;}
 .gud-sel-bar-esc{margin-left:4px;}
 @media (max-width:760px){
   .gud-sel-bar{flex-wrap:wrap;}
@@ -302,6 +379,12 @@
 .gud-catalog-card{position:relative;display:flex;flex-direction:column;gap:3px;padding:12px 13px;border-radius:13px;border:1px solid var(--border-faint);background:var(--surface);cursor:pointer;transition:border-color .12s,box-shadow .12s;}
 .gud-catalog-card:hover{border-color:var(--border-strong);box-shadow:var(--shadow-sm);}
 .gud-catalog-card:focus-visible{outline:2px solid var(--accent-line);outline-offset:2px;}
+/* v1.29.5 (Upload Experience, Phase 1) — drop-zone highlight (animated
+   border) while a file is being dragged over this card. */
+.gud-catalog-card.-dragover{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-line);}
+@media (prefers-reduced-motion:no-preference){
+  .gud-catalog-card.-dragover{animation:gudDropPulse 1s ease-in-out infinite;}
+}
 /* Product image (Phase 10.3) — bleeds to the card's own edges via negative
    margins matching .gud-catalog-card's padding (12px/13px), so it reads as
    one continuous photo tile rather than an inset thumbnail. Adaptive Image
@@ -310,9 +393,10 @@
    chairs, keyboards) are never cropped — object-fit:contain does the
    scaling, this frame just guarantees the same shape and breathing room
    every time, regardless of the grid's responsive column width. */
-.gud-catalog-card-img{margin:-12px -13px 6px;aspect-ratio:1/1;padding:16px;box-sizing:border-box;border-radius:13px 13px 0 0;overflow:hidden;background:var(--surface-2);display:grid;place-items:center;}
+.gud-catalog-card-img{position:relative;margin:-12px -13px 6px;aspect-ratio:1/1;padding:16px;box-sizing:border-box;border-radius:13px 13px 0 0;overflow:hidden;background:var(--surface-2);display:grid;place-items:center;}
 .gud-catalog-card-img img{width:100%;height:100%;object-fit:contain;}
 .gud-catalog-card-img.-placeholder{color:var(--text-faint);}
+.gud-catalog-card-img.-uploading{padding:0;}
 .gud-catalog-card-name{font-size:13px;font-weight:700;line-height:1.3;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
 .gud-catalog-card-meta{font-size:11px;color:var(--text-faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .gud-catalog-card-stock{font-family:var(--font-mono);font-size:12.5px;font-weight:700;color:var(--text-dim);margin-top:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
@@ -524,12 +608,36 @@
 .gud-hist-ic{width:30px;height:30px;border-radius:9px;flex:none;display:grid;place-items:center;}
 .gud-hist-ic[data-tone="ok"]{background:var(--c-green-weak);color:var(--c-green);}
 .gud-hist-ic[data-tone="crit"]{background:var(--crit-weak);color:var(--crit);}
+/* v1.29.7: toneForActivity() (gudang-activities.js) also returns "neutral"
+   (Item Created, and every dormant/future type) — this rule was missing for
+   both the existing v1.29.6 per-item Timeline and the new Dashboard's
+   Recent Activity card, which reuses these exact classes verbatim; added
+   here rather than left unstyled. */
+.gud-hist-ic[data-tone="neutral"]{background:var(--surface-2);color:var(--text-faint);}
 .gud-hist-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
 .gud-hist-title{font-size:13.5px;font-weight:700;}
 .gud-hist-qty{font-family:var(--font-mono);}
 .gud-hist-qty[data-sign="plus"]{color:var(--c-green);} .gud-hist-qty[data-sign="minus"]{color:var(--crit);}
 .gud-hist-sub{font-size:12px;color:var(--text-faint);}
 .gud-hist-time{font-family:var(--font-mono);font-size:11.5px;color:var(--text-faint);white-space:nowrap;flex:none;}
+
+/* v1.29.6 (Warehouse Activity Timeline) — the Item Detail drawer's own
+   expandable rows. .gud-hist-row/-ic/-main/-title/-sub/-time above are
+   reused VERBATIM on the <summary> (which is what actually needs the
+   flex layout); .gud-timeline-row is just the <details> wrapper, kept
+   deliberately bare (block, no flex) so <summary> and the detail panel
+   stack normally instead of competing for the same flex row. Native
+   <details>/<summary> — zero new JS for expand/collapse, keyboard
+   accessible for free (Tab focuses the summary, Enter/Space toggles it),
+   same precedent as js/app.js's own v2-audit-tech-details disclosure. */
+.gud-timeline-row-summary{cursor:pointer;list-style:none;}
+.gud-timeline-row-summary::-webkit-details-marker{display:none;}
+.gud-timeline-row-summary::marker{content:'';}
+.gud-timeline-chevron{flex:none;color:var(--text-faint);transition:transform .15s ease;}
+.gud-timeline-row[open] .gud-timeline-chevron{transform:rotate(180deg);}
+.gud-timeline-detail{margin-top:6px;padding:4px 12px 2px 54px;} /* 54px aligns under .gud-hist-main, past the 30px icon + gap */
+.gud-timeline-detail .gud-kv{padding:7px 0;font-size:12.5px;}
+.gud-timeline-search{max-width:280px;}
 .gud-hist-search{max-width:280px;}
 
 /* ── Stock Opname — category-grouped card catalog (Doc 2 §10) ───────────
@@ -596,6 +704,49 @@
 .gud-asset-row:hover{border-color:var(--border-strong);}
 .gud-asset-identity{font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--text);}
 .gud-action-row{display:flex;gap:10px;flex-wrap:wrap;}
+
+/* ── Dashboard (v1.29.7) — Overview Cards, Warehouse Health, Quick Actions,
+   Category/Location Distribution, Forecast Summary. Low Stock/Recent
+   Activity reuse .gud-toplist/.gud-hist-row above verbatim, no new CSS
+   needed for either. auto-fit/minmax throughout (not fixed breakpoints)
+   so every grid here reflows naturally at any width — "no horizontal
+   scrolling" (brief, Section Layout) without a per-viewport rule. ────── */
+.gud-ov-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;}
+.gud-ov-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;box-shadow:var(--shadow-sm);}
+.gud-ov-ic{width:30px;height:30px;border-radius:9px;background:var(--surface-2);color:var(--text-faint);display:grid;place-items:center;margin-bottom:10px;}
+.gud-ov-ic[data-tone="warn"]{background:var(--c-amber-weak);color:var(--c-amber);}
+.gud-ov-ic[data-tone="crit"]{background:var(--crit-weak);color:var(--crit);}
+.gud-ov-val{font-family:var(--font-display);font-weight:800;font-size:24px;letter-spacing:-.02em;line-height:1.1;}
+.gud-ov-title{font-size:12.5px;color:var(--text-faint);margin-top:4px;}
+.gud-ov-cap{font-size:11px;color:var(--text-ghost);margin-top:2px;}
+
+.gud-health-banner{display:flex;align-items:center;gap:14px;padding:16px 18px;border-radius:14px;border:1px solid var(--border);background:var(--surface);}
+.gud-health-banner[data-tone="ok"]{background:var(--c-green-weak);border-color:transparent;}
+.gud-health-banner[data-tone="warn"]{background:var(--c-amber-weak);border-color:transparent;}
+.gud-health-banner[data-tone="crit"]{background:var(--crit-weak);border-color:transparent;}
+.gud-health-ic{flex:none;width:38px;height:38px;border-radius:11px;display:grid;place-items:center;background:var(--surface);}
+.gud-health-banner[data-tone="ok"] .gud-health-ic{color:var(--c-green);}
+.gud-health-banner[data-tone="warn"] .gud-health-ic{color:var(--c-amber);}
+.gud-health-banner[data-tone="crit"] .gud-health-ic{color:var(--crit);}
+.gud-health-title{font-family:var(--font-display);font-weight:800;font-size:15px;}
+.gud-health-sub{font-size:12.5px;color:var(--text-dim);margin-top:2px;}
+
+.gud-qa-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-top:2px;}
+.gud-qa-tile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:16px 10px;border-radius:14px;border:1px solid var(--border);background:var(--surface);color:var(--text-dim);cursor:pointer;font-family:var(--font-sans);font-size:12.5px;font-weight:600;transition:border-color .12s,box-shadow .12s,transform .12s;}
+.gud-qa-tile:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md);transform:translateY(-1px);color:var(--text);}
+.gud-qa-tile:focus-visible{outline:2px solid var(--accent-line);outline-offset:2px;}
+
+.gud-dist-row{display:grid;grid-template-columns:104px 1fr auto;align-items:center;gap:10px;padding:7px 0;}
+.gud-dist-label{font-size:12.5px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.gud-dist-bar{height:6px;border-radius:99px;background:var(--surface-2);overflow:hidden;}
+.gud-dist-fill{height:100%;background:var(--accent);border-radius:99px;}
+.gud-dist-val{font-family:var(--font-mono);font-size:11.5px;color:var(--text-faint);font-weight:700;text-align:right;min-width:22px;}
+
+.gud-fc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:12px;margin-top:4px;}
+.gud-fc-cell{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;}
+.gud-fc-label{font-size:11.5px;color:var(--text-faint);}
+
+@media (max-width:480px){ .gud-dist-row{grid-template-columns:88px 1fr auto;} }
 
 /* ── responsive ───────────────────────────────────────────────────────── */
 @media (max-width:1080px){

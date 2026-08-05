@@ -103,6 +103,28 @@ export function kbdRow(keys) {
   return `<span class="gud-kbd-row">${keys.map(kbd).join('')}</span>`;
 }
 
+/** v1.29.5 (Warehouse Upload Experience, Phase 9 — "Progress ring"): a
+ *  circular upload-progress indicator, stroke-dasharray technique — the
+ *  FIRST ring-shaped progress indicator anywhere in this app (confirmed:
+ *  every existing precedent, including v1.29.4's own Bulk Operations
+ *  progress bar, is linear; a ring fits a small square image thumbnail
+ *  far better than a bar would, which is why this is a new shape rather
+ *  than reusing .gud-bulk-progress-bar). `pct` is 0-100; omit/undefined
+ *  renders an indeterminate (25%-drawn) ring, used while still
+ *  "preparing" and no real byte count exists yet. */
+export function progressRing(pct, { size = 40, tone = 'accent' } = {}) {
+  const r = (size - 4) / 2;
+  const c = 2 * Math.PI * r;
+  const p = pct == null ? 25 : Math.max(0, Math.min(100, pct));
+  const offset = c * (1 - p / 100);
+  const color = tone === 'accent' ? 'var(--accent)' : (/^(var\(|#|rgb)/.test(tone) ? tone : `var(--${tone})`);
+  return `<svg class="gud-progress-ring" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-hidden="true">
+    <circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="var(--border)" stroke-width="3"/>
+    <circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round"
+      stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${offset.toFixed(2)}" transform="rotate(-90 ${size / 2} ${size / 2})"/>
+  </svg>`;
+}
+
 /** Reusable empty state — icon tile + title + hint + optional CTA, the same
  *  shape as .eng-empty. An empty state always encourages the next
  *  operational action (Doc 2 §14) — never a bare "no data" dead end. */

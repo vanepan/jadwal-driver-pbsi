@@ -49,6 +49,18 @@ import {
 import { forecastSentence } from '../analytics/quiet-intelligence-engine.js';
 import { itemHasPhoto, loadItemPhotoUrl } from './gudang-item-image.js';
 import { archiveItem } from '../repository/item-repository.js';
+// v1.29.5 (Upload Experience, Phase 1/3): drag & drop or paste a photo
+// while the drawer is open now replaces THIS item's photo in place — same
+// shared orchestration Home's catalog card uses (gudang-photo-upload.js),
+// dispatched from gudang-center.js.
+import { renderQuickPhotoOverlay } from './gudang-photo-upload.js';
+// v1.29.6 (Warehouse Activity Timeline): replaces the old flat "Pergerakan
+// Terbaru" (Recent Movements, capped at 8) list with the full, grouped,
+// filterable, expandable Activity Timeline — inside this SAME drawer, no
+// new page/modal (brief's own explicit instruction). Reads the SAME
+// st.detail.movements ensureConsumableData() already fetches below; no
+// second query.
+import { renderTimeline } from './gudang-timeline.js';
 
 const STATUS_LABEL = { available: 'Tersedia', assigned: 'Ditugaskan', maintenance: 'Maintenance', retired: 'Pensiun' };
 const STATUS_PILL = { available: 'ok', assigned: 'info', maintenance: 'warn', retired: 'neutral' };
@@ -61,10 +73,19 @@ export function renderItemDetail(st, c, requestRender) {
 
   ensureDetailImage(st, item, requestRender);
 
+  // v1.29.6: the Activity Timeline applies to BOTH item types (Item
+  // Created is universal), placed after each type's own existing body —
+  // for a Consumable, ensureConsumableData() below already has
+  // st.detail.movements ready by the time this renders; for an Asset,
+  // there simply are none (Movement doesn't apply to Assets, Doc 1
+  // Art.V), so the timeline naturally shows only Item Created — the
+  // Asset UNIT list/history above is untouched, a different granularity
+  // this release deliberately leaves alone (see the architecture report).
   const body = `
     ${itemImageBlock(st, item)}
     ${identityBlock(st, item)}
     ${item.itemType === ITEM_TYPE.CONSUMABLE ? consumableBody(st, item, requestRender) : assetListBody(st, item)}
+    ${renderTimeline(st, item)}
     ${metadataBlock(item)}
     ${editItemButtonBlock(item)}
     ${deleteItemButtonBlock(item)}`;
@@ -87,10 +108,13 @@ function ensureDetailImage(st, item, requestRender) {
 /** Placeholder — never a broken-image icon (Phase 10.3 spec) — same
  *  `package` glyph gudang-home.js's catalog card uses for the same reason. */
 function itemImageBlock(st, item) {
+  const dragOver = st.dragOverItemId === item.itemId ? ' -dragover' : '';
+  const overlay = renderQuickPhotoOverlay(st, item.itemId, { size: 56 });
+  if (overlay) return `<div class="gud-detail-img -uploading${dragOver}">${overlay}</div>`;
   if (itemHasPhoto(item) && st.detail.imageLoaded === item.itemId && st.detail.imageUrl) {
-    return `<div class="gud-detail-img"><img src="${esc(st.detail.imageUrl)}" alt="" /></div>`;
+    return `<div class="gud-detail-img${dragOver}"><img src="${esc(st.detail.imageUrl)}" alt="" /></div>`;
   }
-  return `<div class="gud-detail-img -placeholder">${icon('package', { size: 40, tone: 'text-faint' })}</div>`;
+  return `<div class="gud-detail-img -placeholder${dragOver}">${icon('package', { size: 40, tone: 'text-faint' })}</div>`;
 }
 
 /** Name is already the drawer's own title — Identity shows the rest of
@@ -207,7 +231,15 @@ function ensureConsumableData(st, item, requestRender) {
     cache.forecast = forecastRes.ok ? forecastRes.data : null;
     cache.consumption = consRes.ok ? consRes.data : null;
     cache.deptUsage = deptRes.ok ? deptRes.data : [];
-    cache.movements = histRes.ok ? histRes.data.slice(0, 8) : [];
+    // v1.29.6: was .slice(0, 8) for the old flat "Pergerakan Terbaru" list
+    // — the new Activity Timeline (gudang-timeline.js) does its own
+    // client-side paging (PAGE_SIZE=30, "Muat Lebih Banyak"), so this
+    // needs the real list, capped defensively (not per-render truncation)
+    // against a pathological single item with an implausible movement
+    // count — 500 is generous for anything a real warehouse item could
+    // accumulate; getMovementHistory() is already scoped to ONE item
+    // (Performance: never the whole catalog's movements).
+    cache.movements = histRes.ok ? histRes.data.slice(0, 500) : [];
     requestRender();
   });
 }
@@ -224,13 +256,6 @@ function consumableBody(st, item, requestRender) {
       <div class="gud-kv"><span class="gud-kv-k">Rata-rata Konsumsi Bulanan</span><span class="gud-kv-v">${st.detail.consumption != null ? fmtQty(Math.round(st.detail.consumption)) : '—'}</span></div>
     </div>
     ${quickActionsBlock(item)}
-    <div class="gud-sec">
-      <div class="gud-sec-t">PERGERAKAN TERBARU</div>
-      ${st.detail.movements.length
-        ? st.detail.movements.map((m) => `<div class="gud-kv"><span class="gud-kv-k">${esc(m.what)} · ${esc(m.why)}</span><span class="gud-kv-v">${esc(fmtWhen(m.when))}</span></div>`).join('')
-        : `<div class="gud-muted">Belum ada pergerakan.</div>`}
-      <button type="button" class="gud-link-btn gud-mt" data-act="gud-goto" data-val="history">${icon('arrow-right', { size: 12 })} Lihat semua di Movement History</button>
-    </div>
     <div class="gud-sec">
       <div class="gud-sec-t">PENGGUNAAN PER BIDANG</div>
       ${st.detail.deptUsage.length

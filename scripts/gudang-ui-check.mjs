@@ -70,6 +70,10 @@ console.log('\n[Part B — UI never re-implements analytics/stock/movement compu
     'js/gudang/ui/gudang-stock-opname.js': ['../consumable/stock-opname-engine.js'],
     'js/gudang/ui/gudang-movement-history.js': ['../audit/movement-history-view.js'],
     'js/gudang/ui/gudang-item-detail.js': ['../asset/asset-lifecycle-engine.js', '../analytics/analytics-engine.js'],
+    // v1.29.7 (Warehouse Dashboard): every Overview/Health/Low Stock/
+    // Category/Location/Forecast Summary figure is composed by dashboard-
+    // engine.js, never derived inline in the screen file.
+    'js/gudang/ui/gudang-dashboard.js': ['../dashboard/dashboard-engine.js'],
   };
   for (const [rel, deps] of Object.entries(mustImportFrom)) {
     const code = read(rel);
@@ -116,6 +120,30 @@ console.log('\n[Part D — No unnecessary abstraction]');
     // those two files rather than by gudang-center.js directly (checked
     // separately below, not via the loop every screen file goes through).
     'gudang-item-image.js',
+    // v1.29.4 (Warehouse Bulk Operations Framework): the shared modal UI
+    // (form/confirm/progress/summary) for Bulk Goods Out/Archive/Edit/
+    // Export — not a screen either (no gud-goto entry, rendered as a
+    // st.modal layer exactly like gudang-catalog.js's own modal), so it
+    // is exempt from the "every screen file is imported by gudang-
+    // center.js's render() switch" loop below the same way gudang-
+    // catalog.js already is (checked separately, via its own render
+    // dispatch branch instead).
+    'gudang-bulk-ui.js',
+    // v1.29.5 (Warehouse Upload Experience): shared quick-replace
+    // orchestration (Card/Drawer drag&drop/paste) + the session-overlay
+    // renderer the Add/Edit Item dialog also consumes — not a screen
+    // either; the loop below already confirms it via a plain import-
+    // string check, same as every other non-screen file here.
+    'gudang-photo-upload.js',
+    // v1.29.6 (Warehouse Activity Timeline): the timeline's own render +
+    // filter/search/load-more handlers, mounted INSIDE the Item Detail
+    // drawer (brief: "Do NOT create another page/modal") — not a screen
+    // either; same import-string check as every other non-screen file.
+    'gudang-timeline.js',
+    // v1.29.7 (Warehouse Dashboard): the new module landing screen — a
+    // real screen (has its own gud-goto entry, 'dashboard'), so it goes
+    // through the same orphan-check loop below as every other screen file.
+    'gudang-dashboard.js',
   ];
   const actual = fs.readdirSync(path.join(ROOT, 'js/gudang/ui')).filter((f) => f.endsWith('.js')).sort();
   check(`js/gudang/ui/ has exactly the ${expectedFiles.length} files this phase needs — one per screen, no speculative extras`, JSON.stringify(actual) === JSON.stringify([...expectedFiles].sort()));
@@ -147,7 +175,7 @@ console.log('\n[Part E — Wiring integrity: app.js/index.html actually mount Gu
   check('app.js imports openGudangSearch from gudang-center.js', /import\s*\{[\s\S]{0,200}openGudangSearch[\s\S]{0,200}\}\s*from ['"]\.\/gudang\/ui\/gudang-center\.js['"]/.test(appJs));
   check('the search Clear (X) button handler actually calls openGudangSearch() to keep focus in the field', /v2SearchClear\.addEventListener\('click'[\s\S]{0,400}openGudangSearch\(\)/.test(appJs));
   check('every v2NavGud* sidebar button has a real click listener (Phase 10: this was the actual UAT bug — screens existed but were unreachable)',
-    ['v2NavGudHome', 'v2NavGudGoodsOut', 'v2NavGudGoodsIn', 'v2NavGudHistory', 'v2NavGudOpname', 'v2NavGudAnalytics']
+    ['v2NavGudDashboard', 'v2NavGudHome', 'v2NavGudGoodsOut', 'v2NavGudGoodsIn', 'v2NavGudHistory', 'v2NavGudOpname', 'v2NavGudAnalytics']
       .every((id) => new RegExp(`getElementById\\('${id}'\\)\\?\\.addEventListener\\('click'`).test(appJs)));
   check('setWorkspace() actually toggles #v2GudangWorkspace visible (Phase 10.1: the real blank-screen bug — Gudang was never added to this toggle, so the host stayed at its initial display:none no matter what navGudang() did)',
     /const isGudang\s*=\s*name === 'gudang'/.test(appJs)

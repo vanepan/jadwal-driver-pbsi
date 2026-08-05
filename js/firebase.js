@@ -16,7 +16,7 @@ import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/
 // ref() and must not be shadowed. Storage is the ONLY new Firebase product
 // this milestone activates; every other export below is unchanged V1
 // behavior.
-import { getStorage, ref as storageRef, uploadBytes, getBytes } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js';
+import { getStorage, ref as storageRef, uploadBytes, getBytes, uploadBytesResumable, deleteObject } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js';
 import { showToast } from './utils.js';
 import { getSetting } from './settings-store.js';
 
@@ -899,15 +899,40 @@ export async function acquireReimbursementDocNumber(dateStr) {
    already initializes (never a second parallel Firebase app instance).
 
    RESPONSIBILITY: initFirebaseStorageLayer(), uploadFileToStorage(),
-   downloadFileFromStorage() (V2.1.2, Document Preview — Part L).
+   downloadFileFromStorage() (V2.1.2, Document Preview — Part L),
+   uploadFileToStorageResumable(), deleteFileFromStorage() (v1.29.5,
+   Warehouse Upload Experience).
 
    NON-GOALS (explicit, minimal scope): no getDownloadURL() call (no
    signed/public URLs) — downloadFileFromStorage() uses getBytes() instead,
    which requires the SAME authenticated SDK/security-rules context as any
-   other read, never a public link. No delete/list/metadata-update
-   helpers, no lifecycle or retention policy.
-   src/file-storage/file-storage-engine.js and js/v2/ui/
-   dataset-import-center.js (preview only) are the ONLY callers.
+   other read, never a public link. No list/metadata-update helpers, no
+   lifecycle or retention policy.
+   uploadFileToStorage()/downloadFileFromStorage() themselves are UNCHANGED
+   — src/file-storage/file-storage-engine.js and js/v2/ui/dataset-import-
+   center.js (preview only) keep calling exactly what they already call;
+   nothing here alters an existing signature or behavior for either caller.
+
+   AMENDED — v1.29.5 (Warehouse Upload Experience): added
+   uploadFileToStorageResumable() and deleteFileFromStorage(), both purely
+   additive new exports, for Gudang's new upload engine (js/gudang/upload/
+   upload-engine.js). Investigated first: uploadFileToStorage() uses the
+   one-shot uploadBytes() — confirmed (by this repo's own prior art, see
+   src/knowledge/datasets/import-session/performance-collector.js's own
+   comment) that there is NO byte-level progress event anywhere in this
+   codebase, because uploadBytes() exposes none. A real "large uploads show
+   percentage" experience needs the SDK's resumable upload API
+   (uploadBytesResumable(), which exposes a 'state_changed' progress
+   event) — added as a SEPARATE function rather than changing
+   uploadFileToStorage() internally, so the existing (working, tested)
+   callers are provably unaffected. deleteFileFromStorage() is genuinely
+   new capability: no delete primitive existed anywhere in this file
+   before (a Storage object could be orphaned but never removed) — needed
+   for the new upload engine's "upload new, verify, replace reference,
+   THEN delete the previous file" safety sequence (Gudang's own item
+   photos were the one place in the app that already had a delete-shaped
+   gap: replacing a photo always left the old object behind, undeleted,
+   forever).
    ============================================================ */
 let firebaseStorage = null;
 
@@ -956,6 +981,65 @@ export async function downloadFileFromStorage(storagePath) {
   } catch (err) {
     console.error('[firebase] downloadFileFromStorage gagal:', err);
     return { ok: false, bytes: null, error: err && err.message ? err.message : 'Unduh gagal.' };
+  }
+}
+
+/**
+ * v1.29.5 — same job as uploadFileToStorage(), but via the SDK's resumable
+ * upload task (uploadBytesResumable) so a caller can observe real
+ * byte-level progress through `onProgress({loaded, total})` — the one
+ * thing uploadBytes() cannot expose (confirmed: no progress event exists
+ * anywhere in this codebase before this function). A SEPARATE function,
+ * not a change to uploadFileToStorage() itself — every existing caller of
+ * that one is unaffected.
+ * @param {string} storagePath
+ * @param {Blob|File} file
+ * @param {(p:{loaded:number, total:number}) => void} [onProgress]
+ * @returns {Promise<{ok: boolean, fullPath: string|null, error: string|null}>}
+ */
+export function uploadFileToStorageResumable(storagePath, file, onProgress) {
+  const storage = firebaseStorage || initFirebaseStorageLayer();
+  if (!storage) return Promise.resolve({ ok: false, fullPath: null, error: 'Firebase Storage belum siap.' });
+  return new Promise((resolve) => {
+    let task;
+    try {
+      const target = storageRef(storage, storagePath);
+      task = uploadBytesResumable(target, file);
+    } catch (err) {
+      resolve({ ok: false, fullPath: null, error: err && err.message ? err.message : 'Upload gagal.' });
+      return;
+    }
+    task.on('state_changed',
+      (snapshot) => { if (onProgress) onProgress({ loaded: snapshot.bytesTransferred, total: snapshot.totalBytes }); },
+      (err) => {
+        console.error('[firebase] uploadFileToStorageResumable gagal:', err);
+        resolve({ ok: false, fullPath: null, error: err && err.message ? err.message : 'Upload gagal.' });
+      },
+      () => resolve({ ok: true, fullPath: task.snapshot.ref.fullPath, error: null }));
+  });
+}
+
+/**
+ * v1.29.5 — deletes one Storage object. Genuinely new capability (no
+ * delete primitive existed anywhere in this file before); needed so a
+ * caller can safely implement "upload new, verify, replace reference,
+ * THEN delete the previous file" instead of leaving replaced objects
+ * orphaned forever. Deleting an object that no longer exists (e.g. a
+ * double-cleanup race) is treated as success, not a failure — the
+ * caller's goal ("this path should not exist") is already satisfied.
+ * @param {string} storagePath
+ * @returns {Promise<{ok: boolean, error: string|null}>}
+ */
+export async function deleteFileFromStorage(storagePath) {
+  const storage = firebaseStorage || initFirebaseStorageLayer();
+  if (!storage) return { ok: false, error: 'Firebase Storage belum siap.' };
+  try {
+    await deleteObject(storageRef(storage, storagePath));
+    return { ok: true, error: null };
+  } catch (err) {
+    if (err && err.code === 'storage/object-not-found') return { ok: true, error: null };
+    console.error('[firebase] deleteFileFromStorage gagal:', err);
+    return { ok: false, error: err && err.message ? err.message : 'Hapus berkas gagal.' };
   }
 }
 

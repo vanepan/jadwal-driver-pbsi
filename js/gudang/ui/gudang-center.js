@@ -49,10 +49,37 @@ import { renderMovementHistory, historyHandlers } from './gudang-movement-histor
 import { renderStockOpname, opnameHandlers } from './gudang-stock-opname.js';
 import { renderAnalytics, analyticsOnChange } from './gudang-analytics.js';
 import { renderItemDetail, renderAssetDetail, detailHandlers, renderDeleteItemConfirm } from './gudang-item-detail.js';
+// v1.29.6 (Warehouse Activity Timeline): the timeline's own filter/search/
+// load-more controls, rendered inside the drawer by gudang-timeline.js
+// itself — dispatched here the same way every other Gudang feature's
+// acts are, via a plain prefix check.
+import { timelineHandlers } from './gudang-timeline.js';
 import { renderCatalogModal, catalogHandlers } from './gudang-catalog.js';
+// v1.29.4 (Warehouse Bulk Operations Framework): the Selection Engine
+// stays frozen (js/gudang/selection/selection-engine.js untouched) — Bulk
+// consumes selectedIds() once, at the door (gudang-bulk-ui.js#openBulkModal),
+// never reads st.selection again mid-flow. isBulkOperationRunning() is the
+// one guard the modal/Escape/scrim-click handlers below need to prevent
+// dismissing a bulk operation mid-execution ("No global cancellation").
+import { renderBulkModal, bulkHandlers, isBulkOperationRunning } from './gudang-bulk-ui.js';
+// v1.29.5 (Warehouse Upload Experience): drag & drop / paste onto a Home
+// catalog card or the open Item Detail drawer now replaces that item's
+// photo directly — gudang-center.js only extends its EXISTING dragover/
+// drop/paste listeners (Phase 10.3) to recognize these two new targets
+// alongside the untouched .gud-cat-photo-zone (Add/Edit Item dialog)
+// case; all the actual upload/progress/retry/Storage-safety orchestration
+// lives in gudang-photo-upload.js.
+import { startQuickPhotoReplace, retryQuickPhotoReplace, cancelQuickPhotoReplace } from './gudang-photo-upload.js';
+// v1.29.7 (Warehouse Dashboard): the new module landing screen (mirrors
+// Engineering's own dashboard-as-landing-screen convention) — PURE
+// aggregation over data/engines every other Gudang screen already reuses
+// (see that file's own header). No new acts: every interactive element on
+// it dispatches through acts gudang-center.js already routes below
+// (gud-goto, gud-open-item, gud-quick-goods-out/in, gud-cat-add-item-home).
+import { renderDashboard } from './gudang-dashboard.js';
 
 const st = {
-  screen: 'home',
+  screen: 'dashboard',
   detail: null, // { kind: 'item'|'asset', id: string }
   modal: null, // { kind: 'addItem'|'addLocation'|'addDepartment'|'addAssetUnit', ... } — gudang-catalog.js
   search: createInitialSessionState(),
@@ -75,6 +102,14 @@ const st = {
   // pruneSelection() (an id leaving the inventory, in refreshCatalog())
   // ever remove anything from it.
   selection: createSelectionState(),
+  // v1.29.5 (Warehouse Upload Experience): at most ONE quick photo
+  // replace in flight app-wide — { itemId, session } | null, owned end to
+  // end by gudang-photo-upload.js (this file only reads it for the
+  // Escape/scrim-dismiss guards below, never mutates it directly).
+  photoUpload: null,
+  // Purely visual — which card/drawer image is the current drag target,
+  // toggled by onDragOver/onDragLeave/onDrop below.
+  dragOverItemId: null,
 };
 
 let host = null, mounted = false, loaded = false, lastAnimatedScreen = null, toastTimer = null, searchDebounceTimer = null;
@@ -134,6 +169,7 @@ export async function mountGudang(hostEl) {
     // delegated listener per event type, same discipline as the rest of
     // this file.
     host.addEventListener('dragover', onDragOver);
+    host.addEventListener('dragleave', onDragLeave);
     host.addEventListener('drop', onDrop);
     host.addEventListener('paste', onPaste);
     // v1.29.3 (Selection Engine, Phase 8: "Mobile: Long Press -> Selection
@@ -208,6 +244,16 @@ async function refreshCatalog() {
   st.homeStockBulkLoading = false;
   st.analyticsTop = null; // same staleness class — Top Consumed/Top Departments (gudang-analytics.js)
   st.historyData = null; // same staleness class — the feed itself (gudang-movement-history.js)
+  // v1.29.7 (Warehouse Dashboard, Section 10 — Live Refresh): Recent
+  // Activity's own lazy cache, same staleness class as the three above —
+  // busting it here means every Goods In/Out/Bulk op/Archive/Upload/Edit
+  // already refreshes the Dashboard for free, with zero new refresh
+  // plumbing (this function is already the one chokepoint every mutating
+  // action funnels through). Overview/Health/Low Stock/Forecast Summary
+  // need no separate bust: they all read st.homeStockBulk, already reset
+  // two lines above.
+  st.dashboardActivity = null;
+  st.dashboardActivityLoading = false;
   if (st.detail) { st.detail.loaded = null; st.detail.historyLoaded = null; }
   st.loading = false;
   render();
@@ -221,7 +267,7 @@ async function refreshCatalog() {
 // sitting there indefinitely for the next visit to inherit.
 const EPHEMERAL_SCREEN_STATE_KEY = { goodsOut: 'goodsOut', goodsIn: 'goodsIn', opname: 'opname' };
 export function setGudangScreen(screen) {
-  const next = screen || 'home';
+  const next = screen || 'dashboard';
   if (st.screen !== next) {
     // Nulling the field here lets each screen's own existing ensure()
     // guard recreate a fresh blank draft on next visit — the same
@@ -452,8 +498,9 @@ function render() {
     case 'history': screen = renderMovementHistory(st, c, render); break;
     case 'opname': screen = renderStockOpname(st, c); break;
     case 'analytics': screen = renderAnalytics(st, c, render); break;
-    case 'home':
-    default: screen = renderHome(st, c, render);
+    case 'home': screen = renderHome(st, c, render); break;
+    case 'dashboard':
+    default: screen = renderDashboard(st, c, render);
   }
   const detail = st.detail
     ? (st.detail.kind === 'asset' ? renderAssetDetail(st, c, render) : renderItemDetail(st, c, render))
@@ -466,7 +513,9 @@ function render() {
     ? (mobilePresentation ? renderMobileSearchSheet(st, c) : renderSearchOverlay(st, c, searchAnchorRect()))
     : '';
   const modal = st.modal
-    ? (st.modal.kind === 'confirmDeleteItem' ? renderDeleteItemConfirm(st) : renderCatalogModal(st, c))
+    ? (st.modal.kind === 'confirmDeleteItem' ? renderDeleteItemConfirm(st)
+      : st.modal.kind === 'bulk' ? renderBulkModal(st, c)
+      : renderCatalogModal(st, c))
     : '';
   // v1.29.1 (Warehouse Smart Filtering, Feature 11): mobile bottom sheet,
   // same ownership split as `overlay` above — Home only ever renders the
@@ -515,7 +564,11 @@ function syncSearchInputAria() {
 /* ── delegated events ─────────────────────────────────────────────────── */
 function onClick(e) {
   const scrim = e.target.closest('[data-act="gud-scrim"]');
-  if (scrim && !e.target.closest('.gud-drawer') && !e.target.closest('.gud-modal-box') && !e.target.closest('.gud-spotlight') && !e.target.closest('.gud-filter-sheet')) {
+  // v1.29.4: a bulk operation mid-execution must never be dismissed by a
+  // scrim click ("No global cancellation," brief Phase 6) — the modal's
+  // own head already omits its close (X) button for this exact state;
+  // this is the second of the two dismiss paths that needed the same guard.
+  if (scrim && !e.target.closest('.gud-drawer') && !e.target.closest('.gud-modal-box') && !e.target.closest('.gud-spotlight') && !e.target.closest('.gud-filter-sheet') && !isBulkOperationRunning(st)) {
     st.detail = null;
     st.modal = null;
     st.search = applySessionEvent(st.search, { type: 'close' }).state;
@@ -585,6 +638,17 @@ function onClick(e) {
       if (act.startsWith('gud-asset-action-') || act.startsWith('gud-item-delete-')) { detailHandlers.onClick(st, act, el, c, render, refreshCatalog, showToast); return; }
       if (act.startsWith('gud-cat-')) { catalogHandlers.onClick(st, act, el, c, render, refreshCatalog); return; }
       if (act.startsWith('gud-home-')) { homeHandlers.onClick(st, act, el, c, render); return; }
+      if (act.startsWith('gud-bulk-')) { bulkHandlers.onClick(st, act, el, c, render, refreshCatalog, showToast); return; }
+      // v1.29.5 (Upload Experience): the Card/Drawer quick-replace
+      // overlay's own Retry/Cancel — distinct from gud-cat-photo-retry/
+      // -cancel above, which belong to the Add/Edit Item dialog's own
+      // per-draft session, not st.photoUpload.
+      if (act === 'gud-photo-retry') { retryQuickPhotoReplace(st, render, refreshCatalog, showToast); return; }
+      if (act === 'gud-photo-cancel') { cancelQuickPhotoReplace(st, render); return; }
+      // v1.29.6 (Warehouse Activity Timeline): filter chips / Muat Lebih
+      // Banyak — purely local UI state (st.detail.timeline), no Firebase
+      // touched by either act.
+      if (act.startsWith('gud-timeline-')) { timelineHandlers.onClick(st, act, el, render); return; }
       break;
   }
 }
@@ -611,6 +675,8 @@ function onInput(e) {
   if (ds.act.startsWith('gud-asset-')) { detailHandlers.onInput(st, ds.act, t); return; }
   if (ds.act.startsWith('gud-cat-')) { catalogHandlers.onInput(st, ds.act, t, render); return; }
   if (ds.act.startsWith('gud-home-')) { homeHandlers.onInput(st, ds.act, t, render); return; }
+  if (ds.act.startsWith('gud-bulk-')) { bulkHandlers.onInput(st, ds.act, t, render); return; }
+  if (ds.act.startsWith('gud-timeline-')) { timelineHandlers.onInput(st, ds.act, t, render); return; }
 }
 
 function onSubmit(e) {
@@ -650,31 +716,75 @@ function onHostKeydown(e) {
 }
 
 /* ── Phase 10.3: photo drag & drop / paste (Add Item / Edit Item only) ──── */
+/** v1.29.5 (Upload Experience, Phase 1): resolves a drag/drop target
+ *  outside the Add/Edit Item dialog to the itemId it should replace the
+ *  photo for — a Home catalog card (by its own data-id) or the open Item
+ *  Detail drawer's image block (by st.detail.id, the only item it could
+ *  possibly mean). Returns null when neither matches, so callers can
+ *  cheaply no-op. */
+function quickPhotoTargetId(e) {
+  const card = e.target.closest('.gud-catalog-card');
+  if (card) return card.dataset.id;
+  if (e.target.closest('.gud-detail-img') && st.detail && st.detail.kind === 'item') return st.detail.id;
+  return null;
+}
+
 function onDragOver(e) {
-  if (!e.target.closest('[data-act="gud-cat-photo-zone"]')) return;
-  e.preventDefault(); // required for 'drop' to fire at all
+  if (e.target.closest('[data-act="gud-cat-photo-zone"]')) { e.preventDefault(); return; } // required for 'drop' to fire at all
+  const itemId = quickPhotoTargetId(e);
+  if (!itemId) return;
+  e.preventDefault();
+  if (st.dragOverItemId !== itemId) { st.dragOverItemId = itemId; render(); }
+}
+
+/** Clears the -dragover highlight once the pointer actually leaves the
+ *  card/drawer image (not just crossing an inner child boundary, which
+ *  dragenter/dragleave fire constantly for — closest() on relatedTarget
+ *  is what makes this only fire on a REAL exit). */
+function onDragLeave(e) {
+  if (!st.dragOverItemId) return;
+  const stillInside = e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('.gud-catalog-card, .gud-detail-img');
+  if (!stillInside) { st.dragOverItemId = null; render(); }
 }
 
 function onDrop(e) {
   const zone = e.target.closest('[data-act="gud-cat-photo-zone"]');
-  if (!zone) return;
+  if (zone) {
+    e.preventDefault();
+    const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (file) catalogHandlers.onPhotoFile(st, file, render);
+    return;
+  }
+  const itemId = quickPhotoTargetId(e);
+  if (!itemId) return;
   e.preventDefault();
+  st.dragOverItemId = null;
   const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-  if (file) catalogHandlers.onPhotoFile(st, file, render);
+  if (file) startQuickPhotoReplace(st, itemId, file, render, refreshCatalog, showToast);
+  else render();
 }
 
-/** Paste has no target element to scope by data-act (clipboard events fire
- *  wherever focus is) — scoped instead to "a photo-capable modal is open,"
- *  same as the modal's own Escape-to-cancel keyboard handling below. */
+/** Paste — the Add/Edit Item dialog's existing behavior is untouched;
+ *  v1.29.5 adds ONE more scope: the open Item Detail drawer (paste has no
+ *  drop coordinates, so unlike drag it can't target an arbitrary Home
+ *  card — the drawer is the one unambiguous single target it CAN have;
+ *  see the v1.29.5 architecture report for why Home cards deliberately
+ *  aren't a paste target). */
 function onPaste(e) {
-  if (!st.modal || (st.modal.kind !== 'addItem' && st.modal.kind !== 'editItem')) return;
   const items = (e.clipboardData && e.clipboardData.items) || [];
   const imageItem = Array.from(items).find((it) => it.type && it.type.startsWith('image/'));
   if (!imageItem) return;
   const file = imageItem.getAsFile();
   if (!file) return;
-  e.preventDefault();
-  catalogHandlers.onPhotoFile(st, file, render);
+  if (st.modal && (st.modal.kind === 'addItem' || st.modal.kind === 'editItem')) {
+    e.preventDefault();
+    catalogHandlers.onPhotoFile(st, file, render);
+    return;
+  }
+  if (!st.modal && st.detail && st.detail.kind === 'item') {
+    e.preventDefault();
+    startQuickPhotoReplace(st, st.detail.id, file, render, refreshCatalog, showToast);
+  }
 }
 
 /* ── Phase 8: mobile Long Press -> Selection Mode (Home catalog only) ──── */
@@ -754,7 +864,10 @@ function onGlobalKeydown(e) {
     }
   }
 
-  if (e.key === 'Escape' && st.modal) { e.preventDefault(); e.stopPropagation(); st.modal = null; render(); return; }
+  // v1.29.4: a bulk operation mid-execution must never be dismissed by
+  // Escape either — same "No global cancellation" guard as the scrim
+  // click handler above.
+  if (e.key === 'Escape' && st.modal && !isBulkOperationRunning(st)) { e.preventDefault(); e.stopPropagation(); st.modal = null; render(); return; }
 
   // v1.29.1 Feature 12 (Keyboard Experience: "Esc closes Filter Panel") —
   // same priority tier as the modal check above (a scrim-backed, dialog-
@@ -767,6 +880,11 @@ function onGlobalKeydown(e) {
   // branch below so a stray Esc while selecting never ALSO closes an
   // unrelated open drawer in the same press.
   if (e.key === 'Escape' && hasSelection(st.selection)) { e.preventDefault(); e.stopPropagation(); clearSelection(st.selection); render(); return; }
+
+  // v1.29.5 (Upload Experience, Phase 12 — Accessibility): Esc cancels an
+  // in-flight quick photo replace (Card/Drawer) — same "a mode the user
+  // is currently in" tier as Selection's own Esc-clears above.
+  if (e.key === 'Escape' && st.photoUpload) { e.preventDefault(); e.stopPropagation(); cancelQuickPhotoReplace(st, render); return; }
 
   // v1.28.11 ESC priority (Warehouse UX Enhancement): only one UI layer is
   // ever dismissed per press. When the Spotlight dropdown itself is open

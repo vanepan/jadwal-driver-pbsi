@@ -1279,7 +1279,9 @@ const MODULE_DEFS = {
   gudang: {
     railId: 'v2RailGudang', navId: 'v2PanelGudangNav',
     title: 'Gudang', subtitle: 'Warehouse Operating System', crumb: 'GUDANG',
-    land: () => navGudang('home', 'v2NavGudHome'),
+    // v1.29.7 (Warehouse Dashboard): lands on the Dashboard now, same
+    // pattern as Engineering's own land() -> navEngineering('dashboard', ...).
+    land: () => navGudang('dashboard', 'v2NavGudDashboard'),
   },
   // V2.0.10: Sarpras Intelligence — embedded native module (same pattern as
   // Petty Cash / Engineering), gated to a single pilot identity via
@@ -2139,15 +2141,15 @@ function showModulePlaceholder(title, message) {
 /* ── MODUL: Gudang ── (V1.28.0 Experience Layer — embedded native module,
    same pattern as Engineering: real navId, real land() screen, lazy mount) */
 const GUD_MENU_TITLES = {
-  home: 'Home', goodsOut: 'Goods Out', goodsIn: 'Goods In',
+  dashboard: 'Dashboard', home: 'Home', goodsOut: 'Goods Out', goodsIn: 'Goods In',
   history: 'Movement History', opname: 'Stock Opname', analytics: 'Analytics',
 };
 const GUD_SCREEN_BOTTOM_NAV_ACTION = {
-  home: 'navGudHome', goodsOut: 'navGudGoodsOut', goodsIn: 'navGudGoodsIn',
+  dashboard: 'navGudDashboard', home: 'navGudHome', goodsOut: 'navGudGoodsOut', goodsIn: 'navGudGoodsIn',
   history: 'navGudHistory', opname: 'navGudOpname', analytics: 'navGudAnalytics',
 };
 const GUD_SCREEN_NAV_ID = {
-  home: 'v2NavGudHome', goodsOut: 'v2NavGudGoodsOut', goodsIn: 'v2NavGudGoodsIn',
+  dashboard: 'v2NavGudDashboard', home: 'v2NavGudHome', goodsOut: 'v2NavGudGoodsOut', goodsIn: 'v2NavGudGoodsIn',
   history: 'v2NavGudHistory', opname: 'v2NavGudOpname', analytics: 'v2NavGudAnalytics',
 };
 // Phase 10.4.1: gudangMounted only latches once a host actually exists to
@@ -2161,8 +2163,8 @@ async function navGudang(screen, navId) {
   setWorkspace('gudang');
   const hostEl = document.getElementById('v2GudangWorkspace');
   if (!gudangMounted && hostEl) { gudangMounted = true; await mountGudang(hostEl); }
-  setGudangScreen(screen || 'home');
-  syncBottomNavAction(GUD_SCREEN_BOTTOM_NAV_ACTION[screen] || 'navGudHome', 'openMoreSheet');
+  setGudangScreen(screen || 'dashboard');
+  syncBottomNavAction(GUD_SCREEN_BOTTOM_NAV_ACTION[screen] || 'navGudDashboard', 'openMoreSheet');
 }
 
 // Phase 10.4.1: catches every screen change navGudang() itself doesn't see —
@@ -2172,8 +2174,8 @@ async function navGudang(screen, navId) {
 // bottom-nav synchronized regardless of which of those triggered it.
 onGudangScreenChange((screen) => {
   setCrumb('GUDANG', GUD_MENU_TITLES[screen] || 'Gudang');
-  setV2PanelNavActive(GUD_SCREEN_NAV_ID[screen] || 'v2NavGudHome');
-  syncBottomNavAction(GUD_SCREEN_BOTTOM_NAV_ACTION[screen] || 'navGudHome', 'openMoreSheet');
+  setV2PanelNavActive(GUD_SCREEN_NAV_ID[screen] || 'v2NavGudDashboard');
+  syncBottomNavAction(GUD_SCREEN_BOTTOM_NAV_ACTION[screen] || 'navGudDashboard', 'openMoreSheet');
 });
 
 function initV2Rail() {
@@ -2709,7 +2711,16 @@ function initV2Panel() {
     <!-- ═══ MODUL: Gudang ═══ (V1.28.0 Experience Layer — admin only, see canAccessModule) -->
     <nav class="v2-panel-nav v2-panel-nav--gudang" id="v2PanelGudangNav"
          aria-label="Gudang menu" style="display:none;">
-      <button class="v2-panel-nav-item v2-panel-nav-item--active" id="v2NavGudHome" type="button">
+      <!-- v1.29.7 (Warehouse Dashboard): the new module landing screen — same
+           "Dashboard first, own screens behind it" convention Engineering
+           already established (v2NavEngDashboard). Home (the catalog/search
+           experience Phase 10.2 deliberately built) stays a real screen,
+           just no longer the FIRST one a user lands on. -->
+      <button class="v2-panel-nav-item v2-panel-nav-item--active" id="v2NavGudDashboard" type="button">
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M3 4a1 1 0 011-1h5a1 1 0 011 1v5a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM11 4a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1V4zM11 10a1 1 0 011-1h4a1 1 0 011 1v6a1 1 0 01-1 1h-4a1 1 0 01-1-1v-6zM3 13a1 1 0 011-1h5a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3z"/></svg>
+        Dashboard
+      </button>
+      <button class="v2-panel-nav-item" id="v2NavGudHome" type="button">
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/></svg>
         Home
       </button>
@@ -2934,6 +2945,7 @@ function initV2Panel() {
   // MODUL Gudang (V1.28.0 Experience Layer) — was missing entirely; every
   // other embedded module has a block here, Gudang's real screens (Phases
   // 3-9) were unreachable through the real sidebar until this was added.
+  document.getElementById('v2NavGudDashboard')?.addEventListener('click', () => navGudang('dashboard', 'v2NavGudDashboard'));
   document.getElementById('v2NavGudHome')?.addEventListener('click', () => navGudang('home', 'v2NavGudHome'));
   document.getElementById('v2NavGudGoodsOut')?.addEventListener('click', () => navGudang('goodsOut', 'v2NavGudGoodsOut'));
   document.getElementById('v2NavGudGoodsIn')?.addEventListener('click', () => navGudang('goodsIn', 'v2NavGudGoodsIn'));

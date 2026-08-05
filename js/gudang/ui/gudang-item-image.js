@@ -31,14 +31,36 @@
    `st.*ImageCache` for the session so scrolling/re-rendering never
    re-downloads a photo already resolved once. No thumbnail/resize
    pipeline exists — see this phase's report for that disclosed tradeoff.
+
+   AMENDED — v1.29.5 (Warehouse Upload Experience): this file is now a
+   THIN adapter over the new js/gudang/upload/upload-engine.js (a generic,
+   domain-ignorant engine — same "engine knows nothing about the caller's
+   domain" shape as v1.29.4's bulk-executor.js). compressPhotoForUpload()
+   and validateItemPhoto() are UNCHANGED — investigated first, per this
+   release's own brief: compression already existed here (1280px max
+   dimension, 0.82 JPEG quality, best-effort fallback to the original on
+   any failure) and is reused as-is, passed into the engine as its
+   `compress` step, never reimplemented. uploadItemPhoto(itemId, file) —
+   the original one-shot, no-progress signature every existing caller
+   used — is UNCHANGED in behavior, now simply implemented by running one
+   throwaway engine session (never duplicated logic). NEW exports —
+   createItemPhotoSession/startItemPhotoUpload/retryItemPhotoUpload/
+   cancelItemPhotoUpload — give the new upload UI (gudang-photo-upload.js)
+   live progress and Retry/Cancel, which the old one-shot function never
+   could. deleteItemPhoto() is genuinely new: js/firebase.js had NO delete
+   primitive before this release (a replaced photo's old Storage object
+   was orphaned forever) — now the Storage Safety sequence (Phase 10)
+   can actually clean up after itself, once, only after the NEW photo is
+   confirmed uploaded and the Item record is confirmed updated.
    ============================================================ */
 
 'use strict';
 
 import { GUDANG_STORAGE_PREFIX } from '../config/gudang-paths.js';
-
-const MAX_BYTES = 5 * 1024 * 1024; // 5MB — generous for a phone photo, small enough to stay a quick warehouse-floor upload
-const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+import {
+  createUploadSession, runUpload, retryUpload, cancelUpload,
+  validateUploadFile, ACCEPTED_IMAGE_TYPES, MAX_UPLOAD_BYTES,
+} from '../upload/upload-engine.js';
 
 // Phase 10.4.2 root cause ("upload hangs forever, no success, no failure"):
 // the full chain from this file's calls down to the real Firebase
@@ -61,12 +83,12 @@ function withTimeout(promise, ms) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-/** @param {*} file @returns {string|null} an error message, or null if the file is an acceptable photo. */
+/** @param {*} file @returns {string|null} an error message, or null if the file is an acceptable photo.
+ *  v1.29.5: delegates to upload-engine.js#validateUploadFile with this
+ *  file's own (unchanged) limits — one validation implementation, not two
+ *  copies of the same three checks. */
 export function validateItemPhoto(file) {
-  if (!file) return 'Tidak ada file.';
-  if (!ACCEPTED_TYPES.includes(file.type)) return 'Format tidak didukung. Gunakan JPG, PNG, WEBP, atau GIF.';
-  if (file.size > MAX_BYTES) return 'Ukuran foto maksimal 5MB.';
-  return null;
+  return validateUploadFile(file, { acceptedTypes: ACCEPTED_IMAGE_TYPES, maxBytes: MAX_UPLOAD_BYTES });
 }
 
 function safeExt(mimeType) {
@@ -106,28 +128,77 @@ async function compressPhotoForUpload(file) {
   }
 }
 
+/** The engine's injected `uploader` for item photos — resumable (real
+ *  progress), with the same 30s hang-protection ceiling the old one-shot
+ *  path already established (Phase 10.4.2's fix; a progress-capable
+ *  upload can hang exactly the same way an unbounded one-shot could). */
+function itemPhotoUploader(path, file, onProgress) {
+  return import('../../firebase.js').then(({ uploadFileToStorageResumable }) =>
+    withTimeout(uploadFileToStorageResumable(path, file, onProgress), STORAGE_TIMEOUT_MS));
+}
+
+function buildItemPhotoPath(itemId) {
+  return (file) => `${GUDANG_STORAGE_PREFIX}/${itemId}/${Date.now()}.${safeExt(file.type)}`;
+}
+
+function itemPhotoUploadOps(itemId) {
+  return { buildStoragePath: buildItemPhotoPath(itemId), compress: compressPhotoForUpload, uploader: itemPhotoUploader };
+}
+
+/** Creates a fresh upload session for `file` — `previewUrl` should already
+ *  be a blob: URL the caller made via URL.createObjectURL (Phase 8:
+ *  preview shows instantly, before any network activity; this file never
+ *  touches the DOM itself). */
+export function createItemPhotoSession(file, previewUrl) {
+  return createUploadSession(file, previewUrl);
+}
+
+/** Starts (or restarts from idle) uploading a session for `itemId`.
+ *  `onChange(session)` fires on every state transition (preparing ->
+ *  uploading, each progress tick, done/error) so the caller can re-render. */
+export function startItemPhotoUpload(session, itemId, onChange) {
+  return runUpload(session, { ...itemPhotoUploadOps(itemId), onChange });
+}
+
+/** Retry (Phase 7): re-runs the SAME session — same file, same preview,
+ *  no re-picking, no reopening anything. */
+export function retryItemPhotoUpload(session, itemId, onChange) {
+  return retryUpload(session, { ...itemPhotoUploadOps(itemId), onChange });
+}
+
+/** Cancel (Phase 7). */
+export function cancelItemPhotoUpload(session, onChange) {
+  cancelUpload(session, onChange);
+}
+
 /**
- * Uploads one photo for `itemId`. Each call gets a fresh timestamped path —
- * replacing a photo never overwrites the old object in Storage (this app's
- * Storage layer has no delete primitive, by the same explicit non-goal
- * js/firebase.js's own header documents) — the Item's metadata simply stops
- * pointing at the old path once saved.
+ * Uploads one photo for `itemId` and waits for the whole result — the
+ * ORIGINAL one-shot, no-progress contract every existing caller already
+ * used, UNCHANGED in behavior, now simply running one throwaway engine
+ * session underneath (never a second compress/upload implementation).
  * @returns {Promise<{ok:boolean, storagePath:?string, contentType:?string, error:?string}>}
  */
 export async function uploadItemPhoto(itemId, file) {
   const invalid = validateItemPhoto(file);
   if (invalid) return { ok: false, storagePath: null, contentType: null, error: invalid };
-  const upload = await compressPhotoForUpload(file);
-  const { uploadFileToStorage } = await import('../../firebase.js');
-  const path = `${GUDANG_STORAGE_PREFIX}/${itemId}/${Date.now()}.${safeExt(upload.type)}`;
-  let res;
-  try {
-    res = await withTimeout(uploadFileToStorage(path, upload), STORAGE_TIMEOUT_MS);
-  } catch (err) {
-    return { ok: false, storagePath: null, contentType: null, error: err.message };
-  }
-  if (!res.ok) return { ok: false, storagePath: null, contentType: null, error: res.error };
-  return { ok: true, storagePath: res.fullPath || path, contentType: upload.type, error: null };
+  const session = createUploadSession(file, null);
+  const res = await startItemPhotoUpload(session, itemId, () => {});
+  if (!res.ok) return { ok: false, storagePath: null, contentType: null, error: session.error || 'Unggah gagal.' };
+  return { ok: true, storagePath: res.storagePath, contentType: res.contentType, error: null };
+}
+
+/**
+ * Deletes a previously-uploaded photo's Storage object (Phase 10, Storage
+ * Safety) — call ONLY after a replacement photo is confirmed uploaded AND
+ * the Item record confirmed updated to point at it; never before, and
+ * never as a precondition for either of those succeeding. A no-op success
+ * when `storagePath` is falsy (nothing to delete).
+ * @returns {Promise<{ok:boolean, error:?string}>}
+ */
+export async function deleteItemPhoto(storagePath) {
+  if (!storagePath) return { ok: true, error: null };
+  const { deleteFileFromStorage } = await import('../../firebase.js');
+  return deleteFileFromStorage(storagePath);
 }
 
 // v1.28.7 — this project's Storage read path was confirmed (via direct

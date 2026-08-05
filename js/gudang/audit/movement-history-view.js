@@ -30,6 +30,16 @@
    guessed here. search-resolver.js is therefore NOT modified this phase.
 
    PURE where possible; I/O only in getMovementHistory (a real read).
+
+   AMENDED — v1.29.6 (Warehouse Activity Timeline): formatMovementEntry()
+   now also carries the raw `type`/`reason` enum values and `purpose`/
+   `notes` (dropped entirely before this) — purely additive, no existing
+   key removed or changed. The new Activity Engine (js/gudang/activity/)
+   needs the raw type to pick an icon/vocabulary entry (matching a label
+   STRING was gudang-movement-history.js's own admitted workaround, not a
+   pattern to repeat) and needs purpose/notes to tell a Bulk Goods Out
+   movement apart from a single-item one (see gudang-activities.js's own
+   header for that heuristic's exact reasoning and disclosed limits).
    ============================================================ */
 
 'use strict';
@@ -85,6 +95,18 @@ export function formatMovementEntry(movement) {
     why: label(MOVEMENT_REASON_LABEL, movement.reason),
     quantityDelta: movement.quantityDelta,
     price: movement.price,
+    // v1.29.6 (Warehouse Activity Timeline) — additive: the raw type/
+    // reason enum values (never exposed before; only their labels were)
+    // plus purpose/notes (v1.29.4 Bulk Goods Out fields, previously
+    // dropped entirely by this formatter) are now carried through
+    // alongside what/why, never replacing them. Existing callers
+    // (gudang-movement-history.js, gudang-item-detail.js's old Recent
+    // Movements list) only ever destructured what/why/when/who and are
+    // unaffected by these two new keys.
+    type: movement.type,
+    reason: movement.reason,
+    purpose: movement.purpose ?? null,
+    notes: movement.notes ?? null,
   });
 }
 

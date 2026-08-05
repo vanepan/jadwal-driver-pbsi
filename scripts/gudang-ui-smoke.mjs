@@ -68,7 +68,7 @@ const result = await page.evaluate(async () => {
     out.steps.push('mount:ok');
     out.htmlLengths.home = host.innerHTML.length;
 
-    for (const screen of ['goodsOut', 'goodsIn', 'history', 'opname', 'analytics', 'home']) {
+    for (const screen of ['dashboard', 'goodsOut', 'goodsIn', 'history', 'opname', 'analytics', 'home']) {
       mod.setGudangScreen(screen);
       await new Promise((r) => setTimeout(r, 400)); // let each screen's own async loaders settle
       out.htmlLengths[screen] = host.innerHTML.length;
@@ -106,6 +106,23 @@ try {
   if (homeHandle) await homeHandle.screenshot({ path: path.join(screenshotsDir, 'home-light.png') });
 } catch (_) {}
 
+// v1.29.7 (Warehouse Dashboard): the new landing screen — light, EMPTY-
+// catalog state (this environment is unauthenticated, so the real catalog
+// is always empty; this screenshot proves the empty state itself: page
+// head + Quick Actions, no data sections). The full populated layout
+// (Overview Cards/Health/Low Stock/Distributions) is visually reviewed
+// separately with fixture data, since this harness has no live catalog.
+await page.evaluate(async () => {
+  document.documentElement.removeAttribute('data-theme');
+  const mod = await import('/js/gudang/ui/gudang-center.js');
+  mod.setGudangScreen('dashboard');
+});
+await new Promise((r) => setTimeout(r, 400));
+try {
+  const dashLightHandle = await page.$('#__gudTestHost');
+  if (dashLightHandle) await dashLightHandle.screenshot({ path: path.join(screenshotsDir, 'dashboard-light.png') });
+} catch (_) {}
+
 // Dark mode: flip the same [data-theme] attribute the real theme toggle
 // uses (js/app.js#applyTheme), re-render Home, screenshot for comparison.
 await page.evaluate(async () => {
@@ -117,6 +134,17 @@ await new Promise((r) => setTimeout(r, 400));
 try {
   const darkHandle = await page.$('#__gudTestHost');
   if (darkHandle) await darkHandle.screenshot({ path: path.join(screenshotsDir, 'home-dark.png') });
+} catch (_) {}
+
+// v1.29.7: Dashboard, dark mode, same empty-catalog state as above.
+await page.evaluate(async () => {
+  const mod = await import('/js/gudang/ui/gudang-center.js');
+  mod.setGudangScreen('dashboard');
+});
+await new Promise((r) => setTimeout(r, 400));
+try {
+  const dashDarkHandle = await page.$('#__gudTestHost');
+  if (dashDarkHandle) await dashDarkHandle.screenshot({ path: path.join(screenshotsDir, 'dashboard-dark.png') });
 } catch (_) {}
 
 console.log('Steps:', result.steps.join(' -> '));

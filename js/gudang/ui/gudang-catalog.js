@@ -65,7 +65,21 @@ import { normalizeText } from '../contracts/text-normalization.js';
 import { createItem, updateItem } from '../repository/item-repository.js';
 import { createLocation } from '../repository/location-repository.js';
 import { createAsset } from '../repository/asset-repository.js';
-import { uploadItemPhoto, loadItemPhotoUrl, itemHasPhoto, validateItemPhoto } from './gudang-item-image.js';
+import {
+  uploadItemPhoto, loadItemPhotoUrl, itemHasPhoto, validateItemPhoto,
+  createItemPhotoSession, startItemPhotoUpload, retryItemPhotoUpload, cancelItemPhotoUpload, deleteItemPhoto,
+} from './gudang-item-image.js';
+// v1.29.5 (Warehouse Upload Experience, Phase 2/8): Edit Item's photo now
+// uploads EAGERLY (the instant a file is picked, not deferred to Save) —
+// same shared session-rendering this release's Card/Drawer quick-replace
+// uses (gudang-photo-upload.js), just parameterized with this dialog's
+// own gud-cat-photo-retry/gud-cat-photo-cancel act names since the
+// session lives on m.draft, not on st.photoUpload. Add Item still defers
+// the actual upload to Save (there is no itemId to upload against until
+// the item is created) — its instant local blob preview already satisfies
+// "preview immediately, don't wait for upload" for that one surface; see
+// this release's own architecture report for the full reasoning.
+import { renderSessionOverlay } from './gudang-photo-upload.js';
 
 function uniqueNonEmpty(arr) {
   return Array.from(new Set(arr.filter(Boolean)));
@@ -116,13 +130,22 @@ export function renderCatalogModal(st, c) {
         <span class="gud-modal-hint">Esc untuk batal</span>
         <div class="gud-modal-actions">
           <button type="button" class="gud-btn -ghost" data-act="gud-cat-cancel">Batal</button>
-          <button type="button" class="gud-btn -primary" data-act="gud-cat-confirm" ${m.saving ? 'disabled' : ''}>
-            ${m.saving ? 'Menyimpan…' : `${icon('check', { size: 14 })} Simpan`}
+          <button type="button" class="gud-btn -primary" data-act="gud-cat-confirm" ${m.saving || photoStillUploading(m) ? 'disabled' : ''}>
+            ${photoStillUploading(m) ? 'Menunggu foto…' : m.saving ? 'Menyimpan…' : `${icon('check', { size: 14 })} Simpan`}
           </button>
         </div>
       </div>
     </div>
   </div>`;
+}
+
+/** v1.29.5: true while Edit Item's eager photo upload is still
+ *  'preparing'/'uploading' — Save must wait for it to settle (either
+ *  'done', so the just-uploaded storagePath is used, or 'error', so the
+ *  user can Retry/Cancel first) rather than silently saving mid-flight. */
+function photoStillUploading(m) {
+  const s = m.draft && m.draft.photoSession;
+  return !!(s && (s.status === 'preparing' || s.status === 'uploading'));
 }
 
 /** Add Item / Edit Item share the exact same field set (Phase 10.3) — only
@@ -140,7 +163,7 @@ function itemFormBody(st, m, isEdit) {
     <div class="gud-field"><span>Nama Barang <span class="gud-req">*</span></span>
       <input class="gud-input" data-act="gud-cat-field-name" value="${esc(d.name)}" placeholder="mis. Kertas A4, Super Glue…" autocomplete="off" autofocus /></div>
 
-    ${photoField(d)}
+    ${photoField(d, isEdit)}
 
     <div class="gud-field"><span>Ukuran / Varian <span class="gud-opt">(opsional)</span></span>
       <input class="gud-input" data-act="gud-cat-field-variant" value="${esc(d.variant)}" placeholder="mis. 25 gr, 500 ml, Merah, XL" autocomplete="off" /></div>
@@ -161,16 +184,31 @@ function itemFormBody(st, m, isEdit) {
     </div>`;
 }
 
-/** Drag & drop / browse / paste photo field (Phase 10.3). The drop zone
- *  itself carries data-act="gud-cat-photo-zone" so gudang-center.js's
- *  delegated dragover/drop/click listeners can find it without a new
- *  per-instance DOM reference — same "one delegated listener" discipline
- *  as every other Gudang interaction. */
-function photoField(d) {
+/** Drag & drop / browse / paste photo field (Phase 10.3; upload timing
+ *  redesigned v1.29.5). The drop zone itself carries
+ *  data-act="gud-cat-photo-zone" so gudang-center.js's delegated
+ *  dragover/drop/click listeners can find it without a new per-instance
+ *  DOM reference — same "one delegated listener" discipline as every
+ *  other Gudang interaction.
+ *
+ *  Add Item (isEdit=false): unchanged — d.photoPreviewUrl is a plain
+ *  local blob: preview, the file itself uploads later at Save (no itemId
+ *  exists to upload against until then; see the v1.29.5 architecture
+ *  report for why this one surface keeps its upload deferred).
+ *  Edit Item (isEdit=true): d.photoSession (if any) takes over as the
+ *  preview source — it's the NEW file being uploaded EAGERLY in the
+ *  background (Phase 8) — with a live progress/error+retry overlay on
+ *  top of it. No session yet (nothing new picked) falls back to
+ *  d.photoPreviewUrl, the EXISTING item's current photo. */
+function photoField(d, isEdit) {
+  const session = isEdit ? d.photoSession : null;
+  const previewUrl = session ? session.previewUrl : d.photoPreviewUrl;
+  const overlay = renderSessionOverlay(session, { retryAct: 'gud-cat-photo-retry', cancelAct: 'gud-cat-photo-cancel' });
   return `<div class="gud-field"><span>Foto Item <span class="gud-opt">(opsional)</span></span>
-    <div class="gud-photo-drop${d.photoPreviewUrl ? ' -filled' : ''}" data-act="gud-cat-photo-zone" tabindex="0" role="button" aria-label="Unggah foto item" title="Seret, klik, atau tempel untuk mengunggah foto">
-      ${d.photoPreviewUrl
-        ? `<img class="gud-photo-preview" src="${esc(d.photoPreviewUrl)}" alt="" />
+    <div class="gud-photo-drop${previewUrl ? ' -filled' : ''}" data-act="gud-cat-photo-zone" tabindex="0" role="button" aria-label="Unggah foto item" title="Seret, klik, atau tempel untuk mengunggah foto">
+      ${previewUrl
+        ? `<img class="gud-photo-preview" src="${esc(previewUrl)}" alt="" />
+           ${overlay}
            <div class="gud-photo-drop-actions">
              <button type="button" class="gud-link-btn" data-act="gud-cat-photo-browse">Ganti</button>
              <button type="button" class="gud-link-btn -danger" data-act="gud-cat-photo-remove">Hapus</button>
@@ -218,6 +256,7 @@ function blankItemDraft(prefillName) {
     name: prefillName || '', variant: '', jenis: '', category: '',
     locationName: '', aliases: '', itemType: ITEM_TYPE.CONSUMABLE,
     photoFile: null, photoPreviewUrl: '', photoError: null, photoRemoved: false,
+    photoSession: null, // v1.29.5: unused by Add Item (upload stays deferred to Save) — declared for shape symmetry with itemDraftFromExisting.
     existingStoragePath: null, existingContentType: null,
   };
 }
@@ -234,12 +273,17 @@ function itemDraftFromExisting(item) {
     locationName: '', // resolved below once locations are available to the caller
     aliases: item.aliases.join(', '), itemType: item.itemType,
     photoFile: null, photoPreviewUrl: '', photoError: null, photoRemoved: false,
+    photoSession: null, // v1.29.5: set once the user picks a NEW file (applyPhotoFile) — see photoField's own header for the precedence over photoPreviewUrl.
     existingStoragePath: item.metadata?.imageStoragePath || null,
     existingContentType: item.metadata?.imageContentType || null,
   };
 }
 
-async function resolveOrCreateLocationId(st, locationNameRaw) {
+/** v1.29.4 (Bulk Operations, Phase 3: Bulk Edit): exported so Bulk Edit's
+ *  Location field can resolve/create a Location by typed name exactly the
+ *  same way Add/Edit Item already does — never a second implementation of
+ *  "typed text -> existing Location by normalized name, or create one." */
+export async function resolveOrCreateLocationId(st, locationNameRaw) {
   const locationName = (locationNameRaw || '').trim();
   if (!locationName) return { ok: true, locationId: null };
   const normalized = normalizeText(locationName);
@@ -250,8 +294,20 @@ async function resolveOrCreateLocationId(st, locationNameRaw) {
   return { ok: true, locationId: locRes.data.locationId };
 }
 
+/** "Remove photo" semantics — discard EVERYTHING currently shown: the
+ *  existing item's own photo blob AND any in-flight replacement's blob
+ *  alike (both are being thrown away). */
 function revokePreview(d) {
   if (d.photoPreviewUrl && d.photoPreviewUrl.startsWith('blob:')) URL.revokeObjectURL(d.photoPreviewUrl);
+  if (d.photoSession && d.photoSession.previewUrl && d.photoSession.previewUrl.startsWith('blob:')) URL.revokeObjectURL(d.photoSession.previewUrl);
+}
+
+/** "Cancel this ONE attempt" semantics — discard only a session's own
+ *  blob, deliberately leaving d.photoPreviewUrl (the EXISTING item's
+ *  photo, a separate blob) untouched so photoField() correctly falls
+ *  back to showing it again once the session is cleared. */
+function revokeSessionPreviewOnly(session) {
+  if (session && session.previewUrl && session.previewUrl.startsWith('blob:')) URL.revokeObjectURL(session.previewUrl);
 }
 
 function applyPhotoFile(st, file, render) {
@@ -259,12 +315,32 @@ function applyPhotoFile(st, file, render) {
   if (!m || (m.kind !== 'addItem' && m.kind !== 'editItem')) return;
   const invalid = validateItemPhoto(file);
   if (invalid) { m.draft.photoError = invalid; render(); return; }
-  revokePreview(m.draft);
-  m.draft.photoFile = file;
-  m.draft.photoPreviewUrl = URL.createObjectURL(file);
   m.draft.photoError = null;
   m.draft.photoRemoved = false;
+
+  if (m.kind === 'addItem') {
+    // Upload stays deferred to Save — no itemId exists to upload against
+    // yet (see this release's architecture report for the full reasoning).
+    revokePreview(m.draft);
+    m.draft.photoFile = file;
+    m.draft.photoPreviewUrl = URL.createObjectURL(file);
+    render();
+    return;
+  }
+
+  // editItem (v1.29.5, Phase 2/8): preview instantly, upload EAGERLY in
+  // the background — Save just reads the session's already-settled
+  // result (photoStillUploading() gates Save while it's still in flight).
+  if (m.draft.photoSession) cancelItemPhotoUpload(m.draft.photoSession);
+  revokeSessionPreviewOnly(m.draft.photoSession);
+  const session = createItemPhotoSession(file, URL.createObjectURL(file));
+  m.draft.photoSession = session;
   render();
+  startItemPhotoUpload(session, m.context.itemId, () => {
+    // Stale-session guard: the modal may have closed, or an even newer
+    // file may have been picked since — never act on a superseded session.
+    if (st.modal && st.modal.kind === 'editItem' && st.modal.draft.photoSession === session) render();
+  });
 }
 
 /* ── handlers ─────────────────────────────────────────────────────────── */
@@ -306,7 +382,18 @@ export const catalogHandlers = {
         st.modal = { kind: 'addAssetUnit', context: { itemId: el.dataset.id }, draft: { identity: '', locationId: '' }, saving: false, error: null };
         render(); break;
       case 'gud-cat-cancel': {
-        if (st.modal && (st.modal.kind === 'addItem' || st.modal.kind === 'editItem')) revokePreview(st.modal.draft);
+        if (st.modal && (st.modal.kind === 'addItem' || st.modal.kind === 'editItem')) {
+          // v1.29.5: an eager Edit-Item upload may have already SUCCEEDED
+          // (photo sitting in Storage) even though the modal is being
+          // abandoned before Save — clean it up (Storage Safety), not
+          // just the local blob preview.
+          const s = st.modal.draft.photoSession;
+          if (s) {
+            cancelItemPhotoUpload(s);
+            if (s.status === 'done' && s.result && s.result.storagePath) deleteItemPhoto(s.result.storagePath).catch(() => {});
+          }
+          revokePreview(st.modal.draft);
+        }
         st.modal = null; render(); break;
       }
       case 'gud-cat-set-type': {
@@ -324,8 +411,33 @@ export const catalogHandlers = {
       case 'gud-cat-photo-remove': {
         const m = st.modal;
         if (!m) return;
+        const s = m.draft.photoSession;
+        if (s) {
+          cancelItemPhotoUpload(s);
+          if (s.status === 'done' && s.result && s.result.storagePath) deleteItemPhoto(s.result.storagePath).catch(() => {});
+        }
         revokePreview(m.draft);
-        m.draft.photoFile = null; m.draft.photoPreviewUrl = ''; m.draft.photoError = null; m.draft.photoRemoved = true;
+        m.draft.photoFile = null; m.draft.photoPreviewUrl = ''; m.draft.photoSession = null; m.draft.photoError = null; m.draft.photoRemoved = true;
+        render(); break;
+      }
+      // v1.29.5 (Phase 7 — Retry/Cancel, Edit Item's eager upload only;
+      // Add Item never creates a session, so these are no-ops there).
+      case 'gud-cat-photo-retry': {
+        const m = st.modal;
+        if (!m || !m.draft.photoSession) return;
+        const session = m.draft.photoSession;
+        retryItemPhotoUpload(session, m.context.itemId, () => {
+          if (st.modal && st.modal.kind === 'editItem' && st.modal.draft.photoSession === session) render();
+        });
+        render(); break;
+      }
+      case 'gud-cat-photo-cancel': {
+        const m = st.modal;
+        if (!m || !m.draft.photoSession) return;
+        cancelItemPhotoUpload(m.draft.photoSession);
+        revokeSessionPreviewOnly(m.draft.photoSession);
+        m.draft.photoSession = null;
+        m.draft.photoError = null;
         render(); break;
       }
       case 'gud-cat-confirm': confirmCatalogCreate(st, c, render, refreshCatalog); break;
@@ -450,14 +562,31 @@ async function confirmEditItem(st, m, render, refreshCatalog) {
   if (m.draft.variant.trim()) metadata.variant = m.draft.variant.trim(); else delete metadata.variant;
   if (m.draft.jenis.trim()) metadata.jenis = m.draft.jenis.trim(); else delete metadata.jenis;
 
-  if (m.draft.photoFile) {
-    const photoRes = await uploadItemPhoto(existing.itemId, m.draft.photoFile);
-    if (!photoRes.ok) { m.saving = false; m.error = photoRes.error; render(); return; }
-    metadata.imageStoragePath = photoRes.storagePath;
-    metadata.imageContentType = photoRes.contentType;
+  // v1.29.5 (Upload Experience, Phase 8): the photo — if the user picked
+  // one — was already uploaded EAGERLY the moment it was selected
+  // (applyPhotoFile below kicks off startItemPhotoUpload immediately, not
+  // here at Save) — this just reads the already-settled result. The Save
+  // button stays disabled while a session is still 'preparing'/'uploading'
+  // (renderCatalogModal's `m.saving`/confirm-button gate, below), so
+  // reaching 'error' here without the user having a chance to Retry/
+  // Cancel first should not normally happen — guarded anyway rather than
+  // silently saving an incomplete photo state.
+  let oldStoragePathToDelete = null;
+  if (m.draft.photoSession) {
+    const session = m.draft.photoSession;
+    if (session.status === 'done' && session.result) {
+      metadata.imageStoragePath = session.result.storagePath;
+      metadata.imageContentType = session.result.contentType;
+      oldStoragePathToDelete = existing.metadata && existing.metadata.imageStoragePath || null;
+    } else if (session.status === 'error') {
+      m.saving = false; m.error = session.error || 'Unggah foto gagal. Coba lagi atau hapus foto.'; render(); return;
+    } else {
+      m.saving = false; m.error = 'Unggah foto masih berlangsung. Tunggu sebentar lalu simpan lagi.'; render(); return;
+    }
   } else if (m.draft.photoRemoved) {
     delete metadata.imageStoragePath;
     delete metadata.imageContentType;
+    oldStoragePathToDelete = existing.metadata && existing.metadata.imageStoragePath || null;
   }
 
   const locRes = await resolveOrCreateLocationId(st, m.draft.locationName);
@@ -484,5 +613,9 @@ async function confirmEditItem(st, m, render, refreshCatalog) {
   }
   revokePreview(m.draft);
   st.modal = null;
+  // Storage Safety (Phase 10): delete the PREVIOUS photo only now — after
+  // the new reference is confirmed written — best-effort, never blocking
+  // or failing the save the user already sees as successful.
+  if (oldStoragePathToDelete) deleteItemPhoto(oldStoragePathToDelete).catch(() => {});
   await refreshCatalog();
 }
