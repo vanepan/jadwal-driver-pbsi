@@ -268,6 +268,24 @@
 .gud-home-search-ph{flex:1;color:var(--text-faint);font-size:15px;font-weight:500;}
 .gud-home-search-kbd{flex:none;}
 
+/* v1.29.3 (Warehouse Selection Engine, Phase 3/7) — Selection Mode toolbar,
+   replaces the search+filter row above while anything is selected.
+   position:sticky (not this file's usual position:fixed .gud-scrim/.gud-
+   toast/.gud-fab-row pattern — those are viewport overlays; this is a
+   sub-toolbar of the normally-scrolling page) tucked just beneath
+   .v2-topbar's own sticky top:0/height (platform.css: 56px + safe-area),
+   confirmed the same technique already works for that element. */
+.gud-sel-bar{position:sticky;top:calc(56px + env(safe-area-inset-top,0px));z-index:45;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border-radius:14px;border:1px solid var(--accent-line);background:var(--accent-weak);box-shadow:var(--shadow-sm);}
+.gud-sel-bar-count{font-family:var(--font-sans);font-weight:700;font-size:13.5px;color:var(--text);display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.gud-sel-bar-count strong{font-family:var(--font-mono);color:var(--accent);}
+.gud-sel-bar-hidden{font-weight:600;font-size:11.5px;color:var(--text-faint);}
+.gud-sel-bar-actions{display:flex;align-items:center;gap:8px;flex:none;}
+.gud-sel-bar-esc{margin-left:4px;}
+@media (max-width:760px){
+  .gud-sel-bar{flex-wrap:wrap;}
+  .gud-sel-bar-esc{display:none;} /* Doc 2 §13: no keyboard hints on mobile — same rule already applied to .gud-home-search-kbd */
+}
+
 /* Location/Category — a native <select> styled to sit in the same chip
    row as All/Consumable/Asset/Low Stock without becoming an unbounded
    chip-per-value list (Kategori/Lokasi are freeform, open-ended — Phase
@@ -315,6 +333,21 @@
 .gud-catalog-quick-btn{width:22px;height:22px;border-radius:7px;background:var(--surface-2);border:1px solid var(--border);color:var(--text-faint);display:grid;place-items:center;}
 .gud-catalog-quick-btn:hover{color:var(--accent);border-color:var(--accent-line);background:var(--accent-weak);}
 .gud-catalog-more{display:flex;justify-content:center;margin-top:14px;}
+
+/* v1.29.3 (Warehouse Selection Engine) — per-card checkbox overlay.
+   Hidden until hover (desktop, Phase 8) OR until any item is selected
+   (Phase 1/8: "after entering selection, checkboxes remain visible" — and
+   mobile has no :hover at all, so the [data-sel-active] rule is what makes
+   long-press-then-tap-others work there). .gud-catalog-card already has
+   position:relative, so this needs no structural change to the card. */
+.gud-sel-checkbox{position:absolute;top:8px;left:8px;z-index:2;width:22px;height:22px;border-radius:7px;border:1.5px solid var(--border-strong);background:var(--surface);color:#fff;display:grid;place-items:center;opacity:0;cursor:pointer;transition:opacity .12s,background .12s,border-color .12s;}
+.gud-catalog-card:hover .gud-sel-checkbox,
+.gud-catalog-card[data-selected="true"] .gud-sel-checkbox,
+.gud-catalog-grid[data-sel-active="true"] .gud-sel-checkbox{opacity:1;}
+.gud-sel-checkbox[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);}
+/* Selection state must be visually obvious on the card itself (Phase 1),
+   not only on its checkbox. */
+.gud-catalog-card[data-selected="true"]{border-color:var(--accent);background:var(--accent-weak);}
 
 /* Floating Actions (Part "Home Quick Actions" — Goods Out/In/Add Item
    demoted from primary equal-weight tiles to small, secondary, always-

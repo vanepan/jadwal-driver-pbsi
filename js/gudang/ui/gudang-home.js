@@ -39,7 +39,7 @@
 
 'use strict';
 
-import { esc, icon, emptyState, kbdRow, fmtQty } from './gudang-atoms.js';
+import { esc, icon, emptyState, kbdRow, kbd, fmtQty } from './gudang-atoms.js';
 import { ITEM_TYPE } from '../contracts/item-contract.js';
 import { categoryLabel } from '../config/gudang-categories.js';
 import { getProjection } from '../repository/stock-repository.js';
@@ -58,6 +58,15 @@ import {
   activeFilterChips, clearFilterKey, STOCK_STATUS_FILTER, FORECAST_FILTER,
 } from '../filters/filter-engine.js';
 import { classifyStockBulk } from '../filters/stock-status-bulk.js';
+// v1.29.3 (Warehouse Selection Engine): PURE state module (see its own
+// header) — Home owns the checkbox UI and Selection Mode bar; the shared
+// st.selection instance itself is created once by gudang-center.js, the
+// same ownership split filter-engine.js's st.homeFilter already models
+// (state lives on st, the pure engine only ever operates on it).
+import {
+  isSelected, hasSelection, toggleSelect, clearSelection, selectAll,
+  hiddenSelectionCount, selectionCount,
+} from '../selection/selection-engine.js';
 
 const PAGE_SIZE = 48;
 const ASSET_STATUS_LABEL = { available: 'tersedia', assigned: 'ditugaskan', maintenance: 'maintenance', retired: 'pensiun' };
@@ -123,14 +132,26 @@ export function renderHome(st, c, requestRender) {
   const f = ensureFilter(st);
   const hasCatalog = st.data.items.length > 0;
   if (f.stockStatus !== STOCK_STATUS_FILTER.ALL || f.forecast !== FORECAST_FILTER.ALL) ensureStockBulk(st, requestRender);
+  // v1.29.3 (Selection Engine, Phase 3): "When at least one item is
+  // selected, replace the normal toolbar" — only the SEARCH entry point
+  // swaps for the Selection Mode bar. Filter controls stay live underneath
+  // it (fixed after a UX pass: Phase 2 explicitly requires "hidden by
+  // current filter" to be something a user can TRIGGER — changing the
+  // filter while a selection already exists, watching some selected items
+  // disappear from view — which is only reachable if the filter stays
+  // changeable during selection; hiding it entirely would have made that
+  // half of Phase 2 unreachable through the real UI).
+  const selActive = hasSelection(st.selection);
 
   return `
     <div class="gud-home">
+      ${selActive ? renderSelectionBar(st, f) : `
       <button type="button" class="gud-home-search" data-act="gud-search-open">
         ${icon('search', { size: 20, tone: 'text-faint' })}
         <span class="gud-home-search-ph">Cari item, lokasi, aset…</span>
         <span class="gud-home-search-kbd">${kbdRow(['Ctrl', 'K'])}</span>
       </button>
+      `}
 
       ${hasCatalog ? renderFilterBar(st, f) : ''}
       ${hasCatalog ? renderMobileFilterTrigger(st, f) : ''}
@@ -149,6 +170,27 @@ export function renderHome(st, c, requestRender) {
       <button type="button" class="gud-fab" data-act="gud-quick-goods-in" aria-label="Goods In" title="Goods In">${icon('arrow-in', { size: 18 })}</button>
       <button type="button" class="gud-fab -primary" data-act="gud-cat-add-item-home" aria-label="Tambah Item" title="Tambah Item">${icon('plus', { size: 20 })}</button>
     </div>`;
+}
+
+/** Phase 3 (Selection Counter) + Phase 5 (Select All) + Phase 7 (Sticky
+ *  toolbar). "12 Selected (3 hidden by current filter)" — hiddenSelection-
+ *  Count against the SAME filtered set renderCatalogSection uses, so the
+ *  number shown here can never disagree with what's actually on screen. */
+function renderSelectionBar(st, f) {
+  const sel = st.selection;
+  const count = selectionCount(sel);
+  const visible = new Set(filteredItems(st, f).map((i) => i.itemId));
+  const hidden = hiddenSelectionCount(sel, visible);
+  return `<div class="gud-sel-bar" role="toolbar" aria-label="Mode Pilih">
+    <div class="gud-sel-bar-count">
+      <strong>${fmtQty(count)}</strong> Dipilih
+      ${hidden ? `<span class="gud-sel-bar-hidden">(${fmtQty(hidden)} tersembunyi oleh filter)</span>` : ''}
+    </div>
+    <div class="gud-sel-bar-actions">
+      <button type="button" class="gud-btn -ghost -sm" data-act="gud-home-sel-all">Pilih Semua</button>
+      <button type="button" class="gud-btn -sm" data-act="gud-home-sel-clear">Batal <span class="gud-sel-bar-esc">${kbd('Esc')}</span></button>
+    </div>
+  </div>`;
 }
 
 /** The controls themselves — Type/Location/Category/Stock Status/Forecast —
@@ -264,6 +306,17 @@ function filteredItems(st, f) {
   return filterItems(st.data.items, f, st.homeStockBulk || {});
 }
 
+/** The full currently-filtered id list — NOT just the rendered page (Phase
+ *  5: "Select All applies only to the currently filtered results," an
+ *  unbounded set, same `all` filteredItems() already computes before
+ *  renderCatalogSection slices it to a page). Also the correct ordering
+ *  for Shift+Click range-selection (gudang-center.js's onClick owns that
+ *  interception, since the card's own data-act is dispatched there
+ *  directly — this is the one export it needs from Home to do it). */
+export function visibleHomeItemIds(st) {
+  return filteredItems(st, ensureFilter(st)).map((i) => i.itemId);
+}
+
 function renderCatalogSection(st, f, requestRender) {
   // Phase 10.4.2 root cause ("Semua + Stok Rendah -> 0 items even though
   // qualifying items exist"), same class of bug this generalizes the fix
@@ -303,8 +356,12 @@ function renderCatalogSection(st, f, requestRender) {
   ensureCardImages(st, page, requestRender);
 
   const remaining = all.length - page.length;
+  // data-sel-active (Selection Engine, Phase 8): once ANY item is selected,
+  // every card's checkbox stays visible — not just the hovered one — same
+  // "permanently visible once relevant" rule .gud-catalog-card-quick already
+  // uses for touch below 760px, generalized here to the mouse case too.
   return `
-    <div class="gud-catalog-grid gud-mt">${page.map((item) => catalogCard(item, st)).join('')}</div>
+    <div class="gud-catalog-grid gud-mt" data-sel-active="${hasSelection(st.selection)}">${page.map((item) => catalogCard(item, st)).join('')}</div>
     ${remaining > 0 ? `<div class="gud-catalog-more"><button type="button" class="gud-btn" data-act="gud-home-load-more">Muat ${Math.min(PAGE_SIZE, remaining)} Item Lagi (${remaining} tersisa)</button></div>` : ''}`;
 }
 
@@ -337,7 +394,14 @@ function catalogCard(item, st) {
   // homeLowStockIds Set — reused as-is here, never recomputed.
   const bulk = st.homeStockBulk && st.homeStockBulk[item.itemId];
   const isLowStock = !isAsset && bulk && (bulk.status === STOCK_STATUS_FILTER.LOW || bulk.status === STOCK_STATUS_FILTER.OUT);
-  return `<div class="gud-catalog-card" data-act="gud-open-item" data-id="${esc(item.itemId)}" role="button" tabindex="0" aria-label="${esc(item.name)}">
+  // v1.29.3 (Selection Engine, Phase 1/8): the checkbox is its own nested
+  // data-act ("gud-home-sel-toggle"), so a click on it resolves to THIS act
+  // via the delegated handler's closest('[data-act]') — the same "shared
+  // body, nested override" pattern the quick-action spans below already
+  // rely on (no stopPropagation anywhere needed for either).
+  const checked = isSelected(st.selection, item.itemId);
+  return `<div class="gud-catalog-card" data-act="gud-open-item" data-id="${esc(item.itemId)}" data-selected="${checked}" role="button" tabindex="0" aria-label="${esc(item.name)}">
+    <button type="button" class="gud-sel-checkbox" data-act="gud-home-sel-toggle" data-id="${esc(item.itemId)}" aria-pressed="${checked}" aria-label="${checked ? 'Batalkan pilih' : 'Pilih'} ${esc(item.name)}">${checked ? icon('check', { size: 13 }) : ''}</button>
     ${catalogCardImage(item, st)}
     <div class="gud-catalog-card-name">${esc(item.name)}</div>
     <div class="gud-catalog-card-meta">${metaLine}</div>
@@ -376,6 +440,12 @@ export const homeHandlers = {
       case 'gud-home-chip-remove': clearFilterKey(f, el.dataset.key); render(); break;
       case 'gud-home-clear-filters': clearAllFilters(f); render(); break;
       case 'gud-home-load-more': f.page += PAGE_SIZE; render(); break;
+      // v1.29.3 (Selection Engine, Phases 1/3/5): the checkbox click, and
+      // the Selection Mode bar's own Select All / Batal (Clear) buttons —
+      // all pure state mutations on st.selection, no business logic here.
+      case 'gud-home-sel-toggle': toggleSelect(st.selection, el.dataset.id); render(); break;
+      case 'gud-home-sel-clear': clearSelection(st.selection); render(); break;
+      case 'gud-home-sel-all': selectAll(st.selection, visibleHomeItemIds(st)); render(); break;
       // Quick actions (hover on desktop, tap on mobile — Doc 2 §13): jump
       // straight into the flow with this item already selected, skipping
       // the search step (Doc 2: "Movement before Form"). The flow's own

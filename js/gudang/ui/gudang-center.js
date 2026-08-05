@@ -33,7 +33,15 @@ import { createInitialSessionState, applySessionEvent } from '../search/search-s
 import { searchAndResolve } from '../search/search-resolver.js';
 import { addRecentSearch, clearRecentSearches } from '../search/recent-searches-store.js';
 
-import { renderHome, homeHandlers, renderMobileFilterSheet } from './gudang-home.js';
+import { renderHome, homeHandlers, renderMobileFilterSheet, visibleHomeItemIds } from './gudang-home.js';
+// v1.29.3 (Warehouse Selection Engine): PURE state module (see its own
+// header) — gudang-center.js owns the one st.selection instance and the
+// cross-cutting keyboard/click interception (Ctrl+A, Esc, Shift/Ctrl+Click);
+// gudang-home.js owns the per-card checkbox UI and the Selection Mode bar.
+import {
+  createSelectionState, hasSelection, clearSelection, selectAll, selectRange,
+  toggleSelect, pruneSelection,
+} from '../selection/selection-engine.js';
 import { renderSearchOverlay, renderMobileSearchSheet, SEARCH_LISTBOX_ID } from './gudang-search-overlay.js';
 import { renderGoodsOut, goodsOutHandlers } from './gudang-goods-out.js';
 import { renderGoodsIn, goodsInHandlers } from './gudang-goods-in.js';
@@ -60,6 +68,13 @@ const st = {
   // changes; this is only whether the SHEET is currently on screen — reset
   // on every screen change (setGudangScreen), same lifetime as st.detail.
   filterSheetOpen: false,
+  // v1.29.3 (Warehouse Selection Engine): a sibling of st.detail/st.modal,
+  // deliberately NOT reset by setGudangScreen() (same free-persistence
+  // reasoning as st.homeFilter) — search, filter, sort, and drawer open/
+  // close never touch it. Only clearSelection() (explicit Clear/Esc) and
+  // pruneSelection() (an id leaving the inventory, in refreshCatalog())
+  // ever remove anything from it.
+  selection: createSelectionState(),
 };
 
 let host = null, mounted = false, loaded = false, lastAnimatedScreen = null, toastTimer = null, searchDebounceTimer = null;
@@ -121,6 +136,19 @@ export async function mountGudang(hostEl) {
     host.addEventListener('dragover', onDragOver);
     host.addEventListener('drop', onDrop);
     host.addEventListener('paste', onPaste);
+    // v1.29.3 (Selection Engine, Phase 8: "Mobile: Long Press -> Selection
+    // Mode") — no reusable long-press utility existed anywhere in the repo
+    // (confirmed by search; js/timeline-interactions.js explicitly defers
+    // to the OS's native context menu instead of implementing one), so this
+    // is a small, self-contained touchstart+timer, scoped to
+    // .gud-catalog-card only. touchend is deliberately NOT passive: a
+    // successful long-press calls preventDefault() on it so the synthetic
+    // 'click' mobile browsers fire right after touchend never ALSO opens
+    // the drawer for the same touch.
+    host.addEventListener('touchstart', onTouchStart, { passive: true });
+    host.addEventListener('touchmove', onTouchMove, { passive: true });
+    host.addEventListener('touchend', onTouchEnd, { passive: false });
+    host.addEventListener('touchcancel', onTouchEnd, { passive: true });
     document.addEventListener('keydown', onGlobalKeydown, true);
     // v1.29.0 Feature 6 ("When the search field gains focus and is empty:
     // display recent searches") — the shared field lives outside .gud-root,
@@ -154,6 +182,11 @@ async function refreshCatalog() {
     assets: assetsRes.ok ? assetsRes.data : [],
     loadedAt: Date.now(),
   };
+  // v1.29.3 (Selection Engine): the one place an id is ever implicitly
+  // dropped from selection — an item that no longer exists (archived,
+  // removed) after a reload can no longer be "selected." Every other
+  // reload (nothing removed) is a no-op here.
+  pruneSelection(st.selection, new Set(st.data.items.map((i) => i.itemId)));
   // Phase 10.4.1 root cause ("Catalog stock never refreshes"): per-item
   // stock/forecast figures are cached once-per-fetch by Home
   // (st.homeCardData, gudang-home.js#ensureCardData) and by Item Detail
@@ -517,7 +550,22 @@ function onClick(e) {
     case 'gud-filter-close': closeMobileFilterSheet(); break;
     case 'gud-recent-search-item': applyRecentSearchQuery(val); break;
     case 'gud-recent-search-clear': clearRecentSearches(); render(); break;
-    case 'gud-open-item': st.detail = { kind: 'item', id }; st.search = applySessionEvent(st.search, { type: 'close' }).state; render(); break;
+    case 'gud-open-item': {
+      // v1.29.3 (Selection Engine, Phase 6): Shift/Ctrl+Click on a Home
+      // catalog card selects instead of opening it. Scoped to `el` itself
+      // being the card (not the inner "detail chevron" quick-action, which
+      // always opens) so every OTHER gud-open-item source — Movement
+      // History rows, Analytics top-list rows, Item Detail's asset-back
+      // link, none of them a Selection Engine surface — is untouched.
+      if (st.screen === 'home' && el.classList.contains('gud-catalog-card') && (e.shiftKey || e.ctrlKey || e.metaKey)) {
+        if (e.shiftKey) selectRange(st.selection, visibleHomeItemIds(st), id);
+        else toggleSelect(st.selection, id);
+        render();
+        break;
+      }
+      st.detail = { kind: 'item', id }; st.search = applySessionEvent(st.search, { type: 'close' }).state; render();
+      break;
+    }
     case 'gud-open-asset': st.detail = { kind: 'asset', id }; st.search = applySessionEvent(st.search, { type: 'close' }).state; render(); break;
     case 'gud-detail-close': st.detail = null; render(); break;
     case 'gud-quick-goods-out': setGudangScreen('goodsOut'); break;
@@ -629,6 +677,44 @@ function onPaste(e) {
   catalogHandlers.onPhotoFile(st, file, render);
 }
 
+/* ── Phase 8: mobile Long Press -> Selection Mode (Home catalog only) ──── */
+// v1.29.3 UX pass: 500ms, not the original 550ms — matches Android's own
+// ViewConfiguration.getLongPressTimeout() default (also iOS's long-press
+// gesture minimum), a proven floor rather than an arbitrary pick. Deliberately
+// NOT lowered into 400-450ms: that range starts to overlap with an ordinary
+// unhurried tap or the pause before a scroll gesture begins, which would
+// measurably increase accidental activation — the opposite of the goal.
+const LONG_PRESS_MS = 500;
+let longPressTimer = null;
+let longPressId = null;
+let longPressFired = false;
+
+function onTouchStart(e) {
+  if (st.screen !== 'home') return;
+  const card = e.target.closest('.gud-catalog-card');
+  if (!card) return;
+  longPressId = card.dataset.id;
+  longPressFired = false;
+  longPressTimer = setTimeout(() => {
+    longPressTimer = null;
+    longPressFired = true;
+    toggleSelect(st.selection, longPressId);
+    render();
+  }, LONG_PRESS_MS);
+}
+
+/** Real scrolling/dragging cancels the hold — a long press must mean "held
+ *  still," not "started touching this card on the way to scrolling past it." */
+function onTouchMove() {
+  if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+}
+
+function onTouchEnd(e) {
+  if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+  if (longPressFired) { e.preventDefault(); longPressFired = false; } // suppress the synthetic click that would otherwise also open the drawer
+  longPressId = null;
+}
+
 /* ── keyboard: Ctrl+K anywhere inside Gudang, plus the Spotlight session ──
    Scoped to when Gudang is the active rail module (document-level listener,
    but a no-op outside Gudang so it never hijacks other modules' shortcuts). */
@@ -648,12 +734,39 @@ function onGlobalKeydown(e) {
   const ctrlF = (e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F');
   if (ctrlK || ctrlF) { e.preventDefault(); openSearchEntry(); return; }
 
+  // v1.29.3 (Selection Engine, Phase 6): Ctrl+A selects every currently
+  // FILTERED Home item (visibleHomeItemIds — never the whole inventory
+  // unfiltered). Scoped to Home, and to Search not being open (the shared
+  // field opens the Spotlight dropdown the instant it's genuinely focused —
+  // Feature 6 — so this guard already excludes the one real text field
+  // Home's screen can hand focus to; a belt-and-suspenders text-field check
+  // below covers anything else, so this never hijacks the browser's native
+  // "select all text" inside an actual input/textarea).
+  const ctrlA = (e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A');
+  if (ctrlA && st.screen === 'home' && st.search.status !== 'open') {
+    const active = document.activeElement;
+    const isTextField = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable);
+    if (!isTextField) {
+      e.preventDefault();
+      selectAll(st.selection, visibleHomeItemIds(st));
+      render();
+      return;
+    }
+  }
+
   if (e.key === 'Escape' && st.modal) { e.preventDefault(); e.stopPropagation(); st.modal = null; render(); return; }
 
   // v1.29.1 Feature 12 (Keyboard Experience: "Esc closes Filter Panel") —
   // same priority tier as the modal check above (a scrim-backed, dialog-
   // like overlay), ahead of the search/detail branches below.
   if (e.key === 'Escape' && st.filterSheetOpen) { e.preventDefault(); e.stopPropagation(); st.filterSheetOpen = false; render(); return; }
+
+  // v1.29.3 (Selection Engine, Phase 6): Esc clears an active selection —
+  // one more "a mode the user is currently in" layer, same tier as the
+  // modal/filter-sheet checks above, ahead of the search-blur/detail-close
+  // branch below so a stray Esc while selecting never ALSO closes an
+  // unrelated open drawer in the same press.
+  if (e.key === 'Escape' && hasSelection(st.selection)) { e.preventDefault(); e.stopPropagation(); clearSelection(st.selection); render(); return; }
 
   // v1.28.11 ESC priority (Warehouse UX Enhancement): only one UI layer is
   // ever dismissed per press. When the Spotlight dropdown itself is open
