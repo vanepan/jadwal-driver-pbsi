@@ -19,7 +19,14 @@
                      (occupancy-ratio banded); 0 + overCapacity flag if too small
        utilization   from the capacity status band: LOW100 NORMAL80 HIGH40 OVER10
                      (lower utilization preferred — reuses the configurable bands)
-       health        vehicle.healthScore (0–100), default 100 when undefined
+       health        v1.29.12 — explicit vehicle.healthScore wins when present
+                     (kept for direct/test override); otherwise REUSES the real
+                     Overall Asset Health from Vehicle Asset Intelligence
+                     (computeVehicleHealth via normalizeVehicleAsset in
+                     vehicle-asset-service.js — no duplicate formula). Every
+                     production caller passes raw store records, which never
+                     carry a `healthScore` field, so this is the path real
+                     traffic always takes; see calculateHealthScore() below.
 
    A conflicted OR over-capacity vehicle is still SCORED and appears in
    diagnostics, but can never occupy the recommendation #1 slot: the ranking
@@ -40,6 +47,7 @@ import {
 } from './vehicle-capacity-engine.js';
 import { getDispatchConfig } from '../config/dispatch-intelligence-config.js';
 import { getVehicleScoringWeights } from '../stores/dispatch-intelligence-store.js';
+import { normalizeVehicleAsset } from './vehicle-asset-service.js';
 
 /** Utilization sub-score per capacity status band. The thresholds themselves
  *  live in the CONFIGURABLE statusBands (consumed via calculateStatus), so
@@ -158,17 +166,33 @@ export function calculateUtilizationScore(utilizationPercent, statusBands = getD
 }
 
 /**
- * Health sub-score: consume vehicle.healthScore (0–100), default 100 when
- * undefined. No maintenance/inspection logic — only consumes the existing value.
+ * Health sub-score.
+ *   1. An explicit, finite `vehicle.healthScore` always wins (kept for direct
+ *      score-override use and existing unit tests) — unchanged behavior.
+ *   2. Otherwise (the real-world case: no store record has ever written this
+ *      field) REUSE the Overall Asset Health already computed by Vehicle
+ *      Asset Intelligence (`normalizeVehicleAsset().health.overall` in
+ *      vehicle-asset-service.js — legal/maintenance/operational/documents,
+ *      v1.18.1 weights). No new formula, no new engine — v1.29.12 fix for the
+ *      dead-field regression where every vehicle silently scored a flat 100.
  * @param {Object|number} vehicleOrScore  a vehicle record or a raw healthScore
+ * @param {Date|string|number} [now]  capacity/compliance "today" reference,
+ *   forwarded to normalizeVehicleAsset so STNK/tax/insurance due-soon windows
+ *   are evaluated against the SAME reference date as the rest of the request
+ *   (defaults to real now, matching recommendVehicle's own default)
  * @returns {number} 0–100
  */
-export function calculateHealthScore(vehicleOrScore) {
-  const raw = (vehicleOrScore != null && typeof vehicleOrScore === 'object')
-    ? vehicleOrScore.healthScore
-    : vehicleOrScore;
-  if (raw == null || !Number.isFinite(Number(raw))) return 100;
-  return clamp(Math.round(num(raw)), 0, 100);
+export function calculateHealthScore(vehicleOrScore, now) {
+  if (vehicleOrScore != null && typeof vehicleOrScore === 'object') {
+    const raw = vehicleOrScore.healthScore;
+    if (raw != null && Number.isFinite(Number(raw))) {
+      return clamp(Math.round(num(raw)), 0, 100);
+    }
+    const overall = normalizeVehicleAsset(vehicleOrScore, now).health.overall;
+    return clamp(Math.round(num(overall)), 0, 100);
+  }
+  if (vehicleOrScore == null || !Number.isFinite(Number(vehicleOrScore))) return 100;
+  return clamp(Math.round(num(vehicleOrScore)), 0, 100);
 }
 
 /** Weighted, normalized final score from the four sub-scores + store weights. */
@@ -209,7 +233,9 @@ function combineScore(breakdown, weights) {
  * Evaluate all eligible vehicles for a transport request and rank them.
  *
  * @param {Object} request   { date, startTime, endTime, passengers?, destination? }
- * @param {Array<Object>} vehicles     eligible vehicle records ({ vehicleId, name, capacity, healthScore? })
+ * @param {Array<Object>} vehicles     eligible vehicle records ({ vehicleId, name, capacity,
+ *   healthScore? — optional explicit override; omitted in real store records, in which case the
+ *   real Overall Asset Health is computed from the record, see calculateHealthScore() })
  * @param {Array<Object>} assignments  the operational assignment set (vehicle-by-name)
  * @param {Object} [options]
  * @param {Date|string} [options.now]        capacity "today" reference (default real now)
@@ -258,7 +284,7 @@ export function recommendVehicle(request = {}, vehicles = [], assignments = [], 
       availability: availabilityScore(conflict),
       capacityFit: fit.score,
       utilization: calculateUtilizationScore(cap.utilizationPercent),
-      health: calculateHealthScore(vehicle),
+      health: calculateHealthScore(vehicle, now),
     };
 
     return {

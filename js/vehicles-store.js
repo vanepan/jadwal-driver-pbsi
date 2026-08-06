@@ -124,6 +124,31 @@ function refreshVehiclesCache(nextVehicles) {
   onVehiclesChangeCallbacks.forEach(cb => cb(vehicles));
 }
 
+/**
+ * v1.29.13 — Refresh Consistency. The ONE post-write refresh path every
+ * mutating export below now calls, replacing what used to be a
+ * copy-pasted `mapFirebaseVehicles(Object.fromEntries(...))` /
+ * `refreshVehiclesCache(...)` pair duplicated per writer (and, for several
+ * writers, only present in their offline branch — see the investigation in
+ * docs/VEHICLE_CORE_INVESTIGATION_AND_ROADMAP.md §15 for why that was
+ * inconsistent). Every writer calls this exactly once, AFTER its Firebase
+ * write has been confirmed (or immediately, when running fully offline) —
+ * never before, so this is a refresh of confirmed state, not an optimistic
+ * pre-confirmation update. `mutate(map)` receives a plain `{ [id]: vehicle }`
+ * object built from the CURRENT cache and mutates it in place (set/delete a
+ * key); the result is re-sorted and pushed through the exact same
+ * `refreshVehiclesCache` every other refresh path (create/update/delete, the
+ * offline branches, and the Firebase realtime echo) already uses — so
+ * `getVehicles()` and every `registerVehiclesChangeListener` subscriber are
+ * updated through the SAME single mechanism, for every writer, every time.
+ * @param {(map: Object) => void} mutate
+ */
+function applyVehiclesPatch(mutate) {
+  const map = Object.fromEntries(vehicles.map(v => [v.id, v]));
+  mutate(map);
+  refreshVehiclesCache(mapFirebaseVehicles(map));
+}
+
 async function seedVehiclesIfEmpty() {
   if (!isFirebaseConfigured()) return;
 
@@ -221,13 +246,10 @@ export async function updateVehicleOdometer(vehicleId, value) {
 
   const updates = { odometer: String(Number(value)), updatedAt: new Date().toISOString() };
 
-  if (!isFirebaseConfigured()) {
-    refreshVehiclesCache(mapFirebaseVehicles(Object.fromEntries(
-      vehicles.map(v => [v.id, v.id === vehicleId ? { ...v, ...updates } : v])
-    )));
-    return;
+  if (isFirebaseConfigured()) {
+    await updateFirebaseData(VEHICLES_PATH + '/' + vehicleId, updates);
   }
-  await updateFirebaseData(VEHICLES_PATH + '/' + vehicleId, updates);
+  applyVehiclesPatch(map => { map[vehicleId] = { ...map[vehicleId], ...updates }; });
 }
 
 export function getActiveVehicleNames() {
@@ -283,14 +305,10 @@ export async function createVehicle({ name, plateNumber, capacity, color, active
     ...sanitizeAssetFields(assetInput),
   };
 
-  if (!isFirebaseConfigured()) {
-    refreshVehiclesCache(mapFirebaseVehicles({
-      ...Object.fromEntries(vehicles.map(v => [v.id, v])),
-      [id]: vehicle,
-    }));
-    return vehicle;
+  if (isFirebaseConfigured()) {
+    await storeFirebaseData(VEHICLES_PATH + '/' + id, vehicle);
   }
-  await storeFirebaseData(VEHICLES_PATH + '/' + id, vehicle);
+  applyVehiclesPatch(map => { map[id] = vehicle; });
   return vehicle;
 }
 
@@ -338,13 +356,10 @@ export async function updateVehicle(id, { name, plateNumber, capacity, color, ac
     ...sanitizeAssetFields(assetInput),
   };
 
-  if (!isFirebaseConfigured()) {
-    refreshVehiclesCache(mapFirebaseVehicles(Object.fromEntries(
-      vehicles.map(v => [v.id, v.id === id ? { ...v, ...updates } : v])
-    )));
-    return { ...existing, ...updates };
+  if (isFirebaseConfigured()) {
+    await updateFirebaseData(VEHICLES_PATH + '/' + id, updates);
   }
-  await updateFirebaseData(VEHICLES_PATH + '/' + id, updates);
+  applyVehiclesPatch(map => { map[id] = { ...map[id], ...updates }; });
   return { ...existing, ...updates };
 }
 
@@ -356,13 +371,10 @@ export async function deactivateVehicle(id) {
   // plain active→inactive toggle moves status to 'inactive'.
   const nextStatus = (existing.status && existing.status !== 'active') ? existing.status : 'inactive';
   const updates = { active: false, status: nextStatus, inactiveAt: now, updatedAt: now };
-  if (!isFirebaseConfigured()) {
-    refreshVehiclesCache(mapFirebaseVehicles(Object.fromEntries(
-      vehicles.map(v => [v.id, v.id === id ? { ...v, ...updates } : v])
-    )));
-    return;
+  if (isFirebaseConfigured()) {
+    await updateFirebaseData(VEHICLES_PATH + '/' + id, updates);
   }
-  await updateFirebaseData(VEHICLES_PATH + '/' + id, updates);
+  applyVehiclesPatch(map => { map[id] = { ...map[id], ...updates }; });
 }
 
 export async function reactivateVehicle(id) {
@@ -370,13 +382,10 @@ export async function reactivateVehicle(id) {
   if (!existing) throw new Error('Kendaraan tidak ditemukan.');
   const now = new Date().toISOString();
   const updates = { active: true, status: 'active', inactiveAt: null, updatedAt: now };
-  if (!isFirebaseConfigured()) {
-    refreshVehiclesCache(mapFirebaseVehicles(Object.fromEntries(
-      vehicles.map(v => [v.id, v.id === id ? { ...v, ...updates } : v])
-    )));
-    return;
+  if (isFirebaseConfigured()) {
+    await updateFirebaseData(VEHICLES_PATH + '/' + id, updates);
   }
-  await updateFirebaseData(VEHICLES_PATH + '/' + id, updates);
+  applyVehiclesPatch(map => { map[id] = { ...map[id], ...updates }; });
 }
 
 export async function archiveVehicle(id) {
@@ -384,13 +393,10 @@ export async function archiveVehicle(id) {
   if (!existing) throw new Error('Kendaraan tidak ditemukan.');
   const now = new Date().toISOString();
   const updates = { archived: true, archivedAt: now, active: false, inactiveAt: existing.inactiveAt || now, updatedAt: now };
-  if (!isFirebaseConfigured()) {
-    refreshVehiclesCache(mapFirebaseVehicles(Object.fromEntries(
-      vehicles.map(v => [v.id, v.id === id ? { ...v, ...updates } : v])
-    )));
-    return;
+  if (isFirebaseConfigured()) {
+    await updateFirebaseData(VEHICLES_PATH + '/' + id, updates);
   }
-  await updateFirebaseData(VEHICLES_PATH + '/' + id, updates);
+  applyVehiclesPatch(map => { map[id] = { ...map[id], ...updates }; });
 }
 
 export async function restoreVehicle(id) {
@@ -398,26 +404,20 @@ export async function restoreVehicle(id) {
   if (!existing) throw new Error('Kendaraan tidak ditemukan.');
   const now = new Date().toISOString();
   const updates = { archived: false, archivedAt: null, updatedAt: now };
-  if (!isFirebaseConfigured()) {
-    refreshVehiclesCache(mapFirebaseVehicles(Object.fromEntries(
-      vehicles.map(v => [v.id, v.id === id ? { ...v, ...updates } : v])
-    )));
-    return;
+  if (isFirebaseConfigured()) {
+    await updateFirebaseData(VEHICLES_PATH + '/' + id, updates);
   }
-  await updateFirebaseData(VEHICLES_PATH + '/' + id, updates);
+  applyVehiclesPatch(map => { map[id] = { ...map[id], ...updates }; });
 }
 
 export async function deleteVehicle(id) {
   const existing = vehicles.find(v => v.id === id);
   if (!existing) throw new Error('Kendaraan tidak ditemukan.');
   if (existing.archived !== true) throw new Error('Kendaraan harus diarsipkan sebelum dapat dihapus permanen.');
-  if (!isFirebaseConfigured()) {
-    refreshVehiclesCache(mapFirebaseVehicles(
-      Object.fromEntries(vehicles.filter(v => v.id !== id).map(v => [v.id, v]))
-    ));
-    return;
+  if (isFirebaseConfigured()) {
+    await storeFirebaseData(VEHICLES_PATH + '/' + id, null);
   }
-  await storeFirebaseData(VEHICLES_PATH + '/' + id, null);
+  applyVehiclesPatch(map => { delete map[id]; });
 }
 
 /* ── Maintenance Records (v1.18.1) ────────────────────────────────────────── */
@@ -454,25 +454,19 @@ export async function addMaintenanceRecord(vehicleId, record) {
     updatedAt: now
   };
 
-  // Initialize maintenance array if not present
-  if (!Array.isArray(existing.maintenanceRecords)) {
-    existing.maintenanceRecords = [];
+  // v1.29.13 — build the next array immutably (no longer mutates `existing`
+  // in place) so the cache only changes through applyVehiclesPatch below,
+  // after the write is confirmed (or immediately, offline).
+  const nextRecords = [
+    ...(Array.isArray(existing.maintenanceRecords) ? existing.maintenanceRecords : []),
+    newRecord,
+  ];
+  const updates = { maintenanceRecords: nextRecords, updatedAt: now };
+
+  if (isFirebaseConfigured()) {
+    await updateFirebaseData(VEHICLES_PATH + '/' + vehicleId, updates);
   }
-
-  existing.maintenanceRecords.push(newRecord);
-  const updates = {
-    maintenanceRecords: existing.maintenanceRecords,
-    updatedAt: now
-  };
-
-  if (!isFirebaseConfigured()) {
-    refreshVehiclesCache(mapFirebaseVehicles(Object.fromEntries(
-      vehicles.map(v => [v.id, v.id === vehicleId ? { ...v, ...updates } : v])
-    )));
-    return newRecord;
-  }
-
-  await updateFirebaseData(VEHICLES_PATH + '/' + vehicleId, updates);
+  applyVehiclesPatch(map => { map[vehicleId] = { ...map[vehicleId], ...updates }; });
   return newRecord;
 }
 
@@ -503,20 +497,15 @@ export async function updateMaintenanceRecord(vehicleId, recordId, updates) {
     updatedAt: now
   };
 
-  vehicle.maintenanceRecords[recordIndex] = updated;
-  const vUpdates = {
-    maintenanceRecords: vehicle.maintenanceRecords,
-    updatedAt: now
-  };
+  // v1.29.13 — immutable replace (no longer mutates vehicle.maintenanceRecords
+  // in place); cache only changes through applyVehiclesPatch below.
+  const nextRecords = vehicle.maintenanceRecords.map((r, i) => (i === recordIndex ? updated : r));
+  const vUpdates = { maintenanceRecords: nextRecords, updatedAt: now };
 
-  if (!isFirebaseConfigured()) {
-    refreshVehiclesCache(mapFirebaseVehicles(Object.fromEntries(
-      vehicles.map(v => [v.id, v.id === vehicleId ? { ...v, ...vUpdates } : v])
-    )));
-    return updated;
+  if (isFirebaseConfigured()) {
+    await updateFirebaseData(VEHICLES_PATH + '/' + vehicleId, vUpdates);
   }
-
-  await updateFirebaseData(VEHICLES_PATH + '/' + vehicleId, vUpdates);
+  applyVehiclesPatch(map => { map[vehicleId] = { ...map[vehicleId], ...vUpdates }; });
   return updated;
 }
 
@@ -535,21 +524,16 @@ export async function deleteMaintenanceRecord(vehicleId, recordId) {
   const recordIndex = vehicle.maintenanceRecords.findIndex(r => r.id === recordId);
   if (recordIndex < 0) throw new Error('Catatan perawatan tidak ditemukan.');
 
-  vehicle.maintenanceRecords.splice(recordIndex, 1);
+  // v1.29.13 — immutable removal (no longer splices vehicle.maintenanceRecords
+  // in place); cache only changes through applyVehiclesPatch below.
+  const nextRecords = vehicle.maintenanceRecords.filter((_, i) => i !== recordIndex);
   const now = new Date().toISOString();
-  const updates = {
-    maintenanceRecords: vehicle.maintenanceRecords,
-    updatedAt: now
-  };
+  const updates = { maintenanceRecords: nextRecords, updatedAt: now };
 
-  if (!isFirebaseConfigured()) {
-    refreshVehiclesCache(mapFirebaseVehicles(Object.fromEntries(
-      vehicles.map(v => [v.id, v.id === vehicleId ? { ...v, ...updates } : v])
-    )));
-    return;
+  if (isFirebaseConfigured()) {
+    await updateFirebaseData(VEHICLES_PATH + '/' + vehicleId, updates);
   }
-
-  await updateFirebaseData(VEHICLES_PATH + '/' + vehicleId, updates);
+  applyVehiclesPatch(map => { map[vehicleId] = { ...map[vehicleId], ...updates }; });
 }
 
 /* ── Compliance History (Vehicle Compliance & Financial History) ─────────────
@@ -605,9 +589,11 @@ export function getComplianceHistory(vehicleId) {
 /**
  * Record a compliance renewal (STNK / annual tax / five-year tax / other) and
  * recompute the vehicle's current expiry/tax mirror fields from history.
- * Mutates the cached record synchronously (mirrors addMaintenanceRecord) so a
- * `getVehicles()` read immediately after resolving already reflects it,
- * without waiting on the Firebase echo.
+ * v1.29.13 — refreshes the cache (and notifies every
+ * registerVehiclesChangeListener subscriber) through the single unified
+ * applyVehiclesPatch path, same as every other writer, so a `getVehicles()`
+ * read AND a change-listener callback both already reflect it immediately
+ * after this resolves, without waiting on the separate Firebase echo.
  * @param {string} vehicleId
  * @param {{type?:string, renewalDate:string, expiryDate:string, amount:number,
  *          paymentMethod?:string, receiptNumber?:string, notes?:string, officer?:string}} record
@@ -644,22 +630,19 @@ export async function addComplianceRecord(vehicleId, record) {
     updatedAt: now,
   };
 
-  if (!Array.isArray(existing.complianceHistory)) existing.complianceHistory = [];
-  existing.complianceHistory.push(newRecord);
+  // v1.29.13 — immutable append (no longer mutates `existing` in place);
+  // cache only changes through applyVehiclesPatch below.
+  const nextHistory = [
+    ...(Array.isArray(existing.complianceHistory) ? existing.complianceHistory : []),
+    newRecord,
+  ];
+  const mirror = recomputeComplianceMirror(nextHistory);
+  const updates = { complianceHistory: nextHistory, ...mirror, updatedAt: now };
 
-  const mirror = recomputeComplianceMirror(existing.complianceHistory);
-  Object.assign(existing, mirror, { updatedAt: now });
-
-  const updates = { complianceHistory: existing.complianceHistory, ...mirror, updatedAt: now };
-
-  if (!isFirebaseConfigured()) {
-    refreshVehiclesCache(mapFirebaseVehicles(Object.fromEntries(
-      vehicles.map(v => [v.id, v.id === vehicleId ? { ...v, ...updates } : v])
-    )));
-    return newRecord;
+  if (isFirebaseConfigured()) {
+    await updateFirebaseData(VEHICLES_PATH + '/' + vehicleId, updates);
   }
-
-  await updateFirebaseData(VEHICLES_PATH + '/' + vehicleId, updates);
+  applyVehiclesPatch(map => { map[vehicleId] = { ...map[vehicleId], ...updates }; });
   return newRecord;
 }
 

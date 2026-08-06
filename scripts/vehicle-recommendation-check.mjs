@@ -84,10 +84,69 @@ check('UTILIZATION_SCORE_BY_STATUS matches spec (100/80/40/10)',
 console.log('\n[health]');
 check('health 100 = 100', calculateHealthScore({ healthScore: 100 }) === 100);
 check('health 50 = 50', calculateHealthScore({ healthScore: 50 }) === 50);
-check('health undefined → default 100', calculateHealthScore({}) === 100);
 check('health raw number 80 = 80', calculateHealthScore(80) === 80);
 check('health 150 clamps to 100', calculateHealthScore({ healthScore: 150 }) === 100);
 check('health -5 clamps to 0', calculateHealthScore({ healthScore: -5 }) === 0);
+
+// v1.29.12 FIX — explicit healthScore is a TEST/CALLER OVERRIDE ONLY; no real
+// store record has ever written this field (confirmed by repo-wide audit,
+// docs/VEHICLE_CORE_INVESTIGATION_AND_ROADMAP.md). Previously an object with
+// no explicit healthScore silently defaulted to a flat 100 for every vehicle,
+// which is the exact regression this release closes: a bare `{}` (no status,
+// no documents, no legal/maintenance data) is no longer a free pass — it now
+// falls through to the REAL Overall Asset Health engine (vehicle-asset-
+// service.js#computeVehicleHealth), which scores it 60 (active-by-default
+// operational=100 at weight .15, but 0% document completeness at weight .10,
+// legal/maintenance excluded as "no data" — the same formula independently
+// verified by vehicle-asset-check.mjs). This ONE assertion replaces the old
+// "health undefined → default 100" case; every other assertion in this file
+// still passes an explicit healthScore and is completely unaffected.
+check('health absent, zero real data → real engine computes 60 (was hardcoded 100 pre-fix)',
+  calculateHealthScore({}) === 60);
+
+/* ── v1.29.12: real Overall Asset Health now reaches recommendation scoring ── */
+console.log('\n[health — real Vehicle Asset Intelligence wiring, v1.29.12]');
+const healthyAsset = {
+  vehicleId: 'healthy_01', name: 'Sehat', capacity: 7,
+  status: 'active', stnkNumber: 'B1', stnkExpiry: '2027-01-01', annualTaxDue: '2027-01-01',
+  engineNumber: 'E1', chassisNumber: 'C1', owner: 'PBSI',
+  insuranceCompany: 'JR', policyNumber: 'P1', insuranceExpiry: '2027-01-01',
+  maintenanceRecords: [{ status: 'completed', date: '2026-06-10', category: 'servis_rutin' }],
+};
+const mediumAsset = {
+  vehicleId: 'medium_01', name: 'Sedang', capacity: 7,
+  status: 'active', stnkNumber: 'B2', stnkExpiry: '2026-07-05', annualTaxDue: '2026-07-05',
+  owner: 'PBSI', maintenanceRecords: [],
+};
+const poorAsset = {
+  vehicleId: 'rusak_01', name: 'Rusak', capacity: 7,
+  status: 'maintenance', stnkExpiry: '2026-01-01',
+  maintenanceRecords: [{ status: 'in-progress', date: '2025-01-01', category: 'kerusakan' }],
+};
+check('Vehicle A (active, valid docs, recent completed maintenance) → health 86',
+  calculateHealthScore(healthyAsset, NOW) === 86);
+check('Vehicle B (active, tax due soon, no maintenance history) → health 65',
+  calculateHealthScore(mediumAsset, NOW) === 65);
+check('Vehicle C (in maintenance, expired STNK, unresolved repair) → health 23',
+  calculateHealthScore(poorAsset, NOW) === 23);
+check('health strictly decreases healthy > medium > poor (real engine, not flat 100)',
+  calculateHealthScore(healthyAsset, NOW) > calculateHealthScore(mediumAsset, NOW)
+  && calculateHealthScore(mediumAsset, NOW) > calculateHealthScore(poorAsset, NOW));
+
+// End-to-end: two otherwise-IDENTICAL vehicles (same capacity, both free, both
+// LOW utilization) differing ONLY in real asset health must now rank/score
+// differently. Pre-fix, both would have silently scored identically (health
+// always 100 for both) — this is the exact regression closed by v1.29.12.
+const healthEndToEnd = recommendVehicle(REQUEST, [healthyAsset, poorAsset], [], { now: NOW });
+const byId = (id) => healthEndToEnd.diagnostics.find((d) => d.vehicleId === id);
+check('recommendVehicle: healthy vehicle scores higher than an otherwise-identical unhealthy one',
+  byId('healthy_01').score > byId('rusak_01').score);
+check('recommendVehicle: healthy vehicle score = 96 (was 100-vs-100 tie pre-fix)',
+  byId('healthy_01').score === 96);
+check('recommendVehicle: poor-health vehicle score = 89, still available/eligible (no hard penalty)',
+  byId('rusak_01').score === 89);
+check('recommendVehicle: healthy vehicle is recommended #1',
+  healthEndToEnd.recommendedVehicle && healthEndToEnd.recommendedVehicle.vehicleId === 'healthy_01');
 
 /* ── Vehicle Capacity Engine: trip count + utilization + status ──────── */
 console.log('\n[vehicle capacity engine]');
