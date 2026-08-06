@@ -69,12 +69,6 @@ export function toHumanReason(err) {
   return 'Terjadi kesalahan yang tidak diketahui.';
 }
 
-/** Fresh, empty run-state — one instance per bulk modal invocation (never
- *  reused across a Retry; buildRunState() is called again for that). */
-export function createRunState(total) {
-  return { phase: 'idle', total, processed: 0, startedAtMs: 0 };
-}
-
 /**
  * Run one bulk operation end-to-end: validate every id up front (collecting
  * failures, never stopping at the first one — brief: "Never stop at first

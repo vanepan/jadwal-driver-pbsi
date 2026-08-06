@@ -243,7 +243,19 @@ export function renderDashboard(st, c, requestRender) {
   // already sets (Add Item/Goods Out/In render regardless of hasCatalog):
   // "add the first item" is the one action a brand-new install needs most,
   // so it can never be the thing hidden behind an empty state.
-  const hasCatalog = st.data.items.length > 0;
+  //
+  // v1.29.10 (Part E — Loading Behaviour audit): `|| st.loading` closes a
+  // real flash-of-wrong-state gap — Dashboard is the module's default
+  // landing screen, and st.data.items is genuinely `[]` for the entire
+  // span of the FIRST refreshCatalog() call on mount (it only gets
+  // replaced once that fetch resolves). Without this, every fresh Gudang
+  // session briefly rendered "Gudang siap digunakan / Tambah Item" — a
+  // false empty-warehouse state — before snapping to the real Dashboard,
+  // even for a catalog with hundreds of items. gudang-home.js/gudang-
+  // intelligence.js already guard the identical case with their own
+  // `!st.loading` check; this mirrors that established pattern rather than
+  // inventing a second convention for the same problem.
+  const hasCatalog = st.data.items.length > 0 || st.loading;
   const body = hasCatalog ? renderPopulatedBody(st) : `<div class="gud-mt">${emptyState({
     iconName: 'box', title: 'Gudang siap digunakan',
     hint: 'Tambahkan item pertama untuk mulai melihat kondisi gudang di sini.',

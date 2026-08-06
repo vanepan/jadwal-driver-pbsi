@@ -126,6 +126,13 @@ let host = null, mounted = false, loaded = false, lastAnimatedScreen = null, toa
  *  this, only the (potentially Firebase-touching) resolve itself is. */
 const SEARCH_DEBOUNCE_MS = 275;
 
+/** v1.29.10 (Warehouse Automation, Part F — Error Recovery): refreshCatalog()
+ *  used to treat a read failure exactly like "zero items" — a transient
+ *  network blip would blank the whole catalog to empty for every screen at
+ *  once. One bounded retry (not a loop — Doc 4/brief: "retry gracefully",
+ *  never indefinitely) before giving up and keeping the last-good st.data. */
+const REFRESH_RETRY_DELAY_MS = 900;
+
 /** Scoped, self-dismissing toast (mirrors petty-cash-center.js's own local
  *  toast() — same render-driven module-center idiom, no shared #toast DOM
  *  element the way js/utils.js#showToast uses, since that element lives
@@ -211,18 +218,39 @@ export async function mountGudang(hostEl) {
 
 /** Re-fetch the catalog lists Search/pickers read from. Called on mount and
  *  after any write that could change what they show (Doc 4: no duplicated
- *  queries — one refresh point, not one per screen). */
+ *  queries — one refresh point, not one per screen). THIS is the Warehouse
+ *  Refresh Coordinator (v1.29.10 architecture audit): every Goods In/Out/
+ *  Opname/Bulk op/Archive/Delete/Edit/Photo mutation across every Gudang
+ *  screen already funnels through this one function — confirmed by reading
+ *  every mutating call site, not assumed. No second coordinator was
+ *  introduced; a parallel one would itself be the "duplicated refresh
+ *  logic" this release exists to eliminate. */
 async function refreshCatalog() {
   st.loading = true;
   render();
-  const [itemsRes, locationsRes, assetsRes] = await Promise.all([
-    listItems(), listLocations(), listAssets(),
-  ]);
+
+  const readCatalog = () => Promise.all([listItems(), listLocations(), listAssets()]);
+  let [itemsRes, locationsRes, assetsRes] = await readCatalog();
+  if (!itemsRes.ok || !locationsRes.ok || !assetsRes.ok) {
+    await new Promise((resolve) => setTimeout(resolve, REFRESH_RETRY_DELAY_MS));
+    [itemsRes, locationsRes, assetsRes] = await readCatalog();
+  }
+  if (!itemsRes.ok || !locationsRes.ok || !assetsRes.ok) {
+    // Still failing after one retry — every screen keeps showing whatever
+    // catalog is already on st.data (never silently swapped for an empty
+    // one; Part D: "never leave inconsistent UI"). Caller finds out via the
+    // toast, same channel every other Gudang failure already uses.
+    st.loading = false;
+    render();
+    showToast('Gagal memperbarui data gudang. Menampilkan data terakhir.');
+    return;
+  }
+
   st.data = {
-    items: itemsRes.ok ? itemsRes.data : [],
-    locations: locationsRes.ok ? locationsRes.data : [],
+    items: itemsRes.data,
+    locations: locationsRes.data,
     departments: listBidang(),
-    assets: assetsRes.ok ? assetsRes.data : [],
+    assets: assetsRes.data,
     loadedAt: Date.now(),
   };
   // v1.29.3 (Selection Engine): the one place an id is ever implicitly
@@ -250,7 +278,26 @@ async function refreshCatalog() {
   st.homeStockBulk = null;
   st.homeStockBulkLoading = false;
   st.analyticsTop = null; // same staleness class — Top Consumed/Top Departments (gudang-analytics.js)
+  // v1.29.10 (Part C — Cache Coordination audit): analyticsTopLoading was
+  // never reset here, unlike its homeStockBulkLoading/dashboardActivityLoading
+  // siblings below — if a mutation landed while gudang-analytics.js#
+  // ensureCatalogWide's own fetch was still in flight, this flag could be
+  // left stuck `true` (busted analyticsTop=null above, but the loading
+  // guard `if (st.analyticsTop || st.analyticsTopLoading) return;` would
+  // then block ANY re-fetch from ever starting again). Every ensure*
+  // {data,loading} pair this coordinator owns must reset as one unit.
+  st.analyticsTopLoading = false;
+  // v1.29.11 (Warehouse Core LTS, Part C — Cache Coordination audit): the
+  // per-item picker's own cache (gudang-analytics.js#loadItemInsight, "Analisis
+  // per Item") was never reset here — same staleness class as analyticsTop
+  // above, but a stale-data bug rather than a stuck-flag one: an item's
+  // insight, once loaded, silently kept showing pre-mutation consumption/
+  // cost/forecast/restock numbers after any mutation, since a <select> whose
+  // value doesn't change never re-fires onChange to reload it.
+  st.analyticsItem = null;
+  st.analyticsItemLoading = false;
   st.historyData = null; // same staleness class — the feed itself (gudang-movement-history.js)
+  st.historyLoading = false; // v1.29.10: same stuck-flag class as analyticsTopLoading above
   // v1.29.7 (Warehouse Dashboard, Section 10 — Live Refresh): Recent
   // Activity's own lazy cache, same staleness class as the three above —
   // busting it here means every Goods In/Out/Bulk op/Archive/Upload/Edit
@@ -1062,5 +1109,3 @@ function restoreFocus() {
   const el = host.querySelector(`[data-act="${act}"]`);
   if (el) { el.focus(); try { const n = el.value.length; el.setSelectionRange(n, n); } catch (_) {} }
 }
-
-export { esc };

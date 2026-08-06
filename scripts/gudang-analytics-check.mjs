@@ -111,5 +111,24 @@ console.log('\n[Part E — Regression: domain registry stays internally consiste
   check('domainsWithFoundation() is exactly 12', domainsWithFoundation().length === 12);
 }
 
+/* ── Part F — Regression: Warehouse Core LTS (v1.29.11), Cache Coordination ── */
+console.log('\n[Part F — refreshCatalog() (gudang-center.js) busts the per-item Analytics cache too]');
+{
+  // v1.29.11: st.analyticsItem/st.analyticsItemLoading (gudang-analytics.js's
+  // "Analisis per Item" picker cache) used to survive refreshCatalog()
+  // untouched, so a mutation elsewhere left a picked item's insight showing
+  // stale pre-mutation numbers forever. Source-scanned rather than unit-
+  // tested directly, same as every other refreshCatalog() reset line —
+  // gudang-center.js's chokepoint function is not exported for direct
+  // invocation from a Firebase-free harness.
+  const centerCode = read('js/gudang/ui/gudang-center.js');
+  const start = centerCode.indexOf('st.analyticsTop = null');
+  const end = centerCode.indexOf('st.historyData = null');
+  check('refreshCatalog() resets st.analyticsTop before st.historyData (anchors this check to the right block)', start !== -1 && end !== -1 && start < end);
+  const resetBlock = centerCode.slice(start, end);
+  check('refreshCatalog() resets st.analyticsItem in that same block', resetBlock.includes('st.analyticsItem = null'));
+  check('refreshCatalog() resets st.analyticsItemLoading in that same block', resetBlock.includes('st.analyticsItemLoading = false'));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

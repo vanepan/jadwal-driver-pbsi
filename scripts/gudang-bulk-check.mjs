@@ -269,5 +269,21 @@ console.log('\n[Part E — renderBulkModal: every operation through every reacha
   }
 }
 
+/* ── Part E — Performance Baseline (v1.29.11, Warehouse Core LTS) ──────── */
+console.log('\n[Part E — bulk-executor.js pipeline overhead, synthetic ids, no real Firebase]');
+{
+  // Measures the EXECUTOR's own orchestration cost (validate-all + worker-pool
+  // scheduling), isolated from real Firebase write latency by using a
+  // synchronous no-op execute() — this app doesn't control Firebase latency,
+  // so that isn't what's being baselined here. Informational only, no
+  // pass/fail threshold (the brief: "no optimization unless measurable" cuts
+  // both ways — this documents a number, it doesn't invent a performance gate).
+  const ids200 = Array.from({ length: 200 }, (_, i) => `id-${i}`);
+  const t0 = performance.now();
+  await runBulkOperation(ids200, { execute: async () => ({ ok: true }) });
+  const elapsedMs = performance.now() - t0;
+  console.log(`  runBulkOperation(): 200 synthetic ids, no-op execute, concurrency=${DEFAULT_CONCURRENCY}: ${elapsedMs.toFixed(1)}ms`);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

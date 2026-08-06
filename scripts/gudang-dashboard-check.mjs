@@ -200,6 +200,20 @@ console.log('\n[Part C — renderDashboard(): empty catalog and a populated one,
     const emptyHtml = renderDashboard(emptySt, {}, () => {});
     check('empty catalog: renders the empty state', emptyHtml.includes('Gudang siap digunakan'));
     check('empty catalog: Quick Actions still renders (Tambah Item reachable) — the actual bug the Puppeteer interaction check caught', emptyHtml.includes('data-act="gud-cat-add-item-home"') && emptyHtml.includes('AKSI CEPAT'));
+
+    // v1.29.10 (Warehouse Automation, Part E — Loading Behaviour): the SAME
+    // zero-items shape, but mid-refresh (loading:true) — the real state
+    // during the very first refreshCatalog() call on every fresh mount,
+    // since Dashboard is the default landing screen. Before this release,
+    // renderDashboard() had no `!st.loading` guard (gudang-home.js/gudang-
+    // intelligence.js already did), so this exact state rendered the false
+    // "Gudang siap digunakan" empty-warehouse prompt for the entire span of
+    // the initial fetch, regardless of how many items the catalog actually
+    // held once it resolved.
+    const loadingSt = { data: { items: [], locations: [], departments: [], assets: [] }, loading: true, homeStockBulk: null, homeStockBulkLoading: false };
+    const loadingHtml = renderDashboard(loadingSt, {}, () => {});
+    check('mid-refresh (loading:true) with zero items yet: does NOT render the false "empty warehouse" prompt', !loadingHtml.includes('Gudang siap digunakan'));
+    check('mid-refresh: renders the populated-body shape instead (Overview grid), same as gudang-home.js/gudang-intelligence.js\'s own !st.loading empty-state guard', loadingHtml.includes('gud-ov-grid'));
     check('empty catalog: does not render Overview Cards (nothing to summarize yet)', !emptyHtml.includes('gud-ov-grid'));
 
     // Populated catalog — both item types, Out/Low/Safe stock, a Recent Activity feed.

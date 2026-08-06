@@ -52,6 +52,12 @@ let pass = 0; let fail = 0;
 function check(name, cond) { if (cond) { pass++; console.log(`  ✓ ${name}`); } else { fail++; console.log(`  ✗ ${name}`); } }
 const HOST = '#__gudTestHost';
 
+// v1.29.11 (Warehouse Core LTS, Part E — Performance Baseline): wall-clock
+// only, same lightweight approach as gudang-ui-smoke.mjs — see
+// docs/WAREHOUSE_CORE_LTS_v1.29.11.md for why no dedicated measurement
+// harness was built.
+const tBatteryStart = Date.now();
+
 await page.evaluate(async () => {
   // This test is unauthenticated (no live Firebase credentials in this
   // environment) — the real login modal is legitimately visible and would
@@ -77,7 +83,9 @@ await page.evaluate(async () => {
   host.id = '__gudTestHost';
   host.style.cssText = 'width:1440px;min-height:960px;background:var(--canvas,#fff);';
   document.body.appendChild(host);
+  const tMountStart = performance.now();
   await mod.mountGudang(host);
+  window.__gudMountMs = performance.now() - tMountStart;
   window.__gudMod = mod;
 });
 
@@ -271,6 +279,11 @@ console.log('\n[Part E — Keyboard-only: Tab order reaches the search bar, Ente
 console.log(`\n${pass} passed, ${fail} failed`);
 console.log('\n--- non-permission console/page errors ---');
 errors.forEach((e) => console.log('   •', e.slice(0, 300)));
+
+const mountMs = await page.evaluate(() => window.__gudMountMs);
+console.log('\n[Part E — Performance Baseline, v1.29.11]');
+console.log(`  mountGudang(): ${mountMs}ms`);
+console.log(`  full interaction battery wall-clock: ${Date.now() - tBatteryStart}ms`);
 
 await browser.close();
 server.close();

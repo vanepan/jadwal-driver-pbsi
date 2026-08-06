@@ -41,14 +41,19 @@ await page.setViewport({ width: 1440, height: 960 });
 page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 page.on('console', (m) => { if (m.type() === 'error' && !/Permission denied|permission_denied/i.test(m.text())) errors.push('console.error: ' + m.text()); });
 
+// v1.29.11 (Warehouse Core LTS, Part E — Performance Baseline): boot timing
+// only, not a new measurement harness — see docs/WAREHOUSE_CORE_LTS_v1.29.11.md
+// for why this stays this lightweight (no synthetic-fixture script was built).
+const tBootStart = Date.now();
 await page.goto(url, { waitUntil: 'networkidle2', timeout: 45000 });
+const bootMs = Date.now() - tBootStart;
 await new Promise((r) => setTimeout(r, 3000));
 
 const screenshotsDir = path.join(ROOT, 'scripts', '__gudang-ui-screenshots');
 fs.mkdirSync(screenshotsDir, { recursive: true });
 
 const result = await page.evaluate(async () => {
-  const out = { steps: [], htmlLengths: {} };
+  const out = { steps: [], htmlLengths: {}, timingsMs: {} };
   try {
     const mod = await import('/js/gudang/ui/gudang-center.js');
     const host = document.createElement('div');
@@ -64,12 +69,16 @@ const result = await page.evaluate(async () => {
     host.style.cssText = 'width:1440px;min-height:960px;background:var(--canvas,#fff);';
     document.body.appendChild(host);
 
+    const tMountStart = performance.now();
     await mod.mountGudang(host);
+    out.timingsMs.mount = performance.now() - tMountStart;
     out.steps.push('mount:ok');
     out.htmlLengths.home = host.innerHTML.length;
 
     for (const screen of ['dashboard', 'goodsOut', 'goodsIn', 'history', 'opname', 'analytics', 'intelligence', 'home']) {
+      const tScreenStart = performance.now();
       mod.setGudangScreen(screen);
+      out.timingsMs[`screen:${screen}`] = performance.now() - tScreenStart; // the synchronous render() call itself, not the fixed settle wait below
       await new Promise((r) => setTimeout(r, 400)); // let each screen's own async loaders settle
       out.htmlLengths[screen] = host.innerHTML.length;
       out.steps.push(`screen:${screen}:ok`);
@@ -80,7 +89,9 @@ const result = await page.evaluate(async () => {
     out.htmlLengths.searchOpen = host.innerHTML.length;
     out.steps.push('search-open:ok');
 
+    const tSearchStart = performance.now();
     mod.setGudangSearch('tisu');
+    out.timingsMs['search:resolve'] = performance.now() - tSearchStart; // search-session-engine's own resolve latency (empty/permission-denied catalog in this unauthenticated harness — see doc's documented gap)
     await new Promise((r) => setTimeout(r, 500));
     out.htmlLengths.searchQuery = host.innerHTML.length;
     out.steps.push('search-query:ok');
@@ -149,6 +160,9 @@ try {
 
 console.log('Steps:', result.steps.join(' -> '));
 console.log('HTML lengths per screen:', JSON.stringify(result.htmlLengths, null, 2));
+console.log('\n[Part E — Performance Baseline, v1.29.11]');
+console.log(`  page boot (goto -> networkidle2): ${bootMs}ms`);
+console.log('  in-page timings (ms):', JSON.stringify(result.timingsMs, null, 2));
 if (!result.ok) console.log('ERROR:', result.error);
 console.log('\n--- non-permission console/page errors ---');
 errors.forEach((e) => console.log('   •', e.slice(0, 300)));
