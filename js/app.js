@@ -102,6 +102,7 @@ import { openDriverWellnessDrawer } from './components/driver-wellness-drawer.js
 import { validateMaintenanceRecord, normalizeMaintenanceRecord } from './services/maintenance-service.js';
 import { computeFleetAssetModel, findVehicleAsset, searchFilterVehicles } from './services/vehicle-asset-service.js';
 import { injectFleetDashboardStyles, renderFleetDashboard } from './components/fleet-dashboard.js';
+import { injectVehicleReminderPanelStyles, renderVehicleReminderPanel } from './components/vehicle-reminder-panel.js';
 import { renderIcon, vehicleTypeIconName } from './components/icon-system.js';
 import { openVehicleDetailDrawer, refreshVehicleDetailDrawer } from './components/vehicle-detail-drawer.js';
 import { FUEL_TYPES, TRANSMISSION_TYPES, VEHICLE_TYPE_REGISTRY, VEHICLE_STATUS_REGISTRY } from './config/vehicle-asset-config.js';
@@ -4268,6 +4269,7 @@ function initV2AdministrationWorkspace() {
           </div>
           <div id="v2VehicleInventoryView">
           <div id="v2FleetDashboard"></div>
+          <div id="v2VehicleReminderPanel"></div>
           <div class="exec-head">
             <div class="exec-head__l">
               <h2 class="exec-head__title">Inventaris Kendaraan</h2>
@@ -6659,6 +6661,13 @@ function renderV2AdminVehicles() {
     const dashHost = document.getElementById('v2FleetDashboard');
     const dashModel = computeFleetAssetModel({ vehicles: allVehicles });
     if (dashHost) dashHost.innerHTML = renderFleetDashboard(dashModel);
+
+    // Phase 7 (v1.29.18) — Reminder Engine. Reuses the SAME non-archived
+    // normalized vehicles the Fleet Dashboard above was just built from — no
+    // second computeFleetAssetModel() call, no second Firebase read.
+    injectVehicleReminderPanelStyles();
+    const reminderHost = document.getElementById('v2VehicleReminderPanel');
+    if (reminderHost) reminderHost.innerHTML = renderVehicleReminderPanel(dashModel.vehicles);
 
     // Full normalized model (incl. archived) — drives the cards + detail drawer
     // AND the overview strip below (v1.29.15 — same model, single computation,

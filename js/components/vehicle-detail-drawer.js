@@ -34,6 +34,11 @@ import {
 } from '../analytics/executive-ui-kit.js';
 import { vehicleTypeIconName } from './icon-system.js';
 import { complianceTypeInfo } from '../config/compliance-config.js';
+// v1.29.18 (Phase 7) — Reminder Engine: reads the SAME normalized asset this
+// drawer already renders (tax/insurance doc-status + maintenanceProjection);
+// computes no due date/priority of its own. Render-only consumer, like every
+// other section in this file.
+import { computeVehicleReminders } from '../services/reminder-engine.js';
 // v1.19.6 — the Fleet Explainability layer. PURE derivations (arrangements of the
 // SAME certified projection) + their presentation panels; no prediction logic.
 import {
@@ -203,6 +208,48 @@ function heroBlock(a) {
 
 function overviewSection(a) {
   return execDrawerSection({ title: `Overview — ${a.health.label}`, content: healthBars(a) });
+}
+
+/** Reminders (Phase 7, v1.29.18) — Overdue / Due Soon / Upcoming groups built
+ *  from computeVehicleReminders(a), which itself only reads a.tax/a.insurance/
+ *  a.fiveYearTaxDue/a.maintenanceProjection. This section computes nothing:
+ *  no due date, no remaining-day count, no priority is derived here. */
+function remindersGroup(title, items) {
+  if (!items.length) return '';
+  const tl = execDrawerTimeline(items.map((r) => ({
+    when: r.dueDate ? fmtDate(r.dueDate) : (r.remainingKm != null ? fmtKm(r.remainingKm) : '—'),
+    title: r.category ? `${r.typeLabel} — ${r.categoryLabel}` : r.typeLabel,
+    desc: [r.reason, r.recommendedAction].filter(Boolean).join(' · '),
+    tone: tone3(r.tone, 'info'),
+  })));
+  return `<div class="exec-drawer-sec__h">${esc(title)}</div>${tl}`;
+}
+
+function remindersSection(a) {
+  const reminders = computeVehicleReminders(a);
+  const overdue = reminders.filter((r) => r.status === 'overdue');
+  const dueSoon = reminders.filter((r) => r.status === 'due_soon');
+  const upcoming = reminders.filter((r) => r.status === 'upcoming');
+
+  if (!reminders.length) {
+    const msg = a.archived || a.status === 'retired'
+      ? 'Aset tidak aktif — tidak ada kewajiban yang dipantau.'
+      : 'Belum ada tanggal jatuh tempo yang tercatat untuk dipantau.';
+    return execDrawerSection({ title: 'Pengingat', content: `<p style="font-size:13px;color:var(--muted)">${esc(msg)}</p>` });
+  }
+
+  const badges = badgeRow([
+    overdue.length ? ExecutiveStatusPill(`${overdue.length} Terlambat`, 'danger') : '',
+    dueSoon.length ? ExecutiveStatusPill(`${dueSoon.length} Segera`, 'warn') : '',
+    upcoming.length ? ExecutiveStatusPill(`${upcoming.length} Terjadwal`, 'ok') : '',
+  ]);
+
+  const content = badges
+    + remindersGroup('Terlambat', overdue)
+    + remindersGroup('Segera', dueSoon)
+    + remindersGroup('Terjadwal', upcoming);
+
+  return execDrawerSection({ title: 'Pengingat', content });
 }
 
 function operationalSection(a) {
@@ -469,6 +516,10 @@ function buildDrawerBody(asset, opts) {
   return [
     heroBlock(asset),
     overviewSection(asset),
+    // Phase 7 (v1.29.18) — Reminders sits right after Overview: "what deserves
+    // attention" is high-value information, same placement rationale as the
+    // Prediction/Simulation sections directly below it.
+    remindersSection(asset),
     // v1.19.5 — Prediction summary sits high (right after health) when the caller
     // supplies a certified per-vehicle projection; omitted entirely otherwise.
     (opts.prediction && typeof opts.prediction === 'object') ? predictionSection(opts.prediction) : '',

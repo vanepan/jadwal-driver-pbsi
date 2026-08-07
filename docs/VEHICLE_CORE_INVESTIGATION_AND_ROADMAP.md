@@ -212,8 +212,8 @@ Shipped exactly as this line originally proposed: `complianceHistory` gained `ty
 **Phase 6 — Maintenance due-date projection. ✅ DONE — v1.29.17, see §18.**
 Shipped as a new PURE `js/services/maintenance-projection-service.js`, consuming the already-computed `recommendedIntervalKm/Days` (stored since v1.18.1, unread until now) to derive a `nextDueDate`/`nextDueOdometer`/priority per vehicle, surfaced via a new `maintenanceProjection` field on `normalizeVehicleAsset()`'s output, a new drawer section, and an inventory-card badge signal. Still no scheduled delivery — just makes the existing computed data visible where it was dead before. Full report, architecture trace, and regression results: §18.
 
-**Phase 7 — Vehicle reminder engine (closes the biggest operational gap, §12).**
-Only after Phase 6 gives a real due-date to alert on: extend `functions/src/scheduled/` (already a placeholder folder, per its own README) with a Cloud Scheduler job for STNK/tax/insurance/maintenance thresholds, reusing the existing `deriveDocStatus` classification and the notification channels already wired for assignment reminders. This is the first phase that touches the backend/Functions layer — sequence it last so the due-date data it depends on (Phase 6) already exists and is tested.
+**Phase 7 — Vehicle reminder engine (closes the biggest operational gap, §12). ✅ DONE — v1.29.18, see §19.**
+Shipped NARROWER than this line originally proposed: the actual release brief scoped Phase 7 as a pure reminder MODEL only ("NOT a notification system, NOT a scheduler — only expose a clean reminder model, do NOT implement delivery") — the backend Cloud Scheduler job this line anticipated was explicitly deferred, not shipped. `functions/src/scheduled/` remains the placeholder it was; a future delivery phase can now build on `js/services/reminder-engine.js`'s `computeFleetReminders()`/`needsAttention()` with zero new due-date logic of its own. Full report: §19.
 
 **Phase 8 — Unified Vehicle Timeline (closes Finding G).**
 Adopt `js/gudang/activity-engine.js` for vehicle events, exactly as its own v1.29.6 changelog entry anticipates — replacing the three ad-hoc drawer timeline mappings with one typed-event source. Do this only after Phases 1–4 land, since the drawer will already have been touched by Phase 3's cleanup.
@@ -756,6 +756,99 @@ No migration, no schema change. Every change is additive: one new config constan
 ### Future Reminder Integration
 
 No reminder engine exists yet (§12/§13 Phase 7, correctly sequenced last — "only after Phase 6 gives a real due-date to alert on"). This phase makes `maintenanceProjection.headline.status`/`nextDueDate`/`nextDueOdometer` real, deterministic, always-current due-signals — the same shape `stnkExpiry`/`insuranceExpiry` already have via `deriveDocStatus`. When Phase 7 ships, it can extend `functions/src/scheduled/` with a Cloud Scheduler job that alerts on a transition into `due_soon`/`overdue`, reusing the exact same notification channels already wired for assignment reminders, with zero maintenance-specific due-date logic to build — it already exists here.
+
+---
+
+## 19. Phase 7 Implementation Report — Reminder Engine (v1.29.18)
+
+**Scope discipline:** closes roadmap item 7 (§13) — per §12's own risk assessment, "the single biggest gap between a system that tracks compliance and a system that prevents a lapse." The actual release brief scoped this NARROWER than §13's original prediction: a pure reminder MODEL only ("Reminder Engine is NOT a notification system. Reminder Engine is NOT a scheduler... Design extension points for Push/Telegram/Email/Calendar. Do NOT implement them."). No Cloud Scheduler job, no Functions-layer change, no delivery mechanism of any kind was built — `functions/src/scheduled/` remains exactly the placeholder it was after Phase 6. Files touched: `js/components/vehicle-detail-drawer.js`, `js/app.js`. Untouched, per the brief's explicit do-not-modify list: Compliance Engine, Maintenance Projection Service, Health Engine, Recommendation Engine, Prediction Engine, Vehicle Store, Dashboard calculations (`computeFleetAssetModel`'s `dashboard` object), Business Rules, Firebase schema.
+
+### Architecture Report (pre-implementation investigation)
+
+Traced every reminder-like surface in the app before writing anything:
+
+- **Vehicle/Compliance badges:** `buildVehicleCard()` (app.js) and the drawer's `renewalCountdown()` both source the stnk/tax/insurance pills from `deriveDocStatus()` (`vehicle-asset-service.js`) — one pure classifier (`valid`/`due_soon`/`expired`/`unknown`, using the existing `DUE_SOON_DAYS`=30 threshold), already reused identically for all three document types. `fiveYearTaxDue` was the one exception: the drawer showed its raw date (`fmtDate(a.fiveYearTaxDue)`) with **no** derived status anywhere — confirmed via grep, this field had zero classification logic before this phase.
+- **Maintenance badges:** already fully solved by Phase 6 (§18) — `asset.maintenanceProjection.items` carries `nextDueDate`/`nextDueOdometer`/`remainingDays`/`remainingKm`/`status`/`priority`/`reason` per scheduled category. Nothing left to compute; this phase's job is deciding whether/when to surface it as a reminder, not deriving it.
+- **Dashboard alerts:** `fleet-dashboard.js`'s "Perlu Perhatian" KPI is a local `countIssues()` reduction (expired doc OR danger health) — a pre-existing, independent aggregation confirmed structurally separate from anything this phase needed to build on. Left untouched (see Do-Not-Modify).
+- **Prediction indicators:** `js/prediction/explainability.js` / `js/recommendation/*` answer a PROBABILISTIC question ("how likely is an unscheduled failure?"), not a due-date question — consistent with Phase 6's own finding about `maintenanceRisk` (§18), confirmed structurally incapable of reuse here and correctly not touched.
+- **Notification helpers:** `js/notification-service.js`'s browser-`setInterval` H-1/H-2 reminder path (`checkAndSendH1Reminders` et al.) was already retired in an earlier hardening pass, replaced by a server-side event pipeline (`functions/src/events/onAssignmentWrite.js`) — for ASSIGNMENT reminders, a different domain. This confirms the project's own precedent that durable reminder delivery belongs server-side, not a client interval — noted for a future delivery phase, not invoked here (this phase builds no delivery at all).
+- **Scheduler utilities:** `functions/src/scheduled/README.md` remains a placeholder reserved for a future Cloud Scheduler job; the live sibling `functions/src/reminders/{schedule.js,tick.js,onAssignmentReminderSync.js}` (materialized `/reminders` queue, 5-minute tick) is the pattern a FUTURE vehicle-reminder delivery phase would extend — confirmed untouched, not required by this phase's narrower brief.
+- **Toast helper:** `js/utils.js#showToast()` exists, generic and reusable, but no UI event in this phase needed one — not wired in.
+- **Reserved-but-unwritten fields:** `maintenanceRecords[].reminderStatus`/`reminderSentDate`/`reminderDismissedDate` (`maintenance-service.js`, since v1.18.1) confirmed still to have no writer anywhere. Correctly left alone — writing them would be a per-record acknowledge/dismiss feature (different concern from "what deserves attention right now") and is out of this phase's additive-only scope.
+
+**Conclusion:** every fact a reminder needs already existed, computed once, in exactly one place each (`deriveDocStatus` for the three document types, `maintenanceProjection` for maintenance). The only missing piece — and the only thing this phase built — is the decision layer that turns those facts into a uniform, prioritized, explainable reminder list.
+
+### Reminder Strategy
+
+New PURE file `js/services/reminder-engine.js` — reads normalized assets only, computes zero due dates, zero remaining-day/km counts, zero maintenance priorities of its own:
+
+1. **Four reminder types**, matching the brief exactly: `annual_tax` (reads `asset.tax`, i.e. `deriveDocStatus` over `annualTaxDue||stnkExpiry` — the exact fallback `vehicle-asset-service.js` already uses for the same field), `five_year_tax` (`deriveDocStatus(asset.fiveYearTaxDue)` — reuses the SAME exported classifier the other two document types already use; new SURFACING of an existing field, not a new business rule), `insurance` (`asset.insurance`), `maintenance` (one reminder per `asset.maintenanceProjection.items` entry — priority/reason/remainingKm are READ verbatim, never recomputed; test-verified as the same reference value).
+2. **Status is a 4-state vocabulary** (`overdue`/`due_soon`/`upcoming`/`completed`) mapped 1:1 from the existing classifications, introducing zero new thresholds: `overdue`←`expired`/`overdue`, `due_soon`←`due_soon`/`due_soon`, `upcoming`←`valid`/`on_track` (reusing `DUE_SOON_DAYS`=30 and `MAINTENANCE_DUE_SOON_KM`=1500 exactly as already defined). `completed` is the one genuinely new state — it fires when the vehicle itself is `archived` or `status==='retired'`, reusing `vehicle-asset-service`'s own existing facts rather than inventing a date-based rule, and overrides the underlying doc/projection status regardless of how overdue it is (an archived vehicle has no active obligation to track).
+3. **`unknown` (no date on file) is filtered out** of every returned list — an engine that "determines what deserves attention" cannot recommend action on a field nobody has filled in; that gap belongs to the pre-existing Document Completeness score, not to reminders.
+4. **Priority is read, not invented**, for maintenance (`item.priority`, already computed by Phase 6's `priorityFor()`). Compliance types had no priority axis before this engine — `compliancePriority()` applies the SAME status→urgency SHAPE `priorityFor()` already established (overdue=critical, due_soon=high, upcoming=low, completed=none) to a domain that previously had no priority concept, rather than inventing an unrelated scale.
+5. **Fleet-wide sort** (`computeFleetReminders()`) reuses the exact ordering idiom `computeMaintenanceProjections()` already established: status rank, then priority rank, then soonest `remainingDays` — applied fleet-wide instead of per-category.
+6. **`needsAttention()`/`summarizeReminders()`** give dashboard/panel callers a pre-filtered (`overdue`+`due_soon` only), pre-capped, pre-sorted view — the caller renders it verbatim and never re-decides urgency, satisfying the brief's "Dashboard never decides reminder priority. Reminder Engine owns reminder priority."
+
+### Surfacing (render-only)
+
+- **Drawer** (`vehicle-detail-drawer.js`): new `remindersSection()`, placed immediately after Overview (same prominence rationale already used for the Prediction/Simulation sections directly below it) — a badge-count summary plus three named groups (Terlambat/Segera/Terjadwal — Overdue/Due Soon/Upcoming), built entirely from the existing `execDrawerSection`/`execDrawerTimeline`/`ExecutiveStatusPill` primitives. Zero new drawer grammar. Verified in real headless Chromium (`vehicle-asset-dom-check.mjs`, 35/35, 0 console errors) — light, dark, and mobile screenshots all confirm correct rendering of the badge counts and per-item reason/recommended-action text.
+- **Dashboard:** `fleet-dashboard.js`'s protected 5-KPI strip was deliberately NOT touched — its own docstring self-documents exactly five fixed questions, and Phase 6 already established the precedent that a 6th tile there is a Dashboard-architecture change (on the do-not-modify list; confirmed by a test asserting the file still contains exactly 5 `fleetKpi()` calls). Instead, a new, additive, PURE-presentation file `js/components/vehicle-reminder-panel.js` renders a separate "Pengingat Kendaraan" panel directly below the KPI strip. It reuses `dashModel.vehicles` — the SAME non-archived normalized model the Fleet Dashboard was just built from in `renderV2AdminVehicles()` — so there is zero duplicate `computeFleetAssetModel()` call and zero duplicate Firebase read. A new `#v2VehicleReminderPanel` container was added to the Vehicle Inventory template in `app.js` (no spare container existed; confirmed by investigation before implementation).
+- **Deliberately not wired this phase (documented, not a missed requirement):** the Executive Command Center's cross-domain "Attention Center" widget (`js/widgets/executive/index.js`, `exec-attention`, "Pusat Perhatian") currently sources its one vehicle-related signal from `f.rec.board?.critical` — the probabilistic Recommendation Engine's board, not a real due-date. This is a real, identified integration opportunity (the widget's own docstring already lists "vehicle maintenance" as an intended signal), but it sits in the Executive Command Center module, outside this phase's Vehicle Core scope — left for a future phase, per Future Extension Points below.
+- **No scheduled delivery.** No Cloud Function, push, or Telegram trigger was added — the release brief for this phase explicitly scoped delivery out ("do NOT implement them"), narrower than §13's original roadmap prediction that Phase 7 would touch the Functions layer.
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `js/services/reminder-engine.js` (new) | The reminder engine: `computeVehicleReminders`, `computeFleetReminders`, `needsAttention`, `summarizeReminders`, `reminderTypeInfo`. PURE, Node-testable. |
+| `js/components/vehicle-reminder-panel.js` (new) | Additive Vehicle Inventory panel: `renderVehicleReminderPanel`, `injectVehicleReminderPanelStyles`. PURE presentation. |
+| `js/components/vehicle-detail-drawer.js` | New `remindersSection()`/`remindersGroup()`; one new import; wired into `buildDrawerBody()` right after Overview. |
+| `js/app.js` | New `#v2VehicleReminderPanel` container in the Vehicle Inventory template; mount call in `renderV2AdminVehicles()` reusing `dashModel.vehicles`; one new import. |
+| `js/config.js` | `APP_VERSION` 1.29.17 → 1.29.18, `RELEASE_NAME`, new `VERSION_HISTORY` entry. |
+| `docs/VEHICLE_CORE_INVESTIGATION_AND_ROADMAP.md` | §13's Phase 7 line marked done; this section. |
+| `scripts/reminder-engine-check.mjs` (new) | 49 real functional cases against the actual engine. |
+| `service-worker.js`, `version.json`, `index.html` | Mechanically re-stamped by `scripts/sync-version.mjs` (cache-bust only). |
+
+No other file was opened for editing — `js/vehicles-store.js`, `js/services/vehicle-asset-service.js`, `js/services/maintenance-projection-service.js`, `js/services/vehicle-recommendation-engine.js`, `js/services/dispatch-scoring-engine.js`, `js/engines/prediction-engine.js`, `js/services/prediction-service.js`, `js/prediction/explainability.js`, `js/recommendation/*`, `js/simulation/*`, `js/components/fleet-dashboard.js`, `js/services/maintenance-service.js`, `js/config/vehicle-asset-config.js`, `js/config/maintenance-config.js`, and `js/widgets/executive/index.js` are byte-identical to before this phase.
+
+### Testing Summary
+
+New `scripts/reminder-engine-check.mjs` (49 cases, real functional tests against the actual engine — not string-presence): per-type generation for annual tax / five-year tax / insurance / maintenance and their mutual independence (a vehicle can have annual tax due soon while five-year tax is overdue); the `DUE_SOON_DAYS` boundary reused verbatim (no new threshold introduced); the `annualTaxDue`→`stnkExpiry` fallback matching `vehicle-asset-service.js`'s own `deriveTaxStatus`; `unknown`-status filtering (no date on file ⇒ no reminder); maintenance reminder priority/reason/remainingKm asserted as the SAME reference value as the projection item (proves nothing was recomputed); the archived/retired "completed" override forcing status regardless of an overdue underlying date; fleet-wide sort-never-regresses-urgency-rank across a mixed fleet; `needsAttention()`/`summarizeReminders()` contract (counts match direct filters, cap respected, `top` is always a subset of `needsAttention`); `reminderTypeInfo()`'s fallback; malformed-input safety (`null` never throws, always returns an empty/zeroed result); result immutability (deep-frozen, matching every other engine in this codebase); and UI-wiring source-presence assertions confirming the drawer imports the engine and renders a Pengingat section, the new panel imports the engine and stays render-only (no `vehicle-asset-service` import), `app.js` mounts the panel into its own container and reuses `dashModel.vehicles`, and `fleet-dashboard.js`'s protected 5-KPI grid still contains exactly 5 `fleetKpi()` calls.
+
+### Regression Summary
+
+| Suite | Result |
+|---|---|
+| `reminder-engine-check.mjs` (new) | 49/49 |
+| `vehicle-asset-check.mjs` (confirms `deriveDocStatus`/Health Engine untouched) | 58/58 |
+| `vehicle-asset-dom-check.mjs` (real headless-Chromium; confirms the new Reminders drawer section renders, dark-mode-safe, 0 console errors) | 35/35 |
+| `maintenance-projection-check.mjs` (confirms Maintenance Projection untouched) | 48/48 |
+| `vehicle-management-presentation-check.mjs` | 47/47 |
+| `vehicle-recommendation-check.mjs` | 71/71 |
+| `vehicles-store-check.mjs` (confirms Vehicle Store/Firebase schema untouched) | 49/49 |
+| `fleet-recommendation-check.mjs` / `scenario-simulation-check.mjs` (architectural-purity: neither re-derives a reminder) | PASS / PASS |
+| `prediction-engine-check.mjs` / `-validator-` / `-service-` / `-provider-check.mjs` (confirms the Prediction Engine untouched) | PASS ×4 |
+| `executive-ui-kit-check.mjs` (confirms the shared primitives this phase reused are unaffected) | 46/46 |
+| `executive-dashboard-export-check.mjs` / `-dom-check.mjs` (confirms the Executive Command Center — deliberately not touched — is unaffected) | 18/18, 37/37 |
+| `smoke-boot.mjs` | 0 fatal errors, PASS |
+
+`maintenance-intelligence-check.mjs` retains its known pre-existing 6 failures (stale release-marker/UI-string assertions predating the Executive UI Kit migration — see §18's own note on the same suite). Reconfirmed byte-identical via `git stash` before touching anything, consistent with every prior Vehicle Core phase's documented handling of this same suite.
+
+### Performance Impact
+
+Zero new Firebase reads — the engine reads only fields already present on `normalizeVehicleAsset()`'s output (`tax`/`insurance`/`fiveYearTaxDue`/`maintenanceProjection`), computed once per render and passed by reference. The reminder panel reuses `dashModel.vehicles` (Fleet Dashboard's already-computed, non-archived model) instead of calling `computeFleetAssetModel()` a second time. One additional `O(vehicles × types)` pass over data already resident in memory (at most 4 compliance checks + a handful of maintenance-projection items per vehicle) — immaterial at this fleet's scale. Zero change to `fleet-dashboard.js`'s own render cost (untouched).
+
+### Backward Compatibility / Migration
+
+No schema migration, no new ledger, no new business rule, no write path added anywhere — the engine is entirely read-only. Every existing compliance/maintenance calculation is untouched and produces byte-identical output (verified by the unchanged suites above). A vehicle with no compliance dates on file produces zero reminders for those types (verified) rather than a fabricated "unknown" entry. Every change is additive: two new files, one new drawer section, one new dashboard container + panel, one new config/version entry.
+
+### Future Extension Points
+
+- **Notification delivery (Push/Telegram/Email/Calendar Sync).** Explicitly out of scope for this phase per the brief. A future delivery phase would consume `computeFleetReminders()`/`needsAttention()` exactly as this phase's own UI panel does — the reminder MODEL is the extension point, so zero new due-date logic would need to be built when delivery ships.
+- **Cloud Scheduler tick.** `functions/src/scheduled/` remains the placeholder folder it was after Phase 6. A future job could poll `computeFleetReminders()`'s output (or a server-side port of the same pure logic) and alert on a transition into `due_soon`/`overdue`, reusing the exact notification channels already wired for assignment reminders in `functions/src/reminders/`.
+- **Executive Command Center Attention Center integration.** `js/widgets/executive/index.js`'s `exec-attention` widget currently surfaces vehicle risk only from the probabilistic Recommendation Engine board. Wiring in `needsAttention(computeFleetReminders(...))` as a new fact + `items.push()` block (the same pattern every other cross-domain signal in that file already follows) would give the executive-level attention surface real due-date awareness, not just prediction-risk awareness — identified, not implemented, since it is outside the Vehicle Core module's scope.
+- **Per-reminder acknowledge/dismiss.** `maintenanceRecords[].reminderStatus`/`reminderSentDate`/`reminderDismissedDate` remain reserved, unwritten fields (`maintenance-service.js`, since v1.18.1) — a natural next step once a delivery mechanism exists to acknowledge against, deliberately not built now (no delivery event to acknowledge yet).
+- **Unified Vehicle Timeline (Phase 8, §13).** Unaffected by this phase; `reminder-engine.js` does not touch `buildVehicleTimeline()` or `complianceHistory` at all.
 
 ---
 
