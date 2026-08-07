@@ -206,8 +206,8 @@ Remove `taxHistory` from `sanitizeAssetFields` (superseded by `complianceHistory
 **Phase 4 — De-duplicate stat tiles (Finding B).**
 Pick one source of truth for "total vehicles" (`computeFleetAssetModel().dashboard.totalAssets` is the more complete one, already used by the dashboard) and have `applyVehicleView()`'s overview strip read it instead of recomputing independently.
 
-**Phase 5 — Insurance ledger parity.**
-Extend `complianceHistory` (already schema-flexible per its own design comment) to cover insurance renewals the same way STNK/tax already do, retiring the flat `insuranceExpiry` field in favor of "latest entry of type `insurance`" — same pattern `recomputeComplianceMirror` already implements for tax types.
+**Phase 5 — Insurance ledger parity. ✅ DONE — v1.29.16, see §17.**
+Shipped exactly as this line originally proposed: `complianceHistory` gained `type:'insurance'`, `recomputeComplianceMirror()` gained an insurance branch mirroring `insuranceExpiry` from the latest insurance entry (retiring the flat hand-edited field, same pattern already used for the tax types), and the drawer/registration-form got parity treatment with STNK. Full report: §17.
 
 **Phase 6 — Maintenance due-date projection.**
 Consume the already-computed `recommendedIntervalKm/Days` (currently stored but unread) to derive a `nextDueDate`/`nextDueOdometer` per vehicle, surfaced as a new drawer field and dashboard signal. Still no scheduled delivery — just makes the existing computed data visible where it's dead today.
@@ -571,6 +571,102 @@ Net negative cost. Finding 1 REMOVES one independent count-computation per Inven
 - The two redundant `computeFleetAssetModel()` calls in `renderV2AdminVehicles()` could be collapsed into one `includeArchived:true` call with the KPI strip filtering `.vehicles` down to non-archived itself — a micro-optimization, not a correctness fix, deferred because it touches the Fleet Dashboard's exact input shape and wasn't necessary to close any Consistency Report finding.
 - `renderVehicleOverviewRow()` is now the established pattern for any future per-section overview-strip content: compute the section's canonical model once, pass it to a small render function, never recompute independently — the same lesson Phase 2's `applyVehiclesPatch()` established for writers, now established for read-side presentation too.
 - With Phases 1–4 complete, Findings A–E (plus this phase's two) of the original investigation are all closed. Remaining roadmap items from §13 (insurance ledger parity, maintenance due-date projection, reminder engine, unified timeline, test hardening) remain open and unaffected by this phase.
+
+---
+
+## 17. Phase 5 Implementation Report — Insurance Ledger (v1.29.16)
+
+**Scope discipline:** the first CAPABILITY EXPANSION after the 4-phase foundation freeze (Phases 1–4, §14–§16). Per the release brief's explicit framing ("Insurance is NOT a new subsystem. Insurance is another Compliance record. Reuse first. Extend second."), this phase investigated the full Compliance flow before writing any code and found the architecture already insurance-ready everywhere except one real gap. Files touched: `js/config/compliance-config.js`, `js/vehicles-store.js`, `js/components/vehicle-detail-drawer.js`, `js/app.js`. Untouched, per the brief's explicit do-not-modify list: Vehicle Store architecture (only the Compliance History sub-section gained a branch — no new store function, no new Firebase path), Health Engine, Recommendation Engine, Dispatch Engine, Prediction Engine, Refresh contract, Dashboard architecture, Firebase schema.
+
+### Pre-implementation investigation (what changed the plan)
+
+Traced the complete Compliance flow the brief asked for, layer by layer:
+
+- **Compliance Store** (`js/config/compliance-config.js`) — its own top-of-file comment already stated `COMPLIANCE_TYPES` was "open-ended by design so future compliance events (insurance, registration, inspection…) can reuse `complianceHistory` without a schema change." Verified true, but `insurance` itself had never actually been added to the array — the comment described an intent, not yet a fact.
+- **Ledger** (`js/vehicles-store.js#addComplianceRecord` / `recomputeComplianceMirror`) — `addComplianceRecord` already falls back any type not in `COMPLIANCE_TYPES` to `'annual_tax'`, so an insurance renewal recorded today would have been silently misfiled as a tax renewal. `recomputeComplianceMirror()` derives `stnkExpiry`/`annualTaxDue`/`fiveYearTaxDue` from the latest entry per type, but had no branch for `insurance` at all — even a correctly-typed record would never update `insuranceExpiry`.
+- **Timeline / Drawer / Status** (`js/services/vehicle-asset-service.js`, `js/components/vehicle-detail-drawer.js`) — found ALREADY fully built for insurance, and untouched by this phase: `ASSET_STRING_FIELDS` (`vehicles-store.js`) already accepts `insuranceCompany`/`policyNumber`/`coverage`/`insuranceExpiry`; `normalizeVehicleAsset()` already derives `.insurance` (status/days/label/tone) via `deriveDocStatus(v.insuranceExpiry, now)`, exactly parallel to `.tax`/`.stnk`; `computeVehicleHealth()`'s `legal` sub-score already averages `[stnk, tax, insurance]`; `vehicle-asset-config.js`'s `DOCUMENT_FIELDS` already counts `insuranceCompany`/`policyNumber`/`insuranceExpiry` toward document completeness; `buildVehicleTimeline()` already emits a point-in-time "Asuransi Berlaku Hingga" event from `v.insuranceExpiry`; the drawer already had an `insuranceSection()` showing the Current Insurance summary (provider/policy/coverage/expiry badge). All of this was built in v1.18.0 (Vehicle Asset Intelligence) and required zero changes.
+- **Vehicle Asset Service / Prediction / Reminder dependencies** — `deriveDocStatus`/`computeVehicleHealth` are pure functions over already-normalized doc-status objects; they don't care which ledger type produced `insuranceExpiry`, so no change was needed or made. No reminder engine exists yet (§12/§13 Phase 7, still open) — nothing to wire there yet, documented under Future Extension Points below.
+- **Dashboard** — `computeFleetAssetModel()`'s `dashboard.expiredStnk`/`taxDueSoon` KPIs are STNK/tax-specific by design (unchanged); no equivalent insurance KPI exists on the Fleet Dashboard today and adding one was judged out of scope (a new dashboard metric is a design decision, not a ledger-parity requirement — not requested by the brief).
+
+**Conclusion:** the ONE real gap was `COMPLIANCE_TYPES`/`COMPLIANCE_TYPE_REGISTRY` never including `insurance`, plus the mirror-recompute branch. Everything downstream (derivation, scoring, timeline, drawer summary) already generically consumed whatever `insuranceExpiry` held — it just needed a ledger-driven way to update that field instead of the flat hand-edited one.
+
+### Ledger Extension Strategy
+
+No new ledger, no new storage, no new record fields. An insurance renewal is an ordinary `complianceHistory` entry with `type:'insurance'`, reusing the exact same shape every other entry already has:
+
+| Ledger field (existing, reused) | Insurance-context meaning |
+|---|---|
+| `renewalDate` | Coverage start / renewal date |
+| `expiryDate` | Coverage expiry — mirrors into `vehicle.insuranceExpiry` |
+| `amount` | Premium paid |
+| `paymentMethod` | Same `COMPLIANCE_PAYMENT_METHOD_REGISTRY` (cash/transfer/petty cash/corporate account) |
+| `receiptNumber` | Relabeled "No. Polis / Kwitansi" in the Insurance modal only — same field, no schema change |
+| `notes`, `officer`, `createdAt`, `updatedAt`, `id`, `vehicleId` | Unchanged |
+
+Provider/Policy Number/Coverage (the master spec's "Insurance Provider," "Policy Number," "Coverage") are deliberately NOT per-renewal ledger fields — they already exist as IDENTITY fields on the vehicle record itself (`insuranceCompany`/`policyNumber`/`coverage`, editable via Edit Aset), exactly mirroring how `stnkNumber` is a vehicle identity field while only the STNK *expiry date* is ledger-derived. Recording them per-renewal too would duplicate the same fact in two places with no reconciliation rule — rejected per the brief's "never duplicate ledger logic" instruction.
+
+`recomputeComplianceMirror()` gained one more `latestByType` branch: the insurance entry with the furthest-future `expiryDate` mirrors into `vehicle.insuranceExpiry`, independently of the STNK/tax mirror (verified by test — a Tax renewal cannot disturb the insurance mirror and vice versa). The Vehicle Registration form's hand-editable "Masa Berlaku Asuransi" input was removed (matching the exact precedent already set for `stnkExpiry`/`annualTaxDue`/`fiveYearTaxDue` in the original Compliance History release, which removed those fields for the identical reason: a hand-edit racing the ledger-derived mirror) — replaced with the same "now managed via the renewal button" hint pattern STNK already uses. `insuranceCompany`/`policyNumber`/`coverage` stay hand-editable, matching `stnkNumber`'s precedent.
+
+`complianceTypeInfo()`'s fallback-to-'other' logic used a hardcoded `COMPLIANCE_TYPE_REGISTRY[2]` positional index; inserting `insurance` at that position shifted `'other'` to index 3. Caught before shipping and fixed to look up the fallback by key (`.find(t => t.key === 'other')`) instead of position — a latent bug this phase would otherwise have introduced.
+
+### Drawer / Timeline integration
+
+The Insurance section (`vehicle-detail-drawer.js#insuranceSection`) keeps its existing Current Insurance summary and gains its own filtered "Riwayat Asuransi" ledger view — `complianceHistory.filter(rec => rec.type === 'insurance')`, rendered with the SAME `execDrawerTimeline`/`complianceTypeInfo` machinery the Tax section already uses — plus a new "Sisa Hari" (Remaining Days) metric reusing the existing `renewalCountdown()` helper (previously only used by Tax). The Tax section's "Riwayat Kepatuhan" now excludes `type:'insurance'` entries, so a renewal is never rendered twice in the same drawer — one ledger, split only by a presentation filter, never two ledgers. The canonical unified History section (`buildVehicleTimeline()`'s linimasa) needed NO change: it already iterates `complianceHistory` generically via `complianceTypeInfo(rec.type).timelineTitle`, so insurance entries flow into it automatically the moment the type exists — exactly satisfying the brief's "Insurance events must automatically appear inside the existing Compliance History timeline. Do NOT create another timeline."
+
+A new "Perpanjang Asuransi" footer action was added (`buildFooter`/`handlers`/`KEEP_OPEN_ACTIONS`), gated on `opts.onRenewInsurance` exactly like `onRenewSTNK` (omitted ⇒ no button, verified). It is intentionally its OWN modal in `app.js` (`initInsuranceRenewalModal`/`openRenewInsuranceModal`/`handleRenewInsuranceSubmit`), not a mode of the existing STNK modal — the STNK modal already doubles for annual-tax AND five-year-tax renewals because those are the SAME real-world event in Indonesia (STNK validity and annual tax coincide), but insurance is a genuinely separate provider/cadence, so per the brief's explicit "Renew Insurance action" requirement it gets its own entry point. The new modal is structurally identical to STNK's (3 required fields, collapsed advanced disclosure, smart-defaulted dates seeded from `vehicle.insuranceExpiry`, drawer stays open and refreshes in place via `refreshVehicleDetailDrawer`) but simpler — no type `<select>`, since it only ever writes `type:'insurance'`. It reuses the same `localStorage` "last payment method" key as STNK (already generically named `pbsi_lastCompliancePaymentMethod`) and the same `COMPLIANCE_PAYMENT_METHOD_REGISTRY`/`addComplianceRecord`. Wired into `vehicleDrawerHandlers()` — the single handlers object shared by both the Inventory drawer and the Prediction-tab drawer — so both call sites gain the action for free, with zero additional wiring.
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `js/config/compliance-config.js` | Added `'insurance'` to `COMPLIANCE_TYPES` + a registry entry (label "Asuransi", timelineTitle "Asuransi Diperpanjang"). Fixed `complianceTypeInfo()`'s fallback from a hardcoded positional index to a key lookup (latent bug the insertion would otherwise have triggered). |
+| `js/vehicles-store.js` | `recomputeComplianceMirror()` gained an `insurance` branch mirroring `insuranceExpiry` from the latest insurance entry, independent of the STNK/tax branches. |
+| `js/components/vehicle-detail-drawer.js` | `insuranceSection()` now renders its own filtered "Riwayat Asuransi" history + a Sisa Hari metric; `taxSection()`'s history filter excludes `type:'insurance'`. New `renew-insurance` footer action, handler, and `KEEP_OPEN_ACTIONS` entry, gated on `opts.onRenewInsurance`. JSDoc updated. |
+| `js/app.js` | New `initInsuranceRenewalModal()`/`openRenewInsuranceModal()`/`handleRenewInsuranceSubmit()` (mirrors the existing Renew STNK modal). `vehicleDrawerHandlers()` gained `onRenewInsurance`. Vehicle Registration form: removed the hand-editable "Masa Berlaku Asuransi" date input (now ledger-derived only), added the same explanatory hint paragraph pattern STNK already uses; `insuranceExpiry` dropped from the form's load/submit payload (identity fields `insuranceCompany`/`policyNumber`/`coverage` stay editable). |
+| `js/config.js` | `APP_VERSION` 1.29.15 → 1.29.16, `RELEASE_NAME`, new `VERSION_HISTORY` entry. |
+| `docs/VEHICLE_CORE_INVESTIGATION_AND_ROADMAP.md` | §13's Phase 5 line marked done; this section. |
+| `scripts/vehicles-store-check.mjs` | 7 new cases: insurance type acceptance, `insuranceExpiry` mirror recompute, independence from the STNK/tax mirror in both directions. |
+| `scripts/vehicle-asset-dom-check.mjs` | 5 new real-headless-Chromium cases: Perpanjang Asuransi button presence/back-compat, `renew-insurance` keeps the drawer open, Insurance section renders its own human-readable history, Tax section correctly excludes insurance entries. |
+| `service-worker.js`, `version.json`, `index.html` | Mechanically re-stamped by `scripts/sync-version.mjs` (cache-bust only). |
+
+No other file was opened for editing — `js/services/vehicle-asset-service.js`, `js/config/vehicle-asset-config.js`, `js/services/vehicle-recommendation-engine.js`, `js/services/dispatch-scoring-engine.js`, `js/services/prediction-service.js`, `js/engines/prediction-engine.js`, `js/prediction/explainability.js`, `js/recommendation/*`, `js/simulation/*`, `js/components/fleet-dashboard.js`, and `js/services/maintenance-service.js` are byte-identical to before this phase — all of them were already correctly insurance-generic and needed no changes, as the investigation predicted.
+
+### Testing Summary
+
+Extended `scripts/vehicles-store-check.mjs` (49 cases, was 42): a new `[addComplianceRecord — insurance]` block asserts `type:'insurance'` is accepted, `insuranceExpiry` mirrors immediately (both in `getVehicleById()` and in the listener payload), a subsequent Tax renewal does not disturb the insurance mirror, and (by construction of the existing STNK-then-insurance ordering) the insurance mirror does not disturb `stnkExpiry` either. Extended `scripts/vehicle-asset-dom-check.mjs` (35 cases, was 30, real headless Chromium): added an insurance-type `complianceHistory` entry to the fixture vehicle, then asserted the "Perpanjang Asuransi" button renders when `onRenewInsurance` is supplied and is absent when omitted (back-compat), that clicking it does NOT close the drawer (same KEEP_OPEN contract as `renew-stnk`), that the Insurance section's own history shows the human-readable "Asuransi Diperpanjang" title and formatted amount (never the raw `'insurance'` string), and — the key regression-shaped assertion — that the Tax section's history excludes the insurance entry while still showing the STNK entry, proving the one-ledger/two-filtered-views split works correctly rather than either duplicating or losing a record.
+
+### Regression Summary
+
+| Suite | Result |
+|---|---|
+| `vehicles-store-check.mjs` | 49/49 (was 42/42) |
+| `vehicle-asset-dom-check.mjs` (real headless Chromium, 0 console errors) | 35/35 (was 30/30) |
+| `vehicle-asset-check.mjs` (pure derivation logic — untouched, already insurance-generic) | 58/58 |
+| `vehicle-management-presentation-check.mjs` | 47/47 |
+| `vehicle-recommendation-check.mjs` | 71/71 |
+| `dispatch-scoring-check.mjs` | 33/33 |
+| `fleet-recommendation-check.mjs` (architectural-purity: never re-predicts) | PASS |
+| `scenario-simulation-check.mjs` (architectural-purity: forecasts only via Prediction Service) | PASS |
+| `prediction-engine-check.mjs` / `-validator-` / `-service-` / `-provider-check.mjs` | PASS ×4 |
+| `smoke-boot.mjs` | 0 fatal errors, PASS |
+
+**Zero regressions caused by this phase.** Existing Tax/STNK `complianceHistory` records, unaware of the word `'insurance'`, are completely unaffected — every mirror branch is keyed by `type`, and the new branch only ever reads entries already tagged `insurance`.
+
+### Performance Impact
+
+Zero new Firebase reads — insurance renewals reuse the exact same `addComplianceRecord`/`updateFirebaseData` write path as Tax, one write per renewal, same as before. Zero new caches — the Insurance section's history filter is an `O(n)` array `.filter()` over the `complianceHistory` array the drawer was already holding in memory (typically single-digit entries per vehicle), not a new data source or computation. No change to the Refresh contract or `applyVehiclesPatch()`.
+
+### Backward Compatibility / Migration
+
+No migration. Every change is additive: a new enum value, a new mirror branch, a new filtered presentation view, a new modal, one removed form input. Existing `complianceHistory` records of type `annual_tax`/`five_year_tax`/`other` are read and rendered identically to before. `insuranceExpiry` remains in `vehicles-store.js`'s `ASSET_STRING_FIELDS` for legacy passthrough (same treatment as the three tax date fields before it) — only the form INPUT was removed, and since `updateVehicle` writes via a partial Firebase `update()`, no legacy vehicle's existing `insuranceExpiry` (or any other field) is at risk from this change.
+
+### Future Reminder Integration
+
+No reminder engine exists yet (§12/§13 Phase 7 is still open, correctly sequenced last per the roadmap's own reasoning: "only after Phase 6 gives a real due-date to alert on"). This phase makes `insuranceExpiry` a real, ledger-derived, always-current due date — exactly the same shape `stnkExpiry` already has — so when Phase 7 ships, it can reuse the identical `deriveDocStatus(vehicle.insuranceExpiry, now)` classification it will already be using for STNK/tax, with zero insurance-specific logic required. No wiring was added this phase because no reminder consumer exists yet to wire it to.
+
+### Future Timeline Integration
+
+No unified Vehicle Timeline engine exists yet (§13 Phase 8, `js/gudang/activity-engine.js` reuse, still open). In the meantime, insurance renewals already flow into the existing `buildVehicleTimeline()` linimasa via the same generic `complianceHistory` loop every other compliance type uses — no insurance-specific change will be needed there when Phase 8 eventually replaces that ad hoc builder with the shared activity-engine.
 
 ---
 

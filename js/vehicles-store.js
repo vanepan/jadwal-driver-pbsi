@@ -544,11 +544,14 @@ export async function deleteMaintenanceRecord(vehicleId, recordId) {
    automatically — those three fields are no longer meant to be hand-edited
    (removed from the Vehicle Registration form; see app.js). */
 
-/** Derive the current-state mirror (stnkExpiry/annualTaxDue/fiveYearTaxDue)
- *  from the latest compliance entry per type. An annual OR five-year renewal
- *  both extend STNK + the annual tax cycle (they coincide in ID); a five-year
- *  renewal additionally extends the five-year due date. 'other' entries don't
- *  move any mirror field — they're informational (e.g. a correction/fee). */
+/** Derive the current-state mirror (stnkExpiry/annualTaxDue/fiveYearTaxDue/
+ *  insuranceExpiry) from the latest compliance entry per type. An annual OR
+ *  five-year renewal both extend STNK + the annual tax cycle (they coincide
+ *  in ID); a five-year renewal additionally extends the five-year due date.
+ *  An insurance renewal extends only insuranceExpiry — it is a separate
+ *  real-world cadence/provider from STNK/tax, never coincident with it.
+ *  'other' entries don't move any mirror field — they're informational
+ *  (e.g. a correction/fee). */
 function recomputeComplianceMirror(history) {
   const list = Array.isArray(history) ? history : [];
   const latestByType = {};
@@ -568,6 +571,7 @@ function recomputeComplianceMirror(history) {
     updates.annualTaxDue = latest.expiryDate;
   }
   if (latestByType.five_year_tax) updates.fiveYearTaxDue = latestByType.five_year_tax.expiryDate;
+  if (latestByType.insurance) updates.insuranceExpiry = latestByType.insurance.expiryDate;
   return updates;
 }
 

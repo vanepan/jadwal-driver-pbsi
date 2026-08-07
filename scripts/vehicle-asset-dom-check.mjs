@@ -60,6 +60,8 @@ const result = await page.evaluate(async () => {
       taxHistory: [{ date: '2026-01-05', amount: '3500000', officer: 'Budi', notes: 'lunas' }],
       complianceHistory: [
         { id: 'c1', type: 'annual_tax', renewalDate: '2025-07-01', expiryDate: '2026-07-10', amount: 3500000, paymentMethod: 'cash', receiptNumber: 'RC-1', notes: '', officer: 'Budi', createdAt: '2025-07-01T00:00:00Z', updatedAt: '2025-07-01T00:00:00Z' },
+        // Phase 5 (v1.29.16) — Insurance Ledger: same complianceHistory array, type:'insurance'.
+        { id: 'c-ins1', type: 'insurance', renewalDate: '2026-02-01', expiryDate: '2027-02-01', amount: 1200000, paymentMethod: 'transfer', receiptNumber: 'POL-1', notes: '', officer: 'Budi', createdAt: '2026-02-01T00:00:00Z', updatedAt: '2026-02-01T00:00:00Z' },
       ],
       createdAt: '2022-01-10T00:00:00Z', updatedAt: '2026-01-05T00:00:00Z' },
     { id: 'v2', name: 'Beat', type: 'motor', status: 'active', plateNumber: 'B 2 BBB', capacity: 2, brand: 'Honda', year: '2024', fuel: 'Bensin', transmission: 'Otomatis' },
@@ -87,7 +89,7 @@ const result = await page.evaluate(async () => {
   // footer actions render — cards carry none; the drawer is the action surface).
   const asset = svc.findVehicleAsset(model, 'v1');
   const noop = () => {};
-  const fullHandlers = { onEdit: noop, onToggle: noop, onArchive: noop, onRestore: noop, onDelete: noop, onRenewSTNK: noop };
+  const fullHandlers = { onEdit: noop, onToggle: noop, onArchive: noop, onRestore: noop, onDelete: noop, onRenewSTNK: noop, onRenewInsurance: noop };
   drawer.openVehicleDetailDrawer(asset, fullHandlers);
   const drw = document.getElementById('execDrawerOverlay');
   const drwTitles = drw ? [...drw.querySelectorAll('.exec-drawer-sec__h')].map((e) => e.textContent.trim()) : [];
@@ -109,6 +111,7 @@ const result = await page.evaluate(async () => {
   drawer.openVehicleDetailDrawer(asset, { onEdit: noop, onToggle: noop, onArchive: noop, onRestore: noop, onDelete: noop });
   const drwNoRenew = document.getElementById('execDrawerOverlay');
   const noRenewBtnWhenOmitted = !drwNoRenew.querySelector('[data-exec-drawer-action="renew-stnk"]');
+  const noInsuranceRenewBtnWhenOmitted = !drwNoRenew.querySelector('[data-exec-drawer-action="renew-insurance"]');
   drwNoRenew.querySelector('.exec-drawer__close').click();
   await drainDrawer();
 
@@ -122,6 +125,27 @@ const result = await page.evaluate(async () => {
   document.getElementById('execDrawerOverlay').querySelector('[data-exec-drawer-action="toggle"]').click();
   await drainDrawer();
   const closedAfterToggleClick = !document.getElementById('execDrawerOverlay');
+
+  // ── Insurance Ledger (Phase 5, v1.29.16) ─────────────────────────────────
+  // 'renew-insurance' must also NOT close the drawer (same interaction
+  // pattern as STNK). Also verifies the Insurance section shows its OWN
+  // filtered ledger view (human-readable, not the raw type string) while the
+  // Tax section's Riwayat Kepatuhan excludes insurance-type entries — one
+  // ledger, no duplicate rendering of the same record in two sections.
+  drawer.openVehicleDetailDrawer(asset, fullHandlers);
+  const drwIns = document.getElementById('execDrawerOverlay');
+  const insRenewBtn = drwIns.querySelector('[data-exec-drawer-action="renew-insurance"]');
+  const secByTitle = (t) => {
+    const h = [...drwIns.querySelectorAll('.exec-drawer-sec__h')].find((e) => e.textContent.trim() === t);
+    return h ? h.closest('.exec-drawer-sec') : null;
+  };
+  const taxSecText = (secByTitle('Tax') || {}).textContent || '';
+  const insSecText = (secByTitle('Insurance') || {}).textContent || '';
+  drwIns.querySelector('[data-exec-drawer-action="renew-insurance"]').click();
+  await drainDrawer();
+  const openAfterInsuranceRenewClick = !!document.getElementById('execDrawerOverlay');
+  document.getElementById('execDrawerOverlay').querySelector('.exec-drawer__close').click();
+  await drainDrawer();
 
   // refreshVehicleDetailDrawer updates the SAME overlay element in place
   // (proves no close/reopen) and reflects a newly-added compliance record.
@@ -172,6 +196,12 @@ const result = await page.evaluate(async () => {
     refreshOk,
     sameOverlayInstance,
     refreshedShowsNewRecord: /3\.800\.000/.test(refreshedBodyText),
+    // Insurance Ledger (Phase 5, v1.29.16)
+    insRenewBtn: !!insRenewBtn,
+    noInsuranceRenewBtnWhenOmitted,
+    openAfterInsuranceRenewClick,
+    insuranceHistoryShowsOwnRecord: /Asuransi Diperpanjang/.test(insSecText) && /Rp\s*1\.200\.000/.test(insSecText) && !/\binsurance\b/.test(insSecText),
+    taxSectionExcludesInsuranceEntries: /STNK Diperpanjang/.test(taxSecText) && !/Asuransi Diperpanjang/.test(taxSecText),
   };
 });
 
@@ -204,6 +234,13 @@ check('other footer actions still close the drawer (regression guard)', result.c
 check('refreshVehicleDetailDrawer updates the SAME overlay instance (no close/reopen)', result.sameOverlayInstance);
 check('refreshVehicleDetailDrawer reflects the newly-added compliance record', result.refreshOk && result.refreshedShowsNewRecord);
 check('drawer Close button present', result.closeBtn);
+
+console.log('\n[Insurance Ledger — Phase 5, v1.29.16]');
+check('footer shows Perpanjang Asuransi when onRenewInsurance supplied', result.insRenewBtn);
+check('footer omits Perpanjang Asuransi when onRenewInsurance is not supplied (back-compat)', result.noInsuranceRenewBtnWhenOmitted);
+check('renew-insurance footer action does NOT close the drawer', result.openAfterInsuranceRenewClick);
+check('Insurance section shows its own human-readable history (no raw type/field names)', result.insuranceHistoryShowsOwnRecord);
+check('Tax section excludes insurance-type entries (one ledger, no duplicate rendering)', result.taxSectionExcludesInsuranceEntries);
 
 console.log('\n[design / regression]');
 check('scoped stylesheets use CSS vars (no hard-coded white — dark-mode safe)', result.noHardWhite);

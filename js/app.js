@@ -4817,6 +4817,7 @@ function initV2AdministrationWorkspace() {
   initDriverFormModal();
   initVehicleFormModal();
   initComplianceRenewalModal();
+  initInsuranceRenewalModal();
   initDeleteConfirmModal();
   initAuditDetailModal();
   initAliasResolutionModal();
@@ -6015,11 +6016,8 @@ function initVehicleFormModal() {
               <label for="vehicleFieldCoverage">Cakupan</label>
               <input type="text" id="vehicleFieldCoverage" placeholder="All Risk / TLO" autocomplete="off" />
             </div>
-            <div class="form-group">
-              <label for="vehicleFieldInsExpiry">Masa Berlaku Asuransi</label>
-              <input type="date" id="vehicleFieldInsExpiry" />
-            </div>
           </div>
+          <p class="v2-vehicle-form-hint">Masa berlaku asuransi kini dikelola lewat tombol <strong>Perpanjang Asuransi</strong> di halaman detail kendaraan — setiap perpanjangan tersimpan sebagai riwayat permanen.</p>
           <div class="form-actions">
             <button type="button" class="btn-secondary" id="btnCancelVehicleForm">Batal</button>
             <button type="submit" class="btn-primary" id="btnSaveVehicleForm">Tambah Kendaraan</button>
@@ -6088,7 +6086,6 @@ function openVehicleFormModal(vehicleId = null) {
     setVal('vehicleFieldInsCompany', vehicle.insuranceCompany);
     setVal('vehicleFieldPolicyNumber', vehicle.policyNumber);
     setVal('vehicleFieldCoverage', vehicle.coverage);
-    setVal('vehicleFieldInsExpiry', vehicle.insuranceExpiry);
     syncColor(color);
   } else {
     if (title)   title.textContent   = 'Tambah Kendaraan';
@@ -6136,7 +6133,6 @@ async function handleVehicleFormSubmit(event) {
     insuranceCompany: val('vehicleFieldInsCompany'),
     policyNumber: val('vehicleFieldPolicyNumber'),
     coverage: val('vehicleFieldCoverage'),
-    insuranceExpiry: val('vehicleFieldInsExpiry'),
   };
 
   const btn = document.getElementById('btnSaveVehicleForm');
@@ -6339,6 +6335,165 @@ async function handleRenewSTNKSubmit(event) {
     if (freshAsset) refreshVehicleDetailDrawer(freshAsset, vehicleDrawerHandlers());
   } catch (err) {
     showToast(err.message || 'Gagal menyimpan perpanjangan STNK.');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+/* ── Renew Insurance (Vehicle Compliance & Financial History, Phase 5 v1.29.16) ──
+   Same interaction pattern as Renew STNK above (small quick-entry modal opened
+   from the drawer's "Perpanjang Asuransi" footer action, drawer stays open,
+   refreshed in place) and the SAME store call (addComplianceRecord) — insurance
+   is another `complianceHistory` entry (type:'insurance'), never a separate
+   ledger. Renewal Date / New Expiration Date / Amount Paid reuse the ledger's
+   existing generic vocabulary (Coverage Start / Coverage Expiry / Premium);
+   "No. Polis / Kwitansi" reuses the existing `receiptNumber` field, just
+   relabeled for this context — no new record fields were added. Provider/
+   Policy Number/Coverage stay identity fields on the vehicle itself (edited via
+   Edit Aset, same as No. STNK), not per-renewal ledger fields. */
+
+const RENEW_INSURANCE_LAST_PAYMENT_METHOD_KEY = RENEW_STNK_LAST_PAYMENT_METHOD_KEY;
+let renewingInsuranceVehicleId = null;
+
+function initInsuranceRenewalModal() {
+  const modal = document.createElement('div');
+  modal.id = 'modalRenewInsurance';
+  modal.className = 'modal-overlay modal-overlay--above-drawer';
+  modal.style.display = 'none';
+  modal.innerHTML = `
+    <div class="modal-box modal-box--compact">
+      <div class="modal-header">
+        <h2 class="modal-title">Perpanjang Asuransi</h2>
+        <button class="modal-close" id="btnCloseRenewInsurance" type="button">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="renewInsuranceForm" novalidate>
+          <div class="form-group">
+            <label for="insFieldRenewalDate">Tanggal Perpanjangan *</label>
+            <input type="date" id="insFieldRenewalDate" required />
+          </div>
+          <div class="form-group">
+            <label for="insFieldExpiryDate">Masa Berlaku Baru *</label>
+            <input type="date" id="insFieldExpiryDate" required />
+          </div>
+          <div class="form-group">
+            <label for="insFieldAmount">Premi Dibayar (Rp) *</label>
+            <input type="number" id="insFieldAmount" min="0" step="1000" placeholder="0" required />
+          </div>
+          <details class="v2-compliance-details" id="renewInsuranceAdvanced">
+            <summary class="v2-compliance-summary">Detail Lainnya <span class="v2-compliance-chevron">&#9662;</span></summary>
+            <div class="form-group">
+              <label for="insFieldPaymentMethod">Metode Pembayaran</label>
+              <select id="insFieldPaymentMethod">
+                <option value="">—</option>
+                ${COMPLIANCE_PAYMENT_METHOD_REGISTRY.map(p => `<option value="${p.key}">${p.label}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="insFieldReceiptNumber">No. Polis / Kwitansi</label>
+              <input type="text" id="insFieldReceiptNumber" autocomplete="off" />
+            </div>
+            <div class="form-group">
+              <label for="insFieldNotes">Catatan</label>
+              <textarea id="insFieldNotes" rows="2"></textarea>
+            </div>
+          </details>
+          <div class="form-actions">
+            <button type="button" class="btn-secondary" id="btnCancelRenewInsurance">Batal</button>
+            <button type="submit" class="btn-primary" id="btnSaveRenewInsurance">Simpan</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  document.getElementById('btnCloseRenewInsurance')?.addEventListener('click', closeRenewInsuranceModal);
+  document.getElementById('btnCancelRenewInsurance')?.addEventListener('click', closeRenewInsuranceModal);
+  modal.addEventListener('click', e => { if (e.target === modal) closeRenewInsuranceModal(); });
+  document.getElementById('renewInsuranceForm')?.addEventListener('submit', handleRenewInsuranceSubmit);
+}
+
+function openRenewInsuranceModal(vehicleId) {
+  const vehicle = getVehicles().find(v => v.id === vehicleId);
+  if (!vehicle) return;
+  renewingInsuranceVehicleId = vehicleId;
+
+  const form = document.getElementById('renewInsuranceForm');
+  if (form) form.reset();
+
+  const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val == null ? '' : val; };
+
+  setVal('insFieldRenewalDate', new Date().toISOString().slice(0, 10));
+
+  const prevExpiry = vehicle.insuranceExpiry;
+  const base = prevExpiry && !Number.isNaN(new Date(prevExpiry).getTime()) ? new Date(prevExpiry) : new Date();
+  const suggestedExpiry = new Date(base);
+  suggestedExpiry.setFullYear(suggestedExpiry.getFullYear() + 1);
+  setVal('insFieldExpiryDate', suggestedExpiry.toISOString().slice(0, 10));
+
+  setVal('insFieldAmount', '');
+  setVal('insFieldPaymentMethod', localStorage.getItem(RENEW_INSURANCE_LAST_PAYMENT_METHOD_KEY) || '');
+  setVal('insFieldReceiptNumber', '');
+  setVal('insFieldNotes', '');
+  const advanced = document.getElementById('renewInsuranceAdvanced');
+  if (advanced) advanced.open = false;
+
+  const modal = document.getElementById('modalRenewInsurance');
+  if (modal) modal.style.display = 'flex';
+  document.getElementById('insFieldAmount')?.focus();
+}
+
+function closeRenewInsuranceModal() {
+  const modal = document.getElementById('modalRenewInsurance');
+  if (modal) modal.style.display = 'none';
+  renewingInsuranceVehicleId = null;
+}
+
+async function handleRenewInsuranceSubmit(event) {
+  event.preventDefault();
+  if (!renewingInsuranceVehicleId) return;
+  const vehicleId = renewingInsuranceVehicleId;
+  const val = (id) => (document.getElementById(id)?.value ?? '').trim();
+  const paymentMethod = val('insFieldPaymentMethod');
+
+  const btn = document.getElementById('btnSaveRenewInsurance');
+  if (btn) btn.disabled = true;
+
+  try {
+    const currentUser = getCurrentUser();
+    await addComplianceRecord(vehicleId, {
+      type: 'insurance',
+      renewalDate: val('insFieldRenewalDate'),
+      expiryDate: val('insFieldExpiryDate'),
+      amount: val('insFieldAmount'),
+      paymentMethod,
+      receiptNumber: val('insFieldReceiptNumber'),
+      notes: val('insFieldNotes'),
+      officer: currentUser?.username || '',
+    });
+
+    // Smart default: remember the payment method for next time (shared with
+    // Renew STNK — same key, this is a generic "last compliance payment method").
+    if (paymentMethod) localStorage.setItem(RENEW_INSURANCE_LAST_PAYMENT_METHOD_KEY, paymentMethod);
+
+    logAction({
+      userId: currentUser?.id,
+      username: currentUser?.username,
+      action: 'vehicle_insurance_renewed',
+      targetId: vehicleId,
+      metadata: { type: 'insurance' },
+    });
+
+    closeRenewInsuranceModal();
+    showToast('Asuransi berhasil diperpanjang.');
+
+    // Refresh the still-open drawer in place — same pattern as Renew STNK.
+    _fleetAssetModel = computeFleetAssetModel({ vehicles: getVehicles(), includeArchived: true });
+    const freshAsset = findVehicleAsset(_fleetAssetModel, vehicleId);
+    if (freshAsset) refreshVehicleDetailDrawer(freshAsset, vehicleDrawerHandlers());
+  } catch (err) {
+    showToast(err.message || 'Gagal menyimpan perpanjangan asuransi.');
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -8069,6 +8224,7 @@ function vehicleDrawerHandlers() {
     onRestore:   _vehicleActionRestore,
     onDelete:    _vehicleActionDelete,
     onRenewSTNK: openRenewSTNKModal,
+    onRenewInsurance: openRenewInsuranceModal,
   };
 }
 

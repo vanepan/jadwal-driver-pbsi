@@ -239,7 +239,11 @@ function taxSection(a) {
   // Vehicle Compliance & Financial History — complianceHistory (renewalDate,
   // expiryDate, amount, type) is the source of truth for this timeline going
   // forward. Human-readable only: no field names, no technical values.
-  const rows = a.complianceHistory.slice().sort((x, y) => new Date(y.renewalDate || 0) - new Date(x.renewalDate || 0));
+  // v1.29.16 — insurance-type entries get their own filtered view in
+  // insuranceSection() below (same ledger, no duplicate storage); excluded
+  // here so a renewal doesn't appear twice in the same drawer.
+  const rows = a.complianceHistory.filter(rec => rec.type !== 'insurance')
+    .sort((x, y) => new Date(y.renewalDate || 0) - new Date(x.renewalDate || 0));
   const tl = rows.length
     ? execDrawerTimeline(rows.map(rec => ({
         when: fmtDate(rec.renewalDate),
@@ -255,6 +259,9 @@ function taxSection(a) {
   return execDrawerSection({ title: 'Tax', content: badges + metrics + histTitle + tl });
 }
 
+/** Insurance — Current Insurance summary + Insurance History (Phase 5, v1.29.16).
+ *  Reuses the SAME complianceHistory ledger as Tax, filtered to type:'insurance'
+ *  entries only (never a separate ledger/store). */
 function insuranceSection(a) {
   const badges = badgeRow([ExecutiveStatusPill(`Asuransi: ${a.insurance.label}`, tone3(a.insurance.tone, 'neutral'))]);
   const metrics = execDrawerMetrics([
@@ -262,8 +269,23 @@ function insuranceSection(a) {
     m('No. Polis', a.policyNumber),
     m('Cakupan', a.coverage),
     m('Masa Berlaku', fmtDate(a.insuranceExpiry)),
+    m('Sisa Hari', renewalCountdown(a.insurance), a.insurance.tone),
   ]);
-  return execDrawerSection({ title: 'Insurance', content: badges + metrics });
+  const rows = a.complianceHistory.filter(rec => rec.type === 'insurance')
+    .sort((x, y) => new Date(y.renewalDate || 0) - new Date(x.renewalDate || 0));
+  const tl = rows.length
+    ? execDrawerTimeline(rows.map(rec => ({
+        when: fmtDate(rec.renewalDate),
+        title: complianceTypeInfo(rec.type).timelineTitle,
+        desc: [
+          rec.amount != null ? `Rp ${fmtRp(rec.amount)}` : '',
+          rec.expiryDate ? `Berlaku Hingga ${fmtDate(rec.expiryDate)}` : '',
+        ].filter(Boolean).join(' · '),
+        tone: 'info',
+      })))
+    : '<p style="font-size:13px;color:var(--muted)">Belum ada riwayat perpanjangan asuransi.</p>';
+  const histTitle = rows.length ? '<div class="exec-drawer-sec__h">Riwayat Asuransi</div>' : '';
+  return execDrawerSection({ title: 'Insurance', content: badges + metrics + histTitle + tl });
 }
 
 function maintenanceSection(a) {
@@ -373,6 +395,10 @@ function buildFooter(asset, opts) {
     // Vehicle Compliance & Financial History — placed first/primary: this is
     // the once-or-twice-a-year action the drawer exists to make effortless.
     if (typeof opts.onRenewSTNK === 'function') footer.push({ label: 'Perpanjang STNK', action: 'renew-stnk', variant: 'primary' });
+    // Phase 5 (v1.29.16) — Insurance Ledger: same interaction pattern as STNK
+    // (opens a small modal on top of this drawer, drawer stays open), a
+    // separate real-world renewal cadence/provider so it gets its own action.
+    if (typeof opts.onRenewInsurance === 'function') footer.push({ label: 'Perpanjang Asuransi', action: 'renew-insurance' });
     if (typeof opts.onToggle === 'function') footer.push({ label: asset.status === 'active' ? 'Nonaktifkan' : 'Aktifkan', action: 'toggle' });
     if (typeof opts.onArchive === 'function') footer.push({ label: 'Arsipkan', action: 'archive' });
     if (typeof opts.onEdit === 'function') footer.push({ label: 'Edit Aset', action: 'edit' });
@@ -409,6 +435,7 @@ function buildDrawerBody(asset, opts) {
  * @param {{onEdit?:(id:string)=>void, onToggle?:(id:string)=>void,
  *          onArchive?:(id:string)=>void, onRestore?:(id:string)=>void,
  *          onDelete?:(id:string)=>void, onRenewSTNK?:(id:string)=>void,
+ *          onRenewInsurance?:(id:string)=>void,
  *          prediction?:Object}} [opts]  `prediction` = certified per-vehicle
  *          projection (model.vehicles[i]); when present a Prediction section is
  *          shown. Omit it for the plain (inventory) drawer.
@@ -433,8 +460,9 @@ export function openVehicleDetailDrawer(asset, opts = {}) {
     archive: opts.onArchive,
     edit: opts.onEdit,
     'renew-stnk': opts.onRenewSTNK,
+    'renew-insurance': opts.onRenewInsurance,
   };
-  const KEEP_OPEN_ACTIONS = new Set(['renew-stnk']);
+  const KEEP_OPEN_ACTIONS = new Set(['renew-stnk', 'renew-insurance']);
 
   return openExecutiveDrawer({
     title: asset.name || '—',

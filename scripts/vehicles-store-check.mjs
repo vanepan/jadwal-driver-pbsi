@@ -168,6 +168,35 @@ console.log('\n[addComplianceRecord]');
     listenerCalls[listenerCalls.length - 1].find((v) => v.id === id).stnkExpiry === '2027-06-01');
 }
 
+/* ── addComplianceRecord — Insurance Ledger (Phase 5, v1.29.16) ───────────
+   Insurance reuses the SAME complianceHistory ledger/writer as Tax (no new
+   store function, no new Firebase path) — only asserting the new type is
+   accepted and mirrors into its OWN field (insuranceExpiry), independently
+   of stnkExpiry/annualTaxDue/fiveYearTaxDue. */
+console.log('\n[addComplianceRecord — insurance]');
+{
+  const id = globalThis.__testCarId;
+  const stnkExpiryBefore = store.getVehicleById(id).stnkExpiry;
+  const before = listenerCalls.length;
+  const rec = await store.addComplianceRecord(id, {
+    type: 'insurance', renewalDate: '2026-06-10', expiryDate: '2027-06-10', amount: 1200000,
+  });
+  check('addComplianceRecord accepts type:"insurance" and resolves with an id', !!rec.id);
+  check('getComplianceHistory reflects it immediately', store.getComplianceHistory(id).some((r) => r.id === rec.id && r.type === 'insurance'));
+  check('insuranceExpiry mirror recomputed immediately', store.getVehicleById(id).insuranceExpiry === '2027-06-10');
+  check('stnkExpiry mirror is untouched by an insurance renewal (independent fields)',
+    store.getVehicleById(id).stnkExpiry === stnkExpiryBefore);
+  check('listener fired by the time the write resolved', listenerCalls.length > before);
+  check('listener payload already carries the recomputed insurance mirror field',
+    listenerCalls[listenerCalls.length - 1].find((v) => v.id === id).insuranceExpiry === '2027-06-10');
+
+  // A later, earlier-dated STNK renewal must not disturb the already-recomputed
+  // insuranceExpiry mirror (per-type latest-by-expiryDate, not last-write-wins).
+  await store.addComplianceRecord(id, { type: 'annual_tax', renewalDate: '2026-07-01', expiryDate: '2027-07-01', amount: 600000 });
+  check('a subsequent Tax renewal does not disturb the insurance mirror (regression)',
+    store.getVehicleById(id).insuranceExpiry === '2027-06-10');
+}
+
 /* ── deleteVehicle (identity writer, requires archived first) ───────────── */
 console.log('\n[deleteVehicle]');
 {
