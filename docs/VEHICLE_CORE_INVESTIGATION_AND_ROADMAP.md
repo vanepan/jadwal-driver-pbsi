@@ -215,8 +215,8 @@ Shipped as a new PURE `js/services/maintenance-projection-service.js`, consuming
 **Phase 7 — Vehicle reminder engine (closes the biggest operational gap, §12). ✅ DONE — v1.29.18, see §19.**
 Shipped NARROWER than this line originally proposed: the actual release brief scoped Phase 7 as a pure reminder MODEL only ("NOT a notification system, NOT a scheduler — only expose a clean reminder model, do NOT implement delivery") — the backend Cloud Scheduler job this line anticipated was explicitly deferred, not shipped. `functions/src/scheduled/` remains the placeholder it was; a future delivery phase can now build on `js/services/reminder-engine.js`'s `computeFleetReminders()`/`needsAttention()` with zero new due-date logic of its own. Full report: §19.
 
-**Phase 8 — Unified Vehicle Timeline (closes Finding G).**
-Adopt `js/gudang/activity-engine.js` for vehicle events, exactly as its own v1.29.6 changelog entry anticipates — replacing the three ad-hoc drawer timeline mappings with one typed-event source. Do this only after Phases 1–4 land, since the drawer will already have been touched by Phase 3's cleanup.
+**Phase 8 — Unified Vehicle Timeline (closes Finding G). ✅ DONE — v1.29.19, see §20.**
+Shipped as planned: adopted `js/gudang/activity/activity-engine.js` for vehicle events, the FIRST cross-domain use since it shipped in v1.29.6, needing zero changes to the engine itself. New PURE `js/vehicle/vehicle-timeline.js` assembles Created/Archived/Status Change/Tax/Five-Year Tax/Insurance/Other renewals/Maintenance Performed/Maintenance Due/Reminder Generated/future-custom events from fields already computed elsewhere. Narrower than this line's own wording in one deliberate, documented way: rather than "replacing" the Tax/Insurance/Maintenance sections' own focused mini-ledgers, they were left unchanged (existing rendering must keep working) and the drawer's existing History section became the one place every event type appears together — full reasoning in §20.
 
 **Phase 9 — Test-suite hardening.**
 Add value-level assertions to `maintenance-intelligence-check.mjs` (today 100% string-presence) and a dedicated `compliance-check.mjs`. This can run in parallel with any of the phases above — it's the one item with zero product-behavior risk.
@@ -849,6 +849,107 @@ No schema migration, no new ledger, no new business rule, no write path added an
 - **Executive Command Center Attention Center integration.** `js/widgets/executive/index.js`'s `exec-attention` widget currently surfaces vehicle risk only from the probabilistic Recommendation Engine board. Wiring in `needsAttention(computeFleetReminders(...))` as a new fact + `items.push()` block (the same pattern every other cross-domain signal in that file already follows) would give the executive-level attention surface real due-date awareness, not just prediction-risk awareness — identified, not implemented, since it is outside the Vehicle Core module's scope.
 - **Per-reminder acknowledge/dismiss.** `maintenanceRecords[].reminderStatus`/`reminderSentDate`/`reminderDismissedDate` remain reserved, unwritten fields (`maintenance-service.js`, since v1.18.1) — a natural next step once a delivery mechanism exists to acknowledge against, deliberately not built now (no delivery event to acknowledge yet).
 - **Unified Vehicle Timeline (Phase 8, §13).** Unaffected by this phase; `reminder-engine.js` does not touch `buildVehicleTimeline()` or `complianceHistory` at all.
+
+---
+
+## 20. Phase 8 Implementation Report — Unified Timeline (v1.29.19)
+
+**Scope discipline:** closes roadmap item 8 (§13) / Finding G ("no unified Vehicle Timeline engine"). The release brief was explicit that the Timeline is "a presentation model," never "another database," "another ledger," or a source of business logic — "Timeline assembles. Owners calculate." Files touched: `js/components/vehicle-detail-drawer.js`, `js/app.js`. Untouched, per the brief's explicit do-not-modify list: Compliance Engine, Maintenance Projection Service, Reminder Engine, Health Engine, Recommendation Engine, Prediction Engine, Vehicle Store, Business Rules, Firebase schema.
+
+### Architecture Report (pre-implementation investigation)
+
+Traced every existing history/event surface before writing anything:
+
+- **`vehicle-asset-service.js#buildVehicleTimeline()`** already assembled a partial timeline from `registered`/`tax_paid`/`compliance`/`stnk`/`insurance`/`maintenance`/`retired` synthetic keys, plus a verbatim `v.timeline[]` future-ready passthrough. Two of those keys (`stnk`/`insurance`) are not really past-tense events — they restate the CURRENT expiry date on every render, which can be in the future. The `compliance` key flattens every renewal type (annual tax / five-year tax / insurance / other) into one generic label with no distinguishable type. Zero coverage existed for Maintenance Performed, Maintenance Due, Reminder Generated, or Vehicle Archived.
+- **`vehicle-detail-drawer.js`** additionally built TWO MORE ad-hoc mini-timelines of its own directly from `asset.complianceHistory` (filtered by `rec.type`, in `taxSection()`/`insuranceSection()`) and `asset.maintenanceTimeline` (in `maintenanceSection()`) — three separate array→timeline mappings total, confirming Finding G's own description exactly.
+- **`js/gudang/activity/activity-engine.js`** (v1.29.6) — re-read in full before importing it. Its own file header and `js/config.js`'s v1.29.6 changelog entry both state it was deliberately built domain-ignorant ("zero knowledge of Gudang, Items, or Movements... a future Vehicle Timeline reuses this EXACT file, unmodified"). Confirmed by re-reading the source: no Gudang/Item/Movement/Vehicle string anywhere. This is the FIRST cross-domain import of it since it shipped — it needed zero changes, which is the strongest possible confirmation that the original design held up.
+- **Engineering's `timeline-engine.js`** (`TIMELINE_EVENT` vocabulary + `createTimelineEvent`/`appendEvents`/`workReportTimelineEvent()`) was read as a deliberate contrast case. It is a PUSH/append model — assignments and work reports call `recordEvents()` to append a typed event onto a stored `.timeline[]` array at the moment something happens, and that array is the persisted source of truth going forward. Vehicle has no equivalent append path, and `vehicles-store.js` is explicitly Do-Not-Modify for this phase, so a push/append model was not available here. This phase is correctly a PULL/assemble model instead: the timeline is derived FRESH from already-computed asset fields on every render, never stored as its own array. Documented explicitly so a future reader does not assume the two Vehicle/Engineering timeline shapes are meant to converge — they solve genuinely different constraints.
+- **`vehicles-store.js`** traced for every lifecycle writer's available timestamp: `archiveVehicle()` writes a real `archivedAt` field, but `normalizeVehicleAsset()` (`vehicle-asset-service.js`) never surfaces it on the normalized asset, and extending that file was judged too close to the protected Health Engine to risk this phase (see Design Decisions below) — so "Vehicle Archived" instead reuses `asset.updatedAt`, the SAME "last known transition time" proxy `buildVehicleTimeline()` already relies on for its own `maintenance`/`retired` synthetic entries. `restoreVehicle()` writes NO dedicated timestamp at all (`archivedAt: null` only) — confirmed there is no way to derive "Vehicle Restored" without fabricating a date, so it is defined in the vocabulary (Future Ready) but never emitted.
+- **`compliance-config.js`** confirmed `COMPLIANCE_TYPES` already includes `annual_tax`/`five_year_tax`/`insurance`/`other`, and the STNK renewal modal (`app.js`) already lets the user pick any of the four via its "advanced" disclosure — so all four are real, populated ledger types today, not theoretical.
+- **`maintenance-service.js`/`maintenance-projection-service.js`/`reminder-engine.js`** re-read for their exact output shapes (record status vocabulary, projection item fields, reminder fields) to avoid re-deriving anything already computed.
+
+**Conclusion:** every event type the brief asked for already had a real, traceable data source somewhere in the app — the gap was assembly, not missing data. The one genuine gap (Vehicle Restored) is a real absence of a timestamp, not a design oversight, and is documented rather than papered over.
+
+### Timeline Strategy
+
+New PURE file `js/vehicle/vehicle-timeline.js` — `buildVehicleTimelineEvents(asset)` reads only `asset.*` fields already computed by `vehicle-asset-service.js`/`compliance-config.js`/`maintenance-service.js`/`reminder-engine.js`:
+
+1. **Vehicle Created** — `asset.acquisitionDate || asset.createdAt` (the same fallback `buildVehicleTimeline()` already used for its `registered` key).
+2. **Vehicle Archived** — `asset.archived === true`, pinned at `asset.updatedAt` (see Architecture Report above for why).
+3. **Status Change** — generalizes `buildVehicleTimeline()`'s existing `maintenance`/`retired`-only synthesis to every non-`active` status (`maintenance`/`inactive`/`retired`), reading only `asset.status`/`asset.statusInfo`/`asset.updatedAt`, all already exposed.
+4. **Annual Tax / Five-Year Tax / Insurance / Other Renewal** — `asset.complianceHistory[]`, typed by `rec.type` via `complianceTypeInfo()` (the SAME registry `taxSection()`/`insuranceSection()` already use) — richer than `buildVehicleTimeline()`'s flattened `compliance` key because each event keeps its own distinguishable type plus structured `amount`/`officer`/`notes`.
+5. **Legacy tax_paid backward compat** — reads `asset.timeline`'s own `tax_paid` passthrough (for vehicles created before v1.29.2 with no `complianceHistory` equivalent — Phase 3, v1.29.14, deliberately kept this READ path alive).
+6. **Maintenance Performed** — `asset.maintenanceTimeline[]`, `status==='completed'` only (a planned/in-progress record has not "happened" in the past-tense sense the brief's naming implies).
+7. **Maintenance Due + Reminder Generated** — ONE call to `computeVehicleReminders(asset)` (`reminder-engine.js`), split into the two labels by the reminder's own `type` field. This is a deliberate non-duplication decision: `reminder-engine.js`'s `maintenance` branch already reads `asset.maintenanceProjection.items` verbatim (same-reference-value, test-verified in Phase 7). A SEPARATE adapter reading that same projection directly would show the identical real-world fact twice on one timeline — once via a hypothetical dedicated "Maintenance Due" reader, once via "Reminder Generated." Reading the reminders once and relabeling by `r.type === 'maintenance'` vs. the other three types gives both spec-named event types with zero duplicate reads and zero duplicate rows. Reminders with `status==='completed'` (archived/retired vehicles) or no real `dueDate` (km-only maintenance projections) are excluded — never invent a timestamp.
+8. **Custom / future-ready passthrough** — `asset.timeline[]` entries whose `key` is none of `buildVehicleTimeline()`'s own synthetic keys (`registered`/`tax_paid`/`compliance`/`stnk`/`insurance`/`maintenance`/`retired`) must have come from the raw store's own `v.timeline[]` array — the exact Fuel/Accident/Repair/Inspection/Dispatch/Digitization extension point the brief's "Future Ready" section asks for. Already working end to end with zero new code: a future phase only needs to start writing entries into that array.
+
+**Ordering:** newest-first via `activity-engine.js`'s `sortActivitiesDesc`. Same-timestamp ties are pre-sorted by event `id` before that stable sort runs, so ties resolve identically on every call regardless of which source array (created/archived/compliance/maintenance/reminders/custom) was concatenated first in the assembly function — a stated rule (brief: "If two events have the same timestamp, use deterministic ordering"), verified by a test that calls the builder twice and asserts byte-identical tie output.
+
+**Never invents a timestamp:** every one of the eight adapters above guards on its source date actually being present before creating an entry; nothing defaults to "now" or a placeholder date.
+
+### Surfacing (render-only)
+
+- **Drawer** (`vehicle-detail-drawer.js`): the existing `historySection()` — the brief's designated "primary host" — now builds its Linimasa from `buildVehicleTimelineEvents(asset)` instead of the old single-source `asset.timeline`, through the SAME `execDrawerTimeline` primitive every other section in this file already uses. Zero new section, zero new grammar. Each event's own `meta.tone` (ok/warn/danger/info, always one of those four) now drives the timeline dot color, richer than the old hardcoded `tone:'info'` for every row.
+- **Design decision, documented rather than silently made:** the Tax/Insurance/Maintenance sections' own focused single-category ledger mini-views (`taxSection()`/`insuranceSection()`/`maintenanceSection()`) were deliberately left UNCHANGED, not folded into or removed in favor of the new unified section. Two reasons: (1) the brief's own Backward Compatibility section requires "existing history rendering must continue working," and removing three already-tested renderers to eliminate mild overlap was judged higher-risk than the marginal duplication cost; (2) Gudang's own `activity-engine.js` precedent already treats this exact coexistence as normal — `gudang-timeline.js`'s compact per-item Activity Timeline links OUT to a separate, fuller Movement History view rather than replacing it. The same "compact focused view + fuller unified view, both real, neither wrong" pattern applies here. This mirrors the "if a hardening item is a judgment call requiring a real design decision, document it, don't manufacture a fix" discipline already established in Warehouse Core LTS and Vehicle Core Phase 4.
+- **Dashboard:** `fleet-dashboard.js`'s protected 5-KPI strip was NOT touched (still exactly 5 `fleetKpi()` calls, test-locked, continuing Phase 6/7's precedent). New, additive, PURE-presentation `js/components/vehicle-activity-panel.js` renders a "Aktivitas Kendaraan Terbaru" preview directly below the Reminder Panel via `recentVehicleActivity(vehicles)`, which reuses `buildVehicleTimelineEvents()` per vehicle (never a second event model) over the SAME `dashModel.vehicles` the Fleet Dashboard/Reminder Panel were already built from in `renderV2AdminVehicles()` — zero duplicate `computeFleetAssetModel()` call. A new `#v2VehicleActivityPanel` container was added to the Vehicle Inventory template.
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `js/vehicle/vehicle-timeline.js` (new) | The Timeline domain layer: `buildVehicleTimelineEvents`, `recentVehicleActivity`, `TIMELINE_EVENT`. PURE, Node-testable. |
+| `js/components/vehicle-activity-panel.js` (new) | Additive Vehicle Inventory panel: `renderVehicleActivityPanel`, `injectVehicleActivityPanelStyles`. PURE presentation. |
+| `js/components/vehicle-detail-drawer.js` | `historySection()` rewired to `buildVehicleTimelineEvents()`; one new import. |
+| `js/app.js` | New `#v2VehicleActivityPanel` container in the Vehicle Inventory template; mount call in `renderV2AdminVehicles()` reusing `dashModel.vehicles`; one new import. |
+| `js/config.js` | `APP_VERSION` 1.29.18 → 1.29.19, `RELEASE_NAME`, new `VERSION_HISTORY` entry. |
+| `docs/VEHICLE_CORE_INVESTIGATION_AND_ROADMAP.md` | §13's Phase 8 line marked done; this section. |
+| `scripts/vehicle-timeline-check.mjs` (new) | 44 real functional cases against the actual builder. |
+| `scripts/vehicle-asset-dom-check.mjs` | Seeded vehicle gained one completed maintenance record; 5 new real-Chromium Timeline assertions. |
+| `service-worker.js`, `version.json`, `index.html` | Mechanically re-stamped by `scripts/sync-version.mjs` (cache-bust only). |
+
+No other file was opened for editing — `js/vehicles-store.js`, `js/services/vehicle-asset-service.js`, `js/services/maintenance-projection-service.js`, `js/services/reminder-engine.js`, `js/services/maintenance-service.js`, `js/config/compliance-config.js`, `js/services/vehicle-recommendation-engine.js`, `js/services/dispatch-scoring-engine.js`, `js/engines/prediction-engine.js`, `js/services/prediction-service.js`, `js/prediction/explainability.js`, `js/recommendation/*`, `js/simulation/*`, `js/components/fleet-dashboard.js`, `js/components/vehicle-reminder-panel.js`, and `js/gudang/activity/activity-engine.js` are byte-identical to before this phase.
+
+### Testing Summary
+
+New `scripts/vehicle-timeline-check.mjs` (44 cases, real functional tests against the actual builder — not string-presence): every adapter's guard conditions (Created via acquisitionDate/createdAt fallback and its "never invents one" edge case; Archived only when `archived===true`; Status Change for maintenance/inactive/retired but not active; all four compliance renewal types mapped to distinct `TIMELINE_EVENT` values with human-readable, raw-field-free descriptions; legacy `taxHistory` backward compat; Maintenance Performed excludes planned/in-progress; the Maintenance-Due-vs-Reminder-Generated non-duplication rule, including the "no category appears in both lists" assertion; archived vehicles produce zero forward-looking reminder events; custom passthrough vs. synthetic-key exclusion, including a check that synthetic keys like `registered` are never double-emitted as `CUSTOM`); mixed-type chronological ordering; the deterministic same-timestamp tie-break (asserted reproducible across two separate calls, and asserted alphabetical-by-id specifically, not just "some" order); purity (asset JSON before/after a call is byte-identical); the fleet-wide `recentVehicleActivity` aggregation, its limit cap, and per-entry vehicle tagging; malformed-input safety (`null`/non-array never throw); and UI-wiring source-presence assertions (drawer imports the builder and its History section calls it; `app.js` mounts the new container and reuses `dashModel.vehicles`; `fleet-dashboard.js`'s 5-KPI call count — counting only calls with a literal `label:` argument, excluding the function's own declaration — is unchanged).
+
+`scripts/vehicle-asset-dom-check.mjs` extended with a completed `oil-change` maintenance record on its existing seeded vehicle and 5 new real-headless-Chromium assertions confirming the History section's Linimasa shows Vehicle Created + Annual Tax Renewal + Insurance Renewal + Maintenance Performed together in one list, with at least 4 rendered timeline items.
+
+### Regression Summary
+
+| Suite | Result |
+|---|---|
+| `vehicle-timeline-check.mjs` (new) | 44/44 |
+| `vehicle-asset-dom-check.mjs` (real headless-Chromium, 5 new Timeline assertions, 0 console errors) | 40/40 |
+| `vehicle-asset-check.mjs` (confirms Health Engine/`buildVehicleTimeline` untouched) | 58/58 |
+| `vehicle-recommendation-check.mjs` | 71/71 |
+| `vehicle-management-presentation-check.mjs` | 47/47 |
+| `reminder-engine-check.mjs` (confirms Reminder Engine untouched — this phase only reads its output) | 49/49 |
+| `maintenance-projection-check.mjs` (confirms Maintenance Projection untouched) | 48/48 |
+| `vehicles-store-check.mjs` (confirms Vehicle Store/Firebase schema untouched) | 49/49 |
+| `fleet-recommendation-check.mjs` / `scenario-simulation-check.mjs` | PASS / PASS |
+| `prediction-engine-check.mjs` / `-validator-` / `-service-` / `-provider-check.mjs` | PASS ×4 |
+| `executive-ui-kit-check.mjs` (confirms the shared drawer primitives this phase reused are unaffected) | 46/46 |
+| `executive-dashboard-export-check.mjs` / `-dom-check.mjs` | 18/18, 37/37 |
+| `smoke-boot.mjs` | 0 fatal errors, PASS |
+
+`maintenance-intelligence-check.mjs` retains its known pre-existing 6 failures (stale release-marker/UI-string assertions predating the Executive UI Kit migration — see §18/§19's own notes on the same suite). Reconfirmed byte-identical via `git stash` before touching anything, consistent with every prior Vehicle Core phase's documented handling of this same suite.
+
+### Performance Impact
+
+Zero new Firebase reads. Every adapter reads fields already present on `normalizeVehicleAsset()`'s output (`complianceHistory`/`maintenanceTimeline`/`timeline`) or calls the already-existing `computeVehicleReminders(asset)` once per vehicle. Timeline assembly happens once per drawer-open (one asset) or once per dashboard render (one pass over `dashModel.vehicles`, the SAME array two other panels already iterate) — no second `computeFleetAssetModel()` call anywhere. One accepted, documented minor overlap: `computeVehicleReminders()` is now called once by `vehicle-reminder-panel.js`'s `computeFleetReminders()` AND once per vehicle inside the new Activity Panel's `recentVehicleActivity()`, in the same render pass. Both are cheap, pure, `O(vehicle)` calls with no Firebase I/O — judged immaterial at this fleet's scale, the same class of tradeoff Phase 7's own performance section already accepted for its own additional pass.
+
+### Backward Compatibility / Migration
+
+No schema migration, no new ledger, no new business rule, no write path added anywhere — the Timeline is entirely read-only. Compliance Engine, Maintenance Projection Service, Reminder Engine, Health Engine, Recommendation Engine, Prediction Engine, Vehicle Store, Business Rules, and the Firebase schema are all byte-identical before/after (verified by their own unchanged regression suites above). Every existing Tax/Insurance/Maintenance section rendering is unchanged.
+
+### Future Extension Points
+
+- **Fuel / Accident / Repair / Inspection / Dispatch / Digitization events.** Need zero new Timeline code — a future phase only needs to start writing entries into the raw store's `v.timeline[]` array, which `customEvents()` already picks up automatically (see Timeline Strategy §8 above).
+- **Vehicle Restored.** Becomes derivable the moment (if ever) `vehicles-store.js#restoreVehicle()` gains a dedicated timestamp field. At that point, one new one-line adapter mirroring `archivedEvent()`'s existing pattern closes the gap — deliberately not built now because no real timestamp exists to read.
+- **Timeline filter chips (by event type).** `activity-engine.js`'s own `filterActivitiesByType()`/`availableActivityTypes()` are already imported transitively via this phase's reused engine but not wired into either the drawer or the Dashboard preview UI yet — a natural next increment if the event list grows long enough to need filtering.
+- **Executive Command Center integration.** Not attempted this phase (out of the Vehicle Core module's own scope, same boundary Phase 7 already drew for its own Attention Center note, §19).
+- **Test-suite hardening (Phase 9, §13).** Unaffected by this phase; can still run independently, as originally scoped.
 
 ---
 

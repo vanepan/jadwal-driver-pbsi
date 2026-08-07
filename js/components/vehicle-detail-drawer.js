@@ -68,6 +68,10 @@ import { recommendationDrawerSections } from '../vehicle/vehicle-recommendation-
 // v1.19.8 — Scenario Simulation: when a simulation is active, the drawer shows its
 // Current-vs-Simulation result for this vehicle. EXTENDS the drawer; read-only.
 import { simulationDrawerSections } from '../vehicle/vehicle-simulation-panel.js';
+// Phase 8 (v1.29.19) — Unified Timeline. Assembles Created/Archived/Status
+// Change/Renewals/Maintenance/Reminders into ONE chronological source; this
+// section renders only, exactly like every other section in this file.
+import { buildVehicleTimelineEvents } from '../vehicle/vehicle-timeline.js';
 
 const STYLE_ID = 'vad-hero-styles';
 
@@ -473,6 +477,18 @@ function predictionSection(p) {
   return sections.join('');
 }
 
+/** History / Unified Timeline (Phase 8, v1.29.19) — the linimasa below now
+ *  comes from buildVehicleTimelineEvents(), which merges Created/Archived/
+ *  Status Change/Tax/Five-Year Tax/Insurance renewals/Maintenance Performed/
+ *  Maintenance Due/Reminder Generated/future custom events into ONE
+ *  chronological source. This section still computes nothing — it only maps
+ *  each already-assembled event onto execDrawerTimeline's existing
+ *  {when,title,desc,tone} shape, the SAME primitive every other section in
+ *  this file already uses (no new visual language). The Tax/Insurance/
+ *  Maintenance sections keep their own focused single-category ledger views
+ *  unchanged (backward compatible — "existing history rendering must
+ *  continue working"); this section is the one place every event type
+ *  appears together. */
 function historySection(a) {
   const metrics = execDrawerMetrics([
     m('Tipe Aset', a.typeInfo.label),
@@ -481,9 +497,14 @@ function historySection(a) {
     m('Diperbarui', fmtDate(a.updatedAt)),
     m('Diarsipkan', a.archived ? 'Ya' : 'Tidak'),
   ]);
-  const rows = a.timeline.slice().sort((x, y) => new Date(y.date) - new Date(x.date));
-  const tl = rows.length
-    ? execDrawerTimeline(rows.map(ev => ({ when: fmtDate(ev.date), title: ev.label, desc: ev.detail || '', tone: 'info' })))
+  const events = buildVehicleTimelineEvents(a);
+  const tl = events.length
+    ? execDrawerTimeline(events.map(ev => ({
+        when: fmtDate(ev.when),
+        title: ev.title,
+        desc: ev.description || '',
+        tone: tone3(ev.meta && ev.meta.tone, 'info'),
+      })))
     : '<p style="font-size:13px;color:var(--muted)">Belum ada peristiwa.</p>';
   return execDrawerSection({ title: 'History', content: metrics + '<div class="exec-drawer-sec__h">Linimasa</div>' + tl });
 }

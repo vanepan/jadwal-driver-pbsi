@@ -63,6 +63,11 @@ const result = await page.evaluate(async () => {
         // Phase 5 (v1.29.16) — Insurance Ledger: same complianceHistory array, type:'insurance'.
         { id: 'c-ins1', type: 'insurance', renewalDate: '2026-02-01', expiryDate: '2027-02-01', amount: 1200000, paymentMethod: 'transfer', receiptNumber: 'POL-1', notes: '', officer: 'Budi', createdAt: '2026-02-01T00:00:00Z', updatedAt: '2026-02-01T00:00:00Z' },
       ],
+      // Phase 8 (v1.29.19) — Unified Timeline: one completed record so the
+      // History section's Timeline can assert a MAINTENANCE_PERFORMED entry.
+      maintenanceRecords: [
+        { id: 'mnt1', category: 'oil-change', status: 'completed', date: '2026-05-10', odometer: 42000, cost: 350000 },
+      ],
       createdAt: '2022-01-10T00:00:00Z', updatedAt: '2026-01-05T00:00:00Z' },
     { id: 'v2', name: 'Beat', type: 'motor', status: 'active', plateNumber: 'B 2 BBB', capacity: 2, brand: 'Honda', year: '2024', fuel: 'Bensin', transmission: 'Otomatis' },
     { id: 'v3', name: 'Ambulance Pelatnas', type: 'ambulance', status: 'maintenance', plateNumber: 'B 3 CCC', capacity: 4, brand: 'Toyota', year: '2019', fuel: 'Solar', transmission: 'Manual', stnkExpiry: '2025-01-01' },
@@ -141,6 +146,12 @@ const result = await page.evaluate(async () => {
   };
   const taxSecText = (secByTitle('Tax') || {}).textContent || '';
   const insSecText = (secByTitle('Insurance') || {}).textContent || '';
+  // Phase 8 (v1.29.19) — Unified Timeline: the History section's Linimasa now
+  // merges Created/renewals/Maintenance Performed/Maintenance Due/Reminder
+  // Generated into ONE chronological list (js/vehicle/vehicle-timeline.js).
+  const historySecEl = secByTitle('History');
+  const historySecText = (historySecEl || {}).textContent || '';
+  const historyTlItems = historySecEl ? historySecEl.querySelectorAll('.exec-drawer-tl__li').length : 0;
   drwIns.querySelector('[data-exec-drawer-action="renew-insurance"]').click();
   await drainDrawer();
   const openAfterInsuranceRenewClick = !!document.getElementById('execDrawerOverlay');
@@ -202,6 +213,12 @@ const result = await page.evaluate(async () => {
     openAfterInsuranceRenewClick,
     insuranceHistoryShowsOwnRecord: /Asuransi Diperpanjang/.test(insSecText) && /Rp\s*1\.200\.000/.test(insSecText) && !/\binsurance\b/.test(insSecText),
     taxSectionExcludesInsuranceEntries: /STNK Diperpanjang/.test(taxSecText) && !/Asuransi Diperpanjang/.test(taxSecText),
+    // Phase 8 (v1.29.19) — Unified Timeline
+    historyShowsCreated: /Terdaftar/.test(historySecText),
+    historyShowsTaxRenewal: /STNK Diperpanjang/.test(historySecText),
+    historyShowsInsuranceRenewal: /Asuransi Diperpanjang/.test(historySecText),
+    historyShowsMaintenancePerformed: /Oil Change/i.test(historySecText),
+    historyTlItems,
   };
 });
 
@@ -241,6 +258,13 @@ check('footer omits Perpanjang Asuransi when onRenewInsurance is not supplied (b
 check('renew-insurance footer action does NOT close the drawer', result.openAfterInsuranceRenewClick);
 check('Insurance section shows its own human-readable history (no raw type/field names)', result.insuranceHistoryShowsOwnRecord);
 check('Tax section excludes insurance-type entries (one ledger, no duplicate rendering)', result.taxSectionExcludesInsuranceEntries);
+
+console.log('\n[Unified Timeline — Phase 8, v1.29.19]');
+check('History Linimasa shows Vehicle Created', result.historyShowsCreated);
+check('History Linimasa shows Annual Tax Renewal', result.historyShowsTaxRenewal);
+check('History Linimasa shows Insurance Renewal', result.historyShowsInsuranceRenewal);
+check('History Linimasa shows Maintenance Performed', result.historyShowsMaintenancePerformed);
+check('History Linimasa renders multiple mixed-type entries in one list', result.historyTlItems >= 4);
 
 console.log('\n[design / regression]');
 check('scoped stylesheets use CSS vars (no hard-coded white — dark-mode safe)', result.noHardWhite);
