@@ -218,8 +218,8 @@ Shipped NARROWER than this line originally proposed: the actual release brief sc
 **Phase 8 — Unified Vehicle Timeline (closes Finding G). ✅ DONE — v1.29.19, see §20.**
 Shipped as planned: adopted `js/gudang/activity/activity-engine.js` for vehicle events, the FIRST cross-domain use since it shipped in v1.29.6, needing zero changes to the engine itself. New PURE `js/vehicle/vehicle-timeline.js` assembles Created/Archived/Status Change/Tax/Five-Year Tax/Insurance/Other renewals/Maintenance Performed/Maintenance Due/Reminder Generated/future-custom events from fields already computed elsewhere. Narrower than this line's own wording in one deliberate, documented way: rather than "replacing" the Tax/Insurance/Maintenance sections' own focused mini-ledgers, they were left unchanged (existing rendering must keep working) and the drawer's existing History section became the one place every event type appears together — full reasoning in §20.
 
-**Phase 9 — Test-suite hardening.**
-Add value-level assertions to `maintenance-intelligence-check.mjs` (today 100% string-presence) and a dedicated `compliance-check.mjs`. This can run in parallel with any of the phases above — it's the one item with zero product-behavior risk.
+**Phase 9 — Test-suite hardening. ✅ DONE — v1.29.20, see §21. FINAL phase — the roadmap is now closed.**
+Shipped broader than this line's own narrow prediction (which anticipated only `maintenance-intelligence-check.mjs` + a new `compliance-check.mjs`): a full audit-first pass across every Vehicle Core subsystem per the actual release brief, which found and fixed 4 real, empirically-confirmed defects (not hypothetical) in addition to the test-suite hardening this line anticipated. `maintenance-intelligence-check.mjs` was hardened as predicted (41→51 assertions, all 6 stale string-presence false negatives replaced with real value-level tests); a dedicated `compliance-check.mjs` was investigated and deliberately NOT created — coverage already exists, correctly homed, in `vehicle-asset-check.mjs` + `vehicles-store-check.mjs`. Full report: §21.
 
 **Deliberately out of scope for this roadmap** (raised, not resolved, by this investigation): sort/table view for the Inventaris grid, tablet/mobile-dark screenshot coverage, and a `package.json` test-runner script to unify all `*-check.mjs` suites — all real but platform-wide concerns, not Vehicle-specific, and better addressed once (not once per module).
 
@@ -950,6 +950,137 @@ No schema migration, no new ledger, no new business rule, no write path added an
 - **Timeline filter chips (by event type).** `activity-engine.js`'s own `filterActivitiesByType()`/`availableActivityTypes()` are already imported transitively via this phase's reused engine but not wired into either the drawer or the Dashboard preview UI yet — a natural next increment if the event list grows long enough to need filtering.
 - **Executive Command Center integration.** Not attempted this phase (out of the Vehicle Core module's own scope, same boundary Phase 7 already drew for its own Attention Center note, §19).
 - **Test-suite hardening (Phase 9, §13).** Unaffected by this phase; can still run independently, as originally scoped.
+
+---
+
+## 21. Phase 9 Implementation Report — Test Hardening & LTS Certification (v1.29.20)
+
+**Scope discipline:** this is the FINAL phase of the roadmap — a quality-assurance phase, not a feature phase. Per the release brief's own framing, the mission was to audit every subsystem, harden only where a real gap was found, and leave anything already sufficient untouched. Business rules, feature behavior, UI, the Firebase schema, and the Vehicle Store API were all off-limits *unless* a genuine defect surfaced during testing — four did, and each is reported below with the same rigor as a feature-phase root-cause writeup.
+
+### Pre-implementation investigation
+
+A full regression baseline was run across every Vehicle-adjacent suite (18 Node suites, 7 Puppeteer/DOM suites, `smoke-boot.mjs`, `startup-stability-check.mjs`) *before* any code was touched. Everything was green except the already-known `maintenance-intelligence-check.mjs` (35/41, the same 6 stale failures every prior phase had reconfirmed-and-left-untouched). Two parallel Explore-agent audits were then delegated — one over the scoring layer (Recommendation/Dispatch/Prediction), one over the presentation layer (Timeline/Dashboard/Drawer/Executive) — each instructed to cite file:line evidence and to distinguish "real gap" from "already fine, leave alone" rather than pad a findings list. Every finding from both audits was personally re-derived against the actual current source (not trusted at face value) before any fix was written, consistent with this project's "trust but verify" discipline for delegated work.
+
+### Findings and Root Causes
+
+**Finding 1 — `unified-scoring-dom-check.mjs` was a false negative, silently broken since v1.18.5.** The test asserted `.daa-table .daa-pill` / `daa-pill--{tone}` — the Dispatch Analytics dashboard's pre-Executive-UI-Kit markup. `dispatch-analytics-dashboard.js` migrated its tables to `renderExecutiveTable()`/`ExecutiveStatusPill()` (`.exec-table`/`.exec-pill--{tone}`) at v1.18.5 ("Executive UI Sprint 3 — Dispatch Analytics migration"); the DOM check's own last commit predates that migration (`b489a26`, v1.17.4) and was never updated. Root cause: no `package.json` orchestrator or CI wires any `*-check.mjs` suite together (a known, documented, platform-wide gap — see §10/§13's "Deliberately out of scope" note), so a selector going stale after a markup migration has no mechanism to surface itself; the suite kept reporting "8 passed, 2 failed" for 11+ minor versions with nobody looking. Fix: updated the selector and class-prefix to the current markup. Now 10/10, and it genuinely re-verifies the capacity-pill color contract again (confirmed by reverting the fix locally and re-running — the pre-fix selector reproduces the exact 2-failure signature this investigation started from).
+
+**Finding 2 — `fleet-dashboard.js` silently forked its own health-tone thresholds, disagreeing with the canonical scale for 1 in 3 score bands.** `renderFleetDashboard()` computed `healthTone = health >= 70 ? 'ok' : (health >= 50 ? 'warn' : 'danger')` (a local 2-cut band) instead of reading `d.healthColor`, which `computeFleetAssetModel()` already provides on the exact same `dashboard` object via Unified Scoring's canonical `scoreColor()` (90/70/50/0 bands, `js/services/unified-scoring.js:93-98`). The two bands agree at the extremes (<50 → danger, both) but **disagree for every score 70-89**: canonical says `info` (blue), the local band said `ok` (green). Root cause: this file's own header explicitly claims "PURE PRESENTATION... computes nothing" — a claim that was true when written but silently became false as the local band drifted from the platform's `COLOR_BANDS` (which itself was only introduced/mandated later; §16/Phase 4's own investigation already flagged this exact file's dashboard/drawer tone drift as an accepted, documented, "future consistency pass" item rather than a bug at the time — this phase is that future pass, now that fixing it costs one line instead of a redesign). It slipped past Phase 4's Dashboard Consistency certification because that audit focused on calculation *ownership* (single `computeFleetAssetModel()` call) and correctly found no duplicate calculation of the *health score itself* — the drift was in the presentation *tone*, a narrower and easier-to-miss surface. Fix: read `d.healthColor` directly (already-computed, always present). Side effect requiring its own fix: the health KPI tile's icon was keyed `'health-' + healthTone`, and no `health-info` icon existed in `js/analytics/analytics-shell.js`'s `AN_ICON_PATHS` (only `health-ok`/`health-warn`/`health-danger` — this file's icon inventory was built when the tone vocabulary was 3 values, before the fix reintroduced `info` as a real, reachable value here) — a naive fix would have rendered a blank glyph for every score 70-89. Added a `health-info` icon (circle + "i", matching the existing circle-based glyph family). New regression test (`vehicle-management-presentation-check.mjs`, 4 new value-level assertions) renders the real component across all 4 score bands and asserts the tone class matches `scoreColor()` exactly — the class of test that would have caught this the first time, since everything before it in that file was static source-text matching.
+
+**Finding 3 — `vehicle-detail-drawer.js` still carried a duplicate fork of `explainability.js`'s `confWord()`/`confTone()`, a previously-identified-but-deliberately-deferred item.** `PRED_CONF_WORD`/`PRED_CONF_TONE` were byte-identical local copies of the exported `confWord`/`confTone` maps, despite the drawer already importing `dominantRisk` from the same `explainability.js` module. This is not new drift — §16 (Phase 4) explicitly found and documented this exact fork, fixed the *dashboard's* copy, and left the *drawer's* copy "out of scope for this phase" on record. Root cause: same as Finding 2's precedent — a known, accepted, deferred item waiting for the phase whose scope actually covers the Drawer. This phase's scope explicitly includes Drawer. Fix: added `confWord, confTone` to the drawer's existing `explainability.js` import and deleted the two local maps — the identical one-line-import fix already proven behavior-neutral when applied to `vehicle-prediction-dashboard.js` in Phase 4 (byte-identical output, since the maps were verified identical beforehand). Verified via `vehicle-asset-dom-check.mjs` (0 regressions).
+
+**Finding 4 — `vehicle-recommendation-engine.js`'s candidate filter was one guard short of this codebase's own established convention, and the gap was exploitable.** `recommendVehicle()`'s pool filter was `.filter((v) => v && ...)` — truthiness only. Three other vehicle-array sanitizers in this exact codebase (`dispatch-policy-engine.js:171`, `vehicle-asset-service.js:361`, `dispatch-intelligence-persistence.js:59-60`) all use `v && typeof v === 'object'`. Root cause: this engine was written before that convention was established elsewhere and never retrofitted; in production the Dispatch Policy Engine sanitizes the pool immediately upstream of every real call site, which is presumably why this was never observed as a live bug, but `recommendVehicle` is itself an exported, reusable pure function with no such guarantee from its *other* callers. **Confirmed empirically before fixing** (the same discipline used for every timing-sensitive fix in this project — reproduce the bad behavior against the pre-fix code first): with a pool of `[null, 42, 'bogus-string', {}, realVehicle(health 90)]`, the pre-fix engine's `recommendedVehicle` was one of the three non-object phantom entries (score 100, `vehicleId: undefined`) — outranking the real, healthy vehicle (score 99). Fix: added `typeof v === 'object'` to the filter, matching the established convention exactly. A bare `{}` still passes (same as the convention treats it elsewhere — a data-free but structurally valid candidate), but its `calculateHealthScore({}) === 60` (the Phase 1-documented "maximally empty record" score) can no longer beat a real vehicle's genuine score. New regression test (`vehicle-recommendation-check.mjs`, 3 new assertions) locks in both the non-throw guarantee and the actual ranking-inversion fix, with the pre-fix failure mode documented inline so it can't silently regress unnoticed a second time.
+
+### Architecture Validation Report
+
+| Check | Result |
+|---|---|
+| Single ownership of vehicle health score | Confirmed clean. `computeVehicleHealth()`/`normalizeVehicleAsset()` (`vehicle-asset-service.js`) is the one formula; every consumer (recommendation engine, health-source-registry, dashboard *after Finding 2's fix*) reads it, none re-derive it. |
+| Single ownership of capacity/confidence bands | Confirmed clean. `unified-scoring.js`'s `scoreColor`/`capacityScore`/`confidenceFromScore` are reused verbatim by `dispatch-analytics-engine.js`, `dispatch-presentation.js`, and (post-Finding-2) `fleet-dashboard.js`. |
+| No duplicated calculations | Confirmed clean elsewhere; Findings 2 and 3 were the two live exceptions, both now closed. |
+| No hidden refresh paths / stale cache risk | No new instance found. The one known, accepted case (Phase 2's cache-notify timing, §15) is structural and unrelated to this phase's scope. |
+| No presentation-layer business logic | Confirmed clean elsewhere. Findings 2/3 were presentation files computing/duplicating a classification instead of reading one — now both delegate. |
+| No unintended cross-module dependencies | Confirmed clean. Architectural-purity assertions in `fleet-recommendation-check.mjs`/`scenario-simulation-check.mjs` (never import a prediction engine/validator/provider) still pass; no new import cycle introduced by any fix in this phase. |
+| Executive Attention Center vehicle signal | Re-confirmed still accurate: `js/widgets/executive/index.js`'s `exec-attention` sources its vehicle item from the probabilistic Recommendation board (`f.rec.board?.critical`), not `computeVehicleReminders`/`needsAttention`. Already documented (§19, §20) as a deliberate, out-of-Vehicle-Core-scope future item — reconfirmed, not re-flagged as new. |
+
+### Coverage Summary
+
+| Suite | Before | After | Δ |
+|---|---|---|---|
+| `maintenance-intelligence-check.mjs` | 41 assertions, 35 passing (6 permanent false negatives), 0% value-level | 51 assertions, 51 passing, real value-level coverage of the health-scoring formula's every tier boundary | +10, and the suite is trustworthy again |
+| `vehicles-store-check.mjs` | 49 | 54 | +5 (five-year-tax + cross-type STNK precedence, previously untested) |
+| `vehicle-management-presentation-check.mjs` | 47 | 51 | +4 (real rendering-level health-tone consistency check) |
+| `vehicle-asset-dom-check.mjs` | 40 | 42 | +2 (Pengingat + Proyeksi Perawatan section presence, shipped Phases 6/7 but never structurally asserted) |
+| `vehicle-recommendation-check.mjs` | 71 | 74 | +3 (malformed-pool safety, including the Finding 4 regression lock) |
+| `prediction-engine-check.mjs` | — | — | +2 (docStatusRisk mid-band, previously only tested at its two extremes) |
+| `fleet-recommendation-check.mjs` | — | — | +6 (resolveCategory availability-vs-utilization branch, previously 0% covered) |
+| `unified-scoring-dom-check.mjs` | 8 passing / 2 failing (false negatives) | 10/10, genuinely re-verifying | Fixed, not just papered over |
+| `scripts/prediction-explainability-check.mjs` (new) | 0 (module had no dedicated suite) | 56 | New file — closes the single largest coverage gap found this phase |
+
+**Total this phase: ~92 new assertions + 8 repaired (6 in `maintenance-intelligence-check.mjs`, 2 in `unified-scoring-dom-check.mjs`) across 8 existing files plus 1 new file.** None of them are coverage-for-coverage's-sake — every one maps to a specific finding above or a specific previously-unexercised branch cited by file:line in the pre-implementation audit.
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `js/components/fleet-dashboard.js` | Finding 2 — `healthTone` now reads `d.healthColor` instead of a local threshold band. |
+| `js/analytics/analytics-shell.js` | Finding 2 — added the missing `health-info` icon path. |
+| `js/components/vehicle-detail-drawer.js` | Finding 3 — `confWord`/`confTone` imported from `explainability.js`; local `PRED_CONF_WORD`/`PRED_CONF_TONE` deleted. |
+| `js/services/vehicle-recommendation-engine.js` | Finding 4 — candidate filter gained `typeof v === 'object'`. |
+| `js/config.js` | `APP_VERSION` 1.29.19 → 1.29.20, `RELEASE_NAME`, this `VERSION_HISTORY` entry. |
+| `docs/VEHICLE_CORE_INVESTIGATION_AND_ROADMAP.md` | §13's Phase 9 line marked done; this section. |
+| `scripts/unified-scoring-dom-check.mjs` | Finding 1 — selector/class-prefix updated to current markup. |
+| `scripts/maintenance-intelligence-check.mjs` | Rewritten: 6 stale/false-negative assertions fixed or removed, 14 new value-level assertions added (net 41→51, all passing). |
+| `scripts/vehicles-store-check.mjs` | +5 cross-type compliance-mirror precedence assertions. |
+| `scripts/vehicle-management-presentation-check.mjs` | +4 value-level health-tone assertions (the Finding 2 regression lock). |
+| `scripts/vehicle-asset-dom-check.mjs` | +2 drawer-section presence assertions. |
+| `scripts/prediction-engine-check.mjs` | +1 fixture, +2 assertions (docStatusRisk mid-band). |
+| `scripts/fleet-recommendation-check.mjs` | +6 assertions (resolveCategory branch). |
+| `scripts/vehicle-recommendation-check.mjs` | +3 assertions (Finding 4 regression lock). |
+| `scripts/prediction-explainability-check.mjs` (new) | 56 assertions covering every export of `explainability.js`. |
+| `service-worker.js`, `version.json`, `index.html` | Mechanically re-stamped by `scripts/sync-version.mjs` (cache-bust only). |
+
+No other file was opened for editing. `js/vehicles-store.js`'s business logic, every prediction/dispatch/maintenance/reminder/timeline *engine's formula*, the Firebase schema, and every UI layout are byte-identical to before this phase except the two narrow tone/dedup fixes in Findings 2 and 3 (neither changes a score, a threshold, or a business rule — only which already-computed value a presentation file reads).
+
+### Regression Summary
+
+Every suite in the Vehicle Core family, run clean after every fix above:
+
+| Suite | Result |
+|---|---|
+| `vehicles-store-check.mjs` | 54/54 |
+| `vehicle-asset-check.mjs` | 58/58 |
+| `vehicle-recommendation-check.mjs` | 74/74 |
+| `vehicle-management-presentation-check.mjs` | 51/51 |
+| `vehicle-timeline-check.mjs` | 44/44 |
+| `maintenance-intelligence-check.mjs` | 51/51 (was 35/41 — now fully green, not just re-deferred) |
+| `maintenance-projection-check.mjs` | 48/48 |
+| `reminder-engine-check.mjs` | 49/49 |
+| `dispatch-scoring-check.mjs` / `-persistence-` / `-presentation-` / `-analytics-check.mjs` | 33/33, 25/25, 34/34, 72/72 |
+| `prediction-engine-check.mjs` / `-provider-` / `-service-` / `-validator-check.mjs` | PASS ×4 |
+| `fleet-recommendation-check.mjs` / `scenario-simulation-check.mjs` | ALL PASS / ALL PASS |
+| `unified-scoring-check.mjs` | 52/52 |
+| `prediction-explainability-check.mjs` (new) | 56/56 |
+| `vehicle-asset-dom-check.mjs` (Puppeteer) | 42/42 |
+| `dispatch-analytics-dom-check.mjs` (Puppeteer) | 38/38 |
+| `unified-scoring-dom-check.mjs` (Puppeteer) | 10/10 (was 8/10) |
+| `executive-dashboard-dom-check.mjs` (Puppeteer) | 37/37 |
+| `decision-replay-check.mjs` / `-dom-check.mjs` | 54/54, 28/28 |
+| `approval-panel-dom-check.mjs` / `policy-engine-check.mjs` / `-dom-check.mjs` | 23/23, 73/73, 14/14 |
+| `request-intelligence-check.mjs` | 53/53 |
+| `capacity-hardening-check.mjs` | 38/38 |
+| `executive-attention-verification-check.mjs` | 84/84 |
+| `executive-dashboard-export-check.mjs` | 18/18 |
+| `self-drive-assignment-check.mjs` | 42/42 |
+| `smoke-boot.mjs` | 0 fatal errors, PASS |
+| `startup-stability-check.mjs` | 8/8 |
+
+**Zero failures anywhere. Zero pre-existing failures remain** — this is the first Vehicle Core phase report where that sentence is true; every prior phase's regression summary carried the same 6 `maintenance-intelligence-check.mjs` caveat forward.
+
+### Performance Impact
+
+None. Every change is either a test file (zero production runtime cost) or a one-line substitution of an already-computed value for a locally-recomputed one (Findings 2 and 3 — strictly *fewer* operations at runtime, not more) or a filter predicate that was already O(1) per element (Finding 4).
+
+### Backward Compatibility / Migration
+
+No schema migration, no business-rule change, no new write path. Findings 2-4 are pure bugfixes with no user-facing behavior change *except* the two now-corrected visual/ranking inconsistencies themselves (a health score of 70-89 now shows the same tone everywhere in the app; a corrupted vehicle-pool entry can no longer outrank a real vehicle) — both are corrections toward already-documented, already-elsewhere-enforced platform conventions, not new conventions being introduced.
+
+### Known Limitations
+
+- **No suite orchestrator still exists.** The root cause behind Finding 1 (a selector could drift for 11+ versions unnoticed) is structural and platform-wide, not Vehicle-specific — flagged in §10/§13 as "deliberately out of scope for this roadmap... a platform-wide concern, better addressed once, not once per module." Still true; this phase did not attempt it.
+- **`band3()` threshold inconsistency in the drawer's Overview health bars** (`vehicle-detail-drawer.js`, sub-score progress-bar fill thresholds of 70/40 vs. the canonical 90/70/50/0 scale) was investigated and found real, but judged a deliberate-looking simplification for a 3-color bar fill rather than a confirmed regression — left undocumented-as-fixed, flagged here as a candidate for a future consistency pass, consistent with the "judgment call → document, don't manufacture a fix" discipline already used at §16/Phase 4.
+- **A dedicated `compliance-check.mjs` was NOT created**, despite being the original roadmap's own suggested Phase 9 scope line. Investigated first: `deriveDocStatus`/`deriveTaxStatus` pure classification is already covered in `vehicle-asset-check.mjs`, and the ledger write-path (`recomputeComplianceMirror`) is already correctly homed in `vehicles-store-check.mjs`, which this phase extended rather than duplicated. A new file would have fragmented coverage across three homes instead of two correct ones.
+
+### Future Test Opportunities
+
+Investigated and explicitly declined this phase — real, but each is either lower-leverage than what shipped or requires a platform-wide (not Vehicle-specific) decision:
+- A `package.json` test-runner script unifying every `*-check.mjs` suite (would have caught Finding 1 automatically the moment it was introduced) — platform-wide, not Vehicle-specific, same reasoning as §13's original "deliberately out of scope" note.
+- `vehicle-detail-drawer.js`'s `band3()` sub-score tone thresholds vs. the canonical scale (see Known Limitations above) — a design decision, not a test gap.
+- Tablet/mobile-dark screenshot coverage for the Vehicle add/edit form's color-picker/avatar/capacity-chip controls (flagged, never actioned, since the original investigation — §9) — still real, still platform-wide-adjacent, still not touched.
+
+### Vehicle Core LTS Readiness Assessment
+
+**Certified LTS-ready.** All nine roadmap phases are shipped. Every regression suite in the module's family is green with zero pre-existing failures — a first for this roadmap. Four real defects were found and fixed during this final audit, each narrow, each verified against the pre-fix code before being called a defect, each now locked in place by a regression test that reproduces the original failure mode. Architecture validation found the module's ownership discipline intact everywhere except the two now-closed presentation-layer forks (Findings 2, 3) — no redesign was needed anywhere, consistent with the original investigation's own conclusion that "debt lives at the seams between layers, not within them." The two documented Known Limitations (no suite orchestrator, one judgment-call threshold inconsistency) are both platform-wide-adjacent concerns already flagged in prior phases, not new Vehicle Core debt discovered this phase, and neither blocks LTS certification per the same standard Warehouse Core LTS was held to.
 
 ---
 

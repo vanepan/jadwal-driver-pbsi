@@ -257,6 +257,33 @@ check('util 84 → 100 (LOW) after widening LOW band', calculateUtilizationScore
 resetDispatchConfig();
 check('util 84 → 40 again after reset', calculateUtilizationScore(84) === 40);
 
+/* ── Malformed vehicle-pool safety (real bug found + fixed during Phase 9) ─
+   Before this fix, the candidate filter only checked truthiness (`v &&`),
+   not `typeof v === 'object'` — unlike every other vehicle-array sanitizer
+   in this codebase (dispatch-policy-engine.js:171, vehicle-asset-
+   service.js:361). A non-object entry (number/string/{}) silently became a
+   scoreable "phantom" candidate with an undefined vehicleId, and — because
+   calculateHealthScore() falls back to a health formula that can score a
+   maximally-empty/undefined record ABOVE a real, perfectly healthy vehicle —
+   that phantom could outrank and win recommendedVehicle over the actual
+   fleet. Confirmed empirically before fixing: with [null, 42, 'bogus',
+   {}, realVehicle(health 90)], the TOP recommendation was one of the three
+   corrupt entries (score 100), not the real vehicle (score 99). In
+   production the Policy Engine sanitizes its pool upstream, but this engine
+   has no such guarantee from its OTHER callers. */
+console.log('\n[malformed vehicle-pool safety]');
+{
+  const corrupt = [null, 42, 'bogus-string', {}, vehicles[0]];
+  let threw = false;
+  let corruptResult;
+  try { corruptResult = recommendVehicle(REQUEST, corrupt, assignments, { now: NOW }); }
+  catch { threw = true; }
+  check('null/number/string/empty-object entries do not throw', !threw);
+  check('non-object entries (null/42/string) are excluded from scoring; a bare {} is still a data-free candidate (same convention as vehicle-asset-service.js)', corruptResult.diagnostics.length === 2);
+  check('the REAL vehicle wins the recommendation — the {} phantom cannot outrank it (this was the actual bug: it previously did)',
+    corruptResult.recommendedVehicle && corruptResult.recommendedVehicle.vehicleId === vehicles[0].vehicleId && corruptResult.recommendedVehicle.rank === 1);
+}
+
 /* ── Recommendation persistence ──────────────────────────────────────── */
 console.log('\n[persistence]');
 saveVehicleRecommendation(res);

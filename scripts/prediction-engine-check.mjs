@@ -54,6 +54,10 @@ const vehicles = [
     registration: { year: 2023, odometer: 15000 },
     health: { operational: 95, legal: 98, documents: 100, overall: 96 },
     taxStatus: 'paid', stnkStatus: 'valid', insuranceStatus: 'valid', utilization: 40 },
+  { id: 'v3', name: 'DueSoon', status: 'active', type: 'mobil',
+    registration: { year: 2018, odometer: 90000 },
+    health: { operational: 70, legal: 70, documents: 80, overall: 73 },
+    taxStatus: 'due_soon', stnkStatus: 'valid', insuranceStatus: 'valid', utilization: 50 },
 ];
 
 const dispatch = { summary: { utilization: 90, pending: 4 } };
@@ -144,6 +148,17 @@ check(innova.maintenanceRisk.score > fortuner.maintenanceRisk.score, 'Innova mai
 check(innova.administrativeRisk.score > fortuner.administrativeRisk.score, 'Innova administrativeRisk > Fortuner');
 check(['HIGH', 'CRITICAL'].includes(innova.administrativeRisk.level), 'Innova admin risk HIGH/CRITICAL (STNK expired + tax overdue)');
 check(innova.administrativeRisk.reasons.some((r) => /STNK/i.test(r)), 'admin reasons cite STNK');
+
+// docStatusRisk's middle band ("due"/"soon"/"pending"/"warning"/"attention" ⇒
+// 60) was previously only exercised at its two extremes (expired/overdue ⇒
+// 100 above via Innova, valid/paid ⇒ 0 via Fortuner) — never the mid-band
+// itself, the branch a "one status word away" regex tweak is most likely to
+// silently break.
+const dueSoon = model.vehicles.find((v) => v.name === 'DueSoon');
+const taxSignal = dueSoon.administrativeRisk.signals.find((s) => s.id === 'tax');
+check(taxSignal && taxSignal.value === 60, `docStatusRisk mid-band: taxStatus 'due_soon' ⇒ signal value 60 (got ${taxSignal && taxSignal.value})`);
+check(dueSoon.administrativeRisk.score > fortuner.administrativeRisk.score && dueSoon.administrativeRisk.score < innova.administrativeRisk.score,
+  'DueSoon administrativeRisk sits strictly between the clean (Fortuner) and expired (Innova) vehicles');
 
 section('Dispatch + finance forecasts');
 check(isPrediction(model.dispatch.capacityRisk), 'dispatch.capacityRisk is a prediction');

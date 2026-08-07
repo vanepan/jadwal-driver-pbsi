@@ -86,7 +86,7 @@ const rendered = await page.evaluate(() => {
 
   // Find capacity pills in the driver + vehicle tables and verify each pill's
   // color class equals scoreColor(displayed number) — i.e., never inverted.
-  const pills = Array.from(document.querySelectorAll('.daa-table .daa-pill'));
+  const pills = Array.from(document.querySelectorAll('.exec-table .exec-pill'));
   const capPills = pills.filter((p) => p.getAttribute('title') && p.getAttribute('title').includes('Skor kapasitas'));
   let allConsistent = capPills.length > 0;
   let allInRange = true;
@@ -94,7 +94,7 @@ const rendered = await page.evaluate(() => {
     const n = Number(p.textContent.trim());
     if (!(n >= 0 && n <= 100)) allInRange = false;
     const tone = window.__scoreColor(n);
-    if (!p.className.includes('daa-pill--' + tone)) allConsistent = false;
+    if (!p.className.includes('exec-pill--' + tone)) allConsistent = false;
   }
   return { capPillCount: capPills.length, allConsistent, allInRange, hasInfoStyle: !!document.querySelector('style#daa-dashboard-styles') };
 });

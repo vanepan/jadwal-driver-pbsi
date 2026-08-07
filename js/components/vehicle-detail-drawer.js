@@ -51,6 +51,8 @@ import {
   dataCoverage,
   limitations,
   operationalNotes,
+  confWord,
+  confTone,
 } from '../prediction/explainability.js';
 import {
   injectExplainabilityStyles,
@@ -428,9 +430,6 @@ function maintenanceSection(a) {
    factor's plain-language share of the decision + operational reason. Backward
    compatible: inventory callers pass no prediction and the drawer is unchanged. */
 
-const PRED_CONF_WORD = { HIGH: 'Tinggi', MEDIUM: 'Sedang', LOW: 'Rendah' };
-const PRED_CONF_TONE = { HIGH: 'ok', MEDIUM: 'info', LOW: 'warn' };
-
 /** Prediction Summary — the existing at-a-glance risk snapshot (kept first). */
 function predictionSummarySection(p, dom) {
   const mr = p.maintenanceRisk || {};
@@ -440,7 +439,7 @@ function predictionSummarySection(p, dom) {
   const win = predictionWindow(p);
 
   const badges = badgeRow([
-    ExecutiveStatusPill(`Keyakinan ${PRED_CONF_WORD[cLvl] || 'Rendah'}`, PRED_CONF_TONE[cLvl] || 'warn'),
+    ExecutiveStatusPill(`Keyakinan ${confWord(cLvl)}`, confTone(cLvl)),
     ExecutiveStatusPill(`Jendela ${win.label}`, 'info'),
   ]);
   const summary = dom.summary
@@ -449,7 +448,7 @@ function predictionSummarySection(p, dom) {
     m('Risiko Perawatan', mr.levelLabelId || '—', tone3(mr.tone, 'info')),
     m('Risiko Administrasi', ar.levelLabelId || '—', tone3(ar.tone, 'info')),
     m('Ketersediaan', af.levelLabelId || '—', tone3(af.tone, 'info')),
-    m('Keyakinan Prediksi', PRED_CONF_WORD[cLvl] || 'Rendah'),
+    m('Keyakinan Prediksi', confWord(cLvl)),
   ]);
   return execDrawerSection({ title: 'Prediction Summary', content: badges + summary + metrics });
 }

@@ -98,6 +98,40 @@ check(recF.category === 'none' && recF.actionable === false, 'the healthy vehicl
 check(recF.priority.key === 'informational', 'healthy recommendation is informational priority');
 check(Object.isFrozen(recI), 'recommendation is frozen');
 
+section('resolveCategory — availability-dominant branch (utilization vs. availability)');
+// The Innova/Fortuner fixtures above only ever drive a maintenance-dominant or
+// a no-risk projection — resolveCategory's availability-dominant branch
+// (js/recommendation/fleet-recommendation-engine.js's highUtilization()
+// ternary, picking 'utilization' vs 'availability') was never exercised by
+// any suite. Both fixtures below carry the IDENTICAL maintenance/
+// administrative/availability risk scores (69/67/71, HIGH, availability
+// dominant) — utilization is the only variable, isolating the ternary.
+{
+  const availBase = {
+    status: 'inactive', registration: { year: 2009 },
+    health: { operational: 0, legal: 0, documents: 100, overall: 20 },
+    taxStatus: 'overdue', stnkStatus: 'expired', insuranceStatus: 'valid',
+  };
+  const lowUtilModel = getPrediction({ now: NOW, vehicles: [{ id: 'a1', name: 'AvailTest', ...availBase, utilization: 50 }] }).model;
+  const highUtilModel = getPrediction({ now: NOW, vehicles: [{ id: 'a2', name: 'UtilTest', ...availBase, utilization: 78 }] }).model;
+  const lowUtilProj = lowUtilModel.vehicles[0];
+  const highUtilProj = highUtilModel.vehicles[0];
+
+  check(lowUtilProj.availabilityForecast.level === 'HIGH' && highUtilProj.availabilityForecast.level === 'HIGH',
+    'both fixtures reach HIGH availability risk (actionable branch)');
+  check(lowUtilProj.availabilityForecast.score > lowUtilProj.maintenanceRisk.score && lowUtilProj.availabilityForecast.score > lowUtilProj.administrativeRisk.score,
+    'availabilityForecast is genuinely the dominant risk (not maintenance/administrative)');
+  check(lowUtilProj.availabilityForecast.score === highUtilProj.availabilityForecast.score
+    && lowUtilProj.maintenanceRisk.score === highUtilProj.maintenanceRisk.score,
+    'utilization (50 vs 78) does not itself change the risk scores (78 < the 80 over-utilization ceiling) — isolates the ternary from a confound');
+
+  const recLowUtil = buildVehicleRecommendation(lowUtilProj);
+  const recHighUtil = buildVehicleRecommendation(highUtilProj);
+  check(recLowUtil.category === 'availability', 'utilization 50% (< 75 threshold) ⇒ category "availability" (assign a spare)');
+  check(recHighUtil.category === 'utilization', 'utilization 78% (>= 75 threshold) ⇒ category "utilization" (rotate usage)');
+  check(recLowUtil.title.includes('armada pengganti') && recHighUtil.title.includes('Rotasi'), 'buildTitle produces the distinct operational title for each category');
+}
+
 section('Fleet ranking');
 const fleet = buildFleetRecommendations(model);
 check(fleet.length === 2, 'one recommendation per vehicle');

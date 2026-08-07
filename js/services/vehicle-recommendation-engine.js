@@ -255,7 +255,12 @@ export function recommendVehicle(request = {}, vehicles = [], assignments = [], 
   const now = options.now || new Date();
   const weights = options.weights || getVehicleScoringWeights();
   const candidates = (Array.isArray(vehicles) ? vehicles : [])
-    .filter((v) => v && (typeof options.isEligible === 'function' ? options.isEligible(v) : true));
+    // typeof v === 'object' matches the same guard already used by every
+    // other vehicle-array sanitizer in this codebase (dispatch-policy-
+    // engine.js, vehicle-asset-service.js) — without it, a non-object entry
+    // (e.g. a stray number/string) silently became a scoreable "phantom"
+    // candidate with an undefined vehicleId that could outrank a real vehicle.
+    .filter((v) => v && typeof v === 'object' && (typeof options.isEligible === 'function' ? options.isEligible(v) : true));
 
   // Bucket assignments by normalized vehicle name once (mirrors checkVehicleConflict).
   const byVehicle = new Map();

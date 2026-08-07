@@ -116,6 +116,25 @@ test('computeFleetAssetModel still used', app.includes('computeFleetAssetModel')
 test('Vehicle store functions unchanged', app.includes('deactivateVehicle') && app.includes('archiveVehicle') && app.includes('restoreVehicle'));
 test('No new Firebase calls introduced in dashboard', !dash.includes('Firebase') && !dash.includes('firebase'));
 
+section('Value-level: Kesehatan KPI tone matches the canonical Unified Scoring band');
+// Everything above is a static source-text check — it would stay green even
+// if the "Kesehatan" tile silently forked its own color thresholds instead
+// of reading d.healthColor (which is exactly what happened: a local 70/50
+// band disagreed with scoreColor()'s canonical 90/70/50/0 bands for every
+// health score in 70-89, rendering "ok"/green where the rest of the app
+// would show "info"/blue). This renders the REAL component and proves the
+// tone it displays is byte-identical to scoreColor(healthAvg).
+{
+  const { renderFleetDashboard } = await import('../js/components/fleet-dashboard.js');
+  const { scoreColor } = await import('../js/services/unified-scoring.js');
+  for (const healthAvg of [95, 75, 60, 30]) {
+    const html = renderFleetDashboard({ now: '2026-08-07', dashboard: { totalAssets: 1, healthAvg, healthColor: scoreColor(healthAvg) }, vehicles: [] });
+    const expectedTone = scoreColor(healthAvg);
+    test(`healthAvg ${healthAvg} ⇒ Kesehatan tile carries the canonical '${expectedTone}' tone class`,
+      html.includes(`v2-analytics-kpi-card--${expectedTone}`));
+  }
+}
+
 section('Summary');
 console.log(`\nPassed: ${PASS}\nFailed: ${FAIL}\nTotal:  ${PASS + FAIL}`);
 process.exit(FAIL > 0 ? 1 : 0);

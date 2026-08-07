@@ -230,7 +230,11 @@ check('dashboard has zero emoji', result.dashNoEmoji);
 console.log('\n[Detail drawer]');
 check('detail drawer opens', result.drawerOpen && result.drawerSheet);
 check('drawer hero shows asset health score', /\d/.test(result.drawerHero || ''));
-const want = ['Overview', 'Operational', 'Registration', 'Tax', 'Insurance', 'Maintenance', 'History'];
+// Pengingat (Phase 7, reminder-engine.js) and Proyeksi Perawatan (Phase 6,
+// maintenance-projection-service.js) previously rendered but were never
+// structurally asserted here — only ever captured incidentally in the
+// light/dark/mobile screenshots below, never presence- or dark-mode-checked.
+const want = ['Overview', 'Operational', 'Registration', 'Tax', 'Insurance', 'Proyeksi Perawatan', 'Maintenance', 'Pengingat', 'History'];
 for (const w of want) check(`§ ${w}`, result.drawerTitles.some((t) => t.includes(w)));
 check('Operational section present (new)', result.operationalSection);
 check('footer carries lifecycle actions (toggle/archive/edit)', result.footerActions);

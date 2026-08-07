@@ -103,7 +103,11 @@ export function renderFleetDashboard(model) {
 
   const issues = countIssues(vehicles);
   const health = Math.round(d.healthAvg || 0);
-  const healthTone = health >= 70 ? 'ok' : (health >= 50 ? 'warn' : 'danger');
+  // Reuse the canonical Unified Scoring band (d.healthColor = scoreColor(healthAvg),
+  // 90/70/50/0) instead of a local 70/50 threshold — the two disagreed for
+  // health scores 70-89 (canonical 'info', local 'ok'), the exact class of bug
+  // this file's own header says it doesn't have ("computes nothing").
+  const healthTone = d.healthColor || 'danger';
   const taxDue = d.taxDueSoon || 0;
   const maint = d.maintenance || 0;
 

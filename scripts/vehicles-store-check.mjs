@@ -197,6 +197,37 @@ console.log('\n[addComplianceRecord — insurance]');
     store.getVehicleById(id).insuranceExpiry === '2027-06-10');
 }
 
+/* ── addComplianceRecord — five_year_tax + cross-type STNK precedence ────
+   recomputeComplianceMirror() (js/vehicles-store.js) derives stnkExpiry/
+   annualTaxDue from whichever of annual_tax/five_year_tax has the LATER
+   expiryDate — not "annual_tax always wins" and not "last write wins". This
+   branch had zero coverage: every prior test in this file only ever wrote
+   ONE of the two tax types, so the cross-type max-by-expiry comparison
+   (js/vehicles-store.js recomputeComplianceMirror, the `stnkCandidates`
+   reduce) never actually ran with both types present. */
+console.log('\n[addComplianceRecord — five_year_tax + cross-type STNK precedence]');
+{
+  const id = globalThis.__testCarId;
+  // Current state entering this block: annual_tax expiry = 2027-07-01 (from
+  // the insurance block above), no five_year_tax record yet.
+  const rec = await store.addComplianceRecord(id, {
+    type: 'five_year_tax', renewalDate: '2026-08-01', expiryDate: '2029-01-01', amount: 900000,
+  });
+  check('addComplianceRecord accepts type:"five_year_tax" and resolves with an id', !!rec.id);
+  check('fiveYearTaxDue mirror recomputed immediately', store.getVehicleById(id).fiveYearTaxDue === '2029-01-01');
+  check('a later-expiring five_year_tax record wins the STNK mirror over the earlier annual_tax one',
+    store.getVehicleById(id).stnkExpiry === '2029-01-01' && store.getVehicleById(id).annualTaxDue === '2029-01-01');
+
+  // A NEW annual_tax renewal that expires BEFORE the five_year_tax record
+  // must not steal the STNK mirror back — proves max-by-expiry, not
+  // last-write-wins, exactly the assumption a naive refactor could break.
+  await store.addComplianceRecord(id, { type: 'annual_tax', renewalDate: '2026-08-15', expiryDate: '2027-12-01', amount: 650000 });
+  check('an earlier-expiring annual_tax renewal does NOT steal the STNK mirror back (max-by-expiry, not last-write-wins)',
+    store.getVehicleById(id).stnkExpiry === '2029-01-01');
+  check('fiveYearTaxDue is untouched by the new annual_tax renewal (per-type independence)',
+    store.getVehicleById(id).fiveYearTaxDue === '2029-01-01');
+}
+
 /* ── deleteVehicle (identity writer, requires archived first) ───────────── */
 console.log('\n[deleteVehicle]');
 {
