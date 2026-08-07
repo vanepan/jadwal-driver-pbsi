@@ -66,23 +66,18 @@ function normalizeStatus(value, fallbackActive) {
 }
 
 // Build the additive asset payload from an input bag, dropping undefined so a
-// Firebase write never carries `undefined` (RTDB rejects it). taxHistory is a
-// read-only payment list ([{date,amount,officer,notes}]); timeline is reserved
-// future-ready event storage (kept verbatim when supplied).
+// Firebase write never carries `undefined` (RTDB rejects it). timeline is
+// reserved future-ready event storage (kept verbatim when supplied).
+//
+// v1.29.14: dropped write-acceptance of the legacy `taxHistory[]` field — no
+// caller has ever populated it (superseded by `complianceHistory` since
+// v1.29.2) and `updateVehicle` writes via a partial Firebase `update()`, so
+// this never touches any `taxHistory` a legacy record already has in RTDB.
+// Reading/displaying that legacy data (vehicle-asset-service.js) is untouched.
 function sanitizeAssetFields(input = {}) {
   const out = {};
   for (const key of ASSET_STRING_FIELDS) {
     if (input[key] !== undefined) out[key] = input[key] === null ? null : String(input[key]).trim();
-  }
-  if (Array.isArray(input.taxHistory)) {
-    out.taxHistory = input.taxHistory
-      .filter(e => e && typeof e === 'object')
-      .map(e => ({
-        date: String(e.date || '').trim(),
-        amount: String(e.amount == null ? '' : e.amount).trim(),
-        officer: String(e.officer || '').trim(),
-        notes: String(e.notes || '').trim(),
-      }));
   }
   if (Array.isArray(input.timeline)) out.timeline = input.timeline;
   return out;
@@ -538,9 +533,10 @@ export async function deleteMaintenanceRecord(vehicleId, recordId) {
 
 /* ── Compliance History (Vehicle Compliance & Financial History) ─────────────
    `complianceHistory` is the source of truth for STNK/tax renewals going
-   forward — a NEW, additive field. The legacy `taxHistory` stub (see
-   sanitizeAssetFields above) is left untouched for backward compatibility; it
-   was never actually populated by any write path. Every entry is immutable
+   forward — a NEW, additive field. The legacy `taxHistory[]` field it
+   superseded is no longer write-accepted by sanitizeAssetFields (v1.29.14);
+   any pre-existing `taxHistory` data on a legacy record is left untouched in
+   RTDB and still reads/displays via vehicle-asset-service.js. Every entry is immutable
    once saved (no update/delete — a correction is recorded as a new entry).
    Adding a record also recomputes the vehicle's current-state mirror fields
    (stnkExpiry / annualTaxDue / fiveYearTaxDue) from the latest entry per
