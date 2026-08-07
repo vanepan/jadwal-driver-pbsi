@@ -6567,8 +6567,19 @@ function buildVehicleCard(asset, lastActivity) {
       </article>`;
   }
 
+  // Phase 6 (v1.29.17) — Maintenance Projection dashboard signal. Reads the
+  // already-computed headline (asset.maintenanceProjection); this card
+  // calculates nothing. A vehicle physically IN maintenance still wins (a
+  // known current state beats a projected future one); otherwise an
+  // overdue/due-soon projection is more actionable than the static
+  // "Terawat" fallback and takes its place.
+  const proj = asset.maintenanceProjection && asset.maintenanceProjection.headline;
   const maint = asset.status === 'maintenance'
     ? { tone: 'warn', text: 'Servis' }
+    : (proj && proj.status === 'overdue')
+      ? { tone: 'danger', text: 'Servis Terlambat' }
+    : (proj && proj.status === 'due_soon')
+      ? { tone: 'warn', text: 'Servis Segera' }
     : ((asset.maintenanceSummary?.totalRecords || 0) > 0
         ? { tone: 'ok', text: 'Terawat' }
         : { tone: 'neutral', text: 'Belum ada' });

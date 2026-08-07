@@ -27,6 +27,10 @@ import { isSpecialVehicle } from './dispatch-policy-engine.js';
 import { computeFleetAnalytics } from '../analytics/vehicle-asset-analytics.js';
 import { computeMaintenanceHealth, computeMaintenanceTimeline, deriveMaintenanceSummary } from './maintenance-service.js';
 import { buildMaintenanceAnalytics } from '../analytics/maintenance-analytics.js';
+// Phase 6 (v1.29.17) — deterministic maintenance due-date/due-distance projection.
+// Consumes the maintenanceTimeline this file already computes below; adds no new
+// maintenance calculation of its own. See maintenance-projection-service.js.
+import { computeVehicleMaintenanceProjection } from './maintenance-projection-service.js';
 import {
   vehicleTypeInfo, vehicleStatusInfo, vehicleTypeKeys, vehicleStatusKeys,
   TYPE_ELIGIBILITY, DOCUMENT_FIELDS, DUE_SOON_DAYS, HEALTH_WEIGHTS, STATUS_HEALTH,
@@ -276,6 +280,9 @@ export function normalizeVehicleAsset(vehicle, now) {
   const timeline = buildVehicleTimeline(v, now);
   const maintenanceSummary = deriveMaintenanceSummary(Array.isArray(v.maintenanceRecords) ? v.maintenanceRecords : []);
   const maintenanceTimeline = computeMaintenanceTimeline(Array.isArray(v.maintenanceRecords) ? v.maintenanceRecords : [], now);
+  // Phase 6 (v1.29.17) — reuses the SAME normalized timeline above; no separate
+  // read of v.maintenanceRecords, no re-derivation of interval/odometer data.
+  const maintenanceProjection = computeVehicleMaintenanceProjection(maintenanceTimeline, v.odometer, now);
 
   return {
     id: v.id,
@@ -299,8 +306,8 @@ export function normalizeVehicleAsset(vehicle, now) {
     insuranceCompany: str(v.insuranceCompany), policyNumber: str(v.policyNumber),
     coverage: str(v.coverage), insuranceExpiry: str(v.insuranceExpiry),
     insurance,
-    // Maintenance (v1.18.1)
-    maintenance, maintenanceSummary, maintenanceTimeline,
+    // Maintenance (v1.18.1) + Maintenance Projection (v1.29.17)
+    maintenance, maintenanceSummary, maintenanceTimeline, maintenanceProjection,
     // Derived blocks
     documents, health, eligibility,
     taxHistory: Array.isArray(v.taxHistory) ? v.taxHistory.slice() : [],

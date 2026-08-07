@@ -209,8 +209,8 @@ Pick one source of truth for "total vehicles" (`computeFleetAssetModel().dashboa
 **Phase 5 — Insurance ledger parity. ✅ DONE — v1.29.16, see §17.**
 Shipped exactly as this line originally proposed: `complianceHistory` gained `type:'insurance'`, `recomputeComplianceMirror()` gained an insurance branch mirroring `insuranceExpiry` from the latest insurance entry (retiring the flat hand-edited field, same pattern already used for the tax types), and the drawer/registration-form got parity treatment with STNK. Full report: §17.
 
-**Phase 6 — Maintenance due-date projection.**
-Consume the already-computed `recommendedIntervalKm/Days` (currently stored but unread) to derive a `nextDueDate`/`nextDueOdometer` per vehicle, surfaced as a new drawer field and dashboard signal. Still no scheduled delivery — just makes the existing computed data visible where it's dead today.
+**Phase 6 — Maintenance due-date projection. ✅ DONE — v1.29.17, see §18.**
+Shipped as a new PURE `js/services/maintenance-projection-service.js`, consuming the already-computed `recommendedIntervalKm/Days` (stored since v1.18.1, unread until now) to derive a `nextDueDate`/`nextDueOdometer`/priority per vehicle, surfaced via a new `maintenanceProjection` field on `normalizeVehicleAsset()`'s output, a new drawer section, and an inventory-card badge signal. Still no scheduled delivery — just makes the existing computed data visible where it was dead before. Full report, architecture trace, and regression results: §18.
 
 **Phase 7 — Vehicle reminder engine (closes the biggest operational gap, §12).**
 Only after Phase 6 gives a real due-date to alert on: extend `functions/src/scheduled/` (already a placeholder folder, per its own README) with a Cloud Scheduler job for STNK/tax/insurance/maintenance thresholds, reusing the existing `deriveDocStatus` classification and the notification channels already wired for assignment reminders. This is the first phase that touches the backend/Functions layer — sequence it last so the due-date data it depends on (Phase 6) already exists and is tested.
@@ -667,6 +667,95 @@ No reminder engine exists yet (§12/§13 Phase 7 is still open, correctly sequen
 ### Future Timeline Integration
 
 No unified Vehicle Timeline engine exists yet (§13 Phase 8, `js/gudang/activity-engine.js` reuse, still open). In the meantime, insurance renewals already flow into the existing `buildVehicleTimeline()` linimasa via the same generic `complianceHistory` loop every other compliance type uses — no insurance-specific change will be needed there when Phase 8 eventually replaces that ad hoc builder with the shared activity-engine.
+
+---
+
+## 18. Phase 6 Implementation Report — Maintenance Projection (v1.29.17)
+
+**Scope discipline:** the second CAPABILITY EXPANSION after the 4-phase foundation freeze (Phases 1–4, §14–§16), following Phase 5 (§17). Per the release brief's explicit "Maintenance Projection is NOT AI. It is deterministic. Reuse existing operational data. Projection belongs to one owner only." — investigated every maintenance-related calculation in the codebase before writing any code. Files touched: `js/config/maintenance-config.js`, `js/services/vehicle-asset-service.js`, `js/components/vehicle-detail-drawer.js`, `js/app.js`. Untouched, per the brief's explicit do-not-modify list: Vehicle Store, Recommendation Engine, Dispatch Engine, Health Engine (`computeVehicleHealth`/`HEALTH_WEIGHTS` byte-identical before/after), Compliance Ledger, Insurance Ledger, Dashboard architecture (`fleet-dashboard.js`'s 5-KPI strip), Business Rules, Firebase schema.
+
+### Architecture Report (pre-implementation investigation)
+
+Traced every maintenance-related calculation before writing anything:
+
+- **Where maintenance history is stored:** embedded per-vehicle at `vehicle.maintenanceRecords[]` (RTDB, via `vehicles-store.js`). `maintenance-service.js#normalizeMaintenanceRecord()` has, since v1.18.1, already attached `recommendedIntervalKm`/`recommendedIntervalDays` to every normalized record (a raw per-record override, falling back to `maintenance-config.js`'s `MAINTENANCE_CATEGORY_REGISTRY` default per category) — confirmed via repo-wide grep that neither field was ever read anywhere past storage. This is the exact "orphaned" data point §8 of this same investigation flagged at the very start.
+- **How odometer is updated:** `vehicles-store.js#updateVehicleOdometer(vehicleId, value)`, called once an assignment completes with a captured Odometer Akhir (app.js `registerCompleteCallback`). Stored as `vehicle.odometer`, a string, numeric-safe via `Number()`.
+- **How health is calculated:** `vehicle-asset-service.js#computeVehicleHealth()` (the Health Engine) folds in `maintenance-service.js#computeMaintenanceHealth()` — a RECENCY/frequency/preventive-ratio score (0–100, "how well-maintained has this vehicle been"), not a due-date. Confirmed structurally incapable of answering "when is the next service due" — it has no concept of an interval or a future date, by design. Left completely untouched; this phase adds a sibling field, never modifies this formula.
+- **How the Recommendation Engine uses maintenance:** only indirectly, via `vehicle.health.overall` (wired in Phase 1, §14) — it never reads `maintenanceRecords` or intervals directly. No change needed or made.
+- **Whether the Prediction Engine already exposes reusable functions:** `js/engines/prediction-engine.js#predictVehicle()` has a `maintenanceRisk` signal, which reads as promising at first glance but is a fundamentally different, PROBABILISTIC computation — a weighted blend of operational health, over-utilization, asset age, and current status (`inMaintenance ? 100 : …`), answering "how likely is an unscheduled failure soon?" It never reads `recommendedIntervalKm`/`recommendedIntervalDays` or a record's `odometer`/`date` at all (verified by reading `normVehicles()`'s input projection — it doesn't even carry those fields through). Reusing or extending it for a deterministic "next scheduled service is due at km X / date Y" would have conflated two orthogonal questions (scheduled cadence vs. unscheduled risk) inside one signal — rejected. The Prediction Engine was correctly left untouched; this phase's service is the deterministic counterpart the brief asked for, not a rename of the probabilistic one.
+- **Dashboard ownership:** `fleet-dashboard.js` is a fixed 5-KPI strip whose own docstring states it "answers only the five questions" an asset manager opens the page with — confirmed this is an intentional constraint (not an oversight) from its Sprint-2 migration history, so adding a 6th tile would be a **Dashboard architecture** change, explicitly on the do-not-modify list. The inventory card (`buildVehicleCard()`, `app.js`), rendered directly below that strip on the same Vehicle Management page, was identified instead as the correct "dashboard signal" surface — it already has a maintenance-context pill in its existing badge strip.
+
+**Conclusion:** every piece of data this phase needed already existed and was already correctly derived one layer down (`maintenanceTimeline`, `recommendedIntervalKm/Days`, `odometer`) — the only missing piece was a single deterministic function that reads them and projects forward. No engine needed modification; a new, narrow, single-purpose service was the correct and smallest fix.
+
+### Projection Strategy
+
+New PURE file `js/services/maintenance-projection-service.js` — the ONE owner of every due-date/due-distance number in the app, per "Projection belongs to one owner only":
+
+1. **Input reuse, not re-derivation.** Takes `maintenanceTimeline` — the SAME `computeMaintenanceTimeline()` output `vehicle-asset-service.js` already computes for the drawer's history section — plus the vehicle's raw `odometer` and `now`. No second read of `v.maintenanceRecords`, no re-normalization.
+2. **Per-category grouping.** Since the timeline is newest-first, the first `status === 'completed'` record seen per `category` is that category's latest baseline (a `planned`/`in-progress` record can never seed a projection — there is no completed service yet to project forward from).
+3. **Interval gate.** A category only projects when it actually carries a schedule (`recommendedIntervalKm > 0` OR `recommendedIntervalDays > 0`). Purely corrective categories (brake, engine, transmission, suspension, electrical, body-repair, other — all `0km/0d` in the registry) correctly never produce a projection; you cannot schedule a brake failure.
+4. **Two independent signals, worse wins.** `nextDueOdometer = lastOdometer + intervalKm` (only when both are known) and `nextDueDate = lastDate + intervalDays` are computed independently — a tire (km-only interval) and an AC service (days-only interval) are projected correctly without forcing a false signal on the missing axis. `remainingKm`/`remainingDays` classify into `overdue` (≤0) / `due_soon` (within `MAINTENANCE_DUE_SOON_KM`=1500, new constant in `maintenance-config.js` — or within the EXISTING `DUE_SOON_DAYS`=30 from `vehicle-asset-config.js`, reused not duplicated) / `on_track`; the overall category status is the WORSE of the two available signals.
+5. **Priority, not a new severity scale.** `priority` (critical/high/medium/low/none) escalates `status` using the record's own already-derived `impact` (minor/medium/major/critical, from `maintenance-config.js`) — no new severity vocabulary invented.
+6. **Headline + list.** `computeVehicleMaintenanceProjection()` returns `{ headline, items }` — `items` is every projectable category sorted most-urgent-first (status rank, then impact, then soonest remaining), `headline` is `items[0]` or a `no_data` placeholder (zero fabricated numbers) when a vehicle has no completed maintenance in any scheduled category yet.
+7. **Single integration point.** `vehicle-asset-service.js` is the ONLY file that imports the new service (verified by a source-presence test) — it calls `computeVehicleMaintenanceProjection(maintenanceTimeline, v.odometer, now)` right after computing `maintenanceTimeline`, and exposes the result as one new field, `maintenanceProjection`, on `normalizeVehicleAsset()`'s return object, alongside the existing `maintenance`/`maintenanceSummary`/`maintenanceTimeline` fields (the exact v1.18.1 pattern — not a new one).
+
+### Surfacing (render-only)
+
+- **Drawer** (`vehicle-detail-drawer.js`): `maintenanceSection()` now prepends a new `maintenanceProjectionBlock()` — a "Proyeksi Perawatan" section with a status badge, category/next-due-date/next-due-odometer/remaining-time-or-distance metrics, a human-readable reason string (e.g. "Servis terakhir: Oil Change pada 2026-06-01 · 50.000 km. Interval 10.000 km / 180 hari."), and a "Rekomendasi Servis Berikutnya" list of up to 5 other categories. Built entirely from the existing Executive UI Kit primitives (`execDrawerSection`/`execDrawerMetrics`/`execDrawerTimeline`/`ExecutiveStatusPill`) — zero new drawer grammar. The drawer imports nothing from the projection service (verified by test) — it only reads `asset.maintenanceProjection`.
+- **Inventory card** (`app.js#buildVehicleCard`): the existing status/tax/STNK/insurance/maint pill strip's maintenance pill now reads the projection headline — `overdue` → "Servis Terlambat" (danger), `due_soon` → "Servis Segera" (warn) — falling back to the pre-existing "Terawat"/"Belum ada" behavior when there is no actionable projection. A vehicle physically `status === 'maintenance'` still wins over any projection (a known current state beats a projected future one). This satisfies the brief's "dashboard signal" requirement without touching `fleet-dashboard.js`'s protected 5-KPI architecture.
+- **No scheduled delivery.** No Cloud Function, push, or Telegram trigger was added — that remains roadmap Phase 7, correctly sequenced next now that a real due-date exists to alert on.
+
+### A bug caught before shipping
+
+While writing the "missing record odometer" test case, discovered that the service's `num()` coercion helper used bare `Number(v)` — and `Number(null) === 0`. A maintenance record with no recorded odometer (legitimate and common — not every workshop visit logs one) was silently treated as odometer `0` instead of "no data," fabricating a false overdue projection computed from a bogus zero baseline (`nextDueOdometer = 0 + 10000 = 10000`, wildly behind any real vehicle's actual odometer). Fixed by explicitly treating `null`/`undefined`/`''` as "no data" before the `Number()` coercion. This is exactly the class of silent-fabrication bug the brief's "deterministic, explainable, never invent business rules" principle exists to prevent — caught by a test before it ever reached a real vehicle record, not discovered in production.
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `js/config/maintenance-config.js` | New `MAINTENANCE_DUE_SOON_KM` constant (1500), mirroring `vehicle-asset-config.js`'s `DUE_SOON_DAYS` pattern. |
+| `js/services/maintenance-projection-service.js` (new) | The projection engine: `projectCategoryDue`, `computeMaintenanceProjections`, `computeVehicleMaintenanceProjection`. PURE, Node-testable. |
+| `js/services/vehicle-asset-service.js` | Import + one new `maintenanceProjection` field on `normalizeVehicleAsset()`'s return object. `computeVehicleHealth()` untouched. |
+| `js/components/vehicle-detail-drawer.js` | New `maintenanceProjectionBlock()` prepended to `maintenanceSection()`; two small formatting helpers (`fmtKm`, `projectionCountdown`). |
+| `js/app.js` | `buildVehicleCard()`'s `maint` pill now reads `asset.maintenanceProjection.headline`. |
+| `js/config.js` | `APP_VERSION` 1.29.16 → 1.29.17, `RELEASE_NAME`, new `VERSION_HISTORY` entry. |
+| `docs/VEHICLE_CORE_INVESTIGATION_AND_ROADMAP.md` | §13's Phase 6 line marked done; this section. |
+| `scripts/maintenance-projection-check.mjs` (new) | 48 real functional cases against the actual service. |
+| `service-worker.js`, `version.json`, `index.html` | Mechanically re-stamped by `scripts/sync-version.mjs` (cache-bust only). |
+
+No other file was opened for editing — `js/vehicles-store.js`, `js/services/vehicle-recommendation-engine.js`, `js/services/dispatch-scoring-engine.js`, `js/engines/prediction-engine.js`, `js/services/prediction-service.js`, `js/prediction/explainability.js`, `js/recommendation/*`, `js/simulation/*`, `js/components/fleet-dashboard.js`, `js/services/maintenance-service.js`, and `js/config/vehicle-asset-config.js` (read for its `DUE_SOON_DAYS` constant, not modified) are byte-identical to before this phase.
+
+### Testing Summary
+
+New `scripts/maintenance-projection-check.mjs` (48 cases, real functional tests against the actual service — not string-presence, addressing the exact weakness §10/§7's own "100% string-presence, ZERO value-level assertions" finding about `maintenance-intelligence-check.mjs` called out for the ORIGINAL maintenance feature): per-category math for km+date, date-only (air-conditioning), and km-only (tire-replacement) interval categories; confirms a purely-corrective category (brake) never projects; `due_soon` boundary exactness on both the km and day signal independently; priority escalation by impact severity; multi-category headline ordering (overdue-first, tie-broken by impact then soonest); confirms the projection baselines off the NEWEST completed record per category, never an older one; confirms a `planned` (non-completed) record is never used as a baseline; the `no_data` fallback produces zero fabricated numbers; end-to-end `normalizeVehicleAsset()` wiring (including a spot-check that `health.maintenance` — the Health Engine's own sub-score — is untouched); UI wiring assertions (drawer and card read the new field; `vehicle-asset-service.js` is confirmed the sole importer of the new service); result immutability (deep-frozen, matching every other engine in this codebase).
+
+### Regression Summary
+
+| Suite | Result |
+|---|---|
+| `maintenance-projection-check.mjs` (new) | 48/48 |
+| `vehicle-asset-check.mjs` (confirms Health Engine formula/weights untouched) | 58/58 |
+| `vehicle-recommendation-check.mjs` | 71/71 |
+| `dispatch-scoring-check.mjs` | 33/33 |
+| `fleet-recommendation-check.mjs` (architectural-purity: never re-derives maintenance) | PASS |
+| `prediction-engine-check.mjs` / `-validator-` / `-service-` / `-provider-check.mjs` (confirms the Prediction Engine's independent `maintenanceRisk` was not touched) | PASS ×4 |
+| `vehicle-management-presentation-check.mjs` | 47/47 |
+| `vehicles-store-check.mjs` (confirms Vehicle Store untouched) | 49/49 |
+| `smoke-boot.mjs` | 0 fatal errors, PASS |
+
+`maintenance-intelligence-check.mjs` retains its known pre-existing 6 failures (stale release-marker/UI-string assertions dating to the original v1.18.1 release — `APP_VERSION 1.18.1` check, a `renderMaintenance` function-name check for a function later renamed `maintenanceSection`, and 3 Fleet Dashboard UI-string checks predating the Executive UI Kit migration). Reconfirmed byte-identical via `git stash` before touching anything, consistent with every prior Vehicle Core phase's documented handling of this same suite.
+
+### Performance Impact
+
+Zero new Firebase reads — the projection reuses the `maintenanceTimeline` `normalizeVehicleAsset()` already computes on every render; one additional `O(categories)` pass (at most 13, the size of `MAINTENANCE_CATEGORY_REGISTRY`) over data already resident in memory, not a new I/O or a new cache. Zero change to `fleet-dashboard.js`'s render cost (untouched). The inventory card's pill logic gained one property read (`asset.maintenanceProjection.headline.status`) — immaterial.
+
+### Backward Compatibility / Migration
+
+No migration, no schema change. Every change is additive: one new config constant, one new field on an already-mutable normalized-asset object, one new drawer section, one pill-text branch. A vehicle with zero maintenance history (the common case for a newly registered vehicle) gets a safe `no_data` headline — verified to never throw and never fabricate a number. Existing `maintenanceRecords` continue normalizing exactly as before; `recommendedIntervalKm`/`recommendedIntervalDays` were already being written to every normalized record since v1.18.1, so no historical record needed backfilling for this phase to work correctly the first time it runs.
+
+### Future Reminder Integration
+
+No reminder engine exists yet (§12/§13 Phase 7, correctly sequenced last — "only after Phase 6 gives a real due-date to alert on"). This phase makes `maintenanceProjection.headline.status`/`nextDueDate`/`nextDueOdometer` real, deterministic, always-current due-signals — the same shape `stnkExpiry`/`insuranceExpiry` already have via `deriveDocStatus`. When Phase 7 ships, it can extend `functions/src/scheduled/` with a Cloud Scheduler job that alerts on a transition into `due_soon`/`overdue`, reusing the exact same notification channels already wired for assignment reminders, with zero maintenance-specific due-date logic to build — it already exists here.
 
 ---
 

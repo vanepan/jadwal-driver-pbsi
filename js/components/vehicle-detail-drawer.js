@@ -139,6 +139,21 @@ function fmtDate(s) {
   return Number.isNaN(d.getTime()) ? String(s) : d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+/** Phase 6 (v1.29.17) — km formatter for the Maintenance Projection block. */
+function fmtKm(n) {
+  const num = Number(n);
+  return Number.isFinite(num) ? `${num.toLocaleString('id-ID')} km` : '—';
+}
+
+/** Human countdown for the projection's remainingDays/remainingKm — same
+ *  overdue/today/N-left phrasing as renewalCountdown, generalized to a unit. */
+function projectionCountdown(remaining, unit) {
+  if (remaining == null) return null;
+  if (remaining < 0) return `Terlambat ${Math.abs(remaining).toLocaleString('id-ID')} ${unit}`;
+  if (remaining === 0) return `Jatuh tempo sekarang`;
+  return `${remaining.toLocaleString('id-ID')} ${unit} lagi`;
+}
+
 /** Build a metrics item; empty values collapse to '—' (null) like the old kv. */
 function m(label, value, tone) {
   const v = (value === '' || value == null) ? null : value;
@@ -288,6 +303,48 @@ function insuranceSection(a) {
   return execDrawerSection({ title: 'Insurance', content: badges + metrics + histTitle + tl });
 }
 
+const STATUS_LABEL_ID = { overdue: 'Terlambat', due_soon: 'Segera', on_track: 'Terjadwal', unknown: 'Tdk diketahui' };
+
+/** Maintenance Projection (Phase 6, v1.29.17) — the deterministic headline
+ *  ("next service due") plus a short "recommended next service" list, both
+ *  computed by maintenance-projection-service.js and passed through on the
+ *  normalized asset (a.maintenanceProjection). This section RENDERS ONLY —
+ *  no due-date/remaining-km/priority arithmetic happens here. */
+function maintenanceProjectionBlock(a) {
+  const proj = a.maintenanceProjection;
+  if (!proj || !proj.headline) return '';
+  const h = proj.headline;
+
+  const badges = badgeRow([
+    ExecutiveStatusPill(`Proyeksi: ${h.label}`, tone3(h.tone, 'neutral')),
+  ]);
+  const countdown = [
+    projectionCountdown(h.remainingDays, 'hari'),
+    projectionCountdown(h.remainingKm, 'km'),
+  ].filter(Boolean).join(' · ') || '—';
+  const metrics = execDrawerMetrics([
+    m('Kategori', h.categoryLabel || '—'),
+    m('Perkiraan Tgl Servis', h.nextDueDate ? fmtDate(h.nextDueDate) : '—'),
+    m('Perkiraan Odometer', h.nextDueOdometer != null ? fmtKm(h.nextDueOdometer) : '—'),
+    m('Sisa Waktu/Jarak', countdown, h.tone),
+  ]);
+  const reason = h.reason
+    ? `<p style="font-size:13px;color:var(--muted)">${esc(h.reason)}</p>` : '';
+
+  const others = (proj.items || []).slice(0, 5);
+  const list = others.length
+    ? execDrawerTimeline(others.map(it => ({
+        when: it.nextDueDate ? fmtDate(it.nextDueDate) : (it.nextDueOdometer != null ? fmtKm(it.nextDueOdometer) : '—'),
+        title: it.categoryLabel,
+        desc: [STATUS_LABEL_ID[it.status] || it.label, it.reason].filter(Boolean).join(' · '),
+        tone: tone3(it.tone, 'info'),
+      })))
+    : '';
+  const listTitle = others.length ? '<div class="exec-drawer-sec__h">Rekomendasi Servis Berikutnya</div>' : '';
+
+  return execDrawerSection({ title: 'Proyeksi Perawatan', content: badges + metrics + reason + listTitle + list });
+}
+
 function maintenanceSection(a) {
   const s = a.maintenanceSummary || {};
   const metrics = execDrawerMetrics([
@@ -304,7 +361,7 @@ function maintenanceSection(a) {
         tone: 'info',
       })))
     : '<p style="font-size:13px;color:var(--muted)">Belum ada catatan perawatan.</p>';
-  return execDrawerSection({ title: 'Maintenance', content: metrics + tl });
+  return maintenanceProjectionBlock(a) + execDrawerSection({ title: 'Maintenance', content: metrics + tl });
 }
 
 /* ── Explainability Drawer (v1.19.6, optional) ─────────────────────────────────

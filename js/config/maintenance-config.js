@@ -51,6 +51,11 @@ export const MAINTENANCE_IMPACTS = Object.freeze([
   'critical'
 ]);
 
+// Maintenance Projection (v1.29.17) — distance "due soon" window, in km,
+// mirroring vehicle-asset-config.js's DUE_SOON_DAYS=30 (the date-side window
+// reused as-is by the projection service, not duplicated here).
+export const MAINTENANCE_DUE_SOON_KM = 1500;
+
 /* ── Category Registry ────────────────────────────────────────────────── */
 
 export const MAINTENANCE_CATEGORY_REGISTRY = Object.freeze([
