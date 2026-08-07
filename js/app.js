@@ -6440,6 +6440,41 @@ function buildVehicleCard(asset, lastActivity) {
     </article>`;
 }
 
+// v1.29.15 — Vehicle Inventory's overview strip (#v2AdminOverviewRow). Reuses
+// the SAME normalized fleet model the Fleet Dashboard KPI strip (#v2FleetDashboard,
+// rendered right below it) is built from — status is read via `asset.status`
+// (vehicle-asset-service's resolveVehicleStatus), never the raw `vehicle.active`
+// field. Previously this strip recomputed active/inactive from raw fields
+// independently, which could disagree with the Fleet Dashboard for a vehicle
+// whose `status` is 'maintenance' but `active` was never explicitly set false.
+// "Total Kendaraan" is intentionally NOT repeated here — the Fleet Dashboard's
+// "Armada" KPI is its one owner (was a literal duplicate stacked right above it).
+function renderVehicleOverviewRow(model) {
+  const overviewRow = document.getElementById('v2AdminOverviewRow');
+  if (!overviewRow) return;
+  const vehicles = (model && model.vehicles) || [];
+  const nonArchived = vehicles.filter(v => !v.archived);
+  const activeCount = nonArchived.filter(v => v.status === 'active').length;
+  const inactiveCount = nonArchived.length - activeCount;
+  const archivedCount = vehicles.length - nonArchived.length;
+  overviewRow.innerHTML = `
+    <div class="v2-admin-overview-cards">
+      <div class="v2-admin-overview-card">
+        <span class="v2-admin-overview-value">${activeCount}</span>
+        <span class="v2-admin-overview-label">Kendaraan Aktif</span>
+      </div>
+      <div class="v2-admin-overview-card">
+        <span class="v2-admin-overview-value">${inactiveCount}</span>
+        <span class="v2-admin-overview-label">Kendaraan Nonaktif</span>
+      </div>
+      ${archivedCount > 0 ? `<div class="v2-admin-overview-card v2-admin-overview-card--archived">
+        <span class="v2-admin-overview-value">${archivedCount}</span>
+        <span class="v2-admin-overview-label">Diarsipkan</span>
+      </div>` : ''}
+    </div>
+  `;
+}
+
 function renderV2AdminVehicles() {
   const list = document.getElementById('v2AdminVehicleList');
   if (!list) return;
@@ -6459,8 +6494,11 @@ function renderV2AdminVehicles() {
     const dashModel = computeFleetAssetModel({ vehicles: allVehicles });
     if (dashHost) dashHost.innerHTML = renderFleetDashboard(dashModel);
 
-    // Full normalized model (incl. archived) — drives the cards + detail drawer.
+    // Full normalized model (incl. archived) — drives the cards + detail drawer
+    // AND the overview strip below (v1.29.15 — same model, single computation,
+    // so the two can never disagree; see renderVehicleOverviewRow).
     _fleetAssetModel = computeFleetAssetModel({ vehicles: allVehicles, includeArchived: true });
+    renderVehicleOverviewRow(_fleetAssetModel);
   } catch (err) {
     console.error('[VehicleInventory] render failed', err);
     list.innerHTML = '<div class="v2-admin-empty">Gagal memuat inventaris kendaraan. Data armada mungkin tidak valid. Muat ulang halaman; jika berlanjut, hubungi admin sistem.</div>';
@@ -8046,12 +8084,14 @@ let _fnMountSimulationPanel = null;
  *  Inventory, enriched with the certified per-vehicle projection when available. */
 function openVehiclePredictionDetail(id) {
   if (!id) return;
-  // The prediction view can be opened before the inventory ever renders, so make
-  // sure the normalized fleet model (the drawer's data source) exists.
-  if (!_fleetAssetModel) {
-    try { _fleetAssetModel = computeFleetAssetModel({ vehicles: getVehicles(), includeArchived: true }); }
-    catch (err) { console.warn('[VehiclePrediction] fleet model unavailable', err); return; }
-  }
+  // Recompute unconditionally (not just when missing) — while the Prediction
+  // sub-view is active, nothing else refreshes `_fleetAssetModel` on a vehicle
+  // change (only Inventory's render + the STNK-renewal flow do), so a stale
+  // cached instance could otherwise hand the drawer's health/tax/status badges
+  // out-of-date data alongside a freshly certified prediction for the same
+  // vehicle. The recompute is cheap and happens only on this user action.
+  try { _fleetAssetModel = computeFleetAssetModel({ vehicles: getVehicles(), includeArchived: true }); }
+  catch (err) { console.warn('[VehiclePrediction] fleet model unavailable', err); if (!_fleetAssetModel) return; }
   const asset = findVehicleAsset(_fleetAssetModel, id);
   if (!asset) return;
   // v1.19.8 — when a scenario simulation is active, hand the drawer the current
@@ -8156,36 +8196,12 @@ function applyVehicleView(overviewRow) {
     return;
   }
 
-  // Inventory (default) view.
+  // Inventory (default) view. The overview strip is now owned by
+  // renderV2AdminVehicles() → renderVehicleOverviewRow(), which reuses the SAME
+  // fleet asset model the Fleet Dashboard KPI strip below it renders from —
+  // see that function for why (v1.29.15 Dashboard Consistency).
   if (predictionView) predictionView.style.display = 'none';
   if (inventoryView)  inventoryView.style.display  = '';
-  if (overviewRow) {
-    const allVehicles   = getVehicles();
-    const nonArchived   = allVehicles.filter(v => v.archived !== true);
-    const activeCount   = nonArchived.filter(v => v.active !== false).length;
-    const inactiveCount = nonArchived.length - activeCount;
-    const archivedCount = allVehicles.length - nonArchived.length;
-    overviewRow.innerHTML = `
-      <div class="v2-admin-overview-cards">
-        <div class="v2-admin-overview-card">
-          <span class="v2-admin-overview-value">${nonArchived.length}</span>
-          <span class="v2-admin-overview-label">Total Kendaraan</span>
-        </div>
-        <div class="v2-admin-overview-card">
-          <span class="v2-admin-overview-value">${activeCount}</span>
-          <span class="v2-admin-overview-label">Kendaraan Aktif</span>
-        </div>
-        <div class="v2-admin-overview-card">
-          <span class="v2-admin-overview-value">${inactiveCount}</span>
-          <span class="v2-admin-overview-label">Kendaraan Nonaktif</span>
-        </div>
-        ${archivedCount > 0 ? `<div class="v2-admin-overview-card v2-admin-overview-card--archived">
-          <span class="v2-admin-overview-value">${archivedCount}</span>
-          <span class="v2-admin-overview-label">Diarsipkan</span>
-        </div>` : ''}
-      </div>
-    `;
-  }
   const searchEl = document.getElementById('v2AdminVehicleSearch');
   if (searchEl) searchEl.value = vehicleSearch;
   const filterEl = document.getElementById('v2AdminVehicleStatusFilter');

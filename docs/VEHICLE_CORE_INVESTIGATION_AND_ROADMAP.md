@@ -452,4 +452,126 @@ No new Firebase calls — the same one write per writer as before. `applyVehicle
 
 ---
 
+## 16. Phase 4 Implementation Report — Dashboard Consistency (v1.29.15)
+
+**Scope discipline:** Phases 1–3 closed Findings A, C, D and E. This is the last Vehicle Core foundation phase, and its own brief was explicit: no new business features, no redesign, no new analytics — investigate every dashboard widget's calculation ownership first, then fix only what disagrees or duplicates. Two files hold genuine behavioral changes (`js/app.js`, `js/components/vehicle-prediction-dashboard.js`); everything else (Vehicle Store, Recommendation Engine, Dispatch Engine, Prediction Engine, Compliance, Maintenance, Health Engine, Vehicle Drawer, Firebase schema) is byte-identical to before this phase, per the brief's explicit do-not-modify list.
+
+### Architecture Report
+
+The Vehicle Management dashboard is two sibling sub-views inside one workspace section (`#v2AdminSectionVehicles`, toggled by `applyVehicleView()` in `js/app.js`):
+
+```
+Vehicle Management
+├── Inventaris (default)                          ├── Prediksi
+│   #v2VehicleInventoryView                        │   #v2VehiclePredictionView
+│   ├── #v2FleetDashboard                          │   renderVehiclePredictionSection()
+│   │     renderFleetDashboard(dashModel)          │     → renderVehiclePredictionDashboard(input)
+│   │     dashModel = computeFleetAssetModel(...)  │       (js/components/vehicle-prediction-dashboard.js)
+│   │     (js/components/fleet-dashboard.js)       │     data source: getPrediction() — the certified
+│   ├── #v2AdminVehicleList                        │     Prediction Service, called EXACTLY ONCE
+│   │     buildVehicleCard(asset) per card          │   drawer: openVehiclePredictionDetail(id)
+│   │     (js/app.js)                               │     → same openVehicleDetailDrawer, + certified
+│   └── drawer: openDetail(id)                      │       per-vehicle prediction + active simulation
+│         → openVehicleDetailDrawer(asset, ...)     │
+│           (js/components/vehicle-detail-drawer.js,│
+│            DO NOT MODIFY — off-limits this phase) │
+└── #v2AdminOverviewRow (shared strip, ABOVE both tabs)
+      Inventory: renderVehicleOverviewRow(_fleetAssetModel) — NEW this phase, called from
+                 renderV2AdminVehicles() right after _fleetAssetModel is computed.
+      Prediction: cleared (`overviewRow.innerHTML = ''`) — "the dashboard carries its own hero",
+                  the SAME convention every other KPI-strip-bearing admin section already follows
+                  (Dispatch Analytics, Recommendation Accuracy, Wellness, Driver Prediction,
+                  Executive, Engineering Analytics). Inventory was the one exception before this fix.
+```
+
+Both sub-views share exactly one canonical per-vehicle model: `computeFleetAssetModel()` → `normalizeVehicleAsset()` (`js/services/vehicle-asset-service.js`), which owns health/tax/STNK/insurance/status/maintenance-summary for the Inventory side, and exactly one canonical per-vehicle projection: `getPrediction()` (`js/services/prediction-service.js`) for the Prediction side. `js/prediction/explainability.js` sits between the two as a PURE arrangement layer over the certified projection (confidence wording, dominant-risk selection, fleet heatmap, executive insights) — its own docstring states its reason for existing is so "the drawer, dashboard and this module never disagree," which is exactly the property Finding 2 below had quietly broken.
+
+### Consistency Report
+
+| # | Widget / value | Claimed owner | Actual owner found | Verdict |
+|---|---|---|---|---|
+| 1 | Fleet Dashboard KPI strip (Armada/Perlu Perhatian/Kesehatan/Pajak/Perawatan) | `computeFleetAssetModel()` | Confirmed — `fleet-dashboard.js` computes nothing itself | ✅ Already correct |
+| 2 | Vehicle asset cards (health badge, status/tax/STNK/insurance/maintenance pills) | `normalizeVehicleAsset()` | Confirmed — `buildVehicleCard()` only reads asset fields | ✅ Already correct |
+| 3 | Vehicle Inventory overview strip (Total/Aktif/Nonaktif/Diarsipkan) | *(none declared — ad hoc)* | Raw `v.active !== false` field, recomputed independently of #1 | ❌ **Fixed** — see Finding 1 |
+| 4 | Prediction dashboard's dominant-risk selection (drives Status banner, KPI tones, Risk Ranking sort, timeline severity) | Should be `explainability.js#dominantRisk` | A byte-identical LOCAL fork inside `vehicle-prediction-dashboard.js` | ❌ **Fixed** — see Finding 2 |
+| 5 | Prediction dashboard's confidence word/tone (Tinggi/Sedang/Rendah) | Should be `explainability.js#confWord`/`confTone` | A local copy inside `vehicle-prediction-dashboard.js` (a THIRD copy also exists in `vehicle-detail-drawer.js`, out of scope, not touched) | ❌ **Fixed** (dashboard copy only) |
+| 6 | Prediction-tab drawer's Overview/health/tax/STNK/insurance fields | `_fleetAssetModel` (same as Inventory cards) | Correct field source, but a STALE cached model instance while the user stays on the Prediction tab across a vehicle edit | ❌ **Fixed** — see Finding 3 |
+| 7 | Fleet Heatmap, Executive Insights, Recommendation Board, Priority Timeline, Decision Support, Scenario Simulation panel | Certified model via `explainability.js` / `recommendation-summary.js` / `scenario-engine.js` | Confirmed — all PURE arrangements, zero local computation, verified by `fleet-recommendation-check.mjs` / `scenario-simulation-check.mjs`'s own architectural-purity assertions | ✅ Already correct |
+| 8 | Prediction dashboard's percentage→tone banding (`readinessLabel`, `healthTone`, `availTone`) | Should be `unified-scoring.js` (`scoreBand`/`scoreColor`) | Two different ad hoc local threshold schemes, neither matching the platform's `COLOR_BANDS` | ⚠️ **Documented, not fixed** — see "Deliberately not fixed" below |
+
+### Ownership Report (single owner per metric, post-fix)
+
+| Metric | Sole owner (function, file) |
+|---|---|
+| Per-vehicle health / tax / STNK / insurance / status / maintenance summary | `normalizeVehicleAsset()`, `js/services/vehicle-asset-service.js` |
+| Fleet-wide totals, health average, tax-due-soon, maintenance count (Fleet Dashboard KPI strip) | `computeFleetAssetModel().dashboard`, same file |
+| Vehicle Inventory overview strip counts (Aktif/Nonaktif/Diarsipkan) | **NEW**: `renderVehicleOverviewRow()`, `js/app.js` — reads the SAME `_fleetAssetModel` the KPI strip renders from; "Total Kendaraan" has no separate tile anymore, its one owner is the Fleet Dashboard's "Armada" KPI |
+| Per-vehicle prediction (maintenance/administrative/availability risk) | `getPrediction()`, `js/services/prediction-service.js` |
+| Which risk is "dominant" for a vehicle's headline | `dominantRisk()`, `js/prediction/explainability.js` — now the dashboard's only copy too |
+| Confidence word/tone | `confWord()`/`confTone()`, `js/prediction/explainability.js` — now the dashboard's only copy too |
+| Fleet Heatmap / Executive Insights | `fleetHeatmap()`/`executiveInsights()`, same file |
+| Recommendation Board / Priority Timeline / Decision Support | `js/recommendation/*` (unchanged, verified never re-predicts) |
+| Scenario Simulation | `js/simulation/scenario-engine.js` (unchanged, verified forecasts only through the Prediction Service) |
+
+### Findings fixed
+
+**Finding 1 — duplicated/divergent vehicle-count tiles (closes the original investigation's roadmap item 4).** `applyVehicleView()` (`js/app.js`) independently recomputed "Total/Aktif/Nonaktif/Diarsipkan Kendaraan" for `#v2AdminOverviewRow` from `allVehicles.filter(v => v.active !== false)` — the raw legacy field — stacked directly above `#v2FleetDashboard`'s own "Armada" KPI in the SAME view, which is computed via `computeFleetAssetModel()`'s canonical `resolveVehicleStatus()` (checks `v.status` first, falls back to `v.active` only when `status` isn't a recognized value). A vehicle with `status: 'maintenance'` and no explicit `active: false` would count as "Aktif" in the overview strip while correctly excluded from the Fleet Dashboard's active tally directly below it — a real, on-page divergence, not just a cosmetic double-count. Fix: new `renderVehicleOverviewRow(model)` in `js/app.js`, called from `renderV2AdminVehicles()` immediately after `_fleetAssetModel = computeFleetAssetModel(...)` — one computation, reused by both strips. "Total Kendaraan" is removed (the Fleet Dashboard's "Armada" tile is now its sole owner); Aktif/Nonaktif/Diarsipkan are kept (genuinely distinct information the Fleet Dashboard doesn't surface) but now read `asset.status` instead of the raw field. The old block was deleted from `applyVehicleView()`'s inventory branch, which now matches the convention every OTHER KPI-strip-bearing admin section already follows (clear `#v2AdminOverviewRow` and let the section's own hero own it) — Vehicle Inventory was the one inconsistent case.
+
+**Finding 2 — forked derivations in `vehicle-prediction-dashboard.js`.** The Prediction dashboard defined a local `dominantRisk(v)` byte-identical in logic to `js/prediction/explainability.js`'s exported `dominantRisk(projection)` — whose own docstring states it exists precisely so "the drawer, dashboard and this module never disagree on which risk explains the headline." The dashboard already imported OTHER explainability exports (`fleetHeatmap`, `executiveInsights`) but had silently forked this one instead, meaning the Fleet Heatmap (driven by the canonical copy) and the Status banner / KPI tones / Risk Ranking sort / timeline severity (driven by the local fork) were two independently-maintained code paths on the same page — currently in agreement only because no one had edited either copy since. The dashboard also carried a local `CONF_WORD`/`CONF_TONE` map duplicating the same file's `confWord()`/`confTone()` exports (a third copy already exists in `vehicle-detail-drawer.js` — confirmed by cross-check, left untouched, out of this phase's scope). Fix: both local implementations deleted; `vehicle-prediction-dashboard.js` now imports `dominantRisk, confWord, confTone` from `../prediction/explainability.js` alongside its existing import. Zero behavioral change today — the two implementations produced identical output — but the class of future silent-drift bug is closed.
+
+**Finding 3 — stale `_fleetAssetModel` behind the Prediction-tab drawer.** `_fleetAssetModel` (a module-level cache in `js/app.js`) is only unconditionally refreshed by `renderV2AdminVehicles()` (the Inventory render path) and after an STNK renewal. While the user stays on the Prediction tab, `registerVehiclesChangeListener`'s realtime callback re-renders the Prediction section — refreshing the certified prediction data (`_vehiclePredictionById`) — but never touches `_fleetAssetModel`. `openVehiclePredictionDetail()` only recomputed it `if (!_fleetAssetModel)`, i.e. never again once set. So a vehicle edited (toggled/archived/restored/edited) while the user stayed on the Prediction tab could leave a reopened drawer showing a freshly certified prediction next to stale Overview/health/tax/STNK/insurance fields for the same vehicle — not a field-level bug (the drawer reads the identical normalized-asset fields the card does) but a stale-instance bug in what `app.js` hands it. Fix: `openVehiclePredictionDetail()` now recomputes `_fleetAssetModel` unconditionally, on demand, immediately before opening the drawer — a single cheap normalization pass triggered only by the user's click, not a per-render-tick cost, matching the existing on-demand-recompute pattern already used after STNK renewal.
+
+### Deliberately not fixed (documented, per "smallest correct change wins")
+
+`vehicle-prediction-dashboard.js`'s `readinessLabel()` (5-tier: 85/70/55/35) and `healthTone`/`availTone` (a *different* 2-tier: 100%/60%) percentage-banding thresholds are genuinely inconsistent with the platform's mandated `unified-scoring.js` (`COLOR_BANDS`: 90/70/50) — an ownership violation by this phase's own definition. Not fixed this phase because: (a) it's a governance/consistency-of-semantics issue, not an observed numeric divergence — nothing else on the page computes "Fleet Readiness %" to disagree with; (b) `SCORE_BANDS` is calibrated for 0–100 asset health scores, not "ratio of vehicles in state X" percentages — forcing reuse may not even be the semantically correct fix without a deliberate design decision; (c) changing the thresholds would visibly recolor existing KPI cards for real fleet data, which is a behavior change beyond this phase's explicit "no redesign, only consistency" mandate. Recorded here as a candidate for a dedicated future phase.
+
+The two back-to-back `computeFleetAssetModel()` calls in `renderV2AdminVehicles()` (one non-archived for the KPI strip, one `includeArchived:true` for cards/drawer/overview-strip) were also investigated: confirmed redundant CPU work but not a correctness risk (the function is pure/deterministic, so the two calls cannot disagree) — left as a documented future micro-optimization rather than restructured now.
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `js/app.js` | New `renderVehicleOverviewRow(model)`, called from `renderV2AdminVehicles()`. Deleted the duplicate raw-field count block from `applyVehicleView()`'s inventory branch (now only toggles visibility + syncs filter inputs). `openVehiclePredictionDetail()`'s `_fleetAssetModel` guard changed from "recompute if missing" to "recompute unconditionally on demand." |
+| `js/components/vehicle-prediction-dashboard.js` | Deleted local `dominantRisk()`, `CONF_WORD`, `CONF_TONE`, local `confWord()`; now imports `dominantRisk, confWord, confTone` from `../prediction/explainability.js`. Two call sites updated from `CONF_TONE[lvl] \|\| 'warn'` to `confTone(lvl)`. |
+| `js/config.js` | `APP_VERSION` 1.29.14 → 1.29.15, `RELEASE_NAME`, new `VERSION_HISTORY` entry. |
+| `docs/VEHICLE_CORE_INVESTIGATION_AND_ROADMAP.md` | This section. |
+| `service-worker.js`, `version.json`, `index.html` | Mechanically re-stamped by `scripts/sync-version.mjs` (cache-bust only). |
+
+No other file was opened for editing — `js/services/vehicle-asset-service.js`, `js/services/vehicle-recommendation-engine.js`, `js/services/dispatch-scoring-engine.js`, `js/services/prediction-service.js`, `js/engines/prediction-engine.js`, `js/prediction/explainability.js` (read, not written), `js/recommendation/*`, `js/simulation/*`, `js/components/vehicle-detail-drawer.js`, `js/components/fleet-dashboard.js`, `js/vehicles-store.js`, and `js/services/maintenance-service.js` are byte-identical to before this phase.
+
+### Testing Summary
+
+No existing suite asserted on the removed "Total Kendaraan" tile's text or structure (grepped `scripts/*.mjs` for it — zero hits), so no test needed updating for Finding 1; `vehicle-management-presentation-check.mjs`'s card/drawer/import-integrity assertions cover the surrounding surface and stayed green. No suite asserted on `vehicle-prediction-dashboard.js`'s internal `dominantRisk`/`CONF_WORD` implementation directly (it's exercised indirectly through `fleet-recommendation-check.mjs`'s and `scenario-simulation-check.mjs`'s architectural-purity checks, both of which stayed green). All three fixes were verified by syntax check (`node --check`) plus the full regression sweep below — no new test file was needed because this phase changed WHERE a value is computed/cached, not any computed VALUE itself (confirmed: local `dominantRisk`/`confWord`/`confTone` were byte-identical to the canonical versions before deletion).
+
+### Regression Summary
+
+| Suite | Result |
+|---|---|
+| `vehicle-asset-check.mjs` | 58/58 |
+| `vehicle-management-presentation-check.mjs` | 47/47 |
+| `vehicle-asset-dom-check.mjs` (Fleet Dashboard + Vehicle Drawer, real headless Chromium) | 30/30 |
+| `vehicle-recommendation-check.mjs` | 71/71 |
+| `dispatch-scoring-check.mjs` | 33/33 |
+| `vehicles-store-check.mjs` | 42/42 |
+| `fleet-recommendation-check.mjs` (architectural-purity: never re-predicts) | PASS |
+| `scenario-simulation-check.mjs` (architectural-purity: forecasts only via Prediction Service) | PASS |
+| `prediction-engine-check.mjs` / `-validator-` / `-service-` / `-provider-check.mjs` | PASS ×4 |
+| `smoke-boot.mjs` | 0 fatal errors, PASS |
+| `maintenance-intelligence-check.mjs` | 35/41 — **pre-existing, unrelated** (stale release-marker string assertions + unrelated UI-wiring checks; Maintenance is on this phase's do-not-modify list and was not touched). |
+
+**Zero regressions caused by this phase.**
+
+### Performance Impact
+
+Net negative cost. Finding 1 REMOVES one independent count-computation per Inventory render (the old raw-field filter pass) in favor of reusing the model already being computed for the KPI strip and cards — no new work. Finding 2 is a pure code-path consolidation (deleting a local function in favor of an import) — zero runtime cost either way. Finding 3 adds exactly one `computeFleetAssetModel()` call, but only on the user action of opening a drawer from the Prediction tab (not per render tick, not per realtime update) — for this deployment's fleet size (single- to low-double-digit vehicles), immaterial, and strictly better than showing stale data. No new Firebase reads, no new caches, no new event wiring.
+
+### Future Extension Points
+
+- The Deliberately-Not-Fixed item (percentage-banding vs. Unified Scoring in `vehicle-prediction-dashboard.js`) is the natural next small phase if the platform wants strict visual-tone consistency across every dashboard's percentage displays — would need a short design decision first (does `unified-scoring.js` gain a "ratio" band variant, or does the Prediction dashboard get its own named, deliberately-different band, documented as such?).
+- The two redundant `computeFleetAssetModel()` calls in `renderV2AdminVehicles()` could be collapsed into one `includeArchived:true` call with the KPI strip filtering `.vehicles` down to non-archived itself — a micro-optimization, not a correctness fix, deferred because it touches the Fleet Dashboard's exact input shape and wasn't necessary to close any Consistency Report finding.
+- `renderVehicleOverviewRow()` is now the established pattern for any future per-section overview-strip content: compute the section's canonical model once, pass it to a small render function, never recompute independently — the same lesson Phase 2's `applyVehiclesPatch()` established for writers, now established for read-side presentation too.
+- With Phases 1–4 complete, Findings A–E (plus this phase's two) of the original investigation are all closed. Remaining roadmap items from §13 (insurance ledger parity, maintenance due-date projection, reminder engine, unified timeline, test hardening) remain open and unaffected by this phase.
+
+---
+
 *Investigation and implementation both traceable to file:line citations inline. Nothing here should be treated as authoritative until a human reviews and approves it, per this project's standing rule that AI is an analyzer, not the decision-maker.*

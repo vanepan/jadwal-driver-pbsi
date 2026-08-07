@@ -99,7 +99,7 @@ import {
 } from '../analytics/executive-ui-kit.js';
 // v1.19.6 — Fleet Explainability layer: PURE fleet-level derivations + their
 // presentation. Both only ARRANGE the certified model (no new prediction logic).
-import { fleetHeatmap, executiveInsights } from '../prediction/explainability.js';
+import { fleetHeatmap, executiveInsights, dominantRisk, confWord, confTone } from '../prediction/explainability.js';
 import {
   injectExplainabilityStyles,
   FleetHeatmap,
@@ -272,29 +272,14 @@ function fmtTime(iso) {
   return `${dd} ${mo} ${hh}:${mi}`;
 }
 
-/* Confidence is presented as ONE operational word + tone — never a formula, a
-   validator term, or the underlying percentage maths. LOW/MEDIUM/HIGH is the
-   only vocabulary the model exposes to a user. */
-const CONF_WORD = { HIGH: 'Tinggi', MEDIUM: 'Sedang', LOW: 'Rendah' };
-const CONF_TONE = { HIGH: 'ok', MEDIUM: 'info', LOW: 'warn' };
-function confWord(level) { return CONF_WORD[level] || 'Rendah'; }
+/* Confidence word/tone and the dominant-risk pick are the SAME derivations the
+   Fleet Explainability layer (js/prediction/explainability.js) already exports
+   — imported above, not reimplemented here, so the dashboard, drawer and
+   Explainability panels can never disagree on which risk headlines a vehicle
+   or how a confidence level reads. */
 function confPill(pred) {
   const lvl = pred && pred.confidenceLevel ? pred.confidenceLevel : 'LOW';
-  return ExecutiveStatusPill(`Keyakinan ${confWord(lvl)}`, CONF_TONE[lvl] || 'warn');
-}
-
-/* Which of a vehicle's risks is the dominant (most severe) projection. The
-   engine already scored maintenance, administrative and availability — this
-   only PICKS the highest one for the headline; it computes no new risk. */
-function dominantRisk(v) {
-  const parts = [
-    { pred: v.maintenanceRisk || {}, kind: 'maintenance' },
-    { pred: v.administrativeRisk || {}, kind: 'administrative' },
-    { pred: v.availabilityForecast || {}, kind: 'availability' },
-  ];
-  let dom = parts[0];
-  for (const p of parts) if ((Number(p.pred.score) || 0) > (Number(dom.pred.score) || 0)) dom = p;
-  return dom;
+  return ExecutiveStatusPill(`Keyakinan ${confWord(lvl)}`, confTone(lvl));
 }
 function maintenanceNeeded(v) {
   const lvl = (v.maintenanceRisk || {}).level;
@@ -756,7 +741,7 @@ function renderDetail(model) {
       availability: { text: availableNext(v) ? 'Tersedia' : 'Berisiko', tone: af.tone || (availableNext(v) ? 'ok' : 'warn') },
       risk: { text: pred.levelLabelId || '—', tone: pred.tone || 'info' },
       forecast: { text: proyeksi, tone: proyeksiTone },
-      confidence: { text: confWord(lvl), tone: CONF_TONE[lvl] || 'warn' },
+      confidence: { text: confWord(lvl), tone: confTone(lvl) },
       recommendation: byName.get(String(v.name)) || '—',
       window: cardWindow(v),
     };
