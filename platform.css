@@ -10238,6 +10238,107 @@ input[type="time"].v2-admin-config-input {
   margin-top: 2px;
 }
 
+/* v1.30.1 — Role Management (read-only). Everything else (toolbar, search,
+   filter, stats cards, module-group disclosure) reuses .v2-admin-toolbar /
+   .v2-admin-search / .v2-admin-filter / .v2-dq-stats / .user-role-group
+   verbatim — only the two-pane layout and the permission-row itself are new. */
+.rm-layout {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+.rm-sidebar__title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0 0 10px;
+}
+.rm-role-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.rm-role-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.rm-role-item:hover { background: var(--surface-2, var(--hover)); }
+.rm-role-item--active {
+  background: var(--surface-2, var(--hover));
+  border-color: var(--accent);
+  font-weight: 600;
+}
+.rm-role-item__label { overflow-wrap: anywhere; }
+.rm-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.rm-header__title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin: 0;
+}
+.rm-stats { margin-top: 14px; }
+.rm-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+.rm-category { padding: 8px 0 4px 14px; }
+.rm-category__title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0 0 6px;
+}
+.rm-permission-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 6px 4px;
+  cursor: default;
+}
+.rm-permission-row input[type="checkbox"] {
+  margin-top: 3px;
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.rm-permission-row__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.rm-permission-row__title { font-size: 0.8rem; font-weight: 600; }
+.rm-permission-row__desc { font-size: 0.72rem; color: var(--text-muted); }
+
+@media (max-width: 720px) {
+  .rm-layout { grid-template-columns: 1fr; }
+  .rm-role-list { flex-direction: row; flex-wrap: wrap; }
+  .rm-role-item { width: auto; }
+}
 /* Actions row */
 .v2-dq-actions-row {
   display: flex;

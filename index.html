@@ -22,12 +22,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Archivo:wght@400;500;600;700;800;900&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=1.30.0" />
+  <link rel="stylesheet" href="style.css?v=1.30.1" />
   <link rel="stylesheet" href="platform.css?v=2.1.2" />
-  <link rel="stylesheet" href="petty-cash.css?v=1.30.0" />
-  <link rel="stylesheet" href="overtime.css?v=1.30.0" />
-  <link rel="stylesheet" href="engineering.css?v=1.30.0" />
-  <link rel="stylesheet" href="gudang.css?v=1.30.0" />
+  <link rel="stylesheet" href="petty-cash.css?v=1.30.1" />
+  <link rel="stylesheet" href="overtime.css?v=1.30.1" />
+  <link rel="stylesheet" href="engineering.css?v=1.30.1" />
+  <link rel="stylesheet" href="gudang.css?v=1.30.1" />
   <link rel="stylesheet" href="sarpras-intelligence.css?v=1.23.0" />
   <link rel="stylesheet" href="nor-center.css?v=1.23.0" />
   <link rel="stylesheet" href="workspace-list-kit.css?v=1.23.0" />
@@ -176,6 +176,12 @@
         <button class="sidebar-nav-item sidebar-nav-tertiary" id="btnSarprasIntel" type="button" style="display:none;">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a5 5 0 0 0-5 5c0 2 1 3 2 4l.5 4h5l.5-4c1-1 2-2 2-4a5 5 0 0 0-5-5z"/><path d="M9.5 19h5M10 22h4"/></svg>
           Sarpras Intelligence
+        </button>
+
+        <!-- MODUL Role Management (read-only): admin only (mobile module entry, v1.30.1) -->
+        <button class="sidebar-nav-item sidebar-nav-tertiary" id="btnRoleManagement" type="button" style="display:none;">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 5v6c0 5 3.4 8.7 8 10 4.6-1.3 8-5 8-10V5l-8-3z"/><path d="m9 12 2 2 4-4"/></svg>
+          Role Management
         </button>
 
         <!-- MODUL Konfigurasi: admin only (mobile module entry; was "Admin Panel") -->
@@ -1220,6 +1226,6 @@
      an npm import — mammoth's npm package has no browser-ready ESM
      build. Exposes window.mammoth. -->
 <script src="https://cdn.jsdelivr.net/npm/mammoth@1.12.0/mammoth.browser.min.js"></script>
-<script type="module" src="js/app.js?v=1.30.0"></script>
+<script type="module" src="js/app.js?v=1.30.1"></script>
 </body>
 </html>

@@ -226,6 +226,10 @@ import {
 import {
   mountGudang, setGudangScreen, setGudangSearch, closeGudangSearch, openGudangSearch, onGudangScreenChange,
 } from './gudang/ui/gudang-center.js';
+// v1.30.1 Administration Platform Phase 2 — Role Management (read-only),
+// embedded native module (mirrors Petty Cash/Overtime). First real UI
+// consumer of the v1.30.0 Permission Foundation.
+import { mountRoleManagement } from './role-management/role-management-center.js';
 // v1.20.6 — inject the live User Management source into the Engineering personnel
 // resolver (it deliberately does not import users.js to stay Node-harness-safe).
 import { setEngineeringUsersSource } from './engineering/personnel/engineering-personnel.js';
@@ -311,6 +315,8 @@ let engineeringMounted = false;
 let overtimeMounted = false;
 // V1.28.0: lazy mount flag for the embedded Gudang module.
 let gudangMounted = false;
+// v1.30.1: lazy mount flag for the embedded Role Management module.
+let roleManagementMounted = false;
 // v1.15.0: lazy mount flags for the new Analytics workspaces.
 let analyticsPettyMounted = false;
 let analyticsExecMounted = false;
@@ -733,6 +739,7 @@ const BOTTOM_NAV_MORE_ITEMS = [
   { label: 'Konfigurasi', proxy: 'btnUserMgmt' },
   { label: 'Engineering', proxy: 'btnEngineering', requiresModule: 'engineering' },
   { label: 'Gudang', proxy: 'btnGudang', requiresModule: 'gudang' },
+  { label: 'Role Management', proxy: 'btnRoleManagement', requiresModule: 'roleManagement' },
   { label: 'Keluar', proxy: 'btnLogout' },
 ];
 function openBottomNavMoreSheet() {
@@ -1044,6 +1051,11 @@ function updatePermissionUI(resetNavActive = false) {
     if (v2RailAnalytics) v2RailAnalytics.style.display = adminOnly ? 'flex' : 'none';
     const v2RailKonfig = document.getElementById('v2RailKonfigurasi');
     if (v2RailKonfig) v2RailKonfig.style.display = adminOnly ? 'flex' : 'none';
+    // Role Management (v1.30.1): admin-only, same rule as Konfigurasi/Petty Cash.
+    const v2RailRoleManagement = document.getElementById('v2RailRoleManagement');
+    if (v2RailRoleManagement) v2RailRoleManagement.style.display = adminOnly ? 'flex' : 'none';
+    const btnRoleManagementMobile = document.getElementById('btnRoleManagement');
+    if (btnRoleManagementMobile) btnRoleManagementMobile.style.display = adminOnly ? 'flex' : 'none';
 
     // Gudang (V1.28.0 Experience Layer): admin-only, same rule as Petty Cash/
     // Analytics/Konfigurasi (see canAccessModule's 'gudang' case).
@@ -1266,6 +1278,13 @@ const MODULE_DEFS = {
     railId: 'v2RailKonfigurasi', navId: 'v2PanelKonfigurasiNav',
     title: 'Konfigurasi', subtitle: 'Manajemen Platform', crumb: 'KONFIGURASI',
     land: () => navManajemenUser(),
+  },
+  // v1.30.1: Role Management (read-only) — embedded native module (Petty
+  // Cash pattern), single landing screen, no sub-menu.
+  roleManagement: {
+    railId: 'v2RailRoleManagement', navId: 'v2PanelRoleManagementNav',
+    title: 'Role Management', subtitle: 'Manajemen Peran & Hak Akses', crumb: 'ROLE MANAGEMENT',
+    land: () => navRoleManagement(),
   },
   // v1.20.1: Engineering Operations — embedded native module (Petty Cash pattern).
   engineering: {
@@ -1537,6 +1556,7 @@ function canAccessModule(name) {
     case 'overtime':
     case 'analytics':
     case 'konfigurasi':
+    case 'roleManagement':   // v1.30.1: admin-only, same rule as its siblings
     // V1.28.0 Experience Layer: Gudang has real screens now, but Doc 2 §03
     // names only two eventual audiences (Sarpras Admin, Warehouse Staff) —
     // "Warehouse Staff" is not a role this app's role system has today, and
@@ -2169,6 +2189,16 @@ async function navGudang(screen, navId) {
   syncBottomNavAction(GUD_SCREEN_BOTTOM_NAV_ACTION[screen] || 'navGudDashboard', 'openMoreSheet');
 }
 
+/* v1.30.1 — Role Management (read-only): single landing screen, no
+   sub-menu, so this is a trimmed-down navPettyCash()/navGudang() with no
+   `screen`/`navId` params. */
+async function navRoleManagement() {
+  setCrumb('ROLE MANAGEMENT', 'Role Management');
+  setWorkspace('roleManagement');
+  const hostEl = document.getElementById('v2RoleManagementWorkspace');
+  if (!roleManagementMounted && hostEl) { roleManagementMounted = true; await mountRoleManagement(hostEl); }
+}
+
 // Phase 10.4.1: catches every screen change navGudang() itself doesn't see —
 // Home's FAB, a catalog card's quick-action, "Lihat semua di Movement
 // History" — anything that changes st.screen from INSIDE the Gudang module
@@ -2295,6 +2325,19 @@ function initV2Rail() {
         <div class="v2-rail-tooltip" aria-hidden="true">Sarpras Intelligence</div>
       </div>
 
+      <!-- Role Management (read-only) — v1.30.1, admin only; sits after
+           Sarpras Intelligence, before Konfigurasi (which stays locked last). -->
+      <div class="v2-rail-item" id="v2RailRoleManagement"
+           role="button" tabindex="0"
+           aria-label="Role Management" aria-current="false" style="display:none;">
+        <svg class="v2-rail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 2 4 5v6c0 5 3.4 8.7 8 10 4.6-1.3 8-5 8-10V5l-8-3z"/>
+          <path d="m9 12 2 2 4-4"/>
+        </svg>
+        <div class="v2-rail-tooltip" aria-hidden="true">Role Management</div>
+      </div>
+
       <!-- Konfigurasi (Global Configuration, gear) — admin only; ALWAYS the last
            global navigation item (v1.14.0 / hierarchy locked v1.20.2) -->
       <div class="v2-rail-item" id="v2RailKonfigurasi"
@@ -2354,6 +2397,7 @@ function initV2Rail() {
   const railKonfig  = document.getElementById('v2RailKonfigurasi');
   const railEng     = document.getElementById('v2RailEngineering');
   const railGudang  = document.getElementById('v2RailGudang');
+  const railRoleManagement = document.getElementById('v2RailRoleManagement');
   const railSarpras = document.getElementById('v2RailSarprasIntel');
   const railTheme   = document.getElementById('v2RailThemeBtn');
 
@@ -2370,6 +2414,7 @@ function initV2Rail() {
   railKonfig?.addEventListener('click', () => setRailModule('konfigurasi'));
   railEng?.addEventListener('click', () => setRailModule('engineering'));
   railGudang?.addEventListener('click', () => setRailModule('gudang'));
+  railRoleManagement?.addEventListener('click', () => setRailModule('roleManagement'));
   railSarpras?.addEventListener('click', () => setRailModule('sarprasIntelligence'));
 
   // Mobile (rail hidden <768px): repointed sidebar drawer buttons are the
@@ -2380,6 +2425,7 @@ function initV2Rail() {
   document.getElementById('btnAnalytics')?.addEventListener('click', () => setRailModule('analytics'));
   document.getElementById('btnEngineering')?.addEventListener('click', () => setRailModule('engineering'));
   document.getElementById('btnGudang')?.addEventListener('click', () => setRailModule('gudang'));
+  document.getElementById('btnRoleManagement')?.addEventListener('click', () => setRailModule('roleManagement'));
   document.getElementById('btnSarprasIntel')?.addEventListener('click', () => setRailModule('sarprasIntelligence'));
 
   railTheme?.addEventListener('click', () => {
@@ -2395,7 +2441,7 @@ function initV2Rail() {
   };
 
   // Keyboard: Enter/Space activates any focusable rail element
-  [crest, railHome, driverOps, railPetty, railOvertime, railAnalytics, railKonfig, railEng, railSarpras].forEach(el => {
+  [crest, railHome, driverOps, railPetty, railOvertime, railAnalytics, railKonfig, railEng, railRoleManagement, railSarpras].forEach(el => {
     el?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
@@ -3743,6 +3789,7 @@ function setWorkspace(name) {
   const isSic   = name === 'sarprasIntelligence';
   const isDrvHist = name === 'driverHistory';
   const isGudang = name === 'gudang';
+  const isRm    = name === 'roleManagement';
 
   const timelineSurface = document.getElementById('v2TimelineSurface');
   const driverDash      = document.getElementById('driverDashboard');
@@ -3757,6 +3804,7 @@ function setWorkspace(name) {
   const engWs           = document.getElementById('v2EngineeringWorkspace');
   const sicWs           = document.getElementById('v2SarprasIntelWorkspace');
   const drvHistWs       = document.getElementById('v2DriverHistoryWorkspace');
+  const rmWs            = document.getElementById('v2RoleManagementWorkspace');
   // Phase 10.4.1 root cause: restoreNavState() (fired from the auth-available
   // signal, an independent timing source from this file's own DOMContentLoaded
   // init sequence) can call setWorkspace('gudang') before initV2GudangWorkspace()
@@ -3796,6 +3844,12 @@ function setWorkspace(name) {
   // even though mounting/rendering underneath it worked correctly the whole
   // time (confirmed via DOM inspection — real markup, just invisible).
   if (gudangWs)        gudangWs.style.display        = isGudang ? 'block' : 'none';
+  // Role Management (v1.30.1): pure local UI state, no Firebase subscription
+  // to pause on hide — a plain display toggle is the whole lifecycle here.
+  // Lazy mount-on-first-visit happens in navRoleManagement(), same as every
+  // sibling module (mountPettyCash/mountGudang/etc. are never called from
+  // setWorkspace() itself).
+  if (rmWs)            rmWs.style.display            = isRm    ? 'block' : 'none';
 
   // Pause the embedded Petty Cash module's live re-render when it is hidden;
   // navPettyCash()/setPettyCashScreen() resume it on return.
@@ -4005,6 +4059,15 @@ function initV2GudangWorkspace() {
   ws.style.display = 'none';
   document.querySelector('.main-content')?.appendChild(ws);
   console.log('[V1.28.0] Gudang workspace host injected');
+}
+
+function initV2RoleManagementWorkspace() {
+  const ws = document.createElement('div');
+  ws.id = 'v2RoleManagementWorkspace';
+  ws.className = 'v2-workspace rm-root';
+  ws.style.display = 'none';
+  document.querySelector('.main-content')?.appendChild(ws);
+  console.log('[v1.30.1] Role Management workspace host injected');
 }
 
 /**
@@ -11570,6 +11633,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initV2OvertimeWorkspace();    // v1.25.0: embedded Overtime Management module host
     initV2EngineeringWorkspace(); // v1.20.1: embedded Engineering module host
     initV2GudangWorkspace();      // V1.28.0: embedded Gudang module host
+    initV2RoleManagementWorkspace(); // v1.30.1: embedded Role Management module host
     initV2SarprasIntelligenceWorkspace(); // V2.0.10: embedded Sarpras Intelligence module host
     initV2PlaceholderWorkspace(); // v1.14.0: shared "coming soon" placeholder
     initV2AnalyticsWorkspaces();  // v1.15.0: Analytics Petty Cash + Executive hosts
