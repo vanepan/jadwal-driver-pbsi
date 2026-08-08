@@ -273,7 +273,16 @@ import { initNotificationUI, setNotificationData, openNotificationsModal, markNo
 import { setTelegramBotToken } from './telegram.js';
 import { subscribeLogsChangeListener, getLogs, logAction, ensureLogsLoadedAndSubscribed, resetLogsSync } from './logs.js';
 import { publishEvent } from './events.js';
-import { getUserByUsername, getUsers, createUser, getUserList, activateUser, deactivateUser, registerUsersChangeListener, archiveUser, restoreUser, deleteUser, initUsersSync, ensureUsersLoadedAndSubscribed, resetUsersSync } from './users.js';
+import { getUserByUsername, getUsers, createUser, getUserList, activateUser, deactivateUser, registerUsersChangeListener, archiveUser, restoreUser, deleteUser, initUsersSync, ensureUsersLoadedAndSubscribed, resetUsersSync, getRoleUsageFromUsers } from './users.js';
+// v1.30.4 Administration Platform Phase 5 — User Management Integration.
+// registerRoleUsageProvider() is the extension point role-usage-provider.js
+// shipped in v1.30.3 for exactly this: User Management supplies real usage
+// data, Role Domain stays unaware of user storage. resolveRoleInfo() is the
+// single place a user's stored role id is resolved to a display label +
+// active/archived/unknown status.
+import { registerRoleUsageProvider } from './role-management/role-usage-provider.js';
+import { initCustomRolesStore, registerCustomRolesChangeListener } from './role-management/custom-roles-store.js';
+import { resolveRoleInfo } from './role-management/role-catalog.js';
 import { expandDateRange, showToast, formatDateShort, vehicleLabel, computeWorkTime } from './utils.js';
 import {
   sendRequestApprovedNotification,
@@ -317,6 +326,10 @@ let overtimeMounted = false;
 let gudangMounted = false;
 // v1.30.1: lazy mount flag for the embedded Role Management module.
 let roleManagementMounted = false;
+// v1.30.4: lazy one-time boot for User Management's Role Domain wiring
+// (Custom Roles store + Role Usage Provider registration) — mirrors
+// roleManagementMounted's lazy-init-once pattern.
+let userRoleCatalogReady = false;
 // v1.15.0: lazy mount flags for the new Analytics workspaces.
 let analyticsPettyMounted = false;
 let analyticsExecMounted = false;
@@ -2127,12 +2140,22 @@ function navDriverPrediction() {
 }
 
 /* ── MODUL: Konfigurasi ── */
-function navManajemenUser() {
+async function navManajemenUser() {
   activeAdminModule = 'konfigurasi';
   activeAdminSection = 'users';
   setV2PanelNavActive('v2NavKonfUsers');
   setCrumb('KONFIGURASI', 'Manajemen User');
   setWorkspace('administration');
+  // v1.30.4 — wire User Management into the Role Domain once, on first visit
+  // (docs/ROLE_ASSIGNMENT_DEPENDENCY_REPORT_v1.30.3.md §9's handoff item).
+  if (!userRoleCatalogReady) {
+    userRoleCatalogReady = true;
+    await initCustomRolesStore();
+    registerRoleUsageProvider({ getUsage: getRoleUsageFromUsers });
+    registerCustomRolesChangeListener(() => {
+      if (currentWorkspace === 'administration' && activeAdminSection === 'users') renderV2AdminWorkspace();
+    });
+  }
 }
 function navKonfigurasiGlobal() {
   activeAdminModule = 'konfigurasi';
@@ -4900,7 +4923,15 @@ function buildUserCard(user) {
   const role = user.role || 'viewer';
   const active = user.active !== false;
   const archived = user.archived === true;
-  const roleLabel = formatRole(role);   // reuse the central formatter (covers Engineering; never raw id)
+  // v1.30.4 — resolveRoleInfo() covers System/Custom/archived-custom/unknown
+  // references (formatRole() alone falls back to the raw id, never flags it).
+  const roleInfo = resolveRoleInfo(role);
+  const roleLabel = roleInfo.label;
+  const roleWarningBadge = roleInfo.unknown
+    ? `<span class="v2-entity-badge v2-entity-badge--role-warning" title="Referensi role tidak dikenal">Role Tidak Dikenal</span>`
+    : roleInfo.archived
+      ? `<span class="v2-entity-badge v2-entity-badge--role-warning" title="Custom Role ini sudah diarsipkan">Role Diarsipkan</span>`
+      : '';
 
   if (archived) {
     const refCount = countUserReferences(user);
@@ -4919,6 +4950,7 @@ function buildUserCard(user) {
         </div>
         <div class="v2-user-meta">
           <span class="v2-user-role-pill v2-role-pill--${esc(role)}">${esc(roleLabel)}</span>
+          ${roleWarningBadge}
           <span class="v2-entity-badge v2-entity-badge--archived">Arsip</span>
         </div>
         <div class="v2-user-card-actions">
@@ -4941,6 +4973,7 @@ function buildUserCard(user) {
       </div>
       <div class="v2-user-meta">
         <span class="v2-user-role-pill v2-role-pill--${esc(role)}">${esc(roleLabel)}</span>
+        ${roleWarningBadge}
         <span class="v2-user-status-pill${active ? '' : ' v2-status-pill--inactive'}">${active ? 'Aktif' : 'Nonaktif'}</span>
       </div>
       <div class="v2-user-card-actions">
@@ -5377,9 +5410,18 @@ function renderV2AdminUsers() {
   renderV2AdminStats(allUsers);
 
   const filtered = allUsers.filter(u => {
+    // v1.30.4 — search also matches the resolved role's label/type/status
+    // (e.g. a role name, "custom", or "diarsipkan"), not just name/username.
+    const roleInfo = resolveRoleInfo(u.role);
+    const roleSearchText = [
+      roleInfo.label,
+      roleInfo.type === 'system' ? 'sistem' : roleInfo.type === 'custom' ? 'custom' : 'tidak dikenal',
+      roleInfo.unknown ? 'tidak dikenal' : roleInfo.archived ? 'diarsipkan arsip' : 'aktif',
+    ].join(' ').toLowerCase();
     const matchesSearch = !q ||
       (u.displayName || '').toLowerCase().includes(q) ||
-      (u.username    || '').toLowerCase().includes(q);
+      (u.username    || '').toLowerCase().includes(q) ||
+      roleSearchText.includes(q);
     const matchesRole = !roleFilter || u.role === roleFilter;
     const matchesStatus =
       userStatusFilter === 'all'      ? (u.archived !== true || (!!q && matchesSearch)) :

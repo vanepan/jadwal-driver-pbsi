@@ -3,6 +3,11 @@
 import { getCurrentUser, isAdmin, logout } from './auth.js';
 import { roleLabel } from './config/role-registry.js';   // single source of role display labels
 import { createUser, getUserByUsername, getUsers, updateUser, deactivateUser, validateUsername, registerUsersChangeListener, getUserList } from './users.js';
+// v1.30.4 User Management Integration — Role Domain reads for the create/edit
+// modal: an assignable-role catalog (System + active Custom, disabled) and a
+// reused Role Summary (never recomputed locally, per role-summary-model.js).
+import { getAllRoles, resolveGrantedSet, resolveRoleInfo } from './role-management/role-catalog.js';
+import { buildRoleSummary } from './role-management/role-summary-model.js';
 import { logAction } from './logs.js';
 import { sendNotification } from './telegram.js';
 import { showToast } from './utils.js';
@@ -134,10 +139,16 @@ function attachAdminButtons() {
 
   // Engineering role → reveal the Koordinator/Anggota segment (v1.20.2).
   const roleSelect = document.getElementById('userFieldRole');
-  if (roleSelect) roleSelect.addEventListener('change', () => syncEngineeringLevelUI());
+  if (roleSelect) roleSelect.addEventListener('change', () => {
+    syncEngineeringLevelUI();
+    renderUserRoleSummaryPanel(); // v1.30.4
+  });
   // Single-select: checking one Engineering level card unchecks the other.
   document.querySelectorAll('#userEngineeringLevelGroup [data-eng-level]').forEach((cb) => {
-    cb.addEventListener('change', () => setEngineeringLevel(cb.checked ? cb.dataset.engLevel : null));
+    cb.addEventListener('change', () => {
+      setEngineeringLevel(cb.checked ? cb.dataset.engLevel : null);
+      renderUserRoleSummaryPanel(); // v1.30.4
+    });
   });
 
   const profileForm = document.getElementById('profileForm');
@@ -231,6 +242,11 @@ export function openUserFormModal(username = null) {
   const pinField = document.getElementById('userFieldPin');
   const activeField = document.getElementById('userFieldActive');
 
+  // v1.30.4 — before setting .value, so an active Custom Role reference (rare,
+  // but possible via manual data) can still be represented as a disabled option.
+  refreshCustomRoleOptions();
+  let currentRoleWarning = null;
+
   if (username && users.length) {
     const user = users.find(item => item.username === username);
     if (user) {
@@ -247,6 +263,11 @@ export function openUserFormModal(username = null) {
         } else {
           roleField.value = user.role;
           setEngineeringLevel(null);
+          // The select can only represent System Roles + active Custom Roles.
+          // If it couldn't hold this user's actual stored role, that role is
+          // archived or a broken reference — surface it, never silently swap
+          // it for whatever the select fell back to.
+          if (roleField.value !== user.role) currentRoleWarning = resolveRoleInfo(user.role);
         }
       }
       if (pinField) pinField.value = user.pin || '';
@@ -265,9 +286,102 @@ export function openUserFormModal(username = null) {
   }
   syncPbsiSelect(roleField);
   syncEngineeringLevelUI();
+  renderCurrentRoleWarning(currentRoleWarning);
+  renderUserRoleSummaryPanel();
 
   const modal = document.getElementById('modalUserForm');
   if (modal) modal.style.display = 'flex';
+}
+
+/**
+ * v1.30.4 — list active Custom Roles as disabled ("belum aktif") options.
+ * Assignment is deferred to a future Permission Migration phase (Custom
+ * Roles are visible so admins know they exist, never selectable here).
+ */
+function refreshCustomRoleOptions() {
+  const roleField = document.getElementById('userFieldRole');
+  const hint = document.getElementById('userRoleCustomHint');
+  if (!roleField) return;
+
+  roleField.querySelectorAll('optgroup[data-dynamic-role-group]').forEach((el) => el.remove());
+
+  const customRoles = getAllRoles().filter((r) => r.type === 'custom');
+  if (hint) hint.style.display = customRoles.length ? '' : 'none';
+  if (!customRoles.length) return;
+
+  const group = document.createElement('optgroup');
+  group.label = 'Custom Role (Belum Aktif)';
+  group.dataset.dynamicRoleGroup = 'true';
+  customRoles.forEach((r) => {
+    const opt = document.createElement('option');
+    opt.value = r.id;
+    opt.textContent = r.label;
+    opt.disabled = true;
+    group.appendChild(opt);
+  });
+  roleField.appendChild(group);
+}
+
+/** v1.30.4 — shown only when the picker couldn't represent a user's actual
+    stored role (an archived Custom Role or a broken reference). */
+function renderCurrentRoleWarning(info) {
+  const el = document.getElementById('userRoleCurrentWarning');
+  if (!el) return;
+  if (!info) {
+    el.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+  const reason = info.unknown ? 'tidak dikenal sistem' : 'sudah diarsipkan';
+  el.style.display = '';
+  el.innerHTML = `Role saat ini (<strong>${escapeHTML(info.label)}</strong>) ${reason}. Pilih role di atas untuk memperbarui — menyimpan form akan mengganti role user ini.`;
+}
+
+/**
+ * v1.30.4 — Role Summary for the currently-selected role, reused via
+ * role-summary-model.js (Permission Count / Module Count / Role Type /
+ * Role Status are never recomputed locally).
+ */
+function renderUserRoleSummaryPanel() {
+  const panel = document.getElementById('userRoleSummaryPanel');
+  const roleField = document.getElementById('userFieldRole');
+  if (!panel || !roleField) return;
+
+  let roleId = roleField.value;
+  if (roleId === 'engineering') roleId = currentEngineeringRole();
+
+  if (!roleId) {
+    panel.style.display = 'none';
+    panel.innerHTML = '';
+    return;
+  }
+
+  const info = resolveRoleInfo(roleId);
+  const roleDescriptor = { id: info.id, label: info.label, type: info.type, record: null };
+  const grantedSet = resolveGrantedSet(roleDescriptor);
+  const summary = buildRoleSummary(roleDescriptor, getAllRoles(), grantedSet);
+  const statusLabel = summary.status === 'archived' ? 'Arsip' : 'Aktif';
+  const typeLabel = info.type === 'system' ? 'Sistem' : info.type === 'custom' ? 'Custom' : 'Tidak Dikenal';
+
+  panel.style.display = '';
+  panel.innerHTML = `
+    <div class="v2-dq-stat-card">
+      <span class="v2-dq-stat-value">${escapeHTML(typeLabel)}</span>
+      <span class="v2-dq-stat-label">Tipe Role</span>
+    </div>
+    <div class="v2-dq-stat-card">
+      <span class="v2-dq-stat-value">${escapeHTML(statusLabel)}</span>
+      <span class="v2-dq-stat-label">Status Role</span>
+    </div>
+    <div class="v2-dq-stat-card">
+      <span class="v2-dq-stat-value">${summary.permissionCount}</span>
+      <span class="v2-dq-stat-label">Permission</span>
+    </div>
+    <div class="v2-dq-stat-card">
+      <span class="v2-dq-stat-value">${summary.moduleCount}</span>
+      <span class="v2-dq-stat-label">Modul</span>
+    </div>
+  `;
 }
 
 function closeUserFormModal() {

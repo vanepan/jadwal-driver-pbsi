@@ -8390,6 +8390,21 @@ span.flatpickr-weekday {
   );
 }
 
+/* v1.30.4 — Role Diarsipkan / Role Tidak Dikenal badge (User Management
+   Integration): a user's stored role reference no longer resolves cleanly. */
+.v2-entity-badge--role-warning {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .03em;
+  background: var(--danger-bg);
+  color: var(--danger);
+  text-transform: uppercase;
+}
+
 /* Archived badge — shows in meta column */
 .v2-entity-badge--archived {
   display: inline-flex;

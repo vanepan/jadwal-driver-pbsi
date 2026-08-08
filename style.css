@@ -2022,6 +2022,19 @@ input[type="number"]::-webkit-inner-spin-button {
   margin-top: 2px;
 }
 
+/* v1.30.4 — generic muted note under a form field (User Management Integration's
+   "Custom Role belum aktif" hint; reusable anywhere a field needs a short caveat). */
+.form-hint {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+.form-hint--warning {
+  color: var(--danger, #A8292F);
+  font-weight: 600;
+}
+
 .multi-day-checkbox-label:hover {
   border-color: var(--red);
   box-shadow: 0 0 0 3px rgba(211, 47, 47, 0.06);

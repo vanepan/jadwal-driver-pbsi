@@ -40,7 +40,6 @@ import {
   getPermissionTree,
   filterTree,
   buildSummary,
-  grantedSetForRole,
   listModules,
 } from './role-management-logic.js';
 import {
@@ -57,6 +56,7 @@ import { buildRoleSummary, buildModuleBreakdown, invalidateRoleSummaryCache } fr
 import { canArchiveRole } from './role-archive-guard.js';
 import { getRoleUsage } from './role-usage-provider.js';
 import { roleStatusLabel } from './role-status.js';
+import { getAllRoles, resolveGrantedSet } from './role-catalog.js';
 
 let root = null;
 let bound = false;
@@ -96,24 +96,11 @@ function bindDelegation() {
 
 /* ============================================================
    System + Custom role resolution
+   getAllRoles()/resolveGrantedSet() moved to role-catalog.js (v1.30.4)
+   so User Management can reuse them without importing this DOM module.
    ============================================================ */
-function getAllRoles() {
-  return [
-    ...ROLES.map((r) => ({ id: r.id, label: roleLabel(r.id), type: 'system', record: null })),
-    ...getCustomRoles().map((r) => ({ id: r.id, label: r.name, type: 'custom', clonedFrom: r.clonedFrom, record: r })),
-  ];
-}
-
 function getRoleById(id) {
   return getAllRoles().find((r) => r.id === id) || null;
-}
-
-/** The role's last-saved granted-permission Set (ignores any in-progress draft). */
-function resolveGrantedSet(role) {
-  if (!role) return new Set();
-  if (role.type === 'system') return grantedSetForRole(role.id);
-  const record = getCustomRoleById(role.id);
-  return new Set(record ? record.permissions || [] : []);
 }
 
 /** What the tree/summary should render RIGHT NOW — the live draft while dirty, else last-saved. */

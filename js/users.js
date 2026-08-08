@@ -238,6 +238,23 @@ export function getActiveAdminCount() {
   return users.filter(item => item.role === 'admin' && item.active && item.archived !== true).length;
 }
 
+// v1.30.4 — the Role Usage Provider implementation for js/role-management/
+// role-usage-provider.js#registerRoleUsageProvider(). Role Domain stays
+// unaware of user storage; User Management supplies this at its own boot
+// (see js/app.js#navManajemenUser()). Archived user records are excluded —
+// they no longer meaningfully hold the role; inactive-but-not-archived
+// users still count. dependencies/consumers are genuinely N/A for a
+// user-assignment provider (real zeros, not a stand-in).
+export function getRoleUsageFromUsers(roleId) {
+  const matches = users.filter(u => u.archived !== true && u.role === roleId);
+  return {
+    assignedUsers: matches.length,
+    assignments: matches.map(u => ({ userId: u.username, displayName: u.displayName || u.username })),
+    dependencies: [],
+    consumers: [],
+  };
+}
+
 export async function archiveUser(username) {
   const user = await getUserByUsername(username);
   if (!user) throw new Error('User tidak ditemukan.');
