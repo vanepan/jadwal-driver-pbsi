@@ -10334,11 +10334,158 @@ input[type="time"].v2-admin-config-input {
 .rm-permission-row__title { font-size: 0.8rem; font-weight: 600; }
 .rm-permission-row__desc { font-size: 0.72rem; color: var(--text-muted); }
 
+/* v1.30.2 — Role Management (Editable). Header now shows the selected
+   role's identity + actions; everything below (toolbar/stats/tree) is
+   untouched from v1.30.1. */
+.rm-header__top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.rm-header__role {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.rm-header__role-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.rm-header__actions { display: flex; gap: 8px; }
+
+.rm-name-input {
+  flex: 1 1 260px;
+  min-width: 0;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  font-family: inherit;
+  outline: none;
+}
+.rm-name-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(168,41,47,.12); }
+
+.rm-role-type-badge {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--border-faint, var(--hover));
+  color: var(--text-dim, var(--text-muted));
+}
+
+.rm-action-btn {
+  padding: 0.45rem 0.85rem;
+  font-size: 0.76rem;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease;
+}
+.rm-action-btn:hover { background: var(--surface-2, var(--hover)); }
+.rm-action-btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.rm-action-btn--primary:hover { filter: brightness(1.05); }
+.rm-action-btn--danger {
+  background: var(--danger-bg, #fdecea);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.rm-error {
+  background: var(--danger-bg, #fdecea);
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.rm-save-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 10px 14px;
+  background: var(--surface-2, var(--surface));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg, 0 4px 16px rgba(0,0,0,.12));
+}
+.rm-save-bar__msg { font-size: 0.78rem; color: var(--text-muted); }
+.rm-save-bar__actions { display: flex; gap: 8px; }
+
+/* Clone prompt + Review modal — reuse the shared .modal-overlay/.modal-box
+   shell (js/admin.js's user form modal uses the same classes); only the
+   inner sizing/spacing is new. */
+.rm-modal-box {
+  width: min(440px, 92vw);
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 20px 22px;
+}
+.rm-modal-box h3 { margin: 0 0 8px; font-size: 1rem; }
+.rm-modal-box p { margin: 0 0 12px; font-size: 0.82rem; color: var(--text-muted); }
+.rm-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 14px;
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.rm-review-box { width: min(520px, 92vw); }
+.rm-review-col { margin-bottom: 12px; }
+.rm-review-col h4 { margin: 0 0 6px; font-size: 0.76rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.rm-review-list { margin: 0; padding-left: 18px; font-size: 0.8rem; }
+.rm-review-list li { margin-bottom: 3px; }
+.rm-review-empty { font-size: 0.8rem; color: var(--text-muted); margin: 0; }
+
+.rm-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--text);
+  color: var(--surface);
+  padding: 10px 18px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  box-shadow: var(--shadow-lg, 0 4px 16px rgba(0,0,0,.2));
+  z-index: 1000;
+}
+
 @media (max-width: 720px) {
   .rm-layout { grid-template-columns: 1fr; }
   .rm-role-list { flex-direction: row; flex-wrap: wrap; }
   .rm-role-item { width: auto; }
+  .rm-header__role { flex-direction: column; align-items: stretch; }
+  .rm-header__actions { justify-content: flex-end; }
+  .rm-save-bar { flex-direction: column; align-items: stretch; }
+  .rm-save-bar__actions { justify-content: flex-end; }
 }
+
 /* Actions row */
 .v2-dq-actions-row {
   display: flex;

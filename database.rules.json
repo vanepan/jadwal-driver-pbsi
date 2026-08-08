@@ -104,6 +104,11 @@
       ".write": "auth.token.role === 'admin'"
     },
 
+    "customRoles": {
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+      ".write": "auth.token.role === 'admin'"
+    },
+
     "v2_sarpras": {
       "import_sessions": {
         ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
