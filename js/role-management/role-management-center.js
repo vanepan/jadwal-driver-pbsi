@@ -33,7 +33,7 @@
 import { isAdmin, getCurrentUser } from '../auth.js';
 import { ROLES, roleLabel } from '../config/role-registry.js';
 import { getPermission } from '../config/permission-registry.js';
-import { pill, esc } from '../widgets/_widget-base.js';
+import { pill, esc, empty } from '../widgets/_widget-base.js';
 import { logAction } from '../logs.js';
 import { createFocusGuard } from '../ui/focus-preserving-render.js';
 import {
@@ -53,6 +53,10 @@ import {
   archiveCustomRole,
 } from './custom-roles-store.js';
 import { findDuplicateName, diffPermissions, isEmptyPermissionSet } from './custom-roles-rules.js';
+import { buildRoleSummary, buildModuleBreakdown, invalidateRoleSummaryCache } from './role-summary-model.js';
+import { canArchiveRole } from './role-archive-guard.js';
+import { getRoleUsage } from './role-usage-provider.js';
+import { roleStatusLabel } from './role-status.js';
 
 let root = null;
 let bound = false;
@@ -78,7 +82,7 @@ export async function mountRoleManagement(container) {
   root = container;
   bindDelegation();
   await initCustomRolesStore();
-  registerCustomRolesChangeListener(() => render());
+  registerCustomRolesChangeListener(() => { invalidateRoleSummaryCache(); render(); });
   render();
 }
 
@@ -95,8 +99,8 @@ function bindDelegation() {
    ============================================================ */
 function getAllRoles() {
   return [
-    ...ROLES.map((r) => ({ id: r.id, label: roleLabel(r.id), type: 'system' })),
-    ...getCustomRoles().map((r) => ({ id: r.id, label: r.name, type: 'custom', clonedFrom: r.clonedFrom })),
+    ...ROLES.map((r) => ({ id: r.id, label: roleLabel(r.id), type: 'system', record: null })),
+    ...getCustomRoles().map((r) => ({ id: r.id, label: r.name, type: 'custom', clonedFrom: r.clonedFrom, record: r })),
   ];
 }
 
@@ -182,6 +186,13 @@ function onClick(e) {
   const roleBtn = e.target.closest('[data-rm-role]');
   if (roleBtn) { selectRole(roleBtn.dataset.rmRole); return; }
 
+  const detailToggle = e.target.closest('[data-rm-detail-toggle]');
+  if (detailToggle) {
+    groupExpanded.__roleDetail__ = !isDetailExpanded();
+    render();
+    return;
+  }
+
   const groupToggle = e.target.closest('[data-rm-group-toggle]');
   if (groupToggle) {
     const moduleName = groupToggle.dataset.rmGroupToggle;
@@ -204,6 +215,11 @@ function onClick(e) {
 
 function isExpanded(moduleName) {
   return groupExpanded[moduleName] ?? true;
+}
+
+/** Detail panel starts COLLAPSED (unlike permission-tree groups, which default open). */
+function isDetailExpanded() {
+  return groupExpanded.__roleDetail__ === true;
 }
 
 function selectRole(id) {
@@ -234,6 +250,7 @@ async function confirmClone() {
       sourcePermissions: [...resolveGrantedSet(role)],
       newName: clonePrompt.name,
       systemLabels: ROLES.map((r) => roleLabel(r.id)),
+      sourceRoleId: role.id,
     });
     const user = getCurrentUser();
     await logAction({
@@ -258,6 +275,8 @@ async function confirmClone() {
 async function deleteSelectedRole() {
   const role = getRoleById(selectedRoleId);
   if (!role || role.type !== 'custom') return;
+  const gate = canArchiveRole(role.id);
+  if (!gate.allowed) { error = gate.reason; render(); return; }
   if (!confirm(`Hapus Custom Role "${role.label}"?`)) return;
   const record = getCustomRoleById(role.id);
   try {
@@ -360,6 +379,7 @@ function shell() {
   const grantedSet = effectiveGrantedSet(role);
   const filtered = filterTree(getPermissionTree(), { search: searchQuery, module: moduleFilter });
   const summary = buildSummary(filtered, grantedSet);
+  const roleSummary = role ? buildRoleSummary(role, getAllRoles(), resolveGrantedSet(role)) : null;
   return `
     <div class="rm-layout">
       <aside class="rm-sidebar">
@@ -369,6 +389,7 @@ function shell() {
       <section class="rm-main">
         ${headerHtml(role, isCustom)}
         ${error ? `<div class="rm-error">${esc(error)}</div>` : ''}
+        ${role && roleSummary ? detailPanelHtml(role, roleSummary) : ''}
         <div class="v2-admin-toolbar">
           <input type="search" id="rmSearch" class="v2-admin-search" data-focus="rm-search"
                  placeholder="Cari ID, judul, deskripsi, modul, atau kategori…"
@@ -424,6 +445,118 @@ function headerHtml(role, isCustom) {
             ${isCustom ? `<button type="button" class="rm-action-btn rm-action-btn--danger" data-rm-action="delete">Delete</button>` : ''}
           </div>` : ''}
       </div>
+    </div>`;
+}
+
+/* ============================================================
+   Detail Panel — Relationship/Usage/Lifecycle info (v1.30.3). Collapsed
+   by default; the current sidebar/tree/save screen is unchanged unless an
+   admin opts in. Reads only from roleSummary (role-summary-model.js) —
+   never recomputes a number the summary or the stat cards below it
+   already own.
+   ============================================================ */
+function detailPanelHtml(role, summary) {
+  const expanded = isDetailExpanded();
+  const statusTone = summary.status === 'archived' ? 'danger' : 'good';
+  return `
+    <div class="rm-detail-panel">
+      <button type="button" class="rm-detail-toggle" data-rm-detail-toggle="1" aria-expanded="${expanded}">
+        <span class="user-role-arrow">${expanded ? '▼' : '▶'}</span>
+        <span class="rm-detail-toggle__label">Detail &amp; Relasi Role</span>
+        ${pill(roleStatusLabel(summary.status), statusTone)}
+      </button>
+      ${expanded ? `<div class="rm-detail-grid">
+        ${roleInfoHtml(role, summary)}
+        ${relationshipInfoHtml(summary)}
+        ${moduleBreakdownHtml(role)}
+        ${usageSummaryHtml(role)}
+        ${lifecycleSummaryHtml(summary)}
+        ${futureAssignmentHtml()}
+      </div>` : ''}
+    </div>`;
+}
+
+function roleInfoHtml(role, summary) {
+  return `
+    <div class="rm-detail-card">
+      <h4 class="rm-detail-card__title">Informasi Role</h4>
+      <dl class="rm-detail-dl">
+        <div><dt>Nama</dt><dd>${esc(summary.name)}</dd></div>
+        <div><dt>Tipe</dt><dd>${pill(role.type === 'system' ? 'System Role' : 'Custom Role', role.type === 'system' ? 'neutral' : 'info')}</dd></div>
+        <div><dt>Jumlah Permission</dt><dd>${summary.permissionCount}</dd></div>
+        <div><dt>Jumlah Modul</dt><dd>${summary.moduleCount}</dd></div>
+      </dl>
+      <p class="rm-detail-note">Ringkasan permission lengkap ada pada kartu statistik di bawah.</p>
+    </div>`;
+}
+
+function relationshipInfoHtml(summary) {
+  const derivedFromHtml = summary.derivedFrom
+    ? esc(summary.derivedFrom.label)
+    : summary.derivedFromStale
+      ? `<span class="rm-detail-stale">Sumber tidak ditemukan (mungkin telah diganti nama atau diarsipkan)</span>`
+      : empty('Bukan hasil clone');
+  const derivedRolesHtml = summary.derivedRoles.length
+    ? `<ul class="rm-detail-list">${summary.derivedRoles.map((r) => `<li>${esc(r.label)}</li>`).join('')}</ul>`
+    : empty('Belum ada role turunan');
+  return `
+    <div class="rm-detail-card">
+      <h4 class="rm-detail-card__title">Relasi Role</h4>
+      <dl class="rm-detail-dl">
+        <div><dt>Diturunkan Dari</dt><dd>${derivedFromHtml}</dd></div>
+        <div><dt>Role Turunan</dt><dd>${derivedRolesHtml}</dd></div>
+      </dl>
+    </div>`;
+}
+
+function moduleBreakdownHtml(role) {
+  const grantedSet = resolveGrantedSet(role);
+  const breakdown = buildModuleBreakdown(getPermissionTree(), grantedSet).filter((b) => b.total > 0);
+  const rows = breakdown.map((b) => `
+    <div class="rm-detail-breakdown-row">
+      <span class="rm-detail-breakdown-row__module">${esc(b.module)}</span>
+      <span class="rm-detail-breakdown-row__count">${b.granted}/${b.total}</span>
+    </div>`).join('');
+  return `
+    <div class="rm-detail-card rm-detail-card--wide">
+      <h4 class="rm-detail-card__title">Breakdown Modul</h4>
+      <div class="rm-detail-breakdown">${rows}</div>
+    </div>`;
+}
+
+function usageSummaryHtml(role) {
+  const usage = getRoleUsage(role.id);
+  return `
+    <div class="rm-detail-card">
+      <h4 class="rm-detail-card__title">Ringkasan Penggunaan</h4>
+      <dl class="rm-detail-dl">
+        <div><dt>Assigned Users</dt><dd>${usage.assignedUsers > 0 ? usage.assignedUsers : empty('Belum ada user')}</dd></div>
+        <div><dt>Assignments</dt><dd>${usage.assignments.length > 0 ? usage.assignments.length : empty('Belum ada assignment')}</dd></div>
+        <div><dt>Dependencies</dt><dd>${usage.dependencies.length > 0 ? usage.dependencies.length : empty('Belum ada dependensi')}</dd></div>
+        <div><dt>Consumers</dt><dd>${usage.consumers.length > 0 ? usage.consumers.length : empty('Belum ada consumer')}</dd></div>
+      </dl>
+    </div>`;
+}
+
+function lifecycleSummaryHtml(summary) {
+  const fmt = (iso) => (iso ? new Date(iso).toLocaleString('id-ID') : null);
+  return `
+    <div class="rm-detail-card">
+      <h4 class="rm-detail-card__title">Siklus Hidup</h4>
+      <dl class="rm-detail-dl">
+        <div><dt>Status</dt><dd>${pill(roleStatusLabel(summary.status), summary.status === 'archived' ? 'danger' : 'good')}</dd></div>
+        <div><dt>Dibuat</dt><dd>${fmt(summary.createdAt) || empty('Ditentukan oleh kode')}</dd></div>
+        <div><dt>Diperbarui</dt><dd>${fmt(summary.updatedAt) || empty('Ditentukan oleh kode')}</dd></div>
+        ${summary.status === 'archived' ? `<div><dt>Diarsipkan</dt><dd>${fmt(summary.archivedAt) || '-'}</dd></div>` : ''}
+      </dl>
+    </div>`;
+}
+
+function futureAssignmentHtml() {
+  return `
+    <div class="rm-detail-card rm-detail-card--future">
+      <h4 class="rm-detail-card__title">Penetapan User</h4>
+      ${empty('Tersedia setelah Manajemen User mendukung Custom Role')}
     </div>`;
 }
 

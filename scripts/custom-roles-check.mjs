@@ -51,6 +51,12 @@ check('the clone\'s permissions array is a DIFFERENT array instance than the sou
 sourcePermissions.push('vehicle.view');
 check('mutating the source array afterward does not affect the clone (proves value-copy semantics)', clone.permissions.length === 2);
 
+console.log('\n4b. clonedFromId — v1.30.3 additive lineage link (Role Assignment & Dependency)');
+check('omitting sourceRoleId (every pre-v1.30.3 call site) leaves clonedFromId null', clone.clonedFromId === null);
+const idClone = buildClonedRole({ sourceLabel: 'Admin', sourcePermissions: ['system.admin'], newName: 'Admin (Copy 2)', sourceRoleId: 'admin' });
+check('a passed sourceRoleId is recorded as clonedFromId', idClone.clonedFromId === 'admin');
+check('clonedFrom (the label) is still recorded alongside clonedFromId', idClone.clonedFrom === 'Admin');
+
 console.log('\n5. Permission diffing');
 const before = ['a', 'b', 'c'];
 const after = ['b', 'c', 'd'];

@@ -108,10 +108,10 @@ export function registerCustomRolesChangeListener(callback) {
  * Create a new Custom Role by cloning an existing role's permission
  * snapshot (System or Custom). Validates the name against every System
  * Role label and active Custom Role name before writing.
- * @param {{sourceLabel: string, sourcePermissions: string[], newName: string, systemLabels: string[]}} args
+ * @param {{sourceLabel: string, sourcePermissions: string[], newName: string, systemLabels: string[], sourceRoleId?: string|null}} args
  * @returns {Promise<Object>} the created record
  */
-export async function createCustomRoleFromClone({ sourceLabel, sourcePermissions, newName, systemLabels }) {
+export async function createCustomRoleFromClone({ sourceLabel, sourcePermissions, newName, systemLabels, sourceRoleId = null }) {
   if (!isAdmin()) throw new Error('Hanya admin yang dapat membuat Custom Role.');
   const trimName = String(newName || '').trim();
   if (!trimName) throw new Error('Nama role wajib diisi.');
@@ -119,7 +119,7 @@ export async function createCustomRoleFromClone({ sourceLabel, sourcePermissions
   if (conflict) throw new Error(`Nama role "${conflict}" sudah digunakan.`);
 
   const record = {
-    ...buildClonedRole({ sourceLabel, sourcePermissions, newName: trimName }),
+    ...buildClonedRole({ sourceLabel, sourcePermissions, newName: trimName, sourceRoleId }),
     archived: false,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),

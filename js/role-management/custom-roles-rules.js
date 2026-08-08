@@ -69,14 +69,22 @@ export function makeCustomRoleId(name, existingIds) {
  * existing role (System or Custom). `sourcePermissions` is copied by
  * VALUE (a fresh array) — the clone never shares a reference with its
  * source, so editing the clone can never mutate the source.
- * @param {{sourceLabel: string, sourcePermissions: string[], newName: string}} args
- * @returns {{name: string, permissions: string[], clonedFrom: string}}
+ *
+ * `clonedFrom` (a display label) is kept for backward compatibility with
+ * records written before v1.30.3. `clonedFromId` (Phase 4, additive) is
+ * the stable lineage link role-relationships.js prefers when present —
+ * unlike a label, it survives the source role later being renamed.
+ * `sourceRoleId` is optional so every pre-Phase-4 call site keeps working
+ * unchanged; new call sites should pass it.
+ * @param {{sourceLabel: string, sourcePermissions: string[], newName: string, sourceRoleId?: string|null}} args
+ * @returns {{name: string, permissions: string[], clonedFrom: string|null, clonedFromId: string|null}}
  */
-export function buildClonedRole({ sourceLabel, sourcePermissions, newName }) {
+export function buildClonedRole({ sourceLabel, sourcePermissions, newName, sourceRoleId = null }) {
   return {
     name: String(newName || '').trim(),
     permissions: [...(sourcePermissions || [])],
     clonedFrom: sourceLabel || null,
+    clonedFromId: sourceRoleId || null,
   };
 }
 
