@@ -1,0 +1,149 @@
+/* permission-service-check.mjs — Permission Foundation (v1.30.0)
+   PURE node test. Drives the REAL permission-registry.js + role-permissions.js
+   directly (both pure, both Node-loadable — no Firebase mocking needed).
+   permission-service.js itself imports auth.js (Firebase-touching, not
+   Node-loadable, same constraint documented in vehicle-asset-check.mjs), so
+   its can()/cannot()/hasAny()/hasAll()/listPermissions() are exercised here
+   via a local mirror of the exact same permissionSetFor()-cache algorithm,
+   parameterized by role instead of getCurrentUser() — the same pattern
+   other check scripts use to test pure logic without booting Firebase.
+   Covers: permission lookup, unknown permission, multiple permissions, role
+   mapping, caching, performance, edge cases, regression (eng./sic. parity
+   with role-registry.js CAPABILITIES), registry integrity, and the
+   Module -> Feature -> Permission hierarchy tree.
+   Run: node scripts/permission-service-check.mjs (exit 0 = pass) */
+
+import {
+  PERMISSIONS,
+  getPermission,
+  listAllPermissions,
+  permissionsByModule,
+  permissionsByCategory,
+  buildPermissionTree,
+} from '../js/config/permission-registry.js';
+import {
+  ROLE_PERMISSIONS,
+  permissionsForRole,
+  validateRegistryIntegrity,
+} from '../js/config/role-permissions.js';
+import { ROLES, CAPABILITIES } from '../js/config/role-registry.js';
+
+let pass = 0, fail = 0;
+const check = (name, cond) => { if (cond) { pass++; console.log(`  ✓ ${name}`); } else { fail++; console.log(`  ✗ ${name}`); } };
+
+/* ── Local mirror of permission-service.js's algorithm, parameterized by
+   role instead of getCurrentUser() (auth.js is not Node-loadable). ────── */
+const _setCache = new Map();
+function permissionSetFor(roleId) {
+  if (!roleId) return new Set();
+  if (!_setCache.has(roleId)) _setCache.set(roleId, new Set(ROLE_PERMISSIONS[roleId] || []));
+  return _setCache.get(roleId);
+}
+const canAs = (roleId, permission) => permissionSetFor(roleId).has(permission);
+const cannotAs = (roleId, permission) => !canAs(roleId, permission);
+const hasAnyAs = (roleId, permissions) => permissions.some((p) => canAs(roleId, p));
+const hasAllAs = (roleId, permissions) => permissions.length > 0 && permissions.every((p) => canAs(roleId, p));
+const listPermissionsAs = (roleId) => permissionsForRole(roleId);
+
+console.log('\n1. Permission lookup — matches real auth.js/role-registry.js behavior');
+check('admin can driver.schedule.create', canAs('admin', 'driver.schedule.create'));
+check('admin can warehouse.item.delete', canAs('admin', 'warehouse.item.delete'));
+check('admin can system.admin', canAs('admin', 'system.admin'));
+check('bidang cannot driver.schedule.create (admin-only)', cannotAs('bidang', 'driver.schedule.create'));
+check('bidang can driver.request.create', canAs('bidang', 'driver.request.create'));
+check('driver cannot driver.request.create (bidang-only)', cannotAs('driver', 'driver.request.create'));
+check('driver can driver.schedule.view.own', canAs('driver', 'driver.schedule.view.own'));
+check('viewer can driver.schedule.view', canAs('viewer', 'driver.schedule.view'));
+check('viewer cannot driver.schedule.start', cannotAs('viewer', 'driver.schedule.start'));
+check('viewer cannot warehouse.view (admin-only)', cannotAs('viewer', 'warehouse.view'));
+check('engineering_coordinator can eng.verify', canAs('engineering_coordinator', 'eng.verify'));
+check('engineering_coordinator cannot eng.create (admin-only)', cannotAs('engineering_coordinator', 'eng.create'));
+check('engineering_member can eng.continueTomorrow.ownOnly', canAs('engineering_member', 'eng.continueTomorrow.ownOnly'));
+check('engineering_member cannot eng.verify (coordinator-only)', cannotAs('engineering_member', 'eng.verify'));
+check('bidang can sic.review.act', canAs('bidang', 'sic.review.act'));
+check('bidang cannot sic.approve.act (admin-only)', cannotAs('bidang', 'sic.approve.act'));
+
+console.log('\n2. Unknown permission — deny by default, every role');
+for (const role of ['admin', 'bidang', 'driver', 'viewer', 'engineering_coordinator', 'engineering_member']) {
+  check(`${role} cannot 'nonexistent.permission'`, cannotAs(role, 'nonexistent.permission'));
+}
+check('getPermission() returns null for unknown id', getPermission('nonexistent.permission') === null);
+
+console.log('\n3. Multiple permissions — hasAny/hasAll composition');
+check('admin hasAll([system.admin, warehouse.view])', hasAllAs('admin', ['system.admin', 'warehouse.view']));
+check('driver hasAny([driver.schedule.view.own, system.admin])', hasAnyAs('driver', ['driver.schedule.view.own', 'system.admin']));
+check('driver !hasAll([driver.schedule.view.own, system.admin])', !hasAllAs('driver', ['driver.schedule.view.own', 'system.admin']));
+check('viewer !hasAny([system.admin, warehouse.view])', !hasAnyAs('viewer', ['system.admin', 'warehouse.view']));
+check('hasAny([]) is false (no permission satisfies an empty ask)', !hasAnyAs('admin', []));
+check('hasAll([]) is false (vacuous grant explicitly denied, not truthy)', !hasAllAs('admin', []));
+
+console.log('\n4. Role mapping — ROLE_PERMISSIONS matches hand-computed expected sets');
+const expectDriver = new Set(['driver.schedule.view', 'driver.schedule.view.own', 'driver.schedule.start', 'driver.schedule.complete', 'driver.reimbursement.print']);
+check('driver grant set matches exactly', setsEqual(new Set(ROLE_PERMISSIONS.driver), expectDriver));
+const expectViewer = new Set(['driver.schedule.view']);
+check('viewer grant set matches exactly', setsEqual(new Set(ROLE_PERMISSIONS.viewer), expectViewer));
+const expectBidang = new Set(['driver.schedule.view', 'driver.request.create', 'driver.schedule.start', 'driver.schedule.complete', 'driver.schedule.cancel', 'sic.review.act']);
+check('bidang grant set matches exactly', setsEqual(new Set(ROLE_PERMISSIONS.bidang), expectBidang));
+check('engineering_coordinator has 12 eng.* grants (no create/edit/delete/analytics/settings/ownOnly)', ROLE_PERMISSIONS.engineering_coordinator.length === 12);
+check('engineering_member has 9 eng.* grants', ROLE_PERMISSIONS.engineering_member.length === 9);
+check('reserved executive roles (ketua_umum) hold zero permissions today', ROLE_PERMISSIONS.ketua_umum.length === 0);
+check('every role in role-registry.js ROLES has a ROLE_PERMISSIONS entry', ROLES.every((r) => Array.isArray(ROLE_PERMISSIONS[r.id])));
+check('listPermissions()-equivalent agrees with ROLE_PERMISSIONS for admin', setsEqual(new Set(listPermissionsAs('admin')), new Set(ROLE_PERMISSIONS.admin)));
+
+console.log('\n5. Caching — repeated lookups reuse the same Set instance');
+const setA = permissionSetFor('admin');
+const setB = permissionSetFor('admin');
+check('permissionSetFor(admin) returns the identical Set reference on repeat calls', setA === setB);
+const cacheSizeBefore = _setCache.size;
+permissionSetFor('admin'); permissionSetFor('admin'); permissionSetFor('admin');
+check('cache does not grow on repeated lookups of the same role', _setCache.size === cacheSizeBefore);
+
+console.log('\n6. Performance — bulk lookups stay fast (sanity bound, not a benchmark)');
+const perfStart = Date.now();
+for (let i = 0; i < 50000; i++) canAs('admin', 'warehouse.item.edit');
+const perfMs = Date.now() - perfStart;
+check(`50,000 can() lookups complete in <500ms (took ${perfMs}ms)`, perfMs < 500);
+
+console.log('\n7. Edge cases');
+check('canAs(null, ...) is false (signed-out session)', !canAs(null, 'system.admin'));
+check('canAs(undefined, ...) is false', !canAs(undefined, 'system.admin'));
+check("canAs('ghost-role', ...) is false (unknown role id)", !canAs('ghost-role', 'system.admin'));
+check('listPermissionsAs(unknown role) returns empty array', listPermissionsAs('ghost-role').length === 0);
+check('permissionsForRole(null) returns empty array, not a throw', permissionsForRole(null).length === 0);
+
+console.log('\n8. Regression — eng.*/sic.* grants match role-registry.js CAPABILITIES exactly (reused, not diverged)');
+let capabilityParityOk = true;
+for (const [cap, allowedRoles] of Object.entries(CAPABILITIES)) {
+  for (const role of ROLES.map((r) => r.id)) {
+    const expected = allowedRoles.includes(role);
+    const actual = canAs(role, cap);
+    if (expected !== actual) { capabilityParityOk = false; console.log(`    mismatch: ${cap} / ${role} expected ${expected}, got ${actual}`); }
+  }
+}
+check('every CAPABILITIES entry agrees with ROLE_PERMISSIONS for every role', capabilityParityOk);
+
+console.log('\n9. Registry integrity — role-permissions.js and permission-registry.js stay in sync');
+const integrityProblems = validateRegistryIntegrity();
+check('no role is granted a permission id missing from the catalog', integrityProblems.length === 0);
+check('every catalog entry has non-empty title/description/module/category', listAllPermissions().every((p) => p.title && p.description && p.module && p.category));
+check('every catalog entry id matches its own key', Object.entries(PERMISSIONS).every(([k, v]) => k === v.id));
+
+console.log('\n10. Hierarchy — Module -> Feature -> Permission tree derives automatically');
+const tree = buildPermissionTree();
+const totalInTree = Object.values(tree).reduce((sum, cats) => sum + Object.values(cats).reduce((s2, list) => s2 + list.length, 0), 0);
+check('every permission appears exactly once in the tree', totalInTree === listAllPermissions().length);
+check("tree has a 'Warehouse' module", Object.prototype.hasOwnProperty.call(tree, 'Warehouse'));
+check("Warehouse -> 'Items' feature has 3 permissions (view/create excluded, edit/create/delete included)", tree.Warehouse.Items.length === 3);
+check("Warehouse -> 'Goods In' feature has exactly 1 permission", tree.Warehouse['Goods In'].length === 1);
+check('permissionsByModule(Warehouse) matches the tree module total', permissionsByModule('Warehouse').length === Object.values(tree.Warehouse).reduce((s, l) => s + l.length, 0));
+check('permissionsByCategory(Warehouse, Items) matches tree leaf', permissionsByCategory('Warehouse', 'Items').length === tree.Warehouse.Items.length);
+check('every module/category referenced in PERMISSIONS appears as a tree node', listAllPermissions().every((p) => tree[p.module] && tree[p.module][p.category] && tree[p.module][p.category].some((x) => x.id === p.id)));
+
+function setsEqual(a, b) {
+  if (a.size !== b.size) return false;
+  for (const v of a) if (!b.has(v)) return false;
+  return true;
+}
+
+console.log(`\n${pass} passed, ${fail} failed\n`);
+process.exit(fail === 0 ? 0 : 1);
