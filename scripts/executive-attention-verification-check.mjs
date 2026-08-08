@@ -96,7 +96,7 @@ const scenarioCtx = {
     ctx.models.pettyLowBalance = { low: true }; // critical
     ctx.recommendations = { certified: true, board: { isHealthyFleet: false, critical: [{ vehicleName: 'Innova B1', categoryLabel: 'Servis', reason: 'Jadwal servis terlewat.' }], upcoming: [] }, recs: [] }; // critical
     ctx.requests = [{ id: 'r1', status: 'pending', createdAt: new Date().toISOString(), purpose: 'Transport Pelatnas' }]; // warn
-    ctx.models.wellness = { summary: { burnoutRisk: 1, highFatigue: 1 } }; // warn (2)
+    ctx.models.wellness = { summary: { burnoutRisk: 1, highFatigue: 1, atRiskDrivers: 2 } }; // warn (2)
     // v1.23.0 hotfix — engineering-overdue severity now comes from the SAME
     // shared classifier Hero uses (classifyEngineeringOverdue): critical
     // only at >=3, so a count of 2 is 'warn', not 'critical'. This fixture

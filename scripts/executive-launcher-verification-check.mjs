@@ -103,7 +103,7 @@ const BUILD_CTX_FN = `(function buildCtx({ role = 'admin', crisis = false } = {}
     models: crisis ? {
       exec: { driverKpis: { activeVehicles: 1, activeDrivers: 1 }, score: { value: 12, level: 'attention', label: 'Kritis' }, scoreBreakdown: { components: [] } },
       engineering: { overdueAssignments: { count: 9 } },
-      wellness: { summary: { burnoutRisk: 5, highFatigue: 5 } },
+      wellness: { summary: { burnoutRisk: 5, highFatigue: 5, atRiskDrivers: 5 } },
       pettyLowBalance: { low: true },
     } : {
       exec: { driverKpis: { activeVehicles: 5, activeDrivers: 4 }, score: { value: 91, level: 'excellent', label: 'Sangat Baik' }, scoreBreakdown: { components: [] } },

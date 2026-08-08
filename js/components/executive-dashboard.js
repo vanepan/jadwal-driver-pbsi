@@ -245,7 +245,9 @@ function renderHero(model, d, v) {
 
   const total = num(d.wellness.driverCount);
   const healthy = num(d.wellness.healthyDrivers);
-  const risk = num(d.wellness.highFatigue) + num(d.wellness.burnoutRisk);
+  // v1.30.4.1 — canonical DISTINCT-driver union from the Wellness Engine;
+  // never sum highFatigue + burnoutRisk, that double-counts overlap drivers.
+  const risk = num(d.wellness.atRiskDrivers);
   const active = num(d.fleet.active);
   const maint = num(d.fleet.maintenance);
   const taxDue = num(d.fleet.taxDueSoon);
@@ -337,7 +339,9 @@ function domainSummaries(d) {
 
   // Driver — Driver Wellness (fitness for duty). The bar reflects average health.
   if (num(d.wellness.driverCount) > 0) {
-    const risk = num(d.wellness.highFatigue) + num(d.wellness.burnoutRisk);
+    // v1.30.4.1 — canonical DISTINCT-driver union from the Wellness Engine;
+    // never sum highFatigue + burnoutRisk, that double-counts overlap drivers.
+    const risk = num(d.wellness.atRiskDrivers);
     cards.push({
       icon: 'user', name: 'Driver', score: d.wellness.averageHealth,
       msg: risk > 0 ? `${risk} driver membutuhkan pemulihan.` : 'Semua driver dalam kondisi sehat.',

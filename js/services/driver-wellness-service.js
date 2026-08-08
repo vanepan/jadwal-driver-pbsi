@@ -516,6 +516,19 @@ function distribution(rows, bands, classify) {
   return bands.map((b) => ({ key: b.key, label: b.label, labelId: b.labelId, tone: b.tone, count: counts.get(b.key) || 0 }));
 }
 
+/** A driver counts as "at risk" once, no matter how many risk dimensions it
+ *  trips — the canonical DISTINCT-driver union of fatigue ∪ burnout. This is
+ *  the single source of truth for "N driver berisiko" across every consumer
+ *  (Executive Widget, Narrative, Attention Center, Analytics Executive View).
+ *  Consumers must read `summary.atRiskDrivers`, never derive it themselves by
+ *  summing `highFatigue + burnoutRisk` — that double-counts any driver who
+ *  crosses both thresholds (the root cause of a past incident where 3 active
+ *  drivers produced a reported "5 at risk"). */
+export function isAtRiskDriver(row) {
+  const f = row.fatigue.key, b = row.burnout.key;
+  return f === 'high' || f === 'critical' || b === 'high' || b === 'critical';
+}
+
 function buildSummary(rows) {
   const n = rows.length;
   const healths = rows.map((r) => r.health.score);
@@ -523,6 +536,7 @@ function buildSummary(rows) {
   const attention = rows.filter((r) => r.health.score >= 35 && r.health.score < 70).length;
   const highFatigue = rows.filter((r) => r.fatigue.key === 'high' || r.fatigue.key === 'critical').length;
   const burnoutRisk = rows.filter((r) => r.burnout.key === 'high' || r.burnout.key === 'critical').length;
+  const atRiskDrivers = rows.filter(isAtRiskDriver).length;
   return {
     driverCount: n,
     averageHealth: mean(healths),
@@ -530,6 +544,7 @@ function buildSummary(rows) {
     needsAttention: attention,
     highFatigue,
     burnoutRisk,
+    atRiskDrivers,
     averageRecovery: mean(rows.map((r) => r.recovery.score)),
     averageCapacityHealth: mean(rows.map((r) => r.capacityHealth.score)),
   };

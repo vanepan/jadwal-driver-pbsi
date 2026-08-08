@@ -110,7 +110,10 @@ function facts(ctx) {
   const engOverdue = numOr0((eng.overdueAssignments || {}).count);
   const engUnverifiedList = unverifiedEngineeringAssignments(ctx.engineeringEvents);
   const pendingVerify = engUnverifiedList.length;
-  const atRiskDrivers = numOr0(wellness.summary?.burnoutRisk) + numOr0(wellness.summary?.highFatigue);
+  // v1.30.4.1 — atRiskDrivers is the Wellness Engine's canonical DISTINCT-driver
+  // union (fatigue ∪ burnout); never sum burnoutRisk + highFatigue here, that
+  // double-counts a driver who crosses both thresholds.
+  const atRiskDrivers = numOr0(wellness.summary?.atRiskDrivers);
   const pettyLow = !!petty.low;
   return {
     ex, dk, pending, rec, criticalVehicles, engOverdue,

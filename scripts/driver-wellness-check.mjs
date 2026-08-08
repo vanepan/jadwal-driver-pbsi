@@ -14,6 +14,7 @@ import {
   healthBand,
   fatigueBand,
   burnoutBand,
+  isAtRiskDriver,
   HEALTH_BANDS,
   WELLNESS_COMPONENTS,
   WELLNESS_WINDOWS,
@@ -104,9 +105,66 @@ check('utilization is NEVER shown as quality (low util → high health)',
 
 console.log('\n[Feature 6 — Executive summary]');
 const s = model.summary;
-check('summary has all executive cards', ['driverCount', 'averageHealth', 'healthyDrivers', 'needsAttention', 'highFatigue', 'burnoutRisk', 'averageRecovery', 'averageCapacityHealth'].every((k) => k in s));
+check('summary has all executive cards', ['driverCount', 'averageHealth', 'healthyDrivers', 'needsAttention', 'highFatigue', 'burnoutRisk', 'atRiskDrivers', 'averageRecovery', 'averageCapacityHealth'].every((k) => k in s));
 check('averageHealth is the cohort mean', s.averageHealth === Math.round(model.drivers.reduce((a, d) => a + d.health.score, 0) / model.drivers.length));
 check('healthy + attention counts are consistent', s.healthyDrivers + s.needsAttention <= s.driverCount);
+
+console.log('\n[atRiskDrivers — canonical distinct-driver union (v1.30.4.1 fix)]');
+// Igo is the only fixture driver flagged in BOTH fatigue and burnout — the
+// old `highFatigue + burnoutRisk` sum would double-count him (1+1=2) even
+// though only ONE distinct driver is actually at risk.
+check('fixture: only Igo overlaps → atRiskDrivers counts him ONCE', s.atRiskDrivers === 1);
+check('invariant: atRiskDrivers never exceeds driverCount', s.atRiskDrivers <= s.driverCount);
+check('invariant: atRiskDrivers never exceeds the naive (buggy) sum', s.atRiskDrivers <= s.highFatigue + s.burnoutRisk);
+check('invariant: atRiskDrivers is never less than either individual set', s.atRiskDrivers >= Math.max(s.highFatigue, s.burnoutRisk));
+
+// No drivers.
+check('no drivers → atRiskDrivers is 0', computeDriverWellnessModel({ drivers: [], assignments: [] }).summary.atRiskDrivers === 0);
+
+// One driver, via the real engine (Igo alone).
+const soloModel = computeDriverWellnessModel({ drivers: [drivers[0]], assignments, now: NOW, window: '30d' });
+check('one at-risk driver → atRiskDrivers is 1', soloModel.summary.atRiskDrivers === 1);
+const soloHealthyModel = computeDriverWellnessModel({ drivers: [drivers[2]], assignments, now: NOW, window: '30d' });
+check('one healthy driver (Aria alone) → atRiskDrivers is 0', soloHealthyModel.summary.atRiskDrivers === 0);
+
+// isAtRiskDriver() unit coverage — synthetic rows isolate exact overlap
+// semantics from the numeric scoring formula (which the fix must NOT alter).
+const row = (fatigueKey, burnoutKey) => ({ fatigue: { key: fatigueKey }, burnout: { key: burnoutKey } });
+console.log('\n[isAtRiskDriver — boundary conditions]');
+check('very-low/very-low → not at risk', !isAtRiskDriver(row('very-low', 'low')));
+check('medium/medium → not at risk (medium is below the risk threshold)', !isAtRiskDriver(row('medium', 'medium')));
+check('high fatigue only → at risk', isAtRiskDriver(row('high', 'low')));
+check('critical fatigue only → at risk', isAtRiskDriver(row('critical', 'low')));
+check('high burnout only → at risk', isAtRiskDriver(row('low', 'high')));
+check('critical burnout only → at risk', isAtRiskDriver(row('low', 'critical')));
+check('both high → at risk (counts once, verified via array test below)', isAtRiskDriver(row('high', 'high')));
+
+console.log('\n[Three drivers — overlap scenarios]');
+// Reproduces the reported incident exactly: 3 real drivers, highFatigue=2 +
+// burnoutRisk=3 (the old buggy sum) = 5 — while only 3 DISTINCT drivers exist.
+const incidentRows = [
+  row('critical', 'critical'), // driver A — flagged in both
+  row('high', 'critical'),     // driver B — flagged in both
+  row('low', 'high'),          // driver C — burnout only
+];
+const incidentHighFatigue = incidentRows.filter((r) => r.fatigue.key === 'high' || r.fatigue.key === 'critical').length;
+const incidentBurnoutRisk = incidentRows.filter((r) => r.burnout.key === 'high' || r.burnout.key === 'critical').length;
+check('incident repro: naive sum reproduces the reported "5"', incidentHighFatigue + incidentBurnoutRisk === 5);
+check('incident repro: canonical union correctly reports 3 (all 3 real drivers)',
+  incidentRows.filter(isAtRiskDriver).length === 3);
+
+const noOverlapRows = [row('high', 'low'), row('low', 'high'), row('low', 'low')];
+check('no overlap: union equals the naive sum (2 === 2)',
+  noOverlapRows.filter(isAtRiskDriver).length === 2
+  && noOverlapRows.filter(isAtRiskDriver).length
+     === noOverlapRows.filter((r) => r.fatigue.key === 'high').length + noOverlapRows.filter((r) => r.burnout.key === 'high').length);
+
+const completeOverlapRows = [row('critical', 'critical'), row('high', 'high'), row('critical', 'high')];
+check('complete overlap: union is 3, naive sum would have been 6',
+  completeOverlapRows.filter(isAtRiskDriver).length === 3);
+check('complete overlap: naive sum WOULD have double-counted (regression proof)',
+  completeOverlapRows.filter((r) => r.fatigue.key === 'high' || r.fatigue.key === 'critical').length
+  + completeOverlapRows.filter((r) => r.burnout.key === 'high' || r.burnout.key === 'critical').length === 6);
 
 console.log('\n[Feature 11 — Distributions]');
 check('health distribution covers all bands + totals to driver count',
