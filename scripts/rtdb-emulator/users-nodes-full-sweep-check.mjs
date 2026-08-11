@@ -44,12 +44,24 @@ const testEnv = await initializeTestEnvironment({
 const asAdmin = () => testEnv.authenticatedContext('id-admin', { role: 'admin' }).database();
 const asAnon = () => testEnv.unauthenticatedContext().database();
 const asBidang = () => testEnv.authenticatedContext('id-bidang', { role: 'bidang' }).database();
+const asCarol = () => testEnv.authenticatedContext('carol', { role: 'viewer' }).database();
 
 try {
   await testEnv.clearDatabase();
 
   console.log('\n=== users/$username — completion: admin cross-user WRITE (Phase A only proved admin cross-user READ) ===');
   await checkAsync("admin -> writes bob's users/bob record ALLOWED (a separate expression from the read rule, even though textually parallel)", () => assertSucceeds(asAdmin().ref('users/bob/displayName').set('Bob Updated By Admin')));
+
+  console.log('\n=== users/$username — self-write role/active/archived PINNED (v1.30.7.9 fix). Found during v1.30.8 Custom Role Assignment investigation: the self-write branch (auth.uid === $username) had no field restriction at all, so any authenticated user could rewrite their OWN role/active/archived directly via RTDB (bypassing the app UI entirely), then re-login to mint a token for the tampered role — a full self-privilege-escalation path, pre-existing since Phase 6 (v1.30.6.10) narrowed /users to admin-or-self but added no field-level guard. Fix pins role/active/archived to their persisted value on any write that is NOT admin/adminEquivalent. ===');
+  await checkAsync('carol (self, viewer, no prior record) -> creates her own record without touching role/active/archived ALLOWED (both sides null — the exploit needs an actual CHANGE, not mere existence)', () => assertSucceeds(asCarol().ref('users/carol/displayName').set('Carol')));
+  await asAdmin().ref('users/carol').set({ username: 'carol', displayName: 'Carol', role: 'viewer', active: true, archived: false });
+  await checkAsync('carol (self) -> escalates her own role to admin DENIED (the exploit this fix closes)', () => assertFails(asCarol().ref('users/carol/role').set('admin')));
+  await checkAsync('carol (self) -> deactivates her own active field DENIED', () => assertFails(asCarol().ref('users/carol/active').set(false)));
+  await checkAsync('carol (self) -> archives her own archived field DENIED', () => assertFails(asCarol().ref('users/carol/archived').set(true)));
+  await checkAsync('carol (self) -> re-writes role to its OWN unchanged value ALLOWED (a true no-op self-write is not the exploit)', () => assertSucceeds(asCarol().ref('users/carol/role').set('viewer')));
+  await checkAsync('carol (self) -> legitimate profile-only self-write (displayName, the real handleProfileSubmit() shape) still ALLOWED', () => assertSucceeds(asCarol().ref('users/carol/displayName').set('Carol Updated')));
+  await checkAsync("bob -> still DENIED writing carol's role (cross-user, unaffected by this fix — already covered by role-claim-rules-check.mjs, re-asserted here for locality)", () => assertFails(testEnv.authenticatedContext('bob', { role: 'viewer' }).database().ref('users/carol/role').set('admin')));
+  await checkAsync('admin -> still changes another user (carol) role ALLOWED (admin/adminEquivalent bypass is completely unaffected by this fix)', () => assertSucceeds(asAdmin().ref('users/carol/role').set('bidang')));
 
   console.log('\n=== userProfiles  (.read: "auth != null" for anyone, .write: "false" for EVERYONE including admin) ===');
   await checkAsync('bidang (any authenticated role) -> userProfiles read ALLOWED', () => assertSucceeds(asBidang().ref('userProfiles').once('value')));

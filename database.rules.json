@@ -156,7 +156,7 @@
     "users": {
       "$username": {
         ".read": "auth.token.role === 'admin' || auth.token.adminEquivalent === true || auth.uid === $username",
-        ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true || auth.uid === $username"
+        ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true || (auth.uid === $username && newData.child('role').val() === data.child('role').val() && newData.child('active').val() === data.child('active').val() && newData.child('archived').val() === data.child('archived').val())"
       }
     },
 
