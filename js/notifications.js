@@ -1,6 +1,9 @@
 'use strict';
 
-import { getUserList } from './users.js';
+// v1.30.6.10 — RTDB Security Hardening Program, Phase 6: display-name-only
+// resolution reads the broadly-readable /userProfiles mirror, not the full
+// /users collection (which now carries credential/private fields).
+import { getUserProfileList } from './user-profiles-store.js';
 import { getCurrentUser } from './auth.js';
 import { subscribeNode, updateFirebaseData } from './firebase.js';
 import { wireSheetSwipeDismiss, lockBodyScroll, unlockBodyScroll } from './ui/sheet-gesture.js'; // Phase 11K
@@ -9,7 +12,7 @@ import { wireSheetSwipeDismiss, lockBodyScroll, unlockBodyScroll } from './ui/sh
 
 function resolveDisplayName(entry) {
   if (entry.displayName && entry.displayName !== entry.username) return entry.displayName;
-  const user = getUserList().find(u => u.username === entry.username);
+  const user = getUserProfileList().find(u => u.username === entry.username);
   return user?.displayName || entry.username;
 }
 

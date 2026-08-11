@@ -1,16 +1,26 @@
 /* ============================================================
-   PERMISSION-SERVICE.JS — Permission Foundation (v1.30.0)
+   PERMISSION-SERVICE.JS — Permission Foundation (v1.30.0, Custom-Role-aware
+   since v1.30.5, storage-decoupled since v1.30.6)
 
    The single source of truth for "can the CURRENT session do X". Backed by
-   config/role-permissions.js (role → permission grants) and, transitively,
-   config/permission-registry.js (permission definitions + metadata).
+   config/role-permissions.js (System Role → permission grants) and,
+   transitively, config/permission-registry.js (permission definitions +
+   metadata), plus role-management/runtime-role-provider.js for roles that
+   aren't in that static registry (Custom Roles).
 
-   This is a FOUNDATION-ONLY layer: nothing in the app calls it yet, and no
-   existing role check (auth.js's PERMISSIONS/hasPermission, canAccessModule,
-   canEng, isAdmin, etc.) is touched or migrated. Old checks keep working
-   exactly as before. New code going forward should ask can(permission)
-   instead of adding another role === '...' branch. Future phases migrate
-   existing call sites module by module.
+   v1.30.5 is this file's first real consumer: js/app.js#canAccessModule()
+   and its dependent navigation cluster. Other existing role checks
+   (auth.js's PERMISSIONS/hasPermission, canEng, isAdmin, etc.) are still
+   untouched — future phases migrate remaining call sites module by module.
+
+   v1.30.6: this file deliberately does NOT import role-management/
+   custom-roles-store.js (or any concrete storage) directly — only
+   runtime-role-provider.js's getRuntimeRole(roleId). That indirection is
+   the whole point: which Firebase node/mechanism backs a Custom Role's
+   runtime resolution is an implementation detail the provider owns: it can
+   change (e.g. to a mirrored roleRuntime node) without this file, the
+   authorization engine, ever being touched. See runtime-role-provider.js's
+   own header for the "Future Runtime Architecture" this enables.
 
    Deliberately narrow: this file only answers session-scoped authorization
    questions. It does not expose the metadata catalog or the tree — a future
@@ -18,29 +28,46 @@
    config/role-permissions.js (grants) directly for that, keeping this
    service's one job (and "no UI inside the service") honest.
 
-   Permissions are loaded once (the registries are frozen at import time)
-   and the per-role permission Set is built once and cached — repeated
-   lookups are O(1) Set membership checks, not re-parsed data.
+   System Role permission Sets are built once and cached — repeated lookups
+   are O(1) Set membership checks, not re-parsed data. Custom Role Sets are
+   NOT cached the same way: the runtime role provider's backing store
+   already holds a live, reactively-updated local cache, so re-reading it
+   per call is itself O(1) and always reflects the latest edit — caching it
+   a second time here would risk serving a stale grant after an admin edits
+   a Custom Role's permissions.
 
-   PURE: plain lookups over getCurrentUser(). No DOM, no Firebase writes.
+   PURE: plain lookups over getCurrentUser() (+ the runtime role provider's
+   already-cached read). No DOM, no Firebase writes.
    ============================================================ */
 
 'use strict';
 
 import { getCurrentUser } from './auth.js';
-import { ROLE_PERMISSIONS, permissionsForRole } from './config/role-permissions.js';
+import { ROLE_PERMISSIONS } from './config/role-permissions.js';
+import { getRuntimeRole } from './role-management/runtime-role-provider.js';
 
 const EMPTY_SET = Object.freeze(new Set());
 
-/** roleId -> Set<permissionId>, built once per role and reused after that. */
+/** roleId -> Set<permissionId>, built once per SYSTEM role and reused after that. */
 const _permissionSetCache = new Map();
 
+/**
+ * Permission Set for `roleId`. System Roles resolve from the static,
+ * cached registry. Anything else is resolved through the runtime role
+ * provider — an unresolvable or archived role fails closed (EMPTY_SET),
+ * same as an unknown role id always has.
+ */
 function permissionSetFor(roleId) {
   if (!roleId) return EMPTY_SET;
-  if (!_permissionSetCache.has(roleId)) {
-    _permissionSetCache.set(roleId, new Set(ROLE_PERMISSIONS[roleId] || []));
+  if (roleId in ROLE_PERMISSIONS) {
+    if (!_permissionSetCache.has(roleId)) {
+      _permissionSetCache.set(roleId, new Set(ROLE_PERMISSIONS[roleId] || []));
+    }
+    return _permissionSetCache.get(roleId);
   }
-  return _permissionSetCache.get(roleId);
+  const runtimeRole = getRuntimeRole(roleId);
+  if (!runtimeRole || runtimeRole.archived === true) return EMPTY_SET;
+  return new Set(runtimeRole.permissions || []);
 }
 
 /**
@@ -73,5 +100,5 @@ export function hasAll(permissions) {
 /** Every permission id the current session's role holds (empty array if signed out). */
 export function listPermissions() {
   const user = getCurrentUser();
-  return user ? permissionsForRole(user.role) : [];
+  return user ? [...permissionSetFor(user.role)] : [];
 }

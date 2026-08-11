@@ -1,16 +1,23 @@
-/* permission-service-check.mjs — Permission Foundation (v1.30.0)
+/* permission-service-check.mjs — Permission Foundation (v1.30.0; extended
+   v1.30.5 for Custom Role resolution + the runtime invariant guard)
    PURE node test. Drives the REAL permission-registry.js + role-permissions.js
    directly (both pure, both Node-loadable — no Firebase mocking needed).
    permission-service.js itself imports auth.js (Firebase-touching, not
    Node-loadable, same constraint documented in vehicle-asset-check.mjs), so
    its can()/cannot()/hasAny()/hasAll()/listPermissions() are exercised here
-   via a local mirror of the exact same permissionSetFor()-cache algorithm,
+   via a local mirror of the exact same permissionSetFor() algorithm,
    parameterized by role instead of getCurrentUser() — the same pattern
-   other check scripts use to test pure logic without booting Firebase.
+   other check scripts use to test pure logic without booting Firebase. The
+   v1.30.5 Custom Role branch of that mirror is checked against synthetic
+   fixtures (custom-roles-store.js itself is Firebase-coupled, not
+   Node-loadable — its Puppeteer-driven counterpart is
+   scripts/permission-runtime-invariant-check.mjs).
    Covers: permission lookup, unknown permission, multiple permissions, role
    mapping, caching, performance, edge cases, regression (eng./sic. parity
-   with role-registry.js CAPABILITIES), registry integrity, and the
-   Module -> Feature -> Permission hierarchy tree.
+   with role-registry.js CAPABILITIES), registry integrity, the
+   Module -> Feature -> Permission hierarchy tree, Custom Role resolution,
+   and a permanent drift guard against Role Management's own Role Summary
+   computation (role-management-logic.js#grantedSetForRole).
    Run: node scripts/permission-service-check.mjs (exit 0 = pass) */
 
 import {
@@ -27,20 +34,29 @@ import {
   validateRegistryIntegrity,
 } from '../js/config/role-permissions.js';
 import { ROLES, CAPABILITIES } from '../js/config/role-registry.js';
+import { grantedSetForRole } from '../js/role-management/role-management-logic.js';
 
 let pass = 0, fail = 0;
 const check = (name, cond) => { if (cond) { pass++; console.log(`  ✓ ${name}`); } else { fail++; console.log(`  ✗ ${name}`); } };
 
 /* ── Local mirror of permission-service.js's algorithm, parameterized by
-   role instead of getCurrentUser() (auth.js is not Node-loadable). ────── */
+   role instead of getCurrentUser() (auth.js is not Node-loadable). The
+   Custom Role fallback branch (v1.30.5) is mirrored against a synthetic
+   fixture array instead of the real (Firebase-coupled) custom-roles-store.js
+   — same shape (`{id, permissions, archived}`) getCustomRoleById() returns. */
 const _setCache = new Map();
-function permissionSetFor(roleId) {
+function permissionSetFor(roleId, customRoleFixtures = []) {
   if (!roleId) return new Set();
-  if (!_setCache.has(roleId)) _setCache.set(roleId, new Set(ROLE_PERMISSIONS[roleId] || []));
-  return _setCache.get(roleId);
+  if (roleId in ROLE_PERMISSIONS) {
+    if (!_setCache.has(roleId)) _setCache.set(roleId, new Set(ROLE_PERMISSIONS[roleId] || []));
+    return _setCache.get(roleId);
+  }
+  const customRole = customRoleFixtures.find((r) => r.id === roleId) || null;
+  if (!customRole || customRole.archived === true) return new Set();
+  return new Set(customRole.permissions || []);
 }
-const canAs = (roleId, permission) => permissionSetFor(roleId).has(permission);
-const cannotAs = (roleId, permission) => !canAs(roleId, permission);
+const canAs = (roleId, permission, fixtures) => permissionSetFor(roleId, fixtures).has(permission);
+const cannotAs = (roleId, permission, fixtures) => !canAs(roleId, permission, fixtures);
 const hasAnyAs = (roleId, permissions) => permissions.some((p) => canAs(roleId, p));
 const hasAllAs = (roleId, permissions) => permissions.length > 0 && permissions.every((p) => canAs(roleId, p));
 const listPermissionsAs = (roleId) => permissionsForRole(roleId);
@@ -138,6 +154,29 @@ check("Warehouse -> 'Goods In' feature has exactly 1 permission", tree.Warehouse
 check('permissionsByModule(Warehouse) matches the tree module total', permissionsByModule('Warehouse').length === Object.values(tree.Warehouse).reduce((s, l) => s + l.length, 0));
 check('permissionsByCategory(Warehouse, Items) matches tree leaf', permissionsByCategory('Warehouse', 'Items').length === tree.Warehouse.Items.length);
 check('every module/category referenced in PERMISSIONS appears as a tree node', listAllPermissions().every((p) => tree[p.module] && tree[p.module][p.category] && tree[p.module][p.category].some((x) => x.id === p.id)));
+
+console.log('\n11. Custom Role resolution (v1.30.5) — fallback path, fail-closed rules');
+const customFixtures = [
+  { id: 'warehouse-lead-a1b2', name: 'Warehouse Lead', permissions: ['warehouse.view', 'warehouse.item.edit'], archived: false },
+  { id: 'retired-role-9z', name: 'Retired Role', permissions: ['system.admin'], archived: true },
+];
+check('a non-archived Custom Role sees its own granted permission', canAs('warehouse-lead-a1b2', 'warehouse.item.edit', customFixtures));
+check('a non-archived Custom Role does not see an ungranted permission', cannotAs('warehouse-lead-a1b2', 'system.admin', customFixtures));
+check('an archived Custom Role fails closed even for a permission it was granted before archiving', cannotAs('retired-role-9z', 'system.admin', customFixtures));
+check("an unresolvable role id (no System Role, no fixture match) fails closed", cannotAs('no-such-role', 'driver.schedule.view', customFixtures));
+check('a System Role id is never shadowed by a same-named Custom Role fixture (registry checked first)', canAs('admin', 'driver.schedule.create', [{ id: 'admin', permissions: [], archived: false }]));
+
+console.log('\n12. Runtime invariant guard — permission-service.js resolution must exactly match Role Management\'s own Role Summary computation (role-management-logic.js#grantedSetForRole), for every System Role. Catches the two ever silently forking.');
+let invariantOk = true;
+for (const role of ROLES) {
+  const runtimeSet = permissionSetFor(role.id);
+  const summarySet = grantedSetForRole(role.id);
+  if (!setsEqual(runtimeSet, summarySet)) {
+    invariantOk = false;
+    console.log(`    drift: ${role.id} — runtime has ${runtimeSet.size}, Role Summary has ${summarySet.size}`);
+  }
+}
+check('permission-service.js and Role Management Role Summary agree for every System Role', invariantOk);
 
 function setsEqual(a, b) {
   if (a.size !== b.size) return false;

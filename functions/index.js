@@ -27,6 +27,7 @@
 
 const { health } = require('./src/health');
 const { verifyPin } = require('./src/auth/verifyPin');
+const { createUserCredential, resetUserCredential, changeMyCredential } = require('./src/auth/credentialCallables');
 
 const { publishEvent } = require('./src/events/publishEvent');
 const { onAssignmentWrite } = require('./src/events/onAssignmentWrite');
@@ -44,8 +45,24 @@ const { reminderTick } = require('./src/reminders/tick');
 
 const { exportAnalyticsReport } = require('./src/exports/analytics');
 
+const { backupTick } = require('./src/maintenance/backupTick');
+const { acquireReimbursementNumber } = require('./src/reimbursement/counter');
+
+const { onUserWrite } = require('./src/users/onUserWrite');
+const { notifyAdminsOfNewRequest } = require('./src/notifications/notifyAdminsOfNewRequest');
+
 exports.health = health;
 exports.verifyPin = verifyPin;
+
+/* Credential Service callables (v1.30.6.2, Emergency Credential Security
+   Patch) — the only write path into /users/{username}.pin / .pinHash.
+   createUserCredential/resetUserCredential are admin-only; changeMyCredential
+   is self-service, scoped to the caller's own uid. See
+   src/auth/credentialService.js for the shared logic and
+   docs/CREDENTIAL_SECURITY_PATCH_v1.30.6.2.md for the full design. */
+exports.createUserCredential = createUserCredential;
+exports.resetUserCredential = resetUserCredential;
+exports.changeMyCredential = changeMyCredential;
 
 exports.publishEvent = publishEvent;
 exports.onAssignmentWrite = onAssignmentWrite;
@@ -86,3 +103,23 @@ exports.reminderTick = reminderTick;
    ships the 'poc' foundation template only. See
    Analytics Export/IMPLEMENTATION_ARCHITECTURE.md §7. */
 exports.exportAnalyticsReport = exportAnalyticsReport;
+
+/* RTDB Security Hardening Program, Phase 3 (v1.30.6.6) — moves /backups
+   and /reimbursement_counters off client RTDB access entirely, the same
+   "Client -> Cloud Function -> Admin SDK -> RTDB, .write: false" pattern
+   already used by the Credential Service and push subscriptions.
+   backupTick replaces the old client-side, localStorage-guarded
+   once-a-day opportunistic backup with a real Cloud Scheduler job.
+   acquireReimbursementNumber replaces a client-side runTransaction()
+   with a server-side atomic increment. */
+exports.backupTick = backupTick;
+exports.acquireReimbursementNumber = acquireReimbursementNumber;
+
+/* RTDB Security Hardening Program, Phase 6 (v1.30.6.10) — the /users ->
+   /userProfiles split. onUserWrite mirrors the safe display subset into
+   the new broadly-readable node; notifyAdminsOfNewRequest replaces the
+   one client-side consumer that needed broad admin-record read access
+   (Telegram fan-out) with a server-side equivalent, closing that gap
+   before it could reopen the exposure this split exists to close. */
+exports.onUserWrite = onUserWrite;
+exports.notifyAdminsOfNewRequest = notifyAdminsOfNewRequest;

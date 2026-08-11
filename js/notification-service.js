@@ -37,23 +37,6 @@ function buildDateRangeStr(request) {
   return `${formatTanggal(start)} → ${formatTanggal(end)}`;
 }
 
-/**
- * Build Telegram message untuk notifikasi request pending.
- * Dikirim ke Admin/Sarpras saat ada request baru.
- */
-function buildRequestPendingMessage(request) {
-  const dateStr = buildDateRangeStr(request);
-  return (
-    '📋 *Request Jadwal Baru*\n\n' +
-    `*Dari:* ${request.requesterName || 'Unknown'}\n` +
-    `*Keperluan:* ${request.purpose || '-'}\n` +
-    `*Tanggal:* ${dateStr}\n` +
-    `*Waktu:* ${request.startTime || '-'} – ${request.endTime || '-'}\n` +
-    `*Kendaraan:* ${request.vehicle || '-'}\n` +
-    (request.notes ? `*Catatan:* ${request.notes}\n` : '') +
-    '\n_Silakan login untuk approve/reject._'
-  );
-}
 
 function buildRequestApprovedMessage(request, driver) {
   const dateStr = buildDateRangeStr(request);
@@ -157,30 +140,13 @@ export async function sendRequestRejectedNotification(request, getUserFn) {
   }
 }
 
-/**
- * Notify all active admin users when a new request comes in from bidang.
- * Sends to every admin who has notificationsEnabled.
- *
- * @param {Object}   request     - The new request object
- * @param {Function} getAllUsersFn - async () => user[]
- */
-export async function sendNewRequestNotificationToAdmins(request, getAllUsersFn) {
-  if (!request || typeof getAllUsersFn !== 'function') return;
-  try {
-    const allUsers = await getAllUsersFn();
-    const admins = allUsers.filter(u => u.role === 'admin' && u.active !== false && u.notificationsEnabled);
-    for (const admin of admins) {
-      try {
-        await sendNotification(admin, buildRequestPendingMessage(request));
-        console.log('[Notif] New request → sent to admin', admin.username);
-      } catch (err) {
-        console.error('[Notif] Admin notify failed for', admin.username, err);
-      }
-    }
-  } catch (err) {
-    console.error('[Notif] sendNewRequestNotificationToAdmins failed:', err);
-  }
-}
+// v1.30.6.10 — RTDB Security Hardening Program, Phase 6:
+// sendNewRequestNotificationToAdmins() was removed. It required a bidang
+// session to read every admin's telegramChatIds/notificationsEnabled
+// directly out of the full /users collection — exactly the broad-read
+// exposure the userProfiles/users split closes. Replaced by the
+// notifyAdminsOfNewRequest Cloud Function (functions/src/notifications/
+// notifyAdminsOfNewRequest.js), called via js/firebase.js#callNotifyAdminsOfNewRequest().
 
 // v1.25.x Driver Notification V2 — Final Hardening (Part 4 — single event
 // pipeline). sendNewAssignmentNotificationToDriver, sendAssignmentUpdateNotifications,

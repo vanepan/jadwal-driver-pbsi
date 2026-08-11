@@ -1,7 +1,7 @@
 'use strict';
 
-import { readNode, subscribeNode, storeFirebaseData, updateFirebaseData, isFirebaseConfigured } from './firebase.js';
-import { ENGINEERING_ROLE } from './config/role-registry.js';
+import { readNode, subscribeNode, storeFirebaseData, updateFirebaseData, isFirebaseConfigured, callCreateUserCredential, callResetUserCredential } from './firebase.js';
+import { getAllRoles } from './role-management/role-catalog.js';
 
 const USERS_PATH = 'users';
 
@@ -32,12 +32,18 @@ function isValidPin(value) {
 }
 
 // v1.20.3 RC1 — the Engineering roles are first-class stored roles (role-registry).
-// They were missing here, so createUser/updateUser silently fell back to 'viewer',
-// turning every new Engineering user into a Viewer. Keep this list in sync with the
-// grantable roles: the core four + the two Engineering segments.
+// They were missing from an earlier hardcoded list, so createUser/updateUser
+// silently fell back to 'viewer', turning every new Engineering user into a
+// Viewer. v1.30.6 — replaced that hardcoded 6-string list with
+// role-catalog.js#getAllRoles() (System Roles + active, non-archived Custom
+// Roles): a strict superset of the old check, so every value that validated
+// before still validates, and a Custom Role becomes assignable the moment
+// it's created without this function needing to change again. An archived
+// Custom Role is correctly NOT in getAllRoles() (it filters to active only),
+// so it stops validating the instant it's archived — matches the picker's
+// own "archived roles are never assignable" rule.
 function isValidRole(value) {
-  return ['admin', 'bidang', 'viewer', 'driver',
-    ENGINEERING_ROLE.COORDINATOR, ENGINEERING_ROLE.MEMBER].includes(value);
+  return getAllRoles().some((r) => r.id === value);
 }
 
 function mapFirebaseUsers(value) {
@@ -137,11 +143,14 @@ export async function createUser(userData) {
   }
 
   const createdAt = new Date().toISOString();
+  // v1.30.6.2 — Emergency Credential Security Patch: the base record never
+  // includes a `pin` field at all. The Credential Service (Cloud Functions)
+  // owns hashing + persistence of the credential end to end; this client
+  // never assembles or writes a credential object itself.
   const nextUser = {
     username,
     displayName: String(userData.displayName || userData.username).trim() || username,
     role: isValidRole(userData.role) ? userData.role : 'viewer',
-    pin: String(userData.pin).trim(),
     // telegramChatIds: object with keys { primary, secondary1, secondary2 } for drivers
     telegramChatIds: userData.telegramChatIds && typeof userData.telegramChatIds === 'object'
       ? userData.telegramChatIds
@@ -157,6 +166,15 @@ export async function createUser(userData) {
     ...users.filter(user => normalizeUsername(user.username) !== username),
     nextUser,
   ]);
+
+  try {
+    await callCreateUserCredential({ username, pin: String(userData.pin).trim() });
+  } catch (err) {
+    // Base record already exists — this user just can't log in yet. Reset
+    // PIN is the existing, ordinary recovery path, not a new one.
+    throw new Error('User dibuat, tapi PIN gagal diset — gunakan Reset PIN.');
+  }
+
   return nextUser;
 }
 
@@ -193,11 +211,13 @@ export async function updateUser(userData) {
     updatedAt: new Date().toISOString(),
   };
 
-  if (String(userData.pin || '').trim()) {
-    if (!isValidPin(userData.pin)) {
-      throw new Error('PIN harus tepat 4 digit.');
-    }
-    updates.pin = String(userData.pin).trim();
+  // v1.30.6.2 — a submitted PIN never becomes part of this update; the
+  // Credential Service (Cloud Functions) owns hashing + persistence of
+  // that field, called separately below once the rest of the record is
+  // safely written.
+  const pin = String(userData.pin || '').trim();
+  if (pin && !isValidPin(userData.pin)) {
+    throw new Error('PIN harus tepat 4 digit.');
   }
 
   await updateFirebaseData(`${USERS_PATH}/${username}`, updates);
@@ -205,6 +225,11 @@ export async function updateUser(userData) {
   refreshUsersCache(users.map(user =>
     normalizeUsername(user.username) === username ? updatedUser : user
   ));
+
+  if (pin) {
+    await callResetUserCredential({ username, pin });
+  }
+
   return updatedUser;
 }
 

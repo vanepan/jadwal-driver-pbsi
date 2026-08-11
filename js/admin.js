@@ -3,6 +3,7 @@
 import { getCurrentUser, isAdmin, logout } from './auth.js';
 import { roleLabel } from './config/role-registry.js';   // single source of role display labels
 import { createUser, getUserByUsername, getUsers, updateUser, deactivateUser, validateUsername, registerUsersChangeListener, getUserList } from './users.js';
+import { callResetUserCredential, callChangeMyCredential } from './firebase.js';
 // v1.30.4 User Management Integration — Role Domain reads for the create/edit
 // modal: an assignable-role catalog (System + active Custom, disabled) and a
 // reused Role Summary (never recomputed locally, per role-summary-model.js).
@@ -270,7 +271,11 @@ export function openUserFormModal(username = null) {
           if (roleField.value !== user.role) currentRoleWarning = resolveRoleInfo(user.role);
         }
       }
-      if (pinField) pinField.value = user.pin || '';
+      // v1.30.6.2 — never pre-fill a stored credential (hashed or legacy
+      // plaintext). Empty on Edit, exactly like Create; submitting it
+      // empty means "don't change the credential" (updateUser()'s pin
+      // branch only fires on a non-empty value).
+      if (pinField) pinField.value = '';
       if (activeField) activeField.checked = Boolean(user.active);
     }
   } else {
@@ -585,7 +590,6 @@ function renderUserCard(user) {
       <span class="user-status ${statusClass}">${status}</span>
     </div>
     <div class="user-card-meta">
-      <div>PIN: ${escapeHTML(user.pin || '—')}</div>
       <div>Dibuat: ${new Date(user.createdAt || '').toLocaleDateString('id-ID') || '-'}</div>
     </div>
     <div class="user-card-actions">
@@ -639,10 +643,12 @@ async function handleUserActionClick(event) {
 
   if (action === 'reset') {
     try {
-      const randomPin = String(Math.floor(1000 + Math.random() * 9000));
-      await updateUser({ username, pin: randomPin });
+      // v1.30.6.2 — the Credential Service generates + hashes the new PIN
+      // server-side and returns it once for this toast; the client never
+      // computes a credential itself.
+      const { pin: newPin } = await callResetUserCredential({ username });
       await logAction({ userId: getCurrentUser().id, username: getCurrentUser().username, action: 'user_pin_reset', targetId: username });
-      showToast(`PIN untuk ${username} di-reset menjadi ${randomPin}`);
+      showToast(`PIN untuk ${username} di-reset menjadi ${newPin}`);
       users = await getUsers();
       renderAdminList();
     } catch (error) {
@@ -841,15 +847,12 @@ async function handleProfileSubmit(event) {
   }
 
   try {
-    const user = await getUserByUsername(currentUser.username);
-    if (!user) {
-      showToast('User tidak ditemukan.');
-      return;
-    }
-
-    if (pinChangeRequested && user.pin !== currentPin) {
-      showToast('PIN saat ini tidak cocok.');
-      return;
+    // v1.30.6.2 — proof of the current PIN and the actual change are both
+    // owned by the Credential Service; this client never compares against
+    // a stored credential itself. Verified/changed first so a wrong
+    // current PIN never leaves the rest of the profile half-updated.
+    if (pinChangeRequested) {
+      await callChangeMyCredential({ currentPin, newPin });
     }
 
     const telegramChatIds = {};
@@ -864,8 +867,6 @@ async function handleProfileSubmit(event) {
       telegramChatIds,
       notificationsEnabled,
     };
-
-    if (pinChangeRequested) updatePayload.pin = newPin;
 
     await updateUser(updatePayload);
     await logAction({ userId: currentUser.id, username: currentUser.username, action: 'profile_updated', targetId: currentUser.username });

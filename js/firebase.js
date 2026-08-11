@@ -18,7 +18,6 @@ import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/
 // behavior.
 import { getStorage, ref as storageRef, uploadBytes, getBytes, uploadBytesResumable, deleteObject } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js';
 import { showToast } from './utils.js';
-import { getSetting } from './settings-store.js';
 
 /* ── Backend region — must match Cloud Functions deploy region ── */
 const FUNCTIONS_REGION = 'asia-southeast1';
@@ -199,6 +198,104 @@ export async function callVerifyPin(username, pin) {
   }
   const fn = httpsCallable(firebaseFunctions, 'verifyPin');
   const result = await fn({ username, pin });
+  return result.data;
+}
+
+/**
+ * Credential Service callables (v1.30.6.2, Emergency Credential Security
+ * Patch) — the ONLY way the client ever sets/resets/changes a user's PIN.
+ * The client never computes or stores a hash itself; it submits plaintext
+ * once to exactly the operation it needs and the Cloud Function owns
+ * hashing + persistence. See functions/src/auth/credentialService.js.
+ */
+
+/**
+ * Set the initial credential for a brand-new user (admin-only). Called
+ * right after the non-credential fields are written.
+ * @param {{ username: string, pin: string }} payload
+ * @returns {Promise<{ ok: boolean }>}
+ */
+export async function callCreateUserCredential(payload) {
+  if (!firebaseDb) initFirebaseApp();
+  if (!firebaseApp) throw new Error('Firebase belum siap.');
+  if (!firebaseFunctions) {
+    firebaseFunctions = getFunctions(firebaseApp, FUNCTIONS_REGION);
+  }
+  const fn = httpsCallable(firebaseFunctions, 'createUserCredential');
+  const result = await fn(payload);
+  return result.data;
+}
+
+/**
+ * Admin-authority reset of another user's credential — no proof of the
+ * prior PIN required. Omit `pin` to have one generated server-side.
+ * @param {{ username: string, pin?: string }} payload
+ * @returns {Promise<{ pin: string }>} the credential now in effect (shown once)
+ */
+export async function callResetUserCredential(payload) {
+  if (!firebaseDb) initFirebaseApp();
+  if (!firebaseApp) throw new Error('Firebase belum siap.');
+  if (!firebaseFunctions) {
+    firebaseFunctions = getFunctions(firebaseApp, FUNCTIONS_REGION);
+  }
+  const fn = httpsCallable(firebaseFunctions, 'resetUserCredential');
+  const result = await fn(payload);
+  return result.data;
+}
+
+/**
+ * Self-service PIN change — requires proof of the current PIN. Scoped to
+ * the caller's own session server-side; no username is ever sent.
+ * @param {{ currentPin: string, newPin: string }} payload
+ * @returns {Promise<{ ok: boolean }>}
+ */
+export async function callChangeMyCredential(payload) {
+  if (!firebaseDb) initFirebaseApp();
+  if (!firebaseApp) throw new Error('Firebase belum siap.');
+  if (!firebaseFunctions) {
+    firebaseFunctions = getFunctions(firebaseApp, FUNCTIONS_REGION);
+  }
+  const fn = httpsCallable(firebaseFunctions, 'changeMyCredential');
+  const result = await fn(payload);
+  return result.data;
+}
+
+/**
+ * Acquire the next reimbursement document number for a given month
+ * (RTDB Security Hardening Program, Phase 3, v1.30.6.6). The server owns
+ * the atomic counter transaction — the client never touches
+ * /reimbursement_counters directly.
+ * @param {{ dateStr: string }} payload
+ * @returns {Promise<{ docNumber: string }>}
+ */
+export async function callAcquireReimbursementNumber(payload) {
+  if (!firebaseDb) initFirebaseApp();
+  if (!firebaseApp) throw new Error('Firebase belum siap.');
+  if (!firebaseFunctions) {
+    firebaseFunctions = getFunctions(firebaseApp, FUNCTIONS_REGION);
+  }
+  const fn = httpsCallable(firebaseFunctions, 'acquireReimbursementNumber');
+  const result = await fn(payload);
+  return result.data;
+}
+
+/**
+ * Notify all active, notification-enabled admins that a new request came
+ * in (RTDB Security Hardening Program, Phase 6, v1.30.6.10). Replaces the
+ * old client-side fan-out that required a bidang session to read every
+ * admin's telegramChatIds directly — the server already has, and always
+ * needed, that access.
+ * @param {{ requestId: string }} payload
+ * @returns {Promise<{ ok: boolean, sent: number }>}
+ */
+export async function callNotifyAdminsOfNewRequest(payload) {
+  if (!firebaseDb) initFirebaseApp();
+  if (!firebaseApp) throw new Error('Firebase belum siap.');
+  if (!firebaseFunctions) {
+    firebaseFunctions = getFunctions(firebaseApp, FUNCTIONS_REGION);
+  }
+  const fn = httpsCallable(firebaseFunctions, 'notifyAdminsOfNewRequest');
+  const result = await fn(payload);
   return result.data;
 }
 
@@ -550,6 +647,18 @@ export function removeOneAssignment(assignmentId) {
 
 /**
  * Save driver requests ke localStorage dan Firebase.
+ *
+ * v1.30.6.8 — RTDB Security Hardening Program, Phase 5A: this function's
+ * Firebase write is a full-collection set() on the ENTIRE /driver_requests
+ * node, on every single action. That made a per-record ownership rule
+ * (bidang may write only their own request) mechanically impossible — an
+ * RTDB security rule for a multi-path write must be satisfied for EVERY
+ * touched child, so a bidang user submitting one new request would have
+ * needed write permission on every OTHER existing request too. Prefer
+ * `saveOneRequest()` below for anything that changes a single record
+ * (creation, edit, approve/reject, comment) — this function is kept for
+ * any genuinely bulk/multi-record write, and still keeps the localStorage
+ * cache correct either way.
  * @param {Array} requests
  * @returns {Promise}
  */
@@ -565,6 +674,31 @@ export function saveRequests(requests) {
     .catch(err => {
       console.error('Firebase request save gagal:', err);
       showToast('Firebase gagal menyimpan request. Data tersimpan di device ini.');
+    });
+}
+
+/**
+ * Save exactly ONE driver request — a surgical set() at
+ * driver_requests/{request.id}, mirroring saveOneAssignment()'s existing
+ * pattern. `allRequestsForCache` (optional) is the full in-memory array,
+ * written to localStorage exactly as saveRequests() already does, so
+ * offline/local-cache behavior is unchanged — only the Firebase write
+ * becomes per-record instead of whole-collection.
+ * @param {Object} request
+ * @param {Array} [allRequestsForCache]
+ * @param {{silent?: boolean}} [opts]
+ * @returns {Promise<{ok: boolean, error?: Error}>}
+ */
+export function saveOneRequest(request, allRequestsForCache, opts = {}) {
+  if (allRequestsForCache) localStorage.setItem(REQUESTS_STORAGE_KEY, JSON.stringify(allRequestsForCache));
+  if (!firebaseDb || !request?.id) return Promise.resolve({ ok: false, error: new Error('Firebase belum terkonfigurasi atau request tanpa id') });
+  const reqRef = ref(firebaseDb, `${FIREBASE_REQUESTS_PATH}/${request.id}`);
+  return set(reqRef, request)
+    .then(() => ({ ok: true }))
+    .catch(err => {
+      console.error('Firebase single-request save gagal:', err);
+      if (!opts.silent) showToast('Firebase gagal menyimpan request. Data tersimpan di device ini.');
+      return { ok: false, error: err };
     });
 }
 
@@ -716,67 +850,11 @@ async function _logSafetyAnomalyToFirebase(localCount, remoteCount, reason) {
 }
 
 
-/**
- * Buat backup harian assignments ke /backups/assignments/TIMESTAMP.
- * Dipanggil sekali per hari saat Firebase pertama kali load data.
- * Non-blocking — kegagalan backup tidak menghambat aplikasi.
- * @param {Object} rawData - Raw Firebase map dari snapshot.val()
- */
-async function _backupAssignmentsOnce(rawData) {
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-  const storageKey = `pbsi_backup_done_${today}`;
-  if (localStorage.getItem(storageKey)) return; // sudah backup hari ini
-
-  try {
-    const db = firebaseDb;
-    if (!db || !rawData) return;
-    const ts = new Date().toISOString().slice(0, 19).replace('T', '-').replace(/:/g, '');
-    const backupRef = ref(db, `backups/assignments/${ts}`);
-    await set(backupRef, rawData);
-    localStorage.setItem(storageKey, ts);
-    console.info(`[BACKUP] Dibuat: backups/assignments/${ts}`);
-    // Bersihkan backup lama setelah backup baru berhasil
-    _pruneOldBackups();
-  } catch (err) {
-    console.warn('[BACKUP] Gagal (non-fatal):', err);
-  }
-}
-
-/**
- * Hapus backup yang lebih lama dari settings system.backupRetentionDays.
- * Non-blocking. Format key: YYYY-MM-DD-HHmmss
- */
-async function _pruneOldBackups() {
-  if (!firebaseDb) return;
-  try {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - getSetting('system.backupRetentionDays'));
-    // Format cutoff sebagai "YYYY-MM-DD" untuk perbandingan prefix
-    const cutoffPrefix = cutoff.toISOString().slice(0, 10);
-
-    const backupsRef = ref(firebaseDb, 'backups/assignments');
-    const snapshot = await get(backupsRef);
-    if (!snapshot.exists()) return;
-
-    const keys = Object.keys(snapshot.val());
-    const toDelete = keys.filter(key => {
-      // Key format: "2026-06-02-140532" — ambil 10 char pertama sebagai YYYY-MM-DD
-      const datePart = key.slice(0, 10);
-      return datePart < cutoffPrefix;
-    });
-
-    for (const key of toDelete) {
-      await remove(ref(firebaseDb, `backups/assignments/${key}`));
-      console.info(`[BACKUP] Dihapus (>${getSetting('system.backupRetentionDays')} hari): ${key}`);
-    }
-
-    if (toDelete.length > 0) {
-      console.info(`[BACKUP] Pruning selesai: ${toDelete.length} backup lama dihapus.`);
-    }
-  } catch (err) {
-    console.warn('[BACKUP] Pruning gagal (non-fatal):', err);
-  }
-}
+/* v1.30.6.6 — RTDB Security Hardening Program, Phase 3: the client-side
+   _backupAssignmentsOnce()/_pruneOldBackups() pair (localStorage-guarded,
+   opportunistic, ran once per browser per day) was removed. /backups is
+   now owned entirely by functions/src/maintenance/backupTick.js, a real
+   Cloud Scheduler job — no client RTDB write to /backups exists anymore. */
 
 /**
  * Initialize Firebase sync
@@ -812,12 +890,9 @@ export function initFirebaseSync() {
     _remoteAssignmentCount = updatedAssignments.length;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedAssignments));
 
-    // Backup sekali per hari saat pertama kali data Firebase diterima
-    const isFirstLoad = !firebaseLoadedOnce;
+    // v1.30.6.6 — backups are now owned by the backupTick Cloud Function
+    // (Cloud Scheduler, once daily), not triggered from the client anymore.
     firebaseLoadedOnce = true;
-    if (isFirstLoad) {
-      _backupAssignmentsOnce(snapshot.val());
-    }
 
     if (onDataChangeCallback) {
       onDataChangeCallback(updatedAssignments);
@@ -866,24 +941,21 @@ export function getFirebaseRequestsRef() {
  * Counter stored at: reimbursement_counters/{YYYY_MM}
  * Resets every month. Format: "PBSI/RMB/YYYY/MM/NNNN"
  *
+ * v1.30.6.6 — RTDB Security Hardening Program, Phase 3: the atomic
+ * transaction now runs server-side (acquireReimbursementNumber Cloud
+ * Function); this client no longer touches /reimbursement_counters
+ * directly. Same offline/error fallback shape as before (a
+ * non-sequential-but-non-blank number), just triggered by a failed
+ * callable instead of a failed local transaction.
+ *
  * @param {string} dateStr - Assignment date in YYYY-MM-DD format
  * @returns {Promise<string>} - Formatted document number
  */
 export async function acquireReimbursementDocNumber(dateStr) {
   const [year, month] = String(dateStr || new Date().toISOString()).slice(0, 7).split('-');
-  const key = `${year}_${month}`;
-
-  const db = firebaseDb || initFirebaseApp();
-  if (!db) {
-    // Offline fallback — not sequential but avoids blank number
-    return `PBSI/RMB/${year}/${month}/${String(Date.now()).slice(-4).padStart(4, '0')}`;
-  }
-
-  const counterRef = ref(db, `reimbursement_counters/${key}`);
   try {
-    const result = await runTransaction(counterRef, (current) => (current || 0) + 1);
-    const n = result.snapshot.val() ?? 1;
-    return `PBSI/RMB/${year}/${month}/${String(n).padStart(4, '0')}`;
+    const { docNumber } = await callAcquireReimbursementNumber({ dateStr });
+    return docNumber;
   } catch (err) {
     console.error('[RMB] Gagal acquire nomor dokumen:', err);
     return `PBSI/RMB/${year}/${month}/${String(Date.now()).slice(-4).padStart(4, '0')}`;

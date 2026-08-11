@@ -1,34 +1,34 @@
 {
   "rules": {
-    ".read": "auth != null",
-    ".write": "auth != null",
+    ".read": "false",
+    ".write": "false",
 
     "events": {
-      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
       ".write": "false"
     },
 
     "telegram_deliveries": {
-      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
       ".write": "false"
     },
 
     "notifications": {
       ".write": "false",
       "$recipientId": {
-        ".read": "auth.uid === $recipientId || auth.token.role === 'admin' || auth.token.role === 'developer'"
+        ".read": "auth.uid === $recipientId || auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true"
       }
     },
 
     "notification_deliveries": {
-      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
       ".write": "false"
     },
 
     "push_subscriptions": {
       ".write": "false",
       "$userId": {
-        ".read": "auth.uid === $userId || auth.token.role === 'admin' || auth.token.role === 'developer'"
+        ".read": "auth.uid === $userId || auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true"
       }
     },
 
@@ -41,86 +41,172 @@
     },
 
     "reminders": {
-      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
       ".write": "false",
       ".indexOn": ["fireAt"]
     },
 
+    "logs": {
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
+      "$logId": {
+        ".write": "auth != null && !data.exists()"
+      }
+    },
+
+    "analytics_exports": {
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
+      "$exportId": {
+        ".write": "auth != null && !data.exists()"
+      }
+    },
+
+    "feature_flags": {
+      ".read": "auth != null",
+      ".write": "false"
+    },
+
+    "settings": {
+      "operations": {
+        ".read": "auth != null",
+        ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true"
+      },
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
+      ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true"
+    },
+
     "pettyCashExpenses": {
-      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
-      ".write": "auth.token.role === 'admin'"
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
+      ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true"
     },
     "pettyCashNors": {
-      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
-      ".write": "auth.token.role === 'admin'"
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
+      ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true"
     },
     "pettyCashCycles": {
-      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
-      ".write": "auth.token.role === 'admin'"
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
+      ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true"
     },
     "pettyCashSettings": {
-      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
-      ".write": "auth.token.role === 'admin'"
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
+      ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true"
     },
     "pettyCashAudit": {
-      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
-      ".write": "auth.token.role === 'admin'"
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
+      ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true"
     },
 
     "overtimeUnits": {
-      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
-      ".write": "auth.token.role === 'admin'"
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
+      ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true"
     },
     "overtimeEmployees": {
-      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
-      ".write": "auth.token.role === 'admin'"
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
+      ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true"
     },
     "overtimeRates": {
-      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
-      ".write": "auth.token.role === 'admin'"
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
+      ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true"
     },
     "overtimeRateVersions": {
-      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
-      ".write": "auth.token.role === 'admin'"
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
+      ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true"
     },
     "overtimeHolidays": {
-      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
-      ".write": "auth.token.role === 'admin'"
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
+      ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true"
     },
     "overtimeRecords": {
-      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
-      ".write": "auth.token.role === 'admin'"
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
+      ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true"
     },
     "overtimeDailySummary": {
-      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
-      ".write": "auth.token.role === 'admin'"
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
+      ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true"
     },
     "overtimeMonthlySummary": {
-      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
-      ".write": "auth.token.role === 'admin'"
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
+      ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true"
     },
     "overtimeAudit": {
-      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
-      ".write": "auth.token.role === 'admin'"
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
+      ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true"
+    },
+    "overtimeBudget": {
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
+      ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true"
+    },
+    "overtimeReportHistory": {
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
+      ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true"
+    },
+    "overtimeClosing": {
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
+      ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true"
+    },
+    "overtimeArchive": {
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
+      ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true"
+    },
+
+    "userProfiles": {
+      ".read": "auth != null",
+      ".write": "false"
+    },
+
+    "users": {
+      "$username": {
+        ".read": "auth.token.role === 'admin' || auth.token.adminEquivalent === true || auth.uid === $username",
+        ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true || auth.uid === $username"
+      }
+    },
+
+    "assignments": {
+      ".read": "auth != null",
+      "$assignmentId": {
+        ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true || (data.exists() && newData.child('driverUsername').val() === data.child('driverUsername').val() && newData.child('requestId').val() === data.child('requestId').val() && data.child('status').val() !== 'completed' && data.child('status').val() !== 'cancelled' && ((auth.token.role === 'driver' && data.child('driverUsername').val() === auth.uid) || (auth.token.role === 'bidang' && (!data.child('driver').exists() || data.child('driver').val() === '') && data.child('requestId').val() !== null && root.child('driver_requests').child(data.child('requestId').val()).child('requesterId').val() === auth.uid)))"
+      }
+    },
+
+    "driver_requests": {
+      ".read": "auth != null",
+      "$requestId": {
+        ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true || (auth.token.role === 'bidang' && ((!data.exists() && newData.child('requesterId').val() === auth.uid) || (data.exists() && data.child('requesterId').val() === auth.uid && newData.child('requesterId').val() === auth.uid)))"
+      }
+    },
+
+    "drivers": {
+      ".read": "auth != null",
+      ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true"
+    },
+
+    "vehicles": {
+      ".read": "auth != null",
+      ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true"
     },
 
     "customRoles": {
-      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+      "$roleId": {
+        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || (auth != null && data.child('archived').val() !== true)"
+      },
       ".write": "auth.token.role === 'admin'"
     },
 
     "v2_sarpras": {
       "import_sessions": {
-        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
-        ".write": "auth.token.role === 'admin'"
+        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
+        ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true"
       },
       "import_batches": {
-        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
-        ".write": "auth.token.role === 'admin'"
+        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
+        ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true"
       },
       "file_storage": {
-        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
-        ".write": "auth.token.role === 'admin'"
+        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
+        ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true"
+      },
+      "composer_documents": {
+        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
+        ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true"
       }
     },
 
@@ -140,62 +226,66 @@
       "settings": {
         ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.role === 'engineering_coordinator' || auth.token.role === 'engineering_member'",
         ".write": "auth.token.role === 'admin' || auth.token.role === 'developer'"
+      },
+      "workReports": {
+        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.role === 'engineering_coordinator' || auth.token.role === 'engineering_member'",
+        ".write": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.role === 'engineering_coordinator' || auth.token.role === 'engineering_member'"
       }
     },
 
     "gudang": {
       "items": {
-        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
         "$itemId": {
-          ".write": "(auth.token.role === 'admin' || auth.token.role === 'developer') && (!data.exists() || newData.child('itemType').val() === data.child('itemType').val())",
+          ".write": "(auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true) && (!data.exists() || newData.child('itemType').val() === data.child('itemType').val())",
           ".validate": "newData.hasChildren(['itemId', 'name', 'itemType', 'active', 'normalizedName', 'searchTokens', 'createdAt']) && newData.child('itemId').val() === $itemId"
         }
       },
 
       "movements": {
-        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
         "$movementId": {
-          ".write": "(auth.token.role === 'admin' || auth.token.role === 'developer') && !data.exists()",
+          ".write": "(auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true) && !data.exists()",
           ".validate": "newData.hasChildren(['movementId', 'itemId', 'type', 'quantityDelta', 'reason', 'actorId', 'createdAt']) && newData.child('movementId').val() === $movementId && newData.child('quantityDelta').isNumber()"
         }
       },
 
       "assets": {
-        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
         "$assetId": {
-          ".write": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+          ".write": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
           ".validate": "newData.hasChildren(['assetId', 'itemId', 'identity', 'status', 'createdAt']) && newData.child('assetId').val() === $assetId"
         }
       },
 
       "assetHistory": {
-        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
         "$historyId": {
-          ".write": "(auth.token.role === 'admin' || auth.token.role === 'developer') && !data.exists()",
+          ".write": "(auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true) && !data.exists()",
           ".validate": "newData.hasChildren(['historyId', 'assetId', 'eventType', 'actorId', 'reason', 'occurredAt']) && newData.child('historyId').val() === $historyId"
         }
       },
 
       "locations": {
-        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
         "$locationId": {
-          ".write": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+          ".write": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
           ".validate": "newData.hasChildren(['locationId', 'name', 'createdAt']) && newData.child('locationId').val() === $locationId"
         }
       },
 
       "departments": {
-        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
         "$departmentId": {
-          ".write": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+          ".write": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
           ".validate": "newData.hasChildren(['departmentId', 'name', 'createdAt']) && newData.child('departmentId').val() === $departmentId"
         }
       },
 
       "stockProjection": {
-        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
         "$itemId": {
-          ".write": "auth.token.role === 'admin' || auth.token.role === 'developer'",
+          ".write": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
           ".validate": "newData.hasChildren(['itemId', 'quantity', 'rebuiltAt', 'consistent']) && newData.child('itemId').val() === $itemId && newData.child('quantity').isNumber()"
         }
       }

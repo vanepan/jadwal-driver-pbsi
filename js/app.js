@@ -12,7 +12,7 @@
 
 // Import all modules
 import { APP_NAME, APP_VERSION, RELEASE_NAME, getAppEnv } from './config.js';
-import { loadAssignments, saveAssignments, saveOneAssignment, saveManyAssignments, removeOneAssignment, loadRequests, saveRequests, initFirebaseSync, registerDataChangeListener, registerRequestsChangeListener, checkAssignmentSafety, fetchFirebaseData, storeFirebaseData, isFirebaseConfigured, onAuthAvailable, onAuthLost } from './firebase.js';
+import { loadAssignments, saveAssignments, saveOneAssignment, saveManyAssignments, removeOneAssignment, loadRequests, saveRequests, saveOneRequest, initFirebaseSync, registerDataChangeListener, registerRequestsChangeListener, checkAssignmentSafety, fetchFirebaseData, storeFirebaseData, isFirebaseConfigured, onAuthAvailable, onAuthLost, callNotifyAdminsOfNewRequest } from './firebase.js';
 // rc.1: persist Dispatch Intelligence history (override logs / recommendations / capacity) to RTDB.
 import { hydrateDispatchIntelligence, initDispatchIntelligencePersistence } from './services/dispatch-intelligence-persistence.js';
 import { recoverAssignmentsFromRequests } from './recovery.js';
@@ -126,6 +126,10 @@ import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver,
 // V2.0.10 — single reusable gate for the V2 pilot surface (Sarpras Intelligence).
 // See js/config/feature-gates.js for the rule and its evolution path.
 import { isV2Enabled } from './config/feature-gates.js';
+// v1.30.5 — Permission Runtime Migration: canAccessModule() and its
+// dependent navigation cluster resolve access through can(permission)
+// instead of hardcoded role checks. See js/permission-service.js.
+import { can } from './permission-service.js';
 import * as DocumentEngine from './docs/doc-engine.js';
 import './docs/templates/analytics-summary.js';   // registers 'analytics-summary'
 // v1.20.8 — the 6 exports/analytics/* side-effect imports that used to load here
@@ -233,6 +237,11 @@ import { mountRoleManagement } from './role-management/role-management-center.js
 // v1.20.6 — inject the live User Management source into the Engineering personnel
 // resolver (it deliberately does not import users.js to stay Node-harness-safe).
 import { setEngineeringUsersSource } from './engineering/personnel/engineering-personnel.js';
+// v1.30.6.10 — RTDB Security Hardening Program, Phase 6: display-only
+// consumers (Engineering personnel, Gudang roster, driver-name stamping)
+// read the broadly-readable /userProfiles mirror instead of the full
+// /users collection. See js/user-profiles-store.js's own header.
+import { initUserProfilesStore, getUserProfileList, getUserProfileByUsername } from './user-profiles-store.js';
 // V1.28.0 Phase 10.1 — Gudang's Goods Out department picker reads real Bidang
 // users (role='bidang') from User Management, same injection seam as above.
 import { setGudangUsersSource } from './gudang/config/gudang-bidang-source.js';
@@ -273,7 +282,7 @@ import { initNotificationUI, setNotificationData, openNotificationsModal, markNo
 import { setTelegramBotToken } from './telegram.js';
 import { subscribeLogsChangeListener, getLogs, logAction, ensureLogsLoadedAndSubscribed, resetLogsSync } from './logs.js';
 import { publishEvent } from './events.js';
-import { getUserByUsername, getUsers, createUser, getUserList, activateUser, deactivateUser, registerUsersChangeListener, archiveUser, restoreUser, deleteUser, initUsersSync, ensureUsersLoadedAndSubscribed, resetUsersSync, getRoleUsageFromUsers } from './users.js';
+import { getUserByUsername, createUser, getUserList, activateUser, deactivateUser, registerUsersChangeListener, archiveUser, restoreUser, deleteUser, initUsersSync, ensureUsersLoadedAndSubscribed, resetUsersSync, getRoleUsageFromUsers } from './users.js';
 // v1.30.4 Administration Platform Phase 5 — User Management Integration.
 // registerRoleUsageProvider() is the extension point role-usage-provider.js
 // shipped in v1.30.3 for exactly this: User Management supplies real usage
@@ -283,12 +292,22 @@ import { getUserByUsername, getUsers, createUser, getUserList, activateUser, dea
 import { registerRoleUsageProvider } from './role-management/role-usage-provider.js';
 import { initCustomRolesStore, registerCustomRolesChangeListener } from './role-management/custom-roles-store.js';
 import { resolveRoleInfo } from './role-management/role-catalog.js';
+// v1.30.6 — the every-session boot call (startAuthenticatedSession, below)
+// goes through the runtime role provider abstraction, not the concrete
+// store directly, since its purpose is feeding permission-service.js's
+// Custom Role resolution. navManajemenUser()'s own initCustomRolesStore()
+// call above stays direct — that one is Role Management's own CRUD surface,
+// which legitimately owns knowing the concrete store.
+import { initRuntimeRoleProvider } from './role-management/runtime-role-provider.js';
 import { expandDateRange, showToast, formatDateShort, vehicleLabel, computeWorkTime } from './utils.js';
 import {
   sendRequestApprovedNotification,
   sendRequestRejectedNotification,
-  sendNewRequestNotificationToAdmins,
 } from './notification-service.js';
+// v1.30.6.10 — RTDB Security Hardening Program, Phase 6: the new-request
+// admin fan-out (callNotifyAdminsOfNewRequest, imported above from
+// firebase.js) moved server-side; the old notification-service.js#
+// sendNewRequestNotificationToAdmins() client-side sender was removed.
 
 console.info(`PBSI Scheduler v${APP_VERSION}`);
 
@@ -747,9 +766,15 @@ function updateBottomNavBadges() {
  * tokens for the slide-up transition.
  */
 const BOTTOM_NAV_MORE_ITEMS = [
-  { label: 'Petty Cash', proxy: 'btnPettyCash' },
+  // v1.30.5 — Petty Cash/Konfigurasi previously had no requiresModule tag,
+  // so the sheet always listed them for every role; only the proxied click
+  // handler's own setRailModule() guard actually gated access. Tagging them
+  // here collapses that into the same single canAccessModule() decision
+  // every other entry already uses — no behavior change (both paths agreed
+  // in outcome, just not in shape).
+  { label: 'Petty Cash', proxy: 'btnPettyCash', requiresModule: 'pettycash' },
   { label: 'Overtime', proxy: 'btnOvertime', requiresModule: 'overtime' },
-  { label: 'Konfigurasi', proxy: 'btnUserMgmt' },
+  { label: 'Konfigurasi', proxy: 'btnUserMgmt', requiresModule: 'konfigurasi' },
   { label: 'Engineering', proxy: 'btnEngineering', requiresModule: 'engineering' },
   { label: 'Gudang', proxy: 'btnGudang', requiresModule: 'gudang' },
   { label: 'Role Management', proxy: 'btnRoleManagement', requiresModule: 'roleManagement' },
@@ -1053,22 +1078,24 @@ function updatePermissionUI(resetNavActive = false) {
     // ── Strict per-role isolation (v1.20.6): every rail item is driven by the
     //    canAccessModule() resolver so unrelated modules are never shown. The
     //    Driver Operations rail is now gated — Engineering users must NOT see it. ──
-    const adminOnly = isAdmin();
+    // v1.30.5: adminOnly retired as the gate for these rail items — each now
+    // asks canAccessModule() for its own module name, the single decision
+    // point, instead of a separately-cached "is this admin" shortcut.
     const v2RailDriverOps = document.getElementById('v2RailDriverOps');
     if (v2RailDriverOps) v2RailDriverOps.style.display = canAccessModule('driverops') ? 'flex' : 'none';
     const v2RailPettyCash = document.getElementById('v2RailPettyCash');
-    if (v2RailPettyCash) v2RailPettyCash.style.display = adminOnly ? 'flex' : 'none';
+    if (v2RailPettyCash) v2RailPettyCash.style.display = canAccessModule('pettycash') ? 'flex' : 'none';
     const v2RailOvertime = document.getElementById('v2RailOvertime');
-    if (v2RailOvertime) v2RailOvertime.style.display = adminOnly ? 'flex' : 'none';
+    if (v2RailOvertime) v2RailOvertime.style.display = canAccessModule('overtime') ? 'flex' : 'none';
     const v2RailAnalytics = document.getElementById('v2RailAnalytics');
-    if (v2RailAnalytics) v2RailAnalytics.style.display = adminOnly ? 'flex' : 'none';
+    if (v2RailAnalytics) v2RailAnalytics.style.display = canAccessModule('analytics') ? 'flex' : 'none';
     const v2RailKonfig = document.getElementById('v2RailKonfigurasi');
-    if (v2RailKonfig) v2RailKonfig.style.display = adminOnly ? 'flex' : 'none';
+    if (v2RailKonfig) v2RailKonfig.style.display = canAccessModule('konfigurasi') ? 'flex' : 'none';
     // Role Management (v1.30.1): admin-only, same rule as Konfigurasi/Petty Cash.
     const v2RailRoleManagement = document.getElementById('v2RailRoleManagement');
-    if (v2RailRoleManagement) v2RailRoleManagement.style.display = adminOnly ? 'flex' : 'none';
+    if (v2RailRoleManagement) v2RailRoleManagement.style.display = canAccessModule('roleManagement') ? 'flex' : 'none';
     const btnRoleManagementMobile = document.getElementById('btnRoleManagement');
-    if (btnRoleManagementMobile) btnRoleManagementMobile.style.display = adminOnly ? 'flex' : 'none';
+    if (btnRoleManagementMobile) btnRoleManagementMobile.style.display = canAccessModule('roleManagement') ? 'flex' : 'none';
 
     // Gudang (V1.28.0 Experience Layer): admin-only, same rule as Petty Cash/
     // Analytics/Konfigurasi (see canAccessModule's 'gudang' case).
@@ -1084,7 +1111,6 @@ function updatePermissionUI(resetNavActive = false) {
     // Engineering Operations (v1.20.1): rail visible to Admin + Engineering roles.
     // Panel menu items + labels are role-scoped (Admin: Dashboard/Timeline/
     // Analytics/Pengaturan; Coordinator: +Riwayat; Member: personal Timeline/Riwayat).
-    const engRole = isEngineeringUser();
     const engMember = getCurrentUser()?.role === 'engineering_member';
     const canEng = canAccessModule('engineering');
     const v2RailEng = document.getElementById('v2RailEngineering');
@@ -1092,15 +1118,15 @@ function updatePermissionUI(resetNavActive = false) {
     const btnEngMobile = document.getElementById('btnEngineering');
     if (btnEngMobile) btnEngMobile.style.display = canEng ? 'flex' : 'none';
     const setDisp = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? 'flex' : 'none'; };
-    setDisp('v2NavEngHistory', engRole);          // coordinator + member
-    setDisp('v2NavEngSettings', adminOnly);       // admin only
+    setDisp('v2NavEngHistory', can('eng.history'));   // coordinator + member (not admin — matches CAPABILITIES)
+    setDisp('v2NavEngSettings', can('eng.settings')); // admin only
     // Catat Pekerjaan — Admin + Coordinator (matches eng.report.create). Promoted
     // to a PRIMARY panel CTA (#v2BtnCatatPekerjaan, updatePanelCta) + mobile FAB;
     // the old menu entry is retired to avoid a duplicate entry point (mirrors
     // Petty Cash, which surfaces create only as a CTA).
     setDisp('v2NavEngReport', false);
     // Engineering Analytics now lives in the global Analytics module (v1.20.2).
-    setDisp('v2NavAnalyticsEngineering', adminOnly);
+    setDisp('v2NavAnalyticsEngineering', can('eng.analytics'));
     const engTlLabel = document.getElementById('v2NavEngTimelineLabel');
     if (engTlLabel) engTlLabel.textContent = engMember ? 'Timeline Saya' : 'Timeline';
     const engHiLabel = document.getElementById('v2NavEngHistoryLabel');
@@ -1114,10 +1140,12 @@ function updatePermissionUI(resetNavActive = false) {
     setDisp('btnSarprasIntel', canSarpras);
 
     // Driver Operations panel — Master Data + Audit sections are admin-only.
+    // No narrower permission exists for these yet, so system.admin (the
+    // "unrestricted access" grant) is the correct fit, not a new permission.
     const v2PanelDriverMaster = document.getElementById('v2PanelDriverMaster');
-    if (v2PanelDriverMaster) v2PanelDriverMaster.style.display = adminOnly ? '' : 'none';
+    if (v2PanelDriverMaster) v2PanelDriverMaster.style.display = can('system.admin') ? '' : 'none';
     const v2PanelDriverAudit = document.getElementById('v2PanelDriverAudit');
-    if (v2PanelDriverAudit) v2PanelDriverAudit.style.display = adminOnly ? '' : 'none';
+    if (v2PanelDriverAudit) v2PanelDriverAudit.style.display = can('system.admin') ? '' : 'none';
 
     // Footer user info (Part H)
     const v2FooterAvatarInitials = document.getElementById('v2FooterAvatarInitials');
@@ -1354,13 +1382,14 @@ function setCrumb(moduleLabel, title) {
  *          null ⇒ no CTA / FAB on this workspace.
  */
 function resolvePrimaryCta() {
+  // v1.30.5: gated by permission, not role — same branches, same outcomes.
   if (activeRailModule === 'driverops') {
-    if (isAdmin())  return { kind: 'jadwal', label: 'Tambah Jadwal' };
-    if (isBidang()) return { kind: 'ajukan', label: 'Ajukan Jadwal' };
+    if (can('driver.schedule.create')) return { kind: 'jadwal', label: 'Tambah Jadwal' };
+    if (can('driver.request.create'))  return { kind: 'ajukan', label: 'Ajukan Jadwal' };
     return null;
   }
   if (activeRailModule === 'pettycash') {
-    if (isAdmin())  return { kind: 'pengeluaran', label: 'Tambah Pengeluaran' };
+    if (can('pettycash.manage')) return { kind: 'pengeluaran', label: 'Tambah Pengeluaran' };
     return null;
   }
   if (activeRailModule === 'engineering') {
@@ -1369,10 +1398,8 @@ function resolvePrimaryCta() {
     // assignments but owns operational reporting — the primary action is Catat
     // Pekerjaan. The desktop panel additionally shows BOTH for admin (see
     // updatePanelCta); this resolver only picks the single FAB/primary action.
-    if (isAdmin())  return { kind: 'buat-penugasan', label: 'Buat Penugasan' };
-    if (getCurrentUser()?.role === 'engineering_coordinator') {
-      return { kind: 'catat-pekerjaan', label: 'Catat Pekerjaan' };
-    }
+    if (can('eng.create')) return { kind: 'buat-penugasan', label: 'Buat Penugasan' };
+    if (can('eng.report.create')) return { kind: 'catat-pekerjaan', label: 'Catat Pekerjaan' };
     return null;
   }
   // analytics + konfigurasi → read-only, no primary CTA
@@ -1524,9 +1551,8 @@ function updatePanelCta() {
   //   admin        → Buat Penugasan + Catat Pekerjaan
   //   coordinator  → Catat Pekerjaan
   const engActive = activeRailModule === 'engineering';
-  const engRoleCoord = getCurrentUser()?.role === 'engineering_coordinator';
-  const showBuat  = engActive && isAdmin();
-  const showCatat = engActive && (isAdmin() || engRoleCoord);
+  const showBuat  = engActive && can('eng.create');
+  const showCatat = engActive && can('eng.report.create');
 
   if (cta) {
     if (btnJadwal) btnJadwal.style.display = (resolved && resolved.kind === 'jadwal')        ? 'flex' : 'none';
@@ -1542,46 +1568,44 @@ function updatePanelCta() {
 }
 
 /* ──────────────────────────────────────────────────────────────────
-   Strict per-role module isolation (v1.20.6, Objective 1)
+   Strict per-role module isolation (v1.20.6, Objective 1; permission-driven
+   since v1.30.5 — Permission Runtime Migration, Sub-phase A)
 
    The SINGLE decision point for which rail modules a role may SEE and MOUNT.
-   Engineering users must never reach Driver Operations, and Driver/Bidang must
-   never reach Engineering — enforced here (rail visibility + a mount guard),
-   not by merely hiding menus. Admin keeps full platform access.
-     • admin                → every module
-     • engineering roles     → Home + Engineering only
-     • driver / bidang       → Home + Driver Operations only
-     • Petty / Analytics /
-       Konfigurasi           → admin-only (unchanged)
+   Each module maps to the permission that gates it (js/permission-service.js
+   #can(), backed by config/role-permissions.js); a role reaches a module iff
+   it holds that permission. Admin gets no special bypass here — admin's own
+   BASE_GRANTS already includes every permission below, so full access falls
+   out of the same single check every other role goes through.
    ────────────────────────────────────────────────────────────────── */
+const MODULE_PERMISSIONS = Object.freeze({
+  engineering:    'eng.view',
+  driverops:      'driver.schedule.view',
+  pettycash:      'pettycash.view',
+  overtime:       'overtime.view',
+  analytics:      'analytics.view',
+  konfigurasi:    'konfigurasi.view',
+  roleManagement: 'system.admin', // v1.30.1: admin-only, same rule as its siblings
+  // V1.28.0 Experience Layer: Gudang has real screens now, but Doc 2 §03
+  // names only two eventual audiences (Sarpras Admin, Warehouse Staff) —
+  // "Warehouse Staff" is not a role this app's role system has today, and
+  // inventing one is a new business capability the Experience brief
+  // explicitly forbids ("No new business capability should be invented").
+  // Gudang is therefore admin-only for now (only admin's BASE_GRANTS holds
+  // warehouse.view) — widening it to a real Warehouse Staff role is a
+  // future, deliberate product decision, not an Experience-layer detail.
+  gudang:         'warehouse.view',
+});
+
 function canAccessModule(name) {
   if (name === 'home') return true;                 // Home workspace: every role
-  // V2.0.10 — Sarpras Intelligence is gated by isV2Enabled(), NOT by the
-  // blanket admin bypass below: it must resolve BEFORE `if (isAdmin())
-  // return true`, otherwise every admin (not just the single V2 pilot
-  // identity) would gain access.
+  // V2.0.10 — Sarpras Intelligence is a pilot allowlist gate (isV2Enabled),
+  // not a role permission: it must resolve before the permission lookup
+  // below, otherwise every admin (not just the single V2 pilot identity)
+  // would gain access.
   if (name === 'sarprasIntelligence') return isV2Enabled(getCurrentUser());
-  if (isAdmin()) return true;                        // admin: full access
-  switch (name) {
-    case 'engineering': return isEngineeringUser();
-    case 'driverops':   return !isEngineeringUser(); // bidang + driver
-    case 'pettycash':
-    case 'overtime':
-    case 'analytics':
-    case 'konfigurasi':
-    case 'roleManagement':   // v1.30.1: admin-only, same rule as its siblings
-    // V1.28.0 Experience Layer: Gudang has real screens now, but Doc 2 §03
-    // names only two eventual audiences (Sarpras Admin, Warehouse Staff) —
-    // "Warehouse Staff" is not a role this app's role system has today, and
-    // inventing one is a new business capability the Experience brief
-    // explicitly forbids ("No new business capability should be invented").
-    // Gudang is therefore admin-only for now, exactly like its siblings on
-    // this line — widening it to a real Warehouse Staff role is a future,
-    // deliberate product decision, not an Experience-layer implementation
-    // detail.
-    case 'gudang':      return false;                // admin-only
-    default:            return false;
-  }
+  const permission = MODULE_PERMISSIONS[name];
+  return permission ? can(permission) : false;
 }
 
 /** The module a role lands on by default (Engineering keeps its own module). */
@@ -1702,8 +1726,8 @@ function buildHomeContext() {
 
   // Admin-only intelligence (the Executive Command Center is the sole consumer).
   // Both are failure-safe: a hiccup leaves the field null and the widgets fall
-  // back to honest empty states.
-  if (isAdmin()) {
+  // back to honest empty states. v1.30.5: gated by permission, not role.
+  if (can('executive.dashboard.view')) {
     try { ctx.models = buildExecutiveDashboardModel(); }
     catch (err) { console.warn('[Home] executive model unavailable', err); ctx.models = null; }
     // v1.21.0 Objective 5 — flatten Engineering's per-assignment timelines (the
@@ -2922,10 +2946,11 @@ function initV2Panel() {
   // ── Event handlers — all proxy to V1 elements or imported functions ──
 
   // Tambah Jadwal: admin → assignment form; bidang → request form
+  // v1.30.5: gated by permission, not role.
   document.getElementById('v2BtnTambahJadwal')?.addEventListener('click', () => {
-    if (isAdmin()) {
+    if (can('driver.schedule.create')) {
       openFormModal();
-    } else if (isBidang()) {
+    } else if (can('driver.request.create')) {
       openRequestFormModal();
     }
   });
@@ -2938,7 +2963,7 @@ function initV2Panel() {
   // Tambah Pengeluaran (v1.14.1): Petty Cash primary CTA → open the add-expense
   // modal. Ensure the module is mounted/active first (covers a direct click).
   document.getElementById('v2BtnTambahPengeluaran')?.addEventListener('click', async () => {
-    if (!isAdmin()) return;
+    if (!can('pettycash.manage')) return;
     if (activeRailModule !== 'pettycash') await navPettyCash('dashboard', 'v2NavPcDashboard');
     openPettyCashAddExpense();
   });
@@ -2946,7 +2971,7 @@ function initV2Panel() {
   // Buat Penugasan (v1.20.2): Engineering primary CTA → open the create-assignment
   // modal. Ensure the module is mounted/active first (covers a direct click).
   document.getElementById('v2BtnBuatPenugasan')?.addEventListener('click', async () => {
-    if (!isAdmin()) return;
+    if (!can('eng.create')) return;
     if (activeRailModule !== 'engineering') await navEngineering('dashboard', 'v2NavEngDashboard');
     openEngineeringCreate();
   });
@@ -2955,7 +2980,7 @@ function initV2Panel() {
   // open the Operational Work Report modal. Admin + Coordinator (matches
   // eng.report.create). Ensure the module is mounted/active first.
   document.getElementById('v2BtnCatatPekerjaan')?.addEventListener('click', async () => {
-    if (!(isAdmin() || getCurrentUser()?.role === 'engineering_coordinator')) return;
+    if (!can('eng.report.create')) return;
     if (activeRailModule !== 'engineering') await navEngineering('dashboard', 'v2NavEngDashboard');
     openEngineeringReport();
   });
@@ -10590,8 +10615,9 @@ function _reqReviewDest(r) { return r.destination || r.purpose || ''; }
 
 /**
  * Write a governance classification onto one driver_request (audited).
- * Requests persist as a whole collection (saveRequests) — the established path —
- * so we map the array and write it; the engine re-filters on the next refresh.
+ * Requests persist per-record (saveOneRequest, v1.30.6.8) — the local array
+ * is still mapped for in-memory/cache consistency, but only the ONE changed
+ * record is written to Firebase; the engine re-filters on the next refresh.
  */
 function _setRequestGovernance(id, gov, actionLabel) {
   const idx = requests.findIndex(r => r.id === id);
@@ -10608,7 +10634,7 @@ function _setRequestGovernance(id, gov, actionLabel) {
     },
     updatedAt: now,
   } : r);
-  saveRequests(requests);
+  saveOneRequest(requests.find(r => r.id === id), requests);
 
   logAction({
     userId: cu?.id, username: cu?.username, displayName: cu?.name,
@@ -11291,7 +11317,7 @@ function commitApproval(requestId, decision = {}) {
   } else {
     newAssignments.forEach(a => saveOneAssignment(a));
   }
-  saveRequests(requests);
+  saveOneRequest(requests.find(item => item.id === requestId), requests);
 
   const currentUser = getCurrentUser();
   logAction({
@@ -11315,7 +11341,7 @@ function commitApproval(requestId, decision = {}) {
   // without them drivers see "Belum ada notifikasi untuk Anda."
   const approvalDriverNameLower = (effDriver || '').trim().toLowerCase();
   const approvalDriverUser = approvalDriverNameLower
-    ? getUserList().find(u => u.role === 'driver' &&
+    ? getUserProfileList().find(u => u.role === 'driver' &&
         ((u.displayName || '').trim().toLowerCase() === approvalDriverNameLower ||
          (u.username   || '').trim().toLowerCase() === approvalDriverNameLower))
     : null;
@@ -11630,9 +11656,9 @@ function handleRequestReject(requestId) {
   );
 
   updateAllModules();
-  saveRequests(requests);
-  const currentUser = getCurrentUser();
   const rejectedRequest = requests.find(item => item.id === requestId);
+  saveOneRequest(rejectedRequest, requests);
+  const currentUser = getCurrentUser();
   logAction({
     userId:      currentUser?.id,
     username:    currentUser?.username,
@@ -11935,10 +11961,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   // PWA cold launch / delayed session restore / fresh PIN login. The store
   // ensure* helpers are idempotent (already-subscribed = no-op).
   async function loadAuthedAdminData() {
-    // Wire the Engineering personnel resolver to the live users cache (idempotent).
-    setEngineeringUsersSource(getUserList);
+    // v1.30.6.10 — every session (not just admin) needs the broadly-
+    // readable profile mirror resolvable immediately, same "proactive
+    // init" reasoning already used for the Custom Roles provider (v1.30.5).
+    await initUserProfilesStore();
+    // Wire the Engineering personnel resolver to the profile mirror (idempotent).
+    setEngineeringUsersSource(getUserProfileList);
     // Wire Gudang's Bidang roster resolver the same way (Phase 10.1).
-    setGudangUsersSource(getUserList);
+    setGudangUsersSource(getUserProfileList);
     await ensureUsersLoadedAndSubscribed();
     await ensureLogsLoadedAndSubscribed();
     await ensureExportHistoryLoadedAndSubscribed(); // v1.12.1B export metadata cache
@@ -11957,6 +11987,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     await initDriversStore();              // v1.5.0: seed/sync Firebase driver registry
     await initVehiclesStore();             // v1.5.2: seed/sync Firebase vehicle registry
+    // v1.30.5: every session (not just admin screens) needs Custom Role data
+    // resolvable so permission-service.js#can() can resolve a Custom-Role
+    // holder's grants immediately. Idempotent — navManajemenUser()'s own
+    // (still admin-gated) initCustomRolesStore() call is a safe no-op if
+    // this already ran (same underlying store either way).
+    // v1.30.6: routed through the runtime role provider abstraction, not
+    // the concrete store, since this call exists specifically to feed
+    // permission-service.js's resolution path.
+    await initRuntimeRoleProvider();
     // Registered BEFORE initSettingsStore() so it also catches the initial
     // load (registerSettingsChangeListener fires on first load, not just
     // subsequent live changes — see settings-store.js#refreshSettingsCache).
@@ -12216,7 +12255,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       : null;
     const repDriverName = (repAssignment?.driver || '').trim().toLowerCase();
     const repDriverUser = repDriverName
-      ? getUserList().find(u => u.role === 'driver' &&
+      ? getUserProfileList().find(u => u.role === 'driver' &&
           ((u.displayName || '').trim().toLowerCase() === repDriverName ||
            (u.username   || '').trim().toLowerCase() === repDriverName))
       : null;
@@ -12266,15 +12305,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ── Callback: Bidang submit request ──
   registerRequestCreateCallback((newRequest) => {
-    requests = [...requests, normalizeRequest(newRequest)];
+    const normalized = normalizeRequest(newRequest);
+    requests = [...requests, normalized];
     updateAllModules();
-    saveRequests(requests);
+    saveOneRequest(normalized, requests);
     const currentUser = getCurrentUser();
     logAction({ userId: currentUser?.id, username: currentUser?.username, displayName: currentUser?.name, action: 'request_created', targetId: newRequest.id, metadata: { status: newRequest.status } });
     updatePermissionUI();
 
-    // Notify all admins that a new request arrived — non-blocking
-    sendNewRequestNotificationToAdmins(newRequest, getUsers);
+    // Notify all admins that a new request arrived — non-blocking, now a
+    // server-side callable (v1.30.6.10) instead of a client-side read of
+    // every admin's Telegram IDs.
+    callNotifyAdminsOfNewRequest({ requestId: normalized.id }).catch((err) => {
+      console.error('[app] notifyAdminsOfNewRequest failed:', err);
+    });
   });
 
   // ── Callback: Admin edit pending request sebelum approval ──
@@ -12283,7 +12327,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       request.id === updatedRequest.id ? updatedRequest : request
     );
     updateAllModules();
-    saveRequests(requests);
+    saveOneRequest(updatedRequest, requests);
     const currentUser = getCurrentUser();
     logAction({ userId: currentUser?.id, username: currentUser?.username, displayName: currentUser?.name, action: 'request_updated', targetId: updatedRequest.id, metadata: { status: updatedRequest.status } });
     updatePermissionUI();
@@ -12304,7 +12348,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   registerCommentSaveCallback((updatedRequest, newComment) => {
     requests = requests.map(r => r.id === updatedRequest.id ? updatedRequest : r);
     setCommentRequests(requests);
-    saveRequests(requests);
+    saveOneRequest(updatedRequest, requests);
     renderRequestsList();
 
     // ── Comment Event Foundation (v1.11.1.3) ──
@@ -12316,7 +12360,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const currentUser = getCurrentUser();
       const driverNameLower = (updatedRequest.driver || '').trim().toLowerCase();
       const driverUser = driverNameLower
-        ? getUserList().find(u => u.role === 'driver' &&
+        ? getUserProfileList().find(u => u.role === 'driver' &&
             ((u.displayName || '').trim().toLowerCase() === driverNameLower ||
              (u.username   || '').trim().toLowerCase() === driverNameLower))
         : null;
@@ -12475,7 +12519,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       : null;
     const completedDriverName = (completedAssignment.driver || '').trim().toLowerCase();
     const completedDriverUser = completedDriverName
-      ? getUserList().find(u => u.role === 'driver' &&
+      ? getUserProfileList().find(u => u.role === 'driver' &&
           ((u.displayName || '').trim().toLowerCase() === completedDriverName ||
            (u.username   || '').trim().toLowerCase() === completedDriverName))
       : null;
@@ -12556,7 +12600,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       : null;
     const cancelledDriverName = (cancelledAssignment.driver || '').trim().toLowerCase();
     const cancelledDriverUser = cancelledDriverName
-      ? getUserList().find(u => u.role === 'driver' &&
+      ? getUserProfileList().find(u => u.role === 'driver' &&
           ((u.displayName || '').trim().toLowerCase() === cancelledDriverName ||
            (u.username   || '').trim().toLowerCase() === cancelledDriverName))
       : null;
