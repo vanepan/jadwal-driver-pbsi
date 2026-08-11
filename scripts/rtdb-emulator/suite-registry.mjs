@@ -38,4 +38,10 @@ export const SUITE_REGISTRY = Object.freeze([
   'settings-sensitivity-check.mjs',
   'users-nodes-full-sweep-check.mjs',
   'engineering-nodes-check.mjs',
+
+  // Individual Permission Assignment, Phase 1 (v1.30.9.1)
+  'user-permission-overrides-check.mjs',
+
+  // Production incident fix: /users collection-read defect (v1.30.9.2)
+  'users-collection-read-check.mjs',
 ]);

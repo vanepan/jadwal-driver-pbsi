@@ -154,6 +154,15 @@
     },
 
     "users": {
+      // v1.30.9.2 — production incident fix: RTDB evaluates .read only at
+      // the exact requested path and its ancestors, never at a descendant.
+      // js/users.js subscribes at this collection path (subscribeNode
+      // ('users', ...)), which the $username-only child rule below never
+      // covered — root .read is false, so that subscription was silently
+      // denied for every role, admin included. Deliberately admin/
+      // adminEquivalent ONLY, no self-branch: self access stays scoped to
+      // one's own child record, never the whole roster.
+      ".read": "auth.token.role === 'admin' || auth.token.adminEquivalent === true",
       "$username": {
         ".read": "auth.token.role === 'admin' || auth.token.adminEquivalent === true || auth.uid === $username",
         ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true || (auth.uid === $username && newData.child('role').val() === data.child('role').val() && newData.child('active').val() === data.child('active').val() && newData.child('archived').val() === data.child('archived').val())"
@@ -189,6 +198,22 @@
         ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || (auth != null && data.child('archived').val() !== true)"
       },
       ".write": "auth.token.role === 'admin'"
+    },
+
+    "userPermissionOverrides": {
+      "$username": {
+        ".read": "auth.token.role === 'admin' || auth.token.adminEquivalent === true || auth.uid === $username",
+        ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true",
+        ".validate": "newData.hasChildren(['permissions']) && !newData.hasChild('role') && !newData.hasChild('adminEquivalent') && !newData.hasChild('pin') && !newData.hasChild('pinHash') && !newData.hasChild('active') && !newData.hasChild('archived')",
+        "permissions": {
+          "$index": {
+            ".validate": "newData.isString() && newData.val() !== 'system.admin'"
+          }
+        },
+        "updatedAt": {
+          ".validate": "newData.isString()"
+        }
+      }
     },
 
     "v2_sarpras": {
