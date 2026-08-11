@@ -32,38 +32,56 @@
 # §4/§5 of the v1.30.7.8 remediation for the full CURRENT/TARGET/REMOVED
 # file audit this was derived from).
 
+# v1.30.7.8.3 — CRITICAL FIX: every directory-name pattern below is now
+# anchored to the repository root with a leading "/". Unanchored gitignore-
+# style patterns (e.g. bare "docs/") match a directory of that name at ANY
+# depth in the tree, not just the top level. "docs/" was silently also
+# excluding js/docs/ — a REAL application code directory (doc-engine.js +
+# templates/) that js/app.js statically imports from at its top level. Once
+# Vercel started actually honoring this file (v1.30.7.8.2's install/build
+# skip fix made that true for the first time — it was previously confirmed
+# NOT taking effect at all, see §0.3 of the deployment runbook), that
+# collision 404'd js/docs/doc-engine.js on Vercel, which failed js/app.js's
+# entire static module graph before a single line of it could run — the
+# EXACT documented failure mode from the v1.25.x "Memuat..." hotfix
+# (js/config.js's own VERSION_HISTORY), just triggered by a missing import
+# instead of a syntax error. The whole application was down on Vercel (the
+# URL staff actually use) until this fix. No pattern's INTENDED scope
+# changes — every one of these was always meant to mean "the top-level
+# directory/file of this exact name," never "anywhere in the tree."
+
 # ── Mirrors firebase.json's hosting.ignore (already-approved convention) ──
-firebase.json
-.firebaserc
-database.rules.json
-firebase-rules.json
-functions/
-docs/
-scripts/
-Analytics-V2/
+/firebase.json
+/.firebaserc
+/database.rules.json
+/firebase-rules.json
+/functions/
+/docs/
+/scripts/
+/Analytics-V2/
 *.md
-package.json
-package-lock.json
-temp_server.js
-framework-poc.html
+/package.json
+/package-lock.json
+/temp_server.js
+/framework-poc.html
 
 # ── Additional gaps found this session, not covered by firebase.json's
 #    ignore list either, but equally not required by the running client ──
-scratch/
-Analytics Export/
-Engineering Operations Prototype/
-Petty Cash Center/
-legacy/
-src/
-storage.rules
-storage-cors.json
-database.rules.stageA.json
+/scratch/
+/Analytics Export/
+/Engineering Operations Prototype/
+/Petty Cash Center/
+/legacy/
+/src/
+/storage.rules
+/storage-cors.json
+/database.rules.stageA.json
 *.txt
 
 # ── Standard, not project-specific ──
 node_modules/
-.firebase/
-firebase-debug.log
-database-debug.log
+/.firebase/
+/firebase-debug.log
+/database-debug.log
 .env
 .env.local
