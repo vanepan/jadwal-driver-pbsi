@@ -1,0 +1,69 @@
+# .vercelignore — v1.30.7.8 Production Exposure Remediation
+#
+# Vercel (jadwal-driver-pbsi.vercel.app) auto-deploys this repository as a
+# static site on every push to main, with NO framework detection and NO
+# prior ignore configuration — it served the entire git-tracked tree,
+# including internal engineering/security documentation, verbatim.
+#
+# firebase.json's own `hosting.ignore` array already establishes this
+# project's convention for what must never be publicly served
+# (firebase.json, .firebaserc, database.rules.json, firebase-rules.json,
+# dotfiles, node_modules, functions/**, docs/**, scripts/**,
+# Analytics-V2/**, *.md, package.json, package-lock.json, temp_server.js,
+# framework-poc.html). This file mirrors that list — it is not a new
+# judgment call, it is applying an already-approved rule to the deploy
+# target that was missing it — PLUS several additional directories/files
+# confirmed, this session, to be (a) not referenced anywhere in
+# index.html or js/app.js's runtime code, and (b) already serving on the
+# live Vercel URL: scratch/, "Analytics Export/", "Engineering Operations
+# Prototype/", "Petty Cash Center/", legacy/, src/, storage.rules,
+# storage-cors.json, database.rules.stageA.json, *.txt.
+#
+# database.rules.stageA.json is a documented, explicit "ROLLBACK ONLY"
+# fully-open rules file (root .read/.write: true) for a break-glass
+# scenario — not a secret, but an operational artifact that should not
+# be casually public either.
+#
+# Syntax: same as .gitignore (Vercel's own documented behavior — this
+# repo's existing .gitignore is the syntax precedent).
+#
+# Verified NOT to remove anything index.html/js/app.js/service-worker.js
+# actually loads at runtime (see docs/PRODUCTION_SECURITY_DEPLOYMENT_RUNBOOK_v1.30.7.md
+# §4/§5 of the v1.30.7.8 remediation for the full CURRENT/TARGET/REMOVED
+# file audit this was derived from).
+
+# ── Mirrors firebase.json's hosting.ignore (already-approved convention) ──
+firebase.json
+.firebaserc
+database.rules.json
+firebase-rules.json
+functions/
+docs/
+scripts/
+Analytics-V2/
+*.md
+package.json
+package-lock.json
+temp_server.js
+framework-poc.html
+
+# ── Additional gaps found this session, not covered by firebase.json's
+#    ignore list either, but equally not required by the running client ──
+scratch/
+Analytics Export/
+Engineering Operations Prototype/
+Petty Cash Center/
+legacy/
+src/
+storage.rules
+storage-cors.json
+database.rules.stageA.json
+*.txt
+
+# ── Standard, not project-specific ──
+node_modules/
+.firebase/
+firebase-debug.log
+database-debug.log
+.env
+.env.local
