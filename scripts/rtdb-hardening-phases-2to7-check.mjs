@@ -88,11 +88,21 @@ check("non-admin writers are locked out once status is 'completed' or 'cancelled
   asgWrite.includes("data.child('status').val() !== 'completed'") && asgWrite.includes("data.child('status').val() !== 'cancelled'"));
 check("a driver may write only their OWN assignment (role === 'driver' && driverUsername === auth.uid)",
   asgWrite.includes("auth.token.role === 'driver' && data.child('driverUsername').val() === auth.uid"));
-check("a bidang self-drive writer may act only on an unassigned-driver record they themselves requested (role === 'bidang' && !driver && requestId cross-referenced against driver_requests.requesterId === auth.uid)",
-  asgWrite.includes("auth.token.role === 'bidang' && !data.child('driver').val()") &&
+check("a bidang self-drive writer may act only on an unassigned-driver record they themselves requested (role === 'bidang' && (!driver.exists() || driver === '') && requestId cross-referenced against driver_requests.requesterId === auth.uid)",
+  asgWrite.includes("auth.token.role === 'bidang' && (!data.child('driver').exists() || data.child('driver').val() === '')") &&
   asgWrite.includes("root.child('driver_requests').child(data.child('requestId').val()).child('requesterId').val() === auth.uid"));
 check("bidang branch requires requestId to be non-null before the cross-reference (data.child('requestId').val() !== null)",
   asgWrite.includes("data.child('requestId').val() !== null"));
+// v1.30.7.2 (Authorization Validation Suite Phase A): the clause above was
+// originally `!data.child('driver').val()` — invalid Firebase Rules
+// Language syntax (`!` requires a statically-known boolean; `.val()` isn't
+// one), rejected outright by the real rules compiler. Fixed to the
+// exists()-or-empty-string form verified against the real self-drive data
+// model (scripts/self-drive-assignment-check.mjs). This structural
+// assertion was updated to match — see
+// docs/RTDB_AUTHORIZATION_VALIDATION_FINAL_REPORT_v1.30.7.md §11.1.
+check("v1.30.7.4: requestId is pinned immutable on non-admin writes, same idiom as driverUsername (closes the requestId-retargeting exploit found by the real emulator — see final report §11.2)",
+  asgWrite.includes("newData.child('requestId').val() === data.child('requestId').val()"));
 
 console.log('\n=== Phase 6 (v1.30.6.10) — Users Split (data-model change) ===');
 console.log('\n8. userProfiles — minimal broadly-readable mirror, client write fully closed (server-trigger-only)');
