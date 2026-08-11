@@ -1,0 +1,28 @@
+{
+  "routes": [
+    { "src": "^/docs(/.*)?$", "status": 404 },
+    { "src": "^/scripts(/.*)?$", "status": 404 },
+    { "src": "^/scratch(/.*)?$", "status": 404 },
+    { "src": "^/functions(/.*)?$", "status": 404 },
+    { "src": "^/src(/.*)?$", "status": 404 },
+    { "src": "^/legacy(/.*)?$", "status": 404 },
+    { "src": "^/Analytics-V2(/.*)?$", "status": 404 },
+    { "src": "^/Analytics(%20|\\s)Export(/.*)?$", "status": 404 },
+    { "src": "^/Engineering(%20|\\s)Operations(%20|\\s)Prototype(/.*)?$", "status": 404 },
+    { "src": "^/Petty(%20|\\s)Cash(%20|\\s)Center(/.*)?$", "status": 404 },
+    { "src": "^/database\\.rules\\.json$", "status": 404 },
+    { "src": "^/database\\.rules\\.stageA\\.json$", "status": 404 },
+    { "src": "^/firebase-rules\\.json$", "status": 404 },
+    { "src": "^/firebase\\.json$", "status": 404 },
+    { "src": "^/\\.firebaserc$", "status": 404 },
+    { "src": "^/storage\\.rules$", "status": 404 },
+    { "src": "^/storage-cors\\.json$", "status": 404 },
+    { "src": "^/package\\.json$", "status": 404 },
+    { "src": "^/package-lock\\.json$", "status": 404 },
+    { "src": "^/temp_server\\.js$", "status": 404 },
+    { "src": "^/framework-poc\\.html$", "status": 404 },
+    { "src": "^/.*\\.md$", "status": 404 },
+    { "src": "^/.*\\.txt$", "status": 404 },
+    { "handle": "filesystem" }
+  ]
+}
