@@ -1,4 +1,6 @@
 {
+  "installCommand": "",
+  "buildCommand": "",
   "routes": [
     { "src": "^/docs(/.*)?$", "status": 404 },
     { "src": "^/scripts(/.*)?$", "status": 404 },
