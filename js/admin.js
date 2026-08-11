@@ -299,29 +299,34 @@ export function openUserFormModal(username = null) {
 }
 
 /**
- * v1.30.4 — list active Custom Roles as disabled ("belum aktif") options.
- * Assignment is deferred to a future Permission Migration phase (Custom
- * Roles are visible so admins know they exist, never selectable here).
+ * v1.30.8 — list active Custom Roles as real, selectable options (activates
+ * the v1.30.4 groundwork; the Permission Migration this was deferred for
+ * — verifyPin.js / permission-service.js / database.rules.json Custom Role
+ * resolution — shipped in v1.30.5-v1.30.7 and is deployed). Archived Custom
+ * Roles are never listed here: they're already excluded upstream by
+ * role-catalog.js#getAllRoles() (System Roles + active Custom Roles only —
+ * the same mechanism System Roles themselves rely on, no archive state to
+ * render). A user whose CURRENT stored role turns out to be archived or
+ * unknown is surfaced separately, by renderCurrentRoleWarning() below — not
+ * as a disabled option in this list. The save path (js/users.js#isValidRole())
+ * enforces the identical active-role-only rule independent of this UI.
  */
 function refreshCustomRoleOptions() {
   const roleField = document.getElementById('userFieldRole');
-  const hint = document.getElementById('userRoleCustomHint');
   if (!roleField) return;
 
   roleField.querySelectorAll('optgroup[data-dynamic-role-group]').forEach((el) => el.remove());
 
   const customRoles = getAllRoles().filter((r) => r.type === 'custom');
-  if (hint) hint.style.display = customRoles.length ? '' : 'none';
   if (!customRoles.length) return;
 
   const group = document.createElement('optgroup');
-  group.label = 'Custom Role (Belum Aktif)';
+  group.label = 'Custom Role';
   group.dataset.dynamicRoleGroup = 'true';
   customRoles.forEach((r) => {
     const opt = document.createElement('option');
     opt.value = r.id;
     opt.textContent = r.label;
-    opt.disabled = true;
     group.appendChild(opt);
   });
   roleField.appendChild(group);

@@ -42,7 +42,14 @@ function isValidPin(value) {
 // Custom Role is correctly NOT in getAllRoles() (it filters to active only),
 // so it stops validating the instant it's archived — matches the picker's
 // own "archived roles are never assignable" rule.
-function isValidRole(value) {
+// Exported (v1.30.8) so scripts/users-role-assignment-check.mjs can drive
+// this REAL gate directly — the save-path enforcement Phase 3 of Custom
+// Role Assignment & Activation depends on, previously untested in
+// isolation. createUser()/updateUser() themselves are not safe to call
+// from a plain node script (real Firebase writes against production —
+// this collection has no local emulator); isValidRole() alone has no such
+// side effect, so it can be exercised directly.
+export function isValidRole(value) {
   return getAllRoles().some((r) => r.id === value);
 }
 
@@ -278,6 +285,20 @@ export function getRoleUsageFromUsers(roleId) {
     dependencies: [],
     consumers: [],
   };
+}
+
+/**
+ * TEST-ONLY. Directly seeds the local users cache, bypassing Firebase
+ * entirely — mirrors custom-roles-store.js#__seedCustomRolesForTest()'s
+ * doc/intent exactly. Real production/application code MUST NEVER import
+ * this. Exists so scripts/users-role-assignment-check.mjs can exercise
+ * getRoleUsageFromUsers() (the REAL Role Usage Provider registered at
+ * navManajemenUser()'s boot) against known fixtures without a real
+ * authenticated write.
+ * @param {Array<Object>} list
+ */
+export function __seedUsersForTest(list) {
+  refreshUsersCache(Array.isArray(list) ? list : []);
 }
 
 export async function archiveUser(username) {

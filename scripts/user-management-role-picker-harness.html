@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<!-- user-management-role-picker-harness.html — v1.30.8 Custom Role
+     Assignment & Activation. Minimal harness: just the real USER FORM
+     modal markup (copied verbatim from index.html's #modalUserForm), no
+     full app.js boot (no auth gate, no rail, no other modals) — mirrors
+     the existing role-management-harness.html pattern for the same
+     reason (admin.js's openUserFormModal()/refreshCustomRoleOptions()
+     query document.getElementById directly; they don't need anything
+     else mounted). See scripts/user-management-role-picker-dom-check.mjs. -->
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<title>User Management Role Picker Harness</title>
+</head>
+<body>
+<div class="modal-overlay" id="modalUserForm" style="display:none;">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h2 class="modal-title" id="modalUserFormTitle">Tambah User</h2>
+      <button class="modal-close" id="btnCloseUserForm">&times;</button>
+    </div>
+    <div class="modal-body">
+      <form id="userForm" novalidate>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="userFieldUsername">Username *</label>
+            <input type="text" id="userFieldUsername" autocomplete="username" placeholder="Masukkan username" required />
+          </div>
+          <div class="form-group">
+            <label for="userFieldDisplayName">Display Name *</label>
+            <input type="text" id="userFieldDisplayName" placeholder="Nama tampilan" required />
+          </div>
+          <div class="form-group form-full">
+            <label for="userFieldRole">Role *</label>
+            <select id="userFieldRole" required>
+              <option value="admin">Admin</option>
+              <option value="bidang">Bidang</option>
+              <option value="viewer">Viewer</option>
+              <option value="driver">Driver</option>
+              <option value="engineering">Engineering</option>
+            </select>
+            <p class="form-hint form-hint--warning" id="userRoleCurrentWarning" style="display:none;"></p>
+            <div class="v2-dq-stats" id="userRoleSummaryPanel" style="display:none;"></div>
+          </div>
+          <div class="form-group form-full" id="userEngineeringLevelGroup" style="display:none;">
+            <label>Tingkat Engineering *</label>
+            <div class="eng-level-segment" style="display:flex;gap:10px;">
+              <label class="multi-day-checkbox-label">
+                <input type="checkbox" id="userEngKoordinator" data-eng-level="coordinator" />
+                <span>
+                  <span class="multi-day-checkbox-text">Koordinator</span>
+                  <span class="multi-day-hint">Koordinasi lapangan &amp; verifikasi</span>
+                </span>
+              </label>
+              <label class="multi-day-checkbox-label">
+                <input type="checkbox" id="userEngAnggota" data-eng-level="member" />
+                <span>
+                  <span class="multi-day-checkbox-text">Anggota</span>
+                  <span class="multi-day-hint">Pelaksana pekerjaan lapangan</span>
+                </span>
+              </label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="userFieldPin">PIN *</label>
+            <input type="text" id="userFieldPin" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="4 digit PIN" required />
+          </div>
+          <div class="form-group form-full">
+            <label>Status Akun</label>
+            <label class="pbsi-form-toggle">
+              <input type="checkbox" id="userFieldActive" class="pbsi-toggle-input" role="switch" aria-label="Status akun aktif" checked />
+              <span class="pbsi-form-toggle-label">Aktif</span>
+            </label>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn-secondary" id="btnCancelUserForm">Batal</button>
+          <button type="submit" class="btn-primary" id="btnSaveUserForm">Simpan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+</body>
+</html>
