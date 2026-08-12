@@ -299,6 +299,12 @@ import { resolveRoleInfo } from './role-management/role-catalog.js';
 // call above stays direct — that one is Role Management's own CRUD surface,
 // which legitimately owns knowing the concrete store.
 import { initRuntimeRoleProvider } from './role-management/runtime-role-provider.js';
+// v1.30.9.5 — Individual Permission Assignment, Phase 2: same boundary
+// principle as initRuntimeRoleProvider() above, but for this session's own
+// individual permission overrides (see permission-management/
+// individual-permission-provider.js's own header for why its live cache is
+// scoped to one username, unlike the Custom Role provider's global one).
+import { initIndividualPermissionProvider } from './permission-management/individual-permission-provider.js';
 import { expandDateRange, showToast, formatDateShort, vehicleLabel, computeWorkTime } from './utils.js';
 import {
   sendRequestApprovedNotification,
@@ -11996,6 +12002,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     // the concrete store, since this call exists specifically to feed
     // permission-service.js's resolution path.
     await initRuntimeRoleProvider();
+    // v1.30.9.5: same boot moment, same reasoning — feeds permission-
+    // service.js's individual-override half of effective permission
+    // resolution. getCurrentUser() is already resolved by this point
+    // (startAuthenticatedSession only runs once signed in).
+    initIndividualPermissionProvider();
     // Registered BEFORE initSettingsStore() so it also catches the initial
     // load (registerSettingsChangeListener fires on first load, not just
     // subsequent live changes — see settings-store.js#refreshSettingsCache).
