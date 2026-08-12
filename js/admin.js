@@ -22,6 +22,18 @@ const TELEGRAM_BOT_URL = `https://t.me/${TELEGRAM_BOT_USERNAME}`;
 let users = [];
 let editingUsername = null;
 
+// v1.30.9.3 — Secure Admin PIN Reset UX. Inline stroke-SVG eye/eye-off icons,
+// matching the app's existing icon system (viewBox 24x24, currentColor,
+// stroke-width 1.8 — see index.html's nav-icon SVGs). No icon font/library.
+const ICON_EYE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
+const ICON_EYE_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a21.27 21.27 0 0 1 5.06-5.94"/><path d="M9.9 4.24A10.6 10.6 0 0 1 12 4c7 0 11 7 11 7a21.27 21.27 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><path d="M1 1l22 22"/></svg>';
+
+// Reset PIN flow state — a username pending confirmation/result, whether to
+// reopen the Edit User modal afterward, and the ONE-TIME plaintext returned
+// by resetCredential. Exists only as in-memory UI state, never persisted
+// (no localStorage/sessionStorage), and cleared the instant its dialog closes.
+const pinResetFlow = { username: null, returnToEdit: false, plaintext: null };
+
 // Role group headers. Labels are DERIVED from the shared role registry
 // (roleLabel) — the single source of truth for role presentation (Objective 5).
 // No hardcoded role strings here; renaming a role in the registry updates these.
@@ -174,6 +186,56 @@ function attachAdminButtons() {
     });
   }
 
+  // v1.30.9.3 — Secure Admin PIN Reset UX.
+  // Create User's own eye toggle — reveals/hides what was just typed, never
+  // anything stored. type="button" + inside #userForm, so it must never submit.
+  const btnToggleUserFieldPin = document.getElementById('btnToggleUserFieldPin');
+  const userFieldPinInput = document.getElementById('userFieldPin');
+  if (btnToggleUserFieldPin && userFieldPinInput) {
+    btnToggleUserFieldPin.addEventListener('click', () => {
+      setPinToggleState(btnToggleUserFieldPin, userFieldPinInput, userFieldPinInput.type === 'password');
+    });
+  }
+
+  // Edit User's "Reset PIN" trigger — closes the Edit modal first (Option A,
+  // no stacked modals, same convention js/modal.js's odometer/cancel/
+  // overtime-override dialogs already use) and remembers to reopen it.
+  document.getElementById('btnResetPinFromEdit')?.addEventListener('click', () => {
+    if (!editingUsername) return;
+    const username = editingUsername;
+    closeUserFormModal();
+    openResetPinConfirm(username, { returnToEdit: true });
+  });
+
+  // Reset PIN confirmation dialog
+  document.getElementById('btnCloseResetPinConfirm')?.addEventListener('click', () => closeResetPinConfirm({ reopenEdit: true }));
+  document.getElementById('btnCancelResetPin')?.addEventListener('click', () => closeResetPinConfirm({ reopenEdit: true }));
+  document.getElementById('btnConfirmResetPin')?.addEventListener('click', handleConfirmResetPin);
+  const resetPinConfirmModal = document.getElementById('modalResetPinConfirm');
+  if (resetPinConfirmModal) {
+    resetPinConfirmModal.addEventListener('click', (event) => {
+      if (event.target === resetPinConfirmModal) closeResetPinConfirm({ reopenEdit: true });
+    });
+  }
+
+  // Reset PIN result dialog — the one-time plaintext display.
+  document.getElementById('btnCloseResetPinResult')?.addEventListener('click', () => closeResetPinResult({ reopenEdit: true }));
+  document.getElementById('btnDoneResetPin')?.addEventListener('click', () => closeResetPinResult({ reopenEdit: true }));
+  document.getElementById('btnCopyResetPin')?.addEventListener('click', handleCopyResetPin);
+  const btnToggleResetPinReveal = document.getElementById('btnToggleResetPinReveal');
+  const resetPinResultInput = document.getElementById('resetPinResultValue');
+  if (btnToggleResetPinReveal && resetPinResultInput) {
+    btnToggleResetPinReveal.addEventListener('click', () => {
+      setPinToggleState(btnToggleResetPinReveal, resetPinResultInput, resetPinResultInput.type === 'password');
+    });
+  }
+  const resetPinResultModal = document.getElementById('modalResetPinResult');
+  if (resetPinResultModal) {
+    resetPinResultModal.addEventListener('click', (event) => {
+      if (event.target === resetPinResultModal) closeResetPinResult({ reopenEdit: true });
+    });
+  }
+
   const profileModal = document.getElementById('modalProfile');
   if (profileModal) {
     profileModal.addEventListener('click', (event) => {
@@ -241,12 +303,19 @@ export function openUserFormModal(username = null) {
   const displayNameField = document.getElementById('userFieldDisplayName');
   const roleField = document.getElementById('userFieldRole');
   const pinField = document.getElementById('userFieldPin');
+  const pinToggle = document.getElementById('btnToggleUserFieldPin');
+  const pinCreateGroup = document.getElementById('userFieldPinGroup');
+  const credentialGroup = document.getElementById('userCredentialGroup');
   const activeField = document.getElementById('userFieldActive');
 
   // v1.30.4 — before setting .value, so an active Custom Role reference (rare,
   // but possible via manual data) can still be represented as a disabled option.
   refreshCustomRoleOptions();
   let currentRoleWarning = null;
+
+  // v1.30.9.3 — always start masked, regardless of mode; whichever group is
+  // about to become visible below never opens already-revealed.
+  if (pinField && pinToggle) setPinToggleState(pinToggle, pinField, false);
 
   if (username && users.length) {
     const user = users.find(item => item.username === username);
@@ -271,11 +340,16 @@ export function openUserFormModal(username = null) {
           if (roleField.value !== user.role) currentRoleWarning = resolveRoleInfo(user.role);
         }
       }
-      // v1.30.6.2 — never pre-fill a stored credential (hashed or legacy
-      // plaintext). Empty on Edit, exactly like Create; submitting it
-      // empty means "don't change the credential" (updateUser()'s pin
-      // branch only fires on a non-empty value).
+      // v1.30.9.3 — Secure Admin PIN Reset UX. The Credential Security
+      // Patch (v1.30.6.2) made stored credentials one-way (pinHash); there
+      // is no plaintext left to pre-fill, migrated or not, and a legacy
+      // record's plaintext `pin` field (still possible during the
+      // migration bridge — see docs/PRODUCTION_RTDB_DEPLOYMENT_REPORT_
+      // v1.30.9.2.md §7) is likewise never read into this form. Edit shows
+      // only "PIN tersimpan" + Reset PIN — never an input at all.
       if (pinField) pinField.value = '';
+      if (pinCreateGroup) pinCreateGroup.style.display = 'none';
+      if (credentialGroup) credentialGroup.style.display = '';
       if (activeField) activeField.checked = Boolean(user.active);
     }
   } else {
@@ -287,6 +361,8 @@ export function openUserFormModal(username = null) {
     if (roleField) roleField.value = 'viewer';
     setEngineeringLevel(null);
     if (pinField) pinField.value = '';
+    if (pinCreateGroup) pinCreateGroup.style.display = '';
+    if (credentialGroup) credentialGroup.style.display = 'none';
     if (activeField) activeField.checked = true;
   }
   syncPbsiSelect(roleField);
@@ -398,6 +474,152 @@ function closeUserFormModal() {
   const modal = document.getElementById('modalUserForm');
   if (modal) modal.style.display = 'none';
   editingUsername = null;
+  // Closing always re-masks the Create-mode PIN field, even if it was
+  // revealed — next open (Create or Edit) must never start revealed.
+  const pinField = document.getElementById('userFieldPin');
+  const pinToggle = document.getElementById('btnToggleUserFieldPin');
+  if (pinField && pinToggle) setPinToggleState(pinToggle, pinField, false);
+}
+
+/* ── PIN reveal/reset UX (v1.30.9.3, Secure Admin PIN Reset) ──────────────
+   Two independent things share the eye-icon pattern but are NOT the same
+   feature: (1) unmasking a NEW PIN currently being typed (Create User —
+   the value already lives in the input, nothing to fetch), and (2) the
+   one-time plaintext a fresh Reset PIN returns (nothing pre-existing is
+   ever read — see functions/src/auth/credentialService.js#resetCredential).
+   Both reuse setPinToggleState(); neither ever touches a STORED credential. */
+
+/** Flip a password-style input + its eye button between masked/revealed. */
+function setPinToggleState(button, input, revealed) {
+  input.type = revealed ? 'text' : 'password';
+  button.innerHTML = revealed ? ICON_EYE_OFF : ICON_EYE;
+  button.setAttribute('aria-pressed', String(revealed));
+  button.setAttribute('aria-label', revealed ? 'Sembunyikan PIN' : 'Tampilkan PIN');
+}
+
+/**
+ * Open the Reset PIN confirmation dialog. `returnToEdit: true` means this
+ * was triggered from inside the Edit User modal (already closed per the
+ * app's existing "Option A, no stacked modals" convention — see
+ * js/modal.js's odometer/cancel/overtime-override dialogs) — Batal/close
+ * reopens it. The list-card "Reset PIN" action (Manajemen User list, not
+ * the Edit form) passes `returnToEdit: false` — there's nothing to reopen.
+ */
+function openResetPinConfirm(username, { returnToEdit = false } = {}) {
+  pinResetFlow.username = username;
+  pinResetFlow.returnToEdit = returnToEdit;
+  const modal = document.getElementById('modalResetPinConfirm');
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeResetPinConfirm({ reopenEdit = false } = {}) {
+  const modal = document.getElementById('modalResetPinConfirm');
+  if (modal) modal.style.display = 'none';
+  const { username, returnToEdit } = pinResetFlow;
+  pinResetFlow.username = null;
+  pinResetFlow.returnToEdit = false;
+  if (reopenEdit && returnToEdit && username) openUserFormModal(username);
+}
+
+/**
+ * Confirm → the ONLY place this version calls callResetUserCredential().
+ * The Credential Service (functions/src/auth/credentialService.js) does
+ * every bit of hashing/persistence server-side; this client only ever
+ * receives the one-time plaintext back, and only for THIS toast/dialog use.
+ * Failure leaves the admin on the (still-open) confirm dialog — no fake PIN,
+ * no partial state, existing credential untouched (resetCredential() never
+ * partially writes — see its own single persistCredential() call).
+ */
+async function handleConfirmResetPin() {
+  const { username, returnToEdit } = pinResetFlow;
+  if (!username) return;
+
+  const btnConfirm = document.getElementById('btnConfirmResetPin');
+  const btnCancel = document.getElementById('btnCancelResetPin');
+  if (btnConfirm) { btnConfirm.disabled = true; btnConfirm.textContent = 'Mereset...'; }
+  if (btnCancel) btnCancel.disabled = true;
+
+  try {
+    const { pin: newPin } = await callResetUserCredential({ username });
+    await logAction({ userId: getCurrentUser().id, username: getCurrentUser().username, action: 'user_pin_reset', targetId: username });
+    const confirmModal = document.getElementById('modalResetPinConfirm');
+    if (confirmModal) confirmModal.style.display = 'none';
+    pinResetFlow.username = null;
+    pinResetFlow.returnToEdit = false;
+    users = await getUsers();
+    renderAdminList();
+    openResetPinResult(newPin, { username, returnToEdit });
+  } catch (error) {
+    showToast(error.message || 'Gagal mereset PIN.');
+  } finally {
+    if (btnConfirm) { btnConfirm.disabled = false; btnConfirm.textContent = 'Reset PIN'; }
+    if (btnCancel) btnCancel.disabled = false;
+  }
+}
+
+/** Show the newly generated PIN exactly once, masked by default. */
+function openResetPinResult(pin, { username, returnToEdit }) {
+  pinResetFlow.username = username;
+  pinResetFlow.returnToEdit = returnToEdit;
+  pinResetFlow.plaintext = pin;
+
+  const input = document.getElementById('resetPinResultValue');
+  const toggle = document.getElementById('btnToggleResetPinReveal');
+  if (input) input.value = pin; // DOM property, not an HTML `value="..."` attribute
+  if (input && toggle) setPinToggleState(toggle, input, false);
+
+  const modal = document.getElementById('modalResetPinResult');
+  if (modal) modal.style.display = 'flex';
+}
+
+/** Closing destroys the visible plaintext — value cleared, state cleared, re-masked. */
+function closeResetPinResult({ reopenEdit = false } = {}) {
+  const modal = document.getElementById('modalResetPinResult');
+  if (modal) modal.style.display = 'none';
+
+  const input = document.getElementById('resetPinResultValue');
+  const toggle = document.getElementById('btnToggleResetPinReveal');
+  if (input) input.value = '';
+  if (input && toggle) setPinToggleState(toggle, input, false);
+
+  const { username, returnToEdit } = pinResetFlow;
+  pinResetFlow.username = null;
+  pinResetFlow.returnToEdit = false;
+  pinResetFlow.plaintext = null;
+
+  if (reopenEdit && returnToEdit && username) openUserFormModal(username);
+}
+
+/** "Salin PIN" — explicit, admin-initiated copy only; never automatic. */
+async function handleCopyResetPin() {
+  const pin = pinResetFlow.plaintext;
+  if (!pin) return;
+  try {
+    await navigator.clipboard.writeText(pin);
+    showToast('PIN disalin ke clipboard.');
+  } catch {
+    // Same execCommand fallback js/modal.js#copyWAText() already uses.
+    const ta = document.createElement('textarea');
+    ta.value = pin;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast('PIN disalin ke clipboard.');
+  }
+}
+
+/**
+ * TEST-ONLY. Opens the result dialog directly, bypassing the Cloud Function
+ * call entirely — mirrors users.js#__seedUsersForTest() / custom-roles-
+ * store.js#__seedCustomRolesForTest()'s established pattern for exercising
+ * UI behavior without a real authenticated network call (this codebase's
+ * DOM checks never call a Cloud Function against real Firebase — see
+ * scripts/admin-pin-reset-dom-check.mjs). Real application code MUST NEVER
+ * call this.
+ */
+export function __openResetPinResultForTest(pin, username = 'test-user', returnToEdit = false) {
+  openResetPinResult(pin, { username, returnToEdit });
 }
 
 /* ── Engineering level segment (v1.20.2) ──────────────────────────────────
@@ -442,36 +664,42 @@ async function handleUserFormSubmit(event) {
   const username = usernameField ? usernameField.value.trim() : '';
   const displayName = displayNameField ? displayNameField.value.trim() : '';
   let role = roleField ? roleField.value : 'viewer';
-  const pin = pinField ? pinField.value.trim() : '';
   const active = activeField ? activeField.checked : true;
 
-    if (!username || !displayName || !role) {
-      showToast('Lengkapi username, display name, dan role.');
-      return;
-    }
-
-    // Engineering sentinel → resolve to the concrete role via the segment (v1.20.2).
-    if (role === 'engineering') {
-      const resolved = currentEngineeringRole();
-      if (!resolved) {
-        showToast('Pilih tingkat Engineering: Koordinator atau Anggota.');
-        return;
-      }
-      role = resolved;
-    }
-
-    // PIN required only for new user creation
-    if (!editingUsername && !pin) {
-      showToast('PIN wajib diisi untuk user baru.');
-      return;
-    }
-
-  if (!/^\d{4}$/.test(pin)) {
-    showToast('PIN harus 4 digit angka.');
+  if (!username || !displayName || !role) {
+    showToast('Lengkapi username, display name, dan role.');
     return;
   }
 
-    // Duplicate PINs allowed; no uniqueness check needed
+  // Engineering sentinel → resolve to the concrete role via the segment (v1.20.2).
+  if (role === 'engineering') {
+    const resolved = currentEngineeringRole();
+    if (!resolved) {
+      showToast('Pilih tingkat Engineering: Koordinator atau Anggota.');
+      return;
+    }
+    role = resolved;
+  }
+
+  // v1.30.9.3 — PIN is only ever collected here for a brand-new user;
+  // #userFieldPin isn't even part of the Edit form anymore (see
+  // #userCredentialGroup / openResetPinConfirm — changing an existing
+  // credential now happens exclusively through Reset PIN). Scoping this to
+  // !editingUsername also fixes a latent bug: the old unconditional
+  // 4-digit check ran against this field's always-blank Edit-mode value
+  // and silently rejected every Edit User save that didn't also enter a
+  // brand new PIN.
+  const pin = editingUsername ? '' : (pinField ? pinField.value.trim() : '');
+  if (!editingUsername) {
+    if (!pin) {
+      showToast('PIN wajib diisi untuk user baru.');
+      return;
+    }
+    if (!/^\d{4}$/.test(pin)) {
+      showToast('PIN harus 4 digit angka.');
+      return;
+    }
+  }
 
   if (!(await validateUsername(username, editingUsername))) {
     showToast('Username sudah digunakan atau tidak valid.');
@@ -480,7 +708,7 @@ async function handleUserFormSubmit(event) {
 
   try {
     if (editingUsername) {
-      await updateUser({ username: editingUsername, displayName, role, pin, active });
+      await updateUser({ username: editingUsername, displayName, role, active });
       await logAction({ userId: getCurrentUser().id, username: getCurrentUser().username, action: 'user_edited', targetId: editingUsername, metadata: { displayName, role, active } });
       showToast('User berhasil diperbarui.');
     } else {
@@ -647,18 +875,13 @@ async function handleUserActionClick(event) {
   }
 
   if (action === 'reset') {
-    try {
-      // v1.30.6.2 — the Credential Service generates + hashes the new PIN
-      // server-side and returns it once for this toast; the client never
-      // computes a credential itself.
-      const { pin: newPin } = await callResetUserCredential({ username });
-      await logAction({ userId: getCurrentUser().id, username: getCurrentUser().username, action: 'user_pin_reset', targetId: username });
-      showToast(`PIN untuk ${username} di-reset menjadi ${newPin}`);
-      users = await getUsers();
-      renderAdminList();
-    } catch (error) {
-      showToast(error.message || 'Gagal mereset PIN.');
-    }
+    // v1.30.9.3 — routes through the same confirm → Credential Service →
+    // masked-by-default result dialog as Edit User's Reset PIN (see
+    // openResetPinConfirm/handleConfirmResetPin). Previously this reset
+    // instantly with no confirmation and put the raw new PIN straight into
+    // a toast — exactly what the new UX is meant to stop doing; unifying
+    // the two entry points means there is exactly one secure reset path.
+    openResetPinConfirm(username, { returnToEdit: false });
     return;
   }
 }

@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<!-- admin-pin-reset-harness.html — v1.30.9.3 Secure Admin PIN Reset UX.
+     Minimal harness: the real #modalUserForm markup (Create-mode masked/eye
+     PIN field + Edit-mode "PIN tersimpan"/Reset PIN credential row) plus the
+     two new Reset PIN dialogs, all copied verbatim from index.html. No full
+     app.js boot — mirrors user-management-role-picker-harness.html for the
+     same reason (admin.js's DOM lookups are all null-guarded; nothing else
+     needs to be mounted). See scripts/admin-pin-reset-dom-check.mjs. -->
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<title>Admin PIN Reset Harness</title>
+</head>
+<body>
+<div class="modal-overlay" id="modalUserForm" style="display:none;">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h2 class="modal-title" id="modalUserFormTitle">Tambah User</h2>
+      <button class="modal-close" id="btnCloseUserForm">&times;</button>
+    </div>
+    <div class="modal-body">
+      <form id="userForm" novalidate>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="userFieldUsername">Username *</label>
+            <input type="text" id="userFieldUsername" autocomplete="username" placeholder="Masukkan username" required />
+          </div>
+          <div class="form-group">
+            <label for="userFieldDisplayName">Display Name *</label>
+            <input type="text" id="userFieldDisplayName" placeholder="Nama tampilan" required />
+          </div>
+          <div class="form-group form-full">
+            <label for="userFieldRole">Role *</label>
+            <select id="userFieldRole" required>
+              <option value="admin">Admin</option>
+              <option value="bidang">Bidang</option>
+              <option value="viewer">Viewer</option>
+              <option value="driver">Driver</option>
+              <option value="engineering">Engineering</option>
+            </select>
+            <p class="form-hint form-hint--warning" id="userRoleCurrentWarning" style="display:none;"></p>
+            <div class="v2-dq-stats" id="userRoleSummaryPanel" style="display:none;"></div>
+          </div>
+          <div class="form-group form-full" id="userEngineeringLevelGroup" style="display:none;">
+            <label>Tingkat Engineering *</label>
+            <div class="eng-level-segment" style="display:flex;gap:10px;">
+              <label class="multi-day-checkbox-label">
+                <input type="checkbox" id="userEngKoordinator" data-eng-level="coordinator" />
+                <span>
+                  <span class="multi-day-checkbox-text">Koordinator</span>
+                  <span class="multi-day-hint">Koordinasi lapangan &amp; verifikasi</span>
+                </span>
+              </label>
+              <label class="multi-day-checkbox-label">
+                <input type="checkbox" id="userEngAnggota" data-eng-level="member" />
+                <span>
+                  <span class="multi-day-checkbox-text">Anggota</span>
+                  <span class="multi-day-hint">Pelaksana pekerjaan lapangan</span>
+                </span>
+              </label>
+            </div>
+          </div>
+          <div class="form-group" id="userFieldPinGroup">
+            <label for="userFieldPin">PIN *</label>
+            <div class="pin-reveal-field">
+              <input type="password" id="userFieldPin" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="4 digit PIN" autocomplete="off" required />
+              <button type="button" class="pin-reveal-toggle" id="btnToggleUserFieldPin" aria-label="Tampilkan PIN" aria-pressed="false"></button>
+            </div>
+          </div>
+          <div class="form-group form-full" id="userCredentialGroup" style="display:none;">
+            <label>PIN</label>
+            <div class="pin-credential-row">
+              <span class="pin-credential-status">PIN tersimpan</span>
+              <button type="button" class="btn-secondary" id="btnResetPinFromEdit">Reset PIN</button>
+            </div>
+          </div>
+          <div class="form-group form-full">
+            <label>Status Akun</label>
+            <label class="pbsi-form-toggle">
+              <input type="checkbox" id="userFieldActive" class="pbsi-toggle-input" role="switch" aria-label="Status akun aktif" checked />
+              <span class="pbsi-form-toggle-label">Aktif</span>
+            </label>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn-secondary" id="btnCancelUserForm">Batal</button>
+          <button type="submit" class="btn-primary" id="btnSaveUserForm">Simpan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalResetPinConfirm" style="display:none;">
+  <div class="modal-box modal-cancel-box">
+    <div class="modal-header">
+      <h2 class="modal-title">Reset PIN?</h2>
+      <button class="modal-close" id="btnCloseResetPinConfirm">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p class="cancel-warning">PIN lama tidak dapat dipulihkan. Sistem akan membuat PIN baru untuk pengguna ini.</p>
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" id="btnCancelResetPin">Batal</button>
+        <button type="button" class="btn-danger" id="btnConfirmResetPin">Reset PIN</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalResetPinResult" style="display:none;">
+  <div class="modal-box modal-cancel-box">
+    <div class="modal-header">
+      <h2 class="modal-title">PIN Baru</h2>
+      <button class="modal-close" id="btnCloseResetPinResult">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="pin-reveal-field">
+        <input type="password" id="resetPinResultValue" readonly autocomplete="off" aria-label="PIN baru" value="" />
+        <button type="button" class="pin-reveal-toggle" id="btnToggleResetPinReveal" aria-label="Tampilkan PIN" aria-pressed="false"></button>
+      </div>
+      <p class="cancel-warning">PIN ini hanya ditampilkan sekali. Simpan atau sampaikan kepada pengguna. PIN tidak dapat ditampilkan kembali setelah dialog ditutup.</p>
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" id="btnCopyResetPin">Salin PIN</button>
+        <button type="button" class="btn-primary" id="btnDoneResetPin">Selesai</button>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

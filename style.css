@@ -2148,6 +2148,58 @@ input[type="number"]::-webkit-inner-spin-button {
   flex-wrap: wrap;
 }
 
+/* v1.30.9.3 — Secure Admin PIN Reset UX. Password-style field with an eye
+   toggle: used both for a NEW PIN being typed (Create User) and for a
+   just-generated PIN shown exactly once (Reset PIN result). Padding-right
+   on the input reserves the toggle's space so revealing/hiding never
+   shifts layout. */
+.pin-reveal-field {
+  position: relative;
+  display: flex;
+}
+.pin-reveal-field input {
+  flex: 1;
+  padding-right: 40px !important;
+  font-family: var(--font-mono, monospace);
+  letter-spacing: 0.06em;
+}
+.pin-reveal-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--gray-4);
+  cursor: pointer;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  transition: color 0.15s, background 0.15s;
+}
+.pin-reveal-toggle:hover { color: var(--dark); background: var(--gray-2); }
+.pin-reveal-toggle:focus-visible { outline: 2px solid var(--red); outline-offset: -2px; }
+.pin-reveal-toggle svg { width: 18px; height: 18px; pointer-events: none; }
+
+/* Edit User's "Kredensial" row — PIN is never shown/prefilled here, only a
+   status label and the explicit Reset PIN action. */
+.pin-credential-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--gray-1);
+  border: 1.5px solid var(--gray-2);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+.pin-credential-status {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
 /* v1.18.0 Vehicle Asset form — grouped section heading (Identitas/Registrasi/Legal/Asuransi) */
 .form-section-label {
   font-size: 0.72rem;
