@@ -9,6 +9,12 @@ import { callResetUserCredential, callChangeMyCredential } from './firebase.js';
 // reused Role Summary (never recomputed locally, per role-summary-model.js).
 import { getAllRoles, resolveGrantedSet, resolveRoleInfo } from './role-management/role-catalog.js';
 import { buildRoleSummary } from './role-management/role-summary-model.js';
+// v1.30.9.6 — Individual Permission Assignment, Phase 3A. The admin-editing
+// one-shot API (Phase 1) — never the live runtime cache in
+// individual-permission-provider.js, which is scoped to the CURRENT
+// session's own identity, not whoever is being edited here.
+import { getUserPermissionOverrides, grantUserPermission, revokeUserPermission } from './permission-management/user-permission-overrides-store.js';
+import { listAllPermissions, getPermission } from './config/permission-registry.js';
 import { logAction } from './logs.js';
 import { sendNotification } from './telegram.js';
 import { showToast } from './utils.js';
@@ -21,6 +27,35 @@ const TELEGRAM_BOT_URL = `https://t.me/${TELEGRAM_BOT_USERNAME}`;
 
 let users = [];
 let editingUsername = null;
+
+// v1.30.9.6 — Individual Permission Assignment, Phase 3A. In-memory state
+// for the currently-open Edit User modal's Individual Permissions section.
+// `username` is the SINGLE SOURCE OF TRUTH for "whose overrides is this" —
+// every render/handler checks it before applying any async result, so a
+// user-switch (or modal close) mid-flight can never let a stale response
+// paint a different user's data (see loadIndividualPermissionsFor()).
+let ipmState = {
+  username: null,
+  loading: false,
+  error: false,
+  overrides: new Set(),
+  pickerOpen: false,
+  pickerQuery: '',
+  busyPermissionId: null,
+};
+let ipmRequestToken = 0;
+
+// Permissions that must never be offered through Individual Permission
+// Management, regardless of current enforcement status. system.admin is
+// already structurally blocked at the storage/rules layer (Phase 1) — this
+// is defense in depth at the UI. system.users.manage has zero consumers
+// anywhere in the app today but is administrative BY DESCRIPTION ("Create,
+// edit, and deactivate user accounts and role assignments") — excluded
+// here so a future change that starts enforcing it doesn't retroactively
+// empower every existing individual-override holder unreviewed. See
+// docs/INDIVIDUAL_PERMISSION_ASSIGNMENT_PHASE_3_INVESTIGATION_REPORT_
+// v1.30.9.6.md §3.
+const IPM_FORBIDDEN_PERMISSION_IDS = new Set(['system.admin', 'system.users.manage']);
 
 // v1.30.9.3 — Secure Admin PIN Reset UX. Inline stroke-SVG eye/eye-off icons,
 // matching the app's existing icon system (viewBox 24x24, currentColor,
@@ -155,12 +190,14 @@ function attachAdminButtons() {
   if (roleSelect) roleSelect.addEventListener('change', () => {
     syncEngineeringLevelUI();
     renderUserRoleSummaryPanel(); // v1.30.4
+    renderIndividualPermissionsPanel(); // v1.30.9.6 — "already inherited" tracks the live role selection
   });
   // Single-select: checking one Engineering level card unchecks the other.
   document.querySelectorAll('#userEngineeringLevelGroup [data-eng-level]').forEach((cb) => {
     cb.addEventListener('change', () => {
       setEngineeringLevel(cb.checked ? cb.dataset.engLevel : null);
       renderUserRoleSummaryPanel(); // v1.30.4
+      renderIndividualPermissionsPanel(); // v1.30.9.6
     });
   });
 
@@ -370,6 +407,20 @@ export function openUserFormModal(username = null) {
   renderCurrentRoleWarning(currentRoleWarning);
   renderUserRoleSummaryPanel();
 
+  // v1.30.9.6 — Individual Permission Assignment, Phase 3A. Hidden entirely
+  // in Create-mode (no user exists yet to hold an override). Edit-mode
+  // resets synchronously to a loading state for THIS username before any
+  // async read starts, so a fast user-switch never shows a stale flash of
+  // the previously-edited user's grants.
+  const ipmGroup = document.getElementById('userIndividualPermissionsGroup');
+  if (username) {
+    if (ipmGroup) ipmGroup.style.display = '';
+    loadIndividualPermissionsFor(username);
+  } else {
+    if (ipmGroup) ipmGroup.style.display = 'none';
+    resetIpmState();
+  }
+
   const modal = document.getElementById('modalUserForm');
   if (modal) modal.style.display = 'flex';
 }
@@ -470,6 +521,368 @@ function renderUserRoleSummaryPanel() {
   `;
 }
 
+/* ============================================================
+   INDIVIDUAL PERMISSION MANAGEMENT — v1.30.9.6, Phase 3A
+   (User Management UX)
+
+   Additive, per-user grants on top of whatever the Role above already
+   provides — never a replacement for it, never routed through Role
+   Management's own state or role-summary-model.js (see that file's
+   role.id-keyed cache: feeding a per-user effective set into it would
+   cross-contaminate the cache across different users sharing a role —
+   docs/INDIVIDUAL_PERMISSION_ASSIGNMENT_PHASE_3_INVESTIGATION_REPORT_
+   v1.30.9.6.md §14). Grant/revoke are immediate, independent writes
+   through the existing Phase 1 admin API — never bundled into
+   #btnSaveUserForm, exactly mirroring the Reset PIN precedent above.
+
+   KNOWN, REPORTED GAP: getUserPermissionOverrides() (Phase 1) is
+   fail-closed by design — a denied/errored read and a genuinely empty
+   override record both resolve to an empty Set, with no way to tell
+   them apart through the existing API. The `error` state below is
+   real, wired, and tested via the test seam, but cannot currently be
+   reached through an actual RTDB denial — only a genuine JS exception
+   would trigger it. Flagged, not silently modified: the store the
+   distinction would require is on this phase's explicit do-not-touch
+   list. See the Phase 3A report.
+   ============================================================ */
+
+function resetIpmState() {
+  ipmState = {
+    username: null,
+    loading: false,
+    error: false,
+    overrides: new Set(),
+    pickerOpen: false,
+    pickerQuery: '',
+    busyPermissionId: null,
+  };
+}
+
+/** Mirrors renderUserRoleSummaryPanel()'s own role resolution exactly, so
+    "already inherited via Role" always agrees with the live Role Summary
+    panel — including the not-yet-saved dropdown selection, not just the
+    persisted user record. */
+function computeBaseGrantedSetForForm() {
+  const roleField = document.getElementById('userFieldRole');
+  let roleId = roleField ? roleField.value : '';
+  if (roleId === 'engineering') roleId = currentEngineeringRole();
+  if (!roleId) return new Set();
+  const info = resolveRoleInfo(roleId);
+  const roleDescriptor = { id: info.id, label: info.label, type: info.type, record: null };
+  return resolveGrantedSet(roleDescriptor);
+}
+
+/** Whether Individual Permissions may be granted/revoked for the user
+    currently loaded into ipmState — false for inactive or archived
+    accounts (read-only display only, per this phase's explicit policy). */
+function ipmIsEditable() {
+  const user = users.find((item) => item.username === ipmState.username);
+  return !!user && user.active !== false && user.archived !== true;
+}
+
+/**
+ * Synchronously resets to a loading state for `username` (clearing any
+ * previous user's data immediately — no window where a switch could show
+ * stale data), THEN awaits the real one-shot read. A request token guards
+ * against a slow response from a PREVIOUS load landing after the admin
+ * has already switched to a different user or closed the modal.
+ * @param {string} username
+ */
+async function loadIndividualPermissionsFor(username) {
+  ipmState = {
+    username,
+    loading: true,
+    error: false,
+    overrides: new Set(),
+    pickerOpen: false,
+    pickerQuery: '',
+    busyPermissionId: null,
+  };
+  renderIndividualPermissionsPanel();
+
+  const token = ++ipmRequestToken;
+  let overrides = new Set();
+  let failed = false;
+  try {
+    overrides = await getUserPermissionOverrides(username);
+  } catch (err) {
+    // Not currently reachable via the real API (see file-header comment)
+    // — kept as real error handling, not dead code, in case that ever
+    // changes upstream.
+    console.error(err);
+    failed = true;
+  }
+  if (token !== ipmRequestToken || ipmState.username !== username) return; // superseded — discard
+  ipmState.loading = false;
+  ipmState.error = failed;
+  ipmState.overrides = overrides;
+  renderIndividualPermissionsPanel();
+}
+
+function renderIndividualPermissionsPanel() {
+  const container = document.getElementById('userIndividualPermissionsPanel');
+  if (!container) return;
+  const { username, loading, error, overrides, pickerOpen } = ipmState;
+  if (!username) { container.innerHTML = ''; return; }
+
+  if (loading) {
+    container.innerHTML = `
+      <div class="ipm-panel">
+        <div class="ipm-header"><span class="ipm-title">Individual Permissions</span></div>
+        <div class="ipm-status">Memuat individual permissions...</div>
+      </div>`;
+    return;
+  }
+  if (error) {
+    container.innerHTML = `
+      <div class="ipm-panel">
+        <div class="ipm-header"><span class="ipm-title">Individual Permissions</span></div>
+        <div class="ipm-status ipm-status--error">Gagal memuat individual permissions.</div>
+      </div>`;
+    return;
+  }
+
+  const isEditable = ipmIsEditable();
+  const user = users.find((item) => item.username === username);
+  const count = overrides.size;
+
+  // v1.30.9.7 — Phase 3B, B3: Base Role + Individual = Effective, computed
+  // LOCALLY for this one user (never routed through role-summary-model.js's
+  // role.id-keyed cache — see this section's own header comment on why).
+  // "Individual" here is each override's UNIQUE contribution (excludes any
+  // override that happens to already overlap the role's own grant — e.g.
+  // the role changed after the override was made) so the two numbers
+  // always sum exactly to the effective total, never an apparent mismatch.
+  const baseGranted = computeBaseGrantedSetForForm();
+  const uniqueIndividualContribution = [...overrides].filter((id) => !baseGranted.has(id)).length;
+  const effectiveTotal = baseGranted.size + uniqueIndividualContribution;
+  const effectiveLine = `<div class="ipm-effective-line">Efektif: ${effectiveTotal} permission (${baseGranted.size} dari Role, ${uniqueIndividualContribution} Individual)</div>`;
+
+  const readOnlyNotice = !isEditable
+    ? `<div class="ipm-readonly-notice">${user && user.archived ? 'Akun sudah diarsipkan.' : 'Akun tidak aktif.'} Individual permissions tidak dapat diubah.</div>`
+    : '';
+
+  const rows = [...overrides].sort().map((id) => {
+    const perm = getPermission(id);
+    const title = perm ? perm.title : id;
+    // Disabled while ANY grant/revoke is in flight (not just this row's own
+    // id) — matches the picker's identical "serialize interactions" rule,
+    // so a rapid click on a DIFFERENT row's Cabut while one is pending is
+    // visually inert, not just silently no-op'd by the handler's own guard.
+    const busy = !!ipmState.busyPermissionId;
+    return `
+      <div class="ipm-grant-row">
+        <span class="ipm-grant-row__check">&#10003;</span>
+        <span class="ipm-grant-row__text">
+          <span class="ipm-grant-row__title">${escapeHTML(title)}</span>
+          <span class="ipm-grant-row__badge">Individual</span>
+        </span>
+        ${isEditable ? `<button type="button" class="btn-secondary ipm-revoke-btn" data-ipm-revoke="${escapeHTML(id)}" ${busy ? 'disabled' : ''}>Cabut</button>` : ''}
+      </div>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="ipm-panel">
+      <div class="ipm-header">
+        <span class="ipm-title">Individual Permissions</span>
+        <span class="ipm-count">${count} permission</span>
+        ${isEditable ? `<button type="button" class="btn-secondary ipm-add-btn" id="btnOpenIpmPicker">+ Tambah Permission</button>` : ''}
+      </div>
+      ${readOnlyNotice}
+      ${count === 0 ? '<div class="ipm-empty">Belum ada individual permission.</div>' : `<div class="ipm-grant-list">${rows}</div>`}
+      ${effectiveLine}
+      ${pickerOpen && isEditable ? renderIpmPickerShellHtml() : ''}
+    </div>`;
+
+  wireIndividualPermissionsPanelEvents(container, isEditable);
+}
+
+function renderIpmPickerShellHtml() {
+  const baseGranted = computeBaseGrantedSetForForm();
+  return `
+    <div class="ipm-picker">
+      <div class="ipm-picker-search-row">
+        <input type="search" class="ipm-picker-search" id="ipmPickerSearch"
+               placeholder="Cari permission..." aria-label="Cari permission"
+               value="${escapeHTML(ipmState.pickerQuery)}" />
+        <button type="button" class="btn-secondary" id="btnCloseIpmPicker">Tutup</button>
+      </div>
+      <div class="ipm-picker-body">${renderIpmPickerBodyHtml(baseGranted)}</div>
+    </div>`;
+}
+
+/** Grouped Module -> Category -> permission rows, filtered by the current
+    search query. Rendered separately from the picker shell so a search
+    keystroke can refresh ONLY this element's innerHTML — replacing the
+    shell (including the search <input> itself) on every keystroke would
+    destroy and recreate the input the admin is actively typing into,
+    losing focus/cursor position (see project convention: never bind an
+    input's own event to a handler that re-renders that same input). */
+function renderIpmPickerBodyHtml(baseGranted) {
+  const query = ipmState.pickerQuery.trim().toLowerCase();
+  const tree = {};
+  for (const perm of listAllPermissions()) {
+    if (IPM_FORBIDDEN_PERMISSION_IDS.has(perm.id)) continue;
+    if (query && !`${perm.title} ${perm.description}`.toLowerCase().includes(query)) continue;
+    if (!tree[perm.module]) tree[perm.module] = {};
+    if (!tree[perm.module][perm.category]) tree[perm.module][perm.category] = [];
+    tree[perm.module][perm.category].push(perm);
+  }
+  const moduleNames = Object.keys(tree);
+  if (moduleNames.length === 0) return '<div class="ipm-picker-empty">Tidak ada permission yang cocok.</div>';
+
+  return moduleNames.map((moduleName) => `
+    <div class="ipm-picker-group">
+      <h4 class="ipm-picker-group__title">${escapeHTML(moduleName)}</h4>
+      ${Object.entries(tree[moduleName]).map(([categoryName, perms]) => `
+        <div class="ipm-picker-category">
+          <h5 class="ipm-picker-category__title">${escapeHTML(categoryName)}</h5>
+          ${perms.map((p) => renderIpmPickerRow(p, baseGranted)).join('')}
+        </div>`).join('')}
+    </div>`).join('');
+}
+
+function renderIpmPickerRow(permission, baseGranted) {
+  const inherited = baseGranted.has(permission.id);
+  const alreadyIndividual = ipmState.overrides.has(permission.id);
+  const busy = !!ipmState.busyPermissionId;
+  const disabled = inherited || alreadyIndividual || busy;
+  const checked = inherited || alreadyIndividual;
+  let note = '';
+  if (inherited) note = 'Sudah tersedia melalui Role.';
+  else if (alreadyIndividual) note = 'Sudah menjadi Individual Permission.';
+  return `
+    <label class="ipm-picker-row ${disabled ? 'ipm-picker-row--disabled' : ''}">
+      <input type="checkbox" data-ipm-grant-id="${escapeHTML(permission.id)}"
+             ${disabled ? 'disabled' : ''} ${checked ? 'checked' : ''} />
+      <span class="ipm-picker-row__text">
+        <span class="ipm-picker-row__title">${escapeHTML(permission.title)}</span>
+        <span class="ipm-picker-row__desc">${escapeHTML(permission.description || '')}</span>
+        ${note ? `<span class="ipm-picker-row__note">${escapeHTML(note)}</span>` : ''}
+      </span>
+    </label>`;
+}
+
+function wireIndividualPermissionsPanelEvents(container, isEditable) {
+  const btnAdd = container.querySelector('#btnOpenIpmPicker');
+  if (btnAdd) btnAdd.addEventListener('click', () => {
+    ipmState.pickerOpen = true;
+    renderIndividualPermissionsPanel();
+  });
+
+  const btnClose = container.querySelector('#btnCloseIpmPicker');
+  if (btnClose) btnClose.addEventListener('click', () => {
+    ipmState.pickerOpen = false;
+    ipmState.pickerQuery = '';
+    renderIndividualPermissionsPanel();
+  });
+
+  const searchInput = container.querySelector('#ipmPickerSearch');
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      ipmState.pickerQuery = e.target.value;
+      const body = container.querySelector('.ipm-picker-body');
+      if (!body) return;
+      body.innerHTML = renderIpmPickerBodyHtml(computeBaseGrantedSetForForm());
+      wireIpmPickerBodyCheckboxes(body);
+    });
+  }
+
+  const pickerBody = container.querySelector('.ipm-picker-body');
+  if (pickerBody) wireIpmPickerBodyCheckboxes(pickerBody);
+
+  if (isEditable) {
+    container.querySelectorAll('[data-ipm-revoke]').forEach((btn) => {
+      btn.addEventListener('click', (e) => handleIpmRevokeClick(e.currentTarget.dataset.ipmRevoke));
+    });
+  }
+}
+
+function wireIpmPickerBodyCheckboxes(scope) {
+  scope.querySelectorAll('[data-ipm-grant-id]:not(:disabled)').forEach((cb) => {
+    cb.addEventListener('change', (e) => handleIpmGrantClick(e.target.dataset.ipmGrantId));
+  });
+}
+
+/**
+ * Both grant and revoke share this exact shape — the only difference is
+ * which store function they call, which toast copy they show on success,
+ * and which logAction() event they record. Guarded by the SAME
+ * ipmRequestToken loadIndividualPermissionsFor() uses (not just a username
+ * match): closing the modal and reopening the SAME user starts a fresh
+ * load with a fresh token, so a grant/revoke that was still in flight at
+ * that moment gets its result correctly discarded here too — a
+ * username-only check would have missed this, since the username is
+ * unchanged across a close+reopen of the same user.
+ *
+ * v1.30.9.7 — Phase 3B, B10: audit trail via the EXISTING logAction()
+ * (js/logs.js) — the same mechanism handleUserFormSubmit() already uses
+ * for user_edited/user_created, reused verbatim, not a new subsystem.
+ * Logged only on a CONFIRMED success (the store's resolved Set), never
+ * speculatively before the write settles.
+ */
+async function runIpmMutation(permissionId, storeFn, successMessage, failureMessage, auditAction) {
+  if (!permissionId || ipmState.busyPermissionId) return;
+  const username = ipmState.username;
+  if (!username) return;
+
+  ipmState.busyPermissionId = permissionId;
+  const token = ++ipmRequestToken;
+  renderIndividualPermissionsPanel();
+  try {
+    const nextSet = await storeFn(username, permissionId);
+    if (token !== ipmRequestToken || ipmState.username !== username) return; // superseded — discard
+    ipmState.overrides = nextSet;
+    ipmState.busyPermissionId = null;
+    showToast(successMessage);
+    renderIndividualPermissionsPanel();
+    const actor = getCurrentUser();
+    if (actor) {
+      logAction({ userId: actor.id, username: actor.username, action: auditAction, targetId: username, metadata: { permission: permissionId } });
+    }
+  } catch (err) {
+    console.error(err);
+    if (token !== ipmRequestToken || ipmState.username !== username) return;
+    ipmState.busyPermissionId = null;
+    showToast(err.message || failureMessage);
+    renderIndividualPermissionsPanel();
+  }
+}
+
+async function handleIpmGrantClick(permissionId) {
+  if (permissionId && IPM_FORBIDDEN_PERMISSION_IDS.has(permissionId)) return; // defense in depth; already excluded from the picker
+  await runIpmMutation(permissionId, grantUserPermission, 'Permission berhasil ditambahkan.', 'Gagal menambahkan permission.', 'individual_permission_granted');
+}
+
+async function handleIpmRevokeClick(permissionId) {
+  await runIpmMutation(permissionId, revokeUserPermission, 'Permission berhasil dicabut.', 'Gagal mencabut permission.', 'individual_permission_revoked');
+}
+
+/**
+ * TEST-ONLY. Directly seeds ipmState for `username`, bypassing the real
+ * one-shot Firebase read entirely — same convention as
+ * users.js#__seedUsersForTest() / custom-roles-store.js#
+ * __seedCustomRolesForTest(). Real application code MUST NEVER call this.
+ * `options.error` exists to exercise the error-state UI in isolation,
+ * since it is not reachable through the real API today (see this
+ * section's file-header comment).
+ * @param {string} username
+ * @param {string[]} permissionIds
+ * @param {{error?: boolean}} [options]
+ */
+export function __setIpmOverridesForTest(username, permissionIds, options = {}) {
+  ipmState = {
+    username,
+    loading: false,
+    error: !!options.error,
+    overrides: new Set(permissionIds || []),
+    pickerOpen: false,
+    pickerQuery: '',
+    busyPermissionId: null,
+  };
+  renderIndividualPermissionsPanel();
+}
+
 function closeUserFormModal() {
   const modal = document.getElementById('modalUserForm');
   if (modal) modal.style.display = 'none';
@@ -479,6 +892,9 @@ function closeUserFormModal() {
   const pinField = document.getElementById('userFieldPin');
   const pinToggle = document.getElementById('btnToggleUserFieldPin');
   if (pinField && pinToggle) setPinToggleState(pinToggle, pinField, false);
+  // v1.30.9.6 — never carry Individual Permission state (or an open picker)
+  // into the next modal open, whichever user that turns out to be.
+  resetIpmState();
 }
 
 /* ── PIN reveal/reset UX (v1.30.9.3, Secure Admin PIN Reset) ──────────────

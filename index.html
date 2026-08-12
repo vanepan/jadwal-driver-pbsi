@@ -675,6 +675,20 @@
             <p class="form-hint form-hint--warning" id="userRoleCurrentWarning" style="display:none;"></p>
             <div class="v2-dq-stats" id="userRoleSummaryPanel" style="display:none;"></div>
           </div>
+          <!-- v1.30.9.6 — Individual Permission Assignment, Phase 3A. Additive,
+               per-user permission grants on top of the Role above (never a
+               replacement for it). Hidden entirely in Create-mode (no user
+               exists yet to grant an override to) and fully rendered by
+               js/admin.js#renderIndividualPermissionsPanel() into the single
+               container below — same one-container-full-rerender pattern
+               #userRoleSummaryPanel already uses. Placed OUTSIDE any
+               type="submit" control: every interactive element inside is
+               type="button", so this section can never be submitted via
+               #btnSaveUserForm — grant/revoke are independent, immediate
+               actions (see admin.js), exactly like #btnResetPinFromEdit. -->
+          <div class="form-group form-full" id="userIndividualPermissionsGroup" style="display:none;">
+            <div id="userIndividualPermissionsPanel"></div>
+          </div>
           <!-- Engineering level (v1.20.2) — shown only when role = Engineering.
                Reuses the platform's .multi-day-checkbox-label card component
                (single-select enforced in admin.js). Koordinator / Anggota is
