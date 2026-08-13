@@ -45,6 +45,12 @@ const check = (name, cond) => { if (cond) { pass++; console.log(`  ✓ ${name}`)
    fixture array instead of the real (Firebase-coupled) custom-roles-store.js
    — same shape (`{id, permissions, archived}`) getCustomRoleById() returns. */
 const _setCache = new Map();
+// v1.30.9.10 — Custom Role Protected Permission Security Hardening: the
+// REAL permission-service.js now strips these two ids from a Custom
+// Role's own base contribution unconditionally (permissionSetFor()'s
+// NEVER_EFFECTIVE_IN_CUSTOM_ROLE_BASE) — mirrored here so this file's
+// local mirror doesn't silently drift from the real algorithm.
+const NEVER_EFFECTIVE_IN_CUSTOM_ROLE_BASE = ['system.admin', 'system.users.manage'];
 function permissionSetFor(roleId, customRoleFixtures = []) {
   if (!roleId) return new Set();
   if (roleId in ROLE_PERMISSIONS) {
@@ -53,7 +59,9 @@ function permissionSetFor(roleId, customRoleFixtures = []) {
   }
   const customRole = customRoleFixtures.find((r) => r.id === roleId) || null;
   if (!customRole || customRole.archived === true) return new Set();
-  return new Set(customRole.permissions || []);
+  const permissions = new Set(customRole.permissions || []);
+  for (const id of NEVER_EFFECTIVE_IN_CUSTOM_ROLE_BASE) permissions.delete(id);
+  return permissions;
 }
 const canAs = (roleId, permission, fixtures) => permissionSetFor(roleId, fixtures).has(permission);
 const cannotAs = (roleId, permission, fixtures) => !canAs(roleId, permission, fixtures);
@@ -165,6 +173,20 @@ check('a non-archived Custom Role does not see an ungranted permission', cannotA
 check('an archived Custom Role fails closed even for a permission it was granted before archiving', cannotAs('retired-role-9z', 'system.admin', customFixtures));
 check("an unresolvable role id (no System Role, no fixture match) fails closed", cannotAs('no-such-role', 'driver.schedule.view', customFixtures));
 check('a System Role id is never shadowed by a same-named Custom Role fixture (registry checked first)', canAs('admin', 'driver.schedule.create', [{ id: 'admin', permissions: [], archived: false }]));
+
+console.log('\n11b. Custom Role Protected Permission Security Hardening (v1.30.9.10) — a NON-archived Custom Role can NEVER hold system.admin/system.users.manage as effective, regardless of what its persisted record contains (legacy data, a rules bypass, or otherwise)');
+const legacyInvalidFixtures = [
+  // Simulates a pre-hardening (or admin-console-bypassed) persisted record —
+  // the exact real-world shape this task's own "LEGACY INVALID DATA"
+  // section asks to be verified fail-safe.
+  { id: 'legacy-god-mode', name: 'Legacy God Mode', permissions: ['warehouse.view', 'system.admin', 'system.users.manage'], archived: false },
+];
+check('SECURITY: a non-archived Custom Role holding system.admin in its persisted record NEVER has it effective', cannotAs('legacy-god-mode', 'system.admin', legacyInvalidFixtures));
+check('SECURITY: the same record\'s system.users.manage is also never effective', cannotAs('legacy-god-mode', 'system.users.manage', legacyInvalidFixtures));
+check('the SAME record\'s legitimate, non-protected permission still lands (this is filtering, not a blanket deny)', canAs('legacy-god-mode', 'warehouse.view', legacyInvalidFixtures));
+check('listPermissionsAs-equivalent: system.admin never appears in the resolved Set for this role', !permissionSetFor('legacy-god-mode', legacyInvalidFixtures).has('system.admin'));
+check('SECURITY: the built-in Admin SYSTEM Role is completely unaffected by this same filter — system.admin remains effective', canAs('admin', 'system.admin'));
+check('SECURITY: the built-in Admin SYSTEM Role also still has system.users.manage', canAs('admin', 'system.users.manage'));
 
 console.log('\n12. Runtime invariant guard — permission-service.js resolution must exactly match Role Management\'s own Role Summary computation (role-management-logic.js#grantedSetForRole), for every System Role. Catches the two ever silently forking.');
 let invariantOk = true;

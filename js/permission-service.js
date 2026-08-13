@@ -83,10 +83,36 @@ const EMPTY_SET = Object.freeze(new Set());
 const _permissionSetCache = new Map();
 
 /**
+ * Permission ids that must never be effective as part of a Custom Role's
+ * OWN base grant — v1.30.9.10, Custom Role Protected Permission Security
+ * Hardening. Deliberately re-declared here rather than imported (same
+ * "small two-item list, one per mechanism" reasoning as
+ * NEVER_EFFECTIVE_VIA_OVERRIDE below — see that constant's own comment).
+ *
+ * WHY THIS EXISTS: custom-roles-rules.js/custom-roles-store.js/
+ * database.rules.json now all reject a NEW write that would introduce
+ * either id into a Custom Role's permission list (see those files' own
+ * v1.30.9.10 comments) — but this function's job is READ-time safety,
+ * independent of write-time prevention. A record that predates this
+ * hardening, or one written by a direct admin-console bypass of every
+ * other layer, must still never become an effective grant for any real
+ * user. This is the last line of defense, applied unconditionally to
+ * EVERY non-System-Role read — never to the `roleId in ROLE_PERMISSIONS`
+ * branch above, which is code-defined and fully trusted (this is what
+ * keeps the built-in Admin System Role's own legitimate system.admin/
+ * system.users.manage grant completely untouched).
+ */
+const NEVER_EFFECTIVE_IN_CUSTOM_ROLE_BASE = Object.freeze(['system.admin', 'system.users.manage']);
+
+/**
  * Permission Set for `roleId`. System Roles resolve from the static,
- * cached registry. Anything else is resolved through the runtime role
- * provider — an unresolvable or archived role fails closed (EMPTY_SET),
- * same as an unknown role id always has.
+ * cached registry, fully trusted, never filtered. Anything else (a
+ * Custom Role) is resolved through the runtime role provider — an
+ * unresolvable or archived role fails closed (EMPTY_SET), same as an
+ * unknown role id always has — and additionally has
+ * NEVER_EFFECTIVE_IN_CUSTOM_ROLE_BASE's two ids stripped unconditionally,
+ * since a Custom Role's permissions are Firebase-sourced data, not
+ * code-trusted like the branch above.
  */
 function permissionSetFor(roleId) {
   if (!roleId) return EMPTY_SET;
@@ -98,7 +124,9 @@ function permissionSetFor(roleId) {
   }
   const runtimeRole = getRuntimeRole(roleId);
   if (!runtimeRole || runtimeRole.archived === true) return EMPTY_SET;
-  return new Set(runtimeRole.permissions || []);
+  const permissions = new Set(runtimeRole.permissions || []);
+  for (const id of NEVER_EFFECTIVE_IN_CUSTOM_ROLE_BASE) permissions.delete(id);
+  return permissions;
 }
 
 /**

@@ -193,9 +193,33 @@
       ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true"
     },
 
+    // v1.30.9.10 — Custom Role Protected Permission Security Hardening.
+    // Pre-existing gap found during Phase 4's (v1.30.9.9) Final Review: this
+    // node had NO .validate at all — a Custom Role's permissions array
+    // feeds directly into permission-service.js's BASE grant for every user
+    // holding that role, so an admin could (through the ordinary, already-
+    // shipped Custom Role editor, or by cloning the built-in "Admin" System
+    // Role, which legitimately holds both ids in its OWN base grant) create
+    // a Custom Role that silently grants real system.admin/
+    // system.users.manage to everyone assigned it. .read/.write are
+    // UNCHANGED (this task's own instruction: do not weaken existing
+    // authorization, do not add a self-write path) — only the new
+    // "permissions" -> "$index" .validate clause is added, mirroring
+    // userPermissionOverrides'/rolePermissionOverrides' identical per-
+    // element pattern. This governs the resulting array state for ANY
+    // write shape that touches it — a full record set(), a permissions-
+    // only replacement, a deep single-index write, or a multi-location
+    // update() — RTDB re-evaluates every .validate rule along the write
+    // path against the RESULTING data, not just the literally-touched
+    // leaf, so none of those shapes can smuggle either id in.
     "customRoles": {
       "$roleId": {
-        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || (auth != null && data.child('archived').val() !== true)"
+        ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || (auth != null && data.child('archived').val() !== true)",
+        "permissions": {
+          "$index": {
+            ".validate": "newData.isString() && newData.val() !== 'system.admin' && newData.val() !== 'system.users.manage'"
+          }
+        }
       },
       ".write": "auth.token.role === 'admin'"
     },

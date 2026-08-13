@@ -52,7 +52,13 @@ import {
   updateCustomRole,
   archiveCustomRole,
 } from './custom-roles-store.js';
-import { findDuplicateName, diffPermissions, isEmptyPermissionSet } from './custom-roles-rules.js';
+import {
+  findDuplicateName,
+  diffPermissions,
+  isEmptyPermissionSet,
+  FORBIDDEN_PERMISSION_IDS as CUSTOM_ROLE_FORBIDDEN_PERMISSION_IDS,
+  sanitizePermissionList,
+} from './custom-roles-rules.js';
 import { buildRoleSummary, buildModuleBreakdown, invalidateRoleSummaryCache } from './role-summary-model.js';
 import { canArchiveRole } from './role-archive-guard.js';
 import { getRoleUsage } from './role-usage-provider.js';
@@ -142,9 +148,21 @@ function effectiveName(role) {
   return role ? role.label : '';
 }
 
+/**
+ * v1.30.9.10 — SECURITY: the persisted set is run through
+ * sanitizePermissionList() before seeding the draft, so a legacy-invalid
+ * record (or one somehow written outside this app) can never propagate
+ * system.admin/system.users.manage forward into a fresh edit — the very
+ * FIRST toggle on ANY permission for this role silently drops them from
+ * the working draft. This is never invisible: the Review modal's own
+ * diffPermissions() (attemptSave(), below) compares the draft against
+ * resolveGrantedSet(role) — the RAW persisted set — so if either id was
+ * actually present, it surfaces explicitly under "Dicabut" the moment
+ * the admin saves, exactly like any other real removal.
+ */
 function ensureDraft(role) {
   if (draft && draft.id === role.id) return;
-  draft = { id: role.id, name: role.label, permissions: new Set(resolveGrantedSet(role)) };
+  draft = { id: role.id, name: role.label, permissions: new Set(sanitizePermissionList([...resolveGrantedSet(role)])) };
 }
 
 /* ============================================================
@@ -793,7 +811,38 @@ function treeHtml(filteredTree, grantedSet, editable) {
   }).join('');
 }
 
+/**
+ * v1.30.9.10 — SECURITY: a Custom Role permission row now has a THIRD
+ * state beyond the original granted/not-granted binary. Protected ids
+ * (system.admin/system.users.manage) are never selectable — no
+ * data-rm-permission-id attribute at all, structurally, not just
+ * visually, un-toggleable, mirroring the System Role tree's identical
+ * Base/Protected pattern (systemPermissionRowHtml, below).
+ *
+ * CRITICAL: a protected id that IS currently granted (legacy/pre-
+ * hardening persisted data) is rendered CHECKED — never silently hidden,
+ * per this task's own explicit instruction. Once the admin starts
+ * editing this role at all, ensureDraft()'s sanitization drops it from
+ * the working draft, and this row will render unchecked+disabled from
+ * that point on (the Review modal then shows it explicitly under
+ * "Dicabut" on save — see ensureDraft()'s own comment).
+ */
 function permissionRowHtml(permission, granted, editable) {
+  const isProtected = CUSTOM_ROLE_FORBIDDEN_PERMISSION_IDS.includes(permission.id);
+  if (editable && isProtected) {
+    const note = granted
+      ? 'Protected — akan otomatis dicabut saat Anda menyimpan perubahan.'
+      : 'Protected — tidak dapat diberikan ke Custom Role.';
+    return `
+      <label class="rm-permission-row rm-permission-row--protected">
+        <input type="checkbox" ${granted ? 'checked' : ''} disabled aria-label="${esc(permission.title)}" />
+        <span class="rm-permission-row__text">
+          <span class="rm-permission-row__title">${esc(permission.title)}</span>
+          <span class="rm-permission-row__desc">${esc(permission.description)}</span>
+          <span class="rm-permission-row__note">${esc(note)}</span>
+        </span>
+      </label>`;
+  }
   return `
     <label class="rm-permission-row">
       <input type="checkbox" data-rm-permission-id="${esc(permission.id)}"

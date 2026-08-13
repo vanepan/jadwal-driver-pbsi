@@ -69,9 +69,16 @@ const result = await page.evaluate(async () => {
 
   // Seed one fake Custom Role directly into the store's cache (test-only —
   // bypasses Firebase; see the export's own doc comment).
+  // v1.30.9.10: this fixture used to include 'system.admin' — harmless
+  // before the Custom Role Protected Permission Security Hardening task,
+  // but now that permission renders as a structurally non-editable
+  // protected row (see custom-role-protected-permission-dom-check.mjs for
+  // THAT dedicated coverage), so it was swapped for an ordinary permission
+  // here — this file is testing the toggle/save/cancel/review WORKFLOW,
+  // not protection, and the two concerns should not be conflated.
   store.__seedCustomRolesForTest([{
     id: 'role_test', name: 'Test Custom Role', type: 'custom',
-    permissions: ['system.admin', 'warehouse.view'],
+    permissions: ['vehicle.maintenance', 'warehouse.view'],
     archived: false, clonedFrom: 'Admin',
     createdAt: '2026-08-08T00:00:00.000Z', updatedAt: '2026-08-08T00:00:00.000Z',
   }]);
@@ -83,7 +90,18 @@ const result = await page.evaluate(async () => {
   host.querySelector('[data-rm-role="role_test"]').click();
   out.customBadgeShown = !!host.querySelector('.rm-role-type-badge');
   const checkboxesAfterSelect = Array.from(host.querySelectorAll('.rm-permission-row input[type="checkbox"]'));
-  out.checkboxesEditable = checkboxesAfterSelect.every((cb) => !cb.disabled);
+  // v1.30.9.10 — Custom Role Protected Permission Security Hardening: the
+  // permission tree always renders EVERY registered permission, including
+  // the two structurally protected ones (system.admin/system.users.manage)
+  // — those now render disabled for EVERY Custom Role, regardless of that
+  // role's own fixture, so "every checkbox is editable" is no longer the
+  // right invariant. Narrowed to "every NON-PROTECTED checkbox is
+  // editable" — dedicated protected-row coverage lives in
+  // custom-role-protected-permission-dom-check.mjs.
+  const nonProtectedCheckboxes = checkboxesAfterSelect.filter((cb) => !cb.closest('.rm-permission-row--protected'));
+  out.checkboxesEditable = nonProtectedCheckboxes.length > 0 && nonProtectedCheckboxes.every((cb) => !cb.disabled);
+  out.protectedCheckboxesExistAndAreDisabled = checkboxesAfterSelect.some((cb) => cb.closest('.rm-permission-row--protected'))
+    && checkboxesAfterSelect.filter((cb) => cb.closest('.rm-permission-row--protected')).every((cb) => cb.disabled);
   out.checkedCountInitial = checkboxesAfterSelect.filter((cb) => cb.checked).length; // expect 2
 
   // ── Toggle a checkbox -> dirty + Save bar appears ──────────────────
@@ -161,7 +179,8 @@ const result = await page.evaluate(async () => {
 
 check('seeded Custom Role appears in the role list', result.customRoleInList);
 check('Custom Role badge is shown when selected', result.customBadgeShown);
-check('Custom Role checkboxes are editable (not disabled)', result.checkboxesEditable);
+check('Custom Role non-protected checkboxes are editable (not disabled)', result.checkboxesEditable);
+check('Custom Role protected checkboxes (system.admin/system.users.manage) exist in the tree and are disabled (v1.30.9.10)', result.protectedCheckboxesExistAndAreDisabled);
 check('initial checked count matches the seeded permissions (2)', result.checkedCountInitial === 2);
 check('toggling a checkbox reveals the Save/Cancel bar', result.saveBarAfterToggle);
 check('toggling a checkbox updates the live checked count (3)', result.checkedCountAfterToggle === 3);

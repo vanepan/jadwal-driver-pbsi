@@ -22,7 +22,7 @@
 
 import { readNode, subscribeNode, storeFirebaseData, updateFirebaseData, isFirebaseConfigured } from '../firebase.js';
 import { isAdmin } from '../auth.js';
-import { findDuplicateName, makeCustomRoleId, buildClonedRole } from './custom-roles-rules.js';
+import { findDuplicateName, makeCustomRoleId, buildClonedRole, isValidCustomRolePermissionSet } from './custom-roles-rules.js';
 
 const CUSTOM_ROLES_PATH = 'customRoles';
 
@@ -124,6 +124,14 @@ export async function createCustomRoleFromClone({ sourceLabel, sourcePermissions
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
+  // v1.30.9.10 — SECURITY: defense-in-depth, not the primary guarantee.
+  // buildClonedRole() already sanitized record.permissions above, so this
+  // should never actually fire in normal application flow — it exists for
+  // any FUTURE caller of this function that might not route through the
+  // sanitizing clone-snapshot builder.
+  if (!isValidCustomRolePermissionSet(record.permissions)) {
+    throw new Error('Custom Role tidak dapat memiliki permission system.admin atau system.users.manage.');
+  }
   const id = makeCustomRoleId(trimName, new Set(customRoles.map((r) => r.id)));
   const full = { id, ...record };
 
@@ -149,6 +157,15 @@ export async function updateCustomRole(id, { name, permissions, systemLabels }) 
   if (!trimName) throw new Error('Nama role wajib diisi.');
   const conflict = findDuplicateName(trimName, { systemLabels, customRoles: getCustomRoles(), excludeId: id });
   if (conflict) throw new Error(`Nama role "${conflict}" sudah digunakan.`);
+  // v1.30.9.10 — SECURITY: the primary application-layer gate. The real
+  // UI path (role-management-center.js#ensureDraft()) already strips both
+  // ids from the draft the moment editing starts, so this should never
+  // actually fire for a normal admin save — it exists to reject any write
+  // attempt (a bypassed/future UI, a direct API call) that reaches this
+  // function carrying either protected id, loudly, not silently.
+  if (!isValidCustomRolePermissionSet(permissions || [])) {
+    throw new Error('Custom Role tidak dapat memiliki permission system.admin atau system.users.manage.');
+  }
 
   const updates = {
     name: trimName,

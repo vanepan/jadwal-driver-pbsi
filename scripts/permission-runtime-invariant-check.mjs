@@ -189,7 +189,21 @@ const phase2 = await page.evaluate(async () => {
   customRolesStore.__seedCustomRolesForTest([
     { id: 'phase2-custom-active', name: 'Phase2 Custom Active', permissions: ['warehouse.view'], archived: false },
     { id: 'phase2-custom-archived', name: 'Phase2 Custom Archived', permissions: ['warehouse.view', 'warehouse.item.edit'], archived: true },
-    { id: 'phase2-custom-adminequiv', name: 'Phase2 AdminEquiv', permissions: ['system.admin'], archived: false },
+    // v1.30.9.10 — Custom Role Protected Permission Security Hardening:
+    // this fixture (and its consuming assertions below) used to be named
+    // "AdminEquiv" and asserted svc.can('system.admin') === TRUE for it —
+    // NOT because 'adminEquivalent' is a real concept a Custom Role's
+    // permission list controls (it isn't; that claim is minted exclusively
+    // by verifyPin.js), but because this test was, in effect, encoding the
+    // pre-hardening VULNERABILITY as if it were intended behavior: a
+    // Custom Role holding 'system.admin' in its own persisted permissions
+    // really did grant real system.admin to every user assigned it. Kept
+    // as __seedCustomRolesForTest() test-only data (bypasses the new
+    // write-time validation entirely, same as it always has) specifically
+    // BECAUSE that lets this exact legacy-invalid shape be proven fail-safe
+    // at the READ/runtime layer below, independent of write-time
+    // prevention — see permission-service.js#NEVER_EFFECTIVE_IN_CUSTOM_ROLE_BASE.
+    { id: 'phase2-custom-legacy-god-mode', name: 'Phase2 Legacy God Mode', permissions: ['system.admin'], archived: false },
   ]);
   setLoggedInAs('phase2-custom-active', 'phase2-user-b');
   store.__seedUserPermissionOverridesForTest('phase2-user-b', ['pettycash.view']);
@@ -207,15 +221,20 @@ const phase2 = await page.evaluate(async () => {
   store.__seedUserPermissionOverridesForTest('phase2-admin', ['pettycash.view']);
   out.adminUnaffectedByOverride = setsEqual(new Set(svc.listPermissions()), new Set(rolePerm.ROLE_PERMISSIONS.admin));
 
-  setLoggedInAs('phase2-custom-adminequiv', 'phase2-user-d');
+  setLoggedInAs('phase2-custom-legacy-god-mode', 'phase2-user-d');
   store.__resetUserPermissionOverridesLiveForTest();
-  out.adminEquivRoleHasSystemAdminWithNoOverride = svc.can('system.admin');
+  // v1.30.9.10 SECURITY: this used to assert TRUE — the exact vulnerability
+  // this hardening task closes. A Custom Role's own persisted permissions
+  // (legacy-invalid data, or a rules bypass) can no longer make
+  // system.admin effective, full stop, independent of any override.
+  out.legacyCustomRoleNeverHasSystemAdminEvenWithNoOverride = !svc.can('system.admin');
   store.__seedUserPermissionOverridesForTest('phase2-user-d', ['pettycash.view']);
-  out.adminEquivRoleStillHasSystemAdminWithUnrelatedOverride = svc.can('system.admin');
+  out.legacyCustomRoleStillNeverHasSystemAdminWithUnrelatedOverride = !svc.can('system.admin');
+  out.legacyCustomRoleUnrelatedOverrideStillLands = svc.can('pettycash.view'); // filtering, not a blanket deny
 
   setLoggedInAs('phase2-custom-active', 'phase2-user-e'); // Custom Role WITHOUT system.admin
   store.__seedUserPermissionOverridesForTest('phase2-user-e', ['pettycash.view']);
-  out.customRoleWithoutAdminEquivStaysNonAdmin = !svc.can('system.admin');
+  out.customRoleWithoutSystemAdminStaysNonAdmin = !svc.can('system.admin');
 
   // ── Identity isolation: user A's override must never leak into user B ──
   setLoggedInAs('viewer', 'phase2-identity-a');
@@ -260,9 +279,10 @@ check('Custom Role (active) + override: effective = Custom Role grant UNION over
 check('Archived Custom Role + override: individual grant survives independently (v1.30.9.5 decision)', phase2.archivedCustomRoleOverrideSurvives);
 check('Archived Custom Role + override: the archived role\'s OWN former grants are not resurrected', phase2.archivedCustomRoleOwnGrantsNotResurrected);
 check('admin + override: admin\'s own permission set is unaffected (already a superset)', phase2.adminUnaffectedByOverride);
-check('adminEquivalent Custom Role: holds system.admin from its OWN grant, independent of overrides', phase2.adminEquivRoleHasSystemAdminWithNoOverride);
-check('adminEquivalent Custom Role + unrelated override: system.admin still held, unaffected by the override', phase2.adminEquivRoleStillHasSystemAdminWithUnrelatedOverride);
-check('Custom Role WITHOUT system.admin + ordinary override: does NOT gain system.admin', phase2.customRoleWithoutAdminEquivStaysNonAdmin);
+check('SECURITY (v1.30.9.10): a Custom Role holding system.admin in its OWN persisted permissions never has it effective, even with no override at all', phase2.legacyCustomRoleNeverHasSystemAdminEvenWithNoOverride);
+check('SECURITY (v1.30.9.10): same Custom Role + an unrelated override — system.admin still never effective', phase2.legacyCustomRoleStillNeverHasSystemAdminWithUnrelatedOverride);
+check('same Custom Role\'s unrelated override permission still lands (filtering, not a blanket deny)', phase2.legacyCustomRoleUnrelatedOverrideStillLands);
+check('Custom Role WITHOUT system.admin + ordinary override: does NOT gain system.admin', phase2.customRoleWithoutSystemAdminStaysNonAdmin);
 check('IDENTITY: user A\'s override is visible in user A\'s own session', phase2.identityAHasX);
 check('IDENTITY: after the logout boundary, user B does NOT inherit user A\'s override', phase2.identityBDoesNotInheritX);
 check('IDENTITY: user B\'s own override is visible in user B\'s session', phase2.identityBHasY);
