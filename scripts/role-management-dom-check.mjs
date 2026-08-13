@@ -67,7 +67,15 @@ const result = await page.evaluate(async () => {
   const roleButtons = Array.from(host.querySelectorAll('[data-rm-role]'));
   const roleCount = roleButtons.length;
   const totalCheckboxesInitial = host.querySelectorAll('.rm-permission-row input[type="checkbox"]').length;
-  const allDisabled = Array.from(host.querySelectorAll('.rm-permission-row input[type="checkbox"]')).every((cb) => cb.disabled);
+  // v1.30.9.9 — Role-Level Permission Assignment, Phase 4 intentionally
+  // makes not-yet-granted System Role checkboxes editable (Role
+  // Additional). The invariant this file still proves is narrower: every
+  // CHECKED (Base) box stays disabled, and at least one box is now
+  // genuinely editable — see role-management-edit-dom-check.mjs's
+  // identical narrowing for the same reasoning.
+  const allCheckboxesInitial = Array.from(host.querySelectorAll('.rm-permission-row input[type="checkbox"]'));
+  const allCheckedDisabled = allCheckboxesInitial.filter((cb) => cb.checked).every((cb) => cb.disabled);
+  const someEditable = allCheckboxesInitial.some((cb) => !cb.disabled);
   const adminCheckedInitial = host.querySelectorAll('.rm-permission-row input[type="checkbox"]:checked').length;
   const statValuesAdmin = Array.from(host.querySelectorAll('.v2-dq-stat-value')).map((el) => el.textContent);
 
@@ -102,16 +110,17 @@ const result = await page.evaluate(async () => {
   const bodyAfterCollapse = host.querySelector('[data-rm-group-toggle]').nextElementSibling.style.display;
 
   return {
-    roleCount, totalCheckboxesInitial, allDisabled, adminCheckedInitial, statValuesAdmin,
+    roleCount, totalCheckboxesInitial, allCheckedDisabled, someEditable, adminCheckedInitial, statValuesAdmin,
     viewerCheckedAfterSwitch, viewerActiveClass, rowsAfterSearch, rowsAfterModuleFilter,
     statValuesFiltered, bodyBeforeCollapse, bodyAfterCollapse,
   };
 });
 
 check('all 9 real roles render in the role list', result.roleCount === 9);
-check('every permission row checkbox is disabled', result.allDisabled);
+check('every already-GRANTED (checked) permission row checkbox is disabled (Base is still fully read-only)', result.allCheckedDisabled);
+check('at least one not-yet-granted checkbox is now editable (v1.30.9.9 Role Additional — intentional, not a regression)', result.someEditable);
 check('admin (46 permissions) starts with 46 checked boxes', result.adminCheckedInitial === 46);
-check('summary stat cards render 4 values for admin', result.statValuesAdmin.length === 4 && result.statValuesAdmin[0] === '50');
+check('summary stat cards render 5 values for a System Role (v1.30.9.9 adds Base/Role Additional split)', result.statValuesAdmin.length === 5 && result.statValuesAdmin[0] === '50');
 check('switching to viewer updates checked-count to 1 (real role switching, not cosmetic)', result.viewerCheckedAfterSwitch === 1);
 check('the selected role row carries the active class', result.viewerActiveClass);
 check('searching "warehouse" narrows rows to the 6 Warehouse permissions', result.rowsAfterSearch === 6);

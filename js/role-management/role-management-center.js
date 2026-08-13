@@ -40,6 +40,7 @@ import {
   getPermissionTree,
   filterTree,
   buildSummary,
+  flattenTree,
   listModules,
 } from './role-management-logic.js';
 import {
@@ -57,6 +58,17 @@ import { canArchiveRole } from './role-archive-guard.js';
 import { getRoleUsage } from './role-usage-provider.js';
 import { roleStatusLabel } from './role-status.js';
 import { getAllRoles, resolveGrantedSet } from './role-catalog.js';
+// Role-Level Permission Assignment, Phase 4 (v1.30.9.9) — "Role Additional
+// Permissions": a bulk, per-System-Role grant layer independent of a
+// Custom Role's own (untouched) permission set. See role-permission-
+// overrides-rules.js's header for why this is a SEPARATE mechanism, only
+// ever legal for role.type === 'system'.
+import {
+  getRolePermissionOverrides,
+  grantRolePermission,
+  revokeRolePermission,
+} from '../permission-management/role-permission-overrides-store.js';
+import { FORBIDDEN_PERMISSION_IDS } from '../permission-management/role-permission-overrides-rules.js';
 
 let root = null;
 let bound = false;
@@ -75,6 +87,20 @@ let reviewModal = null;  // { id, name, renamedFrom, added: Permission[], remove
 let toastMsg = null;
 let toastTimer = null;
 
+/* ============================================================
+   Role Additional Permissions state — v1.30.9.9. Only ever populated for
+   a role.type === 'system' (see role-permission-overrides-rules.js's
+   header for why Custom Roles never target this mechanism). Grant/revoke
+   are IMMEDIATE, independent writes — mirrors js/admin.js's Individual
+   Permission Management (ipmState) shape and its request-token race
+   guard exactly, not the Custom Role Draft/Review/Save flow above (a
+   single boolean toggle per permission has no meaningful "review" step,
+   and Role Additional must stay structurally independent of the Custom
+   Role draft mechanism regardless).
+   ============================================================ */
+let raState = { roleId: null, loading: false, error: false, permissions: new Set(), busyPermissionId: null };
+let raRequestToken = 0;
+
 /** Mount the module into a platform-owned host container (admin only). */
 export async function mountRoleManagement(container) {
   if (!isAdmin()) { console.warn('[RoleManagement] admin only'); return; }
@@ -84,6 +110,8 @@ export async function mountRoleManagement(container) {
   await initCustomRolesStore();
   registerCustomRolesChangeListener(() => { invalidateRoleSummaryCache(); render(); });
   render();
+  const initialRole = getRoleById(selectedRoleId);
+  if (initialRole && initialRole.type === 'system') loadRoleAdditionalFor(selectedRoleId);
 }
 
 function bindDelegation() {
@@ -153,7 +181,7 @@ function onInput(e) {
 
 function onChange(e) {
   if (e.target.id === 'rmModuleFilter') { moduleFilter = e.target.value; render(); return; }
-  if (e.target.matches('.rm-permission-row input[type="checkbox"]')) {
+  if (e.target.matches('.rm-permission-row input[type="checkbox"][data-rm-permission-id]')) {
     const role = getRoleById(selectedRoleId);
     if (!role || role.type !== 'custom') return; // defense in depth; disabled attr already prevents this
     const permId = e.target.dataset.rmPermissionId;
@@ -163,6 +191,12 @@ function onChange(e) {
     dirty = true;
     error = '';
     render();
+    return;
+  }
+  if (e.target.matches('.rm-permission-row input[type="checkbox"][data-rm-ra-permission-id]')) {
+    const role = getRoleById(selectedRoleId);
+    if (!role || role.type !== 'system') return; // defense in depth; disabled attr already prevents this
+    void handleRaToggle(e.target.dataset.rmRaPermissionId);
   }
 }
 
@@ -216,6 +250,116 @@ function selectRole(id) {
   draft = null;
   dirty = false;
   error = '';
+  const role = getRoleById(id);
+  if (role && role.type === 'system') {
+    loadRoleAdditionalFor(id);
+  } else {
+    resetRaState();
+  }
+  render();
+}
+
+/* ============================================================
+   Role Additional Permissions — load + mutate (v1.30.9.9)
+   ============================================================ */
+function resetRaState() {
+  raState = { roleId: null, loading: false, error: false, permissions: new Set(), busyPermissionId: null };
+}
+
+/** The role's currently-loaded Role Additional grant Set, or empty when
+    `role` isn't the one raState is scoped to (not yet loaded, a Custom
+    Role, or a stale reference) — never returns a cross-role result. */
+function roleAdditionalSetFor(role) {
+  if (!role || role.type !== 'system' || raState.roleId !== role.id) return new Set();
+  return raState.permissions;
+}
+
+/**
+ * Synchronously resets to a loading state for `roleId` (clearing any
+ * previous role's data immediately), then awaits the real one-shot read.
+ * A request token guards against a slow response from a PREVIOUS load
+ * landing after the admin has already switched roles — mirrors js/
+ * admin.js#loadIndividualPermissionsFor()'s identical, audit-hardened
+ * shape (ipmRequestToken).
+ * @param {string} roleId
+ */
+async function loadRoleAdditionalFor(roleId) {
+  raState = { roleId, loading: true, error: false, permissions: new Set(), busyPermissionId: null };
+  render();
+
+  const token = ++raRequestToken;
+  let permissions = new Set();
+  let failed = false;
+  try {
+    permissions = await getRolePermissionOverrides(roleId);
+  } catch (err) {
+    console.error(err);
+    failed = true;
+  }
+  if (token !== raRequestToken || raState.roleId !== roleId) return; // superseded — discard
+  raState.loading = false;
+  raState.error = failed;
+  raState.permissions = permissions;
+  render();
+}
+
+/**
+ * Shared grant/revoke shape — mirrors js/admin.js#runIpmMutation()
+ * exactly, including the token-AND-roleId double guard (the same race
+ * class the Individual Permission Management audit found and fixed:
+ * closing/reopening the SAME role starts a fresh load with a fresh
+ * token, so a mutation still in flight at that moment gets its result
+ * correctly discarded here too — a roleId-only check would have missed
+ * this).
+ */
+async function runRaMutation(permissionId, storeFn, successMessage, failureMessage, auditAction) {
+  if (!permissionId || raState.busyPermissionId) return;
+  const roleId = raState.roleId;
+  if (!roleId) return;
+
+  raState.busyPermissionId = permissionId;
+  const token = ++raRequestToken;
+  render();
+  try {
+    const nextSet = await storeFn(roleId, permissionId);
+    if (token !== raRequestToken || raState.roleId !== roleId) return; // superseded — discard
+    raState.permissions = nextSet;
+    raState.busyPermissionId = null;
+    render();
+    const user = getCurrentUser();
+    if (user) {
+      await logAction({ userId: user.id, username: user.username, action: auditAction, targetId: roleId, metadata: { permission: permissionId } });
+    }
+    toast(successMessage);
+  } catch (err) {
+    console.error(err);
+    if (token !== raRequestToken || raState.roleId !== roleId) return;
+    raState.busyPermissionId = null;
+    error = err.message || failureMessage;
+    render();
+  }
+}
+
+/** Toggles ONE Role Additional permission for the currently-selected
+    System Role — grant if not currently granted, revoke if it is. */
+async function handleRaToggle(permissionId) {
+  if (!permissionId || FORBIDDEN_PERMISSION_IDS.includes(permissionId)) return; // defense in depth; already excluded from the tree
+  if (raState.permissions.has(permissionId)) {
+    await runRaMutation(permissionId, revokeRolePermission, 'Role Additional Permission berhasil dicabut.', 'Gagal mencabut Role Additional Permission.', 'role_permission_revoked');
+  } else {
+    await runRaMutation(permissionId, grantRolePermission, 'Role Additional Permission berhasil ditambahkan.', 'Gagal menambahkan Role Additional Permission.', 'role_permission_granted');
+  }
+}
+
+/**
+ * TEST-ONLY. Directly seeds raState for `roleId`, bypassing the real
+ * one-shot Firebase read entirely — same convention as js/admin.js#
+ * __setIpmOverridesForTest(). Real application code MUST NEVER call this.
+ * @param {string} roleId
+ * @param {string[]} permissionIds
+ */
+export function __setRaStateForTest(roleId, permissionIds) {
+  raState = { roleId, loading: false, error: false, permissions: new Set(permissionIds || []), busyPermissionId: null };
   render();
 }
 
@@ -277,6 +421,7 @@ async function deleteSelectedRole() {
     selectedRoleId = 'admin';
     draft = null;
     dirty = false;
+    loadRoleAdditionalFor('admin'); // deleteSelectedRole() bypasses selectRole(), so this phase's own load trigger must be repeated here
     toast(`Custom Role "${role.label}" berhasil dihapus.`);
   } catch (err) {
     error = err.message || 'Gagal menghapus Custom Role.';
@@ -363,7 +508,10 @@ function render() {
 function shell() {
   const role = getRoleById(selectedRoleId);
   const isCustom = !!role && role.type === 'custom';
-  const grantedSet = effectiveGrantedSet(role);
+  const isSystem = !!role && role.type === 'system';
+  const baseGrantedSet = role ? resolveGrantedSet(role) : new Set();
+  const roleAdditionalSet = roleAdditionalSetFor(role);
+  const grantedSet = isSystem ? new Set([...baseGrantedSet, ...roleAdditionalSet]) : effectiveGrantedSet(role);
   const filtered = filterTree(getPermissionTree(), { search: searchQuery, module: moduleFilter });
   const summary = buildSummary(filtered, grantedSet);
   const roleSummary = role ? buildRoleSummary(role, getAllRoles(), resolveGrantedSet(role)) : null;
@@ -386,31 +534,81 @@ function shell() {
             ${listModules().map((m) => `<option value="${esc(m)}"${moduleFilter === m ? ' selected' : ''}>${esc(m)}</option>`).join('')}
           </select>
         </div>
-        <div class="v2-dq-stats rm-stats">
-          <div class="v2-dq-stat-card">
-            <span class="v2-dq-stat-value">${summary.totalPermissions}</span>
-            <span class="v2-dq-stat-label">Total Permission</span>
-          </div>
-          <div class="v2-dq-stat-card">
-            <span class="v2-dq-stat-value">${summary.granted}</span>
-            <span class="v2-dq-stat-label">Diberikan</span>
-          </div>
-          <div class="v2-dq-stat-card">
-            <span class="v2-dq-stat-value">${summary.denied}</span>
-            <span class="v2-dq-stat-label">Tidak Diberikan</span>
-          </div>
-          <div class="v2-dq-stat-card">
-            <span class="v2-dq-stat-value">${summary.modulesRepresented}</span>
-            <span class="v2-dq-stat-label">Modul</span>
-          </div>
-        </div>
-        <div class="rm-tree">${treeHtml(filtered, grantedSet, isCustom)}</div>
+        ${isSystem ? systemStatsHtml(filtered, baseGrantedSet, roleAdditionalSet, summary) : statsHtml(summary)}
+        ${isSystem ? raStatusHtml(role) : ''}
+        <div class="rm-tree">${isSystem ? systemTreeHtml(filtered, baseGrantedSet, roleAdditionalSet) : treeHtml(filtered, grantedSet, isCustom)}</div>
         ${isCustom && dirty ? saveBarHtml() : ''}
       </section>
     </div>
     ${clonePrompt ? clonePromptHtml() : ''}
     ${reviewModal ? reviewModalHtml() : ''}
     ${toastMsg ? `<div class="rm-toast">${esc(toastMsg)}</div>` : ''}`;
+}
+
+function statsHtml(summary) {
+  return `
+    <div class="v2-dq-stats rm-stats">
+      <div class="v2-dq-stat-card">
+        <span class="v2-dq-stat-value">${summary.totalPermissions}</span>
+        <span class="v2-dq-stat-label">Total Permission</span>
+      </div>
+      <div class="v2-dq-stat-card">
+        <span class="v2-dq-stat-value">${summary.granted}</span>
+        <span class="v2-dq-stat-label">Diberikan</span>
+      </div>
+      <div class="v2-dq-stat-card">
+        <span class="v2-dq-stat-value">${summary.denied}</span>
+        <span class="v2-dq-stat-label">Tidak Diberikan</span>
+      </div>
+      <div class="v2-dq-stat-card">
+        <span class="v2-dq-stat-value">${summary.modulesRepresented}</span>
+        <span class="v2-dq-stat-label">Modul</span>
+      </div>
+    </div>`;
+}
+
+/** System Role variant — splits "Diberikan" into Base vs Role Additional
+    (per the Phase 4 UI brief) so an admin never has to guess which layer
+    a granted checkbox belongs to. `baseVisible`/`roleAdditionalVisible`
+    are counted over the currently-visible (filtered/searched) tree only,
+    matching buildSummary()'s own scope — Role Additional's contribution
+    is its UNIQUE count (excludes any overlap with Base) so the two
+    numbers always sum to `summary.granted`, mirroring js/admin.js's IPM
+    "unique individual contribution" convention exactly. */
+function systemStatsHtml(filteredTree, baseGrantedSet, roleAdditionalSet, summary) {
+  const visible = flattenTree(filteredTree);
+  const baseVisible = visible.filter((p) => baseGrantedSet.has(p.id)).length;
+  const roleAdditionalVisible = visible.filter((p) => !baseGrantedSet.has(p.id) && roleAdditionalSet.has(p.id)).length;
+  return `
+    <div class="v2-dq-stats rm-stats">
+      <div class="v2-dq-stat-card">
+        <span class="v2-dq-stat-value">${summary.totalPermissions}</span>
+        <span class="v2-dq-stat-label">Total Permission</span>
+      </div>
+      <div class="v2-dq-stat-card">
+        <span class="v2-dq-stat-value">${baseVisible}</span>
+        <span class="v2-dq-stat-label">Base Permissions</span>
+      </div>
+      <div class="v2-dq-stat-card">
+        <span class="v2-dq-stat-value">${roleAdditionalVisible}</span>
+        <span class="v2-dq-stat-label">Role Additional</span>
+      </div>
+      <div class="v2-dq-stat-card">
+        <span class="v2-dq-stat-value">${summary.denied}</span>
+        <span class="v2-dq-stat-label">Tidak Diberikan</span>
+      </div>
+      <div class="v2-dq-stat-card">
+        <span class="v2-dq-stat-value">${summary.modulesRepresented}</span>
+        <span class="v2-dq-stat-label">Modul</span>
+      </div>
+    </div>`;
+}
+
+function raStatusHtml(role) {
+  if (raState.roleId !== role.id) return '';
+  if (raState.loading) return `<div class="rm-ra-status">Memuat Role Additional Permissions…</div>`;
+  if (raState.error) return `<div class="rm-ra-status rm-ra-status--error">Gagal memuat Role Additional Permissions. Checkbox di bawah mungkin tidak mencerminkan status terkini.</div>`;
+  return '';
 }
 
 function headerHtml(role, isCustom) {
@@ -422,7 +620,7 @@ function headerHtml(role, isCustom) {
       <div class="rm-header__top">
         <h1 class="rm-header__title">Role Management</h1>
         ${pill(isCustom ? 'Custom Role' : 'System Role', isCustom ? 'info' : 'neutral')}
-        ${!isCustom ? pill('Read-only', 'neutral') : ''}
+        ${!isCustom ? pill('Base Read-only · Role Additional Dapat Diedit', 'neutral') : ''}
       </div>
       <div class="rm-header__role">
         ${nameField}
@@ -550,7 +748,14 @@ function futureAssignmentHtml() {
 function roleListHtml() {
   return getAllRoles().map((r) => {
     const active = r.id === selectedRoleId;
-    const count = effectiveGrantedSet(r).size;
+    // Role Additional is only ever already-loaded (via raState) for
+    // whichever role is currently selected — roleAdditionalSetFor()
+    // returns empty for any other role, so this never triggers an extra
+    // fetch per sidebar row; an unselected role's badge simply reflects
+    // Base (+ Custom) only until the admin visits it.
+    const count = r.type === 'system'
+      ? new Set([...effectiveGrantedSet(r), ...roleAdditionalSetFor(r)]).size
+      : effectiveGrantedSet(r).size;
     return `
       <button type="button" class="rm-role-item${active ? ' rm-role-item--active' : ''}"
               data-rm-role="${esc(r.id)}" aria-pressed="${active}">
@@ -597,6 +802,86 @@ function permissionRowHtml(permission, granted, editable) {
       <span class="rm-permission-row__text">
         <span class="rm-permission-row__title">${esc(permission.title)}</span>
         <span class="rm-permission-row__desc">${esc(permission.description)}</span>
+      </span>
+    </label>`;
+}
+
+/* ============================================================
+   System Role permission tree — v1.30.9.9. Deliberately a PARALLEL
+   function to treeHtml()/permissionRowHtml() above, not a shared/
+   parameterized one: those two functions back the already-shipped,
+   already-tested Custom Role Draft/Review/Save flow, and this phase's
+   own "small diff, isolated module, backward compatible" discipline
+   means that path stays byte-for-byte untouched rather than being
+   refactored to also serve a THIRD checkbox state Custom Roles never
+   had (Base/Role Additional/Grantable/Protected, vs. Custom Roles'
+   simple granted/not-granted).
+   ============================================================ */
+function systemTreeHtml(filteredTree, baseGrantedSet, roleAdditionalSet) {
+  const moduleNames = Object.keys(filteredTree);
+  if (moduleNames.length === 0) {
+    return `<div class="user-role-empty">Tidak ada permission yang cocok.</div>`;
+  }
+  const busy = !!raState.busyPermissionId;
+  return moduleNames.map((moduleName) => {
+    const categories = filteredTree[moduleName];
+    const totalInModule = Object.values(categories).reduce((sum, list) => sum + list.length, 0);
+    const expanded = isExpanded(moduleName);
+    return `
+      <div class="user-role-group">
+        <button class="user-role-header" data-rm-group-toggle="${esc(moduleName)}" type="button" aria-expanded="${expanded}">
+          <span class="user-role-arrow">${expanded ? '▼' : '▶'}</span>
+          <span class="user-role-label">${esc(moduleName)}</span>
+          <span class="user-role-count-badge">${totalInModule}</span>
+        </button>
+        <div class="user-role-body"${expanded ? '' : ' style="display:none;"'}>
+          ${Object.entries(categories).map(([categoryName, permissions]) => `
+            <div class="rm-category">
+              <h4 class="rm-category__title">${esc(categoryName)}</h4>
+              ${permissions.map((p) => systemPermissionRowHtml(p, baseGrantedSet, roleAdditionalSet, busy)).join('')}
+            </div>`).join('')}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+/**
+ * Three (really four, counting the always-hidden-from-toggling Base
+ * case) checkbox states for a System Role, per the Phase 4 UI brief:
+ *   Base            → checked + disabled, NOT EDITABLE, no data attribute
+ *                      at all (structurally impossible to toggle, not
+ *                      just visually disabled).
+ *   Role Additional → checked + enabled (currently granted at this layer).
+ *   Protected       → unchecked + disabled (system.admin/
+ *                      system.users.manage can never be granted here,
+ *                      regardless of who is looking at it).
+ *   Grantable       → unchecked + enabled.
+ * A permission that is BOTH base-granted AND happens to also carry a
+ * stale Role Additional record (e.g. the role's base grants changed
+ * after the override was made) renders as Base — Base always wins the
+ * display, matching effectivePermissionSetFor()'s own "one permission,
+ * never counted twice" union semantics.
+ */
+function systemPermissionRowHtml(permission, baseGrantedSet, roleAdditionalSet, busy) {
+  const isBase = baseGrantedSet.has(permission.id);
+  const isProtected = FORBIDDEN_PERMISSION_IDS.includes(permission.id);
+  const isRoleAdditional = !isBase && roleAdditionalSet.has(permission.id);
+  const checked = isBase || isRoleAdditional;
+  const disabled = isBase || isProtected || busy;
+  let note = 'Tambahkan ke semua user dengan role ini.';
+  if (isBase) note = 'Base System Permission — tidak dapat diubah di sini.';
+  else if (isProtected) note = 'Protected — tidak dapat diberikan melalui Role Additional.';
+  else if (isRoleAdditional) note = 'Role Additional — diberikan ke semua user dengan role ini.';
+  const dataAttr = isBase || isProtected ? '' : `data-rm-ra-permission-id="${esc(permission.id)}"`;
+  return `
+    <label class="rm-permission-row${isBase ? ' rm-permission-row--base' : ''}${isRoleAdditional ? ' rm-permission-row--role-additional' : ''}${isProtected ? ' rm-permission-row--protected' : ''}">
+      <input type="checkbox" ${dataAttr}
+             ${disabled ? 'disabled' : ''} ${checked ? 'checked' : ''}
+             aria-label="${esc(permission.title)}" />
+      <span class="rm-permission-row__text">
+        <span class="rm-permission-row__title">${esc(permission.title)}</span>
+        <span class="rm-permission-row__desc">${esc(permission.description)}</span>
+        <span class="rm-permission-row__note">${esc(note)}</span>
       </span>
     </label>`;
 }

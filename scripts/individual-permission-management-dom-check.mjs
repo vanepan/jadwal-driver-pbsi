@@ -365,22 +365,87 @@ check('B6. Search input has an explicit aria-label (not placeholder-only)', a11y
 check('B6. Picker checkboxes are wrapped in a <label> (native accessible name, no extra ARIA)', a11yResult.checkboxWrappedInLabel);
 check('B6. A disabled picker row explains why inline (no separate aria-describedby needed)', a11yResult.disabledRowExplainsWhy);
 
-// ── B3. Effective permission summary (Base Role + Individual = Effective) ──
+// ── B3. Effective permission summary (Base Role + Role Additional +
+//    Individual = Effective). v1.30.9.9 — Role-Level Permission
+//    Assignment, Phase 4 extended the line's text format from a 2-way
+//    "(N dari Role, M Individual)" to a 3-way "(N dari Role, M Role
+//    Tambahan, K Individual)" split — updated here to match, since the
+//    OLD 2-way string is no longer what the real, current UI renders
+//    (see js/admin.js#renderIndividualPermissionsPanel()'s own v1.30.9.9
+//    comment for the arithmetic this proves). Role Additional itself is
+//    exercised via getRolePermissionOverrides() — a real, unauthenticated
+//    Firebase call in this sandbox — so it resolves to 0 here by
+//    definition; the assertion below proves the label appears and the
+//    arithmetic still holds with that real 0, not a seeded fixture. ──
 const b3Result = await page.evaluate(async () => {
   const admin = await import('/js/admin.js');
   const roleField = document.getElementById('userFieldRole');
   admin.openUserFormModal('viewer-user'); // viewer's own base grant: driver.schedule.view (1)
   roleField.value = 'viewer';
   roleField.dispatchEvent(new Event('change', { bubbles: true }));
-  admin.__setIpmOverridesForTest('viewer-user', ['pettycash.view', 'overtime.view']); // +2 unique
+  admin.__setIpmOverridesForTest('viewer-user', ['pettycash.view', 'overtime.view']); // +2 unique, applied AFTER the real (slower) individual-overrides fetch would settle — same ordering the pre-existing test already relied on
+  // Deliberately NOT awaiting anything here: raFormCache starts UNLOADED
+  // (roleId: null) until its own real one-shot fetch resolves, so
+  // computeRoleAdditionalSetForForm() already returns an empty Set on
+  // this very first synchronous render — "0 Role Tambahan" is correct
+  // immediately, with no need to wait for that (real, unauthenticated)
+  // fetch to settle. Waiting here would instead risk letting the SLOWER
+  // real loadIndividualPermissionsFor() fetch resolve and overwrite the
+  // just-seeded ipmState.overrides with its own (denied -> empty) result
+  // — exactly the race this comment is warning the next editor about.
   const text = document.getElementById('userIndividualPermissionsPanel').textContent;
   return {
     showsEffectiveLine: text.includes('Efektif:'),
-    mathIsConsistent: text.includes('Efektif: 3 permission (1 dari Role, 2 Individual)'),
+    mathIsConsistent: text.includes('Efektif: 3 permission (1 dari Role, 0 Role Tambahan, 2 Individual)'),
   };
 });
 check('B3. Effective permission summary line renders', b3Result.showsEffectiveLine);
-check('B3. Effective = Role + Individual arithmetic is consistent (1 + 2 = 3)', b3Result.mathIsConsistent);
+check('B3. Effective = Role + Role Additional + Individual arithmetic is consistent (1 + 0 + 2 = 3)', b3Result.mathIsConsistent);
+
+// ── B3-RA. Role Additional's own provenance slot, and its overlap-with-
+//    Base de-duplication (v1.30.9.9) — seeded via the dedicated test
+//    seam (real Role Additional data would require real auth). ────────
+const b3RaResult = await page.evaluate(async () => {
+  const admin = await import('/js/admin.js');
+  const roleField = document.getElementById('userFieldRole');
+  admin.openUserFormModal('viewer-user'); // viewer's own base grant: driver.schedule.view (1)
+  roleField.value = 'viewer';
+  roleField.dispatchEvent(new Event('change', { bubbles: true }));
+  admin.__setIpmOverridesForTest('viewer-user', ['analytics.view']); // +1 unique individual
+  // warehouse.view is a genuinely NEW Role Additional grant; driver.schedule.view
+  // duplicates viewer's own Base grant and must NOT be double-counted.
+  admin.__setRaFormCacheForTest('viewer', ['warehouse.view', 'driver.schedule.view']);
+  const text = document.getElementById('userIndividualPermissionsPanel').textContent;
+  return {
+    // effective = 1 (base) + 1 (warehouse.view, the unique Role Additional
+    // contribution — driver.schedule.view does NOT add a second count) + 1 (individual) = 3
+    mathIsConsistent: text.includes('Efektif: 3 permission (1 dari Role, 1 Role Tambahan, 1 Individual)'),
+  };
+});
+check('B3-RA. Role Additional contributes its UNIQUE count only — a grant that overlaps Base is not double-counted', b3RaResult.mathIsConsistent);
+
+// ── B3-RA picker note. A permission already granted via Role Additional
+//    (not Base) shows the distinct "Sudah tersedia melalui Role
+//    Additional." note in the picker, not the Base note. ─────────────
+const b3RaPickerResult = await page.evaluate(async () => {
+  const admin = await import('/js/admin.js');
+  const roleField = document.getElementById('userFieldRole');
+  admin.openUserFormModal('viewer-user');
+  roleField.value = 'viewer';
+  roleField.dispatchEvent(new Event('change', { bubbles: true }));
+  admin.__setIpmOverridesForTest('viewer-user', []);
+  admin.__setRaFormCacheForTest('viewer', ['warehouse.view']);
+  document.getElementById('btnOpenIpmPicker').click();
+  const row = Array.from(document.querySelectorAll('.ipm-picker-row')).find((r) => r.textContent.includes('View Warehouse'));
+  return {
+    rowFound: !!row,
+    showsRoleAdditionalNote: row ? row.textContent.includes('Sudah tersedia melalui Role Additional.') : false,
+    isDisabled: row ? !!row.querySelector('input[type="checkbox"]').disabled : false,
+  };
+});
+check('B3-RA picker. A Role-Additional-granted permission row is found in the picker', b3RaPickerResult.rowFound);
+check('B3-RA picker. It shows the distinct "Sudah tersedia melalui Role Additional." note', b3RaPickerResult.showsRoleAdditionalNote);
+check('B3-RA picker. It is disabled (cannot become a duplicate Individual override)', b3RaPickerResult.isDisabled);
 
 // ── B10. Audit log wiring — source-level, mirrors admin-pin-reset-dom-check.mjs's
 //     own convention for asserting wiring that a real write would be needed to
@@ -391,6 +456,116 @@ const adminSrc = fs.readFileSync(path.join(ROOT, 'js', 'admin.js'), 'utf8');
 check('B10. Grant success path calls logAction() with individual_permission_granted', /logAction\(\{[\s\S]{0,200}action: auditAction/.test(adminSrc) && adminSrc.includes("'individual_permission_granted'"));
 check('B10. Revoke success path is wired to individual_permission_revoked', adminSrc.includes("'individual_permission_revoked'"));
 check('B10. Audit log call happens only after a CONFIRMED store success (inside the try, after nextSet resolves)', /const nextSet = await storeFn[\s\S]{0,400}logAction/.test(adminSrc));
+
+/* ══════════════════════════════════════════════════════════════════════
+   POST-DEPLOY FINDING A (v1.30.9.8) — archived users previously had no
+   path to Individual Permission Management's already-correct read-only
+   rendering at all: buildUserCard() (js/app.js) rendered no Edit/View
+   button for archived users, so openUserFormModal() could never be
+   reached for one. Drives the REAL openUserFormModal()/handleUserFormSubmit()/
+   users.js#updateUser() — not a mirror. The new "Lihat" button + its
+   click wiring live in js/app.js#buildUserCard(), which requires the
+   full V2 admin workspace scaffold to render via real DOM (out of scope
+   for this minimal #modalUserForm-only harness) — asserted at the
+   source level instead, the same convention admin-pin-reset-dom-check.mjs
+   already uses for wiring a minimal harness can't mount.
+   ══════════════════════════════════════════════════════════════════════ */
+const findingAResult = await page.evaluate(async () => {
+  const admin = await import('/js/admin.js');
+  const usersStore = await import('/js/users.js');
+  const out = {};
+
+  document.getElementById('toast').style.display = 'none';
+  document.getElementById('toast').textContent = '';
+
+  // ── "Lihat" (view-only) mode for the archived user ──────────────────
+  admin.openUserFormModal('archived-user');
+  out.titleShowsLihat = document.getElementById('modalUserFormTitle').textContent.includes('Lihat User');
+  out.saveButtonHidden = document.getElementById('btnSaveUserForm').style.display === 'none';
+  out.displayNameDisabled = document.getElementById('userFieldDisplayName').disabled === true;
+  out.roleFieldDisabled = document.getElementById('userFieldRole').disabled === true;
+  out.activeFieldDisabled = document.getElementById('userFieldActive').disabled === true;
+  out.resetPinHidden = document.getElementById('btnResetPinFromEdit').style.display === 'none';
+  // Individual Permissions section must still be reachable and read-only —
+  // this part already worked; confirming it still does now that the
+  // modal is actually reachable for an archived user.
+  await new Promise((r) => setTimeout(r, 400)); // let the real (denied) IPM load settle
+  admin.__setIpmOverridesForTest('archived-user', ['pettycash.view']);
+  out.ipmSectionStillReadOnlyForArchived = !document.getElementById('btnOpenIpmPicker')
+    && !document.querySelector('.ipm-revoke-btn')
+    && document.getElementById('userIndividualPermissionsPanel').textContent.includes('diarsipkan');
+
+  // ── handleUserFormSubmit() hard guard (defense in depth) ────────────
+  const form = document.getElementById('userForm');
+  form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+  await new Promise((r) => setTimeout(r, 20));
+  out.submitBlockedByGuard = document.getElementById('toast').textContent.includes('read-only')
+    || document.getElementById('toast').textContent.includes('diarsipkan');
+
+  // ── Active user is completely unaffected — regression guard ─────────
+  admin.openUserFormModal('viewer-user');
+  out.activeUserTitleUnaffected = document.getElementById('modalUserFormTitle').textContent === 'Edit User';
+  out.activeUserSaveVisible = document.getElementById('btnSaveUserForm').style.display !== 'none';
+  out.activeUserFieldsEnabled = document.getElementById('userFieldDisplayName').disabled === false
+    && document.getElementById('userFieldRole').disabled === false;
+
+  // ── Inactive (not archived) user is also unaffected ──────────────────
+  admin.openUserFormModal('inactive-user');
+  out.inactiveUserTitleUnaffected = document.getElementById('modalUserFormTitle').textContent === 'Edit User';
+  out.inactiveUserSaveVisible = document.getElementById('btnSaveUserForm').style.display !== 'none';
+
+  // ── js/users.js#updateUser() — the actual data-layer guarantee ──────
+  let updateThrew = false;
+  let updateErrorMessage = '';
+  try {
+    await usersStore.updateUser({ username: 'archived-user', displayName: 'Should Not Save' });
+  } catch (err) {
+    updateThrew = true;
+    updateErrorMessage = err.message || '';
+  }
+  out.updateUserRejectsArchived = updateThrew && updateErrorMessage.includes('diarsipkan');
+
+  // A non-archived user's update path is untouched by the new guard —
+  // this will still attempt a REAL (denied, unauthenticated) Firebase
+  // write and reject for an UNRELATED reason (network/permission), never
+  // the archived-guard's own message.
+  let activeUpdateThrew = false;
+  let activeUpdateMessage = '';
+  try {
+    await usersStore.updateUser({ username: 'viewer-user', displayName: 'Viewer User' });
+  } catch (err) {
+    activeUpdateThrew = true;
+    activeUpdateMessage = err.message || '';
+  }
+  out.activeUserUpdateNotBlockedByArchivedGuard = !activeUpdateThrew || !activeUpdateMessage.includes('diarsipkan');
+
+  return out;
+});
+
+check('Finding A: "Lihat" title shown for an archived user', findingAResult.titleShowsLihat);
+check('Finding A: Save button hidden for an archived user', findingAResult.saveButtonHidden);
+check('Finding A: Display Name field disabled for an archived user', findingAResult.displayNameDisabled);
+check('Finding A: Role field disabled for an archived user', findingAResult.roleFieldDisabled);
+check('Finding A: Status Akun toggle disabled for an archived user', findingAResult.activeFieldDisabled);
+check('Finding A: Reset PIN action hidden for an archived user', findingAResult.resetPinHidden);
+check('Finding A: Individual Permissions section is now reachable AND still correctly read-only for an archived user', findingAResult.ipmSectionStillReadOnlyForArchived);
+check('Finding A: handleUserFormSubmit() hard-blocks a submit attempt on an archived user (defense in depth)', findingAResult.submitBlockedByGuard);
+check('Finding A regression: active user\'s modal title unaffected', findingAResult.activeUserTitleUnaffected);
+check('Finding A regression: active user\'s Save button still visible', findingAResult.activeUserSaveVisible);
+check('Finding A regression: active user\'s fields still enabled', findingAResult.activeUserFieldsEnabled);
+check('Finding A regression: inactive (not archived) user\'s modal title unaffected', findingAResult.inactiveUserTitleUnaffected);
+check('Finding A regression: inactive (not archived) user\'s Save button still visible', findingAResult.inactiveUserSaveVisible);
+check('Finding A: users.js#updateUser() rejects a write to an archived record with a clear message', findingAResult.updateUserRejectsArchived);
+check('Finding A regression: updateUser() for a non-archived user is not blocked by the new archived guard', findingAResult.activeUserUpdateNotBlockedByArchivedGuard);
+
+// ── Finding A source-level checks: buildUserCard()'s archived branch + wiring ──
+const appSrc = fs.readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8');
+const archivedBranchMatch = appSrc.match(/if \(archived\) \{[\s\S]*?const toggleLabel = active/);
+const archivedBranch = archivedBranchMatch ? archivedBranchMatch[0] : '';
+check('Finding A: buildUserCard()\'s archived branch renders a "Lihat" button', /data-user-view="\$\{esc\(user\.username\)\}"[\s\S]{0,40}>Lihat</.test(archivedBranch));
+check('Finding A: the archived branch still renders Pulihkan (unaffected)', archivedBranch.includes('data-user-restore') && archivedBranch.includes('Pulihkan'));
+check('Finding A: the archived branch still renders Hapus Permanen path (unaffected)', archivedBranch.includes('data-user-delete') || archivedBranch.includes('v2-delete-blocked-hint'));
+check('Finding A: data-user-view is wired to openUserFormModal (same entry point as Edit)', /data-user-view\][\s\S]{0,150}openUserFormModal\(btn\.dataset\.userView\)/.test(appSrc));
 
 // ── 20. Zero fatal console errors ────────────────────────────────────────
 const fatal = consoleErrors.filter((e) =>

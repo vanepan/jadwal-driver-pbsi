@@ -135,8 +135,19 @@ const result = await page.evaluate(async () => {
   out.clonePromptClosedAfterConfirm = !host.querySelector('.rm-modal-box:not(.rm-review-box)');
   out.errorShownAfterRejectedClone = !!host.querySelector('.rm-error');
 
-  // ── System Role regression: still fully read-only ──────────────────
-  out.systemCheckboxesStillDisabled = Array.from(host.querySelectorAll('.rm-permission-row input[type="checkbox"]')).every((cb) => cb.disabled);
+  // ── System Role regression, updated for v1.30.9.9 (Role-Level
+  //    Permission Assignment, Phase 4): a System Role's BASE (already-
+  //    granted) permissions are still fully read-only — that invariant
+  //    is unchanged and non-negotiable. What changed on purpose is that
+  //    not-yet-granted permissions are no longer universally disabled —
+  //    those are now Role Additional's editable affordance. See
+  //    role-additional-permission-dom-check.mjs for full coverage of the
+  //    new behavior; this file only re-asserts the part of the OLD
+  //    invariant that must still hold.
+  const adminCheckboxes = Array.from(host.querySelectorAll('.rm-permission-row input[type="checkbox"]'));
+  out.systemBaseCheckboxesStillDisabled = adminCheckboxes.filter((cb) => cb.checked).length > 0
+    && adminCheckboxes.filter((cb) => cb.checked).every((cb) => cb.disabled);
+  out.systemRoleHasSomeEditableCheckbox = adminCheckboxes.some((cb) => !cb.disabled); // Phase 4: Role Additional is now editable
   out.systemRoleHasNoDeleteButton = !host.querySelector('[data-rm-action="delete"]');
 
   // ── Delete (soft-archive) on the Custom Role: also rejected gracefully ──
@@ -167,7 +178,8 @@ check('a rejected save preserves the unsaved edits (Save bar still shown)', resu
 check('Clone prompt opens for a System Role', result.clonePromptShown);
 check('Clone prompt closes after confirming', result.clonePromptClosedAfterConfirm);
 check('a rejected (unauthenticated) clone shows a graceful inline error, not a crash', result.errorShownAfterRejectedClone);
-check('System Role checkboxes remain disabled (regression)', result.systemCheckboxesStillDisabled);
+check('System Role BASE (already-granted) checkboxes remain disabled (regression, narrowed for v1.30.9.9 — see this block\'s own comment)', result.systemBaseCheckboxesStillDisabled);
+check('System Role now has at least one editable (Role Additional) checkbox (v1.30.9.9 — intentional, not a regression)', result.systemRoleHasSomeEditableCheckbox);
 check('System Roles have no Delete button (regression)', result.systemRoleHasNoDeleteButton);
 check('a rejected (unauthenticated) delete shows a graceful inline error, not a crash', result.errorShownAfterRejectedDelete);
 

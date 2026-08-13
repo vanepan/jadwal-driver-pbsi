@@ -10349,6 +10349,21 @@ input[type="time"].v2-admin-config-input {
 .rm-permission-row__title { font-size: 0.8rem; font-weight: 600; }
 .rm-permission-row__desc { font-size: 0.72rem; color: var(--text-muted); }
 
+/* Role-Level Permission Assignment, Phase 4 (v1.30.9.9) — System Role
+   checkbox states. Mirrors .ipm-picker-row__note's language (same tokens:
+   italic, muted, 0.7rem) for the same "why is this checkbox the way it
+   is" note role. */
+.rm-permission-row__note { font-size: 0.7rem; color: var(--text-muted); font-style: italic; margin-top: 1px; }
+.rm-permission-row--base { opacity: 0.82; }
+.rm-permission-row--protected { opacity: 0.6; }
+.rm-permission-row--role-additional .rm-permission-row__title { color: var(--accent); }
+.rm-ra-status {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+.rm-ra-status--error { color: var(--danger); font-weight: 600; }
+
 /* v1.30.2 — Role Management (Editable). Header now shows the selected
    role's identity + actions; everything below (toolbar/stats/tree) is
    untouched from v1.30.1. */

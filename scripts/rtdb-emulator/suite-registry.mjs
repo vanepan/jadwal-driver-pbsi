@@ -44,4 +44,7 @@ export const SUITE_REGISTRY = Object.freeze([
 
   // Production incident fix: /users collection-read defect (v1.30.9.2)
   'users-collection-read-check.mjs',
+
+  // Role-Level Permission Assignment, Phase 4 (v1.30.9.9)
+  'role-permission-overrides-check.mjs',
 ]);

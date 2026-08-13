@@ -51,9 +51,22 @@
    also collapse) — see docs/INDIVIDUAL_PERMISSION_ASSIGNMENT_PHASE_2_
    REPORT_v1.30.9.5.md.
 
-   PURE: plain lookups over getCurrentUser() (+ the runtime role provider's
-   and individual permission provider's already-cached reads). No DOM, no
-   Firebase writes.
+   v1.30.9.9 — Role-Level Permission Assignment, Phase 4 (Runtime
+   Resolution): effective permissions = base role/Custom Role grant UNION
+   this session's role's Role Additional grants UNION this session's
+   individual overrides, resolved through permission-management/role-
+   permission-provider.js — the same dependency-inversion boundary as the
+   other two providers above, applied uniformly to every roleId (System or
+   Custom): Role Additional Permissions are only ever WRITTEN for a System
+   Role (enforced by role-permission-overrides-rules.js#
+   isValidRoleOverrideTarget() at the store layer), so a Custom Role's
+   effective union simply adds an always-empty set in practice — this
+   function does not need to know the distinction, keeping it as agnostic
+   about role TYPE as permissionSetFor() already is.
+
+   PURE: plain lookups over getCurrentUser() (+ the runtime role, role
+   permission, and individual permission providers' already-cached reads).
+   No DOM, no Firebase writes.
    ============================================================ */
 
 'use strict';
@@ -62,6 +75,7 @@ import { getCurrentUser } from './auth.js';
 import { ROLE_PERMISSIONS } from './config/role-permissions.js';
 import { getRuntimeRole } from './role-management/runtime-role-provider.js';
 import { getIndividualPermissionOverrides } from './permission-management/individual-permission-provider.js';
+import { getRoleAdditionalPermissions } from './permission-management/role-permission-provider.js';
 
 const EMPTY_SET = Object.freeze(new Set());
 
@@ -88,27 +102,66 @@ function permissionSetFor(roleId) {
 }
 
 /**
+ * Permission ids that must never become effective THROUGH AN OVERRIDE
+ * LAYER (Role Additional or Individual), regardless of source — the
+ * final, defense-in-depth floor this resolution engine itself enforces,
+ * in ADDITION to (never instead of) each override layer's own
+ * validation. Deliberately re-declared here rather than imported from
+ * role-permission-overrides-rules.js or user-permission-overrides-
+ * rules.js: this file's own architecture never imports a concrete
+ * override/rules module (see file header — only the two PROVIDER
+ * indirections), and importing a rules file here would be a step
+ * backward from that boundary for a two-item constant.
+ *
+ * WHY THIS EXISTS (found during Phase 4's own test-writing, v1.30.9.9):
+ * role-permission-overrides-rules.js hard-blocks BOTH 'system.admin' AND
+ * 'system.users.manage' at its own normalizeOverrideRecord() (Phase 4's
+ * own, wider boundary — see that file's header). But user-permission-
+ * overrides-rules.js (Individual Permission Assignment, Phase 1) only
+ * hard-blocks 'system.admin' at that same layer — 'system.users.manage'
+ * was, by that phase's own explicit and DOCUMENTED decision (docs/
+ * INDIVIDUAL_PERMISSION_ASSIGNMENT_PHASE_3_FINAL_REPORT_v1.30.9.7.md §4),
+ * excluded only at the UI layer (js/admin.js's IPM_FORBIDDEN_PERMISSION_
+ * IDS), never at storage/rules. That file is on this phase's explicit
+ * do-not-modify list, so this function adds the missing floor HERE
+ * instead — a strictly additive safety net, never a behavior removal,
+ * that also closes this latent gap for Individual overrides as a
+ * side effect, without touching a single byte of the Phase 1-3 program.
+ * Never applied to `base` — an ADMIN role's own legitimate 'system.admin'
+ * base grant is untouched; only override CONTRIBUTIONS are filtered.
+ */
+const NEVER_EFFECTIVE_VIA_OVERRIDE = new Set(['system.admin', 'system.users.manage']);
+
+/**
  * Effective permission Set for `user`: base role/Custom Role grant UNION
- * this session's individual overrides (additive only — there is no DENY
- * concept). An archived/unresolvable base role resolves to EMPTY_SET as
- * always, but individual overrides are NOT collapsed along with it — by
- * explicit product decision they remain independently effective on top
- * of an empty base (EMPTY_SET ∪ overrides = overrides). Overrides are
- * themselves already fail-closed and system.admin-proof at the source
- * (user-permission-overrides-rules.js's normalizeOverrideRecord(), which
- * the live cache behind getIndividualPermissionOverrides() applies on
- * every read) — this function trusts that guarantee rather than
- * re-validating it.
+ * this session's role's Role Additional grants UNION this session's
+ * individual overrides (additive only — there is no DENY concept). An
+ * archived/unresolvable base role resolves to EMPTY_SET as always, but
+ * Role Additional grants and individual overrides are NOT collapsed along
+ * with it — by explicit product decision (established for individual
+ * overrides in Phase 2, extended identically to Role Additional grants in
+ * Phase 4) both remain independently effective on top of an empty base
+ * (EMPTY_SET ∪ roleAdditional ∪ individual = roleAdditional ∪ individual).
+ * Both override sources are already fail-closed and normalize their own
+ * raw data (role-permission-overrides-rules.js / user-permission-
+ * overrides-rules.js's normalizeOverrideRecord(), which the live caches
+ * behind getRoleAdditionalPermissions()/getIndividualPermissionOverrides()
+ * apply on every read) — but this function does NOT blindly trust either
+ * layer to be the last word on NEVER_EFFECTIVE_VIA_OVERRIDE's two ids (see
+ * that constant's own comment for why); it re-filters both override
+ * contributions itself as the final boundary.
  * @param {Object|null} user  a getCurrentUser() shape ({role, username})
  * @returns {Set<string>}
  */
 function effectivePermissionSetFor(user) {
   if (!user) return EMPTY_SET;
   const base = permissionSetFor(user.role);
-  const overrides = getIndividualPermissionOverrides(user.username);
-  if (!overrides || overrides.size === 0) return base;
+  const roleAdditional = getRoleAdditionalPermissions(user.role);
+  const individual = getIndividualPermissionOverrides(user.username);
+  if ((!roleAdditional || roleAdditional.size === 0) && (!individual || individual.size === 0)) return base;
   const merged = new Set(base);
-  for (const permissionId of overrides) merged.add(permissionId);
+  for (const permissionId of roleAdditional) { if (!NEVER_EFFECTIVE_VIA_OVERRIDE.has(permissionId)) merged.add(permissionId); }
+  for (const permissionId of individual) { if (!NEVER_EFFECTIVE_VIA_OVERRIDE.has(permissionId)) merged.add(permissionId); }
   return merged;
 }
 
@@ -140,7 +193,8 @@ export function hasAll(permissions) {
 }
 
 /** Every effective permission id the current session holds — base role/Custom
-    Role grant plus individual overrides (empty array if signed out). */
+    Role grant plus Role Additional and individual overrides (empty array if
+    signed out). */
 export function listPermissions() {
   const user = getCurrentUser();
   return user ? [...effectivePermissionSetFor(user)] : [];

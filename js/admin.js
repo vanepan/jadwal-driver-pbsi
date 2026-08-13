@@ -14,6 +14,13 @@ import { buildRoleSummary } from './role-management/role-summary-model.js';
 // individual-permission-provider.js, which is scoped to the CURRENT
 // session's own identity, not whoever is being edited here.
 import { getUserPermissionOverrides, grantUserPermission, revokeUserPermission } from './permission-management/user-permission-overrides-store.js';
+// v1.30.9.9 — Role-Level Permission Assignment, Phase 4. Read-only from
+// User Management's perspective: the admin one-shot API (same shape as
+// the individual overrides import above), used ONLY to compute the
+// "Efektif" line's 3-way provenance for the form's currently-selected
+// role — never to grant/revoke (that affordance lives exclusively in
+// Role Management, role-management-center.js).
+import { getRolePermissionOverrides } from './permission-management/role-permission-overrides-store.js';
 import { listAllPermissions, getPermission } from './config/permission-registry.js';
 import { logAction } from './logs.js';
 import { sendNotification } from './telegram.js';
@@ -27,6 +34,11 @@ const TELEGRAM_BOT_URL = `https://t.me/${TELEGRAM_BOT_USERNAME}`;
 
 let users = [];
 let editingUsername = null;
+// v1.30.9.8 — Post-deploy Finding A: whether the currently-open Edit User
+// modal is actually a read-only "Lihat" view of an ARCHIVED user. Archived
+// users must remain immutable (see js/users.js#updateUser()'s own guard);
+// this flag drives every UI-level restriction on top of that data-layer one.
+let editingUserIsArchived = false;
 
 // v1.30.9.6 — Individual Permission Assignment, Phase 3A. In-memory state
 // for the currently-open Edit User modal's Individual Permissions section.
@@ -44,6 +56,13 @@ let ipmState = {
   busyPermissionId: null,
 };
 let ipmRequestToken = 0;
+
+// v1.30.9.9 — Role-Level Permission Assignment, Phase 4. The form's
+// currently-selected role's Role Additional grants, one-shot-loaded
+// whenever the role selection changes (mirrors ipmState's own request-
+// token race guard). Read-only cache — never mutated by this file.
+let raFormCache = { roleId: null, permissions: new Set() };
+let raFormRequestToken = 0;
 
 // Permissions that must never be offered through Individual Permission
 // Management, regardless of current enforcement status. system.admin is
@@ -191,6 +210,7 @@ function attachAdminButtons() {
     syncEngineeringLevelUI();
     renderUserRoleSummaryPanel(); // v1.30.4
     renderIndividualPermissionsPanel(); // v1.30.9.6 — "already inherited" tracks the live role selection
+    loadRoleAdditionalForForm(currentFormRoleId()); // v1.30.9.9
   });
   // Single-select: checking one Engineering level card unchecks the other.
   document.querySelectorAll('#userEngineeringLevelGroup [data-eng-level]').forEach((cb) => {
@@ -198,6 +218,7 @@ function attachAdminButtons() {
       setEngineeringLevel(cb.checked ? cb.dataset.engLevel : null);
       renderUserRoleSummaryPanel(); // v1.30.4
       renderIndividualPermissionsPanel(); // v1.30.9.6
+      loadRoleAdditionalForForm(currentFormRoleId()); // v1.30.9.9
     });
   });
 
@@ -330,11 +351,22 @@ export function openUserFormModal(username = null) {
   if (!form) return;
   form.reset();
 
+  // v1.30.9.8 — Post-deploy Finding A: an archived user opens this SAME
+  // modal in a read-only "Lihat" mode — detected here, once, from the
+  // user's own record, so every caller (Edit button, the new "Lihat"
+  // button) can call openUserFormModal(username) identically with no
+  // special-casing at the call site.
+  const targetUser = username ? users.find((item) => item.username === username) : null;
+  editingUserIsArchived = !!(targetUser && targetUser.archived === true);
+
   const title = document.getElementById('modalUserFormTitle');
-  if (title) title.textContent = username ? 'Edit User' : 'Tambah User';
+  if (title) title.textContent = editingUserIsArchived ? 'Lihat User (Arsip)' : (username ? 'Edit User' : 'Tambah User');
 
   const btnSave = document.getElementById('btnSaveUserForm');
-  if (btnSave) btnSave.textContent = username ? 'Simpan Perubahan' : 'Buat User';
+  if (btnSave) {
+    btnSave.textContent = username ? 'Simpan Perubahan' : 'Buat User';
+    btnSave.style.display = editingUserIsArchived ? 'none' : '';
+  }
 
   const usernameField = document.getElementById('userFieldUsername');
   const displayNameField = document.getElementById('userFieldDisplayName');
@@ -402,10 +434,26 @@ export function openUserFormModal(username = null) {
     if (credentialGroup) credentialGroup.style.display = 'none';
     if (activeField) activeField.checked = true;
   }
+
+  // v1.30.9.8 — Post-deploy Finding A: "Lihat" (archived) mode disables
+  // every field that could otherwise mutate the record — Save is already
+  // hidden above, but a field left enabled would be misleading even if
+  // handleUserFormSubmit() also hard-blocks the submit itself, and
+  // js/users.js#updateUser() rejects any write to an archived record as
+  // the actual data-layer guarantee, independent of all of this.
+  if (displayNameField) displayNameField.disabled = editingUserIsArchived;
+  if (roleField) roleField.disabled = editingUserIsArchived;
+  if (activeField) activeField.disabled = editingUserIsArchived;
+  document.getElementById('userEngKoordinator')?.toggleAttribute('disabled', editingUserIsArchived);
+  document.getElementById('userEngAnggota')?.toggleAttribute('disabled', editingUserIsArchived);
+  const btnResetPinFromEdit = document.getElementById('btnResetPinFromEdit');
+  if (btnResetPinFromEdit) btnResetPinFromEdit.style.display = editingUserIsArchived ? 'none' : '';
+
   syncPbsiSelect(roleField);
   syncEngineeringLevelUI();
   renderCurrentRoleWarning(currentRoleWarning);
   renderUserRoleSummaryPanel();
+  loadRoleAdditionalForForm(currentFormRoleId()); // v1.30.9.9 — this form's initial role selection
 
   // v1.30.9.6 — Individual Permission Assignment, Phase 3A. Hidden entirely
   // in Create-mode (no user exists yet to hold an override). Edit-mode
@@ -558,18 +606,69 @@ function resetIpmState() {
   };
 }
 
+/** The form's currently-selected role id (Engineering's segmented
+    Koordinator/Anggota picker resolves to the concrete role underneath),
+    factored out so computeBaseGrantedSetForForm() and this phase's own
+    Role Additional lookups always resolve the SAME role id — never two
+    independently-drifting copies of this logic. */
+function currentFormRoleId() {
+  const roleField = document.getElementById('userFieldRole');
+  let roleId = roleField ? roleField.value : '';
+  if (roleId === 'engineering') roleId = currentEngineeringRole();
+  return roleId;
+}
+
 /** Mirrors renderUserRoleSummaryPanel()'s own role resolution exactly, so
     "already inherited via Role" always agrees with the live Role Summary
     panel — including the not-yet-saved dropdown selection, not just the
     persisted user record. */
 function computeBaseGrantedSetForForm() {
-  const roleField = document.getElementById('userFieldRole');
-  let roleId = roleField ? roleField.value : '';
-  if (roleId === 'engineering') roleId = currentEngineeringRole();
+  const roleId = currentFormRoleId();
   if (!roleId) return new Set();
   const info = resolveRoleInfo(roleId);
   const roleDescriptor = { id: info.id, label: info.label, type: info.type, record: null };
   return resolveGrantedSet(roleDescriptor);
+}
+
+/**
+ * The form's currently-selected role's Role Additional grants — v1.30.9.9.
+ * Returns empty unless raFormCache is scoped to EXACTLY this role id (not
+ * yet loaded, a stale/superseded response, or a Custom Role — which never
+ * legally holds Role Additional data in the first place, see
+ * role-permission-overrides-rules.js#isValidRoleOverrideTarget()).
+ * @returns {Set<string>}
+ */
+function computeRoleAdditionalSetForForm() {
+  const roleId = currentFormRoleId();
+  if (!roleId || raFormCache.roleId !== roleId) return new Set();
+  return raFormCache.permissions;
+}
+
+/**
+ * One-shot load of `roleId`'s Role Additional grants for the "Efektif"
+ * line's provenance breakdown. Token-guarded exactly like
+ * loadIndividualPermissionsFor() — a slow response from a role the admin
+ * has since navigated away from must never overwrite a newer selection's
+ * cache. Read-only: never grants/revokes (see this file's own import
+ * comment on getRolePermissionOverrides).
+ * @param {string} roleId
+ */
+async function loadRoleAdditionalForForm(roleId) {
+  const token = ++raFormRequestToken;
+  if (!roleId) {
+    raFormCache = { roleId: null, permissions: new Set() };
+    renderIndividualPermissionsPanel();
+    return;
+  }
+  let permissions = new Set();
+  try {
+    permissions = await getRolePermissionOverrides(roleId);
+  } catch (err) {
+    console.error(err);
+  }
+  if (token !== raFormRequestToken) return; // superseded — discard
+  raFormCache = { roleId, permissions };
+  renderIndividualPermissionsPanel();
 }
 
 /** Whether Individual Permissions may be granted/revoked for the user
@@ -649,14 +748,21 @@ function renderIndividualPermissionsPanel() {
   // v1.30.9.7 — Phase 3B, B3: Base Role + Individual = Effective, computed
   // LOCALLY for this one user (never routed through role-summary-model.js's
   // role.id-keyed cache — see this section's own header comment on why).
-  // "Individual" here is each override's UNIQUE contribution (excludes any
-  // override that happens to already overlap the role's own grant — e.g.
-  // the role changed after the override was made) so the two numbers
-  // always sum exactly to the effective total, never an apparent mismatch.
+  // v1.30.9.9 — Phase 4: extended to a 3-way Base / Role Additional /
+  // Individual provenance split. Both Role Additional's and Individual's
+  // contributions are each their UNIQUE count (excludes any overlap with
+  // the layer(s) beneath them — e.g. the role's Base or Role Additional
+  // grants changed after an Individual override was made) so the three
+  // numbers always sum exactly to the effective total, never an apparent
+  // mismatch — the same discipline Phase 3B already established, applied
+  // to one more layer.
   const baseGranted = computeBaseGrantedSetForForm();
-  const uniqueIndividualContribution = [...overrides].filter((id) => !baseGranted.has(id)).length;
-  const effectiveTotal = baseGranted.size + uniqueIndividualContribution;
-  const effectiveLine = `<div class="ipm-effective-line">Efektif: ${effectiveTotal} permission (${baseGranted.size} dari Role, ${uniqueIndividualContribution} Individual)</div>`;
+  const roleAdditional = computeRoleAdditionalSetForForm();
+  const uniqueRoleAdditionalContribution = [...roleAdditional].filter((id) => !baseGranted.has(id)).length;
+  const combinedRoleGranted = new Set([...baseGranted, ...roleAdditional]);
+  const uniqueIndividualContribution = [...overrides].filter((id) => !combinedRoleGranted.has(id)).length;
+  const effectiveTotal = baseGranted.size + uniqueRoleAdditionalContribution + uniqueIndividualContribution;
+  const effectiveLine = `<div class="ipm-effective-line">Efektif: ${effectiveTotal} permission (${baseGranted.size} dari Role, ${uniqueRoleAdditionalContribution} Role Tambahan, ${uniqueIndividualContribution} Individual)</div>`;
 
   const readOnlyNotice = !isEditable
     ? `<div class="ipm-readonly-notice">${user && user.archived ? 'Akun sudah diarsipkan.' : 'Akun tidak aktif.'} Individual permissions tidak dapat diubah.</div>`
@@ -699,6 +805,7 @@ function renderIndividualPermissionsPanel() {
 
 function renderIpmPickerShellHtml() {
   const baseGranted = computeBaseGrantedSetForForm();
+  const roleAdditional = computeRoleAdditionalSetForForm();
   return `
     <div class="ipm-picker">
       <div class="ipm-picker-search-row">
@@ -707,7 +814,7 @@ function renderIpmPickerShellHtml() {
                value="${escapeHTML(ipmState.pickerQuery)}" />
         <button type="button" class="btn-secondary" id="btnCloseIpmPicker">Tutup</button>
       </div>
-      <div class="ipm-picker-body">${renderIpmPickerBodyHtml(baseGranted)}</div>
+      <div class="ipm-picker-body">${renderIpmPickerBodyHtml(baseGranted, roleAdditional)}</div>
     </div>`;
 }
 
@@ -718,7 +825,7 @@ function renderIpmPickerShellHtml() {
     destroy and recreate the input the admin is actively typing into,
     losing focus/cursor position (see project convention: never bind an
     input's own event to a handler that re-renders that same input). */
-function renderIpmPickerBodyHtml(baseGranted) {
+function renderIpmPickerBodyHtml(baseGranted, roleAdditional) {
   const query = ipmState.pickerQuery.trim().toLowerCase();
   const tree = {};
   for (const perm of listAllPermissions()) {
@@ -737,19 +844,21 @@ function renderIpmPickerBodyHtml(baseGranted) {
       ${Object.entries(tree[moduleName]).map(([categoryName, perms]) => `
         <div class="ipm-picker-category">
           <h5 class="ipm-picker-category__title">${escapeHTML(categoryName)}</h5>
-          ${perms.map((p) => renderIpmPickerRow(p, baseGranted)).join('')}
+          ${perms.map((p) => renderIpmPickerRow(p, baseGranted, roleAdditional)).join('')}
         </div>`).join('')}
     </div>`).join('');
 }
 
-function renderIpmPickerRow(permission, baseGranted) {
-  const inherited = baseGranted.has(permission.id);
+function renderIpmPickerRow(permission, baseGranted, roleAdditional) {
+  const inheritedBase = baseGranted.has(permission.id);
+  const inheritedRoleAdditional = !inheritedBase && (roleAdditional || new Set()).has(permission.id);
   const alreadyIndividual = ipmState.overrides.has(permission.id);
   const busy = !!ipmState.busyPermissionId;
-  const disabled = inherited || alreadyIndividual || busy;
-  const checked = inherited || alreadyIndividual;
+  const disabled = inheritedBase || inheritedRoleAdditional || alreadyIndividual || busy;
+  const checked = inheritedBase || inheritedRoleAdditional || alreadyIndividual;
   let note = '';
-  if (inherited) note = 'Sudah tersedia melalui Role.';
+  if (inheritedBase) note = 'Sudah tersedia melalui Role.';
+  else if (inheritedRoleAdditional) note = 'Sudah tersedia melalui Role Additional.';
   else if (alreadyIndividual) note = 'Sudah menjadi Individual Permission.';
   return `
     <label class="ipm-picker-row ${disabled ? 'ipm-picker-row--disabled' : ''}">
@@ -783,7 +892,7 @@ function wireIndividualPermissionsPanelEvents(container, isEditable) {
       ipmState.pickerQuery = e.target.value;
       const body = container.querySelector('.ipm-picker-body');
       if (!body) return;
-      body.innerHTML = renderIpmPickerBodyHtml(computeBaseGrantedSetForForm());
+      body.innerHTML = renderIpmPickerBodyHtml(computeBaseGrantedSetForForm(), computeRoleAdditionalSetForForm());
       wireIpmPickerBodyCheckboxes(body);
     });
   }
@@ -883,10 +992,24 @@ export function __setIpmOverridesForTest(username, permissionIds, options = {}) 
   renderIndividualPermissionsPanel();
 }
 
+/**
+ * TEST-ONLY. Directly seeds raFormCache for `roleId`, bypassing the real
+ * one-shot Firebase read entirely — v1.30.9.9, same convention as
+ * __setIpmOverridesForTest() above. Real application code MUST NEVER
+ * call this.
+ * @param {string} roleId
+ * @param {string[]} permissionIds
+ */
+export function __setRaFormCacheForTest(roleId, permissionIds) {
+  raFormCache = { roleId, permissions: new Set(permissionIds || []) };
+  renderIndividualPermissionsPanel();
+}
+
 function closeUserFormModal() {
   const modal = document.getElementById('modalUserForm');
   if (modal) modal.style.display = 'none';
   editingUsername = null;
+  editingUserIsArchived = false;
   // Closing always re-masks the Create-mode PIN field, even if it was
   // revealed — next open (Create or Edit) must never start revealed.
   const pinField = document.getElementById('userFieldPin');
@@ -1070,6 +1193,16 @@ function currentEngineeringRole() {
 
 async function handleUserFormSubmit(event) {
   event.preventDefault();
+
+  // v1.30.9.8 — Post-deploy Finding A: defense in depth. The Save button is
+  // already hidden and every field already disabled in "Lihat" (archived)
+  // mode, so this should be unreachable in practice — but the real
+  // guarantee is js/users.js#updateUser()'s own archived guard, and this
+  // is a free, cheap second layer at the UI boundary specifically.
+  if (editingUserIsArchived) {
+    showToast('User yang diarsipkan bersifat read-only.');
+    return;
+  }
 
   const usernameField = document.getElementById('userFieldUsername');
   const displayNameField = document.getElementById('userFieldDisplayName');

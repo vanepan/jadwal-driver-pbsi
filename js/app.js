@@ -305,6 +305,12 @@ import { initRuntimeRoleProvider } from './role-management/runtime-role-provider
 // individual-permission-provider.js's own header for why its live cache is
 // scoped to one username, unlike the Custom Role provider's global one).
 import { initIndividualPermissionProvider } from './permission-management/individual-permission-provider.js';
+// v1.30.9.9 — Role-Level Permission Assignment, Phase 4: same boundary
+// principle again, this time for this session's own ROLE's Role
+// Additional grants (see permission-management/role-permission-
+// provider.js's own header — scoped to one roleId, same reasoning as the
+// individual permission provider's one-username scoping above).
+import { initRolePermissionProvider } from './permission-management/role-permission-provider.js';
 import { expandDateRange, showToast, formatDateShort, vehicleLabel, computeWorkTime } from './utils.js';
 import {
   sendRequestApprovedNotification,
@@ -4985,6 +4991,8 @@ function buildUserCard(user) {
           <span class="v2-entity-badge v2-entity-badge--archived">Arsip</span>
         </div>
         <div class="v2-user-card-actions">
+          <button class="v2-user-btn v2-user-btn--edit"
+                  data-user-view="${esc(user.username)}" type="button">Lihat</button>
           <button class="v2-user-btn v2-user-btn--restore"
                   data-user-restore="${esc(user.username)}" type="button">Pulihkan</button>
           ${deleteBtnHtml}
@@ -5520,6 +5528,15 @@ function renderV2AdminUsers() {
   });
   list.querySelectorAll('[data-user-edit]').forEach(btn => {
     btn.addEventListener('click', () => openUserFormModal(btn.dataset.userEdit));
+  });
+  // v1.30.9.8 — Post-deploy Finding A: archived users previously had no way
+  // to reach Individual Permission Management's already-correct read-only
+  // rendering at all (no button opened openUserFormModal() for them). Same
+  // entry point as Edit — openUserFormModal() itself detects user.archived
+  // and switches into view-only mode (admin.js), so this call site needs no
+  // special-casing.
+  list.querySelectorAll('[data-user-view]').forEach(btn => {
+    btn.addEventListener('click', () => openUserFormModal(btn.dataset.userView));
   });
   list.querySelectorAll('[data-user-toggle]').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -12007,6 +12024,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     // resolution. getCurrentUser() is already resolved by this point
     // (startAuthenticatedSession only runs once signed in).
     initIndividualPermissionProvider();
+    // v1.30.9.9: same boot moment again — feeds permission-service.js's
+    // Role Additional half of effective permission resolution (this
+    // session's own role's bulk grants).
+    initRolePermissionProvider();
     // Registered BEFORE initSettingsStore() so it also catches the initial
     // load (registerSettingsChangeListener fires on first load, not just
     // subsequent live changes — see settings-store.js#refreshSettingsCache).

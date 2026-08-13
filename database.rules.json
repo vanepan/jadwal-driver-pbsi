@@ -216,6 +216,53 @@
       }
     },
 
+    // Role-Level Permission Assignment, Phase 4 (v1.30.9.9) — bulk
+    // "Role Additional Permissions" applied to every user holding a given
+    // SYSTEM role (Custom Roles already have their own mutable permission
+    // set via /customRoles and never target this node — enforced at the
+    // application layer by role-permission-overrides-rules.js#
+    // isValidRoleOverrideTarget(), not by this rule, which has no way to
+    // distinguish a System Role id from a Custom Role id by shape alone).
+    //
+    // READ has TWO branches, deliberately: admin/adminEquivalent (the two
+    // admin UIs — Role Management and User Management's Individual
+    // Permission panel — read one role at a time, on selection) AND
+    // `auth.token.role === $roleId`, a per-role self-read exactly
+    // mirroring userPermissionOverrides' `auth.uid === $username` branch
+    // above, translated from per-user identity to per-role identity since
+    // a role is shared by many users and has no uid of its own. This
+    // self-read is NOT optional: without it, a non-admin session could
+    // never resolve its OWN role's Additional grants, and the feature
+    // could not function for anyone but admin — the exact same reasoning
+    // that justified userPermissionOverrides' self-branch. A role's node
+    // is never readable by a DIFFERENT role's session (cross-role reads
+    // stay denied) and never by an unauthenticated client.
+    //
+    // WRITE is admin/adminEquivalent ONLY — no self-write branch of any
+    // kind (no role ever legitimately writes its own bulk grants; only an
+    // administrator does), matching userPermissionOverrides' "no self-
+    // write branch at all" discipline exactly.
+    //
+    // VALIDATE mirrors userPermissionOverrides' shape byte-for-byte, with
+    // TWO forbidden permission ids instead of one — 'system.users.manage'
+    // is a hard boundary here (Phase 4's own brief), unlike Individual
+    // Permission Assignment where it is only a UI-layer exclusion.
+    "rolePermissionOverrides": {
+      "$roleId": {
+        ".read": "auth.token.role === 'admin' || auth.token.adminEquivalent === true || auth.token.role === $roleId",
+        ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true",
+        ".validate": "newData.hasChildren(['permissions']) && !newData.hasChild('role') && !newData.hasChild('adminEquivalent') && !newData.hasChild('pin') && !newData.hasChild('pinHash') && !newData.hasChild('active') && !newData.hasChild('archived')",
+        "permissions": {
+          "$index": {
+            ".validate": "newData.isString() && newData.val() !== 'system.admin' && newData.val() !== 'system.users.manage'"
+          }
+        },
+        "updatedAt": {
+          ".validate": "newData.isString()"
+        }
+      }
+    },
+
     "v2_sarpras": {
       "import_sessions": {
         ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true",
