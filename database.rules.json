@@ -306,6 +306,32 @@
       }
     },
 
+    // v1.30.9.11 — Phase 5, closing a gap found during Phase 5A's own
+    // investigation: this node has had NO rule at all since the
+    // persistence layer was introduced (v1.16.4.11-rc.1) — confirmed via
+    // `git log -S"dispatchIntelligence" -- database.rules.json` (zero
+    // hits, ever) and via a direct fetch of the LIVE deployed rules
+    // (byte-identical to this file before this change). Root is
+    // deny-by-default, so every read/write has been silently denied for
+    // everyone, including admin, since whichever prior deploy hardened
+    // the root — real production data up to 2026-08-11 proves this
+    // subsystem DID persist successfully before that point; it has been
+    // effectively frozen since. js/services/dispatch-intelligence-
+    // persistence.js's own read-through/write-through pair (override
+    // logs, request recommendation history, capacity snapshots) is
+    // genuinely admin/ops-sensitive operational history, not a public or
+    // broadly-authenticated-readable config store — deliberately
+    // NARROWER than this file's usual "admin/developer/adminEquivalent
+    // read" convention (no 'developer' branch): this task's own explicit
+    // decision tree specified admin/adminEquivalent only for both read
+    // and write, and unlike the sibling analytics/audit nodes above,
+    // nothing in the application currently needs a 'developer' session to
+    // read this node, so it is not added speculatively.
+    "dispatchIntelligence": {
+      ".read": "auth.token.role === 'admin' || auth.token.adminEquivalent === true",
+      ".write": "auth.token.role === 'admin' || auth.token.adminEquivalent === true"
+    },
+
     "engineering": {
       "assignments": {
         ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.role === 'engineering_coordinator' || auth.token.role === 'engineering_member'",

@@ -12050,6 +12050,29 @@ document.addEventListener('DOMContentLoaded', async () => {
       console.warn('[DI Persistence] init failed — continuing on memory.', err);
     }
 
+    // v1.30.9.11 — feature-flags client-sequencing fix (Phase 5A/5). The
+    // FIRST loadFeatureFlags() call (DOMContentLoaded, near the top of
+    // this file) always runs before Firebase Auth can possibly resolve —
+    // its /feature_flags read (rule: `auth != null`) was therefore
+    // guaranteed denied on every single boot, silently falling through to
+    // defaults. Left untouched there (it still correctly drives the very
+    // first paint — including the pre-login screen — which must never
+    // wait on auth). This is the actual fix: now that a session is
+    // authenticated, re-run the SAME function (no second loading system)
+    // so the emergency visualShellV2 rollback this flag exists for has a
+    // live RTDB read that can actually succeed, instead of never once
+    // succeeding in the app's lifetime. Does not attempt to live-tear-
+    // down an already-rendered V2 shell (no such teardown exists in this
+    // codebase) — a rollback set while a V2 session is already running
+    // takes effect on that session's NEXT reload, exactly as before this
+    // fix; only the underlying read (previously impossible) is what this
+    // closes.
+    try {
+      appFlags = await loadFeatureFlags();
+    } catch (err) {
+      console.warn('[flags] post-auth re-check failed — keeping pre-auth defaults.', err);
+    }
+
     // Re-render with authoritative data + refresh permissioned UI.
     // ORDER (v1.20.7 Obj 1/2): resolve role → select workspace BEFORE rendering
     // driver-ops content. updatePermissionUI(true) runs setRailModule(

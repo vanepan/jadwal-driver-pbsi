@@ -50,4 +50,7 @@ export const SUITE_REGISTRY = Object.freeze([
 
   // Custom Role Protected Permission Security Hardening (v1.30.9.10)
   'custom-role-protected-permission-check.mjs',
+
+  // Dispatch Intelligence Authorization Hardening, Phase 5 (v1.30.9.11)
+  'dispatch-intelligence-rule-check.mjs',
 ]);
