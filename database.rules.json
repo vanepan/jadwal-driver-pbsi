@@ -212,7 +212,49 @@
     // update() — RTDB re-evaluates every .validate rule along the write
     // path against the RESULTING data, not just the literally-touched
     // leaf, so none of those shapes can smuggle either id in.
+    // v1.30.9.12 — customRoles collection-read fix (the gap flagged and
+    // reserved since v1.30.9.2, carried forward untouched through v1.30.9.4,
+    // v1.30.9.8, and v1.30.9.11's own Phase 5 scope). Same root cause and
+    // same fix shape as the v1.30.9.2 /users incident: js/role-management/
+    // custom-roles-store.js#initCustomRolesStore() subscribes at the
+    // /customRoles COLLECTION path itself (subscribeNode(CUSTOM_ROLES_PATH,
+    // ...), CUSTOM_ROLES_PATH === 'customRoles'), never per-child. RTDB
+    // evaluates a read request's .read rule at the EXACT requested path and
+    // its ancestors ONLY — a rule that exists solely on the $roleId CHILD
+    // below never satisfies a read issued at the customRoles PARENT, so
+    // with root .read: false and (until this line) no .read on customRoles
+    // itself, that collection subscription was silently denied for every
+    // role, including admin. This is what role-management-center.js and
+    // User Management's Manajemen User screen (both of which call
+    // initCustomRolesStore() — see js/app.js) actually depend on to list
+    // Custom Roles at all. New .read is DELIBERATELY admin/developer ONLY —
+    // NOT this file's usual admin/developer/adminEquivalent-read convention
+    // used by its 22 sibling admin-owned nodes (see e.g. "events"/
+    // "vehicles" above). Proven empirically while writing this fix's own
+    // emulator suite (custom-roles-collection-read-check.mjs): RTDB rules
+    // CASCADE DOWNWARD — a .read rule that evaluates true at a PARENT node
+    // is granted immediately and short-circuits before any narrower CHILD
+    // rule is ever consulted. The $roleId child rule below deliberately
+    // excludes adminEquivalent from reading ARCHIVED records (only admin/
+    // developer bypass the archived check there; everyone else, including
+    // adminEquivalent, only ever gets the "auth != null && !archived"
+    // branch) — a pre-existing, intentional asymmetry this file's own
+    // custom-role-archived-rule-check.mjs already documents and tests.
+    // Including adminEquivalent in a COLLECTION-level rule here would
+    // silently WIDEN that boundary (adminEquivalent would gain read access
+    // to every archived Custom Role record, at both the collection AND,
+    // via cascade, the child path) — a real authorization broadening this
+    // fix must not introduce. admin/developer both ALREADY have
+    // unconditional (including-archived) child-level access, so granting
+    // them the same at the collection level adds no new privilege, only
+    // fixes the broken bulk read. The $roleId child .read, its
+    // "permissions" -> "$index" .validate (v1.30.9.10), and .write below are
+    // completely UNCHANGED — this adds only the missing collection-level
+    // .read as a new sibling key, closing the same class of "architecture-
+    // mismatch: parent-level bulk subscribe vs. child-scoped rule" gap
+    // v1.30.9.11 explicitly identified and deliberately left untouched.
     "customRoles": {
+      ".read": "auth.token.role === 'admin' || auth.token.role === 'developer'",
       "$roleId": {
         ".read": "auth.token.role === 'admin' || auth.token.role === 'developer' || (auth != null && data.child('archived').val() !== true)",
         "permissions": {

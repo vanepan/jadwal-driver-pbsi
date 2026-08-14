@@ -53,4 +53,7 @@ export const SUITE_REGISTRY = Object.freeze([
 
   // Dispatch Intelligence Authorization Hardening, Phase 5 (v1.30.9.11)
   'dispatch-intelligence-rule-check.mjs',
+
+  // customRoles collection-read fix, reserved since v1.30.9.2 (v1.30.9.12)
+  'custom-roles-collection-read-check.mjs',
 ]);
