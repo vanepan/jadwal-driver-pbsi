@@ -55,7 +55,7 @@ import { renderAnalyticsScreen, analyticsActions } from './ui/overtime-analytics
 import { renderReportsScreen, reportsActions } from './ui/overtime-reports-view.js';
 import { renderReportHistoryScreen, reportHistoryActions } from './ui/overtime-report-history-view.js';
 import { renderRecordsScreen, renderEditRecordModal, recordsActions } from './ui/overtime-records-view.js';
-import { renderClosingScreen, renderUnlockModal, closingActions } from './ui/overtime-closing-view.js';
+import { renderClosingScreen, renderUnlockModal, renderCloseConfirmModal, closingActions } from './ui/overtime-closing-view.js';
 import { renderArchiveScreen, archiveActions } from './ui/overtime-archive-view.js';
 
 const NAV = [
@@ -133,6 +133,7 @@ const st = {
   // Closing (Sprint 9)
   closingSelectedMonth: '', closingNote: '',
   unlockModalOpen: false, unlockReason: '', unlockReasonErr: '',
+  closeConfirmModalOpen: false, // V1 Redesign Phase 7 (v1.30.9.19) — guards the one-way close action
 
   // Archive (Sprint 9)
   archiveSearchQuery: '', archiveExpandedMonth: null,
@@ -311,6 +312,7 @@ function shell() {
   ${st.holidayModalOpen ? holidayModal() : ''}
   ${st.editRecordModalOpen ? renderEditRecordModal(st) : ''}
   ${st.unlockModalOpen ? renderUnlockModal(st) : ''}
+  ${st.closeConfirmModalOpen ? renderCloseConfirmModal(st) : ''}
   ${st.saveConfirmData ? saveConfirmModal() : ''}
   ${st.toast ? toastEl() : ''}`;
 }

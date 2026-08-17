@@ -136,6 +136,60 @@
   --row-h:          62px;
   --bar-top:        9px;
   --bar-h:          44px;
+
+  /* ── V1 Redesign Phase 1a: token gap-fill (additive only) ──────────────
+     Extends the existing type scale, adds a real 8px spacing scale, motion
+     durations, breakpoint custom properties, and accent interaction states
+     per docs/DESIGN_SYSTEM_SPEC_v1.30.9.12.md + RESPONSIVE_BEHAVIOR_SPEC.
+     Every name below was grep-verified to have zero existing consumers, so
+     this block cannot change anything currently rendered. The radius scale
+     (--radius-sm/md/lg) is deliberately NOT added here: --radius-sm/-lg
+     already have 30+ consumers elsewhere (style.css, platform.css,
+     js/components/vehicle-*.js) with inconsistent/no fallbacks, so defining
+     them at :root now would be a real visual change, not an addition —
+     deferred to the phase that deliberately migrates those call sites. */
+
+  /* Type scale gap-fill */
+  --type-heading-sm: 14px;
+  --type-body-lg:    15px;
+  --type-body-sm:    12px;
+
+  /* Real 8px spacing scale (kept separate from the still-live
+     --space-hero/section/subsection/card set above) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 32px;
+
+  /* Motion durations — --motion-pop mirrors the live 160ms interaction
+     transition (line ~12435); --motion-theme mirrors the live .theme-anim
+     550ms crossfade (line ~280). The other two are new standardized
+     targets, not yet wired into any rule. */
+  --motion-pop:   160ms;
+  --motion-sheet: 260ms;
+  --motion-view:  340ms;
+  --motion-theme: 550ms;
+
+  /* Breakpoint tokens — documentation/JS (matchMedia) use only; CSS custom
+     properties cannot appear inside @media conditions, so existing @media
+     literals are unaffected until each file migrates deliberately. */
+  --bp-xs: 380px;
+  --bp-sm: 600px;
+  --bp-md: 768px;
+  --bp-lg: 1024px;
+  --bp-xl: 1280px;
+
+  /* Accent interaction states — formalizes the two most common ad hoc
+     patterns already used repeatedly in this file (color-mix 85%/#000 for
+     hover at line ~838; color-mix ~12%/transparent for subtle tints at
+     e.g. lines ~8792, ~12446), deriving both light/dark automatically from
+     --accent with no per-theme duplication. */
+  --accent-hover:  color-mix(in srgb, var(--accent) 85%, #000);
+  --accent-subtle: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 /* ── Comfortable density (future Tweaks toggle) ── */
@@ -482,6 +536,186 @@ html.theme-anim *::after {
 .p-empty .p-empty-icon svg { width: 22px; height: 22px; }
 .p-empty .p-empty-title { font-size: 13.5px; font-weight: 600; color: var(--muted); }
 .p-empty .p-empty-desc  { font-size: 12px; margin-top: 3px; }
+
+
+/* ============================================================
+   V1 REDESIGN PHASE 2 — SHARED COMPONENT LIBRARY (additions)
+   Extends the .p-* V2.0 utility classes above with the remaining
+   primitives from docs/DESIGN_SYSTEM_SPEC_v1.30.9.12.md §3 (the
+   "Sarpras Component Library" design map). These are NEW class names,
+   grep-verified to collide with nothing app-wide — nothing existing is
+   rewired to consume them yet; that's module-by-module adoption in a
+   later phase, done one module at a time so each migration stays
+   isolated and independently shippable (per the guardrails doc). The
+   one exception is .p-btn's min-height, a real accessibility gap this
+   fixes directly (DESIGN_SYSTEM_SPEC's Touch Targets finding: every
+   interactive element should be ≥44×44px on touch surfaces; .p-btn had
+   no min-height at all). .p-btn-sm intentionally still inherits it —
+   the spec is explicit that there's no "small button" exception.
+   ============================================================ */
+
+.p-btn { min-height: 44px; }
+
+.p-btn-secondary {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.p-btn-secondary:hover { background: var(--hover); }
+
+.p-btn-tertiary {
+  background: transparent;
+  color: var(--accent);
+  border-color: transparent;
+}
+.p-btn-tertiary:hover { background: var(--accent-subtle); }
+
+.p-btn-icon {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  background: transparent;
+  color: var(--muted);
+  border-color: transparent;
+}
+.p-btn-icon:hover { background: var(--hover); color: var(--text); }
+
+/* ── Removable chip (extends .p-pill) ── */
+.p-pill--removable { padding-right: 6px; }
+.p-pill-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: currentColor;
+  opacity: .65;
+  flex-shrink: 0;
+}
+.p-pill-remove:hover { opacity: 1; background: rgba(0,0,0,.08); }
+
+/* ── Card — de-boxed by default per the redesign's visual language
+   (DESIGN_SYSTEM_SPEC §2.7); .p-card--boxed is the explicit legacy
+   escape hatch, not the default. ── */
+.p-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: var(--space-6);
+  box-shadow: none;
+}
+.p-card--boxed { box-shadow: var(--shadow-sm); }
+.p-card--boxed:hover { box-shadow: var(--shadow-md); }
+.p-card-title { font-size: var(--type-heading-md); font-weight: 600; color: var(--text); margin: 0 0 4px; }
+.p-card-sub   { font-size: var(--type-body-sm); color: var(--muted); margin: 0; }
+
+/* ── Table shell — horizontal-scroll wrapper, the pattern
+   RESPONSIVE_BEHAVIOR_SPEC §5 confirmed is already correct and
+   consistent app-wide; this just gives it reusable shared classes. ── */
+.p-table-wrap { overflow-x: auto; }
+.p-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.p-table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.p-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  white-space: nowrap;
+}
+.p-table tbody tr:hover td { background: var(--hover); }
+
+/* ── Generic nav rail item — mirrors the already-proven
+   .v2-panel-nav-item shape (line ~12480) but built on canonical,
+   app-wide tokens instead of the Executive-UI-kit-scoped ones. ── */
+.p-navitem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  font-weight: 520;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background-color var(--motion-pop) ease, color var(--motion-pop) ease;
+}
+.p-navitem:hover, .p-navitem:focus-visible {
+  background: var(--accent-subtle);
+  color: var(--text);
+}
+.p-navitem--active {
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ── Tabs — underline style, used by every module workspace. ── */
+.p-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+.p-tab {
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  background: none;
+  font-family: inherit;
+  min-height: 44px;
+}
+.p-tab:hover { color: var(--text); }
+.p-tab--active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ── KPI strip — capped at 3–5, never a KPI wall. ── */
+.p-kpi-strip {
+  display: flex;
+  gap: var(--space-8);
+  flex-wrap: wrap;
+}
+.p-kpi { display: flex; flex-direction: column; gap: 2px; }
+.p-kpi-label { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--faint); }
+.p-kpi-value { font-size: var(--type-heading-lg); font-weight: 700; color: var(--text); font-family: var(--font-mono); }
+.p-kpi-delta { font-size: 11px; font-weight: 600; }
+.p-kpi-delta--up   { color: var(--ok); }
+.p-kpi-delta--down { color: var(--danger); }
+
+/* ── Error state — mirrors .p-empty's shape (line ~522) with a danger
+   tone, part of the design map's "15 states" state-component set. ── */
+.p-error {
+  text-align: center;
+  padding: 48px 20px;
+  color: var(--danger);
+}
+.p-error .p-error-icon {
+  width: 46px; height: 46px;
+  border-radius: 13px;
+  background: var(--danger-bg);
+  display: grid; place-items: center;
+  margin: 0 auto 12px;
+  color: var(--danger);
+}
+.p-error .p-error-icon svg { width: 22px; height: 22px; }
+.p-error .p-error-title { font-size: 13.5px; font-weight: 600; color: var(--text); }
+.p-error .p-error-desc  { font-size: 12px; margin-top: 3px; color: var(--muted); }
 
 
 /* ============================================================
@@ -2875,11 +3109,42 @@ body.v2-shell-active #v2TimelineSurface .v2-tl-header-right .timeline-date-label
 /* Mobile ≤767px: hide subtitle and view toggle to save space */
 @media (max-width: 767px) {
   body.v2-shell-active #v2TimelineSurface .v2-tl-sub          { display: none; }
-  body.v2-shell-active #v2TimelineSurface .v2-tl-view-toggle  { display: none; }
+  /* V1 Redesign 4c (P0, code-confirmed gap): this used to be display:none,
+     which hid the ONLY control that reaches List view on mobile — List view
+     itself was already fully built and is more touch-appropriate than a
+     horizontally-scrolling hour grid, it just had no way to be reached.
+     Made visible and more compact instead of hidden. */
+  body.v2-shell-active #v2TimelineSurface .v2-tl-view-toggle  {
+    display: flex;
+  }
+  body.v2-shell-active #v2TimelineSurface .v2-tl-view-btn {
+    padding: 4px 8px;
+    font-size: 11px;
+  }
   body.v2-shell-active #v2TimelineSurface .v2-tl-header       { padding: 10px 12px; }
   body.v2-shell-active #v2TimelineSurface .v2-tl-title        { font-size: 13px; }
   body.v2-shell-active #v2TimelineSurface .v2-tl-header-right .timeline-date-label {
     font-size: 11px;
+  }
+}
+
+/* Smallest phones: title + toggle + date don't fit on one row even at
+   their most compact (measured overflow at 320px viewport) — wrap onto a
+   second row instead of continuing to shrink text past legibility. */
+@media (max-width: 380px) {
+  body.v2-shell-active #v2TimelineSurface .v2-tl-title        { font-size: 12px; }
+  body.v2-shell-active #v2TimelineSurface .v2-tl-view-btn      { padding: 4px 6px; font-size: 10.5px; }
+  body.v2-shell-active #v2TimelineSurface .v2-tl-header-right .timeline-date-label {
+    font-size: 10px;
+  }
+  body.v2-shell-active #v2TimelineSurface .v2-tl-header {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  body.v2-shell-active #v2TimelineSurface .v2-tl-header-right {
+    flex-basis: 100%;
+    justify-content: space-between;
+    gap: 6px;
   }
 }
 
@@ -3801,6 +4066,24 @@ body.v2-shell-active #v2ListView.v2-view-active {
 .v2-list-vehicle-chip[data-vehicle="Luxio"]    { color: var(--v-luxio);  border-color: var(--v-luxio);  }
 .v2-list-vehicle-chip[data-vehicle="Polytron"] { color: var(--v-poly);   border-color: var(--v-poly);   }
 .v2-list-vehicle-chip[data-vehicle="Hiace"]    { color: var(--v-hiace);  border-color: var(--v-hiace);  }
+/* v1.30.9.15 — buildListCard() now sets color/border-color inline (any
+   fleet size, not just these 4 names); inline always wins the cascade over
+   the attribute-selector rules above, so those are harmless dead weight
+   for the 4 legacy names rather than something to delete right now. */
+.v2-list-vehicle-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  display: inline-block;
+}
+.v2-list-convoy-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--accent);
+}
 
 
 /* ── Status column ─────────────────────────────────────────────*/
@@ -4258,6 +4541,67 @@ body.v2-shell-active #v2TimelineSurface .v2-tl-header-right .timeline-date-label
   font-size: 12px;
   font-weight: 500;
   color: var(--muted);
+}
+
+/* ── V1 Redesign 4c: Assignment Board filter chips ──────────────────────
+   Sits between the header and the timeline/list views (shared by both,
+   since both read getFilteredAssignments()). Native <select> chrome kept
+   deliberately — styled to read as a chip without building a bespoke
+   custom-dropdown component for something this codebase already handles
+   fine natively. */
+#v2FilterBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.v2-filter-chip {
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 10px;
+  min-height: 32px;
+  max-width: 150px;
+  cursor: pointer;
+  transition: background-color var(--motion-pop) ease, border-color var(--motion-pop) ease;
+}
+.v2-filter-chip:hover { background: var(--hover); }
+.v2-filter-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* A chip with a real selection reads as "active" — accent-tinted like the
+   rest of the app's active/selected states. */
+.v2-filter-chip:not([data-empty="true"]) {
+  background: var(--accent-subtle);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--accent);
+}
+.v2-filter-clear {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px 4px;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+}
+.v2-filter-clear:hover { text-decoration: underline; }
+
+@media (max-width: 767px) {
+  #v2FilterBar { padding: 8px 12px; gap: 6px; }
+  .v2-filter-chip { font-size: 11.5px; padding: 5px 9px; min-height: 32px; max-width: 108px; }
+}
+@media (max-width: 380px) {
+  .v2-filter-chip { max-width: 92px; font-size: 11px; }
 }
 
 
@@ -11485,25 +11829,34 @@ input[type="time"].v2-admin-config-input {
   --text-faint: #8a8a93;
   --text-ghost: #b0b0b8;
 
-  --accent:      #cf4a43;
-  --accent-2:    #d65a52;
-  --accent-weak: rgba(207,74,67,0.10);
-  --accent-line: rgba(207,74,67,0.22);
+  /* V1 Redesign Phase 1b: accent/crit/status colors + shadow scale retired
+     onto canonical :root tokens (one brand accent, one shadow scale, one
+     semantic-status palette app-wide). --c-violet/--c-teal removed —
+     grep-confirmed zero consumers anywhere in this file (dead, unlike
+     engineering.css where the same two are live category tones). --c-neutral
+     is KEPT (unlike violet/teal) even though it has zero consumers nested
+     under .v2-analytics-claude directly: js/workspace/workspace-styles.js's
+     `.wsp-root` is deliberately mounted *inside* this scope (its own header
+     comment says so) and reads var(--c-neutral) for 3 live elements (status
+     dot, severity-row bar, an icon+tint) — removing it would silently break
+     those on the Home workspace. --radius/--radius-sm/--radius-lg are
+     deliberately UNCHANGED: several selectors in this scope
+     (.an-export-list, .ec-stat, .ec-card, .ec-history, and .wsp-card via the
+     same cross-scope mounting) consume var(--radius-sm) with no fallback,
+     and no canonical :root --radius-* exists yet (see platform.css:140-150)
+     — removing this block would leave them with no radius at all. */
+  --accent-2:    color-mix(in srgb, var(--accent) 88%, white);
+  --accent-weak: var(--accent-subtle);
+  --accent-line: color-mix(in srgb, var(--accent) 22%, transparent);
 
-  --crit:      #cf4a43;
-  --crit-weak: rgba(207,74,67,0.10);
-  --crit-line: rgba(207,74,67,0.22);
+  --crit:      var(--danger);
+  --crit-weak: var(--danger-bg);
+  --crit-line: color-mix(in srgb, var(--danger) 22%, transparent);
 
-  --c-green:  #2f9e6b;
-  --c-blue:   #3f72d6;
-  --c-amber:  #c4892c;
-  --c-violet: #8b6fd1;
-  --c-teal:   #2f9ea4;
-  --c-neutral:#8c8c95;
-
-  --shadow-sm: 0 1px 2px rgba(16,17,26,0.025);
-  --shadow-md: 0 1px 3px rgba(16,17,26,0.03), 0 10px 24px -16px rgba(16,17,26,0.09);
-  --shadow-lg: 0 4px 12px rgba(16,17,26,0.05), 0 26px 52px -26px rgba(16,17,26,0.16);
+  --c-green:  var(--ok);
+  --c-blue:   var(--info);
+  --c-amber:  var(--warn);
+  --c-neutral: #8c8c95;
 
   --radius:    16px;
   --radius-sm: 11px;
@@ -11540,25 +11893,18 @@ input[type="time"].v2-admin-config-input {
   --text-faint: #6f6f78;
   --text-ghost: #4c4c54;
 
-  --accent:      #e0574f;
-  --accent-2:    #ec6a62;
-  --accent-weak: rgba(224,87,79,0.15);
-  --accent-line: rgba(224,87,79,0.32);
+  --accent-2:    color-mix(in srgb, var(--accent) 88%, white);
+  --accent-weak: var(--accent-subtle);
+  --accent-line: color-mix(in srgb, var(--accent) 32%, transparent);
 
-  --crit:      #e0574f;
-  --crit-weak: rgba(224,87,79,0.15);
-  --crit-line: rgba(224,87,79,0.32);
+  --crit:      var(--danger);
+  --crit-weak: var(--danger-bg);
+  --crit-line: color-mix(in srgb, var(--danger) 32%, transparent);
 
-  --c-green:  #3fb27f;
-  --c-blue:   #5a8cef;
-  --c-amber:  #d8a23e;
-  --c-violet: #a583e0;
-  --c-teal:   #46b9bd;
-  --c-neutral:#7d7d86;
-
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.4);
-  --shadow-md: 0 2px 8px rgba(0,0,0,0.4), 0 18px 40px -18px rgba(0,0,0,0.8);
-  --shadow-lg: 0 8px 24px rgba(0,0,0,0.5), 0 34px 64px -22px rgba(0,0,0,0.85);
+  --c-green:  var(--ok);
+  --c-blue:   var(--info);
+  --c-amber:  var(--warn);
+  --c-neutral: #7d7d86;
 }
 
 /* ── Section scaffold (de-boxed) ────────────────────────────────────────── */
@@ -13191,5 +13537,246 @@ body.v2-shell-active .block-status-badge {
   .ipm-add-btn { margin-left: 0; }
   .ipm-grant-row { flex-wrap: wrap; }
   .ipm-picker-body { max-height: 260px; }
+}
+
+/* ============================================================
+   v1.30.9.13 — Phase 1 App Shell Rebuild (Claude Design mockup)
+
+   Restyles the EXISTING .v2-rail/.v2-panel/.v2-topbar/.bottom-nav shell
+   (initV2Rail()/initV2Panel() in js/app.js, live since v1.14.0) to match
+   the actual Claude Design App Shell mockup. Deliberately positioned as
+   the LAST cascade layer in this file so it wins over every earlier
+   .v2-* rule above without needing !important — same technique this file
+   already uses (see the v1.16.4.7 / v1.18.3 HOTFIX blocks earlier).
+
+   No mechanism change: setRailModule(), canAccessModule(), the mobile
+   DOM-relocation in syncV2ResponsiveNavReuse(), and bottom-nav-registry.js
+   are all untouched. This block is presentation-only, plus the CSS half
+   of the net-new tablet tap-to-reveal panel overlay (JS half lives next
+   to setRailModule() in js/app.js).
+   ============================================================ */
+
+/* ── Rail: theme-aware surface (was permanently-dark var(--side-bg)) ── */
+.v2-rail {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+
+.v2-rail-crest:hover,
+.v2-rail-crest:focus-visible {
+  background: var(--hover);
+}
+
+.v2-rail-item {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  color: var(--muted);
+}
+.v2-rail-item:hover,
+.v2-rail-item:focus-visible {
+  background: var(--hover);
+  color: var(--text);
+}
+
+/* Active state = accent-subtle fill + accent icon (mockup) — replaces the
+   translucent-dark-tint + left-edge-bar language the rail used while it
+   was permanently dark. */
+.v2-rail-item--active,
+.v2-rail-item--active:hover,
+.v2-rail-item--active:focus-visible {
+  color: var(--accent);
+  background: var(--accent-subtle);
+}
+.v2-rail-item--active::before {
+  display: none;
+}
+
+.v2-rail-tooltip,
+.v2-rail-avatar-initials {
+  font-family: var(--font-sans);
+}
+
+/* Pin the last visible module (Konfigurasi/gear) to the rail's bottom —
+   matches the mockup's rail composition without reordering the DOM. */
+#v2RailKonfigurasi {
+  margin-top: auto;
+}
+
+.v2-rail-footer-btn {
+  color: var(--muted);
+}
+.v2-rail-footer-btn:hover,
+.v2-rail-footer-btn:focus-visible {
+  background: var(--hover);
+  color: var(--text);
+}
+
+/* ── Panel: surface-2 (recessed vs. rail/content surface), accent-subtle
+   active pill instead of the translucent left-bar treatment ── */
+.v2-panel {
+  background: var(--surface-2);
+  border-right: 1px solid var(--border);
+}
+
+.v2-panel-title {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.v2-panel-subtitle,
+.v2-panel-section,
+.v2-panel-btn,
+.v2-panel-footer-btn {
+  font-family: var(--font-sans);
+}
+
+.v2-panel-nav-item {
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-family: var(--font-sans);
+  font-weight: 500;
+  color: var(--text);
+}
+.v2-panel-nav-item:hover,
+.v2-panel-nav-item:focus-visible {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.v2-panel-nav-item--active {
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font-weight: 700;
+}
+.v2-panel-nav-item--active::before {
+  display: none;
+}
+
+.v2-panel-nav-icon {
+  opacity: 0.7;
+}
+.v2-panel-nav-item--active .v2-panel-nav-icon {
+  opacity: 1;
+}
+
+/* ── Tablet 768–1024px: section panel becomes a tap-to-reveal overlay ──
+   Net-new — the panel used to be permanently visible from 768px up with
+   no tablet-specific state at all. Desktop (≥1024px) is explicitly
+   cancelled below so nothing here affects the persistent desktop panel. */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .v2-panel {
+    transform: translateX(-100%);
+    transition: transform var(--motion-sheet, 260ms) cubic-bezier(.16,1,.3,1);
+    box-shadow: var(--shadow-lg);
+  }
+  .v2-panel--tablet-open {
+    transform: translateX(0);
+  }
+  .v2-panel-tablet-backdrop {
+    position: fixed;
+    inset: 0;
+    left: 64px;
+    background: var(--scrim);
+    z-index: 114; /* below the rail (120) and panel (115 owns its own layer) */
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--motion-sheet, 260ms) ease;
+  }
+  .v2-panel--tablet-open + .v2-panel-tablet-backdrop,
+  .v2-panel--tablet-open ~ .v2-panel-tablet-backdrop {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+@media (min-width: 1024px) {
+  .v2-panel-tablet-backdrop {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .v2-panel {
+    transition: none;
+  }
+}
+
+/* ── Topbar: token/font alignment inside the existing flex-order skeleton —
+   no structural change to any of the media queries already tuning it ── */
+.v2-topbar {
+  background: var(--surface);
+}
+#v2TopbarCrumb,
+.v2-topbar-title {
+  font-family: var(--font-display);
+}
+.v2-topbar-label {
+  font-family: var(--font-sans);
+  color: var(--accent);
+}
+.v2-topbar-search,
+.v2-topbar-search-input,
+.v2-topbar-user-role {
+  font-family: var(--font-sans);
+}
+
+/* ── Mobile drawer: align to the same rebuilt token language. The relocation
+   mechanism (syncV2ResponsiveNavReuse) and the drawer's own composition
+   (panel-expanded → rail-as-"Bottom Modules" → Logout) are unchanged. ── */
+.v2-panel--mobile-drawer .v2-panel-nav-item--active {
+  background: var(--accent-subtle);
+}
+.v2-rail--mobile-drawer .v2-rail-modules::before,
+.v2-panel--mobile-drawer .v2-panel-section {
+  font-family: var(--font-sans);
+}
+
+/* ============================================================
+   v1.30.9.15 — Phase 3 App Shell/Board: Assignment detail becomes a
+   SIDE DRAWER (mockup: "Sarpras Assignment Board.dc.html"), not the
+   centered-dialog pattern used for short decisions elsewhere.
+
+   Scoped to #modalDetail ONLY — every other .modal-box/.modal-overlay in
+   the app (Comment Thread, Odometer, Cancel confirm, etc.) is unaffected;
+   the mockup only asks for the flagship detail surface to be a drawer.
+   The existing show/hide mechanism (js/modal.js toggling
+   #modalDetail.style.display) is untouched — this is presentation-only,
+   same technique as every other Phase in this redesign. Width is 440px
+   (min(440px,92vw)), wider than the mockup's illustrative 300px, because
+   the real detail surface has six real accordion sections (Ringkasan/
+   Detail Tambahan/Operasional/Odometer/WhatsApp/Reimbursement) the
+   mockup's minimal example never had to fit — reuses the exact width
+   convention already established by the app's own "ONE drawer" component
+   (.exec-drawer, width:min(440px,92vw)) rather than inventing a second one.
+   Mobile is intentionally NOT touched here: .modal-box already becomes a
+   bottom sheet at mobile widths (existing slideUpMobile rule in
+   style.css) — that IS this app's mobile drawer equivalent already.
+   ============================================================ */
+@media (min-width: 768px) {
+  #modalDetail.modal-overlay {
+    justify-content: flex-end;
+    padding: 0;
+    background: var(--scrim, rgba(0,0,0,.36));
+    animation: none; /* the panel's own slide is the entrance; no separate overlay fade needed */
+  }
+  #modalDetail .modal-box.modal-detail-box {
+    width: min(440px, 92vw);
+    max-width: min(440px, 92vw);
+    height: 100%;
+    max-height: 100%;
+    margin: 0;
+    border-radius: 0;
+    animation: v2AssignDrawerIn var(--motion-sheet, 260ms) cubic-bezier(.16,1,.3,1);
+  }
+}
+@keyframes v2AssignDrawerIn {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #modalDetail .modal-box.modal-detail-box { animation: none; }
 }
 

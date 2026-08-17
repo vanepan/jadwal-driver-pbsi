@@ -14,13 +14,18 @@
   --hover:rgba(17,17,26,.03);
   --border:rgba(17,18,28,.055); --border-strong:rgba(17,18,28,.10); --border-faint:rgba(17,18,28,.035);
   --text:#18181d; --text-dim:#5b5b64; --text-faint:#8a8a93; --text-ghost:#b0b0b8;
-  --accent:#cf4a43; --accent-2:#d65a52; --accent-weak:rgba(207,74,67,.10); --accent-line:rgba(207,74,67,.22);
-  --crit:#cf4a43; --crit-weak:rgba(207,74,67,.10);
-  --c-green:#2f9e6b; --c-blue:#3f72d6; --c-amber:#c4892c; --c-violet:#8b6fd1; --c-teal:#2f9ea4; --c-neutral:#8c8c95;
-  --c-green-weak:rgba(47,158,107,.12); --c-blue-weak:rgba(63,114,214,.12); --c-amber-weak:rgba(196,137,44,.13);
+  /* V1 Redesign Phase 1b: --accent/--crit/--c-green/--c-blue/--c-amber/--shadow-*
+     retired from local literals onto the canonical platform.css tokens (one
+     brand accent, one shadow scale, one semantic-status palette app-wide).
+     --c-violet/--c-teal/--c-neutral stay local: they're live here as pure
+     category-tone colors (category tiles, feed/timeline event types) with no
+     canonical equivalent yet — promoting them is Phase 2 (component library)
+     work, not a mechanical rename. */
+  --accent-2:color-mix(in srgb, var(--accent) 88%, white); --accent-weak:var(--accent-subtle); --accent-line:color-mix(in srgb, var(--accent) 22%, transparent);
+  --crit:var(--danger); --crit-weak:var(--danger-bg);
+  --c-green:var(--ok); --c-blue:var(--info); --c-amber:var(--warn); --c-violet:#8b6fd1; --c-teal:#2f9ea4; --c-neutral:#8c8c95;
+  --c-green-weak:var(--ok-bg); --c-blue-weak:var(--info-bg); --c-amber-weak:var(--warn-bg);
   --c-violet-weak:rgba(139,111,209,.12); --c-teal-weak:rgba(47,158,164,.12); --c-neutral-weak:rgba(140,140,149,.12);
-  --shadow-sm:0 1px 2px rgba(16,17,26,.03); --shadow-md:0 1px 3px rgba(16,17,26,.03),0 10px 24px -16px rgba(16,17,26,.09);
-  --shadow-lg:0 4px 12px rgba(16,17,26,.05),0 26px 52px -26px rgba(16,17,26,.16);
   --scrim:rgba(16,17,26,.42);
   --font-display:'Archivo',system-ui,-apple-system,sans-serif;
   --font-sans:'Manrope',system-ui,-apple-system,sans-serif;
@@ -38,13 +43,11 @@
   --hover:rgba(255,255,255,.04);
   --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.15); --border-faint:rgba(255,255,255,.05);
   --text:#f3f3f5; --text-dim:#a4a4ac; --text-faint:#6f6f78; --text-ghost:#4c4c54;
-  --accent:#e0574f; --accent-2:#ec6a62; --accent-weak:rgba(224,87,79,.15); --accent-line:rgba(224,87,79,.32);
-  --crit:#e0574f; --crit-weak:rgba(224,87,79,.15);
-  --c-green:#3fb27f; --c-blue:#5a8cef; --c-amber:#d8a23e; --c-violet:#a583e0; --c-teal:#46b9bd; --c-neutral:#7d7d86;
-  --c-green-weak:rgba(63,178,127,.15); --c-blue-weak:rgba(90,140,239,.15); --c-amber-weak:rgba(216,162,62,.16);
+  --accent-2:color-mix(in srgb, var(--accent) 88%, white); --accent-weak:var(--accent-subtle); --accent-line:color-mix(in srgb, var(--accent) 32%, transparent);
+  --crit:var(--danger); --crit-weak:var(--danger-bg);
+  --c-green:var(--ok); --c-blue:var(--info); --c-amber:var(--warn); --c-violet:#a583e0; --c-teal:#46b9bd; --c-neutral:#7d7d86;
+  --c-green-weak:var(--ok-bg); --c-blue-weak:var(--info-bg); --c-amber-weak:var(--warn-bg);
   --c-violet-weak:rgba(165,131,224,.15); --c-teal-weak:rgba(70,185,189,.15); --c-neutral-weak:rgba(125,125,134,.15);
-  --shadow-sm:0 1px 2px rgba(0,0,0,.4); --shadow-md:0 2px 8px rgba(0,0,0,.4),0 18px 40px -18px rgba(0,0,0,.8);
-  --shadow-lg:0 8px 24px rgba(0,0,0,.5),0 34px 64px -22px rgba(0,0,0,.85);
   --scrim:rgba(0,0,0,.62);
 }
 
@@ -84,6 +87,42 @@
 .eng-grid.-lead{grid-template-columns:1.5fr 1fr;} .eng-grid.-2{grid-template-columns:1fr 1fr;} .eng-grid.-3{grid-template-columns:repeat(3,1fr);}
 .eng-stack{display:flex;flex-direction:column;gap:16px;}
 .eng-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;}
+
+/* V1 Redesign Phase 8 (v1.30.9.20) — genuine 5-column kanban (Open/Joined/
+   In progress/Postponed/Verify), replacing the single flowing card grid
+   above for the Work Queue screen specifically (.eng-card-grid itself is
+   untouched — still used elsewhere, e.g. inside a single column's body).
+   Horizontal-scroll on narrow widths rather than a pill-filtered single
+   list: preserves full at-a-glance visibility of every column without a
+   new filter-state interaction the mockup's mobile treatment would need
+   (a deliberate, disclosed scope simplification for this phase). */
+.eng-kanban{display:flex;gap:14px;align-items:flex-start;overflow-x:auto;padding-bottom:6px;}
+.eng-kanban-col{flex:0 0 300px;display:flex;flex-direction:column;gap:10px;min-width:0;}
+.eng-kanban-col-head{display:flex;align-items:center;gap:8px;padding:0 2px;}
+.eng-kanban-dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--text-faint);}
+.eng-kanban-dot[data-col="joined"]{background:var(--c-blue);}
+.eng-kanban-dot[data-col="in_progress"]{background:var(--accent);}
+.eng-kanban-dot[data-col="postponed"]{background:var(--c-amber);}
+.eng-kanban-dot[data-col="verify"]{background:var(--c-green);}
+.eng-kanban-col-label{font-family:var(--font-sans);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-dim);}
+.eng-kanban-col-count{font-family:var(--font-mono);font-size:11px;color:var(--text-faint);margin-left:auto;}
+.eng-kanban-col-body{display:flex;flex-direction:column;gap:10px;}
+.eng-kanban-col-body .eng-card{width:100%;}
+.eng-kanban-col-empty{font-size:12px;color:var(--text-faint);padding:14px 0;text-align:center;border:1px dashed var(--border);border-radius:12px;}
+@media (max-width:767px){
+  .eng-kanban-col{flex-basis:78vw;}
+}
+
+/* V1 Redesign Phase 8 (v1.30.9.20) — numbered lifecycle stepper, drawer-only.
+   Deliberately its own shape (numbered circles), not a reskin of any
+   Assignment Board component, per the mockup's own "visually distinct...
+   same tokens, different shape" requirement. */
+.eng-stepper{display:flex;gap:0;padding:14px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin-bottom:16px;}
+.eng-stepper-step{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;}
+.eng-stepper-num{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--font-sans);font-weight:700;font-size:11px;background:var(--surface-2,var(--border));color:var(--text-faint);}
+.eng-stepper-step[data-reached="true"] .eng-stepper-num{background:var(--accent);color:#fff;}
+.eng-stepper-label{font-family:var(--font-sans);font-weight:600;font-size:10px;color:var(--text-faint);text-align:center;}
+.eng-stepper-step[data-reached="true"] .eng-stepper-label{color:var(--text);}
 .eng-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-sm);}
 .eng-card.-pad{padding:24px;}
 .eng-card-head{margin-bottom:14px;} .eng-card-h-title{font-family:var(--font-display);font-weight:800;font-size:15px;letter-spacing:-.01em;}

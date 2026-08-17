@@ -100,6 +100,31 @@ const CSS = `
 .exec-vad-bd__fill[data-tone="danger"]{background:var(--danger,#a8292f);}
 .exec-vad-bd__pts{flex:0 0 2.7rem;text-align:right;font-size:.84rem;font-weight:700;
   font-variant-numeric:tabular-nums;color:var(--text,#1a1917);}
+
+/* V1 Redesign Phase 4 (v1.30.9.16, "Sarpras Vehicle Fleet.dc.html"): groups
+   the sections above into the mockup's exact 5-tab set (Health/Compliance/
+   Maintenance/Reminders/Timeline) via the CSS checked-radio pattern — no new
+   JS event wiring, so buildDrawerBody() stays a pure string builder exactly
+   like every section function in this file already is. Sections themselves
+   are untouched; only how their output strings are grouped changes. Rules
+   are written for up to 6 tabs (headroom beyond the current fixed 5); only
+   one drawer instance exists at a time (openExecutiveDrawer always closes
+   the previous one first), so the fixed #vadtab-N ids never collide. */
+.vad-tab-input{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none;}
+.vad-tabnav{display:flex;gap:2px;overflow-x:auto;padding:2px;margin:0 0 .9rem;
+  background:var(--surface-2,#fbfaf8);border:1px solid var(--border,#e8e6e2);border-radius:10px;}
+.vad-tabnav-label{flex:1 1 auto;text-align:center;padding:7px 10px;border-radius:8px;
+  font-size:.76rem;font-weight:600;color:var(--muted,#5b5953);cursor:pointer;white-space:nowrap;
+  transition:background-color .12s ease,color .12s ease;}
+.vad-tabnav-label:hover{color:var(--text,#1a1917);}
+.vad-tabpanel{display:none;}
+${[1, 2, 3, 4, 5, 6].map(n => `#vadtab-${n}:checked ~ .vad-tabpanel[data-panel="${n}"]{display:block;}
+#vadtab-${n}:checked ~ .vad-tabnav .vad-tabnav-label[for="vadtab-${n}"]{background:var(--accent-subtle,#f5e4e1);color:var(--accent,#a8292f);}`).join('\n')}
+/* Prediction/recommendation/what-if — ALWAYS visible below the tabs, never
+   gated behind one (mockup: "stay presentational... always visible without
+   a tab switch"). Same content as before this phase; only its placement
+   relative to the tab strip changed (was a 6th conditional tab). */
+.vad-below-tabs{margin-top:1.1rem;padding-top:1.1rem;border-top:1px solid var(--border,#e8e6e2);}
 `;
 
 function ensureStyles() {
@@ -530,29 +555,60 @@ function buildFooter(asset, opts) {
   return footer;
 }
 
+/**
+ * Groups pre-rendered section-string groups into the CSS checked-radio tab
+ * pattern declared in CSS above. `groups` is an ordered array of
+ * {label, content} — content is one or more already-built section strings
+ * concatenated; nothing about the sections themselves changes here.
+ */
+function buildTabGroup(groups) {
+  const inputs = groups.map((g, i) =>
+    `<input type="radio" name="vadtab" id="vadtab-${i + 1}" class="vad-tab-input"${i === 0 ? ' checked' : ''}>`
+  ).join('');
+  const nav = `<nav class="vad-tabnav" role="tablist">` +
+    groups.map((g, i) => `<label for="vadtab-${i + 1}" class="vad-tabnav-label" role="tab">${esc(g.label)}</label>`).join('') +
+    `</nav>`;
+  const panels = groups.map((g, i) =>
+    `<div class="vad-tabpanel" data-panel="${i + 1}" role="tabpanel">${g.content}</div>`
+  ).join('');
+  return inputs + nav + panels;
+}
+
 /** Compose the drawer body sections — shared by open + in-place refresh so
- *  they can never drift apart. */
+ *  they can never drift apart.
+ *  V1 Redesign Phase 4 (v1.30.9.16) — the ACTUAL mockup ("Sarpras Vehicle
+ *  Fleet.dc.html"), not the prose implementation map, specifies an exact
+ *  5-tab set (Health/Compliance/Maintenance/Reminders/Timeline) with
+ *  prediction/recommendation/what-if simulation ALWAYS visible beneath the
+ *  tabs, never gated behind one. The prior pass (grouped as Ringkasan/
+ *  Operasional/Legal & Asuransi/Perawatan/Riwayat + a 6th conditional
+ *  Prediksi tab) was inferred from the prose map before the real mockup had
+ *  been read — this corrects both the tab set and the always-visible
+ *  requirement. Same sections, same content functions, same "omitted
+ *  entirely when absent" presence rule for prediction/simulation — only the
+ *  grouping and the tab-vs-always-visible placement change.
+ *  The hero stays above the tabs — it's the always-visible identity/score
+ *  header, not tab content. */
 function buildDrawerBody(asset, opts) {
-  return [
-    heroBlock(asset),
-    overviewSection(asset),
-    // Phase 7 (v1.29.18) — Reminders sits right after Overview: "what deserves
-    // attention" is high-value information, same placement rationale as the
-    // Prediction/Simulation sections directly below it.
-    remindersSection(asset),
-    // v1.19.5 — Prediction summary sits high (right after health) when the caller
-    // supplies a certified per-vehicle projection; omitted entirely otherwise.
-    (opts.prediction && typeof opts.prediction === 'object') ? predictionSection(opts.prediction) : '',
-    // v1.19.8 — the active scenario simulation's Current-vs-Simulation result for
-    // this vehicle (only when a simulation is running); read-only, extends only.
-    (opts.simulation && typeof opts.simulation === 'object') ? simulationDrawerSections(opts.simulation, asset.id) : '',
-    operationalSection(asset),
-    registrationSection(asset),
-    taxSection(asset),
-    insuranceSection(asset),
-    maintenanceSection(asset),
-    historySection(asset),
-  ].join('');
+  const hasPrediction = opts.prediction && typeof opts.prediction === 'object';
+  const hasSimulation = opts.simulation && typeof opts.simulation === 'object';
+
+  const tabs = [
+    { label: 'Health',      content: overviewSection(asset) + operationalSection(asset) + registrationSection(asset) },
+    { label: 'Compliance',  content: taxSection(asset) + insuranceSection(asset) },
+    { label: 'Maintenance', content: maintenanceSection(asset) },
+    { label: 'Reminders',   content: remindersSection(asset) },
+    { label: 'Timeline',    content: historySection(asset) },
+  ];
+
+  const alwaysVisible = (hasPrediction || hasSimulation)
+    ? `<div class="vad-below-tabs">${
+        (hasPrediction ? predictionSection(opts.prediction) : '')
+        + (hasSimulation ? simulationDrawerSections(opts.simulation, asset.id) : '')
+      }</div>`
+    : '';
+
+  return heroBlock(asset) + buildTabGroup(tabs) + alwaysVisible;
 }
 
 /* ── Public API (signature unchanged) ─────────────────────────────────────── */

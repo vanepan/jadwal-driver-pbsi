@@ -142,6 +142,32 @@ const CAT_FILTERS = [
  * @param {Array} assignments  all assignments (from store)
  * @param {Object} ctx { role, me, canEng, now, filters }
  */
+/**
+ * V1 Redesign Phase 8 (v1.30.9.20) — "Sarpras Engineering.dc.html" specifies
+ * a genuine 5-column kanban (Open/Joined/In progress/Postponed/Verify), not
+ * the single flowing card grid this screen actually was (confirmed via
+ * direct inspection — no kanban/column concept existed anywhere in this
+ * file before this change; the "kanban-style lifecycle" in prior project
+ * notes referred to the join->start->finish/postpone->verify STATE MACHINE,
+ * not a literal multi-column board layout). Pure, read-only grouping of the
+ * exact same STATUS/participants fields renderAssignmentCard() already
+ * reads — no new status, no new transition, no new Firebase field. "Joined"
+ * has no dedicated STATUS value (the enum only has AVAILABLE before work
+ * starts); it's derived the same way opsContextLine()/cardAction() above
+ * already distinguish "nobody's touched this yet" from "someone's on it" —
+ * AVAILABLE + activeParticipants().length > 0. CONTINUE_TOMORROW folds into
+ * "In progress" (still an active, in-flight assignment merely paused
+ * overnight — a scheduling pause, not the same kind of block POSTPONED
+ * represents) rather than getting a 6th column the mockup doesn't have.
+ */
+const KANBAN_COLUMNS = [
+  { id: 'open', label: 'Open', match: (a) => a.status === STATUS.AVAILABLE && activeParticipants(a).length === 0 },
+  { id: 'joined', label: 'Joined', match: (a) => a.status === STATUS.AVAILABLE && activeParticipants(a).length > 0 },
+  { id: 'in_progress', label: 'In Progress', match: (a) => a.status === STATUS.IN_PROGRESS || a.status === STATUS.CONTINUE_TOMORROW },
+  { id: 'postponed', label: 'Postponed', match: (a) => a.status === STATUS.POSTPONED },
+  { id: 'verify', label: 'Verify', match: (a) => a.status === STATUS.WAITING_VERIFICATION },
+];
+
 export function renderQueue(assignments, ctx) {
   const f = ctx.filters || {};
   const catFilter = f.cat || 'all';
@@ -154,6 +180,28 @@ export function renderQueue(assignments, ctx) {
 
   const chips = CAT_FILTERS.map(([k, l]) => `<button class="eng-chip" data-on="${catFilter === k}" data-act="eng-filter-cat" data-val="${k}">${esc(l)}</button>`).join('');
 
+  const columns = KANBAN_COLUMNS.map((col) => ({ ...col, items: rows.filter(col.match) }));
+  // Every row must land in exactly one column; anything unmatched (should
+  // never happen given the status set above, but a silent card is worse
+  // than a visible one) falls into Open rather than disappearing.
+  const bucketed = new Set(columns.flatMap((c) => c.items.map((a) => a.id)));
+  const stray = rows.filter((a) => !bucketed.has(a.id));
+  if (stray.length) columns[0].items = columns[0].items.concat(stray);
+
+  const kanbanHtml = `<div class="eng-kanban">${columns.map((col) => `
+    <div class="eng-kanban-col">
+      <div class="eng-kanban-col-head">
+        <span class="eng-kanban-dot" data-col="${col.id}"></span>
+        <span class="eng-kanban-col-label">${esc(col.label)}</span>
+        <span class="eng-kanban-col-count">${col.items.length}</span>
+      </div>
+      <div class="eng-kanban-col-body">${
+        col.items.length
+          ? col.items.map((a) => renderAssignmentCard(a, ctx)).join('')
+          : `<div class="eng-kanban-col-empty">Kosong</div>`
+      }</div>
+    </div>`).join('')}</div>`;
+
   return `<div class="eng-screen">
     ${pageHeader('ENGINEERING OPERATIONS', 'Antrean Penugasan', 'Semua penugasan terbuka diurutkan otomatis menurut urgensi operasional — yang paling mendesak di atas.')}
     <div class="eng-filterbar">
@@ -164,7 +212,7 @@ export function renderQueue(assignments, ctx) {
       ${sectionHeader('ANTREAN', 'Urutan Operasional', `${rows.length} penugasan aktif`)}
       ${rows.length === 0
         ? emptyState('Tidak ada penugasan', 'Tidak ada penugasan pada filter ini.')
-        : `<div class="eng-card-grid">${rows.map((a) => renderAssignmentCard(a, ctx)).join('')}</div>`}
+        : kanbanHtml}
     </div>
   </div>`;
 }

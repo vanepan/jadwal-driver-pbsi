@@ -191,6 +191,14 @@ export async function updateUser(userData) {
   const existing = await getUserByUsername(userData.username);
   if (!existing) throw new Error('User tidak ditemukan');
 
+  // v1.30.9.8 — Post-deploy Finding A: archived users must remain immutable.
+  // This is the actual data-layer guarantee — admin.js's "Lihat" (view-only)
+  // UI mode is the presentation of it, not the enforcement of it. Restore
+  // via restoreUser() first if the record genuinely needs to change.
+  if (existing.archived === true) {
+    throw new Error('User yang diarsipkan tidak dapat diubah. Pulihkan terlebih dahulu.');
+  }
+
   const username = normalizeUsername(existing.username);
   const nextRole = isValidRole(userData.role) ? userData.role : existing.role;
   const nextActive = typeof userData.active === 'boolean' ? userData.active : existing.active;

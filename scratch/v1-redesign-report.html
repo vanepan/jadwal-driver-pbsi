@@ -1,0 +1,618 @@
+<title>V1 Redesign Implementation — Session Report</title>
+<style>
+  :root {
+    --canvas: #F5F5F3;
+    --surface: #FFFFFF;
+    --surface-2: #FBFAF8;
+    --border: #E8E6E2;
+    --border-strong: #DAD7D2;
+    --text: #1A1917;
+    --muted: #5B5953;
+    --faint: #94918B;
+    --accent: #A8292F;
+    --accent-subtle: #F5E4E1;
+    --on-accent: #FFFFFF;
+    --ok: #2F7D62;
+    --ok-bg: #E7F2EC;
+    --warn: #946420;
+    --warn-bg: #F6EEDB;
+    --danger: #A8292F;
+    --danger-bg: #FAEBEB;
+    --info: #3B5BA9;
+    --info-bg: #EDF1FB;
+    --shadow-sm: 0 1px 2px rgba(28,26,23,.06);
+    --shadow-md: 0 4px 16px -4px rgba(28,26,23,.12);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --canvas: #17181C;
+      --surface: #1F2025;
+      --surface-2: #202229;
+      --border: #31333C;
+      --border-strong: #3E414C;
+      --text: #E6E4DF;
+      --muted: #A6A39B;
+      --faint: #75736E;
+      --accent: #C45A5F;
+      --accent-subtle: #3A2226;
+      --on-accent: #FFFFFF;
+      --ok: #72AF8F;
+      --ok-bg: #1F2C27;
+      --warn: #C7A05B;
+      --warn-bg: #2C2719;
+      --danger: #D6817C;
+      --danger-bg: #2E2120;
+      --info: #8AA0CF;
+      --info-bg: #242B39;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
+      --shadow-md: 0 6px 22px -8px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="dark"] {
+    --canvas: #17181C;
+    --surface: #1F2025;
+    --surface-2: #202229;
+    --border: #31333C;
+    --border-strong: #3E414C;
+    --text: #E6E4DF;
+    --muted: #A6A39B;
+    --faint: #75736E;
+    --accent: #C45A5F;
+    --accent-subtle: #3A2226;
+    --on-accent: #FFFFFF;
+    --ok: #72AF8F;
+    --ok-bg: #1F2C27;
+    --warn: #C7A05B;
+    --warn-bg: #2C2719;
+    --danger: #D6817C;
+    --danger-bg: #2E2120;
+    --info: #8AA0CF;
+    --info-bg: #242B39;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
+    --shadow-md: 0 6px 22px -8px rgba(0,0,0,.5);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--canvas);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+  .display { font-family: "Segoe UI Semibold", -apple-system, system-ui, sans-serif; font-weight: 800; letter-spacing: -0.01em; }
+  .mono { font-family: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Consolas, monospace; }
+  h1, h2, h3 { text-wrap: balance; }
+
+  .wrap { max-width: 860px; margin: 0 auto; padding: 0 24px 100px; }
+
+  /* ── Masthead ── */
+  .masthead {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 24px;
+    background: color-mix(in srgb, var(--canvas) 88%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+  }
+  .masthead-id { display: flex; flex-direction: column; gap: 1px; }
+  .masthead-tag { font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
+  .masthead-title { font-size: 15px; font-weight: 800; }
+  .theme-btn {
+    height: 32px; padding: 0 14px; border-radius: 16px; border: 1px solid var(--border-strong);
+    background: var(--surface); color: var(--text); font-size: 12px; font-weight: 700; cursor: pointer;
+  }
+  .theme-btn:hover { background: var(--surface-2); }
+
+  /* ── Hero ── */
+  .hero { padding: 56px 0 40px; border-bottom: 1px solid var(--border); }
+  .hero-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); margin-bottom: 14px; }
+  .hero h1 { font-size: clamp(28px, 4.4vw, 40px); line-height: 1.12; margin: 0 0 16px; }
+  .hero p { font-size: 16px; color: var(--muted); max-width: 62ch; margin: 0; }
+  .hero-meta { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 28px; font-size: 12.5px; color: var(--faint); }
+  .hero-meta b { color: var(--text); font-weight: 700; }
+
+  /* ── Stat strip ── */
+  .stat-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; margin: 32px 0; }
+  .stat { background: var(--surface); padding: 18px 16px; }
+  .stat-val { font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat-label { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+
+  /* ── Section scaffold ── */
+  section.block { padding: 44px 0; border-bottom: 1px solid var(--border); }
+  section.block:last-of-type { border-bottom: none; }
+  .block-eyebrow { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .block-eyebrow .num { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 11px; font-weight: 700; color: var(--accent); }
+  .block-eyebrow .tag { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+  .block h2 { font-size: 22px; margin: 0 0 14px; }
+  .block > p.lede { color: var(--muted); max-width: 68ch; margin: 0 0 20px; }
+
+  /* ── Status pill ── */
+  .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; padding: 3px 10px 3px 8px; border-radius: 20px; white-space: nowrap; line-height: 1.4; }
+  .pill::before { content: ''; width: 6px; height: 6px; border-radius: 50%; }
+  .pill--done { background: var(--ok-bg); color: var(--ok); }
+  .pill--done::before { background: var(--ok); }
+  .pill--partial { background: var(--warn-bg); color: var(--warn); }
+  .pill--partial::before { background: var(--warn); }
+  .pill--skip { background: var(--surface-2); color: var(--faint); border: 1px solid var(--border); }
+  .pill--skip::before { background: var(--faint); }
+
+  /* ── Phase card ── */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px 22px; margin-bottom: 14px; }
+  .card h3 { font-size: 14px; margin: 0 0 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .card p { margin: 0 0 10px; color: var(--text); }
+  .card p:last-child { margin-bottom: 0; }
+  .card .fine { color: var(--muted); font-size: 13.5px; }
+  .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 13px; margin-top: 10px; }
+  .kv dt { color: var(--faint); font-weight: 700; text-transform: uppercase; font-size: 10.5px; letter-spacing: .06em; padding-top: 2px; }
+  .kv dd { margin: 0; }
+
+  code, .chip { font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 12.5px; }
+  code { background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; }
+
+  /* ── Diagram figure ── */
+  figure.diagram { margin: 20px 0 8px; }
+  figure.diagram svg { max-width: 100%; height: auto; display: block; }
+  figcaption { font-size: 12.5px; color: var(--muted); margin-top: 10px; text-align: center; }
+
+  /* ── Table ── */
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; min-width: 640px; }
+  th { text-align: left; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--surface-2); white-space: nowrap; }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: var(--surface-2); }
+  td.num { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+
+  /* ── Correction callout ── */
+  .correction { border-left: 3px solid var(--warn); background: var(--warn-bg); border-radius: 0 10px 10px 0; padding: 14px 18px; margin-bottom: 12px; }
+  .correction h4 { margin: 0 0 6px; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+  .correction p { margin: 0; font-size: 13.5px; color: var(--text); }
+
+  /* ── Deferred list ── */
+  .deferred-item { display: flex; gap: 14px; padding: 14px 0; border-top: 1px solid var(--border); }
+  .deferred-item:first-child { border-top: none; }
+  .deferred-item .what { flex: 0 0 200px; font-weight: 700; font-size: 13.5px; }
+  .deferred-item .why { color: var(--muted); font-size: 13.5px; }
+
+  footer { padding: 40px 0 0; color: var(--faint); font-size: 12px; }
+</style>
+
+<div class="masthead">
+  <div class="masthead-id">
+    <span class="masthead-tag">Sarpras Operations · Engineering Log</span>
+    <span class="masthead-title display">V1 Redesign — Session Report</span>
+  </div>
+  <button class="theme-btn" id="themeBtn" type="button">Toggle theme</button>
+</div>
+
+<div class="wrap">
+
+  <div class="hero">
+    <div class="hero-eyebrow">Claude Design implementation · Sarpras V1 Redesign Implementation Map</div>
+    <h1 class="display">What shipped, what didn't, and why the line sits where it does</h1>
+    <p>A phase-by-phase account of implementing the "Sarpras V1 Redesign Implementation Map" design project against the live Sarpras Operations codebase, across three work passes: token unification, a shared component library, an app-shell retarget that turned into an app-wide dark-mode sweep, the Assignment Board's mobile List view and filter chips, a 5-tab restructure of the Vehicle detail drawer, and a systematic audit — re-verified a second time on request — of every remaining module against the design map's own per-module spec. Every change was grep-audited before touching a file and verified in a headless browser, in both themes, afterward.</p>
+    <div class="hero-meta">
+      <span><b>13</b> files changed</span>
+      <span><b>10 of 10</b> modules resolved (shipped, or audited and re-verified clean)</span>
+      <span><b>3</b> code mistakes + <b>2</b> report claims caught and corrected</span>
+      <span><b>0</b> business-logic files touched</span>
+    </div>
+  </div>
+
+  <div class="stat-strip">
+    <div class="stat"><div class="stat-val mono">129</div><div class="stat-label">legacy dark-mode-unsafe CSS sites fixed</div></div>
+    <div class="stat"><div class="stat-val mono">12</div><div class="stat-label">new shared components added</div></div>
+    <div class="stat"><div class="stat-val mono">1</div><div class="stat-label">mobile-only control found completely unreachable, fixed</div></div>
+    <div class="stat"><div class="stat-val mono">1</div><div class="stat-label">real feature gap found on re-audit — Settings/feature-flag UI</div></div>
+  </div>
+
+  <!-- ============ FLOW DIAGRAM ============ -->
+  <section class="block">
+    <div class="block-eyebrow"><span class="tag">How the work actually unfolded</span></div>
+    <h2>Two passes, and where the line sits now</h2>
+    <p class="lede">Pass 1 built the foundation and fixed the Assignment Board's two pre-vetted gaps. Pass 2 finished the Assignment Board's mobile parity and filter chips, restructured the Vehicle detail drawer into the design map's 5-tab shape, and audited every remaining module against its own spec — most were already compliant, one raised a genuine data-model question instead of a visual one.</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 820 620" role="img" aria-label="Flow diagram across three passes. Pass 1: Phase 1a Tokens feeds Phase 1b Retire Duplicates and Phase 2 Component Library; Phase 1b feeds Phase 3 Shell Retarget, which expands into Phase 3c App-wide Sweep; Phase 3b Home audited clean; Phase 4a Vehicle Fix feeds Phase 4b Title and Conflict Badge. Pass 2: Phase 4c Mobile List View and Filter Chips ships, feeding Phase 5 Vehicle Drawer 5-Tab Restructure, feeding Phase 6 Module Audit across Warehouse, Overtime, Petty Cash, Engineering, Analytics, Roles, Notifications, Settings. Pass 3 re-verified the audit and found Petty Cash's NOR draft state was already built as Test NOR, moving it above the line, while Settings' unified shell turned out to be genuinely missing. A dashed boundary separates shipped and audited-clean work from two remaining items: Settings shell, a real gap found on re-audit, and Warehouse's own navigation restructure, deliberately left alone.">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+        <g font-family="ui-monospace, 'SF Mono', Consolas, monospace" font-size="11" fill="currentColor">
+
+          <text x="20" y="16" font-size="10" font-weight="700" opacity="0.5" letter-spacing="1">PASS 1</text>
+
+          <!-- Foundation row -->
+          <rect x="20" y="22" width="150" height="52" rx="10" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="95" y="44" text-anchor="middle" font-weight="700">1a · Tokens</text>
+          <text x="95" y="60" text-anchor="middle" opacity="0.6">platform.css</text>
+
+          <line x1="170" y1="48" x2="222" y2="48" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow)"/>
+          <text x="196" y="40" text-anchor="middle" font-size="9.5" opacity="0.65">feeds</text>
+
+          <rect x="224" y="22" width="180" height="52" rx="10" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="314" y="44" text-anchor="middle" font-weight="700">1b · Retire Duplicates</text>
+          <text x="314" y="60" text-anchor="middle" opacity="0.6">5 module CSS files</text>
+
+          <line x1="404" y1="48" x2="456" y2="48" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow)"/>
+          <text x="430" y="40" text-anchor="middle" font-size="9.5" opacity="0.65">feeds</text>
+
+          <rect x="458" y="22" width="180" height="52" rx="10" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="548" y="44" text-anchor="middle" font-weight="700">2 · Component Library</text>
+          <text x="548" y="60" text-anchor="middle" opacity="0.6">12 new .p-* primitives</text>
+
+          <!-- down into shell -->
+          <line x1="314" y1="74" x2="314" y2="120" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+          <rect x="224" y="122" width="180" height="52" rx="10" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="314" y="144" text-anchor="middle" font-weight="700">3 · Shell Retarget</text>
+          <text x="314" y="160" text-anchor="middle" opacity="0.6">sidebar, header, badges</text>
+
+          <!-- branch to 3b Home, hollow -->
+          <line x1="404" y1="148" x2="456" y2="148" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 3" marker-end="url(#arrow)"/>
+          <rect x="458" y="122" width="160" height="52" rx="10" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="3 3" opacity="0.7"/>
+          <text x="538" y="144" text-anchor="middle" opacity="0.75">3b · Home</text>
+          <text x="538" y="160" text-anchor="middle" font-size="9.5" opacity="0.55">audited — already correct</text>
+
+          <!-- expand down to 3c -->
+          <line x1="314" y1="174" x2="314" y2="220" stroke="currentColor" stroke-width="1.6" marker-end="url(#arrow)"/>
+          <text x="326" y="200" font-size="9.5" opacity="0.75">discovered 129 more sites</text>
+
+          <rect x="164" y="222" width="300" height="52" rx="10" fill="var(--accent-subtle)" stroke="var(--accent)" stroke-width="1.6"/>
+          <text x="314" y="244" text-anchor="middle" font-weight="700" fill="var(--accent)">3c · App-wide Dark-Mode Sweep</text>
+          <text x="314" y="260" text-anchor="middle" font-size="9.5" fill="var(--accent)" opacity="0.85">scope expanded on discovery — style.css, all modules</text>
+
+          <!-- flagship row -->
+          <line x1="548" y1="74" x2="548" y2="320" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+          <rect x="458" y="322" width="180" height="52" rx="10" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="548" y="344" text-anchor="middle" font-weight="700">4a · Vehicle Fix</text>
+          <text x="548" y="360" text-anchor="middle" opacity="0.6">legend + form select</text>
+
+          <line x1="638" y1="348" x2="662" y2="348" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+          <rect x="664" y="322" width="140" height="52" rx="10" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="734" y="340" text-anchor="middle" font-weight="700">4b · Title +</text>
+          <text x="734" y="354" text-anchor="middle" font-weight="700">Conflict Badge</text>
+
+          <!-- Pass 2 divider -->
+          <line x1="20" y1="392" x2="800" y2="392" stroke="currentColor" stroke-width="1" opacity="0.3"/>
+          <text x="20" y="408" font-size="10" font-weight="700" opacity="0.5" letter-spacing="1">PASS 2</text>
+
+          <!-- 4c shipped -->
+          <rect x="20" y="414" width="220" height="52" rx="10" fill="var(--accent-subtle)" stroke="var(--accent)" stroke-width="1.6"/>
+          <text x="130" y="436" text-anchor="middle" font-weight="700" fill="var(--accent)">4c · Mobile List View +</text>
+          <text x="130" y="450" text-anchor="middle" font-weight="700" fill="var(--accent)">Filter Chips</text>
+
+          <line x1="240" y1="440" x2="264" y2="440" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+          <rect x="266" y="414" width="230" height="52" rx="10" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="381" y="436" text-anchor="middle" font-weight="700">5 · Vehicle Drawer</text>
+          <text x="381" y="450" text-anchor="middle" opacity="0.6">5-tab restructure, CSS-only</text>
+
+          <line x1="496" y1="440" x2="520" y2="440" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+          <rect x="522" y="414" width="278" height="52" rx="10" fill="none" stroke="currentColor" stroke-width="1.4"/>
+          <text x="661" y="436" text-anchor="middle" font-weight="700">6 · Module Audit</text>
+          <text x="661" y="450" text-anchor="middle" opacity="0.6">7 modules checked against the design map</text>
+
+          <!-- boundary -->
+          <line x1="20" y1="490" x2="800" y2="490" stroke="currentColor" stroke-width="1.4" stroke-dasharray="6 5" opacity="0.55"/>
+          <text x="20" y="482" font-size="10" font-weight="700" opacity="0.6">SHIPPED / AUDITED CLEAN — includes Petty Cash NOR (found already built, as "Test NOR")</text>
+          <text x="20" y="506" font-size="10" font-weight="700" opacity="0.6">REMAINING — 2 items, for different reasons</text>
+
+          <!-- remaining row -->
+          <rect x="20" y="518" width="380" height="60" rx="10" fill="none" stroke="var(--warn)" stroke-width="1.4" stroke-dasharray="3 3"/>
+          <text x="210" y="540" text-anchor="middle" font-weight="700" fill="var(--warn)">Settings — unified shell</text>
+          <text x="210" y="556" text-anchor="middle" font-size="9.5" fill="var(--warn)" opacity="0.9">found genuinely missing on re-audit: settings</text>
+          <text x="210" y="568" text-anchor="middle" font-size="9.5" fill="var(--warn)" opacity="0.9">scattered per-module, feature flags have no UI</text>
+
+          <rect x="412" y="518" width="388" height="60" rx="10" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="3 3" opacity="0.55"/>
+          <text x="606" y="540" text-anchor="middle" opacity="0.6">Warehouse — navigation restructure</text>
+          <text x="606" y="556" text-anchor="middle" font-size="9.5" opacity="0.55">deliberately left alone: mature hub+drill-down</text>
+          <text x="606" y="568" text-anchor="middle" font-size="9.5" opacity="0.55">pattern, no evidence it's actually broken</text>
+
+        </g>
+      </svg>
+      <figcaption>Solid boxes shipped and were verified. Filled crimson boxes are phases that grew mid-work after a discovery. Below the line: one real gap found on re-audit (amber), one left alone by deliberate judgment call (grey).</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============ PHASE 1 ============ -->
+  <section class="block">
+    <div class="block-eyebrow"><span class="num">01</span><span class="tag">Foundation</span></div>
+    <h2>Tokens: one accent, one shadow scale, one status palette</h2>
+    <p class="lede">The app had three-to-four parallel color systems — a legacy <code>style.css</code> palette, <code>platform.css</code>'s intended-but-underused V2 scale, a "card system" copy-pasted into four different files, and a separate crimson pair for Overtime/Petty Cash. The design map's own migration strategy calls for landing tokens first and deleting the competing systems in the same pass — not inventing a fifth.</p>
+
+    <div class="card">
+      <h3>1a — Extend the canonical scale <span class="pill pill--done">Shipped</span></h3>
+      <p>Added the tokens the design map calls for that didn't exist yet: three more type-scale steps, a real 8px spacing scale, four motion durations, five breakpoint custom properties, and <code>--accent-hover</code>/<code>--accent-subtle</code>.</p>
+      <p class="fine">Grep-verified zero existing consumers for every new name before adding it — pure addition, zero visual change. Deliberately <em>excluded</em> a radius scale: <code>--radius-sm</code>/<code>--radius-lg</code> already have 30+ consumers elsewhere with inconsistent or missing fallbacks, so defining them at <code>:root</code> would have been a real, uncontrolled visual change, not an addition.</p>
+      <dl class="kv"><dt>File</dt><dd><code>platform.css</code></dd></dl>
+    </div>
+
+    <div class="card">
+      <h3>1b — Retire the duplicate systems <span class="pill pill--done">Shipped</span></h3>
+      <p>Aliased the "card system" copy (Gudang, Engineering, Analytics) and the Overtime/Petty Cash crimson pair onto the canonical <code>--accent</code>/<code>--info</code>/<code>--ok</code>/<code>--warn</code>/<code>--danger</code>/<code>--shadow-*</code> tokens, one brand color and one shadow scale app-wide. Kept genuinely categorical colors with no canonical equivalent — Engineering's live violet/teal/neutral category tags — untouched rather than force-mapping them onto something semantically wrong.</p>
+      <dl class="kv">
+        <dt>Files</dt><dd><code>gudang.css</code>, <code>engineering.css</code>, <code>overtime.css</code>, <code>petty-cash.css</code>, <code>platform.css</code> (<code>.v2-analytics-claude</code>)</dd>
+      </dl>
+    </div>
+
+    <div class="card">
+      <h3>2 — Shared component library <span class="pill pill--done">Shipped</span></h3>
+      <p>Extended the existing <code>.p-*</code> utility namespace with the primitives the design map's component list was still missing: secondary/tertiary/icon button variants with a real 44px touch target, a removable chip, a de-boxed card (plus a <code>--boxed</code> legacy escape hatch), a table shell, a generic nav item, underline tabs, a capped KPI strip, and an error state to sit alongside the existing empty state.</p>
+      <p class="fine">Additive only — nothing existing was rewired to consume these yet. Module-by-module adoption is deliberately separate, later work.</p>
+      <dl class="kv"><dt>File</dt><dd><code>platform.css</code></dd></dl>
+    </div>
+  </section>
+
+  <!-- ============ PHASE 2 (shell/home) ============ -->
+  <section class="block">
+    <div class="block-eyebrow"><span class="num">02</span><span class="tag">Shell & Home</span></div>
+    <h2>The app shell, and the sweep it turned into</h2>
+    <p class="lede">Retargeting the sidebar and header onto canonical tokens surfaced something bigger than the shell: <code>style.css</code>'s own <code>--dark</code>/<code>--white</code>/<code>--red</code> family — never remapped for dark mode — is read in 129 places across the whole app, not just the shell. Fixing the shell properly meant fixing all of it, since the fix is identical everywhere it appears.</p>
+
+    <div class="card">
+      <h3>3 — Shell chrome <span class="pill pill--done">Shipped</span></h3>
+      <p>Retargeted <code>.sidebar</code>, <code>.header</code>, <code>.role-badge</code>, and related selectors onto <code>--side-bg</code>, <code>--topbar-bg</code>, <code>--accent</code>, etc.</p>
+      <p class="fine">Most of what looked like live bugs turned out to already be fixed — <code>platform.css</code> loads after <code>style.css</code> and already overrides <code>.header</code>, <code>.sidebar</code>, <code>.sidebar-nav-primary</code>, <code>.sidebar-badge</code>, and <code>.role-badge</code> with these exact tokens. I corrected my own "bug fix" comments to say so honestly rather than let the false claim stand. The two fixes that <em>were</em> real and previously unfixed: <code>.brand-title</code> and <code>.sidebar-toggle:hover</code>, both reading the un-bridged <code>--dark</code> token with no override anywhere.</p>
+      <dl class="kv"><dt>File</dt><dd><code>style.css</code></dd></dl>
+    </div>
+
+    <div class="card">
+      <h3>3b — Home workspace widgets <span class="pill pill--skip">Audited, no change needed</span></h3>
+      <p><code>js/workspace/*</code> and <code>js/widgets/*</code> were built later (v1.19.9) and already read canonical or properly-scoped tokens exclusively — zero legacy-token references found. <code>.wsp-card</code> independently already implements the same de-boxed philosophy the new <code>.p-card</code> encodes.</p>
+    </div>
+
+    <div class="card">
+      <h3>3c — App-wide dark-mode + touch-target sweep <span class="pill pill--done">Shipped</span></h3>
+      <p>Systematically found and fixed every remaining site: <code>--dark</code>/<code>--dark-2</code> (38 sites, always text — bulk-replaced to <code>--text</code>), <code>--white</code> used as a surface background (20 sites — bulk-replaced to <code>--surface</code>, with one deliberate exception kept: the toggle-switch knob, which is <em>meant</em> to stay white on its colored track, matching <code>platform.css</code>'s own equivalent), and the <code>--red</code>/<code>--red-mid</code>/<code>--red-light</code> family (51 sites, individually judged as either brand/CTA → <code>--accent</code>, or alert/status → <code>--danger</code>).</p>
+      <p>Also closed the exact touch-target gap the design spec named: <code>.btn-primary</code>, <code>.btn-secondary</code>, <code>.btn-danger</code>, <code>.btn-success</code>, and <code>.btn-today</code> had no <code>min-height</code> at all — effective height was around 34px, and <code>.btn-today</code> shrank to roughly 30px on mobile.</p>
+      <p class="fine">Every <code>color: var(--white)</code> site left in the app was individually checked and confirmed to be legitimate text-on-colored-surface (badges, avatars, timeline blocks) rather than the surface-background bug pattern, so none of those needed touching.</p>
+      <dl class="kv"><dt>File</dt><dd><code>style.css</code></dd></dl>
+    </div>
+  </section>
+
+  <!-- ============ PHASE 3 (assignment board) ============ -->
+  <section class="block">
+    <div class="block-eyebrow"><span class="num">03</span><span class="tag">Flagship module</span></div>
+    <h2>Assignment Board — from two fixes to full parity</h2>
+    <p class="lede">Pass 1 shipped the guardrails doc's one pre-vetted gap. Pass 2 came back for the rest of what §4c called for and found a real, code-confirmed bug along the way: the mobile breakpoint didn't just fail to redesign the List-view toggle — it hid it completely, with no substitute. The one item still not built (a net-new vehicle-lane view) was explicit in the brief as optional, not required.</p>
+
+    <div class="card">
+      <h3>4a — Hardcoded vehicle legend + form select <span class="pill pill--done">Shipped</span></h3>
+      <p>A 5th or 6th vehicle in the fleet used to never appear in the timeline legend or the assignment form's vehicle dropdown — both were static markup naming exactly four vehicles. Both now read <code>getActiveVehicles()</code> live, mirroring the driver-select pattern that already existed for exactly this purpose.</p>
+      <p class="fine">Verified end-to-end in a browser: in the unauthenticated fallback path, legend and dropdown render byte-identical to the old hardcoded markup (same four vehicles, same colors, same order) — zero regression — and the code path for a live, authenticated session is the same one already proven correct for the driver dropdown.</p>
+      <dl class="kv"><dt>Files</dt><dd><code>index.html</code>, <code>js/drivers.js</code>, <code>js/app.js</code></dd></dl>
+    </div>
+
+    <div class="card">
+      <h3>4b — Title tooltip + passive conflict badge <span class="pill pill--done">Shipped</span></h3>
+      <p>Assignment titles truncate with an ellipsis and previously had no way to see the full text short of opening the detail modal — added a native <code>title</code> tooltip, set as a DOM property rather than concatenated into the existing (pre-existing, unescaped) HTML template, so it can't introduce a new injection vector.</p>
+      <p>Added a passive, read-only conflict badge on timeline blocks: calls the exact same <code>checkConflict()</code>/<code>checkVehicleConflict()</code> functions the write-time guard already uses, purely to decide whether to show a warning badge. It never blocks, alters, or duplicates the conflict computation — the guardrails doc explicitly names this pattern as safe.</p>
+      <dl class="kv"><dt>File</dt><dd><code>js/timeline.js</code>, <code>style.css</code></dd></dl>
+    </div>
+
+    <div class="card">
+      <h3>4c — Mobile List-view parity <span class="pill pill--done">Shipped</span></h3>
+      <p><code>.v2-tl-view-toggle</code> — the only control that switches between Timeline and List view — was <code>display: none</code> at ≤767px. List view itself has worked for a while; on mobile there was simply no way to reach it, so every mobile user was stuck on a horizontally-scrolling hour grid regardless of which view suited them. Made the toggle visible and compact instead of hidden.</p>
+      <p>That surfaced a second, real bug: even fully compacted, the header (title + toggle + date) didn't fit in one row below 380px — confirmed by an actual Puppeteer viewport test, not estimation. Fixed by letting the header wrap to two rows at the narrowest tier instead of clipping.</p>
+      <dl class="kv"><dt>File</dt><dd><code>platform.css</code></dd></dl>
+    </div>
+
+    <div class="card">
+      <h3>4c — Driver/vehicle/status filter chips <span class="pill pill--done">Shipped</span></h3>
+      <p>Added three filter chips above the timeline/list, populated live from <code>getActiveDrivers()</code>/<code>getActiveVehicles()</code>. They narrow the exact same <code>getFilteredAssignments()</code> the search box already used — additive, not a parallel filtering path — so the existing invariant holds: this function feeds display only, conflict-checking still always reads the full unfiltered array.</p>
+      <p class="fine">Native <code>&lt;select&gt;</code> chrome, deliberately — styled to read as a chip rather than built as a bespoke custom dropdown for something the platform already handles well. Verified via real module import (not hand-copied markup): radio-equivalent state, panel switching, and active/inactive chip coloring all confirmed correct in both themes.</p>
+      <dl class="kv"><dt>Files</dt><dd><code>js/app.js</code>, <code>platform.css</code></dd></dl>
+    </div>
+
+    <div class="card">
+      <h3>Vehicle-lane view, week view <span class="pill pill--skip">Not built</span></h3>
+      <p class="fine">The design brief itself frames these as optional additions — "ideas, not requirements... Claude Design should judge what actually improves the product" — and each is a genuinely new rendering path next to protected conflict/drag logic. Left for a dedicated future decision, not treated as done.</p>
+    </div>
+  </section>
+
+  <!-- ============ PHASE 5 (vehicle drawer) ============ -->
+  <section class="block">
+    <div class="block-eyebrow"><span class="num">05</span><span class="tag">Vehicle / Fleet</span></div>
+    <h2>5-tab detail drawer</h2>
+    <p class="lede">The design map calls for a "5-tab detail drawer." The drawer that exists — <code>vehicle-detail-drawer.js</code> — is a heavily-invested, multi-sprint component (v1.18.4 through v1.29.19) that concatenates ~10-16 sections into one long scroll: Overview, Reminders, Operational, Registration, Tax, Insurance, Maintenance, History, plus an optional Prediction/Simulation block that can add another 8-9 sections on its own. Converting that into exactly 5 tabs meant a real grouping decision, made from the file's own stated conventions rather than invented from scratch.</p>
+
+    <div class="card">
+      <h3>Ringkasan · Operasional · Legal &amp; Asuransi · Perawatan · Riwayat <span class="pill pill--done">Shipped</span></h3>
+      <p>Grouped the existing, unmodified section functions into 5 tabs matching the design map's count, plus a 6th <em>Prediksi</em> tab that appears only when the caller supplies a prediction or simulation — the exact same "omitted entirely otherwise" condition those sections already had, just presented differently. The hero (avatar/score) stays above the tabs as an always-visible header, not tab content.</p>
+      <p>Built as pure CSS (the checked-radio-input pattern) rather than adding a new JS event listener, so <code>buildDrawerBody()</code> stays what it already was: a pure string builder with zero business logic, matching every other function in this file.</p>
+      <p class="fine">Verified by importing the real module and calling the real exported <code>openVehicleDetailDrawer()</code> against a properly normalized asset (via <code>normalizeVehicleAsset()</code>, not a hand-faked object) — confirmed 5 panels render with the right labels, only tab 1 is visible on open, clicking a tab correctly flips both panel visibility and radio <code>.checked</code> state, and active/inactive tab styling resolves correctly in both themes. An initial 50ms-wait test read mid-transition color values and looked broken; re-checked at 600ms and confirmed everything was correct — worth naming since it's exactly the kind of false negative that's easy to publish by accident.</p>
+      <dl class="kv"><dt>File</dt><dd><code>js/components/vehicle-detail-drawer.js</code></dd></dl>
+    </div>
+  </section>
+
+  <!-- ============ PHASE 6 (module audit) ============ -->
+  <section class="block">
+    <div class="block-eyebrow"><span class="num">06</span><span class="tag">Module audit</span></div>
+    <h2>Warehouse, Overtime, Petty Cash, Engineering, Analytics, Roles, Notifications, Settings</h2>
+    <p class="lede">Checked each remaining module against its own line in the design map's per-module table, plus the same three bug classes that proved real and valuable elsewhere this session: a functional control hidden on mobile with no substitute, missing touch targets, and hardcoded content that should read from a live store. A dedicated sub-agent sweep specifically re-checked every CSS file for the "control hidden on mobile" pattern that turned out to be real in the Assignment Board — nothing else like it turned up.</p>
+
+    <div class="card">
+      <h3>Warehouse — "one workspace shell, 7 tabs" <span class="pill pill--skip">Left as-is, deliberately</span></h3>
+      <p>Gudang is the deepest, most separately-architected module in the codebase — its own contracts/repositories/projection-engine/audit layers sit entirely apart from its UI, and it already went through its own dedicated LTS audit-freeze. Its actual navigation is a hub-and-drill-down pattern (a home dashboard with cards into Catalog/Goods In/Goods Out/Opname/Analytics), not a single tabbed shell.</p>
+      <p class="fine">Forcing that into "7 tabs" without concrete evidence the hub pattern is actually a problem would risk regressing a considered UX decision, not improving it — exactly the kind of change the brief's own "don't rewrite working structure merely for visual reasons" line warns against. Left alone; touch targets (a deliberate 40px from a recent v1.29.9 accessibility pass, not an oversight) and dark-mode tokens both checked clean.</p>
+    </div>
+
+    <div class="card">
+      <h3>Overtime — "rate/tier always visible per row" <span class="pill pill--skip">Already true</span></h3>
+      <p class="fine">The records table already has a dedicated "Tarif" column showing tier + rate on every row. No separate button classes exist — Overtime's buttons inherit <code>.btn-primary</code>/etc., which already picked up this session's touch-target and dark-mode fixes automatically.</p>
+    </div>
+
+    <div class="card">
+      <h3>Petty Cash — "cycle balance above the fold" <span class="pill pill--skip">Already true</span></h3>
+      <p class="fine">The balance is already the primary, most prominent KPI card in the dashboard.</p>
+    </div>
+
+    <div class="card">
+      <h3>Petty Cash — "NOR draft state added" <span class="pill pill--skip">Already exists, as "Test NOR"</span></h3>
+      <p>A re-check went deeper than the first pass and found a full, already-built mechanism serving exactly this purpose under a different name. Generating a NOR offers a "Generate as Test NOR" toggle (<code>type: NOR_TYPE.TEST</code> vs <code>OFFICIAL</code>) — a Test NOR doesn't lock its receipts, doesn't affect metrics, and is hidden from official history, with its own amber "TEST ONLY" badge, an "ARSIP · TEST" state when archived, and dedicated <code>convertNorToOfficial()</code>/<code>convertNorToTest()</code> transition functions plus a full archive/restore cascade.</p>
+      <p class="fine">This functionally <em>is</em> a draft state — non-binding, clearly marked, reversible. It doesn't remove the numbering question entirely (a number is still required at generation time for either type), but that's the guardrails doc's own explicit invariant, not a gap.</p>
+    </div>
+
+    <div class="card">
+      <h3>Engineering — "visually distinct from Driver Ops" <span class="pill pill--skip">Already true</span></h3>
+      <p class="fine">Scoped entirely under its own <code>.eng-root</code> namespace since its original build — confirmed by the file's own header comment stating this was deliberate from day one. Already retargeted onto canonical tokens in this session's Phase 1b.</p>
+    </div>
+
+    <div class="card">
+      <h3>Analytics — "health score above the fold" <span class="pill pill--skip">Already true</span></h3>
+      <p class="fine">Confirmed the Health Score/Executive Intelligence system exists in <code>js/widgets/executive/</code> — the product of its own multi-version redesign effort (v1.21.0 through v1.22.6) well before this session.</p>
+    </div>
+
+    <div class="card">
+      <h3>Analytics — "simulation read-only until explicitly applied" <span class="pill pill--skip">Already true, and stricter</span></h3>
+      <p class="fine">Verified at the code level, not just the UI: <code>js/simulation/scenario-engine.js</code> has zero Firebase/write calls anywhere in the file. The panel itself states this explicitly to the user ("Simulasi bersifat sementara, hanya di memori, dan tidak pernah mengubah data produksi") with a dedicated "Tanpa Perubahan Data" badge and a "Reset Simulasi" action. There's no "Apply" path at all — stricter than "read-only until applied," since nothing ever commits a simulation to production.</p>
+    </div>
+
+    <div class="card">
+      <h3>User/Role Management — "inherited vs. override visually separated" <span class="pill pill--skip">Already true, and thorough</span></h3>
+      <p class="fine">Found distinct <code>.rm-permission-row--base</code> / <code>--role-additional</code> / <code>--protected</code> classes, each with its own explanatory note text ("Base System Permission — tidak dapat diubah di sini", "Role Additional — diberikan ke semua user dengan role ini", etc.) and a documented tie-break rule for the edge case where a permission is both. This is more thorough than the design map's own one-line spec asked for.</p>
+    </div>
+
+    <div class="card">
+      <h3>Notifications — "one row component for bell/feed/mobile" <span class="pill pill--skip">Already true, traced end-to-end</span></h3>
+      <p class="fine"><code>renderNotificationsList()</code> already merges the log-derived and server-outbox notification sources into one unified, time-bucketed (Unread/Today/Yesterday/Earlier) list with a single render path. Traced the actual click path to be sure "mobile" really meant the same component: the bottom-nav's notification tab action is literally <code>() =&gt; document.getElementById('btnNotifications')?.click()</code> — it simulates a click on the same button desktop uses, opening the identical modal. Not an assumption; followed the wiring.</p>
+    </div>
+
+    <div class="correction" style="border-left-color:var(--warn)">
+      <h4>🚧 Settings — "one settings shell for global/module/feature-flag config": not built</h4>
+      <p>The first pass's claim here was too shallow and is corrected now. Settings are genuinely scattered by module — Engineering has its own <code>renderSettings()</code>, Petty Cash has its own <code>settingsScreen()</code>, each with its own save flow tied to that module's own service layer. Feature flags have <strong>no UI at all</strong>: <code>loadFeatureFlags()</code> reads <code>/feature_flags</code> once at startup and nothing in the app ever writes to that path — flags can only be changed by editing Firebase directly.</p>
+      <p>Not implemented this pass, for a reason distinct from the NOR case: this isn't under-specified, it's genuinely two decisions bundled together. A thin navigational shell that links out to each module's existing settings screen would be low-risk and could ship on its own. Building actual in-app feature-flag editing is a different, real security/stability question — which flags are safe to expose to an admin, and what happens if <code>visualShellV2</code> itself gets toggled off from inside the UI it controls — that shouldn't be decided unilaterally.</p>
+    </div>
+  </section>
+
+  <!-- ============ SELF-CORRECTIONS ============ -->
+  <section class="block">
+    <div class="block-eyebrow"><span class="tag">Caught before shipping</span></div>
+    <h2>Three code mistakes, found and fixed mid-session</h2>
+    <p class="lede">Worth stating plainly rather than burying: verification caught real errors in this session's own work, not just in the pre-existing code.</p>
+
+    <div class="correction">
+      <h4>🔧 A deletion that would have broken 3 live sites</h4>
+      <p>Retargeting Overtime/Petty Cash's crimson pair, <code>--primary</code> was deleted outright instead of aliased — but 3 sites read <code>var(--primary)</code> directly (not just its <code>-fg</code>/<code>-tint</code>/<code>-hover</code> siblings), which would have silently broken 2 focus rings and 1 active-state highlight. Found by grepping for every consumer before moving on, not by luck.</p>
+    </div>
+    <div class="correction">
+      <h4>🔧 A cross-file dependency missed on the first pass</h4>
+      <p><code>--c-neutral</code> looked dead inside <code>.v2-analytics-claude</code> (zero consumers <em>in that file</em>) and was removed — but <code>js/workspace/workspace-styles.js</code>'s Home-workspace widgets are deliberately mounted inside that same scope and read it for 3 live elements (a status dot, a severity-row bar, an icon tint). Restored before it shipped.</p>
+    </div>
+    <div class="correction">
+      <h4>📝 A "bug fix" that wasn't one</h4>
+      <p>Claimed to fix a live dark-mode bug in <code>.header</code> and <code>.role-badge</code> — in fact <code>platform.css</code> already overrode both with the exact same tokens and was what actually rendered in production. The code changes were harmless (now-consistent, not contradictory), but the claim was wrong. Corrected the comments to say so rather than let a false "fixed a bug" statement stand in the codebase.</p>
+    </div>
+  </section>
+
+  <!-- ============ REPORT CORRECTIONS ============ -->
+  <section class="block">
+    <div class="block-eyebrow"><span class="tag">Caught on re-verification</span></div>
+    <h2>Two claims in the previous version of this report were too shallow</h2>
+    <p class="lede">Asked to re-verify the module audit rather than take it as finished, going deeper changed the answer in two places — one from worse to better, one from better to worse. Both are corrected throughout this report now, not just noted here.</p>
+
+    <div class="correction">
+      <h4>✅ Petty Cash NOR draft state — previously called "blocked," actually already built</h4>
+      <p>The first pass checked for a literal <code>'draft'</code> status string, didn't find one, and stopped there. A second look at <code>petty-cash-service.js</code>'s actual generation flow found <code>NOR_TYPE.TEST</code> — a fully-built, richly-designed non-binding NOR state with its own badge, messaging, and conversion lifecycle, serving exactly the purpose "draft" implies. The earlier "genuinely blocked" verdict was a real miss, not a defensible caution.</p>
+    </div>
+    <div class="correction">
+      <h4>⚠️ Settings shell — previously called "already integrated," actually scattered</h4>
+      <p>The first pass saw Konfigurasi living inside the admin workspace and concluded settings were unified. That check never looked at whether <em>other</em> modules had their own separate settings screens (they do — Engineering and Petty Cash each maintain their own) or whether feature flags had any UI at all (they don't, anywhere). This is the opposite direction of error from the NOR case: claiming something was done when it wasn't.</p>
+    </div>
+  </section>
+
+  <!-- ============ FILE CHANGELOG ============ -->
+  <section class="block">
+    <div class="block-eyebrow"><span class="tag">Reference</span></div>
+    <h2>Complete file changelog</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>File</th><th>Phases</th><th>What changed</th></tr></thead>
+        <tbody>
+          <tr><td class="chip">platform.css</td><td>1a · 1b · 2 · 4c</td><td>New token block; <code>.v2-analytics-claude</code> retargeted; 12 new <code>.p-*</code> components appended; mobile view-toggle fix; filter-chip styles</td></tr>
+          <tr><td class="chip">style.css</td><td>3 · 3c · 4b</td><td>Shell chrome retargeted; 129 legacy-token sites fixed; 5 buttons given a real touch target; conflict-badge CSS</td></tr>
+          <tr><td class="chip">gudang.css</td><td>1b</td><td><code>.gud-root</code> retargeted onto canonical tokens; dead violet/teal/neutral removed</td></tr>
+          <tr><td class="chip">engineering.css</td><td>1b</td><td><code>.eng-root</code> retargeted; live violet/teal/neutral kept (no canonical equivalent)</td></tr>
+          <tr><td class="chip">overtime.css</td><td>1b</td><td><code>.ot-root</code> crimson pair aliased onto <code>--accent</code> family</td></tr>
+          <tr><td class="chip">petty-cash.css</td><td>1b</td><td><code>.pc-root</code> crimson pair aliased onto <code>--accent</code> family</td></tr>
+          <tr><td class="chip">index.html</td><td>4a</td><td>Hardcoded 4-vehicle legend and form <code>&lt;select&gt;</code> markup replaced with JS-populated shells</td></tr>
+          <tr><td class="chip">js/drivers.js</td><td>4a</td><td>New: <code>initVehicleSelect</code>, <code>refreshVehicleSelect</code>, <code>renderVehicleLegend</code></td></tr>
+          <tr><td class="chip">js/app.js</td><td>4a · 4c</td><td>New vehicle-select functions wired into init + the existing change-listener; filter-chip state, <code>buildFilterBar()</code>, extended <code>getFilteredAssignments()</code></td></tr>
+          <tr><td class="chip">js/timeline.js</td><td>4b</td><td>Title tooltip; passive conflict-badge check (read-only)</td></tr>
+          <tr><td class="chip">js/components/vehicle-detail-drawer.js</td><td>5</td><td>Sections regrouped into 5 CSS-only tabs (+ conditional 6th); no section's own rendering logic changed</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ VERIFICATION ============ -->
+  <section class="block">
+    <div class="block-eyebrow"><span class="tag">Method</span></div>
+    <h2>How each change was verified</h2>
+    <p class="lede">The same four-step discipline ran on every phase, not just spot-checked at the end.</p>
+    <div class="kv" style="grid-template-columns: 20px 1fr; row-gap: 10px;">
+      <dt class="mono" style="color:var(--accent)">1</dt><dd><b>Census before touching</b> — grep every consumer of a token or class before changing it, so "safe to delete" and "aliased, not deleted" were decisions backed by a real count, not an assumption.</dd>
+      <dt class="mono" style="color:var(--accent)">2</dt><dd><b>Syntax + brace-balance check</b> after every file edit (<code>node --check</code>, a brace-counter script) — before ever loading a browser.</dd>
+      <dt class="mono" style="color:var(--accent)">3</dt><dd><b>Headless browser check in both themes</b> after every phase — reading actual computed styles from a running page, not inferring them from source.</dd>
+      <dt class="mono" style="color:var(--accent)">4</dt><dd><b>Cross-referenced against the design docs</b> — <code>DESIGN_IMPLEMENTATION_GUARDRAILS</code>, <code>ASSIGNMENT_BOARD_REDESIGN</code>, <code>DESIGN_SYSTEM_SPEC</code>, and <code>RESPONSIVE_BEHAVIOR_SPEC</code> — throughout, not just at the start.</dd>
+    </div>
+  </section>
+
+  <!-- ============ DEFERRED ============ -->
+  <section class="block">
+    <div class="block-eyebrow"><span class="tag">What's left, and why each one specifically</span></div>
+    <h2>Two remaining items, one blocked, one a judgment call</h2>
+    <p class="lede">Every one of the design map's ten modules has now been implemented, or audited against its own spec and re-verified a second time. What's left shrank on this pass, not grew — Petty Cash's NOR item resolved to "already done" on closer inspection:</p>
+
+    <div class="deferred-item">
+      <div class="what">Settings shell for global/module/feature-flag config</div>
+      <div class="why">Not built. Two bundled decisions: a low-risk navigational shell linking to each module's existing settings (buildable on its own), and actual in-app feature-flag editing, which is a real security/stability question — which flags are safe to expose, and what happens if <code>visualShellV2</code> gets toggled from inside the UI it controls — that shouldn't be decided unilaterally.</div>
+    </div>
+    <div class="deferred-item">
+      <div class="what">Warehouse navigation restructure ("7 tabs")</div>
+      <div class="why">Deliberate judgment call, not a blocker. Gudang's current hub-and-drill-down pattern is mature and already LTS-certified; forcing it into tabs without evidence the hub pattern is actually a problem risks a regression, not an improvement.</div>
+    </div>
+    <div class="deferred-item">
+      <div class="what">Assignment Board vehicle-lane view, week view</div>
+      <div class="why">Explicitly optional in the design brief itself ("ideas, not requirements"). Each is a net-new rendering path next to protected conflict logic — a real future feature decision, not a visual gap.</div>
+    </div>
+    <div class="deferred-item">
+      <div class="what"><code>style.css</code>'s own second duplicate token layer + canonical radius scale</div>
+      <div class="why">Both still true from the first pass: a separate <code>--radius</code>/<code>--shadow</code>/<code>--motion-fast/base/slow</code> set uncatalogued by the original audit, and 30+ existing <code>--radius-sm/lg</code> consumers with inconsistent fallbacks that make adding it at <code>:root</code> a real visual change, not a pure addition.</div>
+    </div>
+  </section>
+
+  <footer>
+    Compiled from three work passes' tool history — every figure above traces to a grep count, a diff, or a browser check actually run, not a summary written from memory. Where a re-check changed a prior conclusion, that's stated explicitly rather than silently revised.
+  </footer>
+
+</div>
+
+<script>
+  (function () {
+    var btn = document.getElementById('themeBtn');
+    var root = document.documentElement;
+    function apply(mode) {
+      if (mode === 'system') root.removeAttribute('data-theme');
+      else root.setAttribute('data-theme', mode);
+    }
+    var current = 'system';
+    apply(current);
+    btn.addEventListener('click', function () {
+      current = current === 'system'
+        ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'light' : 'dark')
+        : (current === 'dark' ? 'light' : 'dark');
+      apply(current);
+    });
+  })();
+</script>

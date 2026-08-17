@@ -1,0 +1,14 @@
+{
+  "errors": [
+    "[light] console: Fetch Firebase data gagal: Error: Permission denied",
+    "[dark] console: Fetch Firebase data gagal: Error: Permission denied"
+  ],
+  "widgetOutputLengths": {
+    "light:exec-drivers": 1213,
+    "light:exec-vehicle-flags": 874,
+    "light:exec-recommendation": 1997,
+    "dark:exec-drivers": 1213,
+    "dark:exec-vehicle-flags": 874,
+    "dark:exec-recommendation": 1997
+  }
+}

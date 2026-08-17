@@ -109,7 +109,7 @@ export function renderClosingScreen(state) {
       <label style="font-size:12px;font-weight:700;color:var(--muted)">Catatan Closing (opsional)
         <input data-act="statefield:closingNote" type="text" value="${esc(state.closingNote || '')}" style="width:100%;margin-top:4px;padding:9px 10px;border-radius:9px;border:1px solid var(--input-bd);background:var(--input);color:var(--text);font-size:13.5px;box-sizing:border-box">
       </label>
-      <button data-act="closeMonthClick" type="button" style="margin-top:12px;background:var(--primary);color:var(--primary-fg);border:none;border-radius:9px;padding:10px 18px;font-size:13.5px;font-weight:700;cursor:pointer">Tutup Bulan</button>
+      <button data-act="openCloseConfirmModal" type="button" style="margin-top:12px;background:var(--primary);color:var(--primary-fg);border:none;border-radius:9px;padding:10px 18px;font-size:13.5px;font-weight:700;cursor:pointer">Tutup Bulan</button>
     </div>`}
 
     <div style="margin-top:18px">
@@ -141,8 +141,47 @@ export function renderUnlockModal(state) {
     </div>`;
 }
 
+/**
+ * V1 Redesign Phase 7 (v1.30.9.19) — "Sarpras Overtime.dc.html": "Period
+ * closing keeps its one-way, backend-enforced lock; the confirmation copy
+ * now states the concrete consequence... instead of a generic 'are you
+ * sure'." Before this phase, "Tutup Bulan" called svc.closeMonth()
+ * DIRECTLY on click — a genuinely irreversible action (see the Unlock flow
+ * a few lines above, which requires a reason specifically because closing
+ * isn't meant to be undone casually) with ZERO confirmation step at all.
+ * This modal is net-new UI; svc.closeMonth() itself and everything it does
+ * (freeze snapshot, generate report, log to audit trail) is unchanged —
+ * confirmCloseMonth() below is the exact same body closeMonthClick() used
+ * to run inline, just gated behind an explicit confirm click now. Mirrors
+ * renderUnlockModal()'s existing markup/backdrop pattern in this same file.
+ */
+export function renderCloseConfirmModal(state) {
+  const month = state.closingSelectedMonth || todayISO().slice(0, 7);
+  const validation = svc.runClosingValidation(month);
+  const pending = validation.warningCount || 0;
+  return `
+    <div data-act="stop" style="position:fixed;inset:0;background:rgba(20,16,14,.55);backdrop-filter:blur(3px);z-index:1600;display:flex;align-items:center;justify-content:center;padding:20px">
+      <div data-act="closeCloseConfirmModal" style="position:absolute;inset:0"></div>
+      <div style="position:relative;background:var(--card);border-radius:16px;box-shadow:var(--shadow-lg);width:100%;max-width:420px;padding:22px">
+        <div style="font-size:15px;font-weight:800;margin-bottom:6px;color:var(--primary)">Tutup ${esc(fmtMonth(month))}?</div>
+        <div style="font-size:13px;line-height:1.6;color:var(--text)">
+          ${pending ? `${pending} peringatan pra-closing belum ditinjau. ` : ''}Menutup periode membekukan seluruh entri bulan ini — laporan menjadi baca-saja dan tidak ada entri baru yang dapat ditambahkan. Tindakan ini dapat dibuka kembali (Unlock) dengan alasan yang tercatat di Audit Trail.
+        </div>
+        <div style="display:flex;gap:8px;margin-top:16px">
+          ${pending ? `<button data-act="closeCloseConfirmModal" type="button" style="flex:1;border:1px solid var(--border);background:var(--card2);color:var(--text);border-radius:10px;padding:11px;font-size:13px;font-weight:600;cursor:pointer">Tinjau peringatan dulu</button>` : ''}
+          <button data-act="confirmCloseMonth" type="button" style="flex:1;background:var(--primary);color:var(--primary-fg);border:none;border-radius:10px;padding:11px;font-size:13px;font-weight:700;cursor:pointer">${pending ? 'Tutup tetap' : 'Tutup Bulan'}</button>
+          ${!pending ? `<button data-act="closeCloseConfirmModal" type="button" style="flex:1;border:1px solid var(--border);background:var(--card2);color:var(--text);border-radius:10px;padding:11px;font-size:13px;font-weight:600;cursor:pointer">Batal</button>` : ''}
+        </div>
+      </div>
+    </div>`;
+}
+
 export const closingActions = {
-  async closeMonthClick({ state, setState, toast }) {
+  openCloseConfirmModal({ setState }) { setState({ closeConfirmModalOpen: true }); },
+  closeCloseConfirmModal({ setState }) { setState({ closeConfirmModalOpen: false }); },
+
+  async confirmCloseMonth({ state, setState, toast }) {
+    setState({ closeConfirmModalOpen: false });
     const month = state.closingSelectedMonth || todayISO().slice(0, 7);
     try {
       await svc.closeMonth(month, { note: state.closingNote || '' });

@@ -22,12 +22,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Archivo:wght@400;500;600;700;800;900&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=1.30.9.11" />
+  <link rel="stylesheet" href="style.css?v=1.30.9.24" />
   <link rel="stylesheet" href="platform.css?v=2.1.3" />
-  <link rel="stylesheet" href="petty-cash.css?v=1.30.9.11" />
-  <link rel="stylesheet" href="overtime.css?v=1.30.9.11" />
-  <link rel="stylesheet" href="engineering.css?v=1.30.9.11" />
-  <link rel="stylesheet" href="gudang.css?v=1.30.9.11" />
+  <link rel="stylesheet" href="petty-cash.css?v=1.30.9.24" />
+  <link rel="stylesheet" href="overtime.css?v=1.30.9.24" />
+  <link rel="stylesheet" href="engineering.css?v=1.30.9.24" />
+  <link rel="stylesheet" href="gudang.css?v=1.30.9.24" />
   <link rel="stylesheet" href="sarpras-intelligence.css?v=1.23.0" />
   <link rel="stylesheet" href="nor-center.css?v=1.23.0" />
   <link rel="stylesheet" href="workspace-list-kit.css?v=1.23.0" />
@@ -288,12 +288,11 @@
         <div class="timeline-body" id="timelineBody"></div>
       </div>
 
+      <!-- V1 Redesign Phase 4 (P0 fix): items are now rendered by
+           renderVehicleLegend() (js/drivers.js) from getActiveVehicles(),
+           not hardcoded — a 5th/6th vehicle used to never appear here. -->
       <div class="legend">
         <span class="legend-title">Kendaraan:</span>
-        <span class="legend-item" data-vehicle="Innova">Innova</span>
-        <span class="legend-item" data-vehicle="Luxio">Luxio</span>
-        <span class="legend-item" data-vehicle="Polytron">Polytron</span>
-        <span class="legend-item" data-vehicle="Hiace">Hiace</span>
       </div>
 
       <!-- ===== DRIVER DASHBOARD — shown below timeline for driver role ===== -->
@@ -988,13 +987,12 @@
           </div>
           <div class="form-group form-full">
             <label for="fieldVehicle">Kendaraan *</label>
+            <!-- V1 Redesign Phase 4 (P0 fix): options are now populated by
+                 initVehicleSelect()/refreshVehicleSelect() (js/drivers.js)
+                 from getActiveVehicles(), mirroring #fieldDriver's existing
+                 pattern — was previously hardcoded to 4 vehicle names. -->
             <select id="fieldVehicle" required>
               <option value="">-- Pilih Kendaraan --</option>
-              <option value="Innova">Innova</option>
-              <option value="Luxio">Luxio</option>
-              <option value="Polytron">Polytron</option>
-              <option value="Hiace">Hiace</option>
-              <option value="__none__">Tanpa Kendaraan</option>
             </select>
             <!-- beta.3: compact Dispatch Intelligence hint (admin direct assignment) -->
             <div class="dispatch-hint" id="assignmentVehicleHint" hidden></div>
@@ -1311,6 +1309,6 @@
      an npm import — mammoth's npm package has no browser-ready ESM
      build. Exposes window.mammoth. -->
 <script src="https://cdn.jsdelivr.net/npm/mammoth@1.12.0/mammoth.browser.min.js"></script>
-<script type="module" src="js/app.js?v=1.30.9.11"></script>
+<script type="module" src="js/app.js?v=1.30.9.24"></script>
 </body>
 </html>

@@ -16,7 +16,8 @@ import { loadAssignments, saveAssignments, saveOneAssignment, saveManyAssignment
 // rc.1: persist Dispatch Intelligence history (override logs / recommendations / capacity) to RTDB.
 import { hydrateDispatchIntelligence, initDispatchIntelligencePersistence } from './services/dispatch-intelligence-persistence.js';
 import { recoverAssignmentsFromRequests } from './recovery.js';
-import { initDriverSelect, refreshDriverSelect } from './drivers.js';
+import { initDriverSelect, refreshDriverSelect, initVehicleSelect, refreshVehicleSelect, renderVehicleLegend, getVehicleColor } from './drivers.js';
+import { buildVehicleShapeMap, vehicleShapeCss } from './utils/vehicle-identity.js';
 import {
   initDriversStore,
   getDrivers,
@@ -61,7 +62,7 @@ import { initPWA, getPWAState, registerPWAStateListener, triggerInstallPrompt, s
 import { initPush } from './push.js';
 import { initPbsiSelect } from './pbsi-select.js';
 import { initPbsiDatepicker, syncPbsiDatepicker } from './pbsi-datepicker.js';
-import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate } from './timeline.js';
+import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate, registerDateChangeCallback } from './timeline.js';
 import { initTimelineInteractions } from './timeline-interactions.js';
 import { initModalHandlers, openDetailModal, registerEditCallback, registerDeleteCallback, registerStartCallback, registerCompleteCallback, registerCommentCallback as registerModalCommentCallback, registerCancelCallback, registerOvertimeOverrideCallback, setAssignments as setModalAssignments, updateDetailActionButtons } from './modal.js';
 import { initFormHandlers, openFormModal, closeFormModal, registerSaveCallback, registerPersistCallback, setAssignments as setAssignmentsForm, setCurrentDate as setCurrentDateForm, checkConflict, deleteAssignment } from './assignments.js';
@@ -101,6 +102,7 @@ import { openDriverWellnessDrawer } from './components/driver-wellness-drawer.js
 // Unified Scoring + the Dispatch Policy Engine (no dispatch/recommendation change).
 import { validateMaintenanceRecord, normalizeMaintenanceRecord } from './services/maintenance-service.js';
 import { computeFleetAssetModel, findVehicleAsset, searchFilterVehicles } from './services/vehicle-asset-service.js';
+import { computeFleetReminders, summarizeReminders } from './services/reminder-engine.js';
 import { injectFleetDashboardStyles, renderFleetDashboard } from './components/fleet-dashboard.js';
 import { injectVehicleReminderPanelStyles, renderVehicleReminderPanel } from './components/vehicle-reminder-panel.js';
 import { injectVehicleActivityPanelStyles, renderVehicleActivityPanel } from './components/vehicle-activity-panel.js';
@@ -338,6 +340,11 @@ let listDirty = true; // true = list view must re-render before next display
 
 // VSM-9: search query (client-side filter, never touches Firebase data)
 let searchQuery = '';
+// V1 Redesign 4c: Assignment Board filter chips — client-side only, same
+// non-authority as searchQuery (see getFilteredAssignments()). '' = "all".
+let filterDriver = '';
+let filterVehicle = '';
+let filterStatus = '';
 // VSM-9: which workspace is visible — 'dashboard' | 'pending' | 'administration'
 //        | 'pettycash' | 'placeholder'  (v1.14.0 platform modules)
 let currentWorkspace = 'dashboard';
@@ -876,6 +883,12 @@ function syncV2ResponsiveNavReuse() {
   const isMobile = window.matchMedia('(max-width: 767px)').matches;
   const logoutDirect = document.getElementById('v2FooterLogoutDirect');
   const footerUser = document.getElementById('v2FooterUser');
+
+  // v1.30.9.13: the tablet panel-overlay state is only meaningful at
+  // 768–1023px — closing it on every resize elsewhere means it can never
+  // get stuck open after a device rotation or window resize into mobile
+  // or desktop width.
+  if (!isTabletViewport()) setV2PanelTabletOverlay(false);
 
   if (isMobile) {
     // Mobile drawer = the SAME live #v2Rail + #v2Panel relocated into the
@@ -1685,6 +1698,40 @@ function setRailModule(name) {
   saveNavState(); // v1.20.8 — persist the module for state restoration on reopen
 }
 
+/* ── Tablet 768–1024px: section panel becomes a tap-to-reveal overlay ──
+   (v1.30.9.13 — Phase 1 App Shell rebuild.) At this tier the rail stays
+   permanently visible (matches desktop) but the panel is hidden behind a
+   slide-in overlay + backdrop, opened by tapping the already-active rail
+   icon again. Below 768px this is irrelevant (the mobile drawer handles
+   navigation via syncV2ResponsiveNavReuse); at ≥1024px platform.css cancels
+   the transform, so the panel stays permanently visible exactly as before. */
+function isTabletViewport() {
+  return window.matchMedia('(min-width: 768px) and (max-width: 1023px)').matches;
+}
+
+function setV2PanelTabletOverlay(open) {
+  const panel = document.getElementById('v2Panel');
+  if (!panel) return;
+  panel.classList.toggle('v2-panel--tablet-open', Boolean(open));
+}
+
+/**
+ * Rail item click entry point. At tablet width, re-clicking the already-
+ * active module toggles the panel overlay instead of re-running
+ * setRailModule (nothing about the active module needs to change).
+ * Every other case (a different module, or any click outside tablet width)
+ * behaves exactly as before this existed.
+ */
+function handleRailClick(name) {
+  if (isTabletViewport() && name === activeRailModule) {
+    const panel = document.getElementById('v2Panel');
+    setV2PanelTabletOverlay(!panel?.classList.contains('v2-panel--tablet-open'));
+    return;
+  }
+  setRailModule(name);
+  if (isTabletViewport()) setV2PanelTabletOverlay(false);
+}
+
 /* ──────────────────────────────────────────────────────────────────
    Navigation routing layer (v1.14.0)
 
@@ -1714,8 +1761,14 @@ function buildHomeContext() {
     requests,
     myRequests,
     logs: auditLogs,
+    // v1.30.9.14 — reference rosters for the Admin Home driver-status /
+    // vehicle-flags widgets (Phase 2 of the V1 redesign). Cheap: both are
+    // already-loaded in-memory store snapshots, no new Firebase reads.
+    drivers: getActiveDrivers(),
+    vehicles: getActiveVehiclesFromStore(),
     models: null,
     recommendations: null,
+    vehicleFlags: null,
     engineeringEvents: [],
     actions: {
       openFormModal: () => openFormModal(),
@@ -1764,6 +1817,15 @@ function buildHomeContext() {
       ctx.engineeringEvents = [...assignmentEvents, ...reportEvents];
     } catch (err) { console.warn('[Home] engineering events unavailable', err); ctx.engineeringEvents = []; }
     ctx.recommendations = buildExecutiveRecommendations(ctx.models?.engineering, ctx.engineeringEvents);
+    // v1.30.9.14 — Vehicle flags widget data, reusing the certified Vehicle
+    // Core pipeline end-to-end (computeFleetAssetModel's normalized assets →
+    // reminder-engine's computeFleetReminders/summarizeReminders) — no new
+    // compliance/maintenance rule, same engine the Fleet drawer's Reminders
+    // tab already runs.
+    try {
+      const fleetAssets = computeFleetAssetModel({ vehicles: ctx.vehicles }).vehicles;
+      ctx.vehicleFlags = summarizeReminders(computeFleetReminders(fleetAssets), 3);
+    } catch (err) { console.warn('[Home] vehicle flags unavailable', err); ctx.vehicleFlags = null; }
   }
   return ctx;
 }
@@ -2221,8 +2283,15 @@ function showModulePlaceholder(title, message) {
 
 /* ── MODUL: Gudang ── (V1.28.0 Experience Layer — embedded native module,
    same pattern as Engineering: real navId, real land() screen, lazy mount) */
+// v1.30.9.17 (V1 Redesign Phase 5) — 'home' relabeled 'Catalog': the actual
+// gudang-home.js screen IS the item catalog (browse/search/quick-actions per
+// item); "Home" was a naming leftover, not a distinct concept from Catalog.
+// Matches "Sarpras Warehouse.dc.html"'s exact 7-tab set (Dashboard/Catalog/
+// Goods In/Goods Out/Movement/Stock Opname/Analytics) — screen key 'home'
+// (and every internal reference to it) is UNCHANGED, this is a display-label
+// rename only, so no navGudang('home', ...) call site needs to change.
 const GUD_MENU_TITLES = {
-  dashboard: 'Dashboard', home: 'Home', goodsOut: 'Goods Out', goodsIn: 'Goods In',
+  dashboard: 'Dashboard', home: 'Catalog', goodsOut: 'Goods Out', goodsIn: 'Goods In',
   history: 'Movement History', opname: 'Stock Opname', analytics: 'Analytics', intelligence: 'Inventory Intelligence',
 };
 const GUD_SCREEN_BOTTOM_NAV_ACTION = {
@@ -2465,16 +2534,18 @@ function initV2Rail() {
   });
 
   // ── Rail MODULE switching (v1.14.0) ──
-  railHome?.addEventListener('click', () => setRailModule('home'));
-  driverOps?.addEventListener('click', () => setRailModule('driverops'));
-  railPetty?.addEventListener('click', () => setRailModule('pettycash'));
-  railOvertime?.addEventListener('click', () => setRailModule('overtime'));
-  railAnalytics?.addEventListener('click', () => setRailModule('analytics'));
-  railKonfig?.addEventListener('click', () => setRailModule('konfigurasi'));
-  railEng?.addEventListener('click', () => setRailModule('engineering'));
-  railGudang?.addEventListener('click', () => setRailModule('gudang'));
-  railRoleManagement?.addEventListener('click', () => setRailModule('roleManagement'));
-  railSarpras?.addEventListener('click', () => setRailModule('sarprasIntelligence'));
+  // v1.30.9.13: routed through handleRailClick() so re-tapping the active
+  // icon at tablet width toggles the panel overlay instead of a no-op.
+  railHome?.addEventListener('click', () => handleRailClick('home'));
+  driverOps?.addEventListener('click', () => handleRailClick('driverops'));
+  railPetty?.addEventListener('click', () => handleRailClick('pettycash'));
+  railOvertime?.addEventListener('click', () => handleRailClick('overtime'));
+  railAnalytics?.addEventListener('click', () => handleRailClick('analytics'));
+  railKonfig?.addEventListener('click', () => handleRailClick('konfigurasi'));
+  railEng?.addEventListener('click', () => handleRailClick('engineering'));
+  railGudang?.addEventListener('click', () => handleRailClick('gudang'));
+  railRoleManagement?.addEventListener('click', () => handleRailClick('roleManagement'));
+  railSarpras?.addEventListener('click', () => handleRailClick('sarprasIntelligence'));
 
   // Mobile (rail hidden <768px): repointed sidebar drawer buttons are the
   // module entry points. Sidebar auto-closes on .sidebar-nav-item click.
@@ -2827,9 +2898,14 @@ function initV2Panel() {
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M3 4a1 1 0 011-1h5a1 1 0 011 1v5a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM11 4a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1V4zM11 10a1 1 0 011-1h4a1 1 0 011 1v6a1 1 0 01-1 1h-4a1 1 0 01-1-1v-6zM3 13a1 1 0 011-1h5a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3z"/></svg>
         Dashboard
       </button>
+      <!-- v1.30.9.17 (V1 Redesign Phase 5): relabeled Home -> Catalog (matches
+           the mockup's exact 7-tab set and what this screen actually is —
+           gudang-home.js is the item catalog). Icon swapped to match: screen
+           key 'home' / element id v2NavGudHome / navGudang('home', ...) are
+           ALL unchanged — display label + icon only. -->
       <button class="v2-panel-nav-item" id="v2NavGudHome" type="button">
-        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/></svg>
-        Home
+        <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M4 4a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V4zM11 4a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V4zM4 11a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zM11 11a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"/></svg>
+        Catalog
       </button>
       <button class="v2-panel-nav-item" id="v2NavGudGoodsOut" type="button">
         <svg class="v2-panel-nav-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M3 4a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 9a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V9zM3 14a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2zM11.293 4.293a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 01-1.414-1.414L12.586 9H10a1 1 0 110-2h2.586l-1.293-1.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
@@ -2953,6 +3029,23 @@ function initV2Panel() {
     const sidebar   = document.getElementById('sidebar');
     if (appLayout && sidebar) appLayout.insertBefore(panel, sidebar);
     else document.body.appendChild(panel);
+  }
+
+  // Tablet-only backdrop for the panel overlay (v1.30.9.13). A plain sibling
+  // of .v2-panel — not a child — so it's never affected by the panel's own
+  // overflow:hidden/auto and needs no extra positioning-context handling.
+  let tabletBackdrop = document.getElementById('v2PanelTabletBackdrop');
+  if (!tabletBackdrop) {
+    tabletBackdrop = document.createElement('div');
+    tabletBackdrop.id = 'v2PanelTabletBackdrop';
+    tabletBackdrop.className = 'v2-panel-tablet-backdrop';
+    panel.after(tabletBackdrop);
+    tabletBackdrop.addEventListener('click', () => setV2PanelTabletOverlay(false));
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && document.getElementById('v2Panel')?.classList.contains('v2-panel--tablet-open')) {
+        setV2PanelTabletOverlay(false);
+      }
+    });
   }
 
   // ── Event handlers — all proxy to V1 elements or imported functions ──
@@ -3477,6 +3570,23 @@ function buildListCard(a) {
   const vehicle     = esc(vehicleLabel(a.vehicle));   // v1.15.6: '' → "Tanpa Kendaraan"
   const dest        = esc(a.destination || '—');
 
+  // V1 Redesign Phase 3 (v1.30.9.15) — was a CSS [data-vehicle="Innova"]-
+  // style hardcoded 4-vehicle map (a 5th+ vehicle rendered with NO color at
+  // all, the exact "hardcoded 4-color map" gap the Design System brief
+  // calls out); now the same scalable getVehicleColor() + shape pairing
+  // used everywhere else in this redesign, inline so it works for any
+  // fleet size. Convoy/conflict reuse the SAME passive, read-only checks
+  // timeline.js's createAssignmentBlock() already computes for the desktop
+  // board — one definition (isConvoyAssignment/checkConflict), two renderers.
+  const vColor = a.vehicle && a.vehicle !== '__none__' ? getVehicleColor(a.vehicle) : null;
+  const vShape = vColor ? (buildVehicleShapeMap(getActiveVehiclesFromStore()).get(a.vehicle) || 'rounded') : null;
+  const vehicleChipStyle = vColor ? ` style="color:${esc(vColor)};border-color:${esc(vColor)}"` : '';
+  const vehicleDot = vColor
+    ? `<span class="v2-list-vehicle-dot" style="background:${esc(vColor)};${vehicleShapeCss(vShape)}" aria-hidden="true"></span>` : '';
+  const isConvoy = status !== 'cancelled' && isConvoyAssignmentForList(a);
+  const convoyBadge = isConvoy
+    ? `<span class="v2-list-convoy-badge" title="Bagian dari konvoi"><svg viewBox="0 0 24 14" fill="none" stroke="currentColor" stroke-width="2.6" width="13" height="8" aria-hidden="true"><circle cx="8" cy="7" r="5.4"/><circle cx="16" cy="7" r="5.4"/></svg>Konvoi</span>` : '';
+
   return `
     <div class="v2-list-card v2-list-card--${esc(status)}"
          data-list-id="${esc(a.id)}"
@@ -3486,9 +3596,11 @@ function buildListCard(a) {
       <div class="v2-list-card-body">
         <div class="v2-list-card-title">${title}</div>
         <div class="v2-list-card-meta">
+          ${vehicleDot}
           <span>${driver}</span>
-          <span class="v2-list-vehicle-chip" data-vehicle="${vehicle}">${vehicle}</span>
+          <span class="v2-list-vehicle-chip"${vehicleChipStyle}>${vehicle}</span>
           <span>${dest}</span>
+          ${convoyBadge}
         </div>
       </div>
       <div class="v2-list-card-status">
@@ -3496,6 +3608,21 @@ function buildListCard(a) {
       </div>
     </div>
   `;
+}
+
+/** Same convoy heuristic as timeline.js's isConvoyAssignment() (same-date/
+ *  time/destination, different driver) — kept as a separate tiny function
+ *  here rather than importing timeline.js's module-private one, since that
+ *  one closes over timeline.js's own `assignments` module state, not
+ *  app.js's. Reads the SAME module-scope `assignments` array app.js already
+ *  has (identical data, just declared in this file). */
+function isConvoyAssignmentForList(a) {
+  if (!a?.date || !a?.startTime || !a?.endTime || !a?.destination) return false;
+  return assignments.some(other =>
+    other.id !== a.id && other.date === a.date && other.startTime === a.startTime
+    && other.endTime === a.endTime && other.destination === a.destination
+    && other.driver !== a.driver && other.status !== 'cancelled'
+  );
 }
 
 /**
@@ -3522,6 +3649,106 @@ function renderListView() {
   container.innerHTML = dayAssignments.length
     ? dayAssignments.map(buildListCard).join('')
     : buildListEmpty();
+}
+
+/**
+ * V1 Redesign 4c — Assignment Board filter chips (driver/vehicle/status).
+ * Additive alongside the existing #v2SearchInput text search: both narrow
+ * getFilteredAssignments(), which only ever feeds timeline/list rendering,
+ * never conflict-checking (see that function's own doc comment). Built once
+ * and reused across renders, same lifecycle as the view-toggle buttons.
+ */
+function buildFilterBar() {
+  const bar = document.createElement('div');
+  bar.className = 'v2-filter-bar';
+  bar.id = 'v2FilterBar';
+  bar.setAttribute('role', 'group');
+  bar.setAttribute('aria-label', 'Filter jadwal');
+
+  const driverSel = document.createElement('select');
+  driverSel.className = 'v2-filter-chip';
+  driverSel.id = 'v2FilterDriver';
+  driverSel.setAttribute('aria-label', 'Filter driver');
+
+  const vehicleSel = document.createElement('select');
+  vehicleSel.className = 'v2-filter-chip';
+  vehicleSel.id = 'v2FilterVehicle';
+  vehicleSel.setAttribute('aria-label', 'Filter kendaraan');
+
+  const statusSel = document.createElement('select');
+  statusSel.className = 'v2-filter-chip';
+  statusSel.id = 'v2FilterStatus';
+  statusSel.setAttribute('aria-label', 'Filter status');
+  statusSel.innerHTML = `
+    <option value="">Semua Status</option>
+    <option value="assigned">Dijadwalkan</option>
+    <option value="started">Berlangsung</option>
+    <option value="completed">Selesai</option>
+  `;
+
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'v2-filter-clear';
+  clearBtn.id = 'v2FilterClear';
+  clearBtn.textContent = 'Reset';
+  clearBtn.style.display = 'none';
+
+  bar.appendChild(driverSel);
+  bar.appendChild(vehicleSel);
+  bar.appendChild(statusSel);
+  bar.appendChild(clearBtn);
+
+  function applyAndRender() {
+    filterDriver  = driverSel.value;
+    filterVehicle = vehicleSel.value;
+    filterStatus  = statusSel.value;
+    // data-empty drives the "active chip" styling in platform.css — a
+    // native <select>'s current value has no CSS-only way to be read back.
+    driverSel.dataset.empty  = String(!filterDriver);
+    vehicleSel.dataset.empty = String(!filterVehicle);
+    statusSel.dataset.empty  = String(!filterStatus);
+    const anyActive = !!(filterDriver || filterVehicle || filterStatus);
+    clearBtn.style.display = anyActive ? 'inline-flex' : 'none';
+    listDirty = true;
+    renderViews();
+  }
+  driverSel.dataset.empty  = 'true';
+  vehicleSel.dataset.empty = 'true';
+  statusSel.dataset.empty  = 'true';
+
+  driverSel.addEventListener('change', applyAndRender);
+  vehicleSel.addEventListener('change', applyAndRender);
+  statusSel.addEventListener('change', applyAndRender);
+  clearBtn.addEventListener('click', () => {
+    driverSel.value = '';
+    vehicleSel.value = '';
+    statusSel.value = '';
+    applyAndRender();
+  });
+
+  refreshFilterBarOptions();
+  return bar;
+}
+
+/**
+ * Rebuild the driver/vehicle filter-chip option lists without touching
+ * listeners. Call whenever the driver or vehicle roster changes — mirrors
+ * refreshDriverSelect()/refreshVehicleSelect() (js/drivers.js).
+ */
+function refreshFilterBarOptions() {
+  const driverSel  = document.getElementById('v2FilterDriver');
+  const vehicleSel = document.getElementById('v2FilterVehicle');
+  if (!driverSel || !vehicleSel) return;
+
+  const prevDriver = driverSel.value;
+  driverSel.innerHTML = '<option value="">Semua Driver</option>'
+    + getActiveDrivers().map(d => `<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('');
+  if (prevDriver && Array.from(driverSel.options).some(o => o.value === prevDriver)) driverSel.value = prevDriver;
+
+  const prevVehicle = vehicleSel.value;
+  vehicleSel.innerHTML = '<option value="">Semua Kendaraan</option>'
+    + getActiveVehiclesFromStore().map(v => `<option value="${esc(v.name)}">${esc(v.name)}</option>`).join('');
+  if (prevVehicle && Array.from(vehicleSel.options).some(o => o.value === prevVehicle)) vehicleSel.value = prevVehicle;
 }
 
 /**
@@ -3732,6 +3959,7 @@ function initV2TimelineContainer() {
   });
 
   surface.appendChild(tlHeader);
+  surface.appendChild(buildFilterBar()); // V1 Redesign 4c — shared by both views below
   surface.appendChild(timelineView);
   surface.appendChild(listView);
 
@@ -3782,14 +4010,24 @@ function initV2DriverAvatars() {
    ============================================================ */
 
 /**
- * Returns assignments filtered by the current search query.
- * Source-of-truth assignments[] is never mutated.
+ * Returns assignments filtered by the current search query AND the current
+ * filter-chip selection (driver/vehicle/status — V1 Redesign 4c).
+ * Source-of-truth assignments[] is never mutated. Feeds ONLY timeline/list
+ * rendering — never conflict-checking, which always reads the full
+ * unfiltered assignments[] (see checkConflict/checkVehicleConflict in
+ * assignments.js). Narrowing this function narrows what's displayed, never
+ * what's validated against.
  */
 function getFilteredAssignments() {
   // Cancelled assignments are terminal — they drop off the active schedule board,
   // KPI strip, and list view (they no longer occupy capacity). Records are retained
   // in the master `assignments` array for audit, history, and analytics.
-  const active = assignments.filter(a => a.status !== 'cancelled');
+  let active = assignments.filter(a => a.status !== 'cancelled');
+
+  if (filterDriver)  active = active.filter(a => a.driver === filterDriver);
+  if (filterVehicle) active = active.filter(a => a.vehicle === filterVehicle);
+  if (filterStatus)  active = active.filter(a => (a.status || 'assigned') === filterStatus);
+
   if (!searchQuery) return active;
   const q = searchQuery.toLowerCase();
   return active.filter(a =>
@@ -4926,12 +5164,16 @@ function initV2AdministrationWorkspace() {
     // Always keep #fieldDriver in sync regardless of active workspace.
     // #requestFieldDriver is handled by requests.js's own listener.
     refreshDriverSelect();
+    refreshFilterBarOptions(); // V1 Redesign 4c — keep the filter chip in sync with the live roster
     maybeAutoReactivateDrivers();
     if (currentWorkspace === 'administration' && activeAdminSection === 'drivers') renderV2AdminWorkspace();
   });
   registerVehiclesChangeListener(() => {
     if (currentWorkspace === 'administration' && activeAdminSection === 'vehicles') renderV2AdminWorkspace();
     refreshHomeWorkspace(); // v1.21.0 — Fleet feeds the Health Score + Attention Center
+    refreshVehicleSelect(); // V1 Redesign Phase 4 — keep #fieldVehicle in sync with the live roster
+    renderVehicleLegend();  // V1 Redesign Phase 4 — keep the legend in sync with the live roster
+    refreshFilterBarOptions(); // V1 Redesign 4c — keep the filter chip in sync with the live roster
   });
   registerSettingsChangeListener(() => {
     if (activeAdminSection === 'analytics') refreshAnalyticsDisplay();
@@ -12146,7 +12388,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   wireScrollStateSave();                 // v1.20.8 — debounced scroll-position save for state restoration
   initEngineeringDiagnostics();          /* DIAGNOSTIC (removable): wire Ctrl+Shift+D */
   initDriverSelect();                    // Isi dropdown driver
+  initVehicleSelect();                   // V1 Redesign Phase 4 — Isi dropdown kendaraan (was hardcoded)
+  renderVehicleLegend();                 // V1 Redesign Phase 4 — Render legend kendaraan (was hardcoded)
   initDateControls();                    // Setup date navigation buttons
+  // Date-nav (Prev/Next/Today/date-input) only calls renderTimeline() internally —
+  // keep the List/Daftar view's lazy render path (see renderViews()) in sync too,
+  // otherwise Daftar shows the previous date's assignments until something else
+  // marks listDirty (e.g. leaving and re-entering Driver Operations).
+  registerDateChangeCallback(() => {
+    if (currentDashboardView === 'list') {
+      renderListView();
+      listDirty = false;
+    } else {
+      listDirty = true;
+    }
+  });
   initTimelineInteractions();            // v1.25.x Timeline Desktop Experience: context menu + drag/resize
   initFormHandlers();                    // Setup form events
   initModalHandlers();                   // Setup modal events

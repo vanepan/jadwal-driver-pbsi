@@ -52,10 +52,14 @@ export function pill(text, tone = 'neutral') {
 /**
  * A single list row. `detailId` (optional) makes the whole row a keyboard-
  * accessible button that opens the existing detail modal via the renderer.
+ * `dotStyle` (optional, v1.30.9.14) — an inline CSS string overriding the
+ * dot's tone-based background/shape, for callers rendering a per-entity
+ * color+shape identity (e.g. vehicle hue+shape) rather than a status tone.
+ * Every existing caller omits it, so their output is byte-for-byte unchanged.
  */
-export function listRow({ title, meta = '', trailing = '', tone = 'neutral', detailId = null }) {
+export function listRow({ title, meta = '', trailing = '', tone = 'neutral', detailId = null, dotStyle = '' }) {
   const inner = `
-    <span class="wsp-row__dot wsp-row__dot--${esc(tone)}" aria-hidden="true"></span>
+    <span class="wsp-row__dot wsp-row__dot--${esc(tone)}" ${dotStyle ? `style="${esc(dotStyle)}"` : ''} aria-hidden="true"></span>
     <span class="wsp-row__main">
       <span class="wsp-row__title">${esc(title)}</span>
       ${meta ? `<span class="wsp-row__meta">${esc(meta)}</span>` : ''}

@@ -26,6 +26,37 @@ import { renderTimeline } from './engineering-timeline.js';
 const COMPLETED = new Set([STATUS.VERIFIED, STATUS.COMPLETED]);
 const JOINABLE = new Set([STATUS.AVAILABLE, STATUS.IN_PROGRESS, STATUS.CONTINUE_TOMORROW]);
 
+/* V1 Redesign Phase 8 (v1.30.9.20) — "Sarpras Engineering.dc.html" specifies
+   a numbered lifecycle stepper (Join/Start/Finish/Postpone/Verify) in the
+   work-order detail view, "its own component, visually distinct from the
+   Assignment Board's trip-lifecycle chip — same tokens, different shape."
+   Confirmed no such component existed anywhere before this change. Postpone
+   is a BRANCH off "Started" (an assignment goes Start->Finish OR
+   Start->Postpone, never both), not a strict 5th sequential milestone — the
+   mockup's own example only ever fills steps 1-2 and leaves 3-5 upcoming,
+   so this reads the current status into a single "furthest reached" stage
+   and highlights 1..stage, exactly matching that visual, rather than
+   inventing parallel-track semantics the mockup doesn't actually show. */
+const LIFECYCLE_STEPS = ['Join', 'Start', 'Finish', 'Postpone', 'Verify'];
+function lifecycleStage(status) {
+  if (status === STATUS.POSTPONED) return 4;
+  if (COMPLETED.has(status)) return 5;
+  if (status === STATUS.WAITING_VERIFICATION) return 3;
+  if (status === STATUS.IN_PROGRESS || status === STATUS.CONTINUE_TOMORROW) return 2;
+  return 1; // AVAILABLE — the drawer only opens for an already-existing work order
+}
+function renderLifecycleStepper(a) {
+  const stage = lifecycleStage(a.status);
+  return `<div class="eng-stepper">${LIFECYCLE_STEPS.map((label, i) => {
+    const n = i + 1;
+    const reached = n <= stage;
+    return `<div class="eng-stepper-step" data-reached="${reached}">
+      <span class="eng-stepper-num">${n}</span>
+      <span class="eng-stepper-label">${esc(label)}</span>
+    </div>`;
+  }).join('')}</div>`;
+}
+
 function findMine(a, me) {
   if (!me) return null;
   return (a.participants || []).find((p) => p.workerId === me.id || p.name === me.name) || null;
@@ -164,6 +195,7 @@ export function renderDrawer(a, ctx) {
       </div>
 
       <div class="eng-drawer-body">
+        ${renderLifecycleStepper(a)}
         <div class="eng-sec">
           <div class="eng-sec-t">Informasi</div>
           ${kv('Kategori', `<span style="color:var(--${cat.tone})">${esc(cat.label)}</span>`)}

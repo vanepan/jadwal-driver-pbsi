@@ -10,8 +10,11 @@
 import { todayString, formatDateLong, timeToMinutes, minutesToTime, offsetDate, computeWorkTime } from './utils.js';
 import { getVehicleColor } from './drivers.js';
 import { getActiveDrivers } from './drivers-store.js';
+import { getActiveVehicles } from './vehicles-store.js';
+import { checkConflict, checkVehicleConflict } from './assignments.js';
 import { openDetailModal } from './modal.js';
 import { getSetting } from './settings-store.js';
+import { buildVehicleShapeMap, vehicleShapeCss } from './utils/vehicle-identity.js';
 
 /** Live office-hours window (09:00–17:00 default) for overtime detection. */
 function getOfficeHours() {
@@ -302,6 +305,38 @@ function driverMatchesAssignment(driver, assignment) {
 }
 
 /**
+ * V1 Redesign Phase 3 (v1.30.9.15) — passive, read-only convoy detection.
+ * The mockup ("Sarpras Assignment Board.dc.html") explicitly flags real
+ * convoy grouping as an OPEN PRODUCT DECISION — "confirm whether a real
+ * 'linked trip' field should be added to the data model, or whether
+ * time+location matching is enough" — rather than assuming one. Per the
+ * project's own established pattern (flag, don't guess, when a mockup says
+ * to), this implements the SAFER of the two options it names: the same
+ * heuristic (same date + same start/end time + same destination, across 2+
+ * DIFFERENT drivers), which needs no data-model change and is purely
+ * visual/read-only, exactly like the existing passive conflict badge (same
+ * file, same pattern: computed from already-stored fields, never written
+ * back, never blocks anything). A real "linkedTripId" field remains a
+ * product decision for the user to make later if this heuristic proves
+ * insufficient in practice.
+ * @param {Object} assignment
+ * @returns {boolean}
+ */
+function isConvoyAssignment(assignment) {
+  if (!assignment?.date || !assignment?.startTime || !assignment?.endTime || !assignment?.destination) return false;
+  if (normalizeBlockStatus(assignment.status) === 'cancelled') return false;
+  return assignments.some(other =>
+    other.id !== assignment.id
+    && other.date === assignment.date
+    && other.startTime === assignment.startTime
+    && other.endTime === assignment.endTime
+    && other.destination === assignment.destination
+    && other.driver !== assignment.driver
+    && normalizeBlockStatus(other.status) !== 'cancelled'
+  );
+}
+
+/**
  * Buat elemen blok assignment
  * Posisi dan ukuran dihitung berdasarkan jam mulai/selesai
  * @param {Object} assignment - Assignment object
@@ -365,18 +400,57 @@ function createAssignmentBlock(assignment) {
     ? 'Penuh Hari'
     : `${minutesToTime(displayStartMin)}–${minutesToTime(displayEndMin)}`;
 
+  // V1 Redesign Phase 4b: passive visual conflict indicator
+  // (ASSIGNMENT_BOARD_REDESIGN.md §4, guardrails doc §1 explicitly allows
+  // this). Read-only — calls the SAME checkConflict/checkVehicleConflict
+  // used at write-time, never a second conflict-computation path, and never
+  // blocks/alters anything; it only decides whether to show a badge.
+  // Cancelled assignments are excluded (out of the operational view anyway;
+  // see getFilteredAssignments()).
+  const hasConflict = status !== 'cancelled' && (
+    checkConflict(assignment.driver, assignment.startTime, assignment.endTime, assignment.date, assignment.id)
+    || (assignment.vehicle && assignment.vehicle !== '__none__'
+        && checkVehicleConflict(assignment.vehicle, assignment.startTime, assignment.endTime, assignment.date, assignment.id))
+  );
+
   const metadataBadges = [
     isCompleted ? '<span class="block-status-badge">✓ Selesai</span>' : '',
     isOvertime  ? '<span class="block-status-badge block-status-badge--overtime">Lembur</span>' : '',
     isStarted   ? '<span class="block-status-badge block-status-badge--started">Jalan</span>' : '',
+    hasConflict ? '<span class="block-status-badge block-status-badge--conflict">⚠ Konflik</span>' : '',
   ].filter(Boolean).join('<span class="block-meta-separator">•</span>');
 
+  // V1 Redesign Phase 3 (v1.30.9.15) — shape half of vehicle identity (color
+  // alone, the pre-existing block.style.background above, fails colorblind
+  // users) + a passive convoy-link mark + a passive corner conflict dot.
+  // All three are supplementary to what already existed (full-color fill,
+  // the text conflict badge above) — nothing here replaces or blocks
+  // anything, matching this file's own established passive-indicator rule.
+  const shapeMap = buildVehicleShapeMap(getActiveVehicles());
+  const shape = shapeMap.get(assignment.vehicle) || 'rounded';
+  const isConvoy = isConvoyAssignment(assignment);
+  const vehicleShapeDot = assignment.vehicle && assignment.vehicle !== '__none__'
+    ? `<span class="block-vehicle-shape" style="${vehicleShapeCss(shape)}" aria-hidden="true"></span>` : '';
+  const convoyMark = isConvoy
+    ? `<span class="block-convoy-mark" title="Bagian dari konvoi (jadwal &amp; tujuan sama)" aria-hidden="true">
+         <svg viewBox="0 0 24 14" fill="none" stroke="currentColor" stroke-width="2.6"><circle cx="8" cy="7" r="5.4"/><circle cx="16" cy="7" r="5.4"/></svg>
+       </span>` : '';
+  const conflictDot = hasConflict ? '<span class="block-conflict-dot" aria-hidden="true"></span>' : '';
+
   block.innerHTML = `
+    ${vehicleShapeDot}
+    ${conflictDot}
     <span class="block-time">${blockTimeLabel}</span>
     <span class="block-purpose">${assignment.purpose}</span>
     ${metadataBadges ? `<span class="block-meta-row">${metadataBadges}</span>` : ''}
+    ${convoyMark}
     <div class="resize-handle"></div>
   `;
+  // V1 Redesign Phase 4b (P1 fix): .block-purpose truncates with ellipsis
+  // and had no escape hatch (ASSIGNMENT_BOARD_REDESIGN.md §4). Set as a DOM
+  // property, not template-string HTML, so it can't reintroduce an XSS
+  // vector the way the innerHTML above already (pre-existingly) does.
+  block.title = assignment.purpose || '';
 
   // Klik blok → tampilkan detail modal
   block.addEventListener('click', (e) => {
@@ -492,6 +566,20 @@ function syncTimelineScroll() {
   updateFadeIndicators();
 }
 
+let onDateChange = null;
+
+/**
+ * Register a callback fired after currentDate changes via the date input,
+ * Prev/Next, or Today button. renderTimeline() (called directly below) only
+ * refreshes the Timeline engine — app.js uses this hook to also keep the
+ * List/Daftar view in sync, since that view has its own lazy render path
+ * (renderViews()) that a bare renderTimeline() call never reaches.
+ * @param {() => void} fn
+ */
+export function registerDateChangeCallback(fn) {
+  onDateChange = fn;
+}
+
 /**
  * Initialize kontrol navigasi tanggal (Prev, Next, Today, Filter)
  */
@@ -505,6 +593,7 @@ export function initDateControls() {
   input.addEventListener('change', () => {
     currentDate = input.value;
     renderTimeline();
+    onDateChange?.();
   });
 
   // Prev button
@@ -514,6 +603,7 @@ export function initDateControls() {
       currentDate = offsetDate(currentDate, -1);
       input.value = currentDate;
       renderTimeline();
+      onDateChange?.();
     });
   }
 
@@ -524,6 +614,7 @@ export function initDateControls() {
       currentDate = offsetDate(currentDate, 1);
       input.value = currentDate;
       renderTimeline();
+      onDateChange?.();
     });
   }
 
@@ -534,6 +625,7 @@ export function initDateControls() {
       currentDate = todayString();
       input.value = currentDate;
       renderTimeline();
+      onDateChange?.();
     });
   }
 }

@@ -106,12 +106,12 @@ function cycleSummary(model) {
       <div class="an-figure"${accent ? ` style="color:${accent};"` : ''}>${value}</div>
     </div>`;
   return `
-    ${renderEyebrow({ tag: 'Siklus Aktif', title: `Ringkasan Siklus${c.number ? ` #${c.number}` : ''}`, sub: 'Status saldo siklus berjalan' })}
+    ${renderEyebrow({ tag: 'Siklus Aktif', title: `Ringkasan Siklus${c.number ? ` #${c.number}` : ''}`, sub: 'Status realisasi resmi (NOR diterbitkan) siklus berjalan' })}
     <div class="pc-an-cyc" style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:26px;">
       ${item('Saldo Awal Siklus', rp(c.opening))}
-      ${item('Total Pengeluaran', rp(c.spent), 'var(--c-amber,#946420)')}
+      ${item('Total Direalisasi (NOR Resmi)', rp(c.spent), 'var(--c-amber,#946420)')}
       ${item('Saldo Tersisa', rp(c.remaining), c.remaining < 0 ? 'var(--c-crit,#A8292F)' : 'var(--c-green,#2F7D62)')}
-      ${item('Persentase Realisasi', `${c.realizationPct}%`)}
+      ${item('% Realisasi Resmi', `${c.realizationPct}%`)}
     </div>`;
 }
 

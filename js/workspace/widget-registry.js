@@ -35,6 +35,11 @@ export const WIDGETS = {
   'exec-recommendation': { id: 'exec-recommendation', title: 'Tindakan Direkomendasikan', span: 1,   variant: 'card',    group: 'executive' },
   'exec-snapshot':       { id: 'exec-snapshot',       title: 'Snapshot Operasional',   span: 'full', variant: 'section', group: 'executive' },
   'exec-activity':       { id: 'exec-activity',       title: 'Hari Ini',               span: 2,      variant: 'card',    group: 'executive' },
+  // v1.30.9.14 (V1 Redesign Phase 2) — Admin Home mockup's two-column
+  // "Drivers" / "Vehicle flags" pairing, next to exec-activity so they land
+  // in the same visual row as the mockup's layout.
+  'exec-drivers':        { id: 'exec-drivers',        title: 'Driver',                 span: 1,      variant: 'card',    group: 'executive' },
+  'exec-vehicle-flags':  { id: 'exec-vehicle-flags',  title: 'Status Kendaraan',        span: 1,      variant: 'card',    group: 'executive' },
   'exec-quick':          { id: 'exec-quick',          title: 'Peluncur Eksekutif',     span: 'full', variant: 'section', group: 'executive' },
 
   /* ── Request Workspace (bidang) ── */

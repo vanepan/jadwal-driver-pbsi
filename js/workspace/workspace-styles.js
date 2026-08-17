@@ -377,6 +377,11 @@ const CSS = `
 .wsp-inbox__title { font-size: .9rem; font-weight: 700; color: var(--text); }
 .wsp-inbox__reason { font-size: .8rem; color: var(--text-dim); line-height: 1.45; }
 .wsp-inbox__item .wsp-btn { align-self: flex-start; margin-top: 2px; }
+/* v1.30.9.14 — Accept/Dismiss pair (mockup parity); .wsp-inbox__item .wsp-btn
+   above still applies to buttons inside this wrapper (descendant selector),
+   the wrapper only adds the side-by-side layout. */
+.wsp-inbox__row-actions { display: flex; gap: 8px; margin-top: 2px; }
+.wsp-inbox__row-actions .wsp-btn { margin-top: 0; }
 .wsp-inbox__item--primary .wsp-inbox__title { font-size: 1.15rem; letter-spacing: -0.01em; }
 .wsp-inbox__item--primary .wsp-inbox__reason { font-size: .86rem; }
 .wsp-inbox__item--secondary .wsp-inbox__title { font-size: .84rem; }

@@ -14,7 +14,10 @@
 
 'use strict';
 
-import { esc, empty, lead, pill, actionBtn, chip, chipRow } from '../_widget-base.js';
+import { esc, empty, lead, pill, actionBtn, chip, chipRow, listRow, list } from '../_widget-base.js';
+// v1.30.9.14 (V1 Redesign Phase 2) — shape half of vehicle identity (color
+// already existed per-vehicle; shape did not exist anywhere before this).
+import { buildVehicleShapeMap, vehicleShapeCss } from '../../utils/vehicle-identity.js';
 // v1.22.1 Objective 9 — Analytics Driver (analytics-shell.js) is the Executive
 // design authority; reuse its exact ring-gauge SVG builder rather than drawing
 // a second one. Pure presentation, no engine/business-logic coupling.
@@ -920,15 +923,30 @@ export const widgets = {
       // and Impact are two DISTINCT, labeled lines (not merged into one) per
       // the Decision Center contract: Action / Reason / Impact / Priority
       // must each be independently identifiable within 10 seconds.
+      //
+      // v1.30.9.14 (V1 Redesign Phase 2) — Dismiss added per the mockup's
+      // Accept/Dismiss pair. Scoped deliberately: this engine's recs are
+      // navigational ("go look at Prediction"), not auto-executable actions
+      // (there is no "assign Vehicle C to the 14:00 request" endpoint this
+      // widget can safely call sight-unseen) — inventing a fake data-mutating
+      // "Accept" would be worse than not having one. "Tinjau Prediksi" is
+      // kept as the real action (styled primary, matching the mockup's
+      // Accept weight); "Dismiss" is a genuine session-local hide (a Set on
+      // bodyEl, gone on reload) — it touches no stored data, matching what
+      // this widget can honestly promise today.
+      const dismissKey = (r) => `${r.category || ''}:${r.title}`;
       const row = (r, variant) => `
-        <div class="wsp-inbox__item wsp-inbox__item--${variant}">
+        <div class="wsp-inbox__item wsp-inbox__item--${variant}" data-reco-key="${esc(dismissKey(r))}">
           <div class="wsp-inbox__top">${pill(r.priority?.label || 'Prioritas', engineTone(r.priority?.tone))}</div>
           <div class="wsp-inbox__title">${esc(r.title)}</div>
           <div class="wsp-inbox__explain">
             <div class="wsp-inbox__explain-row"><span class="wsp-inbox__explain-label">Alasan</span>${esc(r.reason)}</div>
             <div class="wsp-inbox__explain-row"><span class="wsp-inbox__explain-label">Dampak</span>${esc(r.expectedBenefit || r.estimatedImpact?.label || '—')}</div>
           </div>
-          ${actionBtn('Tinjau Prediksi', 'navDriverPrediction', { variant: 'ghost' })}
+          <div class="wsp-inbox__row-actions">
+            ${actionBtn('Tinjau Prediksi', 'navDriverPrediction', { variant: 'primary' })}
+            <button type="button" class="wsp-btn wsp-btn--ghost" data-reco-dismiss="${esc(dismissKey(r))}">Abaikan</button>
+          </div>
         </div>`;
 
       const visible = items.slice(0, RECOMMENDATION_VISIBLE_CAP);
@@ -961,6 +979,23 @@ export const widgets = {
       } else {
         delete bodyEl.dataset.wspRecoOpen;
       }
+
+      // v1.30.9.14 — session-local Dismiss. __wspRecoDismissed persists on
+      // bodyEl (the same node across a live refresh, only innerHTML is
+      // rebuilt — the established Realtime Continuity pattern this file
+      // uses everywhere else), re-applied on every mount so a dismissal
+      // survives a Firebase-triggered re-render but not a reload.
+      if (!bodyEl.__wspRecoDismissed) bodyEl.__wspRecoDismissed = new Set();
+      bodyEl.querySelectorAll('[data-reco-key]').forEach(el => {
+        if (bodyEl.__wspRecoDismissed.has(el.dataset.recoKey)) el.style.display = 'none';
+      });
+      bodyEl.querySelectorAll('[data-reco-dismiss]').forEach(el => {
+        el.addEventListener('click', () => {
+          const key = el.dataset.recoDismiss;
+          bodyEl.__wspRecoDismissed.add(key);
+          bodyEl.querySelector(`[data-reco-key="${CSS.escape(key)}"]`)?.style.setProperty('display', 'none');
+        });
+      });
     },
   },
 
@@ -1216,6 +1251,87 @@ export const widgets = {
         });
       }
       bodyEl.__wspStorySeen = new Set(nodes.map(el => el.dataset.storyKey));
+    },
+  },
+
+  /* ── Drivers now ── (v1.30.9.14, V1 Redesign Phase 2: Admin Home mockup's
+     "Drivers" list — who is doing what right now, colored by the vehicle
+     they're currently paired with. Status is derived directly from
+     ctx.assignments (already loaded, same pattern exec-snapshot's own
+     render() already uses for its own date-range filtering) — no new
+     engine, no new Firebase read. Vehicle color reuses each vehicle's
+     existing `.color` field; shape is the net-new axis from
+     utils/vehicle-identity.js. */
+  'exec-drivers': {
+    render(ctx) {
+      const driversList = ctx.drivers || [];
+      if (!driversList.length) return empty('Belum ada driver aktif.');
+
+      const vehicles = ctx.vehicles || [];
+      const shapeMap = buildVehicleShapeMap(vehicles);
+      const vehicleByName = new Map(vehicles.map(v => [v.name, v]));
+
+      const todayYmd = new Date().toISOString().slice(0, 10);
+      const nowMin = (() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); })();
+      const toMin = (t) => { const m = /^(\d{1,2}):(\d{2})/.exec(t || ''); return m ? (+m[1]) * 60 + (+m[2]) : null; };
+
+      const todays = (ctx.assignments || []).filter(a => a.date === todayYmd && a.status !== 'cancelled');
+
+      const rows = driversList.map(d => {
+        const mine = todays.filter(a => a.driver === d.name);
+        const inTrip = mine.find(a => {
+          const s = toMin(a.startTime), e = toMin(a.endTime);
+          return s != null && e != null && nowMin >= s && nowMin < e;
+        });
+        const upcoming = mine.find(a => { const s = toMin(a.startTime); return s != null && s > nowMin; });
+        const active = inTrip || upcoming;
+        const vehicle = active ? vehicleByName.get(active.vehicle) : null;
+        const dotStyle = vehicle
+          ? `background:${esc(vehicle.color || '#9a9a9a')};${vehicleShapeCss(shapeMap.get(vehicle.name) || 'rounded')}`
+          : '';
+        const tone = inTrip ? 'good' : upcoming ? 'info' : 'neutral';
+        const status = inTrip ? 'Dalam perjalanan' : upcoming ? 'Terjadwal' : 'Tidak bertugas';
+        return listRow({ title: d.name, trailing: status, tone, dotStyle });
+      });
+
+      return list(rows.join(''));
+    },
+  },
+
+  /* ── Vehicle flags ── (v1.30.9.14, V1 Redesign Phase 2: Admin Home
+     mockup's "Vehicle flags" list. Reuses the certified Vehicle Core
+     pipeline verbatim via ctx.vehicleFlags (computed once in
+     buildHomeContext(), same computeFleetAssetModel → reminder-engine path
+     the Fleet drawer's own Reminders tab already runs) — this widget only
+     renders what it's given, no new compliance/maintenance logic. */
+  'exec-vehicle-flags': {
+    render(ctx) {
+      const vf = ctx.vehicleFlags;
+      if (!vf || !vf.top || !vf.top.length) {
+        return compactSuccessLine('Tidak ada kendaraan yang memerlukan tindakan.');
+      }
+      const vehicles = ctx.vehicles || [];
+      const shapeMap = buildVehicleShapeMap(vehicles);
+      const vehicleById = new Map(vehicles.map(v => [v.id, v]));
+
+      const rows = vf.top.map(r => {
+        const vehicle = vehicleById.get(r.vehicleId);
+        const dotStyle = vehicle
+          ? `background:${esc(vehicle.color || '#9a9a9a')};${vehicleShapeCss(shapeMap.get(vehicle.name) || 'rounded')}`
+          : '';
+        // No detailId: ctx.actions.openDetail() opens the ASSIGNMENT detail
+        // modal (buildHomeContext's only wired detail action) — a vehicleId
+        // there would be a category error, not a real deep link. This row
+        // stays informational; "Buka Manajemen Kendaraan" below is the
+        // actual navigation path, same as the mockup's own non-clickable rows.
+        return listRow({
+          title: `${r.vehicleName} · ${r.typeLabel}`,
+          trailing: r.statusLabel,
+          tone: engineTone(r.tone),
+          dotStyle,
+        });
+      });
+      return list(rows.join('')) + actionBtn('Buka Manajemen Kendaraan', 'navVehicles', { variant: 'ghost' });
     },
   },
 

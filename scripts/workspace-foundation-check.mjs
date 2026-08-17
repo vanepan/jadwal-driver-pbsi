@@ -131,10 +131,15 @@ check('driver → driver workspace', result.roles.driver === 'driver');
 check('engineering → engineering workspace', result.roles.engineering === 'engineering');
 check('unknown role → safe fallback (request)', result.roles.viewer === 'request');
 
-// Phase 7C (Executive Consolidation) — the briefing is deliberately fixed at
-// exactly 6 sections (Hero/Attention/Recommendation/Snapshot/Story/Launcher);
-// exec-priority/exec-decision/exec-simulation were removed, not just thinned.
-check('executive workspace has exactly 6 widgets (post-consolidation)', result.counts.executive === 6);
+// Phase 7C (Executive Consolidation) fixed the briefing at exactly 6 sections
+// (Hero/Attention/Recommendation/Snapshot/Story/Launcher); exec-priority/
+// exec-decision/exec-simulation were removed, not just thinned. v1.30.9.14
+// (V1 Redesign Phase 2) deliberately grew this to 8, adding exec-drivers/
+// exec-vehicle-flags between Story and Launcher — the Admin Home mockup's
+// "Drivers now" / "Vehicle flags" pairing, closing a real gap (neither
+// existed in any form before). Not a reversal of the consolidation
+// principle: still one deliberate, curated set, not a re-thinning.
+check('executive workspace has exactly 8 widgets (post-Phase-2 addition)', result.counts.executive === 8);
 check('request workspace has widgets', result.counts.request >= 8);
 check('driver workspace has widgets', result.counts.driver >= 8);
 check('engineering workspace has widgets', result.counts.engineering >= 6);

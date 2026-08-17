@@ -34,12 +34,18 @@ export const WORKSPACES = {
     // removed (their unique information was merged into exec-attention, or —
     // for Simulation — remains reachable via exec-quick's existing 'Simulasi'
     // destination); their underlying engines are untouched.
+    // v1.30.9.14 (V1 Redesign Phase 2) — exec-drivers/exec-vehicle-flags
+    // added after exec-activity: the mockup's "Drivers now" / "Vehicle
+    // flags" pairing, closing gap analysis's Class C finding for Admin Home
+    // (no driver-status list, no vehicle-flags list existed before this).
     widgets: [
       'exec-hero',
       'exec-attention',
       'exec-recommendation',
       'exec-snapshot',
       'exec-activity',
+      'exec-drivers',
+      'exec-vehicle-flags',
       'exec-quick',
     ],
   },

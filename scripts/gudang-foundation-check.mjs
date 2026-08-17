@@ -243,8 +243,17 @@ console.log('\n[Part G — Routing: js/app.js declares Gudang module wiring]');
   // "zero-screen foundation build"). Real screens now exist; the module
   // graduated to the same admin-only rule Petty Cash/Analytics/Konfigurasi
   // already use (see canAccessModule's 'gudang' case for the full reasoning).
-  check('canAccessModule() gates "gudang" admin-only (V1.28.0 Experience Layer — same rule as Petty Cash/Analytics/Konfigurasi)',
-    /case 'gudang':\s*return false;/.test(appJs));
+  // v1.30.9.17 — this assertion had gone stale: canAccessModule() was
+  // migrated at some point from a literal `case 'gudang': return false`
+  // switch to a data-driven MODULE_PERMISSIONS['gudang'] lookup (v1.30.5's
+  // "gated by permission, not role" migration, per that commit's own
+  // comments elsewhere in app.js) — the regex below never matched the
+  // refactored code and this check had been silently failing since,
+  // independent of and unrelated to this phase's own (display-label-only)
+  // Gudang change. Updated to assert the CURRENT gating mechanism instead
+  // of resurrecting the old switch-case shape.
+  check('canAccessModule() gates "gudang" via MODULE_PERMISSIONS (admin-only warehouse.view — same rule as Petty Cash/Analytics/Konfigurasi)',
+    /gudang:\s*'warehouse\.view'/.test(appJs));
   check('navGudang() is defined', /function navGudang\s*\(/.test(appJs));
   check('navGudang() mounts the real embedded module (mountGudang), not the placeholder', /function navGudang[\s\S]{0,300}mountGudang\(/.test(appJs));
   check('the rail item id v2RailGudang is declared', /v2RailGudang/.test(appJs));
