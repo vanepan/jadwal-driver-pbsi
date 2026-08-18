@@ -60,6 +60,11 @@ export const MACRO_STAGGER = {
   recommendation: 220,
   snapshot: 280,
   story: 340,
+  // v1.30.10.6 — drivers/vehicleFlags (added later, V1 Redesign Phase 2)
+  // never got a beat of their own and fell in with zero delay, out of
+  // sequence between story and launcher, where they actually render.
+  drivers: 400,
+  vehicleFlags: 460,
   // Motion Language's walkthrough beat: "The way out to the rest of the
   // platform arrives last, quietly." Calm tempo, no pulse.
   launcher: 600,

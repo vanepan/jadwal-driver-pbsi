@@ -83,3 +83,21 @@ export function rankedList(items) {
 export function compactSuccessLine(message) {
   return `<div class="wsp-compact-ok"><span class="wsp-compact-ok__dot" aria-hidden="true"></span>${esc(message)}</div>`;
 }
+
+/** v1.30.10.6 — Quick Nav destination tile: icon-over-label, no border/pill
+ *  background at rest (spec: "refined contextual navigation... not a giant
+ *  pill collection"). Writes the same data-wsp-action/data-wsp-arg contract
+ *  actionBtn/chip already use, consumed by workspace-renderer.js's single
+ *  delegated click handler — no new wiring needed. */
+export function launcherItem(d) {
+  return `
+    <button type="button" class="wsp-launcher__item" data-wsp-action="${esc(d.action)}"${d.arg ? ` data-wsp-arg="${esc(d.arg)}"` : ''}>
+      <span class="wsp-launcher__icon" aria-hidden="true">${d.icon || ''}</span>
+      <span class="wsp-launcher__label">${esc(d.label)}</span>
+    </button>`;
+}
+
+/** Destination board wrapper — a responsive grid, not a wrapped pill row. */
+export function launcherGrid(items) {
+  return `<div class="wsp-launcher">${items.map(launcherItem).join('')}</div>`;
+}

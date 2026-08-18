@@ -14,7 +14,7 @@
 
 'use strict';
 
-import { esc, empty, lead, pill, actionBtn, chip, chipRow, listRow, list } from '../_widget-base.js';
+import { esc, empty, lead, pill, actionBtn, listRow, list } from '../_widget-base.js';
 // v1.30.9.14 (V1 Redesign Phase 2) — shape half of vehicle identity (color
 // already existed per-vehicle; shape did not exist anywhere before this).
 import { buildVehicleShapeMap, vehicleShapeCss } from '../../utils/vehicle-identity.js';
@@ -28,7 +28,7 @@ import { buildHeroNarrative } from './narrative-builder.js';
 // Phase 0 Executive Foundation — presentation primitives + tone adapters
 // extracted out of this file (previously private, now shared/reusable).
 // Pure move: same markup, same CSS classes, zero visual change.
-import { rankedList, compactSuccessLine, severityRank, toneFromLevel, toneFromEngine as engineTone } from './ui-kit.js';
+import { rankedList, compactSuccessLine, severityRank, toneFromLevel, toneFromEngine as engineTone, launcherGrid } from './ui-kit.js';
 // Phase 1 (Hero) — Motion Profiles defined in Phase 0, first consumed here.
 // Macro Motion (page-level section reveal) is unaffected by this import —
 // it stays owned by workspace-renderer.js's existing fade-up class.
@@ -194,15 +194,38 @@ function mountHeroMotion(root, ctx) {
   const fromScore = alreadyMounted && Number.isFinite(lastScoreRaw) ? lastScoreRaw : 0;
   root.dataset.heroLastScore = String(targetScore);
 
-  const scoreEl = root.querySelector('[data-countup]');
+  // Scoped to .wsp-hero__scoreval specifically (not the bare [data-countup]
+  // attribute) now that the pulse stats below also carry data-countup —
+  // DOM order happens to put the score first today, but this must not rely
+  // on that.
+  const scoreEl = root.querySelector('.wsp-hero__scoreval[data-countup]');
   const ringEl = root.querySelector('.an-ring-val[data-ring-len]');
   const circ = ringEl ? parseFloat(ringEl.getAttribute('data-ring-circ')) : null;
   const targetLen = ringEl ? parseFloat(ringEl.getAttribute('data-ring-len')) : null;
   const fromLen = alreadyMounted && circ != null ? (fromScore / 100) * circ : 0;
 
+  // v1.30.10.6 — Pulse metrics (Kendaraan Siap/Driver Aktif/Permintaan
+  // Tertunda/Trip Hari Ini) count up the same way the score does: 0->target
+  // on first mount, last-shown->new on a live refresh, never a hard snap.
+  // Continuity is tracked per stat key on root.dataset, same contract as
+  // heroLastScore above (root survives a refresh, only innerHTML is rebuilt).
+  const statEls = Array.from(root.querySelectorAll('.wsp-hero__stat-big[data-countup][data-stat-key]'));
+  const statTweens = new Map();
+  statEls.forEach((el) => {
+    const key = el.dataset.statKey;
+    const target = Number(el.dataset.countup);
+    if (!Number.isFinite(target)) return;
+    const datasetKey = `heroLastStat${key.charAt(0).toUpperCase()}${key.slice(1)}`;
+    const lastRaw = Number(root.dataset[datasetKey]);
+    const from = alreadyMounted && Number.isFinite(lastRaw) ? lastRaw : 0;
+    statTweens.set(el, { from, target });
+    root.dataset[datasetKey] = String(target);
+  });
+
   if (reduce) {
     if (scoreEl) scoreEl.textContent = String(Math.round(targetScore));
     if (ringEl && circ != null) ringEl.setAttribute('stroke-dasharray', `${targetLen} ${circ}`);
+    statTweens.forEach(({ target }, el) => { el.textContent = String(target); });
     return;
   }
 
@@ -246,6 +269,17 @@ function mountHeroMotion(root, ctx) {
     };
     requestAnimationFrame(tick);
   }
+
+  statTweens.forEach(({ from, target }, el) => {
+    const tick = (now) => {
+      if (stale()) return;
+      const p = Math.min(1, (now - t0) / tween.duration);
+      const v = from + (target - from) * ease(p);
+      el.textContent = String(Math.round(v));
+      if (p < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
 }
 
 /* v1.22.1 Objectives 6/7 — Priority/Attention as a de-boxed severity list
@@ -704,10 +738,10 @@ export const widgets = {
       // — the exact same assignments.filter(date===todayYmd) expression
       // buildInsight() already computes for its own workload sentence.
       const stats = [
-        { lbl: 'Kendaraan Siap', big: n(f.dk.activeVehicles) },
-        { lbl: 'Driver Aktif', big: n(f.dk.activeDrivers) },
-        { lbl: 'Permintaan Tertunda', big: f.pending },
-        { lbl: 'Trip Hari Ini', big: f.tripsToday },
+        { key: 'vehicles', lbl: 'Kendaraan Siap', big: n(f.dk.activeVehicles) },
+        { key: 'drivers', lbl: 'Driver Aktif', big: n(f.dk.activeDrivers) },
+        { key: 'pending', lbl: 'Permintaan Tertunda', big: f.pending },
+        { key: 'trips', lbl: 'Trip Hari Ini', big: f.tripsToday },
       ];
 
       // v1.21.0/v1.22.0 Explainability — now secondary, behind a disclosure.
@@ -763,11 +797,17 @@ export const widgets = {
 
           <div class="wsp-hero__stats wsp-hero-anim" style="${beat(profile.micro.pulse)}" tabindex="0" role="group" aria-label="Status operasional saat ini">
             <span class="wsp-hero__stats-label">Status Operasional</span>
-            ${stats.map(s => `
+            ${stats.map(s => {
+              // v1.30.10.6 — numeric stats count up (mountHeroMotion) the same
+              // way the health score already does; a '—' (no-data) stat has
+              // nothing to tween and renders as static text, unchanged.
+              const numeric = typeof s.big === 'number' && Number.isFinite(s.big);
+              return `
               <div class="wsp-hero__stat">
                 <span class="wsp-hero__stat-lbl">${esc(s.lbl)}</span>
-                <span class="wsp-hero__stat-big">${esc(s.big)}</span>
-              </div>`).join('')}
+                <span class="wsp-hero__stat-big"${numeric ? ` data-countup="${esc(s.big)}" data-stat-key="${s.key}"` : ''}>${numeric ? '0' : esc(s.big)}</span>
+              </div>`;
+            }).join('')}
           </div>
 
           ${(breakdownRows || explainRowsHtml) ? `
@@ -1354,13 +1394,18 @@ export const widgets = {
      another decision surface — "where do I go next," never "what should I
      do." Fixed 9-destination order (LAUNCHER_DESTINATIONS above), genuinely
      role-filtered via ctx.role (see that const's comment for why this is a
-     no-op today), horizontally scrollable on mobile via the existing
-     .wsp-chips rule — unchanged from before this phase. */
+     no-op today).
+
+     v1.30.10.6 — rebuilt as a quiet destination grid (launcherGrid, ui-kit.js)
+     instead of a row of bordered/filled .wsp-chip pills: the reference spec
+     explicitly calls out "a giant pill collection" as the anti-pattern to
+     avoid for this exact section. Same 9 destinations, same icons
+     (anIcon()), same data-wsp-action click contract — presentation only. */
   'exec-quick': {
     render(ctx) {
       const items = launcherDestinationsFor(ctx?.role);
       if (!items.length) return empty('Tidak ada tujuan yang tersedia untuk peran ini.');
-      return chipRow(items.map(d => chip(d.label, d.action, { icon: anIcon(d.icon, { size: 16 }) })));
+      return launcherGrid(items.map(d => ({ label: d.label, action: d.action, icon: anIcon(d.icon, { size: 18 }) })));
     },
   },
 };

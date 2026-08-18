@@ -535,6 +535,22 @@ const CSS = `
 .wsp-chip:focus-visible { outline-color: var(--accent); }
 .wsp-chip__icon { display: inline-flex; }
 
+/* v1.30.10.6 — Executive Launcher destination grid: replaces .wsp-chips for
+   exec-quick specifically (that rule stays above, untouched, as a shared
+   primitive other callers may still use). Icon-over-label tiles, no border/
+   fill at rest — the reference spec explicitly names "a giant pill
+   collection" as the anti-pattern this avoids; only a quiet background tint
+   on hover/focus marks each tile as interactive. */
+.wsp-launcher { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 4px; }
+.wsp-launcher__item { display: flex; flex-direction: column; align-items: center; gap: 8px; font: inherit; text-align: center;
+  padding: 14px 8px 12px; border: none; border-radius: var(--radius-sm); background: none; color: var(--text); cursor: pointer;
+  outline: 2px solid transparent; outline-offset: -2px;
+  transition: background-color ${RESPONSIVE.duration}ms ${RESPONSIVE.ease}, outline-color ${RESPONSIVE.duration}ms ${RESPONSIVE.ease}; }
+.wsp-launcher__item:hover { background: var(--border-faint); }
+.wsp-launcher__item:focus-visible { outline-color: var(--accent); }
+.wsp-launcher__icon { display: inline-flex; color: var(--text-dim); }
+.wsp-launcher__label { font-size: .78rem; font-weight: 600; color: var(--text-dim); line-height: 1.25; }
+
 /* ════════ v1.22.2 Objectives 10/11 — Adaptive Layout (non-Hero) ════════
    Hero's own responsive tiers (mobile/tablet/desktop) now live entirely
    with the rest of the Hero CSS, above (Phase 1) — the Hero is one grid
@@ -557,6 +573,9 @@ const CSS = `
   .wsp-chips { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
   .wsp-chips::-webkit-scrollbar { display: none; }
   .wsp-chip { flex: 0 0 auto; }
+  /* v1.30.10.6 — a fixed 3-column grid reads calmer than auto-fill at this
+     width and needs no horizontal scroll, unlike the old chip row. */
+  .wsp-launcher { grid-template-columns: repeat(3, 1fr); }
 }
 
 /* Phase 11J — defensive pass: no reproducible overflow/clip bug was found in
@@ -584,5 +603,10 @@ const CSS = `
 .wsp-grid > [data-widget-id="exec-recommendation"] { animation-delay: ${MACRO_STAGGER.recommendation}ms; }
 .wsp-grid > [data-widget-id="exec-snapshot"] { animation-delay: ${MACRO_STAGGER.snapshot}ms; }
 .wsp-grid > [data-widget-id="exec-activity"] { animation-delay: ${MACRO_STAGGER.story}ms; }
+/* v1.30.10.6 — these two were previously missing from this block entirely
+   (see MACRO_STAGGER's own comment), so they faded in with zero delay
+   instead of their place in the briefing sequence. */
+.wsp-grid > [data-widget-id="exec-drivers"] { animation-delay: ${MACRO_STAGGER.drivers}ms; }
+.wsp-grid > [data-widget-id="exec-vehicle-flags"] { animation-delay: ${MACRO_STAGGER.vehicleFlags}ms; }
 .wsp-grid > [data-widget-id="exec-quick"] { animation-delay: ${MACRO_STAGGER.launcher}ms; }
 `;
