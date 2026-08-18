@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.30.10.6';
-export const RELEASE_NAME = 'Executive Command Center — Pulse Motion + Quick Nav De-Pill';
+export const APP_VERSION = '1.30.10.7';
+export const RELEASE_NAME = 'Domain Shell IA — Shipped as Default';
 
 /* ============================================================
    APP_ENV — the AUTHORITATIVE runtime environment (v1.20.3 RC1).

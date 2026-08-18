@@ -1243,9 +1243,9 @@ function updatePermissionUI(resetNavActive = false) {
 async function loadFeatureFlags() {
   const LS_PREFIX = 'pbsi_flag_';
   // domainShellV1 (Redesign Phase 1): consolidated 7-domain shell, additive
-  // to visualShellV2 (requires it). Defaults OFF — visualShellV2's flat
-  // rail/panel stays the production experience until this is explicitly
-  // enabled. Dev override: localStorage.setItem('pbsi_flag_domainShellV1','true')
+  // to visualShellV2 (requires it). Defaults ON as of v1.30.10.7 — the
+  // consolidated shell is now the production experience. Dev override to
+  // force the old flat rail/panel: localStorage.setItem('pbsi_flag_domainShellV1','false')
   const flagNames = ['visualShellV2', 'domainShellV1'];
 
   // ── Priority 1: localStorage overrides (developer testing only) ──
@@ -1289,7 +1289,14 @@ async function loadFeatureFlags() {
   //   Firebase = false → visualShellV2 = false (emergency rollback to V1)
   const DEFAULTS = {
     visualShellV2: true,   // V2 shell is the production-default experience
-    domainShellV1: false,  // consolidated shell — opt-in until Phase 1 verification is complete
+    // v1.30.10.7 — Phase 1 verification complete (mocked per-role logic +
+    // real-app smoke + rollback, all green; a full old-shell/new-shell
+    // screen equivalence pass found and fixed two real gaps: a missing
+    // driver "Jadwal Saya" shortcut and an entirely-absent Sarpras
+    // Intelligence domain). Consolidated shell is now the default; an
+    // explicit Firebase /feature_flags/domainShellV1 = false still forces
+    // rollback to the flat rail/panel, same emergency path visualShellV2 has.
+    domainShellV1: true,
   };
   const flags = { ...DEFAULTS, ...rawFlags };
 
@@ -1674,6 +1681,7 @@ function initDomainShellV1() {
     setRailModule, getActiveRailModule, defaultModuleForRole,
     pcMenuTitles: PC_MENU_TITLES, otMenuTitles: OT_MENU_TITLES,
     engMenuTitles: ENG_MENU_TITLES, gudMenuTitles: GUD_MENU_TITLES,
+    sicMenuTitles: SIC_MENU_TITLES_PRIMARY,
     mountBefore: document.getElementById('sidebar'),
     // Real identity for the rail's header/footer — same logo asset and the
     // same getCurrentUser()/formatRole() the old rail's footer and topbar
@@ -1685,11 +1693,16 @@ function initDomainShellV1() {
     versionLabel: APP_VERSION,
     land: {
       navHome, navJadwalDriver, navPending, navManajemenDriver, navManajemenKendaraan,
-      navAuditDriver, navAuditKendaraan, navDriverHistory,
+      navAuditDriver, navAuditKendaraan, navDriverHistory, navJadwalSaya,
       navGudang: (screen) => navGudang(screen),
       navPettyCash: (screen) => navPettyCash(screen),
       navOvertime: (screen) => navOvertime(screen),
       navEngineering: (screen) => navEngineering(screen),
+      // navId (2nd real param) only drives OLD v2Panel nav-button highlight
+      // state (setV2PanelNavActive) — safely omitted here, same as the real
+      // function already does for its own internal 'knowledge'/'review' deep
+      // links (see navSarprasIntelligence's own `if (navId)` guard).
+      navSarprasIntelligence: (screen) => navSarprasIntelligence(screen, null),
       navAnalyticsDriver, navDispatchAnalytics, navRecommendationAccuracy,
       navDriverWellness, navDriverPrediction, navAnalyticsPettyCash,
       navAnalyticsExecutive, navAnalyticsEngineering,
@@ -2145,6 +2158,15 @@ const SIC_SCREEN_TO_NAV_ID = {
   dashboard: 'v2NavSicDashboard', nor: 'v2NavSicNor', archive: 'v2NavSicArchive',
   knowledge: null, learning: 'v2NavSicLearning', settings: 'v2NavSicSettings',
   review: null,
+};
+// v1.30.10.7 — domain-shell's screen-tab strip needs the PRIMARY-nav-only
+// subset of SIC_MENU_TITLES (same 5 screens SIC_SCREEN_TO_NAV_ID maps to a
+// real nav id for) — 'knowledge'/'review' are deliberately internal-only
+// deep links (see the comment above), never their own tab, in the old rail
+// or the new shell.
+const SIC_MENU_TITLES_PRIMARY = {
+  dashboard: SIC_MENU_TITLES.dashboard, nor: SIC_MENU_TITLES.nor, archive: SIC_MENU_TITLES.archive,
+  learning: SIC_MENU_TITLES.learning, settings: SIC_MENU_TITLES.settings,
 };
 async function navSarprasIntelligence(screen, navId) {
   // Deep-link / stale-state guard: mirrors setRailModule()'s canAccessModule

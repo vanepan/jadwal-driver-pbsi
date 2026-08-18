@@ -26,6 +26,35 @@ const ROLES = {
 // enough to exercise domainVisible()'s canAccessModule() dependency.
 const MODULE_PERMS = {
   home: null, // always true
+  engineering: 'eng.view',
+  driverops: 'driver.schedule.view',
+  pettycash: 'pettycash.view',
+  overtime: 'overtime.view',
+  analytics: 'analytics.view',
+  konfigurasi: 'konfigurasi.view',
+  roleManagement: 'system.admin',
+  gudang: 'warehouse.view',
+  // Real gate is isV2Enabled(), a pilot allowlist check, NOT a
+  // MODULE_PERMISSIONS entry (see app.js's canAccessModule() — it
+  // special-cases this BEFORE the permission-map lookup). Modeled here as a
+  // broadly-granted fake permission string, consistent with this mock's
+  // documented "every role sees every non-admin-only module" philosophy —
+  // NOT asserted against REAL_MODULE_PERMISSIONS below since it legitimately
+  // isn't in that real map.
+  sarprasIntelligence: 'sarprasIntelligence.pilot',
+};
+
+// Phase 1 drift-guard (v1.30.10.7) — this mock is only useful if it actually
+// mirrors the real permission map. Hardcoded literal of js/app.js:1625-1641's
+// MODULE_PERMISSIONS, re-checked by hand against that file each time this
+// script runs the assertion below. This caught a real, pre-existing gap:
+// 'engineering' was missing from MODULE_PERMS above, so this test's mock
+// silently treated the Engineering domain as invisible for every role
+// (including admin) despite the mock's own documented intent of granting
+// every non-admin-only module broadly — the Engineering domain was never
+// actually exercised by this test before this fix.
+const REAL_MODULE_PERMISSIONS = {
+  engineering: 'eng.view',
   driverops: 'driver.schedule.view',
   pettycash: 'pettycash.view',
   overtime: 'overtime.view',
@@ -34,6 +63,21 @@ const MODULE_PERMS = {
   roleManagement: 'system.admin',
   gudang: 'warehouse.view',
 };
+(function assertNoPermissionDrift() {
+  const drift = [];
+  for (const [mod, perm] of Object.entries(REAL_MODULE_PERMISSIONS)) {
+    if (MODULE_PERMS[mod] !== perm) drift.push(`${mod}: mock=${MODULE_PERMS[mod]} real=${perm}`);
+  }
+  for (const mod of Object.keys(MODULE_PERMS)) {
+    if (mod === 'home' || mod === 'sarprasIntelligence') continue; // gated outside MODULE_PERMISSIONS, not in the real map
+    if (!(mod in REAL_MODULE_PERMISSIONS)) drift.push(`${mod}: present in mock but not in real MODULE_PERMISSIONS`);
+  }
+  if (drift.length) {
+    console.error('MODULE_PERMS drifted from js/app.js MODULE_PERMISSIONS:\n' + drift.map((d) => ' - ' + d).join('\n'));
+    process.exitCode = 1;
+    process.exit(1);
+  }
+})();
 // Every role in this harness can see every module-level gate except the
 // system.admin-only ones — mirrors the real app where driver.schedule.view/
 // pettycash.view/etc are broadly granted, only system.admin is exclusive.
@@ -74,7 +118,7 @@ async function run() {
       const land = {};
       [
         'navHome', 'navJadwalDriver', 'navPending', 'navManajemenDriver', 'navManajemenKendaraan',
-        'navAuditDriver', 'navAuditKendaraan', 'navDriverHistory',
+        'navAuditDriver', 'navAuditKendaraan', 'navDriverHistory', 'navJadwalSaya',
         'navAnalyticsDriver', 'navDispatchAnalytics', 'navRecommendationAccuracy',
         'navDriverWellness', 'navDriverPrediction', 'navAnalyticsPettyCash',
         'navAnalyticsExecutive', 'navAnalyticsEngineering',
@@ -84,6 +128,7 @@ async function run() {
       land.navPettyCash = (screen) => landCalls.push(`navPettyCash:${screen}`);
       land.navOvertime = (screen) => landCalls.push(`navOvertime:${screen}`);
       land.navEngineering = (screen) => landCalls.push(`navEngineering:${screen}`);
+      land.navSarprasIntelligence = (screen) => landCalls.push(`navSarprasIntelligence:${screen}`);
 
       const setRailModuleCalls = [];
       let activeModule = null;
@@ -105,6 +150,7 @@ async function run() {
         otMenuTitles: { dashboard: 'Dashboard', dailyEntry: 'Rekap Lembur', employees: 'Karyawan', rates: 'Tarif', holidays: 'Hari Libur', reports: 'Laporan', reportHistory: 'Riwayat Laporan', records: 'Penyesuaian Data', closing: 'Tutup Periode', archive: 'Arsip' },
         engMenuTitles: { dashboard: 'Dashboard', timeline: 'Timeline', history: 'Riwayat', myjobs: 'Pekerjaan', settings: 'Pengaturan' },
         gudMenuTitles: { dashboard: 'Dashboard', home: 'Catalog', goodsOut: 'Goods Out', goodsIn: 'Goods In', history: 'Movement History', opname: 'Stock Opname', analytics: 'Analytics', intelligence: 'Inventory Intelligence' },
+        sicMenuTitles: { dashboard: 'Home', nor: 'NOR', archive: 'Documents', learning: 'Intelligence', settings: 'Settings' },
         mountBefore: document.getElementById('sidebar'),
       getCurrentUser: () => ({ name: 'Test User', role: 'admin' }),
       formatRole: (r) => r,
@@ -140,7 +186,13 @@ async function run() {
       document.querySelector('[data-domain="control"]')?.click();
       const controlTabs = Array.from(document.querySelectorAll('.domshell-tab')).map((el) => el.textContent);
 
-      return { railLabels, activeRailLabel, operationsTabs, controlTabs, tabbarDisplay, landCalls: [...landCalls], setRailModuleCalls: [...setRailModuleCalls] };
+      // Navigate to the new Sarpras Intelligence domain — confirms its
+      // screens actually render and route, not just that the rail button
+      // exists.
+      document.querySelector('[data-domain="sarprasIntelligence"]')?.click();
+      const sicTabs = Array.from(document.querySelectorAll('.domshell-tab')).map((el) => el.textContent);
+
+      return { railLabels, activeRailLabel, operationsTabs, controlTabs, sicTabs, tabbarDisplay, landCalls: [...landCalls], setRailModuleCalls: [...setRailModuleCalls] };
     }, { roleName, role, moduleParams: MODULE_PERMS });
 
     results.roles[roleName] = out;
@@ -160,6 +212,7 @@ async function run() {
       defaultModuleForRole: () => 'home',
       pcMenuTitles: {}, otMenuTitles: {}, engMenuTitles: {},
       gudMenuTitles: { dashboard: 'Dashboard', goodsIn: 'Goods In' },
+      sicMenuTitles: {},
       mountBefore: document.getElementById('sidebar'),
       getCurrentUser: () => ({ name: 'Test User', role: 'admin' }),
       formatRole: (r) => r,
@@ -200,7 +253,7 @@ async function run() {
       defaultModuleForRole: () => 'home',
       pcMenuTitles: { dashboard: 'Dashboard', expenses: 'Pengeluaran' },
       otMenuTitles: { dashboard: 'Dashboard', employees: 'Karyawan' },
-      engMenuTitles: {}, gudMenuTitles: {},
+      engMenuTitles: {}, gudMenuTitles: {}, sicMenuTitles: {},
       mountBefore: document.getElementById('sidebar'),
       getCurrentUser: () => ({ name: 'Test User', role: 'admin' }),
       formatRole: (r) => r,
@@ -244,7 +297,7 @@ async function run() {
       setRailModule: (name) => { activeModule = name; },
       getActiveRailModule: () => activeModule,
       defaultModuleForRole: () => 'home',
-      pcMenuTitles: { dashboard: 'Dashboard' }, otMenuTitles: {}, engMenuTitles: {}, gudMenuTitles: {},
+      pcMenuTitles: { dashboard: 'Dashboard' }, otMenuTitles: {}, engMenuTitles: {}, gudMenuTitles: {}, sicMenuTitles: {},
       mountBefore: document.getElementById('sidebar'),
       getCurrentUser: () => ({ name: 'Test User', role: 'admin' }),
       formatRole: (r) => r,
@@ -288,11 +341,16 @@ async function run() {
   const fail = [];
   const a = results.roles.admin;
   if (!a.railLabels.includes('Today') || !a.railLabels.includes('Operations') || !a.railLabels.includes('Control')) fail.push('admin missing expected rail domains');
+  if (!a.railLabels.includes('Engineering')) fail.push('admin missing Engineering rail domain (regression: this was silently broken by the MODULE_PERMS gap fixed above)');
+  if (!a.railLabels.includes('Sarpras Intelligence')) fail.push('admin missing Sarpras Intelligence rail domain (was entirely absent from the IA before this phase)');
+  if (!a.sicTabs.includes('Home') || !a.sicTabs.includes('NOR') || !a.sicTabs.includes('Settings')) fail.push(`admin Sarpras Intelligence tabs incomplete: ${JSON.stringify(a.sicTabs)}`);
+  if (!a.landCalls.includes('navSarprasIntelligence:dashboard')) fail.push('clicking Sarpras Intelligence domain did not land on its default (dashboard) screen');
   if (!a.operationsTabs.includes('Drivers') || !a.operationsTabs.includes('Vehicles') || !a.operationsTabs.some(l => l.includes('Audit'))) fail.push('admin missing Master Data/Audit tabs in Operations');
   if (a.tabbarDisplay !== 'flex') fail.push(`tab bar has tab content but computed display is "${a.tabbarDisplay}", not visible`);
   if (!a.controlTabs.includes('Roles')) fail.push('admin missing Roles tab in Control');
 
   const b = results.roles.bidang;
+  if (!b.railLabels.includes('Engineering')) fail.push('bidang missing Engineering rail domain (mock grants eng.view broadly, same as pettycash/overtime/gudang)');
   if (b.operationsTabs.includes('Drivers') || b.operationsTabs.includes('Vehicles') || b.operationsTabs.some(l => l.includes('Audit'))) {
     fail.push(`bidang (non-admin) should NOT see Master Data/Audit tabs, got: ${JSON.stringify(b.operationsTabs)}`);
   }
@@ -300,6 +358,8 @@ async function run() {
 
   const d = results.roles.driver;
   if (d.controlTabs.includes('Roles')) fail.push('driver should NOT see the Roles tab');
+  if (!d.operationsTabs.includes('Jadwal Saya')) fail.push('driver missing the Jadwal Saya tab (equivalence-check regression fixed in domain-shell.js this phase)');
+  if (d.operationsTabs.includes('Drivers') || d.operationsTabs.includes('Vehicles')) fail.push('driver should NOT see Master Data tabs (admin-only)');
 
   if (results.clickRouting.afterDomainClick.activeModule !== 'gudang') fail.push('clicking Warehouse domain did not setRailModule(gudang)');
   if (!results.clickRouting.afterTabClick.landCalls.includes('navGudang:goodsIn')) fail.push('clicking Goods In tab did not call navGudang(goodsIn)');

@@ -51,6 +51,10 @@ const ICONS = {
   engineering: '<polygon points="11,4 16.5,7.3 16.5,14.7 11,18 5.5,14.7 5.5,7.3" fill="none" stroke-width="1.6" stroke-linejoin="round"/><circle cx="11" cy="11" r="1.8" class="domshell-icon-dot"/>',
   insights: '<line x1="6" y1="16" x2="6" y2="12" stroke-width="2.2" stroke-linecap="round"/><line x1="11" y1="16" x2="11" y2="7" stroke-width="2.2" stroke-linecap="round"/><line x1="16" y1="16" x2="16" y2="9.5" stroke-width="2.2" stroke-linecap="round" class="domshell-icon-accent-stroke"/>',
   control: '<rect x="4" y="8.3" width="14" height="7.4" rx="3.7" fill="none" stroke-width="1.6"/><circle cx="14.7" cy="12" r="2.5" class="domshell-icon-dot"/>',
+  // v1.30.10.7 — Sarpras Intelligence (a standalone domain, not nested; see
+  // buildDomains()'s own comment on why). A bulb outline (knowledge/reasoning)
+  // + one filled accent dot, matching this set's existing grammar.
+  sarprasIntelligence: '<circle cx="11" cy="9.3" r="5.1" fill="none" stroke-width="1.6"/><line x1="8.7" y1="15.2" x2="13.3" y2="15.2" stroke-width="1.6" stroke-linecap="round"/><circle cx="13.4" cy="7" r="1.5" class="domshell-icon-dot"/>',
 };
 
 function svgIcon(name) {
@@ -76,6 +80,14 @@ function buildDomains() {
       id: 'operations', label: 'Operations', icon: 'operations', module: 'driverops',
       screens: [
         { id: 'board', label: 'Board', land: land.navJadwalDriver },
+        // v1.30.10.7 — found by the old-shell/new-shell screen equivalence
+        // check: the old v2Panel gives drivers a dedicated "Jadwal Saya"
+        // shortcut (navJadwalSaya — same #driverDashboard content as Board,
+        // but auto-scrolled + its own breadcrumb/nav-active state), distinct
+        // from both Board and Riwayat/History below. Missing here entirely
+        // before this fix — the underlying content was still reachable via
+        // Board, but the dedicated entry point was silently dropped.
+        { id: 'jadwalSaya', label: 'Jadwal Saya', land: land.navJadwalSaya, visible: cfg.isDriver },
         { id: 'requests', label: 'Requests', land: land.navPending, visible: requestsVisible },
         { id: 'drivers', label: 'Drivers', land: land.navManajemenDriver, visible: adminOnly },
         { id: 'vehicles', label: 'Vehicles', land: land.navManajemenKendaraan, visible: adminOnly },
@@ -127,6 +139,26 @@ function buildDomains() {
         { id: 'executive', label: 'Executive', land: land.navAnalyticsExecutive },
         { id: 'engineering', label: 'Engineering', land: land.navAnalyticsEngineering, visible: () => can('eng.analytics') },
       ],
+    },
+    {
+      // v1.30.10.7 — found by the old-shell/new-shell equivalence check: the
+      // Sarpras Intelligence module (SIC_MENU_TITLES, app.js) had no home
+      // anywhere in the 7-domain IA at all, and its gate (isV2Enabled(), a
+      // pilot allowlist check) is completely orthogonal to every other
+      // domain's role-permission gate (canAccessModule('sarprasIntelligence')
+      // resolves BEFORE the normal MODULE_PERMISSIONS lookup — see
+      // app.js's canAccessModule()). Nesting it under an existing domain
+      // (e.g. Insights, alongside Analytics) would reintroduce exactly the
+      // bug the original Finance->Overtime/Control->Roles nested-gate fix
+      // was for: domainVisible() gates the WHOLE domain on its primary
+      // module first, so a pilot user lacking that domain's own permission
+      // would lose Sarpras Intelligence entirely. A standalone domain with
+      // its own single clean gate avoids that class of bug altogether,
+      // same as Today's module:'home'.
+      id: 'sarprasIntelligence', label: 'Sarpras Intelligence', icon: 'sarprasIntelligence', module: 'sarprasIntelligence',
+      screens: Object.entries(cfg.sicMenuTitles).map(([id, label]) => ({
+        id, label, land: () => land.navSarprasIntelligence(id),
+      })),
     },
     {
       id: 'control', label: 'Control', icon: 'control', module: 'konfigurasi',
