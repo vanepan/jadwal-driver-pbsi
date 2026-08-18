@@ -67,6 +67,7 @@ function validateShape({ lines, actorId } = {}) {
       return `lines[${i}].countedQuantity must be a non-negative finite number (a physical count can be zero, never negative).`;
     }
     if (line.locationId != null && typeof line.locationId !== 'string') return `lines[${i}].locationId, when provided, must be a string.`;
+    if (line.note != null && typeof line.note !== 'string') return `lines[${i}].note, when provided, must be a string.`;
   }
   return null;
 }
@@ -108,7 +109,7 @@ export async function validateStockOpnameBatch(batch) {
  * against the FRESH expected quantity; append a Stock Opname Adjustment
  * Movement only where they disagree (Doc 2 §10); recalculate Stock for
  * every item that actually got a Movement.
- * @param {{lines:Array<{itemId:string, countedQuantity:number, locationId?:?string}>, actorId:string}} batch
+ * @param {{lines:Array<{itemId:string, countedQuantity:number, locationId?:?string, note?:?string}>, actorId:string}} batch
  * @returns {Promise<{ok:boolean, data:?{movements:object[], unchanged:string[]}, error:*}>}
  */
 export async function executeStockOpname(batch) {
@@ -135,6 +136,10 @@ export async function executeStockOpname(batch) {
       reason: MOVEMENT_REASON.STOCK_OPNAME,
       locationId: line.locationId ?? null,
       actorId: batch.actorId,
+      // A variance's note (required by the UI whenever discrepancy !== 0 —
+      // see gudang-stock-opname.js) rides on the SAME optional `notes` field
+      // makeMovement already supports (v1.29.4 Bulk Goods Out), not a new one.
+      notes: line.note ?? null,
     });
     const appended = await appendMovement(movement);
     if (!appended.ok) {

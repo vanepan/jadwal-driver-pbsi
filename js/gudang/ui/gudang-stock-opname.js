@@ -125,6 +125,7 @@ function catalogCard(item, o, st) {
     return `<div class="gud-cat-card -done">
       ${cardHeader(item, st, 'c-green')}
       <span class="gud-cat-card-expected">Ekspektasi ${fmtQty(counted.expectedQuantity)} · Hitung ${fmtQty(counted.countedQuantity)}</span>
+      ${counted.note ? `<span class="gud-opname-note">${icon('tag', { size: 11 })} ${esc(counted.note)}</span>` : ''}
       <div class="gud-cat-card-foot">
         <span class="gud-opname-diff" data-sign="${diff === 0 ? 'zero' : diff > 0 ? 'plus' : 'minus'}">${diff === 0 ? 'Sesuai' : (diff > 0 ? `+${diff}` : diff)}</span>
         <button type="button" class="gud-icon-btn -sm" data-act="gud-op-undo" data-id="${esc(item.itemId)}" aria-label="Hitung ulang" title="Hitung ulang">${icon('close', { size: 12 })}</button>
@@ -140,6 +141,13 @@ function catalogCard(item, o, st) {
   }
   const expected = o.expected && o.expected[item.itemId];
   const draft = o.draft && o.draft[item.itemId] != null ? o.draft[item.itemId] : '';
+  const draftNum = draft === '' ? null : Number(draft);
+  // A variance (counted !== expected) requires a note before it can be
+  // confirmed — Doc 2 §10's adjustment movement is otherwise unexplained
+  // audit-trail noise. Matching count needs no justification.
+  const hasVariance = expected != null && draftNum != null && Number.isFinite(draftNum) && draftNum !== expected;
+  const note = o.noteDraft && o.noteDraft[item.itemId] != null ? o.noteDraft[item.itemId] : '';
+  const noteOk = !hasVariance || note.trim() !== '';
   return `<div class="gud-cat-card -counting">
     ${cardHeader(item, st)}
     <span class="gud-cat-card-expected">${expected == null ? 'Memuat…' : `Ekspektasi: ${fmtQty(expected)}`}</span>
@@ -147,9 +155,10 @@ function catalogCard(item, o, st) {
       <!-- Phase 10.4.1: type="number" -> text/inputmode=numeric fixes digit-
            reversal on typing (see gudang-goods-out.js's qty field for the root cause). -->
       <input class="gud-input gud-opname-input" data-act="gud-op-count" data-id="${esc(item.itemId)}" type="text" inputmode="numeric" pattern="[0-9]*" value="${esc(draft)}" placeholder="Hasil hitung" autofocus />
-      <button type="button" class="gud-icon-btn -sm" data-act="gud-op-confirm-count" data-id="${esc(item.itemId)}" aria-label="Konfirmasi" title="Konfirmasi" ${draft === '' || expected == null ? 'disabled' : ''}>${icon('check', { size: 13 })}</button>
+      <button type="button" class="gud-icon-btn -sm" data-act="gud-op-confirm-count" data-id="${esc(item.itemId)}" aria-label="Konfirmasi" title="Konfirmasi" ${draft === '' || expected == null || !noteOk ? 'disabled' : ''}>${icon('check', { size: 13 })}</button>
       <button type="button" class="gud-icon-btn -sm" data-act="gud-op-cancel" data-id="${esc(item.itemId)}" aria-label="Batal" title="Batal">${icon('close', { size: 13 })}</button>
     </div>
+    ${hasVariance ? `<input class="gud-input gud-opname-note-input" data-act="gud-op-note" data-id="${esc(item.itemId)}" type="text" value="${esc(note)}" placeholder="Alasan selisih (wajib diisi)" />` : ''}
   </div>`;
 }
 
@@ -174,7 +183,7 @@ async function openRow(st, itemId, render) {
 
 async function trySave(st, c, render, refreshCatalog) {
   const o = ensure(st);
-  const lines = Object.entries(o.counted).map(([itemId, v]) => ({ itemId, countedQuantity: v.countedQuantity }));
+  const lines = Object.entries(o.counted).map(([itemId, v]) => ({ itemId, countedQuantity: v.countedQuantity, note: v.note ?? null }));
   if (!lines.length || o.saving) return;
   o.saving = true; o.error = null; render();
   const res = await executeStockOpname({ lines, actorId: c.actorId });
@@ -196,15 +205,21 @@ export const opnameHandlers = {
       // _focusAct -> restoreFocus() path as every other step-transition in
       // Goods Out/In.
       case 'gud-op-open': st._focusAct = 'gud-op-count'; openRow(st, id, render); break;
-      case 'gud-op-cancel': delete o.open[id]; if (o.draft) delete o.draft[id]; render(); break;
+      case 'gud-op-cancel': delete o.open[id]; if (o.draft) delete o.draft[id]; if (o.noteDraft) delete o.noteDraft[id]; render(); break;
       case 'gud-op-undo': delete o.counted[id]; render(); break;
       case 'gud-op-confirm-count': {
         const val = Number((o.draft && o.draft[id]) ?? '');
         const expected = (o.expected && o.expected[id]) ?? null;
         if (!Number.isFinite(val) || val < 0 || expected == null) return;
-        o.counted[id] = { countedQuantity: val, expectedQuantity: expected };
+        const note = ((o.noteDraft && o.noteDraft[id]) || '').trim();
+        // A variance requires a note (see catalogCard's hasVariance) — this
+        // mirrors the button's own `disabled` condition so a stray Enter
+        // keypress on the count field can't bypass it.
+        if (val !== expected && !note) return;
+        o.counted[id] = { countedQuantity: val, expectedQuantity: expected, note: note || null };
         delete o.open[id];
         if (o.draft) delete o.draft[id];
+        if (o.noteDraft) delete o.noteDraft[id];
         render();
         break;
       }
@@ -219,6 +234,11 @@ export const opnameHandlers = {
     if (act === 'gud-op-count') {
       if (!o.draft) o.draft = {};
       o.draft[t.dataset.id] = t.value;
+      render();
+    }
+    if (act === 'gud-op-note') {
+      if (!o.noteDraft) o.noteDraft = {};
+      o.noteDraft[t.dataset.id] = t.value;
       render();
     }
   },

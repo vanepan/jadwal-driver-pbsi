@@ -1,7 +1,7 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.30.9.24';
+export const APP_VERSION = '1.30.10.5';
 export const RELEASE_NAME = 'Ground-Truth Audit Fixes — Daftar Date Sync + Petty Cash Analytics Label';
 
 /* ============================================================

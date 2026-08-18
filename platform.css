@@ -13780,3 +13780,423 @@ body.v2-shell-active .block-status-badge {
   #modalDetail .modal-box.modal-detail-box { animation: none; }
 }
 
+/* ============================================================
+   DOMAIN SHELL (domainShellV1) — Redesign Phase 1
+   ============================================================
+   Additive alternative to .v2-rail/.v2-panel — mutually exclusive with
+   them at the JS level (see initDomainShellV1() in app.js), so no rule
+   here needs to fight the old shell's CSS for space. body.domain-shell-
+   active is always paired with body.v2-shell-active (domainShellV1
+   requires visualShellV2), so the existing v2-shell-active rules that
+   hide #sidebar/.header and show .v2-topbar keep working unmodified;
+   this block only needs to override .main-area's margin (the old rule
+   reserves space for rail+panel combined — this shell has no separate
+   panel) and add the rail + tab-bar chrome itself. Cascade-final by
+   position in the file, same convention as the blocks above it.
+   Z-index budget: matches the old rail (120); tab bar sits in normal
+   flow, well under any modal/drawer (200+).
+   ============================================================ */
+
+.domshell-rail {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 72px;
+  height: 100vh;
+  height: 100dvh;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  z-index: 120;
+  display: none;
+  flex-direction: column;
+  padding: 8px;
+  box-sizing: border-box;
+  overflow: hidden;
+  transition: width var(--motion-normal, 200ms) var(--motion-ease, ease);
+  box-shadow: none;
+}
+/* Brand header — logo + short name + real app version (never the
+   prototype's internal "v2 · redesign" build label). */
+.domshell-rail-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 3px 18px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.domshell-rail-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 4px;
+  overflow: hidden;
+}
+.domshell-rail-logo img { width: 100%; height: 100%; object-fit: contain; }
+.domshell-rail-brandtext { min-width: 0; white-space: nowrap; opacity: 0; transition: opacity var(--motion-fast, 120ms) linear; }
+.domshell-rail:hover .domshell-rail-brandtext,
+.domshell-rail:focus-within .domshell-rail-brandtext { opacity: 1; }
+.domshell-rail-brandname { font-size: 13px; font-weight: 800; letter-spacing: -0.01em; color: var(--text); font-family: var(--font-display); }
+.domshell-rail-brandver { font-size: 10px; color: var(--muted); font-family: var(--font-mono); }
+.domshell-rail-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+/* Footer — real signed-in user, same identity data as the old rail's
+   footer/topbar avatar (updatePermissionUI() in app.js). */
+.domshell-rail-footer {
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 3px 4px;
+}
+.domshell-rail-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.domshell-rail-usertext { min-width: 0; white-space: nowrap; opacity: 0; transition: opacity var(--motion-fast, 120ms) linear; }
+.domshell-rail:hover .domshell-rail-usertext,
+.domshell-rail:focus-within .domshell-rail-usertext { opacity: 1; }
+.domshell-rail-username { font-size: 12px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+.domshell-rail-userrole { font-size: 10px; color: var(--muted); text-transform: capitalize; overflow: hidden; text-overflow: ellipsis; }
+@media (min-width: 768px) {
+  .domshell-rail { display: flex; }
+  body.domain-shell-active .main-area {
+    margin-left: 72px;
+    transition: margin-left var(--motion-normal, 200ms) var(--motion-ease, ease);
+  }
+  body.domain-shell-active #sidebar { display: none !important; }
+  /* Hover-expand REFLOWS content (matches the reference design — content
+     shifts right when the rail expands), it does not overlay on top of it.
+     .domshell-rail is a preceding sibling of .main-area under .app-layout
+     (see initDomainShell() in domain-shell.js), so a general sibling
+     selector keeps this pure-CSS — no JS needed to keep the two in sync. */
+  .domshell-rail:hover ~ .main-area,
+  .domshell-rail:focus-within ~ .main-area {
+    margin-left: 220px;
+  }
+}
+.domshell-rail:hover,
+.domshell-rail:focus-within {
+  width: 220px;
+  box-shadow: var(--shadow-lg);
+}
+
+.domshell-rail-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 44px;
+  padding: 0 11px;
+  border: none;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  text-align: left;
+  flex-shrink: 0;
+  transition: background-color var(--motion-fast, 120ms) ease, color var(--motion-fast, 120ms) ease;
+}
+.domshell-rail-item:hover,
+.domshell-rail-item:focus-visible {
+  background: var(--hover, rgba(0,0,0,0.04));
+  color: var(--text);
+}
+.domshell-rail-item--active {
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+.domshell-rail-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+}
+.domshell-rail-icon svg { stroke: currentColor; }
+.domshell-icon-dot { fill: var(--accent); }
+.domshell-rail-item--active .domshell-icon-dot { fill: currentColor; }
+.domshell-icon-accent-stroke { stroke: var(--accent); }
+.domshell-rail-item--active .domshell-icon-accent-stroke { stroke: currentColor; }
+.domshell-rail-label {
+  font-size: 13.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity var(--motion-fast, 120ms) linear;
+}
+.domshell-rail:hover .domshell-rail-label,
+.domshell-rail:focus-within .domshell-rail-label {
+  opacity: 1;
+}
+
+/* ── Tab bar (domain screen-tabs + nested-module sub-tabs) ── */
+.domshell-tabbar {
+  display: none;
+  flex-direction: column;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  flex-shrink: 0;
+}
+.domshell-tabrow {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 10px 0;
+}
+.domshell-tabrow--sub {
+  border-top: 1px solid var(--border);
+  padding: 7px 0;
+}
+/* Segmented-control pill container — reuses the EXACT established pattern
+   from the existing Timeline/Daftar toggle (.v2-tl-view-toggle,
+   platform.css ~line 3060: surface-2 fill + border + padding:2px wrapping
+   transparent buttons, active = surface + shadow-sm), rather than inventing
+   a second tab-pill language for this shell. */
+.domshell-tabrow {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  padding: 2px;
+  margin: 10px 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  width: fit-content;
+  max-width: 100%;
+  animation: v2FadeInScale var(--motion-fast, 160ms) var(--motion-ease, ease);
+}
+.domshell-tabrow--sub {
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  padding: 7px 0 0;
+  margin: 0 0 8px;
+}
+.domshell-tab {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 13px;
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color var(--motion-fast, 120ms) ease, color var(--motion-fast, 120ms) ease;
+}
+.domshell-tab:hover,
+.domshell-tab:focus-visible {
+  color: var(--text);
+}
+.domshell-tab--active {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+}
+.domshell-tabrow--sub .domshell-tab--active {
+  background: var(--accent-subtle);
+  color: var(--accent);
+  box-shadow: none;
+}
+.domshell-tab--sub {
+  font-size: 12px;
+  padding: 6px 12px;
+}
+
+/* ── Command Palette trigger + overlay ──
+   Click-triggered only in this phase — see command-palette.js's doc
+   comment for why no keyboard shortcut is bound yet. */
+/* .v2-topbar lays out its children by explicit flex `order` (crumb=20,
+   search=default, date-nav=40, spacer=50, theme=55, notif=57, user=60 —
+   see the VSM-8/Part-9 rules above); this reuses that same convention so
+   the trigger settles right after the crumb+search, before date-nav. */
+body.v2-shell-active .v2-topbar .domshell-palette-trigger { order: 35; }
+.domshell-palette-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.domshell-palette-trigger:hover,
+.domshell-palette-trigger:focus-visible {
+  background: var(--hover, rgba(0,0,0,0.04));
+  color: var(--text);
+}
+.domshell-palette-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 14, 10, 0.42);
+  z-index: 150;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 14vh;
+}
+.domshell-palette-box {
+  width: min(560px, 90vw);
+  max-height: 60vh;
+  background: var(--surface);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: v2FadeInScale var(--motion-fast, 160ms) var(--motion-ease, ease);
+}
+.domshell-palette-inputwrap {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.domshell-palette-input {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  color: var(--text);
+}
+.domshell-palette-results {
+  overflow-y: auto;
+  padding: 8px;
+}
+.domshell-palette-empty {
+  padding: 26px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+.domshell-palette-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 10px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+}
+.domshell-palette-item:hover,
+.domshell-palette-item:focus-visible {
+  background: var(--hover, rgba(0,0,0,0.05));
+}
+.domshell-palette-item-type {
+  flex-shrink: 0;
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.domshell-palette-item-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.domshell-palette-item-label {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.domshell-palette-item-sub {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+@keyframes v2FadeInScale {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* ── Mobile: rail + tab bar relocated into the legacy sidebar drawer ──
+   Same physical-reparenting technique as the old shell's
+   syncV2ResponsiveNavReuse() (see domain-shell.js's syncResponsive()) —
+   below 768px these are the SAME live nodes, just moved and restyled from
+   a fixed hover-expand rail into a normal vertical list inside the
+   existing hamburger drawer. */
+.domshell-rail--mobile-drawer {
+  position: static;
+  display: flex !important;
+  width: 100%;
+  height: auto;
+  border-right: none;
+  border-bottom: 1px solid var(--border);
+  padding: 6px 4px 10px;
+}
+.domshell-rail--mobile-drawer:hover,
+.domshell-rail--mobile-drawer:focus-within {
+  width: 100%;
+  box-shadow: none;
+}
+.domshell-rail--mobile-drawer .domshell-rail-label,
+.domshell-rail--mobile-drawer .domshell-rail-brandtext,
+.domshell-rail--mobile-drawer .domshell-rail-usertext {
+  opacity: 1; /* always-expanded in the drawer — no hover affordance on touch */
+}
+.domshell-tabbar--mobile-drawer {
+  border-bottom: 1px solid var(--border);
+  padding: 0 4px;
+}
+.domshell-tabbar--mobile-drawer .domshell-tabrow {
+  flex-wrap: wrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .domshell-rail { transition: none; }
+  .domshell-rail-label { transition: none; }
+  .domshell-rail-item { transition: none; }
+  .domshell-rail-brandtext { transition: none; }
+  .domshell-rail-usertext { transition: none; }
+  body.domain-shell-active .main-area { transition: none; }
+  .domshell-tab { transition: none; }
+  .domshell-tabrow { animation: none; }
+  .domshell-palette-box { animation: none; }
+}
+

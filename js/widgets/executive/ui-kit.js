@@ -49,17 +49,25 @@ export function severityRank(sev) {
 
 /** A single ranked/severity row — the shape shared today by Priority
  *  and Attention. Pure move from index.js's former private
- *  severityRow(); markup and CSS classes are unchanged. */
+ *  severityRow(); markup and CSS classes are unchanged.
+ *  v1.30.10.x — optional `i.domain` (a display label like "Operations" /
+ *  "Finance" / "Warehouse" / "Engineering", already implied by each item's
+ *  own `action` destination in exec-attention — no new classification
+ *  logic, just a label) renders as an eyebrow above the title, and the CTA
+ *  switches to the 'link' variant (text + arrow, styled in
+ *  workspace-styles.js) — both purely presentational, `i.domain` omitted
+ *  keeps any other caller byte-for-byte unchanged. */
 export function rankedItem(i) {
   const m = SEV_META[i.sev];
   return `
     <div class="wsp-sevrow wsp-sevrow--${i.sev}">
       <span class="wsp-sevrow__bar" aria-hidden="true"></span>
       <div class="wsp-sevrow__body">
-        <div class="wsp-sevrow__title"><span class="wsp-sevrow__sev">${esc(m.label)}</span>${esc(i.title)}</div>
+        ${i.domain ? `<div class="wsp-sevrow__domain">${esc(i.domain)}</div>` : ''}
+        <div class="wsp-sevrow__title">${i.domain ? '' : `<span class="wsp-sevrow__sev">${esc(m.label)}</span>`}${esc(i.title)}</div>
         <div class="wsp-sevrow__reason">${esc(i.reason)}</div>
       </div>
-      ${i.action ? actionBtn(i.actionLabel, i.action, { variant: 'ghost' }) : ''}
+      ${i.action ? actionBtn(i.actionLabel, i.action, { variant: i.domain ? 'link' : 'ghost' }) : ''}
     </div>`;
 }
 

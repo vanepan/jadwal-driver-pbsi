@@ -124,6 +124,13 @@ const CSS = `
 .wsp-btn--ghost:hover { background: var(--border-faint); border-color: var(--border-strong); }
 .wsp-btn--primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 .wsp-btn--primary:hover { filter: brightness(1.05); }
+/* v1.30.10.x — text-link CTA (Attention Center rows): no box, accent color,
+   trailing arrow — an alternate treatment to --ghost/--primary, not a
+   replacement; every existing caller keeps its own variant untouched. */
+.wsp-btn--link { padding: 4px 0; border: none; background: none; color: var(--accent); font-weight: 700; }
+.wsp-btn--link:hover { text-decoration: underline; }
+.wsp-btn--link .wsp-btn__icon { display: none; }
+.wsp-btn--link span:last-child::after { content: '→'; margin-left: 5px; }
 .wsp-btn:focus-visible { outline-color: var(--accent); }
 .wsp-btn__icon { display: inline-flex; }
 /* A lone button placed directly in a card body should hug its content, not
@@ -314,6 +321,11 @@ const CSS = `
 .wsp-sevrow--critical .wsp-sevrow__bar { background: var(--wsp-danger); }
 .wsp-sevrow--warn .wsp-sevrow__bar { background: var(--wsp-warn); }
 .wsp-sevrow__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+/* v1.30.10.x — domain eyebrow (only rendered when the row carries i.domain,
+   see ui-kit.js's rankedItem()); replaces the inline "Kritis"/"Perlu
+   Perhatian" severity label for rows that opt in, since the colored bar
+   dot already communicates severity. */
+.wsp-sevrow__domain { font-size: .64rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-faint); }
 .wsp-sevrow__title { font-size: .92rem; font-weight: 700; color: var(--text); }
 .wsp-sevrow__sev { font-size: .64rem; font-weight: 700; letter-spacing: .04em; color: var(--text-faint); margin-right: 8px; }
 .wsp-sevrow--critical .wsp-sevrow__sev { color: var(--wsp-danger); }

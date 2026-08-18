@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>domain-shell harness</title><link rel="icon" href="data:,">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/style.css" />
+<link rel="stylesheet" href="/platform.css" />
+</head>
+<body class="v2-shell-active">
+  <!-- Minimal skeleton matching index.html's real structure, just enough
+       for initDomainShell()'s insertBefore()/insertion logic to work. -->
+  <div class="app-layout">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+    <div class="main-area">
+      <header class="header"></header>
+      <main class="main-content"></main>
+    </div>
+  </div>
+  <script type="module">
+    import { initDomainShell, refreshDomainShell, syncDomainShellActiveState } from '/js/shell/domain-shell.js';
+    window.__domainShell = { initDomainShell, refreshDomainShell, syncDomainShellActiveState };
+    window.__domainShellReady = true;
+  </script>
+</body>
+</html>

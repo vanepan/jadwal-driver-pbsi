@@ -132,6 +132,11 @@ import { isV2Enabled } from './config/feature-gates.js';
 // dependent navigation cluster resolve access through can(permission)
 // instead of hardcoded role checks. See js/permission-service.js.
 import { can } from './permission-service.js';
+// Redesign Phase 1 (domainShellV1) — consolidated 7-domain shell. Additive
+// alternative to initV2Rail()/initV2Panel(); routes through the SAME
+// nav*() functions below, never reimplements them. See js/shell/domain-shell.js.
+import { initDomainShell, syncDomainShellActiveState, refreshDomainShell, goToScreen } from './shell/domain-shell.js';
+import { initCommandPalette } from './shell/command-palette.js';
 import * as DocumentEngine from './docs/doc-engine.js';
 import './docs/templates/analytics-summary.js';   // registers 'analytics-summary'
 // v1.20.8 — the 6 exports/analytics/* side-effect imports that used to load here
@@ -1195,6 +1200,15 @@ function updatePermissionUI(resetNavActive = false) {
     syncV2ResponsiveNavReuse();
   }
 
+  // Redesign Phase 1: mirrors the `if (resetNavActive) setRailModule(...)`
+  // call above — deliberately OUTSIDE the `if (v2Panel)` block, since
+  // #v2Panel never exists when domainShellV1 is on (initV2Panel() isn't
+  // called on that path), so that block never runs for this shell. Passing
+  // resetNavActive through means auth changes force-land on the role's
+  // default domain, same as the old rail; plain data refreshes don't move
+  // the user. No-op (including the flag check) when the shell never mounted.
+  if (appFlags?.domainShellV1 === true) refreshDomainShell(resetNavActive);
+
   // Reset bottom nav only on auth changes — same reasoning as panel nav above.
   // v1.20.8: highlight whichever tab is first in the current role's own
   // BOTTOM_NAV_ITEMS list (each role's registry entry already starts on its
@@ -1228,7 +1242,11 @@ function updatePermissionUI(resetNavActive = false) {
  */
 async function loadFeatureFlags() {
   const LS_PREFIX = 'pbsi_flag_';
-  const flagNames = ['visualShellV2'];
+  // domainShellV1 (Redesign Phase 1): consolidated 7-domain shell, additive
+  // to visualShellV2 (requires it). Defaults OFF — visualShellV2's flat
+  // rail/panel stays the production experience until this is explicitly
+  // enabled. Dev override: localStorage.setItem('pbsi_flag_domainShellV1','true')
+  const flagNames = ['visualShellV2', 'domainShellV1'];
 
   // ── Priority 1: localStorage overrides (developer testing only) ──
   // These are never set for production users; cleared by removing the key.
@@ -1270,7 +1288,8 @@ async function loadFeatureFlags() {
   //   Firebase = true  → visualShellV2 = true  (explicit enable)
   //   Firebase = false → visualShellV2 = false (emergency rollback to V1)
   const DEFAULTS = {
-    visualShellV2: true,  // V2 shell is the production-default experience
+    visualShellV2: true,   // V2 shell is the production-default experience
+    domainShellV1: false,  // consolidated shell — opt-in until Phase 1 verification is complete
   };
   const flags = { ...DEFAULTS, ...rawFlags };
 
@@ -1638,6 +1657,68 @@ function defaultModuleForRole() {
   return isEngineeringUser() ? 'engineering' : 'home';
 }
 
+/** Read-only getter for domain-shell.js — activeRailModule stays owned here. */
+function getActiveRailModule() {
+  return activeRailModule;
+}
+
+/**
+ * Redesign Phase 1 — wires js/shell/domain-shell.js into this file's real
+ * nav*() functions and permission gates. Pure dependency injection: nothing
+ * here re-implements navigation, permissions, or rendering — see
+ * js/shell/domain-shell.js for the chrome/routing logic itself.
+ */
+function initDomainShellV1() {
+  initDomainShell({
+    canAccessModule, can, isAdmin, isBidang, isDriver,
+    setRailModule, getActiveRailModule, defaultModuleForRole,
+    pcMenuTitles: PC_MENU_TITLES, otMenuTitles: OT_MENU_TITLES,
+    engMenuTitles: ENG_MENU_TITLES, gudMenuTitles: GUD_MENU_TITLES,
+    mountBefore: document.getElementById('sidebar'),
+    // Real identity for the rail's header/footer — same logo asset and the
+    // same getCurrentUser()/formatRole() the old rail's footer and topbar
+    // avatar already use (js/app.js's updatePermissionUI(), ~line 1181).
+    // Never the prototype's hardcoded "Evan"/"v2 · redesign" placeholders.
+    getCurrentUser, formatRole,
+    logoSrc: 'assets/Logo-PBSI.png',
+    brandLabel: 'Sarpras Ops',
+    versionLabel: APP_VERSION,
+    land: {
+      navHome, navJadwalDriver, navPending, navManajemenDriver, navManajemenKendaraan,
+      navAuditDriver, navAuditKendaraan, navDriverHistory,
+      navGudang: (screen) => navGudang(screen),
+      navPettyCash: (screen) => navPettyCash(screen),
+      navOvertime: (screen) => navOvertime(screen),
+      navEngineering: (screen) => navEngineering(screen),
+      navAnalyticsDriver, navDispatchAnalytics, navRecommendationAccuracy,
+      navDriverWellness, navDriverPrediction, navAnalyticsPettyCash,
+      navAnalyticsExecutive, navAnalyticsEngineering,
+      navManajemenUser, navRoleManagement, navKonfigurasiGlobal,
+    },
+  });
+}
+
+/**
+ * Command Palette: genuinely new capability (no global cross-domain search
+ * existed before — see command-palette.js's doc comment). Reuses
+ * already-loaded driver/vehicle/assignment state and the real
+ * openDetailModal() — no new Firebase reads, no new modal implementation.
+ * Called separately from initDomainShellV1(), AFTER initV2Topbar(), since
+ * its trigger button anchors to .v2-topbar-search — which initV2Topbar()
+ * itself creates and therefore doesn't exist yet at initDomainShellV1()'s
+ * own call time.
+ */
+function initDomainShellCommandPalette() {
+  initCommandPalette({
+    getDrivers: getActiveDrivers,
+    getVehicles: getActiveVehiclesFromStore,
+    getAssignments: () => assignments,
+    goToScreen,
+    openDetailModal,
+    topbarSearchEl: document.querySelector('.v2-topbar-search'),
+  });
+}
+
 /**
  * Switch the active rail module: highlight its rail item, reveal its panel-nav
  * block, set the panel header + breadcrumb, and run its default landing menu.
@@ -1696,6 +1777,13 @@ function setRailModule(name) {
   def.land();
   syncV2ResponsiveNavReuse();
   saveNavState(); // v1.20.8 — persist the module for state restoration on reopen
+
+  // Redesign Phase 1 (domainShellV1): keep the consolidated rail's active
+  // highlight correct even when setRailModule() is reached from a call site
+  // domain-shell.js doesn't own directly (deep links, "Lihat di Board", etc).
+  // Complete no-op — including the flag check — when the flag is off, so
+  // this is the shell's only touch point in the flag-off fallback path.
+  if (appFlags?.domainShellV1 === true) syncDomainShellActiveState();
 }
 
 /* ── Tablet 768–1024px: section panel becomes a tap-to-reveal overlay ──
@@ -11952,11 +12040,24 @@ document.addEventListener('DOMContentLoaded', async () => {
   // If false (default): nothing changes — app is identical to v1.2.5.
   appFlags = await loadFeatureFlags();
   if (appFlags.visualShellV2 === true) {
-    initV2Rail();
-    initV2Panel();
+    // Redesign Phase 1: domainShellV1 replaces the flat rail/panel with the
+    // consolidated 7-domain shell. Mutually exclusive with initV2Rail()/
+    // initV2Panel() — every workspace-content-host initializer below stays
+    // unconditional either way, since both chrome variants render into the
+    // exact same containers via the exact same nav*() functions.
+    if (appFlags.domainShellV1 === true) {
+      initDomainShellV1();
+    } else {
+      initV2Rail();
+      initV2Panel();
+    }
     initV2ResponsiveNavReuse();
     // VSM-3: must run before sidebar-toggle and initDateControls() handler binding
     initV2Topbar();
+    // Redesign Phase 1: palette trigger anchors to .v2-topbar-search, which
+    // initV2Topbar() just created above — must run after it, not inside
+    // initDomainShellV1() (which runs before initV2Topbar() in this list).
+    if (appFlags.domainShellV1 === true) initDomainShellCommandPalette();
     initV2KpiStrip();             // VSM-4: inject KPI strip placeholder above timeline
     initV2TimelineContainer();    // VSM-5: wrap timeline in elevated surface card
     initV2DriverAvatars();        // VSM-5C Part 7: observer stamps data-initials onto driver rows

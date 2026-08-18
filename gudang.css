@@ -715,6 +715,10 @@
 .gud-opname-input{max-width:100%;flex:1;min-width:0;}
 .gud-opname-diff{font-family:var(--font-mono);font-weight:700;font-size:13px;flex:none;}
 .gud-opname-diff[data-sign="zero"]{color:var(--c-green);} .gud-opname-diff[data-sign="plus"]{color:var(--c-blue);} .gud-opname-diff[data-sign="minus"]{color:var(--crit);}
+/* Variance-note requirement (Doc 2 §10 gap-fix): the "why" behind an
+   adjustment movement, required only when counted != expected. */
+.gud-opname-note-input{width:100%;margin-top:6px;font-size:11.5px;}
+.gud-opname-note{display:flex;align-items:center;gap:4px;font-size:10.5px;color:var(--text-faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 
 /* ── Analytics (Doc 2 §11) ───────────────────────────────────────────────── */
 .gud-toplist{display:flex;flex-direction:column;gap:2px;}

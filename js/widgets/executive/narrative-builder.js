@@ -138,9 +138,26 @@ function classifyState(findings, score) {
   return 'warning';
 }
 
+/**
+ * v1.30.10.x — critical/warning headlines now name the live finding count
+ * in the highlighted clause (e.g. "Operasional berjalan baik, 3 hal perlu
+ * perhatian.") instead of a fixed phrase — `count` is `findings.length`,
+ * already-certified data this file was already computing, just not
+ * previously surfaced in the headline itself. good/healthy/neutral are
+ * unchanged (their finding count is 0 by definition, so a count adds
+ * nothing).
+ */
+function headlineForState(state, count) {
+  if (state === 'critical') {
+    return { prefix: 'Operasional', highlight: count === 1 ? '1 hal butuh tindakan segera' : `${count} hal butuh tindakan segera`, tone: 'danger' };
+  }
+  if (state === 'warning') {
+    return { prefix: 'Operasional berjalan baik,', highlight: count === 1 ? '1 hal perlu perhatian' : `${count} hal perlu perhatian`, tone: 'warn' };
+  }
+  return HEADLINE_BY_STATE[state];
+}
+
 const HEADLINE_BY_STATE = {
-  critical: { prefix: 'Operasional', highlight: 'memerlukan intervensi segera', tone: 'danger' },
-  warning: { prefix: 'Operasional', highlight: 'memerlukan perhatian', tone: 'warn' },
   good: { prefix: 'Operasional hari ini berjalan', highlight: 'stabil', tone: 'info' },
   healthy: { prefix: 'Operasional berjalan', highlight: 'sangat baik', tone: 'good' },
   neutral: { prefix: 'Data operasional', highlight: 'belum tersedia', tone: 'neutral' },
@@ -196,5 +213,5 @@ function buildBody(state, findings) {
 export function buildHeroNarrative(f) {
   const findings = collectFindings(f);
   const state = classifyState(findings, f.score);
-  return { headline: HEADLINE_BY_STATE[state], body: buildBody(state, findings) };
+  return { headline: headlineForState(state, findings.length), body: buildBody(state, findings) };
 }

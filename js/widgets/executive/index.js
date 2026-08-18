@@ -118,9 +118,16 @@ function facts(ctx) {
   // double-counts a driver who crosses both thresholds.
   const atRiskDrivers = numOr0(wellness.summary?.atRiskDrivers);
   const pettyLow = !!petty.low;
+  // Same expression buildInsight() already computes locally (line ~537) for
+  // its own workload-comparison sentence — duplicated here (not extracted
+  // into a shared helper) because buildInsight() needs yesterday's count too
+  // and this file's own convention is "ONE computation per render pass"
+  // scoped to facts(), not a cross-function shared cache.
+  const todayYmd = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
+  const tripsToday = (ctx.assignments || []).filter(a => a.date === todayYmd).length;
   return {
     ex, dk, pending, rec, criticalVehicles, engOverdue,
-    engUnverifiedList, pendingVerify, atRiskDrivers, pettyLow,
+    engUnverifiedList, pendingVerify, atRiskDrivers, pettyLow, tripsToday,
     topPendingRequest: topPendingRequest(ctx), score: ex?.score,
   };
 }
@@ -688,16 +695,19 @@ export const widgets = {
       const ringValue = hasScore ? Math.max(0, Math.min(100, f.score.value)) / 100 : 0;
       const ring = renderRingGauge({ value: ringValue, size: 152, thickness: 11, color: `var(--wsp-${headline.tone})`, track: 'var(--border-faint)' });
 
-      // Phase 1 — Operational Pulse: exactly the three metrics that
-      // communicate NOW (Snapshot owns Today/Week/Month, never duplicated
-      // here). "Status Armada" is dropped from this row on purpose — it's
-      // already covered by the ring/score itself and by the explainability
-      // disclosure directly below, so keeping it here only added density
-      // without adding clarity.
+      // Phase 1 — Operational Pulse: the metrics that communicate NOW
+      // (Snapshot owns Today/Week/Month, never duplicated here). "Status
+      // Armada" is dropped from this row on purpose — it's already covered
+      // by the ring/score itself and by the explainability disclosure
+      // directly below, so keeping it here only added density without
+      // adding clarity. Trip Hari Ini (v1.30.10.x) reuses facts().tripsToday
+      // — the exact same assignments.filter(date===todayYmd) expression
+      // buildInsight() already computes for its own workload sentence.
       const stats = [
         { lbl: 'Kendaraan Siap', big: n(f.dk.activeVehicles) },
         { lbl: 'Driver Aktif', big: n(f.dk.activeDrivers) },
         { lbl: 'Permintaan Tertunda', big: f.pending },
+        { lbl: 'Trip Hari Ini', big: f.tripsToday },
       ];
 
       // v1.21.0/v1.22.0 Explainability — now secondary, behind a disclosure.
@@ -810,25 +820,30 @@ export const widgets = {
       const f = facts(ctx);
       const items = [];
 
+      // v1.30.10.x — `domain` labels the SUBJECT of the item (matching the
+      // consolidated Today/Operations/Warehouse/Finance/Engineering/
+      // Insights/Control IA — see js/shell/domain-shell.js), not necessarily
+      // the specific screen `action` deep-links to. Presentational only —
+      // the item's real destination/behavior via `action` is unchanged.
       const criticalVehicleList = f.rec.board?.critical || [];
       if (criticalVehicleList.length > 0) {
         const top = criticalVehicleList[0];
         const suffix = criticalVehicleList.length > 1 ? ` (+${criticalVehicleList.length - 1} lainnya)` : '';
-        items.push({ sev: 'critical', title: `${top.vehicleName} — ${top.categoryLabel}${suffix}`, reason: top.reason, action: 'navDriverPrediction', actionLabel: 'Tinjau Armada' });
+        items.push({ sev: 'critical', domain: 'Operations', title: `${top.vehicleName} — ${top.categoryLabel}${suffix}`, reason: top.reason, action: 'navDriverPrediction', actionLabel: 'Tinjau Armada' });
       }
-      if (f.engOverdue > 0) items.push({ sev: classifyEngineeringOverdue(f.engOverdue).critical ? 'critical' : 'warn', title: `${f.engOverdue} pekerjaan Teknik melewati batas waktu`, reason: 'Penugasan teknik melewati batas waktu penyelesaian.', action: 'navEngineering', actionLabel: 'Tinjau Teknik' });
+      if (f.engOverdue > 0) items.push({ sev: classifyEngineeringOverdue(f.engOverdue).critical ? 'critical' : 'warn', domain: 'Engineering', title: `${f.engOverdue} pekerjaan Teknik melewati batas waktu`, reason: 'Penugasan teknik melewati batas waktu penyelesaian.', action: 'navEngineering', actionLabel: 'Tinjau Teknik' });
       if (f.pendingVerify > 0) {
         const top = f.engUnverifiedList[0];
         const suffix = f.pendingVerify > 1 ? ` (+${f.pendingVerify - 1} lainnya)` : '';
-        items.push({ sev: 'warn', title: `Verifikasi Pekerjaan — ${top.title}${suffix}`, reason: 'Pekerjaan Teknik selesai namun belum diverifikasi koordinator.', action: 'navEngineering', actionLabel: 'Verifikasi Laporan' });
+        items.push({ sev: 'warn', domain: 'Engineering', title: `Verifikasi Pekerjaan — ${top.title}${suffix}`, reason: 'Pekerjaan Teknik selesai namun belum diverifikasi koordinator.', action: 'navEngineering', actionLabel: 'Verifikasi Laporan' });
       }
       if (f.pending > 0) {
         const label = f.topPendingRequest.purpose || f.topPendingRequest.destination || f.topPendingRequest.requesterName || 'Bidang';
         const suffix = f.pending > 1 ? ` (+${f.pending - 1} lainnya)` : '';
-        items.push({ sev: 'warn', title: `Setujui Permintaan — ${label}${suffix}`, reason: 'Permintaan bidang menunggu keputusan admin.', action: 'navPending', actionLabel: 'Tinjau Permintaan' });
+        items.push({ sev: 'warn', domain: 'Operations', title: `Setujui Permintaan — ${label}${suffix}`, reason: 'Permintaan bidang menunggu keputusan admin.', action: 'navPending', actionLabel: 'Tinjau Permintaan' });
       }
-      if (f.atRiskDrivers > 0) items.push({ sev: 'warn', title: `${f.atRiskDrivers} driver berisiko kelelahan/burnout`, reason: 'Beban kerja driver melewati ambang aman dalam periode berjalan.', action: 'navAnalyticsDriver', actionLabel: 'Tinjau Wellness' });
-      if (f.pettyLow) items.push({ sev: 'critical', title: 'Saldo petty cash rendah', reason: 'Saldo siklus berjalan berada di bawah ambang notifikasi.', action: 'navPettyCash', actionLabel: 'Tinjau Petty Cash' });
+      if (f.atRiskDrivers > 0) items.push({ sev: 'warn', domain: 'Operations', title: `${f.atRiskDrivers} driver berisiko kelelahan/burnout`, reason: 'Beban kerja driver melewati ambang aman dalam periode berjalan.', action: 'navAnalyticsDriver', actionLabel: 'Tinjau Wellness' });
+      if (f.pettyLow) items.push({ sev: 'critical', domain: 'Finance', title: 'Saldo petty cash rendah', reason: 'Saldo siklus berjalan berada di bawah ambang notifikasi.', action: 'navPettyCash', actionLabel: 'Tinjau Petty Cash' });
 
       if (!items.length) return compactSuccessLine('Seluruh domain operasional dalam kondisi aman.');
       items.sort((a, b) => severityRank(a.sev) - severityRank(b.sev));
