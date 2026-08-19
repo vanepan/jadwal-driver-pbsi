@@ -91,6 +91,8 @@ import {
 // (recommendation card, confidence, apply, comparison, breakdown, timeline).
 import { mountApprovalIntelligencePanel, updateApprovalComparison } from './components/approval-intelligence-panel.js';
 import { openDecisionReplay, closeDecisionReplayDrawer } from './components/decision-replay-drawer.js'; // v1.17.5 — Decision Replay & Explainable AI drawer
+// Design System Program Phase 3 — the canonical save-feedback state machine.
+import { runSaveFeedback } from './components/save-feedback.js';
 // v1.17.6 Driver Wellness Intelligence — read-only wellness interpretation layer
 // (health score, fatigue, burnout, capacity health) rendered as its own admin
 // section in the Analytics module. Reuses capacity + workload + unified scoring.
@@ -4342,7 +4344,11 @@ function renderPendingWorkspace() {
                 data-action="approve-edit" data-id="${esc(r.id)}" type="button">Edit &amp; Setujui</button>
         <button class="v2-pending-btn v2-pending-btn--reject"
                 data-action="reject" data-id="${esc(r.id)}" type="button">Tolak</button>
-      </div>` : '';
+      </div>
+      <!-- Design System Program Phase 3 — per-card inline save-error region,
+           driven by js/components/save-feedback.js (never alert(), never
+           toast-only) for the direct-approve path. -->
+      <div class="sf-inline-error" data-request-error role="alert" hidden></div>` : '';
 
     return `
       <div class="v2-pending-card" data-request-id="${esc(r.id)}">
@@ -4393,7 +4399,7 @@ function renderPendingWorkspace() {
 
   container.querySelectorAll('[data-action]').forEach(btn => {
     btn.addEventListener('click', () => {
-      if (btn.dataset.action === 'approve-direct') handleRequestApproveDirect(btn.dataset.id);
+      if (btn.dataset.action === 'approve-direct') handleRequestApproveDirect(btn.dataset.id, btn);
       else if (btn.dataset.action === 'approve-edit') handleRequestApproveEdit(btn.dataset.id);
       else if (btn.dataset.action === 'reject') handleRequestReject(btn.dataset.id);
     });
@@ -11582,9 +11588,21 @@ function initThemeManager() {
  * "Setujui Sesuai Rekomendasi" (beta.3.1): immediately approve using the stored
  * recommendation (or a legacy requester choice) — outcome ACCEPTED, no modal.
  */
-function handleRequestApproveDirect(requestId) {
+async function handleRequestApproveDirect(requestId, button) {
   if (!isAdmin()) return;
-  commitApproval(requestId); // no decision → effective = recommendation/baseline → ACCEPTED
+  if (!button) { await commitApproval(requestId); return; } // defensive fallback — every real click passes a button
+  const card = button.closest('.v2-pending-card');
+  await runSaveFeedback({
+    button,
+    alsoDisable: card ? Array.from(card.querySelectorAll('[data-action]')).filter((b) => b !== button) : [],
+    errorRegion: card ? card.querySelector('[data-request-error]') : null,
+    operation: () => commitApproval(requestId), // no decision → effective = recommendation/baseline → ACCEPTED
+    // requestCountBadge persists across renderPendingWorkspace()'s full
+    // rebuild (only its text updates, the node itself isn't recreated) —
+    // unlike the approved request's own card, which the rebuild destroys on
+    // the same tick the success beat begins; see commitApproval() comment.
+    pulseTarget: () => document.getElementById('requestCountBadge'),
+  });
 }
 
 /**
@@ -11604,14 +11622,16 @@ function handleRequestApproveEdit(requestId) {
  * @param {string} requestId
  * @param {{driver?:string, vehicle?:string, reason?:string}} [decision]
  */
-function commitApproval(requestId, decision = {}) {
-  if (!isAdmin()) return;
+async function commitApproval(requestId, decision = {}) {
+  if (!isAdmin()) return { ok: false, error: new Error('Tidak memiliki akses admin.') };
 
   checkAssignmentSafety(assignments.length);
 
   const request = requests.find(item => item.id === requestId);
   const admin   = getCurrentUser();
-  if (!request || request.status !== 'pending') return;
+  if (!request || request.status !== 'pending') {
+    return { ok: false, error: new Error('Request tidak ditemukan atau sudah diproses.') };
+  }
 
   // Effective driver/vehicle from the admin's decision (override) or the
   // baseline (recommendation → legacy requester choice). Single source of truth.
@@ -11626,14 +11646,16 @@ function commitApproval(requestId, decision = {}) {
   // passes a `driver` key in `decision`, even when its value is '' (confirmApproveRequest
   // already blocks calling this with an untouched/unselected driver select).
   if (!effDriver && !request.noDriver && !('driver' in decision)) {
-    showToast('Tidak ada driver untuk request ini — gunakan "Edit & Setujui".');
-    return;
+    const error = new Error('Tidak ada driver untuk request ini — gunakan "Edit & Setujui".');
+    showToast(error.message);
+    return { ok: false, error };
   }
 
   const dates = expandDateRange(request.startDate, request.endDate);
   if (dates.length === 0) {
-    showToast('Request tidak memiliki tanggal yang valid.');
-    return;
+    const error = new Error('Request tidak memiliki tanggal yang valid.');
+    showToast(error.message);
+    return { ok: false, error };
   }
 
   // Driver conflict is skipped for Self-Drive (effDriver === '') — there is no
@@ -11644,12 +11666,13 @@ function commitApproval(requestId, decision = {}) {
   ) : [];
   if (conflictingDates.length > 0) {
     const dateList = conflictingDates.map(d => formatDateShort(d)).join(', ');
-    alert(
-      `Konflik jadwal terdeteksi pada:\n${dateList}\n\n` +
-      `Driver ${effDriver} sudah memiliki jadwal di waktu tersebut.\n` +
-      `Pilih driver lain lewat Override sebelum approve.`
-    );
-    return;
+    // Design System Program Phase 3 — was a blocking alert() here; now
+    // returned as a real error the caller shows inline (never alert(), per
+    // this phase's explicit instruction). No local mutation has happened
+    // yet at this point, same as before.
+    return { ok: false, error: new Error(
+      `Konflik jadwal terdeteksi pada ${dateList}. Driver ${effDriver} sudah memiliki jadwal di waktu tersebut — pilih driver lain lewat Override sebelum approve.`
+    ) };
   }
 
   const dispatchDecision = { driver: effDriver, vehicle: effVehicle };
@@ -11657,6 +11680,36 @@ function commitApproval(requestId, decision = {}) {
   // Issue 9: stamp the immutable driverUsername at creation so ownership survives
   // later driver/display-name edits (approval path).
   newAssignments.forEach(a => stampDriverIdentity(a, { force: true }));
+  const updatedRequest = {
+    ...request, status: 'approved', driver: effDriver, vehicle: effVehicle,
+    approvedBy: admin ? admin.name : '', approvedAt: new Date().toISOString(),
+  };
+
+  // Design System Program Phase 3 — CORE PRINCIPLE fix: the Firebase writes
+  // are now AWAITED here, BEFORE any local state mutates or anything
+  // re-renders. Previously, `assignments`/`requests` mutated and
+  // renderViews()/updatePermissionUI() ran synchronously while these writes
+  // were only fired with a .then()-only failure handler — the UI showed
+  // "approved" before persistence was ever confirmed. Same writes, same
+  // payloads, same Firebase paths (still one atomic multi-path update() for
+  // >1 dates, same as the v1.28.4 Multi Hari hardening) — only the ORDER
+  // changed: resolve-then-render instead of render-then-fire-and-forget.
+  const assignWrite = newAssignments.length > 1
+    ? await saveManyAssignments(newAssignments, { silent: true })
+    : await saveOneAssignment(newAssignments[0], { silent: true });
+  if (!assignWrite.ok) {
+    return { ok: false, error: assignWrite.error || new Error('Gagal menyimpan assignment ke server.') };
+  }
+  // allRequestsForCache omitted deliberately: `requests` hasn't mutated yet
+  // at this point, so passing it would cache a stale array. The real
+  // localStorage refresh happens below, after the mutation, via the
+  // existing updateAllModules()/saveAssignments() calls.
+  const requestWrite = await saveOneRequest(updatedRequest, null, { silent: true });
+  if (!requestWrite.ok) {
+    return { ok: false, error: requestWrite.error || new Error('Gagal menyimpan status request ke server.') };
+  }
+
+  // SUCCESS — both writes confirmed. Only now does local state change.
   assignments = [...assignments, ...newAssignments];
 
   // Record the acceptance/override outcome in the EXISTING override log (Part 4/7).
@@ -11666,33 +11719,12 @@ function commitApproval(requestId, decision = {}) {
     console.warn('[Approval] override log failed', err);
   }
 
-  requests = requests.map(item => item.id === requestId
-    ? { ...item, status: 'approved', driver: effDriver, vehicle: effVehicle, approvedBy: admin ? admin.name : '', approvedAt: new Date().toISOString() }
-    : item
-  );
+  requests = requests.map(item => item.id === requestId ? updatedRequest : item);
 
   updateAllModules();
   setCurrentDate(request.startDate);
   setCurrentDateForm(request.startDate);
   saveAssignments(assignments);
-  // v1.28.4: same atomicity upgrade as the manual Multi Hari form — one
-  // multi-path update() so all N approved dates commit together or not at
-  // all, instead of N independent set() calls that could partially fail.
-  // This path was NOT part of the original Multi Hari bug (it already used
-  // an explicit newAssignments array, not a before/after diff), and stays
-  // local-first/optimistic by design for now — see report "remaining
-  // concerns" for why converting it to the full persist-before-UI flow is
-  // deferred.
-  if (newAssignments.length > 1) {
-    saveManyAssignments(newAssignments).then(result => {
-      if (!result.ok) {
-        showToast(`❌ Gagal menyimpan ${newAssignments.length} jadwal hasil approve ke server. Periksa koneksi lalu coba lagi.`);
-      }
-    });
-  } else {
-    newAssignments.forEach(a => saveOneAssignment(a));
-  }
-  saveOneRequest(requests.find(item => item.id === requestId), requests);
 
   const currentUser = getCurrentUser();
   logAction({
@@ -11743,7 +11775,11 @@ function commitApproval(requestId, decision = {}) {
   renderViews();
   updatePermissionUI();
   if (currentWorkspace === 'pending') renderPendingWorkspace();
-  if (dates.length > 1) showToast(`✅ ${dates.length} assignment berhasil dibuat`);
+  // Design System Program Phase 3 — previously gated on `dates.length > 1`,
+  // so a single-day approval (the common case) got zero success feedback at
+  // all. Now unconditional; the caller's save-feedback checkmark is the
+  // primary signal, this toast is the secondary, non-exclusive one.
+  showToast(dates.length > 1 ? `✅ ${dates.length} assignment berhasil dibuat` : '✅ Permintaan disetujui');
 
   sendRequestApprovedNotification(request, getUserByUsername);
   // v1.25.x Final Hardening (Part 4 — single event pipeline): the driver
@@ -11753,6 +11789,8 @@ function commitApproval(requestId, decision = {}) {
   // → assignment.created → the SAME registry/dispatcher every other channel
   // uses (Push + Telegram + in-app), so a second, independent client-side
   // send would just duplicate it.
+
+  return { ok: true, newAssignments, requestId };
 }
 
 /* ── Approve / Override modal (beta.3) ──────────────────────────────────
@@ -11974,7 +12012,7 @@ function _syncApproveReasonVisibility() {
   if (group) group.hidden = !_approveIsOverride();
 }
 
-function confirmApproveRequest(event) {
+async function confirmApproveRequest(event) {
   if (event) event.preventDefault();
   const requestId = approveModalRequestId;
   if (!requestId) return;
@@ -11996,8 +12034,25 @@ function confirmApproveRequest(event) {
     return;
   }
 
-  closeApproveRequestModal();
-  commitApproval(requestId, { driver: selDriver, vehicle: selVehicle, reason });
+  // Design System Program Phase 3 — the modal used to close HERE, before
+  // commitApproval() even started (so a conflict alert() fired on a page
+  // with the modal already gone). It now stays open through SAVING/SUCCESS,
+  // closing only once the write is confirmed — the Dispatch Intelligence
+  // panel/Decision Replay trigger are siblings of #approveForm, outside it,
+  // so locking the form's own controls never touches them.
+  await runSaveFeedback({
+    button: document.getElementById('btnConfirmApprove'),
+    alsoDisable: [
+      document.getElementById('btnCancelApprove'),
+      driverSel, vehicleSel, reasonEl,
+    ].filter(Boolean),
+    errorRegion: document.getElementById('approveFormError'),
+    operation: () => commitApproval(requestId, { driver: selDriver, vehicle: selVehicle, reason }),
+    onSuccess: () => { closeApproveRequestModal(); },
+    // requestCountBadge persists across renderPendingWorkspace()'s rebuild —
+    // same reasoning as handleRequestApproveDirect's pulseTarget.
+    pulseTarget: () => document.getElementById('requestCountBadge'),
+  });
 }
 
 function _onApproveSelectChange() {

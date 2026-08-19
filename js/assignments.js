@@ -13,6 +13,7 @@ import { hasPermission, getCurrentUser } from './auth.js';
 import { initFormGuard, resetDirty } from './form-guard.js';
 import { syncPbsiSelect } from './pbsi-select.js';
 import { initPbsiDatepicker, syncPbsiDatepicker } from './pbsi-datepicker.js';
+import { runSaveFeedback } from './components/save-feedback.js';
 
 /* ── Module State ── */
 // v1.15.6: UI-only sentinel for the "Tanpa Kendaraan" dropdown option. NEVER
@@ -26,7 +27,6 @@ let assignments = [];
 let editingId = null; // null = add mode, or ID = edit mode
 let onSaveCallback = null;
 let onPersistCallback = null; // v1.28.4: async (records) => {ok, error} — actual Firebase write, awaited BEFORE local state changes
-let isSubmitting = false;      // v1.28.4: re-entrancy guard against double-submit (double-click / Enter race)
 let currentDate = null;
 
 /**
@@ -291,40 +291,20 @@ export function closeFormModal() {
 }
 
 /**
- * v1.28.4 — Toggle the Simpan button's saving/loading state. Disables the
- * button and swaps its label while a persist is in flight, both to give
- * the user feedback and to prevent a double-click/Enter race from firing
- * two overlapping submits (which could otherwise create duplicate
- * assignments before the first request even resolves).
- * @param {boolean} saving
- */
-function setFormSavingUI(saving) {
-  const saveBtn = document.getElementById('btnSaveForm');
-  if (!saveBtn) return;
-  if (saving) {
-    if (saveBtn.dataset.originalLabel === undefined) {
-      saveBtn.dataset.originalLabel = saveBtn.textContent;
-    }
-    saveBtn.disabled = true;
-    saveBtn.textContent = '⏳ Menyimpan…';
-  } else {
-    saveBtn.disabled = false;
-    if (saveBtn.dataset.originalLabel !== undefined) {
-      saveBtn.textContent = saveBtn.dataset.originalLabel;
-    }
-  }
-}
-
-/**
  * Handle form submit (add atau update assignment)
  */
 async function handleFormSubmit(e) {
   e.preventDefault();
 
-  // v1.28.4: re-entrancy guard — a double-click or an Enter-key repeat that
-  // fires a second 'submit' event before the button's `disabled` attribute
-  // has taken visual effect must not start a second, overlapping save.
-  if (isSubmitting) return;
+  // Design System Program Phase 3 — re-entrancy guard against a double-click
+  // or Enter-key repeat firing a second overlapping submit before the first
+  // has visibly started saving. Reads the SAME dataset flag
+  // runSaveFeedback() itself uses (js/components/save-feedback.js) rather
+  // than a second, parallel guard variable — this is a cheap early-exit
+  // only (skips redoing validation/conflict-checking on a rapid double-fire);
+  // the actual duplicate-write prevention is runSaveFeedback's own
+  // synchronous guard further down, which is authoritative regardless.
+  if (document.getElementById('btnSaveForm')?.dataset.sfBusy === '1') return;
 
   // Safety net: only admin can ever write directly to assignments.
   if (!hasPermission('create')) {
@@ -501,55 +481,69 @@ async function handleFormSubmit(e) {
     }];
   }
 
-  isSubmitting = true;
-  setFormSavingUI(true);
-  try {
-    const result = onPersistCallback
+  // Design System Program Phase 3 — the real Firebase write is awaited
+  // INSIDE runSaveFeedback's operation(); success/error/the record-pulse are
+  // all driven by the shared primitive (js/components/save-feedback.js), not
+  // hand-rolled here. Same persist call, same success/failure branching as
+  // before this phase — only the visual/state-machine plumbing moved.
+  await runSaveFeedback({
+    button: document.getElementById('btnSaveForm'),
+    alsoDisable: [document.getElementById('btnCancelForm')].filter(Boolean),
+    errorRegion: document.getElementById('assignmentFormError'),
+    operation: async () => (onPersistCallback
       ? await onPersistCallback(records)
-      : { ok: true }; // no persist callback registered (e.g. isolated/test usage) — degrade to local-only, unchanged from pre-v1.28.4 behavior
+      : { ok: true }), // no persist callback registered (e.g. isolated/test usage) — degrade to local-only, unchanged from pre-v1.28.4 behavior
+    onSuccess: () => {
+      // Firebase has confirmed the write. Only now does local state change,
+      // immutably (see v1.28.3 note below on why in-place push()/index-
+      // mutation was the original bug).
+      if (kind === 'edit') {
+        assignments = assignments.map((a, i) => (i === editIdx ? records[0] : a));
+        showToast('✅ Jadwal berhasil diperbarui');
+        if (onSaveCallback) onSaveCallback(assignments, false, startDate, records[0], previousAssignment);
+      } else if (kind === 'multi') {
+        // v1.28.3 CRITICAL FIX (kept from the prior hardening pass): build a
+        // NEW array instead of `assignments.push(...records)` in place, and
+        // pass `records` explicitly to onSaveCallback instead of `null` —
+        // in-place mutation of the array app.js also references made a
+        // before/after diff in app.js always return empty, so multi-day
+        // Firebase writes were silently skipped entirely. See CLAUDE.md /
+        // commit history v1.28.3 for the full root-cause writeup.
+        assignments = [...assignments, ...records];
+        showToast(`✅ ${records.length} jadwal berhasil ditambahkan`);
+        if (onSaveCallback) onSaveCallback(assignments, true, startDate, records);
+      } else {
+        assignments = [...assignments, records[0]];
+        showToast('✅ Jadwal berhasil ditambahkan');
+        if (onSaveCallback) onSaveCallback(assignments, true, startDate, records[0]);
+      }
 
-    if (!result || !result.ok) {
+      // Reset edit mode dan update current date — only reached on success.
+      editingId = null;
+      if (currentDate !== startDate) currentDate = startDate;
+
+      resetDirty('assignmentForm');
+      closeFormModal();
+    },
+    onError: () => {
       // FAILURE: no local mutation happened, so there is nothing to roll
-      // back. Modal stays open, the user's entered data is untouched, and
-      // Simpan re-enables (in the `finally` below) so they can retry.
+      // back. Modal stays open (runSaveFeedback's onSuccess, which calls
+      // closeFormModal(), never fires), the user's entered data is
+      // untouched, and Simpan is already re-enabled so they can retry.
       showToast('❌ Gagal menyimpan jadwal. Silakan periksa koneksi lalu coba lagi.');
-      return;
-    }
-
-    // SUCCESS — Firebase has confirmed the write. Only now does local state
-    // change, immutably (see v1.28.3 note below on why in-place push()/
-    // index-mutation was the original bug).
-    if (kind === 'edit') {
-      assignments = assignments.map((a, i) => (i === editIdx ? records[0] : a));
-      showToast('✅ Jadwal berhasil diperbarui');
-      if (onSaveCallback) onSaveCallback(assignments, false, startDate, records[0], previousAssignment);
-    } else if (kind === 'multi') {
-      // v1.28.3 CRITICAL FIX (kept from the prior hardening pass): build a
-      // NEW array instead of `assignments.push(...records)` in place, and
-      // pass `records` explicitly to onSaveCallback instead of `null` —
-      // in-place mutation of the array app.js also references made a
-      // before/after diff in app.js always return empty, so multi-day
-      // Firebase writes were silently skipped entirely. See CLAUDE.md /
-      // commit history v1.28.3 for the full root-cause writeup.
-      assignments = [...assignments, ...records];
-      showToast(`✅ ${records.length} jadwal berhasil ditambahkan`);
-      if (onSaveCallback) onSaveCallback(assignments, true, startDate, records);
-    } else {
-      assignments = [...assignments, records[0]];
-      showToast('✅ Jadwal berhasil ditambahkan');
-      if (onSaveCallback) onSaveCallback(assignments, true, startDate, records[0]);
-    }
-
-    // Reset edit mode dan update current date — only reached on success.
-    editingId = null;
-    if (currentDate !== startDate) currentDate = startDate;
-
-    resetDirty('assignmentForm');
-    closeFormModal();
-  } finally {
-    isSubmitting = false;
-    setFormSavingUI(false);
-  }
+    },
+    pulseTarget: () => {
+      // The board (js/timeline.js:226) and list view (js/app.js:3750) both
+      // fully tear down and rebuild on every render — query the FRESH node
+      // AFTER onSuccess's re-render, never a pre-render reference (already
+      // detached by the time this resolves). Multi-day create has no single
+      // "the" record to point at, so it's skipped (returns null).
+      const id = (kind === 'edit' || kind === 'single') ? records[0].id : null;
+      if (!id) return null;
+      return document.querySelector(`.assignment-block[data-id="${CSS.escape(id)}"]`)
+        || document.querySelector(`[data-list-id="${CSS.escape(id)}"]`);
+    },
+  });
 }
 
 /**

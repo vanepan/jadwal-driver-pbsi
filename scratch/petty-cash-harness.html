@@ -1,0 +1,20 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>petty cash harness</title><link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Archivo:wght@400;500;600;700;800;900&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/style.css" />
+<link rel="stylesheet" href="/platform.css" />
+<link rel="stylesheet" href="/petty-cash.css" />
+</head>
+<body style="margin:0;background:var(--bg,#F5F5F3);">
+  <div id="pcHost"></div>
+  <script type="module">
+    import * as center from '/js/petty-cash/petty-cash-center.js';
+    localStorage.setItem('pbsi_current_user', JSON.stringify({ id: 'u1', username: 'admin1', name: 'Admin Test', role: 'admin' }));
+    window.__pc = center;
+    await center.mountPettyCash(document.getElementById('pcHost'));
+    window.__pcHarnessReady = true;
+  </script>
+</body>
+</html>

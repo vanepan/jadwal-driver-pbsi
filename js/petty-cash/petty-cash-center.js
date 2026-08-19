@@ -24,6 +24,7 @@
 
 import { isAdmin, getCurrentUser } from '../auth.js';
 import { createFocusGuard } from '../ui/focus-preserving-render.js';
+import { runSaveFeedback } from '../components/save-feedback.js';
 import {
   initPettyCashStore, registerChangeListener, getSettings, getActiveCycle,
   getNors, getNorById, getExpenses, getExpenseById,
@@ -1138,7 +1139,7 @@ function addModal() {
         <label style="display:block"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Foto Nota <span style="color:var(--muted);font-weight:400;letter-spacing:0">(Opsional · disimpan untuk arsip digital)</span></span>
           <div data-act="pickReceipt" style="margin-top:6px;border:1.5px dashed var(--input-bd);border-radius:9px;padding:18px 14px;text-align:center;color:var(--muted);font-size:12.5px;cursor:pointer;background:var(--card2)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto 8px;display:block"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>${f._photoName ? esc(f._photoName) : 'Klik untuk pilih foto nota fisik<br/><span style="font-size:11px">JPG, PNG · maks. 5 MB · tidak wajib</span>'}</div>
           <input id="pcReceiptInput" type="file" accept="image/*" data-act="receiptFile" style="display:none"/></label>
-        ${f._err ? `<div id="pcAddErr" style="font-size:12px;color:var(--primary);background:var(--primary-tint);border-radius:8px;padding:9px 12px">${esc(f._err)}</div>` : ''}
+        ${f._err ? `<div id="pcAddErr" class="sf-inline-error" role="alert">${esc(f._err)}</div>` : ''}
       </div>
       <div style="display:flex;justify-content:flex-end;gap:10px;padding:16px 22px;border-top:1px solid var(--border2)">
         <button data-act="closeAdd" style="background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 18px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer">Batal</button>
@@ -1566,19 +1567,54 @@ async function submitAdd() {
     receiptImage: f._receiptData || null,
     reimbursementDetail: reimburse ? f.reimbursementDetail : null,
   };
-  try {
-    if (st.editId) {
-      const updated = await svc.updateExpense(st.editId, payload);
+
+  // Design System Program Phase 3 — closes a confirmed, exploitable bug: this
+  // button previously had ZERO re-entrancy guard, so a fast double-click
+  // fired two svc.createExpense() calls before either resolved, both
+  // computing the same locally-cached ref number — two real duplicate RTDB
+  // records with a duplicated ref. runSaveFeedback's own synchronous busy
+  // flag on the button makes that structurally impossible now.
+  const saveBtn = document.querySelector('[data-act="submitAdd"]');
+  if (!saveBtn) return; // defensive — should always exist while this modal is open
+  const cancelBtn = saveBtn.parentElement?.querySelector('[data-act="closeAdd"]');
+  const isEdit = !!st.editId;
+  let savedRecord = null;
+
+  await runSaveFeedback({
+    button: saveBtn,
+    alsoDisable: [cancelBtn].filter(Boolean),
+    operation: async () => {
+      try {
+        const record = isEdit ? await svc.updateExpense(st.editId, payload) : await svc.createExpense(payload);
+        return { ok: true, record };
+      } catch (err) {
+        return { ok: false, error: err };
+      }
+    },
+    onSuccess: (result) => {
+      savedRecord = result.record;
       recordCustomUnitUse(f);
-      setState({ addOpen: false, editId: null, form: blankForm() });
-      toast(`Pengeluaran ${updated.refNumber} diperbarui`);
-    } else {
-      const exp = await svc.createExpense(payload);
-      recordCustomUnitUse(f);
-      setState({ addOpen: false, form: blankForm() });
-      toast(`Pengeluaran ${exp.refNumber} tersimpan`);
-    }
-  } catch (err) { st.form._err = err.message || 'Gagal menyimpan.'; render(); }
+      if (isEdit) {
+        setState({ addOpen: false, editId: null, form: blankForm() });
+        toast(`Pengeluaran ${savedRecord.refNumber} diperbarui`);
+      } else {
+        setState({ addOpen: false, form: blankForm() });
+        toast(`Pengeluaran ${savedRecord.refNumber} tersimpan`);
+      }
+    },
+    // No stable errorRegion element exists here — this module fully rebuilds
+    // its DOM on every setState()/render(), so #pcAddErr only exists once
+    // st.form._err is already truthy (see addModal()). Reusing the file's
+    // own existing inline-error mechanism (rather than fighting it) is the
+    // correct fit for this module's architecture.
+    onError: (err) => {
+      st.form._err = err.message || 'Gagal menyimpan.';
+      render();
+    },
+    pulseTarget: () => (savedRecord
+      ? document.querySelector(`[data-act="openDetail"][data-id="${CSS.escape(savedRecord.id)}"]`)
+      : null),
+  });
 }
 
 async function doDeleteExpense(id) {

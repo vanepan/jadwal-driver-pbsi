@@ -12753,6 +12753,55 @@ body.v2-shell-active .block-status-badge--overtime {
 }
 /* ── end canonical drawer ─────────────────────────────────────────────────── */
 
+/* ── Save-Feedback (Design System Program Phase 3) ────────────────────────────
+   js/components/save-feedback.js. Applied to a button while runSaveFeedback()
+   is driving it — .sf-btn + [data-sf-state] both cleared on return to idle,
+   so an idle button carries neither class nor attribute (no lingering
+   layout impact once a save finishes). ── */
+.sf-btn[data-sf-state] { display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+.sf-btn[data-sf-state] .sf-btn__label { line-height: 1; }
+.sf-icon { display: inline-flex; flex: 0 0 auto; }
+.sf-btn[data-sf-state="saving"] .sf-icon--spin { animation: sf-spin .8s linear infinite; transform-origin: 50% 50%; }
+[data-sf-state="success"] .sf-icon--check { color: var(--ok, #2f7d62); }
+.sf-icon--check { stroke-dasharray: 20; stroke-dashoffset: 20; animation: sf-check-draw .24s ease forwards; }
+@keyframes sf-spin { to { transform: rotate(360deg); } }
+@keyframes sf-check-draw { to { stroke-dashoffset: 0; } }
+
+/* Reduced motion — both the OS preference and this app's own data-anim="off"
+   override switch (same dual-guard convention already used elsewhere, e.g.
+   the domain-shell tab-strip disclosure) freeze rotation/draw-in; the state
+   itself (icon shape, label, aria-busy) still communicates fully without it. */
+@media (prefers-reduced-motion: reduce) {
+  .sf-icon--spin, .sf-icon--check { animation: none; }
+  .sf-icon--check { stroke-dashoffset: 0; }
+}
+[data-anim="off"] .sf-icon--spin, [data-anim="off"] .sf-icon--check { animation: none; }
+[data-anim="off"] .sf-icon--check { stroke-dashoffset: 0; }
+
+/* One-shot success pulse on the record a save landed on (a timeline block,
+   list card, or expense row — resolved by the caller's pulseTarget()).
+   Additive: only a background-color animation, never layout-affecting. */
+/* A box-shadow ring, not background-color — stays correct regardless of
+   the target's OWN background (a solid-color badge pill, a transparent
+   table row, a card — all pulse the same way without fighting the
+   element's resting appearance). */
+@keyframes sf-pulse {
+  0%   { box-shadow: 0 0 0 0 var(--accent-line, rgba(168,41,47,.4)); }
+  100% { box-shadow: 0 0 0 7px rgba(168,41,47,0); }
+}
+.sf-pulse { animation: sf-pulse .55s ease-out; }
+@media (prefers-reduced-motion: reduce) { .sf-pulse { animation: none; } }
+[data-anim="off"] .sf-pulse { animation: none; }
+
+/* Inline, contextual error — same danger-token shape as the existing
+   .conflict-warning, deliberately without its shake (this state is meant to
+   read as calm and actionable, not alarming). */
+.sf-inline-error {
+  background: var(--danger-bg, #faebeb); border: 1.5px solid var(--danger, #a8292f); color: var(--danger, #a8292f);
+  border-radius: var(--radius-sm, 11px); padding: 10px 14px; font-size: 13px; font-weight: 500; margin-top: 8px;
+}
+.sf-inline-error[hidden] { display: none; }
+
 /* ============================================================
    v1.18.3 HOTFIX — Executive Navigation Refinement
    Single V2 renderer reused for desktop shell + mobile drawer.

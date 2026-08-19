@@ -22,12 +22,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Archivo:wght@400;500;600;700;800;900&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=1.30.11.1" />
+  <link rel="stylesheet" href="style.css?v=1.30.11.2" />
   <link rel="stylesheet" href="platform.css?v=2.1.3" />
-  <link rel="stylesheet" href="petty-cash.css?v=1.30.11.1" />
-  <link rel="stylesheet" href="overtime.css?v=1.30.11.1" />
-  <link rel="stylesheet" href="engineering.css?v=1.30.11.1" />
-  <link rel="stylesheet" href="gudang.css?v=1.30.11.1" />
+  <link rel="stylesheet" href="petty-cash.css?v=1.30.11.2" />
+  <link rel="stylesheet" href="overtime.css?v=1.30.11.2" />
+  <link rel="stylesheet" href="engineering.css?v=1.30.11.2" />
+  <link rel="stylesheet" href="gudang.css?v=1.30.11.2" />
   <link rel="stylesheet" href="sarpras-intelligence.css?v=1.23.0" />
   <link rel="stylesheet" href="nor-center.css?v=1.23.0" />
   <link rel="stylesheet" href="workspace-list-kit.css?v=1.23.0" />
@@ -596,6 +596,9 @@
             <textarea id="approveReason" rows="2" placeholder="Wajib diisi jika mengganti rekomendasi"></textarea>
           </div>
         </div>
+        <!-- Design System Program Phase 3 — inline save-error region, driven by
+             js/components/save-feedback.js (never alert(), never toast-only). -->
+        <div class="sf-inline-error" id="approveFormError" role="alert" hidden></div>
         <div class="form-actions">
           <button type="button" class="btn-secondary" id="btnCancelApprove">Batal</button>
           <button type="submit" class="btn-primary" id="btnConfirmApprove">Simpan &amp; Setujui</button>
@@ -1071,6 +1074,9 @@
             ⚠️ Konflik jadwal! Driver atau kendaraan sudah digunakan di jam yang sama.
             <div class="conflict-warning-dates" id="conflictWarningDates"></div>
           </div>
+          <!-- Design System Program Phase 3 — inline save-error region, driven by
+               js/components/save-feedback.js (never alert(), never toast-only). -->
+          <div class="sf-inline-error" id="assignmentFormError" role="alert" hidden></div>
           <div class="form-actions-btns">
             <button type="button" class="btn-secondary" id="btnCancelForm">Batal</button>
             <button type="submit" class="btn-primary" id="btnSaveForm">Simpan</button>
@@ -1212,6 +1218,6 @@
      an npm import — mammoth's npm package has no browser-ready ESM
      build. Exposes window.mammoth. -->
 <script src="https://cdn.jsdelivr.net/npm/mammoth@1.12.0/mammoth.browser.min.js"></script>
-<script type="module" src="js/app.js?v=1.30.11.1"></script>
+<script type="module" src="js/app.js?v=1.30.11.2"></script>
 </body>
 </html>
