@@ -4060,12 +4060,12 @@ function initV2TimelineContainer() {
 
   listView.addEventListener('click', (e) => {
     const card = e.target.closest('[data-list-id]');
-    if (card) openDetailModal(card.dataset.listId);
+    if (card) openDetailModal(card.dataset.listId, { sourceEl: card });
   });
   listView.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
     const card = e.target.closest('[data-list-id]');
-    if (card) { e.preventDefault(); openDetailModal(card.dataset.listId); }
+    if (card) { e.preventDefault(); openDetailModal(card.dataset.listId, { sourceEl: card }); }
   });
 
   surface.appendChild(tlHeader);

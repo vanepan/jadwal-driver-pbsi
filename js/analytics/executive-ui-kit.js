@@ -59,13 +59,18 @@ import {
   renderExecutiveStatusPill,
 } from './executive-table.js';
 
+// Design System Program Phase 2 — the drawer primitive relocated to
+// js/components/drawer.js (generalized, app-wide; was Executive/Analytics-
+// scoped here). Re-exported under the SAME names below so every existing
+// consumer (vehicle-detail-drawer.js and anything importing from this file)
+// needs zero changes.
 import {
-  openExecutiveDrawer,
-  closeExecutiveDrawer,
-  execDrawerSection,
-  execDrawerMetrics,
-  execDrawerTimeline,
-} from './executive-drawer.js';
+  openDrawer as openExecutiveDrawer,
+  closeDrawer as closeExecutiveDrawer,
+  drawerSection as execDrawerSection,
+  drawerMetrics as execDrawerMetrics,
+  drawerTimeline as execDrawerTimeline,
+} from '../components/drawer.js';
 
 /** Shared escaper — single source for the kit (dedupes the 6+ copies). */
 export function escHtml(s) {

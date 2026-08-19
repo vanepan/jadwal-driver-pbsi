@@ -1,8 +1,30 @@
 /* ============================================================
-   MODAL.JS — Detail Modal & WhatsApp Preview
+   MODAL.JS — Assignment Detail (now on the canonical drawer) & WhatsApp Preview
 
-   Open/close detail modal, render assignment details,
-   generate WhatsApp text, delete/edit/start/complete actions.
+   Open/close detail drawer, render assignment details, generate WhatsApp
+   text, delete/edit/start/complete actions.
+
+   Design System Program Phase 2 — Assignment Detail migrated off the legacy
+   #modalDetail (.modal-overlay/.modal-box + a desktop-only CSS costume) onto
+   js/components/drawer.js, the canonical drawer primitive. All permission
+   logic (hasPermission/canActOnAssignment/canCancelAssignment), all
+   Firebase-touching callbacks (registered by js/app.js), and every exported
+   function's name/signature are unchanged — openDetailModal(id)/
+   closeDetailModal() are called from 8+ entry points across the app and
+   none of them needed to change. Only the render target changed: content
+   that used to write into pre-existing static DOM nodes now builds one HTML
+   string handed to the drawer's open() call, and per-button listeners that
+   used to bind once at boot (into permanent DOM) now bind once per drawer
+   open (into freshly-created DOM, torn down on close — same lifecycle the
+   drawer primitive already uses for every other consumer).
+
+   The 4 satellite modals (Odometer/Cancel/OvertimeOverride, all
+   confirmation-with-required-input dialogs; CommentThread) are UNCHANGED —
+   still legacy centered modals, per the Phase 2 migration map's own
+   classification (short, single-purpose, blocking confirmations may stay
+   dialogs). Their "Option A" contract (detail closes first, no stacking;
+   reopens the same assignment after) is preserved exactly, just with the
+   new drawer on the detail side of it instead of the old modal.
    ============================================================ */
 
 'use strict';
@@ -14,6 +36,7 @@ import { hasPermission, getCurrentUser, assignmentBelongsToDriver } from './auth
 import { validateOdometer } from './validation.js';
 import { printReimbursementForm } from './reimbursement.js';
 import { getSetting } from './settings-store.js';
+import { openDrawer, closeDrawer } from './components/drawer.js';
 
 /** Live office-hours window (09:00–17:00 default) for overtime detection. */
 function getOfficeHours() {
@@ -138,7 +161,7 @@ export function setAssignments(newAssignments) {
 
 /**
  * Delete an assignment after a confirmation prompt — the single delete entry
- * point shared by the detail modal's Delete button AND the Timeline's
+ * point shared by the detail drawer's Delete button AND the Timeline's
  * "Delete Assignment" context-menu action (js/timeline-interactions.js), so
  * the permission gate and confirmation UX never diverge between the two.
  * @param {string} id
@@ -157,7 +180,8 @@ export function requestDeleteAssignment(id) {
 
 /* ── Odometer Modal ─────────────────────────────────────────────
    Shown before Start / Complete to capture KM Awal / KM Akhir.
-   Uses Option A: detail modal closes before odometer opens (no stacking).
+   Uses Option A: detail drawer closes before odometer opens (no stacking).
+   Unchanged legacy centered modal — still static DOM in index.html.
    ────────────────────────────────────────────────────────────── */
 
 let _odoType       = null;  // 'start' | 'complete'
@@ -187,7 +211,7 @@ function _openOdometerModal(type, assignmentId, assignment, callback) {
 
   const isStart = type === 'start';
 
-  // Close detail modal first (Option A — no stacked modals)
+  // Close detail drawer first (Option A — no stacked modals)
   closeDetailModal();
 
   // Populate header
@@ -237,7 +261,7 @@ function _openOdometerModal(type, assignmentId, assignment, callback) {
 
 /**
  * Close odometer modal.
- * @param {boolean} reopenDetail - If true, re-open the detail modal for the same assignment.
+ * @param {boolean} reopenDetail - If true, re-open the detail drawer for the same assignment.
  */
 function _closeOdometerModal(reopenDetail = false) {
   const modal = document.getElementById('modalOdometer');
@@ -309,7 +333,7 @@ function _handleOdometerConfirm() {
 /* ── Cancellation Modal ─────────────────────────────────────────
    Confirmation dialog shown before cancelling an assignment.
    Captures a mandatory reason (min 10 chars). Mirrors the odometer
-   modal pattern: detail modal closes first; "Kembali" reopens it.
+   modal pattern: detail drawer closes first; "Kembali" reopens it.
    ────────────────────────────────────────────────────────────── */
 
 let _cancelId = null; // assignment id pending cancellation
@@ -343,7 +367,7 @@ function _openCancelModal(assignmentId) {
 }
 
 /**
- * @param {boolean} reopenDetail - reopen the detail modal for the same assignment.
+ * @param {boolean} reopenDetail - reopen the detail drawer for the same assignment.
  */
 function _closeCancelModal(reopenDetail = false) {
   const modal = document.getElementById('modalCancel');
@@ -442,14 +466,14 @@ function _handleOtOverrideConfirm() {
   if (id && onOvertimeOverrideCallback) onOvertimeOverrideCallback(id, choice, reason);
 }
 
+/** Boot-time wiring for the 4 satellite legacy modals only — unchanged,
+ *  static DOM, bound once. Assignment Detail's own interactive elements are
+ *  wired per-open by _wireDetailHandlers(), since that DOM is now created
+ *  fresh on every openDetailModal() call (same lifecycle every other drawer
+ *  consumer already uses) rather than existing permanently from boot. */
 export function initModalHandlers() {
-  initAccordionListeners();
-
-  document.getElementById('btnCloseDetail')?.addEventListener('click', closeDetailModal);
-  document.getElementById('btnCloseDetail2')?.addEventListener('click', closeDetailModal);
-
   // Odometer modal handlers
-  // Close/Cancel → reopen detail modal so user doesn't lose context
+  // Close/Cancel → reopen detail drawer so user doesn't lose context
   document.getElementById('btnCloseOdometer')?.addEventListener('click',  () => _closeOdometerModal(true));
   document.getElementById('btnCancelOdometer')?.addEventListener('click', () => _closeOdometerModal(true));
   document.getElementById('btnConfirmOdometer')?.addEventListener('click', _handleOdometerConfirm);
@@ -463,29 +487,194 @@ export function initModalHandlers() {
     if (e.target === document.getElementById('modalOdometer')) _closeOdometerModal(true);
   });
 
-  // Edit
-  document.getElementById('btnEditAssignment')?.addEventListener('click', () => {
-    if (!hasPermission('edit')) {
-      showToast('Anda tidak punya akses untuk mengedit jadwal');
-      return;
-    }
+  // Cancellation modal: Kembali reopens detail; Konfirmasi performs the cancel
+  document.getElementById('btnCloseCancel')?.addEventListener('click',  () => _closeCancelModal(true));
+  document.getElementById('btnBackCancel')?.addEventListener('click',   () => _closeCancelModal(true));
+  document.getElementById('btnConfirmCancel')?.addEventListener('click', _handleCancelConfirm);
+  document.getElementById('cancelReasonInput')?.addEventListener('input', _syncCancelConfirmState);
+  document.getElementById('modalCancel')?.addEventListener('click', (e) => {
+    if (e.target === document.getElementById('modalCancel')) _closeCancelModal(true);
+  });
+
+  // Overtime override (v1.16.4.9) — admin opens the force-status dialog.
+  document.getElementById('btnCloseOtOverride')?.addEventListener('click', () => _closeOtOverrideModal(true));
+  document.getElementById('btnBackOtOverride')?.addEventListener('click',  () => _closeOtOverrideModal(true));
+  document.getElementById('btnConfirmOtOverride')?.addEventListener('click', _handleOtOverrideConfirm);
+  document.getElementById('otOverrideReason')?.addEventListener('input', _syncOtOverrideState);
+  document.getElementById('otOverrideChoices')?.addEventListener('change', _syncOtOverrideState);
+  document.getElementById('modalOvertimeOverride')?.addEventListener('click', (e) => {
+    if (e.target === document.getElementById('modalOvertimeOverride')) _closeOtOverrideModal(true);
+  });
+}
+
+/** Assignment Detail's own body content — one combined HTML string covering
+ *  all 6 accordion sections + primary/secondary action bars, a direct port
+ *  of the former static index.html markup (same ids/classes throughout, so
+ *  updateDetailActionButtons() below needs zero logic changes). */
+function _buildDetailBodyHtml(a, status, statusLabel) {
+  const odoRows = buildOdoRows(a);
+  return `
+    <div class="accord-section accord-section--open" id="accordSummary">
+      <button class="accord-header" type="button" aria-expanded="true">
+        <span class="accord-title">Ringkasan Jadwal</span>
+        <span class="accord-chevron">▶</span>
+      </button>
+      <div class="accord-body">
+        <div class="accord-body-inner" id="detailSummary">
+          <div class="detail-row">
+            <span class="detail-label">Status</span>
+            <span class="detail-value"><span class="badge-status badge-status--${status}">${escapeHTML(statusLabel)}</span></span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Driver</span>
+            <span class="detail-value">${escapeHTML(a.driver)}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">No. HP</span>
+            <span class="detail-value">${escapeHTML(a.phone || '-')}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Kendaraan</span>
+            <span class="detail-value"><span class="vehicle-badge" style="background:${getVehicleColor(a.vehicle)}">${escapeHTML(vehicleLabel(a.vehicle))}</span></span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Tanggal</span>
+            <span class="detail-value">${formatDateLong(a.date)}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Waktu</span>
+            <span class="detail-value">${a.fullDay ? 'Penuh Hari' : `${escapeHTML(a.startTime)} – ${escapeHTML(a.endTime)}`}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Tujuan</span>
+            <span class="detail-value">${escapeHTML(a.destination)}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Keperluan</span>
+            <span class="detail-value">${escapeHTML(a.purpose)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="detail-actions-primary" id="detailActionsPrimary">
+      <button class="btn-primary" id="btnStartAssignment" data-drawer-action="start">▶ Mulai Tugas</button>
+      <button class="btn-success" id="btnCompleteAssignment" data-drawer-action="complete">✓ Selesaikan</button>
+      <button class="btn-secondary" id="btnCommentThread" data-drawer-action="comment" style="display:none;">💬 Komentar</button>
+      <button class="btn-danger" id="btnCancelAssignment" data-drawer-action="cancel" style="display:none;">✕ Batalkan</button>
+      <button class="btn-secondary" id="btnOverrideOvertime" data-drawer-action="override" style="display:none;">⏱ Override Lembur</button>
+    </div>
+
+    <div class="accord-section" id="accordExtra">
+      <button class="accord-header" type="button" aria-expanded="false">
+        <span class="accord-title">Detail Tambahan</span>
+        <span class="accord-chevron">▶</span>
+      </button>
+      <div class="accord-body">
+        <div class="accord-body-inner" id="detailExtra">
+          <div class="detail-row">
+            <span class="detail-label">PIC</span>
+            <span class="detail-value">${escapeHTML(a.pic || '-')}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">Penumpang</span>
+            <span class="detail-value">${escapeHTML(String(a.pax ?? 0))} pax</span>
+          </div>
+          ${a.notes ? `
+          <div class="detail-row">
+            <span class="detail-label">Catatan</span>
+            <span class="detail-value">${escapeHTML(a.notes)}</span>
+          </div>` : ''}
+        </div>
+      </div>
+    </div>
+
+    <div class="accord-section" id="accordOps">
+      <button class="accord-header" type="button" aria-expanded="false">
+        <span class="accord-title">Informasi Operasional</span>
+        <span class="accord-chevron">▶</span>
+      </button>
+      <div class="accord-body">
+        <div class="accord-body-inner" id="detailOps">${buildOpsRows(a) || '<p class="detail-empty">Belum ada informasi operasional.</p>'}</div>
+      </div>
+    </div>
+
+    <div class="accord-section${odoRows ? '' : ' accord-section--hidden'}" id="accordOdo">
+      <button class="accord-header" type="button" aria-expanded="false">
+        <span class="accord-title">Odometer</span>
+        <span class="accord-chevron">▶</span>
+      </button>
+      <div class="accord-body">
+        <div class="accord-body-inner" id="detailOdo">${odoRows}</div>
+      </div>
+    </div>
+
+    <div class="accord-section" id="accordWA">
+      <button class="accord-header" type="button" aria-expanded="false">
+        <span class="accord-title">📱 Ringkasan WhatsApp</span>
+        <span class="accord-chevron">▶</span>
+      </button>
+      <div class="accord-body">
+        <div class="accord-body-inner">
+          <pre id="waPreviewText" class="wa-preview-text">${escapeHTML(generateWAText(a))}</pre>
+          <button class="btn-wa-copy" id="btnCopyWA" data-drawer-action="copyWA">📋 Copy Ringkasan WhatsApp</button>
+          <span class="copy-feedback" id="copyFeedback" style="display:none;">✅ Tersalin!</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="accord-section" id="accordReimbursement">
+      <button class="accord-header" type="button" aria-expanded="false">
+        <span class="accord-title">📄 Form Reimbursement</span>
+        <span class="accord-chevron">▶</span>
+      </button>
+      <div class="accord-body">
+        <div class="accord-body-inner">
+          <p class="reimbursement-hint">Buka Form Reimbursement dalam viewer terintegrasi. Mendukung Preview, Download PDF, Print, dan Share langsung dari aplikasi — tanpa popup.</p>
+          <button class="btn-reimbursement" id="btnPrintReimbursement" data-drawer-action="reimbursement">📄 Generate Form Reimbursement</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="detail-actions">
+      <button class="btn-danger" id="btnDeleteAssignment" data-drawer-action="delete">🗑 Hapus</button>
+      <button class="btn-secondary" id="btnEditAssignment" data-drawer-action="edit">✏️ Edit</button>
+      <button class="btn-secondary" id="btnCloseDetail2" data-drawer-action="close">Tutup</button>
+    </div>`;
+}
+
+/** Wires every interactive element inside the just-opened drawer. Bound
+ *  fresh per open() call (the whole subtree is destroyed on close, same
+ *  lifecycle every other drawer consumer already uses) — mirrors exactly
+ *  the button-by-button logic that used to live in initModalHandlers(),
+ *  relocated rather than rewritten. */
+function _wireDetailHandlers(root) {
+  root.querySelectorAll('.accord-header').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const section = btn.closest('.accord-section');
+      if (!section) return;
+      const isOpen = section.classList.contains('accord-section--open');
+      section.classList.toggle('accord-section--open', !isOpen);
+      btn.setAttribute('aria-expanded', String(!isOpen));
+    });
+  });
+
+  root.querySelector('[data-drawer-action="close"]')?.addEventListener('click', closeDetailModal);
+
+  root.querySelector('[data-drawer-action="edit"]')?.addEventListener('click', () => {
+    if (!hasPermission('edit')) { showToast('Anda tidak punya akses untuk mengedit jadwal'); return; }
     const editId = viewingId;
     closeDetailModal();
     setTimeout(() => { if (onEditCallback) onEditCallback(editId); }, 50);
   });
 
-  // Delete
-  document.getElementById('btnDeleteAssignment')?.addEventListener('click', () => {
+  root.querySelector('[data-drawer-action="delete"]')?.addEventListener('click', () => {
     if (requestDeleteAssignment(viewingId)) closeDetailModal();
   });
 
-  // Start — open odometer modal to capture KM Awal before confirming
-  document.getElementById('btnStartAssignment')?.addEventListener('click', () => {
+  root.querySelector('[data-drawer-action="start"]')?.addEventListener('click', () => {
     const a = assignments.find(x => x.id === viewingId);
-    if (!canActOnAssignment('start', a)) {
-      showToast('Hanya Admin atau Driver yang ditugaskan yang bisa memulai');
-      return;
-    }
+    if (!canActOnAssignment('start', a)) { showToast('Hanya Admin atau Driver yang ditugaskan yang bisa memulai'); return; }
     const status = normalizeStatus(a?.status);
     if (status === 'started')   { showToast('Penugasan sudah dimulai'); return; }
     if (status === 'completed') { showToast('Penugasan sudah selesai'); return; }
@@ -502,13 +691,9 @@ export function initModalHandlers() {
     });
   });
 
-  // Complete — open odometer modal to capture KM Akhir before confirming
-  document.getElementById('btnCompleteAssignment')?.addEventListener('click', () => {
+  root.querySelector('[data-drawer-action="complete"]')?.addEventListener('click', () => {
     const a = assignments.find(x => x.id === viewingId);
-    if (!canActOnAssignment('complete', a)) {
-      showToast('Hanya Admin atau Driver yang ditugaskan yang bisa menyelesaikan');
-      return;
-    }
+    if (!canActOnAssignment('complete', a)) { showToast('Hanya Admin atau Driver yang ditugaskan yang bisa menyelesaikan'); return; }
     const status = normalizeStatus(a?.status);
     if (status === 'completed') { showToast('Penugasan sudah selesai'); return; }
     // v1.15.6: "Tanpa Kendaraan" (vehicle === '') has no odometer — complete
@@ -524,49 +709,20 @@ export function initModalHandlers() {
     });
   });
 
-  // Cancel (Batalkan) — open confirmation dialog to capture a reason
-  document.getElementById('btnCancelAssignment')?.addEventListener('click', () => {
+  root.querySelector('[data-drawer-action="cancel"]')?.addEventListener('click', () => {
     const a = assignments.find(x => x.id === viewingId);
-    if (!canCancelAssignment(a)) {
-      showToast('Anda tidak dapat membatalkan assignment ini');
-      return;
-    }
+    if (!canCancelAssignment(a)) { showToast('Anda tidak dapat membatalkan assignment ini'); return; }
     _openCancelModal(viewingId);
   });
 
-  // Cancellation modal: Kembali reopens detail; Konfirmasi performs the cancel
-  document.getElementById('btnCloseCancel')?.addEventListener('click',  () => _closeCancelModal(true));
-  document.getElementById('btnBackCancel')?.addEventListener('click',   () => _closeCancelModal(true));
-  document.getElementById('btnConfirmCancel')?.addEventListener('click', _handleCancelConfirm);
-  document.getElementById('cancelReasonInput')?.addEventListener('input', _syncCancelConfirmState);
-  document.getElementById('modalCancel')?.addEventListener('click', (e) => {
-    if (e.target === document.getElementById('modalCancel')) _closeCancelModal(true);
-  });
-
-  // Overtime override (v1.16.4.9) — admin opens the force-status dialog.
-  document.getElementById('btnOverrideOvertime')?.addEventListener('click', () => {
-    if (!hasPermission('override_overtime')) {
-      showToast('Hanya admin yang bisa override status lembur');
-      return;
-    }
+  root.querySelector('[data-drawer-action="override"]')?.addEventListener('click', () => {
+    if (!hasPermission('override_overtime')) { showToast('Hanya admin yang bisa override status lembur'); return; }
     const a = assignments.find(x => x.id === viewingId);
-    if (normalizeStatus(a?.status) !== 'completed') {
-      showToast('Override hanya untuk penugasan yang sudah selesai');
-      return;
-    }
+    if (normalizeStatus(a?.status) !== 'completed') { showToast('Override hanya untuk penugasan yang sudah selesai'); return; }
     _openOtOverrideModal(viewingId);
   });
-  document.getElementById('btnCloseOtOverride')?.addEventListener('click', () => _closeOtOverrideModal(true));
-  document.getElementById('btnBackOtOverride')?.addEventListener('click',  () => _closeOtOverrideModal(true));
-  document.getElementById('btnConfirmOtOverride')?.addEventListener('click', _handleOtOverrideConfirm);
-  document.getElementById('otOverrideReason')?.addEventListener('input', _syncOtOverrideState);
-  document.getElementById('otOverrideChoices')?.addEventListener('change', _syncOtOverrideState);
-  document.getElementById('modalOvertimeOverride')?.addEventListener('click', (e) => {
-    if (e.target === document.getElementById('modalOvertimeOverride')) _closeOtOverrideModal(true);
-  });
 
-  // Comment thread — only shown when assignment has a requestId
-  document.getElementById('btnCommentThread')?.addEventListener('click', () => {
+  root.querySelector('[data-drawer-action="comment"]')?.addEventListener('click', () => {
     const a = assignments.find(x => x.id === viewingId);
     if (a?.requestId && onCommentCallback) {
       closeDetailModal();
@@ -574,14 +730,13 @@ export function initModalHandlers() {
     }
   });
 
-  // Copy WhatsApp
-  document.getElementById('btnCopyWA')?.addEventListener('click', copyWAText);
+  root.querySelector('[data-drawer-action="copyWA"]')?.addEventListener('click', copyWAText);
 
   // Print Reimbursement Form — async: acquires sequential doc number before opening window
-  document.getElementById('btnPrintReimbursement')?.addEventListener('click', async () => {
+  root.querySelector('[data-drawer-action="reimbursement"]')?.addEventListener('click', async () => {
     const a = assignments.find(x => x.id === viewingId);
     if (!a) return;
-    const btn = document.getElementById('btnPrintReimbursement');
+    const btn = root.querySelector('[data-drawer-action="reimbursement"]');
     if (btn) { btn.disabled = true; btn.textContent = 'Memproses...'; }
     try {
       await printReimbursementForm(a);
@@ -589,14 +744,9 @@ export function initModalHandlers() {
       if (btn) { btn.disabled = false; btn.textContent = '📄 Generate Form Reimbursement'; }
     }
   });
-
-  // Click outside to close
-  document.getElementById('modalDetail')?.addEventListener('click', (e) => {
-    if (e.target === document.getElementById('modalDetail')) closeDetailModal();
-  });
 }
 
-export function openDetailModal(id) {
+export function openDetailModal(id, { sourceEl = null } = {}) {
   const a = assignments.find(x => x.id === id);
   if (!a) return;
 
@@ -604,99 +754,17 @@ export function openDetailModal(id) {
   const status = normalizeStatus(a.status);
   const statusLabel = STATUS_LABELS[status] || status;
 
-  // Section 1: Ringkasan Jadwal
-  const summaryEl = document.getElementById('detailSummary');
-  if (summaryEl) {
-    summaryEl.innerHTML = `
-      <div class="detail-row">
-        <span class="detail-label">Status</span>
-        <span class="detail-value">
-          <span class="badge-status badge-status--${status}">${escapeHTML(statusLabel)}</span>
-        </span>
-      </div>
-      <div class="detail-row">
-        <span class="detail-label">Driver</span>
-        <span class="detail-value">${escapeHTML(a.driver)}</span>
-      </div>
-      <div class="detail-row">
-        <span class="detail-label">No. HP</span>
-        <span class="detail-value">${escapeHTML(a.phone || '-')}</span>
-      </div>
-      <div class="detail-row">
-        <span class="detail-label">Kendaraan</span>
-        <span class="detail-value">
-          <span class="vehicle-badge" style="background:${getVehicleColor(a.vehicle)}">${escapeHTML(vehicleLabel(a.vehicle))}</span>
-        </span>
-      </div>
-      <div class="detail-row">
-        <span class="detail-label">Tanggal</span>
-        <span class="detail-value">${formatDateLong(a.date)}</span>
-      </div>
-      <div class="detail-row">
-        <span class="detail-label">Waktu</span>
-        <span class="detail-value">${a.fullDay ? 'Penuh Hari' : `${escapeHTML(a.startTime)} – ${escapeHTML(a.endTime)}`}</span>
-      </div>
-      <div class="detail-row">
-        <span class="detail-label">Tujuan</span>
-        <span class="detail-value">${escapeHTML(a.destination)}</span>
-      </div>
-      <div class="detail-row">
-        <span class="detail-label">Keperluan</span>
-        <span class="detail-value">${escapeHTML(a.purpose)}</span>
-      </div>
-    `;
-  }
+  const overlay = openDrawer({
+    title: 'Detail Jadwal',
+    icon: 'car',
+    body: _buildDetailBodyHtml(a, status, statusLabel),
+    sourceEl,
+    onClose: () => { viewingId = null; },
+  });
+  if (!overlay) return;
 
-  // Section 2: Detail Tambahan
-  const extraEl = document.getElementById('detailExtra');
-  if (extraEl) {
-    extraEl.innerHTML = `
-      <div class="detail-row">
-        <span class="detail-label">PIC</span>
-        <span class="detail-value">${escapeHTML(a.pic || '-')}</span>
-      </div>
-      <div class="detail-row">
-        <span class="detail-label">Penumpang</span>
-        <span class="detail-value">${escapeHTML(String(a.pax ?? 0))} pax</span>
-      </div>
-      ${a.notes ? `
-      <div class="detail-row">
-        <span class="detail-label">Catatan</span>
-        <span class="detail-value">${escapeHTML(a.notes)}</span>
-      </div>` : ''}
-    `;
-  }
-
-  // Section 3: Informasi Operasional
-  const opsEl = document.getElementById('detailOps');
-  if (opsEl) {
-    opsEl.innerHTML = buildOpsRows(a) || '<p class="detail-empty">Belum ada informasi operasional.</p>';
-  }
-
-  // Section 4: Odometer — show only when odometer data exists
-  const odoEl = document.getElementById('detailOdo');
-  const accordOdo = document.getElementById('accordOdo');
-  if (odoEl && accordOdo) {
-    const odoRows = buildOdoRows(a);
-    if (odoRows) {
-      odoEl.innerHTML = odoRows;
-      accordOdo.classList.remove('accord-section--hidden');
-    } else {
-      accordOdo.classList.add('accord-section--hidden');
-    }
-  }
-
-  // Section 5: Ringkasan WhatsApp
-  const waText = document.getElementById('waPreviewText');
-  if (waText) waText.textContent = generateWAText(a);
-
-  // Reset accordion state: collapse all except Section 1
-  _resetAccordions();
-
+  _wireDetailHandlers(overlay);
   updateDetailActionButtons();
-
-  const modal = document.getElementById('modalDetail');
-  if (modal) modal.style.display = 'flex';
 }
 
 /** Operational audit rows (who requested/assigned/started/completed). */
@@ -845,40 +913,8 @@ function buildOdoRows(a) {
   return rows.join('');
 }
 
-/** Collapse all accordion sections back to default state (Section 1 stays open). */
-function _resetAccordions() {
-  document.querySelectorAll('#modalDetail .accord-section').forEach(section => {
-    const header = section.querySelector('.accord-header');
-    if (section.id === 'accordSummary') {
-      section.classList.add('accord-section--open');
-      header?.setAttribute('aria-expanded', 'true');
-    } else {
-      section.classList.remove('accord-section--open');
-      header?.setAttribute('aria-expanded', 'false');
-    }
-  });
-}
-
-/** Wire up accordion toggle behaviour (called once from initModalHandlers). */
-function initAccordionListeners() {
-  document.querySelectorAll('#modalDetail .accord-header').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const section = btn.closest('.accord-section');
-      if (!section) return;
-      const isOpen = section.classList.contains('accord-section--open');
-      section.classList.toggle('accord-section--open', !isOpen);
-      btn.setAttribute('aria-expanded', String(!isOpen));
-    });
-  });
-}
-
 export function closeDetailModal() {
-  const modal = document.getElementById('modalDetail');
-  if (modal) modal.style.display = 'none';
-
-  document.getElementById('copyFeedback')?.style &&
-    (document.getElementById('copyFeedback').style.display = 'none');
-
+  closeDrawer();
   viewingId = null;
 }
 

@@ -452,10 +452,10 @@ function createAssignmentBlock(assignment) {
   // vector the way the innerHTML above already (pre-existingly) does.
   block.title = assignment.purpose || '';
 
-  // Klik blok → tampilkan detail modal
+  // Klik blok → tampilkan detail drawer (briefly highlights this block while open)
   block.addEventListener('click', (e) => {
     if (!e.target.classList.contains('resize-handle')) {
-      openDetailModal(assignment.id);
+      openDetailModal(assignment.id, { sourceEl: block });
     }
   });
 

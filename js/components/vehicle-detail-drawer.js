@@ -253,7 +253,7 @@ function remindersGroup(title, items) {
     desc: [r.reason, r.recommendedAction].filter(Boolean).join(' · '),
     tone: tone3(r.tone, 'info'),
   })));
-  return `<div class="exec-drawer-sec__h">${esc(title)}</div>${tl}`;
+  return `<div class="drawer-sec__h">${esc(title)}</div>${tl}`;
 }
 
 function remindersSection(a) {
@@ -347,8 +347,8 @@ function taxSection(a) {
         ].filter(Boolean).join(' · '),
         tone: 'info',
       })))
-    : '<div class="exec-drawer-sec__h">Riwayat Kepatuhan</div><p style="font-size:13px;color:var(--muted)">Belum ada riwayat perpanjangan.</p>';
-  const histTitle = rows.length ? '<div class="exec-drawer-sec__h">Riwayat Kepatuhan</div>' : '';
+    : '<div class="drawer-sec__h">Riwayat Kepatuhan</div><p style="font-size:13px;color:var(--muted)">Belum ada riwayat perpanjangan.</p>';
+  const histTitle = rows.length ? '<div class="drawer-sec__h">Riwayat Kepatuhan</div>' : '';
   return execDrawerSection({ title: 'Tax', content: badges + metrics + histTitle + tl });
 }
 
@@ -377,7 +377,7 @@ function insuranceSection(a) {
         tone: 'info',
       })))
     : '<p style="font-size:13px;color:var(--muted)">Belum ada riwayat perpanjangan asuransi.</p>';
-  const histTitle = rows.length ? '<div class="exec-drawer-sec__h">Riwayat Asuransi</div>' : '';
+  const histTitle = rows.length ? '<div class="drawer-sec__h">Riwayat Asuransi</div>' : '';
   return execDrawerSection({ title: 'Insurance', content: badges + metrics + histTitle + tl });
 }
 
@@ -418,7 +418,7 @@ function maintenanceProjectionBlock(a) {
         tone: tone3(it.tone, 'info'),
       })))
     : '';
-  const listTitle = others.length ? '<div class="exec-drawer-sec__h">Rekomendasi Servis Berikutnya</div>' : '';
+  const listTitle = others.length ? '<div class="drawer-sec__h">Rekomendasi Servis Berikutnya</div>' : '';
 
   return execDrawerSection({ title: 'Proyeksi Perawatan', content: badges + metrics + reason + listTitle + list });
 }
@@ -530,7 +530,7 @@ function historySection(a) {
         tone: tone3(ev.meta && ev.meta.tone, 'info'),
       })))
     : '<p style="font-size:13px;color:var(--muted)">Belum ada peristiwa.</p>';
-  return execDrawerSection({ title: 'History', content: metrics + '<div class="exec-drawer-sec__h">Linimasa</div>' + tl });
+  return execDrawerSection({ title: 'History', content: metrics + '<div class="drawer-sec__h">Linimasa</div>' + tl });
 }
 
 /* ── Footer actions ───────────────────────────────────────────────────────── */
@@ -678,7 +678,9 @@ export function closeVehicleDetailDrawer() {
  */
 export function refreshVehicleDetailDrawer(asset, opts = {}) {
   if (!asset || typeof asset !== 'object') return false;
-  const bodyEl = document.querySelector('.exec-drawer-overlay .exec-drawer__body');
+  // Design System Program Phase 2 — class names renamed when the drawer
+  // primitive relocated to js/components/drawer.js (.exec-drawer* -> .drawer*).
+  const bodyEl = document.querySelector('.drawer-overlay .drawer__body');
   if (!bodyEl) return false;
   bodyEl.innerHTML = buildDrawerBody(asset, opts);
   return true;

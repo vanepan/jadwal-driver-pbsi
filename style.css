@@ -1474,9 +1474,10 @@ z-index: 1;
 .modal-box--compact { max-width: 420px; }
 
 /* Vehicle Compliance & Financial History — the Renew STNK modal opens ON TOP
-   of an already-open vehicle detail drawer (.exec-drawer-overlay, z-index
-   10000+) and must NOT close it, so its overlay needs to sit above the
-   drawer rather than the default .modal-overlay z-index (200). */
+   of an already-open vehicle detail drawer (.drawer-overlay, the canonical
+   drawer primitive — js/components/drawer.js, z-index 10000+) and must NOT
+   close it, so its overlay needs to sit above the drawer rather than the
+   default .modal-overlay z-index (200). */
 .modal-overlay--above-drawer { z-index: 10050; }
 
 .modal-detail-box {

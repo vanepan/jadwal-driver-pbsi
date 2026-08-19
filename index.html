@@ -22,12 +22,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Archivo:wght@400;500;600;700;800;900&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=1.30.10.7" />
+  <link rel="stylesheet" href="style.css?v=1.30.11.1" />
   <link rel="stylesheet" href="platform.css?v=2.1.3" />
-  <link rel="stylesheet" href="petty-cash.css?v=1.30.10.7" />
-  <link rel="stylesheet" href="overtime.css?v=1.30.10.7" />
-  <link rel="stylesheet" href="engineering.css?v=1.30.10.7" />
-  <link rel="stylesheet" href="gudang.css?v=1.30.10.7" />
+  <link rel="stylesheet" href="petty-cash.css?v=1.30.11.1" />
+  <link rel="stylesheet" href="overtime.css?v=1.30.11.1" />
+  <link rel="stylesheet" href="engineering.css?v=1.30.11.1" />
+  <link rel="stylesheet" href="gudang.css?v=1.30.11.1" />
   <link rel="stylesheet" href="sarpras-intelligence.css?v=1.23.0" />
   <link rel="stylesheet" href="nor-center.css?v=1.23.0" />
   <link rel="stylesheet" href="workspace-list-kit.css?v=1.23.0" />
@@ -1082,106 +1082,9 @@
 </div>
 
 <!-- ===== MODAL: DETAIL ASSIGNMENT ===== -->
-<div class="modal-overlay" id="modalDetail" style="display:none;">
-  <div class="modal-box modal-detail-box">
-    <div class="modal-header">
-      <h2 class="modal-title">Detail Jadwal</h2>
-      <button class="modal-close" id="btnCloseDetail">&times;</button>
-    </div>
-    <div class="modal-body">
-
-      <!-- Section 1: Ringkasan Jadwal — always expanded -->
-      <div class="accord-section accord-section--open" id="accordSummary">
-        <button class="accord-header" type="button" aria-expanded="true">
-          <span class="accord-title">Ringkasan Jadwal</span>
-          <span class="accord-chevron">▶</span>
-        </button>
-        <div class="accord-body">
-          <div class="accord-body-inner" id="detailSummary"></div>
-        </div>
-      </div>
-
-      <!-- Primary Actions: immediately below summary, before secondary sections -->
-      <div class="detail-actions-primary" id="detailActionsPrimary">
-        <button class="btn-primary" id="btnStartAssignment">▶ Mulai Tugas</button>
-        <button class="btn-success" id="btnCompleteAssignment">✓ Selesaikan</button>
-        <button class="btn-secondary" id="btnCommentThread" style="display:none;">💬 Komentar</button>
-        <button class="btn-danger" id="btnCancelAssignment" style="display:none;">✕ Batalkan</button>
-        <button class="btn-secondary" id="btnOverrideOvertime" style="display:none;">⏱ Override Lembur</button>
-      </div>
-
-      <!-- Section 2: Detail Tambahan — collapsed by default -->
-      <div class="accord-section" id="accordExtra">
-        <button class="accord-header" type="button" aria-expanded="false">
-          <span class="accord-title">Detail Tambahan</span>
-          <span class="accord-chevron">▶</span>
-        </button>
-        <div class="accord-body">
-          <div class="accord-body-inner" id="detailExtra"></div>
-        </div>
-      </div>
-
-      <!-- Section 3: Informasi Operasional — collapsed by default -->
-      <div class="accord-section" id="accordOps">
-        <button class="accord-header" type="button" aria-expanded="false">
-          <span class="accord-title">Informasi Operasional</span>
-          <span class="accord-chevron">▶</span>
-        </button>
-        <div class="accord-body">
-          <div class="accord-body-inner" id="detailOps"></div>
-        </div>
-      </div>
-
-      <!-- Section 4: Odometer — hidden when no data, collapsed by default -->
-      <div class="accord-section accord-section--hidden" id="accordOdo">
-        <button class="accord-header" type="button" aria-expanded="false">
-          <span class="accord-title">Odometer</span>
-          <span class="accord-chevron">▶</span>
-        </button>
-        <div class="accord-body">
-          <div class="accord-body-inner" id="detailOdo"></div>
-        </div>
-      </div>
-
-      <!-- Section 5: Ringkasan WhatsApp — collapsed by default -->
-      <div class="accord-section" id="accordWA">
-        <button class="accord-header" type="button" aria-expanded="false">
-          <span class="accord-title">📱 Ringkasan WhatsApp</span>
-          <span class="accord-chevron">▶</span>
-        </button>
-        <div class="accord-body">
-          <div class="accord-body-inner">
-            <pre id="waPreviewText" class="wa-preview-text"></pre>
-            <button class="btn-wa-copy" id="btnCopyWA">📋 Copy Ringkasan WhatsApp</button>
-            <span class="copy-feedback" id="copyFeedback" style="display:none;">✅ Tersalin!</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Section 6: Form Reimbursement — collapsed by default -->
-      <div class="accord-section" id="accordReimbursement">
-        <button class="accord-header" type="button" aria-expanded="false">
-          <span class="accord-title">📄 Form Reimbursement</span>
-          <span class="accord-chevron">▶</span>
-        </button>
-        <div class="accord-body">
-          <div class="accord-body-inner">
-            <p class="reimbursement-hint">Buka Form Reimbursement dalam viewer terintegrasi. Mendukung Preview, Download PDF, Print, dan Share langsung dari aplikasi — tanpa popup.</p>
-            <button class="btn-reimbursement" id="btnPrintReimbursement">📄 Generate Form Reimbursement</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Secondary Actions: always visible at bottom -->
-      <div class="detail-actions">
-        <button class="btn-danger" id="btnDeleteAssignment">🗑 Hapus</button>
-        <button class="btn-secondary" id="btnEditAssignment">✏️ Edit</button>
-        <button class="btn-secondary" id="btnCloseDetail2">Tutup</button>
-      </div>
-
-    </div>
-  </div>
-</div>
+<!-- Assignment Detail migrated to the canonical drawer (Design System Program
+     Phase 2, js/components/drawer.js) — no longer static markup here. See
+     js/modal.js's openDetailModal(). -->
 
 <!-- ===== MODAL: COMMENT THREAD ===== -->
 <div class="modal-overlay" id="modalCommentThread" style="display:none;">
@@ -1309,6 +1212,6 @@
      an npm import — mammoth's npm package has no browser-ready ESM
      build. Exposes window.mammoth. -->
 <script src="https://cdn.jsdelivr.net/npm/mammoth@1.12.0/mammoth.browser.min.js"></script>
-<script type="module" src="js/app.js?v=1.30.10.7"></script>
+<script type="module" src="js/app.js?v=1.30.11.1"></script>
 </body>
 </html>

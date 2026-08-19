@@ -12578,7 +12578,7 @@ body.v2-shell-active .block-status-badge--overtime {
   --exec-ease:       cubic-bezier(.4, 0, .2, 1);
   --exec-focus-ring: 0 0 0 3px var(--accent-line, rgba(168,41,47,.32));
 }
-.exec-table-wrap *, .exec-drawer * { box-sizing: border-box; }
+.exec-table-wrap * { box-sizing: border-box; }
 
 /* ── ExecutiveHeader ──────────────────────────────────────────────────────── */
 .exec-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
@@ -12665,71 +12665,93 @@ body.v2-shell-active .block-status-badge--overtime {
 .exec-tr--click:hover { background: var(--hover, var(--surface-2, #f2f0ec)); }
 .exec-tr--click:focus-visible { outline: none; box-shadow: inset var(--exec-focus-ring); }
 
-/* ── ExecutiveDrawer (the ONE drawer) ─────────────────────────────────────── */
-.exec-drawer-overlay { position: fixed; inset: 0; z-index: var(--exec-z-overlay, 10000); display: flex; justify-content: flex-end; background: rgba(16, 17, 26, 0); transition: background var(--exec-dur, .2s) var(--exec-ease, ease); }
-.exec-drawer-overlay.is-open { background: rgba(16, 17, 26, .42); }
-.exec-drawer { position: relative; z-index: var(--exec-z-drawer, 10001); display: flex; flex-direction: column; width: min(440px, 92vw); max-width: 92vw; height: 100%; background: var(--surface, #fff); border-left: 1px solid var(--border, #e8e6e2); box-shadow: var(--shadow-lg, 0 18px 50px -12px rgba(28,26,23,.28)); transform: translateX(100%); transition: transform var(--exec-dur, .2s) var(--exec-ease, ease); }
-.exec-drawer-overlay.is-open .exec-drawer { transform: translateX(0); }
-.exec-drawer__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--border-faint, var(--border, #e8e6e2)); flex: 0 0 auto; }
-.exec-drawer__titles { min-width: 0; }
-.exec-drawer__title { display: flex; align-items: center; gap: 9px; font-family: var(--font-display, system-ui); font-weight: 800; font-size: var(--type-heading-xl, 19px); letter-spacing: -0.018em; color: var(--text, #1a1917); }
-.exec-drawer__ico { color: var(--accent, #a8292f); display: inline-flex; }
-.exec-drawer__sub { margin-top: 3px; font-size: var(--type-caption, 12px); color: var(--text-dim, var(--muted, #5b5953)); }
-.exec-drawer__close { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--border, #e8e6e2); background: var(--surface, #fff); color: var(--text-dim, var(--muted, #5b5953)); cursor: pointer; transition: background var(--exec-dur-fast, .14s); }
-.exec-drawer__close:hover { background: var(--hover, #f2f0ec); }
-.exec-drawer__close:focus-visible { outline: none; box-shadow: var(--exec-focus-ring); }
-.exec-drawer__body { flex: 1 1 auto; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 20px; }
-.exec-drawer__foot { flex: 0 0 auto; display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; padding: 14px 20px; border-top: 1px solid var(--border-faint, var(--border, #e8e6e2)); }
-.exec-drawer-btn { font: inherit; font-size: var(--type-body, 14px); font-weight: 700; cursor: pointer; padding: 9px 15px; border-radius: var(--radius-sm, 11px); border: 1px solid var(--border, #e8e6e2); background: var(--surface, #fff); color: var(--text, #1a1917); transition: background var(--exec-dur-fast, .14s), filter var(--exec-dur-fast, .14s); }
-.exec-drawer-btn:hover { background: var(--hover, #f2f0ec); }
-.exec-drawer-btn--primary { background: var(--accent, #a8292f); border-color: var(--accent, #a8292f); color: var(--on-accent, #fff); }
-.exec-drawer-btn--primary:hover { filter: brightness(1.06); background: var(--accent, #a8292f); }
-.exec-drawer-btn--danger { color: var(--danger, #a8292f); border-color: var(--danger, #a8292f); background: var(--danger-bg, #faebeb); }
-.exec-drawer-btn:focus-visible { outline: none; box-shadow: var(--exec-focus-ring); }
+/* ── The canonical drawer (Design System Program Phase 2) ────────────────────
+   Relocated + extended from .exec-drawer (js/analytics/executive-drawer.js ->
+   js/components/drawer.js) — one implementation, app-wide, not scoped to any
+   one module. Self-contained token block below (not dependent on .exec-ui,
+   which stays as-is for the OTHER Executive UI Kit components on this page
+   unrelated to the drawer). ── */
+.drawer-overlay {
+  --drawer-z-overlay: 10000; --drawer-z-panel: 10001;
+  --drawer-dur: .2s; --drawer-dur-fast: .14s;
+  --drawer-ease: cubic-bezier(.4, 0, .2, 1);
+  --drawer-focus-ring: 0 0 0 3px var(--accent-line, rgba(168,41,47,.32));
+  position: fixed; inset: 0; z-index: var(--drawer-z-overlay); display: flex; justify-content: flex-end;
+  background: rgba(16, 17, 26, 0); transition: background var(--drawer-dur) var(--drawer-ease);
+}
+.drawer-overlay * { box-sizing: border-box; }
+.drawer-overlay.is-open { background: rgba(16, 17, 26, .42); }
+.drawer { position: relative; z-index: var(--drawer-z-panel); display: flex; flex-direction: column; width: min(440px, 92vw); max-width: 92vw; height: 100%; background: var(--surface, #fff); border-left: 1px solid var(--border, #e8e6e2); box-shadow: var(--shadow-lg, 0 18px 50px -12px rgba(28,26,23,.28)); transform: translateX(100%); transition: transform var(--drawer-dur) var(--drawer-ease); }
+.drawer-overlay.is-open .drawer { transform: translateX(0); }
+/* Desktop: no grabber (mobile-only drag affordance). */
+.drawer__grabber { display: none; }
+.drawer__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--border-faint, var(--border, #e8e6e2)); flex: 0 0 auto; }
+.drawer__titles { min-width: 0; }
+.drawer__title { display: flex; align-items: center; gap: 9px; font-family: var(--font-display, system-ui); font-weight: 800; font-size: var(--type-heading-xl, 19px); letter-spacing: -0.018em; color: var(--text, #1a1917); }
+.drawer__ico { color: var(--accent, #a8292f); display: inline-flex; }
+.drawer__sub { margin-top: 3px; font-size: var(--type-caption, 12px); color: var(--text-dim, var(--muted, #5b5953)); }
+.drawer__close { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--border, #e8e6e2); background: var(--surface, #fff); color: var(--text-dim, var(--muted, #5b5953)); cursor: pointer; transition: background var(--drawer-dur-fast); }
+.drawer__close:hover { background: var(--hover, #f2f0ec); }
+.drawer__close:focus-visible { outline: none; box-shadow: var(--drawer-focus-ring); }
+.drawer__error { margin: 14px 20px 0; padding: 10px 13px; border-radius: var(--radius-sm, 11px); background: var(--danger-bg, #faebeb); color: var(--danger, #a8292f); font-size: 13px; font-weight: 600; flex: 0 0 auto; }
+.drawer__body { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 18px 20px; display: flex; flex-direction: column; gap: 20px; }
+.drawer__foot { flex: 0 0 auto; display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; padding: 14px 20px; padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--border-faint, var(--border, #e8e6e2)); }
+.drawer button:disabled, .drawer input:disabled, .drawer select:disabled, .drawer textarea:disabled { opacity: .55; cursor: not-allowed; }
+.drawer-btn { font: inherit; font-size: var(--type-body, 14px); font-weight: 700; cursor: pointer; padding: 9px 15px; border-radius: var(--radius-sm, 11px); border: 1px solid var(--border, #e8e6e2); background: var(--surface, #fff); color: var(--text, #1a1917); transition: background var(--drawer-dur-fast), filter var(--drawer-dur-fast); }
+.drawer-btn:hover { background: var(--hover, #f2f0ec); }
+.drawer-btn--primary { background: var(--accent, #a8292f); border-color: var(--accent, #a8292f); color: var(--on-accent, #fff); }
+.drawer-btn--primary:hover { filter: brightness(1.06); background: var(--accent, #a8292f); }
+.drawer-btn--danger { color: var(--danger, #a8292f); border-color: var(--danger, #a8292f); background: var(--danger-bg, #faebeb); }
+.drawer-btn:focus-visible { outline: none; box-shadow: var(--drawer-focus-ring); }
 
 /* Drawer slots: section · metric grid · timeline */
-.exec-drawer-sec { display: flex; flex-direction: column; gap: 9px; }
-.exec-drawer-sec__h { font-size: var(--type-label, 11px); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700; color: var(--text-faint, var(--faint, #94918b)); }
-.exec-drawer-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: 10px; }
-.exec-drawer-metric { display: flex; flex-direction: column; gap: 3px; padding: 11px 13px; background: var(--surface-2, #fbfaf8); border: 1px solid var(--border-faint, var(--border, #e8e6e2)); border-radius: var(--radius-sm, 11px); }
-.exec-drawer-metric__l { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700; color: var(--text-faint, var(--faint, #94918b)); }
-.exec-drawer-metric__v { font-family: var(--font-display, system-ui); font-size: var(--type-heading-lg, 18px); font-weight: 700; color: var(--text, #1a1917); }
-.exec-drawer-metric__v[data-tone="ok"]     { color: var(--c-green, var(--ok, #2f7d62)); }
-.exec-drawer-metric__v[data-tone="warn"]   { color: var(--c-amber, var(--warn, #946420)); }
-.exec-drawer-metric__v[data-tone="danger"] { color: var(--crit, var(--danger, #a8292f)); }
-.exec-drawer-metric__s { font-size: 11px; color: var(--text-dim, var(--muted, #5b5953)); }
-.exec-drawer-tl { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.exec-drawer-tl__li { display: flex; gap: 11px; padding-bottom: 14px; }
-.exec-drawer-tl__li:last-child { padding-bottom: 0; }
-.exec-drawer-tl__rail { flex: 0 0 12px; display: flex; flex-direction: column; align-items: center; }
-.exec-drawer-tl__dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 3px; flex: 0 0 auto; }
-.exec-drawer-tl__li:not(:last-child) .exec-drawer-tl__rail::after { content: ""; flex: 1 1 auto; width: 2px; background: var(--border, #e8e6e2); margin-top: 3px; }
-.exec-drawer-tl__dot--ok { background: var(--ok, #2f7d62); }
-.exec-drawer-tl__dot--info { background: var(--info, #3b5ba9); }
-.exec-drawer-tl__dot--warn { background: var(--warn, #946420); }
-.exec-drawer-tl__dot--danger { background: var(--danger, #a8292f); }
-.exec-drawer-tl__body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.exec-drawer-tl__top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-.exec-drawer-tl__when { font-size: 11px; color: var(--text-faint, var(--faint, #94918b)); font-variant-numeric: tabular-nums; }
-.exec-drawer-tl__title { font-size: 13px; font-weight: 700; color: var(--text, #1a1917); }
-.exec-drawer-tl__d { font-size: 12px; color: var(--text-dim, var(--muted, #5b5953)); }
+.drawer-sec { display: flex; flex-direction: column; gap: 9px; }
+.drawer-sec__h { font-size: var(--type-label, 11px); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700; color: var(--text-faint, var(--faint, #94918b)); }
+.drawer-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: 10px; }
+.drawer-metric { display: flex; flex-direction: column; gap: 3px; padding: 11px 13px; background: var(--surface-2, #fbfaf8); border: 1px solid var(--border-faint, var(--border, #e8e6e2)); border-radius: var(--radius-sm, 11px); }
+.drawer-metric__l { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700; color: var(--text-faint, var(--faint, #94918b)); }
+.drawer-metric__v { font-family: var(--font-display, system-ui); font-size: var(--type-heading-lg, 18px); font-weight: 700; color: var(--text, #1a1917); }
+.drawer-metric__v[data-tone="ok"]     { color: var(--c-green, var(--ok, #2f7d62)); }
+.drawer-metric__v[data-tone="warn"]   { color: var(--c-amber, var(--warn, #946420)); }
+.drawer-metric__v[data-tone="danger"] { color: var(--crit, var(--danger, #a8292f)); }
+.drawer-metric__s { font-size: 11px; color: var(--text-dim, var(--muted, #5b5953)); }
+.drawer-tl { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.drawer-tl__li { display: flex; gap: 11px; padding-bottom: 14px; }
+.drawer-tl__li:last-child { padding-bottom: 0; }
+.drawer-tl__rail { flex: 0 0 12px; display: flex; flex-direction: column; align-items: center; }
+.drawer-tl__dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 3px; flex: 0 0 auto; }
+.drawer-tl__li:not(:last-child) .drawer-tl__rail::after { content: ""; flex: 1 1 auto; width: 2px; background: var(--border, #e8e6e2); margin-top: 3px; }
+.drawer-tl__dot--ok { background: var(--ok, #2f7d62); }
+.drawer-tl__dot--info { background: var(--info, #3b5ba9); }
+.drawer-tl__dot--warn { background: var(--warn, #946420); }
+.drawer-tl__dot--danger { background: var(--danger, #a8292f); }
+.drawer-tl__body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.drawer-tl__top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.drawer-tl__when { font-size: 11px; color: var(--text-faint, var(--faint, #94918b)); font-variant-numeric: tabular-nums; }
+.drawer-tl__title { font-size: 13px; font-weight: 700; color: var(--text, #1a1917); }
+.drawer-tl__d { font-size: 12px; color: var(--text-dim, var(--muted, #5b5953)); }
+
+/* NEW — loading skeleton (shares the Home workspace's .skel-line/.skel-block visual language) */
+.drawer-skeleton { display: flex; flex-direction: column; gap: 12px; }
+
+/* NEW — source-row highlight while its drawer is open */
+.drawer-source-highlight { background: var(--accent-weak, rgba(168,41,47,.08)) !important; transition: background var(--drawer-dur, .2s) ease; }
 
 /* Drawer — mobile bottom-sheet (≤640px) */
 @media (max-width: 640px) {
-  .exec-drawer-overlay { justify-content: stretch; align-items: flex-end; }
-  .exec-drawer { width: 100%; max-width: 100%; height: min(86vh, 100%); border-left: 0; border-top: 1px solid var(--border, #e8e6e2); border-radius: var(--radius-lg, 22px) var(--radius-lg, 22px) 0 0; transform: translateY(100%); }
-  .exec-drawer-overlay.is-open .exec-drawer { transform: translateY(0); }
+  .drawer-overlay { justify-content: stretch; align-items: flex-end; }
+  .drawer { width: 100%; max-width: 100%; height: min(86vh, 100%); border-left: 0; border-top: 1px solid var(--border, #e8e6e2); border-radius: var(--radius-lg, 22px) var(--radius-lg, 22px) 0 0; transform: translateY(100%); padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .drawer-overlay.is-open .drawer { transform: translateY(0); }
+  /* NEW — drag-handle affordance, touch target padded well past the visible bar */
+  .drawer__grabber { display: flex; align-items: center; justify-content: center; flex: 0 0 auto; padding: 10px 0 6px; touch-action: none; }
+  .drawer__grabber::before { content: ""; width: 36px; height: 4px; border-radius: 999px; background: var(--border-strong, #dad7d2); }
 }
-
-/* State variants (permission · offline) — reuse the canonical empty-state shell */
-.exec-state--perm .v2-analytics-empty-state-msg { color: var(--warn, #946420); }
-.exec-state--offline .v2-analytics-empty-state-msg { color: var(--text-dim, var(--muted, #5b5953)); }
 
 /* Motion-reduction respect */
 @media (prefers-reduced-motion: reduce) {
-  .exec-drawer, .exec-drawer-overlay { transition: none; }
+  .drawer, .drawer-overlay, .drawer-source-highlight { transition: none; }
 }
-/* ── end Executive UI Kit ─────────────────────────────────────────────────── */
+/* ── end canonical drawer ─────────────────────────────────────────────────── */
 
 /* ============================================================
    v1.18.3 HOTFIX — Executive Navigation Refinement
@@ -13732,52 +13754,6 @@ body.v2-shell-active .block-status-badge {
 .v2-rail--mobile-drawer .v2-rail-modules::before,
 .v2-panel--mobile-drawer .v2-panel-section {
   font-family: var(--font-sans);
-}
-
-/* ============================================================
-   v1.30.9.15 — Phase 3 App Shell/Board: Assignment detail becomes a
-   SIDE DRAWER (mockup: "Sarpras Assignment Board.dc.html"), not the
-   centered-dialog pattern used for short decisions elsewhere.
-
-   Scoped to #modalDetail ONLY — every other .modal-box/.modal-overlay in
-   the app (Comment Thread, Odometer, Cancel confirm, etc.) is unaffected;
-   the mockup only asks for the flagship detail surface to be a drawer.
-   The existing show/hide mechanism (js/modal.js toggling
-   #modalDetail.style.display) is untouched — this is presentation-only,
-   same technique as every other Phase in this redesign. Width is 440px
-   (min(440px,92vw)), wider than the mockup's illustrative 300px, because
-   the real detail surface has six real accordion sections (Ringkasan/
-   Detail Tambahan/Operasional/Odometer/WhatsApp/Reimbursement) the
-   mockup's minimal example never had to fit — reuses the exact width
-   convention already established by the app's own "ONE drawer" component
-   (.exec-drawer, width:min(440px,92vw)) rather than inventing a second one.
-   Mobile is intentionally NOT touched here: .modal-box already becomes a
-   bottom sheet at mobile widths (existing slideUpMobile rule in
-   style.css) — that IS this app's mobile drawer equivalent already.
-   ============================================================ */
-@media (min-width: 768px) {
-  #modalDetail.modal-overlay {
-    justify-content: flex-end;
-    padding: 0;
-    background: var(--scrim, rgba(0,0,0,.36));
-    animation: none; /* the panel's own slide is the entrance; no separate overlay fade needed */
-  }
-  #modalDetail .modal-box.modal-detail-box {
-    width: min(440px, 92vw);
-    max-width: min(440px, 92vw);
-    height: 100%;
-    max-height: 100%;
-    margin: 0;
-    border-radius: 0;
-    animation: v2AssignDrawerIn var(--motion-sheet, 260ms) cubic-bezier(.16,1,.3,1);
-  }
-}
-@keyframes v2AssignDrawerIn {
-  from { transform: translateX(100%); }
-  to   { transform: translateX(0); }
-}
-@media (prefers-reduced-motion: reduce) {
-  #modalDetail .modal-box.modal-detail-box { animation: none; }
 }
 
 /* ============================================================

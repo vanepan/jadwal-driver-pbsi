@@ -23,7 +23,9 @@ const puppeteer = require('puppeteer');
       const panelCount = document.querySelectorAll('.vad-tabpanel').length;
       mod.closeVehicleDetailDrawer();
       await new Promise(r => setTimeout(r, 350));
-      const stillOpen = !!document.querySelector('.exec-drawer-overlay.is-open');
+      // Design System Program Phase 2 — class renamed (.exec-drawer-overlay -> .drawer-overlay)
+      // when the drawer primitive relocated to js/components/drawer.js.
+      const stillOpen = !!document.querySelector('.drawer-overlay.is-open');
       return { panelCount, closesCleanly: !stillOpen };
     });
 
