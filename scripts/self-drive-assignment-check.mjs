@@ -129,7 +129,13 @@ console.log('\n[assignments.js: self-drive support]');
 const assignmentsSrc = src('js/assignments.js');
 check('NO_DRIVER_SENTINEL constant defined', assignmentsSrc.includes("const NO_DRIVER_SENTINEL = '__none__';"));
 check('handleFormSubmit normalizes the sentinel to driver: \'\'', /const driver\s*=\s*driverRaw === NO_DRIVER_SENTINEL \? '' : driverRaw;/.test(assignmentsSrc));
-check('mandatory-field check uses driverRaw (untouched dropdown), not the normalized driver', assignmentsSrc.includes('if (driverRaw === \'\' || vehicleRaw === \'\''));
+// Design System Program Phase 5 moved this check from an inline literal
+// comparison into runFieldChecks() (per-field validation via validateRequired()
+// from js/validation.js) — the BEHAVIOR this test cares about is unchanged
+// (still validates the raw, untouched-dropdown value driverRaw/vehicleRaw,
+// never the sentinel-normalized driver/vehicle, so an intentional "Tanpa
+// Driver" selection is never mistaken for an empty field), just relocated.
+check('mandatory-field check uses driverRaw (untouched dropdown), not the normalized driver', /validateRequired\(driverRaw, 'Driver'\)/.test(assignmentsSrc) && /validateRequired\(vehicleRaw, 'Kendaraan'\)/.test(assignmentsSrc));
 check('driver conflict check is skipped when driver === \'\' (Self-Drive)', /driver !== '' && checkConflict\(driver,/.test(assignmentsSrc));
 check('edit-mode populate selects the sentinel for a stored empty driver', /a\.driver === '' \? NO_DRIVER_SENTINEL : a\.driver/.test(assignmentsSrc) || /a\.driver == null \|\| a\.driver === ''\) \? NO_DRIVER_SENTINEL/.test(assignmentsSrc));
 

@@ -25,7 +25,7 @@ import {
 import {
   renderEyebrow, renderAnalyticsKPICard, renderKPIGrid, renderAnalyticsChart,
   renderInsightRow, renderInsightDividerList, renderExportCenter, renderHighlights,
-  renderAnalyticsEmptyState, anIcon,
+  renderAnalyticsEmptyState, renderAnalyticsErrorState, anIcon,
 } from '../analytics-shell.js';
 
 const PALETTE = ['#3B5BA9', '#2F7D62', '#946420', '#6B4E9E', '#1E7A8A', '#A8292F', '#7A6E2A', '#2A7A6E'];
@@ -311,7 +311,11 @@ function render() {
   try { model = buildModel(); }
   catch (err) {
     console.error('[AnalyticsPettyCash] compute failed:', err);
-    state.host.innerHTML = `<div class="v2-analytics-claude">${renderAnalyticsEmptyState({ message: 'Gagal memuat analitik petty cash.', hint: 'Silakan muat ulang halaman.' })}</div>`;
+    // Design System Program Phase 5 — this is a load FAILURE, not an empty
+    // state (confirmed bug: was calling the empty-state helper from inside
+    // a catch block). renderAnalyticsErrorState already exists and does the
+    // right thing (role="alert", anIcon('alert')) — just wasn't used here.
+    state.host.innerHTML = `<div class="v2-analytics-claude">${renderAnalyticsErrorState({ message: 'Gagal memuat analitik petty cash.', detail: 'Silakan muat ulang halaman.' })}</div>`;
     return;
   }
 

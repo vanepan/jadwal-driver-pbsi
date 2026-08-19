@@ -1062,6 +1062,18 @@ html.theme-anim *::after {
   box-shadow: var(--shadow-lg);
   font-family: inherit;
 }
+/* Design System Program Phase 5 — severity variants, canonical toast
+   (js/components/toast.js). Reuses the existing semantic status tokens
+   (same palette already used app-wide by .p-pill.ok/info/warn/danger etc.)
+   rather than inventing new colors. Solid background + white text keeps the
+   same high-contrast pill look the base .toast already has. */
+.toast--success { background: var(--ok);      color: #fff; }
+.toast--error   { background: var(--danger);   color: #fff; }
+.toast--warning { background: var(--warn);     color: #fff; }
+.toast--info    { background: var(--info);     color: #fff; }
+.toast__ico { display: inline-flex; vertical-align: -2px; margin-right: 6px; }
+@media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
+[data-anim="off"] .toast { animation: none; }
 
 /* Btn-primary: use accent token */
 .btn-primary {
@@ -10835,21 +10847,6 @@ input[type="time"].v2-admin-config-input {
 .rm-review-list li { margin-bottom: 3px; }
 .rm-review-empty { font-size: 0.8rem; color: var(--text-muted); margin: 0; }
 
-.rm-toast {
-  position: fixed;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--text);
-  color: var(--surface);
-  padding: 10px 18px;
-  border-radius: 999px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  box-shadow: var(--shadow-lg, 0 4px 16px rgba(0,0,0,.2));
-  z-index: 1000;
-}
-
 /* v1.30.3 — Role Assignment & Dependency. Collapsed-by-default disclosure
    panel inserted between the header and the toolbar/stats/tree — reuses
    .wsp-pill/.wsp-empty (js/widgets/_widget-base.js) for every status pill
@@ -12801,6 +12798,23 @@ body.v2-shell-active .block-status-badge--overtime {
   border-radius: var(--radius-sm, 11px); padding: 10px 14px; font-size: 13px; font-weight: 500; margin-top: 8px;
 }
 .sf-inline-error[hidden] { display: none; }
+
+/* Design System Program Phase 5 — per-field inline validation. Same
+   danger-token language as .sf-inline-error above (deliberately without
+   shake, same binding precedent), scaled down to sit under a single form
+   field rather than a whole section. */
+.sf-field-error {
+  display: flex; align-items: center; gap: 5px; margin-top: 5px;
+  color: var(--danger, #a8292f); font-size: 12px; font-weight: 500; line-height: 1.4;
+}
+.sf-field-error[hidden] { display: none; }
+/* Reinforces the field-error text with a border on the input(s) it
+   describes — color is never the ONLY indicator (text + icon already
+   carry the meaning), this is additive emphasis. */
+.form-group input[aria-invalid="true"],
+.form-group select[aria-invalid="true"] {
+  border-color: var(--danger, #a8292f);
+}
 
 /* ============================================================
    v1.18.3 HOTFIX — Executive Navigation Refinement

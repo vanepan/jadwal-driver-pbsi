@@ -25,6 +25,7 @@
 import { isAdmin, getCurrentUser } from '../auth.js';
 import { createFocusGuard } from '../ui/focus-preserving-render.js';
 import { runSaveFeedback } from '../components/save-feedback.js';
+import { showToast as canonicalToast } from '../components/toast.js';
 import {
   initPettyCashStore, registerChangeListener, getSettings, getActiveCycle,
   getNors, getNorById, getExpenses, getExpenseById,
@@ -57,7 +58,6 @@ const st = {
   form: blankForm(),
   newCycleBalance: '',
   settingsDraft: null, settingsDirty: false,
-  toast: null, _toastT: null,
   // Nama Unit autocomplete (v1.17.4 — Part A). Managed in place (the dropdown is
   // a sibling of the focused input, never the input itself) so typing never loses
   // focus or caret across the full-render model.
@@ -80,10 +80,13 @@ function esc(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 function setState(patch) { Object.assign(st, patch); render(); }
-function toast(msg) {
-  if (st._toastT) clearTimeout(st._toastT);
-  st._toastT = setTimeout(() => { st.toast = null; render(); }, 2600);
-  setState({ toast: msg });
+// Design System Program Phase 5 — delegates to the canonical, accessible,
+// severity-aware toast (js/components/toast.js) instead of this module's
+// own render-state/DOM plumbing. Kept as a same-named local wrapper so the
+// ~30 existing call sites below need no signature change; only the
+// confirmed-error (catch-block) sites were updated to pass 'error'.
+function toast(msg, severity) {
+  canonicalToast(msg, severity ? { severity } : {});
 }
 const BADGE_BASE = 'display:inline-flex;align-items:center;gap:4px;font-family:\'JetBrains Mono\',monospace;font-size:9.5px;letter-spacing:.5px;padding:4px 8px;border-radius:6px;';
 
@@ -257,8 +260,7 @@ function shell() {
   ${st.addOpen ? addModal() : ''}
   ${st.detailId ? detailDrawer() : ''}
   ${st.notifOpen ? notifModal(m) : ''}
-  ${st.cycleModalOpen ? cycleModal(m) : ''}
-  ${st.toast ? toastEl() : ''}`;
+  ${st.cycleModalOpen ? cycleModal(m) : ''}`;
 }
 
 /* Mobile-only in-content screen switcher (hidden ≥768px via petty-cash.css —
@@ -1318,12 +1320,6 @@ function cycleModal(m) {
   </div>`;
 }
 
-function toastEl() {
-  return `
-  <div style="position:fixed;bottom:26px;left:50%;transform:translateX(-50%);z-index:1700;background:var(--text);color:var(--bg);padding:12px 20px;border-radius:11px;font-weight:600;font-size:13px;box-shadow:var(--shadow-lg);display:flex;align-items:center;gap:9px;animation:pcToast .3s ease">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>${esc(st.toast)}
-  </div>`;
-}
 
 /* ============================================================
    EVENT DELEGATION
@@ -1540,10 +1536,10 @@ function formFromExpense(e) {
 
 function openEdit(id) {
   const e = getExpenseById(id);
-  if (!e) { toast('Pengeluaran tidak ditemukan.'); return; }
+  if (!e) { toast('Pengeluaran tidak ditemukan.', 'warning'); return; }
   // NOR lock rule (Phase B): realised (LOCKED) or archived expenses are immutable.
   if (e.status !== EXPENSE_STATUS.AVAILABLE) {
-    toast('Transaksi telah direalisasikan dalam NOR dan tidak dapat diubah.');
+    toast('Transaksi telah direalisasikan dalam NOR dan tidak dapat diubah.', 'warning');
     return;
   }
   setState({ addOpen: true, editId: id, detailId: null, drawerOpen: false, form: formFromExpense(e) });
@@ -1619,7 +1615,7 @@ async function submitAdd() {
 
 async function doDeleteExpense(id) {
   try { await svc.removeExpense(id); setState({ detailId: null }); toast('Pengeluaran dihapus'); }
-  catch (err) { toast(err.message || 'Gagal menghapus'); }
+  catch (err) { toast(err.message || 'Gagal menghapus', 'error'); }
 }
 
 async function doArchiveExpense(id) {
@@ -1628,22 +1624,22 @@ async function doArchiveExpense(id) {
   // Confirmation required (P3). Archiving is reversible via the Arsip filter.
   if (!window.confirm(`Arsipkan pengeluaran ${ref}?\n\nPengeluaran akan keluar dari daftar operasional dan tidak dapat dipilih untuk NOR. Anda dapat memulihkannya kapan saja dari filter Arsip.`)) return;
   try { await svc.archiveExpense(id); setState({ detailId: null }); toast('Pengeluaran diarsipkan'); }
-  catch (err) { toast(err.message || 'Gagal mengarsipkan'); }
+  catch (err) { toast(err.message || 'Gagal mengarsipkan', 'error'); }
 }
 
 async function doRestoreExpense(id) {
   try { await svc.restoreExpense(id); setState({ detailId: null }); toast('Pengeluaran dipulihkan'); }
-  catch (err) { toast(err.message || 'Gagal memulihkan'); }
+  catch (err) { toast(err.message || 'Gagal memulihkan', 'error'); }
 }
 
 function gotoPreview() {
-  if (!st.selectedIds.length) { toast('Pilih minimal satu nota untuk lanjut.'); return; }
-  if (!isValidNorSequence(st.norForm.sequence)) { toast('Nomor urut NOR wajib diisi (angka positif).'); return; }
+  if (!st.selectedIds.length) { toast('Pilih minimal satu nota untuk lanjut.', 'warning'); return; }
+  if (!isValidNorSequence(st.norForm.sequence)) { toast('Nomor urut NOR wajib diisi (angka positif).', 'warning'); return; }
   setState({ norStep: 'preview' });
 }
 
 async function confirmGenerate() {
-  if (!isValidNorSequence(st.norForm.sequence)) { toast('Nomor urut NOR wajib diisi (angka positif).'); return; }
+  if (!isValidNorSequence(st.norForm.sequence)) { toast('Nomor urut NOR wajib diisi (angka positif).', 'warning'); return; }
   try {
     const fullNumber = norNumberFromSequence(st.norForm.sequence, st.norForm.date);
     const nor = await svc.generateNor({
@@ -1656,7 +1652,7 @@ async function confirmGenerate() {
       norForm: { sequence: '', date: todayISO(), isTest: false },
     });
     toast(`NOR ${nor.norNumber} berhasil dibuat${nor.type === NOR_TYPE.TEST ? ' (TEST)' : ''}`);
-  } catch (err) { toast(err.message || 'Gagal membuat NOR'); }
+  } catch (err) { toast(err.message || 'Gagal membuat NOR', 'error'); }
 }
 
 async function doArchiveTestNor(id) {
@@ -1673,7 +1669,7 @@ async function doArchiveTestNor(id) {
     toast(res.isTest && res.cascadedCount
       ? `${nor.norNumber} diarsipkan · ${res.cascadedCount} pengeluaran ikut diarsipkan`
       : `${nor.norNumber} diarsipkan${isTest ? ' (Test)' : ''}`);
-  } catch (err) { toast(err.message || 'Gagal mengarsipkan'); }
+  } catch (err) { toast(err.message || 'Gagal mengarsipkan', 'error'); }
 }
 
 async function doRestoreNor(id) {
@@ -1684,13 +1680,13 @@ async function doRestoreNor(id) {
     toast(res.isTest && res.cascadedCount
       ? `${nor.norNumber} dipulihkan · ${res.cascadedCount} pengeluaran ikut dipulihkan`
       : `${nor.norNumber} dipulihkan`);
-  } catch (err) { toast(err.message || 'Gagal memulihkan NOR'); }
+  } catch (err) { toast(err.message || 'Gagal memulihkan NOR', 'error'); }
 }
 
 async function doConvertToTest(id) {
   const nor = getNorById(id); if (!nor) return;
   // Guard rail (P9) — surface the reason before prompting.
-  if (!svc.isNorConvertible(nor)) { toast('NOR ini sudah direalisasikan dan tidak dapat diubah tipenya.'); return; }
+  if (!svc.isNorConvertible(nor)) { toast('NOR ini sudah direalisasikan dan tidak dapat diubah tipenya.', 'warning'); return; }
   const ok = window.confirm(
     'Ubah Menjadi TEST NOR?\n\n' +
     'NOR ini akan dikeluarkan dari pelaporan resmi.\n' +
@@ -1701,12 +1697,12 @@ async function doConvertToTest(id) {
     const res = await svc.convertNorToTest(id);
     setState({ screen: 'norDetail', norDetailId: id });
     toast(`${nor.norNumber} kini TEST NOR${res.affected ? ` · ${res.affected} pengeluaran` : ''}`);
-  } catch (err) { toast(err.message || 'Gagal mengubah tipe NOR'); }
+  } catch (err) { toast(err.message || 'Gagal mengubah tipe NOR', 'error'); }
 }
 
 async function doConvertToOfficial(id) {
   const nor = getNorById(id); if (!nor) return;
-  if (!svc.isNorConvertible(nor)) { toast('NOR ini sudah direalisasikan dan tidak dapat diubah tipenya.'); return; }
+  if (!svc.isNorConvertible(nor)) { toast('NOR ini sudah direalisasikan dan tidak dapat diubah tipenya.', 'warning'); return; }
   const ok = window.confirm(
     'Jadikan NOR Resmi?\n\n' +
     'NOR ini akan masuk ke pelaporan resmi.\n' +
@@ -1717,25 +1713,25 @@ async function doConvertToOfficial(id) {
     const res = await svc.convertNorToOfficial(id);
     setState({ screen: 'norDetail', norDetailId: id });
     toast(`${nor.norNumber} kini NOR resmi${res.affected ? ` · ${res.affected} pengeluaran` : ''}`);
-  } catch (err) { toast(err.message || 'Gagal mengubah tipe NOR'); }
+  } catch (err) { toast(err.message || 'Gagal mengubah tipe NOR', 'error'); }
 }
 
 async function doExportNor(id) {
   const nor = getNorById(id); if (!nor) return;
-  toast('Menyiapkan Excel…');
+  toast('Menyiapkan Excel…', 'info');
   try { const fn = await exportNorExcel(nor); toast(`Excel diunduh: ${fn}`); }
-  catch (err) { console.error(err); toast('Gagal membuat Excel'); }
+  catch (err) { console.error(err); toast('Gagal membuat Excel', 'error'); }
 }
 async function doExportExpenses() {
-  toast('Menyiapkan Excel…');
+  toast('Menyiapkan Excel…', 'info');
   try { const fn = await exportExpensesExcel(); toast(`Excel diunduh: ${fn}`); }
-  catch (err) { console.error(err); toast('Gagal membuat Excel'); }
+  catch (err) { console.error(err); toast('Gagal membuat Excel', 'error'); }
 }
 async function doPrintNor(id) {
   const nor = getNorById(id); if (!nor) return;
-  toast('Menyiapkan PDF…');
+  toast('Menyiapkan PDF…', 'info');
   try { await previewNorPdf(nor); }
-  catch (err) { console.error(err); toast('Gagal membuat PDF'); }
+  catch (err) { console.error(err); toast('Gagal membuat PDF', 'error'); }
 }
 
 function openCycleModal(norId) {
@@ -1751,7 +1747,7 @@ async function confirmNewCycle() {
     const res = await svc.receiveReplenishment({ norId: st.norDetailId, newOpeningBalance: bal });
     setState({ cycleModalOpen: false, screen: 'dashboard' });
     toast(`Siklus #${res.newCycleNumber} dimulai. Saldo awal: ${rp(res.opening)}`);
-  } catch (err) { toast(err.message || 'Gagal menutup siklus'); }
+  } catch (err) { toast(err.message || 'Gagal menutup siklus', 'error'); }
 }
 
 /* ── Settings draft helpers ──────────────────────────────────────── */
@@ -1795,14 +1791,14 @@ async function doSaveSettings() {
     toast(res.syncedCycle
       ? `Pengaturan disimpan · saldo awal Siklus #${res.cycleNumber} diperbarui`
       : 'Pengaturan disimpan');
-  } catch (err) { toast(err.message || 'Gagal menyimpan'); }
+  } catch (err) { toast(err.message || 'Gagal menyimpan', 'error'); }
 }
 
 /* ── Receipt image (optional, stored as data URL for digital archive) ── */
 function onReceiptFile(input) {
   const file = input.files && input.files[0];
   if (!file) return;
-  if (file.size > 5 * 1024 * 1024) { toast('Foto melebihi 5 MB'); return; }
+  if (file.size > 5 * 1024 * 1024) { toast('Foto melebihi 5 MB', 'warning'); return; }
   const reader = new FileReader();
   reader.onload = () => { st.form._receiptData = reader.result; st.form._photoName = file.name; render(); };
   reader.readAsDataURL(file);

@@ -14,6 +14,8 @@ import { initFormGuard, resetDirty } from './form-guard.js';
 import { syncPbsiSelect } from './pbsi-select.js';
 import { initPbsiDatepicker, syncPbsiDatepicker } from './pbsi-datepicker.js';
 import { runSaveFeedback } from './components/save-feedback.js';
+import { validateRequired, validateTimeFormat, validateTimeRange, validateDateRange } from './validation.js';
+import { anIcon } from './analytics/analytics-shell.js';
 
 /* ── Module State ── */
 // v1.15.6: UI-only sentinel for the "Tanpa Kendaraan" dropdown option. NEVER
@@ -120,6 +122,22 @@ export function initFormHandlers() {
   // Real-time conflict preview
   initConflictPreview();
 
+  // Design System Program Phase 5 — blur doesn't bubble, so this listens in
+  // the CAPTURE phase on the form itself. Only clears/refreshes a field that
+  // is CURRENTLY showing an error (revalidateFieldOnBlur no-ops otherwise) —
+  // never introduces a new error for a field the user hasn't submitted
+  // against yet.
+  if (form) {
+    form.addEventListener('blur', (ev) => {
+      const fieldId = ev.target?.id;
+      if (!fieldId) return;
+      const owner = VALIDATED_FIELD_IDS.includes(fieldId)
+        ? fieldId
+        : VALIDATED_FIELD_IDS.find((id) => _fieldErrorInputs(id).includes(ev.target));
+      if (owner) revalidateFieldOnBlur(owner);
+    }, true);
+  }
+
   // Data-loss guard: disables backdrop close, intercepts X/Cancel, shows
   // confirmation dialog when form is dirty. Owns btnCloseForm + btnCancelForm.
   initFormGuard({
@@ -206,6 +224,7 @@ export function openFormModal(asgnId = null) {
   editingId = asgnId;
   const form = document.getElementById('assignmentForm');
   if (form) form.reset();
+  clearAllFieldErrors(); // Design System Program Phase 5 — no stale errors from a previous open
   _syncPaxDisplay(0); // reset stepper display after form.reset()
   syncPbsiSelect(document.getElementById('fieldDriver'));
   syncPbsiSelect(document.getElementById('fieldVehicle'));
@@ -290,6 +309,103 @@ export function closeFormModal() {
   if (previewEl) previewEl.style.display = 'none';
 }
 
+/* ============================================================
+   Design System Program Phase 5 — per-field inline validation for the
+   flagship Assignment Create/Edit form. Each validated field has a sibling
+   `<div class="sf-field-error" id="err-{fieldId}" hidden>` in index.html.
+   A "fieldId" is either a single input's own id (`fieldDriver`) or a
+   paired-input group container's id (`assignmentTimeStart` — Jam Mulai is
+   two <input>s, both described by the same error node).
+   ============================================================ */
+const VALIDATED_FIELD_IDS = [
+  'fieldDriver', 'fieldVehicle', 'fieldDate', 'fieldEndDate',
+  'assignmentTimeStart', 'assignmentTimeEnd', 'fieldDestination', 'fieldPurpose',
+];
+
+function _fieldErrorInputs(fieldId) {
+  const el = document.getElementById(fieldId);
+  if (!el) return [];
+  return (el.tagName === 'INPUT' || el.tagName === 'SELECT') ? [el] : Array.from(el.querySelectorAll('input,select'));
+}
+
+function showFieldError(fieldId, message) {
+  const errEl = document.getElementById(`err-${fieldId}`);
+  if (!errEl) return;
+  errEl.innerHTML = '';
+  const iconSpan = document.createElement('span');
+  iconSpan.innerHTML = anIcon('alert', { size: 12 });
+  iconSpan.style.cssText = 'display:inline-flex;vertical-align:-2px;margin-right:5px;';
+  const textSpan = document.createElement('span');
+  textSpan.textContent = message;
+  errEl.append(iconSpan, textSpan);
+  errEl.hidden = false;
+  for (const el of _fieldErrorInputs(fieldId)) {
+    el.setAttribute('aria-invalid', 'true');
+    el.setAttribute('aria-describedby', errEl.id);
+  }
+}
+
+function clearFieldError(fieldId) {
+  const errEl = document.getElementById(`err-${fieldId}`);
+  if (errEl) { errEl.hidden = true; errEl.textContent = ''; }
+  for (const el of _fieldErrorInputs(fieldId)) {
+    el.removeAttribute('aria-invalid');
+    el.removeAttribute('aria-describedby');
+  }
+}
+
+function clearAllFieldErrors() {
+  VALIDATED_FIELD_IDS.forEach(clearFieldError);
+}
+
+/** Re-runs ONLY the given field's own check (submit-time re-validates
+ *  everything regardless via `runFieldChecks` below). Never introduces a
+ *  new error on blur for a field that hasn't been submitted against yet —
+ *  only clears/refreshes a field that is CURRENTLY showing an error. */
+function revalidateFieldOnBlur(fieldId) {
+  const errEl = document.getElementById(`err-${fieldId}`);
+  if (!errEl || errEl.hidden) return;
+  const [, result] = runFieldChecks().find(([id]) => id === fieldId) || [];
+  if (result && result.valid) clearFieldError(fieldId);
+  else if (result) showFieldError(fieldId, result.errors[0]);
+}
+
+/** Builds the [fieldId, ValidationResult] pairs for every currently-relevant
+ *  field (skips fields hidden by Multi Hari / Penuh Hari toggles). Pure read
+ *  of current DOM values — safe to call from blur or submit alike. */
+function runFieldChecks() {
+  const driverRaw   = document.getElementById('fieldDriver').value;
+  const vehicleRaw  = document.getElementById('fieldVehicle').value;
+  const startDate   = document.getElementById('fieldDate').value;
+  const destination = document.getElementById('fieldDestination').value.trim();
+  const purpose     = document.getElementById('fieldPurpose').value.trim();
+  const isFullDay   = document.getElementById('assignmentFullDay')?.checked ?? false;
+  const isMultiDay  = !editingId && (document.getElementById('assignmentMultiDay')?.checked ?? false);
+  const startTime   = isFullDay ? '00:00' : getCombinedTimeFromPair('fieldStartHour', 'fieldStartMinute');
+  const endTime     = isFullDay ? '23:59' : getCombinedTimeFromPair('fieldEndHour', 'fieldEndMinute');
+
+  const checks = [
+    // v1.15.6/v1.27.0: the sentinel option ("Tanpa Kendaraan"/"Tanpa Driver")
+    // is itself a valid selection — only an untouched dropdown (raw '') fails.
+    ['fieldDriver', validateRequired(driverRaw, 'Driver')],
+    ['fieldVehicle', validateRequired(vehicleRaw, 'Kendaraan')],
+    ['fieldDate', validateRequired(startDate, 'Tanggal')],
+    ['fieldDestination', validateRequired(destination, 'Tujuan')],
+    ['fieldPurpose', validateRequired(purpose, 'Keperluan')],
+  ];
+  if (isMultiDay) {
+    const endDate = document.getElementById('fieldEndDate').value;
+    checks.push(['fieldEndDate', validateRequired(endDate, 'Tanggal selesai')]);
+    checks.push(['fieldEndDate', validateDateRange(startDate, endDate)]);
+  }
+  if (!isFullDay) {
+    checks.push(['assignmentTimeStart', validateTimeFormat(startTime, 'Jam mulai', true)]);
+    checks.push(['assignmentTimeEnd', validateTimeFormat(endTime, 'Jam selesai', true)]);
+    checks.push(['assignmentTimeEnd', validateTimeRange(startTime, endTime)]);
+  }
+  return checks;
+}
+
 /**
  * Handle form submit (add atau update assignment)
  */
@@ -339,40 +455,28 @@ async function handleFormSubmit(e) {
   const notes       = document.getElementById('fieldNotes').value.trim();
   const isMultiDay  = !editingId && (document.getElementById('assignmentMultiDay')?.checked ?? false);
 
-  // Determine date range
-  let datesToCreate = [startDate];
-  if (isMultiDay) {
-    const endDate = document.getElementById('fieldEndDate').value;
-    if (!endDate) {
-      showToast('⚠️ Tanggal selesai wajib diisi untuk multi-day');
-      return;
-    }
-    if (endDate < startDate) {
-      showToast('⚠️ Tanggal selesai tidak boleh sebelum tanggal mulai');
-      return;
-    }
-    datesToCreate = expandDateRange(startDate, endDate);
-  }
-
-  // Validasi dasar. v1.15.6/v1.27.0: the vehicle AND driver fields are satisfied
-  // as long as the user made a selection — including "Tanpa Kendaraan" /
-  // "Tanpa Driver" (sentinel → ''). Only an untouched dropdown (raw '') is
-  // invalid. Date/time/destination/purpose stay mandatory.
-  if (driverRaw === '' || vehicleRaw === '' || !startDate || !startTime || !endTime || !destination || !purpose) {
-    showToast('⚠️ Lengkapi semua field wajib (*)');
+  // Design System Program Phase 5 — field-level validation replaces the old
+  // all-or-nothing "Lengkapi semua field wajib (*)" toast (which never said
+  // WHICH field). Wires js/validation.js's existing pure primitives — see
+  // runFieldChecks() above — instead of reimplementing the rules. Gates
+  // BEFORE conflict-checking runs and before runSaveFeedback ever fires (no
+  // busy-state flash for a client-side validation failure).
+  const fieldChecks = runFieldChecks();
+  const failedChecks = fieldChecks.filter(([, result]) => !result.valid);
+  clearAllFieldErrors();
+  if (failedChecks.length > 0) {
+    failedChecks.forEach(([fieldId, result]) => showFieldError(fieldId, result.errors[0]));
+    // Focus the first failing field's actual input — for a paired-input
+    // group (assignmentTimeStart/End) that's the group's first <input>,
+    // never the container div itself (not natively focusable).
+    _fieldErrorInputs(failedChecks[0][0])[0]?.focus();
     return;
   }
 
-  if (!isFullDay) {
-    if (!/^\d{2}:\d{2}$/.test(startTime) || !/^\d{2}:\d{2}$/.test(endTime)) {
-      showToast('⚠️ Format waktu tidak valid');
-      return;
-    }
-    if (timeToMinutes(endTime) <= timeToMinutes(startTime)) {
-      showToast('⚠️ Jam selesai harus lebih dari jam mulai');
-      return;
-    }
-  }
+  // Determine date range (validated above: endDate is present and >= startDate when Multi Hari)
+  const datesToCreate = isMultiDay
+    ? expandDateRange(startDate, document.getElementById('fieldEndDate').value)
+    : [startDate];
 
   // Cek konflik untuk semua tanggal dalam rentang (driver dan kendaraan).
   // v1.15.6: vehicle conflict is SKIPPED for "Tanpa Kendaraan" (vehicle === '') —
@@ -530,7 +634,12 @@ async function handleFormSubmit(e) {
       // back. Modal stays open (runSaveFeedback's onSuccess, which calls
       // closeFormModal(), never fires), the user's entered data is
       // untouched, and Simpan is already re-enabled so they can retry.
-      showToast('❌ Gagal menyimpan jadwal. Silakan periksa koneksi lalu coba lagi.');
+      // Design System Program Phase 5 — the inline `errorRegion` (wired
+      // below via runSaveFeedback's own `errorRegion` option) is now the
+      // SOLE error surface for this save; this used to also fire its own
+      // generic toast on top, showing two uncoordinated messages for one
+      // failure. The curated, non-raw message now comes from
+      // js/firebase.js's _curateFirebaseError via onPersistCallback.
     },
     pulseTarget: () => {
       // The board (js/timeline.js:226) and list view (js/app.js:3750) both

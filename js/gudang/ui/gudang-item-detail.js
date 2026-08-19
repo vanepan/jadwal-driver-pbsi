@@ -430,6 +430,6 @@ async function confirmDeleteItem(st, render, refreshCatalog, showToast) {
   if (!res.ok) { m.deleting = false; m.error = res.error.message; render(); return; }
   st.modal = null;
   st.detail = null;
-  if (showToast) showToast('Item berhasil dihapus');
+  if (showToast) showToast('Item berhasil dihapus', 'success');
   await refreshCatalog();
 }

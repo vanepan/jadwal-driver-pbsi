@@ -85,7 +85,7 @@ function isBusy(st) {
  *  but Drag and Paste both funnel through this SAME function. */
 export function startQuickPhotoReplace(st, itemId, file, render, refreshCatalog, showToast) {
   if (isBusy(st)) {
-    if (showToast) showToast('Tunggu unggahan foto sebelumnya selesai.');
+    if (showToast) showToast('Tunggu unggahan foto sebelumnya selesai.', 'warning');
     return;
   }
   const invalid = validateUploadFile(file);
@@ -141,7 +141,7 @@ async function runQuickPhotoUpload(st, itemId, render, refreshCatalog, showToast
   // Delete the PREVIOUS file last, best-effort — a cleanup failure here
   // must never look like the replace itself failed (it already succeeded).
   if (oldPath) deleteItemPhoto(oldPath).catch(() => {});
-  if (showToast) showToast('Foto item diperbarui.');
+  if (showToast) showToast('Foto item diperbarui.', 'success');
   await refreshCatalog();
 }
 

@@ -402,6 +402,6 @@ async function runOperation(st, c, render, refreshCatalog, showToast) {
     const msg = results.failed.length
       ? `${results.success.length} item ${verb}, ${results.failed.length} gagal.`
       : `${results.success.length} item ${verb}.`;
-    showToast(msg);
+    showToast(msg, results.failed.length ? 'warning' : 'success');
   }
 }

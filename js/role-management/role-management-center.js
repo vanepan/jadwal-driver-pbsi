@@ -35,6 +35,7 @@ import { ROLES, roleLabel } from '../config/role-registry.js';
 import { getPermission } from '../config/permission-registry.js';
 import { pill, esc, empty } from '../widgets/_widget-base.js';
 import { logAction } from '../logs.js';
+import { showToast as canonicalToast } from '../components/toast.js';
 import { createFocusGuard } from '../ui/focus-preserving-render.js';
 import {
   getPermissionTree,
@@ -90,8 +91,6 @@ let dirty = false;
 let error = '';
 let clonePrompt = null;  // { sourceRoleId, sourceLabel, name }
 let reviewModal = null;  // { id, name, renamedFrom, added: Permission[], removed: Permission[], nextPermissions: string[] }
-let toastMsg = null;
-let toastTimer = null;
 
 /* ============================================================
    Role Additional Permissions state — v1.30.9.9. Only ever populated for
@@ -165,16 +164,12 @@ function ensureDraft(role) {
   draft = { id: role.id, name: role.label, permissions: new Set(sanitizePermissionList([...resolveGrantedSet(role)])) };
 }
 
-/* ============================================================
-   Local toast — Petty Cash/Gudang/Overtime shape (module state + inline
-   render), NOT js/utils.js#showToast, matching this module's existing
-   render-loop architecture.
-   ============================================================ */
-function toast(msg) {
-  if (toastTimer) clearTimeout(toastTimer);
-  toastMsg = msg;
-  toastTimer = setTimeout(() => { toastMsg = null; render(); }, 2600);
-  render();
+// Design System Program Phase 5 — delegates to the canonical, accessible,
+// severity-aware toast (js/components/toast.js) instead of this module's
+// own local render-state toast. All 5 call sites in this file are success
+// confirmations.
+function toast(msg, severity = 'success') {
+  canonicalToast(msg, { severity });
 }
 
 /* ============================================================
@@ -559,8 +554,7 @@ function shell() {
       </section>
     </div>
     ${clonePrompt ? clonePromptHtml() : ''}
-    ${reviewModal ? reviewModalHtml() : ''}
-    ${toastMsg ? `<div class="rm-toast">${esc(toastMsg)}</div>` : ''}`;
+    ${reviewModal ? reviewModalHtml() : ''}`;
 }
 
 function statsHtml(summary) {

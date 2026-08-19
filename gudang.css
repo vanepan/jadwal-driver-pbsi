@@ -826,6 +826,3 @@
   .gud-btn.-big{min-width:0;}
 }
 
-/* ── toast (v1.28.11 — Delete Item success feedback) ─────────────────────── */
-.gud-toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);z-index:1700;background:var(--text);color:var(--surface);padding:12px 20px;border-radius:11px;font-family:var(--font-sans);font-weight:700;font-size:13px;box-shadow:var(--shadow-lg);display:flex;align-items:center;gap:9px;animation:gudToastIn .25s ease;}
-@keyframes gudToastIn{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translate(-50%,0)}}

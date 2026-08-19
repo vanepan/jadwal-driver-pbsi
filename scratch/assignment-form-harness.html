@@ -28,6 +28,7 @@
                 <option value="Grace">Grace</option>
               </select>
               <div class="dispatch-hint" id="assignmentDriverHint" hidden></div>
+              <div class="sf-field-error" id="err-fieldDriver" hidden></div>
             </div>
             <div class="form-group">
               <label for="fieldPhone">Nomor HP</label>
@@ -41,6 +42,7 @@
                 <option value="Avanza B">Avanza B</option>
               </select>
               <div class="dispatch-hint" id="assignmentVehicleHint" hidden></div>
+              <div class="sf-field-error" id="err-fieldVehicle" hidden></div>
             </div>
             <div class="form-group multi-day-section">
               <label class="multi-day-checkbox-label">
@@ -57,10 +59,12 @@
             <div class="form-group">
               <label for="fieldDate" id="fieldDateLabel">Tanggal *</label>
               <input type="date" id="fieldDate" required />
+              <div class="sf-field-error" id="err-fieldDate" hidden></div>
             </div>
             <div class="form-group end-date-wrapper" id="assignmentEndDateGroup">
               <label for="fieldEndDate">Tanggal Selesai *</label>
               <input type="date" id="fieldEndDate" />
+              <div class="sf-field-error" id="err-fieldEndDate" hidden></div>
             </div>
             <div class="form-group time-pair-group" id="assignmentTimeStart">
               <label>Jam Mulai *</label>
@@ -69,6 +73,7 @@
                 <span class="time-separator">:</span>
                 <input type="text" id="fieldStartMinute" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="MM" required />
               </div>
+              <div class="sf-field-error" id="err-assignmentTimeStart" hidden></div>
             </div>
             <div class="form-group time-pair-group" id="assignmentTimeEnd">
               <label>Jam Selesai *</label>
@@ -77,14 +82,17 @@
                 <span class="time-separator">:</span>
                 <input type="text" id="fieldEndMinute" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="MM" required />
               </div>
+              <div class="sf-field-error" id="err-assignmentTimeEnd" hidden></div>
             </div>
             <div class="form-group form-full">
               <label for="fieldDestination">Tujuan *</label>
               <input type="text" id="fieldDestination" placeholder="Contoh: T3 Soetta – Pelatnas" required />
+              <div class="sf-field-error" id="err-fieldDestination" hidden></div>
             </div>
             <div class="form-group form-full">
               <label for="fieldPurpose">Keperluan *</label>
               <input type="text" id="fieldPurpose" placeholder="Contoh: Penjemputan Kepulangan Pengurus" required />
+              <div class="sf-field-error" id="err-fieldPurpose" hidden></div>
             </div>
             <div class="form-group">
               <label for="fieldPIC">PIC</label>
@@ -124,6 +132,10 @@
   <!-- Minimal timeline stand-in so a pulseTarget query can find a real node,
        matching the real .assignment-block[data-id] contract (js/timeline.js). -->
   <div id="timelineHost"><div class="assignment-block" data-id="sf-test-a1" style="width:120px;height:40px;background:#fff;border:1px solid #ccc;">Block</div></div>
+
+  <!-- Design System Program Phase 5 — exact copy of index.html's #toast, so
+       the canonical toast (js/components/toast.js) can be exercised here too. -->
+  <div class="toast" id="toast" style="display:none;" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <script type="module">
     import * as mod from '/js/assignments.js';

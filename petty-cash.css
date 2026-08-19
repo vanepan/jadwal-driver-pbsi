@@ -78,7 +78,6 @@
 
 /* Animations (module-prefixed, safe globally) */
 @keyframes pcSpin { to { transform: rotate(360deg); } }
-@keyframes pcToast { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
 @keyframes pcFade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes pcPop { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @keyframes pcPulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }

@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.30.11.3';
-export const RELEASE_NAME = 'Design System Program Phase 4 — Application-Wide Icon Consolidation';
+export const APP_VERSION = '1.30.11.4';
+export const RELEASE_NAME = 'Design System Program Phase 5 — Application-Wide Error & Validation UX (Foundation + Flagship)';
 
 /* ============================================================
    APP_ENV — the AUTHORITATIVE runtime environment (v1.20.3 RC1).

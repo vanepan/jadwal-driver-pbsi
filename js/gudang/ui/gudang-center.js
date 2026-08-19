@@ -19,7 +19,7 @@
 'use strict';
 
 import { getCurrentUser } from '../../auth.js';
-import { esc, icon } from './gudang-atoms.js';
+import { showToast as canonicalToast } from '../../components/toast.js';
 
 import { listItems } from '../repository/item-repository.js';
 import { listLocations } from '../repository/location-repository.js';
@@ -96,7 +96,6 @@ const st = {
   goodsIn: null,
   opname: null,
   historyFilters: null, // lazily created by gudang-movement-history.js's own ensure pattern
-  toast: null, // transient success message (Delete Item) — see showToast()
   // v1.29.1 (Warehouse Smart Filtering, Feature 11 — mobile bottom sheet):
   // st.homeFilter (gudang-home.js) is the filter DATA and survives screen
   // changes; this is only whether the SHEET is currently on screen — reset
@@ -119,7 +118,7 @@ const st = {
   dragOverItemId: null,
 };
 
-let host = null, mounted = false, loaded = false, lastAnimatedScreen = null, toastTimer = null, searchDebounceTimer = null;
+let host = null, mounted = false, loaded = false, lastAnimatedScreen = null, searchDebounceTimer = null;
 
 /** v1.29.0 Feature 2 (Instant Search): 250-300ms recommended range — the
  *  "dropdown is open" feedback in setGudangSearch() below is NOT delayed by
@@ -133,15 +132,14 @@ const SEARCH_DEBOUNCE_MS = 275;
  *  never indefinitely) before giving up and keeping the last-good st.data. */
 const REFRESH_RETRY_DELAY_MS = 900;
 
-/** Scoped, self-dismissing toast (mirrors petty-cash-center.js's own local
- *  toast() — same render-driven module-center idiom, no shared #toast DOM
- *  element the way js/utils.js#showToast uses, since that element lives
- *  outside Gudang's own root and this module renders its own tree wholesale. */
-function showToast(msg) {
-  if (toastTimer) clearTimeout(toastTimer);
-  st.toast = msg;
-  render();
-  toastTimer = setTimeout(() => { st.toast = null; render(); }, 2600);
+// Design System Program Phase 5 — delegates to the canonical, accessible,
+// severity-aware toast (js/components/toast.js) instead of this module's
+// own render-state toast. Kept as a same-named local wrapper — this
+// function is also passed by reference into gudang-bulk-ui.js/
+// gudang-item-detail.js/gudang-photo-upload.js as an injected dependency,
+// each of which now passes its own severity explicitly.
+function showToast(msg, severity) {
+  canonicalToast(msg, severity ? { severity } : {});
 }
 
 /** Phase 10.4.1 root cause ("breadcrumb/sidebar out of sync"): js/app.js's
@@ -242,7 +240,7 @@ async function refreshCatalog() {
     // toast, same channel every other Gudang failure already uses.
     st.loading = false;
     render();
-    showToast('Gagal memperbarui data gudang. Menampilkan data terakhir.');
+    showToast('Gagal memperbarui data gudang. Menampilkan data terakhir.', 'error');
     return;
   }
 
@@ -576,7 +574,6 @@ function render() {
   // same ownership split as `overlay` above — Home only ever renders the
   // trigger button that opens it (gud-filter-open), never the sheet itself.
   const filterSheet = st.filterSheetOpen ? renderMobileFilterSheet(st) : '';
-  const toast = st.toast ? `<div class="gud-toast">${icon('check-circle', { size: 16 })} ${esc(st.toast)}</div>` : '';
   // Entrance animation plays only when the screen itself changes — every
   // render() call (e.g. one per keystroke while typing) replaces this whole
   // div, so an unconditional animation class replayed the fade-up on every
@@ -584,7 +581,7 @@ function render() {
   const isNewScreen = st.screen !== lastAnimatedScreen;
   if (isNewScreen && _onScreenChange) _onScreenChange(st.screen);
   lastAnimatedScreen = st.screen;
-  host.innerHTML = `<div class="gud-content${isNewScreen ? ' -enter' : ''}">${screen}</div>${detail}${overlay}${filterSheet}${modal}${toast}`;
+  host.innerHTML = `<div class="gud-content${isNewScreen ? ' -enter' : ''}">${screen}</div>${detail}${overlay}${filterSheet}${modal}`;
   restoreFocus();
   syncSearchInputAria();
 }

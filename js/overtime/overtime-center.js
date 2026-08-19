@@ -45,6 +45,7 @@
 
 import { isAdmin } from '../auth.js';
 import { createFocusGuard } from '../ui/focus-preserving-render.js';
+import { showToast as canonicalToast } from '../components/toast.js';
 import { initPbsiDatepicker, syncPbsiDatepicker } from '../pbsi-datepicker.js';
 import { initOvertimeStore, registerChangeListener } from './overtime-store.js';
 import * as svc from './overtime-service.js';
@@ -137,8 +138,6 @@ const st = {
 
   // Archive (Sprint 9)
   archiveSearchQuery: '', archiveExpandedMonth: null,
-
-  toast: null, _toastT: null,
 };
 
 let root = null, bound = false, opened = false, listening = false;
@@ -146,10 +145,12 @@ const focusGuard = createFocusGuard();
 
 /* ── Small helpers ───────────────────────────────────────────────── */
 function setState(patch) { Object.assign(st, patch); render(); }
-function toast(msg) {
-  if (st._toastT) clearTimeout(st._toastT);
-  st._toastT = setTimeout(() => { st.toast = null; render(); }, 2600);
-  setState({ toast: msg });
+// Design System Program Phase 5 — delegates to the canonical, accessible,
+// severity-aware toast (js/components/toast.js). See petty-cash-center.js's
+// identical wrapper for the rationale (same-named local function, no call
+// site signature change needed beyond the confirmed error/warning sites).
+function toast(msg, severity) {
+  canonicalToast(msg, severity ? { severity } : {});
 }
 
 function syncTheme() {
@@ -313,8 +314,7 @@ function shell() {
   ${st.editRecordModalOpen ? renderEditRecordModal(st) : ''}
   ${st.unlockModalOpen ? renderUnlockModal(st) : ''}
   ${st.closeConfirmModalOpen ? renderCloseConfirmModal(st) : ''}
-  ${st.saveConfirmData ? saveConfirmModal() : ''}
-  ${st.toast ? toastEl() : ''}`;
+  ${st.saveConfirmData ? saveConfirmModal() : ''}`;
 }
 
 /* Mobile-only in-content screen switcher (hidden ≥768px via overtime.css —
@@ -963,10 +963,6 @@ function saveConfirmModal() {
     </div>`;
 }
 
-function toastEl() {
-  return `<div style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:1700;box-shadow:var(--shadow-lg)">${esc(st.toast)}</div>`;
-}
-
 /* ── Delegated events ─────────────────────────────────────────────── */
 function bindDelegation() {
   if (bound) return; bound = true;
@@ -1125,7 +1121,7 @@ async function onClick(e) {
     case 'toggleUnitActive': {
       const nextActive = el.dataset.active === '1';
       try { await svc.setUnitActive(id, nextActive); toast(nextActive ? 'Unit diaktifkan.' : 'Unit dinonaktifkan.'); }
-      catch (err) { toast(err.message || 'Gagal memperbarui unit.'); }
+      catch (err) { toast(err.message || 'Gagal memperbarui unit.', 'error'); }
       return;
     }
     case 'toggleUnitGroup': {
@@ -1146,11 +1142,11 @@ async function onClick(e) {
     case 'toggleEmployeeActive': {
       const nextActive = el.dataset.active === '1';
       try { await svc.setEmployeeActive(id, nextActive); toast(nextActive ? 'Karyawan diaktifkan.' : 'Karyawan dinonaktifkan.'); }
-      catch (err) { toast(err.message || 'Gagal memperbarui karyawan.'); }
+      catch (err) { toast(err.message || 'Gagal memperbarui karyawan.', 'error'); }
       return;
     }
-    case 'moveEmployeeUp': try { await svc.moveEmployee(id, 'up'); } catch (err) { toast(err.message || 'Gagal memindahkan.'); } return;
-    case 'moveEmployeeDown': try { await svc.moveEmployee(id, 'down'); } catch (err) { toast(err.message || 'Gagal memindahkan.'); } return;
+    case 'moveEmployeeUp': try { await svc.moveEmployee(id, 'up'); } catch (err) { toast(err.message || 'Gagal memindahkan.', 'error'); } return;
+    case 'moveEmployeeDown': try { await svc.moveEmployee(id, 'down'); } catch (err) { toast(err.message || 'Gagal memindahkan.', 'error'); } return;
     case 'openEmployeeHistory': setState({ historyEmployeeId: id }); return;
     case 'closeEmployeeHistory': setState({ historyEmployeeId: null }); return;
     case 'exportEmployeeHistoryCsv': {
@@ -1166,8 +1162,8 @@ async function onClick(e) {
     case 'openRateVersionModal': setState({ rateModalOpen: true, rateModalTierKey: id, rateForm: { amount: '', effectiveFrom: todayISO(), note: '' }, rateFormErr: '' }); return;
     case 'closeRateModal': setState({ rateModalOpen: false, rateModalTierKey: null }); return;
     case 'toggleRateHistory': setState({ expandedTierKey: st.expandedTierKey === id ? null : id }); return;
-    case 'deleteRateVersion': try { await svc.softDeleteRateVersion(id); toast('Tarif dihapus.'); } catch (err) { toast(err.message || 'Gagal menghapus tarif.'); } return;
-    case 'restoreRateVersion': try { await svc.restoreRateVersion(id); toast('Tarif dipulihkan.'); } catch (err) { toast(err.message || 'Gagal memulihkan tarif.'); } return;
+    case 'deleteRateVersion': try { await svc.softDeleteRateVersion(id); toast('Tarif dihapus.'); } catch (err) { toast(err.message || 'Gagal menghapus tarif.', 'error'); } return;
+    case 'restoreRateVersion': try { await svc.restoreRateVersion(id); toast('Tarif dipulihkan.'); } catch (err) { toast(err.message || 'Gagal memulihkan tarif.', 'error'); } return;
 
     // Holiday
     case 'openAddHoliday': setState({ holidayModalOpen: true, editHolidayId: null, holidayForm: { date: todayISO(), name: '', type: 'national', tierKey: 'nationalHoliday', note: '' }, holidayFormErr: '' }); return;
@@ -1181,7 +1177,7 @@ async function onClick(e) {
     case 'toggleHolidayActive': {
       const nextActive = el.dataset.active === '1';
       try { await svc.setHolidayActive(id, nextActive); toast(nextActive ? 'Hari libur diaktifkan.' : 'Hari libur dinonaktifkan.'); }
-      catch (err) { toast(err.message || 'Gagal memperbarui hari libur.'); }
+      catch (err) { toast(err.message || 'Gagal memperbarui hari libur.', 'error'); }
       return;
     }
 
@@ -1220,7 +1216,7 @@ async function onClick(e) {
       const date = st.entryDate || todayISO();
       const yesterday = addDaysISO(date, -1);
       const ids = svc.getEntryEmployeeIds(yesterday, id);
-      if (!ids.length) { toast('Tidak ada entri kemarin untuk unit ini.'); return; }
+      if (!ids.length) { toast('Tidak ada entri kemarin untuk unit ini.', 'warning'); return; }
       const existingIds = new Set(svc.listRecordsForDate(date, id).map(r => r.employeeId));
       // MERGE (not overwrite) — entrySelected spans every unit's pending
       // checks, and already-recorded employees stay excluded (Level 1).

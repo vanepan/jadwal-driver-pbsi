@@ -432,6 +432,25 @@ function _classifyFirebaseError(error) {
   return /permission|denied|PERMISSION_DENIED/i.test(code) ? 'denied' : 'error';
 }
 
+/* Design System Program Phase 5 — every write function below used to pass
+   the raw Firebase SDK error straight through as {ok:false, error}, which
+   could put text like "permission_denied at /assignments/xyz" directly in
+   front of a user (e.g. via save-feedback.js's inline error region). This
+   curates a safe, understandable Indonesian message instead, reusing the
+   existing denied/error classification above rather than duplicating it.
+   The raw error is preserved via .cause (and by the console.error calls
+   already at each call site) for devtools/debugging — never surfaced. */
+function _curateFirebaseError(err) {
+  const status = _classifyFirebaseError(err);
+  const reason = status === 'denied'
+    ? 'Anda tidak memiliki izin untuk melakukan perubahan ini.'
+    : 'Gagal terhubung ke server. Periksa koneksi internet Anda dan coba lagi.';
+  const curated = new Error(reason);
+  curated.code = err?.code || null;
+  curated.cause = err;
+  return curated;
+}
+
 /**
  * One-shot typed read.
  * @returns {Promise<{status:'ok'|'denied'|'error', value:*, code?:string}>}
@@ -595,8 +614,9 @@ export function saveOneAssignment(assignment, opts = {}) {
     .then(() => ({ ok: true }))
     .catch(err => {
       console.error('Firebase single-assignment save gagal:', err);
-      if (!opts.silent) showToast('Firebase gagal menyimpan. Data tersimpan di device ini.');
-      return { ok: false, error: err };
+      const curated = _curateFirebaseError(err);
+      if (!opts.silent) showToast(`Firebase gagal menyimpan. Data tersimpan di device ini. ${curated.message}`, { severity: 'error' });
+      return { ok: false, error: curated };
     });
 }
 
@@ -625,8 +645,9 @@ export function saveManyAssignments(assignmentList, opts = {}) {
     .then(() => ({ ok: true }))
     .catch(err => {
       console.error('Firebase multi-assignment save gagal (batch, all-or-nothing):', err);
-      if (!opts.silent) showToast('Firebase gagal menyimpan jadwal multi-hari. Data tersimpan di device ini.');
-      return { ok: false, error: err };
+      const curated = _curateFirebaseError(err);
+      if (!opts.silent) showToast(`Firebase gagal menyimpan jadwal multi-hari. Data tersimpan di device ini. ${curated.message}`, { severity: 'error' });
+      return { ok: false, error: curated };
     });
 }
 
@@ -634,15 +655,25 @@ export function saveManyAssignments(assignmentList, opts = {}) {
  * Hapus SATU assignment dari Firebase secara surgical (aman).
  * Hanya menghapus node /assignments/{id} — tidak mempengaruhi record lain.
  * @param {string} assignmentId
- * @returns {Promise}
+ * @param {{silent?: boolean}} [opts] - lihat saveOneAssignment() di atas.
+ *   Design System Program Phase 5 — brought to the same {ok,error} return
+ *   contract as saveOneAssignment/saveManyAssignments (previously resolved
+ *   `undefined` on both success and failure). Additive: its one existing
+ *   caller (js/app.js) doesn't check the return value, so this changes
+ *   nothing for it — any future caller can now check `.ok`.
+ * @returns {Promise<{ok:true}|{ok:false, error:Error}>}
  */
-export function removeOneAssignment(assignmentId) {
-  if (!firebaseDb || !assignmentId) return Promise.resolve();
+export function removeOneAssignment(assignmentId, opts = {}) {
+  if (!firebaseDb || !assignmentId) return Promise.resolve({ ok: false, error: new Error('Firebase belum terkonfigurasi atau id kosong') });
   const assignRef = ref(firebaseDb, `${FIREBASE_ASSIGNMENTS_PATH}/${assignmentId}`);
-  return remove(assignRef).catch(err => {
-    console.error('Firebase single-assignment remove gagal:', err);
-    showToast('Firebase gagal menghapus. Data tersimpan di device ini.');
-  });
+  return remove(assignRef)
+    .then(() => ({ ok: true }))
+    .catch(err => {
+      console.error('Firebase single-assignment remove gagal:', err);
+      const curated = _curateFirebaseError(err);
+      if (!opts.silent) showToast(`Firebase gagal menghapus. Data tersimpan di device ini. ${curated.message}`, { severity: 'error' });
+      return { ok: false, error: curated };
+    });
 }
 
 /**

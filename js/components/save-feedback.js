@@ -20,6 +20,7 @@
 'use strict';
 
 import { SCENE_MS, prefersReducedMotion } from './motion-tokens.js';
+import { anIcon } from '../analytics/analytics-shell.js';
 
 const SPINNER_SVG = '<svg class="sf-icon sf-icon--spin" width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6.25" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="26 39"/></svg>';
 const CHECK_SVG = '<svg class="sf-icon sf-icon--check" width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.6L6.6 11.7L12.5 4.8" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -43,7 +44,18 @@ function showError(errorRegion, button, err) {
   if (!errorRegion) return;
   if (!errorRegion.id) errorRegion.id = `sf-err-${Math.random().toString(36).slice(2, 9)}`;
   errorRegion.hidden = false;
-  errorRegion.textContent = msg;
+  // Design System Program Phase 5 — an anIcon('alert') glyph, matching
+  // renderAnalyticsErrorState's existing treatment (js/analytics/
+  // analytics-shell.js). innerHTML is safe here: the icon is a fixed SVG
+  // literal and `msg` renders inside a plain <span> textContent, never
+  // interpolated as markup.
+  errorRegion.innerHTML = '';
+  const iconSpan = document.createElement('span');
+  iconSpan.innerHTML = anIcon('alert', { size: 14 });
+  iconSpan.style.cssText = 'display:inline-flex;vertical-align:-2px;margin-right:5px;';
+  const textSpan = document.createElement('span');
+  textSpan.textContent = msg;
+  errorRegion.append(iconSpan, textSpan);
   errorRegion.setAttribute('role', 'alert');
   button.setAttribute('aria-describedby', errorRegion.id);
 }

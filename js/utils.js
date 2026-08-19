@@ -344,22 +344,11 @@ export function formatDateTime(isoString) {
   });
 }
 
-/**
- * Toast notification untuk feedback user
- * @param {string} message - Pesan yang ditampilkan
- */
-let toastTimeout = null;
-export function showToast(message) {
-  const toast = document.getElementById('toast');
-  if (!toast) return;
-  toast.textContent = message;
-  toast.style.display = 'block';
-
-  if (toastTimeout) clearTimeout(toastTimeout);
-  toastTimeout = setTimeout(() => {
-    toast.style.display = 'none';
-  }, 2800);
-}
+// Design System Program Phase 5 — the real implementation moved to the
+// canonical js/components/toast.js (severity-aware, accessible). Re-exported
+// here so every existing `import { showToast } from './utils.js'` call site
+// across the app (~223 of them) keeps working unchanged.
+export { showToast } from './components/toast.js';
 
 /**
  * Display label for an assignment's vehicle (v1.15.6 — Requester Vehicle).
