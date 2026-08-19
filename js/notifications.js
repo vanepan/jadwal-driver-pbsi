@@ -7,6 +7,7 @@ import { getUserProfileList } from './user-profiles-store.js';
 import { getCurrentUser } from './auth.js';
 import { subscribeNode, updateFirebaseData } from './firebase.js';
 import { wireSheetSwipeDismiss, lockBodyScroll, unlockBodyScroll } from './ui/sheet-gesture.js'; // Phase 11K
+import { anIcon } from './analytics/analytics-shell.js';
 
 /* ── Helpers ── */
 
@@ -71,7 +72,7 @@ const ACTION_META = {
     desc: e => `${resolveDisplayName(e)} mengajukan request driver`,
     detail: null,
     priority: 'high',
-    icon: '📋',
+    icon: anIcon('inbox', { size: 14 }),
   },
   request_approved: {
     title: 'Request Disetujui',
@@ -83,14 +84,14 @@ const ACTION_META = {
     },
     detail: null,
     priority: 'medium',
-    icon: '✅',
+    icon: anIcon('check', { size: 14 }),
   },
   request_rejected: {
     title: 'Request Ditolak',
     desc: e => `Request ditolak oleh ${resolveDisplayName(e)}`,
     detail: null,
     priority: 'high',
-    icon: '❌',
+    icon: anIcon('x', { size: 14 }),
   },
   // assignment_created/completed/cancelled ACTION_META removed (v1.25.x Part 4/6)
   // — those actions no longer reach this renderer (see OPERATIONAL_ACTIONS
@@ -106,7 +107,7 @@ const ACTION_META = {
       return rows.length > 0 ? rows : null;
     },
     priority: 'medium',
-    icon: '💬',
+    icon: anIcon('comment', { size: 14 }),
   },
 };
 
@@ -379,14 +380,15 @@ function renderCardActions(entry, isUnread) {
  *  assignment.* renders through this same generic branch). */
 function serverNotifIcon(action) {
   const a = String(action || '');
-  if (a.startsWith('engineering.')) return '🔧';
-  if (a === 'assignment.created') return '🚗';
-  if (a === 'assignment.reassigned') return 'ℹ️';
-  if (a === 'assignment.updated') return '✏️';
-  if (a === 'assignment.completed') return '✔️';
-  if (a === 'assignment.cancelled') return '✕';
-  if (a === 'assignment.reminder') return '⏰';
-  return '🔔';
+  const ic = (name) => anIcon(name, { size: 14 });
+  if (a.startsWith('engineering.')) return ic('maintenance');
+  if (a === 'assignment.created') return ic('car');
+  if (a === 'assignment.reassigned') return ic('info');
+  if (a === 'assignment.updated') return ic('edit');
+  if (a === 'assignment.completed') return ic('check');
+  if (a === 'assignment.cancelled') return ic('x');
+  if (a === 'assignment.reminder') return ic('history');
+  return ic('bell');
 }
 
 function renderCard(entry, isUnread) {

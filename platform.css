@@ -13963,10 +13963,6 @@ body.v2-shell-active .block-status-badge {
   flex-shrink: 0;
 }
 .domshell-rail-icon svg { stroke: currentColor; }
-.domshell-icon-dot { fill: var(--accent); }
-.domshell-rail-item--active .domshell-icon-dot { fill: currentColor; }
-.domshell-icon-accent-stroke { stroke: var(--accent); }
-.domshell-rail-item--active .domshell-icon-accent-stroke { stroke: currentColor; }
 .domshell-rail-label {
   font-size: 13.5px;
   font-weight: 700;

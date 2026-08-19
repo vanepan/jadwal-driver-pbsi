@@ -108,7 +108,6 @@ import { computeFleetReminders, summarizeReminders } from './services/reminder-e
 import { injectFleetDashboardStyles, renderFleetDashboard } from './components/fleet-dashboard.js';
 import { injectVehicleReminderPanelStyles, renderVehicleReminderPanel } from './components/vehicle-reminder-panel.js';
 import { injectVehicleActivityPanelStyles, renderVehicleActivityPanel } from './components/vehicle-activity-panel.js';
-import { renderIcon, vehicleTypeIconName } from './components/icon-system.js';
 import { openVehicleDetailDrawer, refreshVehicleDetailDrawer } from './components/vehicle-detail-drawer.js';
 import { FUEL_TYPES, TRANSMISSION_TYPES, VEHICLE_TYPE_REGISTRY, VEHICLE_STATUS_REGISTRY } from './config/vehicle-asset-config.js';
 // Vehicle Compliance & Financial History — STNK/tax renewal ledger. See
@@ -184,6 +183,7 @@ import {
   renderAnalyticsChart,
   renderAnalyticsTabPanels,
   anIcon,
+  vehicleTypeIconName,
   renderEyebrow,
   renderHeroSection,
   renderHighlights,

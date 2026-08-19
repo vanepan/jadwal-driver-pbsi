@@ -29,7 +29,6 @@ const read = (rel) => fs.readFileSync(P(rel), 'utf-8');
 
 const dash   = read('js/components/fleet-dashboard.js');
 const drawer = read('js/components/vehicle-detail-drawer.js');
-const icons  = read('js/components/icon-system.js');
 const shell  = read('js/analytics/analytics-shell.js');
 const app    = read('js/app.js');
 const css    = read('platform.css');
@@ -98,8 +97,9 @@ test('Public openVehicleDetailDrawer signature retained', drawer.includes('expor
 test('Drawer uses the single icon engine (no renderIcon)', !drawer.includes('renderIcon'));
 test('No emoji in the drawer', !EMOJI.test(drawer));
 
-section('Icon system — still serves the OTHER (non-vehicle) modules');
-test('icon-system retains vehicleTypeIconName', icons.includes('export function vehicleTypeIconName'));
+section('Icon system — icon-system.js retired (Design System Program Phase 4)');
+test('vehicleTypeIconName relocated to analytics-shell.js', shell.includes('export function vehicleTypeIconName'));
+test('js/components/icon-system.js no longer exists', !fs.existsSync(P('js/components/icon-system.js')));
 
 section('Import integrity — every vehicle-asset-service fn used is imported');
 {

@@ -30,6 +30,7 @@
    Importers should prefer the Executive* aliases; the originals stay valid. */
 import {
   anIcon,
+  vehicleTypeIconName,
   renderEyebrow,
   renderAnalyticsSection,
   renderHeroSection,
@@ -83,6 +84,7 @@ const esc = escHtml;
 /* Canonical re-exports (aliases) */
 export {
   anIcon,
+  vehicleTypeIconName,
   renderHeroSection as ExecutiveHero,
   renderRingGauge as ExecutiveRing,
   renderEyebrow as ExecutiveSection,

@@ -30,9 +30,9 @@ import {
   ExecutiveDrawerTimeline as execDrawerTimeline,
   ExecutiveStatusPill,
   anIcon,
+  vehicleTypeIconName,
   escHtml,
 } from '../analytics/executive-ui-kit.js';
-import { vehicleTypeIconName } from './icon-system.js';
 import { complianceTypeInfo } from '../config/compliance-config.js';
 // v1.29.18 (Phase 7) — Reminder Engine: reads the SAME normalized asset this
 // drawer already renders (tax/insurance doc-status + maintenanceProjection);

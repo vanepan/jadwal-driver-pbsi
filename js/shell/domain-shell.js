@@ -30,6 +30,8 @@
    functions the old panel nav buttons called.
    ============================================================ */
 
+import { anIcon } from '../analytics/analytics-shell.js';
+
 'use strict';
 
 let cfg = null;           // init() config (function refs from app.js)
@@ -40,25 +42,14 @@ let activeDomainId = null;
 let activeModuleKey = null;   // which module within the active domain
 let activeScreenId = null;    // which screen within the active module
 
-/* ── Icon set (adapted from the Claude Design prototype's inline SVGs;
-   thin 1.6px stroke + filled accent dot, drawn with currentColor so
-   they inherit the existing --ink/--accent tokens in both themes). ── */
-const ICONS = {
-  today: '<circle cx="11" cy="11" r="7.4" fill="none" stroke-width="1.6"/><circle cx="11" cy="11" r="1.7" class="domshell-icon-dot"/>',
-  operations: '<line x1="5.5" y1="16.5" x2="16.5" y2="5.5" stroke-width="1.6" stroke-linecap="round"/><circle cx="5.5" cy="16.5" r="1.9" fill="none" stroke-width="1.6"/><circle cx="16.5" cy="5.5" r="1.9" class="domshell-icon-dot"/>',
-  warehouse: '<rect x="4" y="6.5" width="14" height="11" rx="2.2" fill="none" stroke-width="1.6"/><line x1="4" y1="11" x2="18" y2="11" stroke-width="1.6"/><circle cx="11" cy="14.2" r="1.5" class="domshell-icon-dot"/>',
-  finance: '<rect x="4" y="5.5" width="14" height="12" rx="2.2" fill="none" stroke-width="1.6"/><line x1="4" y1="10" x2="18" y2="10" stroke-width="1.6"/><circle cx="14.5" cy="14" r="1.7" class="domshell-icon-dot"/>',
-  engineering: '<polygon points="11,4 16.5,7.3 16.5,14.7 11,18 5.5,14.7 5.5,7.3" fill="none" stroke-width="1.6" stroke-linejoin="round"/><circle cx="11" cy="11" r="1.8" class="domshell-icon-dot"/>',
-  insights: '<line x1="6" y1="16" x2="6" y2="12" stroke-width="2.2" stroke-linecap="round"/><line x1="11" y1="16" x2="11" y2="7" stroke-width="2.2" stroke-linecap="round"/><line x1="16" y1="16" x2="16" y2="9.5" stroke-width="2.2" stroke-linecap="round" class="domshell-icon-accent-stroke"/>',
-  control: '<rect x="4" y="8.3" width="14" height="7.4" rx="3.7" fill="none" stroke-width="1.6"/><circle cx="14.7" cy="12" r="2.5" class="domshell-icon-dot"/>',
-  // v1.30.10.7 — Sarpras Intelligence (a standalone domain, not nested; see
-  // buildDomains()'s own comment on why). A bulb outline (knowledge/reasoning)
-  // + one filled accent dot, matching this set's existing grammar.
-  sarprasIntelligence: '<circle cx="11" cy="9.3" r="5.1" fill="none" stroke-width="1.6"/><line x1="8.7" y1="15.2" x2="13.3" y2="15.2" stroke-width="1.6" stroke-linecap="round"/><circle cx="13.4" cy="7" r="1.5" class="domshell-icon-dot"/>',
-};
-
+/* ── Design System Program Phase 4: rail icons now render through the
+   canonical anIcon() glyph set instead of this file's own local SVG
+   fragments — fixes a pre-existing 1.6/2.2 stroke-width inconsistency and
+   drops the filled-accent-dot quirk as part of consolidation. Domain ids
+   map 1:1 onto anIcon() names (today/operations/warehouse/finance/
+   engineering/insights/control/sarprasIntelligence all resolve). ── */
 function svgIcon(name) {
-  return `<svg width="20" height="20" viewBox="0 0 22 22" fill="none" aria-hidden="true">${ICONS[name] || ''}</svg>`;
+  return anIcon(name, { size: 20, stroke: 1.8 });
 }
 
 /**

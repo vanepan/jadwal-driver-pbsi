@@ -21,6 +21,8 @@
    navigation or rendering.
    ============================================================ */
 
+import { anIcon } from '../analytics/analytics-shell.js';
+
 'use strict';
 
 let cfg = null;
@@ -132,7 +134,7 @@ export function initCommandPalette(c) {
   triggerEl.type = 'button';
   triggerEl.className = 'domshell-palette-trigger';
   triggerEl.setAttribute('aria-label', 'Cari cepat di seluruh workspace');
-  triggerEl.innerHTML = '<svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.6"/><line x1="13.2" y1="13.2" x2="17" y2="17" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span>Cari Cepat</span>';
+  triggerEl.innerHTML = `${anIcon('search', { size: 14, stroke: 1.8 })}<span>Cari Cepat</span>`;
   triggerEl.addEventListener('click', open);
   if (cfg.topbarSearchEl && cfg.topbarSearchEl.parentElement) {
     cfg.topbarSearchEl.parentElement.insertBefore(triggerEl, cfg.topbarSearchEl.nextSibling);

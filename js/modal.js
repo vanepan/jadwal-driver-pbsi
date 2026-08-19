@@ -37,6 +37,7 @@ import { validateOdometer } from './validation.js';
 import { printReimbursementForm } from './reimbursement.js';
 import { getSetting } from './settings-store.js';
 import { openDrawer, closeDrawer } from './components/drawer.js';
+import { anIcon } from './analytics/analytics-shell.js';
 
 /** Live office-hours window (09:00–17:00 default) for overtime detection. */
 function getOfficeHours() {
@@ -298,7 +299,7 @@ function _updateOdometerPreview() {
   if (endOdo >= startOdo) {
     if (distEl) distEl.textContent = `${(endOdo - startOdo).toLocaleString()} km`;
   } else {
-    if (distEl) distEl.textContent = '⚠️ Lebih kecil dari KM Awal';
+    if (distEl) distEl.innerHTML = `${anIcon('alert', { size: 13 })} Lebih kecil dari KM Awal`;
   }
 }
 
@@ -517,7 +518,7 @@ function _buildDetailBodyHtml(a, status, statusLabel) {
     <div class="accord-section accord-section--open" id="accordSummary">
       <button class="accord-header" type="button" aria-expanded="true">
         <span class="accord-title">Ringkasan Jadwal</span>
-        <span class="accord-chevron">▶</span>
+        <span class="accord-chevron">${anIcon('chevR', { size: 12 })}</span>
       </button>
       <div class="accord-body">
         <div class="accord-body-inner" id="detailSummary">
@@ -558,17 +559,17 @@ function _buildDetailBodyHtml(a, status, statusLabel) {
     </div>
 
     <div class="detail-actions-primary" id="detailActionsPrimary">
-      <button class="btn-primary" id="btnStartAssignment" data-drawer-action="start">▶ Mulai Tugas</button>
-      <button class="btn-success" id="btnCompleteAssignment" data-drawer-action="complete">✓ Selesaikan</button>
-      <button class="btn-secondary" id="btnCommentThread" data-drawer-action="comment" style="display:none;">💬 Komentar</button>
-      <button class="btn-danger" id="btnCancelAssignment" data-drawer-action="cancel" style="display:none;">✕ Batalkan</button>
-      <button class="btn-secondary" id="btnOverrideOvertime" data-drawer-action="override" style="display:none;">⏱ Override Lembur</button>
+      <button class="btn-primary" id="btnStartAssignment" data-drawer-action="start">${anIcon('chevR', { size: 14 })} Mulai Tugas</button>
+      <button class="btn-success" id="btnCompleteAssignment" data-drawer-action="complete">${anIcon('check', { size: 14 })} Selesaikan</button>
+      <button class="btn-secondary" id="btnCommentThread" data-drawer-action="comment" style="display:none;">${anIcon('comment', { size: 14 })} Komentar</button>
+      <button class="btn-danger" id="btnCancelAssignment" data-drawer-action="cancel" style="display:none;">${anIcon('x', { size: 14 })} Batalkan</button>
+      <button class="btn-secondary" id="btnOverrideOvertime" data-drawer-action="override" style="display:none;">${anIcon('history', { size: 14 })} Override Lembur</button>
     </div>
 
     <div class="accord-section" id="accordExtra">
       <button class="accord-header" type="button" aria-expanded="false">
         <span class="accord-title">Detail Tambahan</span>
-        <span class="accord-chevron">▶</span>
+        <span class="accord-chevron">${anIcon('chevR', { size: 12 })}</span>
       </button>
       <div class="accord-body">
         <div class="accord-body-inner" id="detailExtra">
@@ -592,7 +593,7 @@ function _buildDetailBodyHtml(a, status, statusLabel) {
     <div class="accord-section" id="accordOps">
       <button class="accord-header" type="button" aria-expanded="false">
         <span class="accord-title">Informasi Operasional</span>
-        <span class="accord-chevron">▶</span>
+        <span class="accord-chevron">${anIcon('chevR', { size: 12 })}</span>
       </button>
       <div class="accord-body">
         <div class="accord-body-inner" id="detailOps">${buildOpsRows(a) || '<p class="detail-empty">Belum ada informasi operasional.</p>'}</div>
@@ -602,7 +603,7 @@ function _buildDetailBodyHtml(a, status, statusLabel) {
     <div class="accord-section${odoRows ? '' : ' accord-section--hidden'}" id="accordOdo">
       <button class="accord-header" type="button" aria-expanded="false">
         <span class="accord-title">Odometer</span>
-        <span class="accord-chevron">▶</span>
+        <span class="accord-chevron">${anIcon('chevR', { size: 12 })}</span>
       </button>
       <div class="accord-body">
         <div class="accord-body-inner" id="detailOdo">${odoRows}</div>
@@ -611,34 +612,34 @@ function _buildDetailBodyHtml(a, status, statusLabel) {
 
     <div class="accord-section" id="accordWA">
       <button class="accord-header" type="button" aria-expanded="false">
-        <span class="accord-title">📱 Ringkasan WhatsApp</span>
-        <span class="accord-chevron">▶</span>
+        <span class="accord-title">${anIcon('comment', { size: 14 })} Ringkasan WhatsApp</span>
+        <span class="accord-chevron">${anIcon('chevR', { size: 12 })}</span>
       </button>
       <div class="accord-body">
         <div class="accord-body-inner">
           <pre id="waPreviewText" class="wa-preview-text">${escapeHTML(generateWAText(a))}</pre>
-          <button class="btn-wa-copy" id="btnCopyWA" data-drawer-action="copyWA">📋 Copy Ringkasan WhatsApp</button>
-          <span class="copy-feedback" id="copyFeedback" style="display:none;">✅ Tersalin!</span>
+          <button class="btn-wa-copy" id="btnCopyWA" data-drawer-action="copyWA">${anIcon('copy', { size: 14 })} Copy Ringkasan WhatsApp</button>
+          <span class="copy-feedback" id="copyFeedback" style="display:none;">${anIcon('check', { size: 13 })} Tersalin!</span>
         </div>
       </div>
     </div>
 
     <div class="accord-section" id="accordReimbursement">
       <button class="accord-header" type="button" aria-expanded="false">
-        <span class="accord-title">📄 Form Reimbursement</span>
-        <span class="accord-chevron">▶</span>
+        <span class="accord-title">${anIcon('file', { size: 14 })} Form Reimbursement</span>
+        <span class="accord-chevron">${anIcon('chevR', { size: 12 })}</span>
       </button>
       <div class="accord-body">
         <div class="accord-body-inner">
           <p class="reimbursement-hint">Buka Form Reimbursement dalam viewer terintegrasi. Mendukung Preview, Download PDF, Print, dan Share langsung dari aplikasi — tanpa popup.</p>
-          <button class="btn-reimbursement" id="btnPrintReimbursement" data-drawer-action="reimbursement">📄 Generate Form Reimbursement</button>
+          <button class="btn-reimbursement" id="btnPrintReimbursement" data-drawer-action="reimbursement">${anIcon('file', { size: 14 })} Generate Form Reimbursement</button>
         </div>
       </div>
     </div>
 
     <div class="detail-actions">
-      <button class="btn-danger" id="btnDeleteAssignment" data-drawer-action="delete">🗑 Hapus</button>
-      <button class="btn-secondary" id="btnEditAssignment" data-drawer-action="edit">✏️ Edit</button>
+      <button class="btn-danger" id="btnDeleteAssignment" data-drawer-action="delete">${anIcon('trash', { size: 14 })} Hapus</button>
+      <button class="btn-secondary" id="btnEditAssignment" data-drawer-action="edit">${anIcon('edit', { size: 14 })} Edit</button>
       <button class="btn-secondary" id="btnCloseDetail2" data-drawer-action="close">Tutup</button>
     </div>`;
 }
@@ -741,7 +742,7 @@ function _wireDetailHandlers(root) {
     try {
       await printReimbursementForm(a);
     } finally {
-      if (btn) { btn.disabled = false; btn.textContent = '📄 Generate Form Reimbursement'; }
+      if (btn) { btn.disabled = false; btn.innerHTML = `${anIcon('file', { size: 14 })} Generate Form Reimbursement`; }
     }
   });
 }

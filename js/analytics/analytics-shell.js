@@ -376,7 +376,6 @@ const AN_ICON_PATHS = {
   x:        'M6 6l12 12M18 6 6 18',
   spark:    'M12 2v6M12 16v6M4.9 4.9l4.2 4.2M14.9 14.9l4.2 4.2M2 12h6M16 12h6',
   trend:    'M3 17l6-6 4 4 7-7M14 8h6v6',
-  pin2:     '',
   chart:    'M4 20V10M10 20V4M16 20v-7M22 20H2',
   sparkle:  'M12 3l1.6 4.8L18 9.4l-4.4 1.6L12 16l-1.6-5L6 9.4l4.4-1.6zM19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8z',
   filter:   'M3 5h18l-7 8v5l-4 2v-7z',
@@ -417,24 +416,35 @@ const AN_ICON_PATHS = {
   'status-active':      'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-3.5 9 2.5 2.5L16 9',
   'status-inactive':    'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18ZM9 9l6 6M15 9l-6 6',
   'status-maintenance': 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18ZM8 15a4.5 4.5 0 0 0 8 0M9 9.5h.01M15 9.5h.01',
-  'legal-valid':        'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-3.5 9 2.5 2.5L16 9',
-  'legal-warning':      'M10.3 4.3 2.6 18a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0ZM12 9v4M12 17h.01',
   'legal-expired':      'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18ZM8 15h8M9 9.5h.01M15 9.5h.01',
-  'health-ok':          'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-3.5 9 2.5 2.5L16 9',
   'health-info':        'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 5.5h.01M12 11v5',
-  'health-warn':        'M10.3 4.3 2.6 18a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0ZM12 9v4M12 17h.01',
-  'health-danger':      'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18ZM9 9l6 6M15 9l-6 6',
   archive:        'M3 7h18M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M4 7l1.4-2.7A1 1 0 0 1 6.3 4h11.4a1 1 0 0 1 .9.3L20 7M10 12h4',
   // ── v1.18.5 Executive UI Sprint 3 — Dispatch Analytics glyph port.
   //    Outline only, currentColor, 24×24. No emoji.
   repeat:         'M4 9a5 5 0 0 1 5-5h8M17 4l3 3-3 3M20 15a5 5 0 0 1-5 5H7M7 20l-3-3 3-3',
-  target:         'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 4a5 5 0 1 0 0 10 5 5 0 0 0 0-10Zm0 4a1 1 0 1 0 0 2 1 1 0 0 0 0-2Z',
   bulb:           'M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.45 1 1.15 1.1 1.9l.1.8h4.8l.1-.8c.1-.75.5-1.45 1.1-1.9A6 6 0 0 0 12 3Z',
   inbox:          'M3 13h5l1.5 2.5h5L16 13h5M3 13l3-8h12l3 8M3 13v5a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-5',
+  // ── Design System Program Phase 4 — icon consolidation. New custom glyphs
+  //    for concepts with no prior good fit (domain-shell rail, notifications,
+  //    NOR). Same grammar as everything above: 24×24, outline stroke, simple
+  //    multi-primitive paths, no filled accents.
+  bell:           'M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0',
+  nor:            'M12 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6.5M12 3l5 5M12 3v4a1 1 0 0 0 1 1h4M17.5 14.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm-1.4 3.6 1 1 1.9-2',
+  warehouse:      'M3 10 12 4l9 6M5 10v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-9M9 20v-5h6v5M5 14h14',
+  control:        'M4 8h16a4 4 0 0 1 0 8H4a4 4 0 0 1 0-8Zm13 4h.01',
+  today:          'M12 5v-1.5M12 20.5V19M5 12H3.5M20.5 12H19M6.5 6.5l-1-1M18.5 6.5l1-1M6.5 17.5l-1 1M18.5 17.5l1 1M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z',
+  operations:     'M5.5 17.5 17.5 5.5M5.5 17.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm12-12a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z',
+  comment:        'M4 4h16a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H9l-4 4v-4H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z',
+  copy:           'M8 8h11a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1ZM5 16H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1v1',
+  trash:          'M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M10 11v6M14 11v6',
+  edit:           'M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z',
 };
 
 /* Sprint-2 alias map: vehicle-surface icon names that resolve to an EXISTING
-   glyph (no duplicate paths). Resolved inside anIcon(). */
+   glyph (no duplicate paths). Resolved inside anIcon(). Phase 4 added the
+   collapsed status/legal/health/target duplicates (kept as aliases so every
+   existing caller keeps working unchanged) and the domain-shell semantic
+   names that already have a same-meaning glyph. */
 const AN_ICON_ALIASES = {
   'doc-tax':       'tax',
   'doc-shield':    'insurance',
@@ -444,6 +454,20 @@ const AN_ICON_ALIASES = {
   'vehicle-car':   'vehicle',
   'vehicle-motorcycle': 'motorcycle',
   'vehicle-ambulance':  'ambulance',
+  // Phase 4 — collapsed exact-duplicate paths down to one canonical key.
+  'legal-warning': 'alert',
+  'health-warn':   'alert',
+  'legal-valid':   'status-active',
+  'health-ok':     'status-active',
+  'health-danger': 'status-inactive',
+  target:          'recommendation',
+  // Phase 4 — domain-shell semantic names that already have a fitting glyph.
+  finance:         'pettycash',
+  engineering:     'maintenance',
+  insights:        'analytics',
+  sarprasIntelligence: 'bulb',
+  driver:          'user',
+  info:            'health-info',
 };
 
 /**
@@ -456,6 +480,19 @@ export function anIcon(name, { size = 16, stroke = 2, fill = false, cls = '' } =
   const d = AN_ICON_PATHS[resolved] || '';
   const classAttr = cls ? ` class="${cls}"` : '';
   return `<svg${classAttr} width="${size}" height="${size}" viewBox="0 0 24 24" fill="${fill ? 'currentColor' : 'none'}" stroke="${fill ? 'none' : 'currentColor'}" stroke-width="${stroke}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
+}
+
+/* Design System Program Phase 4 — relocated from the now-retired
+   js/components/icon-system.js (its only real usage was this mapping, fed
+   into anIcon(); the file's own separate ICONS/renderIcon() were dead for
+   both real consumers). Maps a vehicle TYPE key to an anIcon() name. */
+const VEHICLE_TYPE_ICONS = {
+  mobil:     'vehicle-car',
+  motor:     'vehicle-motorcycle',
+  ambulance: 'vehicle-ambulance',
+};
+export function vehicleTypeIconName(typeKey) {
+  return VEHICLE_TYPE_ICONS[String(typeKey || '').toLowerCase()] || 'vehicle-car';
 }
 
 /**
