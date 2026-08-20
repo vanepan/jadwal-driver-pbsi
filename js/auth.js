@@ -9,7 +9,6 @@
 
 import { getUserByUsername, initUsersSync } from './users.js';
 import { logAction } from './logs.js';
-import { showToast } from './utils.js';
 import { cleanupPushOnLogout } from './push.js';
 import {
   callVerifyPin,
@@ -26,6 +25,8 @@ import {
   isEngineeringRole,
   ENGINEERING_ROLE,
 } from './config/role-registry.js';
+import { runSaveFeedback } from './components/save-feedback.js';
+import { playLoginSuccessTransition, playLogoutExitTransition } from './components/entry-transition.js';
 
 const SESSION_KEY = 'pbsi_current_user';
 
@@ -79,11 +80,15 @@ let authChangeCallback = null;
  * Login dengan username + PIN.
  * Routes to Firebase custom auth (default) or the legacy client-side
  * PIN path when AUTH_DIRECT_PIN break-glass is active.
- * Returns the session user on success, or null on failure (so the
- * login form can surface its error UI) — never throws.
+ * Resolves the session user on success. Throws an Error with a
+ * user-facing message on any failure (invalid credentials or an
+ * infra/outage) — this is the contract js/components/save-feedback.js's
+ * runSaveFeedback() already expects from an `operation`, so the login
+ * submit button drives the same saving→success/error state machine as
+ * every other async save in the app (Design System Program Phase 6).
  * @param {string} username
  * @param {string} pin
- * @returns {Promise<Object|null>}
+ * @returns {Promise<Object>}
  */
 export async function login(username, pin) {
   return isDirectPinMode()
@@ -102,16 +107,17 @@ async function loginViaFirebase(username, pin) {
     data = await callVerifyPin(String(username).trim(), String(pin).trim());
   } catch (err) {
     const code = String(err?.code || '');
-    // Auth failures (wrong PIN / unknown user / bad input) → silent null
-    // so the form shows its standard error. Anything else is an outage.
+    // Auth failures (wrong PIN / unknown user / bad input) get a specific
+    // message; anything else is an outage — both surface inline through the
+    // caller's save-feedback error region, same as every other async save.
     if (!/unauthenticated|invalid-argument|not-found|permission-denied/.test(code)) {
       console.error('[auth] verifyPin error:', err);
-      showToast('Login sementara tidak tersedia. Coba lagi sebentar.');
+      throw new Error('Login sementara tidak tersedia. Coba lagi sebentar.');
     }
-    return null;
+    throw new Error('Username atau PIN tidak dikenal.');
   }
 
-  if (!data || !data.token) return null;
+  if (!data || !data.token) throw new Error('Username atau PIN tidak dikenal.');
 
   const p = data.profile || {};
   const sessionUser = {
@@ -128,25 +134,29 @@ async function loginViaFirebase(username, pin) {
   } catch (err) {
     console.error('[auth] signInWithCustomToken failed:', err);
     localStorage.removeItem(SESSION_KEY);
-    showToast('Gagal membuat sesi. Coba lagi.');
-    return null;
+    throw new Error('Gagal membuat sesi. Coba lagi.');
   }
 
   // Signed in now → audit write passes auth != null rules.
   logAction({ userId: sessionUser.id, username: sessionUser.username, action: 'login' });
   notifyAuthChange();
-  closeLoginModal();
+  // closeLoginModal() is deliberately NOT called here — the login→shell
+  // success transition (handleLoginSubmit's onSuccess) owns closing the
+  // modal now, as the last step of its own choreography. notifyAuthChange()
+  // above still calls updateAuthUI() → closeLoginModal(), but that call is
+  // a no-op for the duration of the transition (see _deferLoginClose).
   return sessionUser;
 }
 
 /**
  * Legacy client-side PIN comparison (break-glass only).
- * Preserved verbatim from the pre-v1.11.1.2 flow.
+ * Preserved verbatim from the pre-v1.11.1.2 flow, apart from throwing
+ * instead of returning null on failure (see login()'s doc comment).
  */
 async function loginLegacy(username, pin) {
   const user = await getUserByUsername(String(username).trim());
   if (!user || !user.active || user.pin !== String(pin).trim()) {
-    return null;
+    throw new Error('Username atau PIN tidak dikenal.');
   }
 
   const sessionUser = {
@@ -160,7 +170,6 @@ async function loginLegacy(username, pin) {
   localStorage.setItem(SESSION_KEY, JSON.stringify(sessionUser));
   logAction({ userId: user.id, username: user.username, action: 'login' });
   notifyAuthChange();
-  closeLoginModal();
   return sessionUser;
 }
 
@@ -220,20 +229,30 @@ export async function logout() {
     return;
   }
 
-  // Push cleanup BEFORE signOut — the callable needs the live auth
-  // session. A logged-out device must stop receiving push; siblings
-  // keep working (per-device record). Best-effort, never blocks logout.
-  try {
-    await cleanupPushOnLogout();
-  } catch (err) {
-    console.warn('[auth] push cleanup on logout failed:', err);
-  }
+  // Design System Program Phase 6 — the shell's brief exit animation plays
+  // CONCURRENTLY with the real sign-out work below, not before it, so the
+  // coherent inverse transition never adds latency on top of the network
+  // calls (logout must never feel slower than before). Both are awaited
+  // together; whichever finishes first waits for the other.
+  await Promise.all([
+    playLogoutExitTransition({ shellEl: document.querySelector('.app-layout') }),
+    (async () => {
+      // Push cleanup BEFORE signOut — the callable needs the live auth
+      // session. A logged-out device must stop receiving push; siblings
+      // keep working (per-device record). Best-effort, never blocks logout.
+      try {
+        await cleanupPushOnLogout();
+      } catch (err) {
+        console.warn('[auth] push cleanup on logout failed:', err);
+      }
 
-  try {
-    await firebaseSignOut();
-  } catch (err) {
-    console.error('[auth] signOut failed:', err);
-  }
+      try {
+        await firebaseSignOut();
+      } catch (err) {
+        console.error('[auth] signOut failed:', err);
+      }
+    })(),
+  ]);
   localStorage.removeItem(SESSION_KEY);
   // Reload to a clean unauthenticated state: detaches RTDB listeners
   // that would otherwise hit permission_denied under auth != null rules.
@@ -488,26 +507,57 @@ export function getRoleLabel(role) {
 async function handleLoginSubmit(event) {
   event.preventDefault();
 
+  const form = event.target;
   const usernameInput = document.getElementById('loginUsername');
   const pinInput = document.getElementById('loginPin');
   const errorEl = document.getElementById('loginError');
+  const submitBtn = form.querySelector('.login-submit');
 
   const username = usernameInput ? usernameInput.value.trim() : '';
   const pin = pinInput ? pinInput.value.trim() : '';
-  const user = await login(username, pin);
 
-  if (!user) {
-    if (errorEl) errorEl.style.display = 'block';
-    if (pinInput) {
-      pinInput.value = '';
-      pinInput.focus();
-    }
-    return;
-  }
+  // Design System Program Phase 6 — the login button now drives the same
+  // canonical saving→success/error state machine as every other async save
+  // in the app (js/components/save-feedback.js), instead of a bespoke
+  // disable/re-enable dance. login() throws on failure; runSaveFeedback
+  // catches that and shows it inline via #loginError automatically.
+  //
+  // _deferLoginClose is set for the WHOLE attempt, not just after success:
+  // login() calls notifyAuthChange() internally the instant Firebase auth
+  // resolves — synchronously inside operation(), well before onSuccess runs
+  // — and the onAuthStateChanged side-channel can fire the same call again
+  // independently. Both would otherwise instantly display:none the modal
+  // underneath the still-playing transition if the flag were only set once
+  // onSuccess starts.
+  _deferLoginClose = true;
 
-  if (errorEl) errorEl.style.display = 'none';
-  if (pinInput) pinInput.value = '';
-  if (usernameInput) usernameInput.value = '';
+  await runSaveFeedback({
+    button: submitBtn,
+    alsoDisable: [usernameInput, pinInput].filter(Boolean),
+    errorRegion: errorEl,
+    operation: async () => ({ ok: true, user: await login(username, pin) }),
+    onSuccess: async () => {
+      if (pinInput) pinInput.value = '';
+      if (usernameInput) usernameInput.value = '';
+      try {
+        await playLoginSuccessTransition({
+          cardBodyEl: document.querySelector('.login-card-body'),
+          brandMarkEl: document.querySelector('.login-brand-crest'),
+          loginScreenEl: document.getElementById('modalLogin'),
+        });
+      } finally {
+        _deferLoginClose = false;
+        closeLoginModal();
+      }
+    },
+    onError: () => {
+      _deferLoginClose = false;
+      if (pinInput) {
+        pinInput.value = '';
+        pinInput.focus();
+      }
+    },
+  });
 }
 
 function restoreSession() {
@@ -585,7 +635,18 @@ function initLoginKeyboardUX() {
   }
 }
 
+// Set for the duration of the login→shell success transition (see
+// handleLoginSubmit's onSuccess). While true, closeLoginModal() no-ops —
+// otherwise the auth-state listener's own notifyAuthChange()/updateAuthUI()
+// call (fired by the onAuthStateChanged side-channel signInWithToken()
+// triggers) would instantly display:none the modal underneath the still-
+// playing transition, recreating the hard cut this phase exists to remove.
+// Session restore never sets this flag, so its closeLoginModal() calls are
+// unaffected — always instant, exactly as before.
+let _deferLoginClose = false;
+
 function closeLoginModal() {
+  if (_deferLoginClose) return;
   const modal = document.getElementById('modalLogin');
   if (modal) {
     modal.style.display = 'none';

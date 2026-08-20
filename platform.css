@@ -778,6 +778,42 @@ html.theme-anim *::after {
   to   { opacity: 1; transform: none; }
 }
 
+/* ============================================================
+   BRAND MARK — Design System Program Phase 6: Entry Transition
+   One shared badge recipe for the PBSI crest, used at boot splash
+   and login (pre-auth contexts). Neutral surface + border + soft
+   shadow — deliberately NOT accent-filled, so the crest reads as
+   one consistent object as it scales between contexts, including
+   into js/shell/domain-shell.js's .domshell-rail-logo (32px,
+   already neutral-badge styled, unchanged by this phase) at the
+   end of the login→shell transition.
+   ============================================================ */
+.brand-mark {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  background: #fff;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.brand-mark img { width: 100%; height: 100%; object-fit: contain; padding: 8px; }
+.brand-mark--login  { width: 56px; height: 56px; border-radius: 15px; }
+.brand-mark--splash { width: 76px; height: 76px; border-radius: 18px; margin-bottom: 14px; }
+[data-theme="dark"] .brand-mark { background: var(--surface); }
+
+/* Restrained brand reveal — replaces an instant/static splash logo with a
+   single settle-in beat. Uses the app's Phase 3 motion tokens (SCENE_MS /
+   EASE_ARRIVE) rather than inventing new timing. */
+@keyframes brand-mark-reveal {
+  from { opacity: 0; transform: scale(.92); }
+  to   { opacity: 1; transform: none; }
+}
+.app-splash-inner .brand-mark--splash { animation: brand-mark-reveal 550ms cubic-bezier(.16,1,.3,1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .app-splash-inner .brand-mark--splash { animation: none; }
+}
+
 /* Brand row */
 .login-brand {
   display: flex;
@@ -786,27 +822,9 @@ html.theme-anim *::after {
   margin-bottom: 26px;
 }
 .login-brand-crest {
-  width: 46px;
-  height: 46px;
-  border-radius: 13px;
-  background: var(--accent);
-  color: var(--on-accent);
-  display: grid;
-  place-items: center;
+  color: var(--text);
   font-weight: 800;
   font-size: 20px;
-  flex-shrink: 0;
-  /* Inset shadow + outer crimson ring for brand presence on glass card */
-  box-shadow:
-    var(--shadow-sm),
-    0 0 0 3px rgba(168, 41, 47, 0.12);
-  overflow: hidden;
-}
-.login-brand-crest img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  padding: 5px;
 }
 .login-brand-name {
   font-size: 15px;
@@ -873,18 +891,20 @@ html.theme-anim *::after {
 }
 .login-card .form-group input::placeholder { color: var(--faint); }
 
-/* Error message */
+/* Error message — [hidden]-driven, matching the canonical save-feedback.js
+   error region pattern (.sf-inline-error[hidden] / .sf-field-error[hidden]).
+   runSaveFeedback() toggles the `hidden` attribute directly; no .visible
+   class exists to fight it. */
 .login-error-v2 {
-  display: none;
+  display: flex;
   font-size: 11.5px;
   color: var(--danger);
   margin: 6px 0 10px;
-  display: none;
   align-items: center;
   gap: 6px;
   min-height: 16px;
 }
-.login-error-v2.visible { display: flex; }
+.login-error-v2[hidden] { display: none; }
 .login-error-v2 svg { width: 13px; height: 13px; flex-shrink: 0; }
 
 /* Submit button */
@@ -910,60 +930,6 @@ html.theme-anim *::after {
 .login-submit:active { filter: brightness(.86); }
 .login-submit svg    { width: 15px; height: 15px; }
 
-/* Quick access section */
-.login-quick {
-  margin-top: 22px;
-  padding-top: 18px;
-  border-top: 1px solid var(--border);
-}
-.login-quick-label {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  color: var(--faint);
-  margin-bottom: 9px;
-}
-.login-quick-chips {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 7px;
-}
-.login-quick-chip {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 9px 10px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--input-bg);
-  cursor: pointer;
-  text-align: left;
-  font-family: inherit;
-  transition: border-color .14s, background .14s, transform .1s;
-}
-.login-quick-chip:hover {
-  border-color: var(--accent);
-  background: var(--surface);
-  transform: translateY(-1px);
-}
-.login-quick-chip:active { transform: none; }
-.login-chip-ic {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-}
-.login-chip-ic svg { width: 14px; height: 14px; }
-.login-chip-ic.admin    { background: var(--danger-bg); color: var(--danger); }
-.login-chip-ic.bidang   { background: var(--info-bg);   color: var(--info);   }
-.login-chip-ic.driver   { background: var(--warn-bg);   color: var(--warn);   }
-.login-chip-ic.engineering { background: var(--ok-bg);  color: var(--ok);     }
-.login-chip-name  { font-size: 12px;   font-weight: 600; line-height: 1.1; color: var(--text);  display: block; }
-.login-chip-uname { font-size: 10px;   color: var(--faint); margin-top: 1px; display: block; font-family: 'JetBrains Mono', monospace; }
-
 /* Footer */
 .login-foot-text {
   text-align: center;
@@ -979,9 +945,24 @@ html.theme-anim *::after {
     padding: 28px 22px 22px;
     border-radius: 16px;
   }
-  .login-quick-chips {
-    grid-template-columns: 1fr;
-  }
+}
+
+/* login-card-body fades as a single unit during the login→shell success
+   transition (js/components/entry-transition.js) — the wrapper itself
+   carries no visual styling, purely a fade target. */
+.login-card-body { }
+
+/* Shell reveal — applied briefly to .domshell-rail / .main-area by
+   entry-transition.js once the login overlay is hidden, so the shell
+   settles in rather than appearing as a hard cut. Reused for the
+   session-restore boot path too (same restrained beat either way). */
+@keyframes entry-reveal {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+.entry-reveal { animation: entry-reveal 240ms cubic-bezier(.16,1,.3,1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .entry-reveal { animation: none; }
 }
 
 
@@ -1097,16 +1078,6 @@ html.theme-anim *::after {
    Scope: Header · Navigation · Notifications
    Does NOT activate any feature flag or V2 shell.
    ============================================================ */
-
-
-/* ── 1. Login: Hide dev-only Masuk Cepat section ────────────
-   OVERRIDE: loginQuickAccess hidden in production per ROADMAP.md.
-   Re-enable for local dev by toggling this rule off in DevTools.
-   Permanent gate via devMode flag is planned for a future sprint.
-   ──────────────────────────────────────────────────────────── */
-#loginQuickAccess {
-  display: none;
-}
 
 
 /* ── 2. Header ───────────────────────────────────────────────
@@ -6789,7 +6760,6 @@ html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: #4C556A; }
 
 /* Login screen */
 .login-submit:focus-visible     { outline: 2px solid var(--accent); outline-offset: 3px; }
-.login-quick-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* Placeholder contrast — Firefox normalisation (opacity:1 default in Chrome) */
 ::placeholder { opacity: 1; }
@@ -7472,14 +7442,9 @@ textarea:disabled { opacity: 0.55; }
 /* Sarpras Operations logo above the wordmark. Explicit box (matches the
    width/height attributes on the <img>) so there is no layout shift while
    the asset decodes. Responsive size handled below. */
-.app-splash-logo {
-  width: 72px;
-  height: 72px;
-  display: block;
-  margin-bottom: 14px;
-  object-fit: contain;
-  border-radius: 16px;
-}
+/* Sizing/chrome now lives on the .brand-mark--splash wrapper (Phase 6);
+   this class just marks the <img> itself for the mobile query below. */
+.app-splash-logo { display: block; }
 
 .app-splash-name {
   margin: 0;
@@ -7511,11 +7476,23 @@ textarea:disabled { opacity: 0.55; }
   border-radius: 50%;
   border: 2px solid var(--border, rgba(0, 0, 0, 0.12));
   border-top-color: var(--accent, #C62828);
-  animation: startup-spin 0.75s linear infinite;
+  opacity: 0;
+  /* Delayed fade-in: a fast boot never shows this at all — the ring only
+     becomes visible if still on screen after ~380ms, so it reads as "loading
+     is taking a moment" rather than a spinner dominating every launch. */
+  animation:
+    startup-spin 0.75s linear infinite,
+    startup-spinner-in 160ms ease 380ms forwards;
 }
 
 @keyframes startup-spin {
   to { transform: rotate(360deg); }
+}
+@keyframes startup-spinner-in {
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-splash-spinner { animation: none; opacity: .8; }
 }
 
 /* ── Dark-mode overrides ────────────────────────────────────────
@@ -7533,7 +7510,7 @@ textarea:disabled { opacity: 0.55; }
 
 /* Mobile: slightly smaller splash logo (applied pre-paint → no layout shift). */
 @media (max-width: 480px) {
-  .app-splash-logo { width: 60px; height: 60px; margin-bottom: 12px; }
+  .brand-mark--splash { width: 64px; height: 64px; margin-bottom: 12px; }
 }
 
 
