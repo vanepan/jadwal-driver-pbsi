@@ -85,7 +85,13 @@ const result = await page.evaluate(async () => {
     overrideRecord,
   }, { now: '2026-06-25T13:30:00', onExport: (fmt) => { window.__lastExport = fmt; } });
 
-  const root = document.getElementById('decisionReplayDrawer');
+  // Design System Program Phase 8.2 — the drawer now renders through the
+  // canonical shell (js/components/drawer.js): overlay id is appDrawerOverlay,
+  // panel class is .drawer (not #decisionReplayDrawer/.drx-sheet), and the
+  // Tutup button is the canonical footer's [data-drawer-action="close"]
+  // (not a hand-rolled #drxCloseBtn). The export menu keeps its own ids
+  // (#drxExportBtn etc.) since it's still hand-wired content, unlike Tutup.
+  const root = document.getElementById('appDrawerOverlay');
   const q = (s) => root.querySelector(s);
   const titles = [...root.querySelectorAll('.drx-sec__title')].map((e) => e.textContent.trim());
 
@@ -93,24 +99,34 @@ const result = await page.evaluate(async () => {
   const firstRankBtn = root.querySelector('.drx-rank__btn');
   if (firstRankBtn) firstRankBtn.click();
   const rankExpanded = root.querySelector('.drx-rank__item[data-expanded="true"]') != null;
+  const rankExpandedAria = firstRankBtn ? firstRankBtn.getAttribute('aria-expanded') === 'true' : false;
+
+  // The "Decision Replay" section is no longer reliably the first .drx-sec by
+  // DOM position (the relocated recommendation-hero .drx-rec block now sits
+  // before it as a sibling <div>, which breaks a positional :first-of-type
+  // selector) — find it by its section title instead, which is robust to
+  // structure and clearer about intent either way.
+  const replaySection = [...root.querySelectorAll('.drx-sec')]
+    .find((s) => (s.querySelector('.drx-sec__title') || {}).textContent?.trim() === 'Decision Replay');
 
   const styleEl = document.getElementById('drx-drawer-styles');
   return {
     state: pkg.state,
     hasDrawer: !!root,
-    sheet: !!q('.drx-sheet'),
+    sheet: !!q('.drawer'),
     recDriver: (q('.drx-rec__v') || {}).textContent || '',
     stars: (q('.drx-stars') || {}).textContent || '',
     sectionTitles: titles,
-    replayStages: root.querySelectorAll('#decisionReplayDrawer .drx-sec:first-of-type .drx-tl li').length,
+    replayStages: replaySection ? replaySection.querySelectorAll('.drx-tl li').length : 0,
     whyItems: root.querySelectorAll('.drx-why li').length,
     cmpCards: root.querySelectorAll('.drx-cmp__cand').length,
     bdRows: root.querySelectorAll('.drx-bd__row').length,
     rankItems: root.querySelectorAll('.drx-rank__item').length,
     rankExpanded,
+    rankExpandedAria,
     timelineItems: root.querySelectorAll('.drx-tl li').length,
     overrideShown: titles.some((t) => t.includes('Override')),
-    closeBtn: !!q('#drxCloseBtn'),
+    closeBtn: !!q('[data-drawer-action="close"]'),
     exportBtn: !!q('#drxExportBtn'),
     exportPdf: !!q('#drxExportPdf'),
     exportExcel: !!q('#drxExportExcel'),
@@ -135,6 +151,7 @@ check('why-not comparison cards render (Features 3/4)', result.cmpCards >= 1);
 check('score breakdown rows render (Feature 5)', result.bdRows === 2);
 check('candidate ranking rows render (Feature 9)', result.rankItems >= 2);
 check('ranking row expands on click (Feature 9 expandable)', result.rankExpanded);
+check('ranking row toggle syncs aria-expanded (Phase 8.2 a11y bump)', result.rankExpandedAria);
 check('override analysis section present (Feature 8)', result.overrideShown);
 check('lifecycle timeline renders (Feature 11)', result.timelineItems >= 6);
 
@@ -170,10 +187,31 @@ await shot('decision-replay-mobile-light.png');
 
 // On mobile the sheet is full-width; nothing should exceed the viewport.
 const overflow = await page.evaluate(() => {
-  const sheet = document.querySelector('.drx-sheet');
+  const sheet = document.querySelector('.drawer');
   return sheet ? sheet.offsetWidth <= window.innerWidth + 2 : true;
 });
 check('mobile sheet does not exceed viewport width', overflow);
+
+// Phase 8.2 — panel-width risk: the canonical .drawer is min(440px, 92vw),
+// narrower than the old hand-rolled .drx-sheet's min(560px, 100%). Confirm no
+// content row overflows the narrower panel at desktop width.
+await page.setViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
+await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'));
+await new Promise((r) => setTimeout(r, 250));
+const panelOverflow = await page.evaluate(() => {
+  const panel = document.querySelector('.drawer');
+  if (!panel) return { ok: false, offenders: ['no .drawer found'] };
+  const panelRect = panel.getBoundingClientRect();
+  const offenders = [];
+  panel.querySelectorAll('.drx-bd__row, .drx-rec, .drx-cmp__cand, .drx-rank__btn').forEach((row) => {
+    const r = row.getBoundingClientRect();
+    if (r.right > panelRect.right + 1) offenders.push(row.className);
+  });
+  return { ok: offenders.length === 0, offenders };
+});
+check('no content row overflows the narrower canonical panel (440px vs old 560px)', panelOverflow.ok);
+if (!panelOverflow.ok) console.log('   • overflowing:', panelOverflow.offenders.join(', '));
+await shot('decision-replay-panel-width-check.png');
 
 await browser.close();
 server.close();

@@ -223,25 +223,42 @@ console.log('\n[Part E — Wiring integrity: app.js/index.html actually mount Gu
   check('canAccessModule has a real, non-dev-only "gudang" case', /case 'gudang':\s*return false;/.test(appJs));
 }
 
-/* ── Part F — v1.29.9 (Part F, Accessibility): drawer focus-on-open ────── */
-console.log('\n[Part F — Item/Asset Detail drawer moves focus into itself on open, without fighting async re-renders]');
+/* ── Part F — Design System Program Phase 10 (Canonical Drawer Migration):
+   Item/Asset Detail no longer hand-rolls its own scrim/focus-on-open/
+   role="dialog" — it renders through js/components/drawer.js, which
+   already owns all of that (verified end-to-end, including a real
+   Puppeteer focus/role/focus-trap/safe-area run, by
+   drawer-consolidation-check.mjs and the new
+   gudang-drawer-migration-check.mjs — this Part only confirms Gudang's
+   OWN side of the wiring: that it actually calls into the canonical shell
+   instead of a parallel implementation). ────────────────────────────── */
+console.log('\n[Part F — Item/Asset Detail drawer routes through the canonical drawer shell (Phase 10)]');
 {
-  // Can't drive this end-to-end via gudang-ui-interaction-check.mjs's real
-  // Puppeteer clicks — that harness has no live catalog (this environment
-  // has no Firebase credentials, per its own documented "HONEST LIMIT"),
-  // so there is no real catalog card / search result to click. Verified
-  // statically instead, the same way every other not-live-testable
-  // wiring fact in this Part already is.
   const centerCode = read('js/gudang/ui/gudang-center.js');
-  check('gudang-center.js defines a ONE-TIME focusDrawerOnOpen() (direct .focus(), not routed through the persistent st._focusAct/restoreFocus() mechanism that re-applies on every render)',
-    /function focusDrawerOnOpen\(\)\s*\{\s*host\.querySelector\('\[data-act="gud-detail-close"\]'\)\?\.focus\(\);\s*\}/.test(centerCode));
-  const detailOpenSites = centerCode.match(/st\.detail = \{[^}]*\};?[\s\S]{0,120}/g) || [];
-  check('every st.detail = {...} open site (gud-open-item, gud-open-asset, resolveSearchIntent) is followed by focusDrawerOnOpen()',
-    detailOpenSites.length >= 3 && detailOpenSites.every((s) => s.includes('focusDrawerOnOpen()')));
+  check('gudang-center.js imports openDrawer/closeDrawer/refreshDrawerBody from the canonical shell',
+    /import\s*\{\s*openDrawer,\s*closeDrawer,\s*refreshDrawerBody\s*\}\s*from\s*['"]\.\.\/\.\.\/components\/drawer\.js['"]/.test(centerCode));
+  check('syncGudangDetailDrawer() opens a NEW record via openDrawer(), not a hand-rolled scrim',
+    /function syncGudangDetailDrawer[\s\S]{0,900}openDrawer\(\{/.test(centerCode));
+  check('syncGudangDetailDrawer() refreshes the SAME open record via refreshDrawerBody() (preserves scroll/focus instead of a full close/reopen)',
+    /function syncGudangDetailDrawer[\s\S]{0,900}refreshDrawerBody\(body\)/.test(centerCode));
+  check('syncGudangDetailDrawer() closes via closeDrawer() when st.detail is cleared',
+    /function syncGudangDetailDrawer[\s\S]{0,400}closeDrawer\(\)/.test(centerCode));
+  check('render() calls syncGudangDetailDrawer() on every pass — every st.detail mutation (gud-open-item, gud-open-asset, resolveSearchIntent, Escape, scrim-adjacent closes) eventually flows through the same sync point, not one focus call per open site',
+    /host\.innerHTML = `[\s\S]{0,200}`;[\s\S]{0,200}syncGudangDetailDrawer\(c\);/.test(centerCode));
+  check('the drawer overlay\'s onClose callback nulls st.detail and re-renders (keeps Gudang state in sync when the canonical shell closes itself — backdrop click, Escape, X button)',
+    /onClose:\s*\(\)\s*=>\s*\{\s*st\.detail = null;\s*render\(\);\s*\}/.test(centerCode));
 
   const detailCode = read('js/gudang/ui/gudang-item-detail.js');
-  check('the drawer itself declares role="dialog" aria-modal="true" with a dynamic aria-label (matches the mobile filter sheet\'s own existing pattern)',
-    /<div class="gud-drawer" role="dialog" aria-modal="true" aria-label="\$\{esc\(title\)\}">/.test(detailCode));
+  check('gudang-item-detail.js no longer defines its own drawerShell() (the old .gud-scrim/.gud-drawer/role=dialog hand-roll)',
+    !/function drawerShell/.test(detailCode));
+  check('renderItemDetail/renderAssetDetail now return { title, body } for the canonical shell to consume, not a full HTML shell string',
+    /return \{ title: item\.name, body \};/.test(detailCode) && /return \{ title: item \? item\.name : asset\.identity, body \};/.test(detailCode));
+
+  const drawerCode = read('js/components/drawer.js');
+  check('the canonical shell itself still declares role="dialog" aria-modal="true" with a dynamic aria-label (the guarantee Gudang now inherits instead of re-declaring)',
+    /<aside class="drawer" role="dialog" aria-modal="true" aria-label="\$\{esc\(title\)\}">/.test(drawerCode));
+  check('the canonical shell still moves focus to its own close button on open (the guarantee Gudang now inherits instead of a manual focusDrawerOnOpen())',
+    /const first = overlay\.querySelector\('\.drawer__close'\);\s*if \(first\) first\.focus\(\);/.test(drawerCode));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -79,7 +79,12 @@ const result = await page.evaluate(async () => {
   const targetId = firstRow ? firstRow.getAttribute('data-row-id') : null;
   const driver = svc.findDriverWellness(model, targetId);
   drawer.openDriverWellnessDrawer(driver);
-  const drw = document.getElementById('driverWellnessDrawer');
+  // Design System Program Phase 8.2 — the drawer now renders through the
+  // canonical shell (js/components/drawer.js): overlay id is appDrawerOverlay,
+  // panel class is .drawer (not #driverWellnessDrawer/.dwd-sheet), and the
+  // Tutup button is the canonical footer's [data-drawer-action="close"]
+  // (not a hand-rolled #dwdCloseBtn). This drawer has no export widget.
+  const drw = document.getElementById('appDrawerOverlay');
   const drwTitles = drw ? [...drw.querySelectorAll('.dwd-sec__title')].map((e) => e.textContent.trim()) : [];
 
   const dashStyle = document.getElementById('dwi-dashboard-styles');
@@ -119,9 +124,9 @@ const result = await page.evaluate(async () => {
     noEmoji: !EMOJI.test(root.textContent || ''),
     reusesBaseStyles: !!daaStyle,
     noHardWhite: noHardWhite(dashStyle) && noHardWhite(daaStyle) && noHardWhite(drwStyle),
-    // drawer (unchanged component)
+    // drawer (Phase 8.2: canonical shell, content unchanged)
     drawerOpen: !!drw,
-    drawerSheet: !!(drw && drw.querySelector('.dwd-sheet')),
+    drawerSheet: !!(drw && drw.querySelector('.drawer')),
     drawerTitles: drwTitles,
     drawerHero: drw ? (drw.querySelector('.dwd-hero__num') || {}).textContent : '',
     explainRows: drw ? drw.querySelectorAll('.dwd-bd__row').length : 0,
@@ -130,7 +135,7 @@ const result = await page.evaluate(async () => {
     riskMeters: drw ? drw.querySelectorAll('.dwd-risk').length : 0,
     drawerTimeline: drw ? drw.querySelectorAll('.dwd-tl li').length : 0,
     recItems: drw ? drw.querySelectorAll('.dwd-rec').length : 0,
-    closeBtn: !!(drw && drw.querySelector('#dwdCloseBtn')),
+    closeBtn: !!(drw && drw.querySelector('[data-drawer-action="close"]')),
   };
 });
 
@@ -196,10 +201,31 @@ await new Promise((r) => setTimeout(r, 250));
 await shot('driver-wellness-mobile-light.png');
 
 const overflow = await page.evaluate(() => {
-  const sheet = document.querySelector('.dwd-sheet');
+  const sheet = document.querySelector('.drawer');
   return sheet ? sheet.offsetWidth <= window.innerWidth + 2 : true;
 });
 check('mobile drawer sheet does not exceed viewport width', overflow);
+
+// Phase 8.2 — panel-width risk: the canonical .drawer is min(440px, 92vw),
+// narrower than the old hand-rolled .dwd-sheet's min(560px, 100%). Confirm no
+// content row overflows the narrower panel at desktop width.
+await page.setViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
+await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'));
+await new Promise((r) => setTimeout(r, 250));
+const panelOverflow = await page.evaluate(() => {
+  const panel = document.querySelector('.drawer');
+  if (!panel) return { ok: false, offenders: ['no .drawer found'] };
+  const panelRect = panel.getBoundingClientRect();
+  const offenders = [];
+  panel.querySelectorAll('.dwd-bd__row, .dwd-hero, .dwd-comp, .dwd-grid .dwd-stat').forEach((row) => {
+    const r = row.getBoundingClientRect();
+    if (r.right > panelRect.right + 1) offenders.push(row.className);
+  });
+  return { ok: offenders.length === 0, offenders };
+});
+check('no content row overflows the narrower canonical panel (440px vs old 560px)', panelOverflow.ok);
+if (!panelOverflow.ok) console.log('   • overflowing:', panelOverflow.offenders.join(', '));
+await shot('driver-wellness-panel-width-check.png');
 
 await browser.close();
 server.close();

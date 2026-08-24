@@ -9,7 +9,7 @@
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
 import { getDatabase, onValue, ref, set, get, update, remove, runTransaction, goOffline, goOnline } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
-import { getAuth, signInWithCustomToken, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
+import { getAuth, signInWithCustomToken, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
 import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-functions.js';
 // V2.1 — Sarpras Intelligence File Storage Foundation (src/file-storage/).
 // Aliased to `storageRef` — `ref` above is already the Realtime Database
@@ -122,10 +122,41 @@ function _emitAuthSignal(user) {
   cbs.forEach(cb => { try { user ? cb(user) : cb(); } catch (err) { console.error('[firebase] auth signal cb failed:', err); } });
 }
 
+/* Phase 7G.4 — auth-state diagnostics (no PII: never logs PIN, tokens, or
+ * credentials — only event names, booleans, and timestamps). Permanent,
+ * not gated behind a flag: this is a genuinely intermittent, hard-to-
+ * reproduce production issue ("sometimes the app logs me out"), so the
+ * next real occurrence needs a console trail rather than more guessing. */
+function _authDiag(event, detail = {}) {
+  console.info(`[auth-diag] ${new Date().toISOString()} ${event}`, detail);
+}
+
+/* Tracks whether a real (non-null) Firebase user has EVER been observed
+ * this page-load. Gates the null-recheck below: the FIRST emission (fresh
+ * page, nobody signed in yet) must still resolve to "show the login
+ * screen" immediately — only a null that arrives AFTER a real session was
+ * already established gets treated with suspicion. */
+let _hasBeenAuthenticated = false;
+
 /**
  * Initialize the Firebase Auth layer and wire onAuthStateChanged.
  * The FIRST emission resolves authReady() (with the user or null).
  * Idempotent.
+ *
+ * Root-cause investigation (Phase 7G.4, "the app sometimes logs me out"):
+ * onAuthStateChanged is a LIVE listener for the lifetime of the page, not
+ * a one-shot boot check — it keeps firing on every subsequent Firebase
+ * Auth state change. Before this pass, ANY null emission (even after a
+ * real, working session had already been established — e.g. a transient
+ * hiccup during silent token refresh, a momentary IndexedDB access issue,
+ * the well-documented iOS Safari storage-eviction behavior for PWAs) was
+ * treated identically to an explicit sign-out: the session cache was wiped
+ * and every onAuthLost subscriber fired immediately (app.js's
+ * resetUsersSync()/resetLogsSync()/resetExportHistorySync() among them —
+ * a full RTDB listener teardown, not just a UI flicker). A REAL,
+ * explicit logout() never depends on this listener's timing at all: it
+ * calls firebaseSignOut() and then unconditionally reloads the page, so
+ * relaxing this one transition costs nothing for genuine sign-outs.
  * @returns {Object|null} Firebase Auth instance
  */
 export function initFirebaseAuthLayer() {
@@ -135,6 +166,21 @@ export function initFirebaseAuthLayer() {
 
   firebaseAuth = getAuth(firebaseApp);
   onAuthStateChanged(firebaseAuth, async (user) => {
+    if (!user && _hasBeenAuthenticated) {
+      // A null arrived after we already had a real, working session.
+      // Give Firebase a short window to reconfirm on its own before we
+      // treat this as a genuine sign-out — see the function doc above.
+      _authDiag('null-after-authenticated: rechecking before acting', {});
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      if (firebaseAuth.currentUser) {
+        _authDiag('transient null ignored — session reconfirmed', {});
+        return; // stale/spurious emission — do not touch cache or signals
+      }
+      _authDiag('session genuinely lost after being authenticated', {});
+    }
+    if (user) _hasBeenAuthenticated = true;
+    _authDiag('auth-state settled', { hasUser: !!user, firstEmission: !_authResolved });
+
     // Await hydration so the synchronous session cache is populated
     // BEFORE authReady() resolves and the bootstrap proceeds.
     try {
@@ -375,11 +421,24 @@ export async function callRenderAnalyticsExport(payload) {
 
 /**
  * Sign in with a custom token minted by verifyPin.
+ *
+ * Phase 7G.4 — the Phase 7G.3 "Ingat saya di perangkat ini" toggle was
+ * removed (the product wants sessions to just persist normally; see the
+ * root-cause investigation in docs/EXECUTIVE_COMMAND_CENTER_PHASE_7G4_REPORT.md
+ * for why unexpected logouts were NOT actually caused by a missing
+ * persistence setting — Firebase already defaults to browserLocalPersistence
+ * with no explicit call at all). Kept the explicit setPersistence() call
+ * anyway rather than deleting it: it is self-documenting, costs nothing,
+ * and removes any dependence on the SDK's implicit default staying what it
+ * is today. Awaited BEFORE signInWithCustomToken(), per Firebase's own
+ * documented contract that persistence must be set before the sign-in call
+ * it should apply to.
  * @param {string} token
  */
 export async function signInWithToken(token) {
   const auth = firebaseAuth || initFirebaseAuthLayer();
   if (!auth) throw new Error('Firebase Auth belum siap.');
+  await setPersistence(auth, browserLocalPersistence);
   return signInWithCustomToken(auth, token);
 }
 

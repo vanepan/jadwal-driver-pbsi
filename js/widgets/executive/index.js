@@ -14,7 +14,7 @@
 
 'use strict';
 
-import { esc, empty, lead, pill, actionBtn, listRow, list } from '../_widget-base.js';
+import { esc, empty, lead, pill, actionBtn, listRow, list, metric, metricRow } from '../_widget-base.js';
 // v1.30.9.14 (V1 Redesign Phase 2) — shape half of vehicle identity (color
 // already existed per-vehicle; shape did not exist anywhere before this).
 import { buildVehicleShapeMap, vehicleShapeCss } from '../../utils/vehicle-identity.js';
@@ -28,11 +28,11 @@ import { buildHeroNarrative } from './narrative-builder.js';
 // Phase 0 Executive Foundation — presentation primitives + tone adapters
 // extracted out of this file (previously private, now shared/reusable).
 // Pure move: same markup, same CSS classes, zero visual change.
-import { rankedList, compactSuccessLine, severityRank, toneFromLevel, toneFromEngine as engineTone, launcherGrid } from './ui-kit.js';
+import { rankedList, compactSuccessLine, severityRank, toneFromLevel, toneFromEngine as engineTone, launcherGrid, launcherGroups } from './ui-kit.js';
 // Phase 1 (Hero) — Motion Profiles defined in Phase 0, first consumed here.
 // Macro Motion (page-level section reveal) is unaffected by this import —
 // it stays owned by workspace-renderer.js's existing fade-up class.
-import { resolveMotionProfile, REALTIME_TWEEN, cssEaseToFn, MOTION_PROFILES } from './motion-profiles.js';
+import { resolveMotionProfile, REALTIME_TWEEN, cssEaseToFn, MOTION_PROFILES, EASE } from './motion-profiles.js';
 // v1.23.0 hotfix — the assignment-level "pending engineering verification"
 // computation moved to a shared module so Attention and Recommendation can
 // no longer compute two different counts for the same fact (see that
@@ -140,6 +140,107 @@ function motionOff() {
   try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (_) { return false; }
 }
 
+/** Phase 7C — per-item entrance cascade (`.fade-up` + nth-child delay, see
+ *  workspace-styles.js) must only ever play on the FIRST mount of a
+ *  section, exactly like Hero's own `.wsp-hero-anim` contract
+ *  (mountHeroMotion above): `bodyEl` is the same node across a live
+ *  refresh (only its innerHTML is rebuilt), so "already mounted" is
+ *  reliably known from a dataset flag. On every mount after the first,
+ *  the animation is hard-disabled inline before paint so a Firebase
+ *  update never replays the reveal. */
+function suppressReplayAfterFirstMount(bodyEl, flagKey, itemSelector) {
+  const already = bodyEl.dataset[flagKey] === '1';
+  bodyEl.dataset[flagKey] = '1';
+  if (already) bodyEl.querySelectorAll(itemSelector).forEach((el) => { el.style.animation = 'none'; });
+}
+
+/** Phase 7C — generic 0->value count-up for any `[data-countup]` element
+ *  (metric() tiles: Snapshot's 5 KPI values, Outlook's tomorrow-trip
+ *  metric), the same tween shape mountHeroMotion already uses for the
+ *  score/pulse stats, generalized. Deliberately capped short (<=450ms) —
+ *  unlike the Hero's mood-tuned ring/score (which stays on its own
+ *  established per-mood timing, untouched), a KPI tile has no mood to
+ *  express; it should just feel like live data arriving quickly. Runs
+ *  once on first mount only — a live refresh shows the new value directly
+ *  rather than re-tweening from 0 (simpler than Hero's full last-shown
+ *  continuity contract; never replaying from 0 is the part that matters). */
+function mountCountUp(bodyEl, flagKey) {
+  const already = bodyEl.dataset[flagKey] === '1';
+  bodyEl.dataset[flagKey] = '1';
+  const els = Array.from(bodyEl.querySelectorAll('[data-countup]'));
+  if (!els.length) return;
+  if (already || motionOff()) {
+    els.forEach((el) => { el.textContent = el.getAttribute('data-countup'); });
+    return;
+  }
+  // Phase 8.7 — same staleness hazard mountHeroMotion's own gen/stale()
+  // guard below already documents and fixes for the Hero, missed here: a
+  // second mount arriving faster than this tween's own duration (rapid
+  // back-to-back Firebase refreshes) left the FIRST call's tick loop still
+  // running afterward, writing to now-detached [data-countup] nodes
+  // (mountWidgets() rebuilds bodyEl's innerHTML on every mount) until its
+  // own duration elapsed on its own — wasted compositor/scripting work, not
+  // a visible bug (detached nodes render nothing), found by rAF-loop audit.
+  const gen = (bodyEl.__countUpGen = (bodyEl.__countUpGen || 0) + 1);
+  const stale = () => bodyEl.__countUpGen !== gen;
+  const ease = cssEaseToFn(EASE);
+  const duration = 420;
+  const t0 = performance.now();
+  const targets = els.map((el) => ({ el, target: Number(el.getAttribute('data-countup')) || 0 }));
+  const tick = (now) => {
+    if (stale()) return;
+    const p = Math.min(1, (now - t0) / duration);
+    const e = ease(p);
+    targets.forEach(({ el, target }) => { el.textContent = String(Math.round(target * e)); });
+    if (p < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+/** Premium Pass (Sections 9/16) — comparative bars (Snapshot metrics,
+ *  Driver trip-bars) MORPH between refreshes instead of snapping, reusing
+ *  the exact continuity-tween shape mountHeroMotion's ring/score already
+ *  established: `bodyEl.__wspBarLast` is a plain JS Map (bar keys can
+ *  contain characters `dataset` can't) that persists across a refresh
+ *  (bodyEl is the same node every mount, only its innerHTML is rebuilt).
+ *  On first mount every key is unseen, so every bar eases 0 -> target — the
+ *  same reveal the old CSS keyframe gave, just JS-driven so the exact same
+ *  code path also handles a live value CHANGING. A bar with no
+ *  `data-bar-key` (barKey omitted at the call site) is drawn at its target
+ *  immediately every mount — never tracked, never animated — matching how
+ *  every metric()/barPct caller that predates this Pass already behaved. */
+function mountBarReveal(bodyEl, barSelector) {
+  const els = Array.from(bodyEl.querySelectorAll(barSelector));
+  if (!els.length) return;
+  if (!bodyEl.__wspBarLast) bodyEl.__wspBarLast = new Map();
+  const lastMap = bodyEl.__wspBarLast;
+  const reduce = motionOff();
+  const ease = cssEaseToFn(EASE);
+  const duration = 500;
+  const t0 = performance.now();
+  // Phase 8.7 — same guard as mountCountUp above (see its comment): one
+  // generation counter for this whole mount call, checked by every bar's
+  // own tick loop, so a superseded mount's loops stop writing to detached
+  // nodes instead of running out their full duration for nothing.
+  const gen = (bodyEl.__barGen = (bodyEl.__barGen || 0) + 1);
+  const stale = () => bodyEl.__barGen !== gen;
+  els.forEach((el) => {
+    const target = Number(el.dataset.barTarget);
+    if (!Number.isFinite(target)) return;
+    const key = el.dataset.barKey || '';
+    const from = key && lastMap.has(key) ? lastMap.get(key) : 0;
+    if (key) lastMap.set(key, target);
+    if (!key || reduce) { el.style.width = `${target}%`; return; }
+    const tick = (now) => {
+      if (stale()) return;
+      const p = Math.min(1, (now - t0) / duration);
+      el.style.width = `${from + (target - from) * ease(p)}%`;
+      if (p < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+}
+
 /** Phase 1 (Hero) — mood-aware entrance + continuity-safe score/ring tween.
  *  Replaces the old flat 900ms animateHeroMotion(). Two concerns, kept
  *  distinct per the approved Conflict Resolution:
@@ -184,7 +285,12 @@ function mountHeroMotion(root, ctx) {
   const stale = () => root.__heroAnimGen !== gen;
 
   // Micro Motion: suppress replay synchronously, before the browser paints.
-  root.querySelectorAll('.wsp-hero-anim').forEach((el) => {
+  // .wsp-pulse__dot's own pop-in (Phase 7D) isn't itself .wsp-hero-anim
+  // (each dot carries its own per-index animation-delay, not a Hero beat),
+  // so it needs the same suppression explicitly, on the same
+  // alreadyMounted signal, or it would replay its stagger on every
+  // realtime refresh.
+  root.querySelectorAll('.wsp-hero-anim, .wsp-pulse__dot').forEach((el) => {
     if (reduce || alreadyMounted) el.style.animation = 'none';
   });
 
@@ -448,6 +554,175 @@ function storyDomainKey(source, groupKey) {
 }
 const STORY_TONE_RANK = { good: 0, neutral: 1, info: 2, warn: 3, danger: 4 };
 
+/** Phase 7D — extracted from exec-activity's own render() (unchanged
+ *  computation, same audit-log + Engineering-timeline merge, same
+ *  allowlists, same today-only window) so the new Operational Pulse strip
+ *  (exec-hero) can plot the exact same certified event set instead of
+ *  running a second, possibly-diverging query. One source of truth for
+ *  "what happened today," two presentations: a vertical feed (Story) and a
+ *  compact time-axis (Pulse). */
+function todaysStoryItems(ctx) {
+  const seen = new Set();
+  const auditItems = (ctx.logs || [])
+    .filter(l => AUDIT_TIMELINE_ALLOW.has(l.action))
+    .map(l => {
+      const meta = AUDIT_STORY_META[l.action];
+      return {
+        key: l.id || `log:${l.action}:${l.createdAt || l.timestamp}`,
+        groupKey: l.action,
+        domainKey: storyDomainKey('audit', l.action),
+        ts: Date.parse(l.createdAt || l.timestamp || 0),
+        icon: meta.icon, tone: meta.tone,
+        sentence: meta.sentence(l, ctx),
+        meta: '',
+        aggregate: meta.aggregate,
+      };
+    });
+  const engItems = (ctx.engineeringEvents || [])
+    .filter(e => ENG_TIMELINE_ALLOW.has(e.type))
+    .map(e => {
+      const meta = ENG_STORY_META[e.type];
+      return {
+        key: e.id || `eng:${e.type}:${e.timestamp}`,
+        groupKey: e.type,
+        domainKey: storyDomainKey('eng', e.type),
+        ts: Date.parse(e.timestamp || 0),
+        icon: meta.icon, tone: meta.tone,
+        sentence: engEventSentence(e.type, e.assignmentTitle),
+        meta: (e.actor && e.actor.name) || '',
+        aggregate: meta.aggregate,
+      };
+    });
+  const todayStart = startOfDay(0);
+  return [...auditItems, ...engItems]
+    .filter(it => { if (seen.has(it.key)) return false; seen.add(it.key); return true; })
+    .filter(it => Number.isFinite(it.ts) && it.ts >= todayStart && it.ts < todayStart + DAY_MS)
+    .sort((a, b) => a.ts - b.ts);
+}
+
+/** Phase 7D — Operational Pulse: today's REAL events (todaysStoryItems,
+ *  above — the same certified set Story renders as a feed) plotted on a
+ *  fixed 07:00-19:00 time axis. Never a forecast, never a trend line —
+ *  each dot is one real, already-happened event at its real timestamp.
+ *  domainKey collapses to the Pulse's 3-category legend: driver
+ *  operations + vehicle events read as "Operasional Driver" (both are
+ *  fleet/trip activity), engineering as "Teknik", requests as
+ *  "Permintaan". Positions clamp into the window rather than being
+ *  dropped, so an event outside 07:00-19:00 still shows (at the nearest
+ *  edge) rather than silently vanishing. */
+const PULSE_WINDOW_START_MIN = 7 * 60;
+const PULSE_WINDOW_END_MIN = 19 * 60;
+const PULSE_TONE_BY_DOMAIN = { driverOps: 'brand', vehicle: 'brand', engineering: 'intel', request: 'warn' };
+/** Premium Pass — carries the real sentence + domain label per mark (both
+ *  already computed by todaysStoryItems, STORY_DOMAINS — no new data) so
+ *  the dot's hover/focus tooltip can show genuine event content instead of
+ *  just a bare timestamp. */
+function buildPulseMarks(ctx) {
+  const items = todaysStoryItems(ctx);
+  const span = PULSE_WINDOW_END_MIN - PULSE_WINDOW_START_MIN;
+  const marks = items.map((it) => {
+    const d = new Date(it.ts);
+    const minutes = d.getHours() * 60 + d.getMinutes();
+    const pct = Math.max(0, Math.min(100, ((minutes - PULSE_WINDOW_START_MIN) / span) * 100));
+    const domain = STORY_DOMAINS[it.domainKey];
+    // Phase 7G.4 — `active` marks the ONE event type this pulse gives an
+    // active-state treatment to: a driver assignment actually starting
+    // (groupKey is the raw log action, 'assignment_started', for audit-log
+    // items — see todaysStoryItems()/AUDIT_TIMELINE_ALLOW above). No other
+    // event type pulses; the dot's own tone/color is unchanged either way.
+    return { leftPct: pct, tone: PULSE_TONE_BY_DOMAIN[it.domainKey] || 'brand', active: it.groupKey === 'assignment_started', ts: it.ts, sentence: it.sentence, domainLabel: domain ? domain.label : '' };
+  });
+  return marks;
+}
+
+/** Command Panel Pass (7G) — an adaptive viewport clamp shared by the
+ *  Pulse and Outlook tooltips. Both position themselves centered on their
+ *  trigger (dot/marker) via a CSS `translateX(-50%)`; on a narrow phone a
+ *  dot/marker near either edge of the axis centers a tooltip that
+ *  overflows the real viewport (confirmed empirically at 375px — a
+ *  left-edge dot's tooltip sat 58px off-screen, a right-edge one 20px off
+ *  the other side) — exactly what the brief's "do not allow tooltips to
+ *  render outside the viewport" calls out. Rather than a different
+ *  positioning scheme, this measures the ALREADY-centered tooltip
+ *  (position/left is unaffected by the opacity-only --visible class, so
+ *  no rAF wait is needed) and nudges it back inside a small margin via a
+ *  CSS custom property the tooltip's own transform already reads. */
+function clampTooltipToViewport(tip, margin = 8) {
+  tip.style.removeProperty('--wsp-tooltip-shift');
+  const rect = tip.getBoundingClientRect();
+  let shift = 0;
+  if (rect.left < margin) shift = margin - rect.left;
+  else if (rect.right > window.innerWidth - margin) shift = (window.innerWidth - margin) - rect.right;
+  if (shift !== 0) tip.style.setProperty('--wsp-tooltip-shift', `${shift}px`);
+}
+
+/** Premium Pass — a single shared floating tooltip per Pulse instance
+ *  (event-delegated, not one listener/element per dot). Built with
+ *  textContent-only DOM writes (never innerHTML) even though the source
+ *  fields were already esc()-escaped for their data-* attributes — dataset
+ *  reads return the DECODED string, so re-injecting that into innerHTML
+ *  would reopen exactly the injection risk esc() exists to close. */
+function wirePulseTooltip(root) {
+  const pulseEl = root.querySelector('.wsp-pulse');
+  const axis = pulseEl && pulseEl.querySelector('.wsp-pulse__axis');
+  if (!axis) return;
+  let tip = axis.querySelector('.wsp-pulse__tooltip');
+  if (!tip) {
+    tip = document.createElement('div');
+    tip.className = 'wsp-pulse__tooltip';
+    tip.setAttribute('role', 'status');
+    axis.appendChild(tip);
+  }
+  const show = (dot) => {
+    tip.textContent = '';
+    const t = document.createElement('span'); t.className = 'wsp-pulse__tooltip-time'; t.textContent = dot.dataset.pulseTime || '';
+    const d = document.createElement('span'); d.className = 'wsp-pulse__tooltip-domain'; d.textContent = dot.dataset.pulseDomain || '';
+    const s = document.createElement('span'); s.className = 'wsp-pulse__tooltip-sentence'; s.textContent = dot.dataset.pulseSentence || '';
+    tip.append(t, d, s);
+    tip.style.left = dot.style.left;
+    tip.classList.add('wsp-pulse__tooltip--visible');
+    clampTooltipToViewport(tip);
+  };
+  const hide = () => tip.classList.remove('wsp-pulse__tooltip--visible');
+  axis.querySelectorAll('.wsp-pulse__dot').forEach((dot) => {
+    dot.addEventListener('mouseenter', () => show(dot));
+    dot.addEventListener('mouseleave', hide);
+    dot.addEventListener('focus', () => show(dot));
+    dot.addEventListener('blur', hide);
+  });
+}
+
+/** Premium Visual Experience Pass (Section 10) — same hover/focus tooltip
+ *  pattern as wirePulseTooltip above, one shared element per Outlook
+ *  instance. The horizon's trip markers previously only had a native
+ *  `title` attribute (no keyboard access, inconsistent with the Pulse's
+ *  own richer tooltip) — this closes that gap using the exact same
+ *  mechanism, not a new one. */
+function wireHorizonTooltip(root) {
+  const horizonEl = root.querySelector('.wsp-horizon');
+  if (!horizonEl) return;
+  let tip = horizonEl.querySelector('.wsp-horizon__tooltip');
+  if (!tip) {
+    tip = document.createElement('div');
+    tip.className = 'wsp-horizon__tooltip';
+    tip.setAttribute('role', 'status');
+    horizonEl.appendChild(tip);
+  }
+  const show = (marker) => {
+    tip.textContent = marker.dataset.horizonLabel || '';
+    tip.style.left = marker.style.left;
+    tip.classList.add('wsp-horizon__tooltip--visible');
+    clampTooltipToViewport(tip);
+  };
+  const hide = () => tip.classList.remove('wsp-horizon__tooltip--visible');
+  horizonEl.querySelectorAll('.wsp-horizon__marker--trip').forEach((marker) => {
+    marker.addEventListener('mouseenter', () => show(marker));
+    marker.addEventListener('mouseleave', hide);
+    marker.addEventListener('focus', () => show(marker));
+    marker.addEventListener('blur', hide);
+  });
+}
+
 /** Phase 5 — group consecutive events sharing the same operational CONTEXT
  *  (domain) into one narrative "block" ("Each group should tell a small
  *  story"), reusing groupStoryItems() for the fine-grained same-action
@@ -506,6 +781,18 @@ function explainRows(f, breakdown) {
   return breakdown
     .filter(c => c.score != null && EXPLAIN_RULES[c.key])
     .map(c => ({ good: !EXPLAIN_ISSUE[c.key](f), text: EXPLAIN_RULES[c.key](f) }));
+}
+/** Phase 7G.3 — sub-scores are documented as 0-100 by contract, but two of
+ *  the five score-engine helpers (vehicleUtilScore, requestScore in
+ *  executive-score-engine.js) return an un-rounded ratio*100 (e.g.
+ *  98.57142857142858 for a 69/70 ratio) while their siblings (driverOpsScore,
+ *  engineeringOpsScore, pettyCashHealthScore) already Math.round() — an
+ *  inconsistency in the engine. Fixed at display time only, never by
+ *  changing the engine: calculateScore()'s own blended result is already
+ *  Math.round()'d regardless of whether its inputs were pre-rounded, so this
+ *  is a presentation fix with no calculation-behavior change. */
+function fmtScore(score) {
+  return score == null ? '—' : Math.round(score);
 }
 
 /** v1.22.0 Objective 4 — Executive Insight: day-over-day comparisons built
@@ -593,6 +880,21 @@ function topInsightLine(ctx) {
   const lines = buildInsight(ctx);
   return lines[0] || null;
 }
+
+/** Phase 7 (Outlook) — tomorrow's scheduled load, the exact same
+ *  `assignments.filter(a => a.date === ymd)` shape facts().tripsToday
+ *  already uses, one day ahead. Zero new query — this app IS the
+ *  scheduling system, so tomorrow's assignments already exist in
+ *  ctx.assignments the moment they're created. Returns the real list (not
+ *  just a count) since the Visual Expansion Pass's horizon markers need
+ *  each trip's own startTime. */
+function tomorrowTrips(ctx) {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return (ctx.assignments || []).filter(a => a.date === ymd && a.status !== 'cancelled');
+}
+function tomorrowTripCount(ctx) { return tomorrowTrips(ctx).length; }
 
 /** Phase 2 (Executive Attention) — findings always visible before disclosure.
  *  Matches the approved Design Review prototype's own `attentionShowCount`. */
@@ -693,16 +995,26 @@ function wireSnapshotSegmented(bodyEl) {
  *  reads ctx.role so a future narrower role reaching this workspace is
  *  filtered correctly with zero code change here, instead of a comment that
  *  merely claims to be role-aware. */
+// Phase 7D — `group` ('op'|'intel') drives the Launcher's two labeled
+// sections and each icon's tinted badge color; purely presentational,
+// splits the same fixed order at the same point it already conceptually
+// separated (fleet/ops destinations vs. intelligence/analysis ones).
 const LAUNCHER_DESTINATIONS = [
-  { label: 'Driver', icon: 'user', action: 'navDriverOps', visibleFor: ['admin'] },
-  { label: 'Teknik', icon: 'maintenance', action: 'navEngineering', visibleFor: ['admin'] },
-  { label: 'Kendaraan', icon: 'vehicle', action: 'navVehicles', visibleFor: ['admin'] },
-  { label: 'Permintaan', icon: 'file', action: 'navPending', visibleFor: ['admin'] },
-  { label: 'Petty Cash', icon: 'pettycash', action: 'navPettyCash', visibleFor: ['admin'] },
-  { label: 'Analitik', icon: 'chart', action: 'navAnalyticsDriver', visibleFor: ['admin'] },
-  { label: 'Prediksi', icon: 'trend', action: 'navDriverPrediction', visibleFor: ['admin'] },
-  { label: 'Rekomendasi', icon: 'recommendation', action: 'navRecommendationAccuracy', visibleFor: ['admin'] },
-  { label: 'Simulasi', icon: 'reset', action: 'navDriverPrediction', visibleFor: ['admin'] },
+  { label: 'Driver', icon: 'user', action: 'navDriverOps', visibleFor: ['admin'], group: 'op' },
+  { label: 'Teknik', icon: 'maintenance', action: 'navEngineering', visibleFor: ['admin'], group: 'op' },
+  { label: 'Kendaraan', icon: 'vehicle', action: 'navVehicles', visibleFor: ['admin'], group: 'op' },
+  { label: 'Permintaan', icon: 'file', action: 'navPending', visibleFor: ['admin'], group: 'op' },
+  { label: 'Petty Cash', icon: 'pettycash', action: 'navPettyCash', visibleFor: ['admin'], group: 'op' },
+  { label: 'Analitik', icon: 'chart', action: 'navAnalyticsDriver', visibleFor: ['admin'], group: 'intel' },
+  { label: 'Prediksi', icon: 'trend', action: 'navDriverPrediction', visibleFor: ['admin'], group: 'intel' },
+  { label: 'Rekomendasi', icon: 'recommendation', action: 'navRecommendationAccuracy', visibleFor: ['admin'], group: 'intel' },
+  { label: 'Simulasi', icon: 'reset', action: 'navDriverPrediction', visibleFor: ['admin'], group: 'intel' },
+  // Phase 7 — closes the one real gap found in the audit: navAnalyticsExecutive
+  // was already a wired ctx.actions entry (js/app.js buildHomeContext) but had
+  // no path FROM the Home briefing itself; Insights -> Executive Analytics
+  // (js/components/executive-dashboard.js) is this briefing's own Deep Dive
+  // destination — the drill-down page this Outlook/Situation summary points to.
+  { label: 'Analitik Eksekutif', icon: 'insights', action: 'navAnalyticsExecutive', visibleFor: ['admin'], group: 'intel' },
 ];
 
 /** Filters the fixed catalogue by role — a `.filter()` preserves source
@@ -710,6 +1022,26 @@ const LAUNCHER_DESTINATIONS = [
  *  them. */
 function launcherDestinationsFor(role) {
   return LAUNCHER_DESTINATIONS.filter(d => d.visibleFor.includes(role));
+}
+
+/** Premium Pass (Section 6) — Decisions' calm empty state. Replaces the old
+ *  `lead(msg) + actionBtn(...)` fallback, which read as "a giant empty area
+ *  with one sentence and one button" — the exact anti-pattern called out for
+ *  this section. Two distinct real states share this shape: "waiting on
+ *  prediction data" (neutral — the system genuinely doesn't have enough
+ *  data yet) and "nothing needs a decision" (positive — the engine ran and
+ *  found nothing actionable). Never used for a genuine decision; those keep
+ *  the `.wsp-inbox--tinted` accent surface untouched. */
+function decisionCalmState({ icon, title, sub, tone = 'good' }) {
+  return `
+    <div class="wsp-inbox__calm">
+      <span class="wsp-inbox__calm-icon wsp-inbox__calm-icon--${tone}" aria-hidden="true">${anIcon(icon, { size: 20 })}</span>
+      <div class="wsp-inbox__calm-body">
+        <div class="wsp-inbox__calm-title">${esc(title)}</div>
+        <div class="wsp-inbox__calm-sub">${esc(sub)}</div>
+      </div>
+      ${actionBtn('Buka Prediksi', 'navDriverPrediction', { variant: 'link' })}
+    </div>`;
 }
 
 export const widgets = {
@@ -727,7 +1059,14 @@ export const widgets = {
       const hasScore = !!(f.score && f.score.value != null);
       const pillTone = hasScore ? toneFromLevel(f.score.level) : 'neutral';
       const ringValue = hasScore ? Math.max(0, Math.min(100, f.score.value)) / 100 : 0;
-      const ring = renderRingGauge({ value: ringValue, size: 152, thickness: 11, color: `var(--wsp-${headline.tone})`, track: 'var(--border-faint)' });
+      // Command Panel Pass (7G) — grown from 108/8 to 156/12: the approved
+      // design makes readiness the Hero's focal visualization again, sized
+      // to hold its own beside the headline rather than reading as a small
+      // supporting badge. renderRingGauge's viewBox scales proportionally
+      // with `size`, so CSS width/height overrides at narrower breakpoints
+      // (workspace-styles.js) scale the whole gauge — including this
+      // stroke thickness — cleanly, without a second size to maintain.
+      const ring = renderRingGauge({ value: ringValue, size: 156, thickness: 12, color: `var(--wsp-${headline.tone})`, track: 'var(--border-faint)' });
 
       // Phase 1 — Operational Pulse: the metrics that communicate NOW
       // (Snapshot owns Today/Week/Month, never duplicated here). "Status
@@ -737,11 +1076,13 @@ export const widgets = {
       // adding clarity. Trip Hari Ini (v1.30.10.x) reuses facts().tripsToday
       // — the exact same assignments.filter(date===todayYmd) expression
       // buildInsight() already computes for its own workload sentence.
+      // Phase 7D — icon + tone per fact (was plain text): a colored icon
+      // badge per operational fact, matching the approved richer direction.
       const stats = [
-        { key: 'vehicles', lbl: 'Kendaraan Siap', big: n(f.dk.activeVehicles) },
-        { key: 'drivers', lbl: 'Driver Aktif', big: n(f.dk.activeDrivers) },
-        { key: 'pending', lbl: 'Permintaan Tertunda', big: f.pending },
-        { key: 'trips', lbl: 'Trip Hari Ini', big: f.tripsToday },
+        { key: 'vehicles', lbl: 'Kendaraan Siap', big: n(f.dk.activeVehicles), icon: 'car', tone: 'brand' },
+        { key: 'drivers', lbl: 'Driver Aktif', big: n(f.dk.activeDrivers), icon: 'user', tone: 'info' },
+        { key: 'pending', lbl: 'Permintaan Tertunda', big: f.pending, icon: 'file', tone: 'warn' },
+        { key: 'trips', lbl: 'Trip Hari Ini', big: f.tripsToday, icon: 'trend', tone: 'good' },
       ];
 
       // v1.21.0/v1.22.0 Explainability — now secondary, behind a disclosure.
@@ -749,13 +1090,36 @@ export const widgets = {
       const breakdownRows = breakdown.map(c => `
         <div class="wsp-hero__bd-row">
           <span class="wsp-hero__bd-label">${esc(c.label)} <span class="wsp-hero__bd-weight">${esc(c.weightPct)}%</span></span>
-          <span class="wsp-hero__bd-value">${c.score == null ? '—' : esc(c.score)}</span>
+          <span class="wsp-hero__bd-value">${esc(fmtScore(c.score))}</span>
         </div>`).join('');
       const explain = explainRows(f, breakdown);
       const explainRowsHtml = explain.map(r => `
         <div class="wsp-hero__explain-row wsp-hero__explain-row--${r.good ? 'good' : 'bad'}">
           <span class="wsp-hero__explain-sign">${r.good ? '+' : '−'}</span>${esc(r.text)}
         </div>`).join('');
+
+      // Command Panel Pass (7G) — the "at a glance" domain layer moves from
+      // a vertical dot-strength list nested under the ring to a horizontal
+      // bar-meter STRIP spanning the full Command Panel width (matching
+      // the approved design's domain health strip). Same source data as
+      // before (breakdown.components, score/label/key unchanged, the same
+      // EXPLAIN_ISSUE tone check) — only the visual encoding changed, from
+      // 5 dots to a proportional bar. The exact weight%/score disclosure
+      // below is unaffected and still exists for anyone who wants precise
+      // numbers. Renders nothing when breakdown is empty (never a
+      // fabricated substitute).
+      const domainRows = breakdown
+        .filter(c => c.score != null)
+        .map(c => {
+          const issue = EXPLAIN_ISSUE[c.key] ? EXPLAIN_ISSUE[c.key](f) : false;
+          const tone = issue ? 'warn' : 'good';
+          const pct = Math.max(0, Math.min(100, c.score));
+          return `
+            <div class="wsp-hero__domain">
+              <div class="wsp-hero__domain-head"><span class="wsp-hero__domain-label">${esc(c.label)}</span><span class="wsp-hero__domain-val">${esc(fmtScore(c.score))}</span></div>
+              <div class="wsp-hero__domain-track"><div class="wsp-hero__domain-fill wsp-hero__domain-fill--${tone}" style="width:${pct}%"></div></div>
+            </div>`;
+        }).join('');
 
       // Phase 1 — Motion Profile for THIS mood (Micro Motion only; the
       // page's Macro fade-up is untouched and lives in workspace-renderer.js
@@ -772,7 +1136,7 @@ export const widgets = {
         : 'Skor kesehatan operasional belum tersedia';
 
       return `
-        <div class="wsp-hero">
+        <div class="wsp-hero wsp-hero--${headline.tone}">
           <div class="wsp-hero__eyebrow wsp-hero-anim" style="${beat(profile.micro.greeting)}">${esc(greeting(now))}, ${esc(name)} · ${esc(fmtLongDate(now))}</div>
 
           <div class="wsp-hero__health wsp-hero-anim" style="${beat(profile.micro.ring)}" aria-label="${scoreAria}">
@@ -795,7 +1159,7 @@ export const widgets = {
             <p class="wsp-hero__insight">${esc(body)}</p>
           </div>
 
-          <div class="wsp-hero__stats wsp-hero-anim" style="${beat(profile.micro.pulse)}" tabindex="0" role="group" aria-label="Status operasional saat ini">
+          <div class="wsp-hero__stats wsp-hero-anim" style="${beat(profile.micro.pulse)}" role="group" aria-label="Status operasional saat ini">
             <span class="wsp-hero__stats-label">Status Operasional</span>
             ${stats.map(s => {
               // v1.30.10.6 — numeric stats count up (mountHeroMotion) the same
@@ -804,11 +1168,66 @@ export const widgets = {
               const numeric = typeof s.big === 'number' && Number.isFinite(s.big);
               return `
               <div class="wsp-hero__stat">
-                <span class="wsp-hero__stat-lbl">${esc(s.lbl)}</span>
+                <span class="wsp-hero__stat-icon wsp-hero__stat-icon--${s.tone}" aria-hidden="true">${anIcon(s.icon, { size: 16 })}</span>
                 <span class="wsp-hero__stat-big"${numeric ? ` data-countup="${esc(s.big)}" data-stat-key="${s.key}"` : ''}>${numeric ? '0' : esc(s.big)}</span>
+                <span class="wsp-hero__stat-lbl">${esc(s.lbl)}</span>
               </div>`;
             }).join('')}
           </div>
+
+          ${domainRows ? `
+          <div class="wsp-hero__domains wsp-hero-anim" style="${beat(profile.micro.pulse)}">
+            ${domainRows}
+          </div>` : ''}
+
+          ${(() => {
+            // Phase 7D — Operational Pulse: today's REAL events (see
+            // buildPulseMarks' own header) plotted on a fixed 07:00-19:00
+            // axis. Never a forecast, never fabricated — an empty day is an
+            // empty axis, not a hidden section.
+            const marks = buildPulseMarks(ctx);
+            // Premium Pass — a real <button> (was a plain <span>) so every
+            // dot is keyboard-focusable, with the tooltip's content sourced
+            // straight from data-pulse-* (wirePulseTooltip, above). aria-label
+            // carries the same info for assistive tech that never sees the
+            // visual tooltip.
+            // Phase 7G.4 — active (assignment-start) dots get an extra
+            // class driving a CSS-only expanding-ring pulse (see
+            // .wsp-pulse__dot--active::before in workspace-styles.js); the
+            // aria-label gains a plain-language "(dimulai)" marker so the
+            // active state is conveyed to screen readers too, not just
+            // visually.
+            const dots = marks.map((m, i) => `<button type="button" class="wsp-pulse__dot wsp-pulse__dot--${m.tone}${m.active ? ' wsp-pulse__dot--active' : ''}" style="left:${m.leftPct.toFixed(1)}%;animation-delay:${i * 50}ms" data-pulse-time="${esc(fmtTime(m.ts))}" data-pulse-domain="${esc(m.domainLabel)}" data-pulse-sentence="${esc(m.sentence)}" aria-label="${esc(fmtTime(m.ts))} — ${esc(m.domainLabel)} — ${esc(m.sentence)}${m.active ? ' (dimulai)' : ''}"></button>`).join('');
+            // Visual Expansion Pass — a "now" marker, the one element in the
+            // Pulse allowed to animate continuously (a slow pulsing dot) —
+            // every event dot above stays static once its one-time pop-in
+            // finishes. Real current time, same clamp-to-window math as
+            // every event dot; simply omitted (not clamped to an edge) when
+            // now falls outside the 07:00-19:00 window, since a marker
+            // sitting at the axis edge claiming to be "now" at 22:00 would
+            // mislead rather than inform.
+            const nowMin = now.getHours() * 60 + now.getMinutes();
+            const nowInWindow = nowMin >= PULSE_WINDOW_START_MIN && nowMin <= PULSE_WINDOW_END_MIN;
+            const nowPct = nowInWindow ? ((nowMin - PULSE_WINDOW_START_MIN) / (PULSE_WINDOW_END_MIN - PULSE_WINDOW_START_MIN)) * 100 : null;
+            const nowMarker = nowPct != null
+              ? `<div class="wsp-pulse__now" style="left:${nowPct.toFixed(1)}%" aria-hidden="true"><span class="wsp-pulse__now-dot"></span></div>`
+              : '';
+            return `
+          <div class="wsp-pulse wsp-hero-anim" style="${beat(profile.micro.pulse)}">
+            <div class="wsp-pulse__label">Timeline Operasional — Hari Ini</div>
+            <div class="wsp-pulse__axis">
+              <div class="wsp-pulse__line"></div>
+              ${dots}
+              ${nowMarker}
+            </div>
+            <div class="wsp-pulse__ticks"><span>07:00</span><span>09:00</span><span>11:00</span><span>13:00</span><span>15:00</span><span>17:00</span></div>
+            <div class="wsp-pulse__legend">
+              <span class="wsp-pulse__legend-item"><span class="wsp-pulse__legend-dot wsp-pulse__dot--brand"></span>Operasional Driver</span>
+              <span class="wsp-pulse__legend-item"><span class="wsp-pulse__legend-dot wsp-pulse__dot--intel"></span>Teknik</span>
+              <span class="wsp-pulse__legend-item"><span class="wsp-pulse__legend-dot wsp-pulse__dot--warn"></span>Permintaan</span>
+            </div>
+          </div>`;
+          })()}
 
           ${(breakdownRows || explainRowsHtml) ? `
           <details class="wsp-hero__details">
@@ -820,7 +1239,7 @@ export const widgets = {
           </details>` : ''}
         </div>`;
     },
-    onMount(bodyEl, ctx) { mountHeroMotion(bodyEl, ctx); },
+    onMount(bodyEl, ctx) { mountHeroMotion(bodyEl, ctx); wirePulseTooltip(bodyEl); },
   },
 
   /* ── Attention Center ── (v1.21.0 Objective 3: only actionable cross-domain
@@ -905,9 +1324,15 @@ export const widgets = {
         <div class="wsp-attn__more" data-attn-more>${rankedList(rest)}</div>
         <button type="button" class="wsp-attn__toggle" data-attn-toggle aria-expanded="false">Lihat ${esc(rest.length)} lainnya</button>` : '';
 
-      return `<div class="wsp-attn">${summary}${rankedList(visible)}${disclosure}</div>`;
+      // Command Panel Pass (7G) — a warm-tinted elevated panel (was
+      // de-boxed/flat), the same "genuinely distinct executive surface"
+      // treatment Decision already earned in an earlier phase — Attention
+      // and Decision must read as different objects (urgency vs. action),
+      // not as two plain text sections. Real severity data unchanged.
+      return `<div class="wsp-attn wsp-attn--panel">${summary}${rankedList(visible)}${disclosure}</div>`;
     },
     onMount(bodyEl) {
+      suppressReplayAfterFirstMount(bodyEl, 'wspAttnRowsMounted', '.wsp-sevrow');
       const btn = bodyEl.querySelector('[data-attn-toggle]');
       const more = bodyEl.querySelector('[data-attn-more]');
       // Phase 8 (Motion Polish) — Realtime Continuity: disclosure state now
@@ -960,8 +1385,12 @@ export const widgets = {
       // Fleet prediction certification, so only show the "waiting on prediction"
       // fallback when there is truly nothing (no operational recs either).
       if (!rec.certified && !(rec.recs && rec.recs.length)) {
-        return lead('Rekomendasi tersedia setelah data prediksi mencukupi.') +
-          actionBtn('Buka Prediksi', 'navDriverPrediction', { variant: 'ghost' });
+        return decisionCalmState({
+          icon: 'history',
+          title: 'Menunggu data prediksi',
+          sub: 'Rekomendasi tersedia setelah data prediksi mencukupi.',
+          tone: 'neutral',
+        });
       }
       const items = (rec.recs || [])
         .filter(r => r.actionable && r.category !== 'none' && r.category !== 'fleet-optimization')
@@ -969,7 +1398,7 @@ export const widgets = {
         .sort((a, b) => (a.priority?.rank ?? 9) - (b.priority?.rank ?? 9));
       if (!items.length) {
         const msg = (rec.positive && rec.positive.messages && rec.positive.messages[0]) || 'Armada beroperasi normal.';
-        return lead(msg) + actionBtn('Buka Prediksi', 'navDriverPrediction', { variant: 'ghost' });
+        return decisionCalmState({ icon: 'check', title: 'Tidak ada tindakan yang diperlukan', sub: msg });
       }
 
       // v1.22.2 Objective 6's Decision Center hierarchy, reused verbatim: only
@@ -991,7 +1420,7 @@ export const widgets = {
       // this widget can honestly promise today.
       const dismissKey = (r) => `${r.category || ''}:${r.title}`;
       const row = (r, variant) => `
-        <div class="wsp-inbox__item wsp-inbox__item--${variant}" data-reco-key="${esc(dismissKey(r))}">
+        <div class="wsp-inbox__item wsp-inbox__item--${variant} fade-up" data-reco-key="${esc(dismissKey(r))}">
           <div class="wsp-inbox__top">${pill(r.priority?.label || 'Prioritas', engineTone(r.priority?.tone))}</div>
           <div class="wsp-inbox__title">${esc(r.title)}</div>
           <div class="wsp-inbox__explain">
@@ -1011,9 +1440,14 @@ export const widgets = {
         <div class="wsp-reco__more" data-reco-more>${rest.map(r => row(r, 'secondary')).join('')}</div>
         <button type="button" class="wsp-reco__toggle" data-reco-toggle aria-expanded="false">Lihat ${esc(rest.length)} tindakan lainnya</button>` : '';
 
-      return `<div class="wsp-inbox">${visibleHtml}${disclosure}</div>`;
+      // Phase 7D — a tinted surface is back for Decisions specifically (the
+      // brief explicitly reverses Phase 7B's "de-box everything": a
+      // recommendation is a genuinely distinct object, "management can act
+      // on this," so it earns a considered accent-tinted card again).
+      return `<div class="wsp-inbox wsp-inbox--tinted">${visibleHtml}${disclosure}</div>`;
     },
     onMount(bodyEl) {
+      suppressReplayAfterFirstMount(bodyEl, 'wspRecoRowsMounted', '.wsp-inbox__item');
       const btn = bodyEl.querySelector('[data-reco-toggle]');
       const more = bodyEl.querySelector('[data-reco-more]');
       // Phase 8 (Motion Polish) — Realtime Continuity, same pattern as
@@ -1094,52 +1528,64 @@ export const widgets = {
         { key: 'minggu', segLabel: 'Minggu', values: periodValues(sinceYmd(7), sinceMs(7)) },
         { key: 'bulan', segLabel: 'Bulan', values: periodValues(sinceYmd(30), sinceMs(30)) },
       ];
+      // Phase 7D — `tone` per tile (was untoned). `barPct` is computed below,
+      // per-panel, relative to the LARGEST of these same 5 values in that
+      // same period — an honest same-unit comparison, never a percentage of
+      // an invented total (per the brief's absolute "never fabricate" rule).
       const TILE_META = [
-        { key: 'trip', title: 'Penugasan Dijalankan', desc: 'Total penugasan terjadwal pada periode ini' },
-        { key: 'completed', title: 'Penugasan Selesai', desc: 'Penugasan yang telah diselesaikan driver' },
-        { key: 'vehicles', title: 'Kendaraan Terpakai', desc: 'Kendaraan unik yang digunakan' },
-        { key: 'engReports', title: 'Laporan Teknik Selesai', desc: 'Pekerjaan Teknik yang selesai' },
-        { key: 'reqResolved', title: 'Permintaan Diproses', desc: 'Permintaan bidang yang telah diputuskan' },
+        { key: 'trip', title: 'Penugasan Dijalankan', desc: 'Total penugasan terjadwal pada periode ini', tone: 'brand' },
+        { key: 'completed', title: 'Penugasan Selesai', desc: 'Penugasan yang telah diselesaikan driver', tone: 'good' },
+        { key: 'vehicles', title: 'Kendaraan Terpakai', desc: 'Kendaraan unik yang digunakan', tone: 'info' },
+        { key: 'engReports', title: 'Laporan Teknik Selesai', desc: 'Pekerjaan Teknik yang selesai', tone: 'intel' },
+        { key: 'reqResolved', title: 'Permintaan Diproses', desc: 'Permintaan bidang yang telah diputuskan', tone: 'warn' },
       ];
 
       const segButtons = PERIODS.map((p, i) => `
         <button type="button" role="tab" id="wsp-seg-${p.key}" class="wsp-segmented__btn${i === 0 ? ' wsp-segmented__btn--active' : ''}"
           data-wsp-seg="${p.key}" aria-selected="${i === 0}" aria-controls="wsp-panel-${p.key}" tabindex="${i === 0 ? '0' : '-1'}">${esc(p.segLabel)}</button>`).join('');
 
-      const panels = PERIODS.map((p, i) => `
+      // Phase 7B (Executive Experience Refinement) — de-boxed metric() tiles
+      // (the same shared primitive Outlook's "Trip Terjadwal Besok" already
+      // uses) replace the old `.wsp-summary` boxed-tile grid: one flowing
+      // operational readout instead of 5 independent KPI cards. Same 5
+      // values, same descriptions, same period-switching — presentation only.
+      const panels = PERIODS.map((p, i) => {
+        const maxVal = Math.max(1, ...TILE_META.map(m => p.values[m.key]));
+        return `
         <div class="wsp-snapshot__panel" id="wsp-panel-${p.key}" data-snapshot-panel="${p.key}" role="tabpanel" aria-labelledby="wsp-seg-${p.key}"${i === 0 ? '' : ' hidden'}>
-          <div class="wsp-summary-grid">${TILE_META.map(m => `
-            <div class="wsp-summary wsp-summary--static">
-              <span class="wsp-summary__title">${esc(m.title)}</span>
-              <span class="wsp-summary__value">${esc(p.values[m.key])}</span>
-              <span class="wsp-summary__desc">${esc(m.desc)}</span>
-            </div>`).join('')}</div>
-        </div>`).join('');
+          ${metricRow(TILE_META.map(m => metric(m.title, p.values[m.key], { sub: m.desc, countUp: true, tone: m.tone, barPct: (p.values[m.key] / maxVal) * 100, barKey: `${p.key}:${m.key}` })).join(''))}
+        </div>`;
+      }).join('');
 
-      // v1.22.2 Objective 8 — Executive Insight, Apple-Health style: exactly
-      // ONE sentence (topInsightLine), not a bulleted list of up to 4.
-      const insightLine = topInsightLine(ctx) || 'Data historis belum cukup untuk menghasilkan wawasan perbandingan.';
+      // Phase 7 (Executive Command Center Rebuild) — the day-over-day
+      // Insight sentence (topInsightLine()) moved to the new Outlook zone
+      // (exec-outlook, below): it's a trend statement, which fits "what
+      // should I expect next" better than "what happened," and Snapshot
+      // itself becomes purely a period-scoped facts panel. Computed exactly
+      // the same way, by the same functions — relocated, not removed.
+
+      // Phase 7B — the one genuinely clickable tile here (a nav action, not
+      // a KPI readout) becomes a list row matching Drivers/Vehicle Flags'
+      // vocabulary instead of a standalone KPI box.
+      const pendingRow = list(listRow({
+        title: 'Permintaan Tertunda',
+        trailing: f.pending > 0 ? `${f.pending} · Menunggu` : 'Bersih',
+        tone: f.pending > 0 ? 'warn' : 'good',
+        action: 'navPending',
+      }));
 
       return `
         <div class="wsp-segmented" role="tablist" aria-label="Pilih periode Snapshot Operasional" data-wsp-segmented>${segButtons}</div>
         <div class="wsp-snapshot__panels">${panels}</div>
-        <div class="wsp-snapshot-period">
-          <div class="wsp-snapshot-period__label">Wawasan</div>
-          <p class="wsp-insight">${esc(insightLine)}</p>
-        </div>
-        <div class="wsp-summary-grid">
-          <button type="button" class="wsp-summary" data-wsp-action="navPending">
-            <span class="wsp-summary__title">Permintaan Tertunda</span>
-            <span class="wsp-summary__value">${esc(f.pending)}</span>
-            <span class="wsp-summary__status wsp-summary__status--${f.pending > 0 ? 'warn' : 'good'}">${f.pending > 0 ? 'Menunggu' : 'Bersih'}</span>
-          </button>
-        </div>`;
+        ${pendingRow}`;
     },
     onMount(bodyEl) {
       wireSnapshotSegmented(bodyEl);
       const saved = bodyEl.dataset.wspActivePeriod;
       if (saved && saved !== 'hari') applySnapshotPeriod(bodyEl, saved, false);
       else bodyEl.dataset.wspActivePeriod = 'hari';
+      mountCountUp(bodyEl, 'wspSnapshotCountedUp');
+      mountBarReveal(bodyEl, '.wsp-metric__bar-fill');
     },
   },
 
@@ -1156,42 +1602,7 @@ export const widgets = {
      never replays the whole Story — see onMount. */
   'exec-activity': {
     render(ctx) {
-      const seen = new Set();
-      const auditItems = (ctx.logs || [])
-        .filter(l => AUDIT_TIMELINE_ALLOW.has(l.action))
-        .map(l => {
-          const meta = AUDIT_STORY_META[l.action];
-          return {
-            key: l.id || `log:${l.action}:${l.createdAt || l.timestamp}`,
-            groupKey: l.action,
-            domainKey: storyDomainKey('audit', l.action),
-            ts: Date.parse(l.createdAt || l.timestamp || 0),
-            icon: meta.icon, tone: meta.tone,
-            sentence: meta.sentence(l, ctx),
-            meta: '',
-            aggregate: meta.aggregate,
-          };
-        });
-      const engItems = (ctx.engineeringEvents || [])
-        .filter(e => ENG_TIMELINE_ALLOW.has(e.type))
-        .map(e => {
-          const meta = ENG_STORY_META[e.type];
-          return {
-            key: e.id || `eng:${e.type}:${e.timestamp}`,
-            groupKey: e.type,
-            domainKey: storyDomainKey('eng', e.type),
-            ts: Date.parse(e.timestamp || 0),
-            icon: meta.icon, tone: meta.tone,
-            sentence: engEventSentence(e.type, e.assignmentTitle),
-            meta: (e.actor && e.actor.name) || '',
-            aggregate: meta.aggregate,
-          };
-        });
-      const todayStart = startOfDay(0);
-      const raw = [...auditItems, ...engItems]
-        .filter(it => { if (seen.has(it.key)) return false; seen.add(it.key); return true; })
-        .filter(it => Number.isFinite(it.ts) && it.ts >= todayStart && it.ts < todayStart + DAY_MS)
-        .sort((a, b) => a.ts - b.ts);
+      const raw = todaysStoryItems(ctx);
       if (!raw.length) return empty('Belum ada aktivitas penting hari ini.');
 
       const blocks = buildStoryBlocks(raw);
@@ -1332,7 +1743,12 @@ export const widgets = {
 
       const todays = (ctx.assignments || []).filter(a => a.date === todayYmd && a.status !== 'cancelled');
 
-      const rows = driversList.map(d => {
+      // Phase 7D — `mine.length` (today's assignment count for this driver)
+      // is real, already-loaded data — the same array this widget already
+      // filters to find in-trip/upcoming status, just counted instead of
+      // searched. Used as a comparative bar (relative to the busiest driver
+      // shown), never a fabricated workload/fatigue score.
+      const perDriver = driversList.map(d => {
         const mine = todays.filter(a => a.driver === d.name);
         const inTrip = mine.find(a => {
           const s = toMin(a.startTime), e = toMin(a.endTime);
@@ -1345,11 +1761,23 @@ export const widgets = {
           ? `background:${esc(vehicle.color || '#9a9a9a')};${vehicleShapeCss(shapeMap.get(vehicle.name) || 'rounded')}`
           : '';
         const tone = inTrip ? 'good' : upcoming ? 'info' : 'neutral';
-        const status = inTrip ? 'Dalam perjalanan' : upcoming ? 'Terjadwal' : 'Tidak bertugas';
-        return listRow({ title: d.name, trailing: status, tone, dotStyle });
+        const status = mine.length > 0 ? `${mine.length} trip hari ini` : (inTrip ? 'Dalam perjalanan' : upcoming ? 'Terjadwal' : 'Tidak bertugas');
+        return { name: d.name, tripCount: mine.length, dotStyle, tone, status };
       });
+      const maxTrips = Math.max(1, ...perDriver.map(d => d.tripCount));
 
-      return list(rows.join(''));
+      const rows = perDriver.map(d => `
+        <div class="wsp-driver-row">
+          <span class="wsp-row__dot wsp-row__dot--${esc(d.tone)}" style="${esc(d.dotStyle)}" aria-hidden="true"></span>
+          <span class="wsp-driver-row__name">${esc(d.name)}</span>
+          <span class="wsp-driver-row__bar-track"><span class="wsp-driver-row__bar-fill wsp-driver-row__bar-fill--${esc(d.tone)}" data-bar-target="${((d.tripCount / maxTrips) * 100).toFixed(0)}" data-bar-key="${esc(d.name)}" style="width:0%"></span></span>
+          <span class="wsp-driver-row__status">${esc(d.status)}</span>
+        </div>`);
+
+      return `<div class="wsp-driver-list">${rows.join('')}</div>`;
+    },
+    onMount(bodyEl) {
+      mountBarReveal(bodyEl, '.wsp-driver-row__bar-fill');
     },
   },
 
@@ -1369,25 +1797,108 @@ export const widgets = {
       const shapeMap = buildVehicleShapeMap(vehicles);
       const vehicleById = new Map(vehicles.map(v => [v.id, v]));
 
-      const rows = vf.top.map(r => {
+      // Phase 7D — Fleet vehicle cards replace the plain list rows: each
+      // vehicle is a real operational entity ("cards are earned" per the
+      // brief), not just a status line. Same certified data (r.reason is
+      // the Reminder Engine's own sentence, e.g. "Servis terlewat 5 hari"
+      // — reused verbatim, not re-derived) — presentation only.
+      const cards = vf.top.map(r => {
         const vehicle = vehicleById.get(r.vehicleId);
         const dotStyle = vehicle
           ? `background:${esc(vehicle.color || '#9a9a9a')};${vehicleShapeCss(shapeMap.get(vehicle.name) || 'rounded')}`
           : '';
-        // No detailId: ctx.actions.openDetail() opens the ASSIGNMENT detail
-        // modal (buildHomeContext's only wired detail action) — a vehicleId
-        // there would be a category error, not a real deep link. This row
-        // stays informational; "Buka Manajemen Kendaraan" below is the
-        // actual navigation path, same as the mockup's own non-clickable rows.
-        return listRow({
-          title: `${r.vehicleName} · ${r.typeLabel}`,
-          trailing: r.statusLabel,
-          tone: engineTone(r.tone),
-          dotStyle,
-        });
+        const tone = engineTone(r.tone);
+        // Same category-error guard exec-vehicle-flags has always had:
+        // ctx.actions.openDetail() only resolves assignment ids.
+        // openVehicleDetail (Phase 7) is the correctly-typed deep link to
+        // the canonical Vehicle Detail Drawer.
+        const clickable = !!vehicle;
+        const tag = clickable ? 'button' : 'div';
+        const attrs = clickable ? ` type="button" data-wsp-action="openVehicleDetail" data-wsp-arg="${esc(r.vehicleId)}"` : '';
+        return `
+          <${tag} class="wsp-fleet-card wsp-fleet-card--${tone}"${attrs}>
+            <div class="wsp-fleet-card__top">
+              <span class="wsp-fleet-card__icon" aria-hidden="true">${anIcon('vehicle', { size: 15 })}</span>
+              <span class="wsp-fleet-card__dot" style="${esc(dotStyle)}" aria-hidden="true"></span>
+            </div>
+            <div class="wsp-fleet-card__name">${esc(r.vehicleName)} · ${esc(r.typeLabel)}</div>
+            <span class="wsp-fleet-card__status wsp-fleet-card__status--${tone}">${esc(r.statusLabel)}</span>
+            ${r.reason ? `<div class="wsp-fleet-card__reason">${esc(r.reason)}</div>` : ''}
+          </${tag}>`;
       });
-      return list(rows.join('')) + actionBtn('Buka Manajemen Kendaraan', 'navVehicles', { variant: 'ghost' });
+      return `<div class="wsp-fleet-grid">${cards.join('')}</div>` + actionBtn('Buka Manajemen Kendaraan', 'navVehicles', { variant: 'ghost' });
     },
+  },
+
+  /* ── Outlook ── (Phase 7, Executive Command Center Rebuild: "what should I
+     expect next" — the one question the pre-Phase-7 briefing never
+     answered. Three lines, nothing invented:
+       1) the day-over-day Insight sentence (topInsightLine, unchanged
+          computation) relocated here from Snapshot — a trend statement
+          belongs to Outlook, not "what happened this period";
+       2) ctx.recommendations.board.upcoming — the certified Fleet
+          Recommendation Engine's preventive/monitoring-tier vehicles.
+          Already computed every render (buildExecutiveRecommendations(),
+          js/app.js), deliberately excluded from Attention (non-actionable
+          tier — see exec-attention's own comment) and, until this phase,
+          never surfaced anywhere in the Home briefing at all;
+       3) tomorrow's scheduled trip count (tomorrowTripCount) — the only
+          net-new computation in this widget, and it's a one-line filter
+          over data already in ctx.assignments, not a forecast. */
+  'exec-outlook': {
+    render(ctx) {
+      const f = facts(ctx);
+      const insightLine = topInsightLine(ctx) || 'Data historis belum cukup untuk menghasilkan wawasan perbandingan.';
+      const trips = tomorrowTrips(ctx);
+      const tomorrow = trips.length;
+      const upcoming = (f.rec.certified && f.rec.board?.upcoming) || [];
+
+      const loadRow = metricRow(metric('Trip Terjadwal Besok', tomorrow, { tone: tomorrow > 0 ? 'info' : 'neutral', countUp: true }));
+
+      const upcomingBody = upcoming.length
+        ? list(upcoming.slice(0, 3).map(r => listRow({
+            title: `${r.vehicleName} — ${r.categoryLabel}`,
+            meta: r.reason,
+            trailing: r.timeline?.label || '',
+            tone: 'info',
+          })).join(''))
+        : compactSuccessLine('Tidak ada kendaraan dalam jendela pemantauan preventif.');
+
+      // Visual Expansion Pass (Section 11) — a real marker per scheduled
+      // trip (was one fixed decorative dot at a hardcoded 38%). "Hari Ini"
+      // is the horizon's left half, "Besok" its right half; a trip with a
+      // real startTime is placed within the right half using the exact
+      // same 07:00-19:00 operational-window math the Pulse strip already
+      // establishes as this app's convention. A trip with no recorded
+      // startTime still gets a marker (it's real — it's just not
+      // time-placed) at the "Besok" half's own midpoint, rather than being
+      // silently dropped. Zero trips tomorrow means zero markers, honestly
+      // — never a placeholder standing in for data that doesn't exist.
+      const toStartMin = (t) => { const m = /^(\d{1,2}):(\d{2})/.exec(t || ''); return m ? (+m[1]) * 60 + (+m[2]) : null; };
+      const tripMarkers = trips.map((a) => {
+        const min = toStartMin(a.startTime);
+        const pct = min != null
+          ? 50 + Math.max(0, Math.min(1, (min - PULSE_WINDOW_START_MIN) / (PULSE_WINDOW_END_MIN - PULSE_WINDOW_START_MIN))) * 50
+          : 75;
+        const label = a.startTime ? `Terjadwal ${a.startTime}` : 'Terjadwal besok';
+        return `<button type="button" class="wsp-horizon__marker wsp-horizon__marker--trip" style="left:${pct.toFixed(1)}%" data-horizon-label="${esc(label)}" aria-label="${esc(label)}"></button>`;
+      }).join('');
+      const horizon = `
+        <div class="wsp-horizon">
+          <div class="wsp-horizon__fill"></div>
+          <div class="wsp-horizon__marker wsp-horizon__marker--now" style="left:0%"></div>
+          ${tripMarkers}
+        </div>
+        <div class="wsp-horizon__labels"><span>Hari Ini</span><span>Besok</span></div>`;
+
+      return `
+        ${horizon}
+        <p class="wsp-insight">${esc(insightLine)}</p>
+        ${loadRow}
+        <div class="wsp-snapshot-period__label">Pemantauan Preventif</div>
+        ${upcomingBody}`;
+    },
+    onMount(bodyEl) { mountCountUp(bodyEl, 'wspOutlookCountedUp'); wireHorizonTooltip(bodyEl); },
   },
 
   /* ── Executive Launcher ── (Phase 6: the exit point of the briefing, not
@@ -1405,7 +1916,14 @@ export const widgets = {
     render(ctx) {
       const items = launcherDestinationsFor(ctx?.role);
       if (!items.length) return empty('Tidak ada tujuan yang tersedia untuk peran ini.');
-      return launcherGrid(items.map(d => ({ label: d.label, action: d.action, icon: anIcon(d.icon, { size: 18 }) })));
+      const mapped = items.map(d => ({ label: d.label, action: d.action, icon: anIcon(d.icon, { size: 18 }), group: d.group }));
+      // Phase 7D — "app switcher", not one flat icon row: split into the
+      // same two groups LAUNCHER_DESTINATIONS already carries, each with
+      // its own tinted icon badge color.
+      return launcherGroups([
+        { id: 'op', label: 'Operasional', tint: 'op', items: mapped.filter(d => d.group === 'op') },
+        { id: 'intel', label: 'Intelijen', tint: 'intel', items: mapped.filter(d => d.group === 'intel') },
+      ]);
     },
   },
 };

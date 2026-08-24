@@ -117,3 +117,173 @@
   font-size: 12px;
   border-radius: 999px;
 }
+
+/* ============================================================
+   RESPONSIVE — table -> stacked-card reflow (Phase 9 mobile-first
+   audit, Fix 1). All four tables previously wrapped their scroll
+   container in a plain inline `style="...overflow-x:auto"` <div>
+   (not a class), so no @media query could ever reach them. Moving
+   the wrapper to a class (below) is what unlocks the overrides in
+   this section at all.
+
+   These four are real <table>/<tr>/<td> markup (unlike petty-cash.css's
+   .pc-exp-row/.pc-exp-head, which are CSS-Grid divs), so the equivalent
+   of that file's "hide header row, restructure into stacked rows"
+   technique is: hide <thead>, turn each <tr> into a block-level card,
+   and turn each <td> into a flex row with a `data-label` pseudo-header
+   standing in for grid-template-columns + order. Every column's data
+   is preserved (nothing dropped) — none of these four tables has Petty
+   Cash's fallback affordance (a detail drawer) to move a column into,
+   so unlike .pc-exp-row this does not hide any column outright.
+   ============================================================ */
+
+.ot-root .ot-records-table-wrap,
+.ot-root .ot-closing-table-wrap,
+.ot-root .ot-history-table-wrap {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow-x: auto;
+}
+.ot-root .ot-preview-table-wrap {
+  flex: 1;
+  min-width: 300px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  overflow-x: auto;
+}
+
+/* Row-level action buttons (Penyesuaian Data / recordRow()) — were
+   inline padding:5px 10px;font-size:11.5px (~26px tall). min-height:44px
+   matches the touch-target convention already used elsewhere in this
+   app (style.css .btn-primary/.btn-today/.btn-icon, v1.20.8 / V1
+   Redesign Phase 6). */
+.ot-root .ot-row-btn {
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  border-radius: 7px;
+  padding: 5px 12px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Riwayat Laporan (Report History) — 7 columns, the most cramped of
+   the four, so it switches to cards at the widest breakpoint. */
+@media (max-width: 768px) {
+  .ot-root .ot-history-table thead { display: none; }
+  .ot-root .ot-history-table,
+  .ot-root .ot-history-table tbody { display: block; width: 100%; }
+  .ot-root .ot-history-table tr {
+    display: block;
+    padding: 12px 14px;
+    border-top: 1px solid var(--border);
+  }
+  .ot-root .ot-history-table tr:first-child { border-top: none; }
+  .ot-root .ot-history-table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 4px 0 !important;
+    border-top: none !important;
+    text-align: left !important;
+    white-space: normal !important;
+  }
+  .ot-root .ot-history-table td[data-label]::before {
+    content: attr(data-label);
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .02em;
+    flex: none;
+  }
+  .ot-root .ot-history-table td:last-child {
+    justify-content: flex-end;
+    margin-top: 8px;
+  }
+}
+
+/* Penyesuaian Data (Records) — 6 columns + row actions. */
+@media (max-width: 700px) {
+  .ot-root .ot-records-table thead { display: none; }
+  .ot-root .ot-records-table,
+  .ot-root .ot-records-table tbody { display: block; width: 100%; }
+  .ot-root .ot-records-table tr {
+    display: block;
+    padding: 12px 14px;
+    border-top: 1px solid var(--border);
+  }
+  .ot-root .ot-records-table tr:first-child { border-top: none; }
+  .ot-root .ot-records-table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 4px 0 !important;
+    border-top: none !important;
+    text-align: left !important;
+    white-space: normal !important;
+  }
+  .ot-root .ot-records-table td[data-label]::before {
+    content: attr(data-label);
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .02em;
+    flex: none;
+  }
+  .ot-root .ot-records-table td:last-child {
+    justify-content: flex-end;
+    margin-top: 8px;
+  }
+}
+
+/* Tutup Periode's Closing History (5 cols) + Report Builder's preview
+   tables (3-4 cols — already flex-wrap onto their own full-width row
+   above this breakpoint via the container's flex-wrap, so this is the
+   point where even one alone gets too tight to stay a real table). */
+@media (max-width: 640px) {
+  .ot-root .ot-closing-table thead,
+  .ot-root .ot-preview-table thead { display: none; }
+  .ot-root .ot-closing-table, .ot-root .ot-closing-table tbody,
+  .ot-root .ot-preview-table, .ot-root .ot-preview-table tbody { display: block; width: 100%; }
+  .ot-root .ot-closing-table tr,
+  .ot-root .ot-preview-table tr {
+    display: block;
+    padding: 10px 12px;
+    border-top: 1px solid var(--border);
+  }
+  .ot-root .ot-closing-table tr:first-child,
+  .ot-root .ot-preview-table tr:first-child { border-top: none; }
+  .ot-root .ot-closing-table td,
+  .ot-root .ot-preview-table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 4px 0 !important;
+    border-top: none !important;
+    text-align: left !important;
+    white-space: normal !important;
+  }
+  .ot-root .ot-closing-table td[data-label]::before,
+  .ot-root .ot-preview-table td[data-label]::before {
+    content: attr(data-label);
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .02em;
+    flex: none;
+  }
+}

@@ -72,6 +72,7 @@
 }
 .gud-muted{color:var(--text-faint);font-size:13px;}
 .gud-mt{margin-top:16px;}
+.gud-mb{margin-bottom:16px;}
 
 /* ── page + section headers ───────────────────────────────────────────── */
 .gud-page-head{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap;}
@@ -236,15 +237,30 @@
 /* ── scrim + drawer + modal (System B, ported from .eng-scrim/.eng-drawer/.eng-modal-box) ── */
 .gud-scrim{position:fixed;inset:0;background:var(--scrim);z-index:420;display:flex;justify-content:flex-end;opacity:0;pointer-events:none;transition:opacity .2s;}
 .gud-scrim.-open{opacity:1;pointer-events:auto;} .gud-scrim.-center{justify-content:center;align-items:center;}
-.gud-drawer{width:480px;max-width:94vw;height:100%;background:var(--surface);border-left:1px solid var(--border);box-shadow:var(--shadow-lg);display:flex;flex-direction:column;transform:translateX(24px);transition:transform .24s cubic-bezier(.2,.7,.2,1);}
-.gud-scrim.-open .gud-drawer{transform:none;}
-.gud-drawer-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:22px 24px 18px;border-bottom:1px solid var(--border-faint);flex:none;}
-.gud-drawer-head-txt{min-width:0;}
+/* Design System Program Phase 10 (Canonical Drawer Migration): every
+   centered Gudang modal (Add/Edit Item, Add Asset Unit, Bulk Operations,
+   the delete-confirm dialog) can be opened while the Item/Asset Detail
+   drawer is open behind it — that drawer now renders through the
+   canonical shell (js/components/drawer.js), whose own z-index
+   (--drawer-z-panel: 10001, platform.css) sits far above this file's
+   pre-existing z-index:420. Without this, a centered modal opened from
+   inside the migrated drawer would render UNDER it — unreachable. Scoped
+   to .-center only: the search-overlay and filter-sheet scrims use their
+   own distinct classes (gud-spotlight-scrim / gud-filter-sheet-scrim) and
+   are unaffected. */
+.gud-scrim.-center{z-index:10050;}
+/* Design System Program Phase 10 (Canonical Drawer Migration): the shell
+   rules that used to live here (.gud-drawer/.gud-drawer-head/-head-txt/
+   -title/-body/-foot, plus the .gud-scrim.-open .gud-drawer transform and
+   the ≤760px width override further below) are gone — that shell is now
+   js/components/drawer.js's job. .gud-drawer-badges stays: the Item/Asset
+   Detail badge/back-link now renders as the first block of the canonical
+   drawer's body instead of a shell-header slot (see gudang-item-detail.js's
+   Phase 10 comment), and reuses this exact class for identical styling.
+   .gud-drawer-sub was already unused before this migration (dead code
+   pre-dating Phase 10, left as-is — not this phase's to clean up). */
 .gud-drawer-badges{display:flex;align-items:center;gap:8px;margin-bottom:7px;}
-.gud-drawer-title{font-family:var(--font-display);font-weight:800;font-size:21px;letter-spacing:-.022em;margin:0;line-height:1.18;}
 .gud-drawer-sub{display:flex;align-items:center;gap:8px;margin-top:8px;color:var(--text-faint);font-size:12.5px;font-weight:600;}
-.gud-drawer-body{padding:20px 24px 28px;flex:1;overflow-y:auto;min-height:0;}
-.gud-drawer-foot{padding:16px 24px;border-top:1px solid var(--border-faint);flex:none;}
 .gud-sec{margin-top:26px;} .gud-sec:first-child{margin-top:0;}
 .gud-sec-danger{border-top:1px solid var(--border-faint);padding-top:18px;}
 .gud-sec-t{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-ghost);font-weight:700;margin-bottom:12px;}
@@ -822,7 +838,6 @@
   .gud-grid.-2,.gud-grid.-3{grid-template-columns:1fr;}
 }
 @media (max-width:760px){
-  .gud-drawer{width:100%;max-width:100%;}
   .gud-btn.-big{min-width:0;}
 }
 

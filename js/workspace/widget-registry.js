@@ -32,14 +32,33 @@ export const WIDGETS = {
      approved Information Architecture Review one-to-one. */
   'exec-hero':           { id: 'exec-hero',           title: 'Ringkasan Eksekutif',    span: 'full', variant: 'hero',    group: 'executive' },
   'exec-attention':      { id: 'exec-attention',      title: 'Pusat Perhatian',        span: 'full', variant: 'section', group: 'executive' },
-  'exec-recommendation': { id: 'exec-recommendation', title: 'Tindakan Direkomendasikan', span: 1,   variant: 'card',    group: 'executive' },
-  'exec-snapshot':       { id: 'exec-snapshot',       title: 'Snapshot Operasional',   span: 'full', variant: 'section', group: 'executive' },
-  'exec-activity':       { id: 'exec-activity',       title: 'Hari Ini',               span: 2,      variant: 'card',    group: 'executive' },
+  // Phase 7 — promoted from a half-width `card` to a full-width, de-boxed
+  // `section` (was span:1/variant:'card'): alone in its own DECISIONS zone
+  // now, it should read with the same weight as Attention (NOW), not as a
+  // card sharing a row with nothing.
+  'exec-recommendation': { id: 'exec-recommendation', title: 'Tindakan Direkomendasikan', span: 'full', variant: 'section', group: 'executive' },
+  // Phase 7E (Dashboard Composition Rebuild) — span 'full' -> 1: paired with
+  // exec-activity in the same row instead of stacking full-width above it,
+  // so SITUATION reads as a 2x2 dashboard grid (Snapshot|Activity,
+  // Driver|Vehicle Flags) instead of two full-width bands then a half-width
+  // pair. Zone widget order is unchanged (['exec-snapshot', 'exec-activity',
+  // 'exec-drivers', 'exec-vehicle-flags']) — the existing 2-column
+  // `.wsp-grid` auto-places 4 span:1 widgets into exactly 2 rows of 2 with
+  // no renderer change needed.
+  'exec-snapshot':       { id: 'exec-snapshot',       title: 'Snapshot Operasional',   span: 1,      variant: 'section', group: 'executive' },
+  // Phase 7B (Executive Experience Refinement) — card -> section: de-boxed,
+  // matching the rest of the SITUATION zone.
+  // Phase 7E — span 2 -> 1, same reasoning as exec-snapshot above.
+  'exec-activity':       { id: 'exec-activity',       title: 'Hari Ini',               span: 1,      variant: 'section', group: 'executive' },
   // v1.30.9.14 (V1 Redesign Phase 2) — Admin Home mockup's two-column
   // "Drivers" / "Vehicle flags" pairing, next to exec-activity so they land
   // in the same visual row as the mockup's layout.
-  'exec-drivers':        { id: 'exec-drivers',        title: 'Driver',                 span: 1,      variant: 'card',    group: 'executive' },
-  'exec-vehicle-flags':  { id: 'exec-vehicle-flags',  title: 'Status Kendaraan',        span: 1,      variant: 'card',    group: 'executive' },
+  'exec-drivers':        { id: 'exec-drivers',        title: 'Driver',                 span: 1,      variant: 'section', group: 'executive' },
+  'exec-vehicle-flags':  { id: 'exec-vehicle-flags',  title: 'Status Kendaraan',        span: 1,      variant: 'section', group: 'executive' },
+  // Phase 7 (Executive Command Center Rebuild) — Outlook zone: what to
+  // expect next, never invented (day-over-day insight + certified
+  // preventive-monitoring fleet items + tomorrow's scheduled load).
+  'exec-outlook':        { id: 'exec-outlook',        title: 'Proyeksi',               span: 'full', variant: 'section', group: 'executive' },
   'exec-quick':          { id: 'exec-quick',          title: 'Peluncur Eksekutif',     span: 'full', variant: 'section', group: 'executive' },
 
   /* ── Request Workspace (bidang) ── */

@@ -26,6 +26,11 @@ import { isAdmin, getCurrentUser } from '../auth.js';
 import { createFocusGuard } from '../ui/focus-preserving-render.js';
 import { runSaveFeedback } from '../components/save-feedback.js';
 import { showToast as canonicalToast } from '../components/toast.js';
+// Design System Program Phase 10 (Canonical Drawer Migration): the expense
+// detail drawer now renders through the app-wide canonical shell instead
+// of this module's own hand-rolled, fully-inline-styled overlay — see
+// syncPettyCashDetailDrawer() below.
+import { openDrawer, closeDrawer, refreshDrawerBody } from '../components/drawer.js';
 import {
   initPettyCashStore, registerChangeListener, getSettings, getActiveCycle,
   getNors, getNorById, getExpenses, getExpenseById,
@@ -65,6 +70,11 @@ const st = {
 };
 
 let root = null, bound = false, opened = false, listening = false;
+// Phase 10: the currently-open canonical drawer overlay + the expense id
+// it was built for — lets syncPettyCashDetailDrawer() tell "same expense
+// re-rendering" (refreshDrawerBody, preserves scroll) apart from
+// "switching to a different expense" (a real openDrawer()).
+let _pcDrawerOverlay = null, _pcDrawerKey = null;
 
 function blankForm() {
   return { expenseDate: todayISO(), unit: 'Engineering', customUnit: '', category: 'Inventaris', description: '', amount: '', notes: '', reimbursementDetail: blankReimburseDetail(), _err: '' };
@@ -240,6 +250,69 @@ function render() {
   captureFocus();
   root.innerHTML = shell();
   restoreFocus();
+  syncPettyCashDetailDrawer();
+}
+
+/** Phase 10 (Canonical Drawer Migration): st.detailId used to be rendered
+ *  as a plain string concatenated into shell()'s output — every render()
+ *  destroyed and recreated the whole drawer subtree. Now driven
+ *  imperatively: a genuinely new expense (different id, or first open)
+ *  gets a real openDrawer() call; the SAME expense re-rendering gets
+ *  refreshDrawerBody() instead. Closing (st.detailId back to null, from
+ *  any path — the drawer's own dismiss, openEdit(), a successful delete/
+ *  archive/restore, navigating to the related NOR) closes the real
+ *  drawer the same way. */
+function syncPettyCashDetailDrawer() {
+  const desiredKey = st.detailId || null;
+  if (!desiredKey) {
+    if (_pcDrawerOverlay) { closeDrawer(); _pcDrawerOverlay = null; _pcDrawerKey = null; }
+    return;
+  }
+  const { title, subtitle, body, footer } = detailDrawer();
+  if (!title && !body) { // getExpenseById() found nothing (vanished record)
+    if (_pcDrawerOverlay) { closeDrawer(); _pcDrawerOverlay = null; _pcDrawerKey = null; }
+    return;
+  }
+  if (desiredKey === _pcDrawerKey && _pcDrawerOverlay) {
+    refreshDrawerBody(body);
+    return;
+  }
+  _pcDrawerKey = desiredKey;
+  _pcDrawerOverlay = openDrawer({
+    title,
+    subtitle,
+    icon: 'wallet',
+    body,
+    footer,
+    onAction: (action) => onPettyCashDrawerAction(action),
+    onClose: () => { setState({ detailId: null }); },
+  });
+}
+
+/** Handles every action fired from inside the migrated drawer — real
+ *  footer buttons and the body-level "Lihat ... NOR ...→" links (all
+ *  data-drawer-action, routed here regardless of where in the drawer
+ *  they sit — js/components/drawer.js dispatches onAction for any such
+ *  element, not just the footer slot). Mirrors onClick()'s old switch
+ *  cases exactly; the NOR id is recomputed from the currently-open
+ *  expense (closure via st.detailId) instead of a data-id read, since
+ *  this callback is rebuilt fresh for whichever expense is open. */
+function onPettyCashDrawerAction(action) {
+  const id = st.detailId;
+  if (!id) return;
+  switch (action) {
+    case 'closeDetail': setState({ detailId: null }); break;
+    case 'openNorFromDetail': {
+      const raw = getExpenseById(id);
+      if (raw && raw.norId) setState({ detailId: null, screen: 'norDetail', norDetailId: raw.norId });
+      break;
+    }
+    case 'restoreExpense': doRestoreExpense(id); break;
+    case 'editExpense': openEdit(id); break;
+    case 'archiveExpense': doArchiveExpense(id); break;
+    case 'deleteExpense': doDeleteExpense(id); break;
+    default: break;
+  }
 }
 
 /* Embedded shell — content + modals only. The platform shell supplies the
@@ -258,7 +331,6 @@ function shell() {
     </div>
   </div>
   ${st.addOpen ? addModal() : ''}
-  ${st.detailId ? detailDrawer() : ''}
   ${st.notifOpen ? notifModal(m) : ''}
   ${st.cycleModalOpen ? cycleModal(m) : ''}`;
 }
@@ -956,7 +1028,6 @@ function mobileScreen(m) {
 /* Shared field styles for the Tambah/Edit modal (kept identical to the inline
    originals so the visual design is unchanged). */
 const FLD_LABEL = 'font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase';
-const FLD_INPUT = 'width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text)';
 
 /* ── Patchable dynamic regions of the modal (v1.16.4.2 flicker fix) ──────
    The Unit and Kategori <select>s are STATIC in the DOM; the fields that
@@ -972,7 +1043,7 @@ function unitExtraHtml(f) {
       <input name="customUnit" data-act="formInput" data-ac-input data-focus="customUnit" value="${esc(f.customUnit)}"
         autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
         role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="pcUnitAcMenu"
-        placeholder="Contoh: Sekretariat, Humas, Turnamen, PP PBSI" style="${FLD_INPUT}"/>
+        placeholder="Contoh: Sekretariat, Humas, Turnamen, PP PBSI" class="pc-add-input"/>
       <div id="pcUnitAcMenu" class="pc-ac-menu" role="listbox" aria-label="Saran nama unit" hidden></div>
     </div>
     <span style="display:block;margin-top:5px;font-size:10.5px;color:var(--muted)">Ketik untuk mencari bidang — gunakan ↑ ↓ untuk memilih, Tab/Enter untuk melengkapi. Dipakai untuk analitik penggunaan dana per bidang.</span></label>`;
@@ -1089,21 +1160,21 @@ function onUnitAcKeydown(e) {
 function amountRegionHtml(f) {
   if (!formIsReimburse(f)) {
     return `<label style="display:block"><span style="${FLD_LABEL}">Jumlah (Rp) *</span>
-      <input name="amount" data-act="formInput" data-focus="amount" value="${esc(f.amount)}" inputmode="numeric" placeholder="0" style="${FLD_INPUT};font-family:'JetBrains Mono',monospace"/></label>`;
+      <input name="amount" data-act="formInput" data-focus="amount" value="${esc(f.amount)}" inputmode="numeric" placeholder="0" class="pc-add-input" style="font-family:'JetBrains Mono',monospace"/></label>`;
   }
   const sum = reimburseSum(f.reimbursementDetail);
   const items = REIMBURSE_ITEMS.map(it => {
     const v = Number(f.reimbursementDetail[it.key]) || 0;
     return `<label style="display:block"><span style="${FLD_LABEL}">${esc(it.label)}</span>
-      <input data-act="reimburseInput" data-rk="${esc(it.key)}" data-focus="rb_${esc(it.key)}" inputmode="numeric" value="${v ? esc(String(v)) : ''}" placeholder="0" style="${FLD_INPUT};font-family:'JetBrains Mono',monospace"/></label>`;
+      <input data-act="reimburseInput" data-rk="${esc(it.key)}" data-focus="rb_${esc(it.key)}" inputmode="numeric" value="${v ? esc(String(v)) : ''}" placeholder="0" class="pc-add-input" style="font-family:'JetBrains Mono',monospace"/></label>`;
   }).join('');
   return `
     <div style="border:1px solid var(--border);border-radius:11px;padding:14px;background:var(--card2)">
       <div style="${FLD_LABEL};margin-bottom:10px">Rincian Reimbursement</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">${items}</div>
+      <div class="pc-add-grid">${items}</div>
     </div>
     <label style="display:block"><span style="${FLD_LABEL}">Jumlah (Rp) — otomatis</span>
-      <input id="pcAmountValue" value="${esc(rp(sum))}" readonly tabindex="-1" style="${FLD_INPUT};font-family:'JetBrains Mono',monospace;font-weight:700;background:var(--border2);cursor:not-allowed" title="Dihitung otomatis dari rincian"/>
+      <input id="pcAmountValue" value="${esc(rp(sum))}" readonly tabindex="-1" class="pc-add-input" style="font-family:'JetBrains Mono',monospace;font-weight:700;background:var(--border2);cursor:not-allowed" title="Dihitung otomatis dari rincian"/>
       <span style="display:block;margin-top:5px;font-size:10.5px;color:var(--muted)">Total dihitung otomatis dari rincian — tidak dapat diubah manual.</span></label>`;
 }
 
@@ -1117,35 +1188,35 @@ function addModal() {
     ? `Perbarui nota petty cash · Ref ${esc(f.refNumber || '—')} (tidak dapat diubah)`
     : `Catat nota fisik petty cash · Ref otomatis ${esc(svc.nextRefNumber())}`;
   return `
-  <div data-act="closeAdd" style="position:fixed;inset:0;background:rgba(20,16,14,.5);backdrop-filter:blur(2px);z-index:1500;display:flex;align-items:flex-start;justify-content:center;padding:40px 20px;overflow-y:auto;animation:pcFade .18s ease">
-    <div data-act="stop" style="width:100%;max-width:560px;background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-lg);animation:pcPop .22s ease">
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 22px;border-bottom:1px solid var(--border2)">
+  <div data-act="closeAdd" style="position:fixed;inset:0;background:rgba(20,16,14,.5);backdrop-filter:blur(2px);z-index:1500;display:flex;align-items:flex-start;justify-content:center;padding:40px 20px;animation:pcFade .18s ease">
+    <div data-act="stop" class="pc-add-box">
+      <div class="pc-add-head" style="display:flex;justify-content:space-between;align-items:center;padding:18px 22px;border-bottom:1px solid var(--border2)">
         <div><div style="font-weight:800;font-size:17px">${esc(title)}</div><div style="font-size:11.5px;color:var(--muted);margin-top:1px">${subtitle}</div></div>
         <div data-act="closeAdd" style="width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
       </div>
-      <div style="padding:20px 22px;display:flex;flex-direction:column;gap:15px">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <div class="pc-add-body">
+        <div class="pc-add-grid">
           <label style="display:block"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Tanggal *</span>
-            <input type="date" name="expenseDate" data-act="formInput" value="${esc(f.expenseDate)}" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text)"/></label>
+            <input type="date" name="expenseDate" data-act="formInput" value="${esc(f.expenseDate)}" class="pc-add-input"/></label>
           <label style="display:block"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Unit *</span>
-            <select name="unit" data-act="formInput" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text);cursor:pointer">${units}</select></label>
+            <select name="unit" data-act="formInput" class="pc-add-input" style="cursor:pointer">${units}</select></label>
         </div>
         <div id="pcUnitExtra" style="display:contents">${unitExtraHtml(f)}</div>
         <label style="display:block"><span style="${FLD_LABEL}">Kategori *</span>
-          <select name="category" data-act="formInput" style="${FLD_INPUT};cursor:pointer">${cats}</select></label>
+          <select name="category" data-act="formInput" class="pc-add-input" style="cursor:pointer">${cats}</select></label>
         <div id="pcAmountRegion" style="display:contents">${amountRegionHtml(f)}</div>
         <label style="display:block"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Deskripsi *</span>
-          <input name="description" data-act="formInput" data-focus="description" value="${esc(f.description)}" placeholder="Contoh: Pembelian cairan pembersih & alat pel" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text)"/></label>
+          <input name="description" data-act="formInput" data-focus="description" value="${esc(f.description)}" placeholder="Contoh: Pembelian cairan pembersih & alat pel" class="pc-add-input"/></label>
         <label style="display:block"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Catatan / Keterangan</span>
-          <input name="notes" data-act="formInput" data-focus="notes" value="${esc(f.notes)}" placeholder="Contoh: nama PIC / no. kendaraan (opsional)" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--text)"/></label>
+          <input name="notes" data-act="formInput" data-focus="notes" value="${esc(f.notes)}" placeholder="Contoh: nama PIC / no. kendaraan (opsional)" class="pc-add-input"/></label>
         <label style="display:block"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Foto Nota <span style="color:var(--muted);font-weight:400;letter-spacing:0">(Opsional · disimpan untuk arsip digital)</span></span>
           <div data-act="pickReceipt" style="margin-top:6px;border:1.5px dashed var(--input-bd);border-radius:9px;padding:18px 14px;text-align:center;color:var(--muted);font-size:12.5px;cursor:pointer;background:var(--card2)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto 8px;display:block"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>${f._photoName ? esc(f._photoName) : 'Klik untuk pilih foto nota fisik<br/><span style="font-size:11px">JPG, PNG · maks. 5 MB · tidak wajib</span>'}</div>
           <input id="pcReceiptInput" type="file" accept="image/*" data-act="receiptFile" style="display:none"/></label>
         ${f._err ? `<div id="pcAddErr" class="sf-inline-error" role="alert">${esc(f._err)}</div>` : ''}
       </div>
-      <div style="display:flex;justify-content:flex-end;gap:10px;padding:16px 22px;border-top:1px solid var(--border2)">
-        <button data-act="closeAdd" style="background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 18px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer">Batal</button>
-        <button data-act="submitAdd" style="background:var(--primary);color:#fff;border:none;border-radius:9px;padding:10px 20px;font-weight:700;font-size:13px;cursor:pointer">${editing ? 'Simpan Perubahan' : 'Simpan Pengeluaran'}</button>
+      <div class="pc-add-foot" style="display:flex;justify-content:flex-end;gap:10px;padding:16px 22px;border-top:1px solid var(--border2)">
+        <button data-act="closeAdd" class="pc-add-btn pc-add-btn--cancel">Batal</button>
+        <button data-act="submitAdd" class="pc-add-btn pc-add-btn--save">${editing ? 'Simpan Perubahan' : 'Simpan Pengeluaran'}</button>
       </div>
     </div>
   </div>`;
@@ -1178,9 +1249,24 @@ function reimbursementDetailSection(e) {
     </div>`;
 }
 
+/* Design System Program Phase 10 (Canonical Drawer Migration): used to
+ * return a full HTML string — a completely inline-styled overlay+panel
+ * (no class name at all, per the Phase 9 audit) with no focus trap, no
+ * Escape handling, no body scroll lock, no safe-area on header/body, and
+ * a fixed right-docked panel with no bottom-sheet fallback at any mobile
+ * width. All of that is js/components/drawer.js's job now — this
+ * function returns the pieces openDrawer()/refreshDrawerBody() consume.
+ * `title`/`subtitle` are plain escaped text in the canonical shell, so
+ * the ref number (was monospace-styled in the old header) now renders in
+ * the same font as the description — a disclosed cosmetic simplification,
+ * not a functional loss. Every conditional body section (locked/cascade-
+ * archived banners, reimbursement breakdown, audit timeline) and every
+ * footer button-set variant is preserved exactly; see
+ * onPettyCashDrawerAction() for where each button's action now runs.
+ */
 function detailDrawer() {
   const raw = st.detailId ? getExpenseById(st.detailId) : null;
-  if (!raw) return '';
+  if (!raw) return { title: '', subtitle: '', body: '', footer: [] };
   const d = decorate(raw);
   const locked = raw.status === EXPENSE_STATUS.LOCKED;
   const archived = raw.status === EXPENSE_STATUS.ARCHIVED;
@@ -1198,14 +1284,7 @@ function detailDrawer() {
       <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--label);margin-top:3px">${esc(new Date(a.timestamp).toLocaleString('id-ID'))} · ${esc(a.user)}</div>
     </div>`).join('') || '<div style="font-size:12px;color:var(--muted)">Belum ada riwayat.</div>';
 
-  return `
-  <div data-act="closeDetail" style="position:fixed;inset:0;background:rgba(20,16,14,.5);backdrop-filter:blur(2px);z-index:1500;display:flex;justify-content:flex-end;animation:pcFade .18s ease">
-    <div data-act="stop" style="width:440px;max-width:94vw;height:100%;background:var(--card);border-left:1px solid var(--border);box-shadow:var(--shadow-lg);display:flex;flex-direction:column;animation:pcPop .24s ease">
-      <div style="padding:18px 22px;border-bottom:1px solid var(--border2);display:flex;justify-content:space-between;align-items:flex-start">
-        <div><div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)">${esc(d.refNumber)}</div><div style="font-weight:800;font-size:18px;margin-top:3px;line-height:1.25">${esc(d.description)}</div></div>
-        <div data-act="closeDetail" style="width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
-      </div>
-      <div style="flex:1;overflow-y:auto;padding:20px 22px">
+  const body = `
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
           <span style="${d.badgeStyle}" title="${esc(d.badgeTip)}">${esc(d.statusLabel)}</span>
           ${locked && nor ? `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Terkunci dalam ${esc(nor.norNumber)}</span>` : ''}
@@ -1227,42 +1306,41 @@ function detailDrawer() {
           <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1px;color:var(--blue);text-transform:uppercase;margin-bottom:4px">Digunakan oleh TEST NOR</div>
           <div style="font-weight:700;font-size:13px;font-family:'JetBrains Mono',monospace">${esc(nor.norNumber)}</div>
           <div style="font-size:11.5px;color:var(--muted);margin-top:5px;line-height:1.4">Pengeluaran ini sedang digunakan oleh TEST NOR dan tidak dapat digunakan pada NOR lain.</div>
-          <button data-act="openNorFromDetail" data-id="${esc(nor.id)}" style="margin-top:8px;background:transparent;border:none;color:var(--blue);font-size:11.5px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline">Lihat TEST NOR →</button>
+          <button data-drawer-action="openNorFromDetail" style="margin-top:8px;background:transparent;border:none;color:var(--blue);font-size:11.5px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline">Lihat TEST NOR →</button>
         </div>`
           : `<div style="background:var(--amber-tint);border:1px solid var(--amber-bd);border-radius:11px;padding:12px 14px;margin-bottom:18px">
           <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1px;color:var(--amber);text-transform:uppercase;margin-bottom:4px">Termasuk dalam NOR</div>
           <div style="font-weight:700;font-size:13px;font-family:'JetBrains Mono',monospace">${esc(nor.norNumber)}</div>
           <div style="font-size:11.5px;color:var(--muted);margin-top:5px;line-height:1.4">Transaksi telah direalisasikan dalam NOR dan tidak dapat diubah.</div>
-          <button data-act="openNorFromDetail" data-id="${esc(nor.id)}" style="margin-top:8px;background:transparent;border:none;color:var(--amber);font-size:11.5px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline">Lihat NOR Terkait →</button>
+          <button data-drawer-action="openNorFromDetail" style="margin-top:8px;background:transparent;border:none;color:var(--amber);font-size:11.5px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline">Lihat NOR Terkait →</button>
         </div>`) : ''}
         ${cascadeArchived && nor ? `<div style="background:var(--card2);border:1px solid var(--border);border-radius:11px;padding:12px 14px;margin-bottom:18px">
           <div style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1px;color:var(--muted);text-transform:uppercase;margin-bottom:4px">Diarsipkan bersama NOR Test</div>
           <div style="font-weight:700;font-size:13px;font-family:'JetBrains Mono',monospace">${esc(nor.norNumber)}</div>
           <div style="font-size:11.5px;color:var(--muted);margin-top:5px;line-height:1.4">Pengeluaran ini diarsipkan bersama TEST NOR. Pulihkan melalui NOR terkait agar status semula kembali.</div>
-          <button data-act="openNorFromDetail" data-id="${esc(nor.id)}" style="margin-top:8px;background:transparent;border:none;color:var(--primary);font-size:11.5px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline">Buka NOR Test →</button>
+          <button data-drawer-action="openNorFromDetail" style="margin-top:8px;background:transparent;border:none;color:var(--primary);font-size:11.5px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline">Buka NOR Test →</button>
         </div>` : ''}
         <div style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase;margin-bottom:12px">Riwayat Audit</div>
         <div style="position:relative;padding-left:20px">
           <div style="position:absolute;left:5px;top:4px;bottom:6px;width:1.5px;background:var(--border)"></div>
           ${auditRows}
-        </div>
-      </div>
-      <div style="padding:14px 22px;border-top:1px solid var(--border2);display:flex;gap:10px">
-        ${locked && nor
-          ? `<button data-act="openNorFromDetail" data-id="${esc(nor.id)}" style="flex:1;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:11px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer">Lihat NOR Terkait</button>`
-          : cascadeArchived
-            ? `<button data-act="closeDetail" style="flex:1;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:11px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer">Tutup</button>
-          <button data-act="openNorFromDetail" data-id="${esc(raw.norId)}" style="display:flex;align-items:center;gap:7px;background:var(--primary-tint);border:1px solid var(--primary-tint);border-radius:9px;padding:11px 16px;font-weight:600;font-size:13px;color:var(--primary);cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>Pulihkan via NOR Test</button>`
-          : archived
-            ? `<button data-act="closeDetail" style="flex:1;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:11px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer">Tutup</button>
-          <button data-act="restoreExpense" data-id="${esc(d.id)}" style="display:flex;align-items:center;gap:7px;background:var(--green-tint);border:1px solid var(--green-bd);border-radius:9px;padding:11px 16px;font-weight:600;font-size:13px;color:var(--green);cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M3.51 13a9 9 0 1 0 2.13-9.36L3 7"/></svg>Pulihkan Pengeluaran</button>`
-            : `<button data-act="closeDetail" style="flex:1;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:11px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer">Tutup</button>
-          <button data-act="editExpense" data-id="${esc(d.id)}" style="display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:11px 14px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Edit</button>
-          <button data-act="archiveExpense" data-id="${esc(d.id)}" style="display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:11px 14px;font-weight:600;font-size:13px;color:var(--text);cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>Arsipkan</button>
-          <button data-act="deleteExpense" data-id="${esc(d.id)}" style="background:var(--primary-tint);border:1px solid var(--primary-tint);border-radius:9px;padding:11px 16px;font-weight:600;font-size:13px;color:var(--primary);cursor:pointer">Hapus</button>`}
-      </div>
-    </div>
-  </div>`;
+        </div>`;
+
+  // Footer button-set: 4 mutually-exclusive variants by lifecycle state,
+  // same branching as before, now real canonical-footer descriptors
+  // (js/components/drawer.js's openDrawer({footer})) instead of hand-
+  // styled buttons. 'Pulihkan Pengeluaran' loses its specific green tint
+  // (canonical footer only has 'primary'/'danger' variants) — a disclosed
+  // cosmetic simplification; 'Hapus' maps onto 'danger', a genuine fit.
+  const footer = locked && nor
+    ? [{ label: 'Lihat NOR Terkait', action: 'openNorFromDetail', variant: 'primary' }]
+    : cascadeArchived
+      ? [{ label: 'Tutup', action: 'closeDetail' }, { label: 'Pulihkan via NOR Test', action: 'openNorFromDetail', variant: 'primary' }]
+      : archived
+        ? [{ label: 'Tutup', action: 'closeDetail' }, { label: 'Pulihkan Pengeluaran', action: 'restoreExpense', variant: 'primary' }]
+        : [{ label: 'Tutup', action: 'closeDetail' }, { label: 'Edit', action: 'editExpense' }, { label: 'Arsipkan', action: 'archiveExpense' }, { label: 'Hapus', action: 'deleteExpense', variant: 'danger' }];
+
+  return { title: d.description, subtitle: d.refNumber, body, footer };
 }
 
 function notifModal(m) {
@@ -1274,8 +1352,13 @@ function notifModal(m) {
       <div style="display:flex;justify-content:space-between;align-items:flex-start"><div style="display:flex;align-items:center;gap:7px;font-weight:700;font-size:13px"><span style="color:${n.accent}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${n.icon}</svg></span>${esc(n.title)}</div><div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--label)">${esc(n.time)}</div></div>
       <div style="font-size:12px;color:var(--muted);margin-top:5px;line-height:1.4">${esc(n.body)}</div>
     </div>`).join('') || '<div style="padding:30px;text-align:center;color:var(--muted);font-size:13px">Tidak ada notifikasi.</div>';
+  // Phase 10 (Canonical Drawer Migration): can be opened (global bell icon)
+  // while the expense detail drawer is also open — that drawer now renders
+  // through the canonical shell (z-index 10001, platform.css); bumped
+  // above it so this modal doesn't render underneath, unreachable. Was
+  // z-index:1500.
   return `
-  <div data-act="closeNotif" style="position:fixed;inset:0;background:rgba(20,16,14,.5);backdrop-filter:blur(2px);z-index:1500;display:flex;align-items:flex-start;justify-content:center;padding:60px 20px;animation:pcFade .18s ease">
+  <div data-act="closeNotif" style="position:fixed;inset:0;background:rgba(20,16,14,.5);backdrop-filter:blur(2px);z-index:10050;display:flex;align-items:flex-start;justify-content:center;padding:60px 20px;animation:pcFade .18s ease">
     <div data-act="stop" style="width:100%;max-width:440px;background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-lg);max-height:80vh;display:flex;flex-direction:column;animation:pcPop .22s ease">
       <div style="padding:17px 20px;border-bottom:1px solid var(--border2);display:flex;justify-content:space-between;align-items:center"><div style="font-weight:800;font-size:17px">Notifikasi</div><div data-act="closeNotif" style="width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div></div>
       <div style="flex:1;overflow-y:auto;padding:14px 18px">
@@ -1289,8 +1372,13 @@ function notifModal(m) {
 
 function cycleModal(m) {
   const cycle = m.cycle || {};
+  // Phase 10 (Canonical Drawer Migration): bumped above the canonical
+  // drawer's z-index (10001, platform.css) for the same reason as
+  // notifModal() above — no state clears detailId when this modal opens,
+  // so it must not risk rendering underneath an open expense detail
+  // drawer. Was z-index:1600.
   return `
-  <div data-act="closeCycleModal" style="position:fixed;inset:0;background:rgba(20,16,14,.55);backdrop-filter:blur(3px);z-index:1600;display:flex;align-items:center;justify-content:center;padding:20px">
+  <div data-act="closeCycleModal" style="position:fixed;inset:0;background:rgba(20,16,14,.55);backdrop-filter:blur(3px);z-index:10050;display:flex;align-items:center;justify-content:center;padding:20px">
     <div data-act="stop" style="width:100%;max-width:480px;background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-lg);overflow:hidden">
       <div style="background:var(--green);padding:22px 26px 20px">
         <div style="color:rgba(255,255,255,.85);font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px">Dana Pengganti Diterima</div>
@@ -1365,18 +1453,20 @@ async function onClick(e) {
     case 'closeDrawer': setState({ drawerOpen: false }); return;
     case 'openAdd': setState({ addOpen: true, editId: null, drawerOpen: false, form: blankForm() }); return;
     case 'closeAdd': setState({ addOpen: false, editId: null }); return;
-    case 'editExpense': return openEdit(id);
     case 'openNotif': setState({ notifOpen: true }); return;
     case 'closeNotif': setState({ notifOpen: false }); return;
     case 'openDetail': setState({ detailId: id }); return;
-    case 'closeDetail': setState({ detailId: null }); return;
+    // Phase 10: closeDetail/editExpense/deleteExpense/archiveExpense/
+    // restoreExpense/openNorFromDetail used to be reachable here because
+    // the detail drawer rendered its own data-act markup inside `root`.
+    // They only ever appeared inside that drawer (confirmed — no other
+    // markup in this file used them), and are now data-drawer-action,
+    // routed through onPettyCashDrawerAction() instead (see
+    // syncPettyCashDetailDrawer()); the drawer's own close button/
+    // backdrop/Escape are the canonical shell's native ones.
     case 'pickReceipt': { const inp = root.querySelector('#pcReceiptInput'); if (inp) inp.click(); return; }
     case 'submitAdd': return submitAdd();
     case 'acPick': { e.preventDefault(); commitUnitAc(el.dataset.val || ''); return; }
-    case 'deleteExpense': return doDeleteExpense(id);
-    case 'archiveExpense': return doArchiveExpense(id);
-    case 'restoreExpense': return doRestoreExpense(id);
-    case 'openNorFromDetail': setState({ detailId: null, screen: 'norDetail', norDetailId: id }); return;
     case 'filterStatus': setState({ fStatus: id }); return;
     case 'goArchive': setState({ screen: 'expenses', fStatus: 'archived', drawerOpen: false }); return;
     case 'toggleSel': return toggleSel(id);

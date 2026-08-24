@@ -90,7 +90,10 @@ import {
 // v1.16.4.12 Auto Assignment Assistant: premium approval intelligence panel
 // (recommendation card, confidence, apply, comparison, breakdown, timeline).
 import { mountApprovalIntelligencePanel, updateApprovalComparison } from './components/approval-intelligence-panel.js';
-import { openDecisionReplay, closeDecisionReplayDrawer } from './components/decision-replay-drawer.js'; // v1.17.5 — Decision Replay & Explainable AI drawer
+import { openDecisionReplay } from './components/decision-replay-drawer.js'; // v1.17.5 — Decision Replay & Explainable AI drawer
+// Design System Program Phase 8.2 — Decision Replay + Driver Wellness now render
+// through the canonical drawer shell; only closeDrawer() is needed directly here.
+import { closeDrawer } from './components/drawer.js';
 // Design System Program Phase 3 — the canonical save-feedback state machine.
 import { runSaveFeedback } from './components/save-feedback.js';
 // v1.17.6 Driver Wellness Intelligence — read-only wellness interpretation layer
@@ -355,6 +358,11 @@ let filterStatus = '';
 // VSM-9: which workspace is visible — 'dashboard' | 'pending' | 'administration'
 //        | 'pettycash' | 'placeholder'  (v1.14.0 platform modules)
 let currentWorkspace = 'dashboard';
+// Phase 8.5 — false until the first real setWorkspace() call has completed,
+// so the initial post-login landing (crossfading from whatever the pre-auth
+// loading shell happened to look like) never gets wrapped in a view
+// transition — only real subsequent navigations do.
+let _workspaceEverSet = false;
 // v1.14.0: which rail module is active —
 //   'driverops' | 'pettycash' | 'analytics' | 'konfigurasi'
 //   ('administration' retained in code for rollback but no longer reachable)
@@ -1878,6 +1886,16 @@ function buildHomeContext() {
       openRequestFormModal: () => openRequestFormModal(),
       openRequestsList: () => openRequestsListModal(),
       openDetail: (id) => openDetailModal(id),
+      // Phase 7 — the canonical Vehicle Detail Drawer (already used by
+      // Vehicle Management), reached directly from a Home briefing row.
+      // openDetail() above only resolves ASSIGNMENT ids; a vehicle id there
+      // would be a category error (see exec-vehicle-flags's own prior
+      // comment on why it stayed non-interactive) — this is a second,
+      // correctly-typed deep link, not a duplicate of openDetail.
+      openVehicleDetail: (id) => {
+        const v = (ctx.vehicles || []).find(x => x.id === id);
+        if (v) openVehicleDetailDrawer(v, vehicleDrawerHandlers());
+      },
       navPending: () => navPending(),
       navAnalyticsDriver: () => navAnalyticsDriver(),
       navAnalyticsExecutive: () => navAnalyticsExecutive(),
@@ -1986,14 +2004,37 @@ function navHome() {
   syncBottomNavAction('navHome');
 }
 
-/** Full render of the Home workspace into its host (skeleton-first). */
+/**
+ * Full render of the Home workspace into its host (skeleton-first on true
+ * first mount or a role switch; reuses the existing shell otherwise).
+ *
+ * Phase 8.6 fix: this is called on every navigation INTO Home (setWorkspace
+ * -> renderHomeWorkspace(), including every single return visit, not just
+ * the first), and previously always called renderHome() with its default
+ * `skeleton: true`. That unconditionally ran renderShell()'s `host.innerHTML
+ * = ...` (workspace-renderer.js:129), destroying the Hero's root node every
+ * time — which reset `root.dataset.heroMounted` (index.js's mountHeroMotion(),
+ * the flag the Hero relies on to never replay its entrance), so the entire
+ * MACRO_STAGGER page cascade (9 sections, 0-600ms, motion-profiles.js) plus
+ * the Hero's own MICRO_STAGGER and count-ups replayed in full on every
+ * navigation into Home — stacked directly on top of Phase 8.5's crossfade,
+ * on the single most frequently visited workspace in the app. Passing
+ * `skeleton: false` here lets renderHome()'s own already-correct internal
+ * check (`host.__wspWorkspaceId !== workspace.id`) decide instead — true on
+ * a real first mount or role switch (shell rebuilds, skeleton-first UX
+ * intact), false on a plain return visit (shell + entrance state reused,
+ * matching how Pending/Requests already treat re-navigation vs. a genuine
+ * identity change). mountWidgets() still runs unconditionally either way, so
+ * widget content is always fresh regardless of whether the shell rebuilt —
+ * this only skips the unnecessary teardown, not any data refresh.
+ */
 function renderHomeWorkspace() {
   const host = document.getElementById('v2HomeWorkspace');
   if (!host) return;
   const ctx = buildHomeContext();
   const ws = resolveWorkspaceForRole(ctx.role);
   setCrumb('HOME', ws ? ws.title : 'Home');
-  renderHome(host, ctx);
+  renderHome(host, ctx, { skeleton: false });
 }
 
 /** In-place refresh of the Home workspace on live data changes (no flicker).
@@ -4183,9 +4224,77 @@ function sweepOpenModalsOnWorkspaceChange() {
   });
 }
 
+/**
+ * Phase 8.5 — thin dispatcher wrapping applyWorkspaceState() in a View
+ * Transition on a real workspace-boundary change, mirroring applyTheme()'s
+ * exact pattern (Phase 7G.5): document.startViewTransition() captures one
+ * before/after screenshot pair and cross-fades them as a single compositor
+ * animation, so there's no "chrome updates before content" lag — the same
+ * fix for the same failure mode View Transitions already solved for the
+ * theme toggle. See docs/DESIGN_SYSTEM_PROGRAM_PHASE_8_5_NAVIGATION_CROSSFADE_MAP.md.
+ *
+ * Scoped to isWorkspaceChange only (name !== currentWorkspace) — same-name
+ * re-navigation (e.g. switching Administration's Users/Config/Roles
+ * sub-sections) keeps its existing instant re-render; wrapping those too
+ * would treat every sub-navigation like a full domain change (map §5b/§7).
+ */
 function setWorkspace(name) {
+  const isWorkspaceChange = name !== currentWorkspace;
+  const canViewTransition = _workspaceEverSet
+    && isWorkspaceChange
+    && typeof document.startViewTransition === 'function'
+    && !_analyticsMotionOff();
+
+  if (canViewTransition) {
+    const transition = document.startViewTransition(() => applyWorkspaceState(name, isWorkspaceChange));
+    // Hostile-review fix (found by real-browser rapid-navigation testing,
+    // not inferred): applyWorkspaceState() calls into several live-data
+    // render functions (renderPendingWorkspace(), renderV2AdminWorkspace(),
+    // renderHomeWorkspace()) that could throw on malformed data. Unlike the
+    // direct call below, a throw inside a startViewTransition() callback
+    // rejects updateCallbackDone instead of propagating synchronously — left
+    // unhandled, that's a silent "Uncaught (in promise)" console error with
+    // no other visible symptom. Logged the same way this file already logs
+    // other non-fatal async failures (e.g. the Home model try/catch above).
+    transition.updateCallbackDone.catch(err => console.error('[setWorkspace] view transition update failed', err));
+    // A SEPARATE, more common case: per the View Transitions spec, calling
+    // startViewTransition() again while a prior one is still active (rapid
+    // nav clicks — normal usage, not a hostile edge case) natively skips the
+    // in-flight one, exactly as applyTheme() already relies on. But skipping
+    // rejects `ready`/`finished` with AbortError("Transition was skipped") —
+    // that's expected, benign browser behavior, not an app bug, yet left
+    // unhandled it surfaces as a real console error on every rapid nav.
+    // Silently absorbed here; app-level failures are still surfaced above.
+    transition.ready.catch(() => {});
+    transition.finished.catch(() => {});
+    return;
+  }
+  applyWorkspaceState(name, isWorkspaceChange);
+}
+
+function applyWorkspaceState(name, isWorkspaceChange) {
+  _workspaceEverSet = true;
   sweepOpenModalsOnWorkspaceChange();
   currentWorkspace = name;
+  // Phase 8.5 — reset scroll on a real workspace change so incoming content
+  // doesn't render already scrolled to wherever the outgoing workspace left
+  // off (invisible under the old instant swap, visibly wrong once it can
+  // crossfade). CORRECTION found by real-browser testing, not assumed: an
+  // earlier version of this fix set `.main-content`'s own `scrollTop`,
+  // trusting wireScrollStateSave()'s comment below that it's "the single
+  // scroll container every workspace renders into" — but neither
+  // `.main-content` nor its ancestors (`.main-area`, `.app-layout`) declare
+  // `overflow-y` anywhere in style.css/platform.css, so the DOCUMENT scrolls
+  // (confirmed: `html`'s own comment explicitly says overflow-x:hidden is
+  // deliberately avoided so touch-pan events reach child scroll containers —
+  // there is no such container here). Setting `.main-content.scrollTop` was
+  // therefore a silent no-op; this resets the actual scrolling element.
+  // (wireScrollStateSave()/restoreNavState() below have this same pre-
+  // existing mismatch — out of scope here, not touched, see the Phase 8.5
+  // report for why.)
+  if (isWorkspaceChange) {
+    (document.scrollingElement || document.documentElement).scrollTop = 0;
+  }
   const isDash  = name === 'dashboard';
   const isPend  = name === 'pending';
   const isAdmWs = name === 'administration';
@@ -4304,8 +4413,249 @@ function setWorkspace(name) {
 }
 
 /**
+ * Build the HTML for one pending-request card. Pure function of the request
+ * data — used both to mount a new card and, by the reconciler, to detect
+ * whether an existing card's content actually changed.
+ */
+function buildPendingCardHTML(r, canAct) {
+  const ms  = r.createdAt ? Date.now() - new Date(r.createdAt).getTime() : null;
+  const age = ms !== null
+    ? ms < 3_600_000   ? `${Math.max(1, Math.floor(ms / 60_000))}m lalu`
+    : ms < 86_400_000  ? `${Math.floor(ms / 3_600_000)}j lalu`
+    : `${Math.floor(ms / 86_400_000)}h lalu`
+    : '';
+
+  const timeStr = r.fullDay
+    ? 'Penuh Hari'
+    : `${esc(r.startTime || '—')}–${esc(r.endTime || '—')}`;
+
+  const actions = canAct ? `
+    <div class="v2-pending-card-actions">
+      <button class="v2-pending-btn v2-pending-btn--approve"
+              data-action="approve-direct" data-id="${esc(r.id)}" type="button">Setujui Sesuai Rekomendasi</button>
+      <button class="v2-pending-btn v2-pending-btn--edit"
+              data-action="approve-edit" data-id="${esc(r.id)}" type="button">Edit &amp; Setujui</button>
+      <button class="v2-pending-btn v2-pending-btn--reject"
+              data-action="reject" data-id="${esc(r.id)}" type="button">Tolak</button>
+    </div>
+    <!-- Design System Program Phase 3 — per-card inline save-error region,
+         driven by js/components/save-feedback.js (never alert(), never
+         toast-only) for the direct-approve path. -->
+    <div class="sf-inline-error" data-request-error role="alert" hidden></div>` : '';
+
+  return `
+    <div class="v2-pending-card" data-request-id="${esc(r.id)}">
+      <div class="v2-pending-card-header">
+        <span class="v2-pending-status-pill">Menunggu</span>
+        ${age ? `<span class="v2-pending-age">${esc(age)}</span>` : ''}
+      </div>
+      <div class="v2-pending-card-body">
+        <div class="v2-pending-field">
+          <span class="v2-pending-label">Bidang</span>
+          <span class="v2-pending-value">${esc(r.requesterName || '—')}</span>
+        </div>
+        <div class="v2-pending-field v2-pending-field--full">
+          <span class="v2-pending-label">Rekomendasi Dispatch</span>
+          <span class="v2-pending-value">${r.recommendedDriver
+            ? `${esc(r.recommendedDriver)} · ${esc(r.recommendedVehicle)} · skor ${esc(String(r.dispatchScore || 0))}`
+            : (r.driver ? `${esc(r.driver)} · ${esc(r.vehicle || '—')}` : 'Tidak ada rekomendasi')}</span>
+        </div>
+        ${r.recommendation && r.recommendation.availabilitySummary ? `<div class="v2-pending-field v2-pending-field--full"><span class="v2-pending-label">Ketersediaan</span><span class="v2-pending-value">${esc(r.recommendation.availabilitySummary)}</span></div>` : ''}
+        <div class="v2-pending-field">
+          <span class="v2-pending-label">Penumpang</span>
+          <span class="v2-pending-value">${esc(String(r.pax || 0))}</span>
+        </div>
+        <div class="v2-pending-field">
+          <span class="v2-pending-label">Tanggal</span>
+          <span class="v2-pending-value">${esc(r.startDate || '—')}</span>
+        </div>
+        <div class="v2-pending-field">
+          <span class="v2-pending-label">Waktu</span>
+          <span class="v2-pending-value">${timeStr}</span>
+        </div>
+        ${r.purpose ? `<div class="v2-pending-field v2-pending-field--full"><span class="v2-pending-label">Keperluan</span><span class="v2-pending-value">${esc(r.purpose)}</span></div>` : ''}
+        ${r.notes   ? `<div class="v2-pending-field v2-pending-field--full"><span class="v2-pending-label">Catatan</span><span class="v2-pending-value">${esc(r.notes)}</span></div>` : ''}
+      </div>
+      ${actions}
+    </div>`;
+}
+
+function pendingCardHtmlToElement(html) {
+  const template = document.createElement('template');
+  template.innerHTML = html.trim();
+  return template.content.firstElementChild;
+}
+
+function bindPendingCardActions(node) {
+  node.querySelectorAll('[data-action]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.action === 'approve-direct') handleRequestApproveDirect(btn.dataset.id, btn);
+      else if (btn.dataset.action === 'approve-edit') handleRequestApproveEdit(btn.dataset.id);
+      else if (btn.dataset.action === 'reject') handleRequestReject(btn.dataset.id);
+    });
+  });
+}
+
+function applyPendingCardEnterMotion(node) {
+  node.classList.add('v2-pending-card--enter');
+  node.addEventListener('animationend', () => node.classList.remove('v2-pending-card--enter'), { once: true });
+}
+
+/**
+ * True if this card has a `runSaveFeedback()` operation in flight on one of
+ * its own action buttons (`data-sf-busy="1"`, set by save-feedback.js for
+ * the "Setujui Sesuai Rekomendasi" direct-approve path — the only pending-
+ * card action that runs in place rather than via a separate modal). The
+ * reconciler must never recreate or replace such a card's DOM: the busy
+ * button's node identity is what save-feedback.js is holding a live
+ * reference to (duplicate-submission guard, spinner/checkmark, the inline
+ * error region) — see docs/DESIGN_SYSTEM_PROGRAM_PHASE_8_4_PENDING_WORKSPACE_REALTIME_MAP.md §3/§6.
+ */
+function isPendingCardBusy(node) {
+  return !!node.querySelector('[data-sf-busy="1"]');
+}
+
+// Updates one card's content in place, preserving the outer DOM node's
+// identity and restoring focus if the user had focus inside it — same
+// pattern as requests.js's updateRequestCardInPlace() (Phase 8.3).
+function updatePendingCardInPlace(node, html) {
+  const next = pendingCardHtmlToElement(html);
+
+  const hadFocus = node.contains(document.activeElement);
+  const focusedAction = hadFocus ? document.activeElement?.dataset?.action : null;
+
+  node.innerHTML = next.innerHTML;
+  bindPendingCardActions(node);
+
+  if (focusedAction) {
+    const toFocus = node.querySelector(`[data-action="${focusedAction}"]`);
+    if (toFocus) toFocus.focus();
+  }
+}
+
+/* ── Live-update diffing + realtime reactivity (Design System Program
+   Phase 8.4) ────────────────────────────────────────────────────────────
+   renderPendingWorkspace() is now called on every /driver_requests change
+   from ANY device (not just this admin's own approve/reject/search), so an
+   unconditional container.innerHTML rebuild would tear down an in-flight
+   card mid-action (see the migration map §3 for the concrete duplicate-
+   submission / swallowed-error hazard this caused). Reconciles per request
+   id instead: unaffected cards are never touched, and a card with a
+   save-feedback operation in flight is skipped entirely until it clears
+   (isPendingCardBusy). See docs/DESIGN_SYSTEM_PROGRAM_PHASE_8_4_PENDING_WORKSPACE_REALTIME_MAP.md. */
+let _pendingCardNodes = new Map(); // requestId -> mounted .v2-pending-card element
+let _pendingCardHTML  = new Map(); // requestId -> last-rendered HTML string
+
+/* Phase 9 mobile-first audit: pending sorts newest-first and brand-new
+   cards are inserted at the very top of the list (see the insertBefore
+   call below), so a remote request landing while an admin is mid-tap on
+   the current first card's Setujui/Tolak button shifts that button out
+   from under their finger onto a different request. Track whether a
+   pointer is currently down inside any card's action row; if so, the new
+   card lands just BELOW the card being interacted with instead of above
+   it, for this reconcile pass only — the very next pass (nothing else
+   changed) puts it back in true newest-first order once the tap resolves. */
+let _pendingActionPointerActive = false;
+let _pendingActionPointerClearTimer = null;
+if (typeof document !== 'undefined' && !document.__pendingActionPointerGuardWired) {
+  document.__pendingActionPointerGuardWired = true;
+  const clearFlag = () => { _pendingActionPointerActive = false; };
+  document.addEventListener('pointerdown', (e) => {
+    if (e.target.closest && e.target.closest('.v2-pending-card-actions')) {
+      _pendingActionPointerActive = true;
+      clearTimeout(_pendingActionPointerClearTimer);
+      // Safety valve: a touch that never completes a click (dragged off-
+      // target, cancelled) must not wedge reconciliation open-ended.
+      _pendingActionPointerClearTimer = setTimeout(clearFlag, 600);
+    }
+  }, { capture: true, passive: true });
+  document.addEventListener('pointerup', () => {
+    if (_pendingActionPointerActive) { clearTimeout(_pendingActionPointerClearTimer); setTimeout(clearFlag, 50); }
+  }, { capture: true, passive: true });
+  document.addEventListener('pointercancel', clearFlag, { capture: true, passive: true });
+}
+
+function reconcilePendingCards(bodyEl, pending, canAct) {
+  if (pending.length === 0) {
+    if (_pendingCardNodes.size > 0 || !bodyEl.querySelector('.v2-pending-empty')) {
+      bodyEl.innerHTML = '<div class="v2-pending-empty"><p>Semua request sudah diproses.</p></div>';
+      _pendingCardNodes.clear();
+      _pendingCardHTML.clear();
+    }
+    return;
+  }
+
+  let listEl = bodyEl.querySelector('.v2-pending-list');
+  if (!listEl) {
+    bodyEl.innerHTML = '<div class="v2-pending-list"></div>';
+    listEl = bodyEl.querySelector('.v2-pending-list');
+    _pendingCardNodes.clear();
+    _pendingCardHTML.clear();
+  }
+
+  const isBulkPopulate = _pendingCardNodes.size === 0; // initial load / refill after empty — no entrance motion
+  const nextIds = new Set(pending.map(r => r.id));
+
+  for (const [id, node] of _pendingCardNodes) {
+    if (!nextIds.has(id)) {
+      if (isPendingCardBusy(node)) continue; // in-flight save on this exact card — defer removal
+      node.remove();
+      _pendingCardNodes.delete(id);
+      _pendingCardHTML.delete(id);
+    }
+  }
+
+  let ref = listEl.firstElementChild;
+  // See _pendingActionPointerActive above: while true, this pass's brand-new
+  // cards land after (not before) the card currently being interacted with.
+  const protectedNode = _pendingActionPointerActive ? ref : null;
+  let afterProtected = protectedNode;
+  for (const r of pending) {
+    const id = r.id;
+    const html = buildPendingCardHTML(r, canAct);
+    let node = _pendingCardNodes.get(id);
+
+    if (!node) {
+      node = pendingCardHtmlToElement(html);
+      bindPendingCardActions(node);
+      _pendingCardNodes.set(id, node);
+      _pendingCardHTML.set(id, html);
+      if (protectedNode && ref === protectedNode) {
+        afterProtected.after(node);
+        afterProtected = node;
+      } else {
+        listEl.insertBefore(node, ref);
+      }
+      if (!isBulkPopulate) applyPendingCardEnterMotion(node);
+      continue;
+    }
+
+    if (isPendingCardBusy(node)) {
+      // Leave content untouched, but a plain reorder (insertBefore moves,
+      // never recreates) is safe even mid-operation.
+      if (node !== ref) listEl.insertBefore(node, ref);
+      else ref = ref.nextElementSibling;
+      continue;
+    }
+
+    if (_pendingCardHTML.get(id) !== html) {
+      updatePendingCardInPlace(node, html);
+      _pendingCardHTML.set(id, html);
+    }
+
+    if (node !== ref) {
+      listEl.insertBefore(node, ref);
+    } else {
+      ref = ref.nextElementSibling;
+    }
+  }
+}
+
+/**
  * Render pending request cards into #v2PendingWorkspace.
- * Called on workspace switch and after approve/reject.
+ * Called on workspace switch, search, approve/reject, and now (Phase 8.4)
+ * on every realtime /driver_requests change while this admin is viewing
+ * the Pending workspace — a diff-based reconciler, not a full rebuild.
  */
 function renderPendingWorkspace() {
   const container = document.getElementById('v2PendingWorkspace');
@@ -4324,85 +4674,75 @@ function renderPendingWorkspace() {
   const pending = pool.filter(r => r.status === 'pending');
   const canAct  = isAdmin();
 
-  function buildCard(r) {
-    const ms  = r.createdAt ? Date.now() - new Date(r.createdAt).getTime() : null;
-    const age = ms !== null
-      ? ms < 3_600_000   ? `${Math.max(1, Math.floor(ms / 60_000))}m lalu`
-      : ms < 86_400_000  ? `${Math.floor(ms / 3_600_000)}j lalu`
-      : `${Math.floor(ms / 86_400_000)}h lalu`
-      : '';
-
-    const timeStr = r.fullDay
-      ? 'Penuh Hari'
-      : `${esc(r.startTime || '—')}–${esc(r.endTime || '—')}`;
-
-    const actions = canAct ? `
-      <div class="v2-pending-card-actions">
-        <button class="v2-pending-btn v2-pending-btn--approve"
-                data-action="approve-direct" data-id="${esc(r.id)}" type="button">Setujui Sesuai Rekomendasi</button>
-        <button class="v2-pending-btn v2-pending-btn--edit"
-                data-action="approve-edit" data-id="${esc(r.id)}" type="button">Edit &amp; Setujui</button>
-        <button class="v2-pending-btn v2-pending-btn--reject"
-                data-action="reject" data-id="${esc(r.id)}" type="button">Tolak</button>
+  // Persistent header (title + subtitle) built once; only the subtitle's
+  // text is ever updated afterward. Rebuilt if missing (first-ever call, or
+  // the container was cleared by something else) — this also resets the
+  // card-tracking maps so a stale reference from a torn-down subtree can
+  // never be reused.
+  let subtitleEl = container.querySelector('.v2-workspace-subtitle');
+  let bodyEl     = container.querySelector('[data-pending-body]');
+  if (!subtitleEl || !bodyEl) {
+    container.innerHTML = `
+      <div class="v2-workspace-header">
+        <h2 class="v2-workspace-title">Request Menunggu Approval</h2>
+        <p class="v2-workspace-subtitle"></p>
+        <button type="button" class="v2-pending-search-toggle" id="v2PendingSearchToggle" aria-label="Cari request" aria-expanded="false">${anIcon('search', { size: 17 })}</button>
       </div>
-      <!-- Design System Program Phase 3 — per-card inline save-error region,
-           driven by js/components/save-feedback.js (never alert(), never
-           toast-only) for the direct-approve path. -->
-      <div class="sf-inline-error" data-request-error role="alert" hidden></div>` : '';
-
-    return `
-      <div class="v2-pending-card" data-request-id="${esc(r.id)}">
-        <div class="v2-pending-card-header">
-          <span class="v2-pending-status-pill">Menunggu</span>
-          ${age ? `<span class="v2-pending-age">${esc(age)}</span>` : ''}
-        </div>
-        <div class="v2-pending-card-body">
-          <div class="v2-pending-field">
-            <span class="v2-pending-label">Bidang</span>
-            <span class="v2-pending-value">${esc(r.requesterName || '—')}</span>
-          </div>
-          <div class="v2-pending-field v2-pending-field--full">
-            <span class="v2-pending-label">Rekomendasi Dispatch</span>
-            <span class="v2-pending-value">${r.recommendedDriver
-              ? `${esc(r.recommendedDriver)} · ${esc(r.recommendedVehicle)} · skor ${esc(String(r.dispatchScore || 0))}`
-              : (r.driver ? `${esc(r.driver)} · ${esc(r.vehicle || '—')}` : 'Tidak ada rekomendasi')}</span>
-          </div>
-          ${r.recommendation && r.recommendation.availabilitySummary ? `<div class="v2-pending-field v2-pending-field--full"><span class="v2-pending-label">Ketersediaan</span><span class="v2-pending-value">${esc(r.recommendation.availabilitySummary)}</span></div>` : ''}
-          <div class="v2-pending-field">
-            <span class="v2-pending-label">Penumpang</span>
-            <span class="v2-pending-value">${esc(String(r.pax || 0))}</span>
-          </div>
-          <div class="v2-pending-field">
-            <span class="v2-pending-label">Tanggal</span>
-            <span class="v2-pending-value">${esc(r.startDate || '—')}</span>
-          </div>
-          <div class="v2-pending-field">
-            <span class="v2-pending-label">Waktu</span>
-            <span class="v2-pending-value">${timeStr}</span>
-          </div>
-          ${r.purpose ? `<div class="v2-pending-field v2-pending-field--full"><span class="v2-pending-label">Keperluan</span><span class="v2-pending-value">${esc(r.purpose)}</span></div>` : ''}
-          ${r.notes   ? `<div class="v2-pending-field v2-pending-field--full"><span class="v2-pending-label">Catatan</span><span class="v2-pending-value">${esc(r.notes)}</span></div>` : ''}
-        </div>
-        ${actions}
-      </div>`;
+      <div data-pending-body></div>
+    `;
+    subtitleEl = container.querySelector('.v2-workspace-subtitle');
+    bodyEl     = container.querySelector('[data-pending-body]');
+    _pendingCardNodes.clear();
+    _pendingCardHTML.clear();
+    wirePendingMobileSearchToggle();
   }
 
-  container.innerHTML = `
-    <div class="v2-workspace-header">
-      <h2 class="v2-workspace-title">Request Menunggu Approval</h2>
-      <p class="v2-workspace-subtitle">${pending.length ? `${pending.length} request menunggu` : 'Tidak ada request pending'}</p>
-    </div>
-    ${pending.length
-      ? `<div class="v2-pending-list">${pending.map(buildCard).join('')}</div>`
-      : '<div class="v2-pending-empty"><p>Semua request sudah diproses.</p></div>'}
-  `;
+  subtitleEl.textContent = pending.length ? `${pending.length} request menunggu` : 'Tidak ada request pending';
 
-  container.querySelectorAll('[data-action]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      if (btn.dataset.action === 'approve-direct') handleRequestApproveDirect(btn.dataset.id, btn);
-      else if (btn.dataset.action === 'approve-edit') handleRequestApproveEdit(btn.dataset.id);
-      else if (btn.dataset.action === 'reject') handleRequestReject(btn.dataset.id);
-    });
+  reconcilePendingCards(bodyEl, pending, canAct);
+}
+
+/**
+ * Phase 9 mobile-first audit: the shared #v2SearchInput (which Pending
+ * already filters through, see the 'driverops' adapter above) is hidden by
+ * three separate `display:none !important` rules below 1024px — on a phone
+ * there was literally no way to search the Pending list. Rather than touch
+ * the mobile topbar's own CSS Grid (documented elsewhere in platform.css as
+ * having survived multiple overlap-bug rounds), this reveals the SAME input
+ * as a fixed overlay bar confined to Pending's own header button — no new
+ * search implementation, no topbar layout change.
+ */
+function wirePendingMobileSearchToggle() {
+  const toggle = document.getElementById('v2PendingSearchToggle');
+  if (!toggle || toggle.dataset.wired) return;
+  toggle.dataset.wired = '1';
+
+  const close = () => {
+    document.body.classList.remove('pending-mobile-search-open');
+    toggle.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('click', onOutsideClick, true);
+    document.removeEventListener('keydown', onEscape, true);
+  };
+  const onOutsideClick = (e) => {
+    const bar = document.querySelector('.v2-topbar-search');
+    if (bar && !bar.contains(e.target) && e.target !== toggle) close();
+  };
+  const onEscape = (e) => { if (e.key === 'Escape') close(); };
+
+  toggle.addEventListener('click', () => {
+    const opening = !document.body.classList.contains('pending-mobile-search-open');
+    if (opening) {
+      document.body.classList.add('pending-mobile-search-open');
+      toggle.setAttribute('aria-expanded', 'true');
+      document.getElementById('v2SearchInput')?.focus();
+      // Deferred so this click itself isn't seen as the outside click.
+      setTimeout(() => {
+        document.addEventListener('click', onOutsideClick, true);
+        document.addEventListener('keydown', onEscape, true);
+      }, 0);
+    } else {
+      close();
+    }
   });
 }
 
@@ -11538,21 +11878,21 @@ async function handlePermanentDelete() {
   }
 }
 
+const ICON_SUN  = `<svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15" aria-hidden="true"><path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/></svg>`;
+const ICON_MOON = `<svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15" aria-hidden="true"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/></svg>`;
+
 /**
- * Apply and persist a light/dark theme.
+ * Phase 7G.5 — the pure state mutation, extracted out of applyTheme() so it
+ * can be handed to document.startViewTransition() as its callback (the API
+ * requires a synchronous function that just applies the new state; it owns
+ * capturing the before/after snapshots and animating between them itself).
+ * No animation orchestration lives here at all — same DOM writes as the old
+ * single applyTheme() body, byte-for-byte.
  * @param {'light'|'dark'} theme
- * @param {boolean} animate
  */
-function applyTheme(theme, animate = false) {
-  if (animate) {
-    document.documentElement.classList.add('theme-anim');
-    setTimeout(() => document.documentElement.classList.remove('theme-anim'), 700);
-  }
+function applyThemeState(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   localStorage.setItem('pbsi_theme', theme);
-
-  const ICON_SUN  = `<svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15" aria-hidden="true"><path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/></svg>`;
-  const ICON_MOON = `<svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15" aria-hidden="true"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/></svg>`;
 
   const topbarBtn    = document.getElementById('v2TopbarThemeBtn');
   const railBtn      = document.getElementById('v2RailThemeBtn');
@@ -11564,6 +11904,67 @@ function applyTheme(theme, animate = false) {
   if (railBtn)   { railBtn.setAttribute('aria-label',   isDark ? 'Ganti ke tema terang' : 'Ganti ke tema gelap'); railBtn.innerHTML   = isDark ? ICON_SUN : ICON_MOON; }
   if (profileToggle) profileToggle.checked = isDark;
   if (darkStatus)  { darkStatus.textContent = isDark ? 'Aktif' : 'Nonaktif'; darkStatus.classList.toggle('is-active', isDark); }
+}
+
+/**
+ * Apply and persist a light/dark theme.
+ *
+ * Phase 7G.5 — root cause of the Phase 7G.1-7G.4 "feels fragmented" reports:
+ * the old mechanism (still kept below as the fallback) drove the transition
+ * via `html.theme-anim *` — hundreds/thousands of INDEPENDENT per-element
+ * CSS transitions, each individually starting/settling, which is why the
+ * app never looked like ONE surface changing state no matter how much that
+ * selector or its duration was tuned (7G.3/7G.4 both measured this without
+ * being able to fix the underlying model). The View Transitions API changes
+ * the unit of animation entirely: the WHOLE VIEWPORT is captured as a single
+ * before/after snapshot pair and cross-faded as ONE compositor animation —
+ * by construction there is no "header changes before the sidebar," because
+ * there is only one old image and one new image, not N independently-timed
+ * element transitions.
+ *
+ * Progressive enhancement: used only when supported
+ * (`document.startViewTransition` exists) AND motion is allowed
+ * (`_analyticsMotionOff()` — the same existing prefers-reduced-motion/
+ * [data-anim="off"] check already used throughout this file, reused as-is,
+ * not reimplemented). Every other browser/preference falls through to the
+ * EXACT pre-7G.5 `.theme-anim` class + platform.css transition mechanism,
+ * completely unchanged — this is additive, not a replacement of the
+ * fallback's own code path.
+ * @param {'light'|'dark'} theme
+ * @param {boolean} animate
+ */
+function applyTheme(theme, animate = false) {
+  if (!animate) {
+    applyThemeState(theme);
+    return;
+  }
+
+  const canViewTransition = typeof document.startViewTransition === 'function' && !_analyticsMotionOff();
+  if (canViewTransition) {
+    // Phase 7G.5 rapid-toggle protection: per the View Transitions spec, a
+    // NEW startViewTransition() call while one is still active causes the
+    // browser to skip the in-flight one and begin the new one immediately —
+    // native behavior, not something to hand-roll here. The only thing this
+    // code needs to guarantee on its own is that theme STATE stays
+    // authoritative regardless of how many transitions overlap, which
+    // applyThemeState() already does (idempotent, always writes the full
+    // current state) — so no extra locking/debouncing is needed.
+    document.startViewTransition(() => { applyThemeState(theme); });
+    return;
+  }
+
+  // ── Fallback (Phase 7G.1-7G.4, unchanged): browsers without View
+  // Transition support, or reduced-motion/data-anim="off" — those users
+  // never see the animated whole-viewport crossfade in the first place, so
+  // there is nothing for this path to interfere with.
+  document.documentElement.classList.add('theme-anim');
+  // Phase 7G.3 — matches platform.css's html.theme-anim crossfade, trimmed
+  // from .55s/.40s to .32s/.26s (see that rule's own comment for the real
+  // trace evidence). 420ms gives every transitioned property a little
+  // margin past its own longest duration (320ms) before the class comes
+  // off, so nothing gets cut off mid-fade.
+  setTimeout(() => document.documentElement.classList.remove('theme-anim'), 420);
+  applyThemeState(theme);
 }
 
 /**
@@ -11597,12 +11998,19 @@ async function handleRequestApproveDirect(requestId, button) {
     alsoDisable: card ? Array.from(card.querySelectorAll('[data-action]')).filter((b) => b !== button) : [],
     errorRegion: card ? card.querySelector('[data-request-error]') : null,
     operation: () => commitApproval(requestId), // no decision → effective = recommendation/baseline → ACCEPTED
-    // requestCountBadge persists across renderPendingWorkspace()'s full
-    // rebuild (only its text updates, the node itself isn't recreated) —
-    // unlike the approved request's own card, which the rebuild destroys on
-    // the same tick the success beat begins; see commitApproval() comment.
+    // requestCountBadge persists across renderPendingWorkspace()'s
+    // reconciler (only its text updates, the node itself isn't recreated).
     pulseTarget: () => document.getElementById('requestCountBadge'),
   });
+  // Design System Program Phase 8.4: commitApproval() above already called
+  // renderPendingWorkspace() internally while `button` still had
+  // data-sf-busy="1" — the reconciler (isPendingCardBusy) deliberately left
+  // this exact card untouched during that pass so save-feedback.js's own
+  // node reference (the busy button, the inline error region) survived the
+  // success/error beat. Now that runSaveFeedback has settled and cleared
+  // the busy flag, one more render flushes this card to its true state
+  // (removed if approved, restored to actionable if the save failed).
+  if (currentWorkspace === 'pending') renderPendingWorkspace();
 }
 
 /**
@@ -11923,7 +12331,14 @@ function _syncApproveComparison() {
 
 function closeApproveRequestModal() {
   approveModalRequestId = null;
-  closeDecisionReplayDrawer();
+  // Design System Program Phase 8.2: Decision Replay now shares the canonical
+  // drawer's single-instance slot (was its own drx-* overlay). closeDrawer()
+  // is a safe no-op if nothing is open, and — because both the legacy
+  // .modal-overlay (z-index 200) and the canonical drawer overlay are
+  // full-viewport backdrops that block interaction with anything behind them
+  // — no other drawer (Assignment/Vehicle Detail) can be open while the
+  // Approve Request modal is, so this can never close an unrelated drawer.
+  closeDrawer();
   const modal = document.getElementById('modalApproveRequest');
   if (modal) modal.style.display = 'none';
 }
@@ -12049,8 +12464,8 @@ async function confirmApproveRequest(event) {
     errorRegion: document.getElementById('approveFormError'),
     operation: () => commitApproval(requestId, { driver: selDriver, vehicle: selVehicle, reason }),
     onSuccess: () => { closeApproveRequestModal(); },
-    // requestCountBadge persists across renderPendingWorkspace()'s rebuild —
-    // same reasoning as handleRequestApproveDirect's pulseTarget.
+    // requestCountBadge persists across renderPendingWorkspace()'s
+    // reconciler — same reasoning as handleRequestApproveDirect's pulseTarget.
     pulseTarget: () => document.getElementById('requestCountBadge'),
   });
 }
@@ -12683,6 +13098,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (currentWorkspace === 'home') refreshHomeWorkspace(); // v1.19.9 live Home refresh
     // Refresh comment modal if open for one of the updated requests
     refreshCommentThreadIfOpen(requests);
+    // Design System Program Phase 8.4: this callback fires on every other
+    // device's change too, not just this admin's own actions — unlike the
+    // search adapter / commitApproval() / handleRequestReject() call sites
+    // below, which already had this exact guard. renderPendingWorkspace()
+    // is a diff-based reconciler (see its own comment), so this is cheap
+    // even when nothing pending-relevant actually changed.
+    if (currentWorkspace === 'pending') renderPendingWorkspace();
   });
 
   // ── Callback: PERSIST assignment — the actual Firebase write ──

@@ -41,6 +41,7 @@
 'use strict';
 
 import { anIcon } from '../analytics/analytics-shell.js';
+import { lockBodyScroll, unlockBodyScroll } from '../ui/sheet-gesture.js';
 
 const OVERLAY_ID = 'appDrawerOverlay';
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
@@ -55,6 +56,17 @@ let _isDirty = null; // () => boolean, current instance's unsaved-changes check
 // reopen-after-a-sub-modal pattern) could otherwise leave two elements
 // sharing the same id, with getElementById resolving to the stale one.
 let _activeOverlay = null;
+// Design System Program Phase 8.2 hostile-review finding: _activeOverlay
+// alone only guards the "caller replaces without ever calling closeDrawer()"
+// path (openDrawer while _activeOverlay is still set). It does NOT guard a
+// genuine close()-then-immediately-reopen (closeDrawer() nulls _activeOverlay
+// synchronously, so a second openDrawer() inside the ~260ms fade-out window
+// sees no active overlay to replace and appends a second OVERLAY_ID element
+// while the first is still mid-removal). Bumped on every openDrawer() call
+// and captured by closeDrawer()'s deferred cleanup so a superseded close's
+// eventual transitionend/timeout becomes a no-op instead of firing stale
+// focus-restore/onClose side effects after a newer drawer has already opened.
+let _closeSeq = 0;
 
 function esc(s) {
   return String(s == null ? '' : s)
@@ -155,7 +167,15 @@ export function openDrawer({
     _clearSourceHighlight();
     _activeOverlay.remove();
     _activeOverlay = null;
+    unlockBodyScroll();
   }
+  // Invalidate any closeDrawer() still mid-fade-out and hard-remove its
+  // lingering node — covers the case _activeOverlay alone can't (see the
+  // _closeSeq comment above): a real close() already happened, but its
+  // deferred DOM removal hasn't fired yet.
+  _closeSeq++;
+  const _stale = document.getElementById(OVERLAY_ID);
+  if (_stale) _stale.remove();
   _lastFocus = document.activeElement;
   _isDirty = typeof isDirty === 'function' ? isDirty : null;
 
@@ -201,6 +221,7 @@ export function openDrawer({
 
   document.body.appendChild(overlay);
   _activeOverlay = overlay;
+  lockBodyScroll();
   if (sourceEl) _highlightSource(sourceEl);
   // Trigger the enter transition on the next frame.
   requestAnimationFrame(() => overlay.classList.add('is-open'));
@@ -233,7 +254,18 @@ export function closeDrawer(onClose = null) {
   if (!overlay) return;
   _activeOverlay = null;
   overlay.classList.remove('is-open');
+  // This close "owns" cleanup only until a newer openDrawer()/closeDrawer()
+  // bumps _closeSeq — if that happens before this fires, a newer drawer (or
+  // its own close) already handled DOM removal, and firing this one's stale
+  // focus-restore/onClose would be wrong (it'd act on the NEW drawer's state).
+  const mySeq = ++_closeSeq;
   const done = () => {
+    // Unconditional: every openDrawer() takes one lock, so every closeDrawer()
+    // must release exactly one, even when a newer drawer has since superseded
+    // this close (mySeq mismatch below only guards DOM removal/focus/onClose,
+    // which must not act twice or on the wrong instance).
+    unlockBodyScroll();
+    if (mySeq !== _closeSeq) return;
     overlay.remove();
     if (_lastFocus && typeof _lastFocus.focus === 'function') { try { _lastFocus.focus(); } catch (_) {} }
     _lastFocus = null;

@@ -28,14 +28,14 @@ const STATUS_TONE = { success: 'var(--green)', failed: 'var(--primary)' };
 function row(entry) {
   return `
     <tr>
-      <td style="padding:9px 10px;border-top:1px solid var(--border);font-size:12px;white-space:nowrap">${esc(fmtDateTime(entry.generatedAt))}</td>
-      <td style="padding:9px 10px;border-top:1px solid var(--border);font-size:12px;font-weight:700">${esc(FORMAT_LABEL[entry.format] || entry.format)}</td>
-      <td style="padding:9px 10px;border-top:1px solid var(--border);font-size:12px">${esc(entry.periodLabel || '—')}</td>
-      <td style="padding:9px 10px;border-top:1px solid var(--border);font-size:12px">${esc((entry.scope && entry.scope.label) || '—')}</td>
-      <td style="padding:9px 10px;border-top:1px solid var(--border);font-size:12px;color:${STATUS_TONE[entry.status] || 'var(--text)'}">${esc(entry.status === 'success' ? 'Berhasil' : 'Gagal')}</td>
-      <td style="padding:9px 10px;border-top:1px solid var(--border);font-size:12px">${esc(entry.generatedBy || '—')}</td>
+      <td data-label="Waktu" style="padding:9px 10px;border-top:1px solid var(--border);font-size:12px;white-space:nowrap">${esc(fmtDateTime(entry.generatedAt))}</td>
+      <td data-label="Format" style="padding:9px 10px;border-top:1px solid var(--border);font-size:12px;font-weight:700">${esc(FORMAT_LABEL[entry.format] || entry.format)}</td>
+      <td data-label="Periode" style="padding:9px 10px;border-top:1px solid var(--border);font-size:12px">${esc(entry.periodLabel || '—')}</td>
+      <td data-label="Cakupan" style="padding:9px 10px;border-top:1px solid var(--border);font-size:12px">${esc((entry.scope && entry.scope.label) || '—')}</td>
+      <td data-label="Status" style="padding:9px 10px;border-top:1px solid var(--border);font-size:12px;color:${STATUS_TONE[entry.status] || 'var(--text)'}">${esc(entry.status === 'success' ? 'Berhasil' : 'Gagal')}</td>
+      <td data-label="Oleh" style="padding:9px 10px;border-top:1px solid var(--border);font-size:12px">${esc(entry.generatedBy || '—')}</td>
       <td style="padding:9px 10px;border-top:1px solid var(--border);text-align:right">
-        <button data-act="regenerateReport" data-id="${esc(entry.id)}" type="button" style="border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:7px;padding:5px 10px;font-size:11.5px;font-weight:600;cursor:pointer">Regenerate</button>
+        <button data-act="regenerateReport" data-id="${esc(entry.id)}" type="button" class="ot-row-btn">Regenerate</button>
       </td>
     </tr>`;
 }
@@ -50,8 +50,8 @@ export function renderReportHistoryScreen(state) {
       style="border:1px solid ${t.key === filter ? 'var(--primary)' : 'var(--border)'};background:${t.key === filter ? 'var(--primary-tint)' : 'var(--card)'};color:${t.key === filter ? 'var(--primary-text)' : 'var(--text)'};border-radius:8px;padding:6px 12px;font-size:12px;font-weight:${t.key === filter ? '700' : '600'};cursor:pointer">${t.label}</button>`).join('');
 
   const body = rows.length
-    ? `<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;overflow-x:auto">
-        <table style="width:100%;border-collapse:collapse">
+    ? `<div class="ot-history-table-wrap">
+        <table class="ot-history-table" style="width:100%;border-collapse:collapse">
           <thead><tr>
             ${['Waktu', 'Format', 'Periode', 'Cakupan', 'Status', 'Oleh', ''].map(h => `<th style="padding:8px 10px;font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;text-align:left">${esc(h)}</th>`).join('')}
           </tr></thead>

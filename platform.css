@@ -165,14 +165,14 @@
   --space-7: 28px;
   --space-8: 32px;
 
-  /* Motion durations — --motion-pop mirrors the live 160ms interaction
-     transition (line ~12435); --motion-theme mirrors the live .theme-anim
-     550ms crossfade (line ~280). The other two are new standardized
-     targets, not yet wired into any rule. */
+  /* Motion durations — --motion-pop and --motion-sheet are real, consumed
+     tokens (rail-item hover, mobile sheet slide-in respectively). Phase
+     8.1 removed --motion-view and --motion-theme: both had zero var()
+     consumers anywhere, and --motion-theme's comment was stale (claimed
+     to mirror the .theme-anim crossfade, but that crossfade is a
+     hardcoded .32s/.26s, never var-driven — see line ~366). */
   --motion-pop:   160ms;
   --motion-sheet: 260ms;
-  --motion-view:  340ms;
-  --motion-theme: 550ms;
 
   /* Breakpoint tokens — documentation/JS (matchMedia) use only; CSS custom
      properties cannot appear inside @media conditions, so existing @media
@@ -326,15 +326,109 @@ pre,
    Armed by JS adding .theme-anim to <html> for ~650ms during
    a theme switch. Prevents flash-on-load by being opt-in.
    ============================================================ */
+/* Phase 7G.3 — durations trimmed from .55s/.55s/.40s/.55s to .32s/.32s/
+   .26s/.32s (kept in 7G.4). MEASURED via a real Chrome trace of an actual
+   toggle click (page.tracing, not inferred): style recalculation was the
+   dominant cost — layout, paint, compositing, and JS were all negligible
+   by comparison. See docs/EXECUTIVE_COMMAND_CENTER_7G3_TYPOGRAPHY_PERFORMANCE_REPORT.md
+   for the full before numbers.
+
+   Phase 7G.4 — TRIED and MEASURED, then reverted: narrowing this selector
+   from a bare `*` to `*:not(path, circle, rect, ... option, link, meta,
+   title, script, style)` — element types that are structurally incapable
+   of needing this transition (SVG shape internals never render
+   background-color/border-color/color/box-shadow at all; icon recoloring
+   already works via fill="currentColor" tracking an ancestor's `color`
+   live, no transition of its own required; <option>/<link>/<meta>/<title>/
+   <script>/<style> never have a visible box). That excluded ~16% of the
+   real app's matched elements (316 of 1978, measured via
+   document.querySelectorAll('*') on the live page) with zero visual risk.
+   A controlled before/after — SAME session, SAME machine, 3 real Chrome
+   traces per side via page.tracing on an actual toggle click, narrowed vs.
+   reverted-to-plain-`*` — showed NO reproducible difference: style
+   recalculation stayed at ~290-308ms across 13-15 events either way, and
+   long-task count/duration were statistically indistinguishable between
+   the two. Chrome's recalculation cost during this transition is
+   apparently driven by walking the invalidation scope from the
+   `.theme-anim` class toggle on <html> (an ancestor of literally
+   everything), not by how many elements the transition-property selector
+   itself matches — so trimming the selector doesn't reduce the work
+   Chrome actually does. Reverted to the simpler, unmodified `*` rather
+   than keep unjustified complexity for a measured non-improvement — see
+   docs/EXECUTIVE_COMMAND_CENTER_PHASE_7G4_REPORT.md for the full A/B
+   numbers. This finding is recorded so the same hypothesis isn't
+   re-attempted without new evidence. */
 html.theme-anim,
 html.theme-anim *,
 html.theme-anim *::before,
 html.theme-anim *::after {
   transition:
-    background-color .55s cubic-bezier(.4,0,.2,1),
-    border-color     .55s cubic-bezier(.4,0,.2,1),
-    color            .40s ease,
-    box-shadow       .55s ease !important;
+    background-color .32s cubic-bezier(.4,0,.2,1),
+    border-color     .32s cubic-bezier(.4,0,.2,1),
+    color            .26s ease,
+    box-shadow       .32s ease !important;
+}
+/* Phase 7G.2 — this whole crossfade mechanism (this block and Part D
+   further down) had no reduced-motion guard at all. [data-anim="off"] is
+   the same site-level opt-out js/app.js's prefersReducedMotion() already
+   checks (see its own comment: "respect prefers-reduced-motion /
+   [data-anim=\"off\"]"); prefers-reduced-motion is the OS-level signal.
+   Either one disables the crossfade — data-theme still switches instantly
+   to the correct final colors, nothing is left mid-transition. */
+@media (prefers-reduced-motion: reduce) {
+  html.theme-anim,
+  html.theme-anim *,
+  html.theme-anim *::before, html.theme-anim *::after {
+    transition: none !important;
+  }
+}
+html[data-anim="off"].theme-anim,
+html[data-anim="off"].theme-anim *,
+html[data-anim="off"].theme-anim *::before,
+html[data-anim="off"].theme-anim *::after {
+  transition: none !important;
+}
+
+/* ============================================================
+   Phase 7G.5 — WHOLE-VIEW THEME TRANSITION (View Transitions API)
+
+   Primary mechanism now, when the browser supports it (js/app.js's
+   applyTheme() feature-detects document.startViewTransition and falls
+   back to the .theme-anim mechanism above when unsupported OR when
+   motion is disabled — see that function's own comment). Everything the
+   API needs is this one small block: startViewTransition() automatically
+   captures the whole viewport before/after the theme mutation and cross-
+   fades the two as a single compositor animation — by design there is no
+   way for one region to visibly lag another, which is the actual thing
+   every prior phase's per-element tuning (7G.1-7G.4) could not fix,
+   because that model was fundamentally N independent transitions, not
+   one. Deliberately minimal: the UA default (a plain cross-fade) is
+   already correct for a same-layout theme swap; only duration is tuned
+   into the requested ~250-350ms band (default is 250ms, already in
+   range, but explicit here rather than relying on an unstated default).
+   ============================================================ */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 300ms;
+  animation-timing-function: ease;
+}
+/* Defense in depth: js/app.js already never calls startViewTransition()
+   when prefers-reduced-motion/data-anim="off" is active (the transition
+   simply never starts, applyThemeState() runs and the new theme appears
+   immediately). This CSS guard means even a future/alternate call site
+   that starts one anyway degrades to an instant, non-animated state
+   change rather than a broken or partially-respected transition. */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+html[data-anim="off"] ::view-transition-group(*),
+html[data-anim="off"] ::view-transition-old(*),
+html[data-anim="off"] ::view-transition-new(*) {
+  animation: none !important;
 }
 
 
@@ -455,10 +549,10 @@ html.theme-anim *::after {
   width: 19px; height: 19px;
   border-radius: 50%;
   background: #fff;
-  transition: left .15s;
+  transition: transform .15s;
   box-shadow: 0 1px 2px rgba(0,0,0,.28);
 }
-.p-switch.on::after { left: 19px; }
+.p-switch.on::after { transform: translateX(17px); }
 
 /* ── Toast (V2.0 style, complements existing #toast) ── */
 .p-toast {
@@ -827,6 +921,7 @@ html.theme-anim *::after {
   font-size: 20px;
 }
 .login-brand-name {
+  font-family: var(--font-display);
   font-size: 15px;
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -841,12 +936,26 @@ html.theme-anim *::after {
 }
 
 /* Headings */
+/* Phase 7G.3 — was inheriting the body sans face (Manrope); every other
+   confident-heading-level text in the product (Executive Hero headline,
+   workspace title) explicitly sets font-family:var(--font-display), so the
+   login screen's own equivalent heading was quietly off-brand from the rest
+   of the app. Same fix as .login-brand-name above. */
+/* Phase 7G.4 — bottom margin grown from 5px to 24px: the 5px value assumed
+   .login-lead (removed this pass, see index.html) would immediately follow
+   and contribute the real gap before the form via its own 22px margin.
+   With the subtitle gone, h2 now owns that spacing directly. */
 .login-card h2 {
+  font-family: var(--font-display);
   font-size: 19px;
   font-weight: 700;
   letter-spacing: -0.03em;
-  margin: 0 0 5px;
+  margin: 0 0 24px;
 }
+/* .login-lead is no longer used on the login screen (Phase 7G.4 removed
+   its one caller) but left defined — a generic "lead paragraph under a
+   heading" utility, not something specific enough to Remember Me or this
+   one screen to justify deleting outright. */
 .login-card .login-lead {
   font-size: 12.5px;
   color: var(--muted);
@@ -931,12 +1040,17 @@ html.theme-anim *::after {
 .login-submit svg    { width: 15px; height: 15px; }
 
 /* Footer */
+/* Phase 7G.3 — was set in JetBrains Mono. The app's own established
+   convention reserves monospace for short numeric/technical tokens (Pulse's
+   domain values, PIN digits, version numbers — see .v2-panel-version-num);
+   this renders a full descriptive sentence ("Bidang Sarana dan Prasarana
+   Operations Platform"), which reads as a stray technical/debug artifact
+   in that face. Switched to the standard sans body face. */
 .login-foot-text {
   text-align: center;
   font-size: 10.5px;
   color: var(--faint);
   margin-top: 20px;
-  font-family: 'JetBrains Mono', monospace;
 }
 
 /* Mobile adjustments */
@@ -3284,9 +3398,16 @@ body.v2-shell-active .block-status-badge {
    tokens have zero rendering cost.                            */
 
 :root {
-  --motion-fast:   120ms;
-  --motion-normal: 200ms;
-  --motion-slow:   320ms;
+  /* Phase 8.1 — --motion-fast/--motion-slow removed here: they were
+     byte-identical duplicates of style.css's :root tokens of the same
+     name (style.css loads first and is now the sole source for both).
+     --motion-normal is aliased rather than removed, since ~30 call
+     sites in this file reference it by this name — value is unchanged
+     (200ms), only its origin is now a reference instead of an
+     independent literal. --motion-ease is untouched: it's a genuinely
+     different curve from style.css's --ease-standard/--ease-decelerate,
+     not a duplicate. */
+  --motion-normal: var(--motion-base, 200ms);
   /* Ease-out expo variant — snappy entry, gentle rest.
      Used across all VSM-6 transitions and animations.        */
   --motion-ease:   cubic-bezier(0.16, 1, 0.3, 1);
@@ -4764,6 +4885,49 @@ body.v2-shell-active #driverDashboard .dash-empty {
 
 .v2-workspace-header {
   margin-bottom: 16px;
+  position: relative;
+}
+
+/* Phase 9 mobile-first audit — Pending's only search mechanism
+   (#v2SearchInput) is display:none below 1024px with no alternative. This
+   toggle reveals the same input as a fixed overlay bar (see
+   "pending-mobile-search-open" below) rather than adding a second search
+   implementation. Desktop already has the real search bar visible in the
+   topbar, so this stays hidden there. */
+.v2-pending-search-toggle {
+  display: none;
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+}
+@media (max-width: 1023px) {
+  .v2-pending-search-toggle { display: inline-flex; }
+}
+body.pending-mobile-search-open .v2-topbar-search {
+  display: flex !important;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 250;
+  height: 52px;
+  padding: 0 14px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-md, 0 4px 14px rgba(0,0,0,.08));
+  padding-top: env(safe-area-inset-top, 0px);
+}
+body.pending-mobile-search-open .v2-topbar-search-input {
+  font-size: 16px; /* iOS zoom guard, matches the rest of the app's mobile inputs */
 }
 
 .v2-workspace-title {
@@ -4793,6 +4957,20 @@ body.v2-shell-active #driverDashboard .dash-empty {
   border-radius: 10px;
   padding: 14px 16px;
   box-shadow: var(--shadow-sm);
+}
+
+/* Design System Program Phase 8.4 — restrained entrance for a pending card
+   that's genuinely new to the list (realtime arrival from another device),
+   never applied to updated/unaffected cards or on initial/bulk population.
+   Same motion tokens + keyframe shape as .request-card--enter (style.css,
+   Phase 8.3); both the OS-level prefers-reduced-motion and the app's own
+   [data-anim="off"] blanket rules already collapse this — no extra gating. */
+@keyframes v2PendingCardEnter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.v2-pending-card--enter {
+  animation: v2PendingCardEnter var(--motion-base, 200ms) var(--ease-decelerate, ease);
 }
 
 .v2-pending-card-header {
@@ -4854,6 +5032,20 @@ body.v2-shell-active #driverDashboard .dash-empty {
   white-space: nowrap;
 }
 
+/* Phase 9 mobile-first audit: the ellipsis above silently clipped free-text
+   fields (Rekomendasi Dispatch/Ketersediaan/Keperluan/Catatan) with no way
+   to reveal them on touch — a `title` attribute was added as a desktop-hover
+   bonus, but mobile browsers don't reliably surface `title` on tap, so the
+   actual mobile fix is to let these specific fields wrap instead of clip.
+   The short fields (Bidang/Penumpang/Tanggal/Waktu) keep the ellipsis —
+   they're bounded values, not user-entered free text. */
+.v2-pending-field--full .v2-pending-value {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  word-break: break-word;
+}
+
 .v2-pending-card-actions {
   display: flex;
   gap: 8px;
@@ -4871,6 +5063,22 @@ body.v2-shell-active #driverDashboard .dash-empty {
   cursor: pointer;
   border: 1px solid transparent;
   transition: filter var(--motion-fast) var(--motion-ease);
+  /* Phase 9 mobile-first audit: no min-height meant ~30-32px effective
+     height on the primary approve/reject task; align items so the taller
+     box doesn't just push the label to one edge. */
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+/* Phase 9 mobile-first audit: 3 buttons (incl. "Setujui Sesuai Rekomendasi")
+   sharing one row at flex:1 have no room for their Indonesian labels below
+   ~480px and wrap mid-word with no dedicated layout for it. Stack instead. */
+@media (max-width: 480px) {
+  .v2-pending-card-actions { flex-direction: column; }
+  .v2-pending-btn { width: 100%; }
 }
 
 .v2-pending-btn--approve {
@@ -5423,11 +5631,52 @@ body.v2-shell-active .v2-rail-avatar {
 .theme-anim .v2-footer-menu,
 .theme-anim .v2-topbar-search,
 .theme-anim .modal-container,
-.theme-anim .modal-backdrop {
+.theme-anim .modal-backdrop,
+/* Phase 7G.2 — .v2-rail above is the PRE-domain-shell rail class; the
+   live nav chrome under the current domainShellV1 default is
+   .domshell-rail (js/shell/domain-shell.js), which this curated list
+   never got updated for. Its background — and its own logo chip's,
+   .domshell-rail-logo, now dark-mode-aware for the first time this pass —
+   was falling back to the generic 550ms selector further up this file
+   instead of this list's 280ms, so the rail visibly kept crossfading for
+   ~270ms after the topbar (.v2-topbar, already in this list) had already
+   settled. Measured live via a real theme-toggle click, sampling
+   getComputedStyle().backgroundColor every animation frame: before this
+   line, .v2-topbar reached its final color by ~210ms while .domshell-rail
+   and .domshell-rail-logo were still visibly interpolating past 500ms. */
+.theme-anim .domshell-rail,
+.theme-anim .domshell-rail-logo {
   transition:
     background-color 280ms ease,
     color 280ms ease,
     border-color 200ms ease !important;
+}
+/* Reduced-motion guard for Part D specifically: this block's own
+   `!important` transition comes AFTER the early-file universal
+   reduced-motion override (same file, ~line 340) at equal-or-higher
+   specificity for these class selectors, so without a guard here too it
+   would silently win and re-enable the 280ms crossfade even with
+   prefers-reduced-motion/data-anim="off" active. */
+@media (prefers-reduced-motion: reduce) {
+  .theme-anim body, .theme-anim .app-layout, .theme-anim .v2-topbar, .theme-anim .v2-rail,
+  .theme-anim .v2-panel, .theme-anim .main-area, .theme-anim .main-content, .theme-anim .v2-workspace,
+  .theme-anim .v2-surface-card, .theme-anim .v2-list-card, .theme-anim .v2-pending-card,
+  .theme-anim .v2-admin-section, .theme-anim .v2-footer-menu, .theme-anim .v2-topbar-search,
+  .theme-anim .modal-container, .theme-anim .modal-backdrop,
+  .theme-anim .domshell-rail, .theme-anim .domshell-rail-logo {
+    transition: none !important;
+  }
+}
+html[data-anim="off"].theme-anim body, html[data-anim="off"].theme-anim .app-layout,
+html[data-anim="off"].theme-anim .v2-topbar, html[data-anim="off"].theme-anim .v2-rail,
+html[data-anim="off"].theme-anim .v2-panel, html[data-anim="off"].theme-anim .main-area,
+html[data-anim="off"].theme-anim .main-content, html[data-anim="off"].theme-anim .v2-workspace,
+html[data-anim="off"].theme-anim .v2-surface-card, html[data-anim="off"].theme-anim .v2-list-card,
+html[data-anim="off"].theme-anim .v2-pending-card, html[data-anim="off"].theme-anim .v2-admin-section,
+html[data-anim="off"].theme-anim .v2-footer-menu, html[data-anim="off"].theme-anim .v2-topbar-search,
+html[data-anim="off"].theme-anim .modal-container, html[data-anim="off"].theme-anim .modal-backdrop,
+html[data-anim="off"].theme-anim .domshell-rail, html[data-anim="off"].theme-anim .domshell-rail-logo {
+  transition: none !important;
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -5586,12 +5835,15 @@ body.v2-shell-active .v2-kpi-value { font-size: 22px; }
   body.v2-shell-active .v2-topbar {
     display: grid;
     grid-template-columns: auto 1fr auto;
-    grid-template-areas: "ham dnav avatar";
+    grid-template-areas:
+      "ham    dnav    avatar"
+      "search search  search";
     align-items: center;
     column-gap: 6px;
+    row-gap: 6px;
     height: auto;
     min-height: 44px;
-    padding: 6px 8px;
+    padding: 6px 8px 8px;
   }
   body.v2-shell-active .v2-topbar #sidebarToggle {
     grid-area: ham;
@@ -5621,7 +5873,8 @@ body.v2-shell-active .v2-kpi-value { font-size: 22px; }
     grid-template-columns: auto 1fr;
     grid-template-areas:
       "ham    avatar"
-      "dnav   dnav";
+      "dnav   dnav"
+      "search search";
     row-gap: 6px;
   }
   body.v2-shell-active .v2-topbar .date-nav {
@@ -5632,6 +5885,25 @@ body.v2-shell-active .v2-kpi-value { font-size: 22px; }
     grid-area: avatar;
     justify-self: end;
   }
+}
+
+/* Phase 7G.2 — the quick-search trigger (.domshell-palette-trigger,
+   "Cari Cepat") had no grid-area of its own in either template above, so
+   CSS Grid auto-placement dropped it into an UNDOCUMENTED implicit row
+   below the named template: not centered, not stretched, just its own
+   small content width sitting flush left with the rest of that row empty
+   — confirmed by an annotated real-browser screenshot at 375px, not
+   assumed from reading the CSS. Giving it the "search" area (added to
+   both templates above) makes its row deliberate: it spans the full
+   width and, being the sole occupant of that row, is centered by the
+   grid the same way date-nav already is one row up. Written once, outside
+   the media queries: grid-area only has an effect when the parent is
+   actually display:grid (≤600px here), so this is inert at every wider
+   breakpoint where .v2-topbar stays its normal flex layout — desktop and
+   tablet are unaffected by construction, not by convention. */
+body.v2-shell-active .v2-topbar .domshell-palette-trigger {
+  grid-area: search;
+  justify-self: center;
 }
 
 
@@ -6123,6 +6395,16 @@ html.theme-anim .timeline-scroll-fade-right {
   white-space: nowrap;
   background: var(--surface-2);
   color: var(--text);
+  /* Phase 9 mobile-first audit: narrower breakpoints below shrink padding/
+     font to fit 3 buttons per row, which had also been shrinking the tap
+     target itself to ~23-26px on driver/user cards' Edit/Nonaktifkan/
+     Arsipkan actions. min-height floors it at the 44px guideline regardless
+     of how tight the padding gets; centering keeps the label from riding
+     to the top of the taller box. */
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .v2-user-btn:hover {
   filter: brightness(0.96);
@@ -7632,7 +7914,7 @@ textarea:disabled { opacity: 0.55; }
     0 1px 4px rgba(0,0,0,.22),
     0 0 0 0.5px rgba(0,0,0,.05);
   /* Spring easing for premium tactile feel */
-  transition: transform 0.22s cubic-bezier(0.34, 1.26, 0.64, 1);
+  transition: transform 0.22s var(--ease-overshoot, cubic-bezier(0.34, 1.3, 0.64, 1));
 }
 
 /* ON state */
@@ -12549,7 +12831,8 @@ body.v2-shell-active .block-status-badge--overtime {
   --exec-z-drawer:   10001;
   --exec-dur:        .2s;
   --exec-dur-fast:   .14s;
-  --exec-ease:       cubic-bezier(.4, 0, .2, 1);
+  /* Phase 8.1 removed --exec-ease here — zero var() consumers anywhere;
+     --exec-dur/--exec-dur-fast are real and kept. */
   --exec-focus-ring: 0 0 0 3px var(--accent-line, rgba(168,41,47,.32));
 }
 .exec-table-wrap * { box-sizing: border-box; }
@@ -12714,7 +12997,12 @@ body.v2-shell-active .block-status-badge--overtime {
 /* Drawer — mobile bottom-sheet (≤640px) */
 @media (max-width: 640px) {
   .drawer-overlay { justify-content: stretch; align-items: flex-end; }
-  .drawer { width: 100%; max-width: 100%; height: min(86vh, 100%); border-left: 0; border-top: 1px solid var(--border, #e8e6e2); border-radius: var(--radius-lg, 22px) var(--radius-lg, 22px) 0 0; transform: translateY(100%); padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .drawer { width: 100%; max-width: 100%; height: min(86vh, 100%); border-left: 0; border-top: 1px solid var(--border, #e8e6e2); border-radius: var(--radius-lg, 22px) var(--radius-lg, 22px) 0 0; transform: translateY(100%); }
+  /* Safe-area inset belongs to whichever element is actually last: .drawer__foot
+     already carries it (padding: 12872) when a footer exists — applying it here
+     too would double-count the inset. Only add it here for the no-footer case,
+     where .drawer__body is the last child and has none of its own. */
+  .drawer:not(:has(.drawer__foot)) { padding-bottom: env(safe-area-inset-bottom, 0px); }
   .drawer-overlay.is-open .drawer { transform: translateY(0); }
   /* NEW — drag-handle affordance, touch target padded well past the visible bar */
   .drawer__grabber { display: flex; align-items: center; justify-content: center; flex: 0 0 auto; padding: 10px 0 6px; touch-action: none; }
@@ -13854,6 +14142,17 @@ body.v2-shell-active .block-status-badge {
   padding: 4px;
   overflow: hidden;
 }
+/* Phase 7G.2 — the logo asset itself (assets/Logo-PBSI.png) is already a
+   transparent-background crest; this hardcoded #fff was the actual white
+   rectangle reported in dark mode. Same fix .brand-mark already got
+   (search this file for "[data-theme=\"dark\"] .brand-mark") — a real
+   dark surface, not the logo asset. Solid background-color, so it
+   inherits the site's existing html.theme-anim background-color
+   crossfade automatically; no extra transition rule needed here. This
+   node is the SAME live element on mobile too (see the "Mobile: rail +
+   tab bar relocated into the legacy sidebar drawer" comment further
+   down) — one fix covers both surfaces. */
+[data-theme="dark"] .domshell-rail-logo { background: var(--surface); }
 .domshell-rail-logo img { width: 100%; height: 100%; object-fit: contain; }
 .domshell-rail-brandtext { min-width: 0; white-space: nowrap; opacity: 0; transition: opacity var(--motion-fast, 120ms) linear; }
 .domshell-rail:hover .domshell-rail-brandtext,
@@ -13911,12 +14210,37 @@ body.v2-shell-active .block-status-badge {
   .domshell-rail:hover ~ .main-area,
   .domshell-rail:focus-within ~ .main-area {
     margin-left: 220px;
+    /* Phase 8.1 (spec §12) — matches the rail's own hover-expand delay
+       below, so a pointer graze across the rail's edge never triggers a
+       visible reflow of the main content column either. */
+    transition: margin-left var(--motion-normal, 200ms) var(--motion-ease, ease) 100ms;
   }
 }
 .domshell-rail:hover,
 .domshell-rail:focus-within {
   width: 220px;
   box-shadow: var(--shadow-lg);
+  /* Phase 8.1 (spec §12) — 100ms dwell before the expand transition even
+     starts, so a pointer graze across the 72px boundary never triggers a
+     visible width change. Collapse (base rule, line ~14009) is
+     deliberately left at 0 delay — leaving should feel immediate. */
+  transition: width var(--motion-normal, 200ms) var(--motion-ease, ease) 100ms;
+}
+
+/* Phase 9 mobile-first audit — 768-1023px touch tablets have no hover, so
+   the rail's collapsed-with-hover-to-reveal-labels pattern above never
+   reveals anything: there is no pointer to hover with, and :focus-within
+   only fires at the same moment a tap already navigates away. Below 768px
+   this is moot (the rail is reparented into the always-expanded mobile
+   drawer, see ".domshell-rail--mobile-drawer" further down); this closes
+   the same gap for touch devices at/above that width instead of gating it
+   on width alone. */
+@media (min-width: 768px) and (hover: none) {
+  .domshell-rail { width: 220px; }
+  .domshell-rail-label,
+  .domshell-rail-brandtext,
+  .domshell-rail-usertext { opacity: 1; }
+  body.domain-shell-active .main-area { margin-left: 220px; }
 }
 
 .domshell-rail-item {
@@ -14162,6 +14486,21 @@ body.v2-shell-active .v2-topbar .domshell-palette-trigger { order: 35; }
   font-size: 11.5px;
   color: var(--muted);
 }
+/* Phase 8.1 — result-list entrance, first-open only. command-palette.js
+   gates adding this class to the first render() after each open() (its
+   staggerNext flag), so re-renders triggered by typing never replay it —
+   same anti-pattern this codebase has already fixed twice elsewhere
+   (Gudang's lastAnimatedScreen guard, workspace-styles.js's onMount
+   guard). Cadence matches the established per-list-item convention
+   (workspace-styles.js's .wsp-inbox__item), not the page-section
+   MACRO_STAGGER tier — different scale. prefersReducedMotion() already
+   prevents the class from ever being added in that state (stronger than
+   a CSS override); the [data-anim="off"]/reduced-motion blanket rules
+   are a second, independent safety net regardless. */
+.domshell-palette-item--enter { animation: v2FadeInScale 160ms var(--motion-ease, ease) both; }
+.domshell-palette-results > .domshell-palette-item--enter:nth-of-type(1) { animation-delay: .04s; }
+.domshell-palette-results > .domshell-palette-item--enter:nth-of-type(2) { animation-delay: .12s; }
+.domshell-palette-results > .domshell-palette-item--enter:nth-of-type(n+3) { animation-delay: .2s; }
 @keyframes v2FadeInScale {
   from { opacity: 0; transform: scale(0.97); }
   to   { opacity: 1; transform: scale(1); }

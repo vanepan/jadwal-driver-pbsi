@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="id" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <title>Command Palette Motion Harness (Phase 8.1)</title>
+  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="/platform.css" />
+</head>
+<body class="v2-shell-active" style="margin:0;">
+  <div class="v2-topbar" style="display:flex;"><div class="v2-topbar-search" style="display:flex;"></div></div>
+  <script type="module">
+    import { initCommandPalette } from '/js/shell/command-palette.js';
+
+    const drivers = [{ name: 'Budi Santoso', phone: '0812' }, { name: 'Budi Hartono', phone: '0813' }, { name: 'Budi Wijaya', phone: '0814' }, { name: 'Budi Setiawan', phone: '0815' }];
+
+    initCommandPalette({
+      getDrivers: () => drivers,
+      getVehicles: () => [],
+      getAssignments: () => [],
+      goToScreen: () => true,
+      openDetailModal: () => {},
+      topbarSearchEl: document.querySelector('.v2-topbar-search'),
+    });
+
+    window.__paletteReady = true;
+  </script>
+</body>
+</html>

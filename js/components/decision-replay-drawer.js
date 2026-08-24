@@ -1,5 +1,12 @@
 /* ============================================================
    DECISION-REPLAY-DRAWER.JS — Decision Replay & Explainable AI (v1.17.5)
+   Design System Program Phase 8.2 — migrated onto the canonical drawer shell
+   (js/components/drawer.js). This file now owns CONTENT ONLY: the header
+   chrome, overlay/backdrop, slide-in transform, Escape/focus-trap/focus-
+   restoration, and single-instance replace-on-reopen behavior all come from
+   the canonical primitive. Only the recommendation hero, the 9 explainability
+   sections, and the export menu (still hand-wired, since it's the one
+   genuinely stateful piece) remain here.
 
    The Apple-style side drawer that makes a Dispatch Intelligence recommendation
    fully explainable: it replays the decision step by step and exposes why each
@@ -14,42 +21,22 @@
    DESIGN: built entirely on the platform CSS custom properties (var(--surface),
    --border, --text, --muted, --ok/--warn/--info/--danger pairs) so it adapts to
    dark mode automatically (no hard-coded #fff — the dark-mode --white trap).
-   Scoped `.drx-*` class names; a glass overlay + right-anchored sheet that
-   slides in (translateX) with a spring-like ease. Everything is written with
-   textContent (never innerHTML), so a driver/vehicle name can never inject
-   markup. Fully responsive (full-width sheet on mobile). ESC / overlay click /
-   Close button dismiss it.
+   Scoped `.drx-*` class names for CONTENT only (shell is `.drawer*`, owned by
+   drawer.js/platform.css). Everything is written with textContent (never
+   innerHTML), so a driver/vehicle name can never inject markup.
    ============================================================ */
 
 'use strict';
 
 import { buildDecisionReplay } from '../services/decision-replay-service.js';
+import { openDrawer } from './drawer.js';
 
 const STYLE_ID = 'drx-drawer-styles';
-const ROOT_ID = 'decisionReplayDrawer';
 
 const CSS = `
-.drx-overlay{position:fixed;inset:0;z-index:6000;display:flex;justify-content:flex-end;
-  background:rgba(15,17,21,.42);opacity:0;transition:opacity .28s ease;
-  -webkit-backdrop-filter:saturate(140%) blur(3px);backdrop-filter:saturate(140%) blur(3px);}
-.drx-overlay[data-open="true"]{opacity:1;}
-.drx-sheet{position:relative;width:min(560px,100%);height:100%;display:flex;flex-direction:column;
-  background:var(--surface);border-left:1px solid var(--border);box-shadow:-24px 0 60px rgba(0,0,0,.28);
-  transform:translateX(100%);transition:transform .32s cubic-bezier(.32,.72,0,1);color:var(--text);
-  font-family:var(--font-sans, inherit);min-width:0;}
-.drx-overlay[data-open="true"] .drx-sheet{transform:translateX(0);}
-
-/* Header */
-.drx-head{flex:0 0 auto;display:flex;flex-direction:column;gap:.85rem;padding:1.05rem 1.15rem .95rem;
-  border-bottom:1px solid var(--border);background:linear-gradient(180deg,var(--info-bg),var(--surface));}
-.drx-head__top{display:flex;align-items:center;gap:.5rem;}
-.drx-head__brand{display:flex;align-items:center;gap:.45rem;font-size:.78rem;font-weight:800;letter-spacing:.01em;}
-.drx-head__tag{margin-left:auto;font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
-  color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:.14rem .55rem;}
-.drx-x{appearance:none;border:1px solid var(--border);background:var(--surface);color:var(--text);
-  width:2rem;height:2rem;border-radius:999px;cursor:pointer;font-size:1.1rem;line-height:1;display:flex;
-  align-items:center;justify-content:center;transition:background .15s ease;}
-.drx-x:hover{background:var(--surface-2);}
+/* Recommendation hero — relocated into the drawer body as its first item
+   (drawer.js's header only takes plain title/subtitle strings, which can't
+   reproduce the confidence-star glyph / numeral treatment this needs). */
 .drx-rec{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;}
 .drx-rec__pair{display:flex;flex-direction:column;gap:.4rem;min-width:0;flex:1 1 12rem;}
 .drx-rec__row{display:flex;align-items:baseline;gap:.5rem;min-width:0;}
@@ -62,9 +49,6 @@ const CSS = `
 .drx-stars{font-size:1rem;color:var(--warn);letter-spacing:.04em;}
 .drx-conf{font-size:.72rem;font-weight:700;}
 
-/* Body (scroll) */
-.drx-body{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;padding:1rem 1.15rem 1.4rem;
-  display:flex;flex-direction:column;gap:.85rem;-webkit-overflow-scrolling:touch;}
 .drx-sec{border:1px solid var(--border);border-radius:14px;background:var(--surface);
   padding:.8rem .9rem;display:flex;flex-direction:column;gap:.6rem;}
 .drx-sec__title{font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em;
@@ -155,27 +139,24 @@ const CSS = `
 .drx-rank__detrow{display:flex;justify-content:space-between;font-size:.78rem;padding:.18rem 0;}
 .drx-rank__detrow span:first-child{color:var(--muted);}
 
-/* Empty + footer */
 .drx-empty{font-size:.86rem;color:var(--muted);}
-.drx-foot{flex:0 0 auto;display:flex;gap:.6rem;padding:.85rem 1.15rem;border-top:1px solid var(--border);
-  background:var(--surface);}
-.drx-btn{flex:1 1 auto;display:inline-flex;align-items:center;justify-content:center;gap:.4rem;cursor:pointer;
+
+/* Export widget — the one genuinely stateful footer element, hand-wired
+   directly into .drawer__foot alongside the canonical Tutup button. */
+.drx-btn{display:inline-flex;align-items:center;justify-content:center;gap:.4rem;cursor:pointer;
   font-size:.86rem;font-weight:700;border-radius:11px;padding:.62rem .9rem;transition:filter .15s ease;}
-.drx-btn--ghost{background:var(--surface);border:1px solid var(--border);color:var(--text);}
-.drx-btn--ghost:hover{background:var(--surface-2);}
 .drx-btn--accent{background:var(--accent);border:1px solid var(--accent);color:var(--on-accent);}
 .drx-btn--accent:hover{filter:brightness(1.06);}
-.drx-export-menu{position:relative;flex:1 1 auto;display:flex;}
-.drx-export-pop{position:absolute;bottom:calc(100% + .4rem);right:0;left:0;display:none;flex-direction:column;
+.drx-export-menu{position:relative;display:inline-flex;}
+.drx-export-pop{position:absolute;bottom:calc(100% + .4rem);right:0;min-width:9.5rem;display:none;flex-direction:column;
   gap:.25rem;background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:.35rem;
   box-shadow:0 10px 30px rgba(0,0,0,.22);}
 .drx-export-menu[data-open="true"] .drx-export-pop{display:flex;}
 .drx-export-pop button{appearance:none;border:0;background:transparent;color:var(--text);cursor:pointer;
-  font:inherit;font-size:.82rem;font-weight:600;text-align:left;padding:.45rem .55rem;border-radius:8px;}
+  font:inherit;font-size:.82rem;font-weight:600;text-align:left;padding:.45rem .55rem;border-radius:8px;white-space:nowrap;}
 .drx-export-pop button:hover{background:var(--surface-2);}
 
 @media (max-width:560px){
-  .drx-sheet{width:100%;border-left:0;}
   .drx-rec__metrics{width:100%;justify-content:space-between;}
 }
 `;
@@ -263,7 +244,7 @@ function renderScoreBreakdown(bd) {
   return wrap;
 }
 
-function renderWhyNot(block, vsLabel) {
+function renderWhyNot(block) {
   if (!block || !block.recommended || !block.others.length) {
     return el('div', 'drx-empty', 'Tidak ada kandidat pembanding lain.');
   }
@@ -367,6 +348,7 @@ function renderRanking(rows) {
     item.setAttribute('data-expanded', 'false');
     const btn = el('button', 'drx-rank__btn');
     btn.type = 'button';
+    btn.setAttribute('aria-expanded', 'false');
     btn.append(el('span', 'drx-rank__no', `#${r.rank}`));
     btn.append(el('span', 'drx-rank__name', `${r.driverName || '—'} · ${r.vehicleName || '—'}`));
     if (r.recommended) btn.append(el('span', 'drx-rank__badge', 'Rekomendasi'));
@@ -376,6 +358,7 @@ function renderRanking(rows) {
     btn.addEventListener('click', () => {
       const open = item.getAttribute('data-expanded') === 'true';
       item.setAttribute('data-expanded', open ? 'false' : 'true');
+      btn.setAttribute('aria-expanded', open ? 'false' : 'true');
     });
     item.append(btn);
 
@@ -391,30 +374,7 @@ function renderRanking(rows) {
   return wrap;
 }
 
-/* ── Drawer assembly + lifecycle ──────────────────────────────────────── */
-
-let _keyHandler = null;
-
-function buildSheet(model, opts) {
-  const sheet = el('aside', 'drx-sheet');
-  sheet.setAttribute('role', 'dialog');
-  sheet.setAttribute('aria-modal', 'true');
-  sheet.setAttribute('aria-label', 'Decision Replay');
-
-  // Header
-  const head = el('div', 'drx-head');
-  const top = el('div', 'drx-head__top');
-  const brand = el('div', 'drx-head__brand');
-  brand.append(el('span', null, '🧠'), el('span', null, 'Decision Replay'));
-  top.append(brand);
-  top.append(el('span', 'drx-head__tag', 'Explainable AI'));
-  const x = el('button', 'drx-x', '×');
-  x.type = 'button';
-  x.setAttribute('aria-label', 'Tutup');
-  x.id = 'drxClose';
-  top.append(x);
-  head.append(top);
-
+function buildRecommendationSummary(model) {
   const rec = el('div', 'drx-rec');
   const pair = el('div', 'drx-rec__pair');
   const dRow = el('div', 'drx-rec__row');
@@ -429,39 +389,44 @@ function buildSheet(model, opts) {
   cM.append(el('span', 'drx-stars', model.confidence.glyph), el('span', 'drx-conf', model.confidence.label), el('span', 'drx-metric__lbl', 'Confidence'));
   metrics.append(sM, cM);
   rec.append(pair, metrics);
-  head.append(rec);
-  sheet.append(head);
+  return rec;
+}
 
-  // Body
-  const body = el('div', 'drx-body');
+/* ── Body content (appended into drawer.js's [data-drawer-body]) ──────── */
+
+function buildBodyContent(model) {
+  const frag = document.createDocumentFragment();
+
+  frag.append(buildRecommendationSummary(model));
+
   if (!model.hasRecommendation) {
-    body.append(el('div', 'drx-empty',
+    frag.append(el('div', 'drx-empty',
       'Tidak ada rekomendasi otomatis untuk request ini — keputusan dibuat manual oleh admin.'));
   }
 
   // Feature 1 — Decision Replay
   const s1 = section('Decision Replay');
   s1.append(renderTimeline(model.replayStages, false));
-  body.append(s1);
+  frag.append(s1);
 
   if (model.hasRecommendation) {
     // Feature 2 — Why Driver
     const s2 = section('Mengapa Driver Ini?', model.whyDriver ? `${model.whyDriver.name} · ${model.whyDriver.score}` : '');
-    s2.append(renderWhy(model.whyDriver, 'D'));
-    body.append(s2);
+    s2.append(renderWhy(model.whyDriver));
+    frag.append(s2);
 
     // Feature 3 — Why Not Other Drivers
     const s3 = section('Mengapa Bukan Driver Lain?');
     s3.append(renderWhyNot(model.whyNotDrivers));
-    body.append(s3);
+    frag.append(s3);
 
     // Feature 4 — Why Vehicle + comparison
     const s4 = section('Mengapa Kendaraan Ini?', model.whyVehicle ? `${model.whyVehicle.name} · ${model.whyVehicle.score}` : '');
-    s4.append(renderWhy(model.whyVehicle, 'K'));
-    body.append(s4);
+    s4.append(renderWhy(model.whyVehicle));
+    frag.append(s4);
     const s4b = section('Mengapa Bukan Kendaraan Lain?');
     s4b.append(renderWhyNot(model.whyNotVehicles));
-    body.append(s4b);
+    frag.append(s4b);
 
     // Feature 5 — Score Breakdown
     const s5 = section('Komposisi Skor');
@@ -473,40 +438,35 @@ function buildSheet(model, opts) {
       model.scoreBreakdown.subScores.vehicle.forEach((s) => chips.append(el('span', 'drx-chip', `K·${s.label} ${s.score}`)));
       s5.append(chips);
     }
-    body.append(s5);
+    frag.append(s5);
   }
 
   // Feature 6 — Policy Evaluation
   const s6 = section('Evaluasi Policy');
   s6.append(renderPolicy(model.policy));
-  body.append(s6);
+  frag.append(s6);
 
   // Feature 9 — Candidate Ranking
   const s9 = section('Peringkat Kandidat');
   s9.append(renderRanking(model.ranking));
-  body.append(s9);
+  frag.append(s9);
 
   // Feature 8 — Override Analysis (only when a decision/override exists)
   if (model.override && (model.override.decided || model.override.overridden)) {
     const s8 = section('Analisis Override Admin');
     s8.append(renderOverride(model.override));
-    body.append(s8);
+    frag.append(s8);
   }
 
   // Feature 11 — Lifecycle Timeline
   const s11 = section('Linimasa');
   s11.append(renderTimeline(model.timeline, true));
-  body.append(s11);
+  frag.append(s11);
 
-  sheet.append(body);
+  return frag;
+}
 
-  // Footer — Close + Export (Feature 12)
-  const foot = el('div', 'drx-foot');
-  const closeBtn = el('button', 'drx-btn drx-btn--ghost', 'Tutup');
-  closeBtn.type = 'button';
-  closeBtn.id = 'drxCloseBtn';
-  foot.append(closeBtn);
-
+function buildExportMenu(model, opts) {
   const exportMenu = el('div', 'drx-export-menu');
   exportMenu.setAttribute('data-open', 'false');
   const exportBtn = el('button', 'drx-btn drx-btn--accent', 'Export ▾');
@@ -519,13 +479,7 @@ function buildSheet(model, opts) {
   xlsBtn.type = 'button'; xlsBtn.id = 'drxExportExcel';
   pop.append(pdfBtn, xlsBtn);
   exportMenu.append(exportBtn, pop);
-  foot.append(exportMenu);
-  sheet.append(foot);
 
-  // Wire interactions
-  const close = () => closeDecisionReplayDrawer();
-  x.addEventListener('click', close);
-  closeBtn.addEventListener('click', close);
   exportBtn.addEventListener('click', () => {
     exportMenu.setAttribute('data-open', exportMenu.getAttribute('data-open') === 'true' ? 'false' : 'true');
   });
@@ -536,33 +490,33 @@ function buildSheet(model, opts) {
   pdfBtn.addEventListener('click', () => runExport('pdf'));
   xlsBtn.addEventListener('click', () => runExport('excel'));
 
-  return sheet;
+  return exportMenu;
 }
+
+/* ── Open/close — now the canonical drawer's job ──────────────────────── */
 
 /**
  * Open (or replace) the Decision Replay drawer for a replay model.
  * @param {Object} model  buildDecisionReplay() result
  * @param {Object} [opts]
  * @param {(format:'pdf'|'excel', model:Object)=>void} [opts.onExport]  export handler
- * @returns {HTMLElement} the drawer root
+ * @returns {HTMLElement|null} the canonical drawer overlay root
  */
 export function openDecisionReplayDrawer(model, opts = {}) {
   ensureStyles();
-  closeDecisionReplayDrawer();
-
-  const overlay = el('div', 'drx-overlay');
-  overlay.id = ROOT_ID;
-  overlay.setAttribute('data-open', 'false');
-  const sheet = buildSheet(model, opts);
-  overlay.append(sheet);
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeDecisionReplayDrawer(); });
-  document.body.appendChild(overlay);
-
-  _keyHandler = (e) => { if (e.key === 'Escape') closeDecisionReplayDrawer(); };
-  document.addEventListener('keydown', _keyHandler);
-
-  // Next frame → trigger the slide-in transition.
-  requestAnimationFrame(() => { overlay.setAttribute('data-open', 'true'); });
+  const overlay = openDrawer({
+    title: 'Decision Replay',
+    subtitle: model.hasRecommendation
+      ? `${model.recommendation.driver || '—'} · ${model.recommendation.vehicle || '—'}`
+      : 'Tidak ada rekomendasi otomatis',
+    icon: 'bulb',
+    body: '',
+    footer: [{ label: 'Tutup', action: 'close' }],
+    onAction: (action, close) => { if (action === 'close') close(); },
+  });
+  if (!overlay) return null;
+  overlay.querySelector('[data-drawer-body]').appendChild(buildBodyContent(model));
+  overlay.querySelector('.drawer__foot').appendChild(buildExportMenu(model, opts));
   return overlay;
 }
 
@@ -574,17 +528,6 @@ export function openDecisionReplayDrawer(model, opts = {}) {
 export function openDecisionReplay(input = {}, opts = {}) {
   const model = buildDecisionReplay(input, { now: opts.now });
   return openDecisionReplayDrawer(model, opts);
-}
-
-/** Close + remove the drawer (with a short fade) and unbind the ESC handler. */
-export function closeDecisionReplayDrawer() {
-  if (_keyHandler) { document.removeEventListener('keydown', _keyHandler); _keyHandler = null; }
-  const existing = document.getElementById(ROOT_ID);
-  if (!existing) return;
-  existing.setAttribute('data-open', 'false');
-  const remove = () => { if (existing.parentNode) existing.parentNode.removeChild(existing); };
-  // Allow the slide-out transition to play, then remove.
-  setTimeout(remove, 320);
 }
 
 export { buildDecisionReplay };

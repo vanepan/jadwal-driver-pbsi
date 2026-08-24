@@ -66,13 +66,66 @@ function errorBody() {
   return '<div class="wsp-empty wsp-empty--error">Gagal memuat widget ini.</div>';
 }
 
+/** Flat grid — every workspace's original, unchanged behavior. */
+function renderFlatGrid(widgetIds) {
+  const cards = (widgetIds || []).map(id => skeletonWidget(getWidgetDef(id))).join('');
+  return `<div class="wsp-grid" role="list">${cards}</div>`;
+}
+
+/**
+ * Phase 7 — group cards into `.wsp-zone` bands instead of one flat grid
+ * (Masthead -> NOW -> DECISIONS -> SITUATION -> OUTLOOK -> Deep Dive for the
+ * Executive workspace). Every zone gets the same stable `data-zone-id`
+ * wrapper (a reliable DOM anchor for CSS/tests regardless of whether it's
+ * labeled); a zone with no `label` (Masthead, Explore) just omits the
+ * eyebrow/heading `<header>` — no icon, no box, typography-only banding per
+ * the brief's "typography-driven hierarchy" direction. `.wsp-zone` is a
+ * plain flex column around its own single `.wsp-grid`, so an unlabeled zone
+ * is visually identical to the old unwrapped flat-grid case.
+ */
+function renderZonedGrid(zones) {
+  const sections = zones.map((zone) => {
+    const grid = renderFlatGrid(zone.widgets);
+    const headId = `wsp-zone-eyebrow-${zone.id}`;
+    const heading = zone.heading ? `<h2 class="wsp-zone__heading">${zone.heading}</h2>` : '';
+    const header = zone.label ? `
+        <header class="wsp-zone__head fade-up">
+          <span class="wsp-zone__eyebrow" id="${headId}">${zone.label}</span>
+          ${heading}
+        </header>` : '';
+    return `
+      <section class="wsp-zone" data-zone-id="${zone.id}"${zone.label ? ` aria-labelledby="${headId}"` : ''}>
+        ${header}
+        ${grid}
+      </section>`;
+  }).join('');
+  // Phase 7E (Dashboard Composition Rebuild) — zones are grid ITEMS of one
+  // shared 12-column grid instead of a vertical flex stack, so a pair of
+  // zones (NOW/DECISIONS, workspace-styles.js's own `grid-column: span 6`
+  // rule) can share a row instead of each forcing a full-width band. This
+  // wrapper only ever appears here — renderFlatGrid() (every non-zoned
+  // workspace: Request/Driver/Engineering) is a completely separate
+  // function this doesn't touch, so those workspaces are unaffected by
+  // construction, not by convention. Zone widget ORDER (and therefore the
+  // single-column mobile fallback order) is unchanged — only the grid
+  // placement each zone gets above the mobile breakpoint changes.
+  return `<div class="wsp-dashboard-grid">${sections}</div>`;
+}
+
 /**
  * Draw the workspace shell + a skeleton grid. Idempotent per (host, workspace):
  * re-drawing replaces the DOM. Stores the workspace id on the host so the
  * router can decide whether a refresh needs a fresh skeleton.
+ *
+ * Phase 7 — when `workspace.zones` is defined, cards render as labeled
+ * bands (renderZonedGrid); every workspace that omits it (Request/Driver/
+ * Engineering) renders the original flat grid, byte-for-byte — this is one
+ * additive branch, not a second rendering pipeline.
  */
 export function renderShell(host, workspace) {
-  const cards = (workspace.widgets || []).map(id => skeletonWidget(getWidgetDef(id))).join('');
+  const body = Array.isArray(workspace.zones) && workspace.zones.length
+    ? renderZonedGrid(workspace.zones)
+    : renderFlatGrid(workspace.widgets);
   host.innerHTML = `
     <div class="wsp-root">
       <header class="wsp-header">
@@ -80,7 +133,7 @@ export function renderShell(host, workspace) {
         <h1 class="wsp-title">${workspace.title}</h1>
         <p class="wsp-subtitle">${workspace.subtitle}</p>
       </header>
-      <div class="wsp-grid" role="list">${cards}</div>
+      ${body}
     </div>`;
   host.__wspWorkspaceId = workspace.id;
 }

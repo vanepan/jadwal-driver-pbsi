@@ -161,7 +161,11 @@ async function renderScenario(name, viewportKey, theme) {
       firstPillText: (q('.wsp-inbox__item--primary .wsp-pill') || {}).textContent || null,
       firstExplainRows: qa('.wsp-inbox__item--primary .wsp-inbox__explain-row').map((e) => e.textContent),
       hasActionBtn: !!q('.wsp-inbox__item--primary .wsp-btn'),
-      leadText: (q('.wsp-lead') || {}).textContent || null,
+      // Premium Pass — the old flat `.wsp-lead` fallback sentence was
+      // replaced with a calm empty-state block (.wsp-inbox__calm); this
+      // reads its sub-line, which carries the exact same sentence text.
+      leadText: (q('.wsp-inbox__calm-sub') || {}).textContent || null,
+      calmTitle: (q('.wsp-inbox__calm-title') || {}).textContent || null,
       scrollWidthOverflow: document.documentElement.scrollWidth > window.innerWidth + 2,
     };
   }, ctxJson);
@@ -183,10 +187,11 @@ for (const vp of Object.keys(VIEWPORTS)) {
   }
 }
 
-console.log('\n[2] Waiting-on-prediction — lead sentence, no inbox');
+console.log('\n[2] Waiting-on-prediction — calm empty state, no inbox');
 const waitingResult = matrixResults['desktop/light/waiting'];
 check('waiting: no .wsp-inbox (nothing certified yet)', !waitingResult.hasInbox);
-check('waiting: lead sentence present', /prediksi mencukupi/i.test(waitingResult.leadText || ''));
+check('waiting: calm-state sentence present', /prediksi mencukupi/i.test(waitingResult.leadText || ''));
+check('waiting: calm-state title present (not a bare sentence)', /menunggu/i.test(waitingResult.calmTitle || ''));
 
 console.log('\n[3] One action — single primary card, no disclosure button');
 const oneResult = matrixResults['desktop/light/oneAction'];

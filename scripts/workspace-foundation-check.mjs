@@ -139,7 +139,8 @@ check('unknown role → safe fallback (request)', result.roles.viewer === 'reque
 // "Drivers now" / "Vehicle flags" pairing, closing a real gap (neither
 // existed in any form before). Not a reversal of the consolidation
 // principle: still one deliberate, curated set, not a re-thinning.
-check('executive workspace has exactly 8 widgets (post-Phase-2 addition)', result.counts.executive === 8);
+// Phase 7 (Executive Command Center Rebuild) — exec-outlook added (Outlook zone).
+check('executive workspace has exactly 9 widgets (post-Phase-7 addition)', result.counts.executive === 9);
 check('request workspace has widgets', result.counts.request >= 8);
 check('driver workspace has widgets', result.counts.driver >= 8);
 check('engineering workspace has widgets', result.counts.engineering >= 6);

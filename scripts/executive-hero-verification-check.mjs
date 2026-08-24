@@ -11,8 +11,11 @@
        asserts the entrance never replays and the score/ring continuity-tweens
        from the last shown value instead of resetting to zero.
      • Theme switching (data-theme toggle with no re-mount).
-     • Architectural check 1 — Operational Pulse is exactly 3 metrics, "Status
-       Armada" is gone, and its data is still surfaced in the explainability
+     • Architectural check 1 — Operational Pulse is exactly 4 metrics
+       (Kendaraan Siap / Driver Aktif / Permintaan Tertunda / Trip Hari Ini,
+       the last added Phase 7D — a real, already-computed count, not a new
+       query), "Status Armada" is still gone (that specific candidate metric
+       stays rejected), and its data is still surfaced in the explainability
        disclosure (not lost).
      • Architectural check 2 (static, not browser) — single lifecycle owner:
        mountHeroMotion/resolveMotionProfile are referenced ONLY inside
@@ -183,7 +186,7 @@ for (const vp of Object.keys(VIEWPORTS)) {
       const r = await renderMood(mood, vp, theme);
       matrixResults[key] = r;
       check(`${key}: Hero renders`, r.hasHero);
-      check(`${key}: Operational Pulse has exactly 3 stats`, r.statCount === 3);
+      check(`${key}: Operational Pulse has exactly 4 stats`, r.statCount === 4);
       check(`${key}: no horizontal overflow`, !r.scrollWidthOverflow);
     }
   }
@@ -205,12 +208,12 @@ await shot('critical', 'tablet', 'dark');
 await shot('healthy', 'desktop', 'dark');
 await shot('healthy', 'mobile', 'dark');
 
-console.log('\n[3] Operational Pulse — architectural check (3 vs 4 metrics)');
+console.log('\n[3] Operational Pulse — architectural check (Status Armada excluded, Trip Hari Ini added)');
 const healthyDesktopLight = matrixResults['desktop/light/healthy'];
-check('exactly 3 Operational Pulse metrics', healthyDesktopLight.statCount === 3);
+check('exactly 4 Operational Pulse metrics', healthyDesktopLight.statCount === 4);
 check('"Status Armada" is NOT in Operational Pulse', !healthyDesktopLight.statLabels.includes('Status Armada'));
-check('Operational Pulse still has Kendaraan Siap / Driver Aktif / Permintaan Tertunda',
-  ['Kendaraan Siap', 'Driver Aktif', 'Permintaan Tertunda'].every((l) => healthyDesktopLight.statLabels.includes(l)));
+check('Operational Pulse has Kendaraan Siap / Driver Aktif / Permintaan Tertunda / Trip Hari Ini',
+  ['Kendaraan Siap', 'Driver Aktif', 'Permintaan Tertunda', 'Trip Hari Ini'].every((l) => healthyDesktopLight.statLabels.includes(l)));
 // The removed metric's data (fleet criticality) must still be reachable —
 // via the explainability disclosure's vehicleUtil row — proving it moved,
 // not disappeared.

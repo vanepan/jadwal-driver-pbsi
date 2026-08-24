@@ -15,6 +15,13 @@
 'use strict';
 
 import { esc, actionBtn } from '../_widget-base.js';
+import { anIcon } from '../../analytics/analytics-shell.js';
+
+/** Phase 7D — domain -> canonical icon (anIcon()), used by rankedItem()'s
+ *  severity badge. Reuses the exact domain vocabulary exec-attention
+ *  already assigns (see index.js's items.push() calls) — no new
+ *  classification, just an icon per existing label. */
+const DOMAIN_ICON = { Operations: 'operations', Engineering: 'maintenance', Finance: 'pettycash' };
 
 /** Canonical Executive tone vocabulary. Every mood / severity / engine
  *  tone in the Executive widgets resolves into one of these five keys
@@ -59,9 +66,17 @@ export function severityRank(sev) {
  *  keeps any other caller byte-for-byte unchanged. */
 export function rankedItem(i) {
   const m = SEV_META[i.sev];
+  // Phase 7D — a colored domain-icon badge replaces the plain severity dot
+  // for rows that carry `i.domain` (every real Attention row does); rows
+  // without one (none today, kept for safety) fall back to the original
+  // small bar so no caller's output silently breaks.
+  const icon = i.domain && DOMAIN_ICON[i.domain];
+  const marker = icon
+    ? `<span class="wsp-sevrow__icon wsp-sevrow__icon--${i.sev}" aria-hidden="true">${anIcon(icon, { size: 16 })}</span>`
+    : `<span class="wsp-sevrow__bar" aria-hidden="true"></span>`;
   return `
-    <div class="wsp-sevrow wsp-sevrow--${i.sev}">
-      <span class="wsp-sevrow__bar" aria-hidden="true"></span>
+    <div class="wsp-sevrow wsp-sevrow--${i.sev} fade-up">
+      ${marker}
       <div class="wsp-sevrow__body">
         ${i.domain ? `<div class="wsp-sevrow__domain">${esc(i.domain)}</div>` : ''}
         <div class="wsp-sevrow__title">${i.domain ? '' : `<span class="wsp-sevrow__sev">${esc(m.label)}</span>`}${esc(i.title)}</div>
@@ -88,11 +103,14 @@ export function compactSuccessLine(message) {
  *  background at rest (spec: "refined contextual navigation... not a giant
  *  pill collection"). Writes the same data-wsp-action/data-wsp-arg contract
  *  actionBtn/chip already use, consumed by workspace-renderer.js's single
- *  delegated click handler — no new wiring needed. */
+ *  delegated click handler — no new wiring needed.
+ *  Phase 7D — `d.tint` ('op'|'intel', optional) colors the icon's badge
+ *  background; every existing caller omits it (byte-for-byte unchanged). */
 export function launcherItem(d) {
+  const tintClass = d.tint ? ` wsp-launcher__icon--${esc(d.tint)}` : '';
   return `
     <button type="button" class="wsp-launcher__item" data-wsp-action="${esc(d.action)}"${d.arg ? ` data-wsp-arg="${esc(d.arg)}"` : ''}>
-      <span class="wsp-launcher__icon" aria-hidden="true">${d.icon || ''}</span>
+      <span class="wsp-launcher__icon${tintClass}" aria-hidden="true">${d.icon || ''}</span>
       <span class="wsp-launcher__label">${esc(d.label)}</span>
     </button>`;
 }
@@ -100,4 +118,19 @@ export function launcherItem(d) {
 /** Destination board wrapper — a responsive grid, not a wrapped pill row. */
 export function launcherGrid(items) {
   return `<div class="wsp-launcher">${items.map(launcherItem).join('')}</div>`;
+}
+
+/** Phase 7D — the Launcher as a grouped "app switcher": one labeled section
+ *  per `d.group`, each its own launcherGrid(). `sections` is
+ *  [{ id, label, tint, items }]; a section with no items is skipped
+ *  (role-filtering can empty one group without leaving a headerless gap). */
+export function launcherGroups(sections) {
+  return sections
+    .filter(s => s.items.length)
+    .map(s => `
+      <div class="wsp-launcher-group">
+        <div class="wsp-launcher-group__label">${esc(s.label)}</div>
+        ${launcherGrid(s.items.map(it => ({ ...it, tint: s.tint })))}
+      </div>`)
+    .join('');
 }

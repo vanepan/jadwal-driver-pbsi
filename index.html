@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Sarpras · Jadwal Driver Operasional</title>
 
   <!-- PWA -->
@@ -353,8 +353,16 @@
 
     <div class="login-card-body">
       <h2>Masuk ke Platform</h2>
-      <p class="login-lead">Gunakan username dan PIN Anda. Navigasi menyesuaikan peran secara otomatis.</p>
 
+      <!-- Phase 7G.4 — the explanatory subtitle ("Gunakan username dan PIN
+           Anda. Navigasi menyesuaikan peran secara otomatis.") and the
+           "Ingat saya di perangkat ini" toggle (Phase 7G.3) were both
+           removed. The toggle's persistence choice is now just always
+           browserLocalPersistence (see js/firebase.js signInWithToken) —
+           the same behavior Firebase already defaulted to with no
+           explicit call at all, so this UI never changed what the app
+           actually did; it only added a decision the login screen didn't
+           need to ask. -->
       <form id="loginForm" novalidate>
         <div class="form-group">
           <label for="loginUsername">Username</label>

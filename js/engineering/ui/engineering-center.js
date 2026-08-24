@@ -51,6 +51,11 @@ import { renderQueue } from './engineering-queue.js';
 import { renderOpsDashboard, renderMemberDashboard } from './engineering-dashboard.js';
 import { renderTimelinePage, renderHistory, renderSettings, renderMyJobs } from './engineering-views.js';
 import { renderDrawer } from './engineering-drawer.js';
+// Design System Program Phase 10 (Canonical Drawer Migration): the
+// Assignment Detail drawer now renders through the app-wide canonical
+// shell instead of this module's own hand-rolled .eng-scrim/.eng-drawer —
+// see syncEngineeringDetailDrawer() below.
+import { openDrawer, closeDrawer, refreshDrawerBody } from '../../components/drawer.js';
 
 const st = {
   screen: 'dashboard',
@@ -63,6 +68,11 @@ const st = {
 };
 
 let host = null, unsub = null, mounted = false, loaded = false, adapter = null, providerUnsub = null;
+// Phase 10: the currently-open canonical drawer overlay + the assignment
+// id it was built for — lets syncEngineeringDetailDrawer() tell "same
+// assignment re-rendering" (refreshDrawerBody, preserves scroll/focus)
+// apart from "switching to a different assignment" (a real openDrawer()).
+let _engDrawerOverlay = null, _engDrawerKey = null;
 
 // Idempotency guard: assignment ids with an ownership-sensitive write in flight.
 // A repeated click / retry on the same assignment while one is pending is ignored,
@@ -261,10 +271,72 @@ function render() {
     default:
       screen = c.role === ENGINEERING_ROLE.MEMBER ? renderMemberDashboard(all, c) : renderOpsDashboard(all, c);
   }
-  const drawer = st.drawerId ? renderDrawer(getAssignment(st.drawerId), c) : '';
-  host.innerHTML = `<div class="eng-content">${screen}</div>${drawer}${modal}`;
+  host.innerHTML = `<div class="eng-content">${screen}</div>${modal}`;
   restoreFocus();
   if (st.creating) mountCreateWidgets();
+  syncEngineeringDetailDrawer(c);
+}
+
+/** Phase 10 (Canonical Drawer Migration): st.drawerId used to be rendered
+ *  as a plain string concatenated into host.innerHTML — every render()
+ *  call destroyed and recreated the whole drawer subtree, even for an
+ *  unrelated realtime store update while it was open (see the Phase 10
+ *  migration map's §25 finding: focus and scroll position were already
+ *  lost on every such re-render before this migration). Now driven
+ *  imperatively: a genuinely new assignment (different id, or first open)
+ *  gets a real openDrawer() call; the SAME assignment re-rendering (a
+ *  lifecycle action's optimistic update, a realtime echo, an inFlight
+ *  guard clearing) gets refreshDrawerBody() instead — content updates in
+ *  place, scroll position is preserved. Closing (st.drawerId back to
+ *  null, from any path — the drawer's own dismiss, doDelete(), a screen
+ *  change) closes the real drawer the same way. */
+function syncEngineeringDetailDrawer(c) {
+  const desiredKey = st.drawerId ? `assignment:${st.drawerId}` : null;
+  if (!desiredKey) {
+    if (_engDrawerOverlay) { closeDrawer(); _engDrawerOverlay = null; _engDrawerKey = null; }
+    return;
+  }
+  const { title, subtitle, body, footer } = renderDrawer(getAssignment(st.drawerId), c);
+  if (desiredKey === _engDrawerKey && _engDrawerOverlay) {
+    refreshDrawerBody(body);
+    return;
+  }
+  _engDrawerKey = desiredKey;
+  _engDrawerOverlay = openDrawer({
+    title,
+    subtitle,
+    icon: 'wrench',
+    body,
+    footer,
+    onAction: (action, close) => onEngineeringDrawerAction(action, c),
+    onClose: () => { st.drawerId = null; render(); },
+  });
+}
+
+/** Handles every action fired from inside the migrated drawer — real
+ *  footer buttons (Selesaikan/Verifikasi/etc., built by
+ *  engineering-drawer.js's actionButtons()) and the one body-level
+ *  data-drawer-action (the delete-zone button, engineering-drawer.js's
+ *  deleteZone() — see its Phase 10 comment for why it isn't a footer
+ *  button). Mirrors onClick()'s old eng-* switch cases exactly — the
+ *  worker id is always the current user (ctx.me.id, matching the old
+ *  markup's own `data-worker="${me.id}"`), available here via closure
+ *  instead of a dataset read, since this callback is rebuilt fresh for
+ *  whichever assignment is currently open. */
+function onEngineeringDrawerAction(action, c) {
+  const id = st.drawerId;
+  if (!id) return;
+  switch (action) {
+    case 'eng-begin': doBegin(id, c); break;
+    case 'eng-resume': doResume(id, c); break;
+    case 'eng-finish': commitTx(id, (a) => finishAssignment(a, { workerId: c.me.id, actor: c.me })); break;
+    case 'eng-continue': commitTx(id, (a) => continueTomorrowAssignment(a, { workerId: c.me.id, actor: c.me })); break;
+    case 'eng-verify': if (c.canEng('eng.verify')) commitTx(id, (a) => verifyAssignment(a, c.me, { now: Date.now() })); break;
+    case 'eng-postpone': if (c.canEng('eng.postpone')) commitTx(id, (a) => postponeAssignment(a, { actor: c.me })); break;
+    case 'eng-reopen': if (c.canEng('eng.reopen')) commitTx(id, (a) => transitionAssignment(a, STATUS.AVAILABLE, { now: Date.now() })); break;
+    case 'eng-delete': doDelete(id, c); break;
+    default: break;
+  }
 }
 
 /** Attach the shared PBSI date picker to the create modal's date input — the
@@ -313,8 +385,14 @@ function emptyScreen(c) {
 
 /* ── delegated events ─────────────────────────────────────────────────── */
 function onClick(e) {
+  // Phase 10: the '.eng-drawer' exclusion here used to matter because a
+  // click landing on the shared .eng-scrim could originate from either
+  // the drawer's own panel or the create/report modal's panel — now that
+  // the drawer no longer renders '.eng-drawer' at all (canonical shell,
+  // see syncEngineeringDetailDrawer()), only the modal's own scrim click
+  // reaches this handler; '.eng-modal-box' alone is the correct guard.
   const scrim = e.target.closest('[data-act="eng-scrim"]');
-  if (scrim && !e.target.closest('.eng-drawer') && !e.target.closest('.eng-modal-box')) { st.drawerId = null; st.creating = false; st.formMode = 'assignment'; render(); return; }
+  if (scrim && !e.target.closest('.eng-modal-box')) { st.creating = false; st.formMode = 'assignment'; render(); return; }
   const el = e.target.closest('[data-act]');
   if (!el || !host.contains(el)) return;
   const act = el.dataset.act;
@@ -325,7 +403,16 @@ function onClick(e) {
 
   switch (act) {
     case 'eng-open': st.drawerId = id; render(); break;
-    case 'eng-close-drawer': st.drawerId = null; render(); break;
+    // Phase 10: eng-close-drawer/-postpone/-reopen/-delete used to be
+    // reachable here because the drawer rendered its own data-act markup
+    // inside `host`. They're now data-drawer-action (delete) or real
+    // canonical-footer buttons (postpone/reopen), both routed through
+    // onEngineeringDrawerAction() instead (see syncEngineeringDetailDrawer())
+    // — the drawer's own close button is the canonical shell's native one.
+    // eng-begin/-resume/-finish/-continue/-verify stay below: Dashboard
+    // (engineering-dashboard.js) and Queue (engineering-queue.js) render
+    // their own quick-action buttons with these same data-act values,
+    // independent of the drawer.
     // Create opens ONLY via the sidebar CTA → openEngineeringCreate(); there is
     // no in-content 'eng-create' trigger anymore (single global entry point).
     case 'eng-create-cancel': st.creating = false; st.formMode = 'assignment'; render(); break;
@@ -343,9 +430,6 @@ function onClick(e) {
     case 'eng-finish': commitTx(id, (a) => finishAssignment(a, { workerId: worker || c.me.id, actor: c.me })); break;
     case 'eng-continue': commitTx(id, (a) => continueTomorrowAssignment(a, { workerId: worker || c.me.id, actor: c.me })); break;
     case 'eng-verify': if (c.canEng('eng.verify')) commitTx(id, (a) => verifyAssignment(a, c.me, { now: Date.now() })); break;
-    case 'eng-postpone': if (c.canEng('eng.postpone')) commitTx(id, (a) => postponeAssignment(a, { actor: c.me })); break;
-    case 'eng-delete': doDelete(id, c); break;
-    case 'eng-reopen': if (c.canEng('eng.reopen')) commitTx(id, (a) => transitionAssignment(a, STATUS.AVAILABLE, { now: Date.now() })); break;
     default: break;
   }
 }

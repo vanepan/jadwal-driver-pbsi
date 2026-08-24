@@ -70,19 +70,19 @@ function recordRow(r, employeeName, unitName, lockedMonths) {
   const locked = !!lockedMonths.get(r.date.slice(0, 7));
   const deleted = r.status === 'deleted';
   const actions = deleted
-    ? `<button data-act="restoreRecordClick" data-id="${r.id}" type="button" style="border:1px solid var(--border);background:var(--card);color:var(--green);border-radius:7px;padding:5px 10px;font-size:11.5px;font-weight:600;cursor:pointer">Pulihkan</button>`
+    ? `<button data-act="restoreRecordClick" data-id="${r.id}" type="button" class="ot-row-btn" style="color:var(--green)">Pulihkan</button>`
     : locked
       ? `<span title="Periode ${r.date.slice(0, 7)} telah ditutup" style="font-size:11px;color:var(--muted);display:inline-flex;align-items:center;gap:4px"><svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg>Terkunci</span>`
-      : `<button data-act="openEditRecord" data-id="${r.id}" type="button" style="border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:7px;padding:5px 10px;font-size:11.5px;font-weight:600;cursor:pointer;margin-right:6px">Edit</button>
-         <button data-act="deleteRecordClick" data-id="${r.id}" type="button" style="border:1px solid var(--border);background:var(--card);color:var(--primary);border-radius:7px;padding:5px 10px;font-size:11.5px;font-weight:600;cursor:pointer">Hapus</button>`;
+      : `<button data-act="openEditRecord" data-id="${r.id}" type="button" class="ot-row-btn" style="margin-right:6px">Edit</button>
+         <button data-act="deleteRecordClick" data-id="${r.id}" type="button" class="ot-row-btn" style="color:var(--primary)">Hapus</button>`;
 
   return `
     <tr style="${deleted ? 'opacity:.55' : ''}">
-      <td style="padding:9px 10px;border-top:1px solid var(--border);font-size:12.5px;white-space:nowrap">${esc(fmtDate(r.date))}</td>
-      <td style="padding:9px 10px;border-top:1px solid var(--border);font-size:12.5px">${esc(unitName)}</td>
-      <td style="padding:9px 10px;border-top:1px solid var(--border);font-size:12.5px">${esc(employeeName)}${deleted ? ' <span style="font-size:9.5px;font-weight:700;color:var(--primary);border:1px solid var(--border);border-radius:999px;padding:1px 6px">Terhapus</span>' : ''}</td>
-      <td style="padding:9px 10px;border-top:1px solid var(--border);font-size:12.5px">${esc(r.tierKey)}${r.overrideApplied ? ' · override' : ''}</td>
-      <td style="padding:9px 10px;border-top:1px solid var(--border);font-size:12.5px;text-align:right;font-weight:700">${esc(rp(r.rateAmount))}</td>
+      <td data-label="Tanggal" style="padding:9px 10px;border-top:1px solid var(--border);font-size:12.5px;white-space:nowrap">${esc(fmtDate(r.date))}</td>
+      <td data-label="Unit" style="padding:9px 10px;border-top:1px solid var(--border);font-size:12.5px">${esc(unitName)}</td>
+      <td data-label="Karyawan" style="padding:9px 10px;border-top:1px solid var(--border);font-size:12.5px">${esc(employeeName)}${deleted ? ' <span style="font-size:9.5px;font-weight:700;color:var(--primary);border:1px solid var(--border);border-radius:999px;padding:1px 6px">Terhapus</span>' : ''}</td>
+      <td data-label="Tarif" style="padding:9px 10px;border-top:1px solid var(--border);font-size:12.5px">${esc(r.tierKey)}${r.overrideApplied ? ' · override' : ''}</td>
+      <td data-label="Nominal" style="padding:9px 10px;border-top:1px solid var(--border);font-size:12.5px;text-align:right;font-weight:700">${esc(rp(r.rateAmount))}</td>
       <td style="padding:9px 10px;border-top:1px solid var(--border);text-align:right;white-space:nowrap">${actions}</td>
     </tr>`;
 }

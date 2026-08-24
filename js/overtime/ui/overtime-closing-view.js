@@ -61,16 +61,16 @@ function allClosingsTable() {
   const closings = svc.listClosings();
   if (!closings.length) return emptyState('Belum ada Closing yang pernah dijalankan');
   return `
-    <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;overflow-x:auto">
-      <table style="width:100%;border-collapse:collapse">
+    <div class="ot-closing-table-wrap">
+      <table class="ot-closing-table" style="width:100%;border-collapse:collapse">
         <thead><tr>${['Periode', 'Status', 'Ditutup Pada', 'Oleh', 'Dibuka Ulang'].map(h => `<th style="padding:8px 10px;font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;text-align:left">${esc(h)}</th>`).join('')}</tr></thead>
         <tbody>${closings.map(c => `
           <tr>
-            <td style="padding:8px 10px;border-top:1px solid var(--border);font-size:12.5px;font-weight:700">${esc(fmtMonth(c.yyyyMM))}</td>
-            <td style="padding:8px 10px;border-top:1px solid var(--border)">${statusBadge(c)}</td>
-            <td style="padding:8px 10px;border-top:1px solid var(--border);font-size:12px">${esc(fmtDateTime(c.closedAt))}</td>
-            <td style="padding:8px 10px;border-top:1px solid var(--border);font-size:12px">${esc(c.closedBy || '—')}</td>
-            <td style="padding:8px 10px;border-top:1px solid var(--border);font-size:12px">${c.reopenCount || 0}×</td>
+            <td data-label="Periode" style="padding:8px 10px;border-top:1px solid var(--border);font-size:12.5px;font-weight:700">${esc(fmtMonth(c.yyyyMM))}</td>
+            <td data-label="Status" style="padding:8px 10px;border-top:1px solid var(--border)">${statusBadge(c)}</td>
+            <td data-label="Ditutup Pada" style="padding:8px 10px;border-top:1px solid var(--border);font-size:12px">${esc(fmtDateTime(c.closedAt))}</td>
+            <td data-label="Oleh" style="padding:8px 10px;border-top:1px solid var(--border);font-size:12px">${esc(c.closedBy || '—')}</td>
+            <td data-label="Dibuka Ulang" style="padding:8px 10px;border-top:1px solid var(--border);font-size:12px">${c.reopenCount || 0}×</td>
           </tr>`).join('')}</tbody>
       </table>
     </div>`;

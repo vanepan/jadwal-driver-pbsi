@@ -17,8 +17,11 @@
        re-rendering the section with fresh ctx (no reset to "Hari").
      • Reduced motion (prefers-reduced-motion + data-anim="off") on the
        panel crossfade transition.
-     • Regression guard — Insight and Pending Approval are still present and
-       unaffected; Hero/Attention/Decision/Recommendation sections untouched.
+     • Regression guard — Pending Approval unaffected; Hero/Attention/Decision/
+       Recommendation sections untouched. Phase 7 (Executive Command Center
+       Rebuild) relocated the Insight sentence out of Snapshot into the new
+       Outlook zone (exec-outlook) — verified gone from here AND present there,
+       plus the new zone-banding wraps this section under the right zone id.
 
    Run: node scripts/executive-snapshot-verification-check.mjs (exit 0 = pass) */
 
@@ -136,22 +139,34 @@ async function renderSnapshot(viewportKey, theme) {
     host.className = 'exec-ui v2-analytics-claude';
     await router.renderHome(host, ctx);
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    // Phase 7C — the 5 metric() tiles now count up 0->value on first mount
+    // (mountCountUp, <=420ms); wait for it to settle before reading values.
+    await new Promise((r) => setTimeout(r, 500));
 
     const section = host.querySelector('[data-widget-id="exec-snapshot"]');
     const q = (s) => section && section.querySelector(s);
     const qa = (s) => section ? [...section.querySelectorAll(s)] : [];
 
+    // Phase 7B (Executive Experience Refinement) — the 5-tile KPI grid moved
+    // from boxed `.wsp-summary` tiles to the de-boxed `metric()`/`metricRow()`
+    // primitive (_widget-base.js) — same values/descriptions, new markup.
     const readPanel = (key) => {
       const panel = q(`[data-snapshot-panel="${key}"]`);
       if (!panel) return null;
-      const tiles = [...panel.querySelectorAll('.wsp-summary')];
+      const tiles = [...panel.querySelectorAll('.wsp-metric')];
       return {
         hidden: panel.hidden,
-        values: tiles.map((t) => (t.querySelector('.wsp-summary__value') || {}).textContent),
-        descs: tiles.map((t) => (t.querySelector('.wsp-summary__desc') || {}).textContent),
-        titles: tiles.map((t) => (t.querySelector('.wsp-summary__title') || {}).textContent),
+        values: tiles.map((t) => (t.querySelector('.wsp-metric__value') || {}).textContent),
+        descs: tiles.map((t) => (t.querySelector('.wsp-metric__sub') || {}).textContent),
+        titles: tiles.map((t) => (t.querySelector('.wsp-metric__label') || {}).textContent),
       };
     };
+
+    // Phase 7B — the "Permintaan Tertunda" nav tile moved from a standalone
+    // `.wsp-summary` KPI box to a `listRow()` matching Drivers/Vehicle Flags'
+    // vocabulary (a single trailing string "N · Menunggu" / "Bersih",
+    // instead of separate value+status-pill elements).
+    const pendingEl = q('[data-wsp-action="navPending"]');
 
     return {
       hasSection: !!section,
@@ -165,11 +180,15 @@ async function renderSnapshot(viewportKey, theme) {
       panelMinggu: readPanel('minggu'),
       panelBulan: readPanel('bulan'),
       hasInsight: !!q('.wsp-insight'),
-      insightText: (q('.wsp-insight') || {}).textContent || null,
-      pendingValue: (q('[data-wsp-action="navPending"] .wsp-summary__value') || {}).textContent || null,
-      pendingStatus: (q('[data-wsp-action="navPending"] .wsp-summary__status') || {}).textContent || null,
-      noFabricatedTrend: qa('.wsp-summary__value').every((v) => !/^[+−-]/.test((v.textContent || '').trim())),
+      pendingTrailing: (pendingEl && pendingEl.querySelector('.wsp-row__trailing') || {}).textContent || null,
+      pendingTone: pendingEl ? (pendingEl.querySelector('.wsp-row__dot') || {}).className : null,
+      noFabricatedTrend: qa('.wsp-metric__value').every((v) => !/^[+−-]/.test((v.textContent || '').trim())),
       scrollWidthOverflow: document.documentElement.scrollWidth > window.innerWidth + 2,
+      // Phase 7 — Insight now lives in the Outlook zone, not here.
+      outlookInsightText: (host.querySelector('[data-widget-id="exec-outlook"] .wsp-insight') || {}).textContent || null,
+      // Phase 7 — zone-banding: this section should render inside the
+      // "situation" zone band, not the flat top-level grid.
+      inSituationZone: !!host.querySelector('.wsp-zone[data-zone-id="situation"] [data-widget-id="exec-snapshot"]'),
     };
   }, BUILD_CTX_FN);
 }
@@ -216,10 +235,13 @@ check('Hari and Minggu and Bulan are genuinely different (not the same numbers r
 console.log('\n[5] No fabricated trend — no +/- delta glyph on any summary value');
 check('no summary value starts with a delta sign (none of these metrics have a certified comparison yet)', base.noFabricatedTrend);
 
-console.log('\n[6] Regression guard — Insight and Pending Approval unaffected');
-check('Insight sentence still renders', base.hasInsight && !!(base.insightText || '').trim());
-check('Pending Approval tile still shows the real pending count (1, from fixture)', base.pendingValue === '1');
-check('Pending Approval status pill reflects "Menunggu" when pending > 0', base.pendingStatus === 'Menunggu');
+console.log('\n[6] Regression guard — Insight relocated to Outlook, Pending Approval unaffected');
+check('Insight sentence no longer renders inside Snapshot (Phase 7 relocation)', !base.hasInsight);
+check('Insight sentence renders in the new Outlook zone instead', !!(base.outlookInsightText || '').trim());
+check('Pending Approval row still shows the real pending count (1, from fixture)', (base.pendingTrailing || '').includes('1'));
+check('Pending Approval row reflects "Menunggu" when pending > 0', (base.pendingTrailing || '').includes('Menunggu'));
+check('Pending Approval row tone is warn when pending > 0', (base.pendingTone || '').includes('wsp-row__dot--warn'));
+check('exec-snapshot renders inside the "situation" zone band', base.inSituationZone);
 
 console.log('\n[7] Click-to-switch — clicking "Minggu" activates it and reveals its panel');
 await page.setViewport(VIEWPORTS.desktop);

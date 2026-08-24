@@ -65,6 +65,10 @@ export const MACRO_STAGGER = {
   // sequence between story and launcher, where they actually render.
   drivers: 400,
   vehicleFlags: 460,
+  // Phase 7 (Executive Command Center Rebuild) — the Outlook zone
+  // (exec-outlook) renders between Vehicle Flags and the Launcher, same
+  // ~60ms cadence as every other beat in this table.
+  outlook: 520,
   // Motion Language's walkthrough beat: "The way out to the rest of the
   // platform arrives last, quietly." Calm tempo, no pulse.
   launcher: 600,

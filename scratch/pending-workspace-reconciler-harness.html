@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="id" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <title>Pending Workspace Reconciler Harness (Phase 8.4)</title>
+  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="/platform.css" />
+  <style>
+    #v2PendingWorkspace { max-height: 420px; overflow-y: auto; }
+  </style>
+</head>
+<body style="margin:0;">
+  <!--
+    IMPORTANT — why this harness copies code instead of importing js/app.js:
+
+    js/app.js has zero `export` statements — it is the application's
+    monolithic bootstrap entrypoint, not an importable module. Loading it as
+    an ES module would execute its top-level code AND its
+    `document.addEventListener('DOMContentLoaded', ...)` bootstrap handler
+    once this page finishes parsing — which calls initFirebaseSync() and
+    performs real reads/writes against the PRODUCTION Firebase RTDB (see the
+    project's own "Firebase Prod in Local Testing" convention: js/firebase.js
+    always hits real production data, even in local/headless scripts, and
+    authenticated-only store functions must never be driven from an ad-hoc
+    verification script).
+
+    So this harness contains a byte-for-byte copy of the new Phase 8.4
+    functions from js/app.js (buildPendingCardHTML, pendingCardHtmlToElement,
+    bindPendingCardActions, applyPendingCardEnterMotion, isPendingCardBusy,
+    updatePendingCardInPlace, reconcilePendingCards, and a renderPending()
+    wrapper matching renderPendingWorkspace()'s own filter -> header ->
+    reconcile pipeline). It proves the new reconciliation ALGORITHM is
+    correct in isolation. It does not exercise the real wiring inside
+    js/app.js (the actual DOM ids/call sites/Firebase listener) — that is a
+    real, documented limitation, same category as Phase 8.3's own
+    "NOT TESTABLE this session: the real authenticated app" note.
+  -->
+  <div id="v2PendingWorkspace"></div>
+
+  <script type="module">
+    function esc(v) {
+      return String(v == null ? '' : v)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    // ── Verbatim copy of js/app.js's Phase 8.4 functions ──────────────────
+    function buildPendingCardHTML(r, canAct) {
+      const ms  = r.createdAt ? Date.now() - new Date(r.createdAt).getTime() : null;
+      const age = ms !== null
+        ? ms < 3_600_000   ? `${Math.max(1, Math.floor(ms / 60_000))}m lalu`
+        : ms < 86_400_000  ? `${Math.floor(ms / 3_600_000)}j lalu`
+        : `${Math.floor(ms / 86_400_000)}h lalu`
+        : '';
+
+      const timeStr = r.fullDay
+        ? 'Penuh Hari'
+        : `${esc(r.startTime || '—')}–${esc(r.endTime || '—')}`;
+
+      const actions = canAct ? `
+        <div class="v2-pending-card-actions">
+          <button class="v2-pending-btn v2-pending-btn--approve"
+                  data-action="approve-direct" data-id="${esc(r.id)}" type="button">Setujui Sesuai Rekomendasi</button>
+          <button class="v2-pending-btn v2-pending-btn--edit"
+                  data-action="approve-edit" data-id="${esc(r.id)}" type="button">Edit &amp; Setujui</button>
+          <button class="v2-pending-btn v2-pending-btn--reject"
+                  data-action="reject" data-id="${esc(r.id)}" type="button">Tolak</button>
+        </div>
+        <div class="sf-inline-error" data-request-error role="alert" hidden></div>` : '';
+
+      return `
+        <div class="v2-pending-card" data-request-id="${esc(r.id)}">
+          <div class="v2-pending-card-header">
+            <span class="v2-pending-status-pill">Menunggu</span>
+            ${age ? `<span class="v2-pending-age">${esc(age)}</span>` : ''}
+          </div>
+          <div class="v2-pending-card-body">
+            <div class="v2-pending-field">
+              <span class="v2-pending-label">Bidang</span>
+              <span class="v2-pending-value">${esc(r.requesterName || '—')}</span>
+            </div>
+            <div class="v2-pending-field v2-pending-field--full">
+              <span class="v2-pending-label">Rekomendasi Dispatch</span>
+              <span class="v2-pending-value">${r.recommendedDriver
+                ? `${esc(r.recommendedDriver)} · ${esc(r.recommendedVehicle)} · skor ${esc(String(r.dispatchScore || 0))}`
+                : (r.driver ? `${esc(r.driver)} · ${esc(r.vehicle || '—')}` : 'Tidak ada rekomendasi')}</span>
+            </div>
+            ${r.purpose ? `<div class="v2-pending-field v2-pending-field--full"><span class="v2-pending-label">Keperluan</span><span class="v2-pending-value">${esc(r.purpose)}</span></div>` : ''}
+            ${r.notes   ? `<div class="v2-pending-field v2-pending-field--full"><span class="v2-pending-label">Catatan</span><span class="v2-pending-value">${esc(r.notes)}</span></div>` : ''}
+          </div>
+          ${actions}
+        </div>`;
+    }
+
+    function pendingCardHtmlToElement(html) {
+      const template = document.createElement('template');
+      template.innerHTML = html.trim();
+      return template.content.firstElementChild;
+    }
+
+    let approveDirectCount = 0, approveEditCount = 0, rejectCount = 0;
+    function bindPendingCardActions(node) {
+      node.querySelectorAll('[data-action]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (btn.dataset.action === 'approve-direct') approveDirectCount++;
+          else if (btn.dataset.action === 'approve-edit') approveEditCount++;
+          else if (btn.dataset.action === 'reject') rejectCount++;
+        });
+      });
+    }
+
+    function applyPendingCardEnterMotion(node) {
+      node.classList.add('v2-pending-card--enter');
+      node.addEventListener('animationend', () => node.classList.remove('v2-pending-card--enter'), { once: true });
+    }
+
+    function isPendingCardBusy(node) {
+      return !!node.querySelector('[data-sf-busy="1"]');
+    }
+
+    function updatePendingCardInPlace(node, html) {
+      const next = pendingCardHtmlToElement(html);
+      const hadFocus = node.contains(document.activeElement);
+      const focusedAction = hadFocus ? document.activeElement?.dataset?.action : null;
+      node.innerHTML = next.innerHTML;
+      bindPendingCardActions(node);
+      if (focusedAction) {
+        const toFocus = node.querySelector(`[data-action="${focusedAction}"]`);
+        if (toFocus) toFocus.focus();
+      }
+    }
+
+    let _pendingCardNodes = new Map();
+    let _pendingCardHTML  = new Map();
+
+    // ── Verbatim copy of js/app.js's Phase 9 pointer-guard addition ────────
+    let _pendingActionPointerActive = false;
+    let _pendingActionPointerClearTimer = null;
+    if (typeof document !== 'undefined' && !document.__pendingActionPointerGuardWired) {
+      document.__pendingActionPointerGuardWired = true;
+      const clearFlag = () => { _pendingActionPointerActive = false; };
+      document.addEventListener('pointerdown', (e) => {
+        if (e.target.closest && e.target.closest('.v2-pending-card-actions')) {
+          _pendingActionPointerActive = true;
+          clearTimeout(_pendingActionPointerClearTimer);
+          _pendingActionPointerClearTimer = setTimeout(clearFlag, 600);
+        }
+      }, { capture: true, passive: true });
+      document.addEventListener('pointerup', () => {
+        if (_pendingActionPointerActive) { clearTimeout(_pendingActionPointerClearTimer); setTimeout(clearFlag, 50); }
+      }, { capture: true, passive: true });
+      document.addEventListener('pointercancel', clearFlag, { capture: true, passive: true });
+    }
+
+    function reconcilePendingCards(bodyEl, pending, canAct) {
+      if (pending.length === 0) {
+        if (_pendingCardNodes.size > 0 || !bodyEl.querySelector('.v2-pending-empty')) {
+          bodyEl.innerHTML = '<div class="v2-pending-empty"><p>Semua request sudah diproses.</p></div>';
+          _pendingCardNodes.clear();
+          _pendingCardHTML.clear();
+        }
+        return;
+      }
+
+      let listEl = bodyEl.querySelector('.v2-pending-list');
+      if (!listEl) {
+        bodyEl.innerHTML = '<div class="v2-pending-list"></div>';
+        listEl = bodyEl.querySelector('.v2-pending-list');
+        _pendingCardNodes.clear();
+        _pendingCardHTML.clear();
+      }
+
+      const isBulkPopulate = _pendingCardNodes.size === 0;
+      const nextIds = new Set(pending.map(r => r.id));
+
+      for (const [id, node] of _pendingCardNodes) {
+        if (!nextIds.has(id)) {
+          if (isPendingCardBusy(node)) continue;
+          node.remove();
+          _pendingCardNodes.delete(id);
+          _pendingCardHTML.delete(id);
+        }
+      }
+
+      let ref = listEl.firstElementChild;
+      const protectedNode = _pendingActionPointerActive ? ref : null;
+      let afterProtected = protectedNode;
+      for (const r of pending) {
+        const id = r.id;
+        const html = buildPendingCardHTML(r, canAct);
+        let node = _pendingCardNodes.get(id);
+
+        if (!node) {
+          node = pendingCardHtmlToElement(html);
+          bindPendingCardActions(node);
+          _pendingCardNodes.set(id, node);
+          _pendingCardHTML.set(id, html);
+          if (protectedNode && ref === protectedNode) {
+            afterProtected.after(node);
+            afterProtected = node;
+          } else {
+            listEl.insertBefore(node, ref);
+          }
+          if (!isBulkPopulate) applyPendingCardEnterMotion(node);
+          continue;
+        }
+
+        if (isPendingCardBusy(node)) {
+          if (node !== ref) listEl.insertBefore(node, ref);
+          else ref = ref.nextElementSibling;
+          continue;
+        }
+
+        if (_pendingCardHTML.get(id) !== html) {
+          updatePendingCardInPlace(node, html);
+          _pendingCardHTML.set(id, html);
+        }
+
+        if (node !== ref) {
+          listEl.insertBefore(node, ref);
+        } else {
+          ref = ref.nextElementSibling;
+        }
+      }
+    }
+
+    function renderPending(allRequests, { searchQuery = '', canAct = true } = {}) {
+      const container = document.getElementById('v2PendingWorkspace');
+      const q = searchQuery.toLowerCase();
+      const pool = searchQuery
+        ? allRequests.filter(r =>
+            (r.driver        || '').toLowerCase().includes(q) ||
+            (r.requesterName || '').toLowerCase().includes(q) ||
+            (r.vehicle       || '').toLowerCase().includes(q) ||
+            (r.purpose       || '').toLowerCase().includes(q))
+        : allRequests;
+      const pending = pool.filter(r => r.status === 'pending');
+
+      let subtitleEl = container.querySelector('.v2-workspace-subtitle');
+      let bodyEl     = container.querySelector('[data-pending-body]');
+      if (!subtitleEl || !bodyEl) {
+        container.innerHTML = `
+          <div class="v2-workspace-header">
+            <h2 class="v2-workspace-title">Request Menunggu Approval</h2>
+            <p class="v2-workspace-subtitle"></p>
+          </div>
+          <div data-pending-body></div>
+        `;
+        subtitleEl = container.querySelector('.v2-workspace-subtitle');
+        bodyEl     = container.querySelector('[data-pending-body]');
+        _pendingCardNodes.clear();
+        _pendingCardHTML.clear();
+      }
+
+      subtitleEl.textContent = pending.length ? `${pending.length} request menunggu` : 'Tidak ada request pending';
+      reconcilePendingCards(bodyEl, pending, canAct);
+    }
+
+    // ── Test-only helpers (not part of the production algorithm) ──────────
+    function setCardBusy(id, busy) {
+      const node = _pendingCardNodes.get(id);
+      if (!node) return;
+      const btn = node.querySelector('[data-action="approve-direct"]');
+      if (!btn) return;
+      if (busy) btn.dataset.sfBusy = '1'; else delete btn.dataset.sfBusy;
+    }
+
+    window.__pendingTestApi = {
+      renderPending,
+      setCardBusy,
+      getCounts: () => ({ approveDirectCount, approveEditCount, rejectCount }),
+      resetTracking: () => { _pendingCardNodes = new Map(); _pendingCardHTML = new Map(); },
+    };
+    window.__pendingHarnessReady = true;
+  </script>
+</body>
+</html>

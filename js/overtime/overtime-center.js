@@ -796,13 +796,17 @@ function unitGridSection(unit, date, existingIds) {
 
   return `
     <div data-unit-block="${unit.id}" style="background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden;margin-bottom:12px">
-      <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--card2);border-bottom:1px solid var(--border)">
-        <span style="flex:1;font-weight:800;font-size:13.5px;color:var(--text)">${esc(unit.name)}</span>
-        <span style="font-size:10.5px;font-weight:700;color:var(--muted)">${employees.length} pegawai</span>
-        ${checkedCount > 0 ? `<span style="font-size:10.5px;font-weight:700;color:var(--primary-text);background:var(--primary-tint);border-radius:999px;padding:2px 9px">${checkedCount} dipilih</span>` : ''}
-        <button data-act="selectAllUnit" data-id="${unit.id}" type="button" tabindex="-1" style="border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:7px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">Pilih Semua</button>
-        <button data-act="clearUnit" data-id="${unit.id}" type="button" tabindex="-1" style="border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:7px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">Kosongkan</button>
-        <button data-act="bulkCopyYesterdayUnit" data-id="${unit.id}" type="button" tabindex="-1" style="border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:7px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">Salin Kemarin</button>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px 14px;flex-wrap:wrap;padding:12px 16px;background:var(--card2);border-bottom:1px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1 1 auto">
+          <span style="flex:1 1 auto;min-width:0;font-weight:800;font-size:13.5px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(unit.name)}</span>
+          <span style="flex:none;font-size:10.5px;font-weight:700;color:var(--muted)">${employees.length} pegawai</span>
+          ${checkedCount > 0 ? `<span style="flex:none;font-size:10.5px;font-weight:700;color:var(--primary-text);background:var(--primary-tint);border-radius:999px;padding:2px 9px">${checkedCount} dipilih</span>` : ''}
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button data-act="selectAllUnit" data-id="${unit.id}" type="button" tabindex="-1" style="border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:7px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">Pilih Semua</button>
+          <button data-act="clearUnit" data-id="${unit.id}" type="button" tabindex="-1" style="border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:7px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">Kosongkan</button>
+          <button data-act="bulkCopyYesterdayUnit" data-id="${unit.id}" type="button" tabindex="-1" style="border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:7px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">Salin Kemarin</button>
+        </div>
       </div>
       <div class="ot-rekap-grid" style="padding:10px 14px;gap:2px 10px">${cells}</div>
     </div>`;

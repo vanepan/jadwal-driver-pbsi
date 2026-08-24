@@ -22,6 +22,18 @@ import { renderDrawer } from '../js/engineering/ui/engineering-drawer.js';
 let pass = 0, fail = 0;
 const check = (name, cond) => { if (cond) { pass++; console.log(`  ✓ ${name}`); } else { fail++; console.log(`  ✗ ${name}`); } };
 const has = (html, s) => html.includes(s);
+// Design System Program Phase 10 (Canonical Drawer Migration): renderDrawer()
+// now returns { title, subtitle, body, footer } for js/components/drawer.js
+// to consume, not a full HTML string — footer is an array of
+// { label, action, variant } descriptors (js/components/drawer.js's own
+// buildFooter() turns these into real <button data-drawer-action> markup;
+// that rendering itself is covered by drawer-consolidation-check.mjs's
+// real-browser suite, not duplicated here). This helper reconstructs a
+// single searchable string from all four pieces so the existing
+// has(drawerResult, 'text') assertions below keep meaning what they say.
+const footerActions = (footer) => (footer || []).map((f) => f.action).join(' ');
+const footerLabels = (footer) => (footer || []).map((f) => f.label).join(' ');
+const drawerHtml = (d) => `${d.title || ''} ${d.subtitle || ''} ${d.body || ''} ${footerLabels(d.footer)} ${footerActions(d.footer).split(' ').map((a) => `data-act="${a}"`).join(' ')}`;
 
 resetEngineeringStore();
 hydrateAssignments(buildDevSeedAssignments());
@@ -78,22 +90,29 @@ check('admin card on waiting shows Verifikasi (has cap)', has(renderAssignmentCa
 /* ── Drawer role-aware actions ────────────────────────────────────────── */
 console.log('\n[drawer actions]');
 const dInProgAdmin = renderDrawer(pick(STATUS.IN_PROGRESS), admin);
-check('admin drawer: Tunda Penugasan', has(dInProgAdmin, 'data-act="eng-postpone"'));
-check('admin drawer: NOT Mulai Mengerjakan', !has(dInProgAdmin, 'Mulai Mengerjakan'));
+check('admin drawer: Tunda Penugasan', dInProgAdmin.footer.some((f) => f.action === 'eng-postpone' && f.label === 'Tunda Penugasan'));
+check('admin drawer: NOT Mulai Mengerjakan', !has(drawerHtml(dInProgAdmin), 'Mulai Mengerjakan'));
 const dWaitCoord = renderDrawer(pick(STATUS.WAITING_VERIFICATION), coord);
-check('coordinator drawer waiting: Verifikasi Pekerjaan', has(dWaitCoord, 'Verifikasi Pekerjaan'));
+check('coordinator drawer waiting: Verifikasi Pekerjaan', dWaitCoord.footer.some((f) => f.action === 'eng-verify' && f.label === 'Verifikasi Pekerjaan'));
 const dWaitMember = renderDrawer(pick(STATUS.WAITING_VERIFICATION), member);
-check('member drawer waiting: NO Verifikasi Pekerjaan', !has(dWaitMember, 'Verifikasi Pekerjaan'));
+check('member drawer waiting: NO Verifikasi Pekerjaan', !has(drawerHtml(dWaitMember), 'Verifikasi Pekerjaan'));
 const dAvailCoord = renderDrawer(pick(STATUS.AVAILABLE), coord);
-check('coordinator drawer available: Gabung', has(dAvailCoord, '>Gabung<') || has(dAvailCoord, 'Gabung'));
+check('coordinator drawer available: Gabung', dAvailCoord.footer.some((f) => f.label === 'Gabung'));
 const dAvailMember = renderDrawer(pick(STATUS.AVAILABLE), member);
-check('member drawer available: Mulai Mengerjakan', has(dAvailMember, 'Mulai Mengerjakan'));
+check('member drawer available: Mulai Mengerjakan', dAvailMember.footer.some((f) => f.action === 'eng-begin' && f.label === 'Mulai Mengerjakan'));
 const dMyWork = renderDrawer(all.find((a) => a.id === 'a-2041'), member);   // Isep is working
-check('member drawer own working: Lanjutkan Besok + Selesaikan', has(dMyWork, 'Lanjutkan Besok') && has(dMyWork, 'Selesaikan'));
+check('member drawer own working: Lanjutkan Besok + Selesaikan', dMyWork.footer.some((f) => f.label === 'Lanjutkan Besok') && dMyWork.footer.some((f) => f.label === 'Selesaikan'));
 const dVerified = renderDrawer(all.find((a) => a.status === STATUS.VERIFIED || a.status === STATUS.COMPLETED), admin);
-check('verified drawer: closed banner', has(dVerified, 'Terverifikasi dan ditutup'));
-check('drawer has timeline + attachments placeholder', has(dInProgAdmin, 'Timeline Operasional') && has(dInProgAdmin, 'Foto sebelum / sesudah'));
-check('drawer scrim is eng-scrim (closes on backdrop)', has(dInProgAdmin, 'data-act="eng-scrim"'));
+check('verified drawer: closed banner (body note, no footer buttons — see actionNote() in engineering-drawer.js)', has(dVerified.body, 'Terverifikasi dan ditutup') && dVerified.footer.length === 0);
+check('drawer has timeline + attachments placeholder', has(dInProgAdmin.body, 'Timeline Operasional') && has(dInProgAdmin.body, 'Foto sebelum / sesudah'));
+// Design System Program Phase 10: the drawer no longer builds its own
+// .eng-scrim/backdrop at all — js/components/drawer.js owns backdrop-
+// click-to-close now (real-browser verified by
+// drawer-consolidation-check.mjs's "backdrop click closes" suite, not a
+// string check here). This asserts the OTHER half: that renderDrawer()
+// genuinely stopped emitting shell markup, not just that some string
+// still happens to be absent.
+check('drawer no longer renders its own scrim/shell markup (canonical shell owns it)', !has(dInProgAdmin.body, 'data-act="eng-scrim"') && !has(dInProgAdmin.body, 'class="eng-drawer"'));
 
 /* ── Views ────────────────────────────────────────────────────────────── */
 console.log('\n[views]');
@@ -138,7 +157,11 @@ const evil = createAssignmentModel({ id: 'x', assignmentNumber: 'X-1', title: '<
 const evilCard = renderAssignmentCard(evil, admin);
 check('title is HTML-escaped in card', has(evilCard, '&lt;script&gt;') && !has(evilCard, '<script>alert'));
 const evilDrawer = renderDrawer(evil, admin);
-check('title is HTML-escaped in drawer', has(evilDrawer, '&lt;script&gt;') && !has(evilDrawer, '<script>alert'));
+check('title is HTML-escaped in drawer (title itself, escaped by js/components/drawer.js at render time — see js/components/drawer.js openDrawer())', evilDrawer.title === '<script>alert(1)</script>');
+// location (building/room) is now the drawer's `subtitle`, escaped by
+// js/components/drawer.js at render time (same as `title` above) — raw
+// here for the same reason.
+check('location is passed through as subtitle for the canonical shell to escape', evilDrawer.subtitle === evil.location);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

@@ -5,17 +5,20 @@
 
      • 3 approved reference viewports (Desktop 1440x900, Tablet 1194x834,
        Mobile 402x874) x 2 themes = 6 structural combos.
-     • Fixed order — the approved 9-destination sequence (Driver / Teknik
+     • Fixed order — the approved 10-destination sequence (Driver / Teknik
        / Kendaraan / Permintaan / Petty Cash / Analitik / Prediksi /
-       Rekomendasi / Simulasi) never reorders, regardless of ctx.models.
-       (Phase 10A terminology reconciliation: label 'Engineering' -> 'Teknik';
-       action key stays 'navEngineering', unchanged.)
+       Rekomendasi / Simulasi / Analitik Eksekutif) never reorders,
+       regardless of ctx.models. (Phase 10A terminology reconciliation:
+       label 'Engineering' -> 'Teknik'; action key stays 'navEngineering',
+       unchanged. Phase 7 Executive Command Center Rebuild adds the 10th
+       destination, Analitik Eksekutif -> navAnalyticsExecutive, the Deep
+       Dive link into Insights -> Executive Analytics.)
      • Role visibility — hides, never reorders, destinations the current
        role lacks (a synthetic non-admin role is used ONLY to prove the
        filter mechanism is real; production routing never sends a non-admin
        role into this workspace, see workspace-registry.js).
-     • Click wiring — every chip's data-wsp-action resolves to a real,
-       distinct ctx.actions function (Prediction and Simulation share
+     • Click wiring — every destination tile's data-wsp-action resolves to a
+       real, distinct ctx.actions function (Prediction and Simulation share
        navDriverPrediction on purpose — Simulation is a panel inside the
        Prediction page, not a separate route, matching exec-simulation's
        own CTA).
@@ -29,8 +32,13 @@
        activate for free).
      • Accessibility — icons are decorative (aria-hidden), the visible label
        is the accessible name.
+     • Responsive — a CSS grid (auto-fill, min 96px tiles), never a
+       horizontal-scroll chip row (that shape was retired in Phase 6:
+       "a giant pill collection" was the explicit anti-pattern to avoid);
+       mobile (<=600px) fixes exactly 3 columns.
      • Regression guard — sibling Executive sections (Hero/Attention/
-       Decision/Snapshot/Story) still render untouched.
+       Decision/Snapshot/Story) still render untouched, and the Launcher
+       renders inside the new (Phase 7) unlabeled "explore" zone band.
 
    Run: node scripts/executive-launcher-verification-check.mjs (exit 0 = pass) */
 
@@ -85,6 +93,8 @@ const EXPECTED_ORDER = [
   { label: 'Prediksi', action: 'navDriverPrediction' },
   { label: 'Rekomendasi', action: 'navRecommendationAccuracy' },
   { label: 'Simulasi', action: 'navDriverPrediction' },
+  // Phase 7 — Deep Dive link into Insights -> Executive Analytics.
+  { label: 'Analitik Eksekutif', action: 'navAnalyticsExecutive' },
 ];
 
 // buildCtx accepts an optional role override + a "crisis" flag (adverse
@@ -93,7 +103,7 @@ const EXPECTED_ORDER = [
 const BUILD_CTX_FN = `(function buildCtx({ role = 'admin', crisis = false } = {}) {
   window.__actionCalls = [];
   const spy = (name) => (arg) => window.__actionCalls.push([name, arg]);
-  const actionNames = ['navDriverOps','navEngineering','navVehicles','navPending','navPettyCash','navAnalyticsDriver','navDriverPrediction','navRecommendationAccuracy'];
+  const actionNames = ['navDriverOps','navEngineering','navVehicles','navPending','navPettyCash','navAnalyticsDriver','navDriverPrediction','navRecommendationAccuracy','navAnalyticsExecutive'];
   const actions = {};
   actionNames.forEach((n) => { actions[n] = spy(n); });
   return {
@@ -122,30 +132,38 @@ async function readLauncher() {
     const section = document.querySelector('[data-widget-id="exec-quick"]');
     const q = (s) => section && section.querySelector(s);
     const qa = (s) => section ? [...section.querySelectorAll(s)] : [];
-    const chips = qa('.wsp-chip');
+    // Phase 6 rebuilt the Launcher as a quiet icon-over-label grid
+    // (ui-kit.js launcherItem/launcherGrid: .wsp-launcher > .wsp-launcher__item),
+    // replacing the earlier bordered .wsp-chip pill row this script originally
+    // targeted — updated here to match the markup that has actually been live
+    // since v1.30.10.6.
+    const items = qa('.wsp-launcher__item');
     return {
       hasSection: !!section,
-      hasChips: !!q('.wsp-chips'),
+      hasLauncher: !!q('.wsp-launcher'),
       hasEmpty: !!q('.wsp-empty'),
       emptyText: (q('.wsp-empty') || {}).textContent || null,
-      chipCount: chips.length,
-      labels: chips.map((c) => c.querySelector('span:last-child').textContent.trim()),
-      actionsInOrder: chips.map((c) => c.dataset.wspAction),
-      allNativeButtons: chips.every((c) => c.tagName === 'BUTTON'),
-      allHaveIcon: chips.every((c) => !!c.querySelector('.wsp-chip__icon svg')),
-      allIconsAriaHidden: chips.every((c) => {
-        const svg = c.querySelector('.wsp-chip__icon svg');
+      chipCount: items.length,
+      labels: items.map((c) => (c.querySelector('.wsp-launcher__label') || {}).textContent.trim()),
+      actionsInOrder: items.map((c) => c.dataset.wspAction),
+      allNativeButtons: items.every((c) => c.tagName === 'BUTTON'),
+      allHaveIcon: items.every((c) => !!c.querySelector('.wsp-launcher__icon svg')),
+      allIconsAriaHidden: items.every((c) => {
+        const svg = c.querySelector('.wsp-launcher__icon svg');
         return svg && svg.getAttribute('aria-hidden') === 'true';
       }),
       scrollWidthOverflow: document.documentElement.scrollWidth > window.innerWidth + 2,
-      chipsFlexWrap: q('.wsp-chips') ? getComputedStyle(q('.wsp-chips')).flexWrap : null,
-      chipsOverflowX: q('.wsp-chips') ? getComputedStyle(q('.wsp-chips')).overflowX : null,
+      launcherDisplay: q('.wsp-launcher') ? getComputedStyle(q('.wsp-launcher')).display : null,
+      launcherColumns: q('.wsp-launcher') ? getComputedStyle(q('.wsp-launcher')).gridTemplateColumns : null,
       animationDelay: section ? getComputedStyle(section).animationDelay : null,
       heroPresent: !!document.querySelector('[data-widget-id="exec-hero"]'),
       attentionPresent: !!document.querySelector('[data-widget-id="exec-attention"]'),
       decisionGone: !document.querySelector('[data-widget-id="exec-decision"]'),
       snapshotPresent: !!document.querySelector('[data-widget-id="exec-snapshot"]'),
       storyPresent: !!document.querySelector('[data-widget-id="exec-activity"]'),
+      // Phase 7 — zone-banding: the Launcher's zone has no label (see
+      // workspace-registry.js's EXECUTIVE_ZONES "explore" entry).
+      inExploreZone: !!document.querySelector('.wsp-zone[data-zone-id="explore"] [data-widget-id="exec-quick"]'),
     };
   });
 }
@@ -189,15 +207,15 @@ for (const vp of Object.keys(VIEWPORTS)) {
 const desktop = matrixResults['desktop/light'];
 const mobile = matrixResults['mobile/light'];
 
-console.log('\n[2] Fixed 9-destination order (admin, healthy fleet)');
-check('exactly 9 chips render', desktop.chipCount === 9);
+console.log('\n[2] Fixed 10-destination order (admin, healthy fleet)');
+check('exactly 10 destinations render', desktop.chipCount === 10);
 check('labels match the approved order exactly', JSON.stringify(desktop.labels) === JSON.stringify(EXPECTED_ORDER.map(d => d.label)));
 check('actions match the approved order exactly', JSON.stringify(desktop.actionsInOrder) === JSON.stringify(EXPECTED_ORDER.map(d => d.action)));
 check('Prediction and Simulation intentionally share navDriverPrediction', desktop.actionsInOrder[6] === 'navDriverPrediction' && desktop.actionsInOrder[8] === 'navDriverPrediction');
 
 console.log('\n[3] Order never reacts to operational health (crisis fixture)');
 const crisis = await render('desktop', 'light', { crisis: true });
-check('same 9 labels, same order, under a critical/attention-needed fixture', JSON.stringify(crisis.labels) === JSON.stringify(EXPECTED_ORDER.map(d => d.label)));
+check('same 10 labels, same order, under a critical/attention-needed fixture', JSON.stringify(crisis.labels) === JSON.stringify(EXPECTED_ORDER.map(d => d.label)));
 check('same action order under crisis fixture', JSON.stringify(crisis.actionsInOrder) === JSON.stringify(EXPECTED_ORDER.map(d => d.action)));
 
 console.log('\n[4] Role visibility — a real filter, not decorative (synthetic role)');
@@ -212,30 +230,32 @@ const widgetLevel = await page.evaluate(async () => {
   const adminHtml = widgets['exec-quick'].render({ role: 'admin' });
   const bidangHtml = widgets['exec-quick'].render({ role: 'bidang' });
   const noRoleHtml = widgets['exec-quick'].render({});
-  const count = (html) => (html.match(/wsp-chip"/g) || []).length;
+  const count = (html) => (html.match(/wsp-launcher__item"/g) || []).length;
   return {
     adminCount: count(adminHtml),
     bidangIsEmpty: /wsp-empty/.test(bidangHtml) && count(bidangHtml) === 0,
     noRoleIsEmpty: /wsp-empty/.test(noRoleHtml) && count(noRoleHtml) === 0,
   };
 });
-check('exec-quick.render({role:"admin"}) returns all 9 chips', widgetLevel.adminCount === 9);
-check('exec-quick.render({role:"bidang"}) hides all 9 (real ctx.role read, not decorative)', widgetLevel.bidangIsEmpty);
+check('exec-quick.render({role:"admin"}) returns all 10 destinations', widgetLevel.adminCount === 10);
+check('exec-quick.render({role:"bidang"}) hides all 10 (real ctx.role read, not decorative)', widgetLevel.bidangIsEmpty);
 check('exec-quick.render({}) (no role) fails safe to the empty state, not a crash', widgetLevel.noRoleIsEmpty);
 
 console.log('\n[5] Click wiring — each destination calls its own real ctx.actions fn');
 const clickResult = await page.evaluate(() => {
-  const chips = [...document.querySelectorAll('[data-widget-id="exec-quick"] .wsp-chip')];
-  chips[0].click(); // Driver
-  chips[3].click(); // Permintaan
+  const items = [...document.querySelectorAll('[data-widget-id="exec-quick"] .wsp-launcher__item')];
+  items[0].click(); // Driver
+  items[3].click(); // Permintaan
+  items[9].click(); // Analitik Eksekutif
   return window.__actionCalls;
 });
 check('clicking "Driver" invokes navDriverOps', clickResult.some(([n]) => n === 'navDriverOps'));
 check('clicking "Permintaan" invokes navPending', clickResult.some(([n]) => n === 'navPending'));
+check('clicking "Analitik Eksekutif" invokes navAnalyticsExecutive', clickResult.some(([n]) => n === 'navAnalyticsExecutive'));
 
 console.log('\n[6] Accessibility');
-check('every chip is a native <button> (keyboard Enter/Space work for free)', desktop.allNativeButtons);
-check('every chip has an icon svg', desktop.allHaveIcon);
+check('every destination is a native <button> (keyboard Enter/Space work for free)', desktop.allNativeButtons);
+check('every destination has an icon svg', desktop.allHaveIcon);
 check('every icon is aria-hidden (label text is the accessible name)', desktop.allIconsAriaHidden);
 
 console.log('\n[7] Motion — arrives last, quietly (600ms), distinct from the generic cascade cap');
@@ -247,9 +267,11 @@ check('prefers-reduced-motion disables the Launcher entrance animation', await p
 const animOffResult = await render('desktop', 'light', {}, { animOff: true });
 check('data-anim="off" disables the Launcher entrance animation', await page.evaluate(() => getComputedStyle(document.querySelector('[data-widget-id="exec-quick"]')).animationName === 'none'));
 
-console.log('\n[9] Responsive — mobile horizontal scroll, no new layout invented');
-check('desktop: chips wrap (no horizontal scroll container)', desktop.chipsFlexWrap === 'wrap');
-check('mobile: chips become a horizontal-scroll strip (nowrap + overflow-x auto)', mobile.chipsFlexWrap === 'nowrap' && mobile.chipsOverflowX === 'auto');
+console.log('\n[9] Responsive — a CSS grid, no horizontal scroll (Phase 6 retired the chip-row shape)');
+check('desktop: Launcher is a CSS grid, not a flex chip row', desktop.launcherDisplay === 'grid');
+check('desktop: grid has more than 3 columns (auto-fill, min 96px tiles)', (desktop.launcherColumns.match(/px/g) || []).length > 3);
+check('mobile: Launcher is still a CSS grid', mobile.launcherDisplay === 'grid');
+check('mobile: grid fixes exactly 3 columns (no horizontal scroll needed)', (mobile.launcherColumns.match(/px/g) || []).length === 3);
 
 console.log('\n[10] Sibling Executive sections untouched (regression guard)');
 check('Hero still renders', desktop.heroPresent);
@@ -258,6 +280,7 @@ check('Attention still renders', desktop.attentionPresent);
 check('Decision Center is gone (removed per Phase 7C consolidation)', desktop.decisionGone);
 check('Snapshot still renders', desktop.snapshotPresent);
 check('Story still renders', desktop.storyPresent);
+check('Launcher renders inside the (unlabeled) "explore" zone band', desktop.inExploreZone);
 
 console.log('\n[11] Console errors');
 check('zero console/page errors across the whole run', consoleErrors.length === 0);

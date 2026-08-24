@@ -29,12 +29,30 @@ export function empty(message = 'Belum ada data') {
   return `<div class="wsp-empty">${esc(message)}</div>`;
 }
 
-/** A labelled statistic tile. `tone` ∈ good|warn|danger|info|neutral. */
-export function metric(label, value, { sub = '', tone = 'neutral' } = {}) {
+/** A labelled statistic tile. `tone` ∈ good|warn|danger|info|neutral.
+ *  `countUp` (Phase 7C, opt-in — every existing caller omits it, so their
+ *  output is byte-for-byte unchanged) marks a finite numeric value with
+ *  `data-countup` for a widget's own onMount to animate 0 -> value, the
+ *  same mechanism the Hero's pulse stats already use. Purely a data
+ *  attribute — inert unless something reads it.
+ *  `barPct` (Phase 7D, opt-in, 0-100) draws a comparative bar under the
+ *  value — the CALLER computes it (typically value/maxOfTheSet*100, a
+ *  same-unit comparison across the tiles shown together), never a
+ *  percentage of an unknown/invented total. Omitted keeps output
+ *  unchanged.
+ *  `barKey` (Premium Pass, opt-in) gives the bar a stable identity across a
+ *  live refresh so the caller's onMount can smoothly MORPH its width from
+ *  the last-shown value instead of snapping (see index.js's
+ *  mountBarReveal) — omitted, the bar still renders (starts at 0%, caller
+ *  is responsible for revealing it) but is never tracked across refreshes. */
+export function metric(label, value, { sub = '', tone = 'neutral', countUp = false, barPct = null, barKey = '' } = {}) {
+  const numeric = countUp && typeof value === 'number' && Number.isFinite(value);
+  const bar = barPct == null ? '' : `<div class="wsp-metric__bar-track"><div class="wsp-metric__bar-fill" data-bar-target="${Math.max(0, Math.min(100, barPct))}"${barKey ? ` data-bar-key="${esc(barKey)}"` : ''} style="width:0%"></div></div>`;
   return `
     <div class="wsp-metric wsp-metric--${esc(tone)}">
-      <div class="wsp-metric__value">${esc(value)}</div>
+      <div class="wsp-metric__value"${numeric ? ` data-countup="${esc(value)}"` : ''}>${numeric ? '0' : esc(value)}</div>
       <div class="wsp-metric__label">${esc(label)}</div>
+      ${bar}
       ${sub ? `<div class="wsp-metric__sub">${esc(sub)}</div>` : ''}
     </div>`;
 }
@@ -55,9 +73,15 @@ export function pill(text, tone = 'neutral') {
  * `dotStyle` (optional, v1.30.9.14) — an inline CSS string overriding the
  * dot's tone-based background/shape, for callers rendering a per-entity
  * color+shape identity (e.g. vehicle hue+shape) rather than a status tone.
- * Every existing caller omits it, so their output is byte-for-byte unchanged.
+ * `action`/`arg` (optional, Phase 7) — same clickable-row treatment as
+ * `detailId`, but dispatches through the generic `data-wsp-action` contract
+ * instead of the assignment-only `ctx.actions.openDetail`. Lets a row open
+ * ANY declarative action (e.g. a different entity's own drawer) without a
+ * second row-button implementation. `detailId` takes precedence if both are
+ * somehow passed. Every existing caller omits both, so their output is
+ * byte-for-byte unchanged.
  */
-export function listRow({ title, meta = '', trailing = '', tone = 'neutral', detailId = null, dotStyle = '' }) {
+export function listRow({ title, meta = '', trailing = '', tone = 'neutral', detailId = null, dotStyle = '', action = null, arg = '' }) {
   const inner = `
     <span class="wsp-row__dot wsp-row__dot--${esc(tone)}" ${dotStyle ? `style="${esc(dotStyle)}"` : ''} aria-hidden="true"></span>
     <span class="wsp-row__main">
@@ -67,6 +91,9 @@ export function listRow({ title, meta = '', trailing = '', tone = 'neutral', det
     ${trailing ? `<span class="wsp-row__trailing">${esc(trailing)}</span>` : ''}`;
   if (detailId != null) {
     return `<button type="button" class="wsp-row wsp-row--click" data-wsp-detail="${esc(detailId)}">${inner}</button>`;
+  }
+  if (action != null) {
+    return `<button type="button" class="wsp-row wsp-row--click" data-wsp-action="${esc(action)}"${arg !== '' ? ` data-wsp-arg="${esc(arg)}"` : ''}>${inner}</button>`;
   }
   return `<div class="wsp-row">${inner}</div>`;
 }

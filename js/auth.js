@@ -218,6 +218,11 @@ async function _hydrateFromFirebaseUser(user) {
  * Logout user saat ini.
  */
 export async function logout() {
+  // Phase 7G.4 auth diagnostic — marks this as an EXPLICIT, deliberate
+  // sign-out in the console trail, distinct from a passive session loss
+  // (see js/firebase.js's [auth-diag] logs around onAuthStateChanged).
+  // No PII: no username/PIN/token, just that logout() was invoked and how.
+  console.info(`[auth-diag] ${new Date().toISOString()} logout() called`, { directPinMode: isDirectPinMode() });
   const currentUser = getCurrentUser();
   if (currentUser) {
     logAction({ userId: currentUser.id, username: currentUser.username, action: 'logout' });

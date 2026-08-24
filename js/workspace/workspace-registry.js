@@ -16,9 +16,47 @@
 'use strict';
 
 /**
+ * Phase 7 (Executive Command Center Rebuild) — explicit attention hierarchy:
+ * Masthead -> NOW -> DECISIONS -> SITUATION -> OUTLOOK -> Deep Dive. This is
+ * the SINGLE source of truth for both grouping (workspace-renderer.js's
+ * opt-in zone-banding, consumed only when a workspace defines `zones`) and
+ * widget order — `widgets` below is derived from it, never hand-duplicated,
+ * so the flat loader list and the zoned rendering can never drift apart.
+ *
+ * A zone with `label: null` renders its widgets straight into the page grid
+ * with no eyebrow/heading wrapper: Masthead (exec-hero already owns its own
+ * heading treatment) and Explore (a labeled band would compete with, not
+ * support, the Launcher's own "the way out arrives last, quietly" motion
+ * intent — Phase 6). Every other zone gets a small typography-only eyebrow
+ * above its own `.wsp-grid`, no icon, no box (workspace-styles.js `.wsp-zone`).
+ *
+ * `heading` (an extra `<h2>` between the eyebrow and the grid) is used ONLY
+ * for a zone whose grid holds more than one differently-titled widget
+ * (Situation: Snapshot/Story/Drivers/Vehicle Flags) — there it earns its
+ * place by framing several sections at once. A single-widget zone (Now,
+ * Decisions, Outlook) omits it: that widget's own card/section title
+ * (Widget Registry `title`, rendered by workspace-renderer.js regardless of
+ * zones) already IS the heading immediately below the eyebrow — a second,
+ * near-identical `<h2>` between them read as an accidental duplicate in
+ * practice (e.g. eyebrow "Keputusan" -> heading "Tindakan yang
+ * direkomendasikan" -> widget title "Tindakan Direkomendasikan", three
+ * lines saying the same thing), found and fixed during Phase 7's own visual
+ * verification pass.
+ * @type {Array<{id:string, label:string|null, heading?:string, widgets:string[]}>}
+ */
+const EXECUTIVE_ZONES = [
+  { id: 'masthead', label: null, widgets: ['exec-hero'] },
+  { id: 'now', label: 'Sekarang', widgets: ['exec-attention'] },
+  { id: 'decisions', label: 'Keputusan', widgets: ['exec-recommendation'] },
+  { id: 'situation', label: 'Situasi Operasional', heading: 'Gambaran operasional hari ini', widgets: ['exec-snapshot', 'exec-activity', 'exec-drivers', 'exec-vehicle-flags'] },
+  { id: 'outlook', label: 'Proyeksi', widgets: ['exec-outlook'] },
+  { id: 'explore', label: null, widgets: ['exec-quick'] },
+];
+
+/**
  * Workspace profiles. `widgets` is an ordered list of widget ids resolved
  * against the Widget Registry (js/workspace/widget-registry.js).
- * @type {Record<string, {id:string, role:string, title:string, subtitle:string, widgets:string[]}>}
+ * @type {Record<string, {id:string, role:string, title:string, subtitle:string, widgets:string[], zones?:Array}>}
  */
 export const WORKSPACES = {
   // Admin → Executive Command Center. Answers: "What requires my attention today?"
@@ -27,27 +65,8 @@ export const WORKSPACES = {
     role: 'admin',
     title: 'Executive Command Center',
     subtitle: 'Ringkasan operasional — apa yang membutuhkan perhatian Anda hari ini.',
-    // Phase 7C (Executive Consolidation) — the final six-question briefing
-    // order approved in the Phase 7B Information Architecture Review: Hero →
-    // Attention → Recommended Actions → Operational Snapshot → Operational
-    // Story → Launcher. exec-priority/exec-decision/exec-simulation are
-    // removed (their unique information was merged into exec-attention, or —
-    // for Simulation — remains reachable via exec-quick's existing 'Simulasi'
-    // destination); their underlying engines are untouched.
-    // v1.30.9.14 (V1 Redesign Phase 2) — exec-drivers/exec-vehicle-flags
-    // added after exec-activity: the mockup's "Drivers now" / "Vehicle
-    // flags" pairing, closing gap analysis's Class C finding for Admin Home
-    // (no driver-status list, no vehicle-flags list existed before this).
-    widgets: [
-      'exec-hero',
-      'exec-attention',
-      'exec-recommendation',
-      'exec-snapshot',
-      'exec-activity',
-      'exec-drivers',
-      'exec-vehicle-flags',
-      'exec-quick',
-    ],
+    zones: EXECUTIVE_ZONES,
+    widgets: EXECUTIVE_ZONES.flatMap(z => z.widgets),
   },
 
   // Bidang → Request Workspace. Operational consumers: monitor + create requests.

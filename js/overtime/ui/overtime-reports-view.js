@@ -65,12 +65,12 @@ function scopeSelector(state, units, employees) {
 
 function previewTable(title, headers, rows, toCells, emptyLabel) {
   const body = rows.length
-    ? rows.map(r => `<tr>${toCells(r).map((c, i) => `<td style="padding:7px 10px;border-top:1px solid var(--border);font-size:12.5px;text-align:${i === 0 ? 'left' : 'right'}">${c}</td>`).join('')}</tr>`).join('')
+    ? rows.map(r => `<tr>${toCells(r).map((c, i) => `<td data-label="${esc(headers[i])}" style="padding:7px 10px;border-top:1px solid var(--border);font-size:12.5px;text-align:${i === 0 ? 'left' : 'right'}">${c}</td>`).join('')}</tr>`).join('')
     : `<tr><td colspan="${headers.length}" style="padding:12px 10px;font-size:12px;color:var(--muted)">${esc(emptyLabel)}</td></tr>`;
   return `
-    <div style="flex:1;min-width:300px;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 16px;overflow-x:auto">
+    <div class="ot-preview-table-wrap">
       <div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:8px">${esc(title)}</div>
-      <table style="width:100%;border-collapse:collapse">
+      <table class="ot-preview-table" style="width:100%;border-collapse:collapse">
         <thead><tr>${headers.map((h, i) => `<th style="padding:6px 10px;font-size:10.5px;font-weight:700;color:var(--muted);text-align:${i === 0 ? 'left' : 'right'};text-transform:uppercase">${esc(h)}</th>`).join('')}</tr></thead>
         <tbody>${body}</tbody>
       </table>

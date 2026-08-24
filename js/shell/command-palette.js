@@ -22,6 +22,7 @@
    ============================================================ */
 
 import { anIcon } from '../analytics/analytics-shell.js';
+import { prefersReducedMotion } from '../components/motion-tokens.js';
 
 'use strict';
 
@@ -30,6 +31,13 @@ let overlayEl = null;
 let inputEl = null;
 let resultsEl = null;
 let triggerEl = null;
+// Phase 8.1 — true only for the render() immediately after an open();
+// gates the result-list entrance stagger so it plays once per open, not
+// on every keystroke re-render (the same replay anti-pattern already
+// fixed elsewhere in this codebase, e.g. Gudang's lastAnimatedScreen
+// guard). Reset in both open() and close() so the NEXT open() (not just
+// a page reload) always gets a fresh stagger.
+let staggerNext = true;
 
 function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -85,8 +93,12 @@ function render(query) {
     resultsEl.innerHTML = '<div class="domshell-palette-empty">Tidak ada hasil.</div>';
     return;
   }
+  // Phase 8.1 — stagger only the render() right after open(); typing
+  // (which re-renders on every keystroke) never replays it.
+  const stagger = staggerNext && !prefersReducedMotion();
+  staggerNext = false;
   resultsEl.innerHTML = items.map((r, i) => `
-    <button type="button" class="domshell-palette-item" data-idx="${i}">
+    <button type="button" class="domshell-palette-item${stagger ? ' domshell-palette-item--enter' : ''}" data-idx="${i}">
       <span class="domshell-palette-item-type">${escapeHtml(r.type)}</span>
       <span class="domshell-palette-item-text">
         <span class="domshell-palette-item-label">${escapeHtml(r.label)}</span>
@@ -102,7 +114,18 @@ function render(query) {
 function open() {
   if (!overlayEl) return;
   overlayEl.style.display = 'flex';
+  // Phase 8.1 — the box's entrance animation (v2FadeInScale) is applied
+  // via a class selector, not toggled; a display:none↔flex cycle on this
+  // ancestor does NOT restart it on its own (verified empirically — the
+  // underlying Animation object survives and its currentTime keeps
+  // advancing while hidden, so a quick reopen shows it partway/finished
+  // instead of replaying from 0). Force a fresh run with the same
+  // reflow-restart idiom already used in js/app.js for the analytics
+  // deep-panel replay.
+  const box = overlayEl.querySelector('.domshell-palette-box');
+  if (box) { box.style.animation = 'none'; void box.offsetWidth; box.style.animation = ''; }
   inputEl.value = '';
+  staggerNext = true;
   render('');
   setTimeout(() => inputEl.focus(), 0);
   document.addEventListener('keydown', onKeydown, true);
@@ -111,6 +134,7 @@ function open() {
 function close() {
   if (!overlayEl) return;
   overlayEl.style.display = 'none';
+  staggerNext = true;
   document.removeEventListener('keydown', onKeydown, true);
 }
 

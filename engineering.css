@@ -67,6 +67,7 @@
 .eng-pad{padding:20px 4px;} .eng-pad-sm{padding:6px 0;}
 .eng-dot-sep{color:var(--text-ghost);}
 .eng-mt{margin-top:16px;}
+.eng-mb{margin-bottom:16px;}
 .eng-empty-dash{color:var(--text-ghost);font-weight:600;}
 
 /* ── page + section headers ───────────────────────────────────────────── */
@@ -321,6 +322,23 @@
 .eng-table tbody tr{cursor:pointer;} .eng-table tbody tr:hover{background:var(--hover);}
 .eng-table .-right{text-align:right;} .eng-table .-mono{font-family:var(--font-mono);}
 .eng-td-title{display:inline-flex;align-items:center;gap:10px;font-weight:700;} .eng-cat-dot{width:8px;height:8px;border-radius:3px;flex:0 0 8px;}
+/* Mobile: below .eng-table's own min-width (640px) the table can no longer
+   fit the viewport and needs horizontal scroll to read Status/Waktu Kerja.
+   Reflow into stacked key-value rows instead (classic responsive-table
+   pattern) — hide the header row, block-ify table/tr/td, label each cell via
+   data-label + ::before. Every column stays visible; nothing is dropped.
+   Desktop/tablet (>640px) render exactly as before. */
+@media (max-width:640px){
+  .eng-table-wrap{overflow-x:visible;}
+  .eng-table{display:block;width:100%;min-width:0;}
+  .eng-table thead{display:none;}
+  .eng-table tbody{display:flex;flex-direction:column;gap:10px;}
+  .eng-table tr{display:flex;flex-direction:column;border:1px solid var(--border-faint);border-radius:12px;padding:2px 14px;}
+  .eng-table tbody tr:hover{background:none;}
+  .eng-table td{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 0;border-bottom:1px solid var(--border-faint);text-align:right;}
+  .eng-table td:last-child{border-bottom:none;}
+  .eng-table td::before{content:attr(data-label);flex:none;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint);text-align:left;}
+}
 
 /* ── empty state ──────────────────────────────────────────────────────── */
 .eng-empty{padding:56px 24px;text-align:center;border:1px dashed var(--border-strong);border-radius:16px;display:flex;flex-direction:column;align-items:center;}
@@ -382,15 +400,24 @@
 /* ── drawer + scrim + modal ───────────────────────────────────────────── */
 .eng-scrim{position:fixed;inset:0;background:var(--scrim);z-index:120;display:flex;justify-content:flex-end;opacity:0;pointer-events:none;transition:opacity .2s;}
 .eng-scrim.-open{opacity:1;pointer-events:auto;} .eng-scrim.-center{justify-content:center;align-items:center;}
-.eng-drawer{width:480px;max-width:94vw;height:100%;background:var(--surface);border-left:1px solid var(--border);box-shadow:var(--shadow-lg);display:flex;flex-direction:column;transform:translateX(24px);transition:transform .24s cubic-bezier(.2,.7,.2,1);}
-.eng-scrim.-open .eng-drawer{transform:none;}
-.eng-drawer-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:22px 24px 18px;border-bottom:1px solid var(--border-faint);flex:none;}
+/* Design System Program Phase 10 (Canonical Drawer Migration): the create/
+   report modal (still .eng-scrim -center, unmigrated this phase) can be
+   opened via the sidebar CTA while the Assignment Detail drawer is also
+   open (openEngineeringCreate() never clears st.drawerId) — that drawer
+   now renders through the canonical shell, whose z-index
+   (--drawer-z-panel: 10001, platform.css) sits far above this file's
+   z-index:120. Without this, the modal would render UNDER the drawer —
+   unreachable. Scoped to .-center only, the same targeted pattern used
+   for Gudang's equivalent modals (gudang.css). */
+.eng-scrim.-center{z-index:10050;}
+/* .eng-drawer/-head/-body/-foot/-title/-loc are gone — that shell is now
+   js/components/drawer.js's job (see engineering-drawer.js's Phase 10
+   comment above renderDrawer()). .eng-drawer-head-main/-head-txt/-badges
+   stay: the category tile + status badges now render as the first block
+   of the canonical body instead of a shell-header slot, reusing these
+   same classes for identical styling. */
 .eng-drawer-head-main{display:flex;gap:14px;min-width:0;} .eng-drawer-head-txt{min-width:0;}
 .eng-drawer-badges{display:flex;align-items:center;gap:8px;margin-bottom:7px;}
-.eng-drawer-title{font-family:var(--font-display);font-weight:800;font-size:21px;letter-spacing:-.022em;margin:0;line-height:1.18;}
-.eng-drawer-loc{display:flex;align-items:center;gap:8px;margin-top:8px;color:var(--text-faint);font-size:12.5px;font-weight:600;}
-.eng-drawer-body{padding:20px 24px 28px;flex:1;overflow-y:auto;min-height:0;}
-.eng-drawer-foot{padding:16px 24px;border-top:1px solid var(--border-faint);flex:none;}
 .eng-sec{margin-top:26px;} .eng-sec:first-child{margin-top:0;}
 .eng-sec-t{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-ghost);font-weight:700;margin-bottom:12px;}
 .eng-kv{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 0;border-top:1px solid var(--border-faint);font-size:13px;}
@@ -420,6 +447,13 @@
 .eng-input{width:100%;height:40px;border-radius:11px;border:1px solid var(--border);background:var(--surface-2);padding:0 13px;font-family:var(--font-sans);font-size:13.5px;color:var(--text);}
 .eng-input:focus{outline:2px solid var(--accent-line);outline-offset:1px;}
 .eng-textarea{height:68px;padding:9px 13px;resize:vertical;}
+/* Mobile: collapse two-column field pairs to one column (matches .form-grid's
+   own 600px collapse in style.css) and bump input font to 16px so iOS Safari
+   never auto-zooms on focus (same guard/threshold as .gud-input in gudang.css). */
+@media (max-width:600px){
+  .eng-field-row{grid-template-columns:1fr;}
+  .eng-input{font-size:16px;}
+}
 .eng-modal-foot{display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding-top:14px;border-top:1px solid var(--border-faint);flex-wrap:wrap;gap:12px;flex:0 0 auto;}
 .eng-modal-hint{font-size:12px;color:var(--text-faint);display:inline-flex;align-items:center;gap:7px;} .eng-modal-actions{display:flex;gap:10px;}
 .eng-opt{font-weight:600;text-transform:none;letter-spacing:0;color:var(--text-faint);font-style:normal;opacity:.8;}

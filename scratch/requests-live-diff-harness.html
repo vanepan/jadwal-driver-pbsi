@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="id" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <title>Requests Live-Diff Harness (Phase 8.3)</title>
+  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="/platform.css" />
+  <style>
+    /* Bounded height so scroll-continuity checks have something to scroll. */
+    .requests-list { max-height: 420px; overflow-y: auto; }
+  </style>
+</head>
+<body style="margin:0;">
+  <!-- Mirrors index.html's #modalRequestsList structure closely enough for
+       js/requests.js's real, unmodified DOM queries to resolve. No Firebase/
+       auth network calls occur anywhere in this harness — getCurrentUser()/
+       isAdmin() read localStorage only (see js/auth.js), and no init/sync/
+       login function is ever called here. -->
+  <div class="modal-overlay" id="modalRequestsList" style="display:flex;">
+    <div class="modal-box modal-detail-box request-list-box">
+      <div class="modal-header">
+        <h2 class="modal-title" id="requestsListTitle">Requests</h2>
+        <button class="modal-close" id="btnCloseRequestsList">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="requests-list" id="requestsListContent"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import {
+      setRequests, renderRequestsList, openRequestsListModal, closeRequestsListModal,
+      getVisibleRequestsForCurrentUser, getPendingRequestCount,
+      registerRequestApproveCallback, registerRequestRejectCallback, registerCommentCallback,
+    } from '/js/requests.js';
+
+    // Simulate an admin session purely client-side (matches js/auth.js's
+    // getCurrentUser(), which only ever reads localStorage — no network call).
+    localStorage.setItem('pbsi_current_user', JSON.stringify({
+      id: 'test-admin', name: 'Test Admin', username: 'test-admin', role: 'admin',
+    }));
+
+    let approveCount = 0, rejectCount = 0, commentCount = 0;
+    registerRequestApproveCallback(() => { approveCount++; });
+    registerRequestRejectCallback(() => { rejectCount++; });
+    registerCommentCallback(() => { commentCount++; });
+
+    window.__requestsTestApi = {
+      setRequests, renderRequestsList, openRequestsListModal, closeRequestsListModal,
+      getVisibleRequestsForCurrentUser, getPendingRequestCount,
+      getCounts: () => ({ approveCount, rejectCount, commentCount }),
+    };
+    window.__requestsHarnessReady = true;
+  </script>
+</body>
+</html>

@@ -1,46 +1,37 @@
 /* ============================================================
    DRIVER-WELLNESS-DRAWER.JS — Driver Wellness Intelligence (v1.17.6)
+   Design System Program Phase 8.2 — migrated onto the canonical drawer shell
+   (js/components/drawer.js). This file now owns CONTENT ONLY: the header
+   chrome, overlay/backdrop, slide-in transform, Escape/focus-trap/focus-
+   restoration, and single-instance replace-on-reopen behavior all come from
+   the canonical primitive. Only the hero identity block and the 9 wellness
+   sections remain here — no footer widget (this drawer has always been
+   Close-only, unlike Decision Replay's export menu).
 
-   The Apple-style detail drawer for ONE driver's wellbeing. It mirrors the
-   Decision Replay drawer pattern (glass overlay + right-anchored spring sheet,
-   ESC / overlay / Close dismiss, full-width on mobile) and renders the driver's
-   complete wellness object: Overview, Health Score, Fatigue, Burnout, Capacity,
-   Recovery, Working Time, Timeline, and Recommendations — plus the expandable
-   Explainability breakdown (every component's contribution sums to the score).
+   The Apple-style detail drawer for ONE driver's wellbeing. Renders the
+   driver's complete wellness object: Overview, Health Score, Fatigue,
+   Burnout, Capacity, Recovery, Working Time, Timeline, and Recommendations —
+   plus the expandable Explainability breakdown (every component's
+   contribution sums to the score).
 
    It RENDERS ONLY from the driver-wellness-service model (which itself only
    interprets what the engines produced). It recomputes nothing.
 
-   DESIGN: scoped `.dwd-*` on the platform CSS custom properties (dark-mode safe,
-   no hard-coded #fff); textContent-only so a driver name can never inject markup.
+   DESIGN: scoped `.dwd-*` on the platform CSS custom properties (dark-mode
+   safe, no hard-coded #fff); textContent-only so a driver name can never
+   inject markup.
    ============================================================ */
 
 'use strict';
 
+import { openDrawer } from './drawer.js';
+
 const STYLE_ID = 'dwd-drawer-styles';
-const ROOT_ID = 'driverWellnessDrawer';
 
 const CSS = `
-.dwd-overlay{position:fixed;inset:0;z-index:6000;display:flex;justify-content:flex-end;
-  background:rgba(15,17,21,.42);opacity:0;transition:opacity .28s ease;
-  -webkit-backdrop-filter:saturate(140%) blur(3px);backdrop-filter:saturate(140%) blur(3px);}
-.dwd-overlay[data-open="true"]{opacity:1;}
-.dwd-sheet{position:relative;width:min(560px,100%);height:100%;display:flex;flex-direction:column;
-  background:var(--surface);border-left:1px solid var(--border);box-shadow:-24px 0 60px rgba(0,0,0,.28);
-  transform:translateX(100%);transition:transform .32s cubic-bezier(.32,.72,0,1);color:var(--text);
-  font-family:var(--font-sans, inherit);min-width:0;}
-.dwd-overlay[data-open="true"] .dwd-sheet{transform:translateX(0);}
-
-.dwd-head{flex:0 0 auto;display:flex;flex-direction:column;gap:.85rem;padding:1.05rem 1.15rem .95rem;
-  border-bottom:1px solid var(--border);background:linear-gradient(180deg,var(--info-bg),var(--surface));}
-.dwd-head__top{display:flex;align-items:center;gap:.5rem;}
-.dwd-head__brand{display:flex;align-items:center;gap:.45rem;font-size:.78rem;font-weight:800;letter-spacing:.01em;}
-.dwd-head__tag{margin-left:auto;font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
-  color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:.14rem .55rem;}
-.dwd-x{appearance:none;border:1px solid var(--border);background:var(--surface);color:var(--text);
-  width:2rem;height:2rem;border-radius:999px;cursor:pointer;font-size:1.1rem;line-height:1;display:flex;
-  align-items:center;justify-content:center;transition:background .15s ease;}
-.dwd-x:hover{background:var(--surface-2);}
+/* Hero identity — relocated into the drawer body as its first item
+   (drawer.js's header only takes plain title/subtitle strings, which can't
+   reproduce the big score numeral treatment this needs). */
 .dwd-hero{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;}
 .dwd-hero__name{font-size:1.15rem;font-weight:800;letter-spacing:-.01em;min-width:0;overflow:hidden;text-overflow:ellipsis;}
 .dwd-hero__metric{display:flex;flex-direction:column;align-items:flex-end;gap:.1rem;line-height:1.05;}
@@ -48,8 +39,6 @@ const CSS = `
 .dwd-hero__lbl{font-size:.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
 .dwd-num--ok{color:var(--ok);} .dwd-num--info{color:var(--info);} .dwd-num--warn{color:var(--warn);} .dwd-num--danger{color:var(--danger);}
 
-.dwd-body{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;padding:1rem 1.15rem 1.4rem;
-  display:flex;flex-direction:column;gap:.85rem;-webkit-overflow-scrolling:touch;}
 .dwd-sec{border:1px solid var(--border);border-radius:14px;background:var(--surface);padding:.8rem .9rem;display:flex;flex-direction:column;gap:.6rem;}
 .dwd-sec__title{font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);display:flex;align-items:center;gap:.4rem;}
 .dwd-sec__title b{color:var(--text);}
@@ -106,13 +95,6 @@ const CSS = `
 .dwd-sev--high{color:var(--danger);border-color:var(--danger);} .dwd-sev--medium{color:var(--warn);border-color:var(--warn);} .dwd-sev--low{color:var(--ok);border-color:var(--ok);}
 .dwd-rec__label{font-size:.85rem;font-weight:700;}
 .dwd-rec__detail{font-size:.72rem;color:var(--muted);}
-
-.dwd-foot{flex:0 0 auto;display:flex;gap:.6rem;padding:.85rem 1.15rem;border-top:1px solid var(--border);background:var(--surface);}
-.dwd-btn{flex:1 1 auto;display:inline-flex;align-items:center;justify-content:center;gap:.4rem;cursor:pointer;font-size:.86rem;font-weight:700;border-radius:11px;padding:.62rem .9rem;transition:filter .15s ease;}
-.dwd-btn--ghost{background:var(--surface);border:1px solid var(--border);color:var(--text);}
-.dwd-btn--ghost:hover{background:var(--surface-2);}
-
-@media (max-width:560px){ .dwd-sheet{width:100%;border-left:0;} }
 `;
 
 function ensureStyles() {
@@ -226,39 +208,22 @@ function renderRecommendations(recs) {
   return wrap;
 }
 
-/* ── sheet assembly ───────────────────────────────────────────────────────── */
-
-let _keyHandler = null;
-
-function buildSheet(driver) {
-  const sheet = el('aside', 'dwd-sheet');
-  sheet.setAttribute('role', 'dialog');
-  sheet.setAttribute('aria-modal', 'true');
-  sheet.setAttribute('aria-label', `Wellness ${driver.driverName}`);
-
-  // Header
-  const head = el('div', 'dwd-head');
-  const top = el('div', 'dwd-head__top');
-  const brand = el('div', 'dwd-head__brand');
-  brand.append(el('span', null, '🫀'), el('span', null, 'Driver Wellness'));
-  top.append(brand);
-  top.append(el('span', 'dwd-head__tag', 'Sustainability'));
-  const x = el('button', 'dwd-x', '×');
-  x.type = 'button'; x.id = 'dwdClose'; x.setAttribute('aria-label', 'Tutup');
-  top.append(x);
-  head.append(top);
-
+function buildHeroSummary(driver) {
   const hero = el('div', 'dwd-hero');
   hero.append(el('div', 'dwd-hero__name', driver.driverName));
   const metric = el('div', 'dwd-hero__metric');
   metric.append(el('span', `dwd-hero__num dwd-num--${driver.health.tone}`, String(driver.health.score)));
   metric.append(el('span', 'dwd-hero__lbl', `${driver.health.labelId} · Skor / 100`));
   hero.append(metric);
-  head.append(hero);
-  sheet.append(head);
+  return hero;
+}
 
-  // Body
-  const body = el('div', 'dwd-body');
+/* ── Body content (appended into drawer.js's [data-drawer-body]) ──────── */
+
+function buildBodyContent(driver) {
+  const frag = document.createDocumentFragment();
+
+  frag.append(buildHeroSummary(driver));
 
   // Overview
   const sOv = section('Ringkasan');
@@ -268,29 +233,29 @@ function buildSheet(driver) {
   grid.append(stat('Pemulihan', String(driver.recovery.score), `${driver.recovery.avgRestDays} hari rata-rata`));
   grid.append(stat('Jam Kerja', `${driver.workingTime.hours} j`, `${driver.workingTime.last30} tugas / 30h`));
   sOv.append(grid);
-  body.append(sOv);
+  frag.append(sOv);
 
   // Health Score — Explainability (Feature 10)
   const sHealth = section('Skor Kesehatan', `${driver.health.score} · ${driver.health.label}`);
   sHealth.append(renderExplain(driver));
-  body.append(sHealth);
+  frag.append(sHealth);
 
   // Components (Feature 2)
   const sComp = section('Komponen Wellness');
   sComp.append(renderComponents(driver));
-  body.append(sComp);
+  frag.append(sComp);
 
   // Fatigue (Feature 3)
   const sFat = section('Risiko Kelelahan', `${driver.fatigue.label}`);
   sFat.append(riskMeter(driver.fatigue));
   sFat.append(el('div', 'dwd-tl__detail', 'Indikator jangka pendek: pemulihan, hari beruntun, dan kepadatan tugas. Tidak memengaruhi rekomendasi.'));
-  body.append(sFat);
+  frag.append(sFat);
 
   // Burnout (Feature 4)
   const sBurn = section('Risiko Burnout', `${driver.burnout.label}`);
   sBurn.append(riskMeter(driver.burnout));
   sBurn.append(el('div', 'dwd-tl__detail', 'Indikator jangka panjang: tren beban, utilisasi berkelanjutan, akhir pekan, dan pemulihan.'));
-  body.append(sBurn);
+  frag.append(sBurn);
 
   // Capacity (Feature 5)
   const sCap = section('Capacity Health', String(driver.capacityHealth.score));
@@ -299,7 +264,7 @@ function buildSheet(driver) {
   capGrid.append(stat('Utilisasi', `${driver.capacityHealth.utilization}%`, 'beban 30 hari'));
   capGrid.append(stat('Status', driver.capacityHealth.status, 'band kapasitas'));
   sCap.append(capGrid);
-  body.append(sCap);
+  frag.append(sCap);
 
   // Recovery + Working Time
   const sRec = section('Pemulihan & Waktu Kerja');
@@ -309,65 +274,41 @@ function buildSheet(driver) {
   recGrid.append(stat('Jam Kerja', `${driver.workingTime.hours} j`, 'dalam jendela'));
   recGrid.append(stat('Tugas 7 Hari', String(driver.workingTime.last7), 'kepadatan terbaru'));
   sRec.append(recGrid);
-  body.append(sRec);
+  frag.append(sRec);
 
   // Timeline (Feature 8)
   const sTl = section('Linimasa Wellness');
   sTl.append(renderTimeline(driver.timeline));
-  body.append(sTl);
+  frag.append(sTl);
 
   // Recommendations (Feature 9)
   const sRecs = section('Rekomendasi');
   sRecs.append(renderRecommendations(driver.recommendations));
-  body.append(sRecs);
+  frag.append(sRecs);
 
-  sheet.append(body);
-
-  // Footer
-  const foot = el('div', 'dwd-foot');
-  const closeBtn = el('button', 'dwd-btn dwd-btn--ghost', 'Tutup');
-  closeBtn.type = 'button'; closeBtn.id = 'dwdCloseBtn';
-  foot.append(closeBtn);
-  sheet.append(foot);
-
-  const close = () => closeDriverWellnessDrawer();
-  x.addEventListener('click', close);
-  closeBtn.addEventListener('click', close);
-
-  return sheet;
+  return frag;
 }
+
+/* ── Open/close — now the canonical drawer's job ──────────────────────── */
 
 /**
  * Open (or replace) the Driver Wellness detail drawer for one driver's wellness
  * object (an element of computeDriverWellnessModel().drivers).
  * @param {Object} driver  a per-driver wellness object
- * @returns {HTMLElement} the drawer root
+ * @returns {HTMLElement|null} the canonical drawer overlay root
  */
 export function openDriverWellnessDrawer(driver) {
   if (!driver) return null;
   ensureStyles();
-  closeDriverWellnessDrawer();
-
-  const overlay = el('div', 'dwd-overlay');
-  overlay.id = ROOT_ID;
-  overlay.setAttribute('data-open', 'false');
-  overlay.append(buildSheet(driver));
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeDriverWellnessDrawer(); });
-  document.body.appendChild(overlay);
-
-  _keyHandler = (e) => { if (e.key === 'Escape') closeDriverWellnessDrawer(); };
-  document.addEventListener('keydown', _keyHandler);
-
-  requestAnimationFrame(() => { overlay.setAttribute('data-open', 'true'); });
+  const overlay = openDrawer({
+    title: driver.driverName,
+    subtitle: `${driver.health.labelId} · Skor ${driver.health.score}/100`,
+    icon: 'wellness',
+    body: '',
+    footer: [{ label: 'Tutup', action: 'close' }],
+    onAction: (action, close) => { if (action === 'close') close(); },
+  });
+  if (!overlay) return null;
+  overlay.querySelector('[data-drawer-body]').appendChild(buildBodyContent(driver));
   return overlay;
-}
-
-/** Close + remove the drawer (with a short fade) and unbind the ESC handler. */
-export function closeDriverWellnessDrawer() {
-  if (_keyHandler) { document.removeEventListener('keydown', _keyHandler); _keyHandler = null; }
-  const existing = document.getElementById(ROOT_ID);
-  if (!existing) return;
-  existing.setAttribute('data-open', 'false');
-  const remove = () => { if (existing.parentNode) existing.parentNode.removeChild(existing); };
-  setTimeout(remove, 320);
 }

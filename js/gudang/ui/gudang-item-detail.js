@@ -67,9 +67,24 @@ const STATUS_PILL = { available: 'ok', assigned: 'info', maintenance: 'warn', re
 const EVENT_LABEL = { assign: 'Tugaskan', return: 'Kembalikan', maintain: 'Kirim Maintenance', retire: 'Pensiunkan' };
 
 /* ── Item Detail ──────────────────────────────────────────────────────── */
+// Design System Program Phase 10 (Canonical Drawer Migration): these two
+// functions used to return a full HTML string (shell + body) that
+// gudang-center.js concatenated straight into host.innerHTML. They now
+// return { title, body } — gudang-center.js hands `body` to the canonical
+// drawer (js/components/drawer.js) via openDrawer()/refreshDrawerBody(),
+// which owns the shell (scrim, header, close button, focus trap, safe-area,
+// swipe-dismiss, body scroll lock) this file used to hand-roll itself via
+// drawerShell(). The badge/back-link that used to sit in the shell's own
+// header now renders as the first block of the body — the canonical
+// drawer's `subtitle` slot is plain escaped text, not markup, so it can't
+// host a clickable back-link or a colored pill; this is a disclosed,
+// intentional layout adaptation, not a functional loss (same content,
+// same click target, now inside the scrollable body instead of a sticky
+// header the old drawer never actually pinned either — .gud-drawer-head
+// was not `position:sticky`, see gudang.css:241).
 export function renderItemDetail(st, c, requestRender) {
   const item = st.data.items.find((i) => i.itemId === st.detail.id);
-  if (!item) return drawerShell('Item tidak ditemukan', '', '<div class="gud-muted">Item mungkin sudah dihapus.</div>');
+  if (!item) return { title: 'Item tidak ditemukan', body: '<div class="gud-muted">Item mungkin sudah dihapus.</div>' };
 
   ensureDetailImage(st, item, requestRender);
 
@@ -81,7 +96,9 @@ export function renderItemDetail(st, c, requestRender) {
   // Art.V), so the timeline naturally shows only Item Created — the
   // Asset UNIT list/history above is untouched, a different granularity
   // this release deliberately leaves alone (see the architecture report).
+  const badge = item.itemType === ITEM_TYPE.CONSUMABLE ? 'Consumable' : 'Asset';
   const body = `
+    ${badgePillBlock(badge)}
     ${itemImageBlock(st, item)}
     ${identityBlock(st, item)}
     ${item.itemType === ITEM_TYPE.CONSUMABLE ? consumableBody(st, item, requestRender) : assetListBody(st, item)}
@@ -89,7 +106,11 @@ export function renderItemDetail(st, c, requestRender) {
     ${metadataBlock(item)}
     ${editItemButtonBlock(item)}
     ${deleteItemButtonBlock(item)}`;
-  return drawerShell(item.name, item.itemType === ITEM_TYPE.CONSUMABLE ? 'Consumable' : 'Asset', body);
+  return { title: item.name, body };
+}
+
+function badgePillBlock(badge) {
+  return `<div class="gud-drawer-badges gud-mb"><span class="gud-pill" data-pill="neutral">${esc(badge)}</span></div>`;
 }
 
 function ensureDetailImage(st, item, requestRender) {
@@ -291,7 +312,7 @@ function assetListBody(st, item) {
 /* ── Asset Detail ─────────────────────────────────────────────────────── */
 export function renderAssetDetail(st, c, requestRender) {
   const asset = st.data.assets.find((a) => a.assetId === st.detail.id);
-  if (!asset) return drawerShell('Aset tidak ditemukan', '', '<div class="gud-muted">Aset mungkin sudah dihapus.</div>');
+  if (!asset) return { title: 'Aset tidak ditemukan', body: '<div class="gud-muted">Aset mungkin sudah dihapus.</div>' };
   const item = st.data.items.find((i) => i.itemId === asset.itemId);
 
   ensureAssetHistory(st, asset, requestRender);
@@ -302,7 +323,15 @@ export function renderAssetDetail(st, c, requestRender) {
     : `<div class="gud-action-row gud-mt">${allowed.map((evt) => `
         <button type="button" class="gud-btn" data-act="gud-asset-action-open" data-id="${esc(evt)}">${esc(EVENT_LABEL[evt])}</button>`).join('')}</div>`;
 
+  // "Kembali" affordance for the dual-layout entry (Doc 2 §08: one
+  // entrance) — was the shell's own backSlot, now the first block of the
+  // body (see the Phase 10 migration note above renderItemDetail).
+  const backSlot = item
+    ? `<div class="gud-drawer-badges gud-mb"><button type="button" class="gud-link-btn" data-act="gud-open-item" data-id="${esc(item.itemId)}">${icon('chevron-left', { size: 12 })} ${esc(item.name)}</button></div>`
+    : badgePillBlock('Asset');
+
   const body = `
+    ${backSlot}
     <div class="gud-sec">
       <div class="gud-sec-t">IDENTITAS</div>
       <div class="gud-kv"><span class="gud-kv-k">Serial / Tag</span><span class="gud-kv-v">${esc(asset.identity)}</span></div>
@@ -316,10 +345,7 @@ export function renderAssetDetail(st, c, requestRender) {
       ${historyList(st)}
     </div>`;
 
-  return drawerShell(item ? item.name : asset.identity, 'Asset', body, () => {
-    // "Kembali" affordance for the dual-layout entry (Doc 2 §08: one entrance)
-    return item ? `<button type="button" class="gud-link-btn" data-act="gud-open-item" data-id="${esc(item.itemId)}">${icon('chevron-left', { size: 12 })} ${esc(item.name)}</button>` : '';
-  });
+  return { title: item ? item.name : asset.identity, body };
 }
 function locName(st, id) { return st.data.locations.find((l) => l.locationId === id)?.name || id; }
 
@@ -355,31 +381,6 @@ function actionForm(asset, detail) {
   </div>`;
 }
 
-/* ── shell ────────────────────────────────────────────────────────────── */
-function drawerShell(title, badge, body, backSlot) {
-  // v1.29.9 (Part F — Accessibility): the mobile filter sheet already
-  // declares role="dialog"/aria-modal (v1.29.1) — the Item Detail
-  // drawer, the single most-opened overlay in Gudang, never did.
-  // aria-label reuses the same dynamic title the visible <h2> already
-  // shows, so a screen reader announces exactly what's on screen, never
-  // a generic "dialog". (The Add/Edit Item modal and the Bulk Operations
-  // modal have the same gap — noted as a follow-up, not fixed here: the
-  // latter's own file is frozen this release (Do Not Modify), and
-  // re-scoping beyond the drawer this pass specifically investigated
-  // risks exactly the "feature creep" this refinement release avoids.)
-  return `<div class="gud-scrim -open" data-act="gud-scrim">
-    <div class="gud-drawer" role="dialog" aria-modal="true" aria-label="${esc(title)}">
-      <div class="gud-drawer-head">
-        <div class="gud-drawer-head-txt">
-          ${backSlot ? `<div class="gud-drawer-badges">${backSlot()}</div>` : (badge ? `<div class="gud-drawer-badges"><span class="gud-pill" data-pill="neutral">${esc(badge)}</span></div>` : '')}
-          <h2 class="gud-drawer-title">${esc(title)}</h2>
-        </div>
-        <button type="button" class="gud-icon-btn" data-act="gud-detail-close" aria-label="Tutup" title="Tutup">${icon('close', { size: 16 })}</button>
-      </div>
-      <div class="gud-drawer-body">${body}</div>
-    </div>
-  </div>`;
-}
 
 /* ── handlers ─────────────────────────────────────────────────────────── */
 export const detailHandlers = {

@@ -84,6 +84,11 @@ import { renderDashboard } from './gudang-dashboard.js';
 // to this one screen's own local UI state (st.intelligence) — no
 // Firebase write, no cross-screen effect.
 import { renderIntelligence, intelligenceHandlers } from './gudang-intelligence.js';
+// Design System Program Phase 10 (Canonical Drawer Migration): the Item/
+// Asset Detail drawer now renders through the app-wide canonical shell
+// instead of Gudang's own hand-rolled .gud-scrim/.gud-drawer — see
+// syncGudangDetailDrawer() below for the open/refresh/close orchestration.
+import { openDrawer, closeDrawer, refreshDrawerBody } from '../../components/drawer.js';
 
 const st = {
   screen: 'dashboard',
@@ -119,6 +124,13 @@ const st = {
 };
 
 let host = null, mounted = false, loaded = false, lastAnimatedScreen = null, searchDebounceTimer = null;
+// Phase 10: the canonical drawer's overlay lives outside `host` (it's
+// appended to document.body by openDrawer()), and the currently-open key
+// ('item:<id>' / 'asset:<id>') this overlay was last built for — lets
+// syncGudangDetailDrawer() tell "still showing the same record, just
+// refresh its body" apart from "switching to a different record, do a
+// real open" without replaying the entrance transition on every render.
+let _gudDrawerOverlay = null, _gudDrawerKey = null;
 
 /** v1.29.0 Feature 2 (Instant Search): 250-300ms recommended range — the
  *  "dropdown is open" feedback in setGudangSearch() below is NOT delayed by
@@ -555,9 +567,6 @@ function render() {
     case 'dashboard':
     default: screen = renderDashboard(st, c, render);
   }
-  const detail = st.detail
-    ? (st.detail.kind === 'asset' ? renderAssetDetail(st, c, render) : renderItemDetail(st, c, render))
-    : '';
   // v1.29.0 Feature 9: below the shared field's own breakpoint, its dropdown
   // presentation makes no sense (nothing to anchor under) — the full-screen
   // sheet takes over instead. Both render the exact same session state.
@@ -581,9 +590,67 @@ function render() {
   const isNewScreen = st.screen !== lastAnimatedScreen;
   if (isNewScreen && _onScreenChange) _onScreenChange(st.screen);
   lastAnimatedScreen = st.screen;
-  host.innerHTML = `<div class="gud-content${isNewScreen ? ' -enter' : ''}">${screen}</div>${detail}${overlay}${filterSheet}${modal}`;
+  host.innerHTML = `<div class="gud-content${isNewScreen ? ' -enter' : ''}">${screen}</div>${overlay}${filterSheet}${modal}`;
   restoreFocus();
   syncSearchInputAria();
+  syncGudangDetailDrawer(c);
+}
+
+/** Phase 10 (Canonical Drawer Migration): st.detail used to be rendered as
+ *  a plain string concatenated into host.innerHTML alongside everything
+ *  else — every render() call destroyed and recreated the whole drawer
+ *  subtree, even for e.g. an unrelated async fetch resolving inside it.
+ *  Now it's driven imperatively through js/components/drawer.js: a
+ *  genuinely NEW record (different kind/id, or first open) gets a real
+ *  openDrawer() call (entrance transition, fresh focus/scroll); the SAME
+ *  record re-rendering (an ensureConsumableData()/ensureAssetHistory()
+ *  fetch resolving, an asset-action state change, a realtime catalog
+ *  update) gets refreshDrawerBody() instead — content updates in place,
+ *  scroll position and whatever focus the user has inside the drawer are
+ *  left alone. Closing (st.detail set back to null, from any of the
+ *  drawer's own dismiss paths OR from elsewhere in the module, e.g.
+ *  setGudangScreen()) closes the real drawer the same way. */
+function syncGudangDetailDrawer(c) {
+  const desiredKey = st.detail ? `${st.detail.kind}:${st.detail.id}` : null;
+  if (!desiredKey) {
+    if (_gudDrawerOverlay) { closeDrawer(); _gudDrawerOverlay = null; _gudDrawerKey = null; }
+    return;
+  }
+  const { title, body } = st.detail.kind === 'asset' ? renderAssetDetail(st, c, render) : renderItemDetail(st, c, render);
+  if (desiredKey === _gudDrawerKey && _gudDrawerOverlay) {
+    refreshDrawerBody(body);
+    return;
+  }
+  _gudDrawerKey = desiredKey;
+  _gudDrawerOverlay = openDrawer({
+    title,
+    icon: st.detail.kind === 'asset' ? 'tag' : 'package',
+    body,
+    onClose: () => { st.detail = null; render(); },
+  });
+  wireDrawerOverlayDelegation(_gudDrawerOverlay);
+}
+
+/** The canonical drawer appends its overlay to document.body, outside
+ *  `host` — so `host`'s own delegated click/input/drag/paste listeners
+ *  (mountGudang() above) never see events originating inside it. Rather
+ *  than reimplement every gud-* action's dispatch a second time, this
+ *  binds the SAME delegated handlers directly onto the drawer overlay —
+ *  onClick/onInput have no logic that assumes their target is inside
+ *  `host` (the one place that mattered, onClick's containment guard, is
+ *  widened below to also accept _gudDrawerOverlay); the drag/paste photo-
+ *  replace handlers already target elements (.gud-detail-img) by class,
+ *  not by ancestor, per v1.29.5's original design. Called once per fresh
+ *  openDrawer() — a refreshDrawerBody() call reuses the same overlay node
+ *  and therefore the same already-bound listeners. */
+function wireDrawerOverlayDelegation(overlay) {
+  if (!overlay) return;
+  overlay.addEventListener('click', onClick);
+  overlay.addEventListener('input', onInput);
+  overlay.addEventListener('dragover', onDragOver);
+  overlay.addEventListener('dragleave', onDragLeave);
+  overlay.addEventListener('drop', onDrop);
+  overlay.addEventListener('paste', onPaste);
 }
 
 /** v1.29.0 Accessibility: wires the shared field into a real ARIA combobox
@@ -629,7 +696,11 @@ function onClick(e) {
     return;
   }
   const el = e.target.closest('[data-act]');
-  if (!el || !host.contains(el)) return;
+  // Phase 10: an element is "ours" if it's inside `host` (everything this
+  // module has always owned) OR inside the currently-open canonical
+  // drawer overlay (appended to document.body, outside `host` — see
+  // syncGudangDetailDrawer()/wireDrawerOverlayDelegation() above).
+  if (!el || !(host.contains(el) || (_gudDrawerOverlay && _gudDrawerOverlay.contains(el)))) return;
   const act = el.dataset.act;
   const id = el.dataset.id;
   const val = el.dataset.val;
@@ -668,11 +739,10 @@ function onClick(e) {
         render();
         break;
       }
-      st.detail = { kind: 'item', id }; st.search = applySessionEvent(st.search, { type: 'close' }).state; render(); focusDrawerOnOpen();
+      st.detail = { kind: 'item', id }; st.search = applySessionEvent(st.search, { type: 'close' }).state; render();
       break;
     }
-    case 'gud-open-asset': st.detail = { kind: 'asset', id }; st.search = applySessionEvent(st.search, { type: 'close' }).state; render(); focusDrawerOnOpen(); break;
-    case 'gud-detail-close': st.detail = null; render(); break;
+    case 'gud-open-asset': st.detail = { kind: 'asset', id }; st.search = applySessionEvent(st.search, { type: 'close' }).state; render(); break;
     case 'gud-quick-goods-out': setGudangScreen('goodsOut'); break;
     case 'gud-quick-goods-in': setGudangScreen('goodsIn'); break;
     // "Search resolves into action" (Doc 1, Phase 10.1 Part 9) — a
@@ -1080,23 +1150,10 @@ function resolveSearchIntent(intent) {
   st.detail = { kind: intent.ownerDomain === 'asset' ? 'asset' : 'item', id: intent.refId };
   st.search = applySessionEvent(st.search, { type: 'close' }).state;
   render();
-  focusDrawerOnOpen();
-}
-
-/** v1.29.9 (Part F — Accessibility): moves focus INTO the Item/Asset
- *  Detail drawer the instant it opens (WAI-ARIA dialog expectation) —
- *  previously absent, so focus silently stayed wherever it was, often on
- *  a card/row DOM node this same render() call had just replaced. A
- *  one-time, DIRECT .focus() call — deliberately NOT routed through
- *  st._focusAct/restoreFocus(), which re-applies on EVERY subsequent
- *  render() (that mechanism exists for text inputs mid-keystroke, where
- *  re-focusing every render is exactly the point). The drawer keeps
- *  loading async data after it opens (ensureConsumableData's own
- *  stock/movement fetch) — using the persistent mechanism here would
- *  yank focus back to the close button on each of those re-renders,
- *  fighting a user who had already tabbed further into the drawer body. */
-function focusDrawerOnOpen() {
-  host.querySelector('[data-act="gud-detail-close"]')?.focus();
+  // Phase 10: initial focus into the drawer is now the canonical shell's
+  // own job (openDrawer() focuses its close button on every fresh open) —
+  // this used to be a manual focusDrawerOnOpen() call here, now removed
+  // as a direct consequence of that migration (see syncGudangDetailDrawer()).
 }
 
 /* ── focus restoration (mirrors Engineering's restoreFocus) ───────────── */

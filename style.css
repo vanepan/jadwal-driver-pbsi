@@ -44,13 +44,32 @@
 
   /* v1.20.8 — Motion System tokens (Native App Experience). Shared timing
      vocabulary for every animated surface added/retrofitted this sprint:
-     drawer, dialogs, cards, bottom sheets, nav, toast, notification. */
+     drawer, dialogs, cards, bottom sheets, nav, toast, notification.
+
+     Note (Phase 8.1): js/components/motion-tokens.js (MICRO_MS/STANDARD_MS/
+     SCENE_MS/EASE_ARRIVE) and js/widgets/executive/motion-profiles.js
+     (EASE/RESPONSIVE/MEASURED) are separate, deliberately un-bridged JS
+     token layers this phase — not wired to these CSS custom properties.
+     Their numbers don't line up 1:1 with the tokens below today (e.g.
+     STANDARD_MS=240 vs --motion-base=200, SCENE_MS=550 vs
+     --motion-slow=320) — bridging them is a real design decision, not a
+     mechanical alias, so it's left for a future phase. */
   --motion-fast: 120ms;
   --motion-base: 200ms;
   --motion-slow: 320ms;
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-decelerate: cubic-bezier(0, 0, 0, 1);
-  --ease-accelerate: cubic-bezier(0.3, 0, 1, 1);
+  /* Phase 8.1 — replaces --ease-accelerate (verified zero consumers
+     anywhere in the repo). Consolidates 3 near-identical hand-authored
+     "overshoot" springs that differed only in the y1 control point
+     (1.26 / 1.56 / 1.3): platform.css's .pbsi-toggle-input thumb, this
+     file's .req-mode-card__tick and .req-sheet. Picked the middle
+     amplitude (1.3), already in production use at .req-sheet, so that
+     call site is a zero-diff swap; the other two shift imperceptibly.
+     Deliberately does NOT also absorb cubic-bezier(.2,.8,.3,1) (ls-pop,
+     platform.css:868, the login screen's own cold-load reveal) — that
+     curve's only use site sits on the frozen login-entry surface. */
+  --ease-overshoot: cubic-bezier(0.34, 1.3, 0.64, 1);
 }
 
 /* v1.20.8 — respect OS-level reduced-motion preference across every
@@ -62,6 +81,26 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* Phase 8.1 — app-wide manual reduced-motion override, [data-anim="off"],
+   mirroring the OS-level block immediately above. Previously hand-patched
+   into ~7 individual rules inside platform.css only; gudang.css,
+   engineering.css, petty-cash.css, workspace-list-kit.css,
+   sarpras-intelligence.css, nor-center.css and overtime.css had zero
+   coverage of the app's own manual toggle before this rule (only the
+   OS-level query above reached them). Purely additive: existing
+   hand-patched [data-anim="off"] rules elsewhere are untouched — several
+   also reset element-specific end state (e.g. stroke-dashoffset) that a
+   duration override alone can't replicate — they just become harmless,
+   redundant overlap for the duration piece. */
+[data-anim="off"] *,
+[data-anim="off"] *::before,
+[data-anim="off"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
 }
 
 /* ── Reset & Base ── */
@@ -2342,8 +2381,13 @@ input[type="number"]::-webkit-inner-spin-button {
 .v2-compliance-chevron { transition: transform 0.2s; font-size: 10px; }
 .v2-compliance-details[open] .v2-compliance-chevron { transform: rotate(180deg); }
 
-/* Assignment form: sticky footer with conflict notices stacked above buttons */
-#assignmentForm .form-actions {
+/* Assignment form: sticky footer with conflict notices stacked above buttons.
+   Phase 9 mobile-first audit: the User form (#userForm) can run just as long
+   — role summary + individual-permissions panel + engineering-level toggle
+   all conditionally append — but never got this treatment, so Simpan/Batal
+   scrolled away on a 375px screen. Same fix, same selector pattern. */
+#assignmentForm .form-actions,
+#userForm .form-actions {
   flex-direction: column;
   justify-content: stretch;
   margin-top: 12px;
@@ -2750,6 +2794,19 @@ input[type="number"]::-webkit-inner-spin-button {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   transition: outline-color var(--motion-slow, 320ms) var(--ease-standard, ease);
+}
+
+/* Design System Program Phase 8.3 — restrained entrance for a request card
+   that's genuinely new to the list (never applied to updated/unaffected
+   cards, and never applied on initial/bulk population). Both the OS-level
+   prefers-reduced-motion and the app's own [data-anim="off"] blanket rules
+   (top of this file) already collapse this to ~0.01ms — no extra gating. */
+@keyframes requestCardEnter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.request-card--enter {
+  animation: requestCardEnter var(--motion-base, 200ms) var(--ease-decelerate, ease);
 }
 
 /* v1.20.8 — "Lainnya" bottom sheet (Administrator bottom-nav more menu).
@@ -3907,7 +3964,7 @@ body.sheet-scroll-lock { overflow: hidden; }
   border-radius: 999px;
   background: var(--accent, #A8292F); color: var(--on-accent, #fff);
   opacity: 0; transform: scale(.4);
-  transition: opacity .16s ease, transform .18s cubic-bezier(.34,1.56,.64,1);
+  transition: opacity .16s ease, transform .18s var(--ease-overshoot, cubic-bezier(.34,1.3,.64,1));
 }
 .req-mode-card__tick svg { width: 12px; height: 12px; }
 .req-mode-card.is-selected .req-mode-card__tick { opacity: 1; transform: scale(1); }
@@ -3949,7 +4006,7 @@ body.sheet-scroll-lock { overflow: hidden; }
   text-align: center;
   transform: scale(.92) translateY(8px);
   opacity: .6;
-  transition: transform .24s cubic-bezier(.34,1.3,.64,1), opacity .2s ease;
+  transition: transform .24s var(--ease-overshoot, cubic-bezier(.34,1.3,.64,1)), opacity .2s ease;
 }
 .req-sheet-overlay.is-open .req-sheet { transform: scale(1) translateY(0); opacity: 1; }
 

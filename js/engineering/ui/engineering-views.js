@@ -195,11 +195,11 @@ export function renderHistory(all, ctx) {
     : `<div class="eng-table-wrap"><table class="eng-table"><thead><tr>
         <th>Penugasan</th><th>Lokasi</th><th>Engineering</th><th class="-right">Waktu Kerja</th><th>Status</th></tr></thead><tbody>
         ${rows.map((a) => `<tr data-act="eng-open" data-id="${esc(a.id)}">
-          <td><span class="eng-td-title"><span class="eng-cat-dot" style="background:var(--${catMeta(a.category).tone})"></span>${esc(a.title)}</span></td>
-          <td>${esc((a.location || '').split(' · ')[0])}</td>
-          <td>${esc(activeParticipants(a).map((p) => p.name.split(' ')[0]).join(', ') || '—')}</td>
-          <td class="-right -mono">${esc(fmtDuration(actualMinutes(a, ctx.now)))}</td>
-          <td>${statusPill(a.status)}</td></tr>`).join('')}
+          <td data-label="Penugasan"><span class="eng-td-title"><span class="eng-cat-dot" style="background:var(--${catMeta(a.category).tone})"></span>${esc(a.title)}</span></td>
+          <td data-label="Lokasi">${esc((a.location || '').split(' · ')[0])}</td>
+          <td data-label="Engineering">${esc(activeParticipants(a).map((p) => p.name.split(' ')[0]).join(', ') || '—')}</td>
+          <td class="-right -mono" data-label="Waktu Kerja">${esc(fmtDuration(actualMinutes(a, ctx.now)))}</td>
+          <td data-label="Status">${statusPill(a.status)}</td></tr>`).join('')}
       </tbody></table></div>`;
 
   return `<div class="eng-screen">
@@ -221,11 +221,11 @@ function workReportsSection(ctx, q, personal, me) {
   reports.sort((x, y) => (Date.parse(y.createdTime) || 0) - (Date.parse(x.createdTime) || 0));
   if (reports.length === 0) return '';
   const rows = reports.map((r) => `<tr>
-      <td><span class="eng-td-title"><span class="eng-cat-dot" style="background:var(--${catMeta(r.category).tone})"></span>${esc(r.title)}</span></td>
-      <td>${esc((r.location || '').split(' · ')[0] || '—')}</td>
-      <td>${esc(personnelNames(r) || '—')}</td>
-      <td>${esc(r.workDate || '—')}</td>
-      <td class="-right -mono">${esc([r.startTime, r.finishTime].filter(Boolean).join('–') || '—')}</td>
+      <td data-label="Pekerjaan"><span class="eng-td-title"><span class="eng-cat-dot" style="background:var(--${catMeta(r.category).tone})"></span>${esc(r.title)}</span></td>
+      <td data-label="Lokasi">${esc((r.location || '').split(' · ')[0] || '—')}</td>
+      <td data-label="Teknisi">${esc(personnelNames(r) || '—')}</td>
+      <td data-label="Tanggal">${esc(r.workDate || '—')}</td>
+      <td class="-right -mono" data-label="Waktu">${esc([r.startTime, r.finishTime].filter(Boolean).join('–') || '—')}</td>
     </tr>`).join('');
   return `<div class="eng-level" style="margin-top:22px;">
     ${sectionHeader('CATAT PEKERJAAN', 'Laporan Pekerjaan Operasional', 'Pekerjaan nyata yang dicatat di luar penugasan formal — dataset operasional untuk analitik & ML.')}

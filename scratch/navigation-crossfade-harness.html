@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="id" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <title>Navigation Crossfade Harness (Phase 8.5)</title>
+  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="/platform.css" />
+  <style>
+    /* Harness-only filler so .main-content genuinely scrolls, matching the
+       real app's "single shared scroll container" structure being tested. */
+    .fake-ws { padding: 24px; }
+    .fake-ws .filler { height: 1600px; background: linear-gradient(#eee, #ccc); }
+  </style>
+</head>
+<body style="margin:0;">
+  <!--
+    IMPORTANT — why this harness copies code instead of importing js/app.js:
+
+    js/app.js has zero `export` statements (monolithic bootstrap entrypoint)
+    and runs real Firebase reads/writes against PRODUCTION on
+    DOMContentLoaded — see the project's established "Firebase Prod in Local
+    Testing" constraint, and Phase 8.4's identical note in
+    pending-workspace-reconciler-harness.html. So this harness contains a
+    byte-for-byte copy of the new Phase 8.5 setWorkspace()/applyWorkspaceState()
+    control flow (js/app.js, current setWorkspace at line 4218), reduced to a
+    handful of synthetic workspace hosts instead of the real ~15. It proves
+    the MECHANISM (when a View Transition fires, when it's skipped, scroll
+    reset, error containment) in a real browser with the real CSS. It does
+    NOT exercise real Firebase-backed content (Pending's real cards, Executive
+    Command Center's real data) — that remains a documented NOT TESTABLE item,
+    same category as every prior phase's identical constraint.
+  -->
+  <div class="app-layout">
+    <div class="main-area">
+      <main class="main-content">
+        <div id="wsHome"  class="fake-ws" style="display:block;"><h1>Home</h1><div class="filler"></div></div>
+        <div id="wsPending" class="fake-ws" style="display:none;"><h1>Pending</h1><div class="filler"></div></div>
+        <div id="wsAdmin" class="fake-ws" style="display:none;"><h1>Administration</h1><div class="filler"></div></div>
+        <div id="wsOvertime" class="fake-ws" style="display:none;"><h1>Overtime</h1><div class="filler"></div></div>
+        <div id="wsEngineering" class="fake-ws" style="display:none;"><h1>Engineering</h1><div class="filler"></div></div>
+      </main>
+    </div>
+  </div>
+
+  <script type="module">
+    // ── Byte-for-byte copy of js/app.js's Phase 8.5 control flow ──────────
+    let currentWorkspace = 'home';
+    let _workspaceEverSet = false;
+
+    function _analyticsMotionOff() {
+      if (document.documentElement.getAttribute('data-anim') === 'off') return true;
+      try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (_) { return false; }
+    }
+
+    const HOST_MAP = {
+      home: 'wsHome', pending: 'wsPending', administration: 'wsAdmin',
+      overtime: 'wsOvertime', engineering: 'wsEngineering',
+    };
+
+    // Test hook: when true, the render step for the target workspace throws,
+    // exercising the updateCallbackDone.catch() fix.
+    window.__throwOnRender = false;
+
+    function setWorkspace(name) {
+      const isWorkspaceChange = name !== currentWorkspace;
+      const canViewTransition = _workspaceEverSet
+        && isWorkspaceChange
+        && typeof document.startViewTransition === 'function'
+        && !_analyticsMotionOff();
+
+      if (canViewTransition) {
+        const transition = document.startViewTransition(() => applyWorkspaceState(name, isWorkspaceChange));
+        transition.updateCallbackDone.catch(err => console.error('[setWorkspace] view transition update failed', err));
+        transition.ready.catch(() => {});
+        transition.finished.catch(() => {});
+        return;
+      }
+      applyWorkspaceState(name, isWorkspaceChange);
+    }
+
+    function applyWorkspaceState(name, isWorkspaceChange) {
+      _workspaceEverSet = true;
+      currentWorkspace = name;
+      if (isWorkspaceChange) {
+        (document.scrollingElement || document.documentElement).scrollTop = 0;
+      }
+      for (const [key, id] of Object.entries(HOST_MAP)) {
+        const el = document.getElementById(id);
+        if (el) el.style.display = key === name ? 'block' : 'none';
+      }
+      if (window.__throwOnRender && name === 'pending') {
+        throw new Error('synthetic render failure (test hook)');
+      }
+    }
+
+    window.__nav = {
+      setWorkspace,
+      getState: () => ({ currentWorkspace, workspaceEverSet: _workspaceEverSet }),
+      visibleHost: () => Object.entries(HOST_MAP).find(([, id]) => document.getElementById(id).style.display !== 'none')?.[0] ?? null,
+    };
+    window.__navReady = true;
+  </script>
+</body>
+</html>

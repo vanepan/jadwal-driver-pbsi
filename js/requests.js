@@ -443,6 +443,18 @@ export function getVisibleRequestsForCurrentUser() {
   );
 }
 
+/* ── Live-update diffing (Design System Program Phase 8.3) ──────────────
+   renderRequestsList() is called from ~25 unrelated call sites via
+   updatePermissionUI() (login, role switch, workspace nav, etc.) as well as
+   on every real Firebase /driver_requests change. Rebuilding the whole
+   container on every call destroyed DOM identity, scroll position, focus,
+   and in-flight highlight state for a single-record change. This tracks the
+   previously-rendered card per request id and reconciles surgically:
+   unaffected cards are never touched; only added/changed/removed/reordered
+   cards mutate the DOM. See docs/DESIGN_SYSTEM_PROGRAM_PHASE_8_3_REQUESTS_DIFFING_MAP.md. */
+let _requestCardNodes = new Map(); // requestId -> mounted .request-card element
+let _requestCardHTML  = new Map(); // requestId -> last-rendered HTML string (change detection)
+
 export function renderRequestsList() {
   const container = document.getElementById('requestsListContent');
   if (!container) return;
@@ -450,15 +462,103 @@ export function renderRequestsList() {
   const visibleRequests = getVisibleRequestsForCurrentUser();
 
   if (visibleRequests.length === 0) {
-    container.innerHTML = '<div class="empty-request-state">Tidak ada request.</div>';
+    if (_requestCardNodes.size > 0 || container.children.length === 0) {
+      container.innerHTML = '<div class="empty-request-state">Tidak ada request.</div>';
+      _requestCardNodes.clear();
+      _requestCardHTML.clear();
+    }
     return;
   }
 
-  container.innerHTML = visibleRequests.map(request => createRequestCardHTML(request)).join('');
+  // Coming from the empty state (or a stale/foreign container) — clear it
+  // before reconciling so we don't leave the "Tidak ada request." markup
+  // sitting alongside real cards.
+  if (_requestCardNodes.size === 0 && container.querySelector('.empty-request-state')) {
+    container.innerHTML = '';
+  }
 
-  container.querySelectorAll('[data-request-action]').forEach(button => {
+  reconcileRequestCards(container, visibleRequests);
+}
+
+function reconcileRequestCards(container, visibleRequests) {
+  const isBulkPopulate = _requestCardNodes.size === 0; // initial load / refill after empty — no entrance motion
+  const nextIds = new Set(visibleRequests.map(request => request.id));
+
+  for (const [id, node] of _requestCardNodes) {
+    if (!nextIds.has(id)) {
+      node.remove();
+      _requestCardNodes.delete(id);
+      _requestCardHTML.delete(id);
+    }
+  }
+
+  let ref = container.firstElementChild;
+  for (const request of visibleRequests) {
+    const id = request.id;
+    const html = createRequestCardHTML(request);
+    let node = _requestCardNodes.get(id);
+
+    if (!node) {
+      node = htmlToElement(html);
+      bindRequestCardActions(node);
+      _requestCardNodes.set(id, node);
+      _requestCardHTML.set(id, html);
+      container.insertBefore(node, ref);
+      if (!isBulkPopulate) applyRequestCardEnterMotion(node);
+      continue;
+    }
+
+    if (_requestCardHTML.get(id) !== html) {
+      updateRequestCardInPlace(node, html);
+      _requestCardHTML.set(id, html);
+    }
+
+    if (node !== ref) {
+      container.insertBefore(node, ref);
+    } else {
+      ref = ref.nextElementSibling;
+    }
+  }
+}
+
+function htmlToElement(html) {
+  const template = document.createElement('template');
+  template.innerHTML = html.trim();
+  return template.content.firstElementChild;
+}
+
+function bindRequestCardActions(node) {
+  node.querySelectorAll('[data-request-action]').forEach(button => {
     button.addEventListener('click', handleRequestActionClick);
   });
+}
+
+function applyRequestCardEnterMotion(node) {
+  node.classList.add('request-card--enter');
+  node.addEventListener('animationend', () => node.classList.remove('request-card--enter'), { once: true });
+}
+
+// Updates one card's content in place, preserving the outer DOM node's
+// identity (so unrelated code holding a reference, or CSS transitions on
+// it, aren't disrupted) and restoring focus if the user had focus inside it.
+function updateRequestCardInPlace(node, html) {
+  const next = htmlToElement(html);
+
+  const hadFocus = node.contains(document.activeElement);
+  const focusedAction = hadFocus ? document.activeElement?.dataset?.requestAction : null;
+
+  const nextStatus = next.getAttribute('data-status');
+  if (nextStatus !== node.getAttribute('data-status')) {
+    node.setAttribute('data-status', nextStatus);
+  }
+
+  node.innerHTML = next.innerHTML;
+  bindRequestCardActions(node);
+
+  if (focusedAction) {
+    const toFocus = node.querySelector(`[data-request-action="${focusedAction}"]`);
+    if (toFocus) toFocus.focus();
+  }
 }
 
 function handleRequestSubmit(event) {
