@@ -3153,6 +3153,19 @@ body.v2-shell-active #v2TimelineSurface .v2-tl-header-right {
   margin-left: auto;
 }
 
+/* Hotfix: board-native create-assignment CTA — reuses .v2-panel-btn's
+   colors/hover/press states verbatim for visual consistency with the
+   panel's own CTAs, but that class is written for a vertical, full-width
+   panel list (width:100%), which would be wrong inline in this row. */
+body.v2-shell-active #v2TimelineSurface .v2-tl-header-right .v2-tl-header-cta {
+  width: auto;
+  flex-shrink: 0;
+}
+@media (max-width: 767px) {
+  /* Mobile FAB already covers this action — avoid a duplicate control. */
+  .v2-tl-header-cta { display: none !important; }
+}
+
 /* View toggle pill container */
 body.v2-shell-active #v2TimelineSurface .v2-tl-view-toggle {
   display: flex;
@@ -3763,11 +3776,21 @@ body.v2-shell-active #v2TimelineSurface .v2-tl-view-btn {
    arrow buttons, and date input sit on the same baseline.
    No logic changes; only visual sizing.                       */
 
+/* Hotfix: the "unified 32px height" here never actually applied to
+   .btn-today/.btn-icon — those carry an unconditional min-height:44px
+   (style.css, WCAG touch target) which always wins over a smaller explicit
+   height, so the buttons were rendering at 44px inside this 32px-tall pill
+   with no `overflow` set — visually breaking out of their own rounded
+   container. Touch targets must stay 44px (hotfix requirement), so the fix
+   is to stop fighting that height rather than shrink the buttons: `height`
+   removed here so the pill sizes itself from its tallest child instead of
+   clipping/overflowing at a fixed 32px. padding/gap bumped in the later,
+   higher-priority "Date nav: consistent height, rounder" block below
+   (same selector, wins by source order) — not here, to avoid two
+   conflicting values for the same property in the cascade. */
 body.v2-shell-active .v2-topbar .date-nav {
   gap: 3px;
   align-items: center;
-  height: 32px;
-  padding: 2px 3px;
   border-radius: 8px;
 }
 
@@ -4479,11 +4502,15 @@ body.v2-shell-active .v2-topbar {
   border-color: var(--border);
 }
 
-/* Date nav: consistent height, rounder */
+/* Date nav: consistent height, rounder.
+   Hotfix: padding/gap bumped (2px 3px / 2px → 4px 6px / 6px) — see the
+   longer comment on this same selector above (~line 3779) for why: the
+   44px-touch-target buttons this pill holds were overflowing its old
+   tight sizing. */
 body.v2-shell-active .v2-topbar .date-nav {
   border-radius: 9px;
-  gap: 2px;
-  padding: 2px 3px;
+  gap: 6px;
+  padding: 4px 6px;
 }
 
 body.v2-shell-active .v2-topbar .btn-today {

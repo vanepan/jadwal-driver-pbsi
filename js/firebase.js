@@ -1041,12 +1041,20 @@ export function getFirebaseRequestsRef() {
  * @param {string} dateStr - Assignment date in YYYY-MM-DD format
  * @returns {Promise<string>} - Formatted document number
  */
-export async function acquireReimbursementDocNumber(dateStr) {
+export async function acquireReimbursementDocNumber(dateStr, assignmentId) {
   const [year, month] = String(dateStr || new Date().toISOString()).slice(0, 7).split('-');
   try {
-    const { docNumber } = await callAcquireReimbursementNumber({ dateStr });
+    const { docNumber } = await callAcquireReimbursementNumber({ dateStr, assignmentId });
     return docNumber;
   } catch (err) {
+    // v1.30.11.6 hotfix: the Cloud Function now rejects callers who aren't
+    // authorized for THIS assignment (permission-denied/not-found) — that
+    // must abort document generation, not silently fall back to a fake
+    // number and let the PDF build anyway. Only genuinely transient
+    // failures (network, internal) get the offline-resilience fallback.
+    if (err && (err.code === 'functions/permission-denied' || err.code === 'functions/not-found')) {
+      throw err;
+    }
     console.error('[RMB] Gagal acquire nomor dokumen:', err);
     return `PBSI/RMB/${year}/${month}/${String(Date.now()).slice(-4).padStart(4, '0')}`;
   }

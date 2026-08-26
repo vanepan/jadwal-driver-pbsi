@@ -19,16 +19,21 @@
      does the right thing against REAL (emulated) data, not re-deriving
      the boundary-case arithmetic.
 
-     acquireReimbursementNumber — onCall; requires only request.auth.uid,
-     NO role check at all. Distinguished explicitly from
-     notifyAdminsOfNewRequest's finding: this is a monotonic counter with
-     no data exposure and no spam/enumeration vector — "any authenticated
-     staff member can generate a reimbursement document number" reads as
-     plausibly intentional (reimbursement is not a role-gated business
-     action elsewhere in this app), unlike notifyAdminsOfNewRequest's
-     unrelated-user notification-fan-out abuse path. Documented factually
-     as a no-role-check fact below, NOT escalated through the STOP
-     protocol — there is no plausible abuse path, only "broad by design."
+     acquireReimbursementNumber — v1.30.11.6 hotfix: this Phase C finding
+     turned out to be WRONG. It reasoned "no data exposure, no spam/
+     enumeration vector" from reading counter.js in isolation, but never
+     traced the actual client call chain: js/modal.js's reimbursement
+     button DOES have a real cross-driver abuse path (its `assignments`
+     array is the full unfiltered collection, not the driver-scoped one
+     the dashboard renders), and this callable was the ONLY server-side
+     stop that could have caught a client that bypassed/lacked the
+     client-side ownership check. It now requires assignmentId, resolves
+     the assignment via Admin SDK (never trusts the client's dateStr), and
+     enforces the same admin-bypass/driver-owns-it model already used for
+     Start/Complete/Cancel (js/modal.js#canActOnAssignment) — mirroring
+     notifyAdminsOfNewRequest's own resolve-then-authorize pattern, which
+     this file's own comment above already held up as the harder standard
+     this function wasn't meeting.
 
    Run standalone during development:
      firebase emulators:exec --only database "node functions/scripts/phase-c-emulator/backup-and-counter-check.js"
@@ -88,30 +93,71 @@ async function main() {
     await db.ref('backups/assignments').remove();
     await db.ref('settings/system/backupRetentionDays').remove();
 
-    console.log('\n=== acquireReimbursementNumber — authentication required; NO role check (documented, not a spam/enumeration vector) ===');
+    console.log('\n=== acquireReimbursementNumber — authentication + per-assignment ownership required ===');
+    await db.ref('assignments/rmbOwnA').set({ driverUsername: 'driverA', date: '2026-08-10', status: 'assigned' });
+    await db.ref('assignments/rmbOwnB').set({ driverUsername: 'driverB', date: '2026-08-11', status: 'assigned' });
+
     await checkAsync('unauthenticated caller REJECTED', async () => {
       try {
-        await acquireReimbursementNumber.run(makeCallableRequest({ data: { dateStr: '2026-08-10' }, uid: null }));
+        await acquireReimbursementNumber.run(makeCallableRequest({ data: { assignmentId: 'rmbOwnA' }, uid: null }));
         throw new Error('expected rejection');
       } catch (err) {
         if (err.code !== 'unauthenticated') throw new Error(`expected 'unauthenticated', got '${err.code}': ${err.message}`);
       }
     });
-    await checkAsync('malformed dateStr REJECTED', async () => {
+    await checkAsync('missing assignmentId REJECTED', async () => {
       try {
-        await acquireReimbursementNumber.run(makeCallableRequest({ data: { dateStr: 'not-a-date' }, uid: 'someone' }));
+        await acquireReimbursementNumber.run(makeCallableRequest({ data: {}, uid: 'driverA', claims: { role: 'driver' } }));
         throw new Error('expected rejection');
       } catch (err) {
         if (err.code !== 'invalid-argument') throw new Error(`expected 'invalid-argument', got '${err.code}': ${err.message}`);
       }
     });
-    await checkAsync("FACTUAL: an authenticated 'viewer' (no reimbursement-specific role in this system) CAN mint a document number — no role gate exists", async () => {
-      const result = await acquireReimbursementNumber.run(makeCallableRequest({ data: { dateStr: '2026-08-10' }, uid: 'a-viewer', claims: { role: 'viewer' } }));
+    await checkAsync('unknown assignmentId REJECTED (not-found, not silently allowed)', async () => {
+      try {
+        await acquireReimbursementNumber.run(makeCallableRequest({ data: { assignmentId: 'doesNotExist' }, uid: 'driverA', claims: { role: 'driver' } }));
+        throw new Error('expected rejection');
+      } catch (err) {
+        if (err.code !== 'not-found') throw new Error(`expected 'not-found', got '${err.code}': ${err.message}`);
+      }
+    });
+    await checkAsync('driver requesting THEIR OWN assignment ALLOWED', async () => {
+      const result = await acquireReimbursementNumber.run(makeCallableRequest({ data: { assignmentId: 'rmbOwnA' }, uid: 'driverA', claims: { role: 'driver' } }));
       if (!/^PBSI\/RMB\/2026\/08\/\d{4}$/.test(result.docNumber)) throw new Error(`unexpected docNumber format: ${JSON.stringify(result)}`);
     });
+    await checkAsync("driver requesting ANOTHER driver's assignment REJECTED (the actual bug this hotfix closes)", async () => {
+      try {
+        await acquireReimbursementNumber.run(makeCallableRequest({ data: { assignmentId: 'rmbOwnB' }, uid: 'driverA', claims: { role: 'driver' } }));
+        throw new Error('expected rejection');
+      } catch (err) {
+        if (err.code !== 'permission-denied') throw new Error(`expected 'permission-denied', got '${err.code}': ${err.message}`);
+      }
+    });
+    await checkAsync('admin requesting ANY assignment ALLOWED (existing legitimate access preserved)', async () => {
+      const result = await acquireReimbursementNumber.run(makeCallableRequest({ data: { assignmentId: 'rmbOwnB' }, uid: 'anAdmin', claims: { role: 'admin' } }));
+      if (!/^PBSI\/RMB\/2026\/08\/\d{4}$/.test(result.docNumber)) throw new Error(`unexpected docNumber format: ${JSON.stringify(result)}`);
+    });
+    await checkAsync('adminEquivalent (non-"admin" role, permission-derived claim) ALLOWED, same as admin', async () => {
+      const result = await acquireReimbursementNumber.run(makeCallableRequest({ data: { assignmentId: 'rmbOwnB' }, uid: 'anAdminEquiv', claims: { role: 'developer', adminEquivalent: true } }));
+      if (!/^PBSI\/RMB\/2026\/08\/\d{4}$/.test(result.docNumber)) throw new Error(`unexpected docNumber format: ${JSON.stringify(result)}`);
+    });
+    await checkAsync("bidang REJECTED (no reimbursement access in this app's role model — not inventing one here)", async () => {
+      try {
+        await acquireReimbursementNumber.run(makeCallableRequest({ data: { assignmentId: 'rmbOwnA' }, uid: 'someBidang', claims: { role: 'bidang' } }));
+        throw new Error('expected rejection');
+      } catch (err) {
+        if (err.code !== 'permission-denied') throw new Error(`expected 'permission-denied', got '${err.code}': ${err.message}`);
+      }
+    });
+    await checkAsync("dateStr is derived from the resolved assignment record, NOT trusted from the client (a mismatched client dateStr is ignored)", async () => {
+      const result = await acquireReimbursementNumber.run(makeCallableRequest({ data: { assignmentId: 'rmbOwnA', dateStr: '2099-01-01' }, uid: 'driverA', claims: { role: 'driver' } }));
+      if (!result.docNumber.startsWith('PBSI/RMB/2026/08/')) throw new Error(`expected the assignment's own 2026/08 date to win over the client-supplied 2099-01, got ${JSON.stringify(result)}`);
+    });
     await checkAsync('sequential calls in the same month increment atomically (no duplicate/skipped numbers)', async () => {
-      const first = await acquireReimbursementNumber.run(makeCallableRequest({ data: { dateStr: '2026-09-01' }, uid: 'someone' }));
-      const second = await acquireReimbursementNumber.run(makeCallableRequest({ data: { dateStr: '2026-09-15' }, uid: 'someone-else' }));
+      await db.ref('assignments/rmbSeq1').set({ driverUsername: 'seqDriver', date: '2026-09-01', status: 'assigned' });
+      await db.ref('assignments/rmbSeq2').set({ driverUsername: 'seqDriver', date: '2026-09-15', status: 'assigned' });
+      const first = await acquireReimbursementNumber.run(makeCallableRequest({ data: { assignmentId: 'rmbSeq1' }, uid: 'seqDriver', claims: { role: 'driver' } }));
+      const second = await acquireReimbursementNumber.run(makeCallableRequest({ data: { assignmentId: 'rmbSeq2' }, uid: 'seqDriver', claims: { role: 'driver' } }));
       const firstN = Number(first.docNumber.split('/').pop());
       const secondN = Number(second.docNumber.split('/').pop());
       if (secondN !== firstN + 1) throw new Error(`expected sequential increment, got ${firstN} then ${secondN}`);

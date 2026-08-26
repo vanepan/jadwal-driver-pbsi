@@ -2478,10 +2478,14 @@ input[type="number"]::-webkit-inner-spin-button {
 .accord-section {
   border: 1px solid var(--gray-2);
   border-radius: var(--radius-sm);
-  margin-bottom: 8px;
   background: var(--surface);
   overflow: hidden;
 }
+/* Hotfix: margin-bottom removed — every .accord-section is now a direct
+   flex child of the canonical drawer's .drawer__body (gap:20px, see
+   platform.css), so this pre-migration margin was stacking on top of that
+   gap and made spacing around individual sections (e.g. reimbursement)
+   visibly uneven versus the drawer's own uniform rhythm. */
 
 /* Section 1 has a subtle tinted background to signal "always visible" */
 #accordSummary {
@@ -2766,7 +2770,8 @@ input[type="number"]::-webkit-inner-spin-button {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
-  margin-top: 8px;
+  /* margin-top removed — same reasoning as .accord-section above; this is
+     also a direct .drawer__body flex child now. */
 }
 
 /* Request Workflow */
@@ -3267,7 +3272,7 @@ input[type="number"]::-webkit-inner-spin-button {
   .bottom-nav { display: none !important; }
   .fab-add { display: none !important; }
   .header-module-title { display: block; }
-  /* Desktop header: date-nav sits inline (reset mobile wrapping) */
+  /* Desktop header: date-nav sits inline (reset mobile wrapping). */
   .date-nav {
     order: unset;
     width: auto;

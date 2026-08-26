@@ -737,10 +737,35 @@ function _wireDetailHandlers(root) {
   root.querySelector('[data-drawer-action="reimbursement"]')?.addEventListener('click', async () => {
     const a = assignments.find(x => x.id === viewingId);
     if (!a) return;
+    // Hotfix: this handler previously only checked `if (!a) return` — the
+    // accordion's visibility already gated role (print_reimbursement:
+    // admin/driver), but the handler itself never checked OWNERSHIP, and
+    // `assignments` here is the full unfiltered list (every driver's trips),
+    // not the driver-scoped one the dashboard renders. Any driver who could
+    // reach a different assignment's id (a different list view, or editing
+    // client-side state) could generate ANY driver's reimbursement. Mirrors
+    // canActOnAssignment's existing admin-bypass/driver-owns-it pattern
+    // already used for Start/Complete/Cancel on this same assignment.
+    const user = getCurrentUser();
+    const ownsIt = !!user && (user.role === 'admin' || (user.role === 'driver' && assignmentBelongsToDriver(a, user)));
+    if (!hasPermission('print_reimbursement') || !ownsIt) {
+      showToast('Anda tidak memiliki akses ke reimbursement penugasan ini');
+      return;
+    }
     const btn = root.querySelector('[data-drawer-action="reimbursement"]');
     if (btn) { btn.disabled = true; btn.textContent = 'Memproses...'; }
     try {
       await printReimbursementForm(a);
+    } catch (err) {
+      // Server-side rejection (functions/reimbursement/counter.js) — the
+      // authoritative boundary behind the client-side ownsIt check above.
+      // Reachable if that check is ever bypassed (a stale/modified client),
+      // so it needs its own real message, not a silent unhandled rejection.
+      if (err && (err.code === 'functions/permission-denied' || err.code === 'functions/not-found')) {
+        showToast('Anda tidak memiliki akses ke reimbursement penugasan ini');
+      } else {
+        throw err;
+      }
     } finally {
       if (btn) { btn.disabled = false; btn.innerHTML = `${anIcon('file', { size: 14 })} Generate Form Reimbursement`; }
     }

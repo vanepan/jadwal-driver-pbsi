@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.30.11.5';
-export const RELEASE_NAME = 'Design System Program Phase 6 — PBSI Authentication & App Entry Transition';
+export const APP_VERSION = '1.30.11.6';
+export const RELEASE_NAME = 'V1 Urgent Hotfix — Mobile Actions, Reimbursement Authorization & Petty Cash Formatting';
 
 /* ============================================================
    APP_ENV — the AUTHORITATIVE runtime environment (v1.20.3 RC1).
@@ -66,6 +66,17 @@ export function isProduction() {
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.30.11.6',
+    date: '2026-08-26',
+    summary: 'Urgent hotfix covering 5 reported issues, each audited to a real root cause before being touched. (1) Driver Ops\' desktop create-assignment action was never actually missing — it lived in the #v2Panel sidebar, visually disconnected from the Board and fully off-screen on tablet widths (768-1023px) by design; added a board-native CTA reusing the exact same resolvePrimaryCta()/runPrimaryCta() resolver, and permanently hid the now-redundant panel copy to avoid a duplicate. (2) Gudang\'s floating action buttons were nested inside .gud-content, which carries a fill-mode:both entry animation that is never removed from the DOM node — an "engaged" animation\'s resolved transform (even at its resting identity value) establishes a new containing block per spec, so position:fixed was silently computing relative to the scrolling catalog instead of the viewport (measured: 1819px off-screen, moved with scroll). Moved the FAB row to be a true sibling of .gud-content and switched its mobile bottom offset to the app\'s existing --mobile-safe-bottom token. (3) Reimbursement\'s "won\'t open" symptom traced to a universal (not mobile-specific) z-index bug: the document viewer was z-index:1000, rendering behind the canonical drawer\'s 10000/10001 — bumped to 10050, the same convention Phase 10 already used for every other drawer-adjacent overlay. The audit also surfaced a real, separate authorization gap: "driver can only access their own reimbursement" was enforced only in the UI, not in the click handler, not in database.rules.json, and not in the acquireReimbursementNumber Cloud Function. Added a client-side ownership gate (mirrors the existing canActOnAssignment pattern) and, after explicit follow-up authorization, a server-side fix: the Cloud Function now resolves the assignment via the Admin SDK and rejects any caller who is neither admin nor the assignment\'s own driver — verified against a real RTDB emulator (13/13 new checks, 95/95 across the full Cloud Function suite). database.rules.json itself was NOT changed: the entire Driver Ops module depends on one shared onValue(ref(db,\'assignments\')) listener (js/firebase.js) that every role reads in full, and RTDB rules can only grant access downward, never restrict it — scoping the read would require either query-based rules plus a client fetch-pattern rewrite, or an RTDB schema migration, both larger than this hotfix; documented as a STOP finding rather than forced through. (4) Reimbursement\'s uneven spacing and the "Hari Ini" header\'s cramped layout both traced to the same pattern: an app-wide min-height:44px touch-target rule added after its containers were sized, never reconciled — fixed by letting each container grow to fit its 44px children instead of fighting them, not by shrinking the touch targets. (5) Petty Cash\'s amount field gained live Indonesian thousands-separator formatting (a new formatAmountInput(), reusing the same toLocaleString(\'id-ID\') convention rp()/rpDoc()/rpTable() already use) with caret position preserved by digit count through typing, backspace, paste, and mid-string edits — the underlying stored value is unchanged, still a clean digit string.',
+    highlights: [
+      'Two of the five root causes were NOT what they first looked like: Gudang\'s FAB bug was a CSS containing-block defect from an animation that never gets removed (not just insufficient bottom-nav clearance), and the reimbursement "mobile" bug was a universal z-index bug affecting every platform/role identically (not a mobile-specific code fork — none exists anywhere in that chain).',
+      'A real, pre-existing reimbursement authorization gap was found during the audit and fixed: client-side ownership gate plus a server-side Cloud Function fix (Admin SDK-resolved, verified against a real RTDB emulator) that now rejects any driver requesting another driver\'s reimbursement.',
+      'database.rules.json was deliberately left unchanged — the read-scoping fix that would fully close the data-layer gap requires either query-based rules with a client-side fetch rewrite, or an RTDB schema migration; both are architecture changes bigger than this hotfix, so this was reported as a blocker rather than guessed at.',
+      'Full detail, verification evidence, and the reimbursement authorization matrix: docs/V1_HOTFIX_MOBILE_ACTIONS_REIMBURSEMENT_SPACING_CURRENCY_REPORT.md.',
+    ],
+  },
   {
     version: '1.30.9.24',
     date: '2026-08-17',

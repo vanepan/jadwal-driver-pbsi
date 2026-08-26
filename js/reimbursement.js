@@ -190,7 +190,7 @@ function buildViewModel(a, docNumber) {
  * @returns {Promise<void>}
  */
 export async function printReimbursementForm(assignment) {
-  const docNumber = await acquireReimbursementDocNumber(assignment.date);
+  const docNumber = await acquireReimbursementDocNumber(assignment.date, assignment.id);
   const vm = buildViewModel(assignment, docNumber);
   await DocumentEngine.generateAndOpen('reimbursement', vm, {
     viewer: {

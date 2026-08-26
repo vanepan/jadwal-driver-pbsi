@@ -179,7 +179,29 @@ export function renderHome(st, c, requestRender) {
             ctaLabel: 'Tambah Item', ctaAct: 'gud-cat-add-item-home',
           })
         : renderCatalogSection(st, f, requestRender)}
-    </div>
+    </div>`;
+}
+
+/** Home/Catalog's floating action row — a SIBLING of .gud-content in
+ *  gudang-center.js#render(), never nested inside it (same treatment as
+ *  that render()'s `overlay`/`modal` — real viewport overlays already kept
+ *  outside .gud-content there).
+ *
+ *  Hotfix: this used to be part of renderHome()'s own returned string,
+ *  which put it INSIDE .gud-content. .gud-content gets `-enter` (a
+ *  fill-mode:both CSS animation) on every screen change and that class is
+ *  never removed from the node — the SAME node instance stays in the DOM
+ *  with that animation still formally "engaged" for as long as nothing else
+ *  triggers a re-render. A property under an engaged animation reports its
+ *  resolved value (here, a resting matrix(1,0,0,1,0,0)) rather than the
+ *  keyword `none`, and per spec anything other than the literal keyword
+ *  `none` establishes a new containing block for position:fixed
+ *  descendants — so this row was actually pinned to .gud-content (which
+ *  scrolls with the catalog), not to the viewport, despite its own CSS
+ *  correctly saying position:fixed. Moving it out of .gud-content removes
+ *  it from that containing block entirely. */
+export function renderHomeFab() {
+  return `
     <div class="gud-fab-row">
       <button type="button" class="gud-fab" data-act="gud-quick-goods-out" aria-label="Goods Out" title="Goods Out">${icon('arrow-out', { size: 18 })}</button>
       <button type="button" class="gud-fab" data-act="gud-quick-goods-in" aria-label="Goods In" title="Goods In">${icon('arrow-in', { size: 18 })}</button>

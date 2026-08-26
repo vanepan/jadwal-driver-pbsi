@@ -1616,12 +1616,28 @@ function updatePanelCta() {
   const showCatat = engActive && can('eng.report.create');
 
   if (cta) {
-    if (btnJadwal) btnJadwal.style.display = (resolved && resolved.kind === 'jadwal')        ? 'flex' : 'none';
-    if (btnAjukan) btnAjukan.style.display = (resolved && resolved.kind === 'ajukan')        ? 'flex' : 'none';
+    // Hotfix: Driver Ops' create-assignment CTA moved into the Board's own
+    // header (#v2TlHeaderCta below) for desktop discoverability — the panel
+    // copies stay permanently hidden so the two are never shown together.
+    if (btnJadwal) btnJadwal.style.display = 'none';
+    if (btnAjukan) btnAjukan.style.display = 'none';
     if (btnPc)     btnPc.style.display     = (resolved && resolved.kind === 'pengeluaran')   ? 'flex' : 'none';
     if (btnEng)    btnEng.style.display    = showBuat  ? 'flex' : 'none';
     if (btnEngReport) btnEngReport.style.display = showCatat ? 'flex' : 'none';
-    cta.style.display = (resolved || showBuat || showCatat) ? 'flex' : 'none';
+    cta.style.display = ((resolved && resolved.kind === 'pengeluaran') || showBuat || showCatat) ? 'flex' : 'none';
+  }
+
+  // Board-native CTA (Driver Ops only — the element only exists inside its
+  // own board header, so this is a no-op on every other module).
+  const tlCta = document.getElementById('v2TlHeaderCta');
+  if (tlCta) {
+    const tlLabel = document.getElementById('v2TlHeaderCtaLabel');
+    if (resolved && (resolved.kind === 'jadwal' || resolved.kind === 'ajukan')) {
+      tlCta.style.display = 'flex';
+      if (tlLabel) tlLabel.textContent = resolved.label;
+    } else {
+      tlCta.style.display = 'none';
+    }
   }
 
   // Mobile FAB — same resolver, no duplicated mapping.
@@ -4078,6 +4094,28 @@ function initV2TimelineContainer() {
 
   tlRight.appendChild(viewToggle);
   tlRight.appendChild(dateLabel); // moves existing node — event listeners preserved
+
+  // Hotfix: board-native create-assignment CTA. Desktop's only prior CTA
+  // (#v2BtnTambahJadwal/#v2BtnAjukanRequest) lives in the separate #v2Panel
+  // sidebar — visually disconnected from the Board, and fully off-screen on
+  // tablet widths (768–1023px) until manually tapped open. This reuses the
+  // SAME resolver/handler (resolvePrimaryCta/runPrimaryCta) so it's never a
+  // second implementation, just a second, better-placed entry point; the
+  // panel's own buttons are hidden in updatePanelCta() once this exists, so
+  // the two are never visible at the same time. Hidden ≤767px — the mobile
+  // FAB already covers that band (see .v2-tl-header-cta media rule).
+  const tlCta = document.createElement('button');
+  tlCta.className = 'v2-panel-btn v2-panel-btn--primary v2-tl-header-cta';
+  tlCta.id = 'v2TlHeaderCta';
+  tlCta.type = 'button';
+  tlCta.style.display = 'none';
+  tlCta.innerHTML = `
+    <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true">
+      <path d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"/>
+    </svg>
+    <span id="v2TlHeaderCtaLabel">Tambah Jadwal</span>`;
+  tlCta.addEventListener('click', () => runPrimaryCta());
+  tlRight.appendChild(tlCta);
 
   tlHeader.appendChild(tlLeft);
   tlHeader.appendChild(tlRight);

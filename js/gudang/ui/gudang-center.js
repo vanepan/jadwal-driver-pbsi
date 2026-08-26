@@ -33,7 +33,7 @@ import { createInitialSessionState, applySessionEvent } from '../search/search-s
 import { searchAndResolve } from '../search/search-resolver.js';
 import { addRecentSearch, clearRecentSearches } from '../search/recent-searches-store.js';
 
-import { renderHome, homeHandlers, renderMobileFilterSheet, visibleHomeItemIds } from './gudang-home.js';
+import { renderHome, renderHomeFab, homeHandlers, renderMobileFilterSheet, visibleHomeItemIds } from './gudang-home.js';
 // v1.29.3 (Warehouse Selection Engine): PURE state module (see its own
 // header) — gudang-center.js owns the one st.selection instance and the
 // cross-cutting keyboard/click interception (Ctrl+A, Esc, Shift/Ctrl+Click);
@@ -590,7 +590,12 @@ function render() {
   const isNewScreen = st.screen !== lastAnimatedScreen;
   if (isNewScreen && _onScreenChange) _onScreenChange(st.screen);
   lastAnimatedScreen = st.screen;
-  host.innerHTML = `<div class="gud-content${isNewScreen ? ' -enter' : ''}">${screen}</div>${overlay}${filterSheet}${modal}`;
+  // Hotfix: Home's floating action row rendered as a SIBLING of .gud-content
+  // (same treatment as `overlay`/`modal` just above), never nested inside
+  // it — see renderHomeFab()'s own doc comment for why nesting it silently
+  // broke position:fixed against the viewport.
+  const homeFab = st.screen === 'home' ? renderHomeFab() : '';
+  host.innerHTML = `<div class="gud-content${isNewScreen ? ' -enter' : ''}">${screen}</div>${homeFab}${overlay}${filterSheet}${modal}`;
   restoreFocus();
   syncSearchInputAria();
   syncGudangDetailDrawer(c);

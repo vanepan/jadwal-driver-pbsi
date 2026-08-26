@@ -226,6 +226,16 @@ export function parseAmount(value) {
   return parseInt(String(value == null ? '' : value).replace(/[^0-9]/g, ''), 10) || 0;
 }
 
+/** Live amount-input display: grouped digits only, no "Rp " prefix (the
+ *  field's own label already carries "(Rp)") — same toLocaleString('id-ID')
+ *  grouping convention as rp()/rpDoc()/rpTable() above, reused rather than
+ *  reimplemented. '' in → '' out (empty stays empty, not "0"). */
+export function formatAmountInput(digits) {
+  const clean = String(digits == null ? '' : digits).replace(/[^0-9]/g, '');
+  if (!clean) return '';
+  return Number(clean).toLocaleString('id-ID');
+}
+
 /* ── Date formatters (id-ID, ISO yyyy-mm-dd in/out) ─────────────── */
 const MONTHS_LONG = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];

@@ -24,7 +24,31 @@ const acquireReimbursementNumber = onCall({ region: REGION }, async (request) =>
     throw new HttpsError('unauthenticated', 'Sesi tidak valid.');
   }
   const data = request.data || {};
-  const dateStr = String(data.dateStr || new Date().toISOString());
+
+  // v1.30.11.6 hotfix — this callable previously accepted any authenticated
+  // caller's dateStr with no check against the assignment it's actually for
+  // (js/modal.js's reimbursement button had the only real gate, and that was
+  // client-side only). Same "resolve the authoritative record server-side,
+  // never trust a client-supplied ownership field" pattern already used by
+  // functions/src/notifications/notifyAdminsOfNewRequest.js — assignmentId
+  // is now required, and dateStr is derived from the resolved record
+  // instead of trusted from data.
+  const assignmentId = String(data.assignmentId || '').trim();
+  if (!assignmentId) {
+    throw new HttpsError('invalid-argument', 'assignmentId diperlukan.');
+  }
+  const assignmentSnap = await db.ref(`assignments/${assignmentId}`).once('value');
+  const assignment = assignmentSnap.val();
+  if (!assignment) {
+    throw new HttpsError('not-found', 'Penugasan tidak ditemukan.');
+  }
+  const isAdmin = request.auth.token?.role === 'admin' || request.auth.token?.adminEquivalent === true;
+  const isOwningDriver = request.auth.token?.role === 'driver' && assignment.driverUsername === request.auth.uid;
+  if (!isAdmin && !isOwningDriver) {
+    throw new HttpsError('permission-denied', 'Anda tidak berhak mengakses reimbursement penugasan ini.');
+  }
+
+  const dateStr = String(assignment.date || new Date().toISOString());
   const match = DATE_PREFIX_RE.exec(dateStr);
   if (!match) {
     throw new HttpsError('invalid-argument', 'Format tanggal tidak valid.');
@@ -42,7 +66,7 @@ const acquireReimbursementNumber = onCall({ region: REGION }, async (request) =>
   }
 
   const docNumber = `PBSI/RMB/${year}/${month}/${String(n).padStart(4, '0')}`;
-  logger.info('[reimbursement/counter] acquired', { key, n, actor: request.auth.uid });
+  logger.info('[reimbursement/counter] acquired', { key, n, actor: request.auth.uid, assignmentId });
   return { docNumber };
 });
 

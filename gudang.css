@@ -486,6 +486,16 @@
 .gud-fab.-primary{width:54px;height:54px;background:linear-gradient(180deg,var(--accent-2),var(--accent));color:#fff;border:none;}
 .gud-fab.-primary:hover{filter:brightness(1.05);}
 
+/* Hotfix: bottom:24px alone put the row's lower buttons underneath the
+   mobile .bottom-nav (fixed, 56px+safe-area tall, z-index 99 vs this row's
+   60) — same clearance approach as the global .fab-add (style.css), reusing
+   the app's one shared bottom-clearance token instead of a new offset.
+   767px matches style.css's own bottom-nav breakpoint exactly (gudang.css
+   otherwise uses 760px elsewhere in this file — intentional mismatch here). */
+@media (max-width:767px){
+  .gud-fab-row{bottom:var(--mobile-safe-bottom);}
+}
+
 @media (max-width:760px){
   .gud-home-search-kbd{display:none;} /* Doc 2 §13: no keyboard hints on mobile — same rule already applied to .gud-spotlight-foot */
   .gud-catalog-grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));}

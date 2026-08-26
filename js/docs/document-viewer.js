@@ -16,7 +16,15 @@ let _initialised = false;
 let _currentUrl  = null;
 
 const STYLE = `
-.docv-overlay{position:fixed;inset:0;z-index:1000;display:none;align-items:center;justify-content:center;
+/* z-index 10050: this overlay can be opened from inside the canonical
+   drawer (js/components/drawer.js, .drawer-overlay/.drawer at 10000/10001
+   — e.g. Assignment Detail's reimbursement action), which never closes
+   itself first. The old z-index:1000 rendered this viewer BEHIND the
+   still-open drawer's opaque scrim — the PDF generated but was invisible,
+   reading as "the button doesn't do anything". 10050 matches the exact
+   convention Phase 10 already used for every other overlay confirmed to
+   legitimately open on top of the canonical drawer. */
+.docv-overlay{position:fixed;inset:0;z-index:10050;display:none;align-items:center;justify-content:center;
   background:rgba(20,18,16,.55);backdrop-filter:blur(2px);padding:16px;}
 .docv-overlay.open{display:flex;}
 .docv-modal{background:#fff;border-radius:12px;width:min(900px,100%);height:min(92vh,100%);

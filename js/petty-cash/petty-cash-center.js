@@ -45,7 +45,7 @@ import { previewNorPdf } from './nor-pdf-exporter.js';
 import { exportNorExcel, exportExpensesExcel } from './nor-excel-exporter.js';
 import {
   UNITS, CATEGORIES, EXPENSE_STATUS, NOR_STATUS, NOR_TYPE, AUDIT_LABEL,
-  rp, fmtShort, fmtLong, todayISO, parseAmount, unitColor, unitDisplay,
+  rp, fmtShort, fmtLong, todayISO, parseAmount, formatAmountInput, unitColor, unitDisplay,
   norAutoSubject, norStatusMeta, norNumberFromSequence, isValidNorSequence,
   REIMBURSE_ITEMS, reimburseSum, isReimburseExpense, hasReimburseDetail, blankReimburseDetail, sortTransactions,
 } from './petty-cash-config.js';
@@ -1160,7 +1160,7 @@ function onUnitAcKeydown(e) {
 function amountRegionHtml(f) {
   if (!formIsReimburse(f)) {
     return `<label style="display:block"><span style="${FLD_LABEL}">Jumlah (Rp) *</span>
-      <input name="amount" data-act="formInput" data-focus="amount" value="${esc(f.amount)}" inputmode="numeric" placeholder="0" class="pc-add-input" style="font-family:'JetBrains Mono',monospace"/></label>`;
+      <input name="amount" data-act="formInput" data-focus="amount" value="${esc(formatAmountInput(f.amount))}" inputmode="numeric" placeholder="0" class="pc-add-input" style="font-family:'JetBrains Mono',monospace"/></label>`;
   }
   const sum = reimburseSum(f.reimbursementDetail);
   const items = REIMBURSE_ITEMS.map(it => {
@@ -1496,6 +1496,39 @@ async function onClick(e) {
   }
 }
 
+/* ── Live thousands-separator formatting for the "Jumlah (Rp)" input ────
+   The caret is repositioned by DIGIT COUNT, not raw character index —
+   grouping "."s shift position as digits are added/removed anywhere in the
+   string, so a char-index caret would drift on every edit. Counting digits
+   before the caret in the OLD value, then walking that many digits into the
+   freshly formatted string, keeps the caret exactly where the user is
+   actually typing — correct for typing, backspace, delete, paste, and
+   selecting/replacing the whole value alike (all just look like "the value
+   changed" to this function). */
+function digitsBeforeIndex(str, index) {
+  let n = 0;
+  for (let i = 0; i < index && i < str.length; i++) if (/[0-9]/.test(str[i])) n++;
+  return n;
+}
+function indexAfterDigits(str, digitCount) {
+  if (digitCount <= 0) return 0;
+  let n = 0;
+  for (let i = 0; i < str.length; i++) {
+    if (/[0-9]/.test(str[i])) { n++; if (n === digitCount) return i + 1; }
+  }
+  return str.length;
+}
+/** Reformats an amount &lt;input&gt; in place, preserving caret position. @returns the clean digit string (what st.form.amount should be set to). */
+function reformatAmountInput(el) {
+  const digitsBefore = digitsBeforeIndex(el.value, el.selectionStart);
+  const digits = el.value.replace(/[^0-9]/g, '');
+  const formatted = formatAmountInput(digits);
+  el.value = formatted;
+  const pos = indexAfterDigits(formatted, digitsBefore);
+  el.setSelectionRange(pos, pos);
+  return digits;
+}
+
 function onInput(e) {
   const el = actorEl(e);
   if (!el) return;
@@ -1512,6 +1545,11 @@ function onInput(e) {
   // (open/close/submit). Read-only previews that depend on a field are patched
   // in place below, without touching the form. (v1.13.2 focus-retention fix)
   if (act === 'formInput') {
+    if (el.name === 'amount') {
+      st.form.amount = reformatAmountInput(el);
+      st.form._err = ''; clearAddError();
+      return;
+    }
     st.form[el.name] = v; st.form._err = ''; clearAddError();
     // Nama Unit (Others): recompute + open the suggestion dropdown in place.
     if (el.name === 'customUnit') { st._acIndex = -1; refreshUnitAc({ open: true }); }
@@ -1585,6 +1623,10 @@ function onChange(e) {
   const act = el.dataset.act;
   if (act === 'filterUnit') { setState({ fUnit: el.value }); return; }
   if (act === 'formInput') {
+    // 'amount' is kept in sync by onInput()/reformatAmountInput() on every
+    // keystroke already — el.value here is the FORMATTED display string
+    // ("1.000.000"), not the clean digits st.form.amount must stay as.
+    if (el.name === 'amount') { st.form._err = ''; return; }
     st.form[el.name] = el.value; st.form._err = '';
     // Unit and Kategori toggle dependent layout (Nama Unit field, and the
     // Reimbursement Driver detail mode). Patch ONLY the dependent wrappers in
