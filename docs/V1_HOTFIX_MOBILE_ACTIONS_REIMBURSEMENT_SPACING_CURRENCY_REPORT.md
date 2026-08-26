@@ -1,10 +1,13 @@
 # V1 Urgent Hotfix — Mobile Actions, Reimbursement Access, UI Spacing & Petty Cash Number Formatting
 
-**Status:** All 5 issues audited, fixed, and verified. **NOT committed, NOT
-pushed, NOT deployed.** Version label used in code comments: `v1.30.11.6`
-(proposed — `js/config.js`'s `APP_VERSION` was deliberately NOT bumped,
-since bumping is normally tied to a commit and none was authorized this
-pass).
+**Status:** All 5 issues audited, fixed, and verified. **Committed and
+pushed to `origin/main`** as commit `72d025c` (`fix: v1.30.11.6 - V1
+Urgent Hotfix: Mobile Actions, Reimbursement Authorization, Spacing &
+Currency`). `APP_VERSION` bumped to `1.30.11.6` in `js/config.js`,
+propagated via `node scripts/sync-version.mjs` (`service-worker.js`,
+`version.json`, `index.html`'s cache-bust params). **Not separately
+deployed** — see the updated §7 for exactly what pushing to `origin/main`
+does and does not trigger on this project's two live surfaces.
 
 ---
 
@@ -458,21 +461,40 @@ constraint disclosed throughout this project's prior phases.
 
 ## 7. Deployment Boundary
 
-Two genuinely separate deploys are implied by this hotfix, per your
-explicit instruction to keep them distinct:
+Two genuinely separate deploy targets exist for this hotfix; committing
+and pushing to `origin/main` (done — commit `72d025c`) does **not**
+treat them the same way:
 
-- **Client-side hotfix** (Firebase Hosting / Vercel, whichever this
-  project's static deploy targets): every file under `js/`, `gudang.css`,
-  `platform.css`, `style.css`.
-- **Server-side change** (Firebase Cloud Functions deploy):
-  `functions/src/reimbursement/counter.js` only. This is the piece that
-  actually closes the authorization gap — the client-side ownership check
-  is real but is explicitly *not* the authoritative boundary, and doing
-  nothing but the client deploy would leave the Cloud Function's old,
-  weaker check live in production.
+- **Vercel** (`jadwal-driver-pbsi.vercel.app`) **auto-deploys this repo
+  as a static site on every push to `main`** — this is documented in the
+  repo's own `.vercelignore` header, not an assumption. The push in this
+  session therefore **already triggered (or is in the process of
+  triggering) a live Vercel production deployment** of every client file
+  in this hotfix (`js/`, `gudang.css`, `platform.css`, `style.css`,
+  `index.html`, `service-worker.js`, `version.json`) — this was a real
+  consequence of the "commit and push" instruction, not a separate action
+  taken on my own judgment, but it's flagged here explicitly because it
+  is a genuine production deploy, not just a GitHub push. `docs/`,
+  `scratch/`, and `functions/` are excluded from what Vercel serves
+  (`.vercelignore` + `vercel.json`'s 404 routes), so the new report and
+  test scripts do not leak into the public deployment.
+- **Firebase Hosting** does **not** auto-deploy from a git push — it
+  needs an explicit `firebase deploy --only hosting` (or equivalent) run
+  separately. **Not done this session.**
+- **Firebase Cloud Functions** (`functions/src/reimbursement/counter.js`
+  — the piece that actually closes the server-side authorization gap)
+  also does **not** auto-deploy from a git push — it needs an explicit
+  `firebase deploy --only functions` run. **Not done this session.** Until
+  that deploy happens, the OLD, weaker Cloud Function (no ownership check)
+  is still what's live in production — the client-side ownership gate
+  (already live via the Vercel auto-deploy) is real defense-in-depth, but
+  it is explicitly not the authoritative boundary this hotfix was asked to
+  add. This is the one piece of this hotfix's actual security fix that is
+  **not yet in production**.
 
-**Nothing was deployed, committed, or pushed.** `functions/scripts/phase-c-emulator/backup-and-counter-check.js`
-is test-only and has no production deploy target.
+`functions/scripts/phase-c-emulator/backup-and-counter-check.js` is
+test-only and has no production deploy target — committed for its
+regression-coverage value only.
 
 ---
 
@@ -483,6 +505,12 @@ is test-only and has no production deploy target.
 `js/modal.js`, `js/petty-cash/petty-cash-center.js`,
 `js/petty-cash/petty-cash-config.js`, `js/reimbursement.js`, `gudang.css`,
 `platform.css`, `style.css`.
+
+**Version propagation (`node scripts/sync-version.mjs`, run after the
+`APP_VERSION` bump):** `js/config.js` (source of truth + new
+`VERSION_HISTORY` entry), `service-worker.js` (`SW_VERSION`),
+`version.json`, `index.html` (cache-bust query params for `app.js`,
+`style.css`, `petty-cash.css`, `engineering.css`, `gudang.css`).
 
 **Server:** `functions/src/reimbursement/counter.js`.
 
@@ -510,3 +538,24 @@ authorization checks described above.
 - The dead `driver.reimbursement.print` permission-system entry
   (found during the Issue C audit, §2) was documented but not wired up —
   out of this hotfix's scope.
+
+---
+
+## 10. Git Status
+
+**Committed and pushed to `origin/main`:**
+
+```
+commit 72d025c
+fix: v1.30.11.6 - V1 Urgent Hotfix: Mobile Actions, Reimbursement Authorization, Spacing & Currency
+21 files changed, 1123 insertions(+), 50 deletions(-)
+```
+
+Parent: `4f8247e` (`docs: record true scope of fb11a66 checkpoint
+commit`). Push confirmed: `4f8247e..72d025c main -> main`, working tree
+clean afterward, branch up to date with `origin/main`.
+
+**Not done:** no `firebase deploy` of any kind (Hosting or Functions) —
+see §7 for exactly what the push did and didn't trigger on its own.
+No rebase, no amend, no force-push — a plain new commit on top of the
+existing history, as instructed.
