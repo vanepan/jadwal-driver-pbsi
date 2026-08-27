@@ -75,6 +75,13 @@ let root = null, bound = false, opened = false, listening = false;
 // re-rendering" (refreshDrawerBody, preserves scroll) apart from
 // "switching to a different expense" (a real openDrawer()).
 let _pcDrawerOverlay = null, _pcDrawerKey = null;
+// V1 post-QA hotfix (Issue E) — the hand-rolled Add/Edit Expense modal
+// (addModal(), rendered inline in shell()) has no openDrawer()-style focus
+// management, so opening it used to leave the caret on the page behind:
+// keyboard users tabbed through the whole Petty Cash screen before reaching
+// "Tanggal". These track the open↔closed edge so focus moves into the form
+// exactly once per open and returns to the trigger on close.
+let _addModalOpen = false, _addModalReturnFocus = null;
 
 function blankForm() {
   return { expenseDate: todayISO(), unit: 'Engineering', customUnit: '', category: 'Inventaris', description: '', amount: '', notes: '', reimbursementDetail: blankReimburseDetail(), _err: '' };
@@ -89,7 +96,16 @@ function esc(s) {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
-function setState(patch) { Object.assign(st, patch); render(); }
+function setState(patch) {
+  // Issue E: remember what to hand focus back to, captured BEFORE render()
+  // destroys the trigger button. Only on the closed→open edge.
+  if (('addOpen' in patch) && !!patch.addOpen && !st.addOpen) {
+    const ae = document.activeElement;
+    _addModalReturnFocus = (ae && ae !== document.body) ? ae : null;
+  }
+  Object.assign(st, patch);
+  render();
+}
 // Design System Program Phase 5 — delegates to the canonical, accessible,
 // severity-aware toast (js/components/toast.js) instead of this module's
 // own render-state/DOM plumbing. Kept as a same-named local wrapper so the
@@ -251,6 +267,65 @@ function render() {
   root.innerHTML = shell();
   restoreFocus();
   syncPettyCashDetailDrawer();
+  syncAddModalFocus();
+}
+
+/* Issue E — focus lifecycle for the hand-rolled Add/Edit Expense modal.
+   Mirrors the canonical drawer's contract (move focus in on open, restore
+   it on close) WITHOUT migrating the modal onto openDrawer() (a separate,
+   larger task). Purely edge-driven: a re-render while the modal is open is
+   a no-op here, so it never steals the caret from a field the user is
+   editing — focusGuard already preserves those across the full re-render. */
+function syncAddModalFocus() {
+  if (st.addOpen && !_addModalOpen) {
+    _addModalOpen = true;
+    const box = root.querySelector('.pc-add-box');
+    const first = box && box.querySelector('input[name="expenseDate"]');
+    if (first) { try { first.focus(); } catch (_) {} }
+  } else if (!st.addOpen && _addModalOpen) {
+    _addModalOpen = false;
+    const back = _addModalReturnFocus;
+    _addModalReturnFocus = null;
+    if (back && document.contains(back) && typeof back.focus === 'function') {
+      try { back.focus(); } catch (_) {}
+    }
+  }
+}
+
+/* Issue E — keep Tab focus inside the Add/Edit Expense modal and let Escape
+   dismiss it, the same way the canonical drawer does. Bound in
+   bindDelegation() AFTER onUnitAcKeydown so an open "Nama Unit" suggestion
+   list consumes its own Escape/Tab first (it preventDefault()s when it
+   does — detected here via e.defaultPrevented). No positive tabindex: the
+   trap works off the modal's natural DOM order. */
+function onAddModalKeydown(e) {
+  if (!st.addOpen || e.defaultPrevented) return;
+  if (e.key !== 'Tab' && e.key !== 'Escape') return;
+  const box = root && root.querySelector('.pc-add-box');
+  if (!box) return;
+
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    setState({ addOpen: false, editId: null });
+    return;
+  }
+
+  const focusables = [...box.querySelectorAll(
+    'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
+  )].filter((el) => el.offsetParent !== null || el === document.activeElement);
+  if (!focusables.length) return;
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  const active = document.activeElement;
+
+  if (!box.contains(active)) {
+    // Focus is somewhere on the page behind the modal — pull it back in.
+    e.preventDefault();
+    first.focus();
+    return;
+  }
+  if (e.shiftKey && active === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
 }
 
 /** Phase 10 (Canonical Drawer Migration): st.detailId used to be rendered
@@ -1197,7 +1272,7 @@ function addModal() {
       <div class="pc-add-body">
         <div class="pc-add-grid">
           <label style="display:block"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Tanggal *</span>
-            <input type="date" name="expenseDate" data-act="formInput" value="${esc(f.expenseDate)}" class="pc-add-input"/></label>
+            <input type="date" name="expenseDate" data-act="formInput" data-focus="expenseDate" value="${esc(f.expenseDate)}" class="pc-add-input"/></label>
           <label style="display:block"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Unit *</span>
             <select name="unit" data-act="formInput" class="pc-add-input" style="cursor:pointer">${units}</select></label>
         </div>
@@ -1419,6 +1494,14 @@ function bindDelegation() {
   root.addEventListener('change', onChange);
   // Nama Unit autocomplete (v1.17.4): keyboard navigation + close-on-blur.
   root.addEventListener('keydown', onUnitAcKeydown);
+  // Issue E: Tab-trap + Escape for the Add/Edit Expense modal. Bound on
+  // `document` (not `root`) so Escape still dismisses the modal even if
+  // focus has somehow left the panel — the same robustness the canonical
+  // drawer gets from its document-level key handler. onUnitAcKeydown (bound
+  // on `root`, closer to the target) still runs first, so its Escape/Tab
+  // preventDefault() on an open suggestion list is seen here via
+  // e.defaultPrevented. Inert when the modal is closed (st.addOpen gate).
+  document.addEventListener('keydown', onAddModalKeydown);
   root.addEventListener('focusout', (e) => {
     // Close the dropdown when focus truly leaves the autocomplete (not when it
     // moves to a menu item). A microtask defer lets the click on an item land.

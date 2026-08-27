@@ -12845,9 +12845,24 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // V2 parity: close drawer when interacting with V2 nav nodes on mobile.
+  // Delegated (not per-item) because these nav trees re-render their own
+  // innerHTML on navigation — a per-item listener would be lost, and the
+  // clicked node is already detached by the time this bubbles, so match on
+  // e.target.closest() which still resolves against the detached subtree.
+  //
+  // V1 post-QA hotfix (Issue C): under the default domainShellV1 shell the
+  // OLD `.v2-rail-item`/`.v2-panel-nav-item` classes never render at all
+  // (initV2Rail()/initV2Panel() aren't called) — the live mobile-drawer nav
+  // is domain-shell.js's rail (`.domshell-rail-item`) + screen-tab strip
+  // (`.domshell-tab`), reparented into #sidebar by its syncResponsive().
+  // Those were absent from this selector, so picking a module from the
+  // mobile side menu navigated but left the drawer open (+ scroll lock).
+  // Every rendered rail/tab item is a reachable destination, so an
+  // unconditional close here matches the established `.sidebar-nav-item`
+  // behaviour above; a failed nav never re-renders an item to click.
   sidebar?.addEventListener('click', (e) => {
     if (window.innerWidth >= 768) return;
-    if (e.target.closest('.v2-panel-nav-item, .v2-rail-item, #v2FooterLogoutDirect')) {
+    if (e.target.closest('.v2-panel-nav-item, .v2-rail-item, #v2FooterLogoutDirect, .domshell-rail-item, .domshell-tab')) {
       closeSidebar();
     }
   });

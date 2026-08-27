@@ -2571,18 +2571,36 @@ input[type="number"]::-webkit-inner-spin-button {
   transform: rotate(90deg);
 }
 
-/* max-height animation — works on iOS Safari and Android Chrome */
+/* Open/close height animation for Assignment Detail's accordion sections.
+   V1 HOTFIX: was a hardcoded `max-height: 0 → 700px` transition. The 700px
+   cap + `overflow: hidden` SILENTLY CLIPPED the bottom of any taller section
+   — Ringkasan Jadwal, Informasi Operasional and Ringkasan WhatsApp all
+   exceed 700px on a narrow phone (long Tujuan/Keperluan/Catatan wrapping,
+   full lifecycle audit, a multi-line WA preview) — with no scrollbar to
+   recover the hidden content. `grid-template-rows: 0fr → 1fr` animates to
+   the section's TRUE natural height instead: same collapsed state, same
+   ~0.25s ease-out feel, ZERO clipping, and still no per-section scrollbar
+   (the canonical drawer body stays the single vertical scroll container).
+   `overflow: hidden` is kept — it's what clips the inner content to nothing
+   while the row is collapsed / mid-transition. `.accord-body-inner` gets
+   `min-height: 0` so the single grid row can actually collapse to 0
+   (otherwise `minmax(auto, 0fr)` floors at the child's min-content). */
 .accord-body {
-  max-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 0fr); /* minmax(0,…) not bare 0fr: bare 0fr is
+                                         minmax(auto,0fr) whose `auto` floor is
+                                         the child's ~18px padding, leaving the
+                                         collapsed section visibly non-zero. */
   overflow: hidden;
-  transition: max-height 0.25s ease-out;
+  transition: grid-template-rows 0.25s ease-out;
 }
 
 .accord-section--open > .accord-body {
-  max-height: 700px;
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .accord-body-inner {
+  min-height: 0;
   padding: 4px 14px 14px;
 }
 

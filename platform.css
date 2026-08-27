@@ -5890,12 +5890,23 @@ body.v2-shell-active .v2-kpi-value { font-size: 22px; }
   }
 }
 
-/* Below ~380px, date-nav's own protected touch targets (2×44px arrows +
-   96px date-input) no longer fit in one row alongside both the hamburger
-   and the avatar without shrinking one of them — so date-nav alone drops
-   to its own row 2. The hamburger stays paired with the avatar on row 1
-   (never stranded alone), which was the actual bug being fixed here. */
-@media (max-width: 380px) {
+/* Below ~430px, date-nav's own protected touch targets (Hari Ini + 2×44px
+   arrows + the pbsi-datepicker trigger) no longer fit in one row alongside
+   both the hamburger and the avatar without shrinking one of them — so
+   date-nav alone drops to its own row 2. The hamburger stays paired with
+   the avatar on row 1 (never stranded alone), which was the actual bug
+   being fixed here.
+
+   V1 post-QA hotfix (Issue B): this threshold was 380px, but a real-browser
+   geometry sweep showed the single-row "ham | dnav | avatar" grid squeezes
+   .date-nav ~10-20px below its intrinsic content width across the whole
+   381-410px band — "Hari Ini" then overflowed the pill's left edge into the
+   hamburger and the next-arrow overflowed the right edge into the avatar
+   (visible collision at 390px, the reported width). 430px covers every
+   common phone logical width (incl. iPhone Pro Max at 430) with the
+   already-existing, non-stranding two-row layout; 431-600px keeps the
+   compact single row, where the sweep measured ≥30px of slack. */
+@media (max-width: 430px) {
   body.v2-shell-active .v2-topbar {
     grid-template-columns: auto 1fr;
     grid-template-areas:
@@ -13085,6 +13096,16 @@ body.v2-shell-active .block-status-badge--overtime {
 .drawer__close:focus-visible { outline: none; box-shadow: var(--drawer-focus-ring); }
 .drawer__error { margin: 14px 20px 0; padding: 10px 13px; border-radius: var(--radius-sm, 11px); background: var(--danger-bg, #faebeb); color: var(--danger, #a8292f); font-size: 13px; font-weight: 600; flex: 0 0 auto; }
 .drawer__body { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 18px 20px; display: flex; flex-direction: column; gap: 20px; }
+/* V1 HOTFIX — the body is a column flex container purely for `gap`, but that
+   let a tall child with `overflow` other than `visible` (e.g. Assignment
+   Detail's `.accord-section`, which is `overflow:hidden` for its border
+   radius → flex auto-min-size 0) be SHRUNK by the flex algorithm instead of
+   overflowing, so it silently clipped its own content and no scrollbar
+   appeared. Children must keep their natural block size so the body's own
+   `overflow-y:auto` stays the single vertical scroll owner. Harmless for
+   every other consumer (their body children have visible overflow and
+   already refuse to shrink below content). */
+.drawer__body > * { flex-shrink: 0; }
 .drawer__foot { flex: 0 0 auto; display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; padding: 14px 20px; padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--border-faint, var(--border, #e8e6e2)); }
 .drawer button:disabled, .drawer input:disabled, .drawer select:disabled, .drawer textarea:disabled { opacity: .55; cursor: not-allowed; }
 .drawer-btn { font: inherit; font-size: var(--type-body, 14px); font-weight: 700; cursor: pointer; padding: 9px 15px; border-radius: var(--radius-sm, 11px); border: 1px solid var(--border, #e8e6e2); background: var(--surface, #fff); color: var(--text, #1a1917); transition: background var(--drawer-dur-fast), filter var(--drawer-dur-fast); }
@@ -13129,8 +13150,21 @@ body.v2-shell-active .block-status-badge--overtime {
 
 /* Drawer — mobile bottom-sheet (≤640px) */
 @media (max-width: 640px) {
-  .drawer-overlay { justify-content: stretch; align-items: flex-end; }
-  .drawer { width: 100%; max-width: 100%; height: min(86vh, 100%); border-left: 0; border-top: 1px solid var(--border, #e8e6e2); border-radius: var(--radius-lg, 22px) var(--radius-lg, 22px) 0 0; transform: translateY(100%); }
+  /* V1 post-QA hotfix (Issue D): pin the overlay to the *visible* (dynamic)
+     viewport, not the large viewport a `position:fixed; inset:0` element
+     resolves against while the mobile URL/nav bar is showing. Without this
+     the sheet's `align-items:flex-end` anchor is the large-viewport bottom,
+     which sits behind the browser chrome — so the bottom of the sheet (its
+     last section + action row: reimbursement, WhatsApp copy, Edit/Delete)
+     renders off-screen and can't be scrolled into view. `100vh` stays as
+     the fallback for engines without `dvh`; this mirrors the 100vh→100dvh
+     pattern already used across this file (app shell, login, etc.). */
+  .drawer-overlay { justify-content: stretch; align-items: flex-end; height: 100vh; height: 100dvh; }
+  /* Height in `dvh` for the same reason: `86vh` measures 86% of the LARGE
+     viewport, which can equal or exceed the visible area with the URL bar
+     shown, pushing the footer past the screen edge. `min(…, 100%)` keeps the
+     original clamp (100% = the now-100dvh overlay). */
+  .drawer { width: 100%; max-width: 100%; height: 86vh; height: min(86dvh, 100%); border-left: 0; border-top: 1px solid var(--border, #e8e6e2); border-radius: var(--radius-lg, 22px) var(--radius-lg, 22px) 0 0; transform: translateY(100%); }
   /* Safe-area inset belongs to whichever element is actually last: .drawer__foot
      already carries it (padding: 12872) when a footer exists — applying it here
      too would double-count the inset. Only add it here for the no-footer case,
@@ -14289,7 +14323,7 @@ body.v2-shell-active .block-status-badge {
 .domshell-rail-logo img { width: 100%; height: 100%; object-fit: contain; }
 .domshell-rail-brandtext { min-width: 0; white-space: nowrap; opacity: 0; transition: opacity var(--motion-fast, 120ms) linear; }
 .domshell-rail:hover .domshell-rail-brandtext,
-.domshell-rail:focus-within .domshell-rail-brandtext { opacity: 1; }
+.domshell-rail:focus-within .domshell-rail-brandtext { opacity: 1; transition: opacity var(--motion-normal, 200ms) linear 100ms; }
 .domshell-rail-brandname { font-size: 13px; font-weight: 800; letter-spacing: -0.01em; color: var(--text); font-family: var(--font-display); }
 .domshell-rail-brandver { font-size: 10px; color: var(--muted); font-family: var(--font-mono); }
 .domshell-rail-list {
@@ -14325,7 +14359,7 @@ body.v2-shell-active .block-status-badge {
 }
 .domshell-rail-usertext { min-width: 0; white-space: nowrap; opacity: 0; transition: opacity var(--motion-fast, 120ms) linear; }
 .domshell-rail:hover .domshell-rail-usertext,
-.domshell-rail:focus-within .domshell-rail-usertext { opacity: 1; }
+.domshell-rail:focus-within .domshell-rail-usertext { opacity: 1; transition: opacity var(--motion-normal, 200ms) linear 100ms; }
 .domshell-rail-username { font-size: 12px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
 .domshell-rail-userrole { font-size: 10px; color: var(--muted); text-transform: capitalize; overflow: hidden; text-overflow: ellipsis; }
 @media (min-width: 768px) {
@@ -14416,11 +14450,23 @@ body.v2-shell-active .block-status-badge {
   font-weight: 700;
   white-space: nowrap;
   opacity: 0;
+  /* Collapse (un-hover) keeps this quick --motion-fast fade — leaving the
+     rail should feel immediate. The reveal is overridden below. */
   transition: opacity var(--motion-fast, 120ms) linear;
 }
 .domshell-rail:hover .domshell-rail-label,
 .domshell-rail:focus-within .domshell-rail-label {
   opacity: 1;
+  /* V1 post-QA hotfix (Issue F): was the base --motion-fast/0-delay fade, so
+     the label hit full opacity (~120ms) while the 72→220px width expansion
+     had not visibly started (it has its own 100ms dwell) — the text read as
+     a sudden flash detached from the panel opening. Match the width
+     transition's timing exactly (--motion-normal + the same 100ms dwell)
+     so the label materialises *with* the rail as one continuous motion.
+     prefers-reduced-motion / [data-anim="off"] zero the duration globally
+     (style.css), leaving only the 100ms dwell the width expansion already
+     carries under those modes — labels stay usable, no new motion system. */
+  transition: opacity var(--motion-normal, 200ms) linear 100ms;
 }
 
 /* ── Tab bar (domain screen-tabs + nested-module sub-tabs) ── */
