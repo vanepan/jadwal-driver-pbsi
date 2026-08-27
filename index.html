@@ -22,12 +22,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Archivo:wght@400;500;600;700;800;900&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=1.30.11.6" />
+  <link rel="stylesheet" href="style.css?v=1.30.12.0" />
   <link rel="stylesheet" href="platform.css?v=2.1.4" />
-  <link rel="stylesheet" href="petty-cash.css?v=1.30.11.6" />
-  <link rel="stylesheet" href="overtime.css?v=1.30.11.6" />
-  <link rel="stylesheet" href="engineering.css?v=1.30.11.6" />
-  <link rel="stylesheet" href="gudang.css?v=1.30.11.6" />
+  <link rel="stylesheet" href="petty-cash.css?v=1.30.12.0" />
+  <link rel="stylesheet" href="overtime.css?v=1.30.12.0" />
+  <link rel="stylesheet" href="engineering.css?v=1.30.12.0" />
+  <link rel="stylesheet" href="gudang.css?v=1.30.12.0" />
   <link rel="stylesheet" href="sarpras-intelligence.css?v=1.23.0" />
   <link rel="stylesheet" href="nor-center.css?v=1.23.0" />
   <link rel="stylesheet" href="workspace-list-kit.css?v=1.23.0" />
@@ -619,14 +619,17 @@
   </div>
 </div>
 
-<!-- ===== MODAL: USER FORM ===== -->
-<div class="modal-overlay" id="modalUserForm" style="display:none;">
-  <div class="modal-box">
-    <div class="modal-header">
-      <h2 class="modal-title" id="modalUserFormTitle">Tambah User</h2>
-      <button class="modal-close" id="btnCloseUserForm">&times;</button>
-    </div>
-    <div class="modal-body">
+<!-- ===== USER FORM (Phase 11 — Design System Program: canonical drawer) =====
+     Not a modal-overlay anymore. This div is a persistent, off-DOM-tree
+     "parking lot" for the form content — js/admin.js#openUserFormModal()
+     moves it into the canonical drawer (js/components/drawer.js) on open
+     and detaches it back here on close, so every field id below keeps
+     resolving via document.getElementById() exactly as before (the drawer
+     is destroyed/recreated per open; this node survives that intact,
+     preserving the once-at-boot field listeners initAdminUI() binds to
+     these exact elements). title/close/backdrop now come from the drawer
+     shell itself — #modalUserFormTitle/#btnCloseUserForm no longer exist. -->
+<div id="modalUserForm" style="display:none;">
       <form id="userForm" novalidate>
         <div class="form-grid">
           <div class="form-group">
@@ -726,43 +729,30 @@
           <button type="submit" class="btn-primary" id="btnSaveUserForm">Simpan</button>
         </div>
       </form>
-    </div>
-  </div>
 </div>
 
-<!-- ===== MODAL: RESET PIN CONFIRM (v1.30.9.3) =====
+<!-- ===== RESET PIN CONFIRM (v1.30.9.3, Phase 11 canonical drawer) =====
      Explicit privileged confirmation before an admin-authority credential
      reset. Mirrors the modalCancel/modalOvertimeOverride "Option A" pattern
      (js/modal.js): the modal that triggered this one closes first, no
-     stacking; "Batal"/close reopens it. -->
-<div class="modal-overlay" id="modalResetPinConfirm" style="display:none;">
-  <div class="modal-box modal-cancel-box">
-    <div class="modal-header">
-      <h2 class="modal-title">Reset PIN?</h2>
-      <button class="modal-close" id="btnCloseResetPinConfirm">&times;</button>
-    </div>
-    <div class="modal-body">
+     stacking; "Batal"/close reopens it. Content host only (see
+     #modalUserForm's own comment above) — js/admin.js moves it into
+     js/components/drawer.js's shell on open. Static title ("Reset PIN?")
+     is passed directly to openDrawer(), no #modalResetPinTitle needed. -->
+<div id="modalResetPinConfirm" style="display:none;">
       <p class="cancel-warning">PIN lama tidak dapat dipulihkan. Sistem akan membuat PIN baru untuk pengguna ini.</p>
       <div class="form-actions">
         <button type="button" class="btn-secondary" id="btnCancelResetPin">Batal</button>
         <button type="button" class="btn-danger" id="btnConfirmResetPin">Reset PIN</button>
       </div>
-    </div>
-  </div>
 </div>
 
-<!-- ===== MODAL: RESET PIN RESULT (v1.30.9.3) =====
+<!-- ===== RESET PIN RESULT (v1.30.9.3, Phase 11 canonical drawer) =====
      The ONE-TIME plaintext display of a newly generated credential
      (resetCredential's one legitimate plaintext-in-response case — see
      functions/src/auth/credentialService.js). Masked by default; never
      persisted; state is destroyed the instant this dialog closes. -->
-<div class="modal-overlay" id="modalResetPinResult" style="display:none;">
-  <div class="modal-box modal-cancel-box">
-    <div class="modal-header">
-      <h2 class="modal-title">PIN Baru</h2>
-      <button class="modal-close" id="btnCloseResetPinResult">&times;</button>
-    </div>
-    <div class="modal-body">
+<div id="modalResetPinResult" style="display:none;">
       <div class="pin-reveal-field">
         <input type="password" id="resetPinResultValue" readonly autocomplete="off" aria-label="PIN baru" value="" />
         <button type="button" class="pin-reveal-toggle" id="btnToggleResetPinReveal" aria-label="Tampilkan PIN" aria-pressed="false"></button>
@@ -772,8 +762,6 @@
         <button type="button" class="btn-secondary" id="btnCopyResetPin">Salin PIN</button>
         <button type="button" class="btn-primary" id="btnDoneResetPin">Selesai</button>
       </div>
-    </div>
-  </div>
 </div>
 
 <!-- ===== MODAL: PROFILE ===== -->
@@ -1207,6 +1195,6 @@
      an npm import — mammoth's npm package has no browser-ready ESM
      build. Exposes window.mammoth. -->
 <script src="https://cdn.jsdelivr.net/npm/mammoth@1.12.0/mammoth.browser.min.js"></script>
-<script type="module" src="js/app.js?v=1.30.11.6"></script>
+<script type="module" src="js/app.js?v=1.30.12.0"></script>
 </body>
 </html>

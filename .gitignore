@@ -1,5 +1,6 @@
 node_modules/
 .firebase/
 firebase-debug.log
+database-debug.log
 .env
 .env.local

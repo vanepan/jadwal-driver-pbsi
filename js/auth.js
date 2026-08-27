@@ -505,6 +505,23 @@ export function updateAuthUI() {
   }
 }
 
+// Phase 11 (Administration) — audit finding Roles D-2: this (and
+// updateAuthUI()'s #roleBadge above) is Custom-Role-blind the same way
+// app.js's topbar/rail-footer/domain-shell labels were — falls back to the
+// raw stored role id for a Custom Role instead of role-catalog.js's
+// resolveRoleInfo(). Left AS-IS here, deliberately, not overlooked:
+// role-catalog.js -> custom-roles-store.js imports isAdmin() FROM this
+// exact file, so importing resolveRoleInfo() here would create a genuine
+// import cycle (auth.js -> role-catalog.js -> custom-roles-store.js ->
+// auth.js) in a foundational, everywhere-imported module — a real risk to
+// app boot ordering that a label-formatting fix does not justify taking on
+// blind. Lower real-world impact than the 3 sites already fixed: #roleBadge
+// is a V1-only element, hidden inside the V2 topbar by default (see
+// platform.css's own comment) and only visible via the emergency V2
+// rollback flag. Fixing this properly needs restructuring which of
+// auth.js/custom-roles-store.js owns isAdmin() (or extracting it to a
+// dependency-free module) — a real but separately-scoped follow-up, not a
+// silent scope-narrowing of this fix.
 export function getRoleLabel(role) {
   return role ? registryRoleLabel(role) : 'Guest';
 }

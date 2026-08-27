@@ -1111,7 +1111,16 @@ async function onClick(e) {
   const id = el.dataset.id;
   switch (act) {
     case 'stop': e.stopPropagation(); return;
-    case 'nav': setState({ screen: id }); return;
+    // Phase 12 (V1 Final QA) — also clear historyEmployeeId here. It's the
+    // only shell()-level overlay flag (line ~311) that has no screen-scoped
+    // close path, so an open Employee History drawer used to survive a
+    // sub-screen switch and re-render on top of the new screen. First noted
+    // in the Phase 10 Overtime drawer audit (§7) as a bonus fix "if/when
+    // this drawer is migrated"; taken now as a standalone 1-property state
+    // cleanup (no drawer migration) since it's a cross-module consistency
+    // defect exactly in this phase's remit. The other *ModalOpen flags open
+    // and close within a single screen, so they don't leak the same way.
+    case 'nav': setState({ screen: id, historyEmployeeId: null }); return;
 
     // Unit
     case 'openAddUnit': setState({ unitModalOpen: true, editUnitId: null, unitForm: { name: '' }, unitFormErr: '' }); return;

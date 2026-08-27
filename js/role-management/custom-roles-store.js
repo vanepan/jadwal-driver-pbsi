@@ -34,6 +34,14 @@ let loadState = LOAD.UNLOADED;
 let subState = SUB.IDLE;
 let unsubscribe = null;
 let onChangeCallbacks = [];
+// Phase 11 (Administration) — audit finding Roles D-3: onDenied/onError
+// below used to reset subState/loadState and stop there — no flag the UI
+// could read, and no callback fired — so a denied/errored collection read
+// looked EXACTLY like "no Custom Roles exist" (an empty list) with no way
+// to tell the two apart, unlike the Role Additional Permissions panel a
+// few files over, which already surfaces a real, visible error for the
+// same class of failure.
+let loadError = false;
 
 function mapFirebaseCustomRoles(value) {
   const raw = value || {};
@@ -45,7 +53,14 @@ function mapFirebaseCustomRoles(value) {
 function refreshCache(next) {
   customRoles = next;
   loadState = LOAD.LOADED;
+  loadError = false;
   onChangeCallbacks.forEach((cb) => cb(customRoles));
+}
+
+/** True when the most recent /customRoles read was denied or errored — the
+ *  admin should see "failed to load," not an empty-looking role list. */
+export function hasCustomRolesLoadError() {
+  return loadError;
 }
 
 /**
@@ -64,8 +79,18 @@ export async function initCustomRolesStore() {
       subState = SUB.SUBSCRIBED;
     },
     {
-      onDenied: () => { subState = SUB.IDLE; loadState = LOAD.UNLOADED; },
-      onError: () => { subState = SUB.IDLE; loadState = LOAD.UNLOADED; },
+      onDenied: () => {
+        subState = SUB.IDLE;
+        loadState = LOAD.UNLOADED;
+        loadError = true;
+        onChangeCallbacks.forEach((cb) => cb(customRoles));
+      },
+      onError: () => {
+        subState = SUB.IDLE;
+        loadState = LOAD.UNLOADED;
+        loadError = true;
+        onChangeCallbacks.forEach((cb) => cb(customRoles));
+      },
     }
   );
 }

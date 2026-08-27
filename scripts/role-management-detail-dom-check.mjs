@@ -110,9 +110,13 @@ const result = await page.evaluate(async () => {
   out.usageShowsEmptyState = out.usageCardHtml.includes('wsp-empty');
   out.usageHasNoLiteralUndefined = !out.usageCardHtml.includes('undefined');
 
-  // Future Assignment placeholder is present and visibly disabled/greyed.
-  out.futureAssignmentCardPresent = !!host.querySelector('.rm-detail-card--future');
-  out.futureAssignmentText = host.querySelector('.rm-detail-card--future')?.textContent || '';
+  // Phase 11 (Administration audit, P3) — the "Penetapan User" placeholder
+  // card ("available once User Management supports Custom Role") was
+  // removed: that support shipped (Individual/Role Additional Permission
+  // Assignment, both live) and Ringkasan Penggunaan's own Assigned Users
+  // stat above already shows the real number — the placeholder had become
+  // stale AND redundant, not just stale.
+  out.futureAssignmentCardGone = !host.querySelector('.rm-detail-card--future');
 
   // Collapse it again.
   host.querySelector('[data-rm-detail-toggle]').click();
@@ -159,8 +163,7 @@ check('detail grid renders once expanded', result.gridShownAfterExpand);
 check('admin\'s live derived Custom Role (role_from_admin) appears under Derived Roles', result.adminDerivedRolesText.includes('From Admin Clone'));
 check('Usage Summary renders the real empty-state helper for a genuine zero (not blank)', result.usageShowsEmptyState);
 check('Usage Summary never renders a literal "undefined"', result.usageHasNoLiteralUndefined);
-check('the Future Assignment placeholder card is present', result.futureAssignmentCardPresent);
-check('the Future Assignment placeholder explains it awaits User Management', result.futureAssignmentText.includes('Manajemen User'));
+check('the stale/redundant Future Assignment placeholder card is gone (Phase 11, P3)', result.futureAssignmentCardGone);
 check('clicking the toggle again collapses the panel', result.collapsedAfterSecondToggle);
 check('detail grid is removed from the DOM once collapsed', result.gridHiddenAfterCollapse);
 check('a role cloned via clonedFromId shows its resolved Derived-From label', result.clonedDerivedFromText.includes('Admin'));

@@ -120,12 +120,20 @@ console.log('\n[Part C — Visual consistency: gudang.css reuses the existing de
   check('.gud-card declares min-width:0 (prevents grid-item content from forcing horizontal overflow on narrow viewports)', /\.gud-card\{[^}]*min-width:0/.test(css));
   check('everything is scoped under .gud-root (never leaks into the rest of the platform)', /^\.gud-root\s*\{/m.test(css));
   check('has a [data-theme="dark"] .gud-root block (same dark-mode mechanism as .eng-root)', /:root\[data-theme="dark"\]\s*\.gud-root/.test(css));
-  // Token VALUES copied verbatim from engineering.css (Experience brief:
-  // "Reuse existing visual language" — not just similar names, the same
-  // literal accent/palette, so Gudang reads as Engineering's sibling.
+  // Experience brief: "Reuse existing visual language" — Gudang must read
+  // as Engineering's sibling, not a new brand identity. Phase 12 (V1 Final
+  // QA) update: this used to assert a literal `--accent:#hex;` copied
+  // verbatim between the two module files. "V1 Redesign Phase 1b" retired
+  // that local literal from BOTH engineering.css and gudang.css onto the
+  // single canonical platform.css `--accent` token — so the sibling
+  // guarantee is now stronger (one shared source, no divergence possible).
+  // Assert the current architecture: gudang.css declares no local --accent
+  // literal of its own (inherits the platform token), exactly like
+  // engineering.css.
   const eng = read('engineering.css');
-  const accentLine = eng.match(/--accent:#[0-9a-f]{6};/i)?.[0];
-  check('the --accent color is copied verbatim from engineering.css (not a new brand identity)', !!accentLine && css.includes(accentLine));
+  const localAccentLiteral = /--accent\s*:\s*#[0-9a-f]{3,8}\b/i;
+  check('gudang.css does not hardcode its own --accent literal (inherits the canonical platform.css token, same as engineering.css)',
+    !localAccentLiteral.test(css) && !localAccentLiteral.test(eng));
   check('reuses --shadow-sm/--shadow-md/--shadow-lg (same elevation system, not invented)', css.includes('--shadow-sm') && css.includes('--shadow-md') && css.includes('--shadow-lg'));
   check('reuses --font-display/--font-sans/--font-mono (same typography roles)', css.includes('--font-display') && css.includes('--font-sans') && css.includes('--font-mono'));
   check('entry animation matches the app-wide "fade up" signature (gudFadeUp, same shape as engFadeUp/anFadeUp/vsm8-view-in)', /@keyframes gudFadeUp\{from\{opacity:0;transform:translateY\(9px\)/.test(css));
@@ -220,7 +228,16 @@ console.log('\n[Part E — Wiring integrity: app.js/index.html actually mount Gu
   check('initV2GudangWorkspace() is actually called in the startup sequence', /initV2GudangWorkspace\(\);/.test(appJs));
   check('v2PanelGudangNav is declared and included in the panel-clearing array', appJs.includes('v2PanelGudangNav') && /\[.*v2PanelGudangNav.*\]/.test(appJs));
   check('a "gudang" search adapter is registered (Doc 2 §05: search is the product)', /registerSearchAdapter\(\{\s*id:\s*'gudang'/.test(appJs));
-  check('canAccessModule has a real, non-dev-only "gudang" case', /case 'gudang':\s*return false;/.test(appJs));
+  // Phase 12 (V1 Final QA) update: pre-v1.30.5 this was a literal
+  // `case 'gudang': return false;` switch arm. The Permission Runtime
+  // Migration (v1.30.5) replaced canAccessModule()'s switch with a
+  // data-driven MODULE_PERMISSIONS lookup — `gudang` now maps to a real
+  // permission and resolves through can(). Assert the current mechanism:
+  // a real, named permission gate (only admin's BASE_GRANTS holds
+  // warehouse.view today), never world-open.
+  check('canAccessModule gates "gudang" through a real MODULE_PERMISSIONS entry (warehouse.view), not world-open',
+    /MODULE_PERMISSIONS\s*=\s*Object\.freeze\(\{[\s\S]*?gudang:\s*'warehouse\.view'/.test(appJs)
+    && /const permission = MODULE_PERMISSIONS\[name\];\s*return permission \? can\(permission\) : false;/.test(appJs));
 }
 
 /* ── Part F — Design System Program Phase 10 (Canonical Drawer Migration):

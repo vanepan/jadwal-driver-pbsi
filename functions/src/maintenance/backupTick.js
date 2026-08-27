@@ -27,6 +27,14 @@ const logger = require('firebase-functions/logger');
 const { db } = require('../config/admin');
 const { REGION } = require('../config/constants');
 
+// Phase 11 (Administration audit, P3) — MUST stay in sync with js/
+// settings-store.js's DEFAULTS.system.backupRetentionDays (also 30); same
+// documented-drift-risk pattern already accepted elsewhere (e.g. js/config/
+// role-permissions.js's VALID_ROLES mirroring comment). The client-side
+// Settings UI (js/app.js's cfgSaveSystem handler) caps the value it will
+// ever write at 365 days — this read has no matching ceiling of its own,
+// only the `val > 0` floor below; an operator editing /settings/system/
+// backupRetentionDays directly (bypassing the UI) is not bounded here.
 const DEFAULT_RETENTION_DAYS = 30;
 
 const backupTick = onSchedule(

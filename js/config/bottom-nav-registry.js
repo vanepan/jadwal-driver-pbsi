@@ -43,6 +43,13 @@ export const BOTTOM_NAV_ITEMS = {
     { id: 'nav-timeline', label: 'Timeline',   icon: 'clock',     action: 'navDriverTimeline' },
     { id: 'nav-dash',     label: 'Dashboard',  icon: 'grid',      action: 'navDriverList' },
     { id: 'nav-history',  label: 'Riwayat',    icon: 'clipboard', action: 'navDriverHistory' },
+    // Phase 11 (Administration) — Driver is a real server-push
+    // recipient (assignment.* events) but previously had NO mobile path to
+    // the notification panel at all: the desktop header bell is CSS-hidden
+    // <768px and this workspace's own item list had no badge:'notif' entry,
+    // unlike 'request'/'executive' below. See
+    // docs/DESIGN_SYSTEM_PROGRAM_PHASE_11_ADMINISTRATION_AUDIT.md §6, D1.
+    { id: 'nav-notif',    label: 'Notifikasi', icon: 'bell',      action: 'openNotifications', badge: 'notif' },
     { id: 'nav-profile',  label: 'Profil',     icon: 'profile',   action: 'openProfile' },
   ],
   engineering: [
@@ -50,6 +57,10 @@ export const BOTTOM_NAV_ITEMS = {
     { id: 'nav-eng-timeline', label: 'Timeline',  icon: 'clock',     action: 'navEngTimeline' },
     { id: 'nav-eng-jobs',     label: 'Pekerjaan', icon: 'clipboard', action: 'navEngMyJobs' },
     { id: 'nav-eng-history',  label: 'Riwayat',   icon: 'chart',     action: 'navEngHistory' },
+    // Phase 11 (Administration) — same gap as 'driver' above:
+    // engineering_coordinator/engineering_member are real recipients of
+    // engineering.* server notifications with no mobile path to read them.
+    { id: 'nav-eng-notif',    label: 'Notifikasi', icon: 'bell',    action: 'openNotifications', badge: 'notif' },
     { id: 'nav-eng-profile',  label: 'Profil',    icon: 'profile',   action: 'openProfile' },
   ],
   request: [

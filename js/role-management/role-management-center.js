@@ -52,6 +52,7 @@ import {
   createCustomRoleFromClone,
   updateCustomRole,
   archiveCustomRole,
+  hasCustomRolesLoadError,
 } from './custom-roles-store.js';
 import {
   findDuplicateName,
@@ -76,6 +77,23 @@ import {
   revokeRolePermission,
 } from '../permission-management/role-permission-overrides-store.js';
 import { FORBIDDEN_PERMISSION_IDS } from '../permission-management/role-permission-overrides-rules.js';
+// Phase 11 (Administration) — Design System Program: canonical drawer
+// migration for the Clone Role prompt and Review Perubahan modal, AND the
+// new Permissions Matrix view's Individual-override drill-in below.
+import { openDrawer, closeDrawer } from '../components/drawer.js';
+// Phase 11 (Administration) — Permissions Matrix (audit §5's biggest
+// single UX gap: no view answers "who can do X" without opening Role
+// Management once per role AND User Management once per user). Read-only:
+// getUserPermissionOverrides() is the same one-shot admin API
+// js/admin.js's Individual Permissions panel already uses to edit — this
+// view only ever READS it, never grants/revokes (that stays exactly where
+// it already lives). getUserList() is a synchronous cache read (no new
+// network call) of a store that's always already loaded by the time an
+// admin session can reach this module — see loadMatrixData()'s own
+// comment for the one real cost this view has (N one-shot reads, done
+// once per view-open, not per render).
+import { getUserPermissionOverrides } from '../permission-management/user-permission-overrides-store.js';
+import { getUserList } from '../users.js';
 
 let root = null;
 let bound = false;
@@ -91,6 +109,15 @@ let dirty = false;
 let error = '';
 let clonePrompt = null;  // { sourceRoleId, sourceLabel, name }
 let reviewModal = null;  // { id, name, renamedFrom, added: Permission[], removed: Permission[], nextPermissions: string[] }
+// Phase 11 (Administration) — tracks which of the two dialogs (if any) the
+// canonical drawer currently holds. Compared against clonePrompt/reviewModal
+// at the end of every render() so an UNRELATED render (e.g. the realtime
+// Custom Roles echo firing while the Clone dialog is open) never touches
+// the drawer at all — root.innerHTML no longer includes this dialog's
+// markup, so there's nothing to disturb the still-focused #rmCloneName
+// input's caret/typed value. Same "one string-key comparison, act only on
+// a real transition" idea as Gudang's syncGudangDetailDrawer() (Phase 10).
+let _drawerKind = null; // 'clone' | 'review' | null
 
 /* ============================================================
    Role Additional Permissions state — v1.30.9.9. Only ever populated for
@@ -106,6 +133,74 @@ let reviewModal = null;  // { id, name, renamedFrom, added: Permission[], remove
 let raState = { roleId: null, loading: false, error: false, permissions: new Set(), busyPermissionId: null };
 let raRequestToken = 0;
 
+/* ============================================================
+   Permissions Matrix — Phase 11 (Administration). A second, read-only
+   VIEW MODE for this same module (not a new module/route — keeps the IA
+   change to zero new nav entries): cross-role, cross-permission grid
+   answering "who can do X" in one screen. See loadMatrixData()'s own
+   comment for the read cost model.
+   ============================================================ */
+let viewMode = 'detail'; // 'detail' | 'matrix'
+let matrixState = {
+  loading: false,
+  loaded: false,
+  error: false,
+  roleAdditionalByRole: new Map(), // System roleId -> Set<permissionId>
+  individualByPermission: new Map(), // permissionId -> Set<username> (active users only)
+};
+// Canonical-drawer drill-in: which permission's Individual-override holder
+// list is currently shown, or null.
+let matrixDrillIn = null; // { permissionId, title } | null
+
+/**
+ * One-time (per view-open) load: 9 System-role Role-Additional reads +
+ * one read per ACTIVE user's Individual overrides. All one-shot admin
+ * reads already used elsewhere in this app (Role Management's own detail
+ * view, User Management's Individual panel) — this is the same cost,
+ * just paid up front for every role/user at once instead of one at a
+ * time. Cached until the matrix view closes or a realtime Custom-Roles/
+ * users change invalidates it (see mountRoleManagement()'s listener and
+ * toggleViewMode() below) — never re-fetched on every render.
+ */
+async function loadMatrixData() {
+  if (matrixState.loading || matrixState.loaded) return;
+  matrixState.loading = true;
+  matrixState.error = false;
+  render();
+  try {
+    const roleAdditionalByRole = new Map();
+    await Promise.all(ROLES.map(async (r) => {
+      roleAdditionalByRole.set(r.id, await getRolePermissionOverrides(r.id));
+    }));
+
+    const individualByPermission = new Map();
+    const activeUsers = getUserList().filter((u) => u.archived !== true);
+    await Promise.all(activeUsers.map(async (u) => {
+      const overrides = await getUserPermissionOverrides(u.username);
+      for (const permId of overrides) {
+        if (!individualByPermission.has(permId)) individualByPermission.set(permId, new Set());
+        individualByPermission.get(permId).add(u.username);
+      }
+    }));
+
+    matrixState.roleAdditionalByRole = roleAdditionalByRole;
+    matrixState.individualByPermission = individualByPermission;
+    matrixState.loaded = true;
+  } catch (err) {
+    matrixState.error = true;
+  } finally {
+    matrixState.loading = false;
+    render();
+  }
+}
+
+function toggleViewMode(next) {
+  if (next === viewMode) return;
+  viewMode = next;
+  if (next === 'matrix') void loadMatrixData();
+  render();
+}
+
 /** Mount the module into a platform-owned host container (admin only). */
 export async function mountRoleManagement(container) {
   if (!isAdmin()) { console.warn('[RoleManagement] admin only'); return; }
@@ -113,7 +208,15 @@ export async function mountRoleManagement(container) {
   root = container;
   bindDelegation();
   await initCustomRolesStore();
-  registerCustomRolesChangeListener(() => { invalidateRoleSummaryCache(); render(); });
+  registerCustomRolesChangeListener(() => {
+    invalidateRoleSummaryCache();
+    // A Custom Role's own permissions can change (or a role can be
+    // created/archived) independently of the Matrix's own cached snapshot
+    // — force a fresh load next time the Matrix is (re)opened rather than
+    // showing stale columns/cells indefinitely.
+    matrixState.loaded = false;
+    render();
+  });
   render();
   const initialRole = getRoleById(selectedRoleId);
   if (initialRole && initialRole.type === 'system') loadRoleAdditionalFor(selectedRoleId);
@@ -209,14 +312,26 @@ function onChange(e) {
   if (e.target.matches('.rm-permission-row input[type="checkbox"][data-rm-ra-permission-id]')) {
     const role = getRoleById(selectedRoleId);
     if (!role || role.type !== 'system') return; // defense in depth; disabled attr already prevents this
-    void handleRaToggle(e.target.dataset.rmRaPermissionId);
+    const permissionId = e.target.dataset.rmRaPermissionId;
+    // Phase 11 (Administration audit, §Permissions P2) — unlike the Custom
+    // Role tree above (data-rm-permission-id), which stages into `draft`
+    // for an explicit Edit->Review->Save, this checkbox mutated on click
+    // with no confirmation at all. The checkbox's checked state already
+    // flips before `change` fires, so a cancel must explicitly revert it.
+    const wasGranted = raState.permissions.has(permissionId);
+    const title = getPermission(permissionId)?.title || permissionId;
+    const question = wasGranted
+      ? `Cabut Role Additional Permission "${title}" dari SEMUA user dengan role ${roleLabel(role.id)}?`
+      : `Tambahkan Role Additional Permission "${title}" untuk SEMUA user dengan role ${roleLabel(role.id)}?`;
+    if (!confirm(question)) { e.target.checked = wasGranted; return; }
+    void handleRaToggle(permissionId);
   }
 }
 
 function onClick(e) {
-  if (e.target.classList && e.target.classList.contains('modal-overlay')) {
-    clonePrompt = null; reviewModal = null; render(); return;
-  }
+  // Phase 11 (Administration) — overlay-click-to-close is now the
+  // canonical drawer's own built-in behavior (js/components/drawer.js);
+  // clonePrompt/reviewModal no longer render a .modal-overlay at all.
   const roleBtn = e.target.closest('[data-rm-role]');
   if (roleBtn) { selectRole(roleBtn.dataset.rmRole); return; }
 
@@ -235,6 +350,21 @@ function onClick(e) {
     return;
   }
 
+  // Phase 11 (Administration) hostile-review finding: this MUST be checked
+  // before the data-rm-action early-return below — the Individual-count
+  // drill-in buttons carry data-rm-matrix-drillin, not data-rm-action, so
+  // they were structurally unreachable while this check sat after
+  // `if (!action) return;` (a real, DOM-test-caught bug: the button
+  // existed and looked clickable, but its click handler code never ran).
+  const drillTarget = e.target.closest('[data-rm-matrix-drillin]');
+  if (drillTarget) {
+    const permId = drillTarget.dataset.rmMatrixDrillin;
+    const permission = getPermission(permId);
+    matrixDrillIn = { permissionId: permId, title: permission?.title || permId };
+    render();
+    return;
+  }
+
   const action = e.target.closest('[data-rm-action]')?.dataset.rmAction;
   if (!action) return;
   if (action === 'clone-open') return openClonePrompt();
@@ -245,10 +375,25 @@ function onClick(e) {
   if (action === 'cancel') return cancelDraft();
   if (action === 'review-confirm') return void confirmReview();
   if (action === 'review-back') { reviewModal = null; render(); return; }
+  if (action === 'view-detail') return toggleViewMode('detail');
+  if (action === 'view-matrix') return toggleViewMode('matrix');
+  if (action === 'drillin-close') { matrixDrillIn = null; render(); return; }
 }
 
 function isExpanded(moduleName) {
   return groupExpanded[moduleName] ?? true;
+}
+
+/** Phase 11 (Administration) — audit finding Roles D-3: a denied/errored
+ *  /customRoles collection read used to look identical to "no Custom
+ *  Roles exist" (both render an empty role list). Shown alongside — not
+ *  instead of — the per-action `error` banner, since this is a distinct,
+ *  persistent condition ("data may be stale/incomplete"), not a one-shot
+ *  action failure. */
+function customRolesLoadErrorHtml() {
+  return hasCustomRolesLoadError()
+    ? `<div class="rm-error">Gagal memuat Custom Roles. Daftar role di bawah mungkin tidak lengkap — coba muat ulang halaman.</div>`
+    : '';
 }
 
 /** Detail panel starts COLLAPSED (unlike permission-tree groups, which default open). */
@@ -373,6 +518,23 @@ async function handleRaToggle(permissionId) {
  */
 export function __setRaStateForTest(roleId, permissionIds) {
   raState = { roleId, loading: false, error: false, permissions: new Set(permissionIds || []), busyPermissionId: null };
+  render();
+}
+
+/**
+ * TEST-ONLY. Directly seeds the Permissions Matrix's cached data, bypassing
+ * the real N-reads load entirely — same convention as __setRaStateForTest()
+ * above. Real application code MUST NEVER call this.
+ * @param {{ roleAdditionalByRole?: Record<string,string[]>, individualByPermission?: Record<string,string[]> }} data
+ */
+export function __setMatrixStateForTest(data = {}) {
+  matrixState = {
+    loading: false,
+    loaded: true,
+    error: false,
+    roleAdditionalByRole: new Map(Object.entries(data.roleAdditionalByRole || {}).map(([k, v]) => [k, new Set(v)])),
+    individualByPermission: new Map(Object.entries(data.individualByPermission || {}).map(([k, v]) => [k, new Set(v)])),
+  };
   render();
 }
 
@@ -506,6 +668,14 @@ function cancelDraft() {
   dirty = false;
   error = '';
   toast('Perubahan dibatalkan.');
+  // Phase 12 (V1 Final QA) — every other state-mutating handler in this
+  // module (onChange's permission toggle, selectRole, clone-cancel,
+  // review-back, toggleViewMode) ends with render(); this one didn't, so
+  // clicking "Batal" cleared the draft internally but left the Save bar
+  // and the toggled checkbox visibly unchanged until some unrelated
+  // interaction forced a re-render. Caught by role-management-edit-dom-
+  // check.mjs's "Cancel hides the Save bar" / "reverts the checked count".
+  render();
 }
 
 /* ============================================================
@@ -516,9 +686,53 @@ function render() {
   focusGuard.capture(root);
   root.innerHTML = shell();
   focusGuard.restore(root);
+  syncRoleManagementDrawer();
+  // Covers the realtime-invalidation path (registerCustomRolesChangeListener
+  // above): viewMode never changes there, so toggleViewMode()'s own
+  // load-trigger never fires — this is the safety net for "still in Matrix
+  // view, but the cached snapshot was just invalidated."
+  if (viewMode === 'matrix' && !matrixState.loaded && !matrixState.loading) void loadMatrixData();
+}
+
+/** Open/refresh/close the canonical drawer to match clonePrompt/reviewModal
+ *  state — see _drawerKind's own comment for why this is idempotent
+ *  against unrelated render() calls. */
+function syncRoleManagementDrawer() {
+  // A compound key, not just a dialog "kind": matrix-drillin's identity
+  // must include WHICH permission, so clicking a different permission's
+  // drill-in while one is already open is correctly treated as a real
+  // transition (close+reopen), not a same-dialog no-op.
+  const desired = clonePrompt ? 'clone'
+    : reviewModal ? 'review'
+    : matrixDrillIn ? `matrix-drillin:${matrixDrillIn.permissionId}`
+    : null;
+  if (desired === _drawerKind) return;
+  if (!desired) {
+    _drawerKind = null;
+    closeDrawer();
+    return;
+  }
+  _drawerKind = desired;
+  const kind = desired.startsWith('matrix-drillin') ? 'matrix-drillin' : desired;
+  const titles = { clone: 'Clone Role', review: 'Review Perubahan', 'matrix-drillin': matrixDrillIn?.title || '' };
+  const icons = { clone: 'copy', review: 'check', 'matrix-drillin': 'user' };
+  const bodies = { clone: clonePromptHtml, review: reviewModalHtml, 'matrix-drillin': matrixDrillInHtml };
+  const overlay = openDrawer({
+    title: titles[kind],
+    icon: icons[kind],
+    body: bodies[kind](),
+    onClose: () => { clonePrompt = null; reviewModal = null; matrixDrillIn = null; _drawerKind = null; render(); },
+  });
+  // Same delegated dispatch as root — clone-cancel/clone-confirm/review-
+  // back/review-confirm are data-rm-action buttons, handled by the SAME
+  // onClick() this module already binds to root (Phase 10's Gudang
+  // pattern: bind the existing delegated handler directly onto the fresh
+  // overlay too, rather than inventing a second dispatch mechanism).
+  if (overlay) overlay.addEventListener('click', onClick);
 }
 
 function shell() {
+  if (viewMode === 'matrix') return matrixShellHtml();
   const role = getRoleById(selectedRoleId);
   const isCustom = !!role && role.type === 'custom';
   const isSystem = !!role && role.type === 'system';
@@ -536,6 +750,7 @@ function shell() {
       </aside>
       <section class="rm-main">
         ${headerHtml(role, isCustom)}
+        ${customRolesLoadErrorHtml()}
         ${error ? `<div class="rm-error">${esc(error)}</div>` : ''}
         ${role && roleSummary ? detailPanelHtml(role, roleSummary) : ''}
         <div class="v2-admin-toolbar">
@@ -552,9 +767,7 @@ function shell() {
         <div class="rm-tree">${isSystem ? systemTreeHtml(filtered, baseGrantedSet, roleAdditionalSet) : treeHtml(filtered, grantedSet, isCustom)}</div>
         ${isCustom && dirty ? saveBarHtml() : ''}
       </section>
-    </div>
-    ${clonePrompt ? clonePromptHtml() : ''}
-    ${reviewModal ? reviewModalHtml() : ''}`;
+    </div>`;
 }
 
 function statsHtml(summary) {
@@ -633,6 +846,7 @@ function headerHtml(role, isCustom) {
         <h1 class="rm-header__title">Role Management</h1>
         ${pill(isCustom ? 'Custom Role' : 'System Role', isCustom ? 'info' : 'neutral')}
         ${!isCustom ? pill('Base Read-only · Role Additional Dapat Diedit', 'neutral') : ''}
+        ${viewToggleHtml('detail')}
       </div>
       <div class="rm-header__role">
         ${nameField}
@@ -643,6 +857,126 @@ function headerHtml(role, isCustom) {
           </div>` : ''}
       </div>
     </div>`;
+}
+
+/** Segmented Per-Role / Matrix toggle — shared by both view shells. */
+function viewToggleHtml(current) {
+  return `
+    <div class="rm-view-toggle" role="tablist" aria-label="Tampilan Role Management">
+      <button type="button" class="rm-view-toggle__btn${current === 'detail' ? ' rm-view-toggle__btn--active' : ''}"
+              role="tab" aria-selected="${current === 'detail'}" data-rm-action="view-detail">Per Role</button>
+      <button type="button" class="rm-view-toggle__btn${current === 'matrix' ? ' rm-view-toggle__btn--active' : ''}"
+              role="tab" aria-selected="${current === 'matrix'}" data-rm-action="view-matrix">Matrix Permission</button>
+    </div>`;
+}
+
+/* ============================================================
+   Permissions Matrix shell — Phase 11 (Administration). Cross-role,
+   cross-permission grid. Reuses the existing search/module-filter (same
+   filterTree()/listModules() the Per-Role tree already uses) so both
+   views share one mental model of "narrowing the permission list."
+   ============================================================ */
+function matrixShellHtml() {
+  const filtered = filterTree(getPermissionTree(), { search: searchQuery, module: moduleFilter });
+  const roles = getAllRoles();
+  return `
+    <div class="rm-layout rm-layout--matrix">
+      <section class="rm-main rm-main--matrix">
+        <div class="rm-header">
+          <div class="rm-header__top">
+            <h1 class="rm-header__title">Role Management</h1>
+            ${pill('Matrix Permission', 'info')}
+            ${viewToggleHtml('matrix')}
+          </div>
+          <p class="rm-matrix-intro">Perbandingan permission lintas role dalam satu layar — termasuk siapa saja yang memiliki akses tambahan lewat Individual Permission, tanpa perlu membuka Role Management per role dan Manajemen User per user satu per satu.</p>
+        </div>
+        ${customRolesLoadErrorHtml()}
+        ${error ? `<div class="rm-error">${esc(error)}</div>` : ''}
+        <div class="v2-admin-toolbar">
+          <input type="search" id="rmSearch" class="v2-admin-search" data-focus="rm-search"
+                 placeholder="Cari ID, judul, deskripsi, modul, atau kategori…"
+                 autocomplete="off" value="${esc(searchQuery)}" />
+          <select id="rmModuleFilter" class="v2-admin-filter">
+            <option value="all"${moduleFilter === 'all' ? ' selected' : ''}>Semua Modul</option>
+            ${listModules().map((m) => `<option value="${esc(m)}"${moduleFilter === m ? ' selected' : ''}>${esc(m)}</option>`).join('')}
+          </select>
+        </div>
+        ${matrixLegendHtml()}
+        ${matrixState.loading ? `<div class="rm-ra-status">Memuat Matrix Permission (Role Additional + Individual)…</div>` : ''}
+        ${matrixState.error ? `<div class="rm-ra-status rm-ra-status--error">Gagal memuat sebagian data Matrix. Kolom Role Additional/Individual mungkin tidak lengkap.</div>` : ''}
+        <div class="rm-matrix-scroll">${matrixTableHtml(filtered, roles)}</div>
+      </section>
+    </div>`;
+}
+
+function matrixLegendHtml() {
+  return `
+    <div class="rm-matrix-legend">
+      <span class="rm-matrix-legend__item"><span class="rm-matrix-dot rm-matrix-dot--base"></span>Base (kode, tidak dapat diubah)</span>
+      <span class="rm-matrix-legend__item"><span class="rm-matrix-dot rm-matrix-dot--additional"></span>Role Additional (dapat diedit di Per Role)</span>
+      <span class="rm-matrix-legend__item"><span class="rm-matrix-dot rm-matrix-dot--custom"></span>Permission Custom Role</span>
+      <span class="rm-matrix-legend__item"><span class="rm-matrix-dot rm-matrix-dot--none"></span>Tidak diberikan</span>
+    </div>`;
+}
+
+/** Two-permission-protected ids are structurally never assignable to
+ *  anyone except the literal admin System Role — excluded from the
+ *  matrix's rows entirely (there is nothing to "compare across roles"
+ *  for an id that can only ever be true for exactly one role, by
+ *  construction; see database.rules.json's own extensive commentary on
+ *  this pair). Custom-role-editor/Role-Additional-tree already exclude
+ *  them from their own editable pickers the same way. */
+const MATRIX_EXCLUDED_PERMISSION_IDS = new Set(['system.admin', 'system.users.manage']);
+
+function matrixTableHtml(filteredTree, roles) {
+  const modules = Object.keys(filteredTree);
+  if (!modules.length) return `<div class="user-role-empty">Tidak ada permission yang cocok.</div>`;
+  const colgroup = `<colgroup><col class="rm-matrix-col--perm" />${roles.map(() => '<col />').join('')}<col class="rm-matrix-col--individual" /></colgroup>`;
+  const headRow = `
+    <tr>
+      <th class="rm-matrix-th--perm">Permission</th>
+      ${roles.map((r) => `<th class="rm-matrix-th--role" title="${esc(r.label)}">${esc(r.label)}${r.type === 'custom' ? ' <span class="rm-matrix-role-tag">Custom</span>' : ''}</th>`).join('')}
+      <th class="rm-matrix-th--role">Individual</th>
+    </tr>`;
+  const bodyRows = modules.map((moduleName) => {
+    const categories = filteredTree[moduleName];
+    const permRows = Object.values(categories).flat()
+      .filter((p) => !MATRIX_EXCLUDED_PERMISSION_IDS.has(p.id))
+      .map((p) => matrixRowHtml(p, roles));
+    if (!permRows.length) return '';
+    return `
+      <tr class="rm-matrix-module-row"><td colspan="${roles.length + 2}">${esc(moduleName)}</td></tr>
+      ${permRows.join('')}`;
+  }).join('');
+  return `
+    <table class="rm-matrix-table">
+      ${colgroup}
+      <thead>${headRow}</thead>
+      <tbody>${bodyRows}</tbody>
+    </table>`;
+}
+
+function matrixRowHtml(permission, roles) {
+  const cells = roles.map((role) => {
+    const granted = resolveGrantedSet(role); // Base (System) or the Custom Role's own set
+    const isBase = granted.has(permission.id);
+    const isRoleAdditional = role.type === 'system' && !isBase
+      && (matrixState.roleAdditionalByRole.get(role.id)?.has(permission.id) ?? false);
+    const state = isBase ? (role.type === 'custom' ? 'custom' : 'base') : isRoleAdditional ? 'additional' : 'none';
+    const label = state === 'base' ? 'Base' : state === 'additional' ? 'Role Additional' : state === 'custom' ? 'Diberikan' : 'Tidak diberikan';
+    return `<td class="rm-matrix-td"><span class="rm-matrix-dot rm-matrix-dot--${state}" title="${esc(role.label)}: ${esc(label)}" aria-label="${esc(role.label)}: ${esc(label)}"></span></td>`;
+  }).join('');
+  const individualUsers = matrixState.individualByPermission.get(permission.id);
+  const individualCount = individualUsers ? individualUsers.size : 0;
+  const individualCell = individualCount > 0
+    ? `<td class="rm-matrix-td"><button type="button" class="rm-matrix-individual-btn" data-rm-matrix-drillin="${esc(permission.id)}">${individualCount}</button></td>`
+    : `<td class="rm-matrix-td rm-matrix-td--zero">0</td>`;
+  return `
+    <tr>
+      <td class="rm-matrix-td--perm" title="${esc(permission.description)}">${esc(permission.title)}</td>
+      ${cells}
+      ${individualCell}
+    </tr>`;
 }
 
 /* ============================================================
@@ -668,7 +1002,6 @@ function detailPanelHtml(role, summary) {
         ${moduleBreakdownHtml(role)}
         ${usageSummaryHtml(role)}
         ${lifecycleSummaryHtml(summary)}
-        ${futureAssignmentHtml()}
       </div>` : ''}
     </div>`;
 }
@@ -746,14 +1079,6 @@ function lifecycleSummaryHtml(summary) {
         <div><dt>Diperbarui</dt><dd>${fmt(summary.updatedAt) || empty('Ditentukan oleh kode')}</dd></div>
         ${summary.status === 'archived' ? `<div><dt>Diarsipkan</dt><dd>${fmt(summary.archivedAt) || '-'}</dd></div>` : ''}
       </dl>
-    </div>`;
-}
-
-function futureAssignmentHtml() {
-  return `
-    <div class="rm-detail-card rm-detail-card--future">
-      <h4 class="rm-detail-card__title">Penetapan User</h4>
-      ${empty('Tersedia setelah Manajemen User mendukung Custom Role')}
     </div>`;
 }
 
@@ -940,18 +1265,29 @@ function saveBarHtml() {
     </div>`;
 }
 
+// Phase 11 (Administration) — canonical drawer migration: these now return
+// BODY content only (title moved to openDrawer()'s own title param in
+// syncRoleManagementDrawer() above; the drawer shell provides the
+// overlay/panel/close-button chrome the old .modal-overlay/.modal-box wrapper
+// used to).
 function clonePromptHtml() {
+  // Phase 11 hostile-review finding: .rm-name-input carries an explicit
+  // `flex: 1 1 260px` meant for its ORIGINAL row-flex header context
+  // (#rmNameInput inside .rm-header__actions). .drawer__body is itself
+  // `display:flex; flex-direction:column` — as a DIRECT child, this same
+  // rule made the input flex-GROW to fill the drawer's vertical space
+  // (caught by screenshotting the real rendered drawer, not just the DOM
+  // checks, which don't assert layout). Wrapping in a plain, non-flex div
+  // insulates every child from .drawer__body's flex context entirely,
+  // restoring the exact pre-migration rendering.
   return `
-    <div class="modal-overlay">
-      <div class="modal-box rm-modal-box">
-        <h3>Clone Role</h3>
-        <p>Membuat Custom Role baru dari &quot;${esc(clonePrompt.sourceLabel)}&quot;.</p>
-        <input type="text" id="rmCloneName" class="rm-name-input" data-focus="rm-clone-name"
-               value="${esc(clonePrompt.name)}" />
-        <div class="rm-modal-actions">
-          <button type="button" class="rm-action-btn" data-rm-action="clone-cancel">Batal</button>
-          <button type="button" class="rm-action-btn rm-action-btn--primary" data-rm-action="clone-confirm">Buat Custom Role</button>
-        </div>
+    <div class="rm-modal-body">
+      <p>Membuat Custom Role baru dari &quot;${esc(clonePrompt.sourceLabel)}&quot;.</p>
+      <input type="text" id="rmCloneName" class="rm-name-input" data-focus="rm-clone-name"
+             value="${esc(clonePrompt.name)}" />
+      <div class="rm-modal-actions">
+        <button type="button" class="rm-action-btn" data-rm-action="clone-cancel">Batal</button>
+        <button type="button" class="rm-action-btn rm-action-btn--primary" data-rm-action="clone-confirm">Buat Custom Role</button>
       </div>
     </div>`;
 }
@@ -963,17 +1299,41 @@ function reviewModalHtml() {
   const removedHtml = reviewModal.removed.length
     ? `<ul class="rm-review-list">${reviewModal.removed.map((p) => `<li>&minus; ${esc(p.title)}</li>`).join('')}</ul>`
     : `<p class="rm-review-empty">Tidak ada permission dicabut.</p>`;
+  // Same insulation reasoning as clonePromptHtml() above.
   return `
-    <div class="modal-overlay">
-      <div class="modal-box rm-modal-box rm-review-box">
-        <h3>Review Perubahan</h3>
-        ${reviewModal.renamedFrom ? `<p>Nama: &quot;${esc(reviewModal.renamedFrom)}&quot; &rarr; &quot;${esc(reviewModal.name)}&quot;</p>` : ''}
-        <div class="rm-review-col rm-review-col--added"><h4>Ditambahkan (${reviewModal.added.length})</h4>${addedHtml}</div>
-        <div class="rm-review-col rm-review-col--removed"><h4>Dicabut (${reviewModal.removed.length})</h4>${removedHtml}</div>
-        <div class="rm-modal-actions">
-          <button type="button" class="rm-action-btn" data-rm-action="review-back">Kembali</button>
-          <button type="button" class="rm-action-btn rm-action-btn--primary" data-rm-action="review-confirm">Simpan Perubahan</button>
-        </div>
+    <div class="rm-modal-body">
+      ${reviewModal.renamedFrom ? `<p>Nama: &quot;${esc(reviewModal.renamedFrom)}&quot; &rarr; &quot;${esc(reviewModal.name)}&quot;</p>` : ''}
+      <div class="rm-review-col rm-review-col--added"><h4>Ditambahkan (${reviewModal.added.length})</h4>${addedHtml}</div>
+      <div class="rm-review-col rm-review-col--removed"><h4>Dicabut (${reviewModal.removed.length})</h4>${removedHtml}</div>
+      <div class="rm-modal-actions">
+        <button type="button" class="rm-action-btn" data-rm-action="review-back">Kembali</button>
+        <button type="button" class="rm-action-btn rm-action-btn--primary" data-rm-action="review-confirm">Simpan Perubahan</button>
+      </div>
+    </div>`;
+}
+
+/** Matrix drill-in: which specific users hold `matrixDrillIn.permissionId`
+ *  via an Individual override (read-only — grant/revoke stays exclusively
+ *  in User Management's own Individual Permissions panel; this view links
+ *  there rather than duplicating the edit affordance). */
+function matrixDrillInHtml() {
+  if (!matrixDrillIn) return '';
+  const usernames = [...(matrixState.individualByPermission.get(matrixDrillIn.permissionId) || [])].sort();
+  const byUsername = new Map(getUserList().map((u) => [u.username, u]));
+  const listHtml = usernames.length
+    ? `<ul class="rm-review-list rm-drillin-list">${usernames.map((username) => {
+        const u = byUsername.get(username);
+        const display = u ? `${esc(u.displayName || username)} <span class="rm-drillin-username">@${esc(username)}</span>` : `@${esc(username)}`;
+        return `<li>${display}</li>`;
+      }).join('')}</ul>`
+    : `<p class="rm-review-empty">Tidak ada user dengan Individual Permission untuk permission ini.</p>`;
+  return `
+    <div class="rm-modal-body">
+      <p>${usernames.length} user memiliki &quot;${esc(matrixDrillIn.title)}&quot; melalui Individual Permission (di luar akses dari Role).</p>
+      ${listHtml}
+      <p class="rm-review-empty">Untuk mengubah, buka Manajemen User &rarr; pilih user &rarr; Individual Permissions.</p>
+      <div class="rm-modal-actions">
+        <button type="button" class="rm-action-btn rm-action-btn--primary" data-rm-action="drillin-close">Tutup</button>
       </div>
     </div>`;
 }

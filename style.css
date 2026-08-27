@@ -421,6 +421,14 @@ button, [role="button"] {
   justify-content: center;
   gap: 3px;
   flex: 1;
+  /* Phase 11 (Administration) — flex:1 alone still floors each
+     item at its content's min-content width (the longest unbreakable
+     label, e.g. "Pekerjaan"/"Notifikasi"), which silently overflowed the
+     row once a 6th item was added (bottom-nav-notif-check.mjs caught it
+     at 375/390/402px — the 5-item rows never hit this ceiling before).
+     min-width:0 lets flex-shrink actually win; overflow-wrap covers any
+     single word still wider than its shrunk share. */
+  min-width: 0;
   height: 56px;
   background: none;
   border: none;
@@ -433,6 +441,17 @@ button, [role="button"] {
   padding: 6px 4px;
   position: relative;
   -webkit-tap-highlight-color: transparent;
+}
+.bottom-nav-item span {
+  /* align-items:center (above) means this label is never stretched to the
+     button's width by the flex algorithm — without an explicit max-width
+     it stays at its own unwrapped text width forever, which is what kept
+     forcing the outer button (and the whole row) wide even after
+     min-width:0. Capping it here is what actually lets overflow-wrap bite. */
+  max-width: 100%;
+  overflow-wrap: break-word;
+  text-align: center;
+  line-height: 1.15;
 }
 .bottom-nav-item:hover { color: var(--text); }
 .bottom-nav-item:active { color: var(--accent); }
@@ -1691,6 +1710,15 @@ z-index: 1;
   border-radius: var(--radius-sm);
   padding: 12px 14px;
 }
+
+/* Phase 11 (Administration) — audit finding Notifications D2: server-
+   outbox cards with a real deep-link target (entityKind+entityId) are now
+   clickable; this is the only visual signal distinguishing them from the
+   plain, non-navigable cards (logs-derived entries, or a server entry
+   with no entity yet). */
+.notif-card--clickable { cursor: pointer; transition: background 0.12s, border-color 0.12s; }
+.notif-card--clickable:hover { background: var(--hover, var(--surface-2, var(--gray-1))); border-color: var(--accent); }
+.notif-card--clickable:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .notif-priority-high   { border-left-color: var(--danger); }
 .notif-priority-medium { border-left-color: #F57C00; }

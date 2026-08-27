@@ -19,6 +19,18 @@
    maintenance, spare part, scheduled maintenance) without touching this engine.
 
    No DOM, no Firebase, no `window`.
+
+   Phase 11 (Administration audit, D5) — STATUS NOTE: this module was never
+   wired to a transport. The live notification pipeline that actually ships
+   is functions/src/notifications/ (Cloud Functions) + js/notifications.js
+   (the bell UI) — unrelated code, built later, that reads a Cloud Function-
+   authored /notifications/{uid} RTDB node. This file's exports are reachable
+   only via the reserved js/engineering/index.js barrel (itself not imported
+   by production) and are exercised solely as fixture builders inside
+   scripts/engineering-foundation-check.mjs. Left in place rather than
+   deleted: it's real, tested, forward-looking interface work (the
+   registerSourceNotifier() extension seam below), and removing it would
+   also require reworking that test's unrelated store/provider fixtures.
    ============================================================ */
 
 'use strict';

@@ -49,6 +49,11 @@ const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox']
 const page = await browser.newPage();
 page.on('pageerror', (e) => consoleErrors.push('pageerror: ' + e.message));
 page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push('console.error: ' + m.text()); });
+// Phase 11 (Administration audit, §Permissions P2) — grant/revoke now
+// confirm() before mutating (same pattern as role-additional-permission-
+// dom-check.mjs / permissions-matrix-dom-check.mjs); auto-accept so the
+// existing .click()-driven assertions below still exercise the real path.
+page.on('dialog', async (dialog) => { await dialog.accept(); });
 
 await page.setViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
 await page.evaluateOnNewDocument(() => {
@@ -232,7 +237,10 @@ const result = await page.evaluate(async () => {
   for (let i = 0; i < 20; i++) {
     admin.openUserFormModal('viewer-user');
     admin.__setIpmOverridesForTest('viewer-user', ['pettycash.view']);
-    document.getElementById('btnCloseUserForm').click();
+    // Phase 11 — #btnCloseUserForm (the drawer's own X) no longer exists as
+    // a form-local element; #btnCancelUserForm triggers the exact same
+    // closeUserFormModal() and is still real, still in the DOM.
+    document.getElementById('btnCancelUserForm').click();
   }
   for (let i = 0; i < 10; i++) {
     admin.openUserFormModal(i % 2 === 0 ? 'viewer-user' : 'bidang-user');
@@ -315,7 +323,10 @@ for (const vp of VIEWPORTS) {
     admin.__setIpmOverridesForTest('viewer-user', ['pettycash.view']);
     document.getElementById('btnOpenIpmPicker').click();
     const panel = document.getElementById('userIndividualPermissionsPanel');
-    const modalBox = document.querySelector('#modalUserForm .modal-box');
+    // Phase 11 — #modalUserForm .modal-box no longer exists (that wrapper
+    // was the pre-drawer shell); #modalUserForm itself is now the content
+    // root the same overflow check applies to.
+    const modalBox = document.getElementById('modalUserForm');
     const revokeBtn = document.querySelector('.ipm-revoke-btn');
     return {
       panelVisible: panel.offsetParent !== null && panel.getClientRects().length > 0,
@@ -480,7 +491,10 @@ const findingAResult = await page.evaluate(async () => {
 
   // ── "Lihat" (view-only) mode for the archived user ──────────────────
   admin.openUserFormModal('archived-user');
-  out.titleShowsLihat = document.getElementById('modalUserFormTitle').textContent.includes('Lihat User');
+  // Phase 11 — #modalUserFormTitle no longer exists; the canonical drawer
+  // (js/components/drawer.js) renders the title as both its aria-label and
+  // visible text — aria-label is the exact escaped string, no icon markup.
+  out.titleShowsLihat = (document.querySelector('.drawer')?.getAttribute('aria-label') || '').includes('Lihat User');
   out.saveButtonHidden = document.getElementById('btnSaveUserForm').style.display === 'none';
   out.displayNameDisabled = document.getElementById('userFieldDisplayName').disabled === true;
   out.roleFieldDisabled = document.getElementById('userFieldRole').disabled === true;
@@ -504,14 +518,14 @@ const findingAResult = await page.evaluate(async () => {
 
   // ── Active user is completely unaffected — regression guard ─────────
   admin.openUserFormModal('viewer-user');
-  out.activeUserTitleUnaffected = document.getElementById('modalUserFormTitle').textContent === 'Edit User';
+  out.activeUserTitleUnaffected = document.querySelector('.drawer')?.getAttribute('aria-label') === 'Edit User';
   out.activeUserSaveVisible = document.getElementById('btnSaveUserForm').style.display !== 'none';
   out.activeUserFieldsEnabled = document.getElementById('userFieldDisplayName').disabled === false
     && document.getElementById('userFieldRole').disabled === false;
 
   // ── Inactive (not archived) user is also unaffected ──────────────────
   admin.openUserFormModal('inactive-user');
-  out.inactiveUserTitleUnaffected = document.getElementById('modalUserFormTitle').textContent === 'Edit User';
+  out.inactiveUserTitleUnaffected = document.querySelector('.drawer')?.getAttribute('aria-label') === 'Edit User';
   out.inactiveUserSaveVisible = document.getElementById('btnSaveUserForm').style.display !== 'none';
 
   // ── js/users.js#updateUser() — the actual data-layer guarantee ──────

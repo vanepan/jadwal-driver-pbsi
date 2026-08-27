@@ -6077,6 +6077,21 @@ html.theme-anim .timeline-scroll-fade-right {
   border-bottom: 1px solid var(--border);
 }
 
+/* Phase 11 (Administration) — Decision 1: view-only-access banner, shown
+   on Users/Settings when the session lacks real admin write access.
+   Same shape as .ipm-readonly-notice (kept separate: that one lives inside
+   a form panel and needs a tighter margin, this sits above a toolbar). */
+.v2-admin-readonly-banner {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--surface-2, var(--hover));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 1rem;
+}
+
 /* Toolbar sections — search left, filters center, actions right */
 .v2-admin-toolbar__search {
   flex: 1 1 280px;
@@ -6453,33 +6468,11 @@ html.theme-anim .timeline-scroll-fade-right {
 .v2-user-btn--toggle:hover {
   filter: brightness(0.92);
 }
-
-.v2-user-btn--archive {
-  background: var(--danger-bg);
-  color: var(--danger);
-  border-color: var(--danger);
-}
-.v2-user-btn--archive:hover {
-  filter: brightness(0.92);
-}
-
-.v2-user-btn--delete {
-  background: var(--danger-bg);
-  color: var(--danger);
-  border-color: var(--danger);
-}
-.v2-user-btn--delete:hover {
-  filter: brightness(0.92);
-}
-
-.v2-user-btn--restore {
-  background: var(--ok-bg);
-  color: var(--ok);
-  border-color: var(--ok);
-}
-.v2-user-btn--restore:hover {
-  filter: brightness(0.92);
-}
+/* .v2-user-btn--archive/--delete/--restore: styled further down by the
+   "V1.5.3 — Archive & Safe Deletion Framework" block, which — same
+   specificity, later in source order — is what actually wins the cascade;
+   a same-selector duplicate here was pure dead weight (Phase 11
+   Administration audit, P3). */
 .v2-user-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -11107,17 +11100,11 @@ input[type="time"].v2-admin-config-input {
 .rm-save-bar__msg { font-size: 0.78rem; color: var(--text-muted); }
 .rm-save-bar__actions { display: flex; gap: 8px; }
 
-/* Clone prompt + Review modal — reuse the shared .modal-overlay/.modal-box
-   shell (js/admin.js's user form modal uses the same classes); only the
-   inner sizing/spacing is new. */
-.rm-modal-box {
-  width: min(440px, 92vw);
-  max-height: 80vh;
-  overflow-y: auto;
-  padding: 20px 22px;
-}
-.rm-modal-box h3 { margin: 0 0 8px; font-size: 1rem; }
-.rm-modal-box p { margin: 0 0 12px; font-size: 0.82rem; color: var(--text-muted); }
+/* Clone prompt + Review modal — Phase 11 (Administration): migrated onto
+   the canonical drawer (js/components/drawer.js); .rm-modal-box/
+   .rm-review-box (the old .modal-box-derived wrapper sizing) are gone,
+   the drawer shell now owns panel width/scroll/padding. These are still
+   the real body-content classes, unchanged. */
 .rm-modal-actions {
   display: flex;
   justify-content: flex-end;
@@ -11126,7 +11113,6 @@ input[type="time"].v2-admin-config-input {
   margin-top: 14px;
   border-top: 1px solid var(--border);
 }
-.rm-review-box { width: min(520px, 92vw); }
 .rm-review-col { margin-bottom: 12px; }
 .rm-review-col h4 { margin: 0 0 6px; font-size: 0.76rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
 .rm-review-list { margin: 0; padding-left: 18px; font-size: 0.8rem; }
@@ -11169,7 +11155,6 @@ input[type="time"].v2-admin-config-input {
   border-radius: 10px;
 }
 .rm-detail-card--wide { grid-column: 1 / -1; }
-.rm-detail-card--future { opacity: 0.7; }
 .rm-detail-card__title {
   font-size: 0.68rem;
   font-weight: 700;
@@ -11211,6 +11196,127 @@ input[type="time"].v2-admin-config-input {
   .rm-save-bar__actions { justify-content: flex-end; }
   .rm-detail-grid { grid-template-columns: 1fr; }
   .rm-detail-dl dd { text-align: left; }
+}
+
+/* Phase 11 (Administration) — Permissions Matrix: Per-Role/Matrix segmented
+   toggle (shared header) + the matrix table itself (audit §5's biggest
+   single UX gap: no view answered "who can do X" across every role and
+   every user in one place). */
+.rm-view-toggle {
+  display: inline-flex;
+  margin-left: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+  background: var(--surface-2, var(--hover));
+}
+.rm-view-toggle__btn {
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 5px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.rm-view-toggle__btn:hover { color: var(--text); }
+.rm-view-toggle__btn--active { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,.06)); }
+
+.rm-layout--matrix { display: block; }
+.rm-main--matrix { max-width: none; }
+.rm-matrix-intro { margin: 8px 0 0; font-size: 0.8rem; color: var(--text-muted); max-width: 72ch; }
+
+.rm-matrix-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 10px 0 14px;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+.rm-matrix-legend__item { display: inline-flex; align-items: center; gap: 6px; }
+.rm-matrix-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: transparent;
+  flex: none;
+}
+.rm-matrix-dot--base { background: var(--text-muted); border-color: var(--text-muted); }
+.rm-matrix-dot--additional { background: var(--accent); border-color: var(--accent); }
+.rm-matrix-dot--custom { background: var(--info, #2563eb); border-color: var(--info, #2563eb); }
+.rm-matrix-dot--none { background: transparent; }
+
+.rm-matrix-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  -webkit-overflow-scrolling: touch;
+}
+.rm-matrix-table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: max-content;
+  font-size: 0.78rem;
+}
+.rm-matrix-th--perm, .rm-matrix-td--perm {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface);
+  text-align: left;
+  min-width: 220px;
+  max-width: 320px;
+}
+.rm-matrix-th--perm { z-index: 2; }
+.rm-matrix-table th, .rm-matrix-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.rm-matrix-td--perm { white-space: normal; font-weight: 600; }
+.rm-matrix-th--role { text-align: center; font-weight: 700; font-size: 0.72rem; color: var(--text-muted); }
+.rm-matrix-role-tag { font-weight: 500; color: var(--info, #2563eb); font-size: 0.65rem; }
+.rm-matrix-td { text-align: center; }
+.rm-matrix-td--zero { color: var(--faint, var(--text-muted)); }
+.rm-matrix-module-row td {
+  background: var(--surface-2, var(--hover));
+  font-weight: 700;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-muted);
+  position: sticky;
+  left: 0;
+}
+.rm-matrix-individual-btn {
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 700;
+  min-width: 26px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: var(--danger-bg, #faebeb);
+  color: var(--accent);
+  cursor: pointer;
+}
+.rm-matrix-individual-btn:hover { filter: brightness(0.97); }
+
+.rm-drillin-list { list-style: none; padding: 0; margin: 0 0 12px; }
+.rm-drillin-list li { padding: 6px 0; border-bottom: 1px solid var(--border-faint, var(--border)); font-size: 0.82rem; }
+.rm-drillin-list li:last-child { border-bottom: none; }
+.rm-drillin-username { color: var(--text-muted); font-size: 0.76rem; }
+
+@media (max-width: 720px) {
+  .rm-header__top { flex-wrap: wrap; }
+  .rm-view-toggle { margin-left: 0; }
 }
 
 /* Actions row */

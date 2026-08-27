@@ -92,8 +92,10 @@ import {
 import { mountApprovalIntelligencePanel, updateApprovalComparison } from './components/approval-intelligence-panel.js';
 import { openDecisionReplay } from './components/decision-replay-drawer.js'; // v1.17.5 — Decision Replay & Explainable AI drawer
 // Design System Program Phase 8.2 — Decision Replay + Driver Wellness now render
-// through the canonical drawer shell; only closeDrawer() is needed directly here.
-import { closeDrawer } from './components/drawer.js';
+// through the canonical drawer shell; only closeDrawer() was needed directly
+// here until Phase 11 (Administration) migrated the Delete Confirm modal
+// onto this same shell too, which also needs openDrawer() directly.
+import { openDrawer, closeDrawer, evacuatePersistentDrawerContent } from './components/drawer.js';
 // Design System Program Phase 3 — the canonical save-feedback state machine.
 import { runSaveFeedback } from './components/save-feedback.js';
 // v1.17.6 Driver Wellness Intelligence — read-only wellness interpretation layer
@@ -290,7 +292,7 @@ import {
   isReady as pcReady, getExpenses as getPcExpenses, getNors as getPcNors,
   getActiveCycle as getPcActiveCycle, getSettings as getPcSettings,
 } from './petty-cash/petty-cash-store.js';
-import { initNotificationUI, setNotificationData, openNotificationsModal, markNotificationRead } from './notifications.js';
+import { initNotificationUI, setNotificationData, openNotificationsModal, markNotificationRead, resetNotificationsSync } from './notifications.js';
 import { setTelegramBotToken } from './telegram.js';
 import { subscribeLogsChangeListener, getLogs, logAction, ensureLogsLoadedAndSubscribed, resetLogsSync } from './logs.js';
 import { publishEvent } from './events.js';
@@ -1079,9 +1081,16 @@ function updatePermissionUI(resetNavActive = false) {
   if (topbarAvatar) topbarAvatar.textContent = initials;
 
   // VSM-7 Part 7: full role name in topbar profile card
+  // Phase 11 (Administration) — audit finding Roles D-2: formatRole()
+  // (a bare re-export of role-registry.js#roleLabel(), System-Role-only)
+  // fell back to the raw stored id for a Custom Role, unlike
+  // buildUserCard() a few thousand lines down, which already resolves
+  // this correctly via resolveRoleInfo(). A signed-in Custom-Role user
+  // was seeing their own internal slug (e.g. "role_warehouse_operator-2")
+  // here instead of the role's real display name.
   const topbarRole = document.getElementById('v2TopbarRoleLabel');
   if (topbarRole) {
-    topbarRole.textContent = currentUser?.role ? formatRole(currentUser.role) : '';
+    topbarRole.textContent = currentUser?.role ? resolveRoleInfo(currentUser.role).label : '';
   }
 
   // ── VSM-2: V2 context panel role-gating ──
@@ -1192,9 +1201,11 @@ function updatePermissionUI(resetNavActive = false) {
     if (v2FooterAvatarInitials) v2FooterAvatarInitials.textContent = initials;
     const v2FooterDisplayName = document.getElementById('v2FooterDisplayName');
     if (v2FooterDisplayName) v2FooterDisplayName.textContent = displayName;
+    // Phase 11 (Administration) — audit finding Roles D-2, same as the
+    // topbar badge above.
     const v2FooterRoleLabel = document.getElementById('v2FooterRoleLabel');
     if (v2FooterRoleLabel) {
-      v2FooterRoleLabel.textContent = currentUser?.role ? formatRole(currentUser.role) : '';
+      v2FooterRoleLabel.textContent = currentUser?.role ? resolveRoleInfo(currentUser.role).label : '';
     }
 
     // Reset landing only on auth changes (login/logout/startup). Skipped for
@@ -1710,10 +1721,15 @@ function initDomainShellV1() {
     sicMenuTitles: SIC_MENU_TITLES_PRIMARY,
     mountBefore: document.getElementById('sidebar'),
     // Real identity for the rail's header/footer — same logo asset and the
-    // same getCurrentUser()/formatRole() the old rail's footer and topbar
-    // avatar already use (js/app.js's updatePermissionUI(), ~line 1181).
-    // Never the prototype's hardcoded "Evan"/"v2 · redesign" placeholders.
-    getCurrentUser, formatRole,
+    // same getCurrentUser() the old rail's footer and topbar avatar already
+    // use (js/app.js's updatePermissionUI(), ~line 1181). Never the
+    // prototype's hardcoded "Evan"/"v2 · redesign" placeholders.
+    // Phase 11 (Administration) — audit finding Roles D-2: formatRole()
+    // itself is Custom-Role-blind (falls back to the raw stored id); this
+    // wrapper matches domain-shell.js's exact (role:string)=>string
+    // contract while actually resolving System/Custom/archived/unknown
+    // references correctly, same as the topbar/rail-footer fix above.
+    getCurrentUser, formatRole: (roleId) => resolveRoleInfo(roleId).label,
     logoSrc: 'assets/Logo-PBSI.png',
     brandLabel: 'Sarpras Ops',
     versionLabel: APP_VERSION,
@@ -2415,10 +2431,16 @@ async function navManajemenUser() {
   setWorkspace('administration');
   // v1.30.4 — wire User Management into the Role Domain once, on first visit
   // (docs/ROLE_ASSIGNMENT_DEPENDENCY_REPORT_v1.30.3.md §9's handoff item).
+  // Phase 11 (Administration) — the real role-usage provider registration
+  // moved to startAuthenticatedSession() (audit finding Roles D-1: it used
+  // to register only here, so an admin who opened Control → Roles without
+  // ever visiting Users first got the default always-zero provider, and
+  // the archive-safety guard silently reported "0 users affected" for a
+  // Custom Role real users actually held). initCustomRolesStore() and the
+  // change-listener stay here — they're genuinely Users-screen-scoped.
   if (!userRoleCatalogReady) {
     userRoleCatalogReady = true;
     await initCustomRolesStore();
-    registerRoleUsageProvider({ getUsage: getRoleUsageFromUsers });
     registerCustomRolesChangeListener(() => {
       if (currentWorkspace === 'administration' && activeAdminSection === 'users') renderV2AdminWorkspace();
     });
@@ -5099,6 +5121,9 @@ function initV2AdministrationWorkspace() {
             </select>
             <button id="v2AdminAddUser" class="v2-admin-add-btn" type="button">+ Tambah User</button>
           </div>
+          <div id="v2AdminUsersReadOnlyNotice" class="v2-admin-readonly-banner" style="display:none;">
+            Anda hanya memiliki akses lihat untuk Manajemen User — perubahan tidak dapat disimpan.
+          </div>
           <div id="v2AdminStats"></div>
           <div id="v2AdminUserList" class="v2-admin-user-list"></div>
         </div>
@@ -5690,6 +5715,19 @@ function initV2AdministrationWorkspace() {
   console.log('[VSM-12] Administration workspace injected');
 }
 
+// Phase 11 (Administration) — Decision 1 from the audit (§9): konfigurasi.view's
+// own catalog description promises write access ("View and manage") that it
+// cannot actually grant — every /users and /settings RTDB write requires
+// literal admin or the adminEquivalent claim, which is minted only from
+// system.admin (functions/src/auth/verifyPin.js), a separate permission
+// entirely. This mirrors that exact server-side boundary client-side, so a
+// user granted konfigurasi.view alone sees disabled controls + a clear
+// message instead of a fully-interactive console/form that silently fails
+// end-to-end on every mutation. Pure UX hardening — no RTDB rule changed.
+function hasAdminWriteAccess() {
+  return isAdmin() || can('system.admin');
+}
+
 function buildUserCard(user) {
   const initials = (user.displayName || user.username || '?')
     .split(' ').slice(0, 2).map(w => w[0] || '').join('').toUpperCase() || '?';
@@ -5706,12 +5744,18 @@ function buildUserCard(user) {
       ? `<span class="v2-entity-badge v2-entity-badge--role-warning" title="Custom Role ini sudah diarsipkan">Role Diarsipkan</span>`
       : '';
 
+  const canWrite = hasAdminWriteAccess();
+
   if (archived) {
     const refCount = countUserReferences(user);
-    const deleteBtnHtml = refCount === 0
+    const deleteBtnHtml = !canWrite ? '' : refCount === 0
       ? `<button class="v2-user-btn v2-user-btn--delete"
                 data-user-delete="${esc(user.username)}" type="button">Hapus Permanen</button>`
       : `<span class="v2-delete-blocked-hint">${refCount} referensi</span>`;
+    const restoreBtnHtml = canWrite
+      ? `<button class="v2-user-btn v2-user-btn--restore"
+                data-user-restore="${esc(user.username)}" type="button">Pulihkan</button>`
+      : '';
     return `
       <div class="v2-user-card v2-user-card--archived">
         <div class="v2-user-avatar-ring v2-user-avatar--${esc(role)}">
@@ -5729,14 +5773,26 @@ function buildUserCard(user) {
         <div class="v2-user-card-actions">
           <button class="v2-user-btn v2-user-btn--edit"
                   data-user-view="${esc(user.username)}" type="button">Lihat</button>
-          <button class="v2-user-btn v2-user-btn--restore"
-                  data-user-restore="${esc(user.username)}" type="button">Pulihkan</button>
+          ${restoreBtnHtml}
           ${deleteBtnHtml}
         </div>
       </div>`;
   }
 
   const toggleLabel = active ? 'Nonaktifkan' : 'Aktifkan';
+  // Phase 11 (Administration) — Decision 1: a konfigurasi.view-only holder
+  // (no real admin write access) sees "Lihat" only, matching the archived
+  // branch above, instead of Edit/Toggle/Archive buttons that would fail
+  // silently at the RTDB layer.
+  const actionsHtml = canWrite
+    ? `<button class="v2-user-btn v2-user-btn--edit"
+                data-user-edit="${esc(user.username)}" type="button">Edit</button>
+       <button class="v2-user-btn v2-user-btn--toggle"
+                data-user-toggle="${esc(user.username)}" type="button">${toggleLabel}</button>
+       <button class="v2-user-btn v2-user-btn--archive"
+                data-user-archive="${esc(user.username)}" type="button">Arsipkan</button>`
+    : `<button class="v2-user-btn v2-user-btn--edit"
+                data-user-view="${esc(user.username)}" type="button">Lihat</button>`;
   return `
     <div class="v2-user-card${active ? '' : ' v2-user-card--inactive'}">
       <div class="v2-user-avatar-ring v2-user-avatar--${esc(role)}">
@@ -5752,12 +5808,7 @@ function buildUserCard(user) {
         <span class="v2-user-status-pill${active ? '' : ' v2-status-pill--inactive'}">${active ? 'Aktif' : 'Nonaktif'}</span>
       </div>
       <div class="v2-user-card-actions">
-        <button class="v2-user-btn v2-user-btn--edit"
-                data-user-edit="${esc(user.username)}" type="button">Edit</button>
-        <button class="v2-user-btn v2-user-btn--toggle"
-                data-user-toggle="${esc(user.username)}" type="button">${toggleLabel}</button>
-        <button class="v2-user-btn v2-user-btn--archive"
-                data-user-archive="${esc(user.username)}" type="button">Arsipkan</button>
+        ${actionsHtml}
       </div>
     </div>`;
 }
@@ -6177,6 +6228,19 @@ function renderV2AdminUsers() {
   const list = document.getElementById('v2AdminUserList');
   if (!list) return;
 
+  // Phase 11 (Administration) — Decision 1 (audit §9, Users U-1): make the
+  // konfigurasi.view-without-real-write-access case explicit instead of a
+  // silently-failing "Tambah User" button + cards whose actions all
+  // eventually 403. Real /users READ also requires admin/adminEquivalent
+  // (database.rules.json), so in practice this session would already see
+  // an empty list below — this banner + hidden CTA is what makes THAT
+  // empty state legible as "you lack access" rather than "no users exist".
+  const addUserBtn = document.getElementById('v2AdminAddUser');
+  const readOnlyNotice = document.getElementById('v2AdminUsersReadOnlyNotice');
+  const canWriteUsers = hasAdminWriteAccess();
+  if (addUserBtn) addUserBtn.style.display = canWriteUsers ? '' : 'none';
+  if (readOnlyNotice) readOnlyNotice.style.display = canWriteUsers ? 'none' : '';
+
   const q = (document.getElementById('v2AdminSearch')?.value || '').toLowerCase().trim();
   const roleFilter = document.getElementById('v2AdminRoleFilter')?.value || '';
   const allUsers = getUserList();
@@ -6279,12 +6343,28 @@ function renderV2AdminUsers() {
       const username = btn.dataset.userToggle;
       const user = getUserList().find(u => u.username === username);
       if (!user) return;
+      const willDeactivate = user.active !== false;
+      // Phase 11 (Administration) — audit finding Users U-2: this quick
+      // toggle used to fire with zero confirmation, a regression from the
+      // legacy admin.js code's confirm('Nonaktifkan user ini?'). Restored
+      // for both directions (legacy only confirmed deactivate).
+      const confirmMsg = willDeactivate
+        ? `Nonaktifkan user "${user.displayName || user.username}"?`
+        : `Aktifkan kembali user "${user.displayName || user.username}"?`;
+      if (!confirm(confirmMsg)) return;
       btn.disabled = true;
       try {
-        if (user.active !== false) {
+        if (willDeactivate) {
           await deactivateUser(username);
+          // Phase 11 (Administration) — audit finding Users U-3: this was
+          // the one user-mutating action on this whole surface with zero
+          // audit trail (every sibling action already calls logAction()).
+          logAction({ userId: getCurrentUser()?.id, username: getCurrentUser()?.username, action: 'user_deactivated', targetId: username });
+          showToast('User berhasil dinonaktifkan.');
         } else {
           await activateUser(username);
+          logAction({ userId: getCurrentUser()?.id, username: getCurrentUser()?.username, action: 'user_reactivated', targetId: username });
+          showToast('User berhasil diaktifkan.');
         }
       } catch (err) {
         showToast(err.message || 'Gagal mengubah status.', 'error');
@@ -6295,6 +6375,12 @@ function renderV2AdminUsers() {
   list.querySelectorAll('[data-user-archive]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const username = btn.dataset.userArchive;
+      const user = getUserList().find(u => u.username === username);
+      // Phase 11 (Administration) — audit finding Users U-2: Archive also
+      // fired with zero confirmation, despite cascading into a bigger state
+      // change than a simple toggle (PIN reset disabled, Individual
+      // Permissions become read-only, Edit becomes Lihat-only).
+      if (!confirm(`Arsipkan user "${user?.displayName || user?.username || username}"? PIN reset dan Individual Permissions akan dinonaktifkan untuk user ini.`)) return;
       btn.disabled = true;
       try {
         await archiveUser(username);
@@ -7666,6 +7752,11 @@ const AUDIT_ACTION_LABELS = {
   user_archived:        'User Diarsipkan',
   user_restored:        'User Dipulihkan',
   user_deleted:         'User Dihapus',
+  // Phase 11 (Administration) — the V2 quick deactivate/activate toggle
+  // previously logged nothing at all (audit finding Users U-3); these
+  // mirror driver_deactivated/driver_reactivated's existing naming.
+  user_deactivated:     'User Dinonaktifkan',
+  user_reactivated:     'User Diaktifkan',
   vehicle_created:      'Kendaraan Dibuat',
   vehicle_updated:      'Kendaraan Diperbarui',
   vehicle_archived:     'Kendaraan Diarsipkan',
@@ -7937,6 +8028,12 @@ function buildAuditHumanDetails(log) {
     case 'user_restored':
       chg('Status User', 'Diarsipkan', 'Aktif');
       break;
+    case 'user_deactivated':
+      chg('Status User', 'Aktif', 'Nonaktif');
+      break;
+    case 'user_reactivated':
+      chg('Status User', 'Nonaktif', 'Aktif');
+      break;
     case 'user_deleted':
       f('Nama User', meta.name, true);
       f('Operasi',   'Dihapus Permanen');
@@ -8183,8 +8280,17 @@ function _cfgMaskToken(token) {
 function renderV2AdminConfig() {
   const container = document.getElementById('v2AdminSectionConfig');
   if (!container) return;
+  // Phase 11 (Administration) — Decision 1 (audit §9, Settings D1):
+  // konfigurasi.view's own catalog description says "View and manage",
+  // but every /settings write requires literal admin/adminEquivalent —
+  // computed before the template so the banner + disabled Save buttons
+  // render in the same pass, never a flash of enabled-then-disabled.
+  const canWriteConfig = hasAdminWriteAccess();
 
   container.innerHTML = `
+    <div id="v2AdminConfigReadOnlyNotice" class="v2-admin-readonly-banner" style="${canWriteConfig ? 'display:none;' : ''}">
+      Anda hanya memiliki akses lihat untuk Konfigurasi Global — perubahan tidak dapat disimpan.
+    </div>
     <div class="v2-admin-config-groups">
 
       <div class="v2-admin-config-group">
@@ -8203,7 +8309,7 @@ function renderV2AdminConfig() {
           <div class="v2-admin-config-field">
             <label class="v2-admin-config-label" for="cfgOdometerWarn">Batas Lompatan Odometer</label>
             <div class="v2-admin-config-input-row">
-              <input type="number" id="cfgOdometerWarn" class="v2-admin-config-input" min="1" step="1">
+              <input type="number" id="cfgOdometerWarn" class="v2-admin-config-input" min="1" max="50000" step="1">
               <span class="v2-admin-config-unit">km</span>
             </div>
             <p class="v2-admin-config-hint">Perubahan di atas nilai ini akan ditandai sebagai anomali.</p>
@@ -8229,7 +8335,7 @@ function renderV2AdminConfig() {
           <div class="v2-admin-config-field">
             <label class="v2-admin-config-label" for="cfgRecoveryBuffer">Recovery Buffer</label>
             <div class="v2-admin-config-input-row">
-              <input type="number" id="cfgRecoveryBuffer" class="v2-admin-config-input" min="0" step="1">
+              <input type="number" id="cfgRecoveryBuffer" class="v2-admin-config-input" min="0" max="1440" step="1">
               <span class="v2-admin-config-unit">menit</span>
             </div>
             <p class="v2-admin-config-hint">Jeda pemulihan driver setelah assignment berakhir sebelum direkomendasikan lagi (Driver Recommendation Engine).</p>
@@ -8237,7 +8343,7 @@ function renderV2AdminConfig() {
           <div class="v2-admin-config-field">
             <label class="v2-admin-config-label" for="cfgAssignmentThreshold">Ambang Batas Perubahan Jadwal</label>
             <div class="v2-admin-config-input-row">
-              <input type="number" id="cfgAssignmentThreshold" class="v2-admin-config-input" min="0" step="1">
+              <input type="number" id="cfgAssignmentThreshold" class="v2-admin-config-input" min="0" max="1440" step="1">
               <span class="v2-admin-config-unit">menit</span>
             </div>
             <p class="v2-admin-config-hint">Perubahan jam keberangkatan di bawah ambang ini tidak memicu notifikasi (driver/tujuan/kendaraan tetap selalu memicu).</p>
@@ -8245,7 +8351,7 @@ function renderV2AdminConfig() {
           <div class="v2-admin-config-field">
             <label class="v2-admin-config-label" for="cfgNotifDebounce">Notification Debounce</label>
             <div class="v2-admin-config-input-row">
-              <input type="number" id="cfgNotifDebounce" class="v2-admin-config-input" min="0" step="1">
+              <input type="number" id="cfgNotifDebounce" class="v2-admin-config-input" min="0" max="3600" step="1">
               <span class="v2-admin-config-unit">detik</span>
             </div>
             <p class="v2-admin-config-hint">Beberapa edit beruntun pada assignment yang sama digabung menjadi satu notifikasi setelah jeda ini.</p>
@@ -8277,7 +8383,7 @@ function renderV2AdminConfig() {
           <div class="v2-admin-config-field">
             <label class="v2-admin-config-label" for="cfgBackupDays">Retensi Backup</label>
             <div class="v2-admin-config-input-row">
-              <input type="number" id="cfgBackupDays" class="v2-admin-config-input" min="1" step="1">
+              <input type="number" id="cfgBackupDays" class="v2-admin-config-input" min="1" max="365" step="1">
               <span class="v2-admin-config-unit">hari</span>
             </div>
             <p class="v2-admin-config-hint">Jumlah hari data backup dipertahankan.</p>
@@ -8447,6 +8553,9 @@ function renderV2AdminConfig() {
     if (!Number.isFinite(newOdom) || newOdom < 1) {
       showToast('Batas lompatan odometer harus lebih dari 0 km.'); return;
     }
+    if (newOdom > 50000) {
+      showToast('Batas lompatan odometer terlalu besar (maks 50.000 km).'); return;
+    }
     btn.disabled = true;
     try {
       const prevStart = getSetting('operations.workStartMins');
@@ -8498,8 +8607,11 @@ function renderV2AdminConfig() {
     const newEnablePush       = document.getElementById('cfgEnablePush').checked;
 
     if (!Number.isFinite(newRecoveryBuffer) || newRecoveryBuffer < 0) { showToast('Recovery Buffer tidak boleh negatif.'); return; }
+    if (newRecoveryBuffer > 1440) { showToast('Recovery Buffer terlalu besar (maks 1440 menit / 24 jam).'); return; }
     if (!Number.isFinite(newThreshold) || newThreshold < 0) { showToast('Ambang Batas Perubahan Jadwal tidak boleh negatif.'); return; }
+    if (newThreshold > 1440) { showToast('Ambang Batas Perubahan Jadwal terlalu besar (maks 1440 menit / 24 jam).'); return; }
     if (!Number.isFinite(newDebounceSec) || newDebounceSec < 0) { showToast('Notification Debounce tidak boleh negatif.'); return; }
+    if (newDebounceSec > 3600) { showToast('Notification Debounce terlalu besar (maks 3600 detik / 1 jam).'); return; }
 
     btn.disabled = true;
     try {
@@ -8554,6 +8666,9 @@ function renderV2AdminConfig() {
     const newDays = parseInt(document.getElementById('cfgBackupDays').value, 10);
     if (!Number.isFinite(newDays) || newDays < 1) {
       showToast('Retensi backup harus lebih dari 0 hari.'); return;
+    }
+    if (newDays > 365) {
+      showToast('Retensi backup terlalu besar (maks 365 hari).'); return;
     }
     const prevDays = getSetting('system.backupRetentionDays');
     if (newDays === prevDays) { showToast('Tidak ada perubahan.'); return; }
@@ -8668,6 +8783,18 @@ function renderV2AdminConfig() {
 
   _refreshPwaConfigGroup();
   registerPWAStateListener(_refreshPwaConfigGroup);
+
+  // Phase 11 (Administration) — Decision 1: disable every real write
+  // action when the session lacks admin write access. A disabled <button>
+  // never dispatches a click event, so this is a real guard, not merely
+  // cosmetic — matches this function's own Save handlers being plain
+  // click listeners on standalone buttons (no <form> to bypass via Enter).
+  if (!canWriteConfig) {
+    ['cfgSaveOps', 'cfgSaveNotif', 'cfgSaveSystem', 'cfgSaveTelegram'].forEach((id) => {
+      const btn = document.getElementById(id);
+      if (btn) { btn.disabled = true; btn.title = 'Anda hanya memiliki akses lihat.'; }
+    });
+  }
 }
 
 /* ============================================================
@@ -11828,36 +11955,35 @@ function countUserReferences(user) {
   ).length;
 }
 
+// Phase 11 (Administration) — Design System Program: canonical drawer
+// migration. #modalDeleteConfirm is a persistent content host now (title
+// moved to a variable passed straight into openDrawer(), no wrapping
+// .modal-overlay/.modal-box/.modal-header — the drawer shell provides all
+// of that), not a self-contained modal. Same "physically move the node in
+// and out of the drawer, never regenerate it" approach as
+// admin.js#openUserFormModal() — see that function's own comments for why
+// (this modal's #btnConfirmDelete/#deleteConfirmInput listeners are bound
+// once, right here, and must keep resolving to the same live elements
+// across every open/close cycle).
 function initDeleteConfirmModal() {
   const modal = document.createElement('div');
   modal.id = 'modalDeleteConfirm';
-  modal.className = 'modal-overlay';
   modal.style.display = 'none';
   modal.innerHTML = `
-    <div class="modal-box modal-box--narrow">
-      <div class="modal-header">
-        <h2 class="modal-title" id="deleteConfirmTitle">Hapus Permanen</h2>
-        <button class="modal-close" id="btnCloseDeleteConfirm" type="button">&times;</button>
-      </div>
-      <div class="modal-body">
-        <p class="v2-delete-confirm-desc" id="deleteConfirmDesc"></p>
-        <div class="v2-delete-confirm-refs" id="deleteConfirmRefs"></div>
-        <div class="form-group" id="deleteConfirmInputGroup">
-          <label for="deleteConfirmInput">Ketik <strong>DELETE</strong> untuk konfirmasi:</label>
-          <input type="text" id="deleteConfirmInput" placeholder="DELETE" autocomplete="off" />
-        </div>
-        <div class="form-actions">
-          <button type="button" class="btn-secondary" id="btnCancelDeleteConfirm">Batal</button>
-          <button type="button" class="btn-danger" id="btnConfirmDelete" disabled>Hapus Permanen</button>
-        </div>
-      </div>
+    <p class="v2-delete-confirm-desc" id="deleteConfirmDesc"></p>
+    <div class="v2-delete-confirm-refs" id="deleteConfirmRefs"></div>
+    <div class="form-group" id="deleteConfirmInputGroup">
+      <label for="deleteConfirmInput">Ketik <strong>DELETE</strong> untuk konfirmasi:</label>
+      <input type="text" id="deleteConfirmInput" placeholder="DELETE" autocomplete="off" />
+    </div>
+    <div class="form-actions">
+      <button type="button" class="btn-secondary" id="btnCancelDeleteConfirm">Batal</button>
+      <button type="button" class="btn-danger" id="btnConfirmDelete" disabled>Hapus Permanen</button>
     </div>
   `;
   document.body.appendChild(modal);
 
-  document.getElementById('btnCloseDeleteConfirm')?.addEventListener('click', closeDeleteConfirmModal);
   document.getElementById('btnCancelDeleteConfirm')?.addEventListener('click', closeDeleteConfirmModal);
-  modal.addEventListener('click', e => { if (e.target === modal) closeDeleteConfirmModal(); });
   document.getElementById('deleteConfirmInput')?.addEventListener('input', e => {
     const btn = document.getElementById('btnConfirmDelete');
     if (btn) btn.disabled = e.target.value.trim() !== 'DELETE';
@@ -11866,14 +11992,17 @@ function initDeleteConfirmModal() {
 }
 
 function openDeleteConfirmModal({ type, id, name, refCount }) {
+  // Phase 11 (Administration) — see evacuatePersistentDrawerContent()'s own
+  // doc comment (js/components/drawer.js) for why this matters, including
+  // the cross-module case: a stale User Form drawer (js/admin.js) could in
+  // principle still be attached when this fires.
+  evacuatePersistentDrawerContent();
   pendingDeleteEntity = { type, id, name };
-  const title  = document.getElementById('deleteConfirmTitle');
   const desc   = document.getElementById('deleteConfirmDesc');
   const refs   = document.getElementById('deleteConfirmRefs');
   const input  = document.getElementById('deleteConfirmInput');
   const btn    = document.getElementById('btnConfirmDelete');
   const group  = document.getElementById('deleteConfirmInputGroup');
-  if (title) title.textContent = `Hapus Permanen — ${name}`;
   if (desc)  desc.textContent  = 'Tindakan ini tidak dapat dibatalkan. Data akan dihapus secara permanen dari sistem.';
   if (refs)  refs.innerHTML    = refCount > 0
     ? `<div class="v2-delete-refs-warning">Ditemukan ${refCount} referensi di riwayat operasional. Hapus tidak tersedia selama ada referensi aktif.</div>`
@@ -11881,13 +12010,20 @@ function openDeleteConfirmModal({ type, id, name, refCount }) {
   if (input) { input.value = ''; input.disabled = refCount > 0; }
   if (group) group.style.display = refCount > 0 ? 'none' : '';
   if (btn)   btn.disabled = true;
-  const modal = document.getElementById('modalDeleteConfirm');
-  if (modal) modal.style.display = 'flex';
+
+  openDrawer({ title: `Hapus Permanen — ${name}`, icon: 'trash', onClose: closeDeleteConfirmModal });
+  const drawerBody = document.querySelector('[data-drawer-body]');
+  const content = document.getElementById('modalDeleteConfirm');
+  if (drawerBody && content) { content.style.display = ''; drawerBody.appendChild(content); }
 }
 
 function closeDeleteConfirmModal() {
-  const modal = document.getElementById('modalDeleteConfirm');
-  if (modal) modal.style.display = 'none';
+  // Move (not remove) back to a stable parent — see openUserFormModal()'s
+  // closeUserFormModal() for why a real .remove() would break every
+  // getElementById('deleteConfirm...') call on the next open.
+  const content = document.getElementById('modalDeleteConfirm');
+  if (content) { document.body.appendChild(content); content.style.display = 'none'; }
+  closeDrawer();
   pendingDeleteEntity = null;
 }
 
@@ -12832,6 +12968,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   // User management (admin only)
   // Cara pakai: await window.appDebug.createUser({ username, displayName, role, pin })
   window.appDebug.createUser = createUser;
+  // Phase 11 (Administration) — app.js has zero ES exports, so a real DOM
+  // regression test for the (now canonical-drawer-hosted) Delete Confirm
+  // modal has no other way to reach it. Test-only access point, same
+  // convention as openFormModal/closeFormModal above.
+  window.appDebug.openDeleteConfirmModal = openDeleteConfirmModal;
+  window.appDebug.closeDeleteConfirmModal = closeDeleteConfirmModal;
 
   // Load assignments dari localStorage (cache lokal)
   // Normalize requests on load: convert legacy { date } → { startDate, endDate }
@@ -12901,6 +13043,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Role Additional half of effective permission resolution (this
     // session's own role's bulk grants).
     initRolePermissionProvider();
+    // Phase 11 (Administration) — audit finding Roles D-1: same boot-time
+    // reasoning as the three providers above, moved here from
+    // navManajemenUser()'s lazy first-visit registration. loadAuthedAdminData()
+    // (top of this function) has already kicked off the real /users
+    // subscription, so getRoleUsageFromUsers() reads a live-updating cache
+    // by the time anyone actually clicks Delete on a role — this just
+    // guarantees the REAL provider (not the always-zero default) is active
+    // before an admin can ever reach Role Management at all, regardless of
+    // whether they visited Users first in this session.
+    registerRoleUsageProvider({ getUsage: getRoleUsageFromUsers });
+    // Phase 11 (Administration) — audit finding Roles D-4: nav-visibility
+    // (updatePermissionUI(), which shows/hides sidebar/rail buttons) used
+    // to only re-run from a fixed list of explicit UI-action call sites —
+    // never from a live Custom Roles change. The underlying route guard
+    // (canAccessModule() at click-time) was always correct regardless, but
+    // a session whose Custom Role just lost a capability on another tab
+    // could keep seeing a now-forbidden nav button until some UNRELATED
+    // re-render happened to refresh it. initRuntimeRoleProvider() above
+    // already guarantees the /customRoles subscription this listener rides
+    // on is live from session boot, not just after visiting Users/Roles.
+    // Scoped to the Custom-Roles half only (not Role Additional's live
+    // cache, which has no change-notification hook of its own yet — a
+    // real, smaller, separately-scoped follow-up, not silently dropped).
+    registerCustomRolesChangeListener(() => updatePermissionUI());
     // Registered BEFORE initSettingsStore() so it also catches the initial
     // load (registerSettingsChangeListener fires on first load, not just
     // subsequent live changes — see settings-store.js#refreshSettingsCache).
@@ -12985,7 +13151,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   // fires on warm launch, delayed restore, AND fresh login — so the admin
   // datasets recover whenever a live session appears, not only at boot.
   onAuthAvailable(() => { startAuthenticatedSession(); });
-  onAuthLost(() => { resetUsersSync(); resetLogsSync(); resetExportHistorySync(); });
+  // Phase 11 (Administration) — audit finding Notifications D3: this
+  // module's own listeners had no logout teardown, unlike these three
+  // established siblings.
+  onAuthLost(() => { resetUsersSync(); resetLogsSync(); resetExportHistorySync(); resetNotificationsSync(); });
 
   await initAuthUI(() => {
     updatePermissionUI(true); // auth change → reset nav to Dashboard

@@ -122,7 +122,9 @@ const result = await page.evaluate(async () => {
   nameInput.dispatchEvent(new Event('input', { bubbles: true }));
   host.querySelector('[data-rm-action="save"]').click();
   out.errorShownForEmptyName = !!host.querySelector('.rm-error');
-  out.noReviewModalForInvalidSave = !host.querySelector('.rm-review-box');
+  // Phase 11 — Review now renders in the canonical drawer (document.body),
+  // not inside host; .rm-review-box (the old wrapper class) is gone.
+  out.noReviewModalForInvalidSave = !document.querySelector('.drawer');
 
   // ── Valid rename + permission toggle -> Save -> Review shows correct diff ──
   const nameInput2 = host.querySelector('#rmNameInput');
@@ -131,26 +133,32 @@ const result = await page.evaluate(async () => {
   const toggleCb2 = host.querySelector('.rm-permission-row input[data-rm-permission-id="warehouse.view"]');
   toggleCb2.click(); // unchecks warehouse.view (was granted)
   host.querySelector('[data-rm-action="save"]').click();
-  out.reviewModalShown = !!host.querySelector('.rm-review-box');
-  out.reviewShowsRename = (host.querySelector('.rm-review-box')?.textContent || '').includes('Renamed Custom Role');
-  out.reviewShowsRemoved = (host.querySelector('.rm-review-col--removed')?.textContent || '').includes('Warehouse');
+  // Phase 11 — Review Perubahan now renders inside the canonical drawer
+  // (js/components/drawer.js), appended to document.body, not host — the
+  // old .rm-review-box wrapper class is gone; identify it by the drawer's
+  // aria-label (set to the exact title passed to openDrawer()) instead.
+  // .rm-review-col--removed is still the real content class, unchanged.
+  const drawerEl = () => document.querySelector('.drawer');
+  out.reviewModalShown = drawerEl()?.getAttribute('aria-label') === 'Review Perubahan';
+  out.reviewShowsRename = (drawerEl()?.textContent || '').includes('Renamed Custom Role');
+  out.reviewShowsRemoved = (document.querySelector('.rm-review-col--removed')?.textContent || '').includes('Warehouse');
 
   // ── Confirming Review attempts a real write; unauthenticated -> rejected
   //    gracefully (inline error, edits preserved, no crash) ──────────
-  host.querySelector('[data-rm-action="review-confirm"]').click();
+  document.querySelector('[data-rm-action="review-confirm"]').click();
   await new Promise((r) => setTimeout(r, 800)); // let the rejected Firebase write settle
-  out.reviewModalClosedAfterConfirm = !host.querySelector('.rm-review-box');
+  out.reviewModalClosedAfterConfirm = drawerEl()?.getAttribute('aria-label') !== 'Review Perubahan';
   out.errorShownAfterRejectedSave = !!host.querySelector('.rm-error');
   out.saveBarStillShownAfterRejectedSave = !!host.querySelector('.rm-save-bar'); // edits preserved, not lost
 
   // ── Clone (System Role -> Custom Role): attempts a real write, also
   //    rejected gracefully ───────────────────────────────────────────
   host.querySelector('[data-rm-role="admin"]').click(); // no unsaved changes on role_test after the above, but confirm() is auto-accepted regardless
-  host.querySelector('[data-rm-action="clone-open"]').click();
-  out.clonePromptShown = !!host.querySelector('.rm-modal-box');
-  host.querySelector('[data-rm-action="clone-confirm"]').click();
+  host.querySelector('[data-rm-action="clone-open"]').click(); // still the real trigger button, inside host/root
+  out.clonePromptShown = drawerEl()?.getAttribute('aria-label') === 'Clone Role';
+  document.querySelector('[data-rm-action="clone-confirm"]').click();
   await new Promise((r) => setTimeout(r, 800));
-  out.clonePromptClosedAfterConfirm = !host.querySelector('.rm-modal-box:not(.rm-review-box)');
+  out.clonePromptClosedAfterConfirm = drawerEl()?.getAttribute('aria-label') !== 'Clone Role';
   out.errorShownAfterRejectedClone = !!host.querySelector('.rm-error');
 
   // ── System Role regression, updated for v1.30.9.9 (Role-Level

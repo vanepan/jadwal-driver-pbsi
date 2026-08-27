@@ -132,9 +132,12 @@ const result = await page.evaluate(async () => {
 
   // ── Selecting a Custom Role never shows the System-Role-only Role
   //    Additional affordances (structural isolation, not just hidden) ──
+  // Phase 11 — Clone Role now renders inside the canonical drawer
+  // (document.body), not host; #rmCloneName/[data-rm-action="clone-cancel"]
+  // are queried globally now.
   host.querySelector('[data-rm-action="clone-open"]').click();
-  host.querySelector('#rmCloneName').dispatchEvent(new Event('input', { bubbles: true }));
-  host.querySelector('[data-rm-action="clone-cancel"]').click(); // no real clone needed; just confirm no leakage on a Custom Role via the seeded fixture instead
+  document.querySelector('#rmCloneName').dispatchEvent(new Event('input', { bubbles: true }));
+  document.querySelector('[data-rm-action="clone-cancel"]').click(); // no real clone needed; just confirm no leakage on a Custom Role via the seeded fixture instead
   const custom = (await import('/js/role-management/custom-roles-store.js'));
   custom.__seedCustomRolesForTest([{ id: 'role_test_ra', name: 'RA Test Role', permissions: ['warehouse.view'], archived: false, clonedFrom: 'Bidang', createdAt: '2026-08-13T00:00:00.000Z', updatedAt: '2026-08-13T00:00:00.000Z' }]);
   host.querySelector('[data-rm-role="role_test_ra"]').click();

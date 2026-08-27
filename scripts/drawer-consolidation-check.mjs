@@ -42,7 +42,11 @@ check('decision-replay-drawer.js no longer exports closeDecisionReplayDrawer', !
 check('driver-wellness-drawer.js no longer exports closeDriverWellnessDrawer', !/export function closeDriverWellnessDrawer/.test(dwd));
 check('decision-replay-drawer.js rank-toggle sets aria-expanded alongside data-expanded', /setAttribute\('aria-expanded'/.test(drx));
 check('js/app.js closeApproveRequestModal() calls closeDrawer(), not closeDecisionReplayDrawer()', /closeApproveRequestModal\(\) \{[\s\S]{0,400}?closeDrawer\(\)/.test(appJs) && !/closeApproveRequestModal\(\) \{[\s\S]{0,400}?closeDecisionReplayDrawer\(\)/.test(appJs));
-check('js/app.js imports closeDrawer from the canonical shell', /import\s*\{\s*closeDrawer\s*\}\s*from\s*'\.\/components\/drawer\.js'/.test(appJs));
+// Phase 11 (Administration) — app.js's import from this module grew
+// (openDrawer + evacuatePersistentDrawerContent, for the Delete Confirm
+// modal's own drawer migration), so this now checks closeDrawer is
+// PRESENT in that import, not that it's the ONLY named import.
+check('js/app.js imports closeDrawer from the canonical shell', /import\s*\{[^}]*\bcloseDrawer\b[^}]*\}\s*from\s*'\.\/components\/drawer\.js'/.test(appJs));
 
 // Design System Program Phase 10 (Canonical Drawer Migration): Gudang's
 // and Engineering's detail drawers were migrated onto this canonical

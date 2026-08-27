@@ -129,15 +129,19 @@ const result = await page.evaluate(async () => {
   // ── 6. Saving surfaces the auto-heal TRANSPARENTLY: the Review modal's
   //    diff must show "Full Administrator Access" under Dicabut (removed) —
   //    proving it was never silently dropped, just made explicit on save. ──
+  // Phase 11 — Review Perubahan now renders inside the canonical drawer
+  // (js/components/drawer.js), appended to document.body, not host; the
+  // old .rm-review-box wrapper class is gone — identify it by the
+  // drawer's aria-label instead. .rm-review-col--added/--removed are
+  // still the real content classes, unchanged, just queried globally now.
   host.querySelector('[data-rm-action="save"]').click();
-  const reviewBox = host.querySelector('.rm-review-box');
-  out.reviewModalShown = !!reviewBox;
-  out.reviewShowsAdminRemoved = (host.querySelector('.rm-review-col--removed')?.textContent || '').includes('Full Administrator Access');
-  out.reviewShowsVehicleAdded = (host.querySelector('.rm-review-col--added')?.textContent || '').includes('Vehicle');
+  out.reviewModalShown = document.querySelector('.drawer')?.getAttribute('aria-label') === 'Review Perubahan';
+  out.reviewShowsAdminRemoved = (document.querySelector('.rm-review-col--removed')?.textContent || '').includes('Full Administrator Access');
+  out.reviewShowsVehicleAdded = (document.querySelector('.rm-review-col--added')?.textContent || '').includes('Vehicle');
 
   // ── Confirming attempts a real write; unauthenticated -> rejected
   //    gracefully (same established pattern). ────────────────────────
-  host.querySelector('[data-rm-action="review-confirm"]').click();
+  document.querySelector('[data-rm-action="review-confirm"]').click();
   await new Promise((r) => setTimeout(r, 800));
   out.errorShownAfterRejectedSave = !!host.querySelector('.rm-error');
 
@@ -163,14 +167,14 @@ const result = await page.evaluate(async () => {
   pettyRow.querySelector('input[type="checkbox"]').click();
   out.ordinarySaveBarAppears = !!host.querySelector('.rm-save-bar');
   host.querySelector('[data-rm-action="save"]').click();
-  out.ordinarySaveOpensReview = !!host.querySelector('.rm-review-box');
-  out.ordinaryReviewNeverMentionsProtected = !(host.querySelector('.rm-review-box')?.textContent || '').includes('Full Administrator Access');
+  out.ordinarySaveOpensReview = document.querySelector('.drawer')?.getAttribute('aria-label') === 'Review Perubahan';
+  out.ordinaryReviewNeverMentionsProtected = !(document.querySelector('.drawer')?.textContent || '').includes('Full Administrator Access');
 
   // ── Light regression smoke-checks (full dedicated coverage lives in
   //    role-management-dom-check.mjs / role-additional-permission-dom-
   //    check.mjs / individual-permission-management-dom-check.mjs, all
   //    re-run unmodified as part of this task's own regression) ───────
-  host.querySelector('[data-rm-action="review-back"]')?.click();
+  document.querySelector('[data-rm-action="review-back"]')?.click();
   host.querySelector('[data-rm-role="admin"]').click(); // System Role — still read-only for Base
   const adminBaseCheckboxes = Array.from(host.querySelectorAll('.rm-permission-row--base input[type="checkbox"]'));
   out.systemRoleBaseStillReadOnly = adminBaseCheckboxes.length > 0 && adminBaseCheckboxes.every((cb) => cb.disabled);

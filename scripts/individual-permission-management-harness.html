@@ -17,13 +17,10 @@
      calls are silent no-ops and the grant/revoke error path becomes
      unobservable to this test. -->
 <div id="toast" style="display:none;"></div>
-<div class="modal-overlay" id="modalUserForm" style="display:none;">
-  <div class="modal-box">
-    <div class="modal-header">
-      <h2 class="modal-title" id="modalUserFormTitle">Tambah User</h2>
-      <button class="modal-close" id="btnCloseUserForm">&times;</button>
-    </div>
-    <div class="modal-body">
+<!-- Phase 11 — canonical drawer migration: #modalUserForm is now a plain
+     content host (js/admin.js moves it into js/components/drawer.js's
+     shell on open), not a modal-overlay. See index.html's own comment. -->
+<div id="modalUserForm" style="display:none;">
       <form id="userForm" novalidate>
         <div class="form-grid">
           <div class="form-group">
@@ -95,8 +92,6 @@
           <button type="submit" class="btn-primary" id="btnSaveUserForm">Simpan</button>
         </div>
       </form>
-    </div>
-  </div>
 </div>
 </body>
 </html>

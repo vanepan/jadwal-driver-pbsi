@@ -114,24 +114,32 @@ function dur(s) { return parseFloat(s); }
   await page.close();
 }
 
-// ── engineering.css toggle-knob: transform-based travel, visually verified ──
+// ── engineering.css toggle-knob: `left`-based travel, visually verified ──
+// Phase 12 (V1 Final QA) note: this block previously asserted a
+// `transform: translateX` implementation. The Phase 9 checkpoint (§2)
+// deliberately reverted the knob to its original `left`-based transition
+// (`transition: left .15s`; `left: 3px` -> `left: 20px` when on). The
+// visual outcome (a ~17px travel with a suppressible CSS transition) is
+// identical and equally gated by prefers-reduced-motion / [data-anim=off];
+// only the animated property differs. Assertions below now match that
+// deliberate implementation.
 {
   const { page, errors } = await loadPage();
   const before = await page.evaluate(() => {
     const knob = document.getElementById('engKnob');
     const r = knob.getBoundingClientRect();
-    return { x: r.x, transform: getComputedStyle(knob).transform };
+    return { x: r.x, left: getComputedStyle(knob).left };
   });
   await page.evaluate(() => document.getElementById('engToggle').setAttribute('data-on', 'true'));
   await new Promise((r) => setTimeout(r, 200)); // let the .15s transition finish
   const after = await page.evaluate(() => {
     const knob = document.getElementById('engKnob');
     const r = knob.getBoundingClientRect();
-    return { x: r.x, transform: getComputedStyle(knob).transform };
+    return { x: r.x, left: getComputedStyle(knob).left };
   });
   const deltaX = after.x - before.x;
-  check('.eng-toggle-knob travels ~17px on toggle (transform-driven, not layout-driven)', Math.abs(deltaX - 17) < 1, `(got deltaX=${deltaX.toFixed(2)})`);
-  check('.eng-toggle-knob final state uses a real CSS transform (translateX), not "none"', after.transform !== 'none' && after.transform !== before.transform, `(before=${before.transform}, after=${after.transform})`);
+  check('.eng-toggle-knob travels ~17px on toggle', Math.abs(deltaX - 17) < 1, `(got deltaX=${deltaX.toFixed(2)})`);
+  check('.eng-toggle-knob travel is a real CSS property change (`left`), not "none" -> so prefers-reduced-motion can collapse it', after.left !== 'none' && after.left !== before.left, `(before=${before.left}, after=${after.left})`);
   check('zero console/page errors (toggle-knob)', errors.length === 0, errors.length ? `(${errors.join(' | ')})` : '');
   await page.close();
 }

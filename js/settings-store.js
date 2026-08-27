@@ -13,25 +13,12 @@ const SETTINGS_PATH = 'settings';
 // Canonical defaults — all consuming modules fall back to these when
 // Firebase is unavailable or a key hasn't been written yet.
 const DEFAULTS = {
-  general: {},
   operations: {
     workStartMins: 540,          // 09:00 (office-hours window; also the overtime boundary, v1.16.4.7)
     workEndMins: 1020,           // 17:00
     odometerWarnJumpKm: 2000,
   },
   notifications: {
-    // v1.25.x — retained for backward compatibility only (existing Firebase
-    // installations may still carry these under /settings/notifications).
-    // The browser reminder path that read them (checkAndSendH1Reminders /
-    // checkAndSendHoursReminders) was retired in Driver Notification V2 —
-    // the server-side reminder queue (functions/src/reminders/*) replaced it
-    // and needs no client-tunable check interval. No code reads these four
-    // anymore; the Settings UI no longer exposes them (see Part 3 below).
-    h2WindowMinFrom: 110,
-    h2WindowMinTo: 135,
-    h1ReminderCheckIntervalMs: 60 * 60 * 1000,   // 1 hour
-    h2ReminderCheckIntervalMs: 5 * 60 * 1000,    // 5 minutes
-
     // v1.25.x Driver Notification V2 (Final Hardening) — THE single runtime
     // source of truth for these four values. The client reads them
     // synchronously via getSetting(); Cloud Functions read the SAME
@@ -48,7 +35,6 @@ const DEFAULTS = {
   system: {
     backupRetentionDays: 30,
   },
-  ui: {},
   // v1.25.x — Dispatch Intelligence's Recovery Buffer (Driver Recommendation
   // Engine), surfaced in the Settings UI alongside Notification V2 (Part 3).
   // js/config/dispatch-intelligence-config.js#getDispatchConfig() reads this

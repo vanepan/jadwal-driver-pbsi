@@ -141,6 +141,15 @@ function normalizeServerNotif(id, rec) {
     title: rec.title || 'Notifikasi',
     desc: rec.body || '',
     timestamp: rec.createdAt || new Date().toISOString(),
+    // Phase 11 (Administration) — audit finding Notifications D2: these two
+    // fields are the SAME data functions/src/notifications/model.js#
+    // buildNotification() already persists on every record (mirrors
+    // event.entity — see templates.js#deepLink()'s identical use for the
+    // PUSH payload's own deep-link URL). Carrying them through here is what
+    // lets an in-panel card click reuse js/app.js's existing
+    // pbsi:push-nav handler instead of duplicating navigation logic.
+    entityKind: rec.entityKind || null,
+    entityId: rec.entityId || null,
   };
 }
 
@@ -255,6 +264,47 @@ function markItemState(id, patch) {
 /** Exposed for the push-notification deep-link handler (js/app.js). */
 export function markNotificationRead(id) {
   markItemState(id, { read: true });
+  renderNotificationBadge();
+}
+
+/**
+ * TEST-ONLY. Directly seeds the server-outbox cache, bypassing the real
+ * RTDB subscription entirely — same convention as this codebase's other
+ * __seed*ForTest()/__set*ForTest() seams (e.g. admin.js#
+ * __setIpmOverridesForTest()). Real application code MUST NEVER call this.
+ *
+ * Routes each entry through normalizeServerNotif() — the same shaping the
+ * real subscribeNode() callback applies — so fixtures get _server:true and
+ * the same field defaults; renderCard() only recognizes server-outbox
+ * entries via that flag, and a caller-supplied plain object without it
+ * silently renders as an empty card (falls into the /logs ACTION_META
+ * branch, finds no match for a server-only action type like
+ * 'assignment.created', returns '').
+ * @param {Array<{id:string, type?:string, title?:string, body?:string, createdAt?:string, entityKind?:string, entityId?:string}>} list
+ */
+export function __setServerNotifsForTest(list) {
+  serverNotifs = Array.isArray(list) ? list.map((rec) => normalizeServerNotif(rec.id, rec)) : [];
+  renderNotificationBadge();
+  if (document.getElementById('modalNotifications')?.style.display === 'flex') renderNotificationsList();
+}
+
+/**
+ * Phase 11 (Administration) — audit finding Notifications D3: unlike
+ * users.js#resetUsersSync()/logs.js#resetLogsSync()/export-history's own
+ * reset, this module had no logout teardown at all — the two RTDB
+ * listeners above stayed attached to the PREVIOUS user's uid until the
+ * NEXT login's setNotificationData() call happened to replace them (their
+ * own uid-diff guard is correct once called, it just was never called on
+ * logout). Call from js/app.js's onAuthLost, same convention as its three
+ * siblings.
+ */
+export function resetNotificationsSync() {
+  if (_serverNotifUnsub) { try { _serverNotifUnsub(); } catch (_) {} _serverNotifUnsub = null; }
+  _serverNotifUid = null;
+  serverNotifs = [];
+  if (_notifStateUnsub) { try { _notifStateUnsub(); } catch (_) {} _notifStateUnsub = null; }
+  _notifStateUid = null;
+  notifState = {};
   renderNotificationBadge();
 }
 
@@ -391,13 +441,44 @@ function serverNotifIcon(action) {
   return ic('bell');
 }
 
+/**
+ * Priority tier for a server-outbox record, by canonical event type — the
+ * SAME 3-tier vocabulary ACTION_META already uses for /logs-derived cards
+ * (high/medium/low; CSS: .notif-priority-*, style.css/platform.css). Phase
+ * 11 (Administration audit, D6): every server-outbox card previously
+ * hardcoded 'notif-priority-normal', a class with NO matching CSS rule
+ * anywhere in the app — every one of these cards has always rendered with
+ * no priority accent at all, regardless of the real event.
+ *
+ * Grounded directly in functions/src/notifications/registry.js's exhaustive
+ * type list (the only 15 canonical event types this outbox ever contains —
+ * see that file), by an objective property of each type, not a per-type
+ * guess: a cancellation/rejection is the one unambiguously negative
+ * outcome (high, same tier request_rejected already uses); new-or-changed
+ * work needing a response is next (medium); everything else is
+ * already-in-motion or already-resolved information (low).
+ */
+function serverNotifPriority(action) {
+  const a = String(action || '');
+  if (/\.(cancelled|rejected)$/.test(a)) return 'high';
+  if (/\.(created|reassigned|updated|reminder|published|postponed)$/.test(a)) return 'medium';
+  return 'low';
+}
+
 function renderCard(entry, isUnread) {
   // Server-outbox records (Engineering, assignment lifecycle) carry pre-rendered
   // title/body from the Cloud Functions templates — render them directly (no
   // ACTION_META, which only covers the remaining /logs-derived types).
   if (entry._server) {
+    // Phase 11 (Administration) — audit finding Notifications D2: only
+    // server-outbox entries carry the entityKind/entityId needed to
+    // navigate anywhere (see normalizeServerNotif() above) — /logs-derived
+    // entries below have no equivalent deep-link data at all (a separate,
+    // larger, not-yet-scoped gap the audit's §1 already documented; not
+    // silently expanded here).
+    const navigable = !!(entry.entityKind && entry.entityId);
     return `
-    <div class="notif-card notif-priority-normal${isUnread ? ' notif-unread' : ''}" data-id="${escapeHTML(entry.id)}">
+    <div class="notif-card notif-priority-${serverNotifPriority(entry.action)}${isUnread ? ' notif-unread' : ''}${navigable ? ' notif-card--clickable' : ''}" data-id="${escapeHTML(entry.id)}"${navigable ? ' role="button" tabindex="0"' : ''}>
       <div class="notif-card-top">
         <span class="notif-card-title">${serverNotifIcon(entry.action)} ${escapeHTML(entry.title)}${isUnread ? '<span class="notif-new-dot"></span>' : ''}</span>
         <span class="notif-card-time">${escapeHTML(timeAgo(entry.timestamp))}</span>
@@ -444,6 +525,26 @@ function wireNotificationCardActions(container) {
   document.getElementById('btnToggleArchived')?.addEventListener('click', () => {
     showArchived = !showArchived;
     renderNotificationsList();
+  });
+  // Phase 11 (Administration) — audit finding Notifications D2: browsing
+  // the in-app bell used to be read-only — deep-linking only ever worked
+  // via an actual OS push tap (js/app.js#initPushNavHandler(), which this
+  // reuses verbatim rather than duplicating the switch(view) routing).
+  container.querySelectorAll('.notif-card--clickable').forEach((card) => {
+    const navigate = () => {
+      const id = card.dataset.id;
+      const entry = serverNotifs.find((n) => n.id === id);
+      if (!entry || !entry.entityKind || !entry.entityId) return;
+      closeNotificationsModal();
+      window.dispatchEvent(new CustomEvent('pbsi:push-nav', { detail: { view: entry.entityKind, id: entry.entityId } }));
+    };
+    card.addEventListener('click', (ev) => {
+      if (ev.target.closest('[data-notif-action]')) return; // action buttons handle their own click
+      navigate();
+    });
+    card.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); navigate(); }
+    });
   });
 }
 
@@ -525,6 +626,15 @@ export function initNotificationUI() {
     ?.addEventListener('click', closeNotificationsModal);
   document.getElementById('modalNotifications')
     ?.addEventListener('click', ev => { if (ev.target === ev.currentTarget) closeNotificationsModal(); });
+  // Phase 11 (Administration) — audit finding Notifications D4: ~7 other
+  // modals in js/app.js already wire Escape-to-close (e.g. audit detail,
+  // request review); this one never did. Same established pattern.
+  const modalNotifEl = document.getElementById('modalNotifications');
+  if (modalNotifEl) {
+    document.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape' && modalNotifEl.style.display !== 'none') closeNotificationsModal();
+    });
+  }
 
   document.getElementById('btnMarkAllRead')
     ?.addEventListener('click', () => {
@@ -545,6 +655,13 @@ export function initNotificationUI() {
     ?.addEventListener('click', closeActivityLogModal);
   document.getElementById('modalActivityLog')
     ?.addEventListener('click', ev => { if (ev.target === ev.currentTarget) closeActivityLogModal(); });
+  // Same D4 fix, same file, same sibling-modal consistency reasoning.
+  const modalActivityLogEl = document.getElementById('modalActivityLog');
+  if (modalActivityLogEl) {
+    document.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape' && modalActivityLogEl.style.display !== 'none') closeActivityLogModal();
+    });
+  }
 }
 
 /* ── Data ── */

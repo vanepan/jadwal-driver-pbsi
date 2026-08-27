@@ -144,7 +144,10 @@ const result = await page.evaluate(async (LEGACY_PIN, TYPED_PIN, GENERATED_PIN) 
   document.getElementById('btnResetPinFromEdit').click();
   out.editModalClosedOnResetTrigger = document.getElementById('modalUserForm').style.display === 'none';
   out.confirmDialogOpened = document.getElementById('modalResetPinConfirm').style.display !== 'none';
-  out.confirmDialogTitle = document.querySelector('#modalResetPinConfirm .modal-title').textContent;
+  // Phase 11 — Reset PIN Confirm's title is now static text passed
+  // straight into openDrawer() (no #modalResetPinConfirm .modal-title
+  // element anymore); read it the same way as the User Form's own title.
+  out.confirmDialogTitle = document.querySelector('.drawer')?.getAttribute('aria-label');
   out.confirmDialogBody = document.querySelector('#modalResetPinConfirm .cancel-warning').textContent;
   out.confirmHasBatalButton = document.getElementById('btnCancelResetPin').textContent.trim();
   out.confirmHasResetButton = document.getElementById('btnConfirmResetPin').textContent.trim();
@@ -153,8 +156,13 @@ const result = await page.evaluate(async (LEGACY_PIN, TYPED_PIN, GENERATED_PIN) 
 
   document.getElementById('btnCancelResetPin').click(); // "Batal" — no network call
   out.batalClosesConfirm = document.getElementById('modalResetPinConfirm').style.display === 'none';
+  // Phase 11 — canonical drawer migration: #modalUserFormTitle no longer
+  // exists; the title now lives on the drawer shell itself (both its
+  // visible .drawer__title text and its aria-label carry the exact same
+  // escaped string — aria-label is the cleaner read, no icon markup to
+  // strip out).
   out.batalReopensEditUser = document.getElementById('modalUserForm').style.display !== 'none'
-    && document.getElementById('modalUserFormTitle').textContent === 'Edit User'
+    && document.querySelector('.drawer')?.getAttribute('aria-label') === 'Edit User'
     && document.getElementById('userFieldUsername').value === 'legacy-user';
   admin.openUserFormModal(); // back to a clean Create-mode slate for the rest of the checks
 

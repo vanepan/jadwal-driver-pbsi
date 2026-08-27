@@ -286,6 +286,33 @@ export function refreshDrawerBody(html) {
   if (body) body.innerHTML = html;
 }
 
+/**
+ * Phase 11 (Administration) — safety valve for consumers that reuse one
+ * PERSISTENT, once-listener-bound DOM node as a drawer's body (instead of
+ * generating fresh HTML per open — most consumers do that and never need
+ * this). This shell is explicitly single-instance: openDrawer() REPLACES
+ * whatever's currently open by removing its whole overlay, including any
+ * descendant still physically inside it. That's harmless for freshly-
+ * generated content, but a persistent node relocated INTO a drawer (e.g.
+ * js/admin.js's User Form / Reset PIN dialogs) would be destroyed along
+ * with a stale previous overlay if it's still in there when a NEW
+ * openDrawer() call fires — including from a DIFFERENT dialog's opener
+ * than the one that put it there (a real case: the User Form is opened,
+ * then something opens the Reset PIN Result drawer directly without
+ * closing the User Form first). Call this at the top of every such
+ * opener, before openDrawer(), to evacuate whatever's currently in the
+ * body back to document.body first — regardless of which consumer's
+ * content it is, since single-instance means at most one is ever in there.
+ */
+export function evacuatePersistentDrawerContent() {
+  if (typeof document === 'undefined') return;
+  const body = _activeOverlay?.querySelector('[data-drawer-body]');
+  if (!body) return;
+  for (const child of [...body.children]) {
+    if (child.id) document.body.appendChild(child);
+  }
+}
+
 /** Loading skeleton — three pulsing lines, same visual language as the
  *  Home workspace's existing `.wsp-skeleton` treatment. */
 export function drawerLoadingSkeleton() {

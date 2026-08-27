@@ -12,13 +12,10 @@
 <title>Admin PIN Reset Harness</title>
 </head>
 <body>
-<div class="modal-overlay" id="modalUserForm" style="display:none;">
-  <div class="modal-box">
-    <div class="modal-header">
-      <h2 class="modal-title" id="modalUserFormTitle">Tambah User</h2>
-      <button class="modal-close" id="btnCloseUserForm">&times;</button>
-    </div>
-    <div class="modal-body">
+<!-- Phase 11 — canonical drawer migration: #modalUserForm is now a plain
+     content host (js/admin.js moves it into js/components/drawer.js's
+     shell on open), not a modal-overlay. See index.html's own comment. -->
+<div id="modalUserForm" style="display:none;">
       <form id="userForm" novalidate>
         <div class="form-grid">
           <div class="form-group">
@@ -87,33 +84,17 @@
           <button type="submit" class="btn-primary" id="btnSaveUserForm">Simpan</button>
         </div>
       </form>
-    </div>
-  </div>
 </div>
 
-<div class="modal-overlay" id="modalResetPinConfirm" style="display:none;">
-  <div class="modal-box modal-cancel-box">
-    <div class="modal-header">
-      <h2 class="modal-title">Reset PIN?</h2>
-      <button class="modal-close" id="btnCloseResetPinConfirm">&times;</button>
-    </div>
-    <div class="modal-body">
+<div id="modalResetPinConfirm" style="display:none;">
       <p class="cancel-warning">PIN lama tidak dapat dipulihkan. Sistem akan membuat PIN baru untuk pengguna ini.</p>
       <div class="form-actions">
         <button type="button" class="btn-secondary" id="btnCancelResetPin">Batal</button>
         <button type="button" class="btn-danger" id="btnConfirmResetPin">Reset PIN</button>
       </div>
-    </div>
-  </div>
 </div>
 
-<div class="modal-overlay" id="modalResetPinResult" style="display:none;">
-  <div class="modal-box modal-cancel-box">
-    <div class="modal-header">
-      <h2 class="modal-title">PIN Baru</h2>
-      <button class="modal-close" id="btnCloseResetPinResult">&times;</button>
-    </div>
-    <div class="modal-body">
+<div id="modalResetPinResult" style="display:none;">
       <div class="pin-reveal-field">
         <input type="password" id="resetPinResultValue" readonly autocomplete="off" aria-label="PIN baru" value="" />
         <button type="button" class="pin-reveal-toggle" id="btnToggleResetPinReveal" aria-label="Tampilkan PIN" aria-pressed="false"></button>
@@ -123,8 +104,6 @@
         <button type="button" class="btn-secondary" id="btnCopyResetPin">Salin PIN</button>
         <button type="button" class="btn-primary" id="btnDoneResetPin">Selesai</button>
       </div>
-    </div>
-  </div>
 </div>
 </body>
 </html>

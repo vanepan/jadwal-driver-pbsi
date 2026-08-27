@@ -22,12 +22,20 @@ import { getUserPermissionOverrides, grantUserPermission, revokeUserPermission }
 // Role Management, role-management-center.js).
 import { getRolePermissionOverrides } from './permission-management/role-permission-overrides-store.js';
 import { listAllPermissions, getPermission } from './config/permission-registry.js';
+// Phase 11 (Administration) — Decision 1 (audit §9): needed for
+// hasAdminWriteAccess() below, mirroring the same client-side boundary
+// app.js's renderV2AdminUsers()/buildUserCard() now apply.
+import { can } from './permission-service.js';
 import { logAction } from './logs.js';
 import { sendNotification } from './telegram.js';
 import { showToast } from './utils.js';
 import { syncPbsiSelect } from './pbsi-select.js';
 import { enablePush, isPushSupported } from './push.js';
 import { wireSheetSwipeDismiss, lockBodyScroll, unlockBodyScroll } from './ui/sheet-gesture.js'; // Phase 11K
+// Phase 11 (Administration) — Design System Program: the User Form
+// (Create/Edit/Lihat) migrates onto the canonical drawer, same primitive
+// Vehicle/Driver/Gudang/Engineering/Petty Cash already use (Phase 10).
+import { openDrawer, closeDrawer, evacuatePersistentDrawerContent } from './components/drawer.js';
 
 const TELEGRAM_BOT_USERNAME = 'PBSI_Assistant_Bot';
 const TELEGRAM_BOT_URL = `https://t.me/${TELEGRAM_BOT_USERNAME}`;
@@ -39,6 +47,20 @@ let editingUsername = null;
 // users must remain immutable (see js/users.js#updateUser()'s own guard);
 // this flag drives every UI-level restriction on top of that data-layer one.
 let editingUserIsArchived = false;
+// Phase 11 (Administration) — Decision 1: true when the modal must be
+// read-only for EITHER reason — the target user is archived, OR the
+// current session lacks real admin write access (konfigurasi.view alone,
+// no system.admin/adminEquivalent). Every field-disable/button-hide below
+// that isn't specifically about the "(Arsip)" archived label uses this,
+// not editingUserIsArchived alone.
+let editingUserIsReadOnly = false;
+
+// Phase 11 (Administration) — mirrors app.js's identical helper (app.js has
+// no exports, so this can't be a shared import; see that copy's own
+// comment for the full RTDB-boundary reasoning).
+function hasAdminWriteAccess() {
+  return isAdmin() || can('system.admin');
+}
 
 // v1.30.9.6 — Individual Permission Assignment, Phase 3A. In-memory state
 // for the currently-open Edit User modal's Individual Permissions section.
@@ -138,7 +160,6 @@ function attachAdminButtons() {
   const btnCloseUserList = document.getElementById('btnCloseUsersList');
   const btnCloseUserList2 = document.getElementById('btnCloseUsersList2');
   const btnAddUser = document.getElementById('btnOpenAddUser');
-  const btnCloseUserForm = document.getElementById('btnCloseUserForm');
   const btnCancelUserForm = document.getElementById('btnCancelUserForm');
   const btnCloseProfile = document.getElementById('btnCloseProfile');
   const btnCancelProfile = document.getElementById('btnCancelProfile');
@@ -173,7 +194,6 @@ function attachAdminButtons() {
   if (btnCloseUserList) btnCloseUserList.addEventListener('click', closeUsersListModal);
   if (btnCloseUserList2) btnCloseUserList2.addEventListener('click', closeUsersListModal);
   if (btnAddUser) btnAddUser.addEventListener('click', () => openUserFormModal());
-  if (btnCloseUserForm) btnCloseUserForm.addEventListener('click', closeUserFormModal);
   if (btnCancelUserForm) btnCancelUserForm.addEventListener('click', closeUserFormModal);
   if (btnCloseProfile) btnCloseProfile.addEventListener('click', closeProfileModal);
   if (btnCancelProfile) btnCancelProfile.addEventListener('click', closeProfileModal);
@@ -237,12 +257,9 @@ function attachAdminButtons() {
     });
   }
 
-  const userFormModal = document.getElementById('modalUserForm');
-  if (userFormModal) {
-    userFormModal.addEventListener('click', (event) => {
-      if (event.target === userFormModal) closeUserFormModal();
-    });
-  }
+  // Phase 11 (Administration) — #modalUserForm is no longer a modal-overlay
+  // backdrop (it's the canonical drawer's content host now); overlay-click-
+  // to-close is the drawer's own built-in behavior (js/components/drawer.js).
 
   // v1.30.9.3 — Secure Admin PIN Reset UX.
   // Create User's own eye toggle — reveals/hides what was just typed, never
@@ -265,19 +282,14 @@ function attachAdminButtons() {
     openResetPinConfirm(username, { returnToEdit: true });
   });
 
-  // Reset PIN confirmation dialog
-  document.getElementById('btnCloseResetPinConfirm')?.addEventListener('click', () => closeResetPinConfirm({ reopenEdit: true }));
+  // Reset PIN confirmation dialog — Phase 11: #btnCloseResetPinConfirm and
+  // the click-outside listener are gone (canonical drawer, own X + overlay
+  // click-to-close); Batal still explicitly reopens Edit (Option A).
   document.getElementById('btnCancelResetPin')?.addEventListener('click', () => closeResetPinConfirm({ reopenEdit: true }));
   document.getElementById('btnConfirmResetPin')?.addEventListener('click', handleConfirmResetPin);
-  const resetPinConfirmModal = document.getElementById('modalResetPinConfirm');
-  if (resetPinConfirmModal) {
-    resetPinConfirmModal.addEventListener('click', (event) => {
-      if (event.target === resetPinConfirmModal) closeResetPinConfirm({ reopenEdit: true });
-    });
-  }
 
-  // Reset PIN result dialog — the one-time plaintext display.
-  document.getElementById('btnCloseResetPinResult')?.addEventListener('click', () => closeResetPinResult({ reopenEdit: true }));
+  // Reset PIN result dialog — the one-time plaintext display. Same Phase 11
+  // simplification as above.
   document.getElementById('btnDoneResetPin')?.addEventListener('click', () => closeResetPinResult({ reopenEdit: true }));
   document.getElementById('btnCopyResetPin')?.addEventListener('click', handleCopyResetPin);
   const btnToggleResetPinReveal = document.getElementById('btnToggleResetPinReveal');
@@ -285,12 +297,6 @@ function attachAdminButtons() {
   if (btnToggleResetPinReveal && resetPinResultInput) {
     btnToggleResetPinReveal.addEventListener('click', () => {
       setPinToggleState(btnToggleResetPinReveal, resetPinResultInput, resetPinResultInput.type === 'password');
-    });
-  }
-  const resetPinResultModal = document.getElementById('modalResetPinResult');
-  if (resetPinResultModal) {
-    resetPinResultModal.addEventListener('click', (event) => {
-      if (event.target === resetPinResultModal) closeResetPinResult({ reopenEdit: true });
     });
   }
 
@@ -346,6 +352,10 @@ function closeUsersListModal() {
 }
 
 export function openUserFormModal(username = null) {
+  // Phase 11 (Administration) — see evacuatePersistentDrawerContent()'s
+  // own doc comment (js/components/drawer.js) for why this matters even
+  // for THIS function's own reopening, not just the cross-modal case.
+  evacuatePersistentDrawerContent();
   editingUsername = username;
   const form = document.getElementById('userForm');
   if (!form) return;
@@ -358,14 +368,19 @@ export function openUserFormModal(username = null) {
   // special-casing at the call site.
   const targetUser = username ? users.find((item) => item.username === username) : null;
   editingUserIsArchived = !!(targetUser && targetUser.archived === true);
+  // Phase 11 (Administration) — Decision 1: a session without real admin
+  // write access is read-only regardless of the target user's own state.
+  editingUserIsReadOnly = editingUserIsArchived || !hasAdminWriteAccess();
 
-  const title = document.getElementById('modalUserFormTitle');
-  if (title) title.textContent = editingUserIsArchived ? 'Lihat User (Arsip)' : (username ? 'Edit User' : 'Tambah User');
+  // Phase 11 (Administration) — #modalUserFormTitle no longer exists; the
+  // canonical drawer renders its own title from the openDrawer() call at
+  // the bottom of this function, which reads this same variable.
+  const userFormTitleText = editingUserIsArchived ? 'Lihat User (Arsip)' : editingUserIsReadOnly ? 'Lihat User' : (username ? 'Edit User' : 'Tambah User');
 
   const btnSave = document.getElementById('btnSaveUserForm');
   if (btnSave) {
     btnSave.textContent = username ? 'Simpan Perubahan' : 'Buat User';
-    btnSave.style.display = editingUserIsArchived ? 'none' : '';
+    btnSave.style.display = editingUserIsReadOnly ? 'none' : '';
   }
 
   const usernameField = document.getElementById('userFieldUsername');
@@ -441,13 +456,13 @@ export function openUserFormModal(username = null) {
   // handleUserFormSubmit() also hard-blocks the submit itself, and
   // js/users.js#updateUser() rejects any write to an archived record as
   // the actual data-layer guarantee, independent of all of this.
-  if (displayNameField) displayNameField.disabled = editingUserIsArchived;
-  if (roleField) roleField.disabled = editingUserIsArchived;
-  if (activeField) activeField.disabled = editingUserIsArchived;
-  document.getElementById('userEngKoordinator')?.toggleAttribute('disabled', editingUserIsArchived);
-  document.getElementById('userEngAnggota')?.toggleAttribute('disabled', editingUserIsArchived);
+  if (displayNameField) displayNameField.disabled = editingUserIsReadOnly;
+  if (roleField) roleField.disabled = editingUserIsReadOnly;
+  if (activeField) activeField.disabled = editingUserIsReadOnly;
+  document.getElementById('userEngKoordinator')?.toggleAttribute('disabled', editingUserIsReadOnly);
+  document.getElementById('userEngAnggota')?.toggleAttribute('disabled', editingUserIsReadOnly);
   const btnResetPinFromEdit = document.getElementById('btnResetPinFromEdit');
-  if (btnResetPinFromEdit) btnResetPinFromEdit.style.display = editingUserIsArchived ? 'none' : '';
+  if (btnResetPinFromEdit) btnResetPinFromEdit.style.display = editingUserIsReadOnly ? 'none' : '';
 
   syncPbsiSelect(roleField);
   syncEngineeringLevelUI();
@@ -469,8 +484,24 @@ export function openUserFormModal(username = null) {
     resetIpmState();
   }
 
-  const modal = document.getElementById('modalUserForm');
-  if (modal) modal.style.display = 'flex';
+  // Phase 11 (Administration) — Design System Program: canonical drawer
+  // migration. #modalUserForm is the persistent content host (see its own
+  // comment in index.html) — openDrawer() builds a fresh shell every call,
+  // so the content is physically MOVED into it each time, never
+  // regenerated from a template string. That's what keeps every field
+  // listener initAdminUI() bound once, at boot, to these exact elements
+  // still wired correctly after any number of open/close cycles.
+  openDrawer({
+    title: userFormTitleText,
+    icon: 'user',
+    onClose: closeUserFormModal,
+  });
+  const drawerBody = document.querySelector('[data-drawer-body]');
+  const content = document.getElementById('modalUserForm');
+  if (drawerBody && content) {
+    content.style.display = '';
+    drawerBody.appendChild(content);
+  }
 }
 
 /**
@@ -676,7 +707,10 @@ async function loadRoleAdditionalForForm(roleId) {
     accounts (read-only display only, per this phase's explicit policy). */
 function ipmIsEditable() {
   const user = users.find((item) => item.username === ipmState.username);
-  return !!user && user.active !== false && user.archived !== true;
+  // Phase 11 (Administration) — Decision 1: granting/revoking an
+  // individual permission is a write, same RTDB boundary as the rest of
+  // this form.
+  return !!user && user.active !== false && user.archived !== true && hasAdminWriteAccess();
 }
 
 /**
@@ -764,8 +798,16 @@ function renderIndividualPermissionsPanel() {
   const effectiveTotal = baseGranted.size + uniqueRoleAdditionalContribution + uniqueIndividualContribution;
   const effectiveLine = `<div class="ipm-effective-line">Efektif: ${effectiveTotal} permission (${baseGranted.size} dari Role, ${uniqueRoleAdditionalContribution} Role Tambahan, ${uniqueIndividualContribution} Individual)</div>`;
 
+  // Phase 11 (Administration) — Decision 1: three distinct reasons this
+  // panel can be read-only now, not two; report the real one instead of
+  // defaulting to "Akun tidak aktif" for a session that simply lacks write
+  // access to an otherwise perfectly active, non-archived user.
+  const readOnlyReason = user && user.archived ? 'Akun sudah diarsipkan.'
+    : user && user.active === false ? 'Akun tidak aktif.'
+    : !hasAdminWriteAccess() ? 'Anda hanya memiliki akses lihat.'
+    : 'Akun tidak aktif.';
   const readOnlyNotice = !isEditable
-    ? `<div class="ipm-readonly-notice">${user && user.archived ? 'Akun sudah diarsipkan.' : 'Akun tidak aktif.'} Individual permissions tidak dapat diubah.</div>`
+    ? `<div class="ipm-readonly-notice">${readOnlyReason} Individual permissions tidak dapat diubah.</div>`
     : '';
 
   const rows = [...overrides].sort().map((id) => {
@@ -902,14 +944,32 @@ function wireIndividualPermissionsPanelEvents(container, isEditable) {
 
   if (isEditable) {
     container.querySelectorAll('[data-ipm-revoke]').forEach((btn) => {
-      btn.addEventListener('click', (e) => handleIpmRevokeClick(e.currentTarget.dataset.ipmRevoke));
+      btn.addEventListener('click', (e) => {
+        const permissionId = e.currentTarget.dataset.ipmRevoke;
+        const title = getPermission(permissionId)?.title || permissionId;
+        if (!confirm(`Cabut permission "${title}" dari ${ipmState.username}?`)) return;
+        handleIpmRevokeClick(permissionId);
+      });
     });
   }
 }
 
 function wireIpmPickerBodyCheckboxes(scope) {
   scope.querySelectorAll('[data-ipm-grant-id]:not(:disabled)').forEach((cb) => {
-    cb.addEventListener('change', (e) => handleIpmGrantClick(e.target.dataset.ipmGrantId));
+    cb.addEventListener('change', (e) => {
+      const permissionId = e.target.dataset.ipmGrantId;
+      // Phase 11 (Administration audit, §Permissions P2) — grant/revoke
+      // used to mutate on click with no confirmation, unlike this same
+      // codebase's own Custom Role Edit→Review→Save flow. The checkbox's
+      // checked state already flips before `change` fires, so a cancel
+      // must explicitly revert it — nothing re-renders this row otherwise.
+      const title = getPermission(permissionId)?.title || permissionId;
+      if (!confirm(`Tambahkan permission "${title}" untuk ${ipmState.username}?`)) {
+        e.target.checked = false;
+        return;
+      }
+      handleIpmGrantClick(permissionId);
+    });
   });
 }
 
@@ -1006,10 +1066,28 @@ export function __setRaFormCacheForTest(roleId, permissionIds) {
 }
 
 function closeUserFormModal() {
-  const modal = document.getElementById('modalUserForm');
-  if (modal) modal.style.display = 'none';
+  // Phase 11 (Administration) — MOVE (not remove) the content back to a
+  // stable, always-attached parent BEFORE closing the drawer shell, so it
+  // (a) survives the shell's own teardown (openDrawer()'s replace-path
+  // removes the whole overlay instantly; closeDrawer()'s does the same
+  // after a ~260ms fade — a node still inside the overlay at that moment
+  // would be removed along with it) and (b) — critically — stays
+  // reachable via document.getElementById() the ENTIRE time, including
+  // between closes. A real .remove() (fully detaching, no reattachment)
+  // would make it invisible to getElementById() until manually
+  // re-inserted, breaking every one of this file's ~15 other
+  // getElementById('userField...') call sites on the very next open.
+  // appendChild() on a node already in the document is a single atomic
+  // move (detach old parent + attach new parent) — never a floating-
+  // detached state. Safe to call twice (e.g. once directly, once again
+  // via closeDrawer()'s own deferred onClose below) — the second call
+  // just re-parents an already-correctly-parked node, a no-op in effect.
+  const content = document.getElementById('modalUserForm');
+  if (content) { document.body.appendChild(content); content.style.display = 'none'; }
+  closeDrawer();
   editingUsername = null;
   editingUserIsArchived = false;
+  editingUserIsReadOnly = false;
   // Closing always re-masks the Create-mode PIN field, even if it was
   // revealed — next open (Create or Edit) must never start revealed.
   const pinField = document.getElementById('userFieldPin');
@@ -1045,15 +1123,20 @@ function setPinToggleState(button, input, revealed) {
  * the Edit form) passes `returnToEdit: false` — there's nothing to reopen.
  */
 function openResetPinConfirm(username, { returnToEdit = false } = {}) {
+  evacuatePersistentDrawerContent();
   pinResetFlow.username = username;
   pinResetFlow.returnToEdit = returnToEdit;
-  const modal = document.getElementById('modalResetPinConfirm');
-  if (modal) modal.style.display = 'flex';
+
+  openDrawer({ title: 'Reset PIN?', icon: 'alert', onClose: () => closeResetPinConfirm({ reopenEdit: true }) });
+  const drawerBody = document.querySelector('[data-drawer-body]');
+  const content = document.getElementById('modalResetPinConfirm');
+  if (drawerBody && content) { content.style.display = ''; drawerBody.appendChild(content); }
 }
 
 function closeResetPinConfirm({ reopenEdit = false } = {}) {
-  const modal = document.getElementById('modalResetPinConfirm');
-  if (modal) modal.style.display = 'none';
+  const content = document.getElementById('modalResetPinConfirm');
+  if (content) { document.body.appendChild(content); content.style.display = 'none'; }
+  closeDrawer();
   const { username, returnToEdit } = pinResetFlow;
   pinResetFlow.username = null;
   pinResetFlow.returnToEdit = false;
@@ -1081,8 +1164,13 @@ async function handleConfirmResetPin() {
   try {
     const { pin: newPin } = await callResetUserCredential({ username });
     await logAction({ userId: getCurrentUser().id, username: getCurrentUser().username, action: 'user_pin_reset', targetId: username });
-    const confirmModal = document.getElementById('modalResetPinConfirm');
-    if (confirmModal) confirmModal.style.display = 'none';
+    // Park (not closeResetPinConfirm()) — success transitions straight into
+    // the Result dialog, deliberately skipping closeResetPinConfirm()'s own
+    // reopen-Edit logic (openResetPinResult() below owns that decision once
+    // the Result dialog itself closes).
+    const confirmContent = document.getElementById('modalResetPinConfirm');
+    if (confirmContent) { document.body.appendChild(confirmContent); confirmContent.style.display = 'none'; }
+    closeDrawer();
     pinResetFlow.username = null;
     pinResetFlow.returnToEdit = false;
     users = await getUsers();
@@ -1098,6 +1186,7 @@ async function handleConfirmResetPin() {
 
 /** Show the newly generated PIN exactly once, masked by default. */
 function openResetPinResult(pin, { username, returnToEdit }) {
+  evacuatePersistentDrawerContent();
   pinResetFlow.username = username;
   pinResetFlow.returnToEdit = returnToEdit;
   pinResetFlow.plaintext = pin;
@@ -1107,14 +1196,17 @@ function openResetPinResult(pin, { username, returnToEdit }) {
   if (input) input.value = pin; // DOM property, not an HTML `value="..."` attribute
   if (input && toggle) setPinToggleState(toggle, input, false);
 
-  const modal = document.getElementById('modalResetPinResult');
-  if (modal) modal.style.display = 'flex';
+  openDrawer({ title: 'PIN Baru', icon: 'lock', onClose: () => closeResetPinResult({ reopenEdit: true }) });
+  const drawerBody = document.querySelector('[data-drawer-body]');
+  const content = document.getElementById('modalResetPinResult');
+  if (drawerBody && content) { content.style.display = ''; drawerBody.appendChild(content); }
 }
 
 /** Closing destroys the visible plaintext — value cleared, state cleared, re-masked. */
 function closeResetPinResult({ reopenEdit = false } = {}) {
-  const modal = document.getElementById('modalResetPinResult');
-  if (modal) modal.style.display = 'none';
+  const content = document.getElementById('modalResetPinResult');
+  if (content) { document.body.appendChild(content); content.style.display = 'none'; }
+  closeDrawer();
 
   const input = document.getElementById('resetPinResultValue');
   const toggle = document.getElementById('btnToggleResetPinReveal');
@@ -1199,8 +1291,8 @@ async function handleUserFormSubmit(event) {
   // mode, so this should be unreachable in practice — but the real
   // guarantee is js/users.js#updateUser()'s own archived guard, and this
   // is a free, cheap second layer at the UI boundary specifically.
-  if (editingUserIsArchived) {
-    showToast('User yang diarsipkan bersifat read-only.');
+  if (editingUserIsReadOnly) {
+    showToast(editingUserIsArchived ? 'User yang diarsipkan bersifat read-only.' : 'Anda hanya memiliki akses lihat untuk Manajemen User.');
     return;
   }
 
