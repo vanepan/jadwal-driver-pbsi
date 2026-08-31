@@ -71,3 +71,4 @@ export { factQuestions, resolveRecipient, recipientQuestion } from './service/cl
 export { assembleNorDraft } from './service/nor-draft-assembler.js';
 export { createIntelligenceService } from './service/intelligence-service.js';
 export { buildDefaultPorts } from './service/default-ports.js';
+export { bootstrapIntelligenceClient } from './client-bootstrap.js';

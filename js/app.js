@@ -129,6 +129,7 @@ import {
   loadDispatchAnalyticsEngine, loadPettyCashAnalytics, loadExecutiveAnalytics,
   loadPredictionService, loadDriverPredictionDashboard, loadExecutiveDashboard,
   loadPettyCashAnalyticsView, loadExecutiveAnalyticsView, loadSarprasIntelligence,
+  loadIntelligenceBackendWiring,
 } from './config/module-loader-registry.js';
 import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver, isEngineeringUser, assignmentBelongsToDriver } from './auth.js';
 // V2.0.10 — single reusable gate for the V2 pilot surface (Sarpras Intelligence).
@@ -13212,6 +13213,23 @@ document.addEventListener('DOMContentLoaded', async () => {
       appFlags = await loadFeatureFlags();
     } catch (err) {
       console.warn('[flags] post-auth re-check failed — keeping pre-auth defaults.', err);
+    }
+
+    // V2 Sarpras Intelligence — Phase 2F client backend wiring. Registration
+    // only: connects src/intelligence/'s conversation store + provider
+    // abstraction to the deployed callables. Pilot-gated (isV2Enabled),
+    // lazy-loaded so no other session fetches src/intelligence/, one-shot
+    // (this whole block is _sessionInfraStarted-guarded), and fully
+    // error-swallowed — a wiring failure leaves Intelligence inert and never
+    // disturbs the session. It never enables the feature flag, never calls
+    // OpenAI, never creates a conversation, and mounts no UI.
+    if (isV2Enabled(getCurrentUser())) {
+      try {
+        const { wireIntelligenceBackend } = await loadIntelligenceBackendWiring();
+        await wireIntelligenceBackend();
+      } catch (err) {
+        console.warn('[intelligence] backend wiring skipped — continuing.', err);
+      }
     }
 
     // Re-render with authoritative data + refresh permissioned UI.

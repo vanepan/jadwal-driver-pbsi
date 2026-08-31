@@ -51,12 +51,26 @@ export function createCallableIcBackend({ callConversation } = {}) {
     throw new Error('createCallableIcBackend: callConversation port is required.');
   }
 
+  // Firebase httpsCallable rejects with an HttpsError carrying `.code`
+  // (e.g. 'unauthenticated', 'permission-denied', 'invalid-argument',
+  // 'not-found', 'functions/not-found'). Map those to store error codes;
+  // anything else (offline, DNS, 5xx) is a transport failure. Never rethrows.
+  function fromThrow(err) {
+    const code = err && typeof err.code === 'string' ? err.code : '';
+    const msg = err && err.message ? err.message : 'unknown';
+    if (/permission-denied/.test(code)) return icFailure(IC_STORE_ERRORS.FORBIDDEN, msg);
+    if (/invalid-argument/.test(code)) return icFailure(IC_STORE_ERRORS.INVALID_RECORD, msg);
+    if (/not-found/.test(code)) return icFailure(IC_STORE_ERRORS.NOT_FOUND, msg);
+    // 'unauthenticated' (session not ready) + transport errors → the store is not usable right now
+    return icFailure(IC_STORE_ERRORS.NO_BACKEND_CONFIGURED, `conversation function unavailable (${code || msg}).`);
+  }
+
   async function call(payload) {
     let raw;
     try {
       raw = await callConversation(payload);
     } catch (err) {
-      return icFailure(IC_STORE_ERRORS.NO_BACKEND_CONFIGURED, `conversation function unreachable (${err && err.message ? err.message : 'unknown'}).`);
+      return fromThrow(err);
     }
     return toEnvelope(raw);
   }

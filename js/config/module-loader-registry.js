@@ -58,3 +58,11 @@ export const loadExecutiveAnalyticsView = () =>
    top-level import: every other user's session should never fetch it. ── */
 export const loadSarprasIntelligence = () =>
   loadModule('sarpras-intelligence', () => import('../../src/ui/sarpras-intelligence-center.js'));
+
+/* ── Sarpras Intelligence — V2 Phase 2F client backend wiring. Registers the
+   deployed callable conversation backend + the OpenAI provider adapter into
+   the ESM src/intelligence/ layer. Same pilot gate + same "never a static
+   import" reasoning as loadSarprasIntelligence above. Registration only;
+   NOT UI, and it never enables the feature flag or calls OpenAI. ── */
+export const loadIntelligenceBackendWiring = () =>
+  loadModule('intelligence-backend-wiring', () => import('../intelligence-backend-wiring.js'));

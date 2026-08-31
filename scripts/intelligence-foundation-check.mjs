@@ -269,14 +269,15 @@ const intelFiles = [];
 const gateLeak = intelFiles.filter((f) => /['"]role['"]\s*\]?\s*===\s*['"]admin['"]|\busername\s*===|isV2Enabled\s*\(|PERMISSIONS\s*=\s*\{/.test(stripComments(fs.readFileSync(f, 'utf8'))));
 check(gateLeak.length === 0, `no src/intelligence/** file implements its own permission gate (${gateLeak.map((f) => path.relative(ROOT, f)).join(', ') || 'none'})`);
 
-section('Isolation — no RUNTIME coupling into src/intelligence/ from V1 (updated for Phase 1)');
-// Phase 1 wires a CLIENT entry point (js/firebase.js#callGenerateCompletion) and
-// a SERVER boundary (functions/src/intelligence/*), but neither runtime-imports
-// the ESM src/intelligence/ tree: the client callable is a plain httpsCallable,
-// and the CJS server keeps its own tiny model-completion-contract mirror. A
-// JSDoc `@param {import('../src/intelligence/...')}` type reference (comments,
-// stripped below) is not a runtime import. The Intelligence Service itself is
-// still not mounted into any UI (PART 16 non-goal).
+section('Isolation — src/intelligence/ has exactly ONE js/ composition root (Phase 2F)');
+// Phase 2F wires the client: js/intelligence-backend-wiring.js is the ONE
+// sanctioned js/ module that runtime-imports src/intelligence/ (registering
+// the deployed callable conversation backend + the OpenAI provider adapter).
+// Every OTHER js/ file, every other src/ domain, every functions/ file must
+// still NOT import the tree. The CJS server keeps its own tiny contract
+// mirrors. index.html loads nothing from src/intelligence/. No UI mounts the
+// Intelligence Service yet (Phase 3).
+const JS_COMPOSITION_ROOT = 'js/intelligence-backend-wiring.js';
 function runtimeImportsIntelligence(dir, exclude) {
   const hits = [];
   (function walk(d) {
@@ -293,12 +294,19 @@ function runtimeImportsIntelligence(dir, exclude) {
   })(dir);
   return hits;
 }
-const jsHits = runtimeImportsIntelligence(path.join(ROOT, 'js'));
+const jsHits = runtimeImportsIntelligence(path.join(ROOT, 'js')).map((p) => p.replace(/\\/g, '/'));
 const srcHits = runtimeImportsIntelligence(path.join(ROOT, 'src'), path.join(ROOT, 'src/intelligence'));
 const fnHits = runtimeImportsIntelligence(path.join(ROOT, 'functions/src'));
-check(jsHits.length === 0, `no js/** file runtime-imports src/intelligence/ (${jsHits.join(', ') || 'none'})`);
+const jsHitsOther = jsHits.filter((p) => p !== JS_COMPOSITION_ROOT);
+check(jsHits.includes(JS_COMPOSITION_ROOT), `the js/ composition root (${JS_COMPOSITION_ROOT}) imports src/intelligence/ as designed`);
+check(jsHitsOther.length === 0, `no OTHER js/** file runtime-imports src/intelligence/ (${jsHitsOther.join(', ') || 'none'})`);
 check(srcHits.length === 0, `no other src/** domain imports src/intelligence/ (${srcHits.join(', ') || 'none'})`);
 check(fnHits.length === 0, `no functions/** file imports src/intelligence/ — the CJS side mirrors, never imports (${fnHits.join(', ') || 'none'})`);
+// the composition root must NOT hardcode a gate — it inherits js/app.js's isV2Enabled call.
+const wiringSrc = stripComments(fs.readFileSync(path.join(ROOT, JS_COMPOSITION_ROOT), 'utf8'));
+check(!/isV2Enabled\s*\(|['"]role['"]\s*\]?\s*===\s*['"]admin['"]|\busername\s*===/.test(wiringSrc), 'the composition root implements no gate of its own (app.js owns isV2Enabled)');
+check(!/api\.openai\.com|sk-[A-Za-z0-9]|OPENAI_API_KEY/.test(wiringSrc), 'the composition root contains no endpoint / key / secret');
+check(!/setActiveProvider\([^)]*\)\s*;?\s*$/m.test(wiringSrc) || /if\s*\(\s*status\.featureEnabled\s*\)/.test(wiringSrc), 'the OpenAI provider is only activated behind the feature flag');
 const indexHtml = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 check(!/src\/intelligence\//.test(indexHtml), 'index.html does not load anything from src/intelligence/');
 // the layer may read knowledge/organizational-memory/document-intelligence — never the reverse (spot-check the one edge used)
