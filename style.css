@@ -1018,6 +1018,31 @@ z-index: 1;
   font-weight: 700;
 }
 
+/* V1 Phase 3 — the continuous multi-day hour ruler. Every day boundary (the
+   00:00 cell) carries a stronger divider + a compact date marker so the
+   strip stays legible while scrolling across days. */
+.hour-cell--daystart {
+  border-left: 2px solid var(--gray-3);
+  position: relative;
+  overflow: visible;
+}
+.hour-cell--daystart::after {
+  content: attr(data-day);
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  font-family: var(--font-sans, inherit);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: var(--accent);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.hour-cell--endcap {
+  border-left: 2px solid var(--gray-3);
+}
+
 /* ── Timeline Body ── */
 .timeline-body {
   overflow-x: auto;
@@ -1070,28 +1095,39 @@ z-index: 1;
   margin-top: 1px;
 }
 
-/* Area slot jam dalam satu baris driver */
+/* Area slot jam dalam satu baris driver.
+   V1 Phase 3 — continuous multi-day canvas: total width = (--tl-days) days ×
+   24h × lebar per jam. --tl-days is set on #timelineBody by js/timeline.js
+   (renderDriverRows) and inherits down; defaults to 1 day pre-render. */
 .driver-slots {
   position: relative;
-  /* Lebar total = 24 jam × lebar per jam */
-  width: calc(24 * var(--hour-width));
-  min-width: calc(24 * var(--hour-width));
+  width: calc(var(--tl-days, 1) * 24 * var(--hour-width));
+  min-width: calc(var(--tl-days, 1) * 24 * var(--hour-width));
   height: var(--row-height);
   flex-shrink: 0;
 }
 
-/* Garis vertikal setiap jam sebagai grid */
+/* Grid lines: an hourly hairline (layer 2) + a stronger DAY SEAM every 24h
+   (layer 1) so the midnight boundary of the continuous strip stays legible. */
 .driver-slots::before {
   content: '';
   position: absolute;
   inset: 0;
-  background-image: repeating-linear-gradient(
-    to right,
-    var(--gray-2) 0px,
-    var(--gray-2) 1px,
-    transparent 1px,
-    transparent var(--hour-width)
-  );
+  background-image:
+    repeating-linear-gradient(
+      to right,
+      var(--gray-3) 0px,
+      var(--gray-3) 1.5px,
+      transparent 1.5px,
+      transparent calc(24 * var(--hour-width))
+    ),
+    repeating-linear-gradient(
+      to right,
+      var(--gray-2) 0px,
+      var(--gray-2) 1px,
+      transparent 1px,
+      transparent var(--hour-width)
+    );
   pointer-events: none;
 }
 
@@ -1213,6 +1249,64 @@ z-index: 1;
 .assignment-block.is-started {
   outline: 2px solid rgba(255,255,255,0.85);
   outline-offset: -2px;
+}
+
+/* V1 Phase 2/3 — the block is clipped by the WINDOW EDGE (not by a day
+   boundary: inside the window a cross-midnight block is drawn continuously).
+   Flatten the clipped edge so it reads as "runs off the loaded range" and
+   add a chevron. Purely visual; the record is still ONE assignment, ONE id. */
+.assignment-block.continues-next-day {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right: 2px dashed rgba(255,255,255,0.7);
+  padding-right: 14px;
+}
+.assignment-block.continues-next-day::after {
+  content: "»";
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--white);
+  opacity: 0.92;
+  pointer-events: none;
+}
+.assignment-block.continues-prev-day {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-left: 2px dashed rgba(255,255,255,0.7);
+  padding-left: 14px;
+}
+.assignment-block.continues-prev-day::before {
+  content: "«";
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--white);
+  opacity: 0.92;
+  pointer-events: none;
+  z-index: 1;
+}
+/* A block that crosses midnight WITHIN the loaded window: one continuous
+   card, with a faint vertical tick at each day seam it crosses (position fed
+   from JS as --midnight-x, px from the block's left edge) so the crossing
+   stays legible without splitting the card. */
+.assignment-block.spans-midnight::before {
+  content: "";
+  position: absolute;
+  left: var(--midnight-x, 50%);
+  top: 3px;
+  bottom: 3px;
+  width: 2px;
+  background: rgba(255,255,255,0.55);
+  pointer-events: none;
 }
 
 /* Badge SELESAI / JALAN di dalam blok timeline */

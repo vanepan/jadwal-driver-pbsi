@@ -42,7 +42,7 @@ import {
   createAssignmentDirect, updateAssignmentDirect,
 } from './assignments.js';
 import { requestDeleteAssignment } from './modal.js';
-import { getCurrentDate, getHourWidth } from './timeline.js';
+import { getCurrentDate, getHourWidth, canvasMinutesToDateTime, dateToDayIndex } from './timeline.js';
 import { getActiveDrivers } from './drivers-store.js';
 import { recommendDrivers, evaluateAvailability } from './services/driver-recommendation-engine.js';
 import { getDispatchConfig } from './config/dispatch-intelligence-config.js';
@@ -58,6 +58,17 @@ function isDesktopPointer() {
 
 function clampDayMinutes(m) {
   return Math.max(0, Math.min(1439, Math.round(m)));
+}
+
+/** V1 Phase 3 — a pointer X inside .driver-slots maps to ABSOLUTE canvas
+ *  minutes (from the window start), not minute-of-day. Only the lower bound
+ *  is clamped; canvasMinutesToDateTime() resolves any day index. */
+function clampCanvasMinutes(m) {
+  return Math.max(0, Math.round(m));
+}
+/** minute-of-day (0..1439) from a value that may exceed a day (overnight). */
+function wrapDayMinutes(m) {
+  return ((Math.round(m) % 1440) + 1440) % 1440;
 }
 
 /** Movement past this many pixels (from mousedown) promotes a "pending" press
@@ -194,7 +205,7 @@ function onMenuClick(e) {
   if (action === 'copy') doCopy(ctx.id);
   else if (action === 'duplicate') doDuplicate(ctx.id);
   else if (action === 'delete') doDelete(ctx.id);
-  else if (action === 'paste') doPaste(ctx.hoverMinutes);
+  else if (action === 'paste') doPaste(ctx);
 }
 
 function onTimelineContextMenu(e) {
@@ -214,10 +225,11 @@ function onTimelineContextMenu(e) {
     ], { type: 'assignment', id });
   } else {
     const rect = slots.getBoundingClientRect();
-    const hoverMinutes = clampDayMinutes(((e.clientX - rect.left) / getHourWidth()) * 60);
+    const absMin = ((e.clientX - rect.left) / getHourWidth()) * 60;
+    const { date, minutes } = canvasMinutesToDateTime(clampCanvasMinutes(absMin));
     showMenu(e.clientX, e.clientY, [
       { action: 'paste', label: 'Paste Assignment Here', enabled: hasPermission('create') && hasClipboardAssignment() },
-    ], { type: 'empty', hoverMinutes });
+    ], { type: 'empty', date, hoverMinutes: minutes });
   }
 }
 
@@ -249,12 +261,16 @@ function doDuplicate(id) {
   pasteAssignmentCore(a, { date: a.date, startMinutes, durationMinutes, fullDay: !!a.fullDay });
 }
 
-function doPaste(hoverMinutes) {
+function doPaste(ctx) {
   const source = getClipboardAssignment();
   if (!source) return;
   if (!hasPermission('create')) { showToast('Anda tidak punya akses untuk menambah jadwal'); return; }
   const durationMinutes = source.fullDay ? null : Math.max(15, timeToMinutes(source.endTime) - timeToMinutes(source.startTime));
-  pasteAssignmentCore(source, { date: getCurrentDate(), startMinutes: hoverMinutes, durationMinutes, fullDay: !!source.fullDay });
+  pasteAssignmentCore(source, {
+    date: (ctx && ctx.date) || getCurrentDate(),
+    startMinutes: ctx ? ctx.hoverMinutes : 0,
+    durationMinutes, fullDay: !!source.fullDay,
+  });
 }
 
 /**
@@ -265,8 +281,12 @@ function doPaste(hoverMinutes) {
  * Self-Drive; no reassignment is attempted.
  */
 function pasteAssignmentCore(source, { date, startMinutes, durationMinutes, fullDay }) {
-  const startTime = fullDay ? '00:00' : minutesToTime(clampDayMinutes(startMinutes));
-  const endTime   = fullDay ? '23:59' : minutesToTime(clampDayMinutes(startMinutes + durationMinutes));
+  const startMin = fullDay ? 0 : clampDayMinutes(startMinutes);
+  // V1 (Overnight): a paste near end-of-day may roll past midnight — that is a
+  // valid overnight window (endTime < startTime; createAssignmentDirect accepts
+  // it), not something to truncate at 23:59.
+  const startTime = fullDay ? '00:00' : minutesToTime(startMin);
+  const endTime   = fullDay ? '23:59' : minutesToTime(wrapDayMinutes(startMin + (durationMinutes || 0)));
   const request = { date, startTime, endTime };
   const sourceDriverName = String(source.driver || '').trim();
 
@@ -398,10 +418,16 @@ function startMove(e, block, assignment) {
     grabOffsetX: e.clientX - blockRect.left,
     grabOffsetY: e.clientY - blockRect.top,
     ghostHeight: blockRect.height,
-    durationMinutes: assignment.fullDay ? null : (timeToMinutes(assignment.endTime) - timeToMinutes(assignment.startTime)),
+    // V1 (Overnight): duration is measured on the full datetime span so a
+    // cross-midnight block keeps its real length while being dragged.
+    durationMinutes: assignment.fullDay ? null : (() => {
+      const s = timeToMinutes(assignment.startTime), en = timeToMinutes(assignment.endTime);
+      return en > s ? en - s : en + 1440 - s;
+    })(),
     fullDay: !!assignment.fullDay,
     vehicle: assignment.vehicle,
     targetDriver: assignment.driver,
+    targetDate: assignment.date,
     startTime: assignment.startTime,
     endTime: assignment.endTime,
     valid: true,
@@ -426,21 +452,28 @@ function onDragMove(e) {
   const refSlots = (rowEl?.querySelector('.driver-slots')) || d.originRow.querySelector('.driver-slots');
   const refRect = refSlots.getBoundingClientRect();
 
-  const date = getCurrentDate();
+  // V1 Phase 3 — pointer X inside .driver-slots is ABSOLUTE canvas minutes;
+  // resolve the real day the block is being dropped on (drag can cross a day
+  // boundary now), and let the window roll past midnight (overnight).
+  let targetDate = d.targetDate || getCurrentDate();
   let startTime = d.startTime, endTime = d.endTime, isSnapped = false;
   if (!d.fullDay) {
-    const rawStartMinutes = ((newLeft - refRect.left) / d.hourWidth) * 60;
-    const snap = magneticSnap(rawStartMinutes);
-    const startMinutes = clampDayMinutes(snap.value);
-    const endMinutes = clampDayMinutes(startMinutes + d.durationMinutes);
-    startTime = minutesToTime(startMinutes);
-    endTime = minutesToTime(endMinutes);
-    isSnapped = snap.snapped && startMinutes === Math.round(snap.value);
+    const rawAbsStart = ((newLeft - refRect.left) / d.hourWidth) * 60;
+    const snap = magneticSnap(rawAbsStart);
+    const absStart = clampCanvasMinutes(snap.value);
+    const dt = canvasMinutesToDateTime(absStart);
+    targetDate = dt.date;
+    startTime = minutesToTime(dt.minutes);
+    endTime = minutesToTime(wrapDayMinutes(dt.minutes + d.durationMinutes));
+    isSnapped = snap.snapped && absStart === Math.round(snap.value);
     updateBlockTimeLabel(d.ghost, startTime, endTime);
+  } else {
+    const rawAbs = ((newLeft - refRect.left) / d.hourWidth) * 60;
+    targetDate = canvasMinutesToDateTime(clampCanvasMinutes(rawAbs)).date;
   }
 
-  const driverConflict = targetDriver !== '' && checkConflict(targetDriver, startTime, endTime, date, d.id);
-  const vehicleConflict = d.vehicle !== '' && checkVehicleConflict(d.vehicle, startTime, endTime, date, d.id);
+  const driverConflict = targetDriver !== '' && checkConflict(targetDriver, startTime, endTime, targetDate, d.id);
+  const vehicleConflict = d.vehicle !== '' && checkVehicleConflict(d.vehicle, startTime, endTime, targetDate, d.id);
   const valid = !driverConflict && !vehicleConflict;
 
   d.ghost.classList.toggle('tl-drag-valid', valid);
@@ -448,6 +481,7 @@ function onDragMove(e) {
   d.ghost.classList.toggle('tl-drag-snapped', isSnapped);
 
   d.targetDriver = targetDriver;
+  d.targetDate = targetDate;
   d.startTime = startTime;
   d.endTime = endTime;
   d.valid = valid;
@@ -464,7 +498,7 @@ function onDragEnd(e) {
 
   if (d.valid) {
     const result = updateAssignmentDirect(d.id, {
-      driver: d.targetDriver, date: getCurrentDate(), startTime: d.startTime, endTime: d.endTime,
+      driver: d.targetDriver, date: d.targetDate || getCurrentDate(), startTime: d.startTime, endTime: d.endTime,
     });
     if (!result.ok) showToast('⚠ Tidak dapat memindahkan jadwal ke sini');
   }
@@ -487,8 +521,11 @@ function startResize(e, block, assignment) {
   resizeState = {
     id: assignment.id, block, hourWidth, slotsRect,
     startMinutesFixed: timeToMinutes(assignment.startTime),
+    // V1 Phase 3 — the block lives on a multi-day canvas; its fixed start in
+    // ABSOLUTE canvas minutes anchors the resize math.
+    startAbsFixed: dateToDayIndex(assignment.date) * 1440 + timeToMinutes(assignment.startTime),
     driver: assignment.driver, vehicle: assignment.vehicle,
-    date: getCurrentDate(), originalWidth: block.style.width,
+    date: assignment.date, originalWidth: block.style.width,
     originalLabel: timeLabel ? timeLabel.textContent : null,
     endTime: assignment.endTime, valid: true,
   };
@@ -500,13 +537,16 @@ function startResize(e, block, assignment) {
 function onResizeMove(e) {
   if (!resizeState) return;
   const r = resizeState;
-  const rawEndMinutes = ((e.clientX - r.slotsRect.left) / r.hourWidth) * 60;
-  const snap = magneticSnap(rawEndMinutes);
-  const flooredSnapValue = Math.max(snap.value, r.startMinutesFixed + 15);
-  const endMinutes = clampDayMinutes(flooredSnapValue);
-  const isSnapped = snap.snapped && flooredSnapValue === snap.value;
-  const endTime = minutesToTime(endMinutes);
-  const width = ((endMinutes - r.startMinutesFixed) / 60) * r.hourWidth;
+  const rawAbsEnd = ((e.clientX - r.slotsRect.left) / r.hourWidth) * 60;
+  const snap = magneticSnap(rawAbsEnd);
+  // Floor at start+15min; cap at start+ (24h − 1min) so a resize can produce
+  // at most ONE overnight window, never a +2-day span (assignmentSpan only
+  // derives endDate = date + 1).
+  const capped = Math.min(Math.max(snap.value, r.startAbsFixed + 15), r.startAbsFixed + 1439);
+  const endAbs = clampCanvasMinutes(capped);
+  const isSnapped = snap.snapped && capped === snap.value;
+  const endTime = minutesToTime(wrapDayMinutes(endAbs));
+  const width = ((endAbs - r.startAbsFixed) / 60) * r.hourWidth;
   r.block.style.width = `${Math.max(width, 20)}px`;
 
   const startTime = minutesToTime(r.startMinutesFixed);

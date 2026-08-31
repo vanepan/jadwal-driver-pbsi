@@ -1,13 +1,31 @@
 /* ============================================================
    TIMELINE.JS — Timeline Scheduler Rendering
-   
-   Render timeline header, driver rows, assignment blocks,
-   dan sinkronisasi scroll horizontal.
+
+   V1 FOLLOW-UP (Phase 2 + Phase 3): the board is a CONTINUOUS, multi-day
+   canvas. #timelineBody scrolls a strip `windowDayCount` days wide; every
+   assignment block is positioned in ABSOLUTE canvas minutes
+   (dayIndex * 1440 + minuteOfDay), so an overnight / multi-day assignment is
+   ONE block, ONE id, spanning the midnight gridline — no duplicate record,
+   no per-day clipping (clipping only ever happens at the WINDOW edge).
+
+   The window is bounded for performance and slides / extends as the user
+   scrolls toward either edge (infinite feel, bounded DOM). The date header
+   (#timelineDateLabel) follows the scroll VIEWPORT, not an explicit
+   selection. Prev / Next / calendar / "Hari Ini" are smooth-scroll
+   shortcuts. Auto-focus resolves the operationally-relevant assignment by
+   ABSOLUTE datetime (assignmentSpan) — an overnight trip that started
+   yesterday but is active now IS found.
+
+   Single source of truth for an assignment's datetime span: js/utils.js
+   assignmentSpan(). No second parser lives here.
    ============================================================ */
 
 'use strict';
 
-import { todayString, formatDateLong, timeToMinutes, minutesToTime, offsetDate, computeWorkTime } from './utils.js';
+import {
+  todayString, formatDateLong, parseLocalDate,
+  timeToMinutes, minutesToTime, offsetDate, computeWorkTime, assignmentSpan,
+} from './utils.js';
 import { getVehicleColor } from './drivers.js';
 import { getActiveDrivers } from './drivers-store.js';
 import { getActiveVehicles } from './vehicles-store.js';
@@ -24,12 +42,22 @@ function getOfficeHours() {
   };
 }
 
+const DAY_MIN = 1440;
+
 /** Minutes-from-midnight (local) for an ISO timestamp, or null. */
 function isoToMinsOfDay(iso) {
   if (!iso) return null;
   const d = new Date(iso);
   if (isNaN(d.getTime())) return null;
   return d.getHours() * 60 + d.getMinutes();
+}
+/** { dateStr:'YYYY-MM-DD', minutes } (local) for an ISO timestamp, or null. */
+function isoLocalParts(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return { dateStr, minutes: d.getHours() * 60 + d.getMinutes() };
 }
 
 /* ── Helpers ── */
@@ -40,197 +68,504 @@ function normalizeBlockStatus(status) {
 }
 
 /* ── Module State ── */
-let currentDate = todayString();
+
+// Continuous multi-day window. The canvas renders a contiguous run of
+// calendar days [windowStartDate .. windowStartDate + windowDayCount - 1].
+const WINDOW_RADIUS_DAYS = 10;      // initial build: anchor ± this many days
+const WINDOW_EXTEND_DAYS = 10;      // days appended/prepended per infinite-extend
+const WINDOW_EDGE_TRIGGER_DAYS = 3; // extend when the viewport day is within N of an edge
+const WINDOW_MAX_DAYS = 63;         // hard cap on rendered days — extend past it slides the far edge
+
+let windowStartDate = null;   // 'YYYY-MM-DD' — leftmost rendered day
+let windowDayCount = 0;
+
+let currentDate = todayString(); // the explicit ANCHOR (date-nav target) — drives window centering + the List/Daftar view (getCurrentDate)
+let viewportDate = currentDate;  // the day the SCROLL POSITION currently shows — drives the header label + "Hari Ini" state
 let assignments = [];
 let realtimeTimer = null;
-let lastAutoFocusedDate = null; // track which date has already been auto-focused
-let pendingScrollRestore = -1;  // scrollLeft to restore after innerHTML clear (-1 = none)
+
+// Auto-focus (INITIAL OPEN / explicit nav only). `lastFocusAnchor` is the
+// anchor we have already resolved a position for; `_desiredScrollPx` is the
+// canvas px the timeline "wants" — re-asserted across re-renders until the
+// user takes manual control (userMovedTimeline).
+let lastFocusAnchor = null;
+let userMovedTimeline = false;
+let _desiredScrollPx = null;
+
+// The REAL Operations-open path routes through setWorkspace() →
+// document.startViewTransition(), which applies the surface's `display`
+// change ASYNCHRONOUSLY, AFTER renderTimeline() has run. So auto-focus can
+// fire against a display:none / not-yet-laid-out #timelineBody where a
+// scroll write is a silent no-op. A bounded requestAnimationFrame loop
+// waits until the body is genuinely visible + scrollable before it acts.
+let _autoFocusRaf = 0;
+let _autoFocusTries = 0;
+const AUTO_FOCUS_MAX_TRIES = 60; // ~1s of frames — bounded, stops on success
+const AUTO_FOCUS_CONTEXT_MIN = 90; // ~1.5h of leading context before the target
+
+// Smooth-scroll tween (Part 6/7). Distance-scaled easeOutCubic; yields the
+// instant the user starts a manual scroll (wheel / touch / pointer-down).
+let _smoothRaf = 0;
+let _smoothActive = false;
+
+// rAF-throttled viewport-date + infinite-extend sync (Part 11).
+let _viewportSyncRaf = 0;
 
 function getTimelineBodyElement() {
   return document.getElementById('timelineBody') || document.getElementById('timelineGrid');
 }
 
-/**
- * Set current date yang sedang ditampilkan.
- * Resets auto-focus so the new date gets focused on next render.
- * @param {string} dateStr - Format YYYY-MM-DD
- */
-export function setCurrentDate(dateStr) {
-  currentDate = dateStr;
-  lastAutoFocusedDate = null; // force re-focus on next renderTimeline call
+/* ── Canvas geometry ─────────────────────────────────────────────────────
+   A block's `style.left` is ABSOLUTE canvas px from windowStartDate 00:00.
+   Within #timelineBody the leftmost VISIBLE canvas px === body.scrollLeft
+   (the sticky .driver-label covers viewport-x 0..driverCol, and .driver-
+   slots begins right after it, so canvas-px P sits at viewport-x
+   driverCol + P - scrollLeft). Positioning a block P px from the visible
+   canvas edge therefore means scrollLeft = P. */
+function _hourWidth() { return getHourWidth(); }
+function _dayWidthPx() { return 24 * getHourWidth(); }
+function _canvasWidthPx() { return windowDayCount * _dayWidthPx(); }
+
+function _daysBetween(aStr, bStr) {
+  return Math.round((parseLocalDate(bStr) - parseLocalDate(aStr)) / 86400000);
+}
+
+/** Day index of a date within the current window (may be <0 or >=count). */
+export function dateToDayIndex(dateStr) {
+  if (!windowStartDate || !dateStr) return 0;
+  return _daysBetween(windowStartDate, dateStr);
+}
+
+/** Absolute canvas px for (dateStr, minuteOfDay). */
+function _canvasPx(dateStr, minuteOfDay) {
+  return ((dateToDayIndex(dateStr) * DAY_MIN + minuteOfDay) / 60) * getHourWidth();
+}
+
+/** Inverse: absolute canvas minutes → { date, minutes-of-day } — used by
+ *  timeline-interactions.js so drag/resize/paste resolve the real day the
+ *  pointer is over, not a day-0 assumption. */
+export function canvasMinutesToDateTime(absMin) {
+  const dayIndex = Math.floor(absMin / DAY_MIN);
+  let minutes = Math.round(absMin - dayIndex * DAY_MIN);
+  minutes = Math.max(0, Math.min(1439, minutes));
+  return { date: windowStartDate ? offsetDate(windowStartDate, dayIndex) : todayString(), minutes };
+}
+
+/** Leftmost rendered day — for timeline-interactions.js canvas math. */
+export function getWindowStartDate() { return windowStartDate; }
+
+/* ── Window management ──────────────────────────────────────────────────── */
+
+function buildWindow(anchorDate) {
+  const anchor = anchorDate || todayString();
+  windowStartDate = offsetDate(anchor, -WINDOW_RADIUS_DAYS);
+  windowDayCount = WINDOW_RADIUS_DAYS * 2 + 1;
+}
+
+/** Rebuild the window centred on `dateStr` when it is outside (or within
+ *  `margin` days of) the current window. Returns true if it rebuilt. */
+function ensureDateInWindow(dateStr, margin = 2) {
+  if (!windowStartDate) { buildWindow(dateStr); return true; }
+  const idx = _daysBetween(windowStartDate, dateStr);
+  if (idx < margin || idx > windowDayCount - 1 - margin) { buildWindow(dateStr); return true; }
+  return false;
 }
 
 /**
- * Get current date yang sedang ditampilkan
- * @returns {string} - Format YYYY-MM-DD
+ * Grow the window toward whichever edge `viewportDate` is approaching, and
+ * slide the far edge once WINDOW_MAX_DAYS is hit so the DOM stays bounded.
+ * @returns {{changed:boolean, shiftPx:number}} shiftPx = px the canvas
+ *   content moved RIGHT (prepend) or LEFT (negative, far-edge slide);
+ *   caller compensates scrollLeft by it so the viewport does not jump.
  */
-export function getCurrentDate() {
-  return currentDate;
+function maybeExtendWindow() {
+  if (!windowStartDate) return { changed: false, shiftPx: 0 };
+  const idx = _daysBetween(windowStartDate, viewportDate);
+  let changed = false;
+  let shiftPx = 0;
+
+  if (idx <= WINDOW_EDGE_TRIGGER_DAYS) {
+    windowStartDate = offsetDate(windowStartDate, -WINDOW_EXTEND_DAYS);
+    windowDayCount += WINDOW_EXTEND_DAYS;
+    shiftPx = WINDOW_EXTEND_DAYS * _dayWidthPx();
+    if (windowDayCount > WINDOW_MAX_DAYS) windowDayCount = WINDOW_MAX_DAYS; // drop rightmost — off-screen right, no compensation
+    changed = true;
+  } else if (idx >= windowDayCount - 1 - WINDOW_EDGE_TRIGGER_DAYS) {
+    windowDayCount += WINDOW_EXTEND_DAYS;
+    if (windowDayCount > WINDOW_MAX_DAYS) {
+      const trim = windowDayCount - WINDOW_MAX_DAYS;
+      windowStartDate = offsetDate(windowStartDate, trim);
+      windowDayCount = WINDOW_MAX_DAYS;
+      shiftPx = -trim * _dayWidthPx(); // content shifted left → reduce scrollLeft
+    }
+    changed = true;
+  }
+  return { changed, shiftPx };
 }
 
 /**
- * Set assignments array untuk rendering
- * Biasanya dipanggil dari app.js setiap kali data berubah
- * @param {Array} newAssignments - Daftar assignments
- */
-export function setAssignments(newAssignments) {
-  assignments = newAssignments;
-}
-
-/**
- * Render keseluruhan timeline scheduler
- * - Update label tanggal
- * - Render header jam
- * - Render baris driver + blocks
- * - Setup scroll sync
- * - Auto-scroll ke jam sekarang jika today
+ * Render keseluruhan timeline scheduler (multi-day continuous canvas).
  */
 export function renderTimeline() {
+  if (!windowStartDate) buildWindow(currentDate);
+
   updateDateLabel();
   renderHourHeaders();
-  renderDriverRows();
+  renderDriverRows();      // preserves body.scrollLeft across the innerHTML wipe
   updateRealtimeTimeline();
   startRealtimeTimeline();
 
-  // Init scroll sync hanya sekali
   if (!window.timelineScrollInitialized) {
     syncTimelineScroll();
     window.timelineScrollInitialized = true;
   }
 
-  // Smart auto-focus: run when date changes (not on every data refresh)
-  if (lastAutoFocusedDate !== currentDate) {
-    lastAutoFocusedDate = currentDate;
-    requestAnimationFrame(() => autoFocusTimeline());
+  // Smart auto-focus (INITIAL OPEN / new anchor only — never fights the user).
+  if (!userMovedTimeline && lastFocusAnchor !== currentDate) {
+    scheduleAutoFocus();
   }
 
-  // Debug: verify full 24-hour range is rendered and scrollable
+  // Debug: verify the full multi-day range is rendered and scrollable.
   requestAnimationFrame(() => {
     const body = getTimelineBodyElement();
     const hoursEl = document.getElementById('timelineHours');
     if (!body) return;
     const cells = hoursEl ? hoursEl.querySelectorAll('.hour-cell') : [];
-    const first = cells[0]?.textContent ?? 'N/A';
-    const last  = cells[cells.length - 1]?.textContent ?? 'N/A';
     const hw = getHourWidth();
     const dc = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--driver-col')) || 0;
-    const expected = Math.round(dc + 24 * hw);
-    const ok = body.scrollWidth >= expected && body.scrollWidth > body.clientWidth;
+    const expected = Math.round(dc + windowDayCount * 24 * hw);
+    const ok = body.scrollWidth >= expected - 4 && body.scrollWidth > body.clientWidth;
     console.info(`[Timeline] ${ok ? '✅' : '❌'}`, {
-      scrollWidth:   body.scrollWidth,
-      clientWidth:   body.clientWidth,
-      maxScrollPx:   body.scrollWidth - body.clientWidth,
-      maxScrollHrs:  +((body.scrollWidth - body.clientWidth) / hw).toFixed(1),
-      renderedHours: cells.length,
-      firstHour:     first,
-      lastHour:      last,
-      hourWidthPx:   hw,
-      driverColPx:   dc,
+      windowStartDate, windowDayCount,
+      viewportDate, currentDate,
+      scrollWidth: body.scrollWidth,
+      clientWidth: body.clientWidth,
+      renderedHourCells: cells.length,
       expectedScrollWidth: expected,
+      hourWidthPx: hw,
+      driverColPx: dc,
     });
   });
 }
 
 /**
- * Scroll timeline to the most relevant position for the current date:
- * - Today: nearest assignment to current time, or current hour
- * - Other date with assignments: earliest assignment
- * - No assignments: default 08:00
- * Uses smooth scrolling with ~350ms feel.
+ * Pick the single most operationally-relevant assignment for `now`, by
+ * ABSOLUTE datetime (Part 4/5). PURE + exported for unit testing.
+ *   A. Active now: startDateTime <= now < endDateTime — the one ending
+ *      soonest, so a long trip never hides a shorter concurrent one.
+ *      (An overnight trip that started YESTERDAY is found here.)
+ *   B. Else the next upcoming (smallest startDateTime > now).
+ *   C. Else the nearest previous (largest endDateTime <= now).
+ *   D. Else null — caller falls back to "now" / the anchor day.
+ * Cancelled assignments are never chosen.
+ * @param {Array} candidates  any assignment list (not pre-filtered to a date)
+ * @param {Date}  now
+ * @returns {{ assignment:object, focusDate:string, focusMinutes:number }|null}
  */
-function autoFocusTimeline() {
-  const body = getTimelineBodyElement();
-  if (!body) return;
+export function pickRelevantAssignment(candidates, now = new Date()) {
+  const withSpan = (candidates || [])
+    .map(a => ({ a, s: assignmentSpan(a) }))
+    .filter(x => x.s && x.a && x.a.status !== 'cancelled');
+  if (!withSpan.length) return null;
 
-  // Don't fight an active user drag
-  if (syncTimelineScroll._isPointerDown?.()) {
-    lastAutoFocusedDate = null; // retry on next render after release
-    return;
-  }
+  const out = (x) => ({ assignment: x.a, focusDate: x.s.startDate, focusMinutes: x.s.startMin });
 
-  const hourWidth = getHourWidth();
-  const dateAssignments = assignments.filter(a => a.date === currentDate);
-  let targetMinutes;
+  const active = withSpan
+    .filter(x => x.s.startDateTime <= now && now < x.s.endDateTime)
+    .sort((p, q) => p.s.endDateTime - q.s.endDateTime);
+  if (active.length) return out(active[0]);
 
-  if (currentDate === todayString()) {
-    const now = new Date();
-    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const upcoming = withSpan
+    .filter(x => x.s.startDateTime > now)
+    .sort((p, q) => p.s.startDateTime - q.s.startDateTime);
+  if (upcoming.length) return out(upcoming[0]);
 
-    if (dateAssignments.length > 0) {
-      // Nearest assignment to current time
-      const nearest = dateAssignments.reduce((best, a) => {
-        const diff = Math.abs(timeToMinutes(a.startTime) - nowMinutes);
-        const bestDiff = Math.abs(timeToMinutes(best.startTime) - nowMinutes);
-        return diff < bestDiff ? a : best;
-      });
-      targetMinutes = timeToMinutes(nearest.startTime);
-    } else {
-      targetMinutes = nowMinutes;
+  const previous = withSpan
+    .filter(x => x.s.endDateTime <= now)
+    .sort((p, q) => q.s.endDateTime - p.s.endDateTime);
+  if (previous.length) return out(previous[0]);
+
+  return null;
+}
+
+/** Sticky driver-label column width (px). */
+function _driverColPx() {
+  const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--driver-col'));
+  if (Number.isFinite(v) && v > 0) return v;
+  const label = document.querySelector('#timelineBody .driver-label, #timelineGrid .driver-label');
+  return label ? label.offsetWidth || 110 : 110;
+}
+
+function _nowMinutes() {
+  const n = new Date();
+  return n.getHours() * 60 + n.getMinutes();
+}
+
+/** Measured canvas-left of a rendered block (robust against layout/token
+ *  drift), or the minutes-formula fallback. */
+function _blockOrFormulaPx(picked) {
+  if (picked && picked.assignment && picked.assignment.id != null) {
+    let blk = null;
+    try {
+      const body = getTimelineBodyElement();
+      blk = body && body.querySelector(`.assignment-block[data-id="${CSS.escape(String(picked.assignment.id))}"]`);
+    } catch (_) { blk = null; }
+    if (blk) {
+      const l = parseFloat(blk.style.left);
+      if (Number.isFinite(l)) return l;
     }
-  } else if (dateAssignments.length > 0) {
-    // Earliest assignment on the selected date
-    const earliest = dateAssignments.reduce((min, a) =>
-      timeToMinutes(a.startTime) < timeToMinutes(min.startTime) ? a : min
-    );
-    targetMinutes = timeToMinutes(earliest.startTime);
-  } else {
-    targetMinutes = 8 * 60; // default: 08:00
   }
-
-  // Offset by ~1.5 hours to give context before the target
-  const scrollTarget = Math.max(0, ((targetMinutes / 60) - 1.5) * hourWidth);
-  body.scrollTo({ left: scrollTarget, behavior: 'smooth' });
+  return _canvasPx(picked.focusDate, picked.focusMinutes);
 }
 
 /**
- * Update label tanggal di atas timeline
- * Menampilkan tanggal dalam format panjang: "Minggu, 24 Mei 2026"
+ * The canvas scrollLeft that brings the operationally-relevant thing for the
+ * WHOLE dataset (by absolute datetime) `AUTO_FOCUS_CONTEXT_MIN` in from the
+ * visible edge. `canLatch:false` ⇒ "positioned, but data almost certainly
+ * isn't loaded yet — keep retrying so data arrival re-focuses".
+ * @returns {{ px:number, canLatch:boolean }}
+ */
+function _computeAutoFocusTarget() {
+  const ctxPx = (AUTO_FOCUS_CONTEXT_MIN / 60) * getHourWidth();
+  const picked = pickRelevantAssignment(assignments, new Date());
+  if (picked) return { px: Math.max(0, _blockOrFormulaPx(picked) - ctxPx), canLatch: true };
+
+  const todayStr = todayString();
+  const todayIdx = dateToDayIndex(todayStr);
+  if (todayIdx >= 0 && todayIdx < windowDayCount) {
+    return { px: Math.max(0, _canvasPx(todayStr, _nowMinutes()) - ctxPx), canLatch: assignments.length > 0 };
+  }
+  return { px: Math.max(0, _canvasPx(currentDate, 8 * 60) - ctxPx), canLatch: assignments.length > 0 };
+}
+
+/** The canvas scrollLeft for an EXPLICIT date-nav target (Part 14/15/16). */
+function _focusPxForDate(dateStr) {
+  const ctxPx = (AUTO_FOCUS_CONTEXT_MIN / 60) * getHourWidth();
+  const isToday = dateStr === todayString();
+  const dayStart = parseLocalDate(dateStr);
+  const dayEnd = new Date(dayStart); dayEnd.setDate(dayEnd.getDate() + 1);
+
+  const overlapping = assignments
+    .map(a => ({ a, s: assignmentSpan(a) }))
+    .filter(x => x.s && x.a.status !== 'cancelled' && x.s.startDateTime < dayEnd && x.s.endDateTime > dayStart);
+
+  if (isToday) {
+    const picked = pickRelevantAssignment(overlapping.map(x => x.a), new Date());
+    if (picked) return Math.max(0, _blockOrFormulaPx(picked) - ctxPx);
+    return Math.max(0, _canvasPx(dateStr, _nowMinutes()) - ctxPx);
+  }
+  if (overlapping.length) {
+    const earliest = overlapping.reduce((m, x) => (x.s.startDateTime < m.s.startDateTime ? x : m));
+    return Math.max(0, _blockOrFormulaPx({
+      assignment: earliest.a, focusDate: earliest.s.startDate, focusMinutes: earliest.s.startMin,
+    }) - ctxPx);
+  }
+  return Math.max(0, _canvasPx(dateStr, 8 * 60) - ctxPx);
+}
+
+/* ── Smooth scroll (Part 6/7) ──────────────────────────────────────────── */
+
+function cancelSmoothScroll() {
+  if (_smoothRaf) cancelAnimationFrame(_smoothRaf);
+  _smoothRaf = 0;
+  _smoothActive = false;
+}
+
+/**
+ * Animate #timelineBody.scrollLeft to `targetPx` (easeOutCubic, distance-
+ * scaled 240–650ms). Yields immediately if the user starts a manual scroll
+ * (userMovedTimeline) — never fights them back to the target.
+ */
+function smoothScrollTimelineTo(targetPx, { onDone } = {}) {
+  const body = getTimelineBodyElement();
+  if (!body) return;
+  const maxPx = Math.max(0, body.scrollWidth - body.clientWidth);
+  const target = Math.max(0, Math.min(targetPx, maxPx));
+  const start = body.scrollLeft;
+  const dist = target - start;
+
+  cancelSmoothScroll();
+  if (Math.abs(dist) < 4) { body.scrollLeft = target; onDone && onDone(); return; }
+
+  _smoothActive = true;
+  const dur = Math.min(650, Math.max(240, Math.abs(dist) * 0.4));
+  const t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const ease = (p) => 1 - Math.pow(1 - p, 3);
+
+  const step = (now) => {
+    if (!_smoothActive) return;                 // cancelled elsewhere
+    if (userMovedTimeline) { cancelSmoothScroll(); return; } // user took over
+    const p = Math.min(1, ((now || Date.now()) - t0) / dur);
+    body.scrollLeft = start + dist * ease(p);
+    const hours = document.getElementById('timelineHours');
+    if (hours) hours.scrollLeft = body.scrollLeft;
+    if (p < 1) {
+      _smoothRaf = requestAnimationFrame(step);
+    } else {
+      _smoothActive = false;
+      _smoothRaf = 0;
+      onDone && onDone();
+    }
+  };
+  _smoothRaf = requestAnimationFrame(step);
+}
+
+/* ── Bounded readiness loop for the async surface (unchanged rationale) ── */
+
+function scheduleAutoFocus() {
+  _autoFocusTries = 0;
+  if (_autoFocusRaf) cancelAnimationFrame(_autoFocusRaf);
+  _autoFocusRaf = requestAnimationFrame(_autoFocusTick);
+}
+
+function _autoFocusRetry() {
+  if (++_autoFocusTries <= AUTO_FOCUS_MAX_TRIES) {
+    _autoFocusRaf = requestAnimationFrame(_autoFocusTick);
+  } else {
+    _autoFocusRaf = 0;
+  }
+}
+
+function _autoFocusTick() {
+  _autoFocusRaf = 0;
+
+  if (userMovedTimeline) { lastFocusAnchor = currentDate; return; }
+  if (lastFocusAnchor === currentDate) return;
+  if (_smoothActive) { _autoFocusRetry(); return; } // an animation is already running — don't stack
+  if (syncTimelineScroll._isPointerDown && syncTimelineScroll._isPointerDown()) { _autoFocusRetry(); return; }
+
+  const body = getTimelineBodyElement();
+  if (!body) { _autoFocusRetry(); return; }
+
+  // Not laid out yet (surface still display:none / mid View Transition), or
+  // genuinely nothing to scroll — wait for a real scrollable width.
+  const ready = body.offsetParent !== null && body.scrollWidth > body.clientWidth + 1;
+  if (!ready) { _autoFocusRetry(); return; }
+
+  const target = _computeAutoFocusTarget();
+  _desiredScrollPx = target.px;
+
+  smoothScrollTimelineTo(target.px, {
+    onDone: () => {
+      const landed = target.px <= 2 || Math.abs(body.scrollLeft - target.px) <= 6
+        || body.scrollLeft >= (body.scrollWidth - body.clientWidth - 2);
+      if (landed && target.canLatch) {
+        lastFocusAnchor = currentDate;
+      } else if (!target.canLatch) {
+        _autoFocusRetry(); // pre-data — keep trying so data arrival re-focuses
+      }
+    },
+  });
+}
+
+/**
+ * Update the header date label + the calendar picker (Part 10 — BOTH follow
+ * the scroll VIEWPORT, incl. a free scroll past today) and the "Hari Ini"
+ * enabled state.
  */
 function updateDateLabel() {
   const label = document.getElementById('timelineDateLabel');
-  if (label) label.textContent = formatDateLong(currentDate);
+  if (label) label.textContent = formatDateLong(viewportDate);
 
-  // Disable "Hari Ini" button when already viewing today
+  // The date-input calendar tracks whatever the timeline is showing — a plain
+  // horizontal scroll moves it too, not just the Prev/Next/Today buttons.
+  // Assigning .value programmatically does NOT fire its 'change' listener, so
+  // there is no goToDate() feedback loop; onViewportDateChange lets app.js
+  // refresh the PBSI datepicker's visible trigger text (also not a change ev).
+  const dateInput = document.getElementById('filterDate');
+  if (dateInput && dateInput.value !== viewportDate) {
+    dateInput.value = viewportDate;
+    if (onViewportDateChange) { try { onViewportDateChange(viewportDate); } catch (_) {} }
+  }
+
   const btnToday = document.getElementById('btnToday');
   if (btnToday) {
-    const isToday = currentDate === todayString();
-    btnToday.disabled = isToday;
-    btnToday.classList.toggle('is-today', isToday);
+    // Enabled whenever the viewport is not on today, OR today's "now" line is
+    // scrolled out of view (so "Hari Ini" can always re-centre on now — Part 16).
+    const onToday = viewportDate === todayString();
+    const disabled = onToday && _isNowInView();
+    btnToday.disabled = disabled;
+    btnToday.classList.toggle('is-today', disabled);
   }
 }
 
+function _isNowInView() {
+  const body = getTimelineBodyElement();
+  if (!body || !windowStartDate) return false;
+  const todayIdx = dateToDayIndex(todayString());
+  if (todayIdx < 0 || todayIdx >= windowDayCount) return false;
+  const nowPx = _canvasPx(todayString(), _nowMinutes());
+  const left = body.scrollLeft;
+  const right = body.scrollLeft + body.clientWidth - _driverColPx();
+  return nowPx >= left && nowPx <= right;
+}
+
 /**
- * Render header jam (00:00 – 24:00)
- * Setiap kolom mewakili 1 jam
+ * Render the multi-day hour ruler: `windowDayCount * 24` cells (00:00–23:00
+ * repeating). Every day boundary (hour 0) carries a divider + a compact
+ * date marker so the continuous strip stays legible (Part 10).
  */
 function renderHourHeaders() {
   const container = document.getElementById('timelineHours');
   if (!container) return;
 
   container.innerHTML = '';
-  for (let h = 0; h <= 24; h++) {
-    const cell = document.createElement('div');
-    cell.className = 'hour-cell';
-    cell.textContent = `${String(h).padStart(2, '0')}:00`;
-    container.appendChild(cell);
+  const frag = document.createDocumentFragment();
+  for (let d = 0; d < windowDayCount; d++) {
+    const dateStr = offsetDate(windowStartDate, d);
+    for (let h = 0; h < 24; h++) {
+      const cell = document.createElement('div');
+      cell.className = 'hour-cell';
+      cell.textContent = `${String(h).padStart(2, '0')}:00`;
+      if (h === 0) {
+        cell.classList.add('hour-cell--daystart');
+        cell.dataset.day = _shortDayLabel(dateStr);
+      }
+      frag.appendChild(cell);
+    }
   }
+  // Trailing 24:00 marker so the last day still shows its right edge.
+  const endCap = document.createElement('div');
+  endCap.className = 'hour-cell hour-cell--endcap';
+  endCap.textContent = '24:00';
+  frag.appendChild(endCap);
+  container.appendChild(frag);
+}
+
+function _shortDayLabel(dateStr) {
+  const p = parseLocalDate(dateStr);
+  return p.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
 /**
- * Render baris setiap driver beserta blok assignment-nya
+ * Render every driver row + its assignment blocks across the whole window.
+ * An assignment is included when its datetime SPAN overlaps the window
+ * (Part 17) — never `a.date === currentDate`. Preserves body.scrollLeft
+ * across the innerHTML wipe so a Firebase refresh never jumps the view.
  */
 function renderDriverRows() {
   const body = getTimelineBodyElement();
   if (!body) return;
 
+  const keepScroll = body.scrollLeft;
+
+  // Drive .driver-slots / grid width via a CSS var (see style.css).
+  body.style.setProperty('--tl-days', String(windowDayCount));
   body.innerHTML = '';
 
-  // Filter assignments sesuai tanggal yang dipilih
-  const todayAssignments = assignments.filter(a => a.date === currentDate);
+  const winStart = parseLocalDate(windowStartDate);
+  const winEnd = new Date(winStart);
+  winEnd.setDate(winEnd.getDate() + windowDayCount);
+
+  const visibleAssignments = assignments.filter(a => {
+    const s = assignmentSpan(a);
+    return s && s.startDateTime < winEnd && s.endDateTime > winStart;
+  });
+
   const timelineDrivers = getActiveDrivers();
   const driversToRender = [...timelineDrivers];
 
-  todayAssignments.forEach(assignment => {
+  visibleAssignments.forEach(assignment => {
     const hasDriverRow = driversToRender.some(driver => driverMatchesAssignment(driver, assignment));
     if (!hasDriverRow && assignment.driver) {
       driversToRender.push({
@@ -242,12 +577,16 @@ function renderDriverRows() {
     }
   });
 
+  const todayIdx = dateToDayIndex(todayString());
+  const todayInWindow = todayIdx >= 0 && todayIdx < windowDayCount;
+  const nowLeftPx = todayInWindow ? _canvasPx(todayString(), _nowMinutes()) : null;
+
+  const frag = document.createDocumentFragment();
+
   driversToRender.forEach(driver => {
-    // Buat baris driver
     const row = document.createElement('div');
     row.className = 'driver-row';
 
-    // Label nama driver (sticky kiri)
     const label = document.createElement('div');
     label.className = 'driver-label';
     label.innerHTML = `
@@ -256,71 +595,51 @@ function renderDriverRows() {
     `;
     row.appendChild(label);
 
-    // Area slot waktu
     const slots = document.createElement('div');
     slots.className = 'driver-slots';
 
-    // Gambar blok assignment untuk driver ini
-    const driverAssignments = todayAssignments.filter(a => driverMatchesAssignment(driver, a));
-
+    const driverAssignments = visibleAssignments.filter(a => driverMatchesAssignment(driver, a));
     if (driverAssignments.length === 0) {
-      // Teks hint jika tidak ada jadwal
       const hint = document.createElement('span');
       hint.className = 'empty-slots-hint';
       hint.textContent = 'Belum ada jadwal';
       slots.appendChild(hint);
     } else {
-      // Render setiap assignment block
-      driverAssignments.forEach(a => {
-        const block = createAssignmentBlock(a);
-        slots.appendChild(block);
-      });
+      driverAssignments.forEach(a => slots.appendChild(createAssignmentBlock(a)));
     }
 
-    // Garis waktu sekarang (hanya jika tanggal yang dipilih = hari ini)
-    if (currentDate === todayString()) {
-      const now = new Date();
-      const minutesFromMidnight = now.getHours() * 60 + now.getMinutes();
-      const hourWidth = getHourWidth();
-      const leftPx = (minutesFromMidnight / 60) * hourWidth;
-
+    if (nowLeftPx != null) {
       const nowLine = document.createElement('div');
       nowLine.className = 'today-line';
-      nowLine.style.left = `${leftPx}px`;
+      nowLine.style.left = `${nowLeftPx}px`;
       slots.appendChild(nowLine);
     }
 
     row.appendChild(slots);
-    body.appendChild(row);
+    frag.appendChild(row);
   });
+
+  body.appendChild(frag);
+
+  // Restore the pre-wipe scroll position (Firebase refresh must not jump).
+  body.scrollLeft = keepScroll;
+  const hours = document.getElementById('timelineHours');
+  if (hours) hours.scrollLeft = keepScroll;
 }
 
 function driverMatchesAssignment(driver, assignment) {
   const assignmentDriver = String(assignment?.driver || '').trim();
   if (!assignmentDriver) return false;
   if (assignmentDriver === driver.name) return true;
-
   const legacyNames = Array.isArray(driver.legacyNames) ? driver.legacyNames : [];
   return legacyNames.some(name => String(name || '').trim() === assignmentDriver);
 }
 
 /**
  * V1 Redesign Phase 3 (v1.30.9.15) — passive, read-only convoy detection.
- * The mockup ("Sarpras Assignment Board.dc.html") explicitly flags real
- * convoy grouping as an OPEN PRODUCT DECISION — "confirm whether a real
- * 'linked trip' field should be added to the data model, or whether
- * time+location matching is enough" — rather than assuming one. Per the
- * project's own established pattern (flag, don't guess, when a mockup says
- * to), this implements the SAFER of the two options it names: the same
- * heuristic (same date + same start/end time + same destination, across 2+
- * DIFFERENT drivers), which needs no data-model change and is purely
- * visual/read-only, exactly like the existing passive conflict badge (same
- * file, same pattern: computed from already-stored fields, never written
- * back, never blocks anything). A real "linkedTripId" field remains a
- * product decision for the user to make later if this heuristic proves
- * insufficient in practice.
- * @param {Object} assignment
- * @returns {boolean}
+ * Same heuristic (same date + same start/end time + same destination, across
+ * 2+ DIFFERENT drivers): no data-model change, purely visual, exactly like
+ * the passive conflict badge.
  */
 function isConvoyAssignment(assignment) {
   if (!assignment?.date || !assignment?.startTime || !assignment?.endTime || !assignment?.destination) return false;
@@ -337,52 +656,67 @@ function isConvoyAssignment(assignment) {
 }
 
 /**
- * Buat elemen blok assignment
- * Posisi dan ukuran dihitung berdasarkan jam mulai/selesai
- * @param {Object} assignment - Assignment object
- * @returns {HTMLElement} - Assignment block element
+ * Build one assignment block, positioned in ABSOLUTE canvas px. An overnight
+ * / multi-day assignment is ONE block spanning the midnight gridline(s) —
+ * one id, one click target, one business entity (Part I / Part 2 / Part 3).
+ * Clipping happens ONLY at the window edge (`.continues-prev-day` /
+ * `.continues-next-day` chevrons); the block's day-crossing inside the
+ * window is shown continuously against the day-seam gridline.
  */
 function createAssignmentBlock(assignment) {
   const hourWidth = getHourWidth();
-
-  // Scheduled window (planned) — the default and the audit baseline.
-  const schedStartMin = timeToMinutes(assignment.startTime);
-  const schedEndMin   = timeToMinutes(assignment.endTime);
+  const span = assignmentSpan(assignment);
 
   const status = normalizeBlockStatus(assignment.status);
   const isCompleted = status === 'completed';
   const isStarted   = status === 'started';
 
-  // v1.16.4.7 — auto-adjust the block to ACTUAL operational time when known.
-  // Scheduled fields are never mutated; this only changes the visual window.
-  let displayStartMin = schedStartMin;
-  let displayEndMin   = schedEndMin;
+  // Scheduled window in ABSOLUTE canvas minutes from windowStartDate 00:00.
+  let startAbs, endAbs;
+  if (span) {
+    startAbs = dateToDayIndex(span.startDate) * DAY_MIN + span.startMin;
+    endAbs   = dateToDayIndex(span.endDate)   * DAY_MIN + span.endMin;
+  } else {
+    // Malformed record — degrade to a minimal same-day stub on its own date.
+    const s = timeToMinutes(assignment.startTime || '00:00');
+    startAbs = dateToDayIndex(assignment.date || currentDate) * DAY_MIN + (Number.isFinite(s) ? s : 0);
+    endAbs = startAbs + 60;
+  }
+
+  // v1.16.4.7 — auto-adjust to ACTUAL operational time when known (scheduled
+  // fields are never mutated; this only changes the visual window). The
+  // actual timestamps carry their own real dates, so a real cross-midnight
+  // engaged window is handled too.
   let usingActual = false;
+  const aStart = isoLocalParts(assignment.startedAt);
+  const aEnd   = isoLocalParts(assignment.completedAt);
+  const toAbs = (p) => dateToDayIndex(p.dateStr) * DAY_MIN + p.minutes;
 
-  const actualStartMin = isoToMinsOfDay(assignment.startedAt);
-  const actualEndMin   = isoToMinsOfDay(assignment.completedAt);
-
-  if (isCompleted && actualStartMin != null && actualEndMin != null && actualEndMin > actualStartMin) {
-    // Completed: render the real engaged window (same-day).
-    displayStartMin = actualStartMin;
-    displayEndMin   = actualEndMin;
-    usingActual = true;
-  } else if (isStarted && actualStartMin != null) {
-    // In progress: anchor to the real start; extend to the scheduled end
-    // (or just past the start if the schedule has already elapsed).
-    displayStartMin = actualStartMin;
-    displayEndMin   = Math.max(schedEndMin, actualStartMin + 1);
+  if (isCompleted && aStart && aEnd) {
+    const s = toAbs(aStart), e = toAbs(aEnd);
+    if (e > s) { startAbs = s; endAbs = e; usingActual = true; }
+  } else if (isStarted && aStart) {
+    const s = toAbs(aStart);
+    startAbs = s;
+    endAbs = Math.max(endAbs, s + 1);
     usingActual = true;
   }
 
-  const left  = (displayStartMin / 60) * hourWidth;
-  const width = ((displayEndMin - displayStartMin) / 60) * hourWidth;
+  const canvasW = _canvasWidthPx();
+  let left = (startAbs / 60) * hourWidth;
+  let width = ((endAbs - startAbs) / 60) * hourWidth;
+
+  // Clip at the WINDOW edges only.
+  let clipLeft = false, clipRight = false;
+  if (left < 0) { width += left; left = 0; clipLeft = true; }
+  if (left + width > canvasW) { width = canvasW - left; clipRight = true; }
+  if (width < 0) width = 0;
 
   const block = document.createElement('div');
   block.className = 'assignment-block';
   block.dataset.id = assignment.id;
   block.dataset.vehicle = assignment.vehicle;
-  block.dataset.status = status; // v1.25.x — lets timeline-interactions.js gate drag/resize without recomputing status
+  block.dataset.status = status;
   block.style.left  = `${left}px`;
   block.style.width = `${Math.max(width, 20)}px`;
   block.style.background = getVehicleColor(assignment.vehicle);
@@ -390,23 +724,28 @@ function createAssignmentBlock(assignment) {
   if (isCompleted) block.classList.add('is-completed');
   if (isStarted)   block.classList.add('is-started');
   if (status === 'cancelled') block.classList.add('is-cancelled');
+  if (clipLeft)  block.classList.add('continues-prev-day');
+  if (clipRight) block.classList.add('continues-next-day');
+  if (span && span.crossesMidnight && !clipLeft && !clipRight) {
+    block.classList.add('spans-midnight');
+    // Vertical tick at the first day seam the block crosses (px from its left edge).
+    const seamPx = (dateToDayIndex(span.endDate) * DAY_MIN / 60) * hourWidth - left;
+    if (seamPx > 2 && seamPx < width - 2) block.style.setProperty('--midnight-x', `${seamPx}px`);
+  }
 
-  // Overtime (calendar-based) — only meaningful once completed.
   const work = computeWorkTime(assignment, getOfficeHours());
   const isOvertime = work.isOvertime === true;
   if (isOvertime) block.classList.add('is-overtime');
 
+  // Label always shows the TRUE scheduled times (not the clipped extent).
+  const labelStartMin = span ? span.startMin : (startAbs % DAY_MIN);
+  const labelEndMin   = span ? span.endMin   : (endAbs % DAY_MIN);
   const blockTimeLabel = (assignment.fullDay && !usingActual)
     ? 'Penuh Hari'
-    : `${minutesToTime(displayStartMin)}–${minutesToTime(displayEndMin)}`;
+    : `${minutesToTime(labelStartMin)}–${minutesToTime(labelEndMin)}`;
 
-  // V1 Redesign Phase 4b: passive visual conflict indicator
-  // (ASSIGNMENT_BOARD_REDESIGN.md §4, guardrails doc §1 explicitly allows
-  // this). Read-only — calls the SAME checkConflict/checkVehicleConflict
-  // used at write-time, never a second conflict-computation path, and never
-  // blocks/alters anything; it only decides whether to show a badge.
-  // Cancelled assignments are excluded (out of the operational view anyway;
-  // see getFilteredAssignments()).
+  // Passive visual conflict indicator — SAME checkConflict/checkVehicleConflict
+  // used at write time; read-only, never blocks.
   const hasConflict = status !== 'cancelled' && (
     checkConflict(assignment.driver, assignment.startTime, assignment.endTime, assignment.date, assignment.id)
     || (assignment.vehicle && assignment.vehicle !== '__none__'
@@ -420,12 +759,6 @@ function createAssignmentBlock(assignment) {
     hasConflict ? '<span class="block-status-badge block-status-badge--conflict">⚠ Konflik</span>' : '',
   ].filter(Boolean).join('<span class="block-meta-separator">•</span>');
 
-  // V1 Redesign Phase 3 (v1.30.9.15) — shape half of vehicle identity (color
-  // alone, the pre-existing block.style.background above, fails colorblind
-  // users) + a passive convoy-link mark + a passive corner conflict dot.
-  // All three are supplementary to what already existed (full-color fill,
-  // the text conflict badge above) — nothing here replaces or blocks
-  // anything, matching this file's own established passive-indicator rule.
   const shapeMap = buildVehicleShapeMap(getActiveVehicles());
   const shape = shapeMap.get(assignment.vehicle) || 'rounded';
   const isConvoy = isConvoyAssignment(assignment);
@@ -446,13 +779,10 @@ function createAssignmentBlock(assignment) {
     ${convoyMark}
     <div class="resize-handle"></div>
   `;
-  // V1 Redesign Phase 4b (P1 fix): .block-purpose truncates with ellipsis
-  // and had no escape hatch (ASSIGNMENT_BOARD_REDESIGN.md §4). Set as a DOM
-  // property, not template-string HTML, so it can't reintroduce an XSS
-  // vector the way the innerHTML above already (pre-existingly) does.
   block.title = assignment.purpose || '';
 
-  // Klik blok → tampilkan detail drawer (briefly highlights this block while open)
+  // Klik blok (any part of it, incl. past a midnight seam) → the SAME
+  // assignment detail. Continuation is visual only; identity is unchanged.
   block.addEventListener('click', (e) => {
     if (!e.target.classList.contains('resize-handle')) {
       openDetailModal(assignment.id, { sourceEl: block });
@@ -463,93 +793,78 @@ function createAssignmentBlock(assignment) {
 }
 
 /**
- * Mendapatkan lebar per jam dari CSS variable --hour-width
- * Default 80px jika tidak ditemukan
- * @returns {number}
+ * Mendapatkan lebar per jam dari CSS variable --hour-width. Default 80px.
  */
 export function getHourWidth() {
-  const w = parseFloat(
-    getComputedStyle(document.documentElement).getPropertyValue('--hour-width')
-  );
+  const w = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hour-width'));
   return isNaN(w) ? 80 : w;
 }
 
 function updateRealtimeTimeline() {
-  const isToday = currentDate === todayString();
   const hourCells = document.querySelectorAll('#timelineHours .hour-cell');
   const now = new Date();
+  const todayIdx = dateToDayIndex(todayString());
+  const todayInWindow = todayIdx >= 0 && todayIdx < windowDayCount;
+  const currentCellIndex = todayInWindow ? todayIdx * 24 + now.getHours() : -1;
 
   hourCells.forEach((cell, index) => {
-    const hour = index;
-    cell.classList.toggle('hour-shaded', hour < 7 || hour >= 22);
-    cell.classList.toggle('hour-current', isToday && hour === now.getHours());
+    const hourOfDay = index % 24;
+    cell.classList.toggle('hour-shaded', hourOfDay < 7 || hourOfDay >= 22);
+    cell.classList.toggle('hour-current', index === currentCellIndex);
   });
-
-  if (!isToday) {
-    const body = getTimelineBodyElement();
-    if (body) body.querySelectorAll('.today-line').forEach(line => line.remove());
-    return;
-  }
-
-  const minutesFromMidnight = now.getHours() * 60 + now.getMinutes();
-  const hourWidth = getHourWidth();
-  const leftPx = (minutesFromMidnight / 60) * hourWidth;
 
   const body = getTimelineBodyElement();
   if (!body) return;
 
-  body.querySelectorAll('.today-line').forEach(line => {
-    line.style.left = `${leftPx}px`;
-  });
+  if (!todayInWindow) {
+    body.querySelectorAll('.today-line').forEach(line => line.remove());
+    return;
+  }
+  const leftPx = _canvasPx(todayString(), now.getHours() * 60 + now.getMinutes());
+  body.querySelectorAll('.today-line').forEach(line => { line.style.left = `${leftPx}px`; });
 }
 
 function startRealtimeTimeline() {
   if (realtimeTimer) return;
-  realtimeTimer = setInterval(() => {
-    updateRealtimeTimeline();
-  }, 60 * 1000);
+  realtimeTimer = setInterval(() => { updateRealtimeTimeline(); }, 60 * 1000);
 }
 
-/**
- * Sinkronisasi scroll horizontal antara header jam dan body.
- * Juga mengaktifkan scroll horizontal via mouse wheel pada area timeline,
- * dan memperbarui fade indicator kiri/kanan.
- */
+/* ── Scroll: header sync + wheel-to-horizontal + viewport-date + extend ── */
+
 function syncTimelineScroll() {
   const body    = getTimelineBodyElement();
   const hours   = document.getElementById('timelineHours');
   const wrapper = document.querySelector('.timeline-wrapper');
   const fadeR   = wrapper?.querySelector('.timeline-scroll-fade-right');
-
   if (!body || !hours) return;
 
-  // Pointer-down guard: stop auto-focus if user starts a manual drag
   let isPointerDown = false;
-  body.addEventListener('pointerdown', () => { isPointerDown = true; }, { passive: true });
+  body.addEventListener('pointerdown', () => { isPointerDown = true; cancelSmoothScroll(); }, { passive: true });
   window.addEventListener('pointerup',     () => { isPointerDown = false; }, { passive: true });
   window.addEventListener('pointercancel', () => { isPointerDown = false; }, { passive: true });
-
-  // Expose for autoFocusTimeline
   syncTimelineScroll._isPointerDown = () => isPointerDown;
 
-  // Sync hours header with body scroll
+  // A touch-pan is a deliberate manual reposition — latch userMovedTimeline
+  // so a later data refresh / auto-focus never scrolls it back.
+  body.addEventListener('touchmove', () => { userMovedTimeline = true; cancelSmoothScroll(); }, { passive: true });
+
   body.addEventListener('scroll', () => {
     hours.scrollLeft = body.scrollLeft;
     updateFadeIndicators();
+    scheduleViewportSync();
   });
 
-  // Mouse-wheel → horizontal scroll on the timeline body
   if (wrapper) {
     wrapper.addEventListener('wheel', (e) => {
-      // Prioritise native horizontal gestures (trackpad swipe, Shift+wheel)
       if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
         e.preventDefault();
+        userMovedTimeline = true; cancelSmoothScroll();
         body.scrollLeft += e.deltaX;
         return;
       }
-      // Convert vertical wheel to horizontal scroll
       if (e.deltaY !== 0) {
         e.preventDefault();
+        userMovedTimeline = true; cancelSmoothScroll();
         const delta = e.deltaMode === 1 ? e.deltaY * 40 : e.deltaY;
         body.scrollLeft += delta;
       }
@@ -561,27 +876,110 @@ function syncTimelineScroll() {
     const maxScroll = body.scrollWidth - body.clientWidth;
     fadeR.style.opacity = body.scrollLeft < maxScroll - 16 ? '1' : '0';
   }
-
-  // Initial state
   updateFadeIndicators();
 }
 
+/** rAF-throttled: keep the header label in step with the scroll viewport and
+ *  grow the window near an edge (Part 10/11/12/13). One re-render per extend
+ *  (rare) — never per scroll frame. */
+function scheduleViewportSync() {
+  if (_viewportSyncRaf) return;
+  _viewportSyncRaf = requestAnimationFrame(() => {
+    _viewportSyncRaf = 0;
+    syncViewportDate();
+  });
+}
+
+function syncViewportDate() {
+  const body = getTimelineBodyElement();
+  if (!body || !windowStartDate) return;
+
+  // "Dominant day" = a point ~a third of the way into the visible canvas.
+  const focusPx = body.scrollLeft + Math.min(body.clientWidth * 0.35, _dayWidthPx() * 0.5);
+  let dayIdx = Math.floor(focusPx / _dayWidthPx());
+  dayIdx = Math.max(0, Math.min(windowDayCount - 1, dayIdx));
+  const newViewportDate = offsetDate(windowStartDate, dayIdx);
+  if (newViewportDate !== viewportDate) {
+    viewportDate = newViewportDate;
+    updateDateLabel();
+  }
+
+  // Never extend mid programmatic-animation (it would re-render + compensate
+  // scrollLeft under the tween). Auto-focus / nav targets are always inside
+  // the freshly-ensured window anyway.
+  if (_smoothActive) return;
+
+  const { changed, shiftPx } = maybeExtendWindow();
+  if (!changed) return;
+
+  const keep = body.scrollLeft;
+  renderHourHeaders();
+  renderDriverRows();                 // restores `keep` internally
+  const compensated = keep + shiftPx;
+  body.scrollLeft = compensated;
+  const hours = document.getElementById('timelineHours');
+  if (hours) hours.scrollLeft = compensated;
+  if (_desiredScrollPx != null) _desiredScrollPx += shiftPx;
+  updateRealtimeTimeline();
+}
+
 let onDateChange = null;
+let onViewportDateChange = null;
 
 /**
- * Register a callback fired after currentDate changes via the date input,
- * Prev/Next, or Today button. renderTimeline() (called directly below) only
- * refreshes the Timeline engine — app.js uses this hook to also keep the
- * List/Daftar view in sync, since that view has its own lazy render path
- * (renderViews()) that a bare renderTimeline() call never reaches.
- * @param {() => void} fn
+ * Register a callback fired after an EXPLICIT date-nav (Prev/Next/date-input/
+ * Today). app.js uses it to keep the List/Daftar view in sync. A plain
+ * scroll that only moves the header viewport does NOT fire it.
  */
 export function registerDateChangeCallback(fn) {
   onDateChange = fn;
 }
 
 /**
- * Initialize kontrol navigasi tanggal (Prev, Next, Today, Filter)
+ * Register a callback fired whenever the header VIEWPORT date changes — incl.
+ * on a plain horizontal scroll past the current day. app.js uses it to keep
+ * the PBSI datepicker trigger text in step with `#filterDate.value` (which
+ * updateDateLabel() writes without a `change` event). Deliberately does NOT
+ * re-render the List/Daftar view (that follows the explicit anchor only).
+ */
+export function registerViewportDateCallback(fn) {
+  onViewportDateChange = fn;
+}
+
+/**
+ * Set current date (the explicit ANCHOR). Rebuilds the window around it and
+ * resets auto-focus so the next render positions to it.
+ */
+export function setCurrentDate(dateStr) {
+  currentDate = dateStr;
+  viewportDate = dateStr;
+  lastFocusAnchor = null;
+  userMovedTimeline = false;
+  _desiredScrollPx = null;
+  _autoFocusTries = 0;
+  if (_autoFocusRaf) { cancelAnimationFrame(_autoFocusRaf); _autoFocusRaf = 0; }
+  cancelSmoothScroll();
+  buildWindow(dateStr);
+}
+
+/** The explicit anchor date (List/Daftar view + window centering). */
+export function getCurrentDate() {
+  return currentDate;
+}
+
+/** The day the scroll VIEWPORT currently shows (header label). */
+export function getViewportDate() {
+  return viewportDate;
+}
+
+export function setAssignments(newAssignments) {
+  assignments = newAssignments;
+}
+
+/**
+ * Initialize date navigation. Prev / Next / date-input / "Hari Ini" are now
+ * smooth-scroll shortcuts across the continuous canvas — they only trigger a
+ * full rebuild when the target falls outside the current window (Part 14/15/16).
  */
 export function initDateControls() {
   const input = document.getElementById('filterDate');
@@ -589,45 +987,44 @@ export function initDateControls() {
 
   input.value = currentDate;
 
-  // Input tanggal manual
-  input.addEventListener('change', () => {
-    currentDate = input.value;
-    renderTimeline();
-    onDateChange?.();
-  });
+  const goToDate = (target) => {
+    cancelSmoothScroll();
+    currentDate = target;
+    viewportDate = target;
+    input.value = target;
+    userMovedTimeline = false;
+    // Claim the focus for this anchor NOW so renderTimeline()'s own auto-focus
+    // block is a no-op — the explicit smooth-scroll below is the sole
+    // animation (no two tweens racing to different targets).
+    lastFocusAnchor = target;
 
-  // Prev button
+    const rebuilt = ensureDateInWindow(target);
+    if (rebuilt) {
+      renderTimeline();          // new window — rebuild DOM
+    } else {
+      updateDateLabel();
+    }
+
+    // Position after layout settles (a rebuild needs a frame).
+    requestAnimationFrame(() => {
+      const px = _focusPxForDate(target);
+      _desiredScrollPx = px;
+      smoothScrollTimelineTo(px);
+    });
+
+    onDateChange && onDateChange();
+  };
+
+  input.addEventListener('change', () => goToDate(input.value));
+
   const btnPrev = document.getElementById('btnPrevDate');
-  if (btnPrev) {
-    btnPrev.addEventListener('click', () => {
-      currentDate = offsetDate(currentDate, -1);
-      input.value = currentDate;
-      renderTimeline();
-      onDateChange?.();
-    });
-  }
+  if (btnPrev) btnPrev.addEventListener('click', () => goToDate(offsetDate(viewportDate, -1)));
 
-  // Next button
   const btnNext = document.getElementById('btnNextDate');
-  if (btnNext) {
-    btnNext.addEventListener('click', () => {
-      currentDate = offsetDate(currentDate, 1);
-      input.value = currentDate;
-      renderTimeline();
-      onDateChange?.();
-    });
-  }
+  if (btnNext) btnNext.addEventListener('click', () => goToDate(offsetDate(viewportDate, 1)));
 
-  // Today button
   const btnToday = document.getElementById('btnToday');
-  if (btnToday) {
-    btnToday.addEventListener('click', () => {
-      currentDate = todayString();
-      input.value = currentDate;
-      renderTimeline();
-      onDateChange?.();
-    });
-  }
+  if (btnToday) btnToday.addEventListener('click', () => goToDate(todayString()));
 }
 
 console.info('Timeline module loaded');
