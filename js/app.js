@@ -13215,18 +13215,26 @@ document.addEventListener('DOMContentLoaded', async () => {
       console.warn('[flags] post-auth re-check failed — keeping pre-auth defaults.', err);
     }
 
-    // V2 Sarpras Intelligence — Phase 2F client backend wiring. Registration
-    // only: connects src/intelligence/'s conversation store + provider
-    // abstraction to the deployed callables. Pilot-gated (isV2Enabled),
-    // lazy-loaded so no other session fetches src/intelligence/, one-shot
-    // (this whole block is _sessionInfraStarted-guarded), and fully
-    // error-swallowed — a wiring failure leaves Intelligence inert and never
-    // disturbs the session. It never enables the feature flag, never calls
-    // OpenAI, never creates a conversation, and mounts no UI.
+    // V2 Sarpras Intelligence — Phase 2F client backend wiring + Phase 3A
+    // feature-flag sync. Registration only: connects src/intelligence/'s
+    // conversation store + provider abstraction to the deployed callables,
+    // AND syncs the server-controlled flag /feature_flags/intelligence/enabled
+    // into the Intelligence config. `appFlags` is the /feature_flags node the
+    // post-auth loadFeatureFlags() above already fetched — no second read, no
+    // second flag system. The sync is FAIL-CLOSED: only the boolean `true`
+    // activates the OpenAI provider; a missing node / non-boolean / read
+    // failure ⇒ OFF ⇒ the deterministic Null Provider. Sequence: auth ready →
+    // flag read (appFlags) → config updated → bootstrap/wire → provider
+    // selection. Pilot-gated (isV2Enabled), lazy-loaded so no other session
+    // fetches src/intelligence/, one-shot (this whole block is
+    // _sessionInfraStarted-guarded), fully error-swallowed. It never WRITES
+    // the feature flag, never calls OpenAI, never creates a conversation, and
+    // mounts no UI. The client flag is not authorization — the Cloud
+    // Functions re-check the flag and enforce role authz server-side.
     if (isV2Enabled(getCurrentUser())) {
       try {
         const { wireIntelligenceBackend } = await loadIntelligenceBackendWiring();
-        await wireIntelligenceBackend();
+        await wireIntelligenceBackend(appFlags);
       } catch (err) {
         console.warn('[intelligence] backend wiring skipped — continuing.', err);
       }

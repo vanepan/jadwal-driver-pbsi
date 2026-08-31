@@ -160,12 +160,16 @@ check(/try\s*\{[\s\S]*\}\s*catch/.test(wiringCode) && /console\.warn/.test(wirin
 section('Static — js/app.js calls the wiring behind isV2Enabled, lazily, one-shot');
 const appSrc = fs.readFileSync(path.join(ROOT, 'js/app.js'), 'utf8');
 check(/loadIntelligenceBackendWiring/.test(appSrc), 'app.js imports the memoized lazy loader');
-check(/if\s*\(\s*isV2Enabled\(getCurrentUser\(\)\)\s*\)\s*\{[\s\S]{0,400}?wireIntelligenceBackend\(\)/.test(appSrc), 'wireIntelligenceBackend() is called ONLY inside an isV2Enabled(getCurrentUser()) guard');
+check(/if\s*\(\s*isV2Enabled\(getCurrentUser\(\)\)\s*\)\s*\{[\s\S]{0,600}?wireIntelligenceBackend\(/.test(appSrc), 'wireIntelligenceBackend(...) is called ONLY inside an isV2Enabled(getCurrentUser()) guard');
 // the call site must be within startAuthenticatedSession's one-shot block (after the _sessionInfraStarted guard)
 const sasIdx = appSrc.indexOf('async function startAuthenticatedSession');
 const guardIdx = appSrc.indexOf('_sessionInfraStarted = true', sasIdx);
-const wireIdx = appSrc.indexOf('wireIntelligenceBackend()', sasIdx);
+const wireIdx = appSrc.indexOf('await wireIntelligenceBackend(', sasIdx);
 check(sasIdx > 0 && guardIdx > sasIdx && wireIdx > guardIdx, 'the wiring call is inside startAuthenticatedSession(), after the _sessionInfraStarted one-shot guard');
+// Phase 3A — the post-auth /feature_flags node (appFlags) is forwarded to the wiring
+const flagReadIdx = appSrc.indexOf('appFlags = await loadFeatureFlags()', sasIdx);
+check(flagReadIdx > guardIdx && wireIdx > flagReadIdx, 'the flag read (appFlags = await loadFeatureFlags()) happens BEFORE the wiring call (auth → flag read → wire → provider selection)');
+check(/await wireIntelligenceBackend\(\s*appFlags\s*\)/.test(appSrc), 'the already-fetched /feature_flags node (appFlags) is forwarded to wireIntelligenceBackend — no second flag read/system');
 check(/const \{ wireIntelligenceBackend \} = await loadIntelligenceBackendWiring\(\)/.test(appSrc), 'the wiring module is LAZY-loaded (dynamic import via the memoized loader), never a static import');
 const mlr = fs.readFileSync(path.join(ROOT, 'js/config/module-loader-registry.js'), 'utf8');
 check(/loadIntelligenceBackendWiring\s*=\s*\(\)\s*=>\s*loadModule\('intelligence-backend-wiring', \(\) => import\('\.\.\/intelligence-backend-wiring\.js'\)\)/.test(mlr), 'module-loader-registry.js registers the memoized loader');
