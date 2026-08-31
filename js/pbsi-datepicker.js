@@ -62,12 +62,18 @@ const _CALENDAR_SVG = `<svg class="pbsi-datepicker-icon" width="15" height="15" 
 
 /**
  * @param {HTMLInputElement} inputEl
- * @param {{ presets?: Array<{label:string, getValue?:()=>string, openCalendar?:boolean}> }} opts
+ * @param {{ presets?: Array<{label:string, getValue?:()=>string, openCalendar?:boolean}>,
+ *           minDate?: string }} opts
+ *   minDate: "YYYY-MM-DD" — disables earlier days in the calendar. UX-layer
+ *   only (the picker can't stop a manually-typed/pasted value); the actual
+ *   enforcement is the submit-time validator (js/validation.js
+ *   validateNotBeforeCreation). Omit for no floor (e.g. Admin sessions).
  */
 export function initPbsiDatepicker(inputEl, opts = {}) {
   if (!inputEl || _registry.has(inputEl)) return;
 
   const presets = Array.isArray(opts.presets) ? opts.presets : [];
+  const minDate = opts.minDate || null;
 
   // 1. Wrapper — takes the input's layout slot
   const wrapper = document.createElement('div');
@@ -101,7 +107,7 @@ export function initPbsiDatepicker(inputEl, opts = {}) {
   inputEl.style.display = 'none';
 
   // 5. Instance record
-  const inst = { inputEl, wrapper, trigger, displaySpan, presetsEl, presets, fp: null };
+  const inst = { inputEl, wrapper, trigger, displaySpan, presetsEl, presets, minDate, fp: null };
   _registry.set(inputEl, inst);
 
   // 6. Build preset buttons
@@ -191,6 +197,7 @@ function _initFlatpickr(inst) {
     disableMobile: true,
     dateFormat: 'Y-m-d',
     defaultDate: inst.inputEl.value || null,
+    minDate: inst.minDate || undefined,
     locale: _ID_LOCALE,
     allowInput: false,
     onChange(_dates, dateStr) {
@@ -207,12 +214,25 @@ function _initFlatpickr(inst) {
 
 function _updateTrigger(inst) {
   const value = inst.inputEl.value;
-  const display = value ? _formatDisplay(value) : 'Pilih Tanggal';
-  inst.displaySpan.textContent = display;
-  inst.displaySpan.classList.toggle('pbsi-datepicker-display--empty', !value);
-  inst.trigger.setAttribute('aria-label',
-    value ? `Tanggal: ${display}. Klik untuk ubah` : 'Pilih tanggal'
-  );
+  if (!value) {
+    inst.displaySpan.textContent = 'Pilih Tanggal';
+    inst.displaySpan.classList.add('pbsi-datepicker-display--empty');
+    inst.trigger.setAttribute('aria-label', 'Pilih tanggal');
+    _syncActivePreset(inst);
+    return;
+  }
+  // V1 mobile UX update: two spans (full + compact), CSS-switched by
+  // viewport — lets the compact V1 mobile header (≤430px) show a shorter
+  // date ("30 Agu") without wrapping to a second row, while every other
+  // context (desktop, tablet, wider mobile) keeps the existing full
+  // weekday/day/month/year text unchanged. aria-label always uses the
+  // full text regardless of which span is visually shown.
+  const { full, compact } = _formatDisplay(value);
+  inst.displaySpan.innerHTML =
+    `<span class="pbsi-datepicker-display-full">${full}</span>` +
+    `<span class="pbsi-datepicker-display-compact">${compact}</span>`;
+  inst.displaySpan.classList.remove('pbsi-datepicker-display--empty');
+  inst.trigger.setAttribute('aria-label', `Tanggal: ${full}. Klik untuk ubah`);
   _syncActivePreset(inst);
 }
 
@@ -240,14 +260,18 @@ function _detectActivePreset(inst) {
   return calendarPreset ? calendarPreset.label : null;
 }
 
+/** @returns {{full: string, compact: string}} */
 function _formatDisplay(dateStr) {
-  if (!dateStr) return '';
+  if (!dateStr) return { full: '', compact: '' };
   const parts = dateStr.split('-');
-  if (parts.length !== 3) return dateStr;
+  if (parts.length !== 3) return { full: dateStr, compact: dateStr };
   const [y, m, d] = parts.map(Number);
-  if (!y || !m || !d) return dateStr;
+  if (!y || !m || !d) return { full: dateStr, compact: dateStr };
   const date = new Date(y, m - 1, d);
-  return `${_WEEKDAY_ID[date.getDay()]}, ${d} ${_MONTHS_ID[m - 1]} ${y}`;
+  return {
+    full: `${_WEEKDAY_ID[date.getDay()]}, ${d} ${_MONTHS_ID[m - 1]} ${y}`,
+    compact: `${d} ${_MONTHS_ID[m - 1]}`,
+  };
 }
 
 console.info('[PBSI] Datepicker module loaded');

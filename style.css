@@ -379,13 +379,14 @@ button, [role="button"] {
 }
 
 /* ── Sidebar Overlay (mobile backdrop) ── */
+/* V1 mobile UX update: dim only, no blur — app content behind the drawer
+   must stay sharp. */
 .sidebar-overlay {
   display: none;
   position: fixed;
   inset: 0;
   background: rgba(0,0,0,0.48);
   z-index: 140;
-  backdrop-filter: blur(1px);
 }
 .sidebar-overlay.overlay-visible { display: block; }
 
@@ -906,7 +907,12 @@ button:disabled:hover {
 }
 
 .main-content {
-  max-width: 1400px;
+  /* V1 desktop content-width fix: was a hardcoded 1400px, independent of
+     platform.css's --workspace-max-width token (which happened to also be
+     1400px) — two numbers via two mechanisms for the same visual cap. Now
+     reads the same token so there's one source of truth; also means this
+     stays correct if the token is ever retuned again. */
+  max-width: var(--workspace-max-width, 1400px);
   margin: 0 auto;
   padding: 16px 12px 40px;
   /* width:100% is required when .main-content is a flex child of .main-area

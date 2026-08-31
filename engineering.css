@@ -85,6 +85,14 @@
 
 /* ── grids + cards ────────────────────────────────────────────────────── */
 .eng-grid{display:grid;gap:16px;}
+/* Grid items default to min-width:auto (content-based minimum), which a
+   nested flex row's own min-width:0 (.eng-attn-main etc.) does NOT override
+   at this outer level — the .eng-card grid item still refuses to shrink
+   below its content's natural/nowrap text width, forcing horizontal
+   overflow at narrow mobile widths even after .eng-grid.-lead correctly
+   collapses to one column. min-width:0 here lets the card actually honor
+   the column's width and let its own ellipsis/wrap rules do their job. */
+.eng-grid > .eng-card{min-width:0;}
 .eng-grid.-lead{grid-template-columns:1.5fr 1fr;} .eng-grid.-2{grid-template-columns:1fr 1fr;} .eng-grid.-3{grid-template-columns:repeat(3,1fr);}
 .eng-stack{display:flex;flex-direction:column;gap:16px;}
 .eng-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;}
@@ -447,6 +455,9 @@
 .eng-input{width:100%;height:40px;border-radius:11px;border:1px solid var(--border);background:var(--surface-2);padding:0 13px;font-family:var(--font-sans);font-size:13.5px;color:var(--text);}
 .eng-input:focus{outline:2px solid var(--accent-line);outline-offset:1px;}
 .eng-textarea{height:68px;padding:9px 13px;resize:vertical;}
+/* V1: create-form validation message (past-dated Deadline) — this module had
+   no field-level error affordance before; reuses the modal's own type scale. */
+.eng-form-error{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:var(--crit,#d64545);margin-top:-4px;}
 /* Mobile: collapse two-column field pairs to one column (matches .form-grid's
    own 600px collapse in style.css) and bump input font to 16px so iOS Safari
    never auto-zooms on focus (same guard/threshold as .gud-input in gudang.css). */
@@ -478,7 +489,23 @@
 
 /* ── responsive ───────────────────────────────────────────────────────── */
 @media (max-width:1080px){
-  .eng-grid.-lead,.eng-grid.-2,.eng-grid.-3{grid-template-columns:1fr;}
+  /* V1 mobile fix — was ".eng-grid.-lead,.eng-grid.-2,.eng-grid.-3{...}" as one
+     comma-separated rule. ".-2" and ".-3" are not valid CSS class selectors (a
+     class name can't start with a hyphen immediately followed by a digit), and
+     a qualified-rule selector list is dropped IN FULL if any member fails to
+     parse — so this rule silently never applied at any width, for ANY of the
+     three classes, including .eng-grid.-lead (which alone would have been
+     perfectly valid). That's why "Perlu Tindakan"/"Engineering Sedang Bekerja"
+     and "Recent Activity"/"Mini Operational Analytics" (both .eng-grid.-lead
+     rows in engineering-dashboard.js) stayed two-column and got clipped on
+     mobile — confirmed by rendering the real dashboard in a live headless
+     browser (Chromium silently dropped the whole rule; ruleCount inside this
+     media block was 2, not 3). .eng-grid.-2/.eng-grid.-3 were already
+     independently invalid/dead at their own base declaration (line ~88, same
+     digit-after-hyphen problem) — out of scope here since nothing reported
+     depends on them; only .eng-grid.-lead is split out so its override can
+     actually parse. */
+  .eng-grid.-lead{grid-template-columns:1fr;}
   .eng-hero{grid-template-columns:1fr;gap:28px;}
   .eng-hero-health{border-right:none;padding-right:0;border-bottom:1px solid var(--border-faint);padding-bottom:24px;}
 }

@@ -40,7 +40,12 @@
      Effective left inset = main-content(16) + workspace(16) + pad-inline(24) = 56px.
      Pages that lack the intermediate 16px workspace layer use --workspace-edge
      (=workspace 16 + pad-inline 24 = 40) so the TOTAL still lands at 56px. */
-  --workspace-max-width:   1400px;
+  /* V1 desktop content-width fix: bumped 1400→1600px. .main-content (style.css)
+     used to independently hardcode its own max-width:1400px — same number,
+     different mechanism — which was harmless only by coincidence. It now reads
+     this same token (see style.css .main-content), so this is the single place
+     that controls desktop content width for every page keyed off it. */
+  --workspace-max-width:   1600px;
   --workspace-pad-inline:  24px;   /* gutter when already inside .v2-workspace */
   --workspace-edge:        40px;   /* gutter when a page sits directly in .main-content */
   --workspace-pad-top:     8px;
@@ -3854,9 +3859,12 @@ body.v2-shell-active .v2-topbar .header-user-area .role-badge {
   order: 55;
 }
 
-@media (max-width: 767px) {
-  .v2-topbar-theme-btn { display: none !important; }
-}
+/* V1 mobile UX update: theme toggle is now part of the compact single-row
+   mobile header (task 3) — previously unconditionally hidden ≤767px here.
+   Mobile visibility/placement is owned by the consolidated mobile topbar
+   grid rules further down this file (search "single-row compact mobile
+   topbar"). Desktop (≥768px) is unaffected — this button was already
+   visible there before this change. */
 
 
 /* ── Parts 5 + 6: Shared topbar icon button base ───────────────
@@ -4003,9 +4011,10 @@ body.v2-shell-active .v2-topbar #btnHeaderNotif { order: 57; }
   }
 }
 
-/* ≤767px (phone): single-row header, date-nav on row-2 */
-/* These rules mirror the existing VSM-3 mobile structure.
-   Theme toggle hidden; notif bell hidden (existing ≤767px rule). */
+/* ≤767px (phone): single-row header ── these rules mirror the existing
+   VSM-3 mobile structure. Notif bell hidden (existing ≤767px rule);
+   theme toggle now shown (V1 mobile UX update, task 3) — layout/placement
+   owned by the consolidated mobile topbar grid further down this file. */
 @media (max-width: 767px) {
   body.v2-shell-active .v2-topbar .header-user-area {
     border: none;
@@ -4017,10 +4026,11 @@ body.v2-shell-active .v2-topbar #btnHeaderNotif { order: 57; }
   body.v2-shell-active .v2-topbar { height: auto; }
 }
 
-/* ≤600px (small phone): 2-row compact layout */
+/* ≤600px (small phone): search input stays hidden (unrelated to the Quick
+   Search trigger, which is now shown icon-only — see the consolidated
+   mobile topbar grid further down); crumb stays hidden. */
 @media (max-width: 600px) {
   .v2-topbar-search   { display: none !important; }
-  .v2-topbar-theme-btn { display: none !important; }
   #v2TopbarCrumb       { display: none !important; }
 }
 
@@ -5257,6 +5267,26 @@ body.v2-shell-active .main-content > #driverDashboard {
    to the same left edge the strip element now establishes via margin. */
 body.v2-shell-active .main-content > #v2KpiStrip { padding-left: 0; padding-right: 0; }
 
+/* V1 mobile UX fix — Operations horizontal balance. The block above's
+   margin-left:var(--workspace-edge) / margin-right:auto pairing has no
+   margin-left:auto counterpart, so the auto on the right resolves to 0 (per
+   CSS auto-margin rules) instead of sharing space — the whole surface hugs
+   .main-content's right edge with a permanent dead gap on the left. That's
+   an intentional desktop alignment (matches Executive's 56px inset), but
+   nothing neutralizes it below desktop, so Operations alone (every sibling
+   module mounts via .v2-workspace, which only ever uses symmetric margins)
+   reads as pushed-right on mobile. Zero it out at the same 767px split every
+   other mobile-shell rule in this file already uses. */
+@media (max-width: 767px) {
+  body.v2-shell-active .main-content > #v2KpiStrip,
+  body.v2-shell-active .main-content > #v2TimelineSurface,
+  body.v2-shell-active .main-content > .legend,
+  body.v2-shell-active .main-content > #driverDashboard {
+    margin-left: 0;
+    margin-right: 0;
+  }
+}
+
 /* ── Page header layer ──────────────────────────────────────────────── */
 .v2-admin-page-header {
   display: flex;
@@ -5801,84 +5831,47 @@ body.v2-shell-active .v2-kpi-value { font-size: 22px; }
   flex-shrink: 0;
 }
 
-/* ── Part 7: Mobile topbar — keep hamburger + date-nav + avatar on one row ── */
+/* ════════════════════════════════════════════════════════════════
+   V1 MOBILE UX UPDATE — single-row compact mobile topbar (≤767px)
+   ════════════════════════════════════════════════════════════════
+   Supersedes the old "Part 7 flex row (601-767px) + Phase 11I/11L two-row
+   grid (≤600px) + V1 post-QA hotfix three-row grid (≤430px)" cascade —
+   three different layouts fighting for the same ≤767px range, documented
+   at length in the git history this block replaces (search this repo's
+   history for "Phase 11L" / "V1 post-QA hotfix (Issue B)" for the prior
+   incidents). ONE CSS Grid template now covers the full 320-767px mobile
+   range: hamburger | date-nav (Hari Ini + prev + date + next) | quick
+   search (icon-only) | theme toggle | avatar — always a single row, never
+   a second row, per the V1 mobile UX update spec (points 1 + 3). Below
+   431px, a second block (further down) only tightens gaps/padding/date
+   text on the SAME template — it never changes row count. */
 @media (max-width: 767px) {
   body.v2-shell-active .v2-topbar {
-    flex-wrap: nowrap;
-    height: 52px;
-  }
-  /* Collapse the flex spacer on mobile so date-nav stays in the row */
-  body.v2-shell-active .v2-topbar .v2-topbar-spacer {
-    flex: 1;
-    min-width: 0;
-  }
-  body.v2-shell-active .v2-topbar .date-nav {
-    flex-shrink: 1;
-    min-width: 0;
-  }
-}
-@media (max-width: 600px) {
-  .v2-topbar-search    { display: none !important; }
-  .v2-topbar-theme-btn { display: none !important; }
-  #v2TopbarCrumb       { display: none !important; }
-}
-
-/* Phase 11I: the "keep everything on one row" rule above (Part 7,
-   ≤767px) has higher specificity than platform.css's own ≤600px two-row
-   fallback (~line 1930) and comes later in the file, so it silently wins
-   at every width ≤600px too — squeezing #btnToday + 2×.btn-icon (44px
-   min-width each) + #filterDate (96px min-width) onto one row with the
-   hamburger/avatar with nothing left to shrink them, causing overlap on
-   narrow phones (320-430px). This block restores a compact mobile layout
-   at this same specificity, scoped tighter (≤600px) so the 601-767px
-   single-row layout is untouched.
-
-   Phase 11L: an earlier version of this block fixed the overlap with pure
-   flex (order + date-nav width:100%) — but forcing date-nav to 100% width
-   meant it always occupied its wrapped line alone, and the header-user-area
-   (avatar) came AFTER it in flex order (order:60, set unconditionally
-   further up this file), so flex-wrap pushed the avatar onto a THIRD line
-   below date-nav instead of sharing date-nav's line. CSS Grid with explicit
-   grid-area placement sidesteps the whole order-cascade fight (order has no
-   effect once an item has an explicit grid-area) and needs no DOM changes —
-   every participant stays exactly where it already is in the DOM, so tab
-   order and desktop/tablet layout (a separate, untouched breakpoint) are
-   unaffected.
-
-   Phase 11L (revised — live device report): the first version of this fix
-   still put the hamburger alone on its own row (row 1 = "ham ham ham ham"),
-   with date-nav + avatar sharing row 2 below it — a real device screenshot
-   showed this reads as "hamburger stranded above the date," not the
-   single-row toolbar actually wanted: [hamburger] [date-nav] [avatar]
-   together. Single row is the default now, using a 3-column grid
-   (auto | 1fr | auto) the same way a native app toolbar lays out a
-   leading icon, flexible center content, and a trailing icon. Below
-   ~380px this can no longer fit date-nav's own protected touch targets
-   (2×44px arrows + 96px date-input) alongside the hamburger and avatar
-   too, so a narrower fallback keeps the hamburger paired with the avatar
-   on row 1 and gives date-nav its own row 2 — the hamburger is never
-   alone on a row at any width, which was the actual complaint. */
-@media (max-width: 600px) {
-  body.v2-shell-active .v2-topbar {
     display: grid;
-    grid-template-columns: auto 1fr auto;
-    grid-template-areas:
-      "ham    dnav    avatar"
-      "search search  search";
+    grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+    grid-template-areas: "ham dnav search theme avatar";
     align-items: center;
     column-gap: 6px;
-    row-gap: 6px;
+    row-gap: 0;
     height: auto;
     min-height: 44px;
-    padding: 6px 8px 8px;
+    padding: 6px 10px;
   }
   body.v2-shell-active .v2-topbar #sidebarToggle {
     grid-area: ham;
   }
   body.v2-shell-active .v2-topbar .date-nav {
     grid-area: dnav;
-    flex-shrink: 0;
+    min-width: 0;
+    justify-self: stretch;
+  }
+  body.v2-shell-active .v2-topbar .domshell-palette-trigger {
+    grid-area: search;
     justify-self: center;
+  }
+  body.v2-shell-active .v2-topbar .v2-topbar-theme-btn {
+    grid-area: theme;
+    display: flex;
   }
   body.v2-shell-active .v2-topbar .header-user-area {
     grid-area: avatar;
@@ -5888,60 +5881,146 @@ body.v2-shell-active .v2-kpi-value { font-size: 22px; }
   body.v2-shell-active .v2-topbar .v2-topbar-spacer {
     display: none;
   }
-}
+  /* Pre-existing gap, surfaced by unifying 601-767px into this same grid:
+     #v2TopbarCrumb's base rule (display:none, display:block ≥768px) was
+     already being defeated at ALL widths by an unconditional, later
+     "display:flex" from the two-line-breadcrumb rework (search this file
+     for "Part 1: Two-line breadcrumb") — only ≤600px ever explicitly
+     force-hid it again, so 601-767px was showing the decorative desktop
+     breadcrumb unintentionally. Not part of the required mobile header
+     controls (task 1) and would eat into the compact row's width budget. */
+  #v2TopbarCrumb {
+    display: none !important;
+  }
 
-/* Below ~430px, date-nav's own protected touch targets (Hari Ini + 2×44px
-   arrows + the pbsi-datepicker trigger) no longer fit in one row alongside
-   both the hamburger and the avatar without shrinking one of them — so
-   date-nav alone drops to its own row 2. The hamburger stays paired with
-   the avatar on row 1 (never stranded alone), which was the actual bug
-   being fixed here.
+  /* Quick Search (task 1C): icon-only trigger on mobile — reuses the
+     existing command-palette trigger/overlay untouched (same click
+     handler, same focus/Escape behaviour); only the "Cari Cepat" label
+     text is visually hidden here, so it stays in the accessible name via
+     the button's own aria-label. */
+  body.v2-shell-active .v2-topbar .domshell-palette-trigger span {
+    display: none;
+  }
+  body.v2-shell-active .v2-topbar .domshell-palette-trigger {
+    padding: 0;
+    gap: 0;
+    justify-content: center;
+  }
 
-   V1 post-QA hotfix (Issue B): this threshold was 380px, but a real-browser
-   geometry sweep showed the single-row "ham | dnav | avatar" grid squeezes
-   .date-nav ~10-20px below its intrinsic content width across the whole
-   381-410px band — "Hari Ini" then overflowed the pill's left edge into the
-   hamburger and the next-arrow overflowed the right edge into the avatar
-   (visible collision at 390px, the reported width). 430px covers every
-   common phone logical width (incl. iPhone Pro Max at 430) with the
-   already-existing, non-stranding two-row layout; 431-600px keeps the
-   compact single row, where the sweep measured ≥30px of slack. */
-@media (max-width: 430px) {
-  body.v2-shell-active .v2-topbar {
-    grid-template-columns: auto 1fr;
-    grid-template-areas:
-      "ham    avatar"
-      "dnav   dnav"
-      "search search";
-    row-gap: 6px;
+  /* Consistent control height across the whole row (tasks 1D/1E). The base
+     .btn-icon/.btn-today (style.css) carry an app-wide min-height:44px WCAG
+     touch-target rule that fights any smaller pill height in this specific
+     compact toolbar — scoped override to a uniform, still-tappable 32px
+     band for ONLY this mobile topbar context (every control here stays
+     comfortably above the 24px WCAG 2.5.5 AA minimum; the same buttons
+     keep their normal 44px sizing everywhere else in the app, e.g. any
+     other .date-nav instance). */
+  body.v2-shell-active .v2-topbar #sidebarToggle,
+  body.v2-shell-active .v2-topbar .domshell-palette-trigger,
+  body.v2-shell-active .v2-topbar .v2-topbar-theme-btn,
+  body.v2-shell-active .v2-topbar .date-nav .btn-today,
+  body.v2-shell-active .v2-topbar .date-nav .btn-icon,
+  body.v2-shell-active .v2-topbar .date-nav .pbsi-datepicker-trigger {
+    height: 32px;
+    min-height: 32px;
+    box-sizing: border-box;
+  }
+  body.v2-shell-active .v2-topbar #sidebarToggle,
+  body.v2-shell-active .v2-topbar .domshell-palette-trigger,
+  body.v2-shell-active .v2-topbar .v2-topbar-theme-btn {
+    width: 32px;
+    min-width: 32px;
+  }
+  body.v2-shell-active .v2-topbar .date-nav .btn-icon {
+    width: 26px;
+    min-width: 26px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  body.v2-shell-active .v2-topbar .date-nav .btn-today {
+    padding: 0 8px;
+    display: flex;
+    align-items: center;
+  }
+  body.v2-shell-active .v2-topbar .date-nav .pbsi-datepicker-trigger {
+    min-width: 0;
+    width: auto;
+    padding: 0 6px;
+    gap: 4px;
+    font-size: 11px;
   }
   body.v2-shell-active .v2-topbar .date-nav {
-    grid-area: dnav;
-    justify-self: center;
+    height: 32px;
+    box-sizing: border-box;
+    padding: 0 4px;
+    gap: 2px;
+    /* Pin margin/border explicitly: an unrelated legacy V1 rule
+       (style.css, plain ".date-nav" 2-row-header layout, ≤600px) sets
+       margin-top:6px + border:none/border-top — it isn't scoped to
+       ".v2-topbar" so it still matches this same live node and was
+       silently offsetting the pill ~6px below the row's centerline
+       (confirmed via getBoundingClientRect — every other 32px-tall
+       control shared one center-Y, only date-nav didn't). */
+    margin: 0;
+    border: 1px solid var(--border);
   }
+  /* Avatar grown from its 26px "tighter" desktop-adjacent size (Phase 8
+     token pass, elsewhere in this file) up to the same 32px band as every
+     other control in this row — width may differ (it's a circle), height
+     must not (task 1E). */
+  body.v2-shell-active .v2-topbar .header-user-area .v2-topbar-avatar {
+    width: 32px;
+    height: 32px;
+    font-size: 11px;
+  }
+  /* .header-user-area itself: an unrelated later "rounder" token-refinement
+     rule (same selector, no media query, further up this file — Phase 8)
+     re-applies padding:4px 10px 4px 7px at equal specificity and wins by
+     source order, silently padding the wrapper out to 40px tall even
+     though the ≤767px block above already sets padding:0. Re-asserted
+     here (this block is later in the file, so it wins the tie) so the
+     avatar's wrapper matches every other control's 32px band exactly. */
   body.v2-shell-active .v2-topbar .header-user-area {
-    grid-area: avatar;
-    justify-self: end;
+    padding: 0;
+    min-height: 32px;
   }
 }
 
-/* Phase 7G.2 — the quick-search trigger (.domshell-palette-trigger,
-   "Cari Cepat") had no grid-area of its own in either template above, so
-   CSS Grid auto-placement dropped it into an UNDOCUMENTED implicit row
-   below the named template: not centered, not stretched, just its own
-   small content width sitting flush left with the rest of that row empty
-   — confirmed by an annotated real-browser screenshot at 375px, not
-   assumed from reading the CSS. Giving it the "search" area (added to
-   both templates above) makes its row deliberate: it spans the full
-   width and, being the sole occupant of that row, is centered by the
-   grid the same way date-nav already is one row up. Written once, outside
-   the media queries: grid-area only has an effect when the parent is
-   actually display:grid (≤600px here), so this is inert at every wider
-   breakpoint where .v2-topbar stays its normal flex layout — desktop and
-   tablet are unaffected by construction, not by convention. */
-body.v2-shell-active .v2-topbar .domshell-palette-trigger {
-  grid-area: search;
-  justify-self: center;
+/* Below 431px: tighter padding/gaps + a shorter date string so the exact
+   same single-row template above also fits the narrowest supported phones
+   (320-430px) without wrapping (task 1F: "compact at narrow widths,
+   roomier above 430"). This never changes row count or which controls are
+   present — only their density. 431-767px keeps the roomier spacing from
+   the block above. */
+@media (max-width: 430px) {
+  body.v2-shell-active .v2-topbar {
+    column-gap: 4px;
+    padding: 6px 6px;
+  }
+  body.v2-shell-active .v2-topbar .date-nav {
+    gap: 1px;
+    padding: 0 2px;
+  }
+  body.v2-shell-active .v2-topbar .date-nav .btn-today {
+    padding: 0 6px;
+    font-size: 10.5px;
+  }
+  body.v2-shell-active .v2-topbar .date-nav .pbsi-datepicker-trigger {
+    padding: 0 4px;
+    gap: 3px;
+    font-size: 10.5px;
+  }
+  /* Shorter date text ("30 Agu" instead of "Min, 30 Agu 2026") — see
+     pbsi-datepicker.js's _updateTrigger()/_formatDisplay(); both spans
+     always exist, only visibility flips here, scoped to this topbar. */
+  body.v2-shell-active .v2-topbar .pbsi-datepicker-display-full {
+    display: none;
+  }
+  body.v2-shell-active .v2-topbar .pbsi-datepicker-display-compact {
+    display: inline;
+  }
 }
 
 
@@ -8837,6 +8916,11 @@ input.pbsi-stepper-display::-webkit-inner-spin-button {
 .pbsi-datepicker-display--empty {
   color: #757575;
 }
+/* V1 mobile UX update: _updateTrigger() always renders BOTH a full and a
+   compact span (see pbsi-datepicker.js); default everywhere is full-only.
+   The V1 mobile topbar (≤430px) flips this — see the compact mobile
+   header rules further down this file. */
+.pbsi-datepicker-display-compact { display: none; }
 
 /* ── Calendar icon ────────────────────────────────────────── */
 .pbsi-datepicker-icon {
@@ -13480,10 +13564,11 @@ body.v2-shell-active .block-status-badge--overtime {
     border-top: 1px solid var(--border);
     background: var(--surface);
   }
+  /* V1 mobile UX update: the app content behind the drawer must stay sharp —
+     dim only, no blur. (backdrop-filter: blur(6px) previously blurred the
+     whole app behind the overlay; removed, background dim kept as-is.) */
   body.v2-shell-active .sidebar-overlay {
     background: rgba(0, 0, 0, 0.4);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
   }
 
   #v2MobileNavHost {
@@ -14709,6 +14794,15 @@ body.v2-shell-active .v2-topbar .domshell-palette-trigger { order: 35; }
 .domshell-rail--mobile-drawer .domshell-rail-brandtext,
 .domshell-rail--mobile-drawer .domshell-rail-usertext {
   opacity: 1; /* always-expanded in the drawer — no hover affordance on touch */
+}
+/* V1 mobile UX update: the drawer already has its own real header (PBSI
+   logo + "Bidang Sarana dan Prasarana" + close button — .sidebar-header,
+   untouched) directly above this rail. This redundant "Sarpras Ops +
+   version" identity block only makes sense on the desktop hover-rail
+   (collapsed icon rail, expands identity on hover); scoped hide only for
+   the mobile-drawer instance of the same live node — desktop untouched. */
+.domshell-rail--mobile-drawer .domshell-rail-brand {
+  display: none;
 }
 .domshell-tabbar--mobile-drawer {
   border-bottom: 1px solid var(--border);

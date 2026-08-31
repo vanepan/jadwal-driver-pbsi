@@ -9,12 +9,12 @@
 
 import { generateId, timeToMinutes, minutesToTime, showToast, initCustomTimeInputPair, getCombinedTimeFromPair, setTimeFieldsFromValue, normalizeTimeValue, expandDateRange, formatDateShort, addHoursToTime, todayString, offsetDate } from './utils.js';
 import { getDriverByName } from './drivers.js';
-import { hasPermission, getCurrentUser } from './auth.js';
+import { hasPermission, getCurrentUser, isAdmin } from './auth.js';
 import { initFormGuard, resetDirty } from './form-guard.js';
 import { syncPbsiSelect } from './pbsi-select.js';
 import { initPbsiDatepicker, syncPbsiDatepicker } from './pbsi-datepicker.js';
 import { runSaveFeedback } from './components/save-feedback.js';
-import { validateRequired, validateTimeFormat, validateTimeRange, validateDateRange } from './validation.js';
+import { validateRequired, validateTimeFormat, validateTimeRange, validateDateRange, validateNotBeforeCreation } from './validation.js';
 import { anIcon } from './analytics/analytics-shell.js';
 
 /* ── Module State ── */
@@ -148,6 +148,10 @@ export function initFormHandlers() {
   });
 
   // PBSI Date Picker — start date
+  // V1: non-admin can't pick a day before today (day-granularity UX floor;
+  // the authoritative, time-of-day-aware check is runFieldChecks() above via
+  // validateNotBeforeCreation — inert today since direct assignment
+  // create/edit is already admin-only). Admin gets no floor.
   initPbsiDatepicker(document.getElementById('fieldDate'), {
     presets: [
       { label: 'Hari Ini', getValue: () => todayString() },
@@ -155,6 +159,7 @@ export function initFormHandlers() {
       { label: 'Lusa',     getValue: () => offsetDate(todayString(), 2) },
       { label: 'Pilih Tanggal', openCalendar: true },
     ],
+    minDate: isAdmin() ? undefined : todayString(),
   });
 
   // PBSI Date Picker — end date (presets relative to current start date)
@@ -403,6 +408,19 @@ function runFieldChecks() {
     checks.push(['assignmentTimeEnd', validateTimeFormat(endTime, 'Jam selesai', true)]);
     checks.push(['assignmentTimeEnd', validateTimeRange(startTime, endTime)]);
   }
+
+  // V1: normal users may not schedule a date/time earlier than the
+  // assignment's own creation moment; Admin is exempt. In this codebase
+  // direct assignment create/edit is already admin-only (hasPermission
+  // 'create'/'edit' below), so isAdmin() is always true here today and this
+  // is inert defense-in-depth, wired for if that ever changes.
+  const existingForDate = editingId ? assignments.find(a => a.id === editingId) : null;
+  const referenceIso = existingForDate?.createdAt || new Date().toISOString();
+  checks.push(['fieldDate', validateNotBeforeCreation({
+    dateStr: startDate, timeStr: isFullDay ? undefined : startTime, fullDay: isFullDay,
+    referenceIso, isAdmin: isAdmin(),
+  })]);
+
   return checks;
 }
 

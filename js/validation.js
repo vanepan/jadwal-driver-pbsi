@@ -170,6 +170,72 @@ export function validateTelegramChatId(chatId) {
   return createResult();
 }
 
+/**
+ * Validate that a scheduled/requested date-time is not earlier than a
+ * reference creation moment. Used to stop normal users from creating or
+ * scheduling a Driver Request / Driver Assignment / Engineering Assignment
+ * dated before the record's own creation instant.
+ *
+ * Admins are exempt — always valid regardless of the date/time chosen.
+ *
+ * Granularity:
+ *   - fullDay, or timeStr omitted (e.g. a date-only Deadline field): compared
+ *     by CALENDAR DAY only against referenceIso's date — a full-day slot's
+ *     stored "00:00" start-time is a placeholder, not a real instant, so
+ *     comparing it against an exact reference time would reject same-day
+ *     full-day requests made any time after midnight.
+ *   - otherwise: dateStr+timeStr are combined into a real local instant and
+ *     compared against the exact referenceIso instant (so "same day, earlier
+ *     time" is correctly rejected).
+ *
+ * Integration point: requests.js handleRequestSubmit, assignments.js
+ *   runFieldChecks, engineering-center.js submitCreate.
+ *
+ * @param {Object} args
+ * @param {string} args.dateStr        "YYYY-MM-DD"
+ * @param {string} [args.timeStr]      "HH:MM" — omit for date-only checks
+ * @param {boolean} [args.fullDay]     true → day-granularity comparison
+ * @param {string} args.referenceIso   ISO instant to compare against (a new
+ *                                     record's own "now", or an existing
+ *                                     record's original createdAt)
+ * @param {boolean} [args.isAdmin]     true → always valid (admin override)
+ * @returns {{ valid: boolean, errors: string[], warnings: string[] }}
+ */
+export function validateNotBeforeCreation({ dateStr, timeStr, fullDay, referenceIso, isAdmin } = {}) {
+  if (isAdmin) return createResult();
+  if (!dateStr || !referenceIso) return createResult();
+
+  const reference = new Date(referenceIso);
+  if (Number.isNaN(reference.getTime())) return createResult();
+
+  const dayOnly = fullDay || !timeStr;
+  if (dayOnly) {
+    const refDateStr = _isoToLocalDateString(reference);
+    if (dateStr < refDateStr) {
+      return createResult(['Tanggal tidak boleh lebih awal dari waktu pembuatan permintaan.']);
+    }
+    return createResult();
+  }
+
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const [hh, mm] = String(timeStr).split(':').map(Number);
+  if (!y || !m || !d || Number.isNaN(hh) || Number.isNaN(mm)) return createResult();
+  const candidate = new Date(y, m - 1, d, hh, mm, 0, 0);
+
+  if (candidate.getTime() < reference.getTime()) {
+    return createResult(['Tanggal/waktu tidak boleh lebih awal dari waktu pembuatan permintaan.']);
+  }
+  return createResult();
+}
+
+/** Local YYYY-MM-DD for a Date, for day-granularity comparisons. */
+function _isoToLocalDateString(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 /* ── Domain Validators ─────────────────────────────────────── */
 
 /**

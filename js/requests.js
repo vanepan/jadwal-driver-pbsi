@@ -23,6 +23,7 @@ import { getCurrentUser, hasPermission, isAdmin } from './auth.js';
 import { initFormGuard, resetDirty } from './form-guard.js';
 import { syncPbsiSelect } from './pbsi-select.js';
 import { initPbsiDatepicker, syncPbsiDatepicker } from './pbsi-datepicker.js';
+import { validateNotBeforeCreation } from './validation.js';
 
 let requests = [];
 let editingRequestId = null;
@@ -219,7 +220,10 @@ export function initRequestHandlers() {
     closeFn:   closeRequestFormModal,
   });
 
-  // PBSI Date Picker — request start date
+  // PBSI Date Picker — request start date. V1: non-admin (bidang) can't pick
+  // a day before today (day-granularity UX floor for the past-request-time
+  // rule — see validateNotBeforeCreation in handleRequestSubmit for the
+  // authoritative, time-of-day-aware check). Admin gets no floor.
   initPbsiDatepicker(document.getElementById('requestFieldStartDate'), {
     presets: [
       { label: 'Hari Ini', getValue: () => todayString() },
@@ -227,6 +231,7 @@ export function initRequestHandlers() {
       { label: 'Lusa',     getValue: () => offsetDate(todayString(), 2) },
       { label: 'Pilih Tanggal', openCalendar: true },
     ],
+    minDate: isAdmin() ? undefined : todayString(),
   });
 
   // PBSI Date Picker — request end date (presets relative to current start date)
@@ -618,6 +623,24 @@ function handleRequestSubmit(event) {
       showToast('Jam selesai harus lebih dari jam mulai');
       return;
     }
+  }
+
+  // V1: normal users (bidang) may not request a date/time earlier than the
+  // request's own creation moment; Admin is exempt. New requests compare
+  // against "now" (their own about-to-be-stamped createdAt); editing an
+  // existing request preserves and compares against its ORIGINAL createdAt
+  // (never overwritten) — though in practice editing is already admin-only
+  // below, so this branch is a no-op today.
+  const referenceIso = editingRequestId
+    ? (requests.find(item => item.id === editingRequestId)?.createdAt || new Date().toISOString())
+    : new Date().toISOString();
+  const notBeforeResult = validateNotBeforeCreation({
+    dateStr: startDate, timeStr: isFullDay ? undefined : startTime, fullDay: isFullDay,
+    referenceIso, isAdmin: isAdmin(),
+  });
+  if (!notBeforeResult.valid) {
+    showToast(notBeforeResult.errors[0]);
+    return;
   }
 
   // Dispatch Policy context (v1.17.2). "Gunakan Ambulance" is only honoured for

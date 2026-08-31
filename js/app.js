@@ -230,6 +230,7 @@ import { initCommentHandlers, openCommentModal, closeCommentModal, setRequests a
 import { initAdminUI, updateAdminButtons, openUserFormModal } from './admin.js';
 import {
   mountPettyCash, setPettyCashScreen, closePettyCashCenter, openPettyCashAddExpense, setPettyCashSearch,
+  getPettyCashScreen, getPettyCashNorStep, gotoPreviewNor, confirmGenerateNor,
 } from './petty-cash/petty-cash-center.js';
 // v1.25.0 Overtime Management UI — embedded native module (mirrors Petty Cash).
 import {
@@ -1269,6 +1270,37 @@ async function loadFeatureFlags() {
   // force the old flat rail/panel: localStorage.setItem('pbsi_flag_domainShellV1','false')
   const flagNames = ['visualShellV2', 'domainShellV1'];
 
+  // Production defaults.
+  //   Firebase missing → visualShellV2 = true  (V2 is the standard UI)
+  //   Firebase = true  → visualShellV2 = true  (explicit enable)
+  //   Firebase = false → visualShellV2 = false (emergency rollback to V1)
+  //
+  // Hoisted above Priority 1 (2026-08-31 fix) — the localStorage-override
+  // branch used to `return overrides` directly, containing ONLY the flags
+  // that were explicitly set. A device with just
+  // `pbsi_flag_visualShellV2=true` in localStorage (no matching
+  // pbsi_flag_domainShellV1 key — e.g. leftover from testing before
+  // domainShellV1 existed) got back `{ visualShellV2: true }` with
+  // domainShellV1 completely absent, so `appFlags.domainShellV1` was
+  // `undefined` for the rest of the session. Every downstream check is
+  // `appFlags.domainShellV1 === true` (strict equality), so `undefined`
+  // silently took the `else` branch — the old flat rail/panel ("BOTTOM
+  // MODULES") — instead of the domain-shell drawer, on a device that never
+  // touched the domainShellV1 flag at all. Priority 2/3 below already
+  // guarded against exactly this via `{ ...DEFAULTS, ...rawFlags }`; the
+  // override path just never got the same treatment.
+  const DEFAULTS = {
+    visualShellV2: true,   // V2 shell is the production-default experience
+    // v1.30.10.7 — Phase 1 verification complete (mocked per-role logic +
+    // real-app smoke + rollback, all green; a full old-shell/new-shell
+    // screen equivalence pass found and fixed two real gaps: a missing
+    // driver "Jadwal Saya" shortcut and an entirely-absent Sarpras
+    // Intelligence domain). Consolidated shell is now the default; an
+    // explicit Firebase /feature_flags/domainShellV1 = false still forces
+    // rollback to the flat rail/panel, same emergency path visualShellV2 has.
+    domainShellV1: true,
+  };
+
   // ── Priority 1: localStorage overrides (developer testing only) ──
   // These are never set for production users; cleared by removing the key.
   const overrides = {};
@@ -1281,9 +1313,10 @@ async function loadFeatureFlags() {
     }
   }
   if (hasOverride) {
-    console.log('[flags] localStorage override active:', overrides);
-    console.log(`[VSM] visualShellV2 = ${overrides.visualShellV2 ?? true}`);
-    return overrides;
+    const flags = { ...DEFAULTS, ...overrides };
+    console.log('[flags] localStorage override active:', overrides, '-> effective flags:', flags);
+    console.log(`[VSM] visualShellV2 = ${flags.visualShellV2}`);
+    return flags;
   }
 
   // ── Priority 2: Firebase RTDB /feature_flags (3-second timeout) ──
@@ -1304,21 +1337,6 @@ async function loadFeatureFlags() {
   // ── Priority 3: Production defaults ──
   // Spread order: defaults first, Firebase values second so an explicit
   // Firebase false overrides the default true (emergency rollback path).
-  //
-  //   Firebase missing → visualShellV2 = true  (V2 is the standard UI)
-  //   Firebase = true  → visualShellV2 = true  (explicit enable)
-  //   Firebase = false → visualShellV2 = false (emergency rollback to V1)
-  const DEFAULTS = {
-    visualShellV2: true,   // V2 shell is the production-default experience
-    // v1.30.10.7 — Phase 1 verification complete (mocked per-role logic +
-    // real-app smoke + rollback, all green; a full old-shell/new-shell
-    // screen equivalence pass found and fixed two real gaps: a missing
-    // driver "Jadwal Saya" shortcut and an entirely-absent Sarpras
-    // Intelligence domain). Consolidated shell is now the default; an
-    // explicit Firebase /feature_flags/domainShellV1 = false still forces
-    // rollback to the flat rail/panel, same emergency path visualShellV2 has.
-    domainShellV1: true,
-  };
   const flags = { ...DEFAULTS, ...rawFlags };
 
   // Startup verification log — visible in DevTools Console
@@ -1504,6 +1522,38 @@ function runPrimaryCta() {
   }
 }
 
+/**
+ * V1 mobile UX update — mobile-FAB-only contextual override of
+ * resolvePrimaryCta(). Inside the Generate NOR workflow, the FAB should
+ * mirror that workflow's own next step ("Preview NOR" while selecting
+ * expenses, "Generate & Terbitkan NOR" once previewing) instead of the
+ * Petty Cash module's default "Tambah Pengeluaran".
+ *
+ * Deliberately NOT folded into resolvePrimaryCta() itself: that resolver is
+ * also read by the DESKTOP context-panel CTA (updatePanelCta) via the exact
+ * same 'pengeluaran' kind, which must keep showing "+ Tambah Pengeluaran"
+ * unconditionally on every Petty Cash screen exactly as it does today —
+ * this override only ever applies to the FAB (hidden ≥768px already).
+ */
+function resolveFabCta() {
+  const resolved = resolvePrimaryCta();
+  if (resolved && resolved.kind === 'pengeluaran' && getPettyCashScreen() === 'norGenerate') {
+    return getPettyCashNorStep() === 'preview'
+      ? { kind: 'nor-generate', label: 'Generate & Terbitkan NOR' }
+      : { kind: 'nor-preview', label: 'Preview NOR' };
+  }
+  return resolved;
+}
+
+/** FAB click handler — runs the contextual action resolveFabCta() displayed. */
+function runFabCta() {
+  const resolved = resolveFabCta();
+  if (!resolved) return;
+  if (resolved.kind === 'nor-preview')      { gotoPreviewNor(); return; }
+  if (resolved.kind === 'nor-generate')     { confirmGenerateNor(); return; }
+  runPrimaryCta();
+}
+
 /* ── Adaptive global search adapters (v1.20.2) ─────────────────────────────
    Each module registers HOW it responds to the shared search box. Driver /
    Engineering / Petty Cash do real data filtering; Analytics does contextual
@@ -1585,11 +1635,12 @@ function runAnalyticsContextualSearch(q) {
 }
 
 /**
- * Mobile FAB (#fabAdd) — mirrors the desktop CTA via the shared resolver.
+ * Mobile FAB (#fabAdd) — mirrors the desktop CTA via the shared resolver,
+ * with a mobile-only contextual override inside Generate NOR (resolveFabCta()).
  * Hidden on every read-only workspace (Analytics Driver/Petty/Executive,
  * Konfigurasi); labelled + shown on Driver Operations / Petty Cash.
  */
-function updateFabCta(resolved = resolvePrimaryCta()) {
+function updateFabCta(resolved = resolveFabCta()) {
   const fabAdd   = document.getElementById('fabAdd');
   const fabLabel = document.getElementById('fabLabel');
   if (!fabAdd) return;
@@ -1651,8 +1702,10 @@ function updatePanelCta() {
     }
   }
 
-  // Mobile FAB — same resolver, no duplicated mapping.
-  updateFabCta(resolved);
+  // Mobile FAB — same base resolver, plus its own Generate-NOR-only
+  // contextual override (resolveFabCta()'s default param); must NOT reuse
+  // this function's `resolved` directly or that override would be skipped.
+  updateFabCta();
 }
 
 /* ──────────────────────────────────────────────────────────────────
@@ -2168,7 +2221,7 @@ async function navPettyCash(screen, navId) {
   setWorkspace('pettycash');
   if (!pettyCashMounted) {
     pettyCashMounted = true;
-    await mountPettyCash(document.getElementById('v2PettyCashWorkspace'));
+    await mountPettyCash(document.getElementById('v2PettyCashWorkspace'), { onStateChange: () => updateFabCta() });
   }
   setPettyCashScreen(screen);
 }
@@ -12958,8 +13011,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ── FAB (mobile primary action) — v1.15.2: runs the shared module-aware
   // CTA so the click always matches the visible label (Tambah Jadwal /
-  // Ajukan Jadwal / Tambah Pengeluaran). No-op on read-only workspaces. ──
-  document.getElementById('fabAdd')?.addEventListener('click', runPrimaryCta);
+  // Ajukan Jadwal / Tambah Pengeluaran / Preview NOR / Generate & Terbitkan
+  // NOR). No-op on read-only workspaces. runFabCta() adds the Generate-NOR
+  // contextual override on top of the shared resolver (V1 mobile UX update). ──
+  document.getElementById('fabAdd')?.addEventListener('click', runFabCta);
 
   // Bottom nav clicks are wired per-render inside renderBottomNav() (v1.20.8) —
   // the fixed-id proxy listeners this block used to set up no longer apply

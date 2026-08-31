@@ -70,6 +70,11 @@ const st = {
 };
 
 let root = null, bound = false, opened = false, listening = false;
+// V1 mobile UX update — lets the platform shell's mobile FAB stay in sync
+// with screen/step changes that happen INSIDE this module (e.g. Generate
+// NOR's select↔preview steps), which setPettyCashScreen()/navPettyCash()
+// never see since they only fire on module-level navigation.
+let _onStateChange = null;
 // Phase 10: the currently-open canonical drawer overlay + the expense id
 // it was built for — lets syncPettyCashDetailDrawer() tell "same expense
 // re-rendering" (refreshDrawerBody, preserves scroll) apart from
@@ -201,10 +206,16 @@ function syncTheme() {
   if (root) root.setAttribute('data-theme', t);
 }
 
-/** Mount the module into a platform-owned host container (admin only). */
-export async function mountPettyCash(container) {
+/** Mount the module into a platform-owned host container (admin only).
+ * @param {HTMLElement} container
+ * @param {{ onStateChange?: () => void }} [opts] - onStateChange fires after
+ *   every internal render() (screen switch, Generate NOR step, etc.) so the
+ *   platform shell can re-resolve its mobile FAB/desktop CTA.
+ */
+export async function mountPettyCash(container, opts = {}) {
   if (!isAdmin()) { console.warn('[PettyCash] admin only'); return; }
   if (!container) { console.warn('[PettyCash] mount container missing'); return; }
+  _onStateChange = typeof opts.onStateChange === 'function' ? opts.onStateChange : null;
   root = container;
   if (!root.classList.contains('pc-root')) root.classList.add('pc-root');
   bindDelegation();          // guarded by `bound`; binds onClick/onInput/onChange once
@@ -238,6 +249,20 @@ export function openPettyCashAddExpense() {
 /** Current active screen key. */
 export function getPettyCashScreen() { return st.screen; }
 
+/** Current Generate NOR sub-step ('select' | 'preview') — used by the
+ *  platform shell to pick the contextual mobile FAB label. */
+export function getPettyCashNorStep() { return st.norStep; }
+
+/** Advance Generate NOR from "select expenses" to "preview" — same
+ *  validation as the in-page "Preview NOR →" button. Used by the platform
+ *  shell's mobile FAB when it's showing the contextual "Preview NOR" CTA. */
+export function gotoPreviewNor() { gotoPreview(); }
+
+/** Confirm + publish the previewed NOR — same action as the in-page
+ *  "Generate & Terbitkan NOR" button. Used by the platform shell's mobile
+ *  FAB when it's showing that contextual CTA. */
+export async function confirmGenerateNor() { await confirmGenerate(); }
+
 /** Adaptive global-search hook (v1.20.2) — real filtering by NOR / unit (bidang) /
  *  vendor / transaction. Surfaces results on the Pengeluaran list when querying. */
 export function setPettyCashSearch(q) {
@@ -268,6 +293,7 @@ function render() {
   restoreFocus();
   syncPettyCashDetailDrawer();
   syncAddModalFocus();
+  if (_onStateChange) _onStateChange();
 }
 
 /* Issue E — focus lifecycle for the hand-rolled Add/Edit Expense modal.

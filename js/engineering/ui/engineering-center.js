@@ -20,6 +20,7 @@ import { ENGINEERING_ROLE, can as registryCan } from '../../config/role-registry
 import { isDevelopment, getAppEnv } from '../../config.js';
 import { getCurrentUser } from '../../auth.js';
 import { todayString, offsetDate } from '../../utils.js';
+import { validateNotBeforeCreation } from '../../validation.js';
 import { initPbsiDatepicker, syncPbsiDatepicker } from '../../pbsi-datepicker.js';
 import {
   getAssignment, listAssignments, upsertAssignment, removeAssignment,
@@ -65,6 +66,7 @@ const st = {
   filters: { cat: 'all', q: '', tl: 'semua', hq: '' },
   expandedId: null,   // the single timeline card the user has expanded (null = all collapsed)
   form: null,
+  formError: null,   // V1: create-form validation message (e.g. deadline-in-the-past)
 };
 
 let host = null, unsub = null, mounted = false, loaded = false, adapter = null, providerUnsub = null;
@@ -208,6 +210,7 @@ export function openEngineeringCreate() {
   st.creating = true;
   st.formMode = 'assignment';
   st.form = blankForm();
+  st.formError = null;
   render();
 }
 
@@ -222,6 +225,7 @@ export function openEngineeringReport() {
   st.creating = true;
   st.formMode = 'report';
   st.form = blankReportForm();
+  st.formError = null;
   render();
 }
 
@@ -392,7 +396,7 @@ function onClick(e) {
   // see syncEngineeringDetailDrawer()), only the modal's own scrim click
   // reaches this handler; '.eng-modal-box' alone is the correct guard.
   const scrim = e.target.closest('[data-act="eng-scrim"]');
-  if (scrim && !e.target.closest('.eng-modal-box')) { st.creating = false; st.formMode = 'assignment'; render(); return; }
+  if (scrim && !e.target.closest('.eng-modal-box')) { st.creating = false; st.formMode = 'assignment'; st.formError = null; render(); return; }
   const el = e.target.closest('[data-act]');
   if (!el || !host.contains(el)) return;
   const act = el.dataset.act;
@@ -415,7 +419,7 @@ function onClick(e) {
     // independent of the drawer.
     // Create opens ONLY via the sidebar CTA → openEngineeringCreate(); there is
     // no in-content 'eng-create' trigger anymore (single global entry point).
-    case 'eng-create-cancel': st.creating = false; st.formMode = 'assignment'; render(); break;
+    case 'eng-create-cancel': st.creating = false; st.formMode = 'assignment'; st.formError = null; render(); break;
     case 'eng-personnel-toggle': togglePersonnel(el.dataset.uid); break;
     case 'eng-goto': setEngineeringScreen(val); break;
     case 'eng-filter-cat': st.filters.cat = val; render(); break;
@@ -710,13 +714,40 @@ function toDeadlineISO(dateStr) {
 }
 
 function submitCreate(c) {
+  const f = st.form;
+  if (!f || !f.title.trim()) return;
+  const isReport = (st.formMode || 'assignment') === 'report';
+
+  // V1: a Coordinator (not global Admin) may not publish a new assignment
+  // with a Deadline dated before today; Admin is exempt. Day-granularity
+  // only — Deadline has no time-of-day component (toDeadlineISO always
+  // stamps end-of-day). Deliberately assignment-mode only: "Catat Pekerjaan"
+  // (work report, isReport) records work ALREADY done via its own workDate
+  // field and must never be gated by this rule. Checked before the form is
+  // consumed below so an invalid deadline keeps the modal open with the
+  // user's other input intact, instead of silently discarding it.
+  if (!isReport) {
+    const check = validateNotBeforeCreation({
+      dateStr: f.deadline, fullDay: true, referenceIso: new Date().toISOString(),
+      isAdmin: c.role === 'admin',
+    });
+    if (!check.valid) {
+      // Deliberately not check.errors[0] — that generic message talks about
+      // "request creation time" (Driver Request/Assignment framing); this
+      // call site's only possible failure is a past-dated Deadline, so a
+      // field-specific message is clearer here.
+      st.formError = 'Tanggal deadline tidak boleh lebih awal dari hari ini.';
+      render();
+      return;
+    }
+  }
+
   // Idempotency: consume the form so a duplicate submit (double-click / retry)
   // finds nothing and is a clean no-op. blankForm()/blankReportForm() is
   // recreated when the modal is next opened.
-  const f = st.form;
-  if (!f || !f.title.trim()) return;
   st.form = null;
-  if ((st.formMode || 'assignment') === 'report') { submitReport(f, c); return; }
+  st.formError = null;
+  if (isReport) { submitReport(f, c); return; }
   const building = (f.building || '').trim();
   const room = (f.room || '').trim();
   const location = [building, room].filter(Boolean).join(' · ');
@@ -783,9 +814,13 @@ function createModal(c) {
     : `<input class="eng-input" data-field="requester" value="${esc(f.requester)}" placeholder="Nama bidang pemohon" />`;
 
   // Mode-specific: work-report capture fields vs. the assignment deadline.
+  // V1: pre-emptive UI constraint for the past-Deadline rule (submitCreate()
+  // is the authoritative gate) — a plain native <input type="date">, so the
+  // native `min` attribute is all that's needed; Admin gets no `min` at all.
+  const deadlineMin = c.role === 'admin' ? '' : ` min="${todayString()}"`;
   const dateField = isReport
     ? `<label class="eng-field"><span>Tanggal Pekerjaan</span><input type="date" class="eng-input" data-field="workDate" value="${esc(f.workDate || '')}" /></label>`
-    : `<label class="eng-field"><span>Deadline</span><input type="date" class="eng-input" data-field="deadline" value="${esc(f.deadline || '')}" /></label>`;
+    : `<label class="eng-field"><span>Deadline</span><input type="date" class="eng-input" data-field="deadline" value="${esc(f.deadline || '')}"${deadlineMin} /></label>`;
   const reportFields = isReport ? `
         <div class="eng-field-row">
           <label class="eng-field"><span>Jam Mulai</span><input type="time" class="eng-input" data-field="startTime" value="${esc(f.startTime || '')}" /></label>
@@ -819,6 +854,7 @@ function createModal(c) {
           <label class="eng-field"><span>Pemohon (Bidang)</span>${requesterField}</label>
           ${dateField}
         </div>
+        ${st.formError ? `<div class="eng-form-error">${icon('x-circle', { size: 14 })} ${esc(st.formError)}</div>` : ''}
         ${personnelPicker(f)}
         ${reportFields}
         <label class="eng-field"><span>Catatan</span><textarea class="eng-input eng-textarea" data-field="note" placeholder="Deskripsi singkat pekerjaan…">${esc(f.note)}</textarea></label>
