@@ -63,6 +63,88 @@ export function minutesToTime(minutes) {
 }
 
 /* ============================================================
+   ASSIGNMENT DATETIME SPAN (V1 — Overnight Assignment)
+
+   THE single source of truth for an assignment's full start/end datetime.
+   Every consumer (form indicator, status, conflict checks, timeline,
+   request-time validation) derives from here — no second parser, no
+   "01:30 means tomorrow" convention scattered around.
+
+   RULE (Part 2 / Part Q): the stored `date` is always the START date.
+     endTime  >  startTime  →  endDate = date          (same day)
+     endTime  <  startTime  →  endDate = date + 1 day   (crosses midnight)
+     endTime === startTime  →  same day, zero-length (rejected at the form,
+                               but handled here without throwing)
+   A full-day assignment (00:00–23:59) never crosses midnight.
+
+   Backward compatible: existing records carry only date/startTime/endTime;
+   endDate is DERIVED, never required. A record that already stores its own
+   `endDate` (future multi-day writes) is respected as-is.
+   ============================================================ */
+
+/**
+ * @param {{date?:string, startTime?:string, endTime?:string, endDate?:string, fullDay?:boolean}} a
+ * @returns {{
+ *   startDate: string, endDate: string,
+ *   startDateTime: Date, endDateTime: Date,
+ *   crossesMidnight: boolean,
+ *   startMin: number, endMin: number
+ * } | null}  null when date/times are missing/malformed.
+ */
+export function assignmentSpan(a) {
+  if (!a || !a.date) return null;
+  const startTime = a.fullDay ? '00:00' : a.startTime;
+  const endTime   = a.fullDay ? '23:59' : a.endTime;
+  if (!startTime || !endTime || !/^\d{1,2}:\d{2}$/.test(startTime) || !/^\d{1,2}:\d{2}$/.test(endTime)) return null;
+
+  const startMin = timeToMinutes(startTime);
+  const endMin   = timeToMinutes(endTime);
+  const crossesMidnight = !a.fullDay && endMin < startMin;
+
+  const startDate = a.date;
+  // An explicitly-stored endDate (multi-day / future writes) wins; else derive.
+  const endDate = a.endDate || (crossesMidnight ? offsetDate(a.date, 1) : a.date);
+
+  const sp = parseLocalDate(startDate);
+  const ep = parseLocalDate(endDate);
+  const startDateTime = new Date(sp.getFullYear(), sp.getMonth(), sp.getDate(), Math.floor(startMin / 60), startMin % 60, 0, 0);
+  const endDateTime   = new Date(ep.getFullYear(), ep.getMonth(), ep.getDate(), Math.floor(endMin / 60), endMin % 60, 0, 0);
+
+  return { startDate, endDate, startDateTime, endDateTime, crossesMidnight, startMin, endMin };
+}
+
+/**
+ * The END date an assignment lands on, given its start date + times.
+ * Thin wrapper over assignmentSpan() for callers that only need the date.
+ * @returns {string} YYYY-MM-DD
+ */
+export function deriveEndDate(date, startTime, endTime, fullDay = false) {
+  const span = assignmentSpan({ date, startTime, endTime, fullDay });
+  return span ? span.endDate : date;
+}
+
+/** Whether an assignment's scheduled window crosses midnight. */
+export function crossesMidnight(a) {
+  const span = assignmentSpan(a);
+  return !!span && span.crossesMidnight;
+}
+
+/**
+ * Full-datetime status of an assignment's SCHEDULED window relative to `now`
+ * (Part C). This is the schedule-derived view; it does NOT override an
+ * explicit `status` field a user set via Start/Complete — callers decide
+ * how to combine them.
+ * @returns {'upcoming'|'active'|'past'}
+ */
+export function scheduledTimeState(a, now = new Date()) {
+  const span = assignmentSpan(a);
+  if (!span) return 'upcoming';
+  if (now < span.startDateTime) return 'upcoming';
+  if (now >= span.endDateTime) return 'past';
+  return 'active';
+}
+
+/* ============================================================
    WORKING TIME & OVERTIME (v1.16.4.7)
    Single source of truth for actual working time + calendar-based
    overtime detection. Pure & DOM-free — reused by the timeline,
@@ -143,8 +225,12 @@ export function computeWorkTime(a, office = DEFAULT_OFFICE_HOURS) {
   } else if (a?.startTime && a?.endTime) {
     const sMin = timeToMinutes(a.startTime);
     const eMin = timeToMinutes(a.endTime);
-    if (Number.isFinite(sMin) && Number.isFinite(eMin) && eMin >= sMin) {
-      scheduledHours = (eMin - sMin) / 60;
+    if (Number.isFinite(sMin) && Number.isFinite(eMin)) {
+      // V1 (Overnight): eMin < sMin means the scheduled window crosses
+      // midnight — add a day so e.g. 23:30→01:30 is 2h rather than being
+      // dropped. Same-day (eMin >= sMin) is unchanged: (eMin - sMin) / 60.
+      const spanMin = eMin >= sMin ? eMin - sMin : eMin + 1440 - sMin;
+      scheduledHours = spanMin / 60;
     }
   }
 

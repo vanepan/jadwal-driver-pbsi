@@ -1,0 +1,13 @@
+<!doctype html><html><head><meta charset="utf-8"><title>overnight-conflict</title></head>
+<body class="app-ready">
+  <!-- Minimal page: the test imports /js/assignments.js for real and drives
+       checkConflict / checkVehicleConflict via setAssignments(). No app boot,
+       no Firebase auth — assignments.js transitively loads js/firebase.js but
+       (as the existing timeline-autofocus harness already proves) merely
+       importing it headless does not hang. -->
+  <script type="module">
+    import { setAssignments, checkConflict, checkVehicleConflict } from '/js/assignments.js';
+    window.__a = { setAssignments, checkConflict, checkVehicleConflict };
+    window.__ready = true;
+  </script>
+</body></html>

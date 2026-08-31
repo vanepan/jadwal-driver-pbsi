@@ -13166,6 +13166,15 @@ body.v2-shell-active .block-status-badge--overtime {
 }
 .drawer-overlay * { box-sizing: border-box; }
 .drawer-overlay.is-open { background: rgba(16, 17, 26, .42); }
+/* V1 fix (intermittent "whole screen frozen / unclickable" on mobile): this
+   overlay is position:fixed;inset:0;z-index:10000. Only while it is
+   .is-open may it intercept pointer events — a closing/closed/stale one
+   (its JS removal is deferred ~260ms and can be delayed further by a
+   backgrounded tab, or left behind by a rapid open→close→open race) must
+   NEVER become an invisible full-viewport click-blocker over the rest of
+   the app, the sidebar included. */
+.drawer-overlay:not(.is-open) { pointer-events: none; }
+.drawer-overlay:not(.is-open) .drawer { pointer-events: none; }
 .drawer { position: relative; z-index: var(--drawer-z-panel); display: flex; flex-direction: column; width: min(440px, 92vw); max-width: 92vw; height: 100%; background: var(--surface, #fff); border-left: 1px solid var(--border, #e8e6e2); box-shadow: var(--shadow-lg, 0 18px 50px -12px rgba(28,26,23,.28)); transform: translateX(100%); transition: transform var(--drawer-dur) var(--drawer-ease); }
 .drawer-overlay.is-open .drawer { transform: translateX(0); }
 /* Desktop: no grabber (mobile-only drag affordance). */
@@ -13324,6 +13333,18 @@ body.v2-shell-active .block-status-badge--overtime {
   color: var(--danger, #a8292f); font-size: 12px; font-weight: 500; line-height: 1.4;
 }
 .sf-field-error[hidden] { display: none; }
+
+/* V1 (Overnight) — informational cue under Jam Selesai when the assignment
+   window crosses midnight (end earlier than start). Advisory only: neutral
+   tone, not an error. */
+.overnight-cue {
+  display: flex; align-items: center; gap: 5px; margin-top: 5px;
+  color: var(--accent, #2f6bd8); font-size: 12px; font-weight: 600; line-height: 1.4;
+}
+.overnight-cue::before {
+  content: "🌙"; font-size: 11px; line-height: 1;
+}
+.overnight-cue[hidden] { display: none; }
 /* Reinforces the field-error text with a border on the input(s) it
    describes — color is never the ONLY indicator (text + icon already
    carry the meaning), this is additive emphasis. */

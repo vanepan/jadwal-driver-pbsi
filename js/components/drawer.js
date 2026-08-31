@@ -67,6 +67,12 @@ let _activeOverlay = null;
 // eventual transitionend/timeout becomes a no-op instead of firing stale
 // focus-restore/onClose side effects after a newer drawer has already opened.
 let _closeSeq = 0;
+// V1 fix (intermittent "whole screen frozen / unclickable" on mobile): the
+// onClose registered by the CURRENT openDrawer(), so an EXTERNAL closeDrawer()
+// call — e.g. opening the mobile sidebar, or a workspace change — fully
+// tears the consumer down (its viewingId/detail state) instead of leaving a
+// half-closed drawer whose overlay lingers.
+let _storedOnClose = null;
 
 function esc(s) {
   return String(s == null ? '' : s)
@@ -169,15 +175,16 @@ export function openDrawer({
     _activeOverlay = null;
     unlockBodyScroll();
   }
-  // Invalidate any closeDrawer() still mid-fade-out and hard-remove its
+  // Invalidate any closeDrawer() still mid-fade-out and hard-remove EVERY
   // lingering node — covers the case _activeOverlay alone can't (see the
   // _closeSeq comment above): a real close() already happened, but its
-  // deferred DOM removal hasn't fired yet.
+  // deferred DOM removal hasn't fired yet. querySelectorAll (not
+  // getElementById) so a duplicated-id pair is fully cleared.
   _closeSeq++;
-  const _stale = document.getElementById(OVERLAY_ID);
-  if (_stale) _stale.remove();
+  document.querySelectorAll('#' + OVERLAY_ID).forEach((n) => n.remove());
   _lastFocus = document.activeElement;
   _isDirty = typeof isDirty === 'function' ? isDirty : null;
+  _storedOnClose = typeof onClose === 'function' ? onClose : null;
 
   const overlay = document.createElement('div');
   overlay.id = OVERLAY_ID;
@@ -253,23 +260,32 @@ export function closeDrawer(onClose = null) {
   const overlay = _activeOverlay;
   if (!overlay) return;
   _activeOverlay = null;
+  // An external caller (mobile sidebar open, workspace change) passes no
+  // onClose — fall back to the one openDrawer() registered so the consumer
+  // is still fully torn down (e.g. modal.js's viewingId).
+  const effectiveOnClose = typeof onClose === 'function' ? onClose : _storedOnClose;
+  _storedOnClose = null;
   overlay.classList.remove('is-open');
-  // This close "owns" cleanup only until a newer openDrawer()/closeDrawer()
-  // bumps _closeSeq — if that happens before this fires, a newer drawer (or
-  // its own close) already handled DOM removal, and firing this one's stale
-  // focus-restore/onClose would be wrong (it'd act on the NEW drawer's state).
+  // V1 fix (intermittent "whole screen frozen / unclickable"): the moment a
+  // drawer starts closing it must STOP capturing pointers — even while its
+  // node lingers through the ~260ms fade-out, or if a backgrounded tab
+  // throttles the removal timer below. Belt-and-suspenders alongside the
+  // `.drawer-overlay:not(.is-open) { pointer-events:none }` rule in
+  // platform.css.
+  overlay.style.pointerEvents = 'none';
+  // This close "owns" the focus-restore + onClose only until a newer
+  // openDrawer()/closeDrawer() bumps _closeSeq — firing those against a
+  // superseded instance would act on the NEW drawer's state. DOM removal,
+  // by contrast, is ALWAYS correct (removing an already-removed node is a
+  // no-op) and must never be skipped, or the node can linger forever.
   const mySeq = ++_closeSeq;
   const done = () => {
-    // Unconditional: every openDrawer() takes one lock, so every closeDrawer()
-    // must release exactly one, even when a newer drawer has since superseded
-    // this close (mySeq mismatch below only guards DOM removal/focus/onClose,
-    // which must not act twice or on the wrong instance).
-    unlockBodyScroll();
+    unlockBodyScroll(); // one openDrawer() lock ⇒ exactly one release, always
+    overlay.remove();   // unconditional — a lingering fixed-inset overlay is the bug
     if (mySeq !== _closeSeq) return;
-    overlay.remove();
     if (_lastFocus && typeof _lastFocus.focus === 'function') { try { _lastFocus.focus(); } catch (_) {} }
     _lastFocus = null;
-    if (typeof onClose === 'function') { try { onClose(); } catch (_) {} }
+    if (typeof effectiveOnClose === 'function') { try { effectiveOnClose(); } catch (_) {} }
   };
   // Remove after the CSS transition (fallback timer keeps it robust).
   let removed = false;

@@ -7,7 +7,7 @@
 
 'use strict';
 
-import { generateId, timeToMinutes, minutesToTime, showToast, initCustomTimeInputPair, getCombinedTimeFromPair, setTimeFieldsFromValue, normalizeTimeValue, expandDateRange, formatDateShort, addHoursToTime, todayString, offsetDate } from './utils.js';
+import { generateId, timeToMinutes, minutesToTime, showToast, initCustomTimeInputPair, getCombinedTimeFromPair, setTimeFieldsFromValue, normalizeTimeValue, expandDateRange, formatDateShort, parseLocalDate, addHoursToTime, todayString, offsetDate, assignmentSpan } from './utils.js';
 import { getDriverByName } from './drivers.js';
 import { hasPermission, getCurrentUser, isAdmin } from './auth.js';
 import { initFormGuard, resetDirty } from './form-guard.js';
@@ -209,6 +209,41 @@ function syncFullDayUI() {
     group.classList.toggle('time-group-disabled', !!checked);
     group.querySelectorAll('input').forEach(el => { el.disabled = !!checked; });
   });
+  syncOvernightCue();
+}
+
+/**
+ * V1 (Overnight) — the read-only "+1 hari · <tanggal>" cue shown next to Jam
+ * Selesai. Appears ONLY when the entered Jam Selesai is earlier than Jam Mulai
+ * (the trip crosses midnight); hidden for same-day, full-day, or incomplete
+ * input. Pure DOM sync — never writes state, never blocks submit. The end date
+ * is ALWAYS derived (start date + 1); there is deliberately no editable
+ * end-date field for this. Reactive to Tanggal / Jam Mulai / Jam Selesai /
+ * Penuh Hari changes (wired in initConflictPreview + syncFullDayUI + populate).
+ */
+function syncOvernightCue() {
+  const cue = document.getElementById('assignmentOvernightCue');
+  if (!cue) return;
+
+  const isFullDay = document.getElementById('assignmentFullDay')?.checked ?? false;
+  const startDate = document.getElementById('fieldDate')?.value;
+  const startTime = getCombinedTimeFromPair('fieldStartHour', 'fieldStartMinute');
+  const endTime   = getCombinedTimeFromPair('fieldEndHour', 'fieldEndMinute');
+
+  const span = (!isFullDay && startDate && startTime && endTime)
+    ? assignmentSpan({ date: startDate, startTime, endTime })
+    : null;
+
+  if (span && span.crossesMidnight) {
+    const endLabel = parseLocalDate(span.endDate).toLocaleDateString('id-ID', {
+      day: 'numeric', month: 'long', year: 'numeric',
+    });
+    cue.textContent = `+1 hari · ${endLabel}`;
+    cue.hidden = false;
+  } else {
+    cue.hidden = true;
+    cue.textContent = '';
+  }
 }
 
 /**
@@ -295,6 +330,11 @@ export function openFormModal(asgnId = null) {
     document.getElementById('fieldDate').value = todayString();
     syncPbsiDatepicker(document.getElementById('fieldDate'));
   }
+
+  // V1 (Overnight): reconcile the "+1 hari" cue with whatever the form now
+  // holds — hidden for a fresh add / same-day edit, shown for an edit whose
+  // stored window crosses midnight.
+  syncOvernightCue();
 
   const modal = document.getElementById('modalForm');
   if (modal) {
@@ -684,20 +724,23 @@ async function handleFormSubmit(e) {
  * @returns {boolean} - true jika ada konflik
  */
 export function checkConflict(driverName, startTime, endTime, date, excludeId = null) {
-  const startMin = timeToMinutes(startTime);
-  const endMin   = timeToMinutes(endTime);
+  // V1 (Overnight): overlap is compared on the FULL datetime span via the
+  // single source of truth (assignmentSpan), not minutes-of-day pinned to one
+  // date. Identical to the old same-day comparison when neither window crosses
+  // midnight; additionally correct when one (or both) does — a 23:30→01:30
+  // trip is measured to its real end instant on the next calendar day, so a
+  // 00:30→02:00 trip the same night is detected as a conflict.
+  const mySpan = assignmentSpan({ date, startTime, endTime });
+  if (!mySpan) return false;
 
   return assignments.some(a => {
-    if (a.id === excludeId) return false; // Ignore diri sendiri
+    if (a.id === excludeId) return false;       // Ignore diri sendiri
     if (a.status === 'cancelled') return false; // Dibatalkan tidak memakai kapasitas
-    if (a.driver !== driverName) return false; // Beda driver
-    if (a.date !== date) return false; // Beda tanggal
+    if (a.driver !== driverName) return false;  // Beda driver
 
-    const aStart = timeToMinutes(a.startTime);
-    const aEnd   = timeToMinutes(a.endTime);
-
-    // Cek overlap: range baru overlap dengan range yang ada?
-    return startMin < aEnd && endMin > aStart;
+    const aSpan = assignmentSpan(a);
+    if (!aSpan) return false;
+    return mySpan.startDateTime < aSpan.endDateTime && mySpan.endDateTime > aSpan.startDateTime;
   });
 }
 
@@ -712,17 +755,19 @@ export function checkConflict(driverName, startTime, endTime, date, excludeId = 
  * @returns {boolean}
  */
 export function checkVehicleConflict(vehicleName, startTime, endTime, date, excludeId = null) {
-  const startMin = timeToMinutes(startTime);
-  const endMin   = timeToMinutes(endTime);
+  // V1 (Overnight): full datetime-span overlap — see checkConflict for the
+  // rationale. Same-day behaviour is unchanged.
+  const mySpan = assignmentSpan({ date, startTime, endTime });
+  if (!mySpan) return false;
 
   return assignments.some(a => {
     if (a.id === excludeId) return false;
     if (a.status === 'cancelled') return false; // Dibatalkan tidak memakai kapasitas
     if (a.vehicle !== vehicleName) return false;
-    if (a.date !== date) return false;
-    const aStart = timeToMinutes(a.startTime);
-    const aEnd   = timeToMinutes(a.endTime);
-    return startMin < aEnd && endMin > aStart;
+
+    const aSpan = assignmentSpan(a);
+    if (!aSpan) return false;
+    return mySpan.startDateTime < aSpan.endDateTime && mySpan.endDateTime > aSpan.startDateTime;
   });
 }
 
@@ -747,7 +792,10 @@ export function createAssignmentDirect(fields = {}) {
   if (!date || !startTime || !endTime || !destination || !purpose) {
     return { ok: false, reason: 'invalid' };
   }
-  if (!fullDay && timeToMinutes(endTime) <= timeToMinutes(startTime)) {
+  // V1 (Overnight): an end EARLIER than the start is a valid cross-midnight
+  // window — the end date derives to start + 1 (see assignmentSpan). Only a
+  // zero-length window (end === start) is rejected.
+  if (!fullDay && timeToMinutes(endTime) === timeToMinutes(startTime)) {
     return { ok: false, reason: 'invalid' };
   }
   if (driver !== '' && checkConflict(driver, startTime, endTime, date)) {
@@ -801,7 +849,9 @@ export function updateAssignmentDirect(id, patch = {}) {
   const startTime = patch.startTime ?? existing.startTime;
   const endTime   = patch.endTime   ?? existing.endTime;
 
-  if (!existing.fullDay && timeToMinutes(endTime) <= timeToMinutes(startTime)) {
+  // V1 (Overnight): see createAssignmentDirect — an end earlier than the start
+  // is a valid overnight window; only end === start (zero-length) is invalid.
+  if (!existing.fullDay && timeToMinutes(endTime) === timeToMinutes(startTime)) {
     return { ok: false, reason: 'invalid' };
   }
   if (driver !== '' && checkConflict(driver, startTime, endTime, date, id)) {
@@ -837,15 +887,20 @@ function initConflictPreview() {
     'fieldDriver', 'fieldVehicle', 'fieldDate', 'fieldEndDate',
     'fieldStartHour', 'fieldStartMinute', 'fieldEndHour', 'fieldEndMinute',
   ];
+  // V1 (Overnight): the "+1 hari" cue reacts to the same Tanggal / Jam Mulai /
+  // Jam Selesai inputs the conflict preview already watches — run both from one
+  // handler so there is no second listener set to keep in sync.
+  const onWatchedChange = () => { runConflictPreview(); syncOvernightCue(); };
   watchIds.forEach(id => {
     const el = document.getElementById(id);
     if (el) {
-      el.addEventListener('change', runConflictPreview);
-      el.addEventListener('blur',   runConflictPreview);
+      el.addEventListener('change', onWatchedChange);
+      el.addEventListener('blur',   onWatchedChange);
+      el.addEventListener('input',  syncOvernightCue); // snappier feedback while typing the hour/minute
     }
   });
-  document.getElementById('assignmentMultiDay')?.addEventListener('change', runConflictPreview);
-  document.getElementById('assignmentFullDay')?.addEventListener('change',  runConflictPreview);
+  document.getElementById('assignmentMultiDay')?.addEventListener('change', onWatchedChange);
+  document.getElementById('assignmentFullDay')?.addEventListener('change',  onWatchedChange);
 }
 
 /**

@@ -1,0 +1,32 @@
+<!doctype html><html><head><meta charset="utf-8"><title>tl-autofocus</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/platform.css">
+<style>
+  body { margin: 0; }
+  /* Mimic the real workspace container that setWorkspace() toggles — and
+     the fact that the REAL path applies `display` ASYNCHRONOUSLY (via
+     document.startViewTransition) AFTER renderTimeline() has already run. */
+  #v2TimelineSurface { display: none; }
+  #v2TimelineSurface.shown { display: block; }
+  .main-content { max-width: 100%; }
+</style></head><body class="app-ready v2-shell-active">
+  <div id="v2TimelineSurface">
+    <main class="main-content">
+      <div class="timeline-date-label" id="timelineDateLabel">Memuat...</div>
+      <div class="timeline-wrapper">
+        <div class="timeline-scroll-fade-right"></div>
+        <div class="timeline-header-row">
+          <div class="timeline-corner">Driver</div>
+          <div class="timeline-hours" id="timelineHours"></div>
+        </div>
+        <div class="timeline-body" id="timelineBody"></div>
+      </div>
+    </main>
+  </div>
+  <div class="date-nav">
+    <button class="btn-today" id="btnToday">Hari Ini</button>
+    <button class="btn-icon" id="btnPrevDate">&larr;</button>
+    <input type="date" id="filterDate" class="date-input" />
+    <button class="btn-icon" id="btnNextDate">&rarr;</button>
+  </div>
+</body></html>

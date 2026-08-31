@@ -101,15 +101,19 @@ export function validateTimeFormat(time, fieldName = 'Waktu', strict = false) {
 }
 
 /**
- * Validate that endTime is strictly after startTime (both "HH:MM" strings).
- * Skips check if either value is missing.
+ * Validate an assignment's start/end times (both "HH:MM" strings).
+ * V1 (Overnight Assignment): endTime EARLIER than startTime is now a valid
+ * overnight window (the trip crosses midnight; end date is derived as
+ * start date + 1 — see js/utils.js#assignmentSpan). Only an end that
+ * EQUALS the start (a zero-length window) is rejected. Skips check if
+ * either value is missing.
  * @param {string} startTime
  * @param {string} endTime
  */
 export function validateTimeRange(startTime, endTime) {
   if (!startTime || !endTime) return createResult();
-  if (_timeToMinutes(endTime) <= _timeToMinutes(startTime)) {
-    return createResult(['Jam selesai harus lebih dari jam mulai.']);
+  if (_timeToMinutes(endTime) === _timeToMinutes(startTime)) {
+    return createResult(['Jam selesai tidak boleh sama dengan jam mulai.']);
   }
   return createResult();
 }

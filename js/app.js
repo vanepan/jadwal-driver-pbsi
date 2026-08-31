@@ -62,7 +62,7 @@ import { initPWA, getPWAState, registerPWAStateListener, triggerInstallPrompt, s
 import { initPush } from './push.js';
 import { initPbsiSelect } from './pbsi-select.js';
 import { initPbsiDatepicker, syncPbsiDatepicker } from './pbsi-datepicker.js';
-import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate, registerDateChangeCallback } from './timeline.js';
+import { renderTimeline, setCurrentDate, setAssignments as setTimelineAssignments, initDateControls, getCurrentDate, registerDateChangeCallback, registerViewportDateCallback } from './timeline.js';
 import { initTimelineInteractions } from './timeline-interactions.js';
 import { initModalHandlers, openDetailModal, registerEditCallback, registerDeleteCallback, registerStartCallback, registerCompleteCallback, registerCommentCallback as registerModalCommentCallback, registerCancelCallback, registerOvertimeOverrideCallback, setAssignments as setModalAssignments, updateDetailActionButtons } from './modal.js';
 import { initFormHandlers, openFormModal, closeFormModal, registerSaveCallback, registerPersistCallback, setAssignments as setAssignmentsForm, setCurrentDate as setCurrentDateForm, checkConflict, deleteAssignment } from './assignments.js';
@@ -4339,6 +4339,14 @@ function sweepOpenModalsOnWorkspaceChange() {
   document.querySelectorAll('.modal-overlay').forEach(modal => {
     if (modal.style.display !== 'none') modal.style.display = 'none';
   });
+  // V1 fix: also dismiss the canonical drawer (js/components/drawer.js). A
+  // module-A detail drawer must not persist into module B, and — more
+  // importantly — a workspace change is a clean point to guarantee no
+  // stale #appDrawerOverlay (z-index 10000, position:fixed;inset:0) is left
+  // capturing pointers. Safe no-op when nothing is open; closeDrawer() now
+  // falls back to the drawer's own registered onClose so the consumer
+  // (e.g. modal.js viewingId / gudang st.detail) is torn down too.
+  closeDrawer();
 }
 
 /**
@@ -5126,6 +5134,14 @@ function _initAllPbsiDatepickers() {
     document.getElementById(id)?.addEventListener('click', () => {
       requestAnimationFrame(() => syncPbsiDatepicker(filterDateEl));
     });
+  });
+
+  // V1 Phase 3 — the continuous timeline also moves filterDate.value on a
+  // plain horizontal SCROLL past the current day (updateDateLabel), again
+  // without a change event. Refresh the PBSI trigger text so the header date
+  // control tracks the viewport, not just the nav buttons.
+  registerViewportDateCallback(() => {
+    requestAnimationFrame(() => syncPbsiDatepicker(filterDateEl));
   });
 }
 
@@ -12862,6 +12878,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   const sidebarOverlay = document.getElementById('sidebarOverlay');
 
   function openSidebar() {
+    // V1 fix (intermittent "whole screen frozen" on mobile): never let the
+    // canonical drawer (z-index 10000) coexist with the mobile sidebar
+    // (z-index 140). If a detail drawer is open, close it first — otherwise
+    // a stale/closing #appDrawerOverlay sits invisibly over the sidebar and
+    // the whole app and swallows every tap.
+    closeDrawer();
     sidebar?.classList.add('sidebar-open');
     sidebarOverlay?.classList.add('overlay-visible');
     document.body.classList.add('sidebar-is-open');
@@ -13621,11 +13643,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ── Callback: Mulai button di detail modal ──
   // odoData = { startOdometer: number } — diisi dari odometer modal (v1.2.2)
-  registerStartCallback((assignmentId, odoData = {}) => {
+  // assignmentRef = the assignment object the modal was acting on (modal.js
+  // threads it through) — used only as a fallback when this module's own
+  // `assignments` array is momentarily out of sync (a Firebase snapshot
+  // landing between opening the drawer and confirming the odometer). Before
+  // this, that window produced a SILENT findIndex === -1 bail — the exact
+  // "Mulai Tugas does nothing on the first click, works on a retry" bug.
+  registerStartCallback((assignmentId, odoData = {}, assignmentRef = null) => {
     if (!hasPermission('start')) return;
 
-    const idx = assignments.findIndex(a => a.id === assignmentId);
-    if (idx === -1) return;
+    let idx = assignments.findIndex(a => a.id === assignmentId);
+    if (idx === -1 && assignmentRef && assignmentRef.id === assignmentId) {
+      assignments = [...assignments, { ...assignmentRef }];
+      idx = assignments.length - 1;
+    }
+    if (idx === -1) { showToast('Penugasan tidak ditemukan. Muat ulang halaman lalu coba lagi.'); return; }
 
     if (assignments[idx].status === 'started') { showToast('Penugasan sudah dimulai'); return; }
     if (assignments[idx].status === 'completed') { showToast('Penugasan sudah selesai'); return; }
@@ -13664,11 +13696,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ── Callback: Selesai button di detail modal ──
   // odoData = { endOdometer: number } — diisi dari odometer modal (v1.2.2)
-  registerCompleteCallback((assignmentId, odoData = {}) => {
+  // assignmentRef — same stale-array fallback as registerStartCallback above.
+  registerCompleteCallback((assignmentId, odoData = {}, assignmentRef = null) => {
     if (!hasPermission('complete')) return;
 
-    const idx = assignments.findIndex(a => a.id === assignmentId);
-    if (idx === -1) return;
+    let idx = assignments.findIndex(a => a.id === assignmentId);
+    if (idx === -1 && assignmentRef && assignmentRef.id === assignmentId) {
+      assignments = [...assignments, { ...assignmentRef }];
+      idx = assignments.length - 1;
+    }
+    if (idx === -1) { showToast('Penugasan tidak ditemukan. Muat ulang halaman lalu coba lagi.'); return; }
 
     if (assignments[idx].status === 'completed') { showToast('Penugasan sudah selesai'); return; }
 

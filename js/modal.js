@@ -226,7 +226,10 @@ function _openOdometerModal(type, assignmentId, assignment, callback) {
 
   if (titleEl)   titleEl.textContent = isStart ? 'Mulai Assignment' : 'Selesaikan Assignment';
   if (labelEl)   labelEl.textContent = isStart ? 'KM AWAL' : 'KM AKHIR';
-  if (confirmEl) confirmEl.textContent = isStart ? 'Mulai Assignment' : 'Selesaikan Assignment';
+  // V1 fix: the confirm button is the ONE decisive action of this dialog —
+  // label it "Konfirmasi …", not a second "Mulai Assignment" that reads as
+  // re-pressing the drawer's own "Mulai Tugas" CTA.
+  if (confirmEl) confirmEl.textContent = isStart ? 'Konfirmasi & Mulai' : 'Konfirmasi & Selesai';
   if (hintEl)    { hintEl.textContent = ''; }
   // v1.27.0/SS2: Start Assignment autofills Odometer Awal from vehicle.odometer
   // (default value only — stays a normal editable input, never readonly/disabled).
@@ -326,7 +329,12 @@ function _handleOdometerConfirm() {
 
   const odoValue = Number(raw);
   if (_odoCallback) {
-    _odoCallback(_odoId, isStart ? { startOdometer: odoValue } : { endOdometer: odoValue });
+    // Pass the already-resolved assignment object through as a 3rd arg so
+    // the lifecycle handler (js/app.js) can act on THIS trip even if its
+    // own `assignments` array is momentarily out of sync — the root cause
+    // of "Mulai Tugas does nothing on the first try" (a silent
+    // findIndex === -1 bail).
+    _odoCallback(_odoId, isStart ? { startOdometer: odoValue } : { endOdometer: odoValue }, _odoAssignment);
   }
   _closeOdometerModal(false); // confirm → don't reopen detail
 }
@@ -682,12 +690,12 @@ function _wireDetailHandlers(root) {
     // v1.15.6: "Tanpa Kendaraan" (vehicle === '') has no odometer — start
     // directly (Scheduled → In Progress), leaving startOdometer null.
     if (!a || !a.vehicle) {
-      if (onStartCallback) onStartCallback(viewingId, {});
+      if (onStartCallback) onStartCallback(viewingId, {}, a);
       closeDetailModal();
       return;
     }
-    _openOdometerModal('start', viewingId, a, (assignmentId, odoData) => {
-      if (onStartCallback) onStartCallback(assignmentId, odoData);
+    _openOdometerModal('start', viewingId, a, (assignmentId, odoData, assignment) => {
+      if (onStartCallback) onStartCallback(assignmentId, odoData, assignment);
       closeDetailModal();
     });
   });
@@ -700,12 +708,12 @@ function _wireDetailHandlers(root) {
     // v1.15.6: "Tanpa Kendaraan" (vehicle === '') has no odometer — complete
     // directly (In Progress → Completed), leaving endOdometer/distance null.
     if (!a || !a.vehicle) {
-      if (onCompleteCallback) onCompleteCallback(viewingId, {});
+      if (onCompleteCallback) onCompleteCallback(viewingId, {}, a);
       closeDetailModal();
       return;
     }
-    _openOdometerModal('complete', viewingId, a, (assignmentId, odoData) => {
-      if (onCompleteCallback) onCompleteCallback(assignmentId, odoData);
+    _openOdometerModal('complete', viewingId, a, (assignmentId, odoData, assignment) => {
+      if (onCompleteCallback) onCompleteCallback(assignmentId, odoData, assignment);
       closeDetailModal();
     });
   });
