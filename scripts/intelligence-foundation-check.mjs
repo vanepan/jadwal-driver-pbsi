@@ -259,33 +259,46 @@ const tree = buildPermissionTree();
 check(!!tree['Sarpras Intelligence'], "permission-registry.js already has a 'Sarpras Intelligence' module (reused, not a new system)");
 check(!!PERMISSIONS['sic.review.act'] && !!PERMISSIONS['sic.approve.act'], 'existing sic.* permissions are the pattern new intelligence.* ids follow');
 check(!Object.keys(PERMISSIONS).some((k) => k.startsWith('intelligence.')), 'Phase 0 adds NO new permission id (nothing is wired yet — PART 19)');
-// src/intelligence/** must not roll its own gate
+// src/intelligence/** must not roll its own gate. (Comments stripped first —
+// a header may name isV2Enabled in prose while explaining the caller is
+// already gated; and the Phase 1 service takes authz via an INJECTED port,
+// never a hardcoded role check of its own.)
+const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 const intelFiles = [];
 (function walk(d) { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) walk(p); else if (e.name.endsWith('.js')) intelFiles.push(p); } })(path.join(ROOT, 'src/intelligence'));
-const gateLeak = intelFiles.filter((f) => /\brole\s*===|\busername\s*===|isV2Enabled|PERMISSIONS\s*=/.test(fs.readFileSync(f, 'utf8')));
+const gateLeak = intelFiles.filter((f) => /['"]role['"]\s*\]?\s*===\s*['"]admin['"]|\busername\s*===|isV2Enabled\s*\(|PERMISSIONS\s*=\s*\{/.test(stripComments(fs.readFileSync(f, 'utf8'))));
 check(gateLeak.length === 0, `no src/intelligence/** file implements its own permission gate (${gateLeak.map((f) => path.relative(ROOT, f)).join(', ') || 'none'})`);
 
-section('Dormancy + isolation — nothing outside src/intelligence/ imports it (Phase 0 goal)');
-function importsIntelligence(dir, exclude) {
+section('Isolation — no RUNTIME coupling into src/intelligence/ from V1 (updated for Phase 1)');
+// Phase 1 wires a CLIENT entry point (js/firebase.js#callGenerateCompletion) and
+// a SERVER boundary (functions/src/intelligence/*), but neither runtime-imports
+// the ESM src/intelligence/ tree: the client callable is a plain httpsCallable,
+// and the CJS server keeps its own tiny model-completion-contract mirror. A
+// JSDoc `@param {import('../src/intelligence/...')}` type reference (comments,
+// stripped below) is not a runtime import. The Intelligence Service itself is
+// still not mounted into any UI (PART 16 non-goal).
+function runtimeImportsIntelligence(dir, exclude) {
   const hits = [];
   (function walk(d) {
     for (const e of fs.readdirSync(d, { withFileTypes: true })) {
       const p = path.join(d, e.name);
       if (e.isDirectory()) { if (!p.includes('node_modules') && p !== exclude) walk(p); }
-      else if (/\.(js|mjs)$/.test(e.name)) {
-        const t = fs.readFileSync(p, 'utf8');
-        if (/from\s+['"][^'"]*src\/intelligence\/|import\(['"][^'"]*src\/intelligence\//.test(t)) hits.push(path.relative(ROOT, p));
+      else if (/\.(js|mjs|cjs)$/.test(e.name)) {
+        const t = stripComments(fs.readFileSync(p, 'utf8'));
+        if (/(^|[^.\w])(import|export)\s[^;]*from\s+['"][^'"]*src\/intelligence\/|(^|[^.\w])import\(['"][^'"]*src\/intelligence\/|require\(['"][^'"]*src\/intelligence\//.test(t)) {
+          hits.push(path.relative(ROOT, p));
+        }
       }
     }
   })(dir);
   return hits;
 }
-const jsHits = importsIntelligence(path.join(ROOT, 'js'));
-const srcHits = importsIntelligence(path.join(ROOT, 'src'), path.join(ROOT, 'src/intelligence'));
-const fnHits = importsIntelligence(path.join(ROOT, 'functions/src'));
-check(jsHits.length === 0, `no js/** file imports src/intelligence/ (${jsHits.join(', ') || 'none'})`);
+const jsHits = runtimeImportsIntelligence(path.join(ROOT, 'js'));
+const srcHits = runtimeImportsIntelligence(path.join(ROOT, 'src'), path.join(ROOT, 'src/intelligence'));
+const fnHits = runtimeImportsIntelligence(path.join(ROOT, 'functions/src'));
+check(jsHits.length === 0, `no js/** file runtime-imports src/intelligence/ (${jsHits.join(', ') || 'none'})`);
 check(srcHits.length === 0, `no other src/** domain imports src/intelligence/ (${srcHits.join(', ') || 'none'})`);
-check(fnHits.length === 0, `no functions/** file imports src/intelligence/ (${fnHits.join(', ') || 'none'})`);
+check(fnHits.length === 0, `no functions/** file imports src/intelligence/ — the CJS side mirrors, never imports (${fnHits.join(', ') || 'none'})`);
 const indexHtml = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 check(!/src\/intelligence\//.test(indexHtml), 'index.html does not load anything from src/intelligence/');
 // the layer may read knowledge/organizational-memory/document-intelligence — never the reverse (spot-check the one edge used)

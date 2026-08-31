@@ -52,6 +52,24 @@ export const DEFAULT_INTELLIGENCE_CONFIG = Object.freeze({
      *  the registry only ever SUGGESTS. */
     reservationEnabled: false,
   }),
+  /** Phase 1 — defensive bounds on a generation session (PART 13). */
+  limits: Object.freeze({
+    /** Hard cap on clarification turns before the service returns an error
+     *  instead of continuing (no infinite conversation loop). */
+    maxTurns: 12,
+    /** Hard cap on characters of grounding context sent to a provider
+     *  (no unbounded context expansion). */
+    maxPromptChars: 24000,
+  }),
+  /** Phase 1 — provider-neutral hints for a remote model provider. The
+   *  provider adapter maps these to its own API params; still no secret,
+   *  no endpoint, no provider param NAME here. */
+  openai: Object.freeze({
+    /** Model id used when defaultModel is null. Named HERE only. */
+    model: 'gpt-4o-mini',
+    /** Sampling determinism hint, 0..1 (1 = most deterministic). */
+    determinism: 0.7,
+  }),
 });
 
 function cloneConfig(cfg) {
@@ -61,6 +79,8 @@ function cloneConfig(cfg) {
     defaultModel: cfg.defaultModel,
     request: { timeoutMs: cfg.request.timeoutMs, maxOutputTokens: cfg.request.maxOutputTokens },
     numbering: { reservationEnabled: cfg.numbering.reservationEnabled === true },
+    limits: { maxTurns: cfg.limits.maxTurns, maxPromptChars: cfg.limits.maxPromptChars },
+    openai: { model: cfg.openai.model, determinism: cfg.openai.determinism },
   };
 }
 
@@ -93,6 +113,15 @@ export function setIntelligenceConfig(partial = {}) {
   }
   if (partial.numbering && typeof partial.numbering === 'object' && typeof partial.numbering.reservationEnabled === 'boolean') {
     next.numbering.reservationEnabled = partial.numbering.reservationEnabled;
+  }
+  if (partial.limits && typeof partial.limits === 'object') {
+    if (Number(partial.limits.maxTurns) > 0) next.limits.maxTurns = Math.floor(Number(partial.limits.maxTurns));
+    if (Number(partial.limits.maxPromptChars) > 0) next.limits.maxPromptChars = Math.floor(Number(partial.limits.maxPromptChars));
+  }
+  if (partial.openai && typeof partial.openai === 'object') {
+    if (typeof partial.openai.model === 'string' && partial.openai.model) next.openai.model = partial.openai.model;
+    const d = Number(partial.openai.determinism);
+    if (Number.isFinite(d) && d >= 0 && d <= 1) next.openai.determinism = d;
   }
   _active = next;
   return _active;

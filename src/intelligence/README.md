@@ -1,9 +1,42 @@
-# src/intelligence — Sarpras Intelligence (V2, Phase 0: Foundation)
+# src/intelligence — Sarpras Intelligence (V2, Phase 0 + Phase 1)
 
-> Status: **dormant**. Nothing outside `src/intelligence/` imports anything under
-> `src/intelligence/`. There is no UI, no server call, no registered real provider.
-> The master feature flag (`config/intelligence-config.js#enabled`) defaults to
-> **false**, and V1 boots and runs identically whether this tree exists or not.
+> Status: **feature-flagged off, not mounted in any UI.** `config/intelligence-config.js#enabled`
+> defaults to **false**; with it false the layer is deterministic-only (no model
+> call) and V1 boots and runs identically. Phase 1 added the Intelligence
+> Service, the OpenAI provider (client-safe — no key), and durable conversation
+> state; the OpenAI Cloud Function (`functions/src/intelligence/`) is **staged,
+> not wired into `functions/index.js`, not deployed**. See
+> `docs/V2_SARPRAS_INTELLIGENCE_PHASE_1.md`.
+>
+> No V1 file runtime-imports this tree; `js/firebase.js` only carries a JSDoc
+> type reference + the `callGenerateCompletion` httpsCallable wrapper.
+
+## Phase 1 layout (added on top of the Phase 0 contracts)
+
+```
+src/intelligence/
+  service/
+    intelligence-service.js    the orchestrator — handle() / continueSession() /
+                               getSession() / cancelSession(). Composes the EXISTING
+                               src/conversation + src/knowledge + src/organizational-memory
+                               via injected ports; never calls a model API directly.
+    default-ports.js           wires those ports to the real V2 services
+    clarification.js           conversation missingFacts → questions; the recipient
+                               gate (ASK, never invent — PART 8/15)
+    nor-draft-assembler.js     resolved facts (+ optional model prose) → a structured
+                               IntelligenceDraft; sets NO official number
+  providers/
+    model-completion-contract.js   the small browser↔server envelope (ONE CJS mirror)
+    openai-provider.js             client-safe; complete() delegates to an injected
+                                   callModel port (= the Cloud Function). No key/endpoint.
+  retrieval/
+    knowledge-retrieval.js     read-only Approved-Knowledge bridge (no promote path)
+    memory-retrieval.js        read-only archive bridge + recipient-pattern summary
+  conversation/
+    contracts/intelligence-conversation-contract.js   durable IntelligenceConversation
+    intelligence-conversation-store.js + backends/    facade + null/memory backends
+                                                      (RTDB backend registered server-side later)
+```
 
 ## What this is
 

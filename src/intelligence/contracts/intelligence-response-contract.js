@@ -57,6 +57,11 @@ export const RESPONSE_ERRORS = Object.freeze({
   PROVIDER_ERROR: 'PROVIDER_ERROR',
   INVALID_OUTPUT: 'INVALID_OUTPUT',  // provider replied but not in a usable shape
   DATA_NOT_SENDABLE: 'DATA_NOT_SENDABLE', // request carried RESTRICTED data (PART 20)
+  // Phase 1 additions — service-level, never provider secrets:
+  FORBIDDEN: 'FORBIDDEN',            // caller not authorized to use Intelligence / read this session
+  INVALID_REQUEST: 'INVALID_REQUEST', // malformed IntelligenceRequest / unsupported task
+  LIMIT: 'LIMIT',                    // a defensive bound was hit (max turns, prompt size)
+  UNKNOWN_INTENT: 'UNKNOWN_INTENT',  // the opening utterance could not be classified
 });
 
 /**

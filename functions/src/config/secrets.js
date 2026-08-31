@@ -49,4 +49,14 @@ const TELEGRAM_WEBHOOK_SECRET = defineSecret('TELEGRAM_WEBHOOK_SECRET');
 const PUSH_VAPID_PUBLIC_KEY = defineSecret('PUSH_VAPID_PUBLIC_KEY');
 const PUSH_VAPID_PRIVATE_KEY = defineSecret('PUSH_VAPID_PRIVATE_KEY');
 
-module.exports = { TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, PUSH_VAPID_PUBLIC_KEY, PUSH_VAPID_PRIVATE_KEY };
+/**
+ * OpenAI API key — Sarpras Intelligence Phase 1. Bound ONLY to
+ * functions/src/intelligence/generateCompletion.js, which is NOT yet wired
+ * into index.js (staged). Nothing consumes this until the phase that wires
+ * the callable and deploys. Set it BEFORE that deploy:
+ *   firebase functions:secrets:set OPENAI_API_KEY
+ * The browser never receives it (PART 5). No plaintext copy exists anywhere.
+ */
+const OPENAI_API_KEY = defineSecret('OPENAI_API_KEY');
+
+module.exports = { TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, PUSH_VAPID_PUBLIC_KEY, PUSH_VAPID_PRIVATE_KEY, OPENAI_API_KEY };

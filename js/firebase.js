@@ -365,6 +365,35 @@ export async function callPublishEvent(payload) {
 }
 
 /**
+ * Sarpras Intelligence — call the server-side OpenAI boundary
+ * (functions/src/intelligence/generateCompletion.js), V2 Phase 1.
+ *
+ * This is the ONLY link between the browser and any AI model. The browser
+ * sends a provider-neutral ModelCompletionRequest envelope (no key, no
+ * endpoint); the server holds the OPENAI_API_KEY (Secret Manager), calls
+ * OpenAI, and returns a ModelCompletionResult ({ ok, text, usage, model } or
+ * a typed error). Wired into src/intelligence/providers/openai-provider.js
+ * as its `callModel` port.
+ *
+ * NOTE: the callable is STAGED — not yet in functions/index.js. Until it is
+ * deployed (and OPENAI_API_KEY is set, and /feature_flags/intelligence is
+ * flipped), this throws 'functions/not-found', which the provider maps to a
+ * clean NETWORK error and the service degrades to deterministic mode.
+ * @param {import('../src/intelligence/providers/model-completion-contract.js').ModelCompletionRequest} completion
+ * @returns {Promise<import('../src/intelligence/providers/model-completion-contract.js').ModelCompletionResult>}
+ */
+export async function callGenerateCompletion(completion) {
+  if (!firebaseDb) initFirebaseApp();
+  if (!firebaseApp) throw new Error('Firebase belum siap.');
+  if (!firebaseFunctions) {
+    firebaseFunctions = getFunctions(firebaseApp, FUNCTIONS_REGION);
+  }
+  const fn = httpsCallable(firebaseFunctions, 'generateCompletion');
+  const result = await fn({ completion });
+  return result.data;
+}
+
+/**
  * Register a Web Push subscription for this device (v1.11.3).
  * Server-only write path into /push_subscriptions — the client never
  * writes that node directly. The server derives userId from the verified

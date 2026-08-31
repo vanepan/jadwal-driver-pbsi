@@ -65,6 +65,21 @@
       ".write": "false"
     },
 
+    // V2 Sarpras Intelligence Phase 1 — durable multi-turn generation state.
+    // STAGED: this rule ships in the repo but is NOT deployed with Phase 1 —
+    // it gets its own security review before any `firebase deploy --only
+    // database`. Server-only write (a conversation callable writes via the
+    // Admin SDK, which bypasses rules); a viewer READs only their own
+    // sessions ($convId.actorId === auth.uid). Same shape as
+    // push_subscriptions / notification_state.
+    "intelligence_conversations": {
+      ".write": "false",
+      ".indexOn": ["actorId"],
+      "$convId": {
+        ".read": "auth != null && (data.child('actorId').val() === auth.uid || auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true)"
+      }
+    },
+
     "settings": {
       "operations": {
         ".read": "auth != null",

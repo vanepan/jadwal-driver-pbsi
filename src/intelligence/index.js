@@ -60,3 +60,14 @@ export {
   registryFailure,
   isNorRegistryBackend,
 } from './nor-registry/contracts/registry-contract.js';
+
+/* ── Phase 1 — Intelligence Service, OpenAI provider, durable conversation ── */
+export * from './providers/model-completion-contract.js';
+export { createOpenAiProvider, OPENAI_PROVIDER_ID, OPENAI_PROVIDER_VERSION } from './providers/openai-provider.js';
+export * from './conversation/intelligence-conversation-store.js';
+export { retrieveApprovedKnowledge } from './retrieval/knowledge-retrieval.js';
+export { retrieveRecentArchive, summarizeRecipientPatterns } from './retrieval/memory-retrieval.js';
+export { factQuestions, resolveRecipient, recipientQuestion } from './service/clarification.js';
+export { assembleNorDraft } from './service/nor-draft-assembler.js';
+export { createIntelligenceService } from './service/intelligence-service.js';
+export { buildDefaultPorts } from './service/default-ports.js';
