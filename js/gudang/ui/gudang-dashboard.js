@@ -286,7 +286,18 @@ function renderPopulatedBody(st) {
   const counts = computeOverviewCounts(st.data.items, st.data.assets, stockBulk);
   const health = computeWarehouseHealth(stockBulk);
   const lowStockRows = computeLowStockList(st.data.items, stockBulk);
-  const activities = st.dashboardActivity ? buildRecentActivity(st.dashboardActivity.movements, st.data.items, st.data.departments) : [];
+  // V1 Shuttlecock module: st.data.items is already stripped of Shuttlecock
+  // items for a session without warehouse.shuttlecock.view; also drop the
+  // movement rows that reference those hidden items so a Shuttlecock
+  // Goods In/Out never shows up in Recent Activity for an unpermitted
+  // session. A no-op when hiddenShuttlecockItemIds is empty (permitted).
+  const hiddenShuttle = st.hiddenShuttlecockItemIds;
+  const dashMovements = st.dashboardActivity
+    ? (hiddenShuttle && hiddenShuttle.size
+        ? st.dashboardActivity.movements.filter((m) => !hiddenShuttle.has(m.itemId))
+        : st.dashboardActivity.movements)
+    : [];
+  const activities = st.dashboardActivity ? buildRecentActivity(dashMovements, st.data.items, st.data.departments) : [];
   const categoryRows = computeCategoryDistribution(st.data.items);
   const locationRows = computeLocationDistribution(st.data.items, st.data.locations);
   const forecastSummary = computeForecastSummary(stockBulk);

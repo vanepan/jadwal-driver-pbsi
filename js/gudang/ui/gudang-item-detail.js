@@ -39,6 +39,10 @@ import { esc, icon, fmtQty, fmtWhen, emptyState } from './gudang-atoms.js';
 import { ITEM_TYPE } from '../contracts/item-contract.js';
 import { ASSET_STATUS, ASSET_EVENT_TYPE } from '../contracts/asset-contract.js';
 import { categoryLabel } from '../config/gudang-categories.js';
+// V1 Shuttlecock module: a permitted viewer sees a labelled row instead of
+// the raw metadata.inventoryClass key. (Unpermitted sessions can't open a
+// Shuttlecock item at all — it isn't in st.data.items.)
+import { isShuttlecockItem } from '../config/gudang-inventory-class.js';
 import { isTransitionAllowed, applyAssetTransition } from '../asset/asset-lifecycle-engine.js';
 import { getMovementHistory } from '../audit/movement-history-view.js';
 import { getAssetHistory } from '../audit/asset-history-view.js';
@@ -145,6 +149,7 @@ function itemImageBlock(st, item) {
 function identityBlock(st, item) {
   const loc = item.defaultLocationId ? st.data.locations.find((l) => l.locationId === item.defaultLocationId) : null;
   const rows = [
+    isShuttlecockItem(item) ? ['Inventaris khusus', 'Shuttlecock'] : null,
     item.metadata?.variant ? ['Ukuran / Varian', item.metadata.variant] : null,
     item.metadata?.jenis ? ['Merk / Jenis', item.metadata.jenis] : null,
     item.category ? ['Kategori', categoryLabel(item.category)] : null,
@@ -176,7 +181,7 @@ function quickActionsBlock(item) {
  *  metadata bag beyond what Identity already surfaced (Doc 3 Ch.03: the
  *  bag is explicitly open-ended) is listed generically, never invented. */
 function metadataBlock(item) {
-  const shown = new Set(['variant', 'jenis', 'imageStoragePath', 'imageContentType']);
+  const shown = new Set(['variant', 'jenis', 'imageStoragePath', 'imageContentType', 'inventoryClass']);
   const extra = Object.entries(item.metadata || {}).filter(([k, v]) => !shown.has(k) && v != null && v !== '');
   return `<div class="gud-sec">
     <div class="gud-sec-t">METADATA</div>

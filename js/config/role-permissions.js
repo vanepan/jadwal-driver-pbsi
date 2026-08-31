@@ -44,6 +44,7 @@ const BASE_GRANTS = {
     'driver.reimbursement.print', 'driver.overtime.override',
     'warehouse.view', 'warehouse.item.create', 'warehouse.item.edit',
     'warehouse.item.delete', 'warehouse.goodsin.execute', 'warehouse.goodsout.execute',
+    'warehouse.shuttlecock.view',
     'vehicle.view', 'vehicle.edit', 'vehicle.maintenance',
     'pettycash.view', 'pettycash.manage',
     'overtime.view', 'overtime.manage',

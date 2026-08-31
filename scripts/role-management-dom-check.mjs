@@ -119,13 +119,16 @@ const result = await page.evaluate(async () => {
 check('all 9 real roles render in the role list', result.roleCount === 9);
 check('every already-GRANTED (checked) permission row checkbox is disabled (Base is still fully read-only)', result.allCheckedDisabled);
 check('at least one not-yet-granted checkbox is now editable (v1.30.9.9 Role Additional — intentional, not a regression)', result.someEditable);
-check('admin (46 permissions) starts with 46 checked boxes', result.adminCheckedInitial === 46);
-check('summary stat cards render 5 values for a System Role (v1.30.9.9 adds Base/Role Additional split)', result.statValuesAdmin.length === 5 && result.statValuesAdmin[0] === '50');
+// 47 = 46 pre-existing admin grants + warehouse.shuttlecock.view (V1 Shuttlecock module, admin override).
+check('admin (47 permissions) starts with 47 checked boxes', result.adminCheckedInitial === 47);
+// [0] is the registry total: 50 Phase-1 + warehouse.shuttlecock.view = 51.
+check('summary stat cards render 5 values for a System Role (v1.30.9.9 adds Base/Role Additional split)', result.statValuesAdmin.length === 5 && result.statValuesAdmin[0] === '51');
 check('switching to viewer updates checked-count to 1 (real role switching, not cosmetic)', result.viewerCheckedAfterSwitch === 1);
 check('the selected role row carries the active class', result.viewerActiveClass);
-check('searching "warehouse" narrows rows to the 6 Warehouse permissions', result.rowsAfterSearch === 6);
-check('module filter "Warehouse" also narrows rows to 6', result.rowsAfterModuleFilter === 6);
-check('summary stat cards reflect the filtered view (total = 6)', result.statValuesFiltered[0] === '6');
+// 7 = 6 original Warehouse permissions + warehouse.shuttlecock.view (V1 Shuttlecock module).
+check('searching "warehouse" narrows rows to the 7 Warehouse permissions', result.rowsAfterSearch === 7);
+check('module filter "Warehouse" also narrows rows to 7', result.rowsAfterModuleFilter === 7);
+check('summary stat cards reflect the filtered view (Warehouse total = 7)', result.statValuesFiltered[0] === '7');
 check('module group starts expanded', result.bodyBeforeCollapse === '');
 check('clicking the group header collapses it', result.bodyAfterCollapse === 'none');
 

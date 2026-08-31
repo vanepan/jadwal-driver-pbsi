@@ -23,6 +23,14 @@ import { showToast as canonicalToast } from '../../components/toast.js';
 
 import { listItems } from '../repository/item-repository.js';
 import { listLocations } from '../repository/location-repository.js';
+// V1 Shuttlecock module: access control is applied HERE, at the one data
+// boundary every screen/search/analytics surface reads from
+// (st.data.items) — not with a CSS/frontend condition. A session without
+// warehouse.shuttlecock.view never has a Shuttlecock item in st.data.items,
+// so Catalog, Search, Filters, Dashboard, Intelligence, Goods In/Out
+// pickers and Stock Opname can't show, match, or leak one.
+import { canAccessShuttlecock } from '../config/gudang-shuttlecock-access.js';
+import { applyShuttlecockVisibility } from '../config/gudang-inventory-class.js';
 import { listAssets } from '../repository/asset-repository.js';
 // Phase 10.1: "Departemen diganti dengan Bidang" — the picker reads the
 // real Bidang-role roster from User Management (see gudang-bidang-source.js
@@ -96,6 +104,11 @@ const st = {
   modal: null, // { kind: 'addItem'|'addLocation'|'addDepartment'|'addAssetUnit', ... } — gudang-catalog.js
   search: createInitialSessionState(),
   data: { items: [], locations: [], departments: [], assets: [], loadedAt: 0 },
+  // V1 Shuttlecock module: itemIds withheld from st.data.items because this
+  // session lacks warehouse.shuttlecock.view — used by the movement-fed
+  // surfaces (History/Analytics/Dashboard) to drop rows that reference a
+  // hidden item. Empty for a permitted session (and until the first refresh).
+  hiddenShuttlecockItemIds: new Set(),
   loading: false,
   goodsOut: null, // lazily created by gudang-goods-out.js's own blank-batch factory
   goodsIn: null,
@@ -256,8 +269,17 @@ async function refreshCatalog() {
     return;
   }
 
+  // V1 Shuttlecock module: strip Shuttlecock-class items for a session that
+  // lacks warehouse.shuttlecock.view BEFORE they reach any screen. Permitted
+  // sessions get an exact pass-through (visible === itemsRes.data,
+  // hiddenShuttlecockItemIds empty) — zero behaviour change. hiddenShuttlecock-
+  // ItemIds lets the movement-fed surfaces (History, Analytics top lists,
+  // Dashboard recent activity) that reference items by id — never through
+  // st.data.items — exclude those rows too.
+  const shuttlecockVisibility = applyShuttlecockVisibility(itemsRes.data, canAccessShuttlecock());
+  st.hiddenShuttlecockItemIds = shuttlecockVisibility.hiddenIds;
   st.data = {
-    items: itemsRes.data,
+    items: shuttlecockVisibility.visible,
     locations: locationsRes.data,
     departments: listBidang(),
     assets: assetsRes.data,

@@ -5,7 +5,8 @@
    module filter, summary counts, tree generated exactly once (reference
    equality), every real role produces a valid non-throwing summary,
    bulk-operation performance, and a registry-count regression check against
-   Phase 1's known values (50 permissions, 11 modules).
+   the known values (51 permissions — 50 from Phase 1 plus
+   warehouse.shuttlecock.view from the V1 Shuttlecock module — 11 modules).
    Run: node scripts/role-management-check.mjs (exit 0 = pass) */
 
 import {
@@ -66,7 +67,8 @@ check('viewer summary: exactly 1 permission granted', viewerSummary.granted === 
 check('viewer summary: denied is total - 1', viewerSummary.denied === viewerSummary.totalPermissions - 1);
 
 const filteredSummary = buildSummary(warehouseOnly, adminGranted);
-check('summary respects the filtered view, not the full registry (Warehouse-only total = 6)', filteredSummary.totalPermissions === 6);
+// Warehouse feature count: 6 original + 1 (warehouse.shuttlecock.view, V1 Shuttlecock module).
+check('summary respects the filtered view, not the full registry (Warehouse-only total = 7)', filteredSummary.totalPermissions === 7);
 check('summary on filtered view: modulesRepresented === 1', filteredSummary.modulesRepresented === 1);
 
 console.log('\n5. Role switching — every real role produces a valid, non-throwing summary');
@@ -86,7 +88,8 @@ const perfMs = Date.now() - perfStart;
 check(`5,000 filterTree() calls complete in <1000ms (took ${perfMs}ms)`, perfMs < 1000);
 
 console.log('\n7. Regression — registry counts match Phase 1\'s known values');
-check('registry has 50 permissions', listAllPermissions().length === 50);
+// 50 Phase-1 permissions + 1 (warehouse.shuttlecock.view, V1 Shuttlecock module).
+check('registry has 51 permissions', listAllPermissions().length === 51);
 check('registry spans 11 modules', listModules().length === 11);
 check('ROLES has 9 entries', ROLES.length === 9);
 

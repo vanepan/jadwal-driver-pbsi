@@ -260,6 +260,10 @@ import { initUserProfilesStore, getUserProfileList, getUserProfileByUsername } f
 // V1.28.0 Phase 10.1 — Gudang's Goods Out department picker reads real Bidang
 // users (role='bidang') from User Management, same injection seam as above.
 import { setGudangUsersSource } from './gudang/config/gudang-bidang-source.js';
+// V1 Shuttlecock module — Gudang asks "may this session see Shuttlecock
+// inventory?" through the SAME injection seam; app.js wires it to the
+// existing permission service below (loadAuthedAdminData()).
+import { setShuttlecockAccessSource } from './gudang/config/gudang-shuttlecock-access.js';
 import {
   registerSearchAdapter, searchPlaceholder, runModuleSearch, clearModuleSearch,
 } from './services/adaptive-search.js';
@@ -13077,6 +13081,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     setEngineeringUsersSource(getUserProfileList);
     // Wire Gudang's Bidang roster resolver the same way (Phase 10.1).
     setGudangUsersSource(getUserProfileList);
+    // V1 Shuttlecock module: Gudang's Shuttlecock visibility is a real
+    // permission check (warehouse.shuttlecock.view) resolved through the
+    // existing permission service — never a hardcoded bidang name. Admin
+    // holds it via BASE_GRANTS; a specific bidang/unit is granted it through
+    // the Individual Permission Assignment admin UI. Idempotent.
+    setShuttlecockAccessSource(() => can('warehouse.shuttlecock.view'));
     await ensureUsersLoadedAndSubscribed();
     await ensureLogsLoadedAndSubscribed();
     await ensureExportHistoryLoadedAndSubscribed(); // v1.12.1B export metadata cache

@@ -100,6 +100,14 @@ console.log('\n[Part B — itemMatchesFilter: Multi Filter Engine combines dimen
 
   const impossible = { ...createFilterState(), category: 'Perekat', locationId: 'loc-b' };
   check('an impossible combination (category matches i1 only, location matches i2 only) matches NEITHER — proves AND, not OR', !itemMatchesFilter(glue, impossible, {}) && !itemMatchesFilter(tape, impossible, {}));
+
+  // V1 Shuttlecock module: the 'shuttlecock' type value is a narrower slice
+  // of Consumable — a Shuttlecock item IS a Consumable (metadata.inventoryClass).
+  const kok = makeItem({ itemId: 'i3', name: 'Kok Mavis 350', itemType: ITEM_TYPE.CONSUMABLE, metadata: { inventoryClass: 'shuttlecock' } });
+  check('type="shuttlecock" matches only the Shuttlecock-class Consumable', itemMatchesFilter(kok, { ...createFilterState(), type: 'shuttlecock' }, {}) && !itemMatchesFilter(glue, { ...createFilterState(), type: 'shuttlecock' }, {}));
+  check('type="consumable" still includes a Shuttlecock item (it IS a Consumable)', itemMatchesFilter(kok, { ...createFilterState(), type: 'consumable' }, {}));
+  check('type="asset" excludes a Shuttlecock item', !itemMatchesFilter(kok, { ...createFilterState(), type: 'asset' }, {}));
+  check('activeFilterChips() labels the shuttlecock type dimension "Shuttlecock"', activeFilterChips({ ...createFilterState(), type: 'shuttlecock' }, []).find((c) => c.key === 'type')?.label === 'Shuttlecock');
 }
 
 /* ── Part C — filterItems: inactive/Asset/unclassified handling ──────── */

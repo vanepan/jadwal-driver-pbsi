@@ -460,6 +460,20 @@
 .gud-catalog-quick-btn:focus-visible{outline:2px solid var(--accent-line);outline-offset:1px;}
 .gud-catalog-more{display:flex;justify-content:center;margin-top:14px;}
 
+/* V1 Shuttlecock module (requirement §1/§3/§9) — a prioritised section at
+   the top of the catalog. Reuses the existing catalog grid/card/spacing;
+   only the section tag, a light count, and a divider are new. .gud-sec-tag
+   (accent, mono, tracked) already exists — no new colour is introduced. */
+.gud-catalog-shuttle{display:block;}
+.gud-catalog-shuttle-head{display:flex;align-items:baseline;gap:10px;margin-top:16px;}
+.gud-catalog-shuttle-count{font-size:11px;color:var(--text-faint);font-weight:600;}
+.gud-catalog-shuttle-divider{height:1px;background:var(--border-faint);margin:18px 0 2px;}
+/* Card marker: a hairline accent edge, nothing louder (requirement §9 —
+   "boleh sedikit berbeda, jangan terlalu colorful"). The inline
+   .gud-pill[data-pill="info"] "Shuttlecock" tag carries the label itself. */
+.gud-catalog-card.-shuttle{border-left:2px solid var(--accent-line);}
+.gud-catalog-card.-shuttle[data-selected="true"]{border-left-color:var(--accent);}
+
 /* v1.29.3 (Warehouse Selection Engine) — per-card checkbox overlay.
    Hidden until hover (desktop, Phase 8) OR until any item is selected
    (Phase 1/8: "after entering selection, checkboxes remain visible" — and

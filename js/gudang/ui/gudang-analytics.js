@@ -88,7 +88,13 @@ export function renderAnalytics(st, c, requestRender) {
 
 function topList(st, kind) {
   if (!st.analyticsTop) return `<div class="gud-muted">Memuat…</div>`;
-  const rows = st.analyticsTop[kind];
+  // V1 Shuttlecock module: "Item Paling Banyak Keluar" is built from
+  // movements (by itemId), so it bypasses the st.data.items strip — drop
+  // any row for an item this session may not see. A no-op when
+  // hiddenShuttlecockItemIds is empty (permitted session / feature off).
+  const rows = kind === 'items'
+    ? st.analyticsTop.items.filter((r) => !(st.hiddenShuttlecockItemIds && st.hiddenShuttlecockItemIds.has(r.itemId)))
+    : st.analyticsTop[kind];
   if (!rows.length) return `<div class="gud-muted">Belum ada data konsumsi.</div>`;
   const top = rows[0];
   const headline = kind === 'departments'

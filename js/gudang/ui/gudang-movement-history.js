@@ -48,7 +48,15 @@ function ensureData(st, requestRender) {
 export function renderMovementHistory(st, c, requestRender) {
   ensureData(st, requestRender);
   const f = st.historyFilters || (st.historyFilters = { type: null, q: '' });
-  const rows = filteredRows(st.historyData || [], f);
+  // V1 Shuttlecock module: the feed is movement records (by itemId), read
+  // straight from getMovementHistory() — it never passes through the
+  // st.data.items strip. Drop rows for items this session may not see.
+  // A no-op when hiddenShuttlecockItemIds is empty (permitted / feature off).
+  const hiddenShuttle = st.hiddenShuttlecockItemIds;
+  const sourceRows = (hiddenShuttle && hiddenShuttle.size)
+    ? (st.historyData || []).filter((m) => !hiddenShuttle.has(m.itemId))
+    : (st.historyData || []);
+  const rows = filteredRows(sourceRows, f);
 
   return `<div>
     <div class="gud-page-head">

@@ -58,6 +58,11 @@
 
 import { esc, icon } from './gudang-atoms.js';
 import { ITEM_TYPE, makeItem } from '../contracts/item-contract.js';
+// V1 Shuttlecock module: Add/Edit Item can mark a Consumable as
+// Shuttlecock-class (metadata.inventoryClass) — the control is only drawn
+// for a session holding warehouse.shuttlecock.view.
+import { INVENTORY_CLASS, isShuttlecockItem } from '../config/gudang-inventory-class.js';
+import { canAccessShuttlecock } from '../config/gudang-shuttlecock-access.js';
 import { makeLocation } from '../contracts/location-contract.js';
 import { makeAsset } from '../contracts/asset-contract.js';
 import { categoriesForItemType, categoryLabel } from '../config/gudang-categories.js';
@@ -181,7 +186,22 @@ function itemFormBody(st, m, isEdit) {
         <label class="gud-radio"><input type="radio" name="gud-cat-itemtype" data-act="gud-cat-set-type" data-val="${ITEM_TYPE.CONSUMABLE}" ${d.itemType === ITEM_TYPE.CONSUMABLE ? 'checked' : ''} ${isEdit ? 'disabled' : ''} /><span class="gud-radio-mark"></span>Consumable</label>
         <label class="gud-radio"><input type="radio" name="gud-cat-itemtype" data-act="gud-cat-set-type" data-val="${ITEM_TYPE.ASSET}" ${d.itemType === ITEM_TYPE.ASSET ? 'checked' : ''} ${isEdit ? 'disabled' : ''} /><span class="gud-radio-mark"></span>Asset</label>
       </div>
-    </div>`;
+    </div>
+    ${shuttlecockField(d)}`;
+}
+
+/** V1 Shuttlecock module: mark this Consumable as Shuttlecock-class
+ *  (metadata.inventoryClass). Only drawn for a session that holds
+ *  warehouse.shuttlecock.view, and only for a Consumable — a Shuttlecock
+ *  item keeps the Consumable lifecycle (stock/goods-in-out/opname); it is
+ *  never an Asset. A no-op string for everyone else, so the field is
+ *  genuinely absent (not CSS-hidden) without the permission. */
+function shuttlecockField(d) {
+  if (!canAccessShuttlecock() || d.itemType !== ITEM_TYPE.CONSUMABLE) return '';
+  return `<div class="gud-field-secondary">
+    <span class="gud-field-secondary-label">Inventaris khusus</span>
+    <label class="gud-check-row"><input type="checkbox" data-act="gud-cat-set-shuttlecock" ${d.shuttlecock ? 'checked' : ''} /> Shuttlecock</label>
+  </div>`;
 }
 
 /** Drag & drop / browse / paste photo field (Phase 10.3; upload timing
@@ -255,6 +275,7 @@ function blankItemDraft(prefillName) {
   return {
     name: prefillName || '', variant: '', jenis: '', category: '',
     locationName: '', aliases: '', itemType: ITEM_TYPE.CONSUMABLE,
+    shuttlecock: false, // V1 Shuttlecock module — metadata.inventoryClass on save
     photoFile: null, photoPreviewUrl: '', photoError: null, photoRemoved: false,
     photoSession: null, // v1.29.5: unused by Add Item (upload stays deferred to Save) — declared for shape symmetry with itemDraftFromExisting.
     existingStoragePath: null, existingContentType: null,
@@ -272,6 +293,7 @@ function itemDraftFromExisting(item) {
     category: item.category ? categoryLabel(item.category) : '',
     locationName: '', // resolved below once locations are available to the caller
     aliases: item.aliases.join(', '), itemType: item.itemType,
+    shuttlecock: isShuttlecockItem(item), // V1 Shuttlecock module
     photoFile: null, photoPreviewUrl: '', photoError: null, photoRemoved: false,
     photoSession: null, // v1.29.5: set once the user picks a NEW file (applyPhotoFile) — see photoField's own header for the precedence over photoPreviewUrl.
     existingStoragePath: item.metadata?.imageStoragePath || null,
@@ -400,6 +422,19 @@ export const catalogHandlers = {
         const m = st.modal;
         if (!m || m.kind !== 'addItem') return; // editItem's radios are disabled — itemType is immutable
         m.draft.itemType = el.dataset.val;
+        // Only a Consumable can be Shuttlecock-class — switching to Asset
+        // clears the flag so it can't be saved onto an Asset.
+        if (m.draft.itemType !== ITEM_TYPE.CONSUMABLE) m.draft.shuttlecock = false;
+        render(); break;
+      }
+      // V1 Shuttlecock module: mark/unmark this Consumable as Shuttlecock —
+      // the control is only rendered for a session holding
+      // warehouse.shuttlecock.view (shuttlecockField()), so reaching this
+      // act already implies the permission.
+      case 'gud-cat-set-shuttlecock': {
+        const m = st.modal;
+        if (!m || (m.kind !== 'addItem' && m.kind !== 'editItem')) return;
+        m.draft.shuttlecock = el.checked;
         render(); break;
       }
       case 'gud-cat-photo-zone':
@@ -497,6 +532,8 @@ async function confirmCatalogCreate(st, c, render, refreshCatalog) {
       const metadata = {};
       if (m.draft.variant.trim()) metadata.variant = m.draft.variant.trim();
       if (m.draft.jenis.trim()) metadata.jenis = m.draft.jenis.trim();
+      // V1 Shuttlecock module — only a Consumable carries this class.
+      if (m.draft.shuttlecock && m.draft.itemType === ITEM_TYPE.CONSUMABLE) metadata.inventoryClass = INVENTORY_CLASS.SHUTTLECOCK;
 
       if (m.draft.photoFile) {
         const photoRes = await uploadItemPhoto(newId, m.draft.photoFile);
@@ -561,6 +598,13 @@ async function confirmEditItem(st, m, render, refreshCatalog) {
   const metadata = { ...existing.metadata };
   if (m.draft.variant.trim()) metadata.variant = m.draft.variant.trim(); else delete metadata.variant;
   if (m.draft.jenis.trim()) metadata.jenis = m.draft.jenis.trim(); else delete metadata.jenis;
+  // V1 Shuttlecock module: the toggle is only rendered for a session that
+  // holds warehouse.shuttlecock.view, and a hidden Shuttlecock item can
+  // never be opened for edit by an unpermitted session (it isn't in
+  // st.data.items) — so honouring d.shuttlecock here is safe. Unchecking
+  // converts a Shuttlecock item back to ordinary inventory.
+  if (m.draft.shuttlecock && existing.itemType === ITEM_TYPE.CONSUMABLE) metadata.inventoryClass = INVENTORY_CLASS.SHUTTLECOCK;
+  else delete metadata.inventoryClass;
 
   // v1.29.5 (Upload Experience, Phase 8): the photo — if the user picked
   // one — was already uploaded EAGERLY the moment it was selected

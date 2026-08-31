@@ -74,6 +74,14 @@ import {
   isSelected, hasSelection, toggleSelect, clearSelection, selectAll,
   hiddenSelectionCount, selectionCount,
 } from '../selection/selection-engine.js';
+// V1 Shuttlecock module: special inventory that only a bidang/unit holding
+// warehouse.shuttlecock.view may see. Items are already stripped from
+// st.data.items upstream for sessions without the permission
+// (gudang-center.js#refreshCatalog) — canAccessShuttlecock() here only
+// decides whether the Shuttlecock FILTER CHIP and top SECTION header are
+// drawn, so an unpermitted session never even sees the control.
+import { isShuttlecockItem, shuttlecockFirst } from '../config/gudang-inventory-class.js';
+import { canAccessShuttlecock } from '../config/gudang-shuttlecock-access.js';
 
 const PAGE_SIZE = 48;
 const ASSET_STATUS_LABEL = { available: 'tersedia', assigned: 'ditugaskan', maintenance: 'maintenance', retired: 'pensiun' };
@@ -254,6 +262,7 @@ function renderFilterPanelBody(st, f) {
       <button type="button" class="gud-chip" data-on="${f.type === 'all'}" data-act="gud-home-type" data-val="all">Semua</button>
       <button type="button" class="gud-chip" data-on="${f.type === 'consumable'}" data-act="gud-home-type" data-val="consumable">Consumable</button>
       <button type="button" class="gud-chip" data-on="${f.type === 'asset'}" data-act="gud-home-type" data-val="asset">Asset</button>
+      ${canAccessShuttlecock() ? `<button type="button" class="gud-chip" data-on="${f.type === 'shuttlecock'}" data-act="gud-home-type" data-val="shuttlecock">Shuttlecock</button>` : ''}
     </div>
     <div class="gud-chips">
       <select class="gud-chip-select" data-act="gud-home-location">
@@ -362,7 +371,11 @@ function filteredItems(st, f) {
  *  interception, since the card's own data-act is dispatched there
  *  directly — this is the one export it needs from Home to do it). */
 export function visibleHomeItemIds(st) {
-  return filteredItems(st, ensureFilter(st)).map((i) => i.itemId);
+  // shuttlecockFirst() so Shift+Click range-selection and Ctrl+A/"Pilih
+  // Semua" operate in the SAME order the catalog renders (Shuttlecock
+  // section on top). A no-op ordering for a session with no Shuttlecock
+  // items in view.
+  return shuttlecockFirst(filteredItems(st, ensureFilter(st))).map((i) => i.itemId);
 }
 
 function renderCatalogSection(st, f, requestRender) {
@@ -378,7 +391,13 @@ function renderCatalogSection(st, f, requestRender) {
   if (needsStockBulk && !st.homeStockBulk) {
     return `<div class="gud-mt gud-muted">Memuat status stok…</div>`;
   }
-  const all = filteredItems(st, f);
+  // V1 Shuttlecock module (requirement §3): Shuttlecock items float to the
+  // very top of the catalog so a permitted user sees them without scrolling;
+  // every ordinary item keeps its existing relative order (a stable
+  // partition, not a re-sort). shuttlecockFirst() is a no-op when the view
+  // has no Shuttlecock items (every session without the permission, since
+  // they're already stripped from st.data.items upstream).
+  const all = shuttlecockFirst(filteredItems(st, f));
   if (!all.length) {
     // Feature 10 (Empty Filter State): a distinct message + Clear Filters
     // action when a FILTER is why nothing matches, vs. the generic
@@ -408,9 +427,34 @@ function renderCatalogSection(st, f, requestRender) {
   // every card's checkbox stays visible — not just the hovered one — same
   // "permanently visible once relevant" rule .gud-catalog-card-quick already
   // uses for touch below 760px, generalized here to the mouse case too.
+  const selActive = hasSelection(st.selection);
+  const moreBtn = remaining > 0
+    ? `<div class="gud-catalog-more"><button type="button" class="gud-btn" data-act="gud-home-load-more">Muat ${Math.min(PAGE_SIZE, remaining)} Item Lagi (${remaining} tersisa)</button></div>`
+    : '';
+
+  // V1 Shuttlecock module (requirement §1/§3/§9): render Shuttlecock items
+  // in their own labeled block ABOVE ordinary inventory — same card,
+  // same grid, same spacing (no separate-app feel), just a section tag and
+  // a divider. The block only appears for a session that may see
+  // Shuttlecock (belt-and-suspenders: the items themselves are already
+  // absent otherwise).
+  const shuttlePage = canAccessShuttlecock() ? page.filter(isShuttlecockItem) : [];
+  const restPage = shuttlePage.length ? page.filter((i) => !isShuttlecockItem(i)) : page;
+  const grid = (items) => `<div class="gud-catalog-grid gud-mt" data-sel-active="${selActive}">${items.map((item) => catalogCard(item, st)).join('')}</div>`;
+
+  if (!shuttlePage.length) {
+    return `${grid(page)}${moreBtn}`;
+  }
   return `
-    <div class="gud-catalog-grid gud-mt" data-sel-active="${hasSelection(st.selection)}">${page.map((item) => catalogCard(item, st)).join('')}</div>
-    ${remaining > 0 ? `<div class="gud-catalog-more"><button type="button" class="gud-btn" data-act="gud-home-load-more">Muat ${Math.min(PAGE_SIZE, remaining)} Item Lagi (${remaining} tersisa)</button></div>` : ''}`;
+    <section class="gud-catalog-shuttle">
+      <div class="gud-catalog-shuttle-head">
+        <span class="gud-sec-tag">Shuttlecock</span>
+        <span class="gud-catalog-shuttle-count">${fmtQty(shuttlePage.length)} item</span>
+      </div>
+      ${grid(shuttlePage)}
+    </section>
+    ${restPage.length ? `<div class="gud-catalog-shuttle-divider" role="separator"></div>${grid(restPage)}` : ''}
+    ${moreBtn}`;
 }
 
 function catalogCard(item, st) {
@@ -453,11 +497,16 @@ function catalogCard(item, st) {
   // (st.dragOverItemId) — same "state lives in st, class reflects it"
   // pattern -selected already uses one line up.
   const dragOver = st.dragOverItemId === item.itemId ? ' -dragover' : '';
-  return `<div class="gud-catalog-card${dragOver}" data-act="gud-open-item" data-id="${esc(item.itemId)}" data-selected="${checked}" role="button" tabindex="0" aria-label="${esc(item.name)}">
+  // V1 Shuttlecock module (requirement §9): a light identity marker only —
+  // one existing .gud-pill (data-pill="info", already in gudang.css) inline
+  // in the meta row (no extra card height), plus a subtle accent class on
+  // the card. No new colour, gradient, or effect.
+  const isShuttle = isShuttlecockItem(item);
+  return `<div class="gud-catalog-card${dragOver}${isShuttle ? ' -shuttle' : ''}" data-act="gud-open-item" data-id="${esc(item.itemId)}" data-selected="${checked}" role="button" tabindex="0" aria-label="${esc(item.name)}">
     <button type="button" class="gud-sel-checkbox" data-act="gud-home-sel-toggle" data-id="${esc(item.itemId)}" aria-pressed="${checked}" aria-label="${checked ? 'Batalkan pilih' : 'Pilih'} ${esc(item.name)}">${checked ? icon('check', { size: 13 }) : ''}</button>
     ${catalogCardImage(item, st)}
     <div class="gud-catalog-card-name">${esc(item.name)}</div>
-    <div class="gud-catalog-card-meta">${metaLine}</div>
+    <div class="gud-catalog-card-meta">${isShuttle ? `<span class="gud-pill" data-pill="info">Shuttlecock</span> ` : ''}${metaLine}</div>
     <div class="gud-catalog-card-stock">${esc(stockLine)} ${isLowStock ? `<span class="gud-pill" data-pill="warn">${icon('gauge', { size: 10 })} Stok Rendah</span>` : ''}</div>
     ${qiLine ? `<div class="gud-catalog-card-qi">${esc(qiLine)}</div>` : ''}
     <div class="gud-catalog-card-quick">

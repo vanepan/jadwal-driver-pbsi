@@ -30,6 +30,11 @@
 
 import { ITEM_TYPE } from '../contracts/item-contract.js';
 import { categoryLabel } from '../config/gudang-categories.js';
+// V1 Shuttlecock module: the 'shuttlecock' type value narrows to
+// special-inventory items only. isShuttlecockItem() is a PURE metadata
+// read — filter-engine.js stays free of any Firebase/repository import
+// (see this file's header + scripts/gudang-filter-check.mjs Part F).
+import { isShuttlecockItem } from '../config/gudang-inventory-class.js';
 
 export const STOCK_STATUS_FILTER = Object.freeze({ ALL: 'all', LOW: 'low', OUT: 'out', AVAILABLE: 'available' });
 
@@ -89,6 +94,11 @@ function forecastBucket(days) {
  * old lowStock filter's "loading" gap).
  */
 export function itemMatchesFilter(item, f, stockById) {
+  // V1 Shuttlecock module: 'shuttlecock' is a narrower slice of Consumable
+  // (a Shuttlecock item IS a Consumable — it keeps stock/goods-in-out/
+  // opname). 'consumable' therefore still includes Shuttlecock items; only
+  // 'shuttlecock' restricts to them, and 'asset' excludes them naturally.
+  if (f.type === 'shuttlecock' && !isShuttlecockItem(item)) return false;
   if (f.type === 'consumable' && item.itemType !== ITEM_TYPE.CONSUMABLE) return false;
   if (f.type === 'asset' && item.itemType !== ITEM_TYPE.ASSET) return false;
   if (f.locationId && item.defaultLocationId !== f.locationId) return false;
@@ -120,7 +130,10 @@ export function filterItems(items, f, stockById) {
  */
 export function activeFilterChips(f, locations) {
   const chips = [];
-  if (f.type !== 'all') chips.push({ key: 'type', label: f.type === 'consumable' ? 'Consumable' : 'Asset' });
+  if (f.type !== 'all') {
+    const TYPE_LABEL = { consumable: 'Consumable', asset: 'Asset', shuttlecock: 'Shuttlecock' };
+    chips.push({ key: 'type', label: TYPE_LABEL[f.type] || f.type });
+  }
   if (f.locationId) {
     const loc = (locations || []).find((l) => l.locationId === f.locationId);
     chips.push({ key: 'locationId', label: loc ? loc.name : f.locationId });

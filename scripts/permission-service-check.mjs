@@ -159,6 +159,9 @@ check('every permission appears exactly once in the tree', totalInTree === listA
 check("tree has a 'Warehouse' module", Object.prototype.hasOwnProperty.call(tree, 'Warehouse'));
 check("Warehouse -> 'Items' feature has 3 permissions (view/create excluded, edit/create/delete included)", tree.Warehouse.Items.length === 3);
 check("Warehouse -> 'Goods In' feature has exactly 1 permission", tree.Warehouse['Goods In'].length === 1);
+// V1 Shuttlecock module — a new Warehouse feature-category, one permission.
+check("Warehouse -> 'Shuttlecock' feature has exactly 1 permission (warehouse.shuttlecock.view)", tree.Warehouse.Shuttlecock && tree.Warehouse.Shuttlecock.length === 1 && tree.Warehouse.Shuttlecock[0].id === 'warehouse.shuttlecock.view');
+check('warehouse.shuttlecock.view is granted to admin (admin override) and to no other System Role by default', ROLE_PERMISSIONS.admin.includes('warehouse.shuttlecock.view') && !ROLE_PERMISSIONS.bidang.includes('warehouse.shuttlecock.view') && !ROLE_PERMISSIONS.viewer.includes('warehouse.shuttlecock.view') && !ROLE_PERMISSIONS.driver.includes('warehouse.shuttlecock.view'));
 check('permissionsByModule(Warehouse) matches the tree module total', permissionsByModule('Warehouse').length === Object.values(tree.Warehouse).reduce((s, l) => s + l.length, 0));
 check('permissionsByCategory(Warehouse, Items) matches tree leaf', permissionsByCategory('Warehouse', 'Items').length === tree.Warehouse.Items.length);
 check('every module/category referenced in PERMISSIONS appears as a tree node', listAllPermissions().every((p) => tree[p.module] && tree[p.module][p.category] && tree[p.module][p.category].some((x) => x.id === p.id)));

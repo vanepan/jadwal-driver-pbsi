@@ -135,6 +135,11 @@ export const PERMISSIONS = Object.freeze({
     description: 'Record outgoing stock movements.',
     module: 'Warehouse', category: 'Goods Out',
   },
+  'warehouse.shuttlecock.view': {
+    id: 'warehouse.shuttlecock.view', title: 'View Shuttlecock Inventory',
+    description: 'See and manage Shuttlecock-class inventory in the warehouse catalog, filters, and search. Without this permission a bidang/unit sees no trace of Shuttlecock items.',
+    module: 'Warehouse', category: 'Shuttlecock',
+  },
 
   // ── Vehicle ──────────────────────────────────────────────────────────
   'vehicle.view': {

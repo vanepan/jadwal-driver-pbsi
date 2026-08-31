@@ -104,6 +104,14 @@ export function itemMatchesQuery(item, query) {
   if (matches(item.category, q)) return true;
   if (matches(item.metadata?.variant, q)) return true;
   if (matches(item.metadata?.jenis, q)) return true;
+  // V1 Shuttlecock module: a Shuttlecock item is findable by the literal
+  // word "shuttlecock" even when its name/aliases don't contain it — the
+  // same "read one more already-owned metadata field" extension this
+  // predicate already applies to variant/jenis, not a new identity field.
+  // (Access control happens upstream: a session without
+  // warehouse.shuttlecock.view never has these items in its catalog, so
+  // this can only ever match for a permitted session.)
+  if (matches(item.metadata?.inventoryClass, q)) return true;
   return (item.aliases || []).some((alias) => matches(alias, q));
 }
 
