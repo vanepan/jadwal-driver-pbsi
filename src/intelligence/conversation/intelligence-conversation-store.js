@@ -7,10 +7,17 @@
    nor-registry.js and src/knowledge/repository/knowledge-repository.js.
 
    Delegates to the active backend:
-     • 'null'   — default; every call NOT_IMPLEMENTED
-     • 'memory' — in-process append-only (tests + client DISABLED mode)
-     • (later)  — an RTDB-backed backend registered server-side by the
-                  Cloud Function once /intelligence_conversations rules ship
+     • 'null'     — default; every call NOT_IMPLEMENTED
+     • 'memory'   — in-process append-only (tests + client DISABLED mode)
+     • 'callable' — Phase 2C: server-owned RTDB state via the
+                    `intelligenceConversation` Cloud Function
+                    (backends/callable-intelligence-conversation-backend.js)
+
+   ASYNC SINCE PHASE 2C: getConversation / createConversation /
+   appendConversation / listConversations return a Promise of the SAME
+   { ok, data, error } envelope — so a real (network-backed) backend works
+   without changing the contract. The sync memory/null backends are
+   `await`ed transparently; their behaviour is unchanged.
 
    RESPONSIBILITY: backend registry (register/setActive/getActiveId/list/
    reset) + get(convId, actor) / create(record, actor) / append(next, actor)
@@ -30,6 +37,7 @@ import {
 } from './intelligence-conversation-store-contract.js';
 import { isIntelligenceConversation } from './contracts/intelligence-conversation-contract.js';
 import { nullIntelligenceConversationBackend, NULL_IC_BACKEND_ID } from './backends/null-intelligence-conversation-backend.js';
+import { createCallableIcBackend, CALLABLE_IC_BACKEND_ID } from './backends/callable-intelligence-conversation-backend.js';
 
 export {
   IC_STORE_ERRORS, IC_STORE_SCHEMA, icSuccess, icFailure, IC_STORE_CONTRACT,
@@ -37,6 +45,20 @@ export {
 export {
   IC_STATUS, makeIntelligenceConversation, appendTurn, isIntelligenceConversation, isTerminalIcStatus,
 } from './contracts/intelligence-conversation-contract.js';
+export { createCallableIcBackend, CALLABLE_IC_BACKEND_ID } from './backends/callable-intelligence-conversation-backend.js';
+
+/**
+ * Phase 2C convenience — register the server-owned RTDB backend and make it
+ * active. `callConversation` is js/firebase.js#callIntelligenceConversation
+ * in production, a fake in tests.
+ * @param {{ callConversation: Function }} opts
+ */
+export function useCallableIcBackend({ callConversation }) {
+  const backend = createCallableIcBackend({ callConversation });
+  registerIcBackend(backend);
+  setActiveIcBackend(CALLABLE_IC_BACKEND_ID);
+  return backend;
+}
 
 const _backends = new Map();
 let _activeId = null;
@@ -88,10 +110,10 @@ function active() {
  * FORBIDDEN, not NOT_FOUND — the caller learns the id exists but is not
  * theirs only if a test needs it; production maps both to "no session".
  */
-export function getConversation(convId, actorId) {
+export async function getConversation(convId, actorId) {
   const backend = active();
   if (!backend) return icFailure(IC_STORE_ERRORS.NO_BACKEND_CONFIGURED, 'No active IntelligenceConversation backend.');
-  const res = backend.get(convId);
+  const res = await backend.get(convId);
   if (!res.ok) return res;
   if (actorId && res.data && res.data.actorId !== actorId) {
     return icFailure(IC_STORE_ERRORS.FORBIDDEN, 'This conversation belongs to another user.');
@@ -100,7 +122,7 @@ export function getConversation(convId, actorId) {
 }
 
 /** Persist the first version of a session. */
-export function createConversation(record) {
+export async function createConversation(record) {
   const backend = active();
   if (!backend) return icFailure(IC_STORE_ERRORS.NO_BACKEND_CONFIGURED, 'No active IntelligenceConversation backend.');
   if (!isIntelligenceConversation(record) || record.version !== 1) {
@@ -110,13 +132,13 @@ export function createConversation(record) {
 }
 
 /** Persist the next version, enforcing actor ownership against the stored head. */
-export function appendConversation(nextRecord, actorId) {
+export async function appendConversation(nextRecord, actorId) {
   const backend = active();
   if (!backend) return icFailure(IC_STORE_ERRORS.NO_BACKEND_CONFIGURED, 'No active IntelligenceConversation backend.');
   if (!isIntelligenceConversation(nextRecord)) {
     return icFailure(IC_STORE_ERRORS.INVALID_RECORD, 'appendConversation: not an IntelligenceConversation.');
   }
-  const head = backend.get(nextRecord.convId);
+  const head = await backend.get(nextRecord.convId);
   if (!head.ok) return head;
   if (head.data.actorId !== nextRecord.actorId || (actorId && head.data.actorId !== actorId)) {
     return icFailure(IC_STORE_ERRORS.FORBIDDEN, 'appendConversation: actor mismatch.');
@@ -124,7 +146,7 @@ export function appendConversation(nextRecord, actorId) {
   return backend.save(nextRecord);
 }
 
-export function listConversations(filter) {
+export async function listConversations(filter) {
   const backend = active();
   if (!backend) return icFailure(IC_STORE_ERRORS.NO_BACKEND_CONFIGURED, 'No active IntelligenceConversation backend.');
   return backend.list(filter || {});

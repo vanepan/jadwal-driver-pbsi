@@ -375,10 +375,8 @@ export async function callPublishEvent(payload) {
  * a typed error). Wired into src/intelligence/providers/openai-provider.js
  * as its `callModel` port.
  *
- * NOTE: the callable is STAGED — not yet in functions/index.js. Until it is
- * deployed (and OPENAI_API_KEY is set, and /feature_flags/intelligence is
- * flipped), this throws 'functions/not-found', which the provider maps to a
- * clean NETWORK error and the service degrades to deterministic mode.
+ * NOTE: the callable is deployed but INERT — /feature_flags/intelligence is
+ * OFF, so the server returns a typed DISABLED result and never calls OpenAI.
  * @param {import('../src/intelligence/providers/model-completion-contract.js').ModelCompletionRequest} completion
  * @returns {Promise<import('../src/intelligence/providers/model-completion-contract.js').ModelCompletionResult>}
  */
@@ -390,6 +388,32 @@ export async function callGenerateCompletion(completion) {
   }
   const fn = httpsCallable(firebaseFunctions, 'generateCompletion');
   const result = await fn({ completion });
+  return result.data;
+}
+
+/**
+ * Sarpras Intelligence — server-owned multi-turn conversation state, V2
+ * Phase 2C (functions/src/intelligence/intelligenceConversation.js).
+ *
+ * The browser never writes /intelligence_conversations directly (RTDB rule
+ * ".write": false). This callable derives the owner from the verified
+ * Firebase context (never a client-supplied id) and persists via the Admin
+ * SDK. Wired into src/intelligence/conversation as the 'callable' IcBackend.
+ *
+ * NOTE: STAGED — wired into functions/index.js but NOT yet deployed. Until
+ * it is, this throws 'functions/not-found', which the callable backend maps
+ * to a typed NO_BACKEND_CONFIGURED failure.
+ * @param {{op:'create'|'get'|'append', convId?:string, record?:object}} payload
+ * @returns {Promise<{ok:boolean, data:*, error:{code:string,message:string}|null}>}
+ */
+export async function callIntelligenceConversation(payload) {
+  if (!firebaseDb) initFirebaseApp();
+  if (!firebaseApp) throw new Error('Firebase belum siap.');
+  if (!firebaseFunctions) {
+    firebaseFunctions = getFunctions(firebaseApp, FUNCTIONS_REGION);
+  }
+  const fn = httpsCallable(firebaseFunctions, 'intelligenceConversation');
+  const result = await fn(payload);
   return result.data;
 }
 

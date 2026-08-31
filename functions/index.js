@@ -52,6 +52,7 @@ const { onUserWrite } = require('./src/users/onUserWrite');
 const { notifyAdminsOfNewRequest } = require('./src/notifications/notifyAdminsOfNewRequest');
 
 const { generateCompletion } = require('./src/intelligence/generateCompletion');
+const { intelligenceConversation } = require('./src/intelligence/intelligenceConversation');
 
 exports.health = health;
 exports.verifyPin = verifyPin;
@@ -140,3 +141,16 @@ exports.notifyAdminsOfNewRequest = notifyAdminsOfNewRequest;
    exist first (`firebase functions:secrets:set OPENAI_API_KEY`). See
    docs/V2_SARPRAS_INTELLIGENCE_PHASE_1.md §3 and §13. */
 exports.generateCompletion = generateCompletion;
+
+/* V2 Sarpras Intelligence — Phase 2C server-owned conversation state. HTTPS
+   callable v2, region asia-southeast1, NO secrets. Thin persistence boundary
+   for /intelligence_conversations/{convId}: authenticates, authorizes
+   (admin pilot, same gate as generateCompletion), derives the owner ONLY
+   from request.auth.uid (never a client-supplied actorId), and reads/writes
+   via the Admin SDK (RTDB rule ".write": false — this is the sole writer).
+   op ∈ create | get | append. Cross-owner get/append → FORBIDDEN.
+
+   STAGED: wired here but NOT deployed. The /intelligence_conversations RTDB
+   rule (database.rules.json, staged since Phase 1) must be deployed alongside
+   it. See docs/V2_SARPRAS_INTELLIGENCE_PHASE_2C.md. */
+exports.intelligenceConversation = intelligenceConversation;

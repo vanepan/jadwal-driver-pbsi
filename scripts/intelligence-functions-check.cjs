@@ -124,16 +124,28 @@ function configAndCallable() {
   const secrets = fs.readFileSync(path.join(ROOT, 'functions/src/config/secrets.js'), 'utf8');
   check(/defineSecret\(['"]OPENAI_API_KEY['"]\)/.test(secrets), 'OPENAI_API_KEY is declared via defineSecret (Secret Manager, PART 5)');
   check(!/OPENAI_API_KEY\s*=\s*['"][^'"]+['"]/.test(secrets), 'secrets.js contains no OPENAI_API_KEY literal value');
+
+  // Phase 2C: the conversation-state callable is wired (still not deployed).
+  check(/const\s*\{\s*intelligenceConversation\s*\}\s*=\s*require\(['"]\.\/src\/intelligence\/intelligenceConversation['"]\)/.test(idx), 'functions/index.js requires ./src/intelligence/intelligenceConversation (Phase 2C wiring)');
+  check(/exports\.intelligenceConversation\s*=\s*intelligenceConversation\s*;/.test(idx), "functions/index.js exports.intelligenceConversation — the name js/firebase.js calls via httpsCallable('intelligenceConversation')");
+  const convSrc = fs.readFileSync(path.join(ROOT, 'functions/src/intelligence/intelligenceConversation.js'), 'utf8');
+  check(/onCall\(\{\s*region:\s*REGION\s*\}/.test(convSrc) && !/secrets:/.test(convSrc), 'intelligenceConversation is a region-pinned callable with NO secret binding');
+  check(/actorId:\s*uid/.test(convSrc) && /const uid = auth\.uid/.test(convSrc), 'the owner is ALWAYS auth.uid — a client-supplied actorId is overwritten (PART D)');
 }
 
 /* ── 5. no key literal / no client leak ───────────────────────────────── */
 function noLeak() {
   section('No secret literal / no client-side endpoint (PART 5, PART 25)');
   const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
-  for (const f of ['config.js', 'serverPermissions.js', 'openaiClient.js', 'generateCompletion.js', 'model-completion-contract.js']) {
-    const src = stripComments(fs.readFileSync(path.join(ROOT, 'functions/src/intelligence', f), 'utf8'));
-    check(!/['"]sk-[A-Za-z0-9_-]{12,}['"]/.test(src) || f === undefined, `functions/src/intelligence/${f}: no OpenAI key literal`);
+  const dir = path.join(ROOT, 'functions/src/intelligence');
+  for (const f of fs.readdirSync(dir).filter((n) => n.endsWith('.js'))) {
+    const src = stripComments(fs.readFileSync(path.join(dir, f), 'utf8'));
+    check(!/['"]sk-[A-Za-z0-9_-]{12,}['"]/.test(src), `functions/src/intelligence/${f}: no OpenAI key literal`);
     check(!/OPENAI_API_KEY\s*=\s*['"]/.test(src), `functions/src/intelligence/${f}: no key assignment`);
+    // only generateCompletion / openaiClient legitimately touch the key/endpoint
+    if (f !== 'generateCompletion.js' && f !== 'openaiClient.js' && f !== 'config.js' && f !== 'secrets.js') {
+      check(!/OPENAI_API_KEY|api\.openai\.com|process\.env/i.test(src), `functions/src/intelligence/${f}: no key / endpoint / env-var reference (Phase 2C files stay out of the model path)`);
+    }
   }
   check(/OPENAI_API_KEY\.value\(\)/.test(fs.readFileSync(path.join(ROOT, 'functions/src/intelligence/generateCompletion.js'), 'utf8')), 'the key is read only from Secret Manager at call time (OPENAI_API_KEY.value())');
   // the client surface must still not reference the OpenAI endpoint
@@ -144,10 +156,62 @@ function noLeak() {
   check(/callGenerateCompletion/.test(fs.readFileSync(path.join(ROOT, 'js/firebase.js'), 'utf8')), 'js/firebase.js exposes callGenerateCompletion (the httpsCallable wrapper, no key)');
 }
 
+/* ── 6. generateCompletion behavioural matrix — .run() on the IDENTICAL
+      deployed source (the deployed function == this file at HEAD). This
+      covers the auth / authorization / feature-flag-OFF / typed-DISABLED /
+      no-OpenAI-call path that cannot be exercised against the DEPLOYED
+      function without an admin ID token (BLOCKED — see the report). ──── */
+async function deployedBehaviour() {
+  section('generateCompletion.run() — auth / authz / flag-OFF / no OpenAI call');
+
+  // shim the Admin SDK db so getIntelligenceRuntimeConfig()'s RTDB read
+  // resolves to "no flag node" → the INTELLIGENCE_FLAGS defaults (enabled:false),
+  // exactly as the deployed function behaves against the (non-existent)
+  // /feature_flags/intelligence node.
+  const fakeDb = { ref: () => ({ once: async () => ({ val: () => null }) }) };
+  require.cache[require.resolve('../functions/src/config/admin')] = {
+    id: 'admin-shim', loaded: true, exports: { admin: {}, auth: {}, db: fakeDb },
+  };
+  delete require.cache[require.resolve('../functions/src/intelligence/config')];
+  delete require.cache[require.resolve('../functions/src/intelligence/generateCompletion')];
+  const { generateCompletion } = require('../functions/src/intelligence/generateCompletion');
+
+  const envelope = {
+    schema: 'model-completion@1', requestId: 'req-x', purpose: 'nor.draft',
+    messages: [{ role: 'system', content: 'sys' }, { role: 'user', content: 'hi' }],
+    expectJson: false, maxOutputTokens: null, determinism: 0.7,
+  };
+
+  // no OpenAI call may happen — trap the global fetch.
+  const realFetch = globalThis.fetch;
+  let fetchHits = 0;
+  globalThis.fetch = async () => { fetchHits += 1; throw new Error('fetch must not be called with the flag OFF'); };
+  try {
+    let threw;
+    threw = null; try { await generateCompletion.run({ data: { completion: envelope } }); } catch (e) { threw = e; }
+    check(threw && threw.code === 'unauthenticated', 'no auth → HttpsError(unauthenticated)');
+
+    threw = null; try { await generateCompletion.run({ data: { completion: envelope }, auth: { uid: 'bob', token: { role: 'driver' } } }); } catch (e) { threw = e; }
+    check(threw && threw.code === 'permission-denied', 'authenticated non-admin → HttpsError(permission-denied)');
+
+    threw = null; try { await generateCompletion.run({ data: { completion: { bad: 1 } }, auth: { uid: 'evan', token: { role: 'admin' } } }); } catch (e) { threw = e; }
+    check(threw && threw.code === 'invalid-argument', 'admin + malformed envelope → HttpsError(invalid-argument)');
+
+    const disabled = await generateCompletion.run({ data: { completion: envelope }, auth: { uid: 'evan', token: { role: 'admin' } } });
+    check(disabled && disabled.ok === false && disabled.error && disabled.error.code === 'DISABLED', 'admin + flag OFF → typed { ok:false, error:{code:DISABLED} } (RETURNED, not thrown)');
+    check(disabled.schema === 'model-completion@1', 'the DISABLED result is a well-formed ModelCompletionResult');
+
+    check(fetchHits === 0, 'NO OpenAI call occurred at any point (global fetch never invoked)');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+}
+
 (async () => {
   await run();
   configAndCallable();
   noLeak();
+  await deployedBehaviour();
   console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} — ${fail} failing check(s).`);
   process.exit(fail === 0 ? 0 : 1);
 })();

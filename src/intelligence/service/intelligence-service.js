@@ -77,7 +77,11 @@ async function defaultConfig() {
  * @param {{ isEnabled:()=>boolean, get:()=>object }} [deps.config]
  * @param {()=>string} [deps.clock]         ISO-now
  * @param {()=>string} deps.idgen           convId generator (required — keeps the service pure)
- * @param {{ create,append,get }} [deps.store]  defaults to the conversation-store facade
+ * @param {{ create:Function, append:Function, get:Function }} [deps.store]
+ *   defaults to the conversation-store facade. Each may be sync OR return a
+ *   Promise of the { ok, data, error } envelope — the service awaits them,
+ *   so the 'memory' backend and the Phase 2C server-owned 'callable' backend
+ *   (RTDB via the intelligenceConversation Cloud Function) both work.
  */
 export function createIntelligenceService(deps) {
   const {
@@ -285,7 +289,7 @@ export function createIntelligenceService(deps) {
         openingUtterance: utterance, collectedFields: seedFacts, missingFields: [],
         status: IC_STATUS.ERROR, requestId, now,
       });
-      store.create(rec);
+      await store.create(rec);
       return { response: errorResponse({ requestId, code: run.code, message: run.message }), conversationId: convId, audit: turnAudit({ requestId, actorId: actor.userId, sourceModule, status: 'error', questionCount: 0, hasDraft: false }) };
     }
 
@@ -297,7 +301,7 @@ export function createIntelligenceService(deps) {
         openingUtterance: utterance, collectedFields: run.gatheredFacts,
         missingFields: run.missing.map((m) => m.field), status: IC_STATUS.NEEDS_INPUT, requestId, now,
       });
-      store.create(rec);
+      await store.create(rec);
       return {
         response: needsInputResponse({ requestId, questions, provenance: provenanceFor(requestId, actor, sourceModule, null) }),
         conversationId: convId,
@@ -314,7 +318,7 @@ export function createIntelligenceService(deps) {
     if (!authz || typeof authz.canUseIntelligence !== 'function' || !authz.canUseIntelligence(actor)) {
       return { response: errorResponse({ requestId: convId, code: RESPONSE_ERRORS.FORBIDDEN, message: 'Tidak berhak.' }), conversationId: convId };
     }
-    const got = store.get(convId, actor && actor.userId);
+    const got = await store.get(convId, actor && actor.userId);
     if (!got.ok) {
       const code = got.error && got.error.code === 'FORBIDDEN' ? RESPONSE_ERRORS.FORBIDDEN : RESPONSE_ERRORS.INVALID_REQUEST;
       return { response: errorResponse({ requestId: convId, code, message: (got.error && got.error.message) || 'Sesi tidak ditemukan.' }), conversationId: convId };
@@ -326,7 +330,7 @@ export function createIntelligenceService(deps) {
     const l = limits();
     if (ic.turnCount >= l.maxTurns) {
       const next = appendTurn(ic, { answers: answers || {}, status: IC_STATUS.ERROR, collectedFields: ic.collectedFields, missingFields: ic.missingFields, requestId: convId }, clock());
-      store.append(next, actor.userId);
+      await store.append(next, actor.userId);
       return { response: errorResponse({ requestId: convId, code: RESPONSE_ERRORS.LIMIT, message: `Batas ${l.maxTurns} giliran tercapai. Mulai sesi baru.` }), conversationId: convId };
     }
 
@@ -340,13 +344,13 @@ export function createIntelligenceService(deps) {
 
     if (run.kind === 'error') {
       const next = appendTurn(ic, { answers, status: IC_STATUS.ERROR, collectedFields: merged, missingFields: [], requestId: convId }, now);
-      store.append(next, actor.userId);
+      await store.append(next, actor.userId);
       return { response: errorResponse({ requestId: convId, code: run.code, message: run.message }), conversationId: convId };
     }
     if (run.kind === 'active') {
       const questions = factQuestions(run.missing);
       const next = appendTurn(ic, { answers, status: IC_STATUS.NEEDS_INPUT, collectedFields: run.gatheredFacts, missingFields: run.missing.map((m) => m.field), requestId: convId }, now);
-      store.append(next, actor.userId);
+      await store.append(next, actor.userId);
       return {
         response: needsInputResponse({ requestId: convId, questions, provenance: provenanceFor(convId, actor, ic.sourceModule, null) }),
         conversationId: convId,
@@ -370,10 +374,10 @@ export function createIntelligenceService(deps) {
           convId, actorId: actor.userId, actorRole: actor.role, sourceModule, sourceFeature, task, domainType,
           openingUtterance: utterance, collectedFields: facts, missingFields: ['recipient'], status: IC_STATUS.NEEDS_INPUT, requestId, now,
         });
-        store.create(rec);
+        await store.create(rec);
       } else {
         const next = appendTurn(prevIc, { answers, status: IC_STATUS.NEEDS_INPUT, collectedFields: facts, missingFields: ['recipient'], requestId }, now);
-        store.append(next, actor.userId);
+        await store.append(next, actor.userId);
       }
       return {
         response: needsInputResponse({ requestId, questions: q, provenance: provenanceFor(requestId, actor, sourceModule, null) }),
@@ -397,8 +401,8 @@ export function createIntelligenceService(deps) {
     const drafted = isNew
       ? appendTurn(base, { answers: {}, status: IC_STATUS.DRAFTED, collectedFields: facts, missingFields: [], draft: built.draft, numbering: built.numbering, knowledgeRefs: built.knowledgeRefs, memoryRefs: built.memoryRefs, requestId }, now)
       : appendTurn(prevIc, { answers, status: IC_STATUS.DRAFTED, collectedFields: facts, missingFields: [], draft: built.draft, numbering: built.numbering, knowledgeRefs: built.knowledgeRefs, memoryRefs: built.memoryRefs, requestId }, now);
-    if (isNew) store.create(base);
-    store.append(drafted, actor.userId);
+    if (isNew) await store.create(base);
+    await store.append(drafted, actor.userId);
 
     return {
       response: built.response,
@@ -409,21 +413,21 @@ export function createIntelligenceService(deps) {
     };
   }
 
-  function getSession(convId, actorArg) {
+  async function getSession(convId, actorArg) {
     const actor = actorArg ? { userId: actorArg.userId } : null;
-    const got = store.get(convId, actor && actor.userId);
+    const got = await store.get(convId, actor && actor.userId);
     if (!got.ok) return { ok: false, error: got.error };
     return { ok: true, conversation: got.data };
   }
 
-  function cancelSession(convId, actorArg) {
+  async function cancelSession(convId, actorArg) {
     const actor = actorArg ? { userId: actorArg.userId, role: actorArg.role } : null;
-    const got = store.get(convId, actor && actor.userId);
+    const got = await store.get(convId, actor && actor.userId);
     if (!got.ok) return { ok: false, error: got.error };
     const ic = got.data;
     if (ic.status === IC_STATUS.CANCELLED) return { ok: true, conversation: ic };
     const next = appendTurn(ic, { answers: {}, status: IC_STATUS.CANCELLED, collectedFields: ic.collectedFields, missingFields: ic.missingFields, requestId: convId }, clock());
-    const saved = store.append(next, actor.userId);
+    const saved = await store.append(next, actor.userId);
     return saved.ok ? { ok: true, conversation: saved.data } : { ok: false, error: saved.error };
   }
 
