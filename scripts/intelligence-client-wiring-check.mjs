@@ -47,8 +47,12 @@ function makeFakeDb() {
   return { ref: (p) => ({ once: async () => snap(at(p)), set: async (v) => set(p, drop(v) === undefined ? null : drop(v)), orderByChild: (ck) => ({ equalTo: (val) => ({ once: async () => { const all = at(p) || {}; const o = {}; for (const [k, r] of Object.entries(all)) if (r && r[ck] === val) o[k] = r; return snap(Object.keys(o).length ? o : null); } }) }) }), _root: root };
 }
 
-/* wire the CJS conversation callable at a fake db */
-require.cache[require.resolve('../functions/src/config/admin')] = { id: 'admin-shim', loaded: true, exports: { admin: {}, auth: {}, db: makeFakeDb() } };
+/* wire the CJS conversation callable at a fake db. Phase 3C-PREP — the
+   callable now also requires an explicit /userPermissionOverrides/{uid}
+   `intelligence.use` grant; seed it for 'evan' (the caller below). */
+const _fakeDb = makeFakeDb();
+_fakeDb._root.userPermissionOverrides = { evan: { permissions: ['intelligence.use'] } };
+require.cache[require.resolve('../functions/src/config/admin')] = { id: 'admin-shim', loaded: true, exports: { admin: {}, auth: {}, db: _fakeDb } };
 const { intelligenceConversation } = require('../functions/src/intelligence/intelligenceConversation');
 const callConversation = (payload) => intelligenceConversation.run({ data: payload, auth: { uid: 'evan', token: { role: 'admin' } } });
 

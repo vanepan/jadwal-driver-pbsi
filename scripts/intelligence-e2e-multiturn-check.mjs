@@ -69,6 +69,15 @@ function makeFakeDb() {
 
 /* ── wire the CJS callable at a fake db (admin-module shim) ──────────── */
 const fakeDb = makeFakeDb();
+// Phase 3C-PREP — intelligenceConversation now requires an explicit
+// `intelligence.use` grant in /userPermissionOverrides/{uid} on top of the
+// admin role. Seed it for every identity this suite exercises as an
+// authorized caller (evan = the pilot; mallory = a DIFFERENT authorized
+// admin, so the cross-owner test still fails on OWNERSHIP, not on authz).
+fakeDb._root.userPermissionOverrides = {
+  evan: { permissions: ['intelligence.use'] },
+  mallory: { permissions: ['intelligence.use'] },
+};
 require.cache[require.resolve('../functions/src/config/admin')] = {
   id: 'admin-shim', loaded: true, exports: { admin: {}, auth: {}, db: fakeDb },
 };
@@ -170,6 +179,18 @@ check(mCont.response.status === RESPONSE_STATUS.ERROR && mCont.response.error.co
 check(rawStored(conv).collectedFields.item.includes('Honda'), 'the stored conversation was NOT mutated by the cross-owner attempt');
 const ghost = await svc.continueSession('conv_does_not_exist', { x: 1 }, ADMIN);
 check(ghost.response.status === RESPONSE_STATUS.ERROR, 'continuing a nonexistent conversation → controlled error, no crash (PART O)');
+
+section('Phase 3C-PREP — an admin WITHOUT the intelligence.use grant is denied at the callable');
+// 'stranger' has admin role but no /userPermissionOverrides grant seeded above.
+let strangerErr = null;
+try {
+  await intelligenceConversation.run({ data: { op: 'get', convId: conv }, auth: authToken('stranger') });
+} catch (e) { strangerErr = e; }
+check(strangerErr && strangerErr.code === 'permission-denied',
+  'admin role WITHOUT intelligence.use → HttpsError(permission-denied) — the grant, not the role, authorizes');
+check(rawStored(conv).collectedFields.item.includes('Honda'),
+  'the ungranted admin attempt did NOT mutate or expose the conversation');
+
 
 section('PART L — recipient PROPOSED from a consistent archive history (TURN 3 → ready directly)');
 resetConversationRepository(); cfg.resetIntelligenceConfig();

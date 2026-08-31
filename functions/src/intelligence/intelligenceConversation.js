@@ -10,8 +10,12 @@
    knowledge/NOR logic (that all lives in the reusable ESM
    src/intelligence/ layer). Its only jobs:
      1. authenticate  — request.auth.uid required
-     2. authorize     — canUseIntelligence(request.auth.token) (admin pilot,
-                        same gate as generateCompletion; NO new permission id)
+     2. authorize     — canUseIntelligence(auth.token, { uid, db }) — the
+                        SAME narrowed gate as generateCompletion (Phase
+                        3C-PREP): admin floor AND an explicit
+                        /userPermissionOverrides/{uid} `intelligence.use`
+                        grant. Not bypassable by calling this callable
+                        directly instead of generateCompletion.
      3. own           — the owner is request.auth.uid, ALWAYS. A
                         client-supplied record.actorId is overwritten, never
                         trusted. A get/append on another user's conversation
@@ -45,7 +49,11 @@ const intelligenceConversation = onCall({ region: REGION }, async (request) => {
   if (!auth || !auth.uid) {
     throw new HttpsError('unauthenticated', 'Login diperlukan.');
   }
-  const gate = canUseIntelligence(auth.token);
+  // Same boundary as generateCompletion (Phase 3C-PREP): admin floor AND an
+  // explicit /userPermissionOverrides/{uid} `intelligence.use` grant — so a
+  // caller cannot bypass Intelligence authorization by driving conversation
+  // state directly. Ownership (below) is a SEPARATE, additional check.
+  const gate = await canUseIntelligence(auth.token, { uid: auth.uid, db });
   if (!gate.ok) {
     throw new HttpsError('permission-denied', gate.reason || 'Tidak berhak menggunakan Sarpras Intelligence.');
   }

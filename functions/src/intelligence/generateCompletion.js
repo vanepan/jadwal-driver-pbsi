@@ -25,6 +25,7 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const logger = require('firebase-functions/logger');
 const { REGION } = require('../config/constants');
+const { db } = require('../config/admin');
 const { OPENAI_API_KEY } = require('../config/secrets');
 const { canUseIntelligence } = require('./serverPermissions');
 const { getIntelligenceRuntimeConfig } = require('./config');
@@ -38,7 +39,9 @@ const generateCompletion = onCall({ region: REGION, secrets: [OPENAI_API_KEY] },
   if (!auth || !auth.uid) {
     throw new HttpsError('unauthenticated', 'Login diperlukan.');
   }
-  const gate = canUseIntelligence(auth.token);
+  // Admin floor AND an explicit /userPermissionOverrides/{uid} `intelligence.use`
+  // grant (Phase 3C-PREP) — the global feature flag alone never authorizes.
+  const gate = await canUseIntelligence(auth.token, { uid: auth.uid, db });
   if (!gate.ok) {
     throw new HttpsError('permission-denied', gate.reason || 'Tidak berhak menggunakan Sarpras Intelligence.');
   }
