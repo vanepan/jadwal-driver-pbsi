@@ -114,11 +114,16 @@ function configAndCallable() {
   const gc = require('../functions/src/intelligence/generateCompletion');
   check(typeof gc.generateCompletion === 'function' || (gc.generateCompletion && typeof gc.generateCompletion.run === 'function'), 'generateCompletion.js loads and exports the callable');
 
+  // Phase 2A: the callable is now WIRED into the entrypoint (but still inert —
+  // no secret set, feature flag OFF, no deploy run).
   const idx = fs.readFileSync(path.join(ROOT, 'functions/index.js'), 'utf8');
-  check(!/generateCompletion/.test(idx), 'generateCompletion is NOT wired into functions/index.js (staged — nothing deploys)');
+  check(/const\s*\{\s*generateCompletion\s*\}\s*=\s*require\(['"]\.\/src\/intelligence\/generateCompletion['"]\)/.test(idx), 'functions/index.js requires ./src/intelligence/generateCompletion (Phase 2A wiring)');
+  check(/exports\.generateCompletion\s*=\s*generateCompletion\s*;/.test(idx), "functions/index.js exports.generateCompletion — the exact name js/firebase.js calls via httpsCallable('generateCompletion')");
+  check(INTELLIGENCE_FLAGS.enabled === false, 'the wired callable is still inert — INTELLIGENCE_FLAGS.enabled is false');
 
   const secrets = fs.readFileSync(path.join(ROOT, 'functions/src/config/secrets.js'), 'utf8');
   check(/defineSecret\(['"]OPENAI_API_KEY['"]\)/.test(secrets), 'OPENAI_API_KEY is declared via defineSecret (Secret Manager, PART 5)');
+  check(!/OPENAI_API_KEY\s*=\s*['"][^'"]+['"]/.test(secrets), 'secrets.js contains no OPENAI_API_KEY literal value');
 }
 
 /* ── 5. no key literal / no client leak ───────────────────────────────── */

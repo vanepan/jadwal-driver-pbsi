@@ -51,6 +51,8 @@ const { acquireReimbursementNumber } = require('./src/reimbursement/counter');
 const { onUserWrite } = require('./src/users/onUserWrite');
 const { notifyAdminsOfNewRequest } = require('./src/notifications/notifyAdminsOfNewRequest');
 
+const { generateCompletion } = require('./src/intelligence/generateCompletion');
+
 exports.health = health;
 exports.verifyPin = verifyPin;
 
@@ -123,3 +125,18 @@ exports.acquireReimbursementNumber = acquireReimbursementNumber;
    before it could reopen the exposure this split exists to close. */
 exports.onUserWrite = onUserWrite;
 exports.notifyAdminsOfNewRequest = notifyAdminsOfNewRequest;
+
+/* V2 Sarpras Intelligence — the Phase 1 OpenAI server boundary, now wired
+   (Phase 2A). HTTPS callable v2, region asia-southeast1, OPENAI_API_KEY bound
+   from Secret Manager (functions/src/config/secrets.js). Server-side it keeps
+   every Phase 1 guarantee: admin-only authorization (serverPermissions.js),
+   the /feature_flags/intelligence gate (default OFF → a typed DISABLED result,
+   never a thrown error), ModelCompletionRequest envelope + maxPromptChars
+   validation, generic provider-error mapping, and no retry. The browser calls
+   it via js/firebase.js#callGenerateCompletion and never receives the key.
+
+   INERT as shipped: OPENAI_API_KEY is not set, the feature flag is OFF, and no
+   deploy has run. A `firebase deploy --only functions` requires the secret to
+   exist first (`firebase functions:secrets:set OPENAI_API_KEY`). See
+   docs/V2_SARPRAS_INTELLIGENCE_PHASE_1.md §3 and §13. */
+exports.generateCompletion = generateCompletion;
