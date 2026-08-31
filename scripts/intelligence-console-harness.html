@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sarpras Intelligence — Phase 3B console harness</title>
+<!--
+  Offline, isolated harness for scripts/intelligence-console-ui-check.mjs.
+  It loads the REAL view (js/intelligence-console.js) but:
+    • redirects js/auth.js + js/intelligence-backend-wiring.js (which pull in
+      js/firebase.js and its https:// SDK imports) to tiny data: stubs, so
+      nothing network-bound loads;
+    • injects a SCRIPTED fake createIntelligenceService() into
+      mountIntelligenceConsole(host, { controller }), so there is no Firebase,
+      no OpenAI, no RTDB — the flow is fully deterministic.
+-->
+<script type="importmap">
+{
+  "imports": {
+    "/js/auth.js": "data:text/javascript,export function getCurrentUser(){return {username:'evan',role:'admin'};}",
+    "/js/intelligence-backend-wiring.js": "data:text/javascript,export async function createWiredIntelligenceConsoleController(){throw new Error('harness: inject a controller');}"
+  }
+}
+</script>
+<style>
+  html,body{margin:0;background:#fff}
+  #host{padding:0}
+</style>
+</head>
+<body>
+<div id="host"></div>
+<script type="module">
+  import { mountIntelligenceConsole } from '/js/intelligence-console.js';
+  import { createIntelligenceConsoleController } from '/src/intelligence/console/intelligence-console-controller.js';
+  import { RESPONSE_STATUS } from '/src/intelligence/contracts/intelligence-response-contract.js';
+
+  const q = (id, questions) => ({
+    conversationId: id,
+    response: { schema: 'intelligence-response@1', requestId: 'r', status: RESPONSE_STATUS.NEEDS_INPUT, questions },
+  });
+  const reviewEnv = (id) => ({
+    conversationId: id,
+    response: {
+      schema: 'intelligence-response@1', requestId: 'r', status: RESPONSE_STATUS.REQUIRES_REVIEW,
+      draft: { documentType: 'nor', fields: {
+        norType: 'Pengadaan',
+        subject: 'Pengadaan mesin potong rumput (2 unit)',
+        recipient: 'Bendahara', recipientStatus: 'known',
+        date: '2026-08-31',
+        body: 'Dengan hormat, bersama ini diajukan pengadaan mesin potong rumput sebanyak 2 unit untuk keperluan perawatan lapangan PBSI. Perkiraan anggaran Rp4 juta per unit. Mohon arahan lebih lanjut. Terima kasih.',
+        details: { item: 'mesin potong rumput Honda GX35', quantity: '2 unit', purpose: 'perawatan lapangan PBSI', budget: 'Rp4 juta per unit' },
+        metadata: { bodySource: 'template' },
+      } },
+      review: { reason: 'Draf NOR memerlukan peninjauan dan persetujuan manusia sebelum diterbitkan.', blocking: true },
+    },
+  });
+  const errEnv = (code) => ({
+    conversationId: null,
+    response: { schema: 'intelligence-response@1', requestId: 'r', status: RESPONSE_STATUS.ERROR, error: { code, message: 'Firebase: raw ' + code } },
+  });
+
+  // The scripted walkthrough (mesin potong rumput): submit → 2 needs_input
+  // turns → review. One error step is appended for the error-path test.
+  const SCRIPT = [
+    q('conv_harness', [
+      { id: 'item', prompt: 'Barang apa yang akan diadakan?', why: 'Item', required: true },
+      { id: 'quantity', prompt: 'Berapa jumlah unit yang dibutuhkan?', why: 'Jumlah', required: true },
+    ]),
+    q('conv_harness', [
+      { id: 'recipient', prompt: 'NOR ini ditujukan kepada siapa?', why: 'Kepada', required: true },
+    ]),
+    reviewEnv('conv_harness'),
+    errEnv('PROVIDER_ERROR'),
+  ];
+  let cursor = 0;
+  const nextEnv = () => { const s = SCRIPT[Math.min(cursor, SCRIPT.length - 1)]; cursor += 1; return s; };
+
+  const H = { handleCalls: [], continueCalls: [], forceError: false };
+  const service = {
+    async handle(request) { H.handleCalls.push(request); return H.forceError ? errEnv('PROVIDER_ERROR') : nextEnv(); },
+    async continueSession(convId, answers, actor) { H.continueCalls.push({ convId, answers, actor }); return H.forceError ? errEnv('PROVIDER_ERROR') : nextEnv(); },
+  };
+
+  const controller = createIntelligenceConsoleController({ service, actor: { userId: 'evan', role: 'admin' } });
+  H.controller = controller;
+  H.getState = () => controller.getState();
+  H.reset = () => { cursor = 0; H.handleCalls.length = 0; H.continueCalls.length = 0; H.forceError = false; controller.reset(); };
+  window.__harness = H;
+
+  await mountIntelligenceConsole(document.getElementById('host'), { controller });
+  window.__harnessReady = true;
+</script>
+</body>
+</html>

@@ -129,7 +129,7 @@ import {
   loadDispatchAnalyticsEngine, loadPettyCashAnalytics, loadExecutiveAnalytics,
   loadPredictionService, loadDriverPredictionDashboard, loadExecutiveDashboard,
   loadPettyCashAnalyticsView, loadExecutiveAnalyticsView, loadSarprasIntelligence,
-  loadIntelligenceBackendWiring,
+  loadIntelligenceBackendWiring, loadIntelligenceConsole,
 } from './config/module-loader-registry.js';
 import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver, isEngineeringUser, assignmentBelongsToDriver } from './auth.js';
 // V2.0.10 — single reusable gate for the V2 pilot surface (Sarpras Intelligence).
@@ -409,6 +409,13 @@ let sarprasIntelMounted = false;
 let _fnMountSarprasIntel = null;
 let _fnSetSarprasIntelScreen = null;
 let _fnCloseSarprasIntel = null;
+// V2 Phase 3A/3B — the resolved client Intelligence feature-flag state
+// (/feature_flags/intelligence/enabled, synced fail-closed during the
+// post-auth wiring). FALSE until proven true; drives whether
+// navSarprasIntelligence() shows the Phase 3B minimal console instead of
+// the dormant Sarpras Intelligence platform. OFF in production ⇒ unchanged.
+let intelligenceFeatureActive = false;
+let intelligenceConsoleMounted = false;
 
 // V1.5.0 Phase 2.5.1: Administration workspace section state
 let activeAdminSection = 'users';
@@ -2308,6 +2315,28 @@ async function navSarprasIntelligence(screen, navId) {
   setCrumb('SARPRAS INTELLIGENCE', SIC_MENU_TITLES[screen] || 'Sarpras Intelligence');
   if (navId) setV2PanelNavActive(navId);
   setWorkspace('sarprasIntelligence');
+
+  // V2 Phase 3B — when the synced Intelligence feature flag is ON, the Sarpras
+  // Intelligence workspace shows the minimal Phase 3B console (the first live
+  // createIntelligenceService() round-trip: input → needs_input → review). With
+  // the flag OFF (production default) this branch is dead and the dormant
+  // Sarpras Intelligence platform below mounts exactly as before. One-shot per
+  // session, same idiom as the dormant path; error-swallowed so a console
+  // failure can never leave the pilot on a blank workspace.
+  if (intelligenceFeatureActive) {
+    if (!intelligenceConsoleMounted) {
+      intelligenceConsoleMounted = true;
+      try {
+        const { mountIntelligenceConsole } = await loadIntelligenceConsole();
+        await mountIntelligenceConsole(document.getElementById('v2SarprasIntelWorkspace'));
+      } catch (err) {
+        intelligenceConsoleMounted = false;
+        console.warn('[intelligence] console mount failed — continuing.', err);
+      }
+    }
+    return;
+  }
+
   if (!sarprasIntelMounted) {
     sarprasIntelMounted = true;
     const { mountSarprasIntelligence, setSarprasIntelligenceScreen, closeSarprasIntelligence, registerScreenChangeListener } = await loadSarprasIntelligence();
@@ -13231,10 +13260,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     // the feature flag, never calls OpenAI, never creates a conversation, and
     // mounts no UI. The client flag is not authorization — the Cloud
     // Functions re-check the flag and enforce role authz server-side.
+    //
+    // Phase 3B — the resolved flag is captured into intelligenceFeatureActive
+    // so navSarprasIntelligence() can decide (once, when the pilot first opens
+    // the workspace) whether to show the minimal Intelligence console or the
+    // dormant platform. No UI is mounted here.
     if (isV2Enabled(getCurrentUser())) {
       try {
         const { wireIntelligenceBackend } = await loadIntelligenceBackendWiring();
-        await wireIntelligenceBackend(appFlags);
+        const wiringStatus = await wireIntelligenceBackend(appFlags);
+        intelligenceFeatureActive = !!(wiringStatus && wiringStatus.featureEnabled === true);
       } catch (err) {
         console.warn('[intelligence] backend wiring skipped — continuing.', err);
       }

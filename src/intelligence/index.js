@@ -77,3 +77,6 @@ export {
   resolveIntelligenceFlag,
   applyIntelligenceFeatureFlag,
 } from './config/feature-flag-sync.js';
+
+/* ── Phase 3B — the minimal user-facing console (pure state machine) ── */
+export { createIntelligenceConsoleController, CONSOLE_PHASE } from './console/intelligence-console-controller.js';

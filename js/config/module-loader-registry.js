@@ -66,3 +66,11 @@ export const loadSarprasIntelligence = () =>
    NOT UI, and it never enables the feature flag or calls OpenAI. ── */
 export const loadIntelligenceBackendWiring = () =>
   loadModule('intelligence-backend-wiring', () => import('../intelligence-backend-wiring.js'));
+
+/* ── Sarpras Intelligence — V2 Phase 3B minimal console UI. The first
+   user-facing surface (input → needs_input → review). Same pilot gate as
+   loadSarprasIntelligence above, and additionally only reached when the
+   synced /feature_flags/intelligence/enabled flag is ON — so with the flag
+   OFF (production default) this is never fetched. ── */
+export const loadIntelligenceConsole = () =>
+  loadModule('intelligence-console', () => import('../intelligence-console.js'));
