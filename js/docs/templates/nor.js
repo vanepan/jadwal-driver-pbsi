@@ -193,11 +193,20 @@ function build(vm) {
       { text: 'Demikian nota organisasi ini disampaikan, atas perhatiannya kami ucapkan terima kasih.',
         fontSize: 10, alignment: 'justify', margin: [0, 0, 0, 18] },
 
+      // A signatory row is an ATOMIC layout unit — its label, UPPERCASE
+      // position, signing gap and underlined name must never be divided by a
+      // page break (label/position stranded on one page, the name on the
+      // next). `unbreakable: true` is pdfmake's keep-together primitive
+      // (0.2.10 honours it on any node, `columns` included — same mechanism
+      // analytics-report.js's `_section` already relies on): when the row
+      // does not fit in the space left on the page it moves WHOLE to the
+      // next one. No-op whenever it already fits, so page 1's layout is
+      // pixel-identical in every case that renders correctly today. (v1.30.13.1)
       { columns: [
         sb(top[0], 40), sb(top[1], 40), sb(top[2], 40),
-      ], columnGap: 8 },
+      ], columnGap: 8, unbreakable: true },
       bottom.length
-        ? { columns: [sb(bottom[0], 40), { text: '' }, { text: '' }], columnGap: 8, margin: [0, 10, 0, 0] }
+        ? { columns: [sb(bottom[0], 40), { text: '' }, { text: '' }], columnGap: 8, margin: [0, 10, 0, 0], unbreakable: true }
         : { text: '' },
 
       /* ── PAGE 2: RINCIAN PENGGUNAAN PETTY CASH ───────────────── */
@@ -229,9 +238,16 @@ function build(vm) {
       _balanceTable(d, NOR_DS.layout.balanceWidthsPage2),
       { text: `Terbilang: ${d.terbilang || ''}`, fontSize: 10, margin: [0, 0, 0, 18] },
 
+      // The RINCIAN attachment's recap signature block (Dibuat Oleh /
+      // Disetujui Oleh). When the item table spills across pages the recap
+      // could otherwise land astride a page boundary and print with the
+      // labels on page N and the names on page N+1 — unacceptable for an
+      // official document. `unbreakable: true` keeps the whole block on one
+      // page, pushing it entirely to the next page when the current one has
+      // no room. (v1.30.13.1)
       { columns: [
         sb(recap[0], 38), sb(recap[1], 38),
-      ], columnGap: 8, margin: [0, 0, 0, 0] },
+      ], columnGap: 8, margin: [0, 0, 0, 0], unbreakable: true },
     ],
   };
 }
