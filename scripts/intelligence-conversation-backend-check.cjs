@@ -92,18 +92,11 @@ function makeFakeDb() {
 const store = require('../functions/src/intelligence/conversationStore');
 const cjsC = require('../functions/src/intelligence/conversationContract');
 
-// Phase 3C-PREP — intelligenceConversation.js now `require('../config/admin')`
-// for `db` (canUseIntelligence() reads /userPermissionOverrides/{uid}). Install
-// a fake, GRANT-SEEDED admin db in the module cache BEFORE requiring the
-// callable, so a bare `node` run never touches a real database. Every identity
-// this suite drives as an authorized caller is granted 'intelligence.use';
-// 'stranger' deliberately is NOT.
+// intelligenceConversation.js `require('../config/admin')` for `db` (the
+// conversation store). Install a fake admin db in the module cache BEFORE
+// requiring the callable so a bare `node` run never touches a real database.
+// canUseIntelligence() itself does NO db read — authz is the admin role only.
 const callableDb = makeFakeDb();
-callableDb._root.userPermissionOverrides = {
-  evan: { permissions: ['intelligence.use'] },
-  userA: { permissions: ['intelligence.use'] },
-  userB: { permissions: ['intelligence.use'] },
-};
 require.cache[require.resolve('../functions/src/config/admin')] = {
   id: 'admin-shim', loaded: true, exports: { admin: {}, auth: {}, db: callableDb },
 };
@@ -186,25 +179,21 @@ function makeConv({ convId, actorId, status = 'needs_input', version = 1, collec
     check(listed.ok && listed.data.length === 1 && listed.data[0].convId === 'convB', 'listByActor returns only that actor’s conversations');
   }
 
-  /* ── 3. the intelligenceConversation callable (.run) — uses the top-level
-        grant-seeded fake db (callableDb). ─────────────────────────────── */
-  section('intelligenceConversation callable — auth / authz / op / Phase 3C-PREP grant');
+  /* ── 3. the intelligenceConversation callable (.run) ──────────────── */
+  section('intelligenceConversation callable — auth / authz / op');
   {
     let threw;
     threw = null; try { await intelligenceConversation.run({ data: { op: 'get', convId: 'x' } }); } catch (e) { threw = e; }
     check(threw && threw.code === 'unauthenticated', 'no auth → HttpsError(unauthenticated)');
     threw = null; try { await intelligenceConversation.run({ data: { op: 'get', convId: 'x' }, auth: { uid: 'bob', token: { role: 'driver' } } }); } catch (e) { threw = e; }
     check(threw && threw.code === 'permission-denied', 'non-admin → HttpsError(permission-denied)');
-    // Phase 3C-PREP — admin role WITHOUT an /userPermissionOverrides intelligence.use grant → denied.
-    threw = null; try { await intelligenceConversation.run({ data: { op: 'get', convId: 'x' }, auth: { uid: 'stranger', token: { role: 'admin' } } }); } catch (e) { threw = e; }
-    check(threw && threw.code === 'permission-denied', 'admin WITHOUT intelligence.use grant → HttpsError(permission-denied) — cannot bypass the boundary via this callable');
-    threw = null; try { await intelligenceConversation.run({ data: { op: 'bogus' }, auth: { uid: 'evan', token: { role: 'admin' } } }); } catch (e) { threw = e; }
-    check(threw && threw.code === 'invalid-argument', 'granted admin + unknown op → HttpsError(invalid-argument)');
+    threw = null; try { await intelligenceConversation.run({ data: { op: 'bogus' }, auth: { uid: 'anyadmin', token: { role: 'admin' } } }); } catch (e) { threw = e; }
+    check(threw && threw.code === 'invalid-argument', 'ANY admin + unknown op → HttpsError(invalid-argument) (authz passed, no per-user grant needed)');
   }
 
-  section('intelligenceConversation callable — ownership is server-derived (auth.uid), independent of the grant');
+  section('intelligenceConversation callable — ownership is server-derived (auth.uid)');
   {
-    const ic2 = intelligenceConversation;   // the top-level, grant-seeded (userA/userB) instance
+    const ic2 = intelligenceConversation;
 
     // User A creates — client tries to claim actorId 'userZ', server must force 'userA'
     const conv = makeConv({ convId: 'convC', actorId: 'userZ-CLIENT-LIE' });

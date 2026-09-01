@@ -47,63 +47,37 @@ for (const code of ['DISABLED', 'NOT_CONFIGURED', 'AUTH', 'QUOTA', 'TIMEOUT', 'N
 check(JSON.stringify(cjsC.MESSAGE_ROLE) === JSON.stringify({ SYSTEM: 'system', USER: 'user', ASSISTANT: 'assistant' }), 'MESSAGE_ROLE matches');
 check(cjsC.isModelCompletionResult(cjsC.modelCompletionResult({ text: 'x' })) && !cjsC.isModelCompletionResult({}), 'CJS validators behave');
 
-/* ── 2. server permissions — admin FLOOR + explicit intelligence.use grant
-      (Phase 3C-PREP). The gate is now NARROWER than "is an admin". Async —
-      driven from the bottom orchestrator (see serverPermissions() below). ── */
+/* ── 2. server permissions — Sarpras Intelligence is a capability of the
+      ADMIN role (role === 'admin' || adminEquivalent). Token-only, sync.
+      Full authz matrix + shared-boundary + adminEquivalent semantics live
+      in scripts/intelligence-authz-check.cjs. ─────────────────────────── */
 const {
-  canUseIntelligence, meetsAdminFloor, readIntelligenceGrant,
-  INTELLIGENCE_PERMISSION_ID, OVERRIDES_PATH,
+  canUseIntelligence, isEffectiveAdmin, INTELLIGENCE_PERMISSION_ID,
 } = require('../functions/src/intelligence/serverPermissions');
 
-/** a path-aware fake of the Admin SDK db: reads only
- *  userPermissionOverrides/<uid>/permissions */
-function grantDb(grants /* { uid: string[] } */) {
-  return {
-    ref(p) {
-      return {
-        async once() {
-          const m = /^userPermissionOverrides\/([^/]+)\/permissions$/.exec(p);
-          const val = m && grants[m[1]] ? grants[m[1]] : null;
-          return { val: () => val };
-        },
-      };
-    },
-  };
-}
+function serverPermissions() {
+  section('serverPermissions (PART 11 — admin-role access model)');
+  check(INTELLIGENCE_PERMISSION_ID === 'intelligence.use', "the capability is named 'intelligence.use'");
 
-async function serverPermissions() {
-  section('serverPermissions (PART 11 + Phase 3C-PREP pilot grant)');
-  const dbWith = grantDb({ evan: [INTELLIGENCE_PERMISSION_ID], other: ['warehouse.item.edit'] });
-  const dbEmpty = grantDb({});
+  check(canUseIntelligence({ role: 'admin' }).ok === true, 'admin → allowed (no per-user grant needed)');
+  check(canUseIntelligence({ role: 'engineering_coordinator', adminEquivalent: true }).ok === true, 'adminEquivalent === true → allowed (effective admin)');
+  check(canUseIntelligence({ role: 'engineering_coordinator', adminEquivalent: 'true' }).ok === false, 'adminEquivalent as the STRING "true" → DENIED (must be the boolean)');
+  check(canUseIntelligence({ role: 'driver' }).ok === false, 'driver → denied');
+  check(canUseIntelligence({ role: 'bidang' }).ok === false, 'bidang → denied');
+  check(canUseIntelligence(undefined).ok === false, 'no token → denied (fail closed)');
+  check(canUseIntelligence({}).ok === false, 'empty token → denied (fail closed)');
 
-  check(INTELLIGENCE_PERMISSION_ID === 'intelligence.use', "the capability id is 'intelligence.use'");
-  check(OVERRIDES_PATH === 'userPermissionOverrides', 'the grant is read from the EXISTING /userPermissionOverrides node');
+  check(isEffectiveAdmin({ role: 'admin' }) === true && isEffectiveAdmin({ adminEquivalent: true }) === true, 'isEffectiveAdmin: admin / adminEquivalent → true');
+  check(isEffectiveAdmin({ role: 'driver' }) === false && isEffectiveAdmin(undefined) === false, 'isEffectiveAdmin: non-admin / none → false');
 
-  // the admin floor helper — necessary, not sufficient
-  check(meetsAdminFloor({ role: 'admin' }) === true && meetsAdminFloor({ role: 'x', adminEquivalent: true }) === true, 'meetsAdminFloor: admin / adminEquivalent → true');
-  check(meetsAdminFloor({ role: 'driver' }) === false && meetsAdminFloor(undefined) === false, 'meetsAdminFloor: non-admin / no token → false');
+  const denyReason = canUseIntelligence({ role: 'driver' }).reason;
+  check(denyReason && !/password|key|secret|sk-|token|bearer/i.test(denyReason), 'the denial reason leaks nothing sensitive');
 
-  // the full async gate
-  check((await canUseIntelligence({ role: 'admin' }, { uid: 'evan', db: dbWith })).ok === true, 'A: admin WITH intelligence.use → allowed');
-  check((await canUseIntelligence({ role: 'engineering_coordinator', adminEquivalent: true }, { uid: 'evan', db: dbWith })).ok === true, 'adminEquivalent WITH intelligence.use → allowed');
-  check((await canUseIntelligence({ role: 'admin' }, { uid: 'other', db: dbWith })).ok === false, 'B: admin WITHOUT intelligence.use → DENIED (admin role / global flag is not enough)');
-  check((await canUseIntelligence({ role: 'admin' }, { uid: 'nobody', db: dbEmpty })).ok === false, 'admin, no override record at all → DENIED (fail closed)');
-  check((await canUseIntelligence({ role: 'driver' }, { uid: 'evan', db: dbWith })).ok === false, 'D: non-admin (even with a grant record) → DENIED (admin floor not met)');
-  check((await canUseIntelligence({ role: 'admin' }, {})).ok === false, 'admin but no { uid, db } context → DENIED (fail closed — never floor-only)');
-  check((await canUseIntelligence(undefined, { uid: 'evan', db: dbWith })).ok === false, 'E: no token → DENIED');
-  const denyReason = (await canUseIntelligence({ role: 'admin' }, { uid: 'other', db: dbWith })).reason;
-  check(denyReason && !/password|key|secret|sk-/i.test(denyReason), 'the denial reason leaks nothing sensitive');
-  const throwDb = { ref() { return { once() { throw new Error('rtdb down'); } }; } };
-  check((await readIntelligenceGrant(throwDb, 'evan')).ok === false, 'readIntelligenceGrant: an RTDB read error → { ok:false } (fail closed)');
-  check((await readIntelligenceGrant(dbWith, '')).ok === false, 'readIntelligenceGrant: missing uid → { ok:false }');
-
-  // §7 MANDATORY security regression — the Phase 3C blocker must stay closed.
-  // Fails if canUseIntelligence() is ever reduced to `role === 'admin' || adminEquivalent`.
-  check((await canUseIntelligence({ role: 'admin' }, { uid: 'arbitrary-admin', db: dbEmpty })).ok === false,
-    '§7 REGRESSION: admin role alone is NOT sufficient authorization for an arbitrary admin');
-  const permSrc = fs.readFileSync(path.join(ROOT, 'functions/src/intelligence/serverPermissions.js'), 'utf8');
-  check(/userPermissionOverrides/.test(permSrc) && /intelligence\.use/.test(permSrc) && /once\(/.test(permSrc),
-    '§7 REGRESSION: serverPermissions.js still reads an explicit intelligence.use grant from /userPermissionOverrides');
+  // token-only: no RTDB read, no per-user grant in the authz decision
+  const permCode = fs.readFileSync(path.join(ROOT, 'functions/src/intelligence/serverPermissions.js'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  check(!/readIntelligenceGrant|db\.ref\(|\.once\(|userPermissionOverrides/.test(permCode),
+    'serverPermissions.js authz decision is token-only — no per-user grant read, no RTDB I/O');
 }
 
 /* ── 3. openaiClient — every failure mode is typed + non-throwing ──────── */
@@ -215,19 +189,9 @@ async function deployedBehaviour() {
 
   // shim the Admin SDK db. getIntelligenceRuntimeConfig() reads
   // /feature_flags/intelligence (→ null → INTELLIGENCE_FLAGS defaults,
-  // enabled:false — exactly as against the non-existent prod node) and
-  // Phase 3C-PREP's canUseIntelligence() reads
-  // /userPermissionOverrides/<uid>/permissions. 'evan' is granted
-  // 'intelligence.use'; every other admin is NOT.
-  const fakeDb = {
-    ref: (p) => ({
-      once: async () => {
-        const m = /^userPermissionOverrides\/([^/]+)\/permissions$/.exec(String(p || ''));
-        if (m) return { val: () => (m[1] === 'evan' ? ['intelligence.use'] : null) };
-        return { val: () => null };   // /feature_flags/intelligence, /settings/intelligence → absent
-      },
-    }),
-  };
+  // enabled:false — exactly as against the non-existent prod node).
+  // canUseIntelligence() itself does NO db read (token-only, admin role).
+  const fakeDb = { ref: () => ({ once: async () => ({ val: () => null }) }) };
   require.cache[require.resolve('../functions/src/config/admin')] = {
     id: 'admin-shim', loaded: true, exports: { admin: {}, auth: {}, db: fakeDb },
   };
@@ -253,16 +217,11 @@ async function deployedBehaviour() {
     threw = null; try { await generateCompletion.run({ data: { completion: envelope }, auth: { uid: 'bob', token: { role: 'driver' } } }); } catch (e) { threw = e; }
     check(threw && threw.code === 'permission-denied', 'authenticated non-admin → HttpsError(permission-denied)');
 
-    // Phase 3C-PREP §7: an ARBITRARY admin without the intelligence.use grant
-    // is denied at the callable boundary — the global flag never rescues them.
-    threw = null; try { await generateCompletion.run({ data: { completion: envelope }, auth: { uid: 'someadmin', token: { role: 'admin' } } }); } catch (e) { threw = e; }
-    check(threw && threw.code === 'permission-denied', 'G/§7: admin WITHOUT intelligence.use → HttpsError(permission-denied) (before any flag/OpenAI logic)');
+    threw = null; try { await generateCompletion.run({ data: { completion: { bad: 1 } }, auth: { uid: 'anyadmin', token: { role: 'admin' } } }); } catch (e) { threw = e; }
+    check(threw && threw.code === 'invalid-argument', 'ANY admin + malformed envelope → HttpsError(invalid-argument) (authz passed with no per-user grant)');
 
-    threw = null; try { await generateCompletion.run({ data: { completion: { bad: 1 } }, auth: { uid: 'evan', token: { role: 'admin' } } }); } catch (e) { threw = e; }
-    check(threw && threw.code === 'invalid-argument', 'granted admin + malformed envelope → HttpsError(invalid-argument)');
-
-    const disabled = await generateCompletion.run({ data: { completion: envelope }, auth: { uid: 'evan', token: { role: 'admin' } } });
-    check(disabled && disabled.ok === false && disabled.error && disabled.error.code === 'DISABLED', 'F: granted admin + flag OFF → typed { ok:false, error:{code:DISABLED} } (RETURNED, not thrown)');
+    const disabled = await generateCompletion.run({ data: { completion: envelope }, auth: { uid: 'anyadmin', token: { role: 'admin' } } });
+    check(disabled && disabled.ok === false && disabled.error && disabled.error.code === 'DISABLED', 'admin + flag OFF → typed { ok:false, error:{code:DISABLED} } (authorization passed FIRST, then the flag blocked it)');
     check(disabled.schema === 'model-completion@1', 'the DISABLED result is a well-formed ModelCompletionResult');
 
     check(fetchHits === 0, 'NO OpenAI call occurred at any point (global fetch never invoked)');
@@ -272,7 +231,7 @@ async function deployedBehaviour() {
 }
 
 (async () => {
-  await serverPermissions();
+  serverPermissions();
   await run();
   configAndCallable();
   noLeak();

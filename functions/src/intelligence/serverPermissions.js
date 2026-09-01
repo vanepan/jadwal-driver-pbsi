@@ -2,121 +2,91 @@
 
 /* ============================================================
    functions/src/intelligence/serverPermissions.js
-   — Phase 1 (admin floor) + Phase 3C-PREP (explicit pilot grant)
+   — Phase 1 → 3C-PREP → 3C-access-model
 
-   Server-side authorization for the Sarpras Intelligence boundary. The
-   Functions runtime has no permission-service; a callable checks the
-   VERIFIED token claim (request.auth.token.role / .adminEquivalent —
-   minted by verifyPin.js) and an authoritative RTDB grant, never anything
-   the client sends in the request body.
+   Server-side authorization for the Sarpras Intelligence boundary (the WHO).
+   The Functions runtime has NO permission-service and the verified token
+   carries only { role, adminEquivalent? } (minted by verifyPin.js) — never a
+   permission list, never anything from the request body. So an "admin base
+   grant" is expressed here the ONLY way the server can verify it: a role
+   check.
 
-   THE GATE IS NARROWER THAN "IS AN ADMIN" (Phase 3C-PREP). A caller is
-   authorized for Intelligence ONLY when BOTH hold:
+   ACCESS MODEL (current product decision): Sarpras Intelligence is a
+   capability of the ADMIN role.
 
-     1. ADMIN FLOOR — role === 'admin' OR adminEquivalent === true.
-        (Unchanged Phase 1 policy. Necessary, not sufficient.)
+     role === 'admin'            → authorized
+     adminEquivalent === true    → authorized (see below)
+     anything else               → DENIED
 
-     2. EXPLICIT GRANT — 'intelligence.use' present in
-        /userPermissionOverrides/{auth.uid}/permissions.
+   This is byte-for-byte the shape every admin-tier rule in
+   database.rules.json already uses
+   (`auth.token.role === 'admin' || auth.token.adminEquivalent === true`),
+   so Intelligence follows the project's canonical admin authorization
+   pattern rather than inventing a second one.
 
-   #2 reuses the EXISTING per-user grant mechanism (Individual Permission
-   Assignment, v1.30.9.1): that node is admin/adminEquivalent-WRITE ONLY —
-   it has NO self-write branch (see database.rules.json) — so a browser
-   cannot self-grant it. It is read here via the Admin SDK (rules bypassed),
-   exactly as config.js already reads /feature_flags/intelligence.
+   adminEquivalent: minted by verifyPin.js#resolveRoleClaims() ONLY for a
+   Custom Role whose permissions include 'system.admin', and already treated
+   as admin-tier by every admin RTDB rule. Authorizing it here keeps
+   Intelligence consistent with that existing model — an effective admin is
+   an admin everywhere, Intelligence included.
 
-   WHY (the Phase 3C blocker): the Intelligence feature flag
-   /feature_flags/intelligence/enabled is a single GLOBAL boolean. Without
-   #2, flipping it ON would make generateCompletion (→ real OpenAI) callable
-   by EVERY admin/adminEquivalent account, not just the pilot. The flag is
-   the WHAT; this file is the WHO. They are independent.
+   NOT required: an Individual Permission Assignment / per-user grant. The
+   Phase 3C-PREP `/userPermissionOverrides` grant read is REMOVED — the
+   product is no longer a single-pilot surface. `INTELLIGENCE_PERMISSION_ID`
+   is retained as the capability's NAME (for cross-file consistency and as
+   the seam if a future phase makes it grantable to non-admin roles), but it
+   is enforced as the admin-role check above.
 
-   FAIL-CLOSED: no code path returns ok:true on the admin floor alone.
-   Missing uid / db, or any RTDB read error → denied.
+   WHAT vs WHO: the feature flag /feature_flags/intelligence/enabled is the
+   WHAT/WHEN switch (checked separately by generateCompletion). This file is
+   the WHO. They are independent — the flag OFF still blocks model execution
+   for an authorized admin.
+
+   FAIL-CLOSED: a missing / malformed token → denied.
 
    'AI sudah tahu permission' is never assumed — this file, on the server,
    is the authority (PART 11).
    ============================================================ */
 
-/** The one capability id that authorizes the Intelligence/OpenAI surface.
- *  Granted per-user via /userPermissionOverrides/{uid}/permissions. */
+/** The capability's canonical name. Enforced below as an admin-role check
+ *  (the server has no permission list to look it up in); kept as a named
+ *  constant for docs + as the seam for future non-admin granularity. */
 const INTELLIGENCE_PERMISSION_ID = 'intelligence.use';
 
-/** The existing per-user grant node (Individual Permission Assignment). */
-const OVERRIDES_PATH = 'userPermissionOverrides';
-
 /**
- * The ADMIN FLOOR — necessary, never sufficient. Kept as a small pure
- * helper so the callables and the regression tests can assert it in
- * isolation, and so a future edit that tries to reduce canUseIntelligence()
- * back to just this is a visible, testable change.
- * @param {object|undefined} authToken  request.auth.token
+ * Whether the verified token is an EFFECTIVE ADMIN — `role === 'admin'` OR
+ * `adminEquivalent === true`. Exported so the callables and the regression
+ * tests can assert it in isolation.
+ * @param {object|undefined} authToken  request.auth.token (verified claims)
  * @returns {boolean}
  */
-function meetsAdminFloor(authToken) {
+function isEffectiveAdmin(authToken) {
   const role = authToken && typeof authToken.role === 'string' ? authToken.role : null;
   const adminEquivalent = !!(authToken && authToken.adminEquivalent === true);
   return role === 'admin' || adminEquivalent;
 }
 
 /**
- * Read the authoritative per-user Intelligence grant. Fail-closed: any
- * missing input or read error → { ok:false, granted:false }.
- * @param {{ ref: Function }} db   Admin SDK database() handle
- * @param {string} uid            request.auth.uid (the /users key + token sub)
- * @returns {Promise<{ ok: boolean, granted: boolean }>}
- */
-async function readIntelligenceGrant(db, uid) {
-  if (!db || typeof db.ref !== 'function' || !uid || typeof uid !== 'string') {
-    return { ok: false, granted: false };
-  }
-  try {
-    const snap = await db.ref(`${OVERRIDES_PATH}/${uid}/permissions`).once('value');
-    const raw = snap && typeof snap.val === 'function' ? snap.val() : null;
-    const list = Array.isArray(raw)
-      ? raw
-      : (raw && typeof raw === 'object' ? Object.values(raw) : []);
-    return { ok: true, granted: list.indexOf(INTELLIGENCE_PERMISSION_ID) !== -1 };
-  } catch (err) {
-    return { ok: false, granted: false };
-  }
-}
-
-/**
- * The Sarpras Intelligence server authorization gate. Async — it verifies
- * an authoritative RTDB grant in addition to the token role floor.
+ * The Sarpras Intelligence server authorization gate. Synchronous — the
+ * decision is made entirely from the verified token claims, no I/O.
  *
  * @param {object|undefined} authToken   request.auth.token (verified claims)
- * @param {{ uid?: string, db?: object }} [ctx]  request.auth.uid + Admin SDK db
- * @returns {Promise<{ ok: boolean, reason: string|null, role: string|null }>}
+ * @returns {{ ok: boolean, reason: string|null, role: string|null }}
  */
-async function canUseIntelligence(authToken, ctx) {
+function canUseIntelligence(authToken) {
   const role = authToken && typeof authToken.role === 'string' ? authToken.role : null;
-  const uid = ctx && ctx.uid;
-  const db = ctx && ctx.db;
-
-  if (!meetsAdminFloor(authToken)) {
-    return { ok: false, reason: 'Sarpras Intelligence is limited to administrators in this phase.', role };
+  if (isEffectiveAdmin(authToken)) {
+    return { ok: true, reason: null, role: role || 'admin-equivalent' };
   }
-  if (!uid || !db) {
-    // The callables always pass these; their absence means the gate was
-    // invoked without the context it needs to verify the explicit grant.
-    return { ok: false, reason: 'Sarpras Intelligence authorization context is unavailable.', role };
-  }
-  const grant = await readIntelligenceGrant(db, uid);
-  if (!grant.ok) {
-    return { ok: false, reason: 'Could not verify Sarpras Intelligence authorization.', role };
-  }
-  if (!grant.granted) {
-    return { ok: false, reason: 'This account is not authorized for Sarpras Intelligence (missing intelligence.use grant).', role };
-  }
-  return { ok: true, reason: null, role: role || 'admin-equivalent' };
+  return {
+    ok: false,
+    reason: 'Sarpras Intelligence is limited to administrators.',
+    role,
+  };
 }
 
 module.exports = {
   canUseIntelligence,
-  meetsAdminFloor,
-  readIntelligenceGrant,
+  isEffectiveAdmin,
   INTELLIGENCE_PERMISSION_ID,
-  OVERRIDES_PATH,
 };

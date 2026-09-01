@@ -10,12 +10,11 @@
    knowledge/NOR logic (that all lives in the reusable ESM
    src/intelligence/ layer). Its only jobs:
      1. authenticate  — request.auth.uid required
-     2. authorize     — canUseIntelligence(auth.token, { uid, db }) — the
-                        SAME narrowed gate as generateCompletion (Phase
-                        3C-PREP): admin floor AND an explicit
-                        /userPermissionOverrides/{uid} `intelligence.use`
-                        grant. Not bypassable by calling this callable
-                        directly instead of generateCompletion.
+     2. authorize     — canUseIntelligence(auth.token) — the SAME boundary
+                        as generateCompletion: Sarpras Intelligence is a
+                        capability of the ADMIN role (role === 'admin' ||
+                        adminEquivalent). Not bypassable by calling this
+                        callable directly instead of generateCompletion.
      3. own           — the owner is request.auth.uid, ALWAYS. A
                         client-supplied record.actorId is overwritten, never
                         trusted. A get/append on another user's conversation
@@ -49,11 +48,12 @@ const intelligenceConversation = onCall({ region: REGION }, async (request) => {
   if (!auth || !auth.uid) {
     throw new HttpsError('unauthenticated', 'Login diperlukan.');
   }
-  // Same boundary as generateCompletion (Phase 3C-PREP): admin floor AND an
-  // explicit /userPermissionOverrides/{uid} `intelligence.use` grant — so a
-  // caller cannot bypass Intelligence authorization by driving conversation
-  // state directly. Ownership (below) is a SEPARATE, additional check.
-  const gate = await canUseIntelligence(auth.token, { uid: auth.uid, db });
+  // SAME authorization boundary as generateCompletion: Sarpras Intelligence
+  // is a capability of the ADMIN role (role === 'admin' || adminEquivalent).
+  // A caller cannot bypass it by driving conversation state directly.
+  // Ownership (below) is a SEPARATE, additional check — actorId is always
+  // auth.uid regardless.
+  const gate = canUseIntelligence(auth.token);
   if (!gate.ok) {
     throw new HttpsError('permission-denied', gate.reason || 'Tidak berhak menggunakan Sarpras Intelligence.');
   }
