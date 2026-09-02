@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Sarpras Intelligence — Phase 3B console harness</title>
+<title>Sarpras Intelligence — Phase 4 console harness</title>
 <!--
   Offline, isolated harness for scripts/intelligence-console-ui-check.mjs.
   It loads the REAL view (js/intelligence-console.js) but:
@@ -13,6 +13,10 @@
     • injects a SCRIPTED fake createIntelligenceService() into
       mountIntelligenceConsole(host, { controller }), so there is no Firebase,
       no OpenAI, no RTDB — the flow is fully deterministic.
+
+  Phase 4: the fake service also implements getDraft / updateDraft over an
+  in-memory record, so the review WORKSPACE (edit → Simpan Draf → reload)
+  can be exercised end to end.
 -->
 <script type="importmap">
 {
@@ -34,21 +38,50 @@
   import { createIntelligenceConsoleController } from '/src/intelligence/console/intelligence-console-controller.js';
   import { RESPONSE_STATUS } from '/src/intelligence/contracts/intelligence-response-contract.js';
 
+  const DRAFT_ID = 'draft_conv_harness';
+  const REC_KEY = 'sic.p4.harness.record';
+
+  // The one NOR-draft record the fake service "persists". It is also mirrored
+  // into sessionStorage so a PAGE RELOAD restores it — standing in for the
+  // real server-owned RTDB record the reload test depends on.
+  const FACTS0 = { item: 'mesin potong rumput Honda GX35', quantity: '2 unit', purpose: 'perawatan lapangan PBSI', budget: 'Rp4 juta per unit' };
+  const freshRecord = () => ({
+    schema: 'intelligence-nor-draft@1', draftId: DRAFT_ID, conversationId: 'conv_harness',
+    version: 1, ownerId: 'evan', status: 'requires_review',
+    jenis: 'Pengadaan', subject: 'Pengadaan mesin potong rumput (2 unit)',
+    recipient: 'Bendahara', recipientStatus: 'known', date: '2026-08-31',
+    facts: { ...FACTS0 },
+    body: 'Dengan hormat, bersama ini diajukan pengadaan mesin potong rumput sebanyak 2 unit untuk keperluan perawatan lapangan PBSI. Perkiraan anggaran Rp4 juta per unit. Mohon arahan lebih lanjut. Terima kasih.',
+    numbering: { suggestedNumber: '', publishedNumber: null, source: 'system_suggested', basis: null, confidence: 0 },
+    provenance: { bodySource: 'template' }, humanEdited: false,
+    auditTrail: [{ type: 'AI_DRAFT_CREATED', at: 't', actorId: 'evan', changedFields: [] }],
+    createdAt: 't', updatedAt: 't',
+  });
+  function loadRecord() {
+    try { const s = sessionStorage.getItem(REC_KEY); if (s) return JSON.parse(s); } catch (e) { /* ignore */ }
+    return freshRecord();
+  }
+  function saveRecord() { try { sessionStorage.setItem(REC_KEY, JSON.stringify(record)); } catch (e) { /* ignore */ } }
+  let record = loadRecord();
+  const FACT_KEYS = new Set(['item', 'quantity', 'unit', 'purpose', 'budget']);
+
   const q = (id, questions) => ({
     conversationId: id,
     response: { schema: 'intelligence-response@1', requestId: 'r', status: RESPONSE_STATUS.NEEDS_INPUT, questions },
   });
   const reviewEnv = (id) => ({
     conversationId: id,
+    draftId: DRAFT_ID,
+    draftError: null,
     response: {
       schema: 'intelligence-response@1', requestId: 'r', status: RESPONSE_STATUS.REQUIRES_REVIEW,
       draft: { documentType: 'nor', fields: {
         norType: 'Pengadaan',
-        subject: 'Pengadaan mesin potong rumput (2 unit)',
-        recipient: 'Bendahara', recipientStatus: 'known',
-        date: '2026-08-31',
-        body: 'Dengan hormat, bersama ini diajukan pengadaan mesin potong rumput sebanyak 2 unit untuk keperluan perawatan lapangan PBSI. Perkiraan anggaran Rp4 juta per unit. Mohon arahan lebih lanjut. Terima kasih.',
-        details: { item: 'mesin potong rumput Honda GX35', quantity: '2 unit', purpose: 'perawatan lapangan PBSI', budget: 'Rp4 juta per unit' },
+        subject: record.subject,
+        recipient: record.recipient, recipientStatus: 'known',
+        date: record.date,
+        body: record.body,
+        details: { ...record.facts },
         metadata: { bodySource: 'template' },
       } },
       review: { reason: 'Draf NOR memerlukan peninjauan dan persetujuan manusia sebelum diterbitkan.', blocking: true },
@@ -59,8 +92,7 @@
     response: { schema: 'intelligence-response@1', requestId: 'r', status: RESPONSE_STATUS.ERROR, error: { code, message: 'Firebase: raw ' + code } },
   });
 
-  // The scripted walkthrough (mesin potong rumput): submit → 2 needs_input
-  // turns → review. One error step is appended for the error-path test.
+  // submit → 2 needs_input turns → review. One error step for the error-path test.
   const SCRIPT = [
     q('conv_harness', [
       { id: 'item', prompt: 'Barang apa yang akan diadakan?', why: 'Item', required: true },
@@ -75,16 +107,45 @@
   let cursor = 0;
   const nextEnv = () => { const s = SCRIPT[Math.min(cursor, SCRIPT.length - 1)]; cursor += 1; return s; };
 
-  const H = { handleCalls: [], continueCalls: [], forceError: false };
+  const H = { handleCalls: [], continueCalls: [], updateDraftCalls: [], getDraftCalls: [], forceError: false };
   const service = {
     async handle(request) { H.handleCalls.push(request); return H.forceError ? errEnv('PROVIDER_ERROR') : nextEnv(); },
     async continueSession(convId, answers, actor) { H.continueCalls.push({ convId, answers, actor }); return H.forceError ? errEnv('PROVIDER_ERROR') : nextEnv(); },
+    async getDraft(id, actor) {
+      H.getDraftCalls.push({ id, actor });
+      if (id !== DRAFT_ID) return { ok: false, error: { code: 'NOT_FOUND', message: 'none' } };
+      return { ok: true, draft: JSON.parse(JSON.stringify(record)) };
+    },
+    async updateDraft(id, edits, actor) {
+      H.updateDraftCalls.push({ id, edits, actor });
+      if (id !== DRAFT_ID) return { ok: false, error: { code: 'NOT_FOUND', message: 'none' } };
+      const changed = [];
+      for (const [k, v] of Object.entries(edits || {})) {
+        const val = typeof v === 'string' ? v.trim() : v;
+        if (FACT_KEYS.has(k)) { if (String(record.facts[k] ?? '') !== String(val)) changed.push(k); record.facts[k] = val; }
+        else if (['recipient', 'subject', 'date', 'body'].includes(k)) { if (String(record[k] ?? '') !== String(val)) changed.push(k); record[k] = val; }
+      }
+      if (changed.length) {
+        record.version += 1; record.humanEdited = true; record.updatedAt = 't' + record.version;
+        record.auditTrail.push({ type: 'AI_DRAFT_EDITED', at: record.updatedAt, actorId: 'evan', changedFields: changed });
+        saveRecord();
+      }
+      return { ok: true, draft: JSON.parse(JSON.stringify(record)) };
+    },
   };
 
   const controller = createIntelligenceConsoleController({ service, actor: { userId: 'evan', role: 'admin' } });
   H.controller = controller;
   H.getState = () => controller.getState();
-  H.reset = () => { cursor = 0; H.handleCalls.length = 0; H.continueCalls.length = 0; H.forceError = false; controller.reset(); };
+  H.record = () => JSON.parse(JSON.stringify(record));
+  H.reset = () => {
+    cursor = 0; H.handleCalls.length = 0; H.continueCalls.length = 0;
+    H.updateDraftCalls.length = 0; H.getDraftCalls.length = 0; H.forceError = false;
+    record = freshRecord();
+    try { sessionStorage.removeItem('sic.p4.draftId'); } catch (e) { /* ignore */ }
+    try { sessionStorage.removeItem(REC_KEY); } catch (e) { /* ignore */ }
+    controller.reset();
+  };
   window.__harness = H;
 
   await mountIntelligenceConsole(document.getElementById('host'), { controller });

@@ -80,3 +80,22 @@ export {
 
 /* ── Phase 3B — the minimal user-facing console (pure state machine) ── */
 export { createIntelligenceConsoleController, CONSOLE_PHASE } from './console/intelligence-console-controller.js';
+
+/* ── Phase 4 — the persistent, human-reviewable NOR draft ── */
+export {
+  NOR_DRAFT_SCHEMA, NOR_DRAFT_STATUS, NOR_DRAFT_FIELDS, DRAFT_FACT_FIELDS, DRAFT_EDITABLE_FIELDS,
+  DRAFT_AUDIT_EVENTS, makeNorDraftRecord, applyDraftEdits, sanitizeDraftEdits, isNorDraftRecord,
+} from './nor-draft/contracts/nor-draft-record-contract.js';
+export {
+  DRAFT_STORE_ERRORS, NOR_DRAFT_STORE_SCHEMA, draftSuccess, draftFailure,
+  NOR_DRAFT_STORE_CONTRACT, isNorDraftBackend,
+} from './nor-draft/contracts/nor-draft-store-contract.js';
+export {
+  registerNorDraftBackend, setActiveNorDraftBackend, getActiveNorDraftBackendId,
+  listNorDraftBackends, resetNorDraftStore, useCallableNorDraftBackend,
+  createCallableNorDraftBackend, CALLABLE_NOR_DRAFT_BACKEND_ID, DEFAULT_NOR_DRAFT_BACKEND_ID,
+} from './nor-draft/nor-draft-store.js';
+export {
+  createDraft as createNorDraft, getDraft as getNorDraft,
+  updateDraft as updateNorDraft, listDrafts as listNorDrafts,
+} from './nor-draft/nor-draft-store.js';

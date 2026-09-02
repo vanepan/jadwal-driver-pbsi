@@ -418,6 +418,32 @@ export async function callIntelligenceConversation(payload) {
 }
 
 /**
+ * Sarpras Intelligence — server-owned, human-reviewable NOR draft, V2
+ * Phase 4 (functions/src/intelligence/intelligenceNorDraft.js).
+ *
+ * Sibling of callIntelligenceConversation: the browser never writes
+ * /intelligence_nor_drafts directly (RTDB rule ".write": false). This
+ * callable authenticates + authorizes (same admin-role gate as Phase 3C),
+ * derives the owner ONLY from request.auth.uid, and reads/writes via the
+ * Admin SDK. op ∈ create | get | update | list. Cross-owner get/update →
+ * a FORBIDDEN envelope. numbering.publishedNumber is forced null — this
+ * callable never publishes, numbers, approves, or mutates the NOR Registry.
+ * Wired into src/intelligence/nor-draft as the 'callable' NorDraftBackend.
+ * @param {{op:'create'|'get'|'update'|'list', draftId?:string, record?:object, edits?:object, expectedVersion?:number}} payload
+ * @returns {Promise<{ok:boolean, data:*, error:{code:string,message:string}|null}>}
+ */
+export async function callIntelligenceNorDraft(payload) {
+  if (!firebaseDb) initFirebaseApp();
+  if (!firebaseApp) throw new Error('Firebase belum siap.');
+  if (!firebaseFunctions) {
+    firebaseFunctions = getFunctions(firebaseApp, FUNCTIONS_REGION);
+  }
+  const fn = httpsCallable(firebaseFunctions, 'intelligenceNorDraft');
+  const result = await fn(payload);
+  return result.data;
+}
+
+/**
  * Register a Web Push subscription for this device (v1.11.3).
  * Server-only write path into /push_subscriptions — the client never
  * writes that node directly. The server derives userId from the verified

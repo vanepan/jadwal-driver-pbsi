@@ -58,6 +58,10 @@ import { retrieveRecentArchive, summarizeRecipientPatterns } from '../retrieval/
 import { factQuestions, resolveRecipient, recipientQuestion } from './clarification.js';
 import { assembleNorDraft } from './nor-draft-assembler.js';
 import { extractAnswerFacts } from './answer-extractor.js';
+import {
+  createDraft as storeCreateDraft, getDraft as storeGetDraft, updateDraft as storeUpdateDraft,
+} from '../nor-draft/nor-draft-store.js';
+import { makeNorDraftRecord } from '../nor-draft/contracts/nor-draft-record-contract.js';
 
 const TASK_TO_INTENT = Object.freeze({ [REQUEST_TASK.NOR_GENERATE]: 'create_nor' });
 
@@ -83,6 +87,13 @@ async function defaultConfig() {
  *   Promise of the { ok, data, error } envelope — the service awaits them,
  *   so the 'memory' backend and the Phase 2C server-owned 'callable' backend
  *   (RTDB via the intelligenceConversation Cloud Function) both work.
+ * @param {{ create:Function, get:Function, update:Function }} [deps.draftStore]
+ *   defaults to the Phase 4 NOR-draft-store facade. Persists the STRUCTURED,
+ *   human-reviewable NOR draft produced at `requires_review`
+ *   (server-owned RTDB via the intelligenceNorDraft callable in production, a
+ *   memory backend in tests, the inert null backend if none is wired — then
+ *   there is simply no persisted draftId). It NEVER publishes, numbers, or
+ *   approves; numbering.publishedNumber stays null.
  */
 export function createIntelligenceService(deps) {
   const {
@@ -93,6 +104,7 @@ export function createIntelligenceService(deps) {
     clock = () => new Date().toISOString(),
     idgen,
     store = { create: createConversation, append: appendConversation, get: getConversation },
+    draftStore = { create: storeCreateDraft, get: storeGetDraft, update: storeUpdateDraft },
   } = deps || {};
 
   if (!ports || !ports.conversation || typeof ports.conversation.start !== 'function') {
@@ -435,13 +447,75 @@ export function createIntelligenceService(deps) {
     if (isNew) await store.create(base);
     await store.append(drafted, actor.userId);
 
+    // Phase 4 — persist the STRUCTURED, human-reviewable NOR draft. One draft
+    // per conversation, keyed `draft_<convId>` so a reload finds the same
+    // record. A persistence failure is RECOVERABLE: the requires_review
+    // response still returns, carrying `draftError` and no `draftId`, so the
+    // UI can retry the save without losing anything. The draft NEVER carries
+    // a published number — makeNorDraftRecord + the store both force it null.
+    const persisted = await persistNorDraft({ convId, actor, norType, facts, now, built });
+
     return {
       response: built.response,
       conversationId: convId,
+      draftId: persisted.draftId,
+      draftError: persisted.draftError,
       numbering: built.numbering,
       modelError: built.modelError || null,
       audit: turnAudit({ requestId, actorId: actor.userId, sourceModule, status: 'requires_review', questionCount: 0, hasDraft: true }),
     };
+  }
+
+  // A store that simply is not wired (the inert `null` backend, or the
+  // callable before it is deployed) is NOT a failure the reviewer needs to
+  // see — the response is unchanged, just without a persisted draftId.
+  const NOT_CONFIGURED = new Set(['NOT_IMPLEMENTED', 'NO_BACKEND_CONFIGURED']);
+
+  /** Get-or-create the persistent NOR draft for a conversation that has just
+   *  reached requires_review. Never throws — returns { draftId, draftError }. */
+  async function persistNorDraft({ convId, actor, norType, facts, now, built }) {
+    if (!draftStore || typeof draftStore.create !== 'function') return { draftId: null, draftError: null };
+    const draftKey = `draft_${convId}`;
+    try {
+      if (typeof draftStore.get === 'function') {
+        const existing = await draftStore.get(draftKey, { userId: actor.userId });
+        if (existing && existing.ok && existing.data && existing.data.draftId) {
+          return { draftId: existing.data.draftId, draftError: null };
+        }
+      }
+      const df = built && built.draft && built.draft.fields ? built.draft.fields : {};
+      const meta = df.metadata && typeof df.metadata === 'object' ? df.metadata : {};
+      const record = makeNorDraftRecord({
+        draftId: draftKey,
+        conversationId: convId,
+        ownerId: actor.userId,
+        jenis: norType || df.norType || null,
+        subject: df.subject || '',
+        recipient: df.recipient || null,
+        recipientStatus: df.recipientStatus || null,
+        date: df.date || null,
+        facts,                                  // makeNorDraftRecord keeps only the structured fact fields
+        body: df.body || '',
+        numbering: built && built.numbering ? built.numbering : {},
+        provenance: {
+          ...((built && built.provenance) || {}),
+          bodySource: meta.bodySource || null,
+          fieldProvenance: meta.fieldProvenance || {},
+          knowledgeRefs: Array.isArray(meta.knowledgeRefs) ? [...meta.knowledgeRefs] : [],
+          memoryRefs: Array.isArray(meta.memoryRefs) ? [...meta.memoryRefs] : [],
+        },
+        now,
+      });
+      const created = await draftStore.create(record, { userId: actor.userId });
+      if (created && created.ok && created.data && created.data.draftId) {
+        return { draftId: created.data.draftId, draftError: null };
+      }
+      const code = created && created.error && created.error.code;
+      if (NOT_CONFIGURED.has(code)) return { draftId: null, draftError: null };
+      return { draftId: null, draftError: (created && created.error) || { code: 'UNKNOWN', message: 'Draf NOR gagal disimpan.' } };
+    } catch (err) {
+      return { draftId: null, draftError: { code: 'INTERNAL', message: String((err && err.message) || 'Draf NOR gagal disimpan.') } };
+    }
   }
 
   async function getSession(convId, actorArg) {
@@ -449,6 +523,42 @@ export function createIntelligenceService(deps) {
     const got = await store.get(convId, actor && actor.userId);
     if (!got.ok) return { ok: false, error: got.error };
     return { ok: true, conversation: got.data };
+  }
+
+  /* ── Phase 4 — read / edit the persistent NOR draft ─────────────────────
+     Both gate on the SAME authz as every other entry point
+     (authz.canUseIntelligence) and both defer ownership to the store (the
+     server callable is authoritative in production; the memory/test path
+     still checks owner). NEITHER publishes, numbers, or approves. */
+
+  async function getDraft(draftId, actorArg) {
+    const actor = actorArg ? { userId: actorArg.userId, role: actorArg.role } : null;
+    if (!authz || typeof authz.canUseIntelligence !== 'function' || !authz.canUseIntelligence(actor)) {
+      return { ok: false, error: { code: RESPONSE_ERRORS.FORBIDDEN, message: 'Anda tidak berhak menggunakan Sarpras Intelligence.' } };
+    }
+    if (!draftStore || typeof draftStore.get !== 'function') {
+      return { ok: false, error: { code: 'NO_BACKEND', message: 'Penyimpanan draf NOR tidak tersedia.' } };
+    }
+    const res = await draftStore.get(String(draftId || ''), { userId: actor && actor.userId });
+    if (!res || !res.ok) return { ok: false, error: (res && res.error) || { code: 'NOT_FOUND', message: 'Draf NOR tidak ditemukan.' } };
+    return { ok: true, draft: res.data };
+  }
+
+  async function updateDraft(draftId, edits, actorArg) {
+    const actor = actorArg ? { userId: actorArg.userId, role: actorArg.role } : null;
+    if (!authz || typeof authz.canUseIntelligence !== 'function' || !authz.canUseIntelligence(actor)) {
+      return { ok: false, error: { code: RESPONSE_ERRORS.FORBIDDEN, message: 'Anda tidak berhak menggunakan Sarpras Intelligence.' } };
+    }
+    if (!draftStore || typeof draftStore.update !== 'function') {
+      return { ok: false, error: { code: 'NO_BACKEND', message: 'Penyimpanan draf NOR tidak tersedia.' } };
+    }
+    const res = await draftStore.update(
+      String(draftId || ''),
+      edits && typeof edits === 'object' ? edits : {},
+      { userId: actor && actor.userId },
+    );
+    if (!res || !res.ok) return { ok: false, error: (res && res.error) || { code: 'UNKNOWN', message: 'Draf NOR gagal disimpan.' } };
+    return { ok: true, draft: res.data };
   }
 
   async function cancelSession(convId, actorArg) {
@@ -462,7 +572,7 @@ export function createIntelligenceService(deps) {
     return saved.ok ? { ok: true, conversation: saved.data } : { ok: false, error: saved.error };
   }
 
-  return Object.freeze({ handle, continueSession, getSession, cancelSession });
+  return Object.freeze({ handle, continueSession, getSession, cancelSession, getDraft, updateDraft });
 }
 
 export { defaultConfig };

@@ -80,6 +80,20 @@
       }
     },
 
+    // V2 Sarpras Intelligence — Phase 4 server-owned NOR draft & review.
+    // Mirrors intelligence_conversations byte-for-byte: the intelligenceNorDraft
+    // Cloud Function (Admin SDK) is the ONLY writer (".write": false), and a
+    // user may .read ONLY their own draft (ownerId === auth.uid), plus the
+    // admin/developer tier. NOT a publication node — the record itself forces
+    // numbering.publishedNumber null.
+    "intelligence_nor_drafts": {
+      ".write": "false",
+      ".indexOn": ["ownerId"],
+      "$draftId": {
+        ".read": "auth != null && (data.child('ownerId').val() === auth.uid || auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true)"
+      }
+    },
+
     "settings": {
       "operations": {
         ".read": "auth != null",

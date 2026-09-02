@@ -42,9 +42,10 @@ const { isIntelligenceRequest, REQUEST_TASK } =
 
 const ACTOR = { userId: 'evan', role: 'admin' };
 
-/* A scriptable fake createIntelligenceService() instance. */
-function fakeService(script) {
-  const calls = { handle: [], continueSession: [] };
+/* A scriptable fake createIntelligenceService() instance. `draftOps` lets a
+   test supply getDraft/updateDraft (Phase 4). */
+function fakeService(script, draftOps = {}) {
+  const calls = { handle: [], continueSession: [], getDraft: [], updateDraft: [] };
   let i = 0;
   const nextEnv = () => {
     const step = script[Math.min(i, script.length - 1)];
@@ -52,24 +53,46 @@ function fakeService(script) {
     if (typeof step === 'function') return step();
     return step;
   };
-  return {
+  const svc = {
     calls,
-    reset() { i = 0; calls.handle.length = 0; calls.continueSession.length = 0; },
+    reset() { i = 0; for (const k of Object.keys(calls)) calls[k].length = 0; },
     async handle(request) { calls.handle.push(request); return nextEnv(); },
     async continueSession(convId, answers, actor) { calls.continueSession.push({ convId, answers, actor }); return nextEnv(); },
   };
+  if (draftOps.getDraft) svc.getDraft = async (id, actor) => { calls.getDraft.push({ id, actor }); return draftOps.getDraft(id, actor); };
+  if (draftOps.updateDraft) svc.updateDraft = async (id, edits, actor) => { calls.updateDraft.push({ id, edits, actor }); return draftOps.updateDraft(id, edits, actor); };
+  return svc;
 }
 
 const needsInput = (id, questions) => ({
   conversationId: id,
   response: { schema: 'intelligence-response@1', requestId: 'r', status: RESPONSE_STATUS.NEEDS_INPUT, questions },
 });
-const review = (id) => ({
+const review = (id, extra = {}) => ({
   conversationId: id,
+  draftId: extra.draftId !== undefined ? extra.draftId : `draft_${id}`,
+  draftError: extra.draftError || null,
   response: {
     schema: 'intelligence-response@1', requestId: 'r', status: RESPONSE_STATUS.REQUIRES_REVIEW,
     draft: { documentType: 'nor', fields: { norType: 'Pengadaan', subject: 'Pengadaan kursi', recipient: 'Bendahara', recipientStatus: 'known', date: '2026-08-31', body: 'Badan surat.', details: { item: 'kursi', quantity: '10' }, metadata: { bodySource: 'template' } } },
     review: { reason: 'Menunggu review manusia.', blocking: true },
+  },
+});
+
+/* a persisted NOR-draft record, as service.getDraft()/updateDraft() return it */
+const draftRecord = (over = {}) => ({
+  ok: true,
+  draft: {
+    schema: 'intelligence-nor-draft@1', draftId: over.draftId || 'draft_conv_X', conversationId: over.conversationId || 'conv_X',
+    version: over.version || 1, ownerId: 'evan', status: 'requires_review',
+    jenis: 'Pengadaan', subject: over.subject || 'Pengadaan kursi', recipient: over.recipient || 'Bendahara', recipientStatus: 'known',
+    date: '2026-08-31',
+    facts: { item: 'kursi', quantity: '10', ...(over.facts || {}) },
+    body: over.body || 'Badan surat.',
+    numbering: { suggestedNumber: '', publishedNumber: null, source: 'system_suggested', basis: null, confidence: 0 },
+    provenance: { bodySource: 'template' }, humanEdited: over.humanEdited === true,
+    auditTrail: [{ type: 'AI_DRAFT_CREATED', at: 't', actorId: 'evan', changedFields: [] }],
+    createdAt: 't', updatedAt: 't',
   },
 });
 const errEnv = (code, message) => ({
@@ -126,11 +149,110 @@ section('needs_input → answer → continueSession(SAME id, { text }) → revie
   check(st.questions.length === 0, 'questions cleared in review');
 }
 
-section('review state is DISPLAY ONLY — no publish surface on the controller');
+section('review state — editable, but NO publish / approve / numbering surface');
 const api = Object.keys(ctl);
-check(!api.some((k) => /publish|terbitkan|approve|save|number|reserve|commit/i.test(k)),
+check(!api.some((k) => /publish|terbitkan|approve|setuj|\bnumber\b|nomor|reserve|allocate|\bcommit\b/i.test(k)),
   `controller exposes no publish/approve/number method (has: ${api.join(', ')})`);
-check(!('publish' in ctl) && !('approve' in ctl), 'no publish() / approve()');
+check(!('publish' in ctl) && !('approve' in ctl) && !('terbitkan' in ctl), 'no publish() / approve() / terbitkan()');
+check(typeof ctl.editField === 'function' && typeof ctl.saveDraft === 'function' && typeof ctl.discardEdits === 'function' && typeof ctl.resumeDraft === 'function',
+  'Phase 4: the controller DOES expose editField / saveDraft / discardEdits / resumeDraft');
+
+section('Phase 4 — stage edits locally, then save explicitly');
+{
+  let updated = null;
+  const s4 = fakeService(
+    [needsInput('conv_X', [{ id: 'item', prompt: 'Barang apa?', why: 'Item', required: true }]), review('conv_X')],
+    {
+      updateDraft: (id, edits) => {
+        updated = { id, edits };
+        return draftRecord({ draftId: id, version: 2, humanEdited: true, facts: { budget: edits.budget || 'Rp10 juta' }, body: edits.body || 'Badan surat.' });
+      },
+    },
+  );
+  const c4 = createIntelligenceConsoleController({ service: s4, actor: ACTOR });
+  await c4.submit('buat NOR pengadaan kursi');
+  await c4.answer('kursi lipat');
+  let s = c4.getState();
+  check(s.phase === CONSOLE_PHASE.REVIEW && s.draftId === 'draft_conv_X', 'requires_review carried the persisted draftId onto state');
+  check(s.saveState === 'idle' && s.draftDirty === false && Object.keys(s.draftEdits).length === 0, 'no staged edits on arrival; saveState idle');
+
+  c4.editField('budget', 'Rp10 juta');
+  s = c4.getState();
+  check(s.draftDirty === true && s.draftEdits.budget === 'Rp10 juta', 'editField stages a local edit (draftDirty)');
+  check(s4.calls.updateDraft.length === 0, 'editField makes NO service call (nothing sent per keystroke)');
+  c4.editField('type', 'tamper');
+  check(!('type' in c4.getState().draftEdits), 'a non-editable field is ignored by editField');
+
+  await c4.saveDraft();
+  check(s4.calls.updateDraft.length === 1 && updated.id === 'draft_conv_X' && updated.edits.budget === 'Rp10 juta', 'saveDraft() calls service.updateDraft ONCE with the staged edits');
+  s = c4.getState();
+  check(s.saveState === 'saved' && s.draftDirty === false && Object.keys(s.draftEdits).length === 0, 'after a successful save: saveState "saved", edits cleared');
+  check(s.draft.fields.details.budget === 'Rp10 juta' && s.draft.version === 2 && s.draft.humanEdited === true, 'the returned record is mapped back onto the view (budget under details, version bumped, humanEdited)');
+  check(s.draft.status === undefined || s.draft.status === 'requires_review' || s.review, 'the draft never leaves requires_review — no publish/approve happened');
+
+  // a second save with no changes is a harmless no-op (no extra call)
+  await c4.saveDraft();
+  check(s4.calls.updateDraft.length === 1, 'saveDraft with nothing staged does not call the service again');
+}
+
+section('Phase 4 — a save FAILURE keeps the reviewer’s edits');
+{
+  const s5 = fakeService(
+    [needsInput('conv_Y', [{ id: 'item', prompt: 'Barang apa?', why: 'Item', required: true }]), review('conv_Y')],
+    { updateDraft: () => ({ ok: false, error: { code: 'VERSION_CONFLICT', message: 'raw: head is 3' } }) },
+  );
+  const c5 = createIntelligenceConsoleController({ service: s5, actor: ACTOR });
+  await c5.submit('buat NOR pengadaan meja');
+  await c5.answer('meja');
+  c5.editField('body', 'Isi surat yang saya tulis sendiri.');
+  await c5.saveDraft();
+  const s = c5.getState();
+  check(s.saveState === 'error', 'a failed save → saveState "error"');
+  check(s.saveError && !/raw:|head is 3/.test(s.saveError) && /muat ulang/i.test(s.saveError), 'the error is a curated Indonesian sentence (VERSION_CONFLICT), raw text not shown');
+  check(s.draftEdits.body === 'Isi surat yang saya tulis sendiri.' && s.draftDirty === true, 'the staged edit is NOT lost — the reviewer can retry');
+}
+
+section('Phase 4 — save with no persisted draftId is refused, no service call');
+{
+  const s6 = fakeService(
+    [needsInput('conv_Z', [{ id: 'item', prompt: 'Barang apa?', why: 'Item', required: true }]), review('conv_Z', { draftId: null })],
+    { updateDraft: () => draftRecord({}) },
+  );
+  const c6 = createIntelligenceConsoleController({ service: s6, actor: ACTOR });
+  await c6.submit('buat NOR pengadaan lemari');
+  await c6.answer('lemari');
+  check(c6.getState().draftId === null, 'no draftId when the server did not persist the draft');
+  c6.editField('budget', 'Rp5 juta');
+  await c6.saveDraft();
+  check(s6.calls.updateDraft.length === 0 && c6.getState().saveState === 'error', 'saveDraft is refused (no draftId) without calling the service');
+}
+
+section('Phase 4 — a persistence error on requires_review is surfaced (not hidden)');
+{
+  const s7 = fakeService([review('conv_P', { draftId: null, draftError: { code: 'INVALID_RECORD', message: 'raw' } })]);
+  const c7 = createIntelligenceConsoleController({ service: s7, actor: ACTOR });
+  await c7.submit('buat NOR pengadaan kursi lengkap');
+  const s = c7.getState();
+  check(s.phase === CONSOLE_PHASE.REVIEW && s.draftId === null, 'still reaches the review workspace even though persistence failed');
+  check(s.draftPersistError && /tidak dapat disimpan|periksa/i.test(s.draftPersistError), 'draftPersistError carries a curated sentence for the view to show');
+}
+
+section('Phase 4 — resumeDraft() rehydrates the review workspace from the server');
+{
+  const s8 = fakeService([], { getDraft: (id) => draftRecord({ draftId: id, version: 4, humanEdited: true, facts: { item: 'kursi lipat', budget: 'Rp9 juta' }, body: 'Isi tersimpan.' }) });
+  const c8 = createIntelligenceConsoleController({ service: s8, actor: ACTOR });
+  await c8.resumeDraft('draft_conv_R');
+  const s = c8.getState();
+  check(s8.calls.getDraft.length === 1 && s8.calls.getDraft[0].id === 'draft_conv_R', 'resumeDraft calls service.getDraft with the stored id');
+  check(s.phase === CONSOLE_PHASE.REVIEW && s.draftId === 'draft_conv_R', 'it lands directly in the review workspace for that draft');
+  check(s.draft.fields.details.item === 'kursi lipat' && s.draft.fields.body === 'Isi tersimpan.' && s.draft.version === 4, 'the persisted record is shown (reload-safe)');
+  check(s.draftDirty === false && s.saveState === 'idle', 'resumed with a clean edit state');
+  // a stale / failed pointer just returns to idle, no error noise
+  const s8b = fakeService([], { getDraft: () => ({ ok: false, error: { code: 'NOT_FOUND' } }) });
+  const c8b = createIntelligenceConsoleController({ service: s8b, actor: ACTOR });
+  await c8b.resumeDraft('draft_gone');
+  check(c8b.getState().phase === CONSOLE_PHASE.IDLE, 'a stale reload pointer → idle, no error banner');
+}
 
 section('double-submit protection');
 let release;
@@ -220,6 +342,7 @@ section('reset() → idle, server-owned conversation untouched');
   c7.reset();
   const rs = c7.getState();
   check(rs.phase === CONSOLE_PHASE.IDLE && rs.messages.length === 0 && rs.conversationId === null && rs.draft === null, 'reset clears local state');
+  check(rs.draftId === null && rs.draftDirty === false && Object.keys(rs.draftEdits).length === 0 && rs.saveState === 'idle', 'reset also clears the Phase 4 draft-edit state');
   check(!('cancel' in s7.calls) , 'reset did NOT call any cancel/delete on the service (server conversation left as-is)');
 }
 

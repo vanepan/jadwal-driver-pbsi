@@ -186,10 +186,16 @@ reset();
   check(listCalls >= 1, 'the service retrieves Approved Knowledge for the draft');
   check(t.response.draft.fields.metadata.knowledgeRefs.includes('k1'), 'only the APPROVED item (k1) is used as a reference');
   check(!t.response.draft.fields.metadata.knowledgeRefs.includes('k2'), 'a non-approved (draft) item is never used');
-  // generated output does NOT become approved knowledge — the service imports no promote/ingest path
+  // generated output does NOT become approved knowledge — the service imports no promote/ingest path.
+  // NOTE: the Phase 4 NOR-draft store legitimately exposes createDraft/updateDraft (persist a
+  // human-reviewable NOR draft — NOT knowledge), so the guard is scoped to knowledge-write symbols
+  // and to any import from src/knowledge/{services,repository}.
   const svcSrc = (await import('node:fs')).readFileSync(new URL('../src/intelligence/service/intelligence-service.js', import.meta.url), 'utf8');
   const retrSrc = (await import('node:fs')).readFileSync(new URL('../src/intelligence/retrieval/knowledge-retrieval.js', import.meta.url), 'utf8');
-  check(!/promoteKnowledge|ingest\(|createDraft|mergeKnowledge|appendVersion/.test(svcSrc + retrSrc), 'the Intelligence layer calls NO knowledge write/promote path — generated output never auto-becomes Approved Knowledge (PART 7)');
+  const knowledgeWrite = /from ['"][^'"]*knowledge\/(services|repository)/.test(svcSrc)
+    || /promoteKnowledge|mergeKnowledge|appendVersion|ingestKnowledge|\bingest\(/.test(svcSrc + retrSrc)
+    || /knowledge[A-Za-z]*\.(save|write|create|promote|ingest|approve)\s*\(/.test(svcSrc + retrSrc);
+  check(!knowledgeWrite, 'the Intelligence layer calls NO knowledge write/promote path — generated output never auto-becomes Approved Knowledge (PART 7)');
 }
 
 section('Inaccessible knowledge is rejected (PART 11)');

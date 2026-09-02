@@ -53,6 +53,7 @@ const { notifyAdminsOfNewRequest } = require('./src/notifications/notifyAdminsOf
 
 const { generateCompletion } = require('./src/intelligence/generateCompletion');
 const { intelligenceConversation } = require('./src/intelligence/intelligenceConversation');
+const { intelligenceNorDraft } = require('./src/intelligence/intelligenceNorDraft');
 
 exports.health = health;
 exports.verifyPin = verifyPin;
@@ -154,3 +155,13 @@ exports.generateCompletion = generateCompletion;
    rule (database.rules.json, staged since Phase 1) must be deployed alongside
    it. See docs/V2_SARPRAS_INTELLIGENCE_PHASE_2C.md. */
 exports.intelligenceConversation = intelligenceConversation;
+
+/* V2 Sarpras Intelligence — Phase 4 server-owned NOR draft & review. HTTPS
+   callable v2, region asia-southeast1, NO secrets. Sibling of
+   intelligenceConversation: same admin-role authorization (Phase 3C), owner
+   is ALWAYS request.auth.uid, reads/writes /intelligence_nor_drafts/{draftId}
+   via the Admin SDK (RTDB rule ".write": false). op ∈ create | get | update
+   | list. Cross-owner get/update → FORBIDDEN. numbering.publishedNumber is
+   forced null — this callable never publishes, numbers, approves, or mutates
+   the NOR Registry / organizational knowledge. */
+exports.intelligenceNorDraft = intelligenceNorDraft;

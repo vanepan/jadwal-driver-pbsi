@@ -35,7 +35,7 @@
 
 'use strict';
 
-import { callGenerateCompletion, callIntelligenceConversation } from './firebase.js';
+import { callGenerateCompletion, callIntelligenceConversation, callIntelligenceNorDraft } from './firebase.js';
 import { bootstrapIntelligenceClient } from '../src/intelligence/client-bootstrap.js';
 import { createIntelligenceService } from '../src/intelligence/service/intelligence-service.js';
 import { buildDefaultPorts } from '../src/intelligence/service/default-ports.js';
@@ -74,6 +74,7 @@ export async function wireIntelligenceBackend(featureFlags) {
     _status = bootstrapIntelligenceClient({
       callConversation: (payload) => callIntelligenceConversation(payload),
       callModel: (req) => callGenerateCompletion(req),
+      callDraft: (payload) => callIntelligenceNorDraft(payload),
       featureFlags: (featureFlags && typeof featureFlags === 'object') ? featureFlags : undefined,
     });
     _wired = _status.ok === true;

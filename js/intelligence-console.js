@@ -1,30 +1,40 @@
 /* ============================================================
-   INTELLIGENCE-CONSOLE.JS — Sarpras Intelligence (V2, Phase 3B)
+   INTELLIGENCE-CONSOLE.JS — Sarpras Intelligence (V2, Phase 4)
 
-   The minimal user-facing surface for Sarpras Intelligence. It proves ONE
-   browser flow end-to-end and nothing more:
+   The user-facing surface for Sarpras Intelligence. Two stages:
 
-     input → Intelligence Service → server-owned conversation → needs_input
-           → user answers → continueSession() → requires_review (read-only draft)
+     1. INTAKE (chat)   input → Intelligence Service → server-owned
+                        conversation → needs_input → … → requires_review
+     2. NOR DRAFT & REVIEW WORKSPACE   the requires_review result becomes a
+                        persistent, STRUCTURED, human-editable NOR draft
+                        (server-owned RTDB via the intelligenceNorDraft
+                        callable). The reviewer edits real fields, saves
+                        explicitly, and a page reload restores the SAME
+                        persisted draft.
 
-   SCOPE (deliberately small): NO editable preview, NO publish / "Terbitkan",
-   NO NOR Registry, NO official numbering, NO knowledge ingestion, NO
-   autonomous action. The review panel is DISPLAY ONLY.
+   HARD BOUNDARY (unchanged from Phase 3B): NO publish / "Terbitkan" /
+   approve / official numbering / NOR Registry mutation / knowledge write /
+   autonomous action anywhere on this surface. The draft stays
+   `requires_review` — the status pill always reads "Menunggu review". AI
+   assistance is not approval; a human decision is mandatory.
 
    ARCHITECTURE:
-     • all conversation/orchestration logic → the PURE
+     • all flow / draft-edit / save state  → the PURE
        src/intelligence/console/intelligence-console-controller.js
-     • the real service is assembled by js/intelligence-backend-wiring.js
-       (this file imports ONLY that bridge — never src/intelligence/ directly,
-       never js/firebase.js, never a callable)
-     • this file owns ONLY the DOM: build the shell once, patch regions on
-       each controller onChange (so the text input never loses focus/caret)
+     • the real service (with getDraft/updateDraft) is assembled by
+       js/intelligence-backend-wiring.js — this file imports ONLY that
+       bridge, never src/intelligence/ directly, never js/firebase.js
+     • this file owns ONLY the DOM: build the shell once, build the review
+       workspace once per draft version (so a field never loses focus/caret
+       mid-edit), patch the light bits (save bar, status, disabled) on each
+       onChange
+     • the reload pointer is a single draftId string in sessionStorage
+       (a bookmark, not conversation state) — guarded, best-effort
 
    GATING: mounted by js/app.js#navSarprasIntelligence() ONLY when
    isV2Enabled(currentUser) AND the synced Intelligence feature flag is ON.
-   With the flag OFF (production default) this module is never fetched and
-   never mounted. Even mounted, it makes ZERO service calls until the user
-   explicitly submits.
+   Even mounted it makes ZERO service calls until the user submits — except
+   a single getDraft() when a sessionStorage reload pointer is present.
    ============================================================ */
 
 'use strict';
@@ -33,13 +43,14 @@ import { getCurrentUser } from './auth.js';
 import { createWiredIntelligenceConsoleController } from './intelligence-backend-wiring.js';
 
 const STYLE_ID = 'sic-console-style';
+const RESUME_KEY = 'sic.p4.draftId';
 const CSS = `
-.sic-console{width:100%;max-width:720px;margin:0 auto;padding:16px;box-sizing:border-box;
-  font:14px/1.5 var(--font-sans,system-ui,-apple-system,Segoe UI,Roboto,sans-serif);
+.sic-console{width:100%;max-width:760px;margin:0 auto;padding:16px;box-sizing:border-box;
+  font:14px/1.55 var(--font-sans,system-ui,-apple-system,Segoe UI,Roboto,sans-serif);
   color:var(--text,#1b1b1f);overflow-x:hidden}
 .sic-console *{box-sizing:border-box}
 .sic-console__head{margin:0 0 4px}
-.sic-console__title{margin:0;font-size:18px;font-weight:700}
+.sic-console__title{margin:0;font-size:18px;font-weight:700;letter-spacing:-.01em}
 .sic-console__sub{margin:2px 0 14px;color:var(--text-muted,#5b5b66);font-size:13px}
 .sic-console__stack{display:flex;flex-direction:column;gap:10px;margin-bottom:14px}
 .sic-console__msg{max-width:100%;padding:10px 12px;border-radius:12px;white-space:pre-wrap;
@@ -57,26 +68,56 @@ const CSS = `
 .sic-console__input:disabled{opacity:.6}
 .sic-console__btn{flex:0 0 auto;padding:10px 18px;border-radius:10px;border:1px solid transparent;
   background:var(--accent,#2f6fed);color:#fff;font:inherit;font-weight:600;cursor:pointer}
-.sic-console__btn:disabled{opacity:.6;cursor:default}
+.sic-console__btn:disabled{opacity:.55;cursor:default}
 .sic-console__btn--ghost{background:transparent;color:var(--accent,#2f6fed);
-  border-color:var(--accent,#2f6fed);margin-top:10px}
+  border-color:var(--accent,#2f6fed)}
+.sic-console__btn--quiet{background:transparent;color:var(--text-muted,#5b5b66);
+  border-color:var(--border,#d0d0d8);font-weight:500}
 .sic-console__hint{margin:8px 0 0;font-size:12px;color:var(--text-muted,#6b6b76)}
 .sic-console__error{margin:10px 0 0;padding:10px 12px;border-radius:10px;
   background:var(--danger-soft,#fdecec);border:1px solid var(--danger-border,#f5c2c2);
   color:var(--danger-text,#8a1f1f);overflow-wrap:anywhere}
-.sic-console__review{margin-top:16px;padding:14px;border:1px solid var(--border,#e2e2e8);
-  border-radius:12px;background:var(--surface,#fff)}
-.sic-console__review h3{margin:0 0 10px;font-size:15px}
-.sic-console__dl{margin:0;display:grid;grid-template-columns:minmax(0,140px) minmax(0,1fr);
-  gap:6px 12px}
-.sic-console__dl dt{font-weight:600;color:var(--text-muted,#5b5b66)}
-.sic-console__dl dd{margin:0;overflow-wrap:anywhere;white-space:pre-wrap}
-.sic-console__note{margin:10px 0 0;font-size:12px;color:var(--text-muted,#6b6b76)}
-@media (max-width:520px){
+.sic-console__reset{margin-top:14px}
+
+/* ── NOR draft & review workspace ─────────────────────────────────────── */
+.sic-ws{margin-top:18px;display:flex;flex-direction:column;gap:16px}
+.sic-ws__section{border:1px solid var(--border,#e2e2e8);border-radius:14px;
+  background:var(--surface,#fff);padding:16px}
+.sic-ws__section--context{background:var(--surface-2,#f7f7f9)}
+.sic-ws__kicker{margin:0 0 8px;font-size:11px;font-weight:700;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--text-muted,#6b6b76)}
+.sic-ws__statusrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.sic-ws__pill{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;
+  font-size:12px;font-weight:700;background:var(--warning-soft,#fff3d6);
+  border:1px solid var(--warning-border,#f0d089);color:var(--warning-text,#7a5300)}
+.sic-ws__pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.sic-ws__reason{margin:8px 0 0;font-size:12.5px;color:var(--text-muted,#5b5b66)}
+.sic-ws__warn{margin:10px 0 0;padding:9px 11px;border-radius:10px;font-size:12.5px;
+  background:var(--danger-soft,#fdecec);border:1px solid var(--danger-border,#f5c2c2);
+  color:var(--danger-text,#8a1f1f)}
+.sic-ws__contexttext{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--text,#2a2a30)}
+.sic-ws__grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 14px}
+.sic-ws__field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.sic-ws__field--wide{grid-column:1 / -1}
+.sic-ws__flabel{font-size:12px;font-weight:600;color:var(--text-muted,#5b5b66)}
+.sic-ws__fin{width:100%;padding:9px 11px;border-radius:9px;border:1px solid var(--border,#c9c9d2);
+  background:var(--surface,#fff);color:inherit;font:inherit;min-width:0}
+.sic-ws__fin:focus{outline:2px solid var(--accent,#2f6fed);outline-offset:-1px;border-color:transparent}
+textarea.sic-ws__fin{min-height:150px;resize:vertical;line-height:1.55}
+.sic-ws__meta{margin:10px 0 0;font-size:11.5px;color:var(--text-muted,#7a7a84)}
+.sic-ws__savebar{position:sticky;bottom:0;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:12px 14px;border:1px solid var(--border,#e2e2e8);border-radius:14px;
+  background:var(--surface,#fff)}
+.sic-ws__savestate{font-size:12.5px;min-width:0;overflow-wrap:anywhere}
+.sic-ws__savestate--dirty{color:var(--warning-text,#7a5300)}
+.sic-ws__savestate--saved{color:var(--success-text,#1f7a3d)}
+.sic-ws__savestate--error{color:var(--danger-text,#8a1f1f)}
+.sic-ws__spacer{flex:1 1 auto}
+@media (max-width:560px){
   .sic-console{padding:12px}
   .sic-console__btn{flex:1 1 100%}
-  .sic-console__dl{grid-template-columns:1fr}
-  .sic-console__dl dt{margin-top:6px}
+  .sic-ws__grid{grid-template-columns:1fr}
+  .sic-ws__savebar .sic-console__btn{flex:1 1 100%}
 }`;
 
 function injectStyleOnce() {
@@ -92,15 +133,30 @@ const PHASE_HINT = {
   idle: 'Mulailah dengan menjelaskan kebutuhan Anda, mis. "buat NOR pengadaan kursi rapat".',
   needs_input: 'Jawab pertanyaan di atas dengan singkat, lalu tekan Kirim.',
   loading: 'Memproses…',
-  review: 'Ini ringkasan draf — hanya untuk ditinjau. Belum ada penerbitan atau penomoran.',
+  review: 'Tinjau dan sunting draf di bawah, lalu tekan "Simpan Draf". Belum ada penerbitan atau penomoran.',
   error: '',
 };
+
+/* editable fields: id → { label, wide?, textarea?, source } — source says
+   where the CURRENT value is read from on the normalised draft view. */
+const WS_FIELDS = [
+  { id: 'subject', label: 'Perihal', wide: true, src: 'fields' },
+  { id: 'recipient', label: 'Kepada', src: 'fields' },
+  { id: 'date', label: 'Tanggal', src: 'fields', placeholder: 'YYYY-MM-DD' },
+  { id: 'item', label: 'Barang / uraian', src: 'details' },
+  { id: 'quantity', label: 'Jumlah', src: 'details' },
+  { id: 'unit', label: 'Satuan', src: 'details' },
+  { id: 'purpose', label: 'Tujuan / keperluan', wide: true, src: 'details' },
+  { id: 'budget', label: 'Perkiraan anggaran', wide: true, src: 'details' },
+  { id: 'body', label: 'Isi Nota Dinas', wide: true, textarea: true, src: 'fields' },
+];
 
 let _mounted = false;
 let _host = null;
 let _controller = null;
 let _els = null;
-let _draftInput = '';   // live keystrokes — NEVER pushed into controller state (keeps focus)
+let _draftInput = '';        // chat input keystrokes — never pushed into controller state
+let _wsSig = null;           // signature of the workspace currently built (draftId@version)
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => (
@@ -108,8 +164,19 @@ function esc(s) {
   ));
 }
 
-/** Build the shell ONCE. Regions are patched afterwards; the <input> node is
- *  never replaced, so focus + caret survive every state change. */
+/* ── sessionStorage reload pointer (guarded, best-effort) ─────────────── */
+function readResume() {
+  try { return sessionStorage.getItem(RESUME_KEY) || ''; } catch { return ''; }
+}
+function writeResume(id) {
+  try { if (id) sessionStorage.setItem(RESUME_KEY, String(id)); } catch { /* ignore */ }
+}
+function clearResume() {
+  try { sessionStorage.removeItem(RESUME_KEY); } catch { /* ignore */ }
+}
+
+/** Build the shell ONCE. Regions are patched afterwards; the chat <input>
+ *  node is never replaced, so focus + caret survive every state change. */
 function buildShell(host) {
   host.innerHTML = `
     <div class="sic-console" data-sic-console>
@@ -126,8 +193,8 @@ function buildShell(host) {
       </form>
       <p class="sic-console__hint" data-region="hint"></p>
       <div class="sic-console__error" data-region="error" role="alert" hidden></div>
-      <div data-region="review"></div>
-      <button class="sic-console__btn sic-console__btn--ghost" type="button" data-region="reset" hidden>
+      <div data-region="workspace"></div>
+      <button class="sic-console__btn sic-console__btn--ghost sic-console__reset" type="button" data-region="reset" hidden>
         Mulai permintaan baru
       </button>
     </div>`;
@@ -142,14 +209,16 @@ function buildShell(host) {
     btn: q('[data-region="btn"]'),
     hint: q('[data-region="hint"]'),
     error: q('[data-region="error"]'),
-    review: q('[data-region="review"]'),
+    workspace: q('[data-region="workspace"]'),
     reset: q('[data-region="reset"]'),
   };
 
-  // Keystrokes update ONLY the local draft — no re-render, no controller call.
   _els.input.addEventListener('input', (e) => { _draftInput = e.target.value; });
   _els.form.addEventListener('submit', (e) => { e.preventDefault(); submitCurrent(); });
-  _els.reset.addEventListener('click', () => { _draftInput = ''; _controller && _controller.reset(); });
+  _els.reset.addEventListener('click', () => {
+    _draftInput = ''; _wsSig = null; clearResume();
+    _controller && _controller.reset();
+  });
 }
 
 function submitCurrent() {
@@ -158,9 +227,10 @@ function submitCurrent() {
   if (st.busy) return;
   const text = (_draftInput || '').trim();
   if (!text) { _els.input.focus(); return; }
-  // needs_input / an errored live conversation → answer(); otherwise submit().
-  if (st.conversationId && st.phase !== 'idle') _controller.answer(text);
-  else _controller.submit(text);
+  if (st.conversationId && st.phase !== 'idle') { _controller.answer(text); return; }
+  // a fresh request supersedes any earlier resumable draft
+  clearResume();
+  _controller.submit(text);
 }
 
 function renderStack(messages) {
@@ -172,53 +242,168 @@ function renderStack(messages) {
   }).join('');
 }
 
-function renderReview(state) {
-  if (state.phase !== 'review' || !state.draft || !state.draft.fields) { _els.review.innerHTML = ''; return; }
-  const f = state.draft.fields;
-  const rows = [];
-  const add = (k, v) => { if (v != null && v !== '') rows.push([k, v]); };
-  add('Jenis', f.norType);
-  add('Subjek', f.subject);
-  add('Kepada', f.recipient ? `${f.recipient}${f.recipientStatus === 'proposed' ? ' (usulan — mohon dikonfirmasi)' : ''}` : null);
-  add('Tanggal', f.date);
-  const details = f.details && typeof f.details === 'object' ? f.details : {};
-  for (const [k, v] of Object.entries(details)) add(k.charAt(0).toUpperCase() + k.slice(1), v);
-  add('Status', 'Menunggu review');
+/* ── review workspace ────────────────────────────────────────────────── */
+
+function wsSignature(state) {
+  const d = state.draft || {};
+  return `${state.draftId || 'none'}@${d.version || 0}`;
+}
+
+/** Read the CURRENT (last-saved) value of an editable field off the
+ *  normalised draft view — staged edits live in the DOM, not here. */
+function draftFieldValue(state, field, src) {
+  const d = state.draft && state.draft.fields ? state.draft.fields : {};
+  if (src === 'details') {
+    const det = d.details && typeof d.details === 'object' ? d.details : {};
+    return det[field] == null ? '' : String(det[field]);
+  }
+  return d[field] == null ? '' : String(d[field]);
+}
+
+/** Build the workspace DOM ONCE for the current draft signature. Field
+ *  inputs get their listeners here and are NOT rebuilt on later paints, so
+ *  typing is never interrupted. */
+function buildWorkspace(state) {
+  const d = state.draft || {};
+  const f = d.fields || {};
+  const firstUser = (state.messages || []).find((m) => m.role === 'user');
   const bodySrc = f.metadata && f.metadata.bodySource;
-  _els.review.innerHTML = `
-    <div class="sic-console__review">
-      <h3>Review</h3>
-      <dl class="sic-console__dl">
-        ${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}
-      </dl>
-      ${f.body ? `<dl class="sic-console__dl"><dt>Isi</dt><dd>${esc(f.body)}</dd></dl>` : ''}
-      <p class="sic-console__note">Ringkasan ini hanya untuk ditinjau — tidak ada tombol sunting,
-      terbitkan, atau penomoran resmi pada tahap ini.${bodySrc ? ` (Sumber isi: ${esc(bodySrc)}.)` : ''}</p>
+
+  const fieldHtml = WS_FIELDS.map((spec) => {
+    const val = draftFieldValue(state, spec.id, spec.src);
+    const control = spec.textarea
+      ? `<textarea class="sic-ws__fin" data-wsfield="${spec.id}" rows="7">${esc(val)}</textarea>`
+      : `<input class="sic-ws__fin" type="text" data-wsfield="${spec.id}"
+           ${spec.placeholder ? `placeholder="${esc(spec.placeholder)}"` : ''} value="${esc(val)}" />`;
+    return `<div class="sic-ws__field${spec.wide ? ' sic-ws__field--wide' : ''}">
+      <label class="sic-ws__flabel" for="wsf_${spec.id}">${esc(spec.label)}</label>
+      ${control.replace('data-wsfield', `id="wsf_${spec.id}" data-wsfield`)}
     </div>`;
+  }).join('');
+
+  _els.workspace.innerHTML = `
+    <div class="sic-ws" data-ws>
+      <section class="sic-ws__section sic-ws__section--context">
+        <p class="sic-ws__kicker">Konteks percakapan</p>
+        <p class="sic-ws__contexttext">${esc(firstUser ? firstUser.text : '(permintaan tidak tersedia)')}</p>
+      </section>
+
+      <section class="sic-ws__section">
+        <p class="sic-ws__kicker">Status review</p>
+        <div class="sic-ws__statusrow">
+          <span class="sic-ws__pill">Menunggu review</span>
+          <span class="sic-ws__meta" data-ws-ver></span>
+        </div>
+        <p class="sic-ws__reason">${esc((state.review && state.review.reason)
+          || 'Draf NOR memerlukan peninjauan dan persetujuan manusia sebelum diterbitkan. Nomor resmi ditetapkan oleh Registry, bukan AI.')}</p>
+        <div class="sic-ws__warn" data-ws-persistwarn hidden></div>
+      </section>
+
+      <section class="sic-ws__section">
+        <p class="sic-ws__kicker">Draf Nota Dinas — dapat disunting</p>
+        <div class="sic-ws__grid">${fieldHtml}</div>
+        <p class="sic-ws__meta">Jenis: ${esc(f.norType || '—')}${
+          bodySrc ? ` · Sumber isi: ${esc(bodySrc)}` : ''} · Nomor resmi: belum ditetapkan (menunggu review)</p>
+      </section>
+
+      <div class="sic-ws__savebar">
+        <span class="sic-ws__savestate" data-ws-savestate></span>
+        <span class="sic-ws__spacer"></span>
+        <button class="sic-console__btn sic-console__btn--quiet" type="button" data-ws-discard>Batalkan perubahan</button>
+        <button class="sic-console__btn" type="button" data-ws-save>Simpan Draf</button>
+      </div>
+    </div>`;
+
+  // wire the editable fields — each keystroke stages a local edit in the
+  // controller (no network); the value stays in the DOM node so focus/caret
+  // are never disturbed by a re-render.
+  _els.workspace.querySelectorAll('[data-wsfield]').forEach((node) => {
+    node.addEventListener('input', (e) => {
+      if (_controller) _controller.editField(node.getAttribute('data-wsfield'), e.target.value);
+    });
+  });
+  const saveBtn = _els.workspace.querySelector('[data-ws-save]');
+  const discardBtn = _els.workspace.querySelector('[data-ws-discard]');
+  saveBtn.addEventListener('click', () => { if (_controller) _controller.saveDraft(); });
+  discardBtn.addEventListener('click', () => {
+    if (!_controller) return;
+    // force a rebuild so the field inputs revert to the last-saved values
+    _wsSig = null;
+    _controller.discardEdits();
+  });
+
+  _wsSig = wsSignature(state);
+}
+
+/** Patch only the light bits of an already-built workspace (never the field
+ *  values — the reviewer owns those while editing). */
+function patchWorkspace(state) {
+  const ws = _els.workspace.querySelector('[data-ws]');
+  if (!ws) return;
+  const d = state.draft || {};
+
+  const ver = ws.querySelector('[data-ws-ver]');
+  if (ver) {
+    ver.textContent = `Versi ${d.version || 1}${d.humanEdited ? ' · sudah disunting manusia' : ''}`;
+  }
+
+  const warn = ws.querySelector('[data-ws-persistwarn]');
+  if (warn) {
+    if (state.draftPersistError) { warn.hidden = false; warn.textContent = `Draf belum tersimpan otomatis: ${state.draftPersistError}`; }
+    else { warn.hidden = true; warn.textContent = ''; }
+  }
+
+  const ss = ws.querySelector('[data-ws-savestate]');
+  if (ss) {
+    ss.className = 'sic-ws__savestate';
+    if (state.saveState === 'saving') { ss.textContent = 'Menyimpan…'; }
+    else if (state.saveState === 'saved') { ss.textContent = 'Perubahan tersimpan.'; ss.classList.add('sic-ws__savestate--saved'); }
+    else if (state.saveState === 'error') { ss.textContent = state.saveError || 'Perubahan gagal disimpan.'; ss.classList.add('sic-ws__savestate--error'); }
+    else if (state.draftDirty) { ss.textContent = 'Ada perubahan yang belum disimpan.'; ss.classList.add('sic-ws__savestate--dirty'); }
+    else { ss.textContent = 'Belum ada perubahan.'; }
+  }
+
+  const saveBtn = ws.querySelector('[data-ws-save]');
+  const discardBtn = ws.querySelector('[data-ws-discard]');
+  if (saveBtn) { saveBtn.disabled = state.busy || !state.draftDirty; saveBtn.textContent = state.saveState === 'saving' ? 'Menyimpan…' : 'Simpan Draf'; }
+  if (discardBtn) discardBtn.disabled = state.busy || !state.draftDirty;
+}
+
+function renderWorkspace(state) {
+  if (state.phase !== 'review' || !state.draft || !state.draft.fields) {
+    if (_wsSig !== null) { _els.workspace.innerHTML = ''; _wsSig = null; }
+    return;
+  }
+  if (_wsSig !== wsSignature(state)) buildWorkspace(state);
+  patchWorkspace(state);
 }
 
 /** Patch every region from a controller state snapshot. */
 function paint(state) {
   if (!_els) return;
   renderStack(state.messages);
-  renderReview(state);
+  renderWorkspace(state);
 
+  const inReview = state.phase === 'review';
   const busy = state.busy === true;
+
+  // the chat form belongs to intake — hide it once the workspace is showing
+  _els.form.hidden = inReview;
+  _els.label.hidden = inReview;
+
   _els.input.disabled = busy;
   _els.btn.disabled = busy;
   _els.btn.textContent = busy ? 'Memproses…' : 'Kirim';
 
-  // The label + placeholder track the current question when there is one.
   const q0 = state.questions && state.questions[0];
   const labelText = q0 ? (q0.why || q0.prompt) : 'Tulis permintaan';
   _els.label.textContent = labelText;
   _els.input.setAttribute('aria-label', labelText);
   _els.input.placeholder = q0 ? 'Tulis jawaban…' : 'Tulis permintaan…';
 
-  // Restore the field after a failed turn; clear it once a turn succeeds.
   if (state.phase === 'error') {
     if (state.pendingInput && !_draftInput) { _draftInput = state.pendingInput; _els.input.value = _draftInput; }
-  } else if (!busy) {
+  } else if (!busy && !inReview) {
     _draftInput = '';
     _els.input.value = '';
   }
@@ -227,10 +412,18 @@ function paint(state) {
   if (state.error) { _els.error.hidden = false; _els.error.textContent = state.error; }
   else { _els.error.hidden = true; _els.error.textContent = ''; }
 
-  _els.reset.hidden = !(state.phase === 'review' || state.phase === 'error');
+  _els.reset.hidden = !(inReview || state.phase === 'error');
 
-  // Keyboard focus: return to the input whenever it is usable (not while loading).
-  if (!busy && typeof _els.input.focus === 'function') {
+  // reload pointer — remember a persisted draft while it is on screen. It is
+  // cleared explicitly on reset / on a fresh request / on a stale resume,
+  // NOT here (paint runs once with phase 'idle' at mount, before the
+  // resume-pointer is read).
+  if (inReview && state.draftId) writeResume(state.draftId);
+
+  // keyboard focus: only pull focus to the chat input while it is the
+  // primary control (never in the review workspace — the reviewer is typing
+  // in the field inputs there).
+  if (!busy && !inReview && typeof _els.input.focus === 'function') {
     try { _els.input.focus({ preventScroll: true }); } catch { _els.input.focus(); }
   }
 }
@@ -243,6 +436,7 @@ function paint(state) {
 export async function mountIntelligenceConsole(hostEl, opts = {}) {
   if (!hostEl) return;
   _host = hostEl;
+  _wsSig = null;
   injectStyleOnce();
   buildShell(hostEl);
 
@@ -257,7 +451,15 @@ export async function mountIntelligenceConsole(hostEl, opts = {}) {
   if (typeof _controller.setOnChange === 'function') _controller.setOnChange(paint);
 
   _mounted = true;
+
+  // reload restore — a single stored draftId means "resume this review".
+  // Read it BEFORE the first paint (paint never clears it, but be explicit).
+  const resumeId = readResume();
   paint(_controller.getState());
+  if (resumeId && typeof _controller.resumeDraft === 'function') {
+    try { await _controller.resumeDraft(resumeId); } catch { /* ignore */ }
+    if (_controller.getState().phase !== 'review') clearResume(); // stale pointer
+  }
 }
 
 export function unmountIntelligenceConsole() {
@@ -270,6 +472,7 @@ export function unmountIntelligenceConsole() {
   _controller = null;
   _els = null;
   _draftInput = '';
+  _wsSig = null;
 }
 
 export function isIntelligenceConsoleMounted() { return _mounted; }
