@@ -1,7 +1,7 @@
 # V2 — Sarpras Intelligence Phase 5: Canonical NOR Registry & Human Publication
 
-**Status:** implemented, tested, **final hardening pass applied**, **not
-committed / not deployed**. Production feature flag
+**Status:** implemented, tested, hardened, **committed `f23b097` + pushed +
+deployed 2026-09-02**. Production feature flag
 `/feature_flags/intelligence/enabled` remains **absent → OFF**. Zero real
 OpenAI calls. No V1 change. No data migration.
 
@@ -267,13 +267,29 @@ comment-aware sibling `rtdb-hardening-functions-check.mjs` passes 34/34.
 
 ---
 
-## 12. Deployment (NOT DONE — gated)
+## 12. Deployment — DONE 2026-09-02
 
-Required to deploy: `firebase deploy --only functions:intelligenceNorRegistry,database`
-(functions asia-southeast1, no-secret; the `database` deploy pushes the one
-added rule node). Then Vercel auto-deploys the client assets (Firebase Hosting
-does not — see the deployment dual-surface note). **The feature flag stays
-OFF.** Manual production E2E is a separate, explicitly-approved step (§14).
+`git push origin main` (commit `f23b097`, on `4bb69b2` Phase 4) then
+`firebase deploy --only functions:intelligenceNorRegistry,database`:
+
+- **functions:** `intelligenceNorRegistry(asia-southeast1)` **Successful create**
+  — v2 callable, nodejs20, 256 MB, **NO secret bound**. Deployed function count
+  **24 → 25** (sibling of `intelligenceNorDraft` / `intelligenceConversation`).
+- **database:** rules syntax valid → **released successfully**. Live deep-compare
+  against the deployed production ruleset (== `HEAD~1:database.rules.json` —
+  Phase 4 was the last `database` deploy and no commit since touched the file):
+  **+3 leaves, 0 removed, 0 modified**, all under `/rules/intelligence_nor_registry`.
+  Leaf count 140 → 143. The counter node `/intelligence_nor_registry_counters`
+  has **no rule** (root deny-by-default).
+- **prod smoke:** unauthenticated `POST` to the callable → **HTTP 401**
+  `{"error":{"status":"UNAUTHENTICATED","message":"Login diperlukan."}}` — the
+  `HttpsError('unauthenticated')` gate is live.
+- **Vercel** auto-deploys the client assets on the `main` push (Firebase Hosting
+  does not; `APP_VERSION` not bumped → no version-oracle drift).
+- **`/feature_flags/intelligence` untouched → still OFF.** The whole Registry
+  lifecycle UI is a dead branch in production until a signed-in admin flips the
+  flag for the manual E2E (§14). Deploy warnings (Node 20 EOL, outdated
+  `firebase-functions`) are pre-existing and repo-wide.
 
 ---
 
