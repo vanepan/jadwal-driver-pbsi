@@ -39,7 +39,9 @@
   import { RESPONSE_STATUS } from '/src/intelligence/contracts/intelligence-response-contract.js';
 
   const DRAFT_ID = 'draft_conv_harness';
+  const NOR_ID = 'nor_conv_harness';
   const REC_KEY = 'sic.p4.harness.record';
+  const NOR_KEY = 'sic.p5.harness.norRecord';
 
   // The one NOR-draft record the fake service "persists". It is also mirrored
   // into sessionStorage so a PAGE RELOAD restores it — standing in for the
@@ -65,6 +67,30 @@
   let record = loadRecord();
   const FACT_KEYS = new Set(['item', 'quantity', 'unit', 'purpose', 'budget']);
 
+  // Phase 5 — the canonical NorRecord the fake Registry "persists", mirrored
+  // to sessionStorage so a reload restores its lifecycle stage.
+  const contentFromDraft = () => ({
+    jenis: record.jenis, subject: record.subject, recipient: record.recipient,
+    recipientStatus: record.recipientStatus, date: record.date, body: record.body,
+    bodySource: 'template', facts: { ...record.facts }, draftVersion: record.version,
+  });
+  const freshNorRecord = () => ({
+    schema: 'nor-record@1', norId: NOR_ID, ownerId: 'evan', norNumber: '',
+    sourceModule: 'intelligence', documentType: 'nor',
+    status: 'in_review', currentVersion: 1, publishedVersion: null, numberSource: 'system_suggested',
+    content: contentFromDraft(),
+    metadata: { draftId: DRAFT_ID, conversationId: 'conv_harness', numberAllocation: null },
+    versions: [{ version: 1, content: contentFromDraft() }],
+    auditHistory: [{ type: 'AI_DRAFT_CREATED', at: 't', actorId: 'evan', version: 1 }],
+  });
+  function loadNorRecord() {
+    try { const s = sessionStorage.getItem(NOR_KEY); if (s) return JSON.parse(s); } catch (e) { /* ignore */ }
+    return freshNorRecord();
+  }
+  function saveNorRecord() { try { sessionStorage.setItem(NOR_KEY, JSON.stringify(norRecord)); } catch (e) { /* ignore */ } }
+  let norRecord = loadNorRecord();
+  let numberSeq = 6; // publish reserves 7, 8, …
+
   const q = (id, questions) => ({
     conversationId: id,
     response: { schema: 'intelligence-response@1', requestId: 'r', status: RESPONSE_STATUS.NEEDS_INPUT, questions },
@@ -73,6 +99,8 @@
     conversationId: id,
     draftId: DRAFT_ID,
     draftError: null,
+    norId: NOR_ID,
+    registryError: null,
     response: {
       schema: 'intelligence-response@1', requestId: 'r', status: RESPONSE_STATUS.REQUIRES_REVIEW,
       draft: { documentType: 'nor', fields: {
@@ -107,7 +135,11 @@
   let cursor = 0;
   const nextEnv = () => { const s = SCRIPT[Math.min(cursor, SCRIPT.length - 1)]; cursor += 1; return s; };
 
-  const H = { handleCalls: [], continueCalls: [], updateDraftCalls: [], getDraftCalls: [], forceError: false };
+  const H = {
+    handleCalls: [], continueCalls: [], updateDraftCalls: [], getDraftCalls: [],
+    getNorRecordCalls: [], syncNorRecordCalls: [], approveNorCalls: [], publishNorCalls: [],
+    forceError: false,
+  };
   const service = {
     async handle(request) { H.handleCalls.push(request); return H.forceError ? errEnv('PROVIDER_ERROR') : nextEnv(); },
     async continueSession(convId, answers, actor) { H.continueCalls.push({ convId, answers, actor }); return H.forceError ? errEnv('PROVIDER_ERROR') : nextEnv(); },
@@ -132,18 +164,72 @@
       }
       return { ok: true, draft: JSON.parse(JSON.stringify(record)) };
     },
+    // ── Phase 5 — the canonical NOR Registry lifecycle ────────────────────
+    async getNorRecord(id) {
+      H.getNorRecordCalls.push({ id });
+      if (id !== NOR_ID) return { ok: false, error: { code: 'NOT_FOUND', message: 'none' } };
+      return { ok: true, record: JSON.parse(JSON.stringify(norRecord)) };
+    },
+    async syncNorRecord(id) {
+      H.syncNorRecordCalls.push({ id });
+      if (id !== NOR_ID) return { ok: false, error: { code: 'NOT_FOUND', message: 'none' } };
+      if (norRecord.status !== 'in_review') return { ok: false, error: { code: 'ILLEGAL_TRANSITION', message: 'x' } };
+      if (record.version !== norRecord.currentVersion) {
+        norRecord.currentVersion = record.version;
+        norRecord.content = contentFromDraft();
+        norRecord.versions.push({ version: record.version, content: contentFromDraft() });
+        norRecord.auditHistory.push({ type: 'AI_DRAFT_EDITED', at: 't', actorId: 'evan', version: record.version });
+        saveNorRecord();
+      }
+      return { ok: true, record: JSON.parse(JSON.stringify(norRecord)) };
+    },
+    async approveNor(id, expectedVersion) {
+      H.approveNorCalls.push({ id, expectedVersion });
+      if (id !== NOR_ID) return { ok: false, error: { code: 'NOT_FOUND', message: 'none' } };
+      if (norRecord.status === 'published') return { ok: false, error: { code: 'ALREADY_PUBLISHED', message: 'x' } };
+      if (norRecord.status !== 'in_review') return { ok: false, error: { code: 'ILLEGAL_TRANSITION', message: 'x' } };
+      if (typeof expectedVersion === 'number' && expectedVersion !== norRecord.currentVersion) return { ok: false, error: { code: 'VERSION_CONFLICT', message: 'x' } };
+      norRecord.status = 'approved';
+      norRecord.auditHistory.push({ type: 'AI_DRAFT_APPROVED', at: 't', actorId: 'evan', version: norRecord.currentVersion });
+      saveNorRecord();
+      return { ok: true, record: JSON.parse(JSON.stringify(norRecord)) };
+    },
+    async publishNor(id, expectedVersion) {
+      H.publishNorCalls.push({ id, expectedVersion });
+      if (id !== NOR_ID) return { ok: false, error: { code: 'NOT_FOUND', message: 'none' } };
+      if (norRecord.status === 'published') return { ok: true, record: JSON.parse(JSON.stringify(norRecord)) }; // idempotent
+      if (norRecord.status !== 'approved') return { ok: false, error: { code: 'ILLEGAL_TRANSITION', message: 'x' } };
+      if (typeof expectedVersion === 'number' && expectedVersion !== norRecord.currentVersion) return { ok: false, error: { code: 'VERSION_CONFLICT', message: 'x' } };
+      numberSeq += 1;
+      norRecord.status = 'published';
+      norRecord.norNumber = String(numberSeq);
+      norRecord.numberSource = 'reserved';
+      norRecord.publishedVersion = norRecord.currentVersion;
+      norRecord.metadata.numberAllocation = { sequence: numberSeq, scopeKey: 'intelligence_nor', reservationKey: NOR_ID };
+      norRecord.auditHistory.push({ type: 'NOR_NUMBER_RESERVED', at: 't', actorId: 'evan', version: norRecord.currentVersion });
+      norRecord.auditHistory.push({ type: 'NOR_PUBLISHED', at: 't', actorId: 'evan', version: norRecord.currentVersion });
+      saveNorRecord();
+      return { ok: true, record: JSON.parse(JSON.stringify(norRecord)) };
+    },
   };
 
   const controller = createIntelligenceConsoleController({ service, actor: { userId: 'evan', role: 'admin' } });
   H.controller = controller;
   H.getState = () => controller.getState();
   H.record = () => JSON.parse(JSON.stringify(record));
+  H.norRecord = () => JSON.parse(JSON.stringify(norRecord));
+  H.approve = () => controller.approve();
+  H.publish = () => controller.publish();
   H.reset = () => {
     cursor = 0; H.handleCalls.length = 0; H.continueCalls.length = 0;
-    H.updateDraftCalls.length = 0; H.getDraftCalls.length = 0; H.forceError = false;
-    record = freshRecord();
+    H.updateDraftCalls.length = 0; H.getDraftCalls.length = 0;
+    H.getNorRecordCalls.length = 0; H.syncNorRecordCalls.length = 0;
+    H.approveNorCalls.length = 0; H.publishNorCalls.length = 0;
+    H.forceError = false;
+    record = freshRecord(); norRecord = freshNorRecord(); numberSeq = 6;
     try { sessionStorage.removeItem('sic.p4.draftId'); } catch (e) { /* ignore */ }
     try { sessionStorage.removeItem(REC_KEY); } catch (e) { /* ignore */ }
+    try { sessionStorage.removeItem(NOR_KEY); } catch (e) { /* ignore */ }
     controller.reset();
   };
   window.__harness = H;

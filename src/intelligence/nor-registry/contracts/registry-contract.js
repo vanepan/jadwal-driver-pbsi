@@ -26,10 +26,14 @@ export const NOR_REGISTRY_SCHEMA = 'nor-registry@1';
 export const NOR_REGISTRY_ERRORS = Object.freeze({
   NO_BACKEND_CONFIGURED: 'NO_BACKEND_CONFIGURED',
   NOT_FOUND: 'NOT_FOUND',
+  FORBIDDEN: 'FORBIDDEN',                       // owner mismatch — a user may only touch their own records
   DUPLICATE_ID: 'DUPLICATE_ID',
   DUPLICATE_NUMBER: 'DUPLICATE_NUMBER',
   INVALID_RECORD: 'INVALID_RECORD',
-  ILLEGAL_TRANSITION: 'ILLEGAL_TRANSITION',
+  ILLEGAL_TRANSITION: 'ILLEGAL_TRANSITION',     // the requested status move is not legal from the current status
+  VERSION_CONFLICT: 'VERSION_CONFLICT',         // stale expectedVersion — optimistic-concurrency guard (PART E/G)
+  ALREADY_PUBLISHED: 'ALREADY_PUBLISHED',       // publish/approve/edit attempted on a published (immutable) record
+  NUMBER_RESERVATION_FAILED: 'NUMBER_RESERVATION_FAILED', // the atomic official-number allocation could not complete
   NOT_IMPLEMENTED: 'NOT_IMPLEMENTED',
 });
 
@@ -55,14 +59,15 @@ export function registryFailure(code, message) {
  * @property {(record: object) => RegistryResult} register        - Write a NEW NorRecord
  * @property {(norId: string) => RegistryResult} getById          - Read
  * @property {(filter?: object) => RegistryResult} list           - Read
- * @property {(norId: string, patch: object, note?: string) => RegistryResult} appendVersion - Edit = new version
- * @property {(norId: string, opts: object) => RegistryResult} publish - Mark published + set number/publishedVersion
+ * @property {(norId: string, patch: object, note?: string) => RegistryResult} appendVersion - Edit = new immutable version
+ * @property {(norId: string, expectedVersion: number) => RegistryResult} approve - Human approval: in_review → approved (PART E)
+ * @property {(norId: string, opts: object) => RegistryResult} publish - Human publication: approved → published, reserves the official number (PART F/G)
  * @property {(norId: string) => RegistryResult} getHistory       - Version history
  */
 
 export const NOR_REGISTRY_CONTRACT = Object.freeze({
   schema: NOR_REGISTRY_SCHEMA,
-  methods: Object.freeze(['register', 'getById', 'list', 'appendVersion', 'publish', 'getHistory']),
+  methods: Object.freeze(['register', 'getById', 'list', 'appendVersion', 'approve', 'publish', 'getHistory']),
   errorCodes: NOR_REGISTRY_ERRORS,
 });
 

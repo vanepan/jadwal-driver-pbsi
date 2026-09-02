@@ -32,6 +32,7 @@ export const nullNorRegistryBackend = Object.freeze({
   getById: () => notImplemented('getById'),
   list: () => notImplemented('list'),
   appendVersion: () => notImplemented('appendVersion'),
+  approve: () => notImplemented('approve'),
   publish: () => notImplemented('publish'),
   getHistory: () => notImplemented('getHistory'),
 });

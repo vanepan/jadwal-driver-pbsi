@@ -49,6 +49,16 @@ export {
   hasNorSourceModule,
   resetNorSourceModules,
 } from './nor-registry/contracts/nor-record-contract.js';
+/* ── Phase 5 — canonical NOR Registry persistence + human publication.
+   The facade (nor-registry.js, re-exported above) already surfaces
+   `approve`, `REGISTRY_EVENT`, `useCallableNorRegistryBackend`,
+   `norIdFromConversation`, `registryContent*`, `makeNorRecordFromDraft`,
+   `REGISTRY_AUDIT_EVENTS` and `REGISTRY_CHANGE_TYPE`. These are the
+   remaining pure helpers + the backend factory. ── */
+export {
+  appendRegistryVersion, markApproved, markPublished, canRegistryTransition,
+} from './nor-registry/nor-registry-record.js';
+export { createCallableNorRegistryBackend } from './nor-registry/backends/callable-nor-registry-backend.js';
 export {
   NOR_NUMBERING_SCHEMA,
   NUMBERING_ERRORS,

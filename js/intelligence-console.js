@@ -1,33 +1,37 @@
 /* ============================================================
-   INTELLIGENCE-CONSOLE.JS — Sarpras Intelligence (V2, Phase 4)
+   INTELLIGENCE-CONSOLE.JS — Sarpras Intelligence (V2, Phase 5)
 
    The user-facing surface for Sarpras Intelligence. Two stages:
 
      1. INTAKE (chat)   input → Intelligence Service → server-owned
                         conversation → needs_input → … → requires_review
-     2. NOR DRAFT & REVIEW WORKSPACE   the requires_review result becomes a
+     2. NOR DRAFT & REVIEW WORKSPACE   the requires_review result is a
                         persistent, STRUCTURED, human-editable NOR draft
-                        (server-owned RTDB via the intelligenceNorDraft
-                        callable). The reviewer edits real fields, saves
-                        explicitly, and a page reload restores the SAME
-                        persisted draft.
+                        (server-owned RTDB) AND a canonical NorRecord
+                        (Phase 5). The reviewer edits real fields, saves,
+                        then walks the HUMAN-gated lifecycle:
+                          in_review → Setujui → approved → Terbitkan → published
+                        A page reload restores the SAME record at whatever
+                        stage the user left it.
 
-   HARD BOUNDARY (unchanged from Phase 3B): NO publish / "Terbitkan" /
-   approve / official numbering / NOR Registry mutation / knowledge write /
-   autonomous action anywhere on this surface. The draft stays
-   `requires_review` — the status pill always reads "Menunggu review". AI
-   assistance is not approval; a human decision is mandatory.
+   BOUNDARY (Phase 5): approval and publication are EXPLICIT HUMAN actions,
+   each from its own button, each lifecycle-gated. AI membuat draft; manusia
+   meninjau; manusia menyetujui; Registry menetapkan nomor resmi saat
+   diterbitkan. The AI never approves, never publishes, never mints a number.
+   Once `approved` the draft is read-only; once `published` the official
+   number is shown and nothing on this surface can change it.
 
    ARCHITECTURE:
-     • all flow / draft-edit / save state  → the PURE
+     • all flow / edit / lifecycle state  → the PURE
        src/intelligence/console/intelligence-console-controller.js
-     • the real service (with getDraft/updateDraft) is assembled by
+     • the real service (getDraft/updateDraft + getNorRecord/syncNorRecord/
+       approveNor/publishNor) is assembled by
        js/intelligence-backend-wiring.js — this file imports ONLY that
        bridge, never src/intelligence/ directly, never js/firebase.js
      • this file owns ONLY the DOM: build the shell once, build the review
-       workspace once per draft version (so a field never loses focus/caret
-       mid-edit), patch the light bits (save bar, status, disabled) on each
-       onChange
+       workspace once per draft-version + lifecycle-stage (so a field never
+       loses focus/caret mid-edit), patch the light bits (action bar,
+       status, official number, disabled) on each onChange
      • the reload pointer is a single draftId string in sessionStorage
        (a bookmark, not conversation state) — guarded, best-effort
 
@@ -91,10 +95,20 @@ const CSS = `
   font-size:12px;font-weight:700;background:var(--warning-soft,#fff3d6);
   border:1px solid var(--warning-border,#f0d089);color:var(--warning-text,#7a5300)}
 .sic-ws__pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.sic-ws__pill--approved{background:var(--accent-soft,#e7efff);border-color:var(--accent-border,#c7dbff);color:var(--accent,#2f6fed)}
+.sic-ws__pill--published{background:var(--success-soft,#e4f6e9);border-color:var(--success-border,#a9dcb9);color:var(--success-text,#1f7a3d)}
 .sic-ws__reason{margin:8px 0 0;font-size:12.5px;color:var(--text-muted,#5b5b66)}
+.sic-ws__ladder{margin:8px 0 0;font-size:12px;line-height:1.5;color:var(--text-muted,#6b6b76)}
+.sic-ws__official{margin:12px 0 0;padding:12px 14px;border-radius:12px;
+  background:var(--success-soft,#e4f6e9);border:1px solid var(--success-border,#a9dcb9)}
+.sic-ws__official b{display:block;font-size:15px;color:var(--success-text,#1f7a3d);margin-bottom:2px;overflow-wrap:anywhere}
+.sic-ws__official span{font-size:12px;color:var(--text-muted,#5b5b66)}
 .sic-ws__warn{margin:10px 0 0;padding:9px 11px;border-radius:10px;font-size:12.5px;
   background:var(--danger-soft,#fdecec);border:1px solid var(--danger-border,#f5c2c2);
   color:var(--danger-text,#8a1f1f)}
+.sic-ws__actionerr{margin:8px 0 0;font-size:12.5px;color:var(--danger-text,#8a1f1f);overflow-wrap:anywhere}
+.sic-console__btn--approve{background:var(--accent,#2f6fed)}
+.sic-console__btn--publish{background:var(--success-text,#1f7a3d)}
 .sic-ws__contexttext{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--text,#2a2a30)}
 .sic-ws__grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 14px}
 .sic-ws__field{display:flex;flex-direction:column;gap:4px;min-width:0}
@@ -133,8 +147,16 @@ const PHASE_HINT = {
   idle: 'Mulailah dengan menjelaskan kebutuhan Anda, mis. "buat NOR pengadaan kursi rapat".',
   needs_input: 'Jawab pertanyaan di atas dengan singkat, lalu tekan Kirim.',
   loading: 'Memproses…',
-  review: 'Tinjau dan sunting draf di bawah, lalu tekan "Simpan Draf". Belum ada penerbitan atau penomoran.',
+  review: 'Tinjau dan sunting draf di bawah, simpan, lalu Setujui. Nomor resmi ditetapkan Registry saat Terbitkan.',
   error: '',
+};
+
+/** Lifecycle → status pill + copy (PART H). AI membuat draft; manusia
+ *  meninjau; manusia menyetujui; Registry menetapkan nomor resmi. */
+const LIFECYCLE_UI = {
+  in_review: { pill: 'Menunggu review', mod: '', reason: 'Draf dibuat AI. Seorang manusia harus meninjau dan menyetujui sebelum diterbitkan.' },
+  approved: { pill: 'Disetujui — menunggu penerbitan', mod: 'sic-ws__pill--approved', reason: 'Sudah disetujui manusia. Belum ada nomor resmi. Tekan "Terbitkan" untuk menetapkannya melalui Registry.' },
+  published: { pill: 'Diterbitkan', mod: 'sic-ws__pill--published', reason: 'NOR sudah resmi. Versi terbit tidak dapat diubah lagi.' },
 };
 
 /* editable fields: id → { label, wide?, textarea?, source } — source says
@@ -246,7 +268,10 @@ function renderStack(messages) {
 
 function wsSignature(state) {
   const d = state.draft || {};
-  return `${state.draftId || 'none'}@${d.version || 0}`;
+  // rebuild on a lifecycle-stage change too — the fields switch to read-only
+  // and the action bar changes shape between (no canonical record) /
+  // in_review / approved / published.
+  return `${state.draftId || 'none'}@${d.version || 0}#${state.norId ? (state.norLifecycle || 'in_review') : 'noreg'}`;
 }
 
 /** Read the CURRENT (last-saved) value of an editable field off the
@@ -269,17 +294,50 @@ function buildWorkspace(state) {
   const firstUser = (state.messages || []).find((m) => m.role === 'user');
   const bodySrc = f.metadata && f.metadata.bodySource;
 
+  const lc = state.norLifecycle || 'in_review';
+  const ui = LIFECYCLE_UI[lc] || LIFECYCLE_UI.in_review;
+  const editable = lc === 'in_review';
+
   const fieldHtml = WS_FIELDS.map((spec) => {
     const val = draftFieldValue(state, spec.id, spec.src);
+    const ro = editable ? '' : (spec.textarea ? ' readonly' : ' disabled');
     const control = spec.textarea
-      ? `<textarea class="sic-ws__fin" data-wsfield="${spec.id}" rows="7">${esc(val)}</textarea>`
-      : `<input class="sic-ws__fin" type="text" data-wsfield="${spec.id}"
+      ? `<textarea class="sic-ws__fin" data-wsfield="${spec.id}" rows="7"${ro}>${esc(val)}</textarea>`
+      : `<input class="sic-ws__fin" type="text" data-wsfield="${spec.id}"${ro}
            ${spec.placeholder ? `placeholder="${esc(spec.placeholder)}"` : ''} value="${esc(val)}" />`;
     return `<div class="sic-ws__field${spec.wide ? ' sic-ws__field--wide' : ''}">
       <label class="sic-ws__flabel" for="wsf_${spec.id}">${esc(spec.label)}</label>
       ${control.replace('data-wsfield', `id="wsf_${spec.id}" data-wsfield`)}
     </div>`;
   }).join('');
+
+  const numberLine = lc === 'published'
+    ? `Nomor resmi: ${esc(state.norNumber || '—')}`
+    : 'Nomor resmi: belum ditetapkan (menunggu penerbitan)';
+
+  let actionBar;
+  if (lc === 'approved') {
+    actionBar = `
+      <span class="sic-ws__savestate">Draf terkunci untuk penyuntingan. Menunggu penerbitan.</span>
+      <span class="sic-ws__spacer"></span>
+      <button class="sic-console__btn sic-console__btn--publish" type="button" data-ws-publish>Terbitkan</button>`;
+  } else if (lc === 'published') {
+    actionBar = `
+      <span class="sic-ws__savestate sic-ws__savestate--saved">NOR sudah diterbitkan.</span>
+      <span class="sic-ws__spacer"></span>`;
+  } else {
+    // `Setujui` needs the canonical NorRecord (state.norId). If registration
+    // failed at requires_review the reviewer still gets the Phase 4 save-only
+    // bar plus the persist warning, and can restart.
+    const approveBtn = state.norId
+      ? '\n      <button class="sic-console__btn sic-console__btn--approve" type="button" data-ws-approve>Setujui</button>'
+      : '';
+    actionBar = `
+      <span class="sic-ws__savestate" data-ws-savestate></span>
+      <span class="sic-ws__spacer"></span>
+      <button class="sic-console__btn sic-console__btn--quiet" type="button" data-ws-discard>Batalkan perubahan</button>
+      <button class="sic-console__btn" type="button" data-ws-save>Simpan Draf</button>${approveBtn}`;
+  }
 
   _els.workspace.innerHTML = `
     <div class="sic-ws" data-ws>
@@ -289,48 +347,51 @@ function buildWorkspace(state) {
       </section>
 
       <section class="sic-ws__section">
-        <p class="sic-ws__kicker">Status review</p>
+        <p class="sic-ws__kicker">Status NOR</p>
         <div class="sic-ws__statusrow">
-          <span class="sic-ws__pill">Menunggu review</span>
+          <span class="sic-ws__pill ${ui.mod}">${esc(ui.pill)}</span>
           <span class="sic-ws__meta" data-ws-ver></span>
         </div>
-        <p class="sic-ws__reason">${esc((state.review && state.review.reason)
-          || 'Draf NOR memerlukan peninjauan dan persetujuan manusia sebelum diterbitkan. Nomor resmi ditetapkan oleh Registry, bukan AI.')}</p>
+        <p class="sic-ws__reason">${esc(lc === 'in_review' && state.review && state.review.reason ? state.review.reason : ui.reason)}</p>
+        <p class="sic-ws__ladder">AI membuat draft &middot; Manusia meninjau &middot; Manusia menyetujui &middot; Registry menetapkan nomor resmi saat diterbitkan.</p>
+        <div class="sic-ws__official" data-ws-official hidden></div>
         <div class="sic-ws__warn" data-ws-persistwarn hidden></div>
       </section>
 
       <section class="sic-ws__section">
-        <p class="sic-ws__kicker">Draf Nota Dinas — dapat disunting</p>
+        <p class="sic-ws__kicker">${editable ? 'Draf Nota Dinas — dapat disunting' : 'Draf Nota Dinas — hanya baca'}</p>
         <div class="sic-ws__grid">${fieldHtml}</div>
         <p class="sic-ws__meta">Jenis: ${esc(f.norType || '—')}${
-          bodySrc ? ` · Sumber isi: ${esc(bodySrc)}` : ''} · Nomor resmi: belum ditetapkan (menunggu review)</p>
+          bodySrc ? ` &middot; Sumber isi: ${esc(bodySrc)}` : ''} &middot; ${numberLine}</p>
       </section>
 
-      <div class="sic-ws__savebar">
-        <span class="sic-ws__savestate" data-ws-savestate></span>
-        <span class="sic-ws__spacer"></span>
-        <button class="sic-console__btn sic-console__btn--quiet" type="button" data-ws-discard>Batalkan perubahan</button>
-        <button class="sic-console__btn" type="button" data-ws-save>Simpan Draf</button>
+      <div class="sic-ws__savebar">${actionBar}
+        <p class="sic-ws__actionerr" data-ws-actionerr hidden></p>
       </div>
     </div>`;
 
   // wire the editable fields — each keystroke stages a local edit in the
   // controller (no network); the value stays in the DOM node so focus/caret
-  // are never disturbed by a re-render.
-  _els.workspace.querySelectorAll('[data-wsfield]').forEach((node) => {
-    node.addEventListener('input', (e) => {
-      if (_controller) _controller.editField(node.getAttribute('data-wsfield'), e.target.value);
+  // are never disturbed by a re-render. Read-only stages carry no listener.
+  if (editable) {
+    _els.workspace.querySelectorAll('[data-wsfield]').forEach((node) => {
+      node.addEventListener('input', (e) => {
+        if (_controller) _controller.editField(node.getAttribute('data-wsfield'), e.target.value);
+      });
     });
-  });
+  }
   const saveBtn = _els.workspace.querySelector('[data-ws-save]');
   const discardBtn = _els.workspace.querySelector('[data-ws-discard]');
-  saveBtn.addEventListener('click', () => { if (_controller) _controller.saveDraft(); });
-  discardBtn.addEventListener('click', () => {
+  const approveBtn = _els.workspace.querySelector('[data-ws-approve]');
+  const publishBtn = _els.workspace.querySelector('[data-ws-publish]');
+  if (saveBtn) saveBtn.addEventListener('click', () => { if (_controller) _controller.saveDraft(); });
+  if (discardBtn) discardBtn.addEventListener('click', () => {
     if (!_controller) return;
-    // force a rebuild so the field inputs revert to the last-saved values
-    _wsSig = null;
+    _wsSig = null; // force a rebuild so the field inputs revert to the last-saved values
     _controller.discardEdits();
   });
+  if (approveBtn) approveBtn.addEventListener('click', () => { if (_controller) _controller.approve(); });
+  if (publishBtn) publishBtn.addEventListener('click', () => { if (_controller) _controller.publish(); });
 
   _wsSig = wsSignature(state);
 }
@@ -349,8 +410,19 @@ function patchWorkspace(state) {
 
   const warn = ws.querySelector('[data-ws-persistwarn]');
   if (warn) {
-    if (state.draftPersistError) { warn.hidden = false; warn.textContent = `Draf belum tersimpan otomatis: ${state.draftPersistError}`; }
-    else { warn.hidden = true; warn.textContent = ''; }
+    const msg = state.draftPersistError
+      ? `Draf belum tersimpan otomatis: ${state.draftPersistError}`
+      : (state.registryPersistError ? `Catatan Registry belum dibuat: ${state.registryPersistError}` : '');
+    if (msg) { warn.hidden = false; warn.textContent = msg; } else { warn.hidden = true; warn.textContent = ''; }
+  }
+
+  const official = ws.querySelector('[data-ws-official]');
+  if (official) {
+    if (state.norLifecycle === 'published' && state.norNumber) {
+      official.hidden = false;
+      official.innerHTML = `<b>Nomor resmi: ${esc(state.norNumber)}</b>`
+        + `<span>Ditetapkan oleh Registry saat penerbitan${state.norPublishedVersion ? ` &middot; versi terbit ${state.norPublishedVersion}` : ''}.</span>`;
+    } else { official.hidden = true; official.innerHTML = ''; }
   }
 
   const ss = ws.querySelector('[data-ws-savestate]');
@@ -365,8 +437,26 @@ function patchWorkspace(state) {
 
   const saveBtn = ws.querySelector('[data-ws-save]');
   const discardBtn = ws.querySelector('[data-ws-discard]');
+  const approveBtn = ws.querySelector('[data-ws-approve]');
+  const publishBtn = ws.querySelector('[data-ws-publish]');
   if (saveBtn) { saveBtn.disabled = state.busy || !state.draftDirty; saveBtn.textContent = state.saveState === 'saving' ? 'Menyimpan…' : 'Simpan Draf'; }
   if (discardBtn) discardBtn.disabled = state.busy || !state.draftDirty;
+  if (approveBtn) {
+    approveBtn.disabled = state.busy || state.draftDirty || state.approveState === 'busy';
+    approveBtn.textContent = state.approveState === 'busy' ? 'Menyetujui…' : 'Setujui';
+  }
+  if (publishBtn) {
+    publishBtn.disabled = state.busy || state.publishState === 'busy';
+    publishBtn.textContent = state.publishState === 'busy' ? 'Menerbitkan…' : 'Terbitkan';
+  }
+
+  const ae = ws.querySelector('[data-ws-actionerr]');
+  if (ae) {
+    const msg = (state.approveState === 'error' && state.approveError)
+      || (state.publishState === 'error' && state.publishError)
+      || (state.registrySyncError ? `Catatan: ${state.registrySyncError}` : '');
+    if (msg) { ae.hidden = false; ae.textContent = msg; } else { ae.hidden = true; ae.textContent = ''; }
+  }
 }
 
 function renderWorkspace(state) {

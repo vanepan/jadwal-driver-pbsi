@@ -99,10 +99,21 @@ export function isNumberAllocation(a) {
 }
 
 /**
- * Reserve + validate an official number at publication time. NOT IMPLEMENTED
- * in Phase 0 — returns a predictable failure so a caller can be written
- * against the boundary now. The real implementation is server-side
- * (precedent: functions/src/reimbursement/counter.js).
+ * Reserve + validate an official number at publication time.
+ *
+ * CLIENT-SIDE: intentionally NOT IMPLEMENTED — there is NO client-side
+ * authoritative numbering (PART F). The browser never allocates a NOR
+ * number; it calls the server, which owns the atomic counter.
+ *
+ * SERVER-SIDE (Phase 5, real): the atomic + idempotent allocation lives in
+ * functions/src/intelligence/norNumberingCounter.js
+ * (`reserveNorNumber({ db, scopeKey, reservationKey })`), invoked only from
+ * the `intelligenceNorRegistry` callable's `publish` op. Precedent:
+ * functions/src/reimbursement/counter.js#acquireReimbursementNumber. It
+ * returns a unique sequence integer; the DECORATED organizational NOR-number
+ * format for Sarpras Intelligence is an unresolved organizational rule
+ * (docs/NOR-Specification.md §D.7) and is NOT invented here.
+ *
  * @param {{norId?: string, requestedNumber?: string}} _input
  * @returns {{ok: boolean, data: null, error: {code: string, message: string}}}
  */

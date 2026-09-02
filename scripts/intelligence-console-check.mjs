@@ -1,7 +1,7 @@
 /* ============================================================
-   intelligence-console-check.mjs — Sarpras Intelligence (V2, Phase 3B)
+   intelligence-console-check.mjs — Sarpras Intelligence (V2, Phase 5)
 
-   PURE node test of the minimal console CONTROLLER
+   PURE node test of the console CONTROLLER
    (src/intelligence/console/intelligence-console-controller.js). No DOM, no
    Firebase, no OpenAI — the createIntelligenceService() instance is a
    scriptable FAKE, so this proves the state machine + the UI↔service
@@ -11,7 +11,10 @@
      • idle → submit() → loading → needs_input   (service.handle called once,
        with a well-formed makeIntelligenceRequest; conversationId retained)
      • needs_input → answer() → continueSession(SAME id, { text })
-     • → requires_review → review state, DISPLAY ONLY (no publish surface)
+     • → requires_review → review workspace (editable draft + canonical norId)
+     • Phase 5 lifecycle: in_review → approve() → approved → publish() →
+       published; approve/publish are HUMAN-only, lifecycle-gated, never
+       auto-fired; editing is refused once approved; publish is idempotent
      • double-submit protection (a 2nd call while busy is dropped)
      • every service error code → ONE curated Indonesian sentence; a raw
        Firebase-shaped message is NEVER surfaced; a thrown service never
@@ -42,10 +45,11 @@ const { isIntelligenceRequest, REQUEST_TASK } =
 
 const ACTOR = { userId: 'evan', role: 'admin' };
 
-/* A scriptable fake createIntelligenceService() instance. `draftOps` lets a
-   test supply getDraft/updateDraft (Phase 4). */
-function fakeService(script, draftOps = {}) {
-  const calls = { handle: [], continueSession: [], getDraft: [], updateDraft: [] };
+/* A scriptable fake createIntelligenceService() instance. `draftOps` supplies
+   getDraft/updateDraft (Phase 4); `registryOps` supplies
+   getNorRecord/syncNorRecord/approveNor/publishNor (Phase 5). */
+function fakeService(script, draftOps = {}, registryOps = {}) {
+  const calls = { handle: [], continueSession: [], getDraft: [], updateDraft: [], getNorRecord: [], syncNorRecord: [], approveNor: [], publishNor: [] };
   let i = 0;
   const nextEnv = () => {
     const step = script[Math.min(i, script.length - 1)];
@@ -61,6 +65,10 @@ function fakeService(script, draftOps = {}) {
   };
   if (draftOps.getDraft) svc.getDraft = async (id, actor) => { calls.getDraft.push({ id, actor }); return draftOps.getDraft(id, actor); };
   if (draftOps.updateDraft) svc.updateDraft = async (id, edits, actor) => { calls.updateDraft.push({ id, edits, actor }); return draftOps.updateDraft(id, edits, actor); };
+  if (registryOps.getNorRecord) svc.getNorRecord = async (id, actor) => { calls.getNorRecord.push({ id, actor }); return registryOps.getNorRecord(id, actor); };
+  if (registryOps.syncNorRecord) svc.syncNorRecord = async (id, actor) => { calls.syncNorRecord.push({ id, actor }); return registryOps.syncNorRecord(id, actor); };
+  if (registryOps.approveNor) svc.approveNor = async (id, v, actor) => { calls.approveNor.push({ id, v, actor }); return registryOps.approveNor(id, v, actor); };
+  if (registryOps.publishNor) svc.publishNor = async (id, v, actor) => { calls.publishNor.push({ id, v, actor }); return registryOps.publishNor(id, v, actor); };
   return svc;
 }
 
@@ -72,10 +80,25 @@ const review = (id, extra = {}) => ({
   conversationId: id,
   draftId: extra.draftId !== undefined ? extra.draftId : `draft_${id}`,
   draftError: extra.draftError || null,
+  norId: extra.norId !== undefined ? extra.norId : null,
+  registryError: extra.registryError || null,
   response: {
     schema: 'intelligence-response@1', requestId: 'r', status: RESPONSE_STATUS.REQUIRES_REVIEW,
     draft: { documentType: 'nor', fields: { norType: 'Pengadaan', subject: 'Pengadaan kursi', recipient: 'Bendahara', recipientStatus: 'known', date: '2026-08-31', body: 'Badan surat.', details: { item: 'kursi', quantity: '10' }, metadata: { bodySource: 'template' } } },
     review: { reason: 'Menunggu review manusia.', blocking: true },
+  },
+});
+/* a canonical NorRecord as service.getNorRecord/approveNor/publishNor return it */
+const norRec = (over = {}) => ({
+  ok: true,
+  record: {
+    schema: 'nor-record@1', norId: over.norId || 'nor_conv_L', ownerId: 'evan',
+    status: over.status || 'in_review', currentVersion: over.currentVersion || 1,
+    norNumber: over.norNumber || '', publishedVersion: over.publishedVersion == null ? null : over.publishedVersion,
+    numberSource: over.numberSource || 'system_suggested',
+    content: { subject: 'Pengadaan kursi', body: 'Badan surat.', facts: {} },
+    metadata: { draftId: over.draftId || 'draft_conv_L', conversationId: over.conversationId || 'conv_L' },
+    versions: [{ version: 1 }], auditHistory: [{ type: 'AI_DRAFT_CREATED' }],
   },
 });
 
@@ -149,13 +172,29 @@ section('needs_input → answer → continueSession(SAME id, { text }) → revie
   check(st.questions.length === 0, 'questions cleared in review');
 }
 
-section('review state — editable, but NO publish / approve / numbering surface');
+section('review state — Phase 5 lifecycle: approve()/publish() exist but are HUMAN-gated');
 const api = Object.keys(ctl);
-check(!api.some((k) => /publish|terbitkan|approve|setuj|\bnumber\b|nomor|reserve|allocate|\bcommit\b/i.test(k)),
-  `controller exposes no publish/approve/number method (has: ${api.join(', ')})`);
-check(!('publish' in ctl) && !('approve' in ctl) && !('terbitkan' in ctl), 'no publish() / approve() / terbitkan()');
+check(typeof ctl.approve === 'function' && typeof ctl.publish === 'function',
+  `the controller exposes explicit approve() + publish() (Phase 5) (has: ${api.join(', ')})`);
+check(!api.some((k) => /reserve|allocate|\bnumber\b|nomor|mintNumber/i.test(k)),
+  'the controller exposes NO number/reserve/allocate method — the Registry mints the official number server-side');
 check(typeof ctl.editField === 'function' && typeof ctl.saveDraft === 'function' && typeof ctl.discardEdits === 'function' && typeof ctl.resumeDraft === 'function',
   'Phase 4: the controller DOES expose editField / saveDraft / discardEdits / resumeDraft');
+{
+  // with NO canonical norId on the envelope, approve()/publish() are safe
+  // no-ops: they surface a friendly error and NEVER advance anything.
+  const s3b = fakeService([review('conv_A')]); // review() default → norId: null
+  const c3b = createIntelligenceConsoleController({ service: s3b, actor: ACTOR });
+  await c3b.submit('buat NOR pengadaan kursi');
+  let s = c3b.getState();
+  check(s.phase === CONSOLE_PHASE.REVIEW && s.norId == null && s.norLifecycle == null, 'no norId on the envelope → no lifecycle state');
+  await c3b.approve();
+  s = c3b.getState();
+  check(s.approveState === 'error' && s.norLifecycle == null, 'approve() with no canonical record → a curated error, nothing advanced, no crash');
+  await c3b.publish();
+  s = c3b.getState();
+  check(s.publishState === 'error' && s.norLifecycle == null && s.norNumber == null, 'publish() with no canonical record → a curated error, no number');
+}
 
 section('Phase 4 — stage edits locally, then save explicitly');
 {
@@ -252,6 +291,86 @@ section('Phase 4 — resumeDraft() rehydrates the review workspace from the serv
   const c8b = createIntelligenceConsoleController({ service: s8b, actor: ACTOR });
   await c8b.resumeDraft('draft_gone');
   check(c8b.getState().phase === CONSOLE_PHASE.IDLE, 'a stale reload pointer → idle, no error banner');
+}
+
+section('Phase 5 — the HUMAN-gated lifecycle: in_review → Setujui → approved → Terbitkan → published');
+{
+  let rec = { status: 'in_review', currentVersion: 1, norNumber: '', publishedVersion: null };
+  const bump = (o) => { rec = { ...rec, ...o }; return norRec({ norId: 'nor_conv_L', draftId: 'draft_conv_L', conversationId: 'conv_L', ...rec }); };
+  const sL = fakeService(
+    [needsInput('conv_L', [{ id: 'item', prompt: 'Barang?', why: 'x', required: true }]), review('conv_L', { norId: 'nor_conv_L' })],
+    { updateDraft: (id) => draftRecord({ draftId: id, conversationId: 'conv_L', version: 2, humanEdited: true, body: 'Isi disunting.' }) },
+    {
+      getNorRecord: () => bump({}),
+      syncNorRecord: () => bump({ currentVersion: 2 }),
+      approveNor: (id, v) => (v !== rec.currentVersion
+        ? { ok: false, error: { code: 'VERSION_CONFLICT' } }
+        : bump({ status: 'approved' })),
+      publishNor: () => (rec.status === 'published'
+        ? bump({})
+        : bump({ status: 'published', norNumber: '7', publishedVersion: rec.currentVersion })),
+    },
+  );
+  const cL = createIntelligenceConsoleController({ service: sL, actor: ACTOR });
+  await cL.submit('buat NOR pengadaan lampu');
+  await cL.answer('lampu sorot');
+  let s = cL.getState();
+  check(s.phase === CONSOLE_PHASE.REVIEW && s.norId === 'nor_conv_L' && s.norLifecycle === 'in_review' && s.norVersion === 1, 'requires_review carried a canonical norId; lifecycle = in_review, version 1');
+
+  // edit + save also syncs the canonical version
+  cL.editField('body', 'Isi disunting.');
+  await cL.saveDraft();
+  s = cL.getState();
+  check(sL.calls.updateDraft.length === 1 && sL.calls.syncNorRecord.length === 1, 'saveDraft() persists the draft AND syncs the canonical record');
+  check(s.norVersion === 2 && s.saveState === 'saved', 'the canonical version advanced to 2 after the sync');
+
+  // approve is refused while there are unsaved edits
+  cL.editField('body', 'sesuatu lagi');
+  await cL.approve();
+  s = cL.getState();
+  check(sL.calls.approveNor.length === 0 && s.approveState === 'error' && s.norLifecycle === 'in_review', 'approve() is refused while the draft is dirty — save first');
+  cL.discardEdits();
+
+  // approve → approved
+  await cL.approve();
+  s = cL.getState();
+  check(sL.calls.approveNor.length === 1 && sL.calls.approveNor[0].v === 2, 'approve() calls service.approveNor with the fresh expectedVersion (2)');
+  check(s.norLifecycle === 'approved' && s.norNumber == null, 'lifecycle → approved; STILL no official number');
+  check(s.approveState === 'idle', 'approveState resets after success');
+
+  // editing is refused once approved
+  cL.editField('body', 'tamper after approve');
+  check(cL.getState().draftDirty === false, 'editField is a no-op once the record is approved (draft is read-only)');
+
+  // publish → published + official number
+  await cL.publish();
+  s = cL.getState();
+  check(sL.calls.publishNor.length === 1, 'publish() calls service.publishNor');
+  check(s.norLifecycle === 'published' && s.norNumber === '7' && s.norPublishedVersion === 2, 'lifecycle → published; the official number + published version are shown');
+
+  // publish retry is idempotent — same number, no crash, and NOT re-sent to
+  // the server (the controller sees it is already published)
+  await cL.publish();
+  s = cL.getState();
+  check(s.norLifecycle === 'published' && s.norNumber === '7' && s.publishState === 'idle', 'a second publish() is an idempotent no-op — same number, no error');
+  check(sL.calls.publishNor.length === 1, 'the redundant publish() was NOT re-sent to the server (already-published is a client-side no-op)');
+
+  // the controller NEVER auto-fired approve/publish during intake / save
+  check(sL.calls.approveNor.length === 1, 'approve fired exactly once — only from the explicit approve() call, never from submit/answer/saveDraft');
+}
+
+section('Phase 5 — resumeDraft() restores the lifecycle stage from the server');
+{
+  const sR = fakeService([], {
+    getDraft: (id) => draftRecord({ draftId: id, conversationId: 'conv_RR', version: 3 }),
+  }, {
+    getNorRecord: () => norRec({ norId: 'nor_conv_RR', status: 'published', currentVersion: 3, norNumber: '12/2026', publishedVersion: 3 }),
+  });
+  const cR = createIntelligenceConsoleController({ service: sR, actor: ACTOR });
+  await cR.resumeDraft('draft_conv_RR');
+  const s = cR.getState();
+  check(sR.calls.getDraft.length === 1 && sR.calls.getNorRecord.length === 1, 'resumeDraft fetches BOTH the draft and the canonical record');
+  check(s.phase === CONSOLE_PHASE.REVIEW && s.norLifecycle === 'published' && s.norNumber === '12/2026', 'a reload of a published NOR lands read-only, showing the official number');
 }
 
 section('double-submit protection');

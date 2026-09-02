@@ -62,6 +62,11 @@ import {
   createDraft as storeCreateDraft, getDraft as storeGetDraft, updateDraft as storeUpdateDraft,
 } from '../nor-draft/nor-draft-store.js';
 import { makeNorDraftRecord } from '../nor-draft/contracts/nor-draft-record-contract.js';
+import {
+  register as registryRegister, getById as registryGetById, appendVersion as registryAppendVersion,
+  approve as registryApprove, publish as registryPublish, getHistory as registryGetHistory,
+} from '../nor-registry/nor-registry.js';
+import { norIdFromConversation } from '../nor-registry/nor-registry-record.js';
 
 const TASK_TO_INTENT = Object.freeze({ [REQUEST_TASK.NOR_GENERATE]: 'create_nor' });
 
@@ -94,6 +99,17 @@ async function defaultConfig() {
  *   memory backend in tests, the inert null backend if none is wired — then
  *   there is simply no persisted draftId). It NEVER publishes, numbers, or
  *   approves; numbering.publishedNumber stays null.
+ * @param {{ register:Function, get:Function, appendVersion:Function, approve:Function, publish:Function, getHistory:Function }} [deps.registryStore]
+ *   defaults to the canonical NOR Registry facade (Phase 5). At
+ *   `requires_review` the service ALSO registers a canonical NorRecord
+ *   (status `in_review`, no number) linked to the Phase 4 draft — the
+ *   working copy stays the Phase 4 draft, the lifecycle authority is this
+ *   record. A registration failure is RECOVERABLE (the response still
+ *   returns, carrying `registryError` and no `norId`). `approve` and
+ *   `publish` are HUMAN operations exposed as `approveNor` / `publishNor`
+ *   below — the service NEVER calls them itself. In production this is the
+ *   server-owned RTDB backend via the intelligenceNorRegistry callable; a
+ *   memory backend in tests; the inert null backend if none is wired.
  */
 export function createIntelligenceService(deps) {
   const {
@@ -105,6 +121,10 @@ export function createIntelligenceService(deps) {
     idgen,
     store = { create: createConversation, append: appendConversation, get: getConversation },
     draftStore = { create: storeCreateDraft, get: storeGetDraft, update: storeUpdateDraft },
+    registryStore = {
+      register: registryRegister, get: registryGetById, appendVersion: registryAppendVersion,
+      approve: registryApprove, publish: registryPublish, getHistory: registryGetHistory,
+    },
   } = deps || {};
 
   if (!ports || !ports.conversation || typeof ports.conversation.start !== 'function') {
@@ -455,11 +475,22 @@ export function createIntelligenceService(deps) {
     // a published number — makeNorDraftRecord + the store both force it null.
     const persisted = await persistNorDraft({ convId, actor, norType, facts, now, built });
 
+    // Phase 5 — register the CANONICAL NorRecord for this draft (status
+    // `in_review`, NO official number). The Phase 4 draft stays the editable
+    // working copy; this record is the lifecycle authority (approve / publish
+    // are separate HUMAN operations — the service never calls them). Failure
+    // is RECOVERABLE and independent of the draft: the response still returns,
+    // carrying `registryError` and no `norId`. An unwired (null) backend is
+    // silent.
+    const registered = await registerNorRecord({ draftRecord: persisted.draftRecord, actor });
+
     return {
       response: built.response,
       conversationId: convId,
       draftId: persisted.draftId,
       draftError: persisted.draftError,
+      norId: registered.norId,
+      registryError: registered.registryError,
       numbering: built.numbering,
       modelError: built.modelError || null,
       audit: turnAudit({ requestId, actorId: actor.userId, sourceModule, status: 'requires_review', questionCount: 0, hasDraft: true }),
@@ -472,15 +503,16 @@ export function createIntelligenceService(deps) {
   const NOT_CONFIGURED = new Set(['NOT_IMPLEMENTED', 'NO_BACKEND_CONFIGURED']);
 
   /** Get-or-create the persistent NOR draft for a conversation that has just
-   *  reached requires_review. Never throws — returns { draftId, draftError }. */
+   *  reached requires_review. Never throws — returns
+   *  { draftId, draftError, draftRecord }. */
   async function persistNorDraft({ convId, actor, norType, facts, now, built }) {
-    if (!draftStore || typeof draftStore.create !== 'function') return { draftId: null, draftError: null };
+    if (!draftStore || typeof draftStore.create !== 'function') return { draftId: null, draftError: null, draftRecord: null };
     const draftKey = `draft_${convId}`;
     try {
       if (typeof draftStore.get === 'function') {
         const existing = await draftStore.get(draftKey, { userId: actor.userId });
         if (existing && existing.ok && existing.data && existing.data.draftId) {
-          return { draftId: existing.data.draftId, draftError: null };
+          return { draftId: existing.data.draftId, draftError: null, draftRecord: existing.data };
         }
       }
       const df = built && built.draft && built.draft.fields ? built.draft.fields : {};
@@ -508,13 +540,34 @@ export function createIntelligenceService(deps) {
       });
       const created = await draftStore.create(record, { userId: actor.userId });
       if (created && created.ok && created.data && created.data.draftId) {
-        return { draftId: created.data.draftId, draftError: null };
+        return { draftId: created.data.draftId, draftError: null, draftRecord: created.data };
       }
       const code = created && created.error && created.error.code;
-      if (NOT_CONFIGURED.has(code)) return { draftId: null, draftError: null };
-      return { draftId: null, draftError: (created && created.error) || { code: 'UNKNOWN', message: 'Draf NOR gagal disimpan.' } };
+      if (NOT_CONFIGURED.has(code)) return { draftId: null, draftError: null, draftRecord: null };
+      return { draftId: null, draftError: (created && created.error) || { code: 'UNKNOWN', message: 'Draf NOR gagal disimpan.' }, draftRecord: null };
     } catch (err) {
-      return { draftId: null, draftError: { code: 'INTERNAL', message: String((err && err.message) || 'Draf NOR gagal disimpan.') } };
+      return { draftId: null, draftError: { code: 'INTERNAL', message: String((err && err.message) || 'Draf NOR gagal disimpan.') }, draftRecord: null };
+    }
+  }
+
+  /** Get-or-create the CANONICAL NorRecord (status `in_review`, NO number)
+   *  for a draft that has just reached requires_review (PART D). Never
+   *  throws — returns { norId, registryError }. An unwired (null) backend is
+   *  silent. This NEVER approves or publishes. */
+  async function registerNorRecord({ draftRecord, actor }) {
+    if (!draftRecord || !draftRecord.draftId || !registryStore || typeof registryStore.register !== 'function') {
+      return { norId: null, registryError: null };
+    }
+    try {
+      const res = await registryStore.register({ draft: draftRecord, ownerId: actor.userId }, { userId: actor.userId });
+      if (res && res.ok && res.data && res.data.norId) {
+        return { norId: res.data.norId, registryError: null };
+      }
+      const code = res && res.error && res.error.code;
+      if (NOT_CONFIGURED.has(code)) return { norId: null, registryError: null };
+      return { norId: null, registryError: (res && res.error) || { code: 'UNKNOWN', message: 'NOR Registry gagal mencatat draf.' } };
+    } catch (err) {
+      return { norId: null, registryError: { code: 'INTERNAL', message: String((err && err.message) || 'NOR Registry gagal mencatat draf.') } };
     }
   }
 
@@ -561,6 +614,101 @@ export function createIntelligenceService(deps) {
     return { ok: true, draft: res.data };
   }
 
+  /* ── Phase 5 — the CANONICAL NOR Registry lifecycle ────────────────────
+     Every method gates on the SAME authz as every other entry point
+     (authz.canUseIntelligence); ownership + lifecycle + numbering are
+     enforced by the store (the server callable is authoritative in
+     production). `approveNor` / `publishNor` are HUMAN operations — the
+     console calls them from explicit buttons, never automatically. The AI
+     draft is NEVER automatically official. */
+
+  function registryGuard(actor) {
+    if (!authz || typeof authz.canUseIntelligence !== 'function' || !authz.canUseIntelligence(actor)) {
+      return { ok: false, error: { code: RESPONSE_ERRORS.FORBIDDEN, message: 'Anda tidak berhak menggunakan Sarpras Intelligence.' } };
+    }
+    if (!registryStore || typeof registryStore.get !== 'function') {
+      return { ok: false, error: { code: 'NO_BACKEND', message: 'NOR Registry tidak tersedia.' } };
+    }
+    return null;
+  }
+
+  /** Load a canonical record and enforce that `actor` owns it — defence in
+   *  depth for the memory/test path. In production the server callable is the
+   *  authoritative owner check; this never widens it. Returns
+   *  `{ ok, record }` or `{ ok:false, error }`. */
+  async function loadOwnedNorRecord(norId, actor) {
+    const res = await registryStore.get(String(norId || ''));
+    if (!res || !res.ok) return { ok: false, error: (res && res.error) || { code: 'NOT_FOUND', message: 'Catatan NOR tidak ditemukan.' } };
+    const who = actor && actor.userId;
+    if (who && res.data && res.data.ownerId && res.data.ownerId !== who) {
+      return { ok: false, error: { code: 'FORBIDDEN', message: 'Catatan NOR ini milik pengguna lain.' } };
+    }
+    return { ok: true, record: res.data };
+  }
+
+  async function getNorRecord(norId, actorArg) {
+    const actor = actorArg ? { userId: actorArg.userId, role: actorArg.role } : null;
+    const bad = registryGuard(actor);
+    if (bad) return bad;
+    return loadOwnedNorRecord(norId, actor);
+  }
+
+  /** Snapshot the current Phase 4 draft into a NEW immutable registry version
+   *  (PART D). Called by the console right AFTER a successful Phase 4
+   *  updateDraft — the Phase 4 draft stays the working copy; this keeps the
+   *  canonical record's version history in step. Only legal while
+   *  `in_review`. */
+  async function syncNorRecord(norId, actorArg) {
+    const actor = actorArg ? { userId: actorArg.userId, role: actorArg.role } : null;
+    const bad = registryGuard(actor);
+    if (bad) return bad;
+    const owned = await loadOwnedNorRecord(norId, actor);
+    if (!owned.ok) return owned;
+    let draftRecord = null;
+    const draftId = owned.record && owned.record.metadata && owned.record.metadata.draftId;
+    if (draftId && draftStore && typeof draftStore.get === 'function') {
+      const gd = await draftStore.get(draftId, { userId: actor && actor.userId });
+      if (gd && gd.ok) draftRecord = gd.data;
+    }
+    const res = await registryStore.appendVersion(String(norId || ''), {
+      draft: draftRecord, actorId: actor && actor.userId, at: clock(),
+    });
+    if (!res || !res.ok) return { ok: false, error: (res && res.error) || { code: 'UNKNOWN', message: 'NOR Registry gagal disinkronkan.' } };
+    return { ok: true, record: res.data };
+  }
+
+  /** HUMAN approval (PART E): `in_review → approved`. */
+  async function approveNor(norId, expectedVersion, actorArg) {
+    const actor = actorArg ? { userId: actorArg.userId, role: actorArg.role } : null;
+    const bad = registryGuard(actor);
+    if (bad) return bad;
+    const owned = await loadOwnedNorRecord(norId, actor);
+    if (!owned.ok) return owned;
+    const res = await registryStore.approve(String(norId || ''), {
+      expectedVersion: typeof expectedVersion === 'number' ? expectedVersion : undefined,
+      actorId: actor && actor.userId, at: clock(),
+    });
+    if (!res || !res.ok) return { ok: false, error: (res && res.error) || { code: 'UNKNOWN', message: 'NOR gagal disetujui.' } };
+    return { ok: true, record: res.data };
+  }
+
+  /** HUMAN publication (PART F/G): `approved → published`. The official
+   *  number is reserved SERVER-SIDE and IS the reserved sequence — this
+   *  method takes NO number input from any caller. Idempotent. */
+  async function publishNor(norId, expectedVersion, actorArg) {
+    const actor = actorArg ? { userId: actorArg.userId, role: actorArg.role } : null;
+    const bad = registryGuard(actor);
+    if (bad) return bad;
+    const owned = await loadOwnedNorRecord(norId, actor);
+    if (!owned.ok) return owned;
+    const res = await registryStore.publish(String(norId || ''), {
+      expectedVersion: typeof expectedVersion === 'number' ? expectedVersion : undefined,
+      actorId: actor && actor.userId, at: clock(),
+    });
+    if (!res || !res.ok) return { ok: false, error: (res && res.error) || { code: 'UNKNOWN', message: 'NOR gagal diterbitkan.' } };
+    return { ok: true, record: res.data };
+  }
+
   async function cancelSession(convId, actorArg) {
     const actor = actorArg ? { userId: actorArg.userId, role: actorArg.role } : null;
     const got = await store.get(convId, actor && actor.userId);
@@ -572,7 +720,10 @@ export function createIntelligenceService(deps) {
     return saved.ok ? { ok: true, conversation: saved.data } : { ok: false, error: saved.error };
   }
 
-  return Object.freeze({ handle, continueSession, getSession, cancelSession, getDraft, updateDraft });
+  return Object.freeze({
+    handle, continueSession, getSession, cancelSession, getDraft, updateDraft,
+    getNorRecord, syncNorRecord, approveNor, publishNor,
+  });
 }
 
 export { defaultConfig };

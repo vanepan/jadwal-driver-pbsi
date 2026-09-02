@@ -33,6 +33,7 @@
 
 import { useCallableIcBackend, getActiveIcBackendId } from './conversation/intelligence-conversation-store.js';
 import { useCallableNorDraftBackend, getActiveNorDraftBackendId } from './nor-draft/nor-draft-store.js';
+import { useCallableNorRegistryBackend, getActiveBackendId as getActiveNorRegistryBackendId } from './nor-registry/nor-registry.js';
 import { createOpenAiProvider, OPENAI_PROVIDER_ID } from './providers/openai-provider.js';
 import { registerProvider, setActiveProvider, getActiveProviderId, DEFAULT_PROVIDER_ID } from './provider-registry.js';
 import { isIntelligenceEnabled } from './config/intelligence-config.js';
@@ -46,6 +47,11 @@ import { applyIntelligenceFeatureFlag } from './config/feature-flag-sync.js';
  *   the server-owned NOR-draft callable (Phase 4). Optional — omitted ⇒ the
  *   NOR-draft store keeps its inert `null` backend and a `requires_review`
  *   response simply carries no persisted `draftId`.
+ * @param {(payload: {op:string, norId?:string, draftId?:string, expectedVersion?:number}) => Promise<{ok:boolean,data:*,error:*}>} [args.callRegistry]
+ *   the server-owned canonical NOR Registry callable (Phase 5). Optional —
+ *   omitted ⇒ the NOR Registry keeps its inert `null` backend and a
+ *   `requires_review` response simply carries no `norId` (no lifecycle,
+ *   approve/publish unavailable).
  * @param {*} [args.featureFlags]  the already-fetched `/feature_flags` RTDB
  *   node; `/feature_flags/intelligence/enabled` is resolved FAIL-CLOSED and
  *   persisted into the config. Missing / malformed ⇒ OFF.
@@ -53,10 +59,10 @@ import { applyIntelligenceFeatureFlag } from './config/feature-flag-sync.js';
  *   featureFlags resolve+persist (test / advanced seam). Takes precedence
  *   over `featureFlags`. With neither, the current config flag is used.
  * @returns {{ ok:boolean, conversationBackend:string|null, norDraftBackend:string|null,
- *   providerRegistered:boolean, activeProvider:string|null, featureEnabled:boolean,
- *   error:string|null }}
+ *   norRegistryBackend:string|null, providerRegistered:boolean, activeProvider:string|null,
+ *   featureEnabled:boolean, error:string|null }}
  */
-export function bootstrapIntelligenceClient({ callConversation, callModel, callDraft, featureFlags, enabled } = {}) {
+export function bootstrapIntelligenceClient({ callConversation, callModel, callDraft, callRegistry, featureFlags, enabled } = {}) {
   // Step 2 of the Phase 3A sequence — resolve + persist the flag BEFORE any
   // provider is selected. Precedence: an explicit resolved boolean wins;
   // otherwise resolve /feature_flags/intelligence/enabled fail-closed (a
@@ -75,6 +81,7 @@ export function bootstrapIntelligenceClient({ callConversation, callModel, callD
     ok: false,
     conversationBackend: null,
     norDraftBackend: null,
+    norRegistryBackend: null,
     providerRegistered: false,
     activeProvider: null,
     featureEnabled,
@@ -94,6 +101,16 @@ export function bootstrapIntelligenceClient({ callConversation, callModel, callD
     if (typeof callDraft === 'function') {
       useCallableNorDraftBackend({ callDraft });
       status.norDraftBackend = getActiveNorDraftBackendId();
+    }
+
+    // 1c. server-owned canonical NOR Registry — RTDB via the Phase 5
+    //     callable. Optional: with no port the Registry keeps its inert
+    //     `null` backend and a requires_review response carries no norId
+    //     (approve / publish are unavailable). Never publishes or numbers
+    //     anything on its own — those are explicit HUMAN operations.
+    if (typeof callRegistry === 'function') {
+      useCallableNorRegistryBackend({ callRegistry });
+      status.norRegistryBackend = getActiveNorRegistryBackendId();
     }
 
     // 2. OpenAI provider adapter — the callModel port never sees a key.

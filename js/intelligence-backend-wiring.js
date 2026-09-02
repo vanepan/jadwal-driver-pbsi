@@ -9,15 +9,17 @@
    js/firebase.js#callIntelligenceConversation / callGenerateCompletion onto
    its two injected ports.
 
-   WHAT IT DOES: registers the server-owned RTDB conversation backend and
-   the OpenAI provider adapter. Registration only. Phase 3A: it also
+   WHAT IT DOES: registers the server-owned RTDB conversation backend, the
+   Phase 4 NOR-draft backend, the Phase 5 canonical NOR-Registry backend,
+   and the OpenAI provider adapter. Registration only. Phase 3A: it also
    forwards the already-fetched `/feature_flags` node so the bootstrap can
    sync `/feature_flags/intelligence/enabled` into the Intelligence config
    and pick the provider from it (fail-closed — only the boolean `true`
    activates the OpenAI provider). Phase 3B: it also assembles the
-   createIntelligenceService() instance the minimal console UI drives
-   (ports = the real existing V2 domains, provider = the ACTIVE one — Null
-   while the flag is OFF).
+   createIntelligenceService() instance the console UI drives (ports = the
+   real existing V2 domains, provider = the ACTIVE one — Null while the flag
+   is OFF). Phase 5: `approve` / `publish` remain explicit HUMAN operations —
+   this wiring never calls them.
 
    WHAT IT NEVER DOES: WRITE the feature flag (it only reads what
    loadFeatureFlags() already fetched), activate the OpenAI provider while
@@ -35,7 +37,9 @@
 
 'use strict';
 
-import { callGenerateCompletion, callIntelligenceConversation, callIntelligenceNorDraft } from './firebase.js';
+import {
+  callGenerateCompletion, callIntelligenceConversation, callIntelligenceNorDraft, callIntelligenceNorRegistry,
+} from './firebase.js';
 import { bootstrapIntelligenceClient } from '../src/intelligence/client-bootstrap.js';
 import { createIntelligenceService } from '../src/intelligence/service/intelligence-service.js';
 import { buildDefaultPorts } from '../src/intelligence/service/default-ports.js';
@@ -75,6 +79,7 @@ export async function wireIntelligenceBackend(featureFlags) {
       callConversation: (payload) => callIntelligenceConversation(payload),
       callModel: (req) => callGenerateCompletion(req),
       callDraft: (payload) => callIntelligenceNorDraft(payload),
+      callRegistry: (payload) => callIntelligenceNorRegistry(payload),
       featureFlags: (featureFlags && typeof featureFlags === 'object') ? featureFlags : undefined,
     });
     _wired = _status.ok === true;

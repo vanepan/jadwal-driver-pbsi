@@ -1,10 +1,11 @@
 /* ============================================================
-   intelligence-console-ui-check.mjs — Sarpras Intelligence (V2, Phase 4)
+   intelligence-console-ui-check.mjs — Sarpras Intelligence (V2, Phase 5)
 
    REAL-browser (puppeteer) check of the Intelligence console VIEW
    (js/intelligence-console.js) against the scripted, OFFLINE harness
    (scripts/intelligence-console-harness.html — no Firebase, no OpenAI, a
-   fake createIntelligenceService() with getDraft / updateDraft).
+   fake createIntelligenceService() with getDraft / updateDraft AND the
+   Phase 5 getNorRecord / syncNorRecord / approveNor / publishNor).
 
    Proves:
      • responsive at 320 / 375 / 390 / 430 / 768 / 1024 / 1440 — no horizontal
@@ -13,13 +14,15 @@
      • flow: idle → type → submit → needs_input → answer → needs_input →
        answer → requires_review → the NOR DRAFT & REVIEW WORKSPACE
      • the workspace is EDITABLE (real labelled field inputs + a body
-       textarea) and shows the status pill "Menunggu review"
-     • the ONLY actions are Simpan Draf / Batalkan perubahan / Mulai
-       permintaan baru — NO Terbitkan / Publish / Approve / Setujui /
-       numbering / operational-action control anywhere
+       textarea), shows the pill "Menunggu review", offers Simpan Draf +
+       Setujui — and NO "Terbitkan" / numbering control while in_review
      • edit a field → "Simpan Draf" → exactly ONE service.updateDraft call,
        the persisted record changes, the save-state reads "tersimpan"
-     • RELOAD the page → the workspace comes back with the saved edit
+     • Phase 5 HUMAN lifecycle: Setujui → approved (fields read-only, one
+       approveNor call, "Terbitkan" appears, still no number) → Terbitkan →
+       published (one publishNor call, the official number is shown, no
+       destructive control remains) → RELOAD → published read-only comes back
+     • RELOAD mid-review → the workspace + the saved edit come back
        (resumeDraft via a sessionStorage pointer — reload-safe)
      • double-submit protection; a11y; mount makes 0 service calls and 0
        requests to OpenAI / Firebase / Cloud Functions / googleapis
@@ -172,10 +175,12 @@ async function main() {
     check(`${w}: the body field is a <textarea>`, rv.fields.some((f) => f.id === 'body' && f.tag === 'TEXTAREA'), rv.fields);
     check(`${w}: the recipient field carries the collected value "Bendahara"`, rv.fields.some((f) => f.id === 'recipient' && /Bendahara/.test(f.val)), rv.fields);
     check(`${w}: a "Simpan Draf" action exists`, rv.buttons.some((t) => /simpan draf/i.test(t)), rv.buttons);
-    check(`${w}: NO Terbitkan / Publish / Approve / Setujui / numbering control anywhere`,
-      !rv.buttons.some((t) => FORBIDDEN_ACTION.test(t)), rv.buttons);
-    check(`${w}: only expected controls (Simpan Draf / Batalkan / Mulai permintaan baru / the hidden chat Kirim)`,
-      rv.buttons.every((t) => /simpan draf|batalkan|mulai permintaan baru|memproses|^kirim$/i.test(t)), rv.buttons);
+    check(`${w}: a "Setujui" action exists while in_review (the canonical NorRecord is registered)`,
+      rv.buttons.some((t) => /^setujui$/i.test(t)), rv.buttons);
+    check(`${w}: NO "Terbitkan" / numbering / allocate control while in_review (publish is a later, separate stage)`,
+      !rv.buttons.some((t) => /terbitkan|publish|\bnomor\b|\bnumber\b|alokasi|allocate|reserve/i.test(t)), rv.buttons);
+    check(`${w}: only expected controls (Simpan Draf / Batalkan / Setujui / Mulai permintaan baru / the hidden chat Kirim)`,
+      rv.buttons.every((t) => /simpan draf|batalkan|^setujui$|mulai permintaan baru|memproses|^kirim$/i.test(t)), rv.buttons);
     check(`${w}: the chat intake form is hidden while the workspace shows`, rv.formHidden === true);
     check(`${w}: no horizontal page overflow (review)`, rv.docScroll <= rv.inner + 1, { docScroll: rv.docScroll, inner: rv.inner });
     check(`${w}: the workspace is not clipped horizontally + inside the viewport`,
@@ -222,6 +227,70 @@ async function main() {
   check('reload made 0 service.handle / continueSession calls',
     (await page.evaluate('window.__harness.handleCalls.length')) === 0
     && (await page.evaluate('window.__harness.continueCalls.length')) === 0);
+
+  section('Phase 5 — HUMAN lifecycle: Setujui → approved (read-only) → Terbitkan → published (official number)');
+  await page.setViewport({ width: 1024, height: 900, deviceScaleFactor: 1 });
+  await walkToReview(page);
+  check('at the review workspace the canonical record is in_review',
+    (await page.evaluate("window.__harness.getState().norLifecycle")) === 'in_review');
+
+  // Setujui
+  await page.evaluate(() => [...document.querySelectorAll('.sic-console button')].find((b) => /^setujui$/i.test(b.textContent.trim())).click());
+  await page.waitForFunction("window.__harness.getState().norLifecycle === 'approved'", { timeout: 4000 });
+  const approved = await page.evaluate(() => {
+    const buttons = [...document.querySelectorAll('.sic-console button')].map((b) => b.textContent.trim());
+    const fieldsRO = [...document.querySelectorAll('[data-wsfield]')].every((n) => n.disabled || n.readOnly);
+    return {
+      buttons,
+      pill: document.querySelector('.sic-ws__pill') ? document.querySelector('.sic-ws__pill').textContent.trim() : '',
+      fieldsRO,
+      officialShown: !document.querySelector('[data-ws-official]').hidden,
+      norNumber: window.__harness.getState().norNumber,
+      approveCalls: window.__harness.approveNorCalls.length,
+    };
+  });
+  check('approved: exactly ONE service.approveNor call', approved.approveCalls === 1, approved);
+  check('approved: the status pill reads "Disetujui…"', /disetujui/i.test(approved.pill), approved.pill);
+  check('approved: the draft fields are now read-only (no editing after approval)', approved.fieldsRO, approved);
+  check('approved: a "Terbitkan" action appears, "Setujui" is gone',
+    approved.buttons.some((t) => /^terbitkan$/i.test(t)) && !approved.buttons.some((t) => /^setujui$/i.test(t)), approved.buttons);
+  check('approved: STILL no official number', !approved.officialShown && !approved.norNumber, approved);
+
+  // Terbitkan
+  await page.evaluate(() => [...document.querySelectorAll('.sic-console button')].find((b) => /^terbitkan$/i.test(b.textContent.trim())).click());
+  await page.waitForFunction("window.__harness.getState().norLifecycle === 'published'", { timeout: 4000 });
+  const published = await page.evaluate(() => {
+    const buttons = [...document.querySelectorAll('.sic-console button')].map((b) => b.textContent.trim());
+    const off = document.querySelector('[data-ws-official]');
+    return {
+      buttons,
+      pill: document.querySelector('.sic-ws__pill').textContent.trim(),
+      officialShown: !off.hidden,
+      officialText: off.textContent.replace(/\s+/g, ' ').trim(),
+      norNumber: window.__harness.getState().norNumber,
+      publishCalls: window.__harness.publishNorCalls.length,
+      fieldsRO: [...document.querySelectorAll('[data-wsfield]')].every((n) => n.disabled || n.readOnly),
+    };
+  });
+  check('published: exactly ONE service.publishNor call', published.publishCalls === 1, published);
+  check('published: the status pill reads "Diterbitkan"', /diterbitkan/i.test(published.pill), published.pill);
+  check('published: the official number is shown', published.officialShown && /nomor resmi/i.test(published.officialText) && !!published.norNumber, published);
+  check('published: no "Setujui" / "Terbitkan" / "Simpan Draf" destructive control remains',
+    !published.buttons.some((t) => /^setujui$|^terbitkan$|simpan draf|batalkan/i.test(t)), published.buttons);
+  check('published: fields stay read-only', published.fieldsRO, published);
+
+  // reload → the published, read-only state comes back
+  await page.reload({ waitUntil: 'networkidle0' });
+  await page.waitForFunction('window.__harnessReady === true', { timeout: 8000 });
+  await page.waitForFunction("window.__harness.getState().phase === 'review'", { timeout: 4000 });
+  const afterReload = await page.evaluate(() => ({
+    lifecycle: window.__harness.getState().norLifecycle,
+    norNumber: window.__harness.getState().norNumber,
+    pill: document.querySelector('.sic-ws__pill') ? document.querySelector('.sic-ws__pill').textContent.trim() : '',
+    getNorRecordCalls: window.__harness.getNorRecordCalls.length,
+  }));
+  check('after reload: the published NOR comes back read-only, via service.getNorRecord',
+    afterReload.lifecycle === 'published' && !!afterReload.norNumber && /diterbitkan/i.test(afterReload.pill) && afterReload.getNorRecordCalls >= 1, afterReload);
 
   section('Post-run safety re-check');
   check('still 0 requests to blocked hosts after the full run', offNetwork.length === 0, offNetwork);

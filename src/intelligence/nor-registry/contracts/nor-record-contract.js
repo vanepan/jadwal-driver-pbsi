@@ -179,7 +179,10 @@ export function makeNorRecord({
     createdBy,
     status: Object.values(NOR_STATUS).includes(status) ? status : NOR_STATUS.DRAFT,
     currentVersion: Number.isFinite(Number(currentVersion)) && Number(currentVersion) >= 1 ? Number(currentVersion) : 1,
-    publishedVersion: Number.isFinite(Number(publishedVersion)) ? Number(publishedVersion) : null,
+    // A genuine null pre-publication — do NOT coerce (Number(null) === 0). A
+    // real published version is a positive integer; anything else → null.
+    publishedVersion: publishedVersion != null && Number.isFinite(Number(publishedVersion)) && Number(publishedVersion) >= 1
+      ? Number(publishedVersion) : null,
     numberSource: Object.values(NUMBER_SOURCE).includes(numberSource) ? numberSource : NUMBER_SOURCE.USER_EDITED,
     content: content ?? null,
     metadata: metadata && typeof metadata === 'object' ? metadata : {},

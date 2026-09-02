@@ -188,14 +188,25 @@ reset();
   check(!t.response.draft.fields.metadata.knowledgeRefs.includes('k2'), 'a non-approved (draft) item is never used');
   // generated output does NOT become approved knowledge — the service imports no promote/ingest path.
   // NOTE: the Phase 4 NOR-draft store legitimately exposes createDraft/updateDraft (persist a
-  // human-reviewable NOR draft — NOT knowledge), so the guard is scoped to knowledge-write symbols
-  // and to any import from src/knowledge/{services,repository}.
+  // human-reviewable NOR draft — NOT knowledge), and Phase 5 legitimately calls the canonical NOR
+  // Registry's register / appendVersion / approve / publish (a NOR record — NOT knowledge, and
+  // approve/publish only from the explicit human-triggered approveNor/publishNor methods, never
+  // from handle/finishReady — see intelligence-nor-registry-service-check.mjs). So the guard is
+  // scoped to KNOWLEDGE-write symbols and to any import from src/knowledge/{services,repository}.
   const svcSrc = (await import('node:fs')).readFileSync(new URL('../src/intelligence/service/intelligence-service.js', import.meta.url), 'utf8');
   const retrSrc = (await import('node:fs')).readFileSync(new URL('../src/intelligence/retrieval/knowledge-retrieval.js', import.meta.url), 'utf8');
   const knowledgeWrite = /from ['"][^'"]*knowledge\/(services|repository)/.test(svcSrc)
-    || /promoteKnowledge|mergeKnowledge|appendVersion|ingestKnowledge|\bingest\(/.test(svcSrc + retrSrc)
-    || /knowledge[A-Za-z]*\.(save|write|create|promote|ingest|approve)\s*\(/.test(svcSrc + retrSrc);
+    || /promoteKnowledge|mergeKnowledge|ingestKnowledge|\bingest\(/.test(svcSrc + retrSrc)
+    || /knowledge[A-Za-z]*\.(save|write|create|promote|ingest|approve|appendVersion)\s*\(/.test(svcSrc + retrSrc);
   check(!knowledgeWrite, 'the Intelligence layer calls NO knowledge write/promote path — generated output never auto-becomes Approved Knowledge (PART 7)');
+
+  // Phase 5 — the service NEVER auto-advances the NOR lifecycle. handle() /
+  // continueSession() / finishReady() only ever `register` (in_review); the
+  // approve / publish calls appear ONLY inside the explicit approveNor /
+  // publishNor methods.
+  const finishReadyBlock = (svcSrc.match(/async function finishReady[\s\S]*?\n  \}/) || [''])[0];
+  check(!/registryStore\.(approve|publish)\s*\(/.test(finishReadyBlock), 'finishReady() never calls registryStore.approve / .publish — approval + publication stay HUMAN (PART D/E/G)');
+  check(/async function approveNor[\s\S]*?registryStore\.approve\s*\(/.test(svcSrc) && /async function publishNor[\s\S]*?registryStore\.publish\s*\(/.test(svcSrc), 'approve / publish are reached ONLY through the explicit approveNor / publishNor methods');
 }
 
 section('Inaccessible knowledge is rejected (PART 11)');

@@ -54,6 +54,7 @@ const { notifyAdminsOfNewRequest } = require('./src/notifications/notifyAdminsOf
 const { generateCompletion } = require('./src/intelligence/generateCompletion');
 const { intelligenceConversation } = require('./src/intelligence/intelligenceConversation');
 const { intelligenceNorDraft } = require('./src/intelligence/intelligenceNorDraft');
+const { intelligenceNorRegistry } = require('./src/intelligence/intelligenceNorRegistry');
 
 exports.health = health;
 exports.verifyPin = verifyPin;
@@ -165,3 +166,20 @@ exports.intelligenceConversation = intelligenceConversation;
    forced null — this callable never publishes, numbers, approves, or mutates
    the NOR Registry / organizational knowledge. */
 exports.intelligenceNorDraft = intelligenceNorDraft;
+
+/* V2 Sarpras Intelligence — Phase 5 canonical NOR Registry & HUMAN
+   publication. HTTPS callable v2, region asia-southeast1, NO secrets. Same
+   effective-admin authorization as every other Intelligence callable (Phase
+   3C: role === 'admin' || adminEquivalent). Actor is ALWAYS request.auth.uid;
+   cross-owner access → FORBIDDEN envelope. Reads/writes
+   /intelligence_nor_registry/{norId} via the Admin SDK (RTDB rule
+   ".write": false). op ∈ register | get | list | sync | approve | publish |
+   history. `register` / `sync` re-read the linked /intelligence_nor_drafts
+   record server-side — the client injects no NOR content. Lifecycle
+   in_review → approved → published is human-gated with optimistic
+   concurrency; `publish` reserves ONE official sequence atomically +
+   idempotently (/intelligence_nor_registry_counters, root deny-by-default,
+   precedent functions/src/reimbursement/counter.js) and a published record
+   is immutable. Never touches V1 Petty Cash / generateNor() / V1 NOR data /
+   the feature flag / organizational knowledge. */
+exports.intelligenceNorRegistry = intelligenceNorRegistry;

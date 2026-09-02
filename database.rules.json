@@ -94,6 +94,22 @@
       }
     },
 
+    // V2 Sarpras Intelligence — Phase 5 CANONICAL NOR Registry & human
+    // publication. Mirrors intelligence_nor_drafts byte-for-byte: the
+    // intelligenceNorRegistry Cloud Function (Admin SDK) is the ONLY writer
+    // (".write": false), and a user may .read ONLY their own record
+    // (ownerId === auth.uid), plus the admin/developer tier. The
+    // official-number counter (/intelligence_nor_registry_counters) has NO
+    // rule of its own — the root ".read/.write": false deny-by-default
+    // covers it, exactly as it does /reimbursement_counters (server-only).
+    "intelligence_nor_registry": {
+      ".write": "false",
+      ".indexOn": ["ownerId"],
+      "$norId": {
+        ".read": "auth != null && (data.child('ownerId').val() === auth.uid || auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true)"
+      }
+    },
+
     "settings": {
       "operations": {
         ".read": "auth != null",

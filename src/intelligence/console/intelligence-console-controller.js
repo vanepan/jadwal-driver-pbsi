@@ -1,23 +1,28 @@
 /* ============================================================
-   INTELLIGENCE-CONSOLE-CONTROLLER.JS — Sarpras Intelligence (V2, Phase 3B)
+   INTELLIGENCE-CONSOLE-CONTROLLER.JS — Sarpras Intelligence (V2, Phase 5)
 
-   PURPOSE: the minimal, PURE state machine behind the first user-facing
-   Sarpras Intelligence surface. Phase 3B proved the intake flow; Phase 4
-   adds a persistent, human-editable NOR draft on top:
+   PURPOSE: the PURE state machine behind the user-facing Sarpras
+   Intelligence surface. Phase 3B proved the intake flow; Phase 4 added a
+   persistent, human-editable NOR draft; Phase 5 adds the canonical NOR
+   Registry lifecycle on top:
 
      idle → submit(text) → loading → needs_input
           → answer(text) → loading → needs_input | review
-                                              (requires_review + persisted draftId)
+                            (requires_review + persisted draftId + canonical norId, in_review)
           in review:  editField(f, v)  → stage a local edit (no network)
-                      saveDraft()      → persist the staged edits (explicit)
+                      saveDraft()      → persist the edits + sync the canonical version
                       discardEdits()   → drop the staged edits
-          on reload:  resumeDraft(id)  → re-fetch the server draft → review
+                      approve()        → HUMAN: in_review → approved (draft locks)
+          approved:   publish()        → HUMAN: approved → published (Registry reserves the number)
+          published:  read-only — the official number is shown
+          on reload:  resumeDraft(id)  → re-fetch draft + canonical record → the right stage
      any step → error (recoverable — the input / the staged edits are kept)
 
    It is a thin adapter over the EXISTING createIntelligenceService():
      • first turn   → service.handle(makeIntelligenceRequest(...))
      • later turns  → service.continueSession(conversationId, answers, actor)
      • draft edits  → service.updateDraft(draftId, edits, actor)
+     • canonical    → service.getNorRecord / syncNorRecord / approveNor / publishNor
      • reload       → service.getDraft(draftId, actor)
    It never talks to Firebase, OpenAI, RTDB, the DOM, or storage. The host
    view (js/intelligence-console.js) owns rendering + the reload pointer;
@@ -25,15 +30,16 @@
 
    RESPONSIBILITY: createIntelligenceConsoleController({ service, actor,
    onChange?, requestIdFactory? }) → { getState, submit, answer, editField,
-   saveDraft, discardEdits, resumeDraft, reset, destroy }.
+   saveDraft, discardEdits, approve, publish, resumeDraft, reset, destroy }.
 
-   HARD BOUNDARY (unchanged): NO publish / "Terbitkan" / approve / official
-   numbering / NOR Registry / knowledge write / autonomous action. The draft
-   stays `requires_review`; a human review is mandatory. saveDraft() only
-   persists the reviewer's own edits to their own draft.
+   BOUNDARY: approve() / publish() are the ONLY lifecycle-advancing calls and
+   they run ONLY from an explicit user gesture — the controller never invokes
+   them itself, never auto-approves, never auto-publishes, never mints a
+   number (the Registry does, server-side, at publish). Editing is refused
+   once the record leaves `in_review`.
 
-   DEPENDENCIES: the two Phase 0 contracts + the NOR-draft record contract
-   (all pure). Pure.
+   DEPENDENCIES: the Phase 0 contracts + the NOR-draft record contract + the
+   pure `norIdFromConversation` helper. Pure.
    ============================================================ */
 
 'use strict';
@@ -41,8 +47,18 @@
 import { makeIntelligenceRequest, REQUEST_TASK } from '../contracts/intelligence-request-contract.js';
 import { RESPONSE_STATUS } from '../contracts/intelligence-response-contract.js';
 import { DRAFT_EDITABLE_FIELDS } from '../nor-draft/contracts/nor-draft-record-contract.js';
+import { norIdFromConversation } from '../nor-registry/nor-registry-record.js';
 
 const EDITABLE = new Set(DRAFT_EDITABLE_FIELDS);
+
+/** The canonical NOR lifecycle the review workspace surfaces (PART H).
+ *  `in_review` → Edit / Save / Approve.  `approved` → Publish (no editing).
+ *  `published` → the official number, read-only. */
+export const NOR_LIFECYCLE = Object.freeze({
+  IN_REVIEW: 'in_review',
+  APPROVED: 'approved',
+  PUBLISHED: 'published',
+});
 
 export const CONSOLE_PHASE = Object.freeze({
   IDLE: 'idle',
@@ -78,6 +94,10 @@ const ERROR_TEXT = Object.freeze({
   NO_BACKEND_CONFIGURED: 'Penyimpanan draf sedang tidak tersedia. Coba lagi sebentar lagi.',
   INTERNAL: 'Perubahan tidak dapat disimpan saat ini. Coba lagi sebentar lagi.',
   UNKNOWN: 'Perubahan tidak dapat disimpan saat ini.',
+  // Phase 5 — canonical NOR Registry lifecycle
+  ILLEGAL_TRANSITION: 'Tindakan ini tidak sesuai dengan tahap NOR saat ini. Muat ulang untuk melihat status terbaru.',
+  ALREADY_PUBLISHED: 'NOR ini sudah diterbitkan dan tidak dapat diubah lagi.',
+  NUMBER_RESERVATION_FAILED: 'Nomor resmi gagal dipesan. Coba terbitkan lagi sebentar lagi.',
 });
 const ERROR_FALLBACK = 'Intelligence tidak dapat memproses permintaan saat ini.';
 
@@ -129,6 +149,18 @@ export function createIntelligenceConsoleController({ service, actor, onChange, 
     saveState: 'idle',
     saveError: null,       // curated sentence when saveState === 'error'
     draftPersistError: null, // set if requires_review returned but the draft did NOT persist
+    // Phase 5 — the canonical NOR Registry lifecycle
+    norId: null,
+    norLifecycle: null,   // 'in_review' | 'approved' | 'published' | null
+    norVersion: null,     // the canonical record's currentVersion (expectedVersion for approve/publish)
+    norNumber: null,      // the official number — only set once 'published'
+    norPublishedVersion: null,
+    registryPersistError: null, // set if requires_review returned but the canonical record did NOT register
+    approveState: 'idle', // 'idle' | 'busy' | 'error'
+    approveError: null,
+    publishState: 'idle', // 'idle' | 'busy' | 'error'
+    publishError: null,
+    registrySyncError: null, // a soft warning: the draft saved but the canonical version-sync failed
   };
 
   const snapshot = () => ({
@@ -148,6 +180,17 @@ export function createIntelligenceConsoleController({ service, actor, onChange, 
     saveState: state.saveState,
     saveError: state.saveError,
     draftPersistError: state.draftPersistError,
+    norId: state.norId,
+    norLifecycle: state.norLifecycle,
+    norVersion: state.norVersion,
+    norNumber: state.norNumber,
+    norPublishedVersion: state.norPublishedVersion,
+    registryPersistError: state.registryPersistError,
+    approveState: state.approveState,
+    approveError: state.approveError,
+    publishState: state.publishState,
+    publishError: state.publishError,
+    registrySyncError: state.registrySyncError,
   });
 
   /** Normalise BOTH draft shapes the view may receive — the assembler's
@@ -234,11 +277,28 @@ export function createIntelligenceConsoleController({ service, actor, onChange, 
       state.draftDirty = false;
       state.saveState = 'idle';
       state.saveError = null;
+      // Phase 5 — the canonical NorRecord (get-or-created at requires_review,
+      // status `in_review`, NO official number). AI made the draft; a human
+      // must review, then approve, then publish.
+      state.norId = (env && typeof env.norId === 'string' && env.norId) ? env.norId : null;
+      state.norLifecycle = state.norId ? NOR_LIFECYCLE.IN_REVIEW : null;
+      state.norVersion = state.norId ? 1 : null;
+      state.norNumber = null;
+      state.norPublishedVersion = null;
+      state.registryPersistError = (env && env.registryError && env.registryError.code)
+        ? errorText(env.registryError.code) : null;
+      state.approveState = 'idle';
+      state.approveError = null;
+      state.publishState = 'idle';
+      state.publishError = null;
+      state.registrySyncError = null;
       state.phase = CONSOLE_PHASE.REVIEW;
       state.error = null;
-      pushMessage('intelligence', state.draftId
-        ? 'Draf NOR sudah dibuat dan tersimpan. Silakan tinjau, sunting bila perlu, lalu simpan. Status tetap "Menunggu review".'
-        : 'Draf NOR sudah dibuat. Silakan tinjau di bawah. (Draf belum tersimpan otomatis — mulai permintaan baru bila perlu.)');
+      pushMessage('intelligence', state.norId
+        ? 'AI membuat draft NOR. Silakan tinjau, sunting bila perlu, lalu Setujui. Nomor resmi baru ditetapkan Registry saat Anda menekan Terbitkan.'
+        : (state.draftId
+          ? 'Draf NOR sudah dibuat dan tersimpan. Silakan tinjau, sunting bila perlu, lalu simpan. Status tetap "Menunggu review".'
+          : 'Draf NOR sudah dibuat. Silakan tinjau di bawah. (Draf belum tersimpan otomatis — mulai permintaan baru bila perlu.)'));
       return;
     }
     if (res.status === RESPONSE_STATUS.COMPLETED) {
@@ -302,6 +362,89 @@ export function createIntelligenceConsoleController({ service, actor, onChange, 
     return snapshot();
   }
 
+  /* ── Phase 5 — canonical NOR Registry lifecycle helpers ──────────────── */
+
+  /** Fold a canonical NorRecord into the lifecycle slice of the state. */
+  function applyNorRecord(rec) {
+    if (!rec || typeof rec !== 'object') return;
+    state.norId = rec.norId || state.norId;
+    state.norLifecycle = rec.status || state.norLifecycle;
+    state.norVersion = typeof rec.currentVersion === 'number' ? rec.currentVersion : state.norVersion;
+    state.norNumber = rec.norNumber || null;
+    state.norPublishedVersion = typeof rec.publishedVersion === 'number' ? rec.publishedVersion : null;
+  }
+
+  /** Best-effort re-read of the canonical record (never throws). */
+  async function refreshNorRecord() {
+    if (!state.norId || typeof service.getNorRecord !== 'function') return null;
+    try {
+      const res = await service.getNorRecord(state.norId, { userId: who.userId, role: who.role });
+      if (res && res.ok && res.record) { applyNorRecord(res.record); return res.record; }
+    } catch { /* leave the last-known lifecycle in place */ }
+    return null;
+  }
+
+  /** Shared runner for the two HUMAN lifecycle actions (approve / publish).
+   *  `expectStatus` is the stage the action legally starts from (PART H);
+   *  `goalStatuses` are the stages where the action's outcome is ALREADY
+   *  true (so a redundant click is an idempotent success, not an error) —
+   *  approve's goal is met once `approved` OR `published`, publish's once
+   *  `published`. `call` is the service method; `stateKey` is
+   *  'approve' | 'publish'. */
+  async function lifecycleAction({ stateKey, expectStatus, goalStatuses, requireClean, call, done }) {
+    if (state.busy) return snapshot();
+    if (state.phase !== CONSOLE_PHASE.REVIEW) return snapshot();
+    const busyKey = `${stateKey}State`;
+    const errKey = `${stateKey}Error`;
+    if (!state.norId || typeof call !== 'function') {
+      state[busyKey] = 'error';
+      state[errKey] = ERROR_TEXT.NO_BACKEND;
+      emit();
+      return snapshot();
+    }
+    if (requireClean && state.draftDirty) {
+      state[busyKey] = 'error';
+      state[errKey] = 'Simpan perubahan terlebih dahulu sebelum melanjutkan.';
+      emit();
+      return snapshot();
+    }
+    state.busy = true;
+    state[busyKey] = 'busy';
+    state[errKey] = null;
+    emit();
+    try {
+      const fresh = await refreshNorRecord();
+      if (fresh && Array.isArray(goalStatuses) && goalStatuses.includes(fresh.status)) {
+        // the outcome already holds — an idempotent no-op, not a server call.
+        applyNorRecord(fresh);
+        state[busyKey] = 'idle';
+        state[errKey] = null;
+        return snapshot();
+      }
+      if (fresh && fresh.status !== expectStatus) {
+        state[busyKey] = 'error';
+        state[errKey] = ERROR_TEXT.ILLEGAL_TRANSITION;
+        return snapshot();
+      }
+      const version = state.norVersion;
+      let res;
+      try { res = await call(state.norId, version); } catch { res = { ok: false, error: { code: 'NETWORK' } }; }
+      if (res && res.ok && res.record) {
+        applyNorRecord(res.record);
+        state[busyKey] = 'idle';
+        state[errKey] = null;
+        if (typeof done === 'function') done(res.record);
+      } else {
+        state[busyKey] = 'error';
+        state[errKey] = errorText(res && res.error && res.error.code);
+      }
+    } finally {
+      state.busy = false;
+      emit();
+    }
+    return snapshot();
+  }
+
   return Object.freeze({
     getState: snapshot,
     setOnChange,
@@ -321,9 +464,12 @@ export function createIntelligenceConsoleController({ service, actor, onChange, 
 
     /** Stage a local edit to ONE editable draft field. Pure — no network,
      *  never per-keystroke work beyond bookkeeping. The reviewer's edits are
-     *  held here until saveDraft(). Non-editable fields are ignored. */
+     *  held here until saveDraft(). Non-editable fields are ignored. Editing
+     *  is only permitted while the canonical record is `in_review` (PART H):
+     *  once approved / published the draft is read-only. */
     editField(field, value) {
       if (state.phase !== CONSOLE_PHASE.REVIEW) return snapshot();
+      if (state.norLifecycle && state.norLifecycle !== NOR_LIFECYCLE.IN_REVIEW) return snapshot();
       const f = String(field == null ? '' : field);
       if (!EDITABLE.has(f)) return snapshot();
       state.draftEdits = { ...state.draftEdits, [f]: value };
@@ -343,6 +489,12 @@ export function createIntelligenceConsoleController({ service, actor, onChange, 
     async saveDraft() {
       if (state.busy) return snapshot();
       if (state.phase !== CONSOLE_PHASE.REVIEW) return snapshot();
+      if (state.norLifecycle && state.norLifecycle !== NOR_LIFECYCLE.IN_REVIEW) {
+        state.saveState = 'error';
+        state.saveError = ERROR_TEXT.ALREADY_PUBLISHED;
+        emit();
+        return snapshot();
+      }
       if (!state.draftId) {
         state.saveState = 'error';
         state.saveError = 'Draf belum tersimpan di server sehingga belum bisa disunting. Mulai permintaan baru.';
@@ -378,6 +530,17 @@ export function createIntelligenceConsoleController({ service, actor, onChange, 
         state.draftDirty = false;
         state.saveState = 'saved';
         state.saveError = null;
+        state.registrySyncError = null;
+        // Phase 5 — keep the canonical record's immutable version history in
+        // step with the just-saved draft. Best-effort: a sync failure is a
+        // SOFT warning (the draft IS saved); it never blocks or publishes.
+        if (state.norId && typeof service.syncNorRecord === 'function') {
+          try {
+            const sync = await service.syncNorRecord(state.norId, { userId: who.userId, role: who.role });
+            if (sync && sync.ok && sync.record) applyNorRecord(sync.record);
+            else state.registrySyncError = errorText(sync && sync.error && sync.error.code);
+          } catch { state.registrySyncError = ERROR_TEXT.NETWORK; }
+        }
         pushMessage('intelligence', 'Perubahan draf tersimpan. Status tetap "Menunggu review".');
       } else {
         // keep state.draftEdits — the reviewer's work is not thrown away
@@ -387,6 +550,37 @@ export function createIntelligenceConsoleController({ service, actor, onChange, 
       state.busy = false;
       emit();
       return snapshot();
+    },
+
+    /* ── Phase 5 — HUMAN approval + publication (PART E–H) ─────────────────
+       Both are EXPLICIT, from their own buttons. The controller never calls
+       them itself. Approve is only offered while `in_review`; publish only
+       while `approved`. Publish reserves the official number server-side and
+       is idempotent. AI membuat draft; manusia meninjau; manusia menyetujui;
+       Registry menetapkan nomor resmi saat diterbitkan. */
+
+    /** in_review → approved. Requires a clean (saved) draft. */
+    approve() {
+      return lifecycleAction({
+        stateKey: 'approve',
+        expectStatus: NOR_LIFECYCLE.IN_REVIEW,
+        goalStatuses: [NOR_LIFECYCLE.APPROVED, NOR_LIFECYCLE.PUBLISHED],
+        requireClean: true,
+        call: (norId, version) => service.approveNor(norId, version, { userId: who.userId, role: who.role }),
+        done: () => pushMessage('intelligence', 'NOR disetujui oleh Anda. Belum ada nomor resmi — tekan "Terbitkan" untuk menetapkannya melalui Registry.'),
+      });
+    },
+
+    /** approved → published. Reserves exactly one official number. */
+    publish() {
+      return lifecycleAction({
+        stateKey: 'publish',
+        expectStatus: NOR_LIFECYCLE.APPROVED,
+        goalStatuses: [NOR_LIFECYCLE.PUBLISHED],
+        requireClean: false,
+        call: (norId, version) => service.publishNor(norId, version, { userId: who.userId, role: who.role }),
+        done: (rec) => pushMessage('intelligence', `NOR diterbitkan. Nomor resmi: ${rec.norNumber} (ditetapkan oleh Registry). Versi terbit tidak dapat diubah lagi.`),
+      });
     },
 
     /** Drop the staged edits and revert the form to the last saved draft. */
@@ -428,8 +622,25 @@ export function createIntelligenceConsoleController({ service, actor, onChange, 
         state.saveState = 'idle';
         state.saveError = null;
         state.draftPersistError = null;
+        state.approveState = 'idle';
+        state.approveError = null;
+        state.publishState = 'idle';
+        state.publishError = null;
+        state.registrySyncError = null;
+        state.registryPersistError = null;
         state.phase = CONSOLE_PHASE.REVIEW;
-        pushMessage('intelligence', 'Draf NOR yang tersimpan dimuat kembali. Silakan lanjutkan peninjauan.');
+        // Phase 5 — restore the canonical lifecycle (status / version /
+        // official number) so a reload lands on Approve, Publish, or the
+        // read-only published view exactly as the user left it.
+        state.norId = res.draft.conversationId ? norIdFromConversation(res.draft.conversationId) : null;
+        state.norLifecycle = state.norId ? NOR_LIFECYCLE.IN_REVIEW : null;
+        state.norVersion = state.norId ? 1 : null;
+        state.norNumber = null;
+        state.norPublishedVersion = null;
+        await refreshNorRecord();
+        pushMessage('intelligence', state.norLifecycle === NOR_LIFECYCLE.PUBLISHED
+          ? `NOR yang tersimpan dimuat kembali. Sudah diterbitkan — nomor resmi: ${state.norNumber}.`
+          : 'Draf NOR yang tersimpan dimuat kembali. Silakan lanjutkan peninjauan.');
       } else {
         state.phase = CONSOLE_PHASE.IDLE;
       }
@@ -458,6 +669,17 @@ export function createIntelligenceConsoleController({ service, actor, onChange, 
       state.saveState = 'idle';
       state.saveError = null;
       state.draftPersistError = null;
+      state.norId = null;
+      state.norLifecycle = null;
+      state.norVersion = null;
+      state.norNumber = null;
+      state.norPublishedVersion = null;
+      state.registryPersistError = null;
+      state.approveState = 'idle';
+      state.approveError = null;
+      state.publishState = 'idle';
+      state.publishError = null;
+      state.registrySyncError = null;
       emit();
       return snapshot();
     },

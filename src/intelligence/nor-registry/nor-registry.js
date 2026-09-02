@@ -43,6 +43,7 @@ import {
   NOR_REGISTRY_CONTRACT,
 } from './contracts/registry-contract.js';
 import { nullNorRegistryBackend, NULL_NOR_REGISTRY_BACKEND_ID } from './backends/null-nor-registry-backend.js';
+import { createCallableNorRegistryBackend, CALLABLE_NOR_REGISTRY_BACKEND_ID } from './backends/callable-nor-registry-backend.js';
 import { suggestNextNumber, makeNumberAllocation, reserveNumber, NUMBERING_OWNER } from './contracts/nor-numbering-contract.js';
 
 export { NOR_REGISTRY_ERRORS, NOR_REGISTRY_CONTRACT, NOR_REGISTRY_SCHEMA } from './contracts/registry-contract.js';
@@ -50,6 +51,7 @@ export { suggestNextNumber, makeNumberAllocation, reserveNumber, NUMBERING_OWNER
 export {
   NOR_STATUS,
   NOR_STATUS_GRAPH,
+  NOR_HUMAN_GATED_STATES,
   canNorTransition,
   NUMBER_SOURCE,
   NOR_SOURCE_MODULE,
@@ -58,6 +60,15 @@ export {
   makeNorRecord,
   isNorRecord,
 } from './contracts/nor-record-contract.js';
+export {
+  REGISTRY_AUDIT_EVENTS,
+  REGISTRY_CHANGE_TYPE,
+  norIdFromConversation,
+  registryContentFromDraft,
+  registryContentChanged,
+  makeNorRecordFromDraft,
+} from './nor-registry-record.js';
+export { CALLABLE_NOR_REGISTRY_BACKEND_ID } from './backends/callable-nor-registry-backend.js';
 
 /* ── backend registry — Null is the default and the reset target ───────── */
 
@@ -97,6 +108,19 @@ export function listBackends() {
   })));
 }
 
+/**
+ * Phase 5 convenience — register the server-owned RTDB backend and make it
+ * active. `callRegistry` is js/firebase.js#callIntelligenceNorRegistry in
+ * production, a fake wired to the CJS callable's .run() in tests.
+ * @param {{ callRegistry: Function }} opts
+ */
+export function useCallableNorRegistryBackend({ callRegistry }) {
+  const backend = createCallableNorRegistryBackend({ callRegistry });
+  registerBackend(backend);
+  setActiveBackend(CALLABLE_NOR_REGISTRY_BACKEND_ID);
+  return backend;
+}
+
 /** Test/teardown helper — restore just the Null backend, active. */
 export function resetNorRegistry() {
   _backends.clear();
@@ -129,6 +153,7 @@ export function unregisterRegistryListener(cb) {
 export const REGISTRY_EVENT = Object.freeze({
   REGISTERED: 'nor.registered',
   VERSION_APPENDED: 'nor.version_appended',
+  APPROVED: 'nor.approved',
   PUBLISHED: 'nor.published',
 });
 
@@ -155,20 +180,42 @@ export function register(record) {
 export const getById = (norId) => active('getById', norId);
 export const list = (filter) => active('list', filter);
 
-/** Edit a NOR = append a new version, never an overwrite (PART 13). */
-export function appendVersion(norId, patch, note) {
-  const result = active('appendVersion', norId, patch, note);
+/**
+ * Edit a NOR = append a new IMMUTABLE version, never an overwrite (PART D).
+ * `input` carries whatever the active backend needs to compute the next
+ * content — for the server (`callable`) backend that is nothing but the id
+ * (it re-reads the linked Phase 4 draft), for the `memory` backend it is
+ * `{ draft, actorId, at, expectedVersion }`. Only legal while `in_review`.
+ */
+export function appendVersion(norId, input) {
+  const result = active('appendVersion', norId, input);
   if (result.ok) notify(REGISTRY_EVENT.VERSION_APPENDED, result.data);
   return result;
 }
 
 /**
- * Publish a NOR: set its official number + publishedVersion + status.
- * `opts.publishedNumber` is the final issued number (from a human, a
- * suggestion, or — later — reserveNumber()). Phase 0: NOT_IMPLEMENTED.
+ * Human approval (PART E): `in_review → approved`. NEVER automatic. `ctx`
+ * carries `{ expectedVersion, actorId, at }` — the backend enforces
+ * optimistic concurrency, the source status, and (server-side) the
+ * effective-admin + owner checks. No number is reserved here.
  */
-export function publish(norId, opts = {}) {
-  const result = active('publish', norId, opts);
+export function approve(norId, ctx = {}) {
+  const result = active('approve', norId, ctx);
+  if (result.ok) notify(REGISTRY_EVENT.APPROVED, result.data);
+  return result;
+}
+
+/**
+ * Human publication (PART F/G): `approved → published`. Reserves the official
+ * number atomically + idempotently (server-side — precedent
+ * functions/src/reimbursement/counter.js), sets `norNumber` to that
+ * SERVER-RESERVED SEQUENCE (there is NO number input — the browser can never
+ * choose it), `numberSource='reserved'`, `publishedVersion`. `ctx` carries
+ * `{ expectedVersion, actorId, at }`. A retry on an already-published record
+ * returns it unchanged — no second number, no second counter increment.
+ */
+export function publish(norId, ctx = {}) {
+  const result = active('publish', norId, ctx);
   if (result.ok) notify(REGISTRY_EVENT.PUBLISHED, result.data);
   return result;
 }

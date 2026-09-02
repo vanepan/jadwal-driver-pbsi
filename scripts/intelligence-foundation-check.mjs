@@ -193,7 +193,7 @@ const pcService = fs.readFileSync(path.join(ROOT, 'js/petty-cash/petty-cash-serv
 check(!/function\s+nextNorNumber|generateNorNumber|nextNor\b/.test(pcService), 'js/petty-cash/petty-cash-service.js defines NO independent NOR-number generator (nextRefNumber is a nota ref, not a NOR number)');
 
 section('NOR Registry facade + null backend');
-check(NOR_REGISTRY_CONTRACT.methods.join(',') === 'register,getById,list,appendVersion,publish,getHistory', 'backend contract method set');
+check(NOR_REGISTRY_CONTRACT.methods.join(',') === 'register,getById,list,appendVersion,approve,publish,getHistory', 'backend contract method set (Phase 5 added `approve` — the human-gated in_review→approved step, already legal in NOR_STATUS_GRAPH since Phase 0)');
 check(isNorRegistryBackend(registry) === false, 'the facade module namespace is not itself a "backend" object');
 check(registry.getActiveBackendId() === 'null', 'Null backend active by default');
 const regResult = registry.register(rec);
