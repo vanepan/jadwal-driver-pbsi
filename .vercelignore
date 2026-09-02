@@ -72,11 +72,26 @@
 /Engineering Operations Prototype/
 /Petty Cash Center/
 /legacy/
-/src/
 /storage.rules
 /storage-cors.json
 /database.rules.stageA.json
 *.txt
+
+# NOTE (V2 Intelligence hotfix): `/src/` was previously excluded here on the
+# v1.30.7.8 rationale that it was "not referenced anywhere in index.html or
+# js/app.js's runtime code". That is no longer true. Since V2.0.10 the
+# Sarpras Intelligence workspace is a real, runtime-reachable dynamic import
+# (js/config/module-loader-registry.js →
+#   import('../../src/ui/sarpras-intelligence-center.js') and
+#   import('../intelligence-backend-wiring.js') → ../src/intelligence/**),
+# gated behind isV2Enabled(). Excluding /src/ 404'd that whole module graph
+# on Vercel only (Firebase Hosting's firebase.json `hosting.ignore` never
+# excluded src/ and serves it fine) — the exact "Failed to fetch dynamically
+# imported module" blank-screen the v1.25.x/v1.30.7.8.3 hotfixes describe.
+# src/ is browser-ESM application code with NO secrets (server credentials
+# live only in functions/ + Secret Manager; intelligence-security-scan-check
+# enforces this), so serving it matches the already-approved Firebase Hosting
+# posture. docs/, scripts/, functions/, legacy/ etc. remain excluded.
 
 # ── Standard, not project-specific ──
 node_modules/

@@ -6,7 +6,6 @@
     { "src": "^/scripts(/.*)?$", "status": 404 },
     { "src": "^/scratch(/.*)?$", "status": 404 },
     { "src": "^/functions(/.*)?$", "status": 404 },
-    { "src": "^/src(/.*)?$", "status": 404 },
     { "src": "^/legacy(/.*)?$", "status": 404 },
     { "src": "^/Analytics-V2(/.*)?$", "status": 404 },
     { "src": "^/Analytics(%20|\\s)Export(/.*)?$", "status": 404 },
