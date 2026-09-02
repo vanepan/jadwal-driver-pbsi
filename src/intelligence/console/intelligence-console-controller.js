@@ -150,7 +150,8 @@ export function createIntelligenceConsoleController({ service, actor, onChange, 
       }));
       state.phase = CONSOLE_PHASE.NEEDS_INPUT;
       state.error = null;
-      pushMessage('intelligence', questionsToText(state.questions));
+      const prefix = env && env.unmatchedAnswer ? 'Maaf, itu belum menjawab pertanyaan di bawah.\n' : '';
+      pushMessage('intelligence', prefix + questionsToText(state.questions));
       return;
     }
     if (res.status === RESPONSE_STATUS.REQUIRES_REVIEW || res.status === RESPONSE_STATUS.DRAFT) {
@@ -203,8 +204,12 @@ export function createIntelligenceConsoleController({ service, actor, onChange, 
         });
         env = await service.handle(request);
       } else {
-        const field = state.questions[0] && state.questions[0].id ? state.questions[0].id : 'answer';
-        env = await service.continueSession(state.conversationId, { [field]: value }, { userId: who.userId, role: who.role });
+        // Hand the raw message to the service — it extracts the facts this
+        // reply answers by SEMANTIC meaning (item / quantity / purpose /
+        // budget / recipient), merging into the conversation's known facts.
+        // A message may answer one field, several, an earlier field, or a
+        // later one — never blindly the first unanswered question.
+        env = await service.continueSession(state.conversationId, { text: value }, { userId: who.userId, role: who.role });
       }
       applyEnvelope(env);
       if (state.phase !== CONSOLE_PHASE.ERROR) state.pendingInput = '';

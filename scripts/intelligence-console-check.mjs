@@ -10,7 +10,7 @@
    Covers:
      • idle → submit() → loading → needs_input   (service.handle called once,
        with a well-formed makeIntelligenceRequest; conversationId retained)
-     • needs_input → answer() → continueSession(SAME id, { field: text })
+     • needs_input → answer() → continueSession(SAME id, { text })
      • → requires_review → review state, DISPLAY ONLY (no publish surface)
      • double-submit protection (a 2nd call while busy is dropped)
      • every service error code → ONE curated Indonesian sentence; a raw
@@ -104,7 +104,7 @@ check(st.questions.length === 2 && st.questions[0].id === 'item', 'both question
 check(st.messages[0].role === 'user' && st.messages[1].role === 'intelligence', 'stack shows the user turn then the Intelligence turn');
 check(emits.includes('loading') && emits[emits.length - 1] === 'needs_input', 'onChange emitted loading then needs_input');
 
-section('needs_input → answer → continueSession(SAME id, { field: text }) → review');
+section('needs_input → answer → continueSession(SAME id, { text }) → review');
 {
   const s3 = fakeService([
     needsInput('conv_X', [{ id: 'item', prompt: 'Barang apa?', why: 'Item', required: true }]),
@@ -116,7 +116,8 @@ section('needs_input → answer → continueSession(SAME id, { field: text }) �
   check(s3.calls.continueSession.length === 1, 'answer() → continueSession() called once');
   const c = s3.calls.continueSession[0];
   check(c.convId === 'conv_X', 'continueSession got the SAME conversationId the service returned');
-  check(c.answers && c.answers.item === 'kursi lipat', 'the free-text answer is mapped onto the current question field ({ item: … })');
+  check(c.answers && c.answers.text === 'kursi lipat' && Object.keys(c.answers).length === 1,
+    'the RAW free-text reply is handed to the service ({ text: … }) — the service extracts facts by meaning, not the UI');
   check(c.actor && c.actor.userId === 'evan', 'continueSession got the actor (identity never sent as a manual token)');
   st = ctl.getState();
   check(st.phase === CONSOLE_PHASE.REVIEW, 'phase → review after requires_review');

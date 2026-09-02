@@ -37,10 +37,12 @@ const ENTRY_POINTS = [
   'src/ui/sarpras-intelligence-center.js',
 ];
 
-/* ── git-tracked file set ───────────────────────────────────────────── */
-const tracked = new Set(
-  execSync('git ls-files', { cwd: ROOT, encoding: 'utf8' }).split('\n').filter(Boolean),
-);
+/* ── files that will reach Vercel = git-tracked + untracked-not-ignored
+      (a brand-new, not-yet-committed module still deploys once committed) ── */
+const tracked = new Set([
+  ...execSync('git ls-files', { cwd: ROOT, encoding: 'utf8' }).split('\n').filter(Boolean),
+  ...execSync('git ls-files --others --exclude-standard', { cwd: ROOT, encoding: 'utf8' }).split('\n').filter(Boolean),
+]);
 
 /* ── .vercelignore matcher (gitignore-style, as Vercel documents) ────── */
 function loadIgnorePatterns() {

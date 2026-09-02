@@ -57,6 +57,7 @@ import { retrieveApprovedKnowledge } from '../retrieval/knowledge-retrieval.js';
 import { retrieveRecentArchive, summarizeRecipientPatterns } from '../retrieval/memory-retrieval.js';
 import { factQuestions, resolveRecipient, recipientQuestion } from './clarification.js';
 import { assembleNorDraft } from './nor-draft-assembler.js';
+import { extractAnswerFacts } from './answer-extractor.js';
 
 const TASK_TO_INTENT = Object.freeze({ [REQUEST_TASK.NOR_GENERATE]: 'create_nor' });
 
@@ -277,7 +278,11 @@ export function createIntelligenceService(deps) {
     }
 
     const domainType = request.domainType || 'nor';
-    const seedFacts = request.input && request.input.fields && typeof request.input.fields === 'object' ? request.input.fields : {};
+    // Extract whatever structured facts the OPENING message itself already
+    // answers (quantity, purpose, budget, recipient…) — an explicit
+    // request.input.fields still wins on a genuine key collision.
+    const explicitFields = request.input && request.input.fields && typeof request.input.fields === 'object' ? request.input.fields : {};
+    const seedFacts = { ...extractAnswerFacts(utterance, { pendingFields: [], knownFacts: {}, norType: null }), ...explicitFields };
     const run = runConversation(utterance, actor, seedFacts);
     const convId = idgen();
     const now = clock();
@@ -334,6 +339,27 @@ export function createIntelligenceService(deps) {
       return { response: errorResponse({ requestId: convId, code: RESPONSE_ERRORS.LIMIT, message: `Batas ${l.maxTurns} giliran tercapai. Mulai sesi baru.` }), conversationId: convId };
     }
 
+    // A free-text answer (the console sends `{ text }`; a string is also
+    // accepted) is turned into structured {field: value} facts by SEMANTIC
+    // meaning — using the fields currently being asked (ic.missingFields)
+    // and what is already known — instead of being dumped onto whichever
+    // question happens to be first. A caller that already has structured
+    // {field: value} answers (the service's own tests, a future richer UI)
+    // is passed straight through unchanged.
+    const freeText = typeof answers === 'string'
+      ? answers
+      : (answers && typeof answers === 'object' && typeof answers.text === 'string'
+        && Object.keys(answers).length === 1 ? answers.text : null);
+    if (freeText !== null) {
+      // Replace the raw message with the structured facts it answers — this
+      // is also what gets persisted into the turn (turns[].answers).
+      answers = extractAnswerFacts(freeText, {
+        pendingFields: Array.isArray(ic.missingFields) ? ic.missingFields : [],
+        knownFacts: ic.collectedFields || {},
+        norType: (ic.collectedFields && ic.collectedFields.type) || null,
+      });
+    }
+
     const merged = { ...ic.collectedFields };
     for (const [k, v] of Object.entries(answers || {})) {
       if (v !== undefined && v !== null && v !== '') merged[k] = v;
@@ -354,6 +380,11 @@ export function createIntelligenceService(deps) {
       return {
         response: needsInputResponse({ requestId: convId, questions, provenance: provenanceFor(convId, actor, ic.sourceModule, null) }),
         conversationId: convId,
+        // A free-text reply that answered none of the pending questions
+        // (e.g. a name where a budget amount was asked) — the caller may
+        // surface a soft "belum menjawab" hint. The conversation state is
+        // unchanged and still needs the same information.
+        unmatchedAnswer: freeText !== null && Object.keys(answers || {}).length === 0,
         audit: turnAudit({ requestId: convId, actorId: actor.userId, sourceModule: ic.sourceModule, status: 'needs_input', questionCount: questions.length, hasDraft: false }),
       };
     }
