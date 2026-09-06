@@ -76,7 +76,7 @@
       ".write": "false",
       ".indexOn": ["actorId"],
       "$convId": {
-        ".read": "auth != null && (data.child('actorId').val() === auth.uid || auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true)"
+        ".read": "auth != null && (data.child('actorId').val() === auth.uid || auth.token.role === 'admin' || auth.token.adminEquivalent === true)"
       }
     },
 
@@ -84,13 +84,13 @@
     // Mirrors intelligence_conversations byte-for-byte: the intelligenceNorDraft
     // Cloud Function (Admin SDK) is the ONLY writer (".write": false), and a
     // user may .read ONLY their own draft (ownerId === auth.uid), plus the
-    // admin/developer tier. NOT a publication node — the record itself forces
+    // admin / adminEquivalent tier. NOT a publication node — the record itself forces
     // numbering.publishedNumber null.
     "intelligence_nor_drafts": {
       ".write": "false",
       ".indexOn": ["ownerId"],
       "$draftId": {
-        ".read": "auth != null && (data.child('ownerId').val() === auth.uid || auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true)"
+        ".read": "auth != null && (data.child('ownerId').val() === auth.uid || auth.token.role === 'admin' || auth.token.adminEquivalent === true)"
       }
     },
 
@@ -98,7 +98,7 @@
     // publication. Mirrors intelligence_nor_drafts byte-for-byte: the
     // intelligenceNorRegistry Cloud Function (Admin SDK) is the ONLY writer
     // (".write": false), and a user may .read ONLY their own record
-    // (ownerId === auth.uid), plus the admin/developer tier. The
+    // (ownerId === auth.uid), plus the admin / adminEquivalent tier. The
     // official-number counter (/intelligence_nor_registry_counters) has NO
     // rule of its own — the root ".read/.write": false deny-by-default
     // covers it, exactly as it does /reimbursement_counters (server-only).
@@ -106,7 +106,7 @@
       ".write": "false",
       ".indexOn": ["ownerId"],
       "$norId": {
-        ".read": "auth != null && (data.child('ownerId').val() === auth.uid || auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true)"
+        ".read": "auth != null && (data.child('ownerId').val() === auth.uid || auth.token.role === 'admin' || auth.token.adminEquivalent === true)"
       }
     },
 
@@ -118,20 +118,20 @@
     // intelligence_nor_registry byte-for-byte: the intelligenceCorpus
     // Cloud Function (Admin SDK) is the ONLY writer (".write": false), and
     // a user may .read ONLY their own record (ownerId === auth.uid), plus
-    // the admin/developer tier. Historical organizational documents may be
+    // the admin / adminEquivalent tier. Historical organizational documents may be
     // sensitive — corpus access is controlled organizational data.
     "intelligence_corpus_documents": {
       ".write": "false",
       ".indexOn": ["ownerId"],
       "$documentId": {
-        ".read": "auth != null && (data.child('ownerId').val() === auth.uid || auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true)"
+        ".read": "auth != null && (data.child('ownerId').val() === auth.uid || auth.token.role === 'admin' || auth.token.adminEquivalent === true)"
       }
     },
     "intelligence_corpus_observations": {
       ".write": "false",
       ".indexOn": ["documentId", "ownerId"],
       "$observationId": {
-        ".read": "auth != null && (data.child('ownerId').val() === auth.uid || auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true)"
+        ".read": "auth != null && (data.child('ownerId').val() === auth.uid || auth.token.role === 'admin' || auth.token.adminEquivalent === true)"
       }
     },
 
@@ -147,7 +147,7 @@
     // the whole guide. `.indexOn` supports the status / category /
     // documentType queries.
     "intelligence_style_guide": {
-      ".read": "auth != null && (auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true)",
+      ".read": "auth != null && (auth.token.role === 'admin' || auth.token.adminEquivalent === true)",
       ".write": "false",
       ".indexOn": ["status", "category", "documentType"]
     },
@@ -164,7 +164,7 @@
     // the whole system. `.indexOn` supports the status / documentType
     // queries.
     "intelligence_visual_templates": {
-      ".read": "auth != null && (auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true)",
+      ".read": "auth != null && (auth.token.role === 'admin' || auth.token.adminEquivalent === true)",
       ".write": "false",
       ".indexOn": ["status", "documentType"]
     },

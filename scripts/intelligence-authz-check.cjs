@@ -94,6 +94,13 @@ const {
     check(canUseIntelligence({ role }).ok === false, `3: role "${role}" → DENIED`);
   }
 
+  // 3b — 'developer' is a legacy role term (absent from verifyPin.js VALID_ROLES
+  //      and js/config/role-registry.js). Intelligence must NEVER grant it —
+  //      pinned explicitly alongside the RTDB rule remediation that removed the
+  //      latent `auth.token.role === 'developer'` branch from the seven
+  //      intelligence_* .read rules.
+  check(canUseIntelligence({ role: 'developer' }).ok === false, '3: role "developer" → DENIED (no legacy developer grant for Intelligence)');
+
   // 4 — unauthenticated / malformed → denied (fail closed)
   check(canUseIntelligence(undefined).ok === false, '4: no token → DENIED');
   check(canUseIntelligence(null).ok === false, '4: null token → DENIED');
@@ -226,6 +233,37 @@ const {
       `functions/src/intelligence/${f}: no key / endpoint / env-var`);
   }
   check(!/api\.openai\.com/.test(fbSrc), 'js/firebase.js: no OpenAI endpoint (server-only)');
+
+  /* ── 10 — RTDB: the Intelligence .read rules grant admin / adminEquivalent
+        (plus owner where defined) and NEVER the legacy 'developer' role. Pins
+        the post-Phase-B security remediation. Text-scanned, NOT JSON.parsed:
+        database.rules.json carries // comments the raw parser rejects, and
+        repairing that parser is out of scope for this security fix. ──────── */
+  section("10 — database.rules.json: Intelligence .read = admin / adminEquivalent only (no 'developer')");
+  const rulesTxt = fs.readFileSync(path.join(ROOT, 'database.rules.json'), 'utf8');
+  const intelNodes = [
+    'intelligence_conversations', 'intelligence_nor_drafts', 'intelligence_nor_registry',
+    'intelligence_corpus_documents', 'intelligence_corpus_observations',
+    'intelligence_style_guide', 'intelligence_visual_templates',
+  ];
+  const intelStart = rulesTxt.indexOf('"intelligence_conversations"');
+  const intelEnd = rulesTxt.indexOf('"settings"', intelStart);
+  check(intelStart !== -1 && intelEnd > intelStart,
+    'the seven intelligence_* rule nodes form a contiguous region ahead of "settings"');
+  const intelRegion = rulesTxt.slice(intelStart, intelEnd);
+  for (const n of intelNodes) check(intelRegion.includes(`"${n}"`), `   region still contains "${n}"`);
+  check(!/role === 'developer'/.test(intelRegion),
+    "NO intelligence_* rule expression contains role === 'developer' (latent developer read grant removed)");
+  check((intelRegion.match(/auth\.token\.adminEquivalent === true/g) || []).length === intelNodes.length,
+    'all seven intelligence_* .read expressions still grant adminEquivalent === true');
+  check((intelRegion.match(/auth\.token\.role === 'admin'/g) || []).length === intelNodes.length,
+    "all seven intelligence_* .read expressions still grant role === 'admin'");
+  check((intelRegion.match(/data\.child\('ownerId'\)\.val\(\) === auth\.uid/g) || []).length === 4,
+    'the four owner-scoped intelligence_* nodes still grant owner read (ownerId === auth.uid)');
+  check(/data\.child\('actorId'\)\.val\(\) === auth\.uid/.test(intelRegion),
+    'intelligence_conversations still grants owner read (actorId === auth.uid)');
+  check((intelRegion.match(/"\.write":\s*"false"/g) || []).length === intelNodes.length,
+    'all seven intelligence_* nodes keep ".write": "false" (server-authoritative — unchanged)');
 
   console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} — ${fail} failing check(s).`);
   process.exit(fail === 0 ? 0 : 1);

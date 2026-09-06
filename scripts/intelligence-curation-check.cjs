@@ -179,7 +179,7 @@ const styleGuideStore = require('../functions/src/intelligence/styleGuideStore')
     check(!/intelligence_curation|human_curation|curation_workspace/i.test(rules), 'no intelligence_curation* / curation_workspace node was added');
     check(/"intelligence_style_guide"\s*:\s*\{[\s\S]*?"\.write"\s*:\s*"false"/.test(rules), 'the read node it needs — intelligence_style_guide — is server-only writer (Phase 5.x.5 STAGED block, reused verbatim)');
     check(/"intelligence_visual_templates"\s*:\s*\{[\s\S]*?"\.write"\s*:\s*"false"/.test(rules), 'the read node it needs — intelligence_visual_templates — is server-only writer (Phase 5.x.6 STAGED block, reused verbatim)');
-    check(/"intelligence_style_guide"[\s\S]*?"\.read"\s*:\s*"auth != null && \(auth\.token\.role === 'admin' \|\| auth\.token\.role === 'developer' \|\| auth\.token\.adminEquivalent === true\)"/.test(rules), 'intelligence_style_guide .read is the effective-admin tier — the workspace never widens it');
+    check(/"intelligence_style_guide"[\s\S]*?"\.read"\s*:\s*"auth != null && \(auth\.token\.role === 'admin' \|\| auth\.token\.adminEquivalent === true\)"/.test(rules), 'intelligence_style_guide .read is the effective-admin tier (admin / adminEquivalent — no developer) — the workspace never widens it');
   }
 
   /* ── 6. STATIC SAFETY SCAN of every NEW Phase 5.x.8 file ──────────── */
