@@ -125,6 +125,58 @@ function __setTemporalAnalyzerForTest(fn) { _temporalAnalyzer = typeof fn === 'f
 let _writingMemoryBuilder = null;
 function __setWritingMemoryBuilderForTest(fn) { _writingMemoryBuilder = typeof fn === 'function' ? fn : null; }
 
+/* ── PRODUCTION WIRING (Controlled Deployment Phase C1) ──────────────
+   The three deterministic runners above are now wired to a verbatim,
+   drift-guarded mirror of src/intelligence/corpus/** that ships INSIDE
+   the Functions bundle at functions/src/intelligence/corpus-esm/ (an ESM
+   package — see its package.json). Loaded ONCE, lazily, via dynamic
+   import(). A test injection (__set*ForTest) ALWAYS wins — it is checked
+   first at every call site. If the import throws, the runner resolves to
+   null and the op fails safe EXACTLY as before (PIPELINE_UNAVAILABLE /
+   TEMPORAL_UNAVAILABLE / WRITING_MEMORY_UNAVAILABLE). No Firebase, no
+   network, no model — the mirror is pure (its only externals are
+   `mammoth` for .docx and `node:zlib` for PDF FlateDecode). §10: the
+   __set*ForTest seams are retained for unit isolation. */
+let _prodRunners;
+async function loadProdRunners() {
+  if (_prodRunners !== undefined) return _prodRunners;
+  try {
+    const [pipe, tmp, wm] = await Promise.all([
+      import('./corpus-esm/pipeline/analysis-pipeline.js'),
+      import('./corpus-esm/temporal/convention-temporal-analyzer.js'),
+      import('./corpus-esm/writing-memory/writing-memory-builder.js'),
+    ]);
+    _prodRunners = {
+      analyze: (args) => pipe.runAnalysisPipeline({
+        source: (args && args.source) || null,
+        document: args && args.document,
+        at: args && args.at,
+      }),
+      temporal: (input, config, opts) => tmp.analyzeConventionTemporal(input, config, opts),
+      writingMemory: (input, config, opts) => wm.buildWritingMemory(input, config, opts),
+    };
+  } catch (err) {
+    logger.error('[intelligence/corpus] corpus-esm runners failed to load — ops fail safe', { error: err && err.message });
+    _prodRunners = null;
+  }
+  return _prodRunners;
+}
+async function resolveAnalyzePipeline() {
+  if (typeof _analyzePipeline === 'function') return _analyzePipeline;
+  const p = await loadProdRunners();
+  return p && typeof p.analyze === 'function' ? p.analyze : null;
+}
+async function resolveTemporalAnalyzer() {
+  if (typeof _temporalAnalyzer === 'function') return _temporalAnalyzer;
+  const p = await loadProdRunners();
+  return p && typeof p.temporal === 'function' ? p.temporal : null;
+}
+async function resolveWritingMemoryBuilder() {
+  if (typeof _writingMemoryBuilder === 'function') return _writingMemoryBuilder;
+  const p = await loadProdRunners();
+  return p && typeof p.writingMemory === 'function' ? p.writingMemory : null;
+}
+
 /** Drop every field of a client-supplied approved rule except the four
  *  this layer reads. NEVER trusts approvedBy / authority / currentness
  *  / owner (§19). */
@@ -212,8 +264,11 @@ const intelligenceCorpus = onCall({ region: REGION }, async (request) => {
       // READ-ONLY. Gather ONLY the caller's own corpus, run the temporal
       // analyzer, return the analytical view. No write, no lifecycle
       // move, no approval (§16, §17).
-      if (typeof _temporalAnalyzer !== 'function') {
-        result = corpusFailure('TEMPORAL_UNAVAILABLE', 'The temporal interpretation layer is not wired in this deployment (§15). It runs client/agent-side; the server read surface is staged.');
+      const temporalAnalyzer = await resolveTemporalAnalyzer();
+      if (typeof temporalAnalyzer !== 'function') {
+        // reached ONLY if the corpus-esm mirror could not be dynamically
+        // imported (and no test injection is present) — see loadProdRunners.
+        result = corpusFailure('TEMPORAL_UNAVAILABLE', 'The temporal interpretation layer could not be loaded in this deployment (§15).');
       } else {
         const corpus = await gatherOwnerCorpus(uid);
         const cfg = sanitizeTemporalConfig(data.config);
@@ -230,7 +285,7 @@ const intelligenceCorpus = onCall({ region: REGION }, async (request) => {
         if (!result) {
           let view;
           try {
-            view = await _temporalAnalyzer({ ...corpus, approvedRules }, cfg, { at: now });
+            view = await temporalAnalyzer({ ...corpus, approvedRules }, cfg, { at: now });
           } catch (e) {
             view = null;
             logger.error('[intelligence/corpus] temporal analyzer error', { op, actor: uid, error: e && e.message });
@@ -249,15 +304,18 @@ const intelligenceCorpus = onCall({ region: REGION }, async (request) => {
       // READ-ONLY. Gather ONLY the caller's own corpus, build the writing
       // memory, return it. No write, no lifecycle move, NO `approved`
       // authority (§8, §16, §23).
-      if (typeof _writingMemoryBuilder !== 'function') {
-        result = corpusFailure('WRITING_MEMORY_UNAVAILABLE', 'The organizational writing memory builder is not wired in this deployment (§22). It runs client/agent-side; the server read surface is staged.');
+      const writingMemoryBuilder = await resolveWritingMemoryBuilder();
+      if (typeof writingMemoryBuilder !== 'function') {
+        // reached ONLY if the corpus-esm mirror could not be dynamically
+        // imported (and no test injection is present) — see loadProdRunners.
+        result = corpusFailure('WRITING_MEMORY_UNAVAILABLE', 'The organizational writing memory builder could not be loaded in this deployment (§22).');
       } else {
         const corpus = await gatherOwnerCorpus(uid);
         const cfg = sanitizeTemporalConfig(data.config);
         const approvedRules = sanitizeApprovedRules(data.approvedRules);
         let report;
         try {
-          report = await _writingMemoryBuilder({ ...corpus, approvedRules }, cfg, { at: now });
+          report = await writingMemoryBuilder({ ...corpus, approvedRules }, cfg, { at: now });
         } catch (e) {
           report = null;
           logger.error('[intelligence/corpus] writing-memory builder error', { op, actor: uid, error: e && e.message });
@@ -315,13 +373,15 @@ const intelligenceCorpus = onCall({ region: REGION }, async (request) => {
         if (result.ok) event = 'CORPUS_CLASSIFIED';
       } else { // analyze — run the pipeline, then WRITE its result via the
         //         same safe primitives (setClassification + setAnalysisStatus
-        //         + recordObservation). Fails safe if no pipeline is wired.
-        if (typeof _analyzePipeline !== 'function') {
-          result = corpusFailure('PIPELINE_UNAVAILABLE', 'The analysis pipeline is not wired in this deployment (§14). Deterministic analysis runs client/agent-side; server persistence is staged.');
+        //         + recordObservation). Fails safe if the pipeline mirror
+        //         could not be loaded.
+        const analyzePipeline = await resolveAnalyzePipeline();
+        if (typeof analyzePipeline !== 'function') {
+          result = corpusFailure('PIPELINE_UNAVAILABLE', 'The analysis pipeline could not be loaded in this deployment (§14).');
         } else {
           let pr;
           try {
-            pr = await _analyzePipeline({ documentId, document: head.data, source: data.source || null });
+            pr = await analyzePipeline({ documentId, document: head.data, source: data.source || null });
           } catch (e) {
             pr = { ok: false, error: { code: 'ANALYSIS_THREW', message: e && e.message ? e.message : String(e) } };
           }

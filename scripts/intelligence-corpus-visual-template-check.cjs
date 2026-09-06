@@ -186,12 +186,12 @@ const { intelligenceVisualTemplate, __setVisualAggregatorForTest } = require('..
   }
 
   /* ── 3. proposeFromEvidence fails safe ────────────────────────────── */
-  section('proposeFromEvidence — FAILS SAFE with no aggregator wired, mutates nothing (§26, §33)');
+  section('proposeFromEvidence — PRODUCTION aggregator wired via corpus-esm (Phase C1); proposal-only, mutates nothing (§26, §33)');
   {
-    __setVisualAggregatorForTest(null);
+    __setVisualAggregatorForTest(null); // NO injection → exercises the deployed corpus-esm aggregator
     const before = snapshotDb();
     const r = await intelligenceVisualTemplate.run({ data: { op: 'proposeFromEvidence', patternId: 'vpat_anything', config: CFG }, auth: asAdmin('alice') });
-    check(!r.ok && r.error.code === 'VISUAL_ANALYSIS_UNAVAILABLE', 'no aggregator → VISUAL_ANALYSIS_UNAVAILABLE (envelope, no throw)');
+    check(!r.ok && r.error.code === 'PATTERN_NOT_FOUND', 'proposeFromEvidence (production aggregator, empty owner corpus, unknown patternId) → PATTERN_NOT_FOUND — NOT VISUAL_ANALYSIS_UNAVAILABLE (the corpus-esm mirror loaded)');
     check(snapshotDb() === before, 'the database is byte-identical afterwards — nothing was written');
     const noId = await intelligenceVisualTemplate.run({ data: { op: 'proposeFromEvidence' }, auth: asAdmin('alice') });
     check(!noId.ok && noId.error.code === 'INVALID_RECORD', 'proposeFromEvidence without a patternId → INVALID_RECORD');
@@ -357,7 +357,7 @@ const { intelligenceVisualTemplate, __setVisualAggregatorForTest } = require('..
     const cb = stripComments(fs.readFileSync(path.join(ROOT, 'functions/src/intelligence/intelligenceVisualTemplate.js'), 'utf8'));
     check(/canUseIntelligence\(auth\.token\)/.test(cb), 'the callable authorizes with canUseIntelligence (no new permission)');
     check(/const uid = auth\.uid/.test(cb) && !/data\.(actorId|createdBy|approvedBy|approvedAt|authorityState)\b/.test(cb) && !/data\.templateVersion\b/.test(cb), 'the callable derives the actor from auth.uid and NEVER reads a client authority field (§11, §24)');
-    check(/gatherOwnerCorpus\(uid\)/.test(cb) && /_visualAggregator !== 'function'/.test(cb) && /VISUAL_ANALYSIS_UNAVAILABLE/.test(cb), 'proposeFromEvidence rebuilds the aggregation by the verified uid and fails safe (§27, §33)');
+    check(/gatherOwnerCorpus\(uid\)/.test(cb) && /import\(['"]\.\/corpus-esm\/visual-template\/visual-evidence-aggregator\.js['"]\)/.test(cb) && /resolveVisualAggregator\(\)/.test(cb) && /VISUAL_ANALYSIS_UNAVAILABLE/.test(cb), 'proposeFromEvidence rebuilds the aggregation by the verified uid via the production corpus-esm aggregator (Phase C1) and retains a VISUAL_ANALYSIS_UNAVAILABLE fail-safe (§27, §33)');
   }
 
   /* ── 11. wiring (WIRED — Controlled Deployment Phase A) ──────────── */

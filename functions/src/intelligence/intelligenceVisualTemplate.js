@@ -73,6 +73,31 @@ const OPS = new Set(['list', 'get', 'proposeFromEvidence', 'approve', 'reject', 
 let _visualAggregator = null;
 function __setVisualAggregatorForTest(fn) { _visualAggregator = typeof fn === 'function' ? fn : null; }
 
+/* ── PRODUCTION WIRING (Controlled Deployment Phase C1) ──────────────
+   `proposeFromEvidence` now rebuilds the visual aggregation through the
+   verbatim, drift-guarded corpus mirror that ships INSIDE the Functions
+   bundle (functions/src/intelligence/corpus-esm/, an ESM package). Loaded
+   ONCE, lazily. A test injection (__setVisualAggregatorForTest) ALWAYS
+   wins. If the import throws, the aggregator resolves to null and
+   proposeFromEvidence fails safe with VISUAL_ANALYSIS_UNAVAILABLE exactly
+   as before. The mirror is PURE, DETERMINISTIC, geometry-only — no
+   Firebase, no network, no model, no fabricated geometry. §10: the
+   __set*ForTest seam is retained for unit isolation. */
+let _prodVisualAggregator;
+async function resolveVisualAggregator() {
+  if (typeof _visualAggregator === 'function') return _visualAggregator;
+  if (_prodVisualAggregator === undefined) {
+    try {
+      const agg = await import('./corpus-esm/visual-template/visual-evidence-aggregator.js');
+      _prodVisualAggregator = (input, config, opts) => agg.aggregateVisualEvidence(input, config, opts);
+    } catch (err) {
+      logger.error('[intelligence/visual-template] corpus-esm aggregator failed to load — proposeFromEvidence fails safe', { error: err && err.message });
+      _prodVisualAggregator = null;
+    }
+  }
+  return _prodVisualAggregator;
+}
+
 /** Sanitise the client-supplied visual-template config — ONLY the geometry
  *  tolerance + the temporal windows. Nothing authoritative can be set. */
 function sanitizeVisualConfig(c) {
@@ -112,12 +137,15 @@ async function gatherOwnerCorpus(uid) {
 /** Rebuild the visual aggregation server-side and return the pattern with
  *  the given patternId (or null). */
 async function findVisualPattern(uid, patternId, data, now) {
-  if (typeof _visualAggregator !== 'function') return { error: 'VISUAL_ANALYSIS_UNAVAILABLE' };
+  const visualAggregator = await resolveVisualAggregator();
+  // reached ONLY if the corpus-esm mirror could not be imported (and no
+  // test injection is present) — proposeFromEvidence then fails safe.
+  if (typeof visualAggregator !== 'function') return { error: 'VISUAL_ANALYSIS_UNAVAILABLE' };
   const corpus = await gatherOwnerCorpus(uid);
   const cfg = sanitizeVisualConfig(data.config);
   let report;
   try {
-    report = await _visualAggregator({ observations: corpus.observations, documents: corpus.documents }, cfg, { at: now });
+    report = await visualAggregator({ observations: corpus.observations, documents: corpus.documents }, cfg, { at: now });
   } catch (e) {
     logger.error('[intelligence/visual-template] aggregator error', { actor: uid, error: e && e.message });
     return { error: 'VISUAL_ANALYSIS_FAILED' };

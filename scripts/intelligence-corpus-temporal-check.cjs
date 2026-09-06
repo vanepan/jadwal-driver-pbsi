@@ -122,13 +122,13 @@ const { intelligenceCorpus, __setTemporalAnalyzerForTest } = require('../functio
   }
 
   /* ── 2. fail safe ────────────────────────────────────────────────── */
-  section('temporalView — FAILS SAFE with no analyzer wired, mutates nothing (§15)');
+  section('temporalView — PRODUCTION analyzer wired via corpus-esm (Phase C1); read-only, mutates nothing (§15)');
   {
-    __setTemporalAnalyzerForTest(null);
+    __setTemporalAnalyzerForTest(null); // NO injection → exercises the deployed corpus-esm analyzer
     const before = snapshotDb();
     const r = await intelligenceCorpus.run({ data: { op: 'temporalView' }, auth: asAdmin('alice') });
-    check(!r.ok && r.error.code === 'TEMPORAL_UNAVAILABLE', 'temporalView with no analyzer → TEMPORAL_UNAVAILABLE (envelope, no throw)');
-    check(snapshotDb() === before, 'the database is byte-identical afterwards — nothing was written');
+    check(r.ok && r.data && typeof r.data === 'object', 'temporalView (production analyzer, empty owner corpus) → ok, a view object — NOT TEMPORAL_UNAVAILABLE (the corpus-esm mirror loaded)');
+    check(snapshotDb() === before, 'the database is byte-identical afterwards — nothing was written (read-only)');
   }
 
   /* ── 3 + 4. owner isolation + no write ───────────────────────────── */
@@ -212,7 +212,7 @@ const { intelligenceCorpus, __setTemporalAnalyzerForTest } = require('../functio
     const temporalRegion = (blob.match(/op === 'temporalView' \|\| op === 'driftCheck'[\s\S]*?\n    \} else \{/) || [''])[0];
     check(temporalRegion.length > 0 && !/corpusStore\.(ingestDocument|recordObservation|setAnalysisStatus|setClassification)\b/.test(temporalRegion),
       'the temporal branch calls NO corpusStore write method (read-only — §16)');
-    check(/_temporalAnalyzer !== 'function'/.test(blob) && /TEMPORAL_UNAVAILABLE/.test(blob), 'fails safe when no analyzer is wired (§15)');
+    check(/import\(['"]\.\/corpus-esm\/temporal\/convention-temporal-analyzer\.js['"]\)/.test(blob) && /resolveTemporalAnalyzer\(\)/.test(blob) && /TEMPORAL_UNAVAILABLE/.test(blob), 'temporalView wires the production corpus-esm analyzer (Phase C1) AND retains a TEMPORAL_UNAVAILABLE fail-safe for a mirror load failure (§15)');
   }
 
   /* ── 8. wiring (WIRED — Controlled Deployment Phase A) ───────────── */

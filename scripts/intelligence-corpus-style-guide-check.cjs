@@ -172,12 +172,12 @@ const { intelligenceStyleGuide, __setWritingMemoryBuilderForTest } = require('..
   }
 
   /* ── 3. proposeFromMemory fails safe ──────────────────────────────── */
-  section('proposeFromMemory — FAILS SAFE with no builder wired, mutates nothing (§28)');
+  section('proposeFromMemory — PRODUCTION builder wired via corpus-esm (Phase C1); proposal-only, mutates nothing (§28)');
   {
-    __setWritingMemoryBuilderForTest(null);
+    __setWritingMemoryBuilderForTest(null); // NO injection → exercises the deployed corpus-esm builder
     const before = snapshotDb();
     const r = await intelligenceStyleGuide.run({ data: { op: 'proposeFromMemory', memoryId: 'mem_anything', config: CFG }, auth: asAdmin('alice') });
-    check(!r.ok && r.error.code === 'WRITING_MEMORY_UNAVAILABLE', 'no builder → WRITING_MEMORY_UNAVAILABLE (envelope, no throw)');
+    check(!r.ok && r.error.code === 'MEMORY_NOT_FOUND', 'proposeFromMemory (production builder, empty owner corpus, unknown memoryId) → MEMORY_NOT_FOUND — NOT WRITING_MEMORY_UNAVAILABLE (the corpus-esm mirror loaded)');
     check(snapshotDb() === before, 'the database is byte-identical afterwards — nothing was written');
     const noId = await intelligenceStyleGuide.run({ data: { op: 'proposeFromMemory' }, auth: asAdmin('alice') });
     check(!noId.ok && noId.error.code === 'INVALID_RECORD', 'proposeFromMemory without a memoryId → INVALID_RECORD');
@@ -353,7 +353,7 @@ const { intelligenceStyleGuide, __setWritingMemoryBuilderForTest } = require('..
     const cb = stripComments(fs.readFileSync(path.join(ROOT, 'functions/src/intelligence/intelligenceStyleGuide.js'), 'utf8'));
     check(/canUseIntelligence\(auth\.token\)/.test(cb), 'the callable authorizes with canUseIntelligence (no new permission)');
     check(/const uid = auth\.uid/.test(cb) && !/data\.(actorId|createdBy|approvedBy|approvedAt|authorityState)\b/.test(cb) && !/data\.version\b/.test(cb), 'the callable derives the actor from auth.uid and NEVER reads a client authority field — createdBy/approvedBy/approvedAt/authorityState/version (§9, §18)');
-    check(/gatherOwnerCorpus\(uid\)/.test(cb) && /_writingMemoryBuilder !== 'function'/.test(cb) && /WRITING_MEMORY_UNAVAILABLE/.test(cb), 'proposeFromMemory rebuilds Writing Memory by the verified uid and fails safe (§26, §28)');
+    check(/gatherOwnerCorpus\(uid\)/.test(cb) && /import\(['"]\.\/corpus-esm\/writing-memory\/writing-memory-builder\.js['"]\)/.test(cb) && /resolveWritingMemoryBuilder\(\)/.test(cb) && /WRITING_MEMORY_UNAVAILABLE/.test(cb), 'proposeFromMemory rebuilds Writing Memory by the verified uid via the production corpus-esm builder (Phase C1) and retains a WRITING_MEMORY_UNAVAILABLE fail-safe (§26, §28)');
   }
 
   /* ── 11. wiring (WIRED — Controlled Deployment Phase A) ──────────── */

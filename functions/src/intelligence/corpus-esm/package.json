@@ -1,0 +1,6 @@
+{
+  "name": "intelligence-corpus-esm",
+  "private": true,
+  "type": "module",
+  "description": "Verbatim mirror of src/intelligence/corpus/** (traced closure of the analysis / writing-memory / visual-evidence / temporal runners). Kept byte-identical by scripts/intelligence-corpus-esm-parity-check.mjs. Do not edit here — edit the source and re-mirror."
+}

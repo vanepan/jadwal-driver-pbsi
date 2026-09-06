@@ -145,15 +145,15 @@ const { intelligenceCorpus, __setAnalyzePipelineForTest } = require('../function
     check(t && t.code === 'invalid-argument', 'admin + unknown op → invalid-argument');
   }
 
-  section('analyze — FAILS SAFE with no pipeline wired (§14), mutates nothing');
+  section('analyze — PRODUCTION pipeline wired via corpus-esm (Phase C1); honest ANALYSIS_FAILED on empty input, no observations');
   {
-    __setAnalyzePipelineForTest(null); // ensure default
+    __setAnalyzePipelineForTest(null); // NO injection → exercises the deployed corpus-esm pipeline
     await seedDoc(callableDb, { checksum: 'ff'.padEnd(64, 'f'), ownerId: 'alice' });
     const docId = 'corpus_' + 'ff'.padEnd(64, 'f');
-    const before = JSON.stringify(callableDb._root.intelligence_corpus_documents[docId]);
+    // no `source` supplied → the real pipeline returns an honest INVALID_INPUT / failed
     const r = await intelligenceCorpus.run({ data: { op: 'analyze', documentId: docId }, auth: { uid: 'alice', token: { role: 'admin' } } });
-    check(!r.ok && r.error.code === 'PIPELINE_UNAVAILABLE', 'analyze with no pipeline → PIPELINE_UNAVAILABLE envelope (no throw)');
-    check(JSON.stringify(callableDb._root.intelligence_corpus_documents[docId]) === before, 'the document was NOT mutated');
+    check(!r.ok && r.error.code === 'ANALYSIS_FAILED', 'analyze (production pipeline, no source) → honest ANALYSIS_FAILED — NOT PIPELINE_UNAVAILABLE (the corpus-esm mirror loaded)');
+    check(callableDb._root.intelligence_corpus_documents[docId].analysisStatus === 'failed', 'the honest "failed" analysis status was recorded (pending → failed is a legal step)');
     check(callableDb._root.intelligence_corpus_observations === undefined, 'NO observation was written');
   }
 
@@ -230,11 +230,11 @@ const { intelligenceCorpus, __setAnalyzePipelineForTest } = require('../function
     check(!/require\([^)]*petty|from\s+['"][^'"]*petty|generateNor\s*\(|pettyCashNors/i.test(blob), 'no V1 Petty Cash / generateNor coupling');
     check(!/promoteKnowledge|knowledge_repository|approvedKnowledge|require\([^)]*src\/knowledge|require\([^)]*\/knowledge/i.test(blob), 'no organizational-knowledge write / import');
     check(!/feature_flags/i.test(blob), 'never touches the feature-flag node');
-    check(!/require\(['"][^'"]*\/src\/intelligence\//.test(blob), 'the CJS server never imports the ESM src/intelligence/ tree');
+    check(!/require\(['"][^'"]*\/src\/intelligence\//.test(blob), 'the CJS server never require()s the root ESM src/intelligence/ tree (production analysis runs via a dynamic import() of the vendored functions/src/intelligence/corpus-esm/ mirror instead)');
     const callSrc = fs.readFileSync(path.join(ROOT, 'functions/src/intelligence/intelligenceCorpus.js'), 'utf8');
     check(/METADATA ONLY/.test(callSrc) && !/logger\.(info|log|warn)\([^;]*\b(observedValue|preferenceRationale|body|text)\b[^;]*\)/.test(stripComments(callSrc)), 'the log call is METADATA ONLY — never the observed text / rationale');
     check(/canUseIntelligence\(auth\.token\)/.test(callSrc) && /const uid = auth\.uid/.test(callSrc), 'authz + actor/owner unchanged (canUseIntelligence(auth.token); owner = auth.uid)');
-    check(/PIPELINE_UNAVAILABLE/.test(callSrc) && /typeof _analyzePipeline !== 'function'/.test(callSrc), 'analyze fails safe when no pipeline is injected (§14)');
+    check(/import\(['"]\.\/corpus-esm\/pipeline\/analysis-pipeline\.js['"]\)/.test(callSrc) && /resolveAnalyzePipeline\(\)/.test(callSrc) && /PIPELINE_UNAVAILABLE/.test(callSrc), 'analyze wires the production corpus-esm pipeline (Phase C1) AND retains a PIPELINE_UNAVAILABLE fail-safe for a mirror load failure (§14)');
     check(/forced to 'observed'|forced back|lifecycleState: _l/.test(callSrc) || /lifecycleState: _l/.test(callSrc), 'analyze strips the client/model lifecycleState before recordObservation');
   }
 

@@ -117,13 +117,14 @@ const { intelligenceCorpus, __setWritingMemoryBuilderForTest } = require('../fun
   }
 
   /* ── 2. fail safe ────────────────────────────────────────────────── */
-  section('writingMemory — FAILS SAFE with no builder wired, mutates nothing (§22)');
+  section('writingMemory — PRODUCTION builder wired via corpus-esm (Phase C1); read-only, mutates nothing (§22)');
   {
-    __setWritingMemoryBuilderForTest(null);
+    __setWritingMemoryBuilderForTest(null); // NO injection → exercises the deployed corpus-esm builder
     const before = snapshotDb();
     const r = await intelligenceCorpus.run({ data: { op: 'writingMemory' }, auth: asAdmin('alice') });
-    check(!r.ok && r.error.code === 'WRITING_MEMORY_UNAVAILABLE', 'no builder → WRITING_MEMORY_UNAVAILABLE (envelope, no throw)');
-    check(snapshotDb() === before, 'the database is byte-identical afterwards — nothing was written');
+    check(r.ok && r.data && Array.isArray(r.data.entries), 'writingMemory (production builder, real owner corpus) → ok, a real report with an entries[] — NOT WRITING_MEMORY_UNAVAILABLE (the corpus-esm mirror loaded)');
+    check(r.data.entries.every((e) => e && (e.authorityState === 'observed' || e.authorityState === 'candidate')), 'every returned entry is observed / candidate — NEVER approved (§8, §23)');
+    check(snapshotDb() === before, 'the database is byte-identical afterwards — nothing was written (read-only)');
   }
 
   /* ── 3 + 4 + 5. owner isolation + no write + never approved ──────── */
@@ -212,7 +213,7 @@ const { intelligenceCorpus, __setWritingMemoryBuilderForTest } = require('../fun
     check(/op === 'writingMemory'/.test(blob), 'the writingMemory branch exists');
     check(!/sk-[A-Za-z0-9]|OPENAI_API_KEY|api\.openai\.com|openai|anthropic|\bfetch\s*\(/i.test(blob.replace(/no openai/gi, '')), 'no secret / model / outbound-HTTP reference');
     check(!/require\([^)]*petty|generateNor\s*\(|pettyCashNors|promoteKnowledge|knowledge_repository|require\([^)]*\/knowledge|feature_flags/i.test(blob), 'no V1 / knowledge / feature-flag coupling');
-    check(/_writingMemoryBuilder !== 'function'/.test(blob) && /WRITING_MEMORY_UNAVAILABLE/.test(blob), 'fails safe when no builder is wired (§22)');
+    check(/import\(['"]\.\/corpus-esm\/writing-memory\/writing-memory-builder\.js['"]\)/.test(blob) && /resolveWritingMemoryBuilder\(\)/.test(blob) && /WRITING_MEMORY_UNAVAILABLE/.test(blob), 'writingMemory wires the production corpus-esm builder (Phase C1) AND retains a WRITING_MEMORY_UNAVAILABLE fail-safe for a mirror load failure (§22)');
     check(/gatherOwnerCorpus\(uid\)/.test(blob), 'writingMemory gathers the corpus by the VERIFIED uid only');
     check(/authorityState === 'observed' \|\| e\.authorityState === 'candidate'/.test(blob), 'the server strips any entry that is not observed / candidate before returning (§8, §23)');
     const wmRegion = (blob.match(/op === 'writingMemory'[\s\S]*?\n    \} else \{/) || [''])[0];

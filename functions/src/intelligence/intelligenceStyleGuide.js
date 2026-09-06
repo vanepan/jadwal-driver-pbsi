@@ -72,6 +72,30 @@ const OPS = new Set(['list', 'get', 'proposeFromMemory', 'approve', 'reject', 'd
 let _writingMemoryBuilder = null;
 function __setWritingMemoryBuilderForTest(fn) { _writingMemoryBuilder = typeof fn === 'function' ? fn : null; }
 
+/* ── PRODUCTION WIRING (Controlled Deployment Phase C1) ──────────────
+   `proposeFromMemory` now rebuilds Organizational Writing Memory through
+   the verbatim, drift-guarded corpus mirror that ships INSIDE the
+   Functions bundle (functions/src/intelligence/corpus-esm/, an ESM
+   package). Loaded ONCE, lazily. A test injection (__setWritingMemory-
+   BuilderForTest) ALWAYS wins. If the import throws, the builder resolves
+   to null and proposeFromMemory fails safe with WRITING_MEMORY_UNAVAILABLE
+   exactly as before. The mirror is PURE — no Firebase, no network, no
+   model. §10: the __set*ForTest seam is retained for unit isolation. */
+let _prodWritingMemoryBuilder;
+async function resolveWritingMemoryBuilder() {
+  if (typeof _writingMemoryBuilder === 'function') return _writingMemoryBuilder;
+  if (_prodWritingMemoryBuilder === undefined) {
+    try {
+      const wm = await import('./corpus-esm/writing-memory/writing-memory-builder.js');
+      _prodWritingMemoryBuilder = (input, config, opts) => wm.buildWritingMemory(input, config, opts);
+    } catch (err) {
+      logger.error('[intelligence/style-guide] corpus-esm writing-memory builder failed to load — proposeFromMemory fails safe', { error: err && err.message });
+      _prodWritingMemoryBuilder = null;
+    }
+  }
+  return _prodWritingMemoryBuilder;
+}
+
 /** Drop every field of a client-supplied approved rule except the four the
  *  Writing Memory / temporal layers read (mirror of the intelligenceCorpus
  *  helper — §19). */
@@ -120,13 +144,16 @@ async function gatherOwnerCorpus(uid) {
 /** Rebuild Writing Memory server-side and return the entry with the given
  *  memoryId (or null). */
 async function findWritingMemoryEntry(uid, memoryId, data, now) {
-  if (typeof _writingMemoryBuilder !== 'function') return { error: 'WRITING_MEMORY_UNAVAILABLE' };
+  const writingMemoryBuilder = await resolveWritingMemoryBuilder();
+  // reached ONLY if the corpus-esm mirror could not be imported (and no
+  // test injection is present) — proposeFromMemory then fails safe.
+  if (typeof writingMemoryBuilder !== 'function') return { error: 'WRITING_MEMORY_UNAVAILABLE' };
   const corpus = await gatherOwnerCorpus(uid);
   const cfg = sanitizeTemporalConfig(data.config);
   const approvedRules = sanitizeApprovedRules(data.approvedRules);
   let report;
   try {
-    report = await _writingMemoryBuilder({ ...corpus, approvedRules }, cfg, { at: now });
+    report = await writingMemoryBuilder({ ...corpus, approvedRules }, cfg, { at: now });
   } catch (e) {
     logger.error('[intelligence/style-guide] writing-memory builder error', { actor: uid, error: e && e.message });
     return { error: 'WRITING_MEMORY_FAILED' };
