@@ -495,21 +495,27 @@ check(/canUseIntelligence:\s*\(a\)\s*=>/.test(bridge) && !/['"]role['"]\s*===/.t
 check(!/api\.openai\.com|sk-[A-Za-z0-9]|OPENAI_API_KEY|process\.env/.test(bridge), 'no endpoint / key / secret / env read in the bridge');
 check(!/setIntelligenceConfig\(\s*\{\s*enabled:\s*true/.test(bridge), 'the bridge never force-enables the feature flag');
 
-section('static — js/app.js gates the console on isV2Enabled + the synced flag, one-shot, no auto-mount');
+section('static — js/app.js gates the flag-ON authority shell on isV2Enabled + the synced flag, no auto-mount (Phase C3)');
 const app = fs.readFileSync(path.join(ROOT, 'js/app.js'), 'utf8');
 check(/intelligenceFeatureActive\s*=\s*!!\(wiringStatus && wiringStatus\.featureEnabled === true\)/.test(app),
   'intelligenceFeatureActive is taken from the Phase 3A wiring status (the synced flag), fail-closed');
-check(/if \(intelligenceFeatureActive\)\s*\{[\s\S]{0,400}?loadIntelligenceConsole\(\)/.test(app),
-  'the console is loaded ONLY when intelligenceFeatureActive is true');
+// Phase C3 — the flag-ON surface is a 3-tab shell (Workspace / Corpus / Curation).
+// The console is reached ONLY through that shell, and the shell ONLY inside
+// `if (intelligenceFeatureActive)`.
+check(/if \(intelligenceFeatureActive\)\s*\{[\s\S]{0,400}?mountIntelligenceAuthorityShell\(/.test(app),
+  'the flag-ON branch mounts the authority shell ONLY when intelligenceFeatureActive is true');
+check(/SIC_AUTHORITY_TABS[\s\S]*?loadIntelligenceConsole\(\)[\s\S]*?mountIntelligenceConsole/.test(app),
+  'the shell reaches mountIntelligenceConsole lazily via loadIntelligenceConsole() (never a static/auto mount)');
 const navIdx = app.indexOf('async function navSarprasIntelligence');
 const canAccessIdx = app.indexOf("canAccessModule('sarprasIntelligence')", navIdx);
-const consoleIdx = app.indexOf('loadIntelligenceConsole()', navIdx);
-check(navIdx > 0 && canAccessIdx > navIdx && consoleIdx > canAccessIdx,
-  'the console mount sits behind the existing canAccessModule(\'sarprasIntelligence\') pilot guard');
-check(/mountIntelligenceConsole\(document\.getElementById\('v2SarprasIntelWorkspace'\)\)/.test(app),
-  'it mounts into the EXISTING Sarpras Intelligence workspace host — no new nav architecture');
-check((app.match(/mountIntelligenceConsole\(/g) || []).length === 1,
-  'mountIntelligenceConsole is called from exactly one place (navSarprasIntelligence), never on load');
+const shellIdx = app.indexOf('mountIntelligenceAuthorityShell(', navIdx);
+check(navIdx > 0 && canAccessIdx > navIdx && shellIdx > canAccessIdx,
+  "the shell mount sits behind the existing canAccessModule('sarprasIntelligence') pilot guard");
+check(/mountIntelligenceAuthorityShell\(document\.getElementById\('v2SarprasIntelWorkspace'\)/.test(app),
+  'it mounts into the EXISTING Sarpras Intelligence workspace host (#v2SarprasIntelWorkspace) — the shell is a tab strip, not a new rail / panel / nav module');
+check((app.match(/await mountIntelligenceAuthorityShell\(/g) || []).length === 1
+  && /if \(intelligenceFeatureActive\)\s*\{\s*try\s*\{\s*await mountIntelligenceAuthorityShell\(/.test(app),
+  'mountIntelligenceAuthorityShell is invoked from exactly one place (navSarprasIntelligence, inside the flag-ON branch) — never on load');
 
 console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} — ${fail} failing check(s).`);
 process.exit(fail === 0 ? 0 : 1);

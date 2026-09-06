@@ -74,3 +74,18 @@ export const loadIntelligenceBackendWiring = () =>
    OFF (production default) this is never fetched. ── */
 export const loadIntelligenceConsole = () =>
   loadModule('intelligence-console', () => import('../intelligence-console.js'));
+
+/* ── Sarpras Intelligence — V2 Phase 5.x.8 Human Curation Workspace (Style
+   Rules / Visual Templates review + the human-gated approve / reject /
+   deprecate / supersede lifecycle). Same pilot + flag-ON gate as
+   loadIntelligenceConsole; never fetched in production (flag OFF). ── */
+export const loadIntelligenceCurationConsole = () =>
+  loadModule('intelligence-curation-console', () => import('../intelligence-curation-console.js'));
+
+/* ── Sarpras Intelligence — V2 Phase C3 Corpus & Authority operator
+   workspace (source → ingest → deterministic analysis → observations /
+   Writing Memory → Style Guide / Visual Template PROPOSALS). Proposal-only;
+   approval lives in the Curation workspace. Same pilot + flag-ON gate;
+   never fetched in production (flag OFF). No OpenAI. ── */
+export const loadIntelligenceCorpusConsole = () =>
+  loadModule('intelligence-corpus-console', () => import('../intelligence-corpus-console.js'));

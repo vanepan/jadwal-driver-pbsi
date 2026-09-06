@@ -229,13 +229,18 @@ const styleGuideStore = require('../functions/src/intelligence/styleGuideStore')
     check(/httpsCallable\(firebaseFunctions,\s*'intelligenceStyleGuide'\)/.test(fb), 'callIntelligenceStyleGuide targets the STAGED function name "intelligenceStyleGuide"');
     check(/httpsCallable\(firebaseFunctions,\s*'intelligenceVisualTemplate'\)/.test(fb), 'callIntelligenceVisualTemplate targets the STAGED function name "intelligenceVisualTemplate"');
     // Phase 6A adds callIntelligenceNorGeneration (server-authoritative retrieval) — count bumped 5→6 deliberately.
-    check((fb.match(/httpsCallable\(firebaseFunctions,\s*'intelligence/g) || []).length === 6, 'exactly 6 intelligence* httpsCallable wrappers (conversation, norDraft, norRegistry, styleGuide, visualTemplate, norGeneration) — nothing else added');
+    check((fb.match(/httpsCallable\(firebaseFunctions,\s*'intelligence/g) || []).length === 7, 'exactly 7 intelligence* httpsCallable wrappers (conversation, norDraft, norRegistry, styleGuide, visualTemplate, norGeneration, corpus — corpus added by Phase C3) — nothing else');
 
     const wb = strip(fs.readFileSync(path.join(ROOT, 'js/intelligence-backend-wiring.js'), 'utf8'));
     check(/callStyleGuide:\s*\(payload\)\s*=>\s*callIntelligenceStyleGuide/.test(wb) && /callVisualTemplate:\s*\(payload\)\s*=>\s*callIntelligenceVisualTemplate/.test(wb), 'the bridge forwards both ports into bootstrapIntelligenceClient');
     check(/export async function createWiredIntelligenceCurationController/.test(wb), 'the bridge exposes createWiredIntelligenceCurationController');
     check(/createCurationWorkspaceController\(\{[\s\S]*?styleGuide[\s\S]*?visualTemplate/.test(wb), 'it builds the controller over the { list,get,approve,reject,deprecate,history } store facades');
-    check(!/proposeFromMemory|proposeFromEvidence|buildWritingMemory|retrieveNorContext/.test(wb.replace(/callIntelligence\w+/g, '')), 'the curation wiring never proposes / rebuilds Writing Memory / retrieves NOR context');
+    // Scope to the CURATION controller's own function body — Phase C3 added
+    // createWiredIntelligenceCorpusController to the SAME file, and THAT one
+    // legitimately proposes (the Corpus workspace proposes; Curation approves).
+    const curationFn = (wb.match(/export async function createWiredIntelligenceCurationController[\s\S]*?\n\}/) || [''])[0];
+    check(curationFn.length > 0 && !/proposeFromMemory|proposeFromEvidence|buildWritingMemory|retrieveNorContext/.test(curationFn.replace(/callIntelligence\w+/g, '')),
+      'the CURATION controller wiring never proposes / rebuilds Writing Memory / retrieves NOR context (it only walks the human-gated lifecycle)');
     check(!/api\.openai\.com|OPENAI_API_KEY|process\.env/.test(wb), 'no endpoint / key / env read in the bridge additions');
   }
 

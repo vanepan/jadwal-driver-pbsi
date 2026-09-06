@@ -130,6 +130,7 @@ import {
   loadPredictionService, loadDriverPredictionDashboard, loadExecutiveDashboard,
   loadPettyCashAnalyticsView, loadExecutiveAnalyticsView, loadSarprasIntelligence,
   loadIntelligenceBackendWiring, loadIntelligenceConsole,
+  loadIntelligenceCurationConsole, loadIntelligenceCorpusConsole,
 } from './config/module-loader-registry.js';
 import { initAuthUI, hasPermission, getCurrentUser, isAdmin, isBidang, isDriver, isEngineeringUser, assignmentBelongsToDriver } from './auth.js';
 // V2.0.10 — single reusable gate for the V2 pilot surface (Sarpras Intelligence).
@@ -415,7 +416,12 @@ let _fnCloseSarprasIntel = null;
 // navSarprasIntelligence() shows the Phase 3B minimal console instead of
 // the dormant Sarpras Intelligence platform. OFF in production ⇒ unchanged.
 let intelligenceFeatureActive = false;
-let intelligenceConsoleMounted = false;
+// V2 Phase C3 — the flag-ON Sarpras Intelligence surface is a 3-tab shell
+// (Workspace / Corpus / Curation). These track the shell + which sub-console
+// is currently mounted into its content host. OFF in production ⇒ unused.
+let intelligenceAuthorityShellBuilt = false;
+let _sicActiveSub = null;
+let _sicUnmountSub = null;
 
 // V1.5.0 Phase 2.5.1: Administration workspace section state
 let activeAdminSection = 'users';
@@ -2308,6 +2314,72 @@ const SIC_MENU_TITLES_PRIMARY = {
   dashboard: SIC_MENU_TITLES.dashboard, nor: SIC_MENU_TITLES.nor, archive: SIC_MENU_TITLES.archive,
   learning: SIC_MENU_TITLES.learning, settings: SIC_MENU_TITLES.settings,
 };
+
+/* ── V2 Phase C3 — the flag-ON Sarpras Intelligence surface. A minimal
+   3-tab shell composing the THREE existing/added consoles into the one
+   platform-owned host (#v2SarprasIntelWorkspace):
+
+     Workspace  → js/intelligence-console.js         (NOR draft intake + review + preview)
+     Corpus     → js/intelligence-corpus-console.js  (source → analyse → Writing Memory → PROPOSALS)
+     Curation   → js/intelligence-curation-console.js (human-gated approve / reject / deprecate / supersede)
+
+   Only ONE sub-console is mounted at a time (each owns its host's
+   innerHTML). No duplication of any console. Dormant in production
+   (flag OFF ⇒ this is never reached). No V1 navigation is touched. */
+const SIC_AUTHORITY_TABS = [
+  { id: 'workspace', label: 'Workspace', load: async () => (await loadIntelligenceConsole()).mountIntelligenceConsole, unload: async () => (await loadIntelligenceConsole()).unmountIntelligenceConsole },
+  { id: 'corpus', label: 'Corpus', load: async () => (await loadIntelligenceCorpusConsole()).mountIntelligenceCorpusConsole, unload: async () => (await loadIntelligenceCorpusConsole()).unmountIntelligenceCorpusConsole },
+  { id: 'curation', label: 'Curation', load: async () => (await loadIntelligenceCurationConsole()).mountIntelligenceCurationConsole, unload: async () => (await loadIntelligenceCurationConsole()).unmountIntelligenceCurationConsole },
+];
+const SIC_SCREEN_TO_AUTHORITY_TAB = { nor: 'workspace', dashboard: 'workspace', learning: 'workspace', archive: 'curation', knowledge: 'corpus' };
+
+async function mountIntelligenceAuthorityShell(hostEl, screen) {
+  if (!hostEl) return;
+  if (!intelligenceAuthorityShellBuilt) {
+    hostEl.innerHTML = `
+      <div class="sic-authority" data-sic-authority>
+        <nav class="sic-authority-tabs" role="tablist" style="display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--border,#e3e3e8);margin-bottom:12px">
+          ${SIC_AUTHORITY_TABS.map((t) => `<button type="button" role="tab" class="sic-authority-tab" data-sic-tab="${t.id}"
+            style="appearance:none;border:0;background:none;padding:9px 14px;font:inherit;color:var(--text-muted,#6b6b76);border-bottom:2px solid transparent;cursor:pointer"
+            aria-selected="false">${t.label}</button>`).join('')}
+        </nav>
+        <section data-sic-authority-content></section>
+      </div>`;
+    hostEl.querySelector('.sic-authority-tabs').addEventListener('click', (ev) => {
+      const b = ev.target.closest('[data-sic-tab]');
+      if (b) selectIntelligenceAuthorityTab(hostEl, b.getAttribute('data-sic-tab'));
+    });
+    intelligenceAuthorityShellBuilt = true;
+  }
+  const want = SIC_SCREEN_TO_AUTHORITY_TAB[screen] || _sicActiveSub || 'workspace';
+  await selectIntelligenceAuthorityTab(hostEl, want);
+}
+
+async function selectIntelligenceAuthorityTab(hostEl, tabId) {
+  const tab = SIC_AUTHORITY_TABS.find((t) => t.id === tabId) || SIC_AUTHORITY_TABS[0];
+  const content = hostEl.querySelector('[data-sic-authority-content]');
+  if (!content) return;
+  for (const el of hostEl.querySelectorAll('[data-sic-tab]')) {
+    el.setAttribute('aria-selected', String(el.getAttribute('data-sic-tab') === tab.id));
+    el.style.color = el.getAttribute('data-sic-tab') === tab.id ? 'var(--text,#1c1c22)' : 'var(--text-muted,#6b6b76)';
+    el.style.borderBottomColor = el.getAttribute('data-sic-tab') === tab.id ? 'var(--accent,#3a6df0)' : 'transparent';
+  }
+  if (_sicActiveSub === tab.id) return;
+  if (_sicUnmountSub) { try { (await _sicUnmountSub())(); } catch { /* ignore */ } _sicUnmountSub = null; }
+  content.innerHTML = '';
+  _sicActiveSub = tab.id;
+  try {
+    const mount = await tab.load();
+    _sicUnmountSub = tab.unload;
+    await mount(content);
+  } catch (err) {
+    _sicActiveSub = null;
+    _sicUnmountSub = null;
+    content.innerHTML = '<p style="color:var(--text-muted,#6b6b76);padding:16px">Sub-workspace tidak dapat dimuat.</p>';
+    console.warn('[intelligence] sub-console mount failed —', tab.id, err);
+  }
+}
+
 async function navSarprasIntelligence(screen, navId) {
   // Deep-link / stale-state guard: mirrors setRailModule()'s canAccessModule
   // redirect, so a direct call can never mount this for a non-piloted user.
@@ -2324,15 +2396,10 @@ async function navSarprasIntelligence(screen, navId) {
   // session, same idiom as the dormant path; error-swallowed so a console
   // failure can never leave the pilot on a blank workspace.
   if (intelligenceFeatureActive) {
-    if (!intelligenceConsoleMounted) {
-      intelligenceConsoleMounted = true;
-      try {
-        const { mountIntelligenceConsole } = await loadIntelligenceConsole();
-        await mountIntelligenceConsole(document.getElementById('v2SarprasIntelWorkspace'));
-      } catch (err) {
-        intelligenceConsoleMounted = false;
-        console.warn('[intelligence] console mount failed — continuing.', err);
-      }
+    try {
+      await mountIntelligenceAuthorityShell(document.getElementById('v2SarprasIntelWorkspace'), screen);
+    } catch (err) {
+      console.warn('[intelligence] authority shell mount failed — continuing.', err);
     }
     return;
   }

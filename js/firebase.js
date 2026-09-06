@@ -500,6 +500,45 @@ export async function callIntelligenceNorGeneration(payload) {
 }
 
 /**
+ * Sarpras Intelligence — NOR / Memorandum CORPUS, V2 Phase 5.x.1–5.x.4
+ * (functions/src/intelligence/intelligenceCorpus.js). The operator-facing
+ * boundary for building historical organizational writing evidence:
+ * ingest a source document's classification metadata, run the deterministic
+ * server-side analysis pipeline (Phase C1 — text/structure extraction,
+ * classification, OBSERVED-only observations), and read back the derived
+ * Writing Memory / temporal interpretation.
+ *
+ * Sibling of callIntelligenceStyleGuide / callIntelligenceNorRegistry:
+ *   • the browser NEVER writes /intelligence_corpus_* directly
+ *     (RTDB rule ".write": false)
+ *   • the callable authenticates + authorizes (the SAME effective-admin
+ *     gate — role === 'admin' || adminEquivalent === true; `developer` is
+ *     NOT granted) and derives ownerId / actor ONLY from request.auth.uid
+ *   • the client cannot inject an owner, a documentId, an ingestion /
+ *     analysis state, or an observation lifecycle — all server-owned
+ *   • no observation is ever `approved` here; promotion to authority is a
+ *     separate HUMAN step in the Curation workspace
+ *
+ * Thin passthrough — the server contract is the authority on `op`. The
+ * workspace uses: `ingest` | `get` | `list` | `observations` | `analyze` |
+ * `writingMemory` | `temporalView`. It never calls the write-only
+ * primitives (`recordObservation` / `setAnalysisStatus` / `setClassification`).
+ * No OpenAI, no model, no external HTTP anywhere in this path.
+ * @param {{op:'ingest'|'get'|'list'|'observations'|'analyze'|'writingMemory'|'temporalView'} & Record<string,*>} payload
+ * @returns {Promise<{ok:boolean, data:*, error:{code:string,message:string}|null}>}
+ */
+export async function callIntelligenceCorpus(payload) {
+  if (!firebaseDb) initFirebaseApp();
+  if (!firebaseApp) throw new Error('Firebase belum siap.');
+  if (!firebaseFunctions) {
+    firebaseFunctions = getFunctions(firebaseApp, FUNCTIONS_REGION);
+  }
+  const fn = httpsCallable(firebaseFunctions, 'intelligenceCorpus');
+  const result = await fn(payload);
+  return result.data;
+}
+
+/**
  * Sarpras Intelligence — PBSI NOR Style Guide, V2 Phase 5.x.5
  * (functions/src/intelligence/intelligenceStyleGuide.js). Read + the
  * human-gated authority lifecycle (propose → approve / reject / deprecate)

@@ -39,7 +39,7 @@
 
 import {
   callGenerateCompletion, callIntelligenceConversation, callIntelligenceNorDraft, callIntelligenceNorRegistry,
-  callIntelligenceStyleGuide, callIntelligenceVisualTemplate, callIntelligenceNorGeneration,
+  callIntelligenceStyleGuide, callIntelligenceVisualTemplate, callIntelligenceNorGeneration, callIntelligenceCorpus,
 } from './firebase.js';
 import { bootstrapIntelligenceClient } from '../src/intelligence/client-bootstrap.js';
 import { createIntelligenceService } from '../src/intelligence/service/intelligence-service.js';
@@ -48,6 +48,7 @@ import { getActiveProvider } from '../src/intelligence/provider-registry.js';
 import { getIntelligenceConfig, isIntelligenceEnabled } from '../src/intelligence/config/intelligence-config.js';
 import { createIntelligenceConsoleController } from '../src/intelligence/console/intelligence-console-controller.js';
 import { createCurationWorkspaceController } from '../src/intelligence/console/curation-workspace-controller.js';
+import { createCorpusWorkspaceController } from '../src/intelligence/console/corpus-workspace-controller.js';
 import {
   listStyleRules, getStyleRule, approveStyleRule, rejectStyleRule, deprecateStyleRule, getStyleRuleHistory,
 } from '../src/intelligence/corpus/style-guide/style-guide-store.js';
@@ -65,10 +66,19 @@ import { buildIntelligenceNorViewModel } from '../src/intelligence/generation/no
 let _wired = false;
 let _status = null;
 
-/** Client-side pre-check only. The deployed Cloud Functions
- *  (generateCompletion / intelligenceConversation) independently enforce
- *  role authz from the verified Firebase context — this never widens that. */
-const CLIENT_INTELLIGENCE_ROLES = new Set(['admin', 'developer']);
+/** Client-side UI-visibility pre-check ONLY. The deployed Cloud Functions
+ *  independently enforce authz from the verified Firebase context via
+ *  serverPermissions.js#canUseIntelligence — `role === 'admin' ||
+ *  adminEquivalent === true` — and that is the security boundary; this
+ *  never widens it. Kept in lockstep with the server so the UI shows/hides
+ *  the same set the server would allow: effective admin only (the legacy
+ *  `developer` role is not a server grant — see the C2/authz audits — and
+ *  is not a mintable role in this app, so it is not listed here). */
+const CLIENT_INTELLIGENCE_ROLES = new Set(['admin']);
+/** @returns {boolean} whether the actor is an effective admin for UI purposes. */
+function clientCanUseIntelligence(a) {
+  return !!a && (CLIENT_INTELLIGENCE_ROLES.has(a.role) || a.adminEquivalent === true);
+}
 
 /** RTDB-safe conversation id (no `.` `$` `#` `[` `]` `/`). The server still
  *  owns ownership + persistence; this is only the local handle the service
@@ -192,7 +202,7 @@ export async function createWiredIntelligenceConsoleController({ actor, onChange
     ports: { ...buildDefaultPorts(), retrieval: serverAuthoritativeRetrievalPort() },
     provider: getActiveProvider(),
     authz: {
-      canUseIntelligence: (a) => !!a && CLIENT_INTELLIGENCE_ROLES.has(a.role),
+      canUseIntelligence: (a) => clientCanUseIntelligence(a),
       canAccessKnowledge: () => true,
     },
     config: {
@@ -297,4 +307,59 @@ export async function previewIntelligenceNorDraft(draftId) {
   const renderingVisualModel = verdict.status === 'applied' ? resolveRenderingVisualModel(binding) : null;
   const composerData = buildIntelligenceNorViewModel(draft, { renderingVisualModel });
   return { ok: true, data: { composerData, previewVisual: verdict } };
+}
+
+/**
+ * Phase C3 — the Corpus & Authority operator workspace port.
+ *
+ * A THIN facade over the deployed `intelligenceCorpus` callable (Phase
+ * C1 wired the deterministic analysis / writing-memory runners) plus the
+ * two proposal callables. Every method is a passthrough that returns the
+ * server's `{ ok, data, error }` envelope verbatim:
+ *   • the browser never writes RTDB, never sets ownerId / documentId /
+ *     ingestionStatus / analysisStatus / a lifecycle state (all stripped +
+ *     server-owned)
+ *   • no observation is `approved` here; `proposeFromMemory` /
+ *     `proposeFromEvidence` create PROPOSED (non-authoritative) records
+ *     only — approval is a separate HUMAN step in the Curation workspace
+ *   • no OpenAI, no model, no external HTTP
+ *
+ * Returns a PURE corpus-workspace controller (state machine) built over
+ * that port — the SAME architecture as createWiredIntelligenceConsole-
+ * Controller / createWiredIntelligenceCurationController: js/ never imports
+ * src/intelligence/ except through THIS module.
+ *
+ * @param {{ actor?: {userId?:string|null, role?:string|null, adminEquivalent?:boolean}, onChange?:Function }} [opts]
+ * @returns {Promise<import('../src/intelligence/console/corpus-workspace-controller.js').*>}
+ */
+export async function createWiredIntelligenceCorpusController({ actor, onChange } = {}) {
+  await wireIntelligenceBackend();
+  const call = async (fn, label) => {
+    try {
+      const res = await fn();
+      if (res && typeof res === 'object' && 'ok' in res) return res;
+      return { ok: false, data: null, error: { code: 'MALFORMED_RESPONSE', message: `${label}: unexpected response shape.` } };
+    } catch (err) {
+      const msg = (err && err.message) || String(err);
+      const code = /not-found/i.test(msg) ? 'NO_BACKEND_CONFIGURED' : 'CALL_FAILED';
+      return { ok: false, data: null, error: { code, message: msg } };
+    }
+  };
+  const port = {
+    // corpus (deployed)
+    ingest: (document) => call(() => callIntelligenceCorpus({ op: 'ingest', document: document || {} }), 'ingest'),
+    analyze: (documentId, source) => call(() => callIntelligenceCorpus({ op: 'analyze', documentId: String(documentId || ''), source: source || null }), 'analyze'),
+    listDocuments: () => call(() => callIntelligenceCorpus({ op: 'list' }), 'list'),
+    observations: (documentId) => call(() => callIntelligenceCorpus({ op: 'observations', documentId: String(documentId || '') }), 'observations'),
+    writingMemory: (config) => call(() => callIntelligenceCorpus({ op: 'writingMemory', config: config || {} }), 'writingMemory'),
+    temporalView: (config) => call(() => callIntelligenceCorpus({ op: 'temporalView', config: config || {} }), 'temporalView'),
+    // authority PROPOSALS (deployed; proposal-only, never approve)
+    proposeStyleRule: (memoryId, config) => call(() => callIntelligenceStyleGuide({ op: 'proposeFromMemory', memoryId: String(memoryId || ''), config: config || {} }), 'proposeFromMemory'),
+    proposeVisualTemplate: (patternId, config) => call(() => callIntelligenceVisualTemplate({ op: 'proposeFromEvidence', patternId: String(patternId || ''), config: config || {} }), 'proposeFromEvidence'),
+  };
+  return createCorpusWorkspaceController({
+    port,
+    actor: { userId: (actor && actor.userId) || null, role: (actor && actor.role) || null, adminEquivalent: !!(actor && actor.adminEquivalent) },
+    onChange,
+  });
 }
