@@ -21,7 +21,8 @@
         possible_drift picture, corpus untouched
      7  static scan — no secret / model / HTTP / V1 / knowledge / flag
         coupling; the writingMemory branch calls NO corpusStore write
-     8  functions/index.js still does NOT reference intelligenceCorpus (§30)
+     8  functions/index.js references + exports intelligenceCorpus
+        (WIRED — Controlled Deployment Phase A; deploy NOT run)
 
    Run:  node scripts/intelligence-corpus-writing-memory-check.cjs   (exit 0 = pass)
    ============================================================ */
@@ -219,11 +220,11 @@ const { intelligenceCorpus, __setWritingMemoryBuilderForTest } = require('../fun
       'the writingMemory branch calls NO corpusStore write method (read-only)');
   }
 
-  /* ── 8. staging ─────────────────────────────────────────────────── */
-  section('functions/index.js — intelligenceCorpus still STAGED (§30)');
+  /* ── 8. wiring (WIRED — Controlled Deployment Phase A) ───────────── */
+  section('functions/index.js — intelligenceCorpus is WIRED (Controlled Deployment Phase A)');
   {
     const idx = fs.readFileSync(path.join(ROOT, 'functions/index.js'), 'utf8');
-    check(!/intelligenceCorpus/.test(idx), 'functions/index.js does NOT reference intelligenceCorpus');
+    check(/require\(['"]\.\/src\/intelligence\/intelligenceCorpus['"]\)/.test(idx) && /exports\.intelligenceCorpus\s*=\s*intelligenceCorpus/.test(idx), 'functions/index.js requires + exports intelligenceCorpus (deploy still NOT run; the writingMemory op stays read-only and fails safe with no builder wired)');
   }
 
   console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} — ${fail} failing check(s).`);

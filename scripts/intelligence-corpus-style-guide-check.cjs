@@ -30,8 +30,8 @@
      8  READ-ONLY ops (list / get / resolve / history) write nothing
      9  static scan — no secret / model / HTTP / V1 / Petty Cash /
         knowledge-write / feature-flag coupling in the 3 server files
-    10  functions/index.js does NOT reference intelligenceStyleGuide
-        (STAGED — §28, §30)
+    10  functions/index.js references + exports intelligenceStyleGuide
+        (WIRED — Controlled Deployment Phase A; deploy NOT run)
 
    Run:  node scripts/intelligence-corpus-style-guide-check.cjs   (exit 0 = pass)
    ============================================================ */
@@ -356,11 +356,11 @@ const { intelligenceStyleGuide, __setWritingMemoryBuilderForTest } = require('..
     check(/gatherOwnerCorpus\(uid\)/.test(cb) && /_writingMemoryBuilder !== 'function'/.test(cb) && /WRITING_MEMORY_UNAVAILABLE/.test(cb), 'proposeFromMemory rebuilds Writing Memory by the verified uid and fails safe (§26, §28)');
   }
 
-  /* ── 11. staging ────────────────────────────────────────────────── */
-  section('functions/index.js — intelligenceStyleGuide STAGED (§28, §30)');
+  /* ── 11. wiring (WIRED — Controlled Deployment Phase A) ──────────── */
+  section('functions/index.js — intelligenceStyleGuide is WIRED (Controlled Deployment Phase A)');
   {
     const idx = fs.readFileSync(path.join(ROOT, 'functions/index.js'), 'utf8');
-    check(!/intelligenceStyleGuide/.test(idx), 'functions/index.js does NOT reference intelligenceStyleGuide');
+    check(/require\(['"]\.\/src\/intelligence\/intelligenceStyleGuide['"]\)/.test(idx) && /exports\.intelligenceStyleGuide\s*=\s*intelligenceStyleGuide/.test(idx), 'functions/index.js requires + exports intelligenceStyleGuide (deploy still NOT run; approve/reject/deprecate stay human-gated and inert behind the undeployed rule block + OFF flag)');
   }
 
   console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} — ${fail} failing check(s).`);

@@ -56,6 +56,10 @@ const { intelligenceConversation } = require('./src/intelligence/intelligenceCon
 const { intelligenceNorDraft } = require('./src/intelligence/intelligenceNorDraft');
 const { intelligenceNorRegistry } = require('./src/intelligence/intelligenceNorRegistry');
 const { intelligenceNorGeneration } = require('./src/intelligence/intelligenceNorGeneration');
+const { intelligenceCorpus } = require('./src/intelligence/intelligenceCorpus');
+const { intelligenceRetrieval } = require('./src/intelligence/intelligenceRetrieval');
+const { intelligenceStyleGuide } = require('./src/intelligence/intelligenceStyleGuide');
+const { intelligenceVisualTemplate } = require('./src/intelligence/intelligenceVisualTemplate');
 
 exports.health = health;
 exports.verifyPin = verifyPin;
@@ -205,3 +209,43 @@ exports.intelligenceNorRegistry = intelligenceNorRegistry;
    these SAME canonical stores before writing (generationContextVerifier.js)
    — ships in this same phase without a separate export. */
 exports.intelligenceNorGeneration = intelligenceNorGeneration;
+
+/* V2 Sarpras Intelligence — Controlled Deployment Phase A: the four
+   remaining staged Intelligence callables, registered here so a later
+   `firebase deploy --only functions` can expose them. HTTPS callable v2,
+   region asia-southeast1, NO secrets. Each is a sibling of
+   intelligenceNorGeneration / intelligenceNorRegistry with the SAME
+   effective-admin authorization (serverPermissions.js#canUseIntelligence:
+   role === 'admin' || adminEquivalent === true); the actor / owner is
+   ALWAYS request.auth.uid; each fails closed when unauthenticated or
+   unauthorized.
+
+     • intelligenceCorpus         — Phase 5.x.1–5.x.4 historical NOR /
+                                    Memorandum corpus boundary
+                                    (ingest / classify / observe, plus the
+                                    READ-ONLY temporal + writing-memory
+                                    views). Observations are 'observed'
+                                    only — no op approves or promotes one.
+     • intelligenceRetrieval      — Phase 5.x.7 certified retrieval gateway.
+                                    READ-ONLY; composes the approved Style
+                                    Guide rules + approved Visual Template
+                                    into one NOR context. Mutates nothing.
+     • intelligenceStyleGuide     — Phase 5.x.5 authoritative PBSI NOR Style
+                                    Guide. Human-gated approve / reject /
+                                    deprecate; no direct 'approved' write,
+                                    no bulk-approve.
+     • intelligenceVisualTemplate — Phase 5.x.6 authoritative PBSI Visual
+                                    Template System. Same human gate.
+
+   INERT as registered: /feature_flags/intelligence/enabled is OFF, no
+   deploy has run, and every write op is staged behind an as-yet-undeployed
+   database.rules.json block (/intelligence_corpus_documents,
+   /intelligence_corpus_observations, /intelligence_style_guide,
+   /intelligence_visual_templates). No OpenAI call, no model, no RAG, no
+   external HTTP in any of the four. See
+   docs/V2_SARPRAS_INTELLIGENCE_PHASE_5X_CORPUS.md and its 5.x siblings,
+   and docs/V2_SARPRAS_INTELLIGENCE_PHASE_5X7_RETRIEVAL.md. */
+exports.intelligenceCorpus = intelligenceCorpus;
+exports.intelligenceRetrieval = intelligenceRetrieval;
+exports.intelligenceStyleGuide = intelligenceStyleGuide;
+exports.intelligenceVisualTemplate = intelligenceVisualTemplate;

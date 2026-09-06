@@ -11,7 +11,7 @@
      1  SECURITY boundary the workspace runs behind (serverPermissions):
         unauthenticated / non-admin denied; role 'admin' allowed;
         adminEquivalent === true allowed; a missing / malformed token → denied
-     2  the two staged callables the workspace calls (intelligenceStyleGuide /
+     2  the two callables the workspace calls (intelligenceStyleGuide /
         intelligenceVisualTemplate) still enforce auth / authz / op from the
         verified context: unauth → unauthenticated; non-admin →
         permission-denied; unknown op → invalid-argument
@@ -19,9 +19,10 @@
         approvedBy / approvedAt / authorityState / status on an `approve`
         call is ignored — approvedBy = the verified uid, authorityState is
         re-derived from status
-     4  STAGING (§32): functions/index.js does NOT reference
-        intelligenceStyleGuide / intelligenceVisualTemplate — the workspace
-        wired NEITHER production callable export
+     4  WIRING (Controlled Deployment Phase A): functions/index.js now
+        requires + exports intelligenceStyleGuide / intelligenceVisualTemplate
+        (deploy NOT run); the curation workspace itself still adds no Cloud
+        Function
      5  DATABASE SAFETY (§33): the workspace added NO new database.rules.json
         node; the intelligence_* read nodes it needs
         (intelligence_style_guide / intelligence_visual_templates) are the
@@ -32,7 +33,7 @@
         browser writes to authoritative nodes; zero V1 / NOR-generator / NOR
         Registry / Petty Cash / feature-flag coupling; zero automatic
         authority; the console VIEW imports ONLY the sanctioned wiring bridge
-     7  the js/firebase.js client wrappers target the STAGED function names
+     7  the js/firebase.js client wrappers target the wired function names
         and add nothing else; the wiring bridge forwards the two ports and
         exposes createWiredIntelligenceCurationController
 
@@ -160,12 +161,14 @@ const styleGuideStore = require('../functions/src/intelligence/styleGuideStore')
     check(JSON.stringify(callableDb._root) === before, 'list / get / history are byte-identical no-ops');
   }
 
-  /* ── 4. STAGING — neither production callable export is wired ──────── */
-  section('functions/index.js — intelligenceStyleGuide + intelligenceVisualTemplate STAGED (§32)');
+  /* ── 4. WIRING — both production callable exports are now wired
+        (Controlled Deployment Phase A); the curation workspace itself
+        still adds NO Cloud Function ──────────────────────────────────── */
+  section('functions/index.js — intelligenceStyleGuide + intelligenceVisualTemplate WIRED (Controlled Deployment Phase A)');
   {
     const idx = fs.readFileSync(path.join(ROOT, 'functions/index.js'), 'utf8');
-    check(!/intelligenceStyleGuide/.test(idx), 'functions/index.js does NOT reference intelligenceStyleGuide');
-    check(!/intelligenceVisualTemplate/.test(idx), 'functions/index.js does NOT reference intelligenceVisualTemplate');
+    check(/require\(['"]\.\/src\/intelligence\/intelligenceStyleGuide['"]\)/.test(idx) && /exports\.intelligenceStyleGuide\s*=\s*intelligenceStyleGuide/.test(idx), 'functions/index.js requires + exports intelligenceStyleGuide (the store this workspace reads via its controller; deploy NOT run)');
+    check(/require\(['"]\.\/src\/intelligence\/intelligenceVisualTemplate['"]\)/.test(idx) && /exports\.intelligenceVisualTemplate\s*=\s*intelligenceVisualTemplate/.test(idx), 'functions/index.js requires + exports intelligenceVisualTemplate (the store this workspace reads via its controller; deploy NOT run)');
     check(!/curation|Curation/.test(idx), 'functions/index.js has NO curation-workspace export (this phase adds no Cloud Function)');
   }
 

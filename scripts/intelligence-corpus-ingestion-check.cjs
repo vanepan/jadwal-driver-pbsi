@@ -25,8 +25,8 @@
         to 'observed' (§21), a model-injected 'approved' is stripped
      6  static scan — no secret / endpoint / model call in the Phase 5.x.2
         server files; no V1 / knowledge / feature-flag coupling
-     7  functions/index.js still does NOT reference intelligenceCorpus
-        (STAGED — §20)
+     7  functions/index.js references + exports intelligenceCorpus
+        (WIRED — Controlled Deployment Phase A; deploy NOT run)
 
    Run:  node scripts/intelligence-corpus-ingestion-check.cjs   (exit 0 = pass)
    ============================================================ */
@@ -238,11 +238,11 @@ const { intelligenceCorpus, __setAnalyzePipelineForTest } = require('../function
     check(/forced to 'observed'|forced back|lifecycleState: _l/.test(callSrc) || /lifecycleState: _l/.test(callSrc), 'analyze strips the client/model lifecycleState before recordObservation');
   }
 
-  /* ── 7. staging assertion ───────────────────────────────────────── */
-  section('functions/index.js — intelligenceCorpus still STAGED (not wired) (§20)');
+  /* ── 7. wiring assertion (WIRED — Controlled Deployment Phase A) ──── */
+  section('functions/index.js — intelligenceCorpus is WIRED (Controlled Deployment Phase A)');
   {
     const idx = fs.readFileSync(path.join(ROOT, 'functions/index.js'), 'utf8');
-    check(!/intelligenceCorpus/.test(idx), 'functions/index.js does NOT reference intelligenceCorpus (wired + deployed in a later, separately-reviewed step)');
+    check(/require\(['"]\.\/src\/intelligence\/intelligenceCorpus['"]\)/.test(idx) && /exports\.intelligenceCorpus\s*=\s*intelligenceCorpus/.test(idx), 'functions/index.js requires + exports intelligenceCorpus (deploy still NOT run; ingest/analyze write ops remain inert behind the undeployed rule blocks + OFF flag)');
   }
 
   console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} — ${fail} failing check(s).`);

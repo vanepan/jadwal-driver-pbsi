@@ -24,8 +24,8 @@
      8  static scan — no OpenAI / model / RAG / external HTTP / secret / V1
         / NOR Generator / NOR Registry / Petty Cash / feature-flag / any
         write coupling in the 2 server files
-     9  functions/index.js does NOT reference intelligenceRetrieval
-        (STAGED — §29, §35, §36)
+     9  functions/index.js references + exports intelligenceRetrieval
+        (WIRED — Controlled Deployment Phase A; deploy NOT run)
 
    Run:  node scripts/intelligence-retrieval-check.cjs   (exit 0 = pass)
    ============================================================ */
@@ -252,11 +252,11 @@ const { intelligenceRetrieval } = require('../functions/src/intelligence/intelli
     check(!/data\.(scope|authorityState|approvedBy|approvedAt|createdBy|version|sourceDocumentIds|tenantId)\b/.test(cb), 'the callable NEVER reads a client scope / authority / ownership field (§20, §21)');
   }
 
-  /* ── 9. staging ────────────────────────────────────────────────── */
-  section('functions/index.js — intelligenceRetrieval STAGED (§29, §36)');
+  /* ── 9. wiring (WIRED — Controlled Deployment Phase A) ─────────────── */
+  section('functions/index.js — intelligenceRetrieval is WIRED (Controlled Deployment Phase A)');
   {
     const idx = fs.readFileSync(path.join(ROOT, 'functions/index.js'), 'utf8');
-    check(!/intelligenceRetrieval/.test(idx), 'functions/index.js does NOT reference intelligenceRetrieval');
+    check(/require\(['"]\.\/src\/intelligence\/intelligenceRetrieval['"]\)/.test(idx) && /exports\.intelligenceRetrieval\s*=\s*intelligenceRetrieval/.test(idx), 'functions/index.js requires + exports intelligenceRetrieval (deploy still NOT run; the gateway stays read-only and composes APPROVED-only records)');
   }
 
   console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} — ${fail} failing check(s).`);

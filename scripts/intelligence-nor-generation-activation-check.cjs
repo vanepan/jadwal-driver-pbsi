@@ -153,10 +153,11 @@ const { NOR_DRAFT_SCHEMA, DRAFT_STORE_ERRORS } = require('../functions/src/intel
     const idx = fs.readFileSync(path.join(ROOT, 'functions/index.js'), 'utf8');
     check(/require\(['"]\.\/src\/intelligence\/intelligenceNorGeneration['"]\)/.test(idx), 'functions/index.js requires ./src/intelligence/intelligenceNorGeneration');
     check(/exports\.intelligenceNorGeneration\s*=\s*intelligenceNorGeneration/.test(idx), 'functions/index.js exports intelligenceNorGeneration');
-    // §36 — the ONE architectural exception this phase permits: no OTHER
-    // staged callable is wired alongside it.
+    // Phase 6A §36 activated ONLY intelligenceNorGeneration. Controlled
+    // Deployment Phase A then wired the remaining four staged Intelligence
+    // callables alongside it (registration only — no deploy, flag still OFF).
     for (const other of ['intelligenceCorpus', 'intelligenceStyleGuide', 'intelligenceVisualTemplate', 'intelligenceRetrieval']) {
-      check(!new RegExp(`exports\\.${other}\\b`).test(idx), `functions/index.js still does NOT export ${other} (§25 — only the generation callable is activated)`);
+      check(new RegExp(`require\\(['"]\\./src/intelligence/${other}['"]\\)`).test(idx) && new RegExp(`exports\\.${other}\\s*=\\s*${other}\\b`).test(idx), `functions/index.js requires + exports ${other} (Controlled Deployment Phase A)`);
     }
   }
 

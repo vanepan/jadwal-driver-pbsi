@@ -31,8 +31,8 @@
      9  static scan — no secret / model / HTTP / V1 / Petty Cash / NOR
         Registry / Style Guide / knowledge-write / feature-flag / renderer
         coupling in the 3 server files
-    10  functions/index.js does NOT reference intelligenceVisualTemplate
-        (STAGED — §33, §34)
+    10  functions/index.js references + exports intelligenceVisualTemplate
+        (WIRED — Controlled Deployment Phase A; deploy NOT run)
 
    Run:  node scripts/intelligence-corpus-visual-template-check.cjs   (exit 0 = pass)
    ============================================================ */
@@ -360,11 +360,11 @@ const { intelligenceVisualTemplate, __setVisualAggregatorForTest } = require('..
     check(/gatherOwnerCorpus\(uid\)/.test(cb) && /_visualAggregator !== 'function'/.test(cb) && /VISUAL_ANALYSIS_UNAVAILABLE/.test(cb), 'proposeFromEvidence rebuilds the aggregation by the verified uid and fails safe (§27, §33)');
   }
 
-  /* ── 11. staging ────────────────────────────────────────────────── */
-  section('functions/index.js — intelligenceVisualTemplate STAGED (§33, §34)');
+  /* ── 11. wiring (WIRED — Controlled Deployment Phase A) ──────────── */
+  section('functions/index.js — intelligenceVisualTemplate is WIRED (Controlled Deployment Phase A)');
   {
     const idx = fs.readFileSync(path.join(ROOT, 'functions/index.js'), 'utf8');
-    check(!/intelligenceVisualTemplate/.test(idx), 'functions/index.js does NOT reference intelligenceVisualTemplate');
+    check(/require\(['"]\.\/src\/intelligence\/intelligenceVisualTemplate['"]\)/.test(idx) && /exports\.intelligenceVisualTemplate\s*=\s*intelligenceVisualTemplate/.test(idx), 'functions/index.js requires + exports intelligenceVisualTemplate (deploy still NOT run; approve/reject/deprecate stay human-gated and inert behind the undeployed rule block + OFF flag)');
   }
 
   console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} — ${fail} failing check(s).`);

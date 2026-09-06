@@ -23,8 +23,8 @@
         picture is reported and the corpus is still untouched
      7  static scan — no secret / model / HTTP / V1 / knowledge / flag
         coupling in the temporal server code
-     8  functions/index.js still does NOT reference intelligenceCorpus
-        (STAGED — §20)
+     8  functions/index.js references + exports intelligenceCorpus
+        (WIRED — Controlled Deployment Phase A; deploy NOT run)
 
    Run:  node scripts/intelligence-corpus-temporal-check.cjs   (exit 0 = pass)
    ============================================================ */
@@ -215,11 +215,11 @@ const { intelligenceCorpus, __setTemporalAnalyzerForTest } = require('../functio
     check(/_temporalAnalyzer !== 'function'/.test(blob) && /TEMPORAL_UNAVAILABLE/.test(blob), 'fails safe when no analyzer is wired (§15)');
   }
 
-  /* ── 8. staging ─────────────────────────────────────────────────── */
-  section('functions/index.js — intelligenceCorpus still STAGED (§20)');
+  /* ── 8. wiring (WIRED — Controlled Deployment Phase A) ───────────── */
+  section('functions/index.js — intelligenceCorpus is WIRED (Controlled Deployment Phase A)');
   {
     const idx = fs.readFileSync(path.join(ROOT, 'functions/index.js'), 'utf8');
-    check(!/intelligenceCorpus/.test(idx), 'functions/index.js does NOT reference intelligenceCorpus (wired + deployed in a later, separately-reviewed step)');
+    check(/require\(['"]\.\/src\/intelligence\/intelligenceCorpus['"]\)/.test(idx) && /exports\.intelligenceCorpus\s*=\s*intelligenceCorpus/.test(idx), 'functions/index.js requires + exports intelligenceCorpus (deploy still NOT run; the temporalView / driftCheck ops stay read-only and fail safe with no analyzer wired)');
   }
 
   console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} — ${fail} failing check(s).`);

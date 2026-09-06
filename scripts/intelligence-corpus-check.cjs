@@ -22,9 +22,9 @@
      4  static security scan of the 3 server files — no secret / endpoint /
         env-var, no V1 Petty Cash / generateNor coupling, no knowledge
         write, no feature-flag access, log annotated METADATA ONLY
-     5  functions/index.js does NOT yet reference intelligenceCorpus
-        (STAGED — Phase 5.x.1 §20) — and database.rules.json carries the
-        two server-owned, owner-scoped rule blocks
+     5  functions/index.js references + exports intelligenceCorpus
+        (WIRED — Controlled Deployment Phase A) — and database.rules.json
+        carries the two server-owned, owner-scoped rule blocks
 
    Run:  node scripts/intelligence-corpus-check.cjs   (exit 0 = pass)
    ============================================================ */
@@ -316,11 +316,11 @@ const { intelligenceCorpus } = require('../functions/src/intelligence/intelligen
     check(refs.length > 0 && refs.every((r) => /PATH_DOCS|PATH_OBS/.test(r)), `corpusStore only ever addresses PATH_DOCS / PATH_OBS (${refs.length} db.ref calls)`);
   }
 
-  /* ── 5. wiring (STAGED) + rules ──────────────────────────────────── */
-  section('functions/index.js — intelligenceCorpus is STAGED (not wired) (§20)');
+  /* ── 5. wiring (WIRED — Controlled Deployment Phase A) + rules ────── */
+  section('functions/index.js — intelligenceCorpus is WIRED (Controlled Deployment Phase A)');
   {
     const idx = fs.readFileSync(path.join(ROOT, 'functions/index.js'), 'utf8');
-    check(!/intelligenceCorpus/.test(idx), 'functions/index.js does NOT reference intelligenceCorpus yet (staged — wired in Phase 5.x.2 with its own review)');
+    check(/require\(['"]\.\/src\/intelligence\/intelligenceCorpus['"]\)/.test(idx) && /exports\.intelligenceCorpus\s*=\s*intelligenceCorpus/.test(idx), 'functions/index.js requires + exports intelligenceCorpus (wired in Controlled Deployment Phase A; write ops still inert behind the undeployed rule blocks + OFF flag)');
     check(/intelligenceNorRegistry/.test(idx), '(sanity) functions/index.js still wires the Phase 5 registry callable');
   }
 
