@@ -94,6 +94,9 @@ const ERROR_TEXT = Object.freeze({
   NO_BACKEND_CONFIGURED: 'Penyimpanan draf sedang tidak tersedia. Coba lagi sebentar lagi.',
   INTERNAL: 'Perubahan tidak dapat disimpan saat ini. Coba lagi sebentar lagi.',
   UNKNOWN: 'Perubahan tidak dapat disimpan saat ini.',
+  // Phase 6A — the server-side generation-context cross-check
+  INVALID_GENERATION_CONTEXT: 'Konteks pembuatan draf tidak valid. Mulai permintaan baru.',
+  STALE_GENERATION_CONTEXT: 'Aturan organisasi yang digunakan saat pembuatan draf ini sudah berubah. Mulai permintaan baru agar draf dibuat ulang dengan konteks terkini.',
   // Phase 5 — canonical NOR Registry lifecycle
   ILLEGAL_TRANSITION: 'Tindakan ini tidak sesuai dengan tahap NOR saat ini. Muat ulang untuk melihat status terbaru.',
   ALREADY_PUBLISHED: 'NOR ini sudah diterbitkan dan tidak dapat diubah lagi.',
@@ -209,6 +212,7 @@ export function createIntelligenceConsoleController({ service, actor, onChange, 
     for (const k of ['item', 'quantity', 'unit', 'purpose', 'budget']) {
       if (facts[k] !== undefined && facts[k] !== null && facts[k] !== '') details[k] = facts[k];
     }
+    const prov = rec.provenance && typeof rec.provenance === 'object' ? rec.provenance : {};
     return {
       documentType: 'nor',
       draftId: rec.draftId || null,
@@ -222,7 +226,16 @@ export function createIntelligenceConsoleController({ service, actor, onChange, 
         date: rec.date || null,
         body: rec.body || '',
         details,
-        metadata: { bodySource: (rec.provenance && rec.provenance.bodySource) || null },
+        // Phase 6A §20 — a RESUMED draft (loaded from the persisted record,
+        // not the just-produced assembler shape) must carry the same
+        // generation provenance the review UI shows right after generation,
+        // so a page reload does not silently drop the certified/fallback/
+        // blocked disclosure.
+        metadata: {
+          bodySource: prov.bodySource || null,
+          generationContext: prov.generationContext || null,
+          visualBinding: prov.visualBinding || null,
+        },
       },
     };
   }

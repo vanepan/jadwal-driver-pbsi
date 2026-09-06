@@ -111,6 +111,34 @@ function build(vm) {
   const top = d.letterTop || [];
   const bottom = d.letterBottom || [];
   const recap = d.recap || [];
+
+  // Phase 6B — an OPTIONAL, additive `renderingVisualModel` (see
+  // src/intelligence/generation/visual-rendering-model.js). Absent for
+  // every existing caller (Petty Cash V1 never sets this field) ⇒ every
+  // line below this block is a no-op and the DocDefinition is byte-for-byte
+  // what it always was. Only `source === 'approved_template'` fields the
+  // renderer actually supports today (page size, margins, logo position)
+  // are consumed; everything else the template specified is disclosed via
+  // `unsupportedRegions`/`unsupportedFields` upstream, never applied here.
+  //
+  // The resolver already validates units/coordinate-spaces/ranges — this
+  // template does not re-validate that (one validation boundary, not two).
+  // It DOES guard the two raw numeric fields it hands straight to pdfmake
+  // with a cheap `Number.isFinite` check: a NaN/undefined `pageSize` or
+  // `pageMargins` value is a known way to hang pdfmake's async measurement
+  // pipeline forever (the exact class of bug fixed in this file at
+  // v1.28.11 — a frozen `widths` array, not a NaN, but the same "pdfmake
+  // never calls back" failure mode) — cheap, orthogonal defense in depth,
+  // not a second semantic validator.
+  const rvm = d.renderingVisualModel || null;
+  const finiteNum = (v) => typeof v === 'number' && Number.isFinite(v);
+  const geometry = pageGeometry(NOR_DS);
+  if (rvm && rvm.page && finiteNum(rvm.page.width) && finiteNum(rvm.page.height)) {
+    geometry.pageSize = { width: rvm.page.width, height: rvm.page.height };
+  }
+  if (rvm && Array.isArray(rvm.margins) && rvm.margins.length === 4 && rvm.margins.every(finiteNum)) {
+    geometry.pageMargins = [...rvm.margins];
+  }
   // The null-safety `_signBlock(undefined) -> {text:''}` used to provide
   // inline — signatureBlock() itself intentionally does not swallow a bad
   // call, so that guard stays here, at the one place this template calls
@@ -152,7 +180,7 @@ function build(vm) {
   ];
 
   return {
-    ...pageGeometry(NOR_DS),
+    ...geometry,
     info: { title: `Nota Organisasi — ${d.norNumber || ''}`, author: 'Sarpras Operations' },
     defaultStyle: NOR_DS.typography.default,
     // Page 1 (NOTA ORGANISASI) is a formal PBSI document — NO footer at all
@@ -173,7 +201,9 @@ function build(vm) {
         text: 'TEST ONLY — DOKUMEN TIDAK SAH', fontSize: 9, bold: true, color: INK,
         alignment: 'center', characterSpacing: 1.5, margin: [0, 0, 0, 12],
       }] : []),
-      orgLogo({ width: 56 }),
+      orgLogo(rvm && rvm.logo && finiteNum(rvm.logo.x) && finiteNum(rvm.logo.y) && finiteNum(rvm.logo.width)
+        ? { width: rvm.logo.width, position: { x: rvm.logo.x, y: rvm.logo.y } }
+        : { width: 56 }),
       { text: 'NOTA ORGANISASI', fontSize: NOR_DS.typography.documentTitle.fontSize, bold: true, alignment: 'center', margin: [0, 0, 0, 14] },
 
       { text: `Jakarta, ${d.dateLong || ''}`, fontSize: 10, margin: [0, 0, 0, 0] },

@@ -55,6 +55,7 @@ const { generateCompletion } = require('./src/intelligence/generateCompletion');
 const { intelligenceConversation } = require('./src/intelligence/intelligenceConversation');
 const { intelligenceNorDraft } = require('./src/intelligence/intelligenceNorDraft');
 const { intelligenceNorRegistry } = require('./src/intelligence/intelligenceNorRegistry');
+const { intelligenceNorGeneration } = require('./src/intelligence/intelligenceNorGeneration');
 
 exports.health = health;
 exports.verifyPin = verifyPin;
@@ -183,3 +184,24 @@ exports.intelligenceNorDraft = intelligenceNorDraft;
    is immutable. Never touches V1 Petty Cash / generateNor() / V1 NOR data /
    the feature flag / organizational knowledge. */
 exports.intelligenceNorRegistry = intelligenceNorRegistry;
+
+/* V2 Sarpras Intelligence — Phase 6A server-authoritative activation of the
+   Phase 6 Certified Retrieval → NOR Generation boundary. HTTPS callable v2,
+   region asia-southeast1, NO secrets. Same effective-admin authorization as
+   every other Intelligence callable. READ-ONLY: gathers the approved Style
+   Guide + Visual Template records (organization-wide) from their stores,
+   composes the Phase 5.x.7 certified retrieval context, then runs the
+   Phase 6 deterministic gate + style/visual projection. Returns ONE
+   `intelligence-generation-context@1`. The client controls ONLY
+   `documentType` (validated) — it CANNOT claim certification, authority
+   state, approval metadata, a rule/template id, or scope; every such field
+   is ignored server-side. Never generates NOR text, never assembles or
+   persists a draft, never touches the NOR Registry / numbering /
+   publication / Petty Cash / V1. See
+   docs/V2_SARPRAS_INTELLIGENCE_PHASE_6A_SERVER_AUTHORITATIVE_ACTIVATION.md.
+
+   The companion hardening — intelligenceNorDraft's `create` now verifies
+   (never blindly persists) a submitted provenance.generationContext against
+   these SAME canonical stores before writing (generationContextVerifier.js)
+   — ships in this same phase without a separate export. */
+exports.intelligenceNorGeneration = intelligenceNorGeneration;

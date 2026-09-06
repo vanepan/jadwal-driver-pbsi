@@ -39,6 +39,7 @@
 
 import {
   callGenerateCompletion, callIntelligenceConversation, callIntelligenceNorDraft, callIntelligenceNorRegistry,
+  callIntelligenceStyleGuide, callIntelligenceVisualTemplate, callIntelligenceNorGeneration,
 } from './firebase.js';
 import { bootstrapIntelligenceClient } from '../src/intelligence/client-bootstrap.js';
 import { createIntelligenceService } from '../src/intelligence/service/intelligence-service.js';
@@ -46,6 +47,20 @@ import { buildDefaultPorts } from '../src/intelligence/service/default-ports.js'
 import { getActiveProvider } from '../src/intelligence/provider-registry.js';
 import { getIntelligenceConfig, isIntelligenceEnabled } from '../src/intelligence/config/intelligence-config.js';
 import { createIntelligenceConsoleController } from '../src/intelligence/console/intelligence-console-controller.js';
+import { createCurationWorkspaceController } from '../src/intelligence/console/curation-workspace-controller.js';
+import {
+  listStyleRules, getStyleRule, approveStyleRule, rejectStyleRule, deprecateStyleRule, getStyleRuleHistory,
+} from '../src/intelligence/corpus/style-guide/style-guide-store.js';
+import {
+  listVisualTemplates, getVisualTemplate, approveVisualTemplate, rejectVisualTemplate,
+  deprecateVisualTemplate, getVisualTemplateHistoryChain,
+} from '../src/intelligence/corpus/visual-template/visual-template-store.js';
+import {
+  makeGenerationContext, isGenerationContext, GENERATION_GATE_OUTCOME, GENERATION_MODE,
+  RETRIEVAL_CERTIFICATION_STATUS, RETRIEVAL_DOMAIN_STATUS,
+} from '../src/intelligence/generation/contracts/generation-context-contract.js';
+import { resolveRenderingVisualModel } from '../src/intelligence/generation/visual-rendering-model.js';
+import { buildIntelligenceNorViewModel } from '../src/intelligence/generation/nor-preview-view-model.js';
 
 let _wired = false;
 let _status = null;
@@ -80,6 +95,12 @@ export async function wireIntelligenceBackend(featureFlags) {
       callModel: (req) => callGenerateCompletion(req),
       callDraft: (payload) => callIntelligenceNorDraft(payload),
       callRegistry: (payload) => callIntelligenceNorRegistry(payload),
+      // Phase 5.x.8 — the Human Curation Workspace reads + walks the
+      // human-gated authority lifecycle through these two staged callables.
+      // Inert in production today (not in functions/index.js) ⇒ the store
+      // keeps its Null backend and the workspace shows "unavailable".
+      callStyleGuide: (payload) => callIntelligenceStyleGuide(payload),
+      callVisualTemplate: (payload) => callIntelligenceVisualTemplate(payload),
       featureFlags: (featureFlags && typeof featureFlags === 'object') ? featureFlags : undefined,
     });
     _wired = _status.ok === true;
@@ -101,10 +122,60 @@ export function isIntelligenceBackendWired() {
 }
 
 /**
+ * Phase 6A §2, §3, §26 — the SERVER-AUTHORITATIVE retrieval port. The
+ * browser NEVER composes a certification / gate / authority decision
+ * itself: it calls the intelligenceNorGeneration callable, which
+ * independently gathers the approved Style Guide + Visual Template records
+ * and runs the Phase 6 deterministic gate SERVER-SIDE, then returns that
+ * result completely unmodified — this port does not touch, reinterpret, or
+ * re-derive it (§24 — the client only ever renders server state).
+ *
+ * If the callable cannot be reached (STAGED / not yet deployed today, a
+ * network failure, or a malformed reply) this FAILS CLOSED to an honest
+ * `GENERATION_BLOCKED_UNAVAILABLE` context — never a guess, never a
+ * locally-recomputed "certified" claim (§13). This is the ONLY place the
+ * browser ever constructs a GenerationContext itself, and it only ever
+ * constructs the UNAVAILABLE one.
+ * @returns {{ buildGenerationContext: (args:{documentType?:string, mode?:string, at?:string}) => Promise<object> }}
+ */
+function serverAuthoritativeRetrievalPort() {
+  return {
+    async buildGenerationContext({ documentType, mode, at } = {}) {
+      const when = at || new Date().toISOString();
+      let res;
+      try {
+        res = await callIntelligenceNorGeneration({ op: 'generationContext', documentType });
+      } catch {
+        res = null;
+      }
+      if (res && res.ok && isGenerationContext(res.data)) {
+        return res.data;
+      }
+      return makeGenerationContext({
+        mode: mode || GENERATION_MODE.INTELLIGENCE,
+        gate: GENERATION_GATE_OUTCOME.BLOCKED_UNAVAILABLE,
+        reasons: ['The server-authoritative generation service could not be reached.'],
+        generatedAt: when,
+        retrieval: {
+          certification: RETRIEVAL_CERTIFICATION_STATUS.UNAVAILABLE,
+          styleGuideStatus: RETRIEVAL_DOMAIN_STATUS.UNAVAILABLE,
+          visualTemplateStatus: RETRIEVAL_DOMAIN_STATUS.UNAVAILABLE,
+          documentType: documentType || null,
+          retrievedAt: when,
+        },
+      });
+    },
+  };
+}
+
+/**
  * Build the minimal Phase 3B console controller over an EXISTING
  * createIntelligenceService() instance. Ensures the backend is wired first
  * (idempotent), then composes:
- *   ports    → buildDefaultPorts()  (the real existing V2 domains — reuse)
+ *   ports    → buildDefaultPorts()  (the real existing V2 domains — reuse),
+ *              with `retrieval` OVERRIDDEN by the Phase 6A server-authoritative
+ *              port above (the ESM default composes locally and is only the
+ *              safe fallback for pure/offline tests)
  *   provider → getActiveProvider()  (Null while the flag is OFF ⇒ template body,
  *                                    0 OpenAI calls; OpenAI only once the synced
  *                                    flag flipped it active during bootstrap)
@@ -118,7 +189,7 @@ export function isIntelligenceBackendWired() {
 export async function createWiredIntelligenceConsoleController({ actor, onChange } = {}) {
   await wireIntelligenceBackend();
   const service = createIntelligenceService({
-    ports: buildDefaultPorts(),
+    ports: { ...buildDefaultPorts(), retrieval: serverAuthoritativeRetrievalPort() },
     provider: getActiveProvider(),
     authz: {
       canUseIntelligence: (a) => !!a && CLIENT_INTELLIGENCE_ROLES.has(a.role),
@@ -135,4 +206,95 @@ export async function createWiredIntelligenceConsoleController({ actor, onChange
     actor: { userId: (actor && actor.userId) || null, role: (actor && actor.role) || null },
     onChange,
   });
+}
+
+/**
+ * Build the Phase 5.x.8 Human Curation Workspace controller over the
+ * EXISTING Style Guide + Visual Template store facades (the ones the
+ * bootstrap just pointed at the staged callable backends — or the inert
+ * Null backends when the callables are absent, which today they are).
+ *
+ * The controller talks ONLY to the `{ list, get, approve, reject,
+ * deprecate, history }` subset — the read side plus the human-gated
+ * authority lifecycle. It NEVER proposes, never touches Writing Memory,
+ * never calls the NOR generator / Registry, never OpenAI. Approval /
+ * rejection / supersession / deprecation are explicit HUMAN operations
+ * from the workspace — this wiring never invokes them.
+ *
+ * @param {{ actor?: {userId?:string|null, role?:string|null}, onChange?:Function }} [opts]
+ * @returns {Promise<import('../src/intelligence/console/curation-workspace-controller.js').*>}
+ */
+export async function createWiredIntelligenceCurationController({ actor, onChange } = {}) {
+  await wireIntelligenceBackend();
+  const styleGuide = {
+    list: (filter) => listStyleRules(filter),
+    get: (id) => getStyleRule(id),
+    approve: (id, ctx) => approveStyleRule(id, ctx),
+    reject: (id, ctx) => rejectStyleRule(id, ctx),
+    deprecate: (id, ctx) => deprecateStyleRule(id, ctx),
+    history: (id) => getStyleRuleHistory(id),
+  };
+  const visualTemplate = {
+    list: (filter) => listVisualTemplates(filter),
+    get: (id) => getVisualTemplate(id),
+    approve: (id, ctx) => approveVisualTemplate(id, ctx),
+    reject: (id, ctx) => rejectVisualTemplate(id, ctx),
+    deprecate: (id, ctx) => deprecateVisualTemplate(id, ctx),
+    history: (id) => getVisualTemplateHistoryChain(id),
+  };
+  return createCurationWorkspaceController({
+    styleGuide,
+    visualTemplate,
+    actor: { userId: (actor && actor.userId) || null, role: (actor && actor.role) || null },
+    onChange,
+  });
+}
+
+/**
+ * Phase 6C — build a client-side PDF PREVIEW of an owned NOR draft.
+ *
+ * Server-authoritative from end to end: the ONLY draft/visual-authority
+ * source is the `intelligenceNorDraft` callable's `preview` op, which
+ * (re-using its existing auth + effective-admin authorization + owner
+ * check) loads the OWNED draft and re-runs the Phase 6A point-lookup
+ * verification of its STORED generation context. The browser never
+ * retrieves a Visual Template, never composes a certified context, never
+ * decides authority (§9, §20, §32).
+ *
+ * This function then does two PURE, deterministic transforms
+ * (src/intelligence/generation/*):
+ *   1. resolveRenderingVisualModel(binding)  — ONLY when the server verdict
+ *      is `applied`; `stale` / `invalid` / `fallback` ⇒ no template
+ *      geometry, the deterministic composer layout stands (§11, §32).
+ *   2. buildIntelligenceNorViewModel(draft, { renderingVisualModel })
+ *      — NorDraftRecord → the EXISTING `composer-document` renderer input.
+ *
+ * Returns the renderer input + the freshness verdict for the review UI to
+ * disclose ("Template applied" vs "Deterministic fallback", §31). It does
+ * NOT call pdfmake — js/intelligence-console.js pairs the returned data
+ * with the EXISTING js/docs/* engine (DocumentEngine.generate), so there is
+ * ONE PDF pipeline (§4, §15). No write, no number, no Registry, no publish
+ * anywhere in this path (§13, §14, §29).
+ *
+ * @param {string} draftId
+ * @returns {Promise<{ ok:boolean, data?:{ composerData:object, previewVisual:{status:string,templateId:string|null,templateVersion:number|null,reason:string|null} }, error?:{code:string,message:string} }>}
+ */
+export async function previewIntelligenceNorDraft(draftId) {
+  let res;
+  try {
+    res = await callIntelligenceNorDraft({ op: 'preview', draftId: String(draftId || '') });
+  } catch (err) {
+    return { ok: false, error: { code: 'PREVIEW_UNAVAILABLE', message: (err && err.message) || 'Layanan pratinjau tidak dapat dihubungi.' } };
+  }
+  if (!res || res.ok !== true || !res.data || !res.data.draft) {
+    return { ok: false, error: (res && res.error) || { code: 'PREVIEW_FAILED', message: 'Pratinjau draf gagal dibuat.' } };
+  }
+  const { draft, previewVisual } = res.data;
+  const verdict = previewVisual && typeof previewVisual === 'object'
+    ? previewVisual
+    : { status: 'fallback', templateId: null, templateVersion: null, reason: null };
+  const binding = draft.provenance && typeof draft.provenance === 'object' ? draft.provenance.visualBinding : null;
+  const renderingVisualModel = verdict.status === 'applied' ? resolveRenderingVisualModel(binding) : null;
+  const composerData = buildIntelligenceNorViewModel(draft, { renderingVisualModel });
+  return { ok: true, data: { composerData, previewVisual: verdict } };
 }

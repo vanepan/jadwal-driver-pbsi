@@ -264,9 +264,16 @@ export function buildContentModel(data) {
       value: s.value == null || s.value === '' ? '—' : String(s.value),
     })),
     signatureSuggestion: structure.signatureSuggestion,
-    disclaimer: 'Dokumen ini adalah draf hasil komposisi Sarpras Intelligence yang telah disetujui. '
-      + 'Blok penerima/tembusan, tabel rincian biaya, dan format akhir tetap memerlukan penyusunan manual '
-      + 'sebelum diterbitkan sebagai dokumen resmi.',
+    // Phase 6C — an OPTIONAL, additive override. Absent (every existing
+    // caller) ⇒ the unchanged "…yang telah disetujui" text. The Sarpras
+    // Intelligence draft-preview path supplies a preview-honest string
+    // instead, because that draft is still `requires_review` — NOT approved
+    // (§12).
+    disclaimer: (typeof data.disclaimerOverride === 'string' && data.disclaimerOverride.trim())
+      ? data.disclaimerOverride.trim()
+      : 'Dokumen ini adalah draf hasil komposisi Sarpras Intelligence yang telah disetujui. '
+        + 'Blok penerima/tembusan, tabel rincian biaya, dan format akhir tetap memerlukan penyusunan manual '
+        + 'sebelum diterbitkan sebagai dokumen resmi.',
   };
 }
 
@@ -333,13 +340,41 @@ function build(data) {
   // output is unchanged. A pin to a version that no longer exists throws here
   // rather than silently rendering with a newer layout.
   const ds = getDesignSystem('composer', data.layoutVersion != null ? data.layoutVersion : undefined);
+
+  // Phase 6C — an OPTIONAL, additive `renderingVisualModel` (a Phase 6B
+  // `nor-visual-rendering-model@1`, from an APPROVED PBSI Visual Template,
+  // server-verified upstream). Absent for every existing caller
+  // (review-workspace.js never sets it) ⇒ every line below is a no-op and
+  // the DocDefinition is byte-for-byte what it always was. Only the three
+  // fields this renderer supports today (page size, margins, logo position)
+  // are consumed — POINTS, top-left origin, exactly as
+  // src/intelligence/generation/visual-rendering-model.js already produces.
+  // The resolver validated units/spaces/ranges; the cheap `Number.isFinite`
+  // guards here are orthogonal defence in depth against a NaN reaching
+  // pdfmake's async measurement pipeline (the failure class nor.js was
+  // hotfixed for at v1.28.11), not a second semantic validator.
+  const rvm = data.renderingVisualModel && typeof data.renderingVisualModel === 'object' ? data.renderingVisualModel : null;
+  const finiteNum = (v) => typeof v === 'number' && Number.isFinite(v);
+  const pageSize = (rvm && rvm.page && finiteNum(rvm.page.width) && finiteNum(rvm.page.height))
+    ? { width: rvm.page.width, height: rvm.page.height } : ds.page.size;
+  const pageMargins = (rvm && Array.isArray(rvm.margins) && rvm.margins.length === 4 && rvm.margins.every(finiteNum))
+    ? [...rvm.margins] : ds.page.margins;
+
   return {
-    pageSize: ds.page.size,
-    pageMargins: ds.page.margins,
+    pageSize,
+    pageMargins,
     header: docHeader({ org: 'Bidang Sarana dan Prasarana', reference: data.documentId }),
     footer: docFooter({ label: 'Draf Komposisi Dokumen (Sarpras Intelligence)' }),
     content: [
-      orgLogo({ width: ds.logo.width }),
+      // Phase 6C — an unmissable PREVIEW marker (§12). Only ever set by the
+      // Sarpras Intelligence draft-preview path; absent ⇒ nothing rendered.
+      ...(data.isPreview ? [{
+        text: 'PRATINJAU — BUKAN DOKUMEN RESMI', fontSize: 8, bold: true,
+        color: TOKENS.color.accent, alignment: 'center', characterSpacing: 1, margin: [0, 0, 0, 6],
+      }] : []),
+      orgLogo(rvm && rvm.logo && finiteNum(rvm.logo.x) && finiteNum(rvm.logo.y) && finiteNum(rvm.logo.width)
+        ? { width: rvm.logo.width, position: { x: rvm.logo.x, y: rvm.logo.y } }
+        : { width: ds.logo.width }),
       headerRule(),
       { text: model.title, style: 'title', alignment: 'center', margin: [0, 0, 0, 2] },
       ...(model.norNumber ? [{ text: `Nomor: ${model.norNumber}`, alignment: 'center', fontSize: 9, color: TOKENS.color.dim, margin: [0, 0, 0, 2] }] : []),

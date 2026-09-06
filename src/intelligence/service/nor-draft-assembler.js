@@ -48,6 +48,26 @@ function templateBody(norType, f) {
   return lines.join('\n');
 }
 
+/** Phase 6 — a certified `opening` / `closing` Style-Guide rule (when the
+ *  generation context supplies one) wraps the deterministic TEMPLATE body.
+ *  This is the ONE place the assembler controls text; the letterhead
+ *  labels ("Kepada Yth.", "Perihal", …) stay in the deterministic renderer
+ *  (js/docs/templates/nor.js), which a FUTURE phase teaches to consume the
+ *  visual binding. A model-generated body is left untouched — the model was
+ *  already given the rules as bounded context. */
+function slotRuleValue(styleCtx, slot) {
+  const s = styleCtx && styleCtx.slots ? styleCtx.slots[slot] : null;
+  return s && s.source === 'certified_style_rule' && typeof s.value === 'string' && s.value.trim()
+    ? s.value.trim() : null;
+}
+function applyCertifiedWording(body, bodySource, styleCtx) {
+  if (bodySource !== 'template' || !styleCtx) return body;
+  const opening = slotRuleValue(styleCtx, 'opening');
+  const closing = slotRuleValue(styleCtx, 'closing');
+  if (!opening && !closing) return body;
+  return [opening, body, closing].filter(Boolean).join('\n\n');
+}
+
 /**
  * @param {Object} args
  * @param {string|null} args.norType
@@ -57,6 +77,9 @@ function templateBody(norType, f) {
  * @param {{ suggestedNumber:string, basis:string|null, confidence:number }|null} [args.numberingSuggestion]
  * @param {string[]} [args.knowledgeRefs]
  * @param {string[]} [args.memoryRefs]
+ * @param {Object|null} [args.generationStyleContext] - Phase 6 GenerationStyleContext (resolved wording slots). Absent ⇒ output is byte-identical to Phase 1–5.
+ * @param {Object|null} [args.visualBinding]          - Phase 6 VisualBinding (an approved template directive OR the deterministic-fallback marker). NOT consumed here — the renderer owns layout; carried onto the draft for a future renderer step.
+ * @param {Object|null} [args.generationContext]      - the full Phase 6 GenerationContext (mode / gate / status / conflicts / snapshot). Carried onto the draft for provenance + the review UI.
  * @returns {{ draft: object, numbering: object }}
  */
 export function assembleNorDraft({
@@ -67,11 +90,15 @@ export function assembleNorDraft({
   numberingSuggestion = null,
   knowledgeRefs = [],
   memoryRefs = [],
+  generationStyleContext = null,
+  visualBinding = null,
+  generationContext = null,
 }) {
   const f = collectedFields && typeof collectedFields === 'object' ? collectedFields : {};
   const subject = deriveSubject(norType, f);
   const bodySource = typeof modelBody === 'string' && modelBody.trim() ? 'model' : 'template';
-  const body = bodySource === 'model' ? modelBody.trim() : templateBody(norType, f);
+  const rawBody = bodySource === 'model' ? modelBody.trim() : templateBody(norType, f);
+  const body = applyCertifiedWording(rawBody, bodySource, generationStyleContext);
   const today = new Date().toISOString().slice(0, 10);
 
   const fieldProvenance = {
@@ -81,6 +108,45 @@ export function assembleNorDraft({
     recipient: recipient.source,
   };
   for (const k of Object.keys(f)) if (k !== 'type') fieldProvenance[k] = 'human_answer';
+
+  const certifiedRuleIds = generationStyleContext && Array.isArray(generationStyleContext.certifiedRuleIds)
+    ? generationStyleContext.certifiedRuleIds : [];
+  // Phase 6 — when a certified wording rule bound the body, record it (refs
+  // only — never the rule text) alongside the deterministic bodySource.
+  if (certifiedRuleIds.length) {
+    fieldProvenance.body = `${bodySource}+certified_style_rule`;
+    fieldProvenance.certifiedStyleRuleIds = Object.freeze([...certifiedRuleIds]);
+  }
+
+  const genMeta = generationContext && typeof generationContext === 'object'
+    ? Object.freeze({
+      mode: generationContext.mode || null,
+      gate: generationContext.gate || null,
+      status: generationContext.status || null,
+      blocked: generationContext.blocked === true,
+      certification: (generationContext.retrieval && generationContext.retrieval.certification) || null,
+      styleSource: certifiedRuleIds.length
+        ? 'certified_style_rule'
+        : (generationContext.status === 'generated_with_fallback' ? 'deterministic_fallback' : 'deterministic_default'),
+      visualSource: (visualBinding && visualBinding.source) || null,
+      fallbacks: Object.freeze((generationContext.fallbacks || []).map((x) => Object.freeze({ ...x }))),
+      conflicts: generationContext.conflicts || null,
+      snapshot: generationContext.snapshot || null,
+      reasons: Object.freeze([...(generationContext.reasons || [])]),
+    })
+    : null;
+
+  // Legacy mode (no generationContext) ⇒ metadata is byte-identical to
+  // Phase 1–5: the Phase 6 keys are added ONLY when present.
+  const metadata = {
+    generatedBy: genMeta ? 'sarpras-intelligence@phase6' : 'sarpras-intelligence@phase1',
+    bodySource,
+    fieldProvenance: Object.freeze(fieldProvenance),
+    knowledgeRefs: Object.freeze([...knowledgeRefs]),
+    memoryRefs: Object.freeze([...memoryRefs]),
+  };
+  if (genMeta) metadata.generationContext = genMeta;
+  if (visualBinding && typeof visualBinding === 'object') metadata.visualBinding = Object.freeze({ ...visualBinding });
 
   const draft = Object.freeze({
     documentType: 'nor',
@@ -95,13 +161,7 @@ export function assembleNorDraft({
       // structured, per-occasion facts pass straight through for the editor
       details: Object.freeze({ ...Object.fromEntries(Object.entries(f).filter(([k]) => k !== 'type' && k !== 'recipient')) }),
       attachments: Object.freeze([]),
-      metadata: Object.freeze({
-        generatedBy: 'sarpras-intelligence@phase1',
-        bodySource,
-        fieldProvenance: Object.freeze(fieldProvenance),
-        knowledgeRefs: Object.freeze([...knowledgeRefs]),
-        memoryRefs: Object.freeze([...memoryRefs]),
-      }),
+      metadata: Object.freeze(metadata),
     }),
     rendersVia: RENDERS_VIA,
     summary: `Draf NOR ${norType || ''} — ${subject}. Nomor & penerbitan menunggu peninjauan manusia.`.trim(),

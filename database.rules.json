@@ -110,6 +110,65 @@
       }
     },
 
+    // V2 Sarpras Intelligence — Phase 5.x.1 NOR & Memorandum Corpus
+    // Acquisition Foundation. STAGED: these two blocks ship in the repo
+    // but are NOT deployed with Phase 5.x.1 — they get their own
+    // `firebase deploy --only database` review in Phase 5.x.2, together
+    // with wiring intelligenceCorpus into functions/index.js. Mirrors
+    // intelligence_nor_registry byte-for-byte: the intelligenceCorpus
+    // Cloud Function (Admin SDK) is the ONLY writer (".write": false), and
+    // a user may .read ONLY their own record (ownerId === auth.uid), plus
+    // the admin/developer tier. Historical organizational documents may be
+    // sensitive — corpus access is controlled organizational data.
+    "intelligence_corpus_documents": {
+      ".write": "false",
+      ".indexOn": ["ownerId"],
+      "$documentId": {
+        ".read": "auth != null && (data.child('ownerId').val() === auth.uid || auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true)"
+      }
+    },
+    "intelligence_corpus_observations": {
+      ".write": "false",
+      ".indexOn": ["documentId", "ownerId"],
+      "$observationId": {
+        ".read": "auth != null && (data.child('ownerId').val() === auth.uid || auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true)"
+      }
+    },
+
+    // V2 Sarpras Intelligence — Phase 5.x.5 PBSI NOR Style Guide (the FIRST
+    // authority layer: explicit human-approved organizational writing
+    // rules). STAGED: this block ships in the repo but is NOT deployed with
+    // Phase 5.x.5 — it gets its own `firebase deploy --only database`
+    // review together with wiring intelligenceStyleGuide into
+    // functions/index.js. The intelligenceStyleGuide Cloud Function (Admin
+    // SDK) is the ONLY writer (".write": false). Unlike the corpus nodes
+    // this is ORGANIZATION-WIDE, not owner-scoped: the Style Guide is
+    // authoritative organizational data and every effective admin may read
+    // the whole guide. `.indexOn` supports the status / category /
+    // documentType queries.
+    "intelligence_style_guide": {
+      ".read": "auth != null && (auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true)",
+      ".write": "false",
+      ".indexOn": ["status", "category", "documentType"]
+    },
+
+    // V2 Sarpras Intelligence — Phase 5.x.6 PBSI Visual Template System
+    // (the VISUAL authority layer: explicit human-approved document-layout
+    // templates). STAGED: this block ships in the repo but is NOT deployed
+    // with Phase 5.x.6 — it gets its own `firebase deploy --only database`
+    // review together with wiring intelligenceVisualTemplate into
+    // functions/index.js. The intelligenceVisualTemplate Cloud Function
+    // (Admin SDK) is the ONLY writer (".write": false). Like
+    // intelligence_style_guide this is ORGANIZATION-WIDE, not owner-scoped:
+    // authoritative organizational data, every effective admin may read
+    // the whole system. `.indexOn` supports the status / documentType
+    // queries.
+    "intelligence_visual_templates": {
+      ".read": "auth != null && (auth.token.role === 'admin' || auth.token.role === 'developer' || auth.token.adminEquivalent === true)",
+      ".write": "false",
+      ".indexOn": ["status", "documentType"]
+    },
+
     "settings": {
       "operations": {
         ".read": "auth != null",

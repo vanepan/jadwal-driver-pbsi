@@ -260,6 +260,54 @@ const { intelligenceNorDraft } = require('../functions/src/intelligence/intellig
     check(!miss.ok && miss.error.code === cjs.DRAFT_STORE_ERRORS.NOT_FOUND, 'get an unknown draft → NOT_FOUND envelope, no crash');
   }
 
+  /* ── 3b. Phase 6C — op:'preview' — read + a freshness verdict, NEVER a write ── */
+  section("intelligenceNorDraft callable — op:'preview' (Phase 6C)");
+  {
+    const asAdmin = (uid, token) => ({ uid, token: token || { role: 'admin' } });
+
+    // auth / authz — same gate as every other op (§20, §P)
+    let threw = null;
+    try { await intelligenceNorDraft.run({ data: { op: 'preview', draftId: 'draft_cb' } }); } catch (e) { threw = e; }
+    check(threw && threw.code === 'unauthenticated', 'preview unauthenticated → HttpsError(unauthenticated)');
+    threw = null;
+    try { await intelligenceNorDraft.run({ data: { op: 'preview', draftId: 'draft_cb' }, auth: { uid: 'x', token: { role: 'driver' } } }); } catch (e) { threw = e; }
+    check(threw && threw.code === 'permission-denied', 'preview as a non-effective-admin → HttpsError(permission-denied)');
+
+    // cross-owner (§N) — no draft bytes returned
+    const bPrev = await intelligenceNorDraft.run({ data: { op: 'preview', draftId: 'draft_cb' }, auth: asAdmin('bob') });
+    check(!bPrev.ok && bPrev.error.code === cjs.DRAFT_STORE_ERRORS.FORBIDDEN, 'User B preview of User A’s draft → FORBIDDEN (envelope, not a throw)');
+    check(bPrev.data == null, 'a FORBIDDEN preview returns NO draft bytes (data is null)');
+
+    // unknown draft
+    const missP = await intelligenceNorDraft.run({ data: { op: 'preview', draftId: 'draft_ghost' }, auth: asAdmin('alice') });
+    check(!missP.ok && missP.error.code === cjs.DRAFT_STORE_ERRORS.NOT_FOUND, 'preview of an unknown draft → NOT_FOUND, no crash');
+
+    // owner, a legacy draft (no generationContext) → fallback verdict
+    const okP = await intelligenceNorDraft.run({ data: { op: 'preview', draftId: 'draft_cb' }, auth: asAdmin('alice') });
+    check(okP.ok && okP.data && okP.data.draft && okP.data.draft.draftId === 'draft_cb' && okP.data.draft.ownerId === 'alice', 'the owner gets their OWN draft back (server-authoritative retrieval)');
+    check(okP.data.previewVisual && okP.data.previewVisual.status === 'fallback', 'a legacy draft (no generation context) ⇒ previewVisual.status = "fallback"');
+    check(okP.data.draft.numbering.publishedNumber === null, 'the previewed draft still has publishedNumber null (preview allocates nothing — §13)');
+
+    // owner, a draft whose visual binding claims an approved template but carries
+    // no context to verify it against → fail closed (§32), never "applied"
+    await store.createDraft(callableDb, makeNorDraftRecord({
+      draftId: 'draft_prev_bind', conversationId: 'conv_pb', ownerId: 'alice',
+      jenis: 'Pengadaan', subject: 'x', recipient: 'Bendahara', recipientStatus: 'known', date: '2026-09-06',
+      facts: { item: 'kursi', quantity: 2, unit: 'unit', purpose: 'rapat', budget: 'Rp1' },
+      body: 'Dengan hormat.', now: '2026-09-06T00:00:00.000Z',
+      provenance: { visualBinding: { source: 'approved_template', templateId: 'vtpl_x', templateVersion: 1 } },
+    }));
+    const bindP = await intelligenceNorDraft.run({ data: { op: 'preview', draftId: 'draft_prev_bind' }, auth: asAdmin('alice') });
+    check(bindP.ok && bindP.data.previewVisual.status === 'invalid', 'an approved-template binding with no verifiable context ⇒ status "invalid" (fail closed, never silently "applied")');
+
+    // preview writes NOTHING — the stored records are byte-identical before/after
+    const before = JSON.stringify(callableDb._root.intelligence_nor_drafts);
+    await intelligenceNorDraft.run({ data: { op: 'preview', draftId: 'draft_cb' }, auth: asAdmin('alice') });
+    await intelligenceNorDraft.run({ data: { op: 'preview', draftId: 'draft_prev_bind' }, auth: asAdmin('alice') });
+    check(JSON.stringify(callableDb._root.intelligence_nor_drafts) === before, 'two preview calls mutated NOTHING under /intelligence_nor_drafts (§14, §29)');
+    check(!('intelligence_nor_registry' in callableDb._root) && !('intelligence_nor_number_counter' in callableDb._root), 'preview created no Registry / numbering node');
+  }
+
   /* ── 4. static — no publish / numbering / registry / knowledge mutation ── */
   section('static — the Phase 4 server files mutate NOTHING beyond the draft node');
   {
@@ -273,6 +321,13 @@ const { intelligenceNorDraft } = require('../functions/src/intelligence/intellig
     check(refCalls.length > 0 && refCalls.every((r) => /PATH/.test(r)), `norDraftStore only ever addresses the PATH ('intelligence_nor_drafts') node (${refCalls.length} db.ref calls)`);
     const callSrc = fs.readFileSync(path.join(ROOT, 'functions/src/intelligence/intelligenceNorDraft.js'), 'utf8');
     check(/METADATA ONLY/.test(callSrc), 'the log call is annotated METADATA ONLY');
+    // Phase 6C — the preview branch + its helper are READ-ONLY: no store
+    // write, no createDraft/updateDraft, no Registry / numbering call.
+    const previewBlock = (callSrc.match(/op === 'preview'[\s\S]*?\} else if \(op === 'create'\)/) || [''])[0]
+      + (callSrc.match(/async function assessPreviewVisual[\s\S]*?\n\}/) || [''])[0];
+    check(previewBlock.length > 0, 'the op:"preview" branch + assessPreviewVisual helper were located');
+    check(!/store\.(create|update)Draft|\.set\(|createDraft|updateDraft/.test(previewBlock), 'the preview path performs NO store write (getDraft + verifyGenerationContext only)');
+    check(/store\.getDraft/.test(previewBlock) && /verifyGenerationContext/.test(previewBlock), 'the preview path is a read (store.getDraft) + a freshness re-check (verifyGenerationContext) only');
     check(!/logger\.(info|log|warn)\([^)]*\brecord\b[^)]*\)/.test(callSrc) && !/logger\.(info|log|warn)\([^)]*\bbody\b[^)]*\)/.test(callSrc), 'no logger call passes the record body / draft body');
     check(!/sk-[A-Za-z0-9]|OPENAI_API_KEY|api_key|process\.env/i.test(blob), 'no key / secret / env-var reference in the Phase 4 server files');
     // every `publishedNumber:` / `publishedNumber =` in the Phase 4 server files assigns the literal null

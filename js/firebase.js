@@ -472,6 +472,92 @@ export async function callIntelligenceNorRegistry(payload) {
 }
 
 /**
+ * Sarpras Intelligence — Certified Retrieval → NOR Generation, V2 Phase 6 /
+ * 6A (functions/src/intelligence/intelligenceNorGeneration.js).
+ *
+ * The SERVER-AUTHORITATIVE boundary: the browser never composes a
+ * certification/gate/authority decision itself. This callable gathers the
+ * approved Style Guide + Visual Template records itself, runs the
+ * deterministic Phase 6 gate, and returns ONE
+ * `intelligence-generation-context@1`. The client controls ONLY
+ * `documentType` — it cannot claim certification, authority state, a
+ * rule/template id, or scope (all ignored server-side). Read-only; never
+ * generates NOR text, never touches a draft, the Registry, or numbering.
+ * Wired into src/intelligence/service/default-ports.js's `retrieval` port
+ * by js/intelligence-backend-wiring.js.
+ * @param {{op:'generationContext', documentType:string, categories?:string[]|'all', slots?:Array<{category:string,key:string}>, regionKinds?:string[]|'all', includeSupportingEvidence?:boolean}} payload
+ * @returns {Promise<{ok:boolean, data:*, error:{code:string,message:string}|null}>}
+ */
+export async function callIntelligenceNorGeneration(payload) {
+  if (!firebaseDb) initFirebaseApp();
+  if (!firebaseApp) throw new Error('Firebase belum siap.');
+  if (!firebaseFunctions) {
+    firebaseFunctions = getFunctions(firebaseApp, FUNCTIONS_REGION);
+  }
+  const fn = httpsCallable(firebaseFunctions, 'intelligenceNorGeneration');
+  const result = await fn(payload);
+  return result.data;
+}
+
+/**
+ * Sarpras Intelligence — PBSI NOR Style Guide, V2 Phase 5.x.5
+ * (functions/src/intelligence/intelligenceStyleGuide.js). Read + the
+ * human-gated authority lifecycle (propose → approve / reject / deprecate)
+ * for the FIRST authority layer. Sibling of callIntelligenceNorRegistry:
+ * the browser never writes /intelligence_style_guide directly (RTDB rule
+ * ".write": false). The callable authenticates + authorizes (the SAME
+ * effective-admin gate as every other Intelligence callable), derives the
+ * actor ONLY from request.auth.uid, and enforces optimistic concurrency +
+ * fail-closed conflict handling. Wired into
+ * src/intelligence/corpus/style-guide as the 'callable' StyleGuideBackend,
+ * consumed by the Human Curation Workspace (Phase 5.x.8).
+ *
+ * NOTE: STAGED — `intelligenceStyleGuide` is authored but NOT wired into
+ * functions/index.js and NOT deployed. Until it is, this throws
+ * 'functions/not-found', which the callable backend maps to a typed
+ * NO_BACKEND_CONFIGURED failure and the workspace renders "unavailable".
+ * @param {{op:'list'|'get'|'proposeFromMemory'|'approve'|'reject'|'deprecate'|'resolve'|'history'} & Record<string,*>} payload
+ * @returns {Promise<{ok:boolean, data:*, error:{code:string,message:string}|null}>}
+ */
+export async function callIntelligenceStyleGuide(payload) {
+  if (!firebaseDb) initFirebaseApp();
+  if (!firebaseApp) throw new Error('Firebase belum siap.');
+  if (!firebaseFunctions) {
+    firebaseFunctions = getFunctions(firebaseApp, FUNCTIONS_REGION);
+  }
+  const fn = httpsCallable(firebaseFunctions, 'intelligenceStyleGuide');
+  const result = await fn(payload);
+  return result.data;
+}
+
+/**
+ * Sarpras Intelligence — PBSI Visual Template System, V2 Phase 5.x.6
+ * (functions/src/intelligence/intelligenceVisualTemplate.js). The VISUAL
+ * authority layer, sibling of the Style Guide callable — same architecture,
+ * same effective-admin gate, same server-owned actor / authority metadata,
+ * same fail-closed conflict handling. Geometry is never fabricated. Wired
+ * into src/intelligence/corpus/visual-template as the 'callable'
+ * VisualTemplateBackend, consumed by the Human Curation Workspace
+ * (Phase 5.x.8).
+ *
+ * NOTE: STAGED — `intelligenceVisualTemplate` is authored but NOT wired
+ * into functions/index.js and NOT deployed. Until it is, this throws
+ * 'functions/not-found' → a typed NO_BACKEND_CONFIGURED failure.
+ * @param {{op:'list'|'get'|'proposeFromEvidence'|'approve'|'reject'|'deprecate'|'resolve'|'history'} & Record<string,*>} payload
+ * @returns {Promise<{ok:boolean, data:*, error:{code:string,message:string}|null}>}
+ */
+export async function callIntelligenceVisualTemplate(payload) {
+  if (!firebaseDb) initFirebaseApp();
+  if (!firebaseApp) throw new Error('Firebase belum siap.');
+  if (!firebaseFunctions) {
+    firebaseFunctions = getFunctions(firebaseApp, FUNCTIONS_REGION);
+  }
+  const fn = httpsCallable(firebaseFunctions, 'intelligenceVisualTemplate');
+  const result = await fn(payload);
+  return result.data;
+}
+
+/**
  * Register a Web Push subscription for this device (v1.11.3).
  * Server-only write path into /push_subscriptions — the client never
  * writes that node directly. The server derives userId from the verified

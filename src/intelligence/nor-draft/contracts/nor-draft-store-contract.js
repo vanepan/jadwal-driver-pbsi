@@ -26,6 +26,12 @@ export const DRAFT_STORE_ERRORS = Object.freeze({
   INVALID_RECORD: 'INVALID_RECORD',
   VERSION_CONFLICT: 'VERSION_CONFLICT',
   NOT_IMPLEMENTED: 'NOT_IMPLEMENTED',
+  // Phase 6A — the server-side generation-context cross-check
+  // (functions/src/intelligence/generationContextVerifier.js) rejects a
+  // `create` whose provenance.generationContext does not verify against the
+  // canonical Style Guide / Visual Template records with one of these.
+  INVALID_GENERATION_CONTEXT: 'INVALID_GENERATION_CONTEXT',
+  STALE_GENERATION_CONTEXT: 'STALE_GENERATION_CONTEXT',
 });
 
 export function draftSuccess(data) {

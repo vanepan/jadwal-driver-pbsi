@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sarpras Intelligence — Human Curation Workspace harness</title>
+<!--
+  Offline, isolated harness for scripts/intelligence-curation-ui-check.mjs.
+  It loads the REAL view (js/intelligence-curation-console.js) but:
+    • redirects js/auth.js + js/intelligence-backend-wiring.js (which pull
+      in js/firebase.js and its https:// SDK imports) to tiny data: stubs,
+      so nothing network-bound loads;
+    • builds the REAL PURE controller
+      (src/intelligence/console/curation-workspace-controller.js) over the
+      REAL Style Guide + Visual Template MEMORY backends, seeded with a few
+      proposals (incl. a conflict pair and an UNKNOWN-geometry template),
+      and injects it into mountIntelligenceCurationConsole(host,{controller}).
+
+  No Firebase, no OpenAI, no RTDB — every store call is the in-memory
+  lifecycle. The whole flow is deterministic.
+-->
+<script type="importmap">
+{
+  "imports": {
+    "/js/auth.js": "data:text/javascript,export function getCurrentUser(){return {username:'evan',role:'admin'};}",
+    "/js/intelligence-backend-wiring.js": "data:text/javascript,export async function createWiredIntelligenceCurationController(){throw new Error('harness: inject a controller');}"
+  }
+}
+</script>
+<style>
+  html,body{margin:0;background:#fff}
+  #host{padding:0}
+</style>
+</head>
+<body>
+<div id="host"></div>
+<script type="module">
+  import { mountIntelligenceCurationConsole } from '/js/intelligence-curation-console.js';
+  import { createCurationWorkspaceController } from '/src/intelligence/console/curation-workspace-controller.js';
+
+  import * as sg from '/src/intelligence/corpus/style-guide/style-guide-store.js';
+  import * as vt from '/src/intelligence/corpus/visual-template/visual-template-store.js';
+  import * as vtc from '/src/intelligence/corpus/visual-template/contracts/visual-template-contract.js';
+
+  const AT = '2026-09-04T00:00:00.000Z';
+
+  const styleMem = (over = {}) => ({
+    memoryId: over.memoryId || `mem_${over.value || 'x'}`,
+    category: over.category || 'recipient_convention',
+    key: over.key || 'recipient_label',
+    value: over.value || 'Yth.',
+    normalizedValue: (over.value || 'Yth.').toLowerCase(),
+    documentType: over.documentType || 'NOR',
+    temporalStatus: over.temporalStatus || 'current_evidence',
+    conventionEra: over.conventionEra || 'current',
+    confidence: over.confidence == null ? 0.9 : over.confidence,
+    sourceObservationIds: over.sourceObservationIds || ['obs_1', 'obs_2'],
+    sourceDocumentIds: over.sourceDocumentIds || ['corpus_a', 'corpus_b', 'corpus_c'],
+    evidence: {
+      occurrenceCount: over.occ == null ? 7 : over.occ,
+      documentCount: over.docs == null ? 3 : over.docs,
+      documentTypeDistribution: over.dist || { NOR: 3 },
+      oldestSourceDate: '2026-01-01', latestSourceDate: '2026-03-01',
+      recentDocumentCount: 3, historicalDocumentCount: 0, conflictingDocumentCount: 0,
+      approvedRulePresent: false, approvedRuleMatches: false,
+    },
+  });
+
+  const patUnknown = () => ({
+    patternId: 'pat_unknown',
+    documentType: vtc.VISUAL_TEMPLATE_DOCUMENT_TYPE.NOR,
+    variant: 'header-block-a',
+    sourceDocumentIds: ['corpus_v1', 'corpus_v2'],
+    sourceObservationIds: ['vobs_1', 'vobs_2'],
+    pageModel: vtc.makeTemplatePageModel({}),
+    regions: [vtc.makeTemplateRegion({ kind: 'header', sourceObservationIds: ['vobs_1'], sourceDocumentIds: ['corpus_v1'] })],
+    typography: vtc.makeTemplateTypography({}),
+    spacing: vtc.makeTemplateSpacing({}),
+    structuralRules: vtc.makeTemplateStructuralRules({}),
+    evidence: { documentCount: 2, observationCount: 2, pageCount: 2, regionKinds: ['header'], coordinateSpaces: [], geometryKnown: false },
+    temporalEvidence: { temporalStatus: 'current_evidence', conventionEra: 'current', oldestSourceDate: '2026-01-01', latestSourceDate: '2026-03-01', recentDocumentCount: 2, historicalDocumentCount: 0, transitionalDocumentCount: 0, undatedDocumentCount: 0 },
+    confidence: 0.7,
+  });
+  const patKnown = () => ({
+    ...patUnknown(),
+    patternId: 'pat_known', variant: 'header-block-b',
+    pageModel: vtc.makeTemplatePageModel({ width: 595.32, height: 841.92, coordinateSpace: 'pdf_points', pageNumber: 1 }),
+    evidence: { documentCount: 2, observationCount: 2, pageCount: 2, regionKinds: ['header'], coordinateSpaces: ['pdf_points'], geometryKnown: true },
+  });
+
+  function seed() {
+    sg.resetStyleGuideStore(); sg.resetMemoryStyleGuideBackend();
+    sg.registerStyleGuideBackend(sg.memoryStyleGuideBackend);
+    sg.setActiveStyleGuideBackend(sg.MEMORY_STYLE_GUIDE_BACKEND_ID);
+    vt.resetVisualTemplateStore(); vt.resetMemoryVisualTemplateBackend();
+    vt.registerVisualTemplateBackend(vt.memoryVisualTemplateBackend);
+    vt.setActiveVisualTemplateBackend(vt.MEMORY_VISUAL_TEMPLATE_BACKEND_ID);
+
+    sg.proposeStyleRuleFromMemory({ memory: styleMem({ value: 'Yth.', memoryId: 'm_yth', occ: 7, docs: 3 }), actorId: 'evan', now: AT });
+    sg.proposeStyleRuleFromMemory({ memory: styleMem({ value: 'Kepada Yth.', memoryId: 'm_kep', occ: 4, docs: 2 }), actorId: 'evan', now: AT });
+    const cp = sg.proposeStyleRuleFromMemory({ memory: styleMem({ category: 'closing_pattern', key: 'closing', value: 'Hormat kami', memoryId: 'm_close' }), actorId: 'evan', now: AT }).data;
+    sg.approveStyleRule(cp.ruleId, { actorId: 'evan', rationale: 'dipakai konsisten pada NOR', at: AT });
+
+    vt.proposeVisualTemplateFromEvidence({ pattern: patUnknown(), actorId: 'evan', now: AT });
+    vt.proposeVisualTemplateFromEvidence({ pattern: patKnown(), actorId: 'evan', now: AT });
+  }
+
+  // ── count store calls so the check can prove mount does ZERO mutations ──
+  const calls = { list: 0, get: 0, approve: 0, reject: 0, deprecate: 0, history: 0 };
+  const wrap = (obj, fns) => {
+    const out = {};
+    for (const f of fns) out[f] = (...a) => { calls[f] += 1; return obj[f](...a); };
+    return out;
+  };
+  const styleFacade = wrap({
+    list: (x) => sg.listStyleRules(x), get: (x) => sg.getStyleRule(x),
+    approve: (i, c) => sg.approveStyleRule(i, c), reject: (i, c) => sg.rejectStyleRule(i, c),
+    deprecate: (i, c) => sg.deprecateStyleRule(i, c), history: (i) => sg.getStyleRuleHistory(i),
+  }, ['list', 'get', 'approve', 'reject', 'deprecate', 'history']);
+  const visualFacade = wrap({
+    list: (x) => vt.listVisualTemplates(x), get: (x) => vt.getVisualTemplate(x),
+    approve: (i, c) => vt.approveVisualTemplate(i, c), reject: (i, c) => vt.rejectVisualTemplate(i, c),
+    deprecate: (i, c) => vt.deprecateVisualTemplate(i, c), history: (i) => vt.getVisualTemplateHistoryChain(i),
+  }, ['list', 'get', 'approve', 'reject', 'deprecate', 'history']);
+
+  seed();
+  const controller = createCurationWorkspaceController({
+    styleGuide: styleFacade, visualTemplate: visualFacade, actor: { userId: 'evan', role: 'admin' },
+  });
+
+  window.__cur = {
+    controller,
+    calls,
+    getState: () => controller.getState(),
+    styleRules: () => sg.listStyleRules().data.map((r) => ({ id: r.ruleId, status: r.status, value: r.value })),
+    visualTemplates: () => vt.listVisualTemplates().data.map((t) => ({ id: t.templateId, status: t.status, variant: t.variant })),
+    reset: () => { for (const k of Object.keys(calls)) calls[k] = 0; seed(); controller.clearSelection(); controller.resetFilters(); controller.setTab('overview'); },
+  };
+
+  await mountIntelligenceCurationConsole(document.getElementById('host'), { controller });
+  window.__curReady = true;
+</script>
+</body>
+</html>

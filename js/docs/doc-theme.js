@@ -103,8 +103,23 @@ export function tableLayout() {
  *  Extracted from templates/nor.js's own inline `{ image: PBSI_LOGO_DATA_URI,
  *  width: 56, ... }` so every template (not just the Petty Cash NOR) can
  *  put a real organizational logo on a generated document, instead of each
- *  one either inventing its own copy or having none at all. */
-export function orgLogo({ width = OP.logo.width, margin = OP.logo.margin } = {}) {
+ *  one either inventing its own copy or having none at all.
+ *
+ *  Phase 6B, additive: `position: {x, y}` (POINTS, top-left origin — the
+ *  ONE convention src/intelligence/generation/visual-rendering-model.js
+ *  already converts an approved Visual Template's LOGO region into) places
+ *  the SAME trusted, locally-embedded logo asset at an explicit pdfmake
+ *  `absolutePosition` instead of the normal centered flow position. It
+ *  NEVER loads a different/external image (§20). Omitted (every existing
+ *  caller) ⇒ byte-identical to before this phase. NOTE: an
+ *  absolutely-positioned node is removed from the document's normal flow —
+ *  content after it shifts up to fill the gap; this is real, expected
+ *  pdfmake behaviour when a caller opts into `position`, not a bug. */
+export function orgLogo({ width = OP.logo.width, margin = OP.logo.margin, position = null } = {}) {
+  if (position && typeof position.x === 'number' && typeof position.y === 'number'
+    && Number.isFinite(position.x) && Number.isFinite(position.y)) {
+    return { image: PBSI_LOGO_DATA_URI, width, absolutePosition: { x: position.x, y: position.y } };
+  }
   return { image: PBSI_LOGO_DATA_URI, width, alignment: 'center', margin };
 }
 

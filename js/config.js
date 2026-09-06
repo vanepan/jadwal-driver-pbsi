@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.30.13.1';
-export const RELEASE_NAME = 'V1 Hotfix — NOR Signature Safe Area';
+export const APP_VERSION = '1.30.14.0';
+export const RELEASE_NAME = 'V2 Sarpras Intelligence — Phases 5.x–6C (dormant, flag OFF)';
 
 /* ============================================================
    APP_ENV — the AUTHORITATIVE runtime environment (v1.20.3 RC1).

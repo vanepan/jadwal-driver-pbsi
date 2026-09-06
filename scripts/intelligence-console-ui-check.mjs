@@ -60,8 +60,13 @@ const FORBIDDEN_ACTION = /terbitkan|publish|approve|setuj|\bnomor\b|\bnumber\b|a
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function walkToReview(page) {
+async function walkToReview(page, generationScenario) {
   await page.evaluate('window.__harness.reset()');
+  // reset() clears any scenario back to null — (re)apply it AFTER reset,
+  // before the conversation walk produces the requires_review turn.
+  if (generationScenario) {
+    await page.evaluate((s) => window.__harness.setGenerationScenario(s), generationScenario);
+  }
   await sleep(20);
   await page.evaluate(() => {
     const i = document.querySelector('.sic-console__input');
@@ -179,8 +184,10 @@ async function main() {
       rv.buttons.some((t) => /^setujui$/i.test(t)), rv.buttons);
     check(`${w}: NO "Terbitkan" / numbering / allocate control while in_review (publish is a later, separate stage)`,
       !rv.buttons.some((t) => /terbitkan|publish|\bnomor\b|\bnumber\b|alokasi|allocate|reserve/i.test(t)), rv.buttons);
-    check(`${w}: only expected controls (Simpan Draf / Batalkan / Setujui / Mulai permintaan baru / the hidden chat Kirim)`,
-      rv.buttons.every((t) => /simpan draf|batalkan|^setujui$|mulai permintaan baru|memproses|^kirim$/i.test(t)), rv.buttons);
+    check(`${w}: only expected controls (Pratinjau PDF / Simpan Draf / Batalkan / Setujui / Mulai permintaan baru / the hidden chat Kirim)`,
+      rv.buttons.every((t) => /pratinjau pdf|menyiapkan|simpan draf|batalkan|^setujui$|mulai permintaan baru|memproses|^kirim$/i.test(t)), rv.buttons);
+    check(`${w}: the "Pratinjau PDF" (read-only preview) control is present in the review workspace`,
+      rv.buttons.some((t) => /pratinjau pdf/i.test(t)), rv.buttons);
     check(`${w}: the chat intake form is hidden while the workspace shows`, rv.formHidden === true);
     check(`${w}: no horizontal page overflow (review)`, rv.docScroll <= rv.inner + 1, { docScroll: rv.docScroll, inner: rv.inner });
     check(`${w}: the workspace is not clipped horizontally + inside the viewport`,
@@ -291,6 +298,135 @@ async function main() {
   }));
   check('after reload: the published NOR comes back read-only, via service.getNorRecord',
     afterReload.lifecycle === 'published' && !!afterReload.norNumber && /diterbitkan/i.test(afterReload.pill) && afterReload.getNorRecordCalls >= 1, afterReload);
+
+  section('Phase 6A — generation provenance panel (certified / fallback / blocked)');
+  await walkToReview(page, 'certified');
+  const certifiedUi = await page.evaluate(() => {
+    const ws = document.querySelector('[data-ws]');
+    return {
+      hasBlockedBanner: !!ws.querySelector('.sic-ws__blocked'),
+      genSection: ws.querySelector('.sic-ws__section--gen') ? ws.querySelector('.sic-ws__section--gen').textContent : '',
+      fieldsPresent: ws.querySelectorAll('[data-wsfield]').length > 0,
+    };
+  });
+  check('certified: NO blocked banner is shown', !certifiedUi.hasBlockedBanner, certifiedUi);
+  check('certified: the generation section names the PBSI Style Guide', /PBSI Style Guide/.test(certifiedUi.genSection), certifiedUi.genSection);
+  check('certified: the generation section names the PBSI Visual Template', /PBSI Visual Template/.test(certifiedUi.genSection), certifiedUi.genSection);
+  check('certified: the draft fields still render normally', certifiedUi.fieldsPresent, certifiedUi);
+
+  await walkToReview(page, 'fallback');
+  const fallbackUi = await page.evaluate(() => {
+    const ws = document.querySelector('[data-ws]');
+    return {
+      hasBlockedBanner: !!ws.querySelector('.sic-ws__blocked'),
+      hasFallbackWarn: !!ws.querySelector('.sic-ws__warn--gen'),
+      warnText: ws.querySelector('.sic-ws__warn--gen') ? ws.querySelector('.sic-ws__warn--gen').textContent : '',
+      genSection: ws.querySelector('.sic-ws__section--gen') ? ws.querySelector('.sic-ws__section--gen').textContent : '',
+    };
+  });
+  check('fallback: NO blocked banner is shown (generation is still ALLOWED)', !fallbackUi.hasBlockedBanner, fallbackUi);
+  check('fallback: a visible fallback warning is shown', fallbackUi.hasFallbackWarn && /fallback/i.test(fallbackUi.warnText), fallbackUi);
+  check('fallback: the panel does NOT claim the PBSI Style Guide for the fallen-back slot', !/PBSI Style Guide/.test(fallbackUi.genSection), fallbackUi.genSection);
+
+  await walkToReview(page, 'blocked');
+  const blockedUi = await page.evaluate(() => {
+    const ws = document.querySelector('[data-ws]');
+    const banner = ws.querySelector('.sic-ws__blocked');
+    return {
+      hasBanner: !!banner,
+      bannerIsFirst: ws.firstElementChild === banner,
+      bannerText: banner ? banner.textContent : '',
+      hasNormalGenSection: !!ws.querySelector('.sic-ws__section--gen'),
+      fieldsStillPresent: ws.querySelectorAll('[data-wsfield]').length > 0,
+      pillText: ws.querySelector('.sic-ws__pill') ? ws.querySelector('.sic-ws__pill').textContent : '',
+    };
+  });
+  check('blocked: the UNMISSABLE blocked banner is shown', blockedUi.hasBanner, blockedUi);
+  check('blocked: the banner is the FIRST thing in the workspace (§22 — not a tiny warning under a normal draft)', blockedUi.bannerIsFirst, blockedUi);
+  check('blocked: the banner names "Diblokir" / blocked, never looks like an ordinary success', /diblokir/i.test(blockedUi.bannerText), blockedUi.bannerText);
+  check('blocked: the normal certified/fallback generation section is NOT also shown', !blockedUi.hasNormalGenSection, blockedUi);
+  check('blocked: the human can still review/complete the draft fields below the banner', blockedUi.fieldsStillPresent, blockedUi);
+
+  section('Phase 6C — draft PDF preview control (review workspace)');
+  await walkToReview(page);
+  const previewBase = await page.evaluate(() => {
+    const ws = document.querySelector('[data-ws]');
+    const btn = ws.querySelector('[data-ws-preview]');
+    return {
+      present: !!btn,
+      label: btn ? btn.textContent.trim() : '',
+      enabledWhenClean: btn ? !btn.disabled : false,
+      forbiddenControls: /terbitkan|publish|approve|setuj|\bnomor\b|allocate/i.test(btn ? btn.textContent : ''),
+    };
+  });
+  check('a "Pratinjau PDF" control is present in the review workspace', previewBase.present && /pratinjau/i.test(previewBase.label), previewBase);
+  check('it is enabled while the draft is clean (no unsaved edits)', previewBase.enabledWhenClean, previewBase);
+  check('the preview control carries no publish / approve / numbering wording', !previewBase.forbiddenControls, previewBase);
+
+  // click → applied-template scenario
+  await page.evaluate(() => document.querySelector('[data-ws-preview]').click());
+  await page.waitForFunction('window.__harness.openDocCalls.length === 1', { timeout: 4000 });
+  const applied = await page.evaluate(() => {
+    const ws = document.querySelector('[data-ws]');
+    const ps = ws.querySelector('[data-ws-previewstate]');
+    return {
+      previewCalls: window.__harness.previewCalls.length,
+      openDocCalls: window.__harness.openDocCalls.length,
+      calledWithDraftId: (window.__harness.previewCalls[0] || {}).draftId,
+      composerIsPreview: !!(window.__harness.openDocCalls[0] || {}).composerData && window.__harness.openDocCalls[0].composerData.isPreview === true,
+      composerHasNoNumber: !((window.__harness.openDocCalls[0] || {}).composerData.sections || []).some((s) => s.field === 'norNumber'),
+      stateText: ps ? ps.textContent : '',
+      stateClass: ps ? ps.className : '',
+      pill: ws.querySelector('.sic-ws__pill') ? ws.querySelector('.sic-ws__pill').textContent : '',
+      approveCalls: window.__harness.approveNorCalls.length,
+      publishCalls: window.__harness.publishNorCalls.length,
+      updateCalls: window.__harness.updateDraftCalls.length,
+    };
+  });
+  check('one preview request went to the server-authoritative builder with the draftId', applied.previewCalls === 1 && !!applied.calledWithDraftId, applied);
+  check('exactly one document was opened in the in-app viewer (no auto-download path)', applied.openDocCalls === 1, applied);
+  check('the composer data is flagged isPreview and carries NO NOR number (§12, §13)', applied.composerIsPreview && applied.composerHasNoNumber, applied);
+  check('an APPLIED verdict discloses "PBSI Visual Template … diterapkan" (§11, §31)', /PBSI Visual Template/.test(applied.stateText) && /diterapkan/i.test(applied.stateText) && /--ok/.test(applied.stateClass), applied);
+  check('preview did NOT approve / publish / mutate the draft (§14, §29)', applied.approveCalls === 0 && applied.publishCalls === 0 && applied.updateCalls === 0 && /menunggu review/i.test(applied.pill), applied);
+
+  // unsaved edits → preview disabled (§17)
+  await page.evaluate(() => {
+    const t = document.querySelector('[data-wsfield="subject"]');
+    t.value = 'Perihal diubah tanpa disimpan'; t.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await sleep(30);
+  const dirty = await page.evaluate(() => {
+    const ws = document.querySelector('[data-ws]');
+    const btn = ws.querySelector('[data-ws-preview]');
+    const ps = ws.querySelector('[data-ws-previewstate]');
+    return { disabled: btn.disabled, hint: ps && !ps.hidden ? ps.textContent : '' };
+  });
+  check('with unsaved edits the preview control is DISABLED and hints "Simpan draf…" (§17 — never mixes saved + unsaved)',
+    dirty.disabled && /simpan draf/i.test(dirty.hint), dirty);
+
+  // stale-context scenario → falls back visibly, never silently applies an obsolete template (§32)
+  await walkToReview(page);
+  await page.evaluate(() => window.__harness.setPreviewScenario('stale'));
+  await page.evaluate(() => document.querySelector('[data-ws-preview]').click());
+  await page.waitForFunction('window.__harness.openDocCalls.length === 1', { timeout: 4000 });
+  const stale = await page.evaluate(() => {
+    const ps = document.querySelector('[data-ws-previewstate]');
+    return { text: ps.textContent, cls: ps.className, rvmNull: window.__harness.openDocCalls[0].composerData.renderingVisualModel === null };
+  });
+  check('a STALE verdict is surfaced as a warning ("usang") and renders WITHOUT the template geometry (§32)',
+    /usang/i.test(stale.text) && /--warn/.test(stale.cls) && stale.rvmNull, stale);
+
+  // render-failure scenario → explicit error, no silent fallback (§18)
+  await walkToReview(page);
+  await page.evaluate(() => window.__harness.setPreviewScenario('error'));
+  await page.evaluate(() => document.querySelector('[data-ws-preview]').click());
+  await page.waitForFunction("/render failed/i.test((document.querySelector('[data-ws-previewstate]')||{}).textContent||'')", { timeout: 4000 });
+  const errUi = await page.evaluate(() => {
+    const ps = document.querySelector('[data-ws-previewstate]');
+    return { text: ps.textContent, cls: ps.className, openDocCalls: window.__harness.openDocCalls.length };
+  });
+  check('a render failure shows the SPECIFIC server error and opens no document (§18 — no silent fallback / stale PDF)',
+    /render failed/i.test(errUi.text) && /--error/.test(errUi.cls) && errUi.openDocCalls === 0, errUi);
 
   section('Post-run safety re-check');
   check('still 0 requests to blocked hosts after the full run', offNetwork.length === 0, offNetwork);

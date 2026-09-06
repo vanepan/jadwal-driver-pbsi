@@ -70,6 +70,16 @@ import { norIdFromConversation } from '../nor-registry/nor-registry-record.js';
 
 const TASK_TO_INTENT = Object.freeze({ [REQUEST_TASK.NOR_GENERATE]: 'create_nor' });
 
+/** Phase 6 — map the V2 intake domainType onto a Phase 5.x.7 retrieval
+ *  documentType. The V2 conversational intake is always NOR-family; an
+ *  unrecognised domain resolves to UNKNOWN, which the gate treats as
+ *  `incomplete` and BLOCKS (fail closed — §16). NEVER silently retrieves a
+ *  different document type. */
+const DOMAIN_TO_RETRIEVAL_DOCUMENT_TYPE = Object.freeze({ nor: 'NOR' });
+function retrievalDocumentTypeFor(domainType) {
+  return DOMAIN_TO_RETRIEVAL_DOCUMENT_TYPE[String(domainType || '').toLowerCase()] || 'UNKNOWN';
+}
+
 /** Default config port — the Phase 0 config module. */
 async function defaultConfig() {
   const m = await import('../config/intelligence-config.js');
@@ -136,6 +146,16 @@ export function createIntelligenceService(deps) {
 
   const cfg = config || null;
   const isEnabled = () => (cfg ? !!cfg.isEnabled() : false);
+  /* Phase 6 — the NOR generator runs in `intelligence` mode (consumes a
+     certified retrieval snapshot + the Phase 6 gate) ONLY when the master
+     flag is ON *and* config.generation.certifiedRetrieval is explicitly
+     true. Either OFF ⇒ `legacy` mode ⇒ the draft is assembled exactly as
+     in Phase 1–5. Never implicitly detected (§4, §30, §31). */
+  const isCertifiedGenerationOn = () => {
+    if (!isEnabled()) return false;
+    const c = cfg && cfg.get ? cfg.get() : {};
+    return !!(c && c.generation && c.generation.certifiedRetrieval === true);
+  };
   const limits = () => {
     const c = cfg && cfg.get ? cfg.get() : {};
     return {
@@ -195,7 +215,7 @@ export function createIntelligenceService(deps) {
   }
 
   /* ── enabled-mode: ask the model for the NOR body prose ──────────────── */
-  async function modelBodyFor({ requestId, norType, facts, recipient, knowledgeItems }) {
+  async function modelBodyFor({ requestId, norType, facts, recipient, knowledgeItems, styleContext }) {
     if (!isEnabled() || !provider || typeof provider.complete !== 'function') {
       return { body: null, modelInfo: null, error: { code: 'DISABLED', message: 'deterministic mode' } };
     }
@@ -205,16 +225,27 @@ export function createIntelligenceService(deps) {
       .join('\n')
       .slice(0, Math.floor(l.maxPromptChars / 2));
     const factLines = Object.entries(facts || {}).filter(([k]) => k !== 'type').map(([k, v]) => `- ${k}: ${v}`).join('\n');
+    // Phase 6 (§11) — the CERTIFIED Style Guide rules enter the model ONLY
+    // as BOUNDED CONTEXT. The model never decides authority; it drafts prose
+    // constrained by rules the human already approved. Refs are not shown.
+    const styleLines = styleContext && styleContext.slots
+      ? Object.values(styleContext.slots)
+        .filter((sl) => sl && sl.source === 'certified_style_rule' && sl.value)
+        .map((sl) => `- ${sl.slot}: ${sl.value}`)
+        .join('\n')
+      : '';
     const system = [
       'Anda membantu menyusun BADAN SURAT Nota Dinas (NOR) organisasi PBSI dalam Bahasa Indonesia yang formal dan ringkas.',
       'Gunakan HANYA fakta yang diberikan. JANGAN mengarang nomor NOR, tanggal, penerima, atau nilai anggaran yang tidak diberikan.',
+      styleLines ? 'Patuhi aturan gaya organisasi yang telah DISETUJUI berikut sebagai batasan, jangan mengubahnya.' : '',
       'Keluarkan hanya teks badan surat, tanpa kop, tanpa nomor, tanpa tanda tangan.',
-    ].join(' ');
+    ].filter(Boolean).join(' ');
     const user = [
       `Jenis NOR: ${norType || '(umum)'}`,
       `Penerima (untuk konteks saja, jangan diubah): ${recipient && recipient.value ? recipient.value : '(belum ditentukan)'}`,
       'Fakta:',
       factLines || '(tidak ada)',
+      styleLines ? `\nAturan gaya organisasi yang disetujui (batasan):\n${styleLines}` : '',
       knowledgeSummary ? `\nPola/istilah dari pengetahuan yang disetujui:\n${knowledgeSummary}` : '',
     ].join('\n');
 
@@ -269,7 +300,30 @@ export function createIntelligenceService(deps) {
       }
     } catch { numberingSuggestion = null; }
 
-    const mb = await modelBodyFor({ requestId, norType, facts, recipient, knowledgeItems });
+    /* ── Phase 6 — the ONE controlled Certified Retrieval → NOR Generation
+       boundary. `legacy` mode (default, and the only mode while the flag is
+       OFF) skips this entirely. In `intelligence` mode the generator
+       consumes ONE certified retrieval snapshot via the injected retrieval
+       port (no duplicate retrieval — §27) and the deterministic Phase 6
+       gate. A BLOCKED gate (conflict / unavailable / missing approved
+       visual template) still returns a plain deterministic draft with the
+       blocking disclosure attached — NEVER an "apparently normal" NOR that
+       secretly used one side of a conflict (§9). ── */
+    let generationContext = null;
+    if (isCertifiedGenerationOn() && ports.retrieval && typeof ports.retrieval.buildGenerationContext === 'function') {
+      try {
+        generationContext = await ports.retrieval.buildGenerationContext({
+          documentType: retrievalDocumentTypeFor(domainType),
+          mode: 'intelligence',
+          at: clock(),
+        });
+      } catch { generationContext = null; }
+    }
+    const genOk = !!generationContext && generationContext.blocked !== true;
+    const styleCtx = genOk ? generationContext.style : null;
+    const visualBinding = genOk ? generationContext.visual : null;
+
+    const mb = await modelBodyFor({ requestId, norType, facts, recipient, knowledgeItems, styleContext: styleCtx });
 
     const { draft, numbering } = assembleNorDraft({
       norType,
@@ -279,12 +333,21 @@ export function createIntelligenceService(deps) {
       numberingSuggestion,
       knowledgeRefs,
       memoryRefs,
+      generationStyleContext: styleCtx,
+      visualBinding,
+      generationContext,
     });
 
     const provenance = provenanceFor(requestId, actor, sourceModule, mb.modelInfo);
-    const reason = 'Draf NOR memerlukan peninjauan dan persetujuan manusia sebelum diterbitkan. Nomor resmi ditetapkan oleh Registry, bukan AI.';
+    const reason = generationContext && generationContext.blocked
+      ? 'Draf NOR dibuat dengan tata bahasa & tata letak baku (bukan aturan organisasi bersertifikat) '
+        + 'karena konteks organisasi yang disetujui sedang tidak dapat digunakan. Tinjau peringatan di bawah sebelum melanjutkan.'
+      : 'Draf NOR memerlukan peninjauan dan persetujuan manusia sebelum diterbitkan. Nomor resmi ditetapkan oleh Registry, bukan AI.';
     const response = requiresReviewResponse({ requestId, draft, reason, blocking: true, provenance });
-    return { response, draft, numbering, knowledgeRefs, memoryRefs, provenance, modelError: mb.error && mb.error.code !== 'DISABLED' ? mb.error : null };
+    return {
+      response, draft, numbering, knowledgeRefs, memoryRefs, provenance, generationContext,
+      modelError: mb.error && mb.error.code !== 'DISABLED' ? mb.error : null,
+    };
   }
 
   /* ══ PUBLIC API ═════════════════════════════════════════════════════ */
@@ -493,6 +556,10 @@ export function createIntelligenceService(deps) {
       registryError: registered.registryError,
       numbering: built.numbering,
       modelError: built.modelError || null,
+      // Phase 6 — the controlled-boundary outcome for the console/UI (§36,
+      // §37). `null` in legacy mode. When `blocked`, the console must show a
+      // prominent WARNING, not ordinary metadata.
+      generationContext: built.generationContext || null,
       audit: turnAudit({ requestId, actorId: actor.userId, sourceModule, status: 'requires_review', questionCount: 0, hasDraft: true }),
     };
   }
@@ -535,6 +602,18 @@ export function createIntelligenceService(deps) {
           fieldProvenance: meta.fieldProvenance || {},
           knowledgeRefs: Array.isArray(meta.knowledgeRefs) ? [...meta.knowledgeRefs] : [],
           memoryRefs: Array.isArray(meta.memoryRefs) ? [...meta.memoryRefs] : [],
+          // Phase 6 — the controlled-boundary provenance (mode / gate /
+          // status / style+visual source / fallbacks / conflict refs /
+          // snapshot ids). Rides inside the existing free-form `provenance`
+          // bag: NO change to the Phase 4 NOR-draft record schema, its
+          // mandatory field list, or the deployed intelligenceNorDraft
+          // callable. Absent (undefined) in legacy mode. Compact refs only —
+          // no rule/template bodies (§18, §33). This persisted copy is
+          // ADVISORY: the server-authoritative context is produced by the
+          // STAGED intelligenceNorGeneration callable (see the Phase 6 doc,
+          // Known Limitations).
+          generationContext: meta.generationContext || null,
+          visualBinding: meta.visualBinding || null,
         },
         now,
       });

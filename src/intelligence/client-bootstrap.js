@@ -34,6 +34,8 @@
 import { useCallableIcBackend, getActiveIcBackendId } from './conversation/intelligence-conversation-store.js';
 import { useCallableNorDraftBackend, getActiveNorDraftBackendId } from './nor-draft/nor-draft-store.js';
 import { useCallableNorRegistryBackend, getActiveBackendId as getActiveNorRegistryBackendId } from './nor-registry/nor-registry.js';
+import { useCallableStyleGuideBackend, getActiveStyleGuideBackendId } from './corpus/style-guide/style-guide-store.js';
+import { useCallableVisualTemplateBackend, getActiveVisualTemplateBackendId } from './corpus/visual-template/visual-template-store.js';
 import { createOpenAiProvider, OPENAI_PROVIDER_ID } from './providers/openai-provider.js';
 import { registerProvider, setActiveProvider, getActiveProviderId, DEFAULT_PROVIDER_ID } from './provider-registry.js';
 import { isIntelligenceEnabled } from './config/intelligence-config.js';
@@ -52,6 +54,16 @@ import { applyIntelligenceFeatureFlag } from './config/feature-flag-sync.js';
  *   omitted ⇒ the NOR Registry keeps its inert `null` backend and a
  *   `requires_review` response simply carries no `norId` (no lifecycle,
  *   approve/publish unavailable).
+ * @param {(payload: {op:string} & Record<string,*>) => Promise<{ok:boolean,data:*,error:*}>} [args.callStyleGuide]
+ *   the server-owned PBSI NOR Style Guide callable (Phase 5.x.5), consumed by
+ *   the Human Curation Workspace (Phase 5.x.8). Optional — omitted ⇒ the Style
+ *   Guide store keeps its inert `null` backend and the workspace renders the
+ *   Style Guide domain as `unavailable` (NOT "zero proposals"). STAGED: the
+ *   callable is not in functions/index.js, so this is inert in production today.
+ * @param {(payload: {op:string} & Record<string,*>) => Promise<{ok:boolean,data:*,error:*}>} [args.callVisualTemplate]
+ *   the server-owned PBSI Visual Template callable (Phase 5.x.6), consumed by
+ *   the Human Curation Workspace. Same inert-when-absent contract as
+ *   `callStyleGuide`. STAGED.
  * @param {*} [args.featureFlags]  the already-fetched `/feature_flags` RTDB
  *   node; `/feature_flags/intelligence/enabled` is resolved FAIL-CLOSED and
  *   persisted into the config. Missing / malformed ⇒ OFF.
@@ -59,10 +71,11 @@ import { applyIntelligenceFeatureFlag } from './config/feature-flag-sync.js';
  *   featureFlags resolve+persist (test / advanced seam). Takes precedence
  *   over `featureFlags`. With neither, the current config flag is used.
  * @returns {{ ok:boolean, conversationBackend:string|null, norDraftBackend:string|null,
- *   norRegistryBackend:string|null, providerRegistered:boolean, activeProvider:string|null,
+ *   norRegistryBackend:string|null, styleGuideBackend:string|null, visualTemplateBackend:string|null,
+ *   providerRegistered:boolean, activeProvider:string|null,
  *   featureEnabled:boolean, error:string|null }}
  */
-export function bootstrapIntelligenceClient({ callConversation, callModel, callDraft, callRegistry, featureFlags, enabled } = {}) {
+export function bootstrapIntelligenceClient({ callConversation, callModel, callDraft, callRegistry, callStyleGuide, callVisualTemplate, featureFlags, enabled } = {}) {
   // Step 2 of the Phase 3A sequence — resolve + persist the flag BEFORE any
   // provider is selected. Precedence: an explicit resolved boolean wins;
   // otherwise resolve /feature_flags/intelligence/enabled fail-closed (a
@@ -82,6 +95,8 @@ export function bootstrapIntelligenceClient({ callConversation, callModel, callD
     conversationBackend: null,
     norDraftBackend: null,
     norRegistryBackend: null,
+    styleGuideBackend: null,
+    visualTemplateBackend: null,
     providerRegistered: false,
     activeProvider: null,
     featureEnabled,
@@ -111,6 +126,23 @@ export function bootstrapIntelligenceClient({ callConversation, callModel, callD
     if (typeof callRegistry === 'function') {
       useCallableNorRegistryBackend({ callRegistry });
       status.norRegistryBackend = getActiveNorRegistryBackendId();
+    }
+
+    // 1d. server-owned PBSI NOR Style Guide + Visual Template — RTDB via the
+    //     Phase 5.x.5 / 5.x.6 callables, consumed READ + the human-gated
+    //     authority lifecycle by the Human Curation Workspace (Phase 5.x.8).
+    //     Optional: with no port each store keeps its inert `null` backend and
+    //     the workspace renders that domain as `unavailable` (NOT "zero
+    //     proposals"). This step NEVER approves, rejects, deprecates or
+    //     supersedes anything — those are explicit HUMAN operations from the
+    //     workspace. STAGED: the callables are not in functions/index.js.
+    if (typeof callStyleGuide === 'function') {
+      useCallableStyleGuideBackend({ callStyleGuide });
+      status.styleGuideBackend = getActiveStyleGuideBackendId();
+    }
+    if (typeof callVisualTemplate === 'function') {
+      useCallableVisualTemplateBackend({ callVisualTemplate });
+      status.visualTemplateBackend = getActiveVisualTemplateBackendId();
     }
 
     // 2. OpenAI provider adapter — the callModel port never sees a key.

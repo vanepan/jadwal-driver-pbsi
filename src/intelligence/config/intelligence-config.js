@@ -52,6 +52,14 @@ export const DEFAULT_INTELLIGENCE_CONFIG = Object.freeze({
      *  the registry only ever SUGGESTS. */
     reservationEnabled: false,
   }),
+  /** Phase 6 — the controlled Certified Retrieval → NOR Generation boundary. */
+  generation: Object.freeze({
+    /** Opt-in to the `intelligence` generation mode (the generator consumes a
+     *  certified retrieval snapshot + the Phase 6 gate). FALSE by default:
+     *  even with `enabled` TRUE the generator stays in `legacy` mode until
+     *  this is explicitly turned on. It is NEVER implicitly detected. */
+    certifiedRetrieval: false,
+  }),
   /** Phase 1 — defensive bounds on a generation session (PART 13). */
   limits: Object.freeze({
     /** Hard cap on clarification turns before the service returns an error
@@ -79,6 +87,7 @@ function cloneConfig(cfg) {
     defaultModel: cfg.defaultModel,
     request: { timeoutMs: cfg.request.timeoutMs, maxOutputTokens: cfg.request.maxOutputTokens },
     numbering: { reservationEnabled: cfg.numbering.reservationEnabled === true },
+    generation: { certifiedRetrieval: cfg.generation.certifiedRetrieval === true },
     limits: { maxTurns: cfg.limits.maxTurns, maxPromptChars: cfg.limits.maxPromptChars },
     openai: { model: cfg.openai.model, determinism: cfg.openai.determinism },
   };
@@ -114,6 +123,9 @@ export function setIntelligenceConfig(partial = {}) {
   if (partial.numbering && typeof partial.numbering === 'object' && typeof partial.numbering.reservationEnabled === 'boolean') {
     next.numbering.reservationEnabled = partial.numbering.reservationEnabled;
   }
+  if (partial.generation && typeof partial.generation === 'object' && typeof partial.generation.certifiedRetrieval === 'boolean') {
+    next.generation.certifiedRetrieval = partial.generation.certifiedRetrieval;
+  }
   if (partial.limits && typeof partial.limits === 'object') {
     if (Number(partial.limits.maxTurns) > 0) next.limits.maxTurns = Math.floor(Number(partial.limits.maxTurns));
     if (Number(partial.limits.maxPromptChars) > 0) next.limits.maxPromptChars = Math.floor(Number(partial.limits.maxPromptChars));
@@ -136,4 +148,14 @@ export function resetIntelligenceConfig() {
 /** Whether the Sarpras Intelligence layer is switched on. Defaults false. */
 export function isIntelligenceEnabled(cfg = _active) {
   return !!cfg && cfg.enabled === true;
+}
+
+/**
+ * Phase 6 — whether the NOR generator runs in `intelligence` mode (consumes
+ * a certified retrieval snapshot + the Phase 6 gate). Requires BOTH the
+ * master flag AND the explicit opt-in; either OFF ⇒ `legacy` mode. Never
+ * implicitly detected.
+ */
+export function isCertifiedRetrievalGenerationEnabled(cfg = _active) {
+  return isIntelligenceEnabled(cfg) && !!cfg.generation && cfg.generation.certifiedRetrieval === true;
 }

@@ -22,7 +22,7 @@
 {
   "imports": {
     "/js/auth.js": "data:text/javascript,export function getCurrentUser(){return {username:'evan',role:'admin'};}",
-    "/js/intelligence-backend-wiring.js": "data:text/javascript,export async function createWiredIntelligenceConsoleController(){throw new Error('harness: inject a controller');}"
+    "/js/intelligence-backend-wiring.js": "data:text/javascript,export async function createWiredIntelligenceConsoleController(){throw new Error('harness: inject a controller');}export async function previewIntelligenceNorDraft(){throw new Error('harness: inject previewDraft');}"
   }
 }
 </script>
@@ -91,6 +91,45 @@
   let norRecord = loadNorRecord();
   let numberSeq = 6; // publish reserves 7, 8, …
 
+  // Phase 6A — a generation-context scenario the NEXT reviewEnv() attaches
+  // to the draft's fields.metadata (mirrors the real
+  // intelligence-generation-context@1 shape closely enough for the console
+  // UI check; the console never validates the shape itself — it only
+  // renders whatever the server-authoritative context says).
+  let genScenario = null; // null | 'certified' | 'fallback' | 'blocked'
+  const GEN_SCENARIOS = {
+    certified: {
+      schema: 'intelligence-generation-context@1', mode: 'intelligence',
+      gate: 'GENERATION_ALLOWED', status: 'generated', blocked: false,
+      reasons: ['Every authoritative component resolved from approved organizational sources without conflict.'],
+      generatedAt: 't', retrieval: { certification: 'certified', styleGuideStatus: 'resolved', visualTemplateStatus: 'resolved', documentType: 'NOR', retrievedAt: 't' },
+      style: { slots: { opening: { slot: 'opening', source: 'certified_style_rule', ruleId: 'sgr_harness_1', version: 1, value: 'Dengan hormat,' } }, terminology: [], certifiedRuleIds: ['sgr_harness_1'], fallbacks: [] },
+      visual: { source: 'approved_template', templateId: 'vtpl_harness_1', templateVersion: 1, variant: 'a4-v1' },
+      fallbacks: [], conflicts: { styleGuide: [], visualTemplate: [] },
+      snapshot: { styleRuleIds: ['sgr_harness_1'], visualTemplateIds: ['vtpl_harness_1'] },
+    },
+    fallback: {
+      schema: 'intelligence-generation-context@1', mode: 'intelligence',
+      gate: 'GENERATION_ALLOWED_WITH_FALLBACK', status: 'generated_with_fallback', blocked: false,
+      reasons: ['No approved Style Guide rule exists for one or more wording slots; the established deterministic NOR wording was used.'],
+      generatedAt: 't', retrieval: { certification: 'incomplete', styleGuideStatus: 'missing', visualTemplateStatus: 'resolved', documentType: 'NOR', retrievedAt: 't' },
+      style: { slots: { opening: { slot: 'opening', source: 'deterministic_fallback', reason: 'not certified' } }, terminology: [], certifiedRuleIds: [], fallbacks: [{ slot: 'opening', reason: 'not certified' }] },
+      visual: { source: 'approved_template', templateId: 'vtpl_harness_1', templateVersion: 1, variant: 'a4-v1' },
+      fallbacks: [{ area: 'style', slot: 'opening', reason: 'not certified' }], conflicts: { styleGuide: [], visualTemplate: [] },
+      snapshot: { styleRuleIds: [], visualTemplateIds: ['vtpl_harness_1'] },
+    },
+    blocked: {
+      schema: 'intelligence-generation-context@1', mode: 'intelligence',
+      gate: 'GENERATION_BLOCKED_INCOMPLETE', status: 'blocked_incomplete', blocked: true,
+      reasons: ['Generation blocked: no approved Visual Template exists for this document type.'],
+      generatedAt: 't', retrieval: { certification: 'incomplete', styleGuideStatus: 'resolved', visualTemplateStatus: 'missing', documentType: 'NOR', retrievedAt: 't' },
+      style: { slots: {}, terminology: [], certifiedRuleIds: [], fallbacks: [] },
+      visual: { source: 'deterministic_fallback', reason: 'no approved visual template' },
+      fallbacks: [], conflicts: { styleGuide: [], visualTemplate: [] },
+      snapshot: { styleRuleIds: [], visualTemplateIds: [] },
+    },
+  };
+
   const q = (id, questions) => ({
     conversationId: id,
     response: { schema: 'intelligence-response@1', requestId: 'r', status: RESPONSE_STATUS.NEEDS_INPUT, questions },
@@ -110,7 +149,7 @@
         date: record.date,
         body: record.body,
         details: { ...record.facts },
-        metadata: { bodySource: 'template' },
+        metadata: { bodySource: 'template', generationContext: genScenario ? GEN_SCENARIOS[genScenario] : null },
       } },
       review: { reason: 'Draf NOR memerlukan peninjauan dan persetujuan manusia sebelum diterbitkan.', blocking: true },
     },
@@ -120,20 +159,24 @@
     response: { schema: 'intelligence-response@1', requestId: 'r', status: RESPONSE_STATUS.ERROR, error: { code, message: 'Firebase: raw ' + code } },
   });
 
-  // submit → 2 needs_input turns → review. One error step for the error-path test.
+  // submit → 2 needs_input turns → review. One error step for the error-path
+  // test. LAZY factories — evaluated at call time, not at page load — so
+  // reviewEnv() picks up the CURRENT `record` / `genScenario` (Phase 6A: a
+  // scenario set via setGenerationScenario() AFTER this array was built
+  // must still take effect on the NEXT walk).
   const SCRIPT = [
-    q('conv_harness', [
+    () => q('conv_harness', [
       { id: 'item', prompt: 'Barang apa yang akan diadakan?', why: 'Item', required: true },
       { id: 'quantity', prompt: 'Berapa jumlah unit yang dibutuhkan?', why: 'Jumlah', required: true },
     ]),
-    q('conv_harness', [
+    () => q('conv_harness', [
       { id: 'recipient', prompt: 'NOR ini ditujukan kepada siapa?', why: 'Kepada', required: true },
     ]),
-    reviewEnv('conv_harness'),
-    errEnv('PROVIDER_ERROR'),
+    () => reviewEnv('conv_harness'),
+    () => errEnv('PROVIDER_ERROR'),
   ];
   let cursor = 0;
-  const nextEnv = () => { const s = SCRIPT[Math.min(cursor, SCRIPT.length - 1)]; cursor += 1; return s; };
+  const nextEnv = () => { const fn = SCRIPT[Math.min(cursor, SCRIPT.length - 1)]; cursor += 1; return fn(); };
 
   const H = {
     handleCalls: [], continueCalls: [], updateDraftCalls: [], getDraftCalls: [],
@@ -220,12 +263,53 @@
   H.norRecord = () => JSON.parse(JSON.stringify(norRecord));
   H.approve = () => controller.approve();
   H.publish = () => controller.publish();
+  // Phase 6A — pick the generation-context scenario the NEXT requires_review
+  // turn attaches. Set BEFORE walking to review (submit/answer); reset()
+  // clears it back to null (legacy — no Phase 6A panel).
+  H.setGenerationScenario = (name) => { genScenario = name || null; };
+
+  // Phase 6C — a fake previewIntelligenceNorDraft + openDocument, injected
+  // into mountIntelligenceConsole. No pdfmake, no Firebase: previewCalls /
+  // openDocCalls record what the console asked for, previewScenario picks
+  // the server freshness verdict the stub returns.
+  let previewScenario = 'applied'; // applied | fallback | stale | invalid | error
+  H.previewCalls = [];
+  H.openDocCalls = [];
+  H.setPreviewScenario = (name) => { previewScenario = name || 'applied'; };
+  const PV = {
+    applied: { status: 'applied', templateId: 'vtpl_h', templateVersion: 2, reason: null },
+    fallback: { status: 'fallback', templateId: null, templateVersion: null, reason: 'none bound' },
+    stale: { status: 'stale', templateId: 'vtpl_h', templateVersion: 1, reason: 'moved on' },
+    invalid: { status: 'invalid', templateId: null, templateVersion: null, reason: 'malformed' },
+  };
+  const previewDraftStub = async (draftId) => {
+    H.previewCalls.push({ draftId, scenario: previewScenario });
+    if (previewScenario === 'error') return { ok: false, error: { code: 'PREVIEW_FAILED', message: 'stub: pratinjau gagal — render failed for ' + draftId } };
+    return {
+      ok: true,
+      data: {
+        composerData: {
+          documentId: draftId, domainType: 'NOR — ' + record.jenis, version: record.version,
+          statusLabel: 'Draf — menunggu peninjauan', approvedAt: null,
+          sections: [{ field: 'perihal', value: record.subject }],
+          renderingVisualModel: previewScenario === 'applied'
+            ? { schema: 'nor-visual-rendering-model@1', source: 'approved_template', page: { width: 480, height: 720 }, margins: [40, 60, 40, 30], logo: { x: 380, y: 12, width: 50 } }
+            : null,
+          isPreview: true, disclaimerOverride: 'PRATINJAU internal — bukan dokumen resmi.',
+        },
+        previewVisual: PV[previewScenario],
+      },
+    };
+  };
+  const openDocumentStub = async (composerData, meta) => { H.openDocCalls.push({ composerData, meta }); };
+
   H.reset = () => {
     cursor = 0; H.handleCalls.length = 0; H.continueCalls.length = 0;
     H.updateDraftCalls.length = 0; H.getDraftCalls.length = 0;
     H.getNorRecordCalls.length = 0; H.syncNorRecordCalls.length = 0;
     H.approveNorCalls.length = 0; H.publishNorCalls.length = 0;
-    H.forceError = false;
+    H.previewCalls.length = 0; H.openDocCalls.length = 0; previewScenario = 'applied';
+    H.forceError = false; genScenario = null;
     record = freshRecord(); norRecord = freshNorRecord(); numberSeq = 6;
     try { sessionStorage.removeItem('sic.p4.draftId'); } catch (e) { /* ignore */ }
     try { sessionStorage.removeItem(REC_KEY); } catch (e) { /* ignore */ }
@@ -234,7 +318,9 @@
   };
   window.__harness = H;
 
-  await mountIntelligenceConsole(document.getElementById('host'), { controller });
+  await mountIntelligenceConsole(document.getElementById('host'), {
+    controller, previewDraft: previewDraftStub, openDocument: openDocumentStub,
+  });
   window.__harnessReady = true;
 </script>
 </body>
