@@ -1,7 +1,9 @@
 {
   "scripts": {
     "test:rtdb-emulator": "node scripts/rtdb-emulator/run-with-emulator.mjs",
-    "test:functions-emulator": "node functions/scripts/phase-c-emulator/run-with-emulator.mjs"
+    "test:functions-emulator": "node functions/scripts/phase-c-emulator/run-with-emulator.mjs",
+    "test:intelligence-corpus-roundtrip": "node scripts/intelligence-corpus-roundtrip-check.mjs",
+    "test:intelligence-authority-e2e": "node scripts/intelligence-authority-emulator-e2e.mjs"
   },
   "dependencies": {
     "firebase": "^12.13.0",

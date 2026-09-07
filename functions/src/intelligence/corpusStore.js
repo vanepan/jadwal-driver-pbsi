@@ -34,7 +34,7 @@ const {
   makeCorpusDocument, isCorpusDocument, corpusDocumentIdFromChecksum,
   canAnalysisTransition, CORPUS_INGESTION_STATUS,
   CORPUS_DOCUMENT_TYPE, CORPUS_DOCUMENT_ERA,
-  makeCorpusObservation, isCorpusObservation,
+  makeCorpusObservation, isCorpusObservation, makeCorpusProvenance,
   OBSERVATION_LIFECYCLE, observationIdFrom, mergeObservationOccurrence,
 } = require('./corpusContract');
 
@@ -84,9 +84,22 @@ function rehydrateDocument(raw) {
 
 function rehydrateObservation(raw) {
   if (!raw || typeof raw !== 'object') return raw;
-  const provenance = Array.isArray(raw.provenance)
+  // RTDB drops null-valued keys on write, so a stored provenance entry comes
+  // back WITHOUT its optional `sourceFileId` / `pageNumber` / `region` keys
+  // (present-but-null on the way in). makeCorpusObservation trusts an entry
+  // that already carries `schema: 'corpus-provenance@1'` and does NOT
+  // re-normalise it, so the stripped entry fails isCorpusProvenance() →
+  // isCorpusObservation() → groupObservations() silently drops the whole
+  // observation and Writing Memory / temporal / proposeFromMemory /
+  // proposeFromEvidence see nothing. Re-run each entry through
+  // makeCorpusProvenance() here so every persisted observation rehydrates
+  // into an object that satisfies isCorpusObservation() — the omitted
+  // optional fields are restored to null, every present value is preserved
+  // (makeCorpusProvenance is idempotent for a well-formed entry).
+  const rawProv = Array.isArray(raw.provenance)
     ? raw.provenance
     : (raw.provenance && typeof raw.provenance === 'object' ? Object.values(raw.provenance) : []);
+  const provenance = rawProv.map((p) => makeCorpusProvenance(p && typeof p === 'object' ? p : {}));
   return makeCorpusObservation(Object.assign({}, raw, {
     provenance,
     // a stored record is never anything but 'observed' — but force it on
