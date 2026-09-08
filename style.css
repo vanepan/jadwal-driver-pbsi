@@ -1056,9 +1056,17 @@ z-index: 1;
 .timeline-body::-webkit-scrollbar-track { background: var(--gray-1); }
 .timeline-body::-webkit-scrollbar-thumb { background: var(--gray-3); border-radius: 3px; }
 
-/* Setiap baris driver */
+/* Setiap baris driver.
+   width:max-content — the row's box must span its full content (sticky
+   .driver-label + the multi-day .driver-slots canvas), NOT collapse to the
+   #timelineBody flex-container width. `position: sticky` pins .driver-label
+   only within its containing block (this row); if the row stayed viewport-
+   width the label would detach and scroll away once the canvas is scrolled
+   past ~one screen (regression from the continuous multi-day timeline, which
+   grew .driver-slots from 24h to up to 21 days). */
 .driver-row {
   display: flex;
+  width: max-content;
   border-bottom: 1px solid var(--gray-2);
   min-height: var(--row-height);
   position: relative;

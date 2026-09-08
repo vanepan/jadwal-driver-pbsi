@@ -1,0 +1,69 @@
+<!doctype html><html><head><meta charset="utf-8"><title>tl-driver-rail</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/platform.css">
+</head>
+<!-- FAITHFUL reproduction of the PRODUCTION shell + timeline DOM:
+     body.v2-shell-active.domain-shell-active
+       .app-layout                       (style.css: flex, overflow-x:clip)
+         .main-area                       (flex:1, margin-left, flex column, min-width:0)
+           .v2-topbar                     (52px)
+           .main-content                  (max-width token, width:100%, margin:0 auto)
+             #v2TimelineSurface           (flex column, overflow:hidden, min-height:420)
+               .v2-tl-header
+               #v2FilterBar
+               #v2TimelineView.v2-view-container.v2-view-active  (flex column, flex:1)
+                 .timeline-wrapper        (overflow-x:auto, flex:1)
+                   .timeline-scroll-fade-right
+                   .timeline-header-row   (.timeline-corner + #timelineHours)
+                   #timelineBody          (overflow-x:auto — the sticky scroll ctx)
+                 .legend
+               #v2ListView.v2-view-container
+     No app.js; no custom CSS — only the real style.css + platform.css cascade. -->
+<body class="app-ready v2-shell-active domain-shell-active">
+  <div class="app-layout">
+    <div class="domshell-rail" aria-hidden="true"></div>
+    <div class="main-area">
+      <div class="v2-topbar"></div>
+      <main class="main-content">
+        <div id="v2TimelineSurface">
+          <div class="v2-tl-header">
+            <div class="v2-tl-header-left">
+              <span class="v2-tl-title">Papan Jadwal</span>
+              <span class="v2-tl-sub" aria-hidden="true">8 jam • 09:00–17:00</span>
+            </div>
+            <div class="v2-tl-header-right">
+              <div class="v2-tl-view-toggle" role="group">
+                <button class="v2-tl-view-btn v2-tl-view-btn--active" type="button" data-view="timeline">Timeline</button>
+                <button class="v2-tl-view-btn" type="button" data-view="list">Daftar</button>
+              </div>
+              <div class="timeline-date-label" id="timelineDateLabel">Memuat...</div>
+            </div>
+          </div>
+          <div class="v2-filter-bar" id="v2FilterBar" role="group" aria-label="Filter jadwal">
+            <select class="v2-filter-chip" id="v2FilterDriver"><option value="">Semua Driver</option></select>
+            <select class="v2-filter-chip" id="v2FilterVehicle"><option value="">Semua Kendaraan</option></select>
+            <select class="v2-filter-chip" id="v2FilterStatus"><option value="">Semua Status</option></select>
+          </div>
+          <div id="v2TimelineView" class="v2-view-container v2-view-active">
+            <div class="timeline-wrapper">
+              <div class="timeline-scroll-fade-right"></div>
+              <div class="timeline-header-row">
+                <div class="timeline-corner">Driver</div>
+                <div class="timeline-hours" id="timelineHours"></div>
+              </div>
+              <div class="timeline-body" id="timelineBody"></div>
+            </div>
+            <div class="legend"><span class="legend-title">Kendaraan:</span></div>
+          </div>
+          <div id="v2ListView" class="v2-view-container" aria-live="polite"></div>
+        </div>
+      </main>
+    </div>
+  </div>
+  <div class="date-nav" style="position:fixed;bottom:0;left:0;visibility:hidden">
+    <button class="btn-today" id="btnToday">Hari Ini</button>
+    <button class="btn-icon" id="btnPrevDate">&larr;</button>
+    <input type="date" id="filterDate" class="date-input" />
+    <button class="btn-icon" id="btnNextDate">&rarr;</button>
+  </div>
+</body></html>
