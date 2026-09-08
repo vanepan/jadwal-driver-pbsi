@@ -25,7 +25,12 @@
 import {
   todayString, formatDateLong, parseLocalDate,
   timeToMinutes, minutesToTime, offsetDate, computeWorkTime, assignmentSpan,
+  isUnassignedAssignment,
 } from './utils.js';
+
+// Canonical predicate lives in js/utils.js (pure, shared with the analytics
+// engine). Re-exported here for existing importers.
+export { isUnassignedAssignment } from './utils.js';
 import { getVehicleColor } from './drivers.js';
 import { getActiveDrivers } from './drivers-store.js';
 import { getActiveVehicles } from './vehicles-store.js';
@@ -646,9 +651,17 @@ function renderDriverRows() {
     const nameEl = document.createElement('span');
     nameEl.className = 'driver-name';
     nameEl.textContent = 'Tanpa Driver';
+    // "N tugas" = OPEN unassigned tasks (still need a driver) — canonical
+    // status assigned/started, never completed/cancelled history. Completed
+    // unassigned cards still RENDER in the lane (historical), they just do not
+    // count as current operational workload.
+    const openUnassignedCount = unassignedAssignments.filter(a => {
+      const s = normalizeBlockStatus(a.status);
+      return s !== 'completed' && s !== 'cancelled';
+    }).length;
     const countEl = document.createElement('span');
     countEl.className = 'driver-phone driver-lane-count';
-    countEl.textContent = `${unassignedAssignments.length} tugas`;
+    countEl.textContent = `${openUnassignedCount} tugas`;
     label.append(nameEl, countEl);
     row.appendChild(label);
 
@@ -675,20 +688,6 @@ function driverMatchesAssignment(driver, assignment) {
   if (assignmentDriver === driver.name) return true;
   const legacyNames = Array.isArray(driver.legacyNames) ? driver.legacyNames : [];
   return legacyNames.some(name => String(name || '').trim() === assignmentDriver);
-}
-
-/**
- * An assignment is UNASSIGNED when it carries no driver reference. In this
- * codebase the driver reference IS the display-name string (`assignment.driver`);
- * `''` is the persisted "Tanpa Driver" / Self-Drive state (v1.27.0, see
- * js/assignments.js NO_DRIVER_SENTINEL) and legacy records may hold null /
- * undefined. All three route to the dedicated "Tanpa Driver" lane — a driver
- * being absent is an operational condition to surface, never a reason to drop
- * the assignment from the board. Independent of the vehicle: an assignment with
- * a vehicle but no driver is still unassigned.
- */
-export function isUnassignedAssignment(assignment) {
-  return String(assignment?.driver ?? '').trim() === '';
 }
 
 /**

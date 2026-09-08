@@ -232,13 +232,40 @@ check('neither overlapping unassigned block shows a driver-conflict badge', r4.u
 check('overnight unassigned = ONE block, spans-midnight, width ≈ 3h (time math intact)',
   r4.u3 && r4.u3.spansMidnight && near(r4.u3.width, 3 * r4.hw), r4.u3);
 
+/* ── Scenario 4b: "N tugas" counts OPEN unassigned only, not completed history ── */
+console.log('\n[4b — lane count excludes completed unassigned (historical), but the cards still render]');
+const r4b = await page.evaluate(async (ANCHOR) => {
+  const H = window.__H;
+  await H.render([
+    { id: 'open1', driver: '', vehicle: '', date: ANCHOR, startTime: '09:00', endTime: '11:00', status: 'assigned' },
+    { id: 'open2', driver: '', vehicle: '', date: ANCHOR, startTime: '12:00', endTime: '14:00', status: 'started' },
+    { id: 'doneA', driver: '', vehicle: '', date: ANCHOR, startTime: '15:00', endTime: '16:00', status: 'completed' },
+    { id: 'doneB', driver: '', vehicle: '', date: ANCHOR, startTime: '16:30', endTime: '17:30', status: 'completed' },
+  ], ANCHOR);
+  const uRow = H.uRow();
+  return {
+    count: uRow?.querySelector('.driver-lane-count')?.textContent.trim() || '',
+    blockCount: uRow ? uRow.querySelectorAll('.assignment-block').length : 0,
+    doneStillRendered: !!H.blk('doneA') && !!H.blk('doneB'),
+  };
+}, ANCHOR);
+console.log('  ', JSON.stringify(r4b));
+check('"N tugas" = 2 (the two OPEN tasks: assigned + started) — completed excluded', r4b.count === '2 tugas', r4b);
+check('all 4 unassigned cards still RENDER in the lane (completed history preserved)', r4b.blockCount === 4 && r4b.doneStillRendered, r4b);
+
 /* ── Static: drag mapping + module contract + filter contract ── */
 console.log('\n[5 — static: drag maps the lane back to driver:\'\' ; module contract]');
 const tlSrc = src('js/timeline.js');
 const tiSrc = src('js/timeline-interactions.js');
 const appSrc = src('js/app.js');
+const utilSrc = src('js/utils.js');
 
-check('timeline.js exports isUnassignedAssignment', /export function isUnassignedAssignment\(/.test(tlSrc));
+check('canonical isUnassignedAssignment lives in js/utils.js (pure, shared with the analytics engine)',
+  /export function isUnassignedAssignment\(/.test(utilSrc));
+check('timeline.js still exports isUnassignedAssignment (re-export from utils.js)',
+  /export \{ isUnassignedAssignment \} from '\.\/utils\.js';/.test(tlSrc));
+check('analytics-engine.js imports the canonical predicate from utils.js',
+  /import \{[^}]*isUnassignedAssignment[^}]*\} from '\.\.\/utils\.js';/.test(src('js/analytics/analytics-engine.js')));
 check('timeline.js renders the lane ONLY when unassignedAssignments.length > 0',
   /if \(unassignedAssignments\.length > 0\) \{/.test(tlSrc));
 check('timeline.js tags the lane row with data-lane="unassigned"',

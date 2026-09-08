@@ -15,7 +15,7 @@
 'use strict';
 
 import { buildAnalyticsModel } from './analytics-model.js';
-import { computeWorkTime, parseLocalDate } from '../utils.js';
+import { computeWorkTime, parseLocalDate, isUnassignedAssignment } from '../utils.js';
 import { buildWorkloadModel } from './engines/workload-engine.js';
 import { filterEligible } from './analytics-governance.js';
 import { generateInsights } from './analytics-insights.js';
@@ -260,6 +260,12 @@ export function computeAnalyticsModel(ctx) {
   for (const a of filteredAsg) {
     const wt = computeWorkTime(a, office);
     if (wt.actualHours == null) continue; // only completed assignments contribute
+    // No driver → no driver working-time, no driver overtime, no driver
+    // outside-operational-hours, no driver workload. This whole loop is the
+    // DRIVER working-time / overtime / workload pass; an assignment with no
+    // driver has no driver to attribute any of it to. Vehicle km for such a
+    // trip is still counted (vehicleOdoList, below). See isUnassignedAssignment.
+    if (isUnassignedAssignment(a)) continue;
     totalActualHours   += wt.actualHours;
     totalOvertimeHours += wt.overtimeHours;
     if (wt.isOvertime) overtimeAssignments++;
@@ -418,8 +424,13 @@ export function computeAnalyticsModel(ctx) {
   for (const a of filteredAsg) {
     const km = a.distanceTravelled;
     if (km == null || km <= 0) continue;
-    const dKey = (a.driver || '').toLowerCase();
-    _driverOdo.set(dKey, (_driverOdo.get(dKey) || 0) + km);
+    // Driver km is per-driver; an unassigned trip contributes NO driver km (it
+    // never surfaces in driverOdoList anyway — kept explicit so no empty-driver
+    // key is ever created). Vehicle + bidang km below are unaffected.
+    if (!isUnassignedAssignment(a)) {
+      const dKey = (a.driver || '').toLowerCase();
+      _driverOdo.set(dKey, (_driverOdo.get(dKey) || 0) + km);
+    }
     const vKey = (a.vehicle || '').toLowerCase();
     _vehicleOdo.set(vKey, (_vehicleOdo.get(vKey) || 0) + km);
     if (a.requestId) {

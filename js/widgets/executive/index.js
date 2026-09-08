@@ -571,6 +571,7 @@ function todaysStoryItems(ctx) {
         key: l.id || `log:${l.action}:${l.createdAt || l.timestamp}`,
         groupKey: l.action,
         domainKey: storyDomainKey('audit', l.action),
+        targetId: l.targetId,          // assignment id for assignment_* actions (Pulse active-state lookup)
         ts: Date.parse(l.createdAt || l.timestamp || 0),
         icon: meta.icon, tone: meta.tone,
         sentence: meta.sentence(l, ctx),
@@ -617,20 +618,28 @@ const PULSE_TONE_BY_DOMAIN = { driverOps: 'brand', vehicle: 'brand', engineering
  *  already computed by todaysStoryItems, STORY_DOMAINS — no new data) so
  *  the dot's hover/focus tooltip can show genuine event content instead of
  *  just a bare timestamp. */
-function buildPulseMarks(ctx) {
+/** Exported for unit testing (scripts/executive-pulse-active-check.mjs) — the
+ *  render path calls it internally, unchanged. */
+export function buildPulseMarks(ctx) {
   const items = todaysStoryItems(ctx);
   const span = PULSE_WINDOW_END_MIN - PULSE_WINDOW_START_MIN;
+  // The active pulse means "an assignment is currently RUNNING", not "an
+  // assignment started at some point today". A start dot stays on the axis as
+  // historical record, but loses its active treatment the moment the
+  // assignment leaves the canonical 'started' state (completed / cancelled /
+  // reverted). Status — not endTime < now — is the authority. Driver-agnostic:
+  // an unassigned assignment that is running still pulses (the assignment is
+  // active even though no driver is).
+  const runningIds = new Set(
+    (ctx.assignments || []).filter((a) => a && a.status === 'started').map((a) => a.id)
+  );
   const marks = items.map((it) => {
     const d = new Date(it.ts);
     const minutes = d.getHours() * 60 + d.getMinutes();
     const pct = Math.max(0, Math.min(100, ((minutes - PULSE_WINDOW_START_MIN) / span) * 100));
     const domain = STORY_DOMAINS[it.domainKey];
-    // Phase 7G.4 — `active` marks the ONE event type this pulse gives an
-    // active-state treatment to: a driver assignment actually starting
-    // (groupKey is the raw log action, 'assignment_started', for audit-log
-    // items — see todaysStoryItems()/AUDIT_TIMELINE_ALLOW above). No other
-    // event type pulses; the dot's own tone/color is unchanged either way.
-    return { leftPct: pct, tone: PULSE_TONE_BY_DOMAIN[it.domainKey] || 'brand', active: it.groupKey === 'assignment_started', ts: it.ts, sentence: it.sentence, domainLabel: domain ? domain.label : '' };
+    const active = it.groupKey === 'assignment_started' && runningIds.has(it.targetId);
+    return { leftPct: pct, tone: PULSE_TONE_BY_DOMAIN[it.domainKey] || 'brand', active, ts: it.ts, sentence: it.sentence, domainLabel: domain ? domain.label : '' };
   });
   return marks;
 }

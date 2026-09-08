@@ -83,6 +83,32 @@ export function minutesToTime(minutes) {
    ============================================================ */
 
 /**
+ * THE canonical predicate: an assignment has NO driver.
+ *
+ * In this V1 data model the driver reference IS the display-name string
+ * (`assignment.driver`); the unassigned / Self-Drive state (v1.27.0) persists
+ * as `''`, legacy records may hold `null`/`undefined`, and `'__none__'` is the
+ * UI sentinel (NO_DRIVER_SENTINEL) that is normalized to `''` on every write
+ * but is treated as unassigned here for defence in depth. There is no
+ * `driverId`.
+ *
+ * "No driver" means: no driver workload, no driver utilization, no driver
+ * trip/active count, no driver overtime, no driver outside-operational-hours,
+ * no driver fatigue/burnout, no driver operational score — and NEVER a
+ * synthetic "Tanpa Driver" / empty-name driver identity in analytics. It does
+ * NOT gate vehicle analytics (an unassigned trip with a vehicle still counts
+ * for that vehicle) and it does NOT gate whether an assignment is currently
+ * active (an unassigned assignment can still be running).
+ *
+ * @param {{driver?:string|null}} a
+ * @returns {boolean}
+ */
+export function isUnassignedAssignment(a) {
+  const d = String(a?.driver ?? '').trim();
+  return d === '' || d === '__none__';
+}
+
+/**
  * @param {{date?:string, startTime?:string, endTime?:string, endDate?:string, fullDay?:boolean}} a
  * @returns {{
  *   startDate: string, endDate: string,
