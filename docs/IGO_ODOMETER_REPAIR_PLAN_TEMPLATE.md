@@ -19,6 +19,104 @@ through the app's own supervised path — never a blind script.**
 
 ---
 
+## INCIDENT 2026-09-08 — Resource Analytics still shows Igo ≈ 31.729 km
+
+Prevention shipped in `f8517f1` (v1.30.14.3); it does **not** touch historical
+records, so the inflated number is expected until the data is repaired.
+
+Reported screenshot:
+
+| Driver | km |
+|---|---|
+| Igo  | 31.729 |
+| Dedi |  2.704 |
+| Aria |  1.721 |
+| **Total Jarak Tempuh** | **36.238** |
+
+**Per-driver sum = 31.729 + 2.704 + 1.721 = 36.154 → 84 km short of the 36.238
+total.** This is code-explained, not a bug: `Total Jarak Tempuh` (`totalKm`) is
+**vehicle-keyed** (`Σ vehicleOdoList[].km` — every distance-bearing trip with a
+vehicle, incl. Self-Drive `driver:''` and trips by a driver not in the active
+roster), while the per-driver breakdown (`driverOdoList`) is **driver-keyed** and
+drops those. The two views need not sum equal. Reconcile the repair against
+**both** — a mistyped Igo trip could sit under `totalKm`/`vehicleOdoList` without
+appearing under "Igo" if it was logged Self-Drive or under an archived name.
+
+### Phase 1 — exact "Jarak Tempuh per Driver" code path
+
+`js/app.js` ~10251–10300 renders `driverOdoList` / `chartOdoDriver` /
+`Total Jarak Tempuh` from `computeAnalyticsModel(...).charts.odoDriver`
+(`js/analytics/analytics-engine.js`):
+
+```
+Igo km  =  Σ  a.distanceTravelled
+           over  filteredAsg  where:
+             • _asgDate(a) >= cutoff         ← rolling window; DEFAULT '30d'
+                                               (today−29d). User-selectable:
+                                               today / 7d / 30d / 90d / ytd / all.
+                                               ⇒ CONFIRM the range shown in the
+                                                 screenshot before reconciling.
+             • a.status !== 'cancelled'
+             • a.distanceTravelled != null && > 0   (only completed trips have it)
+             • !isUnassignedAssignment(a)           (a.driver non-empty)
+             • (a.driver || '').toLowerCase() === <Igo roster displayName>.toLowerCase()
+```
+
+`_driverOdo` loop: `js/analytics/analytics-engine.js` ~424. `driverOdoList`
+projection: ~441. **`distanceTravelled` is read verbatim — never recomputed from
+`startOdometer`/`endOdometer` at analytics time.**
+
+### Phase 8 — repair MUST update BOTH fields
+
+`distanceTravelled` is **persisted independently** at completion
+(`js/app.js` `registerCompleteCallback` ~13845: `end − start` when both present
+and `end ≥ start`, else `null`). Correcting only `startOdometer` leaves the
+analytics **unchanged**. Each repaired record must set:
+
+```
+after.startOdometer     = <confirmed correct KM Awal>
+after.endOdometer       = before.endOdometer                       (kept if ≥ correct start)
+after.distanceTravelled = after.endOdometer − after.startOdometer   (else null / STOP)
+```
+
+### Root cause (mechanism proven; the specific pattern needs the data)
+
+Pre-`f8517f1` the Start Assignment KM Awal was a free-typed input (autofilled
+from `vehicle.odometer`; `validateOdometer` only **warns** on a mismatch, never
+blocks). A low start persisted and, at completion, produced an inflated
+persisted `distanceTravelled`. Whether Igo's errors are isolated typos, a stale
+`vehicle.odometer` that several assignments inherited as their autofilled start,
+or one repeated wrong baseline **cannot be decided from code** — run
+`auditOdometerAnomalies(assignments, { warnJumpKm, continuityGapKm: 500 })`
+(`js/analytics/odometer-audit.js`) against the export; it classifies
+`STALE_START` / `CONTINUITY_*` / `LARGE_JUMP` / `ARITHMETIC_MISMATCH` etc.
+
+### MINIMUM SANCTIONED EXPORT NEEDED
+
+No terminal/agent path to production RTDB exists (every read requires an
+interactive authenticated admin browser session; forbidden to bypass/weaken
+rules or add any backdoor). Provide, from an authenticated session, a JSON dump
+of these two RTDB nodes:
+
+**`/assignments`** — every record where `driver` (case-insensitive) is Igo OR
+`vehicle` is any vehicle Igo has used (for the vehicle-chain reconstruction),
+across **all dates** (not just the analytics window), each with **exactly**:
+
+```
+id, driver, vehicle, date, startDate, startTime, endTime, status,
+startOdometer, endOdometer, distanceTravelled,
+startedAt, completedAt, createdAt, requestId, destination, purpose
+```
+
+**`/vehicles`** — every vehicle referenced above, each with: `id, name,
+odometer, archived, status`.
+
+Also state the **analytics date range** currently selected in the Resource
+Analytics UI (default is `30d`), so the 31.729 km can be reconciled to the same
+window.
+
+---
+
 ## Phase 1 — Odometer architecture (verified from code, read-only)
 
 | Concern | Source of truth | Where |
