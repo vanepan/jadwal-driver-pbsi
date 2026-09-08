@@ -1587,6 +1587,73 @@ z-index: 1;
   min-height: 18px;
   line-height: 1.4;
 }
+/* v1.30.14.3 — Start Assignment: KM Awal locked to the authoritative vehicle
+   odometer, with an explicit "Koreksi odometer" override that requires a
+   reason. Prevents the free-typed wrong KM Awal that inflates vehicle mileage. */
+.odo-field__inputwrap { position: relative; }
+.odo-field__lock {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 15px;
+  opacity: 0.55;
+  pointer-events: none;
+}
+.odo-field__input[readonly] {
+  background: var(--gray-1, #f5f5f5);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+.odo-field__correct {
+  margin-top: 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.odo-field__correct[hidden] { display: none; }
+.odo-correct { margin-top: 10px; }
+.odo-correct[hidden] { display: none; }
+.odo-field__reason {
+  display: block;
+  width: 100%;
+  font-size: 13px;
+  color: var(--text);
+  padding: 8px 10px;
+  border: 1.5px solid var(--gray-2, #e4e4e4);
+  border-radius: 8px;
+  background: var(--surface);
+  outline: none;
+  resize: vertical;
+  font-family: inherit;
+}
+.odo-field__reason:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 8%, transparent);
+}
+/* Complete Assignment: explicit acknowledgement for a suspicious derived
+   distance (jump beyond operations.odometerWarnJumpKm). */
+.odo-sanity {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--warn, #946420);
+  border-radius: 8px;
+  background: var(--warn-bg, #F6EEDB);
+  font-size: 12.5px;
+  color: var(--text);
+  line-height: 1.45;
+  cursor: pointer;
+}
+.odo-sanity[hidden] { display: none; }
+.odo-sanity input { margin-top: 2px; flex-shrink: 0; }
 
 /* Live preview (Complete mode when startOdometer is available) */
 .odo-preview {

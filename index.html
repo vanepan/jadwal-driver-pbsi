@@ -22,12 +22,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Archivo:wght@400;500;600;700;800;900&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=1.30.14.2" />
+  <link rel="stylesheet" href="style.css?v=1.30.14.3" />
   <link rel="stylesheet" href="platform.css?v=2.1.8" />
-  <link rel="stylesheet" href="petty-cash.css?v=1.30.14.2" />
-  <link rel="stylesheet" href="overtime.css?v=1.30.14.2" />
-  <link rel="stylesheet" href="engineering.css?v=1.30.14.2" />
-  <link rel="stylesheet" href="gudang.css?v=1.30.14.2" />
+  <link rel="stylesheet" href="petty-cash.css?v=1.30.14.3" />
+  <link rel="stylesheet" href="overtime.css?v=1.30.14.3" />
+  <link rel="stylesheet" href="engineering.css?v=1.30.14.3" />
+  <link rel="stylesheet" href="gudang.css?v=1.30.14.3" />
   <link rel="stylesheet" href="sarpras-intelligence.css?v=1.23.0" />
   <link rel="stylesheet" href="nor-center.css?v=1.23.0" />
   <link rel="stylesheet" href="workspace-list-kit.css?v=1.23.0" />
@@ -1104,8 +1104,20 @@
     </div>
     <div class="odo-modal__body">
       <label class="odo-field__label" for="odoInput" id="odoInputLabel">KM Awal</label>
-      <input class="odo-field__input" type="number" id="odoInput"
-             inputmode="numeric" placeholder="0" min="0" step="1" autocomplete="off" />
+      <div class="odo-field__inputwrap">
+        <input class="odo-field__input" type="number" id="odoInput"
+               inputmode="numeric" placeholder="0" min="0" step="1" autocomplete="off" />
+        <span class="odo-field__lock" id="odoLock" title="Nilai resmi kendaraan — terkunci" hidden>&#128274;</span>
+      </div>
+      <!-- Start Assignment: KM Awal is the authoritative vehicle odometer, locked
+           by default. "Koreksi odometer" unlocks it and requires a reason, which
+           is written to the audit trail (odometer_corrected). -->
+      <button type="button" class="odo-field__correct" id="btnOdoCorrect" hidden>Koreksi odometer</button>
+      <div class="odo-correct" id="odoCorrectBox" hidden>
+        <label class="odo-field__label" for="odoCorrectReason">Alasan Koreksi</label>
+        <textarea class="odo-field__reason" id="odoCorrectReason" rows="2" maxlength="200"
+                  placeholder="Contoh: pembacaan odometer kendaraan sebelumnya tidak akurat"></textarea>
+      </div>
       <span class="odo-field__error" id="odoHint"></span>
       <div class="odo-preview" id="odoPreview" style="display:none;">
         <div class="odo-preview__row">
@@ -1121,6 +1133,12 @@
           <span class="odo-preview__val" id="odoPreviewDistance">—</span>
         </div>
       </div>
+      <!-- Complete Assignment: shown only when the derived distance trips the
+           odometer-jump warning; completion is blocked until it is checked. -->
+      <label class="odo-sanity" id="odoSanityWrap" hidden>
+        <input type="checkbox" id="odoSanityAck" />
+        <span>Saya sudah memeriksa, angka odometer sudah benar.</span>
+      </label>
     </div>
     <div class="odo-modal__footer">
       <button type="button" class="odo-btn odo-btn--secondary" id="btnCancelOdometer">Batal</button>
@@ -1200,6 +1218,6 @@
      an npm import — mammoth's npm package has no browser-ready ESM
      build. Exposes window.mammoth. -->
 <script src="https://cdn.jsdelivr.net/npm/mammoth@1.12.0/mammoth.browser.min.js"></script>
-<script type="module" src="js/app.js?v=1.30.14.2"></script>
+<script type="module" src="js/app.js?v=1.30.14.3"></script>
 </body>
 </html>

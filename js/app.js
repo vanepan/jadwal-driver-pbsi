@@ -13819,6 +13819,28 @@ document.addEventListener('DOMContentLoaded', async () => {
       },
     });
 
+    // v1.30.14.3 — the KM Awal shown at Start is LOCKED to the vehicle's
+    // authoritative odometer; an operator can only change it via the explicit
+    // "Koreksi odometer" override, which carries a reason. Preserve the
+    // overridden value + reason in the audit trail (never erase the evidence).
+    if (odoData.odometerCorrected) {
+      logAction({
+        userId: currentUser?.id,
+        username: currentUser?.username,
+        displayName: currentUser?.name,
+        action: 'odometer_corrected',
+        targetId: assignmentId,
+        metadata: {
+          field: 'startOdometer',
+          phase: 'start',
+          vehicle: assignments[idx].vehicle || null,
+          before: odoData.previousStartOdometer ?? null,
+          after: assignments[idx].startOdometer,
+          reason: odoData.correctionReason || '',
+        },
+      });
+    }
+
     showToast('▶ Penugasan dimulai');
   });
 

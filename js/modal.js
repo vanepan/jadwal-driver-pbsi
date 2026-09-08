@@ -191,6 +191,15 @@ let _odoAssignment = null;  // assignment object (for context + prev odometer)
 let _odoVehicle    = null;  // v1.27.0: resolved vehicle record (for odometer autofill/reference)
 let _odoCallback   = null;  // (assignmentId, odoData) => void
 
+// v1.30.14.3 — Start Assignment: KM Awal is LOCKED to the authoritative vehicle
+// odometer. `_odoStartAuthoritative` is that value (null ⇒ the vehicle has no
+// recorded odometer yet, so the field is editable as a first reading);
+// `_odoStartCorrected` flips true only via the explicit "Koreksi odometer"
+// override, which then requires a reason (written to the audit trail).
+let _odoStartAuthoritative = null;
+let _odoStartCorrected     = false;
+const ODO_CORRECT_REASON_MIN = 6;
+
 // SS2 hotfix (v1.27.1): vehicles/{id}/odometer is the existing Vehicle
 // Registration field (stored as a trimmed string — see ASSET_STRING_FIELDS in
 // vehicles-store.js) and is the single source of truth for autofill/reference,
@@ -202,6 +211,10 @@ function _vehicleOdometerValue(vehicle) {
   const n = Number(raw);
   return Number.isFinite(n) ? n : null;
 }
+
+/** Exported for unit testing (scripts/odometer-completion-guard-check.mjs);
+ *  the detail-drawer Start/Complete buttons call it internally, unchanged. */
+export { _openOdometerModal as openOdometerModalForTest };
 
 function _openOdometerModal(type, assignmentId, assignment, callback) {
   _odoType       = type;
@@ -231,11 +244,37 @@ function _openOdometerModal(type, assignmentId, assignment, callback) {
   // re-pressing the drawer's own "Mulai Tugas" CTA.
   if (confirmEl) confirmEl.textContent = isStart ? 'Konfirmasi & Mulai' : 'Konfirmasi & Selesai';
   if (hintEl)    { hintEl.textContent = ''; }
-  // v1.27.0/SS2: Start Assignment autofills Odometer Awal from vehicle.odometer
-  // (default value only — stays a normal editable input, never readonly/disabled).
-  const _odoAutofill = isStart ? _vehicleOdometerValue(_odoVehicle) : null;
-  if (input)     { input.value = _odoAutofill != null ? String(_odoAutofill) : ''; }
   if (previewEl) { previewEl.style.display = 'none'; }
+
+  // ── KM Awal / KM Akhir field state ──────────────────────────────────
+  const lockEl        = document.getElementById('odoLock');
+  const correctBtn    = document.getElementById('btnOdoCorrect');
+  const correctBox    = document.getElementById('odoCorrectBox');
+  const correctReason = document.getElementById('odoCorrectReason');
+  const sanityWrap    = document.getElementById('odoSanityWrap');
+  const sanityAck     = document.getElementById('odoSanityAck');
+
+  _odoStartAuthoritative = isStart ? _vehicleOdometerValue(_odoVehicle) : null;
+  _odoStartCorrected     = false;
+  if (correctReason) correctReason.value = '';
+  if (correctBox)    correctBox.hidden = true;
+  if (sanityWrap)    sanityWrap.hidden = true;
+  if (sanityAck)     sanityAck.checked = false;
+
+  if (isStart && _odoStartAuthoritative != null) {
+    // Locked to the vehicle's authoritative odometer; "Koreksi odometer" is the
+    // only way to change it, and it costs a reason + an audit entry.
+    if (input) { input.value = String(_odoStartAuthoritative); input.setAttribute('readonly', 'readonly'); }
+    if (lockEl)     lockEl.hidden = false;
+    if (correctBtn) correctBtn.hidden = false;
+    if (hintEl)     hintEl.textContent = 'KM Awal diambil dari catatan odometer kendaraan.';
+  } else {
+    // Complete mode (KM Akhir), or Start with no recorded vehicle odometer yet.
+    if (input) { input.value = ''; input.removeAttribute('readonly'); }
+    if (lockEl)     lockEl.hidden = true;
+    if (correctBtn) correctBtn.hidden = true;
+    if (isStart && hintEl) hintEl.textContent = 'Kendaraan ini belum punya catatan odometer — masukkan pembacaan saat ini.';
+  }
 
   if (metaEl) {
     const parts = [
@@ -276,14 +315,66 @@ function _closeOdometerModal(reopenDetail = false) {
   }
 
   _odoType = _odoId = _odoAssignment = _odoVehicle = _odoCallback = null;
+  _odoStartAuthoritative = null;
+  _odoStartCorrected = false;
+}
+
+/**
+ * "Koreksi odometer" (Start only) — the explicit override of the locked KM Awal.
+ * Unlocks the input, reveals the mandatory reason field, and re-gates Confirm.
+ */
+function _onOdoCorrectClick() {
+  if (_odoType !== 'start') return;
+  _odoStartCorrected = true;
+  const input      = document.getElementById('odoInput');
+  const correctBtn = document.getElementById('btnOdoCorrect');
+  const correctBox = document.getElementById('odoCorrectBox');
+  const lockEl     = document.getElementById('odoLock');
+  const reason     = document.getElementById('odoCorrectReason');
+  if (input)      { input.removeAttribute('readonly'); input.focus(); input.select(); }
+  if (lockEl)     lockEl.hidden = true;
+  if (correctBtn) correctBtn.hidden = true;
+  if (correctBox) correctBox.hidden = false;
+  setTimeout(() => reason && reason.focus(), 60);
+  _syncOdoConfirmState();
+}
+
+/** Suspicious-distance threshold on the DERIVED completion distance. */
+function _odoSuspiciousDistance(dist) {
+  return Number.isFinite(dist) && dist > getSetting('operations.odometerWarnJumpKm');
+}
+
+/**
+ * Gate #btnConfirmOdometer:
+ *  - Complete + a suspicious derived distance ⇒ requires the sanity checkbox.
+ *  - Start + "Koreksi odometer" ⇒ requires a reason of at least the minimum.
+ */
+function _syncOdoConfirmState() {
+  const btn = document.getElementById('btnConfirmOdometer');
+  if (!btn) return;
+  let disabled = false;
+
+  if (_odoType === 'complete') {
+    const wrap = document.getElementById('odoSanityWrap');
+    const ack  = document.getElementById('odoSanityAck');
+    if (wrap && !wrap.hidden && ack && !ack.checked) disabled = true;
+  } else if (_odoType === 'start' && _odoStartCorrected) {
+    const reason = document.getElementById('odoCorrectReason');
+    const len = reason ? String(reason.value).trim().length : 0;
+    if (len < ODO_CORRECT_REASON_MIN) disabled = true;
+  }
+  btn.disabled = disabled;
 }
 
 function _updateOdometerPreview() {
-  if (_odoType !== 'complete' || _odoAssignment?.startOdometer == null) return;
+  if (_odoType === 'start') { _syncOdoConfirmState(); return; }
+  if (_odoType !== 'complete' || _odoAssignment?.startOdometer == null) { _syncOdoConfirmState(); return; }
 
   const previewEl = document.getElementById('odoPreview');
   const endEl     = document.getElementById('odoPreviewEnd');
   const distEl    = document.getElementById('odoPreviewDistance');
+  const sanityWrap = document.getElementById('odoSanityWrap');
+  const sanityAck  = document.getElementById('odoSanityAck');
   if (!previewEl) return;
 
   const input = document.getElementById('odoInput');
@@ -291,19 +382,33 @@ function _updateOdometerPreview() {
   const endOdo   = Number(raw);
   const startOdo = Number(_odoAssignment.startOdometer);
 
+  const clearSanity = () => { if (sanityWrap) sanityWrap.hidden = true; if (sanityAck) sanityAck.checked = false; };
+
   if (!raw || !Number.isFinite(endOdo)) {
     if (endEl)  endEl.textContent  = '—';
     if (distEl) distEl.textContent = '—';
+    clearSanity();
+    _syncOdoConfirmState();
     return;
   }
 
   if (endEl) endEl.textContent = `${endOdo.toLocaleString()} km`;
 
   if (endOdo >= startOdo) {
-    if (distEl) distEl.textContent = `${(endOdo - startOdo).toLocaleString()} km`;
+    const dist = endOdo - startOdo;
+    if (distEl) distEl.textContent = `${dist.toLocaleString()} km`;
+    // Suspicious (but legitimate long trips exist) ⇒ ask for an explicit check,
+    // never a hard block.
+    if (_odoSuspiciousDistance(dist)) {
+      if (sanityWrap && sanityWrap.hidden) { sanityWrap.hidden = false; if (sanityAck) sanityAck.checked = false; }
+    } else {
+      clearSanity();
+    }
   } else {
     if (distEl) distEl.innerHTML = `${anIcon('alert', { size: 13 })} Lebih kecil dari KM Awal`;
+    clearSanity();
   }
+  _syncOdoConfirmState();
 }
 
 function _handleOdometerConfirm() {
@@ -325,16 +430,44 @@ function _handleOdometerConfirm() {
     hintEl.textContent = msgs.join(' ');
   }
 
-  if (!result.valid) return;
+  if (!result.valid) return; // hard block — e.g. "Odometer mundur" (end < start)
+
+  // Start override: a corrected KM Awal needs a reason (also gates the button).
+  const reasonEl = document.getElementById('odoCorrectReason');
+  const correctionReason = reasonEl ? String(reasonEl.value).trim() : '';
+  if (isStart && _odoStartCorrected && correctionReason.length < ODO_CORRECT_REASON_MIN) {
+    if (hintEl) hintEl.textContent = `Alasan koreksi minimal ${ODO_CORRECT_REASON_MIN} karakter.`;
+    return;
+  }
+  // Complete: a suspicious derived distance needs the explicit acknowledgement.
+  if (!isStart) {
+    const wrap = document.getElementById('odoSanityWrap');
+    const ack  = document.getElementById('odoSanityAck');
+    if (wrap && !wrap.hidden && ack && !ack.checked) {
+      if (hintEl) hintEl.textContent = 'Centang kotak konfirmasi untuk melanjutkan.';
+      return;
+    }
+  }
 
   const odoValue = Number(raw);
+  const payload = isStart
+    ? {
+        startOdometer: odoValue,
+        // Only present when the operator explicitly overrode the locked value —
+        // js/app.js writes an `odometer_corrected` audit entry for it.
+        ...(_odoStartCorrected
+          ? { odometerCorrected: true, correctionReason, previousStartOdometer: _odoStartAuthoritative }
+          : {}),
+      }
+    : { endOdometer: odoValue };
+
   if (_odoCallback) {
     // Pass the already-resolved assignment object through as a 3rd arg so
     // the lifecycle handler (js/app.js) can act on THIS trip even if its
     // own `assignments` array is momentarily out of sync — the root cause
     // of "Mulai Tugas does nothing on the first try" (a silent
     // findIndex === -1 bail).
-    _odoCallback(_odoId, isStart ? { startOdometer: odoValue } : { endOdometer: odoValue }, _odoAssignment);
+    _odoCallback(_odoId, payload, _odoAssignment);
   }
   _closeOdometerModal(false); // confirm → don't reopen detail
 }
@@ -490,8 +623,13 @@ export function initModalHandlers() {
     if (e.key === 'Enter')  _handleOdometerConfirm();
     if (e.key === 'Escape') _closeOdometerModal(true);
   });
-  // Live preview while typing (Complete mode)
+  // Live preview while typing (Complete mode); confirm-state gate (both modes)
   document.getElementById('odoInput')?.addEventListener('input', _updateOdometerPreview);
+  // v1.30.14.3 — Start "Koreksi odometer" override + its mandatory reason; and
+  // the Complete suspicious-distance acknowledgement.
+  document.getElementById('btnOdoCorrect')?.addEventListener('click', _onOdoCorrectClick);
+  document.getElementById('odoCorrectReason')?.addEventListener('input', _syncOdoConfirmState);
+  document.getElementById('odoSanityAck')?.addEventListener('change', _syncOdoConfirmState);
   document.getElementById('modalOdometer')?.addEventListener('click', (e) => {
     if (e.target === document.getElementById('modalOdometer')) _closeOdometerModal(true);
   });

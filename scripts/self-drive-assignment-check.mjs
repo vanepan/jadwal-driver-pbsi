@@ -110,8 +110,15 @@ check('imports getVehicleByName from vehicles-store.js', modalSrc.includes("impo
 check('no leftover functional reads of the removed vehicle.lastOdometer field', !/_odoVehicle\?\.lastOdometer/.test(modalSrc));
 check('_vehicleOdometerValue helper reads vehicle.odometer (SS2: existing field, not lastOdometer)', /function _vehicleOdometerValue\(vehicle\)/.test(modalSrc) && /const raw = vehicle\?\.odometer;/.test(modalSrc));
 check("_vehicleOdometerValue treats '' (never set) as no value, not 0", /if \(raw == null \|\| raw === ''\) return null;/.test(modalSrc));
-check('Start Assignment prefills #odoInput via _vehicleOdometerValue', /const _odoAutofill = isStart \? _vehicleOdometerValue\(_odoVehicle\) : null;/.test(modalSrc));
-check('field stays a plain input — never marked readonly/disabled for the autofill (Requirement 5)', !/odoInput['"]\)?\.(readOnly|disabled)\s*=\s*true/.test(modalSrc));
+// v1.30.14.3 — Start Assignment KM Awal is now LOCKED to the authoritative
+// vehicle odometer (still resolved via _vehicleOdometerValue), not a free-typed
+// prefill. It is editable only via the explicit "Koreksi odometer" override,
+// which requires a reason written to the audit trail. This supersedes the
+// v1.27.0 "stays a plain input, never readonly" note.
+check('Start Assignment KM Awal is resolved from _vehicleOdometerValue', /_odoStartAuthoritative\s*=\s*isStart \? _vehicleOdometerValue\(_odoVehicle\) : null;/.test(modalSrc));
+check('Start Assignment locks KM Awal (setAttribute readonly) when an authoritative value exists', /input\.setAttribute\('readonly', 'readonly'\)/.test(modalSrc) && /_odoStartAuthoritative != null/.test(modalSrc));
+check('the lock is released ONLY by the explicit "Koreksi odometer" override', /function _onOdoCorrectClick\(\)/.test(modalSrc) && /input\.removeAttribute\('readonly'\)/.test(modalSrc));
+check('a corrected KM Awal requires a reason of at least the minimum', /_odoStartCorrected && correctionReason\.length < ODO_CORRECT_REASON_MIN/.test(modalSrc));
 check('_handleOdometerConfirm passes referenceOdometer only on Start', /referenceOdometer: refOdoVal/.test(modalSrc));
 check('_isOwnBidangAssignment helper extracted and shared', (modalSrc.match(/_isOwnBidangAssignment\(/g) || []).length >= 3);
 check('canActOnAssignment gates Bidang to their OWN self-drive (no-driver) assignment only', /user\.role === 'bidang' && assignment\) \{\s*return !assignment\.driver && _isOwnBidangAssignment/.test(modalSrc));
