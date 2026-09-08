@@ -1095,6 +1095,23 @@ z-index: 1;
   margin-top: 1px;
 }
 
+/* ── "Tanpa Driver" lane ─────────────────────────────────────────────
+   The dedicated resource row for assignments with no driver (Self-Drive /
+   not yet assigned). Structurally a normal driver lane — same sticky left
+   label ↔ right slots, same 1:1 alignment — with only a warm tint so it
+   reads as an operational exception, never a board redesign. The V2-shell
+   refinement (avatar suppression + specificity to beat platform.css's
+   `body.v2-shell-active .driver-label`) lives in platform.css. */
+.driver-label--unassigned {
+  background: var(--warn-bg, #F6EEDB);
+}
+.driver-label--unassigned .driver-name {
+  color: var(--warn, #946420);
+}
+.driver-lane-count {
+  font-family: var(--font-sans, inherit);
+}
+
 /* Area slot jam dalam satu baris driver.
    V1 Phase 3 — continuous multi-day canvas: total width = (--tl-days) days ×
    24h × lebar per jam. --tl-days is set on #timelineBody by js/timeline.js
@@ -1334,6 +1351,19 @@ z-index: 1;
 .block-status-badge--conflict {
   background: var(--warn, #946420);
   color: #fff;
+}
+/* V1 Driver Timeline Resource Lanes — passive "no driver" indicator on the
+   card itself, so a missing driver stays visible wherever the card appears
+   (any lane, any view). Mirrors the --conflict badge's --warn treatment. */
+.block-status-badge--unassigned {
+  background: var(--warn, #946420);
+  color: #fff;
+}
+/* A dashed inner ring marks the card as a provisional/exception state without
+   affecting layout (outline is not clipped by the block's overflow:hidden). */
+.assignment-block.is-unassigned {
+  outline: 1.5px dashed rgba(255, 255, 255, 0.85);
+  outline-offset: -3px;
 }
 
 /* Resize handle di kanan blok */

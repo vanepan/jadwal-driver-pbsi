@@ -447,8 +447,17 @@ function onDragMove(e) {
 
   const centerY = newTop + d.ghostHeight / 2;
   const rowEl = document.elementFromPoint(e.clientX, centerY)?.closest('.driver-row');
-  const nameEl = rowEl?.querySelector('.driver-name');
-  const targetDriver = nameEl ? nameEl.textContent.trim() : d.targetDriver;
+  let targetDriver;
+  if (rowEl && rowEl.dataset.lane === 'unassigned') {
+    // Dropping onto the dedicated "Tanpa Driver" lane clears the driver
+    // (Self-Drive) — updateAssignmentDirect already accepts driver:'' and
+    // skips the driver-conflict guard for it. Never persists the lane's
+    // label text ("Tanpa Driver") as if it were a real driver name.
+    targetDriver = '';
+  } else {
+    const nameEl = rowEl?.querySelector('.driver-name');
+    targetDriver = nameEl ? nameEl.textContent.trim() : d.targetDriver;
+  }
   const refSlots = (rowEl?.querySelector('.driver-slots')) || d.originRow.querySelector('.driver-slots');
   const refRect = refSlots.getBoundingClientRect();
 

@@ -566,8 +566,12 @@ function renderDriverRows() {
   const driversToRender = [...timelineDrivers];
 
   visibleAssignments.forEach(assignment => {
+    if (isUnassignedAssignment(assignment)) return; // handled by the dedicated lane below
     const hasDriverRow = driversToRender.some(driver => driverMatchesAssignment(driver, assignment));
     if (!hasDriverRow && assignment.driver) {
+      // driverId is filled but resolves to no active driver — keep the existing
+      // fallback convention: surface it as its own (inactive) lane under the raw
+      // name rather than dropping the assignment.
       driversToRender.push({
         name: assignment.driver,
         phone: assignment.phone || '',
@@ -577,11 +581,24 @@ function renderDriverRows() {
     }
   });
 
+  // Every visible assignment with no driver — routed to ONE dedicated lane,
+  // rendered last (see below). Overnight / multi-day span logic is unchanged:
+  // only the lane differs, never the time math.
+  const unassignedAssignments = visibleAssignments.filter(isUnassignedAssignment);
+
   const todayIdx = dateToDayIndex(todayString());
   const todayInWindow = todayIdx >= 0 && todayIdx < windowDayCount;
   const nowLeftPx = todayInWindow ? _canvasPx(todayString(), _nowMinutes()) : null;
 
   const frag = document.createDocumentFragment();
+
+  const addNowLine = (slots) => {
+    if (nowLeftPx == null) return;
+    const nowLine = document.createElement('div');
+    nowLine.className = 'today-line';
+    nowLine.style.left = `${nowLeftPx}px`;
+    slots.appendChild(nowLine);
+  };
 
   driversToRender.forEach(driver => {
     const row = document.createElement('div');
@@ -608,16 +625,41 @@ function renderDriverRows() {
       driverAssignments.forEach(a => slots.appendChild(createAssignmentBlock(a)));
     }
 
-    if (nowLeftPx != null) {
-      const nowLine = document.createElement('div');
-      nowLine.className = 'today-line';
-      nowLine.style.left = `${nowLeftPx}px`;
-      slots.appendChild(nowLine);
-    }
+    addNowLine(slots);
 
     row.appendChild(slots);
     frag.appendChild(row);
   });
+
+  // ── Dedicated "Tanpa Driver" lane ─────────────────────────────────────
+  // ALWAYS LAST, and shown ONLY when at least one visible assignment has no
+  // driver — never a permanently-empty fixed row. Same structural row as a
+  // driver lane (one .driver-row = its own sticky left label + right slots),
+  // so left labels and timeline lanes stay 1:1 from a single resource pass.
+  if (unassignedAssignments.length > 0) {
+    const row = document.createElement('div');
+    row.className = 'driver-row driver-row--unassigned';
+    row.dataset.lane = 'unassigned'; // read by timeline-interactions.js drag → driver:''
+
+    const label = document.createElement('div');
+    label.className = 'driver-label driver-label--unassigned';
+    const nameEl = document.createElement('span');
+    nameEl.className = 'driver-name';
+    nameEl.textContent = 'Tanpa Driver';
+    const countEl = document.createElement('span');
+    countEl.className = 'driver-phone driver-lane-count';
+    countEl.textContent = `${unassignedAssignments.length} tugas`;
+    label.append(nameEl, countEl);
+    row.appendChild(label);
+
+    const slots = document.createElement('div');
+    slots.className = 'driver-slots';
+    unassignedAssignments.forEach(a => slots.appendChild(createAssignmentBlock(a)));
+    addNowLine(slots);
+
+    row.appendChild(slots);
+    frag.appendChild(row);
+  }
 
   body.appendChild(frag);
 
@@ -633,6 +675,20 @@ function driverMatchesAssignment(driver, assignment) {
   if (assignmentDriver === driver.name) return true;
   const legacyNames = Array.isArray(driver.legacyNames) ? driver.legacyNames : [];
   return legacyNames.some(name => String(name || '').trim() === assignmentDriver);
+}
+
+/**
+ * An assignment is UNASSIGNED when it carries no driver reference. In this
+ * codebase the driver reference IS the display-name string (`assignment.driver`);
+ * `''` is the persisted "Tanpa Driver" / Self-Drive state (v1.27.0, see
+ * js/assignments.js NO_DRIVER_SENTINEL) and legacy records may hold null /
+ * undefined. All three route to the dedicated "Tanpa Driver" lane — a driver
+ * being absent is an operational condition to surface, never a reason to drop
+ * the assignment from the board. Independent of the vehicle: an assignment with
+ * a vehicle but no driver is still unassigned.
+ */
+export function isUnassignedAssignment(assignment) {
+  return String(assignment?.driver ?? '').trim() === '';
 }
 
 /**
@@ -670,6 +726,7 @@ function createAssignmentBlock(assignment) {
   const status = normalizeBlockStatus(assignment.status);
   const isCompleted = status === 'completed';
   const isStarted   = status === 'started';
+  const isUnassigned = isUnassignedAssignment(assignment);
 
   // Scheduled window in ABSOLUTE canvas minutes from windowStartDate 00:00.
   let startAbs, endAbs;
@@ -723,6 +780,7 @@ function createAssignmentBlock(assignment) {
 
   if (isCompleted) block.classList.add('is-completed');
   if (isStarted)   block.classList.add('is-started');
+  if (isUnassigned) block.classList.add('is-unassigned');
   if (status === 'cancelled') block.classList.add('is-cancelled');
   if (clipLeft)  block.classList.add('continues-prev-day');
   if (clipRight) block.classList.add('continues-next-day');
@@ -745,14 +803,18 @@ function createAssignmentBlock(assignment) {
     : `${minutesToTime(labelStartMin)}–${minutesToTime(labelEndMin)}`;
 
   // Passive visual conflict indicator — SAME checkConflict/checkVehicleConflict
-  // used at write time; read-only, never blocks.
+  // used at write time; read-only, never blocks. The driver-conflict term is
+  // guarded on a non-empty driver to match the write path exactly (js/
+  // assignments.js: `driver !== '' && checkConflict(...)`) — two concurrent
+  // "Tanpa Driver" assignments are a valid state, not a conflict.
   const hasConflict = status !== 'cancelled' && (
-    checkConflict(assignment.driver, assignment.startTime, assignment.endTime, assignment.date, assignment.id)
+    (assignment.driver && checkConflict(assignment.driver, assignment.startTime, assignment.endTime, assignment.date, assignment.id))
     || (assignment.vehicle && assignment.vehicle !== '__none__'
         && checkVehicleConflict(assignment.vehicle, assignment.startTime, assignment.endTime, assignment.date, assignment.id))
   );
 
   const metadataBadges = [
+    isUnassigned ? '<span class="block-status-badge block-status-badge--unassigned">⚠ Tanpa Driver</span>' : '',
     isCompleted ? '<span class="block-status-badge">✓ Selesai</span>' : '',
     isOvertime  ? '<span class="block-status-badge block-status-badge--overtime">Lembur</span>' : '',
     isStarted   ? '<span class="block-status-badge block-status-badge--started">Jalan</span>' : '',

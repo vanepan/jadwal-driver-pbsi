@@ -4791,6 +4791,29 @@ body.v2-shell-active .driver-label .driver-phone {
   body.v2-shell-active .driver-label .driver-phone { grid-column: 1; grid-row: 2; }
 }
 
+/* ── "Tanpa Driver" (unassigned) lane — V2 shell refinement ───────────
+   V1 Driver Timeline Resource Lanes. The lane is built by js/timeline.js
+   #renderDriverRows with class .driver-label--unassigned. It is a state,
+   not a person: no avatar, and a warm tint + amber label so a missing
+   driver reads as an operational exception. Selectors carry the same
+   `body.v2-shell-active .driver-label…` prefix so they win here (defined
+   after the base driver-label rules above). */
+body.v2-shell-active .driver-label--unassigned {
+  grid-template-columns: 1fr;
+  background: var(--warn-bg, #F6EEDB);
+}
+body.v2-shell-active .driver-label--unassigned::before { display: none; }
+body.v2-shell-active .driver-label--unassigned .driver-name {
+  grid-column: 1;
+  color: var(--warn, #946420);
+}
+body.v2-shell-active .driver-label--unassigned .driver-lane-count {
+  grid-column: 1;
+  color: var(--warn, #946420);
+  opacity: 0.85;
+  font-family: var(--font-sans, 'Inter', sans-serif);
+}
+
 
 /* ── 7. Vehicle Legend — refined chips ────────────────────────
    Tighter padding, slightly smaller text, better swatch size. */
