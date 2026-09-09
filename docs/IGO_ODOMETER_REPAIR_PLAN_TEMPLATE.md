@@ -1,21 +1,24 @@
-# IGO ODOMETER REPAIR PLAN — TEMPLATE (NOT EXECUTED)
+# IGO ODOMETER REPAIR PLAN
 
-**Status: BLOCKED for automated execution.** This session has **no access to
+**Status: BLOCKED for execution by the agent.** This session has **no access to
 the production Firebase RTDB** (`schedule-driver-pbsi-default-rtdb`,
-`asia-southeast1`). Unauthenticated reads are denied (confirmed via
-`scripts/smoke-boot.mjs` → `Permission denied`), the repo contains no
-assignments/vehicles export, and the six correction screenshots referenced in
-the task were **not attached** — only six bare km values were provided:
+`asia-southeast1`) — no admin credentials / custom-token, so authenticated reads
+and writes are impossible; unauthenticated reads are denied (`scripts/smoke-boot.mjs`
+→ `Permission denied`); and there is no data export in the repo. The agent will
+not bypass/weaken RTDB rules, add a service account, fake auth, or add a
+cleanup endpoint. As of 2026-09-09 the operator supplied the **six full business
+identities + correct KM Awal** (below) and the separate incident's full numbers
+— but the `assignmentId`s and current stored values still have to be resolved
+from production, which needs an authenticated admin session.
 
-```
-3.424   22.149   20.789   20.490   21.947   21.961
-```
-
-Per the task's PRIMARY SAFETY RULE, no production data is modified until every
-candidate is matched to a real assignment ID and proven safe against the
-surrounding odometer history. That verification requires the data. **Fill this
-template from a production export, verify every row, then execute the repair
-through the app's own supervised path — never a blind script.**
+**Execution path (for someone with admin access):** the console procedure in
+"Write — only via the authenticated admin session" below — run in the DevTools
+console of the running, logged-in production app. It uses the app's own
+`readNode` / `updateFirebaseData` / `logAction` (no code change, no new
+endpoint): DRY RUN (reads + classifies, writes nothing) → per-row WRITE with
+re-read + field-integrity assert → reconcile. Only `startOdometer` +
+`distanceTravelled` are written; a bad START with a valid END never touches
+`endOdometer` or `vehicles/{id}.odometer`.
 
 ---
 
@@ -154,57 +157,192 @@ correct** — do not reset it.
 
 ---
 
-## Repair table — FILL FROM PRODUCTION, verify each row before any write
+## Repair targets — operator-confirmed KM Awal, matched by BUSINESS IDENTITY
 
-| # | Confirmed correct KM Awal | Assignment ID | Date | Vehicle | Current KM Awal | Current KM Akhir | Current Distance | Correct KM Awal | Correct KM Akhir (keep if valid) | Correct Distance | Excess KM removed | Evidence checked |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | 3 424  | `<TBD>` | `<TBD>` | `<TBD>` | `<TBD>` | `<TBD>` | `<TBD>` | 3 424  | `<= current KM Akhir>` | `<end − 3424>` | `<current − corrected>` | ☐ identity ☐ vehicle ☐ chronology ☐ prev/next odo ☐ vehicle odo |
-| 2 | 22 149 | `<TBD>` | `<TBD>` | `<TBD>` | `<TBD>` | `<TBD>` | `<TBD>` | 22 149 | `<keep>` | `<end − 22149>` | `<…>` | ☐ … |
-| 3 | 20 789 | `<TBD>` | `<TBD>` | `<TBD>` | `<TBD>` | `<TBD>` | `<TBD>` | 20 789 | `<keep>` | `<end − 20789>` | `<…>` | ☐ … |
-| 4 | 20 490 | `<TBD>` | `<TBD>` | `<TBD>` | `<TBD>` | `<TBD>` | `<TBD>` | 20 490 | `<keep>` | `<end − 20490>` | `<…>` | ☐ … |
-| 5 | 21 947 | `<TBD>` | `<TBD>` | `<TBD>` | `<TBD>` | `<TBD>` | `<TBD>` | 21 947 | `<keep>` | `<end − 21947>` | `<…>` | ☐ … |
-| 6 | 21 961 | `<TBD>` | `<TBD>` | `<TBD>` | `<TBD>` | `<TBD>` | `<TBD>` | 21 961 | `<keep>` | `<end − 21961>` | `<…>` | ☐ … |
+Match each row in production by **all** of: date + start/end time + `driver`
+(Igo) + vehicle + destination + purpose. Resolve `assignmentId`, re-read the
+full record, then classify. Never match on `assignmentId` alone, never trust
+list order, never repair the first partial match.
 
-> The six values are **not** guaranteed to be in chronological order. Match each
-> to its assignment by the value + vehicle + date, not by list position. The
-> displayed KM Awal may differ from the correct value (e.g. shows `2.927`,
-> correct is `3.424`).
+| # | Tanggal | Jam | Kendaraan | Tujuan | Keperluan | Correct KM Awal |
+|---|---|---|---|---|---|---|
+| 1 | 2026-09-07 | 08:00–10:00 | Polytron | Pelatnas – Kedubes Mesir | Pengantaran Pengurusan Visa Mesir Pak Ketum | **3.424** |
+| 2 | 2026-09-04 | 17:00–19:30 | Innova   | T3 (Domestik) Soetta – Pelatnas | Penjemputan Kepulangan Tim Pontianak IM SI100 | **22.149** |
+| 3 | 2026-09-08 | 06:30–08:00 | Luxio    | Pelatnas – Imigrasi Depok | Pengantaran Pengurusan Paspor | **20.789** |
+| 4 | 2026-09-03 | 12:00–16:00 | Luxio    | Pelatnas – Santika Slipi | Pengantaran Rapat dengan Dewan Pengawas | **20.490** |
+| 5 | 2026-09-01 | 09:50–11:50 | Innova   | T3 Soetta – RM Gama (Green Terrace) | Penjemputan Makanan Ketum | **21.947** |
+| 6 | 2026-09-02 | 08:30–12:30 | Innova   | Pelatnas – Kemenpora | Pengantaran Rapat Bidang Binpres | **21.961** |
 
-**Worked example from the brief** (for arithmetic reference only, not a row above):
-`2.246 → 22.491` (distance `20.245`) becomes `22.390 → 22.491` (distance `101`);
-excess removed = `20.245 − 101 = 20.144 km`; vehicle latest odometer stays `22.491`.
+**7 — the separately documented incident** (all numbers known; still locate the
+record independently by its own business identity + stored odometer values —
+do **not** assume it is any of rows 1–6, do **not** search-and-replace `2.246`):
 
-**Total excess KM removed = Σ (Current Distance − Correct Distance)** across the
-six confirmed rows — fill once the table is complete.
+| Field | Current | Correct |
+|---|---|---|
+| KM Awal | 2.246 | **22.390** |
+| KM Akhir | 22.491 | 22.491 *(unchanged — valid)* |
+| distanceTravelled | 20.245 | **101** |
+| Excess removed | — | **20.144** |
 
-## Per-row safety gate (all must pass before writing that row)
+## Per-row classification — CONFIRMED / AMBIGUOUS / NOT FOUND
 
-1. Assignment ID resolved; `driver === 'Igo'` (or the canonical Igo record).
-2. Vehicle matches the screenshot.
-3. `correctStart ≤ current endOdometer` (else the END is also wrong — STOP, mark SUSPICIOUS).
-4. `correctStart` is `≥` the previous completed Igo/vehicle assignment's valid end and `≤` the next one's start (continuity holds), OR the gap has a documented reason.
-5. `vehicles/{vehicleId}.odometer` is consistent with the KEPT end (usually already correct).
-6. Only `startOdometer` + `distanceTravelled` change. `driver`, `vehicle`, `date`, `startTime`, `endTime`, `destination`, `purpose`, `status`, `endOdometer` unchanged.
+Only **CONFIRMED** rows may be written. A row is CONFIRMED only when **all** hold:
 
-## Execution (operator, supervised — NOT this session)
+1. Exactly one production assignment matches all six business-identity fields.
+2. `record.driver` resolves to Igo; `record.status === 'completed'`.
+3. `correctStart ≤ record.endOdometer` (the END is kept — if this fails the END
+   is also wrong → **AMBIGUOUS**, do not write, report).
+4. `correctStart` sits sanely in the vehicle's chronological chain
+   (≥ previous completed trip's valid end for that vehicle, ≤ next trip's start),
+   OR any gap has a documented operational reason.
+5. `vehicles/{vehicleId}.odometer` is consistent with the kept END (normally
+   already correct — a bad START with a valid END does not imply a wrong vehicle
+   odometer). **Do not** change vehicle state as collateral.
 
-- Prefer the app's own flow if a correction UI exists; otherwise a single
-  supervised RTDB multi-location update, one assignment at a time, with a fresh
-  precondition re-read immediately before each write.
-- For every row, write an audit entry via the existing `logAction` mechanism:
+`> 1` match → **AMBIGUOUS** (report all candidates, write nothing).
+`0` matches → **NOT FOUND** (report, skip).
 
-  ```
-  action:   'odometer_corrected'
-  targetId: <assignmentId>
-  metadata: { field: 'startOdometer', phase: 'repair', vehicle: <name>,
-              before: <old start>, after: <correct start>,
-              beforeDistance: <old>, afterDistance: <correct>,
-              reason: 'Koreksi salah input odometer. Nilai KM awal dikonfirmasi ulang berdasarkan data operasional kendaraan.' }
-  ```
+## Corrected values (arithmetic; fill `endOdometer` from the re-read)
 
-  The original value is preserved in `before` — never erase the evidence.
-- After each write: re-read the assignment, re-read `vehicles/{id}.odometer`,
-  and confirm the analytics monthly mileage dropped by exactly the row's excess.
+```
+correctStart    = <operator value from the table>
+correctEnd      = record.endOdometer            (keep; if < correctStart → AMBIGUOUS)
+correctDistance = correctEnd − correctStart
+excessRemoved   = record.distanceTravelled − correctDistance
+```
+
+`TOTAL IGO KM BEFORE` = Igo's Resource-Analytics number for the selected window.
+`TOTAL CONFIRMED EXCESS REMOVED` = Σ `excessRemoved` over CONFIRMED rows **inside
+that window**. `TOTAL IGO KM AFTER` = BEFORE − that sum. Reconcile before/after.
+
+## Write — only via the authenticated admin session, one record at a time
+
+Run this in the **browser DevTools console while logged in to the production app
+as an admin** (same origin → same-origin dynamic `import()` of the app modules;
+this is the sanctioned existing access path — no code change, no new endpoint).
+
+### Step A — DRY RUN (reads + classifies, writes NOTHING)
+
+```js
+// paste in the console of the running, authenticated admin app
+const { readNode } = await import('/js/firebase.js');
+const norm = s => String(s ?? '').trim().toLowerCase();
+
+const TARGETS = [
+  { n:1, date:'2026-09-07', start:'08:00', end:'10:00', vehicle:'Polytron', dest:'Pelatnas - Kedubes Mesir', purpose:'Pengantaran Pengurusan Visa Mesir Pak Ketum', correctStart:3424 },
+  { n:2, date:'2026-09-04', start:'17:00', end:'19:30', vehicle:'Innova',   dest:'T3 (Domestik) Soetta - Pelatnas', purpose:'Penjemputan Kepulangan Tim Pontianak IM SI100', correctStart:22149 },
+  { n:3, date:'2026-09-08', start:'06:30', end:'08:00', vehicle:'Luxio',    dest:'Pelatnas - Imigrasi Depok', purpose:'Pengantaran Pengurusan Paspor', correctStart:20789 },
+  { n:4, date:'2026-09-03', start:'12:00', end:'16:00', vehicle:'Luxio',    dest:'Pelatnas - Santika Slipi', purpose:'Pengantaran Rapat dengan Dewan Pengawas', correctStart:20490 },
+  { n:5, date:'2026-09-01', start:'09:50', end:'11:50', vehicle:'Innova',   dest:'T3 Soetta - RM Gama (Green Terrace)', purpose:'Penjemputan Makanan Ketum', correctStart:21947 },
+  { n:6, date:'2026-09-02', start:'08:30', end:'12:30', vehicle:'Innova',   dest:'Pelatnas - Kemenpora', purpose:'Pengantaran Rapat Bidang Binpres', correctStart:21961 },
+  // Row 7 — the incident: leave correctStart undefined and instead confirm the
+  // record shows startOdometer 2246 / endOdometer 22491 before treating it as row 7.
+  { n:7, date:null, incident:true, expectStart:2246, expectEnd:22491, correctStart:22390 },
+];
+
+const res = await readNode('assignments');
+if (res.status !== 'ok' || !res.value) { console.error('READ FAILED', res); throw new Error('no assignments'); }
+const all = Object.entries(res.value).map(([id, r]) => ({ id, ...r }));
+
+for (const t of TARGETS) {
+  let cand;
+  if (t.incident) {
+    cand = all.filter(a => norm(a.driver) === 'igo'
+      && Number(a.startOdometer) === t.expectStart && Number(a.endOdometer) === t.expectEnd);
+  } else {
+    cand = all.filter(a => norm(a.driver) === 'igo'
+      && (a.date === t.date || a.startDate === t.date)
+      && a.startTime === t.start && a.endTime === t.end
+      && norm(a.vehicle) === norm(t.vehicle)
+      && norm(a.destination) === norm(t.dest)
+      && norm(a.purpose) === norm(t.purpose));
+  }
+  if (cand.length !== 1) { console.warn(`ROW ${t.n}: ${cand.length===0?'NOT FOUND':'AMBIGUOUS ('+cand.length+')'}`, cand.map(c=>c.id)); continue; }
+  const a = cand[0];
+  const correctEnd = Number(a.endOdometer);
+  const status =
+    a.status !== 'completed'         ? 'AMBIGUOUS (not completed)' :
+    !Number.isFinite(correctEnd)     ? 'AMBIGUOUS (no endOdometer)' :
+    correctEnd < t.correctStart      ? 'AMBIGUOUS (end < correctStart — END also wrong)' :
+    'CONFIRMED';
+  const correctDistance = correctEnd - t.correctStart;
+  console.log(`ROW ${t.n} [${status}] id=${a.id}`, {
+    date:a.date, jam:`${a.startTime}-${a.endTime}`, vehicle:a.vehicle, dest:a.destination,
+    currentStart:a.startOdometer, currentEnd:a.endOdometer, currentDistance:a.distanceTravelled,
+    correctStart:t.correctStart, correctEnd, correctDistance,
+    excessRemoved: (a.distanceTravelled == null ? null : a.distanceTravelled - correctDistance),
+  });
+}
+```
+
+Copy the printed rows into the FINAL REPORT table. **Manually eyeball each
+CONFIRMED row** against the vehicle chain (rows 2/5/6 share Innova; rows 3/4
+share Luxio) before Step B.
+
+### Step B — WRITE, one CONFIRMED row at a time
+
+For **each** CONFIRMED `assignmentId` (do them individually, re-reading first):
+
+```js
+const { readNode, updateFirebaseData } = await import('/js/firebase.js');
+const { logAction } = await import('/js/logs.js');
+const { getCurrentUser } = await import('/js/auth.js');
+
+const ID = '<assignmentId from Step A>';
+const CORRECT_START = <number>;        // from the table
+const REASON = 'Koreksi salah input odometer. Nilai KM awal dikonfirmasi ulang berdasarkan data operasional kendaraan.';
+
+const cur = (await readNode(`assignments/${ID}`)).value;
+if (!cur) throw new Error('gone');
+console.log('BEFORE', { id: ID, ...cur });
+// re-verify identity + preconditions here, by eye, against Step A's row.
+const correctEnd = Number(cur.endOdometer);
+if (!(correctEnd >= CORRECT_START)) throw new Error('END < correctStart — STOP, AMBIGUOUS');
+const newDistance = correctEnd - CORRECT_START;
+
+await updateFirebaseData(`assignments/${ID}`, {   // surgical merge — ONLY these two keys
+  startOdometer: CORRECT_START,
+  distanceTravelled: newDistance,
+});
+
+const u = getCurrentUser();
+await logAction({
+  userId: u?.id, username: u?.username, displayName: u?.name,
+  action: 'odometer_corrected', targetId: ID,
+  metadata: {
+    field: 'startOdometer', phase: 'historical_repair', vehicle: cur.vehicle, assignmentId: ID,
+    before: cur.startOdometer, after: CORRECT_START,
+    beforeDistance: cur.distanceTravelled, afterDistance: newDistance,
+    reason: REASON,
+  },
+});
+
+const after = (await readNode(`assignments/${ID}`)).value;
+console.log('AFTER', after);
+console.assert(after.startOdometer === CORRECT_START && after.distanceTravelled === newDistance
+  && after.driver === cur.driver && after.vehicle === cur.vehicle && after.status === cur.status
+  && after.endOdometer === cur.endOdometer, 'UNEXPECTED FIELD CHANGE');
+```
+
+If any row's assert fails or `updateFirebaseData` rejects → **STOP**, do not
+continue, report the row.
+
+### Step C — reconcile
+
+Reload Analytics → Resource Analytics (same date range). Verify Igo dropped by
+exactly Σ excessRemoved (CONFIRMED, in-window); Dedi/Aria unchanged; total
+vehicle km dropped by the same Σ. Then re-run the anomaly pass on the corrected
+data:
+
+```js
+const { auditOdometerAnomalies } = await import('/js/analytics/odometer-audit.js');
+const rows = Object.entries((await (await import('/js/firebase.js')).readNode('assignments')).value)
+  .map(([id, r]) => ({ id, ...r }));
+console.table(auditOdometerAnomalies(rows.filter(a => String(a.driver||'').toLowerCase()==='igo'),
+  { warnJumpKm: 300, continuityGapKm: 500 }));
+```
+
+Report remaining SUSPICIOUS rows for review — **do not** auto-repair them.
 
 ## Broad audit (Phase 5) — also blocked on data
 
