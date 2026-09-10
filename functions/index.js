@@ -31,6 +31,7 @@ const { createUserCredential, resetUserCredential, changeMyCredential } = requir
 
 const { publishEvent } = require('./src/events/publishEvent');
 const { onAssignmentWrite } = require('./src/events/onAssignmentWrite');
+const { onAssignmentOdometerSync } = require('./src/events/onAssignmentOdometerSync');
 const { onRequestWrite } = require('./src/events/onRequestWrite');
 const { onEngineeringAssignmentWrite } = require('./src/events/onEngineeringAssignmentWrite');
 const { onEventWrite } = require('./src/events/onEventWrite');
@@ -76,6 +77,12 @@ exports.changeMyCredential = changeMyCredential;
 
 exports.publishEvent = publishEvent;
 exports.onAssignmentWrite = onAssignmentWrite;
+/* v1.30.14.4 — trusted server-side vehicle-odometer sync. Fires on the SAME
+   /assignments write completion already makes; monotonically advances only the
+   vehicles/{id}/odometer leaf. Fixes the stale-vehicle-odometer root cause
+   (driver/bidang cannot write /vehicles — rule-denied — so the client
+   fire-and-forget write-back silently failed). Narrowly scoped, no rule change. */
+exports.onAssignmentOdometerSync = onAssignmentOdometerSync;
 exports.onRequestWrite = onRequestWrite;
 
 /* Engineering Operations (v1.20.4) — /engineering/assignments trigger →

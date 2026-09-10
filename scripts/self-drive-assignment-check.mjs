@@ -155,8 +155,15 @@ check('driver-conflict filter is skipped when effDriver is empty (Self-Drive)', 
 check('#approveDriverSelect gains a "Tanpa Driver" (__none__) option', appSrc.includes("'<option value=\"__none__\">Tanpa Driver</option>'"));
 check('confirmApproveRequest only blocks on the untouched placeholder, not the explicit self-drive sentinel', appSrc.includes("if (selDriverRaw === '') { showToast('Pilih driver dulu.'); return; }"));
 check('_approveNormalizedDriver collapses the sentinel everywhere it is read', (appSrc.match(/_approveNormalizedDriver\(/g) || []).length >= 4);
-check('registerCompleteCallback writes vehicle.odometer back on every completed trip with a vehicle', /if \(assignments\[idx\]\.vehicle && endOdometer != null\) \{\s*const veh = getVehicleByName/.test(appSrc));
-check('odometer write-back is fire-and-forget (never blocks the completion already committed)', /updateVehicleOdometer\(veh\.id, endOdometer\)\.catch/.test(appSrc));
+// v1.30.14.4 — vehicle.odometer sync is now AUTHORITATIVE server-side
+// (functions/src/events/onAssignmentOdometerSync.js). The client keeps a
+// FAST-PATH write, but only when it can actually succeed (admin session —
+// /vehicles .write is admin-gated), and a real failure is now logged via the
+// audit mechanism, never a silent console.warn.
+check('registerCompleteCallback client fast-path write is gated on isAdmin()', /if \(isAdmin\(\) && assignments\[idx\]\.vehicle && endOdometer != null\) \{\s*const veh = getVehicleByName/.test(appSrc));
+check('odometer write-back is still fire-and-forget (never blocks the completion already committed)', /updateVehicleOdometer\(veh\.id, endOdometer\)\.catch\(err => \{/.test(appSrc));
+check('a client write-back failure is now logged (vehicle_odometer_sync_failed), not a silent console.warn', /action: 'vehicle_odometer_sync_failed'/.test(appSrc) && !/console\.warn\('\[odometer\] update failed'/.test(appSrc));
+check('server odometer-sync trigger is registered in functions/index.js', /exports\.onAssignmentOdometerSync = onAssignmentOdometerSync;/.test(src('functions/index.js')));
 
 console.log('\n[analytics-engine.js: source pattern confirms the runtime result above]');
 const analyticsSrc = src('js/analytics/analytics-engine.js');

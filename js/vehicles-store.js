@@ -242,7 +242,17 @@ export async function updateVehicleOdometer(vehicleId, value) {
   const updates = { odometer: String(Number(value)), updatedAt: new Date().toISOString() };
 
   if (isFirebaseConfigured()) {
-    await updateFirebaseData(VEHICLES_PATH + '/' + vehicleId, updates);
+    // v1.30.14.4 — bound the write so a hung request never dangles. On failure
+    // (or timeout) the LOCAL CACHE IS DELIBERATELY NOT PATCHED: server state is
+    // authoritative (the primary writer is the onAssignmentOdometerSync server
+    // trigger) and the realtime /vehicles subscription reconciles the client.
+    // Do NOT add optimistic cache behaviour here.
+    await Promise.race([
+      updateFirebaseData(VEHICLES_PATH + '/' + vehicleId, updates),
+      new Promise((_, reject) => setTimeout(
+        () => reject(new Error('vehicle odometer write timed out')), 8000,
+      )),
+    ]);
   }
   applyVehiclesPatch(map => { map[vehicleId] = { ...map[vehicleId], ...updates }; });
 }

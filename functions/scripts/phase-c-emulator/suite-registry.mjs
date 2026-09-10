@@ -32,5 +32,9 @@ export const SUITE_REGISTRY = Object.freeze([
   'profile-mirror-check.js',
   'remaining-oncall-check.js',
   'remaining-triggers-check.js',
+  // v1.30.14.4 — onAssignmentOdometerSync: the trigger's own Admin-SDK
+  // vehicles/{id}/odometer transaction stays leaf-scoped, monotonic,
+  // idempotent, and fail-closed on an unresolvable vehicle name.
+  'vehicle-odometer-sync-check.js',
   'http-functions-check.js',
 ]);

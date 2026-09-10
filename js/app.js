@@ -109,6 +109,7 @@ import { openDriverWellnessDrawer } from './components/driver-wellness-drawer.js
 // Unified Scoring + the Dispatch Policy Engine (no dispatch/recommendation change).
 import { validateMaintenanceRecord, normalizeMaintenanceRecord } from './services/maintenance-service.js';
 import { computeFleetAssetModel, findVehicleAsset, searchFilterVehicles } from './services/vehicle-asset-service.js';
+import { computeVehicleOdometerReconciliation } from './services/vehicle-odometer-reconciliation.js';
 import { computeFleetReminders, summarizeReminders } from './services/reminder-engine.js';
 import { injectFleetDashboardStyles, renderFleetDashboard } from './components/fleet-dashboard.js';
 import { injectVehicleReminderPanelStyles, renderVehicleReminderPanel } from './components/vehicle-reminder-panel.js';
@@ -13506,10 +13507,45 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Setup callbacks untuk cross-module communication
 
+  // ── SAFETY NET (v1.30.14.4): heal vehicles whose odometer went stale BEFORE
+  // the server sync trigger (functions/src/events/onAssignmentOdometerSync.js)
+  // was deployed. ONE-SHOT per admin session, never on render, MONOTONIC
+  // (never lowers). The server trigger is the primary path; this only closes
+  // the historical gap. For this fleet size (≤ a handful of vehicles) a few
+  // parallel writes is not a "storm"; a larger fleet would want one batched
+  // multi-path update() instead.
+  let _vehOdoReconcileDone = false;
+  function reconcileStaleVehicleOdometersOnce() {
+    if (_vehOdoReconcileDone || !isAdmin()) return;
+    const vehicles = getVehicles();
+    if (!vehicles.length || !assignments.length) return; // wait until both are loaded
+    _vehOdoReconcileDone = true;
+    const fixes = computeVehicleOdometerReconciliation(vehicles, assignments);
+    if (!fixes.length) return;
+    const u = getCurrentUser();
+    for (const f of fixes) {
+      updateVehicleOdometer(f.vehicleId, f.trueOdo)
+        .then(() => logAction({
+          userId: u?.id, username: u?.username, displayName: u?.name,
+          action: 'vehicle_odometer_reconciled', targetId: f.vehicleId,
+          metadata: {
+            name: f.name, before: f.current, after: f.trueOdo,
+            note: 'boot safety-net; value = max completed endOdometer for this vehicle (monotonic, never lowered)',
+          },
+        }))
+        .catch(err => logAction({
+          userId: u?.id, username: u?.username, displayName: u?.name,
+          action: 'vehicle_odometer_reconcile_failed', targetId: f.vehicleId,
+          metadata: { name: f.name, target: f.trueOdo, errorCode: err?.code || null, error: String(err?.message || err).slice(0, 200) },
+        }));
+    }
+  }
+
   // ── Callback: Firebase data berubah (dari device lain) ──
   registerDataChangeListener((updatedAssignments) => {
     console.log('Firebase data updated from another device');
     assignments = updatedAssignments.map(normalizeAssignmentStatus);
+    reconcileStaleVehicleOdometersOnce();
     updateAllModules();   // also calls setDashboardAssignments + renderDriverDashboard
     renderViews();
     if (activeAdminSection === 'dispatchanalytics') renderDispatchAnalyticsSection();
@@ -13883,18 +13919,35 @@ document.addEventListener('DOMContentLoaded', async () => {
     saveOneAssignment(assignments[idx]); // Surgical: hanya update record ini di Firebase
     renderViews();
 
-    // v1.27.0/SS2: keep vehicle.odometer (the existing Vehicle Registration
-    // field — single source of truth, not a separate `lastOdometer` field) in
-    // sync so the NEXT assignment (driver or self-drive, any vehicle) autofills
-    // Odometer Awal from it — applies to every completed trip with a vehicle,
-    // not just self-drive. Non-blocking: a transient Firebase hiccup here must
-    // never undo the completion already committed to `assignments` above.
-    if (assignments[idx].vehicle && endOdometer != null) {
+    // v1.30.14.4 — vehicle.odometer sync is now AUTHORITATIVE server-side:
+    // functions/src/events/onAssignmentOdometerSync.js fires on this same
+    // /assignments write, for EVERY completer (driver / bidang / admin),
+    // and monotonically advances vehicles/{id}.odometer. That is the fix for
+    // the stale-odometer root cause — a driver/bidang cannot write /vehicles
+    // (rule-denied), so this client fire-and-forget write-back silently failed
+    // for years and the next assignment inherited the frozen value.
+    //
+    // The client still attempts a FAST-PATH write, but ONLY when it can
+    // actually succeed (admin session — /vehicles .write is admin-gated), so
+    // an admin sees the value update without waiting for the trigger. A real
+    // failure here is now VISIBLE in the audit log, never a silent
+    // console.warn, and the client never claims a sync it did not perform.
+    if (isAdmin() && assignments[idx].vehicle && endOdometer != null) {
       const veh = getVehicleByName(assignments[idx].vehicle);
       if (veh) {
-        updateVehicleOdometer(veh.id, endOdometer).catch(err =>
-          console.warn('[odometer] update failed', err)
-        );
+        updateVehicleOdometer(veh.id, endOdometer).catch(err => {
+          logAction({
+            userId: currentUser?.id, username: currentUser?.username, displayName: currentUser?.name,
+            action: 'vehicle_odometer_sync_failed',
+            targetId: assignmentId,
+            metadata: {
+              vehicle: assignments[idx].vehicle, vehicleId: veh.id, endOdometer,
+              errorCode: err?.code || null,
+              error: String(err?.message || err).slice(0, 200),
+              note: 'client fast-path failed; server onAssignmentOdometerSync remains authoritative',
+            },
+          });
+        });
       }
     }
 
