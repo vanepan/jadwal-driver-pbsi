@@ -434,6 +434,10 @@ const AN_ICON_PATHS = {
   control:        'M4 8h16a4 4 0 0 1 0 8H4a4 4 0 0 1 0-8Zm13 4h.01',
   today:          'M12 5v-1.5M12 20.5V19M5 12H3.5M20.5 12H19M6.5 6.5l-1-1M18.5 6.5l1-1M6.5 17.5l-1 1M18.5 17.5l1 1M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z',
   operations:     'M5.5 17.5 17.5 5.5M5.5 17.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm12-12a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z',
+  // domain-shell rail glyph for the standalone Overtime domain — the exact
+  // clock from the retired #v2RailOvertime rail item (circle + hands), redrawn
+  // as one path in the shared 24×24 outline grammar.
+  overtime:       'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M12 7v5l3.5 2',
   comment:        'M4 4h16a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H9l-4 4v-4H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z',
   copy:           'M8 8h11a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1ZM5 16H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1v1',
   trash:          'M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M10 11v6M14 11v6',

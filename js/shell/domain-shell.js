@@ -95,21 +95,25 @@ function buildDomains() {
     },
     {
       id: 'finance', label: 'Finance', icon: 'finance', module: 'pettycash',
-      screens: [
-        ...Object.entries(cfg.pcMenuTitles).map(([id, label]) => ({
-          id, label, land: () => land.navPettyCash(id),
-        })),
-        { id: 'overtime', label: 'Overtime', land: land.navOvertime, module: 'overtime',
-          // Nested cross-module entry: Finance's OWN gate is pettycash.view
-          // (MODULE_PERMISSIONS), but overtime is a genuinely separate
-          // module/permission (overtime.view) — must check its own access,
-          // not just inherit the domain's, so a role with pettycash but not
-          // overtime access never sees this tab.
-          visible: () => cfg.canAccessModule('overtime'),
-          screens: Object.entries(cfg.otMenuTitles).map(([id, label]) => ({
-            id, label, land: () => land.navOvertime(id),
-          })) },
-      ],
+      screens: Object.entries(cfg.pcMenuTitles).map(([id, label]) => ({
+        id, label, land: () => land.navPettyCash(id),
+      })),
+    },
+    {
+      // Overtime restored to a standalone top-level domain (it was demoted
+      // to a nested Finance → Overtime tab in v1.30.10.5). The
+      // module has its own permission (overtime.view, gated by
+      // canAccessModule('overtime')), its own MODULE_DEFS entry, and its own
+      // navOvertime() handler, so it is a first-class domain here just like
+      // Warehouse/Engineering — no new handler, permission, or module. The
+      // former nested Finance tab was removed with this change so the user
+      // never sees two identical Overtime entry points. Mobile "Lainnya"
+      // (js/app.js BOTTOM_NAV_MORE_ITEMS) is unaffected — it proxies
+      // #btnOvertime and is still gated by the same canAccessModule('overtime').
+      id: 'overtime', label: 'Overtime', icon: 'overtime', module: 'overtime',
+      screens: Object.entries(cfg.otMenuTitles).map(([id, label]) => ({
+        id, label, land: () => land.navOvertime(id),
+      })),
     },
     {
       id: 'engineering', label: 'Engineering', icon: 'engineering', module: 'engineering',
@@ -157,8 +161,9 @@ function buildDomains() {
         { id: 'users', label: 'Users', land: land.navManajemenUser },
         // Nested cross-module entry — Control's own gate is konfigurasi.view,
         // but Role Management is a separately-permissioned module
-        // (system.admin), so it needs its own visibility check too (same
-        // reasoning as Finance's Overtime tab above).
+        // (system.admin), so it needs its own visibility check too: a
+        // nested screen that belongs to a different module gates on that
+        // module's own canAccessModule(), not the parent domain's.
         { id: 'roles', label: 'Roles', land: land.navRoleManagement, module: 'roleManagement',
           visible: () => cfg.canAccessModule('roleManagement') },
         { id: 'settings', label: 'Settings', land: land.navKonfigurasiGlobal },
