@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.30.14.5';
-export const RELEASE_NAME = 'V1 Overtime restored as a standalone top-level menu';
+export const APP_VERSION = '1.30.14.6';
+export const RELEASE_NAME = 'V1 Odometer reconciliation fail-closed fix + Polytron incident closure';
 
 /* ============================================================
    APP_ENV — the AUTHORITATIVE runtime environment (v1.20.3 RC1).
@@ -66,6 +66,17 @@ export function isProduction() {
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.30.14.6',
+    date: '2026-09-11',
+    summary: 'Closes the Polytron odometer-reconciliation incident: the reconciliation SAFETY NET (js/services/vehicle-odometer-reconciliation.js, admin-boot-only, secondary to the v1.30.14.4 server trigger) trusted the unfiltered max() of every completed endOdometer per vehicle name with no plausibility check. On 2026-09-10 a single corrupt completed record (mtkyrihm7a80, Polytron, endOdometer=22029 — Innova\'s contemporaneous reading copied onto a Polytron row, distanceTravelled=0) became the proposed vehicle odometer outright and poisoned vehicles/vhc_polytron/odometer to 22029. CODE FIX (commit 6139bf1, this release): computeVehicleOdometerReconciliation() now collects ALL valid completed endOdometer values per vehicle instead of just the running max, and only proposes a candidate when it sits within a jumpCeilingKm (default 5000) of an INDEPENDENT anchor — the vehicle\'s own stored odometer and/or its own second-highest completed reading. A candidate that fails this check is reported in a new `skipped` list (reason: no_independent_anchor | jump_exceeds_ceiling) and NO value is written or substituted — a skip only withholds a write, it never invents one; one vehicle\'s implausible reading never blocks another vehicle\'s legitimate reconciliation. js/app.js reconcileStaleVehicleOdometersOnce destructures the new { fixes, skipped } return and audit-logs every skip as vehicle_odometer_reconcile_skipped before the existing fix/write/audit path. The server trigger (functions/src/events/onAssignmentOdometerSync.js / odometerSyncLogic.js) was not implicated and was not touched. 43/43 reconciliation suite + full V1 regression suites + smoke-boot passed; deployed to Firebase Hosting (Vercel auto-deployed on push). PRODUCTION DATA REPAIR (supervised, one write at a time, fresh-read verified after each, no bulk/broad update, narrowest-leaf writes only — not a code change, recorded here for the historical record): assignment mtkyrihm7a80 startOdometer/endOdometer corrected 22029 -> 3370 (distanceTravelled kept at its own evidenced value, 0; every other field byte-identical); vehicles/vhc_polytron/odometer corrected 22029 -> 3637, derived from the latest production Polytron reading that survives a monotonic walk-forward check against the real chain (mtsjpaz22kdf), not from the vehicle leaf\'s own corrupted value and not invented. Two follow-up read-only audits (fresh production snapshots, zero writes) confirmed: 0 arithmetic mismatches, 0 invalid readings, 0 new corruption, all 7 original + 9 additional historical repairs + this incident\'s own repairs intact with 0 regressions, and reconciliation stable at fixes=[] / skipped=[] across both audits. A third read-only pass against real natural post-deployment production activity (3 assignments both started and completed after the trigger\'s live deploy, across Luxio and Hiace) directly confirmed via Cloud Function logs: forward sync advances the vehicle leaf correctly, a lower/stale completed reading never lowers it, vehicle name resolution matches correctly, and — for the first time since the fix shipped — the client no longer prefills a stale cached startOdometer on a fresh trip. No V2/Intelligence, Firebase rules, Cloud Functions, feature flags, or OpenAI configuration were touched by any of this work.',
+    highlights: [
+      'Root-cause fix for the reconciliation safety net: it now requires a candidate vehicle odometer to be corroborated by an independent anchor (the vehicle\'s own stored value and/or its own second-highest completed reading) before proposing it, and reports an implausible one as skipped rather than ever writing or inventing a substitute value.',
+      'The exact incident that exposed the gap — a corrupt Polytron completed record carrying Innova\'s odometer reading — is pinned as a permanent regression test alongside the fix.',
+      'The corrupt assignment (mtkyrihm7a80) and the Polytron vehicle leaf it had poisoned were both repaired in supervised, one-at-a-time, fresh-read-verified production writes, evidenced entirely from the real assignment chain — no value was invented.',
+      'Three independent read-only production audits after the fix (including one against genuine new driver activity observed through live Cloud Function logs) found zero new corruption, zero regressions in any prior repair, and confirmed the prevention architecture (server trigger + client completion guard) is working as designed.',
+    ],
+  },
   {
     version: '1.30.14.5',
     date: '2026-09-10',
