@@ -13520,9 +13520,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     const vehicles = getVehicles();
     if (!vehicles.length || !assignments.length) return; // wait until both are loaded
     _vehOdoReconcileDone = true;
-    const fixes = computeVehicleOdometerReconciliation(vehicles, assignments);
-    if (!fixes.length) return;
+    const { fixes, skipped } = computeVehicleOdometerReconciliation(vehicles, assignments);
     const u = getCurrentUser();
+    // Post-incident fail-closed guard (2026-09-11): a candidate max
+    // completed endOdometer that couldn't be corroborated against an
+    // independent anchor is NEVER written and NEVER given a substitute
+    // value — only logged, so a skip is as visible in the audit trail as a
+    // successful reconciliation. See vehicle-odometer-reconciliation.js.
+    for (const s of skipped) {
+      logAction({
+        userId: u?.id, username: u?.username, displayName: u?.name,
+        action: 'vehicle_odometer_reconcile_skipped', targetId: s.vehicleId,
+        metadata: {
+          name: s.name, current: s.current, candidateOdo: s.candidateOdo, anchorOdo: s.anchorOdo, reason: s.reason,
+          note: 'candidate max completed endOdometer inconsistent with established chain — failed closed, no write',
+        },
+      });
+    }
+    if (!fixes.length) return;
     for (const f of fixes) {
       updateVehicleOdometer(f.vehicleId, f.trueOdo)
         .then(() => logAction({
