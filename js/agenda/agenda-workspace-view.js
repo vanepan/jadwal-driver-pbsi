@@ -73,9 +73,25 @@ function toolbarActions(canManage, writableScopes) {
   const exportBtn = `<button type="button" class="cal-btn cal-btn--sm cal-export-btn" data-agenda-action="export-pdf" title="Ekspor Agenda &amp; To-Do ke PDF">${anIcon('download', { size: 14 })}<span>Export PDF</span><svg class="cal-export-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>`;
   const createBtns = (canManage && writableScopes.length)
     ? `<button type="button" class="cal-btn cal-btn--sm" data-agenda-action="create-event">+ Agenda</button>
+    <button type="button" class="cal-btn cal-btn--sm" data-agenda-action="create-calendar">+ Kalender</button>
     <button type="button" class="cal-btn cal-btn--sm" data-agenda-action="create-task">+ Tugas</button>`
     : '';
   return `<div class="cal-header-actions">${exportBtn}${createBtns}</div>`;
+}
+
+/** V1.31.1 — the ONE query the search box applies, extended to cover
+ *  Calendar (§X: "the search box... should evolve to cover Calendar too")
+ *  and to actually cover Agenda too — previously the query was silently
+ *  ignored outside the To-Do tab despite the "Cari agenda atau tugas…"
+ *  placeholder claiming otherwise (found during this phase's own audit).
+ *  Deleted items never reach here at all — agenda-store.js's
+ *  getVisibleEvents()/getVisibleTasks()/getVisibleCalendarItems() already
+ *  filter status==='deleted' out before ctx is built. */
+function matchesQuery(record, q) {
+  if (!q) return true;
+  const title = (record.title || '').toLowerCase();
+  const desc = (record.description || '').toLowerCase();
+  return title.includes(q) || desc.includes(q);
 }
 
 /** @param {Object} ctx see file header */
@@ -87,9 +103,13 @@ export function buildWorkspaceHTML(ctx) {
     return shell(ctx, `<div class="cal-error">${esc(ctx.error)}<div style="margin-top:10px"><button type="button" class="cal-btn cal-btn--sm" data-agenda-action="retry">Coba Lagi</button></div></div>`);
   }
 
+  const q = (ctx.todoFilters.query || '').trim().toLowerCase();
   let inner;
   if (ctx.mode === 'calendar') {
-    inner = renderCalendarHTML({ events: ctx.events, tasks: ctx.tasks, mode: ctx.calendarView, anchorDate: ctx.calendarAnchor, todayStr: ctx.todayStr });
+    const events = ctx.events.filter((e) => matchesQuery(e, q));
+    const tasks = ctx.tasks.filter((t) => matchesQuery(t, q));
+    const calendarItems = (ctx.calendarItems || []).filter((c) => matchesQuery(c, q));
+    inner = renderCalendarHTML({ events, tasks, calendarItems, mode: ctx.calendarView, anchorDate: ctx.calendarAnchor, todayStr: ctx.todayStr, now: ctx.now });
     inner = `<div class="cal-filters" role="tablist" aria-label="Tampilan Kalender">
         ${['month', 'week'].map((v) => `<button type="button" class="cal-chip" role="tab" aria-pressed="${ctx.calendarView === v}" data-agenda-action="set-calview:${v}">${v === 'month' ? 'Bulan' : 'Minggu'}</button>`).join('')}
       </div>${inner}`;
@@ -104,7 +124,9 @@ export function buildWorkspaceHTML(ctx) {
       </div>
       ${renderTodoListHTML({ tasks: filtered, now: ctx.now })}`;
   } else {
-    inner = renderAgendaListHTML({ events: ctx.events, tasks: ctx.tasks, now: ctx.now, todayStr: ctx.todayStr });
+    const events = ctx.events.filter((e) => matchesQuery(e, q));
+    const tasks = ctx.tasks.filter((t) => matchesQuery(t, q));
+    inner = renderAgendaListHTML({ events, tasks, now: ctx.now, todayStr: ctx.todayStr });
   }
 
   return shell(ctx, inner);
@@ -114,13 +136,13 @@ function shell(ctx, inner) {
   return `
     <div class="cal-header">
       <div>
-        <p class="cal-title">Agenda &amp; To-Do</p>
-        <p class="cal-subtitle">Apa yang terjadi dan apa yang perlu dikerjakan</p>
+        <p class="cal-title">Agenda, Kalender &amp; To-Do</p>
+        <p class="cal-subtitle">Apa yang terjadi, di mana orang ditugaskan, dan apa yang perlu dikerjakan</p>
       </div>
       ${modeSwitcher(ctx.mode)}
     </div>
     <div class="cal-header" style="margin-bottom:12px">
-      <input type="search" class="cal-form-input" style="max-width:280px" placeholder="Cari agenda atau tugas…" value="${esc(ctx.todoFilters.query || '')}" data-agenda-search>
+      <input type="search" class="cal-form-input" style="max-width:280px" placeholder="Cari agenda, kalender, atau tugas…" value="${esc(ctx.todoFilters.query || '')}" data-agenda-search>
       ${toolbarActions(ctx.canManage, ctx.writableScopes)}
     </div>
     <div data-agenda-view-root>${inner}</div>`;

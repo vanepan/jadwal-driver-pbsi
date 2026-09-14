@@ -11,6 +11,7 @@
 'use strict';
 
 import { printPdfFromFrame } from './print-manager.js';
+import { lockBodyScroll, unlockBodyScroll } from '../ui/sheet-gesture.js';
 
 let _initialised = false;
 let _currentUrl  = null;
@@ -126,14 +127,21 @@ export function showViewer(blob, filename, meta = {}) {
   }
 
   document.getElementById('docvOverlay').classList.add('open');
-  document.body.style.overflow = 'hidden';
+  // V1.31.1 §AB — was a standalone `document.body.style.overflow =
+  // 'hidden'` inline write, uncoordinated with the SAME shared, reference-
+  // counted lock every drawer/bottom-sheet already uses (js/ui/
+  // sheet-gesture.js) — two independent mechanisms toggling body overflow
+  // around the same Export-PDF flow (this viewer opens right after the
+  // export drawer closes) is exactly the "order-dependent glitch" risk
+  // flagged during this phase's own audit. Unified onto the one lock.
+  lockBodyScroll();
 }
 
 export function closeViewer() {
   const overlay = document.getElementById('docvOverlay');
   if (!overlay) return;
   overlay.classList.remove('open');
-  document.body.style.overflow = '';
+  unlockBodyScroll();
   const frame = document.getElementById('docvFrame');
   if (frame) frame.src = 'about:blank';
   if (_currentUrl) { URL.revokeObjectURL(_currentUrl); _currentUrl = null; }

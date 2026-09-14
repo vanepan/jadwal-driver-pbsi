@@ -28,7 +28,7 @@
 'use strict';
 
 import { openDrawer, closeDrawer, refreshDrawerBody, setDrawerBusy, showDrawerError } from '../components/drawer.js';
-import { createEvent, updateEvent, cancelEvent, getEventById, setMyRsvpStatus } from './agenda-store.js';
+import { createEvent, updateEvent, cancelEvent, deleteEvent, getEventById, setMyRsvpStatus } from './agenda-store.js';
 import { getAgendaCandidates, registerDirectoryChangeListener, unregisterDirectoryChangeListener } from './agenda-directory.js';
 import { renderPickerHTML, renderPersonChipsHTML } from './agenda-participant-picker.js';
 import { wirePlainFields, validateEventDraft, fieldError, combineDateTimeToEpoch } from './agenda-forms.js';
@@ -198,6 +198,12 @@ function footer() {
   if (_editingId && !canWriteEvent(_editingEvent)) return [{ label: 'Tutup', action: 'event:cancelform' }];
   const actions = [{ label: 'Batal', action: 'event:cancelform' }];
   if (_editingId && _draft.status === 'scheduled') actions.push({ label: 'Batalkan Event', action: 'event:cancelevent', variant: 'danger' });
+  // V1.31.1 soft-delete ("Dihapus") — a SEPARATE, always-available action
+  // from "Batalkan" above (spec §T: both Batalkan and Hapus are listed as
+  // independent actions, not a sequential state machine). Available
+  // whenever the actor may write this event at all, regardless of its
+  // current status.
+  if (_editingId) actions.push({ label: 'Hapus Agenda', action: 'event:deleteevent', variant: 'danger' });
   actions.push({ label: _editingId ? 'Simpan Perubahan' : 'Simpan', action: 'event:save', variant: 'primary' });
   return actions;
 }
@@ -290,7 +296,19 @@ function onAction(action, close) {
   if (ns !== 'event' && ns !== 'picker') return;
 
   if (ns === 'event') {
-    if (verb === 'toggleallday') { rerender(); return; }
+    if (verb === 'toggleallday') {
+      // V1.31.1 fix — see agenda-calendar-drawer.js's identical fix for the
+      // full reasoning: a checkbox's native 'click' fires BEFORE 'change',
+      // so trusting wirePlainFields' 'change' listener to have already
+      // updated _draft.allDay by the time this 'click'-triggered rerender()
+      // runs was a one-click-late race (found via this phase's new Calendar
+      // drawer test coverage, then confirmed present here too — the exact
+      // same dual-binding pattern, shipped). Read the checkbox directly.
+      const cb = document.querySelector('[data-field="allDay"]');
+      if (cb) _draft.allDay = cb.checked;
+      rerender();
+      return;
+    }
     if (verb === 'cancelform') { close(); return; }
     if (verb === 'save') { handleSave(close); return; }
     if (verb === 'rsvp') {
@@ -318,6 +336,22 @@ function onAction(action, close) {
         if (typeof _onSaved === 'function') _onSaved();
         close();
       }).catch((err) => { setDrawerBusy(false); showDrawerError(err && err.message ? err.message : 'Gagal membatalkan.'); });
+      return;
+    }
+    if (verb === 'deleteevent') {
+      // Soft-delete ("Dihapus") — permanently removes this event from every
+      // normal projection (agenda-store.js#getVisibleEvents() filters it
+      // out); the underlying record and its full agendaAudit history remain
+      // for administrative forensic purposes. Rules forbid hard delete —
+      // there is no other way to make an event disappear.
+      if (!confirm('Hapus agenda ini? Agenda tidak akan lagi muncul di Agenda, Kalender, To-Do, pencarian, PDF, atau notifikasi. Riwayat tetap tersimpan untuk audit.')) return;
+      const reason = prompt('Alasan penghapusan (opsional):') || null;
+      setDrawerBusy(true, { busyLabel: 'Menghapus…' });
+      deleteEvent(_editingId, reason).then(() => {
+        setDrawerBusy(false);
+        if (typeof _onSaved === 'function') _onSaved();
+        close();
+      }).catch((err) => { setDrawerBusy(false); showDrawerError(err && err.message ? err.message : 'Gagal menghapus.'); });
       return;
     }
     return;

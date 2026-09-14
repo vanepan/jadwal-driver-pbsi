@@ -78,6 +78,19 @@ const sampleTask = (id, over = {}) => ({
   id, title: `Tugas ${id}`, status: 'not_started', priority: 'urgent', scope: 'sarpras_shared',
   responsible: {}, checklist: [], dueDate: '2026-09-11', dueAt: Date.now() + 3600000, ...over,
 });
+// V1.31.1 "Agenda, Kalender & To-Do". Default range mirrors the spec's own
+// worked example (§ example: "Evan - Sirnas C Piala Raja", 15-20 September
+// 2026) — 15 Sep 2026 is a Tuesday, so this fits entirely within one
+// Monday-first week row (Mon 14 - Sun 20), which the pure
+// agenda-calendar-range-bars-check.mjs suite already covers on its own;
+// this harness proves the same shape actually RENDERS as one continuous
+// bar in a real browser.
+const sampleCalendarItem = (id, over = {}) => ({
+  id, title: `Evan - Sirnas C Piala Raja ${id}`, status: 'scheduled', scope: 'sarpras_shared',
+  organizerUsername: 'harness-admin', startDate: '2026-09-15', endDate: '2026-09-20', allDay: true,
+  startAt: Date.parse('2026-09-15T00:00:00+07:00'), endAt: Date.parse('2026-09-20T23:59:00+07:00'),
+  participants: {}, ...over,
+});
 
 async function main() {
   const server = await startServer();
@@ -93,9 +106,9 @@ async function main() {
     await page.waitForFunction('window.__harnessReady === true', { timeout: 8000 });
 
     console.log('\n=== [A — buildWorkspaceHTML: modes + content] ===');
-    await checkAsync('agenda mode renders the section title', () => page.evaluate((ctx) => {
+    await checkAsync('agenda mode renders the section title (V1.31.1: "Agenda, Kalender & To-Do")', () => page.evaluate((ctx) => {
       window.__render(ctx);
-      return document.getElementById('root').textContent.includes('Agenda & To-Do');
+      return document.getElementById('root').textContent.includes('Agenda, Kalender & To-Do');
     }, baseCtx()));
     await checkAsync('agenda mode with data shows the event title and PIC label', () => page.evaluate((ctx) => {
       window.__render(ctx);
@@ -111,6 +124,67 @@ async function main() {
       const cells = document.querySelectorAll('.cal-grid .cal-cell').length;
       return cells > 0 && cells % 7 === 0 && document.body.textContent.includes('Bulan') && document.body.textContent.includes('Minggu');
     }, baseCtx({ mode: 'calendar' })));
+
+    console.log('\n=== [A.2 — V1.31.1 Calendar entity: multi-day rendering, toolbar, search ===');
+    await checkAsync('a multi-day Calendar item (Sirnas, 15-20 Sep) renders as ONE continuous range bar in Month view, clickable to open-calendar', () => page.evaluate((ctx) => {
+      window.__render(ctx);
+      const bars = document.querySelectorAll('.cal-range-bar');
+      const clickTarget = document.querySelector('[data-agenda-action^="open-calendar:"]');
+      // The visible cell label is deliberately truncated (spec §I: "Do not
+      // repeat a huge title inside every cell") — the FULL title lives in
+      // the bar's own title="" attribute, checked here instead of
+      // document.body.textContent (which would only ever see the
+      // truncated fragment).
+      const hasFullTitle = clickTarget && clickTarget.getAttribute('title').includes('Evan - Sirnas C Piala Raja');
+      // 6-day range, entirely within one week row (per the fixture's own
+      // comment) -> exactly 6 bar segments, one per day cell.
+      return bars.length === 6 && hasFullTitle && clickTarget != null;
+    }, baseCtx({ mode: 'calendar', calendarView: 'month', calendarItems: [sampleCalendarItem('sirnas')] })));
+    await checkAsync('the range bar is capped (rounded) ONLY on the true start/end day, squared off on the 4 days between', () => page.evaluate((ctx) => {
+      window.__render(ctx);
+      const capped = document.querySelectorAll('.cal-range-bar--cap-left, .cal-range-bar--cap-right').length;
+      const bothCapped = document.querySelectorAll('.cal-range-bar--cap-left.cal-range-bar--cap-right').length;
+      return capped === 2 && bothCapped === 0; // exactly 2 distinct capped ends, never both caps on one segment (would mean a 1-day item, not this 6-day one)
+    }, baseCtx({ mode: 'calendar', calendarView: 'month', calendarItems: [sampleCalendarItem('sirnas')] })));
+    await checkAsync('a CANCELLED calendar item\'s range bar renders muted/struck-through, distinct from an active one, never silently hidden', () => page.evaluate((ctx) => {
+      window.__render(ctx);
+      return document.querySelector('.cal-range-bar--dibatalkan') != null;
+    }, baseCtx({ mode: 'calendar', calendarView: 'month', calendarItems: [sampleCalendarItem('cancelled1', { status: 'cancelled' })] })));
+    await checkAsync('Week view shows the calendar item as its own row, distinct class from Agenda (blue) and To-Do (amber)', () => page.evaluate((ctx) => {
+      window.__render(ctx);
+      const row = document.querySelector('.cal-week-event--calendar');
+      return row != null && row.getAttribute('data-agenda-action').startsWith('open-calendar:') && document.body.textContent.includes('Sirnas C Piala Raja');
+    }, baseCtx({ mode: 'calendar', calendarView: 'week', calendarAnchor: '2026-09-16', calendarItems: [sampleCalendarItem('sirnas')] })));
+    await checkAsync('an empty Calendar period (no items at all) shows a subtle context hint, not a blank-looking grid', () => page.evaluate((ctx) => {
+      window.__render(ctx);
+      return document.querySelector('.cal-empty-hint') != null && document.body.textContent.includes('Belum ada kegiatan kalender');
+    }, baseCtx({ mode: 'calendar', calendarView: 'month', calendarAnchor: '2026-01-11', events: [], tasks: [], calendarItems: [] })));
+    await checkAsync('toolbar shows "+ Kalender" alongside "+ Agenda" / "+ Tugas" when canManage', () => page.evaluate((ctx) => {
+      window.__render(ctx);
+      return document.querySelector('[data-agenda-action="create-calendar"]') != null;
+    }, baseCtx()));
+    await checkAsync('canManage=false hides "+ Kalender" too (same gate as + Agenda/+ Tugas)', () => page.evaluate((ctx) => {
+      window.__render(ctx);
+      return document.querySelector('[data-agenda-action="create-calendar"]') == null;
+    }, baseCtx({ canManage: false, writableScopes: [] })));
+    await checkAsync('THE FIX: typing in the search box while on the Kalender tab now actually filters calendar items (previously silently ignored outside To-Do — found during this phase\'s own audit)', () => page.evaluate((ctx) => {
+      window.__render(ctx);
+      // Both fixtures are single-day (no truncation-by-week-clipping
+      // concern), but the visible cell label is still truncated at 18
+      // chars (spec §I) — check the bar's title="" attribute (the full,
+      // untruncated title) rather than the truncated visible text.
+      const bar = document.querySelector('.cal-range-bar');
+      return bar != null && bar.getAttribute('title') === 'match needle';
+    }, baseCtx({ mode: 'calendar', calendarView: 'month', todoFilters: { status: 'all', priority: 'all', query: 'needle' }, calendarItems: [sampleCalendarItem('match', { title: 'match needle', startDate: '2026-09-15', endDate: '2026-09-15' }), sampleCalendarItem('nomatch', { title: 'unrelated haystack', startDate: '2026-09-16', endDate: '2026-09-16' })] })));
+    await checkAsync('...and the non-matching calendar item is correctly excluded (only one bar rendered, not two)', () => page.evaluate((ctx) => {
+      window.__render(ctx);
+      return document.querySelectorAll('.cal-range-bar').length === 1;
+    }, baseCtx({ mode: 'calendar', calendarView: 'month', todoFilters: { status: 'all', priority: 'all', query: 'needle' }, calendarItems: [sampleCalendarItem('match', { title: 'match needle', startDate: '2026-09-15', endDate: '2026-09-15' }), sampleCalendarItem('nomatch', { title: 'unrelated haystack', startDate: '2026-09-16', endDate: '2026-09-16' })] })));
+    await checkAsync('search also now filters the Agenda list mode (previously silently ignored outside To-Do)', () => page.evaluate((ctx) => {
+      window.__render(ctx);
+      const html = document.body.textContent;
+      return html.includes('Rapat needle-match') && !html.includes('Rapat haystack');
+    }, baseCtx({ mode: 'agenda', todoFilters: { status: 'all', priority: 'all', query: 'needle' }, events: [sampleEvent('m1', { title: 'Rapat needle-match' }), sampleEvent('m2', { title: 'Rapat haystack' })] })));
     await checkAsync('todo mode renders status + priority filter chips', () => page.evaluate((ctx) => {
       window.__render(ctx);
       return document.body.textContent.includes('Belum Mulai') && document.body.textContent.includes('Urgent');
@@ -194,8 +268,14 @@ async function main() {
     await page.screenshot({ path: path.join(ROOT, 'scratch', 'agenda-mobile-390-light.png') });
 
     await page.setViewport({ width: 1440, height: 900 });
-    await page.evaluate((ctx) => window.__render(ctx), baseCtx({ mode: 'calendar', calendarView: 'month', events: [sampleEvent('e1'), sampleEvent('e2', { date: '2026-09-14', scope: 'kabid' })], tasks: [sampleTask('t1')] }));
+    await page.evaluate((ctx) => window.__render(ctx), baseCtx({ mode: 'calendar', calendarView: 'month', events: [sampleEvent('e1'), sampleEvent('e2', { date: '2026-09-14', scope: 'kabid' })], tasks: [sampleTask('t1')], calendarItems: [sampleCalendarItem('sirnas'), sampleCalendarItem('cancelled1', { title: 'Rapat Dibatalkan', startDate: '2026-09-08', endDate: '2026-09-08', status: 'cancelled' })] }));
     await page.screenshot({ path: path.join(ROOT, 'scratch', 'agenda-desktop-calendar-month.png') });
+    await page.evaluate((ctx) => window.__render(ctx), baseCtx({ mode: 'calendar', calendarView: 'week', calendarAnchor: '2026-09-16', events: [sampleEvent('e1')], tasks: [sampleTask('t1')], calendarItems: [sampleCalendarItem('sirnas')] }));
+    await page.screenshot({ path: path.join(ROOT, 'scratch', 'agenda-desktop-calendar-week.png') });
+    await page.setViewport({ width: 390, height: 844 });
+    await page.evaluate((ctx) => window.__render(ctx), baseCtx({ mode: 'calendar', calendarView: 'month', calendarItems: [sampleCalendarItem('sirnas')] }));
+    await page.screenshot({ path: path.join(ROOT, 'scratch', 'agenda-mobile-390-calendar-month.png') });
+    await page.setViewport({ width: 1440, height: 900 });
     await page.evaluate((ctx) => window.__render(ctx), baseCtx({
       mode: 'todo',
       tasks: [sampleTask('t1', { priority: 'urgent' }), sampleTask('t2', { priority: 'penting', status: 'in_progress' }), sampleTask('t3', { priority: 'normal', status: 'done' }), sampleTask('t4', { scope: 'kabid' })],
@@ -216,6 +296,8 @@ async function main() {
     }, baseCtx({ events: [sampleEvent('e1')], tasks: [sampleTask('t1')] })));
     await page.screenshot({ path: path.join(ROOT, 'scratch', 'agenda-desktop-dark.png') });
     await page.screenshot({ path: path.join(ROOT, 'scratch', 'agenda-toolbar-dark.png') });
+    await page.evaluate((ctx) => window.__render(ctx), baseCtx({ mode: 'calendar', calendarView: 'month', calendarItems: [sampleCalendarItem('sirnas')] }));
+    await page.screenshot({ path: path.join(ROOT, 'scratch', 'agenda-desktop-calendar-month-dark.png') });
     await checkAsync('dark mode: export button + create actions still share one action cluster (grouping fix holds under dark theme)', () => page.evaluate(() => {
       const exportBtn = document.querySelector('[data-agenda-action="export-pdf"]');
       const createBtn = document.querySelector('[data-agenda-action="create-event"]');
@@ -454,6 +536,63 @@ async function main() {
     }));
     await page.screenshot({ path: path.join(ROOT, 'scratch', 'agenda-mobile-390-event-drawer.png') });
     await page.evaluate(() => window.__closeEventDrawer());
+    await new Promise((r) => setTimeout(r, 350));
+    await page.setViewport({ width: 1440, height: 900 });
+
+    console.log('\n=== [G.3 — V1.31.1 Calendar drawer: date-RANGE fields, all-day toggle, validation, participant picker reuse] ===');
+    await page.evaluate(() => {
+      window.__setDirectoryForTest(
+        { evan: { displayName: 'Evan', role: 'admin', active: true, agendaParticipantType: 'sarpras_staff' }, grace: { displayName: 'Grace', role: 'admin', active: true, agendaParticipantType: 'sarpras_staff' } },
+        [],
+      );
+    });
+    await checkAsync('openCreateCalendarDrawer() opens a real drawer with startDate AND endDate fields (a range, not a single date)', () => page.evaluate(() => {
+      window.__openCreateCalendarDrawer();
+      return document.querySelector('.drawer[role="dialog"]') != null
+        && document.querySelector('[data-field="startDate"]') != null
+        && document.querySelector('[data-field="endDate"]') != null;
+    }));
+    await checkAsync('by default (not all-day) startTime/endTime fields are shown', () => page.evaluate(() => {
+      return document.querySelector('[data-field="startTime"]') != null && document.querySelector('[data-field="endTime"]') != null;
+    }));
+    await checkAsync('toggling "Sepanjang hari" (all-day) hides the time fields — an all-day block never forces a time (spec §D)', () => page.evaluate(() => {
+      document.querySelector('[data-drawer-action="calendar:toggleallday"]').click();
+      return document.querySelector('[data-field="startTime"]') == null && document.querySelector('[data-field="endTime"]') == null;
+    }));
+    await checkAsync('clicking Save with an empty title shows a validation error, does not crash, does not close', () => page.evaluate(() => {
+      const saveBtn = document.querySelector('[data-drawer-action="calendar:save"]');
+      saveBtn.click();
+      return document.querySelector('.cal-form-error') != null && document.querySelector('.drawer[role="dialog"]') != null;
+    }));
+    await checkAsync('setting endDate BEFORE startDate shows a range-order validation error (not silently accepted)', () => page.evaluate(() => {
+      document.querySelector('[data-field="title"]').value = 'Sirnas Test';
+      document.querySelector('[data-field="title"]').dispatchEvent(new Event('input', { bubbles: true }));
+      document.querySelector('[data-field="startDate"]').value = '2026-09-20';
+      document.querySelector('[data-field="startDate"]').dispatchEvent(new Event('change', { bubbles: true }));
+      document.querySelector('[data-field="endDate"]').value = '2026-09-15';
+      document.querySelector('[data-field="endDate"]').dispatchEvent(new Event('change', { bubbles: true }));
+      document.querySelector('[data-drawer-action="calendar:save"]').click();
+      const html = document.querySelector('[data-drawer-body]').innerHTML;
+      return html.includes('cal-form-error') && document.querySelector('.drawer[role="dialog"]') != null;
+    }));
+    await checkAsync('the participant/PIC picker is the SAME reusable component as the Event drawer (Evan/Grace candidates, PIC toggle) — not a second, parallel picker', () => page.evaluate(() => {
+      document.querySelector('[data-drawer-action="picker:open"]').click();
+      const html = document.querySelector('[data-drawer-body]').innerHTML;
+      return html.includes('Evan') && html.includes('Grace') && html.includes('cal-picker-pic-toggle');
+    }));
+    await checkAsync('closeCalendarDrawer() force-closes the drawer', () => page.evaluate(async () => {
+      document.querySelector('[data-drawer-action="picker:back"]').click();
+      window.__closeCalendarDrawer();
+      await new Promise((r) => setTimeout(r, 350));
+      return document.querySelector('.drawer[role="dialog"]') == null;
+    }));
+    await page.setViewport({ width: 390, height: 844 });
+    await checkAsync('Calendar drawer opens as a bottom sheet at 390px with no horizontal overflow', () => page.evaluate(() => {
+      window.__openCreateCalendarDrawer();
+      return document.querySelector('.drawer[role="dialog"]') != null && document.documentElement.scrollWidth <= window.innerWidth + 1;
+    }));
+    await page.screenshot({ path: path.join(ROOT, 'scratch', 'agenda-mobile-390-calendar-drawer.png') });
+    await page.evaluate(() => window.__closeCalendarDrawer());
     await new Promise((r) => setTimeout(r, 350));
     await page.setViewport({ width: 1440, height: 900 });
 

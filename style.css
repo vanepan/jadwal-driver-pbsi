@@ -111,6 +111,18 @@ html {
   /* NOTE: overflow-x:hidden on html/body blocks touch-pan events from reaching
      child scroll containers (timeline-body) on iOS Safari / Android Chrome.
      Page horizontal overflow is prevented by layout structure instead. */
+  /* V1.31.1 "Agenda, Kalender & To-Do" §AB — the drawer/sidebar/bottom-
+     sheet jitter root cause: every scroll-lock in this app (.sheet-scroll-
+     lock, .sidebar-is-open, and document-viewer.js's own inline lock) works
+     by toggling `overflow: hidden`, which removes the native scrollbar and
+     lets the whole page reflow into the freed-up width for the split
+     second the lock is active. `scrollbar-gutter: stable` reserves that
+     gutter space PERMANENTLY, whether or not a scrollbar is actually
+     showing — the exact, standards-based fix for "toggle overflow without
+     layout shift" (this is its documented purpose). Browsers without
+     support (older Safari) simply keep today's behavior — not a
+     regression, just not yet improved there. */
+  scrollbar-gutter: stable;
 }
 
 body {

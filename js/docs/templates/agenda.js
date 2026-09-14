@@ -25,6 +25,14 @@ const STATUS_STYLE = {
   cancelled: { label: 'Dibatalkan', color: TOKENS.color.dim, italics: true },
   in_progress: { label: 'Dalam Proses', color: TOKENS.color.ink },
   done: { label: 'Selesai', color: '#2F7D5B', bold: true },
+  // V1.31.1 "Agenda, Kalender & To-Do" — the Calendar entity's OWN
+  // lifecycle vocabulary (agenda-calendar-lifecycle.js), deliberately
+  // DISTINCT string keys from Agenda/To-Do's above — a Calendar item is
+  // NEVER "overdue"/"Terlewat" (spec §E), so no such mapping exists here.
+  terjadwal: { label: 'Terjadwal', color: TOKENS.color.ink },
+  berlangsung: { label: 'Berlangsung', color: '#2F7D5B', bold: true },
+  selesai: { label: 'Selesai', color: TOKENS.color.dim },
+  dibatalkan: { label: 'Dibatalkan', color: TOKENS.color.dim, italics: true },
 };
 
 function statusCell(status) {
@@ -61,16 +69,14 @@ function summaryCards(summary) {
     ] },
     layout: CARD_LAYOUT,
   });
-  return {
-    columns: [
-      cell(summary.totalEvents, 'Total Agenda'),
-      cell(summary.totalTasks, 'Total Tugas'),
-      cell(summary.overdueTasks, 'Tugas Terlambat'),
-      cell(summary.doneTasks, 'Tugas Selesai'),
-    ],
-    columnGap: 7,
-    margin: [0, 4, 0, 8],
-  };
+  const cells = [
+    cell(summary.totalEvents, 'Total Agenda'),
+    cell(summary.totalCalendarItems || 0, 'Total Kalender'),
+    cell(summary.totalTasks, 'Total Tugas'),
+    cell(summary.overdueTasks, 'Tugas Terlambat'),
+    cell(summary.doneTasks, 'Tugas Selesai'),
+  ];
+  return { columns: cells, columnGap: 6, margin: [0, 4, 0, 8] };
 }
 
 function agendaTable(items) {
@@ -89,6 +95,30 @@ function agendaTable(items) {
   ]));
   return {
     table: { widths: [55, 68, '*', 68, 95, 52], headerRows: 1, body: [...head, ...rows] },
+    layout: tableLayout(),
+    margin: [0, 2, 0, 10],
+  };
+}
+
+/** V1.31.1 "Agenda, Kalender & To-Do". `dateLabel` already carries the full
+ *  range ("9 September 2026 – 11 September 2026") from the view-model — no
+ *  separate start/end columns needed, mirroring how the Calendar UI itself
+ *  shows one continuous block, not two dates side by side. */
+function calendarTable(items) {
+  if (!items.length) return emptyState('Tidak ada kalender pada rentang ini.');
+  const head = [[
+    { text: 'Tanggal', style: 'th' }, { text: 'Judul', style: 'th' },
+    { text: 'Lokasi', style: 'th' }, { text: 'Penanggung Jawab', style: 'th' }, { text: 'Status', style: 'th' },
+  ]];
+  const rows = items.map((it) => ([
+    { text: it.dateLabel, fontSize: 8 },
+    { text: it.title, fontSize: 8.5, bold: true },
+    { text: it.location, fontSize: 8 },
+    { text: peopleLine(it), fontSize: 8 },
+    statusCell(it.status),
+  ]));
+  return {
+    table: { widths: [110, '*', 62, 90, 55], headerRows: 1, body: [...head, ...rows] },
     layout: tableLayout(),
     margin: [0, 2, 0, 10],
   };
@@ -117,31 +147,33 @@ function taskTable(items) {
 
 function build(vm, ctx = {}) {
   const d = vm || {};
-  const summary = d.summary || { totalEvents: 0, totalTasks: 0, overdueTasks: 0, doneTasks: 0 };
-  const showAgenda = d.mode !== 'todo';
-  const showTasks = d.mode !== 'agenda';
+  const summary = d.summary || { totalEvents: 0, totalCalendarItems: 0, totalTasks: 0, overdueTasks: 0, doneTasks: 0 };
+  const showAgenda = d.mode === 'agenda' || d.mode === 'semua' || d.mode == null;
+  const showCalendar = d.mode === 'kalender' || d.mode === 'semua' || d.mode == null;
+  const showTasks = d.mode === 'todo' || d.mode === 'semua' || d.mode == null;
 
   return {
     pageSize: 'A4',
     pageOrientation: 'portrait',
     pageMargins: A4_MARGINS,
-    info: { title: d.reportTitle || 'Laporan Agenda & To-Do', author: 'Sarpras Operations' },
+    info: { title: d.reportTitle || 'Laporan Agenda, Kalender & To-Do', author: 'Sarpras Operations' },
     defaultStyle: { fontSize: 8.5, color: TOKENS.color.ink, lineHeight: 1.2 },
     styles: {
       secLabel: { fontSize: 10, bold: true, color: TOKENS.color.ink, margin: [0, 8, 0, 2] },
       th: { fontSize: 7.5, bold: true, color: TOKENS.color.dim, fillColor: TOKENS.color.fill },
     },
-    footer: docFooter({ label: d.reportTitle || 'Laporan Agenda & To-Do' }),
+    footer: docFooter({ label: d.reportTitle || 'Laporan Agenda, Kalender & To-Do' }),
     content: [
       docHeader({ org: d.org, printDate: d.generatedAtLabel }),
       headerRule(),
-      { text: (d.reportTitle || 'LAPORAN AGENDA & TO-DO').toUpperCase(), fontSize: 14, bold: true, alignment: 'center', characterSpacing: 0.4 },
+      { text: (d.reportTitle || 'LAPORAN AGENDA, KALENDER & TO-DO').toUpperCase(), fontSize: 14, bold: true, alignment: 'center', characterSpacing: 0.4 },
       { text: d.dateRangeLabel || '', fontSize: 9, color: TOKENS.color.dim, alignment: 'center', margin: [0, 2, 0, 2] },
       { text: `Digenerate pada: ${d.generatedAtLabel || '—'}`, fontSize: 7.5, color: TOKENS.color.faint, alignment: 'center', margin: [0, 0, 0, 4] },
 
       summaryCards(summary),
 
       ...(showAgenda ? [sectionTitle('Agenda'), agendaTable(d.agendaItems || [])] : []),
+      ...(showCalendar ? [sectionTitle('Kalender'), calendarTable(d.calendarItems || [])] : []),
       ...(showTasks ? [sectionTitle('To-Do'), taskTable(d.taskItems || [])] : []),
     ],
   };
@@ -160,5 +192,5 @@ register('agenda', {
     const stamp = new Date().toISOString().slice(0, 10);
     return `Laporan-Agenda-${safe(d?.dateRangeLabel) || 'periode'}-${stamp}.pdf`;
   },
-  meta: { title: 'Laporan Agenda & To-Do', label: 'Laporan Agenda & To-Do' },
+  meta: { title: 'Laporan Agenda, Kalender & To-Do', label: 'Laporan Agenda, Kalender & To-Do' },
 });

@@ -75,6 +75,35 @@ export function validateTaskDraft(draft) {
   return { valid: Object.keys(errors).length === 0, errors };
 }
 
+/**
+ * V1.31.1 "Agenda, Kalender & To-Do" — Calendar entity. A DATE-RANGE
+ * validation (startDate..endDate, both inclusive), unlike
+ * validateEventDraft's single `date` — the startTime<endTime ordering
+ * check only applies when the range is a single day (startDate===endDate);
+ * a multi-day timed item (e.g. "Perjalanan dinas, 08:00 hari pertama —
+ * 17:00 hari terakhir") has no same-day ordering to violate.
+ * @param {Object} draft
+ * @returns {{valid: boolean, errors: Object<string,string>}}
+ */
+export function validateCalendarDraft(draft) {
+  const errors = {};
+  if (!draft.title || !draft.title.trim()) errors.title = 'Judul wajib diisi.';
+  if (!draft.startDate) errors.startDate = 'Tanggal mulai wajib diisi.';
+  if (!draft.endDate) errors.endDate = 'Tanggal selesai wajib diisi.';
+  if (draft.startDate && draft.endDate && draft.endDate < draft.startDate) {
+    errors.endDate = 'Tanggal selesai harus sama atau setelah tanggal mulai.';
+  }
+  if (!draft.allDay) {
+    if (!draft.startTime) errors.startTime = 'Jam mulai wajib diisi.';
+    if (!draft.endTime) errors.endTime = 'Jam selesai wajib diisi.';
+    if (draft.startDate === draft.endDate && draft.startTime && draft.endTime && draft.startTime >= draft.endTime) {
+      errors.endTime = 'Jam selesai harus setelah jam mulai.';
+    }
+  }
+  if (!draft.scope) errors.scope = 'Cakupan wajib dipilih.';
+  return { valid: Object.keys(errors).length === 0, errors };
+}
+
 /** Renders every field's error message under it, if the caller passes
  *  the same errors map back in — used by both drawers identically. */
 export function fieldError(errors, name) {

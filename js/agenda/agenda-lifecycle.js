@@ -24,7 +24,11 @@
  */
 export function isTaskOverdue(task, now) {
   if (!task) return false;
-  if (task.status === 'done') return false;
+  // 'deleted' (V1.31.1 soft-delete) suppresses overdue exactly like 'done'
+  // — defensive here (agenda-store.js#getVisibleTasks() already filters
+  // deleted tasks out before any view computes display state), but a
+  // deleted task is never "outstanding" regardless of caller.
+  if (task.status === 'done' || task.status === 'deleted') return false;
   if (task.dueAt == null) return false;
   return now > task.dueAt;
 }

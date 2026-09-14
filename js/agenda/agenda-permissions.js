@@ -141,3 +141,33 @@ export function canWriteTask(task) {
   if (task.scope === 'kabid') return canManageKabidAgenda();
   return false;
 }
+
+/**
+ * Same idea for a calendar item (V1.31.1) — organizer, PIC-only
+ * participant, or scope-bypass. Deliberately identical shape to
+ * canWriteEvent(): Calendar reuses Agenda's exact scope/permission
+ * architecture rather than a parallel one (same Sarpras-staff/Kabid
+ * population, no new permission id, no new role).
+ * @param {Object} item an already-loaded /agendaCalendars record
+ */
+export function canWriteCalendarItem(item) {
+  if (!item) return false;
+  const user = getCurrentUser();
+  const uid = user && (user.username || user.id);
+  if (!uid) return false;
+  if (item.organizerUsername === uid) return true;
+  const p = item.participants && item.participants[uid];
+  if (p && p.isPic === true) return true;
+  if (item.scope === 'sarpras_shared') return canManageSharedAgenda();
+  if (item.scope === 'kabid') return canManageKabidAgenda();
+  return false;
+}
+
+/** Mirrors isEventParticipant() for a calendar item. */
+export function isCalendarItemParticipant(item) {
+  if (!item) return false;
+  const user = getCurrentUser();
+  const uid = user && (user.username || user.id);
+  if (!uid) return false;
+  return !!(item.participants && item.participants[uid]);
+}

@@ -171,12 +171,17 @@ export function syncServerNotifications() {
     (snapshot) => {
       const val = snapshot && typeof snapshot.val === 'function' ? snapshot.val() : null;
       const list = val ? Object.entries(val).map(([id, rec]) => normalizeServerNotif(id, rec)) : [];
-      // Surface Engineering AND assignment lifecycle notifications from the
-      // outbox (v1.25.x Part 4). request.*/comment.added stay off this list —
-      // they still render via the legacy /logs bell (OPERATIONAL_ACTIONS) —
-      // so nothing is double-counted in either direction.
+      // Surface Engineering, assignment, AND Agenda/Kalender/To-Do lifecycle
+      // notifications from the outbox (v1.25.x Part 4; agenda./task./
+      // calendar. added V1.31.1 — a real, pre-existing gap found during
+      // this phase's own audit: the server engine has minted agenda.*/
+      // task.* notifications since V1.31 Phase C2, but this filter dropped
+      // every one of them before they ever reached the bell). request.*/
+      // comment.added stay off this list — they still render via the
+      // legacy /logs bell (OPERATIONAL_ACTIONS) — so nothing is double-
+      // counted in either direction.
       serverNotifs = list
-        .filter((n) => String(n.action).startsWith('engineering.') || String(n.action).startsWith('assignment.'))
+        .filter((n) => ['engineering.', 'assignment.', 'agenda.', 'task.', 'calendar.'].some((prefix) => String(n.action).startsWith(prefix)))
         .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
       if (serverNotifs.length) {   /* DIAGNOSTIC (removable) */
         _diagLastNotifAt = Date.now(); _diagLastNotifTitle = serverNotifs[0].title;
@@ -438,6 +443,10 @@ function serverNotifIcon(action) {
   if (a === 'assignment.completed') return ic('check');
   if (a === 'assignment.cancelled') return ic('x');
   if (a === 'assignment.reminder') return ic('history');
+  // V1.31.1 "Agenda, Kalender & To-Do" — agenda./task./calendar. share one
+  // icon (the distinguishing signal is color/context in the card itself,
+  // same as every other action sharing one icon by prefix above).
+  if (a.startsWith('agenda.') || a.startsWith('task.') || a.startsWith('calendar.')) return ic('calendar');
   return ic('bell');
 }
 

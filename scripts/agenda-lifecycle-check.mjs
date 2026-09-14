@@ -31,6 +31,8 @@ check('done after due -> not overdue (completion suppresses overdue)',
   isTaskOverdue({ status: 'done', dueAt: T - 1000 }, T) === false);
 check('reopened (done -> in_progress) while past due -> overdue again (pure recompute, no hidden state)',
   isTaskOverdue({ status: 'in_progress', dueAt: T - 1000 }, T) === true);
+check("V1.31.1: soft-deleted ('deleted') task past due -> not overdue (deletion suppresses overdue, like completion)",
+  isTaskOverdue({ status: 'deleted', dueAt: T - 1000 }, T) === false);
 
 console.log('\n=== [B — Event overdue] ===');
 check('scheduled before end -> not overdue',

@@ -104,6 +104,7 @@ const CSS = `
 .cal-row-meta { font-size:.76rem; color:var(--muted); display:flex; flex-wrap:wrap; gap:8px; }
 .cal-row-meta span { display:inline-flex; align-items:center; gap:4px; }
 
+.cal-empty-hint { text-align:center; padding:14px 12px 2px; color:var(--muted); font-size:.78rem; }
 .cal-empty { text-align:center; padding:40px 16px; color:var(--muted); }
 .cal-empty-title { font-size:.9rem; font-weight:600; color:var(--text); margin-bottom:4px; }
 .cal-empty-sub { font-size:.8rem; margin-bottom:16px; }
@@ -120,6 +121,11 @@ const CSS = `
 .cal-pill--overdue { background:var(--red-tint); color:var(--red); border-color:var(--red-bd); }
 .cal-pill--kabid { background:var(--blue-tint); color:var(--blue); border-color:var(--blue-bd); }
 .cal-pill--pic { background:var(--primary-tint); color:var(--primary-text); border-color:var(--primary); }
+/* V1.31.1 Calendar lifecycle badge — Terjadwal/Berlangsung/Selesai/
+   Dibatalkan, DERIVED (agenda-calendar-lifecycle.js), never "Terlewat". */
+.cal-pill--scheduled { background:var(--card2); color:var(--muted); border-color:var(--border); }
+.cal-pill--active { background:var(--green-tint); color:var(--green); border-color:var(--green-bd); font-weight:700; }
+.cal-pill--cancelled { background:var(--red-tint); color:var(--red); border-color:var(--red-bd); }
 
 /* ── Calendar grid view ───────────────────────────────────────────── */
 .cal-grid-head { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; margin-bottom:6px; }
@@ -142,6 +148,38 @@ const CSS = `
 .cal-week-row .cal-cell { min-height:120px; align-items:stretch; }
 .cal-week-event { font-size:.68rem; background:var(--blue-tint); color:var(--blue); border-radius:6px; padding:2px 5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .cal-week-event--task { background:var(--amber-tint); color:var(--amber); }
+/* V1.31.1 — Calendar item row in Week view. Neutral/organizational tone
+   (green), deliberately distinct from Agenda's blue and To-Do's amber
+   (spec §AM). --active (Berlangsung, right now) gets a filled/bold
+   treatment; --ended (Selesai) is deliberately muted, never "Terlewat"
+   red — a concluded period is not a failure. */
+.cal-week-event--calendar { background:var(--green-tint); color:var(--green); border-left:3px solid var(--green); }
+.cal-week-event--calendar-active { font-weight:700; }
+.cal-week-event--calendar-ended { opacity:.55; }
+.cal-week-event--calendar-cancelled { opacity:.55; text-decoration:line-through; background:var(--red-tint); color:var(--red); border-left-color:var(--red); }
+
+/* ── Multi-day Calendar range bar (Month view) — ONE continuous visual
+   block per item, clipped/segmented per visible week row, never six
+   unrelated dots (spec §AL/§I). Flush (no radius) on whichever side the
+   range continues past the cell/row edge; rounded ONLY on the item's true
+   start/end day, so the eye reads "this keeps going" vs "this is where it
+   begins/ends" without any text needed on continuation days. ────────── */
+.cal-range-bar { height:14px; border-radius:0; margin:0 -6px; padding:0 6px; font-size:.62rem; line-height:14px; font-weight:650; color:var(--green); background:var(--green-tint); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; cursor:pointer; }
+.cal-range-bar--cap-left { margin-left:0; border-radius:7px 0 0 7px; padding-left:6px; }
+.cal-range-bar--cap-right { margin-right:0; border-radius:0 7px 7px 0; }
+.cal-range-bar--cap-left.cal-range-bar--cap-right { border-radius:7px; }
+.cal-range-bar--berlangsung { background:var(--green); color:#fff; font-weight:700; }
+.cal-range-bar--selesai { opacity:.55; }
+.cal-range-bar--dibatalkan { background:var(--red-tint); color:var(--red); text-decoration:line-through; opacity:.75; }
+.cal-range-bar-more { font-size:.62rem; color:var(--muted); padding:0 6px; }
+@media (max-width:600px) {
+  /* Mirrors the existing dot-only mobile convention (Phase A/B risk R11) —
+     the bar itself (a thin colored strip) still communicates a multi-day
+     block at 390px; only the truncated title label is hidden for space,
+     exactly like .cal-cell-label already hides dot-count text. */
+  .cal-range-bar-label { display:none; }
+  .cal-range-bar { height:8px; }
+}
 
 /* ── To-do view ───────────────────────────────────────────────────── */
 .cal-todo-row { display:flex; gap:10px; align-items:flex-start; padding:11px 12px; border-radius:12px; }

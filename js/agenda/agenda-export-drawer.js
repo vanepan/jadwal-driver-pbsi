@@ -22,6 +22,7 @@ import { todayString } from '../utils.js';
 const MODES = [
   { key: 'semua', label: 'Semua' },
   { key: 'agenda', label: 'Agenda' },
+  { key: 'kalender', label: 'Kalender' },
   { key: 'todo', label: 'To-Do' },
 ];
 
@@ -43,7 +44,11 @@ function chipRow(items, current, actionPrefix) {
 
 function renderBody() {
   const showCustom = _draft.preset === 'custom';
-  const showTaskFilters = _draft.mode !== 'agenda';
+  // Task-specific filters (status/priority) only make sense when To-Do
+  // items are actually in the report — 'agenda' and 'kalender' modes
+  // exclude tasks entirely (agenda-pdf-view-model.js#buildAgendaPdfViewModel),
+  // so showing these chips there would filter nothing.
+  const showTaskFilters = _draft.mode === 'todo' || _draft.mode === 'semua';
   return `
     <div class="cal-form-field">
       <label class="cal-form-label cal-form-label--req">Rentang Tanggal</label>

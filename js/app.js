@@ -2440,6 +2440,58 @@ async function navSarprasIntelligence(screen, navId) {
    page happened to already be open. Pure client wiring: every destination
    below already exists (openDetailModal, openRequestsListModal,
    openEngineeringAssignment) — this only routes to it. */
+/* V1.31.1 "Agenda, Kalender & To-Do" — closes a real, pre-existing gap
+   found during this phase's own audit: agenda.* and task.* notifications
+   have been minted server-side since V1.31 Phase C2, but this switch had no
+   case for their entity kinds at all — tapping an Agenda push notification
+   opened/focused the app and navigated NOWHERE (fell to `default`). Fixed
+   here for agendaEvent/agendaTask/agendaCalendar together, since it is the
+   exact same gap in the exact same switch.
+
+   Unlike assignment/engineering, Agenda has no async "mount and await
+   initial data" step to hook into (agenda-store.js's initAgendaStore()
+   only opens live Firebase LISTENERS — the target record may not have
+   streamed in yet the instant navHome() returns, especially on a cold
+   start). Waits for it via the store's own registerAgendaChangeListener()
+   pub/sub instead of assuming it is already there, with a bounded
+   timeout so a genuinely-missing/deleted/unreadable entity does not hang
+   forever. */
+function openAgendaEntityWhenReady(kind, id) {
+  navHome();
+  const DRAWER_MODULE = {
+    agendaEvent: './agenda/agenda-event-drawer.js',
+    agendaTask: './agenda/agenda-task-drawer.js',
+    agendaCalendar: './agenda/agenda-calendar-drawer.js',
+  }[kind];
+  if (!DRAWER_MODULE) return;
+  Promise.all([import(DRAWER_MODULE), import('./agenda/agenda-store.js')]).then(([drawerMod, storeMod]) => {
+    const getById = {
+      agendaEvent: storeMod.getEventById, agendaTask: storeMod.getTaskById, agendaCalendar: storeMod.getCalendarItemById,
+    }[kind];
+    const openEdit = {
+      agendaEvent: drawerMod.openEditEventDrawer, agendaTask: drawerMod.openEditTaskDrawer, agendaCalendar: drawerMod.openEditCalendarDrawer,
+    }[kind];
+    let settled = false;
+    let timer = null;
+    const onChange = () => {
+      if (settled || !getById(id)) return;
+      settled = true;
+      storeMod.unregisterAgendaChangeListener(onChange);
+      clearTimeout(timer);
+      openEdit(id);
+      markNotificationRead(id);
+    };
+    if (getById(id)) { onChange(); return; }
+    storeMod.registerAgendaChangeListener(onChange);
+    timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      storeMod.unregisterAgendaChangeListener(onChange);
+      console.warn(`[push-nav] ${kind} ${id} was not found within the timeout — it may have been deleted, cancelled out of this session's readable scope, or the session lacks agenda.view/agenda.kabid.view.`);
+    }, 8000);
+  });
+}
+
 function initPushNavHandler() {
   window.addEventListener('pbsi:push-nav', (ev) => {
     const { view, id } = ev.detail || {};
@@ -2459,6 +2511,11 @@ function initPushNavHandler() {
           openEngineeringAssignment(id);
           markNotificationRead(id);
         });
+        break;
+      case 'agendaEvent':
+      case 'agendaTask':
+      case 'agendaCalendar':
+        openAgendaEntityWhenReady(view, id);
         break;
       default:
         break;

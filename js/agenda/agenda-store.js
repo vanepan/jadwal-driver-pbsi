@@ -42,6 +42,16 @@
    — see its own doc comment for why (the C3.1 Rules grant is scoped to
    exactly participants/$uid, which an updatedBy/updatedAt-carrying
    multi-location update from the event root would not satisfy).
+
+   V1.31.1 "Agenda, Kalender & To-Do" additions: a third sibling entity,
+   Calendar (/agendaCalendars), mirroring the event write path exactly
+   (see the "Calendar" section near the end of this file), plus a
+   soft-delete ("Dihapus") transition — deleteEvent()/deleteTask()/
+   deleteCalendarItem() — for all three entities, distinct from cancel
+   ("Dibatalkan"). getVisibleEvents()/getVisibleTasks()/
+   getVisibleCalendarItems() filter status==='deleted' out centrally, so
+   every existing and future consumer (views, search, PDF, ECC) excludes
+   deleted records automatically without having to remember to.
    ============================================================ */
 
 'use strict';
@@ -53,14 +63,18 @@ import { readableScopes } from './agenda-permissions.js';
 
 const EVENTS_PATH = 'agendaEvents';
 const TASKS_PATH = 'agendaTasks';
+const CALENDARS_PATH = 'agendaCalendars';
 const EVENTS_SCOPE_INDEX = 'agendaEventsByScope';
 const TASKS_SCOPE_INDEX = 'agendaTasksByScope';
+const CALENDARS_SCOPE_INDEX = 'agendaCalendarsByScope';
 
 let _initialized = false;
 const _eventRecords = new Map();   // eventId -> record
 const _eventUnsubs = new Map();    // eventId -> unsubscribe fn
 const _taskRecords = new Map();
 const _taskUnsubs = new Map();
+const _calendarRecords = new Map();
+const _calendarUnsubs = new Map();
 const _scopeIndexUnsubs = [];      // all top-level scope-index subscriptions, for a future full teardown
 
 const _listeners = new Set();
@@ -118,14 +132,29 @@ export function initAgendaStore() {
       const ids = new Set(Object.keys(snap.val() || {}));
       reconcileRecordSubscriptions(ids, _taskRecords, _taskUnsubs, TASKS_PATH);
     }, { onDenied: () => {}, onError: () => {} });
-    _scopeIndexUnsubs.push(eventsUnsub, tasksUnsub);
+    const calendarsUnsub = subscribeNode(`${CALENDARS_SCOPE_INDEX}/${scope}`, (snap) => {
+      const ids = new Set(Object.keys(snap.val() || {}));
+      reconcileRecordSubscriptions(ids, _calendarRecords, _calendarUnsubs, CALENDARS_PATH);
+    }, { onDenied: () => {}, onError: () => {} });
+    _scopeIndexUnsubs.push(eventsUnsub, tasksUnsub, calendarsUnsub);
   }
 }
 
-export function getVisibleEvents() { return [..._eventRecords.values()]; }
-export function getVisibleTasks() { return [..._taskRecords.values()]; }
+// 'deleted' ("Dihapus") is a terminal tombstone, not merely a status value —
+// per V1.31.1's soft-delete requirement it must disappear from EVERY normal
+// projection (calendar/agenda/to-do lists, search, PDF, counts, reminders,
+// notifications). Filtering it out here, once, at the one place every
+// consumer in this app already reads visible records from, is what makes
+// that guarantee automatic for every current and future caller rather than
+// something each one has to remember to re-implement.
+const notDeleted = (r) => r && r.status !== 'deleted';
+
+export function getVisibleEvents() { return [..._eventRecords.values()].filter(notDeleted); }
+export function getVisibleTasks() { return [..._taskRecords.values()].filter(notDeleted); }
+export function getVisibleCalendarItems() { return [..._calendarRecords.values()].filter(notDeleted); }
 export function getEventById(id) { return _eventRecords.get(id) || null; }
 export function getTaskById(id) { return _taskRecords.get(id) || null; }
+export function getCalendarItemById(id) { return _calendarRecords.get(id) || null; }
 
 /* ── The ONE canonical write path ───────────────────────────────────── */
 
@@ -179,6 +208,17 @@ export async function updateEvent(id, patch) {
 export async function cancelEvent(id, reason) {
   const username = currentUsername();
   await updateEvent(id, { status: 'cancelled', cancelledBy: username, cancelledAt: new Date().toISOString(), cancelReason: reason || null });
+}
+
+/** Soft-delete ("Dihapus") — a terminal tombstone, distinct from cancel
+ *  ("Dibatalkan"). Rules forbid hard delete (no .write path ever accepts a
+ *  remove()); this is the one sanctioned way an event stops appearing
+ *  anywhere (getVisibleEvents() filters status==='deleted' out) while the
+ *  record itself, and its full agendaAudit history, remain intact for
+ *  administrative forensic purposes. */
+export async function deleteEvent(id, reason) {
+  const username = currentUsername();
+  await updateEvent(id, { status: 'deleted', deletedBy: username, deletedAt: new Date().toISOString(), deleteReason: reason || null });
 }
 
 export async function acknowledgeEvent(id) {
@@ -283,6 +323,13 @@ export async function reopenTask(id) {
   await updateTask(id, { status: 'in_progress', completedAt: null, completedBy: null });
 }
 
+/** Soft-delete ("Dihapus") for a task — see deleteEvent()'s doc comment;
+ *  identical reasoning, mirrored for the task entity. */
+export async function deleteTask(id, reason) {
+  const username = currentUsername();
+  await updateTask(id, { status: 'deleted', deletedBy: username, deletedAt: new Date().toISOString(), deleteReason: reason || null });
+}
+
 export async function setTaskResponsible(id, username) {
   const actor = currentUsername();
   await updateTask(id, { [`responsible/${username}`]: { assignedBy: actor, assignedAt: new Date().toISOString() } });
@@ -303,4 +350,102 @@ export async function toggleChecklistItem(id, itemId) {
     item.id === itemId ? { ...item, done: !item.done } : item
   ));
   await updateTask(id, { checklist });
+}
+
+/* ── Calendar — V1.31.1 "Agenda, Kalender & To-Do". Mirrors the Event
+   write path above exactly (same participant/PIC/organizer/scope shape,
+   same Rules, same self-RSVP carve-out) — Calendar is a first-class sibling
+   entity, not a repurposed Agenda event, but it is authorized and shaped
+   the same way because it shares the identical Sarpras-staff/Kabid
+   population. `status` starts 'scheduled' and only ever moves to
+   'cancelled' ("Dibatalkan") or 'deleted' ("Dihapus") — the in-between
+   display states (Terjadwal/Berlangsung/Selesai) are DERIVED from the date
+   range by agenda-calendar-lifecycle.js, never stored, exactly as overdue
+   is derived (never stored) for events/tasks. ───────────────────────── */
+
+/**
+ * @param {Object} fields title/description/location/startDate/endDate/
+ *   allDay/startTime/endTime/startAt/endAt/participants — everything
+ *   except id/organizerUsername/status/createdBy/createdAt/updatedBy/
+ *   updatedAt (organizer is always the creator; status always starts
+ *   'scheduled'; neither is caller-overridable here).
+ * @returns {Promise<string>} the new calendar item id
+ */
+export async function createCalendarItem(fields) {
+  const username = currentUsername();
+  const id = `cal_${generateId()}`;
+  const record = withActorFields({
+    ...fields,
+    id,
+    organizerUsername: username,
+    status: 'scheduled',
+    participants: fields.participants || {},
+  }, { isCreate: true });
+  await storeFirebaseData(`${CALENDARS_PATH}/${id}`, record);
+  return id;
+}
+
+/** `patch` must never include organizerUsername/scope/createdBy/id — the
+ *  Rules reject any write that changes them. */
+export async function updateCalendarItem(id, patch) {
+  await updateFirebaseData(`${CALENDARS_PATH}/${id}`, withActorFields(patch));
+}
+
+export async function cancelCalendarItem(id, reason) {
+  const username = currentUsername();
+  await updateCalendarItem(id, { status: 'cancelled', cancelledBy: username, cancelledAt: new Date().toISOString(), cancelReason: reason || null });
+}
+
+/** Soft-delete ("Dihapus") — see deleteEvent()'s doc comment; identical
+ *  reasoning, mirrored for the calendar entity. */
+export async function deleteCalendarItem(id, reason) {
+  const username = currentUsername();
+  await updateCalendarItem(id, { status: 'deleted', deletedBy: username, deletedAt: new Date().toISOString(), deleteReason: reason || null });
+}
+
+/** @param {{isPic?: boolean, status?: string}} opts */
+export async function setCalendarItemParticipant(id, username, opts = {}) {
+  const item = getCalendarItemById(id);
+  const existing = (item && item.participants && item.participants[username]) || {};
+  const actor = currentUsername();
+  const entry = {
+    isPic: opts.isPic === true,
+    status: opts.status || existing.status || 'invited',
+    invitedBy: existing.invitedBy || actor,
+    invitedAt: existing.invitedAt || new Date().toISOString(),
+  };
+  await updateCalendarItem(id, { [`participants/${username}`]: entry });
+}
+
+export async function removeCalendarItemParticipant(id, username) {
+  await updateCalendarItem(id, { [`participants/${username}`]: null });
+}
+
+/** Self-RSVP for a calendar item — see setMyRsvpStatus()'s doc comment for
+ *  why this bypasses updateCalendarItem()/withActorFields(): the Rules
+ *  grant is scoped to exactly agendaCalendars/{id}/participants/{username},
+ *  which an updatedBy/updatedAt-carrying multi-location update from the
+ *  item root would not satisfy. */
+export async function setMyCalendarRsvpStatus(id, status) {
+  if (!RSVP_STATUSES.has(status)) throw new Error(`Status RSVP tidak valid: ${status}`);
+  const username = currentUsername();
+  if (!username) throw new Error('Tidak dapat menyimpan: sesi tidak valid.');
+  const existing = await new Promise((resolve, reject) => {
+    let unsub = null;
+    unsub = subscribeNode(`${CALENDARS_PATH}/${id}/participants/${username}`, (snap) => {
+      if (unsub) unsub();
+      resolve(snap.val());
+    }, {
+      onDenied: () => { if (unsub) unsub(); resolve(null); },
+      onError: (err) => { if (unsub) unsub(); reject(err); },
+    });
+  });
+  if (!existing) throw new Error('Anda bukan peserta kalender ini.');
+  const entry = {
+    isPic: existing.isPic === true,
+    status,
+    invitedBy: existing.invitedBy,
+    invitedAt: existing.invitedAt,
+  };
+  await storeFirebaseData(`${CALENDARS_PATH}/${id}/participants/${username}`, entry);
 }

@@ -41,6 +41,7 @@
   import { injectAgendaStyles } from '/js/agenda/agenda-styles.js';
   import { openCreateEventDrawer, closeEventDrawer } from '/js/agenda/agenda-event-drawer.js';
   import { openCreateTaskDrawer, closeTaskDrawer } from '/js/agenda/agenda-task-drawer.js';
+  import { openCreateCalendarDrawer, openEditCalendarDrawer, closeCalendarDrawer } from '/js/agenda/agenda-calendar-drawer.js';
   import { openAgendaExportDrawer, closeAgendaExportDrawer } from '/js/agenda/agenda-export-drawer.js';
   import { __setDirectoryForTest } from '/js/agenda/agenda-directory.js';
 
@@ -49,8 +50,11 @@
   window.__render = (ctx) => { document.getElementById('root').innerHTML = buildWorkspaceHTML(ctx); };
   window.__openCreateEventDrawer = (opts) => openCreateEventDrawer(opts || {});
   window.__openCreateTaskDrawer = (opts) => openCreateTaskDrawer(opts || {});
+  window.__openCreateCalendarDrawer = (opts) => openCreateCalendarDrawer(opts || {});
+  window.__openEditCalendarDrawer = (id, opts) => openEditCalendarDrawer(id, opts || {});
   window.__closeEventDrawer = () => closeEventDrawer();
   window.__closeTaskDrawer = () => closeTaskDrawer();
+  window.__closeCalendarDrawer = () => closeCalendarDrawer();
   window.__openAgendaExportDrawer = (opts) => openAgendaExportDrawer(opts || {});
   window.__closeAgendaExportDrawer = () => closeAgendaExportDrawer();
   window.__setDirectoryForTest = __setDirectoryForTest;

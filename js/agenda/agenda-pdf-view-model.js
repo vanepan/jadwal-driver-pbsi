@@ -41,6 +41,7 @@
 'use strict';
 
 import { isTaskOverdue, isEventOverdue } from './agenda-lifecycle.js';
+import { calendarItemDisplayState } from './agenda-calendar-lifecycle.js';
 import { priorityLabel, typeLabel, checklistProgress, formatClock } from './agenda-view-model.js';
 import { formatDateLong } from '../utils.js';
 
@@ -104,6 +105,35 @@ function transformEvent(event, directory, now) {
   };
 }
 
+/**
+ * V1.31.1 "Agenda, Kalender & To-Do" — mirrors transformEvent() exactly
+ * (SARPRAS identity transform, participants/PIC), with two differences:
+ * `dateLabel` is a RANGE (a single date collapses to one, per the spec's
+ * own "Evan - Sirnas C Piala Raja, 15-20 September" example), and `status`
+ * uses the Calendar entity's OWN lifecycle vocabulary
+ * (Terjadwal/Berlangsung/Selesai/Dibatalkan) — never event's overdue/
+ * scheduled/cancelled labels, per §E's explicit "Calendar must never look
+ * like it failed" rule.
+ */
+function transformCalendarItem(item, directory, now) {
+  const participants = item.participants || {};
+  const usernames = Object.keys(participants);
+  const picSet = new Set(usernames.filter((u) => participants[u] && participants[u].isPic));
+  const { hasSarprasTeam, individuals } = transformPeople(usernames, directory, picSet);
+  return {
+    title: item.title,
+    dateLabel: item.startDate === item.endDate
+      ? formatDateLong(item.startDate)
+      : `${formatDateLong(item.startDate)} – ${formatDateLong(item.endDate)}`,
+    timeLabel: item.allDay ? 'Sepanjang hari' : `${formatClock(item.startAt)} – ${formatClock(item.endAt)}`,
+    location: item.location || '—',
+    organizationalResponsible: 'SARPRAS',
+    hasSarprasTeam,
+    people: individuals,
+    status: calendarItemDisplayState(item, now),
+  };
+}
+
 function transformTask(task, directory, now) {
   const usernames = Object.keys(task.responsible || {});
   const { hasSarprasTeam, individuals } = transformPeople(usernames, directory, null);
@@ -124,15 +154,16 @@ function transformTask(task, directory, now) {
  * @param {Object} opts
  * @param {Array} opts.events already-scoped/visible /agendaEvents records
  * @param {Array} opts.tasks already-scoped/visible /agendaTasks records
+ * @param {Array} [opts.calendarItems] already-scoped/visible /agendaCalendars records
  * @param {{start:string,end:string,label:string}} opts.range from resolvePresetRange()
- * @param {{mode:'agenda'|'todo'|'semua', status?:string, priority?:string}} opts.filters
+ * @param {{mode:'agenda'|'kalender'|'todo'|'semua', status?:string, priority?:string}} opts.filters
  * @param {Object} opts.directory plain {[username]:{displayName,class}} snapshot
  * @param {number} opts.now epoch ms — injected (pure); drives overdue
  *   derivation AND the "generated at" label, never read internally.
  * @returns {Object} the PDF template's entire input — no individual
  *   Sarpras-staff identity exists anywhere in the returned tree.
  */
-export function buildAgendaPdfViewModel({ events, tasks, range, filters, directory, now }) {
+export function buildAgendaPdfViewModel({ events, tasks, calendarItems, range, filters, directory, now }) {
   if (!range || !range.start || !range.end) throw new Error('buildAgendaPdfViewModel: range is required');
   if (now == null) throw new Error('buildAgendaPdfViewModel: now (epoch ms) is required');
 
@@ -141,9 +172,21 @@ export function buildAgendaPdfViewModel({ events, tasks, range, filters, directo
   const priorityFilter = filters && filters.priority;
 
   const inRange = (dateStr) => !!dateStr && dateStr >= range.start && dateStr <= range.end;
+  // Calendar items use RANGE overlap, not a single-date match — a
+  // multi-day item that merely OVERLAPS the report's window (starts
+  // before it, ends after it, or anywhere in between) must still appear;
+  // requiring the full item to fall inside the window would silently drop
+  // exactly the kind of long-running commitment (e.g. "Sirnas C Piala
+  // Raja") a report spanning "Minggu ini" is most likely to want to show.
+  const overlapsRange = (item) => !!item.startDate && !!item.endDate && item.startDate <= range.end && item.endDate >= range.start;
 
-  const filteredEvents = mode === 'todo' ? [] : (events || []).filter((e) => e && inRange(e.date));
-  const filteredTasks = (mode === 'agenda' ? [] : (tasks || []).filter((t) => t && inRange(t.dueDate)))
+  const showAgenda = mode === 'agenda' || mode === 'semua';
+  const showCalendar = mode === 'kalender' || mode === 'semua';
+  const showTasks = mode === 'todo' || mode === 'semua';
+
+  const filteredEvents = showAgenda ? (events || []).filter((e) => e && inRange(e.date)) : [];
+  const filteredCalendarItems = showCalendar ? (calendarItems || []).filter((c) => c && overlapsRange(c)) : [];
+  const filteredTasks = (showTasks ? (tasks || []).filter((t) => t && inRange(t.dueDate)) : [])
     .filter((t) => {
       if (priorityFilter && priorityFilter !== 'all' && t.priority !== priorityFilter) return false;
       if (statusFilter && statusFilter !== 'all') {
@@ -156,6 +199,9 @@ export function buildAgendaPdfViewModel({ events, tasks, range, filters, directo
   const agendaItems = [...filteredEvents]
     .sort((a, b) => (a.date === b.date ? (a.startAt || 0) - (b.startAt || 0) : (a.date < b.date ? -1 : 1)))
     .map((e) => transformEvent(e, directory, now));
+  const calendarPdfItems = [...filteredCalendarItems]
+    .sort((a, b) => (a.startDate === b.startDate ? (a.startAt || 0) - (b.startAt || 0) : (a.startDate < b.startDate ? -1 : 1)))
+    .map((c) => transformCalendarItem(c, directory, now));
   const taskItems = [...filteredTasks]
     .sort((a, b) => {
       const ad = a.dueDate || '9999-99-99', bd = b.dueDate || '9999-99-99';
@@ -163,7 +209,10 @@ export function buildAgendaPdfViewModel({ events, tasks, range, filters, directo
     })
     .map((t) => transformTask(t, directory, now));
 
-  const reportTitle = mode === 'agenda' ? 'Laporan Agenda' : mode === 'todo' ? 'Laporan To-Do' : 'Laporan Agenda & To-Do';
+  const reportTitle = mode === 'agenda' ? 'Laporan Agenda'
+    : mode === 'kalender' ? 'Laporan Kalender'
+    : mode === 'todo' ? 'Laporan To-Do'
+    : 'Laporan Agenda, Kalender & To-Do';
 
   return {
     org: ORG_NAME,
@@ -172,9 +221,11 @@ export function buildAgendaPdfViewModel({ events, tasks, range, filters, directo
     generatedAtLabel: `${formatDateLong(epochToDateStr(now))}, ${formatClock(now)}`,
     mode,
     agendaItems,
+    calendarItems: calendarPdfItems,
     taskItems,
     summary: {
       totalEvents: agendaItems.length,
+      totalCalendarItems: calendarPdfItems.length,
       totalTasks: taskItems.length,
       overdueTasks: taskItems.filter((t) => t.status === 'overdue').length,
       doneTasks: taskItems.filter((t) => t.status === 'done').length,

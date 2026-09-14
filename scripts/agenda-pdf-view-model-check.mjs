@@ -38,6 +38,19 @@ function baseEvent(overrides = {}) {
     ...overrides,
   };
 }
+function baseCalendarItem(overrides = {}) {
+  return {
+    id: 'cal1', title: 'Evan - Sirnas C Piala Raja', scope: 'sarpras_shared',
+    organizerUsername: 'evanUsername', status: 'scheduled',
+    startDate: '2026-09-09', endDate: '2026-09-11', allDay: true,
+    startAt: NOW - 2 * 86400000, endAt: NOW + 86400000,
+    participants: {
+      evanUsername: { isPic: true, status: 'invited' },
+      kabidUsername: { isPic: false, status: 'accepted' },
+    },
+    ...overrides,
+  };
+}
 function baseTask(overrides = {}) {
   const dueDate = overrides.dueDate || '2026-09-11';
   const dueTime = 'dueTime' in overrides ? overrides.dueTime : '17:00';
@@ -81,7 +94,42 @@ console.log('\n=== [C — mode filter: agenda / todo / semua] ===');
   check('mode=todo excludes all events', todoOnly.agendaItems.length === 0 && todoOnly.taskItems.length === 1);
   const semua = buildAgendaPdfViewModel({ events: evs, tasks: tks, range: RANGE, filters: { mode: 'semua' }, directory: DIRECTORY, now: NOW });
   check('mode=semua (or omitted) includes both', semua.agendaItems.length === 1 && semua.taskItems.length === 1);
-  check('reportTitle reflects the mode', agendaOnly.reportTitle === 'Laporan Agenda' && todoOnly.reportTitle === 'Laporan To-Do' && semua.reportTitle === 'Laporan Agenda & To-Do');
+  check('reportTitle reflects the mode', agendaOnly.reportTitle === 'Laporan Agenda' && todoOnly.reportTitle === 'Laporan To-Do' && semua.reportTitle === 'Laporan Agenda, Kalender & To-Do');
+}
+
+console.log('\n=== [C.2 — V1.31.1 Calendar: mode filter, SARPRAS transform, range-OVERLAP (not exact-match), never "overdue"] ===');
+{
+  const cal = baseCalendarItem();
+  const kalenderOnly = buildAgendaPdfViewModel({ events: [baseEvent()], tasks: [baseTask()], calendarItems: [cal], range: RANGE, filters: { mode: 'kalender' }, directory: DIRECTORY, now: NOW });
+  check('mode=kalender excludes events and tasks, includes only the calendar item', kalenderOnly.agendaItems.length === 0 && kalenderOnly.taskItems.length === 0 && kalenderOnly.calendarItems.length === 1);
+  check('reportTitle reflects mode=kalender', kalenderOnly.reportTitle === 'Laporan Kalender');
+  const item = kalenderOnly.calendarItems[0];
+  check('organizationalResponsible is always SARPRAS, same transform as events/tasks', item.organizationalResponsible === 'SARPRAS');
+  check('Sarpras staff (Evan) dropped into hasSarprasTeam, Kabid shown individually — the SAME transform, reused not reimplemented', item.hasSarprasTeam === true && item.people.some((p) => p.name === 'Drs. Suryanto' && p.isKabid === true));
+  check('dateLabel is a RANGE ("9 - 11 September"-shaped), not a single date, for a multi-day item', item.dateLabel.includes('–'));
+  check('status uses Calendar\'s OWN vocabulary (berlangsung — item spans "now"), never "overdue"/"Terlewat"', item.status === 'berlangsung');
+  check('the raw username "evanUsername" never appears anywhere in the calendar item either', !JSON.stringify(item).includes('evanUsername'));
+
+  const other = buildAgendaPdfViewModel({ events: [], tasks: [], calendarItems: [cal], range: RANGE, filters: { mode: 'agenda' } , directory: DIRECTORY, now: NOW });
+  check('mode=agenda excludes calendar items', other.calendarItems.length === 0);
+  const semua2 = buildAgendaPdfViewModel({ events: [], tasks: [], calendarItems: [cal], range: RANGE, filters: { mode: 'semua' }, directory: DIRECTORY, now: NOW });
+  check('mode=semua includes calendar items too', semua2.calendarItems.length === 1);
+
+  // RANGE-OVERLAP, not exact single-date match: the fixture spans
+  // 2026-09-09..11, entirely INSIDE the report window (2026-09-07..13) —
+  // this next pair proves overlap-at-the-edges also counts, which a naive
+  // "date in range" check (built for single-date events) would miss.
+  const startsBefore = baseCalendarItem({ id: 'before', startDate: '2026-09-01', endDate: '2026-09-07' }); // ends exactly on range.start
+  const endsAfter = baseCalendarItem({ id: 'after', startDate: '2026-09-13', endDate: '2026-09-20' }); // starts exactly on range.end
+  const fullyOutside = baseCalendarItem({ id: 'outside', startDate: '2026-08-01', endDate: '2026-08-05' });
+  const vmOverlap = buildAgendaPdfViewModel({ events: [], tasks: [], calendarItems: [startsBefore, endsAfter, fullyOutside], range: RANGE, filters: { mode: 'kalender' }, directory: DIRECTORY, now: NOW });
+  check('an item that only OVERLAPS the range edge (starts before, ends ON range.start) is included', vmOverlap.calendarItems.some((i) => i.dateLabel.includes('September')) && vmOverlap.calendarItems.length === 2);
+  check('an item entirely outside the range is excluded', !vmOverlap.calendarItems.some((i) => i === fullyOutside));
+  check('summary.totalCalendarItems reflects the filtered count', vmOverlap.summary.totalCalendarItems === 2);
+
+  const cancelledCal = baseCalendarItem({ id: 'cancelled1', status: 'cancelled' });
+  const vmCancelled = buildAgendaPdfViewModel({ events: [], tasks: [], calendarItems: [cancelledCal], range: RANGE, filters: { mode: 'kalender' }, directory: DIRECTORY, now: NOW });
+  check("a cancelled calendar item shows status 'dibatalkan', still included (not silently dropped from history)", vmCancelled.calendarItems[0].status === 'dibatalkan');
 }
 
 console.log('\n=== [D — date-range filtering] ===');

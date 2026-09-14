@@ -15,7 +15,7 @@
 
 'use strict';
 
-import { getVisibleEvents, getVisibleTasks } from './agenda-store.js';
+import { getVisibleEvents, getVisibleTasks, getVisibleCalendarItems } from './agenda-store.js';
 import { displayNameFor, resolveParticipantClass } from './agenda-directory.js';
 import { buildAgendaPdfViewModel } from './agenda-pdf-view-model.js';
 import { resolvePresetRange } from './agenda-date-range.js';
@@ -25,10 +25,11 @@ import { logExportSuccess, logExportFailure } from '../exports/export-history.js
 import { getCurrentUser } from '../auth.js';
 import { APP_VERSION } from '../config.js';
 
-function collectParticipantUsernames(events, tasks) {
+function collectParticipantUsernames(events, tasks, calendarItems) {
   const set = new Set();
   for (const e of events || []) for (const u of Object.keys(e.participants || {})) set.add(u);
   for (const t of tasks || []) for (const u of Object.keys(t.responsible || {})) set.add(u);
+  for (const c of calendarItems || []) for (const u of Object.keys(c.participants || {})) set.add(u);
   return set;
 }
 
@@ -58,10 +59,11 @@ export async function runAgendaPdfExport(opts = {}) {
 
   const events = getVisibleEvents();
   const tasks = getVisibleTasks();
-  const directory = buildDirectorySnapshot(collectParticipantUsernames(events, tasks));
+  const calendarItems = getVisibleCalendarItems();
+  const directory = buildDirectorySnapshot(collectParticipantUsernames(events, tasks, calendarItems));
 
   const vm = buildAgendaPdfViewModel({
-    events, tasks, range,
+    events, tasks, calendarItems, range,
     filters: { mode: opts.mode || 'semua', status: opts.status, priority: opts.priority },
     directory, now,
   });

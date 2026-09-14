@@ -442,6 +442,15 @@ const AN_ICON_PATHS = {
   copy:           'M8 8h11a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1ZM5 16H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1v1',
   trash:          'M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M10 11v6M14 11v6',
   edit:           'M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z',
+  // V1.31 Agenda & To-Do — genuinely missing: every agenda/task/calendar
+  // drawer header and the Kalender mode's own icon usage has passed
+  // icon:'calendar' to anIcon() since Phase C3, but no such key ever
+  // existed here (nor in AN_ICON_ALIASES) — anIcon() silently rendered a
+  // blank <path d=""/> for all of them (found while wiring the new
+  // Calendar entity's notification icon this phase; a pre-existing gap in
+  // shipped UI, not something that regressed). Standard calendar glyph:
+  // body rect + two hanger ticks + header divider line.
+  calendar:       'M8 2v4M16 2v4M4 9h16M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z',
 };
 
 /* Sprint-2 alias map: vehicle-surface icon names that resolve to an EXISTING

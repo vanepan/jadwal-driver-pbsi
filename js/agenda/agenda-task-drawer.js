@@ -14,7 +14,7 @@
 'use strict';
 
 import { openDrawer, closeDrawer, refreshDrawerBody, setDrawerBusy, showDrawerError } from '../components/drawer.js';
-import { createTask, updateTask, completeTask, reopenTask, getTaskById } from './agenda-store.js';
+import { createTask, updateTask, completeTask, reopenTask, deleteTask, getTaskById } from './agenda-store.js';
 import { getAgendaCandidates, registerDirectoryChangeListener, unregisterDirectoryChangeListener } from './agenda-directory.js';
 import { renderPickerHTML, renderPersonChipsHTML } from './agenda-participant-picker.js';
 import { wirePlainFields, validateTaskDraft, fieldError, combineDateTimeToEpoch } from './agenda-forms.js';
@@ -129,6 +129,9 @@ function footer() {
     actions.push(_draft.status === 'done'
       ? { label: 'Buka Kembali', action: 'task:reopen' }
       : { label: 'Tandai Selesai', action: 'task:complete' });
+    // V1.31.1 soft-delete ("Dihapus") — see agenda-event-drawer.js's
+    // identical addition for the full reasoning.
+    actions.push({ label: 'Hapus Tugas', action: 'task:deletetask', variant: 'danger' });
   }
   actions.push({ label: _editingId ? 'Simpan Perubahan' : 'Simpan', action: 'task:save', variant: 'primary' });
   return actions;
@@ -239,6 +242,17 @@ function onAction(action, close) {
         if (typeof _onSaved === 'function') _onSaved();
         close();
       }).catch((err) => { setDrawerBusy(false); showDrawerError(err && err.message ? err.message : 'Gagal membuka kembali.'); });
+      return;
+    }
+    if (verb === 'deletetask') {
+      if (!confirm('Hapus tugas ini? Tugas tidak akan lagi muncul di Agenda, Kalender, To-Do, pencarian, PDF, atau notifikasi. Riwayat tetap tersimpan untuk audit.')) return;
+      const reason = prompt('Alasan penghapusan (opsional):') || null;
+      setDrawerBusy(true, { busyLabel: 'Menghapus…' });
+      deleteTask(_editingId, reason).then(() => {
+        setDrawerBusy(false);
+        if (typeof _onSaved === 'function') _onSaved();
+        close();
+      }).catch((err) => { setDrawerBusy(false); showDrawerError(err && err.message ? err.message : 'Gagal menghapus.'); });
       return;
     }
     return;

@@ -27,7 +27,7 @@
 
 import { injectAgendaStyles } from './agenda-styles.js';
 import {
-  initAgendaStore, getVisibleEvents, getVisibleTasks,
+  initAgendaStore, getVisibleEvents, getVisibleTasks, getVisibleCalendarItems,
   registerAgendaChangeListener, unregisterAgendaChangeListener,
   toggleChecklistItem, completeTask, reopenTask,
 } from './agenda-store.js';
@@ -36,6 +36,7 @@ import { canSeeAgendaWorkspace, canManageSharedAgenda, canManageKabidAgenda, wri
 import { buildWorkspaceHTML } from './agenda-workspace-view.js';
 import { openCreateEventDrawer, openEditEventDrawer } from './agenda-event-drawer.js';
 import { openCreateTaskDrawer, openEditTaskDrawer } from './agenda-task-drawer.js';
+import { openCreateCalendarDrawer, openEditCalendarDrawer } from './agenda-calendar-drawer.js';
 import { openAgendaExportDrawer } from './agenda-export-drawer.js';
 import { todayString, offsetDate } from '../utils.js';
 
@@ -56,6 +57,7 @@ function buildCtx() {
   return {
     events: getVisibleEvents(),
     tasks: getVisibleTasks(),
+    calendarItems: getVisibleCalendarItems(),
     now: Date.now(),
     todayStr: todayString(),
     mode: _state.mode,
@@ -102,8 +104,10 @@ function handleAction(action) {
     case 'retry': doRender(); return;
     case 'create-event': openCreateEventDrawer({ onSaved: doRender }); return;
     case 'create-task': openCreateTaskDrawer({ onSaved: doRender }); return;
+    case 'create-calendar': openCreateCalendarDrawer({ onSaved: doRender, defaultDate: _state.mode === 'calendar' ? _state.calendarAnchor : undefined }); return;
     case 'open-event': openEditEventDrawer(arg, { onSaved: doRender }); return;
     case 'open-task': openEditTaskDrawer(arg, { onSaved: doRender }); return;
+    case 'open-calendar': openEditCalendarDrawer(arg, { onSaved: doRender }); return;
     case 'export-pdf': openAgendaExportDrawer({}); return;
     case 'toggle-task-done': {
       const task = getVisibleTasks().find((t) => t.id === arg);
