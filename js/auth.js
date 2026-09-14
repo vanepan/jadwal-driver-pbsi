@@ -188,6 +188,16 @@ async function _hydrateFromFirebaseUser(user) {
   }
 
   let role = 'viewer';
+  // V1.31 Agenda & To-Do — agendaKabid mirrors verifyPin.js#deriveExtraClaims():
+  // true iff this session's (System or Custom) role's permissions include
+  // agenda.kabid.view/agenda.kabid.manage. Captured here (not re-derived from
+  // a live /customRoles read) because a Custom-Role session cannot read the
+  // /customRoles COLLECTION itself (database.rules.json scopes that broad
+  // read to admin/developer only — role-management/custom-roles-store.js's
+  // subscription is denied for any other role) — the token claim is the only
+  // channel through which a Custom-Role user can ever learn their OWN
+  // agenda.kabid.* grant client-side. Consumed by agenda-permissions.js.
+  let agendaKabid = false;
   const cached = getCurrentUser();
   try {
     // SS1 hotfix (v1.27.1): getIdTokenResult() refreshes over the network when
@@ -201,15 +211,16 @@ async function _hydrateFromFirebaseUser(user) {
       new Promise((_, reject) => setTimeout(() => reject(new Error('getIdTokenResult timeout')), 5000)),
     ]);
     role = res.claims?.role || role;
+    agendaKabid = res.claims?.agendaKabid === true;
   } catch (_) {
-    if (cached && cached.username === user.uid) role = cached.role || role;
+    if (cached && cached.username === user.uid) { role = cached.role || role; agendaKabid = cached.agendaKabid === true; }
   }
 
   const name = (cached && cached.username === user.uid && cached.name)
     ? cached.name
     : user.uid;
 
-  const sessionUser = { id: user.uid, username: user.uid, name, role, active: true };
+  const sessionUser = { id: user.uid, username: user.uid, name, role, active: true, agendaKabid };
   localStorage.setItem(SESSION_KEY, JSON.stringify(sessionUser));
   notifyAuthChange();
 }

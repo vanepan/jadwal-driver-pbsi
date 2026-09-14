@@ -203,6 +203,33 @@ export const PERMISSIONS = Object.freeze({
     module: 'Executive', category: 'Overview',
   },
 
+  // ── Agenda & To-Do (V1.31, Phase C3) ────────────────────────────────
+  // agenda.kabid.* are intentionally granted to NO System Role in
+  // role-permissions.js's BASE_GRANTS — they exist here only so a Custom
+  // Role (e.g. an admin-created "Kabid Sarana dan Prasarana" role) can
+  // name and grant them through the existing Role Management UI. See
+  // docs/AGENDA_TODO_PHASE_B_ARCHITECTURE_VALIDATION_v1.31.0.0.md §2.1.
+  'agenda.view': {
+    id: 'agenda.view', title: 'View Shared Agenda',
+    description: 'View the shared Sarpras agenda and to-do list.',
+    module: 'Agenda & To-Do', category: 'Overview',
+  },
+  'agenda.manage': {
+    id: 'agenda.manage', title: 'Manage Shared Agenda',
+    description: 'Create, edit, and cancel shared Sarpras agenda events and tasks.',
+    module: 'Agenda & To-Do', category: 'Overview',
+  },
+  'agenda.kabid.view': {
+    id: 'agenda.kabid.view', title: 'View Kabid Agenda',
+    description: 'View the Kabid Sarana dan Prasarana calendar scope.',
+    module: 'Agenda & To-Do', category: 'Kabid Scope',
+  },
+  'agenda.kabid.manage': {
+    id: 'agenda.kabid.manage', title: 'Manage Kabid Agenda',
+    description: 'Create, edit, and cancel Kabid-scope agenda events and tasks.',
+    module: 'Agenda & To-Do', category: 'Kabid Scope',
+  },
+
   // ── Engineering (ids match config/role-registry.js CAPABILITIES verbatim) ──
   'eng.view': {
     id: 'eng.view', title: 'View Engineering',

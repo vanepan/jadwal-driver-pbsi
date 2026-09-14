@@ -54,26 +54,101 @@ function normalizeUsername(value) {
 }
 
 /**
- * Resolve a stored /users/{username}.role value into the token's `role`
- * claim plus any additional claims database.rules.json needs.
+ * PURE: given an effective permissions array (from a Custom Role, from
+ * Individual Permission Overrides, or the two concatenated — the caller
+ * decides), decide which extra claims it earns. Extracted from
+ * resolveRoleClaims() specifically so this decision — the security-relevant
+ * part — is unit-testable without a live RTDB read (see
+ * functions/scripts/agenda-kabid-claim-check.js). Never accepts a role id,
+ * a username, or any client-supplied value — only a permissions array
+ * already fetched server-side.
+ * @param {Array<string>|null|undefined} permissions
+ * @returns {{adminEquivalent?: true, agendaKabid?: true}}
+ */
+function deriveExtraClaims(permissions) {
+  const list = Array.isArray(permissions) ? permissions : [];
+  const extraClaims = {};
+  if (list.includes('system.admin')) extraClaims.adminEquivalent = true;
+  if (list.includes('agenda.kabid.view') || list.includes('agenda.kabid.manage')) {
+    extraClaims.agendaKabid = true;
+  }
+  return extraClaims;
+}
+
+/**
+ * Server-side read of /userPermissionOverrides/{username} (Admin SDK —
+ * bypasses Rules, exactly like the Custom Role read below) — the existing,
+ * already-deployed Individual Permission Assignment mechanism
+ * (js/permission-management/user-permission-overrides-*.js, v1.30.9.1/.5).
+ * That mechanism's own rules.js independently forbids 'system.admin' from
+ * ever being a legal override (FORBIDDEN_PERMISSION_IDS), so folding this
+ * array into deriveExtraClaims() below can never manufacture
+ * `adminEquivalent` — only a real Custom Role's own persisted permissions
+ * can (and that path has its own, separate, equally-enforced prohibition on
+ * ever persisting 'system.admin' — see custom-roles-rules.js). Fails
+ * closed: any read error or malformed record resolves to no grants, never
+ * an elevated one.
+ * @param {string} username
+ * @returns {Promise<string[]>}
+ */
+async function readUserPermissionOverrides(username) {
+  try {
+    const snap = await db.ref(`userPermissionOverrides/${username}`).once('value');
+    const record = snap.val();
+    if (!record || typeof record !== 'object') return [];
+    return Array.isArray(record.permissions) ? record.permissions : Object.values(record.permissions || {});
+  } catch (err) {
+    logger.error('[verifyPin] user permission overrides read failed', { username, error: err.message });
+    return [];
+  }
+}
+
+/**
+ * Resolve a stored /users/{username}.role value (plus that same account's
+ * Individual Permission Overrides) into the token's `role` claim plus any
+ * additional claims database.rules.json needs.
  *
- * Fast path (VALID_ROLES): byte-for-byte the pre-v1.30.6 behavior — every
- * existing account mints exactly the token it always has. No extra read.
+ * System Role path (VALID_ROLES, e.g. 'admin'): mints that role verbatim —
+ * byte-for-byte the pre-v1.30.6 behavior for `role` itself — but (V1.31
+ * C5.3.2) now ALSO derives extra claims from that account's own
+ * /userPermissionOverrides, so an existing System Role account (most
+ * commonly an admin) can be granted a narrow, additional, individually-
+ * scoped capability — e.g. agenda.kabid.view/manage — WITHOUT ever moving
+ * them onto a Custom Role and WITHOUT touching their System Role authority.
+ * This was the missing half of the mechanism: the override already worked
+ * for the client-side permission-service.js resolution, but the *token
+ * claim* (the only thing database.rules.json can ever read) never
+ * incorporated it — see docs/AGENDA_TODO... C5.3.1's investigation.
  *
- * Fallback (Custom Role): a role value outside VALID_ROLES is looked up in
- * /customRoles/{role} (Admin SDK — bypasses rules, one extra read, only on
- * this rare path). An archived or nonexistent record downgrades to 'viewer',
- * same fail-safe as before. A found, active record mints its own id as the
- * role claim verbatim, plus `adminEquivalent: true` iff its permissions
- * include 'system.admin' — the one boolean database.rules.json's admin-tier
- * rules need (see database.rules.json; there is no finer-grained tier today
- * for any rule to consume, so no finer-grained claim is minted).
+ * Custom Role path: a role value outside VALID_ROLES is looked up in
+ * /customRoles/{role} (Admin SDK — bypasses rules, one extra read). An
+ * archived or nonexistent record downgrades to 'viewer', same fail-safe as
+ * before — and, deliberately, does NOT consult overrides in that downgrade
+ * case either (a broken/archived role reference must fail all the way
+ * closed, not partially recover via an override). A found, active record's
+ * own permissions are combined with the SAME account's overrides before
+ * a single derivation pass — `adminEquivalent: true` iff EITHER legitimately
+ * includes 'system.admin' (only the Custom Role's own list ever can — see
+ * readUserPermissionOverrides()'s header), and `agendaKabid: true` iff
+ * either includes 'agenda.kabid.view'/'agenda.kabid.manage'. A capability-
+ * derived claim, never a role id or name, so renaming a Custom Role in the
+ * Role Management UI can never silently break database.rules.json's
+ * agendaEvents/agendaTasks/agendaAudit rules (see
+ * docs/AGENDA_TODO_PHASE_B1_SECURITY_CORRECTION_v1.31.0.0.md §2.1). Both
+ * claims are server-derived only: nothing in `request.data` (the client's
+ * callable payload) is ever consulted here, so a client cannot manufacture
+ * either claim by sending it in the request body — only the verified
+ * account's OWN stored role and OWN stored overrides, both looked up
+ * server-side, ever decide them.
+ * @param {string} username
  * @param {string} storedRole
  * @returns {Promise<{role: string, extraClaims: Object}>}
  */
-async function resolveRoleClaims(storedRole) {
+async function resolveRoleClaims(username, storedRole) {
+  const overridePermissions = await readUserPermissionOverrides(username);
+
   if (VALID_ROLES.includes(storedRole)) {
-    return { role: storedRole, extraClaims: {} };
+    return { role: storedRole, extraClaims: deriveExtraClaims(overridePermissions) };
   }
   let customRole = null;
   try {
@@ -87,11 +162,8 @@ async function resolveRoleClaims(storedRole) {
   if (!customRole || customRole.archived === true) {
     return { role: 'viewer', extraClaims: {} };
   }
-  const permissions = Array.isArray(customRole.permissions) ? customRole.permissions : [];
-  return {
-    role: storedRole,
-    extraClaims: permissions.includes('system.admin') ? { adminEquivalent: true } : {},
-  };
+  const customPermissions = Array.isArray(customRole.permissions) ? customRole.permissions : [];
+  return { role: storedRole, extraClaims: deriveExtraClaims([...customPermissions, ...overridePermissions]) };
 }
 
 const verifyPin = onCall({ region: REGION }, async (request) => {
@@ -132,7 +204,7 @@ const verifyPin = onCall({ region: REGION }, async (request) => {
 
   /* ── Mint custom token with authoritative role claim (+ Custom Role
      extras, v1.30.6) ── */
-  const { role, extraClaims } = await resolveRoleClaims(user.role);
+  const { role, extraClaims } = await resolveRoleClaims(username, user.role);
   let token;
   try {
     token = await auth.createCustomToken(username, { role, ...extraClaims });
@@ -154,4 +226,4 @@ const verifyPin = onCall({ region: REGION }, async (request) => {
   };
 });
 
-module.exports = { verifyPin };
+module.exports = { verifyPin, resolveRoleClaims, deriveExtraClaims, readUserPermissionOverrides };

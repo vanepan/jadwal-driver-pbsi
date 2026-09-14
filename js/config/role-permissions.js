@@ -49,6 +49,12 @@ const BASE_GRANTS = {
     'pettycash.view', 'pettycash.manage',
     'overtime.view', 'overtime.manage',
     'analytics.view', 'konfigurasi.view', 'executive.dashboard.view',
+    // V1.31 Agenda & To-Do — Sarpras staff = the existing admin cohort
+    // (Phase B §3: "shared Sarpras scope" maps directly onto `admin`, no
+    // new role invented for Evan/Leo/Grace). agenda.kabid.* is
+    // deliberately NOT granted here — see permission-registry.js's
+    // comment on those two ids.
+    'agenda.view', 'agenda.manage',
   ],
   bidang: [
     'driver.schedule.view', 'driver.request.create',
