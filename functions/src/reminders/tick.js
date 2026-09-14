@@ -31,6 +31,48 @@ const {
   loadDueReminders, markReminder, tripStartMs, reminderId,
 } = require('./schedule');
 
+/* V1.31 Agenda & To-Do — Phase C2. MUST mirror
+   js/agenda/agenda-lifecycle.js#isEventOverdue()/isTaskOverdue() exactly —
+   duplicated, not imported, because that module is client-side ESM and
+   this is server-side CJS (the same client/server boundary every other
+   pure-logic pair in this codebase already accepts rather than forcing a
+   cross-runtime import — e.g. events/schema.js's own inlined keySafe()). */
+function isAgendaEventOverdue(e, now) {
+  return Boolean(e) && e.status === 'scheduled' && e.acknowledgedAt == null && e.endAt != null && now > e.endAt;
+}
+function isAgendaTaskOverdue(t, now) {
+  return Boolean(t) && t.status !== 'done' && t.dueAt != null && now > t.dueAt;
+}
+
+/** Build the canonical agenda.reminder/agenda.overdue/task.reminder/
+ *  task.overdue envelope for a due row, re-reading the LIVE entity so the
+ *  notification always reflects current state, not the state at schedule
+ *  time (mirrors buildReminderEnvelope's identical philosophy below). */
+function buildAgendaReminderEnvelope(entityType, entity, row) {
+  const prefix = entityType === 'agendaEvent' ? 'agenda' : 'task';
+  const type = `${prefix}.${row.offset === 'overdue' ? 'overdue' : 'reminder'}`;
+  const payload = entityType === 'agendaEvent'
+    ? {
+      title: entity.title ?? null,
+      organizerUsername: entity.organizerUsername ?? null,
+      participants: entity.participants ?? null,
+      offset: row.offset,
+    }
+    : {
+      title: entity.title ?? null,
+      responsible: entity.responsible ?? null,
+      priority: entity.priority ?? null,
+      offset: row.offset,
+    };
+  return buildEnvelope({
+    type,
+    actor: { uid: null, role: 'system', displayName: 'Pengingat' },
+    entity: { kind: entityType, id: row.entityId },
+    payload,
+    timestamp: new Date(row.fireAt).toISOString(),
+  });
+}
+
 /** Resolve the requesterId for an assignment (record carries requestId, not
  *  requesterId — mirror the client: requestId → /driver_requests → requesterId). */
 async function resolveRequesterId(assignment) {
@@ -87,6 +129,48 @@ const reminderTick = onSchedule(
 
     for (const row of due) {
       const id = row.id || reminderId(row.assignmentId, row.offset);
+
+      // V1.31 Agenda & To-Do — Phase C2. Agenda rows carry entityType;
+      // legacy assignment rows never do — this branch is the ONLY new
+      // code path in this loop, the assignment branch below it is
+      // completely unmodified (see Risk R9,
+      // docs/AGENDA_TODO_PHASE_B_ARCHITECTURE_VALIDATION_v1.31.0.0.md §12).
+      if (row.entityType) {
+        try {
+          const path = row.entityType === 'agendaEvent' ? `agendaEvents/${row.entityId}` : `agendaTasks/${row.entityId}`;
+          const entity = (await db.ref(path).once('value')).val();
+          if (!entity) { await markReminder(id, { status: 'cancelled' }); cancelled++; continue; }
+
+          if (row.offset === 'h1') {
+            const startInstant = row.entityType === 'agendaEvent' ? entity.startAt : entity.dueAt;
+            const terminal = row.entityType === 'agendaEvent' ? entity.status === 'cancelled' : entity.status === 'done';
+            if (terminal) { await markReminder(id, { status: 'cancelled' }); cancelled++; continue; }
+            // Staleness guard, mirrors the assignment branch below: a "1 hour
+            // before" reminder for something already past its own start/due
+            // instant is noise (e.g. functions were down for hours) — skip,
+            // don't blast a late reminder.
+            if (startInstant != null && now >= startInstant) { await markReminder(id, { status: 'skipped' }); skipped++; continue; }
+          } else {
+            // 'overdue' — re-validate the item is GENUINELY overdue right
+            // now (not merely that the row was scheduled to fire): it may
+            // have been acknowledged/completed/cancelled since this row was
+            // planned, and the row itself carries no live status of its own.
+            const stillOverdue = row.entityType === 'agendaEvent'
+              ? isAgendaEventOverdue(entity, now)
+              : isAgendaTaskOverdue(entity, now);
+            if (!stillOverdue) { await markReminder(id, { status: 'cancelled' }); cancelled++; continue; }
+          }
+
+          const eventId = `agenda__${row.entityType}__${row.entityId}__${row.offset}`;
+          await writeEventWithId(eventId, buildAgendaReminderEnvelope(row.entityType, entity, row));
+          await markReminder(id, { status: 'fired', firedAt: new Date().toISOString(), eventId });
+          fired++;
+        } catch (err) {
+          logger.error('[reminder/tick] agenda row failed', { id, entityType: row.entityType, entityId: row.entityId, error: err.message });
+        }
+        continue;
+      }
+
       try {
         // Re-validate against live state (guards the cancel/complete race).
         const asg = (await db.ref(`assignments/${row.assignmentId}`).once('value')).val();

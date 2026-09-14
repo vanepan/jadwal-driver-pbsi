@@ -146,6 +146,83 @@ async function loadDueReminders(now) {
   return Object.values(raw).filter(r => r && r.status === 'pending');
 }
 
+/* ============================================================
+   V1.31 Agenda & To-Do — Phase C2. ADDITIVE extension of this SAME
+   /reminders queue for agendaEvent/agendaTask entities — every function
+   above this point is byte-for-byte unchanged (existing assignment rows,
+   `reminderId(assignmentId, offset)`'s id format, `OFFSETS`/`OFFSET_MS`,
+   `syncOffsets`/`tombstoneOffsets`, all untouched). `loadDueReminders()`
+   needs NO change at all: it already ranges on `fireAt`/filters on
+   `status`, fields both row shapes share.
+
+   Agenda rows carry `entityType`/`entityId` instead of `assignmentId` —
+   the two row shapes coexist in one flat node, distinguished by which
+   field is present, exactly as designed in
+   docs/AGENDA_TODO_PHASE_B1_SECURITY_CORRECTION_v1.31.0.0.md §4.1's
+   sibling reasoning. Offsets are 'h1' (fires BEFORE, like assignments'
+   H-1h) and 'overdue' (fires AT/AFTER — a concept assignments' reminders
+   don't need); see agenda/reminderPlan.js for fireAt derivation.
+   ============================================================ */
+
+/** Deterministic per (entityType, entityId, offset) — reschedule overwrites
+ *  in place, exactly like reminderId() does for assignments. */
+function agendaReminderId(entityType, entityId, offset) {
+  return keySafe(`${entityType}:${entityId}__${offset}`);
+}
+
+const AGENDA_OFFSETS = ['h1', 'overdue'];
+
+/**
+ * Upsert whichever offset rows `plan` contains to `pending` with fresh
+ * fireAts. `plan` may omit 'h1' (a task with no due time never gets one —
+ * agenda/reminderPlan.js#planForTask already encodes that), but always
+ * carries 'overdue'. Mirrors syncOffsets()'s "a row already fired is NOT
+ * reverted to pending" invariant.
+ * @param {'agendaEvent'|'agendaTask'} entityType
+ * @param {string} entityId
+ * @param {{h1?: number, overdue: number}} plan
+ */
+async function syncAgendaOffsets(entityType, entityId, plan) {
+  for (const offset of AGENDA_OFFSETS) {
+    if (plan[offset] == null) continue;
+    const id = agendaReminderId(entityType, entityId, offset);
+    const prior = (await getReminder(id)) || {};
+    const status = prior.status === 'fired' ? 'fired' : 'pending';
+    await db.ref(`${REMINDERS_PATH}/${id}`).set({
+      id,
+      entityType,
+      entityId,
+      offset,
+      fireAt: plan[offset],
+      status,
+      firedAt: prior.firedAt ?? null,
+      eventId: prior.eventId ?? null,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+}
+
+/**
+ * Tombstone every existing agenda offset row for an entity (cancel/
+ * complete). No-op for an offset with no row — a task's absent 'h1' row
+ * simply has nothing to tombstone, same tolerant pattern tombstoneOffsets()
+ * already uses.
+ * @param {'agendaEvent'|'agendaTask'} entityType
+ * @param {string} entityId
+ */
+async function tombstoneAgendaOffsets(entityType, entityId) {
+  for (const offset of AGENDA_OFFSETS) {
+    const id = agendaReminderId(entityType, entityId, offset);
+    const prior = await getReminder(id);
+    if (!prior) continue;
+    if (prior.status === 'cancelled') continue;
+    await db.ref(`${REMINDERS_PATH}/${id}`).update({
+      status: 'cancelled',
+      updatedAt: new Date().toISOString(),
+    });
+  }
+}
+
 module.exports = {
   REMINDERS_PATH,
   OFFSETS,
@@ -159,4 +236,8 @@ module.exports = {
   tombstoneOffsets,
   markReminder,
   loadDueReminders,
+  AGENDA_OFFSETS,
+  agendaReminderId,
+  syncAgendaOffsets,
+  tombstoneAgendaOffsets,
 };

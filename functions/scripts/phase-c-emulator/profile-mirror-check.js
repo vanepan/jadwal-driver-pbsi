@@ -45,6 +45,7 @@ async function main() {
   const { db } = require('../../src/config/admin');
 
   const username = 'phasec-mirror-user';
+  const kabidUsername = 'phasec-mirror-kabid';
 
   try {
     await db.ref(`userProfiles/${username}`).remove();
@@ -94,6 +95,37 @@ async function main() {
       await db.ref(`userProfiles/${minimalUsername}`).remove();
     });
 
+    console.log('\n=== onUserWrite — agendaParticipantType (V1.31 C5.2.1): mirrored when present, survives an unrelated subsequent write ===');
+    await checkAsync('a source record with agendaParticipantType mirrors it into userProfiles', async () => {
+      await onUserWrite.run(makeChangeEvent({
+        params: { username: kabidUsername },
+        before: null,
+        after: { displayName: 'Phase C Kabid Test User', role: 'admin', active: true, agendaParticipantType: 'kabid' },
+      }));
+      const mirrored = (await db.ref(`userProfiles/${kabidUsername}`).once('value')).val();
+      if (mirrored?.agendaParticipantType !== 'kabid') {
+        throw new Error(`expected agendaParticipantType: 'kabid' in the mirror, got ${JSON.stringify(mirrored)}`);
+      }
+    });
+    await checkAsync('a subsequent UNRELATED write to the same /users/{username} node (onValueWritten always delivers the full post-write value) still carries agendaParticipantType through to the regenerated mirror', async () => {
+      // Simulates a real unrelated admin action (e.g. a PIN reset touching
+      // updatedAt) — the trigger only ever sees the whole node's current
+      // value, never a diff, so this is the realistic shape of "unrelated
+      // write": agendaParticipantType is untouched by the caller, but must
+      // still be present in the value the trigger receives and re-mirrors.
+      await onUserWrite.run(makeChangeEvent({
+        params: { username: kabidUsername },
+        before: { displayName: 'Phase C Kabid Test User', role: 'admin', active: true, agendaParticipantType: 'kabid' },
+        after: { displayName: 'Phase C Kabid Test User', role: 'admin', active: true, agendaParticipantType: 'kabid', updatedAt: '2026-09-13T00:00:00.000Z' },
+      }));
+      const mirrored = (await db.ref(`userProfiles/${kabidUsername}`).once('value')).val();
+      if (mirrored?.agendaParticipantType !== 'kabid') {
+        throw new Error(`agendaParticipantType did NOT survive the unrelated write — mirror durability broken: ${JSON.stringify(mirrored)}`);
+      }
+      if ('updatedAt' in mirrored) throw new Error('updatedAt leaked into the mirror — it is not in PROFILE_FIELDS');
+    });
+    await db.ref(`userProfiles/${kabidUsername}`).remove();
+
     await checkAsync('deletion (after === null) removes the mirror instead of leaving a corrupted record', async () => {
       await onUserWrite.run(makeChangeEvent({ params: { username }, before: { displayName: 'Phase C Mirror User', role: 'driver' }, after: null }));
       const mirrored = (await db.ref(`userProfiles/${username}`).once('value')).val();
@@ -102,6 +134,7 @@ async function main() {
   } finally {
     await db.ref(`userProfiles/${username}`).remove();
     await db.ref('userProfiles/phasec-mirror-minimal').remove();
+    await db.ref(`userProfiles/${kabidUsername}`).remove();
   }
 }
 

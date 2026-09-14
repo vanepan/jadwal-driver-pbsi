@@ -271,6 +271,69 @@ function engLine(e, tail) {
   return head ? `${head}. ${tail}` : tail;
 }
 
+/* ── Agenda & To-Do (V1.31, Phase C2) — perspective-neutral, like
+   engineering.* (Agenda has no single driver-vs-admin split to render
+   around; every recipient reads the same copy). No `telegram` branch —
+   Agenda notifications are in-app + push only (registry.js). ── */
+Object.assign(TEMPLATES, {
+  'agenda.created': {
+    title: () => 'Agenda Baru',
+    body: (e) => `${e.payload.title || 'Agenda'} — Anda diundang.`,
+  },
+  'agenda.updated': {
+    title: () => 'Agenda Diperbarui',
+    body: (e) => `${e.payload.title || 'Agenda'} telah diperbarui oleh ${actorName(e)}.`,
+  },
+  'agenda.cancelled': {
+    title: () => 'Agenda Dibatalkan',
+    body: (e) => `${e.payload.title || 'Agenda'} dibatalkan oleh ${actorName(e)}.`,
+  },
+  'agenda.participant_added': {
+    title: () => 'Anda Diundang',
+    body: (e) => `Anda diundang ke ${e.payload.title || 'sebuah agenda'}.`,
+  },
+  'agenda.participant_removed': {
+    title: () => 'Dikeluarkan dari Agenda',
+    body: (e) => `Anda telah dikeluarkan dari ${e.payload.title || 'sebuah agenda'}.`,
+  },
+  'agenda.reminder': {
+    title: () => 'Pengingat: 1 Jam Lagi',
+    body: (e) => `${e.payload.title || 'Agenda'} dimulai dalam 1 jam.`,
+  },
+  'agenda.overdue': {
+    title: () => 'Agenda Terlewat',
+    body: (e) => `${e.payload.title || 'Agenda'} telah lewat dan belum ditandai selesai.`,
+  },
+  'task.created': {
+    title: () => 'Tugas Baru',
+    body: (e) => `Anda ditugaskan: ${e.payload.title || 'sebuah tugas'}.`,
+  },
+  'task.updated': {
+    title: () => 'Tugas Diperbarui',
+    body: (e) => `${e.payload.title || 'Tugas'} telah diperbarui oleh ${actorName(e)}.`,
+  },
+  'task.completed': {
+    title: () => 'Tugas Selesai',
+    body: (e) => `${e.payload.title || 'Tugas'} ditandai selesai oleh ${actorName(e)}.`,
+  },
+  'task.responsible_added': {
+    title: () => 'Anda Ditugaskan',
+    body: (e) => `Anda ditambahkan sebagai penanggung jawab: ${e.payload.title || 'sebuah tugas'}.`,
+  },
+  'task.responsible_removed': {
+    title: () => 'Dilepas dari Tugas',
+    body: (e) => `Anda telah dilepas dari tugas ${e.payload.title || ''}.`.trim(),
+  },
+  'task.reminder': {
+    title: () => 'Pengingat: 1 Jam Lagi',
+    body: (e) => `${e.payload.title || 'Tugas'} jatuh tempo dalam 1 jam.`,
+  },
+  'task.overdue': {
+    title: () => 'Tugas Terlambat',
+    body: (e) => `${e.payload.title || 'Tugas'} telah melewati tenggat dan belum selesai.`,
+  },
+});
+
 Object.assign(TEMPLATES, {
   'engineering.published': {
     title: () => 'Penugasan Engineering Baru',
@@ -314,6 +377,13 @@ Object.assign(TEMPLATES, {
  * Build a deep-link target the PWA can resolve from a push click
  * ("/?view=assignment&id=ASG-…"). Derived from the canonical entity.
  */
+// V1.31 Agenda & To-Do (Phase C2) — same SW-tag-collision problem
+// assignment.reminder's H-1d/H-1h already solved: the H-1h and overdue
+// pushes for the SAME agenda entity share one entityId, so without a
+// suffix the service worker's tag-based collapse would dismiss the first
+// when the second arrives. payload.offset ('h1'|'overdue') disambiguates.
+const AGENDA_REMINDER_TYPES = new Set(['agenda.reminder', 'agenda.overdue', 'task.reminder', 'task.overdue']);
+
 function deepLink(event) {
   const ent = (event && event.entity) || {};
   if (!ent.kind || !ent.id) return '/';
@@ -345,7 +415,7 @@ function render(type, event, recipient, channel) {
     // assignment (REV2 §5.4). Navigation uses `url` (real entity) — so the
     // deep link is unaffected. No service-worker change required.
     let entityId = ent.id || null;
-    if (type === 'assignment.reminder' && entityId && ev.payload && ev.payload.offset) {
+    if ((type === 'assignment.reminder' || AGENDA_REMINDER_TYPES.has(type)) && entityId && ev.payload && ev.payload.offset) {
       entityId = `${entityId}__${ev.payload.offset}`;
     }
     return {

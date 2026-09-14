@@ -557,6 +557,144 @@
           ".validate": "newData.hasChildren(['itemId', 'quantity', 'rebuiltAt', 'consistent']) && newData.child('itemId').val() === $itemId && newData.child('quantity').isNumber()"
         }
       }
+    },
+
+    // V1.31 Agenda & To-Do — Phase C1 Data + Rules Foundation (design docs:
+    // docs/AGENDA_TODO_PHASE_B_ARCHITECTURE_VALIDATION_v1.31.0.0.md,
+    // docs/AGENDA_TODO_PHASE_B1_SECURITY_CORRECTION_v1.31.0.0.md). Canonical
+    // records are client-direct-write, Rules-gated (same shape as assignments/
+    // driver_requests); agendaAudit and the four derived-index nodes below are
+    // NOT client-writable — they are written only by the C2 Cloud Functions
+    // (onAgendaEventWrite/onAgendaTaskWrite, onAgendaEvent/TaskIndexSync), not
+    // yet built as of C1.
+    //
+    // Every accepted write to agendaEvents/agendaTasks self-attributes
+    // updatedBy === auth.uid on EVERY branch (create AND update, organizer/PIC/
+    // admin/Kabid alike — not just the create branch the way driver_requests'
+    // requesterId check only covers one branch). This is deliberate and is
+    // what makes agendaAudit's actor field trustworthy downstream (a value the
+    // Rules already refused to let be forged, not a "best-effort" field like
+    // the legacy assignment/request events' deriveActor() — see the Phase B.1
+    // doc's §4 for the full reasoning) — never weaken this to a create-only
+    // check.
+    //
+    // auth.token.agendaKabid is a PLANNED custom claim (Phase B §2.1 Plan A) —
+    // NOT yet minted by verifyPin.js as of C1 (that is explicit C2/auth work,
+    // deliberately deferred). These rules reference it now so the rules text
+    // itself does not need to change again once C2 adds the claim; until then
+    // no production user can ever satisfy this branch, so the Kabid scope is
+    // effectively unreachable in production (not a live gap).
+    "agendaEvents": {
+      "$eventId": {
+        ".read": "auth != null && (data.child('participants').child(auth.uid).exists() || data.child('organizerUsername').val() === auth.uid || (data.child('scope').val() === 'sarpras_shared' && (auth.token.role === 'admin' || auth.token.adminEquivalent === true)) || (data.child('scope').val() === 'kabid' && auth.token.agendaKabid === true))",
+        ".write": "auth != null && newData.exists() && newData.child('updatedBy').val() === auth.uid && ((!data.exists() && newData.child('createdBy').val() === auth.uid && newData.child('organizerUsername').val() === auth.uid && ((newData.child('scope').val() === 'sarpras_shared' && (auth.token.role === 'admin' || auth.token.adminEquivalent === true)) || (newData.child('scope').val() === 'kabid' && auth.token.agendaKabid === true))) || (data.exists() && newData.child('organizerUsername').val() === data.child('organizerUsername').val() && newData.child('scope').val() === data.child('scope').val() && newData.child('createdBy').val() === data.child('createdBy').val() && (data.child('organizerUsername').val() === auth.uid || data.child('participants').child(auth.uid).child('isPic').val() === true || (data.child('scope').val() === 'sarpras_shared' && (auth.token.role === 'admin' || auth.token.adminEquivalent === true)) || (data.child('scope').val() === 'kabid' && auth.token.agendaKabid === true))))",
+        ".validate": "newData.hasChildren(['id', 'title', 'scope', 'organizerUsername', 'status', 'createdBy', 'createdAt', 'updatedBy', 'updatedAt']) && newData.child('id').val() === $eventId && (newData.child('scope').val() === 'sarpras_shared' || newData.child('scope').val() === 'kabid')",
+
+        // C3.1 self-RSVP — the ONE narrow exception to "only organizer/PIC/
+        // admin may write this event". RTDB cascade grants downward from any
+        // ancestor OR descendant rule that evaluates true (a `false`/absent
+        // rule at $eventId above does not block a `true` rule declared here,
+        // per this file's own cascade doc at agendaAudit above — that note is
+        // about an UNDECLARED deeper rule, not a blocked one; a declared
+        // deeper `true` always applies). Deliberately scoped to exactly
+        // `participants/$uid` so it can NEVER be reached by any write that
+        // also touches title/date/location/organizer/scope/PIC/other
+        // participants/creator — those all live under the $eventId node
+        // itself, which this rule cannot grant (it only ever evaluates for
+        // a write whose target path is participants/$uid or a descendant).
+        // A caller cannot smuggle an event-root field change through the
+        // SAME multi-location update as an RSVP write either: RTDB requires
+        // every touched leaf in an update() to be independently granted, and
+        // this rule grants only the participants/$uid leaf.
+        "participants": {
+          "$uid": {
+            // auth.uid===$uid: only the participant themself, never another
+            // participant or an outsider. data.exists(): the entry must
+            // already have been created by the organizer/PIC invite flow —
+            // this can never be used to self-invite. isPic/invitedBy/
+            // invitedAt equality-locked (same idiom as users/$username
+            // above) — RSVP can change status and nothing else. status
+            // restricted to the 3 RSVP outcomes; reverting to 'invited' (the
+            // only other schema value) is not offered by this grant, since
+            // no UI surfaces that action.
+            ".write": "auth != null && auth.uid === $uid && data.exists() && newData.exists() && newData.child('isPic').val() === data.child('isPic').val() && newData.child('invitedBy').val() === data.child('invitedBy').val() && newData.child('invitedAt').val() === data.child('invitedAt').val() && (newData.child('status').val() === 'accepted' || newData.child('status').val() === 'declined' || newData.child('status').val() === 'tentative')",
+            ".validate": "newData.hasChildren(['isPic', 'status', 'invitedBy', 'invitedAt'])"
+          }
+        }
+      }
+    },
+
+    "agendaTasks": {
+      "$taskId": {
+        ".read": "auth != null && (data.child('responsible').child(auth.uid).exists() || data.child('createdBy').val() === auth.uid || (data.child('scope').val() === 'sarpras_shared' && (auth.token.role === 'admin' || auth.token.adminEquivalent === true)) || (data.child('scope').val() === 'kabid' && auth.token.agendaKabid === true))",
+        ".write": "auth != null && newData.exists() && newData.child('updatedBy').val() === auth.uid && ((!data.exists() && newData.child('createdBy').val() === auth.uid && ((newData.child('scope').val() === 'sarpras_shared' && (auth.token.role === 'admin' || auth.token.adminEquivalent === true)) || (newData.child('scope').val() === 'kabid' && auth.token.agendaKabid === true))) || (data.exists() && newData.child('scope').val() === data.child('scope').val() && newData.child('createdBy').val() === data.child('createdBy').val() && (data.child('createdBy').val() === auth.uid || data.child('responsible').child(auth.uid).exists() || (data.child('scope').val() === 'sarpras_shared' && (auth.token.role === 'admin' || auth.token.adminEquivalent === true)) || (data.child('scope').val() === 'kabid' && auth.token.agendaKabid === true))))",
+        ".validate": "newData.hasChildren(['id', 'title', 'scope', 'status', 'priority', 'createdBy', 'createdAt', 'updatedBy', 'updatedAt']) && newData.child('id').val() === $taskId && (newData.child('scope').val() === 'sarpras_shared' || newData.child('scope').val() === 'kabid')"
+      }
+    },
+
+    // Server-authoritative audit (Phase B.1 §3/§11 — corrects Phase B's
+    // originally-client-writable draft). NO .write is declared anywhere in the
+    // $auditId subtree, so the collection-level "false" is the only rule that
+    // ever applies at any descendant path (RTDB rule cascade only ever GRANTS
+    // downward from an ancestor that evaluates true — it can never re-open a
+    // write a stricter ancestor already closed). Written exclusively by the C2
+    // onAgendaEventWrite/onAgendaTaskWrite Cloud Functions via the Admin SDK,
+    // which bypasses these rules by construction — same shape as /userProfiles
+    // and /reminders, both already .write:false / trigger-owned.
+    "agendaAudit": {
+      ".write": "false",
+      ".indexOn": ["entityId"],
+      "$auditId": {
+        ".read": "auth != null && ((data.child('entityScope').val() === 'sarpras_shared' && (auth.token.role === 'admin' || auth.token.adminEquivalent === true)) || (data.child('entityScope').val() === 'kabid' && auth.token.agendaKabid === true))"
+      }
+    },
+
+    // Derived indexes (Phase B §3) — NEVER a source of truth (the canonical
+    // agendaEvents/agendaTasks records above are independently re-checked on
+    // every read regardless of how a client learned the id — a stale or even
+    // corrupted index entry can cause a UX gap, never an authorization leak).
+    // NEVER client-writable — populated only by the C2 onAgendaEvent/
+    // TaskIndexSync triggers. Deliberately STRICTER than this file's usual
+    // admin-bypass convention: even the fact that an event/task id exists in
+    // the "kabid" bucket is calendar data admin must not see merely by being
+    // admin (Phase B §2.6 / Phase B.1 §10) — there is no admin branch on the
+    // kabid leg of either index, unlike every other admin-tier node in this
+    // file.
+    "agendaEventsByUser": {
+      ".write": "false",
+      "$username": {
+        ".read": "auth.uid === $username",
+        ".indexOn": ".value"
+      }
+    },
+    "agendaEventsByScope": {
+      ".write": "false",
+      "sarpras_shared": {
+        ".read": "auth.token.role === 'admin' || auth.token.adminEquivalent === true",
+        ".indexOn": ".value"
+      },
+      "kabid": {
+        ".read": "auth.token.agendaKabid === true",
+        ".indexOn": ".value"
+      }
+    },
+    "agendaTasksByUser": {
+      ".write": "false",
+      "$username": {
+        ".read": "auth.uid === $username",
+        ".indexOn": ".value"
+      }
+    },
+    "agendaTasksByScope": {
+      ".write": "false",
+      "sarpras_shared": {
+        ".read": "auth.token.role === 'admin' || auth.token.adminEquivalent === true",
+        ".indexOn": ".value"
+      },
+      "kabid": {
+        ".read": "auth.token.agendaKabid === true",
+        ".indexOn": ".value"
+      }
     }
   }
 }

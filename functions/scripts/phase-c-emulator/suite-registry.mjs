@@ -37,4 +37,8 @@ export const SUITE_REGISTRY = Object.freeze([
   // idempotent, and fail-closed on an unresolvable vehicle name.
   'vehicle-odometer-sync-check.js',
   'http-functions-check.js',
+  // V1.31 Agenda & To-Do, Phase C2 — server-side operational foundation
+  // (audit/lifecycle-event triggers, derived-index sync, /reminders
+  // timer-queue extension). See docs/AGENDA_TODO_PHASE_C2_*.md.
+  'agenda-triggers-check.js',
 ]);

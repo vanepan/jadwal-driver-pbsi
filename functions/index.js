@@ -52,6 +52,18 @@ const { acquireReimbursementNumber } = require('./src/reimbursement/counter');
 const { onUserWrite } = require('./src/users/onUserWrite');
 const { notifyAdminsOfNewRequest } = require('./src/notifications/notifyAdminsOfNewRequest');
 
+/* V1.31 Agenda & To-Do — Phase C2. Server-side operational foundation:
+   audit + lifecycle-event triggers, derived-index sync, and the
+   /reminders timer-queue extension (functions/src/reminders/{schedule,
+   tick}.js — additive, existing assignment-reminder code path untouched).
+   Not yet deployed; see docs/AGENDA_TODO_PHASE_C2_*.md. */
+const { onAgendaEventWrite } = require('./src/agenda/onAgendaEventWrite');
+const { onAgendaTaskWrite } = require('./src/agenda/onAgendaTaskWrite');
+const { onAgendaEventIndexSync } = require('./src/agenda/onAgendaEventIndexSync');
+const { onAgendaTaskIndexSync } = require('./src/agenda/onAgendaTaskIndexSync');
+const { onAgendaEventReminderSync } = require('./src/agenda/onAgendaEventReminderSync');
+const { onAgendaTaskReminderSync } = require('./src/agenda/onAgendaTaskReminderSync');
+
 const { generateCompletion } = require('./src/intelligence/generateCompletion');
 const { intelligenceConversation } = require('./src/intelligence/intelligenceConversation');
 const { intelligenceNorDraft } = require('./src/intelligence/intelligenceNorDraft');
@@ -140,6 +152,27 @@ exports.acquireReimbursementNumber = acquireReimbursementNumber;
    before it could reopen the exposure this split exists to close. */
 exports.onUserWrite = onUserWrite;
 exports.notifyAdminsOfNewRequest = notifyAdminsOfNewRequest;
+
+/* V1.31 Agenda & To-Do — Phase C2 (V1 feature, no V2/OpenAI dependency).
+   onAgendaEventWrite/onAgendaTaskWrite: server-authoritative
+   /agendaAudit + creation/lifecycle /events, trusting updatedBy only
+   because database.rules.json's agendaEvents/agendaTasks .write rules
+   already refuse any write where it doesn't equal the real auth.uid on
+   every branch (Phase C1 + Phase B.1 §4). onAgendaEvent/TaskIndexSync:
+   the derived agendaEventsByUser/ByScope + agendaTasksByUser/ByScope fan-
+   out — never a source of truth, never client-writable. onAgendaEvent/
+   TaskReminderSync: maintains the SAME /reminders timer queue
+   functions/src/reminders/schedule.js already owns for assignments (an
+   additive, entityType-branched extension — existing assignment rows and
+   reminderTick's assignment code path are byte-for-byte unchanged). None
+   of these six is deployed by this commit; see
+   docs/AGENDA_TODO_PHASE_C2_CLOUD_FUNCTIONS_FOUNDATION_v1.31.0.0.md. */
+exports.onAgendaEventWrite = onAgendaEventWrite;
+exports.onAgendaTaskWrite = onAgendaTaskWrite;
+exports.onAgendaEventIndexSync = onAgendaEventIndexSync;
+exports.onAgendaTaskIndexSync = onAgendaTaskIndexSync;
+exports.onAgendaEventReminderSync = onAgendaEventReminderSync;
+exports.onAgendaTaskReminderSync = onAgendaTaskReminderSync;
 
 /* V2 Sarpras Intelligence — the Phase 1 OpenAI server boundary, now wired
    (Phase 2A). HTTPS callable v2, region asia-southeast1, OPENAI_API_KEY bound

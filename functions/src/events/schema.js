@@ -33,7 +33,7 @@ const ENVELOPE_VERSION = 1;
 const EVENTS_PATH = 'events';
 
 /** Recognized entity kinds. */
-const ENTITY_KINDS = ['assignment', 'request', 'comment', 'notification', 'engineering'];
+const ENTITY_KINDS = ['assignment', 'request', 'comment', 'notification', 'engineering', 'agendaEvent', 'agendaTask'];
 
 /**
  * Canonical event type namespace (domain.action). Additive — new
@@ -74,6 +74,25 @@ const EVENT_TYPES = [
   'engineering.cancelled',
   'engineering.updated',
   'engineering.deleted',
+  // V1.31 Agenda & To-Do — Phase C2. Rides the SAME /events -> onEventWrite
+  // -> engine pipeline; only new TYPES, no new machinery. agenda.reminder/
+  // agenda.overdue/task.reminder/task.overdue are minted by the reminders
+  // tick extension (functions/src/reminders/tick.js), never by the
+  // onAgendaEventWrite/onAgendaTaskWrite triggers directly.
+  'agenda.created',
+  'agenda.updated',
+  'agenda.cancelled',
+  'agenda.participant_added',
+  'agenda.participant_removed',
+  'agenda.reminder',
+  'agenda.overdue',
+  'task.created',
+  'task.updated',
+  'task.completed',
+  'task.responsible_added',
+  'task.responsible_removed',
+  'task.reminder',
+  'task.overdue',
 ];
 const EVENT_TYPE_SET = new Set(EVENT_TYPES);
 

@@ -7,11 +7,13 @@ rules_version = '2';
 // 'gudang/item-photos'). Everything else is denied by default — Storage
 // Rules only grant access to paths with a matching `match` block.
 //
-// DEPLOYMENT NOTE: this file cannot be deployed until Firebase Storage's
-// default bucket actually exists for this project (Firebase Console ->
-// Storage -> Get Started) — confirmed via a direct Google Cloud Storage
-// API query that the bucket schedule-driver-pbsi.firebasestorage.app
-// currently does not exist. Once it does, deploy with:
+// DEPLOYMENT NOTE (corrected, V1.31 Phase C4 — the ORIGINAL wording below
+// was stale/misleading: the bucket was provisioned in the SAME commit that
+// wrote it, and the sentence was never updated afterward. Confirmed via
+// git history (commits b595d0a/4b12483/277458d, 2026-08-03/04): the bucket
+// schedule-driver-pbsi.firebasestorage.app IS real, provisioned, and live
+// in production today — proven end-to-end by Gudang item photos, a fully
+// shipped, GA feature). Deploy any FUTURE change to this file with:
 //   firebase deploy --only storage
 //
 // SEPARATE, EASY-TO-LOSE DEPENDENCY (v1.28.8): getBytes() reads from a
@@ -44,6 +46,55 @@ service firebase.storage {
     match /gudang/item-photos/{itemId}/{fileName} {
       allow read, write: if request.auth != null
         && (request.auth.token.role == 'admin' || request.auth.token.role == 'developer');
+    }
+
+    // V1.31 Agenda & To-Do, Phase C4 — ATTACHMENT FOUNDATION.
+    // PREPARED, NOT DEPLOYED (same "undeployed until an explicit deploy
+    // phase" convention as every RTDB Rules change this program has made —
+    // see database.rules.json's own RSVP grant from Phase C3.1). Written
+    // now, alongside the rest of this phase's Storage-provisioning
+    // research, so the eventual attachment feature has a reviewed Rules
+    // shape ready rather than starting from zero — but NOT wired into any
+    // UI/upload code this phase (see the C4 completion report's Attachment
+    // Status section for why: activating this requires `firebase deploy
+    // --only storage`, which is out of scope for this phase like every
+    // other deploy action).
+    //
+    // KNOWN, DELIBERATE LIMITATION — read before extending: unlike
+    // database.rules.json, Storage Rules cannot reference sibling RTDB
+    // data (no `data.child('organizerUsername')`-style lookup exists for
+    // Storage). This match block therefore CANNOT replicate the C1 Rules'
+    // fine-grained per-record model (organizer/PIC/participant of THIS
+    // specific event). It falls back to the same coarser, role-based trust
+    // boundary the Gudang block above already accepts: any Sarpras admin
+    // or Kabid-permission holder may read/write ANY agenda attachment,
+    // regardless of which specific event/task it belongs to. This is a
+    // real, named gap (not a per-record leak within Kabid's OWN privacy
+    // boundary, since agendaKabid is still required — but it does mean an
+    // admin/Kabid user could reach an attachment on an event they are not
+    // personally a participant of). If per-record scoping is ever required,
+    // it would need either (a) a Callable Function issuing short-lived
+    // signed download URLs after checking the real RTDB record, or (b) a
+    // Storage-triggered Cloud Function mirroring authorization metadata
+    // Storage Rules CAN read (e.g. custom metadata set at upload time) —
+    // neither built here, both out of scope for a "foundation" phase.
+    //
+    // Path convention: agenda/{entityType}/{entityId}/{fileId} — entityType
+    // is 'event'|'task' (mirrors agendaAudit's entityType field, per the
+    // existing #6 Phase B architecture doc's own draft at that time), so a
+    // future evolution to per-entity-type rules (if entityType-specific
+    // authorization is ever needed) doesn't require a path migration.
+    match /agenda/{entityType}/{entityId}/{fileId} {
+      allow read, write: if request.auth != null
+        && (request.auth.token.role == 'admin' || request.auth.token.agendaKabid == true)
+        // Defense in depth even though this is coarse-grained: cap upload
+        // size at 15MB (matches no existing convention in this app since
+        // Gudang photos are compressed client-side, not size-capped at the
+        // Rules layer — chosen fresh here as a reasonable ceiling for
+        // office documents/scans an Agenda attachment would realistically
+        // be) and require a real, non-spoofable-by-filename content type.
+        && request.resource.size < 15 * 1024 * 1024
+        && request.resource.contentType.matches('application/pdf|image/.*|application/vnd\\..*|application/msword');
     }
   }
 }

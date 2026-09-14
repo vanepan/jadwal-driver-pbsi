@@ -5,9 +5,13 @@
    RTDB Security Hardening Program, Phase 6)
 
    Mirrors /users/{username} into a minimal, broadly-readable
-   /userProfiles/{username}: {username, displayName, role, active,
-   archived, archivedAt} only — never credential fields (pin/pinHash),
-   never telegramChatIds, never notificationsEnabled, never timestamps.
+   /userProfiles/{username} — exactly the fields listed in
+   profile-fields.js#PROFILE_FIELDS (displayName, role, active, archived,
+   archivedAt, agendaParticipantType as of V1.31 C5.2) — never credential
+   fields (pin/pinHash), never telegramChatIds, never notificationsEnabled,
+   never timestamps. The field list is owned by profile-fields.js, not
+   duplicated here, specifically so a standalone script can import the
+   same extractProfile() this trigger uses (see that file's own header).
 
    Same "trigger mirrors a rich admin node into a skinny public one"
    pattern already used elsewhere in this backend (onAssignmentWrite,
@@ -27,16 +31,7 @@ const { onValueWritten } = require('firebase-functions/v2/database');
 const logger = require('firebase-functions/logger');
 const { REGION, DB_INSTANCE } = require('../config/constants');
 const { db } = require('../config/admin');
-
-const PROFILE_FIELDS = ['displayName', 'role', 'active', 'archived', 'archivedAt'];
-
-function extractProfile(username, record) {
-  const profile = { username };
-  for (const field of PROFILE_FIELDS) {
-    if (record[field] !== undefined) profile[field] = record[field];
-  }
-  return profile;
-}
+const { extractProfile } = require('./profile-fields');
 
 const onUserWrite = onValueWritten(
   { ref: '/users/{username}', region: REGION, instance: DB_INSTANCE },

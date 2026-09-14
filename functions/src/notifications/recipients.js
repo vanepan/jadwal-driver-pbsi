@@ -240,6 +240,60 @@ function resolveRecipients(event, users) {
       (p.participantIds || []).forEach(id => add(byUsername(users, id), { excludeActor: true }));
       break;
     }
+    /* ── Agenda & To-Do (V1.31, Phase C2) ──────────────────────────────────
+       DELIBERATELY, structurally different from every case above: NONE of
+       these ever call admins(users). Every other case in this file CCs
+       admins somewhere (fleet oversight, approval visibility) — doing that
+       here would notify every Sarpras admin of a Kabid-scope event's/task's
+       existence through the bell even when they are not a participant,
+       reopening exactly the privacy leak database.rules.json's agendaEvents/
+       agendaTasks/agendaAudit rules were built to close (Phase B.1 §5.3) —
+       just through the notification path instead of the read path, which
+       Rules alone cannot prevent (the Admin SDK bypasses Rules by design).
+       If you are adding an Agenda-adjacent case here later, do NOT copy a
+       nearby non-Agenda case that CCs admins(); copy one of these instead. */
+    case 'agenda.created':
+    case 'agenda.updated':
+    case 'agenda.cancelled': {
+      Object.keys(p.participants || {}).forEach(u => add(byUsername(users, u), { excludeActor: true }));
+      break;
+    }
+    case 'agenda.participant_added':
+    case 'agenda.participant_removed': {
+      // Personal notice to the ONE affected person, not a fan-out to every
+      // participant — avoids notifying the whole guest list every time
+      // anyone is added/removed from a meeting.
+      add(byUsername(users, p.affectedUsername), { excludeActor: true });
+      break;
+    }
+    case 'agenda.reminder':
+    case 'agenda.overdue': {
+      // System-originated (the reminder tick has no human actor to exclude).
+      add(byUsername(users, p.organizerUsername));
+      Object.keys(p.participants || {}).forEach(u => add(byUsername(users, u)));
+      break;
+    }
+    case 'task.created':
+    case 'task.updated': {
+      Object.keys(p.responsible || {}).forEach(u => add(byUsername(users, u), { excludeActor: true }));
+      break;
+    }
+    case 'task.completed': {
+      Object.keys(p.responsible || {}).forEach(u => add(byUsername(users, u), { excludeActor: true }));
+      add(byUsername(users, p.createdBy), { excludeActor: true });
+      break;
+    }
+    case 'task.responsible_added':
+    case 'task.responsible_removed': {
+      add(byUsername(users, p.affectedUsername), { excludeActor: true });
+      break;
+    }
+    case 'task.reminder':
+    case 'task.overdue': {
+      Object.keys(p.responsible || {}).forEach(u => add(byUsername(users, u)));
+      break;
+    }
+
     default:
       // request.updated / notification.sent (assignment.started is handled
       // above) intentionally resolve to no recipients in this foundation.

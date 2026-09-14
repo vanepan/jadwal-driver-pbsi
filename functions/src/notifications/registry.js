@@ -64,6 +64,29 @@ const REGISTRY = {
   'engineering.verified':  { channels: [IN_APP, PUSH], template: 'engineering.verified' },
   'engineering.rejected':  { channels: [IN_APP, PUSH], template: 'engineering.rejected' },
   'engineering.cancelled': { channels: [IN_APP, PUSH], template: 'engineering.cancelled' },
+
+  // V1.31 Agenda & To-Do (Phase C2) — in-app + push, no Telegram (the spec's
+  // own instruction: no external channel unless the existing architecture
+  // already supports it with no added complexity — Push already does,
+  // Telegram would need new templates in a channel nobody asked for).
+  // recipients.js's Agenda cases NEVER add admins() — this registry
+  // membership alone does not widen who receives anything; recipient
+  // SCOPING (never blanket-admin, Kabid privacy) is enforced entirely in
+  // recipients.js, not here.
+  'agenda.created':             { channels: [IN_APP, PUSH], template: 'agenda.created' },
+  'agenda.updated':             { channels: [IN_APP, PUSH], template: 'agenda.updated' },
+  'agenda.cancelled':           { channels: [IN_APP, PUSH], template: 'agenda.cancelled' },
+  'agenda.participant_added':   { channels: [IN_APP, PUSH], template: 'agenda.participant_added' },
+  'agenda.participant_removed': { channels: [IN_APP, PUSH], template: 'agenda.participant_removed' },
+  'agenda.reminder':            { channels: [IN_APP, PUSH], template: 'agenda.reminder' },
+  'agenda.overdue':             { channels: [IN_APP, PUSH], template: 'agenda.overdue' },
+  'task.created':                { channels: [IN_APP, PUSH], template: 'task.created' },
+  'task.updated':                { channels: [IN_APP, PUSH], template: 'task.updated' },
+  'task.completed':              { channels: [IN_APP, PUSH], template: 'task.completed' },
+  'task.responsible_added':      { channels: [IN_APP, PUSH], template: 'task.responsible_added' },
+  'task.responsible_removed':    { channels: [IN_APP, PUSH], template: 'task.responsible_removed' },
+  'task.reminder':                { channels: [IN_APP, PUSH], template: 'task.reminder' },
+  'task.overdue':                 { channels: [IN_APP, PUSH], template: 'task.overdue' },
 };
 
 /** Registry entry for a canonical type, or null if not notifiable. */
