@@ -38,7 +38,10 @@ const onAgendaTaskReminderSync = onValueWritten(
       }
       if (!after) return; // Rules forbid hard delete — defensive only
 
-      if (after.status === 'done') {
+      // V1.31.1 soft-delete: 'deleted' must tombstone reminders exactly like
+      // 'done' already does — a deleted task is not one anyone should
+      // still be reminded about.
+      if (after.status === 'done' || after.status === 'deleted') {
         await tombstoneAgendaOffsets(ENTITY_TYPE, taskId);
         return;
       }
@@ -46,7 +49,8 @@ const onAgendaTaskReminderSync = onValueWritten(
       const scheduleChanged = !before
         || before.dueAt !== after.dueAt
         || before.dueTime !== after.dueTime
-        || before.status === 'done';
+        || before.status === 'done'
+        || before.status === 'deleted';
       if (scheduleChanged) {
         const plan = planForTask(after);
         if (plan) await syncAgendaOffsets(ENTITY_TYPE, taskId, plan);

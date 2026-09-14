@@ -62,6 +62,12 @@ function diffToAuditActions(before, after) {
   if (before.status !== after.status) {
     if (after.status === 'cancelled') {
       actions.push({ action: 'cancelled', note: after.cancelReason || null });
+    } else if (after.status === 'deleted') {
+      // V1.31.1 soft-delete ("Dihapus") — a dedicated audit action, not the
+      // generic 'status_changed' fallback below, per the spec's own audit
+      // requirement (created/updated/participant invited/removed/RSVP
+      // changed/cancelled/deleted/restored). Mirrors 'cancelled' exactly.
+      actions.push({ action: 'deleted', note: after.deleteReason || null });
     } else if (after.status === 'done') {
       actions.push({ action: 'completed' });
     } else {

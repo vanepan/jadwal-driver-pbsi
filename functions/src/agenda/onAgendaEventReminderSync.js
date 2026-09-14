@@ -51,7 +51,10 @@ const onAgendaEventReminderSync = onValueWritten(
       }
       if (!after) return; // Rules forbid hard delete — defensive only
 
-      if (after.status === 'cancelled') {
+      // V1.31.1 soft-delete: 'deleted' must tombstone reminders exactly like
+      // 'cancelled' already does — a deleted event is not one anyone should
+      // still be reminded about.
+      if (after.status === 'cancelled' || after.status === 'deleted') {
         await tombstoneAgendaOffsets(ENTITY_TYPE, eventId);
         return;
       }
@@ -59,7 +62,8 @@ const onAgendaEventReminderSync = onValueWritten(
       const scheduleChanged = !before
         || before.startAt !== after.startAt
         || before.endAt !== after.endAt
-        || before.status === 'cancelled';
+        || before.status === 'cancelled'
+        || before.status === 'deleted';
       if (scheduleChanged) {
         const plan = planForEvent(after);
         if (plan) await syncAgendaOffsets(ENTITY_TYPE, eventId, plan);

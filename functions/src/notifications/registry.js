@@ -87,6 +87,19 @@ const REGISTRY = {
   'task.responsible_removed':    { channels: [IN_APP, PUSH], template: 'task.responsible_removed' },
   'task.reminder':                { channels: [IN_APP, PUSH], template: 'task.reminder' },
   'task.overdue':                 { channels: [IN_APP, PUSH], template: 'task.overdue' },
+
+  // V1.31.1 "Agenda, Kalender & To-Do" — same shape/reasoning as the
+  // agenda.*/task.* block above: in-app + push only, no Telegram;
+  // recipients.js's Calendar cases NEVER add admins() either (same Kabid
+  // privacy boundary). calendar.ended replaces agenda.overdue's role —
+  // Calendar's period-ended notice, not an overdue/Terlewat framing.
+  'calendar.created':             { channels: [IN_APP, PUSH], template: 'calendar.created' },
+  'calendar.updated':             { channels: [IN_APP, PUSH], template: 'calendar.updated' },
+  'calendar.cancelled':           { channels: [IN_APP, PUSH], template: 'calendar.cancelled' },
+  'calendar.participant_added':   { channels: [IN_APP, PUSH], template: 'calendar.participant_added' },
+  'calendar.participant_removed': { channels: [IN_APP, PUSH], template: 'calendar.participant_removed' },
+  'calendar.reminder':            { channels: [IN_APP, PUSH], template: 'calendar.reminder' },
+  'calendar.ended':               { channels: [IN_APP, PUSH], template: 'calendar.ended' },
 };
 
 /** Registry entry for a canonical type, or null if not notifiable. */

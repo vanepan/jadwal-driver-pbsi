@@ -294,6 +294,29 @@ function resolveRecipients(event, users) {
       break;
     }
 
+    /* ── Calendar (V1.31.1 "Agenda, Kalender & To-Do") ──────────────────────
+       Byte-for-byte the SAME shape and the SAME privacy reasoning as the
+       Agenda cases immediately above — never admins(), for the identical
+       Kabid-scope-leak reason. calendar.ended takes agenda.overdue's slot
+       (system-originated, organizer + all participants). */
+    case 'calendar.created':
+    case 'calendar.updated':
+    case 'calendar.cancelled': {
+      Object.keys(p.participants || {}).forEach(u => add(byUsername(users, u), { excludeActor: true }));
+      break;
+    }
+    case 'calendar.participant_added':
+    case 'calendar.participant_removed': {
+      add(byUsername(users, p.affectedUsername), { excludeActor: true });
+      break;
+    }
+    case 'calendar.reminder':
+    case 'calendar.ended': {
+      add(byUsername(users, p.organizerUsername));
+      Object.keys(p.participants || {}).forEach(u => add(byUsername(users, u)));
+      break;
+    }
+
     default:
       // request.updated / notification.sent (assignment.started is handled
       // above) intentionally resolve to no recipients in this foundation.

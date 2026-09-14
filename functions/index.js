@@ -63,6 +63,9 @@ const { onAgendaEventIndexSync } = require('./src/agenda/onAgendaEventIndexSync'
 const { onAgendaTaskIndexSync } = require('./src/agenda/onAgendaTaskIndexSync');
 const { onAgendaEventReminderSync } = require('./src/agenda/onAgendaEventReminderSync');
 const { onAgendaTaskReminderSync } = require('./src/agenda/onAgendaTaskReminderSync');
+const { onAgendaCalendarWrite } = require('./src/agenda/onAgendaCalendarWrite');
+const { onAgendaCalendarIndexSync } = require('./src/agenda/onAgendaCalendarIndexSync');
+const { onAgendaCalendarReminderSync } = require('./src/agenda/onAgendaCalendarReminderSync');
 
 const { generateCompletion } = require('./src/intelligence/generateCompletion');
 const { intelligenceConversation } = require('./src/intelligence/intelligenceConversation');
@@ -173,6 +176,15 @@ exports.onAgendaEventIndexSync = onAgendaEventIndexSync;
 exports.onAgendaTaskIndexSync = onAgendaTaskIndexSync;
 exports.onAgendaEventReminderSync = onAgendaEventReminderSync;
 exports.onAgendaTaskReminderSync = onAgendaTaskReminderSync;
+
+/* V1.31.1 "Agenda, Kalender & To-Do" — the Calendar entity's own trigger
+   triple, additive siblings of the six Agenda/To-Do ones immediately
+   above (same three-jobs-per-entity pattern: audit+lifecycle-events,
+   derived-index fan-out, reminder timer-queue). See onAgendaCalendarWrite/
+   IndexSync/ReminderSync.js for the full design rationale. */
+exports.onAgendaCalendarWrite = onAgendaCalendarWrite;
+exports.onAgendaCalendarIndexSync = onAgendaCalendarIndexSync;
+exports.onAgendaCalendarReminderSync = onAgendaCalendarReminderSync;
 
 /* V2 Sarpras Intelligence — the Phase 1 OpenAI server boundary, now wired
    (Phase 2A). HTTPS callable v2, region asia-southeast1, OPENAI_API_KEY bound

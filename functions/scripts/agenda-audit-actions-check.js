@@ -48,6 +48,16 @@ check("an OTHER status transition (not_started -> in_progress) produces the gene
     { status: 'not_started', title: 'x' },
     { status: 'in_progress', title: 'x' },
   ), ['status_changed']));
+check("V1.31.1: status -> 'deleted' produces ONLY 'deleted' (its own dedicated action, NOT the generic 'status_changed', never also 'updated')",
+  actionsEqual(diffToAuditActions(
+    { status: 'scheduled', title: 'x' },
+    { status: 'deleted', title: 'x', deleteReason: 'duplikat' },
+  ), ['deleted']));
+check("deleteReason is carried on the 'deleted' action's note",
+  diffToAuditActions(
+    { status: 'scheduled' },
+    { status: 'deleted', deleteReason: 'duplikat' },
+  )[0].note === 'duplikat');
 
 console.log('\n=== [D — acknowledged] ===');
 check("acknowledgedAt newly set -> 'acknowledged', independent of status",

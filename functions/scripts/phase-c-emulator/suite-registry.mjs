@@ -41,4 +41,14 @@ export const SUITE_REGISTRY = Object.freeze([
   // (audit/lifecycle-event triggers, derived-index sync, /reminders
   // timer-queue extension). See docs/AGENDA_TODO_PHASE_C2_*.md.
   'agenda-triggers-check.js',
+  // V1.31 Agenda & To-Do, Phase C5.3.2 — existed on disk but was never
+  // added here (found during V1.31.1's own test-inventory audit; this
+  // suite's own suite-registry-meta-check.mjs was silently failing this
+  // exact gap on every run until now). Registering it, not fixing the
+  // test itself — it was already complete and correct.
+  'agenda-kabid-claim-override-check.js',
+  // V1.31.1 "Agenda, Kalender & To-Do" — the Calendar entity's own trigger
+  // triple (audit/lifecycle-event, derived-index sync, /reminders
+  // timer-queue), mirroring agenda-triggers-check.js's coverage.
+  'agenda-calendar-triggers-check.js',
 ]);

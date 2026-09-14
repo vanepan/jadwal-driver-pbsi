@@ -170,7 +170,13 @@ function agendaReminderId(entityType, entityId, offset) {
   return keySafe(`${entityType}:${entityId}__${offset}`);
 }
 
-const AGENDA_OFFSETS = ['h1', 'overdue'];
+// V1.31.1 "Agenda, Kalender & To-Do" adds 'ended' (Calendar's period-
+// concluded offset, agenda/reminderPlan.js#planForCalendarItem) — syncAgendaOffsets/
+// tombstoneAgendaOffsets below are already generic over this array (they
+// skip any offset absent from `plan`), so this is a pure additive change;
+// no agendaEvent/agendaTask plan ever sets `plan.ended`, so their behavior
+// is unchanged.
+const AGENDA_OFFSETS = ['h1', 'overdue', 'ended'];
 
 /**
  * Upsert whichever offset rows `plan` contains to `pending` with fresh

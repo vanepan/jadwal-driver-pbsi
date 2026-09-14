@@ -695,6 +695,57 @@
         ".read": "auth.token.agendaKabid === true",
         ".indexOn": ".value"
       }
+    },
+
+    // V1.31.1 Agenda, Kalender & To-Do — Calendar entity. Byte-for-byte the
+    // SAME read/write/validate SHAPE as agendaEvents above (organizer/PIC/
+    // scope-bypass write, participant/organizer/scope-bypass read, the one
+    // narrow participants/$uid self-RSVP carve-out, updatedBy===auth.uid on
+    // every branch, organizerUsername/scope/createdBy immutable after
+    // create) — deliberately reusing the exact same authorization
+    // architecture rather than inventing a parallel one, since Calendar
+    // shares the identical Sarpras-staff/Kabid population and scope model
+    // as Agenda. status has no enum .validate (matching agendaEvents'
+    // existing convention, where 'scheduled'/'cancelled' aren't Rules-
+    // enforced either) — 'deleted' (soft-delete/"Dihapus") is therefore
+    // already writable without any further Rules change, exactly as it now
+    // is for agendaEvents/agendaTasks. agendaAudit below is intentionally
+    // NOT duplicated for Calendar — its existing rule already reads by the
+    // record's own entityScope field, not a per-entity-type path, so a
+    // Calendar audit row (entityType: 'agendaCalendar') is covered for
+    // free.
+    "agendaCalendars": {
+      "$calendarId": {
+        ".read": "auth != null && (data.child('participants').child(auth.uid).exists() || data.child('organizerUsername').val() === auth.uid || (data.child('scope').val() === 'sarpras_shared' && (auth.token.role === 'admin' || auth.token.adminEquivalent === true)) || (data.child('scope').val() === 'kabid' && auth.token.agendaKabid === true))",
+        ".write": "auth != null && newData.exists() && newData.child('updatedBy').val() === auth.uid && ((!data.exists() && newData.child('createdBy').val() === auth.uid && newData.child('organizerUsername').val() === auth.uid && ((newData.child('scope').val() === 'sarpras_shared' && (auth.token.role === 'admin' || auth.token.adminEquivalent === true)) || (newData.child('scope').val() === 'kabid' && auth.token.agendaKabid === true))) || (data.exists() && newData.child('organizerUsername').val() === data.child('organizerUsername').val() && newData.child('scope').val() === data.child('scope').val() && newData.child('createdBy').val() === data.child('createdBy').val() && (data.child('organizerUsername').val() === auth.uid || data.child('participants').child(auth.uid).child('isPic').val() === true || (data.child('scope').val() === 'sarpras_shared' && (auth.token.role === 'admin' || auth.token.adminEquivalent === true)) || (data.child('scope').val() === 'kabid' && auth.token.agendaKabid === true))))",
+        ".validate": "newData.hasChildren(['id', 'title', 'scope', 'organizerUsername', 'status', 'startDate', 'endDate', 'allDay', 'createdBy', 'createdAt', 'updatedBy', 'updatedAt']) && newData.child('id').val() === $calendarId && (newData.child('scope').val() === 'sarpras_shared' || newData.child('scope').val() === 'kabid')",
+
+        "participants": {
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid && data.exists() && newData.exists() && newData.child('isPic').val() === data.child('isPic').val() && newData.child('invitedBy').val() === data.child('invitedBy').val() && newData.child('invitedAt').val() === data.child('invitedAt').val() && (newData.child('status').val() === 'accepted' || newData.child('status').val() === 'declined' || newData.child('status').val() === 'tentative')",
+            ".validate": "newData.hasChildren(['isPic', 'status', 'invitedBy', 'invitedAt'])"
+          }
+        }
+      }
+    },
+
+    "agendaCalendarsByUser": {
+      ".write": "false",
+      "$username": {
+        ".read": "auth.uid === $username",
+        ".indexOn": ".value"
+      }
+    },
+    "agendaCalendarsByScope": {
+      ".write": "false",
+      "sarpras_shared": {
+        ".read": "auth.token.role === 'admin' || auth.token.adminEquivalent === true",
+        ".indexOn": ".value"
+      },
+      "kabid": {
+        ".read": "auth.token.agendaKabid === true",
+        ".indexOn": ".value"
+      }
     }
   }
 }

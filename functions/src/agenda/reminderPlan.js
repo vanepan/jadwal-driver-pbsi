@@ -48,4 +48,22 @@ function planForTask(task) {
   return plan;
 }
 
-module.exports = { planForEvent, planForTask, H1_MS };
+/**
+ * V1.31.1 "Agenda, Kalender & To-Do". 'ended' (fires AT/AFTER endAt) takes
+ * the 'overdue' slot's MECHANISM (same offset-row plumbing) but not its
+ * FRAMING — a Calendar period concluding is not a failure state (spec §E/L:
+ * never "Terlewat" for Calendar). 'h1' is OMITTED for an all-day item —
+ * there is no meaningful "1 hour before" instant for a date-only block
+ * (spec §L: "Do NOT invent an arbitrary 1-hour reminder at midnight") —
+ * mirroring planForTask()'s identical omit-when-no-time convention above.
+ * @param {{startAt: number|null, endAt: number|null, allDay: boolean}} item
+ * @returns {{h1?: number, ended: number}|null}
+ */
+function planForCalendarItem(item) {
+  if (!item || item.startAt == null || item.endAt == null) return null;
+  const plan = { ended: item.endAt };
+  if (item.allDay !== true) plan.h1 = item.startAt - H1_MS;
+  return plan;
+}
+
+module.exports = { planForEvent, planForTask, planForCalendarItem, H1_MS };

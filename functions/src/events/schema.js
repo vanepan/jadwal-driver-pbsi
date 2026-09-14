@@ -33,7 +33,7 @@ const ENVELOPE_VERSION = 1;
 const EVENTS_PATH = 'events';
 
 /** Recognized entity kinds. */
-const ENTITY_KINDS = ['assignment', 'request', 'comment', 'notification', 'engineering', 'agendaEvent', 'agendaTask'];
+const ENTITY_KINDS = ['assignment', 'request', 'comment', 'notification', 'engineering', 'agendaEvent', 'agendaTask', 'agendaCalendar'];
 
 /**
  * Canonical event type namespace (domain.action). Additive — new
@@ -93,6 +93,20 @@ const EVENT_TYPES = [
   'task.responsible_removed',
   'task.reminder',
   'task.overdue',
+  // V1.31.1 "Agenda, Kalender & To-Do" — Calendar entity. Rides the SAME
+  // /events -> onEventWrite -> engine pipeline as agenda.*/task.* above;
+  // only new TYPES, no new machinery. calendar.ended replaces the
+  // overdue/Terlewat concept for Calendar (a period ending is not a
+  // failure state) — minted by the reminders tick extension
+  // (functions/src/reminders/tick.js), never by onAgendaCalendarWrite
+  // directly, exactly like agenda.reminder/agenda.overdue.
+  'calendar.created',
+  'calendar.updated',
+  'calendar.cancelled',
+  'calendar.participant_added',
+  'calendar.participant_removed',
+  'calendar.reminder',
+  'calendar.ended',
 ];
 const EVENT_TYPE_SET = new Set(EVENT_TYPES);
 

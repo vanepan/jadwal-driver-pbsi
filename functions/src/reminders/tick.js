@@ -37,33 +37,72 @@ const {
    this is server-side CJS (the same client/server boundary every other
    pure-logic pair in this codebase already accepts rather than forcing a
    cross-runtime import — e.g. events/schema.js's own inlined keySafe()). */
+const AGENDA_ENTITY_PATH = { agendaEvent: 'agendaEvents', agendaTask: 'agendaTasks', agendaCalendar: 'agendaCalendars' };
+
 function isAgendaEventOverdue(e, now) {
   return Boolean(e) && e.status === 'scheduled' && e.acknowledgedAt == null && e.endAt != null && now > e.endAt;
 }
+// 'deleted' (V1.31.1 soft-delete, added alongside the Calendar entity) must
+// suppress overdue exactly like 'done' already does — a deleted task is not
+// an outstanding one. isAgendaEventOverdue needs no equivalent fix: its
+// status==='scheduled' check is already positive-only, so 'deleted' (or any
+// other non-'scheduled' status) already falls through to false.
 function isAgendaTaskOverdue(t, now) {
-  return Boolean(t) && t.status !== 'done' && t.dueAt != null && now > t.dueAt;
+  return Boolean(t) && t.status !== 'done' && t.status !== 'deleted' && t.dueAt != null && now > t.dueAt;
+}
+/* V1.31.1 "Agenda, Kalender & To-Do". MUST mirror
+   js/agenda/agenda-calendar-lifecycle.js#calendarItemDisplayState()'s
+   'selesai' branch exactly — duplicated, not imported, for the same
+   client/server CJS-ESM boundary reason as the two functions above.
+   Deliberately NOT named isAgendaCalendarOverdue: a Calendar period
+   concluding is not a failure state (spec §E/L — never "Terlewat" for
+   Calendar), it is just informational. */
+function isCalendarItemEnded(item, now) {
+  return Boolean(item) && item.status === 'scheduled' && item.endAt != null && now > item.endAt;
 }
 
+/* V1.31.1 "Agenda, Kalender & To-Do" — entityType -> event-type prefix.
+   Was a binary ternary (agendaEvent->'agenda', else->'task'); a 3rd entity
+   type needs a real lookup, not a wider ternary. */
+const AGENDA_TYPE_PREFIX = { agendaEvent: 'agenda', agendaTask: 'task', agendaCalendar: 'calendar' };
+
 /** Build the canonical agenda.reminder/agenda.overdue/task.reminder/
- *  task.overdue envelope for a due row, re-reading the LIVE entity so the
- *  notification always reflects current state, not the state at schedule
- *  time (mirrors buildReminderEnvelope's identical philosophy below). */
+ *  task.overdue/calendar.reminder/calendar.ended envelope for a due row,
+ *  re-reading the LIVE entity so the notification always reflects current
+ *  state, not the state at schedule time (mirrors buildReminderEnvelope's
+ *  identical philosophy below). */
 function buildAgendaReminderEnvelope(entityType, entity, row) {
-  const prefix = entityType === 'agendaEvent' ? 'agenda' : 'task';
-  const type = `${prefix}.${row.offset === 'overdue' ? 'overdue' : 'reminder'}`;
-  const payload = entityType === 'agendaEvent'
-    ? {
+  const prefix = AGENDA_TYPE_PREFIX[entityType];
+  // 'h1' -> '.reminder' (unchanged); every other offset name ('overdue' for
+  // event/task, 'ended' for calendar) maps to itself — this is a
+  // generalization of the old `row.offset === 'overdue' ? 'overdue' :
+  // 'reminder'` ternary, not a behavior change for event/task.
+  const type = `${prefix}.${row.offset === 'h1' ? 'reminder' : row.offset}`;
+  let payload;
+  if (entityType === 'agendaEvent') {
+    payload = {
       title: entity.title ?? null,
       organizerUsername: entity.organizerUsername ?? null,
       participants: entity.participants ?? null,
       offset: row.offset,
-    }
-    : {
+    };
+  } else if (entityType === 'agendaTask') {
+    payload = {
       title: entity.title ?? null,
       responsible: entity.responsible ?? null,
       priority: entity.priority ?? null,
       offset: row.offset,
     };
+  } else {
+    payload = {
+      title: entity.title ?? null,
+      organizerUsername: entity.organizerUsername ?? null,
+      participants: entity.participants ?? null,
+      startDate: entity.startDate ?? null,
+      endDate: entity.endDate ?? null,
+      offset: row.offset,
+    };
+  }
   return buildEnvelope({
     type,
     actor: { uid: null, role: 'system', displayName: 'Pengingat' },
@@ -137,28 +176,43 @@ const reminderTick = onSchedule(
       // docs/AGENDA_TODO_PHASE_B_ARCHITECTURE_VALIDATION_v1.31.0.0.md §12).
       if (row.entityType) {
         try {
-          const path = row.entityType === 'agendaEvent' ? `agendaEvents/${row.entityId}` : `agendaTasks/${row.entityId}`;
+          // V1.31.1 adds 'agendaCalendar' as a third entity type — was a
+          // binary ternary, now a lookup (AGENDA_ENTITY_PATH, module scope).
+          const path = `${AGENDA_ENTITY_PATH[row.entityType]}/${row.entityId}`;
           const entity = (await db.ref(path).once('value')).val();
           if (!entity) { await markReminder(id, { status: 'cancelled' }); cancelled++; continue; }
 
           if (row.offset === 'h1') {
-            const startInstant = row.entityType === 'agendaEvent' ? entity.startAt : entity.dueAt;
-            const terminal = row.entityType === 'agendaEvent' ? entity.status === 'cancelled' : entity.status === 'done';
+            const startInstant = row.entityType === 'agendaTask' ? entity.dueAt : entity.startAt;
+            // Terminal states per entity type. 'deleted' (V1.31.1 soft-delete)
+            // is terminal for ALL three — added here alongside 'cancelled'/
+            // 'done' rather than being a pre-existing gap left unfixed now
+            // that a deleted event/task can exist.
+            const terminal = row.entityType === 'agendaTask'
+              ? (entity.status === 'done' || entity.status === 'deleted')
+              : (entity.status === 'cancelled' || entity.status === 'deleted');
             if (terminal) { await markReminder(id, { status: 'cancelled' }); cancelled++; continue; }
             // Staleness guard, mirrors the assignment branch below: a "1 hour
             // before" reminder for something already past its own start/due
             // instant is noise (e.g. functions were down for hours) — skip,
             // don't blast a late reminder.
             if (startInstant != null && now >= startInstant) { await markReminder(id, { status: 'skipped' }); skipped++; continue; }
-          } else {
-            // 'overdue' — re-validate the item is GENUINELY overdue right
-            // now (not merely that the row was scheduled to fire): it may
-            // have been acknowledged/completed/cancelled since this row was
-            // planned, and the row itself carries no live status of its own.
+          } else if (row.offset === 'overdue') {
+            // agendaEvent/agendaTask only — re-validate the item is
+            // GENUINELY overdue right now (not merely that the row was
+            // scheduled to fire): it may have been acknowledged/completed/
+            // cancelled/deleted since this row was planned, and the row
+            // itself carries no live status of its own.
             const stillOverdue = row.entityType === 'agendaEvent'
               ? isAgendaEventOverdue(entity, now)
               : isAgendaTaskOverdue(entity, now);
             if (!stillOverdue) { await markReminder(id, { status: 'cancelled' }); cancelled++; continue; }
+          } else {
+            // 'ended' — agendaCalendar only. Same live-re-validation
+            // philosophy as 'overdue' above, but framed as a neutral
+            // conclusion, never as lateness/failure.
+            const genuinelyEnded = isCalendarItemEnded(entity, now);
+            if (!genuinelyEnded) { await markReminder(id, { status: 'cancelled' }); cancelled++; continue; }
           }
 
           const eventId = `agenda__${row.entityType}__${row.entityId}__${row.offset}`;

@@ -334,6 +334,42 @@ Object.assign(TEMPLATES, {
   },
 });
 
+/* ── Calendar (V1.31.1 "Agenda, Kalender & To-Do") — perspective-neutral,
+   same shape as the Agenda block above. calendar.ended deliberately reads
+   as a plain, neutral "this period concluded" notice — NOT the
+   "Terlambat"/overdue framing task.overdue and agenda.overdue use, per
+   this phase's explicit "Calendar must never look like it failed" rule. */
+Object.assign(TEMPLATES, {
+  'calendar.created': {
+    title: () => 'Kalender Baru',
+    body: (e) => `${e.payload.title || 'Kalender'} — Anda diundang.`,
+  },
+  'calendar.updated': {
+    title: () => 'Kalender Diperbarui',
+    body: (e) => `${e.payload.title || 'Kalender'} telah diperbarui oleh ${actorName(e)}.`,
+  },
+  'calendar.cancelled': {
+    title: () => 'Kalender Dibatalkan',
+    body: (e) => `${e.payload.title || 'Kalender'} dibatalkan oleh ${actorName(e)}.`,
+  },
+  'calendar.participant_added': {
+    title: () => 'Anda Diundang',
+    body: (e) => `Anda diundang ke ${e.payload.title || 'sebuah kalender'}.`,
+  },
+  'calendar.participant_removed': {
+    title: () => 'Dikeluarkan dari Kalender',
+    body: (e) => `Anda telah dikeluarkan dari ${e.payload.title || 'sebuah kalender'}.`,
+  },
+  'calendar.reminder': {
+    title: () => 'Pengingat: 1 Jam Lagi',
+    body: (e) => `${e.payload.title || 'Kalender'} dimulai dalam 1 jam.`,
+  },
+  'calendar.ended': {
+    title: () => 'Periode Berakhir',
+    body: (e) => `${e.payload.title || 'Kalender'} telah selesai.`,
+  },
+});
+
 Object.assign(TEMPLATES, {
   'engineering.published': {
     title: () => 'Penugasan Engineering Baru',
@@ -382,7 +418,10 @@ Object.assign(TEMPLATES, {
 // pushes for the SAME agenda entity share one entityId, so without a
 // suffix the service worker's tag-based collapse would dismiss the first
 // when the second arrives. payload.offset ('h1'|'overdue') disambiguates.
-const AGENDA_REMINDER_TYPES = new Set(['agenda.reminder', 'agenda.overdue', 'task.reminder', 'task.overdue']);
+const AGENDA_REMINDER_TYPES = new Set([
+  'agenda.reminder', 'agenda.overdue', 'task.reminder', 'task.overdue',
+  'calendar.reminder', 'calendar.ended',
+]);
 
 function deepLink(event) {
   const ent = (event && event.entity) || {};

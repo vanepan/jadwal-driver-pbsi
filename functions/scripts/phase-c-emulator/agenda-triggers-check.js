@@ -191,6 +191,51 @@ async function main() {
     });
 
     /* ============================================================
+       [1f] V1.31.1 soft-delete ("Dihapus") — event. A SEPARATE terminal
+       transition from [1e]'s cancel, on a fresh event so the two don't
+       interact (Rules/store never allow deleted -> cancelled or vice
+       versa in one step; this proves the trigger side of 'deleted', the
+       Rules WRITE-authorization side is proven by
+       scripts/agenda-calendar-rules-security-check.mjs's [D] section).
+       ============================================================ */
+    console.log('\n=== [1f] Soft-delete ("Dihapus") — event: dedicated audit action + reminders tombstoned ===');
+    const delEventId = 'phasec2-delete-event';
+    const delStartAt = T0 + 40 * 3600000;
+    track(`agendaEvents/${delEventId}`); track(`agendaEventsByUser/organizerA/${delEventId}`);
+    track(`agendaEventsByScope/sarpras_shared/${delEventId}`);
+    const delCreated = {
+      id: delEventId, title: 'Rapat Uji Hapus', scope: 'sarpras_shared', organizerUsername: 'organizerA',
+      status: 'scheduled', startAt: delStartAt, endAt: delStartAt + 2 * 3600000, participants: {},
+      createdBy: 'organizerA', createdAt: 'x', updatedBy: 'organizerA', updatedAt: 'x',
+    };
+    const delCreateTime = new Date(T0 - 86400000).toISOString();
+    await onAgendaEventWrite.run(makeChangeEvent({ params: { eventId: delEventId }, before: null, after: delCreated, time: delCreateTime }));
+    await onAgendaEventReminderSync.run(makeChangeEvent({ params: { eventId: delEventId }, before: null, after: delCreated, time: delCreateTime }));
+    track(`reminders/${agendaReminderId('agendaEvent', delEventId, 'h1')}`);
+    track(`reminders/${agendaReminderId('agendaEvent', delEventId, 'overdue')}`);
+    track(`events/agenda_created__${delEventId}`);
+
+    const delAfter = { ...delCreated, status: 'deleted', deletedBy: 'organizerA', deletedAt: 'd', deleteReason: 'Duplikat entri', updatedBy: 'organizerA', updatedAt: 'v' };
+    const delTime = new Date(T0 - 86000000).toISOString();
+    await onAgendaEventWrite.run(makeChangeEvent({ params: { eventId: delEventId }, before: delCreated, after: delAfter, time: delTime }));
+    await onAgendaEventReminderSync.run(makeChangeEvent({ params: { eventId: delEventId }, before: delCreated, after: delAfter, time: delTime }));
+
+    await checkAsync("audit row: action='deleted' (its own dedicated action, NOT generic 'status_changed'), note carries deleteReason", async () => {
+      const rows = await auditRowsFor(delEventId);
+      const row = rows.find((r) => r.action === 'deleted');
+      if (!row || row.note !== 'Duplikat entri') throw new Error(`got ${JSON.stringify(rows)}`);
+    });
+    await checkAsync("no 'calendar.deleted'/'agenda.deleted' notification event is minted — deletion is audit-only, by construction, same as 'acknowledged'", async () => {
+      const evs = await eventsFor(delEventId, 'agenda.deleted');
+      if (evs.length !== 0) throw new Error(`expected none, got ${JSON.stringify(evs)}`);
+    });
+    await checkAsync('BOTH reminder rows tombstoned to cancelled on delete, exactly like cancel', async () => {
+      const h1 = await getReminder(agendaReminderId('agendaEvent', delEventId, 'h1'));
+      const overdue = await getReminder(agendaReminderId('agendaEvent', delEventId, 'overdue'));
+      if (h1.status !== 'cancelled' || overdue.status !== 'cancelled') throw new Error(`got ${JSON.stringify({ h1, overdue })}`);
+    });
+
+    /* ============================================================
        [2] TASK — create, responsible add/remove, complete
        ============================================================ */
     console.log('\n=== [2] Task lifecycle ===');
@@ -280,6 +325,38 @@ async function main() {
     await checkAsync('completion tombstones BOTH reminder rows — overdue behavior is suppressed going forward', async () => {
       const h1 = await getReminder(agendaReminderId('agendaTask', taskId, 'h1'));
       const overdue = await getReminder(agendaReminderId('agendaTask', taskId, 'overdue'));
+      if (h1.status !== 'cancelled' || overdue.status !== 'cancelled') throw new Error(JSON.stringify({ h1, overdue }));
+    });
+
+    console.log('\n=== [2d] V1.31.1 soft-delete ("Dihapus") — task: dedicated audit action + reminders tombstoned ===');
+    const delTaskId = 'phasec2-delete-task';
+    const delDueAt = T0 + 50 * 3600000;
+    track(`agendaTasks/${delTaskId}`); track(`agendaTasksByUser/creatorX/${delTaskId}`); track(`agendaTasksByScope/sarpras_shared/${delTaskId}`);
+    const delTaskCreated = {
+      id: delTaskId, title: 'Tugas Uji Hapus', scope: 'sarpras_shared', status: 'not_started', priority: 'normal',
+      dueDate: '2026-10-17', dueTime: '10:00', dueAt: delDueAt, responsible: {},
+      createdBy: 'creatorX', createdAt: 'x', updatedBy: 'creatorX', updatedAt: 'x',
+    };
+    const delTaskCreateTime = new Date(T0 - 86400000).toISOString();
+    await onAgendaTaskWrite.run(makeChangeEvent({ params: { taskId: delTaskId }, before: null, after: delTaskCreated, time: delTaskCreateTime }));
+    await onAgendaTaskReminderSync.run(makeChangeEvent({ params: { taskId: delTaskId }, before: null, after: delTaskCreated, time: delTaskCreateTime }));
+    track(`reminders/${agendaReminderId('agendaTask', delTaskId, 'h1')}`);
+    track(`reminders/${agendaReminderId('agendaTask', delTaskId, 'overdue')}`);
+    track(`events/task_created__${delTaskId}`);
+
+    const delTaskAfter = { ...delTaskCreated, status: 'deleted', deletedBy: 'creatorX', deletedAt: 'd', deleteReason: 'Tidak relevan lagi', updatedBy: 'creatorX', updatedAt: 'v' };
+    const delTaskTime = new Date(T0 - 86000000).toISOString();
+    await onAgendaTaskWrite.run(makeChangeEvent({ params: { taskId: delTaskId }, before: delTaskCreated, after: delTaskAfter, time: delTaskTime }));
+    await onAgendaTaskReminderSync.run(makeChangeEvent({ params: { taskId: delTaskId }, before: delTaskCreated, after: delTaskAfter, time: delTaskTime }));
+
+    await checkAsync("audit row: action='deleted', note carries deleteReason", async () => {
+      const rows = await auditRowsFor(delTaskId);
+      const row = rows.find((r) => r.action === 'deleted');
+      if (!row || row.note !== 'Tidak relevan lagi') throw new Error(`got ${JSON.stringify(rows)}`);
+    });
+    await checkAsync('BOTH reminder rows tombstoned to cancelled on delete, exactly like completion', async () => {
+      const h1 = await getReminder(agendaReminderId('agendaTask', delTaskId, 'h1'));
+      const overdue = await getReminder(agendaReminderId('agendaTask', delTaskId, 'overdue'));
       if (h1.status !== 'cancelled' || overdue.status !== 'cancelled') throw new Error(JSON.stringify({ h1, overdue }));
     });
 
@@ -375,6 +452,18 @@ async function main() {
     await checkAsync("a COMPLETED task's overdue row does not fire (isAgendaTaskOverdue re-validates status!=='done' at fire time)", async () => {
       await reminderTick.run();
       const row = await getReminder(doneOverdueId);
+      if (row.status !== 'cancelled') throw new Error(JSON.stringify(row));
+    });
+
+    const deletedTickTaskId = 'phasec2-deleted-tick-task';
+    await db.ref(`agendaTasks/${deletedTickTaskId}`).set({ id: deletedTickTaskId, status: 'deleted', scope: 'sarpras_shared', dueAt: Date.now() - 3600000 });
+    track(`agendaTasks/${deletedTickTaskId}`);
+    const deletedOverdueId = agendaReminderId('agendaTask', deletedTickTaskId, 'overdue');
+    await db.ref(`reminders/${deletedOverdueId}`).set({ id: deletedOverdueId, entityType: 'agendaTask', entityId: deletedTickTaskId, offset: 'overdue', fireAt: Date.now() - 1000, status: 'pending', firedAt: null, eventId: null, updatedAt: 'x' });
+    track(`reminders/${deletedOverdueId}`);
+    await checkAsync("V1.31.1: a soft-DELETED task's overdue row does not fire either (isAgendaTaskOverdue re-validates status!=='deleted' too, not just !=='done')", async () => {
+      await reminderTick.run();
+      const row = await getReminder(deletedOverdueId);
       if (row.status !== 'cancelled') throw new Error(JSON.stringify(row));
     });
 
