@@ -206,6 +206,24 @@ export const EXPORT_REPORTS = {
     template: 'engineering-analytics',
     run: (meta = {}) => window.exportEngineeringAnalyticsExcel(meta),
   },
+  // V1.31 Phase C4 — Agenda & To-Do PDF export. Excluded from
+  // EXPORT_REPORT_ORDER for the same reason every sibling entry above it
+  // is: the Agenda & To-Do workspace owns its own export drawer/button
+  // (js/agenda/agenda-export-drawer.js) and calls this by id directly —
+  // it never needs to appear in the unrelated operational Analytics
+  // dropdown. `run(meta)` accepts {preset, customFrom, customTo, mode,
+  // status, priority} — see agenda-pdf-export.js#runAgendaPdfExport.
+  'agenda-pdf': {
+    id: 'agenda-pdf',
+    title: 'Laporan Agenda & To-Do',
+    description: 'Laporan operasional Agenda & To-Do untuk rentang tanggal terpilih.',
+    icon: ICONS.complete,
+    template: 'agenda',
+    run: async (meta = {}) => {
+      const { runAgendaPdfExport } = await import('../agenda/agenda-pdf-export.js');
+      return runAgendaPdfExport(meta);
+    },
+  },
 };
 
 /** Stable display/menu order for every consumer. */

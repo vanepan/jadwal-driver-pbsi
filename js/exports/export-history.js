@@ -100,11 +100,18 @@ function buildRecord(ctx = {}, status, extra = {}) {
     // scope
     periodLabel:  ctx.periodLabel  || '',
     dateRangeKey: ctx.dateRangeKey || '',
-    filters: {
-      driver:  ctx.filters?.driver  || '',
-      vehicle: ctx.filters?.vehicle || '',
-      bidang:  ctx.filters?.bidang  || '',
-    },
+    // Phase C4 (Agenda PDF export): generalized from a hardcoded
+    // {driver,vehicle,bidang} shape to a passthrough of whatever the
+    // caller's own filters object contains — this module's own header
+    // already claims "Adding a new report = add one entry [to the
+    // registry]. Nothing else needs to know the id->title->handler
+    // mapping", which the old analytics-only shape violated for any
+    // non-analytics report (Agenda's {mode,status,priority} would have
+    // been silently dropped). Existing analytics callers are unaffected:
+    // their {driver,vehicle,bidang} object round-trips identically
+    // through the outer sanitize() call this return value already goes
+    // through (undefined -> null, same as before).
+    filters: ctx.filters || {},
     // outcome
     status,
     fileSize:   extra.fileSize   ?? null,

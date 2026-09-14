@@ -223,6 +223,12 @@ import { renderDriverDashboard, setAssignments as setDashboardAssignments, rende
 // and widgets consume existing models + deep-link into existing modules; no
 // business logic, engines, or Firebase writes live here.
 import { renderHome, refreshHome, resolveWorkspaceForRole } from './workspace/home-router.js';
+// V1.31 Agenda & To-Do — a SIBLING host mounted before #v2HomeWorkspace
+// (see initV2AgendaWorkspace()/applyWorkspaceState() below), never inside
+// the Executive Command Center's own widget tree. Independently gated
+// (agenda.view / agenda.kabid.view) — invisible, and its Firebase
+// subscriptions never even opened, for a role holding neither.
+import { mountAgendaWorkspace, closeAgendaWorkspace, isAgendaWorkspaceVisible } from './agenda/agenda-workspace.js';
 // Single source of role display labels (incl. Engineering) — reused everywhere a
 // role is shown so no internal identifier is ever exposed and no map is duplicated.
 import { roleLabel as formatRole } from './config/role-registry.js';
@@ -4543,6 +4549,7 @@ function applyWorkspaceState(name, isWorkspaceChange) {
   const anPcWs          = document.getElementById('v2AnalyticsPettyWorkspace');
   const anExWs          = document.getElementById('v2AnalyticsExecWorkspace');
   const homeWs          = document.getElementById('v2HomeWorkspace');
+  const agendaWs        = document.getElementById('v2AgendaWorkspace'); // V1.31 Agenda & To-Do
   const engWs           = document.getElementById('v2EngineeringWorkspace');
   const sicWs           = document.getElementById('v2SarprasIntelWorkspace');
   const drvHistWs       = document.getElementById('v2DriverHistoryWorkspace');
@@ -4578,6 +4585,19 @@ function applyWorkspaceState(name, isWorkspaceChange) {
     // the render token it captured no longer matches.
     if (!isHome) homeWs.__wspToken = Symbol('wsp-render-invalidated');
   }
+  // V1.31 Agenda & To-Do — shown/hidden in lockstep with Home (it's a
+  // sibling section on the SAME Today screen, not a separate workspace of
+  // its own). mountAgendaWorkspace()/closeAgendaWorkspace() follow the
+  // established Petty Cash/Overtime/Engineering "pause live re-render when
+  // hidden" idiom (agenda-workspace.js's own header), not plain Home's
+  // (Home has no listeners of its own to pause) — the section is simply
+  // absent from the DOM (isAgendaWorkspaceVisible() → agenda.view /
+  // agenda.kabid.view) for a role holding neither permission.
+  if (agendaWs) {
+    agendaWs.style.display = (isHome && isAgendaWorkspaceVisible()) ? 'block' : 'none';
+  }
+  if (isHome && isAgendaWorkspaceVisible()) mountAgendaWorkspace();
+  else closeAgendaWorkspace();
   if (drvHistWs)       drvHistWs.style.display       = isDrvHist ? 'block' : 'none';
   // V1.28.0 Phase 10.1 fix: Gudang was never added to this toggle when its
   // workspace host was introduced — navGudang() called setWorkspace('gudang')
@@ -5090,6 +5110,30 @@ function initV2HomeWorkspace() {
   ws.style.display = 'none';
   document.querySelector('.main-content')?.appendChild(ws);
   console.log('[v1.19.9] Home workspace injected');
+}
+
+/**
+ * V1.31 Agenda & To-Do — Phase C3. Injects #v2AgendaWorkspace as a SIBLING
+ * host immediately BEFORE #v2HomeWorkspace, so it renders above the
+ * Executive Command Center on Today for every role, without touching
+ * workspace-registry.js/widget-registry.js or any Executive widget (the
+ * integration point identified in
+ * docs/AGENDA_TODO_DISCOVERY_REPORT_v1.31.0.0.md §2/§3 "Option B"). Called
+ * before initV2HomeWorkspace() in the boot sequence, so #v2HomeWorkspace
+ * doesn't exist yet on the primary path (plain appendChild is then
+ * correct: initV2HomeWorkspace()'s own later appendChild naturally lands
+ * after it) — the insertBefore branch below is defensive only, correct
+ * regardless of call order if that ever changes.
+ */
+function initV2AgendaWorkspace() {
+  const main = document.querySelector('.main-content');
+  if (!main) return;
+  const ws = document.createElement('div');
+  ws.id = 'v2AgendaWorkspace';
+  ws.className = 'v2-workspace cal-root v2-analytics-claude';
+  ws.style.display = 'none';
+  const homeHost = document.getElementById('v2HomeWorkspace');
+  if (homeHost) main.insertBefore(ws, homeHost); else main.appendChild(ws);
 }
 
 /**
@@ -12908,6 +12952,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initV2SarprasIntelligenceWorkspace(); // V2.0.10: embedded Sarpras Intelligence module host
     initV2PlaceholderWorkspace(); // v1.14.0: shared "coming soon" placeholder
     initV2AnalyticsWorkspaces();  // v1.15.0: Analytics Petty Cash + Executive hosts
+    initV2AgendaWorkspace();      // V1.31: Agenda & To-Do host — BEFORE Home, so it lands above it in the DOM
     initV2HomeWorkspace();        // v1.19.9: Home workspace host (Executive Command Center)
     initV2DriverHistoryWorkspace(); // v1.20.8: Driver "Riwayat" bottom-nav screen host
     initV2AnalyticsMobileNav();   // v1.15.2: mobile parity sub-nav for the 3 Analytics screens

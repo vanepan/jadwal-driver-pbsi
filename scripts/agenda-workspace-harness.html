@@ -1,0 +1,60 @@
+<!doctype html>
+<html data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agenda Workspace Test Harness (V1.31 Phase C3 — not shipped UI)</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/platform.css">
+<style>
+  /* This harness's own page chrome, not app code — a real app screen's
+     body background comes from style.css/platform.css's global rules,
+     which this isolated harness deliberately doesn't load (it tests
+     agenda-workspace-view.js in isolation, not the whole app shell).
+     Explicit light/dark values here so a dark-mode screenshot is actually
+     representative rather than showing dark-mode TEXT on a light-mode
+     PAGE background (a real bug this test caught in its own harness
+     during this phase — see the C3 report). Values match .cal-root's own
+     --bg token for visual consistency between the section and its host. */
+  html, body { margin: 0; background: #f3f2ef; }
+  html[data-theme="dark"], html[data-theme="dark"] body { background: #201e1b; }
+  #root { max-width: 720px; margin: 0 auto; padding: 16px; position: relative; }
+</style>
+</head>
+<body>
+<div id="root" class="v2-workspace cal-root exec-ui v2-analytics-claude"></div>
+<script>
+  // Seeds a synchronous admin session BEFORE any module import runs — this
+  // harness never boots app.js's Firebase-auth onAuthStateChanged listener
+  // (the documented reason a faked localStorage session doesn't survive a
+  // REAL app boot, memory: firebase-prod-in-local-testing), so there is
+  // nothing here to clear it. getCurrentUser() reads this synchronously
+  // from localStorage; can('agenda.view'/'agenda.manage') resolves via the
+  // 'admin' System Role's STATIC role-permissions.js grant — zero Firebase
+  // read needed for either, which is exactly why this harness can test
+  // real authorization-gated UI (writableScopes(), the create buttons)
+  // without a live emulator connection.
+  localStorage.setItem('pbsi_current_user', JSON.stringify({ id: 'harness-admin', username: 'harness-admin', name: 'Harness Admin', role: 'admin', active: true }));
+</script>
+<script type="module">
+  import { buildWorkspaceHTML } from '/js/agenda/agenda-workspace-view.js';
+  import { injectAgendaStyles } from '/js/agenda/agenda-styles.js';
+  import { openCreateEventDrawer, closeEventDrawer } from '/js/agenda/agenda-event-drawer.js';
+  import { openCreateTaskDrawer, closeTaskDrawer } from '/js/agenda/agenda-task-drawer.js';
+  import { openAgendaExportDrawer, closeAgendaExportDrawer } from '/js/agenda/agenda-export-drawer.js';
+  import { __setDirectoryForTest } from '/js/agenda/agenda-directory.js';
+
+  injectAgendaStyles();
+
+  window.__render = (ctx) => { document.getElementById('root').innerHTML = buildWorkspaceHTML(ctx); };
+  window.__openCreateEventDrawer = (opts) => openCreateEventDrawer(opts || {});
+  window.__openCreateTaskDrawer = (opts) => openCreateTaskDrawer(opts || {});
+  window.__closeEventDrawer = () => closeEventDrawer();
+  window.__closeTaskDrawer = () => closeTaskDrawer();
+  window.__openAgendaExportDrawer = (opts) => openAgendaExportDrawer(opts || {});
+  window.__closeAgendaExportDrawer = () => closeAgendaExportDrawer();
+  window.__setDirectoryForTest = __setDirectoryForTest;
+  window.__harnessReady = true;
+</script>
+</body>
+</html>
