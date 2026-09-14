@@ -78,11 +78,6 @@ function toolbarActions(canManage, writableScopes) {
   return `<div class="cal-header-actions">${exportBtn}${createBtns}</div>`;
 }
 
-function fab(canManage, writableScopes) {
-  if (!canManage || !writableScopes.length) return '';
-  return `<button type="button" class="cal-btn cal-btn--primary cal-fab" data-agenda-action="create-event">+ Tambah</button>`;
-}
-
 /** @param {Object} ctx see file header */
 export function buildWorkspaceHTML(ctx) {
   if (ctx.loading) {
@@ -128,8 +123,7 @@ function shell(ctx, inner) {
       <input type="search" class="cal-form-input" style="max-width:280px" placeholder="Cari agenda atau tugas…" value="${esc(ctx.todoFilters.query || '')}" data-agenda-search>
       ${toolbarActions(ctx.canManage, ctx.writableScopes)}
     </div>
-    <div data-agenda-view-root>${inner}</div>
-    ${fab(ctx.canManage, ctx.writableScopes)}`;
+    <div data-agenda-view-root>${inner}</div>`;
 }
 
 export { applyTodoFilters };

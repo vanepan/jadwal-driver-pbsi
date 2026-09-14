@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.31.0.0';
-export const RELEASE_NAME = 'Agenda & To-Do — shared Sarpras calendar, Kabid authorization, production deployment completeness';
+export const APP_VERSION = '1.31.0.1';
+export const RELEASE_NAME = 'Agenda & To-Do — remove redundant mobile floating creation action';
 
 /* ============================================================
    APP_ENV — the AUTHORITATIVE runtime environment (v1.20.3 RC1).
@@ -66,6 +66,17 @@ export function isProduction() {
 export const VAPID_PUBLIC_KEY = 'BKUPcWYRZesX5DG_2nbiBw_UmT6IeOhWXJPQjhOMOOhlxss9UFKKmtlnaJDNRvHxPzSuCLGiw2E-UPJkoXduZLI';
 
 export const VERSION_HISTORY = [
+  {
+    version: '1.31.0.1',
+    date: '2026-09-14',
+    summary: 'UI-only mobile hotfix: removed a redundant floating red creation action from the Agenda & To-Do workspace. js/agenda/agenda-workspace-view.js#fab() rendered a mobile-only (CSS media query, hidden >=768px), position:fixed button styled .cal-btn--primary (the app\'s primary brand color) with data-agenda-action="create-event" — structurally the exact same action as the toolbar\'s existing "+ Agenda" button (both route through the identical case \'create-event\' in agenda-workspace.js\'s click delegation, which dispatches purely on the data-agenda-action attribute, not element identity). It duplicated an existing toolbar affordance, created no capability of its own (it never offered task creation, only event creation), and sat partially behind the fixed bottom navigation on real mobile viewports. Removed the fab() function, its call site in shell(), and its dead .cal-fab CSS rule (2 lines) from agenda-styles.js; .cal-btn--primary itself was kept since agenda-participant-picker.js\'s "Selesai" button still uses it. The toolbar (Export PDF / + Agenda / + Tugas) is completely unchanged — no redesign, no replacement floating action introduced. Verified with a real-emulator, real-headless-Chromium visual QA pass (throwaway script, not committed) against the actual index.html/app.js/database.rules.json: 0 .cal-fab elements in the DOM at any viewport/theme (mobile 390 light/dark, desktop 1440 light/dark), exactly one visible + Agenda and one + Tugas action, Export PDF visible and functional, both drawers open cleanly with no layout shift, bottom navigation intact and unobstructed, zero horizontal overflow. No Agenda business logic, Firebase Rules, Cloud Functions, auth, permissions, or production data were touched. Files changed: js/agenda/agenda-workspace-view.js, js/agenda/agenda-styles.js, js/config.js (this entry). Regressions green: agenda-workspace-render-check (61/61), agenda-lifecycle-check (16/16), agenda-view-model-check (19/19), agenda-pdf-view-model-check (31/31), agenda-pdf-render-check (11/11), agenda-date-range-check (34/34), smoke-boot PASS. Deploy: Firebase Hosting only (frontend-only fix; no Functions, no Rules).',
+    highlights: [
+      'Removed a redundant, mobile-only floating "+ Tambah" button that duplicated the toolbar\'s existing "+ Agenda" action (same click handler, same data-agenda-action="create-event") and sat partially behind the bottom navigation.',
+      'The toolbar — Export PDF, + Agenda, + Tugas — is unchanged. No redesign, no replacement floating action.',
+      'Verified visually against the real app (real emulators, real headless Chromium): confirmed absent at mobile 390 and desktop, light and dark; both creation drawers and Export PDF still open cleanly.',
+      'Frontend-only: no Agenda business logic, Rules, Functions, auth, permissions, or production data touched.',
+    ],
+  },
   {
     version: '1.31.0.0',
     date: '2026-09-14',

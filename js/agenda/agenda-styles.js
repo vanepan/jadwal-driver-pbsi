@@ -71,8 +71,6 @@ const CSS = `
 .cal-btn--primary:hover { background:var(--primary-hover); }
 .cal-btn--sm { padding:6px 10px; font-size:.76rem; }
 .cal-btn--ghost { border-color:transparent; background:transparent; }
-.cal-fab { position:fixed; right:18px; bottom:calc(18px + env(safe-area-inset-bottom,0px)); z-index:40; border-radius:999px; padding:14px 20px; box-shadow:0 8px 20px rgba(0,0,0,.18); }
-@media (min-width:768px) { .cal-fab { display:none; } }
 
 /* ── Card shell reused everywhere ─────────────────────────────────── */
 .cal-card { background:var(--card); border:1px solid var(--border); border-radius:14px; }
