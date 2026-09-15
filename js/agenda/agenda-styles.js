@@ -178,6 +178,20 @@ const CSS = `
 .cal-week-event--calendar-ended { opacity:.55; }
 .cal-week-event--calendar-cancelled { opacity:.55; text-decoration:line-through; background:var(--red-tint); color:var(--red); border-left-color:var(--red); }
 
+/* V1.31.2 §5 — Week view enrichment: a dedicated all-day/range band
+   (reuses .cal-range-bar — the exact same Month-view element, just
+   narrower) above a chronologically-sorted "timed items" list, with the
+   status language (cancelled/overdue/done) the Agenda list view already
+   had but Week view never did. */
+.cal-week-allday { display:flex; flex-direction:column; gap:2px; margin-bottom:4px; }
+.cal-week-allday .cal-range-bar { margin:0; border-radius:5px; }
+.cal-week-timed { display:flex; flex-direction:column; gap:2px; flex:1; }
+.cal-week-event-time { font-weight:700; opacity:.7; margin-right:4px; font-variant-numeric:tabular-nums; }
+.cal-week-event--cancelled { opacity:.55; text-decoration:line-through; }
+.cal-week-event--overdue { background:var(--red-tint); color:var(--red); }
+.cal-week-event--task-done { opacity:.55; text-decoration:line-through; }
+.cal-week-event--task-overdue { background:var(--red-tint); color:var(--red); }
+
 /* ── Multi-day Calendar range bar (Month view) — ONE continuous visual
    block per item, clipped/segmented per visible week row, never six
    unrelated dots (spec §AL/§I). Flush (no radius) on whichever side the

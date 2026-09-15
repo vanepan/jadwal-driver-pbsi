@@ -150,11 +150,27 @@ async function main() {
       window.__render(ctx);
       return document.querySelector('.cal-range-bar--dibatalkan') != null;
     }, baseCtx({ mode: 'calendar', calendarView: 'month', calendarItems: [sampleCalendarItem('cancelled1', { status: 'cancelled' })] })));
-    await checkAsync('Week view shows the calendar item as its own row, distinct class from Agenda (blue) and To-Do (amber)', () => page.evaluate((ctx) => {
+    await checkAsync('Week view: a multi-day/all-day Calendar item renders in the dedicated all-day range band (cal-week-allday), NOT the timed list — V1.31.2 §5', () => page.evaluate((ctx) => {
       window.__render(ctx);
-      const row = document.querySelector('.cal-week-event--calendar');
-      return row != null && row.getAttribute('data-agenda-action').startsWith('open-calendar:') && document.body.textContent.includes('Sirnas C Piala Raja');
+      const band = document.querySelector('.cal-week-allday .cal-range-bar');
+      const inTimedList = document.querySelector('.cal-week-timed .cal-week-event--calendar');
+      // Cell label is deliberately truncated — the full title lives in the
+      // bar's own title="" attribute (same convention as the Month-view
+      // range-bar test above), not document.body.textContent.
+      const hasFullTitle = band && band.getAttribute('title').includes('Sirnas C Piala Raja');
+      return band != null && inTimedList == null && hasFullTitle;
     }, baseCtx({ mode: 'calendar', calendarView: 'week', calendarAnchor: '2026-09-16', calendarItems: [sampleCalendarItem('sirnas')] })));
+    await checkAsync('Week view: a single-day TIMED Calendar item (not all-day, startDate===endDate) renders its own row in the timed list, distinct class from Agenda (event) and To-Do (task) — V1.31.2 §5', () => page.evaluate((ctx) => {
+      window.__render(ctx);
+      const row = document.querySelector('.cal-week-timed .cal-week-event--calendar');
+      return row != null && row.getAttribute('data-agenda-action').startsWith('open-calendar:') && document.body.textContent.includes('Rapat Kalender Harian');
+    }, baseCtx({
+      mode: 'calendar', calendarView: 'week', calendarAnchor: '2026-09-16',
+      calendarItems: [sampleCalendarItem('cal-timed', {
+        title: 'Rapat Kalender Harian', allDay: false, startDate: '2026-09-16', endDate: '2026-09-16',
+        startAt: Date.parse('2026-09-16T09:00:00+07:00'), endAt: Date.parse('2026-09-16T10:00:00+07:00'),
+      })],
+    })));
     await checkAsync('an empty Calendar period (no items at all) shows a subtle context hint, not a blank-looking grid', () => page.evaluate((ctx) => {
       window.__render(ctx);
       return document.querySelector('.cal-empty-hint') != null && document.body.textContent.includes('Belum ada kegiatan kalender');

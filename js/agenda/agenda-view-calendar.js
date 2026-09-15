@@ -18,7 +18,7 @@
 'use strict';
 
 import { buildMonthGrid, buildWeekGrid, monthRange, mondayWeekRange } from './agenda-date-range.js';
-import { formatDateShort } from './agenda-view-model.js';
+import { formatDateShort, eventDisplayState, taskDisplayState, formatClock } from './agenda-view-model.js';
 import { calendarItemDisplayState } from './agenda-calendar-lifecycle.js';
 
 const WEEKDAY_LABELS = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
@@ -81,6 +81,63 @@ export function assignRangeBars(cells, calendarItems, now) {
   return perDate;
 }
 
+/**
+ * V1.31.2 §5 — the Week view's "timed items" list for ONE day: Agenda
+ * events, timed (single-day, non-all-day) Calendar items, and To-Do
+ * tasks, merged and sorted chronologically — multi-day/all-day Calendar
+ * items are handled SEPARATELY (assignRangeBars/rangeBarsHTML, the exact
+ * same functions Month view already uses, reused not reimplemented) and
+ * never appear here. Status-aware: cancelled/overdue/done get the same
+ * visual language the Agenda list view (agenda-view-agenda.js) already
+ * established — Week view was previously silent about all three.
+ * @param {Array} events already date-bucketed for this one day
+ * @param {Array} tasks already date-bucketed for this one day
+ * @param {Array} timedCalendarItems single-day, non-all-day Calendar items for this one day
+ * @param {number} now epoch ms
+ */
+export function weekTimedRowsHTML(events, tasks, timedCalendarItems, now) {
+  const items = [];
+  for (const e of events || []) {
+    if (!e) continue;
+    const state = eventDisplayState(e, now); // 'cancelled'|'overdue'|'scheduled'
+    const cls = ['cal-week-event'];
+    if (state === 'cancelled') cls.push('cal-week-event--cancelled');
+    if (state === 'overdue') cls.push('cal-week-event--overdue');
+    const time = e.allDay ? '' : `<span class="cal-week-event-time">${esc(formatClock(e.startAt))}</span>`;
+    items.push({
+      sortKey: e.allDay ? -1 : (e.startAt ?? Infinity),
+      html: `<div class="${cls.join(' ')}" data-agenda-action="open-event:${esc(e.id)}" title="${esc(e.title)}">${time}${esc(e.title)}</div>`,
+    });
+  }
+  for (const c of timedCalendarItems || []) {
+    if (!c) continue;
+    const state = calendarItemDisplayState(c, now);
+    const cls = ['cal-week-event', 'cal-week-event--calendar'];
+    if (state === 'berlangsung') cls.push('cal-week-event--calendar-active');
+    if (state === 'dibatalkan') cls.push('cal-week-event--calendar-cancelled');
+    items.push({
+      sortKey: c.startAt ?? Infinity,
+      html: `<div class="${cls.join(' ')}" data-agenda-action="open-calendar:${esc(c.id)}" title="${esc(c.title)}"><span class="cal-week-event-time">${esc(formatClock(c.startAt))}</span>${esc(c.title)}</div>`,
+    });
+  }
+  for (const t of tasks || []) {
+    if (!t) continue;
+    const state = taskDisplayState(t, now); // 'done'|'overdue'|<status>
+    const cls = ['cal-week-event', 'cal-week-event--task'];
+    if (state === 'done') cls.push('cal-week-event--task-done');
+    if (state === 'overdue') cls.push('cal-week-event--task-overdue');
+    // Date-only tasks (no dueTime) sort to the bottom of the day's list —
+    // they're a "sometime today" reminder, not a scheduled moment.
+    const time = t.dueTime ? `<span class="cal-week-event-time">${esc(formatClock(t.dueAt))}</span>` : '';
+    items.push({
+      sortKey: t.dueTime ? (t.dueAt ?? Infinity) : Infinity,
+      html: `<div class="${cls.join(' ')}" data-agenda-action="open-task:${esc(t.id)}" title="${esc(t.title)}">${time}${esc(t.title)}</div>`,
+    });
+  }
+  items.sort((a, b) => a.sortKey - b.sortKey);
+  return items.map((i) => i.html).join('');
+}
+
 function rangeBarsHTML(bars) {
   const shown = bars.slice(0, MAX_RANGE_BARS_PER_CELL);
   const overflow = bars.length - shown.length;
@@ -124,22 +181,30 @@ export function renderCalendarHTML({ events, tasks, calendarItems = [], mode, an
 
   if (mode === 'week') {
     const cells = buildWeekGrid(anchorDate);
+    // V1.31.2 §5 — split Calendar items into the two areas the spec asks
+    // for: all-day/multi-day commitments get their own dedicated band
+    // (assignRangeBars/rangeBarsHTML — the EXACT functions Month view
+    // already uses, reused not reimplemented, so a range crossing this
+    // week keeps the identical continuous-bar/cap-only-at-true-start-end
+    // treatment); a timed, single-day Calendar item joins the "timed
+    // items" list below instead, sorted alongside Agenda events and
+    // To-Do tasks by actual time-of-day.
+    const rangeCalendarItems = (calendarItems || []).filter((c) => c && c.startDate && c.endDate && (c.allDay || c.startDate !== c.endDate));
+    const timedCalendarItems = (calendarItems || []).filter((c) => c && c.startDate && c.endDate && !c.allDay && c.startDate === c.endDate);
+    const rangeBarsByDate = assignRangeBars(cells, rangeCalendarItems, now);
     let anyContent = false;
     const body = cells.map(({ date }) => {
       const day = byDate.get(date) || { events: [], tasks: [] };
       const isToday = date === todayStr;
-      const calItemsToday = (calendarItems || []).filter((c) => c && c.startDate && c.endDate && c.startDate <= date && date <= c.endDate);
-      if (calItemsToday.length || day.events.length || day.tasks.length) anyContent = true;
-      const items = [
-        ...calItemsToday.map((c) => {
-          const state = calendarItemDisplayState(c, now);
-          return `<div class="cal-week-event cal-week-event--calendar${state === 'berlangsung' ? ' cal-week-event--calendar-active' : ''}${state === 'selesai' ? ' cal-week-event--calendar-ended' : ''}${state === 'dibatalkan' ? ' cal-week-event--calendar-cancelled' : ''}" data-agenda-action="open-calendar:${esc(c.id)}" title="${esc(c.title)}">${esc(c.title)}</div>`;
-        }),
-        ...day.events.map((e) => `<div class="cal-week-event" data-agenda-action="open-event:${esc(e.id)}" title="${esc(e.title)}">${esc(e.title)}</div>`),
-        ...day.tasks.map((t) => `<div class="cal-week-event cal-week-event--task" data-agenda-action="open-task:${esc(t.id)}" title="${esc(t.title)}">${esc(t.title)}</div>`),
-      ].join('');
+      const bars = rangeBarsByDate.get(date) || [];
+      const timedToday = timedCalendarItems.filter((c) => c.startDate === date);
+      if (bars.length || day.events.length || day.tasks.length || timedToday.length) anyContent = true;
+      const alldayBand = bars.length ? `<div class="cal-week-allday">${rangeBarsHTML(bars)}</div>` : '';
+      const timedRows = weekTimedRowsHTML(day.events, day.tasks, timedToday, now);
       return `<div class="cal-cell${isToday ? ' cal-cell--today' : ''}" data-agenda-action="goto-day:${date}">
-        <span class="cal-cell-num">${Number(date.slice(8, 10))}</span>${items}
+        <span class="cal-cell-num">${Number(date.slice(8, 10))}</span>
+        ${alldayBand}
+        <div class="cal-week-timed">${timedRows}</div>
       </div>`;
     }).join('');
     return `${nav}<div class="cal-grid cal-week-row">${body}</div>${anyContent ? '' : emptyHint}`;
