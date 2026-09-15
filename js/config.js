@@ -1,8 +1,8 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.31.2.0';
-export const RELEASE_NAME = 'Agenda, Kalender & To-Do — Calendar UX, navigation integration & mobile hardening';
+export const APP_VERSION = '1.31.3.0';
+export const RELEASE_NAME = 'Agenda, Kalender & To-Do — Shared interaction foundation & notification E2E';
 
 /* ============================================================
    APP_ENV — the AUTHORITATIVE runtime environment (v1.20.3 RC1).
