@@ -165,7 +165,7 @@ const CSS = `
   .cal-cell { min-height:46px; padding:4px; }
   .cal-cell-label { display:none; }
 }
-.cal-week-row .cal-cell { min-height:120px; align-items:stretch; }
+.cal-week-row .cal-cell { min-height:120px; align-items:stretch; min-width:0; }
 .cal-week-event { font-size:.68rem; background:var(--blue-tint); color:var(--blue); border-radius:6px; padding:2px 5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .cal-week-event--task { background:var(--amber-tint); color:var(--amber); }
 /* V1.31.1 — Calendar item row in Week view. Neutral/organizational tone

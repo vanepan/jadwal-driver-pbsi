@@ -283,6 +283,30 @@ async function main() {
         return document.documentElement.scrollWidth <= window.innerWidth + 1; // +1px rounding tolerance
       }, baseCtx({ mode: 'calendar', events: [sampleEvent('e1'), sampleEvent('e2', { scope: 'kabid' })], tasks: [sampleTask('t1')] })));
     }
+    // V1.31.2 §5/§16 — the check above defaults to calendarView:'month'
+    // (baseCtx()'s own default) and NEVER exercised Week view at all, the
+    // exact gap that let a real bug through this phase: a 7-column CSS
+    // grid item's `min-width:auto` default refuses to shrink below its
+    // TEXT content's natural width, so a long title inside a Week day
+    // cell forced the whole grid wider than the viewport instead of
+    // truncating (fixed with `min-width:0` on `.cal-week-row .cal-cell`
+    // in agenda-styles.js). Long titles + a multi-day range item here on
+    // purpose — short fixtures would not have caught this.
+    for (const width of [390, 430, 640, 768, 1440]) {
+      await page.setViewport({ width, height: 900 });
+      await checkAsync(`${width}px — Week view, long titles + a multi-day range item — no horizontal overflow`, () => page.evaluate((ctx) => {
+        window.__render(ctx);
+        return document.documentElement.scrollWidth <= window.innerWidth + 1;
+      }, baseCtx({
+        mode: 'calendar', calendarView: 'week', calendarAnchor: '2026-09-16',
+        events: [sampleEvent('e1', { title: 'Rapat Koordinasi Lintas Bidang Sarpras dan Umum' })],
+        tasks: [sampleTask('t1', { title: 'Pendataan dan Verifikasi Inventaris Gudang Utama' })],
+        calendarItems: [sampleCalendarItem('sirnas'), sampleCalendarItem('cal-timed', {
+          title: 'Rapat Kalender Harian Yang Judulnya Cukup Panjang', allDay: false, startDate: '2026-09-16', endDate: '2026-09-16',
+          startAt: Date.parse('2026-09-16T09:00:00+07:00'), endAt: Date.parse('2026-09-16T10:00:00+07:00'),
+        })],
+      })));
+    }
     await fs.promises.mkdir(path.join(ROOT, 'scratch'), { recursive: true });
     await page.setViewport({ width: 390, height: 844 });
     await page.evaluate((ctx) => window.__render(ctx), baseCtx({ events: [sampleEvent('e1')], tasks: [sampleTask('t1')] }));
