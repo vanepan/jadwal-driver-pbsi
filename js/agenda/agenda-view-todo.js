@@ -24,7 +24,7 @@ function todoRow(t, now) {
   const pillText = overdue ? 'Terlewat' : done ? 'Selesai' : priorityLabel(t.priority);
   return `
     <div class="cal-todo-row">
-      <span class="cal-checkbox" role="checkbox" aria-checked="${done}" aria-label="Tandai selesai" data-agenda-action="toggle-task-done:${esc(t.id)}">${done ? '&#10003;' : ''}</span>
+      <span class="cal-checkbox" role="checkbox" aria-checked="${done}" aria-label="Tandai selesai" tabindex="0" data-agenda-action="toggle-task-done:${esc(t.id)}">${done ? '&#10003;' : ''}</span>
       <div class="cal-row-body" data-agenda-action="open-task:${esc(t.id)}" role="button" tabindex="0">
         <p class="cal-row-title${done ? ' cal-row-title--done' : ''}">${esc(t.title)}</p>
         <div class="cal-row-meta">

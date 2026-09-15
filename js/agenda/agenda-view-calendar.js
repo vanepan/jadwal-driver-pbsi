@@ -106,7 +106,7 @@ export function weekTimedRowsHTML(events, tasks, timedCalendarItems, now) {
     const time = e.allDay ? '' : `<span class="cal-week-event-time">${esc(formatClock(e.startAt))}</span>`;
     items.push({
       sortKey: e.allDay ? -1 : (e.startAt ?? Infinity),
-      html: `<div class="${cls.join(' ')}" data-agenda-action="open-event:${esc(e.id)}" title="${esc(e.title)}">${time}${esc(e.title)}</div>`,
+      html: `<div class="${cls.join(' ')}" data-agenda-action="open-event:${esc(e.id)}" title="${esc(e.title)}" role="button" tabindex="0">${time}${esc(e.title)}</div>`,
     });
   }
   for (const c of timedCalendarItems || []) {
@@ -117,7 +117,7 @@ export function weekTimedRowsHTML(events, tasks, timedCalendarItems, now) {
     if (state === 'dibatalkan') cls.push('cal-week-event--calendar-cancelled');
     items.push({
       sortKey: c.startAt ?? Infinity,
-      html: `<div class="${cls.join(' ')}" data-agenda-action="open-calendar:${esc(c.id)}" title="${esc(c.title)}"><span class="cal-week-event-time">${esc(formatClock(c.startAt))}</span>${esc(c.title)}</div>`,
+      html: `<div class="${cls.join(' ')}" data-agenda-action="open-calendar:${esc(c.id)}" title="${esc(c.title)}" role="button" tabindex="0"><span class="cal-week-event-time">${esc(formatClock(c.startAt))}</span>${esc(c.title)}</div>`,
     });
   }
   for (const t of tasks || []) {
@@ -131,7 +131,7 @@ export function weekTimedRowsHTML(events, tasks, timedCalendarItems, now) {
     const time = t.dueTime ? `<span class="cal-week-event-time">${esc(formatClock(t.dueAt))}</span>` : '';
     items.push({
       sortKey: t.dueTime ? (t.dueAt ?? Infinity) : Infinity,
-      html: `<div class="${cls.join(' ')}" data-agenda-action="open-task:${esc(t.id)}" title="${esc(t.title)}">${time}${esc(t.title)}</div>`,
+      html: `<div class="${cls.join(' ')}" data-agenda-action="open-task:${esc(t.id)}" title="${esc(t.title)}" role="button" tabindex="0">${time}${esc(t.title)}</div>`,
     });
   }
   items.sort((a, b) => a.sortKey - b.sortKey);
@@ -146,7 +146,7 @@ function rangeBarsHTML(bars) {
     if (bar.roundedLeft) cls.push('cal-range-bar--cap-left');
     if (bar.roundedRight) cls.push('cal-range-bar--cap-right');
     const label = bar.showLabel ? `<span class="cal-range-bar-label">${esc(truncate(bar.item.title || '', 18))}</span>` : '';
-    return `<div class="${cls.join(' ')}" data-agenda-action="open-calendar:${esc(bar.item.id)}" title="${esc(bar.item.title || '')}">${label}</div>`;
+    return `<div class="${cls.join(' ')}" data-agenda-action="open-calendar:${esc(bar.item.id)}" title="${esc(bar.item.title || '')}" role="button" tabindex="0">${label}</div>`;
   }).join('');
   return html + (overflow > 0 ? `<div class="cal-range-bar-more">+${overflow} kalender</div>` : '');
 }
@@ -201,7 +201,7 @@ export function renderCalendarHTML({ events, tasks, calendarItems = [], mode, an
       if (bars.length || day.events.length || day.tasks.length || timedToday.length) anyContent = true;
       const alldayBand = bars.length ? `<div class="cal-week-allday">${rangeBarsHTML(bars)}</div>` : '';
       const timedRows = weekTimedRowsHTML(day.events, day.tasks, timedToday, now);
-      return `<div class="cal-cell${isToday ? ' cal-cell--today' : ''}" data-agenda-action="goto-day:${date}">
+      return `<div class="cal-cell${isToday ? ' cal-cell--today' : ''}" data-agenda-action="goto-day:${date}" role="button" tabindex="0" aria-label="${esc(date)}">
         <span class="cal-cell-num">${Number(date.slice(8, 10))}</span>
         ${alldayBand}
         <div class="cal-week-timed">${timedRows}</div>
@@ -223,7 +223,7 @@ export function renderCalendarHTML({ events, tasks, calendarItems = [], mode, an
       ...day.events.slice(0, 3).map(() => '<span class="cal-cell-dot"></span>'),
       ...day.tasks.slice(0, 3).map(() => '<span class="cal-cell-dot cal-cell-dot--task"></span>'),
     ].slice(0, 4).join('');
-    return `<div class="cal-cell${inCurrentMonth ? '' : ' cal-cell--out'}${isToday ? ' cal-cell--today' : ''}" data-agenda-action="goto-day:${date}">
+    return `<div class="cal-cell${inCurrentMonth ? '' : ' cal-cell--out'}${isToday ? ' cal-cell--today' : ''}" data-agenda-action="goto-day:${date}" role="button" tabindex="0" aria-label="${esc(date)}">
         <span class="cal-cell-num">${Number(date.slice(8, 10))}</span>
         <span class="cal-cell-label"><span class="cal-cell-dots">${dots}</span>${count > 4 ? `<span class="cal-cell-count">+${count - 4}</span>` : ''}</span>
         ${rangeBarsHTML(bars)}

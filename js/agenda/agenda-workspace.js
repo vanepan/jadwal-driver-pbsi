@@ -170,6 +170,25 @@ function wireHost(host) {
     const el = e.target.closest('[data-agenda-action]');
     if (el) { handleAction(el.getAttribute('data-agenda-action')); return; }
   });
+  // V1.31.2 §18 (accessibility) — the Calendar grid's day cells, range
+  // bars, and Week timed-item rows carry role="button"/tabindex="0" (this
+  // phase's own fix — they previously had neither), and the To-Do
+  // checkbox already carried role="checkbox" but no tabindex at all (also
+  // fixed this phase). A bare div/span gets no native Enter/Space
+  // activation from the browser the way a real <button>/<input> would.
+  // Mirrors the SAME [data-agenda-action] the click handler above already
+  // reads — one delegated listener, same dispatch, no second action
+  // system. Real <button> elements elsewhere in this view (toolbar,
+  // filter chips) already get Enter/Space for free and are unaffected —
+  // the browser's own default handling fires their own click first,
+  // before this handler ever sees the key.
+  host.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const el = e.target.closest('[data-agenda-action][role="button"], [data-agenda-action][role="checkbox"]');
+    if (!el) return;
+    e.preventDefault();
+    handleAction(el.getAttribute('data-agenda-action'));
+  });
   host.addEventListener('input', (e) => {
     if (e.target.matches('[data-agenda-search]')) {
       _state.todoFilters.query = e.target.value;

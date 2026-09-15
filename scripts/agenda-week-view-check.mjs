@@ -44,7 +44,7 @@ console.log('\n=== [B — an all-day Agenda event sorts to the TOP; a date-only 
   const html = weekTimedRowsHTML(events, tasks, [], NOW);
   const order = [...html.matchAll(/data-agenda-action="open-\w+:(\w+)"/g)].map((m) => m[1]);
   check('order: allday (top) -> timed -> dateonly (bottom)', order.join(',') === 'allday,timed,dateonly');
-  check('the all-day event row carries no time-prefix span at all (exact row match)', html.includes('<div class="cal-week-event" data-agenda-action="open-event:allday" title="All Day Event">All Day Event</div>'));
+  check('the all-day event row carries no time-prefix span at all (exact row match)', html.includes('<div class="cal-week-event" data-agenda-action="open-event:allday" title="All Day Event" role="button" tabindex="0">All Day Event</div>'));
 }
 
 console.log('\n=== [C — status language: cancelled event, overdue event, overdue task, done task] ===');
