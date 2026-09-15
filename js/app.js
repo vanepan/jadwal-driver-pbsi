@@ -4525,6 +4525,19 @@ function sweepOpenModalsOnWorkspaceChange() {
  * would treat every sub-navigation like a full domain change (map §5b/§7).
  */
 function setWorkspace(name) {
+  // V1.31.2 §15 — the ONE choke point every top-level navigation function
+  // (navHome/navEngineering/navGudang/navDriverOps/... — grep confirms all
+  // of them) already calls, regardless of which UI triggered it (mobile
+  // sidebar, domain-shell rail/tabs, desktop v2 panel nav, a deep link).
+  // Firing this unconditionally — even when the destination equals the
+  // current workspace — is deliberate: a mobile user tapping their
+  // CURRENT destination again in the sidebar is still a real navigation
+  // choice that should close it, the same as any other. Replaces a
+  // hardcoded, per-class-name sidebar-closing allowlist (see closeSidebar()
+  // wiring) that could only ever cover destinations someone remembered to
+  // add to it — this fires for every destination there is, including ones
+  // added after this line was written.
+  window.dispatchEvent(new CustomEvent('pbsi:workspace-nav'));
   const isWorkspaceChange = name !== currentWorkspace;
   const canViewTransition = _workspaceEverSet
     && isWorkspaceChange
@@ -13123,27 +13136,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // V2 parity: close drawer when interacting with V2 nav nodes on mobile.
-  // Delegated (not per-item) because these nav trees re-render their own
-  // innerHTML on navigation — a per-item listener would be lost, and the
-  // clicked node is already detached by the time this bubbles, so match on
-  // e.target.closest() which still resolves against the detached subtree.
+  // V1.31.2 §15 — generic close-on-navigate, replacing a hardcoded
+  // per-class-name allowlist that had already needed one hotfix (Issue C,
+  // below, kept as a comment for history) once for a nav surface the
+  // original allowlist simply hadn't been told about yet. setWorkspace()
+  // now dispatches 'pbsi:workspace-nav' unconditionally for EVERY
+  // top-level navigation, from ANY trigger (mobile sidebar, domain-shell
+  // rail/tabs, desktop v2 panel nav, a deep link) — so this listens for
+  // the navigation itself instead of guessing which CSS classes a future
+  // nav surface will use. A failed navigation never fires the event, so
+  // this can never close the sidebar over a nav that didn't happen.
   //
-  // V1 post-QA hotfix (Issue C): under the default domainShellV1 shell the
-  // OLD `.v2-rail-item`/`.v2-panel-nav-item` classes never render at all
-  // (initV2Rail()/initV2Panel() aren't called) — the live mobile-drawer nav
-  // is domain-shell.js's rail (`.domshell-rail-item`) + screen-tab strip
-  // (`.domshell-tab`), reparented into #sidebar by its syncResponsive().
-  // Those were absent from this selector, so picking a module from the
-  // mobile side menu navigated but left the drawer open (+ scroll lock).
-  // Every rendered rail/tab item is a reachable destination, so an
-  // unconditional close here matches the established `.sidebar-nav-item`
-  // behaviour above; a failed nav never re-renders an item to click.
-  sidebar?.addEventListener('click', (e) => {
-    if (window.innerWidth >= 768) return;
-    if (e.target.closest('.v2-panel-nav-item, .v2-rail-item, #v2FooterLogoutDirect, .domshell-rail-item, .domshell-tab')) {
-      closeSidebar();
-    }
+  // (Prior history, Issue C: under the default domainShellV1 shell the OLD
+  // `.v2-rail-item`/`.v2-panel-nav-item` classes never render at all — the
+  // live mobile-drawer nav is domain-shell.js's rail/tab strip, reparented
+  // into #sidebar by its syncResponsive() — so a class-based allowlist
+  // that didn't yet know about `.domshell-rail-item`/`.domshell-tab` left
+  // the drawer open after picking a module from the mobile side menu. The
+  // event-based fix above is not vulnerable to that class of bug at all —
+  // it doesn't care what element was clicked, only that a navigation
+  // actually completed.)
+  window.addEventListener('pbsi:workspace-nav', () => {
+    if (window.innerWidth < 768) closeSidebar();
   });
 
   // ── Native drawer swipe gestures (v1.20.8, Objective 4) ──────────────
