@@ -140,7 +140,9 @@ check('unknown role → safe fallback (request)', result.roles.viewer === 'reque
 // existed in any form before). Not a reversal of the consolidation
 // principle: still one deliberate, curated set, not a re-thinning.
 // Phase 7 (Executive Command Center Rebuild) — exec-outlook added (Outlook zone).
-check('executive workspace has exactly 9 widgets (post-Phase-7 addition)', result.counts.executive === 9);
+// V1.31.2 §8 — exec-agenda added (its own "Agenda & Kalender" zone,
+// deliberately NOT folded into Situation's tuned 2x2 grid): 9 -> 10.
+check('executive workspace has exactly 10 widgets (post-V1.31.2 exec-agenda addition)', result.counts.executive === 10);
 check('request workspace has widgets', result.counts.request >= 8);
 check('driver workspace has widgets', result.counts.driver >= 8);
 check('engineering workspace has widgets', result.counts.engineering >= 6);

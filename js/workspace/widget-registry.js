@@ -58,6 +58,11 @@ export const WIDGETS = {
   // Phase 7 (Executive Command Center Rebuild) — Outlook zone: what to
   // expect next, never invented (day-over-day insight + certified
   // preventive-monitoring fleet items + tomorrow's scheduled load).
+  // V1.31.2 §8 — Executive Command Center -> Agenda/Kalender/To-Do
+  // integration, previously deferred. Own zone (not folded into the
+  // Situation 2x2 grid — that layout was deliberately tuned in Phase 7E
+  // for exactly 4 span:1 widgets; a 5th would break it).
+  'exec-agenda':         { id: 'exec-agenda',         title: 'Agenda &amp; Kalender',  span: 'full', variant: 'section', group: 'executive' },
   'exec-outlook':        { id: 'exec-outlook',        title: 'Proyeksi',               span: 'full', variant: 'section', group: 'executive' },
   'exec-quick':          { id: 'exec-quick',          title: 'Peluncur Eksekutif',     span: 'full', variant: 'section', group: 'executive' },
 

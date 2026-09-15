@@ -49,6 +49,9 @@ const EXECUTIVE_ZONES = [
   { id: 'now', label: 'Sekarang', widgets: ['exec-attention'] },
   { id: 'decisions', label: 'Keputusan', widgets: ['exec-recommendation'] },
   { id: 'situation', label: 'Situasi Operasional', heading: 'Gambaran operasional hari ini', widgets: ['exec-snapshot', 'exec-activity', 'exec-drivers', 'exec-vehicle-flags'] },
+  // V1.31.2 §8 — its own zone, not folded into Situation's tuned 2x2 grid
+  // above (Phase 7E deliberately sized that for exactly 4 span:1 widgets).
+  { id: 'agenda', label: 'Agenda & Kalender', widgets: ['exec-agenda'] },
   { id: 'outlook', label: 'Proyeksi', widgets: ['exec-outlook'] },
   { id: 'explore', label: null, widgets: ['exec-quick'] },
 ];

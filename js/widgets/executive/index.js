@@ -42,6 +42,13 @@ import { unverifiedEngineeringAssignments } from '../../recommendation/engineeri
 // made in exactly one place, shared with Hero (narrative-builder.js), so
 // Attention can no longer classify the same engOverdue count differently.
 import { classifyEngineeringOverdue } from '../../recommendation/engineering-overdue.js';
+// V1.31.2 §8 — Executive Command Center -> Calendar/Agenda/To-Do
+// integration. Both PURE, no Firebase, no side effects — reused exactly
+// as agenda-view-calendar.js/agenda-pdf-view-model.js already do, never
+// re-derived here (calendarItemDisplayState is the one place "Berlangsung/
+// Terjadwal/Selesai/Dibatalkan" is computed anywhere in this app).
+import { calendarItemDisplayState, calendarStateLabel } from '../../agenda/agenda-calendar-lifecycle.js';
+import { isTaskOverdue } from '../../agenda/agenda-lifecycle.js';
 
 /* ── deterministic view helpers ── */
 const n = (v) => (v == null || Number.isNaN(Number(v)) ? '—' : Number(v));
@@ -1053,6 +1060,71 @@ function decisionCalmState({ icon, title, sub, tone = 'good' }) {
     </div>`;
 }
 
+/** "12 Sep" / "12 Sep 09.00" — short, locale-correct, no new date library
+ *  (mirrors this app's own established id-ID toLocaleDateString idiom,
+ *  e.g. functions/src/notifications/templates.js#fmtDate). */
+function fmtWhen(epochMs, withTime) {
+  if (epochMs == null) return '';
+  const d = new Date(epochMs);
+  const datePart = d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+  if (!withTime) return datePart;
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${datePart}, ${hh}.${mm}`;
+}
+
+/**
+ * V1.31.2 §8 — a plain, deterministic chronological merge of the three
+ * Agenda/Kalender/To-Do entities into one "what's ahead" list. PURE
+ * given its inputs; `ctx.agendaEvents`/`ctx.agendaTasks`/
+ * `ctx.agendaCalendarItems` are already-scoped, already-visible
+ * snapshots injected by app.js#buildHomeContext() — this never reads
+ * Firebase itself, same discipline as ctx.drivers/ctx.vehicles above.
+ * @param {Object} ctx
+ * @param {number} now epoch ms
+ * @returns {Array<{kind:string, id:string, title:string, when:number, meta:string, typeLabel:string, tone:string, action:string}>}
+ */
+export function agendaBriefingItems(ctx, now) {
+  const items = [];
+  for (const e of ctx.agendaEvents || []) {
+    if (!e || e.status === 'cancelled' || e.startAt == null) continue;
+    // A brief lookback window (6h) so an event that started earlier today
+    // still shows — this is a "what's happening" briefing, not strictly
+    // future-only.
+    if (e.startAt < now - 6 * 3600000) continue;
+    items.push({
+      kind: 'agenda', id: e.id, title: e.title, when: e.startAt,
+      meta: [fmtWhen(e.startAt, !e.allDay), e.location].filter(Boolean).join(' · '),
+      typeLabel: 'Agenda', tone: 'info', action: 'openAgendaEvent',
+    });
+  }
+  for (const c of ctx.agendaCalendarItems || []) {
+    if (!c) continue;
+    const state = calendarItemDisplayState(c, now);
+    if (state === 'dibatalkan' || state === 'selesai') continue;
+    const rangeLabel = c.startDate && c.endDate && c.startDate !== c.endDate
+      ? `${fmtWhen(c.startAt, false)} – ${fmtWhen(c.endAt, false)}`
+      : fmtWhen(c.startAt, !c.allDay);
+    items.push({
+      kind: 'calendar', id: c.id, title: c.title, when: c.startAt ?? now,
+      meta: state === 'berlangsung' ? `${calendarStateLabel(state)} · ${rangeLabel}` : rangeLabel,
+      typeLabel: 'Kalender', tone: state === 'berlangsung' ? 'good' : 'info', action: 'openAgendaCalendarItem',
+    });
+  }
+  for (const t of ctx.agendaTasks || []) {
+    if (!t || t.status === 'done') continue;
+    const overdue = isTaskOverdue(t, now);
+    if (t.dueAt == null && !overdue) continue;
+    items.push({
+      kind: 'task', id: t.id, title: t.title, when: t.dueAt ?? now,
+      meta: overdue ? 'Terlewat' : fmtWhen(t.dueAt, !!t.dueTime),
+      typeLabel: 'To-Do', tone: overdue ? 'warn' : 'neutral', action: 'openAgendaTask',
+    });
+  }
+  items.sort((a, b) => a.when - b.when);
+  return items.slice(0, 6);
+}
+
 export const widgets = {
   /* ── Executive Briefing Hero ── (v1.22.1 redesign: de-boxed, ring gauge +
      huge score as the visual anchor, one verdict headline, one insight
@@ -1908,6 +1980,36 @@ export const widgets = {
         ${upcomingBody}`;
     },
     onMount(bodyEl) { mountCountUp(bodyEl, 'wspOutlookCountedUp'); wireHorizonTooltip(bodyEl); },
+  },
+
+  /* ── Executive Agenda & Calendar ── (V1.31.2 §8 — the previously-deferred
+     ECC integration. A plain chronological summary of what's genuinely
+     scheduled — no recommendation, no invented insight, matching this
+     file's own "never invent AI recommendations" discipline (spec §8).
+     Cancelled/Selesai/Dihapus items never appear: Dihapus is already
+     excluded upstream by agenda-store.js#getVisibleEvents()/
+     getVisibleTasks()/getVisibleCalendarItems() (the SAME projection
+     every other Agenda/Kalender/To-Do surface reads from — this widget
+     is not a second data path), and Cancelled/Selesai are filtered here
+     because a briefing about "what's ahead" has nothing useful to say
+     about something already over or called off. Each row's action key
+     (openAgendaEvent/openAgendaTask/openAgendaCalendarItem) opens the
+     EXACT SAME canonical drawer Agenda/Kalender/To-Do's own UI uses —
+     no second detail implementation. */
+  'exec-agenda': {
+    render(ctx) {
+      const now = ctx.now || Date.now();
+      const items = agendaBriefingItems(ctx, now);
+      if (!items.length) return compactSuccessLine('Tidak ada agenda, kalender, atau tugas mendesak dalam waktu dekat.');
+      return list(items.map((it) => listRow({
+        title: it.title,
+        meta: it.meta,
+        trailing: it.typeLabel,
+        tone: it.tone,
+        action: it.action,
+        arg: it.id,
+      })).join(''));
+    },
   },
 
   /* ── Executive Launcher ── (Phase 6: the exit point of the briefing, not

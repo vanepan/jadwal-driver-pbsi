@@ -229,6 +229,11 @@ import { renderHome, refreshHome, resolveWorkspaceForRole } from './workspace/ho
 // (agenda.view / agenda.kabid.view) — invisible, and its Firebase
 // subscriptions never even opened, for a role holding neither.
 import { mountAgendaWorkspace, closeAgendaWorkspace, isAgendaWorkspaceVisible } from './agenda/agenda-workspace.js';
+// V1.31.2 §8 — Executive Command Center -> Agenda/Kalender/To-Do
+// integration. initAgendaStore()/getVisibleX() are the SAME store every
+// other Agenda/Kalender/To-Do surface already reads from (idempotent,
+// safe to call again here even if mountAgendaWorkspace() already has).
+import { initAgendaStore, getVisibleEvents, getVisibleTasks, getVisibleCalendarItems, registerAgendaChangeListener } from './agenda/agenda-store.js';
 // Single source of role display labels (incl. Engineering) — reused everywhere a
 // role is shown so no internal identifier is ever exposed and no map is duplicated.
 import { roleLabel as formatRole } from './config/role-registry.js';
@@ -2017,8 +2022,36 @@ function buildHomeContext() {
       navDriverOps: () => navJadwalDriver(),
       navEngineering: () => navEngineering(),
       navHome: () => navHome(),
+      // V1.31.2 §8 — each opens the EXACT SAME canonical drawer Agenda/
+      // Kalender/To-Do's own UI uses (agenda-workspace.js's own
+      // open-event/open-task/open-calendar actions), not a second detail
+      // implementation. Dynamically imported: buildHomeContext() runs for
+      // every Home render, but these drawer modules are only ever needed
+      // if the exec-agenda widget's row is actually clicked.
+      openAgendaEvent: (id) => import('./agenda/agenda-event-drawer.js').then((m) => m.openEditEventDrawer(id)),
+      openAgendaTask: (id) => import('./agenda/agenda-task-drawer.js').then((m) => m.openEditTaskDrawer(id)),
+      openAgendaCalendarItem: (id) => import('./agenda/agenda-calendar-drawer.js').then((m) => m.openEditCalendarDrawer(id)),
     },
   };
+
+  // V1.31.2 §8 — cheap, already-subscribed snapshot (same discipline as
+  // ctx.drivers/ctx.vehicles above): initAgendaStore() is idempotent, so
+  // calling it here is safe even before/after mountAgendaWorkspace()'s own
+  // call. Empty arrays (not an error state) when this session can't see
+  // Agenda at all — the widget's own empty-state copy handles that.
+  if (isAgendaWorkspaceVisible()) {
+    try {
+      initAgendaStore();
+      ctx.agendaEvents = getVisibleEvents();
+      ctx.agendaTasks = getVisibleTasks();
+      ctx.agendaCalendarItems = getVisibleCalendarItems();
+    } catch (err) {
+      console.warn('[Home] agenda snapshot unavailable', err);
+      ctx.agendaEvents = []; ctx.agendaTasks = []; ctx.agendaCalendarItems = [];
+    }
+  } else {
+    ctx.agendaEvents = []; ctx.agendaTasks = []; ctx.agendaCalendarItems = [];
+  }
 
   // Admin-only intelligence (the Executive Command Center is the sole consumer).
   // Both are failure-safe: a hiccup leaves the field null and the widgets fall
@@ -5986,6 +6019,11 @@ function initV2AdministrationWorkspace() {
   // Health Score + Attention Center; neither previously refreshed Home.
   registerPettyChangeListener(() => refreshHomeWorkspace());
   registerEngineeringChangeListener(() => refreshHomeWorkspace());
+  // V1.31.2 §8 — Agenda/Kalender/To-Do now feeds the exec-agenda widget;
+  // registered exactly once here (this block runs once at boot, same as
+  // the two lines above), so this can never accumulate into a listener
+  // leak the way a per-mount registration would.
+  registerAgendaChangeListener(() => refreshHomeWorkspace());
 
   initDriverFormModal();
   initVehicleFormModal();
