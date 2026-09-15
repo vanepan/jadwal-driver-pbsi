@@ -1639,6 +1639,29 @@ function registerSearchAdapters() {
     // every other adapter's implicit "nothing to show" no-op.
     clear: () => closeGudangSearch(),
   });
+
+  // V1.31.2 §7 (global clickability audit) — a real gap found during this
+  // phase's own audit: 'home' had NO registered adapter, so the always-
+  // visible topbar search box (#v2SearchInput, present on every module)
+  // silently accepted typing on Home and did nothing at all — the box
+  // looked interactive but had zero effect, right above Agenda's own
+  // working inline search box. Delegates into that SAME existing,
+  // already-tested mechanism (agenda-workspace.js's wireHost() 'input'
+  // listener already covers Agenda/Calendar/To-Do — see agenda-workspace-
+  // view.js's matchesQuery()/applyTodoFilters()) rather than building a
+  // second search implementation. No-ops safely if Agenda isn't mounted
+  // (not permitted for this session, or not yet rendered) — nothing to
+  // search in that case either.
+  registerSearchAdapter({
+    id: 'home',
+    placeholder: 'Cari agenda, kalender, atau tugas…',
+    run: (q) => {
+      const el = document.querySelector('[data-agenda-search]');
+      if (!el) return;
+      el.value = q;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    },
+  });
 }
 
 /* Analytics contextual search: no row filtering (a KPI dashboard has no list) —

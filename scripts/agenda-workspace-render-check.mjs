@@ -209,6 +209,11 @@ async function main() {
       window.__render(ctx);
       return document.querySelector('.cal-pill--urgent') != null;
     }, baseCtx({ mode: 'todo', tasks: [sampleTask('t1', { priority: 'urgent' })] })));
+    await checkAsync('search ALSO filters To-Do mode (completes the trio — Calendar §A.2 and Agenda already covered above) — V1.31.2 §9', () => page.evaluate((ctx) => {
+      window.__render(ctx);
+      const html = document.body.textContent;
+      return html.includes('Tugas needle-match') && !html.includes('Tugas haystack');
+    }, baseCtx({ mode: 'todo', todoFilters: { status: 'all', priority: 'all', query: 'needle' }, tasks: [sampleTask('m1', { title: 'Tugas needle-match' }), sampleTask('m2', { title: 'Tugas haystack' })] })));
 
     console.log('\n=== [B — loading / error states] ===');
     await checkAsync('loading=true renders a skeleton, not the empty state', () => page.evaluate((ctx) => {
