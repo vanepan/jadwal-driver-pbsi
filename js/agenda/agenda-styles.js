@@ -127,6 +127,26 @@ const CSS = `
 .cal-pill--active { background:var(--green-tint); color:var(--green); border-color:var(--green-bd); font-weight:700; }
 .cal-pill--cancelled { background:var(--red-tint); color:var(--red); border-color:var(--red-bd); }
 
+/* ── V1.31.2 §4 — Month<->Week transition. Scoped to ONLY this region via
+   view-transition-name (agenda-workspace-view.js sets the class;
+   agenda-workspace.js#doRenderWithViewTransition() is the one call site
+   that ever triggers a transition capture here — every other re-render
+   uses the plain, unanimated path). A restrained cross-fade + the
+   faintest scale — "fast, subtle, Apple-like", never a slide/bounce that
+   would read as a bigger move than a view toggle actually is. */
+.cal-calview-region { view-transition-name: cal-calview-region; }
+@media (prefers-reduced-motion: reduce) {
+  .cal-calview-region { view-transition-name: none; }
+}
+::view-transition-old(cal-calview-region) {
+  animation: cal-calview-out 140ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+::view-transition-new(cal-calview-region) {
+  animation: cal-calview-in 180ms cubic-bezier(0, 0, 0.2, 1) both;
+}
+@keyframes cal-calview-out { to { opacity: 0; transform: scale(0.99); } }
+@keyframes cal-calview-in { from { opacity: 0; transform: scale(1.01); } }
+
 /* ── Calendar grid view ───────────────────────────────────────────── */
 .cal-grid-head { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; margin-bottom:6px; }
 .cal-grid-head span { font-size:.68rem; font-weight:700; text-align:center; color:var(--label); text-transform:uppercase; }

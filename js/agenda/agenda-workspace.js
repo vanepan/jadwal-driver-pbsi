@@ -83,6 +83,40 @@ function doRender() {
   _host.innerHTML = buildWorkspaceHTML(buildCtx());
 }
 
+/** Mirrors js/app.js#_analyticsMotionOff() exactly — duplicated, not
+ *  imported, since agenda-workspace.js has no dependency on app.js (the
+ *  reverse is true: app.js imports FROM this module) and this is a
+ *  two-line check, not worth inverting that boundary for. Checks both
+ *  this app's manual in-UI "reduce motion" toggle (`data-anim="off"`)
+ *  and the OS-level media query. */
+function calendarMotionOff() {
+  if (document.documentElement.getAttribute('data-anim') === 'off') return true;
+  try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (_) { return false; }
+}
+
+/** V1.31.2 §4 — Month<->Week transition. Reuses this app's OWN existing
+ *  pattern (js/app.js#setWorkspace()'s identical structure) rather than
+ *  inventing a second transition mechanism: document.startViewTransition()
+ *  snapshots the OLD `.cal-calview-region` (view-transition-name, set in
+ *  agenda-workspace-view.js), runs the same synchronous doRender() the
+ *  non-animated path already uses (so the DOM mutation itself, and
+ *  therefore every event-handler-rewiring concern, is BYTE-IDENTICAL to
+ *  the plain path — nothing new to get wrong there), then the browser
+ *  cross-fades old-vs-new automatically. Falls straight through to plain
+ *  doRender() — immediate, no animation — when the API is unavailable or
+ *  motion is reduced, exactly like setWorkspace()'s own fallback. The
+ *  `.catch(() => {})` calls mirror setWorkspace()'s own reasoning: a
+ *  transition "skipped" because a rapid second toggle interrupted it is
+ *  expected, benign browser behavior (AbortError), not an app error. */
+function doRenderWithViewTransition() {
+  if (!_host) return;
+  if (typeof document.startViewTransition !== 'function' || calendarMotionOff()) { doRender(); return; }
+  const transition = document.startViewTransition(() => doRender());
+  transition.ready.catch(() => {});
+  transition.finished.catch(() => {});
+  transition.updateCallbackDone.catch((err) => console.error('[agenda-workspace] calendar view transition failed', err));
+}
+
 function shiftCalendarAnchor(days) {
   _state.calendarAnchor = offsetDate(_state.calendarAnchor, days);
 }
@@ -94,11 +128,23 @@ function handleAction(action) {
 
   switch (verb) {
     case 'set-mode': _state.mode = arg; doRender(); return;
-    case 'set-calview': _state.calendarView = arg; doRender(); return;
+    // Only an actual Month<->Week VIEW change animates — the explicit
+    // Bulan/Minggu toggle, and tapping a day cell in Month view (the
+    // primary real-world "Month -> Week" gesture, §O's own worked
+    // example). cal-prev/next/today (same view, different anchor date
+    // only) deliberately stay instant, matching §4's "no excessive
+    // movement" — this is cosmetic on a genuine view switch, not a
+    // blanket animate-everything change.
+    case 'set-calview': _state.calendarView = arg; doRenderWithViewTransition(); return;
     case 'cal-prev': shiftCalendarAnchor(_state.calendarView === 'month' ? -30 : -7); doRender(); return;
     case 'cal-next': shiftCalendarAnchor(_state.calendarView === 'month' ? 30 : 7); doRender(); return;
     case 'cal-today': _state.calendarAnchor = todayString(); doRender(); return;
-    case 'goto-day': _state.calendarAnchor = arg; _state.calendarView = 'week'; doRender(); return;
+    case 'goto-day': {
+      const wasMonth = _state.calendarView === 'month';
+      _state.calendarAnchor = arg; _state.calendarView = 'week';
+      (wasMonth ? doRenderWithViewTransition : doRender)();
+      return;
+    }
     case 'set-todo-status': _state.todoFilters.status = arg; doRender(); return;
     case 'set-todo-priority': _state.todoFilters.priority = arg; doRender(); return;
     case 'retry': doRender(); return;

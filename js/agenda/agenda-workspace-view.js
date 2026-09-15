@@ -110,9 +110,20 @@ export function buildWorkspaceHTML(ctx) {
     const tasks = ctx.tasks.filter((t) => matchesQuery(t, q));
     const calendarItems = (ctx.calendarItems || []).filter((c) => matchesQuery(c, q));
     inner = renderCalendarHTML({ events, tasks, calendarItems, mode: ctx.calendarView, anchorDate: ctx.calendarAnchor, todayStr: ctx.todayStr, now: ctx.now });
-    inner = `<div class="cal-filters" role="tablist" aria-label="Tampilan Kalender">
+    // V1.31.2 §4 — a stable view-transition-name, scoped to ONLY this
+    // region (not the whole page, unlike js/app.js#setWorkspace()'s own
+    // full-workspace transition) — agenda-workspace.js's
+    // doRenderWithViewTransition() wraps the Month<->Week toggle
+    // specifically in document.startViewTransition(); every OTHER
+    // re-render (search, cal-prev/next, a drawer save) calls plain
+    // doRender() and never touches this, so this element's identity
+    // across a transition capture is always exactly "the calendar body,
+    // before vs. after switching Month/Week" — never anything else.
+    inner = `<div class="cal-calview-region">
+      <div class="cal-filters" role="tablist" aria-label="Tampilan Kalender">
         ${['month', 'week'].map((v) => `<button type="button" class="cal-chip" role="tab" aria-pressed="${ctx.calendarView === v}" data-agenda-action="set-calview:${v}">${v === 'month' ? 'Bulan' : 'Minggu'}</button>`).join('')}
-      </div>${inner}`;
+      </div>${inner}
+    </div>`;
   } else if (ctx.mode === 'todo') {
     const filtered = applyTodoFilters(ctx.tasks, ctx.todoFilters, ctx.now);
     inner = `
