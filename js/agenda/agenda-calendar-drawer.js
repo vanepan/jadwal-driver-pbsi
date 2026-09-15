@@ -47,6 +47,7 @@ let _pickerQuery = '';
 let _editingId = null;
 let _editingItem = null; // raw /agendaCalendars record, needed for canWriteCalendarItem()
 let _onSaved = null;
+let _editOriginalDraftJSON = null; // snapshot at open time, for real isDirty comparison in edit mode
 
 function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 
@@ -364,13 +365,21 @@ export function openEditCalendarDrawer(calendarId, opts = {}) {
   _draft = draftFromItem(item);
   _editingItem = item;
   _errors = {}; _pickerOpen = false; _pickerQuery = ''; _editingId = calendarId; _onSaved = opts.onSaved || null;
+  // V1.31.3 §13 finding: this used to be `() => !readOnly` — true for
+  // every writable item regardless of whether anything was actually
+  // edited, so simply opening then closing an editable Calendar item
+  // (no changes made) triggered the "unsaved changes" confirm() on every
+  // close. Real comparison against the draft's state AT OPEN TIME, same
+  // idea the create-mode isDirty above already uses, just against a
+  // snapshot instead of "started blank".
+  _editOriginalDraftJSON = JSON.stringify(_draft);
   const readOnly = !canWriteCalendarItem(item);
   registerDirectoryChangeListener(onDirectoryChange);
   openDrawer({
     title: readOnly ? 'Detail Kalender' : 'Ubah Kalender', icon: 'calendar', body: currentBodyHTML(), footer: footer(),
     onAction, sourceEl: opts.sourceEl,
     onClose: () => unregisterDirectoryChangeListener(onDirectoryChange),
-    isDirty: () => !readOnly,
+    isDirty: () => !readOnly && JSON.stringify(_draft) !== _editOriginalDraftJSON,
   });
   wireAfterRender();
 }
