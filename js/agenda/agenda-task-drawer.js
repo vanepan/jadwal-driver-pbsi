@@ -28,6 +28,7 @@ let _pickerQuery = '';
 let _editingId = null;
 let _onSaved = null;
 let _newChecklistLabel = '';
+let _editOriginalDraftJSON = null; // snapshot at open time, for real isDirty comparison in edit mode
 
 function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 
@@ -47,7 +48,7 @@ function renderChecklistHTML() {
   const items = _draft.checklist || [];
   const rows = items.map((item) => `
     <div class="cal-checklist-row">
-      <span class="cal-checkbox" role="checkbox" aria-checked="${item.done}" data-drawer-action="task:checkitem:${esc(item.id)}">${item.done ? '&#10003;' : ''}</span>
+      <span class="cal-checkbox" role="checkbox" aria-checked="${item.done}" aria-label="${esc(item.label)}" tabindex="0" data-drawer-action="task:checkitem:${esc(item.id)}">${item.done ? '&#10003;' : ''}</span>
       <span class="cal-checklist-label${item.done ? ' cal-checklist-label--done' : ''}">${esc(item.label)}</span>
       <button type="button" class="cal-btn cal-btn--ghost cal-btn--sm" aria-label="Hapus" data-drawer-action="task:removeitem:${esc(item.id)}">&times;</button>
     </div>`).join('');
@@ -297,12 +298,19 @@ export function openEditTaskDrawer(taskId, opts = {}) {
   if (!task) return;
   _draft = draftFromTask(task);
   _errors = {}; _pickerOpen = false; _pickerQuery = ''; _editingId = taskId; _onSaved = opts.onSaved || null; _newChecklistLabel = '';
+  // V1.31.3 §13 finding: this used to be `() => true` unconditionally —
+  // every close of an existing task, even with zero edits, triggered the
+  // "unsaved changes" confirm(). Real comparison against the draft's
+  // state AT OPEN TIME, same idea the create-mode isDirty already uses
+  // (see openCreateTaskDrawer above), just against a snapshot instead of
+  // "started blank".
+  _editOriginalDraftJSON = JSON.stringify(_draft);
   registerDirectoryChangeListener(onDirectoryChange);
   openDrawer({
     title: 'Ubah Tugas', icon: 'check', body: currentBodyHTML(), footer: footer(),
     onAction, sourceEl: opts.sourceEl,
     onClose: () => unregisterDirectoryChangeListener(onDirectoryChange),
-    isDirty: () => true,
+    isDirty: () => JSON.stringify(_draft) !== _editOriginalDraftJSON,
   });
   wireAfterRender();
 }

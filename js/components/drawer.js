@@ -225,6 +225,25 @@ export function openDrawer({
       onAction(actBtn.getAttribute('data-drawer-action'), () => closeDrawer(onClose));
     }
   });
+  // V1.31.3 §3 — shared foundation fix: every [data-drawer-action] consumer
+  // app-wide (Agenda's participant picker rows, task checklist checkboxes,
+  // and any future non-native row) gets Enter/Space activation for free
+  // from THIS ONE listener — mirrors the click handler above exactly,
+  // dispatching into the SAME onAction() rather than a second behavior
+  // branch that could drift. A real <button>/<input>/<select>/<textarea>/
+  // <a> already gets native Enter/Space activation from the browser (which
+  // fires a real 'click' the listener above already handles) — explicitly
+  // excluded here so a real button's keypress is never dispatched twice.
+  overlay.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const actBtn = e.target.closest('[data-drawer-action]');
+    if (!actBtn) return;
+    if (/^(BUTTON|INPUT|SELECT|TEXTAREA|A)$/.test(actBtn.tagName)) return;
+    e.preventDefault(); // Space must not also scroll the drawer body
+    if (typeof onAction === 'function') {
+      onAction(actBtn.getAttribute('data-drawer-action'), () => closeDrawer(onClose));
+    }
+  });
 
   document.body.appendChild(overlay);
   _activeOverlay = overlay;

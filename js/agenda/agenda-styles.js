@@ -66,7 +66,19 @@ const CSS = `
 
 .cal-btn { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--border); background:var(--card); color:var(--text); padding:8px 14px; border-radius:10px; font-size:.82rem; font-weight:600; cursor:pointer; }
 .cal-btn:hover { border-color: var(--primary); }
-.cal-btn:focus-visible { outline:2px solid var(--primary); outline-offset:2px; }
+/* V1.31.3 §13 audit finding: --primary (and every other .cal-root-scoped
+   token) is a LOCAL alias defined only inside .cal-root's own rule block
+   — it does not inherit into js/components/drawer.js's overlay, which is
+   appended directly to document.body as a SIBLING of .cal-root, not a
+   descendant. Every :focus-visible rule below that must render inside a
+   drawer (.cal-btn is used in BOTH the toolbar AND drawer bodies) falls
+   back to var(--accent) — the one token this alias always just re-exports
+   — so the ring stays visible in both contexts instead of silently
+   computing to outline-style:none (CSS's invalid-at-computed-value
+   fallback for an undefined custom property with no var() fallback of
+   its own). Pre-existing since Phase C3; fixed here only where a real
+   focus outline was found to go invisible, not swept file-wide. */
+.cal-btn:focus-visible { outline:2px solid var(--primary, var(--accent)); outline-offset:2px; }
 .cal-btn--primary { background:var(--primary); border-color:var(--primary); color:var(--primary-fg); }
 .cal-btn--primary:hover { background:var(--primary-hover); }
 .cal-btn--sm { padding:6px 10px; font-size:.76rem; }
@@ -153,6 +165,11 @@ const CSS = `
 .cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
 .cal-cell { min-height:74px; border:1px solid var(--border); border-radius:10px; padding:6px; background:var(--card); cursor:pointer; display:flex; flex-direction:column; gap:4px; }
 .cal-cell:hover { border-color:var(--primary); }
+/* V1.31.3 §18 — visible keyboard focus on every interactive Calendar
+   surface (day cells, range bars, Week timed rows); outline-offset:-2px
+   keeps the ring INSIDE the cell's own box so it is never clipped by an
+   ancestor's overflow, matching .cal-row's own established convention. */
+.cal-cell:focus-visible { outline:2px solid var(--primary); outline-offset:-2px; }
 .cal-cell--out { opacity:.4; }
 .cal-cell--today .cal-cell-num { background:var(--primary); color:var(--primary-fg); border-radius:999px; width:20px; height:20px; display:inline-flex; align-items:center; justify-content:center; }
 .cal-cell-num { font-size:.76rem; font-weight:650; }
@@ -167,6 +184,7 @@ const CSS = `
 }
 .cal-week-row .cal-cell { min-height:120px; align-items:stretch; min-width:0; }
 .cal-week-event { font-size:.68rem; background:var(--blue-tint); color:var(--blue); border-radius:6px; padding:2px 5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cal-week-event:focus-visible { outline:2px solid var(--primary); outline-offset:-2px; }
 .cal-week-event--task { background:var(--amber-tint); color:var(--amber); }
 /* V1.31.1 — Calendar item row in Week view. Neutral/organizational tone
    (green), deliberately distinct from Agenda's blue and To-Do's amber
@@ -199,6 +217,7 @@ const CSS = `
    start/end day, so the eye reads "this keeps going" vs "this is where it
    begins/ends" without any text needed on continuation days. ────────── */
 .cal-range-bar { height:14px; border-radius:0; margin:0 -6px; padding:0 6px; font-size:.62rem; line-height:14px; font-weight:650; color:var(--green); background:var(--green-tint); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; cursor:pointer; }
+.cal-range-bar:focus-visible { outline:2px solid var(--primary); outline-offset:-2px; }
 .cal-range-bar--cap-left { margin-left:0; border-radius:7px 0 0 7px; padding-left:6px; }
 .cal-range-bar--cap-right { margin-right:0; border-radius:0 7px 7px 0; }
 .cal-range-bar--cap-left.cal-range-bar--cap-right { border-radius:7px; }
@@ -220,6 +239,10 @@ const CSS = `
 .cal-todo-row:hover { background:var(--card2); }
 .cal-checkbox { flex:0 0 20px; width:20px; height:20px; border-radius:6px; border:1.5px solid var(--border-bd, var(--border)); display:flex; align-items:center; justify-content:center; cursor:pointer; margin-top:1px; background:var(--card); }
 .cal-checkbox[aria-checked="true"] { background:var(--green); border-color:var(--green); color:#fff; }
+/* .cal-checkbox is used both inside .cal-root (To-Do list row) and inside
+   a drawer (task checklist item) — see the .cal-btn comment above for why
+   the var(--accent) fallback is required for the drawer case. */
+.cal-checkbox:focus-visible { outline:2px solid var(--primary, var(--accent)); outline-offset:2px; }
 
 /* ── Drawer form (content INSIDE js/components/drawer.js's own chrome) ── */
 .cal-form-field { margin-bottom:16px; }
@@ -229,7 +252,10 @@ const CSS = `
   width:100%; border:1px solid var(--input-bd); background:var(--input); color:var(--text);
   border-radius:10px; padding:10px 12px; font-size:16px; font-family:inherit; box-sizing:border-box;
 }
-.cal-form-input:focus, .cal-form-textarea:focus, .cal-form-select:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-tint); }
+/* Every .cal-form-* field only ever renders inside a drawer body — the
+   var(--accent)/var(--accent-subtle) fallbacks are load-bearing here, not
+   defensive filler (see the .cal-btn comment above). */
+.cal-form-input:focus, .cal-form-textarea:focus, .cal-form-select:focus { outline:none; border-color:var(--primary, var(--accent)); box-shadow:0 0 0 3px var(--primary-tint, var(--accent-subtle)); }
 .cal-form-textarea { min-height:72px; resize:vertical; }
 .cal-form-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
 @media (max-width:480px) { .cal-form-row { grid-template-columns:1fr; } }
@@ -257,6 +283,10 @@ const CSS = `
 .cal-picker-group-label { font-size:.68rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--label); padding:6px 8px 2px; }
 .cal-picker-row { display:flex; align-items:center; gap:10px; padding:10px 8px; border-radius:10px; cursor:pointer; }
 .cal-picker-row:hover { background:var(--card2); }
+/* The picker only ever renders inside a drawer body-swap — the
+   var(--accent) fallback is load-bearing here, not defensive filler (see
+   the .cal-btn comment above). */
+.cal-picker-row:focus-visible { outline:2px solid var(--primary, var(--accent)); outline-offset:-2px; }
 .cal-picker-row--selected { background:var(--primary-tint); }
 .cal-picker-check { flex:0 0 20px; width:20px; height:20px; border-radius:6px; border:1.5px solid var(--border); background:var(--card); display:flex; align-items:center; justify-content:center; }
 .cal-picker-row--selected .cal-picker-check { background:var(--primary); border-color:var(--primary); color:var(--primary-fg); }
