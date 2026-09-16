@@ -157,20 +157,28 @@ function renderFormStep(st, m) {
   return '';
 }
 
+/** v1.31.4 R6 — extracted so the dept-search input's `onInput` handler can
+ *  patch just this results fragment (see bulkHandlers.onInput below)
+ *  instead of calling the full modal render() on every keystroke, which
+ *  would destroy and recreate the search input's own DOM node each time. */
+function renderDeptResults(st, f) {
+  const q = f.departmentQuery.trim().toLowerCase();
+  const matches = q ? st.data.departments.filter((d) => d.name.toLowerCase().includes(q)) : st.data.departments;
+  return matches.length
+    ? `<div class="gud-picker-list gud-mt">${matches.map((d) => `<button type="button" class="gud-picker-row" data-act="gud-bulk-dept-pick" data-id="${esc(d.departmentId)}">${esc(d.name)}</button>`).join('')}</div>`
+    : `<div class="gud-muted gud-mt">${st.data.departments.length === 0 ? 'Belum ada bidang terdaftar di Manajemen User.' : 'Tidak ada bidang yang cocok.'}</div>`;
+}
+
 function renderGoodsOutForm(st, m) {
   const f = m.form;
   const dept = st.data.departments.find((d) => d.departmentId === f.departmentId);
   if (!dept) {
-    const q = f.departmentQuery.trim().toLowerCase();
-    const matches = q ? st.data.departments.filter((d) => d.name.toLowerCase().includes(q)) : st.data.departments;
     return `
       <p class="gud-muted">${fmtQty(m.ids.length)} item dipilih.</p>
       <div class="gud-field gud-mt"><span>Bidang</span>
         <input class="gud-input" data-act="gud-bulk-dept-query" value="${esc(f.departmentQuery)}" placeholder="Cari bidang…" autocomplete="off" autofocus />
       </div>
-      ${matches.length
-        ? `<div class="gud-picker-list gud-mt">${matches.map((d) => `<button type="button" class="gud-picker-row" data-act="gud-bulk-dept-pick" data-id="${esc(d.departmentId)}">${esc(d.name)}</button>`).join('')}</div>`
-        : `<div class="gud-muted gud-mt">${st.data.departments.length === 0 ? 'Belum ada bidang terdaftar di Manajemen User.' : 'Tidak ada bidang yang cocok.'}</div>`}
+      <div data-bulk-dept-results>${renderDeptResults(st, f)}</div>
     `;
   }
   return `
@@ -336,10 +344,31 @@ export const bulkHandlers = {
     const m = st.modal;
     if (!m) return;
     switch (act) {
-      case 'gud-bulk-dept-query': m.form.departmentQuery = t.value; render(); break;
+      case 'gud-bulk-dept-query': {
+        m.form.departmentQuery = t.value;
+        // v1.31.4 R6 — scoped re-render: only the filtered results list
+        // updates. The search input's own DOM node (focus, caret) is
+        // never touched, unlike the old full render().
+        const resultsEl = t.closest('.gud-modal-box')?.querySelector('[data-bulk-dept-results]');
+        if (resultsEl) resultsEl.innerHTML = renderDeptResults(st, m.form);
+        break;
+      }
       case 'gud-bulk-purpose': m.form.purpose = t.value; break;
       case 'gud-bulk-notes': m.form.notes = t.value; break;
-      case 'gud-bulk-qty': m.form.quantities[t.dataset.id] = t.value; render(); break;
+      case 'gud-bulk-qty': {
+        m.form.quantities[t.dataset.id] = t.value;
+        // v1.31.4 R6 — do NOT call the full render(): it rebuilds the
+        // whole modal via innerHTML, destroying and recreating this
+        // input's DOM node on every keystroke. On iOS that resets the
+        // numeric keyboard back to the alphabetic layout after each
+        // digit; more generally it also steals focus/caret. The only
+        // thing a qty keystroke needs to keep in sync is the "Lanjut"
+        // button's disabled state (gated on formIsValid()) — patched
+        // directly here instead.
+        const nextBtn = t.closest('.gud-modal-box')?.querySelector('[data-act="gud-bulk-next"]');
+        if (nextBtn) nextBtn.disabled = !formIsValid(m);
+        break;
+      }
       case 'gud-bulk-edit-category': m.form.category = t.value; break;
       case 'gud-bulk-edit-location': m.form.locationName = t.value; break;
       case 'gud-bulk-edit-minstock': m.form.minimumStock = t.value; break;
