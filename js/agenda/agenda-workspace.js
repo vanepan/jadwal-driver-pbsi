@@ -111,9 +111,17 @@ function calendarMotionOff() {
 function doRenderWithViewTransition() {
   if (!_host) return;
   if (typeof document.startViewTransition !== 'function' || calendarMotionOff()) { doRender(); return; }
+  // v1.31.4 R5 — cal-calview-region's view-transition-name (agenda-styles.js)
+  // is scoped to only apply while this class is present, so an unrelated
+  // startViewTransition() elsewhere (the theme toggle) never captures this
+  // region as its own named group. Added before starting the transition (so
+  // the OLD snapshot carries the name) and removed once it settles either
+  // way, success or failure.
+  document.documentElement.classList.add('cal-viewtransition-active');
   const transition = document.startViewTransition(() => doRender());
   transition.ready.catch(() => {});
-  transition.finished.catch(() => {});
+  const clearMarker = () => document.documentElement.classList.remove('cal-viewtransition-active');
+  transition.finished.then(clearMarker, clearMarker);
   transition.updateCallbackDone.catch((err) => console.error('[agenda-workspace] calendar view transition failed', err));
 }
 

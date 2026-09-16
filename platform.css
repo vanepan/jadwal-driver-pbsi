@@ -363,15 +363,31 @@ pre,
    docs/EXECUTIVE_COMMAND_CENTER_PHASE_7G4_REPORT.md for the full A/B
    numbers. This finding is recorded so the same hypothesis isn't
    re-attempted without new evidence. */
+/* v1.31.4 R5 — the ONE shared timing contract every theme-toggle crossfade
+   rule in this file draws from (this universal rule AND the curated "Part
+   D" override further down, ~line 5700) — previously two independently-
+   tuned duration sets (this rule's .32s/.26s vs Part D's 280ms/200ms) that
+   had drifted apart, so a curated container (rail, topbar, surface cards)
+   visibly settled ~40ms before/after everything else, and even WITHIN one
+   curated element its background/color (280ms) and box-shadow (still this
+   rule's .32s, since Part D never overrode shadow) settled at different
+   moments. Both rules now reference these tokens, so they can never drift
+   again. Border intentionally settles faster than fill/shadow (a crisper
+   edge reads better than a slow-fading outline) — that is a deliberate
+   difference, kept, not the accidental one this fixes. */
+:root {
+  --theme-fade-duration: 280ms;
+  --theme-border-duration: 200ms;
+}
 html.theme-anim,
 html.theme-anim *,
 html.theme-anim *::before,
 html.theme-anim *::after {
   transition:
-    background-color .32s cubic-bezier(.4,0,.2,1),
-    border-color     .32s cubic-bezier(.4,0,.2,1),
-    color            .26s ease,
-    box-shadow       .32s ease !important;
+    background-color var(--theme-fade-duration) cubic-bezier(.4,0,.2,1),
+    border-color     var(--theme-border-duration) cubic-bezier(.4,0,.2,1),
+    color            var(--theme-fade-duration) ease,
+    box-shadow       var(--theme-fade-duration) ease !important;
 }
 /* Phase 7G.2 — this whole crossfade mechanism (this block and Part D
    further down) had no reduced-motion guard at all. [data-anim="off"] is
@@ -5727,9 +5743,9 @@ body.v2-shell-active .v2-rail-avatar {
 .theme-anim .domshell-rail,
 .theme-anim .domshell-rail-logo {
   transition:
-    background-color 280ms ease,
-    color 280ms ease,
-    border-color 200ms ease !important;
+    background-color var(--theme-fade-duration) ease,
+    color var(--theme-fade-duration) ease,
+    border-color var(--theme-border-duration) ease !important;
 }
 /* Reduced-motion guard for Part D specifically: this block's own
    `!important` transition comes AFTER the early-file universal

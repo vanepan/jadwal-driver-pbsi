@@ -146,9 +146,22 @@ const CSS = `
    uses the plain, unanimated path). A restrained cross-fade + the
    faintest scale — "fast, subtle, Apple-like", never a slide/bounce that
    would read as a bigger move than a view toggle actually is. */
-.cal-calview-region { view-transition-name: cal-calview-region; }
+/* v1.31.4 R5 — view-transition-name must NOT be unconditional. A named
+   view-transition group is captured by ANY document.startViewTransition()
+   call anywhere in the app, not just the Month<->Week one this scale
+   animation is meant for — including the global theme toggle's own
+   transition (js/app.js#applyTheme()), which never touches this region's
+   content at all. An always-on name meant this card popped/scaled on its
+   own 140-180ms schedule during a THEME switch too, visibly out of step
+   with the rest of the page's shared crossfade. The name is now active
+   ONLY while agenda-workspace.js#doRenderWithViewTransition() has tagged
+   <html> for the duration of its own transition; any other transition
+   (theme included) sees no name here at all and this region simply
+   participates in that transition's default root crossfade instead. */
+.cal-calview-region { view-transition-name: none; }
+html.cal-viewtransition-active .cal-calview-region { view-transition-name: cal-calview-region; }
 @media (prefers-reduced-motion: reduce) {
-  .cal-calview-region { view-transition-name: none; }
+  html.cal-viewtransition-active .cal-calview-region { view-transition-name: none; }
 }
 ::view-transition-old(cal-calview-region) {
   animation: cal-calview-out 140ms cubic-bezier(0.4, 0, 1, 1) both;

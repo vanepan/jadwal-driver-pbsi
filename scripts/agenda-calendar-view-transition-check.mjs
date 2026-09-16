@@ -89,7 +89,20 @@ async function main() {
 
     console.log('\n=== [A — Bulan -> Minggu toggle triggers a scoped view transition] ===');
     await page.evaluate((ctx) => window.__render(ctx), { events: [], tasks: [], calendarItems: [], now: Date.now(), todayStr: '2026-09-15', mode: 'calendar', calendarView: 'month', calendarAnchor: '2026-09-15', todoFilters: { status: 'all', priority: 'all', query: '' }, canManage: true, writableScopes: ['sarpras_shared'], loading: false, error: null });
-    await checkAsync('the calendar region carries a view-transition-name (scoped, not the whole page)', () => page.evaluate(() => getComputedStyle(document.querySelector('.cal-calview-region')).viewTransitionName !== 'none'));
+    // v1.31.4 R5 — view-transition-name is now conditional (agenda-styles.js):
+    // present only while agenda-workspace.js#doRenderWithViewTransition() has
+    // tagged <html>.cal-viewtransition-active for the duration of its OWN
+    // transition, absent otherwise. This proves both halves: scoped (has a
+    // real name, not the whole page) AND not leaked into any unrelated
+    // transition that might be in flight elsewhere (e.g. the theme toggle).
+    await checkAsync('the calendar region carries a view-transition-name ONLY while its own transition is active — never unconditionally', () => page.evaluate(() => {
+      const region = document.querySelector('.cal-calview-region');
+      const withoutMarker = getComputedStyle(region).viewTransitionName;
+      document.documentElement.classList.add('cal-viewtransition-active');
+      const withMarker = getComputedStyle(region).viewTransitionName;
+      document.documentElement.classList.remove('cal-viewtransition-active');
+      return withoutMarker === 'none' && withMarker !== 'none';
+    }));
     // Clear this harness-level render (#root) before mounting the real
     // orchestrator below — view-transition-name must be unique across
     // the WHOLE document during a capture; leaving both #root's and
