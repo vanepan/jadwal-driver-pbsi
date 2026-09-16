@@ -18,8 +18,20 @@
 'use strict';
 
 import { buildMonthGrid, buildWeekGrid, monthRange, mondayWeekRange } from './agenda-date-range.js';
-import { formatDateShort, eventDisplayState, taskDisplayState, formatClock } from './agenda-view-model.js';
+import { formatDateShort, formatDateLong, eventDisplayState, taskDisplayState, formatClock, splitParticipants, priorityLabel, checklistProgress } from './agenda-view-model.js';
 import { calendarItemDisplayState } from './agenda-calendar-lifecycle.js';
+import { isTaskOverdue } from './agenda-lifecycle.js';
+// This file stays deliberately free of any Firebase-touching import
+// (agenda-directory.js, agenda-view-todo.js — both pull in agenda-store.js
+// -> firebase.js transitively): scripts/agenda-week-view-check.mjs and
+// scripts/agenda-calendar-range-bars-check.mjs import this module DIRECTLY
+// in pure Node (no browser) and would break under Node's ESM loader the
+// moment anything in this file's import graph reaches a browser-only
+// (CDN https://) specifier. Username -> display name resolution is
+// therefore INJECTED (an optional `resolveName` parameter, defaulting to
+// identity) rather than imported — the real caller (agenda-workspace-
+// view.js, which already depends on Firebase-touching sibling views) passes
+// the real displayNameFor(); pure-Node callers simply see raw usernames.
 
 const WEEKDAY_LABELS = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
 const MONTH_NAMES_ID = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
@@ -156,10 +168,99 @@ function monthHeaderLabel(anchorDate) {
   return `${MONTH_NAMES_ID[m - 1]} ${y}`;
 }
 
+const identityResolver = (u) => u;
+
+/** SS9 R2 — Day Detail: a date-cell click sets a SELECTED date (transient
+ *  UI state, never persisted) instead of switching Month<->Week; this
+ *  renders that one date's Agenda + Calendar + To-Do items below the
+ *  grid, filtered from the SAME already-loaded arrays the grid itself
+ *  already received — no new Firebase query, no second listener, no
+ *  second cache. Reuses the row visual language (cal-row/cal-todo-row/
+ *  cal-pill) the Agenda List and To-Do views already established.
+ *  `resolveName` is injected (see file header) rather than imported. */
+function dayDetailEventRow(e, now, resolveName) {
+  const { pic } = splitParticipants(e.participants);
+  const picNames = pic.map(resolveName);
+  const cancelled = eventDisplayState(e, now) === 'cancelled';
+  return `<div class="cal-row" data-agenda-action="open-event:${esc(e.id)}" role="button" tabindex="0">
+    <div class="cal-row-time">${e.allDay ? 'Sepanjang hari' : esc(formatClock(e.startAt))}</div>
+    <span class="cal-row-dot" aria-hidden="true"></span>
+    <div class="cal-row-body">
+      <p class="cal-row-title${cancelled ? ' cal-row-title--done' : ''}">${esc(e.title)}${cancelled ? ' (Dibatalkan)' : ''}</p>
+      ${picNames.length ? `<div class="cal-row-meta"><span>PIC: ${esc(picNames.join(', '))}</span></div>` : ''}
+    </div>
+  </div>`;
+}
+function dayDetailCalendarRow(c, now) {
+  const cancelled = calendarItemDisplayState(c, now) === 'dibatalkan';
+  return `<div class="cal-row" data-agenda-action="open-calendar:${esc(c.id)}" role="button" tabindex="0">
+    <div class="cal-row-time">${c.allDay ? 'Sepanjang hari' : esc(formatClock(c.startAt))}</div>
+    <span class="cal-row-dot" aria-hidden="true"></span>
+    <div class="cal-row-body">
+      <p class="cal-row-title${cancelled ? ' cal-row-title--done' : ''}">${esc(c.title)}${cancelled ? ' (Dibatalkan)' : ''}</p>
+    </div>
+  </div>`;
+}
+/** Mirrors agenda-view-todo.js#todoRow()'s exact markup/classes (same
+ *  visual language, same data-agenda-action verbs) — not imported, for
+ *  the Firebase-purity reason explained at the top of this file. */
+function dayDetailTaskRow(t, now, resolveName) {
+  const done = t.status === 'done';
+  const overdue = !done && isTaskOverdue(t, now);
+  const { done: chkDone, total: chkTotal } = checklistProgress(t);
+  const responsible = Object.keys(t.responsible || {}).map(resolveName);
+  const pillClass = overdue ? 'cal-pill--overdue' : done ? 'cal-pill--done' : `cal-pill--${t.priority || 'normal'}`;
+  const pillText = overdue ? 'Terlewat' : done ? 'Selesai' : priorityLabel(t.priority);
+  return `<div class="cal-todo-row">
+    <span class="cal-checkbox" role="checkbox" aria-checked="${done}" aria-label="Tandai selesai" tabindex="0" data-agenda-action="toggle-task-done:${esc(t.id)}">${done ? '&#10003;' : ''}</span>
+    <div class="cal-row-body" data-agenda-action="open-task:${esc(t.id)}" role="button" tabindex="0">
+      <p class="cal-row-title${done ? ' cal-row-title--done' : ''}">${esc(t.title)}</p>
+      <div class="cal-row-meta">
+        <span class="cal-pill ${pillClass}">${pillText}</span>
+        ${chkTotal ? `<span>${chkDone}/${chkTotal} checklist</span>` : ''}
+        ${responsible.length ? `<span>${esc(responsible.join(', '))}</span>` : ''}
+        ${t.scope === 'kabid' ? '<span class="cal-pill cal-pill--kabid">Kabid</span>' : ''}
+      </div>
+    </div>
+  </div>`;
+}
+/** @param {{date:string, events:Array, tasks:Array, calendarItems:Array, now:number, resolveName?:(u:string)=>string}} d */
+export function dayDetailHTML({ date, events, tasks, calendarItems, now, resolveName = identityResolver }) {
+  const dayEvents = (events || []).filter((e) => e && e.date === date);
+  const dayCalendarItems = (calendarItems || []).filter((c) => c && c.startDate && c.endDate && date >= c.startDate && date <= c.endDate);
+  const dayTasks = (tasks || []).filter((t) => t && t.dueDate === date);
+
+  if (!dayEvents.length && !dayCalendarItems.length && !dayTasks.length) {
+    return `<div class="cal-daydetail-empty">Tidak ada agenda atau tugas<br>untuk tanggal ini.</div>`;
+  }
+  const agendaRows = [
+    ...dayEvents.map((e) => ({ sortKey: e.allDay ? -1 : (e.startAt ?? Infinity), html: dayDetailEventRow(e, now, resolveName) })),
+    ...dayCalendarItems.map((c) => ({ sortKey: c.allDay ? -1 : (c.startAt ?? Infinity), html: dayDetailCalendarRow(c, now) })),
+  ].sort((a, b) => a.sortKey - b.sortKey).map((x) => x.html).join('');
+  const todoRows = dayTasks.map((t) => dayDetailTaskRow(t, now, resolveName)).join('');
+
+  return `
+    ${agendaRows ? `<p class="cal-daylabel">Agenda</p>${agendaRows}` : ''}
+    ${todoRows ? `<p class="cal-daylabel">To-Do</p>${todoRows}` : ''}`;
+}
+
+/** SS9 R2 — the currently-selected date's own detail section, appended
+ *  after the grid (never inside a cell) so it works identically for
+ *  Month and Week. Absent (null) selectedDate renders nothing, keeping
+ *  the calendar exactly as it was before this feature when nothing has
+ *  been explicitly selected. */
+function selectedDateSectionHTML(selectedDate, events, tasks, calendarItems, now, resolveName) {
+  if (!selectedDate) return '';
+  return `<div class="cal-daydetail">
+    <p class="cal-daydetail-heading">Tanggal Terpilih: ${esc(formatDateLong(selectedDate))}</p>
+    ${dayDetailHTML({ date: selectedDate, events, tasks, calendarItems, now, resolveName })}
+  </div>`;
+}
+
 /**
- * @param {{events: Array, tasks: Array, calendarItems: Array, mode: 'month'|'week', anchorDate: string, todayStr: string, now: number}} data
+ * @param {{events: Array, tasks: Array, calendarItems: Array, mode: 'month'|'week', anchorDate: string, todayStr: string, now: number, selectedDate: ?string, resolveName?: (u:string)=>string}} data
  */
-export function renderCalendarHTML({ events, tasks, calendarItems = [], mode, anchorDate, todayStr, now = Date.now() }) {
+export function renderCalendarHTML({ events, tasks, calendarItems = [], mode, anchorDate, todayStr, now = Date.now(), selectedDate = null, resolveName = identityResolver }) {
   const byDate = indexByDate(events, tasks);
   const range = mode === 'month' ? monthRange(anchorDate) : mondayWeekRange(anchorDate);
   const label = mode === 'month'
@@ -196,18 +297,19 @@ export function renderCalendarHTML({ events, tasks, calendarItems = [], mode, an
     const body = cells.map(({ date }) => {
       const day = byDate.get(date) || { events: [], tasks: [] };
       const isToday = date === todayStr;
+      const isSelected = date === selectedDate;
       const bars = rangeBarsByDate.get(date) || [];
       const timedToday = timedCalendarItems.filter((c) => c.startDate === date);
       if (bars.length || day.events.length || day.tasks.length || timedToday.length) anyContent = true;
       const alldayBand = bars.length ? `<div class="cal-week-allday">${rangeBarsHTML(bars)}</div>` : '';
       const timedRows = weekTimedRowsHTML(day.events, day.tasks, timedToday, now);
-      return `<div class="cal-cell${isToday ? ' cal-cell--today' : ''}" data-agenda-action="goto-day:${date}" role="button" tabindex="0" aria-label="${esc(date)}">
+      return `<div class="cal-cell${isToday ? ' cal-cell--today' : ''}${isSelected ? ' cal-cell--selected' : ''}" data-agenda-action="goto-day:${date}" role="button" tabindex="0" aria-pressed="${isSelected}" aria-label="${esc(date)}">
         <span class="cal-cell-num">${Number(date.slice(8, 10))}</span>
         ${alldayBand}
         <div class="cal-week-timed">${timedRows}</div>
       </div>`;
     }).join('');
-    return `${nav}<div class="cal-grid cal-week-row">${body}</div>${anyContent ? '' : emptyHint}`;
+    return `${nav}<div class="cal-grid cal-week-row">${body}</div>${anyContent ? '' : emptyHint}${selectedDateSectionHTML(selectedDate, events, tasks, calendarItems, now, resolveName)}`;
   }
 
   const cells = buildMonthGrid(anchorDate);
@@ -216,6 +318,7 @@ export function renderCalendarHTML({ events, tasks, calendarItems = [], mode, an
   const body = cells.map(({ date, inCurrentMonth }) => {
     const day = byDate.get(date) || { events: [], tasks: [] };
     const isToday = date === todayStr;
+    const isSelected = date === selectedDate;
     const count = day.events.length + day.tasks.length;
     const bars = rangeBarsByDate.get(date) || [];
     if (inCurrentMonth && (count || bars.length)) anyContent = true;
@@ -223,12 +326,12 @@ export function renderCalendarHTML({ events, tasks, calendarItems = [], mode, an
       ...day.events.slice(0, 3).map(() => '<span class="cal-cell-dot"></span>'),
       ...day.tasks.slice(0, 3).map(() => '<span class="cal-cell-dot cal-cell-dot--task"></span>'),
     ].slice(0, 4).join('');
-    return `<div class="cal-cell${inCurrentMonth ? '' : ' cal-cell--out'}${isToday ? ' cal-cell--today' : ''}" data-agenda-action="goto-day:${date}" role="button" tabindex="0" aria-label="${esc(date)}">
+    return `<div class="cal-cell${inCurrentMonth ? '' : ' cal-cell--out'}${isToday ? ' cal-cell--today' : ''}${isSelected ? ' cal-cell--selected' : ''}" data-agenda-action="goto-day:${date}" role="button" tabindex="0" aria-pressed="${isSelected}" aria-label="${esc(date)}">
         <span class="cal-cell-num">${Number(date.slice(8, 10))}</span>
         <span class="cal-cell-label"><span class="cal-cell-dots">${dots}</span>${count > 4 ? `<span class="cal-cell-count">+${count - 4}</span>` : ''}</span>
         ${rangeBarsHTML(bars)}
       </div>`;
   }).join('');
 
-  return `${nav}<div class="cal-grid">${body}</div>${anyContent ? '' : emptyHint}`;
+  return `${nav}<div class="cal-grid">${body}</div>${anyContent ? '' : emptyHint}${selectedDateSectionHTML(selectedDate, events, tasks, calendarItems, now, resolveName)}`;
 }

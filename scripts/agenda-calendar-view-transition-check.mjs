@@ -169,21 +169,37 @@ async function main() {
       return cells > 0 && cells % 7 === 0;
     }));
 
-    console.log('\n=== [D — tapping a day cell FROM Month view (the real-world Month->Week gesture) transitions; the SAME tap from within Week view (no view change) does not] ===');
-    await checkAsync('tapping a day cell while in Month view triggers a transition and lands on Minggu', () => page.evaluate(() => {
+    // SS9 R2 — a date-cell click used to switch Month -> Week (the exact
+    // defect the phase was commissioned to fix: "a date cell represents a
+    // date selection, not a request to change calendar view"). It now
+    // selects that date (transient UI state) and stays on whichever view
+    // was already showing, in both directions.
+    console.log('\n=== [D — SS9 R2: a date-cell click selects the date and does NOT switch Month<->Week, in either view] ===');
+    await checkAsync('tapping a day cell while in Month view does NOT call startViewTransition()', () => page.evaluate(() => {
       window.__vtCalls.length = 0;
       const cell = document.querySelector('#v2AgendaWorkspace .cal-grid:not(.cal-week-row) .cal-cell[data-agenda-action^="goto-day:"]');
       cell?.click();
-      return window.__vtCalls.length === 1;
+      return window.__vtCalls.length === 0;
     }));
     await new Promise((r) => setTimeout(r, 250));
-    check('...and the resulting view is really Minggu', await page.evaluate(() => document.querySelectorAll('#v2AgendaWorkspace .cal-week-row .cal-cell').length === 7));
+    check('...the view is STILL Bulan (Month), not Minggu', await page.evaluate(() => document.querySelectorAll('#v2AgendaWorkspace .cal-grid:not(.cal-week-row) .cal-cell').length > 7));
+    check('...the clicked cell now carries cal-cell--selected', await page.evaluate(() => !!document.querySelector('#v2AgendaWorkspace .cal-cell--selected')));
+    check('...a Day Detail section rendered below the grid', await page.evaluate(() => !!document.querySelector('#v2AgendaWorkspace .cal-daydetail')));
+    // Section C left the mounted instance on Bulan (Month) — switch to
+    // Minggu for real first (this IS a genuine view change, so it's
+    // expected/allowed to transition), THEN test that a date click from
+    // within Week view does not itself trigger a further transition.
+    await page.evaluate(() => { window.__vtCalls.length = 0; [...document.querySelectorAll('#v2AgendaWorkspace [data-agenda-action^="set-calview:"]')].find((b) => b.textContent.trim() === 'Minggu')?.click(); });
+    await new Promise((r) => setTimeout(r, 250));
+    check('(setup) switching to Minggu for this check landed on a real 7-cell week row', await page.evaluate(() => document.querySelectorAll('#v2AgendaWorkspace .cal-week-row .cal-cell').length === 7));
     await checkAsync('tapping a day cell WHILE ALREADY in Week view (anchor-only change, no view switch) does NOT transition', () => page.evaluate(() => {
       window.__vtCalls.length = 0;
       const cell = document.querySelector('#v2AgendaWorkspace .cal-week-row .cal-cell[data-agenda-action^="goto-day:"]');
       cell?.click();
       return window.__vtCalls.length === 0;
     }));
+    check('...the view is STILL Minggu (Week), 7 cells', await page.evaluate(() => document.querySelectorAll('#v2AgendaWorkspace .cal-week-row .cal-cell').length === 7));
+    check('...the clicked week cell now carries cal-cell--selected too', await page.evaluate(() => !!document.querySelector('#v2AgendaWorkspace .cal-week-row .cal-cell--selected')));
 
     console.log('\n=== [E — reduced motion: renders correctly with NO transition attempted at all] ===');
     await page.evaluate(() => document.documentElement.setAttribute('data-anim', 'off'));

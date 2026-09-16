@@ -50,6 +50,10 @@ const _state = {
   mode: 'agenda',
   calendarView: 'month',
   calendarAnchor: todayString(),
+  // SS9 R2 — transient UI-only selection (never written to Firebase, never
+  // affects permissions/reminders/audit/notifications/PDF export). Set by
+  // clicking a date cell; no longer switches calendarView.
+  selectedDate: null,
   todoFilters: { status: 'all', priority: 'all', query: '' },
 };
 
@@ -63,6 +67,7 @@ function buildCtx() {
     mode: _state.mode,
     calendarView: _state.calendarView,
     calendarAnchor: _state.calendarAnchor,
+    selectedDate: _state.selectedDate,
     todoFilters: _state.todoFilters,
     canManage: canManageSharedAgenda() || canManageKabidAgenda(),
     writableScopes: writableScopes(),
@@ -147,12 +152,14 @@ function handleAction(action) {
     case 'cal-prev': shiftCalendarAnchor(_state.calendarView === 'month' ? -30 : -7); doRender(); return;
     case 'cal-next': shiftCalendarAnchor(_state.calendarView === 'month' ? 30 : 7); doRender(); return;
     case 'cal-today': _state.calendarAnchor = todayString(); doRender(); return;
-    case 'goto-day': {
-      const wasMonth = _state.calendarView === 'month';
-      _state.calendarAnchor = arg; _state.calendarView = 'week';
-      (wasMonth ? doRenderWithViewTransition : doRender)();
-      return;
-    }
+    // SS9 R2 — a date-cell click selects that date; it does NOT switch
+    // Month<->Week anymore (that was the reported defect — a date is a
+    // date selection, not a view-change request). The explicit Bulan/
+    // Minggu chips (case 'set-calview' above) remain the only way to
+    // change view. calendarAnchor (which month/week is being LOOKED at)
+    // is deliberately left untouched here too — every date reachable via
+    // a click is already within the currently-displayed grid.
+    case 'goto-day': _state.selectedDate = arg; doRender(); return;
     case 'set-todo-status': _state.todoFilters.status = arg; doRender(); return;
     case 'set-todo-priority': _state.todoFilters.priority = arg; doRender(); return;
     case 'retry': doRender(); return;

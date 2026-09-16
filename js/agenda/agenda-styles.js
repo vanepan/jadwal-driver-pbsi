@@ -40,6 +40,15 @@ const CSS = `
   --blue:#4f73a8; --blue-tint:#e7edf5; --blue-bd:#cdd9ea;
   --red:#a8292f; --red-tint:#faebea; --red-bd:#f0c9c7;
   --input:#ffffff; --input-bd:#e1dfd9;
+  /* SS9 R1 — person identity colors (js/agenda/agenda-identity-colors.js
+     is the ONE place that decides which of these a given person gets;
+     this block only supplies the actual values). --id-grace is a
+     dedicated sky blue, deliberately NOT the same as --blue above (the
+     existing .cal-pill--kabid scope badge already uses --blue — reusing
+     it for Grace would make a Kabid-scope item with Grace as a
+     participant show two different meanings in the same shade). */
+  --id-grace:#3d8bc4; --id-evan:#3a3a3c; --id-leo: var(--amber); --id-kabid: var(--red);
+  --id-fb1: var(--green); --id-fb2:#6b4e9e; --id-fb3:#a9742a;
   color: var(--text);
 }
 .cal-root[data-theme="dark"], [data-theme="dark"] .cal-root {
@@ -50,6 +59,8 @@ const CSS = `
   --blue:#7ea0d6; --blue-tint:#1e2733; --blue-bd:#2a3646;
   --red:#d6817c; --red-tint:#2e2120; --red-bd:#3d2b29;
   --input:#2a2724; --input-bd:#3a3631;
+  --id-grace:#6fb3e0; --id-evan:#a49d93; --id-leo: var(--amber); --id-kabid: var(--red);
+  --id-fb1: var(--green); --id-fb2:#8470b5; --id-fb3:#be9350;
 }
 
 /* ── Section shell (the Today sibling host) ─────────────────────── */
@@ -120,6 +131,21 @@ const CSS = `
 .cal-empty { text-align:center; padding:40px 16px; color:var(--muted); }
 .cal-empty-title { font-size:.9rem; font-weight:600; color:var(--text); margin-bottom:4px; }
 .cal-empty-sub { font-size:.8rem; margin-bottom:16px; }
+
+/* SS9 R2 — Day Detail (the selected date's own Agenda + To-Do contents,
+   rendered below the grid; reuses .cal-daylabel/.cal-row/.cal-todo-row
+   verbatim, so this needs no new row styling of its own). */
+.cal-daydetail { margin-top:16px; padding-top:16px; border-top:1px solid var(--border); }
+.cal-daydetail-heading { font-size:.85rem; font-weight:700; color:var(--text); margin:0 0 12px; }
+.cal-daydetail-empty { text-align:center; padding:24px 16px; color:var(--muted); font-size:.82rem; line-height:1.5; }
+
+/* SS9 R1 — a small, reusable person-identity marker. Background color is
+   set per-instance via inline style (the resolved var(--id-...) from
+   js/agenda/agenda-identity-colors.js) rather than one CSS class per
+   person, so a newly-added staff member never needs a CSS change here. */
+.cal-identity-dot { display:inline-block; width:8px; height:8px; border-radius:999px; flex:0 0 auto; }
+.cal-identity-dot--sm { width:6px; height:6px; }
+.cal-identity-dots { display:inline-flex; align-items:center; gap:3px; }
 .cal-skeleton { border-radius:12px; background:linear-gradient(90deg, var(--card2) 25%, var(--border2) 37%, var(--card2) 63%); background-size:400% 100%; animation:cal-shimmer 1.4s ease infinite; height:52px; margin-bottom:8px; }
 @keyframes cal-shimmer { 0%{background-position:100% 50%} 100%{background-position:0 50%} }
 .cal-error { padding:20px; text-align:center; color:var(--muted); font-size:.85rem; }
@@ -185,6 +211,12 @@ html.cal-viewtransition-active .cal-calview-region { view-transition-name: cal-c
 .cal-cell:focus-visible { outline:2px solid var(--primary); outline-offset:-2px; }
 .cal-cell--out { opacity:.4; }
 .cal-cell--today .cal-cell-num { background:var(--primary); color:var(--primary-fg); border-radius:999px; width:20px; height:20px; display:inline-flex; align-items:center; justify-content:center; }
+/* SS9 R2 — an inset ring around the WHOLE cell, deliberately a different
+   visual channel than .cal-cell--today's filled date-number circle, so a
+   date that is both today AND selected shows both treatments at once
+   (box-shadow:inset never shifts layout/reflows the cell, unlike a
+   border-width change would). */
+.cal-cell--selected { box-shadow: 0 0 0 2px var(--primary) inset; }
 .cal-cell-num { font-size:.76rem; font-weight:650; }
 .cal-cell-dots { display:flex; gap:3px; flex-wrap:wrap; }
 .cal-cell-dot { width:6px; height:6px; border-radius:999px; background:var(--blue); }

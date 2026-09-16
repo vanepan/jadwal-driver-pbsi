@@ -12,8 +12,8 @@
    booting the full app.js/Firebase-auth boot sequence.
 
    ctx shape: { events, tasks, now, todayStr, mode, calendarView,
-     calendarAnchor, todoFilters:{status,priority,query}, canManage:bool,
-     writableScopes:[], loading:bool, error:string|null }
+     calendarAnchor, selectedDate:?string, todoFilters:{status,priority,query},
+     canManage:bool, writableScopes:[], loading:bool, error:string|null }
    ============================================================ */
 
 'use strict';
@@ -23,6 +23,7 @@ import { renderCalendarHTML } from './agenda-view-calendar.js';
 import { renderTodoListHTML } from './agenda-view-todo.js';
 import { isTaskOverdue } from './agenda-lifecycle.js';
 import { anIcon } from '../analytics/analytics-shell.js';
+import { displayNameFor } from './agenda-directory.js';
 
 function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
@@ -116,7 +117,7 @@ export function buildWorkspaceHTML(ctx) {
     const events = ctx.events.filter((e) => matchesQuery(e, q));
     const tasks = ctx.tasks.filter((t) => matchesQuery(t, q));
     const calendarItems = (ctx.calendarItems || []).filter((c) => matchesQuery(c, q));
-    inner = renderCalendarHTML({ events, tasks, calendarItems, mode: ctx.calendarView, anchorDate: ctx.calendarAnchor, todayStr: ctx.todayStr, now: ctx.now });
+    inner = renderCalendarHTML({ events, tasks, calendarItems, mode: ctx.calendarView, anchorDate: ctx.calendarAnchor, todayStr: ctx.todayStr, now: ctx.now, selectedDate: ctx.selectedDate, resolveName: displayNameFor });
     // V1.31.2 §4 — a stable view-transition-name, scoped to ONLY this
     // region (not the whole page, unlike js/app.js#setWorkspace()'s own
     // full-workspace transition) — agenda-workspace.js's
