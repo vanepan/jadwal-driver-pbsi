@@ -189,52 +189,13 @@ export const DEFAULT_SETTINGS = {
   ],
 };
 
-/* ── Currency formatters ─────────────────────────────────────────
-   rp     — UI display:    "Rp 1.250.000" (non-breaking space)
-   rpDoc  — NOR letter:    "1.250.000,-"
-   rpTable— NOR table/UI:  "Rp 1.250.000" (regular space) */
-export function rp(n) { return 'Rp ' + Number(Math.round(n || 0)).toLocaleString('id-ID'); }
-export function rpDoc(n) { return Number(Math.round(n || 0)).toLocaleString('id-ID') + ',-'; }
-export function rpTable(n) { return 'Rp ' + Number(Math.round(n || 0)).toLocaleString('id-ID'); }
-
-/**
- * Compact rupiah for executive/KPI surfaces where a full value would overflow,
- * clip, or wrap into ugly fragments. SINGLE source of truth — never reimplement.
- * Up to 1 decimal (Indonesian comma), trailing ",0" trimmed. Always one token
- * (uses a non-breaking space) so it can never break across lines.
- *   10.000.000 → "Rp 10 Jt" · 125.000.000 → "Rp 125 Jt" · 1.200.000.000 → "Rp 1,2 M"
- * @param {number} n
- * @returns {string}
- */
-export function rpCompact(n) {
-  const num = Number(n) || 0;
-  const sign = num < 0 ? '-' : '';
-  const abs = Math.abs(num);
-  const unit = (v, suffix) => {
-    const s = (Math.round(v * 10) / 10).toLocaleString('id-ID', { maximumFractionDigits: 1 });
-    return `${sign}Rp ${s} ${suffix}`;
-  };
-  if (abs >= 1e12) return unit(abs / 1e12, 'T');   // triliun
-  if (abs >= 1e9)  return unit(abs / 1e9,  'M');   // miliar
-  if (abs >= 1e6)  return unit(abs / 1e6,  'Jt');  // juta
-  if (abs >= 1e3)  return unit(abs / 1e3,  'Rb');  // ribu
-  return `${sign}Rp ${abs.toLocaleString('id-ID')}`;
-}
-
-/** Parse a user-typed amount ("Rp 1.250.000") → integer rupiah. */
-export function parseAmount(value) {
-  return parseInt(String(value == null ? '' : value).replace(/[^0-9]/g, ''), 10) || 0;
-}
-
-/** Live amount-input display: grouped digits only, no "Rp " prefix (the
- *  field's own label already carries "(Rp)") — same toLocaleString('id-ID')
- *  grouping convention as rp()/rpDoc()/rpTable() above, reused rather than
- *  reimplemented. '' in → '' out (empty stays empty, not "0"). */
-export function formatAmountInput(digits) {
-  const clean = String(digits == null ? '' : digits).replace(/[^0-9]/g, '');
-  if (!clean) return '';
-  return Number(clean).toLocaleString('id-ID');
-}
+/* ── Currency formatters ──────────────────────────────────────────────────────
+   v1.31.4 R7 — moved to js/utils/currency-format.js, the app-wide
+   canonical formatter/parser layer (other modules had drifted into their
+   own ad-hoc reimplementations of this exact logic). Re-exported here so
+   every existing `from './petty-cash-config.js'` import site keeps
+   working unchanged. */
+export { rp, rpDoc, rpTable, rpCompact, parseAmount, formatAmountInput } from '../utils/currency-format.js';
 
 /* ── Date formatters (id-ID, ISO yyyy-mm-dd in/out) ─────────────── */
 const MONTHS_LONG = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];

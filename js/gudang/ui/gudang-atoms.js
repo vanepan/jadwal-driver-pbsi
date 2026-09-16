@@ -16,6 +16,8 @@
 
 'use strict';
 
+import { rp } from '../../utils/currency-format.js';
+
 /** HTML-escape (attribute/text safe). */
 export function esc(v) {
   return String(v == null ? '' : v)
@@ -151,11 +153,14 @@ export function fmtQty(n) {
 /** Format a Rupiah amount for display. Mirrors quiet-intelligence-engine.js's
  *  "Rp 2.4jt" style for LARGE aggregate figures; a single line-item price is
  *  shown in full (Rp 15.000), never abbreviated, since abbreviating an exact
- *  transaction amount would misrepresent it, unlike a rounded monthly average. */
+ *  transaction amount would misrepresent it, unlike a rounded monthly average.
+ *  v1.31.4 R7 — the actual grouping/prefix now delegates to the canonical
+ *  formatter (js/utils/currency-format.js); the '—' for missing/non-finite
+ *  data is this function's own deliberate distinction, kept as-is (showing
+ *  "Rp 0" for absent data would misrepresent it as an actual zero value). */
 export function fmtRupiah(n) {
   const v = Number(n);
-  if (!Number.isFinite(v)) return '—';
-  return `Rp ${Math.round(v).toLocaleString('id-ID')}`;
+  return Number.isFinite(v) ? rp(v) : '—';
 }
 
 /** Relative-ish timestamp for feed rows (Movement/Asset History) — short,

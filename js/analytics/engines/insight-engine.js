@@ -22,12 +22,15 @@
 
 'use strict';
 
+// v1.31.4 R7 — was its own private ad-hoc formatter; now the canonical
+// one (js/utils/currency-format.js), same as every other money display
+// in the app.
+import { rp } from '../../utils/currency-format.js';
+
 export const INSIGHT_CATEGORY = Object.freeze({
   EFFICIENCY: 'efficiency', WARNING: 'warning', TREND: 'trend', NOR: 'nor', FORECAST: 'forecast',
 });
 
-/** Rupiah formatter (id-ID) used inside insight sentences. */
-function rp(n) { return 'Rp ' + Number(Math.round(Number(n) || 0)).toLocaleString('id-ID'); }
 function pct(n) { return `${Math.round(Number(n) || 0)}%`; }
 
 /** Deterministic, value-seeded variant selector (stable for the same inputs). */

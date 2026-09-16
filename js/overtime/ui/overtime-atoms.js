@@ -9,6 +9,14 @@
 
 'use strict';
 
+// v1.31.4 R7 — was its own ad-hoc 'Rp' + n.toLocaleString('id-ID')
+// (no space between "Rp" and the number, unlike every other money
+// display in the app) — now delegates to the canonical formatter so
+// Overtime's Rupiah figures render exactly like everywhere else. The
+// export name/signature is unchanged, so every existing call site across
+// the 9 files that import rp() from here keeps working untouched.
+import { rp as canonicalRp } from '../../utils/currency-format.js';
+
 export function esc(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -35,7 +43,7 @@ export function fmtMonth(yyyyMM) {
   return `${MONTHS[+p[1] - 1]} ${p[0]}`;
 }
 
-export function rp(n) { return 'Rp' + Number(Math.round(n || 0)).toLocaleString('id-ID'); }
+export function rp(n) { return canonicalRp(n); }
 
 export function todayISO() {
   const d = new Date();

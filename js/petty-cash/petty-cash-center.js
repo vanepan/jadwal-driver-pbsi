@@ -49,6 +49,7 @@ import {
   norAutoSubject, norStatusMeta, norNumberFromSequence, isValidNorSequence,
   REIMBURSE_ITEMS, reimburseSum, isReimburseExpense, hasReimburseDetail, blankReimburseDetail, sortTransactions,
 } from './petty-cash-config.js';
+import { reformatAmountInputEl } from '../utils/currency-format.js';
 
 const LOGO_SRC = 'assets/Logo-PBSI.png';
 
@@ -1605,38 +1606,6 @@ async function onClick(e) {
   }
 }
 
-/* ── Live thousands-separator formatting for the "Jumlah (Rp)" input ────
-   The caret is repositioned by DIGIT COUNT, not raw character index —
-   grouping "."s shift position as digits are added/removed anywhere in the
-   string, so a char-index caret would drift on every edit. Counting digits
-   before the caret in the OLD value, then walking that many digits into the
-   freshly formatted string, keeps the caret exactly where the user is
-   actually typing — correct for typing, backspace, delete, paste, and
-   selecting/replacing the whole value alike (all just look like "the value
-   changed" to this function). */
-function digitsBeforeIndex(str, index) {
-  let n = 0;
-  for (let i = 0; i < index && i < str.length; i++) if (/[0-9]/.test(str[i])) n++;
-  return n;
-}
-function indexAfterDigits(str, digitCount) {
-  if (digitCount <= 0) return 0;
-  let n = 0;
-  for (let i = 0; i < str.length; i++) {
-    if (/[0-9]/.test(str[i])) { n++; if (n === digitCount) return i + 1; }
-  }
-  return str.length;
-}
-/** Reformats an amount &lt;input&gt; in place, preserving caret position. @returns the clean digit string (what st.form.amount should be set to). */
-function reformatAmountInput(el) {
-  const digitsBefore = digitsBeforeIndex(el.value, el.selectionStart);
-  const digits = el.value.replace(/[^0-9]/g, '');
-  const formatted = formatAmountInput(digits);
-  el.value = formatted;
-  const pos = indexAfterDigits(formatted, digitsBefore);
-  el.setSelectionRange(pos, pos);
-  return digits;
-}
 
 function onInput(e) {
   const el = actorEl(e);
@@ -1655,7 +1624,7 @@ function onInput(e) {
   // in place below, without touching the form. (v1.13.2 focus-retention fix)
   if (act === 'formInput') {
     if (el.name === 'amount') {
-      st.form.amount = reformatAmountInput(el);
+      st.form.amount = reformatAmountInputEl(el);
       st.form._err = ''; clearAddError();
       return;
     }
@@ -1732,7 +1701,7 @@ function onChange(e) {
   const act = el.dataset.act;
   if (act === 'filterUnit') { setState({ fUnit: el.value }); return; }
   if (act === 'formInput') {
-    // 'amount' is kept in sync by onInput()/reformatAmountInput() on every
+    // 'amount' is kept in sync by onInput()/reformatAmountInputEl() on every
     // keystroke already — el.value here is the FORMATTED display string
     // ("1.000.000"), not the clean digits st.form.amount must stay as.
     if (el.name === 'amount') { st.form._err = ''; return; }

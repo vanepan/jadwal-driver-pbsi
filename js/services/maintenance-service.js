@@ -24,6 +24,7 @@ import {
   deriveTypeFromCategory,
   deriveImpactFromCategory
 } from '../config/maintenance-config.js';
+import { rp } from '../utils/currency-format.js';
 
 function str(v) { return v == null ? '' : String(v).trim(); }
 
@@ -49,10 +50,10 @@ function esc(v) {
     .replace(/'/g, '&#39;');
 }
 
-function formatCost(cost) {
-  if (!cost || cost === 0) return 'Rp 0';
-  return 'Rp ' + Math.round(cost).toLocaleString('id-ID');
-}
+// v1.31.4 R7 — was its own ad-hoc formatter; equivalent output for every
+// input this function ever received (rp(0) === "Rp 0" already), now the
+// canonical one (js/utils/currency-format.js) instead of a duplicate.
+function formatCost(cost) { return rp(cost); }
 
 /* ── Validation ────────────────────────────────────────────────────────── */
 
