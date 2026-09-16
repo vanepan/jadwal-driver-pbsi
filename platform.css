@@ -13577,10 +13577,18 @@ body.v2-shell-active .block-status-badge--overtime {
     transform: translateX(-100%);
     background: var(--surface);
     color: var(--text);
+    /* v1.31.4 R2 — pointer-events is intentionally not transitioned: the
+       drawer must stop intercepting taps the instant .sidebar-open is
+       removed, not only after its slide-out transition (inherited from
+       style.css's base .sidebar rule) finishes. Otherwise a tap that
+       lands right after a navigation-triggered close can hit the
+       still-visually-present panel instead of the real content beneath. */
+    pointer-events: none;
   }
   body.v2-shell-active #sidebar.sidebar-open {
     transform: translateX(0);
     box-shadow: 16px 0 44px rgba(0, 0, 0, 0.28);
+    pointer-events: auto;
   }
   body.v2-shell-active #sidebar .sidebar-header {
     flex: 0 0 auto;

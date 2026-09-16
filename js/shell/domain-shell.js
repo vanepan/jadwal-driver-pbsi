@@ -186,19 +186,49 @@ function domainVisible(domain) {
 /* ── Rendering ─────────────────────────────────────────────────────── */
 
 let railListEl = null;
+// v1.31.4 R2 — the domain-id set currently rendered into railListEl, so
+// renderRail() (called on EVERY navigation) can tell whether it actually
+// needs to rebuild the buttons or just re-point the active one.
+let renderedRailIds = null;
 
 function renderRail() {
   if (!railListEl) return;
   const visible = domains.filter(domainVisible);
-  railListEl.innerHTML = visible.map(d => `
-    <button type="button" class="domshell-rail-item${d.id === activeDomainId ? ' domshell-rail-item--active' : ''}"
-            data-domain="${d.id}" aria-current="${d.id === activeDomainId ? 'page' : 'false'}">
-      <span class="domshell-rail-icon">${svgIcon(d.icon)}</span>
-      <span class="domshell-rail-label">${d.label}</span>
-    </button>
-  `).join('');
+  const ids = visible.map(d => d.id);
+  const idsChanged = !renderedRailIds
+    || ids.length !== renderedRailIds.length
+    || ids.some((id, i) => id !== renderedRailIds[i]);
+
+  if (idsChanged) {
+    railListEl.innerHTML = visible.map(d => `
+      <button type="button" class="domshell-rail-item${d.id === activeDomainId ? ' domshell-rail-item--active' : ''}"
+              data-domain="${d.id}" aria-current="${d.id === activeDomainId ? 'page' : 'false'}">
+        <span class="domshell-rail-icon">${svgIcon(d.icon)}</span>
+        <span class="domshell-rail-label">${d.label}</span>
+      </button>
+    `).join('');
+    railListEl.querySelectorAll('.domshell-rail-item').forEach(btn => {
+      btn.addEventListener('click', () => enterDomain(btn.dataset.domain));
+    });
+    renderedRailIds = ids;
+    return;
+  }
+
+  // Same domain set already on-screen (the overwhelming majority of calls —
+  // most navigation only changes which domain/screen is active, not which
+  // domains are visible). The rail's open/closed state is plain CSS
+  // :hover/:focus-within on the .domshell-rail container — nothing else
+  // tracks it — so rebuilding via innerHTML here would destroy whichever
+  // button the pointer happens to be over, dropping :hover on that
+  // ancestor mid-navigation (instant collapse), until the next pointer
+  // move re-establishes it (delayed reopen): the sidebar close/reopen
+  // flicker when clicking a module while the pointer stays over the rail.
+  // Patching the existing nodes' active state in place keeps the hovered
+  // button's identity intact across the click, so :hover never lapses.
   railListEl.querySelectorAll('.domshell-rail-item').forEach(btn => {
-    btn.addEventListener('click', () => enterDomain(btn.dataset.domain));
+    const isActive = btn.dataset.domain === activeDomainId;
+    btn.classList.toggle('domshell-rail-item--active', isActive);
+    btn.setAttribute('aria-current', isActive ? 'page' : 'false');
   });
 }
 
@@ -460,6 +490,12 @@ export function initDomainShell(c) {
       </div>
     </div>`;
   railListEl = railEl.querySelector('.domshell-rail-list');
+  // A fresh railListEl has no children yet — renderedRailIds must not carry
+  // over from any previous instance (real boot only builds this once, but
+  // test harnesses re-init to simulate a fresh session), or renderRail()'s
+  // idsChanged check would wrongly compare against a list that no longer
+  // exists and skip populating the new, empty one.
+  renderedRailIds = null;
   cfg.mountBefore.parentElement.insertBefore(railEl, cfg.mountBefore);
 
   tabBarEl = document.createElement('div');

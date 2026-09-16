@@ -3553,15 +3553,22 @@ input[type="number"]::-webkit-inner-spin-button {
    RESPONSIVE — Tablet + Mobile (sidebar as drawer)
    ============================================================ */
 @media (max-width: 767px) {
-  /* Sidebar: hidden by default, slides in on open */
+  /* Sidebar: hidden by default, slides in on open. pointer-events is
+     deliberately NOT part of the transition — the closed/exiting drawer
+     must stop intercepting taps immediately when .sidebar-open is removed,
+     not only once its ~260ms slide-out finishes (a real tap right after
+     navigating could otherwise land on the still-visually-present, but
+     logically closed, panel instead of the real content underneath). */
   .sidebar {
     transform: translateX(-240px);
     transition: transform var(--motion-slow, 0.26s) var(--ease-standard, ease);
     box-shadow: none;
+    pointer-events: none;
   }
   .sidebar.sidebar-open {
     transform: translateX(0);
     box-shadow: var(--shadow-lg);
+    pointer-events: auto;
   }
   .sidebar-close { display: flex; }
   .sidebar-toggle { display: flex; }
