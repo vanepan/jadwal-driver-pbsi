@@ -112,5 +112,30 @@ check('todaysStoryItems threads targetId through for the lookup',
 check("board timeline pulse (.is-started) is driven by status === 'started'",
   /const isStarted\s*=\s*status === 'started';/.test(fs.readFileSync(path.join(ROOT, 'js/timeline.js'), 'utf-8')));
 
+/* ══ 8 — v1.31.4 R1: overnight/multi-day active assignment with NO today
+   log entry (missed logAction write, or the trip started before today) →
+   the Pulse must not go empty despite real active operational data. ══ */
+console.log('\n[8 — overnight assignment active today, zero today-log entries]');
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+const E = { id: 'E', status: 'started', driver: 'Siti', vehicle: 'Avanza', date: ymd(yesterday), startTime: '22:00', endTime: '06:00' };
+const m8 = buildPulseMarks(ctxOf([E], []));
+check('an active assignment with zero today-log entries still produces a mark', m8.length === 1, m8.length);
+check('that mark is active', m8[0]?.active === true, m8[0]);
+check('position clamps to the window start edge (started on a prior calendar day)', m8[0]?.leftPct === 0, m8[0]?.leftPct);
+check('driver identity resolved from the real record, not fabricated', !!m8[0]?.sentence?.includes('Siti'), m8[0]?.sentence);
+
+/* ══ 9 — a same-day running assignment already covered by today's own
+   "assignment_started" log entry must NOT be double-counted. ══ */
+console.log('\n[9 — no duplicate mark when the log-derived pass already covers it]');
+const F = asg('F', 'started');
+const m9 = buildPulseMarks(ctxOf([F], [log('assignment_started', 'F', 9, 0)]));
+check('exactly one mark for F, not two', m9.length === 1, m9.length);
+
+/* ══ 10 — genuinely empty day stays a genuinely empty axis. ══ */
+console.log('\n[10 — genuinely empty day]');
+const m10 = buildPulseMarks(ctxOf([], []));
+check('zero assignments + zero logs → zero marks (no synthetic dots)', m10.length === 0, m10.length);
+
 console.log(`\nexecutive-pulse-active-check: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

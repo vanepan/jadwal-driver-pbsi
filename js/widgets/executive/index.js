@@ -49,6 +49,11 @@ import { classifyEngineeringOverdue } from '../../recommendation/engineering-ove
 // Terjadwal/Selesai/Dibatalkan" is computed anywhere in this app).
 import { calendarItemDisplayState, calendarStateLabel } from '../../agenda/agenda-calendar-lifecycle.js';
 import { isTaskOverdue } from '../../agenda/agenda-lifecycle.js';
+// v1.31.4 R1 — Operational Pulse timeline fix: the canonical assignment
+// start/end resolver (js/timeline.js, the analytics engine already use it)
+// and the canonical "no driver" identity guard, reused rather than
+// reinvented (see buildPulseMarks below).
+import { assignmentSpan, isUnassignedAssignment } from '../../utils.js';
 
 /* ── deterministic view helpers ── */
 const n = (v) => (v == null || Number.isNaN(Number(v)) ? '—' : Number(v));
@@ -640,6 +645,7 @@ export function buildPulseMarks(ctx) {
   const runningIds = new Set(
     (ctx.assignments || []).filter((a) => a && a.status === 'started').map((a) => a.id)
   );
+  const runningAssignments = (ctx.assignments || []).filter((a) => a && a.status === 'started');
   const marks = items.map((it) => {
     const d = new Date(it.ts);
     const minutes = d.getHours() * 60 + d.getMinutes();
@@ -648,6 +654,42 @@ export function buildPulseMarks(ctx) {
     const active = it.groupKey === 'assignment_started' && runningIds.has(it.targetId);
     return { leftPct: pct, tone: PULSE_TONE_BY_DOMAIN[it.domainKey] || 'brand', active, ts: it.ts, sentence: it.sentence, domainLabel: domain ? domain.label : '' };
   });
+
+  // v1.31.4 R1 — a running assignment whose OWN "assignment_started" audit-log
+  // entry didn't land inside TODAY's window (an overnight/multi-day trip that
+  // began before today, or a logAction() write that silently failed —
+  // logAction is fire-and-forget, see js/logs.js) would otherwise never get a
+  // mark at all, even though it is genuinely active right now — the exact
+  // "empty Pulse despite real active drivers" defect. The assignment record
+  // itself, not the audit trail, is ground truth for "is this running", so it
+  // is read directly here as a fallback for anything the log-derived pass
+  // above didn't already cover. Never fabricated: real assignment, real
+  // driver, real (or, if malformed, honestly absent) start time.
+  const loggedActiveIds = new Set(
+    items.filter((it) => it.groupKey === 'assignment_started').map((it) => it.targetId)
+  );
+  const todayYmd = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
+  runningAssignments
+    .filter((a) => !loggedActiveIds.has(a.id))
+    .forEach((a) => {
+      const sp = assignmentSpan(a);
+      const driverName = isUnassignedAssignment(a) ? 'Tanpa Driver' : a.driver;
+      const sentence = `Driver ${driverName} sedang dalam perjalanan${a.destination ? ` menuju ${a.destination}` : ''}.`;
+      // A start date/time from a different calendar day isn't a meaningful
+      // position on TODAY's 07:00-19:00 axis, so it clamps to the window's
+      // start edge ("already running since before today") instead of
+      // plotting a foreign day's time-of-day; malformed/missing span data
+      // clamps the same way rather than being silently dropped.
+      const sameDay = !!sp && sp.startDate === todayYmd;
+      const ts = sp ? sp.startDateTime.getTime() : Date.now();
+      let pct = 0;
+      if (sameDay) {
+        const minutes = sp.startDateTime.getHours() * 60 + sp.startDateTime.getMinutes();
+        pct = Math.max(0, Math.min(100, ((minutes - PULSE_WINDOW_START_MIN) / span) * 100));
+      }
+      marks.push({ leftPct: pct, tone: PULSE_TONE_BY_DOMAIN.driverOps, active: true, ts, sentence, domainLabel: STORY_DOMAINS.driverOps.label });
+    });
+  marks.sort((a, b) => a.ts - b.ts);
   return marks;
 }
 
