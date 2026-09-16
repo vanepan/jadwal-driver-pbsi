@@ -1,7 +1,7 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.31.3.0';
+export const APP_VERSION = '1.31.4.0';
 export const RELEASE_NAME = 'Agenda, Kalender & To-Do — Shared interaction foundation & notification E2E';
 
 /* ============================================================
