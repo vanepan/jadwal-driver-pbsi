@@ -56,8 +56,15 @@ function applyTodoFilters(tasks, filters, now) {
   });
 }
 
+// v1.31.4 R3 — Agenda and Calendar are unified at the UX/conceptual level:
+// Calendar is a VIEW of the agenda (the same event domain visualized over
+// time), never a sibling product competing with it. This is presentation
+// ONLY — the internal mode ids ('agenda'/'calendar'/'todo') are UNCHANGED,
+// so every set-mode: action, deep link, and stored/derived state built on
+// them still resolves exactly as before. 'agenda' now reads "Daftar" (the
+// list presentation of that same domain), reordered so Kalender leads.
 function modeSwitcher(mode) {
-  const modes = [['agenda', 'Agenda'], ['calendar', 'Kalender'], ['todo', 'To-Do']];
+  const modes = [['calendar', 'Kalender'], ['agenda', 'Daftar'], ['todo', 'To-Do']];
   return `<div class="cal-modeswitch" role="tablist" aria-label="Tampilan Agenda">
     ${modes.map(([k, label]) => `<button type="button" role="tab" aria-selected="${mode === k}" data-agenda-action="set-mode:${k}">${label}</button>`).join('')}
   </div>`;
@@ -147,7 +154,7 @@ function shell(ctx, inner) {
   return `
     <div class="cal-header">
       <div>
-        <p class="cal-title">Agenda, Kalender &amp; To-Do</p>
+        <p class="cal-title">Agenda &amp; To-Do</p>
         <p class="cal-subtitle">Apa yang terjadi, di mana orang ditugaskan, dan apa yang perlu dikerjakan</p>
       </div>
       ${modeSwitcher(ctx.mode)}

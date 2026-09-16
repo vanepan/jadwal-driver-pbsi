@@ -106,9 +106,19 @@ async function main() {
     await page.waitForFunction('window.__harnessReady === true', { timeout: 8000 });
 
     console.log('\n=== [A — buildWorkspaceHTML: modes + content] ===');
-    await checkAsync('agenda mode renders the section title (V1.31.1: "Agenda, Kalender & To-Do")', () => page.evaluate((ctx) => {
+    await checkAsync('agenda mode renders the section title (v1.31.4 R3: "Agenda & To-Do" — Calendar is a VIEW of the agenda, not a sibling product)', () => page.evaluate((ctx) => {
       window.__render(ctx);
-      return document.getElementById('root').textContent.includes('Agenda, Kalender & To-Do');
+      return document.getElementById('root').textContent.includes('Agenda & To-Do');
+    }, baseCtx()));
+    await checkAsync('v1.31.4 R3: mode switcher reads Kalender / Daftar / To-Do, in that order (internal mode ids unchanged)', () => page.evaluate((ctx) => {
+      window.__render(ctx);
+      const labels = [...document.querySelectorAll('.cal-modeswitch [role="tab"]')].map((b) => b.textContent.trim());
+      return labels.length === 3 && labels[0] === 'Kalender' && labels[1] === 'Daftar' && labels[2] === 'To-Do';
+    }, baseCtx()));
+    await checkAsync('v1.31.4 R3: the "Daftar" tab still drives the unchanged internal agenda mode/action', () => page.evaluate((ctx) => {
+      window.__render(ctx);
+      const daftarBtn = [...document.querySelectorAll('.cal-modeswitch [role="tab"]')].find((b) => b.textContent.trim() === 'Daftar');
+      return daftarBtn?.getAttribute('data-agenda-action') === 'set-mode:agenda';
     }, baseCtx()));
     await checkAsync('agenda mode with data shows the event title and PIC label', () => page.evaluate((ctx) => {
       window.__render(ctx);
