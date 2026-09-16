@@ -189,24 +189,29 @@ function wireHost(host) {
     e.preventDefault();
     handleAction(el.getAttribute('data-agenda-action'));
   });
-  host.addEventListener('input', (e) => {
-    if (e.target.matches('[data-agenda-search]')) {
-      _state.todoFilters.query = e.target.value;
-      // Search filtering re-renders the view root only (not the header the
-      // search input itself lives in) to avoid stealing focus mid-typing —
-      // same Focus-Preserving discipline as the drawers.
-      const viewRoot = host.querySelector('[data-agenda-view-root]');
-      if (viewRoot) {
-        const ctx = buildCtx();
-        // Rebuild just the inner content by re-invoking the same pure
-        // function and swapping only the view-root's children.
-        const tmp = document.createElement('div');
-        tmp.innerHTML = buildWorkspaceHTML(ctx);
-        const freshRoot = tmp.querySelector('[data-agenda-view-root]');
-        if (freshRoot) viewRoot.innerHTML = freshRoot.innerHTML;
-      }
-    }
-  });
+}
+
+/** v1.31.4 R4 — the workspace's own page-level search box was removed
+ *  (redundant with the always-visible global topbar search, which already
+ *  targets this exact query). This is now the ONE place that query is
+ *  applied, called directly by js/app.js's 'home' search adapter instead
+ *  of that adapter simulating an `input` event on a DOM node that no
+ *  longer exists. Re-renders the view root only (not the whole host) —
+ *  same Focus-Preserving discipline the old inline handler used, kept even
+ *  though this workspace no longer owns an input of its own, since a
+ *  keystroke in the topbar box can still arrive while, e.g., a drawer- or
+ *  other-triggered re-render is in flight. No-ops if the workspace isn't
+ *  mounted (mirrors mountAgendaWorkspace()'s own guard). */
+export function applyAgendaSearchQuery(query) {
+  if (!_host) return;
+  _state.todoFilters.query = query;
+  const viewRoot = _host.querySelector('[data-agenda-view-root]');
+  if (!viewRoot) return;
+  const ctx = buildCtx();
+  const tmp = document.createElement('div');
+  tmp.innerHTML = buildWorkspaceHTML(ctx);
+  const freshRoot = tmp.querySelector('[data-agenda-view-root]');
+  if (freshRoot) viewRoot.innerHTML = freshRoot.innerHTML;
 }
 
 /** Idempotent — safe to call on every Today visit. */

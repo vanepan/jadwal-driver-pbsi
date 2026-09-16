@@ -1,12 +1,15 @@
 /* agenda-home-search-adapter-check.mjs — V1.31.2 §7 (global clickability
-   audit): proves the real gap found and fixed this phase — the always-
+   audit): proves the real gap found and fixed that phase — the always-
    visible topbar search box (#v2SearchInput) had NO adapter registered
    for the 'home' module (where Agenda/Kalender/To-Do lives), so it looked
    fully interactive but silently did nothing when the user was on Home.
 
-   Fixed in js/app.js#registerSearchAdapters() by delegating 'home's query
-   into the SAME existing [data-agenda-search] input's 'input' listener
-   (agenda-workspace.js#wireHost()) — no second search implementation.
+   v1.31.4 R4 — Agenda's own page-level search box (the old
+   [data-agenda-search] input) was removed as redundant with this same
+   topbar box. js/app.js#registerSearchAdapters()'s 'home' adapter now
+   calls agenda-workspace.js#applyAgendaSearchQuery(q) directly (no DOM
+   simulation, no second search implementation, no hidden duplicate input
+   left behind for the topbar box to puppet).
 
    Real login, real production data, READ-ONLY (search + clear only, no
    record created/edited/deleted). Whatever the session's real Agenda data
@@ -86,7 +89,7 @@ async function main() {
     await new Promise((r) => setTimeout(r, 4000));
     await page.evaluate(() => { document.getElementById('btnPushDismiss')?.click(); });
     check('logged in as leo', true);
-    await page.waitForSelector('[data-agenda-search]', { timeout: 15000 }).catch(() => {});
+    await page.waitForSelector('#v2AgendaWorkspace [data-agenda-view-root]', { timeout: 15000 }).catch(() => {});
 
     console.log('\n=== [2] Baseline: the global topbar search placeholder now names Agenda content on Home (was the generic default) ===');
     const placeholder = await page.evaluate(() => document.getElementById('v2SearchInput')?.placeholder);
@@ -103,9 +106,12 @@ async function main() {
       return rows === 0 && emptyVisible;
     });
 
-    console.log('\n=== [4] The two search boxes share state — the inline Agenda box reflects what was typed in the topbar box (SAME underlying query, not a second parallel filter) ===');
-    await checkAsync('[data-agenda-search]\'s own value now matches what was typed in the topbar box', () => page.evaluate(() =>
-      document.querySelector('[data-agenda-search]')?.value === 'zzz-impossible-query-zzz-nomatch'
+    console.log('\n=== [4] v1.31.4 R4: the redundant page-level Agenda search box is gone — the topbar box is the ONE search entry point, no hidden duplicate left behind ===');
+    await checkAsync('no [data-agenda-search] node exists anywhere in the workspace (not removed-but-hidden either)', () => page.evaluate(() =>
+      document.querySelector('[data-agenda-search]') === null
+    ));
+    await checkAsync('no second visible <input type="search"> renders inside the Agenda workspace host', () => page.evaluate(() =>
+      document.querySelectorAll('#v2AgendaWorkspace input[type="search"]').length === 0
     ));
 
     console.log('\n=== [5] Clearing the GLOBAL topbar box (as clearModuleSearch() does on every navigation away from Home) restores the full list ===');

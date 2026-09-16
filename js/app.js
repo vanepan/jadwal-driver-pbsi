@@ -228,7 +228,7 @@ import { renderHome, refreshHome, resolveWorkspaceForRole } from './workspace/ho
 // the Executive Command Center's own widget tree. Independently gated
 // (agenda.view / agenda.kabid.view) — invisible, and its Firebase
 // subscriptions never even opened, for a role holding neither.
-import { mountAgendaWorkspace, closeAgendaWorkspace, isAgendaWorkspaceVisible } from './agenda/agenda-workspace.js';
+import { mountAgendaWorkspace, closeAgendaWorkspace, isAgendaWorkspaceVisible, applyAgendaSearchQuery } from './agenda/agenda-workspace.js';
 // V1.31.2 §8 — Executive Command Center -> Agenda/Kalender/To-Do
 // integration. initAgendaStore()/getVisibleX() are the SAME store every
 // other Agenda/Kalender/To-Do surface already reads from (idempotent,
@@ -1640,27 +1640,20 @@ function registerSearchAdapters() {
     clear: () => closeGudangSearch(),
   });
 
-  // V1.31.2 §7 (global clickability audit) — a real gap found during this
+  // V1.31.2 §7 (global clickability audit) — a real gap found during that
   // phase's own audit: 'home' had NO registered adapter, so the always-
   // visible topbar search box (#v2SearchInput, present on every module)
-  // silently accepted typing on Home and did nothing at all — the box
-  // looked interactive but had zero effect, right above Agenda's own
-  // working inline search box. Delegates into that SAME existing,
-  // already-tested mechanism (agenda-workspace.js's wireHost() 'input'
-  // listener already covers Agenda/Calendar/To-Do — see agenda-workspace-
-  // view.js's matchesQuery()/applyTodoFilters()) rather than building a
-  // second search implementation. No-ops safely if Agenda isn't mounted
-  // (not permitted for this session, or not yet rendered) — nothing to
-  // search in that case either.
+  // silently accepted typing on Home and did nothing at all. v1.31.4 R4
+  // removed Agenda's own redundant page-level search box (the topbar box
+  // is now the ONE search entry point for Agenda/Calendar/To-Do), so this
+  // now calls agenda-workspace.js's applyAgendaSearchQuery() directly
+  // instead of simulating an `input` event on a DOM node that no longer
+  // exists. No-ops safely if Agenda isn't mounted (not permitted for this
+  // session, or not yet rendered) — nothing to search in that case either.
   registerSearchAdapter({
     id: 'home',
     placeholder: 'Cari agenda, kalender, atau tugas…',
-    run: (q) => {
-      const el = document.querySelector('[data-agenda-search]');
-      if (!el) return;
-      el.value = q;
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-    },
+    run: (q) => applyAgendaSearchQuery(q),
   });
 }
 

@@ -159,8 +159,7 @@ function shell(ctx, inner) {
       </div>
       ${modeSwitcher(ctx.mode)}
     </div>
-    <div class="cal-header" style="margin-bottom:12px">
-      <input type="search" class="cal-form-input" style="max-width:280px" placeholder="Cari agenda, kalender, atau tugas…" value="${esc(ctx.todoFilters.query || '')}" data-agenda-search>
+    <div class="cal-header" style="margin-bottom:12px;justify-content:flex-end">
       ${toolbarActions(ctx.canManage, ctx.writableScopes)}
     </div>
     <div data-agenda-view-root>${inner}</div>`;
