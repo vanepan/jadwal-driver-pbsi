@@ -850,7 +850,9 @@ input[type="date"] { color-scheme: light; }
      touch min-height, so this protects both tiers). */
   min-height: 44px;
   cursor: pointer;
-  transition: all 0.15s;
+  /* v1.31.4 R8 — only the properties :hover/:disabled/.is-today actually
+     change (background, border-color, opacity), not every property. */
+  transition: background-color 0.15s, border-color 0.15s, opacity 0.15s;
   white-space: nowrap;
 }
 .btn-today:hover:not(:disabled) { background: #FFCDD2; border-color: var(--danger); }
@@ -2679,7 +2681,8 @@ input[type="number"]::-webkit-inner-spin-button {
   padding: 8px 16px;
   min-height: 44px;
   cursor: pointer;
-  transition: all 0.15s;
+  /* v1.31.4 R8 — only background changes on :hover. */
+  transition: background-color 0.15s;
 }
 .btn-secondary:hover { background: var(--gray-2); }
 

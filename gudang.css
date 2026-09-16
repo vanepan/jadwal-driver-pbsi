@@ -145,7 +145,7 @@
    existed for it — this is why chips rendered as unstyled default buttons.
    Mirrors .eng-chip/.eng-chips verbatim (same data-on="true" toggle idiom). */
 .gud-chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
-.gud-chip{border:1px solid var(--border);background:var(--surface);color:var(--text-dim);font-family:var(--font-sans);font-weight:600;font-size:12.5px;padding:7px 13px;border-radius:999px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:all .12s;}
+.gud-chip{border:1px solid var(--border);background:var(--surface);color:var(--text-dim);font-family:var(--font-sans);font-weight:600;font-size:12.5px;padding:7px 13px;border-radius:999px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:background-color .12s,border-color .12s,color .12s;}
 .gud-chip:hover{border-color:var(--border-strong);color:var(--text);}
 .gud-chip[data-on="true"]{background:var(--accent-weak);border-color:var(--accent-line);color:var(--accent);}
 
