@@ -23,7 +23,8 @@ import { renderCalendarHTML } from './agenda-view-calendar.js';
 import { renderTodoListHTML } from './agenda-view-todo.js';
 import { isTaskOverdue } from './agenda-lifecycle.js';
 import { anIcon } from '../analytics/analytics-shell.js';
-import { displayNameFor } from './agenda-directory.js';
+import { displayNameFor, getAgendaCandidates } from './agenda-directory.js';
+import { buildAgendaIdentityColorMap } from './agenda-identity-colors.js';
 
 function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
@@ -112,12 +113,17 @@ export function buildWorkspaceHTML(ctx) {
   }
 
   const q = (ctx.todoFilters.query || '').trim().toLowerCase();
+  // SS9 R1 — one stable username -> color map per render, reused by every
+  // dot/chip below (never re-derived per row). getAgendaCandidates() is
+  // the same already-loaded directory snapshot displayNameFor() itself
+  // reads from — no new Firebase call.
+  const colorMap = buildAgendaIdentityColorMap(getAgendaCandidates());
   let inner;
   if (ctx.mode === 'calendar') {
     const events = ctx.events.filter((e) => matchesQuery(e, q));
     const tasks = ctx.tasks.filter((t) => matchesQuery(t, q));
     const calendarItems = (ctx.calendarItems || []).filter((c) => matchesQuery(c, q));
-    inner = renderCalendarHTML({ events, tasks, calendarItems, mode: ctx.calendarView, anchorDate: ctx.calendarAnchor, todayStr: ctx.todayStr, now: ctx.now, selectedDate: ctx.selectedDate, resolveName: displayNameFor });
+    inner = renderCalendarHTML({ events, tasks, calendarItems, mode: ctx.calendarView, anchorDate: ctx.calendarAnchor, todayStr: ctx.todayStr, now: ctx.now, selectedDate: ctx.selectedDate, resolveName: displayNameFor, colorMap });
     // V1.31.2 §4 — a stable view-transition-name, scoped to ONLY this
     // region (not the whole page, unlike js/app.js#setWorkspace()'s own
     // full-workspace transition) — agenda-workspace.js's
@@ -141,11 +147,11 @@ export function buildWorkspaceHTML(ctx) {
       <div class="cal-filters" role="group" aria-label="Filter prioritas">
         ${PRIORITY_FILTERS.map((f) => `<button type="button" class="cal-chip" aria-pressed="${ctx.todoFilters.priority === f.key}" data-agenda-action="set-todo-priority:${f.key}">${f.label}</button>`).join('')}
       </div>
-      ${renderTodoListHTML({ tasks: filtered, now: ctx.now })}`;
+      ${renderTodoListHTML({ tasks: filtered, now: ctx.now, colorMap })}`;
   } else {
     const events = ctx.events.filter((e) => matchesQuery(e, q));
     const tasks = ctx.tasks.filter((t) => matchesQuery(t, q));
-    inner = renderAgendaListHTML({ events, tasks, now: ctx.now, todayStr: ctx.todayStr });
+    inner = renderAgendaListHTML({ events, tasks, now: ctx.now, todayStr: ctx.todayStr, colorMap });
   }
 
   return shell(ctx, inner);
