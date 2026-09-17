@@ -920,7 +920,23 @@ function _wireDetailHandlers(root) {
 
 export function openDetailModal(id, { sourceEl = null } = {}) {
   const a = assignments.find(x => x.id === id);
-  if (!a) return;
+  if (!a) {
+    // SS10 — a bare no-op here (the previous behavior) left notification
+    // click-through with zero feedback: the rail would switch to Driver Ops,
+    // nothing would open, and the notification was still marked read. This
+    // can be reached for a genuinely deleted/cancelled assignment, or for a
+    // role whose local `assignments` cache never populates (see
+    // setModalAssignments' own module-permission gate in js/app.js) —
+    // mirrors js/engineering/ui/engineering-drawer.js#renderDrawer's own
+    // null-`a` branch: an honest not-found drawer instead of silence.
+    openDrawer({
+      title: 'Detail Jadwal',
+      icon: 'car',
+      body: '<div style="padding:8px 0;color:var(--text-muted);">Penugasan ini tidak ditemukan &mdash; mungkin sudah dihapus, atau Anda tidak memiliki akses ke modul ini.</div>',
+      sourceEl,
+    });
+    return;
+  }
 
   viewingId = id;
   const status = normalizeStatus(a.status);
