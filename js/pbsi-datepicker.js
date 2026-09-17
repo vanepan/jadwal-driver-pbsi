@@ -139,6 +139,29 @@ export function syncPbsiDatepicker(inputEl) {
   _updateTrigger(inst);
 }
 
+/* ── Public: destroy ──────────────────────────────────────── */
+
+/**
+ * SS10 — tears down a previously-initialized picker: Flatpickr's own
+ * document.body-appended calendar node and its internal global
+ * click/keydown listeners (created via `appendTo: document.body` in
+ * _initFlatpickr, above). initPbsiDatepicker's WeakMap guard is keyed by
+ * element identity, so it only protects a caller that reuses the SAME
+ * input node across calls — a caller that rebuilds its DOM on every
+ * render (host.innerHTML = ..., the majority pattern in this codebase)
+ * gets a brand-new input every time, the guard never fires, and Flatpickr
+ * never gets torn down on its own. Such callers must call this for the
+ * PREVIOUS render's input before discarding it. No-op if `inputEl` was
+ * never initialized (or is null/undefined).
+ */
+export function destroyPbsiDatepicker(inputEl) {
+  if (!inputEl) return;
+  const inst = _registry.get(inputEl);
+  if (!inst) return;
+  if (inst.fp) inst.fp.destroy();
+  _registry.delete(inputEl);
+}
+
 /* ── Private: preset buttons ──────────────────────────────── */
 
 function _buildPresets(inst) {

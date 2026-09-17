@@ -46,7 +46,7 @@
 import { isAdmin } from '../auth.js';
 import { createFocusGuard } from '../ui/focus-preserving-render.js';
 import { showToast as canonicalToast } from '../components/toast.js';
-import { initPbsiDatepicker, syncPbsiDatepicker } from '../pbsi-datepicker.js';
+import { initPbsiDatepicker, syncPbsiDatepicker, destroyPbsiDatepicker } from '../pbsi-datepicker.js';
 import { initOvertimeStore, registerChangeListener } from './overtime-store.js';
 import * as svc from './overtime-service.js';
 import {
@@ -141,6 +141,15 @@ const st = {
 };
 
 let root = null, bound = false, opened = false, listening = false;
+// SS10 — render() rebuilds root's entire subtree on EVERY call (a
+// checkbox toggle, a filter keystroke, a screen change), so a Flatpickr
+// instance mountRekapDatepicker() wired to the PREVIOUS render's
+// #otRekapDateInput becomes orphaned every time: initPbsiDatepicker's own
+// re-init guard is keyed by element identity and never sees a brand-new
+// element, so its document.body calendar node + global listeners were
+// never torn down. Tracks that input so render() can destroy it before
+// discarding it (mirrors engineering-center.js's identical fix).
+let _rekapDatepickerInputEl = null;
 const focusGuard = createFocusGuard();
 
 /* ── Small helpers ───────────────────────────────────────────────── */
@@ -261,6 +270,9 @@ function render() {
   if (!root || !opened) return;
   syncTheme();
   focusGuard.capture(root);
+  // SS10 — tear down the PREVIOUS render's picker before root.innerHTML
+  // discards its input; see _rekapDatepickerInputEl's own comment.
+  if (_rekapDatepickerInputEl) { destroyPbsiDatepicker(_rekapDatepickerInputEl); _rekapDatepickerInputEl = null; }
   root.innerHTML = shell();
   focusGuard.restore(root);
   if (st.screen === 'dailyEntry') mountRekapDatepicker();
@@ -284,6 +296,7 @@ function render() {
 function mountRekapDatepicker() {
   const input = document.getElementById('otRekapDateInput');
   if (!input) return;
+  _rekapDatepickerInputEl = input;
   initPbsiDatepicker(input, {
     presets: [
       { label: 'Hari Ini', getValue: () => todayISO() },

@@ -21,7 +21,7 @@ import { isDevelopment, getAppEnv } from '../../config.js';
 import { getCurrentUser } from '../../auth.js';
 import { todayString, offsetDate } from '../../utils.js';
 import { validateNotBeforeCreation } from '../../validation.js';
-import { initPbsiDatepicker, syncPbsiDatepicker } from '../../pbsi-datepicker.js';
+import { initPbsiDatepicker, syncPbsiDatepicker, destroyPbsiDatepicker } from '../../pbsi-datepicker.js';
 import {
   getAssignment, listAssignments, upsertAssignment, removeAssignment,
   registerEngineeringChangeListener, nextAssignmentSequence,
@@ -75,6 +75,16 @@ let host = null, unsub = null, mounted = false, loaded = false, adapter = null, 
 // assignment re-rendering" (refreshDrawerBody, preserves scroll/focus)
 // apart from "switching to a different assignment" (a real openDrawer()).
 let _engDrawerOverlay = null, _engDrawerKey = null;
+// SS10 — the create-modal's date input is torn down and rebuilt on EVERY
+// render() (host.innerHTML = ...), including one fired by an unrelated
+// keystroke in the same modal (see onInput's 'eng-personnel-search'
+// branch, which re-renders the whole modal) or by the modal closing.
+// initPbsiDatepicker's own re-init guard is keyed by element identity, so
+// it can't see this — each render leaked a new Flatpickr instance +
+// document.body calendar node + global listeners. Tracks the input
+// mountCreateWidgets() last wired a picker to, so render() can tear it
+// down before its element is discarded (see mountCreateWidgets, below).
+let _createDatepickerInputEl = null;
 
 // Idempotency guard: assignment ids with an ownership-sensitive write in flight.
 // A repeated click / retry on the same assignment while one is pending is ignored,
@@ -253,6 +263,12 @@ export function openEngineeringAssignment(id) {
 /* ── render ───────────────────────────────────────────────────────────── */
 function render() {
   if (!host) return;
+  // SS10 — every branch below replaces host's entire subtree, orphaning
+  // whatever mountCreateWidgets() last wired a picker to (still-open modal
+  // re-rendering, or the modal just closed). Tear it down BEFORE that
+  // happens — see _createDatepickerInputEl's own comment for why this
+  // can't be left to initPbsiDatepicker's own guard.
+  if (_createDatepickerInputEl) { destroyPbsiDatepicker(_createDatepickerInputEl); _createDatepickerInputEl = null; }
   const c = ctx();
   const all = listAssignments();
   const modal = st.creating ? createModal(c) : '';
@@ -345,12 +361,17 @@ function onEngineeringDrawerAction(action, c) {
 
 /** Attach the shared PBSI date picker to the create modal's date input — the
  *  assignment "deadline" or the work-report "workDate" (whichever is present).
- *  Idempotent per element (the picker registry guards re-init). */
+ *  Idempotent per element (the picker registry guards re-init) — but this
+ *  element is freshly created by THIS render (render() rebuilds the whole
+ *  modal every call), so that guard never actually re-fires; tracked in
+ *  _createDatepickerInputEl so the NEXT render() can tear this one down
+ *  before it's orphaned (SS10 — see that variable's own comment). */
 function mountCreateWidgets() {
   const isReport = st.formMode === 'report';
   const field = isReport ? 'workDate' : 'deadline';
   const input = host.querySelector(`.eng-modal-box [data-field="${field}"]`);
   if (!input) return;
+  _createDatepickerInputEl = input;
   initPbsiDatepicker(input, {
     presets: isReport
       ? [
