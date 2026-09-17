@@ -626,6 +626,27 @@ function todaysStoryItems(ctx) {
 const PULSE_WINDOW_START_MIN = 7 * 60;
 const PULSE_WINDOW_END_MIN = 19 * 60;
 const PULSE_TONE_BY_DOMAIN = { driverOps: 'brand', vehicle: 'brand', engineering: 'intel', request: 'warn' };
+/** SS10 — the tick row used to be a hardcoded 07:00–17:00 label list laid
+ *  out with `justify-content: space-between`, two hours short of the real
+ *  07:00–19:00 pct-based window above: flexbox spaced those 6 labels
+ *  evenly across the FULL axis width, so the last one ("17:00") rendered
+ *  at the 100% mark that a dot's own `left:X%` math reserves for 19:00 —
+ *  every later label silently drifted too (an event genuinely at 16:36
+ *  landed under the "15:00" tick). Generating the labels from the same
+ *  PULSE_WINDOW_* constants buildPulseMarks() uses, at a step that evenly
+ *  divides the window, keeps the two permanently in lockstep: N labels
+ *  spaced by flexbox land at i/(N-1) of the width, identical to a dot's
+ *  (minutes-START)/(END-START) at that same clock time. */
+const PULSE_TICK_STEP_MIN = 120;
+/** Exported for unit testing (scripts/executive-pulse-active-check.mjs) — the
+ *  render path calls it internally, unchanged. */
+export function pulseTickLabels() {
+  const labels = [];
+  for (let m = PULSE_WINDOW_START_MIN; m <= PULSE_WINDOW_END_MIN; m += PULSE_TICK_STEP_MIN) {
+    labels.push(`${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`);
+  }
+  return labels;
+}
 /** Premium Pass — carries the real sentence + domain label per mark (both
  *  already computed by todaysStoryItems, STORY_DOMAINS — no new data) so
  *  the dot's hover/focus tooltip can show genuine event content instead of
@@ -1343,7 +1364,7 @@ export const widgets = {
               ${dots}
               ${nowMarker}
             </div>
-            <div class="wsp-pulse__ticks"><span>07:00</span><span>09:00</span><span>11:00</span><span>13:00</span><span>15:00</span><span>17:00</span></div>
+            <div class="wsp-pulse__ticks">${pulseTickLabels().map((t) => `<span>${t}</span>`).join('')}</div>
             <div class="wsp-pulse__legend">
               <span class="wsp-pulse__legend-item"><span class="wsp-pulse__legend-dot wsp-pulse__dot--brand"></span>Operasional Driver</span>
               <span class="wsp-pulse__legend-item"><span class="wsp-pulse__legend-dot wsp-pulse__dot--intel"></span>Teknik</span>

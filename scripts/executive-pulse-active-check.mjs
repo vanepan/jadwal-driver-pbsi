@@ -9,8 +9,13 @@
    active state the moment the assignment completes. Driver-agnostic: an
    unassigned assignment that is running still pulses.
 
-   Drives the REAL js/widgets/executive/index.js#buildPulseMarks (exported for
-   this test; the render path calls it unchanged). Pure Node.
+   Also covers axis-tick correctness (SS10, §11 below): the tick row must
+   span the SAME 07:00–19:00 window buildPulseMarks positions dots against,
+   not a shorter, stale label range.
+
+   Drives the REAL js/widgets/executive/index.js#buildPulseMarks and
+   #pulseTickLabels (both exported for this test; the render path calls
+   them unchanged). Pure Node.
 
    Run: node scripts/executive-pulse-active-check.mjs   (exit 0 = all pass)
 */
@@ -18,7 +23,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildPulseMarks } from '../js/widgets/executive/index.js';
+import { buildPulseMarks, pulseTickLabels } from '../js/widgets/executive/index.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let pass = 0, fail = 0;
@@ -136,6 +141,29 @@ check('exactly one mark for F, not two', m9.length === 1, m9.length);
 console.log('\n[10 — genuinely empty day]');
 const m10 = buildPulseMarks(ctxOf([], []));
 check('zero assignments + zero logs → zero marks (no synthetic dots)', m10.length === 0, m10.length);
+
+/* ══ 11 — SS10: axis tick labels must stay in lockstep with the dots' own
+   pct-based positioning. The ticks are laid out with `justify-content:
+   space-between` (flexbox even distribution across N labels), while a
+   dot's position comes from (minutes - WINDOW_START) / (WINDOW_END -
+   WINDOW_START) * 100. These two formulas only agree if the ticks span
+   the FULL window at a step that evenly divides it — this locks that
+   invariant so a future window-constant change can't silently reintroduce
+   the 07:00–17:00-labels-on-a-07:00–19:00-axis drift. ══ */
+console.log('\n[11 — axis tick labels span the real window, in lockstep with dot pct math]');
+const ticks = pulseTickLabels();
+check('first tick is the window start (07:00)', ticks[0] === '07:00', ticks);
+check('last tick is the window END (19:00) — NOT a truncated 17:00', ticks[ticks.length - 1] === '19:00', ticks);
+const toMin = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
+const WINDOW_START = toMin(ticks[0]);
+const WINDOW_END = toMin(ticks[ticks.length - 1]);
+const flexAligned = ticks.every((t, i) => {
+  const dotPct = ((toMin(t) - WINDOW_START) / (WINDOW_END - WINDOW_START)) * 100;
+  const flexPct = (i / (ticks.length - 1)) * 100;
+  return Math.abs(dotPct - flexPct) < 1e-9;
+});
+check('every tick\'s real-time pct exactly matches its flexbox space-between slot',
+  flexAligned, ticks);
 
 console.log(`\nexecutive-pulse-active-check: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
