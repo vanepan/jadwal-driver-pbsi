@@ -817,6 +817,15 @@ function onInput(e) {
   // re-focuses + restores the caret. Mirrors Engineering's restoreFocus,
   // generalized to every Gudang live input, not just search.
   st._focusAct = ds.act;
+  // SS10 — restoreFocus() used to always jump the caret to end-of-string on
+  // every re-render, making it impossible to edit mid-value on any of these
+  // live inputs (worst on the mobile search sheet: un-debounced render() on
+  // every keystroke). Capture the REAL selection here, before render()
+  // replaces the node; restoreFocus() below restores it instead of
+  // guessing "end". Some input types (number, etc.) don't support
+  // selectionStart/End and throw — falls back to the old end-of-string
+  // behavior for those rather than breaking the handler.
+  try { st._focusSel = { start: t.selectionStart, end: t.selectionEnd }; } catch (_) { st._focusSel = null; }
   // v1.29.0 Feature 9: the mobile search sheet's own input drives the exact
   // same debounced search path the shared desktop field's adapter uses.
   if (ds.act === 'gud-mobile-search-field') { setGudangSearch(t.value); return; }
@@ -1188,5 +1197,14 @@ function restoreFocus() {
   const act = st._focusAct;
   if (!act) return;
   const el = host.querySelector(`[data-act="${act}"]`);
-  if (el) { el.focus(); try { const n = el.value.length; el.setSelectionRange(n, n); } catch (_) {} }
+  if (el) {
+    el.focus();
+    try {
+      const sel = st._focusSel;
+      const n = el.value.length;
+      const start = sel && sel.start != null ? Math.min(sel.start, n) : n;
+      const end = sel && sel.end != null ? Math.min(sel.end, n) : n;
+      el.setSelectionRange(start, end);
+    } catch (_) {}
+  }
 }

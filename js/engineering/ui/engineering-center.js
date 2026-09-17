@@ -445,9 +445,9 @@ function onInput(e) {
   const t = e.target;
   const ds = t && t.dataset ? t.dataset : null;
   if (!ds) return;
-  if (ds.act === 'eng-search') { st.filters.q = t.value; render(); return; }
-  if (ds.act === 'eng-hsearch') { st.filters.hq = t.value; render(); return; }
-  if (ds.act === 'eng-personnel-search') { if (st.form) st.form._pq = t.value; render(); return; }
+  if (ds.act === 'eng-search') { st.filters.q = t.value; st._focusSel = { start: t.selectionStart, end: t.selectionEnd }; render(); return; }
+  if (ds.act === 'eng-hsearch') { st.filters.hq = t.value; st._focusSel = { start: t.selectionStart, end: t.selectionEnd }; render(); return; }
+  if (ds.act === 'eng-personnel-search') { if (st.form) st.form._pq = t.value; st._focusSel = { start: t.selectionStart, end: t.selectionEnd }; render(); return; }
   if (ds.field) {
     // Building & Room are free-text (intentionally un-normalized — future ML
     // normalizes spelling/aliases); title/note/category/priority/requester and
@@ -873,7 +873,22 @@ function restoreFocus() {
   const act = st._focusAct;
   if (!act) return;
   const el = host.querySelector(`[data-act="${act}"]`);
-  if (el) { el.focus(); try { const n = el.value.length; el.setSelectionRange(n, n); } catch (_) {} }
+  if (el) {
+    el.focus();
+    try {
+      // SS10 — used to always jump the caret to end-of-string
+      // (`el.value.length`), so re-render()ing on every keystroke (the
+      // established search/filter pattern, see focus-preserving-render.js)
+      // made editing mid-query impossible: the cursor would fling itself
+      // to the end after every character. st._focusSel (captured in
+      // onInput, before this render) restores the real position instead.
+      const sel = st._focusSel;
+      const n = el.value.length;
+      const start = sel && sel.start != null ? Math.min(sel.start, n) : n;
+      const end = sel && sel.end != null ? Math.min(sel.end, n) : n;
+      el.setSelectionRange(start, end);
+    } catch (_) {}
+  }
 }
 // track which search input is focused so re-render can restore it
 document.addEventListener('focusin', (e) => {
