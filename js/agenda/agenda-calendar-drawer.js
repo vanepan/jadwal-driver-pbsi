@@ -361,7 +361,18 @@ export function openCreateCalendarDrawer(opts = {}) {
 /** @param {string} calendarId @param {{onSaved?: () => void, sourceEl?: HTMLElement}} [opts] */
 export function openEditCalendarDrawer(calendarId, opts = {}) {
   const item = getCalendarItemById(calendarId);
-  if (!item) return;
+  if (!item) {
+    // SS12 — mirrors agenda-event-drawer.js's identical fix (itself
+    // mirroring js/modal.js's SS10 openDetailModal fix): an honest drawer
+    // instead of a silent no-op for a deleted/no-longer-accessible item.
+    openDrawer({
+      title: 'Kalender',
+      icon: 'calendar',
+      body: '<div style="padding:8px 0;color:var(--text-muted);">Item kalender ini tidak ditemukan &mdash; mungkin sudah dihapus atau tidak lagi dapat diakses.</div>',
+      sourceEl: opts.sourceEl,
+    });
+    return;
+  }
   _draft = draftFromItem(item);
   _editingItem = item;
   _errors = {}; _pickerOpen = false; _pickerQuery = ''; _editingId = calendarId; _onSaved = opts.onSaved || null;

@@ -295,7 +295,18 @@ export function openCreateTaskDrawer(opts = {}) {
 
 export function openEditTaskDrawer(taskId, opts = {}) {
   const task = getTaskById(taskId);
-  if (!task) return;
+  if (!task) {
+    // SS12 — mirrors agenda-event-drawer.js's identical fix (itself
+    // mirroring js/modal.js's SS10 openDetailModal fix): an honest drawer
+    // instead of a silent no-op for a deleted/no-longer-accessible task.
+    openDrawer({
+      title: 'Tugas',
+      icon: 'check',
+      body: '<div style="padding:8px 0;color:var(--text-muted);">Tugas ini tidak ditemukan &mdash; mungkin sudah dihapus atau tidak lagi dapat diakses.</div>',
+      sourceEl: opts.sourceEl,
+    });
+    return;
+  }
   _draft = draftFromTask(task);
   _errors = {}; _pickerOpen = false; _pickerQuery = ''; _editingId = taskId; _onSaved = opts.onSaved || null; _newChecklistLabel = '';
   // V1.31.3 §13 finding: this used to be `() => true` unconditionally —

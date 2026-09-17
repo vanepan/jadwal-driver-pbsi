@@ -403,7 +403,21 @@ export function openCreateEventDrawer(opts = {}) {
 /** @param {string} eventId @param {{onSaved?: () => void, sourceEl?: HTMLElement}} [opts] */
 export function openEditEventDrawer(eventId, opts = {}) {
   const event = getEventById(eventId);
-  if (!event) return;
+  if (!event) {
+    // SS12 — a bare no-op here left a row click with zero feedback for a
+    // deleted/cancelled/no-longer-accessible event (a real race in a
+    // multi-admin/kabid app: another session can delete between this
+    // session's last render and the click). Mirrors js/modal.js's
+    // openDetailModal not-found fix (SS10): an honest drawer instead of
+    // silence.
+    openDrawer({
+      title: 'Agenda',
+      icon: 'calendar',
+      body: '<div style="padding:8px 0;color:var(--text-muted);">Agenda ini tidak ditemukan &mdash; mungkin sudah dihapus atau tidak lagi dapat diakses.</div>',
+      sourceEl: opts.sourceEl,
+    });
+    return;
+  }
   _draft = draftFromEvent(event);
   _editingEvent = event;
   _errors = {}; _pickerOpen = false; _pickerQuery = ''; _editingId = eventId; _onSaved = opts.onSaved || null;
