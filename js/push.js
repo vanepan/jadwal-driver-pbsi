@@ -275,8 +275,15 @@ async function _healSubscription() {
   } catch (err) { console.warn('[push] heal failed:', err); }
 }
 
+let _navigationInitialized = false;
 function _initNavigation() {
   if (!('serviceWorker' in navigator)) return;
+  // SS10 — initPush() has only ever been called once, from bootstrap, so
+  // this was never reachable in practice; guarded anyway (matching every
+  // sibling init*() in this codebase) so a second call — e.g. a future
+  // re-auth path — can't attach a second 'message' listener.
+  if (_navigationInitialized) return;
+  _navigationInitialized = true;
   navigator.serviceWorker.addEventListener('message', (event) => {
     if (!event.data) return;
     if (event.data.type === 'NAV' && event.data.url) _emitNav(event.data.url);
