@@ -12407,6 +12407,15 @@ async function handlePermanentDelete() {
 
 const ICON_SUN  = `<svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15" aria-hidden="true"><path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/></svg>`;
 const ICON_MOON = `<svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15" aria-hidden="true"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/></svg>`;
+// SS12 — applyTheme()'s non-View-Transition fallback path scheduled its
+// class-removal setTimeout with no way to cancel a still-pending one from a
+// PRIOR call. A rapid double-toggle (two clicks inside 420ms) queued two
+// independent timers; the first one fired and removed .theme-anim mid-way
+// through the SECOND toggle's own animation, snapping it to an unanimated
+// end state ~100ms early. Tracked here so applyTheme() can clear a pending
+// timer before scheduling a new one — the View Transition path (the
+// default on modern browsers) was never affected; see its own comment.
+let _themeAnimTimer = null;
 
 /**
  * Phase 7G.5 — the pure state mutation, extracted out of applyTheme() so it
@@ -12490,7 +12499,12 @@ function applyTheme(theme, animate = false) {
   // trace evidence). 420ms gives every transitioned property a little
   // margin past its own longest duration (320ms) before the class comes
   // off, so nothing gets cut off mid-fade.
-  setTimeout(() => document.documentElement.classList.remove('theme-anim'), 420);
+  // SS12 — clear any timer from a still-in-flight PRIOR toggle first: two
+  // timers racing meant the earlier one could remove .theme-anim mid-way
+  // through this newer toggle's own animation (see _themeAnimTimer's
+  // comment above).
+  if (_themeAnimTimer) clearTimeout(_themeAnimTimer);
+  _themeAnimTimer = setTimeout(() => { document.documentElement.classList.remove('theme-anim'); _themeAnimTimer = null; }, 420);
   applyThemeState(theme);
 }
 
@@ -13562,6 +13576,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     initPush();
   }
 
+  // SS12 — MUST be registered before anything that can call
+  // startAuthenticatedSession() (both paths immediately below): that chain
+  // calls initPush(), whose _initNavigation() (js/push.js) synchronously
+  // re-dispatches a cold-start `?view=&id=` deep link as a 'pbsi:push-nav'
+  // CustomEvent — a plain window.dispatchEvent, with no buffering/replay
+  // for listeners registered later. initPushNavHandler() used to run much
+  // later in this same function (after the getCurrentUser() fast-path
+  // below), so for the common "returning user, persisted session" case —
+  // exactly the case that fast-path exists for — a notification-tap
+  // cold start dispatched into zero listeners and was silently dropped:
+  // the app landed on plain Home with no indication a specific
+  // notification target was ever intended. Listener registration itself
+  // has no ordering dependency on anything else in this function (it only
+  // references other top-level `function` declarations, hoisted, whose
+  // bodies don't run until the event actually fires).
+  initPushNavHandler();                  // v1.20.8 — deep-link a tapped push notification to its content
+
   // Auth-presence orchestration (Firebase custom-auth mode). onAuthAvailable
   // fires on warm launch, delayed restore, AND fresh login — so the admin
   // datasets recover whenever a live session appears, not only at boot.
@@ -13598,7 +13629,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Notification is optional; Driver Operations (renderViews() below) is not —
   // a throw here must never block the timeline/driver list from painting.
   try { initNotificationUI(); } catch (err) { console.error('[Bootstrap] initNotificationUI failed — continuing without notification UI.', err); }
-  initPushNavHandler();                  // v1.20.8 — deep-link a tapped push notification to its content
   initOfflineExperience();               // v1.20.8 — non-blocking offline/online toast
   wireScrollStateSave();                 // v1.20.8 — debounced scroll-position save for state restoration
   initEngineeringDiagnostics();          /* DIAGNOSTIC (removable): wire Ctrl+Shift+D */
