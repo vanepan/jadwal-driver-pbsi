@@ -26,17 +26,13 @@
 
 'use strict';
 
-// SS9 R1 — pure, zero-import (safe alongside this file's own "no DOM, no
-// Firebase" contract).
-import { agendaIdentityColorVar, buildAgendaIdentityColorMap } from './agenda-identity-colors.js';
-
 function esc(s) {
   return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 /** One candidate row — extracted so the grouped renderer below and any
  *  future ungrouped caller share the exact same row markup. */
-function pickerRowHTML(c, selected, mode, colorMap) {
+function pickerRowHTML(c, selected, mode) {
   const sel = selected[c.username];
   const isSelected = Boolean(sel);
   const isPic = mode === 'participant' && sel && sel.isPic === true;
@@ -44,11 +40,9 @@ function pickerRowHTML(c, selected, mode, colorMap) {
   const picToggle = mode === 'participant'
     ? `<button type="button" class="cal-picker-pic-toggle" aria-pressed="${isPic}" data-drawer-action="picker:togglepic:${esc(c.username)}" ${isSelected ? '' : 'disabled'}>PIC</button>`
     : '';
-  const dot = `<span class="cal-identity-dot" style="background:${agendaIdentityColorVar(c.username, colorMap)}" aria-hidden="true"></span>`;
   return `
     <div class="cal-picker-row${isSelected ? ' cal-picker-row--selected' : ''}" data-drawer-action="picker:toggle:${esc(c.username)}" role="checkbox" aria-checked="${isSelected}" tabindex="0">
       <span class="cal-picker-check" aria-hidden="true">${isSelected ? '&#10003;' : ''}</span>
-      ${dot}
       <span class="cal-picker-name">${esc(c.displayName)}</span>
       ${scopeTag}
       ${picToggle}
@@ -65,9 +59,6 @@ function pickerRowHTML(c, selected, mode, colorMap) {
 export function renderPickerHTML({ candidates, selected, mode, query = '' }) {
   const q = query.trim().toLowerCase();
   const filtered = q ? candidates.filter((c) => c.displayName.toLowerCase().includes(q)) : candidates;
-  // SS9 R1 — built once from the FULL (unfiltered) roster so a color never
-  // shifts as the search query narrows the visible list.
-  const colorMap = buildAgendaIdentityColorMap(candidates);
 
   // Grouped by scope (SARPRAS / KABID & UNDANGAN) — purely a rendering
   // concern over the SAME data-driven `candidates` array
@@ -81,10 +72,10 @@ export function renderPickerHTML({ candidates, selected, mode, query = '' }) {
   const kabid = filtered.filter((c) => c.scope === 'kabid');
   const other = filtered.filter((c) => c.scope !== 'sarpras_shared' && c.scope !== 'kabid');
   const group = (label, list) => (list.length
-    ? `<div class="cal-picker-group"><div class="cal-picker-group-label">${esc(label)}</div>${list.map((c) => pickerRowHTML(c, selected, mode, colorMap)).join('')}</div>`
+    ? `<div class="cal-picker-group"><div class="cal-picker-group-label">${esc(label)}</div>${list.map((c) => pickerRowHTML(c, selected, mode)).join('')}</div>`
     : '');
   const rows = (sarpras.length || kabid.length || other.length)
-    ? `${group('SARPRAS', sarpras)}${group('KABID / UNDANGAN', kabid)}${other.map((c) => pickerRowHTML(c, selected, mode, colorMap)).join('')}`
+    ? `${group('SARPRAS', sarpras)}${group('KABID / UNDANGAN', kabid)}${other.map((c) => pickerRowHTML(c, selected, mode)).join('')}`
     : `<div class="cal-empty"><div class="cal-empty-sub">Tidak ada nama yang cocok.</div></div>`;
 
   return `
@@ -109,12 +100,10 @@ export function renderPersonChipsHTML(candidates, selected, mode) {
   const byUsername = new Map(candidates.map((c) => [c.username, c]));
   const entries = Object.keys(selected || {});
   if (!entries.length) return `<div class="cal-form-hint">Belum ada yang dipilih.</div>`;
-  const colorMap = buildAgendaIdentityColorMap(candidates);
   return `<div class="cal-chiprow">${entries.map((username) => {
     const c = byUsername.get(username);
     const name = c ? c.displayName : username;
     const isPic = mode === 'participant' && selected[username] && selected[username].isPic === true;
-    const dot = `<span class="cal-identity-dot cal-identity-dot--sm" style="background:${agendaIdentityColorVar(username, colorMap)}" aria-hidden="true"></span>`;
-    return `<span class="cal-person-chip${isPic ? ' cal-person-chip--pic' : ''}">${dot}${esc(name)}${isPic ? ' · PIC' : ''}<button type="button" aria-label="Hapus ${esc(name)}" data-drawer-action="picker:remove:${esc(username)}">&times;</button></span>`;
+    return `<span class="cal-person-chip${isPic ? ' cal-person-chip--pic' : ''}">${esc(name)}${isPic ? ' · PIC' : ''}<button type="button" aria-label="Hapus ${esc(name)}" data-drawer-action="picker:remove:${esc(username)}">&times;</button></span>`;
   }).join('')}</div>`;
 }

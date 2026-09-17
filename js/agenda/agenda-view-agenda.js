@@ -19,33 +19,19 @@ import {
   splitParticipants, priorityLabel, typeLabel,
 } from './agenda-view-model.js';
 import { displayNameFor } from './agenda-directory.js';
-import { agendaIdentityColorVar } from './agenda-identity-colors.js';
 
 function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-
-/** SS9 R1 — the one PIC (or organizer, if none marked PIC yet) whose
- *  color represents this event; a task's first responsible person. */
-function primaryPersonUsername(record, kind) {
-  if (kind === 'task') return Object.keys(record.responsible || {})[0] || null;
-  const { pic } = splitParticipants(record.participants);
-  return pic[0] || record.organizerUsername || null;
-}
-function identityDotHTML(username, colorMap) {
-  if (!username) return '';
-  return `<span class="cal-identity-dot" style="background:${agendaIdentityColorVar(username, colorMap)}" title="${esc(displayNameFor(username))}" aria-hidden="true"></span>`;
-}
 
 function eventRow(e, colorMap) {
   const { pic } = splitParticipants(e.participants);
   const picNames = pic.map(displayNameFor);
   const cancelled = e.status === 'cancelled';
-  const dot = identityDotHTML(primaryPersonUsername(e, 'event'), colorMap);
   return `
     <div class="cal-row" data-agenda-action="open-event:${esc(e.id)}" role="button" tabindex="0">
       <div class="cal-row-time">${e.allDay ? 'Sepanjang hari' : formatClock(e.startAt)}</div>
       <span class="cal-row-dot" aria-hidden="true"></span>
       <div class="cal-row-body">
-        <p class="cal-row-title${cancelled ? ' cal-row-title--done' : ''}">${dot}${esc(e.title)}${cancelled ? ' (Dibatalkan)' : ''}</p>
+        <p class="cal-row-title${cancelled ? ' cal-row-title--done' : ''}">${esc(e.title)}${cancelled ? ' (Dibatalkan)' : ''}</p>
         <div class="cal-row-meta">
           <span>${esc(typeLabel(e.type))}</span>
           ${e.location ? `<span>${esc(e.location)}</span>` : ''}
@@ -64,14 +50,13 @@ function eventRow(e, colorMap) {
  *  a same-day item, so no redundant range is ever shown. */
 function calendarRow(c, now, colorMap) {
   const cancelled = calendarItemDisplayState(c, now) === 'dibatalkan';
-  const dot = identityDotHTML(primaryPersonUsername(c, 'calendar'), colorMap);
   const rangeLabel = formatDateRangeLabel(c.startDate, c.endDate);
   return `
     <div class="cal-row" data-agenda-action="open-calendar:${esc(c.id)}" role="button" tabindex="0">
       <div class="cal-row-time">${c.allDay ? 'Sepanjang hari' : formatClock(c.startAt)}</div>
       <span class="cal-row-dot" aria-hidden="true"></span>
       <div class="cal-row-body">
-        <p class="cal-row-title${cancelled ? ' cal-row-title--done' : ''}">${dot}${esc(c.title)}${cancelled ? ' (Dibatalkan)' : ''}</p>
+        <p class="cal-row-title${cancelled ? ' cal-row-title--done' : ''}">${esc(c.title)}${cancelled ? ' (Dibatalkan)' : ''}</p>
         ${rangeLabel ? `<div class="cal-row-meta"><span>${esc(rangeLabel)}</span></div>` : ''}
       </div>
     </div>`;
@@ -81,13 +66,12 @@ function taskRow(t, now, colorMap) {
   const overdue = isTaskOverdue(t, now);
   const pillClass = overdue ? 'cal-pill--overdue' : `cal-pill--${t.priority || 'normal'}`;
   const pillText = overdue ? 'Terlewat' : priorityLabel(t.priority);
-  const dot = identityDotHTML(primaryPersonUsername(t, 'task'), colorMap);
   return `
     <div class="cal-row" data-agenda-action="open-task:${esc(t.id)}" role="button" tabindex="0">
       <div class="cal-row-time"></div>
       <span class="cal-row-dot cal-row-dot--task" aria-hidden="true"></span>
       <div class="cal-row-body">
-        <p class="cal-row-title">${dot}${esc(t.title)}</p>
+        <p class="cal-row-title">${esc(t.title)}</p>
         <div class="cal-row-meta">
           <span class="cal-pill ${pillClass}">${pillText}</span>
           ${t.scope === 'kabid' ? '<span class="cal-pill cal-pill--kabid">Kabid</span>' : ''}

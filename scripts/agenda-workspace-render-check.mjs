@@ -477,6 +477,10 @@ async function main() {
       const groupIdx = html.indexOf('cal-picker-group-label">SARPRAS<');
       return groupIdx !== -1 && html.includes('Evan') && html.includes('Leo') && html.includes('Grace');
     }));
+    await checkAsync('SS9.2 R2: picker rows carry zero redundant identity dots (name text alone is the signal)', () => page.evaluate(() => {
+      const rows = [...document.querySelectorAll('.cal-picker-row')];
+      return rows.length > 0 && rows.every((r) => !r.querySelector('.cal-identity-dot'));
+    }));
     await checkAsync('the Kabid candidate appears under a distinct "KABID / UNDANGAN" section header (data-driven from candidate.scope, not a hardcoded name)', () => page.evaluate(() => {
       const html = document.querySelector('[data-drawer-body]').innerHTML;
       return html.includes('cal-picker-group-label">KABID / UNDANGAN<') && html.includes('Kabid Sarana dan Prasarana');
@@ -533,6 +537,10 @@ async function main() {
       document.querySelector('[data-drawer-action="picker:back"]').click();
       const chips = [...document.querySelectorAll('.cal-person-chip--pic')].map((el) => el.textContent);
       return chips.some((t) => t.includes('Evan')) && chips.some((t) => t.includes('Leo'));
+    }));
+    await checkAsync('SS9.2 R2: selected-person chips carry zero redundant identity dots', () => page.evaluate(() => {
+      const chips = [...document.querySelectorAll('.cal-person-chip')];
+      return chips.length > 0 && chips.every((c) => !c.querySelector('.cal-identity-dot'));
     }));
     await page.evaluate(() => window.__closeEventDrawer());
     await new Promise((r) => setTimeout(r, 350));

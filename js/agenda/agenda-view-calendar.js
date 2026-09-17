@@ -53,20 +53,14 @@ function primaryPersonUsername(record, kind) {
   const { pic } = splitParticipants(record.participants);
   return pic[0] || record.organizerUsername || null;
 }
-/** A single small identity marker — additive only, never replaces the
- *  existing status/type styling (background/border/strikethrough) a row
- *  already carries. */
-function identityDotHTML(username, colorMap, resolveName) {
-  if (!username) return '';
-  return `<span class="cal-identity-dot" style="background:${agendaIdentityColorVar(username, colorMap)}" title="${esc(resolveName(username))}" aria-hidden="true"></span>`;
-}
 /** SS9.1 R1 — the --bar-c/--bar-tint custom-property pair a calendar bar
  *  or row reads its identity color from (agenda-styles.js's
  *  .cal-range-bar / .cal-week-event--calendar rules). Applied on EVERY
- *  rendered segment of a multi-day bar (not just the labeled one) so the
- *  whole span keeps one identity color, and independent of `showLabel` —
- *  a different concern from the identity dot, which only marks the
- *  labeled segment. */
+ *  rendered segment of a multi-day bar (not just the labeled one), so
+ *  the whole span keeps one identity color regardless of `showLabel`
+ *  (SS9.2 removed the separate identity-dot marker that used to only
+ *  mark the labeled segment — the bar color itself is now the only
+ *  identity signal on any segment). */
 function barStyleAttr(username, colorMap) {
   if (!username) return '';
   return ` style="--bar-c:${agendaIdentityColorVar(username, colorMap)};--bar-tint:${agendaIdentityTintVar(username, colorMap)}"`;
@@ -149,10 +143,9 @@ export function weekTimedRowsHTML(events, tasks, timedCalendarItems, now, colorM
     if (state === 'cancelled') cls.push('cal-week-event--cancelled');
     if (state === 'overdue') cls.push('cal-week-event--overdue');
     const time = e.allDay ? '' : `<span class="cal-week-event-time">${esc(formatClock(e.startAt))}</span>`;
-    const dot = identityDotHTML(primaryPersonUsername(e, 'event'), colorMap, resolveName);
     items.push({
       sortKey: e.allDay ? -1 : (e.startAt ?? Infinity),
-      html: `<div class="${cls.join(' ')}" data-agenda-action="open-event:${esc(e.id)}" title="${esc(e.title)}" role="button" tabindex="0">${dot}${time}${esc(e.title)}</div>`,
+      html: `<div class="${cls.join(' ')}" data-agenda-action="open-event:${esc(e.id)}" title="${esc(e.title)}" role="button" tabindex="0">${time}${esc(e.title)}</div>`,
     });
   }
   for (const c of timedCalendarItems || []) {
@@ -162,10 +155,9 @@ export function weekTimedRowsHTML(events, tasks, timedCalendarItems, now, colorM
     if (state === 'berlangsung') cls.push('cal-week-event--calendar-active');
     if (state === 'dibatalkan') cls.push('cal-week-event--calendar-cancelled');
     const person = primaryPersonUsername(c, 'calendar');
-    const dot = identityDotHTML(person, colorMap, resolveName);
     items.push({
       sortKey: c.startAt ?? Infinity,
-      html: `<div class="${cls.join(' ')}"${barStyleAttr(person, colorMap)} data-agenda-action="open-calendar:${esc(c.id)}" title="${esc(c.title)}" role="button" tabindex="0">${dot}<span class="cal-week-event-time">${esc(formatClock(c.startAt))}</span>${esc(c.title)}</div>`,
+      html: `<div class="${cls.join(' ')}"${barStyleAttr(person, colorMap)} data-agenda-action="open-calendar:${esc(c.id)}" title="${esc(c.title)}" role="button" tabindex="0"><span class="cal-week-event-time">${esc(formatClock(c.startAt))}</span>${esc(c.title)}</div>`,
     });
   }
   for (const t of tasks || []) {
@@ -177,10 +169,9 @@ export function weekTimedRowsHTML(events, tasks, timedCalendarItems, now, colorM
     // Date-only tasks (no dueTime) sort to the bottom of the day's list —
     // they're a "sometime today" reminder, not a scheduled moment.
     const time = t.dueTime ? `<span class="cal-week-event-time">${esc(formatClock(t.dueAt))}</span>` : '';
-    const dot = identityDotHTML(primaryPersonUsername(t, 'task'), colorMap, resolveName);
     items.push({
       sortKey: t.dueTime ? (t.dueAt ?? Infinity) : Infinity,
-      html: `<div class="${cls.join(' ')}" data-agenda-action="open-task:${esc(t.id)}" title="${esc(t.title)}" role="button" tabindex="0">${dot}${time}${esc(t.title)}</div>`,
+      html: `<div class="${cls.join(' ')}" data-agenda-action="open-task:${esc(t.id)}" title="${esc(t.title)}" role="button" tabindex="0">${time}${esc(t.title)}</div>`,
     });
   }
   items.sort((a, b) => a.sortKey - b.sortKey);
@@ -195,8 +186,7 @@ function rangeBarsHTML(bars, colorMap = {}, resolveName = identityResolver) {
     if (bar.roundedLeft) cls.push('cal-range-bar--cap-left');
     if (bar.roundedRight) cls.push('cal-range-bar--cap-right');
     const person = primaryPersonUsername(bar.item, 'calendar');
-    const dot = bar.showLabel ? identityDotHTML(person, colorMap, resolveName) : '';
-    const label = bar.showLabel ? `<span class="cal-range-bar-label">${dot}${esc(truncate(bar.item.title || '', 18))}</span>` : '';
+    const label = bar.showLabel ? `<span class="cal-range-bar-label">${esc(truncate(bar.item.title || '', 18))}</span>` : '';
     return `<div class="${cls.join(' ')}"${barStyleAttr(person, colorMap)} data-agenda-action="open-calendar:${esc(bar.item.id)}" title="${esc(bar.item.title || '')}" role="button" tabindex="0">${label}</div>`;
   }).join('');
   return html + (overflow > 0 ? `<div class="cal-range-bar-more">+${overflow} kalender</div>` : '');

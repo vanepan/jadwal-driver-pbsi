@@ -46,8 +46,15 @@ const CSS = `
      dedicated sky blue, deliberately NOT the same as --blue above (the
      existing .cal-pill--kabid scope badge already uses --blue — reusing
      it for Grace would make a Kabid-scope item with Grace as a
-     participant show two different meanings in the same shade). */
-  --id-grace:#3d8bc4; --id-evan:#3a3a3c; --id-leo: var(--amber); --id-kabid: var(--red);
+     participant show two different meanings in the same shade).
+     SS9.2 R3 — --id-evan is a sophisticated deep teal-green (was
+     charcoal/slate) — hue ~174°, far enough (numerically, not just by
+     hue) from --green's ~154° that it never reads as "just the generic
+     success green" (a first, lighter pick at the same hue measured too
+     close in RGB terms — this deeper value clears a real distance
+     check), and far from --id-grace's blue (~205°) and --id-leo/
+     --id-kabid (amber/red). */
+  --id-grace:#3d8bc4; --id-evan:#0f655c; --id-leo: var(--amber); --id-kabid: var(--red);
   --id-fb1: var(--green); --id-fb2:#6b4e9e; --id-fb3:#a9742a;
   /* SS9.1 R1 — tint+text pairs for identity-colored bars, following the
      EXACT existing --green/--green-tint convention (text-on-tint, never
@@ -56,7 +63,7 @@ const CSS = `
      --amber-tint/--red-tint for free since their base colors already
      alias --amber/--red; only Grace and Evan (bespoke base colors) and
      fb2 (no existing family to alias) need real new values. */
-  --id-grace-tint:#e5f1f9; --id-evan-tint:#eeece9;
+  --id-grace-tint:#e5f1f9; --id-evan-tint:#e2f2ee;
   --id-leo-tint: var(--amber-tint); --id-kabid-tint: var(--red-tint);
   --id-fb1-tint: var(--green-tint); --id-fb2-tint:#efe9f7; --id-fb3-tint: var(--amber-tint);
   color: var(--text);
@@ -69,9 +76,13 @@ const CSS = `
   --blue:#7ea0d6; --blue-tint:#1e2733; --blue-bd:#2a3646;
   --red:#d6817c; --red-tint:#2e2120; --red-bd:#3d2b29;
   --input:#2a2724; --input-bd:#3a3631;
-  --id-grace:#6fb3e0; --id-evan:#a49d93; --id-leo: var(--amber); --id-kabid: var(--red);
+  /* SS9.2 R3 — dark-mode teal: lighter/more luminous than the light-mode
+     value (same principle SS9.1 established for Grace/Evan generally),
+     same ~169° hue family so light<->dark clearly reads as one identity,
+     and still ~20° from dark --green (~148°) for the same reason. */
+  --id-grace:#6fb3e0; --id-evan:#4fb3a0; --id-leo: var(--amber); --id-kabid: var(--red);
   --id-fb1: var(--green); --id-fb2:#8470b5; --id-fb3:#be9350;
-  --id-grace-tint:#1c2a35; --id-evan-tint:#2f2b27;
+  --id-grace-tint:#1c2a35; --id-evan-tint:#182e2a;
   --id-leo-tint: var(--amber-tint); --id-kabid-tint: var(--red-tint);
   --id-fb1-tint: var(--green-tint); --id-fb2-tint:#2a2433; --id-fb3-tint: var(--amber-tint);
 }
@@ -152,13 +163,11 @@ const CSS = `
 .cal-daydetail-heading { font-size:.85rem; font-weight:700; color:var(--text); margin:0 0 12px; }
 .cal-daydetail-empty { text-align:center; padding:24px 16px; color:var(--muted); font-size:.82rem; line-height:1.5; }
 
-/* SS9 R1 — a small, reusable person-identity marker. Background color is
-   set per-instance via inline style (the resolved var(--id-...) from
-   js/agenda/agenda-identity-colors.js) rather than one CSS class per
-   person, so a newly-added staff member never needs a CSS change here. */
-.cal-identity-dot { display:inline-block; width:8px; height:8px; border-radius:999px; flex:0 0 auto; }
-.cal-identity-dot--sm { width:6px; height:6px; }
-.cal-identity-dots { display:inline-flex; align-items:center; gap:3px; }
+/* SS9 R1 introduced a small per-person identity dot here; SS9.2 R1/R2/R4
+   removed every place that rendered one (the bar/row identity color and,
+   where no bar exists, identity-colored title text already carry that
+   signal — a dot next to the name was redundant and visually cramped).
+   Rules deleted along with their last producer. */
 .cal-skeleton { border-radius:12px; background:linear-gradient(90deg, var(--card2) 25%, var(--border2) 37%, var(--card2) 63%); background-size:400% 100%; animation:cal-shimmer 1.4s ease infinite; height:52px; margin-bottom:8px; }
 @keyframes cal-shimmer { 0%{background-position:100% 50%} 100%{background-position:0 50%} }
 .cal-error { padding:20px; text-align:center; color:var(--muted); font-size:.85rem; }
