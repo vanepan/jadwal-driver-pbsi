@@ -15,6 +15,11 @@ import { lockBodyScroll, unlockBodyScroll } from '../ui/sheet-gesture.js';
 
 let _initialised = false;
 let _currentUrl  = null;
+// SS12 — unlike the canonical drawer (js/components/drawer.js) and Petty
+// Cash's own modal, this viewer never captured/restored focus: every close
+// dropped keyboard/screen-reader focus to <body> instead of back to
+// whatever triggered it (a real reimbursement/NOR/report preview close).
+let _lastFocus = null;
 
 const STYLE = `
 /* z-index 10050: this overlay can be opened from inside the canonical
@@ -126,7 +131,20 @@ export function showViewer(blob, filename, meta = {}) {
     shareBtn.style.display = 'none';
   }
 
-  document.getElementById('docvOverlay').classList.add('open');
+  const overlayEl = document.getElementById('docvOverlay');
+  // SS12 — showViewer() has no internal await, but a caller can still
+  // invoke it twice before the user's one closeViewer() click (e.g.
+  // doc-engine.js's generateAndOpen() double-firing on a fast double-
+  // click while a PDF is still generating, or re-showing a second
+  // document while this one is still open): each call reached
+  // lockBodyScroll() unconditionally, over-incrementing the shared
+  // reference count so a single close never brought it back to 0 —
+  // `sheet-scroll-lock` stuck on <body> permanently. Only lock on the
+  // open->already-open transition; re-showing a new document while
+  // already open correctly leaves the existing lock alone.
+  const wasOpen = overlayEl.classList.contains('open');
+  if (!wasOpen) _lastFocus = document.activeElement;
+  overlayEl.classList.add('open');
   // V1.31.1 §AB — was a standalone `document.body.style.overflow =
   // 'hidden'` inline write, uncoordinated with the SAME shared, reference-
   // counted lock every drawer/bottom-sheet already uses (js/ui/
@@ -134,7 +152,7 @@ export function showViewer(blob, filename, meta = {}) {
   // around the same Export-PDF flow (this viewer opens right after the
   // export drawer closes) is exactly the "order-dependent glitch" risk
   // flagged during this phase's own audit. Unified onto the one lock.
-  lockBodyScroll();
+  if (!wasOpen) lockBodyScroll();
 }
 
 export function closeViewer() {
@@ -145,6 +163,10 @@ export function closeViewer() {
   const frame = document.getElementById('docvFrame');
   if (frame) frame.src = 'about:blank';
   if (_currentUrl) { URL.revokeObjectURL(_currentUrl); _currentUrl = null; }
+  // SS12 — restore focus to whatever triggered this viewer (matching the
+  // canonical drawer's contract) instead of dropping it to <body>.
+  if (_lastFocus && typeof _lastFocus.focus === 'function' && document.contains(_lastFocus)) _lastFocus.focus();
+  _lastFocus = null;
 }
 
 function _canShareFiles() {

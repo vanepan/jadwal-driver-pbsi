@@ -1595,10 +1595,29 @@ function pasteHint() {
   return 'Tempel manual dengan Ctrl+V.';
 }
 
+// SS12 — openProfileModal() awaits getUserByUsername() BEFORE calling
+// lockBodyScroll() (below); lockBodyScroll/unlockBodyScroll are reference-
+// counted (js/ui/sheet-gesture.js). btnProfile's click handler has no
+// disabled-during-open state, so a real double-click/double-tap before
+// that await resolves ran this function twice concurrently, each reaching
+// lockBodyScroll() and pushing the count to 2 — the single subsequent
+// closeProfileModal() call only decrements once, permanently leaving
+// `sheet-scroll-lock` on <body> (page unscrollable until reload). Guards
+// the whole function as in-flight; cleared in `finally` so a genuinely
+// later open (after this one settles) is never blocked.
+let _profileModalOpening = false;
 async function openProfileModal() {
   const modal = document.getElementById('modalProfile');
-  if (!modal) return;
+  if (!modal || _profileModalOpening) return;
+  _profileModalOpening = true;
+  try {
+    await _openProfileModalImpl(modal);
+  } finally {
+    _profileModalOpening = false;
+  }
+}
 
+async function _openProfileModalImpl(modal) {
   const currentUser = getCurrentUser();
   const usernameLabel = document.getElementById('profileUsernameLabel');
   const avatarEl = document.getElementById('profileAvatar');
