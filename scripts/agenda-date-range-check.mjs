@@ -2,7 +2,7 @@
    js/agenda/agenda-date-range.js (V1.31 Agenda & To-Do, Phase C3 + C4)
    Run: node scripts/agenda-date-range-check.mjs (exit 0 = pass) */
 
-import { mondayWeekRange, monthRange, buildMonthGrid, buildWeekGrid, groupForAgendaView, resolvePresetRange, nextMonthRange } from '../js/agenda/agenda-date-range.js';
+import { mondayWeekRange, monthRange, buildMonthGrid, buildWeekGrid, groupForAgendaView, resolvePresetRange, nextMonthRange, formatDateRangeLabel } from '../js/agenda/agenda-date-range.js';
 
 let pass = 0, fail = 0;
 function check(name, cond, detail) {
@@ -58,6 +58,19 @@ console.log('\n=== [F — customizable horizon] ===');
 const wideGrouped = groupForAgendaView(events, tasks, '2026-09-11', 30);
 check('widening the horizon parameter now includes the previously-excluded task', wideGrouped.upcoming.some((b) => b.tasks.some((t) => t.id === 't3')));
 
+console.log('\n=== [F2 — SS9.1 R2: groupForAgendaView also buckets calendarItems] ===');
+const calendarItems = [
+  { id: 'c1', startDate: '2026-09-09', endDate: '2026-09-13' }, // ONGOING today (2026-09-11) — started before, ends after
+  { id: 'c2', startDate: '2026-09-14', endDate: '2026-09-20' }, // starts tomorrow — upcoming, bucketed by its startDate
+  { id: 'c3', startDate: '2026-08-01', endDate: '2026-08-05' }, // entirely in the past — must not appear anywhere
+];
+const groupedWithCal = groupForAgendaView(events, tasks, '2026-09-11', 14, calendarItems);
+check('a range ONGOING today (started before, still running) lands in today.calendarItems even though it didn\'t start today', groupedWithCal.today.calendarItems.some((c) => c.id === 'c1'));
+check('a range starting tomorrow is bucketed by its startDate in upcoming', groupedWithCal.upcoming.some((b) => b.date === '2026-09-14' && b.calendarItems.some((c) => c.id === 'c2')));
+check('a fully-past range never appears in today OR upcoming', !groupedWithCal.today.calendarItems.some((c) => c.id === 'c3') && !groupedWithCal.upcoming.some((b) => b.calendarItems.some((c) => c.id === 'c3')));
+check('existing events/tasks bucketing is unaffected by adding calendarItems', groupedWithCal.today.events.length === 1 && groupedWithCal.today.events[0].id === 'e1');
+check('calendarItems defaults to [] (the trailing param is optional, non-breaking for the 3/4-arg call shape)', groupForAgendaView(events, tasks, '2026-09-11').today.calendarItems.length === 0);
+
 console.log('\n=== [G — nextMonthRange, incl. year rollover] ===');
 check('September 2026 -> October 2026', JSON.stringify(nextMonthRange('2026-09-15')) === JSON.stringify({ start: '2026-10-01', end: '2026-10-31' }));
 check('December -> January rolls the YEAR forward', JSON.stringify(nextMonthRange('2026-12-15')) === JSON.stringify({ start: '2027-01-01', end: '2027-01-31' }));
@@ -81,6 +94,14 @@ check('an unknown preset id throws rather than silently returning something wron
   try { resolvePresetRange('not-a-real-preset', TODAY); return false; } catch { return true; }
 })());
 check('resolvePresetRange never reads the clock itself — same todayStr always produces the same result', JSON.stringify(resolvePresetRange('this_week', TODAY)) === JSON.stringify(resolvePresetRange('this_week', TODAY)));
+
+console.log('\n=== [I — SS9.1 R2: formatDateRangeLabel — condensed Indonesian date-range label] ===');
+check('same-day -> null (no redundant range for a single-day item)', formatDateRangeLabel('2026-09-16', '2026-09-16') === null);
+check('missing start/end -> null rather than throwing', formatDateRangeLabel(null, '2026-09-16') === null && formatDateRangeLabel('2026-09-16', null) === null);
+check('same month/year -> "14–20 September 2026" (the spec\'s own worked example)', formatDateRangeLabel('2026-09-14', '2026-09-20') === '14–20 September 2026');
+check('cross-month, same year -> "29 September–2 Oktober 2026" (month not merged)', formatDateRangeLabel('2026-09-29', '2026-10-02') === '29 September–2 Oktober 2026');
+check('cross-year -> "30 Desember 2026–2 Januari 2027" (full date on both ends)', formatDateRangeLabel('2026-12-30', '2027-01-02') === '30 Desember 2026–2 Januari 2027');
+check('uses an EN DASH (–), not a hyphen, matching the spec\'s examples verbatim', formatDateRangeLabel('2026-09-14', '2026-09-20').includes('–') && !formatDateRangeLabel('2026-09-14', '2026-09-20').includes('-'));
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

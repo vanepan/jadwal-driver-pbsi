@@ -95,13 +95,25 @@ async function main() {
     // transition, absent otherwise. This proves both halves: scoped (has a
     // real name, not the whole page) AND not leaked into any unrelated
     // transition that might be in flight elsewhere (e.g. the theme toggle).
-    await checkAsync('the calendar region carries a view-transition-name ONLY while its own transition is active — never unconditionally', () => page.evaluate(() => {
-      const region = document.querySelector('.cal-calview-region');
-      const withoutMarker = getComputedStyle(region).viewTransitionName;
+    // SS9.1 R4 — retargeted from .cal-calview-region to .cal-grid: the
+    // named element is now just the date grid, not the chips/nav/Day
+    // Detail that used to be bundled into .cal-calview-region too.
+    await checkAsync('the calendar GRID carries a view-transition-name ONLY while its own transition is active — never unconditionally', () => page.evaluate(() => {
+      const grid = document.querySelector('.cal-grid');
+      const withoutMarker = getComputedStyle(grid).viewTransitionName;
       document.documentElement.classList.add('cal-viewtransition-active');
-      const withMarker = getComputedStyle(region).viewTransitionName;
+      const withMarker = getComputedStyle(grid).viewTransitionName;
       document.documentElement.classList.remove('cal-viewtransition-active');
       return withoutMarker === 'none' && withMarker !== 'none';
+    }));
+    // SS9.1 R4 — the narrowed boundary's whole point: chips/nav/header/Day
+    // Detail must NEVER carry the transition name, even while active,
+    // proving the capture really is grid-only, not just "grid also has one".
+    await checkAsync('.cal-calview-region (the old, too-wide boundary) never carries a view-transition-name even while active', () => page.evaluate(() => {
+      document.documentElement.classList.add('cal-viewtransition-active');
+      const name = getComputedStyle(document.querySelector('.cal-calview-region')).viewTransitionName;
+      document.documentElement.classList.remove('cal-viewtransition-active');
+      return name === 'none';
     }));
     // Clear this harness-level render (#root) before mounting the real
     // orchestrator below — view-transition-name must be unique across

@@ -93,3 +93,18 @@ export function agendaIdentityColorVar(username, colorMap, opts = {}) {
   if (colorMap && colorMap[key]) return colorMap[key];
   return `var(${FALLBACK_VARS[0]})`;
 }
+
+/**
+ * SS9.1 R1 — the matching tint (light-wash background) var for the same
+ * person `agendaIdentityColorVar()` would resolve, e.g.
+ * "var(--id-evan)" -> "var(--id-evan-tint)". String-derived rather than a
+ * second lookup table, so the two resolvers can never drift apart.
+ * @param {string} username
+ * @param {Record<string,string>} [colorMap]
+ * @param {{isKabid?: boolean}} [opts]
+ * @returns {string} a CSS var() string
+ */
+export function agendaIdentityTintVar(username, colorMap, opts = {}) {
+  const base = agendaIdentityColorVar(username, colorMap, opts);
+  return base.replace(/^var\((--[a-z0-9-]+)\)$/, 'var($1-tint)');
+}

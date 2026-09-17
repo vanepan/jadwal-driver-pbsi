@@ -102,24 +102,27 @@ function calendarMotionOff() {
 /** V1.31.2 §4 — Month<->Week transition. Reuses this app's OWN existing
  *  pattern (js/app.js#setWorkspace()'s identical structure) rather than
  *  inventing a second transition mechanism: document.startViewTransition()
- *  snapshots the OLD `.cal-calview-region` (view-transition-name, set in
- *  agenda-workspace-view.js), runs the same synchronous doRender() the
- *  non-animated path already uses (so the DOM mutation itself, and
- *  therefore every event-handler-rewiring concern, is BYTE-IDENTICAL to
- *  the plain path — nothing new to get wrong there), then the browser
- *  cross-fades old-vs-new automatically. Falls straight through to plain
- *  doRender() — immediate, no animation — when the API is unavailable or
- *  motion is reduced, exactly like setWorkspace()'s own fallback. The
- *  `.catch(() => {})` calls mirror setWorkspace()'s own reasoning: a
- *  transition "skipped" because a rapid second toggle interrupted it is
- *  expected, benign browser behavior (AbortError), not an app error. */
+ *  snapshots the OLD `.cal-grid` (view-transition-name, set in
+ *  agenda-styles.js — SS9.1 R4 narrowed this from `.cal-calview-region`,
+ *  which also wrapped the Bulan/Minggu chips, nav, and Day Detail, down to
+ *  just the date grid itself, so only the grid animates), runs the same
+ *  synchronous doRender() the non-animated path already uses (so the DOM
+ *  mutation itself, and therefore every event-handler-rewiring concern, is
+ *  BYTE-IDENTICAL to the plain path — nothing new to get wrong there), then
+ *  the browser cross-fades old-vs-new automatically. Falls straight through
+ *  to plain doRender() — immediate, no animation — when the API is
+ *  unavailable or motion is reduced, exactly like setWorkspace()'s own
+ *  fallback. The `.catch(() => {})` calls mirror setWorkspace()'s own
+ *  reasoning: a transition "skipped" because a rapid second toggle
+ *  interrupted it is expected, benign browser behavior (AbortError), not an
+ *  app error. */
 function doRenderWithViewTransition() {
   if (!_host) return;
   if (typeof document.startViewTransition !== 'function' || calendarMotionOff()) { doRender(); return; }
-  // v1.31.4 R5 — cal-calview-region's view-transition-name (agenda-styles.js)
-  // is scoped to only apply while this class is present, so an unrelated
-  // startViewTransition() elsewhere (the theme toggle) never captures this
-  // region as its own named group. Added before starting the transition (so
+  // v1.31.4 R5 — .cal-grid's view-transition-name (agenda-styles.js) is
+  // scoped to only apply while this class is present, so an unrelated
+  // startViewTransition() elsewhere (the theme toggle) never captures the
+  // grid as its own named group. Added before starting the transition (so
   // the OLD snapshot carries the name) and removed once it settles either
   // way, success or failure.
   document.documentElement.classList.add('cal-viewtransition-active');

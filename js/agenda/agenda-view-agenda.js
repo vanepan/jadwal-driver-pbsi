@@ -11,10 +11,11 @@
 
 'use strict';
 
-import { groupForAgendaView } from './agenda-date-range.js';
+import { groupForAgendaView, formatDateRangeLabel } from './agenda-date-range.js';
 import { isTaskOverdue } from './agenda-lifecycle.js';
+import { calendarItemDisplayState } from './agenda-calendar-lifecycle.js';
 import {
-  sortEventsByTime, sortTasksByPriority, formatClock, formatDateLong,
+  sortTasksByPriority, formatClock, formatDateLong,
   splitParticipants, priorityLabel, typeLabel,
 } from './agenda-view-model.js';
 import { displayNameFor } from './agenda-directory.js';
@@ -55,6 +56,27 @@ function eventRow(e, colorMap) {
     </div>`;
 }
 
+/** SS9.1 R2 — a multi-day Calendar item in Daftar (previously invisible
+ *  here — this view never received calendarItems before this phase).
+ *  Mirrors eventRow's markup; title stays visually primary (matches
+ *  eventRow's row-title), the date range is supporting metadata below it,
+ *  never louder than the title. formatDateRangeLabel() returns null for
+ *  a same-day item, so no redundant range is ever shown. */
+function calendarRow(c, now, colorMap) {
+  const cancelled = calendarItemDisplayState(c, now) === 'dibatalkan';
+  const dot = identityDotHTML(primaryPersonUsername(c, 'calendar'), colorMap);
+  const rangeLabel = formatDateRangeLabel(c.startDate, c.endDate);
+  return `
+    <div class="cal-row" data-agenda-action="open-calendar:${esc(c.id)}" role="button" tabindex="0">
+      <div class="cal-row-time">${c.allDay ? 'Sepanjang hari' : formatClock(c.startAt)}</div>
+      <span class="cal-row-dot" aria-hidden="true"></span>
+      <div class="cal-row-body">
+        <p class="cal-row-title${cancelled ? ' cal-row-title--done' : ''}">${dot}${esc(c.title)}${cancelled ? ' (Dibatalkan)' : ''}</p>
+        ${rangeLabel ? `<div class="cal-row-meta"><span>${esc(rangeLabel)}</span></div>` : ''}
+      </div>
+    </div>`;
+}
+
 function taskRow(t, now, colorMap) {
   const overdue = isTaskOverdue(t, now);
   const pillClass = overdue ? 'cal-pill--overdue' : `cal-pill--${t.priority || 'normal'}`;
@@ -74,11 +96,23 @@ function taskRow(t, now, colorMap) {
     </div>`;
 }
 
+/** SS9.1 R2 — events + calendar items for one day/bucket, time-interleaved
+ *  (all-day floats first), mirroring agenda-view-calendar.js#dayDetailHTML's
+ *  own sortKey convention exactly, so Daftar and Day Detail read
+ *  consistently instead of each inventing their own order. Rendered
+ *  before tasks, same as that panel's Agenda-then-To-Do split. */
+function agendaEntriesHTML(events, calendarItems, now, colorMap) {
+  return [
+    ...(events || []).map((e) => ({ sortKey: e.allDay ? -1 : (e.startAt ?? Infinity), html: eventRow(e, colorMap) })),
+    ...(calendarItems || []).map((c) => ({ sortKey: c.allDay ? -1 : (c.startAt ?? Infinity), html: calendarRow(c, now, colorMap) })),
+  ].sort((a, b) => a.sortKey - b.sortKey).map((x) => x.html).join('');
+}
+
 /**
- * @param {{events: Array, tasks: Array, now: number, todayStr: string, colorMap?: Record<string,string>}} data
+ * @param {{events: Array, tasks: Array, calendarItems?: Array, now: number, todayStr: string, colorMap?: Record<string,string>}} data
  */
-export function renderAgendaListHTML({ events, tasks, now, todayStr, colorMap = {} }) {
-  const grouped = groupForAgendaView(events, tasks, todayStr);
+export function renderAgendaListHTML({ events, tasks, calendarItems = [], now, todayStr, colorMap = {} }) {
+  const grouped = groupForAgendaView(events, tasks, todayStr, 14, calendarItems);
 
   // Overdue tasks belong in "Today" regardless of their literal due date —
   // the Agenda view's job is "what do I need to act on today", which
@@ -86,12 +120,12 @@ export function renderAgendaListHTML({ events, tasks, now, todayStr, colorMap = 
   // itself; this is the caller applying that documented behavior).
   const overdueElsewhere = tasks.filter((t) => isTaskOverdue(t, now) && t.dueDate !== todayStr);
   const todayTasks = sortTasksByPriority([...grouped.today.tasks, ...overdueElsewhere]);
-  const todayEvents = sortEventsByTime(grouped.today.events);
+  const todayAgenda = agendaEntriesHTML(grouped.today.events, grouped.today.calendarItems, now, colorMap);
 
-  const todaySection = (todayEvents.length || todayTasks.length)
+  const todaySection = (todayAgenda || todayTasks.length)
     ? `<div class="cal-daygroup">
         <p class="cal-daylabel">Hari Ini</p>
-        ${todayEvents.map((e) => eventRow(e, colorMap)).join('')}
+        ${todayAgenda}
         ${todayTasks.map((t) => taskRow(t, now, colorMap)).join('')}
       </div>`
     : `<div class="cal-empty"><div class="cal-empty-title">Tidak ada agenda hari ini</div><div class="cal-empty-sub">Semua agenda dan tugas untuk hari ini sudah selesai, atau belum ada yang dijadwalkan.</div></div>`;
@@ -99,7 +133,7 @@ export function renderAgendaListHTML({ events, tasks, now, todayStr, colorMap = 
   const upcomingSections = grouped.upcoming.map((bucket) => `
     <div class="cal-daygroup">
       <p class="cal-daylabel">${esc(formatDateLong(bucket.date))}</p>
-      ${sortEventsByTime(bucket.events).map((e) => eventRow(e, colorMap)).join('')}
+      ${agendaEntriesHTML(bucket.events, bucket.calendarItems, now, colorMap)}
       ${sortTasksByPriority(bucket.tasks).map((t) => taskRow(t, now, colorMap)).join('')}
     </div>`).join('');
 

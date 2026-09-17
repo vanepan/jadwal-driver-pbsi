@@ -17,13 +17,13 @@
 
 'use strict';
 
-import { buildMonthGrid, buildWeekGrid, monthRange, mondayWeekRange } from './agenda-date-range.js';
+import { buildMonthGrid, buildWeekGrid, monthRange, mondayWeekRange, formatDateRangeLabel } from './agenda-date-range.js';
 import { formatDateShort, formatDateLong, eventDisplayState, taskDisplayState, formatClock, splitParticipants, priorityLabel, checklistProgress } from './agenda-view-model.js';
 import { calendarItemDisplayState } from './agenda-calendar-lifecycle.js';
 import { isTaskOverdue } from './agenda-lifecycle.js';
 // SS9 R1 — pure, zero-import (safe alongside this file's own Firebase-free
 // contract, unlike agenda-directory.js/agenda-view-todo.js below).
-import { agendaIdentityColorVar } from './agenda-identity-colors.js';
+import { agendaIdentityColorVar, agendaIdentityTintVar } from './agenda-identity-colors.js';
 // This file stays deliberately free of any Firebase-touching import
 // (agenda-directory.js, agenda-view-todo.js — both pull in agenda-store.js
 // -> firebase.js transitively): scripts/agenda-week-view-check.mjs and
@@ -59,6 +59,17 @@ function primaryPersonUsername(record, kind) {
 function identityDotHTML(username, colorMap, resolveName) {
   if (!username) return '';
   return `<span class="cal-identity-dot" style="background:${agendaIdentityColorVar(username, colorMap)}" title="${esc(resolveName(username))}" aria-hidden="true"></span>`;
+}
+/** SS9.1 R1 — the --bar-c/--bar-tint custom-property pair a calendar bar
+ *  or row reads its identity color from (agenda-styles.js's
+ *  .cal-range-bar / .cal-week-event--calendar rules). Applied on EVERY
+ *  rendered segment of a multi-day bar (not just the labeled one) so the
+ *  whole span keeps one identity color, and independent of `showLabel` —
+ *  a different concern from the identity dot, which only marks the
+ *  labeled segment. */
+function barStyleAttr(username, colorMap) {
+  if (!username) return '';
+  return ` style="--bar-c:${agendaIdentityColorVar(username, colorMap)};--bar-tint:${agendaIdentityTintVar(username, colorMap)}"`;
 }
 function truncate(s, n) { return s.length > n ? `${s.slice(0, n - 1)}…` : s; }
 
@@ -150,10 +161,11 @@ export function weekTimedRowsHTML(events, tasks, timedCalendarItems, now, colorM
     const cls = ['cal-week-event', 'cal-week-event--calendar'];
     if (state === 'berlangsung') cls.push('cal-week-event--calendar-active');
     if (state === 'dibatalkan') cls.push('cal-week-event--calendar-cancelled');
-    const dot = identityDotHTML(primaryPersonUsername(c, 'calendar'), colorMap, resolveName);
+    const person = primaryPersonUsername(c, 'calendar');
+    const dot = identityDotHTML(person, colorMap, resolveName);
     items.push({
       sortKey: c.startAt ?? Infinity,
-      html: `<div class="${cls.join(' ')}" data-agenda-action="open-calendar:${esc(c.id)}" title="${esc(c.title)}" role="button" tabindex="0">${dot}<span class="cal-week-event-time">${esc(formatClock(c.startAt))}</span>${esc(c.title)}</div>`,
+      html: `<div class="${cls.join(' ')}"${barStyleAttr(person, colorMap)} data-agenda-action="open-calendar:${esc(c.id)}" title="${esc(c.title)}" role="button" tabindex="0">${dot}<span class="cal-week-event-time">${esc(formatClock(c.startAt))}</span>${esc(c.title)}</div>`,
     });
   }
   for (const t of tasks || []) {
@@ -182,9 +194,10 @@ function rangeBarsHTML(bars, colorMap = {}, resolveName = identityResolver) {
     const cls = ['cal-range-bar', `cal-range-bar--${bar.state}`];
     if (bar.roundedLeft) cls.push('cal-range-bar--cap-left');
     if (bar.roundedRight) cls.push('cal-range-bar--cap-right');
-    const dot = bar.showLabel ? identityDotHTML(primaryPersonUsername(bar.item, 'calendar'), colorMap, resolveName) : '';
+    const person = primaryPersonUsername(bar.item, 'calendar');
+    const dot = bar.showLabel ? identityDotHTML(person, colorMap, resolveName) : '';
     const label = bar.showLabel ? `<span class="cal-range-bar-label">${dot}${esc(truncate(bar.item.title || '', 18))}</span>` : '';
-    return `<div class="${cls.join(' ')}" data-agenda-action="open-calendar:${esc(bar.item.id)}" title="${esc(bar.item.title || '')}" role="button" tabindex="0">${label}</div>`;
+    return `<div class="${cls.join(' ')}"${barStyleAttr(person, colorMap)} data-agenda-action="open-calendar:${esc(bar.item.id)}" title="${esc(bar.item.title || '')}" role="button" tabindex="0">${label}</div>`;
   }).join('');
   return html + (overflow > 0 ? `<div class="cal-range-bar-more">+${overflow} kalender</div>` : '');
 }
@@ -204,34 +217,49 @@ const identityResolver = (u) => u;
  *  second cache. Reuses the row visual language (cal-row/cal-todo-row/
  *  cal-pill) the Agenda List and To-Do views already established.
  *  `resolveName` is injected (see file header) rather than imported. */
+/** SS9.1 R3 — no identity dot: the PIC text line right below already
+ *  carries that signal, so a dot next to the title would repeat it. */
 function dayDetailEventRow(e, now, resolveName, colorMap) {
   const { pic } = splitParticipants(e.participants);
   const picNames = pic.map(resolveName);
   const cancelled = eventDisplayState(e, now) === 'cancelled';
-  const dot = identityDotHTML(primaryPersonUsername(e, 'event'), colorMap, resolveName);
   return `<div class="cal-row" data-agenda-action="open-event:${esc(e.id)}" role="button" tabindex="0">
     <div class="cal-row-time">${e.allDay ? 'Sepanjang hari' : esc(formatClock(e.startAt))}</div>
     <span class="cal-row-dot" aria-hidden="true"></span>
     <div class="cal-row-body">
-      <p class="cal-row-title${cancelled ? ' cal-row-title--done' : ''}">${dot}${esc(e.title)}${cancelled ? ' (Dibatalkan)' : ''}</p>
+      <p class="cal-row-title${cancelled ? ' cal-row-title--done' : ''}">${esc(e.title)}${cancelled ? ' (Dibatalkan)' : ''}</p>
       ${picNames.length ? `<div class="cal-row-meta"><span>PIC: ${esc(picNames.join(', '))}</span></div>` : ''}
     </div>
   </div>`;
 }
+/** SS9.1 R2/R3 — this row has no PIC/name text of its own (unlike events/
+ *  tasks), so removing its dot needs a replacement identity signal:
+ *  identity-colored title text, one of the spec's own explicitly allowed
+ *  alternatives. Only applied when NOT cancelled — a cancelled row keeps
+ *  the same muted-grey `cal-row-title--done` treatment events/tasks
+ *  already get (an inline color would otherwise unconditionally beat
+ *  that class's color, silently overriding the tested cancelled
+ *  treatment). Also carries the R2 date-range label when the item
+ *  actually spans multiple days. */
 function dayDetailCalendarRow(c, now, resolveName, colorMap) {
   const cancelled = calendarItemDisplayState(c, now) === 'dibatalkan';
-  const dot = identityDotHTML(primaryPersonUsername(c, 'calendar'), colorMap, resolveName);
+  const titleStyle = cancelled ? '' : ` style="color:${agendaIdentityColorVar(primaryPersonUsername(c, 'calendar'), colorMap)}"`;
+  const rangeLabel = formatDateRangeLabel(c.startDate, c.endDate);
   return `<div class="cal-row" data-agenda-action="open-calendar:${esc(c.id)}" role="button" tabindex="0">
     <div class="cal-row-time">${c.allDay ? 'Sepanjang hari' : esc(formatClock(c.startAt))}</div>
     <span class="cal-row-dot" aria-hidden="true"></span>
     <div class="cal-row-body">
-      <p class="cal-row-title${cancelled ? ' cal-row-title--done' : ''}">${dot}${esc(c.title)}${cancelled ? ' (Dibatalkan)' : ''}</p>
+      <p class="cal-row-title${cancelled ? ' cal-row-title--done' : ''}"${titleStyle}>${esc(c.title)}${cancelled ? ' (Dibatalkan)' : ''}</p>
+      ${rangeLabel ? `<div class="cal-row-meta"><span>${esc(rangeLabel)}</span></div>` : ''}
     </div>
   </div>`;
 }
 /** Mirrors agenda-view-todo.js#todoRow()'s exact markup/classes (same
  *  visual language, same data-agenda-action verbs) — not imported, for
  *  the Firebase-purity reason explained at the top of this file. */
+/** SS9.1 R3 — no identity dot: the responsible-name text below already
+ *  carries that signal. Checkbox/done/overdue/checklist/pill treatment
+ *  is untouched — only the redundant identity marker is removed. */
 function dayDetailTaskRow(t, now, resolveName, colorMap) {
   const done = t.status === 'done';
   const overdue = !done && isTaskOverdue(t, now);
@@ -239,11 +267,10 @@ function dayDetailTaskRow(t, now, resolveName, colorMap) {
   const responsible = Object.keys(t.responsible || {}).map(resolveName);
   const pillClass = overdue ? 'cal-pill--overdue' : done ? 'cal-pill--done' : `cal-pill--${t.priority || 'normal'}`;
   const pillText = overdue ? 'Terlewat' : done ? 'Selesai' : priorityLabel(t.priority);
-  const dot = identityDotHTML(primaryPersonUsername(t, 'task'), colorMap, resolveName);
   return `<div class="cal-todo-row">
     <span class="cal-checkbox" role="checkbox" aria-checked="${done}" aria-label="Tandai selesai" tabindex="0" data-agenda-action="toggle-task-done:${esc(t.id)}">${done ? '&#10003;' : ''}</span>
     <div class="cal-row-body" data-agenda-action="open-task:${esc(t.id)}" role="button" tabindex="0">
-      <p class="cal-row-title${done ? ' cal-row-title--done' : ''}">${dot}${esc(t.title)}</p>
+      <p class="cal-row-title${done ? ' cal-row-title--done' : ''}">${esc(t.title)}</p>
       <div class="cal-row-meta">
         <span class="cal-pill ${pillClass}">${pillText}</span>
         ${chkTotal ? `<span>${chkDone}/${chkTotal} checklist</span>` : ''}

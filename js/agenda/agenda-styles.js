@@ -49,6 +49,16 @@ const CSS = `
      participant show two different meanings in the same shade). */
   --id-grace:#3d8bc4; --id-evan:#3a3a3c; --id-leo: var(--amber); --id-kabid: var(--red);
   --id-fb1: var(--green); --id-fb2:#6b4e9e; --id-fb3:#a9742a;
+  /* SS9.1 R1 — tint+text pairs for identity-colored bars, following the
+     EXACT existing --green/--green-tint convention (text-on-tint, never
+     white-on-solid — keeps every identity readable, not just the ones
+     that happen to be dark enough for white text). Leo/Kabid alias
+     --amber-tint/--red-tint for free since their base colors already
+     alias --amber/--red; only Grace and Evan (bespoke base colors) and
+     fb2 (no existing family to alias) need real new values. */
+  --id-grace-tint:#e5f1f9; --id-evan-tint:#eeece9;
+  --id-leo-tint: var(--amber-tint); --id-kabid-tint: var(--red-tint);
+  --id-fb1-tint: var(--green-tint); --id-fb2-tint:#efe9f7; --id-fb3-tint: var(--amber-tint);
   color: var(--text);
 }
 .cal-root[data-theme="dark"], [data-theme="dark"] .cal-root {
@@ -61,6 +71,9 @@ const CSS = `
   --input:#2a2724; --input-bd:#3a3631;
   --id-grace:#6fb3e0; --id-evan:#a49d93; --id-leo: var(--amber); --id-kabid: var(--red);
   --id-fb1: var(--green); --id-fb2:#8470b5; --id-fb3:#be9350;
+  --id-grace-tint:#1c2a35; --id-evan-tint:#2f2b27;
+  --id-leo-tint: var(--amber-tint); --id-kabid-tint: var(--red-tint);
+  --id-fb1-tint: var(--green-tint); --id-fb2-tint:#2a2433; --id-fb3-tint: var(--amber-tint);
 }
 
 /* ── Section shell (the Today sibling host) ─────────────────────── */
@@ -165,34 +178,43 @@ const CSS = `
 .cal-pill--active { background:var(--green-tint); color:var(--green); border-color:var(--green-bd); font-weight:700; }
 .cal-pill--cancelled { background:var(--red-tint); color:var(--red); border-color:var(--red-bd); }
 
-/* ── V1.31.2 §4 — Month<->Week transition. Scoped to ONLY this region via
-   view-transition-name (agenda-workspace-view.js sets the class;
-   agenda-workspace.js#doRenderWithViewTransition() is the one call site
-   that ever triggers a transition capture here — every other re-render
-   uses the plain, unanimated path). A restrained cross-fade + the
-   faintest scale — "fast, subtle, Apple-like", never a slide/bounce that
-   would read as a bigger move than a view toggle actually is. */
+/* ── V1.31.2 §4 — Month<->Week transition. Scoped to ONLY the grid itself
+   via view-transition-name (agenda-workspace-view.js sets the gating
+   class; agenda-workspace.js#doRenderWithViewTransition() is the one call
+   site that ever triggers a transition capture here — every other
+   re-render uses the plain, unanimated path). A restrained cross-fade +
+   the faintest scale — "fast, subtle, Apple-like", never a slide/bounce
+   that would read as a bigger move than a view toggle actually is. */
 /* v1.31.4 R5 — view-transition-name must NOT be unconditional. A named
    view-transition group is captured by ANY document.startViewTransition()
    call anywhere in the app, not just the Month<->Week one this scale
    animation is meant for — including the global theme toggle's own
-   transition (js/app.js#applyTheme()), which never touches this region's
-   content at all. An always-on name meant this card popped/scaled on its
-   own 140-180ms schedule during a THEME switch too, visibly out of step
-   with the rest of the page's shared crossfade. The name is now active
-   ONLY while agenda-workspace.js#doRenderWithViewTransition() has tagged
-   <html> for the duration of its own transition; any other transition
-   (theme included) sees no name here at all and this region simply
-   participates in that transition's default root crossfade instead. */
+   transition (js/app.js#applyTheme()), which never touches this element's
+   content at all. An always-on name meant this element popped/scaled on
+   its own 140-180ms schedule during a THEME switch too, visibly out of
+   step with the rest of the page's shared crossfade. The name is now
+   active ONLY while agenda-workspace.js#doRenderWithViewTransition() has
+   tagged <html> for the duration of its own transition; any other
+   transition (theme included) sees no name here at all and the grid
+   simply participates in that transition's default root crossfade
+   instead. */
+/* SS9.1 R4 — retargeted from .cal-calview-region (which also wrapped the
+   Bulan/Minggu filter chips, the prev/next/"Hari Ini" nav, and Day
+   Detail — all of which animated along with the grid, contrary to the
+   "animate geometry, not the page" requirement) to .cal-grid alone: the
+   actual date grid, a standalone sibling to nav/chips/Day Detail in both
+   Month and Week markup. .cal-calview-region remains a plain layout
+   wrapper with no transition role. */
 .cal-calview-region { view-transition-name: none; }
-html.cal-viewtransition-active .cal-calview-region { view-transition-name: cal-calview-region; }
+.cal-grid { view-transition-name: none; }
+html.cal-viewtransition-active .cal-grid { view-transition-name: cal-grid; }
 @media (prefers-reduced-motion: reduce) {
-  html.cal-viewtransition-active .cal-calview-region { view-transition-name: none; }
+  html.cal-viewtransition-active .cal-grid { view-transition-name: none; }
 }
-::view-transition-old(cal-calview-region) {
+::view-transition-old(cal-grid) {
   animation: cal-calview-out 140ms cubic-bezier(0.4, 0, 1, 1) both;
 }
-::view-transition-new(cal-calview-region) {
+::view-transition-new(cal-grid) {
   animation: cal-calview-in 180ms cubic-bezier(0, 0, 0.2, 1) both;
 }
 @keyframes cal-calview-out { to { opacity: 0; transform: scale(0.99); } }
@@ -236,10 +258,20 @@ html.cal-viewtransition-active .cal-calview-region { view-transition-name: cal-c
    (spec §AM). --active (Berlangsung, right now) gets a filled/bold
    treatment; --ended (Selesai) is deliberately muted, never "Terlewat"
    red — a concluded period is not a failure. */
-.cal-week-event--calendar { background:var(--green-tint); color:var(--green); border-left:3px solid var(--green); }
+/* SS9.1 R1 — background/text/border derive from the per-item --bar-tint/
+   --bar-c custom props (set inline per row in weekTimedRowsHTML()), with
+   --green as the fallback for any caller that doesn't set them. A single
+   discrete row (not a multi-cell strip), so the border-left carries no
+   seam risk the way an unconditional one would on Month's .cal-range-bar. */
+.cal-week-event--calendar { background:var(--bar-tint, var(--green-tint)); color:var(--bar-c, var(--green)); border-left:3px solid var(--bar-c, var(--green)); }
 .cal-week-event--calendar-active { font-weight:700; }
 .cal-week-event--calendar-ended { opacity:.55; }
-.cal-week-event--calendar-cancelled { opacity:.55; text-decoration:line-through; background:var(--red-tint); color:var(--red); border-left-color:var(--red); }
+/* Cancelled keeps the person's identity color (strikethrough + reduced
+   opacity carry "cancelled" instead of a red swap) — R1's explicit
+   decision to preserve status semantics via opacity/strikethrough while
+   deriving the base accent from identity, applied consistently here and
+   to .cal-range-bar--dibatalkan below. */
+.cal-week-event--calendar-cancelled { opacity:.75; text-decoration:line-through; }
 
 /* V1.31.2 §5 — Week view enrichment: a dedicated all-day/range band
    (reuses .cal-range-bar — the exact same Month-view element, just
@@ -261,14 +293,31 @@ html.cal-viewtransition-active .cal-calview-region { view-transition-name: cal-c
    range continues past the cell/row edge; rounded ONLY on the item's true
    start/end day, so the eye reads "this keeps going" vs "this is where it
    begins/ends" without any text needed on continuation days. ────────── */
-.cal-range-bar { height:14px; border-radius:0; margin:0 -6px; padding:0 6px; font-size:.62rem; line-height:14px; font-weight:650; color:var(--green); background:var(--green-tint); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; cursor:pointer; }
+/* SS9.1 R1 — color/background derive from the per-item --bar-c/--bar-tint
+   custom props (set inline per bar in rangeBarsHTML(), on EVERY segment
+   not just the labeled one, so a multi-day bar keeps one identity color
+   across its whole span) — --green stays the fallback for any caller
+   that doesn't set them. Deliberately NO border-left here (unlike
+   .cal-week-event--calendar above): a border only on cap-left segments
+   would leave every continuation segment under-signaled, and an
+   unconditional one would reintroduce a seam at every cell boundary,
+   breaking the continuous-strip illusion cap-left/cap-right exist to
+   create. Background-only (already how the -6px bleed margin reads as
+   continuous today) avoids both problems. */
+.cal-range-bar { height:14px; border-radius:0; margin:0 -6px; padding:0 6px; font-size:.62rem; line-height:14px; font-weight:650; color:var(--bar-c, var(--green)); background:var(--bar-tint, var(--green-tint)); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; cursor:pointer; }
 .cal-range-bar:focus-visible { outline:2px solid var(--primary); outline-offset:-2px; }
 .cal-range-bar--cap-left { margin-left:0; border-radius:7px 0 0 7px; padding-left:6px; }
 .cal-range-bar--cap-right { margin-right:0; border-radius:0 7px 7px 0; }
 .cal-range-bar--cap-left.cal-range-bar--cap-right { border-radius:7px; }
-.cal-range-bar--berlangsung { background:var(--green); color:#fff; font-weight:700; }
+/* Bold weight only — NOT a solid identity-color fill + white text. That
+   worked for the single hardcoded green this replaced, but white text
+   fails contrast against at least two identity colors in dark mode
+   (grace/kabid); bold alone is a sufficient, contrast-safe active signal. */
+.cal-range-bar--berlangsung { font-weight:700; }
 .cal-range-bar--selesai { opacity:.55; }
-.cal-range-bar--dibatalkan { background:var(--red-tint); color:var(--red); text-decoration:line-through; opacity:.75; }
+/* Cancelled keeps identity color — see .cal-week-event--calendar-cancelled
+   above for the same reasoning. */
+.cal-range-bar--dibatalkan { text-decoration:line-through; opacity:.75; }
 .cal-range-bar-more { font-size:.62rem; color:var(--muted); padding:0 6px; }
 @media (max-width:600px) {
   /* Mirrors the existing dot-only mobile convention (Phase A/B risk R11) —

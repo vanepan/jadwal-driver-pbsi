@@ -124,15 +124,18 @@ export function buildWorkspaceHTML(ctx) {
     const tasks = ctx.tasks.filter((t) => matchesQuery(t, q));
     const calendarItems = (ctx.calendarItems || []).filter((c) => matchesQuery(c, q));
     inner = renderCalendarHTML({ events, tasks, calendarItems, mode: ctx.calendarView, anchorDate: ctx.calendarAnchor, todayStr: ctx.todayStr, now: ctx.now, selectedDate: ctx.selectedDate, resolveName: displayNameFor, colorMap });
-    // V1.31.2 §4 — a stable view-transition-name, scoped to ONLY this
-    // region (not the whole page, unlike js/app.js#setWorkspace()'s own
-    // full-workspace transition) — agenda-workspace.js's
-    // doRenderWithViewTransition() wraps the Month<->Week toggle
-    // specifically in document.startViewTransition(); every OTHER
-    // re-render (search, cal-prev/next, a drawer save) calls plain
-    // doRender() and never touches this, so this element's identity
-    // across a transition capture is always exactly "the calendar body,
-    // before vs. after switching Month/Week" — never anything else.
+    // V1.31.2 §4 — .cal-calview-region is a plain layout wrapper (chips +
+    // the calendar body). The actual view-transition-name (agenda-styles.js)
+    // lives on the `.cal-grid` element INSIDE renderCalendarHTML()'s own
+    // output, not on this wrapper — SS9.1 R4 narrowed the transition
+    // boundary from this whole region (which also animated the Bulan/Minggu
+    // chips and Day Detail, both meant to stay static) down to just the
+    // date grid. agenda-workspace.js's doRenderWithViewTransition() wraps
+    // the Month<->Week toggle specifically in document.startViewTransition();
+    // every OTHER re-render (search, cal-prev/next, a drawer save) calls
+    // plain doRender() and never touches this, so the grid's identity
+    // across a transition capture is always exactly "the date grid, before
+    // vs. after switching Month/Week" — never anything else.
     inner = `<div class="cal-calview-region">
       <div class="cal-filters" role="tablist" aria-label="Tampilan Kalender">
         ${['month', 'week'].map((v) => `<button type="button" class="cal-chip" role="tab" aria-pressed="${ctx.calendarView === v}" data-agenda-action="set-calview:${v}">${v === 'month' ? 'Bulan' : 'Minggu'}</button>`).join('')}
@@ -151,7 +154,12 @@ export function buildWorkspaceHTML(ctx) {
   } else {
     const events = ctx.events.filter((e) => matchesQuery(e, q));
     const tasks = ctx.tasks.filter((t) => matchesQuery(t, q));
-    inner = renderAgendaListHTML({ events, tasks, now: ctx.now, todayStr: ctx.todayStr, colorMap });
+    // SS9.1 R2 — Daftar now also surfaces Calendar items (previously only
+    // the Kalender tab received this array), so multi-day items ("Sirnas
+    // C Piala Raja / 14–20 September 2026") are visible outside the grid
+    // too. Same defensive `|| []` as the Kalender branch above.
+    const calendarItems = (ctx.calendarItems || []).filter((c) => matchesQuery(c, q));
+    inner = renderAgendaListHTML({ events, tasks, calendarItems, now: ctx.now, todayStr: ctx.todayStr, colorMap });
   }
 
   return shell(ctx, inner);

@@ -5,7 +5,7 @@
    1) PRIMARY path (modern browsers — js/app.js#applyTheme() calls
       document.startViewTransition(() => applyThemeState(theme)), touching
       only the data-theme attribute; no .theme-anim class involved at all
-      on this path). agenda-styles.js's .cal-calview-region carried an
+      on this path). agenda-styles.js's named element carried an
       UNCONDITIONAL view-transition-name, meant only for its own
       Month<->Week toggle (agenda-workspace.js#doRenderWithViewTransition()).
       A named view-transition group is captured by ANY startViewTransition()
@@ -14,7 +14,11 @@
       140-180ms scale animation — visibly out of step with everything else,
       which just crossfades as one image. Fixed: the name is now active
       ONLY while <html> carries .cal-viewtransition-active, which only the
-      calendar's own transition ever sets.
+      calendar's own transition ever sets. (SS9.1 R4 additionally
+      retargeted the named element itself from .cal-calview-region — which
+      also wrapped the Bulan/Minggu chips, nav, and Day Detail, all of
+      which animated along with it — to .cal-grid alone, so only the
+      actual date grid ever gets pulled out of the theme crossfade.)
 
    2) FALLBACK path (browsers without View Transitions support, or
       prefers-reduced-motion/data-anim="off" — .theme-anim class +
@@ -66,7 +70,9 @@ const HARNESS = `<!doctype html><html><head><meta charset="utf-8">
   <div class="domshell-rail" id="rail">rail</div>
   <div class="v2-surface-card" id="curatedCard">curated card</div>
   <div id="plain">plain, not in the curated list at all</div>
-  <div class="cal-calview-region" id="calRegion">calendar region</div>
+  <div class="cal-calview-region" id="calRegion">calendar region
+    <div class="cal-grid" id="calGrid">calendar grid</div>
+  </div>
 <script type="module">
   import { injectAgendaStyles } from '/js/agenda/agenda-styles.js';
   injectAgendaStyles();
@@ -107,20 +113,41 @@ const supportsViewTransitions = await page.evaluate(() => typeof document.startV
 if (supportsViewTransitions) {
   /* ── PRIMARY path: an unrelated view-transition (simulating the real
      theme toggle, which only ever sets data-theme) must NOT capture the
-     calendar region as an independent named group. ── */
-  console.log('\n[1 — PRIMARY: an unrelated startViewTransition() (theme toggle shape) does not hijack the calendar region]');
+     calendar GRID as an independent named group. SS9.1 R4 retargeted the
+     named element from .cal-calview-region to .cal-grid (the region also
+     wrapped chips/nav/Day Detail, which should stay static — narrowed to
+     just the grid). ── */
+  console.log('\n[1 — PRIMARY: an unrelated startViewTransition() (theme toggle shape) does not hijack the calendar grid]');
   const leaked = await page.evaluate(async () => {
     const t = document.startViewTransition(() => { document.documentElement.setAttribute('data-theme', 'dark'); });
     await t.ready;
     const anims = document.getAnimations();
-    const hit = anims.some((a) => String(a.effect?.pseudoElement || '').includes('cal-calview-region'));
+    const hit = anims.some((a) => String(a.effect?.pseudoElement || '').includes('cal-grid'));
     await t.finished;
     return hit;
   });
-  check('no animation targets a ::view-transition-*(cal-calview-region) pseudo-element during an unrelated (theme-shaped) transition', !leaked, leaked);
+  check('no animation targets a ::view-transition-*(cal-grid) pseudo-element during an unrelated (theme-shaped) transition', !leaked, leaked);
 
-  console.log('\n[2 — the calendar region STILL gets its own named transition for its OWN Month<->Week toggle]');
+  console.log('\n[2 — the calendar GRID STILL gets its own named transition for its OWN Month<->Week toggle]');
   const scoped = await page.evaluate(async () => {
+    document.documentElement.classList.add('cal-viewtransition-active');
+    const t = document.startViewTransition(() => {});
+    await t.ready;
+    const anims = document.getAnimations();
+    const hit = anims.some((a) => String(a.effect?.pseudoElement || '').includes('cal-grid'));
+    await t.finished;
+    document.documentElement.classList.remove('cal-viewtransition-active');
+    return hit;
+  });
+  check('an animation DOES target ::view-transition-*(cal-grid) while .cal-viewtransition-active is set (the real mechanism still works)', scoped, scoped);
+
+  // SS9.1 R4 — the narrowed boundary's whole point: .cal-calview-region
+  // (chips/nav/Day Detail's wrapper) must NEVER be independently named,
+  // even during the calendar's own active transition — proving those
+  // regions really do stay in the transition's default root crossfade
+  // instead of animating along with the grid.
+  console.log('\n[2b — .cal-calview-region (chips/nav/Day Detail wrapper) is never independently named, even during the active transition]');
+  const regionLeaked = await page.evaluate(async () => {
     document.documentElement.classList.add('cal-viewtransition-active');
     const t = document.startViewTransition(() => {});
     await t.ready;
@@ -130,7 +157,7 @@ if (supportsViewTransitions) {
     document.documentElement.classList.remove('cal-viewtransition-active');
     return hit;
   });
-  check('an animation DOES target ::view-transition-*(cal-calview-region) while .cal-viewtransition-active is set (the real mechanism still works)', scoped, scoped);
+  check('no animation targets a ::view-transition-*(cal-calview-region) pseudo-element, even while .cal-viewtransition-active is set', !regionLeaked, regionLeaked);
 } else {
   console.log('\n[1-2 — SKIPPED: this Chromium build has no View Transitions API]');
 }

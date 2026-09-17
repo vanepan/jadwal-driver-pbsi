@@ -70,6 +70,37 @@ export function buildWeekGrid(dateStr) {
 }
 
 /**
+ * SS9.1 R2 — condensed Indonesian date-range label for a multi-day
+ * Calendar item ("14–20 September 2026", "29 September–2 Oktober 2026",
+ * "30 Desember 2026–2 Januari 2027"). Returns null for a single-day range
+ * (startDate === endDate) — callers skip rendering rather than show a
+ * redundant "16–16 September 2026". Deliberately a SECOND, UI-only
+ * convention, separate from agenda-pdf-view-model.js's own verbose
+ * dateLabel (full date spelled out on both ends, no month/year merging)
+ * — that file is out of scope for this phase ("DO NOT modify PDF
+ * logic"), so this isn't drift from an existing helper, it's a
+ * deliberately distinct one for Daftar/Day Detail.
+ * @param {string} startDate YYYY-MM-DD
+ * @param {string} endDate YYYY-MM-DD
+ * @returns {?string}
+ */
+export function formatDateRangeLabel(startDate, endDate) {
+  if (!startDate || !endDate || startDate === endDate) return null;
+  const start = parseLocalDate(startDate);
+  const end = parseLocalDate(endDate);
+  const startDay = start.toLocaleDateString('id-ID', { day: 'numeric' });
+  const startMonth = start.toLocaleDateString('id-ID', { month: 'long' });
+  const startYear = start.toLocaleDateString('id-ID', { year: 'numeric' });
+  const endDay = end.toLocaleDateString('id-ID', { day: 'numeric' });
+  const endMonth = end.toLocaleDateString('id-ID', { month: 'long' });
+  const endYear = end.toLocaleDateString('id-ID', { year: 'numeric' });
+
+  if (startYear !== endYear) return `${startDay} ${startMonth} ${startYear}–${endDay} ${endMonth} ${endYear}`;
+  if (startMonth !== endMonth) return `${startDay} ${startMonth}–${endDay} ${endMonth} ${endYear}`;
+  return `${startDay}–${endDay} ${endMonth} ${endYear}`;
+}
+
+/**
  * Groups events (by `.date`, the local WIB calendar date already on the
  * record) and tasks (by `.dueDate`) into Today / Upcoming buckets for the
  * default Agenda view. Undated tasks (no due date at all) go into a
@@ -81,15 +112,22 @@ export function buildWeekGrid(dateStr) {
  * @param {Array} tasks already-scoped, already-visible task records
  * @param {string} [todayStr] injectable for testability — defaults to todayString()
  * @param {number} [upcomingDays]
+ * @param {Array} [calendarItems] SS9.1 R2 — already-scoped, already-visible
+ *   /agendaCalendars records. Trailing optional param (default []) so the
+ *   existing 3-arg call shape stays valid. Bucketed differently from
+ *   events: a range ONGOING today (startDate<=todayStr<=endDate, the same
+ *   inclusive check agenda-view-calendar.js#dayDetailHTML() already uses)
+ *   goes in `today` even if it didn't START today; otherwise it buckets
+ *   by its startDate like an event buckets by its one date.
  */
-export function groupForAgendaView(events, tasks, todayStr = todayString(), upcomingDays = 14) {
+export function groupForAgendaView(events, tasks, todayStr = todayString(), upcomingDays = 14, calendarItems = []) {
   const horizon = offsetDate(todayStr, upcomingDays);
-  const today = { events: [], tasks: [] };
-  const upcoming = new Map(); // date -> {events:[], tasks:[]}
+  const today = { events: [], tasks: [], calendarItems: [] };
+  const upcoming = new Map(); // date -> {events:[], tasks:[], calendarItems:[]}
   const noDueDate = [];
 
   const bucketFor = (date) => {
-    if (!upcoming.has(date)) upcoming.set(date, { date, events: [], tasks: [] });
+    if (!upcoming.has(date)) upcoming.set(date, { date, events: [], tasks: [], calendarItems: [] });
     return upcoming.get(date);
   };
 
@@ -97,6 +135,11 @@ export function groupForAgendaView(events, tasks, todayStr = todayString(), upco
     if (!e || !e.date) continue;
     if (e.date === todayStr) today.events.push(e);
     else if (e.date > todayStr && e.date <= horizon) bucketFor(e.date).events.push(e);
+  }
+  for (const c of calendarItems || []) {
+    if (!c || !c.startDate || !c.endDate) continue;
+    if (c.startDate <= todayStr && c.endDate >= todayStr) today.calendarItems.push(c);
+    else if (c.startDate > todayStr && c.startDate <= horizon) bucketFor(c.startDate).calendarItems.push(c);
   }
   for (const t of tasks || []) {
     if (!t) continue;

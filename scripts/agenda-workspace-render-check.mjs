@@ -125,6 +125,17 @@ async function main() {
       const html = document.getElementById('root').innerHTML;
       return html.includes('Rapat e1') && html.includes('PIC:');
     }, baseCtx({ events: [sampleEvent('e1')] })));
+    await checkAsync('SS9.1 R2: Daftar (agenda mode) now also shows a multi-day Calendar item, with its date-range label', () => page.evaluate((ctx) => {
+      window.__render(ctx);
+      const html = document.getElementById('root').innerHTML;
+      return html.includes('Evan - Sirnas C Piala Raja sirnas') && html.includes('15–20 September 2026');
+    }, baseCtx({ mode: 'agenda', calendarItems: [sampleCalendarItem('sirnas')] })));
+    await checkAsync('SS9.1 R2: Daftar mode still renders correctly when ctx.calendarItems is entirely omitted (the pre-existing 3-arg-shaped ctx many tests here still use — proves the defensive `|| []` fix, not a bare `.filter` that would throw)', () => page.evaluate((ctx) => {
+      const c = { ...ctx };
+      delete c.calendarItems;
+      window.__render(c);
+      return document.getElementById('root').innerHTML.includes('Rapat e1');
+    }, baseCtx({ mode: 'agenda', events: [sampleEvent('e1')] })));
     await checkAsync('empty agenda shows a real empty state, not a blank screen', () => page.evaluate((ctx) => {
       window.__render(ctx);
       return document.querySelector('.cal-empty') != null;

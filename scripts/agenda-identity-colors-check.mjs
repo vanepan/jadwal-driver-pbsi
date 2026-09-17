@@ -5,6 +5,15 @@
    overrides existing status semantics (cancelled/overdue/done stay
    visually distinguishable).
 
+   SS9.1 additions: [H] identity tint+text contrast (WCAG-correct, all 7
+   slots x 2 themes), multi-day bar color propagating to every segment
+   (not just the labeled one), and cancelled bars keeping identity color
+   instead of a hardcoded red swap. [I] Day Detail's redundant identity
+   dots are gone, PIC/responsible text (or, for Calendar items with no
+   text of their own, identity-colored title text) remains the one
+   signal, and a cancelled Calendar-item row keeps its muted treatment
+   rather than leaking identity color onto it.
+
    Run: node scripts/agenda-identity-colors-check.mjs   (exit 0 = pass) */
 
 import fs from 'node:fs';
@@ -217,6 +226,171 @@ try {
   const kabidDotColor = await page.evaluate(() => document.querySelector('[data-agenda-action="open-event:ke1"] .cal-identity-dot')?.style.background);
   const kabidCssVar = await page.evaluate(() => getComputedStyle(document.querySelector('.cal-root')).getPropertyValue('--id-kabid').trim());
   check('a REAL Kabid-scope participant (seeded via the real directory, resolved via the real getAgendaCandidates()) renders with the real --id-kabid color', kabidDotColor === 'var(--id-kabid)', { kabidDotColor, kabidCssVar });
+
+  /* ══ H — SS9.1 R1: tint+text contrast, multi-day bar color propagation,
+     cancelled bars keep identity (not a red swap) ══ */
+  console.log('\n[H — SS9.1 R1: identity tint contrast, multi-day bar color, cancelled bars keep identity]');
+  // A real WCAG relative-luminance (gamma-corrected) — deliberately NOT
+  // reusing this file's own simpler luminance() above (that one is a fast
+  // comparative "is A darker than B" helper for sections D/G, not a real
+  // contrast-ratio input; using it here would understate every pair's
+  // true contrast, including already-shipped ones).
+  function wcagLuminance(hex) {
+    const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex || '').trim());
+    if (!m) return null;
+    const [r, g, b] = m.slice(1).map((h) => {
+      const c = parseInt(h, 16) / 255;
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+  function contrastRatio(hexA, hexB) {
+    const la = wcagLuminance(hexA), lb = wcagLuminance(hexB);
+    if (la == null || lb == null) return null;
+    const lighter = Math.max(la, lb), darker = Math.min(la, lb);
+    return (lighter + 0.05) / (darker + 0.05);
+  }
+  const identitySlots = ['grace', 'evan', 'leo', 'kabid', 'fb1', 'fb2', 'fb3'];
+  async function readTintTokens(theme) {
+    await page.evaluate((t) => document.documentElement.setAttribute('data-theme', t), theme);
+    await new Promise((r) => setTimeout(r, 150));
+    return page.evaluate((slots) => {
+      const cs = getComputedStyle(document.querySelector('.cal-root'));
+      const out = {};
+      for (const s of slots) { out[s] = cs.getPropertyValue(`--id-${s}`).trim(); out[`${s}Tint`] = cs.getPropertyValue(`--id-${s}-tint`).trim(); }
+      return out;
+    }, identitySlots);
+  }
+  const lightTints = await readTintTokens('light');
+  const darkTints = await readTintTokens('dark');
+  const CONTRAST_FLOOR = 3.0; // small bold text on a tint background — matches the existing badge/pill family's own class of treatment, not body-text AA
+  for (const theme of ['light', 'dark']) {
+    const tokens = theme === 'light' ? lightTints : darkTints;
+    for (const slot of identitySlots) {
+      const ratio = contrastRatio(tokens[slot], tokens[`${slot}Tint`]);
+      check(`${theme.toUpperCase()}: --id-${slot} text on --id-${slot}-tint background clears ${CONTRAST_FLOOR}:1`, ratio != null && ratio >= CONTRAST_FLOOR, { text: tokens[slot], tint: tokens[`${slot}Tint`], ratio });
+    }
+  }
+  await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'));
+
+  await page.evaluate(() => window.__setDirectoryForTest?.([{ username: 'grace', displayName: 'Grace', scope: 'sarpras_shared' }]));
+  const multiDayItem = {
+    id: 'md1', title: 'Sirnas C Piala Raja', startDate: '2026-09-14', endDate: '2026-09-16', allDay: true,
+    status: 'scheduled', scope: 'sarpras_shared', organizerUsername: 'grace', participants: { grace: { isPic: true } },
+  };
+  const cancelledMultiDayItem = {
+    id: 'md2', title: 'Turnamen Dibatalkan', startDate: '2026-09-20', endDate: '2026-09-22', allDay: true,
+    status: 'cancelled', scope: 'sarpras_shared', organizerUsername: 'grace', participants: { grace: { isPic: true } },
+  };
+  await page.evaluate((ctx) => window.__render(ctx), {
+    events: [], tasks: [], calendarItems: [multiDayItem, cancelledMultiDayItem], now: Date.parse('2026-09-15T08:00:00+07:00'),
+    todayStr: '2026-09-15', mode: 'calendar', calendarView: 'month', calendarAnchor: '2026-09-15', selectedDate: null,
+    todoFilters: { status: 'all', priority: 'all', query: '' }, canManage: true, writableScopes: ['sarpras_shared'], loading: false, error: null,
+  });
+  const barConsistency = await page.evaluate(() => {
+    // A probe carrying color:var(--id-grace) resolves through the SAME
+    // var() chain the bars themselves use — comparing computed `color`
+    // strings needs no hex/rgb conversion and is exact.
+    const root = document.querySelector('.cal-root');
+    const probe = document.createElement('span');
+    probe.style.color = 'var(--id-grace)';
+    root.appendChild(probe);
+    const graceColor = getComputedStyle(probe).color;
+    const redProbe = document.createElement('span');
+    redProbe.style.color = 'var(--red)';
+    root.appendChild(redProbe);
+    const redColor = getComputedStyle(redProbe).color;
+    probe.remove(); redProbe.remove();
+
+    const activeBars = [...document.querySelectorAll('[data-agenda-action="open-calendar:md1"]')];
+    const cancelledBars = [...document.querySelectorAll('[data-agenda-action="open-calendar:md2"]')];
+    return {
+      graceColor, redColor,
+      activeCount: activeBars.length,
+      activeAllMatchGrace: activeBars.length > 0 && activeBars.every((b) => getComputedStyle(b).color === graceColor),
+      activeLabeledCount: activeBars.filter((b) => b.querySelector('.cal-range-bar-label')).length,
+      cancelledCount: cancelledBars.length,
+      cancelledAllMatchGrace: cancelledBars.length > 0 && cancelledBars.every((b) => getComputedStyle(b).color === graceColor),
+      cancelledAnyMatchRed: cancelledBars.some((b) => getComputedStyle(b).color === redColor),
+      cancelledStrikethrough: cancelledBars.length > 0 && cancelledBars.every((b) => getComputedStyle(b).textDecorationLine.includes('line-through')),
+      cancelledOpacityReduced: cancelledBars.length > 0 && cancelledBars.every((b) => parseFloat(getComputedStyle(b).opacity) < 1),
+    };
+  });
+  check('a 3-day multi-day bar renders 3 segments (one per day)', barConsistency.activeCount === 3, barConsistency);
+  check('only ONE segment carries the label (the others are continuation-only, per the existing cap-left/showLabel design)', barConsistency.activeLabeledCount === 1, barConsistency);
+  check('EVERY segment of the multi-day bar — labeled AND non-labeled — carries the SAME identity color (Grace)', barConsistency.activeAllMatchGrace, barConsistency);
+  check('a cancelled multi-day bar ALSO keeps the identity color on every segment (no red swap)', barConsistency.cancelledAllMatchGrace, barConsistency);
+  check('...and never matches --red (the old hardcoded cancelled color)', !barConsistency.cancelledAnyMatchRed, barConsistency);
+  check('...cancelled bar carries strikethrough (the mechanism that now signals "cancelled" instead of red)', barConsistency.cancelledStrikethrough, barConsistency);
+  check('...cancelled bar has reduced opacity too', barConsistency.cancelledOpacityReduced, barConsistency);
+
+  /* ══ I — SS9.1 R3: Day Detail no longer renders redundant identity
+     dots; PIC/responsible text (or, for Calendar items, identity-colored
+     title text) remains the ONE signal; cancelled rows keep their muted
+     treatment, not an identity-color leak ══ */
+  console.log('\n[I — SS9.1 R3: Day Detail redundant-dot removal, identity/PIC text preserved, cancelled stays muted]');
+  // Object-keyed shape (matches the real /userProfiles snapshot, per
+  // section G's own established convention above) — needed here because,
+  // unlike E/F/H (which never assert on the resolved DISPLAY NAME text),
+  // this section checks that "PIC: Grace" / the responsible name actually
+  // renders, which requires displayNameFor() to resolve for real.
+  await page.evaluate(() => window.__setDirectoryForTest?.({
+    grace: { displayName: 'Grace', agendaParticipantType: 'sarpras_staff', active: true },
+  }));
+  const dayDetailEvent = {
+    id: 'dde1', title: 'Rapat Vendor', date: '2026-09-16', startTime: '09:00', endTime: '10:00',
+    startAt: Date.parse('2026-09-16T09:00:00+07:00'), endAt: Date.parse('2026-09-16T10:00:00+07:00'),
+    allDay: false, status: 'scheduled', scope: 'sarpras_shared', organizerUsername: 'grace', participants: { grace: { isPic: true } },
+  };
+  const dayDetailTask = {
+    id: 'ddt1', title: 'Periksa Genset', dueDate: '2026-09-16', status: 'not_started', priority: 'normal',
+    responsible: { grace: true }, scope: 'sarpras_shared',
+  };
+  const dayDetailActiveCal = {
+    id: 'ddc1', title: 'Sirnas C Piala Raja', startDate: '2026-09-14', endDate: '2026-09-20', allDay: true,
+    status: 'scheduled', scope: 'sarpras_shared', organizerUsername: 'grace', participants: { grace: { isPic: true } },
+  };
+  const dayDetailCancelledCal = {
+    id: 'ddc2', title: 'Turnamen Dibatalkan', startDate: '2026-09-14', endDate: '2026-09-20', allDay: true,
+    status: 'cancelled', scope: 'sarpras_shared', organizerUsername: 'grace', participants: { grace: { isPic: true } },
+  };
+  await page.evaluate((ctx) => window.__render(ctx), {
+    events: [dayDetailEvent], tasks: [dayDetailTask], calendarItems: [dayDetailActiveCal, dayDetailCancelledCal],
+    now: Date.parse('2026-09-16T08:00:00+07:00'), todayStr: '2026-09-16', mode: 'calendar', calendarView: 'month',
+    calendarAnchor: '2026-09-16', selectedDate: '2026-09-16',
+    todoFilters: { status: 'all', priority: 'all', query: '' }, canManage: true, writableScopes: ['sarpras_shared'], loading: false, error: null,
+  });
+  const dayDetailCheck = await page.evaluate(() => {
+    const panel = document.querySelector('.cal-daydetail');
+    const root = document.querySelector('.cal-root');
+    const probe = document.createElement('span');
+    probe.style.color = 'var(--id-grace)';
+    root.appendChild(probe);
+    const graceColor = getComputedStyle(probe).color;
+    probe.remove();
+
+    const eventRow = panel.querySelector('[data-agenda-action="open-event:dde1"]');
+    const taskRow = panel.querySelector('[data-agenda-action="toggle-task-done:ddt1"]')?.closest('.cal-todo-row') || panel.querySelector('[data-agenda-action="open-task:ddt1"]')?.closest('.cal-todo-row');
+    const activeCalRow = panel.querySelector('[data-agenda-action="open-calendar:ddc1"]');
+    const cancelledCalRow = panel.querySelector('[data-agenda-action="open-calendar:ddc2"]');
+    return {
+      totalDots: panel.querySelectorAll('.cal-identity-dot').length,
+      eventHasPicText: !!eventRow && eventRow.textContent.includes('PIC:') && eventRow.textContent.includes('Grace'),
+      taskHasResponsibleText: !!taskRow && taskRow.textContent.includes('Grace'),
+      activeCalTitleColor: activeCalRow ? getComputedStyle(activeCalRow.querySelector('.cal-row-title')).color : null,
+      activeCalHasRange: !!activeCalRow && activeCalRow.textContent.includes('14–20 September 2026'),
+      cancelledCalHasDoneClass: !!cancelledCalRow?.querySelector('.cal-row-title--done'),
+      cancelledCalTitleColor: cancelledCalRow ? getComputedStyle(cancelledCalRow.querySelector('.cal-row-title')).color : null,
+      graceColor,
+    };
+  });
+  check('zero .cal-identity-dot elements anywhere in Day Detail (the redundant marker is gone)', dayDetailCheck.totalDots === 0, dayDetailCheck);
+  check('the event row still shows "PIC: Grace" text (the one remaining identity signal)', dayDetailCheck.eventHasPicText, dayDetailCheck);
+  check('the task row still shows the responsible person\'s name', dayDetailCheck.taskHasResponsibleText, dayDetailCheck);
+  check('a non-cancelled Calendar-item row title is identity-colored (its replacement signal, since it has no PIC text of its own)', dayDetailCheck.activeCalTitleColor === dayDetailCheck.graceColor, dayDetailCheck);
+  check('...and shows the R2 date-range label ("14–20 September 2026")', dayDetailCheck.activeCalHasRange, dayDetailCheck);
+  check('a CANCELLED Calendar-item row keeps its muted cal-row-title--done treatment', dayDetailCheck.cancelledCalHasDoneClass, dayDetailCheck);
+  check('...and does NOT leak identity color onto the cancelled title (stays the plain muted color, not Grace\'s)', dayDetailCheck.cancelledCalTitleColor !== dayDetailCheck.graceColor, dayDetailCheck);
 
   console.log('\n[Z — console cleanliness]');
   check('zero console/page errors across the whole run', errors.length === 0, errors.slice(0, 5));
