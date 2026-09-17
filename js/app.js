@@ -2505,14 +2505,26 @@ async function navSarprasIntelligence(screen, navId) {
    pub/sub instead of assuming it is already there, with a bounded
    timeout so a genuinely-missing/deleted/unreadable entity does not hang
    forever. */
+// SS10 — keyed by `${kind}:${id}`, tracks a request already waiting on
+// agenda-store to stream the target record in. Without this, reopening
+// the bell and clicking the same still-unread (cold-start/slow-network)
+// notification again built a SECOND closure-scoped onChange listener +
+// 8s timer racing the first — harmless in practice (openDrawer() is
+// single-instance and markNotificationRead is idempotent) but a genuine
+// duplicate registration, and the exact thing SS10's notification
+// hardening pass asks to rule out.
+const _pendingAgendaOpens = new Set();
 function openAgendaEntityWhenReady(kind, id) {
-  navHome();
+  const pendingKey = `${kind}:${id}`;
+  if (_pendingAgendaOpens.has(pendingKey)) return;
   const DRAWER_MODULE = {
     agendaEvent: './agenda/agenda-event-drawer.js',
     agendaTask: './agenda/agenda-task-drawer.js',
     agendaCalendar: './agenda/agenda-calendar-drawer.js',
   }[kind];
   if (!DRAWER_MODULE) return;
+  navHome();
+  _pendingAgendaOpens.add(pendingKey);
   Promise.all([import(DRAWER_MODULE), import('./agenda/agenda-store.js')]).then(([drawerMod, storeMod]) => {
     const getById = {
       agendaEvent: storeMod.getEventById, agendaTask: storeMod.getTaskById, agendaCalendar: storeMod.getCalendarItemById,
@@ -2525,6 +2537,7 @@ function openAgendaEntityWhenReady(kind, id) {
     const onChange = () => {
       if (settled || !getById(id)) return;
       settled = true;
+      _pendingAgendaOpens.delete(pendingKey);
       storeMod.unregisterAgendaChangeListener(onChange);
       clearTimeout(timer);
       openEdit(id);
@@ -2535,6 +2548,7 @@ function openAgendaEntityWhenReady(kind, id) {
     timer = setTimeout(() => {
       if (settled) return;
       settled = true;
+      _pendingAgendaOpens.delete(pendingKey);
       storeMod.unregisterAgendaChangeListener(onChange);
       console.warn(`[push-nav] ${kind} ${id} was not found within the timeout — it may have been deleted, cancelled out of this session's readable scope, or the session lacks agenda.view/agenda.kabid.view.`);
     }, 8000);
