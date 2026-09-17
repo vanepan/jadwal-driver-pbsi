@@ -260,14 +260,23 @@ export function renderTimeline() {
  *      soonest, so a long trip never hides a shorter concurrent one.
  *      (An overnight trip that started YESTERDAY is found here.)
  *   B. Else the next upcoming (smallest startDateTime > now).
- *   C. Else the nearest previous (largest endDateTime <= now).
+ *   C. Else, if `includePrevious` (default true): the nearest previous
+ *      (largest endDateTime <= now).
  *   D. Else null — caller falls back to "now" / the anchor day.
  * Cancelled assignments are never chosen.
  * @param {Array} candidates  any assignment list (not pre-filtered to a date)
  * @param {Date}  now
+ * @param {{ includePrevious?: boolean }} [opts]
+ *   SS11 — includePrevious:false skips tier C. Added for
+ *   _focusPxForDate's "Hari Ini" positioning: btnToday's own disabled-state
+ *   contract (updateDateLabel, below — "Hari Ini can always re-centre on
+ *   now", Part 16) means that ONE caller must land on/near literal "now"
+ *   once nothing is active/upcoming, not a stale past block. Every other
+ *   caller (auto-focus on load, and this function's own unit tests) keeps
+ *   the full A/B/C ranking via the default.
  * @returns {{ assignment:object, focusDate:string, focusMinutes:number }|null}
  */
-export function pickRelevantAssignment(candidates, now = new Date()) {
+export function pickRelevantAssignment(candidates, now = new Date(), { includePrevious = true } = {}) {
   const withSpan = (candidates || [])
     .map(a => ({ a, s: assignmentSpan(a) }))
     .filter(x => x.s && x.a && x.a.status !== 'cancelled');
@@ -284,6 +293,8 @@ export function pickRelevantAssignment(candidates, now = new Date()) {
     .filter(x => x.s.startDateTime > now)
     .sort((p, q) => p.s.startDateTime - q.s.startDateTime);
   if (upcoming.length) return out(upcoming[0]);
+
+  if (!includePrevious) return null;
 
   const previous = withSpan
     .filter(x => x.s.endDateTime <= now)
@@ -355,7 +366,16 @@ function _focusPxForDate(dateStr) {
     .filter(x => x.s && x.a.status !== 'cancelled' && x.s.startDateTime < dayEnd && x.s.endDateTime > dayStart);
 
   if (isToday) {
-    const picked = pickRelevantAssignment(overlapping.map(x => x.a), new Date());
+    // SS11 — excludes pickRelevantAssignment's tier-C "nearest previous"
+    // fallback: an active or upcoming assignment is still the right thing
+    // to center on, but when today has only a STALE (already-ended)
+    // assignment and nothing active/upcoming, "Hari Ini" must land on
+    // literal "now" (see updateDateLabel's btnToday disabled-state
+    // contract, "Hari Ini can always re-centre on now" — Part 16), not
+    // jump back to that past block. _computeAutoFocusTarget (initial
+    // page-load auto-focus) is a different contract and keeps the full
+    // ranking.
+    const picked = pickRelevantAssignment(overlapping.map(x => x.a), new Date(), { includePrevious: false });
     if (picked) return Math.max(0, _blockOrFormulaPx(picked) - ctxPx);
     return Math.max(0, _canvasPx(dateStr, _nowMinutes()) - ctxPx);
   }

@@ -227,7 +227,7 @@ check('the board renders a bounded, sliding multi-day WINDOW (not one day, not u
   /const WINDOW_MAX_DAYS = \d+;/.test(tSrc) && /function maybeExtendWindow\(\)/.test(tSrc)
   && /function buildWindow\(anchorDate\)/.test(tSrc));
 check('auto-focus ranks by ABSOLUTE datetime via assignmentSpan (overnight-started-yesterday aware)',
-  /export function pickRelevantAssignment\(candidates, now = new Date\(\)\)/.test(tSrc)
+  /export function pickRelevantAssignment\(candidates, now = new Date\(\), \{ includePrevious = true \} = \{\}\)/.test(tSrc)
   && /x\.s\.startDateTime <= now && now < x\.s\.endDateTime/.test(tSrc));
 check('date-nav / auto-focus positioning uses a SMOOTH scroll tween (not an instant jump)',
   /function smoothScrollTimelineTo\(targetPx/.test(tSrc)
