@@ -1,8 +1,17 @@
 /* v1.20.9 — Mobile Zoom Hardening verification: serve the static app, load it
    in headless Chromium at an iPhone-class mobile viewport, and assert:
-   (1) the viewport meta disables pinch-zoom (maximum-scale=1, user-scalable=no)
+   (1) SS10 — v1.20.9 originally locked the viewport meta (maximum-scale=1,
+       user-scalable=no) to stop accidental double-tap zoom; commit
+       fb11a66 ("phase 10 canonical drawer migration", 2026-08-24)
+       deliberately reverted that lock AND added
+       mobile-first-verification-check.mjs's "[2] Zoom accessibility" check
+       asserting the opposite (no lock — WCAG 1.4.4 resize-text, pinch-zoom
+       must stay available) in the very same commit. That is the current,
+       intentional policy; this assertion is updated to match it rather
+       than leaving a permanently-red check asserting the superseded one.
    (2) every real editable form field computes to >=16px font-size, the
-       threshold below which iOS Safari auto-zooms an input on focus.
+       threshold below which iOS Safari auto-zooms an input on focus —
+       unaffected by (1), still the current policy.
    Field #2 is checked both for live DOM elements (login form, always present
    unauthenticated) and for CSS-rule-only elements (everything gated behind
    auth/role/modal state) via synthetic fixtures inserted at runtime — this
@@ -39,10 +48,11 @@ await new Promise(r => setTimeout(r, 1500));
 
 const results = [];
 
-// 1. Viewport meta
+// 1. Viewport meta — SS10: pinch-zoom must stay AVAILABLE (accessibility
+// policy since fb11a66, see file header); no maximum-scale/user-scalable lock.
 const viewportContent = await page.evaluate(() => document.querySelector('meta[name="viewport"]')?.content || '');
-const pinchDisabled = /maximum-scale=1(\.0)?/.test(viewportContent) && /user-scalable=no/.test(viewportContent);
-results.push({ name: 'viewport meta disables pinch-zoom', pass: pinchDisabled, detail: viewportContent });
+const pinchZoomAvailable = !/maximum-scale|user-scalable/.test(viewportContent);
+results.push({ name: 'viewport meta leaves pinch-zoom available (no maximum-scale/user-scalable lock)', pass: pinchZoomAvailable, detail: viewportContent });
 
 // 2. mobile-web-app-capable present (Android/Chrome PWA parity)
 const mobileWebAppCapable = await page.evaluate(() => document.querySelector('meta[name="mobile-web-app-capable"]')?.content || '');
