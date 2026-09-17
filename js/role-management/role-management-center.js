@@ -1162,9 +1162,16 @@ function permissionRowHtml(permission, granted, editable) {
         </span>
       </label>`;
   }
+  // SS12 — render() wraps every permission toggle in focusGuard.capture/
+  // restore (this file's own established pattern, already used for
+  // #rmSearch/#rmNameInput below), but that guard only acts on an element
+  // carrying data-focus; without one here, the just-toggled checkbox
+  // (destroyed by the following root.innerHTML rebuild) dropped keyboard
+  // focus to <body> on every single Tab+Space toggle.
   return `
     <label class="rm-permission-row">
       <input type="checkbox" data-rm-permission-id="${esc(permission.id)}"
+             data-focus="rm-perm-${esc(permission.id)}"
              ${editable ? '' : 'disabled'} ${granted ? 'checked' : ''}
              aria-label="${esc(permission.title)}" />
       <span class="rm-permission-row__text">
@@ -1240,7 +1247,11 @@ function systemPermissionRowHtml(permission, baseGrantedSet, roleAdditionalSet, 
   if (isBase) note = 'Base System Permission — tidak dapat diubah di sini.';
   else if (isProtected) note = 'Protected — tidak dapat diberikan melalui Role Additional.';
   else if (isRoleAdditional) note = 'Role Additional — diberikan ke semua user dengan role ini.';
-  const dataAttr = isBase || isProtected ? '' : `data-rm-ra-permission-id="${esc(permission.id)}"`;
+  // SS12 — same focusGuard gap as permissionRowHtml() above: without
+  // data-focus, the just-toggled checkbox (destroyed by render()'s
+  // root.innerHTML rebuild after handleRaToggle() resolves) dropped
+  // keyboard focus to <body>.
+  const dataAttr = isBase || isProtected ? '' : `data-rm-ra-permission-id="${esc(permission.id)}" data-focus="rm-ra-perm-${esc(permission.id)}"`;
   return `
     <label class="rm-permission-row${isBase ? ' rm-permission-row--base' : ''}${isRoleAdditional ? ' rm-permission-row--role-additional' : ''}${isProtected ? ' rm-permission-row--protected' : ''}">
       <input type="checkbox" ${dataAttr}
