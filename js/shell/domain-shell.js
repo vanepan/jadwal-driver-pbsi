@@ -208,7 +208,25 @@ function renderRail() {
       </button>
     `).join('');
     railListEl.querySelectorAll('.domshell-rail-item').forEach(btn => {
-      btn.addEventListener('click', () => enterDomain(btn.dataset.domain));
+      btn.addEventListener('click', (e) => {
+        enterDomain(btn.dataset.domain);
+        // SS14 — .domshell-rail's expand/collapse is pure CSS
+        // (:hover / :focus-within, see platform.css), with no JS state of
+        // its own. That's normally fine, but a mouse/touch click on a
+        // <button> also focuses it, and that focus alone satisfies
+        // :focus-within after the pointer has moved away — leaving the
+        // rail stuck open until something else steals focus (the reported
+        // "must click empty space" bug). Fix: release the focus this
+        // click just gave the button, but ONLY for a pointer-originated
+        // click — a keyboard Enter/Space activation must keep the rail
+        // expanded via focus exactly as before. `click.detail` is the
+        // browser's own, synchronous way of telling the two apart: a real
+        // mouse/touch click reports its click count (>=1), while a
+        // keyboard-activated click always reports 0 — true across
+        // Chrome/Firefox/Safari/Edge, and needs no pointerdown tracking or
+        // timers (which would race against real click timing) to read.
+        if (e.detail > 0) btn.blur();
+      });
     });
     renderedRailIds = ids;
     return;
