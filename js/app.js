@@ -12417,6 +12417,21 @@ const ICON_MOON = `<svg viewBox="0 0 20 20" fill="currentColor" width="15" heigh
 // default on modern browsers) was never affected; see its own comment.
 let _themeAnimTimer = null;
 
+// SS13 — the topbar toggle button used to compute its next theme by reading
+// document.documentElement's data-theme attribute at click time. On the View
+// Transition path that attribute is only written inside applyThemeState(),
+// which per spec runs in a task queued by startViewTransition() — NOT
+// synchronously and not even as a microtask of the click handler. Two clicks
+// handled back-to-back (a real rapid double-click can still land inside the
+// same task-queue window) both read the SAME pre-toggle value and therefore
+// both request the SAME target theme, silently eating one of the two
+// toggles (e.g. two clicks from light landed on dark, not back on light).
+// _themeRequested is the authoritative "last requested" theme, written
+// synchronously the instant a toggle is requested — the click handler reads
+// THIS, never the DOM attribute, so every click always toggles relative to
+// the previous click's intent instead of whatever has actually painted yet.
+let _themeRequested = null;
+
 /**
  * Phase 7G.5 — the pure state mutation, extracted out of applyTheme() so it
  * can be handed to document.startViewTransition() as its callback (the API
@@ -12470,6 +12485,7 @@ function applyThemeState(theme) {
  * @param {boolean} animate
  */
 function applyTheme(theme, animate = false) {
+  _themeRequested = theme;
   if (!animate) {
     applyThemeState(theme);
     return;
@@ -12485,7 +12501,19 @@ function applyTheme(theme, animate = false) {
     // authoritative regardless of how many transitions overlap, which
     // applyThemeState() already does (idempotent, always writes the full
     // current state) — so no extra locking/debouncing is needed.
-    document.startViewTransition(() => { applyThemeState(theme); });
+    //
+    // SS13 — that reasoning covered STATE but missed the PROMISE: a skipped
+    // transition rejects `ready`/`finished` with AbortError("Transition was
+    // skipped"), same as setWorkspace()'s own View Transition call already
+    // documents above. This branch never captured the returned transition,
+    // so on a rapid double/triple toggle that rejection went unhandled —
+    // the exact console AbortError SS12 flagged as a known limitation.
+    // Mirrors setWorkspace()'s existing fix: absorb the benign skip, keep
+    // surfacing real callback failures.
+    const transition = document.startViewTransition(() => { applyThemeState(theme); });
+    transition.updateCallbackDone.catch(err => console.error('[applyTheme] view transition update failed', err));
+    transition.ready.catch(() => {});
+    transition.finished.catch(() => {});
     return;
   }
 
@@ -12516,7 +12544,10 @@ function initThemeManager() {
   applyTheme(localStorage.getItem('pbsi_theme') || 'light', false);
 
   document.getElementById('v2TopbarThemeBtn')?.addEventListener('click', () => {
-    const current = document.documentElement.getAttribute('data-theme') || 'light';
+    // SS13 — toggle relative to the last REQUESTED theme, not the DOM
+    // attribute (see _themeRequested's comment): the attribute can still be
+    // mid-flight from a just-queued View Transition update task.
+    const current = _themeRequested || document.documentElement.getAttribute('data-theme') || 'light';
     applyTheme(current === 'dark' ? 'light' : 'dark', true);
   });
 }
