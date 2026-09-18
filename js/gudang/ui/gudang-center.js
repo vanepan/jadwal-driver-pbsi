@@ -137,6 +137,19 @@ const st = {
 };
 
 let host = null, mounted = false, loaded = false, lastAnimatedScreen = null, searchDebounceTimer = null;
+// SS13 — driveSearchQuery() is async (searchAndResolve() awaits a real
+// Firebase read whenever st.data isn't preloaded yet, e.g. right after
+// mount). Nothing previously stopped an OLDER in-flight resolve from
+// dispatching 'resultsLoaded' AFTER a newer one — via ordinary rapid
+// typing outrunning a slow first lookup, via applyRecentSearchQuery()'s
+// un-debounced immediate re-search racing a still-pending debounced
+// keystroke, or via the search being closed entirely while a lookup was
+// still in flight. _latestSearchQuery is the single authoritative "what
+// query is the user currently waiting on" — null when no live search is
+// pending (closed / Recent Searches view). Written synchronously at every
+// request/close site; driveSearchQuery() only ever applies a resolve that
+// still matches it.
+let _latestSearchQuery = null;
 // Phase 10: the canonical drawer's overlay lives outside `host` (it's
 // appended to document.body by openDrawer()), and the currently-open key
 // ('item:<id>' / 'asset:<id>') this overlay was last built for — lets
@@ -379,6 +392,10 @@ export function setGudangSearch(q) {
   if (!q) { openRecentSearchesView(); return; }
   if (st.search.status !== 'open') st.search = applySessionEvent(st.search, { type: 'open' }).state;
   render();
+  // SS13 — record the request synchronously, the instant it's made, so a
+  // later stale resolve (see _latestSearchQuery's comment) can recognize
+  // itself as superseded even though ITS OWN debounce timer already fired.
+  _latestSearchQuery = q;
   // v1.29.0 Feature 2 (debounce): only the potentially-expensive resolve is
   // delayed — the render() above already shows the dropdown as open the
   // instant a key is pressed, so typing never feels laggy.
@@ -395,6 +412,7 @@ export function setGudangSearch(q) {
  *  whatever was there before. */
 function openRecentSearchesView() {
   if (searchDebounceTimer) { clearTimeout(searchDebounceTimer); searchDebounceTimer = null; }
+  _latestSearchQuery = null; // no live query is pending — any still-in-flight resolve is now stale
   st.search = applySessionEvent(st.search, { type: 'open' }).state;
   render();
 }
@@ -414,6 +432,7 @@ function openRecentSearchesView() {
  *  to share one code path before Feature 6 made them behave differently. */
 export function closeGudangSearch() {
   if (searchDebounceTimer) { clearTimeout(searchDebounceTimer); searchDebounceTimer = null; }
+  _latestSearchQuery = null; // search is closing — a still-in-flight resolve must not reopen/repopulate it
   if (st.search.status === 'open') {
     st.search = applySessionEvent(st.search, { type: 'close' }).state;
     render();
@@ -549,6 +568,12 @@ function syncVisibleSearchInputs(query) {
  *  why this is a safe, additive change to that file's signature. */
 async function driveSearchQuery(query) {
   const res = await searchAndResolve(query, { items: st.data.items, locations: st.data.locations });
+  // SS13 — this resolve is only still relevant if `query` is still the
+  // query the user is actually waiting on. Without this, a slower older
+  // lookup (e.g. the first keystroke, still hitting a cold Firebase read)
+  // can finish AFTER a newer one and silently overwrite its results, or
+  // resurrect a query the user already navigated away from / closed.
+  if (query !== _latestSearchQuery) return;
   st.search = applySessionEvent(st.search, { type: 'resultsLoaded', query, results: res.ok ? res.data : [] }).state;
   render();
 }
@@ -559,6 +584,12 @@ async function driveSearchQuery(query) {
  *  field doesn't look empty while showing that query's results. */
 function applyRecentSearchQuery(query) {
   if (!query) return;
+  // SS13 — this immediate re-search bypasses the debounce entirely (by
+  // design, per the comment below), so a PRIOR debounced keystroke's timer
+  // could otherwise still be pending and fire later, overwriting this
+  // deliberate click's results with a stale, already-abandoned query.
+  if (searchDebounceTimer) { clearTimeout(searchDebounceTimer); searchDebounceTimer = null; }
+  _latestSearchQuery = query;
   syncVisibleSearchInputs(query);
   if (st.search.status !== 'open') st.search = applySessionEvent(st.search, { type: 'open' }).state;
   render();

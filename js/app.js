@@ -2514,6 +2514,18 @@ async function navSarprasIntelligence(screen, navId) {
 // duplicate registration, and the exact thing SS10's notification
 // hardening pass asks to rule out.
 const _pendingAgendaOpens = new Set();
+// SS13 — the exact same class of gap _pendingAgendaOpens closes for Agenda,
+// but for the 'engineering' case below: without this, a rapid double-click
+// (or double-tap) on an engineering push notification fires TWO overlapping
+// navEngineering() calls. navEngineering()'s own `engineeringMounted` guard
+// is a plain boolean set synchronously before its `await mountEngineering()`
+// — so on a session's FIRST-ever engineering navigation, a second concurrent
+// call sees the module already "mounted" and proceeds immediately, racing
+// ahead of the first call's still-in-flight mount instead of waiting for it.
+// Deduping at the notification entry point (one id, one in-flight open)
+// avoids that race entirely rather than trying to fix re-entrancy inside
+// navEngineering() itself.
+const _pendingEngineeringOpens = new Set();
 function openAgendaEntityWhenReady(kind, id) {
   const pendingKey = `${kind}:${id}`;
   if (_pendingAgendaOpens.has(pendingKey)) return;
@@ -2570,10 +2582,12 @@ function initPushNavHandler() {
         markNotificationRead(id);
         break;
       case 'engineering':
-        navEngineering('dashboard', 'v2NavEngDashboard').then(() => {
-          openEngineeringAssignment(id);
-          markNotificationRead(id);
-        });
+        if (_pendingEngineeringOpens.has(id)) break;
+        _pendingEngineeringOpens.add(id);
+        navEngineering('dashboard', 'v2NavEngDashboard')
+          .then(() => { openEngineeringAssignment(id); markNotificationRead(id); })
+          .catch((err) => console.error('[push-nav] engineering navigation failed', err))
+          .finally(() => _pendingEngineeringOpens.delete(id));
         break;
       case 'agendaEvent':
       case 'agendaTask':
