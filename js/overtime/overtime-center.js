@@ -150,6 +150,17 @@ let root = null, bound = false, opened = false, listening = false;
 // never torn down. Tracks that input so render() can destroy it before
 // discarding it (mirrors engineering-center.js's identical fix).
 let _rekapDatepickerInputEl = null;
+// SS13 — confirmSaveDailyEntry() has two independent trigger paths (the
+// dialog's Simpan button via onClick's data-act dispatch, AND its own
+// direct Enter-keydown shortcut at onRekapGridKeydown — see that
+// function's FIX 14 comment). Neither was guarded against firing twice
+// while the first svc.createDailyEntries() write is still in flight — a
+// rapid double-click, or a double Enter-press, could submit the SAME
+// employeeIds/date batch twice, creating duplicate overtime entries (a
+// real payroll-data defect, not just a UI glitch). Guards re-entry;
+// always released in confirmSaveDailyEntry()'s finally so a failed save
+// can still be retried.
+let _savingDailyEntry = false;
 const focusGuard = createFocusGuard();
 
 /* ── Small helpers ───────────────────────────────────────────────── */
@@ -921,6 +932,7 @@ function closeSaveConfirm() { setState({ saveConfirmData: null, entryErr: '' });
 async function confirmSaveDailyEntry() {
   const d = st.saveConfirmData;
   if (!d) return;
+  if (_savingDailyEntry) return; // SS13 — a save for this dialog is already in flight
   const units = svc.listActiveUnits();
   const existingIdsByUnit = freshExistingIdsByUnit(d.date);
   const employeeIds = [];
@@ -931,6 +943,7 @@ async function confirmSaveDailyEntry() {
     });
   });
   if (!employeeIds.length) { setState({ entryErr: 'Pilih minimal satu karyawan.' }); return; }
+  _savingDailyEntry = true;
   try {
     const overrideTierKey = st.entryOverrideOn && st.entryOverrideTierKey ? st.entryOverrideTierKey : null;
     const result = await svc.createDailyEntries({
@@ -953,6 +966,8 @@ async function confirmSaveDailyEntry() {
     if (target) target.focus();
   } catch (err) {
     setState({ entryErr: err.message || 'Gagal menyimpan.' });
+  } finally {
+    _savingDailyEntry = false;
   }
 }
 
