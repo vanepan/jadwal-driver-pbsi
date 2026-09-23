@@ -161,6 +161,15 @@ let _rekapDatepickerInputEl = null;
 // always released in confirmSaveDailyEntry()'s finally so a failed save
 // can still be retried.
 let _savingDailyEntry = false;
+// SS15 — same double-submit hazard as _savingDailyEntry above, but for the
+// Unit/Employee/RateVersion/Holiday create-or-edit forms: each stays open
+// with an enabled submit button for the full async round-trip (no setState
+// happens until the write resolves), so a rapid double-click or double
+// Enter fires onSubmit() twice and svc.create*() has no idempotency key —
+// two calls in flight before either resolves produce two records with
+// different generated ids. Guarded per form key; always released in the
+// matching finally so a failed save can still be retried.
+const _savingForm = new Set();
 const focusGuard = createFocusGuard();
 
 /* ── Small helpers ───────────────────────────────────────────────── */
@@ -1324,6 +1333,8 @@ async function onSubmit(e) {
   const act = el.dataset.act;
   if (act === 'submitUnit') {
     e.preventDefault();
+    if (_savingForm.has('unit')) return; // SS15 — a save for this form is already in flight
+    _savingForm.add('unit');
     try {
       if (st.editUnitId) await svc.updateUnit(st.editUnitId, { name: st.unitForm.name });
       else await svc.createUnit({ name: st.unitForm.name });
@@ -1331,11 +1342,15 @@ async function onSubmit(e) {
       toast('Unit tersimpan.');
     } catch (err) {
       setState({ unitFormErr: err.message || 'Gagal menyimpan unit.' });
+    } finally {
+      _savingForm.delete('unit');
     }
     return;
   }
   if (act === 'submitEmployee') {
     e.preventDefault();
+    if (_savingForm.has('employee')) return; // SS15 — a save for this form is already in flight
+    _savingForm.add('employee');
     const payload = { name: st.employeeForm.name, unitId: st.employeeForm.unitId, note: st.employeeForm.note };
     try {
       if (st.editEmployeeId) await svc.updateEmployee(st.editEmployeeId, payload);
@@ -1344,11 +1359,15 @@ async function onSubmit(e) {
       toast('Karyawan tersimpan.');
     } catch (err) {
       setState({ employeeFormErr: err.message || 'Gagal menyimpan karyawan.' });
+    } finally {
+      _savingForm.delete('employee');
     }
     return;
   }
   if (act === 'submitRateVersion') {
     e.preventDefault();
+    if (_savingForm.has('rateVersion')) return; // SS15 — a save for this form is already in flight
+    _savingForm.add('rateVersion');
     const payload = { tierKey: st.rateModalTierKey, amount: st.rateForm.amount, effectiveFrom: st.rateForm.effectiveFrom, note: st.rateForm.note };
     try {
       await svc.createRateVersion(payload);
@@ -1356,11 +1375,15 @@ async function onSubmit(e) {
       toast('Tarif baru tersimpan.');
     } catch (err) {
       setState({ rateFormErr: err.message || 'Gagal menyimpan tarif.' });
+    } finally {
+      _savingForm.delete('rateVersion');
     }
     return;
   }
   if (act === 'submitHoliday') {
     e.preventDefault();
+    if (_savingForm.has('holiday')) return; // SS15 — a save for this form is already in flight
+    _savingForm.add('holiday');
     const payload = { date: st.holidayForm.date, name: st.holidayForm.name, type: st.holidayForm.type, tierKey: st.holidayForm.tierKey, note: st.holidayForm.note };
     try {
       if (st.editHolidayId) await svc.updateHoliday(st.editHolidayId, payload);
@@ -1369,6 +1392,8 @@ async function onSubmit(e) {
       toast('Hari libur tersimpan.');
     } catch (err) {
       setState({ holidayFormErr: err.message || 'Gagal menyimpan hari libur.' });
+    } finally {
+      _savingForm.delete('holiday');
     }
     return;
   }
