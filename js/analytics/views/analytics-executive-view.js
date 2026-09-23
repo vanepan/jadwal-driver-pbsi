@@ -27,6 +27,7 @@ import {
   renderAnalyticsEmptyState, renderResponsiveCurrency, anIcon,
 } from '../analytics-shell.js';
 import { bindResponsiveCurrency, unbindResponsiveCurrency } from '../responsive-currency.js';
+import { showToast } from '../../components/toast.js';
 
 /** Container-aware currency cell (sized by ResizeObserver to actual card width). */
 const curResp = (v, cls = '') => renderResponsiveCurrency(rp(v), rpCompact(v), cls);
@@ -399,7 +400,14 @@ function onHostClick(e) {
   }
   const actionBtn = e.target.closest('[data-action]');
   if (actionBtn && actionBtn.dataset.action === 'exec-export-pdf' && typeof window.exportExecutiveAnalytics === 'function') {
-    Promise.resolve(window.exportExecutiveAnalytics()).catch(err => console.error('[AnalyticsExecutive] PDF export failed', err));
+    // SS15 — this used to fail completely silently (console.error only, no
+    // loading state anywhere on this button): click, wait, nothing happens,
+    // no toast, no retry hint. Matches petty-cash-center.js#doPrintNor's
+    // existing convention for the same failure.
+    Promise.resolve(window.exportExecutiveAnalytics()).catch(err => {
+      console.error('[AnalyticsExecutive] PDF export failed', err);
+      showToast('Gagal membuat PDF', 'error');
+    });
   }
 }
 

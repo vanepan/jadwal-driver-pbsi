@@ -27,6 +27,7 @@ import {
   renderInsightRow, renderInsightDividerList, renderExportCenter, renderHighlights,
   renderAnalyticsEmptyState, renderAnalyticsErrorState, anIcon,
 } from '../analytics-shell.js';
+import { showToast } from '../../components/toast.js';
 
 const PALETTE = ['#3B5BA9', '#2F7D62', '#946420', '#6B4E9E', '#1E7A8A', '#A8292F', '#7A6E2A', '#2A7A6E'];
 
@@ -359,10 +360,18 @@ function onHostClick(e) {
   const actionBtn = e.target.closest('[data-action]');
   if (actionBtn) {
     const action = actionBtn.dataset.action;
+    // SS15 — both of these used to fail completely silently (console.error
+    // only): click, wait, nothing happens, no toast, no retry hint.
     if (action === 'pc-export-pdf' && typeof window.exportPettyCashAnalytics === 'function') {
-      Promise.resolve(window.exportPettyCashAnalytics()).catch(err => console.error('[AnalyticsPettyCash] PDF export failed', err));
+      Promise.resolve(window.exportPettyCashAnalytics()).catch(err => {
+        console.error('[AnalyticsPettyCash] PDF export failed', err);
+        showToast('Gagal membuat PDF', 'error');
+      });
     } else if (action === 'pc-export-excel' && typeof window.exportPettyCashAnalyticsExcel === 'function') {
-      Promise.resolve(window.exportPettyCashAnalyticsExcel()).catch(err => console.error('[AnalyticsPettyCash] Excel export failed', err));
+      Promise.resolve(window.exportPettyCashAnalyticsExcel()).catch(err => {
+        console.error('[AnalyticsPettyCash] Excel export failed', err);
+        showToast('Gagal membuat Excel', 'error');
+      });
     }
   }
 }

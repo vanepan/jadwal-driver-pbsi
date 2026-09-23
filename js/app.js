@@ -2643,11 +2643,23 @@ async function navAnalyticsPettyCash() {
   // resolved mount/close/refresh functions are cached below for setWorkspace()'s
   // guard (lines further down), which only ever runs once this has resolved
   // (guarded by analyticsPettyMounted, set true only after this await starts).
-  const { mountAnalyticsPettyCash, closeAnalyticsPettyCash, refreshAnalyticsPettyCash } = await loadPettyCashAnalyticsView();
-  _fnMountAnalyticsPettyCash = mountAnalyticsPettyCash;
-  _fnCloseAnalyticsPettyCash = closeAnalyticsPettyCash;
-  _fnRefreshAnalyticsPettyCash = refreshAnalyticsPettyCash;
-  await _fnMountAnalyticsPettyCash(document.getElementById('v2AnalyticsPettyWorkspace'));
+  try {
+    const { mountAnalyticsPettyCash, closeAnalyticsPettyCash, refreshAnalyticsPettyCash } = await loadPettyCashAnalyticsView();
+    _fnMountAnalyticsPettyCash = mountAnalyticsPettyCash;
+    _fnCloseAnalyticsPettyCash = closeAnalyticsPettyCash;
+    _fnRefreshAnalyticsPettyCash = refreshAnalyticsPettyCash;
+    await _fnMountAnalyticsPettyCash(document.getElementById('v2AnalyticsPettyWorkspace'));
+  } catch (err) {
+    // SS15 — this had no try/catch at all: a failed dynamic import/mount
+    // (chunk load failure, transient network) left analyticsPettyMounted
+    // stuck at true with no mount/close/refresh fns ever assigned, an
+    // unhandled rejection, and stale/blank content with zero feedback —
+    // same shape as renderDriverWellnessSection's already-correct fallback.
+    console.warn('[AnalyticsPettyCash] mount failed', err);
+    analyticsPettyMounted = false;
+    const host = document.getElementById('v2AnalyticsPettyWorkspace');
+    if (host) host.innerHTML = '<div class="dwi daa exec-ui v2-analytics-claude"><div class="daa-status daa-status--warn"><div class="daa-status__eye">Analytics Petty Cash</div><div class="daa-status__level">Gagal memuat</div><div class="daa-status__msg">Terjadi kesalahan saat memuat modul ini. Coba muat ulang halaman.</div></div></div>';
+  }
 }
 /* v1.18.8 — "Analytics Executive" is repointed to the new Executive Analytics
    Dashboard (the platform's executive home page), rendered as a SIBLING admin
