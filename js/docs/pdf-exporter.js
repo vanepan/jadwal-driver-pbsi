@@ -55,15 +55,50 @@ function _loadPdfMake() {
 
 /* ── Backends ───────────────────────────────────────────────── */
 
+// SS15 — v1.28.11's incident (see js/config.js's changelog entry for that
+// version) root-caused a REAL production hang: pdfmake's internal
+// DocMeasure/extendTableWidths mutates the table `widths:` array it's given,
+// and if that throws (there it was a frozen array; in general it can be any
+// internal pdfmake exception — bad image data, an invalid font reference, a
+// malformed table), it throws deep inside getBlob()'s async measurement
+// pipeline, AFTER this function's synchronous try/catch has already
+// returned — so neither resolve() nor reject() below is ever called and the
+// Promise hangs forever. That release fixed only the ONE trigger site
+// (templates/nor.js's frozen arrays); this exporter itself had no general
+// safeguard, so any OTHER pdfmake-internal throw in any template reproduces
+// the identical permanent hang. A bounded timeout guarantees this Promise
+// always eventually settles either way, so every awaiter up the chain
+// (doc-engine.js, callers' try/catch/finally) actually runs instead of
+// hanging with the loading state stuck forever.
+const PDF_EXPORT_TIMEOUT_MS = 30000;
+
 class PdfmakeBackend {
   /** @returns {Promise<Blob>} real application/pdf blob */
   async exportToPdf(definition) {
     const pdfMake = await _loadPdfMake();
     return new Promise((resolve, reject) => {
-      try {
-        pdfMake.createPdf(definition).getBlob(blob => resolve(blob));
-      } catch (err) {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        reject(new Error('Pembuatan PDF melebihi batas waktu (30 detik). Coba lagi.'));
+      }, PDF_EXPORT_TIMEOUT_MS);
+      const settleResolve = (blob) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(blob);
+      };
+      const settleReject = (err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
         reject(err);
+      };
+      try {
+        pdfMake.createPdf(definition).getBlob(blob => settleResolve(blob));
+      } catch (err) {
+        settleReject(err);
       }
     });
   }
