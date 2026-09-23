@@ -639,7 +639,7 @@ function dashboard(m) {
   const archivedCount = svc.archivedExpenses().length;
   const recent = svc.activeExpenses().slice(0, 5).map(decorate);
   const recentRows = recent.map(e => `
-    <div data-act="openDetail" data-id="${esc(e.id)}" style="display:flex;align-items:center;gap:13px;padding:12px 18px;border-bottom:1px solid var(--border2);cursor:pointer">
+    <div data-act="openDetail" data-id="${esc(e.id)}" role="button" tabindex="0" style="display:flex;align-items:center;gap:13px;padding:12px 18px;border-bottom:1px solid var(--border2);cursor:pointer">
       <div style="${dotStyle(e.unit)}"></div>
       <div style="flex:1;min-width:0">
         <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(e.description)}</div>
@@ -677,7 +677,7 @@ function dashboard(m) {
         <div style="flex:1"><div style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Pengeluaran Aktif</div><div style="font-weight:800;font-size:20px;margin-top:2px">${m.expenseCount}</div></div>
         <div style="font-size:11px;color:var(--muted);text-align:right;max-width:120px">Tercatat pada siklus berjalan</div>
       </div>
-      <div data-act="goArchive" title="Lihat pengeluaran terarsip" style="flex:1;min-width:220px;background:var(--card);border:1px solid var(--border);border-radius:13px;box-shadow:var(--shadow);padding:14px 16px;display:flex;align-items:center;gap:13px;cursor:pointer">
+      <div data-act="goArchive" role="button" tabindex="0" title="Lihat pengeluaran terarsip" style="flex:1;min-width:220px;background:var(--card);border:1px solid var(--border);border-radius:13px;box-shadow:var(--shadow);padding:14px 16px;display:flex;align-items:center;gap:13px;cursor:pointer">
         <div style="width:34px;height:34px;flex:none;border-radius:10px;background:var(--border2);color:var(--muted);display:flex;align-items:center;justify-content:center"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg></div>
         <div style="flex:1"><div style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Pengeluaran Diarsipkan</div><div style="font-weight:800;font-size:20px;margin-top:2px">${archivedCount}</div></div>
         <span style="display:flex;color:var(--muted)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
@@ -762,7 +762,7 @@ function expensesScreen(m) {
   ].map(c => `<button data-act="filterStatus" data-id="${c.key}" style="border:none;border-radius:7px;padding:7px 13px;font-size:12.5px;font-weight:600;cursor:pointer;${st.fStatus === c.key ? 'background:var(--primary);color:#fff' : 'background:transparent;color:var(--muted)'}">${c.label} <span style="opacity:.6">${c.count}</span></button>`).join('');
 
   const rows = list.map(decorate).map(e => `
-    <div class="pc-exp-row" data-act="openDetail" data-id="${esc(e.id)}" style="display:grid;grid-template-columns:128px 1fr 150px 130px 130px 120px;gap:12px;padding:13px 18px;border-bottom:1px solid var(--border2);cursor:pointer;align-items:center">
+    <div class="pc-exp-row" data-act="openDetail" data-id="${esc(e.id)}" role="button" tabindex="0" style="display:grid;grid-template-columns:128px 1fr 150px 130px 130px 120px;gap:12px;padding:13px 18px;border-bottom:1px solid var(--border2);cursor:pointer;align-items:center">
       <div><div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600">${esc(e.refNumber)}</div><div style="font-size:10.5px;color:var(--muted);margin-top:2px">${esc(e.dateFmt)}</div></div>
       <div style="min-width:0"><div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(e.description)}</div><div style="font-size:10.5px;color:var(--muted);margin-top:1px">${esc(e.notesDisplay)}</div></div>
       <div style="display:flex;align-items:center;gap:7px"><span style="${dotStyle(e.unit)}"></span><span style="font-size:12.5px">${esc(e.unitDisp)}</span></div>
@@ -847,7 +847,7 @@ function generateScreen(m) {
   const rows = avail.map(e => {
     const sel = st.selectedIds.includes(e.id);
     return `
-    <div class="pc-nor-row" data-act="toggleSel" data-id="${esc(e.id)}" style="display:grid;grid-template-columns:34px 110px 1fr 130px 120px;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border2);cursor:pointer;align-items:center;${sel ? 'background:var(--primary-tint)' : 'background:transparent'}">
+    <div class="pc-nor-row" data-act="toggleSel" data-id="${esc(e.id)}" role="button" tabindex="0" aria-pressed="${sel ? 'true' : 'false'}" style="display:grid;grid-template-columns:34px 110px 1fr 130px 120px;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border2);cursor:pointer;align-items:center;${sel ? 'background:var(--primary-tint)' : 'background:transparent'}">
       <div style="width:19px;height:19px;border-radius:6px;display:flex;align-items:center;justify-content:center;${sel ? 'background:var(--primary);border:1px solid var(--primary)' : 'background:var(--card);border:1.5px solid var(--input-bd)'}">${sel ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>' : ''}</div>
       <div><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600">${esc(e.refNumber)}</div><div style="font-size:10px;color:var(--muted);margin-top:1px">${esc(fmtShort(e.expenseDate))}</div></div>
       <div style="min-width:0"><div style="font-weight:600;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(e.description)}</div><div style="font-size:10px;color:var(--muted);margin-top:1px">${esc(e.notes || '—')}</div></div>
@@ -882,7 +882,7 @@ function generateScreen(m) {
           <div style="margin:-6px 0 13px"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Nomor Lengkap (otomatis)</span><div id="pcNorFull" style="margin-top:5px;background:var(--card2);border:1px solid var(--border2);border-radius:9px;padding:9px 11px;font-size:12px;line-height:1.4;font-family:'JetBrains Mono',monospace;${isValidNorSequence(st.norForm.sequence) ? 'color:var(--primary-text);font-weight:600' : 'color:var(--muted)'}">${esc(isValidNorSequence(st.norForm.sequence) ? norNumberFromSequence(st.norForm.sequence, st.norForm.date) : 'Masukkan nomor urut (angka) untuk melihat nomor lengkap')}</div></div>
           <label style="display:block;margin-bottom:13px"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Tanggal NOR *</span><input type="date" name="date" value="${esc(st.norForm.date)}" data-act="norForm" style="width:100%;margin-top:6px;background:var(--input);border:1px solid var(--input-bd);border-radius:9px;padding:9px 11px;font-size:12.5px;color:var(--text)"/></label>
           <div style="display:block;margin-bottom:13px"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Perihal <span style="color:var(--muted);font-weight:400;letter-spacing:0">(otomatis dari tanggal)</span></span><div id="pcNorSubject" style="margin-top:6px;background:var(--card2);border:1px solid var(--border2);border-radius:9px;padding:9px 11px;font-size:12.5px;color:var(--muted);line-height:1.4">${esc(norAutoSubject(st.norForm.date))}</div></div>
-          <div data-act="toggleTestNor" style="display:flex;align-items:flex-start;gap:9px;cursor:pointer;background:${st.norForm.isTest ? 'var(--amber-tint)' : 'var(--card2)'};border:1px solid ${st.norForm.isTest ? 'var(--amber-bd)' : 'var(--border2)'};border-radius:9px;padding:10px 12px">
+          <div data-act="toggleTestNor" role="button" tabindex="0" aria-pressed="${st.norForm.isTest ? 'true' : 'false'}" style="display:flex;align-items:flex-start;gap:9px;cursor:pointer;background:${st.norForm.isTest ? 'var(--amber-tint)' : 'var(--card2)'};border:1px solid ${st.norForm.isTest ? 'var(--amber-bd)' : 'var(--border2)'};border-radius:9px;padding:10px 12px">
             <div style="width:18px;height:18px;flex:none;margin-top:1px;border-radius:5px;display:flex;align-items:center;justify-content:center;${st.norForm.isTest ? 'background:var(--amber);border:1px solid var(--amber)' : 'background:var(--card);border:1.5px solid var(--input-bd)'}">${st.norForm.isTest ? '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>' : ''}</div>
             <div><div style="font-weight:600;font-size:12.5px;color:var(--text)">Generate as Test NOR</div><div style="font-size:11px;color:var(--muted);margin-top:1px;line-height:1.35">NOR uji coba: tidak mengunci nota, tidak memengaruhi metrik, dan tersembunyi dari Riwayat resmi.</div></div>
           </div>
@@ -933,7 +933,7 @@ function historyScreen() {
       ? (isTest ? archTestBadge : archBadge)
       : (isTest ? testBadge : `<span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.5px;padding:4px 9px;border-radius:6px;${meta.done ? 'background:var(--green-tint);color:var(--green);border:1px solid var(--green-bd)' : 'background:var(--amber-tint);color:var(--amber);border:1px solid var(--amber-bd)'}">${meta.label}</span>`);
     return `
-    <div class="pc-nor-hist" data-act="norOpen" data-id="${esc(n.id)}" style="background:var(--card);border:1px solid var(--border);border-radius:13px;box-shadow:var(--shadow);padding:17px 19px;display:flex;align-items:center;gap:18px;cursor:pointer;${isTest || n.archived ? 'opacity:.92' : ''}">
+    <div class="pc-nor-hist" data-act="norOpen" data-id="${esc(n.id)}" role="button" tabindex="0" style="background:var(--card);border:1px solid var(--border);border-radius:13px;box-shadow:var(--shadow);padding:17px 19px;display:flex;align-items:center;gap:18px;cursor:pointer;${isTest || n.archived ? 'opacity:.92' : ''}">
       <div style="width:42px;height:42px;flex:none;border-radius:11px;background:var(--primary-tint);color:var(--primary);display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div>
       <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:14px;font-family:'JetBrains Mono',monospace">${esc(n.norNumber)}</div><div style="font-size:12px;color:var(--muted);margin-top:2px">${esc(n.subject)} · ${esc(fmtLong(n.norDate))}</div></div>
       <div style="text-align:right"><div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--label);letter-spacing:.5px">TOTAL</div><div style="font-weight:700;font-size:14px;font-family:'JetBrains Mono',monospace">${esc(rp(total))}</div></div>
@@ -1056,7 +1056,7 @@ function settingsScreen(m) {
       <input name="label" data-act="sigInput" data-id="${s.id}" data-focus="sig-label-${s.id}" value="${esc(s.label)}" style="width:100%;background:var(--input);border:1px solid var(--input-bd);border-radius:8px;padding:8px 10px;font-size:12px;color:var(--text)"/>
       <input name="name" data-act="sigInput" data-id="${s.id}" data-focus="sig-name-${s.id}" value="${esc(s.name)}" style="width:100%;background:var(--input);border:1px solid var(--input-bd);border-radius:8px;padding:8px 10px;font-size:12px;color:var(--text)"/>
       <input name="position" data-act="sigInput" data-id="${s.id}" data-focus="sig-pos-${s.id}" value="${esc(s.position)}" style="width:100%;background:var(--input);border:1px solid var(--input-bd);border-radius:8px;padding:8px 10px;font-size:12px;color:var(--text)"/>
-      <div data-act="removeSig" data-id="${s.id}" style="width:32px;height:32px;border-radius:8px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></div>
+      <div data-act="removeSig" data-id="${s.id}" role="button" tabindex="0" aria-label="Hapus" title="Hapus tanda tangan" style="width:32px;height:32px;border-radius:8px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></div>
     </div>`).join('');
 
   return `
@@ -1294,7 +1294,7 @@ function addModal() {
     <div data-act="stop" class="pc-add-box">
       <div class="pc-add-head" style="display:flex;justify-content:space-between;align-items:center;padding:18px 22px;border-bottom:1px solid var(--border2)">
         <div><div style="font-weight:800;font-size:17px">${esc(title)}</div><div style="font-size:11.5px;color:var(--muted);margin-top:1px">${subtitle}</div></div>
-        <div data-act="closeAdd" style="width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
+        <div data-act="closeAdd" role="button" tabindex="0" aria-label="Tutup" style="width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
       </div>
       <div class="pc-add-body">
         <div class="pc-add-grid">
@@ -1521,6 +1521,15 @@ function bindDelegation() {
   root.addEventListener('change', onChange);
   // Nama Unit autocomplete (v1.17.4): keyboard navigation + close-on-blur.
   root.addEventListener('keydown', onUnitAcKeydown);
+  // SS16 — every clickable [data-act] row/icon here is a plain <div> with
+  // role="button" tabindex="0" (dashboard/expense rows, archive card, NOR
+  // rows, the Test-NOR toggle, remove-signature, the Add modal's close
+  // icon), same shape as Gudang's onHostKeydown (js/gudang/ui/
+  // gudang-center.js): a real role="button" must answer Enter AND Space
+  // the same way a native <button> would — WAI-ARIA APG requirement, not
+  // optional polish. Re-dispatches through the SAME onClick() delegate via
+  // el.click(), so every case in that switch keeps working unchanged.
+  root.addEventListener('keydown', onHostKeydown);
   // Issue E: Tab-trap + Escape for the Add/Edit Expense modal. Bound on
   // `document` (not `root`) so Escape still dismisses the modal even if
   // focus has somehow left the panel — the same robustness the canonical
@@ -1542,6 +1551,18 @@ function bindDelegation() {
 }
 
 function actorEl(e) { return e.target.closest('[data-act]'); }
+
+/* SS16 — mirrors Gudang's onHostKeydown (js/gudang/ui/gudang-center.js):
+   a clickable <div role="button"> must answer Enter AND Space the same way
+   a real <button> would. Scoped to e.target itself (not closest()) so a
+   keypress on a genuinely nested real control — an <input>/<button> inside
+   one of this module's rows — is never hijacked into a second activation. */
+function onHostKeydown(e) {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  if (!e.target || e.target.getAttribute('role') !== 'button' || !e.target.dataset.act) return;
+  e.preventDefault();
+  e.target.click();
+}
 
 async function onClick(e) {
   const el = actorEl(e);
