@@ -29,7 +29,21 @@ function fb() {
 export async function saveProjection(projection) {
   if (!isStockProjection(projection)) return failure(REPOSITORY_ERROR.INVALID_INPUT, 'saveProjection: projection does not satisfy the StockProjection contract.');
   const { storeFirebaseData } = await fb();
-  await storeFirebaseData(`${GUDANG_PATHS.stock}/${projection.itemId}`, projection);
+  // SS15 — storeFirebaseData() returns the raw (uncaught-by-design) Firebase
+  // set() promise, which REJECTS on permission-denied/network/quota errors.
+  // Every other write in this repository layer (see movement-repository.js's
+  // appendMovement) wraps that call in try/catch and returns a failure()
+  // Result instead of letting it throw — this one didn't, so a rejected
+  // write here used to propagate all the way up through
+  // recalculateStock()/executeGoodsIn()/executeGoodsOut() as an unhandled
+  // rejection, permanently stranding the Goods In/Out screen's `saving`
+  // flag at true (no finally ever ran) with no way to retry short of a
+  // page reload.
+  try {
+    await storeFirebaseData(`${GUDANG_PATHS.stock}/${projection.itemId}`, projection);
+  } catch (err) {
+    return failure(REPOSITORY_ERROR.WRITE_FAILED, `saveProjection: write rejected (${err?.code || err?.message || 'unknown error'}).`);
+  }
   return success(projection);
 }
 
