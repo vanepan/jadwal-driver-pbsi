@@ -80,8 +80,27 @@ function _ensureDom() {
   overlay.addEventListener('click', e => { if (e.target === overlay) closeViewer(); });
   document.getElementById('docvClose').addEventListener('click', closeViewer);
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && overlay.classList.contains('open')) closeViewer();
+    if (!overlay.classList.contains('open')) return;
+    if (e.key === 'Escape') { closeViewer(); return; }
+    if (e.key === 'Tab') _trapTab(overlay, e);
   });
+}
+
+// SS16 — this dialog claims role="dialog"/aria-modal="true" but never
+// actually trapped Tab: focus could leave docvPrint (the last control)
+// straight into whatever the underlying page happened to have next in DOM
+// order, sighted behind the opaque overlay. Same trap shape as the
+// canonical drawer's _trapTab (js/components/drawer.js) — kept local since
+// this viewer is deliberately self-contained (no shared drawer import).
+const DOCV_FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+function _trapTab(overlay, e) {
+  const modal = overlay.querySelector('.docv-modal');
+  if (!modal) return;
+  const nodes = Array.from(modal.querySelectorAll(DOCV_FOCUSABLE)).filter((n) => n.offsetParent !== null || n === document.activeElement);
+  if (!nodes.length) return;
+  const first = nodes[0], last = nodes[nodes.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
 }
 
 /**
@@ -153,6 +172,13 @@ export function showViewer(blob, filename, meta = {}) {
   // export drawer closes) is exactly the "order-dependent glitch" risk
   // flagged during this phase's own audit. Unified onto the one lock.
   if (!wasOpen) lockBodyScroll();
+  // SS16 — aria-modal="true" implies focus enters the dialog on open; this
+  // never happened (only closeViewer()'s restore, fixed in SS12, existed).
+  // A keyboard user activating Preview/Cetak landed nowhere: Tab from their
+  // trigger continued into whatever the underlying page had next, sighted
+  // behind the opaque overlay. Only on the real open transition, matching
+  // the lock/focus-capture gating just above.
+  if (!wasOpen) document.getElementById('docvClose').focus();
 }
 
 export function closeViewer() {
