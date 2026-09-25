@@ -14645,6 +14645,20 @@ body.v2-shell-active .block-status-badge {
        visible reflow of the main content column either. */
     transition: margin-left var(--motion-normal, 200ms) var(--motion-ease, ease) 100ms;
   }
+  /* SS14.7 — a THIRD, independent consequence of the same real-hover-lapse
+     mechanism SS14.5 (rail width) and SS14.6 (label/brandtext/usertext
+     opacity) already fixed: .main-area's own margin-left is keyed off this
+     EXACT same .domshell-rail:hover/:focus-within state via the sibling
+     selector above, with the identical "collapse has no delay, expand has
+     a 100ms one" shape — so it reacted to the same transition-induced
+     hover loss by genuinely collapsing from 220px to 72px (confirmed:
+     97.6 -> 76.1 -> 72.3 -> 72, sitting there through the whole transition
+     window) and snapping back once real hover returned, reading as the
+     module content jumping left then right on every navigation. Same
+     fix, same reasoning, same 700ms margin. */
+  html.domshell-nav-transition .domshell-rail:not(:hover):not(:focus-within) ~ .main-area {
+    transition: margin-left var(--motion-normal, 200ms) var(--motion-ease, ease) 700ms;
+  }
 }
 .domshell-rail:hover,
 .domshell-rail:focus-within {
