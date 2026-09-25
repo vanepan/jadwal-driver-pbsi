@@ -434,6 +434,51 @@ html[data-anim="off"].theme-anim *::after {
   animation-timing-function: ease;
 }
 
+/* SS14.5 — the ::view-transition pseudo-element tree renders as a
+   position:fixed, viewport-covering top-layer overlay (the View
+   Transitions spec's own UA stylesheet) for the ~300-390ms (occasionally
+   longer — a heavier workspace render measured ~590ms) a navigation
+   transition runs. Confirmed by direct instrumentation, mouse held
+   genuinely stationary and hovering the whole time: document.
+   elementFromPoint() at the cursor's own screen position reads back <html>
+   instead of the live rail button underneath for the ENTIRE transition
+   window, and real :hover on .domshell-rail genuinely goes false as a
+   result — not a visual artifact, an actual pseudo-class state change,
+   which the rail's own base .domshell-rail{transition:width 200ms ease}
+   rule then genuinely, visibly collapses to 72px in response to, before
+   re-expanding once the overlay tears down and hit-testing reaches the
+   live DOM again. This is what SS14.1-14.4 were chasing as "the sidebar
+   collapses during navigation" and could never reproduce with a
+   programmatic .click() (no real hover in flight to lose) or in the
+   isolated domain-shell.js harness (whose mock `land` never called
+   startViewTransition() at all).
+   Tried first, disproven by direct testing (a minimal, app-independent
+   repro page): giving the transition pseudo-elements pointer-events:none,
+   the standard web-platform recommendation for "let input reach the live
+   page under a purely decorative overlay." getComputedStyle confirmed the
+   rule applied (pointer-events read "none"), but elementFromPoint() still
+   returned <html> throughout — this Chromium's top-layer hit-testing for
+   View Transitions does not fall through to the live document underneath
+   regardless of pointer-events. Not a viable fix here.
+   Actual fix: the SAME "brief interruption shouldn't visibly move the
+   rail" technique this file already uses for the opposite direction (the
+   :hover/:focus-within rule's own 100ms expand dwell, "so a pointer graze
+   across the 72px boundary never triggers a visible width change") is
+   applied to the COLLAPSE direction, but only for the width of an actual
+   navigation transition: a collapse trigger scoped to
+   html.domshell-nav-transition gets a delay comfortably longer than any
+   observed transition duration. Real hover reliably returns before that
+   delay elapses (confirmed: ~250-300ms after the transition starts, the
+   overlay tears down and :hover flips true again) — CSS transitions
+   cancel a still-pending (not yet started) transition outright when the
+   property's target value reverts before the delay elapses, so the width
+   never actually moves. A genuine pointer-leave DURING a navigation is
+   delayed by the same margin before it visibly collapses — an accepted,
+   narrow trade-off, and back to instant the moment the class clears. */
+html.domshell-nav-transition .domshell-rail:not(:hover):not(:focus-within) {
+  transition: width var(--motion-normal, 200ms) var(--motion-ease, ease) 700ms;
+}
+
 /* SS14.4 — the persistent domain-shell sidebar (js/shell/domain-shell.js,
    .domshell-rail above) is given its own view-transition-name so Phase 8.5's
    navigation transition (setWorkspace(), js/app.js) can't sweep it into the
