@@ -1,7 +1,7 @@
 'use strict';
 
 export const APP_NAME = 'Bidang Sarana dan Prasarana Operations Platform';
-export const APP_VERSION = '1.31.15.0';
+export const APP_VERSION = '1.31.16.0';
 export const RELEASE_NAME = 'Agenda & To-Do — Participant identity colors & calendar date selection';
 
 /* ============================================================
