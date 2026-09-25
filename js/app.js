@@ -384,6 +384,17 @@ let currentWorkspace = 'dashboard';
 // loading shell happened to look like) never gets wrapped in a view
 // transition — only real subsequent navigations do.
 let _workspaceEverSet = false;
+// SS14.4 — how many navigation view-transitions are currently in flight.
+// A rapid second click while one is still animating makes the browser skip
+// the first (native View Transitions behavior — see the existing rapid-nav
+// comment below); that skipped transition's `finished` settles almost
+// immediately, well before the second, real one finishes animating. A bare
+// add-before/remove-after around a single call would remove
+// 'domshell-nav-transition' the instant the FIRST one settles, re-enabling
+// the rail's cross-fade suppression's opposite (i.e. turning the CSS guard
+// back off) while the SECOND transition is still actually running. Counting
+// instead of toggling keeps the class on as long as anything is in flight.
+let _navTransitionDepth = 0;
 // v1.14.0: which rail module is active —
 //   'driverops' | 'pettycash' | 'analytics' | 'konfigurasi'
 //   ('administration' retained in code for rollback but no longer reachable)
@@ -4634,7 +4645,25 @@ function setWorkspace(name) {
     && !_analyticsMotionOff();
 
   if (canViewTransition) {
+    // SS14.4 — .domshell-rail carries its own view-transition-name (platform.css)
+    // specifically so THIS transition (a navigation) can't sweep the persistent
+    // sidebar into the same root cross-fade as the outgoing/incoming content —
+    // that's what was producing the reported sidebar ghost/flicker on every
+    // module click. applyTheme()'s View Transition (Phase 7G.5) intentionally
+    // wants the opposite for the sidebar — its colors SHOULD cross-fade smoothly
+    // together with the rest of the page on a light/dark toggle — so the CSS
+    // that suppresses the rail's cross-fade is scoped to this class, set only
+    // for the lifetime of a navigation transition, never for a theme one.
+    // Depth-counted (see _navTransitionDepth) so a rapid second nav click
+    // doesn't turn the guard off early while the real, still-running
+    // transition it superseded keeps animating.
+    _navTransitionDepth++;
+    document.documentElement.classList.add('domshell-nav-transition');
     const transition = document.startViewTransition(() => applyWorkspaceState(name, isWorkspaceChange));
+    transition.finished.finally(() => {
+      _navTransitionDepth = Math.max(0, _navTransitionDepth - 1);
+      if (_navTransitionDepth === 0) document.documentElement.classList.remove('domshell-nav-transition');
+    });
     // Hostile-review fix (found by real-browser rapid-navigation testing,
     // not inferred): applyWorkspaceState() calls into several live-data
     // render functions (renderPendingWorkspace(), renderV2AdminWorkspace(),

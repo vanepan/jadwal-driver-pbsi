@@ -433,6 +433,35 @@ html[data-anim="off"].theme-anim *::after {
   animation-duration: 300ms;
   animation-timing-function: ease;
 }
+
+/* SS14.4 — the persistent domain-shell sidebar (js/shell/domain-shell.js,
+   .domshell-rail above) is given its own view-transition-name so Phase 8.5's
+   navigation transition (setWorkspace(), js/app.js) can't sweep it into the
+   root cross-fade alongside the outgoing/incoming CONTENT, which is what
+   produced the reported "sidebar ghosts/disappears during navigation" —
+   confirmed via document.startViewTransition() introspection: the rail
+   participated in a ~300-360ms root transition on every module click, with
+   getComputedStyle(rail).viewTransitionName reading "none" (i.e. not
+   excluded). Its OWN group still gets old/new snapshots (the active-item
+   highlight really does recolor between them), so still cross-fading those
+   would trade one visible artifact for a smaller one — a hard, instant snap
+   reads as "stayed put" the way nothing else in this rail visibly does. The
+   CONTENT area keeps its full animated cross-fade untouched; only this one
+   named group is affected.
+   Scoped to html.domshell-nav-transition (set only for the lifetime of a
+   setWorkspace() navigation transition) — applyTheme()'s OWN View Transition
+   (Phase 7G.5, light/dark toggle) also targets root and deliberately WANTS
+   the rail's colors cross-fading smoothly together with the rest of the
+   page, exactly like every other region; an unscoped rule here would have
+   made the sidebar hard-snap on every theme toggle too, a real regression
+   to a working, intentionally-designed feature this fix has nothing to do
+   with. */
+html.domshell-nav-transition ::view-transition-group(domshell-rail),
+html.domshell-nav-transition ::view-transition-old(domshell-rail),
+html.domshell-nav-transition ::view-transition-new(domshell-rail) {
+  animation: none;
+}
+
 /* Defense in depth: js/app.js already never calls startViewTransition()
    when prefers-reduced-motion/data-anim="off" is active (the transition
    simply never starts, applyThemeState() runs and the new theme appears
@@ -14438,6 +14467,21 @@ body.v2-shell-active .block-status-badge {
   overflow: hidden;
   transition: width var(--motion-normal, 200ms) var(--motion-ease, ease);
   box-shadow: none;
+  /* SS14.4 — js/app.js's setWorkspace() wraps every module navigation in
+     document.startViewTransition(), same whole-viewport root snapshot Phase
+     7G.5 uses for the theme toggle (see the ::view-transition-old/new(root)
+     rule below). That's correct for a theme swap (the whole page legitimately
+     changes together) but wrong here: without its own name the rail has none
+     — getComputedStyle(...).viewTransitionName reads "none" — so it gets
+     baked into the SAME flat old/new screenshot pair as the completely
+     different outgoing/incoming CONTENT, and the ~300ms root cross-fade
+     visibly ghosts straight across the persistent sidebar even though the
+     rail's own DOM/CSS state never actually changes underneath (confirmed:
+     width stays 220px, :hover stays true, no childList mutation — see
+     scripts/ss14-sidebar-navigation-close-check.mjs). Naming it pulls it
+     into its own ::view-transition-group(domshell-rail), separate from
+     root — the suppression of THAT group's own cross-fade is just below. */
+  view-transition-name: domshell-rail;
 }
 /* Brand header — logo + short name + real app version (never the
    prototype's internal "v2 · redesign" build label). */
