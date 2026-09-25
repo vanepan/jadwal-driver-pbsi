@@ -479,6 +479,27 @@ html.domshell-nav-transition .domshell-rail:not(:hover):not(:focus-within) {
   transition: width var(--motion-normal, 200ms) var(--motion-ease, ease) 700ms;
 }
 
+/* SS14.6 — the width fix above didn't cover the whole picture: the exact
+   same real-hover-genuinely-lapses mechanism also drives
+   .domshell-rail-label/-brandtext/-usertext, each independently opacity:0
+   with its OWN no-delay 120ms fade-out (".domshell-rail:hover
+   .domshell-rail-label{opacity:1}" simply stops matching the instant
+   :hover is lost). Confirmed by direct measurement, mouse genuinely
+   stationary and hovering throughout a real navigation: label/brandtext
+   opacity actually ran 1.00 -> 0.72 -> 0.30 -> 0.03 -> 0.00 over the first
+   100ms, sat at 0 through the rest of the transition, then 0.00 -> 0.33 ->
+   1.00 back up once real hover returned — a real, visible disappear/
+   reappear despite the rail's own WIDTH never moving (SS14.5). Same fix,
+   same reasoning, same 700ms margin: a fade-out transition scoped to
+   html.domshell-nav-transition + :not(:hover):not(:focus-within) on the
+   ancestor rail never gets the chance to start before real hover returns,
+   so the browser cancels it outright and opacity never visibly moves. */
+html.domshell-nav-transition .domshell-rail:not(:hover):not(:focus-within) .domshell-rail-label,
+html.domshell-nav-transition .domshell-rail:not(:hover):not(:focus-within) .domshell-rail-brandtext,
+html.domshell-nav-transition .domshell-rail:not(:hover):not(:focus-within) .domshell-rail-usertext {
+  transition: opacity var(--motion-fast, 120ms) linear 700ms;
+}
+
 /* SS14.4 — the persistent domain-shell sidebar (js/shell/domain-shell.js,
    .domshell-rail above) is given its own view-transition-name so Phase 8.5's
    navigation transition (setWorkspace(), js/app.js) can't sweep it into the
