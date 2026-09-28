@@ -522,10 +522,33 @@ html.domshell-nav-transition .domshell-rail:not(:hover):not(:focus-within) .doms
    made the sidebar hard-snap on every theme toggle too, a real regression
    to a working, intentionally-designed feature this fix has nothing to do
    with. */
-html.domshell-nav-transition ::view-transition-group(domshell-rail),
-html.domshell-nav-transition ::view-transition-old(domshell-rail),
-html.domshell-nav-transition ::view-transition-new(domshell-rail) {
-  animation: none;
+/* SS14.10: this rule never actually matched anything, since SS14.4 — the
+   space before each `::view-transition-*(domshell-rail)` made it a
+   descendant-combinator selector, but view-transition pseudo-elements are
+   only selectable via a compound selector attached directly to their
+   originating root element (no space): `html.foo::view-transition-old(x)`,
+   never `html.foo ::view-transition-old(x)`. Proven with a controlled A/B
+   stylesheet injection: the descendant-combinator form left old/new
+   running the browser's UA default cross-fade (animationName
+   "-ua-view-transition-fade-out"/"-ua-view-transition-fade-in", opacity
+   genuinely interpolating over the full 250ms) regardless of !important;
+   the identical rule rewritten as a compound selector suppressed it
+   completely (animationName "none", opacity pinned at 1 throughout). That
+   250ms crossfade of the rail's OWN old/new snapshots is what let the
+   PREVIOUS domain's active-highlight stay visibly on top for the ~1.1s a
+   real screen recording caught, before snapping to the new state. Fixed
+   selector shape below; `!important` kept as defense-in-depth, matching
+   the identical precedent already used below for
+   prefers-reduced-motion/data-anim="off".
+   ::view-transition-image-pair(domshell-rail) is deliberately NOT included
+   here: measured directly, it already computes animation:none with no
+   authored rule targeting it at all — Chrome never assigns image-pair a
+   default animation (only old/new get one), so there is nothing to
+   suppress and no reason to add a selector for it. */
+html.domshell-nav-transition::view-transition-group(domshell-rail),
+html.domshell-nav-transition::view-transition-old(domshell-rail),
+html.domshell-nav-transition::view-transition-new(domshell-rail) {
+  animation: none !important;
 }
 
 /* Defense in depth: js/app.js already never calls startViewTransition()
