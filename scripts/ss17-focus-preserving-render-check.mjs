@@ -152,6 +152,51 @@ console.log('\n[E. restore() with a fallback as a plain element (not a function)
   check('accepts a plain element (not just a getter) as fallback', r.landed, r);
 }
 
+console.log('\n[F. SS18 — fallback also applies when NOTHING was captured (focus was on an untracked element, e.g. the picker search box)]');
+{
+  const r = await page.evaluate(async () => {
+    const { createFocusGuard } = await import('/js/ui/focus-preserving-render.js');
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    // The focused element (a search input) carries data-field, NOT this
+    // guard's tracked data-drawer-action — capture() correctly leaves
+    // pending null for it (found via real production data: SS17's Agenda
+    // picker had zero candidates, so the user never Tab'd off the search
+    // box before clicking "Selesai").
+    root.innerHTML = '<input data-field="pickerQuery">';
+    root.querySelector('input').focus();
+    const guard = createFocusGuard({ attr: 'drawer-action' });
+    guard.capture(root);
+    root.innerHTML = '<button data-drawer-action="picker:open">+ Tambah</button><button class="drawer__close">X</button>';
+    guard.restore(root, () => root.querySelector('[data-drawer-action="picker:open"]') || root.querySelector('.drawer__close'));
+    const landedOnOpenBtn = document.activeElement === root.querySelector('[data-drawer-action="picker:open"]');
+    root.remove();
+    return { landedOnOpenBtn };
+  });
+  check('falls back to the "+ Tambah" button even though nothing was captured (was: silently left focus on <body>)', r.landedOnOpenBtn, r);
+}
+
+console.log('\n[G. fallback is NOT invoked when restore already succeeded, or when focus is already elsewhere inside root]');
+{
+  const r = await page.evaluate(async () => {
+    const { createFocusGuard } = await import('/js/ui/focus-preserving-render.js');
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    root.innerHTML = '<button data-drawer-action="x">X</button>';
+    root.querySelector('button').focus();
+    const guard = createFocusGuard({ attr: 'drawer-action' });
+    guard.capture(root);
+    root.innerHTML = '<button data-drawer-action="x">X</button><button id="fallback">F</button>';
+    let fallbackCalled = false;
+    guard.restore(root, () => { fallbackCalled = true; return root.querySelector('#fallback'); });
+    const landedOnX = document.activeElement === root.querySelector('[data-drawer-action="x"]');
+    root.remove();
+    return { fallbackCalled, landedOnX };
+  });
+  check('a successful key-based restore never invokes the fallback', !r.fallbackCalled, r);
+  check('focus lands on the correctly-restored element, not the fallback', r.landedOnX, r);
+}
+
 console.log('\n[console cleanliness]');
 check('zero console/page errors across the whole sequence', errors.length === 0, errors.join(' | '));
 

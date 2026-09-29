@@ -62,6 +62,22 @@
    (e.g. the acted-on row was itself the thing removed) — without a
    fallback, restore() silently no-ops in that case, same as before.
    Default `attr: 'focus'` keeps every existing call site byte-identical.
+
+   SS18 fix — `fallback` also applies when NOTHING was captured at all
+   (found via real production data: js/agenda/agenda-event-drawer.js's
+   picker "Selesai" button, clicked while focus was on the picker's own
+   search box — which carries `data-field`, not this guard's tracked
+   attribute — capture() correctly leaves `pending` null for it, but the
+   body-replacing rerender() destroys it regardless, dropping focus to
+   <body> with the fallback never even attempted). A `fallback` argument's
+   presence means the caller wants ONE invariant guaranteed — focus ends up
+   somewhere inside `root` — regardless of whether a tracked key happened
+   to be captured; restore() now checks that invariant directly
+   (`!root.contains(document.activeElement)`) instead of only reacting to
+   "captured a key that failed to re-resolve". Consumers that never pass a
+   fallback (Petty Cash, Overtime, Engineering, Timeline, the Agenda
+   workspace itself) are byte-identical — this branch is unreachable
+   without one.
    ============================================================ */
 
 'use strict';
@@ -84,20 +100,28 @@ export function createFocusGuard({ attr = 'focus' } = {}) {
       }
     },
     /** Call AFTER mutating the DOM. Re-focuses the element carrying the
-        same key and restores the caret/selection range. If the key no
-        longer exists in `root` (the acted-on element was itself removed),
-        focuses `fallback` (element or () => element) instead, when given. */
+        same key and restores the caret/selection range. If that fails to
+        land focus inside `root` — the key no longer exists (the acted-on
+        element was itself removed), or nothing was captured to begin with
+        (the focused element wasn't one this guard tracks) — focuses
+        `fallback` (element or () => element) instead, when given. */
     restore(root, fallback) {
-      if (!pending || !root) { pending = null; return; }
-      const el = root.querySelector(`[data-${attr}="${CSS.escape(pending.key)}"]`);
-      if (el) {
-        el.focus();
-        try { if (pending.start != null) el.setSelectionRange(pending.start, pending.end); } catch (_) {}
-      } else if (fallback) {
+      const p = pending;
+      pending = null;
+      if (!root) return;
+      let restored = false;
+      if (p) {
+        const el = root.querySelector(`[data-${attr}="${CSS.escape(p.key)}"]`);
+        if (el) {
+          el.focus();
+          try { if (p.start != null) el.setSelectionRange(p.start, p.end); } catch (_) {}
+          restored = true;
+        }
+      }
+      if (!restored && fallback && !root.contains(document.activeElement)) {
         const target = typeof fallback === 'function' ? fallback() : fallback;
         if (target && typeof target.focus === 'function') target.focus();
       }
-      pending = null;
     },
   };
 }
