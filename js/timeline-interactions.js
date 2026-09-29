@@ -123,6 +123,7 @@ const CSS = `
   font-size:13px;color:var(--text, #1a1a1a);cursor:pointer;
 }
 .tl-ctx-item:hover:not(:disabled){background:var(--gray-1, #f5f5f5);}
+.tl-ctx-item:focus-visible{background:var(--gray-1, #f5f5f5);outline:2px solid var(--accent, #2f6fed);outline-offset:-2px;}
 .tl-ctx-item:disabled{color:var(--text-muted, #757575);cursor:not-allowed;opacity:.6;}
 .tl-ctx-item--danger{color:#c23b3b;}
 
@@ -160,6 +161,10 @@ function ensureStyles() {
 
 const MENU_ID = 'tlCtxMenu';
 let menuContext = null;
+// SS18 — the element to return focus to on Escape/Tab (the assignment
+// block that was right-clicked OR keyboard-activated; null for the
+// empty-space "Paste" menu, which has no equivalent focusable invoker).
+let menuInvoker = null;
 
 function ensureMenu() {
   let menu = document.getElementById(MENU_ID);
@@ -171,14 +176,26 @@ function ensureMenu() {
   menu.hidden = true;
   document.body.appendChild(menu);
   menu.addEventListener('click', onMenuClick);
+  // SS18 — WAI-ARIA APG menu pattern: Arrow/Home/End move among items,
+  // Tab backs out (closes + returns focus to the invoker, same as
+  // Escape — this is a transient popup menu, not a persistent menubar,
+  // so there is no "next" menu to hand off to).
+  menu.addEventListener('keydown', onMenuKeydown);
   return menu;
 }
 
-function showMenu(x, y, items, context) {
+/** @param {{invoker?: HTMLElement, ariaLabel?: string}} [opts] `invoker` —
+ *  the element Escape/Tab returns focus to (the assignment block, for
+ *  both the mouse-right-click and SS18's new keyboard-activation path —
+ *  matches standard OS/browser context-menu behavior of restoring focus
+ *  to what was right-clicked when the menu is dismissed via keyboard). */
+function showMenu(x, y, items, context, { invoker = null, ariaLabel = 'Menu Assignment' } = {}) {
   menuContext = context;
+  menuInvoker = invoker;
   const menu = ensureMenu();
+  menu.setAttribute('aria-label', ariaLabel);
   menu.innerHTML = items.map((it) =>
-    `<button type="button" class="tl-ctx-item${it.danger ? ' tl-ctx-item--danger' : ''}" data-action="${it.action}"${it.enabled ? '' : ' disabled'}>${it.label}</button>`
+    `<button type="button" role="menuitem" class="tl-ctx-item${it.danger ? ' tl-ctx-item--danger' : ''}" data-action="${it.action}"${it.enabled ? '' : ' disabled'}>${it.label}</button>`
   ).join('');
   menu.hidden = false;
 
@@ -187,12 +204,34 @@ function showMenu(x, y, items, context) {
   const mw = menu.offsetWidth, mh = menu.offsetHeight;
   menu.style.left = `${Math.max(4, Math.min(x, vw - mw - 8))}px`;
   menu.style.top  = `${Math.max(4, Math.min(y, vh - mh - 8))}px`;
+
+  // SS18 — focus the first enabled item on every open (mouse-right-click
+  // included, matching standard OS context-menu behavior: Arrow keys work
+  // immediately without an extra Tab/click first). Previously the menu
+  // was pointer-only once open — no item was ever reachable by keyboard.
+  const firstEnabled = menu.querySelector('button[role="menuitem"]:not(:disabled)');
+  if (firstEnabled) firstEnabled.focus();
 }
 
+/** Plain close — no focus restore. Used for outside-click dismiss (the
+ *  user already chose where focus goes next) and after an item is
+ *  activated (the action's own effect, e.g. a delete confirmation,
+ *  owns focus from there). */
 function closeMenu() {
   const menu = document.getElementById(MENU_ID);
   if (menu) menu.hidden = true;
   menuContext = null;
+  menuInvoker = null;
+}
+
+/** Close + return focus to whatever invoked the menu — Escape and Tab
+ *  (a keyboard user "backing out" without picking an action). */
+function closeMenuAndRestoreFocus() {
+  const invoker = menuInvoker;
+  closeMenu();
+  if (invoker && document.contains(invoker) && typeof invoker.focus === 'function') {
+    try { invoker.focus(); } catch (_) {}
+  }
 }
 
 function onMenuClick(e) {
@@ -206,6 +245,27 @@ function onMenuClick(e) {
   else if (action === 'duplicate') doDuplicate(ctx.id);
   else if (action === 'delete') doDelete(ctx.id);
   else if (action === 'paste') doPaste(ctx);
+}
+
+/** WAI-ARIA APG menu keyboard pattern — Arrow/Home/End move among the
+ *  enabled items (disabled ones are skipped, same as native Tab already
+ *  skips a disabled control); Enter/Space activate natively (these are
+ *  real <button>s, so the existing onMenuClick's native-click handling
+ *  already covers that — nothing extra needed here). Tab backs out like
+ *  Escape: this is a transient popup, not a persistent menubar, so there
+ *  is no "next menu" to hand focus to. */
+function onMenuKeydown(e) {
+  const menu = e.currentTarget;
+  const items = Array.from(menu.querySelectorAll('button[role="menuitem"]:not(:disabled)'));
+  if (!items.length) return;
+  const idx = items.indexOf(document.activeElement);
+  if (e.key === 'ArrowDown') { e.preventDefault(); items[(idx + 1 + items.length) % items.length].focus(); return; }
+  if (e.key === 'ArrowUp') { e.preventDefault(); items[(idx - 1 + items.length) % items.length].focus(); return; }
+  if (e.key === 'Home') { e.preventDefault(); items[0].focus(); return; }
+  if (e.key === 'End') { e.preventDefault(); items[items.length - 1].focus(); return; }
+  if (e.key === 'Tab') { e.preventDefault(); closeMenuAndRestoreFocus(); }
+  // Escape is handled globally by onDocumentKeydown (fires regardless of
+  // which element inside the menu has focus) — not duplicated here.
 }
 
 function onTimelineContextMenu(e) {
@@ -222,22 +282,50 @@ function onTimelineContextMenu(e) {
       { action: 'copy', label: 'Copy Assignment', enabled: true },
       { action: 'duplicate', label: 'Duplicate Assignment', enabled: hasPermission('create') },
       { action: 'delete', label: 'Delete Assignment', enabled: hasPermission('delete'), danger: true },
-    ], { type: 'assignment', id });
+    ], { type: 'assignment', id }, { invoker: block, ariaLabel: 'Menu Assignment' });
   } else {
     const rect = slots.getBoundingClientRect();
     const absMin = ((e.clientX - rect.left) / getHourWidth()) * 60;
     const { date, minutes } = canvasMinutesToDateTime(clampCanvasMinutes(absMin));
     showMenu(e.clientX, e.clientY, [
       { action: 'paste', label: 'Paste Assignment Here', enabled: hasPermission('create') && hasClipboardAssignment() },
-    ], { type: 'empty', date, hoverMinutes: minutes });
+    ], { type: 'empty', date, hoverMinutes: minutes }, { ariaLabel: 'Menu Jadwal Kosong' });
   }
+}
+
+/**
+ * SS18 — keyboard-equivalent of right-clicking a FOCUSED assignment block:
+ * Shift+F10 and the dedicated ContextMenu/"Menu" key are the two standard
+ * keyboard triggers for a context menu (WAI-ARIA APG). Anchors the menu
+ * under the block itself (no mouse coordinates exist for a keyboard
+ * trigger) instead of a pointer position. Scoped to assignment blocks only
+ * — the empty-space "Paste" menu has no keyboard-focusable anchor (SS17
+ * made assignment blocks focusable; empty canvas slots are not, and
+ * making them so is a separate, larger interaction-design decision, not a
+ * simple bolt-on to this one). Same items, same hasPermission() gates, same
+ * showMenu() call the mouse path already uses — no new authorization path.
+ */
+function onTimelineKeydown(e) {
+  const isContextMenuKey = e.key === 'ContextMenu' || e.key === 'Menu' || (e.key === 'F10' && e.shiftKey);
+  if (!isContextMenuKey) return;
+  const block = e.target.closest('.assignment-block');
+  if (!block) return;
+  e.preventDefault();
+  const id = block.dataset.id;
+  if (!getAssignments().some((a) => a.id === id)) return;
+  const rect = block.getBoundingClientRect();
+  showMenu(rect.left, rect.bottom, [
+    { action: 'copy', label: 'Copy Assignment', enabled: true },
+    { action: 'duplicate', label: 'Duplicate Assignment', enabled: hasPermission('create') },
+    { action: 'delete', label: 'Delete Assignment', enabled: hasPermission('delete'), danger: true },
+  ], { type: 'assignment', id }, { invoker: block, ariaLabel: 'Menu Assignment' });
 }
 
 function onDocumentClick(e) {
   const menu = document.getElementById(MENU_ID);
   if (menu && !menu.hidden && !menu.contains(e.target)) closeMenu();
 }
-function onDocumentKeydown(e) { if (e.key === 'Escape') closeMenu(); }
+function onDocumentKeydown(e) { if (e.key === 'Escape') closeMenuAndRestoreFocus(); }
 
 /* ── Menu actions ──────────────────────────────────────────────────────── */
 
@@ -624,4 +712,12 @@ export function initTimelineInteractions() {
   if (!body) return;
   body.addEventListener('contextmenu', onTimelineContextMenu);
   body.addEventListener('pointerdown', onBlockPointerDown);
+  // SS18 — Shift+F10 / ContextMenu key on a focused assignment block opens
+  // the SAME menu a right-click does. Deliberately NOT gated behind
+  // isDesktopPointer() (unlike every mouse/drag interaction above) — a
+  // keyboard user is not necessarily on a "fine pointer" device (a screen-
+  // reader or switch-access user on a touch tablet, for instance), and
+  // there is no pointer-based reason to exclude them from a keyboard-only
+  // interaction.
+  body.addEventListener('keydown', onTimelineKeydown);
 }
