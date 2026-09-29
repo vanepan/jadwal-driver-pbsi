@@ -3526,15 +3526,17 @@ input[type="number"]::-webkit-inner-spin-button {
 
 /* SS18 Phase E — manual dismiss control (js/components/toast.js). A dim
    glyph by default so it doesn't compete with the message; full opacity on
-   hover/focus. Negative margin keeps the toast's own padding visually
-   balanced now that a button sits at its trailing edge. */
+   hover/focus. Padding (not just the 11px icon) sets the real hit target —
+   7px clears the WCAG 2.5.8 24x24 CSS-pixel minimum (Phase G browser QA:
+   the icon alone measured 19x19, confirmed via getBoundingClientRect at
+   every QA viewport) without visually enlarging the glyph itself. */
 .toast__close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: none;
   margin-left: 2px;
-  padding: 4px;
+  padding: 7px;
   border: none;
   border-radius: 999px;
   background: transparent;
