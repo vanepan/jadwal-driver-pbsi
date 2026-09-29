@@ -45,6 +45,7 @@
 
 import { isAdmin } from '../auth.js';
 import { createFocusGuard } from '../ui/focus-preserving-render.js';
+import { attachModalA11y } from '../ui/modal-a11y.js';
 import { showToast as canonicalToast } from '../components/toast.js';
 import { initPbsiDatepicker, syncPbsiDatepicker, destroyPbsiDatepicker } from '../pbsi-datepicker.js';
 import { initOvertimeStore, registerChangeListener } from './overtime-store.js';
@@ -172,6 +173,80 @@ let _savingDailyEntry = false;
 const _savingForm = new Set();
 const focusGuard = createFocusGuard();
 
+// SS18 — bolt-on Tab-trap + Escape + focus-restore for every hand-rolled
+// modal/drawer overlay in this module. All 9 (unitModal, employeeModal,
+// employeeHistoryDrawer, rateModal, holidayModal, editRecordModal,
+// unlockModal, closeConfirmModal, saveConfirmModal) share the identical
+// `[data-act="stop"]` wrapper + `[data-act="close*"]` backdrop pattern, so
+// ONE live-getter selector covers all of them (only one is ever open at a
+// time — shell() concatenates all 9 ternaries, but only one flag is ever
+// true in practice). Live-getter, not a captured element: render()
+// rebuilds root's ENTIRE subtree on every state change, including a live
+// Firebase update arriving mid-modal (registerChangeListener → render()),
+// so a captured reference would go stale — same reasoning SS17 used for
+// Engineering's create/report modal (js/ui/modal-a11y.js's own header).
+//
+// Escape is wired to synthesize a click on the SAME [data-act="close*"]
+// element the mouse path already uses (never a duplicated state change),
+// mirroring the existing "click anywhere on the backdrop closes, no
+// confirmation" behavior every one of these modals already has for Batal/
+// backdrop-click — so Escape introduces no NEW data-loss risk beyond what
+// already exists. saveConfirmModal is the one exception: onRekapGridKeydown
+// (FIX 14, above) already owns its Escape (cancel) and Enter (confirm) —
+// onEscape is omitted there to avoid double-firing closeSaveConfirm(), and
+// focusOnAttach is omitted too since render() already explicitly focuses
+// #otSaveConfirmBtn on every render while it's open.
+const OVERTIME_MODAL_FLAGS = [
+  ['unitModalOpen', 'closeUnitModal'],
+  ['employeeModalOpen', 'closeEmployeeModal'],
+  ['historyEmployeeId', 'closeEmployeeHistory'],
+  ['rateModalOpen', 'closeRateModal'],
+  ['holidayModalOpen', 'closeHolidayModal'],
+  ['editRecordModalOpen', 'closeEditRecordModal'],
+  ['unlockModalOpen', 'closeUnlockModal'],
+  ['closeConfirmModalOpen', 'closeCloseConfirmModal'],
+];
+let _overtimeModalA11y = null;
+// Captured at the TOP of render(), before it destroys whatever triggered
+// it — see render()'s own comment.
+let _pendingModalTrigger = null;
+function syncOvertimeModalA11y() {
+  const activeFlag = OVERTIME_MODAL_FLAGS.find(([flag]) => !!st[flag]);
+  const isSaveConfirm = !!st.saveConfirmData;
+  const shouldBeOpen = !!activeFlag || isSaveConfirm;
+
+  if (shouldBeOpen && !_overtimeModalA11y) {
+    // The trigger button itself — not just the modal — is destroyed by the
+    // very next render() (root.innerHTML rebuilds the WHOLE module, and
+    // even the close that ends this dialog is itself a render()), so a
+    // captured element reference (including modal-a11y.js's own default
+    // document.activeElement snapshot) would already be a detached, stale
+    // node by release() time. Use the (act[,id]) descriptor render()
+    // captured a moment ago instead, and hand attachModalA11y a GETTER
+    // that re-resolves it against the POST-close DOM lazily (see
+    // js/ui/modal-a11y.js's SS18 header note).
+    const captured = _pendingModalTrigger;
+    const restoreFocusTo = captured ? () => {
+      const sel = captured.id != null
+        ? `[data-act="${captured.act}"][data-id="${CSS.escape(captured.id)}"]`
+        : `[data-act="${captured.act}"]`;
+      return root && root.querySelector(sel);
+    } : null;
+
+    _overtimeModalA11y = attachModalA11y(() => root && root.querySelector('[data-act="stop"]'), {
+      focusOnAttach: !isSaveConfirm,
+      restoreFocusTo,
+      onEscape: activeFlag ? () => {
+        const closeEl = root && root.querySelector(`[data-act="${activeFlag[1]}"]`);
+        if (closeEl) closeEl.click();
+      } : null,
+    });
+  } else if (!shouldBeOpen && _overtimeModalA11y) {
+    _overtimeModalA11y.release();
+    _overtimeModalA11y = null;
+  }
+}
+
 /* ── Small helpers ───────────────────────────────────────────────── */
 function setState(patch) { Object.assign(st, patch); render(); }
 // Design System Program Phase 5 — delegates to the canonical, accessible,
@@ -290,6 +365,18 @@ function render() {
   if (!root || !opened) return;
   syncTheme();
   focusGuard.capture(root);
+  // SS18 — capture the (act[,id]) identity of whatever triggered THIS
+  // render() before the innerHTML replace below destroys it and focus
+  // reverts to <body> (the trigger buttons here carry no [data-focus], so
+  // focusGuard above doesn't preserve them). Consumed by
+  // syncOvertimeModalA11y() at the bottom of this function, on the specific
+  // render() that represents a modal's closed->open transition — capturing
+  // it there instead (after the replace) would only ever see
+  // document.activeElement === <body>.
+  {
+    const ae = document.activeElement;
+    _pendingModalTrigger = (ae && ae.dataset && ae.dataset.act) ? { act: ae.dataset.act, id: ae.dataset.id } : null;
+  }
   // SS10 — tear down the PREVIOUS render's picker before root.innerHTML
   // discards its input; see _rekapDatepickerInputEl's own comment.
   if (_rekapDatepickerInputEl) { destroyPbsiDatepicker(_rekapDatepickerInputEl); _rekapDatepickerInputEl = null; }
@@ -304,15 +391,24 @@ function render() {
     const btn = document.getElementById('otSaveConfirmBtn');
     if (btn) btn.focus();
   }
+  syncOvertimeModalA11y();
 }
 
 /** Wraps the (freshly re-created, per the full-innerHTML-replace render
     model) native date input with the shared PBSI datepicker — mirrors
     engineering-center.js's mountCreateWidgets(), called right after
-    render() rather than from inside the render() string-builder. The
-    trigger button initPbsiDatepicker() creates doesn't expose a tabindex
-    option, so it's set directly here (§3: date-nav stays mouse-reachable
-    but out of the Tab chain). */
+    render() rather than from inside the render() string-builder.
+    SS18 — this used to also force the trigger button's tabIndex to -1
+    ("§3: date-nav stays mouse-reachable but out of the Tab chain"),
+    matching the SAME tabindex="-1" this phase removed from the date
+    input itself and the rest of the Rekap Lembur toolbar: a real, 100%
+    keyboard-unreachable barrier (no Tab access, and — unlike the
+    checkbox grid's own rich Arrow/Home/End/Ctrl+A keyboard model —
+    onRekapGridKeydown() provides no alternate path to any of these
+    controls at all). Restoring native tabbability doesn't interact with
+    that grid keyboard model: onRekapGridKeydown()'s Tab-jump-between-
+    units logic only ever intercepts Tab when e.target is itself a
+    checkbox, so it's a no-op for every one of these controls regardless. */
 function mountRekapDatepicker() {
   const input = document.getElementById('otRekapDateInput');
   if (!input) return;
@@ -324,8 +420,6 @@ function mountRekapDatepicker() {
       { label: 'Pilih Tanggal', openCalendar: true },
     ],
   });
-  const trigger = input.parentElement && input.parentElement.querySelector('.pbsi-datepicker-trigger');
-  if (trigger) trigger.tabIndex = -1;
   syncPbsiDatepicker(input);
 }
 
@@ -456,7 +550,7 @@ function unitModal() {
   return `
   <div data-act="stop" style="position:fixed;inset:0;background:rgba(20,16,14,.55);backdrop-filter:blur(3px);z-index:1600;display:flex;align-items:center;justify-content:center;padding:20px">
     <div data-act="closeUnitModal" style="position:absolute;inset:0"></div>
-    <form data-act="submitUnit" style="position:relative;background:var(--card);border-radius:16px;box-shadow:var(--shadow-lg);width:100%;max-width:400px;padding:22px">
+    <form data-act="submitUnit" role="dialog" aria-modal="true" aria-label="${editing ? 'Edit Unit' : 'Tambah Unit'}" style="position:relative;background:var(--card);border-radius:16px;box-shadow:var(--shadow-lg);width:100%;max-width:400px;padding:22px">
       <div style="font-weight:800;font-size:15px;margin-bottom:14px">${editing ? 'Edit Unit' : 'Tambah Unit'}</div>
       <label style="display:block;font-size:12px;font-weight:700;color:var(--label);margin-bottom:6px">Nama Unit</label>
       <input data-focus="unitFormName" data-act="statefield:unitForm.name" type="text" value="${esc(st.unitForm.name)}" autofocus
@@ -477,7 +571,7 @@ function employeeModal() {
   return `
   <div data-act="stop" style="position:fixed;inset:0;background:rgba(20,16,14,.55);backdrop-filter:blur(3px);z-index:1600;display:flex;align-items:center;justify-content:center;padding:20px">
     <div data-act="closeEmployeeModal" style="position:absolute;inset:0"></div>
-    <form data-act="submitEmployee" style="position:relative;background:var(--card);border-radius:16px;box-shadow:var(--shadow-lg);width:100%;max-width:400px;padding:22px">
+    <form data-act="submitEmployee" role="dialog" aria-modal="true" aria-label="${editing ? 'Edit Karyawan' : 'Tambah Karyawan'}" style="position:relative;background:var(--card);border-radius:16px;box-shadow:var(--shadow-lg);width:100%;max-width:400px;padding:22px">
       <div style="font-weight:800;font-size:15px;margin-bottom:14px">${editing ? 'Edit Karyawan' : 'Tambah Karyawan'}</div>
       <label style="display:block;font-size:12px;font-weight:700;color:var(--label);margin-bottom:6px">Nama</label>
       <input data-focus="employeeFormName" data-act="statefield:employeeForm.name" type="text" value="${esc(st.employeeForm.name)}" autofocus
@@ -529,8 +623,8 @@ function employeeHistoryDrawer() {
   return `
   <div data-act="stop" style="position:fixed;inset:0;background:rgba(20,16,14,.55);backdrop-filter:blur(3px);z-index:1650;display:flex;align-items:center;justify-content:flex-end">
     <div data-act="closeEmployeeHistory" style="position:absolute;inset:0"></div>
-    <div style="position:relative;background:var(--card);height:100%;width:100%;max-width:460px;padding:24px;overflow-y:auto;box-shadow:var(--shadow-lg)">
-      <button data-act="closeEmployeeHistory" type="button" style="position:absolute;top:18px;right:18px;border:none;background:none;color:var(--muted);cursor:pointer">
+    <div role="dialog" aria-modal="true" aria-label="Riwayat ${esc(employee.name)}" style="position:relative;background:var(--card);height:100%;width:100%;max-width:460px;padding:24px;overflow-y:auto;box-shadow:var(--shadow-lg)">
+      <button data-act="closeEmployeeHistory" type="button" aria-label="Tutup" style="position:absolute;top:18px;right:18px;border:none;background:none;color:var(--muted);cursor:pointer">
         <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
       </button>
       <div style="font-weight:800;font-size:17px;color:var(--text)">${esc(employee.name)}</div>
@@ -623,7 +717,7 @@ function rateModal() {
   return `
   <div data-act="stop" style="position:fixed;inset:0;background:rgba(20,16,14,.55);backdrop-filter:blur(3px);z-index:1600;display:flex;align-items:center;justify-content:center;padding:20px">
     <div data-act="closeRateModal" style="position:absolute;inset:0"></div>
-    <form data-act="submitRateVersion" style="position:relative;background:var(--card);border-radius:16px;box-shadow:var(--shadow-lg);width:100%;max-width:400px;padding:22px">
+    <form data-act="submitRateVersion" role="dialog" aria-modal="true" aria-label="Ubah Tarif ${esc(tier ? tier.label : '')}" style="position:relative;background:var(--card);border-radius:16px;box-shadow:var(--shadow-lg);width:100%;max-width:400px;padding:22px">
       <div style="font-weight:800;font-size:15px;margin-bottom:4px">Ubah Tarif — ${esc(tier ? tier.label : '')}</div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:14px">Membuat versi baru. Tarif lama tetap tersimpan sebagai riwayat.</div>
       <label style="display:block;font-size:12px;font-weight:700;color:var(--label);margin-bottom:6px">Nominal (Rp)</label>
@@ -684,7 +778,7 @@ function holidayModal() {
   return `
   <div data-act="stop" style="position:fixed;inset:0;background:rgba(20,16,14,.55);backdrop-filter:blur(3px);z-index:1600;display:flex;align-items:center;justify-content:center;padding:20px">
     <div data-act="closeHolidayModal" style="position:absolute;inset:0"></div>
-    <form data-act="submitHoliday" style="position:relative;background:var(--card);border-radius:16px;box-shadow:var(--shadow-lg);width:100%;max-width:400px;padding:22px;max-height:90vh;overflow-y:auto">
+    <form data-act="submitHoliday" role="dialog" aria-modal="true" aria-label="${editing ? 'Edit Hari Libur' : 'Tambah Hari Libur'}" style="position:relative;background:var(--card);border-radius:16px;box-shadow:var(--shadow-lg);width:100%;max-width:400px;padding:22px;max-height:90vh;overflow-y:auto">
       <div style="font-weight:800;font-size:15px;margin-bottom:14px">${editing ? 'Edit Hari Libur' : 'Tambah Hari Libur'}</div>
       <label style="display:block;font-size:12px;font-weight:700;color:var(--label);margin-bottom:6px">Tanggal</label>
       <input data-focus="holidayFormDate" data-act="statefield:holidayForm.date" type="date" value="${esc(st.holidayForm.date)}" autofocus
@@ -770,10 +864,10 @@ function dailyEntryScreen() {
     </div>
 
     <div class="ot-date-nav" style="margin:12px 0 8px">
-      <input id="otRekapDateInput" data-focus="entryDate" data-act="input:entryDate" type="date" tabindex="-1" value="${esc(date)}" />
+      <input id="otRekapDateInput" data-focus="entryDate" data-act="input:entryDate" type="date" value="${esc(date)}" />
     </div>
     <label style="display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;color:var(--muted);cursor:pointer;margin:0 0 14px">
-      <input data-act="toggleAutoAdvance" type="checkbox" tabindex="-1" ${st.rekapAutoAdvance ? 'checked' : ''} style="width:14px;height:14px;accent-color:var(--primary)" />
+      <input data-act="toggleAutoAdvance" type="checkbox" ${st.rekapAutoAdvance ? 'checked' : ''} style="width:14px;height:14px;accent-color:var(--primary)" />
       Lanjut ke hari berikutnya setelah simpan
     </label>
 
@@ -783,10 +877,10 @@ function dailyEntryScreen() {
         <div style="font-size:16px;font-weight:800;margin-top:2px">${resolved ? `${rp(resolved.amount)} <span style="font-size:11.5px;font-weight:600;color:var(--muted)">(${esc(resolved.tierLabel)}${resolved.holiday ? ' · ' + esc(resolved.holiday.name) : ''})</span>` : '<span style="color:var(--crit,#9a1b2d)">Belum tersedia</span>'}</div>
       </div>
       <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--text);cursor:pointer">
-        <input data-act="toggleEntryOverride" type="checkbox" tabindex="-1" ${st.entryOverrideOn ? 'checked' : ''} style="width:15px;height:15px;accent-color:var(--primary)" />
+        <input data-act="toggleEntryOverride" type="checkbox" ${st.entryOverrideOn ? 'checked' : ''} style="width:15px;height:15px;accent-color:var(--primary)" />
         Override Rate
       </label>
-      ${st.entryOverrideOn ? `<select data-act="statefield:entryOverrideTierKey" tabindex="-1" style="padding:8px 10px;border-radius:8px;border:1px solid var(--input-bd);background:var(--input);color:var(--text);font-size:12.5px">
+      ${st.entryOverrideOn ? `<select data-act="statefield:entryOverrideTierKey" style="padding:8px 10px;border-radius:8px;border:1px solid var(--input-bd);background:var(--input);color:var(--text);font-size:12.5px">
           <option value="">— Pilih Tarif —</option>
           ${tierOptions}
         </select>` : ''}
@@ -836,9 +930,9 @@ function unitGridSection(unit, date, existingIds) {
           ${checkedCount > 0 ? `<span style="flex:none;font-size:10.5px;font-weight:700;color:var(--primary-text);background:var(--primary-tint);border-radius:999px;padding:2px 9px">${checkedCount} dipilih</span>` : ''}
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button data-act="selectAllUnit" data-id="${unit.id}" type="button" tabindex="-1" style="border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:7px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">Pilih Semua</button>
-          <button data-act="clearUnit" data-id="${unit.id}" type="button" tabindex="-1" style="border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:7px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">Kosongkan</button>
-          <button data-act="bulkCopyYesterdayUnit" data-id="${unit.id}" type="button" tabindex="-1" style="border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:7px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">Salin Kemarin</button>
+          <button data-act="selectAllUnit" data-id="${unit.id}" type="button" style="border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:7px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">Pilih Semua</button>
+          <button data-act="clearUnit" data-id="${unit.id}" type="button" style="border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:7px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">Kosongkan</button>
+          <button data-act="bulkCopyYesterdayUnit" data-id="${unit.id}" type="button" style="border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:7px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">Salin Kemarin</button>
         </div>
       </div>
       <div class="ot-rekap-grid" style="padding:10px 14px;gap:2px 10px">${cells}</div>
@@ -986,7 +1080,7 @@ function saveConfirmModal() {
   return `
     <div data-act="stop" style="position:fixed;inset:0;background:rgba(20,16,14,.55);backdrop-filter:blur(3px);z-index:1600;display:flex;align-items:center;justify-content:center;padding:20px">
       <div data-act="closeSaveConfirm" style="position:absolute;inset:0"></div>
-      <div style="position:relative;background:var(--card);border-radius:16px;box-shadow:var(--shadow-lg);width:100%;max-width:400px;padding:22px">
+      <div role="dialog" aria-modal="true" aria-label="Konfirmasi Simpan Rekap" style="position:relative;background:var(--card);border-radius:16px;box-shadow:var(--shadow-lg);width:100%;max-width:400px;padding:22px">
         <div style="font-size:15px;font-weight:800;margin-bottom:14px">Konfirmasi Simpan Rekap</div>
         <div style="display:flex;flex-direction:column;gap:10px">
           ${[['Tanggal', fmtDate(d.date)], ['Unit', `${d.unitCount} Unit`], ['Pegawai', `${d.employeeCount} Pegawai`], ['Total Nominal', rp(d.total)]].map(([k, v]) => `

@@ -139,7 +139,7 @@ export function renderEditRecordModal(state) {
   return `
     <div data-act="stop" style="position:fixed;inset:0;background:rgba(20,16,14,.55);backdrop-filter:blur(3px);z-index:1600;display:flex;align-items:center;justify-content:center;padding:20px">
       <div data-act="closeEditRecordModal" style="position:absolute;inset:0"></div>
-      <div style="position:relative;background:var(--card);border-radius:16px;box-shadow:var(--shadow-lg);width:100%;max-width:420px;max-height:90vh;overflow-y:auto;padding:22px">
+      <div role="dialog" aria-modal="true" aria-label="Edit Entri Lembur" style="position:relative;background:var(--card);border-radius:16px;box-shadow:var(--shadow-lg);width:100%;max-width:420px;max-height:90vh;overflow-y:auto;padding:22px">
         <div style="font-size:15px;font-weight:800;margin-bottom:14px">Edit Entri Lembur</div>
         <div style="display:flex;flex-direction:column;gap:12px">
           <label style="font-size:12px;font-weight:700;color:var(--muted)">Karyawan

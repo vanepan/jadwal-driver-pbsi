@@ -180,6 +180,39 @@ console.log('\n[F. live getter — trap survives the overlay DOM node being repl
   check('the trap still works against the POST-re-render DOM (not a stale detached node)', r.wrappedAfterReRender, r);
 }
 
+console.log('\n[G. SS18 — restoreFocusTo as a lazy getter, for a trigger INSIDE a re-rendered subtree]');
+{
+  const r = await page.evaluate(async () => {
+    const { attachModalA11y } = await import('/js/ui/modal-a11y.js');
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    // The trigger lives INSIDE the same subtree the module fully
+    // re-renders on close (Overtime's own architecture) — a captured
+    // element reference (the old contract's implicit
+    // document.activeElement snapshot) would already be a detached node
+    // by release() time.
+    host.innerHTML = '<button id="trigger">Open</button>';
+    const oldTrigger = host.querySelector('#trigger');
+    oldTrigger.focus();
+    const overlay = document.createElement('div');
+    overlay.innerHTML = '<button id="only">Only</button>';
+    document.body.appendChild(overlay);
+    const handle = attachModalA11y(overlay, { restoreFocusTo: () => host.querySelector('#trigger') });
+    // Simulate the module's full re-render — a BRAND NEW #trigger node,
+    // the old one now detached (exactly what closing an Overtime dialog
+    // does to its own "+ Tambah .../Ubah Tarif" trigger).
+    host.innerHTML = '<button id="trigger">Open</button>';
+    const newTrigger = host.querySelector('#trigger');
+    const oldTriggerDetached = !document.contains(oldTrigger);
+    handle.release();
+    const restoredToNewTrigger = document.activeElement === newTrigger;
+    overlay.remove(); host.remove();
+    return { oldTriggerDetached, restoredToNewTrigger };
+  });
+  check('old trigger reference is genuinely detached after the simulated re-render (sanity)', r.oldTriggerDetached, r);
+  check('release() re-resolves the getter and focuses the NEW trigger node (was: silently failed on the stale one)', r.restoredToNewTrigger, r);
+}
+
 console.log('\n[console cleanliness]');
 check('zero console/page errors across the whole sequence', errors.length === 0, errors.join(' | '));
 

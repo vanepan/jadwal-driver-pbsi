@@ -21,6 +21,19 @@
    open; the trap then always queries the CURRENT node instead of a
    stale detached one.
 
+   SS18 — `restoreFocusTo` accepts the same element-or-getter shape. A
+   plain element is captured once, at attach time — correct for a
+   PERSISTENT element a re-render never touches (Command Palette's own
+   trigger button, the topbar's notification bell/avatar). A () => element
+   getter is resolved lazily, at release() time instead — required for a
+   caller whose trigger button lives INSIDE the same subtree a full
+   `root.innerHTML = ...` re-render replaces (e.g. Overtime's per-screen
+   "+ Tambah .../Ubah Tarif" buttons): even the very close that ends the
+   dialog re-renders that subtree, so an element reference captured at
+   attach time — including the implicit default, document.activeElement —
+   is already a detached, stale node by the time release() runs and would
+   silently fail to refocus anything.
+
    Usage:
      const handle = attachModalA11y(overlayEl, { onEscape: closeFn });
      // ...later, when the modal closes:
@@ -39,9 +52,11 @@ const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:n
  *   double-closing).
  * @param {HTMLElement|(() => HTMLElement)} [opts.initialFocus] - element to
  *   focus on attach; defaults to the first focusable node in the overlay.
- * @param {HTMLElement} [opts.restoreFocusTo] - element to refocus on
- *   release(); defaults to document.activeElement at attach time (the
- *   trigger, assuming attach happens synchronously from its click/keydown).
+ * @param {HTMLElement|(() => HTMLElement)} [opts.restoreFocusTo] - element
+ *   (captured now) or getter (resolved at release() time — see header) to
+ *   refocus on release(); defaults to document.activeElement at attach
+ *   time (the trigger, assuming attach happens synchronously from its
+ *   click/keydown).
  * @param {boolean} [opts.focusOnAttach=true] - false when the caller
  *   already owns moving focus in (e.g. its own setTimeout-based focus).
  * @param {boolean} [opts.restoreOnRelease=true] - false to skip the
@@ -61,7 +76,11 @@ export function attachModalA11y(overlayRef, {
   const getOverlay = typeof overlayRef === 'function' ? overlayRef : () => overlayRef;
   if (!getOverlay()) return { release() {} };
 
-  const lastFocus = restoreOnRelease ? (restoreFocusTo || document.activeElement) : null;
+  // NOT resolved yet if restoreFocusTo is a function — see header. The
+  // implicit default (no restoreFocusTo given) still snapshots
+  // document.activeElement as a plain element right now, unchanged from
+  // the original contract.
+  const lastFocusRef = restoreOnRelease ? (restoreFocusTo || document.activeElement) : null;
 
   const focusables = () => {
     const el = getOverlay();
@@ -88,7 +107,9 @@ export function attachModalA11y(overlayRef, {
   return {
     release() {
       document.removeEventListener('keydown', onKeydown);
-      if (lastFocus && typeof lastFocus.focus === 'function') { try { lastFocus.focus(); } catch (_) {} }
+      if (!lastFocusRef) return;
+      const target = typeof lastFocusRef === 'function' ? lastFocusRef() : lastFocusRef;
+      if (target && typeof target.focus === 'function') { try { target.focus(); } catch (_) {} }
     },
   };
 }

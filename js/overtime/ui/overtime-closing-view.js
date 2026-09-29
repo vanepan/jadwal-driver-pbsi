@@ -127,7 +127,7 @@ export function renderUnlockModal(state) {
   return `
     <div data-act="stop" style="position:fixed;inset:0;background:rgba(20,16,14,.55);backdrop-filter:blur(3px);z-index:1600;display:flex;align-items:center;justify-content:center;padding:20px">
       <div data-act="closeUnlockModal" style="position:absolute;inset:0"></div>
-      <div style="position:relative;background:var(--card);border-radius:16px;box-shadow:var(--shadow-lg);width:100%;max-width:420px;padding:22px">
+      <div role="dialog" aria-modal="true" aria-label="Buka Kunci Periode" style="position:relative;background:var(--card);border-radius:16px;box-shadow:var(--shadow-lg);width:100%;max-width:420px;padding:22px">
         <div style="font-size:15px;font-weight:800;margin-bottom:6px">Buka Kunci Periode</div>
         <div style="font-size:12.5px;color:var(--muted);margin-bottom:14px">Alasan wajib diisi — akan tercatat pada Audit Trail dan riwayat periode ini.</div>
         <textarea data-focus="unlockReasonField" data-act="statefield:unlockReason" autofocus rows="3" placeholder="Contoh: koreksi entri karyawan X tanggal 12."
@@ -162,7 +162,7 @@ export function renderCloseConfirmModal(state) {
   return `
     <div data-act="stop" style="position:fixed;inset:0;background:rgba(20,16,14,.55);backdrop-filter:blur(3px);z-index:1600;display:flex;align-items:center;justify-content:center;padding:20px">
       <div data-act="closeCloseConfirmModal" style="position:absolute;inset:0"></div>
-      <div style="position:relative;background:var(--card);border-radius:16px;box-shadow:var(--shadow-lg);width:100%;max-width:420px;padding:22px">
+      <div role="dialog" aria-modal="true" aria-label="Tutup ${esc(fmtMonth(month))}" style="position:relative;background:var(--card);border-radius:16px;box-shadow:var(--shadow-lg);width:100%;max-width:420px;padding:22px">
         <div style="font-size:15px;font-weight:800;margin-bottom:6px;color:var(--primary)">Tutup ${esc(fmtMonth(month))}?</div>
         <div style="font-size:13px;line-height:1.6;color:var(--text)">
           ${pending ? `${pending} peringatan pra-closing belum ditinjau. ` : ''}Menutup periode membekukan seluruh entri bulan ini — laporan menjadi baca-saja dan tidak ada entri baru yang dapat ditambahkan. Tindakan ini dapat dibuka kembali (Unlock) dengan alasan yang tercatat di Audit Trail.
