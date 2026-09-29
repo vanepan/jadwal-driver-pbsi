@@ -9480,6 +9480,22 @@ function renderRecommendationAccuracySection() {
   }
 }
 
+/** SS18 Phase D — a button disabled while it holds focus is dropped to
+ *  <body> by the browser (confirmed: disabling the active element clears
+ *  document.activeElement immediately, and re-enabling it does NOT restore
+ *  focus). Every Analytics export button below disables itself for the
+ *  async Generate duration, so the click that started the export was
+ *  always the user's last real action — refocus it once the button is
+ *  re-enabled, but ONLY if focus is still exactly where the browser
+ *  stranded it (<body>): if the user navigated away, closed the dashboard,
+ *  or clicked something else while the export ran, activeElement will no
+ *  longer be <body> (or btn will no longer be attached), and this is a
+ *  deliberate no-op so it never steals focus back from something the user
+ *  did in the meantime. */
+function restoreExportButtonFocus(btn) {
+  if (btn && document.body.contains(btn) && document.activeElement === document.body) btn.focus();
+}
+
 /** Export the Recommendation Accuracy report (PDF | Excel) via the export
  *  registry + export-history log (mirrors exportDispatchAnalytics). */
 async function exportRecommendationAccuracy(format, btn) {
@@ -9517,6 +9533,7 @@ async function exportRecommendationAccuracy(format, btn) {
     showToast(isExcel ? 'Gagal membuat Excel.' : 'Gagal membuat PDF.');
   } finally {
     if (btn) { btn.disabled = false; if (prev != null) btn.textContent = prev; }
+    restoreExportButtonFocus(btn);
   }
 }
 
@@ -9559,6 +9576,7 @@ async function exportDispatchAnalytics(format, btn) {
     showToast(isExcel ? 'Gagal membuat Excel.' : 'Gagal membuat PDF.');
   } finally {
     if (btn) { btn.disabled = false; if (prev != null) btn.textContent = prev; }
+    restoreExportButtonFocus(btn);
   }
 }
 
@@ -9981,6 +9999,7 @@ async function exportExecutiveDashboard(format, btn) {
     showToast(isExcel ? 'Gagal membuat Excel.' : 'Gagal membuat PDF.');
   } finally {
     if (btn) { btn.disabled = false; if (prev != null) btn.textContent = prev; }
+    restoreExportButtonFocus(btn);
   }
 }
 
@@ -10034,6 +10053,7 @@ async function exportEngineeringAnalytics(format, btn) {
     showToast(isExcel ? 'Gagal membuat Excel.' : 'Gagal membuat PDF.');
   } finally {
     if (btn) { btn.disabled = false; if (prev != null) btn.textContent = prev; }
+    restoreExportButtonFocus(btn);
   }
 }
 
@@ -10083,6 +10103,7 @@ async function exportDriverWellness(format, btn) {
     showToast(isExcel ? 'Gagal membuat Excel.' : 'Gagal membuat PDF.');
   } finally {
     if (btn) { btn.disabled = false; if (prev != null) btn.textContent = prev; }
+    restoreExportButtonFocus(btn);
   }
 }
 
@@ -11279,6 +11300,7 @@ async function exportAnalyticsReport(triggerBtn) {
     showToast('Gagal membuat PDF.');
   } finally {
     if (btn) btn.disabled = false;
+    restoreExportButtonFocus(btn);
   }
 }
 
@@ -11329,6 +11351,7 @@ async function runAnalyticsExport(report, triggerBtn = null) {
   } finally {
     if (btn) btn.disabled = false;
     if (label) label.textContent = prev || 'Export PDF';
+    restoreExportButtonFocus(btn);
   }
 }
 
