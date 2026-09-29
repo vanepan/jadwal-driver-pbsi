@@ -3507,7 +3507,7 @@ input[type="number"]::-webkit-inner-spin-button {
   transform: translateX(-50%);
   background: var(--dark);
   color: var(--white);
-  padding: 10px 20px;
+  padding: 10px 14px 10px 20px;
   border-radius: 20px;
   font-size: 13px;
   font-weight: 500;
@@ -3517,6 +3517,39 @@ input[type="number"]::-webkit-inner-spin-button {
   white-space: nowrap;
   max-width: 90vw;
   text-align: center;
+  /* SS18 Phase E — flex row so the (optional) severity icon, message, and
+     close button all align on one line regardless of which are present. */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* SS18 Phase E — manual dismiss control (js/components/toast.js). A dim
+   glyph by default so it doesn't compete with the message; full opacity on
+   hover/focus. Negative margin keeps the toast's own padding visually
+   balanced now that a button sits at its trailing edge. */
+.toast__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  margin-left: 2px;
+  padding: 4px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: currentColor;
+  opacity: 0.7;
+  cursor: pointer;
+}
+.toast__close:hover,
+.toast__close:focus-visible {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.16);
+}
+.toast__close:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
 }
 
 @keyframes toastIn {

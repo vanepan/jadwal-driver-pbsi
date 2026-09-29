@@ -43,12 +43,40 @@ const SEVERITY_ICON = {
   info: 'info',
 };
 
+const TOAST_DURATION_MS = 2800;
 let toastTimeout = null;
+let toastPauseHandlersAttached = false;
 
 function esc(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function scheduleAutoDismiss(toast) {
+  if (toastTimeout) clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => { toast.style.display = 'none'; }, TOAST_DURATION_MS);
+}
+
+/** SS18 Phase E — WCAG 2.2.1 (Timing Adjustable): auto-dismissing content the
+ *  user can't pause/extend is a real barrier for anyone who needs longer than
+ *  2.8s to read it (a longer error message, a screen reader mid-announcement,
+ *  a motor-impaired user reaching for the close button). Pauses the timer
+ *  while the pointer is over the toast or focus is inside it (the close
+ *  button below), resumes a fresh full duration once both let go. Attached
+ *  once, lazily — `#toast` is a page-static singleton element reused for
+ *  every message, so the listeners never need to be re-attached. */
+function attachPauseHandlers(toast) {
+  if (toastPauseHandlersAttached) return;
+  toastPauseHandlersAttached = true;
+  const pause = () => { if (toastTimeout) { clearTimeout(toastTimeout); toastTimeout = null; } };
+  const resume = () => { if (toast.style.display !== 'none') scheduleAutoDismiss(toast); };
+  toast.addEventListener('mouseenter', pause);
+  toast.addEventListener('mouseleave', resume);
+  toast.addEventListener('focusin', pause);
+  // Only resume once focus has left the toast ENTIRELY — not just moved
+  // from the message text to the close button within the same toast.
+  toast.addEventListener('focusout', (e) => { if (!toast.contains(e.relatedTarget)) resume(); });
 }
 
 /**
@@ -66,6 +94,7 @@ function esc(s) {
 export function showToast(message, opts = {}) {
   const toast = document.getElementById('toast');
   if (!toast) return;
+  attachPauseHandlers(toast);
 
   const normalizedOpts = typeof opts === 'string' ? { severity: opts } : (opts || {});
   let text = String(message == null ? '' : message);
@@ -77,9 +106,18 @@ export function showToast(message, opts = {}) {
   }
 
   toast.className = severity ? `toast toast--${severity}` : 'toast';
-  toast.innerHTML = severity
+  const body = severity
     ? `${anIcon(SEVERITY_ICON[severity], { size: 15, cls: 'toast__ico' })}<span>${esc(text)}</span>`
     : esc(text);
+  // SS18 Phase E — a manual dismiss control: before this, a toast could
+  // only ever go away on its own 2.8s timer, so a keyboard/screen-reader
+  // user had zero way to close one early, and nothing inside it was even
+  // reachable by Tab in the first place.
+  toast.innerHTML = `${body}<button type="button" class="toast__close" aria-label="Tutup notifikasi">${anIcon('x', { size: 11 })}</button>`;
+  toast.querySelector('.toast__close').addEventListener('click', () => {
+    if (toastTimeout) { clearTimeout(toastTimeout); toastTimeout = null; }
+    toast.style.display = 'none';
+  });
 
   // role/aria-live are set per-call (not just once statically) so an error
   // toast interrupts a screen reader mid-sentence the way role="alert"
@@ -91,8 +129,5 @@ export function showToast(message, opts = {}) {
   else toast.style.animation = '';
   toast.style.display = 'block';
 
-  if (toastTimeout) clearTimeout(toastTimeout);
-  toastTimeout = setTimeout(() => {
-    toast.style.display = 'none';
-  }, 2800);
+  scheduleAutoDismiss(toast);
 }
