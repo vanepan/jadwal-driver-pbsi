@@ -57,6 +57,7 @@ import { renderDrawer } from './engineering-drawer.js';
 // shell instead of this module's own hand-rolled .eng-scrim/.eng-drawer —
 // see syncEngineeringDetailDrawer() below.
 import { openDrawer, closeDrawer, refreshDrawerBody } from '../../components/drawer.js';
+import { attachModalA11y } from '../../ui/modal-a11y.js';
 
 const st = {
   screen: 'dashboard',
@@ -85,6 +86,24 @@ let _engDrawerOverlay = null, _engDrawerKey = null;
 // mountCreateWidgets() last wired a picker to, so render() can tear it
 // down before its element is discarded (see mountCreateWidgets, below).
 let _createDatepickerInputEl = null;
+// SS17 — the create/report modal (.eng-modal-box) had no focus-trap/Escape/
+// focus-restore at all. A LIVE getter (not a captured element) since this
+// modal's DOM node is destroyed and recreated on every render() while open
+// (e.g. the personnel-search branch of onInput()) — attaching once on the
+// false->true transition and re-querying host at trap-time survives that.
+let _createModalA11y = null;
+function syncCreateModalA11y() {
+  if (st.creating) {
+    if (!_createModalA11y) {
+      _createModalA11y = attachModalA11y(() => host && host.querySelector('.eng-modal-box'), {
+        onEscape: () => { st.creating = false; st.formMode = 'assignment'; st.formError = null; render(); },
+      });
+    }
+  } else if (_createModalA11y) {
+    _createModalA11y.release();
+    _createModalA11y = null;
+  }
+}
 
 // Idempotency guard: assignment ids with an ownership-sensitive write in flight.
 // A repeated click / retry on the same assignment while one is pending is ignored,
@@ -130,6 +149,7 @@ export async function mountEngineering(hostEl) {
     host.addEventListener('click', onClick);
     host.addEventListener('input', onInput);
     host.addEventListener('submit', onSubmit);
+    host.addEventListener('keydown', onHostKeydown);
     unsub = registerEngineeringChangeListener(() => render());
   }
   if (!loaded) {
@@ -278,6 +298,7 @@ function render() {
   if (all.length === 0 && listWorkReports().length === 0 && st.screen !== 'settings') {
     host.innerHTML = `<div class="eng-content">${emptyScreen(c)}</div>${modal}`;
     if (st.creating) mountCreateWidgets();
+    syncCreateModalA11y();
     return;
   }
   let screen;
@@ -294,6 +315,7 @@ function render() {
   host.innerHTML = `<div class="eng-content">${screen}</div>${modal}`;
   restoreFocus();
   if (st.creating) mountCreateWidgets();
+  syncCreateModalA11y();
   syncEngineeringDetailDrawer(c);
 }
 
@@ -475,6 +497,20 @@ function onInput(e) {
     // the deadline picker input all feed through here too.
     if (!st.form) return;
     st.form[ds.field] = t.value;
+  }
+}
+
+/** SS17 — mirrors js/gudang/ui/gudang-center.js's own onHostKeydown()
+ *  exactly: a clickable `<div role="button">` (eng-card, the Timeline
+ *  toggle header/collapsed strip, History/feed/attention/live-worker rows,
+ *  My Work's title) must answer Enter AND Space the same way a real
+ *  <button> would. Before this fix Engineering had role="button" markup in
+ *  several places (e.g. eng-card) but NO keydown-to-click bridge anywhere
+ *  in the module at all, so none of it was actually keyboard-operable. */
+function onHostKeydown(e) {
+  if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.getAttribute('role') === 'button' && e.target.dataset.act) {
+    e.preventDefault();
+    e.target.click();
   }
 }
 
@@ -858,9 +894,9 @@ function createModal(c) {
   ` : '';
 
   return `<div class="eng-scrim -open -center" data-act="eng-scrim">
-    <form class="eng-modal-box" data-act="eng-create-form">
+    <form class="eng-modal-box" data-act="eng-create-form" role="dialog" aria-modal="true" aria-label="${isReport ? 'Catat Pekerjaan' : 'Buat Penugasan'}">
       <div class="eng-modal-head"><div><div class="eng-modal-kicker">${isReport ? 'Laporan Operasional' : 'Penugasan Baru'}</div><h2 class="eng-modal-title">${isReport ? 'Catat Pekerjaan' : 'Buat Penugasan'}</h2></div>
-        <button type="button" class="eng-icon-btn" data-act="eng-create-cancel">${icon('close', { size: 18 })}</button></div>
+        <button type="button" class="eng-icon-btn" data-act="eng-create-cancel" aria-label="Tutup">${icon('close', { size: 18 })}</button></div>
       <div class="eng-modal-body">
         <label class="eng-field"><span>Judul pekerjaan</span><input class="eng-input" data-field="title" value="${esc(f.title)}" placeholder="mis. Ganti lampu koridor Lantai 2" /></label>
         <div class="eng-field-row">

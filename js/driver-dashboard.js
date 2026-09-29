@@ -100,6 +100,13 @@ export function renderDriverDashboard() {
   // Wire card clicks → open existing detail modal
   container.querySelectorAll('[data-asgn-id]').forEach(card => {
     card.addEventListener('click', () => openDetailModal(card.dataset.asgnId));
+    // SS17 — cards already carry role="button" tabindex="0" (buildCard())
+    // but had no Enter/Space activation at all.
+    card.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      openDetailModal(card.dataset.asgnId);
+    });
   });
 }
 
@@ -118,6 +125,11 @@ export function renderDriverHistoryScreen(container) {
   });
   container.querySelectorAll('[data-asgn-id]').forEach(card => {
     card.addEventListener('click', () => openDetailModal(card.dataset.asgnId));
+    card.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      openDetailModal(card.dataset.asgnId);
+    });
   });
 }
 

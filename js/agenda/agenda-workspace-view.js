@@ -136,9 +136,16 @@ export function buildWorkspaceHTML(ctx) {
     // plain doRender() and never touches this, so the grid's identity
     // across a transition capture is always exactly "the date grid, before
     // vs. after switching Month/Week" — never anything else.
+    // SS17 — role="tab" doesn't support aria-pressed (not a valid state for
+    // that role, so a screen reader never learns which of Bulan/Minggu is
+    // active); aria-selected is what role="tab" actually maps to (see
+    // modeSwitcher() above for the same idiom already used correctly).
+    // aria-pressed stays ALONGSIDE aria-selected below, not replaced,
+    // purely so the existing .cal-chip[aria-pressed="true"] CSS keeps
+    // driving the visual selected state.
     inner = `<div class="cal-calview-region">
       <div class="cal-filters" role="tablist" aria-label="Tampilan Kalender">
-        ${['month', 'week'].map((v) => `<button type="button" class="cal-chip" role="tab" aria-pressed="${ctx.calendarView === v}" data-agenda-action="set-calview:${v}">${v === 'month' ? 'Bulan' : 'Minggu'}</button>`).join('')}
+        ${['month', 'week'].map((v) => `<button type="button" class="cal-chip" role="tab" aria-selected="${ctx.calendarView === v}" aria-pressed="${ctx.calendarView === v}" data-agenda-action="set-calview:${v}">${v === 'month' ? 'Bulan' : 'Minggu'}</button>`).join('')}
       </div>${inner}
     </div>`;
   } else if (ctx.mode === 'todo') {

@@ -766,7 +766,7 @@
 
 <!-- ===== MODAL: PROFILE ===== -->
 <div class="modal-overlay" id="modalProfile" style="display:none;">
-  <div class="modal-box profile-modal-box">
+  <div class="modal-box profile-modal-box" role="dialog" aria-modal="true" aria-label="Profil">
     <div class="modal-header">
       <h2 class="modal-title">Profil</h2>
       <button class="modal-close" id="btnCloseProfile">&times;</button>
@@ -899,7 +899,7 @@
 
 <!-- ===== MODAL: NOTIFICATIONS ===== -->
 <div class="modal-overlay" id="modalNotifications" style="display:none;">
-  <div class="modal-box modal-detail-box">
+  <div class="modal-box modal-detail-box" role="dialog" aria-modal="true" aria-label="Notifikasi">
     <div class="modal-header">
       <h2 class="modal-title">Notifikasi</h2>
       <button class="modal-close" id="btnCloseNotifications">&times;</button>
@@ -917,7 +917,7 @@
 
 <!-- ===== MODAL: LOG AKTIVITAS ===== -->
 <div class="modal-overlay" id="modalActivityLog" style="display:none;">
-  <div class="modal-box modal-detail-box">
+  <div class="modal-box modal-detail-box" role="dialog" aria-modal="true" aria-label="Log Aktivitas">
     <div class="modal-header">
       <h2 class="modal-title">Log Aktivitas</h2>
       <button class="modal-close" id="btnCloseActivityLog">&times;</button>
@@ -1094,7 +1094,7 @@
 
 <!-- ===== MODAL: ODOMETER INPUT ===== -->
 <div class="modal-overlay" id="modalOdometer" style="display:none;">
-  <div class="odo-modal">
+  <div class="odo-modal" role="dialog" aria-modal="true" aria-labelledby="odoModalTitle">
     <div class="odo-modal__header">
       <div class="odo-modal__header-text">
         <h2 class="odo-modal__title" id="odoModalTitle">Mulai Assignment</h2>
@@ -1149,10 +1149,10 @@
 
 <!-- ===== MODAL: BATALKAN ASSIGNMENT ===== -->
 <div class="modal-overlay" id="modalCancel" style="display:none;">
-  <div class="modal-box modal-cancel-box">
+  <div class="modal-box modal-cancel-box" role="dialog" aria-modal="true" aria-label="Batalkan Assignment">
     <div class="modal-header">
       <h2 class="modal-title">Batalkan Assignment</h2>
-      <button class="modal-close" id="btnCloseCancel">&times;</button>
+      <button class="modal-close" id="btnCloseCancel" aria-label="Tutup">&times;</button>
     </div>
     <div class="modal-body">
       <p class="cancel-warning">Assignment yang dibatalkan tidak dapat diaktifkan kembali. Catatan ini disimpan permanen untuk audit.</p>
@@ -1173,10 +1173,10 @@
 
 <!-- ===== OVERTIME OVERRIDE MODAL (v1.16.4.9) ===== -->
 <div class="modal-overlay" id="modalOvertimeOverride" style="display:none;">
-  <div class="modal-box modal-cancel-box">
+  <div class="modal-box modal-cancel-box" role="dialog" aria-modal="true" aria-label="Override Status Lembur">
     <div class="modal-header">
       <h2 class="modal-title">Override Status Lembur</h2>
-      <button class="modal-close" id="btnCloseOtOverride">&times;</button>
+      <button class="modal-close" id="btnCloseOtOverride" aria-label="Tutup">&times;</button>
     </div>
     <div class="modal-body">
       <p class="cancel-warning" id="otOverrideContext"></p>

@@ -49,32 +49,53 @@
    Each call site owns an independent guard instance (no shared module
    state across modules), matching the store/service/center convention
    of never sharing mutable state across unrelated domains.
+
+   SS17 extension — `attr` + `fallback`: originally keyed exclusively off
+   `data-focus` (a dedicated attribute some modules add just for this).
+   `createFocusGuard({ attr: 'agenda-action' })` instead keys off an
+   attribute a module already has on its action elements (e.g.
+   `data-agenda-action`/`data-drawer-action`), so re-render-heavy modules
+   (js/agenda/*) can restore focus/keyboard-Tab-position to a clicked
+   button or row without adding a redundant second attribute everywhere.
+   `restore(root, fallback)` accepts an optional element (or a () => element
+   getter) to focus when the original key no longer exists post-render
+   (e.g. the acted-on row was itself the thing removed) — without a
+   fallback, restore() silently no-ops in that case, same as before.
+   Default `attr: 'focus'` keeps every existing call site byte-identical.
    ============================================================ */
 
 'use strict';
 
-/** Create an independent focus-preservation guard for one render loop. */
-export function createFocusGuard() {
+/** Create an independent focus-preservation guard for one render loop.
+ *  @param {{attr?: string}} [opts] dataset attribute (kebab-case, e.g.
+ *    'agenda-action') to key capture/restore off. Defaults to 'focus'. */
+export function createFocusGuard({ attr = 'focus' } = {}) {
+  const prop = attr.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
   let pending = null;
 
   return {
     /** Call BEFORE mutating the DOM (e.g. root.innerHTML = ...). */
     capture(root) {
       const el = document.activeElement;
-      if (el && root && root.contains(el) && el.dataset && el.dataset.focus) {
-        pending = { key: el.dataset.focus, start: el.selectionStart, end: el.selectionEnd };
+      if (el && root && root.contains(el) && el.dataset && el.dataset[prop]) {
+        pending = { key: el.dataset[prop], start: el.selectionStart, end: el.selectionEnd };
       } else {
         pending = null;
       }
     },
     /** Call AFTER mutating the DOM. Re-focuses the element carrying the
-        same data-focus key and restores the caret/selection range. */
-    restore(root) {
+        same key and restores the caret/selection range. If the key no
+        longer exists in `root` (the acted-on element was itself removed),
+        focuses `fallback` (element or () => element) instead, when given. */
+    restore(root, fallback) {
       if (!pending || !root) { pending = null; return; }
-      const el = root.querySelector(`[data-focus="${CSS.escape(pending.key)}"]`);
+      const el = root.querySelector(`[data-${attr}="${CSS.escape(pending.key)}"]`);
       if (el) {
         el.focus();
         try { if (pending.start != null) el.setSelectionRange(pending.start, pending.end); } catch (_) {}
+      } else if (fallback) {
+        const target = typeof fallback === 'function' ? fallback() : fallback;
+        if (target && typeof target.focus === 'function') target.focus();
       }
       pending = null;
     },

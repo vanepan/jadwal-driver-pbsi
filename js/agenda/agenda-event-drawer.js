@@ -36,6 +36,14 @@ import { typeLabel } from './agenda-view-model.js';
 import { writableScopes, canManageSharedAgenda, canManageKabidAgenda, canWriteEvent } from './agenda-permissions.js';
 import { getCurrentUser } from '../auth.js';
 import { todayString } from '../utils.js';
+import { createFocusGuard } from '../ui/focus-preserving-render.js';
+
+// SS17 — refreshDrawerBody() is a raw body-replace primitive; every verb
+// below that calls rerender() was silently dropping focus to <body> (or,
+// worse, off the drawer entirely once the trap's activeElement checks no
+// longer matched anything — see the SS17 audit's Repro A/B). Keyed off the
+// same data-drawer-action every row/button/chip already carries.
+const _focusGuard = createFocusGuard({ attr: 'drawer-action' });
 
 const EVENT_TYPES = ['rapat', 'kegiatan', 'kunjungan', 'perjalanan', 'maintenance', 'deadline', 'lainnya'];
 const RSVP_LABELS = { invited: 'Belum merespons', accepted: 'Hadir', declined: 'Tidak hadir', tentative: 'Tentatif' };
@@ -53,6 +61,7 @@ let _editingId = null;
 let _editingEvent = null; // raw /agendaEvents record (organizerUsername etc. — _draft doesn't carry it), needed for canWriteEvent()
 let _onSaved = null;
 let _editOriginalDraftJSON = null; // snapshot at open time, for real isDirty comparison in edit mode
+let _pickerJustOpened = false; // SS17 — see wireAfterRender()/rerender()
 
 function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 
@@ -210,8 +219,20 @@ function footer() {
 }
 
 function rerender() {
+  const bodyEl = document.querySelector('[data-drawer-body]');
+  const openingPicker = _pickerJustOpened;
+  _focusGuard.capture(bodyEl);
   refreshDrawerBody(currentBodyHTML());
   wireAfterRender();
+  // Skip the generic restore on the very transition that just deliberately
+  // moved focus to the picker's search box (wireAfterRender(), below) — a
+  // restore here would immediately steal it back. Every other transition
+  // (including picker->form on "Selesai"/"Kembali") falls back to the
+  // "+ Tambah Peserta" button, or the drawer's own close button, rather
+  // than letting focus escape to <body> and defeat the drawer's Tab trap.
+  if (!openingPicker) {
+    _focusGuard.restore(bodyEl, () => document.querySelector('[data-drawer-action="picker:open"]') || document.querySelector('.drawer__close'));
+  }
 }
 
 function wireAfterRender() {
@@ -222,22 +243,35 @@ function wireAfterRender() {
     const search = bodyEl.querySelector('[data-field="pickerQuery"]');
     if (search) {
       search.addEventListener('input', () => { _pickerQuery = search.value; rerenderPickerListOnly(bodyEl); });
-      search.focus();
-      search.setSelectionRange(search.value.length, search.value.length);
+      // SS17 — only steal focus into the search box on the OPEN transition.
+      // Previously this ran on every rerender() while the picker stayed
+      // open (every toggle/select-all/clear), snapping focus back to search
+      // and away from the row the user just acted on (SS17 audit Repro A).
+      if (_pickerJustOpened) {
+        search.focus();
+        search.setSelectionRange(search.value.length, search.value.length);
+      }
     }
   }
+  _pickerJustOpened = false;
 }
 
 /** Re-renders ONLY the picker's row list on search-as-you-type — a full
  *  refreshDrawerBody() would steal focus from the search input mid-typing
  *  (the exact bug class the Focus-Preserving Render Pattern exists to
- *  avoid), so this patches just the list container instead. */
+ *  avoid), so this patches just the list container instead. Also wrapped
+ *  in the focus guard (SS17): the OTHER caller, onDirectoryChange(), is an
+ *  async Firebase listener that can fire while a keyboard user has Tab-
+ *  focused a candidate row — without this, that row's re-creation would
+ *  silently drop focus to <body> out from under the user. */
 function rerenderPickerListOnly(bodyEl) {
+  _focusGuard.capture(bodyEl);
   const list = bodyEl.querySelector('.cal-picker-list');
   const wrap = document.createElement('div');
   wrap.innerHTML = renderPickerHTML({ candidates: getAgendaCandidates(), selected: _draft.participants, mode: 'participant', query: _pickerQuery });
   const newList = wrap.querySelector('.cal-picker-list');
   if (list && newList) list.innerHTML = newList.innerHTML;
+  _focusGuard.restore(bodyEl);
 }
 
 /** Fixes the exact race C3.1 named but didn't fix: agenda-directory.js's
@@ -359,7 +393,7 @@ function onAction(action, close) {
   }
 
   // ns === 'picker'
-  if (verb === 'open') { _pickerOpen = true; _pickerQuery = ''; rerender(); return; }
+  if (verb === 'open') { _pickerOpen = true; _pickerQuery = ''; _pickerJustOpened = true; rerender(); return; }
   if (verb === 'back' || verb === 'done') { _pickerOpen = false; rerender(); return; }
   if (verb === 'toggle') {
     if (_draft.participants[arg]) delete _draft.participants[arg];
@@ -389,7 +423,7 @@ export function openCreateEventDrawer(opts = {}) {
   if (!defaultScope) return; // no writable scope — caller should have already hidden the create action
   _draft = blankDraft(defaultScope);
   _editingEvent = null;
-  _errors = {}; _pickerOpen = false; _pickerQuery = ''; _editingId = null; _onSaved = opts.onSaved || null;
+  _errors = {}; _pickerOpen = false; _pickerQuery = ''; _pickerJustOpened = false; _editingId = null; _onSaved = opts.onSaved || null;
   registerDirectoryChangeListener(onDirectoryChange);
   openDrawer({
     title: 'Agenda Baru', icon: 'calendar', body: currentBodyHTML(), footer: footer(),
@@ -420,7 +454,7 @@ export function openEditEventDrawer(eventId, opts = {}) {
   }
   _draft = draftFromEvent(event);
   _editingEvent = event;
-  _errors = {}; _pickerOpen = false; _pickerQuery = ''; _editingId = eventId; _onSaved = opts.onSaved || null;
+  _errors = {}; _pickerOpen = false; _pickerQuery = ''; _pickerJustOpened = false; _editingId = eventId; _onSaved = opts.onSaved || null;
   // V1.31.3 §13 finding: this used to be `() => !readOnly` — true for
   // every writable event regardless of whether anything was actually
   // edited, so simply opening then closing an editable event (no changes

@@ -20,6 +20,11 @@ import { renderPickerHTML, renderPersonChipsHTML } from './agenda-participant-pi
 import { wirePlainFields, validateTaskDraft, fieldError, combineDateTimeToEpoch } from './agenda-forms.js';
 import { writableScopes, canManageSharedAgenda, canManageKabidAgenda } from './agenda-permissions.js';
 import { generateId } from '../utils.js';
+import { createFocusGuard } from '../ui/focus-preserving-render.js';
+
+// SS17 — see agenda-event-drawer.js's identical guard for the full
+// reasoning (systemic focus-loss on every rerender()).
+const _focusGuard = createFocusGuard({ attr: 'drawer-action' });
 
 let _draft = null;
 let _errors = {};
@@ -29,6 +34,7 @@ let _editingId = null;
 let _onSaved = null;
 let _newChecklistLabel = '';
 let _editOriginalDraftJSON = null; // snapshot at open time, for real isDirty comparison in edit mode
+let _pickerJustOpened = false; // SS17 — see wireAfterRender()/rerender()
 
 function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 
@@ -138,7 +144,16 @@ function footer() {
   return actions;
 }
 
-function rerender() { refreshDrawerBody(currentBodyHTML()); wireAfterRender(); }
+function rerender() {
+  const bodyEl = document.querySelector('[data-drawer-body]');
+  const openingPicker = _pickerJustOpened;
+  _focusGuard.capture(bodyEl);
+  refreshDrawerBody(currentBodyHTML());
+  wireAfterRender();
+  if (!openingPicker) {
+    _focusGuard.restore(bodyEl, () => document.querySelector('[data-drawer-action="picker:open"]') || document.querySelector('.drawer__close'));
+  }
+}
 
 function wireAfterRender() {
   const bodyEl = document.querySelector('[data-drawer-body]');
@@ -150,18 +165,23 @@ function wireAfterRender() {
     const search = bodyEl.querySelector('[data-field="pickerQuery"]');
     if (search) {
       search.addEventListener('input', () => { _pickerQuery = search.value; rerenderPickerListOnly(bodyEl); });
-      search.focus();
-      search.setSelectionRange(search.value.length, search.value.length);
+      if (_pickerJustOpened) {
+        search.focus();
+        search.setSelectionRange(search.value.length, search.value.length);
+      }
     }
   }
+  _pickerJustOpened = false;
 }
 
 function rerenderPickerListOnly(bodyEl) {
+  _focusGuard.capture(bodyEl);
   const list = bodyEl.querySelector('.cal-picker-list');
   const wrap = document.createElement('div');
   wrap.innerHTML = renderPickerHTML({ candidates: getAgendaCandidates(), selected: _draft.responsible, mode: 'responsible', query: _pickerQuery });
   const newList = wrap.querySelector('.cal-picker-list');
   if (list && newList) list.innerHTML = newList.innerHTML;
+  _focusGuard.restore(bodyEl);
 }
 
 /** Same late-directory-data fix as agenda-event-drawer.js's own
@@ -260,7 +280,7 @@ function onAction(action, close) {
   }
 
   // ns === 'picker'
-  if (verb === 'open') { _pickerOpen = true; _pickerQuery = ''; rerender(); return; }
+  if (verb === 'open') { _pickerOpen = true; _pickerQuery = ''; _pickerJustOpened = true; rerender(); return; }
   if (verb === 'back' || verb === 'done') { _pickerOpen = false; rerender(); return; }
   if (verb === 'toggle') {
     if (_draft.responsible[arg]) delete _draft.responsible[arg];
@@ -282,7 +302,7 @@ export function openCreateTaskDrawer(opts = {}) {
   const defaultScope = opts.defaultScope && scopes.includes(opts.defaultScope) ? opts.defaultScope : scopes[0];
   if (!defaultScope) return;
   _draft = blankDraft(defaultScope);
-  _errors = {}; _pickerOpen = false; _pickerQuery = ''; _editingId = null; _onSaved = opts.onSaved || null; _newChecklistLabel = '';
+  _errors = {}; _pickerOpen = false; _pickerQuery = ''; _pickerJustOpened = false; _editingId = null; _onSaved = opts.onSaved || null; _newChecklistLabel = '';
   registerDirectoryChangeListener(onDirectoryChange);
   openDrawer({
     title: 'Tugas Baru', icon: 'check', body: currentBodyHTML(), footer: footer(),
@@ -308,7 +328,7 @@ export function openEditTaskDrawer(taskId, opts = {}) {
     return;
   }
   _draft = draftFromTask(task);
-  _errors = {}; _pickerOpen = false; _pickerQuery = ''; _editingId = taskId; _onSaved = opts.onSaved || null; _newChecklistLabel = '';
+  _errors = {}; _pickerOpen = false; _pickerQuery = ''; _pickerJustOpened = false; _editingId = taskId; _onSaved = opts.onSaved || null; _newChecklistLabel = '';
   // V1.31.3 §13 finding: this used to be `() => true` unconditionally —
   // every close of an existing task, even with zero edits, triggered the
   // "unsaved changes" confirm(). Real comparison against the draft's

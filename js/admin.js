@@ -32,6 +32,7 @@ import { showToast } from './utils.js';
 import { syncPbsiSelect } from './pbsi-select.js';
 import { enablePush, isPushSupported } from './push.js';
 import { wireSheetSwipeDismiss, lockBodyScroll, unlockBodyScroll } from './ui/sheet-gesture.js'; // Phase 11K
+import { attachModalA11y } from './ui/modal-a11y.js';
 // Phase 11 (Administration) — Design System Program: the User Form
 // (Create/Edit/Lihat) migrates onto the canonical drawer, same primitive
 // Vehicle/Driver/Gudang/Engineering/Petty Cash already use (Phase 10).
@@ -1606,6 +1607,12 @@ function pasteHint() {
 // the whole function as in-flight; cleared in `finally` so a genuinely
 // later open (after this one settles) is never blocked.
 let _profileModalOpening = false;
+// SS17 — this modal had NO focus management at all: no focus moved in on
+// open, no Tab trap, and (unlike its sibling Notifications/Activity Log
+// modals) no Escape handler either. Matters more than a typical modal here:
+// with the active shell (domainShellV1), #v2TopbarAvatar -> this modal is
+// the ONLY reachable Profile/Settings/theme-toggle/logout surface.
+let _profileA11y = null;
 async function openProfileModal() {
   const modal = document.getElementById('modalProfile');
   if (!modal || _profileModalOpening) return;
@@ -1678,6 +1685,7 @@ async function _openProfileModalImpl(modal) {
   if (profileBox) wireSheetSwipeDismiss(profileBox, modal, closeProfileModal);
   modal.style.display = 'flex';
   lockBodyScroll();
+  _profileA11y = attachModalA11y(modal, { onEscape: closeProfileModal });
 }
 
 function closeProfileModal() {
@@ -1686,6 +1694,7 @@ function closeProfileModal() {
   unlockBodyScroll();
   const form = document.getElementById('profileForm');
   if (form) form.reset();
+  if (_profileA11y) { _profileA11y.release(); _profileA11y = null; }
 }
 
 async function handleProfileSubmit(event) {

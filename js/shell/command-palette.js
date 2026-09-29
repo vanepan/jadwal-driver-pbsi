@@ -23,6 +23,7 @@
 
 import { anIcon } from '../analytics/analytics-shell.js';
 import { prefersReducedMotion } from '../components/motion-tokens.js';
+import { attachModalA11y } from '../ui/modal-a11y.js';
 
 'use strict';
 
@@ -38,6 +39,11 @@ let triggerEl = null;
 // guard). Reset in both open() and close() so the NEXT open() (not just
 // a page reload) always gets a fresh stagger.
 let staggerNext = true;
+// SS17 — the palette moved focus in on open and had its own Escape, but
+// never trapped Tab (a keyboard user could Tab straight out into the
+// topbar/sidebar behind it while it stayed visually open) and never
+// restored focus to the "Cari Cepat" trigger on close.
+let _a11y = null;
 
 function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -129,6 +135,10 @@ function open() {
   render('');
   setTimeout(() => inputEl.focus(), 0);
   document.addEventListener('keydown', onKeydown, true);
+  // focusOnAttach:false — the setTimeout above already owns moving focus
+  // into the input (dodges a focus-then-immediately-reset-value ordering
+  // issue); this only adds the Tab trap and the close()-time focus-restore.
+  _a11y = attachModalA11y(overlayEl, { focusOnAttach: false, restoreFocusTo: triggerEl });
 }
 
 function close() {
@@ -136,6 +146,7 @@ function close() {
   overlayEl.style.display = 'none';
   staggerNext = true;
   document.removeEventListener('keydown', onKeydown, true);
+  if (_a11y) { _a11y.release(); _a11y = null; }
 }
 
 function onKeydown(e) {
@@ -173,7 +184,7 @@ export function initCommandPalette(c) {
   overlayEl.className = 'domshell-palette-overlay';
   overlayEl.style.display = 'none';
   overlayEl.innerHTML = `
-    <div class="domshell-palette-box">
+    <div class="domshell-palette-box" role="dialog" aria-modal="true" aria-label="Pencarian cepat">
       <div class="domshell-palette-inputwrap">
         <input type="text" class="domshell-palette-input" placeholder="Cari driver, kendaraan, jadwal..." />
       </div>

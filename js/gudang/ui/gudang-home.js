@@ -510,10 +510,10 @@ function catalogCard(item, st) {
     <div class="gud-catalog-card-stock">${esc(stockLine)} ${isLowStock ? `<span class="gud-pill" data-pill="warn">${icon('gauge', { size: 10 })} Stok Rendah</span>` : ''}</div>
     ${qiLine ? `<div class="gud-catalog-card-qi">${esc(qiLine)}</div>` : ''}
     <div class="gud-catalog-card-quick">
-      <span class="gud-catalog-quick-btn" data-act="gud-home-quick-out" data-id="${esc(item.itemId)}" title="Goods Out">${icon('arrow-out', { size: 13 })}</span>
-      <span class="gud-catalog-quick-btn" data-act="gud-home-quick-in" data-id="${esc(item.itemId)}" title="Goods In">${icon('arrow-in', { size: 13 })}</span>
-      <span class="gud-catalog-quick-btn" data-act="gud-home-quick-opname" data-id="${esc(item.itemId)}" title="Stock Opname">${icon('clipboard', { size: 13 })}</span>
-      <span class="gud-catalog-quick-btn" data-act="gud-open-item" data-id="${esc(item.itemId)}" title="Detail">${icon('chevron-right', { size: 13 })}</span>
+      <span class="gud-catalog-quick-btn" data-act="gud-home-quick-out" data-id="${esc(item.itemId)}" title="Goods Out" role="button" tabindex="0" aria-label="Goods Out — ${esc(item.name)}">${icon('arrow-out', { size: 13 })}</span>
+      <span class="gud-catalog-quick-btn" data-act="gud-home-quick-in" data-id="${esc(item.itemId)}" title="Goods In" role="button" tabindex="0" aria-label="Goods In — ${esc(item.name)}">${icon('arrow-in', { size: 13 })}</span>
+      <span class="gud-catalog-quick-btn" data-act="gud-home-quick-opname" data-id="${esc(item.itemId)}" title="Stock Opname" role="button" tabindex="0" aria-label="Stock Opname — ${esc(item.name)}">${icon('clipboard', { size: 13 })}</span>
+      <span class="gud-catalog-quick-btn" data-act="gud-open-item" data-id="${esc(item.itemId)}" title="Detail" role="button" tabindex="0" aria-label="Detail — ${esc(item.name)}">${icon('chevron-right', { size: 13 })}</span>
     </div>
   </div>`;
 }

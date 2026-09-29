@@ -78,7 +78,7 @@ export function activityFeed(all, ctx, limit = 7) {
   if (!top.length) return '<div class="eng-muted eng-pad">Belum ada aktivitas.</div>';
   return `<div class="eng-feed">${top.map(({ a, e }) => {
     const m = eventMeta(e.type);
-    return `<div class="eng-feed-row" data-act="eng-open" data-id="${esc(a.id)}">
+    return `<div class="eng-feed-row" data-act="eng-open" data-id="${esc(a.id)}" role="button" tabindex="0" aria-label="Buka detail ${esc(a.title)}">
       <span class="eng-feed-ic" data-tone="${m.tone}">${icon(m.icon, { size: 14, tone: m.tone })}</span>
       <div class="eng-feed-main">
         <div class="eng-feed-label"><span>${esc((e.actor && e.actor.name) || 'Sistem')}</span> · ${esc(m.label)}</div>
@@ -186,7 +186,7 @@ function attnRow(a, kind, ctx) {
   const canVerify = ctx.canEng('eng.verify');
   return `<div class="eng-attn-row">
     ${catTile(a.category, 38)}
-    <div class="eng-attn-main" data-act="eng-open" data-id="${esc(a.id)}">
+    <div class="eng-attn-main" data-act="eng-open" data-id="${esc(a.id)}" role="button" tabindex="0" aria-label="Buka detail ${esc(a.title)}">
       <div class="eng-attn-title">${esc(a.title)}</div>
       <div class="eng-attn-sub"><span style="color:var(--${cfg.tone})">${icon(cfg.icon, { size: 13, tone: cfg.tone })} ${esc(cfg.label)}</span><span class="eng-dot-sep">·</span> ${esc((a.location || '').split(' · ')[0])}</div>
     </div>
@@ -195,7 +195,7 @@ function attnRow(a, kind, ctx) {
 }
 
 function liveWorkerRow(a, p, now) {
-  return `<div class="eng-live-row" data-act="eng-open" data-id="${esc(a.id)}">
+  return `<div class="eng-live-row" data-act="eng-open" data-id="${esc(a.id)}" role="button" tabindex="0" aria-label="Buka detail ${esc(a.title)}">
     <span class="eng-live-ava">${avatar(p.name, 34)}<span class="eng-live-pulse"></span></span>
     <div class="eng-live-main"><div class="eng-live-name">${esc(p.name)}</div><div class="eng-live-task">${esc(a.title)}</div></div>
     <span class="eng-live-dur">${esc(fmtDuration(workerElapsedMin(p, now)))}</span>
@@ -221,7 +221,7 @@ export function renderMemberDashboard(all, ctx) {
         ${catTile(a.category, 48, 14)}
         <div class="eng-mywork-info">
           <div class="eng-mywork-kicker" style="color:var(--${active ? 'c-blue' : 'c-violet'})">${active ? '<span class="eng-pulse-dot"></span>Sedang Anda kerjakan' : 'Dilanjut besok'}</div>
-          <div class="eng-mywork-title" data-act="eng-open" data-id="${esc(a.id)}">${esc(a.title)}</div>
+          <div class="eng-mywork-title" data-act="eng-open" data-id="${esc(a.id)}" role="button" tabindex="0" aria-label="Buka detail ${esc(a.title)}">${esc(a.title)}</div>
           <div class="eng-mywork-loc">${icon('pin', { size: 14 })} ${esc(a.location || '')}</div>
         </div>
         <div class="eng-mywork-time"><div class="eng-mywork-num">${esc(fmtDuration(workerElapsedMin(mine, ctx.now)))}</div><div class="eng-mywork-cap">waktu kerja Anda</div></div>
@@ -253,7 +253,7 @@ export function renderMemberDashboard(all, ctx) {
       <div class="eng-card -pad">${sectionHeader('TIMELINE', 'Timeline Hari Ini', 'Aktivitas Anda', `<button class="eng-link" data-act="eng-goto" data-val="timeline">Buka →</button>`)}${activityFeed(all, ctx, 5)}</div>
       <div class="eng-card -pad">${sectionHeader('RIWAYAT', 'Riwayat Terakhir', `${myDone.length}`)}
         ${myDone.length === 0 ? '<div class="eng-muted eng-pad">Belum ada pekerjaan selesai hari ini.</div>'
-          : myDone.map((a) => `<div class="eng-hist-row" data-act="eng-open" data-id="${esc(a.id)}">${catTile(a.category, 34)}<div class="eng-hist-main"><div class="eng-hist-title">${esc(a.title)}</div><div class="eng-hist-sub">${esc((a.location || '').split(' · ')[0])}</div></div><span class="eng-hist-status" style="color:var(--${DONE.has(a.status) ? 'c-green' : 'c-amber'})">${icon(DONE.has(a.status) ? 'check-circle' : 'clock', { size: 14 })} ${DONE.has(a.status) ? 'Terverifikasi' : 'Menunggu'}</span></div>`).join('')}</div>
+          : myDone.map((a) => `<div class="eng-hist-row" data-act="eng-open" data-id="${esc(a.id)}" role="button" tabindex="0" aria-label="Buka detail ${esc(a.title)}">${catTile(a.category, 34)}<div class="eng-hist-main"><div class="eng-hist-title">${esc(a.title)}</div><div class="eng-hist-sub">${esc((a.location || '').split(' · ')[0])}</div></div><span class="eng-hist-status" style="color:var(--${DONE.has(a.status) ? 'c-green' : 'c-amber'})">${icon(DONE.has(a.status) ? 'check-circle' : 'clock', { size: 14 })} ${DONE.has(a.status) ? 'Terverifikasi' : 'Menunggu'}</span></div>`).join('')}</div>
     </div></div>
   </div>`;
 }

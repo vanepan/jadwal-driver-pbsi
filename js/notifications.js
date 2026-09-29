@@ -8,6 +8,7 @@ import { getCurrentUser } from './auth.js';
 import { subscribeNode, updateFirebaseData } from './firebase.js';
 import { wireSheetSwipeDismiss, lockBodyScroll, unlockBodyScroll } from './ui/sheet-gesture.js'; // Phase 11K
 import { anIcon } from './analytics/analytics-shell.js';
+import { attachModalA11y } from './ui/modal-a11y.js';
 
 /* ── Helpers ── */
 
@@ -688,6 +689,13 @@ export function setNotificationData({ pendingRequests = 0, recentLogs = [] }) {
 
 /* ── Modal open / close ── */
 
+// SS17 — neither modal moved focus in on open, trapped Tab, or restored
+// focus to the bell icon on close (Escape-only, added earlier — D4). The
+// individual notification cards themselves already carry role="button"
+// tabindex="0" + Enter/Space and are unaffected by this.
+let _notifA11y = null;
+let _actLogA11y = null;
+
 export function openNotificationsModal() {
   // Log Aktivitas is admin-only — hide the button for all other roles
   const actLogBtn = document.getElementById('btnOpenActivityLog');
@@ -704,6 +712,9 @@ export function openNotificationsModal() {
     if (box) wireSheetSwipeDismiss(box, modal, closeNotificationsModal);
     modal.style.display = 'flex';
     lockBodyScroll();
+    // onEscape omitted — the module-level Escape listener wired near D4
+    // already closes this modal; this only adds the Tab trap + restore.
+    _notifA11y = attachModalA11y(modal);
   }
 }
 
@@ -711,6 +722,7 @@ export function closeNotificationsModal() {
   const modal = document.getElementById('modalNotifications');
   if (modal) modal.style.display = 'none';
   unlockBodyScroll();
+  if (_notifA11y) { _notifA11y.release(); _notifA11y = null; }
 }
 
 /* ── Activity Log ── */
@@ -719,12 +731,16 @@ export function openActivityLogModal() {
   if (getCurrentUser()?.role !== 'admin') return;
   renderActivityLog();
   const modal = document.getElementById('modalActivityLog');
-  if (modal) modal.style.display = 'flex';
+  if (modal) {
+    modal.style.display = 'flex';
+    _actLogA11y = attachModalA11y(modal);
+  }
 }
 
 export function closeActivityLogModal() {
   const modal = document.getElementById('modalActivityLog');
   if (modal) modal.style.display = 'none';
+  if (_actLogA11y) { _actLogA11y.release(); _actLogA11y = null; }
 }
 
 function renderActivityLog() {

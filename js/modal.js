@@ -38,6 +38,7 @@ import { printReimbursementForm } from './reimbursement.js';
 import { getSetting } from './settings-store.js';
 import { openDrawer, closeDrawer } from './components/drawer.js';
 import { anIcon } from './analytics/analytics-shell.js';
+import { attachModalA11y } from './ui/modal-a11y.js';
 
 /** Live office-hours window (09:00–17:00 default) for overtime detection. */
 function getOfficeHours() {
@@ -200,6 +201,16 @@ let _odoStartAuthoritative = null;
 let _odoStartCorrected     = false;
 const ODO_CORRECT_REASON_MIN = 6;
 
+// SS17 — the 3 satellite modals below (Odometer/Cancel/Overtime Override)
+// had no Tab trap at all, and Escape either didn't exist (Cancel, Overtime
+// Override) or only worked while one specific field had focus (Odometer —
+// #odoInput's own keydown listener, not modal-wide). restoreOnRelease is
+// false for all three: each already has an explicit reopenDetail-driven
+// focus target (closeDetailModal()/openDetailModal() via drawer.js's own
+// deferred close/reopen), which this would otherwise fight by trying to
+// refocus a trigger element mid-transition.
+let _odoA11y = null, _cancelA11y = null, _otOverrideA11y = null;
+
 // SS2 hotfix (v1.27.1): vehicles/{id}/odometer is the existing Vehicle
 // Registration field (stored as a trimmed string — see ASSET_STRING_FIELDS in
 // vehicles-store.js) and is the single source of truth for autofill/reference,
@@ -297,7 +308,13 @@ function _openOdometerModal(type, assignmentId, assignment, callback) {
   }
 
   const modal = document.getElementById('modalOdometer');
-  if (modal) modal.style.display = 'flex';
+  if (modal) {
+    modal.style.display = 'flex';
+    _odoA11y = attachModalA11y(modal.querySelector('.odo-modal'), {
+      focusOnAttach: false, restoreOnRelease: false,
+      onEscape: () => _closeOdometerModal(true),
+    });
+  }
 
   setTimeout(() => { if (input) input.focus(); }, 80);
 }
@@ -309,6 +326,7 @@ function _openOdometerModal(type, assignmentId, assignment, callback) {
 function _closeOdometerModal(reopenDetail = false) {
   const modal = document.getElementById('modalOdometer');
   if (modal) modal.style.display = 'none';
+  if (_odoA11y) { _odoA11y.release(); _odoA11y = null; }
 
   if (reopenDetail && _odoId) {
     openDetailModal(_odoId);
@@ -504,7 +522,13 @@ function _openCancelModal(assignmentId) {
   _syncCancelConfirmState();
 
   const modal = document.getElementById('modalCancel');
-  if (modal) modal.style.display = 'flex';
+  if (modal) {
+    modal.style.display = 'flex';
+    _cancelA11y = attachModalA11y(modal.querySelector('.modal-box'), {
+      focusOnAttach: false, restoreOnRelease: false,
+      onEscape: () => _closeCancelModal(true),
+    });
+  }
   setTimeout(() => { if (input) input.focus(); }, 80);
 }
 
@@ -514,6 +538,7 @@ function _openCancelModal(assignmentId) {
 function _closeCancelModal(reopenDetail = false) {
   const modal = document.getElementById('modalCancel');
   if (modal) modal.style.display = 'none';
+  if (_cancelA11y) { _cancelA11y.release(); _cancelA11y = null; }
 
   const reopenId = _cancelId;
   _cancelId = null;
@@ -583,13 +608,20 @@ function _openOtOverrideModal(assignmentId) {
   _syncOtOverrideState();
 
   const modal = document.getElementById('modalOvertimeOverride');
-  if (modal) modal.style.display = 'flex';
+  if (modal) {
+    modal.style.display = 'flex';
+    _otOverrideA11y = attachModalA11y(modal.querySelector('.modal-box'), {
+      focusOnAttach: false, restoreOnRelease: false,
+      onEscape: () => _closeOtOverrideModal(true),
+    });
+  }
   setTimeout(() => { if (input) input.focus(); }, 80);
 }
 
 function _closeOtOverrideModal(reopenDetail = false) {
   const modal = document.getElementById('modalOvertimeOverride');
   if (modal) modal.style.display = 'none';
+  if (_otOverrideA11y) { _otOverrideA11y.release(); _otOverrideA11y = null; }
   const reopenId = _otOverrideId;
   _otOverrideId = null;
   if (reopenDetail && reopenId) openDetailModal(reopenId);
@@ -620,8 +652,10 @@ export function initModalHandlers() {
   document.getElementById('btnCancelOdometer')?.addEventListener('click', () => _closeOdometerModal(true));
   document.getElementById('btnConfirmOdometer')?.addEventListener('click', _handleOdometerConfirm);
   document.getElementById('odoInput')?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter')  _handleOdometerConfirm();
-    if (e.key === 'Escape') _closeOdometerModal(true);
+    // SS17 — Escape used to be handled ONLY here (only worked while this one
+    // field had focus, e.g. not from "Koreksi odometer"'s reason textarea);
+    // now handled modal-wide by attachModalA11y() in _openOdometerModal().
+    if (e.key === 'Enter') _handleOdometerConfirm();
   });
   // Live preview while typing (Complete mode); confirm-state gate (both modes)
   document.getElementById('odoInput')?.addEventListener('input', _updateOdometerPreview);

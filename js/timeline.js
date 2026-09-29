@@ -38,6 +38,15 @@ import { checkConflict, checkVehicleConflict } from './assignments.js';
 import { openDetailModal } from './modal.js';
 import { getSetting } from './settings-store.js';
 import { buildVehicleShapeMap, vehicleShapeCss } from './utils/vehicle-identity.js';
+import { createFocusGuard } from './ui/focus-preserving-render.js';
+
+// SS17 — assignment blocks on the canvas were entirely keyboard-unreachable
+// (no role/tabindex/keydown at all — mouse/touch only). Blocks are built
+// via document.createElement, not an innerHTML string, so they carry their
+// own stable `data-id` (assignment.id) already; keying the guard off that
+// preserves keyboard focus across the innerHTML wipe every
+// renderDriverRows() does on a Firebase refresh or date-window change.
+const _blockFocusGuard = createFocusGuard({ attr: 'id' });
 
 /** Live office-hours window (09:00–17:00 default) for overtime detection. */
 function getOfficeHours() {
@@ -573,6 +582,7 @@ function renderDriverRows() {
   if (!body) return;
 
   const keepScroll = body.scrollLeft;
+  _blockFocusGuard.capture(body);
 
   // Drive .driver-slots / grid width via a CSS var (see style.css).
   body.style.setProperty('--tl-days', String(windowDayCount));
@@ -700,6 +710,7 @@ function renderDriverRows() {
   body.scrollLeft = keepScroll;
   const hours = document.getElementById('timelineHours');
   if (hours) hours.scrollLeft = keepScroll;
+  _blockFocusGuard.restore(body);
 }
 
 function driverMatchesAssignment(driver, assignment) {
@@ -793,6 +804,13 @@ function createAssignmentBlock(assignment) {
   block.dataset.id = assignment.id;
   block.dataset.vehicle = assignment.vehicle;
   block.dataset.status = status;
+  // SS17 — click-equivalent keyboard access only (opens the same detail
+  // drawer the click handler below opens); drag-to-move/resize and the
+  // right-click context menu (js/timeline-interactions.js) stay mouse-only
+  // in this pass — making a free-drag canvas keyboard-operable is a
+  // separate, larger interaction-design decision, not a role/tabindex fix.
+  block.setAttribute('role', 'button');
+  block.setAttribute('tabindex', '0');
   block.style.left  = `${left}px`;
   block.style.width = `${Math.max(width, 20)}px`;
   block.style.background = getVehicleColor(assignment.vehicle);
@@ -861,6 +879,7 @@ function createAssignmentBlock(assignment) {
     <div class="resize-handle"></div>
   `;
   block.title = assignment.purpose || '';
+  block.setAttribute('aria-label', `${assignment.purpose || 'Tugas'} — ${blockTimeLabel}`);
 
   // Klik blok (any part of it, incl. past a midnight seam) → the SAME
   // assignment detail. Continuation is visual only; identity is unchanged.
@@ -868,6 +887,11 @@ function createAssignmentBlock(assignment) {
     if (!e.target.classList.contains('resize-handle')) {
       openDetailModal(assignment.id, { sourceEl: block });
     }
+  });
+  block.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    openDetailModal(assignment.id, { sourceEl: block });
   });
 
   return block;

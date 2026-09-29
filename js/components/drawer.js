@@ -199,7 +199,7 @@ export function openDrawer({
         </div>
         <button type="button" class="drawer__close" aria-label="Tutup">${anIcon('x', { size: 18 })}</button>
       </header>
-      <div class="drawer__error" data-drawer-error hidden></div>
+      <div class="drawer__error" data-drawer-error hidden role="alert"></div>
       <div class="drawer__body" data-drawer-body>${loading ? drawerLoadingSkeleton() : body}</div>
       ${buildFooter(footer)}
     </aside>`;

@@ -88,6 +88,11 @@ let _pcDrawerOverlay = null, _pcDrawerKey = null;
 // "Tanggal". These track the open↔closed edge so focus moves into the form
 // exactly once per open and returns to the trigger on close.
 let _addModalOpen = false, _addModalReturnFocus = null;
+// SS17 — same contract, extended to the Notifikasi and Tutup Siklus
+// overlays (notifModal()/cycleModal()), which had no Escape/Tab-trap/
+// focus-restore of their own at all.
+let _notifModalOpen = false, _notifModalReturnFocus = null;
+let _cycleModalOpen = false, _cycleModalReturnFocus = null;
 
 function blankForm() {
   return { expenseDate: todayISO(), unit: 'Engineering', customUnit: '', category: 'Inventaris', description: '', amount: '', notes: '', reimbursementDetail: blankReimburseDetail(), _err: '' };
@@ -108,6 +113,15 @@ function setState(patch) {
   if (('addOpen' in patch) && !!patch.addOpen && !st.addOpen) {
     const ae = document.activeElement;
     _addModalReturnFocus = (ae && ae !== document.body) ? ae : null;
+  }
+  // SS17 — same closed→open capture, extended to Notifikasi/Tutup Siklus.
+  if (('notifOpen' in patch) && !!patch.notifOpen && !st.notifOpen) {
+    const ae = document.activeElement;
+    _notifModalReturnFocus = (ae && ae !== document.body) ? ae : null;
+  }
+  if (('cycleModalOpen' in patch) && !!patch.cycleModalOpen && !st.cycleModalOpen) {
+    const ae = document.activeElement;
+    _cycleModalReturnFocus = (ae && ae !== document.body) ? ae : null;
   }
   Object.assign(st, patch);
   render();
@@ -294,6 +308,8 @@ function render() {
   restoreFocus();
   syncPettyCashDetailDrawer();
   syncAddModalFocus();
+  syncNotifModalFocus();
+  syncCycleModalFocus();
   if (_onStateChange) _onStateChange();
 }
 
@@ -319,21 +335,65 @@ function syncAddModalFocus() {
   }
 }
 
-/* Issue E — keep Tab focus inside the Add/Edit Expense modal and let Escape
+/** SS17 — same contract as syncAddModalFocus(), for the Notifikasi overlay. */
+function syncNotifModalFocus() {
+  if (st.notifOpen && !_notifModalOpen) {
+    _notifModalOpen = true;
+    const box = root.querySelector('.pc-notif-box');
+    const first = box && box.querySelector('[data-act="closeNotif"]');
+    if (first) { try { first.focus(); } catch (_) {} }
+  } else if (!st.notifOpen && _notifModalOpen) {
+    _notifModalOpen = false;
+    const back = _notifModalReturnFocus;
+    _notifModalReturnFocus = null;
+    if (back && document.contains(back) && typeof back.focus === 'function') {
+      try { back.focus(); } catch (_) {}
+    }
+  }
+}
+
+/** SS17 — same contract as syncAddModalFocus(), for the Tutup Siklus overlay. */
+function syncCycleModalFocus() {
+  if (st.cycleModalOpen && !_cycleModalOpen) {
+    _cycleModalOpen = true;
+    const box = root.querySelector('.pc-cycle-box');
+    const first = box && box.querySelector('[data-act="newBalInput"]');
+    if (first) { try { first.focus(); } catch (_) {} }
+  } else if (!st.cycleModalOpen && _cycleModalOpen) {
+    _cycleModalOpen = false;
+    const back = _cycleModalReturnFocus;
+    _cycleModalReturnFocus = null;
+    if (back && document.contains(back) && typeof back.focus === 'function') {
+      try { back.focus(); } catch (_) {}
+    }
+  }
+}
+
+/* Issue E — keep Tab focus inside whichever hand-rolled overlay (Add/Edit
+   Expense, Notifikasi, Tutup Siklus) is currently open, and let Escape
    dismiss it, the same way the canonical drawer does. Bound in
    bindDelegation() AFTER onUnitAcKeydown so an open "Nama Unit" suggestion
    list consumes its own Escape/Tab first (it preventDefault()s when it
    does — detected here via e.defaultPrevented). No positive tabindex: the
-   trap works off the modal's natural DOM order. */
+   trap works off each modal's natural DOM order.
+   SS17 — extended from Add/Edit-only to also cover Notifikasi and Tutup
+   Siklus, which had no Escape/Tab-trap of their own (at most one of the
+   three is ever open at a time, so resolving "the" open box by st flag is
+   unambiguous). */
 function onAddModalKeydown(e) {
-  if (!st.addOpen || e.defaultPrevented) return;
+  if (e.defaultPrevented) return;
   if (e.key !== 'Tab' && e.key !== 'Escape') return;
-  const box = root && root.querySelector('.pc-add-box');
+  if (!st.addOpen && !st.notifOpen && !st.cycleModalOpen) return;
+  const box = root && root.querySelector(
+    st.addOpen ? '.pc-add-box' : st.notifOpen ? '.pc-notif-box' : '.pc-cycle-box'
+  );
   if (!box) return;
 
   if (e.key === 'Escape') {
     e.preventDefault();
-    setState({ addOpen: false, editId: null });
+    if (st.addOpen) setState({ addOpen: false, editId: null });
+    else if (st.notifOpen) setState({ notifOpen: false });
+    else if (st.cycleModalOpen) setState({ cycleModalOpen: false });
     return;
   }
 
@@ -1312,7 +1372,7 @@ function addModal() {
         <label style="display:block"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Catatan / Keterangan</span>
           <input name="notes" data-act="formInput" data-focus="notes" value="${esc(f.notes)}" placeholder="Contoh: nama PIC / no. kendaraan (opsional)" class="pc-add-input"/></label>
         <label style="display:block"><span style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase">Foto Nota <span style="color:var(--muted);font-weight:400;letter-spacing:0">(Opsional · disimpan untuk arsip digital)</span></span>
-          <div data-act="pickReceipt" style="margin-top:6px;border:1.5px dashed var(--input-bd);border-radius:9px;padding:18px 14px;text-align:center;color:var(--muted);font-size:12.5px;cursor:pointer;background:var(--card2)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto 8px;display:block"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>${f._photoName ? esc(f._photoName) : 'Klik untuk pilih foto nota fisik<br/><span style="font-size:11px">JPG, PNG · maks. 5 MB · tidak wajib</span>'}</div>
+          <div data-act="pickReceipt" role="button" tabindex="0" aria-label="Pilih foto nota" style="margin-top:6px;border:1.5px dashed var(--input-bd);border-radius:9px;padding:18px 14px;text-align:center;color:var(--muted);font-size:12.5px;cursor:pointer;background:var(--card2)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto 8px;display:block"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>${f._photoName ? esc(f._photoName) : 'Klik untuk pilih foto nota fisik<br/><span style="font-size:11px">JPG, PNG · maks. 5 MB · tidak wajib</span>'}</div>
           <input id="pcReceiptInput" type="file" accept="image/*" data-act="receiptFile" style="display:none"/></label>
         ${f._err ? `<div id="pcAddErr" class="sf-inline-error" role="alert">${esc(f._err)}</div>` : ''}
       </div>
@@ -1461,8 +1521,8 @@ function notifModal(m) {
   // z-index:1500.
   return `
   <div data-act="closeNotif" style="position:fixed;inset:0;background:rgba(20,16,14,.5);backdrop-filter:blur(2px);z-index:10050;display:flex;align-items:flex-start;justify-content:center;padding:60px 20px;animation:pcFade .18s ease">
-    <div data-act="stop" style="width:100%;max-width:440px;background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-lg);max-height:80vh;display:flex;flex-direction:column;animation:pcPop .22s ease">
-      <div style="padding:17px 20px;border-bottom:1px solid var(--border2);display:flex;justify-content:space-between;align-items:center"><div style="font-weight:800;font-size:17px">Notifikasi</div><div data-act="closeNotif" style="width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div></div>
+    <div data-act="stop" class="pc-notif-box" role="dialog" aria-modal="true" aria-label="Notifikasi" style="width:100%;max-width:440px;background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-lg);max-height:80vh;display:flex;flex-direction:column;animation:pcPop .22s ease">
+      <div style="padding:17px 20px;border-bottom:1px solid var(--border2);display:flex;justify-content:space-between;align-items:center"><div style="font-weight:800;font-size:17px">Notifikasi</div><div data-act="closeNotif" role="button" tabindex="0" aria-label="Tutup" style="width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div></div>
       <div style="flex:1;overflow-y:auto;padding:14px 18px">
         <div style="font-family:var(--font-sans);font-size:var(--type-label);font-weight:700;letter-spacing:0.05em;color:var(--label);text-transform:uppercase;margin-bottom:10px">Untuk Admin</div>
         ${items}
@@ -1481,7 +1541,7 @@ function cycleModal(m) {
   // drawer. Was z-index:1600.
   return `
   <div data-act="closeCycleModal" style="position:fixed;inset:0;background:rgba(20,16,14,.55);backdrop-filter:blur(3px);z-index:10050;display:flex;align-items:center;justify-content:center;padding:20px">
-    <div data-act="stop" style="width:100%;max-width:480px;background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-lg);overflow:hidden">
+    <div data-act="stop" class="pc-cycle-box" role="dialog" aria-modal="true" aria-label="Tutup Siklus &amp; Mulai Siklus Baru" style="width:100%;max-width:480px;background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-lg);overflow:hidden">
       <div style="background:var(--green);padding:22px 26px 20px">
         <div style="color:rgba(255,255,255,.85);font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px">Dana Pengganti Diterima</div>
         <div style="font-weight:800;font-size:20px;color:#fff;letter-spacing:-.3px">Tutup Siklus &amp; Mulai Siklus Baru</div>

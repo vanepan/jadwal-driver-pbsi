@@ -106,7 +106,7 @@ function timelineCard(a, open, ctx) {
   const room = (a.location || '').split(' · ').slice(-1)[0] || a.room || '';
   const members = activeParticipants(a);
   return `<div class="eng-tlc" data-open="${open}">
-    <div class="eng-tlc-head" data-act="eng-tl-toggle" data-id="${esc(a.id)}">
+    <div class="eng-tlc-head" data-act="eng-tl-toggle" data-id="${esc(a.id)}" role="button" tabindex="0" aria-expanded="${open}">
       ${catTile(a.category, 44, 13)}
       <div class="eng-tlc-main">
         <div class="eng-tlc-badges"><span class="eng-card-id">${esc(a.assignmentNumber || a.id)}</span>${st}${priorityTag(a.priority)}</div>
@@ -118,7 +118,7 @@ function timelineCard(a, open, ctx) {
     </div>
     ${open ? `<div class="eng-tlc-body">${renderTimeline(a.timeline, { dense: true, now: ctx.now })}
       <div class="eng-tlc-detail"><button class="eng-chip" data-act="eng-open" data-id="${esc(a.id)}">Buka detail ${icon('arrow-right', { size: 13 })}</button></div></div>`
-      : (latest ? `<div class="eng-tlc-collapsed" data-act="eng-tl-toggle" data-id="${esc(a.id)}">
+      : (latest ? `<div class="eng-tlc-collapsed" data-act="eng-tl-toggle" data-id="${esc(a.id)}" role="button" tabindex="0" aria-expanded="false">
           <span class="eng-tlc-cdot" data-tone="${eventMeta(latest.type).tone}">${icon(eventMeta(latest.type).icon, { size: 11, tone: eventMeta(latest.type).tone })}</span>
           <span class="eng-tlc-clabel">${esc(eventMeta(latest.type).label)}${latest.actor && latest.actor.name ? ` — ${esc(latest.actor.name)}` : ''}</span>
           <span class="eng-tlc-ccount">${(a.timeline || []).length} aktivitas</span></div>` : '')}
@@ -136,7 +136,7 @@ function workReportCard(r, open, ctx) {
   const room = (r.location || '').split(' · ').slice(-1)[0] || r.room || '';
   const names = personnelNames(r);
   return `<div class="eng-tlc" data-open="${open}">
-    <div class="eng-tlc-head" data-act="eng-tl-toggle" data-id="${esc(r.id)}">
+    <div class="eng-tlc-head" data-act="eng-tl-toggle" data-id="${esc(r.id)}" role="button" tabindex="0" aria-expanded="${open}">
       ${catTile(r.category, 44, 13)}
       <div class="eng-tlc-main">
         <div class="eng-tlc-badges"><span class="eng-card-id">${esc(r.reportNumber || r.id)}</span>${statusPill(STATUS.COMPLETED)}${priorityTag(r.priority)}</div>
@@ -147,7 +147,7 @@ function workReportCard(r, open, ctx) {
       <div class="eng-tlc-right"><span class="eng-tlc-time">${esc(formatEventTime(ev.timestamp, ctx.now))}</span>${icon('chevron-down', { size: 16, cls: 'eng-chev' })}</div>
     </div>
     ${open ? `<div class="eng-tlc-body">${renderTimeline([ev], { dense: true, now: ctx.now })}</div>`
-      : `<div class="eng-tlc-collapsed" data-act="eng-tl-toggle" data-id="${esc(r.id)}">
+      : `<div class="eng-tlc-collapsed" data-act="eng-tl-toggle" data-id="${esc(r.id)}" role="button" tabindex="0" aria-expanded="false">
           <span class="eng-tlc-cdot" data-tone="${eventMeta(ev.type).tone}">${icon(eventMeta(ev.type).icon, { size: 11, tone: eventMeta(ev.type).tone })}</span>
           <span class="eng-tlc-clabel">${esc(eventMeta(ev.type).label)}${ev.actor && ev.actor.name ? ` — ${esc(ev.actor.name)}` : ''}</span>
           <span class="eng-tlc-ccount">1 aktivitas</span></div>`}
@@ -194,7 +194,7 @@ export function renderHistory(all, ctx) {
     ? emptyState('Belum ada riwayat', 'Penugasan yang telah diverifikasi atau ditunda akan muncul di sini.')
     : `<div class="eng-table-wrap"><table class="eng-table"><thead><tr>
         <th>Penugasan</th><th>Lokasi</th><th>Engineering</th><th class="-right">Waktu Kerja</th><th>Status</th></tr></thead><tbody>
-        ${rows.map((a) => `<tr data-act="eng-open" data-id="${esc(a.id)}">
+        ${rows.map((a) => `<tr data-act="eng-open" data-id="${esc(a.id)}" role="button" tabindex="0" aria-label="Buka detail ${esc(a.title)}">
           <td data-label="Penugasan"><span class="eng-td-title"><span class="eng-cat-dot" style="background:var(--${catMeta(a.category).tone})"></span>${esc(a.title)}</span></td>
           <td data-label="Lokasi">${esc((a.location || '').split(' · ')[0])}</td>
           <td data-label="Engineering">${esc(activeParticipants(a).map((p) => p.name.split(' ')[0]).join(', ') || '—')}</td>

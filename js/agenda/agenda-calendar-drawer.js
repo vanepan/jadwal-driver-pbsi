@@ -31,6 +31,11 @@ import { writableScopes, canManageSharedAgenda, canManageKabidAgenda, canWriteCa
 import { calendarItemDisplayState, calendarStateLabel } from './agenda-calendar-lifecycle.js';
 import { getCurrentUser } from '../auth.js';
 import { todayString } from '../utils.js';
+import { createFocusGuard } from '../ui/focus-preserving-render.js';
+
+// SS17 — see agenda-event-drawer.js's identical guard for the full
+// reasoning (systemic focus-loss on every rerender()).
+const _focusGuard = createFocusGuard({ attr: 'drawer-action' });
 
 const RSVP_LABELS = { invited: 'Belum merespons', accepted: 'Hadir', declined: 'Tidak hadir', tentative: 'Tentatif' };
 const RSVP_OPTIONS = [
@@ -48,6 +53,7 @@ let _editingId = null;
 let _editingItem = null; // raw /agendaCalendars record, needed for canWriteCalendarItem()
 let _onSaved = null;
 let _editOriginalDraftJSON = null; // snapshot at open time, for real isDirty comparison in edit mode
+let _pickerJustOpened = false; // SS17 — see wireAfterRender()/rerender()
 
 function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 
@@ -192,7 +198,16 @@ function footer() {
   return actions;
 }
 
-function rerender() { refreshDrawerBody(currentBodyHTML()); wireAfterRender(); }
+function rerender() {
+  const bodyEl = document.querySelector('[data-drawer-body]');
+  const openingPicker = _pickerJustOpened;
+  _focusGuard.capture(bodyEl);
+  refreshDrawerBody(currentBodyHTML());
+  wireAfterRender();
+  if (!openingPicker) {
+    _focusGuard.restore(bodyEl, () => document.querySelector('[data-drawer-action="picker:open"]') || document.querySelector('.drawer__close'));
+  }
+}
 
 function wireAfterRender() {
   const bodyEl = document.querySelector('[data-drawer-body]');
@@ -202,18 +217,23 @@ function wireAfterRender() {
     const search = bodyEl.querySelector('[data-field="pickerQuery"]');
     if (search) {
       search.addEventListener('input', () => { _pickerQuery = search.value; rerenderPickerListOnly(bodyEl); });
-      search.focus();
-      search.setSelectionRange(search.value.length, search.value.length);
+      if (_pickerJustOpened) {
+        search.focus();
+        search.setSelectionRange(search.value.length, search.value.length);
+      }
     }
   }
+  _pickerJustOpened = false;
 }
 
 function rerenderPickerListOnly(bodyEl) {
+  _focusGuard.capture(bodyEl);
   const list = bodyEl.querySelector('.cal-picker-list');
   const wrap = document.createElement('div');
   wrap.innerHTML = renderPickerHTML({ candidates: getAgendaCandidates(), selected: _draft.participants, mode: 'participant', query: _pickerQuery });
   const newList = wrap.querySelector('.cal-picker-list');
   if (list && newList) list.innerHTML = newList.innerHTML;
+  _focusGuard.restore(bodyEl);
 }
 
 /** Mirrors agenda-event-drawer.js#onDirectoryChange() exactly. */
@@ -316,7 +336,7 @@ function onAction(action, close) {
   }
 
   // ns === 'picker'
-  if (verb === 'open') { _pickerOpen = true; _pickerQuery = ''; rerender(); return; }
+  if (verb === 'open') { _pickerOpen = true; _pickerQuery = ''; _pickerJustOpened = true; rerender(); return; }
   if (verb === 'back' || verb === 'done') { _pickerOpen = false; rerender(); return; }
   if (verb === 'toggle') {
     if (_draft.participants[arg]) delete _draft.participants[arg];
@@ -347,7 +367,7 @@ export function openCreateCalendarDrawer(opts = {}) {
   _draft = blankDraft(defaultScope);
   if (opts.defaultDate) { _draft.startDate = opts.defaultDate; _draft.endDate = opts.defaultDate; }
   _editingItem = null;
-  _errors = {}; _pickerOpen = false; _pickerQuery = ''; _editingId = null; _onSaved = opts.onSaved || null;
+  _errors = {}; _pickerOpen = false; _pickerQuery = ''; _pickerJustOpened = false; _editingId = null; _onSaved = opts.onSaved || null;
   registerDirectoryChangeListener(onDirectoryChange);
   openDrawer({
     title: 'Kalender Baru', icon: 'calendar', body: currentBodyHTML(), footer: footer(),
@@ -375,7 +395,7 @@ export function openEditCalendarDrawer(calendarId, opts = {}) {
   }
   _draft = draftFromItem(item);
   _editingItem = item;
-  _errors = {}; _pickerOpen = false; _pickerQuery = ''; _editingId = calendarId; _onSaved = opts.onSaved || null;
+  _errors = {}; _pickerOpen = false; _pickerQuery = ''; _pickerJustOpened = false; _editingId = calendarId; _onSaved = opts.onSaved || null;
   // V1.31.3 §13 finding: this used to be `() => !readOnly` — true for
   // every writable item regardless of whether anything was actually
   // edited, so simply opening then closing an editable Calendar item

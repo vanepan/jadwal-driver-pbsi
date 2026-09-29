@@ -39,12 +39,22 @@ import { openCreateTaskDrawer, openEditTaskDrawer } from './agenda-task-drawer.j
 import { openCreateCalendarDrawer, openEditCalendarDrawer } from './agenda-calendar-drawer.js';
 import { openAgendaExportDrawer } from './agenda-export-drawer.js';
 import { todayString, offsetDate } from '../utils.js';
+import { createFocusGuard } from '../ui/focus-preserving-render.js';
 
 const HOST_ID = 'v2AgendaWorkspace';
 
 let _mounted = false;
 let _renderRegistered = false;
 let _host = null;
+
+// SS17 — every action-driven re-render below does a full innerHTML replace
+// of the host (no diffing), which silently drops keyboard focus to <body>
+// (found during the SS17 audit: Tab to a day cell/nav arrow/To-Do chip,
+// press Enter, focus vanishes). Keyed off the SAME data-agenda-action the
+// delegated click/keydown handlers already read (wireHost() below) — no
+// second attribute needed — so a re-rendered element carrying the same
+// action string gets focus back automatically.
+const _focusGuard = createFocusGuard({ attr: 'agenda-action' });
 
 const _state = {
   mode: 'agenda',
@@ -85,7 +95,9 @@ function buildCtx() {
  *  search handler does, can't steal its focus either way). */
 function doRender() {
   if (!_host) return;
+  _focusGuard.capture(_host);
   _host.innerHTML = buildWorkspaceHTML(buildCtx());
+  _focusGuard.restore(_host);
 }
 
 /** Mirrors js/app.js#_analyticsMotionOff() exactly — duplicated, not

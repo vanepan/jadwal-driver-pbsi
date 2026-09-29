@@ -18,6 +18,14 @@ import { AGENDA_REPORT_PRESETS, presetLabel } from './agenda-date-range.js';
 import { STATUS_FILTERS, PRIORITY_FILTERS } from './agenda-workspace-view.js';
 import { validateDateRange } from '../validation.js';
 import { todayString } from '../utils.js';
+import { createFocusGuard } from '../ui/focus-preserving-render.js';
+
+// SS17 — see agenda-event-drawer.js's identical guard for the full
+// reasoning (systemic focus-loss on every rerender()): every preset/mode/
+// status/priority chip click here replaced the whole drawer body with no
+// focus restoration at all, dropping focus to <body> on the very first
+// filter selection.
+const _focusGuard = createFocusGuard({ attr: 'drawer-action' });
 
 const MODES = [
   { key: 'semua', label: 'Semua' },
@@ -37,8 +45,15 @@ function chipRow(items, current, actionPrefix) {
   // cal-filters--wrap: the drawer panel is narrower than the workspace
   // section this chip idiom was designed for — wrap instead of hiding
   // options behind an unlabeled horizontal scroll (found by screenshotting).
+  // SS17 — role="radiogroup" needs role="radio"/aria-checked children, not
+  // aria-pressed (mismatched ARIA — a screen reader found a "radio group"
+  // with zero radios in it). aria-pressed is kept ALONGSIDE aria-checked,
+  // not replaced, purely for CSS (`.cal-chip[aria-pressed="true"]` drives
+  // the visual selected state) — the same two-attribute idiom
+  // agenda-task-drawer.js's own priority chips already use for this exact
+  // reason.
   return `<div class="cal-filters cal-filters--wrap" role="radiogroup">
-    ${items.map((it) => `<button type="button" class="cal-chip" aria-pressed="${current === it.key}" data-drawer-action="${actionPrefix}:${it.key}">${it.label}</button>`).join('')}
+    ${items.map((it) => `<button type="button" class="cal-chip" role="radio" aria-checked="${current === it.key}" aria-pressed="${current === it.key}" data-drawer-action="${actionPrefix}:${it.key}">${it.label}</button>`).join('')}
   </div>`;
 }
 
@@ -83,8 +98,11 @@ function renderBody() {
 }
 
 function rerender() {
+  const bodyEl = document.querySelector('[data-drawer-body]');
+  _focusGuard.capture(bodyEl);
   refreshDrawerBody(renderBody());
   wireAfterRender();
+  _focusGuard.restore(bodyEl, () => document.querySelector('.drawer__close'));
 }
 
 function wireAfterRender() {
