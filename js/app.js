@@ -395,6 +395,30 @@ let _workspaceEverSet = false;
 // back off) while the SECOND transition is still actually running. Counting
 // instead of toggling keeps the class on as long as anything is in flight.
 let _navTransitionDepth = 0;
+// SS14.11 — the LAST REQUESTED workspace, written synchronously the instant
+// setWorkspace() is called, mirroring applyTheme()'s own _themeRequested fix
+// (SS13) for the identical shape of bug: per the View Transitions spec, the
+// updateCallback passed to document.startViewTransition() (here,
+// applyWorkspaceState(), which is what actually writes `currentWorkspace`)
+// runs in a QUEUED TASK, not synchronously — so a second setWorkspace() call
+// landing inside that same brief window (confirmed by real-browser
+// instrumentation: two rail clicks separated by well under 1ms both still
+// read the pre-navigation `currentWorkspace`) computes `isWorkspaceChange`
+// against a STALE value and both think they're a genuine NEW navigation,
+// both call document.startViewTransition() into the SAME destination. Per
+// spec the second call skips the first rather than queuing — benign on its
+// own — but the two transitions' pseudo-element trees briefly coexist, which
+// is what produced a real, user-visible self-cross-fade "double image" of
+// the destination workspace over itself (SS14.11, a 2026-09-29 screen
+// recording of Engineering→Today) — a more severe manifestation of the
+// "rapid nav click" race SS14.4's own comment already anticipated but only
+// handled for the CSS class lifetime, not for preventing the duplicate
+// transition itself. `_workspaceRequested` is checked/written before
+// `_workspaceEverSet`'s existing early-navigation gate, so the FIRST-ever
+// call in a session (`_workspaceEverSet` still false) is unaffected either
+// way — only a second call racing an in-flight transition into the SAME
+// destination is now correctly treated as a no-op re-navigation.
+let _workspaceRequested = null;
 // v1.14.0: which rail module is active —
 //   'driverops' | 'pettycash' | 'analytics' | 'konfigurasi'
 //   ('administration' retained in code for rollback but no longer reachable)
@@ -4619,10 +4643,11 @@ function sweepOpenModalsOnWorkspaceChange() {
  * fix for the same failure mode View Transitions already solved for the
  * theme toggle. See docs/DESIGN_SYSTEM_PROGRAM_PHASE_8_5_NAVIGATION_CROSSFADE_MAP.md.
  *
- * Scoped to isWorkspaceChange only (name !== currentWorkspace) — same-name
- * re-navigation (e.g. switching Administration's Users/Config/Roles
- * sub-sections) keeps its existing instant re-render; wrapping those too
- * would treat every sub-navigation like a full domain change (map §5b/§7).
+ * Scoped to isWorkspaceChange only (name !== the last REQUESTED workspace,
+ * not necessarily the last APPLIED one — see _workspaceRequested, SS14.11)
+ * — same-name re-navigation (e.g. switching Administration's Users/Config/
+ * Roles sub-sections) keeps its existing instant re-render; wrapping those
+ * too would treat every sub-navigation like a full domain change (map §5b/§7).
  */
 function setWorkspace(name) {
   // V1.31.2 §15 — the ONE choke point every top-level navigation function
@@ -4638,7 +4663,15 @@ function setWorkspace(name) {
   // add to it — this fires for every destination there is, including ones
   // added after this line was written.
   window.dispatchEvent(new CustomEvent('pbsi:workspace-nav'));
-  const isWorkspaceChange = name !== currentWorkspace;
+  // SS14.11 — read/write BEFORE computing isWorkspaceChange, synchronously,
+  // so a second call landing before the first's deferred updateCallback has
+  // run `currentWorkspace = name` (see _workspaceRequested's own comment
+  // above) sees THIS call's already-recorded request rather than the still-
+  // stale currentWorkspace, and correctly takes the instant/no-transition
+  // path instead of racing a second document.startViewTransition() into the
+  // same destination.
+  const isWorkspaceChange = name !== _workspaceRequested;
+  _workspaceRequested = name;
   const canViewTransition = _workspaceEverSet
     && isWorkspaceChange
     && typeof document.startViewTransition === 'function'
